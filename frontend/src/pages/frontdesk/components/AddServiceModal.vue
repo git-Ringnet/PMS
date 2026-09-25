@@ -18,6 +18,8 @@ const props = defineProps({
   roomRate:      { type: Number, default: 0 },
   roomAdjustment: { type: Object, default: null },
   systemDate:    { type: String, default: '' },
+  isNoPost:      { type: Boolean, default: false },
+  roomChargeNoPost: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['close', 'success'])
@@ -28,6 +30,10 @@ const emit = defineEmits(['close', 'success'])
 const activeTab    = ref('service') // 'service' | 'room'
 const isSubmitting = ref(false)
 const errorMsg     = ref('')
+const activePostBlocked = computed(() => props.isNoPost || (activeTab.value === 'room' && props.roomChargeNoPost))
+const noPostMessage = computed(() => props.isNoPost
+  ? 'Booking hoặc phòng đang bật No Post — không thể post dịch vụ/tiền phòng.'
+  : 'Booking có phòng đang bật No Post — không thể post tiền phòng.')
 const modalRef     = ref(null)
 const modalPosition = ref({ x: 0, y: 0 })
 const isDraggingModal = ref(false)
@@ -387,8 +393,13 @@ watch(() => props.show, (v) => {
 // ─────────────────────────────────────────────
 async function handleSubmit() {
   errorMsg.value  = ''
+  if (activePostBlocked.value) {
+    errorMsg.value = noPostMessage.value
+    return
+  }
   isSubmitting.value = true
   try {
+    let result = null
     if (activeTab.value === 'service') {
       if (!selectedService.value) { errorMsg.value = 'Vui lòng chọn dịch vụ.'; isSubmitting.value = false; return }
       if (!quantity.value || quantity.value <= 0) { errorMsg.value = 'Số lượng phải > 0.'; isSubmitting.value = false; return }
@@ -398,7 +409,7 @@ async function handleSubmit() {
         isSubmitting.value = false
         return
       }
-      await postFoServiceBill({
+      const response = await postFoServiceBill({
         booking_room_id: props.bookingRoomId || undefined,
         guest_id:        props.guestId || undefined,
         booking_id:      props.bookingId || undefined,
@@ -412,6 +423,7 @@ async function handleSubmit() {
         description:  description.value,
         currency:     currency.value,
       })
+      result = response?.data ?? null
     } else {
       if (bookingMinDate.value && roomMaxDate.value && bookingMinDate.value > roomMaxDate.value) {
         errorMsg.value = 'Booking không có đêm lưu trú hợp lệ để post tiền phòng.'
@@ -429,7 +441,7 @@ async function handleSubmit() {
         isSubmitting.value = false
         return
       }
-      await postRoomCharge({
+      const response = await postRoomCharge({
         booking_room_id: props.bookingRoomId || undefined,
         guest_id:        props.guestId || undefined,
         booking_id:      props.bookingId || undefined,
@@ -441,8 +453,9 @@ async function handleSubmit() {
         description: roomDescription.value,
         currency:    roomCurrency.value,
       })
+      result = response?.data ?? null
     }
-    emit('success')
+    emit('success', result)
     emit('close')
   } catch (err) {
     errorMsg.value = err?.response?.data?.message ?? 'Có lỗi xảy ra, vui lòng thử lại.'
@@ -489,20 +502,26 @@ function handleClose() {
 
         <!-- Tabs -->
         <div class="flex items-center gap-6 border-b border-gray-200">
-          <button @click="activeTab = 'service'"
+          <button @click="activeTab = 'service'" :disabled="isNoPost"
             :class="['pb-2.5 text-sm font-medium transition-all relative -mb-px',
               activeTab === 'service'
                 ? 'text-blue-600 font-semibold border-b-2 border-blue-600'
-                : 'text-gray-500 hover:text-gray-800 border-b-2 border-transparent']">
+                : 'text-gray-500 hover:text-gray-800 border-b-2 border-transparent',
+              isNoPost ? 'cursor-not-allowed opacity-50' : '']">
             Dịch vụ
           </button>
-          <button @click="activeTab = 'room'"
+          <button @click="activeTab = 'room'" :disabled="isNoPost || roomChargeNoPost"
             :class="['pb-2.5 text-sm font-medium transition-all relative -mb-px',
               activeTab === 'room'
                 ? 'text-blue-600 font-semibold border-b-2 border-blue-600'
-                : 'text-gray-500 hover:text-gray-800 border-b-2 border-transparent']">
+                : 'text-gray-500 hover:text-gray-800 border-b-2 border-transparent',
+              (isNoPost || roomChargeNoPost) ? 'cursor-not-allowed opacity-50' : '']">
             Tiền phòng
           </button>
+        </div>
+
+        <div v-if="isNoPost || roomChargeNoPost" class="rounded-lg border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-xs font-medium text-rose-700" role="status">
+          {{ noPostMessage }}
         </div>
 
         <!-- Error Alert -->
@@ -662,7 +681,9 @@ function handleClose() {
                   <div class="relative group">
                     <Info class="w-3.5 h-3.5 text-gray-400 cursor-help" />
                     <div class="absolute bottom-5 left-0 bg-gray-800 text-white text-xs rounded px-2.5 py-1.5 w-64 opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none shadow-md">
-                      {{ roomSurcharge ? 'Lưu IsRoomNight=0 trong SP3004 (không ảnh hưởng công suất phòng)' : 'Lưu IsRoomNight=1 trong SP3004 (có tính công suất phòng)' }}
+                      {{ roomSurcharge
+                        ? 'Thay đổi giá phòng, cập nhật doanh thu và công suất phòng.'
+                        : 'Thêm phụ thu tiền phòng, không ảnh hưởng đến giá phòng và công suất phòng. Không ảnh hưởng tiền phòng chạy tự động hằng đêm.' }}
                     </div>
                   </div>
                 </div>
@@ -713,7 +734,7 @@ function handleClose() {
           class="px-5 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
           Hủy
         </button>
-        <button @click="handleSubmit" :disabled="isSubmitting || (activeTab === 'service' && !selectedService)"
+        <button @click="handleSubmit" :disabled="isSubmitting || activePostBlocked || (activeTab === 'service' && !selectedService)"
           class="px-6 py-2 text-sm font-semibold text-white bg-[#2563eb] rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1.5 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
           <Plus class="w-4 h-4" />
           <span>{{ isSubmitting ? 'Đang xử lý...' : 'Thêm' }}</span>

@@ -17,7 +17,7 @@ return new class extends Migration
             return;
         }
 
-        $connections = ['mysql', 'mysql_hkt1', 'mysql_hkt2', 'mysql_hkt3', 'mysql_hkt4'];
+        $connections = [DB::getDefaultConnection()];
         $armyProvider = require database_path('report_templates/expected_breakfast_army_summary_reference.php');
         $dtxProvider = require database_path('report_templates/expected_breakfast_dtx_summary_reference.php');
         $detailProvider = require database_path('report_templates/expected_breakfast_detail_reference.php');
@@ -102,7 +102,7 @@ SQL);
 
     public function down(): void
     {
-        foreach (['mysql', 'mysql_hkt1', 'mysql_hkt2', 'mysql_hkt3', 'mysql_hkt4'] as $connectionName) {
+        foreach ([DB::getDefaultConnection()] as $connectionName) {
             try {
                 $connection = DB::connection($connectionName);
                 if ($connection->getDriverName() !== 'mysql') {
@@ -122,7 +122,7 @@ SQL);
                     ->whereIn('code', ['EXPECTED_BREAKFAST_1', 'EXPECTED_BREAKFAST_2'])
                     ->update(['is_active' => true, 'updated_at' => now()]);
             } catch (\Throwable) {
-                // Rollback must not prevent other branch connections from restoring their metadata.
+                // Preserve best-effort rollback behavior for the target database.
             }
         }
     }

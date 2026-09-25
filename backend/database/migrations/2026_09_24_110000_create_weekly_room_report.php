@@ -6,7 +6,6 @@ use Illuminate\Support\Facades\Log;
 
 return new class extends Migration
 {
-    private const CONNECTIONS = ['mysql', 'mysql_hkt1', 'mysql_hkt2', 'mysql_hkt3', 'mysql_hkt4'];
     private const SOURCE = 'RPT_WEEKLY_ROOM_REPORT';
     private const REPORT = 'WEEKLY_ROOM_REPORT';
     private const TEMPLATE = 'WEEKLY_ROOM_REPORT_REFERENCE';
@@ -15,7 +14,7 @@ return new class extends Migration
     {
         $visitedDatabases = [];
 
-        foreach (self::CONNECTIONS as $connectionName) {
+        foreach ([DB::getDefaultConnection()] as $connectionName) {
             try {
                 $db = DB::connection($connectionName);
                 if ($db->getDriverName() !== 'mysql') {
@@ -44,7 +43,7 @@ return new class extends Migration
     {
         $visitedDatabases = [];
 
-        foreach (self::CONNECTIONS as $connectionName) {
+        foreach ([DB::getDefaultConnection()] as $connectionName) {
             try {
                 $db = DB::connection($connectionName);
                 if ($db->getDriverName() !== 'mysql') {

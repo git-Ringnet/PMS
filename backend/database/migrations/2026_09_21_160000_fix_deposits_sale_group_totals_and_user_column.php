@@ -12,10 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         $systemConnection = config('database_domains.system_connection', 'mysql_system');
-        $candidates = array_merge(
-            [Schema::getConnection()->getName(), DB::getDefaultConnection()],
-            array_values(config('database_domains.branch_connections', []))
-        );
+        $candidates = [DB::getDefaultConnection()];
         $connections = array_values(array_unique(array_filter(
             $candidates,
             static fn (string $connection): bool => $connection !== $systemConnection

@@ -5,25 +5,12 @@ use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
-    private const CONNECTIONS = [
-        'mysql',
-        'mysql_hkt1',
-        'mysql_hkt2',
-        'mysql_hkt3',
-        'mysql_hkt4',
-    ];
 
     public function up(): void
     {
         $definition = (require database_path('report_templates/deposits_sale_reference.php'))->definition();
 
-        $candidates = array_merge([$this->getConnection()], self::CONNECTIONS);
-        $connections = array_values(array_unique(array_filter(
-            $candidates,
-            static fn (?string $conn): bool => !empty($conn) && config("database.connections.{$conn}") !== null
-        )));
-
-        foreach ($connections as $connection) {
+        foreach ([DB::getDefaultConnection()] as $connection) {
             $db = DB::connection($connection);
             if ($db->getDriverName() !== 'mysql') {
                 continue;

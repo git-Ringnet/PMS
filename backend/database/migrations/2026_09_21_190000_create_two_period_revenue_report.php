@@ -11,10 +11,7 @@ return new class extends Migration
 
     public function up(): void
     {
-        $connections = array_values(array_unique(array_merge(
-            ['mysql'],
-            array_values(config('database_domains.branch_connections', []))
-        )));
+        $connections = [DB::getDefaultConnection()];
         $visitedDatabases = [];
 
         foreach ($connections as $connectionName) {
@@ -411,10 +408,7 @@ SQL;
 
     public function down(): void
     {
-        $connections = array_values(array_unique(array_merge(
-            ['mysql'],
-            array_values(config('database_domains.branch_connections', []))
-        )));
+        $connections = [DB::getDefaultConnection()];
         $visitedDatabases = [];
 
         foreach ($connections as $connectionName) {

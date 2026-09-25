@@ -1,7 +1,5 @@
 # Project Memory — PMS
 
-
-
 ## Current Status
 
 - 2026-09-24: Đã triển khai các vấn đề Checkout dòng 226/227/229/230/231/232: giữ trạng thái booking/phòng sau thanh toán; chuẩn hóa marker `pack2/pack4`; lấy tài khoản ngân hàng từ cấu hình; chỉnh sửa mô tả bill/payment; tinh gọn Payment Modal; kéo thả bill/cọc/thanh toán trước sang phòng. Không migration, không backfill dữ liệu lịch sử. PHP lint, route list và frontend build đạt; backend feature test liên quan bị treo không xuất output trong môi trường test hiện tại.
@@ -202,6 +200,11 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 ## Recent Changes
 
+- 2026-09-25: Dòng 233 bổ sung nhánh chốt hóa đơn 0đ riêng: UI chỉ thêm payment 0đ vào bảng sau khi bấm **Thêm**, và chỉ gửi cờ `zero_balance_close` khi dịch vụ được cọc/tạm ứng bù đủ; API kiểm tra lại bill/cọc cùng phạm vi trước khi liên kết payment/invoice và đóng bill. Request không có cờ và luồng amount khác 0 giữ nguyên; không migration/backfill. `SalesInvoiceSettlementTest` đạt 8/8 (61 assertions).
+- 2026-09-25: `PaymentModal.vue` cập nhật `payAmountNum` theo `remainingAmount` sau thao tác thêm/xóa dòng tạm; giữ nguyên cấu trúc payment rows và điều kiện submit, không thay đổi API/backend hay Prepayment Modal. Frontend build đạt.
+- 2026-09-25: Tách cờ No Post Master/phòng mà không đổi schema hoặc dữ liệu cũ; Master room-charge tiếp tục post phòng hợp lệ và trả danh sách phòng riêng lẻ bị bỏ qua. Checkout nhận kết quả một phần; No Post phòng không còn khóa điều chỉnh giá toàn Booking nếu phòng đang chọn hợp lệ.
+- 2026-09-25: Checkout khóa nút mở form post FO/HK khi Booking/phòng có No Post; AddServiceModal chặn trước submit, room-charge Master bị khóa nếu bất kỳ phòng đích nào có No Post; HK hiển thị badge và chặn thêm vào giỏ/gửi bill; điều chỉnh giá và early-checkout charge khóa đích bị chặn. Chỉ tác động UI Checkout/Hóa đơn và Buồng phòng; giữ nguyên backend/API.
+- 2026-09-25: Sửa `PaymentModal.vue`/`PrepaymentModal.vue` để ca lấy từ `/shifts`, map theo giờ và khóa lưu khi cấu hình ca thiếu/lỗi; UI ngày Payment dùng icon lịch riêng, cho phép gõ bàn phím và xác thực giới hạn ngày; cập nhật giải thích chế độ tiền phòng trong `AddServiceModal.vue`. `PaymentController` fail-closed khi chưa có ca; `BookingRoomServiceController` chặn No Post theo Booking/phòng cho FO, HK, room charge, điều chỉnh giá và no-show. Bổ sung hồi quy ca/No Post; không đổi Night Audit, dòng 238, schema hoặc dữ liệu.
 - 2026-09-24: Sửa `CheckoutPage.vue`, `PaymentModal.vue`, `PrepaymentModal.vue`, `PaymentController.php`, `BookingRoomServiceController.php` và route API cho sáu vấn đề Checkout. API chuyển payment chỉ nhận DPR/AP chưa sử dụng và bảo toàn marker khi audit transfer; service bill có endpoint chỉnh mô tả riêng. Cập nhật `.codex/docs/frontdesk_checkout/README.md` và mapping `payments`.
 - 2026-09-24: Cập nhật giới hạn ngày/ca và quyền City Ledger ở Payment/Prepayment; backend xác thực ngày/ca/Công ty. Checkout date bounds FO và RM theo phòng; No Post áp dụng cho post FO/HK/room-charge. `service_bills` owner logic (dòng 238) để nguyên do ảnh hưởng tới luồng đọc bill ngoài phạm vi.
 
@@ -327,7 +330,11 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 ## Known Risks
 
-
+- 2026-09-25: Dòng 233 chưa nghiệm thu tương tác trên browser hoặc đối chiếu dữ liệu thật; đã xác minh `SalesInvoiceSettlementTest` 8/8, PHP lint và frontend production build.
+- 2026-09-25: Dòng 292 mới được xác nhận bằng frontend production build; chưa kiểm tra tương tác Payment Modal trực tiếp trên browser.
+- 2026-09-25: Chưa nghiệm thu browser cho Booking No Post, No Post từng phòng và Master post một phần; cần xác nhận UI hiển thị danh sách phòng bị bỏ qua.
+- 2026-09-25: Dữ liệu phòng No Post cũ không được chuẩn hóa theo yêu cầu. Cờ phòng từng bị cascade từ Master vẫn được hiểu là cờ riêng của phòng và có thể tiếp tục chặn phòng đó khi Master đã tắt.
+- 2026-09-25: Bốn test còn lỗi trong `BookingRoomServiceFolioTest` liên quan lưu `booking_room_services` cho FO/housekeeping; cần điều tra riêng. Chưa nghiệm thu browser các thao tác No Post và UI ngày/ca với tài khoản đăng nhập.
 - 2026-09-24: Chưa nghiệm thu browser với dữ liệu thật cho kéo thả phòng, chỉnh mô tả inline và tài khoản ngân hàng; hai feature test backend liên quan chạy quá thời gian không trả output trong môi trường hiện tại nên cần chạy lại trên DB test ổn định.
 - 2026-09-24: Dữ liệu lịch sử `payments` có thể còn `pack2=DPR, pack4=PY`; hệ thống không tự backfill, cần quyết định riêng nếu muốn sửa dữ liệu lịch sử.
 - 2026-09-24: Feature tests Checkout hiện không khởi động được trong môi trường do connection `mysql_data` chưa được khai báo; cần cấu hình DB test rồi chạy lại. Dòng 238 cần rà soát/duyệt riêng các consumer ownership trước khi triển khai.

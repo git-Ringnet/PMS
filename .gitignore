@@ -34,22 +34,8 @@
 /backend/Homestead.yaml
 
 
-/.agents/*
-!/.agents/DAILY_LOG.md
+/DAILY_LOG.md
 /AGENTS.md
 /.codex/*
-!/.codex/PROJECT_MEMORY.md
-!/.codex/docs/
-/.codex/docs/*
-!/.codex/docs/reports/
-!/.codex/docs/doc_baocao/
-/.codex/docs/reports/*
-!/.codex/docs/reports/report_creation_rules.md
-!/.codex/docs/reports/deposits_sale.md
-!/.codex/docs/reports/ROW_150_151_152_COMPREHENSIVE_SPECIFICATION.md
-!/.codex/docs/reports/ROW_158_161_164_COMPREHENSIVE_SPECIFICATION.md
-!/.codex/docs/reports/REVENUE_ARMY.md
-!/.codex/docs/reports/RECEPTION_REVENUE_ARMY.md
-!/.codex/docs/reports/two_period_revenue.md
-!/.codex/docs/reports/template_editor.md
-/scratch/
+/.agents/*
+/.codex
