@@ -2,12 +2,11 @@
 
 namespace App\Services\Reports;
 
+use Illuminate\Support\Facades\DB;
+
 /**
- * Builds presentation-only group labels and a provisional payment allocation
- * summary from the single result set returned by legacy sp_039.
- *
- * This adapter is intentionally not registered with ReportDatasetEnricher.
- * It does not create a city-ledger dataset.
+ * Builds presentation-only group labels and payment summaries from the
+ * single result set returned by the sp_039-compatible procedure.
  */
 final class ReceptionCashierShiftDataAdapter
 {
@@ -80,8 +79,103 @@ final class ReceptionCashierShiftDataAdapter
 
         $data['rows'] = $rows;
         $data['currency_allocations'] = $allocations;
+        $data['city_ledger_rows'] = $this->cityLedgerRows($data['parameters'] ?? []);
 
         return $data;
+    }
+
+    private function cityLedgerRows(array $parameters): array
+    {
+        $settlements = DB::table('payment_debt_settlements')
+            ->select('payment_id')
+            ->selectRaw('SUM(CASE WHEN COALESCE(edit_flag, 0) = 0 AND deleted_at IS NULL THEN amount ELSE 0 END) AS paid_amount')
+            ->groupBy('payment_id');
+
+        $query = DB::table('payments as p')
+            ->leftJoin('payment_methods as pm', 'pm.code', '=', 'p.payment_method_id')
+            ->leftJoin('bookings as b', 'b.id', '=', 'p.booking_id')
+            ->leftJoinSub($settlements, 'settled', 'settled.payment_id', '=', 'p.id')
+            ->whereBetween('p.date', [
+                $parameters['p_from_date'] ?? now()->toDateString(),
+                $parameters['p_to_date'] ?? now()->toDateString(),
+            ])
+            ->where(function ($nested) {
+                $nested->where('pm.code', 'AC')->orWhere('p.payment_method_id', 'AC');
+            })
+            ->where(function ($nested) {
+                $nested->where('p.edit_flag', 0)->orWhereNull('p.edit_flag');
+            })
+            ->whereNull('p.deleted_at');
+
+        $department = trim((string) ($parameters['p_department'] ?? ''));
+        if ($department !== '') {
+            $query->whereRaw(
+                "FIND_IN_SET(COALESCE(NULLIF(p.department_id, ''), ''), ?) > 0",
+                [str_replace(' ', '', $department)]
+            );
+        }
+
+        $user = trim((string) ($parameters['p_user'] ?? ''));
+        if ($user !== '') {
+            $query->whereRaw(
+                "FIND_IN_SET(COALESCE(NULLIF(p.created_by, ''), p.username), ?) > 0",
+                [str_replace(' ', '', $user)]
+            );
+        }
+
+        $shift = trim((string) ($parameters['p_shift'] ?? ''));
+        if ($shift !== '') {
+            $query->where('p.shift', $shift);
+        }
+
+        $companyId = trim((string) ($parameters['p_company_id'] ?? ''));
+        if ($companyId !== '' && ! in_array($companyId, ['-1', '0'], true)) {
+            $query->whereRaw('COALESCE(p.company_id, b.company_id) = ?', [$companyId]);
+        }
+
+        $paymentMethod = trim((string) ($parameters['p_payment_method'] ?? ''));
+        if ($paymentMethod !== '') {
+            $query->whereRaw(
+                "FIND_IN_SET(COALESCE(pm.code, p.payment_method_id), ?) > 0",
+                [str_replace(' ', '', $paymentMethod)]
+            );
+        }
+
+        $fromTime = trim((string) ($parameters['p_from_time'] ?? ''));
+        if ($fromTime !== '') {
+            $query->whereRaw("TIME(COALESCE(p.open_time, TIME(p.created_at))) >= ?", [$fromTime]);
+        }
+
+        $toTime = trim((string) ($parameters['p_to_time'] ?? ''));
+        if ($toTime !== '') {
+            $query->whereRaw("TIME(COALESCE(p.open_time, TIME(p.created_at))) <= ?", [$toTime]);
+        }
+
+        if (! (bool) ($parameters['p_view_deposit'] ?? true)) {
+            $query->where(function ($nested) {
+                $nested->whereNull('p.pack2')->orWhere('p.pack2', '<>', 'DPR');
+            });
+        }
+
+        if (! (bool) ($parameters['p_view_amount_zero'] ?? false)) {
+            $query->where('p.amount', '<>', 0);
+        }
+
+        $summary = $query
+            ->selectRaw('COALESCE(SUM(p.amount), 0) AS total_amount')
+            ->selectRaw('COALESCE(SUM(COALESCE(settled.paid_amount, 0)), 0) AS paid_amount')
+            ->first();
+
+        if (! $summary || ((float) $summary->total_amount === 0.0 && (float) $summary->paid_amount === 0.0)) {
+            return [];
+        }
+
+        return [[
+            'PaymentMethodTitle' => 'AC (City ledger/Công nợ)',
+            'TotalAmount' => (float) $summary->total_amount,
+            'PaidAmount' => (float) $summary->paid_amount,
+            'BalanceAmount' => (float) $summary->total_amount - (float) $summary->paid_amount,
+        ]];
     }
 
     private function methodTitle(string $code, string $name): string

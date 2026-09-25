@@ -876,3 +876,11 @@ DELIMITER ;
 3. **Chạy migration**: `php artisan migrate:all --force`.
 4. **Tạo test case**: `backend/tests/Feature/RevenueByDepartureDateReportTest.php`.
 5. **Chạy kiểm thử xác nhận**: `php artisan test --filter=RevenueByDepartureDateReportTest`.
+
+---
+
+## 7. Trạng thái triển khai runtime
+
+- Mã runtime: `REVENUE_BY_DEPARTURE_DATE`, procedure `rpt_revenue_by_departure_date`, template `REVENUE_BY_DEPARTURE_DATE_REFERENCE`.
+- Migration đã chạy: `2026_09_22_100000` và các migration sửa `ONLY_FULL_GROUP_BY`/tương thích schema đến `2026_09_22_160000` trên HKT1–HKT4.
+- Smoke-test `CALL rpt_revenue_by_departure_date(...)` đạt trên `pms_hkt1`–`pms_hkt4`; chưa nghiệm thu số liệu với dữ liệu legacy thật.

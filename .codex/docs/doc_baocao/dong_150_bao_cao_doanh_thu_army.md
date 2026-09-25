@@ -23,6 +23,8 @@
 
 ## 2. Phân Tích Giao Diện & Bộ Lọc (`dong_150_ui_mau.png`)
 
+- 2026-09-22: Bộ lọc `p_date` dùng `SingleDatePicker` với lịch tiếng Việt trong `frontend/src/pages/reports/ReportsPage.vue`; giá trị API giữ dạng `YYYY-MM-DD`.
+
 ### 2.1. Panel Bộ Lọc Bên Trái (Left Filter Panel)
 * **Chiều rộng panel**: ~ 260px - 280px.
 * **Các thành phần điều khiển**:
@@ -730,3 +732,11 @@ DELIMITER ;
 3. **Chạy migrate**: `php artisan migrate:all --force`.
 4. **Viết test case**: `backend/tests/Feature/RevenueArmyReportTest.php` kiểm tra Stored Procedure và API report.
 5. **Kiểm tra**: Chạy `php artisan test --filter=RevenueArmyReportTest`.
+
+---
+
+## 6. Trạng thái triển khai runtime
+
+- Mã runtime: `REVENUE_ARMY`, procedure `rpt_revenue_army`, template `REVENUE_ARMY_REFERENCE`.
+- Migration đã chạy: `2026_09_22_100000` và các migration tương thích schema/alias template đến `2026_09_22_160000` trên HKT1–HKT4.
+- Smoke-test `CALL rpt_revenue_army(...)` đạt trên `pms_hkt1`–`pms_hkt4`; chưa nghiệm thu số liệu với dữ liệu legacy thật.

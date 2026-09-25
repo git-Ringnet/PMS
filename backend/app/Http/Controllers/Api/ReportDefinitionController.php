@@ -212,8 +212,13 @@ class ReportDefinitionController extends Controller
     private function executeReportSource(ReportDefinition $reportDefinition, array $parameters, Request $request): array
     {
         $division = $parameters['p_division'] ?? '__current__';
-        if (! in_array($reportDefinition->code, ['CANCELLED_ROOMS', 'NO_SHOW', 'NO_SHOW_BY_DAY'], true) || ! in_array($division, ['', '__all__'], true)) {
-            return $this->executor->executeSource($reportDefinition->reportDataSource, $parameters);
+        $multiBranchReports = ['CANCELLED_ROOMS', 'NO_SHOW', 'NO_SHOW_BY_DAY', 'WEEKLY_ROOM_REPORT'];
+        if (! in_array($reportDefinition->code, $multiBranchReports, true) || ! in_array($division, ['', '__all__'], true)) {
+            $data = $this->executor->executeSource($reportDefinition->reportDataSource, $parameters);
+
+            return $reportDefinition->code === 'WEEKLY_ROOM_REPORT'
+                ? $this->normalizeWeeklyReportData($data, (string) $request->attributes->get('_branch_code', ''))
+                : $data;
         }
 
         $user = $request->user();
@@ -259,6 +264,9 @@ class ReportDefinitionController extends Controller
                 $branchParameters,
                 $connectionName
             );
+            if ($reportDefinition->code === 'WEEKLY_ROOM_REPORT') {
+                $branchData = $this->normalizeWeeklyReportData($branchData, (string) $branch->code);
+            }
             $fields = $fields ?: ($branchData['fields'] ?? []);
             $truncated = $truncated || (bool) ($branchData['summary']['truncated'] ?? false);
 
@@ -270,8 +278,12 @@ class ReportDefinitionController extends Controller
 
         if ($reportDefinition->code === 'CANCELLED_ROOMS') {
             $this->sortCancelledRoomRows($rows, (bool) ($parameters['p_group_by_reason'] ?? false));
-        } else {
+        } elseif (in_array($reportDefinition->code, ['NO_SHOW', 'NO_SHOW_BY_DAY'], true)) {
             $this->sortNoShowRows($rows, (string) ($parameters['p_sort_type'] ?? 'ASC'));
+        }
+        if ($reportDefinition->code === 'WEEKLY_ROOM_REPORT') {
+            $rows = $this->aggregateWeeklyRows($rows);
+            $parameters = $this->weeklySummaryParameters($parameters, $rows, 'Tất cả chi nhánh');
         }
         if (count($rows) > $maxRows) {
             $rows = array_slice($rows, 0, $maxRows);
@@ -288,6 +300,91 @@ class ReportDefinitionController extends Controller
             'summary' => ['row_count' => count($rows), 'truncated' => $truncated],
             'fields' => $fields,
         ];
+    }
+
+    private function normalizeWeeklyReportData(array $data, string $fallbackDivision): array
+    {
+        $rows = $this->normalizeWeeklyRows($data['rows'] ?? [], $fallbackDivision);
+        $parameters = $this->weeklySummaryParameters(
+            $data['parameters'] ?? [],
+            $rows,
+            ($data['parameters']['p_division'] ?? '__current__') === '__all__'
+                ? 'Tất cả chi nhánh'
+                : 'Chi nhánh hiện tại'
+        );
+
+        return [
+            ...$data,
+            'parameters' => $parameters,
+            'rows' => $rows,
+            'summary' => [
+                ...($data['summary'] ?? []),
+                'row_count' => count($rows),
+            ],
+        ];
+    }
+
+    private function normalizeWeeklyRows(array $rows, string $fallbackDivision): array
+    {
+        foreach ($rows as &$row) {
+            foreach (['arr_rooms', 'arr_guests', 'dep_rooms', 'dep_guests', 'occ_rooms', 'occ_guests', 'available_rooms'] as $field) {
+                $row[$field] = (int) ($row[$field] ?? 0);
+            }
+            $row['occupancy_rate'] = round((float) ($row['occupancy_rate'] ?? 0), 2);
+            $row['Division'] = (string) ($row['Division'] ?? '') ?: $fallbackDivision;
+        }
+        unset($row);
+
+        usort($rows, static fn (array $left, array $right): int => strcmp(
+            (string) ($left['report_date'] ?? ''),
+            (string) ($right['report_date'] ?? '')
+        ));
+
+        return $rows;
+    }
+
+    private function aggregateWeeklyRows(array $rows): array
+    {
+        $grouped = [];
+        foreach ($rows as $row) {
+            $date = (string) ($row['report_date'] ?? '');
+            if ($date === '') {
+                continue;
+            }
+            if (! isset($grouped[$date])) {
+                $grouped[$date] = $row;
+                $grouped[$date]['Division'] = '__all__';
+                continue;
+            }
+            foreach (['arr_rooms', 'arr_guests', 'dep_rooms', 'dep_guests', 'occ_rooms', 'occ_guests', 'available_rooms'] as $field) {
+                $grouped[$date][$field] += (int) ($row[$field] ?? 0);
+            }
+        }
+
+        foreach ($grouped as &$row) {
+            $row['occupancy_rate'] = $row['available_rooms'] > 0
+                ? round($row['occ_rooms'] * 100 / $row['available_rooms'], 2)
+                : 0.0;
+        }
+        unset($row);
+
+        return $this->normalizeWeeklyRows(array_values($grouped), '__all__');
+    }
+
+    private function weeklySummaryParameters(array $parameters, array $rows, string $divisionLabel): array
+    {
+        $availableRooms = array_sum(array_map(static fn (array $row): int => (int) ($row['available_rooms'] ?? 0), $rows));
+        $occupiedRooms = array_sum(array_map(static fn (array $row): int => (int) ($row['occ_rooms'] ?? 0), $rows));
+
+        $parameters['p_division_label'] = $divisionLabel;
+        $parameters['p_weekly_occupancy_rate'] = number_format(
+            $availableRooms > 0 ? $occupiedRooms * 100 / $availableRooms : 0,
+            2,
+            '.',
+            ''
+        );
+
+        return $parameters;
     }
 
     private function sortCancelledRoomRows(array &$rows, bool $groupByReason): void
@@ -381,7 +478,7 @@ class ReportDefinitionController extends Controller
             'parameter_ui_schema.*.required' => 'nullable|boolean',
             'parameter_ui_schema.*.default' => 'nullable',
             'parameter_ui_schema.*.options' => 'nullable|array',
-            'parameter_ui_schema.*.options_source' => 'nullable|string|in:areas,outlets,companies,bookings,rooms,room-classes,registration-statuses,users,hotel-services,report-shifts,service-departments',
+            'parameter_ui_schema.*.options_source' => 'nullable|string|in:areas,outlets,companies,bookings,rooms,room-classes,registration-statuses,users,hotel-services,report-shifts,service-departments,branches',
             'parameter_ui_schema.*.range_end_parameter' => 'nullable|string|max:128',
             'template_ids' => 'required|array|min:1',
             'template_ids.*' => 'integer|distinct|exists:templates,id',

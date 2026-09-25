@@ -37,7 +37,6 @@
 /.agents/*
 !/.agents/DAILY_LOG.md
 /AGENTS.md
-!/AGENTS.md
 /.codex/*
 !/.codex/PROJECT_MEMORY.md
 !/.codex/docs/

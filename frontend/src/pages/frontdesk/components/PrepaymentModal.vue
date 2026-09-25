@@ -2,6 +2,7 @@
 import { ref, watch, computed, onMounted } from 'vue'
 import { X, Plus, Calendar, Clock, Save } from '@lucide/vue'
 import http from '@/services/http'
+import { fetchBankAccounts as fetchConfiguredBankAccounts } from '@/services/company-service'
 import { useUiStore } from '@/stores/ui-store'
 
 const props = defineProps({
@@ -61,6 +62,8 @@ const description = ref('')
 const workShift = ref('1')
 const timeStr = ref(nowTimeStr())
 const dateStr = ref(props.systemDate || todayDateStr())
+const workShiftsList = ref([])
+const shiftTimeTouched = ref(false)
 const currency = ref('VND')
 const isSubmitting = ref(false)
 const errorMsg = ref('')
@@ -102,6 +105,42 @@ function todayDateStr() {
   return `${yyyy}-${mm}-${dd}`
 }
 
+function timeMatchesShift(timeValue, shift) {
+  if (!shift?.start_time || !shift?.end_time || !/^\d{2}:\d{2}$/.test(timeValue || '')) return false
+  const toMinutes = (value) => {
+    const [hours, minutes] = String(value).slice(0, 5).split(':').map(Number)
+    return hours * 60 + minutes
+  }
+  const time = toMinutes(timeValue)
+  const start = toMinutes(shift.start_time)
+  const end = toMinutes(shift.end_time)
+  if (start === end) return true
+  return start < end ? time >= start && time < end : time >= start || time < end
+}
+
+function getAutoWorkShift(timeValue) {
+  const matchingShift = workShiftsList.value.find(shift => timeMatchesShift(timeValue, shift))
+  if (matchingShift) return String(matchingShift.id ?? matchingShift.name)
+
+  const hour = Number(String(timeValue || '').slice(0, 2)) || 0
+  if (hour >= 6 && hour < 14) return '1'
+  if (hour >= 14 && hour < 22) return '2'
+  return '3'
+}
+
+function isShiftTimeAllowed() {
+  if (!/^\d{2}:\d{2}$/.test(timeStr.value || '')) return false
+  if (workShiftsList.value.length === 0) return true
+  const shift = workShiftsList.value.find(item => String(item.id ?? item.name) === String(workShift.value))
+  if (!shift) return false
+  if (!shift.start_time || !shift.end_time) return true
+  return timeMatchesShift(timeStr.value, shift)
+}
+
+const markShiftTimeTouched = () => {
+  shiftTimeTouched.value = true
+}
+
 const registrationDisplay = computed(() => {
   if (props.bookingCode && props.bookingName) {
     return `${props.bookingCode} - ${props.bookingName}`
@@ -132,6 +171,10 @@ const isBankTransfer = computed(() => {
   return code === 'BT' || name.includes('bank') || name.includes('chuyển khoản') || name.includes('transfer') || bankName.includes('transfer')
 })
 
+const selectedBankAccountDetails = computed(() => bankAccountOptions.value.find(account => (
+  String(account.id) === String(selectedBankAccount.value)
+)) || null)
+
 const fetchPaymentMethods = async () => {
   try {
     const res = await http.get('/payment-methods')
@@ -148,26 +191,40 @@ const fetchPaymentMethods = async () => {
 
 const fetchBankAccounts = async () => {
   try {
-    const res = await http.get('/hotel-settings')
-    const settings = res.data?.data || res.data || {}
-    const list = []
-    if (settings.bank || settings.account) {
-      list.push({
-        id: 'hotel_bank_1',
-        display: `${settings.bank || 'Ngân hàng'} - ${settings.account || ''} (${settings.account_name || ''})`.trim()
-      })
-    }
-    list.push(
-      { id: 'mb_bank', display: 'MB Bank - 7451100001168 (Chi nhánh Lâm Đồng)' },
-      { id: 'vcb_bank', display: 'Vietcombank - 0071001234567 (CN Nha Trang)' },
-      { id: 'tcb_bank', display: 'Techcombank - 1903567890123' }
-    )
-    bankAccountOptions.value = list
-    if (list.length > 0 && !selectedBankAccount.value) {
-      selectedBankAccount.value = list[0].display
-    }
+    const res = await fetchConfiguredBankAccounts({ is_intermediary: false, is_active: true })
+    bankAccountOptions.value = (res.data?.data || res.data || [])
+      .filter(account => account.is_active !== false && !account.is_intermediary)
+      .map(account => ({
+        ...account,
+        display: [account.bank_name, account.bank_account_number, account.code]
+          .filter(Boolean)
+          .join(' - ')
+      }))
   } catch (err) {
     console.error('Lỗi khi tải tài khoản ngân hàng:', err)
+  }
+}
+
+const fetchWorkShifts = async () => {
+  try {
+    const res = await http.get('/shifts')
+    const list = res.data?.data || res.data || []
+    if (Array.isArray(list) && list.length > 0) {
+      workShiftsList.value = list
+      if (!shiftTimeTouched.value) {
+        const matchingShift = list.find(shift => timeMatchesShift(timeStr.value, shift))
+        if (matchingShift) {
+          workShift.value = String(matchingShift.id ?? matchingShift.name)
+        } else {
+          const firstShift = list[0]
+          workShift.value = String(firstShift.id ?? firstShift.name)
+          const firstShiftStart = String(firstShift.start_time || '').slice(0, 5)
+          if (/^\d{2}:\d{2}$/.test(firstShiftStart)) timeStr.value = firstShiftStart
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Không thể nạp danh sách ca làm việc từ API, sử dụng ca mặc định.')
   }
 }
 
@@ -180,8 +237,12 @@ watch(() => props.show, (visible) => {
   if (visible) {
     amount.value = 0
     errorMsg.value = ''
+    selectedBankAccount.value = ''
     timeStr.value = nowTimeStr()
     dateStr.value = props.systemDate || todayDateStr()
+    shiftTimeTouched.value = false
+    workShift.value = getAutoWorkShift(timeStr.value)
+    fetchWorkShifts()
     const rawRId = props.selectedRoomId
     selectedTargetRoomId.value = (rawRId !== null && rawRId !== undefined && rawRId !== '' && rawRId !== 'null') ? rawRId : null
     if (paymentMethods.value.length === 0) {
@@ -191,6 +252,10 @@ watch(() => props.show, (visible) => {
     }
     updateDefaultDescription()
   }
+})
+
+watch(isBankTransfer, (bankTransfer) => {
+  if (!bankTransfer) selectedBankAccount.value = ''
 })
 
 watch(paymentMethodId, () => {
@@ -217,6 +282,10 @@ const handleSubmit = async () => {
     errorMsg.value = 'Không tìm thấy thông tin Booking.'
     return
   }
+  if (!isShiftTimeAllowed()) {
+    errorMsg.value = 'Giờ thanh toán không thuộc ca đã chọn. Vui lòng chọn lại ca hoặc giờ.'
+    return
+  }
 
   isSubmitting.value = true
   try {
@@ -224,10 +293,7 @@ const handleSubmit = async () => {
       ? selectedTargetRoomId.value
       : null
 
-    let finalDesc = description.value.trim() || `Advance Payment`
-    if (isBankTransfer.value && selectedBankAccount.value) {
-      finalDesc += ` [TK: ${selectedBankAccount.value}]`
-    }
+    const finalDesc = description.value.trim() || `Advance Payment`
 
     const payload = {
       booking_id: props.bookingId,
@@ -242,6 +308,8 @@ const handleSubmit = async () => {
       shift_id: workShift.value,
       department_id: 'FO',
       folio_id: Number(props.folioId) || 1,
+      bank_account_id: isBankTransfer.value ? (selectedBankAccountDetails.value?.id || null) : null,
+      debit_account: isBankTransfer.value ? (selectedBankAccountDetails.value?.accounting_account || null) : null,
       pack4: 'AP'
     }
 
@@ -254,9 +322,12 @@ const handleSubmit = async () => {
       errorMsg.value = res.data?.message || 'Không thể lưu thanh toán trước.'
     }
   } catch (err) {
-    const backendMsg = err.response?.data?.message
-    const validationErrors = err.response?.data?.errors ? Object.values(err.response.data.errors).flat().join('; ') : ''
-    errorMsg.value = backendMsg || validationErrors || 'Có lỗi xảy ra khi lưu thanh toán trước.'
+    const response = err.response
+    const backendMsg = response?.data?.message
+    const validationErrors = response?.data?.errors ? Object.values(response.data.errors).flat().join('; ') : ''
+    errorMsg.value = backendMsg || validationErrors || (response?.status === 403
+      ? 'Bạn không có quyền thực hiện thao tác thanh toán này.'
+      : 'Có lỗi xảy ra khi lưu thanh toán trước.')
   } finally {
     isSubmitting.value = false
   }
@@ -322,8 +393,8 @@ onMounted(() => {
               <div v-if="isBankTransfer" class="col-span-6">
                 <label class="block font-semibold text-gray-700 mb-1 text-xs">Tài khoản ngân hàng</label>
                 <select v-model="selectedBankAccount" class="w-full px-2 py-1.5 bg-[#ffffcc] border border-gray-300 rounded text-gray-900 font-medium focus:outline-none text-xs truncate" title="Tài khoản ngân hàng">
-                  <option value="" disabled>Tài khoản ngân hàng</option>
-                  <option v-for="b in bankAccountOptions" :key="b.id" :value="b.display">
+                  <option value="">-- Không chọn --</option>
+                  <option v-for="b in bankAccountOptions" :key="b.id" :value="b.id">
                     {{ b.display }}
                   </option>
                 </select>
@@ -365,10 +436,17 @@ onMounted(() => {
               <!-- Ca làm việc (Nền vàng #ffffcc) -->
               <div class="col-span-2">
                 <label class="block font-medium text-gray-700 mb-1 text-[11px]">Ca</label>
-                <select v-model="workShift" class="w-full px-1.5 py-1 bg-[#ffffcc] border border-gray-300 rounded font-bold text-xs focus:outline-none text-center">
-                  <option value="1">1</option>
-                  <option value="2">2</option>
-                  <option value="3">3</option>
+                <select v-model="workShift" @change="markShiftTimeTouched" class="w-full px-1.5 py-1 bg-[#ffffcc] border border-gray-300 rounded font-bold text-xs focus:outline-none text-center">
+                  <template v-if="workShiftsList.length > 0">
+                    <option v-for="shift in workShiftsList" :key="shift.id" :value="String(shift.id ?? shift.name)">
+                      {{ shift.name }}
+                    </option>
+                  </template>
+                  <template v-if="workShiftsList.length === 0">
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                  </template>
                 </select>
               </div>
 
@@ -376,7 +454,7 @@ onMounted(() => {
               <div class="col-span-3">
                 <label class="block font-medium text-gray-700 mb-1 text-[11px]">Giờ</label>
                 <div class="relative">
-                  <input type="text" v-model="timeStr" class="w-full pl-1.5 pr-6 py-1 bg-white border border-gray-300 rounded text-center text-xs font-mono font-semibold" />
+                  <input type="time" v-model="timeStr" step="60" @change="markShiftTimeTouched" class="w-full pl-1.5 pr-6 py-1 bg-white border border-gray-300 rounded text-center text-xs font-mono font-semibold" />
                   <Clock class="w-3.5 h-3.5 text-sky-400 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 </div>
               </div>

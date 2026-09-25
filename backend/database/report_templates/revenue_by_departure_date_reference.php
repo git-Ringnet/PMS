@@ -2,8 +2,7 @@
 
 /**
  * Designer v1 reference layout for legacy sp_238/sp_240.
- * A report data source is intentionally not registered until the runtime
- * booking, service, payment and outlet mappings are verified.
+ * Runtime registration is provided by the row 151 feature migration.
  */
 return new class
 {

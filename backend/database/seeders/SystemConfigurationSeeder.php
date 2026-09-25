@@ -265,6 +265,10 @@ class SystemConfigurationSeeder extends Seeder
             ]
         );
 
+        // Seed lại môi trường test luôn bắt đầu với toàn bộ phòng ở trạng thái sẵn sàng.
+        // Không dùng quy tắc này cho import dữ liệu legacy hoặc dữ liệu production.
+        Room::query()->update(['room_status_code' => 'vacant_ready']);
+
         // Seed some room locks and histories
         $room501 = Room::where('room_number', '501')->first();
         $room502 = Room::where('room_number', '502')->first();

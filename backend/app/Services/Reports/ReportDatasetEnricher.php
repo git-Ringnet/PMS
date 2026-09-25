@@ -17,6 +17,9 @@ class ReportDatasetEnricher
     private readonly PaidCompanyDebtsDataAdapter $paidCompanyDebts;
     private readonly SalesInvoicesDataAdapter $salesInvoices;
     private readonly DepositsSaleDataAdapter $depositsSale;
+    private readonly ReceptionCashierShiftDataAdapter $receptionCashierShift;
+    private readonly SummaryServiceInvoicesDataAdapter $summaryServiceInvoices;
+    private readonly SalespersonRevenueDataAdapter $salespersonRevenue;
 
     public function __construct(
         private readonly ArrivingRoomsSummaryService $arrivingRoomsSummary,
@@ -25,10 +28,16 @@ class ReportDatasetEnricher
         ?PaidCompanyDebtsDataAdapter $paidCompanyDebts = null,
         ?SalesInvoicesDataAdapter $salesInvoices = null,
         ?DepositsSaleDataAdapter $depositsSale = null,
+        ?ReceptionCashierShiftDataAdapter $receptionCashierShift = null,
+        ?SummaryServiceInvoicesDataAdapter $summaryServiceInvoices = null,
+        ?SalespersonRevenueDataAdapter $salespersonRevenue = null,
     ) {
         $this->paidCompanyDebts = $paidCompanyDebts ?? new PaidCompanyDebtsDataAdapter();
         $this->salesInvoices = $salesInvoices ?? new SalesInvoicesDataAdapter();
         $this->depositsSale = $depositsSale ?? new DepositsSaleDataAdapter();
+        $this->receptionCashierShift = $receptionCashierShift ?? new ReceptionCashierShiftDataAdapter();
+        $this->summaryServiceInvoices = $summaryServiceInvoices ?? new SummaryServiceInvoicesDataAdapter();
+        $this->salespersonRevenue = $salespersonRevenue ?? new SalespersonRevenueDataAdapter();
     }
 
     public function enrich(ReportDefinition $reportDefinition, array $data): array
@@ -58,8 +67,20 @@ class ReportDatasetEnricher
         if ($code === 'DEPOSITS_SALE') {
             return $this->depositsSale->adapt($data);
         }
+        if (in_array($code, ['RPT_RECEPTION_CASHIER_SHIFT', 'RECEPTION_CASHIER_SHIFT'], true)) {
+            return $this->receptionCashierShift->adapt($data);
+        }
         if (in_array($code, ['RPT_RECEPTION_REVENUE_ARMY', 'RECEPTION_REVENUE_ARMY'], true)) {
             return $this->enrichReceptionRevenueArmySummary($data);
+        }
+        if (in_array($code, ['SUMMARY_SERVICE_INVOICES', 'RPT_SUMMARY_SERVICE_INVOICES'], true)) {
+            return $this->summaryServiceInvoices->adapt($data);
+        }
+        if ($code === 'DAILY_SUMMARY' || $code === 'RPT_DAILY_SUMMARY') {
+            return $this->enrichDailySummaryLabels($data);
+        }
+        if (in_array($code, ['SALESPERSON_REVENUE_SUMMARY', 'SALESPERSON_REVENUE_DETAIL', 'RPT_SALESPERSON_REVENUE_SUMMARY', 'RPT_SALESPERSON_REVENUE_DETAIL'], true)) {
+            return $this->salespersonRevenue->adapt($data);
         }
         if (in_array($code, ['EXPECTED_BREAKFAST', 'EXPECTED_BREAKFAST_1', 'EXPECTED_BREAKFAST_2'], true)) {
             return $this->enrichExpectedBreakfast($data);
@@ -220,6 +241,18 @@ class ReportDatasetEnricher
             ['GroupName' => 'Doanh Thu Phòng', 'TotalAmount' => round($roomTotal, 2)],
             ['GroupName' => 'Doanh Thu Dịch Vụ', 'TotalAmount' => round($grandTotal - $roomTotal, 2)],
         ];
+
+        return $data;
+    }
+
+    private function enrichDailySummaryLabels(array $data): array
+    {
+        $date = $data['parameters']['p_date'] ?? null;
+        if (is_string($date) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            $data['parameters']['p_month_label'] = \Carbon\Carbon::parse($date)->format('m/Y');
+        } else {
+            $data['parameters']['p_month_label'] = '';
+        }
 
         return $data;
     }

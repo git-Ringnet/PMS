@@ -4,8 +4,7 @@ use App\Services\TemplateRendererService;
 
 /**
  * Designer v1 reference for RECEPTION_CASHIER_SHIFT / Navy sp_039.
- * This file defines presentation and binding contracts only. It does not
- * register a report or claim a runtime data-source mapping.
+ * Runtime registration is provided by the row 158 feature migration.
  */
 return new class
 {
@@ -30,7 +29,7 @@ return new class
                 'p_shift' => '',
                 'p_from_time' => '00:00',
                 'p_to_time' => '23:59',
-                'p_company' => '-1',
+                'p_company_id' => '',
                 'p_view_deposit' => 1,
                 'p_view_amount_zero' => 0,
                 'p_payment_method' => '',
@@ -88,14 +87,11 @@ return new class
                     'p_shift' => 'string',
                     'p_from_time' => 'string',
                     'p_to_time' => 'string',
-                    'p_company' => 'string',
+                    'p_company_id' => 'string',
                     'p_view_deposit' => 'integer',
                     'p_view_amount_zero' => 'integer',
                     'p_payment_method' => 'string',
                 ],
-            ],
-            'blocked_datasets' => [
-                'city_ledger_rows' => 'Chưa xác minh nguồn dữ liệu và công thức; Navy sp_039 không trả dataset này.',
             ],
         ];
     }
@@ -173,12 +169,7 @@ return new class
                     'content' => '<h2 class="cashier-shift-section-title">Tổng Hợp Công Nợ Công Ty</h2>',
                     'style' => ['textAlign' => 'center', 'fontWeight' => 'bold', 'fontSize' => '14px'],
                 ],
-                [
-                    'id' => 'cashier_shift_city_ledger_pending',
-                    'type' => 'text',
-                    'content' => '<p class="cashier-shift-pending">Bảng công nợ công ty: Chưa xác minh nguồn dữ liệu runtime.</p>',
-                    'style' => ['textAlign' => 'center', 'fontSize' => '9px', 'color' => '#92400e'],
-                ],
+                $this->cityLedgerTableBlock(),
             ],
             'footer' => [[
                 'id' => 'cashier_shift_signatures',
@@ -372,6 +363,25 @@ return new class
                 'className' => 'cashier-shift-grand-total',
                 'cells' => $cells,
             ]],
+        ];
+    }
+
+    private function cityLedgerTableBlock(): array
+    {
+        return [
+            'id' => 'cashier_shift_city_ledger_table',
+            'type' => 'table',
+            'dataSource' => 'city_ledger_rows',
+            'tableType' => 'dynamic',
+            'tableStyle' => 'grid',
+            'tableClassName' => 'cashier-shift-summary-table',
+            'style' => ['width' => '72%', 'marginLeft' => 'auto', 'marginRight' => 'auto', 'borderCollapse' => 'collapse', 'fontSize' => '9.5px'],
+            'columns' => $this->columnsFromDefinitions([
+                ['PaymentMethodTitle', 'HTTT', '40%', 'left', 'text'],
+                ['TotalAmount', 'Tổng', '20%', 'right', 'number'],
+                ['PaidAmount', 'Đã Thanh Toán', '20%', 'right', 'number'],
+                ['BalanceAmount', 'Còn Lại', '20%', 'right', 'number'],
+            ], 'cashier_shift_city_ledger'),
         ];
     }
 

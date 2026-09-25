@@ -67,20 +67,12 @@ function generateMockRooms() {
   const rooms = []
   const floors = [4, 5, 6, 7, 8, 9, 10, 11]
   const roomsPerFloor = 12
-  const statuses = Object.values(ROOM_STATUSES)
   const typeKeys = Object.keys(ROOM_TYPES)
 
   for (const floor of floors) {
     for (let i = 1; i <= roomsPerFloor; i++) {
       const roomNumber = `${floor}${String(i).padStart(2, '0')}`
-      const statusIndex = Math.floor(Math.random() * 100)
-      let status
-      if (statusIndex < 55) status = ROOM_STATUSES.AVAILABLE
-      else if (statusIndex < 70) status = ROOM_STATUSES.OCCUPIED
-      else if (statusIndex < 80) status = ROOM_STATUSES.DIRTY
-      else if (statusIndex < 88) status = ROOM_STATUSES.RESERVED
-      else if (statusIndex < 95) status = ROOM_STATUSES.CHECKOUT
-      else status = ROOM_STATUSES.MAINTENANCE
+      const status = ROOM_STATUSES.AVAILABLE
 
       const type = typeKeys[Math.floor(Math.random() * typeKeys.length)]
       const maxGuests = Math.floor(Math.random() * 4) + 1

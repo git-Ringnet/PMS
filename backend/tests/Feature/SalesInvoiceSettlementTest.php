@@ -4,11 +4,13 @@ namespace Tests\Feature;
 
 use App\Models\Booking;
 use App\Models\BookingRoom;
+use App\Models\Company;
 use App\Models\Guest;
 use App\Models\Payment;
 use App\Models\PaymentMethod;
 use App\Models\PaymentSequence;
 use App\Models\SalesInvoice;
+use App\Models\Shift;
 use App\Models\ServiceBill;
 use App\Models\SystemDateRoll;
 use App\Models\User;
@@ -188,6 +190,90 @@ class SalesInvoiceSettlementTest extends TestCase
         $this->assertEquals($salesInvoice->id, $payment->salesInvoice->id);
         $this->assertCount(2, $salesInvoice->serviceBills);
         $this->assertCount(1, $salesInvoice->payments);
+    }
+
+    public function test_settlement_persists_the_selected_shift_and_rejects_a_time_from_another_shift(): void
+    {
+        Shift::create(['name' => '1', 'start_time' => '06:00:00', 'end_time' => '14:00:00']);
+        Shift::create(['name' => '2', 'start_time' => '14:00:00', 'end_time' => '22:00:00']);
+        $bill = ServiceBill::create([
+            'Guest' => 'Nguyễn Văn Test', 'DepartmentId' => 'FO', 'ServiceId' => 'LA',
+            'Username' => $this->user->username, 'Date' => '2026-09-16', 'OpenTime' => '08:00:00',
+            'Amount' => 500000, 'Exchange' => 1, 'Edit' => 0, 'Status' => 1, 'Folio' => '1',
+            'RegisterId1' => (string) $this->booking->id, 'RentalRoomId1' => (string) $this->room->id,
+            'RegisterID2' => (string) $this->booking->id, 'RentalRoomId2' => (string) $this->room->id,
+        ]);
+
+        $basePayload = [
+            'folio_id' => '1', 'booking_room_id' => $this->room->id,
+            'payments' => [['payment_method_id' => 'CA', 'amount' => 500000]],
+            'service_bill_ids' => [$bill->Ma], 'department_id' => 'FO',
+            'date' => '2026-09-16', 'open_time' => '15:58',
+        ];
+
+        $this->postJson("/api/bookings/{$this->booking->id}/settle-payment", $basePayload + ['shift_id' => '1'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('shift_id');
+        $this->assertDatabaseCount('payments', 0);
+        $this->assertDatabaseCount('sales_invoices', 0);
+
+        $this->postJson("/api/bookings/{$this->booking->id}/settle-payment", $basePayload + ['shift_id' => '2'])
+            ->assertSuccessful();
+
+        $payment = Payment::where('booking_id', $this->booking->id)->firstOrFail();
+        $invoice = SalesInvoice::where('booking_id', $this->booking->id)->firstOrFail();
+        $this->assertSame('2', (string) $payment->shift);
+        $this->assertSame('15:58', substr((string) $payment->open_time, 0, 5));
+        $this->assertSame('2', (string) $invoice->ca);
+    }
+
+    public function test_settlement_rejects_a_date_outside_the_booking_stay(): void
+    {
+        $this->booking->update(['arrival_date' => '2026-09-17', 'departure_date' => '2026-09-18']);
+        $this->room->update(['arrival_date' => '2026-09-17', 'departure_date' => '2026-09-18']);
+        $bill = ServiceBill::create([
+            'Guest' => 'Nguyễn Văn Test', 'DepartmentId' => 'FO', 'ServiceId' => 'LA',
+            'Username' => $this->user->username, 'Date' => '2026-09-16', 'OpenTime' => '08:00:00',
+            'Amount' => 500000, 'Exchange' => 1, 'Edit' => 0, 'Status' => 1, 'Folio' => '1',
+            'RegisterId1' => (string) $this->booking->id, 'RentalRoomId1' => (string) $this->room->id,
+            'RegisterID2' => (string) $this->booking->id, 'RentalRoomId2' => (string) $this->room->id,
+        ]);
+
+        $this->postJson("/api/bookings/{$this->booking->id}/settle-payment", [
+            'folio_id' => '1', 'booking_room_id' => $this->room->id,
+            'payments' => [['payment_method_id' => 'CA', 'amount' => 500000]],
+            'service_bill_ids' => [$bill->Ma], 'department_id' => 'FO',
+            'date' => '2026-09-16', 'open_time' => '10:00', 'shift_id' => '1',
+        ])->assertUnprocessable()->assertJsonValidationErrors('date');
+
+        $this->assertDatabaseCount('payments', 0);
+        $this->assertDatabaseCount('sales_invoices', 0);
+    }
+
+    public function test_city_ledger_requires_the_booking_company_debt_setting(): void
+    {
+        $company = Company::create(['name' => 'Company without credit', 'sync_acc' => false]);
+        $this->booking->update(['company_id' => $company->id]);
+        PaymentMethod::create(['code' => 'AC', 'name' => 'City ledger', 'payment_group' => 4]);
+        $bill = ServiceBill::create([
+            'Guest' => 'Nguyễn Văn Test', 'DepartmentId' => 'FO', 'ServiceId' => 'LA',
+            'Username' => $this->user->username, 'Date' => '2026-09-16', 'OpenTime' => '08:00:00',
+            'Amount' => 500000, 'Exchange' => 1, 'Edit' => 0, 'Status' => 1, 'Folio' => '1',
+            'RegisterId1' => (string) $this->booking->id, 'RentalRoomId1' => (string) $this->room->id,
+            'RegisterID2' => (string) $this->booking->id, 'RentalRoomId2' => (string) $this->room->id,
+        ]);
+        $payload = [
+            'folio_id' => '1', 'booking_room_id' => $this->room->id,
+            'payments' => [['payment_method_id' => 'AC', 'amount' => 500000]],
+            'service_bill_ids' => [$bill->Ma], 'department_id' => 'FO',
+            'date' => '2026-09-16', 'open_time' => '10:00', 'shift_id' => '1',
+        ];
+
+        $this->postJson("/api/bookings/{$this->booking->id}/settle-payment", $payload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('payments');
+        $this->assertDatabaseCount('payments', 0);
+        $this->assertDatabaseCount('sales_invoices', 0);
     }
 
     public function test_payment_cancellation_marks_sales_invoice_status_as_cancelled(): void
