@@ -359,6 +359,10 @@ const submitCheckout = async () => {
   } finally { isServiceOperationLoading.value = false }
 }
 const chargeEarlyCheckout = async () => {
+  if (earlyChargeNoPost.value) {
+    checkoutError.value = 'Phòng hoặc booking đang bật No Post — không thể post tiền phòng.'
+    return
+  }
   if (!earlyCheckoutData.value || earlyChargeDates.value.length === 0) { checkoutError.value = 'Chọn ít nhất một ngày để charge tiền phòng.'; return }
   isServiceOperationLoading.value = true
   try {
@@ -375,6 +379,10 @@ const chargeEarlyCheckout = async () => {
 
 const openEarlyChargeModal = () => {
   if (!earlyCheckoutData.value) return
+  if (earlyChargeNoPost.value) {
+    uiStore.showToast('Phòng hoặc booking đang bật No Post — không thể post tiền phòng.', 'warning')
+    return
+  }
   const dates = Array.isArray(earlyCheckoutData.value.remaining_dates)
     ? earlyCheckoutData.value.remaining_dates
     : (() => {
@@ -408,6 +416,10 @@ const checkoutEarlyWithoutCharge = async () => {
 const openAddHousekeepingService = () => {
   // Dòng master chỉ đại diện booking; dịch vụ BP luôn hạch toán cho một phòng cụ thể.
   if (!selectedRoomItem.value) return
+  if (isSelectedPostBlocked.value) {
+    uiStore.showToast(noPostBlockMessage.value, 'warning')
+    return
+  }
   showHousekeepingServiceModal.value = true
 }
 
@@ -443,6 +455,35 @@ const toggleCheckoutGuest = (roomId, guestId, checked) => {
 const selectedBooking = ref(null)
 const selectedRoomItem = ref(null)
 const systemDate = ref('')
+const isNoPostEnabled = value => value === true || value === 1 || ['1', 'true', 'yes'].includes(String(value ?? '').trim().toLowerCase())
+const selectedBookingNoPost = computed(() => isNoPostEnabled(selectedBooking.value?.rawBooking?.no_post ?? selectedBooking.value?.no_post))
+const selectedRoomNoPost = computed(() => isNoPostEnabled(selectedRoomItem.value?.rawRoom?.no_post ?? selectedRoomItem.value?.no_post))
+const isSelectedPostBlocked = computed(() => selectedBookingNoPost.value || selectedRoomNoPost.value)
+const isRoomChargeNoPostBlocked = computed(() => isSelectedPostBlocked.value)
+const noPostBlockMessage = computed(() => selectedBookingNoPost.value
+  ? 'Booking đang bật No Post — không thể post dịch vụ.'
+  : 'Phòng đang bật No Post — không thể post dịch vụ.')
+const findCheckoutRoomTarget = roomId => {
+  const bookings = [selectedBooking.value, ...allBookingsList.value].filter(Boolean)
+  for (const booking of bookings) {
+    const room = (booking.roomItems || []).find(item => String(item.roomId || item.id || item.rawRoom?.id) === String(roomId))
+    if (room) return { booking, room }
+  }
+  return null
+}
+const earlyChargeNoPost = computed(() => {
+  const target = earlyCheckoutData.value?.room_id ? findCheckoutRoomTarget(earlyCheckoutData.value.room_id) : null
+  return isNoPostEnabled(target?.booking?.rawBooking?.no_post ?? target?.booking?.no_post)
+    || isNoPostEnabled(target?.room?.rawRoom?.no_post ?? target?.room?.no_post)
+})
+
+const openAddServiceModal = () => {
+  if (isSelectedPostBlocked.value) {
+    uiStore.showToast(noPostBlockMessage.value, 'warning')
+    return
+  }
+  showAddServiceModal.value = true
+}
 
 const clearCheckoutPanels = () => {
   allBookingsList.value.forEach(booking => {
@@ -570,6 +611,10 @@ const loadSystemDate = async () => {
 }
 
 const openAdjustRoomRateModal = async () => {
+  if (selectedBookingNoPost.value) {
+    uiStore.showToast('Booking đang bật No Post — không thể điều chỉnh tiền phòng.', 'warning')
+    return
+  }
   await loadSystemDate()
   showAdjustRoomRateModal.value = true
 }
@@ -924,7 +969,11 @@ const handleServiceAdded = async (data, options = {}) => {
   await refreshCheckoutData()
 
   if (options.showToast !== false) {
-    uiStore.showToast('Đã thêm dịch vụ thành công!', 'success')
+    if (data?.skipped_no_post_rooms?.length) {
+      uiStore.showToast(data.message || 'Một số phòng đang bật No Post nên đã được bỏ qua.', 'warning')
+    } else {
+      uiStore.showToast('Đã thêm dịch vụ thành công!', 'success')
+    }
   }
 }
 
@@ -1809,6 +1858,10 @@ const openCancelServiceModal = () => {
 
 const openServiceAdjustment = async () => {
   if (!canAdjustSelectedService.value) return
+  if (isSelectedPostBlocked.value) {
+    uiStore.showToast('Booking hoặc phòng đang bật No Post — không thể điều chỉnh dịch vụ.', 'warning')
+    return
+  }
   const group = selectedServiceGroups.value[0]
   const item = group.items[0]
   showCancelServiceModal.value = false
@@ -2572,7 +2625,7 @@ const selectBookingHeader = (b) => {
   roomNumber.value = ''
   selectedGuest.value = b.name
   selectedGuestId.value = null
-  isNoPost.value = Boolean(b.rawBooking?.no_post)
+  isNoPost.value = isNoPostEnabled(b.rawBooking?.no_post ?? b.no_post)
 }
 
 const selectRoomItemRow = (b, r, specificGuest = null) => {
@@ -2588,7 +2641,7 @@ const selectRoomItemRow = (b, r, specificGuest = null) => {
   const guest = specificGuest || guests.find(item => item?.isPrimary) || guests[0] || null
   selectedGuest.value = guest?.name || r.guestName
   selectedGuestId.value = guest?.id || null
-  isNoPost.value = Boolean(r.rawRoom?.no_post)
+  isNoPost.value = selectedBookingNoPost.value || isNoPostEnabled(r.rawRoom?.no_post ?? r.no_post)
 }
 
 const handleNoPostChange = async (event) => {
@@ -2605,18 +2658,14 @@ const handleNoPostChange = async (event) => {
     } else {
       await updateBookingNoPost(selectedBooking.value.bookingId, noPost)
       selectedBooking.value.rawBooking.no_post = noPost
-      selectedBooking.value.roomItems.forEach(room => {
-        room.rawRoom.no_post = noPost
-        room.no_post = noPost
-      })
     }
 
     isNoPost.value = noPost
     uiStore.showToast(noPost ? 'Đã bật No Post.' : 'Đã tắt No Post.', 'success')
   } catch (error) {
     const currentNoPost = selectedRoomItem.value
-      ? Boolean(selectedRoomItem.value.rawRoom?.no_post)
-      : Boolean(selectedBooking.value.rawBooking?.no_post)
+      ? selectedBookingNoPost.value || isNoPostEnabled(selectedRoomItem.value.rawRoom?.no_post ?? selectedRoomItem.value.no_post)
+      : isNoPostEnabled(selectedBooking.value.rawBooking?.no_post ?? selectedBooking.value.no_post)
     isNoPost.value = currentNoPost
     uiStore.showToast(error.response?.data?.message || 'Không thể cập nhật No Post.', 'error')
   } finally {
@@ -2769,9 +2818,10 @@ onUnmounted(() => {
 
           <!-- Thêm dịch vụ -->
           <button 
-            @click="showAddServiceModal = true"
-            class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded text-[#cbd5e1] hover:bg-[#334155] hover:text-white transition-colors text-xs"
-            :title="isSidebarCollapsed ? 'Thêm dịch vụ' : ''"
+            @click="openAddServiceModal"
+            :disabled="isSelectedPostBlocked"
+            class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded text-[#cbd5e1] hover:bg-[#334155] hover:text-white transition-colors text-xs disabled:cursor-not-allowed disabled:opacity-40"
+            :title="isSidebarCollapsed ? (isSelectedPostBlocked ? noPostBlockMessage : 'Thêm dịch vụ') : (isSelectedPostBlocked ? noPostBlockMessage : '')"
           >
             <Plus class="w-3.5 h-3.5 text-white shrink-0" />
             <span v-if="!isSidebarCollapsed" class="truncate">Thêm Dịch Vụ</span>
@@ -2780,10 +2830,10 @@ onUnmounted(() => {
           <!-- Thêm dịch vụ BP -->
           <button 
             @click="openAddHousekeepingService"
-            :disabled="!selectedRoomItem"
+            :disabled="!selectedRoomItem || isSelectedPostBlocked"
             class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded transition-colors text-xs"
-            :class="[selectedRoomItem ? 'text-[#cbd5e1] hover:bg-[#334155] hover:text-white cursor-pointer' : 'opacity-40 cursor-not-allowed text-[#64748b]']"
-            :title="isSidebarCollapsed ? 'Thêm dịch vụ BP' : ''"
+            :class="[selectedRoomItem && !isSelectedPostBlocked ? 'text-[#cbd5e1] hover:bg-[#334155] hover:text-white cursor-pointer' : 'opacity-40 cursor-not-allowed text-[#64748b]']"
+            :title="isSidebarCollapsed ? (isSelectedPostBlocked ? noPostBlockMessage : 'Thêm dịch vụ BP') : (isSelectedPostBlocked ? noPostBlockMessage : '')"
           >
             <PlusSquare class="w-3.5 h-3.5 text-white shrink-0" />
             <span v-if="!isSidebarCollapsed" class="truncate">Thêm DV Buồng Phòng</span>
@@ -2928,10 +2978,10 @@ onUnmounted(() => {
 
         <!-- NHÓM: Tiện ích -->
         <div class="pb-1">
-          <button v-if="!selectedRoomItem" @click="openAdjustRoomRateModal" :disabled="!selectedBooking"
+          <button v-if="!selectedRoomItem" @click="openAdjustRoomRateModal" :disabled="!selectedBooking || selectedBookingNoPost"
             class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded text-xs transition-colors"
-            :class="selectedBooking ? 'text-[#cbd5e1] hover:bg-[#334155] hover:text-white' : 'opacity-40 cursor-not-allowed text-[#64748b]'"
-            :title="isSidebarCollapsed ? 'Điều chỉnh tiền phòng' : ''">
+            :class="selectedBooking && !selectedBookingNoPost ? 'text-[#cbd5e1] hover:bg-[#334155] hover:text-white' : 'opacity-40 cursor-not-allowed text-[#64748b]'"
+            :title="isSidebarCollapsed ? (selectedBookingNoPost ? 'Booking đang bật No Post' : 'Điều chỉnh tiền phòng') : ''">
             <RefreshCw class="w-3.5 h-3.5 text-white shrink-0" />
             <span v-if="!isSidebarCollapsed" class="truncate">Điều Chỉnh Tiền Phòng</span>
           </button>
@@ -3203,7 +3253,7 @@ onUnmounted(() => {
           <div class="checkout-info-heading flex items-center justify-between border-b border-slate-300 px-2 py-1">
             <span class="checkout-info-title"><i class="fa-solid fa-bed"></i> Thông Tin Đăng Ký</span>
             <label class="flex items-center gap-1 text-[10px] font-bold text-red-600">
-              <input type="checkbox" v-model="isNoPost" :disabled="!selectedBooking || noPostSaving" @change="handleNoPostChange" class="rounded border-gray-300 text-sky-600" />
+              <input type="checkbox" v-model="isNoPost" :disabled="!selectedBooking || noPostSaving || (selectedRoomItem && selectedBookingNoPost)" @change="handleNoPostChange" class="rounded border-gray-300 text-sky-600" />
               No post
             </label>
           </div>
@@ -3542,7 +3592,7 @@ onUnmounted(() => {
           <div v-if="earlyCheckoutData" class="flex justify-end gap-2">
             <button @click="showCheckoutModal = false" :disabled="isServiceOperationLoading" class="rounded bg-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50">Đóng</button>
             <button @click="checkoutEarlyWithoutCharge" :disabled="isServiceOperationLoading" class="rounded bg-sky-500 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Trả phòng</button>
-            <button @click="openEarlyChargeModal" :disabled="isServiceOperationLoading" class="rounded bg-sky-500 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Tiền phòng</button>
+            <button @click="openEarlyChargeModal" :disabled="isServiceOperationLoading || earlyChargeNoPost" class="rounded bg-sky-500 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Tiền phòng</button>
           </div>
         </div>
         <div v-if="!earlyCheckoutData" class="flex justify-end gap-2 border-t px-4 py-3"><button @click="showCheckoutModal = false" class="rounded bg-slate-200 px-4 py-2 text-sm">Đóng</button><button @click="submitCheckout" :disabled="isServiceOperationLoading" class="rounded bg-sky-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{{ isRestoreCheckout ? 'Khôi phục checkout' : (selectedCheckoutRooms.length > 1 && !checkoutPreview ? 'Kiểm tra điều kiện' : 'Checkout') }}</button></div>
@@ -3556,7 +3606,7 @@ onUnmounted(() => {
           <div><p class="mb-2 font-semibold">Chọn ngày</p><label v-for="date in earlyChargeDateOptions" :key="date" class="mb-1 flex items-center gap-2"><input v-model="earlyChargeDates" :value="date" type="checkbox" class="h-4 w-4 accent-sky-500" />{{ date.split('-').reverse().join('-') }}</label></div>
           <label class="flex items-center gap-4"><span>% Charge</span><input v-model.number="earlyChargePercent" type="number" min="0" max="100" step="1" class="w-32 rounded border border-slate-300 px-2 py-1.5 text-right" /></label>
         </div>
-        <div class="flex justify-end gap-2 border-t px-4 py-3"><button @click="showEarlyChargeModal = false" class="rounded bg-slate-300 px-4 py-2 text-xs font-semibold text-slate-700">Không</button><button @click="chargeEarlyCheckout" :disabled="isServiceOperationLoading" class="rounded bg-sky-500 px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">Tiền phòng</button></div>
+        <div class="flex justify-end gap-2 border-t px-4 py-3"><button @click="showEarlyChargeModal = false" class="rounded bg-slate-300 px-4 py-2 text-xs font-semibold text-slate-700">Không</button><button @click="chargeEarlyCheckout" :disabled="isServiceOperationLoading || earlyChargeNoPost" class="rounded bg-sky-500 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Tiền phòng</button></div>
       </div>
     </div>
 
@@ -3572,6 +3622,8 @@ onUnmounted(() => {
       :roomRate="Number(selectedRoomItem ? (selectedRoomItem.rate ?? selectedRoomItem.roomRate ?? selectedRoomItem.rawRoom?.rate ?? selectedRoomItem.rawRoom?.room_rate ?? 0) : (selectedBooking?.roomItems?.[0]?.rate ?? selectedBooking?.roomItems?.[0]?.roomRate ?? selectedBooking?.roomItems?.[0]?.rawRoom?.rate ?? selectedBooking?.roomItems?.[0]?.rawRoom?.room_rate ?? 0))"
       :roomAdjustment="roomAdjustment"
       :systemDate="systemDate"
+      :isNoPost="isSelectedPostBlocked"
+      :roomChargeNoPost="isRoomChargeNoPostBlocked"
       @close="showAddServiceModal = false; roomAdjustment = null" 
       @success="handleServiceAdded"
     />
