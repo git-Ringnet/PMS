@@ -3125,14 +3125,19 @@ function calculateRoomAdjustedPrice(room) {
 }
 
 const activeServiceDiscountKey = ref(null)
+const activeDiscountContext = ref(null)
 
 function toggleServiceDiscountPopover(room, svc) {
   const cleanDate = cleanDateStr(svc.service_date)
   const key = `${room.id}_${svc.id || cleanDate}`
   if (activeServiceDiscountKey.value === key) {
-    activeServiceDiscountKey.value = null
+    closeDiscountPopover(room, svc)
   } else {
+    if (activeServiceDiscountKey.value && activeDiscountContext.value) {
+      closeDiscountPopover(activeDiscountContext.value.room, activeDiscountContext.value.svc)
+    }
     activeServiceDiscountKey.value = key
+    activeDiscountContext.value = { room, svc }
     activeRoomDiscountId.value = null
     activeDiscountRowId.value = null
   }
@@ -3189,6 +3194,11 @@ function calculateNightAdjustedPrice(room, svc) {
 }
 
 async function closeDiscountPopover(room, svc) {
+  if (!room && activeDiscountContext.value) {
+    room = activeDiscountContext.value.room
+    svc = activeDiscountContext.value.svc
+  }
+  activeDiscountContext.value = null
   activeDiscountRowId.value = null
   activeRoomDiscountId.value = null
   activeServiceDiscountKey.value = null
@@ -3209,7 +3219,16 @@ async function closeDiscountPopover(room, svc) {
         rate: newRate,
         is_room: 1
       }
-      await createBookingRoomService(room.bookingRoomId, payload)
+      const res = await createBookingRoomService(room.bookingRoomId, payload)
+      if (res?.data?.success) {
+        uiStore.showToast('Cập nhật đơn giá phòng thành công!', 'success')
+        const freshRes = await fetchBookingRoomServices(room.bookingRoomId)
+        room.services = (freshRes.data?.data || []).map(s => ({
+          ...s,
+          service_date: cleanDateStr(s.service_date)
+        }))
+        room.total = calculateRoomTotal(room)
+      }
     } catch (err) {
       console.error('Lỗi lưu dịch vụ phòng khi đóng popover giảm giá:', err)
     }
@@ -7095,7 +7114,7 @@ defineExpose({
                                                      :value="getServiceDiscountObj(room, svc).discountUnit === 'percent' ? getServiceDiscountObj(room, svc).discountValue : formatCurrencyInput(getServiceDiscountObj(room, svc).discountValue)"
                                                      @input="e => { 
                                                        const disc = getServiceDiscountObj(room, svc); 
-                                                       disc.discountValue = disc.discountUnit === 'percent' ? Number(e.target.value.replace(/[^\\d]/g, '')) || 0 : cleanCurrencyValue(e.target.value); 
+                                                       disc.discountValue = disc.discountUnit === 'percent' ? Number(e.target.value.replace(/[^\d]/g, '')) || 0 : cleanCurrencyValue(e.target.value); 
                                                        calculateNightAdjustedPrice(room, svc) 
                                                      }"
                                                      @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"

@@ -82,19 +82,25 @@ const showNationalitySuggestions = ref(false)
 
 const filteredNationalities = computed(() => {
   const q = (nationalitySearch.value || '').trim().toLowerCase()
-  if (!q) return nationalitiesList.value.slice(0, 35)
+  if (!q) return nationalitiesList.value
   return nationalitiesList.value.filter(n =>
-    n.code.toLowerCase().includes(q) || n.label.toLowerCase().includes(q)
-  ).slice(0, 35)
+    n.code.toLowerCase().includes(q) ||
+    (n.asm_code && n.asm_code.toLowerCase().includes(q)) ||
+    n.label.toLowerCase().includes(q)
+  )
 })
 
 function syncNationalityDisplay() {
-  const code = formGuest.value.nationality
+  const code = (formGuest.value.nationality || '').trim().toUpperCase()
   if (!code) {
     nationalitySearch.value = ''
     return
   }
-  const found = nationalitiesList.value.find(n => n.code.toUpperCase() === code.toUpperCase())
+  const found = nationalitiesList.value.find(n =>
+    n.code.toUpperCase() === code ||
+    (n.asm_code && n.asm_code.toUpperCase() === code) ||
+    (n.nationality_id && n.nationality_id.toUpperCase() === code)
+  )
   nationalitySearch.value = found ? found.label : code
 }
 
@@ -102,7 +108,11 @@ function onNationalityInput(e) {
   nationalitySearch.value = e.target.value
   showNationalitySuggestions.value = true
   const q = e.target.value.trim().toUpperCase()
-  const match = nationalitiesList.value.find(n => n.code.toUpperCase() === q)
+  const match = nationalitiesList.value.find(n =>
+    n.code.toUpperCase() === q ||
+    (n.asm_code && n.asm_code.toUpperCase() === q) ||
+    (n.nationality_id && n.nationality_id.toUpperCase() === q)
+  )
   if (match) {
     formGuest.value.nationality = match.code
   }
@@ -136,7 +146,9 @@ async function loadNationalities() {
     if (res.data?.success) {
       const list = res.data.data || []
       nationalitiesList.value = list.map(item => ({
-        code: item.asm_code || item.nationality_id || '',
+        code: item.nationality_id || item.asm_code || '',
+        asm_code: item.asm_code || '',
+        nationality_id: item.nationality_id || '',
         label: `${item.nationality_id || item.asm_code || '—'} - ${item.asm_name || item.nationality_name || ''}`
       })).filter(item => item.code !== '')
       syncNationalityDisplay()
@@ -724,6 +736,14 @@ async function loadGuests(autoSelectId = null) {
         dob: formatDateForInput(c.dob) || '',
         nationality: c.nationality_code || 'VN',
         age_group: 'child',
+        phone: c.phone || '',
+        email: c.email || '',
+        id_type: c.id_type || 'CCCD',
+        id_number: c.id_number || '',
+        passport_number: c.passport_number || '',
+        id_issue_date: formatDateForInput(c.id_issue_date) || '',
+        residence_type: c.residence_type || 'Thường trú',
+        address: c.address || '',
       }))
 
     babies.value = roomChildren
@@ -735,6 +755,14 @@ async function loadGuests(autoSelectId = null) {
         dob: formatDateForInput(c.dob) || '',
         nationality: c.nationality_code || 'VN',
         age_group: 'baby',
+        phone: c.phone || '',
+        email: c.email || '',
+        id_type: c.id_type || 'CCCD',
+        id_number: c.id_number || '',
+        passport_number: c.passport_number || '',
+        id_issue_date: formatDateForInput(c.id_issue_date) || '',
+        residence_type: c.residence_type || 'Thường trú',
+        address: c.address || '',
       }))
 
     // Dynamically update occupants count string
@@ -889,15 +917,15 @@ function selectChild(c) {
     name: c.name ? c.name.toUpperCase() : '',
     nationality: c.nationality || 'VN',
     dob: formatDateForInput(c.dob) || '',
-    email: '',
-    phone: '',
+    email: c.email || '',
+    phone: c.phone || '',
     stay_count: 1,
-    id_type: 'CCCD',
-    id_number: '',
-    passport_number: '',
-    id_issue_date: '',
-    residence_type: 'Thường trú',
-    address: '',
+    id_type: c.id_type || 'CCCD',
+    id_number: c.id_number || '',
+    passport_number: c.passport_number || '',
+    id_issue_date: formatDateForInput(c.id_issue_date) || '',
+    residence_type: c.residence_type || 'Thường trú',
+    address: c.address || '',
     avatar: '',
   }
   syncNationalityDisplay()
@@ -1016,6 +1044,8 @@ function doAddChild(ageGroup) {
     title: 'Mr.',
     nationality: 'VN',
     dob: '',
+    email: '',
+    phone: '',
     stay_count: 1,
     id_type: 'CCCD',
     id_number: '',
@@ -1150,6 +1180,16 @@ async function handleSave() {
             nationality_code: formGuest.value.nationality,
             dob: formGuest.value.dob,
             age_group: draftGuest.value.age_group,
+            phone: formGuest.value.phone,
+            email: formGuest.value.email,
+            id_type: formGuest.value.id_type,
+            id_number: formGuest.value.id_number,
+            passport_number: isPassportType(formGuest.value.id_type)
+              ? formGuest.value.id_number
+              : formGuest.value.passport_number,
+            id_issue_date: formGuest.value.id_issue_date,
+            residence_type: formGuest.value.residence_type,
+            address: formGuest.value.address,
             ...roomFields,
           })
           newId = res.data?.data?.id
@@ -1191,6 +1231,16 @@ async function handleSave() {
         title: formGuest.value.title,
         nationality_code: formGuest.value.nationality,
         dob: formGuest.value.dob,
+        phone: formGuest.value.phone,
+        email: formGuest.value.email,
+        id_type: formGuest.value.id_type,
+        id_number: formGuest.value.id_number,
+        passport_number: isPassportType(formGuest.value.id_type)
+          ? formGuest.value.id_number
+          : formGuest.value.passport_number,
+        id_issue_date: formGuest.value.id_issue_date,
+        residence_type: formGuest.value.residence_type,
+        address: formGuest.value.address,
         ...roomFields,
       })
     }
