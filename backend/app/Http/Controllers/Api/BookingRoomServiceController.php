@@ -1652,13 +1652,13 @@ class BookingRoomServiceController extends Controller
                 ['BillServiceId' => $bill->Ma, 'Ma' => 2, 'DepartmentId' => 'FO', 'ServiceId' => 'BF', 'DescriptionServive' => $breakfastDescription, 'OriginalRate' => $bfBreakdown['original_rate'], 'ServiceCharge' => $breakfastTaxProfile['service_charge'], 'SpecialTax' => $breakfastTaxProfile['special_tax'], 'Tax' => $breakfastTaxProfile['tax'], 'ServiceChargeAmount' => $bfBreakdown['service_charge_amount'], 'SpecialTaxAmount' => $bfBreakdown['special_tax_amount'], 'TaxAmount' => $bfBreakdown['tax_amount'], 'Amount' => $breakfastAmount, 'Currency' => $bill->Currency, 'Exchange' => 1, 'DetailBillOriginalAmount' => $bfBreakdown['net_total'], 'OriginalAmount' => $bfBreakdown['net_total']],
                 ['BillServiceId' => $bill->Ma, 'Ma' => 3, 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'DescriptionServive' => 'Giảm trừ ' . $breakfastDescription, 'OriginalRate' => $rmMinusBreakdown['original_rate'], 'ServiceCharge' => $roomTaxProfile['service_charge'], 'SpecialTax' => $roomTaxProfile['special_tax'], 'Tax' => $roomTaxProfile['tax'], 'ServiceChargeAmount' => $rmMinusBreakdown['service_charge_amount'], 'SpecialTaxAmount' => $rmMinusBreakdown['special_tax_amount'], 'TaxAmount' => $rmMinusBreakdown['tax_amount'], 'Amount' => -$breakfastAmount, 'Currency' => $bill->Currency, 'Exchange' => 1, 'DetailBillOriginalAmount' => $rmMinusBreakdown['net_total'], 'OriginalAmount' => $rmMinusBreakdown['net_total']],
             ]);
-            RoomNightBill::create(['bill_id' => $bill->Ma, 'adult' => $adults, 'child' => (int) $room->children_qty, 'is_room_night' => 1, 'breakfast_amount' => $breakfastAmount, 'date' => $date->toDateString(), 'room' => $room->room_number, 'room_type_id' => $room->room_class_id, 'breakfast' => $room->breakfast ? $adults : 0, 'extra_bed' => (int) $room->extra_bed_qty, 'rate_code' => $room->rate_code, 'rate' => $rate]);
+            RoomNightBill::create(['bill_id' => $bill->Ma, 'adult' => $adults, 'child' => (int) $room->children_qty, 'is_room_night' => $this->roomNightFlag($room, $booking), 'breakfast_amount' => $breakfastAmount, 'date' => $date->toDateString(), 'room' => $room->room_number, 'room_type_id' => $room->room_class_id, 'breakfast' => $room->breakfast ? $adults : 0, 'extra_bed' => (int) $room->extra_bed_qty, 'rate_code' => $room->rate_code, 'rate' => $rate]);
             if (!$atMaster) BookingRoomService::updateOrCreate(['booking_room_id' => $room->id, 'service_code' => BookingRoomService::catalogCode(BookingRoomService::CODE_ROOM), 'service_date' => $date->toDateString()], ['guest_id' => $guest?->guest_id, 'service_bill_id' => $bill->Ma, 'service_bill_detail_no' => 1, 'service_name' => BookingRoomService::catalogName(BookingRoomService::CODE_ROOM, 'Tiền phòng'), 'quantity' => 1, 'rate' => $rate, 'total_amount' => $rate, 'department' => 'FO', 'note' => $bill->DescriptionServive, 'tax' => $roomTaxProfile['tax'], 'service_charge' => $roomTaxProfile['service_charge'], 'unit' => 'Đêm', 'folio' => $bill->Folio, 'is_room' => 1, 'is_posted' => 1, 'posted_at' => now(), 'created_by' => $user]);
             if ((bool) ($data['update_room_rate'] ?? false)) {
                 if (($data['update_room_rate_scope'] ?? 'room') === 'booking') {
-                    $booking->bookingRooms()->update(['rate' => $rate]);
+                    $booking->bookingRooms()->update(['rate' => $rate, 'base_price' => $rate]);
                 } else {
-                    $room->update(['rate' => $rate]);
+                    $room->update(['rate' => $rate, 'base_price' => $rate]);
                 }
             }
             return ['original_bill_id' => $original?->Ma, 'negative_bill_id' => $negative?->Ma, 'new_bill_id' => $bill->Ma];
@@ -1838,7 +1838,9 @@ class BookingRoomServiceController extends Controller
 
                     if ($mode === 'auto') $rate = round($rate * $chargePercent / 100, 2);
 
-                    $isRoomNight = ($mode === 'surcharge') ? 0 : 1;
+                    $isRoomNight = ($mode === 'surcharge')
+                        ? 0
+                        : $this->roomNightFlag($targetRoom, $booking);
                     $totalAmount = $rate;
 
                     // Lấy giá ăn sáng (chỉ tách ăn sáng khi mode === 'auto' và có ăn sáng)
@@ -2475,5 +2477,22 @@ class BookingRoomServiceController extends Controller
             'message' => 'Charge tiền phòng noshow thành công!',
             'data'    => $result,
         ]);
+    }
+
+    /**
+     * Day-use contributes revenue by default but contributes an occupancy
+     * room-night only when the legacy setting explicitly enables it.
+     */
+    private function roomNightFlag(?BookingRoom $room, ?Booking $booking = null): int
+    {
+        $isDayUse = (bool) ($room?->is_day_use ?? false)
+            || (bool) ($booking?->is_day_use ?? false);
+        if (!$isDayUse) {
+            return 1;
+        }
+
+        return (int) (HotelConfig::where('name', 'IsRoomNightRoomDayUse')->value('value') ?? '1') === 1
+            ? 1
+            : 0;
     }
 }

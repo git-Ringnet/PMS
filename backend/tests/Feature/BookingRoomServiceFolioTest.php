@@ -39,7 +39,7 @@ class BookingRoomServiceFolioTest extends TestCase
     {
         $user = User::factory()->create();
         $role = \App\Models\Role::firstOrCreate(['code' => 'folio_test'], ['name' => 'Folio test', 'level' => 3, 'department_scope' => 'FO', 'is_active' => true]);
-        foreach (['fo.service.create', 'fo.payment.create'] as $code) {
+        foreach (['fo.service.view', 'fo.service.add', 'fo.service.edit', 'fo.service.delete', 'fo.payment.create'] as $code) {
             $permission = \App\Models\Permission::firstOrCreate(['code' => $code], ['name' => $code, 'module' => 'FO']);
             $role->permissions()->syncWithoutDetaching([$permission->id]);
         }

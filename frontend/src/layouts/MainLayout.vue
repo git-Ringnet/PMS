@@ -877,8 +877,12 @@ function openHeaderBookingSearch() {
 function handleHeaderBookingSelected(booking) {
   isHeaderBookingSearchOpen.value = false
   headerBookingSearchQuery.value = ''
+  // Keep the booking in the module where the search was launched.  The
+  // legacy FO search opens the booking editor inside FO (RoomMapPage), while
+  // reservation search stays in the reservation module.
+  const targetPath = route.path.startsWith('/frontdesk') ? '/frontdesk' : '/reservation'
   router.push({
-    path: '/reservation',
+    path: targetPath,
     query: {
       tab: 'create-res',
       bookingCode: booking.booking_code || booking.id,

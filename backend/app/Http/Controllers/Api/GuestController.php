@@ -956,10 +956,26 @@ class GuestController extends Controller
         if ($request->filled('departure_date')) $roomData['departure_date'] = $request->input('departure_date');
         if ($request->filled('arrival_time'))   $roomData['arrival_time']   = $request->input('arrival_time');
         if ($request->filled('departure_time')) $roomData['departure_time'] = $request->input('departure_time');
-        if ($request->has('rate') && $request->input('rate') !== null) $roomData['rate'] = $request->input('rate');
+        if ($request->has('rate') && $request->input('rate') !== null) {
+            $roomData['rate'] = $request->input('rate');
+            $roomData['base_price'] = $request->input('rate');
+        }
         if ($request->has('rate_code'))      $roomData['rate_code']      = filled($request->rate_code) ? trim($request->rate_code) : null;
         if ($request->has('extra_bed_qty') && $request->input('extra_bed_qty') !== null) $roomData['extra_bed_qty'] = $request->input('extra_bed_qty');
         if ($request->has('extra_bed_rate') && $request->input('extra_bed_rate') !== null) $roomData['extra_bed_rate'] = $request->input('extra_bed_rate');
+        if ($request->has('is_day_use')) {
+            $isDayUse = filter_var($request->input('is_day_use'), FILTER_VALIDATE_BOOLEAN);
+            $roomData['is_day_use'] = $isDayUse ? 1 : 0;
+            if ($isDayUse) {
+                $roomData['NumOfDays'] = 0;
+                $roomData['ActutalNumOfDays'] = 0;
+                if ($request->filled('arrival_date')) {
+                    $roomData['departure_date'] = $request->input('arrival_date');
+                } elseif ($room->arrival_date) {
+                    $roomData['departure_date'] = $room->arrival_date->toDateString();
+                }
+            }
+        }
 
         // BookingDetailModal sends the current rate and rate code together
         // with a date-only edit. Treat those fields as a pricing change only
@@ -1495,9 +1511,6 @@ class GuestController extends Controller
 
         $detail->update($updateData);
 
-        // Đồng bộ chi tiết ăn sáng trẻ em vào booking_room_services
-        $this->syncChildBreakfastToService($detail);
-
         return response()->json(['success' => true, 'data' => $detail->fresh(), 'message' => 'Cập nhật ăn sáng trẻ em thành công.']);
     }
 
@@ -1766,73 +1779,8 @@ class GuestController extends Controller
                 ]
             );
             
-            // Đồng bộ sang booking_room_services
-            $this->syncChildBreakfastToService($detail);
-
             $current = $current->addDay();
         }
     }
 
-    /**
-     * Đồng bộ chi tiết ăn sáng trẻ em vào booking_room_services để hiển thị lên Folio/Checkout.
-     */
-    private function syncChildBreakfastToService(\App\Models\BookingChildBreakfastDetail $detail): void
-    {
-        $child = $detail->bookingChild;
-        if (!$child || !$child->booking_room_id) return;
-
-        // Lấy mã dịch vụ phụ thu ăn sáng trẻ em từ HotelConfig
-        $serviceCode = \App\Models\HotelConfig::where('name', 'Booking_BFChildSetServiceId')->value('value') ?: 'BD';
-
-        // Điều kiện để tạo dịch vụ: Có ăn sáng và có extra charge và không miễn phí
-        $shouldHaveService = $detail->breakfast && $detail->is_extra_charge && !$detail->is_free;
-        $serviceNote = "Phụ thu ăn sáng trẻ em: {$child->full_name}";
-        $serviceDate = Carbon::parse($detail->service_date)->toDateString();
-
-        $existing = \App\Models\BookingRoomService::withTrashed()
-            ->where('booking_room_id', $child->booking_room_id)
-            ->where('service_code', $serviceCode)
-            ->whereDate('service_date', $serviceDate)
-            ->where('note', $serviceNote)
-            ->first();
-
-        if ($existing && (int) $existing->is_posted === 1) {
-            // A posted surcharge is financial history. The detail can still
-            // be edited for future reconciliation, but this endpoint must not
-            // rewrite or delete the posted service line.
-            return;
-        }
-
-        if ($shouldHaveService) {
-            $values = [
-                'service_name' => $serviceNote,
-                'quantity'     => 1,
-                'rate'         => $detail->amount,
-                'total_amount' => $detail->amount,
-                'department'   => 'FO',
-                'folio'        => 1,
-                'is_room'      => $detail->is_room ? 1 : 0,
-                'is_posted'    => 0,
-                'deleted_at'   => null,
-            ];
-
-            if ($existing) {
-                $existing->fill($values);
-                $existing->save();
-            } else {
-                \App\Models\BookingRoomService::create([
-                    'booking_room_id' => $child->booking_room_id,
-                    'service_code'    => $serviceCode,
-                    'service_date'    => $serviceDate,
-                    'note'            => $serviceNote,
-                    ...$values,
-                ]);
-            }
-        } else {
-            // Xóa dịch vụ chưa post nếu có; posted rows were returned above.
-            if ($existing) {
-                $existing->delete();
-            }
-        }
-    }
 }

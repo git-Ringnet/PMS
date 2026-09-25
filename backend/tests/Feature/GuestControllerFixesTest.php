@@ -183,7 +183,7 @@ class GuestControllerFixesTest extends TestCase
         $this->assertNull($historicalCharge->fresh()->deleted_at);
     }
 
-    public function test_breakfast_amount_updates_projected_service_but_never_rewrites_posted_service(): void
+    public function test_breakfast_amount_updates_detail_without_rewriting_booking_services(): void
     {
         HotelConfig::updateOrCreate(
             ['name' => 'Booking_BFChildSetServiceId'],
@@ -231,7 +231,7 @@ class GuestControllerFixesTest extends TestCase
             'amount' => 123456,
         ])->assertSuccessful();
         $this->assertSame(123456.0, (float) $detail->fresh()->amount);
-        $this->assertSame(123456.0, (float) $projected->fresh()->rate);
+        $this->assertSame(90000.0, (float) $projected->fresh()->rate);
 
         $this->patchJson("/api/booking-children/{$child->id}/breakfast-details/{$postedDetail->id}", [
             'amount' => 654321,

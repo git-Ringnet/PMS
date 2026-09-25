@@ -461,14 +461,14 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
 
     // --- Booking Room Services (SP2102) — Epic 4, 10, 14 ---
     Route::prefix('booking-rooms/{roomId}/services')->group(function () {
-        Route::get('/', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'index']);
-        Route::post('/', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'store'])->middleware('permission:fo.service.create');
-        Route::delete('/bulk', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'bulkDelete'])->middleware('permission:fo.service.cancel');
-        Route::post('/cancel', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'cancel'])->middleware('permission:fo.service.cancel');
-        Route::patch('/folio', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'transferFolio'])->middleware('permission:fo.service.create');
+        Route::get('/', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'index'])->middleware('permission:fo.service.view');
+        Route::post('/', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'store'])->middleware('permission:fo.service.add');
+        Route::delete('/bulk', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'bulkDelete'])->middleware('permission:fo.service.delete');
+        Route::post('/cancel', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'cancel'])->middleware('permission:fo.service.delete');
+        Route::patch('/folio', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'transferFolio'])->middleware('permission:fo.service.edit');
         Route::get('/quick-transfer-candidates', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'quickTransferCandidates']);
-        Route::post('/quick-transfer', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'quickTransfer'])->middleware('permission:fo.service.create');
-        Route::post('/split-folio', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'splitFolio'])->middleware('permission:fo.service.create');
+        Route::post('/quick-transfer', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'quickTransfer'])->middleware('permission:fo.service.edit');
+        Route::post('/split-folio', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'splitFolio'])->middleware('permission:fo.service.edit');
     });
     Route::patch('booking-rooms/{roomId}/no-post', [\App\Http\Controllers\Api\BookingNoPostController::class, 'updateRoom']);
     Route::get('/booking-services/extra-bed-rate', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'defaultExtraBedRate']);
@@ -478,9 +478,9 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     Route::post('/booking-room-services/post-housekeeping-bill', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'postHousekeepingBill']);
     Route::get('/housekeeping/service-bills', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'searchHousekeepingInvoices']);
     Route::post('/housekeeping/service-bills/{billId}/cancel', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'cancelHousekeepingInvoice']);
-    Route::post('/booking-room-services/post-fo-service-bill', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'postFoServiceBill']);
-    Route::post('/booking-room-services/post-room-charge', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'postRoomCharge']);
-    Route::post('/bookings/{bookingId}/adjust-room-rate', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'adjustRoomRate']);
+    Route::post('/booking-room-services/post-fo-service-bill', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'postFoServiceBill'])->middleware('permission:fo.service.add');
+    Route::post('/booking-room-services/post-room-charge', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'postRoomCharge'])->middleware('permission:fo.service.add');
+    Route::post('/bookings/{bookingId}/adjust-room-rate', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'adjustRoomRate'])->middleware('permission:fo.service.edit');
 
     // --- Special Requests (SP2107, SP1325) — Epic 15 ---
     Route::get('/special-requests', [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'catalog']);

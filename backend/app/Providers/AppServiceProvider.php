@@ -23,6 +23,17 @@ class AppServiceProvider extends ServiceProvider
         if ($this->app->environment('production') || true) {
             URL::forceScheme('https');
         }
+
+        // Đăng ký Broadcaster an toàn (SafePusherBroadcaster) không làm chết request khi WebSocket/Reverb offline
+        \Illuminate\Support\Facades\Broadcast::extend('reverb', function ($app, $config) {
+            $pusher = $app->make(\Illuminate\Broadcasting\BroadcastManager::class)->pusher($config);
+            return new \App\Broadcasting\SafePusherBroadcaster($pusher, $config['jsonp'] ?? false);
+        });
+
+        \Illuminate\Support\Facades\Broadcast::extend('pusher', function ($app, $config) {
+            $pusher = $app->make(\Illuminate\Broadcasting\BroadcastManager::class)->pusher($config);
+            return new \App\Broadcasting\SafePusherBroadcaster($pusher, $config['jsonp'] ?? false);
+        });
         // Đăng ký Event Listener toàn cục để tự động bắt các thay đổi dữ liệu của Eloquent
         \Illuminate\Support\Facades\Event::listen('eloquent.*', function ($eventName, array $data) {
             static $dispatchedReservations = [];

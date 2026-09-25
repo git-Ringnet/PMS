@@ -7,10 +7,15 @@ use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PresenceChannel;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-class RoomStatusUpdated implements ShouldBroadcastNow
+/**
+ * Keep room-map consumers from reloading before a room/booking-room write is
+ * committed. This pairs with ReservationUpdated for booking mutations.
+ */
+class RoomStatusUpdated implements ShouldBroadcastNow, ShouldDispatchAfterCommit
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 

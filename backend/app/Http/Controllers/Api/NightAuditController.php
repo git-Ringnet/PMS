@@ -503,7 +503,9 @@ class NightAuditController extends Controller
                     ->where('status', '!=', BookingRoom::STATUS_MOVED)
                     ->get();
                 foreach ($inhouseRooms as $targetRoom) {
-                    // Check xem ngày hôm nay đã post tiền phòng chuẩn chưa (is_room_night = 1)
+                    // Check the configured day-use occupancy flag rather than
+                    // assuming every RM bill is a room-night.
+                    $expectedRoomNight = $this->roomNightFlag($targetRoom);
                     $hasStandardRM = false;
                     $existingRMBills = ServiceBill::where('RegisterId1', $targetRoom->booking_id)
                         ->where('RentalRoomId1', $targetRoom->id)
@@ -514,7 +516,7 @@ class NightAuditController extends Controller
 
                     if ($existingRMBills->isNotEmpty()) {
                         $hasStandardRM = RoomNightBill::whereIn('bill_id', $existingRMBills)
-                            ->where('is_room_night', 1)
+                            ->where('is_room_night', $expectedRoomNight)
                             ->exists();
                     }
 
@@ -903,7 +905,7 @@ class NightAuditController extends Controller
             'bill_id'          => $bill->Ma,
             'adult'            => max(1, (int)$room->adults),
             'child'            => (int)$room->children_qty,
-            'is_room_night'    => 1,
+            'is_room_night'    => $this->roomNightFlag($room, $booking),
             'breakfast_amount' => $breakfastAmount,
             'extrabed_amount'  => (float)($room->extra_bed_rate ?? 0) * (int)($room->extra_bed_qty ?? 0),
             'date'             => $date->toDateString(),
@@ -1051,5 +1053,23 @@ class NightAuditController extends Controller
         }
 
         return $hotelService->billDescription($roomNumber, 'FO');
+    }
+
+    /**
+     * Day-use revenue is always posted, but occupancy is controlled by the
+     * legacy IsRoomNightRoomDayUse setting. Late check-in rows keep is_day_use
+     * false, so equal dates alone never flip this flag.
+     */
+    private function roomNightFlag(?BookingRoom $room, ?Booking $booking = null): int
+    {
+        $isDayUse = (bool) ($room?->is_day_use ?? false)
+            || (bool) ($booking?->is_day_use ?? false);
+        if (!$isDayUse) {
+            return 1;
+        }
+
+        return (int) (HotelConfig::where('name', 'IsRoomNightRoomDayUse')->value('value') ?? '1') === 1
+            ? 1
+            : 0;
     }
 }
