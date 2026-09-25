@@ -18,6 +18,20 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-25] - Khắc phục lỗi Tăng/Giảm giá chi tiết từng đêm phòng (Subtable Night Rate Adjustment)
+### Module: Đặt phòng / Quản lý đăng ký ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))
+
+- **Bối cảnh & Nguyên nhân lỗi**:
+  - Khi mở bảng chi tiết đêm phòng và mở popover "Tăng/Giảm giá", người dùng nhập giá trị giảm (ví dụ: `10%`) nhưng "Giá mới" vẫn hiển thị bằng "Giá gốc" (`540,000đ`), các cột "Đơn giá", "Thành tiền" của đêm và giá phòng không cập nhật lại.
+  - Nguyên nhân: Tại dòng 7098 trong [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue) (chế độ nhóm phòng MODE B), biểu thức chính quy bị lỗi double-escape `e.target.value.replace(/[^\\d]/g, '')`. Do `/.../` trong JS đã là RegExp literal nên `\\d` bị coi là ký tự `\` hoặc `d`, dẫn đến việc xóa sạch toàn bộ các chữ số (kể cả số 0-9), khiến giá trị sau khi làm sạch luôn là chuỗi rỗng `""` và `disc.discountValue` luôn bằng 0.
+  - Đồng thời, hàm `closeDiscountPopover` chưa lưu lại context `room` và `svc` khi người dùng click ra ngoài (global click), chưa cập nhật lại mảng `room.services` và tổng tiền `room.total` sau khi lưu API.
+- **Nghiệp vụ đã xử lý**:
+  - Sửa regex thành `e.target.value.replace(/[^\d]/g, '')`, đảm bảo giữ đúng giá trị số nguyên phần trăm/số tiền khi người dùng nhập.
+  - Thêm `activeDiscountContext` để ghi nhớ phòng và dịch vụ đang được chỉnh sửa chiết khấu; tự động lưu và cập nhật kể cả khi bấm nút "Xong", đổi popover hoặc click ra ngoài.
+  - Cập nhật tự động tải lại `room.services` và tính toán lại `room.total = calculateRoomTotal(room)` sau khi gọi API `createBookingRoomService` thành công, đồng thời thông báo toast cho người dùng.
+- **Kiểm thử**:
+  - Frontend `npm run build` thành công 100%.
+
 ## [2026-09-25] - Khắc phục lỗi Thông tin trẻ em trong Booking & Sơ đồ phòng (Room Map)
 ### Module: Thông tin khách lưu trú & Sơ đồ phòng ([GuestController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/GuestController.php), [GuestInfoModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestInfoModal.vue), [BookingDetailModal.vue](file:///d:/PMS/frontend/src/components/BookingDetailModal.vue))
 
