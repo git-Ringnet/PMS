@@ -18,6 +18,34 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-25] - Khắc phục lỗi khôi phục Database (max_allowed_packet 1153) & Nâng cấp toàn diện Sao lưu / Khôi phục
+### Module: Quản trị Hệ thống / Database Backup & Restore ([DatabaseBackupController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/DatabaseBackupController.php), [DatabaseBackupTab.vue](file:///d:/PMS/frontend/src/pages/config/components/DatabaseBackupTab.vue))
+
+- **Bối cảnh & Nguyên nhân lỗi**:
+  - Khi người dùng tải file backup từ server về để khôi phục cho chi nhánh `HKT1` (hoặc `ALL`/`SYSTEM`), hệ thống báo lỗi: `SQLSTATE[08S01]: Communication link failure: 1153 Got a packet bigger than 'max_allowed_packet' bytes (Connection: mysql_hkt1...)`.
+  - Cấu hình MySQL/MariaDB mặc định trong XAMPP chỉ cấp `max_allowed_packet = 1M`.
+  - Cơ chế import cũ đọc toàn bộ file vào chuỗi `$sqlContent` và truyền cả file hàng chục MB vào một lệnh `DB::unprepared($cleanSql)`, làm MySQL ngắt kết nối ngay lập tức vì vượt quá packet cho phép; đồng thời khi lỗi, Laravel dump toàn bộ nội dung SQL khổng lồ làm tràn vỡ giao diện.
+  - File sao lưu cũ không export Stored Procedures/Functions/Views, khiến bản sao lưu bị thiếu các store báo cáo.
+- **Nghiệp vụ đã xử lý**:
+  - **Tự động nâng `max_allowed_packet` lên 1GB**:
+    - Gọi tự động `SET GLOBAL max_allowed_packet = 1073741824;` trong controller khi thực thi tác vụ database.
+    - Cập nhật cấu hình file `my.ini` của XAMPP nâng `max_allowed_packet` lên 256M để duy trì sau mỗi lần restart MySQL.
+  - **Khôi phục trực tiếp qua `mysql.exe` CLI (O(1) RAM, cực nhanh & chuẩn xác)**:
+    - Tìm và gọi `mysql.exe` qua `proc_open` với luồng file descriptor trực tiếp, đặt cờ `--max_allowed_packet=512M` và truyền `MYSQL_PWD`.
+    - Tự động chuẩn hóa file SQL trước khi nạp: loại bỏ các câu lệnh `CREATE DATABASE` và `USE` gây xung đột đích khôi phục; chuẩn hóa `DEFINER=CURRENT_USER`; bảo toàn hoàn toàn số thập phân (`0.000000`).
+    - Hỗ trợ đầy đủ Stored Procedures, Functions, Triggers, Views và các khối `DELIMITER` phức tạp.
+    - Xây dựng cơ chế fallback đọc stream từng câu lệnh độc lập nếu môi trường không có mysql CLI.
+  - **Nâng cấp Export đầy đủ Stored Procedures, Functions, Views**:
+    - Xuất toàn bộ Stored Procedures (`SHOW PROCEDURE STATUS`) và Stored Functions (`SHOW FUNCTION STATUS`) kèm khối `DELIMITER ;;`.
+    - Phân tách riêng `BASE TABLE` và `VIEW`.
+    - Giảm chunk size insert xuống 50 dòng/lần tránh phình kích thước từng lệnh INSERT.
+  - **Giao diện người dùng ([DatabaseBackupTab.vue](file:///d:/PMS/frontend/src/pages/config/components/DatabaseBackupTab.vue))**:
+    - Bọc thông báo lỗi trong container có thanh cuộn `max-h-48 overflow-y-auto break-all`, backend giới hạn độ dài lỗi trả về, không còn tình trạng tràn chữ đỏ khắp màn hình.
+- **Kiểm thử**:
+  - Đã xuất và khôi phục thành công 100% database `HKT1` (2.67 MB, bao gồm bảng và 25+ stored procedures) trong ~3 giây với HTTP 200.
+  - Đã xuất và khôi phục thành công 100% database `SYSTEM` với HTTP 200.
+  - Frontend build thành công 100% không phát sinh lỗi.
+
 ## [2026-09-25] - Khắc phục lỗi 500 Server Error và hoàn thiện nghiệp vụ Khôi phục Booking hủy khi Over phòng
 ### Module: Đăng ký đặt phòng ([BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))
 
