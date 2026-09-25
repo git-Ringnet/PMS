@@ -9,6 +9,55 @@ const roomId = ref('')
 const dateFrom = ref('')
 const dateTo = ref('')
 const rate = ref(0)
+const rateDisplay = ref('')
+
+function formatInputCurrency(val) {
+  if (val === null || val === undefined || val === '') return ''
+  const str = String(val)
+  const clean = str.replace(/,/g, '')
+  const parts = clean.split('.')
+  let intPart = parts[0].replace(/[^\d]/g, '')
+  if (intPart) {
+    intPart = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+  }
+  if (parts.length > 1) {
+    const decPart = parts.slice(1).join('').replace(/[^\d]/g, '')
+    return `${intPart}.${decPart}`
+  }
+  return intPart
+}
+
+function parseInputCurrency(val) {
+  if (val === null || val === undefined || val === '') return 0
+  const clean = String(val).replace(/,/g, '')
+  const num = parseFloat(clean)
+  return isNaN(num) ? 0 : num
+}
+
+function onRateInput(e) {
+  const input = e.target
+  const rawVal = input.value
+  if (rawVal === '') {
+    rateDisplay.value = ''
+    rate.value = 0
+    return
+  }
+  const prevPos = input.selectionStart
+  const prevLen = rawVal.length
+  const formatted = formatInputCurrency(rawVal)
+  rateDisplay.value = formatted
+  rate.value = parseInputCurrency(formatted)
+  input.value = formatted
+  const diff = formatted.length - prevLen
+  const newPos = Math.max(0, (prevPos || 0) + diff)
+  input.setSelectionRange(newPos, newPos)
+}
+
+function setRate(val) {
+  rate.value = Number(val) || 0
+  rateDisplay.value = rate.value > 0 ? formatInputCurrency(rate.value) : (val === 0 ? '0' : '')
+}
+
 const description = ref('Dịch vụ phòng nghỉ')
 const reason = ref('')
 const updateRoomRate = ref(false)
@@ -156,7 +205,7 @@ watch(() => props.show, visible => {
   const room = rooms.value[0]
   roomId.value = String(room?.roomId || room?.id || '')
   initializeStayDates(room)
-  rate.value = Number(room?.rate || room?.roomRate || room?.rawRoom?.rate || 0)
+  setRate(Number(room?.rate || room?.roomRate || room?.rawRoom?.rate || 0))
   description.value = 'Dịch vụ phòng nghỉ'
   reason.value = ''
   updateRoomRate.value = false
@@ -173,7 +222,7 @@ watch([() => props.show, () => props.systemDate, selectedRoom], ([visible, syste
 
 watch(selectedRoom, room => {
   if (!room) return
-  rate.value = Number(room.rate || room.roomRate || room.rawRoom?.rate || 0)
+  setRate(Number(room.rate || room.roomRate || room.rawRoom?.rate || 0))
   const arrival = normalizeYmd(room.rawRoom?.arrival_date || room.arrivalDate || props.booking?.arrivalDate)
   const departure = normalizeYmd(room.rawRoom?.departure_date || room.departureDate || props.booking?.departureDate)
   if (dateFrom.value < arrival || dateFrom.value >= departure) dateFrom.value = arrival
@@ -313,9 +362,9 @@ async function submit() {
           <label class="mb-1 block text-slate-700">Giá <span class="font-bold text-slate-900">Phòng</span></label>
           <div class="flex items-center gap-3">
             <input
-              v-model.number="rate"
-              min="0"
-              type="number"
+              :value="rateDisplay"
+              @input="onRateInput"
+              type="text"
               class="h-[32px] w-[200px] rounded-[6px] border border-slate-300 bg-white px-2.5 text-[12px] text-slate-800 shadow-sm outline-none focus:border-[#0788eb]"
             />
             <label class="flex shrink-0 cursor-pointer items-center gap-1.5 text-[12px] text-slate-700 select-none">

@@ -232,4 +232,228 @@ class UndoCheckInValidationTest extends TestCase
                 'message' => 'Chỉ được hủy nhận phòng cho những phòng vừa mới nhận trong ngày.',
             ]);
     }
+
+    public function test_undo_checkin_succeeds_when_bill_has_been_transferred_to_another_room(): void
+    {
+        // Tạo phòng thứ 2
+        $roomClass = \App\Models\RoomClass::first();
+        $roomForm = \App\Models\RoomForm::first();
+        Room::create([
+            'room_number'      => '102',
+            'room_class_id'    => $roomClass->id,
+            'room_form_id'     => $roomForm->id,
+            'floor'            => 1,
+            'room_status_code' => 'occupied_ready',
+            'is_active'        => true,
+            'clean_status'     => 'clean',
+        ]);
+        $room2 = BookingRoom::create([
+            'booking_id'          => $this->booking->id,
+            'room_number'         => '102',
+            'room_class_id'       => $roomClass->id,
+            'status'              => BookingRoom::STATUS_CHECKED_IN,
+            'arrival_date'        => '2026-09-16',
+            'actual_arrival_date' => '2026-09-16',
+            'departure_date'      => '2026-09-18',
+        ]);
+
+        // Giả lập bill đã chuyển từ phòng 1 ($this->room) sang phòng 2 ($room2)
+        // 1. Bill gốc trên phòng 1: Edit = 1, Status = 4
+        $originalBill = ServiceBill::create([
+            'Date'          => '2026-09-16 10:00:00',
+            'OpenTime'      => '10:00',
+            'Guest'         => 'Nguyen Van A',
+            'Username'      => $this->user->username,
+            'DepartmentId'  => 'FO',
+            'RegisterId1'   => $this->booking->id,
+            'RentalRoomId1' => (string) $this->room->id,
+            'RegisterID2'   => $this->booking->id,
+            'RentalRoomId2' => (string) $this->room->id,
+            'Amount'        => 100000,
+            'Edit'          => 1, // Đã chuyển
+            'Status'        => 4, // Transferred
+            'ServiceId'     => 'FB',
+        ]);
+
+        // 2. Bill âm đối trừ trên phòng 1: Edit = 1, Status = 4
+        ServiceBill::create([
+            'Date'          => '2026-09-16 10:00:00',
+            'OpenTime'      => '10:00',
+            'Guest'         => 'Nguyen Van A',
+            'Username'      => $this->user->username,
+            'DepartmentId'  => 'FO',
+            'RegisterId1'   => $this->booking->id,
+            'RentalRoomId1' => (string) $this->room->id,
+            'RegisterID2'   => $this->booking->id,
+            'RentalRoomId2' => (string) $this->room->id,
+            'Amount'        => -100000,
+            'Edit'          => 1, // Đã chuyển
+            'Status'        => 4, // Transferred
+            'ServiceId'     => 'FB',
+        ]);
+
+        // 3. Bill dương mới trên phòng 2: RentalRoomId1 vẫn giữ phòng 1 do replicate, RentalRoomId2 = phòng 2, Edit = 0
+        ServiceBill::create([
+            'Date'          => '2026-09-16 10:00:00',
+            'OpenTime'      => '10:00',
+            'Guest'         => 'Nguyen Van A',
+            'Username'      => $this->user->username,
+            'DepartmentId'  => 'FO',
+            'RegisterId1'   => $this->booking->id,
+            'RentalRoomId1' => (string) $this->room->id, // Copy từ bill gốc
+            'RegisterID2'   => $this->booking->id,
+            'RentalRoomId2' => (string) $room2->id,     // Thuộc phòng 2
+            'Amount'        => 100000,
+            'Edit'          => 0,                       // Đang hoạt động ở phòng 2
+            'Status'        => 1,
+            'ServiceId'     => 'FB',
+        ]);
+
+        // Phòng 1: Đã chuyển hết bill sang phòng khác -> CHO PHÉP hủy nhận phòng
+        $response1 = $this->postJson("/api/bookings/{$this->booking->id}/rooms/{$this->room->id}/undo-checkin", [
+            'room_status_code' => 'vacant_dirty',
+        ]);
+        $response1->assertOk()
+            ->assertJson([
+                'success' => true,
+                'message' => 'Hủy nhận phòng thành công!',
+            ]);
+
+        // Phòng 2: Đang nhận bill (RentalRoomId2 = room2->id, Edit = 0) -> KHÔNG CHO PHÉP hủy nhận phòng
+        $response2 = $this->postJson("/api/bookings/{$this->booking->id}/rooms/{$room2->id}/undo-checkin", [
+            'room_status_code' => 'vacant_dirty',
+        ]);
+        $response2->assertStatus(422)
+            ->assertJson([
+                'success' => false,
+                'message' => 'Hủy nhận phòng không thành công, phòng đã phát sinh dịch vụ hoặc đặt cọc. Vui lòng kiểm tra lại thông tin',
+            ]);
+    }
+
+    public function test_undo_checkin_succeeds_when_deposit_has_been_transferred_to_another_room(): void
+    {
+        $roomClass = \App\Models\RoomClass::first();
+        $roomForm = \App\Models\RoomForm::first();
+        Room::create([
+            'room_number'      => '103',
+            'room_class_id'    => $roomClass->id,
+            'room_form_id'     => $roomForm->id,
+            'floor'            => 1,
+            'room_status_code' => 'occupied_ready',
+            'is_active'        => true,
+            'clean_status'     => 'clean',
+        ]);
+        $room2 = BookingRoom::create([
+            'booking_id'          => $this->booking->id,
+            'room_number'         => '103',
+            'room_class_id'       => $roomClass->id,
+            'status'              => BookingRoom::STATUS_CHECKED_IN,
+            'arrival_date'        => '2026-09-16',
+            'actual_arrival_date' => '2026-09-16',
+            'departure_date'      => '2026-09-18',
+        ]);
+
+        // Cọc gốc trên phòng 1 đã bị soft-delete & edit_flag = 1
+        $payment1 = Payment::create([
+            'booking_id'        => $this->booking->id,
+            'booking_room_id'   => $this->room->id,
+            'amount'            => 200000,
+            'payment_method_id' => 'CA',
+            'date'              => '2026-09-16',
+            'payment_date'      => '2026-09-16',
+            'edit_flag'         => 1,
+            'status'            => Payment::STATUS_DELETED,
+        ]);
+        $payment1->delete();
+
+        // Cọc mới được chuyển sang phòng 2: edit_flag = 0
+        Payment::create([
+            'booking_id'        => $this->booking->id,
+            'booking_room_id'   => $room2->id,
+            'amount'            => 200000,
+            'payment_method_id' => 'CA',
+            'date'              => '2026-09-16',
+            'payment_date'      => '2026-09-16',
+            'edit_flag'         => 0,
+            'status'            => Payment::STATUS_PENDING,
+        ]);
+
+        // Phòng 1: cọc đã chuyển -> Cho phép hủy nhận phòng
+        $response1 = $this->postJson("/api/bookings/{$this->booking->id}/rooms/{$this->room->id}/undo-checkin", [
+            'room_status_code' => 'vacant_dirty',
+        ]);
+        $response1->assertOk()
+            ->assertJson(['success' => true]);
+
+        // Phòng 2: đang giữ cọc -> Chặn hủy nhận phòng
+        $response2 = $this->postJson("/api/bookings/{$this->booking->id}/rooms/{$room2->id}/undo-checkin", [
+            'room_status_code' => 'vacant_dirty',
+        ]);
+        $response2->assertStatus(422)
+            ->assertJson([
+                'success' => false,
+                'message' => 'Hủy nhận phòng không thành công, phòng đã phát sinh dịch vụ hoặc đặt cọc. Vui lòng kiểm tra lại thông tin',
+            ]);
+    }
+
+    public function test_undo_checkin_succeeds_when_bill_has_been_transferred_to_master_folio(): void
+    {
+        // 1. Bill gốc trên phòng 1: Edit = 1, Status = 4
+        ServiceBill::create([
+            'Date'          => '2026-09-16 10:00:00',
+            'OpenTime'      => '10:00',
+            'Guest'         => 'Nguyen Van A',
+            'Username'      => $this->user->username,
+            'DepartmentId'  => 'FO',
+            'RegisterId1'   => $this->booking->id,
+            'RentalRoomId1' => (string) $this->room->id,
+            'RegisterID2'   => $this->booking->id,
+            'RentalRoomId2' => (string) $this->room->id,
+            'Amount'        => 150000,
+            'Edit'          => 1,
+            'Status'        => 4,
+            'ServiceId'     => 'FB',
+        ]);
+
+        // 2. Bill đối trừ âm trên phòng 1: Edit = 1, Status = 4
+        ServiceBill::create([
+            'Date'          => '2026-09-16 10:00:00',
+            'OpenTime'      => '10:00',
+            'Guest'         => 'Nguyen Van A',
+            'Username'      => $this->user->username,
+            'DepartmentId'  => 'FO',
+            'RegisterId1'   => $this->booking->id,
+            'RentalRoomId1' => (string) $this->room->id,
+            'RegisterID2'   => $this->booking->id,
+            'RentalRoomId2' => (string) $this->room->id,
+            'Amount'        => -150000,
+            'Edit'          => 1,
+            'Status'        => 4,
+            'ServiceId'     => 'FB',
+        ]);
+
+        // 3. Bill dương chuyển sang Master Folio (RentalRoomId2 = null, RegisterID2 = bookingId, RentalRoomId1 = phòng 1 do replicate)
+        ServiceBill::create([
+            'Date'          => '2026-09-16 10:00:00',
+            'OpenTime'      => '10:00',
+            'Guest'         => 'Nguyen Van A',
+            'Username'      => $this->user->username,
+            'DepartmentId'  => 'FO',
+            'RegisterId1'   => $this->booking->id,
+            'RentalRoomId1' => (string) $this->room->id,
+            'RegisterID2'   => $this->booking->id,
+            'RentalRoomId2' => null, // Tại Master Folio
+            'Amount'        => 150000,
+            'Edit'          => 0,
+            'Status'        => 1,
+            'ServiceId'     => 'FB',
+        ]);
+
+        // Phòng 1 đã chuyển bill sang Master -> Cho phép hủy nhận phòng bình thường
+        $response = $this->postJson("/api/bookings/{$this->booking->id}/rooms/{$this->room->id}/undo-checkin", [
+            'room_status_code' => 'vacant_dirty',
+        ]);
+        $response->assertOk()
+            ->assertJson(['success' => true]);
+    }
 }

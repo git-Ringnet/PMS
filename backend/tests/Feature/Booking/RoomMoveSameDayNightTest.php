@@ -69,7 +69,7 @@ class RoomMoveSameDayNightTest extends TestCase
             'room_form_id' => $roomForm->id,
             'floor' => 10,
             'status' => 'available',
-            'room_status_code' => 'vacant_clean',
+            'room_status_code' => 'vacant_ready',
         ]);
 
         HotelConfig::create(['name' => 'AllowOverRoomTypeRoomKind', 'value' => '1']);

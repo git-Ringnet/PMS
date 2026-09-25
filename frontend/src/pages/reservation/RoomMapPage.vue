@@ -1649,6 +1649,23 @@ function handleRoomMapShortcut(event) {
   if (target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return
   if (currentTab.value !== 'room-map') return
 
+  // Không cho phép bấm phím tắt khi đang mở bất kỳ modal nào (Thông tin, Chuyển phòng, Đặt cọc, Khóa phòng,...)
+  if (
+    showBookingDetailModal.value ||
+    showRoomMoveModal.value ||
+    showDetailModal.value ||
+    showRoomLockModal.value ||
+    showDepositModal.value ||
+    showStatsModal.value ||
+    showPrintTasksModal.value ||
+    showQuickCheckinModal.value ||
+    showQuickAssignModal.value ||
+    showUndoCheckinModal.value ||
+    Boolean(document.querySelector('.fixed.inset-0:not(.pointer-events-none), [role="dialog"]'))
+  ) {
+    return
+  }
+
   const key = String(event.key || '').toLowerCase()
   if (!['b', 'g', 'c', 'i', '1', '2', '3'].includes(key)) return
 
@@ -3942,8 +3959,8 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                   hoverTooltip.room.company_name }}</div>
                 <div v-if="hoverTooltip.room.booking_note" class="text-neutral-400 italic">Ghi chú: {{
                   hoverTooltip.room.booking_note }}</div>
-                <div v-if="hoverTooltip.room.special_requests" class="text-neutral-400 italic">Yêu cầu: {{
-                  hoverTooltip.room.special_requests }}</div>
+                <div v-if="getListSpecialRequests(hoverTooltip.room)" class="text-neutral-400 italic">Yêu cầu: {{
+                  getListSpecialRequests(hoverTooltip.room) }}</div>
 
                 <div class="h-px bg-neutral-700/30 my-1.5"
                   v-if="hoverTooltip.room.guest_details && hoverTooltip.room.guest_details.length > 0"></div>

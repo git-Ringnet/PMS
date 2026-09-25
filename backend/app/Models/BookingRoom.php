@@ -129,6 +129,24 @@ class BookingRoom extends Model
             $isActive = in_array((int) $model->status, [self::STATUS_BOOKED, self::STATUS_CHECKED_IN], true);
             $restoredToActive = $model->wasChanged('status') && $isActive;
 
+            // Đồng bộ actual_arrival_date cho khách khi phòng đổi ngày đến (ở trạng thái chưa check-in)
+            if ($isActive && $model->wasChanged('arrival_date') && (int) $model->status === self::STATUS_BOOKED) {
+                $arrivalDate = $model->arrival_date?->toDateString();
+                if ($arrivalDate) {
+                    $model->guests()
+                        ->whereIn('status', [BookingRoomGuest::STATUS_ACTIVE, BookingRoomGuest::STATUS_CHECKED_IN])
+                        ->update([
+                            'actual_arrival_date' => $arrivalDate,
+                        ]);
+
+                    $model->childAssignments()
+                        ->whereIn('status', [BookingRoomGuest::STATUS_ACTIVE, BookingRoomGuest::STATUS_CHECKED_IN])
+                        ->update([
+                            'actual_arrival_date' => $arrivalDate,
+                        ]);
+                }
+            }
+
             if (!$isActive || (!$model->wasChanged('departure_date') && !$restoredToActive)) {
                 return;
             }

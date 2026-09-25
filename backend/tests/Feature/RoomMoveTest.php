@@ -14,6 +14,8 @@ use App\Models\Room;
 use App\Models\RoomClass;
 use App\Models\RoomForm;
 use App\Models\ServiceBill;
+use App\Models\HotelConfig;
+use App\Models\RegistrationStatus;
 use App\Models\Role;
 use App\Models\SystemDateRoll;
 use App\Models\User;
@@ -163,7 +165,7 @@ class RoomMoveTest extends TestCase
 
         $response->assertStatus(422)
             ->assertJsonPath('success', false)
-            ->assertJsonPath('message', 'Vui lòng kiểm tra tình trạng phòng');
+            ->assertJsonPath('message', 'Phòng đang trong tình trạng phòng bẩn, không thể chuyển phòng ');
     }
 
     public function test_successful_form_a_room_move_to_available_ready_room()
@@ -826,5 +828,252 @@ class RoomMoveTest extends TestCase
             'booking_room_id' => $targetRoom->id,
             'guest_id' => $sourceGuest->id,
         ]);
+    }
+
+    public function test_cannot_move_to_vacant_clean_room()
+    {
+        $cleanRoom = Room::create([
+            'room_number'      => '104',
+            'room_class_id'    => $this->roomClass->id,
+            'room_form_id'     => 1,
+            'floor'            => 1,
+            'status'           => 'available',
+            'room_status_code' => 'vacant_clean',
+        ]);
+
+        $booking = Booking::create([
+            'booking_name'   => 'Khách Test Clean',
+            'booking_date'   => '2026-07-14',
+            'arrival_date'   => '2026-07-14',
+            'departure_date' => '2026-07-17',
+            'status'         => 0,
+            'created_by'     => 'admin_test',
+        ]);
+
+        $bookingRoom = BookingRoom::create([
+            'booking_id'     => $booking->id,
+            'room_class_id'  => $this->roomClass->id,
+            'room_number'    => '101',
+            'arrival_date'   => '2026-07-14',
+            'departure_date' => '2026-07-17',
+            'status'         => BookingRoom::STATUS_CHECKED_IN,
+        ]);
+
+        $response = $this->postJson("/api/bookings/{$booking->id}/rooms/{$bookingRoom->id}/move", [
+            'move_type'          => 'available',
+            'target_room_number' => '104',
+            'reason'             => 'Thử chuyển vào phòng chờ kiểm tra',
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('message', 'Phòng đang trong tình trạng chờ kiểm tra, không thể chuyển phòng ');
+    }
+
+    public function test_move_room_blocked_when_target_room_type_is_over_and_allow_over_0()
+    {
+        HotelConfig::updateOrCreate(['name' => 'AllowOverRoomTypeRoomKind'], ['value' => '0']);
+
+        RegistrationStatus::firstOrCreate(['id' => 1], [
+            'name' => 'Guaranteed',
+            'booking_status_id' => 1,
+            'is_availability' => 1,
+        ]);
+
+        // Tạo loại phòng Suite chỉ có 1 phòng (201)
+        $suiteClass = RoomClass::create([
+            'code'      => 'SUI',
+            'name'      => 'Suite Room',
+            'is_active' => true,
+        ]);
+
+        $suiteRoom = Room::create([
+            'room_number'      => '201',
+            'room_class_id'    => $suiteClass->id,
+            'room_form_id'     => 1,
+            'floor'            => 2,
+            'status'           => 'available',
+            'room_status_code' => 'vacant_ready',
+        ]);
+
+        // Booking 1 giữ phòng Suite từ 14 đến 17 -> AV của Suite = 0
+        $holdingBooking = Booking::create([
+            'booking_name'           => 'Booking Giữ Suite',
+            'booking_date'           => '2026-07-14',
+            'arrival_date'           => '2026-07-14',
+            'departure_date'         => '2026-07-17',
+            'status'                 => 0,
+            'registration_status_id' => 1,
+            'created_by'             => 'admin_test',
+        ]);
+        BookingRoom::create([
+            'booking_id'     => $holdingBooking->id,
+            'room_class_id'  => $suiteClass->id,
+            'room_number'    => null, // Giữ phòng chưa gán số phòng
+            'arrival_date'   => '2026-07-14',
+            'departure_date' => '2026-07-17',
+            'status'         => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        // Booking 2 đang ở phòng 101 (STD) muốn chuyển sang 201 (Suite)
+        $booking2 = Booking::create([
+            'booking_name'           => 'Booking STD',
+            'booking_date'           => '2026-07-14',
+            'arrival_date'           => '2026-07-14',
+            'departure_date'         => '2026-07-17',
+            'status'                 => 0,
+            'registration_status_id' => 1,
+            'created_by'             => 'admin_test',
+        ]);
+        $bookingRoom2 = BookingRoom::create([
+            'booking_id'     => $booking2->id,
+            'room_class_id'  => $this->roomClass->id,
+            'room_number'    => '101',
+            'arrival_date'   => '2026-07-14',
+            'departure_date' => '2026-07-17',
+            'status'         => BookingRoom::STATUS_CHECKED_IN,
+        ]);
+
+        $response = $this->postJson("/api/bookings/{$booking2->id}/rooms/{$bookingRoom2->id}/move", [
+            'move_type'          => 'available',
+            'target_room_number' => '201',
+            'reason'             => 'Đổi từ STD sang Suite bị over',
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('message', 'Loại phòng đã bị over, không thể chuyển phòng');
+    }
+
+    public function test_move_room_prompts_and_allows_when_over_under_allow_over_1()
+    {
+        HotelConfig::updateOrCreate(['name' => 'AllowOverRoomTypeRoomKind'], ['value' => '1']);
+
+        RegistrationStatus::firstOrCreate(['id' => 1], [
+            'name' => 'Guaranteed',
+            'booking_status_id' => 1,
+            'is_availability' => 1,
+        ]);
+
+        $suiteClass = RoomClass::create([
+            'code'      => 'SUI2',
+            'name'      => 'Suite Room 2',
+            'is_active' => true,
+        ]);
+
+        $suiteRoom = Room::create([
+            'room_number'      => '202',
+            'room_class_id'    => $suiteClass->id,
+            'room_form_id'     => 1,
+            'floor'            => 2,
+            'status'           => 'available',
+            'room_status_code' => 'vacant_ready',
+        ]);
+
+        $holdingBooking = Booking::create([
+            'booking_name'           => 'Booking Giữ Suite 2',
+            'booking_date'           => '2026-07-14',
+            'arrival_date'           => '2026-07-14',
+            'departure_date'         => '2026-07-17',
+            'status'                 => 0,
+            'registration_status_id' => 1,
+            'created_by'             => 'admin_test',
+        ]);
+        BookingRoom::create([
+            'booking_id'     => $holdingBooking->id,
+            'room_class_id'  => $suiteClass->id,
+            'room_number'    => null,
+            'arrival_date'   => '2026-07-14',
+            'departure_date' => '2026-07-17',
+            'status'         => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $booking2 = Booking::create([
+            'booking_name'           => 'Booking STD 2',
+            'booking_date'           => '2026-07-14',
+            'arrival_date'           => '2026-07-14',
+            'departure_date'         => '2026-07-17',
+            'status'                 => 0,
+            'registration_status_id' => 1,
+            'created_by'             => 'admin_test',
+        ]);
+        $bookingRoom2 = BookingRoom::create([
+            'booking_id'     => $booking2->id,
+            'room_class_id'  => $this->roomClass->id,
+            'room_number'    => '101',
+            'arrival_date'   => '2026-07-14',
+            'departure_date' => '2026-07-17',
+            'status'         => BookingRoom::STATUS_CHECKED_IN,
+        ]);
+
+        // Lần 1: Không có confirm_over_room -> yêu cầu xác nhận
+        $response1 = $this->postJson("/api/bookings/{$booking2->id}/rooms/{$bookingRoom2->id}/move", [
+            'move_type'          => 'available',
+            'target_room_number' => '202',
+            'reason'             => 'Chuyển sang Suite cho phép over',
+        ]);
+
+        $response1->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('require_over_confirm', true)
+            ->assertJsonPath('message', 'Loại phòng đã bị over, bạn có muốn tiếp tục');
+
+        // Lần 2: Người dùng xác nhận Yes (confirm_over_room = true) -> Cho phép chuyển
+        $response2 = $this->postJson("/api/bookings/{$booking2->id}/rooms/{$bookingRoom2->id}/move", [
+            'move_type'          => 'available',
+            'target_room_number' => '202',
+            'reason'             => 'Chuyển sang Suite cho phép over',
+            'confirm_over_room'  => true,
+        ]);
+
+        $response2->assertOk()
+            ->assertJsonPath('success', true);
+    }
+
+    public function test_get_move_target_rooms_includes_dirty_rooms_and_natural_sorts()
+    {
+        // 102 là dirty (đã tạo ở setUp)
+        // Tạo thêm 1002
+        Room::create([
+            'room_number'      => '1002',
+            'room_class_id'    => $this->roomClass->id,
+            'room_form_id'     => 1,
+            'floor'            => 10,
+            'status'           => 'available',
+            'room_status_code' => 'vacant_ready',
+        ]);
+
+        $booking = Booking::create([
+            'booking_name'   => 'Booking Test Target Rooms',
+            'booking_date'   => '2026-07-14',
+            'arrival_date'   => '2026-07-14',
+            'departure_date' => '2026-07-17',
+            'status'         => 0,
+            'created_by'     => 'admin_test',
+        ]);
+        $bookingRoom = BookingRoom::create([
+            'booking_id'     => $booking->id,
+            'room_class_id'  => $this->roomClass->id,
+            'room_number'    => '101',
+            'arrival_date'   => '2026-07-14',
+            'departure_date' => '2026-07-17',
+            'status'         => BookingRoom::STATUS_CHECKED_IN,
+        ]);
+
+        $response = $this->getJson("/api/bookings/{$booking->id}/rooms/{$bookingRoom->id}/move-target-rooms");
+
+        $response->assertOk()->assertJsonPath('success', true);
+        $availableRooms = $response->json('data.available_rooms');
+
+        // Phòng 102 (dirty) PHẢI xuất hiện trong danh sách nhưng is_ready = false
+        $room102Item = collect($availableRooms)->firstWhere('room_number', '102');
+        $this->assertNotNull($room102Item, 'Phòng bẩn 102 phải xuất hiện trong danh sách phòng trống');
+        $this->assertFalse($room102Item['is_ready'], 'Phòng bẩn phải có is_ready = false');
+
+        // Thứ tự sắp xếp tự nhiên: 102 trước 1002 (thay vì 1002 trước 102 nếu sắp theo chuỗi)
+        $numbers = array_column($availableRooms, 'room_number');
+        $idx102 = array_search('102', $numbers);
+        $idx1002 = array_search('1002', $numbers);
+        $this->assertLessThan($idx1002, $idx102, 'Thứ tự phòng phải sắp xếp tự nhiên theo số từ nhỏ đến lớn');
     }
 }

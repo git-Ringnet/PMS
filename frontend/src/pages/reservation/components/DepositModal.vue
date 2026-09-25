@@ -416,139 +416,150 @@
         </div>
 
         <!-- CUSTOM TRANSFER DEPOSIT MODAL -->
-        <div v-if="isTransferOpen" class="fixed inset-0 bg-black/60 z-[100000] flex items-center justify-center p-4 backdrop-blur-xs" style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
-            <div class="w-full max-w-lg bg-white rounded-xl shadow-2xl overflow-visible border border-slate-200 flex flex-col animate-in fade-in duration-200 relative">
+        <Teleport to="body">
+            <div v-if="isTransferOpen" class="fixed inset-0 bg-black/60 z-[2000000] flex items-center justify-center p-4 backdrop-blur-xs select-none" style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
                 <div 
-                  class="flex justify-between items-center px-4 py-2.5 border-b border-black/10 rounded-t-xl transition-all duration-300"
-                  :style="{ background: topbarThemeBg }"
-                  :class="isTopBarThemeDark ? 'text-white' : 'text-slate-900'"
+                  class="w-full max-w-lg bg-white rounded-xl shadow-2xl overflow-visible border border-slate-200 flex flex-col relative"
+                  :style="{ 
+                    transform: `translate3d(${transferModalPos.x}px, ${transferModalPos.y}px, 0px)`,
+                    transition: isDraggingTransferModal ? 'none' : 'transform 0.1s ease-out'
+                  }"
                 >
-                    <div class="flex items-center space-x-2">
-                        <i class="fa-solid fa-arrow-right-arrow-left text-xs" :class="isTopBarThemeDark ? 'text-blue-200' : 'text-slate-800'"></i>
-                        <span class="font-bold text-xs uppercase tracking-wide">Chuyển đặt cọc</span>
-                    </div>
-                    <button @click="isTransferOpen = false" class="transition cursor-pointer border-none bg-transparent" :class="isTopBarThemeDark ? 'text-slate-300 hover:text-white' : 'text-slate-700 hover:text-black'">
-                        <i class="fa-solid fa-xmark text-sm"></i>
-                    </button>
-                </div>
-                <div class="p-5 flex flex-col space-y-4">
-                    <!-- Information summary -->
-                    <div class="grid grid-cols-2 gap-4 bg-slate-50 p-3 rounded-lg border border-slate-100 text-xs font-semibold">
-                        <div class="flex flex-col space-y-1 border-r border-slate-200 pr-2">
-                            <span class="text-[9px] uppercase text-slate-400 font-bold tracking-wider">Bên chuyển cọc</span>
-                            <div class="text-slate-800 font-bold truncate">{{ props.bookingName || 'Chưa có tên' }}</div>
-                            <div class="text-[10px] text-slate-500 font-semibold">Mã BK: {{ props.bookingCode }}</div>
+                    <div 
+                      class="flex justify-between items-center px-4 py-2.5 border-b border-black/10 rounded-t-xl cursor-move select-none"
+                      :style="{ background: topbarThemeBg }"
+                      :class="isTopBarThemeDark ? 'text-white' : 'text-slate-900'"
+                      @mousedown="startDragTransferModal"
+                      @pointerdown="startDragTransferModal"
+                    >
+                        <div class="flex items-center space-x-2 pointer-events-none select-none">
+                            <i class="fa-solid fa-arrow-right-arrow-left text-xs" :class="isTopBarThemeDark ? 'text-blue-200' : 'text-slate-800'"></i>
+                            <span class="font-bold text-xs uppercase tracking-wide">Chuyển đặt cọc</span>
                         </div>
-                        <div class="flex flex-col space-y-1 pl-2">
-                            <span class="text-[9px] uppercase text-slate-400 font-bold tracking-wider">Bên nhận cọc</span>
-                            <template v-if="transferDestBooking">
-                                <div class="text-green-600 font-bold truncate">{{ transferDestBooking.booking_name || 'Chưa có tên' }}</div>
-                                <div class="text-[10px] text-slate-500 font-semibold">Mã BK: {{ transferDestBooking.booking_code }}</div>
-                            </template>
-                            <template v-else>
-                                <div class="text-slate-400 italic">Vui lòng chọn booking nhận...</div>
-                            </template>
-                        </div>
+                        <button type="button" @click.stop="isTransferOpen = false" class="transition cursor-pointer border-none bg-transparent" :class="isTopBarThemeDark ? 'text-slate-300 hover:text-white' : 'text-slate-700 hover:text-black'">
+                            <i class="fa-solid fa-xmark text-sm"></i>
+                        </button>
                     </div>
+                    <div class="p-5 flex flex-col space-y-4">
+                        <!-- Information summary -->
+                        <div class="grid grid-cols-2 gap-4 bg-slate-50 p-3 rounded-lg border border-slate-100 text-xs font-semibold">
+                            <div class="flex flex-col space-y-1 border-r border-slate-200 pr-2">
+                                <span class="text-[9px] uppercase text-slate-400 font-bold tracking-wider">Bên chuyển cọc</span>
+                                <div class="text-slate-800 font-bold truncate">{{ props.bookingName || 'Chưa có tên' }}</div>
+                                <div class="text-[10px] text-slate-500 font-semibold">Mã BK: {{ props.bookingCode }}</div>
+                            </div>
+                            <div class="flex flex-col space-y-1 pl-2">
+                                <span class="text-[9px] uppercase text-slate-400 font-bold tracking-wider">Bên nhận cọc</span>
+                                <template v-if="transferDestBooking">
+                                    <div class="text-green-600 font-bold truncate">{{ destBookingName || transferDestBooking.booking_name || 'Chưa có tên' }}</div>
+                                    <div class="text-[10px] text-slate-500 font-semibold">Mã BK: {{ transferDestBooking.booking_code || `GAL${transferDestBooking.id}` }}</div>
+                                </template>
+                                <template v-else>
+                                    <div class="text-slate-400 italic">Vui lòng chọn booking nhận...</div>
+                                </template>
+                            </div>
+                        </div>
 
-                    <div class="flex items-center justify-between gap-4">
-                        <span class="text-xs font-bold text-slate-700">Số tiền chuyển</span>
-                        <div class="relative flex-1 max-w-[260px]">
-                            <input 
-                              type="text" 
-                              readonly 
-                              :value="formatCurrencyInput(transferAmount) + ' VND'"
-                              class="w-full border border-slate-200 rounded-lg px-3 h-[32px] text-xs text-right font-bold bg-slate-50 text-slate-400 outline-none cursor-not-allowed"
-                            />
+                        <div class="flex items-center justify-between gap-4">
+                            <span class="text-xs font-bold text-slate-700">Số tiền chuyển</span>
+                            <div class="relative flex-1 max-w-[280px]">
+                                <input 
+                                  type="text" 
+                                  readonly 
+                                  :value="formatCurrencyInput(transferAmount) + ' VND'"
+                                  class="w-full border border-slate-200 rounded-lg px-3 h-[32px] text-xs text-right font-bold bg-slate-50 text-slate-600 outline-none cursor-not-allowed"
+                                />
+                            </div>
                         </div>
-                    </div>
-                    
-                    <div class="flex items-center justify-between gap-4 relative">
-                        <span class="text-xs font-bold text-slate-700">Mã booking nhận</span>
-                        <div class="relative flex-1 max-w-[260px]">
-                            <input 
-                              type="text" 
-                              v-model="transferDestSearch"
-                              @focus="handleSearchFocus"
-                              @click="handleSearchFocus"
-                              @blur="setTimeout(() => { isFocused = false }, 250)"
-                              @input="e => handleSearchBookingInput(e.target.value)"
-                              placeholder="Tìm theo mã hoặc tên khách nhận..."
-                              class="w-full border border-slate-300 rounded-lg pl-3 pr-8 h-[32px] text-xs font-semibold bg-white text-slate-800 focus:outline-none focus:border-blue-500 shadow-sm"
-                            />
-                            <i 
-                              v-if="transferDestSearch"
-                              @click="clearTransferSelection"
-                              class="fa-solid fa-xmark absolute right-3 top-2.5 text-slate-400 hover:text-rose-500 cursor-pointer text-xs animate-in fade-in"
-                            ></i>
-                            <i 
-                              v-else
-                              @click="handleSearchFocus"
-                              class="fa-solid fa-chevron-down absolute right-3 top-2.5 text-slate-400 text-[10px] cursor-pointer"
-                            ></i>
-                            <!-- Dropdown list: booking và các phòng/khách tương ứng như luồng chuyển ở Hóa đơn. -->
-                            <div 
-                              v-if="showSearchDropdown && transferOptions.length > 0" 
-                              class="absolute left-0 right-0 top-full mt-1 max-h-[240px] overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-xl z-[100010] py-1 select-none"
-                            >
+                        
+                        <div class="flex items-center justify-between gap-4 relative" ref="transferDropdownContainerRef">
+                            <span class="text-xs font-bold text-slate-700 shrink-0">Mã booking nhận</span>
+                            <div class="relative flex-1 max-w-[280px]">
+                                <input 
+                                  ref="transferInputRef"
+                                  type="text" 
+                                  v-model="transferDestSearch"
+                                  @focus="openTransferDropdown"
+                                  @click="openTransferDropdown"
+                                  @input="e => handleSearchBookingInput(e.target.value)"
+                                  placeholder="Tìm theo mã hoặc tên khách nhận..."
+                                  class="w-full border border-slate-300 rounded-lg pl-3 pr-8 h-[32px] text-xs font-semibold bg-white text-slate-800 focus:outline-none focus:border-blue-500 shadow-sm"
+                                />
+                                <i 
+                                  v-if="transferDestSearch"
+                                  @click.stop="clearTransferSelection"
+                                  class="fa-solid fa-xmark absolute right-3 top-2.5 text-slate-400 hover:text-rose-500 cursor-pointer text-xs animate-in fade-in"
+                                ></i>
+                                <i 
+                                  v-else
+                                  @click.stop="toggleTransferDropdown"
+                                  class="fa-solid fa-chevron-down absolute right-3 top-2.5 text-slate-400 text-[10px] cursor-pointer transition-transform duration-200"
+                                  :class="{ 'rotate-180 text-blue-500': isDropdownOpen }"
+                                ></i>
+
+                                <!-- Dropdown menu: không bị che mất đáy nhờ mở ở modal đặt cao (pt-20) và hỗ trợ dropup -->
                                 <div 
-                                  v-for="opt in transferOptions" 
-                                  :key="opt.key"
-                                  @mousedown="selectTargetBookingOption(opt)"
-                                  class="px-3.5 py-1.5 hover:bg-sky-50/80 cursor-pointer text-left flex items-center border-b border-slate-100 last:border-0 transition"
+                                  v-if="isDropdownOpen && transferOptions.length > 0" 
+                                  :class="openUpwards ? 'bottom-full mb-1.5' : 'top-full mt-1'"
+                                  class="absolute left-0 right-0 max-h-[220px] overflow-y-auto bg-white border border-slate-300 rounded-lg shadow-2xl z-[2000050] py-1 select-none"
                                 >
-                                    <template v-if="opt.type === 'booking'">
-                                      <span class="font-black text-slate-800 text-xs tracking-wider w-12 shrink-0">BKK:</span>
-                                      <span class="font-bold text-slate-800 text-xs truncate">{{ opt.code }} - {{ opt.name }}</span>
-                                    </template>
-                                    <template v-else-if="opt.type === 'room'">
-                                      <div class="flex items-center text-xs pl-6 w-full">
-                                        <span class="font-bold text-slate-800 min-w-[48px] text-right pr-1">{{ opt.roomNumber }}</span>
-                                        <span class="text-slate-400 font-normal px-2">|</span>
-                                        <span class="font-medium text-slate-700 truncate">Toàn bộ phòng</span>
-                                      </div>
-                                    </template>
-                                    <template v-else-if="opt.type === 'guest'">
-                                      <div class="flex items-center text-xs pl-6 w-full">
-                                        <span class="font-bold text-slate-800 min-w-[48px] text-right pr-1">{{ opt.roomNumber }}</span>
-                                        <span class="text-slate-400 font-normal px-2">|</span>
-                                        <span :class="opt.isPrimary ? 'font-bold text-slate-900' : 'font-medium text-slate-700'" class="truncate">
-                                          {{ opt.guestName }}
-                                        </span>
-                                      </div>
-                                    </template>
+                                    <div 
+                                      v-for="opt in transferOptions" 
+                                      :key="opt.key"
+                                      @mousedown.prevent="selectTargetBookingOption(opt)"
+                                      class="px-3 py-2 hover:bg-sky-50/80 cursor-pointer text-left flex items-center border-b border-slate-100 last:border-0 transition"
+                                      :class="{ 'bg-blue-50 font-bold': isSelectedOption(opt) }"
+                                    >
+                                        <!-- Dòng Booking: BKK: Mã - Tên -->
+                                        <template v-if="opt.type === 'booking'">
+                                          <span class="font-black text-slate-900 text-xs tracking-wider w-12 shrink-0">BKK:</span>
+                                          <span class="font-bold text-slate-900 text-xs truncate">{{ opt.code }} - {{ opt.name }}</span>
+                                        </template>
+                                        <!-- Dòng Phòng: chỉ phòng Đang ở (status=1), KHÔNG có dòng 'Toàn bộ phòng' -->
+                                        <template v-else-if="opt.type === 'guest'">
+                                          <div class="flex items-center text-xs pl-6 w-full">
+                                            <span class="font-bold text-slate-800 min-w-[48px] text-right pr-1">{{ opt.roomNumber }}</span>
+                                            <span class="text-slate-400 font-normal px-2">|</span>
+                                            <span :class="opt.isPrimary ? 'font-bold text-slate-900' : 'font-medium text-slate-700'" class="truncate">
+                                              {{ opt.guestName }}
+                                            </span>
+                                            <span v-if="opt.isPrimary" class="ml-1.5 text-[9px] text-blue-600 font-normal shrink-0">(Khách chính)</span>
+                                          </div>
+                                        </template>
+                                    </div>
+                                </div>
+                                <div 
+                                  v-else-if="isDropdownOpen && !isSearchingDest && transferOptions.length === 0" 
+                                  :class="openUpwards ? 'bottom-full mb-1.5' : 'top-full mt-1'"
+                                  class="absolute left-0 right-0 bg-white border border-slate-300 rounded-lg shadow-2xl z-[2000050] p-3 text-center text-xs text-slate-400 italic"
+                                >
+                                    Không tìm thấy đặt phòng hoặc phòng đang ở phù hợp
                                 </div>
                             </div>
-                            <div 
-                              v-else-if="showSearchDropdown && transferDestSearch && !isSearchingDest && transferOptions.length === 0" 
-                              class="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-[100010] p-3 text-center text-xs text-slate-400 italic"
+                        </div>
+
+                        <!-- Search status detail indicator -->
+                        <div class="flex justify-end pr-1 min-h-[16px]">
+                            <span 
+                              v-if="destBookingName" 
+                              class="text-[11px] font-bold"
+                              :class="transferDestBooking ? 'text-green-600' : 'text-rose-500'"
                             >
-                                Không tìm thấy đặt phòng ở trạng thái Đăng ký hoặc Đang ở
-                            </div>
+                                {{ destBookingName }}
+                            </span>
                         </div>
                     </div>
-
-                    <!-- Search status detail indicator -->
-                    <div class="flex justify-end pr-1">
-                        <span 
-                          v-if="destBookingName" 
-                          class="text-[10px] font-bold"
-                          :class="transferDestBooking ? 'text-green-600' : 'text-rose-500'"
-                        >
-                            {{ destBookingName }}
-                        </span>
+                    <div class="bg-slate-50 px-5 py-3 border-t border-slate-200 flex justify-end gap-2 rounded-b-xl">
+                        <button type="button" @click="isTransferOpen = false" class="px-4 py-1.5 bg-[#e2e8f0] hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition text-xs cursor-pointer border-none">
+                            Hủy
+                        </button>
+                        <button type="button" @click="confirmTransfer" class="px-4 py-1.5 bg-[#3b82f6] hover:bg-[#2563eb] text-white font-bold rounded-lg transition text-xs shadow-md flex items-center cursor-pointer border-none" :disabled="!transferDestBooking">
+                            <i class="fa-solid fa-check mr-1.5"></i> Xác nhận
+                        </button>
                     </div>
                 </div>
-                <div class="bg-slate-50 px-5 py-3 border-t border-slate-200 flex justify-end gap-2 rounded-b-xl">
-                    <button type="button" @click="isTransferOpen = false" class="px-4 py-1.5 bg-[#e2e8f0] hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition text-xs cursor-pointer border-none">
-                        Hủy
-                    </button>
-                    <button type="button" @click="confirmTransfer" class="px-4 py-1.5 bg-[#3b82f6] hover:bg-[#2563eb] text-white font-bold rounded-lg transition text-xs shadow-md flex items-center cursor-pointer border-none" :disabled="!transferDestBooking">
-                        <i class="fa-solid fa-check mr-1.5"></i> Xác nhận
-                    </button>
-                </div>
             </div>
-        </div>
+        </Teleport>
         <!-- Image Preview Lightbox Modal -->
         <div v-if="previewImageUrl" class="fixed inset-0 bg-black/80 z-[2000000] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200" @click="previewImageUrl = null">
             <div class="relative max-w-4xl max-h-[90vh] bg-white rounded-lg p-2 shadow-2xl animate-in zoom-in duration-200 flex flex-col" @click.stop>
@@ -602,7 +613,7 @@
 </template>
 
 <script setup>
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, onUnmounted, nextTick } from 'vue'
 import {
   fetchPayments,
   createPayment,
@@ -781,57 +792,163 @@ const transferDestBooking = ref(null)
 const destBookingName = ref('')
 const isSearchingDest = ref(false)
 const transferDestSearch = ref('')
-const isFocused = ref(false)
-const showSearchDropdown = computed(() => {
-  return isFocused.value
-})
 const searchResults = ref([])
 let transferSearchRequestId = 0
+
+const isDropdownOpen = ref(false)
+const openUpwards = ref(false)
+const transferDropdownContainerRef = ref(null)
+const transferInputRef = ref(null)
+
+function checkDropdownPlacement() {
+  nextTick(() => {
+    if (!transferInputRef.value) return
+    const rect = transferInputRef.value.getBoundingClientRect()
+    const spaceBelow = window.innerHeight - rect.bottom
+    openUpwards.value = spaceBelow < 230 && rect.top > 230
+  })
+}
+
+function openTransferDropdown() {
+  isDropdownOpen.value = true
+  checkDropdownPlacement()
+}
+
+function toggleTransferDropdown() {
+  isDropdownOpen.value = !isDropdownOpen.value
+  if (isDropdownOpen.value) {
+    checkDropdownPlacement()
+  }
+}
+
+function handleDocumentPointerDown(event) {
+  if (!isDropdownOpen.value) return
+  if (transferDropdownContainerRef.value && !transferDropdownContainerRef.value.contains(event.target)) {
+    isDropdownOpen.value = false
+  }
+}
+
+// ==================== DRAGGABLE TRANSFER MODAL ====================
+const transferModalPos = ref({ x: 0, y: 0 })
+const isDraggingTransferModal = ref(false)
+
+function startDragTransferModal(e) {
+  const ignoreTags = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A', 'LABEL']
+  if (ignoreTags.includes(e.target.tagName) || e.target.closest('button, input, select, textarea, a, label')) return
+  
+  e.preventDefault()
+  isDraggingTransferModal.value = true
+  const startX = e.clientX - transferModalPos.value.x
+  const startY = e.clientY - transferModalPos.value.y
+
+  function onMove(ev) {
+    if (!isDraggingTransferModal.value) return
+    ev.preventDefault()
+    transferModalPos.value = {
+      x: ev.clientX - startX,
+      y: ev.clientY - startY
+    }
+  }
+
+  function onEnd() {
+    isDraggingTransferModal.value = false
+    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mouseup', onEnd)
+    window.removeEventListener('pointermove', onMove)
+    window.removeEventListener('pointerup', onEnd)
+    window.removeEventListener('pointercancel', onEnd)
+    checkDropdownPlacement()
+  }
+
+  window.addEventListener('mousemove', onMove, { passive: false })
+  window.addEventListener('mouseup', onEnd)
+  window.addEventListener('pointermove', onMove, { passive: false })
+  window.addEventListener('pointerup', onEnd)
+  window.addEventListener('pointercancel', onEnd)
+}
+
+watch(isTransferOpen, (open) => {
+  if (open) {
+    transferModalPos.value = { x: 0, y: 0 }
+    document.addEventListener('pointerdown', handleDocumentPointerDown)
+  } else {
+    isDropdownOpen.value = false
+    document.removeEventListener('pointerdown', handleDocumentPointerDown)
+    isDraggingTransferModal.value = false
+  }
+})
+
+onUnmounted(() => {
+  document.removeEventListener('pointerdown', handleDocumentPointerDown)
+  document.removeEventListener('mousemove', dragModal)
+  document.removeEventListener('mouseup', stopDragModal)
+})
 
 const transferOptions = computed(() => {
   const query = (transferDestSearch.value || '').trim().toLowerCase()
   const list = []
 
   for (const booking of searchResults.value) {
-    const code = String(booking.booking_code || '').toLowerCase()
-    const name = String(booking.booking_name || booking.guest_name || '').toLowerCase()
-    const bookingMatches = !query || code.includes(query) || name.includes(query)
+    const code = String(booking.booking_code || booking.code || `GAL${booking.id}`).toLowerCase()
+    const mainGuestName = (
+      (booking.booking_name && booking.booking_name.trim()) ||
+      (booking.guest_name && booking.guest_name.trim()) ||
+      (booking.contact_name && booking.contact_name.trim()) ||
+      (booking.customer?.full_name && booking.customer.full_name.trim()) ||
+      (booking.customer?.name && booking.customer.name.trim()) ||
+      (booking.company?.name && booking.company.name.trim()) ||
+      (booking.booker?.full_name && booking.booker.full_name.trim()) ||
+      'Khách lẻ'
+    )
+    const bookingMatches = !query || code.includes(query) || mainGuestName.toLowerCase().includes(query)
     const roomOptions = []
 
     for (const room of Array.isArray(booking.booking_rooms) ? booking.booking_rooms : []) {
-      const roomNumber = String(room.room_number || room.room?.room_number || 'Chưa xếp')
-      const roomMatches = !query || roomNumber.toLowerCase().includes(query)
-      const eligibleRoom = room.status === undefined || room.status === null || [0, 1].includes(Number(room.status))
-      if (!eligibleRoom) continue
-      const guests = Array.isArray(room.guests) && room.guests.length > 0
-        ? room.guests
-        : [{ guest_id: null, guest_name: 'Khách chưa đặt tên', is_primary: true }]
+      const roomNumber = String(room.room_number || room.room?.room_number || '').trim()
+      // CHỈ LẤY PHÒNG ĐANG Ở (STATUS = 1) ĐÃ CÓ SỐ PHÒNG THỰC TẾ VÀ CHƯA CHECK-OUT
+      const isInHouse = Number(room.status) === 1
+      const isCheckedOut = Number(room.status) === 2 || Boolean(room.checked_out_at)
+      if (!isInHouse || isCheckedOut || !roomNumber) continue
 
-      const matchingGuests = guests.filter(guest => {
-        const guestName = String(guest.guest?.full_name || guest.guest_name || 'Khách chưa đặt tên').trim()
-        return !query || bookingMatches || roomMatches || guestName.toLowerCase().includes(query)
+      const roomMatches = !query || roomNumber.toLowerCase().includes(query)
+
+      // Lấy danh sách khách hợp lệ của phòng đang ở
+      const roomGuests = []
+      if (room.guests && Array.isArray(room.guests) && room.guests.length > 0) {
+        room.guests.forEach(g => {
+          if ([3, 100].includes(Number(g.status)) || Number(g.status) === 2) return
+          const gName = g.guest?.full_name || g.full_name || (g.first_name ? `${g.first_name} ${g.last_name || ''}`.trim() : '')
+          const guestId = g.guest_id || g.guest?.id || null
+          if (gName) {
+            roomGuests.push({ id: guestId, name: gName, isPrimary: Boolean(g.is_primary) })
+          }
+        })
+      }
+      if (roomGuests.length === 0 && room.guest_name && room.guest_name.trim()) {
+        roomGuests.push({ id: null, name: room.guest_name.trim(), isPrimary: true })
+      }
+      if (roomGuests.length === 0) {
+        roomGuests.push({ id: null, name: mainGuestName, isPrimary: true })
+      }
+
+      const matchingGuests = roomGuests.filter(guest => {
+        return !query || bookingMatches || roomMatches || guest.name.toLowerCase().includes(query)
       })
+
       if (!bookingMatches && !roomMatches && matchingGuests.length === 0) continue
 
-      roomOptions.push({
-        key: `room_${booking.id}_${room.id || roomNumber}`,
-        type: 'room',
-        booking,
-        bookingRoomId: room.id,
-        roomNumber,
-      })
-
+      // KHÔNG push dòng "Toàn bộ phòng" (type: 'room')!
+      // Mỗi phòng đang ở chỉ tạo các dòng khách: [Số phòng] | [Tên khách]
       for (const guest of matchingGuests) {
-        const guestName = String(guest.guest?.full_name || guest.guest_name || 'Khách chưa đặt tên').trim()
         roomOptions.push({
-          key: `guest_${booking.id}_${room.id || roomNumber}_${guest.guest_id || guest.guest?.id || guest.id || guestName}`,
+          key: `guest_${booking.id}_${room.id}_${guest.id || guest.name}`,
           type: 'guest',
           booking,
           bookingRoomId: room.id,
-          guestId: guest.guest_id || guest.guest?.id || guest.id || null,
+          guestId: guest.id,
           roomNumber,
-          guestName,
-          isPrimary: Boolean(guest.is_primary),
+          guestName: guest.name,
+          isPrimary: guest.isPrimary,
         })
       }
     }
@@ -841,14 +958,25 @@ const transferOptions = computed(() => {
         key: `bkk_${booking.id}`,
         type: 'booking',
         booking,
-        code: booking.booking_code || `BK-${booking.id}`,
-        name: booking.booking_name || booking.guest_name || 'Chưa có tên',
+        code: booking.booking_code || booking.code || `GAL${booking.id}`,
+        name: mainGuestName,
       })
       list.push(...roomOptions)
     }
   }
   return list
 })
+
+function isSelectedOption(opt) {
+  if (!transferDestBooking.value) return false
+  if (opt.type === 'booking') {
+    return opt.booking.id === transferDestBooking.value.id && !transferDestRoomId.value
+  }
+  if (opt.type === 'guest') {
+    return opt.booking.id === transferDestBooking.value.id && opt.bookingRoomId === transferDestRoomId.value && String(opt.guestId || '') === String(transferDestGuestId.value || '')
+  }
+  return false
+}
 
 const activeCurrency = computed(() => {
   return props.currenciesList?.find(c => c.is_main) || { code: 'VND', decimals_to_round: 0 }
@@ -1534,54 +1662,56 @@ async function confirmSplit() {
   }
 }
 
-async function handleSearchBookingInput(query) {
-  transferDestSearch.value = query
-  // Tải đầy đủ booking một lần rồi lọc cục bộ cả mã/tên booking, số phòng
-  // và tên khách. API chỉ tìm được booking-level nên gửi query lên server
-  // sẽ làm mất các phòng/khách hợp lệ khi người dùng gõ số phòng hoặc tên khách.
-  if (searchResults.value.length > 0) return
+let transferSearchDebounce = null
 
+async function loadAvailableBookingsForTransfer(searchQuery = '') {
   isSearchingDest.value = true
   const requestId = ++transferSearchRequestId
   try {
-    const params = { status: '0,1', limit: 100 }
+    const params = { status: '0,1,4' }
+    if (searchQuery) params.search = searchQuery
     const res = await fetchBookings(params)
     const bookings = res.data?.data || res.data || []
     if (requestId !== transferSearchRequestId) return
-    searchResults.value = bookings.filter(b => String(b.id) !== String(props.bookingId) && (Number(b.status) === 0 || Number(b.status) === 1))
+    searchResults.value = bookings.filter(b => String(b.id) !== String(props.bookingId))
   } catch (err) {
-    console.error(err)
+    console.error('Lỗi khi tải danh sách booking để chuyển cọc:', err)
     if (requestId === transferSearchRequestId) searchResults.value = []
   } finally {
     if (requestId === transferSearchRequestId) isSearchingDest.value = false
   }
 }
 
-function handleSearchFocus() {
-  isFocused.value = true
-  if (searchResults.value.length === 0 && !isSearchingDest.value) {
-    handleSearchBookingInput(transferDestSearch.value || '')
+function handleSearchBookingInput(query) {
+  transferDestSearch.value = query
+  isDropdownOpen.value = true
+  checkDropdownPlacement()
+  clearTimeout(transferSearchDebounce)
+  if (query && query.trim().length >= 2) {
+    transferSearchDebounce = setTimeout(() => {
+      // Nếu lọc client-side không có kết quả, thử truy vấn server theo từ khóa
+      if (transferOptions.value.length === 0) {
+        loadAvailableBookingsForTransfer(query.trim())
+      }
+    }, 400)
   }
 }
 
 function selectTargetBookingOption(opt) {
   const b = opt.booking
   transferDestBooking.value = b
-  transferDestRoomId.value = opt.type === 'room' || opt.type === 'guest' ? opt.bookingRoomId : null
-  transferDestGuestId.value = opt.type === 'guest' ? opt.guestId : null
   if (opt.type === 'guest') {
+    transferDestRoomId.value = opt.bookingRoomId
+    transferDestGuestId.value = opt.guestId
     transferDestSearch.value = `${opt.roomNumber} | ${opt.guestName}`
-    destBookingName.value = `Khách nhận: ${opt.guestName} (P.${opt.roomNumber} - ${b.booking_code})`
-  } else if (opt.type === 'room') {
-    transferDestSearch.value = `${opt.roomNumber} | Toàn bộ phòng`
-    destBookingName.value = `Phòng nhận: ${opt.roomNumber} (${b.booking_code})`
+    destBookingName.value = `Khách nhận: ${opt.guestName} (P.${opt.roomNumber} - ${b.booking_code || b.code || `GAL${b.id}`})`
   } else {
     transferDestRoomId.value = null
     transferDestGuestId.value = null
     transferDestSearch.value = `${opt.code} - ${opt.name}`
     destBookingName.value = `Booking nhận: ${opt.code} - ${opt.name}`
   }
-  isFocused.value = false
+  isDropdownOpen.value = false
 }
 
 function clearTransferSelection() {
@@ -1590,7 +1720,7 @@ function clearTransferSelection() {
   transferDestRoomId.value = null
   transferDestGuestId.value = null
   destBookingName.value = ''
-  handleSearchBookingInput('')
+  isDropdownOpen.value = false
 }
 
 async function transferDeposit() {
@@ -1620,20 +1750,10 @@ async function transferDeposit() {
   transferDestGuestId.value = null
   destBookingName.value = ''
   searchResults.value = []
+  isDropdownOpen.value = false
   isTransferOpen.value = true
 
-  isSearchingDest.value = true
-  const requestId = ++transferSearchRequestId
-  try {
-    const res = await fetchBookings({ limit: 100, status: '0,1' })
-    const bookings = res.data?.data || res.data || []
-    if (requestId !== transferSearchRequestId) return
-    searchResults.value = bookings.filter(b => String(b.id) !== String(props.bookingId) && (Number(b.status) === 0 || Number(b.status) === 1))
-  } catch (err) {
-    console.error(err)
-  } finally {
-    if (requestId === transferSearchRequestId) isSearchingDest.value = false
-  }
+  await loadAvailableBookingsForTransfer()
 }
 
 async function confirmTransfer() {
@@ -1652,7 +1772,7 @@ async function confirmTransfer() {
   try {
     await transferPayment(targetId, payload)
     await syncDepositsFromBackend(true)
-    uiStore.showToast(`Đã chuyển cọc sang booking ${transferDestBooking.value.booking_code} thành công!`, 'success')
+    uiStore.showToast(`Đã chuyển cọc sang booking ${transferDestBooking.value.booking_code || transferDestBooking.value.code || `GAL${transferDestBooking.value.id}`} thành công!`, 'success')
     selectedDepositIds.value = []
     isTransferOpen.value = false
   } catch (err) {

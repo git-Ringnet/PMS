@@ -139,17 +139,68 @@ function isDateWithinBounds(date, minDate, maxDate) {
 }
 
 // ─────────────────────────────────────────────
+// Format Helpers
+// ─────────────────────────────────────────────
+function formatInputCurrency(val) {
+  if (val === null || val === undefined || val === '') return ''
+  const str = String(val)
+  const clean = str.replace(/,/g, '')
+  const parts = clean.split('.')
+  let intPart = parts[0].replace(/[^\d]/g, '')
+  if (intPart) {
+    intPart = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+  }
+  if (parts.length > 1) {
+    const decPart = parts.slice(1).join('').replace(/[^\d]/g, '')
+    return `${intPart}.${decPart}`
+  }
+  return intPart
+}
+
+function parseInputCurrency(val) {
+  if (val === null || val === undefined || val === '') return 0
+  const clean = String(val).replace(/,/g, '')
+  const num = parseFloat(clean)
+  return isNaN(num) ? 0 : num
+}
+
+// ─────────────────────────────────────────────
 // TAB 1 — DỊCH VỤ
 // ─────────────────────────────────────────────
-const serviceFrom     = ref(props.systemDate || todayYmd())
-const serviceTo       = ref(props.systemDate || todayYmd())
-const folio           = ref(1)
-const currency        = ref('VND')
-const selectedService = ref(null)
-const quantity        = ref(1)
-const unitPrice       = ref(0)
-const description     = ref('')
-const isPriceLocked   = ref(false) // khoá Đơn giá nếu service có giá cố định > 0
+const serviceFrom        = ref(props.systemDate || todayYmd())
+const serviceTo          = ref(props.systemDate || todayYmd())
+const folio              = ref(1)
+const currency           = ref('VND')
+const selectedService    = ref(null)
+const quantity           = ref(1)
+const unitPrice          = ref(0)
+const unitPriceDisplay   = ref('')
+const description        = ref('')
+const isPriceLocked      = ref(false) // khoá Đơn giá nếu service có giá cố định > 0
+
+function onUnitPriceInput(e) {
+  const input = e.target
+  const rawVal = input.value
+  if (rawVal === '') {
+    unitPriceDisplay.value = ''
+    unitPrice.value = 0
+    return
+  }
+  const prevPos = input.selectionStart
+  const prevLen = rawVal.length
+  const formatted = formatInputCurrency(rawVal)
+  unitPriceDisplay.value = formatted
+  unitPrice.value = parseInputCurrency(formatted)
+  input.value = formatted
+  const diff = formatted.length - prevLen
+  const newPos = Math.max(0, (prevPos || 0) + diff)
+  input.setSelectionRange(newPos, newPos)
+}
+
+function setUnitPrice(val) {
+  unitPrice.value = Number(val) || 0
+  unitPriceDisplay.value = unitPrice.value > 0 ? formatInputCurrency(unitPrice.value) : (val === 0 ? '0' : '')
+}
 
 // Danh sách dịch vụ FO
 const foServices      = ref([])
@@ -172,17 +223,17 @@ async function loadFoServices() {
 watch(selectedService, (svc) => {
   if (!svc) { 
     quantity.value = 1
-    unitPrice.value = 0
+    setUnitPrice(0)
     description.value = ''
     isPriceLocked.value = false
     return 
   }
   description.value = svc.name
   if (svc.price && Number(svc.price) > 0) {
-    unitPrice.value = Number(svc.price)
+    setUnitPrice(Number(svc.price))
     isPriceLocked.value = true
   } else {
-    unitPrice.value = 0
+    setUnitPrice(0)
     isPriceLocked.value = false
   }
 })
@@ -196,14 +247,39 @@ const totalPrice = computed(() => {
 // ─────────────────────────────────────────────
 // TAB 2 — TIỀN PHÒNG
 // ─────────────────────────────────────────────
-const roomFrom        = ref(props.systemDate || todayYmd())
-const roomTo          = ref(props.systemDate || todayYmd())
-const roomFolio       = ref(1)
-const roomCurrency    = ref('VND')
-const roomDescription = ref('Dịch vụ phòng nghỉ')
-const roomUpdateMode  = ref(false)   // Toggle: Cập nhật tiền phòng
-const roomSurcharge   = ref(false)   // Toggle: Phụ thu tiền phòng
-const customRoomRate  = ref(0)
+const roomFrom              = ref(props.systemDate || todayYmd())
+const roomTo                = ref(props.systemDate || todayYmd())
+const roomFolio             = ref(1)
+const roomCurrency          = ref('VND')
+const roomDescription       = ref('Dịch vụ phòng nghỉ')
+const roomUpdateMode        = ref(false)   // Toggle: Cập nhật tiền phòng
+const roomSurcharge         = ref(false)   // Toggle: Phụ thu tiền phòng
+const customRoomRate        = ref(0)
+const customRoomRateDisplay = ref('')
+
+function onCustomRoomRateInput(e) {
+  const input = e.target
+  const rawVal = input.value
+  if (rawVal === '') {
+    customRoomRateDisplay.value = ''
+    customRoomRate.value = 0
+    return
+  }
+  const prevPos = input.selectionStart
+  const prevLen = rawVal.length
+  const formatted = formatInputCurrency(rawVal)
+  customRoomRateDisplay.value = formatted
+  customRoomRate.value = parseInputCurrency(formatted)
+  input.value = formatted
+  const diff = formatted.length - prevLen
+  const newPos = Math.max(0, (prevPos || 0) + diff)
+  input.setSelectionRange(newPos, newPos)
+}
+
+function setCustomRoomRate(val) {
+  customRoomRate.value = Number(val) || 0
+  customRoomRateDisplay.value = customRoomRate.value > 0 ? formatInputCurrency(customRoomRate.value) : (val === 0 ? '0' : '')
+}
 
 // Toggle 1: Tự nhập tiền phòng
 function toggleRoomUpdateMode() {
@@ -214,7 +290,7 @@ function toggleRoomUpdateMode() {
     roomSurcharge.value = false
   }
   if (roomUpdateMode.value && (!customRoomRate.value || customRoomRate.value === 0)) {
-    customRoomRate.value = Math.round(Number(props.roomRate || 0))
+    setCustomRoomRate(Math.round(Number(props.roomRate || 0)))
   }
 }
 
@@ -274,13 +350,13 @@ watch(() => props.show, (v) => {
     folio.value       = 1
     selectedService.value = null
     quantity.value    = 1
-    unitPrice.value   = 0
+    setUnitPrice(0)
     description.value = ''
     roomFrom.value    = initialRoomDate
     roomTo.value      = initialRoomDate
     roomUpdateMode.value  = false
     roomSurcharge.value   = false
-    customRoomRate.value  = 0
+    setCustomRoomRate(0)
     if (props.roomAdjustment) {
       const adjustment = props.roomAdjustment
       const date = clampDateToBounds(
@@ -294,7 +370,7 @@ watch(() => props.show, (v) => {
       roomFolio.value = Number(adjustment.folio) || 1
       roomUpdateMode.value = true
       roomSurcharge.value = false
-      customRoomRate.value = Number(adjustment.amount) || 0
+      setCustomRoomRate(Number(adjustment.amount) || 0)
       queueMicrotask(() => {
         roomDescription.value = adjustment.description || roomDescription.value
       })
@@ -332,7 +408,7 @@ async function handleSubmit() {
         quantity:     parseFloat(quantity.value),
         rate:         parseFloat(unitPrice.value),
         folio:        parseInt(folio.value),
-        is_room:      1,
+        is_room:      props.bookingRoomId ? 1 : 0,
         description:  description.value,
         currency:     currency.value,
       })
@@ -505,7 +581,7 @@ function handleClose() {
               <label class="block text-xs font-medium text-gray-700 mb-1.5">
                 Đơn giá <span class="text-red-500">*</span>
               </label>
-              <input v-model.number="unitPrice" type="number" min="0"
+              <input :value="unitPriceDisplay" @input="onUnitPriceInput" type="text"
                 :disabled="!selectedService || isPriceLocked"
                 :class="['w-full border rounded-lg px-3.5 py-2.5 text-sm font-medium focus:outline-none focus:ring-1 focus:ring-blue-500',
                   (!selectedService || isPriceLocked) ? 'bg-[#f8fafc] text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-white border-gray-200 text-gray-800']" />
@@ -602,7 +678,7 @@ function handleClose() {
             <!-- Right Side: Tổng tiền -->
             <div>
               <label class="block text-xs font-medium text-gray-700 mb-1.5">Tổng tiền</label>
-              <input v-if="roomUpdateMode" v-model.number="customRoomRate" type="number" min="0"
+              <input v-if="roomUpdateMode" :value="customRoomRateDisplay" @input="onCustomRoomRateInput" type="text"
                 class="w-full border border-blue-500 rounded-lg px-3.5 py-2.5 text-sm bg-white text-gray-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500" />
               <input v-else :value="roomAutoText" readonly disabled
                 class="w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm bg-[#f1f5f9] text-gray-500 font-semibold cursor-not-allowed" />
