@@ -1053,7 +1053,7 @@ class BookingRoomServiceController extends Controller
         }
 
         $postingSource = strtoupper($request->input('posting_source', 'HK'));
-        if ($room->no_post) {
+        if ($room->no_post || $room->booking?->no_post) {
             return response()->json([
                 'success' => false,
                 'message' => 'Phòng đang ở trạng thái No Post. Vui lòng kiểm tra lại thông tin.',
@@ -1472,7 +1472,7 @@ class BookingRoomServiceController extends Controller
             return response()->json(['success' => false, 'message' => 'Không tìm thấy phòng hoặc booking tương ứng.'], 404);
         }
 
-        if ($room ? $room->no_post : $booking->no_post) {
+        if (($room && $room->no_post) || ($booking && $booking->no_post)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Phòng đang ở trạng thái No Post. Vui lòng kiểm tra lại thông tin.',
@@ -1653,6 +1653,12 @@ class BookingRoomServiceController extends Controller
         $data = $request->validate(['booking_room_id' => 'required|string|max:50', 'service_date' => 'required|date', 'rate' => 'required|numeric|min:0', 'description' => 'nullable|string|max:400', 'reason' => 'required|string|max:400', 'update_room_rate' => 'nullable|boolean', 'update_room_rate_scope' => 'nullable|in:room,booking']);
         $booking = Booking::findOrFail($bookingId);
         $room = $booking->bookingRooms()->with('guests.guest')->findOrFail($data['booking_room_id']);
+        if ($booking->no_post || $room->no_post) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Phòng đang ở trạng thái No Post. Vui lòng kiểm tra lại thông tin.',
+            ], 422);
+        }
         if (!in_array((int) $room->status, [BookingRoom::STATUS_CHECKED_IN, BookingRoom::STATUS_CHECKED_OUT], true)) return response()->json(['success' => false, 'message' => 'Chỉ điều chỉnh tiền phòng của phòng đang ở hoặc đã checkout.'], 422);
         $date = Carbon::parse($data['service_date'])->startOfDay();
         $systemDate = SystemDateRoll::latest('id')->value('system_date');
@@ -1755,7 +1761,7 @@ class BookingRoomServiceController extends Controller
             return response()->json(['success' => false, 'message' => 'Không có phòng nào để post tiền phòng.'], 422);
         }
 
-        if (($room && $room->no_post) || (!$room && $booking->no_post)) {
+        if (($booking && $booking->no_post) || ($room && $room->no_post)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Phòng đang ở trạng thái No Post. Vui lòng kiểm tra lại thông tin.',
@@ -1788,14 +1794,16 @@ class BookingRoomServiceController extends Controller
             }
         }
 
+        $noPostSkippedRooms = [];
         if ($isBookingPost) {
-            $blockedRoom = $roomsToPost->first(fn (BookingRoom $targetRoom) => (bool) $targetRoom->no_post);
-            if ($blockedRoom) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Phòng đang ở trạng thái No Post. Vui lòng kiểm tra lại thông tin.',
-                ], 422);
-            }
+            $noPostSkippedRooms = $roomsToPost
+                ->filter(fn (BookingRoom $targetRoom) => (bool) $targetRoom->no_post)
+                ->map(fn (BookingRoom $targetRoom) => $targetRoom->room_number ?: 'Phòng ' . $targetRoom->id)
+                ->values()
+                ->all();
+            $roomsToPost = $roomsToPost
+                ->reject(fn (BookingRoom $targetRoom) => (bool) $targetRoom->no_post)
+                ->values();
         }
 
         $stayStart = Carbon::parse($room?->arrival_date ?: $booking->arrival_date)->startOfDay();
@@ -2228,6 +2236,9 @@ class BookingRoomServiceController extends Controller
         if (count($skippedRooms) > 0) {
             $msgParts[] = 'bỏ qua các phòng đã được post trước đó: ' . implode(', ', $skippedRooms);
         }
+        if (count($noPostSkippedRooms) > 0) {
+            $msgParts[] = 'bỏ qua các phòng đang bật No Post: ' . implode(', ', $noPostSkippedRooms);
+        }
         $finalMessage = ucfirst(implode('; ', $msgParts) ?: 'Không có phòng nào được xử lý.');
 
         return response()->json([
@@ -2235,6 +2246,7 @@ class BookingRoomServiceController extends Controller
             'message'       => $finalMessage,
             'posted_rooms'  => $postedRooms,
             'skipped_rooms' => $skippedRooms,
+            'skipped_no_post_rooms' => $noPostSkippedRooms,
             'bill_ids'      => $createdBills,
         ]);
     }
@@ -2423,6 +2435,14 @@ class BookingRoomServiceController extends Controller
             return response()->json(['success' => false, 'message' => 'Không tìm thấy phòng thuê!'], 404);
         }
 
+        $booking = $room->booking;
+        if ($booking?->no_post || $room->no_post) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Phòng đang ở trạng thái No Post. Vui lòng kiểm tra lại thông tin.',
+            ], 422);
+        }
+
         if (intval($room->status) !== BookingRoom::STATUS_NOSHOW) {
             return response()->json([
                 'success' => false,
@@ -2430,7 +2450,6 @@ class BookingRoomServiceController extends Controller
             ], 422);
         }
 
-        $booking = $room->booking;
         $user = Auth::user()?->username ?? 'system';
 
         $dateFrom = Carbon::parse($request->date_from);

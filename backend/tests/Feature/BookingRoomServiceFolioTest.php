@@ -498,6 +498,88 @@ class BookingRoomServiceFolioTest extends TestCase
         $this->assertDatabaseMissing('service_bills', ['RentalRoomId1' => $unassignedRoom->id, 'ServiceId' => 'RM', 'Edit' => 0]);
     }
 
+    public function test_master_no_post_changes_do_not_overwrite_room_no_post_flags(): void
+    {
+        $user = $this->createFolioUser();
+        $role = $user->roles()->firstOrFail();
+        $permission = \App\Models\Permission::firstOrCreate(['code' => 'fo.booking.edit'], ['name' => 'fo.booking.edit', 'module' => 'FO']);
+        $role->permissions()->syncWithoutDetaching([$permission->id]);
+
+        $booking = Booking::create([
+            'booking_name' => 'No Post scope test', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-07',
+            'num_of_days' => 1, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
+        ]);
+        $blockedRoom = $this->makeRoom($booking, 'GAL1-NP-ROOM');
+        $allowedRoom = $this->makeRoom($booking, 'GAL1-POST-ROOM');
+        $blockedRoom->update(['no_post' => true]);
+
+        $this->actingAs($user)
+            ->patchJson("/api/bookings/{$booking->id}/no-post", ['no_post' => true])
+            ->assertSuccessful();
+
+        $this->assertDatabaseHas('bookings', ['id' => $booking->id, 'no_post' => true]);
+        $this->assertDatabaseHas('booking_rooms', ['id' => $blockedRoom->id, 'no_post' => true]);
+        $this->assertDatabaseHas('booking_rooms', ['id' => $allowedRoom->id, 'no_post' => false]);
+
+        $this->actingAs($user)
+            ->patchJson("/api/bookings/{$booking->id}/no-post", ['no_post' => false])
+            ->assertSuccessful();
+
+        $this->assertDatabaseHas('booking_rooms', ['id' => $blockedRoom->id, 'no_post' => true]);
+        $this->assertDatabaseHas('booking_rooms', ['id' => $allowedRoom->id, 'no_post' => false]);
+    }
+
+    public function test_master_room_charge_skips_only_rooms_with_room_level_no_post(): void
+    {
+        $user = $this->createFolioUser();
+        $booking = Booking::create([
+            'booking_name' => 'Master room charge No Post test', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-07',
+            'num_of_days' => 1, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
+        ]);
+        $booking->update(['is_master_room_rate' => true]);
+        $blockedRoom = $this->makeRoom($booking, 'GAL1-NP-201');
+        $allowedRoom = $this->makeRoom($booking, 'GAL1-POST-202');
+        $roomForm = RoomForm::firstOrCreate(['name' => 'Test Form']);
+        foreach ([['201', $blockedRoom], ['202', $allowedRoom]] as [$number, $bookingRoom]) {
+            Room::create([
+                'room_number' => $number,
+                'room_form_id' => $roomForm->id,
+                'room_class_id' => $bookingRoom->room_class_id,
+                'floor' => '1',
+            ]);
+        }
+        BookingRoom::withoutEvents(function () use ($blockedRoom, $allowedRoom) {
+            $blockedRoom->update(['room_number' => '201', 'status' => BookingRoom::STATUS_CHECKED_IN, 'rate' => 500000, 'no_post' => true]);
+            $allowedRoom->update(['room_number' => '202', 'status' => BookingRoom::STATUS_CHECKED_IN, 'rate' => 500000]);
+        });
+        $department = Department::firstOrCreate(['code' => 'FO'], ['name' => 'Reception']);
+        HotelService::create([
+            'code' => 'RM', 'name' => 'Dịch vụ phòng nghỉ',
+            'service_charge' => 5, 'special_tax' => 1, 'tax' => 8,
+            'department_id' => $department->id,
+        ]);
+
+        $response = $this->actingAs($user)
+            ->postJson('/api/booking-room-services/post-room-charge', [
+                'booking_id' => $booking->id,
+                'date_from' => '2026-08-06',
+                'date_to' => '2026-08-06',
+                'mode' => 'auto',
+                'folio' => 1,
+                'currency' => 'VND',
+            ])
+            ->assertSuccessful()
+            ->assertJsonPath('skipped_no_post_rooms.0', '201');
+
+        $this->assertStringContainsString('bỏ qua các phòng đang bật No Post: 201', $response->json('message'));
+        $this->assertDatabaseHas('service_bills', [
+            'RentalRoomId1' => $allowedRoom->id, 'ServiceId' => 'RM', 'Edit' => 0,
+        ]);
+        $this->assertDatabaseMissing('service_bills', [
+            'RentalRoomId1' => $blockedRoom->id, 'ServiceId' => 'RM', 'Edit' => 0,
+        ]);
+    }
+
     public function test_room_charge_posts_pending_booking_services_for_selected_dates_once(): void
     {
         $user = $this->createFolioUser();
@@ -811,10 +893,53 @@ class BookingRoomServiceFolioTest extends TestCase
             ->postJson('/api/booking-room-services/post-housekeeping-bill', [
                 'booking_room_id' => $room->id,
                 'posting_source' => 'FO',
-                'bills' => [['group' => 'MB', 'items' => []]],
+                'bills' => [['group' => 'MB', 'items' => [['code' => 'MB', 'qty' => 1, 'price' => 100000, 'tax' => 0]]]],
             ])
             ->assertUnprocessable()
             ->assertJsonPath('message', $warning);
+
+        $this->assertDatabaseCount('service_bills', 0);
+    }
+
+    public function test_booking_no_post_blocks_room_service_housekeeping_room_charge_and_rate_adjustment(): void
+    {
+        $user = $this->createFolioUser();
+        $booking = Booking::create([
+            'booking_name' => 'Booking No Post test', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-07',
+            'num_of_days' => 1, 'booking_date' => '2026-08-06', 'created_by' => $user->username, 'no_post' => true,
+        ]);
+        $room = $this->makeRoom($booking, 'GAL1-BK-NP');
+        $room->update(['status' => BookingRoom::STATUS_CHECKED_IN]);
+        $warning = 'Phòng đang ở trạng thái No Post. Vui lòng kiểm tra lại thông tin.';
+
+        $this->actingAs($user)
+            ->postJson('/api/booking-room-services/post-fo-service-bill', [
+                'booking_room_id' => $room->id,
+                'date_from' => '2026-08-06', 'date_to' => '2026-08-06',
+                'service_code' => 'MB', 'quantity' => 1, 'rate' => 100000,
+            ])
+            ->assertUnprocessable()->assertJsonPath('message', $warning);
+
+        $this->actingAs($user)
+            ->postJson('/api/booking-room-services/post-housekeeping-bill', [
+                'booking_room_id' => $room->id,
+                'bills' => [['group' => 'MB', 'items' => [['code' => 'MB', 'qty' => 1, 'price' => 100000, 'tax' => 0]]]],
+            ])
+            ->assertUnprocessable()->assertJsonPath('message', $warning);
+
+        $this->actingAs($user)
+            ->postJson('/api/booking-room-services/post-room-charge', [
+                'booking_room_id' => $room->id,
+                'date_from' => '2026-08-06', 'date_to' => '2026-08-06', 'mode' => 'auto',
+            ])
+            ->assertUnprocessable()->assertJsonPath('message', $warning);
+
+        $this->actingAs($user)
+            ->postJson("/api/bookings/{$booking->id}/adjust-room-rate", [
+                'booking_room_id' => $room->id, 'service_date' => '2026-08-06',
+                'rate' => 500000, 'reason' => 'No Post regression test',
+            ])
+            ->assertUnprocessable()->assertJsonPath('message', $warning);
 
         $this->assertDatabaseCount('service_bills', 0);
     }

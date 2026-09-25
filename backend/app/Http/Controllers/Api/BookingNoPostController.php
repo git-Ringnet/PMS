@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\Booking;
 use App\Models\BookingRoom;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
 class BookingNoPostController extends Controller
 {
@@ -15,10 +14,7 @@ class BookingNoPostController extends Controller
         $data = $request->validate(['no_post' => ['required', 'boolean']]);
         $booking = Booking::findOrFail($bookingId);
 
-        DB::transaction(function () use ($booking, $data) {
-            $booking->update(['no_post' => $data['no_post']]);
-            $booking->bookingRooms()->update(['no_post' => $data['no_post']]);
-        });
+        $booking->update(['no_post' => $data['no_post']]);
 
         return response()->json([
             'success' => true,
