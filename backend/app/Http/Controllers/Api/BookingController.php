@@ -15,6 +15,7 @@ use App\Models\Payment;
 use App\Models\BankAccount;
 use App\Models\PaymentMethod;
 use App\Models\RegistrationStatus;
+use App\Models\RoomClass;
 use App\Models\RoomRateCode;
 use App\Models\StandardRate;
 use App\Models\SystemDateRoll;
@@ -1862,152 +1863,268 @@ class BookingController extends Controller
     // #22 — Khôi phục booking đã hủy
     // POST /bookings/{id}/restore
     // =========================================
+    // =========================================
+    // #22 — Khôi phục booking đã hủy
+    // POST /bookings/{id}/restore
+    // =========================================
     public function restore(Request $request, $id)
     {
-        $booking = Booking::withTrashed()->with('bookingRooms')->find($id);
+        try {
+            $booking = Booking::withTrashed()->with(['bookingRooms' => fn ($q) => $q->withTrashed()])->find($id);
 
-        if (!$booking) {
-            return response()->json(['success' => false, 'message' => 'Không tìm thấy đăng ký!'], 404);
-        }
-
-        $allRoomsCancelled = $booking->bookingRooms->count() > 0
-            && $booking->bookingRooms->every(fn ($room) => $room->status === BookingRoom::STATUS_CANCELLED);
-
-        if ($booking->status !== Booking::STATUS_DELETED && !$allRoomsCancelled) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Booking chưa bị xóa/hủy, không cần khôi phục.',
-            ], 422);
-        }
-
-        $roomsToRestore = $booking->bookingRooms->where('status', BookingRoom::STATUS_CANCELLED);
-        $availability = app(RoomAvailabilityService::class);
-        $duplicateRooms = [];
-
-        foreach ($roomsToRestore as $bRoom) {
-            if (empty($bRoom->room_number)) continue;
-
-            $conflict = BookingRoom::with('booking')
-                ->where('room_number', $bRoom->room_number)
-                ->where('booking_id', '!=', $booking->id)
-                ->whereIn('status', [
-                    BookingRoom::STATUS_BOOKED,
-                    BookingRoom::STATUS_CHECKED_IN,
-                    BookingRoom::STATUS_CHECKED_OUT,
-                ])
-                ->where('arrival_date', '<', $bRoom->departure_date)
-                ->where('departure_date', '>', $bRoom->arrival_date)
-                ->whereHas('booking', fn ($q) => $q->whereNotIn('status', [Booking::STATUS_DELETED, Booking::STATUS_NO_SHOW]))
-                ->first();
-
-            if ($conflict) {
-                $duplicateRooms[] = [
-                    'room_number' => $bRoom->room_number,
-                    'booking_code' => $conflict->booking?->booking_code ?? ('BK#' . $conflict->booking_id),
-                ];
+            if (!$booking) {
+                return response()->json(['success' => false, 'message' => 'Không tìm thấy đăng ký!'], 404);
             }
-        }
 
-        if (count($duplicateRooms) > 0) {
-            $details = collect($duplicateRooms)
-                ->map(fn ($item) => "Phòng {$item['room_number']} — {$item['booking_code']}")
-                ->implode('; ');
-            return response()->json([
-                'success' => false,
-                'duplicate_rooms' => $duplicateRooms,
-                'message' => "Không thể khôi phục booking vì số phòng bị trùng: {$details}.",
-            ], 422);
-        }
+            $roomsToRestore = $booking->bookingRooms->filter(fn ($room) =>
+                (int) $room->status === BookingRoom::STATUS_CANCELLED || !empty($room->deleted_at)
+            );
 
-        $systemDate = SystemDateRoll::latest('id')->first();
-        $sysDateStr = $systemDate
-            ? Carbon::parse($systemDate->system_date)->toDateString()
-            : now()->toDateString();
-        $allowOver = HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->value('value') == '1';
-        $overRooms = [];
+            $allRoomsCancelled = $booking->bookingRooms->count() > 0 && $roomsToRestore->count() === $booking->bookingRooms->count();
 
-        foreach ($roomsToRestore as $bRoom) {
-            $start = Carbon::parse($bRoom->arrival_date);
-            $end = Carbon::parse($bRoom->departure_date);
-            for ($date = $start->copy(); $date->lt($end); $date->addDay()) {
-                $dateStr = $date->toDateString();
-                $av = $availability->getAvailability($bRoom->room_class_id, $dateStr, $date->copy()->addDay()->toDateString());
-                $needed = $roomsToRestore->filter(fn ($room) =>
-                    $room->room_class_id === $bRoom->room_class_id
-                    && Carbon::parse($room->arrival_date)->toDateString() <= $dateStr
-                    && Carbon::parse($room->departure_date)->toDateString() > $dateStr
-                )->count();
+            if ($booking->status !== Booking::STATUS_DELETED && !$allRoomsCancelled && $roomsToRestore->isEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Booking chưa bị xóa/hủy, không cần khôi phục.',
+                ], 422);
+            }
 
-                if ($av - $needed < 0) {
-                    $overRooms[] = [
-                        'room_class_id' => $bRoom->room_class_id,
-                        'date' => $dateStr,
+            $availability = app(RoomAvailabilityService::class);
+
+            // ========================================================
+            // BẮT BUỘC: KIỂM TRA TRÙNG SỐ PHÒNG VẬT LÝ TUYỆT ĐỐI
+            // Cho dù AllowOverRoomTypeRoomKind = 1, hệ thống chỉ cho phép
+            // âm số lượng phòng trống của loại phòng (AV < 0), TUYỆT ĐỐI
+            // KHÔNG cho phép trùng số phòng vật lý giữa các phòng đã đặt.
+            // ========================================================
+
+            // 1. Kiểm tra trùng số phòng nội bộ trong chính danh sách phòng khôi phục
+            $seenAssigned = [];
+            foreach ($roomsToRestore as $bRoom) {
+                if (empty($bRoom->room_number)) continue;
+                $rn = trim((string) $bRoom->room_number);
+                $arrStr = Carbon::parse($bRoom->arrival_date ?? $booking->arrival_date)->toDateString();
+                $depStr = Carbon::parse($bRoom->departure_date ?? $booking->departure_date)->toDateString();
+
+                if (isset($seenAssigned[$rn])) {
+                    foreach ($seenAssigned[$rn] as $prevSpan) {
+                        if ($arrStr < $prevSpan['dep'] && $depStr > $prevSpan['arr']) {
+                            return response()->json([
+                                'success' => false,
+                                'message' => "Không thể khôi phục booking vì trùng số phòng {$rn} ngay trong danh sách phòng của đăng ký.",
+                            ], 422);
+                        }
+                    }
+                }
+                $seenAssigned[$rn][] = ['arr' => $arrStr, 'dep' => $depStr];
+            }
+
+            // 2. Kiểm tra trùng số phòng với các phòng đang đặt/ở trong hệ thống
+            $duplicateRooms = [];
+            foreach ($roomsToRestore as $bRoom) {
+                if (empty($bRoom->room_number)) continue;
+                $rn = trim((string) $bRoom->room_number);
+                $arrDate = Carbon::parse($bRoom->arrival_date ?? $booking->arrival_date)->toDateString();
+                $depDate = Carbon::parse($bRoom->departure_date ?? $booking->departure_date)->toDateString();
+
+                $conflict = BookingRoom::with('booking')
+                    ->where('room_number', $rn)
+                    ->where('id', '!=', $bRoom->id)
+                    ->where('booking_id', '!=', $booking->id)
+                    ->whereIn('status', [
+                        BookingRoom::STATUS_BOOKED,
+                        BookingRoom::STATUS_CHECKED_IN,
+                        BookingRoom::STATUS_CHECKED_OUT,
+                    ])
+                    ->where(function ($q) use ($arrDate, $depDate) {
+                        $q->where(function ($sub) use ($arrDate, $depDate) {
+                            $sub->where('arrival_date', '<', $depDate)
+                                ->where('departure_date', '>', $arrDate);
+                        })->orWhere(function ($dayuseSub) use ($arrDate, $depDate) {
+                            $dayuseSub->where('is_day_use', 1)
+                                      ->whereBetween('arrival_date', [$arrDate . ' 00:00:00', $depDate . ' 23:59:59']);
+                        });
+                    })
+                    ->whereHas('booking', fn ($q) => $q->whereNotIn('status', [Booking::STATUS_DELETED, Booking::STATUS_NO_SHOW]))
+                    ->first();
+
+                if ($conflict) {
+                    $bCode = $conflict->booking?->booking_code ?? ('BK#' . $conflict->booking_id);
+                    $duplicateRooms[] = [
+                        'room_number'  => $rn,
+                        'booking_code' => $bCode,
                     ];
                 }
             }
-        }
 
-        if (count($overRooms) > 0 && !$allowOver) {
-            return response()->json([
-                'success' => false,
-                'over_rooms' => $overRooms,
-                'message' => 'Không thể khôi phục booking vì số lượng phòng sẽ bị over. Thông số hiện tại không cho phép over phòng.',
-            ], 422);
-        }
+            if (count($duplicateRooms) > 0) {
+                $details = collect($duplicateRooms)
+                    ->map(fn ($item) => "Phòng {$item['room_number']} (thuộc {$item['booking_code']})")
+                    ->unique()
+                    ->implode('; ');
+                return response()->json([
+                    'success'         => false,
+                    'duplicate_rooms' => $duplicateRooms,
+                    'message'         => "Không thể khôi phục booking vì số phòng bị trùng với phòng đang đặt: {$details}.",
+                ], 422);
+            }
 
-        if (count($overRooms) > 0 && !$request->boolean('force')) {
-            return response()->json([
-                'success' => false,
-                'needs_confirm' => true,
-                'over_rooms' => $overRooms,
-                'message' => 'Khôi phục booking sẽ làm số phòng bị over. Bạn có muốn tiếp tục thao tác không?',
-            ], 200);
-        }
+            // ========================================================
+            // KIỂM TRA OVER PHÒNG THEO AllowOverRoomTypeRoomKind
+            // ========================================================
+            $systemDate = SystemDateRoll::latest('id')->first();
+            $sysDateStr = $systemDate
+                ? Carbon::parse($systemDate->system_date)->toDateString()
+                : now()->toDateString();
+            $allowOver = (string) (HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->value('value') ?? '1') === '1';
+            $overRooms = [];
 
-        DB::transaction(function () use ($booking, $sysDateStr) {
-            // Restore soft delete
-            $booking->restore();
+            // Gom nhóm kiểm tra AV theo từng loại phòng để tránh lặp trùng lặp
+            $roomsByClass = [];
+            foreach ($roomsToRestore as $bRoom) {
+                $rawClassId = $bRoom->room_class_id ?: $bRoom->original_room_class_id;
+                $classId = (int) explode('-', (string) $rawClassId)[0];
+                if ($classId > 0) {
+                    $roomsByClass[$classId][] = $bRoom;
+                }
+            }
 
-            // Cập nhật status booking về Reservation
-            // NOTE: booking_status (registration_status_id) giữ nguyên trạng thái Cancelled
-            //       để user tự kiểm tra lại thực tế (theo business rule 4.11)
-            $booking->update([
-                'status'     => Booking::STATUS_RESERVATION,
-                'updated_by' => Auth::user()?->username ?? 'system',
-            ]);
+            foreach ($roomsByClass as $classId => $classRooms) {
+                $roomClassModel = RoomClass::find($classId);
+                $className = $roomClassModel ? $roomClassModel->name : "ID {$classId}";
 
-            $arrivalStr = Carbon::parse($booking->arrival_date)->toDateString();
+                foreach ($classRooms as $bRoom) {
+                    $start = Carbon::parse($bRoom->arrival_date ?? $booking->arrival_date);
+                    $end = Carbon::parse($bRoom->departure_date ?? $booking->departure_date);
 
-            // Nếu arrival_date < system_date → chỉ khôi phục thông tin booking, KHÔNG khôi phục phòng
-            // Nếu arrival_date >= system_date → khôi phục cả phòng
-            if ($arrivalStr >= $sysDateStr) {
-                foreach ($booking->bookingRooms as $bRoom) {
-                    if ($bRoom->status === BookingRoom::STATUS_CANCELLED) {
+                    if ($start->gte($end)) {
+                        $end = $start->copy()->addDay();
+                    }
+
+                    for ($date = $start->copy(); $date->lt($end); $date->addDay()) {
+                        $dateStr = $date->toDateString();
+                        $nextDateStr = $date->copy()->addDay()->toDateString();
+
+                        $av = $availability->getAvailability($classId, $dateStr, $nextDateStr);
+                        $needed = collect($classRooms)->filter(function ($room) use ($dateStr, $booking) {
+                            $rArr = Carbon::parse($room->arrival_date ?? $booking->arrival_date)->toDateString();
+                            $rDep = Carbon::parse($room->departure_date ?? $booking->departure_date)->toDateString();
+                            return $rArr <= $dateStr && $rDep > $dateStr;
+                        })->count();
+
+                        if ($av - $needed < 0) {
+                            $overKey = "{$classId}_{$dateStr}";
+                            $overRooms[$overKey] = [
+                                'room_class_id' => $classId,
+                                'class_name'    => $className,
+                                'date'          => $dateStr,
+                                'av'            => $av,
+                                'needed'        => $needed,
+                            ];
+                        }
+                    }
+                }
+            }
+
+            // Nếu AllowOverRoomTypeRoomKind = 0: Tuyệt đối không cho phép over phòng
+            if (count($overRooms) > 0 && !$allowOver) {
+                $classNames = collect($overRooms)->map(fn ($item) => $item['class_name'])->unique()->implode(', ');
+                return response()->json([
+                    'success'    => false,
+                    'over_rooms' => array_values($overRooms),
+                    'message'    => "Số lượng của loại phòng sau khi khôi phục đăng ký đang bị over ({$classNames}). Cấu hình hệ thống không cho phép over phòng.",
+                ], 422);
+            }
+
+            // Nếu AllowOverRoomTypeRoomKind = 1: Bật cảnh báo xác nhận nếu chưa có cờ force
+            if (count($overRooms) > 0 && !$request->boolean('force')) {
+                return response()->json([
+                    'success'       => false,
+                    'needs_confirm' => true,
+                    'over_rooms'    => array_values($overRooms),
+                    'message'       => 'Số lượng của loại phòng sau khi khôi phục đăng ký đang bị over, bạn có muốn tiếp tục?',
+                ], 200);
+            }
+
+            // ========================================================
+            // TIẾN HÀNH KHÔI PHỤC BOOKING & PHÒNG
+            // ========================================================
+            DB::transaction(function () use ($booking, $roomsToRestore, $sysDateStr) {
+                $currentUsername = Auth::user()?->username ?? 'system';
+
+                // 1. Khôi phục soft delete booking
+                $booking->restore();
+
+                // 2. Cập nhật status booking về Reservation (0)
+                $booking->update([
+                    'status'     => Booking::STATUS_RESERVATION,
+                    'updated_by' => $currentUsername,
+                ]);
+
+                // 3. Nếu arrival_date >= system_date → khôi phục cả phòng
+                $arrivalStr = Carbon::parse($booking->arrival_date)->toDateString();
+                if ($arrivalStr >= $sysDateStr) {
+                    foreach ($roomsToRestore as $bRoom) {
                         $bRoom->restore();
-                        $bRoom->update(['status' => BookingRoom::STATUS_BOOKED]);
+                        $bRoom->update([
+                            'status'     => BookingRoom::STATUS_BOOKED,
+                            'updated_by' => $currentUsername,
+                        ]);
+
                         // Khôi phục guests
-                        $bRoom->guests()->update(['status' => 0]);
+                        $bRoom->guests()->update(['status' => BookingRoomGuest::STATUS_ACTIVE]);
                         app(\App\Services\GuestStatusSyncService::class)->syncForGuestIds($bRoom->guests()->pluck('guest_id'));
+
                         // Khôi phục children
                         $bRoom->children()->update(['child_status' => 0]);
                     }
                 }
-            }
-        });
+            });
 
-        $arrivalStr = Carbon::parse($booking->arrival_date)->toDateString();
-        $roomRestored = ($arrivalStr >= $sysDateStr);
+            try {
+                $bCode = $booking->booking_code ?? ('GAL' . $booking->id);
+                \App\Services\ActivityLogService::logBusiness([
+                    'action'       => 'Restore',
+                    'module'       => 'reservation',
+                    'component'    => 'CreateRegistrationPage',
+                    'description'  => "* Khôi phục đăng ký {$bCode}",
+                    'target_type'  => 'Booking',
+                    'target_id'    => (string) $booking->id,
+                    'target_label' => $bCode,
+                ], $request);
+            } catch (\Throwable $e) {}
 
-        return response()->json([
-            'success'        => true,
-            'data'           => $booking->fresh()->load(['registrationStatus', 'bookingRooms.roomClass', 'payments.paymentMethod', 'payments.user']),
-            'rooms_restored' => $roomRestored,
-            'message'        => 'Khôi phục booking thành công!' . (
-                !$roomRestored
-                    ? ' Ngày đến đã qua ngày hệ thống — chỉ khôi phục thông tin booking, phòng không được khôi phục.'
-                    : ''
-            ),
-        ]);
+            $arrivalStr = Carbon::parse($booking->arrival_date)->toDateString();
+            $roomRestored = ($arrivalStr >= $sysDateStr);
+
+            $freshBooking = Booking::withTrashed()->with([
+                'registrationStatus',
+                'bookingRooms.roomClass',
+                'payments.paymentMethod',
+                'payments.user',
+            ])->find($booking->id);
+
+            return response()->json([
+                'success'        => true,
+                'data'           => $freshBooking,
+                'rooms_restored' => $roomRestored,
+                'message'        => 'Khôi phục booking thành công!' . (
+                    !$roomRestored
+                        ? ' Ngày đến đã qua ngày hệ thống — chỉ khôi phục thông tin booking, phòng không được khôi phục.'
+                        : ''
+                ),
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Restore booking error: ' . $e->getMessage(), [
+                'booking_id' => $id,
+                'trace'      => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Lỗi máy chủ khi khôi phục booking: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     // =========================================

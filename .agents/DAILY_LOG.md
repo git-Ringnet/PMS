@@ -18,6 +18,25 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-25] - Khắc phục lỗi 500 Server Error và hoàn thiện nghiệp vụ Khôi phục Booking hủy khi Over phòng
+### Module: Đăng ký đặt phòng ([BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))
+
+- **Bối cảnh & Nguyên nhân lỗi**:
+  - Khi booking bị hủy được khôi phục trong tình trạng loại phòng bị over (`AV < 0`), hệ thống báo `500 Server Error` (khách hàng gặp trên booking `GAL14`).
+  - Nguyên nhân chính: Trong [BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php) thiếu khai báo `use App\Models\RoomClass;` dẫn đến ngoại lệ `Class "App\Http\Controllers\Api\RoomClass" not found`.
+  - Thiếu `withTrashed()` trên eager loading relation `bookingRooms` của booking, và `RoomAvailabilityService::getAvailability` yêu cầu tham số kiểu int trong khi `room_class_id` có thể chứa chuỗi ghép dạng `"9-1"`.
+- **Nghiệp vụ đã xử lý**:
+  - **Kiểm soát Over phòng theo cấu hình chi nhánh `AllowOverRoomTypeRoomKind`**:
+    - Khi `AllowOverRoomTypeRoomKind = 1`: Cho phép khôi phục nhưng hiển thị popup cảnh báo xác nhận: *"Số lượng của loại phòng sau khi khôi phục đăng ký đang bị over, bạn có muốn tiếp tục?"*. Khi người dùng bấm *"Tiếp tục"*, hệ thống gửi cờ `force: true` để hoàn tất khôi phục booking và phòng.
+    - Khi `AllowOverRoomTypeRoomKind = 0`: Chặn cứng không cho khôi phục và trả về mã 422 cùng thông báo chi tiết danh sách loại phòng đang over.
+  - **Ràng buộc bất biến - Chặn trùng số phòng vật lý tuyệt đối**:
+    - Cấu hình `AllowOverRoomTypeRoomKind = 1` CHỈ cho phép âm số lượng khả dụng của loại phòng ($AV < 0$).
+    - Tuyệt đối không cho phép trùng số phòng vật lý (`room_number`) giữa các phòng đã đặt. Hệ thống kiểm tra cả nội bộ danh sách phòng của booking lẫn các phòng active khác trong cùng khoảng thời gian; nếu phát hiện trùng số phòng sẽ lập tức chặn khôi phục (HTTP 422) kèm chi tiết số phòng và mã booking xung đột.
+  - **Đồng bộ Frontend ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))**:
+    - Chuẩn hóa thông điệp xác nhận ban đầu cho booking hủy / noshow.
+    - Xử lý nhận diện phản hồi `needs_confirm` từ backend để hiển thị dialog cảnh báo Over booking với 2 nút "Tiếp tục" và "Hủy".
+    - Tự động xóa `tab.dbId` khỏi danh sách `closedIds` trong localStorage (`removeClosedTabId`) và nạp lại booking sau khi khôi phục thành công.
+
 ## [2026-09-25] - Ẩn cột "Đặt trước" (isPreassigned) trên bảng phòng Booking
 ### Module: Đăng ký đặt phòng ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))
 
