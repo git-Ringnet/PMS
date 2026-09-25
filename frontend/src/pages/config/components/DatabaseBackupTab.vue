@@ -247,14 +247,14 @@ onMounted(() => {
     </div>
 
     <!-- Error Alert -->
-    <div v-if="errorMsg" class="bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-xl flex items-center justify-between shadow-xs animate-fade-in">
-      <div class="flex items-center gap-3">
-        <svg class="w-5 h-5 text-rose-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <div v-if="errorMsg" class="bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-xl flex items-start justify-between shadow-xs animate-fade-in">
+      <div class="flex items-start gap-3 overflow-hidden">
+        <svg class="w-5 h-5 text-rose-600 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
-        <span class="text-sm font-semibold">{{ errorMsg }}</span>
+        <div class="text-sm font-semibold max-h-48 overflow-y-auto break-all whitespace-pre-wrap">{{ errorMsg }}</div>
       </div>
-      <button @click="errorMsg = null" class="text-rose-500 hover:text-rose-800 bg-transparent border-none cursor-pointer">✕</button>
+      <button @click="errorMsg = null" class="text-rose-500 hover:text-rose-800 bg-transparent border-none cursor-pointer shrink-0 ml-2">✕</button>
     </div>
 
     <!-- BANNER: CHỌN PHẠM VI SAO LƯU & KHÔI PHỤC -->

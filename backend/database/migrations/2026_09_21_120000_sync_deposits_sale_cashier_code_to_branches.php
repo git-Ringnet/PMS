@@ -6,8 +6,7 @@ use Illuminate\Support\Facades\DB;
 return new class extends Migration
 {
     private const CONNECTIONS = [
-        'mysql_data',
-        'mysql_db',
+        'mysql',
         'mysql_hkt1',
         'mysql_hkt2',
         'mysql_hkt3',
@@ -20,7 +19,13 @@ return new class extends Migration
     {
         $definition = (require database_path('report_templates/deposits_sale_reference.php'))->definition();
 
-        foreach (self::CONNECTIONS as $connection) {
+        $candidates = array_merge([$this->getConnection()], self::CONNECTIONS);
+        $connections = array_values(array_unique(array_filter(
+            $candidates,
+            static fn (?string $conn): bool => !empty($conn) && config("database.connections.{$conn}") !== null
+        )));
+
+        foreach ($connections as $connection) {
             $db = DB::connection($connection);
             if ($db->getDriverName() !== 'mysql') {
                 continue;

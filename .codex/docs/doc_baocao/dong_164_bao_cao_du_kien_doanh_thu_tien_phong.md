@@ -28,6 +28,7 @@
 
 - Nút **Báo cáo dự kiến doanh thu tiền phòng** trong `frontend/src/pages/frontdesk/DayClosePage.vue` mở `/reports?report=EXPECTED_ROOM_REVENUE_NIGHT_AUDIT`.
 - ReportsPage mở report theo mã này và dùng `$today` làm `p_date` dựa trên ngày PMS; người dùng vẫn bấm **Hiển thị báo cáo** để chạy truy vấn.
+- 2026-09-22: `p_date` dùng `SingleDatePicker` với lịch tiếng Việt trong `frontend/src/pages/reports/ReportsPage.vue`; giá trị API giữ dạng `YYYY-MM-DD`, không còn phụ thuộc lịch native của trình duyệt.
 - Route `/reports` hiện yêu cầu quyền `mgmt.report.view`; người dùng chỉ có quyền màn hình Sang ngày có thể không mở được report.
 - Đã nối handler frontend; chưa kiểm tra bằng browser hoặc xác nhận quyền trên tài khoản thực tế.
 
@@ -393,3 +394,12 @@ DELIMITER ;
 | `Tổng` | `lst.Total` (`RateTotal`) | `booking_room_rates.rate` hoặc `daily_services` | Tiền dự kiến post trong đêm audit |
 | `Công Ty` | `Company` | `companies.company_name` | Tên công ty / lữ hành |
 | `Ghi Chú` | `vw.NoteBooking` | `bookings.notes` | Ghi chú đặt phòng |
+
+---
+
+## 7. Trạng thái triển khai runtime
+
+- Mã runtime: `EXPECTED_ROOM_REVENUE_NIGHT_AUDIT`, procedure `rpt_expected_room_revenue_night_audit`.
+- Migration `2026_09_22_110000` bảo đảm report tồn tại và hiển thị trong menu `frontdesk`/`reservation` trên HKT1–HKT4.
+- Route mở đúng mã row 164 được tạm bỏ qua `mgmt.report.view`; các report khác vẫn giữ kiểm tra quyền hiện tại.
+- Smoke-test procedure đạt trên `pms_hkt1`–`pms_hkt4`; chưa nghiệm thu thao tác Day Close/preview trên browser.

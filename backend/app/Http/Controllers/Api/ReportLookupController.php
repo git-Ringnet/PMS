@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\SystemBranch;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -27,6 +28,7 @@ class ReportLookupController extends Controller
             'report-shifts' => $this->distinctServiceBillOptions('Ca'),
             'service-departments' => $this->serviceDepartments(),
             'rate-codes' => $this->rateCodes($search),
+            'branches' => $this->branches($request),
             default => abort(404, 'Danh mục tham số báo cáo không tồn tại.'),
         };
 
@@ -228,5 +230,29 @@ class ReportLookupController extends Controller
                 'label' => trim("{$rc->Ma} - {$rc->Description}", ' -'),
             ])
             ->all();
+    }
+
+    private function branches(Request $request): array
+    {
+        $user = $request->user();
+        if (! $user) {
+            return [];
+        }
+
+        $configuredBranchCodes = array_keys(config('database_domains.branch_connections', []));
+        $branches = SystemBranch::query()
+            ->where('is_active', true)
+            ->whereIn('code', $configuredBranchCodes)
+            ->get(['id'])
+            ->filter(fn (SystemBranch $branch): bool => $user->isSuperAdmin() || $user->hasBranchAccess((int) $branch->id));
+
+        if ($branches->isEmpty()) {
+            return [];
+        }
+
+        return [
+            ['value' => '__current__', 'label' => 'Chi nhánh hiện tại'],
+            ['value' => '__all__', 'label' => 'Tất cả chi nhánh'],
+        ];
     }
 }

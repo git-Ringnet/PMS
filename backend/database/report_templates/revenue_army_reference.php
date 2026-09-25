@@ -4,8 +4,7 @@ use App\Services\TemplateRendererService;
 
 /**
  * Designer v1 reference for REVENUE_ARMY / legacy ProVistaArmyHotel.dbo.sp_292.
- * The stored procedure/data-source integration is intentionally not registered
- * until its legacy-key and runtime amount mappings are verified.
+ * Runtime registration is provided by the row 150 feature migration.
  */
 return new class
 {

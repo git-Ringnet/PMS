@@ -701,7 +701,7 @@ const columns = ref([
   { key: 'specialRequests', label: 'Yêu cầu đặc biệt', visible: true, width: 'w-[125px]', center: true },
   { key: 'arrivalTime', label: 'Giờ đến', visible: true, width: 'w-[90px]', center: true },
   { key: 'hoursOut', label: 'Giờ đi', visible: true, width: 'w-[90px]', center: true },
-  { key: 'isPreassigned', label: 'Đặt trước', visible: true, width: 'w-[80px]', center: true },
+  { key: 'isPreassigned', label: 'Đặt trước', visible: false, width: 'w-[80px]', center: true },
   { key: 'initialRoomClass', label: 'LP Khởi tạo', visible: true, width: 'w-[105px]' },
   { key: 'transferredFrom', label: 'Phòng chuyển', visible: true, width: 'w-[100px]', center: true },
   { key: 'allotmentCode', label: 'Mã ALM', visible: true, width: 'w-[100px]' },
@@ -5039,9 +5039,13 @@ async function triggerAction(actionName) {
     const tab = activeTab.value
     if (!tab || !tab.dbId) return
 
+    const confirmMsg = isCancelledBooking.value
+      ? 'Bạn có chắc chắn muốn khôi phục booking này về hoạt động?'
+      : 'Bạn có chắc chắn muốn khôi phục booking noshow này về hoạt động?'
+
     uiStore.confirm({
       title: 'Xác nhận khôi phục booking',
-      message: 'Bạn có chắc chắn muốn khôi phục booking noshow này về hoạt động?',
+      message: confirmMsg,
       confirmText: 'Đồng ý', cancelText: 'Hủy'
     }).then(async (confirmed) => {
       if (confirmed) {
@@ -5051,12 +5055,13 @@ async function triggerAction(actionName) {
             ? await restoreBooking(tab.dbId)
             : await revertBookingNoshow(tab.dbId)
           if (res.data?.success) {
-            uiStore.showToast('Khôi phục booking thành công!', 'success')
+            removeClosedTabId(tab.dbId)
+            uiStore.showToast(res.data?.message || 'Khôi phục booking thành công!', 'success')
             await loadBookings()
           } else if (res.data?.needs_confirm) {
             uiStore.confirm({
               title: 'Cảnh báo Over booking',
-              message: res.data.message || 'Số lượng phòng trống sau khi khôi phục sẽ bị âm. Bạn có muốn tiếp tục thao tác?',
+              message: res.data.message || 'Số lượng của loại phòng sau khi khôi phục đăng ký đang bị over, bạn có muốn tiếp tục?',
               confirmText: 'Tiếp tục', cancelText: 'Hủy'
             }).then(async (confirmedOver) => {
               if (confirmedOver) {
@@ -5066,7 +5071,8 @@ async function triggerAction(actionName) {
                     ? await restoreBooking(tab.dbId, { force: true })
                     : await revertBookingNoshow(tab.dbId, { force: true })
                   if (resForce.data?.success) {
-                    uiStore.showToast('Khôi phục booking thành công!', 'success')
+                    removeClosedTabId(tab.dbId)
+                    uiStore.showToast(resForce.data?.message || 'Khôi phục booking thành công!', 'success')
                     await loadBookings()
                   } else {
                     uiStore.showToast(resForce.data?.message || 'Khôi phục booking thất bại!', 'error')
