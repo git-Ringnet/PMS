@@ -18,6 +18,32 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-25] - Khắc phục lỗi Thông tin trẻ em trong Booking & Sơ đồ phòng (Room Map)
+### Module: Thông tin khách lưu trú & Sơ đồ phòng ([GuestController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/GuestController.php), [GuestInfoModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestInfoModal.vue), [BookingDetailModal.vue](file:///d:/PMS/frontend/src/components/BookingDetailModal.vue))
+
+- **Bối cảnh & Nguyên nhân lỗi**:
+  - Khi thêm trẻ em mới vào phòng rồi lưu từ màn hình Sơ đồ phòng (Room Map), hệ thống bị lỗi 500: `Class "App\Http\Controllers\Api\BookingRoomService" not found`. Nguyên nhân do [GuestController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/GuestController.php) thiếu dòng import model `use App\Models\BookingRoomService;` trong hàm `syncExtraBedServices`.
+  - Trong modal "Thông tin khách trong phòng" ([GuestInfoModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestInfoModal.vue)), khi người dùng bật chế độ chỉnh sửa, dòng trẻ em chỉ xử lý trường `title` và ngày tháng; toàn bộ các cột dữ liệu còn lại (`nationality_code`, `id_type`, `residence_type`, `province`, `district`, `ward`, `guest_type`, `entry_purpose`, `border_gate`) bị rơi vào fallback ô input text thông thường thay vì select dropdown như người lớn.
+  - Cột "Thao tác" ở đầu bảng chứa nút "Thẻ khách" / "Thẻ trẻ" chiếm diện tích hiển thị của bảng.
+  - Khi thêm hoặc chỉnh sửa trẻ em từ popup chi tiết đặt phòng [BookingDetailModal.vue](file:///d:/PMS/frontend/src/components/BookingDetailModal.vue), các trường giấy tờ tùy thân, liên hệ và địa chỉ của trẻ em bị bỏ trống và không được lưu vào backend.
+- **Nghiệp vụ đã xử lý**:
+  - **Sửa triệt để lỗi 500 Backend ([GuestController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/GuestController.php))**:
+    - Khai báo `use App\Models\BookingRoomService;` ở đầu file.
+    - Nâng cấp `addChild`, `updateChild`, `bulkUpdate` hỗ trợ đầy đủ các trường thông tin cá nhân của trẻ em (`id_type`, `id_number`, `id_issue_date`, `passport_number`, `passport_expiry`, `phone`, `email`, `address`, `province`, `district`, `ward`, `residence_type`, `temp_residence_to`, `visa_no`, `entry_date`, `visa_expiry_date`, `entry_purpose`, `border_gate`, `note`).
+    - Tự động gán `passport_number` khi `id_type` là hộ chiếu và đồng bộ thông tin lưu trú của phòng cùng địa giới hành chính (`syncGeoFromData`).
+  - **Hoàn thiện bảng Thông tin khách trong phòng ([GuestInfoModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestInfoModal.vue))**:
+    - Bỏ cột "Thao tác" ở đầu bảng; người dùng có thể nhấp đúp (double-click) vào bất kỳ dòng nào (hoặc cột STT) để mở Thẻ thông tin chi tiết khách/trẻ em.
+    - Bổ sung toàn bộ dropdown chọn cho dòng trẻ em giống như người lớn: Danh xưng, Quốc tịch, Loại giấy tờ, Thường trú/Tạm trú, Loại khách, Mục đích, Cửa khẩu, Tỉnh thành, Quận/Huyện, Phường/Xã.
+    - Đồng bộ hiển thị nhãn thân thiện (`getDisplayTitle`) ở chế độ chỉ xem cho trẻ em.
+  - **Đồng bộ Sơ đồ phòng ([BookingDetailModal.vue](file:///d:/PMS/frontend/src/components/BookingDetailModal.vue))**:
+    - Nạp và ánh xạ đầy đủ các trường giấy tờ, liên hệ cho trẻ em và em bé trong `loadGuests`.
+    - Tự động điền dữ liệu của trẻ khi chọn trẻ em/em bé (`selectChild`).
+    - Truyền đầy đủ dữ liệu khi thêm mới (`addBookingChild`) và cập nhật (`updateBookingChild`).
+    - Bỏ giới hạn cắt cụt 35 quốc tịch (`.slice(0, 35)`), chuẩn hóa mã ISO 3 ký tự và cho phép cuộn/tìm kiếm toàn bộ 250+ quốc gia từ A đến Z.
+- **Kiểm thử**:
+    - Frontend build thành công 100% không phát sinh lỗi template/script.
+    - Cú pháp PHP của [GuestController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/GuestController.php) đạt chuẩn không có lỗi cú pháp.
+
 ## [2026-09-25] - Khắc phục lỗi khôi phục Database (max_allowed_packet 1153) & Nâng cấp toàn diện Sao lưu / Khôi phục
 ### Module: Quản trị Hệ thống / Database Backup & Restore ([DatabaseBackupController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/DatabaseBackupController.php), [DatabaseBackupTab.vue](file:///d:/PMS/frontend/src/pages/config/components/DatabaseBackupTab.vue))
 

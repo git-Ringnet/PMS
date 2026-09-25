@@ -74,7 +74,6 @@
             <thead class="sticky top-0 z-10 bg-slate-100/90 border-b border-slate-200 text-slate-700">
               <tr>
                 <th class="py-2.5 px-3 border-r border-slate-200 text-center font-semibold w-12 bg-slate-100">STT</th>
-                <th class="py-2.5 px-3 border-r border-slate-200 text-center font-semibold w-24 bg-slate-100">Thao tác</th>
                 <th v-for="col in visibleColumns" :key="col.key"
                   class="py-2.5 px-3 border-r border-slate-200 text-left font-semibold whitespace-nowrap bg-slate-100"
                   :style="col.width ? `width:${col.width}` : ''">
@@ -86,7 +85,7 @@
               <template v-for="(roomGroup, gi) in (isEditing ? editData : guestData)" :key="gi">
                 <!-- Room group header -->
                 <tr class="bg-slate-100/80 font-bold border-b border-slate-200">
-                  <td :colspan="visibleColumns.length + 2" class="py-2 px-4 text-[12.5px] text-[#1E2D4A] bg-[#eef2f6]">
+                  <td :colspan="visibleColumns.length + 1" class="py-2 px-4 text-[12.5px] text-[#1E2D4A] bg-[#eef2f6]">
                     <i class="fa-solid fa-hotel mr-1.5 text-slate-500"></i>Room: {{ roomGroup.room_number || '(Chưa gán)' }}
                     ({{ (roomGroup.guests || []).length + (roomGroup.children || []).length }} khách)
                     - {{ roomGroup.room_class_name }}
@@ -105,20 +104,7 @@
                   ]"
                   title="Nhấp đúp chuột (Double click) để mở thẻ thông tin chi tiết khách"
                 >
-                  <td class="py-2 px-3 border-r border-slate-200 text-center text-slate-500 font-semibold">{{ idx + 1 }}</td>
-                  
-                  <!-- Cột thao tác: Thẻ khách -->
-                  <td class="py-1 px-2 border-r border-slate-200 text-center">
-                    <button
-                      type="button"
-                      @click.stop="openGuestDetail(roomGroup, guest, 'adult')"
-                      class="px-2 py-0.5 text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 rounded border border-blue-200 cursor-pointer inline-flex items-center gap-1 font-medium transition-colors"
-                      title="Mở Thẻ thông tin khách"
-                    >
-                      <i class="fa-solid fa-id-card text-xs"></i>
-                      <span>Thẻ khách</span>
-                    </button>
-                  </td>
+                  <td @dblclick.stop="openGuestDetail(roomGroup, guest, 'adult')" class="py-2 px-3 border-r border-slate-200 text-center text-slate-500 font-semibold cursor-pointer select-none" title="Nhấp đúp chuột để mở thẻ thông tin khách">{{ idx + 1 }}</td>
 
                   <td v-for="col in visibleColumns" :key="col.key" class="py-1.5 px-2 border-r border-slate-200 whitespace-nowrap text-slate-700">
                     <!-- Khi đang chỉnh sửa trực tiếp trên bảng -->
@@ -229,6 +215,9 @@
                         <template v-else-if="['dob', 'id_issue_date', 'passport_expiry', 'temp_residence_to', 'entry_date', 'visa_expiry_date'].includes(col.key)">
                           {{ formatDate(guest[col.key]) }}
                         </template>
+                        <template v-else-if="['residence_type', 'guest_type', 'entry_purpose', 'border_gate'].includes(col.key)">
+                          {{ getDisplayTitle(guest, col) }}
+                        </template>
                         <template v-else>{{ guest[col.key] || '—' }}</template>
                       </div>
                     </template>
@@ -247,43 +236,119 @@
                   ]"
                   title="Nhấp đúp chuột (Double click) để mở thẻ thông tin chi tiết trẻ em"
                 >
-                  <td class="py-2 px-3 border-r border-slate-200 text-center text-slate-500 font-semibold">{{ roomGroup.guests.length + cidx + 1 }}</td>
-                  
-                  <!-- Cột thao tác: Thẻ trẻ em -->
-                  <td class="py-1 px-2 border-r border-slate-200 text-center">
-                    <button
-                      type="button"
-                      @click.stop="openGuestDetail(roomGroup, child, 'child')"
-                      class="px-2 py-0.5 text-xs bg-purple-50 text-purple-600 hover:bg-purple-100 rounded border border-purple-200 cursor-pointer inline-flex items-center gap-1 font-medium transition-colors"
-                      title="Mở Thẻ thông tin trẻ em"
-                    >
-                      <i class="fa-solid fa-child text-xs"></i>
-                      <span>Thẻ trẻ</span>
-                    </button>
-                  </td>
+                  <td @dblclick.stop="openGuestDetail(roomGroup, child, 'child')" class="py-2 px-3 border-r border-slate-200 text-center text-slate-500 font-semibold cursor-pointer select-none" title="Nhấp đúp chuột để mở thẻ thông tin trẻ em">{{ (roomGroup.guests || []).length + cidx + 1 }}</td>
 
                   <td v-for="col in visibleColumns" :key="col.key" class="py-1.5 px-2 border-r border-slate-200 whitespace-nowrap text-slate-700">
+                    <!-- Khi đang chỉnh sửa trực tiếp trên bảng -->
                     <template v-if="isEditing">
                       <template v-if="col.key === 'room_number'">{{ roomGroup.room_number || '—' }}</template>
+                      
+                      <!-- Title dropdown -->
                       <template v-else-if="col.key === 'title'">
-                        <select v-model="child.title" class="table-input">
+                        <select v-model="child.title" @change="handleTitleChange(child)" class="table-input">
                           <option value="">-- Chọn --</option>
                           <option v-for="t in titlesList" :key="t" :value="t">{{ t }}</option>
                         </select>
                       </template>
-                      <template v-else-if="['dob', 'id_issue_date', 'passport_expiry', 'temp_residence_to'].includes(col.key)">
+
+                      <!-- Nationality dropdown -->
+                      <template v-else-if="col.key === 'nationality_code'">
+                        <select v-model="child.nationality_code" class="table-input">
+                          <option value="">-- Chọn --</option>
+                          <option v-for="n in nationalitiesList" :key="n.code" :value="n.code">{{ n.label }}</option>
+                        </select>
+                      </template>
+
+                      <!-- ID type dropdown -->
+                      <template v-else-if="col.key === 'id_type'">
+                        <select v-model="child.id_type" class="table-input">
+                          <option value="">Loại</option>
+                          <option v-for="it in idTypesList" :key="it.id" :value="getIdTypeValue(it)">{{ it.name }}</option>
+                          <option v-if="child.id_type && !idTypesList.some(it => getIdTypeValue(it) === child.id_type || it.name === child.id_type)" :value="child.id_type">{{ child.id_type }}</option>
+                        </select>
+                      </template>
+
+                      <!-- Residence type dropdown -->
+                      <template v-else-if="col.key === 'residence_type'">
+                        <select v-model="child.residence_type" class="table-input">
+                          <option value="">-- Chọn --</option>
+                          <option v-for="rt in residenceTypesList" :key="rt.id" :value="String(rt.id)">{{ rt.name_new_form || rt.name }}</option>
+                          <option v-if="child.residence_type && !residenceTypesList.some(rt => String(rt.id) === String(child.residence_type))" :value="child.residence_type">{{ child.residence_type }}</option>
+                        </select>
+                      </template>
+
+                      <!-- Guest type dropdown -->
+                      <template v-else-if="col.key === 'guest_type'">
+                        <select v-model="child.guest_type" class="table-input">
+                          <option value="">Loại</option>
+                          <option v-for="gt in guestTypesList" :key="gt.id" :value="String(gt.id)">{{ gt.name }}</option>
+                          <option v-if="child.guest_type && !guestTypesList.some(gt => String(gt.id) === String(child.guest_type))" :value="child.guest_type">{{ child.guest_type }}</option>
+                        </select>
+                      </template>
+
+                      <!-- Entry purpose dropdown -->
+                      <template v-else-if="col.key === 'entry_purpose'">
+                        <select v-model="child.entry_purpose" class="table-input">
+                          <option value="">Mục đích</option>
+                          <option v-for="ep in entryPurposesList" :key="ep.id" :value="String(ep.id)">{{ ep.name }}</option>
+                          <option v-if="child.entry_purpose && !entryPurposesList.some(ep => String(ep.id) === String(child.entry_purpose))" :value="child.entry_purpose">{{ child.entry_purpose }}</option>
+                        </select>
+                      </template>
+
+                      <!-- Border gate dropdown -->
+                      <template v-else-if="col.key === 'border_gate'">
+                        <select v-model="child.border_gate" class="table-input">
+                          <option value="">-- Cửa khẩu --</option>
+                          <option v-for="bg in borderGatesList" :key="bg.id" :value="bg.code">{{ bg.name }}</option>
+                          <option v-if="child.border_gate && !borderGatesList.some(bg => bg.code === child.border_gate)" :value="child.border_gate">{{ child.border_gate }}</option>
+                        </select>
+                      </template>
+
+                      <!-- Province dropdown -->
+                      <template v-else-if="col.key === 'province'">
+                        <select v-model="child.province" @change="handleProvinceChange(`c-${child.id}`, child, child.province)" class="table-input select-geo">
+                          <option value="">-- Chọn --</option>
+                          <option v-for="p in provincesList" :key="p.code" :value="p.name">{{ p.name }}</option>
+                        </select>
+                      </template>
+
+                      <!-- District dropdown -->
+                      <template v-else-if="col.key === 'district'">
+                        <select v-model="child.district" @change="handleDistrictChange(`c-${child.id}`, child, child.district)" class="table-input select-geo" :disabled="!child.province">
+                          <option value="">-- Chọn --</option>
+                          <option v-for="d in (districtsForLine[`c-${child.id}`] || [])" :key="d.code" :value="d.name">{{ d.name }}</option>
+                        </select>
+                      </template>
+
+                      <!-- Ward dropdown -->
+                      <template v-else-if="col.key === 'ward'">
+                        <select v-model="child.ward" class="table-input select-geo" :disabled="!child.district">
+                          <option value="">-- Chọn --</option>
+                          <option v-for="w in (wardsForLine[`c-${child.id}`] || [])" :key="w.code" :value="w.name">{{ w.name }}</option>
+                        </select>
+                      </template>
+
+                      <!-- Date Fields -->
+                      <template v-else-if="['dob', 'id_issue_date', 'passport_expiry', 'temp_residence_to', 'entry_date', 'visa_expiry_date'].includes(col.key)">
                         <input v-model="child[col.key]" type="date" class="table-input" />
                       </template>
+
+                      <!-- Text fields -->
                       <template v-else>
                         <input v-model="child[col.key]" type="text" class="table-input" />
                       </template>
                     </template>
+
+                    <!-- Khi chỉ xem -->
                     <template v-else>
-                      <div class="truncate-cell text-[12px]">
+                      <div class="truncate-cell text-[12px]" :style="col.width ? `max-width:${col.width}` : ''" :title="getDisplayTitle(child, col)">
                         <template v-if="col.key === 'room_number'">{{ roomGroup.room_number || '—' }}</template>
                         <template v-else-if="col.key === 'nationality_code'">{{ getNationalityLabel(child.nationality_code) }}</template>
-                        <template v-else-if="['dob', 'id_issue_date', 'passport_expiry', 'temp_residence_to'].includes(col.key)">
+                        <template v-else-if="['dob', 'id_issue_date', 'passport_expiry', 'temp_residence_to', 'entry_date', 'visa_expiry_date'].includes(col.key)">
                           {{ formatDate(child[col.key]) }}
+                        </template>
+                        <template v-else-if="['residence_type', 'guest_type', 'entry_purpose', 'border_gate'].includes(col.key)">
+                          {{ getDisplayTitle(child, col) }}
                         </template>
                         <template v-else>{{ child[col.key] || '—' }}</template>
                       </div>
@@ -293,7 +358,7 @@
 
                 <!-- Trống -->
                 <tr v-if="(roomGroup.guests || []).length === 0 && (roomGroup.children || []).length === 0">
-                  <td :colspan="visibleColumns.length + 2" class="py-3 px-4 text-center text-slate-400 text-[13px] italic border-b border-slate-200">
+                  <td :colspan="visibleColumns.length + 1" class="py-3 px-4 text-center text-slate-400 text-[13px] italic border-b border-slate-200">
                     Chưa có thông tin khách trong phòng này
                   </td>
                 </tr>
@@ -301,7 +366,7 @@
 
               <!-- Overall empty -->
               <tr v-if="guestData.length === 0">
-                <td :colspan="visibleColumns.length + 2" class="py-16 text-center text-slate-400 text-[13px]">
+                <td :colspan="visibleColumns.length + 1" class="py-16 text-center text-slate-400 text-[13px]">
                   Chưa có dữ liệu. Vui lòng lưu thông tin đăng ký trước.
                 </td>
               </tr>
