@@ -681,7 +681,9 @@ function handleClose() {
                   <div class="relative group">
                     <Info class="w-3.5 h-3.5 text-gray-400 cursor-help" />
                     <div class="absolute bottom-5 left-0 bg-gray-800 text-white text-xs rounded px-2.5 py-1.5 w-64 opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none shadow-md">
-                      {{ roomSurcharge ? 'Lưu IsRoomNight=0 trong SP3004 (không ảnh hưởng công suất phòng)' : 'Lưu IsRoomNight=1 trong SP3004 (có tính công suất phòng)' }}
+                      {{ roomSurcharge
+                        ? 'Thay đổi giá phòng, cập nhật doanh thu và công suất phòng.'
+                        : 'Thêm phụ thu tiền phòng, không ảnh hưởng đến giá phòng và công suất phòng. Không ảnh hưởng tiền phòng chạy tự động hằng đêm.' }}
                     </div>
                   </div>
                 </div>
