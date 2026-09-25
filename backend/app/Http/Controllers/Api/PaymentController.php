@@ -102,8 +102,9 @@ class PaymentController extends Controller
     {
         $shifts = Shift::query()->orderBy('id')->get();
         if ($shifts->isEmpty()) {
-            return trim((string) $requestedShift)
-                ?: (string) (\App\Models\SystemDateRoll::latest('id')->value('shift') ?: '1');
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'shift_id' => ['Chưa cấu hình ca làm việc. Không thể lưu thanh toán khi chưa có cấu hình ca hợp lệ.'],
+            ]);
         }
 
         $requestedShift = trim((string) $requestedShift);
@@ -1229,6 +1230,7 @@ class PaymentController extends Controller
             'shift_id' => 'nullable|string|max:20',
             'service_bill_ids' => 'nullable|array',
             'service_bill_ids.*' => 'integer',
+            'zero_balance_close' => 'sometimes|boolean',
         ]);
 
         $paymentDate = Carbon::parse($request->input('date'))->startOfDay();
@@ -1443,6 +1445,31 @@ class PaymentController extends Controller
 
             // Tính toán bóc tách thuế phí chi tiết từ các dịch vụ được thanh toán (theo chuẩn vw_018 & Luật thuế)
             $settledBills = (clone $unpaidServiceQuery)->get();
+            $submittedPayments = collect($request->input('payments', []));
+
+            // A zero payment is only a bill-closing row when a real unpaid service
+            // bill is fully covered by an eligible deposit/advance in this scope.
+            // This explicit flag keeps every existing caller's settlement behavior unchanged.
+            if ($request->boolean('zero_balance_close')) {
+                $serviceAmountForZeroSettlement = round((float) (clone $unpaidServiceQuery)->sum('Amount'), 2);
+                $depositAmountForZeroSettlement = round((float) (clone $unpaidDepositQuery)->sum('amount'), 2);
+                $hasEligibleDeposit = (clone $unpaidDepositQuery)->exists();
+
+                if (
+                    $submittedPayments->count() !== 1
+                    || round((float) ($submittedPayments->first()['amount'] ?? 0), 2) != 0.0
+                    || $settledBills->isEmpty()
+                    || !$hasEligibleDeposit
+                    || $serviceAmountForZeroSettlement <= 0
+                    || $depositAmountForZeroSettlement <= 0
+                    || abs($serviceAmountForZeroSettlement - $depositAmountForZeroSettlement) > 0.01
+                ) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'payments' => ['Chỉ chốt thanh toán 0đ khi có bill dịch vụ chưa thanh toán được cọc/tạm ứng hợp lệ bù đủ.'],
+                    ]);
+                }
+            }
+
             $totalBillAmount = 0.0;
             $totalOriginalRate = 0.0;
             $totalServiceCharge = 0.0;

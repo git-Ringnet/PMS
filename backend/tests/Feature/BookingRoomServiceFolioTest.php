@@ -19,6 +19,7 @@ use App\Models\RoomClass;
 use App\Models\RoomForm;
 use App\Models\ServiceBill;
 use App\Models\ServiceBillDetail;
+use App\Models\Shift;
 use App\Models\SystemDateRoll;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -33,6 +34,9 @@ class BookingRoomServiceFolioTest extends TestCase
         parent::setUp();
 
         $this->artisan('db:seed', ['--class' => 'BookingStatusSeeder']);
+        Shift::create(['name' => '1', 'start_time' => '06:00:00', 'end_time' => '14:00:00']);
+        Shift::create(['name' => '2', 'start_time' => '14:00:00', 'end_time' => '22:00:00']);
+        Shift::create(['name' => '3', 'start_time' => '22:00:00', 'end_time' => '06:00:00']);
     }
 
     private function createFolioUser(): User
@@ -182,6 +186,27 @@ class BookingRoomServiceFolioTest extends TestCase
             'booking_id' => $booking->id, 'folio_id' => 3, 'pack4' => Payment::PACK4_ADVANCE,
             'pack2' => null, 'amount' => 500000,
         ]);
+    }
+
+    public function test_front_desk_advance_payment_is_rejected_without_shift_configuration(): void
+    {
+        Shift::query()->delete();
+        $user = $this->createFolioUser();
+        $booking = Booking::create([
+            'booking_name' => 'GAL1', 'arrival_date' => now()->toDateString(), 'departure_date' => now()->addDay()->toDateString(),
+            'num_of_days' => 1, 'booking_date' => now()->toDateString(), 'created_by' => $user->username,
+        ]);
+        PaymentMethod::create(['code' => 'CA', 'name' => 'Cash', 'payment_group' => 1]);
+
+        $this->actingAs($user)
+            ->postJson("/api/bookings/{$booking->id}/payments", [
+                'date' => now()->toDateString(), 'open_time' => '10:00', 'shift_id' => '1',
+                'amount' => 500000, 'payment_method_id' => 'CA', 'pack4' => Payment::PACK4_ADVANCE,
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('shift_id');
+
+        $this->assertDatabaseCount('payments', 0);
     }
 
     public function test_folio_drag_moves_multiple_unused_deposits_only(): void
