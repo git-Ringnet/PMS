@@ -191,6 +191,11 @@ const selectedBankAccountDetails = computed(() => bankAccountOptions.value.find(
 const netTotalAmount = computed(() => {
   return (Number(props.totalServiceAmount) || 0) - (Number(props.totalDepositAmount) || 0)
 })
+const isZeroBalanceSettlement = computed(() => (
+  Math.abs(netTotalAmount.value) <= 0.01
+  && Number(props.totalServiceAmount) > 0
+  && Number(props.totalDepositAmount) > 0
+))
 
 const totalAddedInModal = computed(() => {
   return addedPayments.value.reduce((acc, item) => acc + (Number(item.amount) || 0), 0)
@@ -381,13 +386,39 @@ watch(() => props.show, (visible) => {
       paymentMethodId.value = paymentMethods.value[0].id || paymentMethods.value[0].code
     }
   }
-})
+}, { immediate: true })
 
 watch(isBankTransfer, (bankTransfer) => {
   if (!bankTransfer) selectedBankAccount.value = ''
 })
 
 const handleAddPaymentItem = () => {
+  if (isZeroBalanceSettlement.value) {
+    if (addedPayments.value.length > 0) {
+      errorMsg.value = 'Đã có dòng chốt thanh toán 0đ.'
+      return
+    }
+
+    const selectedMethod = paymentMethods.value.find(m => String(m.id) === String(paymentMethodId.value) || String(m.code) === String(paymentMethodId.value))
+    const methodName = selectedMethod ? selectedMethod.name : 'Tiền mặt'
+    const methodCode = selectedMethod ? (selectedMethod.code || selectedMethod.id) : 'CA'
+    addedPayments.value.push({
+      id: Date.now(),
+      payment_method_id: paymentMethodId.value || 'CA',
+      method_code: methodCode,
+      method_name: methodName,
+      bank_account: '',
+      bank_account_id: null,
+      debit_account: null,
+      amount: 0,
+      currency: currency.value,
+      note: 'Thanh toán 0đ - Dùng cọc/tạm ứng'
+    })
+    payAmountNum.value = 0
+    errorMsg.value = ''
+    return
+  }
+
   if (payAmountNum.value === 0) {
     errorMsg.value = 'Vui lòng nhập số tiền thanh toán.'
     return
@@ -419,23 +450,27 @@ const handleAddPaymentItem = () => {
     note: desc
   })
 
-  payAmountNum.value = 0
+  payAmountNum.value = remainingAmount.value
   errorMsg.value = ''
 }
 
 const handleRemovePaymentItem = (index) => {
   addedPayments.value.splice(index, 1)
+  payAmountNum.value = remainingAmount.value
 }
 
 const handleSubmit = async () => {
   errorMsg.value = ''
 
-  if (!isPaymentDateAllowed(dateStr.value)) {
-    errorMsg.value = 'Ngày thanh toán phải nằm trong thời gian lưu trú và không lớn hơn ngày hệ thống.'
+  if (paymentDateError.value || !validatePaymentDateInput({ target: paymentDateInput.value })) return
+  if (shiftLoadState.value !== 'ready') {
+    errorMsg.value = shiftLoadState.value === 'loading'
+      ? 'Đang tải cấu hình ca làm việc. Vui lòng chờ.'
+      : 'Chưa có cấu hình ca làm việc hợp lệ. Vui lòng kiểm tra mục Ca làm việc.'
     return
   }
-  if (!isShiftTimeAllowed()) {
-    errorMsg.value = 'Giờ thanh toán không thuộc ca đã chọn. Vui lòng chọn lại ca hoặc giờ.'
+  if (shiftTimeError.value || !isShiftTimeAllowed()) {
+    if (!shiftTimeError.value) shiftTimeError.value = 'Giờ phải nằm trong thời gian của ca đã chọn.'
     return
   }
 
@@ -493,7 +528,8 @@ const handleSubmit = async () => {
       open_time: timeStr.value,
       shift_id: workShift.value,
       currency: currency.value,
-      department_id: 'FO'
+      department_id: 'FO',
+      ...(isZeroBalanceSettlement.value ? { zero_balance_close: true } : {})
     }
 
     const res = await settleBookingPayment(props.bookingId, payload)
@@ -652,6 +688,7 @@ onMounted(() => {
                   <input 
                     type="text" 
                     v-model="displayPayAmount" 
+                    :readonly="isZeroBalanceSettlement"
                     class="w-full px-2 py-1 bg-[#ffffcc] border border-gray-300 rounded tabular-nums font-bold text-gray-900 text-right text-sm"
                   />
                 </div>
@@ -719,7 +756,7 @@ onMounted(() => {
                 <td class="px-2.5 py-1.5 border-r border-gray-200 font-bold text-gray-800">{{ item.currency }}</td>
                 <td class="px-2.5 py-1.5 border-r border-gray-200 text-right tabular-nums font-bold text-emerald-700">{{ formatMoney(item.amount) }}</td>
                 <td class="px-2.5 py-1.5 text-center">
-                  <button @click="handleRemovePaymentItem(idx)" class="text-sky-500 hover:text-sky-700 p-1 rounded" title="Xóa dòng">
+                  <button @click="handleRemovePaymentItem(idx)" :disabled="isZeroBalanceSettlement" class="text-sky-500 hover:text-sky-700 p-1 rounded disabled:cursor-not-allowed disabled:opacity-40" title="Xóa dòng">
                     <Trash2 class="w-3.5 h-3.5" />
                   </button>
                 </td>
