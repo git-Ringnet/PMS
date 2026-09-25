@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { fetchGeneralSearch, fetchGeneralSearchOptions, fetchGeneralSearchSuggestions, checkInRoom } from '@/services/booking-service'
 import { useAuthStore } from '@/stores/auth-store'
 import { useUiStore } from '@/stores/ui-store'
@@ -10,6 +10,7 @@ import GuestInfoModal from '@/pages/reservation/components/GuestInfoModal.vue'
 import CopyModal from '@/pages/reservation/components/CopyModal.vue'
 
 const router = useRouter()
+const route = useRoute()
 const uiStore = useUiStore()
 const auth = useAuthStore()
 const tab = ref('booking')
@@ -679,7 +680,8 @@ function handleActionRegister() {
     uiStore.showToast('Không tìm thấy thông tin mã đăng ký.', 'warning')
     return
   }
-  router.push({ path: '/reservation', query: { tab: 'create-res', edit_id: bookingCode } })
+  const targetPath = route.path.startsWith('/frontdesk') ? '/frontdesk' : '/reservation'
+  router.push({ path: targetPath, query: { tab: 'create-res', edit_id: bookingCode } })
 }
 
 function handleActionInvoice() {

@@ -458,6 +458,26 @@ class RoomController extends Controller
 
         $oldCode = $room->getOriginal('room_status_code');
         $newCode = $validated['room_status_code'];
+
+        // Nếu chuyển từ phòng khóa (ooo/oos/occupied_ooo) sang trạng thái thường -> Kiểm tra quyền mở khóa phòng
+        $isUnlocking = in_array($oldCode, ['ooo', 'oos', 'occupied_ooo']) && !in_array($newCode, ['ooo', 'oos', 'occupied_ooo']);
+        if ($isUnlocking) {
+            $activeLock = \App\Models\RoomLock::where('room_number', $room->room_number)
+                ->where('is_active', 1)
+                ->first();
+
+            $permService = app(\App\Services\RoomLockPermissionService::class);
+            $roleErr = $permService->checkUnlockRolePermission($request->user(), $activeLock);
+            if ($roleErr) {
+                return response()->json(['success' => false, 'message' => $roleErr], 403);
+            }
+
+            $deptErr = $permService->checkUnlockDepartmentPermission($request->user(), $activeLock);
+            if ($deptErr) {
+                return response()->json(['success' => false, 'message' => $deptErr], 403);
+            }
+        }
+
         $room->update(['room_status_code' => $newCode]);
 
         try {
@@ -466,15 +486,46 @@ class RoomController extends Controller
         } catch (\Throwable $e) {}
 
         // Nếu chuyển sang trạng thái thường (không phải ooo/oos/occupied_ooo) -> Tự động giải phóng các active lock của phòng này
-        if (!in_array($newCode, ['ooo', 'oos', 'occupied_ooo'])) {
+        if ($isUnlocking) {
             $currentUser = auth()->user()?->username ?? auth()->user()?->name ?? 'system';
-            \App\Models\RoomLock::where('room_number', $room->room_number)
+            $latestRoll = \App\Models\SystemDateRoll::latest('id')->first();
+            $sysDateStr = $latestRoll
+                ? \Carbon\Carbon::parse($latestRoll->system_date)->toDateString()
+                : \Carbon\Carbon::now('Asia/Ho_Chi_Minh')->toDateString();
+            $localNow = \Carbon\Carbon::now('Asia/Ho_Chi_Minh');
+            $unlockEndDateTime = $sysDateStr . ' ' . $localNow->format('H:i:s');
+
+            $activeLocks = \App\Models\RoomLock::where('room_number', $room->room_number)
                 ->where('is_active', 1)
-                ->update([
-                    'is_active' => 2,
-                    'unlock_username' => $currentUser,
-                    'unlocked_at' => now(),
-                ]);
+                ->get();
+
+            foreach ($activeLocks as $lock) {
+                $oldValues = $lock->toArray();
+                if ($lock->status === 'New') {
+                    $lock->delete();
+                } else {
+                    $updateData = [
+                        'is_active' => 2,
+                        'status' => 'Done',
+                        'unlock_username' => $currentUser,
+                        'unlocked_at' => now(),
+                    ];
+                    if (\Carbon\Carbon::parse($lock->start_date)->lte(\Carbon\Carbon::parse($unlockEndDateTime))) {
+                        $updateData['end_date'] = $unlockEndDateTime;
+                    }
+                    $lock->update($updateData);
+                }
+
+                \App\Services\ActivityLogService::logUpdate(
+                    $request,
+                    $lock,
+                    $oldValues,
+                    'reservation',
+                    'RoomMapPage',
+                    "Mở khóa phòng {$lock->room_number} (Hành động: Unlock qua đổi tình trạng phòng, Giai đoạn: " . ($lock->start_date ? $lock->start_date->format('d/m/Y H:i') : '') . " ~ " . ($lock->end_date ? $lock->end_date->format('d/m/Y H:i') : '') . ")",
+                    $lock->room_number
+                );
+            }
         }
 
         try {
@@ -526,8 +577,39 @@ class RoomController extends Controller
         $newCode = $validated['room_status_code'];
         $rooms = Room::whereIn('id', $validated['room_ids'])->get();
 
-        DB::transaction(function () use ($rooms, $newCode, $request) {
-            $rooms->each(function (Room $room) use ($newCode, $request) {
+        // Kiểm tra quyền mở khóa phòng nếu có phòng đang khóa chuyển sang trạng thái thường
+        if (!in_array($newCode, ['ooo', 'oos', 'occupied_ooo'])) {
+            $permService = app(\App\Services\RoomLockPermissionService::class);
+            foreach ($rooms as $r) {
+                $rOldCode = $r->getOriginal('room_status_code');
+                if (in_array($rOldCode, ['ooo', 'oos', 'occupied_ooo'])) {
+                    $activeLock = \App\Models\RoomLock::where('room_number', $r->room_number)
+                        ->where('is_active', 1)
+                        ->first();
+
+                    $roleErr = $permService->checkUnlockRolePermission($request->user(), $activeLock);
+                    if ($roleErr) {
+                        return response()->json(['success' => false, 'message' => "Không thể mở khóa phòng {$r->room_number}: {$roleErr}"], 403);
+                    }
+
+                    $deptErr = $permService->checkUnlockDepartmentPermission($request->user(), $activeLock);
+                    if ($deptErr) {
+                        return response()->json(['success' => false, 'message' => "Không thể mở khóa phòng {$r->room_number}: {$deptErr}"], 403);
+                    }
+                }
+            }
+        }
+
+        $latestRoll = \App\Models\SystemDateRoll::latest('id')->first();
+        $sysDateStr = $latestRoll
+            ? \Carbon\Carbon::parse($latestRoll->system_date)->toDateString()
+            : \Carbon\Carbon::now('Asia/Ho_Chi_Minh')->toDateString();
+        $localNow = \Carbon\Carbon::now('Asia/Ho_Chi_Minh');
+        $unlockEndDateTime = $sysDateStr . ' ' . $localNow->format('H:i:s');
+        $currentUser = auth()->user()?->username ?? auth()->user()?->name ?? 'system';
+
+        DB::transaction(function () use ($rooms, $newCode, $request, $unlockEndDateTime, $currentUser) {
+            $rooms->each(function (Room $room) use ($newCode, $request, $unlockEndDateTime, $currentUser) {
                 $oldCode = $room->getOriginal('room_status_code');
                 $room->update(['room_status_code' => $newCode]);
 
@@ -536,15 +618,38 @@ class RoomController extends Controller
                         ->log($room->room_number, $oldCode, $newCode, $request);
                 } catch (\Throwable $e) {}
 
-                if (!in_array($newCode, ['ooo', 'oos', 'occupied_ooo'])) {
-                    $currentUser = auth()->user()?->username ?? auth()->user()?->name ?? 'system';
-                    \App\Models\RoomLock::where('room_number', $room->room_number)
+                if (in_array($oldCode, ['ooo', 'oos', 'occupied_ooo']) && !in_array($newCode, ['ooo', 'oos', 'occupied_ooo'])) {
+                    $activeLocks = \App\Models\RoomLock::where('room_number', $room->room_number)
                         ->where('is_active', 1)
-                        ->update([
-                            'is_active' => 2,
-                            'unlock_username' => $currentUser,
-                            'unlocked_at' => now(),
-                        ]);
+                        ->get();
+
+                    foreach ($activeLocks as $lock) {
+                        $oldValues = $lock->toArray();
+                        if ($lock->status === 'New') {
+                            $lock->delete();
+                        } else {
+                            $updateData = [
+                                'is_active' => 2,
+                                'status' => 'Done',
+                                'unlock_username' => $currentUser,
+                                'unlocked_at' => now(),
+                            ];
+                            if (\Carbon\Carbon::parse($lock->start_date)->lte(\Carbon\Carbon::parse($unlockEndDateTime))) {
+                                $updateData['end_date'] = $unlockEndDateTime;
+                            }
+                            $lock->update($updateData);
+                        }
+
+                        \App\Services\ActivityLogService::logUpdate(
+                            $request,
+                            $lock,
+                            $oldValues,
+                            'reservation',
+                            'RoomMapPage',
+                            "Mở khóa phòng {$lock->room_number} (Hành động: Unlock qua đổi tình trạng phòng, Giai đoạn: " . ($lock->start_date ? $lock->start_date->format('d/m/Y H:i') : '') . " ~ " . ($lock->end_date ? $lock->end_date->format('d/m/Y H:i') : '') . ")",
+                            $lock->room_number
+                        );
+                    }
                 }
             });
         });

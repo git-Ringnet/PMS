@@ -233,6 +233,31 @@ class UndoCheckInValidationTest extends TestCase
             ]);
     }
 
+    public function test_undo_checkin_fails_for_a_room_created_by_same_day_room_move(): void
+    {
+        $roomClass = \App\Models\RoomClass::first();
+        $roomForm = \App\Models\RoomForm::first();
+        Room::create([
+            'room_number' => '102',
+            'room_class_id' => $roomClass->id,
+            'room_form_id' => $roomForm->id,
+            'floor' => 1,
+            'room_status_code' => 'occupied_ready',
+            'is_active' => true,
+            'clean_status' => 'clean',
+        ]);
+
+        $movedRoom = $this->room->moveToRoom('102', '2026-09-16', $this->user->username);
+
+        $this->postJson("/api/bookings/{$this->booking->id}/rooms/{$movedRoom->id}/undo-checkin", [
+            'room_status_code' => 'vacant_dirty',
+        ])->assertStatus(422)
+            ->assertJson([
+                'success' => false,
+                'message' => 'Phòng đã được chuyển từ phòng khác, không thể hủy nhận phòng tại đây.',
+            ]);
+    }
+
     public function test_undo_checkin_succeeds_when_bill_has_been_transferred_to_another_room(): void
     {
         // Tạo phòng thứ 2

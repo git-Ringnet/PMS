@@ -47,7 +47,7 @@ class BookingBusinessRulesTest extends TestCase
 
         $this->user = User::factory()->create(['username' => 'test_user']);
         $role = Role::create(['code' => 'booking_rules_test', 'name' => 'Booking rules test', 'level' => 3, 'department_scope' => 'FO', 'is_active' => true]);
-        foreach (['fo.booking.create', 'fo.booking.edit', 'fo.checkin', 'fo.checkout', 'fo.room.move', 'fo.service.create'] as $code) {
+        foreach (['fo.booking.create', 'fo.booking.edit', 'fo.checkin', 'fo.checkout', 'fo.room.move', 'fo.service.view', 'fo.service.add', 'fo.service.edit', 'fo.service.delete'] as $code) {
             $permission = Permission::firstOrCreate(['code' => $code], ['name' => $code, 'module' => 'FO']);
             $role->permissions()->syncWithoutDetaching([$permission->id]);
         }
@@ -1372,9 +1372,10 @@ class BookingBusinessRulesTest extends TestCase
     }
 
     /**
-     * TC-16: Inline service update (such as RM bypass and EB sync to booking_rooms)
+     * Section 8: child breakfast surcharge is persisted only in the daily
+     * detail table; editing it must not create a new booking-room service.
      */
-    public function test_child_breakfast_sync_preserves_fit_owner_flag(): void
+    public function test_child_breakfast_edit_does_not_create_booking_room_service(): void
     {
         HotelConfig::create(['name' => 'Booking_BFChildSetServiceId', 'value' => 'BD']);
         $booking = $this->createBooking();
@@ -1409,19 +1410,78 @@ class BookingBusinessRulesTest extends TestCase
             'amount' => 90000,
         ])->assertSuccessful();
 
-        $service = BookingRoomService::where('booking_room_id', $room->id)
-            ->where('service_code', 'BD')
-            ->whereDate('service_date', '2026-08-07')
-            ->firstOrFail();
-        $this->assertSame(1, (int) $service->is_room);
+        $this->assertDatabaseMissing('booking_room_services', [
+            'booking_room_id' => $room->id,
+            'service_code' => 'BD',
+            'service_date' => '2026-08-07 00:00:00',
+        ]);
 
         $this->patchJson("/api/booking-children/{$child->id}/breakfast-details/{$detail->id}", [
             'is_room' => false,
             'amount' => 90000,
         ])->assertSuccessful()->assertJsonPath('data.is_room', false);
 
-        $this->assertDatabaseCount('booking_room_services', 1);
-        $this->assertSame(0, (int) $service->fresh()->is_room);
+        $this->assertDatabaseCount('booking_room_services', 0);
+        $this->assertDatabaseHas('booking_child_breakfast_details', [
+            'id' => $detail->id,
+            'is_room' => 0,
+            'amount' => 90000,
+        ]);
+    }
+
+    public function test_room_date_update_moves_guest_actual_arrival_and_child_breakfast_period(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'Booking_AutoExtraChargeBFChild'], ['value' => '1']);
+        $booking = $this->createBooking([
+            'arrival_date' => '2026-08-17',
+            'departure_date' => '2026-08-28',
+        ]);
+        $room = BookingRoom::create([
+            'id' => 'G-BF-DATE',
+            'booking_id' => $booking->id,
+            'room_number' => '101',
+            'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-17',
+            'departure_date' => '2026-08-20',
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+        $guest = Guest::create(['full_name' => 'Date Guest', 'guest_status' => Guest::STATUS_ACTIVE]);
+        $pivot = BookingRoomGuest::create([
+            'booking_room_id' => $room->id,
+            'guest_id' => $guest->id,
+            'is_primary' => true,
+            'status' => BookingRoomGuest::STATUS_ACTIVE,
+            'actual_arrival_date' => '2026-08-17',
+        ]);
+        $child = BookingChild::create([
+            'id' => 'BC-BF-DATE',
+            'booking_id' => $booking->id,
+            'booking_room_id' => $room->id,
+            'full_name' => 'Date Child',
+            'age_group' => 'child',
+        ]);
+        foreach (['2026-08-17', '2026-08-18', '2026-08-19'] as $date) {
+            BookingChildBreakfastDetail::create([
+                'booking_child_id' => $child->id,
+                'service_date' => $date,
+                'breakfast' => true,
+                'is_free' => false,
+                'is_extra_charge' => true,
+                'is_room' => false,
+                'amount' => 90000,
+            ]);
+        }
+
+        $this->putJson("/api/bookings/{$booking->id}/rooms/{$room->id}", [
+            'arrival_date' => '2026-08-24',
+            'departure_date' => '2026-08-28',
+        ])->assertSuccessful();
+
+        $this->assertSame('2026-08-24', $pivot->fresh()->actual_arrival_date->toDateString());
+        $this->assertSame(['2026-08-24', '2026-08-25', '2026-08-26', '2026-08-27'],
+            $child->fresh()->breakfastDetails()->orderBy('service_date')->pluck('service_date')->map(fn ($date) => $date->toDateString())->all());
+        $this->assertSame(90000.0, (float) $child->fresh()->breakfastDetails()->first()->amount);
+        $this->assertDatabaseCount('booking_room_services', 0);
     }
 
     public function test_inline_service_update_bypasses_service_check_and_syncs_extra_bed(): void
@@ -1628,5 +1688,44 @@ class BookingBusinessRulesTest extends TestCase
         $room1->refresh();
         $this->assertEquals('2026-08-22', $room1->arrival_date->toDateString()); // Unchanged
         $this->assertEquals('2026-08-27', $room1->departure_date->toDateString()); // Changed
+    }
+
+    /**
+     * Day-use keeps a same-day stay at zero nights and can be edited through
+     * the bulk room endpoint without being rejected as an invalid overnight
+     * period.
+     */
+    public function test_day_use_room_persists_zero_nights_and_accepts_same_day_bulk_update(): void
+    {
+        $booking = $this->createBooking([
+            'arrival_date' => '2026-08-21',
+            'departure_date' => '2026-08-21',
+            'num_of_days' => 0,
+            'is_day_use' => true,
+        ]);
+
+        $room = BookingRoom::create([
+            'id' => 'G-DAY-USE',
+            'booking_id' => $booking->id,
+            'room_number' => '101',
+            'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-21',
+            'departure_date' => '2026-08-21',
+            'is_day_use' => true,
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $this->assertSame(0, (int) $room->fresh()->ActutalNumOfDays);
+        $this->assertSame(0, (int) $room->fresh()->NumOfDays);
+
+        $this->postJson("/api/bookings/{$booking->id}/rooms/bulk-update", [
+            'room_ids' => [$room->id],
+            'arrival_date' => '2026-08-21',
+            'departure_date' => '2026-08-21',
+        ])->assertSuccessful();
+
+        $room->refresh();
+        $this->assertSame(0, (int) $room->ActutalNumOfDays);
+        $this->assertSame(0, (int) $room->NumOfDays);
     }
 }

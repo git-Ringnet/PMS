@@ -116,7 +116,10 @@ class RoomAvailabilityService
             $lockStart = Carbon::parse($lk->start_date)->toDateString();
             $lockEnd = Carbon::parse($lk->end_date)->toDateString();
 
-            if ($lk->is_active == 2 && $lockStart !== $lockEnd) {
+            if ($lk->is_active == 2) {
+                if ($lockStart === $lockEnd) {
+                    return false;
+                }
                 $endTime = Carbon::parse($lk->end_date)->format('H:i');
                 if ($endTime < $defineLockTime && $lockEnd <= $arrivalDate) {
                     return false;
@@ -204,19 +207,32 @@ class RoomAvailabilityService
             $query->where('id', '!=', $excludeBookingRoomId);
         }
 
-        $query->where(function ($q) use ($arrivalDate, $departureDate, $arrivalTime, $departureTime) {
-            // Case 1: Standard date overlap check
-            $q->where(function ($sub) use ($arrivalDate, $departureDate) {
-                $sub->where('arrival_date', '<', $departureDate)
-                    ->where('departure_date', '>', $arrivalDate);
+        $queryEnd = $arrivalDate === $departureDate
+            ? Carbon::parse($arrivalDate)->addDay()->toDateString()
+            : $departureDate;
+        $query->where(function ($q) use ($arrivalDate, $departureDate, $queryEnd, $arrivalTime, $departureTime) {
+            // Standard overnight overlap uses the half-open [arrival,
+            // departure) interval.
+            $q->where(function ($sub) use ($arrivalDate, $queryEnd) {
+                $sub->whereColumn('arrival_date', '!=', 'departure_date')
+                    ->where('arrival_date', '<', $queryEnd . ' 00:00:00')
+                    ->where('departure_date', '>', $arrivalDate . ' 00:00:00');
             });
 
-            // Case 2: Same-day Dayuse hourly overlap check
-            $q->orWhere(function ($sub) use ($arrivalDate, $departureDate, $arrivalTime, $departureTime) {
-                $sub->whereBetween('arrival_date', [$arrivalDate . ' 00:00:00', $arrivalDate . ' 23:59:59'])
-                    ->whereBetween('departure_date', [$departureDate . ' 00:00:00', $departureDate . ' 23:59:59']);
+            // A day-use row occupies its calendar day. This covers both an
+            // overnight request colliding with an existing day-use row and a
+            // same-day request colliding with an overnight stay (the latter
+            // is the case the old implementation missed).
+            $q->orWhere(function ($sub) use ($arrivalDate, $departureDate, $queryEnd, $arrivalTime, $departureTime) {
+                $sub->whereColumn('arrival_date', '=', 'departure_date')
+                    ->where('is_day_use', 1)
+                    ->where('arrival_date', '>=', $arrivalDate . ' 00:00:00')
+                    ->where('arrival_date', '<', $queryEnd . ' 00:00:00');
 
-                if ($arrivalTime && $departureTime) {
+                if ($arrivalDate === $departureDate
+                    && $arrivalTime
+                    && $departureTime
+                    && $arrivalTime < $departureTime) {
                     $sub->where('arrival_time', '<', $departureTime)
                         ->where('departure_time', '>', $arrivalTime);
                 }

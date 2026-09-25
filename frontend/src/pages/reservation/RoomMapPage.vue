@@ -2074,7 +2074,7 @@ async function changeRoomStatus(room, roomStatusCode) {
       await roomStore.updateRoomStatus(room.id, roomStatusCode, moduleContext.value)
       uiStore.showToast(t('roomMap.changeStatusSuccess', { room: room.room_number, status: statusLabel }), 'success')
     } catch (err) {
-      uiStore.showToast(t('roomMap.changeStatusError'), 'error')
+      uiStore.showToast(err.response?.data?.message || t('roomMap.changeStatusError'), 'error')
     }
   }
 }

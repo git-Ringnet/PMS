@@ -49,6 +49,9 @@ class HotelSettingController extends Controller
         
         $bfConfig = \App\Models\HotelConfig::where('name', 'DefaultBreakfast')->first();
         $data['DefaultBreakfast'] = $bfConfig ? intval($bfConfig->value) : 1;
+
+        $syncConfig = \App\Models\HotelConfig::where('name', 'SyncRoomDateByBookingDate')->first();
+        $data['SyncRoomDateByBookingDate'] = $syncConfig ? intval($syncConfig->value) : 0;
         
         return response()->json([
             'success' => true,

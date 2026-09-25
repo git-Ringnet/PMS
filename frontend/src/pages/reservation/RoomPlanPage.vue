@@ -1960,6 +1960,7 @@ const processedBookings = computed(() => {
     if (room.isVirtual) return
     if (room.active_locks && room.active_locks.length > 0) {
       room.active_locks.forEach(lock => {
+        if (lock.is_active === 2 || lock.lock_status === 'Done') return
         combinedList.push({
           room: String(room.room),
           checkIn: lock.lock_start_date,
@@ -2074,8 +2075,13 @@ const processedBookings = computed(() => {
     // Left offset ratio (0% to start at the left boundary of the first day cell)
     const leftRatio = showNights.value ? 0 : 0.5
 
+    const checkOutHourMin = `${String(checkOutDate.getHours()).padStart(2, '0')}:${String(checkOutDate.getMinutes()).padStart(2, '0')}`
+    const defineLockTime = hotelSettings.value?.FrmOOO_DefineLockByTime || '12:00'
+    const cutoffTime = defineLockTime.length >= 5 ? defineLockTime.slice(0, 5) : '12:00'
+    const isLockEndedEarly = isLockItem && (checkInDateStr !== checkOutDateStr) && (checkOutHourMin < cutoffTime)
+
     // Total columns spanned (occupy full cells or half cells)
-    const span = Math.max(1, isLockItem ? (endIdx - startIdx + 1) : (endIdx - startIdx))
+    const span = Math.max(1, isLockItem ? (isLockEndedEarly ? (endIdx - startIdx) : (endIdx - startIdx + 1)) : (endIdx - startIdx))
     const showCheckOutIndicator = !showNights.value && isCheckOutVisible
 
     // Formatting for tooltip display
@@ -2192,8 +2198,17 @@ const dynamicStats = computed(() => {
 
       const hasLock = items.some(item => {
         if (item.type !== 'OOO' && item.type !== 'OOS') return false
-        // Room locks occupy the checkout/end date as well.
-        return idx >= item.startIndex && idx <= item.endIndex
+        if (idx < item.startIndex || idx > item.endIndex) return false
+        // Nếu ngày đang xét là ngày kết thúc và khác ngày bắt đầu:
+        if (idx === item.endIndex && item.startIndex !== item.endIndex) {
+          const defineLockTime = hotelSettings.value?.FrmOOO_DefineLockByTime || '12:00'
+          const cutoffTime = defineLockTime.length >= 5 ? defineLockTime.slice(0, 5) : '12:00'
+          const lockEndTime = item.checkOutTimeStr || '12:00'
+          if (lockEndTime < cutoffTime) {
+            return false // Mở khóa trước giờ quy định => ngày kết thúc không tính là phòng khóa
+          }
+        }
+        return true
       })
 
       if (hasGuest) {

@@ -7,10 +7,19 @@ use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PresenceChannel;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
+use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-class ReservationUpdated implements ShouldBroadcastNow
+/**
+ * Notify reservation screens after the enclosing write transaction commits.
+ *
+ * Booking flows update several related records in one transaction. Deferring
+ * the broadcast prevents another screen from reloading a partially-written
+ * booking (or receiving a notification for a transaction that later rolls
+ * back).
+ */
+class ReservationUpdated implements ShouldBroadcastNow, ShouldDispatchAfterCommit
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 

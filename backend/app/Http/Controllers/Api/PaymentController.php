@@ -646,13 +646,44 @@ class PaymentController extends Controller
             'description'       => 'nullable|string|max:255',
         ]);
 
-        DB::transaction(function () use ($request, $payment) {
+        // The UI only exposes active cash/card/bank/voucher methods, but the
+        // API must enforce the same rule for quick edits and legacy clients.
+        // Otherwise a deposit could be changed to debt/free-of-charge (group
+        // 4/5) or to an unknown code while still remaining an active deposit.
+        $paymentMethodCode = null;
+        $paymentMethod = null;
+        if ($request->has('payment_method_id')) {
+            $paymentMethodCode = $this->resolvePaymentMethodCode($request->payment_method_id);
+            $paymentMethod = PaymentMethod::where('code', $paymentMethodCode)->first();
+            if (!$paymentMethod || $paymentMethod->is_inactive || in_array((int) $paymentMethod->payment_group, [4, 5], true)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Hình thức thanh toán không hợp lệ cho đặt cọc.',
+                ], 422);
+            }
+        }
+
+        DB::transaction(function () use ($request, $payment, $paymentMethodCode, $paymentMethod) {
             // Không cho sửa date và amount
             // A deposit correction may only change its payment method and note.
             // Date, amount, room, account, and receipt stay immutable.
             $data = $request->only(['description']);
             if ($request->has('payment_method_id')) {
-                $data['payment_method_id'] = $this->resolvePaymentMethodCode($request->payment_method_id);
+                $data['payment_method_id'] = $paymentMethodCode;
+
+                // The legacy edit flow keeps the deposit description in sync
+                // with the selected payment method. If the method changes,
+                // regenerate the description so it cannot advertise the old
+                // method (including when an old client submitted a custom
+                // description alongside the method).
+                $oldMethodCode = strtoupper(trim((string) $payment->payment_method_id));
+                $newMethodCode = strtoupper(trim((string) $paymentMethodCode));
+
+                if ($oldMethodCode !== $newMethodCode && $paymentMethod) {
+                    $roomNumber = $payment->bookingRoom?->room_number;
+                    $data['description'] = 'Deposit (' . $paymentMethod->name . ')'
+                        . ($roomNumber ? ' - Phòng ' . $roomNumber : '');
+                }
             }
             $payment->update(array_merge(
                 $data,

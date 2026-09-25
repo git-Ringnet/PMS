@@ -14,6 +14,14 @@ Người dùng yêu cầu dùng sub-agent GPT-5.6 Luna, reasoning **max**. Đã 
 - Ngày đến bằng ngày đi tiếp tục tính một ngày theo model hiện tại; chưa đổi nghiệp vụ day-use.
 - Giá/dịch vụ đã post được bảo toàn; sửa kỳ ở xử lý RM dự kiến. Chưa tự sửa hóa đơn đã post, chưa thay quy trình điều chỉnh tiền EB/BD ngoài mô tả lỗi.
 
+## Audit Sections 4/6/7/9/11/12/17/20 (2026-09-23)
+
+- Same-day room assignment now checks room-number overlap against overnight stays and treats moved status `100` as historical for duplicate validation.
+- Day-use rows persist `is_day_use` with zero nights; late check-in keeps its original non-day-use flag. Room-night occupancy follows `IsRoomNightRoomDayUse` when posting RM.
+- Quick Update starts blank, rejects an empty room selection, and rate-only bulk changes do not write projected RM service rows. Room price edits update both `rate` and `base_price`; nightly RM details remain date-specific.
+- Room move history is loaded through `moved_to_room`/`moved_from_room`; the moved source row displays its destination room. Destination move segments remain ineligible for undo check-in.
+- Detailed scope, file mapping and UAT cases: `.codex/docs/booking/sections_4_6_7_9_11_12_17_20.md`.
+
 ## Chuyển đổi dữ liệu section 7
 
 **Chưa chạy trên database vận hành.** Chỉ chuẩn bị code/migration và test trên database test riêng. Không mở ứng dụng với bộ frontend/backend mới trên database chưa chuyển đổi để nhập dữ liệu booking.
@@ -82,5 +90,11 @@ Kết quả đã chạy trong workspace:
 Windows sandbox chặn spawn ở chế độ mặc định; Node tests cần chạy không tách process như lệnh trên. Chưa chạy UAT trên trình duyệt với chuỗi GAL6, đổi BAR nhanh, keyboard/paste và dữ liệu thật. Chưa chạy migration trên MySQL vận hành; SQLite không xác nhận DDL/procedure/quyền/collation của MySQL. Chưa truy vấn hoặc sửa G0000022. Cần backup, dry-run migration, đối soát status/AV và nghiệm thu từng section trước khi mở ghi dữ liệu.
 
 `RoomLockTest::test_section_2_allow_lock_room_cause_unassignable_room_bk` vẫn còn một assertion riêng về nội dung cảnh báo AV (fixture chờ thông báo thiếu phòng liên tục, endpoint hiện trả cảnh báo AV âm phòng); failure này không đi qua accessor `HotelSetting::getSetting()` và nằm ngoài regression tạo booking mới.
+
+## Realtime/API follow-up (23/09/2026)
+
+- `ReservationUpdated` and `RoomStatusUpdated` now implement `ShouldDispatchAfterCommit`, so the existing Eloquent listener notifies Room Plan/Room Map/General Search only after a booking/room transaction commits. This preserves the existing public `pms-channel`, event names, payloads, and Echo consumers while preventing partial/rolled-back refreshes.
+- `BookingController::restore` now receives `Request`; the optional `force` flag used by the overbooking-confirmation branch no longer raises an undefined-variable error.
+- PHP lint and booking route listing passed for the controller/events. The focused `BookingTest` could not start in this environment because the configured branch connection `mysql_data` is missing.
 
 Các thay đổi add-only trong correction này **chưa viết/chạy test hoặc build theo yêu cầu người dùng**. Cần kiểm tra thủ công theo repro: booking đã có 2 phòng, mở `Lấy phòng`, sửa giá/người nhưng quantity mới vẫn 0, lưu và đối chiếu các trường của 2 `booking_rooms` không đổi; sau đó thử thêm phòng, thử lỗi availability và thử hủy/reopen draft.

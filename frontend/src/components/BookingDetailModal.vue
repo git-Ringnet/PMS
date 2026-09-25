@@ -39,6 +39,40 @@ const router = useRouter()
 const route = useRoute()
 const uiStore = useUiStore()
 
+const isInHouse = computed(() => {
+  const s = props.room?.booking_room_status ?? props.room?.bookingRoomStatus ?? props.room?.status
+  return s === 1 || s === '1' || s === 'Checked In' || s === 'occupied' || s === 'checked_in'
+})
+
+const isDayUseDisabled = computed(() => {
+  if (!isEditingMode.value) return true
+  const arr = formatDateForInput(stayInfo.value.arrival_date || props.room?.arrival_date)
+  const sys = formatDateForInput(systemDate.value)
+  if (arr && sys && arr < sys) {
+    return true
+  }
+  return false
+})
+
+function onHourlyToggle() {
+  if (isDayUseDisabled.value) {
+    stayInfo.value.hourly = false
+    return
+  }
+  if (stayInfo.value.hourly) {
+    stayInfo.value.departure_date = stayInfo.value.arrival_date
+    stayInfo.value.nights = 0
+  } else {
+    if (stayInfo.value.arrival_date === stayInfo.value.departure_date) {
+      const d = new Date(stayInfo.value.arrival_date)
+      d.setDate(d.getDate() + 1)
+      stayInfo.value.departure_date = d.toISOString().split('T')[0]
+      stayInfo.value.nights = 1
+    }
+  }
+}
+
+
 // ── Dropdowns Catalog ──────────────────────────────
 const titlesList = ['Mr.', 'Ms.', 'Mrs.', 'Miss.', 'Kid.', 'Baby.', 'Dr.', 'Prof.']
 
@@ -727,15 +761,16 @@ async function loadGuests(autoSelectId = null) {
 
 watch(() => props.room, (newRoom) => {
   if (newRoom) {
+    const isHourlyRoom = !!(newRoom.is_day_use || newRoom.is_hourly || newRoom.hourly)
     stayInfo.value = {
       arrival_date: formatDateForInput(newRoom.arrival_date) || '',
       arrival_time: formatTime24h(newRoom.check_in_time) || '14:00',
       departure_date: formatDateForInput(newRoom.departure_date) || '',
       departure_time: formatTime24h(newRoom.check_out_time) || '12:00',
-      nights: newRoom.nights || newRoom.ActutalNumOfDays || 1,
+      nights: isHourlyRoom ? 0 : (newRoom.nights || newRoom.ActutalNumOfDays || 1),
       occupants_str: `${adults.value.length} / ${children.value.length} / ${babies.value.length}`,
       breakfast: newRoom.breakfast !== false,
-      hourly: newRoom.is_hourly || false,
+      hourly: isHourlyRoom,
       notes: newRoom.booking_note || '',
     }
 
@@ -756,11 +791,15 @@ watch(() => props.room, (newRoom) => {
 
 watch(() => [stayInfo.value.arrival_date, stayInfo.value.departure_date], ([arr, dep]) => {
   if (arr && dep) {
-    const dArr = new Date(arr)
-    const dDep = new Date(dep)
-    const diffTime = dDep.getTime() - dArr.getTime()
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-    stayInfo.value.nights = diffDays > 0 ? diffDays : 1
+    if (stayInfo.value.hourly || arr === dep) {
+      stayInfo.value.nights = 0
+    } else {
+      const dArr = new Date(arr)
+      const dDep = new Date(dep)
+      const diffTime = dDep.getTime() - dArr.getTime()
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+      stayInfo.value.nights = diffDays > 0 ? diffDays : 1
+    }
   }
 })
 
@@ -1071,6 +1110,7 @@ async function handleSave() {
       arrival_time: stayInfo.value.arrival_time,
       departure_date: stayInfo.value.departure_date,
       departure_time: stayInfo.value.departure_time,
+      is_day_use: !!stayInfo.value.hourly,
       rate: pricingInfo.value.rate ? Number(String(pricingInfo.value.rate).replace(/\D/g, '')) : 0,
       rate_code: validRateCode,
       extra_bed_qty: Number(pricingInfo.value.extra_bed_qty || 0),
@@ -1593,7 +1633,7 @@ function parseNumber(val) {
                   <label>Ngày phát hành</label>
                   <SingleDatePicker
                     v-model="formGuest.id_issue_date"
-                    :disabled="!isEditingMode"
+                    :disabled="!isEditingMode || stayInfo.hourly"
                     placeholder="dd/mm/yyyy"
                   />
                 </div>
@@ -1678,7 +1718,7 @@ function parseNumber(val) {
                 </div>
                 <div class="checkbox-row">
                   <label class="cb"><input type="checkbox" v-model="stayInfo.breakfast" :disabled="!isEditingMode"> Ăn sáng</label>
-                  <label class="cb"><input type="checkbox" v-model="stayInfo.hourly" :disabled="!isEditingMode"> Phòng theo giờ</label>
+                  <label class="cb"><input type="checkbox" v-model="stayInfo.hourly" :disabled="isDayUseDisabled" @change="onHourlyToggle"> Phòng theo giờ</label>
                 </div>
               </div>
               <div class="f" style="margin-top: 10px;">

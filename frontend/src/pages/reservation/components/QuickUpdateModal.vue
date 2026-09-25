@@ -57,7 +57,7 @@
             class="px-2.5 py-1 bg-slate-100 border border-slate-200 rounded-md font-bold text-slate-700 text-[11px]"
           >
             P. {{ r.roomNumber || 'Chưa gán' }} 
-            <span class="text-[9px] text-slate-400 font-normal">({{ r.status === 1 || r.status === 'Checked In' ? 'Đang ở' : 'Đăng ký' }})</span>
+            <span class="text-[9px] text-slate-400 font-normal">({{ Number(roomStatus(r)) === 1 || roomStatus(r) === 'Checked In' ? 'Đang ở' : 'Đăng ký' }})</span>
           </span>
         </div>
 
@@ -272,8 +272,15 @@ const systemDateNormalized = computed(() => {
 })
 
 const hasCheckedInRoom = computed(() => {
-  return props.targetRooms.some(r => r.status === 1 || r.status === 'Checked In')
+  return props.targetRooms.some(r => Number(roomStatus(r)) === 1 || roomStatus(r) === 'Checked In')
 })
+
+// CreateRegistrationPage stores the persisted booking-room status as
+// `bookingRoomStatus`; Room Map callers historically used `status`. Keep both
+// shapes readable so in-house restrictions are applied consistently.
+function roomStatus(room) {
+  return room?.bookingRoomStatus ?? room?.status
+}
 
 const isFO = computed(() => {
   const dept = authStore.user?.department_code?.toLowerCase()
@@ -335,17 +342,18 @@ watch(() => form.value.arrival_date, (newArrival) => {
 watch(() => props.show, (newVal) => {
   if (newVal) {
     modalPos.value = { x: 0, y: 0 }
-    const firstRoom = props.targetRooms[0] || {}
+    // Bulk update is intentionally a blank patch. Do not copy values from
+    // the first selected room into every selected room.
     form.value = {
-      arrival_date: normalizeToYmd(firstRoom.checkIn),
-      arrival_time: firstRoom.arrivalTime ? firstRoom.arrivalTime.substring(0, 5) : '14:00',
-      departure_date: normalizeToYmd(firstRoom.checkOut),
-      departure_time: firstRoom.hoursOut ? firstRoom.hoursOut.substring(0, 5) : '12:00',
-      rate: firstRoom.price !== undefined ? firstRoom.price : '',
-      adults: firstRoom.adults !== undefined ? firstRoom.adults : '',
-      children_qty: firstRoom.children !== undefined ? firstRoom.children : '',
-      extra_bed_qty: firstRoom.extraBedQty !== undefined ? firstRoom.extraBedQty : '',
-      extra_bed_rate: firstRoom.extraBedPrice !== undefined ? firstRoom.extraBedPrice : '',
+      arrival_date: '',
+      arrival_time: '',
+      departure_date: '',
+      departure_time: '',
+      rate: '',
+      adults: '',
+      children_qty: '',
+      extra_bed_qty: '',
+      extra_bed_rate: '',
       confirm_overbooking: false
     }
   }

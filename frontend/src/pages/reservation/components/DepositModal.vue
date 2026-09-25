@@ -515,7 +515,7 @@
                                           <span class="font-black text-slate-900 text-xs tracking-wider w-12 shrink-0">BKK:</span>
                                           <span class="font-bold text-slate-900 text-xs truncate">{{ opt.code }} - {{ opt.name }}</span>
                                         </template>
-                                        <!-- Dòng Phòng: chỉ phòng Đang ở (status=1), KHÔNG có dòng 'Toàn bộ phòng' -->
+                                        <!-- Dòng phòng/khách hợp lệ (Reservation hoặc Inhouse), không có dòng "Toàn bộ phòng" -->
                                         <template v-else-if="opt.type === 'guest'">
                                           <div class="flex items-center text-xs pl-6 w-full">
                                             <span class="font-bold text-slate-800 min-w-[48px] text-right pr-1">{{ opt.roomNumber }}</span>
@@ -905,12 +905,19 @@ const transferOptions = computed(() => {
 
     for (const room of Array.isArray(booking.booking_rooms) ? booking.booking_rooms : []) {
       const roomNumber = String(room.room_number || room.room?.room_number || '').trim()
-      // CHỈ LẤY PHÒNG ĐANG Ở (STATUS = 1) ĐÃ CÓ SỐ PHÒNG THỰC TẾ VÀ CHƯA CHECK-OUT
-      const isInHouse = Number(room.status) === 1
+      const roomLabel = roomNumber || 'Chưa xếp'
+      // Backend accepts both Reservation (0) and Inhouse (1). Keep the
+      // destination scope aligned with Checkout -> Chuyển cọc; a booking
+      // row remains available for a Master transfer while room rows carry
+      // the optional booking-room/guest IDs.
+      const isTransferEligibleRoom = [0, 1].includes(Number(room.status))
       const isCheckedOut = Number(room.status) === 2 || Boolean(room.checked_out_at)
-      if (!isInHouse || isCheckedOut || !roomNumber) continue
+      if (!isTransferEligibleRoom || isCheckedOut) continue
 
-      const roomMatches = !query || roomNumber.toLowerCase().includes(query)
+      // Keep unassigned but valid booking rooms in the destination list;
+      // Checkout renders the same records as "PM" and the API accepts their
+      // booking-room ID even when no physical room number exists yet.
+      const roomMatches = !query || roomNumber.toLowerCase().includes(query) || roomLabel.toLowerCase().includes(query)
 
       // Lấy danh sách khách hợp lệ của phòng đang ở
       const roomGuests = []
@@ -946,7 +953,7 @@ const transferOptions = computed(() => {
           booking,
           bookingRoomId: room.id,
           guestId: guest.id,
-          roomNumber,
+          roomNumber: roomLabel,
           guestName: guest.name,
           isPrimary: guest.isPrimary,
         })
@@ -970,10 +977,12 @@ const transferOptions = computed(() => {
 function isSelectedOption(opt) {
   if (!transferDestBooking.value) return false
   if (opt.type === 'booking') {
-    return opt.booking.id === transferDestBooking.value.id && !transferDestRoomId.value
+    return String(opt.booking.id) === String(transferDestBooking.value.id) && !transferDestRoomId.value
   }
   if (opt.type === 'guest') {
-    return opt.booking.id === transferDestBooking.value.id && opt.bookingRoomId === transferDestRoomId.value && String(opt.guestId || '') === String(transferDestGuestId.value || '')
+    return String(opt.booking.id) === String(transferDestBooking.value.id)
+      && String(opt.bookingRoomId) === String(transferDestRoomId.value)
+      && String(opt.guestId || '') === String(transferDestGuestId.value || '')
   }
   return false
 }
@@ -1125,6 +1134,26 @@ function updateAutoNote() {
 }
 
 function handlePaymentMethodChange() {
+  const pmId = depositForm.value.paymentMethodId
+  const pm = (props.paymentMethods || []).find(x => x.code === pmId || String(x.id) === String(pmId))
+  if (!pm) return
+
+  // When editing an existing deposit, changing the payment method must also
+  // refresh the description. Amount/date/room remain immutable in the API;
+  // the legacy flow always keeps the description aligned with the new method.
+  if (depositForm.value.id) {
+    let roomTag = ''
+    if (depositForm.value.bookingRoomId) {
+      const targetRoom = availableRooms.value.find(r => String(getBookingRoomId(r)) === String(depositForm.value.bookingRoomId))
+      if (targetRoom) {
+        const rNo = targetRoom.room_number || targetRoom.roomNumber || targetRoom.room?.room_number
+        if (rNo) roomTag = ` - Phòng ${rNo}`
+      }
+    }
+    depositForm.value.note = `Deposit (${pm.name})${roomTag}`
+    return
+  }
+
   updateAutoNote()
 }
 
@@ -1133,8 +1162,11 @@ function handleRoomChange() {
 }
 
 // Auto-fill note based on payment method selection
-watch(() => depositForm.value.paymentMethodId, (newPmId) => {
-  handlePaymentMethodChange()
+watch(() => depositForm.value.paymentMethodId, () => {
+  // The explicit change handler owns edit-mode updates. This watcher keeps
+  // the auto-description behavior for a new deposit without rewriting the
+  // existing description while an edit form is being hydrated.
+  if (!depositForm.value.id) handlePaymentMethodChange()
 })
 
 watch(() => props.show, async (newVal) => {
@@ -1668,12 +1700,15 @@ async function loadAvailableBookingsForTransfer(searchQuery = '') {
   isSearchingDest.value = true
   const requestId = ++transferSearchRequestId
   try {
-    const params = { status: '0,1,4' }
+    const params = { status: '0,1' }
     if (searchQuery) params.search = searchQuery
     const res = await fetchBookings(params)
     const bookings = res.data?.data || res.data || []
     if (requestId !== transferSearchRequestId) return
-    searchResults.value = bookings.filter(b => String(b.id) !== String(props.bookingId))
+    searchResults.value = bookings.filter(b => (
+      [0, 1].includes(Number(b.status))
+      && String(b.id) !== String(props.bookingId)
+    ))
   } catch (err) {
     console.error('Lỗi khi tải danh sách booking để chuyển cọc:', err)
     if (requestId === transferSearchRequestId) searchResults.value = []
@@ -1715,6 +1750,9 @@ function selectTargetBookingOption(opt) {
 }
 
 function clearTransferSelection() {
+  // Invalidate an in-flight lookup so a late response cannot repopulate a
+  // selection the user has just cleared.
+  transferSearchRequestId++
   transferDestSearch.value = ''
   transferDestBooking.value = null
   transferDestRoomId.value = null
@@ -1768,7 +1806,9 @@ async function confirmTransfer() {
     department_id: props.departmentId || 'MR',
   }
   if (transferDestRoomId.value) payload.target_room_id = transferDestRoomId.value
-  if (transferDestGuestId.value) payload.target_guest_id = transferDestGuestId.value
+  if (transferDestGuestId.value !== null && transferDestGuestId.value !== '') {
+    payload.target_guest_id = transferDestGuestId.value
+  }
   try {
     await transferPayment(targetId, payload)
     await syncDepositsFromBackend(true)
