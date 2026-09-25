@@ -18,6 +18,13 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-25] - Ẩn cột "Đặt trước" (isPreassigned) trên bảng phòng Booking
+### Module: Đăng ký đặt phòng ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))
+
+- **Nghiệp vụ**:
+  - Ẩn cột "Đặt trước" (`isPreassigned`) khỏi bảng phòng trong màn hình Đăng ký đặt phòng bằng cách chuyển `visible: false` theo mặc định.
+  - Loại bỏ hoàn toàn hiển thị cột không sử dụng này trên cả chế độ bảng phòng chi tiết và rút gọn, tự động co lại chiều rộng `tableWidth`.
+
 ## [2026-09-23] - Phân tích đặc tả kỹ thuật Báo cáo Dòng 169, 170, 171 (Báo cáo Dự đoán bán phòng, Báo cáo Phòng hàng tuần, Báo cáo Tổng doanh thu)
 ### Module: Tài liệu phân tích báo cáo ([ROW_169_170_171_COMPREHENSIVE_SPECIFICATION.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/ROW_169_170_171_COMPREHENSIVE_SPECIFICATION.md), [dong_169_bao_cao_du_doan_ban_phong.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_169_bao_cao_du_doan_ban_phong.md), [dong_170_bao_cao_phong_hang_tuan.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_170_bao_cao_phong_hang_tuan.md), [dong_171_bao_cao_tong_doanh_thu.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/dong_171_bao_cao_tong_doanh_thu.md))
 

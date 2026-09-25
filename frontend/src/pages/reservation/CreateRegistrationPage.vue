@@ -701,7 +701,7 @@ const columns = ref([
   { key: 'specialRequests', label: 'Yêu cầu đặc biệt', visible: true, width: 'w-[125px]', center: true },
   { key: 'arrivalTime', label: 'Giờ đến', visible: true, width: 'w-[90px]', center: true },
   { key: 'hoursOut', label: 'Giờ đi', visible: true, width: 'w-[90px]', center: true },
-  { key: 'isPreassigned', label: 'Đặt trước', visible: true, width: 'w-[80px]', center: true },
+  { key: 'isPreassigned', label: 'Đặt trước', visible: false, width: 'w-[80px]', center: true },
   { key: 'initialRoomClass', label: 'LP Khởi tạo', visible: true, width: 'w-[105px]' },
   { key: 'transferredFrom', label: 'Phòng chuyển', visible: true, width: 'w-[100px]', center: true },
   { key: 'allotmentCode', label: 'Mã ALM', visible: true, width: 'w-[100px]' },
