@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import http from '@/services/http'
 import { fetchRoles } from '@/services/company-service'
 import { useUiStore } from '@/stores/ui-store'
@@ -9,8 +9,21 @@ const loading = ref(false)
 const hotelConfigs = ref([])
 const searchConfigQuery = ref('')
 const roles = ref([])
-const selectedOldDayRoleCodes = ref([])
 const oldDayRuleConfigKey = 'RuleUserCorrectOrPostBillPaymentOldDay'
+
+// Standard hotel roles/positions to ensure all common roles are available in dropdown
+const defaultRoleOptions = [
+  { code: 'Admin', name: 'Quản trị viên (Administrator)' },
+  { code: 'FO', name: 'Nhân viên lễ tân (Front Office)' },
+  { code: 'FOM', name: 'Trưởng bộ phận lễ tân (FO Manager)' },
+  { code: 'HK', name: 'Nhân viên buồng phòng (Housekeeping)' },
+  { code: 'HKM', name: 'Trưởng buồng phòng (HK Manager)' },
+  { code: 'Sales', name: 'Kinh doanh (Sales)' },
+  { code: 'MGMT', name: 'Quản lý (Management)' },
+  { code: 'FB', name: 'Nhân viên nhà hàng (F&B Staff)' },
+  { code: 'FBM', name: 'Trưởng nhà hàng (F&B Manager)' },
+  { code: 'ACC', name: 'Kế toán (Accounting)' },
+]
 
 const isEditMode = ref(false)
 const isConfigModalOpen = ref(false)
@@ -20,6 +33,124 @@ const configFormState = reactive({
   value: '',
   description: ''
 })
+
+// Role dropdown state
+const roleDropdownOpen = ref(false)
+const roleDropdownRef = ref(null)
+const roleSearchQuery = ref('')
+const customRoleInput = ref('')
+const selectedRoleCodes = ref([])
+
+const isRoleConfig = (key) => {
+  if (!key) return false
+  const k = String(key).trim()
+  return (
+    k === 'RoleUserUnlockRoomOOO/OOS' ||
+    k === 'OOORoleUserUnlock' ||
+    k === 'OOSRoleUserUnlock' ||
+    k === oldDayRuleConfigKey ||
+    k.startsWith('RoleUser') ||
+    k.startsWith('RuleUser') ||
+    k.includes('RoleUser') ||
+    k.includes('RoleUnlock')
+  )
+}
+
+// Merge fetched roles, positions, default options, and current selections
+const availableRoleOptions = computed(() => {
+  const map = new Map()
+
+  // 1. Add default common roles
+  defaultRoleOptions.forEach(opt => {
+    map.set(opt.code.toLowerCase(), { code: opt.code, name: opt.name })
+  })
+
+  // 2. Add roles from API
+  if (Array.isArray(roles.value)) {
+    roles.value.forEach(r => {
+      if (!r || !r.code) return
+      const key = String(r.code).toLowerCase()
+      if (map.has(key)) {
+        const existing = map.get(key)
+        if (r.name && (!existing.name || existing.name === existing.code)) {
+          existing.name = r.name
+        }
+      } else {
+        map.set(key, { code: r.code, name: r.name || r.code })
+      }
+    })
+  }
+
+  // 3. Ensure any selected code in current value is present in options
+  selectedRoleCodes.value.forEach(code => {
+    const key = String(code).toLowerCase()
+    if (!map.has(key)) {
+      map.set(key, { code, name: code })
+    }
+  })
+
+  return Array.from(map.values())
+})
+
+const filteredRoleOptions = computed(() => {
+  const q = roleSearchQuery.value.trim().toLowerCase()
+  if (!q) return availableRoleOptions.value
+  return availableRoleOptions.value.filter(opt =>
+    opt.code.toLowerCase().includes(q) || (opt.name && opt.name.toLowerCase().includes(q))
+  )
+})
+
+const syncRoleCodesToValue = () => {
+  configFormState.value = selectedRoleCodes.value.join(',')
+}
+
+const toggleRole = (code) => {
+  const idx = selectedRoleCodes.value.findIndex(c => c.toLowerCase() === code.toLowerCase())
+  if (idx >= 0) {
+    selectedRoleCodes.value.splice(idx, 1)
+  } else {
+    selectedRoleCodes.value.push(code)
+  }
+  syncRoleCodesToValue()
+}
+
+const removeRole = (code) => {
+  const idx = selectedRoleCodes.value.findIndex(c => c.toLowerCase() === code.toLowerCase())
+  if (idx >= 0) {
+    selectedRoleCodes.value.splice(idx, 1)
+    syncRoleCodesToValue()
+  }
+}
+
+const selectAllRoles = () => {
+  filteredRoleOptions.value.forEach(opt => {
+    if (!selectedRoleCodes.value.some(c => c.toLowerCase() === opt.code.toLowerCase())) {
+      selectedRoleCodes.value.push(opt.code)
+    }
+  })
+  syncRoleCodesToValue()
+}
+
+const clearAllRoles = () => {
+  selectedRoleCodes.value = []
+  syncRoleCodesToValue()
+}
+
+const addCustomRole = () => {
+  const code = customRoleInput.value.trim()
+  if (!code) return
+  if (!selectedRoleCodes.value.some(c => c.toLowerCase() === code.toLowerCase())) {
+    selectedRoleCodes.value.push(code)
+    syncRoleCodesToValue()
+  }
+  customRoleInput.value = ''
+}
+
+const handleClickOutside = (e) => {
+  if (roleDropdownOpen.value && roleDropdownRef.value && !roleDropdownRef.value.contains(e.target)) {
+    roleDropdownOpen.value = false
+  }
+}
 
 const fetchHotelConfigs = async () => {
   loading.value = true
@@ -37,17 +168,31 @@ const fetchHotelConfigs = async () => {
 
 const fetchRoleOptions = async () => {
   try {
-    const res = await fetchRoles()
-    const roleData = res.data?.data ?? res.data ?? []
-    roles.value = Array.isArray(roleData) ? roleData : []
+    const [rolesRes, orgRes] = await Promise.allSettled([
+      fetchRoles(),
+      http.get('/organization')
+    ])
+
+    const roleData = rolesRes.status === 'fulfilled' ? (rolesRes.value.data?.data ?? rolesRes.value.data ?? []) : []
+    const loadedRoles = Array.isArray(roleData) ? [...roleData] : []
+
+    // If organization endpoint available, extract positions as roles
+    if (orgRes.status === 'fulfilled' && Array.isArray(orgRes.value.data?.data)) {
+      orgRes.value.data.data.forEach(dept => {
+        if (Array.isArray(dept.positions)) {
+          dept.positions.forEach(pos => {
+            if (pos && pos.code) {
+              loadedRoles.push({ code: pos.code, name: pos.name })
+            }
+          })
+        }
+      })
+    }
+
+    roles.value = loadedRoles
   } catch (err) {
     console.error('Unable to load role options:', err)
-    roles.value = []
   }
-}
-
-const syncOldDayRoleCodes = () => {
-  configFormState.value = selectedOldDayRoleCodes.value.join(',')
 }
 
 const openAddConfigModal = () => {
@@ -59,7 +204,9 @@ const openAddConfigModal = () => {
     value: '',
     description: ''
   })
-  selectedOldDayRoleCodes.value = []
+  selectedRoleCodes.value = []
+  roleDropdownOpen.value = false
+  roleSearchQuery.value = ''
   isConfigModalOpen.value = true
 }
 
@@ -72,9 +219,16 @@ const openEditConfigModal = (config) => {
     value: config.value,
     description: config.description
   })
-  selectedOldDayRoleCodes.value = config.name === oldDayRuleConfigKey
-    ? String(config.value || '').split(',').map(code => code.trim()).filter(Boolean)
-    : []
+  if (isRoleConfig(config.name)) {
+    selectedRoleCodes.value = String(config.value || '')
+      .split(',')
+      .map(code => code.trim())
+      .filter(Boolean)
+  } else {
+    selectedRoleCodes.value = []
+  }
+  roleDropdownOpen.value = false
+  roleSearchQuery.value = ''
   isConfigModalOpen.value = true
 }
 
@@ -83,8 +237,8 @@ const saveConfig = async () => {
     uiStore.showToast('Vui lòng nhập tên cấu hình', 'warning')
     return
   }
-  if (configFormState.name === oldDayRuleConfigKey) {
-    syncOldDayRoleCodes()
+  if (isRoleConfig(configFormState.name)) {
+    syncRoleCodesToValue()
   }
   loading.value = true
   try {
@@ -133,8 +287,13 @@ const deleteConfig = async (configId) => {
 }
 
 onMounted(() => {
+  window.addEventListener('click', handleClickOutside)
   fetchHotelConfigs()
   fetchRoleOptions()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('click', handleClickOutside)
 })
 </script>
 
@@ -227,19 +386,120 @@ onMounted(() => {
               placeholder="AllowChangeRoomStatus..."
               class="border border-slate-200 rounded-lg p-2.5 focus:outline-sky-500 text-sm disabled:bg-slate-100 disabled:cursor-not-allowed" />
           </div>
-          <div v-if="configFormState.name === oldDayRuleConfigKey" class="flex flex-col gap-1.5">
-            <span>M&#227; vai tr&#242; &#273;&#432;&#7907;c ph&#233;p thao t&#225;c ng&#224;y c&#361;</span>
-            <select v-model="selectedOldDayRoleCodes" multiple size="5"
-              class="border border-slate-200 rounded-lg p-2.5 focus:outline-sky-500 text-sm bg-white">
-              <option v-for="role in roles" :key="role.id" :value="role.code">
-                {{ role.code }}{{ role.name ? ` - ${role.name}` : '' }}
-              </option>
-            </select>
-            <span class="text-xs font-medium text-slate-400">Ch&#7885;n m&#7897;t ho&#7863;c nhi&#7873;u m&#227; vai tr&#242;. Gi&#225; tr&#7883; s&#7869; &#273;&#432;&#7907;c l&#432;u d&#7841;ng FOM,ACC.</span>
+          <!-- Khi cấu hình là loại phân quyền RoleUser... -->
+          <div v-if="isRoleConfig(configFormState.name)" class="flex flex-col gap-1.5 relative" ref="roleDropdownRef">
+            <div class="flex items-center justify-between">
+              <span>Giá trị (Vai trò / Role được cấp quyền)</span>
+              <span class="text-xs font-semibold text-slate-400">Đã chọn: {{ selectedRoleCodes.length }}</span>
+            </div>
+
+            <!-- Custom Multi-select Dropdown Trigger -->
+            <div
+              @click="roleDropdownOpen = !roleDropdownOpen"
+              class="border border-slate-200 rounded-lg p-2 bg-white hover:border-sky-400 cursor-pointer flex items-center justify-between min-h-[42px] transition-all shadow-2xs"
+              :class="roleDropdownOpen ? 'border-sky-500 ring-2 ring-sky-100' : ''"
+            >
+              <div class="flex flex-wrap gap-1.5 items-center flex-1 pr-2">
+                <span v-if="selectedRoleCodes.length === 0" class="text-slate-400 text-xs font-normal">
+                  -- Nhấp để chọn vai trò được phép (Admin, FO, FOM,...) --
+                </span>
+                <span
+                  v-for="code in selectedRoleCodes"
+                  :key="code"
+                  class="inline-flex items-center gap-1 bg-sky-50 text-sky-700 border border-sky-200 rounded-md px-2 py-0.5 text-xs font-bold"
+                  @click.stop
+                >
+                  {{ code }}
+                  <button
+                    type="button"
+                    @click.stop="removeRole(code)"
+                    class="hover:text-red-500 font-bold text-sm leading-none bg-transparent border-none cursor-pointer p-0 text-slate-400"
+                  >×</button>
+                </span>
+              </div>
+              <svg class="w-4 h-4 text-slate-400 transition-transform shrink-0" :class="roleDropdownOpen ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+
+            <!-- Dropdown Menu with Checkboxes -->
+            <div
+              v-if="roleDropdownOpen"
+              class="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-50 p-2.5 flex flex-col gap-2 max-h-72 overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+            >
+              <!-- Search box + Quick actions -->
+              <div class="flex items-center gap-1.5 pb-2 border-b border-slate-100">
+                <input
+                  type="text"
+                  v-model="roleSearchQuery"
+                  placeholder="Tìm vai trò (mã, tên)..."
+                  class="flex-1 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-medium focus:outline-sky-500"
+                  @click.stop
+                />
+                <button
+                  type="button"
+                  @click.stop="selectAllRoles"
+                  class="text-xs text-sky-600 hover:text-sky-800 font-bold bg-sky-50 hover:bg-sky-100 px-2 py-1 rounded border-none cursor-pointer whitespace-nowrap"
+                >Chọn hết</button>
+                <button
+                  type="button"
+                  @click.stop="clearAllRoles"
+                  class="text-xs text-slate-500 hover:text-slate-700 font-bold bg-slate-100 hover:bg-slate-200 px-2 py-1 rounded border-none cursor-pointer whitespace-nowrap"
+                >Bỏ chọn</button>
+              </div>
+
+              <!-- Roles List with Checkboxes -->
+              <div class="overflow-y-auto max-h-40 flex flex-col gap-0.5 pr-1">
+                <label
+                  v-for="opt in filteredRoleOptions"
+                  :key="opt.code"
+                  @click.stop
+                  class="flex items-center gap-2.5 p-1.5 rounded-lg hover:bg-sky-50/60 cursor-pointer select-none transition-colors"
+                >
+                  <input
+                    type="checkbox"
+                    :checked="selectedRoleCodes.some(c => c.toLowerCase() === opt.code.toLowerCase())"
+                    @change="toggleRole(opt.code)"
+                    class="w-4 h-4 rounded text-sky-600 focus:ring-sky-500 border-slate-300 cursor-pointer"
+                  />
+                  <div class="flex items-center gap-1.5 flex-1 text-xs">
+                    <span class="font-bold text-slate-800 font-mono">{{ opt.code }}</span>
+                    <span v-if="opt.name && opt.name.toLowerCase() !== opt.code.toLowerCase()" class="text-slate-500 text-[11px] font-normal truncate">
+                      - {{ opt.name }}
+                    </span>
+                  </div>
+                </label>
+                <div v-if="filteredRoleOptions.length === 0" class="p-3 text-center text-xs text-slate-400 italic">
+                  Không tìm thấy vai trò phù hợp
+                </div>
+              </div>
+
+              <!-- Add custom role row -->
+              <div class="pt-2 border-t border-slate-100 flex items-center gap-1.5" @click.stop>
+                <input
+                  type="text"
+                  v-model="customRoleInput"
+                  placeholder="Thêm mã khác (vd: Auditor)..."
+                  class="flex-1 border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-mono focus:outline-sky-500 uppercase"
+                  @keydown.enter.prevent="addCustomRole"
+                />
+                <button
+                  type="button"
+                  @click="addCustomRole"
+                  class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold border-none cursor-pointer"
+                >+ Thêm</button>
+              </div>
+            </div>
+
+            <!-- Value preview / instruction -->
+            <div class="flex items-center gap-1.5 text-xs text-slate-500 font-medium bg-slate-50 p-2 rounded-lg border border-slate-100">
+              <span class="text-slate-400 font-semibold shrink-0">Giá trị lưu:</span>
+              <span class="font-mono text-sky-700 font-bold break-all">{{ configFormState.value || '(Trống)' }}</span>
+            </div>
           </div>
           <div v-else class="flex flex-col gap-1.5">
-            <span>Gi&#225; tr&#7883;</span>
-            <input type="text" v-model="configFormState.value" placeholder="1 ho&#7863;c 0 ho&#7863;c b&#7887; tr&#7889;ng"
+            <span>Giá trị</span>
+            <input type="text" v-model="configFormState.value" placeholder="1 hoặc 0 hoặc bỏ trống"
               class="border border-slate-200 rounded-lg p-2.5 focus:outline-sky-500 text-sm" />
           </div>
           <div class="flex flex-col gap-1.5">

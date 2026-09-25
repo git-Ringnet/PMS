@@ -8,6 +8,7 @@ use App\Models\BookingCancelLog;
 use App\Models\BookingChild;
 use App\Models\BookingRoom;
 use App\Models\BookingRoomGuest;
+use App\Models\BookingRoomService;
 use App\Models\CancelReason;
 use App\Models\Guest;
 use App\Models\Payment;
@@ -956,10 +957,26 @@ class GuestController extends Controller
         if ($request->filled('departure_date')) $roomData['departure_date'] = $request->input('departure_date');
         if ($request->filled('arrival_time'))   $roomData['arrival_time']   = $request->input('arrival_time');
         if ($request->filled('departure_time')) $roomData['departure_time'] = $request->input('departure_time');
-        if ($request->has('rate') && $request->input('rate') !== null) $roomData['rate'] = $request->input('rate');
+        if ($request->has('rate') && $request->input('rate') !== null) {
+            $roomData['rate'] = $request->input('rate');
+            $roomData['base_price'] = $request->input('rate');
+        }
         if ($request->has('rate_code'))      $roomData['rate_code']      = filled($request->rate_code) ? trim($request->rate_code) : null;
         if ($request->has('extra_bed_qty') && $request->input('extra_bed_qty') !== null) $roomData['extra_bed_qty'] = $request->input('extra_bed_qty');
         if ($request->has('extra_bed_rate') && $request->input('extra_bed_rate') !== null) $roomData['extra_bed_rate'] = $request->input('extra_bed_rate');
+        if ($request->has('is_day_use')) {
+            $isDayUse = filter_var($request->input('is_day_use'), FILTER_VALIDATE_BOOLEAN);
+            $roomData['is_day_use'] = $isDayUse ? 1 : 0;
+            if ($isDayUse) {
+                $roomData['NumOfDays'] = 0;
+                $roomData['ActutalNumOfDays'] = 0;
+                if ($request->filled('arrival_date')) {
+                    $roomData['departure_date'] = $request->input('arrival_date');
+                } elseif ($room->arrival_date) {
+                    $roomData['departure_date'] = $room->arrival_date->toDateString();
+                }
+            }
+        }
 
         // BookingDetailModal sends the current rate and rate code together
         // with a date-only edit. Treat those fields as a pricing change only
@@ -1260,9 +1277,40 @@ class GuestController extends Controller
         Booking::findOrFail($bookingId);
 
         $request->validate([
-            'booking_room_id' => 'nullable|exists:booking_rooms,id',
-            'full_name'       => 'nullable|string|max:200',
-            'age_group'       => 'nullable|in:baby,child',
+            'booking_room_id'   => 'nullable|exists:booking_rooms,id',
+            'full_name'         => 'nullable|string|max:200',
+            'title'             => 'nullable|string|max:20',
+            'dob'               => 'nullable|date',
+            'nationality_code'  => 'nullable|string|max:5',
+            'age_group'         => 'nullable|in:baby,child',
+            'gender'            => 'nullable|integer|in:0,1,2',
+            'id_type'           => 'nullable|string|max:50',
+            'id_number'         => 'nullable|string|max:50',
+            'id_issue_date'     => 'nullable|date',
+            'passport_number'   => 'nullable|string|max:50',
+            'passport_expiry'   => 'nullable|date',
+            'phone'             => 'nullable|string|max:20',
+            'email'             => 'nullable|string|max:150',
+            'address'           => 'nullable|string|max:500',
+            'province'          => 'nullable|string|max:100',
+            'district'          => 'nullable|string|max:100',
+            'ward'              => 'nullable|string|max:100',
+            'residence_type'    => 'nullable|string|max:20',
+            'temp_residence_to' => 'nullable|date',
+            'visa_no'           => 'nullable|string|max:50',
+            'entry_date'        => 'nullable|date',
+            'visa_expiry_date'  => 'nullable|date',
+            'entry_purpose'     => 'nullable|string|max:200',
+            'border_gate'       => 'nullable|string|max:100',
+            'note'              => 'nullable|string',
+            'arrival_date'      => 'nullable|date',
+            'arrival_time'      => 'nullable|date_format:H:i',
+            'departure_date'    => 'nullable|date',
+            'departure_time'    => 'nullable|date_format:H:i',
+            'rate'              => 'nullable|numeric|min:0',
+            'rate_code'         => 'nullable|string|max:100|exists:room_rate_codes,Ma',
+            'extra_bed_qty'     => 'nullable|integer|min:0',
+            'extra_bed_rate'    => 'nullable|numeric|min:0',
         ]);
 
         $room = null;
@@ -1280,13 +1328,25 @@ class GuestController extends Controller
             }
         }
 
-        $child = \App\Models\BookingChild::create([
-            'booking_id'      => $bookingId,
-            'booking_room_id' => $request->booking_room_id,
-            'full_name'       => $request->full_name,
-            'age_group'       => $request->age_group ?? 'child',
-            'child_status'    => 0,
+        $childData = $request->only([
+            'booking_room_id', 'full_name', 'title', 'dob', 'nationality_code',
+            'age_group', 'gender', 'id_type', 'id_number', 'id_issue_date',
+            'passport_number', 'passport_expiry', 'phone', 'email', 'address',
+            'province', 'district', 'ward', 'residence_type', 'temp_residence_to',
+            'visa_no', 'entry_date', 'visa_expiry_date', 'entry_purpose',
+            'border_gate', 'note',
         ]);
+        $childData['booking_id'] = $bookingId;
+        $childData['child_status'] = 0;
+        if (empty($childData['age_group'])) {
+            $childData['age_group'] = 'child';
+        }
+        $idType = mb_strtolower(trim((string) $request->input('id_type')));
+        if (str_contains($idType, 'passport') || str_contains($idType, 'hộ chiếu')) {
+            $childData['passport_number'] = $request->input('id_number');
+        }
+
+        $child = \App\Models\BookingChild::create($childData);
 
         // Auto-generate breakfast detail rows cho mỗi ngày nếu có room
         if ($request->booking_room_id) {
@@ -1299,6 +1359,13 @@ class GuestController extends Controller
                 ]);
             }
         }
+
+        if ($room) {
+            $this->validateStayDates($request, $room);
+            $this->updateBookingRoomFromGuestRequest($request, $room);
+        }
+
+        $this->syncGeoFromData([$request->all()]);
 
         return response()->json([
             'success' => true,
@@ -1313,19 +1380,39 @@ class GuestController extends Controller
         $child = BookingChild::findOrFail($childId);
 
         $request->validate([
-            'full_name'        => 'nullable|string|max:200',
-            'title'            => 'nullable|string|max:20',
-            'dob'              => 'nullable|date',
-            'nationality_code' => 'nullable|string|max:5',
-            'age_group'        => 'nullable|in:baby,child',
-            'arrival_date'     => 'nullable|date',
-            'arrival_time'     => 'nullable|date_format:H:i',
-            'departure_date'   => 'nullable|date',
-            'departure_time'   => 'nullable|date_format:H:i',
-            'rate'             => 'nullable|numeric|min:0',
-            'rate_code'        => 'nullable|string|max:100|exists:room_rate_codes,Ma',
-            'extra_bed_qty'    => 'nullable|integer|min:0',
-            'extra_bed_rate'   => 'nullable|numeric|min:0',
+            'full_name'         => 'nullable|string|max:200',
+            'title'             => 'nullable|string|max:20',
+            'dob'               => 'nullable|date',
+            'nationality_code'  => 'nullable|string|max:5',
+            'age_group'         => 'nullable|in:baby,child',
+            'gender'            => 'nullable|integer|in:0,1,2',
+            'id_type'           => 'nullable|string|max:50',
+            'id_number'         => 'nullable|string|max:50',
+            'id_issue_date'     => 'nullable|date',
+            'passport_number'   => 'nullable|string|max:50',
+            'passport_expiry'   => 'nullable|date',
+            'phone'             => 'nullable|string|max:20',
+            'email'             => 'nullable|string|max:150',
+            'address'           => 'nullable|string|max:500',
+            'province'          => 'nullable|string|max:100',
+            'district'          => 'nullable|string|max:100',
+            'ward'              => 'nullable|string|max:100',
+            'residence_type'    => 'nullable|string|max:20',
+            'temp_residence_to' => 'nullable|date',
+            'visa_no'           => 'nullable|string|max:50',
+            'entry_date'        => 'nullable|date',
+            'visa_expiry_date'  => 'nullable|date',
+            'entry_purpose'     => 'nullable|string|max:200',
+            'border_gate'       => 'nullable|string|max:100',
+            'note'              => 'nullable|string',
+            'arrival_date'      => 'nullable|date',
+            'arrival_time'      => 'nullable|date_format:H:i',
+            'departure_date'    => 'nullable|date',
+            'departure_time'    => 'nullable|date_format:H:i',
+            'rate'              => 'nullable|numeric|min:0',
+            'rate_code'         => 'nullable|string|max:100|exists:room_rate_codes,Ma',
+            'extra_bed_qty'     => 'nullable|integer|min:0',
+            'extra_bed_rate'    => 'nullable|numeric|min:0',
         ]);
 
         $room = $child->booking_room_id
@@ -1335,8 +1422,24 @@ class GuestController extends Controller
             $this->validateStayDates($request, $room);
         }
 
-        DB::transaction(function () use ($request, $child, $room): void {
-            $child->update($request->only(['full_name', 'title', 'dob', 'nationality_code', 'age_group']));
+        $childData = $request->only([
+            'full_name', 'title', 'dob', 'nationality_code', 'age_group',
+            'gender', 'id_type', 'id_number', 'id_issue_date',
+            'passport_number', 'passport_expiry', 'phone', 'email',
+            'address', 'province', 'district', 'ward',
+            'residence_type', 'temp_residence_to',
+            'visa_no', 'entry_date', 'visa_expiry_date',
+            'entry_purpose', 'border_gate', 'note',
+        ]);
+        $idType = mb_strtolower(trim((string) $request->input('id_type')));
+        if (str_contains($idType, 'passport') || str_contains($idType, 'hộ chiếu')) {
+            $childData['passport_number'] = $request->input('id_number');
+        }
+
+        DB::transaction(function () use ($request, $child, $childData, $room): void {
+            $child->update($childData);
+
+            $this->syncGeoFromData([$request->all()]);
 
             if ($room) {
                 $this->updateBookingRoomFromGuestRequest($request, $room);
@@ -1495,9 +1598,6 @@ class GuestController extends Controller
 
         $detail->update($updateData);
 
-        // Đồng bộ chi tiết ăn sáng trẻ em vào booking_room_services
-        $this->syncChildBreakfastToService($detail);
-
         return response()->json(['success' => true, 'data' => $detail->fresh(), 'message' => 'Cập nhật ăn sáng trẻ em thành công.']);
     }
 
@@ -1585,6 +1685,11 @@ class GuestController extends Controller
                         }
                     }
 
+                    $childIdType = mb_strtolower(trim((string) ($cData['id_type'] ?? '')));
+                    $childPassportNumber = (str_contains($childIdType, 'passport') || str_contains($childIdType, 'hộ chiếu'))
+                        ? ($cData['id_number'] ?? null)
+                        : ($cData['passport_number'] ?? $child->passport_number);
+
                     $child->update([
                         'full_name'         => $cData['full_name'] ?? '',
                         'title'             => $cData['title'] ?? null,
@@ -1593,6 +1698,7 @@ class GuestController extends Controller
                         'nationality_code'  => $cData['nationality_code'] ?? null,
                         'id_type'           => $cData['id_type'] ?? null,
                         'id_number'         => $cData['id_number'] ?? null,
+                        'passport_number'   => $childPassportNumber,
                         'id_issue_date'     => $cData['id_issue_date'] ?? null,
                         'passport_expiry'   => $cData['passport_expiry'] ?? null,
                         'address'           => $cData['address'] ?? null,
@@ -1766,73 +1872,8 @@ class GuestController extends Controller
                 ]
             );
             
-            // Đồng bộ sang booking_room_services
-            $this->syncChildBreakfastToService($detail);
-
             $current = $current->addDay();
         }
     }
 
-    /**
-     * Đồng bộ chi tiết ăn sáng trẻ em vào booking_room_services để hiển thị lên Folio/Checkout.
-     */
-    private function syncChildBreakfastToService(\App\Models\BookingChildBreakfastDetail $detail): void
-    {
-        $child = $detail->bookingChild;
-        if (!$child || !$child->booking_room_id) return;
-
-        // Lấy mã dịch vụ phụ thu ăn sáng trẻ em từ HotelConfig
-        $serviceCode = \App\Models\HotelConfig::where('name', 'Booking_BFChildSetServiceId')->value('value') ?: 'BD';
-
-        // Điều kiện để tạo dịch vụ: Có ăn sáng và có extra charge và không miễn phí
-        $shouldHaveService = $detail->breakfast && $detail->is_extra_charge && !$detail->is_free;
-        $serviceNote = "Phụ thu ăn sáng trẻ em: {$child->full_name}";
-        $serviceDate = Carbon::parse($detail->service_date)->toDateString();
-
-        $existing = \App\Models\BookingRoomService::withTrashed()
-            ->where('booking_room_id', $child->booking_room_id)
-            ->where('service_code', $serviceCode)
-            ->whereDate('service_date', $serviceDate)
-            ->where('note', $serviceNote)
-            ->first();
-
-        if ($existing && (int) $existing->is_posted === 1) {
-            // A posted surcharge is financial history. The detail can still
-            // be edited for future reconciliation, but this endpoint must not
-            // rewrite or delete the posted service line.
-            return;
-        }
-
-        if ($shouldHaveService) {
-            $values = [
-                'service_name' => $serviceNote,
-                'quantity'     => 1,
-                'rate'         => $detail->amount,
-                'total_amount' => $detail->amount,
-                'department'   => 'FO',
-                'folio'        => 1,
-                'is_room'      => $detail->is_room ? 1 : 0,
-                'is_posted'    => 0,
-                'deleted_at'   => null,
-            ];
-
-            if ($existing) {
-                $existing->fill($values);
-                $existing->save();
-            } else {
-                \App\Models\BookingRoomService::create([
-                    'booking_room_id' => $child->booking_room_id,
-                    'service_code'    => $serviceCode,
-                    'service_date'    => $serviceDate,
-                    'note'            => $serviceNote,
-                    ...$values,
-                ]);
-            }
-        } else {
-            // Xóa dịch vụ chưa post nếu có; posted rows were returned above.
-            if ($existing) {
-                $existing->delete();
-            }
-        }
-    }
 }

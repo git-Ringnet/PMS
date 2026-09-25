@@ -60,11 +60,13 @@ class BookingRoom extends Model
                 $arr = \Carbon\Carbon::parse($model->arrival_date);
                 $dep = \Carbon\Carbon::parse($model->departure_date);
                 $diff = $arr->diffInDays($dep);
-                $model->ActutalNumOfDays = ((int)$model->status === self::STATUS_MOVED) ? $diff : ($diff > 0 ? $diff : 1);
+                $model->ActutalNumOfDays = $model->is_day_use
+                    ? 0
+                    : (((int)$model->status === self::STATUS_MOVED) ? $diff : ($diff > 0 ? $diff : 1));
             }
             // Giữ riêng kế hoạch ban đầu để nhận diện checkout sớm sau khi ngày đi thực tế thay đổi.
             $model->planned_departure_date = $model->planned_departure_date ?: $model->departure_date;
-            $model->NumOfDays = $model->NumOfDays ?: $model->ActutalNumOfDays;
+            $model->NumOfDays = $model->NumOfDays === null ? $model->ActutalNumOfDays : $model->NumOfDays;
 
             // Phòng chưa checkout luôn giữ lịch checkout dự kiến để tương thích legacy.
             if (in_array((int) $model->status, [self::STATUS_BOOKED, self::STATUS_CHECKED_IN], true)) {
@@ -92,13 +94,15 @@ class BookingRoom extends Model
                     $arr = \Carbon\Carbon::parse($model->arrival_date);
                     $dep = \Carbon\Carbon::parse($model->departure_date);
                     $diff = $arr->diffInDays($dep);
-                    $model->ActutalNumOfDays = ((int)$model->status === self::STATUS_MOVED) ? $diff : ($diff > 0 ? $diff : 1);
+                    $model->ActutalNumOfDays = $model->is_day_use
+                        ? 0
+                        : (((int)$model->status === self::STATUS_MOVED) ? $diff : ($diff > 0 ? $diff : 1));
                 }
             }
 
             // Cho phép sửa kế hoạch khi còn là reservation; từ lúc check-in phải giữ nguyên để nhận diện gia hạn/trả sớm.
             if ((int) $model->getOriginal('status') === self::STATUS_BOOKED
-                && ($model->isDirty('arrival_date') || $model->isDirty('departure_date'))) {
+                && ($model->isDirty('arrival_date') || $model->isDirty('departure_date') || $model->isDirty('is_day_use'))) {
                 $model->planned_departure_date = $model->departure_date;
                 $model->NumOfDays = $model->ActutalNumOfDays;
             }
@@ -203,10 +207,12 @@ class BookingRoom extends Model
                 $arr = \Carbon\Carbon::parse($model->arrival_date);
                 $dep = \Carbon\Carbon::parse($model->departure_date);
                 $diff = $arr->diffInDays($dep);
-                if ((int)$model->status === self::STATUS_MOVED) {
+                if ($model->is_day_use) {
+                    $model->ActutalNumOfDays = 0;
+                } elseif ((int)$model->status === self::STATUS_MOVED) {
                     $model->ActutalNumOfDays = $diff;
-                } elseif ($model->ActutalNumOfDays === null || $model->isDirty('arrival_date') || $model->isDirty('departure_date')) {
-                    $model->ActutalNumOfDays = $diff > 0 ? $diff : 1; // Nếu cùng ngày (day use) thì tính 1 ngày
+                } elseif ($model->ActutalNumOfDays === null || $model->isDirty('arrival_date') || $model->isDirty('departure_date') || $model->isDirty('is_day_use')) {
+                    $model->ActutalNumOfDays = $diff > 0 ? $diff : 1;
                 }
             }
 

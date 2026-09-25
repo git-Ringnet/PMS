@@ -1,0 +1,148 @@
+Các nghiệp vụ liên quan tới booking nha kiểm tra xem các section thiếu hay cần bổ sung hay cần sửa gì thì cứ note lên plan kế hoạch thực hiện 
+Section 1 
+Edit cọc
+Check phần mô tả description khi edit hình thức thanh toán của cọc
+=> fIX: khi edit cọc chọn lại HTTT mới thì phần mô tả phải update theo HTTT mới
+Section 2 
+Ngày xác nhận
+- chỉnh lại trường hợp ngày đến - ngày cut of < ngày hệ thống thì ngày xác nhận = ngày hệ thống
+- Lúc tạo đk mới , có lúc ngày xác nhận hiển thị là dd/mm/yyyy có lúc hiển thị = ngày hệ thống
+=> check lại
+- Ngày xác nhận chỉ chạy khi tạo mới booking
+Trường hợp bk đã tạo , sửa lại ngày đến thì ngày xác nhận không cần update theo
+Section 3 
+ Thao tác Thêm 1 rule mới , modun lễ tân các màn hình đều check vào cho phép add, edit, dlete,view
+Tại màn hình booking sử dụng user phân quyền theo rule này kiểm tra một số chức năng không chạy được 
+vd chỉnh giá chi tiết từng đêm cho tiền phòng , EB, hoặc các dịch vụ tự động 
+sửa trong chi tiết EB cũng lỗi 
+Section 4
+phòng day use
+( ngày đến = ngày đi)
+Phòng 105 đã được gán cho booking số 5 (10/8 - 15/8)
+Sau đó tạo một booking mới có ngày đến = ngày đi (10/8 - 10/8) vẫn gán được phòng 105 cho booking này 
+ Các phòng có ngày đến = ngày đi đang chưa check trùng số phòng, hiện đang hiển thị tất cả bao gôm các phòng hôm nay đến, hiện chỉ đang trừ các phòng đã inhouse từ hôm trước (phòng stay over)
+Có thể liên quan tới sang ngày nữa ko chắc lắm
+Trường hợp booking 1 có ngày đến = ngày đi (10/8 - 10/8) assign số phòng 105 trước
+Booking 5 kia  gán phòng sau sẽ không hiển thị phòng 105 này
+Section 6 Booking
+Room map-Thông tin phòng
+phòng ở theo giờ
+- Đối với các booking có ngày đến = ngày đi, số đêm hiển thị =1, chỉnh tay số đêm =0 không được
+=> Fix: Vì khách sạn sẽ có trường hợp khách thuê theo giờ (in out ttrong ngày) được hiểu là các phòng Day use, nếu ngày đến = ngày đi thì hiển thị đêm =0 và cho phép chỉnh số đêm =0 
+- Cột ở theo giờ-> nút switch không bật được-> khi bật lên, hệ thống báo thành công nhưng lưu xong thì trả về thành không bật
+=> Fix:
+ + Đối với các phòng thuộc tình trạng Đăng Ký - Màn hình đăng ký: khi check vào, ngày đi của phòng sẽ tự cập nhật = với ngày đến và số đêm =0
+ (nếu phòng đang có ngày đến khác ngày đi và số đêm khác 0), và không cho phép điều chỉnh ngày đi khi phòng đang bật ở theo giờ, 
+khi chỉnh ngày đến , ngày đi tự nhảy = ngày đến ( xem link hotel)
+ +Đối với các phòng đã inhouse -
+ Room map -> chuột phải Màn hình thông tin: đối với những phòng đang ở có ngày đến < ngày hệ thống ( tức đã ở các đêm trước rồi) thì không cho phép bấm vào nút day use.
+Chỉ cho phép click vào day use đối với những phòng vừa check in hôm nay (Ngày đến = ngày hệ thống), sau khi bấm vào phòng ở theo giờ số đêm nhảy về  = 0, ngày đi= ngày đến
+- LƯU Ý: CÁC PHÒNG CÓ NGÀY ĐẾN = NGÀY ĐI , NẾU CHECK VÀO DAY USE THÌ phòng trống sẽ -1 phòng này
+nếu không check vào dayuse thì không trừ phòng này vào quỹ phòng trống
+- Post tiền phòng cho phòng dayuse: thông số IsRoomNightRoomDayUse
+giá trị =0 , tiền phòng của phòng dayuse tại bảng room_night_bill , cột is_room_night giá trị sẽ =0 ( mục đích khi ghi nhận vào báo cáo, phòng dayuse chỉ ghi nhận tiền phòng, không ghi nhận 
+vào công suất phòng)
+giá trị=1 , tiền phòng của phòng dayuse tại bảng room_night_bill , cột is_room_night giá trị sẽ =1 ( mục đích khi ghi nhận vào báo cáo, phòng dayuse vừa ghi nhận doanh thu và công suất)
+Lưu ý: trong nghiệp vụ  cần phân biệt rõ phòng dayuse ( có ngày đến= ngày đi khi tạo phòng)
+và những phòng late check in . vd phòng có ngày đến 1 out ngày 2 . ngày hệ thống ngày 1 , khách không đến -> thực hiện late check in phòng. hệ thống sẽ cập nhật
+ngày đến của phòng thành ngày 2 , lúc này ngày out cũng =2 
+Setion 7 Liên quan phòng chuyển
+- Thực hiện chuyển phòng qua lại nhiều lần 
+vd: từ phòng đang ở tại 1209 . từ phòng  1209 -> 1208
+1208 -> 1209 cuối cùng lúc này khách đang ở phòng 1209
+=> khi bấm sửa bk và lưu lại hệ thống báo lỗi phòng 1209 bị trùng nhau => phòng tình trạng 100 trên cùng bk không cần kiểm tra vì nó là phòng cũ rồi 
+- Màn hình booking: cột phòng chuyển , dòng phòng tình trạng 100 phòng đã chuyển chưa lên mã số phòng chuyển đến (lấy dữ liệu tại booking_rooms.move_room)
+Section 8
+Cập nhật
+ 
+- Cập nhật ngày đến - đi của phòng: Tạo một phòng (10 -11/8) sau đó vào cập nhật ngày đến và đi của phòng thành 17 - 20/8, cập nhật tiếp 24 - 28/8
+ Bảng Booking_room_guests cột actual_arrival_date không cập nhật (vẫn đang hiển thị ngày đến là 10/8)
+=> Fix: Cập nhật lại đúng ngày đến của phòng sau cập nhật
+- Phòng có trẻ em ăn sáng có phí 90k các đêm 17 18 19 (phòng ở giai đoạn 17 - 20/8), sau đó cập nhật ngày đến ngày đi thành 24 -28/8 
+ -> Phí ăn sáng của trẻ em vẫn nằm ở ba đêm cũ (17 18 19) => do đang lấy dữ liệu ở bảng Booking_room_service, dữ liệu không cập nhật theo giai đoạn mới của phòng. Bảng booking_child_breakfast_details có cập nhật giai đoạn ăn sáng của trẻ nhưng giá lại =0 
+=> Fix: Phí phụ thu ăn sáng trẻ không insert vào bảng Booking_room_service, chỉ insert vào bảng booking_child_breakfast_details
+  bảng booking_child_breakfast_details: sau khi cập nhật lại ngày đến ngày đi của phòng thì cập nhật lại ngày dịch vụ tương ứng theo giai đoạn ở mới của phòng và cập nhật lại giá đúng
+Section 9
+Chức năng 
+-> cập nhật 
+Thao tác chọn 1 lúc nhiều phòng để cập nhật dữ liệu
+-> Màn hình cập nhật hiện tại đang fill hết sẵn các dữ liệu phòng đầu tiên. Lúc này nếu sửa bất kỳ trường thông tin gì thì các phòng chọn chung đều cập nhật giống hết tất cả thông tin của
+phòng đầu tiên -> SAI 
+=> Fix:  Màn hình cập nhật mặc định clear hết thông tin, để trống toàn bộ thông tin để khi muốn cập nhật thông tin nào thì sẽ nhập vào thông tin đó , không gây ảnh hưởng chung khi thao tác
+cập nhật 1 lúc nhiều phòng.
+- Khi cập nhật giá phòng, dữ liệu đang insert vào bảng booking_room_services 
+=>Fix: cập nhật ở đây thì Chỉ cập nhật lại cột Rate ở bảng booking_rooms, không cập nhật giá vào bảng booking_room_services
+- Khi không check chọn phòng nào -> bấm cập nhật , hệ thống truyền vào màn hình thông tin đăng ký
+=> Fix: khi không chọn phòng nào, bấm cập nhật. hệ thống lên thông báo vui lòng chọn phòng
+Section 10 
+check in 
+Chỉnh lại thông báo lúc check in phòng
+- Hiện tại mỗi phòng ra 1 dòng thông báo -> Fix: nếu các phòng đều có cảnh báo giống nhau thì gom lại 1 dòng thôi
+VD: Phòng 105,106 đang ở trạng thái chờ kiểm tra,......
+- Fix lại câu thông báo
+Hiện tại: Phòng 105: phòng 105 đang ở trạng thái chờ kiểm tra ( Vacant Clean). Không được phép nhận phòng do cấu hình hệ thống (AllowCheckinVacantClen=0)
+=> Fix: toàn bộ các câu thông báo sau chỉnh lại trong câu thông báo không ghi tên thông số lên
+Phòng 105 đang ở trạng thái chờ kiểm tra ( Vacant Clean). Không thể thực hiện nhận phòng.
+Section 11
+Table booking_room
+Tăng giảm giá phòng 
+vd: giá phòng ban đầu lúc lấy phòng là 650k sau đó cập nhật thành 500k
+Thao tác sửa giá ( ở dòng phòng) hoặc cập nhật giá phòng trong nút cập nhật - hiện tại chỉ đang lưu vào booking_rooms.rate mà không cập nhật vào booking_rooms.base_price
+=> Khi thao tác tăng hoặc giảm giá hệ thống vẫn đang tính dựa trên giá ban đầu là 650k -> sai nguyên tắc
+=> Fix: khi cập nhật giá phòng ở các màn hình
+Room map -> chuột phải -> thông tin phòng -> sửa giá phòng
+Booking -> sửa -> cập nhật giá
+Booking -> chức năng -> cập nhật
+đều phải cập nhật cả 2 cột là booking_rooms.rate và booking_rooms.base_price
+Section 12
+Tăng giảm giá 
+cho chi tiết đêm phòng 
+Bổ sung tăng giảm giá chi tiết từng đêm cho phòng 
+Section 13 
+Đồng bộ real time
+Bật 2 tab song song, thay đổi dữ liệu ở tab 1 tab sau khi lưu thì tab bên kia phải đồng bộ real time theo
+Section 14 
+Tìm kiếm bk
+bị truyền sai modun 
+Thao tác tại modun lễ tân 
+-> bấm vào icon tìm kiếm trên thanh menu chính
+-> bấm chọn vào 1 bk bất kì
+Đang đứng từ modun lễ tân hệ thống truyền qua modun sale 
+=> Sai: Fix lại , phải truyền đúng modun đang thao tác , tránh trong quá trình thao tác bị chuyển nhầm modun  
+Secttion 15
+Phòng hủy 
+- Trường hợp bk đang trong tình trạng đăng ký,đang ở,  inhouse, checkout, noshow   ( bảng bookings.status in (0,1,2,4)
+Thì không hiển thị tình trạng phòng hủy lên màn hình booking
+Chỉ khi nào booking tình trạng 3 đã hủy , thì mới show hết các phòng đã hủy của booking lên hệ thống
+Section 16 
+Chỉnh ngày đến đi BK
+theo thông số
+Thông số  SyncRoomDateByBookingDate
+Nếu thông số SyncRoomDateByBookingDate=0
+=> Thì khi thao tác chỉnh ngày đến ngày đi của thông tin booking , ngày đến và ngày đi của phòng con sẽ không tự động cập nhật theo ngày của booking.
+ Nếu thông số SyncRoomDateByBookingDate=1 , khi cập nhật ngày đến , ngày đi của booking thì ngày đến ngày đi của phòng con sẽ cập nhật theo ngày booking
+chỉ cập nhật đối với các phòng với tình trạng đăng ký (0) các phòng tình trạng khác không cập nhật theo, và không cập nhật phòng khi ngày đến của BK < ngày hệ thống
+khi cập nhật phòng con cần ràng đảm bảo không được over theo thông số overroom
+- Khi nào thông số  SyncRoomDateByBookingDate=1 mới cho sửa ngày đến ngày đi số đêm trực tiếp ở đây khi sửa bk
+tên bk không cho sửa trong này, để người dùng thao tác ra màn hình thông tin đăng ký sửa
+Section 17
+Lỗi sữa ngày đi phòng
+Sửa ngày đi của phòng hệ thống báo lỗi phải nằm trong giai đoạn bk , trong khi giai đoạn vẫn đang nằm trong giai đoạn BK
+VD: BK có ngày đến 11 ngày đi 14
+Phòng có ngày đến 11 ngày đi 14
+-> bấm sửa ngày đi phòng thành 12 -> hệ thống báo lỗi
+Section 18
+Tên thông số: RegistrationStatusId_BookingCancel
+Gía trị của thông số là giá trị tình trạng sẽ được cập nhật vào bảng Bookings.registration_status_id, 
+Nếu giá trị khác 0 khi hủy BK thì bảng Bookings.RegistrationStatusId  tình trạng sẽ lưu theo giá trị của thông số , VD: 28
+Nếu thông số =0 , khi hủy BK thì tình trạng ở  Bookings.RegistrationStatusId giữ nguyên không thay đổi
+Section 19 Tìm kiếm
+Thao tác: tạo booking -> lấy phòng -> click chọn hết phòng -> chức năng: chọn hủy phòng
+chỉ hủy phòng không hủy đăng ký nên booking.status =0 
+=> Tab tìm kiếm bị lỗi FE
+Bookings.status=0 ( là tình trạng đăng ký ) giao diện tim kiếm hiển thị đã hủy
+Section 20
+Hủy nhận phòng 
+Room map -> Hủy nhận phòng
+kiểm tra đối với những booking có ngày đến = ngày hệ thống,  được chuyển từ phòng khác qua thì không cho thao tác hủy nhận phòng
+vd: phòng 101 check in ngày 9 , sau đó ngày 10 chuyển qua phòng 102 , thì phòng 102 đó không được hủy nhận phòng 

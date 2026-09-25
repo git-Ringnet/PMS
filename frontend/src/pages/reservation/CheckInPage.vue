@@ -354,7 +354,26 @@ const handleCheckIn = async () => {
 
   loading.value = true
   let successCount = 0
-  let errorMessages = []
+  const errorGroups = new Map()
+  const escapeRegExp = value => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const addCheckinError = (item, message) => {
+    const roomNumber = String(item.roomNumber || 'chưa gán').trim()
+    let normalized = String(message || 'Lỗi không xác định').trim()
+    if (roomNumber !== 'chưa gán') {
+      const roomPattern = escapeRegExp(roomNumber)
+      // API messages already contain the room number. Remove an old client
+      // prefix and replace the number with a group marker so equal warnings
+      // across selected rooms become one concise toast.
+      normalized = normalized
+        .replace(new RegExp(`^Phòng\\s+${roomPattern}\\s*:\\s*`, 'iu'), '')
+        .replace(new RegExp(`^Phòng\\s+${roomPattern}(?=\\s|$)`, 'iu'), 'Phòng {rooms}')
+    }
+    if (!normalized.includes('{rooms}')) normalized = `Phòng {rooms}: ${normalized}`
+
+    const group = errorGroups.get(normalized) || { rooms: [], template: normalized }
+    if (!group.rooms.includes(roomNumber)) group.rooms.push(roomNumber)
+    errorGroups.set(normalized, group)
+  }
 
   for (const item of selectedRoomsToProcess) {
     try {
@@ -374,17 +393,17 @@ const handleCheckIn = async () => {
         if (res2.data && res2.data.success !== false && !res2.data.needs_confirmation) {
           successCount++
         } else {
-          errorMessages.push(`Phòng ${item.roomNumber || 'chưa gán'}: ${res2.data?.message || 'Lỗi không xác định'}`)
+          addCheckinError(item, res2.data?.message)
         }
       } else if (res.data && res.data.success !== false) {
         successCount++
       } else {
-        errorMessages.push(`Phòng ${item.roomNumber || 'chưa gán'}: ${res.data?.message || 'Lỗi không xác định'}`)
+        addCheckinError(item, res.data?.message)
       }
     } catch (err) {
       console.error(err)
       const msg = err.response?.data?.message || 'Lỗi kết nối máy chủ'
-      errorMessages.push(`Phòng ${item.roomNumber || 'chưa gán'}: ${msg}`)
+      addCheckinError(item, msg)
     }
   }
 
@@ -397,9 +416,9 @@ const handleCheckIn = async () => {
   if (successCount > 0) {
     uiStore.showToast(`Đã nhận phòng thành công cho ${successCount} phòng!`, 'success')
   }
-  if (errorMessages.length > 0) {
-    errorMessages.forEach(msg => {
-      uiStore.showToast(msg, 'error')
+  if (errorGroups.size > 0) {
+    errorGroups.forEach(group => {
+      uiStore.showToast(group.template.replace('{rooms}', group.rooms.join(', ')), 'error')
     })
   }
 }

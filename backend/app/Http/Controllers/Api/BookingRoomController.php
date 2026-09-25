@@ -31,6 +31,7 @@ class BookingRoomController extends Controller
         protected RoomAvailabilityService $avService,
         protected RoomAssignmentService $roomAssignmentService,
         protected BookingStatusSyncService $bookingStatusSyncService,
+        protected \App\Services\BookingRoomLifecycleService $bookingRoomLifecycleService,
     ) {}
 
     // =========================================
@@ -88,7 +89,11 @@ class BookingRoomController extends Controller
             'is_day_use'      => 'nullable|boolean',
         ]);
 
-        $isDayUse = (bool) $booking->is_day_use;
+        $isDayUse = (bool) $booking->is_day_use
+            || (bool) ($validated['is_day_use'] ?? false)
+            // This endpoint creates a new room row, so a same-day period is
+            // an explicit day-use request. Late check-in only updates rows.
+            || ($validated['arrival_date'] === $validated['departure_date']);
         if (!$isDayUse && $validated['departure_date'] === $validated['arrival_date']) {
             return response()->json([
                 'success' => false,
@@ -297,6 +302,18 @@ class BookingRoomController extends Controller
         }
 
         $isDayUse = filter_var($request->has('is_day_use') ? $request->input('is_day_use') : $bookingRoom->is_day_use, FILTER_VALIDATE_BOOLEAN);
+        if ($isInhouse && $isDayUse && Carbon::parse($arrivalDate)->toDateString() < $systemDate->toDateString()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Phòng đã lưu trú từ ngày trước không thể chuyển sang day-use.',
+            ], 422);
+        }
+        if ($isDayUse && array_key_exists('departure_date', $validated) && $departureDate !== $arrivalDate) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Phòng day-use không thể chỉnh ngày đi khi đang bật theo giờ.',
+            ], 422);
+        }
         if (!$isDayUse && $departureDate === $arrivalDate) {
             return response()->json([
                 'success' => false,
@@ -335,6 +352,12 @@ class BookingRoomController extends Controller
 
         $currentUser = Auth::user()?->username ?? 'system';
         $validated['updated_by'] = $currentUser;
+        if (array_key_exists('rate', $validated) && $validated['rate'] !== null) {
+            // Legacy booking-room pricing keeps the entered rate and its
+            // base/original value together so later recalculation does not
+            // silently fall back to the old price.
+            $validated['base_price'] = $validated['rate'];
+        }
 
         if ($isInhouse && isset($validated['room_number']) && $validated['room_number'] !== $bookingRoom->room_number) {
             $newRoomNumber = $validated['room_number'];
@@ -411,6 +434,18 @@ class BookingRoomController extends Controller
             $this->upsertExtraBedServices($bookingRoom->fresh());
         }
 
+        // All room-date entry points must keep projected RM/EB and child
+        // breakfast rows aligned with the new stay period. Posted rows remain
+        // immutable inside the lifecycle service.
+        $stayPeriodChanged = array_key_exists('arrival_date', $validated)
+            || array_key_exists('departure_date', $validated)
+            || array_key_exists('is_day_use', $validated);
+        $this->bookingRoomLifecycleService->synchronize(
+            $bookingRoom->fresh(),
+            array_key_exists('rate', $validated) && $validated['rate'] !== null,
+            $stayPeriodChanged,
+        );
+
         // Sync header booking nếu ngày phòng vượt ra ngoài header
         $this->syncBookingHeaderDates($bookingRoom->booking);
 
@@ -461,7 +496,7 @@ class BookingRoomController extends Controller
 
         // 1. Validate dates and AV for all rooms first to avoid partial updates
         foreach ($rooms as $room) {
-            if (in_array($room->status, [BookingRoom::STATUS_CANCELLED, BookingRoom::STATUS_CHECKED_OUT])) {
+            if (in_array($room->status, [BookingRoom::STATUS_CANCELLED, BookingRoom::STATUS_CHECKED_OUT, BookingRoom::STATUS_MOVED])) {
                 continue;
             }
 
@@ -483,10 +518,11 @@ class BookingRoomController extends Controller
             $newArrival = $isInhouse ? $room->arrival_date->toDateString() : ($request->arrival_date ?? $room->arrival_date->toDateString());
             $newDeparture = $request->departure_date ?? $room->departure_date->toDateString();
 
-            if ($newDeparture <= $newArrival) {
+            $isDayUse = (bool) $room->is_day_use || (bool) $booking->is_day_use;
+            if ($newDeparture < $newArrival || ($newDeparture === $newArrival && !$isDayUse)) {
                 return response()->json([
                     'success' => false,
-                    'message' => "Ngày đi ({$newDeparture}) phải lớn hơn ngày đến ({$newArrival}) của phòng."
+                    'message' => "Ngày đi ({$newDeparture}) phải lớn hơn hoặc bằng ngày đến ({$newArrival}) của phòng; phòng ở theo giờ mới được phép cùng ngày."
                 ], 422);
             }
 
@@ -513,7 +549,7 @@ class BookingRoomController extends Controller
         DB::beginTransaction();
         try {
             foreach ($rooms as $room) {
-                if (in_array($room->status, [BookingRoom::STATUS_CANCELLED, BookingRoom::STATUS_CHECKED_OUT])) {
+                if (in_array($room->status, [BookingRoom::STATUS_CANCELLED, BookingRoom::STATUS_CHECKED_OUT, BookingRoom::STATUS_MOVED])) {
                     $errors[] = 'Phòng #' . $room->id . ' đã hủy/checkout, bỏ qua.';
                     continue;
                 }
@@ -528,6 +564,7 @@ class BookingRoomController extends Controller
 
                     if ($request->filled('rate')) {
                         $data['rate'] = $request->rate;
+                        $data['base_price'] = $request->rate;
                     }
 
                     if ($isFO) {
@@ -541,35 +578,14 @@ class BookingRoomController extends Controller
 
                     $room->update($data);
 
-                    // Sync RM services (SP2200)
-                    $this->upsertRoomChargeServices($room->fresh());
                     // Sync EB services (SP2200)
                     $this->upsertExtraBedServices($room->fresh());
-
-                    // Update future night rates in service_bills (SP3000)
-                    if ($request->filled('rate')) {
-                        $newRate = $request->rate;
-                        $servicesToUpdate = $room->services()
-                            ->where('service_code', 'RM')
-                            ->where('service_date', '>=', $sysDateStr)
-                            ->get();
-
-                        foreach ($servicesToUpdate as $srv) {
-                            if ($srv->service_bill_id) {
-                                $bill = \App\Models\ServiceBill::find($srv->service_bill_id);
-                                if ($bill) {
-                                    $bill->update(['Amount' => $newRate]);
-                                    \App\Models\ServiceBillDetail::where('BillServiceId', $bill->Ma)
-                                        ->where('ServiceId', 'RM')
-                                        ->update([
-                                            'OriginalRate'             => $newRate,
-                                            'Amount'                   => $newRate,
-                                            'DetailBillOriginalAmount' => $newRate
-                                        ]);
-                                }
-                            }
-                        }
-                    }
+                    $this->bookingRoomLifecycleService->synchronize(
+                        $room->fresh(),
+                        $request->filled('rate'),
+                        $request->filled('departure_date'),
+                        $request->filled('departure_date'),
+                    );
                 } else {
                     // Reservation room: can update everything
                     $data = array_filter([
@@ -578,6 +594,7 @@ class BookingRoomController extends Controller
                         'departure_date' => $request->departure_date,
                         'departure_time' => $request->departure_time,
                         'rate'           => $request->rate,
+                        'base_price'     => $request->rate,
                         'adults'         => $request->adults,
                         'children_qty'   => $request->children_qty,
                         'extra_bed_qty'  => $request->extra_bed_qty,
@@ -602,9 +619,14 @@ class BookingRoomController extends Controller
                         }
                     }
 
-                    // Sync RM & EB services (SP2200)
-                    $this->upsertRoomChargeServices($room->fresh());
                     $this->upsertExtraBedServices($room->fresh());
+                    $this->bookingRoomLifecycleService->synchronize(
+                        $room->fresh(),
+                        $request->filled('rate'),
+                        $request->filled('arrival_date') || $request->filled('departure_date'),
+                        $request->filled('arrival_date')
+                            || $request->filled('departure_date'),
+                    );
                 }
 
                 $updated[] = $room->id;
@@ -709,7 +731,7 @@ class BookingRoomController extends Controller
                             // Cấu hình không cho phép nhận phòng khi đang chờ kiểm tra / dirty
                             return response()->json([
                                 'success'     => false,
-                                'message'     => 'Phòng ' . $bookingRoom->room_number . ' đang ở trạng thái ' . $label . '. Không được phép nhận phòng do cấu hình hệ thống (AllowCheckinVacantClean = 0).',
+                                'message'     => 'Phòng ' . $bookingRoom->room_number . ' đang ở trạng thái ' . $label . '. Không thể thực hiện nhận phòng.',
                                 'room_status' => $currentCode,
                             ], 422);
                         }
@@ -830,6 +852,16 @@ class BookingRoomController extends Controller
         // Chỉ cho phép hủy check-in nếu phòng đang Checked In (status = 1)
         if ($bookingRoom->status !== BookingRoom::STATUS_CHECKED_IN) {
             return response()->json(['success' => false, 'message' => 'Phòng không ở trạng thái đã check-in.'], 422);
+        }
+
+        // A room created by Room Move is a continuation of an existing
+        // in-house stay, not a fresh check-in.  Even when the move happens on
+        // the same PMS date, undoing it would reopen the wrong room segment.
+        if ($bookingRoom->movedFromRoom()->exists()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Phòng đã được chuyển từ phòng khác, không thể hủy nhận phòng tại đây.',
+            ], 422);
         }
 
         // Không cho phép hủy nhận phòng đối với các phòng đã phát sinh hóa đơn, thanh toán hoặc thanh toán trước (Edit = 0)
@@ -1299,6 +1331,10 @@ class BookingRoomController extends Controller
                 continue;
             }
 
+            $rate = ($existing && $existing->rate !== null && (float) $existing->rate > 0)
+                ? (float) $existing->rate
+                : (float) ($room->extra_bed_rate ?? 0);
+
             BookingRoomService::withTrashed()->updateOrCreate(
                 [
                     'booking_room_id' => $room->id,
@@ -1308,9 +1344,8 @@ class BookingRoomController extends Controller
                 [
                     'service_name' => BookingRoomService::catalogName(BookingRoomService::CODE_EXTRA_BED, 'Extra Bed'),
                     'quantity'     => $room->extra_bed_qty,
-                    'rate'         => $room->extra_bed_rate,
+                    'rate'         => $rate,
                     'department'   => 'FO',
-                    // Giữ nguyên FIT/GIT đã setup; mặc định FIT cho dữ liệu cũ.
                     'is_room'      => $existing?->is_room ?? 1,
                     'is_posted'    => 0,
                     'deleted_at'   => null,
@@ -1444,7 +1479,7 @@ class BookingRoomController extends Controller
         $departure = Carbon::parse($bRoom->departure_date);
 
         while ($current->lt($departure)) {
-            $detail = \App\Models\BookingChildBreakfastDetail::create([
+            \App\Models\BookingChildBreakfastDetail::create([
                 'booking_child_id' => $child->id,
                 'service_date'     => $current->toDateString(),
                 'breakfast'        => true,
@@ -1454,53 +1489,7 @@ class BookingRoomController extends Controller
                 'amount'           => $amount,
             ]);
 
-            // Đồng bộ sang booking_room_services
-            $this->syncChildBreakfastToService($detail);
-
             $current = $current->addDay();
-        }
-    }
-
-    /**
-     * Đồng bộ chi tiết ăn sáng trẻ em vào booking_room_services để hiển thị lên Folio/Checkout.
-     */
-    private function syncChildBreakfastToService(\App\Models\BookingChildBreakfastDetail $detail): void
-    {
-        $child = $detail->bookingChild;
-        if (!$child || !$child->booking_room_id) return;
-
-        // Lấy mã dịch vụ phụ thu ăn sáng trẻ em từ HotelConfig
-        $serviceCode = \App\Models\HotelConfig::where('name', 'Booking_BFChildSetServiceId')->value('value') ?: 'BD';
-
-        // Điều kiện để tạo dịch vụ: Có ăn sáng và có extra charge và không miễn phí
-        $shouldHaveService = $detail->breakfast && $detail->is_extra_charge && !$detail->is_free;
-
-        if ($shouldHaveService) {
-            \App\Models\BookingRoomService::updateOrCreateForDate(
-                [
-                    'booking_room_id' => $child->booking_room_id,
-                    'service_code'    => $serviceCode,
-                    'note'            => "Phụ thu ăn sáng trẻ em: {$child->full_name}",
-                ],
-                $detail->service_date,
-                [
-                    'service_name'    => "Phụ thu ăn sáng trẻ em: {$child->full_name}",
-                    'quantity'        => 1,
-                    'rate'            => $detail->amount,
-                    'total_amount'    => $detail->amount,
-                    'department'      => 'FO',
-                    'folio'           => 1,
-                    'is_room'         => $detail->is_room ? 1 : 0,
-                    'is_posted'       => 0,
-                ]
-            );
-        } else {
-            // Xóa dịch vụ nếu có
-            \App\Models\BookingRoomService::where('booking_room_id', $child->booking_room_id)
-                ->where('service_code', $serviceCode)
-                ->whereDate('service_date', $detail->service_date->toDateString())
-                ->where('note', "Phụ thu ăn sáng trẻ em: {$child->full_name}")
-                ->delete();
         }
     }
 

@@ -39,6 +39,40 @@ const router = useRouter()
 const route = useRoute()
 const uiStore = useUiStore()
 
+const isInHouse = computed(() => {
+  const s = props.room?.booking_room_status ?? props.room?.bookingRoomStatus ?? props.room?.status
+  return s === 1 || s === '1' || s === 'Checked In' || s === 'occupied' || s === 'checked_in'
+})
+
+const isDayUseDisabled = computed(() => {
+  if (!isEditingMode.value) return true
+  const arr = formatDateForInput(stayInfo.value.arrival_date || props.room?.arrival_date)
+  const sys = formatDateForInput(systemDate.value)
+  if (arr && sys && arr < sys) {
+    return true
+  }
+  return false
+})
+
+function onHourlyToggle() {
+  if (isDayUseDisabled.value) {
+    stayInfo.value.hourly = false
+    return
+  }
+  if (stayInfo.value.hourly) {
+    stayInfo.value.departure_date = stayInfo.value.arrival_date
+    stayInfo.value.nights = 0
+  } else {
+    if (stayInfo.value.arrival_date === stayInfo.value.departure_date) {
+      const d = new Date(stayInfo.value.arrival_date)
+      d.setDate(d.getDate() + 1)
+      stayInfo.value.departure_date = d.toISOString().split('T')[0]
+      stayInfo.value.nights = 1
+    }
+  }
+}
+
+
 // ── Dropdowns Catalog ──────────────────────────────
 const titlesList = ['Mr.', 'Ms.', 'Mrs.', 'Miss.', 'Kid.', 'Baby.', 'Dr.', 'Prof.']
 
@@ -48,19 +82,25 @@ const showNationalitySuggestions = ref(false)
 
 const filteredNationalities = computed(() => {
   const q = (nationalitySearch.value || '').trim().toLowerCase()
-  if (!q) return nationalitiesList.value.slice(0, 35)
+  if (!q) return nationalitiesList.value
   return nationalitiesList.value.filter(n =>
-    n.code.toLowerCase().includes(q) || n.label.toLowerCase().includes(q)
-  ).slice(0, 35)
+    n.code.toLowerCase().includes(q) ||
+    (n.asm_code && n.asm_code.toLowerCase().includes(q)) ||
+    n.label.toLowerCase().includes(q)
+  )
 })
 
 function syncNationalityDisplay() {
-  const code = formGuest.value.nationality
+  const code = (formGuest.value.nationality || '').trim().toUpperCase()
   if (!code) {
     nationalitySearch.value = ''
     return
   }
-  const found = nationalitiesList.value.find(n => n.code.toUpperCase() === code.toUpperCase())
+  const found = nationalitiesList.value.find(n =>
+    n.code.toUpperCase() === code ||
+    (n.asm_code && n.asm_code.toUpperCase() === code) ||
+    (n.nationality_id && n.nationality_id.toUpperCase() === code)
+  )
   nationalitySearch.value = found ? found.label : code
 }
 
@@ -68,7 +108,11 @@ function onNationalityInput(e) {
   nationalitySearch.value = e.target.value
   showNationalitySuggestions.value = true
   const q = e.target.value.trim().toUpperCase()
-  const match = nationalitiesList.value.find(n => n.code.toUpperCase() === q)
+  const match = nationalitiesList.value.find(n =>
+    n.code.toUpperCase() === q ||
+    (n.asm_code && n.asm_code.toUpperCase() === q) ||
+    (n.nationality_id && n.nationality_id.toUpperCase() === q)
+  )
   if (match) {
     formGuest.value.nationality = match.code
   }
@@ -102,7 +146,9 @@ async function loadNationalities() {
     if (res.data?.success) {
       const list = res.data.data || []
       nationalitiesList.value = list.map(item => ({
-        code: item.asm_code || item.nationality_id || '',
+        code: item.nationality_id || item.asm_code || '',
+        asm_code: item.asm_code || '',
+        nationality_id: item.nationality_id || '',
         label: `${item.nationality_id || item.asm_code || '—'} - ${item.asm_name || item.nationality_name || ''}`
       })).filter(item => item.code !== '')
       syncNationalityDisplay()
@@ -690,6 +736,14 @@ async function loadGuests(autoSelectId = null) {
         dob: formatDateForInput(c.dob) || '',
         nationality: c.nationality_code || 'VN',
         age_group: 'child',
+        phone: c.phone || '',
+        email: c.email || '',
+        id_type: c.id_type || 'CCCD',
+        id_number: c.id_number || '',
+        passport_number: c.passport_number || '',
+        id_issue_date: formatDateForInput(c.id_issue_date) || '',
+        residence_type: c.residence_type || 'Thường trú',
+        address: c.address || '',
       }))
 
     babies.value = roomChildren
@@ -701,6 +755,14 @@ async function loadGuests(autoSelectId = null) {
         dob: formatDateForInput(c.dob) || '',
         nationality: c.nationality_code || 'VN',
         age_group: 'baby',
+        phone: c.phone || '',
+        email: c.email || '',
+        id_type: c.id_type || 'CCCD',
+        id_number: c.id_number || '',
+        passport_number: c.passport_number || '',
+        id_issue_date: formatDateForInput(c.id_issue_date) || '',
+        residence_type: c.residence_type || 'Thường trú',
+        address: c.address || '',
       }))
 
     // Dynamically update occupants count string
@@ -727,15 +789,16 @@ async function loadGuests(autoSelectId = null) {
 
 watch(() => props.room, (newRoom) => {
   if (newRoom) {
+    const isHourlyRoom = !!(newRoom.is_day_use || newRoom.is_hourly || newRoom.hourly)
     stayInfo.value = {
       arrival_date: formatDateForInput(newRoom.arrival_date) || '',
       arrival_time: formatTime24h(newRoom.check_in_time) || '14:00',
       departure_date: formatDateForInput(newRoom.departure_date) || '',
       departure_time: formatTime24h(newRoom.check_out_time) || '12:00',
-      nights: newRoom.nights || newRoom.ActutalNumOfDays || 1,
+      nights: isHourlyRoom ? 0 : (newRoom.nights || newRoom.ActutalNumOfDays || 1),
       occupants_str: `${adults.value.length} / ${children.value.length} / ${babies.value.length}`,
       breakfast: newRoom.breakfast !== false,
-      hourly: newRoom.is_hourly || false,
+      hourly: isHourlyRoom,
       notes: newRoom.booking_note || '',
     }
 
@@ -756,11 +819,15 @@ watch(() => props.room, (newRoom) => {
 
 watch(() => [stayInfo.value.arrival_date, stayInfo.value.departure_date], ([arr, dep]) => {
   if (arr && dep) {
-    const dArr = new Date(arr)
-    const dDep = new Date(dep)
-    const diffTime = dDep.getTime() - dArr.getTime()
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-    stayInfo.value.nights = diffDays > 0 ? diffDays : 1
+    if (stayInfo.value.hourly || arr === dep) {
+      stayInfo.value.nights = 0
+    } else {
+      const dArr = new Date(arr)
+      const dDep = new Date(dep)
+      const diffTime = dDep.getTime() - dArr.getTime()
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+      stayInfo.value.nights = diffDays > 0 ? diffDays : 1
+    }
   }
 })
 
@@ -850,15 +917,15 @@ function selectChild(c) {
     name: c.name ? c.name.toUpperCase() : '',
     nationality: c.nationality || 'VN',
     dob: formatDateForInput(c.dob) || '',
-    email: '',
-    phone: '',
+    email: c.email || '',
+    phone: c.phone || '',
     stay_count: 1,
-    id_type: 'CCCD',
-    id_number: '',
-    passport_number: '',
-    id_issue_date: '',
-    residence_type: 'Thường trú',
-    address: '',
+    id_type: c.id_type || 'CCCD',
+    id_number: c.id_number || '',
+    passport_number: c.passport_number || '',
+    id_issue_date: formatDateForInput(c.id_issue_date) || '',
+    residence_type: c.residence_type || 'Thường trú',
+    address: c.address || '',
     avatar: '',
   }
   syncNationalityDisplay()
@@ -977,6 +1044,8 @@ function doAddChild(ageGroup) {
     title: 'Mr.',
     nationality: 'VN',
     dob: '',
+    email: '',
+    phone: '',
     stay_count: 1,
     id_type: 'CCCD',
     id_number: '',
@@ -1071,6 +1140,7 @@ async function handleSave() {
       arrival_time: stayInfo.value.arrival_time,
       departure_date: stayInfo.value.departure_date,
       departure_time: stayInfo.value.departure_time,
+      is_day_use: !!stayInfo.value.hourly,
       rate: pricingInfo.value.rate ? Number(String(pricingInfo.value.rate).replace(/\D/g, '')) : 0,
       rate_code: validRateCode,
       extra_bed_qty: Number(pricingInfo.value.extra_bed_qty || 0),
@@ -1110,6 +1180,16 @@ async function handleSave() {
             nationality_code: formGuest.value.nationality,
             dob: formGuest.value.dob,
             age_group: draftGuest.value.age_group,
+            phone: formGuest.value.phone,
+            email: formGuest.value.email,
+            id_type: formGuest.value.id_type,
+            id_number: formGuest.value.id_number,
+            passport_number: isPassportType(formGuest.value.id_type)
+              ? formGuest.value.id_number
+              : formGuest.value.passport_number,
+            id_issue_date: formGuest.value.id_issue_date,
+            residence_type: formGuest.value.residence_type,
+            address: formGuest.value.address,
             ...roomFields,
           })
           newId = res.data?.data?.id
@@ -1151,6 +1231,16 @@ async function handleSave() {
         title: formGuest.value.title,
         nationality_code: formGuest.value.nationality,
         dob: formGuest.value.dob,
+        phone: formGuest.value.phone,
+        email: formGuest.value.email,
+        id_type: formGuest.value.id_type,
+        id_number: formGuest.value.id_number,
+        passport_number: isPassportType(formGuest.value.id_type)
+          ? formGuest.value.id_number
+          : formGuest.value.passport_number,
+        id_issue_date: formGuest.value.id_issue_date,
+        residence_type: formGuest.value.residence_type,
+        address: formGuest.value.address,
         ...roomFields,
       })
     }
@@ -1593,7 +1683,7 @@ function parseNumber(val) {
                   <label>Ngày phát hành</label>
                   <SingleDatePicker
                     v-model="formGuest.id_issue_date"
-                    :disabled="!isEditingMode"
+                    :disabled="!isEditingMode || stayInfo.hourly"
                     placeholder="dd/mm/yyyy"
                   />
                 </div>
@@ -1678,7 +1768,7 @@ function parseNumber(val) {
                 </div>
                 <div class="checkbox-row">
                   <label class="cb"><input type="checkbox" v-model="stayInfo.breakfast" :disabled="!isEditingMode"> Ăn sáng</label>
-                  <label class="cb"><input type="checkbox" v-model="stayInfo.hourly" :disabled="!isEditingMode"> Phòng theo giờ</label>
+                  <label class="cb"><input type="checkbox" v-model="stayInfo.hourly" :disabled="isDayUseDisabled" @change="onHourlyToggle"> Phòng theo giờ</label>
                 </div>
               </div>
               <div class="f" style="margin-top: 10px;">

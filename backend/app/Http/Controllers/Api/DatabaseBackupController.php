@@ -13,6 +13,62 @@ use Illuminate\Support\Facades\Log;
 class DatabaseBackupController extends Controller
 {
     /**
+     * Tìm đường dẫn thực thi của mysql CLI
+     */
+    private function getMysqlBinary(): ?string
+    {
+        $envPath = env('MYSQL_BINARY_PATH');
+        if ($envPath && file_exists($envPath)) {
+            return $envPath;
+        }
+
+        $commonPaths = [
+            'C:\\xampp\\mysql\\bin\\mysql.exe',
+            'D:\\xampp\\mysql\\bin\\mysql.exe',
+            'C:\\laragon\\bin\\mysql\\current\\bin\\mysql.exe',
+            'C:\\Program Files\\MySQL\\MySQL Server 8.0\\bin\\mysql.exe',
+            'C:\\Program Files\\MySQL\\MySQL Server 8.4\\bin\\mysql.exe',
+            'C:\\Program Files\\MariaDB 10.4\\bin\\mysql.exe',
+            'C:\\Program Files\\MariaDB 10.5\\bin\\mysql.exe',
+            'C:\\Program Files\\MariaDB 10.11\\bin\\mysql.exe',
+        ];
+
+        foreach ($commonPaths as $path) {
+            if (file_exists($path)) {
+                return $path;
+            }
+        }
+
+        $isWindows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
+        $whichCmd = $isWindows ? 'where mysql 2>nul' : 'which mysql 2>/dev/null';
+        $output = @shell_exec($whichCmd);
+        if ($output) {
+            $lines = explode("\n", trim($output));
+            foreach ($lines as $line) {
+                $line = trim($line);
+                if ($line && file_exists($line)) {
+                    return $line;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Tự động nâng max_allowed_packet lên 1GB trên kết nối MySQL
+     */
+    private function ensureMaxAllowedPacket(?string $connName = null): void
+    {
+        try {
+            $conn = $connName ?: config('database.default', 'mysql');
+            DB::connection($conn)->statement('SET GLOBAL max_allowed_packet = 1073741824;');
+        } catch (\Throwable $e) {
+            // Không có quyền SUPER hoặc kết nối không hỗ trợ thì bỏ qua
+        }
+    }
+
+    /**
      * Helper: Phân giải thông tin Database connection theo chi nhánh / ALL / SYSTEM
      */
     private function resolveBranchContext(Request $request): array
@@ -23,24 +79,42 @@ class DatabaseBackupController extends Controller
         $branchCode = strtoupper(trim((string) $branchCode));
 
         if ($branchCode === 'ALL') {
+            $dbConfig = Config::get('database.connections.mysql_system') 
+                ?? Config::get('database.connections.mysql') 
+                ?? [];
+
             return [
                 'type'        => 'ALL',
                 'branch_code' => 'ALL',
                 'branch_name' => 'Toàn Bộ Hệ Thống & Tất Cả Chi Nhánh',
                 'database'    => 'ALL (Multi-Database)',
                 'connection'  => 'all',
+                'host'        => $dbConfig['host'] ?? env('DB_HOST', '127.0.0.1'),
+                'port'        => $dbConfig['port'] ?? env('DB_PORT', '3306'),
+                'username'    => $dbConfig['username'] ?? env('DB_USERNAME', 'root'),
+                'password'    => $dbConfig['password'] ?? env('DB_PASSWORD', ''),
+                'config'      => $dbConfig,
             ];
         }
 
         if ($branchCode === 'SYSTEM') {
             $systemConn = 'mysql_system';
             $systemDb = config('database.connections.mysql_system.database', 'pms_system');
+            $dbConfig = Config::get('database.connections.mysql_system') 
+                ?? Config::get('database.connections.mysql') 
+                ?? [];
+
             return [
                 'type'        => 'SYSTEM',
                 'branch_code' => 'SYSTEM',
                 'branch_name' => 'Cơ sở Dữ liệu Hệ Thống Chính (Users, Roles, Chi nhánh)',
                 'database'    => $systemDb,
                 'connection'  => $systemConn,
+                'host'        => $dbConfig['host'] ?? env('DB_HOST', '127.0.0.1'),
+                'port'        => $dbConfig['port'] ?? env('DB_PORT', '3306'),
+                'username'    => $dbConfig['username'] ?? env('DB_USERNAME', 'root'),
+                'password'    => $dbConfig['password'] ?? env('DB_PASSWORD', ''),
+                'config'      => $dbConfig,
             ];
         }
 
@@ -210,9 +284,9 @@ class DatabaseBackupController extends Controller
     }
 
     /**
-     * Xuất một Database connection ra luồng SQL
+     * Xuất một Database connection ra luồng SQL (Bao gồm Tables, Views, Stored Procedures, Functions, Triggers)
      */
-    private function exportDatabaseToStream($out, string $connName, string $dbName, string $title, bool $includeUseDb = false)
+    private function exportDatabaseToStream($out, string $connName, string $dbName, string $title, bool $includeUseDb = false): void
     {
         fwrite($out, "\n-- ========================================================\n");
         fwrite($out, "-- DATABASE SECTION: `{$dbName}`\n");
@@ -225,26 +299,29 @@ class DatabaseBackupController extends Controller
             fwrite($out, "USE `{$dbName}`;\n\n");
         }
 
+        fwrite($out, "/*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;\n");
+        fwrite($out, "/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;\n");
         fwrite($out, "SET FOREIGN_KEY_CHECKS=0;\n");
         fwrite($out, "SET SQL_MODE = \"NO_AUTO_VALUE_ON_ZERO\";\n");
         fwrite($out, "SET time_zone = \"+00:00\";\n\n");
 
         try {
-            $tables = DB::connection($connName)->select('SHOW TABLES');
+            // 1. Xuất danh sách BẢNG DỮ LIỆU (Base Tables)
+            $tables = DB::connection($connName)->select("SHOW FULL TABLES WHERE Table_type = 'BASE TABLE'");
             $tableKey = "Tables_in_" . $dbName;
 
             foreach ($tables as $t) {
                 $tableArray = (array)$t;
                 $tableName = $tableArray[$tableKey] ?? reset($tableArray);
 
-                // Lấy câu lệnh CREATE TABLE
+                // Lấy cấu trúc CREATE TABLE
                 try {
                     $createSql = DB::connection($connName)->select("SHOW CREATE TABLE `{$tableName}`");
                     if (!empty($createSql)) {
                         $createArray = (array)$createSql[0];
                         $createTableStmt = $createArray['Create Table'] ?? $createArray['CREATE TABLE'] ?? null;
                         if ($createTableStmt) {
-                            fwrite($out, "-- Table structure for `{$tableName}`\n");
+                            fwrite($out, "-- Cấu trúc bảng cho `{$tableName}`\n");
                             fwrite($out, "DROP TABLE IF EXISTS `{$tableName}`;\n");
                             fwrite($out, $createTableStmt . ";\n\n");
                         }
@@ -253,13 +330,13 @@ class DatabaseBackupController extends Controller
                     continue;
                 }
 
-                // Lấy dữ liệu bảng theo từng đợt
+                // Xuất dữ liệu bảng theo từng đợt nhỏ (50 dòng/lần) tránh vượt packet
                 try {
                     $count = DB::connection($connName)->table($tableName)->count();
                     if ($count > 0) {
-                        fwrite($out, "-- Dumping data for table `{$tableName}`\n");
+                        fwrite($out, "-- Dữ liệu cho bảng `{$tableName}`\n");
                         
-                        DB::connection($connName)->table($tableName)->orderBy(DB::raw(1))->chunk(200, function ($rows) use ($out, $tableName, $connName) {
+                        DB::connection($connName)->table($tableName)->orderBy(DB::raw(1))->chunk(50, function ($rows) use ($out, $tableName, $connName) {
                             if ($rows->isEmpty()) return;
                             
                             $firstRow = (array)$rows->first();
@@ -283,11 +360,87 @@ class DatabaseBackupController extends Controller
                     continue;
                 }
             }
+
+            // 2. Xuất VIEWS
+            try {
+                $views = DB::connection($connName)->select("SHOW FULL TABLES WHERE Table_type = 'VIEW'");
+                foreach ($views as $v) {
+                    $vArray = (array)$v;
+                    $viewName = $vArray[$tableKey] ?? reset($vArray);
+                    $createView = DB::connection($connName)->select("SHOW CREATE VIEW `{$viewName}`");
+                    if (!empty($createView)) {
+                        $vRow = (array)$createView[0];
+                        $createViewStmt = $vRow['Create View'] ?? $vRow['CREATE VIEW'] ?? null;
+                        if ($createViewStmt) {
+                            fwrite($out, "-- View `{$viewName}`\n");
+                            fwrite($out, "DROP VIEW IF EXISTS `{$viewName}`;\n");
+                            fwrite($out, $createViewStmt . ";\n\n");
+                        }
+                    }
+                }
+            } catch (\Throwable $e) {
+                // bỏ qua nếu không hỗ trợ view
+            }
+
+            // 3. Xuất STORED PROCEDURES
+            try {
+                $procedures = DB::connection($connName)->select("SHOW PROCEDURE STATUS WHERE Db = ?", [$dbName]);
+                if (!empty($procedures)) {
+                    fwrite($out, "\n-- --------------------------------------------------------\n");
+                    fwrite($out, "-- Stored Procedures cho `{$dbName}`\n");
+                    fwrite($out, "-- --------------------------------------------------------\n\n");
+                    fwrite($out, "DELIMITER ;;\n");
+                    foreach ($procedures as $proc) {
+                        $procName = $proc->Name;
+                        $createProc = DB::connection($connName)->select("SHOW CREATE PROCEDURE `{$procName}`");
+                        if (!empty($createProc)) {
+                            $procArr = (array)$createProc[0];
+                            $stmt = $procArr['Create Procedure'] ?? $procArr['CREATE PROCEDURE'] ?? null;
+                            if ($stmt) {
+                                fwrite($out, "DROP PROCEDURE IF EXISTS `{$procName}`;;\n");
+                                fwrite($out, $stmt . ";;\n\n");
+                            }
+                        }
+                    }
+                    fwrite($out, "DELIMITER ;\n\n");
+                }
+            } catch (\Throwable $e) {
+                // tiếp tục
+            }
+
+            // 4. Xuất STORED FUNCTIONS
+            try {
+                $functions = DB::connection($connName)->select("SHOW FUNCTION STATUS WHERE Db = ?", [$dbName]);
+                if (!empty($functions)) {
+                    fwrite($out, "\n-- --------------------------------------------------------\n");
+                    fwrite($out, "-- Stored Functions cho `{$dbName}`\n");
+                    fwrite($out, "-- --------------------------------------------------------\n\n");
+                    fwrite($out, "DELIMITER ;;\n");
+                    foreach ($functions as $func) {
+                        $funcName = $func->Name;
+                        $createFunc = DB::connection($connName)->select("SHOW CREATE FUNCTION `{$funcName}`");
+                        if (!empty($createFunc)) {
+                            $funcArr = (array)$createFunc[0];
+                            $stmt = $funcArr['Create Function'] ?? $funcArr['CREATE FUNCTION'] ?? null;
+                            if ($stmt) {
+                                fwrite($out, "DROP FUNCTION IF EXISTS `{$funcName}`;;\n");
+                                fwrite($out, $stmt . ";;\n\n");
+                            }
+                        }
+                    }
+                    fwrite($out, "DELIMITER ;\n\n");
+                }
+            } catch (\Throwable $e) {
+                // tiếp tục
+            }
+
         } catch (\Throwable $e) {
             fwrite($out, "-- Error exporting database {$dbName}: " . $e->getMessage() . "\n");
         }
 
-        fwrite($out, "SET FOREIGN_KEY_CHECKS=1;\n\n");
+        fwrite($out, "SET FOREIGN_KEY_CHECKS=1;\n");
+        fwrite($out, "/*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;\n");
+        fwrite($out, "/*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;\n\n");
     }
 
     /**
@@ -296,6 +449,12 @@ class DatabaseBackupController extends Controller
      */
     public function exportDatabase(Request $request)
     {
+        @set_time_limit(0);
+        @ini_set('memory_limit', '1024M');
+        @ini_set('max_execution_time', '0');
+
+        $this->ensureMaxAllowedPacket();
+
         $context = $this->resolveBranchContext($request);
         $type = $context['type'];
         $branchCode = $context['branch_code'];
@@ -375,11 +534,200 @@ class DatabaseBackupController extends Controller
     }
 
     /**
+     * Chuẩn hóa và làm sạch file SQL sao lưu (loại bỏ lệnh USE/CREATE DATABASE gây chuyển nhầm DB, chuẩn hóa DEFINER)
+     */
+    private function prepareSanitizedSqlFile(string $sourcePath, bool $stripUseAndCreateDb): string
+    {
+        $tempPath = tempnam(sys_get_temp_dir(), 'pms_restore_');
+        $in = fopen($sourcePath, 'r');
+        if (!$in) {
+            throw new \RuntimeException("Không thể đọc file sao lưu nguồn.");
+        }
+        $out = fopen($tempPath, 'w');
+        if (!$out) {
+            fclose($in);
+            throw new \RuntimeException("Không thể tạo file tạm để khôi phục.");
+        }
+
+        fwrite($out, "/*!40014 SET @OLD_UNIQUE_CHECKS=@@UNIQUE_CHECKS, UNIQUE_CHECKS=0 */;\n");
+        fwrite($out, "/*!40014 SET @OLD_FOREIGN_KEY_CHECKS=@@FOREIGN_KEY_CHECKS, FOREIGN_KEY_CHECKS=0 */;\n");
+        fwrite($out, "SET FOREIGN_KEY_CHECKS = 0;\n");
+        fwrite($out, "SET SQL_MODE = 'NO_AUTO_VALUE_ON_ZERO';\n");
+
+        while (($line = fgets($in)) !== false) {
+            if ($stripUseAndCreateDb) {
+                // Bỏ qua lệnh CREATE DATABASE và USE khi đang import vào 1 chi nhánh chỉ định
+                if (preg_match('/^\s*CREATE\s+DATABASE\b/i', $line)) {
+                    continue;
+                }
+                if (preg_match('/^\s*USE\s+[`\'"]?[a-zA-Z0-9_\-]+[`\'"]?\s*;?/i', $line)) {
+                    continue;
+                }
+                // Chỉ loại bỏ tiền tố `dbname`. trước tên bảng trên các câu lệnh DDL/DML, tránh chạm vào số thập phân (ví dụ 0.000000)
+                if (strpos($line, '.') !== false) {
+                    $line = preg_replace(
+                        '/(CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?|INSERT\s+(?:IGNORE\s+)?INTO\s+|DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?|ALTER\s+TABLE\s+|UPDATE\s+|TRUNCATE\s+(?:TABLE\s+)?)[`\'"]?[a-zA-Z0-9_\-]+[`\'"]?\s*\.\s*[`\'"]?([a-zA-Z0-9_\-]+)[`\'"]?/i',
+                        '$1`$2`',
+                        $line
+                    );
+                }
+            }
+
+            // Chuẩn hóa DEFINER nếu xuất từ server/tài khoản khác
+            if (stripos($line, 'DEFINER=') !== false) {
+                $line = preg_replace('/DEFINER\s*=\s*[`\'"]?[^`\'"@]+[`\'"]?@\s*[`\'"]?[^`\'"]+[`\'"]?/i', 'DEFINER=CURRENT_USER', $line);
+            }
+
+            fwrite($out, $line);
+        }
+
+        fwrite($out, "\nSET FOREIGN_KEY_CHECKS = 1;\n");
+        fwrite($out, "/*!40014 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS */;\n");
+        fwrite($out, "/*!40014 SET UNIQUE_CHECKS=@OLD_UNIQUE_CHECKS */;\n");
+
+        fclose($in);
+        fclose($out);
+
+        return $tempPath;
+    }
+
+    /**
+     * Khôi phục database trực tiếp qua mysql.exe CLI (O(1) RAM, cực nhanh, hỗ trợ đầy đủ Stored Procedures/Triggers)
+     */
+    private function executeRestoreViaCli(string $mysqlBin, array $dbConfig, string $sqlFilePath, ?string $targetDatabase = null): void
+    {
+        $host = $dbConfig['host'] ?? env('DB_HOST', '127.0.0.1');
+        $port = $dbConfig['port'] ?? env('DB_PORT', '3306');
+        $username = $dbConfig['username'] ?? env('DB_USERNAME', 'root');
+        $password = $dbConfig['password'] ?? env('DB_PASSWORD', '');
+
+        $cmd = sprintf(
+            '"%s" -h %s -P %s -u %s --default-character-set=utf8mb4 --max_allowed_packet=512M',
+            $mysqlBin,
+            escapeshellarg($host),
+            escapeshellarg((string)$port),
+            escapeshellarg($username)
+        );
+
+        if ($targetDatabase) {
+            $cmd .= ' ' . escapeshellarg($targetDatabase);
+        }
+
+        $descriptors = [
+            0 => ['file', $sqlFilePath, 'r'],
+            1 => ['pipe', 'w'],
+            2 => ['pipe', 'w'],
+        ];
+
+        if ($password !== '') {
+            putenv("MYSQL_PWD={$password}");
+        } else {
+            putenv("MYSQL_PWD");
+        }
+
+        $process = proc_open($cmd, $descriptors, $pipes, null, null);
+
+        if (!is_resource($process)) {
+            putenv("MYSQL_PWD");
+            throw new \RuntimeException("Không thể khởi chạy tiến trình mysql CLI để khôi phục.");
+        }
+
+        $stdout = stream_get_contents($pipes[1]);
+        fclose($pipes[1]);
+
+        $stderr = stream_get_contents($pipes[2]);
+        fclose($pipes[2]);
+
+        $exitCode = proc_close($process);
+        putenv("MYSQL_PWD");
+
+        if ($exitCode !== 0) {
+            $errorLines = array_filter(explode("\n", (string)$stderr), function ($l) {
+                $l = trim($l);
+                if (!$l) return false;
+                if (stripos($l, '[Warning] Using a password') !== false) return false;
+                return true;
+            });
+            $cleanError = implode("\n", $errorLines);
+
+            if (!empty($cleanError)) {
+                throw new \RuntimeException("MySQL CLI error (Mã {$exitCode}): " . mb_substr($cleanError, 0, 500));
+            }
+        }
+    }
+
+    /**
+     * Fallback khôi phục theo từng câu lệnh streaming (Nếu môi trường không có mysql CLI)
+     */
+    private function executeRestoreViaPdoStream(string $connName, string $sqlFilePath): void
+    {
+        $in = fopen($sqlFilePath, 'r');
+        if (!$in) {
+            throw new \RuntimeException("Không thể mở file SQL để thực thi.");
+        }
+
+        DB::connection($connName)->statement('SET FOREIGN_KEY_CHECKS = 0;');
+
+        $buffer = '';
+        $delimiter = ';';
+
+        while (($line = fgets($in)) !== false) {
+            $trimmed = trim($line);
+            if ($trimmed === '' || str_starts_with($trimmed, '--') || str_starts_with($trimmed, '#')) {
+                continue;
+            }
+
+            // Nhận diện thay đổi DELIMITER
+            if (preg_match('/^DELIMITER\s+(.+)$/i', $trimmed, $matches)) {
+                $delimiter = trim($matches[1]);
+                continue;
+            }
+
+            $buffer .= $line;
+
+            // Kiểm tra kết thúc câu lệnh bằng DELIMITER hiện hành
+            $checkBuffer = rtrim($buffer);
+            if (str_ends_with($checkBuffer, $delimiter)) {
+                $stmt = substr($checkBuffer, 0, -strlen($delimiter));
+                $stmt = trim($stmt);
+                $buffer = '';
+
+                if ($stmt !== '') {
+                    try {
+                        DB::connection($connName)->unprepared($stmt);
+                    } catch (\Throwable $e) {
+                        fclose($in);
+                        $preview = mb_substr($stmt, 0, 150);
+                        throw new \RuntimeException("Lỗi thực thi câu lệnh [{$preview}...]: " . $e->getMessage());
+                    }
+                }
+            }
+        }
+
+        if (trim($buffer) !== '') {
+            try {
+                DB::connection($connName)->unprepared(trim($buffer));
+            } catch (\Throwable $e) {
+                fclose($in);
+                $preview = mb_substr(trim($buffer), 0, 150);
+                throw new \RuntimeException("Lỗi thực thi câu lệnh cuối: " . $e->getMessage());
+            }
+        }
+
+        fclose($in);
+        DB::connection($connName)->statement('SET FOREIGN_KEY_CHECKS = 1;');
+    }
+
+    /**
      * POST /api/system/database/import
      * Khôi phục database (hỗ trợ ALL, SYSTEM hoặc từng chi nhánh cụ thể)
      */
     public function importDatabase(Request $request)
     {
+        @set_time_limit(0);
+        @ini_set('memory_limit', '1024M');
+        @ini_set('max_execution_time', '0');
+
         $request->validate([
             'file'        => 'required|file',
             'branch_code' => 'nullable|string',
@@ -394,33 +742,35 @@ class DatabaseBackupController extends Controller
             ], 422);
         }
 
+        $this->ensureMaxAllowedPacket();
+
         $context = $this->resolveBranchContext($request);
         $type = $context['type'];
         $branchCode = $context['branch_code'];
         $branchName = $context['branch_name'];
+        $database = $context['database'] ?? null;
+        $connName = $context['connection'] ?? null;
+
+        $mysqlBin = $this->getMysqlBinary();
+        $sourceFilePath = $file->getRealPath();
+        $tempSanitizedPath = null;
 
         try {
-            $filePath = $file->getRealPath();
-            $sqlContent = file_get_contents($filePath);
-
-            if (empty(trim($sqlContent))) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'File SQL tải lên trống!',
-                ], 422);
-            }
-
-            // TRƯỜNG HỢP 1: KHÔI PHỤC TOÀN BỘ (ALL) - Tự động định tuyến nhiều Database
+            // TRƯỜNG HỢP 1: KHÔI PHỤC TOÀN BỘ (ALL)
             if ($type === 'ALL') {
-                // Kiểm tra xem file có các khối USE `dbname` hoặc DATABASE SECTION không
-                $sections = preg_split('/(?=CREATE\s+DATABASE\s+|USE\s+[`\'"]?[a-zA-Z0-9_\-]+[`\'"]?\s*;)/i', $sqlContent);
+                $tempSanitizedPath = $this->prepareSanitizedSqlFile($sourceFilePath, false);
 
-                if (count($sections) > 1) {
+                if ($mysqlBin) {
+                    $this->executeRestoreViaCli($mysqlBin, $context['config'], $tempSanitizedPath, null);
+                } else {
+                    // Fallback phân tích các khối USE `dbname`
+                    $sqlContent = file_get_contents($tempSanitizedPath);
+                    $sections = preg_split('/(?=CREATE\s+DATABASE\s+|USE\s+[`\'"]?[a-zA-Z0-9_\-]+[`\'"]?\s*;)/i', $sqlContent);
                     $restoredDatabases = [];
+
                     foreach ($sections as $sec) {
                         if (empty(trim($sec))) continue;
 
-                        // Tìm tên database trong lệnh USE `dbname`
                         if (preg_match('/USE\s+[`\'"]?([a-zA-Z0-9_\-]+)[`\'"]?\s*;/i', $sec, $matches)) {
                             $targetDb = $matches[1];
                             TenantDatabaseService::createDatabaseIfNotExists($targetDb);
@@ -428,63 +778,37 @@ class DatabaseBackupController extends Controller
                             $tempConn = 'import_' . uniqid();
                             TenantDatabaseService::registerDynamicConnection($tempConn, $targetDb);
 
-                            $cleanSec = preg_replace('/^\s*CREATE\s+DATABASE\s+.*?;/mi', '', $sec);
-                            $cleanSec = preg_replace('/^\s*USE\s+[`\'"]?[a-zA-Z0-9_\-]+[`\'"]?\s*;?/mi', '', $cleanSec);
-
-                            DB::connection($tempConn)->statement('SET FOREIGN_KEY_CHECKS = 0;');
-                            DB::connection($tempConn)->unprepared($cleanSec);
-                            DB::connection($tempConn)->statement('SET FOREIGN_KEY_CHECKS = 1;');
+                            $tempSecFile = tempnam(sys_get_temp_dir(), 'sec_');
+                            file_put_contents($tempSecFile, $sec);
+                            $this->executeRestoreViaPdoStream($tempConn, $tempSecFile);
+                            @unlink($tempSecFile);
 
                             $restoredDatabases[] = $targetDb;
                         }
                     }
-
-                    return response()->json([
-                        'success'     => true,
-                        'message'     => 'Khôi phục toàn bộ hệ thống thành công (' . count($restoredDatabases) . ' Database)!',
-                        'databases'   => $restoredDatabases,
-                        'branch_code' => 'ALL',
-                    ]);
                 }
-            }
-
-            // TRƯỜNG HỢP 2: KHÔI PHỤC SYSTEM DB
-            if ($type === 'SYSTEM') {
-                $targetDb = config('database.connections.mysql_system.database', 'pms_system');
-                TenantDatabaseService::createDatabaseIfNotExists($targetDb);
-
-                $cleanSql = preg_replace('/^\s*CREATE\s+DATABASE\s+.*?;/mi', '-- [STRIPPED CREATE DATABASE]', $sqlContent);
-                $cleanSql = preg_replace('/^\s*USE\s+[`\'"]?[a-zA-Z0-9_\-]+[`\'"]?\s*;?/mi', '-- [STRIPPED USE STATEMENT]', $cleanSql);
-
-                DB::connection('mysql_system')->statement('SET FOREIGN_KEY_CHECKS = 0;');
-                DB::connection('mysql_system')->unprepared($cleanSql);
-                DB::connection('mysql_system')->statement('SET FOREIGN_KEY_CHECKS = 1;');
 
                 return response()->json([
                     'success'     => true,
-                    'message'     => "Khôi phục Database Hệ Thống Chính ({$targetDb}) thành công!",
-                    'branch_code' => 'SYSTEM',
-                    'database'    => $targetDb,
+                    'message'     => 'Khôi phục toàn bộ hệ thống & tất cả chi nhánh thành công!',
+                    'branch_code' => 'ALL',
                 ]);
             }
 
-            // TRƯỜNG HỢP 3: KHÔI PHỤC MỘT CHI NHÁNH CỤ THỂ
-            $database = $context['database'];
-            $connName = $context['connection'];
+            // TRƯỜNG HỢP 2 & 3: KHÔI PHỤC DATABASE HỆ THỐNG HOẶC MỘT CHI NHÁNH CỤ THỂ
+            if ($type === 'SYSTEM') {
+                $database = config('database.connections.mysql_system.database', 'pms_system');
+                $connName = 'mysql_system';
+            }
 
             TenantDatabaseService::createDatabaseIfNotExists($database);
+            $tempSanitizedPath = $this->prepareSanitizedSqlFile($sourceFilePath, true);
 
-            $cleanSql = preg_replace('/^\s*CREATE\s+DATABASE\s+.*?;/mi', '-- [STRIPPED CREATE DATABASE]', $sqlContent);
-            $cleanSql = preg_replace('/^\s*USE\s+[`\'"]?[a-zA-Z0-9_\-]+[`\'"]?\s*;?/mi', '-- [STRIPPED USE STATEMENT]', $cleanSql);
-            
-            // Xóa tiền tố `dbname`. trước tên bảng nếu có
-            $cleanSql = preg_replace('/(CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?)[`\'"]?[a-zA-Z0-9_\-]+[`\'"]?\s*\.\s*[`\'"]?([a-zA-Z0-9_\-]+)[`\'"]?/i', '$1`$2`', $cleanSql);
-            $cleanSql = preg_replace('/(INSERT\s+INTO\s+)[`\'"]?[a-zA-Z0-9_\-]+[`\'"]?\s*\.\s*[`\'"]?([a-zA-Z0-9_\-]+)[`\'"]?/i', '$1`$2`', $cleanSql);
-            $cleanSql = preg_replace('/(DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?)[`\'"]?[a-zA-Z0-9_\-]+[`\'"]?\s*\.\s*[`\'"]?([a-zA-Z0-9_\-]+)[`\'"]?/i', '$1`$2`', $cleanSql);
-
-            DB::connection($connName)->statement('SET FOREIGN_KEY_CHECKS = 0;');
-            DB::connection($connName)->unprepared($cleanSql);
-            DB::connection($connName)->statement('SET FOREIGN_KEY_CHECKS = 1;');
+            if ($mysqlBin) {
+                $this->executeRestoreViaCli($mysqlBin, $context['config'], $tempSanitizedPath, $database);
+            } else {
+                $this->executeRestoreViaPdoStream($connName, $tempSanitizedPath);
+            }
 
             return response()->json([
                 'success'     => true,
@@ -492,13 +816,24 @@ class DatabaseBackupController extends Controller
                 'branch_code' => $branchCode,
                 'database'    => $database,
             ]);
+
         } catch (\Throwable $e) {
             Log::error("Import Database Error for branch {$branchCode}: " . $e->getMessage());
 
+            // Rút gọn thông điệp lỗi ngắn gọn, sạch sẽ, không dump hàng trăm nghìn ký tự SQL lên giao diện
+            $errorDetail = $e->getMessage();
+            if (strlen($errorDetail) > 300) {
+                $errorDetail = mb_substr($errorDetail, 0, 300) . '...';
+            }
+
             return response()->json([
                 'success' => false,
-                'message' => "Lỗi khôi phục database chi nhánh {$branchCode}: " . $e->getMessage(),
+                'message' => "Lỗi khôi phục database chi nhánh {$branchCode}: {$errorDetail}",
             ], 500);
+        } finally {
+            if ($tempSanitizedPath && file_exists($tempSanitizedPath)) {
+                @unlink($tempSanitizedPath);
+            }
         }
     }
 }

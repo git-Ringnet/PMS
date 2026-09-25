@@ -793,7 +793,7 @@ async function handleSave() {
       }
 
       if (allowVacantClean === '0') {
-        uiStore.showToast(`Phòng ${selectedRoomNumber.value} đang ở trạng thái ${label}. Không được phép nhận phòng do cấu hình hệ thống (AllowCheckinVacantClean = 0).`, 'error')
+        uiStore.showToast(`Phòng ${selectedRoomNumber.value} đang ở trạng thái ${label}. Không thể thực hiện nhận phòng.`, 'error')
         isSubmitting.value = false
         return // Dừng ngay lập tức, không tạo booking, không gán phòng
       }
