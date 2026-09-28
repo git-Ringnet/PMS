@@ -18,6 +18,39 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-28] - Cải tiến màn hình Thông tin khách (Guest Information)
+### Module: Đặt phòng / Thông tin khách ([GuestInfoModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestInfoModal.vue), [GuestDetailModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestDetailModal.vue), [GuestController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/GuestController.php))
+
+- **Yêu cầu nghiệp vụ & Giải pháp**:
+  1. **Bổ sung Group cấp 1 theo tình trạng khách**:
+     - Phân loại phòng và khách theo 4 nhóm tình trạng: `0: Đăng ký`, `1: Đang ở`, `2: Phòng đi`, `4: Noshow`.
+     - Header nhóm có icon, badge màu nhận diện, hiển thị tổng số phòng và tổng số khách trong nhóm.
+     - Hỗ trợ nút `[-]` / `[+]` để mở rộng hoặc thu gọn linh hoạt từng nhóm tình trạng (mặc định mở tất cả).
+     - Backend [`GuestController.php`](file:///d:/PMS/backend/app/Http/Controllers/Api/GuestController.php) trả về `'status' => (int) $room->status`.
+  2. **Cố định (Sticky / Freeze) các cột từ STT đến Họ và tên**:
+     - Ghim cố định 4 cột bên trái (`STT`, `Số phòng`, `Danh xưng`, `Họ và tên`) khi cuộn ngang bảng dữ liệu để nhập các trường bên phải.
+     - Cột `Họ và tên` có đường viền phải và shadow ngăn cách rõ ràng.
+     - Header của nhóm phòng và tình trạng ghim cố định text bên trái để luôn quan sát được thông tin khi cuộn xa.
+  3. **Quốc tịch**:
+     - Chuẩn hóa định dạng hiển thị và dropdown chọn theo cấu trúc: `mã quốc tịch - nationality_name` (ví dụ: `VNM - Việt Nam`).
+  4. **Danh xưng (`guest_titles`)**:
+     - Người lớn: chỉ hiển thị các danh xưng có `is_adult = 1` (`Mr.`, `Ms.`, `Mrs.`).
+     - Trẻ em: chỉ hiển thị các danh xưng có `is_adult = 0` (`Boy.`, `Girl.`, `Kid.`, `Inf`).
+     - Đồng bộ áp dụng trên cả bảng chính [`GuestInfoModal.vue`](file:///d:/PMS/frontend/src/pages/reservation/components/GuestInfoModal.vue) và thẻ chi tiết [`GuestDetailModal.vue`](file:///d:/PMS/frontend/src/pages/reservation/components/GuestDetailModal.vue).
+  5. **Cột địa chỉ**:
+     - Tăng độ rộng cột địa chỉ từ `160px` lên `260px` để dễ dàng quan sát và chỉnh sửa.
+  6. **Sắp xếp thứ tự cột & lưu theo User**:
+     - Bổ sung nút di chuyển lên/xuống (`▲` / `▼`) và checkbox ẩn/hiện cột trong popup Cài đặt cột.
+     - Nhóm cột định danh cố định (`Số phòng`, `Danh xưng`, `Họ và tên`) được ghim an toàn không bị phá vỡ cấu trúc.
+     - Tự động lưu cấu hình cột riêng theo tài khoản người dùng đăng nhập (`pms_guest_info_columns_{userId}`) vào `localStorage`.
+     - Hỗ trợ nút "Mặc định" để khôi phục nhanh cấu hình cột ban đầu.
+  7. **Ghi chú tính năng Excel & Trải nghiệm**:
+     - Đã ghi nhận báo Vy review chi tiết UX/UI thao tác nhập dữ liệu.
+     - 2 tính năng Import Excel và Copy/Paste từ Excel vào bảng khách sẽ triển khai ở giai đoạn tiếp theo.
+- **Kiểm thử**:
+  - Test script backend xác nhận API `bookingGuests` trả về đúng trường `status` dạng integer.
+  - Build frontend `npm run build` thành công 100%.
+
 ## [2026-09-28] - Chuẩn hóa logic Tăng / Giảm Trẻ em & Em bé cho phòng chưa check-in
 ### Module: Đặt phòng / Quản lý Trẻ em & Em bé ([BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [BookingChild.php](file:///d:/PMS/backend/app/Models/BookingChild.php))
 

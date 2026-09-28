@@ -378,10 +378,14 @@ const guestDefinitions = ref({
 })
 
 const titles = computed(() => {
-  if (guestDefinitions.value.titles?.length > 0) {
-    return guestDefinitions.value.titles.map(t => t.name)
+  const all = guestDefinitions.value.titles || []
+  if (all.length > 0) {
+    const isAdult = props.guestType === 'adult'
+    const filtered = all.filter(t => isAdult ? (t.is_adult === true || t.is_adult === 1) : (!t.is_adult || t.is_adult === false || t.is_adult === 0))
+    if (filtered.length > 0) return filtered.map(t => t.name)
+    return all.map(t => t.name)
   }
-  return ['Boy.', 'Girl.', 'Inf', 'Kid.', 'Mr.', 'Ms.']
+  return props.guestType === 'adult' ? ['Mr.', 'Ms.', 'Mrs.'] : ['Boy.', 'Girl.', 'Inf', 'Kid.']
 })
 
 function handleTitleChange() {
