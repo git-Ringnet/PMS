@@ -96,6 +96,7 @@ class RoomController extends Controller
                     ->whereDate('service_date', $sysDateStr),
                 'specialRequests.specialRequest',
                 'lateCheckins',
+                'movedFromRoom',
             ])
             ->get();
 
@@ -118,6 +119,7 @@ class RoomController extends Controller
         /** @var Room $room */
         foreach ($rooms as $room) {
             $room->booking_status = null;
+            $room->is_transferred = false;
 
             // Ưu tiên trạng thái OOO/OOS (Active Lock ngày đang xem)
             $currentLock = $room->allActiveLocks ? $room->allActiveLocks->first(function($l) use ($sysDateStr) {
@@ -265,6 +267,7 @@ class RoomController extends Controller
                 $room->is_do_not_move = $br->is_do_not_move ?? 0;
                 $room->booking_room_id = $br->id ?? null;
                 $room->booking_id = $br->booking_id ?? null;
+                $room->is_transferred = (bool) ($br->movedFromRoom);
             }
 
             $room->has_arrival_today = $hasArrivalToday;

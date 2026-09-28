@@ -16,6 +16,7 @@ import {
 } from '@/utils/booking-room-allocations'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import TimePicker24h from '@/components/TimePicker24h.vue'
+import SingleDatePicker from '@/components/SingleDatePicker.vue'
 import CopyModal from './components/CopyModal.vue'
 import UpgradeModal from './components/UpgradeModal.vue'
 import DepositModal from './components/DepositModal.vue'
@@ -39,6 +40,7 @@ import {
 } from '@/services/company-service'
 import {
   fetchBookings,
+  fetchBooking,
   createBooking,
   addBookingRooms,
   updateBooking,
@@ -93,14 +95,35 @@ const authStore = useAuthStore()
 const roomStore = useRoomStore()
 
 let pmsBc = null
-if (typeof BroadcastChannel !== 'undefined') {
-  pmsBc = new BroadcastChannel('pms-room-updates')
+function getPmsBroadcastChannel() {
+  if (typeof BroadcastChannel === 'undefined') return null
+  if (!pmsBc) {
+    pmsBc = new BroadcastChannel('pms-room-updates')
+  }
+  return pmsBc
 }
 
-function notifyRoomUpdates() {
+function notifyRoomUpdates(bookingId = null) {
   roomStore.fetchRooms({ silent: true })
   roomStore.fetchStats()
-  if (pmsBc) pmsBc.postMessage('rooms-updated')
+  const bId = bookingId || activeTab.value?.dbId || activeTab.value?.id
+  const payload = { type: 'booking-updated', bookingId: bId, timestamp: Date.now() }
+  try {
+    const bc = getPmsBroadcastChannel()
+    if (bc) {
+      bc.postMessage(payload)
+      bc.postMessage('rooms-updated')
+    }
+    if (typeof BroadcastChannel !== 'undefined') {
+      const bc2 = new BroadcastChannel('pms-channel')
+      bc2.postMessage(payload)
+      bc2.postMessage('rooms-updated')
+      bc2.close()
+    }
+  } catch (err) {
+    console.warn('notifyRoomUpdates broadcast error:', err)
+  }
+  window.dispatchEvent(new CustomEvent('booking-updated', { detail: payload }))
 }
 
 // ==================== CONFIG & SYSTEM ====================
@@ -116,6 +139,10 @@ function formatLocalYYYYMMDD(dVal) {
 
 const systemDate = ref(formatLocalYYYYMMDD(new Date()))
 const hotelSettings = ref({})
+const isSyncRoomDateEnabled = computed(() => {
+  const val = hotelSettings.value?.SyncRoomDateByBookingDate ?? hotelSettings.value?.sync_room_date_by_booking_date
+  return Number(val) === 1
+})
 const currenciesList = ref([])
 const activeCurrency = computed(() => {
   return currenciesList.value.find(c => c.is_main) || { code: 'VND', decimals_to_round: 0 }
@@ -303,7 +330,7 @@ const emptyForm = () => ({
   checkOut: '',
   nights: 1,
   registrationStatusId: null,
-  confirmDate: '',
+  confirmDate: systemDate.value || parseApiDate(new Date()),
   expiredDate: '',
   companyId: null,
   paymentMethodId: null,
@@ -336,6 +363,8 @@ const roomAddDraft = ref([])
 const isColorChanged = ref(false)
 const isColorPickerOpen = ref(false)
 const initialModalSnapshot = ref('')
+const initialBookingSnapshot = ref('')
+const initialRoomsSnapshot = ref('')
 
 // A rate-code request can finish after a newer selection. Keep the latest
 // choice authoritative so an old response cannot overwrite the quantity or
@@ -354,7 +383,7 @@ function isLatestRateCodeRequest(target, version, selectedValue) {
     && String(target?.rateCode || '').trim() === String(selectedValue || '').trim()
 }
 
-function getModalFormSnapshot() {
+function getModalBookingSnapshot() {
   if (!modalForm.value) return ''
   return JSON.stringify({
     bookingName: modalForm.value.bookingName || '',
@@ -378,35 +407,56 @@ function getModalFormSnapshot() {
     specialRequests: modalForm.value.specialRequests || '',
     isMasterRoomRate: modalForm.value.isMasterRoomRate,
     shuttleInfo: modalForm.value.shuttleInfo || [],
-    roomAddDraft: (roomAddDraft.value || []).map(a => ({
-      roomClassId: a.roomClassId,
-      quantity: a.quantity,
-      price: a.price,
-      rateCode: a.rateCode,
-      adults: a.adults,
-      children: a.children,
-      babies: a.babies,
-      breakfastIncluded: a.breakfastIncluded,
-      upgradeClassId: a.upgradeClassId,
-      rooms: (a.rooms || []).map(r => ({
-        roomClassId: r.roomClassId,
-        roomNumber: r.roomNumber,
-        price: r.price,
-        rateCode: r.rateCode,
-        arrivalDate: r.arrivalDate,
-        departureDate: r.departureDate,
-        adults: r.adults,
-        children: r.children,
-        babies: r.babies,
-        breakfast: r.breakfast,
-      })),
+  })
+}
+
+function getModalRoomsSnapshot() {
+  return JSON.stringify((roomAddDraft.value || []).map(a => ({
+    roomClassId: a.roomClassId,
+    quantity: a.quantity,
+    price: a.price,
+    rateCode: a.rateCode,
+    adults: a.adults,
+    children: a.children,
+    babies: a.babies,
+    breakfastIncluded: a.breakfastIncluded,
+    upgradeClassId: a.upgradeClassId,
+    rooms: (a.rooms || []).map(r => ({
+      roomClassId: r.roomClassId,
+      roomNumber: r.roomNumber,
+      price: r.price,
+      rateCode: r.rateCode,
+      arrivalDate: r.arrivalDate,
+      departureDate: r.departureDate,
+      adults: r.adults,
+      children: r.children,
+      babies: r.babies,
+      breakfast: r.breakfast,
     })),
+  })))
+}
+
+function getModalFormSnapshot() {
+  if (!modalForm.value) return ''
+  return JSON.stringify({
+    booking: getModalBookingSnapshot(),
+    rooms: getModalRoomsSnapshot(),
   })
 }
 
 const isModalFormDirty = computed(() => {
   if (!modalForm.value || !modalForm.value.dbId) return true
   return getModalFormSnapshot() !== initialModalSnapshot.value
+})
+
+const isBookingInfoDirty = computed(() => {
+  if (!modalForm.value || !modalForm.value.dbId) return true
+  return getModalBookingSnapshot() !== initialBookingSnapshot.value
+})
+
+const hasRoomsToAdd = computed(() => {
+  if (!roomAddDraft.value || !roomAddDraft.value.length) return false
+  return roomAddDraft.value.reduce((sum, a) => sum + (Number(a.quantity) || 0), 0) > 0
 })
 
 const bkColorList = [
@@ -940,6 +990,7 @@ async function handleInlineServiceRateChange(room, svc, newRate) {
           service_date: cleanDateStr(s.service_date)
         }))
         room.total = calculateRoomTotal(room)
+        notifyRoomUpdates(activeTab.value?.dbId)
       }
     } catch (err) {
       console.error(err)
@@ -995,6 +1046,7 @@ async function handleInlineServiceQtyChange(room, svc, newQty) {
           service_date: cleanDateStr(s.service_date)
         }))
         room.total = calculateRoomTotal(room)
+        notifyRoomUpdates(activeTab.value?.dbId)
       }
     } catch (err) {
       console.error(err)
@@ -1016,7 +1068,7 @@ function getChildBreakfastDisplayName(svc) {
   return isChildBreakfastService(svc) ? name.replace(':', ' -') : name
 }
 
-async function handleInlineExtraBedQtyChange(room) {
+function handleInlineExtraBedQtyChange(room) {
   const qty = Number(room.extraBedQty) || 0
   
   if (qty > 0) {
@@ -1062,46 +1114,25 @@ async function handleInlineExtraBedQtyChange(room) {
     }
   }
   room.dailyExtraBeds = dailyRates
-  room.total = calculateRoomTotal(room)
 
-  // 2. Cập nhật Database nếu đã lưu
-  if (room.bookingRoomId && !String(room.bookingRoomId).startsWith('temp-')) {
-    try {
-      uiStore.showToast('Đang lưu thông tin Thêm giường...', 'info')
-      
-      // 2.1 Cập nhật booking_rooms
-      await http.put(`/bookings/${activeTab.value.dbId}/rooms/${room.bookingRoomId}`, {
-        extra_bed_qty: qty,
-        extra_bed_rate: rate
+  // Đồng bộ mảng room.services cho EB trong memory
+  if (room.services && Array.isArray(room.services)) {
+    if (qty <= 0) {
+      room.services = room.services.filter(s => s.service_code !== 'EB')
+    } else {
+      room.services.forEach(s => {
+        if (s.service_code === 'EB') {
+          s.quantity = qty
+          s.rate = rate
+        }
       })
-
-      // 2.2 Cập nhật booking_room_services
-      for (const d of dailyRates) {
-        await http.post(`/booking-rooms/${room.bookingRoomId}/services`, {
-          service_code: getHotelServiceCode('EB'),
-          service_name: getHotelServiceName('EB', 'Extra Bed'),
-          service_date: d.dateStr,
-          quantity: d.quantity,
-          rate: d.rate,
-          is_room: d.isRoom ? 1 : 0
-        })
-      }
-
-      const freshRes = await fetchBookingRoomServices(room.bookingRoomId)
-      room.services = (freshRes.data?.data || []).map(s => ({
-        ...s,
-        service_date: cleanDateStr(s.service_date)
-      }))
-      room.total = calculateRoomTotal(room)
-      uiStore.showToast('Cập nhật Thêm giường thành công!', 'success')
-    } catch (err) {
-      console.error(err)
-      uiStore.showToast('Không thể cập nhật Thêm giường vào hệ thống!', 'error')
     }
   }
+
+  room.total = calculateRoomTotal(room)
 }
 
-async function handleInlineExtraBedRateChange(room) {
+function handleInlineExtraBedRateChange(room) {
   const qty = Number(room.extraBedQty) || 0
   const rate = Number(room.extraBedPrice) || 0
 
@@ -1135,43 +1166,33 @@ async function handleInlineExtraBedRateChange(room) {
     }
   }
   room.dailyExtraBeds = dailyRates
-  room.total = calculateRoomTotal(room)
 
-  // 2. Cập nhật Database nếu đã lưu
-  if (room.bookingRoomId && !String(room.bookingRoomId).startsWith('temp-')) {
-    try {
-      uiStore.showToast('Đang lưu thông tin Thêm giường...', 'info')
-      
-      // 2.1 Cập nhật booking_rooms
-      await http.put(`/bookings/${activeTab.value.dbId}/rooms/${room.bookingRoomId}`, {
-        extra_bed_qty: qty,
-        extra_bed_rate: rate
-      })
-
-      // 2.2 Cập nhật booking_room_services
-      for (const d of dailyRates) {
-        await http.post(`/booking-rooms/${room.bookingRoomId}/services`, {
-          service_code: getHotelServiceCode('EB'),
-          service_name: getHotelServiceName('EB', 'Extra Bed'),
-          service_date: d.dateStr,
-          quantity: d.quantity,
-          rate: d.rate,
-          is_room: d.isRoom ? 1 : 0
-        })
+  if (room.services && Array.isArray(room.services)) {
+    room.services.forEach(s => {
+      if (s.service_code === 'EB') {
+        s.rate = rate
       }
-
-      const freshRes = await fetchBookingRoomServices(room.bookingRoomId)
-      room.services = (freshRes.data?.data || []).map(s => ({
-        ...s,
-        service_date: cleanDateStr(s.service_date)
-      }))
-      room.total = calculateRoomTotal(room)
-      uiStore.showToast('Cập nhật Thêm giường thành công!', 'success')
-    } catch (err) {
-      console.error(err)
-      uiStore.showToast('Không thể cập nhật Thêm giường vào hệ thống!', 'error')
-    }
+    })
   }
+
+  room.total = calculateRoomTotal(room)
+}
+
+function stepExtraBedQty(room, delta) {
+  const current = Number(room.extraBedQty) || 0
+  const next = Math.max(0, current + delta)
+  room.extraBedQty = next
+  handleInlineExtraBedQtyChange(room)
+}
+
+function stepExtraBedPrice(room, delta) {
+  const current = Number(room.extraBedPrice) || 0
+  const next = Math.max(0, current + delta)
+  room.extraBedPrice = next
+  if (next > 0 && (!room.extraBedQty || Number(room.extraBedQty) === 0)) {
+    room.extraBedQty = 1
+  }
+  handleInlineExtraBedRateChange(room)
 }
 
 async function handleInlineServiceDelete(room, svc) {
@@ -1209,6 +1230,7 @@ async function handleInlineServiceDelete(room, svc) {
         }
         
         room.total = calculateRoomTotal(room)
+        notifyRoomUpdates(activeTab.value?.dbId)
       }
     } catch (err) {
       console.error(err)
@@ -1489,7 +1511,9 @@ function getServicesTotal(room) {
 
 function getRoomExtraBedQty(room) {
   if (!room) return 0
-  if (Number(room.extraBedQty) > 0) return Number(room.extraBedQty)
+  if (room.extraBedQty !== undefined && room.extraBedQty !== null && room.extraBedQty !== '') {
+    return Number(room.extraBedQty) || 0
+  }
   if (room.dailyExtraBeds && Array.isArray(room.dailyExtraBeds) && room.dailyExtraBeds.length > 0) {
     const maxQty = Math.max(...room.dailyExtraBeds.map(d => Number(d.quantity) || 0))
     if (maxQty > 0) return maxQty
@@ -1506,6 +1530,9 @@ function getRoomExtraBedQty(room) {
 
 function getRoomExtraBedTotal(room) {
   if (!room) return 0
+  const qty = getRoomExtraBedQty(room)
+  if (qty <= 0) return 0
+
   if (room.dailyExtraBeds && Array.isArray(room.dailyExtraBeds) && room.dailyExtraBeds.length > 0) {
     const sum = room.dailyExtraBeds.reduce((s, d) => s + (Number(d.total) || (Number(d.quantity || 0) * Number(d.rate || 0))), 0)
     if (sum > 0) return sum
@@ -1522,8 +1549,7 @@ function getRoomExtraBedTotal(room) {
   }
   const nights = Number(room.nights) || 1
   const extraBedPrice = Number(room.extraBedPrice) || 0
-  const extraBedQty = Number(room.extraBedQty) || 0
-  return extraBedPrice * extraBedQty * nights
+  return extraBedPrice * qty * nights
 }
 
 function getRoomChargeTotal(room) {
@@ -1631,8 +1657,12 @@ const filteredActiveRooms = computed(() => {
   if (!tab || !tab.rooms) return []
   let list = tab.rooms
 
-  // Cả phòng chuyển (status 100) và phòng hủy (status 3) đều là lịch sử phòng của đăng ký,
-  // luôn được hiển thị trong bảng theo từng nhóm trạng thái riêng biệt (Đăng ký, Đang ở, Hủy, Phòng chuyển).
+  // Section 15: Trường hợp booking đang active (status in 0, 1, 2, 4) thì ẩn các phòng hủy (status 3).
+  // Chỉ khi nào booking tình trạng 3 đã hủy, thì mới show hết các phòng đã hủy của booking lên hệ thống.
+  const bookingStatus = Number(tab.status ?? 0)
+  if (bookingStatus !== 3) {
+    list = list.filter(r => Number(r.bookingRoomStatus) !== 3)
+  }
 
   if (selectedServiceFilter.value && selectedServiceFilter.value !== 'all') {
     list = list.filter(r => r.services && r.services.some(s => s.service_code === selectedServiceFilter.value))
@@ -1912,7 +1942,9 @@ onMounted(async () => {
   document.addEventListener('click', handleGlobalClick)
   window.addEventListener('booking-updated', handleBookingUpdatedEvent)
   window.addEventListener('deposit-updated', loadBookings)
-  if (pmsBc) pmsBc.addEventListener('message', handleBookingUpdatedBroadcast)
+  window.addEventListener('hotel-config-updated', handleHotelConfigUpdated)
+  const bc = getPmsBroadcastChannel()
+  if (bc) bc.addEventListener('message', handleBookingUpdatedBroadcast)
   try {
     isLoading.value = true
     await Promise.all([loadDropdowns(), loadBookings()])
@@ -1990,6 +2022,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('click', handleGlobalClick)
   window.removeEventListener('booking-updated', handleBookingUpdatedEvent)
   window.removeEventListener('deposit-updated', loadBookings)
+  window.removeEventListener('hotel-config-updated', handleHotelConfigUpdated)
   if (pmsBc) {
     pmsBc.removeEventListener('message', handleBookingUpdatedBroadcast)
     pmsBc.close()
@@ -2013,6 +2046,7 @@ watch(() => route.query, async (newQuery) => {
 
 watch(activeTabId, (newId, oldId) => {
   if (newId !== oldId) {
+    selectedRows.value = []
     loadActiveBookingNotifications()
   }
 })
@@ -2094,29 +2128,118 @@ function externalBookingId(value) {
 }
 
 async function refreshMatchingBooking(bookingId = null) {
-  // A background update must never replace a form containing local edits or
-  // drafts. This covers both the modal and the inline tab editor. A closed
-  // modal is safe to refresh, including for events without a booking id
-  // emitted by older callers.
+  // A background update must never replace a form containing local edits or drafts.
   if (isEditing.value || (isModalOpen.value && isModalFormDirty.value)) return
+
+  roomStore.fetchRooms({ silent: true })
+  roomStore.fetchStats()
 
   const targetId = externalBookingId(bookingId)
   if (targetId) {
-    const knownBooking = tabs.value.some(tab => externalBookingId(tab.dbId) === targetId)
-    if (!knownBooking) return
+    const matchingTab = tabs.value.find(tab => 
+      externalBookingId(tab.dbId) === targetId || 
+      externalBookingId(tab.id) === targetId ||
+      String(tab.id || '').trim().toLowerCase() === targetId.trim().toLowerCase() ||
+      String(tab.bookingCode || '').trim().toLowerCase() === targetId.trim().toLowerCase()
+    )
+    if (matchingTab) {
+      try {
+        const res = await fetchBooking(matchingTab.dbId || targetId)
+        const updatedBooking = res.data?.data || res.data
+        if (updatedBooking) {
+          const newTabObj = bookingToTab(updatedBooking)
+          newTabObj.rooms.forEach(room => {
+            if (room.rateCode && room.rateCode !== 'Vui lòng chọn giá phòng') {
+              applyRateCodeDailyPricesToRoom(room)
+            }
+          })
+          const idx = tabs.value.findIndex(t => t.id === matchingTab.id || t.dbId === matchingTab.dbId)
+          if (idx !== -1) {
+            newTabObj.id = tabs.value[idx].id
+            tabs.value.splice(idx, 1, newTabObj)
+            if (activeTabId.value === matchingTab.id || activeTabId.value === newTabObj.id) {
+              activeTabId.value = newTabObj.id
+              if (isModalOpen.value && String(modalForm.value.dbId) === String(newTabObj.dbId)) {
+                fillModalForm(newTabObj)
+              }
+              await loadActiveBookingNotifications(newTabObj)
+            }
+          }
+          return
+        }
+      } catch (err) {
+        console.warn('Lỗi tải lại booking theo ID:', err)
+      }
+    }
   }
 
-  await loadBookings()
+  // Fallback: Tải lại các tab đang mở có dbId
+  for (let i = 0; i < tabs.value.length; i++) {
+    const tab = tabs.value[i]
+    if (tab.dbId && (!targetId || String(tab.dbId) === targetId || String(tab.id).toLowerCase() === targetId.toLowerCase() || String(tab.bookingCode || '').toLowerCase() === targetId.toLowerCase())) {
+      try {
+        const res = await fetchBooking(tab.dbId)
+        const updatedBooking = res.data?.data || res.data
+        if (updatedBooking) {
+          const newTabObj = bookingToTab(updatedBooking)
+          newTabObj.rooms.forEach(room => {
+            if (room.rateCode && room.rateCode !== 'Vui lòng chọn giá phòng') {
+              applyRateCodeDailyPricesToRoom(room)
+            }
+          })
+          newTabObj.id = tab.id
+          tabs.value.splice(i, 1, newTabObj)
+          if (activeTabId.value === tab.id || activeTabId.value === newTabObj.id) {
+            activeTabId.value = newTabObj.id
+            if (isModalOpen.value && String(modalForm.value.dbId) === String(newTabObj.dbId)) {
+              fillModalForm(newTabObj)
+            }
+            await loadActiveBookingNotifications(newTabObj)
+          }
+        }
+      } catch (e) {
+        console.warn('Lỗi tải lại tab booking:', e)
+      }
+    }
+  }
 }
 
 function handleBookingUpdatedEvent(event) {
   return refreshMatchingBooking(event?.detail?.bookingId)
 }
 
+function handleHotelConfigUpdated(event) {
+  const detail = event?.detail
+  if (detail?.name && detail?.value !== undefined) {
+    hotelSettings.value = {
+      ...hotelSettings.value,
+      [detail.name]: detail.value
+    }
+  }
+  loadDropdowns().catch(console.error)
+}
+
 function handleBookingUpdatedBroadcast(event) {
-  const message = event?.data
-  if (!message || typeof message !== 'object' || message.type !== 'booking-updated') return
-  return refreshMatchingBooking(message.bookingId)
+  const data = event?.data
+  if (data === 'settings-updated' || data?.type === 'hotel-config-updated' || data?.type === 'settings-updated') {
+    if (data?.name && data?.value !== undefined) {
+      hotelSettings.value = {
+        ...hotelSettings.value,
+        [data.name]: data.value
+      }
+    }
+    loadDropdowns().catch(console.error)
+    return
+  }
+  let bookingId = null
+  if (typeof data === 'string') {
+    bookingId = null
+  } else if (data && typeof data === 'object') {
+    if (data.type === 'booking-updated' || data.type === 'rooms-updated') {
+      bookingId = data.bookingId
+    }
+  }
+  return refreshMatchingBooking(bookingId)
 }
 
 async function loadBookings() {
@@ -2266,7 +2389,17 @@ function bookingToTab(b) {
         hoursOut: br.departure_time || '12:00',
         isPreassigned: !!physicalRoom.room_number,
         initialRoomClass: rc.code || '',
-        transferredFrom: '',
+        transferredFrom: (() => {
+          if (br.move_room) {
+            const movedTo = (b.booking_rooms || []).find(other => Number(other.id) === Number(br.move_room))
+            return movedTo?.room?.room_number || movedTo?.room_number || br.moved_to_room?.room?.room_number || br.movedToRoom?.room?.room_number || ''
+          }
+          const movedFrom = (b.booking_rooms || []).find(other => Number(other.move_room) === Number(br.id))
+          if (movedFrom) {
+            return movedFrom?.room?.room_number || movedFrom?.room_number || ''
+          }
+          return ''
+        })(),
         roomStatus: (br.status === 1 || physicalRoom.status === 'dirty') ? 'Bẩn' : (physicalRoom.status === 'cleaning' ? 'Đang dọn' : (physicalRoom.status === 'inspecting' ? 'Kiểm tra' : 'Sạch')),
         allotmentCode: '',
         roomCode: br.id || '',
@@ -2440,6 +2573,7 @@ function bookingToTab(b) {
   return {
     id: b.booking_code,
     dbId: b.id,
+    bookingCode: b.booking_code,
     title: `Booking ${b.booking_code}`,
     bookingName: b.booking_name,
     statusLabel: b.registration_status?.name || '—',
@@ -3410,19 +3544,16 @@ async function handleAddTabClick() {
   nextTick(() => {
     autoResizeTextarea()
     initialModalSnapshot.value = getModalFormSnapshot()
+    initialBookingSnapshot.value = getModalBookingSnapshot()
+    initialRoomsSnapshot.value = getModalRoomsSnapshot()
   })
 }
 
-async function openEditModal() {
-  await refreshRoomRateCodes()
-  const tab = activeTab.value
+function fillModalForm(tab) {
   if (!tab) return
-  modalPos.value = { x: 0, y: 0 }
-  isEditModal.value = true
-  isColorChanged.value = false
   modalForm.value = {
     dbId: tab.dbId,
-    bookingCode: tab.id,
+    bookingCode: tab.id || tab.bookingCode,
     bookingName: tab.bookingName,
     color: tab.color || '#000000',
     checkIn: tab.checkIn,
@@ -3436,7 +3567,7 @@ async function openEditModal() {
     paymentValue: tab.paymentValue || 0,
     externalBookingCode: tab.externalBookingCode || '',
     salesPerson: tab.salesPerson || '',
-    isGit: true,
+    isGit: tab.isGit !== undefined ? tab.isGit : true,
     isMasterRoomRate: tab.isMasterRoomRate !== undefined ? Boolean(tab.isMasterRoomRate) : true,
     hasVat: tab.hasVat || false,
     marketId: tab.marketId,
@@ -3450,21 +3581,32 @@ async function openEditModal() {
     shuttleInfo: (tab.shuttleInfo && tab.shuttleInfo.length > 0)
       ? JSON.parse(JSON.stringify(tab.shuttleInfo))
       : [ { id: Date.now(), type: 'Đón', vehicle: '7 Seater car', code: '', date: tab.checkIn || systemDate.value || new Date().toISOString().split('T')[0], time: '00:00', price: 0, location: '', note: '' } ],
-    // Existing booking rooms never seed the independent add-room draft.
     roomAllocations: [],
     deposits: JSON.parse(JSON.stringify(tab.deposits || [])),
     rooms: [],
     createdBy: tab.createdBy || '',
     createdAt: tab.createdAt || '',
   }
+  nextTick(() => {
+    autoResizeTextarea()
+    initialModalSnapshot.value = getModalFormSnapshot()
+    initialBookingSnapshot.value = getModalBookingSnapshot()
+    initialRoomsSnapshot.value = getModalRoomsSnapshot()
+  })
+}
+
+async function openEditModal() {
+  await refreshRoomRateCodes()
+  const tab = activeTab.value
+  if (!tab) return
+  modalPos.value = { x: 0, y: 0 }
+  isEditModal.value = true
+  isColorChanged.value = false
+  fillModalForm(tab)
   roomAddDraft.value = initRoomAddDraft(tab.checkIn, tab.checkOut)
   await updateRoomAvailability()
   modalSubTab.value = 'info'
   isModalOpen.value = true
-  nextTick(() => {
-    autoResizeTextarea()
-    initialModalSnapshot.value = getModalFormSnapshot()
-  })
 }
 
 function handleBookerChange() {
@@ -3514,11 +3656,13 @@ watch(() => modalForm.value.registrationStatusId, (newId) => {
       uiStore.showToast('Chú ý: Tình trạng đăng ký này không giữ phòng trống (is_availability = 0)', 'info')
     }
   }
-  handleConfirmDateCalculation()
+  handleConfirmDateCalculation(true)
 })
 
 watch(() => modalForm.value.checkIn, () => {
-  handleConfirmDateCalculation()
+  if (!modalForm.value.dbId) {
+    handleConfirmDateCalculation(false)
+  }
 })
 
 function addDaysToDateStr(dateStr, days) {
@@ -3536,7 +3680,10 @@ function addDaysToDateStr(dateStr, days) {
   return `${newY}-${newM}-${newD}`
 }
 
-function handleConfirmDateCalculation() {
+function handleConfirmDateCalculation(isUserStatusChange = false) {
+  // Booking đã tồn tại và không phải user chủ động đổi trạng thái đăng ký -> không tự tính lại
+  if (modalForm.value.dbId && !isUserStatusChange) return
+
   const statusId = modalForm.value.registrationStatusId
   if (!statusId) return
   const status = registrationStatuses.value.find(s => Number(s.booking_status_id) === Number(statusId))
@@ -3547,7 +3694,9 @@ function handleConfirmDateCalculation() {
 
   if (modalForm.value.checkIn) {
     const calcDate = addDaysToDateStr(modalForm.value.checkIn, -cutOff)
-    if (calcDate < sysDate || calcDate > modalForm.value.checkIn) {
+    if (calcDate < sysDate) {
+      modalForm.value.confirmDate = sysDate
+    } else if (calcDate > modalForm.value.checkIn) {
       modalForm.value.confirmDate = modalForm.value.checkIn
     } else {
       modalForm.value.confirmDate = calcDate
@@ -3717,7 +3866,15 @@ async function handleCheckInChange() {
   await handleDateChange()
 }
 
+function warnSyncRoomDateDisabled() {
+  uiStore.showToast('Thông số cấu hình SyncRoomDateByBookingDate = 0: Không cho phép chỉnh sửa ngày đến/đi và số đêm trực tiếp trên thanh tiêu đề.', 'warning')
+}
+
 async function handleMainCheckInChange() {
+  if (!isSyncRoomDateEnabled.value) {
+    warnSyncRoomDateDisabled()
+    return
+  }
   await handleMainDateChange()
 }
 
@@ -3766,12 +3923,18 @@ async function handleDateChange() {
       })
     })
     
-    handleConfirmDateCalculation()
+    if (!modalForm.value.dbId) {
+      handleConfirmDateCalculation(false)
+    }
     await updateRoomAvailability()
   }
 }
 
 async function handleMainDateChange() {
+  if (!isSyncRoomDateEnabled.value) {
+    warnSyncRoomDateDisabled()
+    return
+  }
   const tab = activeTab.value
   if (!tab) return
   const ci = new Date(tab.checkIn)
@@ -3785,44 +3948,53 @@ async function handleMainDateChange() {
     const diff = Math.ceil((co - ci) / 86400000)
     tab.nights = diff >= 0 ? diff : 0
     
-    // Sync dates to allocations & rooms in tab
-    if (tab.roomAllocations) {
-      tab.roomAllocations.forEach(alloc => {
-        alloc.arrivalDate = tab.checkIn
-        alloc.departureDate = tab.checkOut
-        alloc.nights = tab.nights
-      })
-    }
-    if (tab.rooms) {
-      tab.rooms.forEach(r => {
-        if (!isEditableAllocationRoom(r)) return
-        r.checkIn = tab.checkIn
-        r.checkOut = tab.checkOut
-        r.nights = tab.nights
-        r.total = (r.price || 0) * (r.nights || 1)
+    // Section 16: Chỉ đồng bộ sang phòng con nếu cấu hình bật và ngày đến >= ngày hệ thống
+    const sysDate = systemDate.value || parseApiDate(new Date())
+    const canSyncToRooms = isSyncRoomDateEnabled.value && (!tab.checkIn || tab.checkIn >= sysDate)
 
-        if (r.dailyRoomPrices) {
-          Object.keys(r.dailyRoomPrices).forEach(dStr => {
-            if (dStr >= tab.checkOut) {
-              delete r.dailyRoomPrices[dStr]
-            }
-          })
-        }
-        if (r.services) {
-          r.services = r.services.filter(s => {
-            if (!s.service_date) return true
-            return s.service_date < tab.checkOut
-          })
-        }
-        applyRateCodeDailyPricesToRoom(r)
-      })
+    if (canSyncToRooms) {
+      // Sync dates to allocations & rooms in tab
+      if (tab.roomAllocations) {
+        tab.roomAllocations.forEach(alloc => {
+          alloc.arrivalDate = tab.checkIn
+          alloc.departureDate = tab.checkOut
+          alloc.nights = tab.nights
+        })
+      }
+      if (tab.rooms) {
+        tab.rooms.forEach(r => {
+          if (!isEditableAllocationRoom(r) || Number(r.bookingRoomStatus) !== 0) return
+          r.checkIn = tab.checkIn
+          r.checkOut = tab.checkOut
+          r.nights = tab.nights
+          r.total = (r.price || 0) * (r.nights || 1)
+
+          if (r.dailyRoomPrices) {
+            Object.keys(r.dailyRoomPrices).forEach(dStr => {
+              if (dStr >= tab.checkOut) {
+                delete r.dailyRoomPrices[dStr]
+              }
+            })
+          }
+          if (r.services) {
+            r.services = r.services.filter(s => {
+              if (!s.service_date) return true
+              return s.service_date < tab.checkOut
+            })
+          }
+          applyRateCodeDailyPricesToRoom(r)
+        })
+      }
     }
-    handleConfirmDateCalculation()
     await updateRoomAvailability()
   }
 }
 
 async function handleMainNightsChange() {
+  if (!isSyncRoomDateEnabled.value) {
+    warnSyncRoomDateDisabled()
+    return
+  }
   const tab = activeTab.value
   if (!tab) return
   const ci = new Date(tab.checkIn)
@@ -3831,35 +4003,41 @@ async function handleMainNightsChange() {
     co.setDate(ci.getDate() + Number(tab.nights))
     tab.checkOut = co.toISOString().split('T')[0]
     
-    // Sync to rooms and allocations in tab
-    if (tab.roomAllocations) {
-      tab.roomAllocations.forEach(alloc => {
-        alloc.departureDate = tab.checkOut
-        alloc.nights = Number(tab.nights)
-      })
-    }
-    if (tab.rooms) {
-      tab.rooms.forEach(r => {
-        if (!isEditableAllocationRoom(r)) return
-        r.checkOut = tab.checkOut
-        r.nights = Number(tab.nights)
-        r.total = (r.price || 0) * (r.nights || 1)
+    // Section 16: Chỉ đồng bộ sang phòng con nếu cấu hình bật và ngày đến >= ngày hệ thống
+    const sysDate = systemDate.value || parseApiDate(new Date())
+    const canSyncToRooms = isSyncRoomDateEnabled.value && (!tab.checkIn || tab.checkIn >= sysDate)
 
-        if (r.dailyRoomPrices) {
-          Object.keys(r.dailyRoomPrices).forEach(dStr => {
-            if (dStr >= tab.checkOut) {
-              delete r.dailyRoomPrices[dStr]
-            }
-          })
-        }
-        if (r.services) {
-          r.services = r.services.filter(s => {
-            if (!s.service_date) return true
-            return s.service_date < tab.checkOut
-          })
-        }
-        applyRateCodeDailyPricesToRoom(r)
-      })
+    if (canSyncToRooms) {
+      // Sync to rooms and allocations in tab
+      if (tab.roomAllocations) {
+        tab.roomAllocations.forEach(alloc => {
+          alloc.departureDate = tab.checkOut
+          alloc.nights = Number(tab.nights)
+        })
+      }
+      if (tab.rooms) {
+        tab.rooms.forEach(r => {
+          if (!isEditableAllocationRoom(r) || Number(r.bookingRoomStatus) !== 0) return
+          r.checkOut = tab.checkOut
+          r.nights = Number(tab.nights)
+          r.total = (r.price || 0) * (r.nights || 1)
+
+          if (r.dailyRoomPrices) {
+            Object.keys(r.dailyRoomPrices).forEach(dStr => {
+              if (dStr >= tab.checkOut) {
+                delete r.dailyRoomPrices[dStr]
+              }
+            })
+          }
+          if (r.services) {
+            r.services = r.services.filter(s => {
+              if (!s.service_date) return true
+              return s.service_date < tab.checkOut
+            })
+          }
+          applyRateCodeDailyPricesToRoom(r)
+        })
+      }
     }
     await updateRoomAvailability()
   }
@@ -4260,20 +4438,54 @@ async function handleSaveNewBooking() {
     return
   }
 
-  const dupError = validateRoomsDuplication(roomAddDraftRooms())
-  if (dupError) {
-    uiStore.showToast(dupError, 'error')
-    return
+  const allocations = serializeRoomAddDraft()
+  const totalAddQty = allocations.reduce((sum, a) => sum + (Number(a.quantity) || 0), 0)
+  const hasRoomsToAddNow = totalAddQty > 0
+  const isBookingInfoChanged = isBookingInfoDirty.value
+
+  if (hasRoomsToAddNow) {
+    const dupError = validateRoomsDuplication(roomAddDraftRooms())
+    if (dupError) {
+      uiStore.showToast(dupError, 'error')
+      return
+    }
+  }
+
+  if (isEditModal.value && modalForm.value.dbId) {
+    if (!hasRoomsToAddNow && !isBookingInfoChanged) {
+      uiStore.showToast('Không có thay đổi nào để lưu!', 'info')
+      return
+    }
+    if (modalSubTab.value === 'rooms' && !hasRoomsToAddNow && !isBookingInfoChanged) {
+      uiStore.showToast('Vui lòng chọn số lượng phòng cần thêm!', 'warning')
+      return
+    }
+  }
+
+  let confirmTitle = 'Xác nhận tạo mới đăng ký'
+  let confirmMessage = `Bạn có chắc chắn muốn tạo đơn đặt phòng mới ${modalForm.value.bookingName} với ${modalForm.value.nights} đêm?`
+  let confirmText = 'Tạo mới'
+
+  if (isEditModal.value) {
+    if (hasRoomsToAddNow && isBookingInfoChanged) {
+      confirmTitle = 'Xác nhận cập nhật thông tin & thêm phòng'
+      confirmMessage = `Bạn có chắc chắn muốn cập nhật thông tin đăng ký ${modalForm.value.bookingCode} và thêm ${totalAddQty} phòng mới?`
+      confirmText = 'Lưu tất cả'
+    } else if (hasRoomsToAddNow) {
+      confirmTitle = 'Xác nhận thêm phòng mới'
+      confirmMessage = `Bạn có chắc chắn muốn thêm ${totalAddQty} phòng mới vào đơn đặt phòng ${modalForm.value.bookingCode}?`
+      confirmText = 'Thêm phòng'
+    } else {
+      confirmTitle = 'Xác nhận cập nhật đăng ký'
+      confirmMessage = `Bạn có chắc chắn muốn cập nhật đơn đặt phòng ${modalForm.value.bookingCode} với ${modalForm.value.nights} đêm?`
+      confirmText = 'Cập nhật'
+    }
   }
 
   const confirmed = await uiStore.confirm({
-    title: isEditModal.value
-      ? (modalSubTab.value === 'rooms' ? 'Xác nhận thêm phòng mới' : 'Xác nhận cập nhật đăng ký')
-      : 'Xác nhận tạo mới đăng ký',
-    message: isEditModal.value 
-      ? `Bạn có chắc chắn muốn cập nhật đơn đặt phòng ${modalForm.value.bookingCode} với ${modalForm.value.nights} đêm?`
-      : `Bạn có chắc chắn muốn tạo đơn đặt phòng mới ${modalForm.value.bookingName} với ${modalForm.value.nights} đêm?`,
-    confirmText: isEditModal.value ? (modalSubTab.value === 'rooms' ? 'Thêm phòng' : 'Cập nhật') : 'Tạo mới',
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmText,
     cancelText: 'Hủy'
   })
   if (!confirmed) return
@@ -4312,30 +4524,37 @@ async function handleSaveNewBooking() {
       created_module:         currentBookingModule.value,
     }
     if (isEditModal.value && modalForm.value.dbId) {
-      if (modalSubTab.value === 'rooms') {
-        const allocations = serializeRoomAddDraft()
-        const totalQty = allocations.reduce((sum, a) => sum + (Number(a.quantity) || 0), 0)
-        if (totalQty <= 0) {
-          uiStore.showToast('Vui lòng chọn số lượng phòng cần thêm!', 'warning')
-          isSavingModal.value = false
-          return
-        }
-
-        // The add-room tab has an explicit append-only API. It never sends
-        // existing booking-room ids or the persisted room list.
+      if (hasRoomsToAddNow && isBookingInfoChanged) {
+        const res = await updateBooking(modalForm.value.dbId, payload)
+        const updated = res.data?.data || res.data
         await addBookingRooms(modalForm.value.dbId, {
           intent: 'add_only',
           room_allocations: allocations,
         })
         await loadBookings()
+        const idx = tabs.value.findIndex(t => t.dbId === modalForm.value.dbId)
+        if (idx !== -1) { activeTabId.value = tabs.value[idx].id }
+        notifyRoomUpdates(modalForm.value.dbId)
         resetRoomAddDraft(modalForm.value.checkIn, modalForm.value.checkOut)
-        uiStore.showToast('Thêm phòng mới vào đăng ký thành công!', 'success')
+        uiStore.showToast(`Cập nhật đăng ký ${updated.booking_code || modalForm.value.bookingCode} và thêm ${totalAddQty} phòng thành công!`, 'success')
+      } else if (hasRoomsToAddNow) {
+        await addBookingRooms(modalForm.value.dbId, {
+          intent: 'add_only',
+          room_allocations: allocations,
+        })
+        await loadBookings()
+        const idx = tabs.value.findIndex(t => t.dbId === modalForm.value.dbId)
+        if (idx !== -1) { activeTabId.value = tabs.value[idx].id }
+        notifyRoomUpdates(modalForm.value.dbId)
+        resetRoomAddDraft(modalForm.value.checkIn, modalForm.value.checkOut)
+        uiStore.showToast(`Thêm ${totalAddQty} phòng mới vào đăng ký thành công!`, 'success')
       } else {
         const res = await updateBooking(modalForm.value.dbId, payload)
         const updated = res.data?.data || res.data
         await loadBookings()
         const idx = tabs.value.findIndex(t => t.dbId === modalForm.value.dbId)
         if (idx !== -1) { activeTabId.value = tabs.value[idx].id }
+        notifyRoomUpdates(modalForm.value.dbId)
         uiStore.showToast(`Cập nhật đăng ký ${updated.booking_code} thành công!`, 'success')
       }
     } else {
@@ -4343,6 +4562,7 @@ async function handleSaveNewBooking() {
       const res = await createBooking(payload)
       const created = res.data?.data || res.data
       await loadBookings()
+      notifyRoomUpdates(created.id)
       await openBookingModalByCode(created.booking_code || created.id)
       uiStore.showToast(`Tạo đăng ký ${created.booking_code} thành công!`, 'success')
     }
@@ -4358,10 +4578,7 @@ async function handleSaveNewBooking() {
 
 async function handleGuestInfoSaved() {
   await loadBookings()
-  const bc1 = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('pms-room-updates') : null
-  if (bc1) bc1.postMessage('rooms-updated')
-  const bc2 = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('pms-channel') : null
-  if (bc2) bc2.postMessage('rooms-updated')
+  notifyRoomUpdates(activeTab.value?.dbId)
 }
 
 function areRoomPeriodsOverlapping(r1, r2) {
@@ -4544,6 +4761,7 @@ async function triggerAction(actionName) {
       uiStore.showToast('Booking đang ở hoặc có phòng đã ở/đã trả/chuyển/hủy, không được phép chỉnh sửa.', 'warning')
       return
     }
+    loadDropdowns().catch(console.error)
     isEditing.value = true
     const tab = activeTab.value
     if (tab) {
@@ -4640,17 +4858,21 @@ async function triggerAction(actionName) {
     })
   } else if (actionName === 'Cập nhật') {
     const tab = activeTab.value
-    if (tab && selectedRows.value.length > 0) {
-      const selectedRooms = tab.rooms.filter(r => selectedRows.value.includes(r.id))
-      const validRooms = selectedRooms.filter(r => r.status !== 2 && r.status !== 3 && r.status !== 'Checked Out' && r.status !== 'Cancelled')
-      if (validRooms.length === 0) {
-        uiStore.showToast('Chỉ cho phép cập nhật nhanh các phòng ở trạng thái Đăng ký hoặc Đang ở!', 'warning')
-        return
-      }
-      isQuickUpdateModalOpen.value = true
-    } else {
+    if (!tab || !selectedRows.value || selectedRows.value.length === 0) {
       uiStore.showToast('Vui lòng chọn phòng để cập nhật.', 'warning')
+      return
     }
+    const selectedRooms = tab.rooms.filter(r => selectedRows.value.includes(r.id))
+    if (selectedRooms.length === 0) {
+      uiStore.showToast('Vui lòng chọn phòng để cập nhật.', 'warning')
+      return
+    }
+    const validRooms = selectedRooms.filter(r => r.status !== 2 && r.status !== 3 && r.status !== 'Checked Out' && r.status !== 'Cancelled')
+    if (validRooms.length === 0) {
+      uiStore.showToast('Chỉ cho phép cập nhật nhanh các phòng ở trạng thái Đăng ký hoặc Đang ở!', 'warning')
+      return
+    }
+    isQuickUpdateModalOpen.value = true
   } else if (actionName === 'Thông tin đăng ký') {
     openEditModal()
   } else if (actionName === 'Thông báo') {
@@ -4706,7 +4928,7 @@ async function triggerAction(actionName) {
         uiStore.showToast('Đang tiến hành giao phòng cho khách...', 'info')
         let successCount = 0
         let failCount = 0
-        let failMessages = []
+        const failMap = new Map()
 
         try {
           for (const r of targetList) {
@@ -4718,23 +4940,44 @@ async function triggerAction(actionName) {
                 r.roomStatus = 'Bẩn'
               } else {
                 failCount++
-                failMessages.push(res.data?.message || `Phòng ${r.roomNumber} thất bại.`)
+                let rawMsg = res.data?.message || 'Không thể thực hiện nhận phòng.'
+                rawMsg = rawMsg.replace(/thông số hệ thống\s*\[?[^\]:]+\]?\s*=?\s*\d*/gi, '').trim()
+                const roomNum = r.roomNumber || r.roomCode || '---'
+                let cleanReason = rawMsg.replace(new RegExp(`^Phòng\\s+${roomNum}\\s*[:,-]?\\s*`, 'i'), '').trim()
+                if (!cleanReason) cleanReason = rawMsg
+                if (!failMap.has(cleanReason)) {
+                  failMap.set(cleanReason, new Set())
+                }
+                failMap.get(cleanReason).add(roomNum)
               }
             } catch (err) {
               console.error(err)
               failCount++
-              failMessages.push(err.response?.data?.message || `Phòng ${r.roomNumber} thất bại.`)
+              let rawMsg = err.response?.data?.message || 'Không thể thực hiện nhận phòng.'
+              rawMsg = rawMsg.replace(/thông số hệ thống\s*\[?[^\]:]+\]?\s*=?\s*\d*/gi, '').trim()
+              const roomNum = r.roomNumber || r.roomCode || '---'
+              let cleanReason = rawMsg.replace(new RegExp(`^Phòng\\s+${roomNum}\\s*[:,-]?\\s*`, 'i'), '').trim()
+              if (!cleanReason) cleanReason = rawMsg
+              if (!failMap.has(cleanReason)) {
+                failMap.set(cleanReason, new Set())
+              }
+              failMap.get(cleanReason).add(roomNum)
             }
           }
 
           await loadBookings()
-          notifyRoomUpdates()
+          notifyRoomUpdates(tab.dbId)
           selectedRows.value = []
 
+          const formattedFailures = []
+          failMap.forEach((rooms, reason) => {
+            formattedFailures.push(`Phòng ${Array.from(rooms).join(', ')}: ${reason}`)
+          })
+
           if (successCount > 0) {
-            uiStore.showToast(`Giao phòng thành công ${successCount} phòng!${failCount > 0 ? ` (Thất bại ${failCount} phòng: ${failMessages.join(', ')})` : ''}`, 'success')
+            uiStore.showToast(`Giao phòng thành công ${successCount} phòng!${failCount > 0 ? ` (Thất bại ${failCount} phòng: ${formattedFailures.join('; ')})` : ''}`, 'success')
           } else {
-            uiStore.showToast(`Giao phòng thất bại: ${failMessages.join(', ')}`, 'error')
+            uiStore.showToast(`Giao phòng thất bại: ${formattedFailures.join('; ')}`, 'error')
           }
         } catch(err) {
           console.error(err)
@@ -4793,6 +5036,8 @@ async function triggerAction(actionName) {
           }
         }
 
+        await loadBookings()
+        notifyRoomUpdates(tab.dbId)
         selectedRows.value = []
 
         if (successCount > 0) {
@@ -4830,6 +5075,8 @@ async function triggerAction(actionName) {
                 r.roomNumber = ''
                 r.isPreassigned = false
               }
+              await loadBookings()
+              notifyRoomUpdates(tab.dbId)
               uiStore.showToast('Đã gỡ số phòng thành công!', 'success')
             } catch(err) {
               console.error(err)
@@ -4940,6 +5187,7 @@ async function triggerAction(actionName) {
             }
           }
           await loadBookings()
+          notifyRoomUpdates(tab.dbId)
           selectedRows.value = []
 
           if (successCount > 0) {
@@ -5005,6 +5253,7 @@ async function triggerAction(actionName) {
             }
           }
           await loadBookings()
+          notifyRoomUpdates(tab.dbId)
           selectedRows.value = []
 
           if (successCount > 0) {
@@ -5264,6 +5513,7 @@ async function handleConfirmCancelReason(payload) {
           activeTabId.value = null
         }
         uiStore.showToast('Đã hủy và xóa đăng ký thành công!', 'success')
+        notifyRoomUpdates(tab.dbId)
       } else {
         uiStore.showToast(res.data?.message || 'Không thể xóa đăng ký!', 'error')
       }
@@ -5301,6 +5551,7 @@ async function handleConfirmCancelReason(payload) {
       }
 
       await loadBookings()
+      notifyRoomUpdates(tab.dbId)
       selectedRows.value = []
 
       if (successCount > 0) {
@@ -5352,6 +5603,7 @@ function handleCopied(newBooking) {
     // Xóa khỏi closed list nếu trước đây đã bị đóng
     removeClosedTabId(newBooking.id)
     replaceBookingTab(newBooking)
+    notifyRoomUpdates(newBooking.id)
   }
   loadBookings()
 }
@@ -5379,6 +5631,7 @@ function openUpgradeModal() {
 
 function handleUpgraded(payload) {
   loadBookings()
+  notifyRoomUpdates(activeTab.value?.dbId)
   selectedRows.value = []
   if (payload) {
     const { successCount, failCount, failMessages } = payload
@@ -5424,6 +5677,7 @@ const deleteServiceModalTargetRooms = ref([])
 function handleServiceDeleted() {
   expandedRooms.value = []
   loadBookings()
+  notifyRoomUpdates(activeTab.value?.dbId)
   selectedRows.value = []
 }
 
@@ -5480,6 +5734,7 @@ async function handleExtraBedSaved({ quantity, rate, totalExtraBedPrice, dailyRa
       }
 
       await loadBookings()
+      notifyRoomUpdates(activeTab.value?.dbId)
       uiStore.showToast('Cập nhật Thêm giường vào Database thành công!', 'success')
     } catch (err) {
       console.error('Lỗi khi lưu Extra Bed:', err)
@@ -5545,15 +5800,16 @@ async function handleServicesSaved() {
   } else {
     await loadBookings()
   }
+  notifyRoomUpdates(activeTab.value?.dbId)
   selectedRows.value = []
 }
 
-async function openBookingModalByCode(bookingCode) {
+async function openBookingModalByCode(bookingCode, forceReload = false) {
   if (!bookingCode) return
   await refreshRoomRateCodes()
   let foundTab = tabs.value.find(t => String(t.id) === String(bookingCode) || String(t.dbId) === String(bookingCode))
   
-  if (foundTab) {
+  if (foundTab && !forceReload) {
     removeClosedTabId(foundTab.dbId)
     activeTabId.value = foundTab.id
     await loadActiveBookingNotifications(foundTab)
@@ -5793,44 +6049,64 @@ defineExpose({
       >
         <div>
           <span class="label">Tên đăng ký:</span>
-          <input 
-            v-if="isEditing" 
-            type="text" 
-            v-model="activeTab.bookingName" 
-            class="border border-slate-300 rounded px-2 py-0.5 text-xs w-48 font-semibold text-slate-800 focus:outline-none focus:border-blue-500" 
-            @click.stop
-          />
-          <b v-else class="font-black text-slate-800">{{ activeTab.bookingName || 'Trống' }}</b>
+          <b class="font-black text-slate-800">{{ activeTab.bookingName || 'Trống' }}</b>
         </div>
         <div><span class="label">Trạng thái:</span><span class="status-pill select-none">{{ activeTabStatusName || 'Trống' }}</span></div>
-        <div>
+        <div class="flex items-center gap-1.5">
           <span class="label">Ngày đến/đi:</span>
-          <div v-if="isEditing" class="flex items-center space-x-1" @click.stop>
-            <input 
-              type="date" 
-              v-model="activeTab.checkIn" 
-              @change="handleMainCheckInChange" 
-              class="border border-slate-300 rounded px-1.5 py-0.5 text-xs font-semibold text-slate-800 focus:outline-none" 
-            />
-            <span>~</span>
-            <input 
-              type="date" 
-              v-model="activeTab.checkOut" 
-              @change="handleMainDateChange" 
-              class="border border-slate-300 rounded px-1.5 py-0.5 text-xs font-semibold text-slate-800 focus:outline-none" 
-            />
+          <div v-if="isEditing" class="inline-flex items-center space-x-1.5" @click.stop>
+            <div class="relative w-[116px]">
+              <SingleDatePicker
+                v-model="activeTab.checkIn"
+                :disabled="!isSyncRoomDateEnabled"
+                @change="handleMainCheckInChange"
+                input-class="!py-0.5 !px-2 !text-xs !h-[26px] !rounded !border-slate-300 font-semibold text-slate-800"
+              />
+              <div 
+                v-if="!isSyncRoomDateEnabled" 
+                class="absolute inset-0 cursor-not-allowed z-10" 
+                @click.stop="warnSyncRoomDateDisabled"
+                title="Cấu hình SyncRoomDateByBookingDate = 0: Không cho phép chỉnh sửa ngày booking trực tiếp tại đây"
+              ></div>
+            </div>
+            <span class="text-slate-400 font-bold">~</span>
+            <div class="relative w-[116px]">
+              <SingleDatePicker
+                v-model="activeTab.checkOut"
+                :disabled="!isSyncRoomDateEnabled"
+                @change="handleMainDateChange"
+                input-class="!py-0.5 !px-2 !text-xs !h-[26px] !rounded !border-slate-300 font-semibold text-slate-800"
+              />
+              <div 
+                v-if="!isSyncRoomDateEnabled" 
+                class="absolute inset-0 cursor-not-allowed z-10" 
+                @click.stop="warnSyncRoomDateDisabled"
+                title="Cấu hình SyncRoomDateByBookingDate = 0: Không cho phép chỉnh sửa ngày booking trực tiếp tại đây"
+              ></div>
+            </div>
           </div>
           <b v-else class="font-black text-slate-800">{{ formatDateVi(activeTab.checkIn) }} ~ {{ formatDateVi(activeTab.checkOut) }}</b>
         </div>
-        <div v-if="isEditing" class="flex items-center space-x-1" @click.stop>
+        <div class="flex items-center gap-1">
           <span class="label">Số đêm:</span>
-          <input 
-            type="number" 
-            v-model.number="activeTab.nights" 
-            @input="handleMainNightsChange" 
-            min="0" 
-            class="border border-slate-300 rounded px-1 py-0.5 text-xs font-semibold text-slate-800 focus:outline-none w-12 text-center" 
-          />
+          <div v-if="isEditing" class="relative inline-flex items-center" @click.stop>
+            <input 
+              type="number" 
+              v-model.number="activeTab.nights" 
+              @input="handleMainNightsChange" 
+              :disabled="!isSyncRoomDateEnabled"
+              :class="[!isSyncRoomDateEnabled ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200' : 'bg-white text-slate-800 border-slate-300 hover:border-sky-400 focus:border-sky-500']"
+              min="0" 
+              class="border rounded px-2 py-0.5 text-xs font-semibold focus:outline-none w-14 text-center h-[26px] shadow-2xs transition-colors" 
+            />
+            <div 
+              v-if="!isSyncRoomDateEnabled" 
+              class="absolute inset-0 cursor-not-allowed z-10" 
+              @click.stop="warnSyncRoomDateDisabled"
+              title="Cấu hình SyncRoomDateByBookingDate = 0: Không cho phép chỉnh sửa số đêm trực tiếp tại đây"
+            ></div>
+          </div>
+          <b v-else class="font-black text-slate-800">{{ activeTab.nights || 0 }}</b>
         </div>
         <div><span class="label">Đặt cọc:</span><b class="font-black text-slate-800">{{ (activeTab.deposit || 0).toLocaleString('en-US') }}</b></div>
         <div><span class="label">Công ty:</span><b class="font-black text-[#0f7d8c]">{{ activeTab.company || '---' }}</b></div>
@@ -6223,15 +6499,20 @@ defineExpose({
                           </select>
                         </template>
                         <template v-else-if="col.key === 'extraBed'">
-                          <div v-if="isEditing" class="relative inline-flex items-center justify-center mx-auto" @click.stop>
+                          <div v-if="isEditing" class="relative w-full min-w-[45px] max-w-[55px] mx-auto border border-slate-300 rounded-md h-[26px] bg-white shadow-sm flex items-center" @click.stop>
                             <input 
                               type="number" 
                               v-model.number="room.extraBedQty" 
                               min="0"
                               max="10"
                               @input="handleInlineExtraBedQtyChange(room)"
-                              class="w-12 h-6 text-center border border-slate-300 rounded px-1 text-[11px] font-semibold text-slate-800 bg-white shadow-sm focus:outline-none"
+                              @focus="$event.target.select()"
+                              class="w-full text-center pr-3 focus:outline-none text-[11px] font-semibold text-slate-800 bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             />
+                            <div class="flex flex-col text-slate-800 absolute right-1 top-0 bottom-0 justify-center items-center w-3 select-none">
+                              <button @click.prevent="stepExtraBedQty(room, 1)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0" title="Tăng số lượng"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
+                              <button @click.prevent="stepExtraBedQty(room, -1)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0" title="Giảm số lượng"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
+                            </div>
                           </div>
                           <div v-else class="flex items-center justify-center gap-1">
                             <span class="font-bold text-slate-700 text-[11px]">{{ getRoomExtraBedQty(room) }}</span>
@@ -6241,14 +6522,18 @@ defineExpose({
                           </div>
                         </template>
                         <template v-else-if="col.key === 'extraBedPrice'">
-                          <div v-if="isEditing" class="relative inline-flex items-center justify-center w-full" @click.stop>
+                          <div v-if="isEditing" class="relative w-full border border-slate-300 rounded-md h-[26px] bg-white shadow-sm flex items-center" @click.stop>
                             <input 
                               type="text" 
                               :value="formatCurrencyInput(room.extraBedPrice)"
                               @input="e => { room.extraBedPrice = cleanCurrencyValue(e.target.value); handleInlineExtraBedRateChange(room) }"
                               @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
-                              class="w-full h-6 text-right border border-slate-300 rounded px-1.5 text-[11px] font-semibold text-slate-800 bg-white shadow-sm focus:outline-none"
+                              class="w-full h-full text-right pr-4 pl-1 text-[11px] font-semibold text-slate-800 bg-transparent border-none outline-none focus:outline-none"
                             />
+                            <div class="flex flex-col text-slate-800 absolute right-1 top-0 bottom-0 justify-center items-center w-3 select-none">
+                              <button @click.prevent="stepExtraBedPrice(room, 50000)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0" title="+50,000"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
+                              <button @click.prevent="stepExtraBedPrice(room, -50000)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0" title="-50,000"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
+                            </div>
                           </div>
                           <span v-else class="text-gray-900 font-semibold" :title="`Tổng thêm giường: ${formatCurrencyInput(getRoomExtraBedTotal(room))}`">{{ getRoomExtraBedQty(room) > 0 ? formatCurrencyInput(room.extraBedPrice) : '' }}</span>
                         </template>
@@ -6892,15 +7177,20 @@ defineExpose({
                                   </select>
                                 </template>
                                 <template v-else-if="col.key === 'extraBed'">
-                                  <div v-if="isEditing" class="relative inline-flex items-center justify-center mx-auto" @click.stop>
+                                  <div v-if="isEditing" class="relative w-full min-w-[45px] max-w-[55px] mx-auto border border-slate-300 rounded-md h-[26px] bg-white shadow-sm flex items-center" @click.stop>
                                     <input 
                                       type="number" 
                                       v-model.number="room.extraBedQty" 
                                       min="0"
                                       max="10"
                                       @input="handleInlineExtraBedQtyChange(room)"
-                                      class="w-12 h-6 text-center border border-slate-300 rounded px-1 text-[11px] font-semibold text-slate-800 bg-white shadow-sm focus:outline-none"
+                                      @focus="$event.target.select()"
+                                      class="w-full text-center pr-3 focus:outline-none text-[11px] font-semibold text-slate-800 bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                     />
+                                    <div class="flex flex-col text-slate-800 absolute right-1 top-0 bottom-0 justify-center items-center w-3 select-none">
+                                      <button @click.prevent="stepExtraBedQty(room, 1)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0" title="Tăng số lượng"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
+                                      <button @click.prevent="stepExtraBedQty(room, -1)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0" title="Giảm số lượng"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
+                                    </div>
                                   </div>
                                   <div v-else class="flex items-center justify-center gap-1">
                                     <span class="font-bold text-slate-700 text-[11px]">{{ getRoomExtraBedQty(room) }}</span>
@@ -6910,14 +7200,18 @@ defineExpose({
                                   </div>
                                 </template>
                                 <template v-else-if="col.key === 'extraBedPrice'">
-                                  <div v-if="isEditing" class="relative inline-flex items-center justify-center w-full" @click.stop>
+                                  <div v-if="isEditing" class="relative w-full border border-slate-300 rounded-md h-[26px] bg-white shadow-sm flex items-center" @click.stop>
                                     <input 
                                       type="text" 
                                       :value="formatCurrencyInput(room.extraBedPrice)"
                                       @input="e => { room.extraBedPrice = cleanCurrencyValue(e.target.value); handleInlineExtraBedRateChange(room) }"
                                       @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
-                                      class="w-full h-6 text-right border border-slate-300 rounded px-1.5 text-[11px] font-semibold text-slate-800 bg-white shadow-sm focus:outline-none"
+                                      class="w-full h-full text-right pr-4 pl-1 text-[11px] font-semibold text-slate-800 bg-transparent border-none outline-none focus:outline-none"
                                     />
+                                    <div class="flex flex-col text-slate-800 absolute right-1 top-0 bottom-0 justify-center items-center w-3 select-none">
+                                      <button @click.prevent="stepExtraBedPrice(room, 50000)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0" title="+50,000"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
+                                      <button @click.prevent="stepExtraBedPrice(room, -50000)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0" title="-50,000"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
+                                    </div>
                                   </div>
                                   <span v-else class="text-gray-900 font-semibold" :title="`Tổng thêm giường: ${formatCurrencyInput(getRoomExtraBedTotal(room))}`">{{ getRoomExtraBedQty(room) > 0 ? formatCurrencyInput(room.extraBedPrice) : '' }}</span>
                                 </template>
@@ -7600,7 +7894,7 @@ defineExpose({
                 <div class="relative w-full flex items-center group">
                   <select 
                     v-model="modalForm.registrationStatusId"
-                    @change="handleConfirmDateCalculation"
+                    @change="handleConfirmDateCalculation(true)"
                     class="w-full bg-white border border-slate-300 text-slate-900 rounded-lg pl-2.5 pr-8 text-xs focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 appearance-none font-bold h-[34px] shadow-2xs cursor-pointer"
                   >
                     <option :value="null" disabled>— Chọn tình trạng —</option>
@@ -7612,7 +7906,7 @@ defineExpose({
                   <button 
                     v-if="modalForm.registrationStatusId"
                     type="button" 
-                    @click.stop="modalForm.registrationStatusId = null; handleConfirmDateCalculation()"
+                    @click.stop="modalForm.registrationStatusId = null; handleConfirmDateCalculation(true)"
                     class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs select-none opacity-0 group-hover:opacity-100 transition-opacity"
                     style="z-index: 10;"
                     title="Xóa chọn"
@@ -8501,7 +8795,7 @@ defineExpose({
                   >
                       <i v-if="isSavingModal" class="fa-solid fa-circle-notch animate-spin"></i>
                       <i v-else class="fa-regular fa-floppy-disk"></i>
-                      <span>{{ isSavingModal ? 'Đang lưu...' : (modalForm.dbId ? (modalSubTab === 'rooms' ? 'Thêm phòng' : 'Cập nhật Booking') : 'Lưu Booking') }}</span>
+                      <span>{{ isSavingModal ? 'Đang lưu...' : (modalForm.dbId ? (hasRoomsToAdd && isBookingInfoDirty ? 'Lưu thay đổi & Thêm phòng' : (modalSubTab === 'rooms' ? 'Thêm phòng' : 'Cập nhật Booking')) : 'Lưu Booking') }}</span>
                   </button>
               </div>
           </div>

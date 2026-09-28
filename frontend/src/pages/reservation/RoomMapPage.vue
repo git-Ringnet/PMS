@@ -615,6 +615,7 @@ function getRoomNumberStyle(room) {
 function canShowUndoCheckinForRoom(room) {
   if (!room) return false
   if (moduleContext.value !== 'frontdesk') return false
+  if (room.is_transferred) return false
 
   const checkinDate = room.actual_arrival_date || room.arrival_date || room.check_in || room.booking_arrival_date || room.booking?.arrival_date
   if (!checkinDate) return false
@@ -649,6 +650,11 @@ const undoCheckinLoading = ref(false)
 
 function handleUndoCheckinFromMenu() {
   if (!contextMenu.value.room) return
+  if (contextMenu.value.room.is_transferred) {
+    uiStore.showToast('Phòng đã được chuyển từ phòng khác, không thể hủy nhận phòng.', 'warning')
+    closeContextMenu()
+    return
+  }
   undoCheckinRoomTarget.value = contextMenu.value.room
   showUndoCheckinModal.value = true
   closeContextMenu()
@@ -662,6 +668,11 @@ function closeUndoCheckinModal() {
 async function executeUndoCheckin(mode = 'clean') {
   if (!undoCheckinRoomTarget.value) return
   const room = undoCheckinRoomTarget.value
+  if (room.is_transferred) {
+    uiStore.showToast('Phòng đã được chuyển từ phòng khác, không thể hủy nhận phòng.', 'warning')
+    closeUndoCheckinModal()
+    return
+  }
   undoCheckinLoading.value = true
 
   try {
@@ -2080,6 +2091,7 @@ async function changeRoomStatus(room, roomStatusCode) {
 }
 
 let roomMapSyncTimer = null
+let roomMapBc = null
 
 async function refreshRoomMapSnapshot() {
   if (currentTab.value !== 'room-map') return
@@ -2150,6 +2162,14 @@ onMounted(async () => {
       .listen('.reservation.updated', refreshRoomMapSnapshot)
   }
 
+  // Lắng nghe sự kiện realtime qua BroadcastChannel (đồng bộ tức thì giữa các tab)
+  if (typeof BroadcastChannel !== 'undefined') {
+    roomMapBc = new BroadcastChannel('pms-room-updates')
+    roomMapBc.addEventListener('message', () => {
+      refreshRoomMapSnapshot()
+    })
+  }
+
   // Echo là kênh chính; polling là dự phòng khi websocket gián đoạn hoặc tab vừa quay lại.
   roomMapSyncTimer = window.setInterval(refreshRoomMapSnapshot, 15000)
   document.addEventListener('visibilitychange', refreshWhenVisible)
@@ -2162,6 +2182,10 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', calculateScale)
   document.removeEventListener('visibilitychange', refreshWhenVisible)
   if (roomMapSyncTimer) window.clearInterval(roomMapSyncTimer)
+  if (roomMapBc) {
+    roomMapBc.close()
+    roomMapBc = null
+  }
   // Hủy lắng nghe sự kiện realtime qua Laravel Echo
   if (echo) {
     echo.channel('pms-channel').stopListening('.room.status.updated')

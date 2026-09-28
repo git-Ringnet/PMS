@@ -134,6 +134,11 @@ class BookingChild extends Model
                 $data
             );
         });
+
+        static::deleting(function ($model) {
+            BookingChildBreakfastDetail::where('booking_child_id', $model->id)->delete();
+            BookingRoomChild::where('booking_child_id', $model->id)->delete();
+        });
     }
 
     protected $fillable = [

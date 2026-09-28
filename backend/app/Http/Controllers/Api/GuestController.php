@@ -99,6 +99,7 @@ class GuestController extends Controller
                 'adults_count'     => $this->normalizeCount($room->adults, 1),
                 'babies_count'     => $this->normalizeCount($room->babies),
                 'children_count'   => $this->normalizeCount($room->children_qty),
+                'status'           => (int) $room->status,
                 'guests'           => $guests,
                 'children'         => $children,
             ];
