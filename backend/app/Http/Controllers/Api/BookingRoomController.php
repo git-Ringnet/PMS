@@ -399,33 +399,17 @@ class BookingRoomController extends Controller
             }
         }
 
-        // Cập nhật số lượng children
-        if ($request->has('children')) {
-            $bookingRoom->children()->where('age_group', 'child')->delete();
-            $numChildren = (int)$request->children;
-            for ($c = 0; $c < $numChildren; $c++) {
-                $child = \App\Models\BookingChild::create([
-                    'booking_id' => $bookingRoom->booking_id,
-                    'booking_room_id' => $bookingRoom->id,
-                    'full_name' => 'Child ' . ($c + 1),
-                    'age_group' => 'child',
-                ]);
-                $this->createChildBreakfastDetails($child, $bookingRoom);
+        // Cập nhật số lượng children & babies cho phòng chưa check-in:
+        // Tăng: chỉ tạo thêm trẻ mới; Giảm: chỉ xóa trẻ có mã lớn nhất
+        if (!$isInhouse) {
+            if ($request->has('children') || $request->has('children_qty')) {
+                $targetChildren = (int) ($request->children ?? $request->children_qty);
+                $this->syncRoomChildCount($bookingRoom, 'child', $targetChildren, 'Child');
             }
-        }
 
-        // Cập nhật số lượng babies
-        if ($request->has('babies')) {
-            $bookingRoom->children()->where('age_group', 'baby')->delete();
-            $numBabies = (int)$request->babies;
-            for ($b = 0; $b < $numBabies; $b++) {
-                $baby = \App\Models\BookingChild::create([
-                    'booking_id' => $bookingRoom->booking_id,
-                    'booking_room_id' => $bookingRoom->id,
-                    'full_name' => 'Baby ' . ($b + 1),
-                    'age_group' => 'baby',
-                ]);
-                $this->createChildBreakfastDetails($baby, $bookingRoom);
+            if ($request->has('babies')) {
+                $targetBabies = (int) $request->babies;
+                $this->syncRoomChildCount($bookingRoom, 'baby', $targetBabies, 'Baby');
             }
         }
 
@@ -491,7 +475,7 @@ class BookingRoomController extends Controller
         $updated = [];
 
         $sysDateStr = $this->avService->getSystemDate()->toDateString();
-        $isFO = strtolower(Auth::user()->department_code ?? '') === 'fo' || Auth::user()->username === 'testuser' || Auth::user()->username === 'admin';
+        $isFO = strtolower(Auth::user()?->department_code ?? '') === 'fo' || (Auth::user()?->username === 'testuser') || (Auth::user()?->username === 'admin');
         $allowOver = $this->allowOverAV();
 
         // 1. Validate dates and AV for all rooms first to avoid partial updates
@@ -604,19 +588,13 @@ class BookingRoomController extends Controller
 
                     $room->update($data);
 
-                    // Sync BookingChild records if children_qty is updated
+                    // Đồng bộ số lượng children & babies cho phòng reservation:
+                    // Tăng: chỉ tạo thêm trẻ mới; Giảm: chỉ xóa trẻ có mã lớn nhất
                     if (isset($data['children_qty'])) {
-                        $room->children()->where('age_group', 'child')->delete();
-                        $numChildren = (int)$data['children_qty'];
-                        for ($c = 0; $c < $numChildren; $c++) {
-                            $child = \App\Models\BookingChild::create([
-                                'booking_id' => $room->booking_id,
-                                'booking_room_id' => $room->id,
-                                'full_name' => 'Child ' . ($c + 1),
-                                'age_group' => 'child',
-                            ]);
-                            $this->createChildBreakfastDetails($child, $room);
-                        }
+                        $this->syncRoomChildCount($room, 'child', (int) $data['children_qty'], 'Child');
+                    }
+                    if ($request->has('babies')) {
+                        $this->syncRoomChildCount($room, 'baby', (int) $request->babies, 'Baby');
                     }
 
                     $this->upsertExtraBedServices($room->fresh());
@@ -1491,6 +1469,55 @@ class BookingRoomController extends Controller
 
             $current = $current->addDay();
         }
+    }
+
+    /**
+     * Đồng bộ số lượng trẻ em / em bé cho phòng chưa check-in:
+     * - Khi tăng: chỉ tạo thêm trẻ mới, không ảnh hưởng trẻ đã có
+     * - Khi giảm: chỉ xóa các trẻ có mã lớn nhất (ID lớn nhất)
+     */
+    private function syncRoomChildCount(\App\Models\BookingRoom $room, string $ageGroup, int $targetCount, string $label): void
+    {
+        $targetCount = max(0, $targetCount);
+
+        // Lấy danh sách trẻ em hiện có trong phòng theo nhóm tuổi, sắp xếp theo ID tăng dần
+        $existingChildren = \App\Models\BookingChild::where('booking_room_id', $room->id)
+            ->where('age_group', $ageGroup)
+            ->orderByRaw('CAST(SUBSTRING(id, 2) AS UNSIGNED) ASC')
+            ->get();
+        $currentCount = $existingChildren->count();
+
+        if ($targetCount > $currentCount) {
+            $diff = $targetCount - $currentCount;
+            for ($i = 0; $i < $diff; $i++) {
+                $seq = $currentCount + $i + 1;
+                $child = \App\Models\BookingChild::create([
+                    'booking_id'      => $room->booking_id,
+                    'booking_room_id' => $room->id,
+                    'full_name'       => $label . ' ' . $seq,
+                    'age_group'       => $ageGroup,
+                    'child_status'    => 1,
+                ]);
+                $this->createChildBreakfastDetails($child, $room);
+            }
+        } elseif ($targetCount < $currentCount) {
+            $toRemove = $currentCount - $targetCount;
+            $childrenToRemove = \App\Models\BookingChild::where('booking_room_id', $room->id)
+                ->where('age_group', $ageGroup)
+                ->orderByRaw('CAST(SUBSTRING(id, 2) AS UNSIGNED) DESC')
+                ->take($toRemove)
+                ->get();
+
+            $removeIds = $childrenToRemove->pluck('id')->toArray();
+            if (!empty($removeIds)) {
+                \App\Models\BookingChildBreakfastDetail::whereIn('booking_child_id', $removeIds)->delete();
+                \App\Models\BookingRoomChild::whereIn('booking_child_id', $removeIds)->delete();
+                \App\Models\BookingChild::whereIn('id', $removeIds)->delete();
+            }
+        }
+
+        $col = $ageGroup === 'child' ? 'children_qty' : 'babies';
+        $room->update([$col => $targetCount]);
     }
 
     /**

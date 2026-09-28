@@ -1413,36 +1413,52 @@ class BookingController extends Controller
                             }
 
                             // Preserve existing children/details on a normal
-                            // booking edit. Recreating every child here used
-                            // to erase manually entered breakfast amounts when
-                            // only the room/header dates changed. Only adjust
-                            // the requested age-group count when that field is
-                            // actually present and changed.
+                            // booking edit:
+                            // - Tăng: chỉ tạo thêm trẻ mới, giữ nguyên trẻ cũ
+                            // - Giảm: chỉ xóa các trẻ có mã lớn nhất (từ trên xuống)
                             $syncChildCount = function (string $ageGroup, string $field, string $label) use ($detail, $bRoom, $booking): void {
                                 if (!array_key_exists($field, $detail)) {
                                     return;
                                 }
 
                                 $target = max(0, (int) $detail[$field]);
-                                $children = $bRoom->children()->where('age_group', $ageGroup)->orderBy('id')->get();
-                                $current = $children->count();
+                                $existing = \App\Models\BookingChild::where('booking_room_id', $bRoom->id)
+                                    ->where('age_group', $ageGroup)
+                                    ->orderByRaw('CAST(SUBSTRING(id, 2) AS UNSIGNED) ASC')
+                                    ->get();
+                                $current = $existing->count();
 
-                                if ($target < $current) {
-                                    foreach ($children->slice($target) as $childToRemove) {
-                                        \App\Models\BookingChildBreakfastDetail::where('booking_child_id', $childToRemove->id)->delete();
-                                        $childToRemove->delete();
+                                if ($target > $current) {
+                                    $diff = $target - $current;
+                                    for ($i = 0; $i < $diff; $i++) {
+                                        $seq = $current + $i + 1;
+                                        $child = \App\Models\BookingChild::create([
+                                            'booking_id'      => $booking->id,
+                                            'booking_room_id' => $bRoom->id,
+                                            'full_name'       => $label . ' ' . $seq,
+                                            'age_group'       => $ageGroup,
+                                            'child_status'    => 1,
+                                        ]);
+                                        $this->createChildBreakfastDetails($child, $bRoom);
+                                    }
+                                } elseif ($target < $current) {
+                                    $toRemove = $current - $target;
+                                    $childrenToRemove = \App\Models\BookingChild::where('booking_room_id', $bRoom->id)
+                                        ->where('age_group', $ageGroup)
+                                        ->orderByRaw('CAST(SUBSTRING(id, 2) AS UNSIGNED) DESC')
+                                        ->take($toRemove)
+                                        ->get();
+
+                                    $removeIds = $childrenToRemove->pluck('id')->toArray();
+                                    if (!empty($removeIds)) {
+                                        \App\Models\BookingChildBreakfastDetail::whereIn('booking_child_id', $removeIds)->delete();
+                                        \App\Models\BookingRoomChild::whereIn('booking_child_id', $removeIds)->delete();
+                                        \App\Models\BookingChild::whereIn('id', $removeIds)->delete();
                                     }
                                 }
 
-                                for ($index = $current; $index < $target; $index++) {
-                                    $child = \App\Models\BookingChild::create([
-                                        'booking_id' => $booking->id,
-                                        'booking_room_id' => $bRoom->id,
-                                        'full_name' => $label . ' ' . ($index + 1),
-                                        'age_group' => $ageGroup,
-                                    ]);
-                                    $this->createChildBreakfastDetails($child, $bRoom);
-                                }
+                                $col = $ageGroup === 'child' ? 'children_qty' : 'babies';
+                                $bRoom->update([$col => $target]);
                             };
 
                             $syncChildCount('child', 'children', 'Child');

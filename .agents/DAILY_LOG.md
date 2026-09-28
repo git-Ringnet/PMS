@@ -18,6 +18,26 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-28] - Chuẩn hóa logic Tăng / Giảm Trẻ em & Em bé cho phòng chưa check-in
+### Module: Đặt phòng / Quản lý Trẻ em & Em bé ([BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [BookingChild.php](file:///d:/PMS/backend/app/Models/BookingChild.php))
+
+- **Bối cảnh & Nguyên nhân lỗi**:
+  - Khi tăng hoặc giảm số lượng em bé (`babies`) hoặc trẻ em (`children`) đối với phòng chưa check-in (trạng thái `BOOKED`):
+  - Trước đây: hệ thống gọi `$bookingRoom->children()->where(...)->delete()`, xóa sạch toàn bộ trẻ em/em bé cũ trong phòng rồi tạo mới lại toàn bộ từ 1.
+  - Hậu quả: các mã trẻ em cũ (`T000000023`, `T000000024`,...) bị xóa và cấp dải mã mới nhảy vọt liên tục (`T000000027`, `T000000028`,...); đồng thời bảng `booking_room_children` bị cascade xóa và sinh lại ID mới, mất cấu hình ăn sáng riêng (`booking_child_breakfast_details`) và thông tin hồ sơ của trẻ cũ.
+- **Nghiệp vụ đã xử lý**:
+  1. **Chuẩn hóa hàm `syncRoomChildCount` trong [`BookingRoomController.php`](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php)**:
+     - Áp dụng cho cả hàm `update` (sửa phòng đơn lẻ) và `bulkUpdate` (cập nhật nhanh nhiều phòng) với cả 2 nhóm `child` và `baby`.
+     - **Khi TĂNG**: Giữ nguyên toàn bộ trẻ em/em bé đã có từ trước (không xóa, không đổi mã ID, không ảnh hưởng cấu hình ăn sáng cũ); chỉ `create` thêm đúng số lượng chênh lệch tăng thêm và sinh chi tiết ăn sáng cho trẻ mới.
+     - **Khi GIẢM**: Lấy đúng số lượng chênh lệch giảm bớt có **mã/ID lớn nhất** (`orderByRaw('CAST(SUBSTRING(id, 2) AS UNSIGNED) DESC')`), dọn sạch đồng bộ 3 bảng (`booking_child_breakfast_details`, `booking_room_children`, `booking_children`). Các trẻ có mã nhỏ hơn được giữ nguyên 100%.
+  2. **Chuẩn hóa hàm `$syncChildCount` trong [`BookingController.php`](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php) (`updateBooking`)**:
+     - Đồng bộ cùng cơ chế tăng chỉ thêm mới, giảm xóa mã lớn nhất từ trên xuống, cập nhật lại cột `children_qty` và `babies` trên phòng.
+  3. **Bổ sung Event `deleting` trong Model [`BookingChild.php`](file:///d:/PMS/backend/app/Models/BookingChild.php)**:
+     - Tự động dọn dẹp sạch sẽ `BookingChildBreakfastDetail` và `BookingRoomChild` khi bất kỳ `BookingChild` nào bị xóa, ngăn ngừa hoàn toàn dữ liệu mồ côi (orphan records).
+- **Kiểm thử**:
+  - Chạy test script tự động bao phủ 7 kịch bản: tăng trẻ em từ 2 lên 3 -> giảm về 2; tăng em bé từ 1 lên 2 -> giảm về 1; tăng trẻ em qua `updateBooking` lên 4 -> giảm về 1. Kết quả toàn bộ 7 test cases đều PASSED 100%.
+  - Build frontend `npm run build` thành công 100%.
+
 ## [2026-09-28] - Khắc phục spam thông báo & tự động lưu khi sửa Thêm giường trên màn hình Đăng ký
 ### Module: Đặt phòng / Sửa Booking / Thêm giường ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))
 
