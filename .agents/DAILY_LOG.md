@@ -18,6 +18,25 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-28] - Lưu đồng thời thông tin đăng ký và phòng mới trên màn hình Đăng ký
+### Module: Đặt phòng / Sửa và thêm phòng ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))
+
+- **Yêu cầu nghiệp vụ**:
+  - Trên màn hình thông tin đăng ký, khi vừa thao tác sửa thông tin booking (hoặc thông tin đưa đón) vừa thực hiện lấy phòng ở tab "Lấy phòng".
+  - Trước đây: hệ thống chỉ lưu được thao tác tại tab đang đứng (đang đứng ở tab Lấy phòng thì chỉ thêm phòng chứ không lưu thông tin chung).
+  - Khắc phục: cho phép lưu được toàn bộ thông tin thay đổi (thông tin chung, đưa đón) và lấy phòng khi lưu Booking.
+- **Nghiệp vụ đã xử lý**:
+  - Khai báo snapshot độc lập: `initialBookingSnapshot` và `initialRoomsSnapshot`, chia tách `getModalBookingSnapshot()` và `getModalRoomsSnapshot()`.
+  - Bổ sung 2 thuộc tính tính toán `isBookingInfoDirty` (kiểm tra thay đổi thông tin chung/đưa đón) và `hasRoomsToAdd` (kiểm tra có phòng đang chọn thêm trong `roomAddDraft`).
+  - Cập nhật hàm `handleSaveNewBooking`:
+    - Nếu vừa có thay đổi thông tin chung/đưa đón vừa có chọn phòng thêm (`hasRoomsToAddNow && isBookingInfoChanged`): gọi tuần tự API `updateBooking` cập nhật thông tin booking, sau đó gọi `addBookingRooms` để nạp các phòng mới.
+    - Nếu chỉ sửa thông tin: gọi `updateBooking`.
+    - Nếu chỉ thêm phòng: gọi `addBookingRooms`.
+    - Modal popup xác nhận tự động đổi tiêu đề và nội dung phù hợp: *"Xác nhận cập nhật thông tin & thêm phòng"* với nút *"Lưu tất cả"*.
+    - Cập nhật nhãn nút bấm lưu tại footer modal hiển thị *"Lưu thay đổi & Thêm phòng"* khi có cả 2 thay đổi.
+- **Kiểm thử**:
+  - Build frontend `npm run build` thành công 100%.
+
 ## [2026-09-28] - Chặn Hủy nhận phòng đối với phòng chuyển trên Sơ đồ phòng (Room Map)
 ### Module: Lễ tân / Sơ đồ phòng / Hủy nhận phòng ([RoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomController.php), [RoomResource.php](file:///d:/PMS/backend/app/Http/Resources/RoomResource.php), [RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue), [BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php))
 

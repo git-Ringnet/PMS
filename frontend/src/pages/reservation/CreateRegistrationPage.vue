@@ -363,6 +363,8 @@ const roomAddDraft = ref([])
 const isColorChanged = ref(false)
 const isColorPickerOpen = ref(false)
 const initialModalSnapshot = ref('')
+const initialBookingSnapshot = ref('')
+const initialRoomsSnapshot = ref('')
 
 // A rate-code request can finish after a newer selection. Keep the latest
 // choice authoritative so an old response cannot overwrite the quantity or
@@ -381,7 +383,7 @@ function isLatestRateCodeRequest(target, version, selectedValue) {
     && String(target?.rateCode || '').trim() === String(selectedValue || '').trim()
 }
 
-function getModalFormSnapshot() {
+function getModalBookingSnapshot() {
   if (!modalForm.value) return ''
   return JSON.stringify({
     bookingName: modalForm.value.bookingName || '',
@@ -405,35 +407,56 @@ function getModalFormSnapshot() {
     specialRequests: modalForm.value.specialRequests || '',
     isMasterRoomRate: modalForm.value.isMasterRoomRate,
     shuttleInfo: modalForm.value.shuttleInfo || [],
-    roomAddDraft: (roomAddDraft.value || []).map(a => ({
-      roomClassId: a.roomClassId,
-      quantity: a.quantity,
-      price: a.price,
-      rateCode: a.rateCode,
-      adults: a.adults,
-      children: a.children,
-      babies: a.babies,
-      breakfastIncluded: a.breakfastIncluded,
-      upgradeClassId: a.upgradeClassId,
-      rooms: (a.rooms || []).map(r => ({
-        roomClassId: r.roomClassId,
-        roomNumber: r.roomNumber,
-        price: r.price,
-        rateCode: r.rateCode,
-        arrivalDate: r.arrivalDate,
-        departureDate: r.departureDate,
-        adults: r.adults,
-        children: r.children,
-        babies: r.babies,
-        breakfast: r.breakfast,
-      })),
+  })
+}
+
+function getModalRoomsSnapshot() {
+  return JSON.stringify((roomAddDraft.value || []).map(a => ({
+    roomClassId: a.roomClassId,
+    quantity: a.quantity,
+    price: a.price,
+    rateCode: a.rateCode,
+    adults: a.adults,
+    children: a.children,
+    babies: a.babies,
+    breakfastIncluded: a.breakfastIncluded,
+    upgradeClassId: a.upgradeClassId,
+    rooms: (a.rooms || []).map(r => ({
+      roomClassId: r.roomClassId,
+      roomNumber: r.roomNumber,
+      price: r.price,
+      rateCode: r.rateCode,
+      arrivalDate: r.arrivalDate,
+      departureDate: r.departureDate,
+      adults: r.adults,
+      children: r.children,
+      babies: r.babies,
+      breakfast: r.breakfast,
     })),
+  })))
+}
+
+function getModalFormSnapshot() {
+  if (!modalForm.value) return ''
+  return JSON.stringify({
+    booking: getModalBookingSnapshot(),
+    rooms: getModalRoomsSnapshot(),
   })
 }
 
 const isModalFormDirty = computed(() => {
   if (!modalForm.value || !modalForm.value.dbId) return true
   return getModalFormSnapshot() !== initialModalSnapshot.value
+})
+
+const isBookingInfoDirty = computed(() => {
+  if (!modalForm.value || !modalForm.value.dbId) return true
+  return getModalBookingSnapshot() !== initialBookingSnapshot.value
+})
+
+const hasRoomsToAdd = computed(() => {
+  if (!roomAddDraft.value || !roomAddDraft.value.length) return false
+  return roomAddDraft.value.reduce((sum, a) => sum + (Number(a.quantity) || 0), 0) > 0
 })
 
 const bkColorList = [
@@ -3549,6 +3572,8 @@ async function handleAddTabClick() {
   nextTick(() => {
     autoResizeTextarea()
     initialModalSnapshot.value = getModalFormSnapshot()
+    initialBookingSnapshot.value = getModalBookingSnapshot()
+    initialRoomsSnapshot.value = getModalRoomsSnapshot()
   })
 }
 
@@ -3593,6 +3618,8 @@ function fillModalForm(tab) {
   nextTick(() => {
     autoResizeTextarea()
     initialModalSnapshot.value = getModalFormSnapshot()
+    initialBookingSnapshot.value = getModalBookingSnapshot()
+    initialRoomsSnapshot.value = getModalRoomsSnapshot()
   })
 }
 
@@ -4439,20 +4466,54 @@ async function handleSaveNewBooking() {
     return
   }
 
-  const dupError = validateRoomsDuplication(roomAddDraftRooms())
-  if (dupError) {
-    uiStore.showToast(dupError, 'error')
-    return
+  const allocations = serializeRoomAddDraft()
+  const totalAddQty = allocations.reduce((sum, a) => sum + (Number(a.quantity) || 0), 0)
+  const hasRoomsToAddNow = totalAddQty > 0
+  const isBookingInfoChanged = isBookingInfoDirty.value
+
+  if (hasRoomsToAddNow) {
+    const dupError = validateRoomsDuplication(roomAddDraftRooms())
+    if (dupError) {
+      uiStore.showToast(dupError, 'error')
+      return
+    }
+  }
+
+  if (isEditModal.value && modalForm.value.dbId) {
+    if (!hasRoomsToAddNow && !isBookingInfoChanged) {
+      uiStore.showToast('Không có thay đổi nào để lưu!', 'info')
+      return
+    }
+    if (modalSubTab.value === 'rooms' && !hasRoomsToAddNow && !isBookingInfoChanged) {
+      uiStore.showToast('Vui lòng chọn số lượng phòng cần thêm!', 'warning')
+      return
+    }
+  }
+
+  let confirmTitle = 'Xác nhận tạo mới đăng ký'
+  let confirmMessage = `Bạn có chắc chắn muốn tạo đơn đặt phòng mới ${modalForm.value.bookingName} với ${modalForm.value.nights} đêm?`
+  let confirmText = 'Tạo mới'
+
+  if (isEditModal.value) {
+    if (hasRoomsToAddNow && isBookingInfoChanged) {
+      confirmTitle = 'Xác nhận cập nhật thông tin & thêm phòng'
+      confirmMessage = `Bạn có chắc chắn muốn cập nhật thông tin đăng ký ${modalForm.value.bookingCode} và thêm ${totalAddQty} phòng mới?`
+      confirmText = 'Lưu tất cả'
+    } else if (hasRoomsToAddNow) {
+      confirmTitle = 'Xác nhận thêm phòng mới'
+      confirmMessage = `Bạn có chắc chắn muốn thêm ${totalAddQty} phòng mới vào đơn đặt phòng ${modalForm.value.bookingCode}?`
+      confirmText = 'Thêm phòng'
+    } else {
+      confirmTitle = 'Xác nhận cập nhật đăng ký'
+      confirmMessage = `Bạn có chắc chắn muốn cập nhật đơn đặt phòng ${modalForm.value.bookingCode} với ${modalForm.value.nights} đêm?`
+      confirmText = 'Cập nhật'
+    }
   }
 
   const confirmed = await uiStore.confirm({
-    title: isEditModal.value
-      ? (modalSubTab.value === 'rooms' ? 'Xác nhận thêm phòng mới' : 'Xác nhận cập nhật đăng ký')
-      : 'Xác nhận tạo mới đăng ký',
-    message: isEditModal.value 
-      ? `Bạn có chắc chắn muốn cập nhật đơn đặt phòng ${modalForm.value.bookingCode} với ${modalForm.value.nights} đêm?`
-      : `Bạn có chắc chắn muốn tạo đơn đặt phòng mới ${modalForm.value.bookingName} với ${modalForm.value.nights} đêm?`,
-    confirmText: isEditModal.value ? (modalSubTab.value === 'rooms' ? 'Thêm phòng' : 'Cập nhật') : 'Tạo mới',
+    title: confirmTitle,
+    message: confirmMessage,
+    confirmText: confirmText,
     cancelText: 'Hủy'
   })
   if (!confirmed) return
@@ -4491,25 +4552,30 @@ async function handleSaveNewBooking() {
       created_module:         currentBookingModule.value,
     }
     if (isEditModal.value && modalForm.value.dbId) {
-      if (modalSubTab.value === 'rooms') {
-        const allocations = serializeRoomAddDraft()
-        const totalQty = allocations.reduce((sum, a) => sum + (Number(a.quantity) || 0), 0)
-        if (totalQty <= 0) {
-          uiStore.showToast('Vui lòng chọn số lượng phòng cần thêm!', 'warning')
-          isSavingModal.value = false
-          return
-        }
-
-        // The add-room tab has an explicit append-only API. It never sends
-        // existing booking-room ids or the persisted room list.
+      if (hasRoomsToAddNow && isBookingInfoChanged) {
+        const res = await updateBooking(modalForm.value.dbId, payload)
+        const updated = res.data?.data || res.data
         await addBookingRooms(modalForm.value.dbId, {
           intent: 'add_only',
           room_allocations: allocations,
         })
         await loadBookings()
+        const idx = tabs.value.findIndex(t => t.dbId === modalForm.value.dbId)
+        if (idx !== -1) { activeTabId.value = tabs.value[idx].id }
         notifyRoomUpdates(modalForm.value.dbId)
         resetRoomAddDraft(modalForm.value.checkIn, modalForm.value.checkOut)
-        uiStore.showToast('Thêm phòng mới vào đăng ký thành công!', 'success')
+        uiStore.showToast(`Cập nhật đăng ký ${updated.booking_code || modalForm.value.bookingCode} và thêm ${totalAddQty} phòng thành công!`, 'success')
+      } else if (hasRoomsToAddNow) {
+        await addBookingRooms(modalForm.value.dbId, {
+          intent: 'add_only',
+          room_allocations: allocations,
+        })
+        await loadBookings()
+        const idx = tabs.value.findIndex(t => t.dbId === modalForm.value.dbId)
+        if (idx !== -1) { activeTabId.value = tabs.value[idx].id }
+        notifyRoomUpdates(modalForm.value.dbId)
+        resetRoomAddDraft(modalForm.value.checkIn, modalForm.value.checkOut)
+        uiStore.showToast(`Thêm ${totalAddQty} phòng mới vào đăng ký thành công!`, 'success')
       } else {
         const res = await updateBooking(modalForm.value.dbId, payload)
         const updated = res.data?.data || res.data
@@ -8735,7 +8801,7 @@ defineExpose({
                   >
                       <i v-if="isSavingModal" class="fa-solid fa-circle-notch animate-spin"></i>
                       <i v-else class="fa-regular fa-floppy-disk"></i>
-                      <span>{{ isSavingModal ? 'Đang lưu...' : (modalForm.dbId ? (modalSubTab === 'rooms' ? 'Thêm phòng' : 'Cập nhật Booking') : 'Lưu Booking') }}</span>
+                      <span>{{ isSavingModal ? 'Đang lưu...' : (modalForm.dbId ? (hasRoomsToAdd && isBookingInfoDirty ? 'Lưu thay đổi & Thêm phòng' : (modalSubTab === 'rooms' ? 'Thêm phòng' : 'Cập nhật Booking')) : 'Lưu Booking') }}</span>
                   </button>
               </div>
           </div>
