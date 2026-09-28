@@ -16,6 +16,7 @@ import {
 } from '@/utils/booking-room-allocations'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import TimePicker24h from '@/components/TimePicker24h.vue'
+import SingleDatePicker from '@/components/SingleDatePicker.vue'
 import CopyModal from './components/CopyModal.vue'
 import UpgradeModal from './components/UpgradeModal.vue'
 import DepositModal from './components/DepositModal.vue'
@@ -1947,6 +1948,7 @@ onMounted(async () => {
   document.addEventListener('click', handleGlobalClick)
   window.addEventListener('booking-updated', handleBookingUpdatedEvent)
   window.addEventListener('deposit-updated', loadBookings)
+  window.addEventListener('hotel-config-updated', handleHotelConfigUpdated)
   const bc = getPmsBroadcastChannel()
   if (bc) bc.addEventListener('message', handleBookingUpdatedBroadcast)
   try {
@@ -2026,6 +2028,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('click', handleGlobalClick)
   window.removeEventListener('booking-updated', handleBookingUpdatedEvent)
   window.removeEventListener('deposit-updated', loadBookings)
+  window.removeEventListener('hotel-config-updated', handleHotelConfigUpdated)
   if (pmsBc) {
     pmsBc.removeEventListener('message', handleBookingUpdatedBroadcast)
     pmsBc.close()
@@ -2210,8 +2213,29 @@ function handleBookingUpdatedEvent(event) {
   return refreshMatchingBooking(event?.detail?.bookingId)
 }
 
+function handleHotelConfigUpdated(event) {
+  const detail = event?.detail
+  if (detail?.name && detail?.value !== undefined) {
+    hotelSettings.value = {
+      ...hotelSettings.value,
+      [detail.name]: detail.value
+    }
+  }
+  loadDropdowns().catch(console.error)
+}
+
 function handleBookingUpdatedBroadcast(event) {
   const data = event?.data
+  if (data === 'settings-updated' || data?.type === 'hotel-config-updated' || data?.type === 'settings-updated') {
+    if (data?.name && data?.value !== undefined) {
+      hotelSettings.value = {
+        ...hotelSettings.value,
+        [data.name]: data.value
+      }
+    }
+    loadDropdowns().catch(console.error)
+    return
+  }
   let bookingId = null
   if (typeof data === 'string') {
     bookingId = null
@@ -3843,7 +3867,15 @@ async function handleCheckInChange() {
   await handleDateChange()
 }
 
+function warnSyncRoomDateDisabled() {
+  uiStore.showToast('Thông số cấu hình SyncRoomDateByBookingDate = 0: Không cho phép chỉnh sửa ngày đến/đi và số đêm trực tiếp trên thanh tiêu đề.', 'warning')
+}
+
 async function handleMainCheckInChange() {
+  if (!isSyncRoomDateEnabled.value) {
+    warnSyncRoomDateDisabled()
+    return
+  }
   await handleMainDateChange()
 }
 
@@ -3900,6 +3932,10 @@ async function handleDateChange() {
 }
 
 async function handleMainDateChange() {
+  if (!isSyncRoomDateEnabled.value) {
+    warnSyncRoomDateDisabled()
+    return
+  }
   const tab = activeTab.value
   if (!tab) return
   const ci = new Date(tab.checkIn)
@@ -3956,6 +3992,10 @@ async function handleMainDateChange() {
 }
 
 async function handleMainNightsChange() {
+  if (!isSyncRoomDateEnabled.value) {
+    warnSyncRoomDateDisabled()
+    return
+  }
   const tab = activeTab.value
   if (!tab) return
   const ci = new Date(tab.checkIn)
@@ -4683,6 +4723,7 @@ async function triggerAction(actionName) {
       uiStore.showToast('Booking đang ở hoặc có phòng đã ở/đã trả/chuyển/hủy, không được phép chỉnh sửa.', 'warning')
       return
     }
+    loadDropdowns().catch(console.error)
     isEditing.value = true
     const tab = activeTab.value
     if (tab) {
@@ -5969,36 +6010,62 @@ defineExpose({
           <b class="font-black text-slate-800">{{ activeTab.bookingName || 'Trống' }}</b>
         </div>
         <div><span class="label">Trạng thái:</span><span class="status-pill select-none">{{ activeTabStatusName || 'Trống' }}</span></div>
-        <div>
+        <div class="flex items-center gap-1.5">
           <span class="label">Ngày đến/đi:</span>
-          <div v-if="isEditing && isSyncRoomDateEnabled" class="flex items-center space-x-1" @click.stop>
-            <input 
-              type="date" 
-              v-model="activeTab.checkIn" 
-              @change="handleMainCheckInChange" 
-              class="border border-slate-300 rounded px-1.5 py-0.5 text-xs font-semibold text-slate-800 focus:outline-none" 
-            />
-            <span>~</span>
-            <input 
-              type="date" 
-              v-model="activeTab.checkOut" 
-              @change="handleMainDateChange" 
-              class="border border-slate-300 rounded px-1.5 py-0.5 text-xs font-semibold text-slate-800 focus:outline-none" 
-            />
+          <div v-if="isEditing" class="inline-flex items-center space-x-1.5" @click.stop>
+            <div class="relative w-[116px]">
+              <SingleDatePicker
+                v-model="activeTab.checkIn"
+                :disabled="!isSyncRoomDateEnabled"
+                @change="handleMainCheckInChange"
+                input-class="!py-0.5 !px-2 !text-xs !h-[26px] !rounded !border-slate-300 font-semibold text-slate-800"
+              />
+              <div 
+                v-if="!isSyncRoomDateEnabled" 
+                class="absolute inset-0 cursor-not-allowed z-10" 
+                @click.stop="warnSyncRoomDateDisabled"
+                title="Cấu hình SyncRoomDateByBookingDate = 0: Không cho phép chỉnh sửa ngày booking trực tiếp tại đây"
+              ></div>
+            </div>
+            <span class="text-slate-400 font-bold">~</span>
+            <div class="relative w-[116px]">
+              <SingleDatePicker
+                v-model="activeTab.checkOut"
+                :disabled="!isSyncRoomDateEnabled"
+                @change="handleMainDateChange"
+                input-class="!py-0.5 !px-2 !text-xs !h-[26px] !rounded !border-slate-300 font-semibold text-slate-800"
+              />
+              <div 
+                v-if="!isSyncRoomDateEnabled" 
+                class="absolute inset-0 cursor-not-allowed z-10" 
+                @click.stop="warnSyncRoomDateDisabled"
+                title="Cấu hình SyncRoomDateByBookingDate = 0: Không cho phép chỉnh sửa ngày booking trực tiếp tại đây"
+              ></div>
+            </div>
           </div>
           <b v-else class="font-black text-slate-800">{{ formatDateVi(activeTab.checkIn) }} ~ {{ formatDateVi(activeTab.checkOut) }}</b>
         </div>
-        <div v-if="isEditing && isSyncRoomDateEnabled" class="flex items-center space-x-1" @click.stop>
+        <div class="flex items-center gap-1">
           <span class="label">Số đêm:</span>
-          <input 
-            type="number" 
-            v-model.number="activeTab.nights" 
-            @input="handleMainNightsChange" 
-            min="0" 
-            class="border border-slate-300 rounded px-1 py-0.5 text-xs font-semibold text-slate-800 focus:outline-none w-12 text-center" 
-          />
+          <div v-if="isEditing" class="relative inline-flex items-center" @click.stop>
+            <input 
+              type="number" 
+              v-model.number="activeTab.nights" 
+              @input="handleMainNightsChange" 
+              :disabled="!isSyncRoomDateEnabled"
+              :class="[!isSyncRoomDateEnabled ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200' : 'bg-white text-slate-800 border-slate-300 hover:border-sky-400 focus:border-sky-500']"
+              min="0" 
+              class="border rounded px-2 py-0.5 text-xs font-semibold focus:outline-none w-14 text-center h-[26px] shadow-2xs transition-colors" 
+            />
+            <div 
+              v-if="!isSyncRoomDateEnabled" 
+              class="absolute inset-0 cursor-not-allowed z-10" 
+              @click.stop="warnSyncRoomDateDisabled"
+              title="Cấu hình SyncRoomDateByBookingDate = 0: Không cho phép chỉnh sửa số đêm trực tiếp tại đây"
+            ></div>
+          </div>
+          <b v-else class="font-black text-slate-800">{{ activeTab.nights || 0 }}</b>
         </div>
-        <div v-else><span class="label">Số đêm:</span><b class="font-black text-slate-800">{{ activeTab.nights || 0 }}</b></div>
         <div><span class="label">Đặt cọc:</span><b class="font-black text-slate-800">{{ (activeTab.deposit || 0).toLocaleString('en-US') }}</b></div>
         <div><span class="label">Công ty:</span><b class="font-black text-[#0f7d8c]">{{ activeTab.company || '---' }}</b></div>
         <div><span class="label">Xác nhận:</span><b class="font-bold text-slate-500">{{ formatDateVi(activeTab.confirmDate) || '---' }}</b></div>

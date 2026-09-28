@@ -615,6 +615,7 @@ function getRoomNumberStyle(room) {
 function canShowUndoCheckinForRoom(room) {
   if (!room) return false
   if (moduleContext.value !== 'frontdesk') return false
+  if (room.is_transferred) return false
 
   const checkinDate = room.actual_arrival_date || room.arrival_date || room.check_in || room.booking_arrival_date || room.booking?.arrival_date
   if (!checkinDate) return false
@@ -649,6 +650,11 @@ const undoCheckinLoading = ref(false)
 
 function handleUndoCheckinFromMenu() {
   if (!contextMenu.value.room) return
+  if (contextMenu.value.room.is_transferred) {
+    uiStore.showToast('Phòng đã được chuyển từ phòng khác, không thể hủy nhận phòng.', 'warning')
+    closeContextMenu()
+    return
+  }
   undoCheckinRoomTarget.value = contextMenu.value.room
   showUndoCheckinModal.value = true
   closeContextMenu()
@@ -662,6 +668,11 @@ function closeUndoCheckinModal() {
 async function executeUndoCheckin(mode = 'clean') {
   if (!undoCheckinRoomTarget.value) return
   const room = undoCheckinRoomTarget.value
+  if (room.is_transferred) {
+    uiStore.showToast('Phòng đã được chuyển từ phòng khác, không thể hủy nhận phòng.', 'warning')
+    closeUndoCheckinModal()
+    return
+  }
   undoCheckinLoading.value = true
 
   try {

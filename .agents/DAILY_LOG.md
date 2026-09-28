@@ -18,6 +18,67 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-28] - Chặn Hủy nhận phòng đối với phòng chuyển trên Sơ đồ phòng (Room Map)
+### Module: Lễ tân / Sơ đồ phòng / Hủy nhận phòng ([RoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomController.php), [RoomResource.php](file:///d:/PMS/backend/app/Http/Resources/RoomResource.php), [RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue), [BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php))
+
+- **Yêu cầu nghiệp vụ**:
+  - Đối với các booking/phòng có ngày đến = ngày hệ thống, nhưng được chuyển từ phòng khác qua (room move / room merge) thì KHÔNG cho thao tác hủy nhận phòng.
+  - Ví dụ: Phòng 101 check in ngày 9, sau đó ngày 10 chuyển qua phòng 102 -> Phòng 102 không được hủy nhận phòng.
+- **Nghiệp vụ đã xử lý**:
+  1. **Backend ([RoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomController.php), [RoomResource.php](file:///d:/PMS/backend/app/Http/Resources/RoomResource.php))**:
+     - Thêm quan hệ `movedFromRoom` vào eager loading của danh sách phòng hôm nay (`$bookingRoomsToday`).
+     - Xác định cờ `is_transferred = (bool) ($br->movedFromRoom)` và trả về qua `RoomResource`.
+     - [BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php) đã có logic chặn cứng API `undoCheckIn` với thông báo 422: *"Phòng đã được chuyển từ phòng khác, không thể hủy nhận phòng tại đây."*
+  2. **Giao diện người dùng ([RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))**:
+     - Cập nhật hàm `canShowUndoCheckinForRoom(room)`: kiểm tra `if (room.is_transferred) return false` để ẩn hoàn toàn nút "Hủy nhận phòng" trên Context Menu chuột phải của phòng chuyển.
+     - Bổ sung kiểm tra guard trong `handleUndoCheckinFromMenu` và `executeUndoCheckin` với thông báo toast cảnh báo nếu phát hiện phòng chuyển.
+- **Kiểm thử**:
+  - Viết script kiểm thử xác nhận `movedFromRoom` relation, cờ `is_transferred` trên `RoomResource` và trong DB transaction.
+  - Build frontend `npm run build` thành công 100%.
+
+## [2026-09-28] - Hoàn thiện Section 18: Thông số RegistrationStatusId_BookingCancel khi hủy Booking
+### Module: Đặt phòng / Hủy đăng ký / Cài đặt cấu hình ([BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [HotelDefinitionSeeder.php](file:///d:/PMS/backend/database/seeders/HotelDefinitionSeeder.php), [HotelConfigTab.vue](file:///d:/PMS/frontend/src/pages/config/components/hotel/HotelConfigTab.vue))
+
+- **Yêu cầu nghiệp vụ**:
+  - Thông số: `RegistrationStatusId_BookingCancel`.
+  - Giá trị của thông số là giá trị tình trạng sẽ được cập nhật vào bảng `Bookings.registration_status_id`.
+  - Nếu giá trị khác 0: khi hủy BK thì bảng `Bookings.registration_status_id` lưu theo giá trị của thông số (ví dụ: 28).
+  - Nếu thông số = 0: khi hủy BK thì tình trạng ở `Bookings.registration_status_id` giữ nguyên không thay đổi.
+- **Nghiệp vụ đã xử lý**:
+  1. **Cơ sở dữ liệu & Seeder ([HotelDefinitionSeeder.php](file:///d:/PMS/backend/database/seeders/HotelDefinitionSeeder.php))**:
+     - Thêm cấu hình `RegistrationStatusId_BookingCancel` với giá trị mặc định là `'0'` và mô tả rõ ràng.
+     - Khởi tạo bản ghi trong bảng `hotel_configs` (CSDL hiện tại giá trị = `0`).
+  2. **Xử lý Backend ([BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php))**:
+     - Tại hàm `destroy` khi hủy booking: lấy giá trị thông số `RegistrationStatusId_BookingCancel`.
+     - Nếu giá trị là số và khác 0: gán trực tiếp giá trị số đó vào `Bookings.registration_status_id`.
+     - Nếu giá trị = 0 (hoặc rỗng): giữ nguyên `registration_status_id` hiện tại của booking.
+  3. **Giao diện Cấu hình ([HotelConfigTab.vue](file:///d:/PMS/frontend/src/pages/config/components/hotel/HotelConfigTab.vue))**:
+     - Thêm dropdown chọn nhanh các tình trạng đăng ký (`0 - Giữ nguyên không thay đổi tình trạng`, `28 - Cancelled`,...) hiển thị mã + tên tiếng Việt trực quan.
+     - Hiển thị tên trạng thái tương ứng ngay trên cột "Giá trị" của bảng danh sách cấu hình.
+- **Kiểm thử**:
+  - Chạy script kiểm thử tự động với 3 trường hợp: thông số = 0 (giữ nguyên), thông số = 28 (lưu 28), thông số = 24 (lưu 24) -> cả 3 trường hợp đều khớp 100%.
+  - Build frontend `npm run build` thành công 100%.
+
+## [2026-09-28] - Khắc phục hiển thị Header Summary & Đồng bộ tức thời cấu hình SyncRoomDateByBookingDate
+### Module: Đặt phòng / Quản lý đăng ký / Cài đặt cấu hình ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [HotelConfigTab.vue](file:///d:/PMS/frontend/src/pages/config/components/hotel/HotelConfigTab.vue))
+
+- **Bối cảnh & Nguyên nhân**:
+  1. Khi người dùng bấm "Sửa", cụm ô chọn ngày đến/đi `<input type="date">` bị rớt xuống dòng thứ hai thay vì nằm ngang hàng với nhãn "Ngày đến/đi:". Nguyên nhân do container bọc input là block `div` không có căn chỉnh flex.
+  2. Khi sửa cấu hình `SyncRoomDateByBookingDate = 0` tại Cài đặt, màn hình Tạo đăng ký đang mở không tự động cập nhật lại cấu hình mà phải F5 trang mới nhận giá trị mới.
+- **Nghiệp vụ đã xử lý**:
+  1. Căn chỉnh giao diện: Chuyển container Ngày đến/đi và Số đêm sang `flex items-center gap-1`, bao bọc ô date picker bằng `inline-flex items-center space-x-1`, đảm bảo luôn hiển thị ngang hàng thẳng tắp kể cả ở chế độ xem lẫn chế độ sửa.
+  2. Tích hợp SingleDatePicker với icon lịch và popup chọn ngày trực quan:
+     - Thay thế ô input native cũ bằng component [SingleDatePicker.vue](file:///d:/PMS/frontend/src/components/SingleDatePicker.vue) chuẩn giao diện của hệ thống: hiển thị ngày định dạng `DD/MM/YYYY`, tích hợp icon lịch bên phải để mở popup chọn ngày nhanh hoặc gõ trực tiếp.
+     - Đồng bộ chiều cao (`h-[26px]`), bo góc và hiệu ứng viền giữa 2 ô ngày đến/đi và ô số đêm.
+     - Khi `SyncRoomDateByBookingDate = 0`: Cả 2 ô ngày và ô số đêm bị khóa, khi click vào sẽ bật thông báo toast cảnh báo: *"Thông số cấu hình SyncRoomDateByBookingDate = 0: Không cho phép chỉnh sửa ngày đến/đi và số đêm trực tiếp trên thanh tiêu đề."*.
+     - Khi `SyncRoomDateByBookingDate = 1`: Mở click chọn từ lịch bình thường và tự động đồng bộ xuống các phòng con chưa check-in.
+  3. Đồng bộ cấu hình thời gian thực:
+     - Tại [HotelConfigTab.vue](file:///d:/PMS/frontend/src/pages/config/components/hotel/HotelConfigTab.vue), phát tín hiệu broadcast `{ type: 'hotel-config-updated', name, value }` và dispatch window custom event khi cập nhật cấu hình.
+     - Tại [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), lắng nghe sự kiện cập nhật cấu hình qua broadcast và window event để cập nhật ngay lập tức `hotelSettings.value`.
+     - Tự động gọi `loadDropdowns()` khi người dùng bấm hành động "Sửa" để luôn bảo đảm lấy cấu hình mới nhất từ server.
+- **Kiểm thử**:
+  - Frontend `npm run build` thành công 100% (4.73s).
+
 ## [2026-09-25] - Hoàn thiện toàn diện Đồng bộ Realtime đa màn hình & Rà soát triệt để các Section Booking 2
 ### Module: Đặt phòng / Quản lý đăng ký / Sơ đồ phòng ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue), [BookingDetailModal.vue](file:///d:/PMS/frontend/src/components/BookingDetailModal.vue), [QuickUpdateModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/QuickUpdateModal.vue), [DepositModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/DepositModal.vue), [SystemSearchModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/SystemSearchModal.vue), [BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [api.php](file:///d:/PMS/backend/routes/api.php))
 

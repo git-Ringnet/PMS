@@ -425,6 +425,8 @@ class HotelDefinitionSeeder extends Seeder
             ['name' => 'BreakfastRateChild', 'value' => '0', 'description' => 'Giá ăn sáng trẻ em mặc định khi KHÔNG có extra charge (is_extra_charge = 0). Đơn vị: VND', 'is_visible' => true],
             // Cài đặt Room Map
             ['name' => 'RoomMap_ColorRoomNumberByRoomClass', 'value' => '0', 'description' => 'Hiển thị màu số phòng theo loại phòng trên Room Map (0: màu đen mặc định, phòng check-in hôm nay hiển thị đỏ; 1: màu số phòng theo room_classes.color, không đổi đỏ khi check-in)', 'is_visible' => true],
+            // Section 18 - Trạng thái đăng ký khi hủy booking
+            ['name' => 'RegistrationStatusId_BookingCancel', 'value' => '0', 'description' => 'Mã tình trạng đăng ký (registration_status_id) cập nhật cho booking khi hủy BK (0: giữ nguyên tình trạng cũ, khác 0: lưu theo giá trị của thông số, VD: 28)', 'is_visible' => true],
         ];
 
         foreach ($configs as $cfg) {

@@ -1665,14 +1665,22 @@ class BookingController extends Controller
                 ]);
             }
 
+            // Section 18: Thông số RegistrationStatusId_BookingCancel
+            // Nếu giá trị khác 0: Bookings.registration_status_id lưu theo giá trị của thông số (VD: 28)
+            // Nếu thông số = 0: giữ nguyên không thay đổi Bookings.registration_status_id
             $configuredStatusId = HotelConfig::where('name', 'RegistrationStatusId_BookingCancel')->value('value');
-            $configuredStatus = is_numeric($configuredStatusId) && (int) $configuredStatusId !== 0
-                ? RegistrationStatus::where('booking_status_id', (int) $configuredStatusId)->first()
-                : null;
+            $newRegistrationStatusId = $booking->registration_status_id;
+
+            if ($configuredStatusId !== null && $configuredStatusId !== '' && is_numeric($configuredStatusId)) {
+                $statusVal = (int) $configuredStatusId;
+                if ($statusVal !== 0) {
+                    $newRegistrationStatusId = $statusVal;
+                }
+            }
 
             $booking->update([
                 'status'                 => Booking::STATUS_DELETED,
-                'registration_status_id' => $configuredStatus?->booking_status_id ?? $booking->registration_status_id,
+                'registration_status_id' => $newRegistrationStatusId,
                 'updated_by'             => $currentUsername,
             ]);
         });
