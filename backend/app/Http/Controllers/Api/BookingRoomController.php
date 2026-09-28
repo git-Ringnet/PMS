@@ -426,8 +426,9 @@ class BookingRoomController extends Controller
             || array_key_exists('is_day_use', $validated);
         $this->bookingRoomLifecycleService->synchronize(
             $bookingRoom->fresh(),
-            array_key_exists('rate', $validated) && $validated['rate'] !== null,
+            false,
             $stayPeriodChanged,
+            false,
         );
 
         // Sync header booking nếu ngày phòng vượt ra ngoài header
@@ -566,9 +567,9 @@ class BookingRoomController extends Controller
                     $this->upsertExtraBedServices($room->fresh());
                     $this->bookingRoomLifecycleService->synchronize(
                         $room->fresh(),
-                        $request->filled('rate'),
+                        false,
                         $request->filled('departure_date'),
-                        $request->filled('departure_date'),
+                        false,
                     );
                 } else {
                     // Reservation room: can update everything
@@ -600,10 +601,9 @@ class BookingRoomController extends Controller
                     $this->upsertExtraBedServices($room->fresh());
                     $this->bookingRoomLifecycleService->synchronize(
                         $room->fresh(),
-                        $request->filled('rate'),
+                        false,
                         $request->filled('arrival_date') || $request->filled('departure_date'),
-                        $request->filled('arrival_date')
-                            || $request->filled('departure_date'),
+                        false,
                     );
                 }
 

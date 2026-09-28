@@ -18,6 +18,30 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-28] - Khắc phục tính năng Cập nhật nhanh nhiều phòng (QuickUpdate)
+### Module: Đặt phòng / Cập nhật nhanh nhiều phòng ([QuickUpdateModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/QuickUpdateModal.vue), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php))
+
+- **Yêu cầu nghiệp vụ & Giải pháp**:
+  1. **Form Cập nhật nhanh mặc định để trống toàn bộ thông tin ([QuickUpdateModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/QuickUpdateModal.vue))**:
+     - Form mở lên xóa sạch toàn bộ các trường, không lấy trước dữ liệu từ phòng đầu tiên (tránh làm ghi đè thông tin khác của các phòng được chọn chung).
+     - Thay thế picker giờ bằng native time input độc lập bắt đầu từ rỗng (`--:--`), không tự áp đặt mặc định 14:00/12:00.
+     - Thêm placeholder trực quan cho các ô giá, người lớn, trẻ em, giường phụ: `"Để trống nếu không đổi"`, `"Không đổi"`.
+     - Bổ sung xác thực chặn lưu khi chưa nhập bất kỳ trường thông tin nào: cảnh báo *"Vui lòng nhập ít nhất một thông tin cần cập nhật."*.
+  2. **Chặn thao tác khi chưa chọn phòng ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))**:
+     - Khi chưa tích chọn phòng nào (`selectedRows.length === 0` hoặc danh sách phòng chọn không thuộc tab hiện tại), bấm "Cập nhật" trên thanh Chức năng lập tức hiển thị thông báo toast: *"Vui lòng chọn phòng để cập nhật."*, tuyệt đối không mở modal cập nhật hay modal thông tin đăng ký.
+     - Tự động xóa danh sách phòng đang chọn (`selectedRows.value = []`) khi người dùng chuyển đổi tab booking (`watch(activeTabId)`), tránh lưu vết ID phòng từ tab trước.
+  3. **Cập nhật giá phòng KHÔNG insert / update vào `booking_room_services` ([BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php))**:
+     - Áp dụng triệt để cho cả 2 API: cập nhật phòng đơn lẻ (`update`) và cập nhật nhanh nhiều phòng (`bulkUpdate`).
+     - Khi cập nhật giá phòng, chỉ cập nhật giá trị ở 2 cột `rate` và `base_price` trên bảng `booking_rooms`.
+     - Tắt cờ `$replaceRoomRates = false` và `$synchronizeRoomCharges = false` khi gọi `BookingRoomLifecycleService::synchronize`, không sinh mới và không ghi đè giá vào bảng `booking_room_services`.
+- **Kiểm thử**:
+  - Chạy test suite tự động bao phủ 3 kịch bản:
+    1. Cập nhật phòng đơn lẻ: `rate` và `base_price` đổi, số lượng bản ghi RM trong `booking_room_services` giữ nguyên.
+    2. Cập nhật hàng loạt nhiều phòng: toàn bộ phòng cập nhật `rate`/`base_price`, không bản ghi RM nào bị insert thêm.
+    3. Phòng mới tạo không có RM service: cập nhật giá xong vẫn giữ nguyên 0 service, không bị tự ý sinh bản ghi RM.
+  - Kết quả cả 3 test cases đều PASSED 100%.
+  - Build frontend `npm run build` thành công 100%.
+
 ## [2026-09-28] - Cải tiến màn hình Thông tin khách (Guest Information)
 ### Module: Đặt phòng / Thông tin khách ([GuestInfoModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestInfoModal.vue), [GuestDetailModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/GuestDetailModal.vue), [GuestController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/GuestController.php))
 

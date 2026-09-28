@@ -2046,6 +2046,7 @@ watch(() => route.query, async (newQuery) => {
 
 watch(activeTabId, (newId, oldId) => {
   if (newId !== oldId) {
+    selectedRows.value = []
     loadActiveBookingNotifications()
   }
 })
@@ -4857,17 +4858,21 @@ async function triggerAction(actionName) {
     })
   } else if (actionName === 'Cập nhật') {
     const tab = activeTab.value
-    if (tab && selectedRows.value.length > 0) {
-      const selectedRooms = tab.rooms.filter(r => selectedRows.value.includes(r.id))
-      const validRooms = selectedRooms.filter(r => r.status !== 2 && r.status !== 3 && r.status !== 'Checked Out' && r.status !== 'Cancelled')
-      if (validRooms.length === 0) {
-        uiStore.showToast('Chỉ cho phép cập nhật nhanh các phòng ở trạng thái Đăng ký hoặc Đang ở!', 'warning')
-        return
-      }
-      isQuickUpdateModalOpen.value = true
-    } else {
+    if (!tab || !selectedRows.value || selectedRows.value.length === 0) {
       uiStore.showToast('Vui lòng chọn phòng để cập nhật.', 'warning')
+      return
     }
+    const selectedRooms = tab.rooms.filter(r => selectedRows.value.includes(r.id))
+    if (selectedRooms.length === 0) {
+      uiStore.showToast('Vui lòng chọn phòng để cập nhật.', 'warning')
+      return
+    }
+    const validRooms = selectedRooms.filter(r => r.status !== 2 && r.status !== 3 && r.status !== 'Checked Out' && r.status !== 'Cancelled')
+    if (validRooms.length === 0) {
+      uiStore.showToast('Chỉ cho phép cập nhật nhanh các phòng ở trạng thái Đăng ký hoặc Đang ở!', 'warning')
+      return
+    }
+    isQuickUpdateModalOpen.value = true
   } else if (actionName === 'Thông tin đăng ký') {
     openEditModal()
   } else if (actionName === 'Thông báo') {
