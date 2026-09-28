@@ -18,6 +18,24 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-28] - Khắc phục spam thông báo & tự động lưu khi sửa Thêm giường trên màn hình Đăng ký
+### Module: Đặt phòng / Sửa Booking / Thêm giường ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))
+
+- **Bối cảnh & Nguyên nhân lỗi**:
+  - Khi bấm "Sửa" Booking trên thanh chức năng, người dùng thao tác nhập số lượng thêm giường (`extraBedQty`) hoặc giá thêm giường (`extraBedPrice`).
+  - Trước đây: cả 2 ô input đều bắt sự kiện `@input` và gọi trực tiếp API `PUT /bookings/.../rooms/...` kèm vòng lặp `POST /booking-rooms/.../services` theo từng ký tự gõ phím.
+  - Hậu quả: mỗi ký tự gõ vào (ví dụ gõ giá 30,000) gửi 5 request song song và hiển thị dồn dập hàng loạt thông báo *"Đang lưu thông tin Thêm giường..."* và *"Cập nhật Thêm giường thành công!"* che kín màn hình (như hình phản ánh của khách). Đồng thời gây sai lệch cơ chế "Quay lại" (hủy sửa) vì dữ liệu đã bị ghi sớm vào database.
+- **Nghiệp vụ đã xử lý**:
+  - Bỏ hoàn toàn việc gọi API ghi sớm và bỏ spam toast trong các hàm `handleInlineExtraBedQtyChange` và `handleInlineExtraBedRateChange`.
+  - Toàn bộ thao tác sửa số lượng và giá thêm giường được tính toán cập nhật mượt mà trong bộ nhớ (`room.dailyExtraBeds`, `room.services`, `room.total`).
+  - Chuẩn hóa hàm `getRoomExtraBedQty` và `getRoomExtraBedTotal`: khi người dùng đưa số lượng thêm giường về `0`, tổng tiền thêm giường lập tức về `0` chính xác, không bị ảnh hưởng bởi dịch vụ cũ.
+  - Khi người dùng bấm nút **Lưu** (trên thanh chức năng) và xác nhận lưu: toàn bộ thông tin đăng ký cùng số lượng, giá và chi tiết thêm giường được đồng bộ lưu xuống Database qua API `updateBooking` một lần duy nhất với 1 thông báo thành công.
+  - Thêm nút mũi tên lên/xuống (stepper carets) cho cả 2 ô:
+    - Ô **Thêm giường**: bấm nút lên tăng dần 1 đơn vị (+1), nút xuống giảm dần 1 đơn vị (-1, min 0).
+    - Ô **Giá thêm giường**: bấm nút lên tăng dần 50,000đ (+50,000), nút xuống giảm dần 50,000đ (-50,000, min 0). Tự động đặt số lượng = 1 nếu đang tăng giá khi số lượng = 0.
+- **Kiểm thử**:
+  - Build frontend `npm run build` thành công 100%.
+
 ## [2026-09-28] - Lưu đồng thời thông tin đăng ký và phòng mới trên màn hình Đăng ký
 ### Module: Đặt phòng / Sửa và thêm phòng ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))
 

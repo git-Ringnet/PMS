@@ -1068,7 +1068,7 @@ function getChildBreakfastDisplayName(svc) {
   return isChildBreakfastService(svc) ? name.replace(':', ' -') : name
 }
 
-async function handleInlineExtraBedQtyChange(room) {
+function handleInlineExtraBedQtyChange(room) {
   const qty = Number(room.extraBedQty) || 0
   
   if (qty > 0) {
@@ -1114,47 +1114,25 @@ async function handleInlineExtraBedQtyChange(room) {
     }
   }
   room.dailyExtraBeds = dailyRates
-  room.total = calculateRoomTotal(room)
 
-  // 2. Cập nhật Database nếu đã lưu
-  if (room.bookingRoomId && !String(room.bookingRoomId).startsWith('temp-')) {
-    try {
-      uiStore.showToast('Đang lưu thông tin Thêm giường...', 'info')
-      
-      // 2.1 Cập nhật booking_rooms
-      await http.put(`/bookings/${activeTab.value.dbId}/rooms/${room.bookingRoomId}`, {
-        extra_bed_qty: qty,
-        extra_bed_rate: rate
+  // Đồng bộ mảng room.services cho EB trong memory
+  if (room.services && Array.isArray(room.services)) {
+    if (qty <= 0) {
+      room.services = room.services.filter(s => s.service_code !== 'EB')
+    } else {
+      room.services.forEach(s => {
+        if (s.service_code === 'EB') {
+          s.quantity = qty
+          s.rate = rate
+        }
       })
-
-      // 2.2 Cập nhật booking_room_services
-      for (const d of dailyRates) {
-        await http.post(`/booking-rooms/${room.bookingRoomId}/services`, {
-          service_code: getHotelServiceCode('EB'),
-          service_name: getHotelServiceName('EB', 'Extra Bed'),
-          service_date: d.dateStr,
-          quantity: d.quantity,
-          rate: d.rate,
-          is_room: d.isRoom ? 1 : 0
-        })
-      }
-
-      const freshRes = await fetchBookingRoomServices(room.bookingRoomId)
-      room.services = (freshRes.data?.data || []).map(s => ({
-        ...s,
-        service_date: cleanDateStr(s.service_date)
-      }))
-      room.total = calculateRoomTotal(room)
-      notifyRoomUpdates(activeTab.value?.dbId)
-      uiStore.showToast('Cập nhật Thêm giường thành công!', 'success')
-    } catch (err) {
-      console.error(err)
-      uiStore.showToast('Không thể cập nhật Thêm giường vào hệ thống!', 'error')
     }
   }
+
+  room.total = calculateRoomTotal(room)
 }
 
-async function handleInlineExtraBedRateChange(room) {
+function handleInlineExtraBedRateChange(room) {
   const qty = Number(room.extraBedQty) || 0
   const rate = Number(room.extraBedPrice) || 0
 
@@ -1188,44 +1166,33 @@ async function handleInlineExtraBedRateChange(room) {
     }
   }
   room.dailyExtraBeds = dailyRates
-  room.total = calculateRoomTotal(room)
 
-  // 2. Cập nhật Database nếu đã lưu
-  if (room.bookingRoomId && !String(room.bookingRoomId).startsWith('temp-')) {
-    try {
-      uiStore.showToast('Đang lưu thông tin Thêm giường...', 'info')
-      
-      // 2.1 Cập nhật booking_rooms
-      await http.put(`/bookings/${activeTab.value.dbId}/rooms/${room.bookingRoomId}`, {
-        extra_bed_qty: qty,
-        extra_bed_rate: rate
-      })
-
-      // 2.2 Cập nhật booking_room_services
-      for (const d of dailyRates) {
-        await http.post(`/booking-rooms/${room.bookingRoomId}/services`, {
-          service_code: getHotelServiceCode('EB'),
-          service_name: getHotelServiceName('EB', 'Extra Bed'),
-          service_date: d.dateStr,
-          quantity: d.quantity,
-          rate: d.rate,
-          is_room: d.isRoom ? 1 : 0
-        })
+  if (room.services && Array.isArray(room.services)) {
+    room.services.forEach(s => {
+      if (s.service_code === 'EB') {
+        s.rate = rate
       }
-
-      const freshRes = await fetchBookingRoomServices(room.bookingRoomId)
-      room.services = (freshRes.data?.data || []).map(s => ({
-        ...s,
-        service_date: cleanDateStr(s.service_date)
-      }))
-      room.total = calculateRoomTotal(room)
-      notifyRoomUpdates(activeTab.value?.dbId)
-      uiStore.showToast('Cập nhật Thêm giường thành công!', 'success')
-    } catch (err) {
-      console.error(err)
-      uiStore.showToast('Không thể cập nhật Thêm giường vào hệ thống!', 'error')
-    }
+    })
   }
+
+  room.total = calculateRoomTotal(room)
+}
+
+function stepExtraBedQty(room, delta) {
+  const current = Number(room.extraBedQty) || 0
+  const next = Math.max(0, current + delta)
+  room.extraBedQty = next
+  handleInlineExtraBedQtyChange(room)
+}
+
+function stepExtraBedPrice(room, delta) {
+  const current = Number(room.extraBedPrice) || 0
+  const next = Math.max(0, current + delta)
+  room.extraBedPrice = next
+  if (next > 0 && (!room.extraBedQty || Number(room.extraBedQty) === 0)) {
+    room.extraBedQty = 1
+  }
+  handleInlineExtraBedRateChange(room)
 }
 
 async function handleInlineServiceDelete(room, svc) {
@@ -1544,7 +1511,9 @@ function getServicesTotal(room) {
 
 function getRoomExtraBedQty(room) {
   if (!room) return 0
-  if (Number(room.extraBedQty) > 0) return Number(room.extraBedQty)
+  if (room.extraBedQty !== undefined && room.extraBedQty !== null && room.extraBedQty !== '') {
+    return Number(room.extraBedQty) || 0
+  }
   if (room.dailyExtraBeds && Array.isArray(room.dailyExtraBeds) && room.dailyExtraBeds.length > 0) {
     const maxQty = Math.max(...room.dailyExtraBeds.map(d => Number(d.quantity) || 0))
     if (maxQty > 0) return maxQty
@@ -1561,6 +1530,9 @@ function getRoomExtraBedQty(room) {
 
 function getRoomExtraBedTotal(room) {
   if (!room) return 0
+  const qty = getRoomExtraBedQty(room)
+  if (qty <= 0) return 0
+
   if (room.dailyExtraBeds && Array.isArray(room.dailyExtraBeds) && room.dailyExtraBeds.length > 0) {
     const sum = room.dailyExtraBeds.reduce((s, d) => s + (Number(d.total) || (Number(d.quantity || 0) * Number(d.rate || 0))), 0)
     if (sum > 0) return sum
@@ -1577,8 +1549,7 @@ function getRoomExtraBedTotal(room) {
   }
   const nights = Number(room.nights) || 1
   const extraBedPrice = Number(room.extraBedPrice) || 0
-  const extraBedQty = Number(room.extraBedQty) || 0
-  return extraBedPrice * extraBedQty * nights
+  return extraBedPrice * qty * nights
 }
 
 function getRoomChargeTotal(room) {
@@ -6523,15 +6494,20 @@ defineExpose({
                           </select>
                         </template>
                         <template v-else-if="col.key === 'extraBed'">
-                          <div v-if="isEditing" class="relative inline-flex items-center justify-center mx-auto" @click.stop>
+                          <div v-if="isEditing" class="relative w-full min-w-[45px] max-w-[55px] mx-auto border border-slate-300 rounded-md h-[26px] bg-white shadow-sm flex items-center" @click.stop>
                             <input 
                               type="number" 
                               v-model.number="room.extraBedQty" 
                               min="0"
                               max="10"
                               @input="handleInlineExtraBedQtyChange(room)"
-                              class="w-12 h-6 text-center border border-slate-300 rounded px-1 text-[11px] font-semibold text-slate-800 bg-white shadow-sm focus:outline-none"
+                              @focus="$event.target.select()"
+                              class="w-full text-center pr-3 focus:outline-none text-[11px] font-semibold text-slate-800 bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             />
+                            <div class="flex flex-col text-slate-800 absolute right-1 top-0 bottom-0 justify-center items-center w-3 select-none">
+                              <button @click.prevent="stepExtraBedQty(room, 1)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0" title="Tăng số lượng"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
+                              <button @click.prevent="stepExtraBedQty(room, -1)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0" title="Giảm số lượng"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
+                            </div>
                           </div>
                           <div v-else class="flex items-center justify-center gap-1">
                             <span class="font-bold text-slate-700 text-[11px]">{{ getRoomExtraBedQty(room) }}</span>
@@ -6541,14 +6517,18 @@ defineExpose({
                           </div>
                         </template>
                         <template v-else-if="col.key === 'extraBedPrice'">
-                          <div v-if="isEditing" class="relative inline-flex items-center justify-center w-full" @click.stop>
+                          <div v-if="isEditing" class="relative w-full border border-slate-300 rounded-md h-[26px] bg-white shadow-sm flex items-center" @click.stop>
                             <input 
                               type="text" 
                               :value="formatCurrencyInput(room.extraBedPrice)"
                               @input="e => { room.extraBedPrice = cleanCurrencyValue(e.target.value); handleInlineExtraBedRateChange(room) }"
                               @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
-                              class="w-full h-6 text-right border border-slate-300 rounded px-1.5 text-[11px] font-semibold text-slate-800 bg-white shadow-sm focus:outline-none"
+                              class="w-full h-full text-right pr-4 pl-1 text-[11px] font-semibold text-slate-800 bg-transparent border-none outline-none focus:outline-none"
                             />
+                            <div class="flex flex-col text-slate-800 absolute right-1 top-0 bottom-0 justify-center items-center w-3 select-none">
+                              <button @click.prevent="stepExtraBedPrice(room, 50000)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0" title="+50,000"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
+                              <button @click.prevent="stepExtraBedPrice(room, -50000)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0" title="-50,000"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
+                            </div>
                           </div>
                           <span v-else class="text-gray-900 font-semibold" :title="`Tổng thêm giường: ${formatCurrencyInput(getRoomExtraBedTotal(room))}`">{{ getRoomExtraBedQty(room) > 0 ? formatCurrencyInput(room.extraBedPrice) : '' }}</span>
                         </template>
@@ -7192,15 +7172,20 @@ defineExpose({
                                   </select>
                                 </template>
                                 <template v-else-if="col.key === 'extraBed'">
-                                  <div v-if="isEditing" class="relative inline-flex items-center justify-center mx-auto" @click.stop>
+                                  <div v-if="isEditing" class="relative w-full min-w-[45px] max-w-[55px] mx-auto border border-slate-300 rounded-md h-[26px] bg-white shadow-sm flex items-center" @click.stop>
                                     <input 
                                       type="number" 
                                       v-model.number="room.extraBedQty" 
                                       min="0"
                                       max="10"
                                       @input="handleInlineExtraBedQtyChange(room)"
-                                      class="w-12 h-6 text-center border border-slate-300 rounded px-1 text-[11px] font-semibold text-slate-800 bg-white shadow-sm focus:outline-none"
+                                      @focus="$event.target.select()"
+                                      class="w-full text-center pr-3 focus:outline-none text-[11px] font-semibold text-slate-800 bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                     />
+                                    <div class="flex flex-col text-slate-800 absolute right-1 top-0 bottom-0 justify-center items-center w-3 select-none">
+                                      <button @click.prevent="stepExtraBedQty(room, 1)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0" title="Tăng số lượng"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
+                                      <button @click.prevent="stepExtraBedQty(room, -1)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0" title="Giảm số lượng"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
+                                    </div>
                                   </div>
                                   <div v-else class="flex items-center justify-center gap-1">
                                     <span class="font-bold text-slate-700 text-[11px]">{{ getRoomExtraBedQty(room) }}</span>
@@ -7210,14 +7195,18 @@ defineExpose({
                                   </div>
                                 </template>
                                 <template v-else-if="col.key === 'extraBedPrice'">
-                                  <div v-if="isEditing" class="relative inline-flex items-center justify-center w-full" @click.stop>
+                                  <div v-if="isEditing" class="relative w-full border border-slate-300 rounded-md h-[26px] bg-white shadow-sm flex items-center" @click.stop>
                                     <input 
                                       type="text" 
                                       :value="formatCurrencyInput(room.extraBedPrice)"
                                       @input="e => { room.extraBedPrice = cleanCurrencyValue(e.target.value); handleInlineExtraBedRateChange(room) }"
                                       @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
-                                      class="w-full h-6 text-right border border-slate-300 rounded px-1.5 text-[11px] font-semibold text-slate-800 bg-white shadow-sm focus:outline-none"
+                                      class="w-full h-full text-right pr-4 pl-1 text-[11px] font-semibold text-slate-800 bg-transparent border-none outline-none focus:outline-none"
                                     />
+                                    <div class="flex flex-col text-slate-800 absolute right-1 top-0 bottom-0 justify-center items-center w-3 select-none">
+                                      <button @click.prevent="stepExtraBedPrice(room, 50000)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0" title="+50,000"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
+                                      <button @click.prevent="stepExtraBedPrice(room, -50000)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0" title="-50,000"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
+                                    </div>
                                   </div>
                                   <span v-else class="text-gray-900 font-semibold" :title="`Tổng thêm giường: ${formatCurrencyInput(getRoomExtraBedTotal(room))}`">{{ getRoomExtraBedQty(room) > 0 ? formatCurrencyInput(room.extraBedPrice) : '' }}</span>
                                 </template>
