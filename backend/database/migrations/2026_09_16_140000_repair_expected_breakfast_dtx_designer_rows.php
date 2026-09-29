@@ -20,7 +20,7 @@ return new class extends Migration
         }
         $now = now();
 
-        foreach (['mysql', 'mysql_hkt1', 'mysql_hkt2', 'mysql_hkt3', 'mysql_hkt4'] as $connectionName) {
+        foreach ([DB::getDefaultConnection()] as $connectionName) {
             $connection = DB::connection($connectionName);
             if ($connection->getDriverName() !== 'mysql') {
                 continue;

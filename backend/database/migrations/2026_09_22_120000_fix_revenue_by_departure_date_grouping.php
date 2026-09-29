@@ -10,10 +10,7 @@ return new class extends Migration
         $migration = require database_path('migrations/2026_09_22_100000_create_revenue_reports_150_151_158.php');
         $visitedDatabases = [];
 
-        foreach (array_values(array_unique(array_merge(
-            [config('database.default', 'mysql')],
-            array_values(config('database_domains.branch_connections', []))
-        ))) as $connectionName) {
+        foreach ([DB::getDefaultConnection()] as $connectionName) {
             $db = DB::connection($connectionName);
             if ($db->getDriverName() !== 'mysql') {
                 continue;

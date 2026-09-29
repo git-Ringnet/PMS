@@ -630,8 +630,8 @@ SQL);
             array_merge($detailData, ['created_at' => $now])
         );
 
-        // Sync templates across all PMS connections
-        foreach (['mysql', 'mysql_hkt1', 'mysql_hkt2', 'mysql_hkt3', 'mysql_hkt4'] as $conn) {
+        // Sync templates on the database targeted by this migration
+        foreach ([DB::getDefaultConnection()] as $conn) {
             try {
                 if (DB::connection($conn)->getDriverName() === 'mysql') {
                     $tenantSourceId = DB::connection($conn)->table('report_data_sources')->where('code', self::SOURCE)->value('id') ?: $sourceId;

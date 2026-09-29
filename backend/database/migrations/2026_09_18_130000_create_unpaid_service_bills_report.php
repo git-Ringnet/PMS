@@ -5,7 +5,6 @@ use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
-    private const CONNECTIONS = ['mysql', 'mysql_hkt1', 'mysql_hkt2', 'mysql_hkt3', 'mysql_hkt4'];
     private const SOURCE = 'RPT_UNPAID_SERVICE_BILLS';
     private const REPORT = 'UNPAID_SERVICE_BILLS';
     private const TEMPLATE = 'UNPAID_SERVICE_BILLS_REFERENCE';
@@ -14,7 +13,7 @@ return new class extends Migration
     {
         $visitedDatabases = [];
 
-        foreach (self::CONNECTIONS as $conn) {
+        foreach ([DB::getDefaultConnection()] as $conn) {
             try {
                 if (DB::connection($conn)->getDriverName() !== 'mysql') {
                     continue;
@@ -33,7 +32,7 @@ return new class extends Migration
                 // 2. Sync report metadata and templates
                 $this->syncReportConfiguration($conn);
             } catch (\Throwable $e) {
-                // Continue for other branches
+                // Preserve best-effort handling for this target database.
             }
         }
     }

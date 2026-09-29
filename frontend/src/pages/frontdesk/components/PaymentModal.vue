@@ -1,6 +1,6 @@
 <script setup>
 import { ref, watch, computed, onMounted } from 'vue'
-import { X, Plus, Clock, Save, Inbox, Trash2 } from '@lucide/vue'
+import { X, Plus, Save, Inbox, Trash2, CalendarDays } from '@lucide/vue'
 import http from '@/services/http'
 import { settleBookingPayment } from '@/services/booking-service'
 import { fetchBankAccounts as fetchConfiguredBankAccounts } from '@/services/company-service'
@@ -75,10 +75,16 @@ const bankAccountOptions = ref([])
 const selectedBankAccount = ref('')
 
 const currency = ref('VND')
-const workShift = ref('1')
+const workShift = ref('')
 const timeStr = ref(nowTimeStr())
+const lastValidTimeStr = ref(timeStr.value)
+const shiftTimeError = ref('')
 const dateStr = ref(props.systemDate || todayDateStr())
-const shiftTimeTouched = ref(false)
+const draftPaymentDate = ref(dateStr.value)
+const shiftLoadState = ref('idle')
+const paymentDateInput = ref(null)
+const paymentDateError = ref('')
+const paymentDateRangeError = 'Ngày không hợp lệ'
 const department = ref('FO')
 
 const payAmountNum = ref(0)
@@ -111,6 +117,21 @@ const latestPaymentDate = computed(() => {
   const limits = [stayEndDate.value, normalizeDate(props.systemDate) || todayDateStr()].filter(Boolean)
   return limits.sort()[0] || ''
 })
+const paymentDateRangeAvailable = computed(() => (
+  !stayStartDate.value || !latestPaymentDate.value || stayStartDate.value <= latestPaymentDate.value
+))
+function openPaymentDatePicker() {
+  const input = paymentDateInput.value
+  if (!input) return
+  input.focus()
+  if (typeof input.showPicker === 'function') {
+    try {
+      input.showPicker()
+      return
+    } catch {}
+  }
+  input.focus()
+}
 
 function isPaymentDateAllowed(value) {
   const date = normalizeDate(value)
@@ -118,6 +139,20 @@ function isPaymentDateAllowed(value) {
     && (!stayStartDate.value || date >= stayStartDate.value)
     && (!stayEndDate.value || date <= stayEndDate.value)
     && date <= (normalizeDate(props.systemDate) || todayDateStr())
+}
+
+function validatePaymentDateInput(event) {
+  const candidate = normalizeDate(event?.target?.value ?? draftPaymentDate.value)
+  if (!isPaymentDateAllowed(candidate)) {
+    draftPaymentDate.value = dateStr.value
+    if (event?.target) event.target.value = dateStr.value
+    paymentDateError.value = paymentDateRangeError
+    return false
+  }
+  dateStr.value = candidate
+  draftPaymentDate.value = candidate
+  paymentDateError.value = ''
+  return true
 }
 
 function formatMoney(num) {
@@ -156,6 +191,11 @@ const selectedBankAccountDetails = computed(() => bankAccountOptions.value.find(
 const netTotalAmount = computed(() => {
   return (Number(props.totalServiceAmount) || 0) - (Number(props.totalDepositAmount) || 0)
 })
+const isZeroBalanceSettlement = computed(() => (
+  Math.abs(netTotalAmount.value) <= 0.01
+  && Number(props.totalServiceAmount) > 0
+  && Number(props.totalDepositAmount) > 0
+))
 
 const totalAddedInModal = computed(() => {
   return addedPayments.value.reduce((acc, item) => acc + (Number(item.amount) || 0), 0)
@@ -222,63 +262,106 @@ function inGroupExcluded(m) {
 
 const workShiftsList = ref([])
 
-function getAutoWorkShift(timeStrVal) {
-  const time = timeStrVal || nowTimeStr()
-  const matchingShift = workShiftsList.value.find(shift => timeMatchesShift(time, shift))
-  if (matchingShift) return String(matchingShift.id ?? matchingShift.name)
-
-  const hour = parseInt(time.slice(0, 2), 10) || 0
-  if (hour >= 6 && hour < 14) return '1'
-  if (hour >= 14 && hour < 22) return '2'
-  return '3'
+function normalizeShiftTime(value) {
+  const match = String(value || '').match(/^([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?$/)
+  return match ? `${match[1]}:${match[2]}` : ''
 }
 
+function shiftMinuteOfDay(value) {
+  const normalized = normalizeShiftTime(value)
+  if (!normalized) return null
+  const [hours, minutes] = normalized.split(':').map(Number)
+  return hours * 60 + minutes
+}
+
+const selectedWorkShift = computed(() => workShiftsList.value.find(
+  item => String(item.id ?? item.name) === String(workShift.value)
+))
+const shiftTimeMin = computed(() => {
+  const shift = selectedWorkShift.value
+  const start = normalizeShiftTime(shift?.start_time)
+  const end = normalizeShiftTime(shift?.end_time)
+  return start && start !== end ? start : undefined
+})
+const shiftTimeMax = computed(() => {
+  const start = shiftMinuteOfDay(selectedWorkShift.value?.start_time)
+  const end = shiftMinuteOfDay(selectedWorkShift.value?.end_time)
+  if (start === null || end === null || start === end) return undefined
+  const lastMinute = (end + 1439) % 1440
+  return `${String(Math.floor(lastMinute / 60)).padStart(2, '0')}:${String(lastMinute % 60).padStart(2, '0')}`
+})
+
 function timeMatchesShift(timeValue, shift) {
-  if (!shift?.start_time || !shift?.end_time || !/^\d{2}:\d{2}$/.test(timeValue || '')) return false
-  const toMinutes = (value) => {
-    const [hours, minutes] = String(value).slice(0, 5).split(':').map(Number)
-    return hours * 60 + minutes
-  }
-  const time = toMinutes(timeValue)
-  const start = toMinutes(shift.start_time)
-  const end = toMinutes(shift.end_time)
+  const time = shiftMinuteOfDay(timeValue)
+  const start = shiftMinuteOfDay(shift?.start_time)
+  const end = shiftMinuteOfDay(shift?.end_time)
+  if (time === null || start === null || end === null) return false
   if (start === end) return true
   return start < end ? time >= start && time < end : time >= start || time < end
 }
 
 function isShiftTimeAllowed() {
-  if (!/^\d{2}:\d{2}$/.test(timeStr.value || '')) return false
-  if (workShiftsList.value.length === 0) return true
-  const shift = workShiftsList.value.find(item => String(item.id ?? item.name) === String(workShift.value))
-  if (!shift) return false
-  if (!shift.start_time || !shift.end_time) return true
-  return timeMatchesShift(timeStr.value, shift)
+  return shiftLoadState.value === 'ready' && Boolean(selectedWorkShift.value && timeMatchesShift(timeStr.value, selectedWorkShift.value))
 }
 
-const markShiftTimeTouched = () => {
-  shiftTimeTouched.value = true
+function syncShiftFromTime() {
+  if (shiftLoadState.value !== 'ready') return
+  const matchingShift = workShiftsList.value.find(shift => timeMatchesShift(timeStr.value, shift))
+  workShift.value = matchingShift ? String(matchingShift.id ?? matchingShift.name) : ''
+  if (matchingShift) {
+    lastValidTimeStr.value = timeStr.value
+    shiftTimeError.value = ''
+  }
 }
 
+function handleWorkShiftChange() {
+  const shift = selectedWorkShift.value
+  if (!shift) return
+  if (!timeMatchesShift(timeStr.value, shift)) timeStr.value = normalizeShiftTime(shift.start_time)
+  lastValidTimeStr.value = timeStr.value
+  shiftTimeError.value = ''
+}
+
+function handleTimeChange() {
+  if (shiftLoadState.value !== 'ready') return
+  const matchingShift = selectedWorkShift.value && timeMatchesShift(timeStr.value, selectedWorkShift.value)
+    ? selectedWorkShift.value
+    : workShiftsList.value.find(shift => timeMatchesShift(timeStr.value, shift))
+  if (!matchingShift) {
+    timeStr.value = lastValidTimeStr.value || normalizeShiftTime(selectedWorkShift.value?.start_time)
+    shiftTimeError.value = 'Giờ phải nằm trong thời gian của một ca đã cấu hình.'
+    return
+  }
+  workShift.value = String(matchingShift.id ?? matchingShift.name)
+  lastValidTimeStr.value = timeStr.value
+  shiftTimeError.value = ''
+}
+
+let shiftRequestId = 0
 const fetchWorkShifts = async () => {
+  const requestId = ++shiftRequestId
+  shiftLoadState.value = 'loading'
+  workShiftsList.value = []
+  workShift.value = ''
   try {
     const res = await http.get('/shifts')
     const list = res.data?.data || res.data || []
-    if (Array.isArray(list) && list.length > 0) {
-      workShiftsList.value = list
-      if (!shiftTimeTouched.value) {
-        const matchingShift = list.find(shift => timeMatchesShift(timeStr.value, shift))
-        if (matchingShift) {
-          workShift.value = String(matchingShift.id ?? matchingShift.name)
-        } else {
-          const firstShift = list[0]
-          workShift.value = String(firstShift.id ?? firstShift.name)
-          const firstShiftStart = String(firstShift.start_time || '').slice(0, 5)
-          if (/^\d{2}:\d{2}$/.test(firstShiftStart)) timeStr.value = firstShiftStart
-        }
-      }
+    if (requestId !== shiftRequestId) return
+    workShiftsList.value = Array.isArray(list)
+      ? list.filter(shift => normalizeShiftTime(shift?.start_time) && normalizeShiftTime(shift?.end_time))
+      : []
+    if (workShiftsList.value.length === 0) {
+      shiftLoadState.value = 'missing'
+      errorMsg.value = 'Chưa có cấu hình ca làm việc hợp lệ. Vui lòng kiểm tra mục Ca làm việc.'
+      return
     }
+    shiftLoadState.value = 'ready'
+    syncShiftFromTime()
   } catch (err) {
-    console.warn('Không thể nạp danh sách ca làm việc từ API, sử dụng ca mặc định.')
+    if (requestId !== shiftRequestId) return
+    shiftLoadState.value = 'error'
+    errorMsg.value = 'Không tải được cấu hình ca làm việc. Vui lòng thử lại trước khi thanh toán.'
+    console.warn('Không thể nạp danh sách ca làm việc từ API.')
   }
 }
 
@@ -288,10 +371,13 @@ watch(() => props.show, (visible) => {
     addedPayments.value = []
     selectedBankAccount.value = ''
     dateStr.value = props.systemDate || todayDateStr()
+    draftPaymentDate.value = dateStr.value
+    paymentDateError.value = ''
     payAmountNum.value = netTotalAmount.value
     timeStr.value = nowTimeStr()
-    shiftTimeTouched.value = false
-    workShift.value = getAutoWorkShift(timeStr.value)
+    lastValidTimeStr.value = timeStr.value
+    shiftTimeError.value = ''
+    workShift.value = ''
     fetchWorkShifts()
 
     if (paymentMethods.value.length === 0) {
@@ -300,13 +386,39 @@ watch(() => props.show, (visible) => {
       paymentMethodId.value = paymentMethods.value[0].id || paymentMethods.value[0].code
     }
   }
-})
+}, { immediate: true })
 
 watch(isBankTransfer, (bankTransfer) => {
   if (!bankTransfer) selectedBankAccount.value = ''
 })
 
 const handleAddPaymentItem = () => {
+  if (isZeroBalanceSettlement.value) {
+    if (addedPayments.value.length > 0) {
+      errorMsg.value = 'Đã có dòng chốt thanh toán 0đ.'
+      return
+    }
+
+    const selectedMethod = paymentMethods.value.find(m => String(m.id) === String(paymentMethodId.value) || String(m.code) === String(paymentMethodId.value))
+    const methodName = selectedMethod ? selectedMethod.name : 'Tiền mặt'
+    const methodCode = selectedMethod ? (selectedMethod.code || selectedMethod.id) : 'CA'
+    addedPayments.value.push({
+      id: Date.now(),
+      payment_method_id: paymentMethodId.value || 'CA',
+      method_code: methodCode,
+      method_name: methodName,
+      bank_account: '',
+      bank_account_id: null,
+      debit_account: null,
+      amount: 0,
+      currency: currency.value,
+      note: 'Thanh toán 0đ - Dùng cọc/tạm ứng'
+    })
+    payAmountNum.value = 0
+    errorMsg.value = ''
+    return
+  }
+
   if (payAmountNum.value === 0) {
     errorMsg.value = 'Vui lòng nhập số tiền thanh toán.'
     return
@@ -338,23 +450,27 @@ const handleAddPaymentItem = () => {
     note: desc
   })
 
-  payAmountNum.value = 0
+  payAmountNum.value = remainingAmount.value
   errorMsg.value = ''
 }
 
 const handleRemovePaymentItem = (index) => {
   addedPayments.value.splice(index, 1)
+  payAmountNum.value = remainingAmount.value
 }
 
 const handleSubmit = async () => {
   errorMsg.value = ''
 
-  if (!isPaymentDateAllowed(dateStr.value)) {
-    errorMsg.value = 'Ngày thanh toán phải nằm trong thời gian lưu trú và không lớn hơn ngày hệ thống.'
+  if (paymentDateError.value || !validatePaymentDateInput({ target: paymentDateInput.value })) return
+  if (shiftLoadState.value !== 'ready') {
+    errorMsg.value = shiftLoadState.value === 'loading'
+      ? 'Đang tải cấu hình ca làm việc. Vui lòng chờ.'
+      : 'Chưa có cấu hình ca làm việc hợp lệ. Vui lòng kiểm tra mục Ca làm việc.'
     return
   }
-  if (!isShiftTimeAllowed()) {
-    errorMsg.value = 'Giờ thanh toán không thuộc ca đã chọn. Vui lòng chọn lại ca hoặc giờ.'
+  if (shiftTimeError.value || !isShiftTimeAllowed()) {
+    if (!shiftTimeError.value) shiftTimeError.value = 'Giờ phải nằm trong thời gian của ca đã chọn.'
     return
   }
 
@@ -412,7 +528,8 @@ const handleSubmit = async () => {
       open_time: timeStr.value,
       shift_id: workShift.value,
       currency: currency.value,
-      department_id: 'FO'
+      department_id: 'FO',
+      ...(isZeroBalanceSettlement.value ? { zero_balance_close: true } : {})
     }
 
     const res = await settleBookingPayment(props.bookingId, payload)
@@ -509,56 +626,54 @@ onMounted(() => {
           <div class="col-span-6 space-y-2 flex flex-col justify-between">
             
             <!-- Top Inputs Row: Tiền tệ, Ca, Giờ, Ngày, Bộ phận -->
-            <div class="grid grid-cols-12 gap-2 items-end">
+            <div class="grid gap-2 items-start" style="grid-template-columns: minmax(4rem, 1fr) minmax(3.5rem, .9fr) minmax(7rem, 1.55fr) minmax(7.5rem, 1.5fr) minmax(3.5rem, .9fr)">
               <!-- Tiền tệ -->
-              <div class="col-span-3">
+              <div class="min-w-0">
                 <label class="block font-medium text-gray-700 mb-0.5 text-[10px]">Tiền tệ</label>
-                <div class="flex items-center gap-1 bg-white border border-gray-300 px-1.5 py-1 rounded">
+                <div class="h-8 box-border flex items-center gap-1 bg-white border border-gray-300 px-1.5 rounded">
                   <span class="w-3.5 h-3.5 bg-red-600 rounded-full flex items-center justify-center text-[8px] text-yellow-300 font-bold shrink-0">★</span>
-                  <select v-model="currency" class="bg-transparent font-bold text-[11px] focus:outline-none w-full">
+                  <select v-model="currency" class="h-full min-w-0 bg-transparent font-bold text-[11px] focus:outline-none w-full">
                     <option value="VND">VND</option>
                   </select>
                 </div>
               </div>
 
               <!-- Ca làm việc -->
-              <div class="col-span-2">
+              <div class="min-w-0">
                 <label class="block font-medium text-gray-700 mb-0.5 text-[10px]">Ca làm việc</label>
-                <select v-model="workShift" @change="markShiftTimeTouched" class="w-full px-1 py-1 bg-[#ffffcc] border border-gray-300 rounded font-bold text-xs focus:outline-none text-center">
-                  <template v-if="workShiftsList.length > 0">
-                    <option v-for="sh in workShiftsList" :key="sh.id" :value="String(sh.id ?? sh.name)">
-                      {{ sh.name }}
-                    </option>
-                  </template>
-                  <template v-else>
-                    <option value="1">1</option>
-                    <option value="2">2</option>
-                    <option value="3">3</option>
-                  </template>
+                <select v-model="workShift" :disabled="shiftLoadState !== 'ready'" @change="handleWorkShiftChange" class="h-8 box-border w-full min-w-0 px-1 bg-[#ffffcc] border border-gray-300 rounded font-bold text-xs focus:outline-none text-center disabled:bg-gray-100">
+                  <option value="" disabled>Chọn ca</option>
+                  <option v-for="sh in workShiftsList" :key="sh.id ?? sh.name" :value="String(sh.id ?? sh.name)">
+                    {{ sh.name }}
+                  </option>
                 </select>
               </div>
 
               <!-- Giờ -->
-              <div class="col-span-2">
+              <div class="min-w-0">
                 <label class="block font-medium text-gray-700 mb-0.5 text-[10px]">Giờ</label>
-                <div class="relative">
-                  <input type="time" v-model="timeStr" step="60" @change="markShiftTimeTouched" class="w-full pl-1 pr-5 py-1 bg-white border border-gray-300 rounded text-center font-mono text-xs font-semibold" />
-                  <Clock class="w-3 h-3 text-sky-400 absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none" />
-                </div>
+                <input type="time" v-model="timeStr" :min="shiftTimeMin" :max="shiftTimeMax" :disabled="shiftLoadState !== 'ready' || !workShift" step="60" @change="handleTimeChange" class="h-8 box-border w-full min-w-0 px-1 bg-white border border-gray-300 rounded text-center font-mono text-xs font-semibold disabled:bg-gray-100" />
+                <p v-if="shiftTimeError" class="mt-0.5 text-[9px] leading-3 text-red-600">{{ shiftTimeError }}</p>
               </div>
 
               <!-- Ngày -->
-              <div class="col-span-3">
+              <div class="min-w-0">
                 <label class="block font-medium text-gray-700 mb-0.5 text-[10px]">Ngày</label>
                 <div class="relative">
-                  <input type="date" v-model="dateStr" :min="stayStartDate || undefined" :max="latestPaymentDate || undefined" class="w-full px-1 py-1 bg-white border border-gray-300 rounded text-center text-[11px] font-mono font-semibold" />
+                  <input ref="paymentDateInput" type="date" v-model="draftPaymentDate" :min="stayStartDate || undefined" :max="latestPaymentDate || undefined" :disabled="!paymentDateRangeAvailable" :aria-invalid="Boolean(paymentDateError)" :aria-describedby="paymentDateError ? 'payment-date-error-message' : undefined" @blur="validatePaymentDateInput" @keydown.enter.prevent="validatePaymentDateInput" class="h-8 box-border w-full min-w-0 pl-1 pr-7 bg-white border border-gray-300 rounded text-center text-[11px] font-mono font-semibold disabled:bg-gray-100" />
+                  <button type="button" :disabled="!paymentDateRangeAvailable" aria-label="Mở lịch chọn ngày thanh toán" title="Chọn ngày" @click.stop="openPaymentDatePicker" class="absolute right-1 top-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded text-slate-500 hover:bg-slate-100 hover:text-sky-600 disabled:cursor-not-allowed">
+                    <CalendarDays class="h-3.5 w-3.5" />
+                  </button>
                 </div>
+                <p v-if="paymentDateError" id="payment-date-error-message" role="alert" class="mt-0.5 text-[9px] leading-3 text-red-600">
+                  {{ paymentDateError }}
+                </p>
               </div>
 
               <!-- Bộ phận -->
-              <div class="col-span-2">
+              <div class="min-w-0">
                 <label class="block font-medium text-gray-700 mb-0.5 text-[10px]">Bộ phận</label>
-                <select v-model="department" class="w-full px-1 py-1 bg-white border border-gray-300 rounded text-xs font-semibold focus:outline-none">
+                <select v-model="department" class="h-8 box-border w-full px-1 bg-white border border-gray-300 rounded text-xs font-semibold focus:outline-none">
                   <option value="FO">FO</option>
                 </select>
               </div>
@@ -573,6 +688,7 @@ onMounted(() => {
                   <input 
                     type="text" 
                     v-model="displayPayAmount" 
+                    :readonly="isZeroBalanceSettlement"
                     class="w-full px-2 py-1 bg-[#ffffcc] border border-gray-300 rounded tabular-nums font-bold text-gray-900 text-right text-sm"
                   />
                 </div>
@@ -640,7 +756,7 @@ onMounted(() => {
                 <td class="px-2.5 py-1.5 border-r border-gray-200 font-bold text-gray-800">{{ item.currency }}</td>
                 <td class="px-2.5 py-1.5 border-r border-gray-200 text-right tabular-nums font-bold text-emerald-700">{{ formatMoney(item.amount) }}</td>
                 <td class="px-2.5 py-1.5 text-center">
-                  <button @click="handleRemovePaymentItem(idx)" class="text-sky-500 hover:text-sky-700 p-1 rounded" title="Xóa dòng">
+                  <button @click="handleRemovePaymentItem(idx)" :disabled="isZeroBalanceSettlement" class="text-sky-500 hover:text-sky-700 p-1 rounded disabled:cursor-not-allowed disabled:opacity-40" title="Xóa dòng">
                     <Trash2 class="w-3.5 h-3.5" />
                   </button>
                 </td>
@@ -670,7 +786,7 @@ onMounted(() => {
 
         <button 
           @click="handleSubmit"
-          :disabled="isSubmitting"
+          :disabled="isSubmitting || shiftLoadState !== 'ready'"
           class="bg-[#0088ff] hover:bg-sky-600 text-white px-4 py-1.5 rounded flex items-center gap-1.5 font-bold shadow-xs transition-colors cursor-pointer disabled:opacity-50 text-xs"
         >
           <Save class="w-4 h-4" />

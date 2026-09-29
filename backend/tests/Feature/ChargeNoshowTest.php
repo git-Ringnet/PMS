@@ -189,4 +189,19 @@ class ChargeNoshowTest extends TestCase
             'message' => 'Phòng thuê không ở trạng thái Noshow, không thể thực hiện charge tiền.'
         ]);
     }
+
+    public function test_no_post_booking_blocks_noshow_charge_with_standard_warning(): void
+    {
+        $this->booking->update(['no_post' => true]);
+
+        $this->postJson("/api/bookings/{$this->booking->id}/rooms/{$this->room->id}/charge-noshow", [
+            'date_from' => '2026-08-04', 'date_to' => '2026-08-06',
+            'rate' => 1000000, 'auto_rate' => false,
+            'description' => 'No Post regression test',
+        ])
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Phòng đang ở trạng thái No Post. Vui lòng kiểm tra lại thông tin.');
+
+        $this->assertDatabaseCount('service_bills', 0);
+    }
 }

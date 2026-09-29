@@ -18,6 +18,7 @@
               <span class="font-bold text-slate-800 shrink-0">{{ selectedOption.roomNumber }}</span>
               <span class="text-slate-300">·</span>
               <span class="text-slate-700 truncate font-normal">{{ selectedOption.guestName }}</span>
+              <span v-if="selectedOption.bookingNoPost || selectedOption.roomNoPost" class="ml-1 shrink-0 rounded bg-rose-100 px-1.5 py-0.5 text-[9px] font-bold text-rose-700">No Post</span>
             </div>
             <div v-else class="text-slate-400 font-normal italic">
               -- Chọn phòng / khách --
@@ -68,6 +69,7 @@
                     <span class="font-bold text-slate-800 shrink-0">{{ opt.roomNumber }}</span>
                     <span class="text-slate-300">·</span>
                     <span class="text-slate-700 truncate" :class="opt.isPrimary ? 'font-bold' : 'font-normal'">{{ opt.guestName }}</span>
+                    <span v-if="opt.bookingNoPost || opt.roomNoPost" class="ml-auto shrink-0 rounded bg-rose-100 px-1.5 py-0.5 text-[9px] font-bold text-rose-700">No Post</span>
                   </div>
                 </div>
               </template>
@@ -127,6 +129,10 @@
         </div>
       </div>
 
+      <div v-if="isPostBlocked" class="shrink-0 border-b border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-medium text-rose-700" role="alert">
+        {{ postBlockMessage }}
+      </div>
+
       <!-- MAIN BODY GRID (330px Left | 1fr Right) -->
       <div class="modal-body flex-1 grid grid-cols-1 md:grid-cols-[330px_1fr] overflow-hidden">
         
@@ -171,6 +177,8 @@
                     :key="p.id"
                     @click="addToCart(p)"
                     class="product-item flex items-center gap-2.5 px-3.5 py-2 cursor-pointer border-b border-slate-100 hover:bg-blue-50 transition-colors select-none"
+                    :class="{ 'pointer-events-none cursor-not-allowed opacity-45': isPostBlocked }"
+                    :aria-disabled="isPostBlocked"
                   >
                     <div class="product-thumb w-8.5 h-8.5 rounded-md bg-slate-50 border border-slate-200 flex items-center justify-center text-base shrink-0 overflow-hidden">
                       <img v-if="p.image" :src="p.image" class="w-full h-full object-cover" />
@@ -182,7 +190,8 @@
                     </div>
                     <button 
                       @click.stop="addToCart(p)"
-                      class="product-add w-6 h-6 rounded-full bg-[#1a6b8a] hover:bg-[#155a76] text-white border-none text-base cursor-pointer flex items-center justify-center shrink-0 transition-colors leading-none"
+                      :disabled="isPostBlocked"
+                      class="product-add w-6 h-6 rounded-full bg-[#1a6b8a] hover:bg-[#155a76] text-white border-none text-base cursor-pointer flex items-center justify-center shrink-0 transition-colors leading-none disabled:cursor-not-allowed disabled:opacity-40"
                       title="Thêm"
                     >
                       +
@@ -333,7 +342,7 @@
           <button @click="undoCart" class="btn btn-cancel h-9 px-4 rounded border border-rose-700 !bg-rose-600 hover:!bg-rose-700 !text-white text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1.5 shadow-xs">
             <span>↩ Undo</span>
           </button>
-          <button @click="sendToRoom" :disabled="isSending" class="btn btn-save h-9 px-5 rounded !bg-[#1a6b8a] hover:!bg-[#155a76] !text-white text-xs font-semibold cursor-pointer transition-colors border-none flex items-center gap-1.5 shadow-xs">
+          <button @click="sendToRoom" :disabled="isSending || isPostBlocked" class="btn btn-save h-9 px-5 rounded !bg-[#1a6b8a] hover:!bg-[#155a76] !text-white text-xs font-semibold cursor-pointer transition-colors border-none flex items-center gap-1.5 shadow-xs disabled:cursor-not-allowed disabled:opacity-50">
             <span v-if="isSending" class="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
             <span>💾 Gửi về phòng</span>
           </button>
@@ -388,9 +397,15 @@ const emit = defineEmits(['close', 'success'])
 
 const uiStore = useUiStore()
 
+const isNoPostEnabled = value => value === true || value === 1 || ['1', 'true', 'yes'].includes(String(value ?? '').trim().toLowerCase())
+
 const bookingGroups = ref([])
 const roomGuestOptions = ref([])
 const selectedOption = ref(null)
+const isPostBlocked = computed(() => Boolean(selectedOption.value?.bookingNoPost || selectedOption.value?.roomNoPost))
+const postBlockMessage = computed(() => selectedOption.value?.bookingNoPost
+  ? 'Booking đang bật No Post — không thể thêm hoặc gửi dịch vụ.'
+  : 'Phòng đang bật No Post — không thể thêm hoặc gửi dịch vụ.')
 const isDropdownOpen = ref(false)
 const roomSearchQuery = ref('')
 const dropdownRef = ref(null)
@@ -557,6 +572,8 @@ const loadBookingRooms = async () => {
                   roomNumber: roomNoDisplay,
                   guestName: g.name,
                   isPrimary: g.isPrimary,
+                  bookingNoPost: isNoPostEnabled(b.no_post),
+                  roomNoPost: isNoPostEnabled(r.no_post),
                   label: `${code} · ${roomNoDisplay} · ${g.name}`
                 }
                 allOptions.push(opt)
@@ -574,6 +591,8 @@ const loadBookingRooms = async () => {
                 roomNumber: roomNoDisplay,
                 guestName: fallbackGuest,
                 isPrimary: true,
+                bookingNoPost: isNoPostEnabled(b.no_post),
+                roomNoPost: isNoPostEnabled(r.no_post),
                 label: `${code} · ${roomNoDisplay} · ${fallbackGuest}`
               }
               allOptions.push(opt)
@@ -800,6 +819,10 @@ const toggleDiscountMode = () => {
 }
 
 const addToCart = (product) => {
+  if (isPostBlocked.value) {
+    uiStore.showToast(postBlockMessage.value, 'warning')
+    return
+  }
   const existing = cart.value.find(c => c.product.id === product.id)
   if (existing) {
     existing.qty++
@@ -859,6 +882,10 @@ const refreshCart = () => {
 }
 
 const sendToRoom = async () => {
+  if (isPostBlocked.value) {
+    uiStore.showToast(postBlockMessage.value, 'warning')
+    return
+  }
   if (!form.value.roomId) {
     uiStore.showToast('Vui lòng chọn phòng trước khi gửi.', 'warning')
     return

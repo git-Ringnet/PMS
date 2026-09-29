@@ -15,7 +15,7 @@ return new class extends Migration
 
     public function up(): void
     {
-        $connections = ['mysql', 'mysql_hkt1', 'mysql_hkt2', 'mysql_hkt3', 'mysql_hkt4'];
+        $connections = [DB::getDefaultConnection()];
 
         $summaryProvider = require database_path('report_templates/expected_breakfast_summary_reference.php');
         $detailProvider = require database_path('report_templates/expected_breakfast_detail_reference.php');
@@ -433,7 +433,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        $connections = ['mysql', 'mysql_hkt1', 'mysql_hkt2', 'mysql_hkt3', 'mysql_hkt4'];
+        $connections = [DB::getDefaultConnection()];
 
         foreach ($connections as $conn) {
             try {

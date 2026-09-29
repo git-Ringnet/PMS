@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         $visitedDatabases = [];
-        foreach ($this->branchConnections() as $connectionName) {
+        foreach ($this->targetConnections() as $connectionName) {
             $connection = DB::connection($connectionName);
             if ($connection->getDriverName() !== 'mysql') {
                 continue;
@@ -186,7 +186,7 @@ SQL;
 
     public function down(): void
     {
-        foreach ($this->branchConnections() as $connectionName) {
+        foreach ($this->targetConnections() as $connectionName) {
             $connection = DB::connection($connectionName);
             if ($connection->getDriverName() !== 'mysql') {
                 continue;
@@ -204,12 +204,9 @@ SQL;
         }
     }
 
-    private function branchConnections(): array
+    private function targetConnections(): array
     {
-        return array_values(array_unique(array_merge(
-            [config('database.default', 'mysql')],
-            array_values(config('database_domains.branch_connections', []))
-        )));
+        return [DB::getDefaultConnection()];
     }
 
     private function syncReportConfiguration(string $connectionName): void

@@ -5,15 +5,14 @@ use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
-    private const CONNECTIONS = ['mysql', 'mysql_hkt1', 'mysql_hkt2', 'mysql_hkt3', 'mysql_hkt4'];
     private const SOURCE = 'DEPOSITS_SALE';
     private const REPORT = 'DEPOSITS_SALE';
     private const TEMPLATE = 'DEPOSITS_SALE_REFERENCE';
 
     public function up(): void
     {
-        // 1. Thêm / kích hoạt phòng ban MR (Reservation / Kinh Doanh) trên tất cả các database chi nhánh
-        foreach (self::CONNECTIONS as $conn) {
+        // 1. Thêm / kích hoạt phòng ban MR trong database đích của migration
+        foreach ([DB::getDefaultConnection()] as $conn) {
             try {
                 if (DB::connection($conn)->getDriverName() !== 'mysql') {
                     continue;
@@ -41,8 +40,8 @@ return new class extends Migration
             }
         }
 
-        // 2. Cập nhật Stored Procedure rpt_deposits_sale trên từng connection
-        foreach (self::CONNECTIONS as $conn) {
+        // 2. Cập nhật Stored Procedure rpt_deposits_sale trên database đích
+        foreach ([DB::getDefaultConnection()] as $conn) {
             try {
                 if (DB::connection($conn)->getDriverName() !== 'mysql') {
                     continue;

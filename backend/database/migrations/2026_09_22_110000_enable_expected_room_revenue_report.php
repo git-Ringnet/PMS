@@ -14,7 +14,7 @@ return new class extends Migration
         $legacyMigration = require database_path('migrations/2026_09_21_170000_create_expected_room_revenue_night_audit_report.php');
         $visitedDatabases = [];
 
-        foreach ($this->branchConnections() as $connectionName) {
+        foreach ($this->targetConnections() as $connectionName) {
             $db = DB::connection($connectionName);
             if ($db->getDriverName() !== 'mysql') {
                 continue;
@@ -46,7 +46,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        foreach ($this->branchConnections() as $connectionName) {
+        foreach ($this->targetConnections() as $connectionName) {
             $db = DB::connection($connectionName);
             if ($db->getDriverName() === 'mysql') {
                 $db->table('report_definitions')->where('code', self::REPORT)->update([
@@ -58,12 +58,9 @@ return new class extends Migration
         }
     }
 
-    private function branchConnections(): array
+    private function targetConnections(): array
     {
-        return array_values(array_unique(array_merge(
-            [config('database.default', 'mysql')],
-            array_values(config('database_domains.branch_connections', []))
-        )));
+        return [DB::getDefaultConnection()];
     }
 
     private function createMissingConfiguration($db): void

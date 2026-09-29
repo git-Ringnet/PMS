@@ -5,7 +5,6 @@ use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
-    private const CONNECTIONS = ['mysql', 'mysql_hkt1', 'mysql_hkt2', 'mysql_hkt3', 'mysql_hkt4'];
 
     public function up(): void
     {
@@ -14,7 +13,7 @@ return new class extends Migration
         }
 
         $handledDatabases = [];
-        foreach (self::CONNECTIONS as $connectionName) {
+        foreach ([DB::getDefaultConnection()] as $connectionName) {
             $connection = DB::connection($connectionName);
             if ($connection->getDriverName() !== 'mysql') {
                 continue;

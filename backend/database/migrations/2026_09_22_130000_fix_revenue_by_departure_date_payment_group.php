@@ -9,10 +9,7 @@ return new class extends Migration
     {
         $baseMigration = require database_path('migrations/2026_09_22_100000_create_revenue_reports_150_151_158.php');
 
-        $connections = array_values(array_unique(array_merge(
-            [config('database.default', 'mysql')],
-            array_values(config('database_domains.branch_connections', []))
-        )));
+        $connections = [DB::getDefaultConnection()];
 
         $visitedDatabases = [];
         foreach ($connections as $connectionName) {

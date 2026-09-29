@@ -69,6 +69,10 @@ const saving = ref(false)
 
 const rooms = computed(() => (props.booking?.roomItems || []).filter(room => [1, 2].includes(Number(room.rawRoom?.status ?? room.status))))
 const selectedRoom = computed(() => rooms.value.find(room => String(room.roomId || room.id) === String(roomId.value)))
+const isNoPostEnabled = value => value === true || value === 1 || ['1', 'true', 'yes'].includes(String(value ?? '').trim().toLowerCase())
+const bookingNoPost = computed(() => isNoPostEnabled(props.booking?.rawBooking?.no_post ?? props.booking?.no_post))
+const roomNoPost = room => bookingNoPost.value || isNoPostEnabled(room?.rawRoom?.no_post ?? room?.no_post)
+const selectedRoomNoPost = computed(() => roomNoPost(selectedRoom.value))
 
 const bookingName = computed(() => {
   if (!props.booking) return ''
@@ -232,6 +236,10 @@ watch(selectedRoom, room => {
 
 async function submit() {
   error.value = ''
+  if (bookingNoPost.value || selectedRoomNoPost.value) {
+    error.value = 'Booking hoặc phòng đang bật No Post — không thể điều chỉnh tiền phòng.'
+    return
+  }
   const dates = roomDates()
   if (!roomId.value || dates.length === 0 || rate.value < 0 || !reason.value.trim()) {
     error.value = 'Nhập đủ phòng, ngày, giá và lý do điều chỉnh.'
@@ -294,14 +302,15 @@ async function submit() {
               v-model="roomId"
               class="h-[32px] w-full rounded-[6px] border border-slate-300 bg-white px-2.5 text-[12px] text-slate-800 shadow-sm outline-none focus:border-[#0788eb]"
             >
-              <option v-for="room in rooms" :key="room.roomId || room.id" :value="String(room.roomId || room.id)">
-                Chọn: {{ room.roomNumber || room.rawRoom?.room_number || 0 }}
+              <option v-for="room in rooms" :key="room.roomId || room.id" :value="String(room.roomId || room.id)" :disabled="roomNoPost(room)">
+                Chọn: {{ room.roomNumber || room.rawRoom?.room_number || 0 }}{{ roomNoPost(room) ? ' — No Post' : '' }}
               </option>
             </select>
             <label v-if="updateRoomRate" class="mt-2 flex cursor-pointer items-center gap-1.5 text-[12px] text-slate-700 select-none">
               <input v-model="updateRoomRateScope" true-value="booking" false-value="room" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-[#0788eb] focus:ring-[#0788eb]" />
               <span>Cập nhật giá toàn bộ phòng trong booking</span>
             </label>
+            <p v-if="selectedRoomNoPost" class="mt-1 text-[10px] text-rose-600">Phòng đang chọn bật No Post nên không thể post tiền phòng.</p>
           </div>
         </div>
 

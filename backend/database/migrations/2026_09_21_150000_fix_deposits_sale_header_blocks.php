@@ -6,13 +6,6 @@ use Illuminate\Support\Facades\Log;
 
 return new class extends Migration
 {
-    private const CONNECTIONS = [
-        'mysql',
-        'mysql_hkt1',
-        'mysql_hkt2',
-        'mysql_hkt3',
-        'mysql_hkt4',
-    ];
 
     public function up(): void
     {
@@ -29,7 +22,7 @@ return new class extends Migration
             throw new RuntimeException('The DEPOSITS_SALE reference header is missing one or more target blocks.');
         }
 
-        foreach (self::CONNECTIONS as $connection) {
+        foreach ([DB::getDefaultConnection()] as $connection) {
             $db = DB::connection($connection);
             if ($db->getDriverName() !== 'mysql') {
                 continue;

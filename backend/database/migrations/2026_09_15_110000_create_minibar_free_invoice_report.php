@@ -131,7 +131,7 @@ SQL);
 
         DB::table('templates')->where('report', 'MINIBAR_FREE_INVOICES_STANDARD')->update($updateData);
 
-        foreach (['mysql', 'mysql_hkt1', 'mysql_hkt2', 'mysql_hkt3', 'mysql_hkt4'] as $conn) {
+        foreach ([DB::getDefaultConnection()] as $conn) {
             try {
                 if (DB::connection($conn)->getDriverName() === 'mysql') {
                     DB::connection($conn)->table('templates')->where('report', 'MINIBAR_FREE_INVOICES_STANDARD')->update($updateData);

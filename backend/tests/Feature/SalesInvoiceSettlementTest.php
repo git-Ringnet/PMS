@@ -46,6 +46,10 @@ class SalesInvoiceSettlementTest extends TestCase
             'username'    => $this->user->username,
         ]);
 
+        Shift::create(['name' => '1', 'start_time' => '06:00:00', 'end_time' => '14:00:00']);
+        Shift::create(['name' => '2', 'start_time' => '14:00:00', 'end_time' => '22:00:00']);
+        Shift::create(['name' => '3', 'start_time' => '22:00:00', 'end_time' => '06:00:00']);
+
         PaymentMethod::create(['code' => 'CA', 'name' => 'Tiền mặt', 'payment_group' => 1]);
         PaymentMethod::create(['code' => 'CK', 'name' => 'Chuyển khoản', 'payment_group' => 1]);
 
@@ -192,10 +196,61 @@ class SalesInvoiceSettlementTest extends TestCase
         $this->assertCount(1, $salesInvoice->payments);
     }
 
+    public function test_zero_balance_settlement_creates_one_zero_payment_and_closes_bill_using_deposit(): void
+    {
+        $bill = ServiceBill::create([
+            'Guest' => 'Nguyễn Văn Test', 'DepartmentId' => 'FO', 'ServiceId' => 'LA',
+            'Username' => $this->user->username, 'Date' => '2026-09-16', 'OpenTime' => '08:00:00',
+            'Amount' => 500000, 'Exchange' => 1, 'Edit' => 0, 'Status' => 1, 'Folio' => '1',
+            'RegisterId1' => (string) $this->booking->id, 'RentalRoomId1' => (string) $this->room->id,
+            'RegisterID2' => (string) $this->booking->id, 'RentalRoomId2' => (string) $this->room->id,
+        ]);
+        $deposit = Payment::create([
+            'booking_id' => $this->booking->id, 'booking_room_id' => (string) $this->room->id,
+            'date' => '2026-09-16', 'amount' => 500000, 'pack2' => Payment::PACK2_DEPOSIT,
+            'folio_id' => 1, 'payment_method_id' => 'CA', 'status' => Payment::STATUS_PENDING,
+            'edit_flag' => 0, 'created_by' => $this->user->username,
+        ]);
+
+        $this->postJson("/api/bookings/{$this->booking->id}/settle-payment", [
+            'folio_id' => '1', 'booking_room_id' => $this->room->id,
+            'payments' => [['payment_method_id' => 'CA', 'amount' => 0]],
+            'service_bill_ids' => [$bill->Ma], 'department_id' => 'FO',
+            'date' => '2026-09-16', 'open_time' => '10:00', 'shift_id' => '1',
+            'zero_balance_close' => true,
+        ])->assertOk()->assertJsonPath('success', true);
+
+        $bill->refresh();
+        $deposit->refresh();
+        $salesInvoice = SalesInvoice::where('booking_id', $this->booking->id)->firstOrFail();
+        $zeroPayment = Payment::where('booking_id', $this->booking->id)
+            ->whereNull('pack2')->whereNull('pack4')->firstOrFail();
+
+        $this->assertSame(2, (int) $bill->Status);
+        $this->assertSame((string) $salesInvoice->id, (string) $bill->InvoiceId);
+        $this->assertSame(2, (int) $deposit->status);
+        $this->assertSame((string) $zeroPayment->payment_id, (string) $deposit->payment_id);
+        $this->assertSame((string) $salesInvoice->id, (string) $deposit->invoice_id);
+        $this->assertEquals(0, (float) $zeroPayment->amount);
+        $this->assertSame((string) $salesInvoice->id, (string) $zeroPayment->invoice_id);
+        $this->assertEquals(500000, (float) $salesInvoice->amount);
+    }
+
+    public function test_zero_payment_cannot_create_an_invoice_without_an_unpaid_service_bill(): void
+    {
+        $this->postJson("/api/bookings/{$this->booking->id}/settle-payment", [
+            'folio_id' => '1', 'booking_room_id' => $this->room->id,
+            'payments' => [['payment_method_id' => 'CA', 'amount' => 0]],
+            'department_id' => 'FO', 'date' => '2026-09-16', 'open_time' => '10:00', 'shift_id' => '1',
+            'zero_balance_close' => true,
+        ])->assertUnprocessable()->assertJsonValidationErrors('payments');
+
+        $this->assertDatabaseCount('payments', 0);
+        $this->assertDatabaseCount('sales_invoices', 0);
+    }
+
     public function test_settlement_persists_the_selected_shift_and_rejects_a_time_from_another_shift(): void
     {
-        Shift::create(['name' => '1', 'start_time' => '06:00:00', 'end_time' => '14:00:00']);
-        Shift::create(['name' => '2', 'start_time' => '14:00:00', 'end_time' => '22:00:00']);
         $bill = ServiceBill::create([
             'Guest' => 'Nguyễn Văn Test', 'DepartmentId' => 'FO', 'ServiceId' => 'LA',
             'Username' => $this->user->username, 'Date' => '2026-09-16', 'OpenTime' => '08:00:00',
@@ -225,6 +280,28 @@ class SalesInvoiceSettlementTest extends TestCase
         $this->assertSame('2', (string) $payment->shift);
         $this->assertSame('15:58', substr((string) $payment->open_time, 0, 5));
         $this->assertSame('2', (string) $invoice->ca);
+    }
+
+    public function test_settlement_is_rejected_when_no_shift_is_configured(): void
+    {
+        Shift::query()->delete();
+        $bill = ServiceBill::create([
+            'Guest' => 'Nguyễn Văn Test', 'DepartmentId' => 'FO', 'ServiceId' => 'LA',
+            'Username' => $this->user->username, 'Date' => '2026-09-16', 'OpenTime' => '08:00:00',
+            'Amount' => 500000, 'Exchange' => 1, 'Edit' => 0, 'Status' => 1, 'Folio' => '1',
+            'RegisterId1' => (string) $this->booking->id, 'RentalRoomId1' => (string) $this->room->id,
+            'RegisterID2' => (string) $this->booking->id, 'RentalRoomId2' => (string) $this->room->id,
+        ]);
+
+        $this->postJson("/api/bookings/{$this->booking->id}/settle-payment", [
+            'folio_id' => '1', 'booking_room_id' => $this->room->id,
+            'payments' => [['payment_method_id' => 'CA', 'amount' => 500000]],
+            'service_bill_ids' => [$bill->Ma], 'department_id' => 'FO',
+            'date' => '2026-09-16', 'open_time' => '10:00', 'shift_id' => '1',
+        ])->assertUnprocessable()->assertJsonValidationErrors('shift_id');
+
+        $this->assertDatabaseCount('payments', 0);
+        $this->assertDatabaseCount('sales_invoices', 0);
     }
 
     public function test_settlement_rejects_a_date_outside_the_booking_stay(): void

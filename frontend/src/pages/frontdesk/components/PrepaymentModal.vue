@@ -1,6 +1,6 @@
 <script setup>
 import { ref, watch, computed, onMounted } from 'vue'
-import { X, Plus, Calendar, Clock, Save } from '@lucide/vue'
+import { X, Plus, Save } from '@lucide/vue'
 import http from '@/services/http'
 import { fetchBankAccounts as fetchConfiguredBankAccounts } from '@/services/company-service'
 import { useUiStore } from '@/stores/ui-store'
@@ -59,11 +59,13 @@ const paymentMethods = ref([])
 const bankAccountOptions = ref([])
 const selectedBankAccount = ref('')
 const description = ref('')
-const workShift = ref('1')
+const workShift = ref('')
 const timeStr = ref(nowTimeStr())
+const lastValidTimeStr = ref(timeStr.value)
 const dateStr = ref(props.systemDate || todayDateStr())
 const workShiftsList = ref([])
-const shiftTimeTouched = ref(false)
+const shiftLoadState = ref('idle')
+const shiftTimeError = ref('')
 const currency = ref('VND')
 const isSubmitting = ref(false)
 const errorMsg = ref('')
@@ -105,40 +107,79 @@ function todayDateStr() {
   return `${yyyy}-${mm}-${dd}`
 }
 
+function normalizeShiftTime(value) {
+  const match = String(value || '').match(/^([01]\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?$/)
+  return match ? `${match[1]}:${match[2]}` : ''
+}
+
+function shiftMinuteOfDay(value) {
+  const normalized = normalizeShiftTime(value)
+  if (!normalized) return null
+  const [hours, minutes] = normalized.split(':').map(Number)
+  return hours * 60 + minutes
+}
+
+const selectedWorkShift = computed(() => workShiftsList.value.find(
+  item => String(item.id ?? item.name) === String(workShift.value)
+))
+const shiftTimeMin = computed(() => {
+  const shift = selectedWorkShift.value
+  const start = normalizeShiftTime(shift?.start_time)
+  const end = normalizeShiftTime(shift?.end_time)
+  return start && start !== end ? start : undefined
+})
+const shiftTimeMax = computed(() => {
+  const start = shiftMinuteOfDay(selectedWorkShift.value?.start_time)
+  const end = shiftMinuteOfDay(selectedWorkShift.value?.end_time)
+  if (start === null || end === null || start === end) return undefined
+  const lastMinute = (end + 1439) % 1440
+  return `${String(Math.floor(lastMinute / 60)).padStart(2, '0')}:${String(lastMinute % 60).padStart(2, '0')}`
+})
+
 function timeMatchesShift(timeValue, shift) {
-  if (!shift?.start_time || !shift?.end_time || !/^\d{2}:\d{2}$/.test(timeValue || '')) return false
-  const toMinutes = (value) => {
-    const [hours, minutes] = String(value).slice(0, 5).split(':').map(Number)
-    return hours * 60 + minutes
-  }
-  const time = toMinutes(timeValue)
-  const start = toMinutes(shift.start_time)
-  const end = toMinutes(shift.end_time)
+  const time = shiftMinuteOfDay(timeValue)
+  const start = shiftMinuteOfDay(shift?.start_time)
+  const end = shiftMinuteOfDay(shift?.end_time)
+  if (time === null || start === null || end === null) return false
   if (start === end) return true
   return start < end ? time >= start && time < end : time >= start || time < end
 }
 
-function getAutoWorkShift(timeValue) {
-  const matchingShift = workShiftsList.value.find(shift => timeMatchesShift(timeValue, shift))
-  if (matchingShift) return String(matchingShift.id ?? matchingShift.name)
-
-  const hour = Number(String(timeValue || '').slice(0, 2)) || 0
-  if (hour >= 6 && hour < 14) return '1'
-  if (hour >= 14 && hour < 22) return '2'
-  return '3'
-}
-
 function isShiftTimeAllowed() {
-  if (!/^\d{2}:\d{2}$/.test(timeStr.value || '')) return false
-  if (workShiftsList.value.length === 0) return true
-  const shift = workShiftsList.value.find(item => String(item.id ?? item.name) === String(workShift.value))
-  if (!shift) return false
-  if (!shift.start_time || !shift.end_time) return true
-  return timeMatchesShift(timeStr.value, shift)
+  return shiftLoadState.value === 'ready' && Boolean(selectedWorkShift.value && timeMatchesShift(timeStr.value, selectedWorkShift.value))
 }
 
-const markShiftTimeTouched = () => {
-  shiftTimeTouched.value = true
+function syncShiftFromTime() {
+  if (shiftLoadState.value !== 'ready') return
+  const matchingShift = workShiftsList.value.find(shift => timeMatchesShift(timeStr.value, shift))
+  workShift.value = matchingShift ? String(matchingShift.id ?? matchingShift.name) : ''
+  if (matchingShift) {
+    lastValidTimeStr.value = timeStr.value
+    shiftTimeError.value = ''
+  }
+}
+
+function handleWorkShiftChange() {
+  const shift = selectedWorkShift.value
+  if (!shift) return
+  if (!timeMatchesShift(timeStr.value, shift)) timeStr.value = normalizeShiftTime(shift.start_time)
+  lastValidTimeStr.value = timeStr.value
+  shiftTimeError.value = ''
+}
+
+function handleTimeChange() {
+  if (shiftLoadState.value !== 'ready') return
+  const matchingShift = selectedWorkShift.value && timeMatchesShift(timeStr.value, selectedWorkShift.value)
+    ? selectedWorkShift.value
+    : workShiftsList.value.find(shift => timeMatchesShift(timeStr.value, shift))
+  if (!matchingShift) {
+    timeStr.value = lastValidTimeStr.value || normalizeShiftTime(selectedWorkShift.value?.start_time)
+    shiftTimeError.value = 'Giờ phải nằm trong thời gian của một ca đã cấu hình.'
+    return
+  }
+  workShift.value = String(matchingShift.id ?? matchingShift.name)
+  lastValidTimeStr.value = timeStr.value
+  shiftTimeError.value = ''
 }
 
 const registrationDisplay = computed(() => {
@@ -205,26 +246,31 @@ const fetchBankAccounts = async () => {
   }
 }
 
+let shiftRequestId = 0
 const fetchWorkShifts = async () => {
+  const requestId = ++shiftRequestId
+  shiftLoadState.value = 'loading'
+  workShiftsList.value = []
+  workShift.value = ''
   try {
     const res = await http.get('/shifts')
     const list = res.data?.data || res.data || []
-    if (Array.isArray(list) && list.length > 0) {
-      workShiftsList.value = list
-      if (!shiftTimeTouched.value) {
-        const matchingShift = list.find(shift => timeMatchesShift(timeStr.value, shift))
-        if (matchingShift) {
-          workShift.value = String(matchingShift.id ?? matchingShift.name)
-        } else {
-          const firstShift = list[0]
-          workShift.value = String(firstShift.id ?? firstShift.name)
-          const firstShiftStart = String(firstShift.start_time || '').slice(0, 5)
-          if (/^\d{2}:\d{2}$/.test(firstShiftStart)) timeStr.value = firstShiftStart
-        }
-      }
+    if (requestId !== shiftRequestId) return
+    workShiftsList.value = Array.isArray(list)
+      ? list.filter(shift => normalizeShiftTime(shift?.start_time) && normalizeShiftTime(shift?.end_time))
+      : []
+    if (workShiftsList.value.length === 0) {
+      shiftLoadState.value = 'missing'
+      errorMsg.value = 'Chưa có cấu hình ca làm việc hợp lệ. Vui lòng kiểm tra mục Ca làm việc.'
+      return
     }
+    shiftLoadState.value = 'ready'
+    syncShiftFromTime()
   } catch (err) {
-    console.warn('Không thể nạp danh sách ca làm việc từ API, sử dụng ca mặc định.')
+    if (requestId !== shiftRequestId) return
+    shiftLoadState.value = 'error'
+    errorMsg.value = 'Không tải được cấu hình ca làm việc. Vui lòng thử lại trước khi lưu.'
+    console.warn('Không thể nạp danh sách ca làm việc từ API.')
   }
 }
 
@@ -239,9 +285,10 @@ watch(() => props.show, (visible) => {
     errorMsg.value = ''
     selectedBankAccount.value = ''
     timeStr.value = nowTimeStr()
+    lastValidTimeStr.value = timeStr.value
+    shiftTimeError.value = ''
     dateStr.value = props.systemDate || todayDateStr()
-    shiftTimeTouched.value = false
-    workShift.value = getAutoWorkShift(timeStr.value)
+    workShift.value = ''
     fetchWorkShifts()
     const rawRId = props.selectedRoomId
     selectedTargetRoomId.value = (rawRId !== null && rawRId !== undefined && rawRId !== '' && rawRId !== 'null') ? rawRId : null
@@ -252,7 +299,7 @@ watch(() => props.show, (visible) => {
     }
     updateDefaultDescription()
   }
-})
+}, { immediate: true })
 
 watch(isBankTransfer, (bankTransfer) => {
   if (!bankTransfer) selectedBankAccount.value = ''
@@ -282,8 +329,14 @@ const handleSubmit = async () => {
     errorMsg.value = 'Không tìm thấy thông tin Booking.'
     return
   }
-  if (!isShiftTimeAllowed()) {
-    errorMsg.value = 'Giờ thanh toán không thuộc ca đã chọn. Vui lòng chọn lại ca hoặc giờ.'
+  if (shiftLoadState.value !== 'ready') {
+    errorMsg.value = shiftLoadState.value === 'loading'
+      ? 'Đang tải cấu hình ca làm việc. Vui lòng chờ.'
+      : 'Chưa có cấu hình ca làm việc hợp lệ. Vui lòng kiểm tra mục Ca làm việc.'
+    return
+  }
+  if (shiftTimeError.value || !isShiftTimeAllowed()) {
+    if (!shiftTimeError.value) shiftTimeError.value = 'Giờ phải nằm trong thời gian của ca đã chọn.'
     return
   }
 
@@ -436,17 +489,11 @@ onMounted(() => {
               <!-- Ca làm việc (Nền vàng #ffffcc) -->
               <div class="col-span-2">
                 <label class="block font-medium text-gray-700 mb-1 text-[11px]">Ca</label>
-                <select v-model="workShift" @change="markShiftTimeTouched" class="w-full px-1.5 py-1 bg-[#ffffcc] border border-gray-300 rounded font-bold text-xs focus:outline-none text-center">
-                  <template v-if="workShiftsList.length > 0">
-                    <option v-for="shift in workShiftsList" :key="shift.id" :value="String(shift.id ?? shift.name)">
-                      {{ shift.name }}
-                    </option>
-                  </template>
-                  <template v-if="workShiftsList.length === 0">
-                    <option value="1">1</option>
-                    <option value="2">2</option>
-                    <option value="3">3</option>
-                  </template>
+                <select v-model="workShift" :disabled="shiftLoadState !== 'ready'" @change="handleWorkShiftChange" class="w-full px-1.5 py-1 bg-[#ffffcc] border border-gray-300 rounded font-bold text-xs focus:outline-none text-center disabled:bg-gray-100">
+                  <option value="" disabled>Chọn ca</option>
+                  <option v-for="shift in workShiftsList" :key="shift.id ?? shift.name" :value="String(shift.id ?? shift.name)">
+                    {{ shift.name }}
+                  </option>
                 </select>
               </div>
 
@@ -454,9 +501,9 @@ onMounted(() => {
               <div class="col-span-3">
                 <label class="block font-medium text-gray-700 mb-1 text-[11px]">Giờ</label>
                 <div class="relative">
-                  <input type="time" v-model="timeStr" step="60" @change="markShiftTimeTouched" class="w-full pl-1.5 pr-6 py-1 bg-white border border-gray-300 rounded text-center text-xs font-mono font-semibold" />
-                  <Clock class="w-3.5 h-3.5 text-sky-400 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input type="time" v-model="timeStr" :min="shiftTimeMin" :max="shiftTimeMax" :disabled="shiftLoadState !== 'ready' || !workShift" step="60" @change="handleTimeChange" class="w-full min-w-0 px-1.5 py-1 bg-white border border-gray-300 rounded text-center text-xs font-mono font-semibold disabled:bg-gray-100" />
                 </div>
+                <p v-if="shiftTimeError" class="mt-0.5 text-[9px] leading-3 text-red-600">{{ shiftTimeError }}</p>
               </div>
 
               <!-- Ngày -->
@@ -528,7 +575,7 @@ onMounted(() => {
 
         <button 
           @click="handleSubmit"
-          :disabled="isSubmitting"
+          :disabled="isSubmitting || shiftLoadState !== 'ready'"
           class="bg-[#0088ff] hover:bg-sky-600 text-white px-4 py-1.5 rounded flex items-center gap-1.5 font-bold shadow-xs transition-colors disabled:opacity-50 cursor-pointer text-xs"
         >
           <Save class="w-4 h-4" />

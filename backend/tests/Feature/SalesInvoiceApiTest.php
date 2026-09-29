@@ -15,6 +15,7 @@ use App\Models\Room;
 use App\Models\RoomClass;
 use App\Models\RoomForm;
 use App\Models\SalesInvoice;
+use App\Models\Shift;
 use App\Models\ServiceBill;
 use App\Models\SystemDateRoll;
 use App\Models\User;
@@ -56,6 +57,10 @@ class SalesInvoiceApiTest extends TestCase
             'shift'       => '2',
             'username'    => $this->user->username,
         ]);
+
+        Shift::create(['name' => '1', 'start_time' => '06:00:00', 'end_time' => '14:00:00']);
+        Shift::create(['name' => '2', 'start_time' => '14:00:00', 'end_time' => '22:00:00']);
+        Shift::create(['name' => '3', 'start_time' => '22:00:00', 'end_time' => '06:00:00']);
 
         PaymentMethod::create(['code' => 'CA', 'name' => 'Tiền mặt', 'payment_group' => 1]);
         PaymentMethod::create(['code' => 'CK', 'name' => 'Chuyển khoản', 'payment_group' => 1]);
@@ -144,6 +149,7 @@ class SalesInvoiceApiTest extends TestCase
             ],
             'department_id'   => 'FO',
             'shift_id'        => '2',
+            'open_time'       => '15:58',
         ]);
 
         $res->assertOk();

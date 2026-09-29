@@ -10,7 +10,7 @@ return new class extends Migration
         $definition = (require database_path('report_templates/summary_service_invoices_reference.php'))->definition();
         $visitedDatabases = [];
 
-        foreach ($this->branchConnections() as $connectionName) {
+        foreach ($this->targetConnections() as $connectionName) {
             $db = DB::connection($connectionName);
             if ($db->getDriverName() !== 'mysql') {
                 continue;
@@ -36,11 +36,8 @@ return new class extends Migration
         // Keep the JSON-driven template contract when rolling back metadata-only migrations.
     }
 
-    private function branchConnections(): array
+    private function targetConnections(): array
     {
-        return array_values(array_unique(array_merge(
-            [config('database.default', 'mysql')],
-            array_values(config('database_domains.branch_connections', []))
-        )));
+        return [DB::getDefaultConnection()];
     }
 };
