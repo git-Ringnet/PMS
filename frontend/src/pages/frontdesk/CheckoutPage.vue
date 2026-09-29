@@ -1180,6 +1180,7 @@ const servicesList = computed(() => {
 
     return {
       id: s.id || `S${idx}`,
+      bookingRoomServiceId: s.id ? Number(s.id) : null,
       serviceDate: s.service_date || s.created_at || null,
       serviceTime: s.open_time || s.openTime || s.service_bill?.OpenTime || s.serviceBill?.OpenTime || linkedBill?.OpenTime || linkedBill?.CreatedHour || null,
       serviceBillDetailNo: s.service_bill_detail_no || s.serviceBillDetailNo || null,
@@ -1222,6 +1223,7 @@ const servicesList = computed(() => {
 
     return {
       id: Number(sb.Ma || idx),
+      bookingRoomServiceId: null,
       serviceBillId: sb.Ma || null,
       serviceDate: sb.Date || sb.CreatedDate || null,
       serviceTime: sb.OpenTime || sb.CreatedHour || null,
@@ -2013,8 +2015,13 @@ const cancelSelectedServices = async (reason) => {
   try {
     const isMaster = !selectedRoomItem.value
     const sourceId = selectedRoomItem.value?.roomId || `master-${selectedBooking.value.bookingId}`
-    const ids = selectedServiceItems.value.map(service => Number(service.id))
-    const response = await cancelBookingRoomServices(sourceId, isMaster ? { service_bill_ids: ids, reason } : { service_ids: ids, reason })
+    const billIds = [...new Set(selectedServiceItems.value.map(service => Number(service.serviceBillId)).filter(id => Number.isInteger(id) && id > 0))]
+    const payload = { service_bill_ids: billIds, reason }
+    if (!isMaster) {
+      const mirrorIds = [...new Set(selectedServiceItems.value.map(service => service.bookingRoomServiceId).filter(Number.isInteger))]
+      if (mirrorIds.length) payload.service_ids = mirrorIds
+    }
+    const response = await cancelBookingRoomServices(sourceId, payload)
     showCancelServiceModal.value = false
     await refreshAfterServiceOperation()
     uiStore.showToast(response.data?.message || 'Đã xóa dịch vụ thành công!', 'success')
