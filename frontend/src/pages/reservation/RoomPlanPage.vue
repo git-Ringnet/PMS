@@ -1314,7 +1314,8 @@ async function loadBookings() {
     const res = await fetchBookings({
       from_date: formatDateStr(startRange),
       to_date: formatDateStr(endRange),
-      with_billing: true
+      with_billing: true,
+      stay_only: true
     })
 
     if (requestId !== loadBookingsRequestId) return

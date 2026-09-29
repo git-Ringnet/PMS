@@ -33,6 +33,19 @@ class BookingController extends Controller
     private array $rateCodePricingCache = [];
     private array $roomClassPricingContextCache = [];
 
+    private function serviceOnlyMutationError(Booking $booking)
+    {
+        if (!$booking->is_service_only) {
+            return null;
+        }
+
+        return response()->json([
+            'success' => false,
+            'code' => 'service_only_folio',
+            'message' => 'Folio dịch vụ chỉ dùng để ghi nhận dịch vụ và thanh toán; không thể thay đổi nghiệp vụ lưu trú.',
+        ], 422);
+    }
+
     private function resolveDepositBankAccount($bankAccountId): ?BankAccount
     {
         if ($bankAccountId === null || $bankAccountId === '' || in_array(strtolower((string) $bankAccountId), ['null', 'undefined'], true)) {
@@ -147,7 +160,18 @@ class BookingController extends Controller
             $relations[] = 'payments.bankAccount';
         }
 
+        $stayOnly = $request->boolean('stay_only');
         $query = Booking::with($relations);
+        if ($stayOnly) {
+            // Keep the legacy default response intact for financial and shared
+            // consumers. Accommodation screens opt in to this narrower view.
+            $query->where('is_service_only', false)
+                ->where(function ($bookings): void {
+                    $bookings->whereDoesntHave('bookingRooms')
+                        ->orWhereHas('bookingRooms', fn ($rooms) => $rooms->stayOnly());
+                })
+                ->with(['bookingRooms' => fn ($rooms) => $rooms->stayOnly()]);
+        }
         $query->withSum([
             'payments as active_deposit_total' => function ($paymentQuery) {
                 $paymentQuery
@@ -176,7 +200,10 @@ class BookingController extends Controller
             $pmsDateStartUtc = $pmsDate->copy()->utc();
             $pmsDateEndUtc = $pmsDate->copy()->addDay()->utc();
 
-            $arrivalRoomFilter = function ($roomQuery) use ($request, $pmsDateStartUtc, $pmsDateEndUtc) {
+            $arrivalRoomFilter = function ($roomQuery) use ($request, $pmsDateStartUtc, $pmsDateEndUtc, $stayOnly) {
+                if ($stayOnly) {
+                    $roomQuery->stayOnly();
+                }
                 $statusValue = $request->input('status', '0,1');
                 $statuses = is_array($statusValue)
                     ? array_map('intval', $statusValue)
@@ -222,12 +249,15 @@ class BookingController extends Controller
         // Filter theo khoảng ngày
         if ($request->from_date && $request->to_date) {
             $dateType = $request->date_type;
-            $query->where(function ($q) use ($request, $dateType) {
+            $query->where(function ($q) use ($request, $dateType, $stayOnly) {
                 if ($dateType === 'arrival') {
                     // NgÃ y Ä‘áº¿n nghiá»‡p vá»¥ nÃ³i Ä‘áº¿n phÃ²ng, khÃ´ng pháº£i luÃ´n lÃ  ngÃ y header Booking.
                     $fromUtc = Carbon::parse($request->from_date, 'Asia/Ho_Chi_Minh')->startOfDay()->utc();
                     $toUtc = Carbon::parse($request->to_date, 'Asia/Ho_Chi_Minh')->endOfDay()->utc();
-                    $q->whereHas('bookingRooms', function ($roomQuery) use ($fromUtc, $toUtc) {
+                    $q->whereHas('bookingRooms', function ($roomQuery) use ($fromUtc, $toUtc, $stayOnly) {
+                        if ($stayOnly) {
+                            $roomQuery->stayOnly();
+                        }
                         $roomQuery->whereBetween('arrival_date', [$fromUtc, $toUtc]);
                     });
                 } elseif ($dateType === 'departure') {
@@ -797,6 +827,10 @@ class BookingController extends Controller
             return response()->json(['success' => false, 'message' => 'Không tìm thấy đăng ký!'], 404);
         }
 
+        if ($error = $this->serviceOnlyMutationError($booking)) {
+            return $error;
+        }
+
         if (in_array($booking->status, [Booking::STATUS_CHECKOUT, Booking::STATUS_DELETED], true)) {
             return response()->json([
                 'success' => false,
@@ -876,6 +910,10 @@ class BookingController extends Controller
         $booking = Booking::find($id);
         if (!$booking) {
             return response()->json(['success' => false, 'message' => 'Không tìm thấy đăng ký!'], 404);
+        }
+
+        if ($error = $this->serviceOnlyMutationError($booking)) {
+            return $error;
         }
 
         // Không cho sửa booking đã checkout hoặc đã xóa
@@ -1571,6 +1609,10 @@ class BookingController extends Controller
             return response()->json(['success' => false, 'message' => 'Không tìm thấy đăng ký!'], 404);
         }
 
+        if ($error = $this->serviceOnlyMutationError($booking)) {
+            return $error;
+        }
+
         // Kiểm tra cấu hình CheckModuleBeforeDelete
         $checkModuleConfig = \Illuminate\Support\Facades\DB::table('hotel_configs')
             ->where('name', 'CheckModuleBeforeDelete')
@@ -1733,6 +1775,10 @@ class BookingController extends Controller
 
         if (!$source) {
             return response()->json(['success' => false, 'message' => 'Không tìm thấy đăng ký gốc!'], 404);
+        }
+
+        if ($error = $this->serviceOnlyMutationError($source)) {
+            return $error;
         }
 
         $request->validate([
@@ -1901,6 +1947,10 @@ class BookingController extends Controller
 
             if (!$booking) {
                 return response()->json(['success' => false, 'message' => 'Không tìm thấy đăng ký!'], 404);
+            }
+
+            if ($error = $this->serviceOnlyMutationError($booking)) {
+                return $error;
             }
 
             $roomsToRestore = $booking->bookingRooms->filter(fn ($room) =>
@@ -3234,6 +3284,10 @@ class BookingController extends Controller
 
         if (!$booking) {
             return response()->json(['success' => false, 'message' => 'Không tìm thấy đăng ký!'], 404);
+        }
+
+        if ($error = $this->serviceOnlyMutationError($booking)) {
+            return $error;
         }
 
         // Đăng ký được coi là noshow nếu status = 4 hoặc tất cả các phòng đều có status = 4 (Noshow)

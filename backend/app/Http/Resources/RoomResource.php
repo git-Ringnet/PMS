@@ -38,6 +38,7 @@ class RoomResource extends JsonResource
             'owner_room' => $this->owner_room,
             'linked_room' => $this->linked_room,
             'is_internal' => (bool) $this->is_internal,
+            'is_virtual' => (bool) $this->is_virtual,
             'status' => $this->status,
             'booking_status' => $this->booking_status ?? null,
             'guest_name' => $this->guest_name ?? '',

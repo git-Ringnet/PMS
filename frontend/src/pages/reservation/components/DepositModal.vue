@@ -889,6 +889,7 @@ const transferOptions = computed(() => {
   const list = []
 
   for (const booking of searchResults.value) {
+    if (booking.is_service_only) continue
     const code = String(booking.booking_code || booking.code || `GAL${booking.id}`).toLowerCase()
     const mainGuestName = (
       (booking.booking_name && booking.booking_name.trim()) ||
@@ -905,6 +906,8 @@ const transferOptions = computed(() => {
 
     for (const room of Array.isArray(booking.booking_rooms) ? booking.booking_rooms : []) {
       const roomNumber = String(room.room_number || room.room?.room_number || '').trim()
+      const isVirtualRoom = Boolean(room.is_virtual || room.is_internal || room.room?.is_virtual || room.room?.is_internal || roomNumber.startsWith('0'))
+      if (isVirtualRoom) continue
       const roomLabel = roomNumber || 'Chưa xếp'
       // Backend accepts both Reservation (0) and Inhouse (1). Keep the
       // destination scope aligned with Checkout -> Chuyển cọc; a booking
@@ -1710,13 +1713,14 @@ async function loadAvailableBookingsForTransfer(searchQuery = '') {
   isSearchingDest.value = true
   const requestId = ++transferSearchRequestId
   try {
-    const params = { status: '0,1' }
+    const params = { status: '0,1', stay_only: true }
     if (searchQuery) params.search = searchQuery
     const res = await fetchBookings(params)
     const bookings = res.data?.data || res.data || []
     if (requestId !== transferSearchRequestId) return
     searchResults.value = bookings.filter(b => (
       [0, 1].includes(Number(b.status))
+      && !b.is_service_only
       && String(b.id) !== String(props.bookingId)
     ))
   } catch (err) {

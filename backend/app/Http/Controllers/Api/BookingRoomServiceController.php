@@ -1052,6 +1052,10 @@ class BookingRoomServiceController extends Controller
             return response()->json(['success' => false, 'message' => 'Không tìm thấy phòng tương ứng.'], 404);
         }
 
+        if ($room->isVirtual()) {
+            return response()->json(['success' => false, 'code' => 'virtual_room', 'message' => 'Folio phòng ảo không nhận bill nghiệp vụ buồng phòng.'], 422);
+        }
+
         $postingSource = strtoupper($request->input('posting_source', 'HK'));
         if ($room->no_post || $room->booking?->no_post) {
             return response()->json([
@@ -1757,8 +1761,19 @@ class BookingRoomServiceController extends Controller
 
         $isBookingPost = !$room && (bool) $booking;
         $roomsToPost = $room ? collect([$room]) : ($booking ? $booking->bookingRooms : collect());
+        if ($room && $room->isVirtual()) {
+            return response()->json(['success' => false, 'code' => 'virtual_room', 'message' => 'Không thể post tiền phòng RM vào folio phòng ảo.'], 422);
+        }
+        if ($isBookingPost) {
+            $roomsToPost = $roomsToPost->reject(fn (BookingRoom $targetRoom) => $targetRoom->isVirtual())->values();
+        }
         if ($roomsToPost->isEmpty()) {
-            return response()->json(['success' => false, 'message' => 'Không có phòng nào để post tiền phòng.'], 422);
+            $virtualOnly = $booking?->is_service_only || ($booking && $booking->bookingRooms->contains(fn (BookingRoom $targetRoom) => $targetRoom->isVirtual()));
+            return response()->json([
+                'success' => false,
+                'code' => $virtualOnly ? 'virtual_room' : null,
+                'message' => $virtualOnly ? 'Booking chỉ chứa folio phòng ảo, không có tiền phòng để post.' : 'Không có phòng nào để post tiền phòng.',
+            ], 422);
         }
 
         if (($booking && $booking->no_post) || ($room && $room->no_post)) {

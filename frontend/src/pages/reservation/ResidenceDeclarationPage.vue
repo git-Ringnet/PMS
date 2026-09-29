@@ -838,7 +838,7 @@ async function initSystemDate() {
 
 async function loadBookingData() {
   try {
-    const res = await fetchBookings()
+    const res = await fetchBookings({ stay_only: true })
     const rawList = res?.data?.data || res?.data || []
     if (Array.isArray(rawList)) {
       // Include non-cancelled bookings

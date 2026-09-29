@@ -33,6 +33,7 @@ class RoomAvailabilityService
         string|int|null $excludeBookingRoomId = null
     ): int {
         $query = BookingRoom::where('room_class_id', $roomClassId)
+            ->stayOnly()
             ->whereIn('status', [
                 BookingRoom::STATUS_BOOKED,
                 BookingRoom::STATUS_CHECKED_IN,
@@ -98,8 +99,8 @@ class RoomAvailabilityService
      */
     public function getLockedCount(int $roomClassId, string $arrivalDate, string $departureDate): int
     {
-        $roomNumbers = \App\Models\Room::where('room_class_id', $roomClassId)
-            ->where('is_internal', false)
+        $roomNumbers = \App\Models\Room::physical()
+            ->where('room_class_id', $roomClassId)
             ->pluck('room_number');
 
         if ($roomNumbers->isEmpty()) return 0;
@@ -139,8 +140,8 @@ class RoomAvailabilityService
      */
     public function getTotalRooms(int $roomClassId): int
     {
-        return \App\Models\Room::where('room_class_id', $roomClassId)
-            ->where('is_internal', false)
+        return \App\Models\Room::physical()
+            ->where('room_class_id', $roomClassId)
             ->count();
     }
 
@@ -187,6 +188,7 @@ class RoomAvailabilityService
         string|null $departureTime = null
     ): bool {
         $query = BookingRoom::where('room_number', $roomNumber)
+            ->stayOnly()
             ->whereIn('status', [
                 BookingRoom::STATUS_BOOKED,
                 BookingRoom::STATUS_CHECKED_IN,
@@ -279,6 +281,7 @@ class RoomAvailabilityService
 
         // Lấy tất cả booking_rooms overlap với khoảng ngày
         $bookings = BookingRoom::where('room_class_id', $roomClassId)
+            ->stayOnly()
             ->whereIn('status', [
                 BookingRoom::STATUS_BOOKED,
                 BookingRoom::STATUS_CHECKED_IN,
@@ -295,7 +298,7 @@ class RoomAvailabilityService
             ->get(['arrival_date', 'departure_date']);
 
         // Lấy locks
-        $locks = RoomLock::whereHas('room', fn($q) => $q->where('room_class_id', $roomClassId)->where('is_internal', false))
+        $locks = RoomLock::whereHas('room', fn($q) => $q->physical()->where('room_class_id', $roomClassId))
             ->whereIn('is_active', [1, 2])
             ->where('start_date', '<', $endDate)
             ->where('end_date', '>', $startDate)

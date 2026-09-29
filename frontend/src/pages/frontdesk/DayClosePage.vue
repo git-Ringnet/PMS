@@ -179,7 +179,7 @@ const fetchRealData = async () => {
     }
 
     // 2. Lấy danh sách booking từ backend API
-    const bookingsRes = await http.get('/bookings')
+    const bookingsRes = await http.get('/bookings', { params: { stay_only: true } })
     if (bookingsRes.data && (bookingsRes.data.success || Array.isArray(bookingsRes.data.data))) {
       const apiData = Array.isArray(bookingsRes.data.data) ? bookingsRes.data.data : (bookingsRes.data || [])
       rawBookings.value = apiData

@@ -65,6 +65,14 @@ class BookingRoomController extends Controller
     {
         $booking = Booking::findOrFail($bookingId);
 
+        if ($booking->is_service_only) {
+            return response()->json([
+                'success' => false,
+                'code' => 'service_only_folio',
+                'message' => 'Không thể thêm phòng lưu trú vào folio dịch vụ.',
+            ], 422);
+        }
+
         // Không cho thêm phòng vào booking đã checkout/deleted
         if (in_array($booking->status, [Booking::STATUS_CHECKOUT, Booking::STATUS_DELETED])) {
             return response()->json(['success' => false, 'message' => 'Booking đã đóng, không thể thêm phòng.'], 422);
@@ -224,6 +232,10 @@ class BookingRoomController extends Controller
     public function update(Request $request, $bookingId, $roomId)
     {
         $bookingRoom = BookingRoom::where('booking_id', $bookingId)->findOrFail($roomId);
+
+        if ($bookingRoom->isVirtual()) {
+            return response()->json(['success' => false, 'code' => 'virtual_room', 'message' => 'Không thể sửa dữ liệu lưu trú trên folio phòng ảo.'], 422);
+        }
 
         if ($bookingRoom->status === BookingRoom::STATUS_CANCELLED) {
             return response()->json(['success' => false, 'message' => 'Phòng đã hủy, không thể sửa.'], 422);
@@ -453,6 +465,13 @@ class BookingRoomController extends Controller
     {
         \Log::info('bulkUpdate payload: ' . json_encode($request->all()) . ' bookingId: ' . $bookingId);
         $booking = Booking::findOrFail($bookingId);
+        if ($booking->is_service_only) {
+            return response()->json([
+                'success' => false,
+                'code' => 'service_only_folio',
+                'message' => 'Không thể cập nhật ngày hoặc thông tin phòng lưu trú trên folio dịch vụ.',
+            ], 422);
+        }
         $request->validate([
             'room_ids'            => 'required|array|min:1',
             'room_ids.*'          => 'string',
@@ -636,6 +655,10 @@ class BookingRoomController extends Controller
         $bookingRoom = BookingRoom::where('booking_id', $bookingId)->with('booking')->findOrFail($roomId);
         $booking     = $bookingRoom->booking;
         $systemDate  = $this->avService->getSystemDate();
+
+        if ($bookingRoom->isVirtual()) {
+            return response()->json(['success' => false, 'code' => 'virtual_room', 'message' => 'Phòng ảo chỉ dùng làm folio dịch vụ, không thể check-in.'], 422);
+        }
 
         // Check-in chỉ từ Front Office
         // Điều kiện 1: Chưa check-in (status = 0)
@@ -821,6 +844,10 @@ class BookingRoomController extends Controller
         $bookingRoom = BookingRoom::where('booking_id', $bookingId)->with('booking')->findOrFail($roomId);
         $booking     = $bookingRoom->booking;
 
+        if ($bookingRoom->isVirtual()) {
+            return response()->json(['success' => false, 'code' => 'virtual_room', 'message' => 'Phòng ảo không có trạng thái lưu trú để hủy nhận phòng.'], 422);
+        }
+
         $systemDate = $this->avService->getSystemDate()->toDateString();
         $checkinDate = ($bookingRoom->actual_arrival_date ?? $bookingRoom->arrival_date)?->toDateString();
         if ($checkinDate !== $systemDate) {
@@ -925,6 +952,10 @@ class BookingRoomController extends Controller
     {
         $bookingRoom = BookingRoom::where('booking_id', $bookingId)->findOrFail($roomId);
 
+        if ($bookingRoom->isVirtual()) {
+            return response()->json(['success' => false, 'code' => 'virtual_room', 'message' => 'Không thể gỡ số phòng của folio ảo.'], 422);
+        }
+
         if ($bookingRoom->is_do_not_move) {
             return response()->json(['success' => false, 'message' => 'Phòng này đang bị khóa chuyển phòng (Do Not Move). Vui lòng mở khóa trước.'], 422);
         }
@@ -957,6 +988,10 @@ class BookingRoomController extends Controller
         $bookingRoom = BookingRoom::where('booking_id', $bookingId)
             ->with(['guests', 'children'])
             ->findOrFail($roomId);
+
+        if ($bookingRoom->isVirtual()) {
+            return response()->json(['success' => false, 'code' => 'virtual_room', 'message' => 'Không thể hủy folio phòng ảo bằng thao tác hủy lưu trú.'], 422);
+        }
 
         if (in_array($bookingRoom->status, [BookingRoom::STATUS_CANCELLED, BookingRoom::STATUS_CHECKED_OUT])) {
             return response()->json(['success' => false, 'message' => 'Phòng đã hủy hoặc đã checkout.'], 422);
@@ -1053,6 +1088,10 @@ class BookingRoomController extends Controller
     {
         $bookingRoom = BookingRoom::where('booking_id', $bookingId)->findOrFail($roomId);
 
+        if ($bookingRoom->isVirtual()) {
+            return response()->json(['success' => false, 'code' => 'virtual_room', 'message' => 'Folio phòng ảo không có hạng phòng để nâng hoặc hạ.'], 422);
+        }
+
         if ($bookingRoom->is_do_not_move) {
             return response()->json(['success' => false, 'message' => 'Phòng này đang bị khóa chuyển phòng (Do Not Move). Vui lòng mở khóa trước.'], 422);
         }
@@ -1114,6 +1153,10 @@ class BookingRoomController extends Controller
     {
         $bookingRoom = BookingRoom::where('booking_id', $bookingId)->findOrFail($roomId);
 
+        if ($bookingRoom->isVirtual()) {
+            return response()->json(['success' => false, 'code' => 'virtual_room', 'message' => 'Folio phòng ảo không hỗ trợ khóa chuyển phòng.'], 422);
+        }
+
         if (empty($bookingRoom->room_number)) {
             return response()->json(['success' => false, 'message' => 'Phòng chưa được gán số phòng. Vui lòng gán số phòng trước khi khóa chuyển phòng.'], 422);
         }
@@ -1151,6 +1194,10 @@ class BookingRoomController extends Controller
     public function unlockMove($bookingId, $roomId)
     {
         $bookingRoom = BookingRoom::where('booking_id', $bookingId)->findOrFail($roomId);
+
+        if ($bookingRoom->isVirtual()) {
+            return response()->json(['success' => false, 'code' => 'virtual_room', 'message' => 'Folio phòng ảo không hỗ trợ mở khóa chuyển phòng.'], 422);
+        }
         $activeLock  = $bookingRoom->activeDoNotMoveLock;
 
         if (!$bookingRoom->is_do_not_move || !$activeLock) {
@@ -1201,6 +1248,10 @@ class BookingRoomController extends Controller
     {
         return DB::transaction(function () use ($bookingId, $roomId) {
             $bookingRoom = BookingRoom::where('booking_id', $bookingId)->lockForUpdate()->findOrFail($roomId);
+
+            if ($bookingRoom->isVirtual()) {
+                return response()->json(['success' => false, 'code' => 'virtual_room', 'message' => 'Không thể gán phòng lưu trú cho folio ảo.'], 422);
+            }
 
             if ($bookingRoom->status !== BookingRoom::STATUS_BOOKED) {
                 return response()->json(['success' => false, 'message' => 'Chỉ tự động gán phòng cho phòng ở trạng thái đăng ký.'], 422);
@@ -1372,6 +1423,10 @@ class BookingRoomController extends Controller
 
         $bookingRoom = BookingRoom::where('booking_id', $bookingId)->findOrFail($roomId);
 
+        if ($bookingRoom->isVirtual()) {
+            return response()->json(['success' => false, 'code' => 'virtual_room', 'message' => 'Không thể tách folio phòng ảo thành lượt lưu trú.'], 422);
+        }
+
         if ($bookingRoom->status === BookingRoom::STATUS_CANCELLED) {
             return response()->json(['success' => false, 'message' => 'Phòng đã hủy, không thể tách.'], 422);
         }
@@ -1529,6 +1584,10 @@ class BookingRoomController extends Controller
         $bookingRoom = BookingRoom::where('booking_id', $bookingId)
             ->with(['guests.guest', 'roomClass', 'children', 'services'])
             ->findOrFail($roomId);
+
+        if ($bookingRoom->isVirtual()) {
+            return response()->json(['success' => false, 'code' => 'virtual_room', 'message' => 'Folio phòng ảo không có phòng đích để chuyển.'], 422);
+        }
 
         $systemDate = $this->avService->getSystemDate();
         $moveDateStr = $systemDate->toDateString();
@@ -1730,6 +1789,10 @@ class BookingRoomController extends Controller
         $bookingRoom = BookingRoom::where('booking_id', $bookingId)
             ->with(['guests', 'children', 'services'])
             ->findOrFail($roomId);
+
+        if ($bookingRoom->isVirtual()) {
+            return response()->json(['success' => false, 'code' => 'virtual_room', 'message' => 'Không thể chuyển hoặc gộp folio phòng ảo như một lượt lưu trú.'], 422);
+        }
 
         // 1. Check lock status (is_do_not_move)
         if ($bookingRoom->is_do_not_move) {
@@ -2366,6 +2429,10 @@ class BookingRoomController extends Controller
             return response()->json(['success' => false, 'message' => 'Không tìm thấy phòng thuê!'], 404);
         }
 
+        if ($bookingRoom->isVirtual()) {
+            return response()->json(['success' => false, 'code' => 'virtual_room', 'message' => 'Folio phòng ảo không hỗ trợ khôi phục no-show.'], 422);
+        }
+
         if (intval($bookingRoom->status) !== BookingRoom::STATUS_NOSHOW) {
             return response()->json([
                 'success' => false,
@@ -2473,11 +2540,12 @@ class BookingRoomController extends Controller
         $start = Carbon::parse($startDateStr)->startOfDay();
         $end   = Carbon::parse($endDateStr)->startOfDay();
 
-        $totalRooms = Room::where('room_class_id', $roomClassId)
-            ->where('is_internal', false)
+        $totalRooms = Room::physical()
+            ->where('room_class_id', $roomClassId)
             ->count();
 
         $bookings = BookingRoom::where('room_class_id', $roomClassId)
+            ->stayOnly()
             ->whereIn('status', [
                 BookingRoom::STATUS_BOOKED,
                 BookingRoom::STATUS_CHECKED_IN,
@@ -2493,7 +2561,7 @@ class BookingRoomController extends Controller
             ->where('departure_date', '>', $startDateStr)
             ->get(['arrival_date', 'departure_date']);
 
-        $locks = RoomLock::whereHas('room', fn($q) => $q->where('room_class_id', $roomClassId)->where('is_internal', false))
+        $locks = RoomLock::whereHas('room', fn($q) => $q->physical()->where('room_class_id', $roomClassId))
             ->whereIn('is_active', [1, 2])
             ->where('start_date', '<', $endDateStr . ' 23:59:59')
             ->where('end_date', '>', $startDateStr . ' 00:00:00')

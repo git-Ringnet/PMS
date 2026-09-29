@@ -1356,7 +1356,7 @@ class RoomLockController extends Controller
             $lastCheckDate->subDay();
         }
 
-        $totalRooms = Room::where('room_class_id', $roomClassId)->where('is_internal', false)->count();
+        $totalRooms = Room::physical()->where('room_class_id', $roomClassId)->count();
         if ($totalRooms === 0) {
             return null;
         }
@@ -1372,7 +1372,7 @@ class RoomLockController extends Controller
                 ->where('start_date', '<=', $dateStr . ' 23:59:59')
                 ->where('end_date', '>=', $dateStr . ' 00:00:00')
                 ->whereHas('room', function ($q) use ($roomClassId) {
-                    $q->where('room_class_id', $roomClassId);
+                    $q->physical()->where('room_class_id', $roomClassId);
                 });
 
             if ($excludeRoomNumber) {
@@ -1382,6 +1382,7 @@ class RoomLockController extends Controller
             $lockedCount = $lockedQuery->count();
 
             $bookingsCount = BookingRoom::where('room_class_id', $roomClassId)
+                ->stayOnly()
                 ->whereIn('status', [
                     BookingRoom::STATUS_BOOKED,
                     BookingRoom::STATUS_CHECKED_IN,
@@ -1461,14 +1462,14 @@ class RoomLockController extends Controller
         // 1. Find all active unassigned bookings in this room class that overlap with the lock period
         $unassignedBookings = BookingRoom::with(['booking', 'roomClass'])
             ->where('room_class_id', $roomClassId)
+            ->stayOnly()
             ->whereIn('status', [
                 BookingRoom::STATUS_BOOKED,
                 BookingRoom::STATUS_CHECKED_IN,
             ])
             ->where(function ($q) {
                 $q->whereNull('room_number')
-                  ->orWhere('room_number', '')
-                  ->orWhere('room_number', 'like', '0%');
+                    ->orWhere('room_number', '');
             })
             ->where('arrival_date', '<', $endDateStr)
             ->where('departure_date', '>', $startDateStr)
@@ -1482,9 +1483,8 @@ class RoomLockController extends Controller
         }
 
         // 2. Get all physical rooms of this room class
-        $physicalRooms = Room::where('room_class_id', $roomClassId)
-            ->where('is_internal', false)
-            ->where('room_number', 'not like', '0%')
+        $physicalRooms = Room::physical()
+            ->where('room_class_id', $roomClassId)
             ->get();
 
         if ($physicalRooms->isEmpty()) {

@@ -310,10 +310,15 @@ class GuestController extends Controller
     // TODO: Tích hợp thêm nút "Checkout riêng" trên giao diện UI (tab Danh sách khách của phòng) sau.
     public function checkoutGuest(Request $request, $roomId, $guestId)
     {
+        $room = BookingRoom::with('booking')->findOrFail($roomId);
+
+        if ($room->isVirtual()) {
+            return response()->json(['success' => false, 'code' => 'virtual_room', 'message' => 'Phòng ảo chỉ dùng làm folio dịch vụ, không hỗ trợ checkout khách lưu trú.'], 422);
+        }
+
         $pivot = BookingRoomGuest::where('booking_room_id', $roomId)
             ->where('guest_id', $guestId)
             ->firstOrFail();
-        $room = BookingRoom::with('booking')->findOrFail($roomId);
 
         if ($pivot->status === BookingRoomGuest::STATUS_CHECKED_OUT) {
             return response()->json(['success' => false, 'message' => 'Khách đã checkout rồi.'], 422);
@@ -346,6 +351,9 @@ class GuestController extends Controller
     {
         $data = $request->validate(['guest_ids' => 'required|array|min:1', 'guest_ids.*' => 'string|max:50', 'skip_remaining_room_charge' => 'nullable|boolean']);
         $room = BookingRoom::with('booking')->findOrFail($roomId);
+        if ($room->isVirtual()) {
+            return response()->json(['success' => false, 'code' => 'virtual_room', 'message' => 'Phòng ảo chỉ dùng làm folio dịch vụ, không hỗ trợ checkout phòng.'], 422);
+        }
         $guestIds = collect($data['guest_ids']);
         $activeGuestIds = $room->guests()->whereNotIn('status', [BookingRoomGuest::STATUS_CHECKED_OUT, BookingRoomGuest::STATUS_CANCELLED])->pluck('guest_id');
         $isFullRoomCheckout = $activeGuestIds->diff($guestIds)->isEmpty();
@@ -408,6 +416,15 @@ class GuestController extends Controller
                     'folio' => $bill->Folio,
                 ])->values(),
                 'rooms' => $rooms->map(function (BookingRoom $room) {
+                    if ($room->isVirtual()) {
+                        return [
+                            'room_id' => $room->id,
+                            'room_number' => $room->room_number,
+                            'eligible' => false,
+                            'code' => 'virtual_room',
+                            'message' => 'Phòng ảo chỉ dùng làm folio dịch vụ, không hỗ trợ checkout phòng.',
+                        ];
+                    }
                     $eligibility = $this->validateFullCheckout($room);
                     return [
                         'room_id' => $room->id,
@@ -425,6 +442,9 @@ class GuestController extends Controller
     public function checkoutChild($roomId, $childId)
     {
         $room = BookingRoom::findOrFail($roomId);
+        if ($room->isVirtual()) {
+            return response()->json(['success' => false, 'code' => 'virtual_room', 'message' => 'Phòng ảo không có khách lưu trú để checkout.'], 422);
+        }
         $child = BookingChild::where('booking_room_id', $room->id)->findOrFail($childId);
         if ((int) $child->child_status === BookingRoomGuest::STATUS_CHECKED_OUT) {
             return response()->json(['success' => false, 'message' => 'Trẻ em đã checkout.'], 422);
@@ -441,7 +461,14 @@ class GuestController extends Controller
     public function checkoutBooking(Request $request, $bookingId)
     {
         $booking = \App\Models\Booking::with('bookingRooms.guests')->findOrFail($bookingId);
-        $rooms = $booking->bookingRooms->where('status', BookingRoom::STATUS_CHECKED_IN);
+        $allRooms = $booking->bookingRooms;
+        $rooms = $allRooms
+            ->where('status', BookingRoom::STATUS_CHECKED_IN)
+            ->filter(fn (BookingRoom $room) => !$room->isVirtual());
+
+        if ($booking->is_service_only || ($rooms->isEmpty() && $allRooms->contains(fn (BookingRoom $room) => $room->isVirtual()))) {
+            return response()->json(['success' => false, 'code' => 'virtual_room', 'message' => 'Booking chỉ chứa folio phòng ảo, không hỗ trợ checkout lưu trú.'], 422);
+        }
 
         // Checkout Master chỉ xét công nợ/cọc của toàn Booking, không xét ngày đi từng phòng.
         $eligibility = $this->validateMasterCheckout($booking, $rooms);
@@ -480,6 +507,10 @@ class GuestController extends Controller
         return DB::transaction(function () use ($roomId) {
             $room = BookingRoom::with(['booking', 'guests', 'children', 'room'])->lockForUpdate()->findOrFail($roomId);
             $systemDate = app(\App\Services\RoomAvailabilityService::class)->getSystemDate()->startOfDay();
+
+            if ($room->isVirtual()) {
+                return response()->json(['success' => false, 'code' => 'virtual_room', 'message' => 'Không thể khôi phục checkout cho folio phòng ảo.'], 422);
+            }
 
             if ($room->status !== BookingRoom::STATUS_CHECKED_OUT) {
                 return response()->json(['success' => false, 'message' => 'Chỉ có thể khôi phục phòng đã checkout.'], 422);
@@ -553,6 +584,9 @@ class GuestController extends Controller
     {
         return DB::transaction(function () use ($bookingId) {
             $booking = Booking::findOrFail($bookingId);
+            if ($booking->is_service_only) {
+                return response()->json(['success' => false, 'code' => 'virtual_room', 'message' => 'Booking folio ảo không có trạng thái checkout lưu trú để khôi phục.'], 422);
+            }
             if ($booking->status !== Booking::STATUS_CHECKOUT) {
                 return response()->json(['success' => false, 'message' => 'Chỉ có thể khôi phục Master đã checkout.'], 422);
             }
