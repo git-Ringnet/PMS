@@ -111,15 +111,6 @@ function normalizeDate(value) {
   return String(value || '').trim().slice(0, 10)
 }
 
-const stayStartDate = computed(() => normalizeDate(props.arrivalDate))
-const stayEndDate = computed(() => normalizeDate(props.departureDate))
-const latestPaymentDate = computed(() => {
-  const limits = [stayEndDate.value, normalizeDate(props.systemDate) || todayDateStr()].filter(Boolean)
-  return limits.sort()[0] || ''
-})
-const paymentDateRangeAvailable = computed(() => (
-  !stayStartDate.value || !latestPaymentDate.value || stayStartDate.value <= latestPaymentDate.value
-))
 function openPaymentDatePicker() {
   const input = paymentDateInput.value
   if (!input) return
@@ -133,17 +124,24 @@ function openPaymentDatePicker() {
   input.focus()
 }
 
-function isPaymentDateAllowed(value) {
+function isValidPaymentDate(value) {
   const date = normalizeDate(value)
-  return Boolean(date)
-    && (!stayStartDate.value || date >= stayStartDate.value)
-    && (!stayEndDate.value || date <= stayEndDate.value)
-    && date <= (normalizeDate(props.systemDate) || todayDateStr())
+  const match = date.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!match) return false
+
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  if (year < 1 || month < 1 || month > 12 || day < 1) return false
+
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+  return day <= daysInMonth[month - 1]
 }
 
 function validatePaymentDateInput(event) {
   const candidate = normalizeDate(event?.target?.value ?? draftPaymentDate.value)
-  if (!isPaymentDateAllowed(candidate)) {
+  if (!isValidPaymentDate(candidate)) {
     draftPaymentDate.value = dateStr.value
     if (event?.target) event.target.value = dateStr.value
     paymentDateError.value = paymentDateRangeError
@@ -660,8 +658,8 @@ onMounted(() => {
               <div class="min-w-0">
                 <label class="block font-medium text-gray-700 mb-0.5 text-[10px]">Ngày</label>
                 <div class="relative">
-                  <input ref="paymentDateInput" type="date" v-model="draftPaymentDate" :min="stayStartDate || undefined" :max="latestPaymentDate || undefined" :disabled="!paymentDateRangeAvailable" :aria-invalid="Boolean(paymentDateError)" :aria-describedby="paymentDateError ? 'payment-date-error-message' : undefined" @blur="validatePaymentDateInput" @keydown.enter.prevent="validatePaymentDateInput" class="h-8 box-border w-full min-w-0 pl-1 pr-7 bg-white border border-gray-300 rounded text-center text-[11px] font-mono font-semibold disabled:bg-gray-100" />
-                  <button type="button" :disabled="!paymentDateRangeAvailable" aria-label="Mở lịch chọn ngày thanh toán" title="Chọn ngày" @click.stop="openPaymentDatePicker" class="absolute right-1 top-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded text-slate-500 hover:bg-slate-100 hover:text-sky-600 disabled:cursor-not-allowed">
+                  <input ref="paymentDateInput" type="date" v-model="draftPaymentDate" required :aria-invalid="Boolean(paymentDateError)" :aria-describedby="paymentDateError ? 'payment-date-error-message' : undefined" @blur="validatePaymentDateInput" @keydown.enter.prevent="validatePaymentDateInput" class="h-8 box-border w-full min-w-0 pl-1 pr-7 bg-white border border-gray-300 rounded text-center text-[11px] font-mono font-semibold" />
+                  <button type="button" aria-label="Mở lịch chọn ngày thanh toán" title="Chọn ngày" @click.stop="openPaymentDatePicker" class="absolute right-1 top-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded text-slate-500 hover:bg-slate-100 hover:text-sky-600">
                     <CalendarDays class="h-3.5 w-3.5" />
                   </button>
                 </div>
