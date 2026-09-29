@@ -2447,8 +2447,15 @@ const handleRoomDrop = async (booking, room, guest = null) => {
   const sourceId = selectedRoomItem.value?.roomId || `master-${selectedBooking.value?.bookingId}`
   const selectedItems = selectedServiceItems.value.filter(service => !service.isPaid && Number(service.status) !== 2)
   const draggedItems = group.items.filter(service => !service.isPaid && Number(service.status) !== 2)
+  const transferItemKey = item => {
+    const mirrorId = Number(item.bookingRoomServiceId)
+    if (Number.isInteger(mirrorId) && mirrorId > 0) return `mirror-${mirrorId}`
+    const billId = Number(item.serviceBillId)
+    if (Number.isInteger(billId) && billId > 0) return `bill-${billId}`
+    return `item-${String(item.id)}`
+  }
   const itemsToTransfer = selectedItems.length > 0
-    ? [...new Map([...selectedItems, ...draggedItems].map(item => [String(item.id), item])).values()]
+    ? [...new Map([...selectedItems, ...draggedItems].map(item => [transferItemKey(item), item])).values()]
     : draggedItems
 
   if (itemsToTransfer.length === 0) {
@@ -2458,13 +2465,29 @@ const handleRoomDrop = async (booking, room, guest = null) => {
 
   isServiceOperationLoading.value = true
   try {
+    const serviceBillIds = [...new Set(itemsToTransfer
+      .map(item => Number(item.serviceBillId))
+      .filter(id => Number.isInteger(id) && id > 0))]
+    const mirrorServiceIds = [...new Set(itemsToTransfer
+      .map(item => Number(item.bookingRoomServiceId))
+      .filter(id => Number.isInteger(id) && id > 0))]
+    if (!isMaster && serviceBillIds.length > 0 && itemsToTransfer.some(item => {
+      const billId = Number(item.serviceBillId)
+      return !Number.isInteger(billId) || billId <= 0
+    })) {
+      uiStore.showToast('Có dịch vụ chưa liên kết với hóa đơn nên không thể chuyển cùng lúc.', 'error')
+      return
+    }
+
     const response = isMaster
       ? await quickTransferBookingRoomServices(destination.roomId, {
           bill_ids: [...new Set(itemsToTransfer.map(item => Number(item.serviceBillId || item.id)))],
           target_guest_id: destination.guestId,
         })
       : await transferBookingRoomServicesFolio(sourceId, {
-          service_ids: [...new Set(itemsToTransfer.map(item => Number(item.id)))],
+          ...(serviceBillIds.length > 0
+            ? { service_bill_ids: serviceBillIds, ...(mirrorServiceIds.length > 0 ? { service_ids: mirrorServiceIds } : {}) }
+            : { service_ids: mirrorServiceIds }),
           target_booking_id: destination.bookingId,
           target_room_id: destination.roomId,
           target_guest_id: destination.guestId,
