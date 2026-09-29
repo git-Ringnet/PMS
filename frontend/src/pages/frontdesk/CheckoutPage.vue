@@ -2157,13 +2157,16 @@ const transferSelectedServices = async (destination) => {
   try {
     const isMaster = !selectedRoomItem.value
     const sourceId = selectedRoomItem.value?.roomId || `master-${selectedBooking.value.bookingId}`
+    const billIds = [...new Set(selectedServiceItems.value.map(service => Number(service.serviceBillId)).filter(id => Number.isInteger(id) && id > 0))]
+    const mirrorIds = [...new Set(selectedServiceItems.value.map(service => service.bookingRoomServiceId).filter(Number.isInteger))]
     const response = isMaster
       ? await quickTransferBookingRoomServices(destination.roomId, {
-          bill_ids: selectedServiceIds.value.map(Number),
+          bill_ids: billIds,
           target_guest_id: destination.guestId
         })
       : await transferBookingRoomServicesFolio(sourceId, {
-          service_ids: selectedServiceIds.value.map(Number),
+          service_bill_ids: billIds,
+          ...(mirrorIds.length ? { service_ids: mirrorIds } : {}),
           target_booking_id: destination.bookingId,
           target_room_id: destination.roomId,
           target_guest_id: destination.guestId

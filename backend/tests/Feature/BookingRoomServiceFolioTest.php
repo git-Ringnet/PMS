@@ -170,6 +170,121 @@ class BookingRoomServiceFolioTest extends TestCase
         $this->assertSoftDeleted('booking_room_services', ['id' => $service->id]);
     }
 
+    public function test_room_service_transfer_accepts_a_legacy_bill_without_mirror_rows(): void
+    {
+        $user = $this->createFolioUser();
+        $sourceBooking = Booking::create([
+            'booking_name' => 'GAL1', 'arrival_date' => now()->toDateString(), 'departure_date' => now()->addDay()->toDateString(),
+            'num_of_days' => 1, 'booking_date' => now()->toDateString(), 'created_by' => $user->username,
+        ]);
+        $targetBooking = Booking::create([
+            'booking_name' => 'GAL2', 'arrival_date' => now()->toDateString(), 'departure_date' => now()->addDay()->toDateString(),
+            'num_of_days' => 1, 'booking_date' => now()->toDateString(), 'created_by' => $user->username,
+        ]);
+        $sourceRoom = $this->makeRoom($sourceBooking, 'GAL1-105');
+        $targetRoom = $this->makeRoom($targetBooking, 'GAL2-205');
+        $bill = $this->makeBill('Dịch vụ legacy không có mirror');
+        $bill->update([
+            'Date' => now(), 'Amount' => 175000, 'RegisterId1' => $sourceBooking->id, 'RentalRoomId1' => $sourceRoom->id,
+            'RegisterID2' => $sourceBooking->id, 'RentalRoomId2' => $sourceRoom->id, 'Status' => 1, 'Edit' => 0,
+        ]);
+
+        $this->actingAs($user)
+            ->patchJson("/api/booking-rooms/{$sourceRoom->id}/services/folio", [
+                'service_bill_ids' => [$bill->Ma], 'target_booking_id' => $targetBooking->id, 'target_room_id' => $targetRoom->id,
+            ])
+            ->assertSuccessful();
+
+        $this->assertDatabaseHas('service_bills', ['Ma' => $bill->Ma, 'Edit' => 1, 'Status' => 4]);
+        $firstTransferBill = ServiceBill::where('RentalRoomId2', $targetRoom->id)
+            ->where('Amount', 175000)->where('Edit', 0)->where('Status', 1)->firstOrFail();
+        $this->assertDatabaseHas('service_bills', ['Amount' => -175000, 'Status' => 4]);
+
+        // A transferred bill keeps its original RegisterId1; RentalRoomId2 still identifies its current room owner.
+        $this->actingAs($user)
+            ->patchJson("/api/booking-rooms/{$targetRoom->id}/services/folio", [
+                'service_bill_ids' => [$firstTransferBill->Ma], 'target_booking_id' => $sourceBooking->id, 'target_room_id' => $sourceRoom->id,
+            ])
+            ->assertSuccessful();
+
+        $this->assertDatabaseHas('service_bills', ['RentalRoomId2' => $sourceRoom->id, 'Amount' => 175000, 'Edit' => 0, 'Status' => 1]);
+        $this->assertDatabaseCount('booking_room_services', 0);
+    }
+
+    public function test_room_service_transfer_rejects_a_bill_owned_by_another_room(): void
+    {
+        $user = $this->createFolioUser();
+        $sourceBooking = Booking::create([
+            'booking_name' => 'GAL1', 'arrival_date' => now()->toDateString(), 'departure_date' => now()->addDay()->toDateString(),
+            'num_of_days' => 1, 'booking_date' => now()->toDateString(), 'created_by' => $user->username,
+        ]);
+        $targetBooking = Booking::create([
+            'booking_name' => 'GAL2', 'arrival_date' => now()->toDateString(), 'departure_date' => now()->addDay()->toDateString(),
+            'num_of_days' => 1, 'booking_date' => now()->toDateString(), 'created_by' => $user->username,
+        ]);
+        $selectedRoom = $this->makeRoom($sourceBooking, 'GAL1-105');
+        $ownerRoom = $this->makeRoom($sourceBooking, 'GAL1-106');
+        $targetRoom = $this->makeRoom($targetBooking, 'GAL2-205');
+        $bill = $this->makeBill('Bill thuộc phòng khác');
+        $bill->update([
+            'Date' => now(), 'Amount' => 150000, 'RegisterId1' => $sourceBooking->id, 'RentalRoomId1' => $ownerRoom->id,
+            'RegisterID2' => $sourceBooking->id, 'RentalRoomId2' => $ownerRoom->id, 'Status' => 1, 'Edit' => 0,
+        ]);
+
+        $this->actingAs($user)
+            ->patchJson("/api/booking-rooms/{$selectedRoom->id}/services/folio", [
+                'service_bill_ids' => [$bill->Ma], 'target_booking_id' => $targetBooking->id, 'target_room_id' => $targetRoom->id,
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Có bill không thuộc phòng đã chọn.');
+
+        $this->assertDatabaseHas('service_bills', ['Ma' => $bill->Ma, 'Amount' => 150000, 'Edit' => 0, 'Status' => 1]);
+        $this->assertSame(1, ServiceBill::where('Amount', 150000)->count());
+    }
+
+    public function test_room_service_transfer_requires_all_mirror_rows_and_keeps_service_ids_compatibility(): void
+    {
+        $user = $this->createFolioUser();
+        $sourceBooking = Booking::create([
+            'booking_name' => 'GAL1', 'arrival_date' => now()->toDateString(), 'departure_date' => now()->addDay()->toDateString(),
+            'num_of_days' => 1, 'booking_date' => now()->toDateString(), 'created_by' => $user->username,
+        ]);
+        $targetBooking = Booking::create([
+            'booking_name' => 'GAL2', 'arrival_date' => now()->toDateString(), 'departure_date' => now()->addDay()->toDateString(),
+            'num_of_days' => 1, 'booking_date' => now()->toDateString(), 'created_by' => $user->username,
+        ]);
+        $sourceRoom = $this->makeRoom($sourceBooking, 'GAL1-105');
+        $targetRoom = $this->makeRoom($targetBooking, 'GAL2-205');
+        $bill = $this->makeBill('Bill nhiều dòng');
+        $bill->update([
+            'Date' => now(), 'Amount' => 250000, 'RegisterId1' => $sourceBooking->id, 'RentalRoomId1' => $sourceRoom->id,
+            'RegisterID2' => $sourceBooking->id, 'RentalRoomId2' => $sourceRoom->id, 'Status' => 1, 'Edit' => 0,
+        ]);
+        $firstService = $this->makeService($sourceRoom, $bill->Ma);
+        $secondService = $this->makeService($sourceRoom, $bill->Ma);
+
+        $this->actingAs($user)
+            ->patchJson("/api/booking-rooms/{$sourceRoom->id}/services/folio", [
+                'service_bill_ids' => [$bill->Ma], 'service_ids' => [$firstService->id],
+                'target_booking_id' => $targetBooking->id, 'target_room_id' => $targetRoom->id,
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Phải chọn toàn bộ chi tiết của cùng một hóa đơn dịch vụ để chuyển.');
+
+        $this->assertDatabaseHas('service_bills', ['Ma' => $bill->Ma, 'Edit' => 0, 'Status' => 1]);
+
+        $this->actingAs($user)
+            ->patchJson("/api/booking-rooms/{$sourceRoom->id}/services/folio", [
+                'service_ids' => [$firstService->id, $secondService->id],
+                'target_booking_id' => $targetBooking->id, 'target_room_id' => $targetRoom->id,
+            ])
+            ->assertSuccessful();
+
+        $this->assertSoftDeleted('booking_room_services', ['id' => $firstService->id]);
+        $this->assertSoftDeleted('booking_room_services', ['id' => $secondService->id]);
+        $this->assertDatabaseHas('booking_room_services', ['booking_room_id' => $targetRoom->id, 'service_code' => 'MB']);
+    }
+
     public function test_folio_drag_updates_only_the_selected_room_service_and_its_linked_bill(): void
     {
         $user = $this->createFolioUser();

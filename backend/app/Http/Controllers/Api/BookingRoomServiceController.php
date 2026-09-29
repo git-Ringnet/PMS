@@ -749,19 +749,26 @@ class BookingRoomServiceController extends Controller
             return response()->json(['success' => true, 'message' => 'Đã chuyển dịch vụ sang Folio mới.']);
         }
 
-        $request->validate([
-            'service_ids'   => 'required|array|min:1',
+        $validated = $request->validate([
+            'service_ids'   => 'required_without:service_bill_ids|array|min:1',
             'service_ids.*' => 'integer',
+            'service_bill_ids' => 'required_without:service_ids|array|min:1',
+            'service_bill_ids.*' => 'integer',
             'target_booking_id' => 'required|integer|exists:bookings,id',
             'target_room_id' => 'nullable|string|exists:booking_rooms,id',
             'target_guest_id' => 'nullable|string|exists:guests,id',
         ]);
 
         $sourceRoom = BookingRoom::findOrFail($roomId);
-        $targetBooking = Booking::findOrFail($request->target_booking_id);
-        $targetRoom = $request->target_room_id
-            ? BookingRoom::where('booking_id', $targetBooking->id)->findOrFail($request->target_room_id)
+        $targetBooking = Booking::findOrFail($validated['target_booking_id']);
+        $targetRoom = !empty($validated['target_room_id'])
+            ? BookingRoom::where('booking_id', $targetBooking->id)->findOrFail($validated['target_room_id'])
             : null;
+        $transferByBill = isset($validated['service_bill_ids']);
+        $requestedIds = array_values(array_unique(array_map(
+            'intval',
+            $transferByBill ? $validated['service_bill_ids'] : $validated['service_ids']
+        )));
         $activeRoomStatuses = [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN];
         if (!in_array((int) $sourceRoom->status, $activeRoomStatuses, true)) {
             abort(422, 'Chỉ được chuyển dịch vụ từ phòng Reservation hoặc Inhouse.');
@@ -780,14 +787,39 @@ class BookingRoomServiceController extends Controller
             ? 'R_' . ($targetRoom->room_number ?: $targetRoom->id)
             : 'BK_' . $targetBooking->id;
 
-        DB::transaction(function () use ($request, $sourceRoom, $targetBooking, $targetRoom, $targetGuest, $sourceLocation, $targetLocation) {
-            $services = BookingRoomService::where('booking_room_id', $sourceRoom->id)
-                ->whereIn('id', $request->service_ids)->lockForUpdate()->get();
-            if ($services->count() !== count(array_unique($request->service_ids))) abort(422, 'Có dịch vụ không thuộc phòng đã chọn.');
-            if ($services->contains(fn ($service) => !$service->service_bill_id)) abort(422, 'Dịch vụ chưa có liên kết bill để thực hiện chuyển.');
+        DB::transaction(function () use ($validated, $sourceRoom, $targetBooking, $targetRoom, $targetGuest, $sourceLocation, $targetLocation, $transferByBill, $requestedIds) {
+            if ($transferByBill) {
+                $bills = ServiceBill::whereIn('Ma', $requestedIds)->lockForUpdate()->get()->keyBy('Ma');
+                if ($bills->count() !== count($requestedIds)
+                    || $bills->contains(fn (ServiceBill $bill) => !$this->serviceBillBelongsToRoom($bill, $sourceRoom))) {
+                    abort(422, 'Có bill không thuộc phòng đã chọn.');
+                }
+                $billIds = $requestedIds;
+                $requestedMirrorIds = array_values(array_unique(array_map('intval', $validated['service_ids'] ?? [])));
+                $services = empty($requestedMirrorIds)
+                    ? collect()
+                    : BookingRoomService::where('booking_room_id', $sourceRoom->id)
+                        ->whereIn('service_bill_id', $billIds)
+                        ->whereIn('id', $requestedMirrorIds)
+                        ->lockForUpdate()
+                        ->get();
+                if ($services->count() !== count($requestedMirrorIds)) {
+                    abort(422, 'Có dịch vụ không thuộc phòng đã chọn.');
+                }
+                $servicesByBill = $services->groupBy('service_bill_id');
+            } else {
+                $services = BookingRoomService::where('booking_room_id', $sourceRoom->id)
+                    ->whereIn('id', $requestedIds)->lockForUpdate()->get();
+                if ($services->count() !== count($requestedIds)) abort(422, 'Có dịch vụ không thuộc phòng đã chọn.');
+                if ($services->contains(fn ($service) => !$service->service_bill_id)) abort(422, 'Dịch vụ chưa có liên kết bill để thực hiện chuyển.');
+                $servicesByBill = $services->groupBy('service_bill_id');
+                $billIds = $servicesByBill->keys()->all();
+                $bills = collect();
+            }
 
-            foreach ($services->groupBy('service_bill_id') as $serviceBillId => $billServices) {
-                $bill = ServiceBill::whereKey($serviceBillId)->lockForUpdate()->firstOrFail();
+            foreach ($billIds as $serviceBillId) {
+                $billServices = $servicesByBill->get($serviceBillId, collect());
+                $bill = $bills->get($serviceBillId) ?: ServiceBill::whereKey($serviceBillId)->lockForUpdate()->firstOrFail();
                 if ($bill->PaymentId !== null || (int) $bill->Status !== 1 || (int) $bill->Edit === 1) abort(422, 'Chỉ được chuyển dịch vụ chưa thanh toán.');
                 $hasPaidHousekeepingBill = HousekeepingServiceBill::where('BillServiceId', $bill->Ma)
                     ->where(function ($query) {
