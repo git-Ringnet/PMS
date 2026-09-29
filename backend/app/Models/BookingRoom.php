@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -12,6 +13,50 @@ class BookingRoom extends Model
 
     protected $keyType = 'string';
     public $incrementing = false;
+
+    /**
+     * Scope to room rows that represent accommodation inventory.
+     * Unassigned physical reservations remain included; service-only bookings,
+     * internal rooms and legacy 0-prefixed rooms are excluded.
+     */
+    public function scopeStayOnly(Builder $query): Builder
+    {
+        return $query
+            ->whereDoesntHave('booking', fn (Builder $booking) => $booking->where('is_service_only', true))
+            ->where(function (Builder $rooms): void {
+                $rooms->whereNull('room_number')
+                    ->orWhere('room_number', '')
+                    ->orWhere(function (Builder $assigned): void {
+                        $assigned->where('room_number', 'not like', '0%')
+                            ->whereDoesntHave('room', fn (Builder $room) => $room->where('is_internal', true));
+                    });
+            });
+    }
+
+    /** Scope to virtual/service-anchor rows without changing normal relation queries. */
+    public function scopeVirtual(Builder $query): Builder
+    {
+        return $query->where(function (Builder $virtual): void {
+            $virtual->where('room_number', 'like', '0%')
+                ->orWhereHas('room', fn (Builder $room) => $room->where('is_internal', true))
+                ->orWhereHas('booking', fn (Builder $booking) => $booking->where('is_service_only', true));
+        });
+    }
+
+    public function isVirtual(): bool
+    {
+        if (str_starts_with((string) $this->room_number, '0')) {
+            return true;
+        }
+
+        $booking = $this->relationLoaded('booking') ? $this->getRelation('booking') : $this->booking()->first();
+        if ($booking?->is_service_only) {
+            return true;
+        }
+
+        $room = $this->relationLoaded('room') ? $this->getRelation('room') : $this->room()->first();
+        return (bool) $room?->is_internal;
+    }
 
     protected static function boot()
     {

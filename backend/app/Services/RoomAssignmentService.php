@@ -58,9 +58,8 @@ class RoomAssignmentService
      */
     public function lockedCandidates(int|string $roomClassId): Collection
     {
-        $rooms = Room::query()
+        $rooms = Room::physical()
             ->where('room_class_id', $roomClassId)
-            ->where('is_internal', false)
             ->lockForUpdate()
             ->get();
 

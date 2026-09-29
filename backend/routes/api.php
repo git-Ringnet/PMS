@@ -135,6 +135,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     Route::get('/rooms/stats', [\App\Http\Controllers\Api\RoomController::class, 'stats']);
     Route::post('/rooms/bulk-status', [\App\Http\Controllers\Api\RoomController::class, 'bulkUpdateStatus']);
     Route::put('/rooms/{id}/status', [\App\Http\Controllers\Api\RoomController::class, 'updateStatus']);
+    Route::post('/rooms/{room_number}/service-folio', [\App\Http\Controllers\Api\RoomController::class, 'ensureVirtualServiceFolio'])
+        ->middleware('permission:fo.service.add,fo.service.edit');
     Route::apiResource('rooms', \App\Http\Controllers\Api\RoomController::class);
 
     // Room locks management

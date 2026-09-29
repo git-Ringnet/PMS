@@ -58,7 +58,7 @@ class AvailabilityController extends Controller
             ->orderBy('id')
             ->get();
 
-        $roomCounts = Room::where('room_number', 'not like', '0%')
+        $roomCounts = Room::physical()
             ->select('room_class_id', DB::raw('count(*) as total'), DB::raw('max(extra_beds_limit) as max_extra'))
             ->groupBy('room_class_id')
             ->get()
@@ -119,6 +119,7 @@ class AvailabilityController extends Controller
 
         // 3. Tính OOO/OOS per class per date
         $locks = RoomLock::whereIn('is_active', [1, 2])
+            ->whereHas('room', fn ($room) => $room->physical())
             ->where('start_date', '<', $endStr)
             ->where('end_date', '>', $startStr)
             ->with('room.roomClass')
@@ -161,6 +162,7 @@ class AvailabilityController extends Controller
                 BookingRoom::STATUS_CHECKED_OUT,
                 BookingRoom::STATUS_CANCELLED,
             ])
+            ->stayOnly()
             ->where(function ($query) use ($startStr, $endStr) {
                 $query->where(function ($overnight) use ($startStr, $endStr) {
                     $overnight->where('arrival_date', '<', $endStr)
@@ -346,7 +348,7 @@ class AvailabilityController extends Controller
         }
 
         // Lấy tất cả phòng của mỗi loại phòng
-        $roomsByClass = Room::where('room_number', 'not like', '0%')
+        $roomsByClass = Room::physical()
             ->select('room_number', 'room_class_id')
             ->get()
             ->groupBy('room_class_id');
@@ -527,9 +529,7 @@ class AvailabilityController extends Controller
         $metric = $validated['metric'];
         $roomClassId = $validated['room_class_id'] ?? null;
 
-        $roomsQuery = Room::query()
-            ->where('is_internal', false)
-            ->where('room_number', 'not like', '0%')
+        $roomsQuery = Room::physical()
             ->with('roomClass:id,code,name')
             ->orderBy('room_number');
 
@@ -564,6 +564,7 @@ class AvailabilityController extends Controller
         $lockedNumbers = $locks->pluck('room_number')->unique()->values();
 
         $bookingRooms = BookingRoom::query()
+            ->stayOnly()
             ->whereIn('status', [
                 BookingRoom::STATUS_BOOKED,
                 BookingRoom::STATUS_CHECKED_IN,

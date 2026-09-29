@@ -28,6 +28,7 @@ class RoomController extends Controller
     {
         $request->validate([
             'date' => 'nullable|date',
+            'virtual_only' => 'nullable|in:0,1,true,false',
         ]);
 
         $query = Room::with(['roomForm', 'roomClass.standardRates.roomForm', 'activeLock', 'allActiveLocks'])
@@ -43,7 +44,9 @@ class RoomController extends Controller
         }
 
         // Filter internal/virtual rooms (exclude by default unless include_internal=1 or is_internal parameter is passed)
-        if ($request->has('include_internal') && $request->boolean('include_internal')) {
+        if ($request->boolean('virtual_only')) {
+            $query->virtual();
+        } elseif ($request->has('include_internal') && $request->boolean('include_internal')) {
             // include all rooms (both physical and internal/virtual)
         } elseif ($request->has('is_internal')) {
             $query->where('is_internal', $request->boolean('is_internal'));
@@ -72,6 +75,7 @@ class RoomController extends Controller
 
         // Tải các phòng đang được đặt/đang ở hôm nay
         $bookingRoomsToday = \App\Models\BookingRoom::whereNotNull('room_number')
+            ->stayOnly()
             ->whereHas('booking.registrationStatus', fn ($query) => $query->where('is_availability', 1))
             ->whereIn('status', [
                 \App\Models\BookingRoom::STATUS_BOOKED,
@@ -102,6 +106,7 @@ class RoomController extends Controller
 
         $tomorrowDate = $systemDate->copy()->addDay()->toDateString();
         $bookingRoomsTomorrow = \App\Models\BookingRoom::whereNotNull('room_number')
+            ->stayOnly()
             ->whereHas('booking.registrationStatus', fn ($query) => $query->where('is_availability', 1))
             ->whereIn('status', [
                 \App\Models\BookingRoom::STATUS_BOOKED,
@@ -330,6 +335,121 @@ class RoomController extends Controller
                     ->pluck('floor')
                     ->map(fn($f) => (int)$f),
             ]
+        ]);
+    }
+
+    /**
+     * Return the active service folio for an internal room, creating a runtime
+     * anchor only when the room has no active booking-room relation.
+     */
+    public function ensureVirtualServiceFolio(Request $request, string $roomNumber)
+    {
+        $result = DB::transaction(function () use ($request, $roomNumber) {
+            $room = Room::query()
+                ->where('room_number', $roomNumber)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if (!$room->is_virtual) {
+                return ['error' => response()->json([
+                    'success' => false,
+                    'code' => 'not_virtual_room',
+                    'message' => 'Chỉ phòng ảo mới có thể dùng folio dịch vụ.',
+                ], 422)];
+            }
+
+            // A 0-prefixed number is sufficient to list a legacy virtual room,
+            // but provisioning needs the explicit flag so existing reports
+            // that only filter is_internal cannot count this folio as a stay.
+            if (!$room->is_internal || !str_starts_with((string) $room->room_number, '0')) {
+                return ['error' => response()->json([
+                    'success' => false,
+                    'code' => 'virtual_room_configuration_required',
+                    'message' => 'Chỉ tự tạo folio cho phòng có số bắt đầu bằng 0 và cờ nội bộ. Hãy xác minh cấu hình phòng trước để tránh ảnh hưởng báo cáo lưu trú.',
+                ], 422)];
+            }
+
+            $activeRoomRows = \App\Models\BookingRoom::query()
+                ->with('booking')
+                ->where('room_number', $room->room_number)
+                ->whereIn('status', [
+                    \App\Models\BookingRoom::STATUS_BOOKED,
+                    \App\Models\BookingRoom::STATUS_CHECKED_IN,
+                ])
+                ->lockForUpdate()
+                ->get();
+
+            $serviceFolios = $activeRoomRows
+                ->filter(fn ($bookingRoom) => (bool) $bookingRoom->booking?->is_service_only)
+                ->values();
+
+            if ($serviceFolios->count() === 1) {
+                return ['booking_room' => $serviceFolios->first(), 'created' => false];
+            }
+
+            if ($serviceFolios->count() > 1 || $activeRoomRows->isNotEmpty()) {
+                return ['error' => response()->json([
+                    'success' => false,
+                    'code' => 'virtual_room_folio_ambiguous',
+                    'message' => 'Phòng đã có liên kết đăng ký chưa được xác minh; không tự tạo hoặc thay đổi folio.',
+                ], 409)];
+            }
+
+            $systemDate = DB::table('system_date_rolls')->orderByDesc('id')->value('system_date');
+            $arrivalDate = $systemDate
+                ? \Carbon\Carbon::parse($systemDate)->toDateString()
+                : now('Asia/Ho_Chi_Minh')->toDateString();
+            $departureDate = \Carbon\Carbon::parse($arrivalDate)->addDay()->toDateString();
+            $username = $request->user()?->username ?? 'system';
+
+            $booking = \App\Models\Booking::create([
+                'booking_name' => 'PHÒNG ẢO ' . $room->room_number,
+                'arrival_date' => $arrivalDate,
+                'departure_date' => $departureDate,
+                'num_of_days' => 1,
+                'booking_date' => $arrivalDate,
+                'status' => \App\Models\Booking::STATUS_RESERVATION,
+                'is_service_only' => true,
+                'is_master_room_rate' => false,
+                'created_by' => $username,
+                'updated_by' => $username,
+                'module' => 'FO',
+            ]);
+
+            $bookingRoom = \App\Models\BookingRoom::create([
+                'booking_id' => $booking->id,
+                'room_number' => $room->room_number,
+                'room_class_id' => $room->room_class_id,
+                'arrival_date' => $arrivalDate,
+                'departure_date' => $departureDate,
+                'actual_arrival_date' => $arrivalDate,
+                'planned_departure_date' => $departureDate,
+                'NumOfDays' => 1,
+                'ActutalNumOfDays' => 1,
+                'status' => \App\Models\BookingRoom::STATUS_BOOKED,
+                'rate' => 0,
+                'base_price' => 0,
+                'adults' => 0,
+                'babies' => 0,
+                'children_qty' => 0,
+                'created_by' => $username,
+                'updated_by' => $username,
+            ]);
+
+            return ['booking_room' => $bookingRoom->load('booking'), 'created' => true];
+        });
+
+        if (isset($result['error'])) {
+            return $result['error'];
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'booking_id' => $result['booking_room']->booking_id,
+                'booking_room_id' => $result['booking_room']->id,
+                'created' => $result['created'],
+            ],
         ]);
     }
 
@@ -713,7 +833,7 @@ class RoomController extends Controller
         $avService = app(\App\Services\RoomAvailabilityService::class);
 
         // Lấy tất cả phòng vật lý của loại phòng này (loại trừ phòng ảo/nội bộ)
-        $rooms = Room::where('room_class_id', $roomClassId)->where('is_internal', false)->get();
+        $rooms = Room::physical()->where('room_class_id', $roomClassId)->get();
 
         $vacantRooms = [];
         foreach ($rooms as $room) {

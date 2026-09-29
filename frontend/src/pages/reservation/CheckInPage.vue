@@ -118,7 +118,8 @@ const loadBookings = async () => {
       arrival_date: isDepartureMode.value ? (systemDate.value || searchDate.value) : searchDate.value,
       status: isDepartureMode.value ? '1,2' : isOccupiedMode.value ? '1' : '0,1',
       ...(isDepartureMode.value ? { list_mode: 'departures' } : {}),
-      with_billing: true
+      with_billing: true,
+      stay_only: true
     })
     if (res.data && res.data.success !== false) {
       bookings.value = res.data.data || []

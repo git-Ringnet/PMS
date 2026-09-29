@@ -195,6 +195,7 @@ class NightAuditController extends Controller
 
         // 1. Phòng cần check in nhưng chưa check in (arrival_date <= system_date và status = 0, loại bỏ phòng chuyển và phòng chưa gán phòng vật lý)
         $pendingCheckIns = BookingRoom::with(['booking', 'roomClass'])
+            ->stayOnly()
             ->whereDate('arrival_date', '<=', $systemDate)
             ->where('status', BookingRoom::STATUS_BOOKED)
             ->where('status', '!=', BookingRoom::STATUS_MOVED)
@@ -205,6 +206,7 @@ class NightAuditController extends Controller
 
         // 2. Phòng có lịch check out hôm nay/trước đây nhưng vẫn ở trạng thái in-house (departure_date <= system_date và status = 1, loại bỏ phòng chuyển)
         $pendingCheckOuts = BookingRoom::with(['booking', 'roomClass'])
+            ->stayOnly()
             ->whereDate('departure_date', '<=', $systemDate)
             ->where('status', BookingRoom::STATUS_CHECKED_IN)
             ->where('status', '!=', BookingRoom::STATUS_MOVED)
@@ -259,6 +261,9 @@ class NightAuditController extends Controller
         $userReason    = $request->reason;
 
         $room = BookingRoom::with('booking')->findOrFail($bookingRoomId);
+        if ($room->isVirtual()) {
+            return response()->json(['success' => false, 'code' => 'virtual_room', 'message' => 'Folio phòng ảo không hỗ trợ late check-in.'], 422);
+        }
         if ($room->status !== BookingRoom::STATUS_BOOKED) {
             return response()->json(['success' => false, 'message' => 'Phòng không ở trạng thái Đặt trước để late check-in.'], 422);
         }
@@ -340,6 +345,9 @@ class NightAuditController extends Controller
         $userReason    = $request->reason;
 
         $room = BookingRoom::with('booking')->findOrFail($bookingRoomId);
+        if ($room->isVirtual()) {
+            return response()->json(['success' => false, 'code' => 'virtual_room', 'message' => 'Folio phòng ảo không hỗ trợ no-show.'], 422);
+        }
         if ($room->status !== BookingRoom::STATUS_BOOKED) {
             return response()->json(['success' => false, 'message' => 'Phòng không ở trạng thái Đặt trước để noshow.'], 422);
         }
@@ -479,6 +487,7 @@ class NightAuditController extends Controller
             DB::transaction(function () use ($systemDate, $nextDate, $username, $shift, $occupiedToDirty, $emptyToInspect) {
                 // 2. Kiểm tra lại điều kiện chặn (loại bỏ phòng đã chuyển STATUS_MOVED và phòng chưa gán phòng vật lý)
                 $pendingCheckIns = BookingRoom::whereDate('arrival_date', '<=', $systemDate->toDateString())
+                    ->stayOnly()
                     ->where('status', BookingRoom::STATUS_BOOKED)
                     ->where('status', '!=', BookingRoom::STATUS_MOVED)
                     ->whereNotNull('room_number')
@@ -487,6 +496,7 @@ class NightAuditController extends Controller
                     ->count();
 
                 $pendingCheckOuts = BookingRoom::whereDate('departure_date', '<=', $systemDate->toDateString())
+                    ->stayOnly()
                     ->where('status', BookingRoom::STATUS_CHECKED_IN)
                     ->where('status', '!=', BookingRoom::STATUS_MOVED)
                     ->whereNotNull('room_number')
@@ -500,6 +510,7 @@ class NightAuditController extends Controller
 
                 // 3. Tự động post tiền phòng + các dịch vụ tự động cho phòng đang ở (loại bỏ STATUS_MOVED)
                 $inhouseRooms = BookingRoom::where('status', BookingRoom::STATUS_CHECKED_IN)
+                    ->stayOnly()
                     ->where('status', '!=', BookingRoom::STATUS_MOVED)
                     ->get();
                 foreach ($inhouseRooms as $targetRoom) {
@@ -549,11 +560,12 @@ class NightAuditController extends Controller
                 if ($occupiedToDirty) {
                     // Phòng đang ở -> dirty (occupied_dirty)
                     $occupiedNumbers = BookingRoom::where('status', BookingRoom::STATUS_CHECKED_IN)
+                        ->stayOnly()
                         ->where('status', '!=', BookingRoom::STATUS_MOVED)
                         ->whereNotNull('room_number')
                         ->pluck('room_number');
 
-                    Room::whereIn('room_number', $occupiedNumbers)
+                    Room::physical()->whereIn('room_number', $occupiedNumbers)
                         ->whereNotIn('room_status_code', ['ooo', 'oos'])
                         ->update(['room_status_code' => 'occupied_dirty']);
                 }
@@ -561,11 +573,12 @@ class NightAuditController extends Controller
                 if ($emptyToInspect) {
                     // Phòng trống sẵn sàng -> chờ kiểm tra (vacant_clean - Phòng sạch)
                     $occupiedNumbers = BookingRoom::where('status', BookingRoom::STATUS_CHECKED_IN)
+                        ->stayOnly()
                         ->where('status', '!=', BookingRoom::STATUS_MOVED)
                         ->whereNotNull('room_number')
                         ->pluck('room_number');
 
-                    Room::whereNotIn('room_number', $occupiedNumbers)
+                    Room::physical()->whereNotIn('room_number', $occupiedNumbers)
                         ->whereIn('room_status_code', ['vacant_ready'])
                         ->update(['room_status_code' => 'vacant_clean']);
                 }
@@ -573,6 +586,7 @@ class NightAuditController extends Controller
                 // 6. Xử lý phòng khóa (Room Locks)
                 // A. Mở các phòng hết hạn khóa hôm nay
                 $expiredLocks = RoomLock::where('is_active', 1)
+                    ->whereHas('room', fn ($room) => $room->physical())
                     ->whereDate('end_date', '<=', $systemDate->toDateString())
                     ->get();
 
@@ -592,6 +606,7 @@ class NightAuditController extends Controller
 
                 // B. Kích hoạt lịch khóa mới bắt đầu vào ngày hệ thống mới
                 $startingLocks = RoomLock::where('is_active', 1)
+                    ->whereHas('room', fn ($room) => $room->physical())
                     ->whereDate('start_date', '<=', $nextDate->toDateString())
                     ->where('status', 'New')
                     ->get();
@@ -601,6 +616,7 @@ class NightAuditController extends Controller
                 foreach ($startingLocks as $lock) {
                     // Kiểm tra xem phòng có khách đang ở không
                     $hasInhouse = BookingRoom::where('room_number', $lock->room_number)
+                        ->stayOnly()
                         ->where('status', BookingRoom::STATUS_CHECKED_IN)
                         ->exists();
 
@@ -662,6 +678,10 @@ class NightAuditController extends Controller
 
         $room   = BookingRoom::with('booking')->findOrFail($request->booking_room_id);
         $nights = (int) $request->nights;
+
+        if ($room->isVirtual()) {
+            return response()->json(['success' => false, 'code' => 'virtual_room', 'message' => 'Folio phòng ảo không hỗ trợ gia hạn lưu trú.'], 422);
+        }
 
         if ($room->status !== BookingRoom::STATUS_CHECKED_IN) {
             return response()->json(['success' => false, 'message' => 'Chỉ gia hạn được phòng đang ở (In-house).'], 422);

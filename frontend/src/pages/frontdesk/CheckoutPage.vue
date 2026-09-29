@@ -143,10 +143,7 @@ async function applyCheckoutFilters() {
     dateTo: filterDepartureChecked.value ? filterDateTo.value : '',
   }
   showRegisterFilterDropdown.value = false
-  selectedBooking.value = null
-  selectedRoomItem.value = null
-  selectedGuestId.value = null
-  displayedBookingsList.value = []
+  clearCheckoutPanels()
   await loadCheckoutBookings()
 }
 
@@ -267,8 +264,16 @@ const openCheckoutModal = () => {
   const checkedRooms = selectedCheckoutRooms.value
   if (!selectedBooking.value && checkedRooms.length === 0) return
   if (checkedRooms.length > 0) {
+    if (checkedRooms.some(({ room }) => room.isVirtual)) {
+      uiStore.showToast('Folio phòng ảo chỉ dùng cho dịch vụ, không thể chọn checkout.', 'warning')
+      return
+    }
     selectedBooking.value = checkedRooms[0].booking
     selectedRoomItem.value = checkedRooms.length === 1 ? checkedRooms[0].room : null
+  }
+  if (selectedRoomItem.value?.isVirtual) {
+    uiStore.showToast('Folio phòng ảo chỉ dùng cho dịch vụ, không thể checkout.', 'warning')
+    return
   }
   checkoutError.value = ''
   earlyCheckoutData.value = null
@@ -293,6 +298,10 @@ const openCheckoutModal = () => {
 }
 const submitCheckout = async () => {
   checkoutError.value = ''
+  if (selectedRoomItem.value?.isVirtual || selectedCheckoutRooms.value.some(({ room }) => room.isVirtual)) {
+    checkoutError.value = 'Folio phòng ảo chỉ dùng cho dịch vụ, không thể checkout.'
+    return
+  }
   if (!isRestoreCheckout.value && selectedRoomItem.value && checkoutGuestIds.value.length === 0) { checkoutError.value = 'Phải chọn tối thiểu một khách.'; return }
   isServiceOperationLoading.value = true
   try {
@@ -359,6 +368,10 @@ const submitCheckout = async () => {
   } finally { isServiceOperationLoading.value = false }
 }
 const chargeEarlyCheckout = async () => {
+  if (selectedRoomItem.value?.isVirtual) {
+    checkoutError.value = 'Folio phòng ảo không phát sinh tiền phòng RM.'
+    return
+  }
   if (earlyChargeNoPost.value) {
     checkoutError.value = 'Phòng hoặc booking đang bật No Post — không thể post tiền phòng.'
     return
@@ -398,6 +411,10 @@ const openEarlyChargeModal = () => {
 
 const checkoutEarlyWithoutCharge = async () => {
   if (!selectedRoomItem.value) return
+  if (selectedRoomItem.value.isVirtual) {
+    checkoutError.value = 'Folio phòng ảo chỉ dùng cho dịch vụ, không thể checkout.'
+    return
+  }
   isServiceOperationLoading.value = true
   try {
     const childIds = checkoutGuestIds.value.filter(id => (selectedRoomItem.value.rawRoom?.children || []).some(child => String(child.id) === String(id)))
@@ -416,6 +433,10 @@ const checkoutEarlyWithoutCharge = async () => {
 const openAddHousekeepingService = () => {
   // Dòng master chỉ đại diện booking; dịch vụ BP luôn hạch toán cho một phòng cụ thể.
   if (!selectedRoomItem.value) return
+  if (selectedRoomItem.value.isVirtual) {
+    uiStore.showToast('Folio phòng ảo không nhận dịch vụ nghiệp vụ buồng phòng.', 'warning')
+    return
+  }
   if (isSelectedPostBlocked.value) {
     uiStore.showToast(noPostBlockMessage.value, 'warning')
     return
@@ -426,6 +447,7 @@ const openAddHousekeepingService = () => {
 // State dữ liệu thực từ CSDL
 const allBookingsList = ref([])
 const displayedBookingsList = ref([])
+const virtualFolioLoadingRoomNumbers = ref(new Set())
 
 const selectedCheckoutRooms = computed(() => allBookingsList.value.flatMap(booking => (
   (booking.roomItems || [])
@@ -637,6 +659,7 @@ const loadCheckoutBookings = async () => {
     }
 
     params.with_billing = true
+    if (activeFilter.register !== 'virtual') params.stay_only = true
 
     const res = await fetchBookings(params)
     const list = res.data?.data || res.data || []
@@ -657,14 +680,14 @@ const loadCheckoutBookings = async () => {
 
       const roomItems = []
       const bookingIsCheckedOut = isCheckedOutRecord(b)
-      const bookingIsVirtual = Boolean(b.is_virtual || b.is_internal || (b.booking_rooms || []).some(room => (
-        room.is_virtual || room.is_internal || room.room?.is_virtual || room.room?.is_internal
+      const bookingIsVirtual = Boolean(b.is_service_only || b.is_virtual || b.is_internal || (b.booking_rooms || []).some(room => (
+        room.is_virtual || room.is_internal || room.room?.is_virtual || room.room?.is_internal || String(room.room_number || '').startsWith('0')
       )))
 
       if (b.booking_rooms && b.booking_rooms.length > 0) {
         b.booking_rooms.forEach(r => {
           const roomNo = r.room_number || r.room || (r.room && r.room.room_number) || ''
-          const isVirtualRoom = Boolean(r.is_virtual || r.is_internal || r.room?.is_virtual || r.room?.is_internal || !roomNo)
+          const isVirtualRoom = Boolean(b.is_service_only || r.is_virtual || r.is_internal || r.room?.is_virtual || r.room?.is_internal || String(r.room_number || roomNo).startsWith('0'))
           const roomIsCheckedOut = isCheckedOutRecord(r)
           const isNoshowRoom = Number(r.status) === 4
           const hasTransactions = (r.services || []).some(isPostedBookingService) ||
@@ -673,7 +696,7 @@ const loadCheckoutBookings = async () => {
           const includeRoom = activeFilter.register === 'old'
             ? roomIsCheckedOut || isNoshowRoom || (Number(r.status) === 0 && hasTransactions)
             : activeFilter.register === 'virtual'
-              ? isVirtualRoom && Number(r.status) === 1 && !roomIsCheckedOut
+              ? isVirtualRoom && [0, 1].includes(Number(r.status)) && !roomIsCheckedOut
               : Number(r.status) === 1 && !roomIsCheckedOut
           if ((!roomNo && !isVirtualRoom) || !includeRoom) return
           const displayRoomNo = roomNo || 'PM'
@@ -905,10 +928,69 @@ const loadCheckoutBookings = async () => {
       })
     })
 
+    if (activeFilter.register === 'virtual') {
+      const roomsResponse = await http.get('/rooms', {
+        params: { virtual_only: true, include_inactive: true }
+      })
+      const virtualRooms = roomsResponse.data?.data || []
+      const displayedVirtualRoomNumbers = new Set(
+        formatted.flatMap(booking => booking.roomItems || [])
+          .filter(room => room.isVirtual)
+          .map(room => String(room.roomNumber || '').trim())
+          .filter(Boolean)
+      )
+
+      virtualRooms.forEach(room => {
+        const roomNumber = String(room.room_number || '').trim()
+        if (!roomNumber || displayedVirtualRoomNumbers.has(roomNumber)) return
+
+        const hasExplicitInternalFlag = Boolean(room.is_internal)
+        const followsLegacyVirtualNumber = roomNumber.startsWith('0')
+        const canProvisionServiceFolio = hasExplicitInternalFlag && followsLegacyVirtualNumber
+        const roomItem = {
+          id: `VROOM-${roomNumber}`,
+          roomId: null,
+          roomNumber,
+          isVirtual: true,
+          requiresFolio: canProvisionServiceFolio,
+          configurationRequired: !canProvisionServiceFolio,
+          guestName: canProvisionServiceFolio ? 'Chưa khởi tạo folio dịch vụ' : 'Cần xác minh cấu hình phòng ảo',
+          allGuests: [],
+          serviceAmount: 0,
+          paidAmount: 0,
+          checked: false,
+          rawRoom: room
+        }
+
+        formatted.push({
+          id: `VROOM-BOOKING-${roomNumber}`,
+          bookingId: null,
+          code: roomNumber,
+          name: `PHÒNG ẢO ${roomNumber}`,
+          totalService: 0,
+          paidAmount: 0,
+          arrivalDate: '',
+          departureDate: '',
+          isVirtual: true,
+          requiresFolio: canProvisionServiceFolio,
+          configurationRequired: !canProvisionServiceFolio,
+          checked: false,
+          roomItems: [roomItem],
+          rawBooking: {
+            booking_name: `PHÒNG ẢO ${roomNumber}`,
+            is_service_only: true,
+            virtual_room_without_folio: true,
+            no_post: false
+          }
+        })
+      })
+    }
+
     // Lưu toàn bộ danh sách cho ô Tìm kiếm Popup
     allBookingsList.value = formatted
-    // Chỉ nạp vào panel sau khi người dùng chọn một kết quả trong ô tìm kiếm.
-    displayedBookingsList.value = []
+    // Tab Phòng ảo là danh sách chuyên biệt; hiển thị các folio phù hợp ngay,
+    // còn các tab Checkout thông thường tiếp tục chờ người dùng chọn kết quả tìm kiếm.
+    displayedBookingsList.value = activeFilter.register === 'virtual' ? formatted : []
   } catch (err) {
     console.error('Lỗi khi nạp danh sách booking cho Checkout:', err)
   } finally {
@@ -983,9 +1065,13 @@ const handlePrepaymentSuccess = async () => {
 }
 
 const toggleBookingCheck = (b) => {
+  if (activeFilter.register === 'virtual') {
+    b.checked = false
+    return
+  }
   if (b.roomItems) {
     b.roomItems.forEach(r => {
-      r.checked = b.checked
+      r.checked = !r.isVirtual && b.checked
     })
   }
 }
@@ -1094,6 +1180,7 @@ const servicesList = computed(() => {
 
     return {
       id: s.id || `S${idx}`,
+      bookingRoomServiceId: s.id ? Number(s.id) : null,
       serviceDate: s.service_date || s.created_at || null,
       serviceTime: s.open_time || s.openTime || s.service_bill?.OpenTime || s.serviceBill?.OpenTime || linkedBill?.OpenTime || linkedBill?.CreatedHour || null,
       serviceBillDetailNo: s.service_bill_detail_no || s.serviceBillDetailNo || null,
@@ -1136,6 +1223,7 @@ const servicesList = computed(() => {
 
     return {
       id: Number(sb.Ma || idx),
+      bookingRoomServiceId: null,
       serviceBillId: sb.Ma || null,
       serviceDate: sb.Date || sb.CreatedDate || null,
       serviceTime: sb.OpenTime || sb.CreatedHour || null,
@@ -1927,8 +2015,13 @@ const cancelSelectedServices = async (reason) => {
   try {
     const isMaster = !selectedRoomItem.value
     const sourceId = selectedRoomItem.value?.roomId || `master-${selectedBooking.value.bookingId}`
-    const ids = selectedServiceItems.value.map(service => Number(service.id))
-    const response = await cancelBookingRoomServices(sourceId, isMaster ? { service_bill_ids: ids, reason } : { service_ids: ids, reason })
+    const billIds = [...new Set(selectedServiceItems.value.map(service => Number(service.serviceBillId)).filter(id => Number.isInteger(id) && id > 0))]
+    const payload = { service_bill_ids: billIds, reason }
+    if (!isMaster) {
+      const mirrorIds = [...new Set(selectedServiceItems.value.map(service => service.bookingRoomServiceId).filter(Number.isInteger))]
+      if (mirrorIds.length) payload.service_ids = mirrorIds
+    }
+    const response = await cancelBookingRoomServices(sourceId, payload)
     showCancelServiceModal.value = false
     await refreshAfterServiceOperation()
     uiStore.showToast(response.data?.message || 'Đã xóa dịch vụ thành công!', 'success')
@@ -2064,13 +2157,16 @@ const transferSelectedServices = async (destination) => {
   try {
     const isMaster = !selectedRoomItem.value
     const sourceId = selectedRoomItem.value?.roomId || `master-${selectedBooking.value.bookingId}`
+    const billIds = [...new Set(selectedServiceItems.value.map(service => Number(service.serviceBillId)).filter(id => Number.isInteger(id) && id > 0))]
+    const mirrorIds = [...new Set(selectedServiceItems.value.map(service => service.bookingRoomServiceId).filter(Number.isInteger))]
     const response = isMaster
       ? await quickTransferBookingRoomServices(destination.roomId, {
-          bill_ids: selectedServiceIds.value.map(Number),
+          bill_ids: billIds,
           target_guest_id: destination.guestId
         })
       : await transferBookingRoomServicesFolio(sourceId, {
-          service_ids: selectedServiceIds.value.map(Number),
+          service_bill_ids: billIds,
+          ...(mirrorIds.length ? { service_ids: mirrorIds } : {}),
           target_booking_id: destination.bookingId,
           target_room_id: destination.roomId,
           target_guest_id: destination.guestId
@@ -2351,8 +2447,15 @@ const handleRoomDrop = async (booking, room, guest = null) => {
   const sourceId = selectedRoomItem.value?.roomId || `master-${selectedBooking.value?.bookingId}`
   const selectedItems = selectedServiceItems.value.filter(service => !service.isPaid && Number(service.status) !== 2)
   const draggedItems = group.items.filter(service => !service.isPaid && Number(service.status) !== 2)
+  const transferItemKey = item => {
+    const mirrorId = Number(item.bookingRoomServiceId)
+    if (Number.isInteger(mirrorId) && mirrorId > 0) return `mirror-${mirrorId}`
+    const billId = Number(item.serviceBillId)
+    if (Number.isInteger(billId) && billId > 0) return `bill-${billId}`
+    return `item-${String(item.id)}`
+  }
   const itemsToTransfer = selectedItems.length > 0
-    ? [...new Map([...selectedItems, ...draggedItems].map(item => [String(item.id), item])).values()]
+    ? [...new Map([...selectedItems, ...draggedItems].map(item => [transferItemKey(item), item])).values()]
     : draggedItems
 
   if (itemsToTransfer.length === 0) {
@@ -2362,13 +2465,29 @@ const handleRoomDrop = async (booking, room, guest = null) => {
 
   isServiceOperationLoading.value = true
   try {
+    const serviceBillIds = [...new Set(itemsToTransfer
+      .map(item => Number(item.serviceBillId))
+      .filter(id => Number.isInteger(id) && id > 0))]
+    const mirrorServiceIds = [...new Set(itemsToTransfer
+      .map(item => Number(item.bookingRoomServiceId))
+      .filter(id => Number.isInteger(id) && id > 0))]
+    if (!isMaster && serviceBillIds.length > 0 && itemsToTransfer.some(item => {
+      const billId = Number(item.serviceBillId)
+      return !Number.isInteger(billId) || billId <= 0
+    })) {
+      uiStore.showToast('Có dịch vụ chưa liên kết với hóa đơn nên không thể chuyển cùng lúc.', 'error')
+      return
+    }
+
     const response = isMaster
       ? await quickTransferBookingRoomServices(destination.roomId, {
           bill_ids: [...new Set(itemsToTransfer.map(item => Number(item.serviceBillId || item.id)))],
           target_guest_id: destination.guestId,
         })
       : await transferBookingRoomServicesFolio(sourceId, {
-          service_ids: [...new Set(itemsToTransfer.map(item => Number(item.id)))],
+          ...(serviceBillIds.length > 0
+            ? { service_bill_ids: serviceBillIds, ...(mirrorServiceIds.length > 0 ? { service_ids: mirrorServiceIds } : {}) }
+            : { service_ids: mirrorServiceIds }),
           target_booking_id: destination.bookingId,
           target_room_id: destination.roomId,
           target_guest_id: destination.guestId,
@@ -2529,9 +2648,9 @@ const openPaymentModal = () => {
     return
   }
 
-  // A room-row payment must identify the guest selected in that row. Do not
-  // silently create an unattributed room payment when legacy data has no ID.
-  if (selectedRoomItem.value && !selectedGuestId.value) {
+  // Physical room payments must identify a guest. Service-only virtual folios
+  // intentionally have no guest, so settle the selected folio without one.
+  if (selectedRoomItem.value && !selectedRoomItem.value.isVirtual && !selectedGuestId.value) {
     uiStore.showToast('Không xác định được khách của dòng đang chọn. Vui lòng chọn đúng khách trước khi thanh toán.', 'warning')
     return
   }
@@ -2612,6 +2731,15 @@ const selectPanelGuest = (guest) => {
 }
 
 const selectBookingHeader = (b) => {
+  if (b.requiresFolio && b.roomItems?.[0]) {
+    selectRoomItemRow(b, b.roomItems[0])
+    return
+  }
+  if (b.configurationRequired) {
+    uiStore.showToast('Chỉ tự tạo folio cho phòng có số bắt đầu bằng 0 và cờ nội bộ; cần xác minh cấu hình phòng.', 'warning')
+    return
+  }
+
   selectedBooking.value = b
   selectedRoomItem.value = null
   // Chọn Master luôn checkout toàn bộ phòng đang In-House của booking;
@@ -2628,7 +2756,48 @@ const selectBookingHeader = (b) => {
   isNoPost.value = isNoPostEnabled(b.rawBooking?.no_post ?? b.no_post)
 }
 
-const selectRoomItemRow = (b, r, specificGuest = null) => {
+const selectRoomItemRow = async (b, r, specificGuest = null) => {
+  if (r.configurationRequired) {
+    uiStore.showToast('Chỉ tự tạo folio cho phòng có số bắt đầu bằng 0 và cờ nội bộ; cần xác minh cấu hình phòng.', 'warning')
+    return
+  }
+
+  if (r.requiresFolio) {
+    const roomNumberKey = String(r.roomNumber || '')
+    if (!roomNumberKey || virtualFolioLoadingRoomNumbers.value.has(roomNumberKey)) return
+
+    const loadingRooms = new Set(virtualFolioLoadingRoomNumbers.value)
+    loadingRooms.add(roomNumberKey)
+    virtualFolioLoadingRoomNumbers.value = loadingRooms
+
+    try {
+      const response = await http.post(`/rooms/${encodeURIComponent(roomNumberKey)}/service-folio`)
+      const createdFolio = response.data?.data
+      await loadCheckoutBookings()
+
+      const freshBooking = allBookingsList.value.find(booking => (
+        String(booking.bookingId) === String(createdFolio?.booking_id)
+      ))
+      const freshRoom = freshBooking?.roomItems?.find(room => (
+        String(room.roomId) === String(createdFolio?.booking_room_id)
+      ))
+
+      if (!freshBooking || !freshRoom) {
+        uiStore.showToast('Folio đã sẵn sàng nhưng chưa tải được dữ liệu; hãy làm mới danh sách phòng ảo.', 'warning')
+        return
+      }
+
+      return selectRoomItemRow(freshBooking, freshRoom, specificGuest)
+    } catch (error) {
+      uiStore.showToast(error.response?.data?.message || 'Không thể khởi tạo folio dịch vụ cho phòng ảo.', 'error')
+      return
+    } finally {
+      const updatedRooms = new Set(virtualFolioLoadingRoomNumbers.value)
+      updatedRooms.delete(roomNumberKey)
+      virtualFolioLoadingRoomNumbers.value = updatedRooms
+    }
+  }
+
   selectedBooking.value = b
   selectedRoomItem.value = r
   serviceFilter.value = null
@@ -3181,7 +3350,7 @@ onUnmounted(() => {
                     ]"
                   >
                     <td class="p-1 w-[25px] text-center">
-                      <input type="checkbox" v-model="b.checked" @change="toggleBookingCheck(b)" @click.stop class="rounded border-gray-300 text-sky-600" />
+                    <input type="checkbox" v-model="b.checked" :disabled="appliedCheckoutFilter.register === 'virtual' || Boolean(b.rawBooking?.is_service_only)" @change="toggleBookingCheck(b)" @click.stop class="rounded border-gray-300 text-sky-600 disabled:cursor-not-allowed disabled:opacity-40" />
                     </td>
                     <td class="min-w-0 p-1 font-bold text-slate-900">
                       <div class="flex min-w-0 items-center gap-1 overflow-hidden">
@@ -3212,7 +3381,7 @@ onUnmounted(() => {
                         ]"
                       >
                         <td class="p-1 w-[25px] text-center">
-                          <input type="checkbox" v-model="r.checked" @click.stop class="rounded border-gray-300 text-sky-600" />
+                          <input type="checkbox" v-model="r.checked" :disabled="r.isVirtual" @click.stop class="rounded border-gray-300 text-sky-600 disabled:cursor-not-allowed disabled:opacity-40" />
                         </td>
                         <td class="p-1 pl-10 text-slate-900 text-center">{{ r.roomNumber }}</td>
                         <td class="min-w-0 p-1 truncate text-slate-700" :title="guest.name">{{ guest.name }}</td>
@@ -3233,7 +3402,7 @@ onUnmounted(() => {
                         ]"
                       >
                         <td class="p-1 w-[25px] text-center">
-                          <input type="checkbox" v-model="r.checked" @click.stop class="rounded border-gray-300 text-sky-600" />
+                          <input type="checkbox" v-model="r.checked" :disabled="r.isVirtual" @click.stop class="rounded border-gray-300 text-sky-600 disabled:cursor-not-allowed disabled:opacity-40" />
                         </td>
                         <td class="p-1 pl-10 text-slate-900 text-center">{{ r.roomNumber }}</td>
                         <td class="min-w-0 p-1 truncate text-slate-700" :title="r.guestName">{{ r.guestName }}</td>
