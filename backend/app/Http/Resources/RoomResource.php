@@ -99,6 +99,7 @@ class RoomResource extends JsonResource
             'payment_method' => $this->payment_method,
             'payment_value' => $this->payment_value,
             'is_do_not_move' => (int)($this->is_do_not_move ?? 0),
+            'is_transferred' => (bool)($this->is_transferred ?? false),
             'booking_room_id' => $this->booking_room_id ?? null,
             'booking_id' => $this->booking_id ?? null,
             'is_arriving_tomorrow' => (bool) ($this->is_arriving_tomorrow ?? false),

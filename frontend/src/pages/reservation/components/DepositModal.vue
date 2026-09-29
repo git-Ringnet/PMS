@@ -1274,7 +1274,17 @@ async function syncDepositsFromBackend(dispatchEvents = false) {
     emit('update:paymentValue', totalValue)
     if (dispatchEvents) {
       window.dispatchEvent(new CustomEvent('deposit-updated'))
-      window.dispatchEvent(new CustomEvent('booking-updated'))
+      window.dispatchEvent(new CustomEvent('booking-updated', { detail: { bookingId: props.bookingId } }))
+      try {
+        if (typeof BroadcastChannel !== 'undefined') {
+          const bc = new BroadcastChannel('pms-room-updates')
+          bc.postMessage({ type: 'booking-updated', bookingId: props.bookingId, timestamp: Date.now() })
+          bc.postMessage('rooms-updated')
+          bc.close()
+        }
+      } catch (e) {
+        console.warn('Deposit BroadcastChannel error:', e)
+      }
     }
   } catch (err) {
     console.error('Lỗi đồng bộ cọc:', err)

@@ -354,11 +354,7 @@ function getStatusText(status) {
 }
 
 function getDisplayStatus(booking) {
-  const rooms = booking?.booking_rooms || []
-  if (Number(booking?.status) === 3 || (rooms.length > 0 && rooms.every(room => Number(room.status) === 3))) {
-    return 3
-  }
-  return booking?.status
+  return Number(booking?.status ?? 0)
 }
 
 function getStatusBadgeStyle(status) {

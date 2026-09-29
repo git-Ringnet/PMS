@@ -35,6 +35,19 @@ const props = defineProps({
 })
 const emit = defineEmits(['close', 'refresh'])
 
+function notifyChanges() {
+  emit('refresh')
+  try {
+    const bId = props.bookingId || props.room?.booking_id || props.room?.bookingId
+    if (typeof BroadcastChannel !== 'undefined') {
+      const bc = new BroadcastChannel('pms-room-updates')
+      bc.postMessage({ type: 'booking-updated', bookingId: bId, timestamp: Date.now() })
+      bc.postMessage('rooms-updated')
+      bc.close()
+    }
+  } catch (e) {}
+}
+
 const router = useRouter()
 const route = useRoute()
 const uiStore = useUiStore()
@@ -382,7 +395,7 @@ async function onExtraBedSaved(data) {
         pricingInfo.value.extra_bed_qty = data.quantity
         pricingInfo.value.extra_bed_price = formatNumber(data.rate)
         uiStore.showToast('Đã lưu thông tin Thêm giường thành công!', 'success')
-        emit('refresh')
+        notifyChanges()
       } catch (err) {
         console.error('Lỗi khi lưu extra bed:', err)
         uiStore.showToast('Lỗi khi lưu thêm giường: ' + (err.response?.data?.message || err.message), 'error')
@@ -444,7 +457,7 @@ async function onSpecialRequestsSaved(data) {
     }).filter(item => item.name || item.code)
   }
   await loadRoomSpecialRequests()
-  emit('refresh')
+  notifyChanges()
 }
 
 async function quickRemoveSpecialRequest(req) {
@@ -459,7 +472,7 @@ async function quickRemoveSpecialRequest(req) {
         special_request_ids: remainingIds,
       })
       uiStore.showToast(`Đã gỡ yêu cầu: ${req.name || req.code}`, 'success')
-      emit('refresh')
+      notifyChanges()
     } catch (e) {
       console.error('Quick remove special request error', e)
       await loadRoomSpecialRequests()
@@ -966,7 +979,7 @@ async function handleAvatarFileChange(event) {
       formGuest.value.avatar = avatarUrl
       selectedGuest.value.avatar = avatarUrl
       uiStore.showToast('Tải ảnh đại diện thành công!', 'success')
-      emit('refresh')
+      notifyChanges()
     }
   } catch (err) {
     console.error(err)
@@ -1202,7 +1215,7 @@ async function handleSave() {
       showIdNumberSuggestions.value = false
       uiStore.showToast('Đã thêm và lưu thông tin khách thành công!', 'success')
       await loadGuests(newId)
-      emit('refresh')
+      notifyChanges()
       return
     }
 
@@ -1250,7 +1263,7 @@ async function handleSave() {
     showIdNumberSuggestions.value = false
     uiStore.showToast('Đã lưu thông tin khách thành công!', 'success')
     await loadGuests(selectedGuest.value?.id || selectedChild.value?.id)
-    emit('refresh')
+    notifyChanges()
   } catch (e) {
     console.error('Lỗi khi lưu thông tin:', e)
     const errData = e.response?.data
@@ -1303,7 +1316,7 @@ async function handleDeleteGuest() {
     isEditingMode.value = false
     uiStore.showToast('Đã xóa khách thành công khỏi phòng và CSDL!', 'success')
     await loadGuests()
-    emit('refresh')
+    notifyChanges()
   } catch (e) {
     const errorMsg = e.response?.data?.message || e.message || 'Lỗi khi xóa khách.'
     uiStore.showToast(errorMsg, 'error')
@@ -1923,7 +1936,7 @@ function parseNumber(val) {
     v-model:show="showChildBreakfastModal"
     :room="formattedRoomForModals"
     :bookingId="bookingId"
-    @saved="emit('refresh')"
+    @saved="notifyChanges()"
   />
 
   <ExtraBedModal

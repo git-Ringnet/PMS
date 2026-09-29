@@ -40,6 +40,22 @@ const roleDropdownRef = ref(null)
 const roleSearchQuery = ref('')
 const customRoleInput = ref('')
 const selectedRoleCodes = ref([])
+const registrationStatusOptions = ref([])
+
+const fetchRegistrationStatusOptions = async () => {
+  try {
+    const res = await http.get('/registration-statuses')
+    registrationStatusOptions.value = res.data?.data || res.data || []
+  } catch (err) {
+    console.error('Lỗi khi tải registration-statuses:', err)
+  }
+}
+
+const getRegistrationStatusName = (code) => {
+  if (!code || String(code) === '0') return 'Giữ nguyên'
+  const st = registrationStatusOptions.value.find(s => String(s.booking_status_id) === String(code) || String(s.id) === String(code))
+  return st ? (st.vietnamese || st.name) : code
+}
 
 const isRoleConfig = (key) => {
   if (!key) return false
@@ -253,8 +269,17 @@ const saveConfig = async () => {
     fetchHotelConfigs()
     if (typeof BroadcastChannel !== 'undefined') {
       const bcNotify = new BroadcastChannel('pms-room-updates')
-      bcNotify.postMessage('settings-updated')
+      bcNotify.postMessage({
+        type: 'hotel-config-updated',
+        name: configFormState.name,
+        value: configFormState.value
+      })
       bcNotify.close()
+    }
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('hotel-config-updated', {
+        detail: { name: configFormState.name, value: configFormState.value }
+      }))
     }
   } catch (err) {
     console.error(err)
@@ -290,6 +315,7 @@ onMounted(() => {
   window.addEventListener('click', handleClickOutside)
   fetchHotelConfigs()
   fetchRoleOptions()
+  fetchRegistrationStatusOptions()
 })
 
 onBeforeUnmount(() => {
@@ -343,7 +369,12 @@ onBeforeUnmount(() => {
             :key="cfg.id" @click="openEditConfigModal(cfg)"
             class="border-b border-slate-100 hover:bg-slate-50/55 cursor-pointer">
             <td class="p-3 font-bold text-slate-800">{{ cfg.name }}</td>
-            <td class="p-3 font-bold text-sky-700 font-mono">{{ cfg.value || '-' }}</td>
+            <td class="p-3 font-bold text-sky-700 font-mono">
+              <span v-if="cfg.name === 'RegistrationStatusId_BookingCancel'">
+                {{ cfg.value === '0' || !cfg.value ? '0 (Giữ nguyên)' : `${cfg.value} (${getRegistrationStatusName(cfg.value)})` }}
+              </span>
+              <span v-else>{{ cfg.value || '-' }}</span>
+            </td>
             <td class="p-3 text-slate-500 font-semibold text-xs leading-relaxed max-w-xs">{{ cfg.description || '-' }}</td>
             <td class="p-3 text-right">
               <div class="flex items-center justify-end gap-1">
@@ -495,6 +526,32 @@ onBeforeUnmount(() => {
             <div class="flex items-center gap-1.5 text-xs text-slate-500 font-medium bg-slate-50 p-2 rounded-lg border border-slate-100">
               <span class="text-slate-400 font-semibold shrink-0">Giá trị lưu:</span>
               <span class="font-mono text-sky-700 font-bold break-all">{{ configFormState.value || '(Trống)' }}</span>
+            </div>
+          </div>
+
+          <!-- Khi cấu hình là RegistrationStatusId_BookingCancel (Section 18) -->
+          <div v-else-if="configFormState.name === 'RegistrationStatusId_BookingCancel'" class="flex flex-col gap-1.5">
+            <div class="flex items-center justify-between">
+              <span>Giá trị tình trạng đăng ký khi hủy</span>
+              <span class="text-xs font-semibold text-slate-400">0: Giữ nguyên | khác 0: Mã trạng thái</span>
+            </div>
+            <select
+              v-model="configFormState.value"
+              class="border border-slate-200 rounded-lg p-2.5 focus:outline-sky-500 text-sm bg-white font-medium"
+            >
+              <option value="0">0 - Giữ nguyên không thay đổi tình trạng (Mặc định)</option>
+              <option
+                v-for="st in registrationStatusOptions"
+                :key="st.booking_status_id"
+                :value="String(st.booking_status_id)"
+              >
+                {{ st.booking_status_id }} - {{ st.vietnamese || st.name }}
+              </option>
+            </select>
+            <div class="flex items-center gap-1.5 text-xs text-slate-500 font-medium bg-slate-50 p-2 rounded-lg border border-slate-100">
+              <span class="text-slate-400 font-semibold shrink-0">Giá trị lưu:</span>
+              <span class="font-mono text-sky-700 font-bold">{{ configFormState.value ?? '0' }}</span>
+              <span class="text-slate-400 text-xs ml-auto">({{ getRegistrationStatusName(configFormState.value) }})</span>
             </div>
           </div>
           <div v-else class="flex flex-col gap-1.5">

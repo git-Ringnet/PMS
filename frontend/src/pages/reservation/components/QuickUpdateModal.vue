@@ -102,11 +102,14 @@
           <!-- Arrival Time -->
           <div>
             <label class="block text-slate-600 mb-1 font-bold">Giờ đến</label>
-            <TimePicker24h
-              v-model="form.arrival_time"
-              default-time="14:00"
-              :disabled="isArrivalDisabled"
-            />
+            <div class="relative flex items-center">
+              <input 
+                type="time" 
+                v-model="form.arrival_time" 
+                :disabled="isArrivalDisabled"
+                class="w-full border rounded-lg h-9 px-3 text-xs focus:outline-none transition-colors border-slate-300 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed text-center font-semibold cursor-pointer"
+              />
+            </div>
           </div>
 
           <!-- Departure Date -->
@@ -132,11 +135,14 @@
           <!-- Departure Time -->
           <div>
             <label class="block text-slate-600 mb-1 font-bold">Giờ đi</label>
-            <TimePicker24h
-              v-model="form.departure_time"
-              default-time="12:00"
-              :disabled="isDepartureDisabled"
-            />
+            <div class="relative flex items-center">
+              <input 
+                type="time" 
+                v-model="form.departure_time" 
+                :disabled="isDepartureDisabled"
+                class="w-full border rounded-lg h-9 px-3 text-xs focus:outline-none transition-colors border-slate-300 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed text-center font-semibold cursor-pointer"
+              />
+            </div>
           </div>
 
           <!-- Rate -->
@@ -144,6 +150,7 @@
             <label class="block text-slate-600 mb-1 font-bold">Giá</label>
             <input 
               type="text" 
+              placeholder="Để trống nếu không đổi"
               :value="formatCurrencyInput(form.rate)"
               @input="e => form.rate = cleanCurrencyValue(e.target.value)"
               class="w-full border rounded-lg h-9 px-3 text-xs focus:outline-none transition-colors border-slate-300 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 text-right font-bold text-slate-800"
@@ -158,6 +165,7 @@
                 <input 
                   type="number" 
                   v-model.number="form.adults"
+                  placeholder="Không đổi"
                   min="1"
                   :disabled="isOccupantsDisabled"
                   class="w-full border rounded-lg h-9 px-3 text-xs focus:outline-none transition-colors border-slate-300 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed text-center"
@@ -168,6 +176,7 @@
                 <input 
                   type="number" 
                   v-model.number="form.children_qty"
+                  placeholder="Không đổi"
                   min="0"
                   :disabled="isOccupantsDisabled"
                   class="w-full border rounded-lg h-9 px-3 text-xs focus:outline-none transition-colors border-slate-300 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed text-center"
@@ -182,6 +191,7 @@
             <input 
               type="number" 
               v-model.number="form.extra_bed_qty"
+              placeholder="Không đổi"
               min="0"
               :disabled="isExtraBedDisabled"
               class="w-full border rounded-lg h-9 px-3 text-xs focus:outline-none transition-colors border-slate-300 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed text-center"
@@ -193,6 +203,7 @@
             <label class="block text-slate-600 mb-1 font-bold">Giá thêm giường</label>
             <input 
               type="text" 
+              placeholder="Để trống nếu không đổi"
               :value="formatCurrencyInput(form.extra_bed_rate)"
               @input="e => form.extra_bed_rate = cleanCurrencyValue(e.target.value)"
               :disabled="isExtraBedDisabled"
@@ -231,7 +242,6 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import TimePicker24h from '@/components/TimePicker24h.vue'
 import { useAuthStore } from '@/stores/auth-store'
 import { useUiStore } from '@/stores/ui-store'
 import http from '@/services/http'
@@ -486,6 +496,14 @@ async function submitSave() {
     if (form.value.extra_bed_qty !== '') payload.extra_bed_qty = Number(form.value.extra_bed_qty)
     if (form.value.extra_bed_rate !== '') payload.extra_bed_rate = Number(form.value.extra_bed_rate)
 
+    const editableKeys = ['arrival_date', 'arrival_time', 'departure_date', 'departure_time', 'rate', 'adults', 'children_qty', 'extra_bed_qty', 'extra_bed_rate']
+    const hasAnyField = editableKeys.some(k => payload[k] !== undefined)
+    if (!hasAnyField) {
+      uiStore.showToast('Vui lòng nhập ít nhất một thông tin cần cập nhật.', 'warning')
+      isSaving.value = false
+      return
+    }
+
     const res = await http.post(`/bookings/${props.bookingId}/rooms/bulk-update`, payload)
     
     if (res.data?.success || res.data?.code === 'OVERBOOKING_WARNING') {
@@ -507,6 +525,14 @@ async function submitSave() {
       }
 
       uiStore.showToast(res.data?.message || 'Cập nhật nhanh thành công!', 'success')
+      try {
+        if (typeof BroadcastChannel !== 'undefined') {
+          const bc = new BroadcastChannel('pms-room-updates')
+          bc.postMessage({ type: 'booking-updated', bookingId: props.bookingId, timestamp: Date.now() })
+          bc.postMessage('rooms-updated')
+          bc.close()
+        }
+      } catch (e) {}
       emit('saved', payload)
       close()
     } else {
