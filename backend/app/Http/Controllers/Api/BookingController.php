@@ -1107,7 +1107,7 @@ class BookingController extends Controller
                         }
                         $roomToSync->update($syncData);
                         app(\App\Services\BookingRoomLifecycleService::class)
-                            ->synchronize($roomToSync->fresh(), false, true);
+                            ->synchronize($roomToSync->fresh(), false, true, false);
                     }
                 }
 
@@ -1122,7 +1122,7 @@ class BookingController extends Controller
                         $roomDayUse = ($room->arrival_date->toDateString() === $room->departure_date->toDateString()) && (bool) $booking->is_day_use;
                         $room->update(['is_day_use' => $roomDayUse]);
                         app(\App\Services\BookingRoomLifecycleService::class)
-                            ->synchronize($room->fresh(), false, $dayUseChanged);
+                            ->synchronize($room->fresh(), false, $dayUseChanged, false);
                     });
 
                 // Đồng bộ room_allocations (từ UI gửi lên) - xử lý thông minh để cập nhật thay vì xóa/tạo lại
@@ -2437,17 +2437,46 @@ class BookingController extends Controller
      */
     private function validateAddOnlyRoomAllocations(Booking $booking, array $roomAllocations): void
     {
-        $existingRoomNumbers = $booking->bookingRooms()
+        $existingRooms = $booking->bookingRooms()
             ->whereIn('status', [
                 BookingRoom::STATUS_BOOKED,
                 BookingRoom::STATUS_CHECKED_IN,
                 BookingRoom::STATUS_CHECKED_OUT,
             ])
             ->whereNotNull('room_number')
-            ->pluck('room_number')
-            ->map(fn ($number) => (string) $number)
-            ->flip();
+            ->get(['room_number', 'arrival_date', 'departure_date', 'is_day_use']);
 
+        $parseDate = static function ($date): ?string {
+            if (!$date) {
+                return null;
+            }
+            $date = trim((string) $date);
+            if (str_contains($date, '/')) {
+                $parts = explode('/', $date);
+                if (count($parts) === 3 && strlen($parts[2]) === 4) {
+                    return "{$parts[2]}-{$parts[1]}-{$parts[0]}";
+                }
+            }
+            return Carbon::parse($date)->toDateString();
+        };
+
+        $bookingArrival = Carbon::parse($booking->arrival_date)->toDateString();
+        $bookingDeparture = Carbon::parse($booking->departure_date)->toDateString();
+
+        $datesOverlap = static function ($arr1, $dep1, $dayUse1, $arr2, $dep2, $dayUse2): bool {
+            if ($dayUse1 && $dayUse2) {
+                return $arr1 === $arr2;
+            }
+            if ($dayUse1 && $arr1 === $dep1) {
+                return $arr2 <= $arr1 && $arr1 < $dep2;
+            }
+            if ($dayUse2 && $arr2 === $dep2) {
+                return $arr1 <= $arr2 && $arr2 < $dep1;
+            }
+            return $arr1 < $dep2 && $dep1 > $arr2;
+        };
+
+        $incomingRooms = [];
         $totalQuantity = 0;
         foreach ($roomAllocations as $allocation) {
             if (!is_array($allocation)) {
@@ -2490,8 +2519,39 @@ class BookingController extends Controller
                 }
 
                 $roomNumber = trim((string) ($detail['roomNumber'] ?? ''));
-                if ($roomNumber !== '' && isset($existingRoomNumbers[$roomNumber])) {
-                    throw new \Exception('Số phòng ' . $roomNumber . ' đã có trong đăng ký này.');
+                if ($roomNumber !== '') {
+                    $roomArrival = $parseDate($detail['arrivalDate'] ?? $detail['checkIn'] ?? null) ?? $bookingArrival;
+                    $roomDeparture = $parseDate($detail['departureDate'] ?? $detail['checkOut'] ?? null) ?? $bookingDeparture;
+                    $isRoomDayUse = (bool) ($detail['is_day_use'] ?? $detail['hourly'] ?? false) || ($roomArrival === $roomDeparture);
+
+                    // Check conflict with existing rooms of this booking
+                    foreach ($existingRooms as $ex) {
+                        if ((string) $ex->room_number === $roomNumber) {
+                            $exArr = Carbon::parse($ex->arrival_date)->toDateString();
+                            $exDep = Carbon::parse($ex->departure_date)->toDateString();
+                            $exDayUse = (bool) $ex->is_day_use || ($exArr === $exDep);
+
+                            if ($datesOverlap($roomArrival, $roomDeparture, $isRoomDayUse, $exArr, $exDep, $exDayUse)) {
+                                throw new \Exception('Số phòng ' . $roomNumber . ' bị trùng lặp với phòng đã có trong đăng ký này trong cùng khoảng thời gian.');
+                            }
+                        }
+                    }
+
+                    // Check conflict with other incoming rooms in this same request
+                    foreach ($incomingRooms as $inc) {
+                        if ($inc['room_number'] === $roomNumber) {
+                            if ($datesOverlap($roomArrival, $roomDeparture, $isRoomDayUse, $inc['arrival'], $inc['departure'], $inc['is_day_use'])) {
+                                throw new \Exception('Số phòng ' . $roomNumber . ' bị trùng lặp trong cùng một lượt thêm với thời gian ở trùng nhau.');
+                            }
+                        }
+                    }
+
+                    $incomingRooms[] = [
+                        'room_number' => $roomNumber,
+                        'arrival' => $roomArrival,
+                        'departure' => $roomDeparture,
+                        'is_day_use' => $isRoomDayUse,
+                    ];
                 }
             }
         }
@@ -2529,7 +2589,11 @@ class BookingController extends Controller
         $hasExplicitRoomDates = $roomArrival !== null && $roomDeparture !== null;
         $syncRoomDates = HotelConfig::where('name', 'SyncRoomDateByBookingDate')->value('value') === '1';
 
-        if (!$hasExplicitRoomDates || $syncRoomDates) {
+        // Preserve explicitly selected room periods even when legacy synchronization is enabled
+        if ($syncRoomDates && !$hasExplicitRoomDates) {
+            $roomArrival = $bookingArrival;
+            $roomDeparture = $bookingDeparture;
+        } else {
             $roomArrival = $roomArrival ?? $bookingArrival;
             $roomDeparture = $roomDeparture ?? $bookingDeparture;
         }

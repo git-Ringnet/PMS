@@ -18,6 +18,25 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-09-30] - Khắc phục 2 lỗi Đặt phòng (Note dòng 88 & 89 sheet Cần điều chỉnh: Tự động sinh RM & Gán cùng số phòng cho các chặng không trùng ngày)
+### Module: Đặt phòng / Quản lý phòng ([BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [BookingRoomLifecycleService.php](file:///d:/PMS/backend/app/Services/BookingRoomLifecycleService.php), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))
+
+- **Lỗi 1 (Dòng 88 - Thảo Note - Booking Trẻ em) - Tự động chèn tiền phòng (RM) vào `booking_room_services`**:
+  - *Hiện tượng*: Khi cấu hình `Booking_AutoExtraChargeBFChild = 1`, booking có 2 phòng 3 đêm. Khi thêm trẻ em vào 1 phòng và bấm lưu, hệ thống tự động sinh ra các dòng tiền phòng (`service_code = 'RM'`) cho tất cả các đêm của cả 2 phòng vào bảng `booking_room_services`.
+  - *Xử lý*:
+    - Điều chỉnh giá trị mặc định của cờ `$synchronizeRoomCharges = false` trong [`BookingRoomLifecycleService::synchronize`](file:///d:/PMS/backend/app/Services/BookingRoomLifecycleService.php#L34).
+    - Trong [`BookingController::update`](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php#L1110), truyền tường minh `$synchronizeRoomCharges = false` khi đồng bộ vòng đời phòng, đảm bảo không tự ý sinh bản ghi tiền phòng RM hàng loạt vào `booking_room_services`.
+- **Lỗi 2 (Dòng 89 - LỖI CHECK LẠI - Booking gán số phòng) - Không thể gán cùng số phòng cho 2 chặng phòng kế tiếp nhau không trùng ngày trong cùng booking**:
+  - *Hiện tượng*: Phòng 1 đặt từ Ngày 1 -> Ngày 2 gán phòng 101. Phòng 2 đặt từ Ngày 2 -> Ngày 3 trong cùng booking nhưng bị chặn không cho chọn/gán phòng 101 dù phòng 101 hoàn toàn trống từ Ngày 2 -> Ngày 3 với lỗi "Số phòng 101 đã có trong đăng ký này.".
+  - *Xử lý*:
+    - Trong [`BookingController::validateAddOnlyRoomAllocations`](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php#L2440), thay thế cơ chế chặn cứng theo danh sách số phòng (`flip()`) bằng hàm kiểm tra giao thoa khoảng thời gian (`datesOverlap`). Cho phép dùng cùng số phòng nếu 2 chặng thời gian không trùng chéo nhau (`[arr1, dep1)` và `[arr2, dep2)`).
+    - Trong [`BookingController::createAdditionalBookingRoom`](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php#L2530), giữ nguyên ngày đến / ngày đi cụ thể của từng phòng (`hasExplicitRoomDates`) khi thêm phòng, không bị cấu hình `SyncRoomDateByBookingDate` ép về ngày tổng của booking header.
+    - Trong [`CreateRegistrationPage.vue`](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue#L4584), hàm `areRoomPeriodsOverlapping` chuẩn hóa cả 2 định dạng ngày `DD/MM/YYYY` và `YYYY-MM-DD` qua `parseDateVi` trước khi so sánh, tránh lỗi `Invalid Date` trên trình duyệt.
+- **Kiểm thử**:
+  - Chạy test kịch bản tự động xác minh cả 2 lỗi đều PASSED 100%.
+  - `php artisan test --filter=BookingBusinessRulesTest`: 26/26 tests PASSED.
+  - `npm run build` frontend: hoàn thành thành công trong 3.87s.
+
 ## [2026-09-30] - Khôi phục 100% Giao diện chuẩn khách hàng & Tối ưu chuyển trang Đăng nhập
 ### Module: Lễ tân / Đóng ngày / Sang ngày ([DayClosePage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue))
 

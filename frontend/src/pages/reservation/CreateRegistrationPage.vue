@@ -4584,16 +4584,21 @@ async function handleGuestInfoSaved() {
 function areRoomPeriodsOverlapping(r1, r2) {
   if (!r1.checkIn || !r1.checkOut || !r2.checkIn || !r2.checkOut) return false
 
-  const start1 = new Date(r1.checkIn)
-  const end1 = new Date(r1.checkOut)
-  const start2 = new Date(r2.checkIn)
-  const end2 = new Date(r2.checkOut)
+  const d1In = parseDateVi(r1.checkIn)
+  const d1Out = parseDateVi(r1.checkOut)
+  const d2In = parseDateVi(r2.checkIn)
+  const d2Out = parseDateVi(r2.checkOut)
 
-  const isHourly1 = r1.checkIn === r1.checkOut || !!r1.hourly
-  const isHourly2 = r2.checkIn === r2.checkOut || !!r2.hourly
+  const start1 = new Date(d1In)
+  const end1 = new Date(d1Out)
+  const start2 = new Date(d2In)
+  const end2 = new Date(d2Out)
+
+  const isHourly1 = d1In === d1Out || !!r1.hourly
+  const isHourly2 = d2In === d2Out || !!r2.hourly
 
   if (isHourly1 && isHourly2) {
-    return r1.checkIn === r2.checkIn
+    return d1In === d2In
   }
 
   if (isHourly1) {
