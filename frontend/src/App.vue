@@ -17,14 +17,20 @@ const noLayout = computed(() => !route.name || !!route.meta.noLayout)
 const isNightAuditRunning = ref(false)
 const nightAuditMessage = ref('')
 
+const isDayClosePage = computed(() => {
+  return route.query?.tab === 'day-close' || window.location.href.includes('tab=day-close')
+})
+
 onMounted(async () => {
   // Lấy trạng thái ban đầu của Night Audit từ backend khi reload trang
   try {
     const res = await http.get('/hotel-settings')
     if (res.data && res.data.success && res.data.data) {
-      isNightAuditRunning.value = !!res.data.data.is_night_audit_running
-      if (isNightAuditRunning.value) {
-        nightAuditMessage.value = 'Hệ thống đang trong quá trình sang ngày mới. Vui lòng đợi...'
+      if (!isDayClosePage.value) {
+        isNightAuditRunning.value = !!res.data.data.is_night_audit_running
+        if (isNightAuditRunning.value) {
+          nightAuditMessage.value = 'Hệ thống đang trong quá trình sang ngày mới. Vui lòng đợi...'
+        }
       }
     }
   } catch (e) {
@@ -35,16 +41,24 @@ onMounted(async () => {
   if (echo) {
     echo.channel('pms-channel')
       .listen('.night.audit.updated', (e) => {
+        const onDayClose = isDayClosePage.value
         if (e.status === 'started') {
-          isNightAuditRunning.value = true
-          nightAuditMessage.value = e.message || 'Hệ thống đang tiến hành sang ngày mới...'
+          if (!onDayClose) {
+            isNightAuditRunning.value = true
+            nightAuditMessage.value = e.message || 'Hệ thống đang tiến hành sang ngày mới...'
+          }
         } else if (e.status === 'completed') {
           isNightAuditRunning.value = false
-          // Reload để lấy ngày hệ thống mới
-          window.location.reload()
+          // Chỉ reload trang đối với các màn hình khác để nhận ngày mới.
+          // Riêng màn hình Sang ngày tự quản lý tiến trình 18 bước và đếm ngược hoàn tất.
+          if (!onDayClose) {
+            window.location.reload()
+          }
         } else if (e.status === 'failed') {
           isNightAuditRunning.value = false
-          alert('Chuyển ngày hệ thống thất bại: ' + e.message)
+          if (!onDayClose) {
+            alert('Chuyển ngày hệ thống thất bại: ' + e.message)
+          }
         }
       })
   }
@@ -72,7 +86,7 @@ onUnmounted(() => {
   <ForceChangePasswordModal />
 
   <!-- Global System Lock Overlay during Night Audit -->
-  <div v-if="isNightAuditRunning" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[9999] flex flex-col items-center justify-center text-white">
+  <div v-if="isNightAuditRunning && !isDayClosePage" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[9999] flex flex-col items-center justify-center text-white">
     <div class="bg-slate-900/90 p-8 rounded-lg border border-slate-800 shadow-2xl flex flex-col items-center max-w-md text-center">
       <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-5"></div>
       <h3 class="text-base font-bold mb-2 tracking-wide">HỆ THỐNG ĐANG SANG NGÀY</h3>
