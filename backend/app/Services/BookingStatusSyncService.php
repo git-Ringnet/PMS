@@ -9,7 +9,7 @@ use App\Models\BookingRoom;
  * Keeps the booking lifecycle header consistent with room lifecycle status.
  *
  * The invariant introduced for partial check-in is deliberately narrow:
- * whenever at least one booking room is checked in, the booking header is
+ * whenever at least one physical accommodation room is checked in, the booking header is
  * CHECKIN. The caller may provide a fallback for flows that already had an
  * established rule for the no-inhouse case (such as undo check-in).
  */
@@ -18,7 +18,7 @@ class BookingStatusSyncService
     /**
      * Synchronize the booking header from current booking-room statuses.
      *
-     * If an inhouse room exists, CHECKIN always wins. If no inhouse room
+     * If an inhouse physical room exists, CHECKIN always wins. If no inhouse room
      * exists, the current header is preserved unless a fallback is supplied.
      * This keeps unspecified combinations unchanged while allowing existing
      * undo/revert flows to return to reservation.
@@ -33,6 +33,7 @@ class BookingStatusSyncService
 
         $hasInhouseRoom = BookingRoom::query()
             ->where('booking_id', $lockedBooking->getKey())
+            ->stayOnly()
             ->where('status', BookingRoom::STATUS_CHECKED_IN)
             ->exists();
 
@@ -57,6 +58,7 @@ class BookingStatusSyncService
 
         return BookingRoom::query()
             ->where('booking_id', $bookingId)
+            ->stayOnly()
             ->where('status', BookingRoom::STATUS_CHECKED_IN)
             ->exists();
     }

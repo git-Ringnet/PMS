@@ -1013,6 +1013,9 @@ class PaymentController extends Controller
         ]);
 
         $targetBooking = Booking::findOrFail($request->target_booking_id);
+        if ($targetBooking->is_service_only) {
+            abort(422, 'Không thể chuyển cọc vào folio chỉ dùng cho dịch vụ.');
+        }
         if (!in_array((int) $targetBooking->status, [0, 1], true)) {
             abort(422, 'Chỉ có thể chuyển cọc sang Booking ở trạng thái Đăng ký (0) hoặc Đang ở (1).');
         }
@@ -1020,6 +1023,9 @@ class PaymentController extends Controller
         $targetRoom = $request->target_room_id
             ? BookingRoom::where('booking_id', $targetBooking->id)->findOrFail($request->target_room_id)
             : null;
+        if ($targetRoom?->isVirtual()) {
+            abort(422, 'Không thể chuyển cọc vào phòng ảo.');
+        }
         if ($targetRoom && !in_array((int) $targetRoom->status, [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN], true)) {
             abort(422, 'Phòng nhận cọc phải ở trạng thái Reservation hoặc Inhouse.');
         }
@@ -1094,6 +1100,14 @@ class PaymentController extends Controller
 
         $targetBooking = Booking::findOrFail($request->target_booking_id);
 
+        if ($targetBooking->is_service_only) {
+            return response()->json([
+                'success' => false,
+                'code' => 'service_only_folio',
+                'message' => 'Không thể chuyển cọc vào folio chỉ dùng cho dịch vụ.',
+            ], 422);
+        }
+
         if (!in_array((int)$targetBooking->status, [0, 1])) {
             return response()->json([
                 'success' => false,
@@ -1104,6 +1118,13 @@ class PaymentController extends Controller
         $targetRoom = $request->target_room_id
             ? BookingRoom::where('booking_id', $targetBooking->id)->findOrFail($request->target_room_id)
             : null;
+        if ($targetRoom?->isVirtual()) {
+            return response()->json([
+                'success' => false,
+                'code' => 'virtual_room',
+                'message' => 'Không thể chuyển cọc vào phòng ảo.',
+            ], 422);
+        }
         if ($targetRoom && !in_array((int) $targetRoom->status, [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN], true)) {
             return response()->json([
                 'success' => false,
@@ -1278,6 +1299,7 @@ class PaymentController extends Controller
             ], 403);
         }
 
+        $hasStayDateBounds = !$booking->is_service_only;
         $stayStart = $booking->arrival_date ? Carbon::parse($booking->arrival_date)->startOfDay() : null;
         $stayEnd = $booking->departure_date ? Carbon::parse($booking->departure_date)->startOfDay() : null;
         $roomInput = $request->input('booking_room_id') ?? $request->input('bookingRoomId') ?? $request->input('room_id') ?? $request->input('roomId');
@@ -1289,11 +1311,15 @@ class PaymentController extends Controller
                 })
                 ->first();
             if ($dateBoundRoom) {
-                $stayStart = $dateBoundRoom->arrival_date ? Carbon::parse($dateBoundRoom->arrival_date)->startOfDay() : $stayStart;
-                $stayEnd = $dateBoundRoom->departure_date ? Carbon::parse($dateBoundRoom->departure_date)->startOfDay() : $stayEnd;
+                if ($dateBoundRoom->isVirtual()) {
+                    $hasStayDateBounds = false;
+                } else {
+                    $stayStart = $dateBoundRoom->arrival_date ? Carbon::parse($dateBoundRoom->arrival_date)->startOfDay() : $stayStart;
+                    $stayEnd = $dateBoundRoom->departure_date ? Carbon::parse($dateBoundRoom->departure_date)->startOfDay() : $stayEnd;
+                }
             }
         }
-        if (($stayStart && $paymentDate->lt($stayStart)) || ($stayEnd && $paymentDate->gt($stayEnd))) {
+        if ($hasStayDateBounds && (($stayStart && $paymentDate->lt($stayStart)) || ($stayEnd && $paymentDate->gt($stayEnd)))) {
             throw \Illuminate\Validation\ValidationException::withMessages([
                 'date' => ['Ngày thanh toán phải nằm trong thời gian lưu trú của đăng ký/phòng.'],
             ]);

@@ -2245,7 +2245,7 @@ function handleBookingUpdatedBroadcast(event) {
 async function loadBookings() {
   isLoadingBookings.value = true
   try {
-    const res = await fetchBookings({ status: '0,1' })
+    const res = await fetchBookings({ status: '0,1', stay_only: true })
     const allList = res.data?.data || res.data || []
 
     // Kiểm tra lần đầu vào trang: closedIds chưa có trong localStorage
@@ -5815,7 +5815,7 @@ async function openBookingModalByCode(bookingCode, forceReload = false) {
     await loadActiveBookingNotifications(foundTab)
   } else {
     try {
-      const res = await fetchBookings({ search: bookingCode })
+      const res = await fetchBookings({ search: bookingCode, stay_only: true })
       const list = res.data?.data || res.data || []
       if (list.length > 0) {
         const bItem = list.find(b => String(b.booking_code) === String(bookingCode) || String(b.id) === String(bookingCode)) || list[0]

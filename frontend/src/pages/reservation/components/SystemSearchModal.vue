@@ -489,6 +489,8 @@ async function executeGlobalSearch() {
     params.status = selectedStatuses.value.join(',')
   }
   
+  params.stay_only = true
+
   try {
     const res = await fetchBookings(params)
     let list = res.data?.data || res.data || []

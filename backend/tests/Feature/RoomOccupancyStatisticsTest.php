@@ -143,7 +143,7 @@ class RoomOccupancyStatisticsTest extends TestCase
             'registration_status_id' => $availableStatus->booking_status_id,
             'created_by' => 'room_stats_test',
         ]);
-        BookingRoom::create([
+        $dayUseRoom = BookingRoom::create([
             'booking_id' => $dayUseBooking->id,
             'room_number' => '106',
             'room_class_id' => $class->id,
@@ -155,6 +155,7 @@ class RoomOccupancyStatisticsTest extends TestCase
             'is_day_use' => true,
             'status' => BookingRoom::STATUS_CHECKED_OUT,
         ]);
+        $this->assertTrue(BookingRoom::stayOnly()->whereKey($dayUseRoom->id)->exists());
 
         $earlyBooking = Booking::create([
             'booking_name' => 'Early checkout',

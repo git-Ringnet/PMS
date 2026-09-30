@@ -48,6 +48,7 @@ class RoomOccupancyStatisticsService
         $occupancyBaseRooms = max(0, $totalRooms - $ooo);
 
         $availabilityQuery = fn () => BookingRoom::query()
+            ->stayOnly()
             ->whereHas('booking.registrationStatus', fn ($query) => $query->where('is_availability', 1));
 
         $assignedPhysicalQuery = fn () => $availabilityQuery()

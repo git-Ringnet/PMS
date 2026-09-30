@@ -327,6 +327,77 @@ class SalesInvoiceSettlementTest extends TestCase
         $this->assertDatabaseCount('sales_invoices', 0);
     }
 
+    public function test_virtual_folio_settlement_accepts_payment_without_guest_or_stay_date_bounds(): void
+    {
+        $virtualBooking = Booking::create([
+            'booking_code' => 'BK260830V001',
+            'booking_name' => 'PHÒNG ẢO 004',
+            'booking_date' => '2026-08-30',
+            'arrival_date' => '2026-08-30',
+            'departure_date' => '2026-08-31',
+            'created_by' => $this->user->username,
+            'status' => Booking::STATUS_RESERVATION,
+            'is_service_only' => true,
+        ]);
+        \App\Models\Room::create([
+            'room_number' => '004',
+            'room_form_id' => DB::table('rooms')->where('room_number', '102')->value('room_form_id'),
+            'room_class_id' => $this->room->room_class_id,
+            'floor' => '0',
+            'is_internal' => true,
+        ]);
+        $virtualRoom = BookingRoom::create([
+            'booking_id' => $virtualBooking->id,
+            'room_class_id' => $this->room->room_class_id,
+            'room_number' => '004',
+            'arrival_date' => '2026-08-30',
+            'departure_date' => '2026-08-31',
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+        $bill = ServiceBill::create([
+            'Guest' => 'PHÒNG ẢO 004',
+            'DepartmentId' => 'FO',
+            'ServiceId' => 'LA',
+            'Username' => $this->user->username,
+            'Date' => '2026-09-16',
+            'OpenTime' => '09:00:00',
+            'Amount' => 250000,
+            'Exchange' => 1,
+            'Edit' => 0,
+            'Status' => 1,
+            'Folio' => '1',
+            'RegisterId1' => (string) $virtualBooking->id,
+            'RegisterID2' => (string) $virtualBooking->id,
+            'RentalRoomId1' => (string) $virtualRoom->id,
+            'RentalRoomId2' => (string) $virtualRoom->id,
+        ]);
+
+        $this->postJson("/api/bookings/{$virtualBooking->id}/settle-payment", [
+            'folio_id' => '1',
+            'booking_room_id' => $virtualRoom->id,
+            'payments' => [['payment_method_id' => 'CA', 'amount' => 250000]],
+            'service_bill_ids' => [$bill->Ma],
+            'department_id' => 'FO',
+            'date' => '2026-09-16',
+            'open_time' => '10:00',
+            'shift_id' => '1',
+        ])->assertOk()->assertJsonPath('success', true);
+
+        $this->assertDatabaseHas('payments', [
+            'booking_id' => $virtualBooking->id,
+            'booking_room_id' => $virtualRoom->id,
+            'guest_id' => null,
+            'amount' => 250000,
+            'status' => Payment::STATUS_PAID,
+        ]);
+        $this->assertDatabaseHas('sales_invoices', [
+            'booking_id' => $virtualBooking->id,
+            'booking_room_id' => $virtualRoom->id,
+            'guest_id' => null,
+            'invoice_date' => '2026-09-16 00:00:00',
+        ]);
+    }
+
     public function test_city_ledger_requires_the_booking_company_debt_setting(): void
     {
         $company = Company::create(['name' => 'Company without credit', 'sync_acc' => false]);

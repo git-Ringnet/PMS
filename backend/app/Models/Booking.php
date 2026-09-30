@@ -22,6 +22,7 @@ class Booking extends Model
     protected $hidden = ['registration_status_pk_before_codes'];
 
     protected $fillable = [
+        'is_service_only',
         'booking_name',
         'arrival_date',
         'departure_date',
@@ -86,6 +87,7 @@ class Booking extends Model
         'departure_flight_date'=> 'datetime',
         'edit_date'            => 'datetime',
         'is_git'               => 'boolean',
+        'is_service_only'      => 'boolean',
         'is_day_use'           => 'boolean',
         'breakfast_included'   => 'boolean',
         'has_vat'              => 'boolean',

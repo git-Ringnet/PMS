@@ -524,7 +524,7 @@ const loadBookingRooms = async () => {
     // Từ menu HK chỉ hiển thị khách/phòng đang Inhouse; khi mở từ Room Map
     // vẫn giữ được phòng Reservation được truyền vào để đối chiếu đúng luồng legacy.
     const fromRoomMap = Boolean(props.initialRoomId)
-    const res = await fetchBookings({ status: fromRoomMap ? '0,1' : '1' })
+    const res = await fetchBookings({ status: fromRoomMap ? '0,1' : '1', stay_only: true })
     const list = res.data?.data || res.data || []
     const allOptions = []
     const groups = []

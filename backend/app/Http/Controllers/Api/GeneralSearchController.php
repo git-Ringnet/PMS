@@ -174,11 +174,16 @@ class GeneralSearchController extends Controller
 
     private function bookingRelations(): array
     {
-        return ['company', 'market', 'registrationStatus', 'creator', 'bookingRooms.roomClass', 'bookingRooms.originalRoomClass', 'bookingRooms.guests.guest'];
+        return [
+            'company', 'market', 'registrationStatus', 'creator',
+            'bookingRooms' => fn (Builder $rooms) => $rooms->stayOnly(),
+            'bookingRooms.roomClass', 'bookingRooms.originalRoomClass', 'bookingRooms.guests.guest',
+        ];
     }
 
     private function applyRoomFilters(Builder $query, array $data): void
     {
+        $query->stayOnly();
         if (($data['status'] ?? '') !== '') $query->whereIn('status', array_map('intval', explode(',', $data['status'])));
         if ($data['rate_code_id'] ?? null) $query->where('rate_code', $data['rate_code_id']);
         if ($data['room_class_id'] ?? null) $query->where('room_class_id', $data['room_class_id']);
