@@ -21,6 +21,12 @@ use App\Models\RoomNightBill;
 use App\Models\BookingRoomService;
 use App\Models\LateCheckin;
 use App\Models\NoshowLog;
+use App\Models\NightAuditRun;
+use App\Models\NightAuditRunStep;
+use App\Models\NightAuditAgencyProductivitySnapshot;
+use App\Models\NightAuditInhouseSnapshot;
+use App\Models\NightAuditRoomSalesForecastSnapshot;
+use App\Models\NightAuditRoomTypeSnapshot;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 use Carbon\Carbon;
@@ -441,4 +447,224 @@ class NightAuditTest extends TestCase
         ]);
         return $bill;
     }
+
+    /**
+     * Test Night Audit tạo đủ run record, 13 steps, và các snapshot SP7000, SP7001, SP7003, SP7005
+     */
+    public function test_night_audit_creates_run_and_all_13_steps_and_snapshots()
+    {
+        $latest = SystemDateRoll::latest('id')->first();
+        $sysDateStr = Carbon::parse($latest->system_date)->toDateString();
+
+        Room::updateOrCreate(
+            ['room_number' => '201'],
+            [
+                'room_class_id' => 1,
+                'room_form_id' => 1,
+                'floor' => '2',
+                'room_status_code' => 'occupied_ready',
+            ]
+        );
+
+        $booking = Booking::create([
+            'booking_name' => 'KHACH DOAN CONG TY A',
+            'arrival_date' => $sysDateStr,
+            'departure_date' => Carbon::parse($sysDateStr)->addDays(2)->toDateString(),
+            'num_of_days' => 2,
+            'booking_date' => $sysDateStr,
+            'created_by' => 'admin',
+            'registration_status_id' => 1,
+        ]);
+
+        BookingRoom::create([
+            'id' => 'G2000001',
+            'booking_id' => $booking->id,
+            'room_class_id' => 1,
+            'room_number' => '201',
+            'arrival_date' => $sysDateStr,
+            'departure_date' => Carbon::parse($sysDateStr)->addDays(2)->toDateString(),
+            'status' => BookingRoom::STATUS_CHECKED_IN,
+            'rate' => 800000,
+        ]);
+
+        $response = $this->actingAs($this->user)->postJson('/api/night-audit/run', [
+            'occupied_to_dirty' => false,
+            'empty_to_inspect'  => false,
+        ]);
+
+        $response->assertSuccessful();
+
+        $run = NightAuditRun::whereDate('source_system_date', $sysDateStr)->latest('id')->first();
+        $this->assertNotNull($run);
+        $this->assertEquals('succeeded', $run->status);
+
+        // Kiểm tra đúng 13 bước trong Step log
+        $steps = NightAuditRunStep::where('run_id', $run->id)->orderBy('step_order')->get();
+        $this->assertCount(13, $steps);
+
+        // SP7002 và SP7004 phải ở trạng thái skipped_unconfigured
+        $sp7002Step = $steps->firstWhere('step_code', 'SNAPSHOT_SP7002');
+        $this->assertNotNull($sp7002Step);
+        $this->assertEquals('skipped_unconfigured', $sp7002Step->status);
+
+        $sp7004Step = $steps->firstWhere('step_code', 'SNAPSHOT_SP7004');
+        $this->assertNotNull($sp7004Step);
+        $this->assertEquals('skipped_unconfigured', $sp7004Step->status);
+
+        // Các bước còn lại phải succeeded
+        $succeededSteps = $steps->where('status', 'succeeded');
+        $this->assertCount(11, $succeededSteps);
+
+        // Kiểm tra các bảng snapshot có dữ liệu
+        $this->assertDatabaseHas('night_audit_agency_productivity_snapshots', [
+            'night_audit_run_id' => $run->id,
+        ]);
+        $this->assertDatabaseHas('night_audit_inhouse_snapshots', [
+            'night_audit_run_id' => $run->id,
+            'room'               => '201',
+        ]);
+        $this->assertDatabaseHas('night_audit_room_sales_forecast_snapshots', [
+            'night_audit_run_id' => $run->id,
+        ]);
+        $this->assertDatabaseHas('night_audit_room_type_snapshots', [
+            'night_audit_run_id' => $run->id,
+        ]);
+    }
+
+    /**
+     * Test Rollback toàn diện khi xảy ra lỗi giữa chừng trong transaction:
+     * Bills không commit, ngày hệ thống không đổi, run status là failed.
+     */
+    public function test_night_audit_rolls_back_everything_on_failure_and_marks_run_failed()
+    {
+        $latest = SystemDateRoll::latest('id')->first();
+        $sysDateStr = Carbon::parse($latest->system_date)->toDateString();
+
+        $initialRollCount = SystemDateRoll::count();
+
+        // Mock service để gây lỗi cố ý tại bước SNAPSHOT_SP7005
+        $mockService = \Mockery::mock(\App\Services\NightAuditSnapshotService::class)->makePartial();
+        $mockService->shouldReceive('captureRoomType')
+            ->once()
+            ->andThrow(new \RuntimeException('Giả lập lỗi I/O CSDL khi tạo snapshot SP7005'));
+        $this->app->instance(\App\Services\NightAuditSnapshotService::class, $mockService);
+
+        $response = $this->actingAs($this->user)->postJson('/api/night-audit/run', [
+            'occupied_to_dirty' => false,
+            'empty_to_inspect'  => false,
+        ]);
+
+        $response->assertStatus(500);
+
+        // Run phải được ghi nhận trạng thái failed
+        $failedRun = NightAuditRun::latest('id')->first();
+        $this->assertNotNull($failedRun);
+        $this->assertEquals('failed', $failedRun->status);
+        $this->assertStringContainsString('Giả lập lỗi I/O', $failedRun->error_message);
+
+        // Step SNAPSHOT_SP7005 phải đánh dấu failed
+        $failedStep = NightAuditRunStep::where('run_id', $failedRun->id)
+            ->where('step_code', 'SNAPSHOT_SP7005')
+            ->first();
+        $this->assertNotNull($failedStep);
+        $this->assertEquals('failed', $failedStep->status);
+
+        // Rollback: Số lượng system_date_rolls không bị tăng thêm
+        $this->assertEquals($initialRollCount, SystemDateRoll::count());
+
+        // Rollback: Không có snapshot nào bị commit dở dang
+        $this->assertDatabaseMissing('night_audit_room_sales_forecast_snapshots', [
+            'night_audit_run_id' => $failedRun->id,
+        ]);
+        $this->assertDatabaseMissing('night_audit_agency_productivity_snapshots', [
+            'night_audit_run_id' => $failedRun->id,
+        ]);
+    }
+
+    /**
+     * Test Chống chạy đồng thời (Concurrency check - HTTP 409 Conflict)
+     */
+    public function test_night_audit_concurrency_blocks_simultaneous_run()
+    {
+        $latest = SystemDateRoll::latest('id')->first();
+        $sysDateStr = Carbon::parse($latest->system_date)->toDateString();
+
+        // Giả lập một run đang chạy hợp lệ (mới bắt đầu 1 phút trước)
+        NightAuditRun::create([
+            'source_system_date' => $sysDateStr,
+            'target_system_date' => Carbon::parse($sysDateStr)->addDay()->toDateString(),
+            'actual_started_at'  => now()->subMinute(),
+            'shift'              => 1,
+            'username'           => 'other_user',
+            'status'             => 'running',
+            'idempotency_key'    => 'test_concurrency_token',
+        ]);
+
+        $response = $this->actingAs($this->user)->postJson('/api/night-audit/run', [
+            'occupied_to_dirty' => false,
+            'empty_to_inspect'  => false,
+        ]);
+
+        $response->assertStatus(409)
+            ->assertJsonPath('success', false);
+    }
+
+    /**
+     * Test Chống chạy trùng (Idempotency - HTTP 409 khi ngày này đã sang ngày thành công)
+     */
+    public function test_night_audit_idempotency_prevents_duplicate_runs()
+    {
+        $latest = SystemDateRoll::latest('id')->first();
+        $sysDateStr = Carbon::parse($latest->system_date)->toDateString();
+
+        // Giả lập một run đã hoàn tất thành công cho ngày này
+        NightAuditRun::create([
+            'source_system_date' => $sysDateStr,
+            'target_system_date' => Carbon::parse($sysDateStr)->addDay()->toDateString(),
+            'actual_started_at'  => now()->subHour(),
+            'actual_finished_at' => now()->subMinutes(55),
+            'shift'              => 1,
+            'username'           => 'admin',
+            'status'             => 'succeeded',
+            'idempotency_key'    => 'test_idempotency_token',
+        ]);
+
+        $response = $this->actingAs($this->user)->postJson('/api/night-audit/run', [
+            'occupied_to_dirty' => false,
+            'empty_to_inspect'  => false,
+        ]);
+
+        $response->assertStatus(409)
+            ->assertJsonPath('success', false);
+    }
+
+    /**
+     * Test Bảo mật PII trong Inhouse Snapshot (toSafeArray)
+     */
+    public function test_inhouse_snapshot_masks_pii_for_unauthorized_users()
+    {
+        $snapshot = new NightAuditInhouseSnapshot([
+            'guest_name' => 'NGUYEN VAN TEST',
+            'passport'   => 'B1234567',
+            'phone'      => '0912345678',
+            'email'      => 'test@example.com',
+            'address'    => '123 Đường ABC, Hà Nội',
+            'room'       => '301',
+        ]);
+
+        // 1. Không có quyền xem PII -> các trường nhạy cảm phải bị che bằng '***'
+        $safeArray = $snapshot->toSafeArray(canViewPii: false);
+        $this->assertEquals('***', $safeArray['passport']);
+        $this->assertEquals('***', $safeArray['phone']);
+        $this->assertEquals('***', $safeArray['email']);
+        $this->assertEquals('***', $safeArray['address']);
+        $this->assertEquals('301', $safeArray['room']); // Trường không nhạy cảm giữ nguyên
+
+        // 2. Có quyền xem PII -> giữ nguyên giá trị gốc
+        $fullArray = $snapshot->toSafeArray(canViewPii: true);
+        $this->assertEquals('B1234567', $fullArray['passport']);
+        $this->assertEquals('0912345678', $fullArray['phone']);
+        $this->assertEquals('test@example.com', $fullArray['email']);
+    }
 }
+
