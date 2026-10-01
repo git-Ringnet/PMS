@@ -1402,13 +1402,17 @@ function isLightColor(color) {
 function getRoomCardStyle(room, floorIdx, roomIdx) {
   const isOccupiedOrCheckout = room.booking_status === 'occupied' || room.booking_status === 'checkout'
   const hasBkColor = isOccupiedOrCheckout && room.booking_color && room.booking_color !== ''
+  const hasBridge = room && room.floor && roomStore.roomsByFloor[room.floor]
+    ? hasConnectingDoorWithNext(room, roomStore.roomsByFloor[room.floor], roomIdx)
+    : false
 
   const baseStyle = {
     animationDelay: `${(floorIdx * 80) + (roomIdx * 20)}ms`,
     width: settings.value.roomWidth + 'px',
     height: settings.value.roomHeight + 'px',
     minHeight: settings.value.roomHeight + 'px',
-    maxHeight: settings.value.roomHeight + 'px'
+    maxHeight: settings.value.roomHeight + 'px',
+    ...(hasBridge ? { zIndex: 25 } : {})
   }
 
   if (hasBkColor) {
@@ -1423,6 +1427,77 @@ function getRoomCardStyle(room, floorIdx, roomIdx) {
   }
 
   return baseStyle
+}
+
+function getConnectingRoomNumber(room) {
+  if (!room) return null
+  if (room.connecting_room && String(room.connecting_room).trim() !== '') {
+    return String(room.connecting_room).trim()
+  }
+  const currentNum = String(room.room_number || '').trim()
+  if (!currentNum) return null
+  const allRooms = roomStore.rooms || []
+  const partner = allRooms.find(r => r.connecting_room && String(r.connecting_room).trim() === currentNum)
+  return partner ? String(partner.room_number).trim() : null
+}
+
+function hasConnectingDoorWithNext(room, floorRooms, roomIdx) {
+  if (!floorRooms || roomIdx >= floorRooms.length - 1) return false
+  const nextRoom = floorRooms[roomIdx + 1]
+  if (!nextRoom) return false
+
+  const r1Num = String(room.room_number || '').trim()
+  const r2Num = String(nextRoom.room_number || '').trim()
+  const r1Conn = String(room.connecting_room || '').trim()
+  const r2Conn = String(nextRoom.connecting_room || '').trim()
+
+  return (r1Conn !== '' && r1Conn === r2Num) || (r2Conn !== '' && r2Conn === r1Num)
+}
+
+function isIsolatedConnectingRoom(room, floorRooms, roomIdx) {
+  const connNum = getConnectingRoomNumber(room)
+  if (!connNum) return false
+
+  // If connected with next room, it is handled by bridge
+  if (hasConnectingDoorWithNext(room, floorRooms, roomIdx)) return false
+
+  // If connected with previous room, it is handled by previous room's bridge
+  if (roomIdx > 0 && floorRooms) {
+    const prevRoom = floorRooms[roomIdx - 1]
+    if (prevRoom && hasConnectingDoorWithNext(prevRoom, floorRooms, roomIdx - 1)) {
+      return false
+    }
+  }
+
+  return true
+}
+
+function getConnectingDoorStyle() {
+  const isHorizontal = settings.value.floorOrientation === 'Ngang'
+  const iconW = Math.max(14, Math.round(16 * cardScale.value))
+  const iconH = Math.max(21, Math.round(25 * cardScale.value))
+  // The gap between room cards in flex is 6px (gap-1.5)
+  // Distance from edge of card to center in the 6px gap: -(3 + iconW / 2)
+  const offsetH = -(3 + Math.round(iconW / 2))
+  const offsetV = -(3 + Math.round(iconH / 2))
+
+  if (isHorizontal) {
+    return {
+      right: `${offsetH}px`,
+      top: '42%',
+      transform: 'translateY(-50%)',
+      width: `${iconW}px`,
+      height: `${iconH}px`,
+    }
+  }
+
+  return {
+    bottom: `${offsetV}px`,
+    left: '50%',
+    transform: 'translateX(-50%)',
+    width: `${iconW}px`,
+    height: `${iconH}px`,
+  }
 }
 
 function getFloorPillStyle() {
@@ -3148,7 +3223,8 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         :class="[
                           isInitialLoad ? 'room-card-animate' : '',
                           (room.booking_status === 'occupied' || room.booking_status === 'checkout') ? 'occupied-room' : '',
-                          lastFocusedRoom?.id === room.id ? 'room-card-selected' : ''
+                          lastFocusedRoom?.id === room.id ? 'room-card-selected' : '',
+                          hasConnectingDoorWithNext(room, roomStore.roomsByFloor[floor], roomIdx) ? 'z-25' : ''
                       ]" :style="getRoomCardStyle(room, floorIdx, roomIdx)" @click="handleRoomClick(room)" @dblclick.stop="handleRoomDoubleClick(room)"
                        @contextmenu.prevent="handleContextMenu($event, room)" @mouseenter="showTooltip($event, room)"
                         @mousemove="showTooltip($event, room)" @mouseleave="hideTooltip">
@@ -3162,6 +3238,25 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         <div v-if="hasDepartureToday(room)" class="absolute top-2.5 right-2.5 z-10" title="Phòng đi">
                           <span class="rounded-full block border border-white/20 shadow-sm bg-red-500 relative"
                             :style="{ width: Math.max(8, (settings.iconSizes?.group3 ?? 10) * cardScale) + 'px', height: Math.max(8, (settings.iconSizes?.group3 ?? 10) * cardScale) + 'px' }"></span>
+                        </div>
+
+                        <!-- Connecting Door Bridge (Icon cánh cửa giữa 2 phòng thông nhau) -->
+                        <div v-if="hasConnectingDoorWithNext(room, roomStore.roomsByFloor[floor], roomIdx)"
+                          class="absolute z-50 pointer-events-auto flex items-center justify-center cursor-help transition-transform hover:scale-125"
+                          :style="getConnectingDoorStyle()"
+                          :title="`Cửa thông phòng: ${room.room_number} ↔ ${roomStore.roomsByFloor[floor][roomIdx + 1]?.room_number}`"
+                          @click.stop>
+                          <RoomIcon name="connecting-door" class="text-black w-full h-full drop-shadow-xs" />
+                        </div>
+
+                        <!-- Fallback Badge cửa thông nhau (khi phòng đối tác không nằm liền kề trong danh sách) -->
+                        <div v-else-if="isIsolatedConnectingRoom(room, roomStore.roomsByFloor[floor], roomIdx)"
+                          class="absolute top-2.5 z-10 pointer-events-auto flex items-center justify-center cursor-help transition-transform hover:scale-110"
+                          :class="hasArrivalToday(room) ? 'left-7' : 'left-2.5'"
+                          :style="{ width: Math.max(13, Math.round(15 * cardScale)) + 'px', height: Math.max(17, Math.round(20 * cardScale)) + 'px' }"
+                          :title="`Phòng thông với: ${getConnectingRoomNumber(room)}`"
+                          @click.stop>
+                          <RoomIcon name="connecting-door" class="text-black w-full h-full drop-shadow-xs" />
                         </div>
 
                         <!-- Room Content (Centered, shifted slightly up to leave safe space for bottom icons) -->
@@ -3680,6 +3775,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                             :style="getRoomNumberStyle(room)"
                             class="inline-flex items-center justify-center gap-1">
                             {{ room.room_number }}
+                            <span v-if="getConnectingRoomNumber(room)" class="inline-flex items-center text-slate-700 ml-0.5" :title="`Phòng thông nhau với: ${getConnectingRoomNumber(room)}`">
+                              <RoomIcon name="connecting-door" class="w-3.5 h-3.5" />
+                            </span>
                             <span v-if="room.is_do_not_move" class="inline-flex items-center text-red-500" title="Khóa chuyển phòng (Do Not Move)">
                               <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
                                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2" fill="none" stroke="currentColor" stroke-width="2.5"></rect>
@@ -3947,6 +4045,13 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 <li class="flex items-start gap-1">
                   <span class="text-neutral-500">•</span>
                   <span>{{ hoverTooltip.room.room_type_name }} (Phòng {{ hoverTooltip.room.room_number }})</span>
+                </li>
+                <li v-if="getConnectingRoomNumber(hoverTooltip.room)" class="flex items-start gap-1 text-sky-300 font-semibold">
+                  <span class="text-neutral-500">•</span>
+                  <span class="inline-flex items-center gap-1">
+                    <RoomIcon name="connecting-door" class="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                    <span>Phòng thông nhau: <strong class="text-white">{{ getConnectingRoomNumber(hoverTooltip.room) }}</strong></span>
+                  </span>
                 </li>
                 <li class="flex items-start gap-1">
                   <span class="text-neutral-500">•</span>

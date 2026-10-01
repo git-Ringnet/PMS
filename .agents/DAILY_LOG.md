@@ -18,6 +18,36 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-10-01] - Bổ sung tính năng Phòng thông nhau (Connecting Rooms) trong Cấu hình phòng & Sơ đồ phòng
+### Module: Cấu hình phòng / Sơ đồ phòng ([Room.php](file:///d:/PMS/backend/app/Models/Room.php), [RoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomController.php), [RoomResource.php](file:///d:/PMS/backend/app/Http/Resources/RoomResource.php), [RoomTab.vue](file:///d:/PMS/frontend/src/pages/config/components/room/RoomTab.vue), [RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue), [RoomIcon.vue](file:///d:/PMS/frontend/src/components/RoomIcon.vue))
+
+- **Yêu cầu nghiệp vụ**:
+  - Bổ sung cột `connecting_room` ở bảng `rooms` (các phòng có cửa thông nhau).
+  - Giao diện thêm/sửa phòng bổ sung thông tin chọn số phòng connect (`connecting_room`). Dropdown chỉ hiển thị các phòng liền kề trực tiếp trong cùng tầng (phòng trước và phòng sau), không hiển thị tất cả các phòng xa.
+  - Trên Sơ đồ phòng (Room Map), hiển thị icon cánh cửa màu đen thanh thoát (không bọc khung viền trắng) tại đúng ranh giới tiếp giáp giữa 2 phòng thông nhau.
+- **Nghiệp vụ đã xử lý**:
+  1. **Cơ sở dữ liệu (Database)**:
+     - Tạo migration `2026_10_01_100000_add_connecting_room_to_rooms_table.php` bổ sung cột `connecting_room` (`string(50)`, nullable).
+     - Chạy migrate thành công trên toàn bộ các database chi nhánh qua `php artisan migrate:all --force`.
+  2. **Backend API & Model**:
+     - Trong [`Room.php`](file:///d:/PMS/backend/app/Models/Room.php): Thêm `connecting_room` vào `$fillable`.
+     - Trong [`RoomResource.php`](file:///d:/PMS/backend/app/Http/Resources/RoomResource.php): Trả về trường `connecting_room` ra client.
+     - Trong [`RoomController.php`](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomController.php): Thêm validation cho cả `store` và `update`: `'connecting_room' => 'nullable|string|max:50|different:room_number'`.
+  3. **Giao diện Cấu hình phòng ([RoomTab.vue](file:///d:/PMS/frontend/src/pages/config/components/room/RoomTab.vue))**:
+     - Thêm trường **"PHÒNG THÔNG NHAU"** vào modal Thêm/Sửa phòng.
+     - Tối ưu hàm `availableConnectingRooms`: Chỉ lọc và hiển thị các phòng liền kề trực tiếp trong cùng tầng (`currentIndex - 1` và `currentIndex + 1`), loại trừ các phòng ở xa hoặc khác tầng (ví dụ phòng 106 chỉ gợi ý phòng 105 và 107).
+     - Thêm cột `Phòng thông nhau` vào bảng danh sách phòng, có icon cánh cửa và hỗ trợ bật/tắt trong cài đặt hiển thị cột.
+  4. **Icon Cánh cửa & Sơ đồ phòng ([RoomIcon.vue](file:///d:/PMS/frontend/src/components/RoomIcon.vue), [RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))**:
+     - Cập nhật SVG icon cánh cửa mở chuẩn (`connecting-door`) trong [`RoomIcon.vue`](file:///d:/PMS/frontend/src/components/RoomIcon.vue) với vector đơn khối sắc nét (khung cửa chữ L ngược + cánh cửa mở 3D + núm cửa trắng), không dùng các lớp stroke rời rạc.
+     - Xử lý vấn đề z-index / CSS stacking context: Thêm `zIndex: 25` (và class `z-25`) cho thẻ phòng chứa cửa nối và `z-50` cho container icon, đảm bảo icon cánh cửa luôn nổi lên trên cả 2 thẻ phòng, không bị thẻ phòng kế tiếp đè lên.
+     - Căn chỉnh vị trí `top: 42%` ngay chính giữa ranh giới tiếp giáp giữa 2 phòng kề nhau.
+     - Khi 2 phòng thông nhau nhưng không nằm cạnh nhau: Hiển thị badge icon cánh cửa ở góc thẻ phòng kèm tooltip.
+     - Trong tooltip chi tiết khi hover thẻ phòng: Hiển thị dòng `"Phòng thông nhau: [số phòng]"`.
+     - Trong chế độ Bảng danh sách của Sơ đồ phòng: Hiển thị icon cánh cửa cạnh số phòng.
+- **Kiểm thử**:
+  - Chạy `php artisan test --filter=ConnectingRoomTest`: 3/3 tests PASSED (7 assertions).
+  - Chạy `npm run build` frontend: hoàn thành thành công trong 4.89s không phát sinh lỗi.
+
 ## [2026-09-30] - Khắc phục 2 lỗi Đặt phòng (Note dòng 88 & 89 sheet Cần điều chỉnh: Tự động sinh RM & Gán cùng số phòng cho các chặng không trùng ngày)
 ### Module: Đặt phòng / Quản lý phòng ([BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [BookingRoomLifecycleService.php](file:///d:/PMS/backend/app/Services/BookingRoomLifecycleService.php), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))
 

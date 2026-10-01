@@ -30,6 +30,7 @@ class Room extends Model
         'grid_column',
         'owner_room',
         'linked_room',
+        'connecting_room',
         'is_internal',
         'room_status_code',
         'status',
