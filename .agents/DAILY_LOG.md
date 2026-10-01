@@ -18,6 +18,27 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-10-01] - Điều chỉnh Tooltip Booking và Submenu Context Menu trên Sơ đồ phòng (Room Map - Dòng 293)
+### Module: Sơ đồ phòng ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
+
+- **Yêu cầu nghiệp vụ & Giải pháp**:
+  1. **Tooltip Booking thông thường**:
+     - Canh tooltip nằm trọn vẹn trong viewport (`clampedX` giữ khoảng cách an toàn tối thiểu 12px với mép màn hình).
+     - Định vị mũi tên chỉ định vị theo `pointerOffset` chính xác tới vị trí ô phòng.
+     - Hỗ trợ chữ dài tự động xuống dòng (`break-words`, `whitespace-normal`), không bị cắt cụt.
+     - Bỏ khối tóm tắt loại phòng và đơn giá ở phần dưới (`1 [Loại phòng]...` và `[Giá]/R/N`).
+     - Bổ sung hiển thị Yêu cầu đặc biệt (`special_requests`) nổi bật với màu chữ `rose-600`.
+     - Giữ nguyên thông tin số phòng trong danh sách chi tiết: `{{ room.room_type_name }} (Phòng {{ room.room_number }})`.
+     - Đổi màu nền tooltip booking sang màu trắng (`bg-white`), chữ đen (`text-slate-800`), viền xám sáng (`border-slate-300`), đồng bộ mũi tên nền trắng.
+  2. **Bảo toàn tooltip phòng khóa (OOO/OOS)**:
+     - Giữ nguyên 100% tooltip OOO/OOS với nền đen `#2e2e2e`, chữ trắng, viền tối và mũi tên đen.
+  3. **Submenu Chuyển tình trạng phòng (Context Menu)**:
+     - Thêm cờ `isSubmenuLeft` vào state `contextMenu`.
+     - Tự động phát hiện khi menu hiển thị ở các phòng sát mép phải màn hình (cột 109, 110, 111) để bung submenu sang bên trái (`right-[96%] before:-right-4`), tránh tràn ra ngoài viewport làm khuất các chức năng.
+- **Kiểm thử**:
+  - `npm run build` frontend thành công 100% không có lỗi.
+  - Không ảnh hưởng đến backend hay logic CSDL của các phần khác.
+
 ## [2026-09-28] - Khắc phục tính năng Cập nhật nhanh nhiều phòng (QuickUpdate)
 ### Module: Đặt phòng / Cập nhật nhanh nhiều phòng ([QuickUpdateModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/QuickUpdateModal.vue), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php))
 
