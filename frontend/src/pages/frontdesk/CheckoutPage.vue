@@ -32,12 +32,61 @@ import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import AdjustRoomRateModal from './components/AdjustRoomRateModal.vue'
 import echo from '@/services/echo'
 import { useUiStore } from '@/stores/ui-store'
+import { useAuthStore } from '@/stores/auth-store'
 import { usePermission } from '@/composables/usePermission'
 
 const uiStore = useUiStore()
+const authStore = useAuthStore()
 const { can } = usePermission()
 const route = useRoute()
 const router = useRouter()
+const canAdjustRoomRate = ref(false)
+const canModifyRateBillService = ref(false)
+
+const loadCheckoutRolePermissions = async () => {
+  try {
+    const response = await http.get('/hotel-configs', { params: { name: 'RoleUserAdjustRoomRate' } })
+    const roleConfig = String(response.data?.data?.[0]?.value ?? '')
+    const allowedRoles = roleConfig.split(/[,;|]+/).map(role => role.trim().toLowerCase()).filter(role => role && role !== '0')
+    const userRoles = [
+      ...(authStore.roles || []).flatMap(role => [role.role_code, role.role_name]),
+      authStore.user?.job_title_code,
+      authStore.user?.job_title,
+      authStore.user?.department_code,
+      authStore.user?.department,
+    ].map(role => String(role || '').trim().toLowerCase()).filter(Boolean)
+
+    canAdjustRoomRate.value = allowedRoles.some(role => userRoles.includes(role))
+  } catch (error) {
+    canAdjustRoomRate.value = false
+  }
+}
+
+const onCheckoutRoleConfigUpdated = event => {
+  if (event?.detail?.name === 'RoleUserAdjustRoomRate') loadCheckoutRolePermissions()
+  if (event?.detail?.name === 'RuleUserModifyRateBillService') loadServiceBillAdjustmentPermission()
+}
+
+const loadServiceBillAdjustmentPermission = async () => {
+  try {
+    const response = await http.get('/hotel-configs', { params: { name: 'RuleUserModifyRateBillService' } })
+    const allowedRoles = String(response.data?.data?.[0]?.value ?? '')
+      .split(/[,;|]+/)
+      .map(role => role.trim().toLowerCase())
+      .filter(role => role && role !== '0')
+    const userRoles = [
+      ...(authStore.roles || []).flatMap(role => [role.role_code, role.role_name]),
+      authStore.user?.job_title_code,
+      authStore.user?.job_title,
+      authStore.user?.department_code,
+      authStore.user?.department,
+    ].map(role => String(role || '').trim().toLowerCase()).filter(Boolean)
+
+    canModifyRateBillService.value = allowedRoles.some(role => userRoles.includes(role))
+  } catch (error) {
+    canModifyRateBillService.value = false
+  }
+}
 
 const stripTrailingQuantitySuffix = value => String(value || '').replace(/\s+\(\d+\)$/u, '').trim()
 
@@ -633,6 +682,10 @@ const loadSystemDate = async () => {
 }
 
 const openAdjustRoomRateModal = async () => {
+  if (!canAdjustRoomRate.value) {
+    uiStore.showToast('Tài khoản không có quyền điều chỉnh tiền phòng.', 'warning')
+    return
+  }
   if (selectedBookingNoPost.value) {
     uiStore.showToast('Booking đang bật No Post — không thể điều chỉnh tiền phòng.', 'warning')
     return
@@ -1581,6 +1634,50 @@ const canSplitSelectedServices = computed(() => {
   return billIds.length === selectedServiceItems.value.length && new Set(billIds).size === 1
 })
 const selectedPaymentItems = computed(() => paymentsList.value.filter(payment => selectedPaymentIds.value.includes(Number(payment.id))))
+const selectedDeletePaymentGroup = computed(() => {
+  const selected = selectedPaymentItems.value[0]
+  if (!selected) return []
+
+  const raw = selected.rawPayment || {}
+  const paymentId = String(raw.payment_id || selected.paymentId || selected.paymentCode || '')
+  const invoiceId = String(raw.invoice_id || selected.invoiceCode || '')
+  if (!paymentId && !invoiceId) return [selected]
+
+  const group = (selectedBooking.value?.rawBooking?.payments || [])
+    .filter(payment => !payment.deleted_at && Number(payment.edit_flag || 0) === 0)
+    .filter(payment => (
+      (paymentId && String(payment.payment_id || '') === paymentId)
+      || (invoiceId && String(payment.invoice_id || '') === invoiceId)
+    ))
+    .map(payment => ({
+      id: payment.id,
+      paymentMethod: payment.payment_method?.name || payment.payment_method_name || payment.payment_method_id || '',
+      amount: Number(payment.amount) || 0,
+      isDepositOrAdvance: String(payment.pack2 || '').toUpperCase() === 'DPR' || String(payment.pack4 || '').toUpperCase() === 'AP',
+    }))
+
+  return group.length ? group : [selected]
+})
+const selectedPaymentsSpanMultipleSettlements = computed(() => {
+  const selectedItems = selectedPaymentItems.value
+  if (selectedItems.length < 2) return false
+
+  const first = selectedItems[0]
+  const raw = first.rawPayment || {}
+  const paymentId = String(raw.payment_id || first.paymentId || first.paymentCode || '')
+  const invoiceId = String(raw.invoice_id || first.invoiceCode || '')
+  if (!paymentId && !invoiceId) return true
+
+  const memberIds = new Set((selectedBooking.value?.rawBooking?.payments || [])
+    .filter(payment => !payment.deleted_at && Number(payment.edit_flag || 0) === 0)
+    .filter(payment => (
+      (paymentId && String(payment.payment_id || '') === paymentId)
+      || (invoiceId && String(payment.invoice_id || '') === invoiceId)
+    ))
+    .map(payment => String(payment.id)))
+
+  return selectedItems.some(payment => !memberIds.has(String(payment.id)))
+})
 const canSplitSelectedDeposit = computed(() => selectedPaymentItems.value.length === 1 && canTransferPayment(selectedPaymentItems.value[0]))
 const canTransferSelectedDeposit = computed(() => selectedPaymentItems.value.length > 0 && selectedPaymentItems.value.every(canTransferPayment))
 const hasSelectedDeposit = computed(() => selectedPaymentItems.value.length > 0)
@@ -1854,6 +1951,11 @@ const transferPreviewPayments = (booking, room = null, targetGuestId = null) => 
 
 const isTransferEligibleRoom = (room) => [0, 1].includes(Number(room.rawRoom?.status))
 const isTransferEligibleBooking = (booking) => [0, 1].includes(Number(booking.rawBooking?.status))
+const resolveQuickTransferTargetId = (destination) => {
+  if (destination?.roomId) return destination.roomId
+  const bookingId = Number(destination?.bookingId)
+  return Number.isInteger(bookingId) && bookingId > 0 ? `master-${bookingId}` : null
+}
 
 const transferDestinations = computed(() => allBookingsList.value.filter(isTransferEligibleBooking).flatMap(booking => {
   const roomDestinations = booking.roomItems.filter(isTransferEligibleRoom).flatMap(room => {
@@ -1934,7 +2036,8 @@ const canAdjustSelectedService = computed(() => (
   && selectedServiceGroups.value.length === 1
   && selectedServiceGroups.value[0].items.every(item => !isRoomRateService(item))
 ))
-const canOpenCancelServiceModal = computed(() => canCancelSelectedServices.value || canAdjustSelectedService.value)
+const canAdjustSelectedServicePrice = computed(() => canAdjustSelectedService.value && canModifyRateBillService.value)
+const canOpenCancelServiceModal = computed(() => canCancelSelectedServices.value || canAdjustSelectedServicePrice.value)
 const toggleAllPaymentSelection = (checked) => {
   selectedPaymentIds.value = checked ? [...new Set(paymentSelectionIds.value)] : []
   if (checked) selectedServiceIds.value = []
@@ -1945,7 +2048,7 @@ const openCancelServiceModal = () => {
 }
 
 const openServiceAdjustment = async () => {
-  if (!canAdjustSelectedService.value) return
+  if (!canAdjustSelectedServicePrice.value) return
   if (isSelectedPostBlocked.value) {
     uiStore.showToast('Booking hoặc phòng đang bật No Post — không thể điều chỉnh dịch vụ.', 'warning')
     return
@@ -2153,14 +2256,28 @@ const splitSelectedDeposit = async ({ amount, folio }) => {
 
 const transferSelectedServices = async (destination) => {
   if (!canTransferSelectedServices.value) return
+  const isMaster = !selectedRoomItem.value
+  const quickTransferTargetId = isMaster ? resolveQuickTransferTargetId(destination) : null
+  if (isMaster && !quickTransferTargetId) {
+    transferServiceError.value = 'Không xác định được nơi nhận dịch vụ.'
+    uiStore.showToast(transferServiceError.value, 'error')
+    return
+  }
   isServiceOperationLoading.value = true
   try {
-    const isMaster = !selectedRoomItem.value
     const sourceId = selectedRoomItem.value?.roomId || `master-${selectedBooking.value.bookingId}`
     const billIds = [...new Set(selectedServiceItems.value.map(service => Number(service.serviceBillId)).filter(id => Number.isInteger(id) && id > 0))]
     const mirrorIds = [...new Set(selectedServiceItems.value.map(service => service.bookingRoomServiceId).filter(Number.isInteger))]
+    const isCrossBooking = String(destination.bookingId) !== String(selectedBooking.value?.bookingId)
     const response = isMaster
-      ? await quickTransferBookingRoomServices(destination.roomId, {
+      ? isCrossBooking
+        ? await transferBookingRoomServicesFolio(sourceId, {
+            service_bill_ids: billIds,
+            target_booking_id: destination.bookingId,
+            target_room_id: destination.roomId,
+            target_guest_id: destination.guestId,
+          })
+        : await quickTransferBookingRoomServices(quickTransferTargetId, {
           bill_ids: billIds,
           target_guest_id: destination.guestId
         })
@@ -2444,6 +2561,12 @@ const handleRoomDrop = async (booking, room, guest = null) => {
   }
 
   const isMaster = !selectedRoomItem.value
+  const quickTransferTargetId = isMaster ? resolveQuickTransferTargetId(destination) : null
+  if (isMaster && !quickTransferTargetId) {
+    uiStore.showToast('Không xác định được nơi nhận dịch vụ.', 'error')
+    handleServiceDragEnd()
+    return
+  }
   const sourceId = selectedRoomItem.value?.roomId || `master-${selectedBooking.value?.bookingId}`
   const selectedItems = selectedServiceItems.value.filter(service => !service.isPaid && Number(service.status) !== 2)
   const draggedItems = group.items.filter(service => !service.isPaid && Number(service.status) !== 2)
@@ -2471,6 +2594,9 @@ const handleRoomDrop = async (booking, room, guest = null) => {
     const mirrorServiceIds = [...new Set(itemsToTransfer
       .map(item => Number(item.bookingRoomServiceId))
       .filter(id => Number.isInteger(id) && id > 0))]
+    const masterBillIds = [...new Set(itemsToTransfer
+      .map(item => Number(item.serviceBillId || item.id))
+      .filter(id => Number.isInteger(id) && id > 0))]
     if (!isMaster && serviceBillIds.length > 0 && itemsToTransfer.some(item => {
       const billId = Number(item.serviceBillId)
       return !Number.isInteger(billId) || billId <= 0
@@ -2479,11 +2605,20 @@ const handleRoomDrop = async (booking, room, guest = null) => {
       return
     }
 
+    const isCrossBooking = String(destination.bookingId) !== String(selectedBooking.value?.bookingId)
     const response = isMaster
-      ? await quickTransferBookingRoomServices(destination.roomId, {
-          bill_ids: [...new Set(itemsToTransfer.map(item => Number(item.serviceBillId || item.id)))],
-          target_guest_id: destination.guestId,
-        })
+      ? isCrossBooking
+        ? await transferBookingRoomServicesFolio(sourceId, {
+            service_bill_ids: masterBillIds,
+            ...(mirrorServiceIds.length > 0 ? { service_ids: mirrorServiceIds } : {}),
+            target_booking_id: destination.bookingId,
+            target_room_id: destination.roomId,
+            target_guest_id: destination.guestId,
+          })
+        : await quickTransferBookingRoomServices(quickTransferTargetId, {
+            bill_ids: masterBillIds,
+            target_guest_id: destination.guestId,
+          })
       : await transferBookingRoomServicesFolio(sourceId, {
           ...(serviceBillIds.length > 0
             ? { service_bill_ids: serviceBillIds, ...(mirrorServiceIds.length > 0 ? { service_ids: mirrorServiceIds } : {}) }
@@ -2675,6 +2810,11 @@ const openDeletePaymentModal = async () => {
   const payment = selectedPaymentItems.value[0]
   if (!payment || !payment.id || String(payment.id).startsWith('P-fallback')) {
     uiStore.showToast('Bản ghi thanh toán không hợp lệ.', 'warning')
+    return
+  }
+
+  if (selectedPaymentsSpanMultipleSettlements.value) {
+    uiStore.showToast('Mỗi lần chỉ được hủy một lần thanh toán hoàn chỉnh.', 'warning')
     return
   }
 
@@ -2914,9 +3054,12 @@ const handleClickOutside = (e) => {
 
 onMounted(async () => {
   await loadSystemDate()
+  await loadCheckoutRolePermissions()
+  await loadServiceBillAdjustmentPermission()
   await loadCheckoutBookings()
   selectCheckoutBookingFromRoute()
   document.addEventListener('click', handleClickOutside)
+  window.addEventListener('hotel-config-updated', onCheckoutRoleConfigUpdated)
   // Lắng nghe sự kiện realtime qua Laravel Echo
   if (echo) {
     echo.channel('pms-channel')
@@ -2932,6 +3075,13 @@ onMounted(async () => {
 watch(() => [route.query.bookingCode, route.query.booking_code, route.query.booking_id, route.query.roomId, route.query.room_id, route.query.booking_room_id], async () => {
   await loadCheckoutBookings()
   selectCheckoutBookingFromRoute()
+})
+
+watch(() => [authStore.activeBranch?.id, authStore.roles], () => {
+  canAdjustRoomRate.value = false
+  loadCheckoutRolePermissions()
+  canModifyRateBillService.value = false
+  loadServiceBillAdjustmentPermission()
 })
 
 watch(searchQuery, (newVal) => {
@@ -2950,6 +3100,7 @@ const clearSearch = () => {
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
+  window.removeEventListener('hotel-config-updated', onCheckoutRoleConfigUpdated)
     // Hủy lắng nghe sự kiện realtime qua Laravel Echo
   if (echo) {
     echo.channel('pms-channel').stopListening('.room.status.updated')
@@ -3147,7 +3298,7 @@ onUnmounted(() => {
 
         <!-- NHÓM: Tiện ích -->
         <div class="pb-1">
-          <button v-if="!selectedRoomItem" @click="openAdjustRoomRateModal" :disabled="!selectedBooking || selectedBookingNoPost"
+          <button v-if="!selectedRoomItem && canAdjustRoomRate" @click="openAdjustRoomRateModal" :disabled="!selectedBooking || selectedBookingNoPost"
             class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded text-xs transition-colors"
             :class="selectedBooking && !selectedBookingNoPost ? 'text-[#cbd5e1] hover:bg-[#334155] hover:text-white' : 'opacity-40 cursor-not-allowed text-[#64748b]'"
             :title="isSidebarCollapsed ? (selectedBookingNoPost ? 'Booking đang bật No Post' : 'Điều chỉnh tiền phòng') : ''">
@@ -3801,6 +3952,7 @@ onUnmounted(() => {
       :show="showHousekeepingServiceModal" 
       :bookingInfo="addServiceBookingInfo"
       :roomId="selectedRoomItem ? (selectedRoomItem.roomId || selectedRoomItem.id) : ''"
+      :includeInitialCheckedOutRoom="true"
       :guestId="selectedGuestId"
       :initialAdjustment="housekeepingAdjustment"
       :folioId="activeFolioTab === 'A' ? 1 : (Number(activeFolioTab) || 1)"
@@ -3826,7 +3978,7 @@ onUnmounted(() => {
       :loading="isServiceOperationLoading"
       :count="selectedServiceItems.length"
       :canDelete="canCancelSelectedServices"
-      :canAdjust="canAdjustSelectedService"
+      :canAdjust="canAdjustSelectedServicePrice"
       @close="showCancelServiceModal = false"
       @submit="cancelSelectedServices"
       @adjust="openServiceAdjustment"
@@ -3921,6 +4073,7 @@ onUnmounted(() => {
       :show="showDeletePaymentModal"
       :loading="isServiceOperationLoading"
       :payment="selectedPaymentItems[0] || null"
+      :payment-group="selectedDeletePaymentGroup"
       @close="showDeletePaymentModal = false"
       @submit="deleteSelectedPayment"
     />
