@@ -12,6 +12,10 @@ const props = defineProps({
     type: [String, Number],
     default: ''
   },
+  includeInitialCheckedOutRoom: {
+    type: Boolean,
+    default: false
+  },
   guestId: {
     type: [String, Number],
     default: ''
@@ -57,6 +61,7 @@ const handleSuccess = (data) => {
       <div class="flex-1 overflow-hidden">
         <PostBillHousekeepingTab
           :initialRoomId="roomId"
+          :includeInitialCheckedOutRoom="includeInitialCheckedOutRoom"
           :initialGuestId="guestId"
           :initialAdjustment="initialAdjustment"
           :initialFolioId="folioId"

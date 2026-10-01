@@ -367,6 +367,10 @@ const props = defineProps({
     type: [String, Number],
     default: ''
   },
+  includeInitialCheckedOutRoom: {
+    type: Boolean,
+    default: false
+  },
   initialGuestId: {
     type: [String, Number],
     default: ''
@@ -524,7 +528,9 @@ const loadBookingRooms = async () => {
     // Từ menu HK chỉ hiển thị khách/phòng đang Inhouse; khi mở từ Room Map
     // vẫn giữ được phòng Reservation được truyền vào để đối chiếu đúng luồng legacy.
     const fromRoomMap = Boolean(props.initialRoomId)
-    const res = await fetchBookings({ status: fromRoomMap ? '0,1' : '1', stay_only: true })
+    const includeCheckedOutTarget = Boolean(props.includeInitialCheckedOutRoom && props.initialRoomId)
+    const statusFilter = includeCheckedOutTarget ? '0,1,2' : (fromRoomMap ? '0,1' : '1')
+    const res = await fetchBookings({ status: statusFilter, stay_only: true })
     const list = res.data?.data || res.data || []
     const allOptions = []
     const groups = []
@@ -544,10 +550,15 @@ const loadBookingRooms = async () => {
       )
 
       if (b.booking_rooms && b.booking_rooms.length > 0) {
-        const activeRooms = b.booking_rooms.filter(r => fromRoomMap
-          ? (Number(r.status) === 1 || Number(r.status) === 0)
-          : Number(r.status) === 1
-        )
+        const activeRooms = b.booking_rooms.filter(r => {
+          const roomStatus = Number(r.status)
+          const isInitialCheckedOutRoom = includeCheckedOutTarget
+            && roomStatus === 2
+            && String(r.id ?? '') === String(props.initialRoomId)
+
+          if (isInitialCheckedOutRoom) return true
+          return fromRoomMap ? roomStatus === 1 || roomStatus === 0 : roomStatus === 1
+        })
         if (activeRooms.length > 0) {
           const groupItems = []
           activeRooms.forEach(r => {

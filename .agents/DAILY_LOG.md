@@ -18,61 +18,26 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
-## [2026-09-30] - Khôi phục 100% Giao diện chuẩn khách hàng & Tối ưu chuyển trang Đăng nhập
-### Module: Lễ tân / Đóng ngày / Sang ngày ([DayClosePage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue))
-
-- **Khôi phục giao diện màn hình tiến trình**:
-  - Khôi phục 100% giao diện tiến trình chuẩn theo đúng tài liệu tham khảo và video khách hàng (`Sang ngày.mp4`): Toàn màn hình nền trắng với hoa văn mạng mờ (`night-audit-bg.png`), ảnh minh họa vector chuẩn ở giữa (`night-audit-illustration.png`), thanh tiến trình pill bo tròn 34px bo góc mượt mà kèm dải màu gradient (`#329ddf` -> `#57cc8a` -> `#8edf72`).
-  - Dòng chữ bước chạy chuẩn song ngữ/tiếng Anh đúng theo bản gốc PMS: `Step X: [Tên bước]` (Ví dụ: `Step 9: Update Room Status`).
-  - Khi hoàn tất sang ngày: hiển thị dòng trạng thái kết thúc `Step 18: Finish End Day At DD-MM-YYYY HH:mm. User Login: [username]`.
-- **Quy trình kết thúc**:
-  - Bỏ nút `Continue.. (10)` theo đúng yêu cầu người dùng.
-  - Khi thanh tiến trình chạy đủ 100% và sang ngày thành công, hệ thống dừng 2.5s để người dùng quan sát kết quả, sau đó tự động đăng xuất và điều hướng về trang đăng nhập `/login` để đăng nhập lại với ngày làm việc mới.
-- **Kiểm thử & Biên dịch**:
-  - Backend tests: 11/11 tests PASSED (67 assertions).
-  - Frontend build: `npm run build` hoàn thành thành công trong 3.42s.
-
-## [2026-09-29] - Triển khai chức năng Snapshot/Backup & Rollback khi Sang ngày (Night Audit)
-### Module: Lễ tân / Đóng ngày / Sang ngày ([NightAuditController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php), [NightAuditSnapshotService.php](file:///d:/PMS/backend/app/Services/NightAuditSnapshotService.php), [DayClosePage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue), [NightAuditTest.php](file:///d:/PMS/backend/tests/Feature/NightAuditTest.php), [BAO_CAO_SNAPSHOT_BACKUP_SANG_NGAY.md](file:///d:/PMS/Sang%20ng%C3%A0y/BAO_CAO_SNAPSHOT_BACKUP_SANG_NGAY.md))
-
-- **Tài liệu bàn giao & Báo cáo kỹ thuật ([BAO_CAO_SNAPSHOT_BACKUP_SANG_NGAY.md](file:///d:/PMS/Sang%20ng%C3%A0y/BAO_CAO_SNAPSHOT_BACKUP_SANG_NGAY.md))**:
-  - Đã xuất bản báo cáo hoàn chỉnh giải trình toàn bộ cơ chế Snapshot thay vì file dump SQL theo chuẩn quốc tế PMS.
-  - Ánh xạ 1:1 nguồn dữ liệu bóc tách từ các bảng nghiệp vụ (`bookings`, `booking_rooms`, `service_bills`, `rooms`, `room_classes`, `companies`...) vào các bảng Snapshot SP7000, SP7001, SP7003, SP7005.
-  - Phân tích chi tiết quy trình 18 bước từ video `Sang ngày.mp4` và log 16.257 dòng SQL Profiler.
-  - Giải trình an toàn Transaction Rollback 100% khi phát sinh lỗi trong quá trình sang ngày.
+## [2026-10-01] - Điều chỉnh Tooltip Booking và Submenu Context Menu trên Sơ đồ phòng (Room Map - Dòng 293)
+### Module: Sơ đồ phòng ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
 
 - **Yêu cầu nghiệp vụ & Giải pháp**:
-  1. **Lịch sử Run & Step (13 bước thực thi)**:
-     - Tạo bảng `night_audit_runs` và `night_audit_run_steps` theo dõi trạng thái `running`, `succeeded`, `failed`.
-     - 13 bước thực thi có log trạng thái `pending`, `running`, `succeeded`, `failed`, `skipped_unconfigured` kèm `row_count` và `details`.
-     - Chống chạy đồng thời: khóa conflict HTTP 409 nếu có phiên đang chạy; tự động thu hồi phiên treo sau 15 phút.
-     - Chống chạy trùng: kiểm tra idempotency key và chặn roll trùng nếu ngày hiện tại đã hoàn tất sang ngày thành công.
-  2. **6 Bảng Snapshot dữ liệu quá khứ**:
-     - SP7000: `night_audit_agency_productivity_snapshots` (Năng suất đại lý theo ngày/tháng/năm).
-     - SP7001: `night_audit_inhouse_snapshots` (Danh sách khách in-house; che thông tin PII nhạy cảm nếu không có quyền).
-     - SP7002 & SP7004: `night_audit_agency_productivity_kpi_snapshots` & `night_audit_room_sales_forecast_detail_snapshots` (Đã chuẩn hóa bảng lưu trữ; logic nguồn chưa có trong codebase nên bước được đánh dấu `skipped_unconfigured` với nhãn UI rõ ràng).
-     - SP7003: `night_audit_room_sales_forecast_snapshots` (Dự báo doanh thu phòng theo ngày).
-     - SP7005: `night_audit_room_type_snapshots` (Thống kê theo loại phòng).
-  3. **Quản lý ngày hệ thống & Rollback an toàn**:
-     - Tái sử dụng bảng `system_date_rolls`; thêm unique constraint sau khi xác minh không trùng lặp.
-     - Cơ chế rollback: toàn bộ 13 bước và roll ngày nằm trong MySQL transaction trên đúng database chi nhánh (`tenant_db`). Khi xảy ra bất kỳ lỗi nào, transaction lập tức rollback 100%, ghi log `failed` cho run và step. Tuyệt đối không dùng API `importDatabase`.
-  4. **Giao diện người dùng ([DayClosePage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue))**:
-     - Thiết kế lại màn hình Sang ngày theo dạng toàn màn hình màu trắng (Full-screen Overlay) đồng bộ 100% với giao diện PMS thực tế từ video `Sang ngày.mp4`:
-       - Tự sáng tạo hình minh họa vector chuyên nghiệp bằng model AI (`night-audit-illustration.png`, 856×730px): Đội ngũ lễ tân/kiểm toán đêm khách sạn, lịch số lật ngày tự động, đồng hồ nửa đêm, thẻ phòng và biểu đồ tài chính cân đối doanh thu đêm.
-       - Thanh tiến trình rộng 800px, cao 34px bo tròn pill (`rounded-full`), nền `#f4f4f4`, gradient từ xanh lam sang xanh lá chuẩn (`#329ddf` -> `#57cc8a` -> `#8edf72`).
-       - Dòng text tiến trình cỡ lớn (`text-[22px] md:text-[24px] font-semibold text-[#272428]`), hiển thị nút `Continue.. (5)` tự động đếm ngược khi hoàn tất.
-       - Nền full màn hình chứa họa tiết node mạng mờ chuẩn (`night-audit-bg.png`).
-       - Xử lý lỗi an toàn: dừng tại bước phát sinh sự cố, hiển thị banner cảnh báo và giải trình rollback, hỗ trợ xem chi tiết bảng 13 bước khi cần.
-  5. **Khắc phục lỗi snapshot khách in-house ([NightAuditSnapshotService.php](file:///d:/PMS/backend/app/Services/NightAuditSnapshotService.php))**:
-     - Sửa lỗi `Call to undefined relationship [nationality] on model [App\Models\Guest]`: chuyển sang tra cứu trực tiếp theo danh mục quốc tịch và mã `nationality_code`.
-- **Migrations & Áp dụng**:
-  - `2026_09_29_120000_create_night_audit_runs_and_steps_tables.php`
-  - `2026_09_29_121000_create_night_audit_snapshots_tables.php`
-  - `2026_09_29_122000_add_unique_constraint_to_system_date_rolls.php`
-  - Đã chạy thành công qua `php artisan migrate:all --force` trên toàn bộ 11 MySQL databases.
+  1. **Tooltip Booking thông thường**:
+     - Canh tooltip nằm trọn vẹn trong viewport (`clampedX` giữ khoảng cách an toàn tối thiểu 12px với mép màn hình).
+     - Định vị mũi tên chỉ định vị theo `pointerOffset` chính xác tới vị trí ô phòng.
+     - Hỗ trợ chữ dài tự động xuống dòng (`break-words`, `whitespace-normal`), không bị cắt cụt.
+     - Bỏ khối tóm tắt loại phòng và đơn giá ở phần dưới (`1 [Loại phòng]...` và `[Giá]/R/N`).
+     - Bổ sung hiển thị Yêu cầu đặc biệt (`special_requests`) nổi bật với màu chữ `rose-600`.
+     - Giữ nguyên thông tin số phòng trong danh sách chi tiết: `{{ room.room_type_name }} (Phòng {{ room.room_number }})`.
+     - Đổi màu nền tooltip booking sang màu trắng (`bg-white`), chữ đen (`text-slate-800`), viền xám sáng (`border-slate-300`), đồng bộ mũi tên nền trắng.
+  2. **Bảo toàn tooltip phòng khóa (OOO/OOS)**:
+     - Giữ nguyên 100% tooltip OOO/OOS với nền đen `#2e2e2e`, chữ trắng, viền tối và mũi tên đen.
+  3. **Submenu Chuyển tình trạng phòng (Context Menu)**:
+     - Thêm cờ `isSubmenuLeft` vào state `contextMenu`.
+     - Tự động phát hiện khi menu hiển thị ở các phòng sát mép phải màn hình (cột 109, 110, 111) để bung submenu sang bên trái (`right-[96%] before:-right-4`), tránh tràn ra ngoài viewport làm khuất các chức năng.
 - **Kiểm thử**:
-  - Chạy `php artisan test --filter=NightAuditTest`: 11/11 tests PASSED (67 assertions).
-  - Chạy `npm run build` frontend: hoàn thành 100% (4.48s, không phát sinh lỗi).
+  - `npm run build` frontend thành công 100% không có lỗi.
+  - Không ảnh hưởng đến backend hay logic CSDL của các phần khác.
 
 ## [2026-09-28] - Khắc phục tính năng Cập nhật nhanh nhiều phòng (QuickUpdate)
 ### Module: Đặt phòng / Cập nhật nhanh nhiều phòng ([QuickUpdateModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/QuickUpdateModal.vue), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php))

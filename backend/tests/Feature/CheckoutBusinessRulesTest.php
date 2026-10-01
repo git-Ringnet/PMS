@@ -40,11 +40,13 @@ class CheckoutBusinessRulesTest extends TestCase
             ['code' => 'checkout_rules_test'],
             ['name' => 'Checkout rules test', 'level' => 3, 'department_scope' => 'FO', 'is_active' => true]
         );
-        $permission = Permission::firstOrCreate(
-            ['code' => 'fo.checkout'],
-            ['name' => 'Check-out / Trả phòng', 'module' => 'FO']
-        );
-        $role->permissions()->syncWithoutDetaching([$permission->id]);
+        foreach (['fo.checkout', 'fo.service.add', 'fo.service.edit'] as $permissionCode) {
+            $permission = Permission::firstOrCreate(
+                ['code' => $permissionCode],
+                ['name' => $permissionCode, 'module' => 'FO']
+            );
+            $role->permissions()->syncWithoutDetaching([$permission->id]);
+        }
         $user->roles()->attach($role->id);
         $this->actingAs($user);
         DB::table('booking_statuses')->insert([
@@ -59,6 +61,10 @@ class CheckoutBusinessRulesTest extends TestCase
         $this->guest = Guest::create(['full_name' => 'Guest checkout']);
         BookingRoomGuest::create(['booking_room_id' => $this->room->id, 'guest_id' => $this->guest->id, 'status' => BookingRoomGuest::STATUS_CHECKED_IN, 'is_primary' => true]);
         HotelConfig::create(['name' => 'AllowEarlyCheckout', 'value' => '1', 'description' => 'Allow early checkout']);
+        HotelConfig::updateOrCreate(
+            ['name' => 'RoleUserAdjustRoomRate'],
+            ['value' => 'checkout_rules_test']
+        );
         HotelSetting::create(['hotel_name' => 'Checkout test hotel', 'breakfast_adult_rate' => 50000]);
     }
 
@@ -68,6 +74,155 @@ class CheckoutBusinessRulesTest extends TestCase
 
         $this->assertDatabaseHas('bookings', ['id' => $this->booking->id, 'status' => Booking::STATUS_CHECKOUT]);
         $this->assertDatabaseHas('booking_rooms', ['id' => $this->room->id, 'status' => BookingRoom::STATUS_CHECKED_OUT]);
+    }
+
+    public function test_master_checkout_lists_rooms_with_unpaid_bills_without_changing_stay_data(): void
+    {
+        Room::create([
+            'room_number' => '107',
+            'room_form_id' => RoomForm::firstOrFail()->id,
+            'room_class_id' => RoomClass::firstOrFail()->id,
+            'floor' => 1,
+            'status' => 'occupied',
+        ]);
+        $secondRoom = BookingRoom::create([
+            'booking_id' => $this->booking->id,
+            'room_number' => '107',
+            'room_class_id' => RoomClass::firstOrFail()->id,
+            'arrival_date' => '2026-08-01',
+            'departure_date' => '2026-08-06',
+            'status' => BookingRoom::STATUS_CHECKED_IN,
+        ]);
+        $secondGuest = Guest::create(['full_name' => 'Guest room 107']);
+        BookingRoomGuest::create([
+            'booking_room_id' => $secondRoom->id,
+            'guest_id' => $secondGuest->id,
+            'status' => BookingRoomGuest::STATUS_CHECKED_IN,
+            'is_primary' => true,
+        ]);
+
+        $firstBill = ServiceBill::create([
+            'Date' => '2026-08-04', 'OpenTime' => '12:00', 'Guest' => $this->guest->full_name,
+            'DepartmentId' => 'FO', 'ServiceId' => 'MB', 'Username' => 'checkout_rules_user',
+            'Edit' => 0, 'Status' => 1, 'RegisterId1' => $this->booking->id,
+            'RentalRoomId1' => $this->room->id, 'RegisterID2' => $this->booking->id,
+            'RentalRoomId2' => $this->room->id, 'CustomerId2' => $this->guest->id,
+        ]);
+        $secondBill = ServiceBill::create([
+            'Date' => '2026-08-04', 'OpenTime' => '12:00', 'Guest' => $secondGuest->full_name,
+            'DepartmentId' => 'FO', 'ServiceId' => 'MB', 'Username' => 'checkout_rules_user',
+            'Edit' => 0, 'Status' => 1, 'RegisterId1' => $this->booking->id,
+            'RentalRoomId1' => $secondRoom->id, 'RegisterID2' => $this->booking->id,
+            'RentalRoomId2' => $secondRoom->id, 'CustomerId2' => $secondGuest->id,
+        ]);
+
+        $response = $this->postJson("/api/bookings/{$this->booking->id}/checkout")
+            ->assertStatus(422)
+            ->assertJsonPath('code', 'unpaid_master')
+            ->assertJsonPath('message', 'Bạn cần thanh toán hết công nợ của các phòng sau:');
+
+        $this->assertSame([
+            ['room_id' => (string) $this->room->id, 'room_number' => '101', 'guest_name' => $this->guest->full_name],
+            ['room_id' => (string) $secondRoom->id, 'room_number' => '107', 'guest_name' => $secondGuest->full_name],
+        ], $response->json('data.unpaid_rooms'));
+        $this->assertDatabaseHas('bookings', ['id' => $this->booking->id, 'status' => Booking::STATUS_CHECKIN]);
+        $this->assertDatabaseHas('booking_rooms', ['id' => $this->room->id, 'status' => BookingRoom::STATUS_CHECKED_IN]);
+        $this->assertDatabaseHas('booking_rooms', ['id' => $secondRoom->id, 'status' => BookingRoom::STATUS_CHECKED_IN]);
+        $this->assertDatabaseHas('booking_room_guests', ['booking_room_id' => $this->room->id, 'guest_id' => $this->guest->id, 'status' => BookingRoomGuest::STATUS_CHECKED_IN]);
+        $this->assertDatabaseHas('booking_room_guests', ['booking_room_id' => $secondRoom->id, 'guest_id' => $secondGuest->id, 'status' => BookingRoomGuest::STATUS_CHECKED_IN]);
+        $this->assertDatabaseHas('service_bills', ['Ma' => $firstBill->Ma, 'Status' => 1, 'PaymentId' => null]);
+        $this->assertDatabaseHas('service_bills', ['Ma' => $secondBill->Ma, 'Status' => 1, 'PaymentId' => null]);
+
+        $firstBill->update(['Status' => 2, 'PaymentId' => 'paid-1']);
+        $secondBill->update(['Status' => 2, 'PaymentId' => 'paid-2']);
+        $this->postJson("/api/bookings/{$this->booking->id}/checkout")->assertSuccessful();
+        $this->assertDatabaseHas('bookings', ['id' => $this->booking->id, 'status' => Booking::STATUS_CHECKOUT]);
+        $this->assertDatabaseHas('booking_rooms', ['id' => $secondRoom->id, 'status' => BookingRoom::STATUS_CHECKED_OUT]);
+    }
+
+    public function test_master_checkout_does_not_attribute_master_bill_to_its_source_room(): void
+    {
+        ServiceBill::create([
+            'Date' => '2026-08-04', 'OpenTime' => '12:00', 'Guest' => $this->guest->full_name,
+            'DepartmentId' => 'FO', 'ServiceId' => 'MB', 'Username' => 'checkout_rules_user',
+            'Edit' => 0, 'Status' => 1, 'RegisterId1' => $this->booking->id,
+            'RentalRoomId1' => $this->room->id, 'RegisterID2' => $this->booking->id,
+            'RentalRoomId2' => null,
+        ]);
+
+        $this->postJson("/api/bookings/{$this->booking->id}/checkout")
+            ->assertStatus(422)
+            ->assertJsonPath('code', 'unpaid_master')
+            ->assertJsonPath('message', 'Master còn hóa đơn chưa thanh toán.')
+            ->assertJsonPath('data.unpaid_rooms', []);
+        $this->assertDatabaseHas('booking_rooms', ['id' => $this->room->id, 'status' => BookingRoom::STATUS_CHECKED_IN]);
+    }
+
+    public function test_master_checkout_identifies_unpaid_bill_on_a_checked_out_room(): void
+    {
+        $this->room->update(['status' => BookingRoom::STATUS_CHECKED_OUT]);
+        ServiceBill::create([
+            'Date' => '2026-08-04', 'OpenTime' => '12:00', 'Guest' => $this->guest->full_name,
+            'DepartmentId' => 'FO', 'ServiceId' => 'MB', 'Username' => 'checkout_rules_user',
+            'Edit' => 0, 'Status' => 1, 'RegisterId1' => $this->booking->id,
+            'RentalRoomId1' => $this->room->id, 'RegisterID2' => $this->booking->id,
+            'RentalRoomId2' => $this->room->id,
+        ]);
+
+        $this->postJson("/api/bookings/{$this->booking->id}/checkout")
+            ->assertStatus(422)
+            ->assertJsonPath('code', 'unpaid_master')
+            ->assertJsonPath('data.unpaid_rooms.0.room_number', '101')
+            ->assertJsonPath('data.unpaid_rooms.0.guest_name', $this->guest->full_name);
+        $this->assertDatabaseHas('bookings', ['id' => $this->booking->id, 'status' => Booking::STATUS_CHECKIN]);
+        $this->assertDatabaseHas('booking_rooms', ['id' => $this->room->id, 'status' => BookingRoom::STATUS_CHECKED_OUT]);
+    }
+
+    public function test_master_checkout_lists_room_debt_until_it_is_fully_settled(): void
+    {
+        $debt = Payment::create([
+            'booking_id' => $this->booking->id,
+            'booking_room_id' => $this->room->id,
+            'guest_id' => $this->guest->id,
+            'guest_display' => $this->guest->full_name,
+            'date' => '2026-08-04',
+            'amount' => 1000000,
+            'payment_method_id' => 'AC',
+            'status' => Payment::STATUS_PENDING,
+            'edit_flag' => 0,
+            'created_by' => 'checkout_rules_user',
+        ]);
+        PaymentDebtSettlement::create([
+            'payment_id' => $debt->id,
+            'payment_date' => '2026-08-04',
+            'payment_time' => '12:00',
+            'payment_method_id' => 'CA',
+            'amount' => 400000,
+            'edit_flag' => 0,
+            'created_by' => 'checkout_rules_user',
+        ]);
+
+        $this->postJson("/api/bookings/{$this->booking->id}/checkout")
+            ->assertStatus(422)
+            ->assertJsonPath('code', 'unpaid_debt')
+            ->assertJsonPath('message', 'Bạn cần thanh toán hết công nợ của các phòng sau:')
+            ->assertJsonPath('data.unpaid_rooms.0.room_number', '101')
+            ->assertJsonPath('data.unpaid_rooms.0.guest_name', $this->guest->full_name);
+        $this->assertDatabaseHas('bookings', ['id' => $this->booking->id, 'status' => Booking::STATUS_CHECKIN]);
+        $this->assertDatabaseHas('booking_rooms', ['id' => $this->room->id, 'status' => BookingRoom::STATUS_CHECKED_IN]);
+
+        PaymentDebtSettlement::create([
+            'payment_id' => $debt->id,
+            'payment_date' => '2026-08-04',
+            'payment_time' => '13:00',
+            'payment_method_id' => 'CA',
+            'amount' => 600000,
+            'edit_flag' => 0,
+            'created_by' => 'checkout_rules_user',
+        ]);
+
+        $this->postJson("/api/bookings/{$this->booking->id}/checkout")->assertSuccessful();
+        $this->assertDatabaseHas('bookings', ['id' => $this->booking->id, 'status' => Booking::STATUS_CHECKOUT]);
     }
 
     public function test_early_room_checkout_requires_remaining_nights_to_be_charged(): void

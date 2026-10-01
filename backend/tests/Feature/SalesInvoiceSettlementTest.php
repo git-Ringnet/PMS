@@ -464,10 +464,10 @@ class SalesInvoiceSettlementTest extends TestCase
         ]);
         $delResponse->assertOk();
 
-        // sales_invoices phải đổi status về 0
+        // sales_invoices status 3 là trạng thái hủy theo mapping legacy.
         $salesInvoice = SalesInvoice::find($payment->invoice_id);
         $this->assertNotNull($salesInvoice);
-        $this->assertEquals(0, $salesInvoice->status);
+        $this->assertEquals(3, $salesInvoice->status);
 
         // Bill được nhả InvoiceId
         $bill->refresh();

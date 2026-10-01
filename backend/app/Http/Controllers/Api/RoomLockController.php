@@ -589,8 +589,8 @@ class RoomLockController extends Controller
             if (!$hasActiveToday) {
                 $targetRoom = Room::where('room_number', $roomNumber)->first();
                 if ($targetRoom && in_array($targetRoom->room_status_code, ['ooo', 'oos', 'occupied_ooo'])) {
-                    $targetRoom->update(['room_status_code' => 'vacant_ready']);
-                    event(new \App\Events\RoomStatusUpdated($targetRoom->id, 'vacant_ready', 'Mở khóa phòng'));
+                    $targetRoom->update(['room_status_code' => 'vacant_dirty']);
+                    event(new \App\Events\RoomStatusUpdated($targetRoom->id, 'vacant_dirty', 'Mở khóa phòng'));
                 }
             }
         }
@@ -964,8 +964,8 @@ class RoomLockController extends Controller
         if (!$hasActiveToday) {
             $targetRoom = Room::where('room_number', $roomNumber)->first();
             if ($targetRoom && in_array($targetRoom->room_status_code, ['ooo', 'oos', 'occupied_ooo'])) {
-                $targetRoom->update(['room_status_code' => 'vacant_ready']);
-                event(new \App\Events\RoomStatusUpdated($targetRoom->id, 'vacant_ready', 'Mở khóa phòng'));
+                $targetRoom->update(['room_status_code' => 'vacant_dirty']);
+                event(new \App\Events\RoomStatusUpdated($targetRoom->id, 'vacant_dirty', 'Mở khóa phòng'));
             }
         }
 

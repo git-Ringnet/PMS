@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Models\Payment;
 use App\Models\PaymentDebtSettlement;
 use App\Models\PaymentMethod;
+use App\Models\Permission;
+use App\Models\Role;
 use App\Models\SystemDateRoll;
 use App\Models\User;
 use App\Models\UserSetting;
@@ -23,6 +25,16 @@ class DebtSettlementTest extends TestCase
         parent::setUp();
 
         $this->user = User::factory()->create(['username' => 'debt_settlement_user']);
+        $role = Role::firstOrCreate(
+            ['code' => 'debt_settlement_test'],
+            ['name' => 'Debt settlement test', 'level' => 3, 'department_scope' => 'FO', 'is_active' => true]
+        );
+        $permission = Permission::firstOrCreate(
+            ['code' => 'fo.payment.create'],
+            ['name' => 'Create front desk payment', 'module' => 'FO']
+        );
+        $role->permissions()->syncWithoutDetaching([$permission->id]);
+        $this->user->roles()->attach($role->id);
         $this->actingAs($this->user);
         SystemDateRoll::create([
             'system_date' => '2026-08-05',
