@@ -40,11 +40,13 @@ class CheckoutBusinessRulesTest extends TestCase
             ['code' => 'checkout_rules_test'],
             ['name' => 'Checkout rules test', 'level' => 3, 'department_scope' => 'FO', 'is_active' => true]
         );
-        $permission = Permission::firstOrCreate(
-            ['code' => 'fo.checkout'],
-            ['name' => 'Check-out / Trả phòng', 'module' => 'FO']
-        );
-        $role->permissions()->syncWithoutDetaching([$permission->id]);
+        foreach (['fo.checkout', 'fo.service.add', 'fo.service.edit'] as $permissionCode) {
+            $permission = Permission::firstOrCreate(
+                ['code' => $permissionCode],
+                ['name' => $permissionCode, 'module' => 'FO']
+            );
+            $role->permissions()->syncWithoutDetaching([$permission->id]);
+        }
         $user->roles()->attach($role->id);
         $this->actingAs($user);
         DB::table('booking_statuses')->insert([
@@ -59,6 +61,10 @@ class CheckoutBusinessRulesTest extends TestCase
         $this->guest = Guest::create(['full_name' => 'Guest checkout']);
         BookingRoomGuest::create(['booking_room_id' => $this->room->id, 'guest_id' => $this->guest->id, 'status' => BookingRoomGuest::STATUS_CHECKED_IN, 'is_primary' => true]);
         HotelConfig::create(['name' => 'AllowEarlyCheckout', 'value' => '1', 'description' => 'Allow early checkout']);
+        HotelConfig::updateOrCreate(
+            ['name' => 'RoleUserAdjustRoomRate'],
+            ['value' => 'checkout_rules_test']
+        );
         HotelSetting::create(['hotel_name' => 'Checkout test hotel', 'breakfast_adult_rate' => 50000]);
     }
 

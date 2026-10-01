@@ -52,6 +52,17 @@ class BookingRoomServiceFolioTest extends TestCase
         return $user;
     }
 
+    private function allowPastDateTransferToAnotherBooking(): void
+    {
+        \App\Models\HotelConfig::updateOrCreate(['name' => 'Bill_TransBillPastDateToAnotherBK'], ['value' => '1']);
+        \App\Models\HotelConfig::updateOrCreate(['name' => 'RoleUserAllowTransBillPastDateToAnotherBK'], ['value' => 'folio_test']);
+    }
+
+    private function allowRoomRateAdjustment(): void
+    {
+        \App\Models\HotelConfig::updateOrCreate(['name' => 'RoleUserAdjustRoomRate'], ['value' => 'folio_test']);
+    }
+
     public function test_room_service_cancel_accepts_service_bill_ids_without_mirror_rows_and_legacy_owner_fields(): void
     {
         $user = $this->createFolioUser();
@@ -173,6 +184,7 @@ class BookingRoomServiceFolioTest extends TestCase
     public function test_room_service_transfer_accepts_a_legacy_bill_without_mirror_rows(): void
     {
         $user = $this->createFolioUser();
+        $this->allowPastDateTransferToAnotherBooking();
         $sourceBooking = Booking::create([
             'booking_name' => 'GAL1', 'arrival_date' => now()->toDateString(), 'departure_date' => now()->addDay()->toDateString(),
             'num_of_days' => 1, 'booking_date' => now()->toDateString(), 'created_by' => $user->username,
@@ -245,6 +257,7 @@ class BookingRoomServiceFolioTest extends TestCase
     public function test_room_service_transfer_requires_all_mirror_rows_and_keeps_service_ids_compatibility(): void
     {
         $user = $this->createFolioUser();
+        $this->allowPastDateTransferToAnotherBooking();
         $sourceBooking = Booking::create([
             'booking_name' => 'GAL1', 'arrival_date' => now()->toDateString(), 'departure_date' => now()->addDay()->toDateString(),
             'num_of_days' => 1, 'booking_date' => now()->toDateString(), 'created_by' => $user->username,
@@ -1137,6 +1150,7 @@ class BookingRoomServiceFolioTest extends TestCase
     public function test_booking_no_post_blocks_room_service_housekeeping_room_charge_and_rate_adjustment(): void
     {
         $user = $this->createFolioUser();
+        $this->allowRoomRateAdjustment();
         $booking = Booking::create([
             'booking_name' => 'Booking No Post test', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-07',
             'num_of_days' => 1, 'booking_date' => '2026-08-06', 'created_by' => $user->username, 'no_post' => true,
