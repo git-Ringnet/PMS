@@ -460,7 +460,7 @@ class GuestController extends Controller
 
     public function checkoutBooking(Request $request, $bookingId)
     {
-        $booking = \App\Models\Booking::with('bookingRooms.guests')->findOrFail($bookingId);
+        $booking = \App\Models\Booking::with('bookingRooms.guests.guest')->findOrFail($bookingId);
         $allRooms = $booking->bookingRooms;
         $rooms = $allRooms
             ->where('status', BookingRoom::STATUS_CHECKED_IN)
@@ -472,7 +472,11 @@ class GuestController extends Controller
 
         // Checkout Master chỉ xét công nợ/cọc của toàn Booking, không xét ngày đi từng phòng.
         $eligibility = $this->validateMasterCheckout($booking, $rooms);
-        if ($eligibility) return response()->json(['success' => false, 'code' => $eligibility['code'], 'message' => $eligibility['message']], 422);
+        if ($eligibility) {
+            $response = ['success' => false, 'code' => $eligibility['code'], 'message' => $eligibility['message']];
+            if (isset($eligibility['data'])) $response['data'] = $eligibility['data'];
+            return response()->json($response, 422);
+        }
 
         return DB::transaction(function () use ($booking, $rooms) {
             foreach ($rooms->pluck('id') as $roomId) {
@@ -747,7 +751,7 @@ class GuestController extends Controller
     private function validateMasterCheckout(Booking $booking, $rooms): ?array
     {
         $roomIds = $rooms->pluck('id')->map(fn ($id) => (string) $id)->all();
-        $unpaid = \App\Models\ServiceBill::query()
+        $unpaidBills = \App\Models\ServiceBill::query()
             ->where('Edit', 0)
             ->where(function ($q) { $q->whereNull('PaymentId')->orWhere('PaymentId', ''); })
             ->where('Status', '!=', 2)
@@ -759,11 +763,41 @@ class GuestController extends Controller
                         ->orWhereIn(DB::raw('CAST(RentalRoomId1 AS CHAR)'), $roomIds);
                 }
             })
-            ->exists();
-        if ($unpaid) return ['code' => 'unpaid_master', 'message' => 'Master còn hóa đơn chưa thanh toán.'];
+            ->get(['RentalRoomId1', 'RentalRoomId2', 'RegisterID2', 'CustomerId1', 'CustomerId2']);
 
-        if ($this->hasUnpaidDebt($booking->id)) {
-            return ['code' => 'unpaid_debt', 'message' => 'Phòng vẫn còn công nợ chưa thanh toán.'];
+        $unpaidDebts = \App\Models\Payment::query()
+            ->where('booking_id', $booking->id)
+            ->where('payment_method_id', 'AC')
+            ->where('edit_flag', 0)
+            ->where('status', '!=', \App\Models\Payment::STATUS_DELETED)
+            ->whereNull('deleted_at')
+            ->get(['id', 'amount', 'booking_room_id', 'guest_id', 'guest_display'])
+            ->filter(function ($payment) {
+                $settled = \App\Models\PaymentDebtSettlement::query()
+                    ->where('payment_id', $payment->id)
+                    ->where('edit_flag', 0)
+                    ->sum('amount');
+
+                return round((float) $payment->amount - (float) $settled, 2) > 0;
+            });
+
+        if ($unpaidBills->isNotEmpty() || $unpaidDebts->isNotEmpty()) {
+            $roomDetails = $this->masterCheckoutUnpaidRooms($booking, $unpaidBills, $unpaidDebts);
+            $code = $unpaidBills->isNotEmpty() ? 'unpaid_master' : 'unpaid_debt';
+            $message = $unpaidBills->isNotEmpty()
+                ? 'Master còn hóa đơn chưa thanh toán.'
+                : 'Phòng vẫn còn công nợ chưa thanh toán.';
+            if ($roomDetails['rooms']) {
+                $message = $roomDetails['has_master_balance']
+                    ? 'Bạn cần thanh toán hết công nợ của các phòng sau và Master:'
+                    : 'Bạn cần thanh toán hết công nợ của các phòng sau:';
+            }
+
+            return [
+                'code' => $code,
+                'message' => $message,
+                'data' => ['unpaid_rooms' => $roomDetails['rooms']],
+            ];
         }
 
         $unusedDeposit = \App\Models\Payment::where('booking_id', $booking->id)
@@ -774,6 +808,63 @@ class GuestController extends Controller
         if ($unusedDeposit) return ['code' => 'unused_deposit', 'message' => 'Master còn tiền cọc chưa dùng để thanh toán hóa đơn.'];
 
         return null;
+    }
+
+    private function masterCheckoutUnpaidRooms(Booking $booking, $unpaidBills, $unpaidDebts): array
+    {
+        $bookingRooms = $booking->bookingRooms->keyBy(fn (BookingRoom $room) => (string) $room->id);
+        $unpaidRooms = [];
+        $hasMasterBalance = false;
+
+        foreach ($unpaidBills as $bill) {
+            $currentRoomId = trim((string) $bill->RentalRoomId2);
+            $hasCurrentBooking = !in_array((string) $bill->RegisterID2, ['', '0'], true);
+            $roomId = $currentRoomId !== '' && $currentRoomId !== '0'
+                ? $currentRoomId
+                : ($hasCurrentBooking ? null : trim((string) $bill->RentalRoomId1));
+            $room = $roomId ? $bookingRooms->get($roomId) : null;
+            if (!$room) {
+                $hasMasterBalance = true;
+                continue;
+            }
+
+            $guestId = $currentRoomId !== '' && $currentRoomId !== '0'
+                ? $bill->CustomerId2
+                : $bill->CustomerId1;
+            $unpaidRooms[(string) $room->id] = $this->masterCheckoutUnpaidRoomDetail($room, $guestId);
+        }
+
+        foreach ($unpaidDebts as $debt) {
+            $room = $bookingRooms->get((string) $debt->booking_room_id);
+            if (!$room) {
+                $hasMasterBalance = true;
+                continue;
+            }
+
+            $unpaidRooms[(string) $room->id] = $this->masterCheckoutUnpaidRoomDetail($room, $debt->guest_id, $debt->guest_display);
+        }
+
+        $rooms = array_values($unpaidRooms);
+        usort($rooms, fn (array $a, array $b) => strnatcmp($a['room_number'], $b['room_number']));
+
+        return ['rooms' => $rooms, 'has_master_balance' => $hasMasterBalance];
+    }
+
+    private function masterCheckoutUnpaidRoomDetail(BookingRoom $room, $guestId = null, $fallbackName = null): array
+    {
+        $roomGuests = $room->guests->filter(fn ($pivot) => (int) $pivot->status !== BookingRoomGuest::STATUS_CANCELLED && $pivot->guest);
+        $guest = $guestId !== null && (string) $guestId !== ''
+            ? $roomGuests->first(fn ($pivot) => (string) $pivot->guest_id === (string) $guestId)
+            : null;
+        $guest ??= $roomGuests->first(fn ($pivot) => (bool) $pivot->is_primary);
+        $guest ??= $roomGuests->first();
+        $guestName = trim((string) ($guest?->guest?->full_name ?: $fallbackName));
+
+        return [
+            'room_id' => (string) $room->id,
+            'room_number' => (string) ($room->room_number ?: $room->id),
+            'guest_name' => $guestName !== '' ? $guestName : 'Chưa xác định khách',
+        ];
     }
 
     /** Công nợ AC chỉ được xem là đã thanh toán khi tổng giải trừ đạt đủ số tiền gốc. */

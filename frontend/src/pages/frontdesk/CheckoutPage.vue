@@ -250,6 +250,7 @@ const showInvoiceMenu = ref(false)
 const showCheckoutModal = ref(false)
 const checkoutGuestIds = ref([])
 const checkoutError = ref('')
+const checkoutUnpaidRooms = ref([])
 const earlyCheckoutData = ref(null)
 const checkoutPreview = ref(null)
 const masterDebtConfirmed = ref(false)
@@ -325,6 +326,7 @@ const openCheckoutModal = () => {
     return
   }
   checkoutError.value = ''
+  checkoutUnpaidRooms.value = []
   earlyCheckoutData.value = null
   checkoutPreview.value = null
   masterDebtConfirmed.value = false
@@ -347,6 +349,7 @@ const openCheckoutModal = () => {
 }
 const submitCheckout = async () => {
   checkoutError.value = ''
+  checkoutUnpaidRooms.value = []
   if (selectedRoomItem.value?.isVirtual || selectedCheckoutRooms.value.some(({ room }) => room.isVirtual)) {
     checkoutError.value = 'Folio phòng ảo chỉ dùng cho dịch vụ, không thể checkout.'
     return
@@ -409,11 +412,16 @@ const submitCheckout = async () => {
     clearCheckoutPanels()
     uiStore.showToast('Checkout thành công.', 'success')
   } catch (err) {
-    console.error('Checkout API error:', err?.response?.data || err)
+    console.error('Checkout API error:', { status: err?.response?.status, code: err?.response?.data?.code })
     earlyCheckoutData.value = ['early_checkout', 'early_checkout_master'].includes(err?.response?.data?.code)
       ? err.response.data.data
       : null
     checkoutError.value = err?.response?.data?.message || (isRestoreCheckout.value ? 'Không thể khôi phục checkout.' : 'Không thể checkout.')
+    if (!isRestoreCheckout.value && !selectedRoomItem.value && selectedCheckoutRooms.value.length === 0) {
+      checkoutUnpaidRooms.value = Array.isArray(err?.response?.data?.data?.unpaid_rooms)
+        ? err.response.data.data.unpaid_rooms
+        : []
+    }
   } finally { isServiceOperationLoading.value = false }
 }
 const chargeEarlyCheckout = async () => {
@@ -576,6 +584,7 @@ const clearCheckoutPanels = () => {
   checkoutGuestIds.value = []
   checkoutPreview.value = null
   checkoutError.value = ''
+  checkoutUnpaidRooms.value = []
 }
 
 const addServiceBookingInfo = computed(() => {
@@ -3907,15 +3916,18 @@ onUnmounted(() => {
             <label v-for="guest in checkoutGuestOptions(selectedRoomItem)" :key="guest.id" class="flex items-center justify-between rounded-lg border px-3 py-2 text-sm"><span>{{ guest.name }}</span><input v-model="checkoutGuestIds" :value="guest.id" type="checkbox" class="h-4 w-4 accent-sky-500" /></label>
             <p v-if="checkoutGuestOptions(selectedRoomItem).length === 0" class="text-sm text-rose-600">Phòng chưa có khách hợp lệ để checkout.</p>
           </template>
-          <p v-else class="py-3 text-center text-sm text-slate-700">Bạn có chắc chắn trả phòng toàn bộ Master không?</p>
+          <p v-else class="py-3 text-center text-sm text-slate-700">Bạn có chắc chắn muốn trả phòng không?</p>
           <p v-if="checkoutError" class="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{{ checkoutError }}</p>
+          <ul v-if="checkoutUnpaidRooms.length" class="max-h-40 space-y-1 overflow-y-auto rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+            <li v-for="room in checkoutUnpaidRooms" :key="room.room_id">Phòng {{ room.room_number }} - {{ room.guest_name }}</li>
+          </ul>
           <div v-if="earlyCheckoutData" class="flex justify-end gap-2">
             <button @click="showCheckoutModal = false" :disabled="isServiceOperationLoading" class="rounded bg-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50">Đóng</button>
             <button @click="checkoutEarlyWithoutCharge" :disabled="isServiceOperationLoading" class="rounded bg-sky-500 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Trả phòng</button>
             <button @click="openEarlyChargeModal" :disabled="isServiceOperationLoading || earlyChargeNoPost" class="rounded bg-sky-500 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Tiền phòng</button>
           </div>
         </div>
-        <div v-if="!earlyCheckoutData" class="flex justify-end gap-2 border-t px-4 py-3"><button @click="showCheckoutModal = false" class="rounded bg-slate-200 px-4 py-2 text-sm">Đóng</button><button @click="submitCheckout" :disabled="isServiceOperationLoading" class="rounded bg-sky-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{{ isRestoreCheckout ? 'Khôi phục checkout' : (selectedCheckoutRooms.length > 1 && !checkoutPreview ? 'Kiểm tra điều kiện' : 'Checkout') }}</button></div>
+        <div v-if="!earlyCheckoutData" class="flex justify-end gap-2 border-t px-4 py-3"><button @click="showCheckoutModal = false" class="rounded bg-slate-200 px-4 py-2 text-sm">Đóng</button><button @click="submitCheckout" :disabled="isServiceOperationLoading" class="rounded bg-sky-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{{ isRestoreCheckout ? 'Khôi phục checkout' : (selectedCheckoutRooms.length > 1 && !checkoutPreview ? 'Kiểm tra điều kiện' : (!selectedRoomItem && selectedCheckoutRooms.length === 0 ? 'Có' : 'Checkout')) }}</button></div>
       </div>
     </div>
 
