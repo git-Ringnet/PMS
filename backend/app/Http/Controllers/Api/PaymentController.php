@@ -764,8 +764,11 @@ class PaymentController extends Controller
         }
 
         $systemDate = $this->getSystemDate();
-        $paymentDate = Carbon::parse($payment->date)->toDateString();
-        if ($paymentDate < $systemDate && !$this->canOperateOldDay()) {
+        $isSettlementPayment = filled($payment->payment_id) || filled($payment->invoice_id);
+        $hasPastSettlementLine = $isSettlementPayment
+            ? $this->settlementPaymentRowsQuery($payment)->whereDate('date', '<', $systemDate)->exists()
+            : Carbon::parse($payment->date)->toDateString() < $systemDate;
+        if ($hasPastSettlementLine && !$this->canOperateOldDay()) {
             return response()->json([
                 'success' => false,
                 'message' => 'Tài khoản không được phân quyền xóa cọc / thanh toán cho ngày cũ (RuleUserCorrectOrPostBillPaymentOldDay). Chỉ được xóa cọc có ngày = ngày hệ thống.',
@@ -780,6 +783,15 @@ class PaymentController extends Controller
             $payment = Payment::withTrashed()->whereKey($paymentId)->lockForUpdate()->first();
             if (!$payment || $payment->trashed() || (int) $payment->edit_flag !== 0) {
                 abort(422, 'Cọc / thanh toán này đã bị hủy hoặc đã được xử lý trước đó.');
+            }
+
+            if (filled($payment->payment_id) || filled($payment->invoice_id)) {
+                $this->cancelSettlementPaymentGroup($payment, $systemDate, $validated['reason']);
+                return;
+            }
+
+            if (Carbon::parse($payment->date)->toDateString() < $systemDate && !$this->canOperateOldDay()) {
+                abort(403, 'Tài khoản không được phân quyền xóa cọc / thanh toán cho ngày cũ (RuleUserCorrectOrPostBillPaymentOldDay).');
             }
 
             // Tạo dòng âm đối trừ với ngày hệ thống hiện tại
@@ -808,51 +820,12 @@ class PaymentController extends Controller
                 'created_by'        => Auth::user()?->username ?? 'system',
             ]);
 
-            // Nếu đây là bản ghi thanh toán (có payment_id hoặc invoice_id), nhả payment_id trên các bill liên quan và hủy hóa đơn bán hàng
-            if (!empty($payment->payment_id) || !empty($payment->invoice_id)) {
-                SalesInvoice::query()
-                    ->when($payment->invoice_id, fn($q) => $q->where('id', $payment->invoice_id))
-                    ->when($payment->payment_id, fn($q) => $q->orWhere('payment_code', $payment->payment_id))
-                    ->update(['status' => 0]);
-            }
-
-            if (!empty($payment->payment_id)) {
-                $serviceBillIds = ServiceBill::where('PaymentID', $payment->payment_id)->pluck('Ma');
-                ServiceBill::where('PaymentID', $payment->payment_id)
-                    ->update(['PaymentID' => null, 'Status' => 1, 'InvoiceId' => null]);
-                if (\Illuminate\Support\Facades\Schema::hasColumn('booking_room_services', 'payment_id')) {
-                    \App\Models\BookingRoomService::where('payment_id', $payment->payment_id)
-                        ->update(['payment_id' => null, 'status' => 1]);
-                } elseif (\Illuminate\Support\Facades\Schema::hasColumn('booking_room_services', 'status')) {
-                    $roomServiceQuery = \App\Models\BookingRoomService::whereIn('service_bill_id', $serviceBillIds);
-                    $roomServiceQuery->update(['status' => 1]);
-                }
-                if ($serviceBillIds->isNotEmpty()) {
-                    \App\Models\HousekeepingServiceBill::whereIn('BillServiceId', $serviceBillIds)
-                        ->update(['Status' => 1, 'BillEdit' => 0]);
-                }
-            }
-
             // Đánh dấu dòng gốc đã hủy, lưu ref sang dòng âm
             $payment->update([
                 'edit_flag'    => 1,
                 'reversal_ref' => $reversal->id,
                 'updated_by'   => Auth::user()?->username ?? 'system',
             ]);
-
-            // Hoàn nguyên các phiếu cọc đã được settlement này sử dụng.
-            // Nếu không reset, phiếu cọc vẫn giữ mã thanh toán và hiển thị Đã thanh toán.
-            if (!empty($payment->payment_id)) {
-                Payment::where('payment_id', $payment->payment_id)
-                    ->where('edit_flag', 0)
-                    ->whereNull('deleted_at')
-                    ->update([
-                        'payment_id' => null,
-                        'invoice_id' => null,
-                        'status' => Payment::STATUS_PENDING,
-                        'updated_by' => Auth::user()?->username ?? 'system',
-                    ]);
-            }
 
             $payment->delete(); // Soft delete để cập nhật deleted_at
 
@@ -863,7 +836,174 @@ class PaymentController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Đã xóa cọc / thanh toán thành công (tạo dòng đối trừ).',
+            'message' => $isSettlementPayment
+                ? 'Đã hủy toàn bộ lần thanh toán; cọc và thanh toán trước đã được trả về trạng thái chưa sử dụng.'
+                : 'Đã xóa cọc / thanh toán thành công (tạo dòng đối trừ).',
+        ]);
+    }
+
+    private function settlementPaymentRowsQuery(Payment $payment)
+    {
+        return Payment::query()
+            ->where('booking_id', $payment->booking_id)
+            ->where('edit_flag', 0)
+            ->whereNull('deleted_at')
+            ->where(function ($query) use ($payment) {
+                if (filled($payment->payment_id)) {
+                    $query->where('payment_id', $payment->payment_id);
+                }
+                if (filled($payment->invoice_id)) {
+                    $method = filled($payment->payment_id) ? 'orWhere' : 'where';
+                    $query->{$method}('invoice_id', $payment->invoice_id);
+                }
+            });
+    }
+
+    private function cancelSettlementPaymentGroup(Payment $selectedPayment, string $systemDate, string $reason): void
+    {
+        $payments = $this->settlementPaymentRowsQuery($selectedPayment)
+            ->lockForUpdate()
+            ->get();
+
+        if (!$payments->contains(fn (Payment $payment) => (int) $payment->id === (int) $selectedPayment->id)) {
+            abort(422, 'Không tìm thấy đầy đủ các dòng thuộc lần thanh toán cần hủy.');
+        }
+
+        if ($payments->contains(fn (Payment $payment) => Carbon::parse($payment->date)->toDateString() < $systemDate)
+            && !$this->canOperateOldDay()) {
+            abort(403, 'Tài khoản không được phân quyền hủy lần thanh toán có dòng thuộc ngày cũ.');
+        }
+
+        $paymentCodes = $payments->pluck('payment_id')->filter()->unique()->values();
+        $invoiceIds = $payments->pluck('invoice_id')->filter()->unique()->values();
+        $bookingId = $selectedPayment->booking_id;
+        $username = Auth::user()?->username ?? 'system';
+
+        // Reuse of a DPR/AP row must make that same deposit or advance available again.
+        foreach ($payments->filter(fn (Payment $payment) => $this->isTransferableDepositOrAdvance($payment)) as $deposit) {
+            $deposit->update([
+                'payment_id' => null,
+                'invoice_id' => null,
+                'status' => Payment::STATUS_PENDING,
+                'edit_flag' => 0,
+                'updated_by' => $username,
+            ]);
+        }
+
+        // Cancel every settlement-generated tender line and create a matching audit reversal.
+        foreach ($payments->reject(fn (Payment $payment) => $this->isTransferableDepositOrAdvance($payment)) as $line) {
+            $reversalId = null;
+            $amount = round((float) $line->amount, 2);
+            if (abs($amount) >= 0.01) {
+                $reversal = Payment::create([
+                    'booking_id' => $line->booking_id,
+                    'booking_room_id' => $line->booking_room_id,
+                    'company_id' => $line->company_id,
+                    'date' => $systemDate,
+                    'open_time' => now()->format('H:i:s'),
+                    'guest_display' => $line->guest_display,
+                    'description' => '[REVERSAL] ' . $line->description,
+                    'reason' => $reason,
+                    'amount' => -$amount,
+                    'total_amount_before_split' => $line->total_amount_before_split,
+                    'guest_id' => $line->guest_id,
+                    'pack2' => $line->pack2,
+                    'pack4' => $line->pack4,
+                    'payment_method_id' => $line->payment_method_id,
+                    'debit_account' => $line->debit_account,
+                    'currency' => $line->currency,
+                    'bank_account_id' => $line->bank_account_id,
+                    'department_id' => $line->department_id,
+                    'outlet' => $line->outlet,
+                    'image_path' => $line->image_path,
+                    'reversal_ref' => $line->id,
+                    'status' => Payment::STATUS_DELETED,
+                    'edit_flag' => 1,
+                    'created_by' => $username,
+                ]);
+                $reversalId = $reversal->id;
+            }
+
+            $line->update([
+                'status' => Payment::STATUS_DELETED,
+                'edit_flag' => 1,
+                'reversal_ref' => $reversalId,
+                'updated_by' => $username,
+            ]);
+            $line->delete();
+        }
+
+        if ($invoiceIds->isNotEmpty() || $paymentCodes->isNotEmpty()) {
+            SalesInvoice::query()
+                ->where(function ($query) use ($invoiceIds, $paymentCodes) {
+                    if ($invoiceIds->isNotEmpty()) {
+                        $query->whereIn('id', $invoiceIds);
+                    }
+                    if ($paymentCodes->isNotEmpty()) {
+                        $method = $invoiceIds->isNotEmpty() ? 'orWhereIn' : 'whereIn';
+                        $query->{$method}('payment_code', $paymentCodes);
+                    }
+                })
+                ->lockForUpdate()
+                ->get()
+                ->each(fn (SalesInvoice $invoice) => $invoice->update(['status' => 3]));
+        }
+
+        $serviceBills = ServiceBill::query()
+            ->where('Edit', 0)
+            ->where(function ($query) use ($invoiceIds, $paymentCodes) {
+                if ($invoiceIds->isNotEmpty()) {
+                    $query->whereIn('InvoiceId', $invoiceIds);
+                }
+                if ($paymentCodes->isNotEmpty()) {
+                    $method = $invoiceIds->isNotEmpty() ? 'orWhereIn' : 'whereIn';
+                    $query->{$method}('PaymentID', $paymentCodes);
+                }
+            })
+            ->lockForUpdate()
+            ->get();
+        $serviceBillIds = $serviceBills->pluck('Ma');
+        $serviceBills->each(function (ServiceBill $bill): void {
+            // ServiceBill's mass-assignable model attribute is `PaymentId`.
+            // Using `PaymentID` is silently discarded by Eloquent, leaving the
+            // stale settlement code visible and making Checkout treat it paid.
+            $bill->update(['PaymentId' => null, 'Status' => 1, 'InvoiceId' => null]);
+        });
+
+        $hasMirrorPaymentId = \Illuminate\Support\Facades\Schema::hasColumn('booking_room_services', 'payment_id');
+        if ($serviceBillIds->isNotEmpty() || ($hasMirrorPaymentId && $paymentCodes->isNotEmpty())) {
+            $roomServices = \App\Models\BookingRoomService::query()
+                ->where(function ($query) use ($serviceBillIds, $paymentCodes, $hasMirrorPaymentId) {
+                    if ($serviceBillIds->isNotEmpty()) {
+                        $query->whereIn('service_bill_id', $serviceBillIds);
+                    }
+                    if ($hasMirrorPaymentId && $paymentCodes->isNotEmpty()) {
+                        $method = $serviceBillIds->isNotEmpty() ? 'orWhereIn' : 'whereIn';
+                        $query->{$method}('payment_id', $paymentCodes);
+                    }
+                });
+            $roomServiceUpdates = [];
+            if ($hasMirrorPaymentId) {
+                $roomServiceUpdates['payment_id'] = null;
+            }
+            if (\Illuminate\Support\Facades\Schema::hasColumn('booking_room_services', 'invoice_code')) {
+                $roomServiceUpdates['invoice_code'] = null;
+            }
+            if (\Illuminate\Support\Facades\Schema::hasColumn('booking_room_services', 'status')) {
+                $roomServiceUpdates['status'] = 1;
+            }
+            if ($roomServiceUpdates) {
+                $roomServices->update($roomServiceUpdates);
+            }
+
+            if ($serviceBillIds->isNotEmpty()) {
+                \App\Models\HousekeepingServiceBill::whereIn('BillServiceId', $serviceBillIds)
+                    ->update(['Status' => 1, 'BillEdit' => 0]);
+            }
+        }
+
+        Booking::where('id', $bookingId)->update([
+            'payment_value' => $this->bookingDepositAndAdvanceTotal($bookingId),
         ]);
     }
 
@@ -1176,6 +1316,16 @@ class PaymentController extends Controller
 
             $sourceBookingId = $payment->booking_id;
             $sourceBooking = Booking::findOrFail($sourceBookingId);
+            $paymentDate = Carbon::parse($payment->date)->toDateString();
+            if ((int) $sourceBooking->id !== (int) $targetBooking->id
+                && $paymentDate < $systemDate
+                && !app(\App\Services\CheckoutRoleConfigService::class)->canTransferPastDateToAnotherBooking(
+                    Auth::user(),
+                    request()->attributes->get('_branch_id')
+                )) {
+                abort(403, 'Không có quyền chuyển cọc/thanh toán trước ngày cũ sang Booking khác.');
+            }
+
             $sourceLocation = $payment->booking_room_id ? 'R_' . ($payment->bookingRoom?->room_number ?: $payment->booking_room_id) : 'BK_' . $sourceBookingId;
             $targetLocation = $targetRoom ? 'R_' . ($targetRoom->room_number ?: $targetRoom->id) : 'BK_' . $targetBooking->id;
 
@@ -1858,6 +2008,12 @@ class PaymentController extends Controller
             ->whereNotIn('status', [BookingRoom::STATUS_CANCELLED, BookingRoom::STATUS_CHECKED_OUT])
             ->exists();
         if ($hasActiveRooms) return;
+
+        $hasCheckedOutStayRoom = $booking->bookingRooms()
+            ->stayOnly()
+            ->where('status', BookingRoom::STATUS_CHECKED_OUT)
+            ->exists();
+        if (!$hasCheckedOutStayRoom) return;
 
         $checkedOutRoomIds = $booking->bookingRooms()
             ->where('status', BookingRoom::STATUS_CHECKED_OUT)
