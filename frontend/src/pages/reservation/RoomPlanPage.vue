@@ -2538,11 +2538,12 @@ function handleCellContextMenu(roomItem, dayItem, event) {
 }
 
 function handleBookingDblClick(booking) {
-  if (booking.code === 'LOCK') return
+  if (isHousekeepingModule.value || booking.code === 'LOCK') return
   emit('edit-booking', { code: booking.code, id: booking.bookingId })
 }
 
 function startResize(bk, type, event) {
+  if (isHousekeepingModule.value) return
   if (bk.code === 'LOCK') return
 
   if (bk.type === 'InHouse') {
@@ -2595,6 +2596,10 @@ function startResize(bk, type, event) {
 }
 
 function handleResizeMouseMove(event) {
+  if (isHousekeepingModule.value) {
+    resizeState.value = null
+    return
+  }
   if (!resizeState.value) return
 
   const { type, initialX, cellWidth, originalCheckIn, originalCheckOut } = resizeState.value
@@ -2639,6 +2644,7 @@ async function handleResizeMouseUp(event) {
   if (!resizeState.value) return
   const state = resizeState.value
   resizeState.value = null
+  if (isHousekeepingModule.value) return
 
   const checkInStr = formatDateStr(state.tempCheckIn)
   const checkOutStr = formatDateStr(state.tempCheckOut)
@@ -2680,6 +2686,9 @@ async function handleResizeMouseUp(event) {
 function handleBookingContextMenu(booking, event) {
   event.preventDefault()
   event.stopPropagation()
+
+  const isRoomLock = booking.code === 'LOCK' || booking.type === 'OOO' || booking.type === 'OOS' || booking.isLockRoom
+  if (isHousekeepingModule.value && !isRoomLock) return
   
   let x = event.clientX
   let y = event.clientY
@@ -2823,6 +2832,10 @@ function calculateQuickBookingPrice() {
 }
 
 async function triggerMenuAction(actionName) {
+  if (isHousekeepingModule.value && !housekeepingAllowedRoomPlanActions.has(actionName)) {
+    closeContextMenu()
+    return
+  }
   closeContextMenu()
   
   if (actionName === 'Tạo') {
@@ -3052,6 +3065,10 @@ function canCheckInBooking(bk) {
 }
 
 function handleDragStart(bk, event) {
+  if (isHousekeepingModule.value) {
+    event.preventDefault()
+    return
+  }
   if (bk.type === 'InHouse') {
     uiStore.showToast('Phòng đang In-house không được phép kéo chuyển phòng trên Room Plan.', 'warning')
     event.preventDefault()
@@ -3119,6 +3136,7 @@ function handleDragStart(bk, event) {
 }
 
 function handleBookingPointerDown(bk, event) {
+  if (isHousekeepingModule.value) return
   if (event.button !== 0) return
   if (event.target.closest('[data-room-plan-resize-handle], [data-room-plan-split-handle]')) return
 
@@ -3149,6 +3167,10 @@ function handleBookingPointerDown(bk, event) {
 }
 
 function startBookingPointerDrag(bk, event, element) {
+  if (isHousekeepingModule.value) {
+    event.preventDefault()
+    return
+  }
   event.preventDefault()
   hideTooltip()
   isPointerDraggingBooking = true
@@ -3175,6 +3197,11 @@ function startBookingPointerDrag(bk, event, element) {
 }
 
 function handleBookingPointerMove(event) {
+  if (isHousekeepingModule.value) {
+    bookingPointerPending = null
+    stopBookingPointerDrag()
+    return
+  }
   if (!isPointerDraggingBooking || !draggedBooking.value) {
     const pending = bookingPointerPending
     if (!pending || pending.pointerId !== event.pointerId) return
@@ -3280,6 +3307,7 @@ function setDragGhostTop(top) {
 }
 
 function handleGlobalDragOver(event) {
+  if (isHousekeepingModule.value) return
   if (!draggedBooking.value) return
   if (event.__roomPlanDragHandled) return
   event.__roomPlanDragHandled = true
@@ -3342,6 +3370,7 @@ function updateDragPosition(targetCell, clientY) {
 }
 
 function handleWindowDragOver(event) {
+  if (isHousekeepingModule.value) return
   if (!draggedBooking.value) return
   event.preventDefault()
   if (!scrollContainer) getDragVerticalBounds()
@@ -3353,6 +3382,7 @@ function allowRoomPlanDrop(event) {
 }
 
 function handleTopDragOver(event) {
+  if (isHousekeepingModule.value) return
   if (!draggedBooking.value) return
   event.preventDefault()
   if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
@@ -3415,6 +3445,11 @@ function handleDragEnd() {
 }
 
 async function handleDrop(targetRoom, targetDay, event) {
+  if (isHousekeepingModule.value) {
+    event.preventDefault()
+    handleDragEnd()
+    return
+  }
   event.preventDefault()
   dragSourceStartIdx.value = null
   dragSourceEndIdx.value = null
@@ -3553,6 +3588,7 @@ function cancelSplit() {
 }
 
 async function executeSplit() {
+  if (isHousekeepingModule.value) return
   const bk = splittingBooking.value
   if (!bk) return
 
@@ -3585,6 +3621,7 @@ async function executeSplit() {
 }
 
 function startDragSplitBar(event) {
+  if (isHousekeepingModule.value) return
   event.preventDefault()
   const startX = event.clientX
   const initialSplitIndex = splitIndex.value
@@ -3619,6 +3656,7 @@ function startDragSplitBar(event) {
 }
 
 async function saveQuickBooking() {
+  if (isHousekeepingModule.value) return
   const ranges = selectedRoomsRanges.value
   if (ranges.length === 0) return
 
@@ -3794,7 +3832,8 @@ async function saveLockRoom() {
       locks: locksPayload,
       lock_type: lockRoomType.value,
       reason: note,
-      force: false
+      force: false,
+      ...(isHousekeepingModule.value ? { current_module: 'HK' } : {})
     }
 
     try {
@@ -3906,6 +3945,7 @@ const isCancelReasonModalOpen = ref(false)
 const pendingCancelBooking = ref(null)
 
 async function handleConfirmCancelRoomPlan(payload) {
+  if (isHousekeepingModule.value) return
   const booking = pendingCancelBooking.value
   if (!booking || !booking.bookingId || !booking.bookingRoomId) return
 
@@ -4415,7 +4455,7 @@ function getRoomStatusIconName(item) {
 
                     <!-- Right resize handle -->
                     <div 
-                      v-if="bk.code !== 'LOCK'"
+                      v-if="!isHousekeepingModule && bk.code !== 'LOCK' && bk.isCheckOutVisible"
                       data-room-plan-resize-handle
                       class="absolute top-0 bottom-0 right-0 w-2 z-20 select-none"
                       style="cursor: e-resize;"
@@ -4492,7 +4532,7 @@ function getRoomStatusIconName(item) {
 
                     <!-- Split Handle / Control -->
                     <div 
-                      v-if="splittingBooking?.bookingRoomId === bk.bookingRoomId && bk.type !== 'OOO' && bk.type !== 'OOS' && bk.code !== 'LOCK'"
+                      v-if="!isHousekeepingModule && splittingBooking?.bookingRoomId === bk.bookingRoomId && bk.type !== 'OOO' && bk.type !== 'OOS' && bk.code !== 'LOCK'"
                       data-room-plan-split-handle
                       class="absolute top-0 bottom-0 w-[4px] bg-white cursor-ew-resize z-40 shadow-[0_0_4px_rgba(0,0,0,0.5)]"
                       :style="{ left: `calc(${((splitIndex - bk.startIndex) / bk.span) * 100}% - 2px)` }"
@@ -4501,7 +4541,7 @@ function getRoomStatusIconName(item) {
 
                     <!-- Split Buttons Overlay -->
                     <div 
-                      v-if="splittingBooking?.bookingRoomId === bk.bookingRoomId && bk.type !== 'OOO' && bk.type !== 'OOS' && bk.code !== 'LOCK'"
+                      v-if="!isHousekeepingModule && splittingBooking?.bookingRoomId === bk.bookingRoomId && bk.type !== 'OOO' && bk.type !== 'OOS' && bk.code !== 'LOCK'"
                       class="absolute bottom-[-22px] left-0 flex gap-1 z-50 select-none bg-white border border-slate-200 shadow-lg rounded p-0.5"
                     >
                       <button 
@@ -4735,6 +4775,7 @@ function getRoomStatusIconName(item) {
       <!-- Option for Cell Actions -->
       <template v-if="contextMenu.type === 'cell-actions'">
         <button 
+          v-if="!isHousekeepingModule"
           @click="triggerMenuAction('Tạo')"
           class="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 border-none bg-transparent cursor-pointer transition-colors"
         >
@@ -4755,7 +4796,7 @@ function getRoomStatusIconName(item) {
       </template>
 
       <!-- Option for Cell Waitlist -->
-      <template v-else-if="contextMenu.type === 'cell-waitlist'">
+      <template v-else-if="contextMenu.type === 'cell-waitlist' && !isHousekeepingModule">
         <button 
           @click="triggerMenuAction('Danh sách chờ')"
           class="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 border-none bg-transparent cursor-pointer transition-colors"
@@ -4765,7 +4806,7 @@ function getRoomStatusIconName(item) {
       </template>
 
       <!-- Options for Green Booking -->
-      <template v-else-if="contextMenu.type === 'green-booking'">
+      <template v-else-if="contextMenu.type === 'green-booking' && !isHousekeepingModule">
         <button 
           v-if="canCheckInBooking(contextMenu.booking)"
           @click="triggerMenuAction('Giao phòng')"
@@ -4809,7 +4850,7 @@ function getRoomStatusIconName(item) {
       </template>
 
       <!-- Options for Blue Booking -->
-      <template v-else-if="contextMenu.type === 'blue-booking'">
+      <template v-else-if="contextMenu.type === 'blue-booking' && !isHousekeepingModule">
         <button 
           v-if="!contextMenu.booking?.isDoNotMove"
           @click="triggerMenuAction('Khóa Di Chuyển Phòng')"
