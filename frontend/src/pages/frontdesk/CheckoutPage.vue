@@ -3061,12 +3061,57 @@ const openRegistrationFromCheckout = () => {
   router.push({ path: '/frontdesk', query: { tab: 'create-res', bookingCode: selectedBooking.value.code } })
 }
 
-const selectCheckoutBookingFromRoute = () => {
+const syncCheckoutFilterFromRoute = () => {
+  const queryRegister = String(route.query.register || '').trim()
+  let changed = false
+  if (['old', 'current', 'virtual'].includes(queryRegister) && appliedCheckoutFilter.value.register !== queryRegister) {
+    registerFilter.value = queryRegister
+    appliedCheckoutFilter.value.register = queryRegister
+    changed = true
+  }
+  const routeBookingKey = String(route.query.bookingCode || route.query.booking_code || route.query.booking_id || route.query.edit_id || '').trim()
+  if (routeBookingKey && appliedCheckoutFilter.value.departureEnabled) {
+    appliedCheckoutFilter.value.departureEnabled = false
+    filterDepartureChecked.value = false
+    changed = true
+  }
+  return changed
+}
+
+const selectCheckoutBookingFromRoute = async () => {
   const bookingKey = String(route.query.bookingCode || route.query.booking_code || route.query.booking_id || route.query.edit_id || '').trim()
   if (!bookingKey) return
-  const booking = allBookingsList.value.find(item => (
+  let booking = allBookingsList.value.find(item => (
     String(item.code) === bookingKey || String(item.bookingId) === bookingKey || String(item.id) === bookingKey || String(item.id) === `B${bookingKey}`
   ))
+
+  if (!booking) {
+    try {
+      const res = await fetchBookings({ search: bookingKey, status: '0,1,2,4', with_billing: true, stay_only: true })
+      const list = res.data?.data || res.data || []
+      const rawTarget = list.find(b => (
+        String(b.booking_code) === bookingKey ||
+        String(b.id) === bookingKey ||
+        `GAL${b.id}` === bookingKey ||
+        `B${b.id}` === bookingKey
+      )) || list[0]
+
+      if (rawTarget) {
+        const isTargetCheckedOut = isCheckedOutRecord(rawTarget)
+        if (isTargetCheckedOut && appliedCheckoutFilter.value.register !== 'old') {
+          registerFilter.value = 'old'
+          appliedCheckoutFilter.value.register = 'old'
+          await loadCheckoutBookings()
+          booking = allBookingsList.value.find(item => (
+            String(item.code) === bookingKey || String(item.bookingId) === bookingKey || String(item.id) === bookingKey || String(item.id) === `B${bookingKey}`
+          ))
+        }
+      }
+    } catch (err) {
+      console.error('Lỗi khi tra cứu booking theo route query:', err)
+    }
+  }
+
   if (booking) {
     const roomId = String(route.query.roomId || route.query.room_id || route.query.booking_room_id || '').trim()
     const room = roomId
@@ -3144,9 +3189,10 @@ onMounted(async () => {
   }
 })
 
-watch(() => [route.query.bookingCode, route.query.booking_code, route.query.booking_id, route.query.roomId, route.query.room_id, route.query.booking_room_id], async () => {
+watch(() => [route.query.bookingCode, route.query.booking_code, route.query.booking_id, route.query.roomId, route.query.room_id, route.query.booking_room_id, route.query.register], async () => {
+  syncCheckoutFilterFromRoute()
   await loadCheckoutBookings()
-  selectCheckoutBookingFromRoute()
+  await selectCheckoutBookingFromRoute()
 })
 
 watch(() => [authStore.activeBranch?.id, authStore.roles], () => {

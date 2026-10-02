@@ -696,6 +696,7 @@ function handleActionInvoice() {
   const bookingCode = first.booking_code || (tab.value === 'booking' ? first.id : first.booking_id)
   const bookingId = tab.value === 'booking' ? first.id : first.booking_id
   const roomId = tab.value === 'room' ? first.id : (first.booking_room_id || first.room_id || undefined)
+  const isOld = Number(first.status) === 2 || String(first.status_label || '').toLowerCase().includes('check out')
   router.push({
     path: '/frontdesk',
     query: {
@@ -704,7 +705,8 @@ function handleActionInvoice() {
       booking_code: bookingCode || undefined,
       booking_id: bookingId || undefined,
       roomId: roomId || undefined,
-      room_id: roomId || undefined
+      room_id: roomId || undefined,
+      ...(isOld ? { register: 'old' } : {})
     }
   })
 }

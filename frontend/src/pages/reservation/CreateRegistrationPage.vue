@@ -4918,7 +4918,17 @@ async function triggerAction(actionName) {
       uiStore.showToast('Vui lòng lưu đăng ký trước khi mở hóa đơn.', 'warning')
       return
     }
-    router.push({ path: '/frontdesk', query: { tab: 'checkout', bookingCode: tab.id } })
+    const isOldBooking = Number(tab.status) === 2 || (
+      Array.isArray(tab.rooms) && tab.rooms.length > 0 && tab.rooms.every(r => Number(r.bookingRoomStatus ?? r.status) === 2)
+    )
+    router.push({
+      path: '/frontdesk',
+      query: {
+        tab: 'checkout',
+        bookingCode: tab.id || tab.bookingCode,
+        ...(isOldBooking ? { register: 'old' } : {})
+      }
+    })
   } else if (actionName === 'Nhân bản') {
     openCopyModal()
   } else if (actionName === 'GIAO PHÒNG') {
