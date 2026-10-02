@@ -22,6 +22,27 @@
 ## [2026-10-01] - Điều chỉnh Tooltip Booking và Submenu Context Menu trên Sơ đồ phòng (Room Map - Dòng 293)
 ### Module: Sơ đồ phòng ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
 
+## [2026-10-02] - Đồng bộ cập nhật Công ty từ Booking sang Hóa đơn dịch vụ (SP3000), Thanh toán (Payments) và Hóa đơn bán (SalesInvoices)
+### Module: Đặt phòng / Thu ngân ([BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [BookingCompanySyncTest.php](file:///d:/PMS/backend/tests/Feature/BookingCompanySyncTest.php))
+
+- **Yêu cầu & Nghiệp vụ**:
+  - Khi tạo một booking ban đầu gắn với Công ty A (ví dụ ID: 3), sau đó vào sửa booking chọn lại Công ty B (ví dụ ID: 1).
+  - Hệ thống cần tự động đồng bộ mã công ty mới sang toàn bộ các bảng hóa đơn và thanh toán liên quan đến booking này, thay vì chỉ cập nhật riêng bảng `bookings`.
+- **Rà soát & Xử lý**:
+  - Đã rà soát toàn bộ CSDL và xác định 3 bảng nghiệp vụ có liên kết trực tiếp với Công ty của Booking:
+    1. `payments`: Cập nhật `company_id = $newCompanyId` cho các khoản cọc/thanh toán của booking và các phòng thuộc booking.
+    2. `sales_invoices`: Cập nhật `company_id = $newCompanyId` cho các hóa đơn thanh toán/settlement của booking.
+    3. `service_bills` (`SP3000`):
+       - `CompanyId2`: Cập nhật `= $newCompanyId` cho toàn bộ các bill đang thuộc/quản lý bởi booking (`RegisterID2 = $booking->id`, hoặc các bill chưa chuyển có `RegisterId1 = $booking->id` / `RentalRoomId1` thuộc các phòng của booking).
+       - `CompanyId1`: Cập nhật `= $newCompanyId` cho các bill ban đầu sinh ra từ booking này. Riêng các bill chuyển từ booking khác sang vẫn giữ nguyên `CompanyId1` của booking nguồn ban đầu, chỉ cập nhật `CompanyId2`.
+  - Triển khai hàm `cascadeBookingCompanyUpdate` trong [BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), tự động kích hoạt trong transaction của phương thức `update` khi phát hiện `$booking->wasChanged('company_id')`.
+- **Kiểm thử**:
+  - Viết bộ Feature Test toàn diện [BookingCompanySyncTest.php](file:///d:/PMS/backend/tests/Feature/BookingCompanySyncTest.php) bao gồm 3 test case:
+    1. Cập nhật booking sang công ty mới -> đồng bộ đồng thời sang `service_bills` (cả master & phòng), `payments` (cả master & phòng) và `sales_invoices`.
+    2. Bill chuyển từ booking khác sang chỉ cập nhật `CompanyId2`, giữ nguyên `CompanyId1` nguồn.
+    3. Cập nhật các thông tin khác của booking mà không đổi công ty -> giữ nguyên dữ liệu công ty ở các bảng liên quan.
+  - Kết quả: 3/3 tests PASSED (17 assertions).
+
 ## [2026-10-02] - Khắc phục đồng bộ tiến trình Sang ngày (Night Audit) đa tài khoản & đa tab (Reverb, BroadcastChannel, Public status check & Polling fallback)
 ### Module: Lễ tân / Sang ngày ([NightAuditController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php), [api.php](file:///d:/PMS/backend/routes/api.php), [echo.js](file:///d:/PMS/frontend/src/services/echo.js), [auth-store.js](file:///d:/PMS/frontend/src/stores/auth-store.js), [night-audit-store.js](file:///d:/PMS/frontend/src/stores/night-audit-store.js), [App.vue](file:///d:/PMS/frontend/src/App.vue), [DayClosePage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue))
 

@@ -1195,6 +1195,7 @@ class BookingController extends Controller
 
                 $booking->update($validated);
                 $dayUseChanged = $booking->wasChanged('is_day_use');
+                $companyChanged = $booking->wasChanged('company_id');
                 // Do not use a mass update here: it bypasses BookingRoom's
                 // lifecycle hooks (night count and guest actual dates).
                 $booking->bookingRooms()
@@ -1620,6 +1621,10 @@ class BookingController extends Controller
                             }
                         }
                     }
+                }
+
+                if ($companyChanged) {
+                    $this->cascadeBookingCompanyUpdate($booking, $booking->company_id);
                 }
             });
         } catch (\Exception $e) {
@@ -3559,5 +3564,69 @@ class BookingController extends Controller
             'message' => 'Khôi phục booking noshow thành công!',
             'data'    => $booking->fresh()->load(['registrationStatus', 'bookingRooms.roomClass']),
         ]);
+    }
+
+    /**
+     * Đồng bộ mã công ty sang các bảng liên quan (payments, sales_invoices, service_bills)
+     * khi booking được cập nhật công ty mới.
+     */
+    protected function cascadeBookingCompanyUpdate(Booking $booking, $newCompanyId): void
+    {
+        if (empty($newCompanyId)) {
+            return;
+        }
+
+        $bIdStr = (string) $booking->id;
+        $bIdInt = (int) $booking->id;
+        $roomIds = $booking->bookingRooms()->pluck('id')->filter()->values()->all();
+
+        // 1. Cập nhật payments (cọc và thanh toán thuộc booking hoặc các phòng của booking)
+        \App\Models\Payment::where(function ($q) use ($bIdInt, $roomIds) {
+            $q->where('booking_id', $bIdInt);
+            if (!empty($roomIds)) {
+                $q->orWhereIn('booking_room_id', $roomIds);
+            }
+        })->update(['company_id' => $newCompanyId]);
+
+        // 2. Cập nhật sales_invoices (hóa đơn thanh toán/settlement)
+        \App\Models\SalesInvoice::where(function ($q) use ($bIdInt, $roomIds) {
+            $q->where('booking_id', $bIdInt)
+                ->orWhere('legacy_booking_id', $bIdInt);
+            if (!empty($roomIds)) {
+                $q->orWhereIn('booking_room_id', $roomIds)
+                    ->orWhereIn('legacy_rental_room_id', $roomIds)
+                    ->orWhereIn('guest_room_id', $roomIds);
+            }
+        })->update(['company_id' => $newCompanyId]);
+
+        // 3. Cập nhật service_bills (SP3000):
+        // 3.1. CompanyId2: Dành cho các bill đang thuộc/quản lý bởi booking này
+        \App\Models\ServiceBill::where(function ($q) use ($bIdStr, $bIdInt, $roomIds) {
+            $q->where('RegisterID2', $bIdStr)
+                ->orWhere('RegisterID2', $bIdInt)
+                ->orWhere(function ($sub) use ($bIdStr, $bIdInt, $roomIds) {
+                    $sub->where(function ($reg) {
+                        $reg->whereNull('RegisterID2')
+                            ->orWhere('RegisterID2', '')
+                            ->orWhere('RegisterID2', '0');
+                    })->where(function ($owner) use ($bIdStr, $bIdInt, $roomIds) {
+                        $owner->where('RegisterId1', $bIdStr)
+                            ->orWhere('RegisterId1', $bIdInt);
+                        if (!empty($roomIds)) {
+                            $owner->orWhereIn('RentalRoomId1', $roomIds)
+                                ->orWhereIn('RentalRoomId2', $roomIds);
+                        }
+                    });
+                });
+        })->update(['CompanyId2' => $newCompanyId]);
+
+        // 3.2. CompanyId1: Dành cho các bill ban đầu sinh ra từ booking này (hoặc các phòng của booking)
+        \App\Models\ServiceBill::where(function ($q) use ($bIdStr, $bIdInt, $roomIds) {
+            $q->where('RegisterId1', $bIdStr)
+                ->orWhere('RegisterId1', $bIdInt);
+            if (!empty($roomIds)) {
+                $q->orWhereIn('RentalRoomId1', $roomIds);
+            }
+        })->update(['CompanyId1' => $newCompanyId]);
     }
 }
