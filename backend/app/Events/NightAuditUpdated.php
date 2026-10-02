@@ -12,16 +12,18 @@ class NightAuditUpdated implements ShouldBroadcastNow
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public $status; // 'started' | 'completed' | 'failed'
+    public $status; // 'started' | 'running' | 'completed' | 'failed'
     public $message;
+    public $payload;
 
     /**
      * Create a new event instance.
      */
-    public function __construct($status, $message = null)
+    public function __construct($status, $message = null, $payload = [])
     {
         $this->status = $status;
         $this->message = $message;
+        $this->payload = $payload;
     }
 
     /**

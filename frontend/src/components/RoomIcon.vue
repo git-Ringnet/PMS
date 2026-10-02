@@ -198,6 +198,16 @@ defineProps({
       <path d="M13.0915 22.5859L13.0895 24.3176C13.0891 24.694 13.9548 25.0002 15.023 25.0015C16.0913 25.0027 16.9576 24.6985 16.9581 24.3221L16.9601 22.5905L13.0915 22.5859Z" fill="currentColor" />
       <path d="M7.6745 4.11669C8.81088 4.11669 9.73211 3.19547 9.73211 2.05908C9.73211 0.92269 8.81088 0.00146484 7.6745 0.00146484C6.53811 0.00146484 5.61688 0.92269 5.61688 2.05908C5.61688 3.19547 6.53811 4.11669 7.6745 4.11669Z" fill="currentColor" />
     </svg>
+
+    <!-- 29. Phòng thông nhau (connecting-door / door) -->
+    <svg v-else-if="name === 'connecting-door' || name === 'door'" viewBox="0 0 42 65" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <!-- Khung cửa: Xà trên và cột phải -->
+      <path d="M0 0H42V60H37V5H0Z" fill="currentColor"/>
+      <!-- Cánh cửa mở nghiêng phối cảnh 3D -->
+      <polygon points="0,0 29,12 29,64.5 0,58" fill="currentColor"/>
+      <!-- Nắm đấm cửa tròn màu trắng -->
+      <circle cx="24" cy="35" r="2.2" fill="white"/>
+    </svg>
   </span>
 </template>
 

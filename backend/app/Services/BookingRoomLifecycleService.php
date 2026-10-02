@@ -31,7 +31,7 @@ class BookingRoomLifecycleService
         BookingRoom $room,
         bool $replaceRoomRates = false,
         bool $synchronizeChildBreakfast = false,
-        bool $synchronizeRoomCharges = true,
+        bool $synchronizeRoomCharges = false,
     ): void
     {
         if (!in_array((int) $room->status, [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN], true)) {

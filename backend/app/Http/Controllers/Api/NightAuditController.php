@@ -303,7 +303,7 @@ class NightAuditController extends Controller
 
         $systemDate = $this->getSystemDate();
         $nextDate   = $systemDate->copy()->addDay();
-        $username   = Auth::user()?->username ?? 'admin';
+        $username   = Auth::user()?->username ?: (Auth::user()?->name ?: 'system');
         $shift      = $this->getSystemShift();
 
         DB::transaction(function () use ($room, $systemDate, $nextDate, $chargeOption, $userReason, $username, $shift) {
@@ -386,7 +386,7 @@ class NightAuditController extends Controller
         }
 
         $systemDate = $this->getSystemDate();
-        $username   = Auth::user()?->username ?? 'admin';
+        $username   = Auth::user()?->username ?: (Auth::user()?->name ?: 'system');
         $shift      = $this->getSystemShift();
 
         $warning = null;
@@ -506,7 +506,7 @@ class NightAuditController extends Controller
 
         $systemDate = $this->getSystemDate();
         $nextDate   = $systemDate->copy()->addDay();
-        $username   = Auth::user()?->username ?? 'admin';
+        $username   = Auth::user()?->username ?: (Auth::user()?->name ?: 'system');
         $shift      = $this->getSystemShift();
 
         $settings = HotelSetting::first();
@@ -552,7 +552,11 @@ class NightAuditController extends Controller
         if ($settings) {
             $settings->update(['is_night_audit_running' => true]);
         }
-        event(new NightAuditUpdated('started', 'Hệ thống đang tiến hành sang ngày mới...'));
+        event(new NightAuditUpdated('started', 'Hệ thống đang tiến hành sang ngày mới...', [
+            'username'    => $username,
+            'source_date' => $systemDate->toDateString(),
+            'target_date' => $nextDate->toDateString(),
+        ]));
 
         // 3. Tạo bản ghi Run TRƯỚC transaction (để đảm bảo run record tồn tại kể cả khi transaction nghiệp vụ rollback)
         $idempotencyKey = (string) ($request->header('X-Idempotency-Key')
@@ -615,26 +619,59 @@ class NightAuditController extends Controller
                 $currentStepCode = 'PRE_CHECK';
                 $snapshotService->markStepRunning($steps['PRE_CHECK']);
 
-                $pendingCheckIns = BookingRoom::whereDate('arrival_date', '<=', $systemDate->toDateString())
+                $pendingCheckIns = BookingRoom::with(['booking', 'guests.guest'])
+                    ->whereDate('arrival_date', '<=', $systemDate->toDateString())
                     ->stayOnly()
                     ->where('status', BookingRoom::STATUS_BOOKED)
                     ->where('status', '!=', BookingRoom::STATUS_MOVED)
                     ->whereNotNull('room_number')
                     ->where('room_number', '!=', '')
                     ->whereRaw("LOWER(TRIM(room_number)) NOT IN ('chưa gán', 'chua gan')")
-                    ->count();
+                    ->get();
 
-                $pendingCheckOuts = BookingRoom::whereDate('departure_date', '<=', $systemDate->toDateString())
+                $pendingCheckOuts = BookingRoom::with(['booking', 'guests.guest'])
+                    ->whereDate('departure_date', '<=', $systemDate->toDateString())
                     ->stayOnly()
                     ->where('status', BookingRoom::STATUS_CHECKED_IN)
                     ->where('status', '!=', BookingRoom::STATUS_MOVED)
                     ->whereNotNull('room_number')
                     ->where('room_number', '!=', '')
                     ->whereRaw("LOWER(TRIM(room_number)) NOT IN ('chưa gán', 'chua gan')")
-                    ->count();
+                    ->get();
 
-                if ($pendingCheckIns > 0 || $pendingCheckOuts > 0) {
-                    throw new \RuntimeException("Không thể sang ngày vì vẫn còn {$pendingCheckIns} phòng chưa check-in hoặc {$pendingCheckOuts} phòng chưa check-out.");
+                if ($pendingCheckIns->isNotEmpty() || $pendingCheckOuts->isNotEmpty()) {
+                    $inCount = $pendingCheckIns->count();
+                    $outCount = $pendingCheckOuts->count();
+                    $errorData = [
+                        'type' => 'PRE_CHECK_FAILED',
+                        'failed_step' => 'PRE_CHECK',
+                        'pending_checkins_count' => $inCount,
+                        'pending_checkouts_count' => $outCount,
+                        'pending_checkins' => $pendingCheckIns->map(fn($r) => [
+                            'id' => $r->id,
+                            'room_number' => $r->room_number,
+                            'booking_code' => $r->booking?->code,
+                            'guest_name' => $r->guests->first()?->guest?->full_name ?: ($r->booking?->booking_name ?: 'Khách'),
+                            'arrival_date' => Carbon::parse($r->arrival_date)->format('d/m/Y'),
+                        ])->values(),
+                        'pending_checkouts' => $pendingCheckOuts->map(fn($r) => [
+                            'id' => $r->id,
+                            'room_number' => $r->room_number,
+                            'booking_code' => $r->booking?->code,
+                            'guest_name' => $r->guests->first()?->guest?->full_name ?: ($r->booking?->booking_name ?: 'Khách'),
+                            'departure_date' => Carbon::parse($r->departure_date)->format('d/m/Y'),
+                        ])->values(),
+                        'hint' => 'Vui lòng kiểm tra và xử lý các phòng trên tại màn hình Sơ đồ phòng hoặc Đặt phòng (nhận phòng, trả phòng hoặc đánh dấu Noshow) trước khi thực hiện sang ngày.',
+                    ];
+
+                    $msgParts = [];
+                    if ($inCount > 0) $msgParts[] = "{$inCount} phòng chưa check-in";
+                    if ($outCount > 0) $msgParts[] = "{$outCount} phòng chưa check-out";
+                    $msg = "Không thể sang ngày vì vẫn còn " . implode(' và ', $msgParts) . ".";
+
+                    $ex = new \RuntimeException($msg);
+                    $ex->errorDetails = $errorData;
+                    throw $ex;
                 }
                 $snapshotService->markStepSucceeded($steps['PRE_CHECK'], 0, ['pending_checkins' => 0, 'pending_checkouts' => 0]);
 
@@ -845,7 +882,12 @@ class NightAuditController extends Controller
                 'actual_finished_at' => now(),
             ]);
 
-            event(new NightAuditUpdated('completed', 'Chuyển ngày hệ thống thành công sang: ' . $nextDate->toDateString()));
+            event(new NightAuditUpdated('completed', 'Chuyển ngày hệ thống thành công sang: ' . $nextDate->toDateString(), [
+                'username'    => $username,
+                'source_date' => $systemDate->toDateString(),
+                'target_date' => $nextDate->toDateString(),
+                'run_id'      => $run->id,
+            ]));
 
             return response()->json([
                 'success'           => true,
@@ -875,13 +917,28 @@ class NightAuditController extends Controller
                 'error_message'      => $e->getMessage(),
             ]);
 
-            event(new NightAuditUpdated('failed', 'Sang ngày thất bại: ' . $e->getMessage()));
+            $errorDetails = property_exists($e, 'errorDetails') ? $e->errorDetails : [
+                'type'              => 'SYSTEM_ERROR',
+                'failed_step'       => $currentStepCode,
+                'technical_message' => $e->getMessage(),
+                'hint'              => 'Hệ thống đã tự động Rollback 100% dữ liệu về trạng thái an toàn. Vui lòng kiểm tra lại dữ liệu hoặc liên hệ bộ phận kỹ thuật.',
+            ];
+
+            event(new NightAuditUpdated('failed', 'Sang ngày thất bại: ' . $e->getMessage(), [
+                'username'      => $username,
+                'failed_step'   => $currentStepCode,
+                'error_message' => $e->getMessage(),
+                'error_details' => $errorDetails,
+                'rollback_done' => true,
+            ]));
 
             return response()->json([
-                'success'     => false,
-                'run_id'      => $run->id,
-                'failed_step' => $currentStepCode,
-                'message'     => 'Lỗi khi thực hiện sang ngày tại bước [' . $currentStepCode . ']: ' . $e->getMessage(),
+                'success'       => false,
+                'run_id'        => $run->id,
+                'failed_step'   => $currentStepCode,
+                'message'       => 'Lỗi khi thực hiện sang ngày tại bước [' . $currentStepCode . ']: ' . $e->getMessage(),
+                'error_details' => $errorDetails,
+                'rollback_done' => true,
             ], 500);
 
         } finally {

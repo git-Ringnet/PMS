@@ -43,6 +43,7 @@ class BookingRoomServiceController extends Controller
         $room     = BookingRoom::findOrFail($roomId);
         $services = $room->services()
             ->orderBy('service_date')
+            ->orderBy('id')
             ->get();
 
         return response()->json(['success' => true, 'data' => $services]);
@@ -686,35 +687,7 @@ class BookingRoomServiceController extends Controller
                 $details = ServiceBillDetail::where('BillServiceId', $bill->Ma)->get();
                 foreach ($details as $detail) { $p = $detail->replicate(); $p->BillServiceId = $positive->Ma; $p->save(); $n = $detail->replicate(); $n->BillServiceId = $negative->Ma; $n->Amount = -abs((float) $detail->Amount); $n->save(); }
                 $services->each(function (BookingRoomService $service) use ($targetRoom, $targetGuest, $positive) { $copy = $service->replicate(); $service->delete(); if (!$targetRoom) return; $copy->booking_room_id = $targetRoom->id; $copy->guest_id = $targetGuest?->guest_id; $copy->service_bill_id = $positive->Ma; $copy->folio = 1; $copy->note = mb_substr((string)$positive->DescriptionServive, 0, 950); $copy->service_name = mb_substr((string)($service->service_name ?: $positive->DescriptionServive), 0, 950); $copy->posted_at = $service->posted_at; $copy->created_at = $service->created_at; $copy->deleted_at = null; $copy->save(); });
-                if ($isMasterSource && $targetRoom) {
-                    $quantity = max((float) ($positive->Quantity ?: 1), 1);
-                    $roomService = new BookingRoomService([
-                        'booking_room_id' => $targetRoom->id,
-                        'guest_id' => $targetGuest?->guest_id,
-                        'service_bill_id' => $positive->Ma,
-                        'service_bill_detail_no' => null,
-                        'service_code' => $positive->ServiceId ?: ($positive->Outlet ?: 'DV'),
-                        'service_name' => mb_substr((string)($positive->DescriptionServive ?: $positive->ServiceId), 0, 950),
-                        'service_date' => $positive->Date,
-                        'quantity' => $quantity,
-                        'rate' => (float) $positive->Amount / $quantity,
-                        'total_amount' => (float) $positive->Amount,
-                        'department' => $positive->DepartmentId,
-                        'note' => mb_substr((string)$positive->DescriptionServive, 0, 950),
-                        'tax' => $positive->Tax,
-                        'service_charge' => $positive->ServiceCharge,
-                        'unit' => $positive->Currency ?: 'VND',
-                        'folio' => 1,
-                        'is_room' => strtoupper((string) $positive->ServiceId) === BookingRoomService::CODE_ROOM ? 1 : 0,
-                        'is_posted' => 1,
-                        'posted_at' => $originCreatedAt,
-                        'created_by' => auth()->user()?->username ?: 'system',
-                        'updated_by' => auth()->user()?->username ?: 'system',
-                    ]);
-                    $roomService->preserveTotalAmount = true;
-                    $roomService->created_at = $originCreatedAt;
-                    $roomService->save();
-                }
+
             }
 
         });

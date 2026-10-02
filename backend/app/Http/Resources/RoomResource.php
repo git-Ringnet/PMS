@@ -37,6 +37,7 @@ class RoomResource extends JsonResource
             'grid_column' => $this->grid_column,
             'owner_room' => $this->owner_room,
             'linked_room' => $this->linked_room,
+            'connecting_room' => $this->connecting_room,
             'is_internal' => (bool) $this->is_internal,
             'is_virtual' => (bool) $this->is_virtual,
             'status' => $this->status,

@@ -49,6 +49,8 @@ class RolePermissionSeeder extends Seeder
             ['code' => 'fo.frontdesk.view',      'name' => 'Xem FrontDesk / Sơ đồ phòng',  'module' => 'FO'],
             ['code' => 'fo.guest.view',          'name' => 'Xem thông tin khách',           'module' => 'FO'],
             ['code' => 'fo.guest.edit',          'name' => 'Sửa thông tin khách',           'module' => 'FO'],
+            ['code' => 'fo.night_audit',         'name' => 'Sang ngày / Đóng ngày hệ thống', 'module' => 'FO'],
+
 
             // HK — Buồng phòng
             ['code' => 'hk.view',               'name' => 'Xem module Buồng Phòng',        'module' => 'HK'],
@@ -97,7 +99,7 @@ class RolePermissionSeeder extends Seeder
                 'fo.booking.view','fo.booking.create','fo.booking.edit','fo.booking.cancel',
                 'fo.booking.noshow','fo.checkin','fo.checkout','fo.room.move',
                 'fo.payment.view','fo.payment.create','fo.service.add','fo.frontdesk.view',
-                'fo.guest.view','fo.guest.edit',
+                'fo.guest.view','fo.guest.edit','fo.night_audit',
                 'hk.view','hk.assign','hk.report.view','hk.lost_found.manage','hk.room.status',
                 'hk.service.bill','hk.warehouse.view','hk.warehouse.manage',
                 'fb.view','fb.order.view','fb.order.create','fb.order.edit','fb.order.cancel',
@@ -118,7 +120,7 @@ class RolePermissionSeeder extends Seeder
                 'fo.booking.view','fo.booking.create','fo.booking.edit','fo.booking.cancel',
                 'fo.booking.noshow','fo.checkin','fo.checkout','fo.room.move',
                 'fo.payment.view','fo.payment.create','fo.service.add','fo.frontdesk.view',
-                'fo.guest.view','fo.guest.edit',
+                'fo.guest.view','fo.guest.edit','fo.night_audit',
                 'mgmt.activity_log',
             ],
 

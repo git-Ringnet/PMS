@@ -2,6 +2,7 @@
 import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
+import RoomIcon from '@/components/RoomIcon.vue'
 
 const uiStore = useUiStore()
 const loading = ref(false)
@@ -93,8 +94,49 @@ const roomFormState = reactive({
   grid_column: 0,
   owner_room: '',
   linked_room: '',
+  connecting_room: '',
   is_internal: false,
   notes: ''
+})
+
+const availableConnectingRooms = computed(() => {
+  const currentNum = String(roomFormState.room_number || '').trim()
+  if (!currentNum) {
+    return rooms.value
+      .slice()
+      .sort((a, b) => String(a.room_number).localeCompare(String(b.room_number), undefined, { numeric: true }))
+  }
+
+  const currentFloor = String(roomFormState.floor || '').trim()
+  const sameFloorRooms = rooms.value
+    .filter(rm => !currentFloor || String(rm.floor || '').trim() === currentFloor)
+    .slice()
+    .sort((a, b) => {
+      if (a.orders != null && b.orders != null) return a.orders - b.orders
+      return String(a.room_number).localeCompare(String(b.room_number), undefined, { numeric: true })
+    })
+
+  const currentIndex = sameFloorRooms.findIndex(rm => String(rm.room_number).trim() === currentNum)
+  if (currentIndex === -1) {
+    return sameFloorRooms.filter(rm => String(rm.room_number).trim() !== currentNum)
+  }
+
+  const adjacentRooms = []
+  if (currentIndex > 0) {
+    adjacentRooms.push(sameFloorRooms[currentIndex - 1])
+  }
+  if (currentIndex < sameFloorRooms.length - 1) {
+    adjacentRooms.push(sameFloorRooms[currentIndex + 1])
+  }
+
+  if (roomFormState.connecting_room) {
+    const existing = rooms.value.find(rm => String(rm.room_number).trim() === String(roomFormState.connecting_room).trim())
+    if (existing && !adjacentRooms.some(rm => rm.id === existing.id)) {
+      adjacentRooms.push(existing)
+    }
+  }
+
+  return adjacentRooms
 })
 
 // Column selector states and helper functions
@@ -111,6 +153,7 @@ const roomColumns = ref([
   { id: 'grid_row', label: 'Hàng', visible: true },
   { id: 'grid_column', label: 'Cột', visible: true },
   { id: 'is_internal', label: 'Phòng nội bộ', visible: true },
+  { id: 'connecting_room', label: 'Phòng thông nhau', visible: true },
   { id: 'notes', label: 'Ghi chú', visible: true },
   { id: 'action', label: 'Hành động', visible: true },
 ])
@@ -272,6 +315,7 @@ const openAddRoomModal = () => {
     grid_column: 0,
     owner_room: '',
     linked_room: '',
+    connecting_room: '',
     is_internal: false,
     notes: ''
   })
@@ -293,6 +337,7 @@ const openEditRoomModal = (room) => {
     grid_column: room.grid_column,
     owner_room: room.owner_room || '',
     linked_room: room.linked_room || '',
+    connecting_room: room.connecting_room || '',
     is_internal: room.is_internal,
     notes: room.notes || ''
   })
@@ -460,6 +505,7 @@ const toggleRoomInternal = async (room) => {
             <th v-if="isRoomColumnVisible('grid_row')" class="p-3 text-center">Hàng</th>
             <th v-if="isRoomColumnVisible('grid_column')" class="p-3 text-center">Cột</th>
             <th v-if="isRoomColumnVisible('is_internal')" class="p-3">Phòng nội bộ</th>
+            <th v-if="isRoomColumnVisible('connecting_room')" class="p-3 text-center">Phòng thông nhau</th>
             <th v-if="isRoomColumnVisible('notes')" class="p-3">Ghi chú</th>
             <th v-if="isRoomColumnVisible('action')" class="p-3 text-right">Hành động</th>
           </tr>
@@ -501,6 +547,7 @@ const toggleRoomInternal = async (room) => {
               <td v-if="isRoomColumnVisible('grid_row')" class="p-3"></td>
               <td v-if="isRoomColumnVisible('grid_column')" class="p-3"></td>
               <td v-if="isRoomColumnVisible('is_internal')" class="p-3"></td>
+              <td v-if="isRoomColumnVisible('connecting_room')" class="p-3"></td>
               <td v-if="isRoomColumnVisible('notes')" class="p-3"></td>
               <td v-if="isRoomColumnVisible('action')" class="p-3"></td>
             </tr>
@@ -549,6 +596,15 @@ const toggleRoomInternal = async (room) => {
                       class="w-8 h-4.5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-blue-500">
                     </div>
                   </label>
+                </td>
+
+                <td v-if="isRoomColumnVisible('connecting_room')" class="p-3 text-slate-600 font-semibold text-center">
+                  <span v-if="r.connecting_room"
+                    class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-800 text-xs font-bold border border-slate-200">
+                    <RoomIcon name="connecting-door" class="w-3.5 h-3.5 text-slate-700" />
+                    {{ r.connecting_room }}
+                  </span>
+                  <span v-else class="text-slate-400 font-normal">-</span>
                 </td>
 
                 <td v-if="isRoomColumnVisible('notes')" class="p-3 text-slate-400 italic max-w-[120px] truncate"
@@ -640,12 +696,24 @@ const toggleRoomInternal = async (room) => {
                 </select>
               </div>
             </div>
-            <div class="flex flex-col gap-1.5">
-              <span>TÊN LOẠI PHÒNG</span>
-              <select v-model="roomFormState.room_class_id"
-                class="border border-slate-200 rounded-lg p-2.5 bg-white font-semibold focus:outline-sky-500 text-sm">
-                <option v-for="c in roomClasses" :key="c.id" :value="c.id">{{ c.name }}</option>
-              </select>
+            <div class="grid grid-cols-2 gap-4">
+              <div class="flex flex-col gap-1.5">
+                <span>TÊN LOẠI PHÒNG</span>
+                <select v-model="roomFormState.room_class_id"
+                  class="border border-slate-200 rounded-lg p-2.5 bg-white font-semibold focus:outline-sky-500 text-sm">
+                  <option v-for="c in roomClasses" :key="c.id" :value="c.id">{{ c.name }}</option>
+                </select>
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <span>PHÒNG THÔNG NHAU</span>
+                <select v-model="roomFormState.connecting_room"
+                  class="border border-slate-200 rounded-lg p-2.5 bg-white font-semibold focus:outline-sky-500 text-sm">
+                  <option value="">-- Không có --</option>
+                  <option v-for="rm in availableConnectingRooms" :key="rm.id" :value="rm.room_number">
+                    Phòng {{ rm.room_number }} ({{ rm.room_class?.name || rm.room_class?.code || 'P' }})
+                  </option>
+                </select>
+              </div>
             </div>
           </div>
 
