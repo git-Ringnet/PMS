@@ -7,6 +7,7 @@ import { useRoomStore } from '@/stores/room-store'
 import RoomIcon from '@/components/RoomIcon.vue'
 import { fetchBookings, fetchBookingInitDropdowns, checkInRoom, unassignRoom, fetchRoomRateCodes, cancelBookingRoom, fetchSystemDate, fetchUserSettings, updateUserSettings, fetchHotelSettings, updateBookingRoom, splitBookingRoom, createBooking, lockRoomMove, unlockRoomMove } from '@/services/booking-service'
 import { fetchCompanies, fetchMarkets, fetchCustomerSources } from '@/services/company-service'
+import { updateRoomPlanBookingRoomStay } from '@/services/room-plan-service'
 import CancelReasonModal from './components/CancelReasonModal.vue'
 import { useAuthStore } from '@/stores/auth-store'
 import http from '@/services/http'
@@ -2724,7 +2725,29 @@ async function handleResizeMouseUp(event) {
         departure_date: checkOutStr
       }
 
-      const res = await updateBookingRoom(state.booking.bookingId, state.booking.bookingRoomId, payload)
+      let res
+      try {
+        res = await updateRoomPlanBookingRoomStay(state.booking.bookingId, state.booking.bookingRoomId, payload)
+      } catch (resizeError) {
+        const errorData = resizeError.response?.data
+        if (errorData?.code !== 'overbooking_confirmation_required') throw resizeError
+
+        const confirmed = await uiStore.confirm({
+          title: 'Cảnh báo overbooking',
+          message: errorData.message || 'Loại phòng đang bị over, bạn có muốn tiếp tục?',
+          confirmText: 'Tiếp tục',
+          cancelText: 'Hủy'
+        })
+        if (!confirmed) {
+          await loadBookings()
+          return
+        }
+
+        res = await updateRoomPlanBookingRoomStay(state.booking.bookingId, state.booking.bookingRoomId, {
+          ...payload,
+          confirm_overbooking: true
+        })
+      }
 
       if (res && res.data && res.data.success) {
         if (res.data.warning) {
