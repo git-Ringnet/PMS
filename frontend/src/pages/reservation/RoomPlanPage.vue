@@ -2152,6 +2152,7 @@ const processedBookings = computed(() => {
       endIndex: endIdx,
       leftRatio,
       span,
+      pastDaysOffset,
       checkInDateStr: checkInFormatted,
       checkInTimeStr,
       checkOutDateStr: checkOutFormatted,
@@ -4421,7 +4422,17 @@ function getRoomStatusIconName(item) {
                       @mousedown.stop="startResize(bk, 'end', $event)"
                     ></div>
 
-                    <div class="flex items-center gap-1 w-full overflow-hidden pb-1.5 pr-1">
+                    <!-- Booking labels follow their natural timeline and restore the original 11px inset when clipped. -->
+                    <div 
+                      class="flex items-center gap-1 pb-1.5 pr-1 transition-none"
+                      :class="bk.pastDaysOffset > 0 ? 'min-w-max' : 'w-full overflow-hidden'"
+                      :style="bk.pastDaysOffset > 0 ? {
+                        transform: bk.code === 'LOCK' ? undefined : 'translateX(11px)',
+                        marginLeft: bk.code === 'LOCK'
+                          ? `calc(-${bk.pastDaysOffset} * (100% / ${bk.span}))`
+                          : `calc(-${bk.pastDaysOffset} * 62px)`
+                      } : {}"
+                    >
                       <svg 
                         v-if="bk.isDoNotMove"
                         class="w-3 h-3 text-slate-700 shrink-0" 
@@ -4430,7 +4441,7 @@ function getRoomStatusIconName(item) {
                       >
                         <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" />
                       </svg>
-                      <span class="truncate flex-1 min-w-0">{{ bk.label }}</span>
+                      <span :class="bk.pastDaysOffset > 0 ? 'whitespace-nowrap' : 'truncate flex-1 min-w-0'">{{ bk.label }}</span>
                     </div>
 
                     <!-- Bottom Status Indicator: Phòng đến (Xanh lá 🟢) & Phòng đi (Đỏ 🔴) -->
