@@ -5451,47 +5451,79 @@ async function triggerAction(actionName) {
       message: confirmMsg,
       confirmText: 'Đồng ý', cancelText: 'Hủy'
     }).then(async (confirmed) => {
-      if (confirmed) {
-        try {
-          uiStore.showToast('Đang khôi phục booking...', 'info')
-          let res = isCancelledBooking.value
-            ? await restoreBooking(tab.dbId)
-            : await revertBookingNoshow(tab.dbId)
-          if (res.data?.success) {
-            removeClosedTabId(tab.dbId)
-            uiStore.showToast(res.data?.message || 'Khôi phục booking thành công!', 'success')
-            await loadBookings()
-          } else if (res.data?.needs_confirm) {
-            uiStore.confirm({
-              title: 'Cảnh báo Over booking',
-              message: res.data.message || 'Số lượng của loại phòng sau khi khôi phục đăng ký đang bị over, bạn có muốn tiếp tục?',
-              confirmText: 'Tiếp tục', cancelText: 'Hủy'
-            }).then(async (confirmedOver) => {
-              if (confirmedOver) {
-                try {
-                  uiStore.showToast('Đang khôi phục booking (force)...', 'info')
-                  let resForce = isCancelledBooking.value
-                    ? await restoreBooking(tab.dbId, { force: true })
-                    : await revertBookingNoshow(tab.dbId, { force: true })
-                  if (resForce.data?.success) {
-                    removeClosedTabId(tab.dbId)
-                    uiStore.showToast(resForce.data?.message || 'Khôi phục booking thành công!', 'success')
-                    await loadBookings()
-                  } else {
-                    uiStore.showToast(resForce.data?.message || 'Khôi phục booking thất bại!', 'error')
-                  }
-                } catch (err) {
-                  uiStore.showToast(err.response?.data?.message || 'Khôi phục booking thất bại!', 'error')
-                }
-              }
-            })
-          } else {
-            uiStore.showToast(res.data?.message || 'Khôi phục booking thất bại!', 'error')
+      if (!confirmed) return
+
+      try {
+        let clearDuplicates = false
+        uiStore.showToast('Đang khôi phục booking...', 'info')
+        let res = isCancelledBooking.value
+          ? await restoreBooking(tab.dbId)
+          : await revertBookingNoshow(tab.dbId)
+
+        // 1. Kiểm tra trùng số phòng (với booking khác hoặc đang bị khóa OOO/OOS)
+        if (res.data?.needs_duplicate_confirm) {
+          const confirmedClear = await uiStore.confirm({
+            title: 'Cảnh báo trùng số phòng',
+            message: res.data.message,
+            confirmText: 'Có',
+            cancelText: 'Không'
+          })
+
+          if (!confirmedClear) {
+            uiStore.showToast('Đã hủy khôi phục booking.', 'info')
+            return
           }
-        } catch (err) {
-          console.error(err)
-          uiStore.showToast(err.response?.data?.message || 'Khôi phục booking thất bại!', 'error')
+
+          clearDuplicates = true
+          uiStore.showToast('Đang khôi phục booking...', 'info')
+          try {
+            res = await restoreBooking(tab.dbId, { clear_duplicate_rooms: true })
+          } catch (errDup) {
+            uiStore.showToast(errDup.response?.data?.message || 'Khôi phục booking thất bại!', 'error')
+            return
+          }
         }
+
+        // 2. Kiểm tra over loại phòng
+        if (res.data?.needs_over_confirm || res.data?.needs_confirm) {
+          const confirmedOver = await uiStore.confirm({
+            title: 'Cảnh báo Over phòng',
+            message: res.data.message || 'Loại phòng đang bị over bạn có muốn tiếp tục',
+            confirmText: 'Có',
+            cancelText: 'Không'
+          })
+
+          if (!confirmedOver) {
+            uiStore.showToast('Đã hủy khôi phục booking.', 'info')
+            return
+          }
+
+          uiStore.showToast('Đang khôi phục booking...', 'info')
+          try {
+            const forcePayload = {
+              force: true,
+              force_over: true,
+              clear_duplicate_rooms: clearDuplicates,
+            }
+            res = isCancelledBooking.value
+              ? await restoreBooking(tab.dbId, forcePayload)
+              : await revertBookingNoshow(tab.dbId, forcePayload)
+          } catch (errOver) {
+            uiStore.showToast(errOver.response?.data?.message || 'Khôi phục booking thất bại!', 'error')
+            return
+          }
+        }
+
+        if (res.data?.success) {
+          removeClosedTabId(tab.dbId)
+          uiStore.showToast(res.data?.message || 'Khôi phục booking thành công!', 'success')
+          await loadBookings()
+        } else {
+          uiStore.showToast(res.data?.message || 'Khôi phục booking thất bại!', 'error')
+        }
+      } catch (err) {
+        console.error(err)
+        uiStore.showToast(err.response?.data?.message || 'Khôi phục booking thất bại!', 'error')
       }
     })
   } else if (actionName === 'Khôi phục phòng noshow') {

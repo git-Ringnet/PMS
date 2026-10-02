@@ -19,6 +19,48 @@
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
 
+## [2026-10-02] - Xử lý Khôi phục Booking hủy: Kiểm tra Over loại phòng (AllowOverRoomTypeRoomKind) và Trùng số phòng vật lý / Khóa phòng (RoomLock)
+### Module: Đặt phòng / Khôi phục Booking ([BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [RestoreBookingConflictTest.php](file:///d:/PMS/backend/tests/Feature/RestoreBookingConflictTest.php))
+
+- **Yêu cầu & Nghiệp vụ**:
+  - Khi khôi phục một booking bị hủy (Cancelled booking), kiểm tra 2 điều kiện nghiêm ngặt:
+    1. **Trùng số phòng vật lý (Room Conflict)**:
+       - Tuyệt đối không được xảy ra trùng số phòng (kể cả khi `AllowOverRoomTypeRoomKind = 1`).
+       - Nguồn gây trùng phòng gồm:
+         a) Số phòng trùng với `BookingRoom` của booking khác đang hoạt động (`BOOKED`, `CHECKED_IN`, `CHECKED_OUT`).
+         b) Số phòng trùng với phòng đang bị khóa OOO/OOS (`RoomLock`, `is_active` in `[1, 2]`).
+       - Format cảnh báo:
+         `- R: {room_number} - BK: {booking_code}` (trùng booking khác)
+         `- R: {room_number}` (trùng do khóa OOO/OOS)
+       - Thông báo: *"Đăng ký được khôi phục có số phòng đã được đặt bởi đăng ký khác hoặc đang bị khóa. Bạn có muốn tiếp tục? (Số phòng của những phòng bị trùng sẽ được xóa khi khôi phục)"* kèm danh sách phòng trùng.
+       - Nếu chọn Có (`clear_duplicate_rooms: true`): Khôi phục booking, tự động xóa số phòng (`room_number = null`) của những phòng bị trùng, giữ nguyên phòng không trùng.
+       - Nếu chọn Không: Hủy thao tác, không khôi phục.
+    2. **Kiểm tra Over loại phòng (`AllowOverRoomTypeRoomKind`)**:
+       - `AllowOverRoomTypeRoomKind = 1`: Cho phép khôi phục nhưng hiển thị cảnh báo xác nhận *"Loại phòng đang bị over bạn có muốn tiếp tục"*. Chọn Có (`force_over: true`) -> Khôi phục. Chọn Không -> Dừng lại.
+       - `AllowOverRoomTypeRoomKind = 0`: Chặn không cho khôi phục và thông báo lỗi: *"Loại phòng đang bị over không thể khôi phục booking"*.
+- **Backend đã xử lý ([BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php))**:
+  - Import model `RoomLock`.
+  - Phương thức `restore(Request $request, $id)`:
+    - Bổ sung truy vấn kiểm tra trùng số phòng với bảng `room_locks` (`is_active` in `[1, 2]`, giao thoa thời gian lưu trú).
+    - Tạo danh sách `conflict_lines` với định dạng chuẩn `- R: ... - BK: ...` hoặc `- R: ...`.
+    - Trả về `needs_duplicate_confirm: true` khi có trùng và chưa gửi `clear_duplicate_rooms`.
+    - Kiểm tra Over phòng: nếu `AllowOverRoomTypeRoomKind = 0` và over -> trả về HTTP 422 `blocked_by_over: true` cùng câu thông báo: *"Loại phòng đang bị over không thể khôi phục booking"*. Nếu `AllowOverRoomTypeRoomKind = 1` và over -> trả về `needs_over_confirm: true` khi chưa có `force_over`.
+    - Trong DB Transaction: Nếu có `clear_duplicate_rooms: true`, tự động xóa `room_number = null` cho các phòng bị trùng trong danh sách khôi phục.
+- **Frontend đã xử lý ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))**:
+  - Tại action `'Khôi phục BK'`:
+    - Xử lý xác nhận tuần tự 2 bước:
+      - Bước 1: Nếu backend trả về `needs_duplicate_confirm` -> hiển thị confirm dialog với danh sách phòng trùng. Nếu người dùng chọn Không -> dừng lại thông báo đã hủy. Nếu chọn Có -> kích hoạt khôi phục kèm cờ `clear_duplicate_rooms: true`.
+      - Bước 2: Nếu backend trả về `needs_over_confirm` -> hiển thị confirm dialog cảnh báo loại phòng over. Nếu người dùng chọn Không -> hủy thao tác. Nếu chọn Có -> kích hoạt tiếp với `force_over: true, clear_duplicate_rooms: clearDuplicates`.
+- **Kiểm thử**:
+  - Backend: Viết bộ Feature Test [RestoreBookingConflictTest.php](file:///d:/PMS/backend/tests/Feature/RestoreBookingConflictTest.php) bao phủ đầy đủ 5 test cases:
+    1. Trùng số phòng với booking đang hoạt động -> trả về `needs_duplicate_confirm` kèm `- R: 106 - BK: GAL...`, chọn Có -> xóa số phòng về null và khôi phục thành công.
+    2. Trùng số phòng do phòng bị khóa OOO/OOS -> trả về `needs_duplicate_confirm` kèm `- R: 106`, chọn Có -> xóa số phòng về null và khôi phục thành công.
+    3. Over loại phòng khi `AllowOverRoomTypeRoomKind = 0` -> chặn lỗi 422 với thông báo yêu cầu.
+    4. Over loại phòng khi `AllowOverRoomTypeRoomKind = 1` -> trả về `needs_over_confirm`, gửi `force_over = true` -> khôi phục thành công.
+    5. Kịch bản kết hợp: vừa trùng phòng vừa over loại phòng -> xác nhận 2 bước liên tiếp -> khôi phục thành công.
+    - Kết quả: **5/5 tests PASSED (27 assertions)**.
+  - Frontend: `npm run build` -> hoàn thành thành công không lỗi (7.28s).
+
 ## [2026-10-01] - Điều chỉnh Tooltip Booking và Submenu Context Menu trên Sơ đồ phòng (Room Map - Dòng 293)
 ### Module: Sơ đồ phòng ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
 
