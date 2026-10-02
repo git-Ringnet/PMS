@@ -228,6 +228,7 @@ class NightAuditController extends Controller
         $latestRun = NightAuditRun::with('steps')->latest('id')->first();
         $isRunning = (bool) ($settings?->is_night_audit_running) ||
             ($latestRun && $latestRun->status === 'running' && $latestRun->actual_started_at && $latestRun->actual_started_at->gte(now()->subMinutes(15)));
+        $activeStep = \Illuminate\Support\Facades\Cache::get('night_audit_active_step');
 
         return response()->json([
             'success' => true,
@@ -235,6 +236,7 @@ class NightAuditController extends Controller
                 'system_date' => $systemDate,
                 'already_rolled_today' => $alreadyRolledToday,
                 'is_running' => $isRunning,
+                'active_step' => $activeStep,
                 'latest_run' => $latestRun ? [
                     'id'                 => $latestRun->id,
                     'status'             => $latestRun->status,
@@ -555,7 +557,7 @@ class NightAuditController extends Controller
             $settings->update(['is_night_audit_running' => true]);
         }
         $startedAtMs = (int) (microtime(true) * 1000);
-        $stepDelayUs = app()->environment('testing') ? 0 : 250000;
+        $stepDelayUs = app()->environment('testing') ? 0 : 550000;
 
         $notifyStep = function (int $order, string $code, string $nameEn, int $percent) use (
             $username,
@@ -564,6 +566,16 @@ class NightAuditController extends Controller
             &$run,
             $stepDelayUs
         ) {
+            \Illuminate\Support\Facades\Cache::put('night_audit_active_step', [
+                'step_order'  => $order,
+                'step_code'   => $code,
+                'name_en'     => $nameEn,
+                'percent'     => $percent,
+                'username'    => $username,
+                'source_date' => $systemDate->toDateString(),
+                'target_date' => $nextDate->toDateString(),
+            ], 60);
+
             event(new NightAuditUpdated('progress', "Step {$order}: {$nameEn}", [
                 'run_id'     => $run?->id,
                 'step_order' => $order,
@@ -1018,6 +1030,7 @@ class NightAuditController extends Controller
             ], 500);
 
         } finally {
+            \Illuminate\Support\Facades\Cache::forget('night_audit_active_step');
             if ($settings) {
                 $settings->update(['is_night_audit_running' => false]);
             }

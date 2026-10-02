@@ -46,6 +46,31 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
 
   let autoCloseTimer = null
   let redirectTimer = null
+  let pollTimer = null
+
+  // BroadcastChannel API: Đồng bộ tức thì 0ms giữa các tabs trong cùng trình duyệt
+  const bc = (typeof window !== 'undefined' && 'BroadcastChannel' in window)
+    ? new BroadcastChannel('pms_night_audit_channel')
+    : null
+
+  if (bc) {
+    bc.onmessage = (event) => {
+      const data = event.data || {}
+      if (data.type === 'progress') {
+        if (!isInitiator.value) {
+          handleProgressUpdate(data.payload, false)
+        }
+      } else if (data.type === 'completed') {
+        if (!isInitiator.value) {
+          handleCompleted(data.payload, false)
+        }
+      } else if (data.type === 'failed') {
+        if (!isInitiator.value) {
+          handleFailed(data.payload, false)
+        }
+      }
+    }
+  }
 
   // Computed
   const currentRunningStepText = computed(() => {
@@ -78,6 +103,7 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
       clearTimeout(redirectTimer)
       redirectTimer = null
     }
+    stopPolling()
   }
 
   function startAutoCloseCountdown() {
@@ -117,14 +143,17 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
       uiStore.showToast('Sang ngày thành công! Vui lòng đăng nhập lại.', 'success')
       router.push('/login')
       showModal.value = false
-    }, 2500)
+    }, 3000)
   }
 
   /**
    * Cập nhật từng bước chạy từ Backend (Server-driven realtime progress)
    */
-  function handleProgressUpdate(payload = {}) {
-    clearAllTimers()
+  function handleProgressUpdate(payload = {}, broadcastToTabs = true) {
+    if (autoCloseTimer) {
+      clearInterval(autoCloseTimer)
+      autoCloseTimer = null
+    }
     showModal.value = true
     isRunning.value = true
     auditRunStatus.value = 'running'
@@ -155,12 +184,18 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
         s.status = 'pending'
       }
     })
+
+    if (broadcastToTabs && bc) {
+      try {
+        bc.postMessage({ type: 'progress', payload })
+      } catch (_) {}
+    }
   }
 
   /**
    * Nhận sự kiện hoàn tất Sang ngày từ Backend
    */
-  async function handleCompleted(payload = {}) {
+  async function handleCompleted(payload = {}, broadcastToTabs = true) {
     clearAllTimers()
     showModal.value = true
     isRunning.value = false
@@ -176,6 +211,12 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
       s.status = 'succeeded'
     })
 
+    if (broadcastToTabs && bc) {
+      try {
+        bc.postMessage({ type: 'completed', payload })
+      } catch (_) {}
+    }
+
     uiStore.showToast('Đã chuyển sang ngày tiếp theo thành công!', 'success')
     await completeAndLogout()
   }
@@ -183,7 +224,7 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
   /**
    * Nhận sự kiện thất bại từ Backend
    */
-  function handleFailed(errOrPayload = {}) {
+  function handleFailed(errOrPayload = {}, broadcastToTabs = true) {
     clearAllTimers()
     showModal.value = true
     isRunning.value = false
@@ -220,41 +261,109 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
       }
     }
 
+    if (broadcastToTabs && bc) {
+      try {
+        bc.postMessage({
+          type: 'failed',
+          payload: {
+            error_message: errMsg,
+            failed_step: failedStep,
+            error_details: errorDetails
+          }
+        })
+      } catch (_) {}
+    }
+
     uiStore.showToast(errMsg, 'error')
     startAutoCloseCountdown()
   }
 
   /**
+   * Cơ chế Polling kiểm tra trạng thái
+   */
+  function startPolling() {
+    if (pollTimer) return
+    pollTimer = setInterval(async () => {
+      if (!isRunning.value && auditRunStatus.value !== 'running') {
+        stopPolling()
+        return
+      }
+      await checkCurrentStatus(false)
+    }, 1500)
+  }
+
+  function stopPolling() {
+    if (pollTimer) {
+      clearInterval(pollTimer)
+      pollTimer = null
+    }
+  }
+
+  /**
+   * Kiểm tra trạng thái trực tiếp từ server
+   */
+  async function checkCurrentStatus(shouldStartPolling = true) {
+    try {
+      const res = await http.get('/night-audit/check-status')
+      if (res.data?.success && res.data?.data) {
+        const data = res.data.data
+        if (data.is_running) {
+          const active = data.active_step
+          const latestRun = data.latest_run
+          handleProgressUpdate({
+            username: active?.username || latestRun?.username || 'Hệ thống',
+            step_order: active?.step_order || (latestRun ? 1 : 1),
+            percent: active?.percent || (active?.step_order ? Math.round((active.step_order / 18) * 100) : 10),
+          }, false)
+          if (shouldStartPolling) {
+            startPolling()
+          }
+        } else if (isRunning.value && auditRunStatus.value === 'running') {
+          stopPolling()
+          if (data.latest_run?.status === 'succeeded') {
+            await handleCompleted(data.latest_run, false)
+          } else if (data.latest_run?.status === 'failed') {
+            handleFailed(data.latest_run, false)
+          }
+        }
+      }
+    } catch (_) {
+      // Bỏ qua lỗi mạng
+    }
+  }
+
+  /**
    * Khởi chạy Sang ngày từ phía Initiator
    */
-  async function triggerNightAudit({ occupiedToDirty = true, emptyToInspect = true } = {}) {
+  async function triggerNightAudit({ occupiedToDirty = true, emptyToInspect = true, forceRerun = false } = {}) {
     clearAllTimers()
     isInitiator.value = true
     executorUsername.value = authStore.user?.username || authStore.user?.name || 'system'
 
-    // Bật modal ngay từ bước 1
+    // Bật modal ngay từ bước 1 và phát thông báo tức thì sang các tab khác trong cùng trình duyệt
     handleProgressUpdate({
       username: executorUsername.value,
       step_order: 1,
       percent: 6
-    })
+    }, true)
 
     try {
       const res = await http.post('/night-audit/run', {
         occupied_to_dirty: occupiedToDirty,
-        empty_to_inspect: emptyToInspect
+        empty_to_inspect: emptyToInspect,
+        force_rerun: forceRerun
       })
 
       if (res.data && res.data.success) {
-        await handleCompleted(res.data)
+        await handleCompleted(res.data, true)
         return { success: true, data: res.data }
       } else {
         const errMsg = res.data?.message || 'Không thể chuyển ngày hệ thống.'
-        handleFailed({ message: errMsg })
+        handleFailed({ message: errMsg }, true)
         return { success: false, message: errMsg }
       }
     } catch (err) {
-      handleFailed(err)
+      handleFailed(err, true)
       return { success: false, error: err }
     }
   }
@@ -288,6 +397,9 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
     finishStepText,
     triggerNightAudit,
     closeModal,
+    checkCurrentStatus,
+    startPolling,
+    stopPolling,
     handleProgressUpdate,
     handleCompleted,
     handleFailed,
