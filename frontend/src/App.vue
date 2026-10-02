@@ -18,16 +18,46 @@ const nightAuditStore = useNightAuditStore()
 const noLayout = computed(() => !route.name || !!route.meta.noLayout)
 
 onMounted(async () => {
-  // Lấy trạng thái ban đầu của Night Audit từ backend khi reload trang
+  // Lấy trạng thái ban đầu của Night Audit từ backend khi reload trang hoặc login
   try {
-    const res = await http.get('/hotel-settings')
+    const res = await http.get('/night-audit/check-status')
     if (res.data && res.data.success && res.data.data) {
-      if (res.data.data.is_night_audit_running && !nightAuditStore.isRunning) {
-        nightAuditStore.handleRemoteStarted({ username: 'Hệ thống' })
+      const data = res.data.data
+      const latestRun = data.latest_run
+      if (latestRun) {
+        const startMs = latestRun.started_at_ms || (latestRun.started_at ? new Date(latestRun.started_at).getTime() : 0)
+        const elapsed = startMs > 0 ? (Date.now() - startMs) : 999999
+        // Nếu tiến trình đang chạy hoặc vừa hoàn thành trong vòng 8s
+        if (data.is_running || elapsed < 8000) {
+          if (!nightAuditStore.isRunning) {
+            nightAuditStore.handleRemoteStarted({
+              username: latestRun.username || 'Hệ thống',
+              started_at: startMs > 0 ? startMs : Date.now()
+            })
+            if (latestRun.status === 'succeeded') {
+              nightAuditStore.handleRemoteCompleted({
+                username: latestRun.username || 'Hệ thống',
+                started_at: startMs
+              })
+            } else if (latestRun.status === 'failed') {
+              nightAuditStore.handleRemoteFailed({
+                username: latestRun.username || 'Hệ thống',
+                error_message: latestRun.error_message,
+                failed_step: latestRun.failed_step
+              })
+            }
+          }
+        }
       }
     }
   } catch (e) {
-    console.error(e)
+    // Fallback qua hotel-settings nếu check-status chưa sẵn sàng
+    try {
+      const hRes = await http.get('/hotel-settings')
+      if (hRes.data?.data?.is_night_audit_running && !nightAuditStore.isRunning) {
+        nightAuditStore.handleRemoteStarted({ username: 'Hệ thống' })
+      }
+    } catch (_) {}
   }
 
   // Lắng nghe qua Echo cho tất cả các tài khoản đang đăng nhập

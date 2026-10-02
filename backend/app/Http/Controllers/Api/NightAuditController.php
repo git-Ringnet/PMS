@@ -238,9 +238,11 @@ class NightAuditController extends Controller
                 'latest_run' => $latestRun ? [
                     'id'                 => $latestRun->id,
                     'status'             => $latestRun->status,
+                    'username'           => $latestRun->username,
                     'source_system_date' => $latestRun->source_system_date?->toDateString(),
                     'target_system_date' => $latestRun->target_system_date?->toDateString(),
                     'started_at'         => $latestRun->actual_started_at?->toIso8601String(),
+                    'started_at_ms'      => $latestRun->actual_started_at ? (int) ($latestRun->actual_started_at->getTimestamp() * 1000) : null,
                     'finished_at'        => $latestRun->actual_finished_at?->toIso8601String(),
                     'error_message'      => $latestRun->error_message,
                     'steps'              => $latestRun->steps->map(fn($s) => [
@@ -552,10 +554,12 @@ class NightAuditController extends Controller
         if ($settings) {
             $settings->update(['is_night_audit_running' => true]);
         }
+        $startedAtMs = (int) (microtime(true) * 1000);
         event(new NightAuditUpdated('started', 'Hệ thống đang tiến hành sang ngày mới...', [
             'username'    => $username,
             'source_date' => $systemDate->toDateString(),
             'target_date' => $nextDate->toDateString(),
+            'started_at'  => $startedAtMs,
         ]));
 
         // 3. Tạo bản ghi Run TRƯỚC transaction (để đảm bảo run record tồn tại kể cả khi transaction nghiệp vụ rollback)
@@ -887,11 +891,13 @@ class NightAuditController extends Controller
                 'source_date' => $systemDate->toDateString(),
                 'target_date' => $nextDate->toDateString(),
                 'run_id'      => $run->id,
+                'started_at'  => $startedAtMs,
             ]));
 
             return response()->json([
                 'success'           => true,
                 'run_id'            => $run->id,
+                'started_at'        => $startedAtMs,
                 'source_date'       => $systemDate->toDateString(),
                 'target_date'       => $nextDate->toDateString(),
                 'status'            => 'succeeded',
@@ -930,6 +936,7 @@ class NightAuditController extends Controller
                 'error_message' => $e->getMessage(),
                 'error_details' => $errorDetails,
                 'rollback_done' => true,
+                'started_at'    => $startedAtMs ?? (int) (microtime(true) * 1000),
             ]));
 
             return response()->json([

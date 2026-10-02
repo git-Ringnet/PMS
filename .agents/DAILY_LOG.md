@@ -33,10 +33,10 @@
   - [`NightAuditUpdated.php`](file:///d:/PMS/backend/app/Events/NightAuditUpdated.php): Bổ sung `username`, `source_date`, `target_date`, `failed_step`, `error_details`, `rollback_done` vào WebSocket event broadcast.
   - [`NightAuditSnapshotService.php`](file:///d:/PMS/backend/app/Services/NightAuditSnapshotService.php): Thay thế fallback `'admin'` thành `'system'`.
   - [`NightAuditTest.php`](file:///d:/PMS/backend/tests/Feature/NightAuditTest.php): Bổ sung role `super_admin` và kiểm tra dynamic username `test_auditor`. Passed 11/11 tests (67 assertions).
-- **Frontend đã xử lý**:
-  - [`night-audit-store.js`](file:///d:/PMS/frontend/src/stores/night-audit-store.js): Store Pinia quản lý tiến trình toàn cục, animation 18 bước, xử lý socket realtime cho cả người chạy lẫn người xem (`handleRemoteStarted`, `handleRemoteCompleted`, `handleRemoteFailed`), cơ chế đếm ngược 10 giây tự đóng khi gặp lỗi.
+  - [`night-audit-store.js`](file:///d:/PMS/frontend/src/stores/night-audit-store.js): Tái cấu trúc sang cơ chế Timeline thời gian thực đồng bộ (`TIMELINE_DURATION_MS = 7000ms`, `stepSchedule` 17 bước). Khắc phục triệt để lỗi tài khoản xem nhảy cóc lên Step 18 quá sớm khi nhận WebSocket event `completed` trong khi tài khoản bấm vẫn đang chạy các bước trước. Hai máy luôn hiển thị đồng nhịp 100% từng bước và cùng chạm mốc Step 18.
+  - [`NightAuditController.php`](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php): Đính kèm `started_at` (timestamp milliseconds) vào WebSocket events và response `checkStatus` để các máy đồng bộ chung một trục thời gian.
   - [`NightAuditProgressModal.vue`](file:///d:/PMS/frontend/src/components/NightAuditProgressModal.vue): Component modal tiến trình toàn cục nền trắng chuẩn tham chiếu, badge đếm ngược 10s, bảng hiển thị phòng lỗi phân loại rõ phòng đến/phòng đi kèm mã booking và hướng dẫn khắc phục.
-  - [`App.vue`](file:///d:/PMS/frontend/src/App.vue): Nhúng `<NightAuditProgressModal />` ở cấp root và lắng nghe kênh WebSocket Echo `pms-channel` event `.night.audit.updated`.
+  - [`App.vue`](file:///d:/PMS/frontend/src/App.vue): Nhúng `<NightAuditProgressModal />` ở cấp root, lắng nghe WebSocket Echo `pms-channel`, tự động tính toán thời gian `elapsed` khi tài khoản khác vừa đăng nhập để nhảy ngay vào đúng bước đang chạy đồng bộ với tài khoản thực hiện.
   - [`DayClosePage.vue`](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue): Kiểm tra quyền thực thi `canExecuteNightAudit`, kết nối nút "Sang ngày" với store `nightAuditStore.triggerNightAudit`, loại bỏ khối modal duplicate và các biến cục bộ thừa.
 - **Kiểm thử**:
   - Backend: `php artisan test tests/Feature/NightAuditTest.php` -> 11/11 tests passed.
