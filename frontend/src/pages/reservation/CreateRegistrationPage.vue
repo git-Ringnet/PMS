@@ -194,6 +194,18 @@ function removeClosedTabId(dbId) {
   localStorage.setItem(CLOSED_TABS_KEY, JSON.stringify(ids))
 }
 
+const LAST_ACTIVE_BOOKING_KEY = 'pms_last_active_booking_id'
+function getLastActiveBookingId() {
+  return sessionStorage.getItem(LAST_ACTIVE_BOOKING_KEY)
+}
+function setLastActiveBookingId(id) {
+  if (id) {
+    sessionStorage.setItem(LAST_ACTIVE_BOOKING_KEY, String(id))
+  } else {
+    sessionStorage.removeItem(LAST_ACTIVE_BOOKING_KEY)
+  }
+}
+
 // ==================== MODAL STATES ====================
 const isModalOpen = ref(false)
 const isEditModal = ref(false)
@@ -2048,6 +2060,11 @@ watch(activeTabId, (newId, oldId) => {
   if (newId !== oldId) {
     selectedRows.value = []
     loadActiveBookingNotifications()
+    if (activeTab.value?.dbId) {
+      setLastActiveBookingId(activeTab.value.dbId)
+    } else if (activeTab.value?.id === 'NEW_BOOKING') {
+      setLastActiveBookingId('NEW_BOOKING')
+    }
   }
 })
 
@@ -2250,13 +2267,15 @@ async function loadBookings() {
 
     // Kiểm tra lần đầu vào trang: closedIds chưa có trong localStorage
     const isFirstLoad = localStorage.getItem(CLOSED_TABS_KEY) === null
+    const savedActiveId = getLastActiveBookingId()
 
     if (isFirstLoad && allList.length > 0) {
-      // Lần đầu: chỉ mở 1 booking mới nhất (id lớn nhất), KHÔNG đóng các booking khác
-      const latestBooking = allList.reduce((max, b) => b.id > max.id ? b : max, allList[0])
+      // Lần đầu: mở 1 booking (ưu tiên booking đã lưu từ session trước hoặc mới nhất)
+      const targetBooking = (savedActiveId && allList.find(b => String(b.id) === String(savedActiveId) || String(b.booking_code) === String(savedActiveId)))
+        || allList.reduce((max, b) => b.id > max.id ? b : max, allList[0])
       // Khởi tạo localStorage với mảng rỗng (không đánh dấu ai là closed)
       localStorage.setItem(CLOSED_TABS_KEY, JSON.stringify([]))
-      replaceBookingTab(latestBooking)
+      replaceBookingTab(targetBooking)
       nextTick(() => {
         loadActiveBookingNotifications()
       })
@@ -2268,7 +2287,10 @@ async function loadBookings() {
       const currentBooking = currentTab?.dbId
         ? list.find(b => String(b.id) === String(currentTab.dbId))
         : null
-      const nextBooking = currentBooking || (currentTab?.id === 'NEW_BOOKING'
+      const savedBooking = (!currentBooking && savedActiveId)
+        ? list.find(b => String(b.id) === String(savedActiveId) || String(b.booking_code) === String(savedActiveId))
+        : null
+      const nextBooking = currentBooking || savedBooking || (currentTab?.id === 'NEW_BOOKING'
         ? null
         : list.reduce((max, b) => !max || b.id > max.id ? b : max, null))
 
@@ -2277,9 +2299,10 @@ async function loadBookings() {
         nextTick(() => {
           loadActiveBookingNotifications()
         })
-      } else if (currentTab?.id === 'NEW_BOOKING') {
-        tabs.value = [currentTab]
-        activeTabId.value = currentTab.id
+      } else if (currentTab?.id === 'NEW_BOOKING' || savedActiveId === 'NEW_BOOKING') {
+        const blankTab = currentTab || makeBlankTab()
+        tabs.value = [blankTab]
+        activeTabId.value = blankTab.id
       } else {
         // Không còn tab nào → empty state, KHÔNG tạo blank tab
         tabs.value = []
@@ -2661,6 +2684,9 @@ function replaceBookingTab(booking) {
   const nextTab = { ...bookingToTab(booking) }
   tabs.value = [nextTab]
   activeTabId.value = nextTab.id
+  if (nextTab.dbId) {
+    setLastActiveBookingId(nextTab.dbId)
+  }
   return nextTab
 }
 
@@ -2673,10 +2699,13 @@ function handleCloseTab(tabId, event) {
   tabs.value = tabs.value.filter(t => t.id !== tabId)
   if (activeTabId.value === tabId) {
     if (tabs.value.length > 0) {
-      activeTabId.value = tabs.value[Math.max(0, index - 1)].id
+      const nextTab = tabs.value[Math.max(0, index - 1)]
+      activeTabId.value = nextTab.id
+      setLastActiveBookingId(nextTab.dbId || null)
     } else {
       // Đóng tab cuối → empty state, KHÔNG tạo blank tab
       activeTabId.value = null
+      setLastActiveBookingId(null)
     }
   }
 }

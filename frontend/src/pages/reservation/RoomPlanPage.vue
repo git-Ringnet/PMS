@@ -376,6 +376,46 @@ function closeRoomTypePopover() {
   showRoomTypePopover.value = false
 }
 
+const ROOM_PLAN_SCROLL_TOP_KEY = 'pms_roomplan_scroll_top'
+const ROOM_PLAN_SCROLL_LEFT_KEY = 'pms_roomplan_scroll_left'
+const ROOM_PLAN_START_DATE_KEY = 'pms_roomplan_start_date'
+const ROOM_PLAN_END_DATE_KEY = 'pms_roomplan_end_date'
+
+let roomPlanScrollSaveTimeout = null
+function handleRoomPlanScroll(event) {
+  hideTooltip()
+  clearTimeout(roomPlanScrollSaveTimeout)
+  roomPlanScrollSaveTimeout = setTimeout(() => {
+    if (roomPlanScrollContainer.value) {
+      sessionStorage.setItem(ROOM_PLAN_SCROLL_TOP_KEY, String(roomPlanScrollContainer.value.scrollTop))
+      sessionStorage.setItem(ROOM_PLAN_SCROLL_LEFT_KEY, String(roomPlanScrollContainer.value.scrollLeft))
+    }
+  }, 100)
+}
+
+function restoreRoomPlanScrollPosition() {
+  const savedTop = sessionStorage.getItem(ROOM_PLAN_SCROLL_TOP_KEY)
+  const savedLeft = sessionStorage.getItem(ROOM_PLAN_SCROLL_LEFT_KEY)
+  if (savedTop === null && savedLeft === null) return
+
+  const applyScroll = () => {
+    if (!roomPlanScrollContainer.value) return false
+    if (savedTop !== null) {
+      roomPlanScrollContainer.value.scrollTop = Number(savedTop)
+    }
+    if (savedLeft !== null) {
+      roomPlanScrollContainer.value.scrollLeft = Number(savedLeft)
+    }
+    return true
+  }
+
+  nextTick(() => {
+    applyScroll()
+    setTimeout(applyScroll, 50)
+    setTimeout(applyScroll, 200)
+  })
+}
+
 function saveDateRange() {
   const start = new Date(tempStartDateStr.value)
   const end = new Date(tempEndDateStr.value)
@@ -390,6 +430,8 @@ function saveDateRange() {
   startDate.value = start
   endDate.value = end
   dateRangeText.value = `${formatDateToDMY(formatDateStr(start))} ~ ${formatDateToDMY(formatDateStr(end))}`
+  sessionStorage.setItem(ROOM_PLAN_START_DATE_KEY, formatDateStr(start))
+  sessionStorage.setItem(ROOM_PLAN_END_DATE_KEY, formatDateStr(end))
   showDatePickerPopover.value = false
 }
 
@@ -1486,6 +1528,7 @@ async function loadBookings() {
     if (requestId === loadBookingsRequestId) {
       loadingBookings.value = false
       emit('loading', false)
+      restoreRoomPlanScrollPosition()
     }
   }
 }
@@ -1572,10 +1615,17 @@ onMounted(async () => {
     console.error('Failed to load initial settings:', err)
   }
 
-  // 2. Initialize date range: system date + 30 days
-  const baseDate = sysDateStr ? new Date(sysDateStr) : new Date()
-  const endDateVal = new Date(baseDate)
+  // 2. Initialize date range: restore from sessionStorage if available, else system date + 30 days
+  const savedStartDate = sessionStorage.getItem(ROOM_PLAN_START_DATE_KEY)
+  const savedEndDate = sessionStorage.getItem(ROOM_PLAN_END_DATE_KEY)
+  let baseDate = sysDateStr ? new Date(sysDateStr) : new Date()
+  let endDateVal = new Date(baseDate)
   endDateVal.setDate(baseDate.getDate() + 29)
+
+  if (savedStartDate && savedEndDate && !isNaN(new Date(savedStartDate).getTime()) && !isNaN(new Date(savedEndDate).getTime())) {
+    baseDate = new Date(savedStartDate)
+    endDateVal = new Date(savedEndDate)
+  }
 
   suppressDateRangeReload = true
   startDate.value = baseDate
@@ -1594,6 +1644,7 @@ onMounted(async () => {
   loadBookings()
   loadCompanies()
   loadRateCodes()
+  restoreRoomPlanScrollPosition()
   
   window.addEventListener('click', closeContextMenu)
   window.addEventListener('click', closePlanSettings)
@@ -1634,6 +1685,10 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   stopQuickBookingDrag()
   stopBookingPointerDrag()
+  if (roomPlanScrollContainer.value) {
+    sessionStorage.setItem(ROOM_PLAN_SCROLL_TOP_KEY, String(roomPlanScrollContainer.value.scrollTop))
+    sessionStorage.setItem(ROOM_PLAN_SCROLL_LEFT_KEY, String(roomPlanScrollContainer.value.scrollLeft))
+  }
   window.removeEventListener('click', closeContextMenu)
   window.removeEventListener('click', closePlanSettings)
   window.removeEventListener('click', closeDatePickerPopover)
@@ -1655,6 +1710,14 @@ onBeforeUnmount(() => {
 watch([startDate, endDate], () => {
   if (suppressDateRangeReload) return
   loadBookings()
+})
+
+let isInitialPlanScrollRestored = false
+watch(dbRooms, (newVal) => {
+  if (!isInitialPlanScrollRestored && newVal && newVal.length > 0) {
+    restoreRoomPlanScrollPosition()
+    isInitialPlanScrollRestored = true
+  }
 })
 
 // Auto-save user settings on change (debounced)
