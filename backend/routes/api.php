@@ -79,12 +79,12 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     // API Day Close / Night Audit
     Route::prefix('night-audit')->group(function () {
         Route::get('/check-status', [NightAuditController::class, 'checkStatus']);
-        Route::post('/late-check-in', [NightAuditController::class, 'lateCheckIn']);
-        Route::post('/no-show', [NightAuditController::class, 'noShowRoom']);
-        Route::post('/extend-stay', [NightAuditController::class, 'extendStay']); // Bug B
-        Route::post('/split-old-services', [NightAuditController::class, 'splitOldServices']);
+        Route::post('/late-check-in', [NightAuditController::class, 'lateCheckIn'])->middleware('permission:fo.night_audit');
+        Route::post('/no-show', [NightAuditController::class, 'noShowRoom'])->middleware('permission:fo.night_audit,fo.booking.noshow');
+        Route::post('/extend-stay', [NightAuditController::class, 'extendStay'])->middleware('permission:fo.night_audit');
+        Route::post('/split-old-services', [NightAuditController::class, 'splitOldServices'])->middleware('permission:fo.night_audit');
 
-        Route::post('/run', [NightAuditController::class, 'runNightAudit']);
+        Route::post('/run', [NightAuditController::class, 'runNightAudit'])->middleware('permission:fo.night_audit');
     });
 
 
