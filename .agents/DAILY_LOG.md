@@ -29,18 +29,21 @@
 - **Backend đã xử lý**:
   - [`RolePermissionSeeder.php`](file:///d:/PMS/backend/database/seeders/RolePermissionSeeder.php): Thêm permission `fo.night_audit` ('Sang ngày / Đóng ngày hệ thống'), gán cho các role `super_admin`, `branch_admin`, `fo_manager`.
   - [`routes/api.php`](file:///d:/PMS/backend/routes/api.php): Gắn middleware `permission:fo.night_audit` bảo vệ các route `/night-audit/run`, `late-check-in`, `no-show`, `extend-stay`.
-  - [`NightAuditController.php`](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php): Thay thế hardcode `'admin'` bằng `Auth::user()?->username ?: (Auth::user()?->name ?: 'system')`. Tại bước 1 PRE_CHECK, truy vấn chi tiết các phòng vướng mắc và đính kèm vào `error_details` (`pending_checkins`, `pending_checkouts`, `hint`). Khối catch phát broadcast realtime và trả JSON response chứa `error_details`.
-  - [`NightAuditUpdated.php`](file:///d:/PMS/backend/app/Events/NightAuditUpdated.php): Bổ sung `username`, `source_date`, `target_date`, `failed_step`, `error_details`, `rollback_done` vào WebSocket event broadcast.
+  - [`NightAuditController.php`](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php):
+    - Chuyển sang cơ chế **Server-Driven Progress**: Đặt hàm `$notifyStep(order, code, nameEn, percent)` phát WebSocket event `progress` kèm `usleep(250000)` (250ms giữa các bước; bỏ qua khi chạy testing).
+    - Phát tuần tự từng bước từ 1 đến 17 qua WebSocket `night.audit.updated`. Bước 18 phát event `completed` (100%).
+    - Thay thế hardcode `'admin'` bằng dynamic username của người đăng nhập.
+    - Tại bước 1 PRE_CHECK, truy vấn chi tiết các phòng vướng mắc và đính kèm vào `error_details` (`pending_checkins`, `pending_checkouts`, `hint`). Khối catch phát broadcast realtime `failed` và trả JSON response chứa `error_details`.
+  - [`NightAuditUpdated.php`](file:///d:/PMS/backend/app/Events/NightAuditUpdated.php): Bổ sung `username`, `source_date`, `target_date`, `step_order`, `percent`, `failed_step`, `error_details`, `rollback_done` vào WebSocket event broadcast.
   - [`NightAuditSnapshotService.php`](file:///d:/PMS/backend/app/Services/NightAuditSnapshotService.php): Thay thế fallback `'admin'` thành `'system'`.
   - [`NightAuditTest.php`](file:///d:/PMS/backend/tests/Feature/NightAuditTest.php): Bổ sung role `super_admin` và kiểm tra dynamic username `test_auditor`. Passed 11/11 tests (67 assertions).
-  - [`night-audit-store.js`](file:///d:/PMS/frontend/src/stores/night-audit-store.js): Tái cấu trúc sang cơ chế Timeline thời gian thực đồng bộ (`TIMELINE_DURATION_MS = 7000ms`, `stepSchedule` 17 bước). Khắc phục triệt để lỗi tài khoản xem nhảy cóc lên Step 18 quá sớm khi nhận WebSocket event `completed` trong khi tài khoản bấm vẫn đang chạy các bước trước. Hai máy luôn hiển thị đồng nhịp 100% từng bước và cùng chạm mốc Step 18.
-  - [`NightAuditController.php`](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php): Đính kèm `started_at` (timestamp milliseconds) vào WebSocket events và response `checkStatus` để các máy đồng bộ chung một trục thời gian.
+  - [`night-audit-store.js`](file:///d:/PMS/frontend/src/stores/night-audit-store.js): Tối giản store thành Server-Driven event handler; loại bỏ hoàn toàn fake timeline (`TIMELINE_DURATION_MS = 7000ms`, `stepSchedule`, `setInterval`). Cả tài khoản người bấm và tài khoản người đang xem đều cập nhật trực tiếp theo tín hiệu WebSocket từ server, đảm bảo đồng bộ tuyệt đối 100% từng bước và cùng chuyển sang Step 18 sau đó đăng xuất cùng lúc sau 2.5s.
   - [`NightAuditProgressModal.vue`](file:///d:/PMS/frontend/src/components/NightAuditProgressModal.vue): Component modal tiến trình toàn cục nền trắng chuẩn tham chiếu, badge đếm ngược 10s, bảng hiển thị phòng lỗi phân loại rõ phòng đến/phòng đi kèm mã booking và hướng dẫn khắc phục.
-  - [`App.vue`](file:///d:/PMS/frontend/src/App.vue): Nhúng `<NightAuditProgressModal />` ở cấp root, lắng nghe WebSocket Echo `pms-channel`, tự động tính toán thời gian `elapsed` khi tài khoản khác vừa đăng nhập để nhảy ngay vào đúng bước đang chạy đồng bộ với tài khoản thực hiện.
+  - [`App.vue`](file:///d:/PMS/frontend/src/App.vue): Nhúng `<NightAuditProgressModal />` ở cấp root; trong `onMounted` chỉ kích hoạt modal nếu hệ thống thực sự đang chạy (`is_running === true`), loại bỏ triệt để việc tự động kích hoạt tiến trình cũ khiến tài khoản mới login bị nhảy cóc sang Step 18 và bị ép logout; lắng nghe event `progress`, `completed`, `failed`.
   - [`DayClosePage.vue`](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue): Kiểm tra quyền thực thi `canExecuteNightAudit`, kết nối nút "Sang ngày" với store `nightAuditStore.triggerNightAudit`, loại bỏ khối modal duplicate và các biến cục bộ thừa.
 - **Kiểm thử**:
-  - Backend: `php artisan test tests/Feature/NightAuditTest.php` -> 11/11 tests passed.
-  - Frontend: `npm run build` -> thành công không có lỗi cú pháp hay cảnh báo bundle hỏng.
+  - Backend: `php artisan test tests/Feature/NightAuditTest.php` -> 11/11 tests passed (67 assertions).
+  - Frontend: `npm run build` -> hoàn thành thành công trong 3.70s không có lỗi.
 
 ## [2026-10-02] - Sửa lỗi nhảy tổng tiền và hiển thị nhầm Extra Bed thành Tiền phòng khi mở chi tiết phòng (Booking GAL3)
 ### Module: Đặt phòng / Màn hình BK ([BookingRoomServiceController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomServiceController.php), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))

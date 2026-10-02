@@ -4,7 +4,6 @@ import MainLayout from '@/layouts/MainLayout.vue'
 import ToastContainer from '@/components/ToastContainer.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import AlertModal from '@/components/AlertModal.vue'
-import ForceChangePasswordModal from '@/components/ForceChangePasswordModal.vue'
 import NightAuditProgressModal from '@/components/NightAuditProgressModal.vue'
 import { computed, onMounted, onUnmounted } from 'vue'
 import echo from '@/services/echo'
@@ -21,55 +20,32 @@ onMounted(async () => {
   // Lấy trạng thái ban đầu của Night Audit từ backend khi reload trang hoặc login
   try {
     const res = await http.get('/night-audit/check-status')
-    if (res.data && res.data.success && res.data.data) {
+    if (res.data?.success && res.data?.data) {
       const data = res.data.data
-      const latestRun = data.latest_run
-      if (latestRun) {
-        const startMs = latestRun.started_at_ms || (latestRun.started_at ? new Date(latestRun.started_at).getTime() : 0)
-        const elapsed = startMs > 0 ? (Date.now() - startMs) : 999999
-        // Nếu tiến trình đang chạy hoặc vừa hoàn thành trong vòng 8s
-        if (data.is_running || elapsed < 8000) {
-          if (!nightAuditStore.isRunning) {
-            nightAuditStore.handleRemoteStarted({
-              username: latestRun.username || 'Hệ thống',
-              started_at: startMs > 0 ? startMs : Date.now()
-            })
-            if (latestRun.status === 'succeeded') {
-              nightAuditStore.handleRemoteCompleted({
-                username: latestRun.username || 'Hệ thống',
-                started_at: startMs
-              })
-            } else if (latestRun.status === 'failed') {
-              nightAuditStore.handleRemoteFailed({
-                username: latestRun.username || 'Hệ thống',
-                error_message: latestRun.error_message,
-                failed_step: latestRun.failed_step
-              })
-            }
-          }
-        }
+      // CHỈ kích hoạt nếu Night Audit THỰC SỰ ĐANG CHẠY ngay lúc này
+      if (data.is_running && !nightAuditStore.isRunning) {
+        const latestRun = data.latest_run
+        nightAuditStore.handleProgressUpdate({
+          username: latestRun?.username || 'Hệ thống',
+          step_order: 1,
+          percent: 10,
+        })
       }
     }
   } catch (e) {
-    // Fallback qua hotel-settings nếu check-status chưa sẵn sàng
-    try {
-      const hRes = await http.get('/hotel-settings')
-      if (hRes.data?.data?.is_night_audit_running && !nightAuditStore.isRunning) {
-        nightAuditStore.handleRemoteStarted({ username: 'Hệ thống' })
-      }
-    } catch (_) {}
+    // Bỏ qua nếu lỗi mạng hoặc endpoint chưa sẵn sàng
   }
 
   // Lắng nghe qua Echo cho tất cả các tài khoản đang đăng nhập
   if (echo) {
     echo.channel('pms-channel')
       .listen('.night.audit.updated', (e) => {
-        if (e.status === 'started') {
-          nightAuditStore.handleRemoteStarted(e.payload)
+        if (e.status === 'started' || e.status === 'progress') {
+          nightAuditStore.handleProgressUpdate(e.payload)
         } else if (e.status === 'completed') {
-          nightAuditStore.handleRemoteCompleted(e.payload)
+          nightAuditStore.handleCompleted(e.payload)
         } else if (e.status === 'failed') {
-          nightAuditStore.handleRemoteFailed({
+          nightAuditStore.handleFailed({
             error_message: e.message,
             ...e.payload
           })
@@ -97,7 +73,6 @@ onUnmounted(() => {
   <ToastContainer />
   <ConfirmModal />
   <AlertModal />
-  <ForceChangePasswordModal />
 
   <!-- Global Night Audit 18-Step Progress Modal (Hiển thị đồng bộ cho tất cả tài khoản) -->
   <NightAuditProgressModal />

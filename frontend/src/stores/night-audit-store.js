@@ -26,29 +26,6 @@ export const defaultAuditSteps = [
   { order: 18, code: 'FINALIZE', nameEn: 'Finish End Day', nameVi: 'Hoàn tất đóng ngày & Giải phóng phiên', status: 'pending' },
 ]
 
-// Timeline 17 bước đầu kéo dài 7000ms (~7 giây) đồng bộ tuyệt đối theo thời gian thực
-export const TIMELINE_DURATION_MS = 7000
-
-export const stepSchedule = [
-  { start: 0, end: 350, idx: 0, pct: 6 },
-  { start: 350, end: 700, idx: 1, pct: 12 },
-  { start: 700, end: 1050, idx: 2, pct: 18 },
-  { start: 1050, end: 1450, idx: 3, pct: 24 },
-  { start: 1450, end: 2050, idx: 4, pct: 36 },
-  { start: 2050, end: 2400, idx: 5, pct: 42 },
-  { start: 2400, end: 2800, idx: 6, pct: 48 },
-  { start: 2800, end: 3150, idx: 7, pct: 54 },
-  { start: 3150, end: 3600, idx: 8, pct: 60 },
-  { start: 3600, end: 4000, idx: 9, pct: 66 },
-  { start: 4000, end: 4600, idx: 10, pct: 76 },
-  { start: 4600, end: 4950, idx: 11, pct: 81 },
-  { start: 4950, end: 5300, idx: 12, pct: 86 },
-  { start: 5300, end: 5650, idx: 13, pct: 90 },
-  { start: 5650, end: 6300, idx: 14, pct: 94 },
-  { start: 6300, end: 6650, idx: 15, pct: 97 },
-  { start: 6650, end: 7000, idx: 16, pct: 99 },
-]
-
 export const useNightAuditStore = defineStore('nightAudit', () => {
   const authStore = useAuthStore()
   const uiStore = useUiStore()
@@ -67,13 +44,7 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
   const toggleShowDetails = ref(false)
   const auditSteps = ref(JSON.parse(JSON.stringify(defaultAuditSteps)))
 
-  // Đồng bộ thời gian
-  const startTimestamp = ref(0)
-  const backendSuccessData = ref(null)
-  const backendFailedData = ref(null)
-
   let autoCloseTimer = null
-  let syncInterval = null
   let redirectTimer = null
 
   // Computed
@@ -103,10 +74,6 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
       clearInterval(autoCloseTimer)
       autoCloseTimer = null
     }
-    if (syncInterval) {
-      clearInterval(syncInterval)
-      syncInterval = null
-    }
     if (redirectTimer) {
       clearTimeout(redirectTimer)
       redirectTimer = null
@@ -134,9 +101,9 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
     auditErrorDetails.value = null
     autoCloseCountdown.value = 10
     toggleShowDetails.value = false
-    backendSuccessData.value = null
-    backendFailedData.value = null
-    startTimestamp.value = 0
+    currentStepIndex.value = 0
+    progressPercent.value = 0
+    auditSteps.value = JSON.parse(JSON.stringify(defaultAuditSteps))
   }
 
   async function completeAndLogout() {
@@ -154,79 +121,73 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
   }
 
   /**
-   * Vòng lặp đồng bộ thời gian thực chung cho TẤT CẢ các tài khoản
+   * Cập nhật từng bước chạy từ Backend (Server-driven realtime progress)
    */
-  function startSynchronizedTimeline(startMs) {
-    if (syncInterval) {
-      clearInterval(syncInterval)
-      syncInterval = null
-    }
-
-    startTimestamp.value = startMs || Date.now()
+  function handleProgressUpdate(payload = {}) {
+    clearAllTimers()
     showModal.value = true
     isRunning.value = true
     auditRunStatus.value = 'running'
     auditRunError.value = ''
     auditErrorDetails.value = null
-    auditSteps.value = JSON.parse(JSON.stringify(defaultAuditSteps))
-    toggleShowDetails.value = false
 
-    syncInterval = setInterval(() => {
-      // 1. Kiểm tra nếu có lỗi backend
-      if (backendFailedData.value) {
-        clearInterval(syncInterval)
-        syncInterval = null
-        applyFailedState(backendFailedData.value)
-        return
-      }
+    if (payload?.username) {
+      executorUsername.value = payload.username
+    }
 
-      // 2. Tính thời gian đã trôi qua kể từ mốc startTimestamp
-      const elapsed = Date.now() - startTimestamp.value
+    const order = Number(payload?.step_order) || 1
+    const idx = Math.max(0, Math.min(17, order - 1))
+    currentStepIndex.value = idx
 
-      if (elapsed < TIMELINE_DURATION_MS) {
-        // Trong khoảng 0 -> 7000ms: Cập nhật đúng bước theo timeline
-        const current = stepSchedule.find(s => elapsed >= s.start && elapsed < s.end) || stepSchedule[0]
-        currentStepIndex.value = current.idx
-        progressPercent.value = current.pct
+    if (payload?.percent !== undefined) {
+      progressPercent.value = Number(payload.percent)
+    } else {
+      progressPercent.value = Math.max(5, Math.min(99, Math.round((order / 18) * 100)))
+    }
+
+    // Cập nhật trạng thái từng dòng bảng 18 bước
+    auditSteps.value.forEach((s, i) => {
+      if (i < idx) {
+        s.status = 'succeeded'
+      } else if (i === idx) {
+        s.status = 'running'
       } else {
-        // Đã hoàn thành 17 bước (7000ms)
-        currentStepIndex.value = 16
-        progressPercent.value = 99
-
-        // 3. Nếu backend đã báo thành công thì chuyển sang Step 18
-        if (backendSuccessData.value) {
-          clearInterval(syncInterval)
-          syncInterval = null
-          applySuccessState(backendSuccessData.value)
-        }
+        s.status = 'pending'
       }
-    }, 80)
+    })
   }
 
-  async function applySuccessState(data) {
+  /**
+   * Nhận sự kiện hoàn tất Sang ngày từ Backend
+   */
+  async function handleCompleted(payload = {}) {
+    clearAllTimers()
+    showModal.value = true
+    isRunning.value = false
+    auditRunStatus.value = 'succeeded'
     currentStepIndex.value = 17
     progressPercent.value = 100
-    auditRunStatus.value = 'succeeded'
 
-    if (Array.isArray(data?.steps) && data.steps.length > 0) {
-      auditSteps.value = data.steps.map(s => ({
-        code: s.step_code,
-        order: s.step_order,
-        name: s.step_name,
-        status: s.status,
-        affected_rows: s.affected_rows,
-        summary: s.summary,
-        error: s.error_message,
-      }))
+    if (payload?.username) {
+      executorUsername.value = payload.username
     }
+
+    auditSteps.value.forEach(s => {
+      s.status = 'succeeded'
+    })
 
     uiStore.showToast('Đã chuyển sang ngày tiếp theo thành công!', 'success')
     await completeAndLogout()
   }
 
-  function applyFailedState(errOrPayload) {
-    auditRunStatus.value = 'failed'
+  /**
+   * Nhận sự kiện thất bại từ Backend
+   */
+  function handleFailed(errOrPayload = {}) {
+    clearAllTimers()
+    showModal.value = true
     isRunning.value = false
+    auditRunStatus.value = 'failed'
 
     let errMsg = 'Có lỗi xảy ra khi chuyển ngày.'
     let failedStep = null
@@ -264,17 +225,19 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
   }
 
   /**
-   * Phía Initiator: Người bấm Sang ngày
+   * Khởi chạy Sang ngày từ phía Initiator
    */
   async function triggerNightAudit({ occupiedToDirty = true, emptyToInspect = true } = {}) {
     clearAllTimers()
     isInitiator.value = true
-    backendSuccessData.value = null
-    backendFailedData.value = null
     executorUsername.value = authStore.user?.username || authStore.user?.name || 'system'
 
-    const nowMs = Date.now()
-    startSynchronizedTimeline(nowMs)
+    // Bật modal ngay từ bước 1
+    handleProgressUpdate({
+      username: executorUsername.value,
+      step_order: 1,
+      percent: 6
+    })
 
     try {
       const res = await http.post('/night-audit/run', {
@@ -283,65 +246,28 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
       })
 
       if (res.data && res.data.success) {
-        backendSuccessData.value = res.data
+        await handleCompleted(res.data)
         return { success: true, data: res.data }
       } else {
         const errMsg = res.data?.message || 'Không thể chuyển ngày hệ thống.'
-        backendFailedData.value = { message: errMsg }
+        handleFailed({ message: errMsg })
         return { success: false, message: errMsg }
       }
     } catch (err) {
-      backendFailedData.value = err
+      handleFailed(err)
       return { success: false, error: err }
     }
   }
 
-  /**
-   * Phía Remote: Nhận WebSocket sự kiện từ tài khoản khác đang chạy
-   */
+  // Compatibility aliases
   function handleRemoteStarted(payload = {}) {
-    if (isInitiator.value) return
-    clearAllTimers()
-    isInitiator.value = false
-    backendSuccessData.value = null
-    backendFailedData.value = null
-    executorUsername.value = payload?.username || 'Hệ thống'
-
-    const startMs = payload?.started_at ? Number(payload.started_at) : Date.now()
-    startSynchronizedTimeline(startMs)
+    handleProgressUpdate(payload)
   }
-
   function handleRemoteCompleted(payload = {}) {
-    if (isInitiator.value) return
-    if (payload?.username) {
-      executorUsername.value = payload.username
-    }
-    backendSuccessData.value = payload
-
-    // Nếu chưa mở modal (ví dụ người dùng vừa login vào lúc đã xong):
-    if (!showModal.value) {
-      showModal.value = true
-      isRunning.value = true
-    }
-
-    // Nếu đã hết thời gian 7000ms: hoàn tất ngay lập tức
-    const elapsed = Date.now() - (payload?.started_at ? Number(payload.started_at) : startTimestamp.value)
-    if (elapsed >= TIMELINE_DURATION_MS) {
-      if (syncInterval) {
-        clearInterval(syncInterval)
-        syncInterval = null
-      }
-      applySuccessState(payload)
-    }
-    // Nếu chưa đủ 7000ms: vòng lặp syncInterval sẽ tiếp tục chạy mượt mà đến 7000ms rồi tự động hoàn tất!
+    handleCompleted(payload)
   }
-
   function handleRemoteFailed(payload = {}) {
-    if (isInitiator.value) return
-    backendFailedData.value = payload
-    if (!showModal.value) {
-      showModal.value = true
-    }
+    handleFailed(payload)
   }
 
   return {
@@ -362,6 +288,9 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
     finishStepText,
     triggerNightAudit,
     closeModal,
+    handleProgressUpdate,
+    handleCompleted,
+    handleFailed,
     handleRemoteStarted,
     handleRemoteCompleted,
     handleRemoteFailed,
