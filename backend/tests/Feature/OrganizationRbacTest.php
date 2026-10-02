@@ -633,24 +633,21 @@ class OrganizationRbacTest extends TestCase
         $this->assertFalse($user->canPerformHistoricalDateActions($branch->id));
     }
 
-    public function test_forced_password_change_blocks_business_api_until_password_is_changed(): void
+    public function test_user_can_change_password_voluntarily(): void
     {
         $user = User::factory()->create([
             'password' => Hash::make('old_password_123'),
-            'must_change_password' => true,
+            'must_change_password' => false,
         ]);
         Sanctum::actingAs($user);
 
-        $this->getJson('/api/modules')->assertStatus(423)->assertJson([
-            'must_change_password' => true,
-        ]);
         $this->getJson('/api/me')->assertOk();
         $this->postJson('/api/me/change-password', [
             'current_password' => 'old_password_123',
             'new_password' => 'new_password_456',
             'new_password_confirmation' => 'new_password_456',
         ])->assertOk();
-        $this->assertFalse($user->fresh()->must_change_password);
+        $this->assertTrue(Hash::check('new_password_456', $user->fresh()->password));
     }
 
     public function test_organization_imports_departments_from_legacy_department_table(): void

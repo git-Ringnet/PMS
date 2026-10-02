@@ -45,8 +45,32 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
   const auditSteps = ref(JSON.parse(JSON.stringify(defaultAuditSteps)))
 
   let autoCloseTimer = null
-  let animationInterval = null
   let redirectTimer = null
+  let pollTimer = null
+
+  // BroadcastChannel API: Đồng bộ tức thì 0ms giữa các tabs trong cùng trình duyệt
+  const bc = (typeof window !== 'undefined' && 'BroadcastChannel' in window)
+    ? new BroadcastChannel('pms_night_audit_channel')
+    : null
+
+  if (bc) {
+    bc.onmessage = (event) => {
+      const data = event.data || {}
+      if (data.type === 'progress') {
+        if (!isInitiator.value) {
+          handleProgressUpdate(data.payload, false)
+        }
+      } else if (data.type === 'completed') {
+        if (!isInitiator.value) {
+          handleCompleted(data.payload, false)
+        }
+      } else if (data.type === 'failed') {
+        if (!isInitiator.value) {
+          handleFailed(data.payload, false)
+        }
+      }
+    }
+  }
 
   // Computed
   const currentRunningStepText = computed(() => {
@@ -70,43 +94,18 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
     return `Step 18: Finish End Day At ${d}-${m}-${y} ${h}:${min}. User Login: ${user}`
   })
 
-  const stepTimeline = [
-    { idx: 0, pct: 6, wait: 350 },
-    { idx: 1, pct: 12, wait: 350 },
-    { idx: 2, pct: 18, wait: 350 },
-    { idx: 3, pct: 24, wait: 400 },
-    { idx: 4, pct: 36, wait: 600 },
-    { idx: 5, pct: 42, wait: 350 },
-    { idx: 6, pct: 48, wait: 400 },
-    { idx: 7, pct: 54, wait: 350 },
-    { idx: 8, pct: 60, wait: 450 },
-    { idx: 9, pct: 66, wait: 400 },
-    { idx: 10, pct: 76, wait: 600 },
-    { idx: 11, pct: 81, wait: 350 },
-    { idx: 12, pct: 86, wait: 350 },
-    { idx: 13, pct: 90, wait: 350 },
-    { idx: 14, pct: 94, wait: 650 },
-    { idx: 15, pct: 97, wait: 350 },
-    { idx: 16, pct: 99, wait: 350 },
-  ]
-
-  // Cleanup helper
   function clearAllTimers() {
     if (autoCloseTimer) {
       clearInterval(autoCloseTimer)
       autoCloseTimer = null
     }
-    if (animationInterval) {
-      clearInterval(animationInterval)
-      animationInterval = null
-    }
     if (redirectTimer) {
       clearTimeout(redirectTimer)
       redirectTimer = null
     }
+    stopPolling()
   }
 
-  // Đếm ngược 10s tự động đóng modal khi lỗi
   function startAutoCloseCountdown() {
     clearAllTimers()
     autoCloseCountdown.value = 10
@@ -118,7 +117,6 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
     }, 1000)
   }
 
-  // Đóng modal quay lại màn hình làm việc
   function closeModal() {
     clearAllTimers()
     showModal.value = false
@@ -129,9 +127,11 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
     auditErrorDetails.value = null
     autoCloseCountdown.value = 10
     toggleShowDetails.value = false
+    currentStepIndex.value = 0
+    progressPercent.value = 0
+    auditSteps.value = JSON.parse(JSON.stringify(defaultAuditSteps))
   }
 
-  // Tự động đăng xuất sau khi hoàn tất thành công
   async function completeAndLogout() {
     clearAllTimers()
     redirectTimer = setTimeout(async () => {
@@ -143,91 +143,110 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
       uiStore.showToast('Sang ngày thành công! Vui lòng đăng nhập lại.', 'success')
       router.push('/login')
       showModal.value = false
-    }, 2500)
+    }, 3000)
   }
 
   /**
-   * Chạy tiến trình phía Initiator (tài khoản trực tiếp bấm nút Sang ngày)
+   * Cập nhật từng bước chạy từ Backend (Server-driven realtime progress)
    */
-  async function triggerNightAudit({ occupiedToDirty = true, emptyToInspect = true } = {}) {
-    clearAllTimers()
+  function handleProgressUpdate(payload = {}, broadcastToTabs = true) {
+    if (autoCloseTimer) {
+      clearInterval(autoCloseTimer)
+      autoCloseTimer = null
+    }
     showModal.value = true
     isRunning.value = true
-    isInitiator.value = true
     auditRunStatus.value = 'running'
     auditRunError.value = ''
     auditErrorDetails.value = null
-    auditSteps.value = JSON.parse(JSON.stringify(defaultAuditSteps))
-    currentStepIndex.value = 0
-    progressPercent.value = 5
-    executorUsername.value = authStore.user?.username || authStore.user?.name || 'system'
-    toggleShowDetails.value = false
 
-    let backendResult = null
-    let backendError = null
+    if (payload?.username) {
+      executorUsername.value = payload.username
+    }
 
-    // Gửi request API
-    http.post('/night-audit/run', {
-      occupied_to_dirty: occupiedToDirty,
-      empty_to_inspect: emptyToInspect
-    }).then(res => {
-      backendResult = res
-    }).catch(err => {
-      backendError = err
+    const order = Number(payload?.step_order) || 1
+    const idx = Math.max(0, Math.min(17, order - 1))
+    currentStepIndex.value = idx
+
+    if (payload?.percent !== undefined) {
+      progressPercent.value = Number(payload.percent)
+    } else {
+      progressPercent.value = Math.max(5, Math.min(99, Math.round((order / 18) * 100)))
+    }
+
+    // Cập nhật trạng thái từng dòng bảng 18 bước
+    auditSteps.value.forEach((s, i) => {
+      if (i < idx) {
+        s.status = 'succeeded'
+      } else if (i === idx) {
+        s.status = 'running'
+      } else {
+        s.status = 'pending'
+      }
     })
 
-    // Animation chạy tuần tự các bước
-    for (let i = 0; i < stepTimeline.length; i++) {
-      if (backendError) break
-      const item = stepTimeline[i]
-      currentStepIndex.value = item.idx
-      progressPercent.value = item.pct
-      await new Promise(resolve => setTimeout(resolve, item.wait))
-    }
-
-    // Đợi backend hoàn tất
-    while (!backendResult && !backendError) {
-      await new Promise(resolve => setTimeout(resolve, 200))
-    }
-
-    if (backendError) {
-      handleAuditError(backendError)
-      return { success: false, error: backendError }
-    }
-
-    if (backendResult.data && backendResult.data.success) {
-      currentStepIndex.value = 17
-      progressPercent.value = 100
-      auditRunStatus.value = 'succeeded'
-      if (Array.isArray(backendResult.data.steps) && backendResult.data.steps.length > 0) {
-        auditSteps.value = backendResult.data.steps.map(s => ({
-          code: s.step_code,
-          order: s.step_order,
-          name: s.step_name,
-          status: s.status,
-          affected_rows: s.affected_rows,
-          summary: s.summary,
-          error: s.error_message,
-        }))
-      }
-      uiStore.showToast('Đã chuyển sang ngày tiếp theo thành công!', 'success')
-      await completeAndLogout()
-      return { success: true, data: backendResult.data }
-    } else {
-      const errMsg = backendResult.data?.message || 'Không thể chuyển ngày hệ thống.'
-      handleAuditError({ response: { data: { message: errMsg } } })
-      return { success: false, message: errMsg }
+    if (broadcastToTabs && bc) {
+      try {
+        bc.postMessage({ type: 'progress', payload })
+      } catch (_) {}
     }
   }
 
-  function handleAuditError(err) {
-    auditRunStatus.value = 'failed'
+  /**
+   * Nhận sự kiện hoàn tất Sang ngày từ Backend
+   */
+  async function handleCompleted(payload = {}, broadcastToTabs = true) {
+    clearAllTimers()
+    showModal.value = true
     isRunning.value = false
-    const errData = err.response?.data
-    const failedStep = errData?.failed_step
-    const errMsg = errData?.message || 'Có lỗi xảy ra khi chuyển ngày.'
+    auditRunStatus.value = 'succeeded'
+    currentStepIndex.value = 17
+    progressPercent.value = 100
+
+    if (payload?.username) {
+      executorUsername.value = payload.username
+    }
+
+    auditSteps.value.forEach(s => {
+      s.status = 'succeeded'
+    })
+
+    if (broadcastToTabs && bc) {
+      try {
+        bc.postMessage({ type: 'completed', payload })
+      } catch (_) {}
+    }
+
+    uiStore.showToast('Đã chuyển sang ngày tiếp theo thành công!', 'success')
+    await completeAndLogout()
+  }
+
+  /**
+   * Nhận sự kiện thất bại từ Backend
+   */
+  function handleFailed(errOrPayload = {}, broadcastToTabs = true) {
+    clearAllTimers()
+    showModal.value = true
+    isRunning.value = false
+    auditRunStatus.value = 'failed'
+
+    let errMsg = 'Có lỗi xảy ra khi chuyển ngày.'
+    let failedStep = null
+    let errorDetails = null
+
+    if (errOrPayload?.response?.data) {
+      const errData = errOrPayload.response.data
+      errMsg = errData.message || errMsg
+      failedStep = errData.failed_step
+      errorDetails = errData.error_details
+    } else {
+      errMsg = errOrPayload?.error_message || errOrPayload?.message || errMsg
+      failedStep = errOrPayload?.failed_step
+      errorDetails = errOrPayload?.error_details
+    }
+
     auditRunError.value = errMsg
-    auditErrorDetails.value = errData?.error_details || null
+    auditErrorDetails.value = errorDetails
 
     if (failedStep) {
       const stepIdx = defaultAuditSteps.findIndex(s => s.code === failedStep)
@@ -242,73 +261,122 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
       }
     }
 
+    if (broadcastToTabs && bc) {
+      try {
+        bc.postMessage({
+          type: 'failed',
+          payload: {
+            error_message: errMsg,
+            failed_step: failedStep,
+            error_details: errorDetails
+          }
+        })
+      } catch (_) {}
+    }
+
     uiStore.showToast(errMsg, 'error')
     startAutoCloseCountdown()
   }
 
   /**
-   * Xử lý WebSocket Realtime cho các tài khoản KHÁC đang đăng nhập
+   * Cơ chế Polling kiểm tra trạng thái
    */
-  async function handleRemoteStarted(payload = {}) {
-    if (isInitiator.value) return // Bỏ qua nếu tab này là tab bấm Sang ngày
-    clearAllTimers()
-    showModal.value = true
-    isRunning.value = true
-    auditRunStatus.value = 'running'
-    auditRunError.value = ''
-    auditErrorDetails.value = null
-    auditSteps.value = JSON.parse(JSON.stringify(defaultAuditSteps))
-    currentStepIndex.value = 0
-    progressPercent.value = 5
-    executorUsername.value = payload?.username || 'Hệ thống'
-    toggleShowDetails.value = false
+  function startPolling() {
+    if (pollTimer) return
+    pollTimer = setInterval(async () => {
+      if (!isRunning.value && auditRunStatus.value !== 'running') {
+        stopPolling()
+        return
+      }
+      await checkCurrentStatus(false)
+    }, 1500)
+  }
 
-    // Animation chạy đồng bộ
-    for (let i = 0; i < stepTimeline.length; i++) {
-      if (auditRunStatus.value !== 'running') break
-      const item = stepTimeline[i]
-      currentStepIndex.value = item.idx
-      progressPercent.value = item.pct
-      await new Promise(resolve => setTimeout(resolve, item.wait))
+  function stopPolling() {
+    if (pollTimer) {
+      clearInterval(pollTimer)
+      pollTimer = null
     }
   }
 
-  async function handleRemoteCompleted(payload = {}) {
-    if (isInitiator.value) return
-    clearAllTimers()
-    if (!showModal.value) showModal.value = true
-    currentStepIndex.value = 17
-    progressPercent.value = 100
-    auditRunStatus.value = 'succeeded'
-    executorUsername.value = payload?.username || executorUsername.value
-    await completeAndLogout()
+  /**
+   * Kiểm tra trạng thái trực tiếp từ server
+   */
+  async function checkCurrentStatus(shouldStartPolling = true) {
+    try {
+      const res = await http.get('/night-audit/check-status')
+      if (res.data?.success && res.data?.data) {
+        const data = res.data.data
+        if (data.is_running) {
+          const active = data.active_step
+          const latestRun = data.latest_run
+          handleProgressUpdate({
+            username: active?.username || latestRun?.username || 'Hệ thống',
+            step_order: active?.step_order || (latestRun ? 1 : 1),
+            percent: active?.percent || (active?.step_order ? Math.round((active.step_order / 18) * 100) : 10),
+          }, false)
+          if (shouldStartPolling) {
+            startPolling()
+          }
+        } else if (isRunning.value && auditRunStatus.value === 'running') {
+          stopPolling()
+          if (data.latest_run?.status === 'succeeded') {
+            await handleCompleted(data.latest_run, false)
+          } else if (data.latest_run?.status === 'failed') {
+            handleFailed(data.latest_run, false)
+          }
+        }
+      }
+    } catch (_) {
+      // Bỏ qua lỗi mạng
+    }
   }
 
+  /**
+   * Khởi chạy Sang ngày từ phía Initiator
+   */
+  async function triggerNightAudit({ occupiedToDirty = true, emptyToInspect = true, forceRerun = false } = {}) {
+    clearAllTimers()
+    isInitiator.value = true
+    executorUsername.value = authStore.user?.username || authStore.user?.name || 'system'
+
+    // Bật modal ngay từ bước 1 và phát thông báo tức thì sang các tab khác trong cùng trình duyệt
+    handleProgressUpdate({
+      username: executorUsername.value,
+      step_order: 1,
+      percent: 6
+    }, true)
+
+    try {
+      const res = await http.post('/night-audit/run', {
+        occupied_to_dirty: occupiedToDirty,
+        empty_to_inspect: emptyToInspect,
+        force_rerun: forceRerun
+      })
+
+      if (res.data && res.data.success) {
+        await handleCompleted(res.data, true)
+        return { success: true, data: res.data }
+      } else {
+        const errMsg = res.data?.message || 'Không thể chuyển ngày hệ thống.'
+        handleFailed({ message: errMsg }, true)
+        return { success: false, message: errMsg }
+      }
+    } catch (err) {
+      handleFailed(err, true)
+      return { success: false, error: err }
+    }
+  }
+
+  // Compatibility aliases
+  function handleRemoteStarted(payload = {}) {
+    handleProgressUpdate(payload)
+  }
+  function handleRemoteCompleted(payload = {}) {
+    handleCompleted(payload)
+  }
   function handleRemoteFailed(payload = {}) {
-    if (isInitiator.value) return
-    clearAllTimers()
-    if (!showModal.value) showModal.value = true
-    auditRunStatus.value = 'failed'
-    isRunning.value = false
-    executorUsername.value = payload?.username || executorUsername.value
-    auditRunError.value = payload?.error_message || 'Sang ngày thất bại.'
-    auditErrorDetails.value = payload?.error_details || null
-
-    const failedStep = payload?.failed_step
-    if (failedStep) {
-      const stepIdx = defaultAuditSteps.findIndex(s => s.code === failedStep)
-      if (stepIdx !== -1) {
-        currentStepIndex.value = stepIdx
-        progressPercent.value = Math.max(10, Math.round(((stepIdx + 1) / 18) * 100))
-      }
-      const tableStepIdx = auditSteps.value.findIndex(s => s.code === failedStep)
-      if (tableStepIdx !== -1) {
-        auditSteps.value[tableStepIdx].status = 'failed'
-        auditSteps.value[tableStepIdx].error = auditRunError.value
-      }
-    }
-
-    startAutoCloseCountdown()
+    handleFailed(payload)
   }
 
   return {
@@ -329,6 +397,12 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
     finishStepText,
     triggerNightAudit,
     closeModal,
+    checkCurrentStatus,
+    startPolling,
+    stopPolling,
+    handleProgressUpdate,
+    handleCompleted,
+    handleFailed,
     handleRemoteStarted,
     handleRemoteCompleted,
     handleRemoteFailed,

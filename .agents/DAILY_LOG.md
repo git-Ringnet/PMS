@@ -22,6 +22,53 @@
 ## [2026-10-01] - Điều chỉnh Tooltip Booking và Submenu Context Menu trên Sơ đồ phòng (Room Map - Dòng 293)
 ### Module: Sơ đồ phòng ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
 
+## [2026-10-02] - Khắc phục đồng bộ tiến trình Sang ngày (Night Audit) đa tài khoản & đa tab (Reverb, BroadcastChannel, Public status check & Polling fallback)
+### Module: Lễ tân / Sang ngày ([NightAuditController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php), [api.php](file:///d:/PMS/backend/routes/api.php), [echo.js](file:///d:/PMS/frontend/src/services/echo.js), [auth-store.js](file:///d:/PMS/frontend/src/stores/auth-store.js), [night-audit-store.js](file:///d:/PMS/frontend/src/stores/night-audit-store.js), [App.vue](file:///d:/PMS/frontend/src/App.vue), [DayClosePage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue))
+
+- **Yêu cầu & Nghiệp vụ**:
+  - Khi một tài khoản bấm Sang ngày, tất cả các tài khoản khác (dù đang mở sẵn, chuyển trang, hay vừa đăng nhập) đều phải hiển thị đồng bộ tiến trình chạy 18 bước trong thời gian thực.
+  - Khắc phục triệt để hiện tượng tài khoản thứ 2 không nhận được tín hiệu tiến trình hoặc bị chặn kiểm tra trạng thái trước/trong khi đăng nhập.
+  - Cho phép người dùng chạy lại sang ngày nếu đã xác nhận khi ngày hiện tại đã từng chạy mà không bị chặn lỗi 409 Conflict.
+- **Backend đã xử lý**:
+  - [`routes/api.php`](file:///d:/PMS/backend/routes/api.php): Chuyển endpoint `GET /night-audit/check-status` thành Public route (không yêu cầu Sanctum) để bất kỳ tab nào, kể cả ở trang Login khi chưa có token, đều kiểm tra được cờ `is_running` và bước đang chạy.
+  - [`.env`](file:///d:/PMS/backend/.env): Xóa bỏ dòng cấu hình trùng `BROADCAST_CONNECTION=log`, đảm bảo luôn sử dụng Reverb.
+  - [`NightAuditController.php`](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php):
+    - Tối ưu nhịp trễ `$stepDelayUs = 550000` (~550ms/bước, tổng ~10s) vừa đủ cho mọi tài khoản quan sát rõ ràng, nhịp nhàng.
+    - Trong hàm `$notifyStep`: Lưu cache `night_audit_active_step` với TTL 60s để bất kỳ tài khoản nào gọi `checkStatus` (vừa login hoặc polling) đều bắt kịp chính xác bước đang chạy và % tiến độ hiện tại.
+    - Trong khối `finally`: Tự động xóa cache `night_audit_active_step` và giải phóng khóa hệ thống `is_night_audit_running`.
+- **Frontend đã xử lý**:
+  - [`echo.js`](file:///d:/PMS/frontend/src/services/echo.js): Ưu tiên `127.0.0.1` khi chạy localhost, giải quyết triệt để lỗi Windows phân giải `localhost` sang `::1` IPv6 làm đứt kết nối WebSocket.
+  - [`auth-store.js`](file:///d:/PMS/frontend/src/stores/auth-store.js): Trong action `login()`, tự động gọi `checkCurrentStatus()` ngay khi đăng nhập thành công. Nếu hệ thống đang sang ngày, tài khoản vừa login lập tức kích hoạt modal tiến trình tại đúng bước hiện tại.
+  - [`night-audit-store.js`](file:///d:/PMS/frontend/src/stores/night-audit-store.js):
+    - Tích hợp HTML5 `BroadcastChannel('pms_night_audit_channel')` đồng bộ song song tức thì 0ms giữa các tab cùng trình duyệt.
+    - Bổ sung cơ chế Polling nhẹ (1.5s/lần) khi `isRunning === true` làm mạng lưới an toàn thứ 3 trong trường hợp WebSocket bị trễ hoặc rớt gói tin.
+    - Cập nhật hàm `triggerNightAudit` nhận cờ `forceRerun` và gửi xuống backend.
+  - [`DayClosePage.vue`](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue): Truyền `forceRerun: !!alreadyRolledToday.value` khi người dùng đã xác nhận chạy tiếp.
+  - [`App.vue`](file:///d:/PMS/frontend/src/App.vue): Lắng nghe Reverb Echo, đồng bộ route change và gọi `checkCurrentStatus()` ngay khi ứng dụng mount.
+- **Kiểm thử**:
+  - Backend: `php artisan test tests/Feature/NightAuditTest.php` -> 11/11 tests passed (67 assertions).
+  - Frontend: `npm run build` -> hoàn thành thành công trong 3.65s.
+
+## [2026-10-02] - Gỡ bỏ cơ chế bắt buộc đổi mật khẩu lần đầu khi tạo/đặt lại tài khoản nhân viên
+### Module: Quản trị hệ thống / Nhân viên / Xác thực ([UserController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/UserController.php), [ForcePasswordChange.php](file:///d:/PMS/backend/app/Http/Middleware/ForcePasswordChange.php), [app.php](file:///d:/PMS/backend/bootstrap/app.php), [App.vue](file:///d:/PMS/frontend/src/App.vue), [http.js](file:///d:/PMS/frontend/src/services/http.js), [EmployeeTab.vue](file:///d:/PMS/frontend/src/pages/system/components/EmployeeTab.vue))
+
+- **Yêu cầu & Nghiệp vụ**:
+  - Khi tạo tài khoản nhân viên, đăng nhập sử dụng mật khẩu đã đặt khi tạo mà không cần đổi lại mật khẩu lần đầu.
+  - Gỡ bỏ hoàn toàn popup modal "Yêu Cầu Đổi Mật Khẩu Lần Đầu" chặn toàn màn hình. Khi người dùng muốn đổi mật khẩu thì tự chủ động đổi.
+- **Backend đã xử lý**:
+  - [`UserController.php`](file:///d:/PMS/backend/app/Http/Controllers/Api/UserController.php): Đặt `must_change_password => false` khi tạo mới (`store`), không ép cờ khi cập nhật (`update`), và đặt `must_change_password => false` khi đặt lại mật khẩu (`resetPassword`).
+  - [`bootstrap/app.php`](file:///d:/PMS/backend/bootstrap/app.php): Gỡ bỏ middleware `ForcePasswordChange::class` khỏi API group.
+  - [`ForcePasswordChange.php`](file:///d:/PMS/backend/app/Http/Middleware/ForcePasswordChange.php): Chuyển thành passthrough `$next($request)`.
+  - Database: Cập nhật toàn bộ các bản ghi `users.must_change_password = 0`.
+- **Frontend đã xử lý**:
+  - [`App.vue`](file:///d:/PMS/frontend/src/App.vue): Gỡ bỏ component `<ForceChangePasswordModal />` và import.
+  - [`http.js`](file:///d:/PMS/frontend/src/services/http.js): Gỡ bỏ cờ `_isHandling423` và interceptor bắt mã HTTP 423.
+  - [`EmployeeTab.vue`](file:///d:/PMS/frontend/src/pages/system/components/EmployeeTab.vue): Cập nhật thông báo xác nhận và thông báo kết quả khi đặt lại mật khẩu; bỏ ghi chú ép đổi mật khẩu ở form tạo nhân viên.
+- **Kiểm thử**:
+  - Backend: `php artisan test --filter=OrganizationRbacTest` -> 15/15 tests passed.
+  - Frontend: `npm run build` -> thành công không lỗi trong 3.93s.
+
+
 ## [2026-10-02] - Nâng cấp tiến trình Sang ngày (Night Audit): Đồng bộ toàn hệ thống đa tài khoản, phân quyền động, chi tiết phòng lỗi & tự động đóng 10s
 ### Module: Lễ tân / Sang ngày ([NightAuditController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php), [RolePermissionSeeder.php](file:///d:/PMS/backend/database/seeders/RolePermissionSeeder.php), [NightAuditUpdated.php](file:///d:/PMS/backend/app/Events/NightAuditUpdated.php), [night-audit-store.js](file:///d:/PMS/frontend/src/stores/night-audit-store.js), [NightAuditProgressModal.vue](file:///d:/PMS/frontend/src/components/NightAuditProgressModal.vue), [App.vue](file:///d:/PMS/frontend/src/App.vue), [DayClosePage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue))
 
@@ -33,18 +80,21 @@
 - **Backend đã xử lý**:
   - [`RolePermissionSeeder.php`](file:///d:/PMS/backend/database/seeders/RolePermissionSeeder.php): Thêm permission `fo.night_audit` ('Sang ngày / Đóng ngày hệ thống'), gán cho các role `super_admin`, `branch_admin`, `fo_manager`.
   - [`routes/api.php`](file:///d:/PMS/backend/routes/api.php): Gắn middleware `permission:fo.night_audit` bảo vệ các route `/night-audit/run`, `late-check-in`, `no-show`, `extend-stay`.
-  - [`NightAuditController.php`](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php): Thay thế hardcode `'admin'` bằng `Auth::user()?->username ?: (Auth::user()?->name ?: 'system')`. Tại bước 1 PRE_CHECK, truy vấn chi tiết các phòng vướng mắc và đính kèm vào `error_details` (`pending_checkins`, `pending_checkouts`, `hint`). Khối catch phát broadcast realtime và trả JSON response chứa `error_details`.
-  - [`NightAuditUpdated.php`](file:///d:/PMS/backend/app/Events/NightAuditUpdated.php): Bổ sung `username`, `source_date`, `target_date`, `failed_step`, `error_details`, `rollback_done` vào WebSocket event broadcast.
+  - [`NightAuditController.php`](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php):
+    - Chuyển sang cơ chế **Server-Driven Progress**: Đặt hàm `$notifyStep(order, code, nameEn, percent)` phát WebSocket event `progress` kèm `usleep(250000)` (250ms giữa các bước; bỏ qua khi chạy testing).
+    - Phát tuần tự từng bước từ 1 đến 17 qua WebSocket `night.audit.updated`. Bước 18 phát event `completed` (100%).
+    - Thay thế hardcode `'admin'` bằng dynamic username của người đăng nhập.
+    - Tại bước 1 PRE_CHECK, truy vấn chi tiết các phòng vướng mắc và đính kèm vào `error_details` (`pending_checkins`, `pending_checkouts`, `hint`). Khối catch phát broadcast realtime `failed` và trả JSON response chứa `error_details`.
+  - [`NightAuditUpdated.php`](file:///d:/PMS/backend/app/Events/NightAuditUpdated.php): Bổ sung `username`, `source_date`, `target_date`, `step_order`, `percent`, `failed_step`, `error_details`, `rollback_done` vào WebSocket event broadcast.
   - [`NightAuditSnapshotService.php`](file:///d:/PMS/backend/app/Services/NightAuditSnapshotService.php): Thay thế fallback `'admin'` thành `'system'`.
   - [`NightAuditTest.php`](file:///d:/PMS/backend/tests/Feature/NightAuditTest.php): Bổ sung role `super_admin` và kiểm tra dynamic username `test_auditor`. Passed 11/11 tests (67 assertions).
-- **Frontend đã xử lý**:
-  - [`night-audit-store.js`](file:///d:/PMS/frontend/src/stores/night-audit-store.js): Store Pinia quản lý tiến trình toàn cục, animation 18 bước, xử lý socket realtime cho cả người chạy lẫn người xem (`handleRemoteStarted`, `handleRemoteCompleted`, `handleRemoteFailed`), cơ chế đếm ngược 10 giây tự đóng khi gặp lỗi.
+  - [`night-audit-store.js`](file:///d:/PMS/frontend/src/stores/night-audit-store.js): Tối giản store thành Server-Driven event handler; loại bỏ hoàn toàn fake timeline (`TIMELINE_DURATION_MS = 7000ms`, `stepSchedule`, `setInterval`). Cả tài khoản người bấm và tài khoản người đang xem đều cập nhật trực tiếp theo tín hiệu WebSocket từ server, đảm bảo đồng bộ tuyệt đối 100% từng bước và cùng chuyển sang Step 18 sau đó đăng xuất cùng lúc sau 2.5s.
   - [`NightAuditProgressModal.vue`](file:///d:/PMS/frontend/src/components/NightAuditProgressModal.vue): Component modal tiến trình toàn cục nền trắng chuẩn tham chiếu, badge đếm ngược 10s, bảng hiển thị phòng lỗi phân loại rõ phòng đến/phòng đi kèm mã booking và hướng dẫn khắc phục.
-  - [`App.vue`](file:///d:/PMS/frontend/src/App.vue): Nhúng `<NightAuditProgressModal />` ở cấp root và lắng nghe kênh WebSocket Echo `pms-channel` event `.night.audit.updated`.
+  - [`App.vue`](file:///d:/PMS/frontend/src/App.vue): Nhúng `<NightAuditProgressModal />` ở cấp root; trong `onMounted` chỉ kích hoạt modal nếu hệ thống thực sự đang chạy (`is_running === true`), loại bỏ triệt để việc tự động kích hoạt tiến trình cũ khiến tài khoản mới login bị nhảy cóc sang Step 18 và bị ép logout; lắng nghe event `progress`, `completed`, `failed`.
   - [`DayClosePage.vue`](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue): Kiểm tra quyền thực thi `canExecuteNightAudit`, kết nối nút "Sang ngày" với store `nightAuditStore.triggerNightAudit`, loại bỏ khối modal duplicate và các biến cục bộ thừa.
 - **Kiểm thử**:
-  - Backend: `php artisan test tests/Feature/NightAuditTest.php` -> 11/11 tests passed.
-  - Frontend: `npm run build` -> thành công không có lỗi cú pháp hay cảnh báo bundle hỏng.
+  - Backend: `php artisan test tests/Feature/NightAuditTest.php` -> 11/11 tests passed (67 assertions).
+  - Frontend: `npm run build` -> hoàn thành thành công trong 3.70s không có lỗi.
 
 ## [2026-10-02] - Sửa lỗi nhảy tổng tiền và hiển thị nhầm Extra Bed thành Tiền phòng khi mở chi tiết phòng (Booking GAL3)
 ### Module: Đặt phòng / Màn hình BK ([BookingRoomServiceController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomServiceController.php), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))

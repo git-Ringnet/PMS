@@ -675,7 +675,7 @@ const handleResetPassword = async () => {
   const userEmail = form.value.email || 'email của nhân viên'
   const confirmed = await uiStore.confirm({
     title: 'Đặt lại mật khẩu',
-    message: `Bạn có chắc chắn muốn đặt lại mật khẩu của nhân viên này về Email (${userEmail}) và yêu cầu đổi mật khẩu khi đăng nhập?`,
+    message: `Bạn có chắc chắn muốn đặt lại mật khẩu của nhân viên này về Email (${userEmail})?`,
     confirmText: 'Đặt lại',
     cancelText: 'Hủy'
   })
@@ -683,7 +683,7 @@ const handleResetPassword = async () => {
   try {
     loading.value = true
     const res = await resetUserPassword(currentId.value)
-    const msg = res.data?.message || `Đã đặt lại mật khẩu về email (${userEmail}) và bật yêu cầu đổi mật khẩu lần đầu!`
+    const msg = res.data?.message || `Đã đặt lại mật khẩu về email (${userEmail})!`
     uiStore.showToast(msg, 'success')
   } catch (err) {
     console.error(err)
@@ -1142,7 +1142,7 @@ const changePage = (page) => {
                   <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <span>
-                  Lưu ý: Nếu để trống ô này, mật khẩu đăng nhập ban đầu sẽ là <strong>Email</strong> của nhân viên. Hệ thống sẽ bắt buộc đổi mật khẩu ở lần đăng nhập đầu tiên.
+                  Lưu ý: Nếu để trống ô này, mật khẩu đăng nhập ban đầu sẽ là <strong>Email</strong> của nhân viên.
                 </span>
               </div>
             </div>

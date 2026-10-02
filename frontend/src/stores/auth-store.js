@@ -103,6 +103,13 @@ export const useAuthStore = defineStore('auth', {
         this.settings = user.setting?.settings || {}
         cleanOldLocalConfigs()
 
+        // Kiểm tra ngay xem hệ thống có đang trong tiến trình Sang ngày hay không
+        try {
+          const { useNightAuditStore } = await import('./night-audit-store')
+          const nightAuditStore = useNightAuditStore()
+          await nightAuditStore.checkCurrentStatus()
+        } catch (_) {}
+
         return user
       } catch (err) {
         this.error = err.response?.data?.message || 'Đăng nhập thất bại. Vui lòng kiểm tra lại.'

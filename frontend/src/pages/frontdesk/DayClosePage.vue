@@ -503,7 +503,8 @@ async function handleRollDay() {
 
   await nightAuditStore.triggerNightAudit({
     occupiedToDirty: occupiedToDirty.value,
-    emptyToInspect: emptyToInspect.value
+    emptyToInspect: emptyToInspect.value,
+    forceRerun: !!alreadyRolledToday.value,
   })
 }
 

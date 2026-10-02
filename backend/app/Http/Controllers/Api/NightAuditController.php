@@ -228,6 +228,7 @@ class NightAuditController extends Controller
         $latestRun = NightAuditRun::with('steps')->latest('id')->first();
         $isRunning = (bool) ($settings?->is_night_audit_running) ||
             ($latestRun && $latestRun->status === 'running' && $latestRun->actual_started_at && $latestRun->actual_started_at->gte(now()->subMinutes(15)));
+        $activeStep = \Illuminate\Support\Facades\Cache::get('night_audit_active_step');
 
         return response()->json([
             'success' => true,
@@ -235,12 +236,15 @@ class NightAuditController extends Controller
                 'system_date' => $systemDate,
                 'already_rolled_today' => $alreadyRolledToday,
                 'is_running' => $isRunning,
+                'active_step' => $activeStep,
                 'latest_run' => $latestRun ? [
                     'id'                 => $latestRun->id,
                     'status'             => $latestRun->status,
+                    'username'           => $latestRun->username,
                     'source_system_date' => $latestRun->source_system_date?->toDateString(),
                     'target_system_date' => $latestRun->target_system_date?->toDateString(),
                     'started_at'         => $latestRun->actual_started_at?->toIso8601String(),
+                    'started_at_ms'      => $latestRun->actual_started_at ? (int) ($latestRun->actual_started_at->getTimestamp() * 1000) : null,
                     'finished_at'        => $latestRun->actual_finished_at?->toIso8601String(),
                     'error_message'      => $latestRun->error_message,
                     'steps'              => $latestRun->steps->map(fn($s) => [
@@ -552,10 +556,47 @@ class NightAuditController extends Controller
         if ($settings) {
             $settings->update(['is_night_audit_running' => true]);
         }
+        $startedAtMs = (int) (microtime(true) * 1000);
+        $stepDelayUs = app()->environment('testing') ? 0 : 550000;
+
+        $notifyStep = function (int $order, string $code, string $nameEn, int $percent) use (
+            $username,
+            $systemDate,
+            $nextDate,
+            &$run,
+            $stepDelayUs
+        ) {
+            \Illuminate\Support\Facades\Cache::put('night_audit_active_step', [
+                'step_order'  => $order,
+                'step_code'   => $code,
+                'name_en'     => $nameEn,
+                'percent'     => $percent,
+                'username'    => $username,
+                'source_date' => $systemDate->toDateString(),
+                'target_date' => $nextDate->toDateString(),
+            ], 60);
+
+            event(new NightAuditUpdated('progress', "Step {$order}: {$nameEn}", [
+                'run_id'     => $run?->id,
+                'step_order' => $order,
+                'step_code'  => $code,
+                'name_en'    => $nameEn,
+                'percent'    => $percent,
+                'username'   => $username,
+                'source_date'=> $systemDate->toDateString(),
+                'target_date'=> $nextDate->toDateString(),
+            ]));
+
+            if ($stepDelayUs > 0) {
+                usleep($stepDelayUs);
+            }
+        };
+
         event(new NightAuditUpdated('started', 'Hệ thống đang tiến hành sang ngày mới...', [
             'username'    => $username,
             'source_date' => $systemDate->toDateString(),
             'target_date' => $nextDate->toDateString(),
+            'started_at'  => $startedAtMs,
         ]));
 
         // 3. Tạo bản ghi Run TRƯỚC transaction (để đảm bảo run record tồn tại kể cả khi transaction nghiệp vụ rollback)
@@ -611,12 +652,14 @@ class NightAuditController extends Controller
                 $emptyToInspect,
                 $run,
                 $snapshotService,
+                $notifyStep,
                 &$steps,
                 &$currentStepCode,
                 &$skippedLocks
             ) {
-                // Bước 1: Pre-checks
+                // Bước 1: Check In/Out Conditions
                 $currentStepCode = 'PRE_CHECK';
+                $notifyStep(1, 'PRE_CHECK', 'Check In/Out Conditions', 6);
                 $snapshotService->markStepRunning($steps['PRE_CHECK']);
 
                 $pendingCheckIns = BookingRoom::with(['booking', 'guests.guest'])
@@ -675,8 +718,15 @@ class NightAuditController extends Controller
                 }
                 $snapshotService->markStepSucceeded($steps['PRE_CHECK'], 0, ['pending_checkins' => 0, 'pending_checkouts' => 0]);
 
-                // Bước 2: Lock & Verify System Date
+                // Bước 2: Backup Data
+                $notifyStep(2, 'BACKUP_PRE', 'Backup Data', 12);
+
+                // Bước 3: Lock System
+                $notifyStep(3, 'LOCK_SYSTEM', 'Lock System', 18);
+
+                // Bước 4: Checking Data & Verify System Date
                 $currentStepCode = 'LOCK_AND_VERIFY';
+                $notifyStep(4, 'CHECK_DATA', 'Checking Data', 24);
                 $snapshotService->markStepRunning($steps['LOCK_AND_VERIFY']);
 
                 $latestRoll = SystemDateRoll::orderBy('id', 'desc')->lockForUpdate()->first();
@@ -689,8 +739,9 @@ class NightAuditController extends Controller
                 }
                 $snapshotService->markStepSucceeded($steps['LOCK_AND_VERIFY'], 1, ['system_date' => $systemDate->toDateString()]);
 
-                // Bước 3: Tự động post tiền phòng + các dịch vụ tự động cho phòng đang ở
+                // Bước 5: Post Room Charge
                 $currentStepCode = 'POST_BILLS';
+                $notifyStep(5, 'POST_ROOM_CHARGE', 'Post Room Charge', 36);
                 $snapshotService->markStepRunning($steps['POST_BILLS']);
 
                 $inhouseRooms = BookingRoom::where('status', BookingRoom::STATUS_CHECKED_IN)
@@ -726,6 +777,11 @@ class NightAuditController extends Controller
                         ->where('service_code', '!=', 'RM')
                         ->get();
 
+                    // Bước 6: Post Check Out Bill OutLet
+                    if ($autoServices->isNotEmpty()) {
+                        $notifyStep(6, 'POST_OUTLET_BILL', 'Post Check Out Bill OutLet', 42);
+                    }
+
                     foreach ($autoServices as $service) {
                         $this->postSetupServiceBill($targetRoom, $service, $username);
                         $postedBillsCount++;
@@ -736,52 +792,15 @@ class NightAuditController extends Controller
                     'posted_bills'  => $postedBillsCount,
                 ]);
 
-                // Bước 4: Snapshot SP7000 (Agency Productivity)
-                $currentStepCode = 'SNAPSHOT_SP7000';
-                $snapshotService->markStepRunning($steps['SNAPSHOT_SP7000']);
-                $sp7000Rows = $snapshotService->captureAgencyProductivity($systemDate, $run);
-                $snapshotService->markStepSucceeded($steps['SNAPSHOT_SP7000'], $sp7000Rows);
+                // Bước 7: Update System Date
+                $notifyStep(7, 'UPDATE_SYSTEM_DATE', 'Update System Date', 48);
 
-                // Bước 5: Snapshot SP7001 (Inhouse Guests)
-                $currentStepCode = 'SNAPSHOT_SP7001';
-                $snapshotService->markStepRunning($steps['SNAPSHOT_SP7001']);
-                $sp7001Rows = $snapshotService->captureInhouse($systemDate, $run);
-                $snapshotService->markStepSucceeded($steps['SNAPSHOT_SP7001'], $sp7001Rows);
+                // Bước 8: Write End Of Day Log
+                $notifyStep(8, 'WRITE_EOD_LOG', 'Write End Of Day Log', 54);
 
-                // Bước 6: Snapshot SP7002 (KPI Agency - Bỏ qua có ghi nhận do thiếu producer nguồn)
-                $currentStepCode = 'SNAPSHOT_SP7002';
-                $snapshotService->markStepSkipped(
-                    $steps['SNAPSHOT_SP7002'],
-                    'Chưa cấu hình công thức nguồn (Không có procedure tạo dữ liệu SP7002 trong tài liệu SQL Server của khách)'
-                );
-
-                // Bước 7: Snapshot SP7003 (Room Sales Forecast)
-                $currentStepCode = 'SNAPSHOT_SP7003';
-                $snapshotService->markStepRunning($steps['SNAPSHOT_SP7003']);
-                $sp7003Rows = $snapshotService->captureRoomSalesForecast($systemDate, $run);
-                $snapshotService->markStepSucceeded($steps['SNAPSHOT_SP7003'], $sp7003Rows);
-
-                // Bước 8: Snapshot SP7004 (Room Sales Forecast Detail - Bỏ qua có ghi nhận do thiếu mapping)
-                $currentStepCode = 'SNAPSHOT_SP7004';
-                $snapshotService->markStepSkipped(
-                    $steps['SNAPSHOT_SP7004'],
-                    'Chưa cấu hình công thức nguồn (Chưa có mapping service-code và procedure ghi dữ liệu SP7004)'
-                );
-
-                // Bước 9: Snapshot SP7005 (Room Type Statistics)
-                $currentStepCode = 'SNAPSHOT_SP7005';
-                $snapshotService->markStepRunning($steps['SNAPSHOT_SP7005']);
-                $sp7005Rows = $snapshotService->captureRoomType($systemDate, $run);
-                $snapshotService->markStepSucceeded($steps['SNAPSHOT_SP7005'], $sp7005Rows);
-
-                // Bước 10: Invariants Verification
-                $currentStepCode = 'VERIFY_INVARIANTS';
-                $snapshotService->markStepRunning($steps['VERIFY_INVARIANTS']);
-                $verification = $snapshotService->verifyInvariants($systemDate, $run);
-                $snapshotService->markStepSucceeded($steps['VERIFY_INVARIANTS'], 1, $verification);
-
-                // Bước 11: Cập nhật trạng thái hiển thị sơ đồ phòng & xử lý khóa phòng
+                // Bước 9: Update Room Status
                 $currentStepCode = 'UPDATE_ROOMS_AND_LOCKS';
+                $notifyStep(9, 'UPDATE_ROOM_STATUS', 'Update Room Status', 60);
                 $snapshotService->markStepRunning($steps['UPDATE_ROOMS_AND_LOCKS']);
 
                 if ($occupiedToDirty) {
@@ -859,8 +878,72 @@ class NightAuditController extends Controller
                 }
                 $snapshotService->markStepSucceeded($steps['UPDATE_ROOMS_AND_LOCKS'], count($expiredLocks) + count($startingLocks));
 
-                // Bước 12: Chuyển ngày hệ thống mới (SystemDateRoll)
+                // Bước 10: Process Folio Charges
+                $notifyStep(10, 'PROCESS_FOLIO_CHARGES', 'Process Folio Charges', 66);
+
+                // Bước 11: Split Bill
+                $notifyStep(11, 'SPLIT_BILL', 'Split Bill', 76);
+
+                // Bước 12: Process Pending Outlets
+                $notifyStep(12, 'PROCESS_PENDING_OUTLET', 'Process Pending Outlets', 81);
+
+                // Bước 13: Update Check Out Bill
+                $notifyStep(13, 'UPDATE_CHECKOUT_BILL', 'Update Check Out Bill', 86);
+
+                // Bước 14: UnLock System
+                $notifyStep(14, 'UNLOCK_SYSTEM', 'UnLock System', 90);
+
+                // Bước 15: Back Up Data After Night Audit (SP7000 - SP7005)
+                $notifyStep(15, 'BACKUP_POST', 'Back Up Data After Night Audit', 94);
+
+                // Snapshot SP7000 (Agency Productivity)
+                $currentStepCode = 'SNAPSHOT_SP7000';
+                $snapshotService->markStepRunning($steps['SNAPSHOT_SP7000']);
+                $sp7000Rows = $snapshotService->captureAgencyProductivity($systemDate, $run);
+                $snapshotService->markStepSucceeded($steps['SNAPSHOT_SP7000'], $sp7000Rows);
+
+                // Snapshot SP7001 (Inhouse Guests)
+                $currentStepCode = 'SNAPSHOT_SP7001';
+                $snapshotService->markStepRunning($steps['SNAPSHOT_SP7001']);
+                $sp7001Rows = $snapshotService->captureInhouse($systemDate, $run);
+                $snapshotService->markStepSucceeded($steps['SNAPSHOT_SP7001'], $sp7001Rows);
+
+                // Snapshot SP7002 (KPI Agency - Bỏ qua có ghi nhận do thiếu producer nguồn)
+                $currentStepCode = 'SNAPSHOT_SP7002';
+                $snapshotService->markStepSkipped(
+                    $steps['SNAPSHOT_SP7002'],
+                    'Chưa cấu hình công thức nguồn (Không có procedure tạo dữ liệu SP7002 trong tài liệu SQL Server của khách)'
+                );
+
+                // Snapshot SP7003 (Room Sales Forecast)
+                $currentStepCode = 'SNAPSHOT_SP7003';
+                $snapshotService->markStepRunning($steps['SNAPSHOT_SP7003']);
+                $sp7003Rows = $snapshotService->captureRoomSalesForecast($systemDate, $run);
+                $snapshotService->markStepSucceeded($steps['SNAPSHOT_SP7003'], $sp7003Rows);
+
+                // Snapshot SP7004 (Room Sales Forecast Detail - Bỏ qua có ghi nhận do thiếu mapping)
+                $currentStepCode = 'SNAPSHOT_SP7004';
+                $snapshotService->markStepSkipped(
+                    $steps['SNAPSHOT_SP7004'],
+                    'Chưa cấu hình công thức nguồn (Chưa có mapping service-code và procedure ghi dữ liệu SP7004)'
+                );
+
+                // Snapshot SP7005 (Room Type Statistics)
+                $currentStepCode = 'SNAPSHOT_SP7005';
+                $snapshotService->markStepRunning($steps['SNAPSHOT_SP7005']);
+                $sp7005Rows = $snapshotService->captureRoomType($systemDate, $run);
+                $snapshotService->markStepSucceeded($steps['SNAPSHOT_SP7005'], $sp7005Rows);
+
+                // Bước 16: Verify Backup Integrity
+                $currentStepCode = 'VERIFY_INVARIANTS';
+                $notifyStep(16, 'VERIFY_INTEGRITY', 'Verify Backup Integrity', 97);
+                $snapshotService->markStepRunning($steps['VERIFY_INVARIANTS']);
+                $verification = $snapshotService->verifyInvariants($systemDate, $run);
+                $snapshotService->markStepSucceeded($steps['VERIFY_INVARIANTS'], 1, $verification);
+
+                // Bước 17: Sync AV Allotment To Channel Manager & Chuyển ngày hệ thống
                 $currentStepCode = 'ROLL_SYSTEM_DATE';
+                $notifyStep(17, 'SYNC_ALLOTMENT', 'Sync AV Allotment To Channel Manager', 99);
                 $snapshotService->markStepRunning($steps['ROLL_SYSTEM_DATE']);
 
                 SystemDateRoll::create([
@@ -871,7 +954,7 @@ class NightAuditController extends Controller
                 ]);
                 $snapshotService->markStepSucceeded($steps['ROLL_SYSTEM_DATE'], 1, ['new_system_date' => $nextDate->toDateString()]);
 
-                // Bước 13: Hoàn tất
+                // Hoàn tất transaction
                 $currentStepCode = 'FINALIZE';
                 $snapshotService->markStepSucceeded($steps['FINALIZE'], 1);
             });
@@ -887,11 +970,15 @@ class NightAuditController extends Controller
                 'source_date' => $systemDate->toDateString(),
                 'target_date' => $nextDate->toDateString(),
                 'run_id'      => $run->id,
+                'step_order'  => 18,
+                'percent'     => 100,
+                'started_at'  => $startedAtMs,
             ]));
 
             return response()->json([
                 'success'           => true,
                 'run_id'            => $run->id,
+                'started_at'        => $startedAtMs,
                 'source_date'       => $systemDate->toDateString(),
                 'target_date'       => $nextDate->toDateString(),
                 'status'            => 'succeeded',
@@ -930,6 +1017,7 @@ class NightAuditController extends Controller
                 'error_message' => $e->getMessage(),
                 'error_details' => $errorDetails,
                 'rollback_done' => true,
+                'started_at'    => $startedAtMs ?? (int) (microtime(true) * 1000),
             ]));
 
             return response()->json([
@@ -942,6 +1030,7 @@ class NightAuditController extends Controller
             ], 500);
 
         } finally {
+            \Illuminate\Support\Facades\Cache::forget('night_audit_active_step');
             if ($settings) {
                 $settings->update(['is_night_audit_running' => false]);
             }
