@@ -25,6 +25,18 @@ const currentBookingModule = computed(() => {
   if (route.path === '/housekeeping') return 'HK'
   return 'SALE'
 })
+const isHousekeepingModule = computed(() => currentBookingModule.value === 'HK')
+const housekeepingAllowedRoomPlanActions = new Set([
+  'Khóa phòng OOO',
+  'Khóa phòng OOS',
+  'Mở khóa phòng'
+])
+
+function getRoomPlanBookingRenderKey(booking) {
+  const isLock = booking.code === 'LOCK' || booking.isLockRoom
+  const id = booking.lockId ?? booking.bookingRoomId ?? booking.code
+  return `${isLock ? 'lock' : 'booking-room'}-${id}`
+}
 
 const isAdmin = computed(() => {
   const u = authStore.user
@@ -736,8 +748,10 @@ const days = computed(() => {
     const current = new Date(start)
     current.setDate(start.getDate() + i)
     const dayOfWeek = current.getDay()
+    const key = formatDateStr(current)
     
     list.push({
+      key,
       dateStr: `${String(current.getDate()).padStart(2, '0')}/${String(current.getMonth() + 1).padStart(2, '0')}`,
       dow: weekDays[dayOfWeek],
       isWeekend: dayOfWeek === 0 || dayOfWeek === 6,
@@ -4210,7 +4224,7 @@ function getRoomStatusIconName(item) {
       <table class="w-full text-xs border-collapse table-fixed select-none">
         <colgroup>
           <col class="w-[120px] sticky left-0 z-30" />
-          <col v-for="(day, idx) in days" :key="idx" class="w-[62px]" />
+          <col v-for="day in days" :key="day.key" class="w-[62px]" />
         </colgroup>
 
         <!-- Header -->
@@ -4219,7 +4233,7 @@ function getRoomStatusIconName(item) {
             <th class="p-2 border-r border-slate-200 text-center sticky left-0 top-0 z-40 bg-slate-100 shadow-[inset_-1px_0_0_#e2e8f0]"></th>
             <th 
               v-for="(day, idx) in days" 
-              :key="idx" 
+              :key="day.key" 
               class="p-1 border-r border-slate-200 text-center sticky top-0 z-30 shadow-[inset_0_-1px_0_#e2e8f0]"
               :class="[
                 dragSourceStartIdx !== null && idx >= dragSourceStartIdx && idx < dragSourceEndIdx
@@ -4304,7 +4318,7 @@ function getRoomStatusIconName(item) {
               <!-- Grid Cells -->
               <td 
                 v-for="(day, dayIdx) in days" 
-                :key="dayIdx" 
+                :key="day.key" 
                 data-room-plan-cell
                 :data-room="item.room"
                 :data-day-index="dayIdx"
@@ -4329,8 +4343,8 @@ function getRoomStatusIconName(item) {
                 <!-- Render bookings starting at this cell -->
                 <template v-if="processedBookings[item.room]">
                   <div
-                    v-for="(bk, bkIdx) in processedBookings[item.room].filter(b => b.startIndex === dayIdx)"
-                    :key="bkIdx"
+                    v-for="bk in processedBookings[item.room].filter(b => b.startIndex === dayIdx)"
+                    :key="getRoomPlanBookingRenderKey(bk)"
                     @mouseenter="showTooltip(bk, $event)"
                     @mousemove="updateTooltipPosition($event)"
                     @mouseleave="hideTooltip"
@@ -4464,7 +4478,7 @@ function getRoomStatusIconName(item) {
             </td>
             <td 
               v-for="(day, idx) in days" 
-              :key="idx" 
+              :key="day.key" 
               class="p-1 text-center text-[9px] font-bold text-slate-800 shadow-[inset_-1px_-1px_0_#93c5fd] cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden leading-tight"
               :class="[
                 dragSourceStartIdx !== null && idx >= dragSourceStartIdx && idx < dragSourceEndIdx
@@ -4490,7 +4504,7 @@ function getRoomStatusIconName(item) {
             </td>
             <td 
               v-for="(day, idx) in days" 
-              :key="idx" 
+              :key="day.key" 
               class="p-1 text-center text-[9px] font-bold text-slate-700 shadow-[inset_-1px_-1px_0_#e2e8f0] cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden leading-tight"
               :class="[
                 isTodayDate(day.fullDate) ? 'bg-[#ff7043]/20' : (day.isWeekend ? 'bg-[#72b5f7]/30' : 'bg-white')
@@ -4514,7 +4528,7 @@ function getRoomStatusIconName(item) {
             </td>
             <td 
               v-for="(day, idx) in days" 
-              :key="idx" 
+              :key="day.key" 
               class="p-1 text-center text-[9px] font-bold text-slate-500 shadow-[inset_-1px_-1px_0_#e2e8f0] cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden leading-tight"
               :class="[
                 isTodayDate(day.fullDate) ? 'bg-[#ff7043]/20' : (day.isWeekend ? 'bg-[#72b5f7]/30' : 'bg-white')
