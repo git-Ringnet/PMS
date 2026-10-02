@@ -43,6 +43,7 @@ class BookingRoomServiceController extends Controller
         $room     = BookingRoom::findOrFail($roomId);
         $services = $room->services()
             ->orderBy('service_date')
+            ->orderBy('id')
             ->get();
 
         return response()->json(['success' => true, 'data' => $services]);

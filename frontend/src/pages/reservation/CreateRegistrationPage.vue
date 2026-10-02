@@ -830,7 +830,7 @@ function handleServiceRateChange(room, svc, newRate) {
   svc.rate = newRate
   svc.service_date = cleanDate
 
-  const isRoomCharge = svc.service_code === 'ROOM_CHARGE' || svc.service_code === 'RM' || svc.is_room === true || Number(svc.is_room) === 1
+  const isRoomCharge = isRoomChargeService(svc)
 
   if (isRoomCharge) {
     if (!room.dailyRoomPrices) room.dailyRoomPrices = {}
@@ -1053,6 +1053,12 @@ async function handleInlineServiceQtyChange(room, svc, newQty) {
       uiStore.showToast('Không thể cập nhật số lượng vào hệ thống!', 'error')
     }
   }
+}
+
+function isRoomChargeService(svc) {
+  if (!svc) return false
+  const code = String(svc.service_code || svc.ServiceId || '').toUpperCase()
+  return code === 'RM' || code === 'ROOM_CHARGE' || code === 'ER'
 }
 
 function isChildBreakfastService(svc) {
@@ -1329,8 +1335,7 @@ function getRoomDisplayServices(room) {
       } else {
         // Đêm HÔM NAY HOẶC TƯƠNG LAI: chưa có hóa đơn, lấy theo dịch vụ phòng đã lưu hoặc giá kế hoạch
         const dbCharge = (room.services || []).find(svc => 
-          (svc.service_code === 'RM' || svc.service_code === 'ROOM_CHARGE' || Number(svc.is_room) === 1) && 
-          cleanDateStr(svc.service_date) === dStr
+          isRoomChargeService(svc) && cleanDateStr(svc.service_date) === dStr
         )
 
         const customRate = (room.dailyRoomPrices && room.dailyRoomPrices[dStr] !== undefined)
@@ -1341,8 +1346,8 @@ function getRoomDisplayServices(room) {
           list.push({
             id: dbCharge.id,
             service_date: dStr,
-            service_name: getChildBreakfastDisplayName(dbCharge) || getHotelServiceName('RM', 'Dịch vụ phòng nghỉ'),
-            service_code: dbCharge.service_code,
+            service_name: dbCharge.service_name || getHotelServiceName('RM', 'Dịch vụ phòng nghỉ'),
+            service_code: dbCharge.service_code || 'RM',
             quantity: dbCharge.quantity || 1,
             rate: customRate,
             is_room: true,
@@ -1530,30 +1535,32 @@ function getRoomDisplayServices(room) {
         if (!d.breakfast || (!d.is_extra_charge && d.is_free) || amt <= 0 || !dStr) return
 
         const isPastNight = sysDate ? (dStr < sysDate) : false
+        let bfBill = null
         if (isPastNight) {
-          const bfBill = (room.serviceBills || []).find(sb => 
+          bfBill = (room.serviceBills || []).find(sb => 
             (String(sb.ServiceId || '').toUpperCase() === 'BD' || String(sb.DescriptionServive || '').toLowerCase().includes('ăn sáng trẻ em')) &&
             getBillRecordDateStr(sb) === dStr &&
             Number(sb.Edit) !== 1 && ![3, 4].includes(Number(sb.Status)) &&
             !handledBillIds.has(String(sb.Ma || sb.id))
           )
-          if (bfBill) {
-            const bId = String(bfBill.Ma || bfBill.id)
-            handledBillIds.add(bId)
-            const qty = Number(bfBill.Quantity) || 1
-            const bAmt = Number(bfBill.Amount) || 0
-            list.push({
-              id: `child-bf-bill-${bId}`,
-              service_date: dStr,
-              service_name: bfBill.DescriptionServive || `Phụ thu ăn sáng trẻ em - ${child.full_name || 'Child'}`,
-              service_code: 'BD',
-              quantity: qty,
-              rate: qty > 0 ? bAmt / qty : bAmt,
-              is_room: true,
-              from_bill: true,
-              bill_ref: bfBill
-            })
-          }
+        }
+
+        if (bfBill) {
+          const bId = String(bfBill.Ma || bfBill.id)
+          handledBillIds.add(bId)
+          const qty = Number(bfBill.Quantity) || 1
+          const bAmt = Number(bfBill.Amount) || 0
+          list.push({
+            id: `child-bf-bill-${bId}`,
+            service_date: dStr,
+            service_name: bfBill.DescriptionServive || `Phụ thu ăn sáng trẻ em - ${child.full_name || 'Child'}`,
+            service_code: 'BD',
+            quantity: qty,
+            rate: qty > 0 ? bAmt / qty : bAmt,
+            is_room: true,
+            from_bill: true,
+            bill_ref: bfBill
+          })
         } else {
           list.push({
             id: `child-bf-${d.id}`,
@@ -3417,7 +3424,7 @@ function getServiceDiscountObj(room, svc) {
 }
 
 function getServiceDiscountLabel(room, svc) {
-  const isRoomCharge = svc.service_code === 'ROOM_CHARGE' || svc.service_code === 'RM' || Number(svc.is_room) === 1
+  const isRoomCharge = isRoomChargeService(svc)
   if (!isRoomCharge) return '—'
   const cleanDate = cleanDateStr(svc.service_date)
   const disc = room.dailyRoomDiscounts?.[cleanDate]
@@ -6809,7 +6816,7 @@ defineExpose({
                                   <td class="p-2 border-r border-slate-100 text-slate-800 font-bold">{{ svc.service_name }}</td>
                                   <td class="p-2 border-r border-slate-100 text-slate-400 italic">—</td>
                                   <td class="p-2 border-r border-slate-100 text-center relative">
-                                    <template v-if="(svc.service_code === 'ROOM_CHARGE' || svc.service_code === 'RM' || Number(svc.is_room) === 1) && !isChildBreakfastService(svc)">
+                                    <template v-if="isRoomChargeService(svc) && !isChildBreakfastService(svc)">
                                       <div 
                                         v-if="isEditing && isServiceRateEditable(svc.service_date)"
                                         @click.stop="toggleServiceDiscountPopover(room, svc)"
@@ -7482,7 +7489,7 @@ defineExpose({
                                         <td class="p-2 border-r border-slate-100">{{ formatDateVi(svc.service_date) }}</td>
                                         <td class="p-2 border-r border-slate-100 text-slate-800 font-bold">{{ svc.service_name }}</td>
                                          <td class="p-2 border-r border-slate-100 text-center relative">
-                                           <template v-if="(svc.service_code === 'ROOM_CHARGE' || svc.service_code === 'RM' || Number(svc.is_room) === 1) && !isChildBreakfastService(svc)">
+                                           <template v-if="isRoomChargeService(svc) && !isChildBreakfastService(svc)">
                                              <div 
                                                v-if="isServiceRateEditable(svc.service_date)"
                                                @click.stop="toggleServiceDiscountPopover(room, svc)"
@@ -7582,7 +7589,7 @@ defineExpose({
                                          </td>
                                         <td class="p-2 border-r border-slate-100 text-center text-slate-700">
                                           <input 
-                                            v-if="isServiceRateEditable(svc.service_date) && svc.service_code !== 'ROOM_CHARGE' && svc.service_code !== 'RM' && !isChildBreakfastService(svc)"
+                                            v-if="isServiceRateEditable(svc.service_date) && !isRoomChargeService(svc) && !isChildBreakfastService(svc)"
                                             type="number"
                                             :value="svc.quantity !== undefined && svc.quantity !== null ? parseFloat(svc.quantity) : 1"
                                             min="0"
@@ -7608,7 +7615,7 @@ defineExpose({
                                           <div class="flex items-center justify-end space-x-2">
                                             <span>{{ (Number(svc.quantity || 1) * Number(svc.rate || 0)).toLocaleString('en-US') }}</span>
                                             <button 
-                                              v-if="isServiceRateEditable(svc.service_date) && svc.service_code !== 'ROOM_CHARGE' && svc.service_code !== 'RM'"
+                                              v-if="isServiceRateEditable(svc.service_date) && !isRoomChargeService(svc)"
                                               @click.stop="handleInlineServiceDelete(room, svc)"
                                               class="text-rose-500 hover:text-rose-700 opacity-0 group-hover:opacity-100 transition-opacity duration-150 cursor-pointer w-3 flex justify-center shrink-0"
                                               title="Xóa dịch vụ"

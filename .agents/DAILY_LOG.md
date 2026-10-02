@@ -18,6 +18,68 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-10-02] - Nâng cấp tiến trình Sang ngày (Night Audit): Đồng bộ toàn hệ thống đa tài khoản, phân quyền động, chi tiết phòng lỗi & tự động đóng 10s
+### Module: Lễ tân / Sang ngày ([NightAuditController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php), [RolePermissionSeeder.php](file:///d:/PMS/backend/database/seeders/RolePermissionSeeder.php), [NightAuditUpdated.php](file:///d:/PMS/backend/app/Events/NightAuditUpdated.php), [night-audit-store.js](file:///d:/PMS/frontend/src/stores/night-audit-store.js), [NightAuditProgressModal.vue](file:///d:/PMS/frontend/src/components/NightAuditProgressModal.vue), [App.vue](file:///d:/PMS/frontend/src/App.vue), [DayClosePage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue))
+
+- **Yêu cầu & Nghiệp vụ**:
+  - Không hardcode tài khoản `admin`; bất kỳ tài khoản nào có quyền `fo.night_audit` hoặc Quản trị viên/Lễ tân trưởng đều được phép thực hiện Sang ngày.
+  - Khi 1 tài khoản kích hoạt Sang ngày, tất cả các tài khoản khác đang đăng nhập/sử dụng ở các màn hình khác (Sơ đồ phòng, Đặt phòng, Thu ngân...) đều tự động hiển thị màn hình tiến trình 18 bước chạy đồng bộ realtime qua WebSocket.
+  - Khi có lỗi ở bất kỳ bước nào (đặc biệt Bước 1 PRE_CHECK), hiển thị chi tiết nguyên nhân vi phạm (danh sách phòng chưa check-in/chưa check-out, mã booking, tên khách, ngày đến/đi) và hướng dẫn cụ thể để nhân viên xử lý.
+  - Tự động đóng thông báo lỗi sau 10 giây (kèm đồng hồ đếm ngược) để đưa người dùng quay lại màn hình làm việc mà không bắt buộc phải bấm nút đóng.
+- **Backend đã xử lý**:
+  - [`RolePermissionSeeder.php`](file:///d:/PMS/backend/database/seeders/RolePermissionSeeder.php): Thêm permission `fo.night_audit` ('Sang ngày / Đóng ngày hệ thống'), gán cho các role `super_admin`, `branch_admin`, `fo_manager`.
+  - [`routes/api.php`](file:///d:/PMS/backend/routes/api.php): Gắn middleware `permission:fo.night_audit` bảo vệ các route `/night-audit/run`, `late-check-in`, `no-show`, `extend-stay`.
+  - [`NightAuditController.php`](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php): Thay thế hardcode `'admin'` bằng `Auth::user()?->username ?: (Auth::user()?->name ?: 'system')`. Tại bước 1 PRE_CHECK, truy vấn chi tiết các phòng vướng mắc và đính kèm vào `error_details` (`pending_checkins`, `pending_checkouts`, `hint`). Khối catch phát broadcast realtime và trả JSON response chứa `error_details`.
+  - [`NightAuditUpdated.php`](file:///d:/PMS/backend/app/Events/NightAuditUpdated.php): Bổ sung `username`, `source_date`, `target_date`, `failed_step`, `error_details`, `rollback_done` vào WebSocket event broadcast.
+  - [`NightAuditSnapshotService.php`](file:///d:/PMS/backend/app/Services/NightAuditSnapshotService.php): Thay thế fallback `'admin'` thành `'system'`.
+  - [`NightAuditTest.php`](file:///d:/PMS/backend/tests/Feature/NightAuditTest.php): Bổ sung role `super_admin` và kiểm tra dynamic username `test_auditor`. Passed 11/11 tests (67 assertions).
+- **Frontend đã xử lý**:
+  - [`night-audit-store.js`](file:///d:/PMS/frontend/src/stores/night-audit-store.js): Store Pinia quản lý tiến trình toàn cục, animation 18 bước, xử lý socket realtime cho cả người chạy lẫn người xem (`handleRemoteStarted`, `handleRemoteCompleted`, `handleRemoteFailed`), cơ chế đếm ngược 10 giây tự đóng khi gặp lỗi.
+  - [`NightAuditProgressModal.vue`](file:///d:/PMS/frontend/src/components/NightAuditProgressModal.vue): Component modal tiến trình toàn cục nền trắng chuẩn tham chiếu, badge đếm ngược 10s, bảng hiển thị phòng lỗi phân loại rõ phòng đến/phòng đi kèm mã booking và hướng dẫn khắc phục.
+  - [`App.vue`](file:///d:/PMS/frontend/src/App.vue): Nhúng `<NightAuditProgressModal />` ở cấp root và lắng nghe kênh WebSocket Echo `pms-channel` event `.night.audit.updated`.
+  - [`DayClosePage.vue`](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue): Kiểm tra quyền thực thi `canExecuteNightAudit`, kết nối nút "Sang ngày" với store `nightAuditStore.triggerNightAudit`, loại bỏ khối modal duplicate và các biến cục bộ thừa.
+- **Kiểm thử**:
+  - Backend: `php artisan test tests/Feature/NightAuditTest.php` -> 11/11 tests passed.
+  - Frontend: `npm run build` -> thành công không có lỗi cú pháp hay cảnh báo bundle hỏng.
+
+## [2026-10-02] - Sửa lỗi nhảy tổng tiền và hiển thị nhầm Extra Bed thành Tiền phòng khi mở chi tiết phòng (Booking GAL3)
+### Module: Đặt phòng / Màn hình BK ([BookingRoomServiceController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomServiceController.php), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))
+
+- **Yêu cầu & Phản ánh của khách hàng**:
+  - Khách hàng phản ánh trên link test khi vào Booking số 3 (`GAL3`), tổng tiền ở chân bảng ban đầu là 36,830,000đ.
+  - Khi bấm dấu `+` (xổ chi tiết dịch vụ) của phòng 109, tổng tiền chân bảng nhảy xuống 35,230,000đ (bị hụt đúng 1,600,000đ = 2 đêm 800,000đ).
+  - Đồng thời chi tiết ngày 02/09/2026 và 03/09/2026 xuất hiện dòng tên `Extrabed/Thêm Giường` với đơn giá 800,000đ (có icon thùng rác đỏ để xóa) thay vì dòng `Dịch vụ phòng nghỉ`.
+- **Nguyên nhân cốt lõi**:
+  - Khi mở rộng phòng, frontend gọi API `fetchBookingRoomServices` lấy danh sách dịch vụ và ghi đè `room.services`.
+  - Trong logic tìm tiền phòng tương lai `dbCharge`, điều kiện cũ kiểm tra `(svc.service_code === 'RM' || svc.service_code === 'ROOM_CHARGE' || Number(svc.is_room) === 1)`.
+  - Trong DB, cột `is_room = 1` dùng để phân biệt folio phòng (FIT) chứ không phải cờ "là tiền phòng". Vì vậy các bản ghi Extra Bed (`EB`) cũng có `is_room = 1`.
+  - Khi bản ghi `EB` trả về trước `RM` cùng ngày 02/09 và 03/09, `.find()` bắt nhầm bản ghi `EB` làm tiền phòng: gán tên `Extrabed/Thêm Giường`, gán mã `EB` và đơn giá 800,000đ.
+  - Khi tính tổng, `getRoomChargeTotal` chỉ lọc mã `RM`/`ROOM_CHARGE`/`ER` nên bỏ sót 2 đêm này (-1,600,000đ), làm tổng tiền bị tụt từ 36,830,000đ xuống 35,230,000đ.
+- **Nghiệp vụ đã xử lý**:
+  1. **Frontend ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))**:
+     - Tạo hàm chuẩn `isRoomChargeService(svc)` để định danh chính xác các mã tiền phòng: `RM`, `ROOM_CHARGE`, `ER`.
+     - Loại bỏ triệt để điều kiện nhầm lẫn `Number(svc.is_room) === 1` khi tìm `dbCharge`, gán tên `dbCharge.service_name || Dịch vụ phòng nghỉ` và `service_code: 'RM'`.
+     - Đồng bộ lại `isRoomChargeService` ở tất cả các vị trí: `handleServiceRateChange`, `getServiceDiscountLabel`, popup giảm giá và template Mode A & Mode B.
+     - Cập nhật điều kiện nút xóa và ô nhập số lượng trong chi tiết phòng: chỉ hiển thị cho dịch vụ phụ `!isRoomChargeService(svc)`.
+  2. **Backend ([BookingRoomServiceController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomServiceController.php))**:
+     - Thêm `->orderBy('id')` sau `orderBy('service_date')` trong phương thức `index` để đảm bảo thứ tự trả về luôn ổn định và ưu tiên bản ghi tiền phòng gốc tạo trước.
+- **Kiểm thử**:
+  - `npm run build` hoàn thành thành công trong 4.43s không có lỗi.
+
+## [2026-10-02] - Bổ sung Fallback phụ thu ăn sáng trẻ em ngày quá khứ tránh hụt 270,000đ (Booking GAL3)
+### Module: Đặt phòng / Màn hình BK ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))
+
+- **Phản ánh & Hiện tượng**:
+  - Người dùng thấy tổng tiền Booking GAL3 bị hụt từ 36,830,000đ xuống 36,560,000đ (phòng 109 từ 11,400,000đ còn 11,130,000đ, hụt đúng 270,000đ).
+- **Nguyên nhân**:
+  - 270,000đ = 3 đêm x 90,000đ phụ thu ăn sáng của Trẻ em (Child 1) vào 3 ngày quá khứ (30/08, 31/08, 01/09).
+  - Trước đó theo chuẩn fun_052, ngày quá khứ chỉ tìm bill `BD` trong `service_bills`. Do khách sạn chưa post bill lẻ vào `service_bills` nên 3 đêm này bị bỏ sót.
+- **Xử lý**:
+  - Tại [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue): Bổ sung cơ chế fallback — nếu ngày quá khứ chưa có bill lẻ trong `service_bills` thì tự động lấy theo cấu hình ăn sáng trẻ em đã cài trong Booking (`booking_child_breakfast_details`).
+  - Đảm bảo phòng 109 tính đủ 11,400,000đ và tổng Booking giữ đúng 36,830,000đ cả trước và sau khi mở chi tiết phòng.
+- **Kiểm thử**:
+  - Build frontend `npm run build` thành công trong 4.43s.
+
 ## [2026-10-01] - Sửa lỗi tính tiền màn hình BK (Task 224 - Note 22/09: Lọc dịch vụ post tay tại lễ tân & chuẩn hóa theo fun_052)
 ### Module: Đặt phòng / Màn hình BK ([BookingRoomServiceController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomServiceController.php), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))
 
