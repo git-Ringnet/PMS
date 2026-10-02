@@ -3905,7 +3905,7 @@ async function saveLockRoom() {
       const resData = err.response?.data
       if (resData && resData.require_confirm) {
         const proceed = await uiStore.confirm({
-          title: 'Cảnh báo phòng âm',
+          title: 'Cảnh báo',
           message: resData.message || 'Phòng âm. Bạn có muốn tiếp tục thao tác?',
           confirmText: 'Tiếp tục',
           cancelText: 'Hủy'

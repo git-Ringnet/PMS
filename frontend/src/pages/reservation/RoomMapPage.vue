@@ -2048,7 +2048,7 @@ async function submitRoomLock(force = false) {
   } catch (err) {
     const resData = err.response?.data
     if (resData?.require_confirm) {
-      const proceed = await uiStore.confirm({ title: 'Cảnh báo phòng âm', message: resData.message, confirmText: 'Tiếp tục', cancelText: 'Hủy' })
+      const proceed = await uiStore.confirm({ title: 'Cảnh báo', message: resData.message, confirmText: 'Tiếp tục', cancelText: 'Hủy' })
       if (proceed) await submitRoomLock(true)
     } else { uiStore.showToast(resData?.message || 'Không thể khóa phòng.', 'error') }
   }
