@@ -18,6 +18,25 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-10-02] - Gỡ bỏ cơ chế bắt buộc đổi mật khẩu lần đầu khi tạo/đặt lại tài khoản nhân viên
+### Module: Quản trị hệ thống / Nhân viên / Xác thực ([UserController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/UserController.php), [ForcePasswordChange.php](file:///d:/PMS/backend/app/Http/Middleware/ForcePasswordChange.php), [app.php](file:///d:/PMS/backend/bootstrap/app.php), [App.vue](file:///d:/PMS/frontend/src/App.vue), [http.js](file:///d:/PMS/frontend/src/services/http.js), [EmployeeTab.vue](file:///d:/PMS/frontend/src/pages/system/components/EmployeeTab.vue))
+
+- **Yêu cầu & Nghiệp vụ**:
+  - Khi tạo tài khoản nhân viên, đăng nhập sử dụng mật khẩu đã đặt khi tạo mà không cần đổi lại mật khẩu lần đầu.
+  - Gỡ bỏ hoàn toàn popup modal "Yêu Cầu Đổi Mật Khẩu Lần Đầu" chặn toàn màn hình. Khi người dùng muốn đổi mật khẩu thì tự chủ động đổi.
+- **Backend đã xử lý**:
+  - [`UserController.php`](file:///d:/PMS/backend/app/Http/Controllers/Api/UserController.php): Đặt `must_change_password => false` khi tạo mới (`store`), không ép cờ khi cập nhật (`update`), và đặt `must_change_password => false` khi đặt lại mật khẩu (`resetPassword`).
+  - [`bootstrap/app.php`](file:///d:/PMS/backend/bootstrap/app.php): Gỡ bỏ middleware `ForcePasswordChange::class` khỏi API group.
+  - [`ForcePasswordChange.php`](file:///d:/PMS/backend/app/Http/Middleware/ForcePasswordChange.php): Chuyển thành passthrough `$next($request)`.
+  - Database: Cập nhật toàn bộ các bản ghi `users.must_change_password = 0`.
+- **Frontend đã xử lý**:
+  - [`App.vue`](file:///d:/PMS/frontend/src/App.vue): Gỡ bỏ component `<ForceChangePasswordModal />` và import.
+  - [`http.js`](file:///d:/PMS/frontend/src/services/http.js): Gỡ bỏ cờ `_isHandling423` và interceptor bắt mã HTTP 423.
+  - [`EmployeeTab.vue`](file:///d:/PMS/frontend/src/pages/system/components/EmployeeTab.vue): Cập nhật thông báo xác nhận và thông báo kết quả khi đặt lại mật khẩu; bỏ ghi chú ép đổi mật khẩu ở form tạo nhân viên.
+- **Kiểm thử**:
+  - Backend: `php artisan test --filter=OrganizationRbacTest` -> 15/15 tests passed.
+  - Frontend: `npm run build` -> thành công không lỗi trong 3.93s.
+
 ## [2026-10-02] - Nâng cấp tiến trình Sang ngày (Night Audit): Đồng bộ toàn hệ thống đa tài khoản, phân quyền động, chi tiết phòng lỗi & tự động đóng 10s
 ### Module: Lễ tân / Sang ngày ([NightAuditController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php), [RolePermissionSeeder.php](file:///d:/PMS/backend/database/seeders/RolePermissionSeeder.php), [NightAuditUpdated.php](file:///d:/PMS/backend/app/Events/NightAuditUpdated.php), [night-audit-store.js](file:///d:/PMS/frontend/src/stores/night-audit-store.js), [NightAuditProgressModal.vue](file:///d:/PMS/frontend/src/components/NightAuditProgressModal.vue), [App.vue](file:///d:/PMS/frontend/src/App.vue), [DayClosePage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue))
 

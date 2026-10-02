@@ -82,7 +82,7 @@ class UserController extends Controller
                 'employee_code' => $prefix.str_pad((string) $nextNumber, 4, '0', STR_PAD_LEFT),
                 'username' => $validated['username'] ?: $validated['email'],
                 'password' => Hash::make($validated['password'] ?: $validated['email']),
-                'must_change_password' => true,
+                'must_change_password' => false,
                 'is_active_user' => $validated['is_active_user'] ?? true,
             ]);
         });
@@ -125,7 +125,6 @@ class UserController extends Controller
         $validated['username'] = $validated['username'] ?: $validated['email'];
         if (!empty($validated['password'])) {
             $validated['password'] = Hash::make($validated['password']);
-            $validated['must_change_password'] = true;
         } else {
             unset($validated['password']);
         }
@@ -143,13 +142,13 @@ class UserController extends Controller
         $user = User::findOrFail($id);
         $user->update([
             'password' => Hash::make($user->email),
-            'must_change_password' => true,
+            'must_change_password' => false,
         ]);
         $user->tokens()->delete();
 
         return response()->json([
             'success' => true,
-            'message' => 'Đã đặt lại mật khẩu về email ('.$user->email.') và yêu cầu đổi ở lần đăng nhập tiếp theo.',
+            'message' => 'Đã đặt lại mật khẩu về email ('.$user->email.').',
         ]);
     }
 
