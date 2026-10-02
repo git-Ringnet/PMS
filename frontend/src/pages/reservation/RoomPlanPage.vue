@@ -4376,7 +4376,7 @@ function getRoomStatusIconName(item) {
     </div>
 
     <!-- Timeline Grid Matrix -->
-    <div ref="roomPlanScrollContainer" class="flex-1 overflow-auto border border-slate-200 rounded-lg relative" @scroll.passive="hideTooltip" @dragenter="handleGlobalDragOver($event)" @dragover="handleGlobalDragOver($event)">
+    <div ref="roomPlanScrollContainer" class="flex-1 overflow-auto border border-slate-200 rounded-lg relative" @scroll.passive="handleRoomPlanScroll" @dragenter="handleGlobalDragOver($event)" @dragover="handleGlobalDragOver($event)">
       <table class="w-full text-xs border-collapse table-fixed select-none">
         <colgroup>
           <col class="w-[120px] sticky left-0 z-30" />
