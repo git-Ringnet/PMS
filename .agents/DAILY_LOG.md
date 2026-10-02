@@ -18,6 +18,28 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-10-01] - Sửa lỗi tính tiền màn hình BK (Task 224 - Note 22/09: Lọc dịch vụ post tay tại lễ tân & chuẩn hóa theo fun_052)
+### Module: Đặt phòng / Màn hình BK ([BookingRoomServiceController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomServiceController.php), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))
+
+- **Yêu cầu nghiệp vụ (Task 224 - Note 22/09)**:
+  - Khách hàng phản ánh chi tiết tiền trong BK bị sai do cộng thêm các dịch vụ phát sinh mà Lễ tân post trực tiếp tại hóa đơn (`service_bills` / `SP3000`).
+  - Hướng xử lý theo chuẩn `fun_052` (Smile PMS):
+    - **Giai đoạn ngày quá khứ (`< systemDate`)**: Chỉ lấy lên các dịch vụ ở bảng `sp3000` (`service_bills`) bao gồm những mã dịch vụ được cài đặt tự động theo BK (`RM`/tiền phòng, `EB`/giường phụ, `BD`/ăn sáng trẻ em, và các dịch vụ bổ sung đã setup trong BK). Tuyệt đối **không lấy các dịch vụ tự post tay tại hóa đơn** (minibar, giặt là, nhà hàng,...). Nếu bill trong quá khứ bị xóa ở hóa đơn thì tiền = 0.
+    - **Giai đoạn ngày hiện tại đến tương lai (`>= systemDate`)**: Lấy theo dự kiến từ phòng, dịch vụ tự động, Extra Bed (EB) và phụ thu trẻ em đã cài sẵn trong BK.
+- **Nghiệp vụ đã xử lý**:
+  1. **Backend ([BookingRoomServiceController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomServiceController.php))**:
+     - Trong phương thức `quickTransfer`: Đã gỡ bỏ đoạn code tự tạo mới bản ghi `BookingRoomService` khi chuyển bill từ Master sang phòng. Dịch vụ chỉ luân chuyển trong hóa đơn `service_bills` (`SP3000`), không tự ý đẩy vào bảng dịch vụ đặt trước của BK.
+  2. **Frontend ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))**:
+     - Cập nhật hàm `getRoomDisplayServices(room)`:
+       - *Tiền phòng (`RM`/`ER`)*: Ngày quá khứ chỉ lấy từ bill `room.serviceBills` (nếu không có hoặc bill bị xóa -> 0đ); ngày hiện tại/tương lai lấy theo giá phòng dự kiến hoặc bill post trước.
+       - *Giường phụ (`EB`)*: Ngày quá khứ chỉ lấy từ `room.serviceBills` nếu phòng có setup EB và có bill phát sinh (nếu không có -> 0đ); ngày tương lai lấy theo `dailyExtraBeds`/cấu hình EB của BK.
+       - *Ăn sáng trẻ em (`BD`)*: Ngày quá khứ lấy từ `room.serviceBills` khớp mã `BD` hoặc phụ thu ăn sáng; ngày tương lai lấy theo danh sách `childRecords`.
+       - *Dịch vụ bổ sung tự động theo BK*: Chỉ duyệt qua các dịch vụ đã setup trong BK (`setupServices`). Ngày quá khứ chỉ lấy từ `room.serviceBills` có mã khớp với dịch vụ đã setup trong BK; ngày tương lai lấy theo dự kiến trong `room.services`.
+       - *Loại trừ triệt để DV post tay*: Các bill minibar, giặt là, nhà hàng... do lễ tân post phát sinh tại hóa đơn sẽ hoàn toàn không xuất hiện trên màn hình BK và không bị cộng vào tổng tiền booking.
+     - Đồng bộ các hàm tính tổng: `getRoomChargeTotal`, `getRoomExtraBedTotal`, `getServicesTotal` và `calculateRoomTotal` đều sử dụng chung nguồn dữ liệu chuẩn từ `getRoomDisplayServices`, đảm bảo khớp 100% giữa danh sách phòng, chi tiết mở rộng `+`, và thanh tổng tiền booking.
+- **Kiểm thử**:
+  - Biên dịch Frontend: `npm run build` hoàn thành thành công trong 4.60s không có lỗi.
+
 ## [2026-10-01] - Bổ sung tính năng Phòng thông nhau (Connecting Rooms) trong Cấu hình phòng & Sơ đồ phòng
 ### Module: Cấu hình phòng / Sơ đồ phòng ([Room.php](file:///d:/PMS/backend/app/Models/Room.php), [RoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomController.php), [RoomResource.php](file:///d:/PMS/backend/app/Http/Resources/RoomResource.php), [RoomTab.vue](file:///d:/PMS/frontend/src/pages/config/components/room/RoomTab.vue), [RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue), [RoomIcon.vue](file:///d:/PMS/frontend/src/components/RoomIcon.vue))
 
