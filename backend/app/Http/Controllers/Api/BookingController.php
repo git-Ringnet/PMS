@@ -317,11 +317,93 @@ class BookingController extends Controller
 
         $bookings = $query->orderBy('created_at', 'desc')->get();
         $bookings->each(fn (Booking $booking) => $this->hideCancelledRoomsForActiveBooking($booking));
+        if ($withBilling && $request->boolean('with_service_amounts')) {
+            $this->attachServiceBillAmounts($bookings);
+        }
 
         return response()->json([
             'success' => true,
             'data'    => $bookings,
         ]);
+    }
+
+    /** Add persisted monetary tax/service-charge values for Checkout's service panel only. */
+    private function attachServiceBillAmounts(\Illuminate\Database\Eloquent\Collection $bookings): void
+    {
+        $schema = DB::connection()->getSchemaBuilder();
+        if (!$schema->hasColumn('service_bill_details', 'ServiceChargeAmount')
+            || !$schema->hasColumn('service_bill_details', 'TaxAmount')) {
+            return;
+        }
+
+        $billRecords = collect();
+        $bookingRooms = collect();
+        foreach ($bookings as $booking) {
+            foreach (['serviceBills', 'masterServiceBills'] as $relation) {
+                if ($booking->relationLoaded($relation)) {
+                    $billRecords = $billRecords->concat($booking->getRelation($relation));
+                }
+            }
+
+            if (!$booking->relationLoaded('bookingRooms')) {
+                continue;
+            }
+
+            foreach ($booking->getRelation('bookingRooms') as $room) {
+                $bookingRooms->push($room);
+                foreach (['serviceBills', 'currentServiceBills'] as $relation) {
+                    if ($room->relationLoaded($relation)) {
+                        $billRecords = $billRecords->concat($room->getRelation($relation));
+                    }
+                }
+            }
+        }
+
+        $billIds = $billRecords->pluck('Ma')->filter()->map(fn ($id) => (string) $id)->unique()->values();
+        if ($billIds->isEmpty()) {
+            return;
+        }
+
+        $detailsByBill = DB::table('service_bill_details')
+            ->whereIn('BillServiceId', $billIds)
+            ->get(['BillServiceId', 'Ma', 'ServiceChargeAmount', 'TaxAmount'])
+            ->groupBy(fn ($detail) => (string) $detail->BillServiceId);
+
+        $sumStoredAmount = static function ($details, string $column) {
+            $values = $details->pluck($column)->filter(fn ($value) => $value !== null && $value !== '');
+            return $values->isEmpty() ? null : $values->sum(fn ($value) => (float) $value);
+        };
+
+        foreach ($billRecords as $bill) {
+            $billDetails = $detailsByBill->get((string) $bill->Ma, collect());
+            $bill->setAttribute('ServiceChargeAmount', $sumStoredAmount($billDetails, 'ServiceChargeAmount'));
+            $bill->setAttribute('TaxAmount', $sumStoredAmount($billDetails, 'TaxAmount'));
+        }
+
+        foreach ($bookingRooms as $room) {
+            if (!$room->relationLoaded('services')) {
+                continue;
+            }
+
+            foreach ($room->getRelation('services') as $service) {
+                if (!$service->service_bill_id) {
+                    continue;
+                }
+
+                $billDetails = $detailsByBill->get((string) $service->service_bill_id, collect());
+                $detailNo = $service->service_bill_detail_no;
+                $detail = $detailNo !== null && $detailNo !== ''
+                    ? $billDetails->first(fn ($candidate) => (string) $candidate->Ma === (string) $detailNo)
+                    : null;
+                if (!$detail && $billDetails->count() === 1) {
+                    $detail = $billDetails->first();
+                }
+                if ($detail) {
+                    $service->setAttribute('service_charge_amount', $detail->ServiceChargeAmount);
+                    $service->setAttribute('tax_amount', $detail->TaxAmount);
+                }
+            }
+        }
     }
 
     /**

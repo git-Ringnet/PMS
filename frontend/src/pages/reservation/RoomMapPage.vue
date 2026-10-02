@@ -711,6 +711,7 @@ const hoverTooltip = ref({
   x: 0,
   y: 0,
   isBelow: false,
+  pointerOffset: 0,
   room: null,
 })
 
@@ -736,13 +737,21 @@ function showTooltip(event, room) {
 
   const rect = event.currentTarget.getBoundingClientRect()
   const tooltipHeight = 280
+  const tooltipWidth = 320
+  const halfWidth = tooltipWidth / 2
+  const margin = 12
   const isBelow = rect.top < tooltipHeight
+
+  const targetX = rect.left + rect.width / 2
+  const clampedX = Math.max(halfWidth + margin, Math.min(window.innerWidth - halfWidth - margin, targetX))
+  const pointerOffset = Math.max(-halfWidth + 24, Math.min(halfWidth - 24, targetX - clampedX))
 
   hoverTooltip.value = {
     show: true,
-    x: rect.left + rect.width / 2,
+    x: clampedX,
     y: isBelow ? rect.bottom + 8 : rect.top - 8,
     isBelow: isBelow,
+    pointerOffset: pointerOffset,
     room: room
   }
 }
@@ -1622,6 +1631,7 @@ const contextMenu = ref({
   y: 0,
   room: null,
   isLeft: false,
+  isSubmenuLeft: false,
   submenuUp: false,
 })
 const contextMenuRef = ref(null)
@@ -1670,13 +1680,15 @@ function handleContextMenu(event, room) {
   const isLeft = !canOpenRight && canOpenLeft
   const initialX = isLeft ? anchor.left - menuWidth - margin : anchor.right + margin
   const initialY = anchor.top
+  const clampedInitialX = Math.min(Math.max(initialX, margin), window.innerWidth - menuWidth - margin)
 
   contextMenu.value = {
     show: true,
-    x: Math.min(Math.max(initialX, margin), window.innerWidth - menuWidth - margin),
+    x: clampedInitialX,
     y: Math.max(initialY, margin),
     room: room,
     isLeft: isLeft,
+    isSubmenuLeft: isLeft || (clampedInitialX + menuWidth + submenuWidth + margin > window.innerWidth),
     submenuUp: anchor.top + 260 + margin > window.innerHeight,
   }
 
@@ -1699,9 +1711,11 @@ function handleContextMenu(event, room) {
       ? anchor.top
       : anchor.bottom - rect.height
 
-    contextMenu.value.x = x
+    const finalX = Math.min(Math.max(x, margin), maxX)
+    contextMenu.value.x = finalX
     contextMenu.value.y = Math.min(Math.max(y, margin), maxY)
     contextMenu.value.isLeft = placeLeft
+    contextMenu.value.isSubmenuLeft = placeLeft || (finalX + rect.width + submenuWidth + margin > window.innerWidth)
     contextMenu.value.submenuUp = anchor.top + 260 + margin > window.innerHeight
   })
 }
@@ -3990,11 +4004,16 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
       <Teleport to="body">
         <Transition name="tooltip-fade">
           <div v-if="hoverTooltip.show && hoverTooltip.room && !contextMenu.show"
-            class="fixed z-[9990] pointer-events-none bg-[#2e2e2e] text-[#f1f5f9] border border-neutral-700/60 rounded-xl shadow-2xl p-3.5 w-[320px] text-[11px] leading-relaxed -translate-x-1/2"
-            :class="hoverTooltip.isBelow ? 'translate-y-0' : '-translate-y-full'"
+            class="fixed z-[9990] pointer-events-none rounded-xl shadow-2xl p-3.5 w-[320px] text-[11px] leading-relaxed -translate-x-1/2"
+            :class="[
+              hoverTooltip.isBelow ? 'translate-y-0' : '-translate-y-full',
+              isLockedRoom(hoverTooltip.room)
+                ? 'bg-[#2e2e2e] text-[#f1f5f9] border border-neutral-700/60'
+                : 'bg-white text-slate-800 border border-slate-300'
+            ]"
             :style="{ top: hoverTooltip.y + 'px', left: hoverTooltip.x + 'px' }" @mouseenter="cancelHide"
             @mouseleave="hideTooltip">
-            <!-- Mode 1: Khóa phòng (OOO / OOS) -->
+            <!-- Mode 1: Khóa phòng (OOO / OOS) - Giữ nguyên 100% -->
             <template v-if="isLockedRoom(hoverTooltip.room)">
               <div
                 class="flex items-center justify-between font-bold border-b border-neutral-700/60 pb-1.5 mb-2 text-[12px] text-white">
@@ -4014,36 +4033,36 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
               </div>
             </template>
 
-            <!-- Mode 2: Booking thông thường -->
+            <!-- Mode 2: Booking thông thường - Đổi sang nền trắng, chữ đen, xuống dòng, bỏ tóm tắt loại phòng/giá, thêm yêu cầu đặc biệt -->
             <template v-else>
               <!-- Header: Dates and Booking Code -->
               <div
-                class="flex items-center justify-between font-bold border-b border-neutral-700/60 pb-1.5 mb-2 text-[12px] text-white">
+                class="flex items-center justify-between font-bold border-b border-slate-200 pb-1.5 mb-2 text-[12px] text-slate-800">
                 <div class="flex items-center gap-1.5">
                   <span class="text-xs">🟢</span>
                   <span>{{ formatTooltipDate(hoverTooltip.room.arrival_date) }}</span>
-                  <span class="text-neutral-500 font-normal">-</span>
+                  <span class="text-slate-400 font-normal">-</span>
                   <span class="text-xs">🔴</span>
                   <span>{{ formatTooltipDate(hoverTooltip.room.departure_date) }}</span>
                 </div>
                 <div>
-                  <span class="text-neutral-400 font-normal">Mã ĐK:</span>
-                  <span class="ml-1 text-sky-400">{{ hoverTooltip.room.booking_code }}</span>
+                  <span class="text-slate-500 font-normal">Mã ĐK:</span>
+                  <span class="ml-1 text-sky-600 font-bold">{{ hoverTooltip.room.booking_code }}</span>
                 </div>
               </div>
 
               <!-- Details list -->
-              <ul class="space-y-1 pl-0 list-none m-0 text-neutral-300">
-                <li class="flex items-start gap-1">
-                  <span class="text-neutral-500">•</span>
-                  <span>Tên ĐK: <strong class="text-white">{{ hoverTooltip.room.booking_name }}</strong></span>
+              <ul class="space-y-1 pl-0 list-none m-0 text-slate-700">
+                <li class="flex items-start gap-1 break-words whitespace-normal">
+                  <span class="text-slate-400">•</span>
+                  <span>Tên ĐK: <strong class="text-slate-900">{{ hoverTooltip.room.booking_name }}</strong></span>
                 </li>
-                <li class="flex items-start gap-1">
-                  <span class="text-neutral-500">•</span>
-                  <span>Tên: <strong class="text-white">{{ hoverTooltip.room.guest_name }}</strong></span>
+                <li class="flex items-start gap-1 break-words whitespace-normal">
+                  <span class="text-slate-400">•</span>
+                  <span>Tên: <strong class="text-slate-900">{{ hoverTooltip.room.guest_name }}</strong></span>
                 </li>
-                <li class="flex items-start gap-1">
-                  <span class="text-neutral-500">•</span>
+                <li class="flex items-start gap-1 break-words whitespace-normal">
+                  <span class="text-slate-400">•</span>
                   <span>{{ hoverTooltip.room.room_type_name }} (Phòng {{ hoverTooltip.room.room_number }})</span>
                 </li>
                 <li v-if="getConnectingRoomNumber(hoverTooltip.room)" class="flex items-start gap-1 text-sky-300 font-semibold">
@@ -4054,11 +4073,11 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                   </span>
                 </li>
                 <li class="flex items-start gap-1">
-                  <span class="text-neutral-500">•</span>
+                  <span class="text-slate-400">•</span>
                   <span>Đêm: {{ hoverTooltip.room.nights }}</span>
                 </li>
                 <li class="flex items-center gap-2">
-                  <span class="text-neutral-500">•</span>
+                  <span class="text-slate-400">•</span>
                   <span class="flex items-center gap-1">
                     {{ hoverTooltip.room.adults }} 🧑
                     {{ hoverTooltip.room.children }} 🧒
@@ -4067,61 +4086,66 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 </li>
                 <li class="flex items-center justify-between">
                   <span class="flex items-center gap-1">
-                    <span class="text-neutral-500">•</span>
+                    <span class="text-slate-400">•</span>
                     <span>Thời gian đến: {{ hoverTooltip.room.arrival_time }}</span>
                   </span>
-                  <strong class="text-amber-400 text-xs">{{ formatTooltipPrice(hoverTooltip.room.rate) }}</strong>
+                  <strong class="text-amber-600 text-xs">{{ formatTooltipPrice(hoverTooltip.room.rate) }}</strong>
                 </li>
               </ul>
 
               <!-- Divider -->
-              <div class="h-px bg-neutral-700/60 my-2"></div>
+              <div class="h-px bg-slate-200 my-2"></div>
 
               <!-- Lower Section (Description/Company details) -->
-              <div class="text-neutral-400 space-y-1">
-                <div class="uppercase font-bold text-neutral-300">
-                  1 {{ hoverTooltip.room.room_type_name }} - {{ hoverTooltip.room.adults > 2 ? 'TRPL' : 'DBL' }} ({{
-                    hoverTooltip.room.nights }} ĐÊM)*
+              <div class="text-slate-600 space-y-1">
+                <!-- Yêu cầu đặc biệt (thay thế phần tóm tắt loại phòng/giá được khoanh) -->
+                <div v-if="getListSpecialRequests(hoverTooltip.room)" class="text-slate-800 break-words whitespace-normal pt-0.5">
+                  <span class="font-bold text-slate-700">Yêu cầu đặc biệt:</span>
+                  <span class="ml-1 text-rose-600 font-semibold">{{ getListSpecialRequests(hoverTooltip.room) }}</span>
                 </div>
-                <div>{{ formatTooltipPrice(hoverTooltip.room.rate) }}/R/N</div>
-                <div v-if="hoverTooltip.room.company_name" class="uppercase text-neutral-300">CTY: {{
-                  hoverTooltip.room.company_name }}</div>
-                <div v-if="hoverTooltip.room.booking_note" class="text-neutral-400 italic">Ghi chú: {{
-                  hoverTooltip.room.booking_note }}</div>
-                <div v-if="getListSpecialRequests(hoverTooltip.room)" class="text-neutral-400 italic">Yêu cầu: {{
-                  getListSpecialRequests(hoverTooltip.room) }}</div>
 
-                <div class="h-px bg-neutral-700/30 my-1.5"
+                <div v-if="hoverTooltip.room.company_name" class="uppercase text-slate-700 font-semibold break-words whitespace-normal">
+                  CTY: {{ hoverTooltip.room.company_name }}
+                </div>
+                <div v-if="hoverTooltip.room.booking_note" class="text-slate-600 italic break-words whitespace-normal">
+                  Ghi chú: {{ hoverTooltip.room.booking_note }}
+                </div>
+
+                <div class="h-px bg-slate-200 my-1.5"
                   v-if="hoverTooltip.room.guest_details && hoverTooltip.room.guest_details.length > 0"></div>
 
                 <template v-if="hoverTooltip.room.guest_details && hoverTooltip.room.guest_details.length > 0">
-                  <div class="text-neutral-300 font-bold uppercase text-[10px] tracking-wider mb-0.5">Tên khách:</div>
+                  <div class="text-slate-700 font-bold uppercase text-[10px] tracking-wider mb-0.5">Tên khách:</div>
                   <div v-for="(gName, idx) in hoverTooltip.room.guest_details" :key="idx"
-                    class="uppercase text-neutral-200 pl-1">
+                    class="uppercase text-slate-800 pl-1 break-words whitespace-normal">
                     • {{ gName }}
                   </div>
                 </template>
 
                 <!-- Back-to-back notification -->
-                <div v-if="hoverTooltip.room.is_back_to_back" class="mt-2.5 pt-2 border-t border-emerald-500/40 bg-emerald-950/40 p-2 rounded text-[10px]">
-                  <div class="text-emerald-400 font-bold flex items-center gap-1.5">
-                    <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                <div v-if="hoverTooltip.room.is_back_to_back" class="mt-2.5 pt-2 border-t border-emerald-500/40 bg-emerald-50 p-2 rounded text-[10px]">
+                  <div class="text-emerald-700 font-bold flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
                     Phòng Back-to-Back (Khách mới đến hôm nay)
                   </div>
-                  <div v-if="hoverTooltip.room.arriving_booking" class="text-neutral-200 mt-1">
-                    Mã: <span class="text-sky-300 font-medium">{{ hoverTooltip.room.arriving_booking.booking_code }}</span>
-                    <span v-if="hoverTooltip.room.arriving_booking.guest_name"> | Khách: <span class="text-white font-medium">{{ hoverTooltip.room.arriving_booking.guest_name }}</span></span>
+                  <div v-if="hoverTooltip.room.arriving_booking" class="text-slate-700 mt-1">
+                    Mã: <span class="text-sky-600 font-medium">{{ hoverTooltip.room.arriving_booking.booking_code }}</span>
+                    <span v-if="hoverTooltip.room.arriving_booking.guest_name"> | Khách: <span class="text-slate-900 font-medium">{{ hoverTooltip.room.arriving_booking.guest_name }}</span></span>
                   </div>
                 </div>
               </div>
             </template>
 
-            <!-- Triangle Pointer -->
+            <!-- Triangle Pointer - canh theo pointerOffset và đồng bộ màu nền -->
             <div
-              class="absolute left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent"
-              :class="hoverTooltip.isBelow
-                ? 'top-0 -translate-y-full border-b-[6px] border-b-[#2e2e2e] border-t-0'
-                : 'bottom-0 translate-y-full border-t-[6px] border-t-[#2e2e2e] border-b-0'"></div>
+              class="absolute -translate-x-1/2 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent"
+              :style="{ left: 'calc(50% + ' + (hoverTooltip.pointerOffset || 0) + 'px)' }"
+              :class="[
+                hoverTooltip.isBelow ? 'top-0 -translate-y-full border-b-[6px] border-t-0' : 'bottom-0 translate-y-full border-t-[6px] border-b-0',
+                isLockedRoom(hoverTooltip.room)
+                  ? (hoverTooltip.isBelow ? 'border-b-[#2e2e2e]' : 'border-t-[#2e2e2e]')
+                  : (hoverTooltip.isBelow ? 'border-b-white' : 'border-t-white')
+              ]"></div>
           </div>
         </Transition>
       </Teleport>
@@ -4201,7 +4225,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
               <div
                 class="absolute hidden group-hover:block bg-[#eaeaea] border border-slate-300 rounded-xl shadow-2xl py-1.5 w-60 z-[99999] before:content-[''] before:absolute before:top-0 before:bottom-0 before:w-6"
                 :class="[
-                  contextMenu.isLeft ? 'right-[96%] before:-right-4' : 'left-[96%] before:-left-4',
+                  (contextMenu.isSubmenuLeft ?? contextMenu.isLeft) ? 'right-[96%] before:-right-4' : 'left-[96%] before:-left-4',
                   contextMenu.submenuUp ? 'bottom-0' : 'top-0'
                 ]">
                 <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.VACANT_READY)"
@@ -4265,7 +4289,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
               <div
                 class="absolute hidden group-hover:block bg-[#eaeaea] border border-slate-300 rounded-xl shadow-2xl py-1.5 w-60 z-[99999] before:content-[''] before:absolute before:top-0 before:bottom-0 before:w-6"
                 :class="[
-                  contextMenu.isLeft ? 'right-[96%] before:-right-4' : 'left-[96%] before:-left-4',
+                  (contextMenu.isSubmenuLeft ?? contextMenu.isLeft) ? 'right-[96%] before:-right-4' : 'left-[96%] before:-left-4',
                   contextMenu.submenuUp ? 'bottom-0' : 'top-0'
                 ]">
                 <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.VACANT_READY)"
@@ -4460,7 +4484,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
               <div
                 class="absolute hidden group-hover:block bg-[#eaeaea] border border-slate-300 rounded-xl shadow-2xl py-1.5 w-60 z-[99999] before:content-[''] before:absolute before:top-0 before:bottom-0 before:w-6"
                 :class="[
-                  contextMenu.isLeft ? 'right-[96%] before:-right-4' : 'left-[96%] before:-left-4',
+                  (contextMenu.isSubmenuLeft ?? contextMenu.isLeft) ? 'right-[96%] before:-right-4' : 'left-[96%] before:-left-4',
                   contextMenu.submenuUp ? 'bottom-0' : 'top-0'
                 ]">
                 <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.VACANT_READY)"
