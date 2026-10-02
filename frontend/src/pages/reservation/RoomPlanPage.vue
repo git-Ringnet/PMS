@@ -2054,7 +2054,7 @@ const processedBookings = computed(() => {
     // Find start index
     let startIdx = 0
     let isCheckInVisible = true
-    if (checkInDate >= visibleStart) {
+    if (checkInDateStr >= visibleStartDateStr && checkInDateStr <= visibleEndDateStr) {
       startIdx = days.value.findIndex(d => {
         const dDate = new Date(d.fullDate)
         return dDate.getDate() === checkInDate.getDate() && 
@@ -2072,7 +2072,7 @@ const processedBookings = computed(() => {
     // Find end index
     let endIdx = days.value.length - 1
     let isCheckOutVisible = true
-    if (checkOutDate <= visibleEnd) {
+    if (checkOutDateStr >= visibleStartDateStr && checkOutDateStr <= visibleEndDateStr) {
       endIdx = days.value.findIndex(d => {
         const dDate = new Date(d.fullDate)
         return dDate.getDate() === checkOutDate.getDate() && 
@@ -2087,8 +2087,11 @@ const processedBookings = computed(() => {
       isCheckOutVisible = false
     }
 
-    // Left offset ratio (0% to start at the left boundary of the first day cell)
-    const leftRatio = showNights.value ? 0 : 0.5
+    // Left offset ratio (0% to start at the left boundary of the first day cell if check-in was in the past)
+    let leftRatio = showNights.value ? 0 : 0.5
+    if (!isCheckInVisible) {
+      leftRatio = 0
+    }
 
     const checkOutHourMin = `${String(checkOutDate.getHours()).padStart(2, '0')}:${String(checkOutDate.getMinutes()).padStart(2, '0')}`
     const defineLockTime = hotelSettings.value?.FrmOOO_DefineLockByTime || '12:00'
@@ -2096,8 +2099,34 @@ const processedBookings = computed(() => {
     const isLockEndedEarly = isLockItem && (checkInDateStr !== checkOutDateStr) && (checkOutHourMin < cutoffTime)
 
     // Total columns spanned (occupy full cells or half cells)
-    const span = Math.max(1, isLockItem ? (isLockEndedEarly ? (endIdx - startIdx) : (endIdx - startIdx + 1)) : (endIdx - startIdx))
+    let baseSpan = endIdx - startIdx
+    if (!isLockItem) {
+      if (!showNights.value) {
+        if (!isCheckInVisible && isCheckOutVisible) {
+          baseSpan += 0.5
+        } else if (isCheckInVisible && !isCheckOutVisible) {
+          baseSpan += 0.5
+        } else if (!isCheckInVisible && !isCheckOutVisible) {
+          baseSpan += 1.0
+        }
+      }
+    } else {
+      baseSpan = isLockEndedEarly ? (endIdx - startIdx) : (endIdx - startIdx + 1)
+    }
+    const span = Math.max(1, baseSpan)
     const showCheckOutIndicator = !showNights.value && isCheckOutVisible
+
+    // Calculate past days offset for text shift (Phương án 1: Trượt tự nhiên theo timeline quá khứ)
+    const checkInMid = new Date(checkInDate)
+    checkInMid.setHours(0, 0, 0, 0)
+    const visibleStartMid = new Date(visibleStart)
+    visibleStartMid.setHours(0, 0, 0, 0)
+
+    let pastDaysOffset = 0
+    if (!isCheckInVisible) {
+      const diffDays = Math.max(0, Math.round((visibleStartMid.getTime() - checkInMid.getTime()) / (1000 * 60 * 60 * 24)))
+      pastDaysOffset = isLockItem ? diffDays : Math.max(0, diffDays - (showNights.value ? 0 : 0.5))
+    }
 
     // Formatting for tooltip display
     const checkInFormatted = `${String(checkInDate.getDate()).padStart(2, '0')}/${String(checkInDate.getMonth() + 1).padStart(2, '0')}`
@@ -4353,21 +4382,30 @@ function getRoomStatusIconName(item) {
                     @contextmenu.prevent.stop="handleBookingContextMenu(bk, $event)"
                     draggable="false"
                     @pointerdown="handleBookingPointerDown(bk, $event)"
-                    class="absolute top-[2px] h-[33px] border rounded flex items-center px-2.5 z-10 text-[9px] font-bold leading-tight select-none shadow-xs cursor-pointer hover:brightness-95 hover:shadow-md transition-[filter,box-shadow] duration-150"
+                    class="absolute top-[2px] h-[33px] border-t border-b flex items-center z-10 text-[9px] font-bold leading-tight select-none shadow-xs hover:brightness-95 hover:shadow-md transition-[filter,box-shadow] duration-150"
                     :class="[
                       isBookingMatched(bk) ? getBookingClass(bk.type) : 'bg-slate-100 text-slate-400 border-slate-200 opacity-60',
-                      splittingBooking?.bookingRoomId === bk.bookingRoomId ? 'z-30 overflow-visible' : 'overflow-visible',
-                      draggedBooking?.bookingRoomId === bk.bookingRoomId ? 'opacity-0' : ''
+                      splittingBooking?.bookingRoomId === bk.bookingRoomId ? 'z-30 overflow-visible' : 'overflow-hidden',
+                      draggedBooking?.bookingRoomId === bk.bookingRoomId ? 'opacity-0' : '',
+                      isHousekeepingModule ? 'cursor-default' : 'cursor-pointer',
+                      bk.isCheckInVisible ? 'pl-2.5 rounded-l border-l' : 'pl-0 rounded-l-none border-l-0',
+                      bk.isCheckOutVisible ? 'pr-2.5 rounded-r border-r' : 'pr-0 rounded-r-none border-r-0'
                     ]"
                     :style="{
-                      left: isBookingSegmented(bk) ? `calc(${bk.leftRatio * 100}% + 2px)` : `${bk.leftRatio * 100}%`,
-                      width: isBookingSegmented(bk) ? `calc(${bk.span * 100}% - 6px)` : `calc(${bk.span * 100}% - 2px)`,
+                      left: !bk.isCheckInVisible 
+                        ? '0%' 
+                        : (isBookingSegmented(bk) ? `calc(${bk.leftRatio * 100}% + 2px)` : `${bk.leftRatio * 100}%`),
+                      width: !bk.isCheckInVisible
+                        ? (isBookingSegmented(bk) ? `calc(${bk.span * 100}% - 4px)` : `calc(${bk.span * 100}% - 1px)`)
+                        : (isBookingSegmented(bk) ? `calc(${bk.span * 100}% - 6px)` : `calc(${bk.span * 100}% - 1px)`),
+                      borderLeftStyle: !bk.isCheckInVisible ? 'none' : undefined,
+                      borderRightStyle: !bk.isCheckOutVisible ? 'none' : undefined,
                       ...(isBookingMatched(bk) ? getBookingStyle(bk.type, bk.registrationStatusColor) : {})
                     }"
                   >
                     <!-- Left resize handle -->
                     <div 
-                      v-if="bk.code !== 'LOCK'"
+                      v-if="!isHousekeepingModule && bk.code !== 'LOCK' && bk.isCheckInVisible"
                       data-room-plan-resize-handle
                       class="absolute top-0 bottom-0 left-0 w-2 z-20 select-none"
                       :style="{ cursor: Number(hotelSettings?.RoomPlan_AllowChangeArrivalDate) === 1 ? 'w-resize' : 'not-allowed' }"
@@ -4400,28 +4438,39 @@ function getRoomStatusIconName(item) {
                       <!-- Đã trả phòng (CheckedOut) -->
                       <template v-if="bk.type === 'CheckedOut' || bk.status === 2">
                         <div 
-                          class="absolute bottom-0 left-0 right-0 h-[3px] rounded-b"
-                          :class="isBookingMatched(bk) ? 'bg-slate-400' : 'bg-slate-300'"
+                          class="absolute bottom-0 left-0 right-0 h-[3px]"
+                          :class="[
+                            isBookingMatched(bk) ? 'bg-slate-400' : 'bg-slate-300',
+                            bk.isCheckInVisible ? 'rounded-bl' : '',
+                            bk.isCheckOutVisible ? 'rounded-br' : ''
+                          ]"
                           title="Trạng thái: Đã trả phòng"
                         ></div>
                       </template>
                       <!-- Đang lưu trú / Đặt trước: Vạch xanh (Phòng đến), vạch đỏ tại ngày check-out (Phòng đi) -->
                       <template v-else>
-                        <!-- Vạch xanh lá (Phòng đến 🟢) -->
+                        <!-- Vạch màu Tình trạng đăng ký (Guaranteed 🟢, None Guaranteed, ...) -->
                         <div 
-                          class="absolute bottom-0 left-0 h-[5px] rounded-bl"
-                          :class="isBookingMatched(bk) ? 'bg-[#22c55e]' : 'bg-slate-300'"
+                          class="absolute bottom-0 left-0 h-[5px]"
+                          :class="[
+                            isBookingMatched(bk) ? (bk.registrationStatusColor ? '' : 'bg-[#22c55e]') : 'bg-slate-300',
+                            bk.isCheckInVisible ? 'rounded-bl' : 'rounded-bl-none'
+                          ]"
                           :style="{
+                            backgroundColor: (isBookingMatched(bk) && bk.registrationStatusColor) ? bk.registrationStatusColor : undefined,
                             right: bk.showCheckOutIndicator ? `${(0.5 / bk.span) * 100}%` : '0px'
                           }"
-                          title="Trạng thái: Phòng đến"
+                          :title="`Tình trạng đăng ký: ${bk.registrationStatusName || 'Đảm bảo'}`"
                         ></div>
 
                         <!-- Vạch đỏ (Phòng đi 🔴) -->
                         <div 
                           v-if="bk.showCheckOutIndicator"
-                          class="absolute bottom-0 right-0 h-[5px] rounded-br"
-                          :class="isBookingMatched(bk) ? 'bg-[#ef4444]' : 'bg-slate-300'"
+                          class="absolute bottom-0 right-0 h-[5px]"
+                          :class="[
+                            isBookingMatched(bk) ? 'bg-[#ef4444]' : 'bg-slate-300',
+                            bk.isCheckOutVisible ? 'rounded-br' : ''
+                          ]"
                           :style="{
                             width: `${(0.5 / bk.span) * 100}%`
                           }"
