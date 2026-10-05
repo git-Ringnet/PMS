@@ -2006,26 +2006,74 @@ function parseNumber(val) {
 .btn-hd {
   border-radius: 6px;
   color: #fff;
-  font-size: 13.5px;
+  font-size: 12px;
   font-weight: 600;
-  padding: 7px 15px;
+  height: 32px;
+  padding: 0 14px;
   cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  border: none;
-  transition: opacity 0.15s, background-color 0.15s;
+  border: 1px solid transparent;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  user-select: none;
 }
-.btn-hd:hover:not(:disabled) { opacity: 0.88; }
-.btn-hd.save { background: #2563eb; }
-.btn-hd.edit { background: #2563eb; }
-.btn-hd.cancel { background: #475569; }
-.btn-hd.delete { background: #dc2626; }
-.btn-hd.scan { background: #0284c7; }
+.btn-hd:hover:not(:disabled) {
+  opacity: 0.92;
+  box-shadow: 0 2px 4px 0 rgba(0, 0, 0, 0.1);
+}
+.btn-hd.save {
+  background: #0088ff;
+  border-color: #0088ff;
+}
+.btn-hd.save:hover:not(:disabled) {
+  background: #0077e6;
+  border-color: #0077e6;
+}
+.btn-hd.edit {
+  background: #0088ff;
+  border-color: #0088ff;
+}
+.btn-hd.edit:hover:not(:disabled) {
+  background: #0077e6;
+  border-color: #0077e6;
+}
+.btn-hd.cancel {
+  background: #0088ff;
+  border-color: #0088ff;
+}
+.btn-hd.cancel:hover:not(:disabled) {
+  background: #0077e6;
+  border-color: #0077e6;
+}
+.btn-hd.delete {
+  background: #dc2626;
+  border-color: #dc2626;
+}
+.btn-hd.delete:hover:not(:disabled) {
+  background: #b91c1c;
+  border-color: #b91c1c;
+}
+.btn-hd.scan {
+  background: #ffffff;
+  color: #334155;
+  border-color: #cbd5e1;
+}
+.btn-hd.scan:hover:not(:disabled) {
+  background: #f8fafc;
+  color: #0f172a;
+  border-color: #94a3b8;
+}
 .btn-hd.disabled-btn {
   background: #94a3b8 !important;
-  opacity: 0.6;
+  border-color: #94a3b8 !important;
+  color: #ffffff !important;
+  opacity: 0.5;
   cursor: not-allowed;
+  pointer-events: none;
 }
 
 .close-x-btn {

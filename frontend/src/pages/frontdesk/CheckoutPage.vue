@@ -4031,12 +4031,12 @@ onUnmounted(() => {
             <li v-for="room in checkoutUnpaidRooms" :key="room.room_id">Phòng {{ room.room_number }} - {{ room.guest_name }}</li>
           </ul>
           <div v-if="earlyCheckoutData" class="flex justify-end gap-2">
-            <button @click="showCheckoutModal = false" :disabled="isServiceOperationLoading" class="rounded bg-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50">Đóng</button>
-            <button @click="checkoutEarlyWithoutCharge" :disabled="isServiceOperationLoading" class="rounded bg-sky-500 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Trả phòng</button>
-            <button @click="openEarlyChargeModal" :disabled="isServiceOperationLoading || earlyChargeNoPost" class="rounded bg-sky-500 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Tiền phòng</button>
+            <button @click="showCheckoutModal = false" :disabled="isServiceOperationLoading" class="btn-pms-close">Đóng</button>
+            <button @click="checkoutEarlyWithoutCharge" :disabled="isServiceOperationLoading" class="btn-pms-primary">Trả phòng</button>
+            <button @click="openEarlyChargeModal" :disabled="isServiceOperationLoading || earlyChargeNoPost" class="btn-pms-primary">Tiền phòng</button>
           </div>
         </div>
-        <div v-if="!earlyCheckoutData" class="flex justify-end gap-2 border-t px-4 py-3"><button @click="showCheckoutModal = false" class="rounded bg-slate-200 px-4 py-2 text-sm">Đóng</button><button @click="submitCheckout" :disabled="isServiceOperationLoading" class="rounded bg-sky-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{{ isRestoreCheckout ? 'Khôi phục checkout' : (selectedCheckoutRooms.length > 1 && !checkoutPreview ? 'Kiểm tra điều kiện' : (!selectedRoomItem && selectedCheckoutRooms.length === 0 ? 'Có' : 'Checkout')) }}</button></div>
+        <div v-if="!earlyCheckoutData" class="flex justify-end gap-2 border-t px-4 py-3"><button @click="showCheckoutModal = false" class="btn-pms-close">Đóng</button><button @click="submitCheckout" :disabled="isServiceOperationLoading" class="btn-pms-primary">{{ isRestoreCheckout ? 'Khôi phục checkout' : (selectedCheckoutRooms.length > 1 && !checkoutPreview ? 'Kiểm tra điều kiện' : (!selectedRoomItem && selectedCheckoutRooms.length === 0 ? 'Có' : 'Checkout')) }}</button></div>
       </div>
     </div>
 
@@ -4047,7 +4047,7 @@ onUnmounted(() => {
           <div><p class="mb-2 font-semibold">Chọn ngày</p><label v-for="date in earlyChargeDateOptions" :key="date" class="mb-1 flex items-center gap-2"><input v-model="earlyChargeDates" :value="date" type="checkbox" class="h-4 w-4 accent-sky-500" />{{ date.split('-').reverse().join('-') }}</label></div>
           <label class="flex items-center gap-4"><span>% Charge</span><input v-model.number="earlyChargePercent" type="number" min="0" max="100" step="1" class="w-32 rounded border border-slate-300 px-2 py-1.5 text-right" /></label>
         </div>
-        <div class="flex justify-end gap-2 border-t px-4 py-3"><button @click="showEarlyChargeModal = false" class="rounded bg-slate-300 px-4 py-2 text-xs font-semibold text-slate-700">Không</button><button @click="chargeEarlyCheckout" :disabled="isServiceOperationLoading || earlyChargeNoPost" class="rounded bg-sky-500 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Tiền phòng</button></div>
+        <div class="flex justify-end gap-2 border-t px-4 py-3"><button @click="showEarlyChargeModal = false" class="btn-pms-close">Không</button><button @click="chargeEarlyCheckout" :disabled="isServiceOperationLoading || earlyChargeNoPost" class="btn-pms-primary">Tiền phòng</button></div>
       </div>
     </div>
 
@@ -4406,7 +4406,8 @@ onUnmounted(() => {
 .checkout-filter-date-wrap input { width: 100%; min-width: 0; height: 22px !important; padding: 0 !important; border: 0 !important; border-radius: 0 !important; font-size: 10px !important; }
 .checkout-filter-date-wrap i { margin-left: 2px; color: #10b981; font-size: 11px; }
 .checkout-filter-actions { display: flex; justify-content: flex-end; gap: 6px; padding-top: 8px; border-top: 1px solid #f1f5f9; }
-.checkout-filter-actions button { padding: 4px 10px; border: 0; border-radius: 4px; background: #2563eb; color: #fff; font-size: 10px; font-weight: 600; }
+.checkout-filter-actions button { padding: 4px 12px; border: 0; border-radius: 4px; background: #0088ff; color: #fff; font-size: 11px; font-weight: 600; cursor: pointer; transition: background-color 0.15s; }
+.checkout-filter-actions button:hover { background: #0077e6; }
 /* Match the sample: filter popup is anchored to the whole search-bar, not the button. */
 .checkout-header > div:first-child { position: relative; }
 .checkout-register-filter { position: static !important; }

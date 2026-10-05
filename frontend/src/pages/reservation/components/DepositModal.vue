@@ -279,35 +279,35 @@
         <div class="bg-white border-t border-slate-200 p-2.5 px-4 flex justify-between items-center shrink-0">
             
             <div class="flex items-center space-x-2" v-if="!showDeleted">
-                <button type="button" @click="splitDeposit" :disabled="isSubmitting || isEditing" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting || isEditing }" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-xs shadow-sm flex items-center space-x-1.5 cursor-pointer border-none">
-                    <i class="fa-solid fa-code-branch text-[10px]"></i>
+                <button type="button" @click="splitDeposit" :disabled="isSubmitting || isEditing" class="btn-pms-secondary" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting || isEditing }">
+                    <i class="fa-solid fa-code-branch text-[11px]"></i>
                     <span>Tách</span>
                 </button>
-                <button type="button" @click="transferDeposit" :disabled="isSubmitting || isEditing" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting || isEditing }" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-xs shadow-sm flex items-center space-x-1.5 cursor-pointer border-none">
-                    <i class="fa-solid fa-arrow-right-arrow-left text-[10px]"></i>
+                <button type="button" @click="transferDeposit" :disabled="isSubmitting || isEditing" class="btn-pms-secondary" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting || isEditing }">
+                    <i class="fa-solid fa-arrow-right-arrow-left text-[11px]"></i>
                     <span>Chuyển</span>
                 </button>
             </div>
 
             <div class="flex items-center space-x-2 ml-auto">
-                <button type="button" v-if="depositForm.id" @click="resetForm(); selectedDepositIds = []" :disabled="isSubmitting" class="px-4 py-1.5 bg-slate-500 hover:bg-slate-600 text-white font-medium rounded-lg transition text-xs shadow-sm flex items-center space-x-1.5 cursor-pointer border-none">
-                    <i class="fa-solid fa-arrow-left text-[10px]"></i>
+                <button type="button" v-if="depositForm.id" @click="resetForm(); selectedDepositIds = []" :disabled="isSubmitting" class="btn-pms-close" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting }">
+                    <i class="fa-solid fa-arrow-left text-[11px]"></i>
                     <span>Quay lại</span>
                 </button>
-                <button type="button" @click="deleteDeposits" :disabled="isSubmitting || isEditing" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting || isEditing }" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-xs shadow-sm flex items-center space-x-1.5 cursor-pointer border-none">
-                    <i class="fa-solid fa-trash-can text-[10px]"></i>
+                <button type="button" @click="deleteDeposits" :disabled="isSubmitting || isEditing" class="btn-pms-danger" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting || isEditing }">
+                    <i class="fa-solid fa-trash-can text-[11px]"></i>
                     <span>Xóa</span>
                 </button>
-                <button type="button" @click="editDeposit" :disabled="isSubmitting || isEditing" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting || isEditing }" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-xs shadow-sm flex items-center space-x-1.5 cursor-pointer border-none">
-                    <i class="fa-solid fa-pen-to-square text-[10px]"></i>
+                <button type="button" @click="editDeposit" :disabled="isSubmitting || isEditing" class="btn-pms-primary" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting || isEditing }">
+                    <i class="fa-solid fa-pen-to-square text-[11px]"></i>
                     <span>Sửa</span>
                 </button>
-                <button type="button" @click="saveDeposit" :disabled="isSubmitting" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting }" class="px-5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition text-xs shadow-sm flex items-center space-x-1.5 cursor-pointer border-none">
-                    <i class="fa-regular fa-floppy-disk text-[10px]"></i>
+                <button type="button" @click="saveDeposit" :disabled="isSubmitting" class="btn-pms-primary" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting }">
+                    <i class="fa-regular fa-floppy-disk text-[11px]"></i>
                     <span>Lưu</span>
                 </button>
-                <button type="button" v-if="!isEditing" @click="addDeposit" :disabled="isSubmitting" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting }" class="px-5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition flex items-center space-x-1.5 shadow-md text-xs tracking-wide cursor-pointer border-none">
-                    <i class="fa-solid fa-plus text-[10px]"></i>
+                <button type="button" v-if="!isEditing" @click="addDeposit" :disabled="isSubmitting" class="btn-pms-primary" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting }">
+                    <i class="fa-solid fa-plus text-[11px]"></i>
                     <span>Thêm</span>
                 </button>
             </div>

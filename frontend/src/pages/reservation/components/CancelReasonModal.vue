@@ -66,19 +66,20 @@
       </div>
 
       <!-- MODAL FOOTER -->
-      <div class="bg-white border-t border-slate-100 px-4 py-4 flex justify-center space-x-3 shrink-0">
+      <div class="bg-white border-t border-slate-100 px-4 py-3 flex justify-center space-x-3 shrink-0">
         <button 
           @click="close" 
-          class="bg-[#9ed0f0] hover:bg-[#83beeb] text-[#1c64a3] font-bold text-xs px-6 py-2 rounded-lg cursor-pointer transition border-none shadow-sm flex items-center justify-center"
+          class="btn-pms-close"
         >
-          Không
+          <i class="fa-solid fa-xmark text-xs"></i>
+          <span>Không</span>
         </button>
         <button 
           @click="handleConfirm" 
-          class="font-bold text-xs px-6 py-2 rounded-lg cursor-pointer transition border-none shadow-sm flex items-center justify-center hover:brightness-95"
-          :style="{ background: 'var(--pms-custom-theme, #006bdb)', color: 'var(--pms-custom-theme-text, #ffffff)' }"
+          class="btn-pms-primary"
         >
-          Có
+          <i class="fa-solid fa-check text-xs"></i>
+          <span>Có</span>
         </button>
       </div>
     </div>
