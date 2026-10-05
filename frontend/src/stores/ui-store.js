@@ -96,15 +96,99 @@ export const useUiStore = defineStore('ui', () => {
     alertState.value.show = false
   }
 
+  // Auth password confirmation dialog configuration (CheckAuthorization)
+  const authModalState = ref({
+    show: false,
+    username: '',
+    errorMessage: '',
+    loading: false,
+    resolve: null
+  })
+
+  let cachedCheckAuth = null
+  let cachedCheckAuthTime = 0
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('hotel-config-updated', (e) => {
+      if (e.detail?.name === 'CheckAuthorization') {
+        cachedCheckAuth = null
+      }
+    })
+  }
+
+  async function getCheckAuthorizationSetting() {
+    const now = Date.now()
+    if (cachedCheckAuth !== null && now - cachedCheckAuthTime < 5000) {
+      return cachedCheckAuth
+    }
+    try {
+      const http = (await import('@/services/http')).default
+      const res = await http.get('/hotel-configs', { params: { name: 'CheckAuthorization' } })
+      const configs = res.data?.data || []
+      const found = configs.find(c => c.name === 'CheckAuthorization')
+      const val = found ? String(found.value).trim() : '0'
+      cachedCheckAuth = val
+      cachedCheckAuthTime = now
+      return val
+    } catch {
+      return '0'
+    }
+  }
+
+  /**
+   * Request password authorization if CheckAuthorization != 0.
+   * If CheckAuthorization == 0, returns true immediately.
+   * @returns {Promise<boolean>} Resolves to true if authorized, false if cancelled
+   */
+  async function requestAuthorization() {
+    const settingValue = await getCheckAuthorizationSetting()
+    if (settingValue === '0' || settingValue === '' || settingValue === false || Number(settingValue) === 0) {
+      return true
+    }
+
+    const { useAuthStore } = await import('@/stores/auth-store')
+    const authStore = useAuthStore()
+    const currentUsername = authStore.user?.username || 'admin'
+
+    return new Promise((resolve) => {
+      authModalState.value = {
+        show: true,
+        username: currentUsername,
+        errorMessage: '',
+        loading: false,
+        resolve
+      }
+    })
+  }
+
+  function handleAuthSuccess() {
+    if (authModalState.value.resolve) {
+      authModalState.value.resolve(true)
+    }
+    authModalState.value.show = false
+  }
+
+  function handleAuthCancel() {
+    if (authModalState.value.resolve) {
+      authModalState.value.resolve(false)
+    }
+    authModalState.value.show = false
+  }
+
   return {
     toasts,
     confirmState,
     alertState,
+    authModalState,
     showToast,
     removeToast,
     confirm,
     handleConfirm,
     alert,
-    handleAlert
+    handleAlert,
+    requestAuthorization,
+    handleAuthSuccess,
+    handleAuthCancel,
+    getCheckAuthorizationSetting
   }
 })

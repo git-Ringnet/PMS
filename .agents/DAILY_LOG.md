@@ -19,6 +19,37 @@
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
 
+## [2026-10-05] - Khắc phục Chuyển cọc (Note 29/09) & Triển khai cấu hình CheckAuthorization xác thực mật khẩu trước thao tác nhạy cảm
+### Module: Đặt phòng / Thu ngân / Cài đặt hệ thống ([HotelSettingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/HotelSettingController.php), [AuthController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/AuthController.php), [DepositModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/DepositModal.vue), [AuthPasswordModal.vue](file:///d:/PMS/frontend/src/components/AuthPasswordModal.vue), [ui-store.js](file:///d:/PMS/frontend/src/stores/ui-store.js), [CheckoutPage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))
+
+- **Khắc phục Chuyển cọc (Note 29/09, dòng 210) đồng bộ với màn hình hóa đơn chuyển thanh toán (TransferPaymentModal)**:
+  - Đồng bộ hoàn toàn logic và cấu trúc với màn hình hóa đơn chuyển thanh toán (`CheckoutPage` -> `TransferPaymentModal`):
+    - Tải toàn bộ booking hoạt động (`status` in `[0, 1]`): không loại trừ booking hiện tại (cho phép chuyển cọc giữa các phòng trong cùng booking).
+    - Cấu trúc cây dropdown phân cấp rõ ràng: Dòng cha là Booking (`BKK: Mã - Tên`), các dòng con là phòng In-House của booking đó (`Số phòng | Tên khách`).
+    - Đối với phòng con: **CHỈ** hiển thị các phòng có tình trạng 1 (In-house / Đang ở), đã có số phòng thực tế, chưa check-out và không phải phòng ảo.
+    - Tìm kiếm Client-side toàn diện: khi gõ từ khóa (mã booking, tên khách, số phòng con), dropdown lọc mượt mà theo cả cấp booking lẫn cấp phòng mà không bị gửi query server đè mất dữ liệu.
+    - Dropdown placement: tự động tính chiều cao và drop-up khi mở gần đáy màn hình, không bị che khuất.
+
+- **Triển khai thông số CheckAuthorization & Modal xác thực mật khẩu**:
+  - **Cơ chế**:
+    - Khi `CheckAuthorization == 0`: Bỏ qua xác thực, thực hiện thao tác bình thường.
+    - Khi `CheckAuthorization != 0`: Bật modal xác thực mật khẩu đăng nhập (khóa tên đăng nhập chỉ đọc, người dùng nhập mật khẩu để xác nhận). Nhập sai thông báo lỗi đỏ "Đăng nhập không thành công".
+  - **Phạm vi bảo vệ**:
+    - **Booking**: Xóa cọc, Xóa booking *(xóa phòng lẻ không yêu cầu xác thực)*.
+    - **Bill**: Xóa thanh toán, Xóa cọc, Xóa dịch vụ, Thanh toán (bao gồm cả thanh toán công nợ).
+  - **Backend**:
+    - Migration bổ sung `CheckAuthorization` (mặc định `'0'`) vào bảng `hotel_configs` trên toàn bộ 5 chi nhánh database (`php artisan migrate:all --force`).
+    - Cập nhật `HotelSettingController@show` trả về `CheckAuthorization`.
+    - Thêm endpoint `POST /api/me/verify-password` trong `AuthController@verifyPassword` kiểm tra mật khẩu user hiện tại.
+    - Viết Feature test [VerifyPasswordTest.php](file:///d:/PMS/backend/tests/Feature/VerifyPasswordTest.php) (2/2 tests PASSED).
+  - **Frontend**:
+    - Tạo component [AuthPasswordModal.vue](file:///d:/PMS/frontend/src/components/AuthPasswordModal.vue) theo đúng giao diện Provilen.
+    - Tích hợp hàm `requestAuthorization()` trong [ui-store.js](file:///d:/PMS/frontend/src/stores/ui-store.js) và nhúng modal toàn cục tại [App.vue](file:///d:/PMS/frontend/src/App.vue).
+    - Ràng buộc xác thực mật khẩu tại [DepositModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/DepositModal.vue) (xóa cọc), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue) (xóa booking), và [CheckoutPage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue) (xóa thanh toán, xóa cọc, xóa dịch vụ, thanh toán).
+  - **Kiểm thử**:
+    - Backend: Feature test pass 100%.
+    - Frontend: `npm run build` hoàn thành không lỗi.
+
 ## [2026-10-02] - Xử lý Khôi phục Booking hủy: Kiểm tra Over loại phòng (AllowOverRoomTypeRoomKind) và Trùng số phòng vật lý / Khóa phòng (RoomLock)
 ### Module: Đặt phòng / Khôi phục Booking ([BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [RestoreBookingConflictTest.php](file:///d:/PMS/backend/tests/Feature/RestoreBookingConflictTest.php))
 

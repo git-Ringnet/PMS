@@ -5663,6 +5663,9 @@ async function handleConfirmCancelReason(payload) {
   if (!target) return
 
   if (target.type === 'booking') {
+    const authorized = await uiStore.requestAuthorization()
+    if (!authorized) return
+
     const tab = target.tab
     try {
       uiStore.showToast('Đang tiến hành hủy đăng ký...', 'info')

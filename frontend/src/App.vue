@@ -5,6 +5,7 @@ import ToastContainer from '@/components/ToastContainer.vue'
 import ConfirmModal from '@/components/ConfirmModal.vue'
 import AlertModal from '@/components/AlertModal.vue'
 import NightAuditProgressModal from '@/components/NightAuditProgressModal.vue'
+import AuthPasswordModal from '@/components/AuthPasswordModal.vue'
 import { computed, onMounted, onUnmounted, watch } from 'vue'
 import echo from '@/services/echo'
 import { useNightAuditStore } from '@/stores/night-audit-store'
@@ -67,4 +68,7 @@ onUnmounted(() => {
 
   <!-- Global Night Audit 18-Step Progress Modal (Hiển thị đồng bộ cho tất cả tài khoản) -->
   <NightAuditProgressModal />
+
+  <!-- Global Authorization Password Modal (CheckAuthorization) -->
+  <AuthPasswordModal />
 </template>
