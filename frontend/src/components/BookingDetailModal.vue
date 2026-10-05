@@ -1953,11 +1953,11 @@ function parseNumber(val) {
   inset: 0;
   z-index: 100;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
   background: rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(4px);
-  padding: 24px 16px;
+  padding: clamp(8px, 1.5vh, 20px) clamp(8px, 1.5vw, 16px);
   overflow-y: auto;
 }
 
@@ -1966,7 +1966,10 @@ function parseNumber(val) {
   border-radius: 12px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
   width: 100%;
-  max-width: 1440px;
+  max-width: min(96vw, 1400px);
+  max-height: min(94vh, 900px);
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   margin: auto;
   animation: modalIn 0.15s ease-out;
@@ -1976,16 +1979,17 @@ function parseNumber(val) {
 .card-header {
   background: #1a2e4a;
   color: #fff;
-  padding: 14px 22px;
+  padding: 10px 18px;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-shrink: 0;
 }
 .header-left {
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 15.5px;
+  font-size: 15px;
   font-weight: 700;
   letter-spacing: 0.3px;
 }
@@ -1994,13 +1998,13 @@ function parseNumber(val) {
   border: 1px solid rgba(255, 255, 255, 0.25);
   border-radius: 6px;
   padding: 3px 12px;
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 500;
   color: #cfe8ff;
 }
 .header-actions {
   display: flex;
-  gap: 9px;
+  gap: 8px;
   align-items: center;
 }
 .btn-hd {
@@ -2088,7 +2092,12 @@ function parseNumber(val) {
 .close-x-btn:hover { color: #fff; }
 
 /* BODY & MAIN GRID */
-.card-body { padding: 18px 22px 20px; }
+.card-body {
+  padding: 14px 18px 16px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
 
 .main-grid {
   display: grid;
@@ -2557,5 +2566,39 @@ input.always-gray:disabled {
   padding: 8px 14px;
   border-radius: 6px;
   margin-bottom: 12px;
+}
+
+/* Responsive compact adjustments for laptops (h <= 820px) */
+@media (max-height: 820px) {
+  .card-header {
+    padding: 8px 14px;
+  }
+  .card-body {
+    padding: 10px 14px 14px;
+  }
+  .cell-guests, .cell-personal, .cell-docs, .cell-stay, .cell-price {
+    padding: 8px 12px !important;
+  }
+  .f input, .f select {
+    height: 30px !important;
+    padding: 2px 6px !important;
+    font-size: 12px !important;
+  }
+  .sec-label {
+    padding-bottom: 4px !important;
+    margin-bottom: 8px !important;
+    font-size: 11px !important;
+  }
+  .draft-alert-banner {
+    padding: 5px 10px;
+    font-size: 11.5px;
+    margin-bottom: 8px;
+  }
+}
+
+@media (max-width: 1080px) {
+  .main-grid {
+    grid-template-columns: 200px 1.2fr 1fr;
+  }
 }
 </style>

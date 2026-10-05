@@ -3228,7 +3228,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="checkout-shell flex h-[calc(100vh-48px)] bg-[#f1f5f9] text-xs text-slate-700 select-none overflow-hidden font-sans relative">
+  <div class="checkout-shell flex h-full flex-1 min-h-0 bg-[#f1f5f9] text-xs text-slate-700 select-none overflow-hidden font-sans relative">
     <LoadingOverlay :show="isLoading || isServiceOperationLoading" />
 
     <!-- LEFTSIDE TOOLBAR (Cột nút chức năng dọc bên trái - Hỗ trợ Thu gọn/Mở rộng) -->
@@ -3463,7 +3463,7 @@ onUnmounted(() => {
     </aside>
 
     <!-- RIGHT MAIN SECTION -->
-    <main class="checkout-main flex-1 grid min-w-0 grid-cols-[minmax(410px,430px)_minmax(0,1fr)] grid-rows-[45px_minmax(0,1fr)] gap-0 bg-[#f1f5f9] overflow-hidden">
+    <main class="checkout-main flex-1 grid min-w-0 grid-cols-[minmax(340px,420px)_minmax(0,1fr)] grid-rows-[45px_minmax(0,1fr)] gap-0 bg-[#f1f5f9] overflow-hidden">
 
       <!-- TOP CONTROL BAR (Nằm trên cùng toàn chiều rộng, không thuộc panel nào) -->
       <div class="checkout-header col-span-2 flex items-center justify-between gap-2 px-4 py-1.5 bg-white border-b border-slate-300 text-xs">
@@ -3687,7 +3687,7 @@ onUnmounted(() => {
         </div>
 
         <!-- BOOKING INFORMATION + FOLIO (reference layout) -->
-        <div class="checkout-info-panel bg-white rounded-none border-0 flex flex-col min-h-0 shadow-none">
+        <div class="checkout-info-panel bg-white rounded-none border-0 flex flex-col min-h-0 shadow-none overflow-y-auto">
           <div class="checkout-info-heading flex items-center justify-between border-b border-slate-300 px-2 py-1">
             <span class="checkout-info-title"><i class="fa-solid fa-bed"></i> Thông Tin Đăng Ký</span>
             <label class="flex items-center gap-1 text-[10px] font-bold text-red-600">

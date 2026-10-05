@@ -649,16 +649,26 @@ table.footer-table td:last-child {
 /* ---------- ACTION DOCK ---------- */
 .dock {
   position: sticky;
-  top: 14px;
+  top: 10px;
   align-self: flex-start;
-  margin: 14px 16px 90px 0;
+  margin: 10px 14px 20px 0;
   width: 52px;
+  max-height: calc(100vh - 110px);
+  overflow-y: auto;
+  overflow-x: hidden;
   background: var(--pms-custom-theme, var(--navy));
   border-radius: 10px;
-  overflow: hidden;
   transition: width 0.22s ease;
   z-index: 40;
   box-shadow: 0 4px 14px rgba(18, 35, 61, 0.18);
+  scrollbar-width: thin;
+}
+.dock::-webkit-scrollbar {
+  width: 3px;
+}
+.dock::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
 }
 .dock:hover {
   width: 246px;

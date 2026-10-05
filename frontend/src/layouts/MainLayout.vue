@@ -909,12 +909,12 @@ function handleHeaderBookingSelected(booking) {
   <div class="flex flex-col h-screen w-full max-w-full overflow-hidden bg-white">
     <!-- Top Header Bar (Light Theme) -->
     <header 
-      class="flex items-center justify-between gap-4 h-12 border-b border-slate-200 px-4 shrink-0 z-50 transition-all duration-200 w-full max-w-full"
+      class="flex items-center justify-between gap-1.5 2xl:gap-3 h-11 lg:h-12 compact-low-h-header border-b border-slate-200 px-2.5 2xl:px-4 shrink-0 z-50 transition-all duration-200 w-full max-w-full"
       :class="!['/pms', '/fnb', '/', '/login'].includes(route.path) ? '' : 'bg-white'"
       :style="{ background: !['/pms', '/fnb', '/', '/login'].includes(route.path) ? headerBgColor : '' }"
     >
       <!-- Logo (Left) -->
-      <div class="flex items-center justify-start">
+      <div class="flex items-center justify-start shrink-0">
         <button
           @click="goHome"
           class="flex items-center gap-1.5 hover:opacity-80 transition-opacity cursor-pointer bg-transparent border-none p-0"
@@ -930,15 +930,15 @@ function handleHeaderBookingSelected(booking) {
       </div>
 
       <!-- Main Navigation (Center) -->
-      <nav v-if="!['/pms', '/fnb', '/', '/login'].includes(route.path)" class="flex items-center gap-1.5">
+      <nav v-if="!['/pms', '/fnb', '/', '/login'].includes(route.path)" class="flex items-center gap-0.5 2xl:gap-1 shrink-0 py-0.5">
         <div
           v-for="item in menuItems"
           :key="item.route"
-          class="relative group py-2"
+          class="relative group py-1.5"
         >
           <button
             @click="navigateTo(item.route)"
-            class="px-3.5 py-1.5 text-[13.5px] font-bold transition-colors cursor-pointer border-none whitespace-nowrap bg-transparent tracking-wide"
+            class="px-1.5 2xl:px-2.5 py-1 text-[11.5px] 2xl:text-[13px] font-bold transition-colors cursor-pointer border-none whitespace-nowrap bg-transparent tracking-tight 2xl:tracking-normal"
             :class="isActive(item.route)
               ? (isHeaderBgDark ? 'text-white border-b-2 border-white' : 'text-gray-900 border-b-2 border-gray-900/80 dark:text-white dark:border-white')
               : (isHeaderBgDark ? 'text-white/80 hover:text-white' : 'text-gray-900/75 hover:text-gray-900 dark:text-white/70 dark:hover:text-white')"
@@ -989,7 +989,7 @@ function handleHeaderBookingSelected(booking) {
       </nav>
 
       <!-- Right Side: User Info / Date / Time (Right) -->
-      <div class="flex items-center justify-end gap-1.5 text-sm whitespace-nowrap shrink-0">
+      <div class="flex items-center justify-end gap-1 2xl:gap-1.5 text-xs whitespace-nowrap shrink-0">
         <!-- Search icon button -->
         <button
           v-if="!route.path.startsWith('/housekeeping')"
@@ -1294,7 +1294,7 @@ function handleHeaderBookingSelected(booking) {
 
         <!-- Shift & Date Time in Header (Mockup style) -->
         <div 
-          class="flex items-center gap-1.5 font-bold text-[11px] whitespace-nowrap px-0.5 shrink-0 transition-colors duration-200"
+          class="flex items-center gap-1 font-bold text-[10.5px] 2xl:text-[11px] whitespace-nowrap px-0.5 shrink-0 transition-colors duration-200"
           :class="isHeaderBgDark ? 'text-white' : 'text-gray-900 dark:text-white'"
         >
           <span>{{ t('header.shift') }}: {{ activeShiftName }}</span>
@@ -1378,13 +1378,13 @@ function handleHeaderBookingSelected(booking) {
     <!-- Sub Navigation (Light Theme Tabs) -->
     <div
       v-if="subMenuItems.length > 0"
-      class="flex items-center gap-1 xl:gap-1.5 h-11 bg-white border-b border-slate-200 px-2 xl:px-4 shrink-0 overflow-x-auto scrollbar-thin dark:bg-[#000000] dark:border-[#1c1c1c]"
+      class="flex items-center gap-1 xl:gap-1.5 h-10 xl:h-11 compact-low-h-subnav bg-white border-b border-slate-200 px-2 xl:px-4 shrink-0 overflow-x-auto scrollbar-thin dark:bg-[#000000] dark:border-[#1c1c1c]"
     >
       <button
         v-for="item in subMenuItems"
         :key="item.name"
         @click="handleSubMenuClick(item)"
-        class="flex items-center gap-1 px-2.5 py-1 xl:px-3 text-[11.5px] xl:text-[12px] rounded-full transition-all duration-200 cursor-pointer border whitespace-nowrap relative font-semibold"
+        class="flex items-center gap-1 px-2.5 py-0.5 xl:py-1 xl:px-3 text-[11px] xl:text-[12px] rounded-full transition-all duration-200 cursor-pointer border whitespace-nowrap relative font-semibold"
         :class="item.active
           ? 'bg-[#bdecfe] text-gray-900 border-[#7dd3fc] dark:bg-sky-950 dark:text-sky-200 dark:border-sky-800'
           : 'bg-transparent text-gray-900/70 border-transparent hover:bg-slate-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-[#121212] dark:hover:text-white'"

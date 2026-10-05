@@ -561,6 +561,39 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   -webkit-appearance: none;
 }
 
+/* ===== Responsive Utilities for Multi-Screen & Laptops ===== */
+.modal-responsive-card {
+  max-width: min(96vw, 1440px);
+  max-height: min(92dvh, 900px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modal-responsive-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Compact spacing on low-height screens (Laptop 13-14 inch, h <= 768px) */
+@media (max-height: 768px) {
+  .compact-low-h-header {
+    height: 2.5rem !important; /* 40px */
+  }
+  .compact-low-h-subnav {
+    height: 2.25rem !important; /* 36px */
+  }
+  .compact-low-h-metrics {
+    padding-top: 0.375rem !important;
+    padding-bottom: 0.375rem !important;
+  }
+  .compact-low-h-metrics button {
+    padding-top: 0.375rem !important;
+    padding-bottom: 0.375rem !important;
+  }
+}
+
 /* ===== Unified PMS Action Buttons Design System (Dòng 4, 16, 27) ===== */
 .btn-pms-primary {
   display: inline-flex;
