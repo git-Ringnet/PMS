@@ -44,8 +44,6 @@ http.interceptors.request.use(
 
 // Flag tránh redirect nhiều lần khi nhiều request 401 cùng lúc
 let _isRedirectingToLogin = false
-// Flag tránh dispatch 423 liên tục
-let _isHandling423 = false
 
 // Response interceptor
 http.interceptors.response.use(
@@ -81,12 +79,6 @@ http.interceptors.response.use(
         setTimeout(() => { _isRedirectingToLogin = false }, 3000)
       } else if (status === 403) {
         console.error('Không có quyền truy cập')
-      } else if (status === 423 && !_isHandling423) {
-        // 423 = must_change_password: bắt buộc đổi mật khẩu lần đầu
-        // Dispatch custom event để ForceChangePasswordModal bắt (tránh circular dep với store)
-        _isHandling423 = true
-        window.dispatchEvent(new CustomEvent('pms:force-change-password'))
-        setTimeout(() => { _isHandling423 = false }, 3000)
       } else if (status === 500) {
         console.error('Lỗi máy chủ')
       }

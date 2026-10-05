@@ -10,16 +10,7 @@ class ForcePasswordChange
 {
     public function handle(Request $request, Closure $next): Response
     {
-        $user = $request->user();
-        if (!$user || !$user->must_change_password || $this->isAllowedRoute($request)) {
-            return $next($request);
-        }
-
-        return response()->json([
-            'success' => false,
-            'message' => 'Bạn phải đổi mật khẩu mặc định trước khi sử dụng hệ thống.',
-            'must_change_password' => true,
-        ], 423);
+        return $next($request);
     }
 
     private function isAllowedRoute(Request $request): bool

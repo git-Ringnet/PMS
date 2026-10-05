@@ -140,6 +140,213 @@
 ## [2026-10-01] - Điều chỉnh Tooltip Booking và Submenu Context Menu trên Sơ đồ phòng (Room Map - Dòng 293)
 ### Module: Sơ đồ phòng ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
 
+## [2026-10-02] - Khắc phục đồng bộ tiến trình Sang ngày (Night Audit) đa tài khoản & đa tab (Reverb, BroadcastChannel, Public status check & Polling fallback)
+### Module: Lễ tân / Sang ngày ([NightAuditController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php), [api.php](file:///d:/PMS/backend/routes/api.php), [echo.js](file:///d:/PMS/frontend/src/services/echo.js), [auth-store.js](file:///d:/PMS/frontend/src/stores/auth-store.js), [night-audit-store.js](file:///d:/PMS/frontend/src/stores/night-audit-store.js), [App.vue](file:///d:/PMS/frontend/src/App.vue), [DayClosePage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue))
+
+- **Yêu cầu & Nghiệp vụ**:
+  - Khi một tài khoản bấm Sang ngày, tất cả các tài khoản khác (dù đang mở sẵn, chuyển trang, hay vừa đăng nhập) đều phải hiển thị đồng bộ tiến trình chạy 18 bước trong thời gian thực.
+  - Khắc phục triệt để hiện tượng tài khoản thứ 2 không nhận được tín hiệu tiến trình hoặc bị chặn kiểm tra trạng thái trước/trong khi đăng nhập.
+  - Cho phép người dùng chạy lại sang ngày nếu đã xác nhận khi ngày hiện tại đã từng chạy mà không bị chặn lỗi 409 Conflict.
+- **Backend đã xử lý**:
+  - [`routes/api.php`](file:///d:/PMS/backend/routes/api.php): Chuyển endpoint `GET /night-audit/check-status` thành Public route (không yêu cầu Sanctum) để bất kỳ tab nào, kể cả ở trang Login khi chưa có token, đều kiểm tra được cờ `is_running` và bước đang chạy.
+  - [`.env`](file:///d:/PMS/backend/.env): Xóa bỏ dòng cấu hình trùng `BROADCAST_CONNECTION=log`, đảm bảo luôn sử dụng Reverb.
+  - [`NightAuditController.php`](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php):
+    - Tối ưu nhịp trễ `$stepDelayUs = 550000` (~550ms/bước, tổng ~10s) vừa đủ cho mọi tài khoản quan sát rõ ràng, nhịp nhàng.
+    - Trong hàm `$notifyStep`: Lưu cache `night_audit_active_step` với TTL 60s để bất kỳ tài khoản nào gọi `checkStatus` (vừa login hoặc polling) đều bắt kịp chính xác bước đang chạy và % tiến độ hiện tại.
+    - Trong khối `finally`: Tự động xóa cache `night_audit_active_step` và giải phóng khóa hệ thống `is_night_audit_running`.
+- **Frontend đã xử lý**:
+  - [`echo.js`](file:///d:/PMS/frontend/src/services/echo.js): Ưu tiên `127.0.0.1` khi chạy localhost, giải quyết triệt để lỗi Windows phân giải `localhost` sang `::1` IPv6 làm đứt kết nối WebSocket.
+  - [`auth-store.js`](file:///d:/PMS/frontend/src/stores/auth-store.js): Trong action `login()`, tự động gọi `checkCurrentStatus()` ngay khi đăng nhập thành công. Nếu hệ thống đang sang ngày, tài khoản vừa login lập tức kích hoạt modal tiến trình tại đúng bước hiện tại.
+  - [`night-audit-store.js`](file:///d:/PMS/frontend/src/stores/night-audit-store.js):
+    - Tích hợp HTML5 `BroadcastChannel('pms_night_audit_channel')` đồng bộ song song tức thì 0ms giữa các tab cùng trình duyệt.
+    - Bổ sung cơ chế Polling nhẹ (1.5s/lần) khi `isRunning === true` làm mạng lưới an toàn thứ 3 trong trường hợp WebSocket bị trễ hoặc rớt gói tin.
+    - Cập nhật hàm `triggerNightAudit` nhận cờ `forceRerun` và gửi xuống backend.
+  - [`DayClosePage.vue`](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue): Truyền `forceRerun: !!alreadyRolledToday.value` khi người dùng đã xác nhận chạy tiếp.
+  - [`App.vue`](file:///d:/PMS/frontend/src/App.vue): Lắng nghe Reverb Echo, đồng bộ route change và gọi `checkCurrentStatus()` ngay khi ứng dụng mount.
+- **Kiểm thử**:
+  - Backend: `php artisan test tests/Feature/NightAuditTest.php` -> 11/11 tests passed (67 assertions).
+  - Frontend: `npm run build` -> hoàn thành thành công trong 3.65s.
+
+## [2026-10-02] - Gỡ bỏ cơ chế bắt buộc đổi mật khẩu lần đầu khi tạo/đặt lại tài khoản nhân viên
+### Module: Quản trị hệ thống / Nhân viên / Xác thực ([UserController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/UserController.php), [ForcePasswordChange.php](file:///d:/PMS/backend/app/Http/Middleware/ForcePasswordChange.php), [app.php](file:///d:/PMS/backend/bootstrap/app.php), [App.vue](file:///d:/PMS/frontend/src/App.vue), [http.js](file:///d:/PMS/frontend/src/services/http.js), [EmployeeTab.vue](file:///d:/PMS/frontend/src/pages/system/components/EmployeeTab.vue))
+
+- **Yêu cầu & Nghiệp vụ**:
+  - Khi tạo tài khoản nhân viên, đăng nhập sử dụng mật khẩu đã đặt khi tạo mà không cần đổi lại mật khẩu lần đầu.
+  - Gỡ bỏ hoàn toàn popup modal "Yêu Cầu Đổi Mật Khẩu Lần Đầu" chặn toàn màn hình. Khi người dùng muốn đổi mật khẩu thì tự chủ động đổi.
+- **Backend đã xử lý**:
+  - [`UserController.php`](file:///d:/PMS/backend/app/Http/Controllers/Api/UserController.php): Đặt `must_change_password => false` khi tạo mới (`store`), không ép cờ khi cập nhật (`update`), và đặt `must_change_password => false` khi đặt lại mật khẩu (`resetPassword`).
+  - [`bootstrap/app.php`](file:///d:/PMS/backend/bootstrap/app.php): Gỡ bỏ middleware `ForcePasswordChange::class` khỏi API group.
+  - [`ForcePasswordChange.php`](file:///d:/PMS/backend/app/Http/Middleware/ForcePasswordChange.php): Chuyển thành passthrough `$next($request)`.
+  - Database: Cập nhật toàn bộ các bản ghi `users.must_change_password = 0`.
+- **Frontend đã xử lý**:
+  - [`App.vue`](file:///d:/PMS/frontend/src/App.vue): Gỡ bỏ component `<ForceChangePasswordModal />` và import.
+  - [`http.js`](file:///d:/PMS/frontend/src/services/http.js): Gỡ bỏ cờ `_isHandling423` và interceptor bắt mã HTTP 423.
+  - [`EmployeeTab.vue`](file:///d:/PMS/frontend/src/pages/system/components/EmployeeTab.vue): Cập nhật thông báo xác nhận và thông báo kết quả khi đặt lại mật khẩu; bỏ ghi chú ép đổi mật khẩu ở form tạo nhân viên.
+- **Kiểm thử**:
+  - Backend: `php artisan test --filter=OrganizationRbacTest` -> 15/15 tests passed.
+  - Frontend: `npm run build` -> thành công không lỗi trong 3.93s.
+
+
+## [2026-10-02] - Nâng cấp tiến trình Sang ngày (Night Audit): Đồng bộ toàn hệ thống đa tài khoản, phân quyền động, chi tiết phòng lỗi & tự động đóng 10s
+### Module: Lễ tân / Sang ngày ([NightAuditController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php), [RolePermissionSeeder.php](file:///d:/PMS/backend/database/seeders/RolePermissionSeeder.php), [NightAuditUpdated.php](file:///d:/PMS/backend/app/Events/NightAuditUpdated.php), [night-audit-store.js](file:///d:/PMS/frontend/src/stores/night-audit-store.js), [NightAuditProgressModal.vue](file:///d:/PMS/frontend/src/components/NightAuditProgressModal.vue), [App.vue](file:///d:/PMS/frontend/src/App.vue), [DayClosePage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue))
+
+- **Yêu cầu & Nghiệp vụ**:
+  - Không hardcode tài khoản `admin`; bất kỳ tài khoản nào có quyền `fo.night_audit` hoặc Quản trị viên/Lễ tân trưởng đều được phép thực hiện Sang ngày.
+  - Khi 1 tài khoản kích hoạt Sang ngày, tất cả các tài khoản khác đang đăng nhập/sử dụng ở các màn hình khác (Sơ đồ phòng, Đặt phòng, Thu ngân...) đều tự động hiển thị màn hình tiến trình 18 bước chạy đồng bộ realtime qua WebSocket.
+  - Khi có lỗi ở bất kỳ bước nào (đặc biệt Bước 1 PRE_CHECK), hiển thị chi tiết nguyên nhân vi phạm (danh sách phòng chưa check-in/chưa check-out, mã booking, tên khách, ngày đến/đi) và hướng dẫn cụ thể để nhân viên xử lý.
+  - Tự động đóng thông báo lỗi sau 10 giây (kèm đồng hồ đếm ngược) để đưa người dùng quay lại màn hình làm việc mà không bắt buộc phải bấm nút đóng.
+- **Backend đã xử lý**:
+  - [`RolePermissionSeeder.php`](file:///d:/PMS/backend/database/seeders/RolePermissionSeeder.php): Thêm permission `fo.night_audit` ('Sang ngày / Đóng ngày hệ thống'), gán cho các role `super_admin`, `branch_admin`, `fo_manager`.
+  - [`routes/api.php`](file:///d:/PMS/backend/routes/api.php): Gắn middleware `permission:fo.night_audit` bảo vệ các route `/night-audit/run`, `late-check-in`, `no-show`, `extend-stay`.
+  - [`NightAuditController.php`](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php):
+    - Chuyển sang cơ chế **Server-Driven Progress**: Đặt hàm `$notifyStep(order, code, nameEn, percent)` phát WebSocket event `progress` kèm `usleep(250000)` (250ms giữa các bước; bỏ qua khi chạy testing).
+    - Phát tuần tự từng bước từ 1 đến 17 qua WebSocket `night.audit.updated`. Bước 18 phát event `completed` (100%).
+    - Thay thế hardcode `'admin'` bằng dynamic username của người đăng nhập.
+    - Tại bước 1 PRE_CHECK, truy vấn chi tiết các phòng vướng mắc và đính kèm vào `error_details` (`pending_checkins`, `pending_checkouts`, `hint`). Khối catch phát broadcast realtime `failed` và trả JSON response chứa `error_details`.
+  - [`NightAuditUpdated.php`](file:///d:/PMS/backend/app/Events/NightAuditUpdated.php): Bổ sung `username`, `source_date`, `target_date`, `step_order`, `percent`, `failed_step`, `error_details`, `rollback_done` vào WebSocket event broadcast.
+  - [`NightAuditSnapshotService.php`](file:///d:/PMS/backend/app/Services/NightAuditSnapshotService.php): Thay thế fallback `'admin'` thành `'system'`.
+  - [`NightAuditTest.php`](file:///d:/PMS/backend/tests/Feature/NightAuditTest.php): Bổ sung role `super_admin` và kiểm tra dynamic username `test_auditor`. Passed 11/11 tests (67 assertions).
+  - [`night-audit-store.js`](file:///d:/PMS/frontend/src/stores/night-audit-store.js): Tối giản store thành Server-Driven event handler; loại bỏ hoàn toàn fake timeline (`TIMELINE_DURATION_MS = 7000ms`, `stepSchedule`, `setInterval`). Cả tài khoản người bấm và tài khoản người đang xem đều cập nhật trực tiếp theo tín hiệu WebSocket từ server, đảm bảo đồng bộ tuyệt đối 100% từng bước và cùng chuyển sang Step 18 sau đó đăng xuất cùng lúc sau 2.5s.
+  - [`NightAuditProgressModal.vue`](file:///d:/PMS/frontend/src/components/NightAuditProgressModal.vue): Component modal tiến trình toàn cục nền trắng chuẩn tham chiếu, badge đếm ngược 10s, bảng hiển thị phòng lỗi phân loại rõ phòng đến/phòng đi kèm mã booking và hướng dẫn khắc phục.
+  - [`App.vue`](file:///d:/PMS/frontend/src/App.vue): Nhúng `<NightAuditProgressModal />` ở cấp root; trong `onMounted` chỉ kích hoạt modal nếu hệ thống thực sự đang chạy (`is_running === true`), loại bỏ triệt để việc tự động kích hoạt tiến trình cũ khiến tài khoản mới login bị nhảy cóc sang Step 18 và bị ép logout; lắng nghe event `progress`, `completed`, `failed`.
+  - [`DayClosePage.vue`](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue): Kiểm tra quyền thực thi `canExecuteNightAudit`, kết nối nút "Sang ngày" với store `nightAuditStore.triggerNightAudit`, loại bỏ khối modal duplicate và các biến cục bộ thừa.
+- **Kiểm thử**:
+  - Backend: `php artisan test tests/Feature/NightAuditTest.php` -> 11/11 tests passed (67 assertions).
+  - Frontend: `npm run build` -> hoàn thành thành công trong 3.70s không có lỗi.
+
+## [2026-10-02] - Sửa lỗi nhảy tổng tiền và hiển thị nhầm Extra Bed thành Tiền phòng khi mở chi tiết phòng (Booking GAL3)
+### Module: Đặt phòng / Màn hình BK ([BookingRoomServiceController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomServiceController.php), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))
+
+- **Yêu cầu & Phản ánh của khách hàng**:
+  - Khách hàng phản ánh trên link test khi vào Booking số 3 (`GAL3`), tổng tiền ở chân bảng ban đầu là 36,830,000đ.
+  - Khi bấm dấu `+` (xổ chi tiết dịch vụ) của phòng 109, tổng tiền chân bảng nhảy xuống 35,230,000đ (bị hụt đúng 1,600,000đ = 2 đêm 800,000đ).
+  - Đồng thời chi tiết ngày 02/09/2026 và 03/09/2026 xuất hiện dòng tên `Extrabed/Thêm Giường` với đơn giá 800,000đ (có icon thùng rác đỏ để xóa) thay vì dòng `Dịch vụ phòng nghỉ`.
+- **Nguyên nhân cốt lõi**:
+  - Khi mở rộng phòng, frontend gọi API `fetchBookingRoomServices` lấy danh sách dịch vụ và ghi đè `room.services`.
+  - Trong logic tìm tiền phòng tương lai `dbCharge`, điều kiện cũ kiểm tra `(svc.service_code === 'RM' || svc.service_code === 'ROOM_CHARGE' || Number(svc.is_room) === 1)`.
+  - Trong DB, cột `is_room = 1` dùng để phân biệt folio phòng (FIT) chứ không phải cờ "là tiền phòng". Vì vậy các bản ghi Extra Bed (`EB`) cũng có `is_room = 1`.
+  - Khi bản ghi `EB` trả về trước `RM` cùng ngày 02/09 và 03/09, `.find()` bắt nhầm bản ghi `EB` làm tiền phòng: gán tên `Extrabed/Thêm Giường`, gán mã `EB` và đơn giá 800,000đ.
+  - Khi tính tổng, `getRoomChargeTotal` chỉ lọc mã `RM`/`ROOM_CHARGE`/`ER` nên bỏ sót 2 đêm này (-1,600,000đ), làm tổng tiền bị tụt từ 36,830,000đ xuống 35,230,000đ.
+- **Nghiệp vụ đã xử lý**:
+  1. **Frontend ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))**:
+     - Tạo hàm chuẩn `isRoomChargeService(svc)` để định danh chính xác các mã tiền phòng: `RM`, `ROOM_CHARGE`, `ER`.
+     - Loại bỏ triệt để điều kiện nhầm lẫn `Number(svc.is_room) === 1` khi tìm `dbCharge`, gán tên `dbCharge.service_name || Dịch vụ phòng nghỉ` và `service_code: 'RM'`.
+     - Đồng bộ lại `isRoomChargeService` ở tất cả các vị trí: `handleServiceRateChange`, `getServiceDiscountLabel`, popup giảm giá và template Mode A & Mode B.
+     - Cập nhật điều kiện nút xóa và ô nhập số lượng trong chi tiết phòng: chỉ hiển thị cho dịch vụ phụ `!isRoomChargeService(svc)`.
+  2. **Backend ([BookingRoomServiceController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomServiceController.php))**:
+     - Thêm `->orderBy('id')` sau `orderBy('service_date')` trong phương thức `index` để đảm bảo thứ tự trả về luôn ổn định và ưu tiên bản ghi tiền phòng gốc tạo trước.
+- **Kiểm thử**:
+  - `npm run build` hoàn thành thành công trong 4.43s không có lỗi.
+
+## [2026-10-02] - Bổ sung Fallback phụ thu ăn sáng trẻ em ngày quá khứ tránh hụt 270,000đ (Booking GAL3)
+### Module: Đặt phòng / Màn hình BK ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))
+
+- **Phản ánh & Hiện tượng**:
+  - Người dùng thấy tổng tiền Booking GAL3 bị hụt từ 36,830,000đ xuống 36,560,000đ (phòng 109 từ 11,400,000đ còn 11,130,000đ, hụt đúng 270,000đ).
+- **Nguyên nhân**:
+  - 270,000đ = 3 đêm x 90,000đ phụ thu ăn sáng của Trẻ em (Child 1) vào 3 ngày quá khứ (30/08, 31/08, 01/09).
+  - Trước đó theo chuẩn fun_052, ngày quá khứ chỉ tìm bill `BD` trong `service_bills`. Do khách sạn chưa post bill lẻ vào `service_bills` nên 3 đêm này bị bỏ sót.
+- **Xử lý**:
+  - Tại [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue): Bổ sung cơ chế fallback — nếu ngày quá khứ chưa có bill lẻ trong `service_bills` thì tự động lấy theo cấu hình ăn sáng trẻ em đã cài trong Booking (`booking_child_breakfast_details`).
+  - Đảm bảo phòng 109 tính đủ 11,400,000đ và tổng Booking giữ đúng 36,830,000đ cả trước và sau khi mở chi tiết phòng.
+- **Kiểm thử**:
+  - Build frontend `npm run build` thành công trong 4.43s.
+
+## [2026-10-01] - Sửa lỗi tính tiền màn hình BK (Task 224 - Note 22/09: Lọc dịch vụ post tay tại lễ tân & chuẩn hóa theo fun_052)
+### Module: Đặt phòng / Màn hình BK ([BookingRoomServiceController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomServiceController.php), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))
+
+- **Yêu cầu nghiệp vụ (Task 224 - Note 22/09)**:
+  - Khách hàng phản ánh chi tiết tiền trong BK bị sai do cộng thêm các dịch vụ phát sinh mà Lễ tân post trực tiếp tại hóa đơn (`service_bills` / `SP3000`).
+  - Hướng xử lý theo chuẩn `fun_052` (Smile PMS):
+    - **Giai đoạn ngày quá khứ (`< systemDate`)**: Chỉ lấy lên các dịch vụ ở bảng `sp3000` (`service_bills`) bao gồm những mã dịch vụ được cài đặt tự động theo BK (`RM`/tiền phòng, `EB`/giường phụ, `BD`/ăn sáng trẻ em, và các dịch vụ bổ sung đã setup trong BK). Tuyệt đối **không lấy các dịch vụ tự post tay tại hóa đơn** (minibar, giặt là, nhà hàng,...). Nếu bill trong quá khứ bị xóa ở hóa đơn thì tiền = 0.
+    - **Giai đoạn ngày hiện tại đến tương lai (`>= systemDate`)**: Lấy theo dự kiến từ phòng, dịch vụ tự động, Extra Bed (EB) và phụ thu trẻ em đã cài sẵn trong BK.
+- **Nghiệp vụ đã xử lý**:
+  1. **Backend ([BookingRoomServiceController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomServiceController.php))**:
+     - Trong phương thức `quickTransfer`: Đã gỡ bỏ đoạn code tự tạo mới bản ghi `BookingRoomService` khi chuyển bill từ Master sang phòng. Dịch vụ chỉ luân chuyển trong hóa đơn `service_bills` (`SP3000`), không tự ý đẩy vào bảng dịch vụ đặt trước của BK.
+  2. **Frontend ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))**:
+     - Cập nhật hàm `getRoomDisplayServices(room)`:
+       - *Tiền phòng (`RM`/`ER`)*: Ngày quá khứ chỉ lấy từ bill `room.serviceBills` (nếu không có hoặc bill bị xóa -> 0đ); ngày hiện tại/tương lai lấy theo giá phòng dự kiến hoặc bill post trước.
+       - *Giường phụ (`EB`)*: Ngày quá khứ chỉ lấy từ `room.serviceBills` nếu phòng có setup EB và có bill phát sinh (nếu không có -> 0đ); ngày tương lai lấy theo `dailyExtraBeds`/cấu hình EB của BK.
+       - *Ăn sáng trẻ em (`BD`)*: Ngày quá khứ lấy từ `room.serviceBills` khớp mã `BD` hoặc phụ thu ăn sáng; ngày tương lai lấy theo danh sách `childRecords`.
+       - *Dịch vụ bổ sung tự động theo BK*: Chỉ duyệt qua các dịch vụ đã setup trong BK (`setupServices`). Ngày quá khứ chỉ lấy từ `room.serviceBills` có mã khớp với dịch vụ đã setup trong BK; ngày tương lai lấy theo dự kiến trong `room.services`.
+       - *Loại trừ triệt để DV post tay*: Các bill minibar, giặt là, nhà hàng... do lễ tân post phát sinh tại hóa đơn sẽ hoàn toàn không xuất hiện trên màn hình BK và không bị cộng vào tổng tiền booking.
+     - Đồng bộ các hàm tính tổng: `getRoomChargeTotal`, `getRoomExtraBedTotal`, `getServicesTotal` và `calculateRoomTotal` đều sử dụng chung nguồn dữ liệu chuẩn từ `getRoomDisplayServices`, đảm bảo khớp 100% giữa danh sách phòng, chi tiết mở rộng `+`, và thanh tổng tiền booking.
+- **Kiểm thử**:
+  - Biên dịch Frontend: `npm run build` hoàn thành thành công trong 4.60s không có lỗi.
+
+## [2026-10-01] - Bổ sung tính năng Phòng thông nhau (Connecting Rooms) trong Cấu hình phòng & Sơ đồ phòng
+### Module: Cấu hình phòng / Sơ đồ phòng ([Room.php](file:///d:/PMS/backend/app/Models/Room.php), [RoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomController.php), [RoomResource.php](file:///d:/PMS/backend/app/Http/Resources/RoomResource.php), [RoomTab.vue](file:///d:/PMS/frontend/src/pages/config/components/room/RoomTab.vue), [RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue), [RoomIcon.vue](file:///d:/PMS/frontend/src/components/RoomIcon.vue))
+
+- **Yêu cầu nghiệp vụ**:
+  - Bổ sung cột `connecting_room` ở bảng `rooms` (các phòng có cửa thông nhau).
+  - Giao diện thêm/sửa phòng bổ sung thông tin chọn số phòng connect (`connecting_room`). Dropdown chỉ hiển thị các phòng liền kề trực tiếp trong cùng tầng (phòng trước và phòng sau), không hiển thị tất cả các phòng xa.
+  - Trên Sơ đồ phòng (Room Map), hiển thị icon cánh cửa màu đen thanh thoát (không bọc khung viền trắng) tại đúng ranh giới tiếp giáp giữa 2 phòng thông nhau.
+- **Nghiệp vụ đã xử lý**:
+  1. **Cơ sở dữ liệu (Database)**:
+     - Tạo migration `2026_10_01_100000_add_connecting_room_to_rooms_table.php` bổ sung cột `connecting_room` (`string(50)`, nullable).
+     - Chạy migrate thành công trên toàn bộ các database chi nhánh qua `php artisan migrate:all --force`.
+  2. **Backend API & Model**:
+     - Trong [`Room.php`](file:///d:/PMS/backend/app/Models/Room.php): Thêm `connecting_room` vào `$fillable`.
+     - Trong [`RoomResource.php`](file:///d:/PMS/backend/app/Http/Resources/RoomResource.php): Trả về trường `connecting_room` ra client.
+     - Trong [`RoomController.php`](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomController.php): Thêm validation cho cả `store` và `update`: `'connecting_room' => 'nullable|string|max:50|different:room_number'`.
+  3. **Giao diện Cấu hình phòng ([RoomTab.vue](file:///d:/PMS/frontend/src/pages/config/components/room/RoomTab.vue))**:
+     - Thêm trường **"PHÒNG THÔNG NHAU"** vào modal Thêm/Sửa phòng.
+     - Tối ưu hàm `availableConnectingRooms`: Chỉ lọc và hiển thị các phòng liền kề trực tiếp trong cùng tầng (`currentIndex - 1` và `currentIndex + 1`), loại trừ các phòng ở xa hoặc khác tầng (ví dụ phòng 106 chỉ gợi ý phòng 105 và 107).
+     - Thêm cột `Phòng thông nhau` vào bảng danh sách phòng, có icon cánh cửa và hỗ trợ bật/tắt trong cài đặt hiển thị cột.
+  4. **Icon Cánh cửa & Sơ đồ phòng ([RoomIcon.vue](file:///d:/PMS/frontend/src/components/RoomIcon.vue), [RoomMapPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomMapPage.vue))**:
+     - Cập nhật SVG icon cánh cửa mở chuẩn (`connecting-door`) trong [`RoomIcon.vue`](file:///d:/PMS/frontend/src/components/RoomIcon.vue) với vector đơn khối sắc nét (khung cửa chữ L ngược + cánh cửa mở 3D + núm cửa trắng), không dùng các lớp stroke rời rạc.
+     - Xử lý vấn đề z-index / CSS stacking context: Thêm `zIndex: 25` (và class `z-25`) cho thẻ phòng chứa cửa nối và `z-50` cho container icon, đảm bảo icon cánh cửa luôn nổi lên trên cả 2 thẻ phòng, không bị thẻ phòng kế tiếp đè lên.
+     - Căn chỉnh vị trí `top: 42%` ngay chính giữa ranh giới tiếp giáp giữa 2 phòng kề nhau.
+     - Khi 2 phòng thông nhau nhưng không nằm cạnh nhau: Hiển thị badge icon cánh cửa ở góc thẻ phòng kèm tooltip.
+     - Trong tooltip chi tiết khi hover thẻ phòng: Hiển thị dòng `"Phòng thông nhau: [số phòng]"`.
+     - Trong chế độ Bảng danh sách của Sơ đồ phòng: Hiển thị icon cánh cửa cạnh số phòng.
+- **Kiểm thử**:
+  - Chạy `php artisan test --filter=ConnectingRoomTest`: 3/3 tests PASSED (7 assertions).
+  - Chạy `npm run build` frontend: hoàn thành thành công trong 4.89s không phát sinh lỗi.
+
+## [2026-09-30] - Khắc phục 2 lỗi Đặt phòng (Note dòng 88 & 89 sheet Cần điều chỉnh: Tự động sinh RM & Gán cùng số phòng cho các chặng không trùng ngày)
+### Module: Đặt phòng / Quản lý phòng ([BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [BookingRoomLifecycleService.php](file:///d:/PMS/backend/app/Services/BookingRoomLifecycleService.php), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))
+
+- **Lỗi 1 (Dòng 88 - Thảo Note - Booking Trẻ em) - Tự động chèn tiền phòng (RM) vào `booking_room_services`**:
+  - *Hiện tượng*: Khi cấu hình `Booking_AutoExtraChargeBFChild = 1`, booking có 2 phòng 3 đêm. Khi thêm trẻ em vào 1 phòng và bấm lưu, hệ thống tự động sinh ra các dòng tiền phòng (`service_code = 'RM'`) cho tất cả các đêm của cả 2 phòng vào bảng `booking_room_services`.
+  - *Xử lý*:
+    - Điều chỉnh giá trị mặc định của cờ `$synchronizeRoomCharges = false` trong [`BookingRoomLifecycleService::synchronize`](file:///d:/PMS/backend/app/Services/BookingRoomLifecycleService.php#L34).
+    - Trong [`BookingController::update`](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php#L1110), truyền tường minh `$synchronizeRoomCharges = false` khi đồng bộ vòng đời phòng, đảm bảo không tự ý sinh bản ghi tiền phòng RM hàng loạt vào `booking_room_services`.
+- **Lỗi 2 (Dòng 89 - LỖI CHECK LẠI - Booking gán số phòng) - Không thể gán cùng số phòng cho 2 chặng phòng kế tiếp nhau không trùng ngày trong cùng booking**:
+  - *Hiện tượng*: Phòng 1 đặt từ Ngày 1 -> Ngày 2 gán phòng 101. Phòng 2 đặt từ Ngày 2 -> Ngày 3 trong cùng booking nhưng bị chặn không cho chọn/gán phòng 101 dù phòng 101 hoàn toàn trống từ Ngày 2 -> Ngày 3 với lỗi "Số phòng 101 đã có trong đăng ký này.".
+  - *Xử lý*:
+    - Trong [`BookingController::validateAddOnlyRoomAllocations`](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php#L2440), thay thế cơ chế chặn cứng theo danh sách số phòng (`flip()`) bằng hàm kiểm tra giao thoa khoảng thời gian (`datesOverlap`). Cho phép dùng cùng số phòng nếu 2 chặng thời gian không trùng chéo nhau (`[arr1, dep1)` và `[arr2, dep2)`).
+    - Trong [`BookingController::createAdditionalBookingRoom`](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php#L2530), giữ nguyên ngày đến / ngày đi cụ thể của từng phòng (`hasExplicitRoomDates`) khi thêm phòng, không bị cấu hình `SyncRoomDateByBookingDate` ép về ngày tổng của booking header.
+    - Trong [`CreateRegistrationPage.vue`](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue#L4584), hàm `areRoomPeriodsOverlapping` chuẩn hóa cả 2 định dạng ngày `DD/MM/YYYY` và `YYYY-MM-DD` qua `parseDateVi` trước khi so sánh, tránh lỗi `Invalid Date` trên trình duyệt.
+- **Kiểm thử**:
+  - Chạy test kịch bản tự động xác minh cả 2 lỗi đều PASSED 100%.
+  - `php artisan test --filter=BookingBusinessRulesTest`: 26/26 tests PASSED.
+  - `npm run build` frontend: hoàn thành thành công trong 3.87s.
+
+## [2026-09-30] - Khôi phục 100% Giao diện chuẩn khách hàng & Tối ưu chuyển trang Đăng nhập
+### Module: Lễ tân / Đóng ngày / Sang ngày ([DayClosePage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue))
+
+- **Khôi phục giao diện màn hình tiến trình**:
+  - Khôi phục 100% giao diện tiến trình chuẩn theo đúng tài liệu tham khảo và video khách hàng (`Sang ngày.mp4`): Toàn màn hình nền trắng với hoa văn mạng mờ (`night-audit-bg.png`), ảnh minh họa vector chuẩn ở giữa (`night-audit-illustration.png`), thanh tiến trình pill bo tròn 34px bo góc mượt mà kèm dải màu gradient (`#329ddf` -> `#57cc8a` -> `#8edf72`).
+  - Dòng chữ bước chạy chuẩn song ngữ/tiếng Anh đúng theo bản gốc PMS: `Step X: [Tên bước]` (Ví dụ: `Step 9: Update Room Status`).
+  - Khi hoàn tất sang ngày: hiển thị dòng trạng thái kết thúc `Step 18: Finish End Day At DD-MM-YYYY HH:mm. User Login: [username]`.
+- **Quy trình kết thúc**:
+  - Bỏ nút `Continue.. (10)` theo đúng yêu cầu người dùng.
+  - Khi thanh tiến trình chạy đủ 100% và sang ngày thành công, hệ thống dừng 2.5s để người dùng quan sát kết quả, sau đó tự động đăng xuất và điều hướng về trang đăng nhập `/login` để đăng nhập lại với ngày làm việc mới.
+- **Kiểm thử & Biên dịch**:
+  - Backend tests: 11/11 tests PASSED (67 assertions).
+  - Frontend build: `npm run build` hoàn thành thành công trong 3.42s.
+
+## [2026-09-29] - Triển khai chức năng Snapshot/Backup & Rollback khi Sang ngày (Night Audit)
+### Module: Lễ tân / Đóng ngày / Sang ngày ([NightAuditController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php), [NightAuditSnapshotService.php](file:///d:/PMS/backend/app/Services/NightAuditSnapshotService.php), [DayClosePage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue), [NightAuditTest.php](file:///d:/PMS/backend/tests/Feature/NightAuditTest.php), [BAO_CAO_SNAPSHOT_BACKUP_SANG_NGAY.md](file:///d:/PMS/Sang%20ng%C3%A0y/BAO_CAO_SNAPSHOT_BACKUP_SANG_NGAY.md))
+
+- **Tài liệu bàn giao & Báo cáo kỹ thuật ([BAO_CAO_SNAPSHOT_BACKUP_SANG_NGAY.md](file:///d:/PMS/Sang%20ng%C3%A0y/BAO_CAO_SNAPSHOT_BACKUP_SANG_NGAY.md))**:
+  - Đã xuất bản báo cáo hoàn chỉnh giải trình toàn bộ cơ chế Snapshot thay vì file dump SQL theo chuẩn quốc tế PMS.
+  - Ánh xạ 1:1 nguồn dữ liệu bóc tách từ các bảng nghiệp vụ (`bookings`, `booking_rooms`, `service_bills`, `rooms`, `room_classes`, `companies`...) vào các bảng Snapshot SP7000, SP7001, SP7003, SP7005.
+  - Phân tích chi tiết quy trình 18 bước từ video `Sang ngày.mp4` và log 16.257 dòng SQL Profiler.
+  - Giải trình an toàn Transaction Rollback 100% khi phát sinh lỗi trong quá trình sang ngày.
+
+
 - **Yêu cầu nghiệp vụ & Giải pháp**:
   1. **Tooltip Booking thông thường**:
      - Canh tooltip nằm trọn vẹn trong viewport (`clampedX` giữ khoảng cách an toàn tối thiểu 12px với mép màn hình).

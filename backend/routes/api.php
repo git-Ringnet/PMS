@@ -10,6 +10,8 @@ use App\Http\Controllers\Api\NightAuditController;
 Route::post('/login', [AuthController::class, 'login']);
 // GET hotel-settings public để App.vue đọc is_night_audit_running trước khi login
 Route::get('/hotel-settings', [\App\Http\Controllers\Api\HotelSettingController::class, 'show']);
+// GET night-audit/check-status public để mọi client/tab/màn hình login đều kiểm tra được trạng thái tiến trình
+Route::get('/night-audit/check-status', [NightAuditController::class, 'checkStatus']);
 
 // Protected routes (Sanctum)
 Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::class])->group(function () {
@@ -78,13 +80,12 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
 
     // API Day Close / Night Audit
     Route::prefix('night-audit')->group(function () {
-        Route::get('/check-status', [NightAuditController::class, 'checkStatus']);
-        Route::post('/late-check-in', [NightAuditController::class, 'lateCheckIn']);
-        Route::post('/no-show', [NightAuditController::class, 'noShowRoom']);
-        Route::post('/extend-stay', [NightAuditController::class, 'extendStay']); // Bug B
-        Route::post('/split-old-services', [NightAuditController::class, 'splitOldServices']);
+        Route::post('/late-check-in', [NightAuditController::class, 'lateCheckIn'])->middleware('permission:fo.night_audit');
+        Route::post('/no-show', [NightAuditController::class, 'noShowRoom'])->middleware('permission:fo.night_audit,fo.booking.noshow');
+        Route::post('/extend-stay', [NightAuditController::class, 'extendStay'])->middleware('permission:fo.night_audit');
+        Route::post('/split-old-services', [NightAuditController::class, 'splitOldServices'])->middleware('permission:fo.night_audit');
 
-        Route::post('/run', [NightAuditController::class, 'runNightAudit']);
+        Route::post('/run', [NightAuditController::class, 'runNightAudit'])->middleware('permission:fo.night_audit');
     });
 
 

@@ -27,6 +27,7 @@ use App\Models\NightAuditAgencyProductivitySnapshot;
 use App\Models\NightAuditInhouseSnapshot;
 use App\Models\NightAuditRoomSalesForecastSnapshot;
 use App\Models\NightAuditRoomTypeSnapshot;
+use App\Models\Role;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 use Carbon\Carbon;
@@ -49,7 +50,9 @@ class NightAuditTest extends TestCase
         $this->artisan('db:seed', ['--class' => 'SystemDefinitionSeeder']);
         $this->artisan('db:seed', ['--class' => 'BookingStatusSeeder']);
 
-        $this->user = User::factory()->create(['username' => 'admin']);
+        $this->user = User::factory()->create(['username' => 'test_auditor']);
+        $role = Role::firstOrCreate(['code' => 'super_admin'], ['name' => 'Super Administrator', 'level' => 1]);
+        $this->user->roles()->attach($role);
     }
 
     /**
@@ -179,7 +182,7 @@ class NightAuditTest extends TestCase
         // Kiểm tra log trong late_checkins
         $this->assertDatabaseHas('late_checkins', [
             'booking_room_id' => $bookingRoom->id,
-            'username' => 'admin',
+            'username' => $this->user->username,
         ]);
 
         // Kiểm tra đã post bill

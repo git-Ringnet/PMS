@@ -23,24 +23,23 @@ import {
   History,
   CalendarPlus,
   UserX,
-  CheckCircle2,
-  XCircle,
-  AlertTriangle,
-  Loader2,
-  Info,
-  LogOut,
-  Moon,
-  Sparkles
+  CheckCircle2
 } from '@lucide/vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
+import { useNightAuditStore } from '@/stores/night-audit-store'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import echo from '@/services/echo'
 
 const router = useRouter()
 const uiStore = useUiStore()
 const authStore = useAuthStore()
+const nightAuditStore = useNightAuditStore()
+
+const canExecuteNightAudit = computed(() => {
+  return authStore.hasPermission('fo.night_audit') || authStore.isAdmin
+})
 
 // Active sub-navigation item
 const activeSubNav = ref('day-close')
@@ -97,88 +96,9 @@ const emptyToInspect = ref(true)
 // Data structure grouped by company / source (populated dynamically from backend)
 const groupData = ref([])
 
-const isRolling = ref(false)
 const systemDate = ref('')
 const isLoading = ref(false)
 const rawBookings = ref([])
-
-// Night Audit 18-Step Realtime Progress State
-const showProgressModal = ref(false)
-const auditRunStatus = ref('idle') // 'idle' | 'running' | 'succeeded' | 'failed'
-const auditRunError = ref('')
-const auditRunWarnings = ref([])
-const auditSteps = ref([])
-const progressPercent = ref(0)
-const currentStepIndex = ref(0)
-const toggleShowDetails = ref(false)
-let progressInterval = null
-
-// Countdown auto redirect to login
-const redirectCountdown = ref(3)
-let redirectTimer = null
-
-const stepDisplayList = [
-  { order: 1, code: 'PRE_CHECK', nameEn: 'Check In/Out Conditions', nameVi: 'Kiểm tra điều kiện phòng đến/đi' },
-  { order: 2, code: 'BACKUP_PRE', nameEn: 'Backup Data', nameVi: 'Khởi tạo sao lưu dữ liệu trước sang ngày' },
-  { order: 3, code: 'LOCK_SYSTEM', nameEn: 'Lock System', nameVi: 'Khóa hệ thống' },
-  { order: 4, code: 'CHECK_DATA', nameEn: 'Checking Data', nameVi: 'Kiểm tra dữ liệu phòng & hóa đơn' },
-  { order: 5, code: 'POST_ROOM_CHARGE', nameEn: 'Post Room Charge', nameVi: 'Tự động post tiền phòng' },
-  { order: 6, code: 'POST_OUTLET_BILL', nameEn: 'Post Check Out Bill OutLet', nameVi: 'Post hóa đơn outlet dịch vụ' },
-  { order: 7, code: 'UPDATE_SYSTEM_DATE', nameEn: 'Update System Date', nameVi: 'Cập nhật ngày hệ thống' },
-  { order: 8, code: 'WRITE_EOD_LOG', nameEn: 'Write End Of Day Log', nameVi: 'Ghi nhật ký đóng ngày' },
-  { order: 9, code: 'UPDATE_ROOM_STATUS', nameEn: 'Update Room Status', nameVi: 'Cập nhật trạng thái buồng phòng' },
-  { order: 10, code: 'PROCESS_FOLIO_CHARGES', nameEn: 'Process Folio Charges', nameVi: 'Đối chiếu phí dịch vụ' },
-  { order: 11, code: 'SPLIT_BILL', nameEn: 'Split Bill', nameVi: 'Tự động tách hóa đơn và cân đối' },
-  { order: 12, code: 'PROCESS_PENDING_OUTLET', nameEn: 'Process Pending Outlets', nameVi: 'Cập nhật bill outlet tồn đọng' },
-  { order: 13, code: 'UPDATE_CHECKOUT_BILL', nameEn: 'Update Check Out Bill', nameVi: 'Cập nhật trạng thái bill trả phòng' },
-  { order: 14, code: 'UNLOCK_SYSTEM', nameEn: 'UnLock System', nameVi: 'Mở khóa hệ thống' },
-  { order: 15, code: 'BACKUP_POST', nameEn: 'Back Up Data After Night Audit', nameVi: 'Lưu trữ các bản snapshot sao lưu (SP7000-SP7005)' },
-  { order: 16, code: 'VERIFY_INTEGRITY', nameEn: 'Verify Backup Integrity', nameVi: 'Kiểm tra tính toàn vẹn bản ghi snapshot' },
-  { order: 17, code: 'SYNC_ALLOTMENT', nameEn: 'Sync AV Allotment To Channel Manager', nameVi: 'Đồng bộ phòng trống lên Channel Manager' },
-  { order: 18, code: 'FINALIZE', nameEn: 'Finish End Day', nameVi: 'Hoàn tất đóng ngày & Giải phóng phiên' },
-]
-
-const currentRunningStepText = computed(() => {
-  const s = stepDisplayList[currentStepIndex.value] || stepDisplayList[0]
-  return `Step ${s.order}: ${s.nameEn}`
-})
-
-const finishStepText = computed(() => {
-  const now = new Date()
-  const d = String(now.getDate()).padStart(2, '0')
-  const m = String(now.getMonth() + 1).padStart(2, '0')
-  const y = now.getFullYear()
-  const h = String(now.getHours()).padStart(2, '0')
-  const min = String(now.getMinutes()).padStart(2, '0')
-  const username = authStore.user?.username || authStore.user?.name || 'admin'
-  return `Step 18: Finish End Day At ${d}-${m}-${y} ${h}:${min}. User Login: ${username}`
-})
-
-const currentFailedStepText = computed(() => {
-  const s = stepDisplayList[currentStepIndex.value] || stepDisplayList[0]
-  return `Step ${s.order}: ${s.nameEn} (Thất bại)`
-})
-
-const defaultAuditSteps = [
-  { code: 'PRE_CHECK', order: 1, name: 'Kiểm tra điều kiện phòng đến/đi', status: 'pending', affected_rows: 0 },
-  { code: 'BACKUP_PRE', order: 2, name: 'Sao lưu dữ liệu trước khi sang ngày', status: 'pending', affected_rows: 0 },
-  { code: 'LOCK_SYSTEM', order: 3, name: 'Khóa hệ thống', status: 'pending', affected_rows: 0 },
-  { code: 'CHECK_DATA', order: 4, name: 'Kiểm tra dữ liệu phòng & hóa đơn', status: 'pending', affected_rows: 0 },
-  { code: 'POST_ROOM_CHARGE', order: 5, name: 'Tự động post tiền phòng', status: 'pending', affected_rows: 0 },
-  { code: 'POST_OUTLET_BILL', order: 6, name: 'Post hóa đơn outlet dịch vụ', status: 'pending', affected_rows: 0 },
-  { code: 'UPDATE_SYSTEM_DATE', order: 7, name: 'Cập nhật ngày hệ thống', status: 'pending', affected_rows: 0 },
-  { code: 'WRITE_EOD_LOG', order: 8, name: 'Ghi nhật ký đóng ngày', status: 'pending', affected_rows: 0 },
-  { code: 'UPDATE_ROOM_STATUS', order: 9, name: 'Cập nhật trạng thái buồng phòng', status: 'pending', affected_rows: 0 },
-  { code: 'PROCESS_FOLIO_CHARGES', order: 10, name: 'Đối chiếu phí dịch vụ', status: 'pending', affected_rows: 0 },
-  { code: 'SPLIT_BILL', order: 11, name: 'Tự động tách hóa đơn và cân đối', status: 'pending', affected_rows: 0 },
-  { code: 'PROCESS_PENDING_OUTLET', order: 12, name: 'Cập nhật bill outlet tồn đọng', status: 'pending', affected_rows: 0 },
-  { code: 'UPDATE_CHECKOUT_BILL', order: 13, name: 'Cập nhật trạng thái bill trả phòng', status: 'pending', affected_rows: 0 },
-  { code: 'UNLOCK_SYSTEM', order: 14, name: 'Mở khóa hệ thống', status: 'pending', affected_rows: 0 },
-  { code: 'BACKUP_POST', order: 15, name: 'Lưu trữ các bản snapshot sao lưu sau sang ngày', status: 'pending', affected_rows: 0 },
-  { code: 'VERIFY_INTEGRITY', order: 16, name: 'Kiểm tra tính toàn vẹn bản ghi snapshot', status: 'pending', affected_rows: 0 },
-  { code: 'SYNC_ALLOTMENT', order: 17, name: 'Đồng bộ phòng trống lên Channel Manager', status: 'pending', affected_rows: 0 },
-  { code: 'FINALIZE', order: 18, name: 'Hoàn tất sang ngày', status: 'pending', affected_rows: 0 },
-]
 
 // Helper function to extract YYYY-MM-DD reliably in local Vietnam timezone
 function getNormalizedDate(val) {
@@ -560,18 +480,6 @@ function handleSubNavClick(item) {
   }
 }
 
-// Function to handle instant logout and redirect to login
-async function handleImmediateLogin() {
-  if (redirectTimer) clearInterval(redirectTimer)
-  try {
-    await authStore.logout()
-  } catch (e) {
-    console.error('Logout error:', e)
-  }
-  uiStore.showToast('Sang ngày thành công! Vui lòng đăng nhập lại.', 'success')
-  router.push('/login')
-}
-
 // Trigger Day Close action
 async function handleRollDay() {
   if (alreadyRolledToday.value) {
@@ -593,130 +501,11 @@ async function handleRollDay() {
 
   if (!confirmed) return
 
-  try {
-    isRolling.value = true
-    showProgressModal.value = true
-    auditRunStatus.value = 'running'
-    auditRunError.value = ''
-    auditRunWarnings.value = []
-    auditSteps.value = JSON.parse(JSON.stringify(defaultAuditSteps))
-    currentStepIndex.value = 0
-    progressPercent.value = 5
-    toggleShowDetails.value = false
-
-    const stepTimeline = [
-      { idx: 0, pct: 6, wait: 350 },   // Step 1: Check In/Out Conditions
-      { idx: 1, pct: 12, wait: 350 },  // Step 2: Backup Data
-      { idx: 2, pct: 18, wait: 350 },  // Step 3: Lock System
-      { idx: 3, pct: 24, wait: 400 },  // Step 4: Checking Data
-      { idx: 4, pct: 36, wait: 600 },  // Step 5: Post Room Charge
-      { idx: 5, pct: 42, wait: 350 },  // Step 6: Post Check Out Bill OutLet
-      { idx: 6, pct: 48, wait: 400 },  // Step 7: Update System Date
-      { idx: 7, pct: 54, wait: 350 },  // Step 8: Write End Of Day Log
-      { idx: 8, pct: 60, wait: 450 },  // Step 9: Update Room Status
-      { idx: 9, pct: 66, wait: 400 },  // Step 10: Process Folio Charges
-      { idx: 10, pct: 76, wait: 600 }, // Step 11: Split Bill
-      { idx: 11, pct: 81, wait: 350 }, // Step 12: Process Pending Outlets
-      { idx: 12, pct: 86, wait: 350 }, // Step 13: Update Check Out Bill
-      { idx: 13, pct: 90, wait: 350 }, // Step 14: UnLock System
-      { idx: 14, pct: 94, wait: 650 }, // Step 15: Back Up Data After Night Audit
-      { idx: 15, pct: 97, wait: 350 }, // Step 16: Verify Backup Integrity
-      { idx: 16, pct: 99, wait: 350 }, // Step 17: Sync AV Allotment To Channel Manager
-    ]
-
-    // Khởi chạy gọi backend song song với animation tuần tự
-    let backendResult = null
-    let backendError = null
-
-    http.post('/night-audit/run', {
-      occupied_to_dirty: occupiedToDirty.value,
-      empty_to_inspect: emptyToInspect.value
-    }).then(res => {
-      backendResult = res
-    }).catch(err => {
-      backendError = err
-    })
-
-    // Duyệt qua từng bước tuần tự để đảm bảo quan sát rõ toàn bộ tiến trình
-    for (let i = 0; i < stepTimeline.length; i++) {
-      if (backendError) break
-      const item = stepTimeline[i]
-      currentStepIndex.value = item.idx
-      progressPercent.value = item.pct
-      await new Promise(resolve => setTimeout(resolve, item.wait))
-    }
-
-    // Chờ backend hoàn tất nếu animation chạy trước
-    while (!backendResult && !backendError) {
-      await new Promise(resolve => setTimeout(resolve, 200))
-    }
-
-    if (backendError) {
-      throw backendError
-    }
-
-    if (backendResult.data && backendResult.data.success) {
-      currentStepIndex.value = 17
-      progressPercent.value = 100
-      auditRunStatus.value = 'succeeded'
-      if (Array.isArray(backendResult.data.steps) && backendResult.data.steps.length > 0) {
-        auditSteps.value = backendResult.data.steps.map(s => ({
-          code: s.step_code,
-          order: s.step_order,
-          name: s.step_name,
-          status: s.status,
-          affected_rows: s.affected_rows,
-          summary: s.summary,
-          error: s.error_message,
-        }))
-      }
-      uiStore.showToast('Đã chuyển sang ngày tiếp theo thành công!', 'success')
-      const skipped = backendResult.data.skipped_locks
-      if (skipped && skipped.length > 0) {
-        auditRunWarnings.value = skipped
-      }
-
-      // Tự động logout và điều hướng về trang đăng nhập sau 2.5s
-      setTimeout(async () => {
-        await handleImmediateLogin()
-      }, 2500)
-    } else {
-      auditRunStatus.value = 'failed'
-      auditRunError.value = backendResult.data?.message || 'Không thể chuyển ngày hệ thống.'
-      uiStore.showToast('Không thể chuyển ngày hệ thống.', 'error')
-    }
-  } catch (err) {
-    if (progressInterval) clearInterval(progressInterval)
-    console.error(err)
-    auditRunStatus.value = 'failed'
-    const failedStep = err.response?.data?.failed_step
-    const errMsg = err.response?.data?.message || 'Có lỗi xảy ra khi chuyển ngày.'
-    auditRunError.value = errMsg
-    if (failedStep) {
-      const stepIdx = stepDisplayList.findIndex(s => s.code === failedStep)
-      if (stepIdx !== -1) {
-        currentStepIndex.value = stepIdx
-        progressPercent.value = Math.round(((stepIdx + 1) / 17) * 100)
-      }
-      const tableStepIdx = auditSteps.value.findIndex(s => s.code === failedStep)
-      if (tableStepIdx !== -1) {
-        auditSteps.value[tableStepIdx].status = 'failed'
-        auditSteps.value[tableStepIdx].error = errMsg
-      }
-    }
-    uiStore.showToast(errMsg, 'error')
-  } finally {
-    isRolling.value = false
-  }
-}
-
-function handleCloseProgressModal() {
-  if (progressInterval) clearInterval(progressInterval)
-  if (redirectTimer) clearInterval(redirectTimer)
-  showProgressModal.value = false
-  if (auditRunStatus.value === 'succeeded') {
-    handleImmediateLogin()
-  }
+  await nightAuditStore.triggerNightAudit({
+    occupiedToDirty: occupiedToDirty.value,
+    emptyToInspect: emptyToInspect.value,
+    forceRerun: !!alreadyRolledToday.value,
+  })
 }
 
 function handleRevenueReport() {
@@ -922,7 +711,7 @@ async function confirmNoshow() {
 <template>
   <div class="day-close-page relative flex flex-col min-h-screen bg-white text-slate-800 text-xs font-sans">
     <!-- Standard system LoadingOverlay -->
-    <LoadingOverlay :show="isLoading || isRolling" />
+    <LoadingOverlay :show="isLoading || nightAuditStore.isRunning" />
 
     <!-- 1. TOP FILTER BAR WITH COUNTERS (GIỮ NGUYÊN GIAO DIỆN BÌNH THƯỜNG CỦA KHÁCH) -->
     <section class="bg-white border-b border-gray-200 px-4 py-1.5 flex items-center justify-between shadow-xs sticky top-0 z-20">
@@ -946,12 +735,12 @@ async function confirmNoshow() {
         <!-- Action button Sang ngày -->
         <button
           @click="handleRollDay"
-          :disabled="!canRollDay || isRolling"
-          :title="!canRollDay ? 'Vui lòng xử lý hết phòng đi và cập nhật phòng đến trước khi sang ngày' : 'Thực hiện chuyển ngày hệ thống'"
+          :disabled="!canRollDay || nightAuditStore.isRunning || !canExecuteNightAudit"
+          :title="!canExecuteNightAudit ? 'Bạn không có quyền thực hiện sang ngày hệ thống' : (!canRollDay ? 'Vui lòng xử lý hết phòng đi và cập nhật phòng đến trước khi sang ngày' : 'Thực hiện chuyển ngày hệ thống')"
           class="bg-[#4a85df] hover:bg-[#3972c7] active:bg-[#2b5fa8] text-white px-4 py-1.5 rounded font-semibold flex items-center gap-1.5 shadow-xs transition-all cursor-pointer text-xs disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-[#4a85df]"
         >
           <Calendar class="w-4 h-4" />
-          <span>{{ isRolling ? 'Đang xử lý...' : 'Sang ngày' }}</span>
+          <span>{{ nightAuditStore.isRunning ? 'Đang xử lý...' : 'Sang ngày' }}</span>
         </button>
       </div>
 
@@ -1333,128 +1122,6 @@ async function confirmNoshow() {
       </div>
     </div>
 
-    <!-- FULLSCREEN WHITE SCREEN: TIẾN TRÌNH SANG NGÀY HỆ THỐNG (MATCHING REFERENCE UI) -->
-    <div
-      v-if="showProgressModal"
-      class="fixed inset-0 z-[100] bg-white flex flex-col items-center justify-center select-none overflow-hidden"
-      style="background: #ffffff url('/night-audit-bg.png') no-repeat center center; background-size: cover;"
-    >
-      <!-- Main Center Content -->
-      <div class="relative z-10 flex flex-col items-center w-full max-w-[860px] px-6">
-        <!-- Calendar Illustration -->
-        <img
-          src="/night-audit-illustration.png"
-          alt="Night Audit"
-          class="w-[540px] max-w-[85vw] h-auto object-contain mb-8 pointer-events-none select-none"
-        />
-
-        <!-- Progress Bar Container (800px max, 34px height, track #f4f4f4, fully rounded) -->
-        <div class="w-full max-w-[800px] bg-[#f4f4f4] rounded-full h-[34px] overflow-hidden p-0 shadow-none border-none">
-          <div
-            class="h-full rounded-full transition-all duration-300 ease-out"
-            :class="[
-              auditRunStatus === 'failed'
-                ? 'bg-gradient-to-r from-red-500 to-rose-600'
-                : ''
-            ]"
-            :style="auditRunStatus !== 'failed' ? {
-              width: progressPercent + '%',
-              background: 'linear-gradient(to right, #329ddf, #57cc8a, #8edf72)'
-            } : { width: progressPercent + '%' }"
-          ></div>
-        </div>
-
-        <!-- Step Text / Status Label -->
-        <div class="mt-6 text-center">
-          <div
-            v-if="auditRunStatus === 'running'"
-            class="text-[22px] md:text-[24px] font-semibold text-[#272428] tracking-normal font-sans"
-          >
-            {{ currentRunningStepText }}
-          </div>
-
-          <div
-            v-else-if="auditRunStatus === 'succeeded'"
-            class="space-y-2"
-          >
-            <div class="text-[20px] md:text-[22px] font-semibold text-[#272428] tracking-normal font-sans">
-              {{ finishStepText }}
-            </div>
-            <div class="text-xs text-gray-500 font-medium">
-              Đang chuyển về trang đăng nhập...
-            </div>
-          </div>
-
-          <div
-            v-else-if="auditRunStatus === 'failed'"
-            class="text-[20px] md:text-[22px] font-bold text-red-600 flex items-center justify-center gap-2"
-          >
-            <XCircle class="w-6 h-6 text-red-600" />
-            <span>{{ currentFailedStepText }}</span>
-          </div>
-        </div>
-
-        <!-- Error Card (if failed) -->
-        <div
-          v-if="auditRunStatus === 'failed'"
-          class="mt-6 w-full max-w-[800px] p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-xs shadow-xs"
-        >
-          <div class="font-bold text-red-800 flex items-center gap-1.5 mb-1">
-            <AlertTriangle class="w-4 h-4 text-red-600" />
-            <span>Gặp lỗi trong quá trình sang ngày:</span>
-          </div>
-          <div class="text-[12px] text-red-700 leading-relaxed font-mono bg-white/70 p-2.5 rounded border border-red-200/60 mt-1">
-            {{ auditRunError }}
-          </div>
-          <div class="text-[11px] text-red-600 italic mt-2">
-            Hệ thống đã tự động Rollback 100% dữ liệu về trạng thái an toàn trước khi chạy.
-          </div>
-
-          <div class="mt-4 flex items-center justify-end gap-3">
-            <button
-              @click="toggleShowDetails = !toggleShowDetails"
-              class="text-gray-600 hover:text-gray-800 underline text-xs cursor-pointer"
-            >
-              {{ toggleShowDetails ? 'Ẩn chi tiết các bước' : 'Xem chi tiết 18 bước' }}
-            </button>
-            <button
-              @click="handleCloseProgressModal"
-              class="px-4 py-2 bg-gray-700 hover:bg-gray-800 text-white rounded font-medium text-xs transition-colors cursor-pointer"
-            >
-              Đóng & Kiểm tra lại
-            </button>
-          </div>
-        </div>
-
-        <!-- Table of Steps on Failure -->
-        <div
-          v-if="auditRunStatus === 'failed' && toggleShowDetails"
-          class="mt-4 w-full max-w-[800px] max-h-60 overflow-y-auto border border-gray-200 rounded-lg bg-white text-xs shadow-xs p-2 text-left"
-        >
-          <table class="w-full border-collapse text-[11px]">
-            <thead>
-              <tr class="border-b text-gray-500 font-semibold">
-                <th class="py-1 text-left">Bước</th>
-                <th class="py-1 text-left">Nội dung</th>
-                <th class="py-1 text-center">Trạng thái</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="step in auditSteps" :key="step.code" class="border-b border-gray-100">
-                <td class="py-1 text-gray-400 font-mono">#{{ step.order }}</td>
-                <td class="py-1 font-medium text-gray-800">{{ step.name }}</td>
-                <td class="py-1 text-center">
-                  <span v-if="step.status === 'succeeded'" class="text-emerald-600 font-bold">Thành công</span>
-                  <span v-else-if="step.status === 'failed'" class="text-red-600 font-bold">Thất bại</span>
-                  <span v-else-if="step.status === 'skipped_unconfigured'" class="text-amber-600">Chưa cấu hình</span>
-                  <span v-else class="text-gray-400">Chờ</span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
