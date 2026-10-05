@@ -270,6 +270,14 @@ const mergeServiceBills = (...groups) => {
   })
 }
 
+// A transferred bill keeps its original Master IDs for audit; only the current owner decides visibility here.
+const hasCurrentBillOwner = value => value !== undefined && value !== null && String(value) !== '' && String(value) !== '0'
+const isCheckoutMasterBill = (bill, booking) => (
+  !hasCurrentBillOwner(bill?.RentalRoomId2)
+  && !hasCurrentBillOwner(bill?.CustomerId2)
+  && isMasterOwnedBill(bill, booking)
+)
+
 // Modal states
 import AddServiceModal from './components/AddServiceModal.vue'
 import AddHousekeepingServiceModal from './components/AddHousekeepingServiceModal.vue'
@@ -957,7 +965,11 @@ const loadCheckoutBookings = async () => {
 
       const allBills = mergeServiceBills(b.master_service_bills || [], b.service_bills || [])
 
-      const masterBillsForSum = allBills.filter(sb => isMasterOwnedBill(sb, b))
+      const masterBillsForSum = allBills.filter(sb => (
+        Number(sb.Edit) !== 1
+        && ![3, 4].includes(Number(sb.Status))
+        && isCheckoutMasterBill(sb, b)
+      ))
 
       // Tổng Master phải khớp với các dòng RM đang hiển thị trên bảng dịch vụ.
       // Một số bill cũ chỉ còn liên kết ở booking_room.services nên cần bổ sung
@@ -973,9 +985,12 @@ const loadCheckoutBookings = async () => {
             if (linkedBillId && countedMasterBillIds.has(linkedBillId)) return
             if (linkedBillId) {
               const linkedBill = allBills.find(sb => String(sb.Ma) === linkedBillId)
-              if (linkedBill && Number(linkedBill.Edit) !== 1 && ![3, 4].includes(Number(linkedBill.Status))) {
-                masterServiceTotal += Number(linkedBill.Amount) || 0
-                countedMasterBillIds.add(linkedBillId)
+              if (linkedBill) {
+                if (Number(linkedBill.Edit) !== 1 && ![3, 4].includes(Number(linkedBill.Status)) && isCheckoutMasterBill(linkedBill, b)) {
+                  masterServiceTotal += Number(linkedBill.Amount) || 0
+                  countedMasterBillIds.add(linkedBillId)
+                }
+                // A transferred or cancelled bill cannot be restored by the legacy service fallback.
                 return
               }
             }
