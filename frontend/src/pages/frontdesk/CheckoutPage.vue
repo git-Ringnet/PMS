@@ -1156,7 +1156,7 @@ const handlePrepaymentSuccess = async () => {
 }
 
 const toggleBookingCheck = (b) => {
-  if (activeFilter.register === 'virtual') {
+  if (appliedCheckoutFilter.value.register === 'virtual') {
     b.checked = false
     return
   }
@@ -2979,7 +2979,6 @@ const selectRoomItemRow = async (b, r, specificGuest = null) => {
 
   selectedBooking.value = b
   selectedRoomItem.value = r
-  saveCheckoutSessionStorage(b.bookingId || b.id, r.roomId || r.id, guest?.id || null)
   serviceFilter.value = null
   selectedServiceIds.value = []
   selectedPaymentIds.value = []
@@ -2988,6 +2987,7 @@ const selectRoomItemRow = async (b, r, specificGuest = null) => {
   roomNumber.value = r.roomNumber
   const guests = Array.isArray(r.allGuests) ? r.allGuests : []
   const guest = specificGuest || guests.find(item => item?.isPrimary) || guests[0] || null
+  saveCheckoutSessionStorage(b.bookingId || b.id, r.roomId || r.id, guest?.id || null)
   selectedGuest.value = guest?.name || r.guestName
   selectedGuestId.value = guest?.id || null
   isNoPost.value = selectedBookingNoPost.value || isNoPostEnabled(r.rawRoom?.no_post ?? r.no_post)
