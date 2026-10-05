@@ -710,22 +710,52 @@ const defaultColumns = {
 
 const visibleColumns = ref({ ...defaultColumns })
 
-watch(() => authStore.settings?.visible_columns?.create_registration, (newVal) => {
-  if (newVal) {
-    visibleColumns.value = { ...defaultColumns, ...newVal }
-  }
-}, { immediate: true, deep: true })
+// Khởi tạo từ authStore nếu đã có sẵn
+if (authStore.settings?.visible_columns?.create_registration) {
+  visibleColumns.value = { ...defaultColumns, ...authStore.settings.visible_columns.create_registration }
+}
 
-watch(visibleColumns, (newVal) => {
-  try {
-    authStore.updateUserSettings({
-      visible_columns: {
-        create_registration: newVal
-      }
+let saveColumnsTimer = null
+let isSyncingFromStore = false
+let isSavingToStore = false
+
+// Đồng bộ từ store khi dữ liệu user settings được tải lần đầu từ API /me (nếu chưa có khi mount)
+watch(() => authStore.settings?.visible_columns?.create_registration, (newVal) => {
+  if (isSavingToStore) return
+  if (!newVal) return
+
+  const keys = Object.keys(defaultColumns)
+  const isDifferent = keys.some(k => newVal[k] !== undefined && newVal[k] !== visibleColumns.value[k])
+  if (isDifferent) {
+    isSyncingFromStore = true
+    visibleColumns.value = { ...defaultColumns, ...newVal }
+    nextTick(() => {
+      isSyncingFromStore = false
     })
-  } catch (e) {
-    console.error(e)
   }
+}, { deep: true })
+
+// Lưu thiết lập khi người dùng chủ động tích chọn cột (debounce 500ms để tránh gửi request liên tục và race condition)
+watch(visibleColumns, (newVal) => {
+  if (isSyncingFromStore) return
+
+  if (saveColumnsTimer) clearTimeout(saveColumnsTimer)
+  saveColumnsTimer = setTimeout(async () => {
+    try {
+      isSavingToStore = true
+      await authStore.updateUserSettings({
+        visible_columns: {
+          create_registration: JSON.parse(JSON.stringify(newVal))
+        }
+      })
+    } catch (e) {
+      console.error('Lỗi khi lưu cấu hình hiển thị cột:', e)
+    } finally {
+      nextTick(() => {
+        isSavingToStore = false
+      })
+    }
+  }, 500)
 }, { deep: true })
 const showColumnSelector = ref(false)
 
@@ -2148,6 +2178,14 @@ function notificationRoomLabel(notification) {
 }
 
 onBeforeUnmount(() => {
+  if (saveColumnsTimer) {
+    clearTimeout(saveColumnsTimer)
+    authStore.updateUserSettings({
+      visible_columns: {
+        create_registration: JSON.parse(JSON.stringify(visibleColumns.value))
+      }
+    }).catch(() => {})
+  }
   activeBookingNotificationsTimers.forEach(clearTimeout)
   document.removeEventListener('click', handleGlobalClick)
   window.removeEventListener('booking-updated', handleBookingUpdatedEvent)

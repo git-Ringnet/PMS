@@ -50,6 +50,26 @@
     - Backend: Feature test pass 100%.
     - Frontend: `npm run build` hoàn thành không lỗi.
 
+## [2026-10-05] - Khắc phục lỗi tự động bật/tắt các cột hiển thị khi check chọn ở Tab Lấy phòng (CreateRegistrationPage)
+### Module: Đặt phòng ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))
+
+- **Nguyên nhân lỗi (Race Condition & Ping-Pong Watcher)**:
+  - Khi người dùng tích chọn/bỏ chọn checkbox cột trong dropdown "CỘT HIỂN THỊ" (`visibleColumns`):
+    - `watch(visibleColumns)` không có debounce, ngay lập tức gọi API `authStore.updateUserSettings` lưu xuống server.
+    - Khi API server phản hồi, `authStore.settings` được gán lại đối tượng mới, kích hoạt watcher đối nghịch `watch(() => authStore.settings?.visible_columns?.create_registration)`.
+    - Watcher này ghi đè ngược lại `visibleColumns.value` bằng dữ liệu từ phản hồi trước đó.
+    - Khi người dùng thao tác liên tiếp nhiều checkbox, các request bất đồng bộ phản hồi lệch thời gian đè chéo lên nhau làm các checkbox và cột bảng bị nhảy bật/tắt tự động, mất trạng thái vừa chọn.
+- **Giải pháp xử lý**:
+  - Tách bạch 2 chiều dữ liệu và thêm cờ bảo vệ chống ghi đè chéo:
+    - `isSavingToStore`: Khi người dùng đang lưu cấu hình, watcher từ `authStore.settings` tuyệt đối không ghi đè lại `visibleColumns.value`.
+    - `isSyncingFromStore`: Khi đồng bộ dữ liệu ban đầu từ store, không kích hoạt watcher lưu ngược lên server.
+    - Thêm cơ chế kiểm tra `isDifferent` (chỉ cập nhật khi giá trị thực sự thay đổi).
+    - Thêm **Debounce 500ms** cho `watch(visibleColumns)` để gom toàn bộ các thao tác click liên tiếp của người dùng thành một request duy nhất sau khi dừng thao tác.
+    - Dọn dẹp và flush timer lưu ngay trong `onBeforeUnmount` nếu component bị unmount trước khi debounce kết thúc.
+- **Kiểm thử & Kết quả**:
+  - Build frontend `npm run build` thành công 100% không lỗi (4.27s).
+  - Tích chọn/bỏ chọn các cột hiển thị hoạt động mượt mà, phản hồi ngay lập tức trên UI và bảng phòng, không còn hiện tượng giật nảy hay tự động bật tắt cột.
+
 ## [2026-10-02] - Xử lý Khôi phục Booking hủy: Kiểm tra Over loại phòng (AllowOverRoomTypeRoomKind) và Trùng số phòng vật lý / Khóa phòng (RoomLock)
 ### Module: Đặt phòng / Khôi phục Booking ([BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [RestoreBookingConflictTest.php](file:///d:/PMS/backend/tests/Feature/RestoreBookingConflictTest.php))
 
