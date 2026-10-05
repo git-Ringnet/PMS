@@ -19,17 +19,20 @@ async function loadNationalities() {
       list.forEach(item => {
         const c2 = item.asm_code ? String(item.asm_code).trim().toUpperCase() : null
         const c3 = item.nationality_id ? String(item.nationality_id).trim().toUpperCase() : null
-        const nameVi = item.asm_name || item.nationality_name || ''
+        const nameVi = item.asm_name || ''
         const nameEn = item.asm_description || item.nationality_name_en || ''
+        const displayName = item.nationality_name || (nameEn && nameVi
+          ? `${nameEn} ( ${nameVi} )`
+          : nameVi || nameEn)
         const code3 = item.nationality_id || item.asm_code || '—'
         const labelFor = `${code3} - ${nameEn}`
         
         if (c2) {
-          natMap[c2] = `${nameVi} ( ${nameVi} )`
+          natMap[c2] = displayName
           forMap[c2] = labelFor
         }
         if (c3) {
-          natMap[c3] = `${nameVi} ( ${nameVi} )`
+          natMap[c3] = displayName
           forMap[c3] = labelFor
         }
       })
@@ -45,6 +48,16 @@ function getNationalityName(code) {
   if (!code) return 'Việt Nam ( Việt Nam )'
   const cleanCode = String(code).trim().toUpperCase()
   return nationalityMap.value[cleanCode] || code
+}
+
+function getSeparateIdNumber(idNumber, passportNumber) {
+  const idValue = String(idNumber ?? '').trim()
+  const passportValue = String(passportNumber ?? '').trim()
+  return idValue && idValue !== passportValue ? idValue : ''
+}
+
+function cellTitle(value) {
+  return value == null || value === '_' ? '' : String(value)
 }
 
 // State
@@ -64,15 +77,13 @@ const isColOpen = ref(false)
 // Filter states
 const filterSearchTerm = ref('')
 const filters = ref({
-  vat: false,
-  noVat: false,
   children: false,
   passport: false,
   roomMove: false,
   inHouse: false
 })
 
-// Column Visibility State (true means VISIBLE - covers all 16 columns)
+// Column Visibility State (true means VISIBLE - covers all 17 data columns)
 const colVisibility = ref({
   ma: true,
   phong: true,
@@ -85,6 +96,7 @@ const colVisibility = ref({
   diachi: true,
   sogiayto: true,
   hochieu: true,
+  tamtruden: true,
   ngayhethan: true,
   ngaynhapcanh: true,
   cuakhau: true,
@@ -121,6 +133,7 @@ const tableClasses = computed(() => {
     'hide-diachi': !colVisibility.value.diachi,
     'hide-sogiayto': !colVisibility.value.sogiayto,
     'hide-hochieu': !colVisibility.value.hochieu,
+    'hide-tamtruden': !colVisibility.value.tamtruden,
     'hide-ngayhethan': !colVisibility.value.ngayhethan,
     'hide-ngaynhapcanh': !colVisibility.value.ngaynhapcanh,
     'hide-cuakhau': !colVisibility.value.cuakhau,
@@ -276,14 +289,7 @@ const filteredRows = computed(() => {
     return false
   })
 
-  // 2. Lọc theo VAT / No VAT
-  if (filters.value.vat && !filters.value.noVat) {
-    list = list.filter(r => r.hasVat)
-  } else if (filters.value.noVat && !filters.value.vat) {
-    list = list.filter(r => !r.hasVat)
-  }
-
-  // 3. Lọc Trẻ em
+  // 2. Lọc Trẻ em
   if (filters.value.children) {
     list = list.filter(r => !r.nLon)
   }
@@ -799,8 +805,6 @@ function handleExport(type) {
 
 function resetFilters() {
   filters.value = {
-    vat: false,
-    noVat: false,
     children: false,
     passport: false,
     roomMove: false,
@@ -858,7 +862,6 @@ async function loadBookingData() {
       let seq = 1
       activeBookings.forEach(b => {
         const ma = b.booking_code || b.code || b.id || ''
-        const hasVat = !!(b.has_vat || b.vat || b.is_vat)
         const bookingRooms = b.booking_rooms || b.bookingRooms || []
         
         if (bookingRooms.length > 0) {
@@ -919,8 +922,10 @@ async function loadBookingData() {
                     quocTich: getNationalityName(c.nationality_code || 'VNM'),
                     diaChi: c.address || '_',
                     soGiayTo: c.id_number || c.passport_number || '',
+                    soGiayToHienThi: getSeparateIdNumber(c.id_number, c.passport_number),
                     loaiGiayTo: c.passport_number ? 'Hộ chiếu' : 'Căn cước công dân',
                     hoChieu: c.passport_number || '',
+                    tamTruDenHienThi: c.temp_residence_to ? formatDateDisplay(c.temp_residence_to) : '',
                     ngayHetHan: c.passport_expiry ? formatDateDisplay(c.passport_expiry) : '',
                     ngayNhapCanh: c.entry_date ? formatDateDisplay(c.entry_date) : formatDateDisplay(ngayDen),
                     cuaKhau: c.border_gate || '',
@@ -947,8 +952,7 @@ async function loadBookingData() {
                     arrivalDate: br.arrival_date,
                     departureDate: br.departure_date,
                     isStayedThenMoved: isStayedThenMoved,
-                    isSameDayMoved: isSameDayMoved,
-                    hasVat: hasVat
+                    isSameDayMoved: isSameDayMoved
                   })
                 }
               })
@@ -967,8 +971,10 @@ async function loadBookingData() {
                 quocTich: 'Vietnam ( Việt Nam )',
                 diaChi: '_',
                 soGiayTo: '',
+                soGiayToHienThi: '',
                 loaiGiayTo: 'Căn cước công dân',
                 hoChieu: '',
+                tamTruDenHienThi: '',
                 ngayHetHan: '',
                 ngayNhapCanh: formatDateDisplay(ngayDen),
                 cuaKhau: '',
@@ -994,8 +1000,7 @@ async function loadBookingData() {
                 arrivalDate: br.arrival_date,
                 departureDate: br.departure_date,
                 isStayedThenMoved: isStayedThenMoved,
-                isSameDayMoved: isSameDayMoved,
-                hasVat: hasVat
+                isSameDayMoved: isSameDayMoved
               })
             }
 
@@ -1033,8 +1038,10 @@ async function loadBookingData() {
                 quocTich: getNationalityName(ch.nationality_code || 'VNM'),
                 diaChi: ch.address || '_',
                 soGiayTo: ch.id_number || ch.passport_number || '',
+                soGiayToHienThi: getSeparateIdNumber(ch.id_number, ch.passport_number),
                 loaiGiayTo: ch.passport_number ? 'Hộ chiếu' : (ch.id_type || 'Căn cước công dân'),
                 hoChieu: ch.passport_number || '',
+                tamTruDenHienThi: ch.temp_residence_to ? formatDateDisplay(ch.temp_residence_to) : '',
                 ngayHetHan: ch.passport_expiry ? formatDateDisplay(ch.passport_expiry) : '',
                 ngayNhapCanh: ch.entry_date ? formatDateDisplay(ch.entry_date) : formatDateDisplay(ngayDen),
                 cuaKhau: ch.border_gate || '',
@@ -1060,8 +1067,7 @@ async function loadBookingData() {
                 arrivalDate: br.arrival_date,
                 departureDate: br.departure_date,
                 isStayedThenMoved: isStayedThenMoved,
-                isSameDayMoved: isSameDayMoved,
-                hasVat: hasVat
+                isSameDayMoved: isSameDayMoved
               })
             })
           })
@@ -1229,12 +1235,6 @@ onUnmounted(() => {
           </div>
 
           <div class="dp-list filter-items-list">
-            <label v-show="!filterSearchTerm || 'vat'.includes(filterSearchTerm.toLowerCase())" class="dp-item">
-              <input type="checkbox" v-model="filters.vat" /> VAT
-            </label>
-            <label v-show="!filterSearchTerm || 'no vat'.includes(filterSearchTerm.toLowerCase())" class="dp-item">
-              <input type="checkbox" v-model="filters.noVat" /> No VAT
-            </label>
             <label v-show="!filterSearchTerm || 'trẻ em'.includes(filterSearchTerm.toLowerCase())" class="dp-item">
               <input type="checkbox" v-model="filters.children" /> Trẻ em
             </label>
@@ -1255,7 +1255,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- Column Visibility Anchor (All 16 columns toggleable) -->
+      <!-- Column Visibility Anchor (All 17 data columns toggleable) -->
       <div class="dropdown-anchor">
         <button class="filter-btn icon-only" @click.stop="toggleDropdown('col')" title="Tuỳ chỉnh cột">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="16" cy="6" r="2" stroke="currentColor" stroke-width="1.6"/><circle cx="10" cy="12" r="2" stroke="currentColor" stroke-width="1.6"/><circle cx="17" cy="18" r="2" stroke="currentColor" stroke-width="1.6"/></svg>
@@ -1287,6 +1287,7 @@ onUnmounted(() => {
             <label class="dp-item"><input type="checkbox" v-model="colVisibility.diachi" /> Địa chỉ</label>
             <label class="dp-item"><input type="checkbox" v-model="colVisibility.sogiayto" /> Số giấy tờ</label>
             <label class="dp-item"><input type="checkbox" v-model="colVisibility.hochieu" /> Hộ chiếu</label>
+            <label class="dp-item"><input type="checkbox" v-model="colVisibility.tamtruden" /> Tạm trú đến</label>
             <label class="dp-item"><input type="checkbox" v-model="colVisibility.ngayhethan" /> Ngày hết hạn</label>
             <label class="dp-item"><input type="checkbox" v-model="colVisibility.ngaynhapcanh" /> Ngày nhập cảnh</label>
             <label class="dp-item"><input type="checkbox" v-model="colVisibility.cuakhau" /> Cửa khẩu</label>
@@ -1300,7 +1301,27 @@ onUnmounted(() => {
     <!-- ═══ TABLE ═══ -->
     <div class="table-shell">
       <div class="table-scroll">
-        <table class="grid" :class="tableClasses">
+        <table class="residence-grid" :class="tableClasses">
+          <colgroup>
+            <col class="col-checkbox" />
+            <col class="col-ma" />
+            <col class="col-phong" />
+            <col class="col-ten" />
+            <col class="col-gioitinh" />
+            <col class="col-ngaysinh" />
+            <col class="col-ngayden" />
+            <col class="col-ngaydi" />
+            <col class="col-quoctich" />
+            <col class="col-diachi" />
+            <col class="col-sogiayto" />
+            <col class="col-hochieu" />
+            <col class="col-tamtruden" />
+            <col class="col-ngayhethan" />
+            <col class="col-ngaynhapcanh" />
+            <col class="col-cuakhau" />
+            <col class="col-nlon" />
+            <col class="col-ghichuchuyen" />
+          </colgroup>
           <thead>
             <tr>
               <th class="col-checkbox" style="padding-left:14px;">
@@ -1349,6 +1370,7 @@ onUnmounted(() => {
               <th class="col-diachi">Địa chỉ</th>
               <th class="col-sogiayto">Số Giấy Tờ</th>
               <th class="col-hochieu">Hộ chiếu</th>
+              <th class="col-tamtruden">Tạm trú đến</th>
               <th class="col-ngayhethan">Ngày hết hạn</th>
               <th class="col-ngaynhapcanh">Ngày Nhập Cảnh</th>
               <th class="col-cuakhau">Cửa Khẩu</th>
@@ -1359,7 +1381,7 @@ onUnmounted(() => {
 
           <tbody>
             <tr v-if="filteredRows.length === 0">
-              <td colspan="17">
+              <td colspan="18">
                 <div class="empty-state">Không tìm thấy kết quả phù hợp.</div>
               </td>
             </tr>
@@ -1367,29 +1389,30 @@ onUnmounted(() => {
               <td class="col-checkbox" style="padding-left:14px;">
                 <input type="checkbox" :value="r.id" v-model="selectedRows" />
               </td>
-              <td class="col-ma cell-ma">{{ r.ma }}</td>
-              <td class="col-phong cell-phong">{{ r.phong }}</td>
-              <td class="col-ten font-bold text-slate-800">{{ r.ten }}</td>
-              <td class="col-gioitinh">{{ r.gioiTinh }}</td>
-              <td class="col-ngaysinh">{{ r.ngaySinh || '' }}</td>
-              <td class="col-ngayden">{{ r.ngayDen }}</td>
-              <td class="col-ngaydi">{{ r.ngayDi }}</td>
-              <td class="col-quoctich">
-                <span v-if="r.quocTich" class="cell-country">{{ r.quocTich }}</span>
+              <td class="col-ma cell-ma" :title="cellTitle(r.ma)"><span class="cell-content">{{ r.ma }}</span></td>
+              <td class="col-phong cell-phong" :title="cellTitle(r.phong)"><span class="cell-content">{{ r.phong }}</span></td>
+              <td class="col-ten font-bold text-slate-800" :title="cellTitle(r.ten)"><span class="cell-content">{{ r.ten }}</span></td>
+              <td class="col-gioitinh" :title="cellTitle(r.gioiTinh)"><span class="cell-content">{{ r.gioiTinh }}</span></td>
+              <td class="col-ngaysinh" :title="cellTitle(r.ngaySinh)"><span class="cell-content">{{ r.ngaySinh || '' }}</span></td>
+              <td class="col-ngayden" :title="cellTitle(r.ngayDen)"><span class="cell-content">{{ r.ngayDen }}</span></td>
+              <td class="col-ngaydi" :title="cellTitle(r.ngayDi)"><span class="cell-content">{{ r.ngayDi }}</span></td>
+              <td class="col-quoctich" :title="cellTitle(r.quocTich)">
+                <span v-if="r.quocTich" class="cell-country cell-content">{{ r.quocTich }}</span>
               </td>
-              <td class="col-diachi">{{ r.diaChi !== '_' ? r.diaChi : '' }}</td>
-              <td class="col-sogiayto">{{ r.soGiayTo }}</td>
-              <td class="col-hochieu">{{ r.hoChieu }}</td>
-              <td class="col-ngayhethan">{{ r.ngayHetHan }}</td>
-              <td class="col-ngaynhapcanh">{{ r.ngayNhapCanh }}</td>
-              <td class="col-cuakhau">{{ r.cuaKhau }}</td>
+              <td class="col-diachi" :title="cellTitle(r.diaChi)"><span class="cell-content">{{ r.diaChi !== '_' ? r.diaChi : '' }}</span></td>
+              <td class="col-sogiayto" :title="cellTitle(r.soGiayToHienThi)"><span class="cell-content">{{ r.soGiayToHienThi }}</span></td>
+              <td class="col-hochieu" :title="cellTitle(r.hoChieu)"><span class="cell-content">{{ r.hoChieu }}</span></td>
+              <td class="col-tamtruden" :title="cellTitle(r.tamTruDenHienThi)"><span class="cell-content">{{ r.tamTruDenHienThi }}</span></td>
+              <td class="col-ngayhethan" :title="cellTitle(r.ngayHetHan)"><span class="cell-content">{{ r.ngayHetHan }}</span></td>
+              <td class="col-ngaynhapcanh" :title="cellTitle(r.ngayNhapCanh)"><span class="cell-content">{{ r.ngayNhapCanh }}</span></td>
+              <td class="col-cuakhau" :title="cellTitle(r.cuaKhau)"><span class="cell-content">{{ r.cuaKhau }}</span></td>
               <td class="col-nlon">
                 <label class="sw">
                   <input type="checkbox" :checked="r.nLon" disabled />
                   <span class="sw-track"></span>
                 </label>
               </td>
-              <td class="col-ghichuchuyen cell-ghichuchuyen">{{ r.transferNote || '' }}</td>
+              <td class="col-ghichuchuyen cell-ghichuchuyen" :title="cellTitle(r.transferNote)"><span class="cell-content">{{ r.transferNote || '' }}</span></td>
             </tr>
           </tbody>
         </table>
@@ -1920,13 +1943,14 @@ onUnmounted(() => {
   border-radius: 3px;
 }
 
-table.grid {
+table.residence-grid {
+  display: table;
   width: 100%;
   border-collapse: collapse;
   min-width: 100%;
   table-layout: fixed;
 }
-table.grid thead th {
+table.residence-grid thead th {
   position: sticky;
   top: 0;
   z-index: 5;
@@ -1940,16 +1964,16 @@ table.grid thead th {
   border-bottom: 2px solid var(--border);
   white-space: nowrap;
 }
-table.grid th .th-inner {
+table.residence-grid th .th-inner {
   display: flex;
   align-items: center;
   gap: 5px;
 }
-table.grid th.sortable {
+table.residence-grid th.sortable {
   cursor: pointer;
   user-select: none;
 }
-table.grid th.sortable:hover .th-inner {
+table.residence-grid th.sortable:hover .th-inner {
   color: var(--blue);
 }
 .sort-icons {
@@ -1974,17 +1998,17 @@ th.sort-desc .sort-icons .down {
   color: var(--blue);
 }
 
-table.grid td {
+table.residence-grid td:not(.col-checkbox):not(.col-nlon) {
   padding: 9.5px 13px;
   border-bottom: 1px solid var(--border);
   color: var(--text);
   white-space: nowrap;
   font-size: 12.5px;
 }
-table.grid tbody tr:last-child td {
+table.residence-grid tbody tr:last-child td {
   border-bottom: none;
 }
-table.grid tbody tr:hover td {
+table.residence-grid tbody tr:hover td {
   background: var(--surface-hover);
 }
 
@@ -2002,6 +2026,14 @@ table.grid tbody tr:hover td {
   gap: 5px;
   color: var(--text);
   font-size: 12px;
+}
+.cell-content {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Toggle Switch */
@@ -2052,41 +2084,43 @@ input[type=checkbox] {
 }
 
 /* Column Widths */
-.col-checkbox { width: 3.5%; }
-.col-ma { width: 6%; }
-.col-phong { width: 5%; }
-.col-ten { width: 8.5%; }
-.col-gioitinh { width: 5%; }
-.col-ngaysinh { width: 6%; }
-.col-ngayden { width: 6.5%; }
-.col-ngaydi { width: 6.5%; }
-.col-quoctich { width: 9%; }
-.col-diachi { width: 5%; }
-.col-sogiayto { width: 6.5%; }
-.col-hochieu { width: 5.5%; }
-.col-ngayhethan { width: 6%; }
-.col-ngaynhapcanh { width: 6.5%; }
-.col-cuakhau { width: 5.5%; }
+.col-checkbox { width: 3%; }
+.col-ma { width: 5.2%; }
+.col-phong { width: 4.3%; }
+.col-ten { width: 7.4%; }
+.col-gioitinh { width: 4.3%; }
+.col-ngaysinh { width: 5.2%; }
+.col-ngayden { width: 5.65%; }
+.col-ngaydi { width: 5.65%; }
+.col-quoctich { width: 7.85%; }
+.col-diachi { width: 4.35%; }
+.col-sogiayto { width: 5.65%; }
+.col-hochieu { width: 4.8%; }
+.col-tamtruden { width: 5.2%; }
+.col-ngayhethan { width: 5.2%; }
+.col-ngaynhapcanh { width: 5.65%; }
+.col-cuakhau { width: 4.8%; }
 .col-nlon { width: 4%; }
-.col-ghichuchuyen { min-width: 220px; width: 14%; }
+.col-ghichuchuyen { min-width: 220px; width: 11.8%; }
 
-/* Column Hiding (All 16 columns) */
-table.grid.hide-ma .col-ma,
-table.grid.hide-phong .col-phong,
-table.grid.hide-ten .col-ten,
-table.grid.hide-gioitinh .col-gioitinh,
-table.grid.hide-ngaysinh .col-ngaysinh,
-table.grid.hide-ngayden .col-ngayden,
-table.grid.hide-ngaydi .col-ngaydi,
-table.grid.hide-quoctich .col-quoctich,
-table.grid.hide-diachi .col-diachi,
-table.grid.hide-sogiayto .col-sogiayto,
-table.grid.hide-hochieu .col-hochieu,
-table.grid.hide-ngayhethan .col-ngayhethan,
-table.grid.hide-ngaynhapcanh .col-ngaynhapcanh,
-table.grid.hide-cuakhau .col-cuakhau,
-table.grid.hide-nlon .col-nlon,
-table.grid.hide-ghichuchuyen .col-ghichuchuyen {
+/* Column Hiding (All 17 data columns) */
+table.residence-grid.hide-ma .col-ma,
+table.residence-grid.hide-phong .col-phong,
+table.residence-grid.hide-ten .col-ten,
+table.residence-grid.hide-gioitinh .col-gioitinh,
+table.residence-grid.hide-ngaysinh .col-ngaysinh,
+table.residence-grid.hide-ngayden .col-ngayden,
+table.residence-grid.hide-ngaydi .col-ngaydi,
+table.residence-grid.hide-quoctich .col-quoctich,
+table.residence-grid.hide-diachi .col-diachi,
+table.residence-grid.hide-sogiayto .col-sogiayto,
+table.residence-grid.hide-hochieu .col-hochieu,
+table.residence-grid.hide-tamtruden .col-tamtruden,
+table.residence-grid.hide-ngayhethan .col-ngayhethan,
+table.residence-grid.hide-ngaynhapcanh .col-ngaynhapcanh,
+table.residence-grid.hide-cuakhau .col-cuakhau,
+table.residence-grid.hide-nlon .col-nlon,
+table.residence-grid.hide-ghichuchuyen .col-ghichuchuyen {
   display: none !important;
 }
 

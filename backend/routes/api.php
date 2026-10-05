@@ -436,6 +436,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
         Route::get('/', [\App\Http\Controllers\Api\BookingRoomController::class, 'index']);
         Route::post('/', [\App\Http\Controllers\Api\BookingRoomController::class, 'store'])->middleware('permission:fo.booking.create');
         Route::put('/{roomId}', [\App\Http\Controllers\Api\BookingRoomController::class, 'update'])->middleware('permission:fo.booking.edit');
+        Route::put('/{roomId}/room-plan-stay', [\App\Http\Controllers\Api\RoomPlanBookingRoomController::class, 'updateStay'])->middleware('permission:fo.booking.edit');
         Route::post('/bulk-update', [\App\Http\Controllers\Api\BookingRoomController::class, 'bulkUpdate'])->middleware('permission:fo.booking.edit');
         // Epic 5 - Check-in
         Route::patch('/{roomId}/check-in', [\App\Http\Controllers\Api\BookingRoomController::class, 'checkIn'])->middleware('permission:fo.checkin');

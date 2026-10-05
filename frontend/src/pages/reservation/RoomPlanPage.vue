@@ -7,6 +7,7 @@ import { useRoomStore } from '@/stores/room-store'
 import RoomIcon from '@/components/RoomIcon.vue'
 import { fetchBookings, fetchBookingInitDropdowns, checkInRoom, unassignRoom, fetchRoomRateCodes, cancelBookingRoom, fetchSystemDate, fetchUserSettings, updateUserSettings, fetchHotelSettings, updateBookingRoom, splitBookingRoom, createBooking, lockRoomMove, unlockRoomMove } from '@/services/booking-service'
 import { fetchCompanies, fetchMarkets, fetchCustomerSources } from '@/services/company-service'
+import { updateRoomPlanBookingRoomStay } from '@/services/room-plan-service'
 import CancelReasonModal from './components/CancelReasonModal.vue'
 import { useAuthStore } from '@/stores/auth-store'
 import http from '@/services/http'
@@ -25,6 +26,18 @@ const currentBookingModule = computed(() => {
   if (route.path === '/housekeeping') return 'HK'
   return 'SALE'
 })
+const isHousekeepingModule = computed(() => currentBookingModule.value === 'HK')
+const housekeepingAllowedRoomPlanActions = new Set([
+  'Khóa phòng OOO',
+  'Khóa phòng OOS',
+  'Mở khóa phòng'
+])
+
+function getRoomPlanBookingRenderKey(booking) {
+  const isLock = booking.code === 'LOCK' || booking.isLockRoom
+  const id = booking.lockId ?? booking.bookingRoomId ?? booking.code
+  return `${isLock ? 'lock' : 'booking-room'}-${id}`
+}
 
 const isAdmin = computed(() => {
   const u = authStore.user
@@ -364,6 +377,46 @@ function closeRoomTypePopover() {
   showRoomTypePopover.value = false
 }
 
+const ROOM_PLAN_SCROLL_TOP_KEY = 'pms_roomplan_scroll_top'
+const ROOM_PLAN_SCROLL_LEFT_KEY = 'pms_roomplan_scroll_left'
+const ROOM_PLAN_START_DATE_KEY = 'pms_roomplan_start_date'
+const ROOM_PLAN_END_DATE_KEY = 'pms_roomplan_end_date'
+
+let roomPlanScrollSaveTimeout = null
+function handleRoomPlanScroll(event) {
+  hideTooltip()
+  clearTimeout(roomPlanScrollSaveTimeout)
+  roomPlanScrollSaveTimeout = setTimeout(() => {
+    if (roomPlanScrollContainer.value) {
+      sessionStorage.setItem(ROOM_PLAN_SCROLL_TOP_KEY, String(roomPlanScrollContainer.value.scrollTop))
+      sessionStorage.setItem(ROOM_PLAN_SCROLL_LEFT_KEY, String(roomPlanScrollContainer.value.scrollLeft))
+    }
+  }, 100)
+}
+
+function restoreRoomPlanScrollPosition() {
+  const savedTop = sessionStorage.getItem(ROOM_PLAN_SCROLL_TOP_KEY)
+  const savedLeft = sessionStorage.getItem(ROOM_PLAN_SCROLL_LEFT_KEY)
+  if (savedTop === null && savedLeft === null) return
+
+  const applyScroll = () => {
+    if (!roomPlanScrollContainer.value) return false
+    if (savedTop !== null) {
+      roomPlanScrollContainer.value.scrollTop = Number(savedTop)
+    }
+    if (savedLeft !== null) {
+      roomPlanScrollContainer.value.scrollLeft = Number(savedLeft)
+    }
+    return true
+  }
+
+  nextTick(() => {
+    applyScroll()
+    setTimeout(applyScroll, 50)
+    setTimeout(applyScroll, 200)
+  })
+}
+
 function saveDateRange() {
   const start = new Date(tempStartDateStr.value)
   const end = new Date(tempEndDateStr.value)
@@ -378,6 +431,8 @@ function saveDateRange() {
   startDate.value = start
   endDate.value = end
   dateRangeText.value = `${formatDateToDMY(formatDateStr(start))} ~ ${formatDateToDMY(formatDateStr(end))}`
+  sessionStorage.setItem(ROOM_PLAN_START_DATE_KEY, formatDateStr(start))
+  sessionStorage.setItem(ROOM_PLAN_END_DATE_KEY, formatDateStr(end))
   showDatePickerPopover.value = false
 }
 
@@ -736,8 +791,10 @@ const days = computed(() => {
     const current = new Date(start)
     current.setDate(start.getDate() + i)
     const dayOfWeek = current.getDay()
+    const key = formatDateStr(current)
     
     list.push({
+      key,
       dateStr: `${String(current.getDate()).padStart(2, '0')}/${String(current.getMonth() + 1).padStart(2, '0')}`,
       dow: weekDays[dayOfWeek],
       isWeekend: dayOfWeek === 0 || dayOfWeek === 6,
@@ -1472,6 +1529,7 @@ async function loadBookings() {
     if (requestId === loadBookingsRequestId) {
       loadingBookings.value = false
       emit('loading', false)
+      restoreRoomPlanScrollPosition()
     }
   }
 }
@@ -1558,10 +1616,17 @@ onMounted(async () => {
     console.error('Failed to load initial settings:', err)
   }
 
-  // 2. Initialize date range: system date + 30 days
-  const baseDate = sysDateStr ? new Date(sysDateStr) : new Date()
-  const endDateVal = new Date(baseDate)
+  // 2. Initialize date range: restore from sessionStorage if available, else system date + 30 days
+  const savedStartDate = sessionStorage.getItem(ROOM_PLAN_START_DATE_KEY)
+  const savedEndDate = sessionStorage.getItem(ROOM_PLAN_END_DATE_KEY)
+  let baseDate = sysDateStr ? new Date(sysDateStr) : new Date()
+  let endDateVal = new Date(baseDate)
   endDateVal.setDate(baseDate.getDate() + 29)
+
+  if (savedStartDate && savedEndDate && !isNaN(new Date(savedStartDate).getTime()) && !isNaN(new Date(savedEndDate).getTime())) {
+    baseDate = new Date(savedStartDate)
+    endDateVal = new Date(savedEndDate)
+  }
 
   suppressDateRangeReload = true
   startDate.value = baseDate
@@ -1580,6 +1645,7 @@ onMounted(async () => {
   loadBookings()
   loadCompanies()
   loadRateCodes()
+  restoreRoomPlanScrollPosition()
   
   window.addEventListener('click', closeContextMenu)
   window.addEventListener('click', closePlanSettings)
@@ -1620,6 +1686,10 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   stopQuickBookingDrag()
   stopBookingPointerDrag()
+  if (roomPlanScrollContainer.value) {
+    sessionStorage.setItem(ROOM_PLAN_SCROLL_TOP_KEY, String(roomPlanScrollContainer.value.scrollTop))
+    sessionStorage.setItem(ROOM_PLAN_SCROLL_LEFT_KEY, String(roomPlanScrollContainer.value.scrollLeft))
+  }
   window.removeEventListener('click', closeContextMenu)
   window.removeEventListener('click', closePlanSettings)
   window.removeEventListener('click', closeDatePickerPopover)
@@ -1641,6 +1711,14 @@ onBeforeUnmount(() => {
 watch([startDate, endDate], () => {
   if (suppressDateRangeReload) return
   loadBookings()
+})
+
+let isInitialPlanScrollRestored = false
+watch(dbRooms, (newVal) => {
+  if (!isInitialPlanScrollRestored && newVal && newVal.length > 0) {
+    restoreRoomPlanScrollPosition()
+    isInitialPlanScrollRestored = true
+  }
 })
 
 // Auto-save user settings on change (debounced)
@@ -2040,7 +2118,7 @@ const processedBookings = computed(() => {
     // Find start index
     let startIdx = 0
     let isCheckInVisible = true
-    if (checkInDate >= visibleStart) {
+    if (checkInDateStr >= visibleStartDateStr && checkInDateStr <= visibleEndDateStr) {
       startIdx = days.value.findIndex(d => {
         const dDate = new Date(d.fullDate)
         return dDate.getDate() === checkInDate.getDate() && 
@@ -2058,7 +2136,7 @@ const processedBookings = computed(() => {
     // Find end index
     let endIdx = days.value.length - 1
     let isCheckOutVisible = true
-    if (checkOutDate <= visibleEnd) {
+    if (checkOutDateStr >= visibleStartDateStr && checkOutDateStr <= visibleEndDateStr) {
       endIdx = days.value.findIndex(d => {
         const dDate = new Date(d.fullDate)
         return dDate.getDate() === checkOutDate.getDate() && 
@@ -2073,8 +2151,11 @@ const processedBookings = computed(() => {
       isCheckOutVisible = false
     }
 
-    // Left offset ratio (0% to start at the left boundary of the first day cell)
-    const leftRatio = showNights.value ? 0 : 0.5
+    // Left offset ratio (0% to start at the left boundary of the first day cell if check-in was in the past)
+    let leftRatio = showNights.value ? 0 : 0.5
+    if (!isCheckInVisible) {
+      leftRatio = 0
+    }
 
     const checkOutHourMin = `${String(checkOutDate.getHours()).padStart(2, '0')}:${String(checkOutDate.getMinutes()).padStart(2, '0')}`
     const defineLockTime = hotelSettings.value?.FrmOOO_DefineLockByTime || '12:00'
@@ -2082,8 +2163,34 @@ const processedBookings = computed(() => {
     const isLockEndedEarly = isLockItem && (checkInDateStr !== checkOutDateStr) && (checkOutHourMin < cutoffTime)
 
     // Total columns spanned (occupy full cells or half cells)
-    const span = Math.max(1, isLockItem ? (isLockEndedEarly ? (endIdx - startIdx) : (endIdx - startIdx + 1)) : (endIdx - startIdx))
+    let baseSpan = endIdx - startIdx
+    if (!isLockItem) {
+      if (!showNights.value) {
+        if (!isCheckInVisible && isCheckOutVisible) {
+          baseSpan += 0.5
+        } else if (isCheckInVisible && !isCheckOutVisible) {
+          baseSpan += 0.5
+        } else if (!isCheckInVisible && !isCheckOutVisible) {
+          baseSpan += 1.0
+        }
+      }
+    } else {
+      baseSpan = isLockEndedEarly ? (endIdx - startIdx) : (endIdx - startIdx + 1)
+    }
+    const span = Math.max(1, baseSpan)
     const showCheckOutIndicator = !showNights.value && isCheckOutVisible
+
+    // Calculate past days offset for text shift (Phương án 1: Trượt tự nhiên theo timeline quá khứ)
+    const checkInMid = new Date(checkInDate)
+    checkInMid.setHours(0, 0, 0, 0)
+    const visibleStartMid = new Date(visibleStart)
+    visibleStartMid.setHours(0, 0, 0, 0)
+
+    let pastDaysOffset = 0
+    if (!isCheckInVisible) {
+      const diffDays = Math.max(0, Math.round((visibleStartMid.getTime() - checkInMid.getTime()) / (1000 * 60 * 60 * 24)))
+      pastDaysOffset = isLockItem ? diffDays : Math.max(0, diffDays - (showNights.value ? 0 : 0.5))
+    }
 
     // Formatting for tooltip display
     const checkInFormatted = `${String(checkInDate.getDate()).padStart(2, '0')}/${String(checkInDate.getMonth() + 1).padStart(2, '0')}`
@@ -2109,6 +2216,7 @@ const processedBookings = computed(() => {
       endIndex: endIdx,
       leftRatio,
       span,
+      pastDaysOffset,
       checkInDateStr: checkInFormatted,
       checkInTimeStr,
       checkOutDateStr: checkOutFormatted,
@@ -2494,11 +2602,12 @@ function handleCellContextMenu(roomItem, dayItem, event) {
 }
 
 function handleBookingDblClick(booking) {
-  if (booking.code === 'LOCK') return
+  if (isHousekeepingModule.value || booking.code === 'LOCK') return
   emit('edit-booking', { code: booking.code, id: booking.bookingId })
 }
 
 function startResize(bk, type, event) {
+  if (isHousekeepingModule.value) return
   if (bk.code === 'LOCK') return
 
   if (bk.type === 'InHouse') {
@@ -2551,6 +2660,10 @@ function startResize(bk, type, event) {
 }
 
 function handleResizeMouseMove(event) {
+  if (isHousekeepingModule.value) {
+    resizeState.value = null
+    return
+  }
   if (!resizeState.value) return
 
   const { type, initialX, cellWidth, originalCheckIn, originalCheckOut } = resizeState.value
@@ -2595,6 +2708,7 @@ async function handleResizeMouseUp(event) {
   if (!resizeState.value) return
   const state = resizeState.value
   resizeState.value = null
+  if (isHousekeepingModule.value) return
 
   const checkInStr = formatDateStr(state.tempCheckIn)
   const checkOutStr = formatDateStr(state.tempCheckOut)
@@ -2611,7 +2725,29 @@ async function handleResizeMouseUp(event) {
         departure_date: checkOutStr
       }
 
-      const res = await updateBookingRoom(state.booking.bookingId, state.booking.bookingRoomId, payload)
+      let res
+      try {
+        res = await updateRoomPlanBookingRoomStay(state.booking.bookingId, state.booking.bookingRoomId, payload)
+      } catch (resizeError) {
+        const errorData = resizeError.response?.data
+        if (errorData?.code !== 'overbooking_confirmation_required') throw resizeError
+
+        const confirmed = await uiStore.confirm({
+          title: 'Cảnh báo overbooking',
+          message: errorData.message || 'Loại phòng đang bị over, bạn có muốn tiếp tục?',
+          confirmText: 'Tiếp tục',
+          cancelText: 'Hủy'
+        })
+        if (!confirmed) {
+          await loadBookings()
+          return
+        }
+
+        res = await updateRoomPlanBookingRoomStay(state.booking.bookingId, state.booking.bookingRoomId, {
+          ...payload,
+          confirm_overbooking: true
+        })
+      }
 
       if (res && res.data && res.data.success) {
         if (res.data.warning) {
@@ -2636,6 +2772,9 @@ async function handleResizeMouseUp(event) {
 function handleBookingContextMenu(booking, event) {
   event.preventDefault()
   event.stopPropagation()
+
+  const isRoomLock = booking.code === 'LOCK' || booking.type === 'OOO' || booking.type === 'OOS' || booking.isLockRoom
+  if (isHousekeepingModule.value && !isRoomLock) return
   
   let x = event.clientX
   let y = event.clientY
@@ -2779,6 +2918,10 @@ function calculateQuickBookingPrice() {
 }
 
 async function triggerMenuAction(actionName) {
+  if (isHousekeepingModule.value && !housekeepingAllowedRoomPlanActions.has(actionName)) {
+    closeContextMenu()
+    return
+  }
   closeContextMenu()
   
   if (actionName === 'Tạo') {
@@ -3008,6 +3151,10 @@ function canCheckInBooking(bk) {
 }
 
 function handleDragStart(bk, event) {
+  if (isHousekeepingModule.value) {
+    event.preventDefault()
+    return
+  }
   if (bk.type === 'InHouse') {
     uiStore.showToast('Phòng đang In-house không được phép kéo chuyển phòng trên Room Plan.', 'warning')
     event.preventDefault()
@@ -3075,6 +3222,7 @@ function handleDragStart(bk, event) {
 }
 
 function handleBookingPointerDown(bk, event) {
+  if (isHousekeepingModule.value) return
   if (event.button !== 0) return
   if (event.target.closest('[data-room-plan-resize-handle], [data-room-plan-split-handle]')) return
 
@@ -3105,6 +3253,10 @@ function handleBookingPointerDown(bk, event) {
 }
 
 function startBookingPointerDrag(bk, event, element) {
+  if (isHousekeepingModule.value) {
+    event.preventDefault()
+    return
+  }
   event.preventDefault()
   hideTooltip()
   isPointerDraggingBooking = true
@@ -3131,6 +3283,11 @@ function startBookingPointerDrag(bk, event, element) {
 }
 
 function handleBookingPointerMove(event) {
+  if (isHousekeepingModule.value) {
+    bookingPointerPending = null
+    stopBookingPointerDrag()
+    return
+  }
   if (!isPointerDraggingBooking || !draggedBooking.value) {
     const pending = bookingPointerPending
     if (!pending || pending.pointerId !== event.pointerId) return
@@ -3236,6 +3393,7 @@ function setDragGhostTop(top) {
 }
 
 function handleGlobalDragOver(event) {
+  if (isHousekeepingModule.value) return
   if (!draggedBooking.value) return
   if (event.__roomPlanDragHandled) return
   event.__roomPlanDragHandled = true
@@ -3298,6 +3456,7 @@ function updateDragPosition(targetCell, clientY) {
 }
 
 function handleWindowDragOver(event) {
+  if (isHousekeepingModule.value) return
   if (!draggedBooking.value) return
   event.preventDefault()
   if (!scrollContainer) getDragVerticalBounds()
@@ -3309,6 +3468,7 @@ function allowRoomPlanDrop(event) {
 }
 
 function handleTopDragOver(event) {
+  if (isHousekeepingModule.value) return
   if (!draggedBooking.value) return
   event.preventDefault()
   if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
@@ -3371,6 +3531,11 @@ function handleDragEnd() {
 }
 
 async function handleDrop(targetRoom, targetDay, event) {
+  if (isHousekeepingModule.value) {
+    event.preventDefault()
+    handleDragEnd()
+    return
+  }
   event.preventDefault()
   dragSourceStartIdx.value = null
   dragSourceEndIdx.value = null
@@ -3509,6 +3674,7 @@ function cancelSplit() {
 }
 
 async function executeSplit() {
+  if (isHousekeepingModule.value) return
   const bk = splittingBooking.value
   if (!bk) return
 
@@ -3541,6 +3707,7 @@ async function executeSplit() {
 }
 
 function startDragSplitBar(event) {
+  if (isHousekeepingModule.value) return
   event.preventDefault()
   const startX = event.clientX
   const initialSplitIndex = splitIndex.value
@@ -3575,6 +3742,7 @@ function startDragSplitBar(event) {
 }
 
 async function saveQuickBooking() {
+  if (isHousekeepingModule.value) return
   const ranges = selectedRoomsRanges.value
   if (ranges.length === 0) return
 
@@ -3750,7 +3918,8 @@ async function saveLockRoom() {
       locks: locksPayload,
       lock_type: lockRoomType.value,
       reason: note,
-      force: false
+      force: false,
+      ...(isHousekeepingModule.value ? { current_module: 'HK' } : {})
     }
 
     try {
@@ -3759,7 +3928,7 @@ async function saveLockRoom() {
       const resData = err.response?.data
       if (resData && resData.require_confirm) {
         const proceed = await uiStore.confirm({
-          title: 'Cảnh báo phòng âm',
+          title: 'Cảnh báo',
           message: resData.message || 'Phòng âm. Bạn có muốn tiếp tục thao tác?',
           confirmText: 'Tiếp tục',
           cancelText: 'Hủy'
@@ -3862,6 +4031,7 @@ const isCancelReasonModalOpen = ref(false)
 const pendingCancelBooking = ref(null)
 
 async function handleConfirmCancelRoomPlan(payload) {
+  if (isHousekeepingModule.value) return
   const booking = pendingCancelBooking.value
   if (!booking || !booking.bookingId || !booking.bookingRoomId) return
 
@@ -4206,11 +4376,11 @@ function getRoomStatusIconName(item) {
     </div>
 
     <!-- Timeline Grid Matrix -->
-    <div ref="roomPlanScrollContainer" class="flex-1 overflow-auto border border-slate-200 rounded-lg relative" @scroll.passive="hideTooltip" @dragenter="handleGlobalDragOver($event)" @dragover="handleGlobalDragOver($event)">
+    <div ref="roomPlanScrollContainer" class="flex-1 overflow-auto border border-slate-200 rounded-lg relative" @scroll.passive="handleRoomPlanScroll" @dragenter="handleGlobalDragOver($event)" @dragover="handleGlobalDragOver($event)">
       <table class="w-full text-xs border-collapse table-fixed select-none">
         <colgroup>
           <col class="w-[120px] sticky left-0 z-30" />
-          <col v-for="(day, idx) in days" :key="idx" class="w-[62px]" />
+          <col v-for="day in days" :key="day.key" class="w-[62px]" />
         </colgroup>
 
         <!-- Header -->
@@ -4219,7 +4389,7 @@ function getRoomStatusIconName(item) {
             <th class="p-2 border-r border-slate-200 text-center sticky left-0 top-0 z-40 bg-slate-100 shadow-[inset_-1px_0_0_#e2e8f0]"></th>
             <th 
               v-for="(day, idx) in days" 
-              :key="idx" 
+              :key="day.key" 
               class="p-1 border-r border-slate-200 text-center sticky top-0 z-30 shadow-[inset_0_-1px_0_#e2e8f0]"
               :class="[
                 dragSourceStartIdx !== null && idx >= dragSourceStartIdx && idx < dragSourceEndIdx
@@ -4304,7 +4474,7 @@ function getRoomStatusIconName(item) {
               <!-- Grid Cells -->
               <td 
                 v-for="(day, dayIdx) in days" 
-                :key="dayIdx" 
+                :key="day.key" 
                 data-room-plan-cell
                 :data-room="item.room"
                 :data-day-index="dayIdx"
@@ -4329,8 +4499,8 @@ function getRoomStatusIconName(item) {
                 <!-- Render bookings starting at this cell -->
                 <template v-if="processedBookings[item.room]">
                   <div
-                    v-for="(bk, bkIdx) in processedBookings[item.room].filter(b => b.startIndex === dayIdx)"
-                    :key="bkIdx"
+                    v-for="bk in processedBookings[item.room].filter(b => b.startIndex === dayIdx)"
+                    :key="getRoomPlanBookingRenderKey(bk)"
                     @mouseenter="showTooltip(bk, $event)"
                     @mousemove="updateTooltipPosition($event)"
                     @mouseleave="hideTooltip"
@@ -4339,21 +4509,30 @@ function getRoomStatusIconName(item) {
                     @contextmenu.prevent.stop="handleBookingContextMenu(bk, $event)"
                     draggable="false"
                     @pointerdown="handleBookingPointerDown(bk, $event)"
-                    class="absolute top-[2px] h-[33px] border rounded flex items-center px-2.5 z-10 text-[9px] font-bold leading-tight select-none shadow-xs cursor-pointer hover:brightness-95 hover:shadow-md transition-[filter,box-shadow] duration-150"
+                    class="absolute top-[2px] h-[33px] border-t border-b flex items-center z-10 text-[9px] font-bold leading-tight select-none shadow-xs hover:brightness-95 hover:shadow-md transition-[filter,box-shadow] duration-150"
                     :class="[
                       isBookingMatched(bk) ? getBookingClass(bk.type) : 'bg-slate-100 text-slate-400 border-slate-200 opacity-60',
-                      splittingBooking?.bookingRoomId === bk.bookingRoomId ? 'z-30 overflow-visible' : 'overflow-visible',
-                      draggedBooking?.bookingRoomId === bk.bookingRoomId ? 'opacity-0' : ''
+                      splittingBooking?.bookingRoomId === bk.bookingRoomId ? 'z-30 overflow-visible' : 'overflow-hidden',
+                      draggedBooking?.bookingRoomId === bk.bookingRoomId ? 'opacity-0' : '',
+                      isHousekeepingModule ? 'cursor-default' : 'cursor-pointer',
+                      bk.isCheckInVisible ? 'pl-2.5 rounded-l border-l' : 'pl-0 rounded-l-none border-l-0',
+                      bk.isCheckOutVisible ? 'pr-2.5 rounded-r border-r' : 'pr-0 rounded-r-none border-r-0'
                     ]"
                     :style="{
-                      left: isBookingSegmented(bk) ? `calc(${bk.leftRatio * 100}% + 2px)` : `${bk.leftRatio * 100}%`,
-                      width: isBookingSegmented(bk) ? `calc(${bk.span * 100}% - 6px)` : `calc(${bk.span * 100}% - 2px)`,
+                      left: !bk.isCheckInVisible 
+                        ? '0%' 
+                        : (isBookingSegmented(bk) ? `calc(${bk.leftRatio * 100}% + 2px)` : `${bk.leftRatio * 100}%`),
+                      width: !bk.isCheckInVisible
+                        ? (isBookingSegmented(bk) ? `calc(${bk.span * 100}% - 4px)` : `calc(${bk.span * 100}% - 1px)`)
+                        : (isBookingSegmented(bk) ? `calc(${bk.span * 100}% - 6px)` : `calc(${bk.span * 100}% - 1px)`),
+                      borderLeftStyle: !bk.isCheckInVisible ? 'none' : undefined,
+                      borderRightStyle: !bk.isCheckOutVisible ? 'none' : undefined,
                       ...(isBookingMatched(bk) ? getBookingStyle(bk.type, bk.registrationStatusColor) : {})
                     }"
                   >
                     <!-- Left resize handle -->
                     <div 
-                      v-if="bk.code !== 'LOCK'"
+                      v-if="!isHousekeepingModule && bk.code !== 'LOCK' && bk.isCheckInVisible"
                       data-room-plan-resize-handle
                       class="absolute top-0 bottom-0 left-0 w-2 z-20 select-none"
                       :style="{ cursor: Number(hotelSettings?.RoomPlan_AllowChangeArrivalDate) === 1 ? 'w-resize' : 'not-allowed' }"
@@ -4362,14 +4541,24 @@ function getRoomStatusIconName(item) {
 
                     <!-- Right resize handle -->
                     <div 
-                      v-if="bk.code !== 'LOCK'"
+                      v-if="!isHousekeepingModule && bk.code !== 'LOCK' && bk.isCheckOutVisible"
                       data-room-plan-resize-handle
                       class="absolute top-0 bottom-0 right-0 w-2 z-20 select-none"
                       style="cursor: e-resize;"
                       @mousedown.stop="startResize(bk, 'end', $event)"
                     ></div>
 
-                    <div class="flex items-center gap-1 w-full overflow-hidden pb-1.5 pr-1">
+                    <!-- Booking labels follow their natural timeline and restore the original 11px inset when clipped. -->
+                    <div 
+                      class="flex items-center gap-1 pb-1.5 pr-1 transition-none"
+                      :class="bk.pastDaysOffset > 0 ? 'min-w-max' : 'w-full overflow-hidden'"
+                      :style="bk.pastDaysOffset > 0 ? {
+                        transform: bk.code === 'LOCK' ? undefined : 'translateX(11px)',
+                        marginLeft: bk.code === 'LOCK'
+                          ? `calc(-${bk.pastDaysOffset} * (100% / ${bk.span}))`
+                          : `calc(-${bk.pastDaysOffset} * 62px)`
+                      } : {}"
+                    >
                       <svg 
                         v-if="bk.isDoNotMove"
                         class="w-3 h-3 text-slate-700 shrink-0" 
@@ -4378,7 +4567,7 @@ function getRoomStatusIconName(item) {
                       >
                         <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" />
                       </svg>
-                      <span class="truncate flex-1 min-w-0">{{ bk.label }}</span>
+                      <span :class="bk.pastDaysOffset > 0 ? 'whitespace-nowrap' : 'truncate flex-1 min-w-0'">{{ bk.label }}</span>
                     </div>
 
                     <!-- Bottom Status Indicator: Phòng đến (Xanh lá 🟢) & Phòng đi (Đỏ 🔴) -->
@@ -4386,28 +4575,39 @@ function getRoomStatusIconName(item) {
                       <!-- Đã trả phòng (CheckedOut) -->
                       <template v-if="bk.type === 'CheckedOut' || bk.status === 2">
                         <div 
-                          class="absolute bottom-0 left-0 right-0 h-[3px] rounded-b"
-                          :class="isBookingMatched(bk) ? 'bg-slate-400' : 'bg-slate-300'"
+                          class="absolute bottom-0 left-0 right-0 h-[3px]"
+                          :class="[
+                            isBookingMatched(bk) ? 'bg-slate-400' : 'bg-slate-300',
+                            bk.isCheckInVisible ? 'rounded-bl' : '',
+                            bk.isCheckOutVisible ? 'rounded-br' : ''
+                          ]"
                           title="Trạng thái: Đã trả phòng"
                         ></div>
                       </template>
                       <!-- Đang lưu trú / Đặt trước: Vạch xanh (Phòng đến), vạch đỏ tại ngày check-out (Phòng đi) -->
                       <template v-else>
-                        <!-- Vạch xanh lá (Phòng đến 🟢) -->
+                        <!-- Vạch màu Tình trạng đăng ký (Guaranteed 🟢, None Guaranteed, ...) -->
                         <div 
-                          class="absolute bottom-0 left-0 h-[5px] rounded-bl"
-                          :class="isBookingMatched(bk) ? 'bg-[#22c55e]' : 'bg-slate-300'"
+                          class="absolute bottom-0 left-0 h-[5px]"
+                          :class="[
+                            isBookingMatched(bk) ? (bk.registrationStatusColor ? '' : 'bg-[#22c55e]') : 'bg-slate-300',
+                            bk.isCheckInVisible ? 'rounded-bl' : 'rounded-bl-none'
+                          ]"
                           :style="{
+                            backgroundColor: (isBookingMatched(bk) && bk.registrationStatusColor) ? bk.registrationStatusColor : undefined,
                             right: bk.showCheckOutIndicator ? `${(0.5 / bk.span) * 100}%` : '0px'
                           }"
-                          title="Trạng thái: Phòng đến"
+                          :title="`Tình trạng đăng ký: ${bk.registrationStatusName || 'Đảm bảo'}`"
                         ></div>
 
                         <!-- Vạch đỏ (Phòng đi 🔴) -->
                         <div 
                           v-if="bk.showCheckOutIndicator"
-                          class="absolute bottom-0 right-0 h-[5px] rounded-br"
-                          :class="isBookingMatched(bk) ? 'bg-[#ef4444]' : 'bg-slate-300'"
+                          class="absolute bottom-0 right-0 h-[5px]"
+                          :class="[
+                            isBookingMatched(bk) ? 'bg-[#ef4444]' : 'bg-slate-300',
+                            bk.isCheckOutVisible ? 'rounded-br' : ''
+                          ]"
                           :style="{
                             width: `${(0.5 / bk.span) * 100}%`
                           }"
@@ -4418,7 +4618,7 @@ function getRoomStatusIconName(item) {
 
                     <!-- Split Handle / Control -->
                     <div 
-                      v-if="splittingBooking?.bookingRoomId === bk.bookingRoomId && bk.type !== 'OOO' && bk.type !== 'OOS' && bk.code !== 'LOCK'"
+                      v-if="!isHousekeepingModule && splittingBooking?.bookingRoomId === bk.bookingRoomId && bk.type !== 'OOO' && bk.type !== 'OOS' && bk.code !== 'LOCK'"
                       data-room-plan-split-handle
                       class="absolute top-0 bottom-0 w-[4px] bg-white cursor-ew-resize z-40 shadow-[0_0_4px_rgba(0,0,0,0.5)]"
                       :style="{ left: `calc(${((splitIndex - bk.startIndex) / bk.span) * 100}% - 2px)` }"
@@ -4427,7 +4627,7 @@ function getRoomStatusIconName(item) {
 
                     <!-- Split Buttons Overlay -->
                     <div 
-                      v-if="splittingBooking?.bookingRoomId === bk.bookingRoomId && bk.type !== 'OOO' && bk.type !== 'OOS' && bk.code !== 'LOCK'"
+                      v-if="!isHousekeepingModule && splittingBooking?.bookingRoomId === bk.bookingRoomId && bk.type !== 'OOO' && bk.type !== 'OOS' && bk.code !== 'LOCK'"
                       class="absolute bottom-[-22px] left-0 flex gap-1 z-50 select-none bg-white border border-slate-200 shadow-lg rounded p-0.5"
                     >
                       <button 
@@ -4464,7 +4664,7 @@ function getRoomStatusIconName(item) {
             </td>
             <td 
               v-for="(day, idx) in days" 
-              :key="idx" 
+              :key="day.key" 
               class="p-1 text-center text-[9px] font-bold text-slate-800 shadow-[inset_-1px_-1px_0_#93c5fd] cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden leading-tight"
               :class="[
                 dragSourceStartIdx !== null && idx >= dragSourceStartIdx && idx < dragSourceEndIdx
@@ -4490,7 +4690,7 @@ function getRoomStatusIconName(item) {
             </td>
             <td 
               v-for="(day, idx) in days" 
-              :key="idx" 
+              :key="day.key" 
               class="p-1 text-center text-[9px] font-bold text-slate-700 shadow-[inset_-1px_-1px_0_#e2e8f0] cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden leading-tight"
               :class="[
                 isTodayDate(day.fullDate) ? 'bg-[#ff7043]/20' : (day.isWeekend ? 'bg-[#72b5f7]/30' : 'bg-white')
@@ -4514,7 +4714,7 @@ function getRoomStatusIconName(item) {
             </td>
             <td 
               v-for="(day, idx) in days" 
-              :key="idx" 
+              :key="day.key" 
               class="p-1 text-center text-[9px] font-bold text-slate-500 shadow-[inset_-1px_-1px_0_#e2e8f0] cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden leading-tight"
               :class="[
                 isTodayDate(day.fullDate) ? 'bg-[#ff7043]/20' : (day.isWeekend ? 'bg-[#72b5f7]/30' : 'bg-white')
@@ -4661,6 +4861,7 @@ function getRoomStatusIconName(item) {
       <!-- Option for Cell Actions -->
       <template v-if="contextMenu.type === 'cell-actions'">
         <button 
+          v-if="!isHousekeepingModule"
           @click="triggerMenuAction('Tạo')"
           class="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 border-none bg-transparent cursor-pointer transition-colors"
         >
@@ -4681,7 +4882,7 @@ function getRoomStatusIconName(item) {
       </template>
 
       <!-- Option for Cell Waitlist -->
-      <template v-else-if="contextMenu.type === 'cell-waitlist'">
+      <template v-else-if="contextMenu.type === 'cell-waitlist' && !isHousekeepingModule">
         <button 
           @click="triggerMenuAction('Danh sách chờ')"
           class="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 border-none bg-transparent cursor-pointer transition-colors"
@@ -4691,7 +4892,7 @@ function getRoomStatusIconName(item) {
       </template>
 
       <!-- Options for Green Booking -->
-      <template v-else-if="contextMenu.type === 'green-booking'">
+      <template v-else-if="contextMenu.type === 'green-booking' && !isHousekeepingModule">
         <button 
           v-if="canCheckInBooking(contextMenu.booking)"
           @click="triggerMenuAction('Giao phòng')"
@@ -4735,7 +4936,7 @@ function getRoomStatusIconName(item) {
       </template>
 
       <!-- Options for Blue Booking -->
-      <template v-else-if="contextMenu.type === 'blue-booking'">
+      <template v-else-if="contextMenu.type === 'blue-booking' && !isHousekeepingModule">
         <button 
           v-if="!contextMenu.booking?.isDoNotMove"
           @click="triggerMenuAction('Khóa Di Chuyển Phòng')"

@@ -743,7 +743,7 @@ const submitBulkLock = async (force = false) => {
     // Check if it is a confirmation request for booking overlap
     if (err.response && err.response.data && err.response.data.require_confirm) {
       const confirmed = await uiStore.confirm({
-        title: 'Cảnh báo phòng âm',
+        title: 'Cảnh báo',
         message: err.response.data.message || 'Phòng âm. Bạn có muốn tiếp tục thao tác?',
         confirmText: 'Tiếp tục',
         cancelText: 'Hủy'
@@ -869,7 +869,7 @@ const submitBatchSave = async (force = false) => {
     console.error('Lỗi khi lưu hàng loạt phòng khóa:', err)
     if (err.response?.data?.require_confirm) {
       const confirmed = await uiStore.confirm({
-        title: 'Cảnh báo phòng âm',
+        title: 'Cảnh báo',
         message: err.response.data.message || 'Phòng âm. Bạn có muốn tiếp tục thao tác?',
         confirmText: 'Tiếp tục',
         cancelText: 'Hủy'
