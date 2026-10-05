@@ -2081,8 +2081,12 @@ const toggleAllPaymentSelection = (checked) => {
   if (checked) selectedServiceIds.value = []
 }
 
-const openCancelServiceModal = () => {
-  if (canOpenCancelServiceModal.value) showCancelServiceModal.value = true
+const openCancelServiceModal = async () => {
+  if (canOpenCancelServiceModal.value) {
+    const authorized = await uiStore.requestAuthorization()
+    if (!authorized) return
+    showCancelServiceModal.value = true
+  }
 }
 
 const openServiceAdjustment = async () => {
@@ -2187,8 +2191,10 @@ const openTransferPaymentModal = () => {
   }
 }
 
-const openDebtSettlementModal = () => {
+const openDebtSettlementModal = async () => {
   if (canOpenDebtSettlement.value) {
+    const authorized = await uiStore.requestAuthorization()
+    if (!authorized) return
     showDebtSettlementModal.value = true
   }
 }
@@ -2815,7 +2821,7 @@ const currentFolioDepositTotal = computed(() => {
   return folioDepositTotal(activeFolioTab.value)
 })
 
-const openPaymentModal = () => {
+const openPaymentModal = async () => {
   if (!selectedBooking.value) {
     uiStore.showToast('Vui lòng chọn Booking hoặc phòng cần thanh toán.', 'warning')
     return
@@ -2827,6 +2833,9 @@ const openPaymentModal = () => {
     uiStore.showToast('Không xác định được khách của dòng đang chọn. Vui lòng chọn đúng khách trước khi thanh toán.', 'warning')
     return
   }
+
+  const authorized = await uiStore.requestAuthorization()
+  if (!authorized) return
 
   showPaymentModal.value = true
 }
@@ -2855,6 +2864,9 @@ const openDeletePaymentModal = async () => {
     uiStore.showToast('Mỗi lần chỉ được hủy một lần thanh toán hoàn chỉnh.', 'warning')
     return
   }
+
+  const authorized = await uiStore.requestAuthorization()
+  if (!authorized) return
 
   showDeletePaymentModal.value = true
 }

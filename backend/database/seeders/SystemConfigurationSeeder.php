@@ -328,5 +328,16 @@ class SystemConfigurationSeeder extends Seeder
                 'created_at' => now(),
             ]
         );
+
+        // Seed CheckAuthorization system parameter
+        \Illuminate\Support\Facades\DB::table('hotel_configs')->updateOrInsert(
+            ['name' => 'CheckAuthorization'],
+            [
+                'value' => '0',
+                'description' => 'Xác thực mật khẩu người dùng khi thực hiện thao tác xóa cọc, xóa booking, xóa thanh toán, xóa dịch vụ, thanh toán (0: Không xác thực, khác 0: Xác thực)',
+                'updated_at' => now(),
+                'created_at' => now(),
+            ]
+        );
     }
 }

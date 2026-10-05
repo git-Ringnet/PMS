@@ -242,4 +242,28 @@ class AuthController extends Controller
             'message' => 'Đổi mật khẩu thành công.',
         ]);
     }
+
+    /**
+     * Xác thực mật khẩu user đang đăng nhập (dùng cho CheckAuthorization).
+     */
+    public function verifyPassword(Request $request)
+    {
+        $request->validate([
+            'password' => 'required|string',
+        ]);
+
+        $user = $request->user();
+        if (!$user || !Hash::check((string) $request->input('password'), $user->password)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Đăng nhập không thành công',
+                'errors'  => ['password' => ['Đăng nhập không thành công']]
+            ], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Xác thực thành công',
+        ]);
+    }
 }

@@ -18,6 +18,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/me/change-password', [AuthController::class, 'changePassword']);
+    Route::post('/me/verify-password', [AuthController::class, 'verifyPassword']);
 
     Route::get('/user', function (Request $request) {
         return $request->user();
