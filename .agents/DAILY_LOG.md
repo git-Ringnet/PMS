@@ -18,6 +18,125 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-10-02] - Khôi phục hiển thị chữ trên booking theo timeline tự nhiên (Phương án 1) ([RoomPlanPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomPlanPage.vue))
+### Module: Kế hoạch phòng / Sơ đồ kế hoạch ([RoomPlanPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomPlanPage.vue))
+
+- **Yêu cầu & Giải pháp**:
+  - Yêu cầu: Quay lại cách hiển thị chữ trên booking trước đó (Phương án 1 - chữ trượt tự nhiên theo timeline ngày lưu trú thực tế).
+  - Khôi phục container chữ: Áp dụng lại `pastDaysOffset` và `marginLeft: calc(-pastDaysOffset * (100% / span))` tại [RoomPlanPage.vue#L4552-L4560](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomPlanPage.vue#L4552-L4560), đặt `pl-0` khi `!isCheckInVisible` để các ký tự của những ngày quá khứ ẩn tự nhiên ra phía ngoài thanh cắt, chỉ hiển thị phần chữ tương ứng với các ngày nằm trong khung nhìn.
+- **Kiểm thử**:
+  - Frontend production build (`npm run build`) thành công 100%.
+  - Xác thực trực quan bằng browser subagent trên khoảng ngày `01/09/2026 ~ 29/09/2026`: chữ trên các thanh booking bị cắt đã trượt tự nhiên theo đúng timeline trước đó.
+
+## [2026-10-02] - Đồng bộ độ rộng viền phải thanh booking trên Kế hoạch phòng ([RoomPlanPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomPlanPage.vue))
+### Module: Kế hoạch phòng / Sơ đồ kế hoạch ([RoomPlanPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomPlanPage.vue))
+
+- **Yêu cầu & Giải pháp**:
+  - Yêu cầu: Khắc phục trường hợp phòng như 107 (có ngày đến hiển thị trên màn hình) bị hụt mép phải 1px so với viền cột trên sơ đồ.
+  - Nguyên nhân: Trước đó công thức CSS dùng `calc(span * 100% - 2px)` khi `isCheckInVisible = true`, trong khi các phòng khác dùng `calc(span * 100% - 1px)`.
+  - Khắc phục: Đồng bộ công thức độ rộng về `calc(${bk.span * 100}% - 1px)` tại [RoomPlanPage.vue#L4504](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomPlanPage.vue#L4504) để mép phải chạm khít đường kẻ cột.
+- **Kiểm thử**:
+  - Chạy `npm run build` thành công 100% không phát sinh lỗi.
+  - Chụp và xác thực trực quan qua browser screenshot: mép phải của thanh booking phòng 107 đã khớp hoàn toàn với đường kẻ cột và thẳng hàng với các phòng khác.
+
+## [2026-10-02] - Hiển thị thanh booking phát sinh trước đó theo Phương án 1 (Kế hoạch phòng - Dòng 272)
+### Module: Kế hoạch phòng / Sơ đồ kế hoạch ([RoomPlanPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomPlanPage.vue))
+
+- **Yêu cầu nghiệp vụ & Giải pháp**:
+  - Yêu cầu (Dòng 272): Chỉnh lại giao diện Kế hoạch phòng (Room Plan) khi xem bắt đầu từ một ngày nhất định. Đối với các booking hoặc phòng khóa phát sinh và nhận phòng trước ngày bắt đầu xem, cần hiển thị cắt ngang thanh booking ở biên trái (không bo tròn, không viền trái) để người xem nhận biết ngay phòng này đã ở trước đó, phân biệt rõ với phòng check-in từ ngày bắt đầu xem (có bo góc trái, viền trái và vạch đến màu xanh).
+  - Triển khai theo **Phương án 1 (cắt tự nhiên theo timeline như hệ thống cũ)**:
+    1. **Tính toán vị trí & độ rộng (processedBookings)**:
+       - Booking bắt đầu trước ngày xem (`!isCheckInVisible`): `leftRatio = 0` (bắt đầu tại mốc 00:00 của ngày đầu tiên).
+       - Tính số ngày phát sinh trước đó: `diffDays = (visibleStart - checkInDate)` (tính theo ngày). `pastDaysOffset = diffDays - 0.5` (do check-in lúc 14:00 cách 00:00 nửa ngày).
+       - Bổ sung `baseSpan += 0.5` khi `!isCheckInVisible && isCheckOutVisible` để thanh kéo dài trọn vẹn từ 00:00 ngày đầu đến 12:00 ngày trả phòng.
+       - Tương tự cho các trường hợp booking kết thúc sau ngày cuối visible: thanh kéo dài đến hết biên phải và cắt phẳng bên phải.
+    2. **Định dạng hiển thị trực quan (Template & CSS)**:
+       - Biên trái: `bk.isCheckInVisible ? 'pl-2.5 rounded-l border-l' : 'pl-1.5 rounded-l-none border-l-0'`.
+       - Biên phải: `bk.isCheckOutVisible ? 'pr-2.5 rounded-r border-r' : 'pr-0 rounded-r-none border-r-0'`.
+       - Chữ/Nhãn: Bắt đầu hiển thị chuẩn từ đầu thanh booking (căn lề trái, `pl-1.5` khi cắt phẳng), đảm bảo luôn đọc được đầy đủ `Mã booking - Tên khách...` mà không bị lệch hay che khuất phần đầu chữ.
+       - Vạch trạng thái dưới đáy: Hiển thị đầy đủ màu sắc tình trạng đăng ký (`Guaranteed` xanh lá 🟢, `None Guaranteed` xám,...) cho toàn bộ booking kể cả khi bị cắt ngày đến. Vạch đỏ (Phòng đi 🔴) hiển thị đúng ngày trả phòng.
+       - Tay nắm kéo giãn (resize handles): Ẩn tay nắm trái khi `!isCheckInVisible` và ẩn tay nắm phải khi `!isCheckOutVisible` để tránh thao tác vượt ngoài phạm vi nhìn thấy.
+- **Kiểm thử**:
+  - Bộ unit test `test_row272_unit.mjs` bao phủ 6 trường hợp kiểm thử (check-in trong kỳ, check-in trước kỳ, check-out sau kỳ, khóa phòng OOO/OOS) vượt qua 100% (6/6 passed).
+  - Frontend production build (`npm run build`) thành công 100% không phát sinh lỗi.
+  - Xác thực trực quan qua browser capture trên Room Plan.
+
+## [2026-10-02] - Xử lý truyền màn hình hóa đơn cho booking đã check-out (Booking / Hóa đơn - Dòng 317)
+### Module: Đăng ký đặt phòng & Quản lý hóa đơn Trả phòng ([CreateRegistrationPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [CheckoutPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue), [GeneralSearchPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/GeneralSearchPage.vue))
+
+- **Yêu cầu nghiệp vụ & Giải pháp**:
+  - Yêu cầu: "Các booking tình trạng 2 (đã check out) đứng ở màn hình booking -> bấm vào nút hóa đơn để chuyển nhanh qua màn hình hóa đơn chưa truyền đến đúng booking đang thao tác".
+  - Nguyên nhân: Nút Hóa đơn trên màn hình booking chỉ push `bookingCode` mà không truyền trạng thái đăng ký; trong khi màn hình Trả phòng (`CheckoutPage`) mặc định lọc theo `register: 'current'`, chỉ nạp booking có `status: '0,1,4'`, đồng thời lọc bỏ các phòng đã checkout, dẫn đến booking đã checkout không có trong danh sách tìm kiếm và màn hình hiển thị trống.
+  - Giải pháp:
+    1. Tại [CreateRegistrationPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue): Kiểm tra nếu booking có `status === 2` hoặc toàn bộ phòng đã checkout (`bookingRoomStatus === 2`), tự động truyền thêm query `register: 'old'` khi bấm nút Hóa đơn.
+    2. Tại [CheckoutPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue):
+       - Đồng bộ `register` từ `route.query`: Đọc `route.query.register` và cập nhật vào `registerFilter` cùng `appliedCheckoutFilter.register` trong `onMounted` và `watch(route.query)`.
+       - Tự động bỏ kích hoạt lọc ngày đi (`departureEnabled: false`) khi mở trực tiếp một `bookingCode` cụ thể để tránh lọc nhầm ngày.
+       - Cơ chế fallback: Nếu booking chưa có trong `allBookingsList`, tự động gọi API `fetchBookings({ search: bookingKey, status: '0,1,2,4' })`. Nếu là booking đã checkout, tự động chuyển bộ lọc sang `register: 'old'` và nạp/chọn chính xác booking cùng phòng.
+    3. Tại [GeneralSearchPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/GeneralSearchPage.vue): Bổ sung truyền `register: 'old'` tương tự khi người dùng điều hướng sang Checkout từ dòng đã checkout.
+- **Kiểm thử**:
+  - Đã kiểm thử tự động End-to-End bằng browser subagent: Tạo booking test đã checkout (`status = 2`), mở booking ở màn hình Đăng ký, bấm "Hóa đơn", màn hình tự động chuyển sang Trả phòng với tab "Đăng ký cũ" được chọn, hiển thị đúng mã booking, tên khách, số phòng, folio và tiền dịch vụ/thanh toán.
+  - Frontend production build (`npm run build`) đạt 100% không phát sinh lỗi.
+
+## [2026-10-02] - Chuẩn hóa tiêu đề cảnh báo phòng âm khi khóa phòng (Khóa phòng - Dòng 312)
+### Module: Khóa phòng, Sơ đồ phòng, Kế hoạch phòng ([LockRoomPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/LockRoomPage.vue), [RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue), [RoomPlanPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomPlanPage.vue))
+
+- **Yêu cầu nghiệp vụ & Giải pháp**:
+  - Yêu cầu: "chỉnh lại câu cảnh báo phòng âm thành Cảnh báo".
+  - Chuẩn hóa tiêu đề hộp thoại xác nhận cảnh báo `uiStore.confirm` từ `'Cảnh báo phòng âm'` thành `'Cảnh báo'` trên toàn bộ các nơi có thao tác khóa phòng:
+    1. [LockRoomPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/LockRoomPage.vue): Trong hàm tạo khóa phòng mới `submitBulkLock` và hàm sửa hàng loạt phòng khóa `submitBatchSave`.
+    2. [RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue): Trong hàm khóa phòng `submitRoomLock` trên Sơ đồ phòng.
+    3. [RoomPlanPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomPlanPage.vue): Trong hàm khóa phòng `handleBulkLockSubmit` trên Kế hoạch phòng.
+  - Bảo toàn 100% nội dung thông báo chi tiết từ backend (`resData.message`) và luồng xác nhận tiếp tục (`force: true`).
+- **Kiểm thử**:
+  - Test tự động Node.js `test_row312.mjs` đạt 3/3 (100% PASS).
+  - Backend `RoomLockTest` đạt 15/15 (50 assertions).
+  - Frontend production build (`npm run build`) đạt 100% không phát sinh lỗi.
+
+## [2026-10-02] - Lưu và khôi phục trạng thái xem khi chuyển màn hình (Booking / Hóa đơn / Kế hoạch phòng - Dòng 309)
+### Module: Đăng ký đặt phòng, Thu ngân Checkout, Kế hoạch phòng ([CreateRegistrationPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [CheckoutPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue), [RoomPlanPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomPlanPage.vue))
+
+- **Yêu cầu nghiệp vụ & Giải pháp**:
+  1. **Màn hình Booking ([CreateRegistrationPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))**:
+     - Khắc phục lỗi: Khi đang xem 1 booking (ví dụ: booking 13) -> chuyển sang màn hình khác -> quay lại thì hệ thống tự động nhảy sang booking mới nhất (`max.id`).
+     - Giải pháp: Lưu `activeTab.dbId` vào `sessionStorage` (`pms_last_active_booking_id`) khi chuyển tab/mở booking; trong `loadBookings()`, ưu tiên tìm và khôi phục đúng booking đã lưu thay vì tự động mở booking mới nhất. Xóa key khi người dùng chủ động đóng tab (`handleCloseTab`).
+  2. **Màn hình Hóa đơn Checkout ([CheckoutPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue))**:
+     - Khắc phục lỗi: Khi đang chọn hóa đơn/booking/phòng -> chuyển sang màn hình khác -> quay lại thì mất dữ liệu đang chọn và bảng kết quả hiển thị trống.
+     - Giải pháp: Lưu `bookingId`, `roomId`, `guestId` vào `sessionStorage` khi gọi `selectBookingFromSearch` / `selectRoomItemRow`; trong `onMounted()`, nếu không có query route thì tự động đọc `sessionStorage` và chọn lại đúng booking/phòng/khách đã chọn trước đó. Tự động xóa key khi checkout hoàn tất hoặc khi người dùng làm mới/xóa bộ lọc (`clearCheckoutPanels`).
+  3. **Màn hình Kế hoạch phòng ([RoomPlanPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomPlanPage.vue))**:
+     - Khắc phục lỗi: Khi đang xem và cuộn tới phòng/ngày cụ thể -> chuyển sang màn hình khác -> quay lại thì bị cuộn về đầu trang (0, 0) và reset khoảng ngày về 30 ngày mặc định.
+     - Giải pháp: Lắng nghe scroll trên `roomPlanScrollContainer` (debounced) và trong `onBeforeUnmount` lưu `scrollTop`, `scrollLeft` vào `sessionStorage` (`pms_roomplan_scroll_top`, `pms_roomplan_scroll_left`). Lưu `startDate`, `endDate` khi đổi ngày (`saveDateRange`). Trong `onMounted()`, khôi phục khoảng ngày và sau khi dữ liệu phòng/booking render xong (`nextTick`), khôi phục chính xác vị trí cuộn scroll.
+- **Kiểm thử**:
+  - Chạy `npm run build` thành công 100% không có lỗi cú pháp hoặc cảnh báo mới.
+  - Không sửa đổi database hay API backend, bảo toàn 100% logic nghiệp vụ và dữ liệu hệ thống.
+
+## [2026-10-02] - Triển khai cấu hình quyền đổi trạng thái phòng tại Lễ tân (Room Map - Dòng 287)
+### Module: Sơ đồ phòng & Lễ tân ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue), [RoomStatusPermissionService.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Services/RoomStatusPermissionService.php), [RoomStatusPermissionTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Feature/RoomStatusPermissionTest.php))
+
+- **Yêu cầu nghiệp vụ & Giải pháp**:
+  1. **Quan hệ giữa Công tắc chính (`AllowChangeRoomStatusAtReception`) và Danh sách vai trò (`RoleUserAllowChangeRoomStatusAtReception`)**:
+     - `AllowChangeRoomStatusAtReception`: Đóng vai trò là công tắc chính (Master Switch). Nếu giá trị là `0` (Tắt) -> Toàn bộ người dùng thường tại Lễ tân đều KHÔNG được phép đổi trạng thái phòng (kể cả khi vai trò có nằm trong `RoleUserAllowChangeRoomStatusAtReception`).
+     - Khi `AllowChangeRoomStatusAtReception` là `1` (Bật): Hệ thống mới xét tiếp đến `RoleUserAllowChangeRoomStatusAtReception`:
+       - Nếu có cấu hình danh sách vai trò: Chỉ người dùng thuộc các vai trò được chỉ định mới được đổi trạng thái phòng.
+       - Nếu để trống: Toàn bộ nhân viên Lễ tân đều được đổi trạng thái phòng.
+     - Super Admin (`isSuperAdmin()` hoặc username `admin`) luôn được phép đổi trạng thái phòng.
+     - Tổng hợp toàn bộ vai trò của user bao gồm: vị trí/chức vụ theo schema RBAC mới (`user_branch_positions` -> `positions`, `PositionBranchRole` -> `roles`), roles từ pivot `user_roles`, cùng mã và tên chức danh/phòng ban (`job_title_code`, `job_title`, `department_code`, `department`).
+     - Tách biệt rõ ràng cấp bậc trưởng bộ phận (`FOM`, `fo_manager`, `Trưởng Lễ Tân`) và nhân viên (`FO`, `fo_staff`, `Nhân viên lễ tân`), tránh nhầm lẫn do trùng chuỗi viết tắt.
+  2. **Áp dụng đồng bộ trên cả 2 chế độ Sơ đồ phòng (Grid mode & List mode)**:
+     - Dạng lưới (Grid mode): Kiểm tra `canChangeRoomStatus` khi bấm chuột phải đổi tình trạng phòng trống, phòng khóa OOO/OOS, phòng đang ở và phím tắt bàn phím (1, 2, 3).
+     - Dạng danh sách (List mode): Kiểm tra `canChangeRoomStatus` ở context menu, menu cập nhật trạng thái hàng loạt (`toggleBulkStatusMenu`), nút bấm cập nhật hàng loạt và hàm `bulkUpdateRoomStatus`.
+     - Tự động cập nhật quyền tức thì mà không cần tải lại trang khi cấu hình khách sạn thay đổi thông qua sự kiện `hotel-config-updated` và BroadcastChannel `pms-room-updates`.
+  3. **Khởi tạo tài khoản kiểm thử nghiệp vụ (`letan_test`)**:
+     - Tài khoản kiểm thử: `letan_test`.
+     - Vai trò: `fo_staff` (Nhân Viên Lễ Tân), Vị trí: `FO` (Nhân Viên Lễ Tân), Bộ phận: `FO` (Bộ phận Lễ tân).
+     - Gán quyền truy cập chi nhánh `HKT1` (primary), `HKT2`, `HKT3`, `HKT4`.
+     - Đã kiểm thử thực tế API `/api/rooms/permissions`: Bị chặn khi cấu hình `RoleUserAllowChangeRoomStatusAtReception` = `FOM` và được phép khi cấu hình `FOM, FO` hoặc để trống (fallback `AllowChangeRoomStatusAtReception = 1`).
+- **Kiểm thử**:
+  - Tạo mới bộ test tự động [RoomStatusPermissionTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Feature/RoomStatusPermissionTest.php) bao phủ 7 ca kiểm thử: Housekeeping luôn được phép, Reservation luôn bị chặn, Super Admin luôn được phép, Fallback cấu hình cũ khi role config rỗng, Chặn user không thuộc role, Cho phép user có role/position RBAC hợp lệ, và Chặn cập nhật hàng loạt `bulkUpdateStatus`. Chạy đạt 7/7 (19 assertions).
+  - Test suite liên quan [RoomLockTest.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/tests/Feature/RoomLockTest.php) đạt 15/15 (50 assertions).
+  - Frontend production build (`npm run build`) thành công 100% không phát sinh lỗi.
+  - Không thay đổi schema database runtime, đảm bảo an toàn toàn vẹn dữ liệu.
+
 ## [2026-10-01] - Điều chỉnh Tooltip Booking và Submenu Context Menu trên Sơ đồ phòng (Room Map - Dòng 293)
 ### Module: Sơ đồ phòng ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
 
