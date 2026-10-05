@@ -18,6 +18,28 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-10-05] - Tinh gọn phân trang Lịch sử thao tác & Chặn log rác cấu hình user-settings
+### Module: Quản trị hệ thống / Lịch sử thao tác ([ActivityLogTab.vue](file:///d:/PMS/frontend/src/pages/system/components/ActivityLogTab.vue), [LogActivity.php](file:///d:/PMS/backend/app/Http/Middleware/LogActivity.php), [ActivityLogController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/ActivityLogController.php))
+
+- **Yêu cầu & Vấn đề giải quyết**:
+  - Giao diện phân trang có quá nhiều chỗ điền (bấm vào dấu `...` cũng hiện ô nhập, kèm ô `[input] [Đi]` bên ngoài).
+  - Bảng `activity_logs` phình to bất thường với 132,433 log (4,415 trang), trong đó có tới 132,236 log `user-settings` (chiếm 99.85%) do middleware `LogActivity` tự động log mọi request `PUT /api/user-settings`.
+- **Giải pháp hoàn thành**:
+  1. **Frontend ([ActivityLogTab.vue](file:///d:/PMS/frontend/src/pages/system/components/ActivityLogTab.vue))**:
+     - Hiển thị tối đa 3 số trang (`visiblePages`): Chỉ hiển thị nhóm 3 trang liên tiếp (ví dụ: `1, 2, 3` khi ở trang đầu, `4, 5, 6` khi ở trang 4), không hiển thị dàn trải toàn bộ các trang.
+     - Ô `...` tích hợp duy nhất: Đặt ngay sau các số trang với placeholder `...`, người dùng nhập số trang và nhấn Enter là tự fill/nhảy trực tiếp đến trang đó.
+     - Bỏ hoàn toàn ô `[...] Đi` tách biệt bên ngoài, gom toàn bộ thanh điều hướng thành một hàng nút liền mạch gọn đẹp: `[ « ] [ < ] [ 4 ] [ 5 ] [ 6 ] [ ... ] [ > ] [ » ]`.
+     - Bộ chọn số dòng: `30`, `50`, `100`, `200` dòng/trang.
+  2. **Backend ([LogActivity.php](file:///d:/PMS/backend/app/Http/Middleware/LogActivity.php), [ActivityLogController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/ActivityLogController.php))**:
+     - Thêm điều kiện skip `user-settings` trong `terminate()` của middleware `LogActivity.php`, ngăn chặn vĩnh viễn việc ghi log rác cho các thay đổi giao diện cá nhân.
+     - Nâng giới hạn `per_page` tối đa lên 500.
+  3. **Dọn dẹp CSDL**:
+     - Đã xóa sạch 132,236 bản ghi rác `user-settings` trong CSDL.
+     - Số lượng log thực tế của hệ thống trở về 197 bản ghi (~7 trang ở mức 30 dòng/trang).
+  4. **Kiểm thử**:
+     - Frontend production build (`npm run build`) thành công 100%.
+     - Kiểm tra CSDL xác nhận còn 197 log thực tế hoạt động trơn tru.
+
 ## [2026-10-05] - Khắc phục lỗi sửa đơn giá tiền phòng đã post hóa đơn nhưng không cập nhật (Booking 6 - Phòng 105)
 ### Module: Đặt phòng / Quản lý dịch vụ & Hóa đơn ([BookingRoomServiceController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomServiceController.php), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [UpdateRoomRateServiceBillTest.php](file:///d:/PMS/backend/tests/Feature/UpdateRoomRateServiceBillTest.php))
 
