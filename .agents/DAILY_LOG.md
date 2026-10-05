@@ -18,6 +18,36 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-10-05] - Khắc phục lỗi sửa đơn giá tiền phòng đã post hóa đơn nhưng không cập nhật (Booking 6 - Phòng 105)
+### Module: Đặt phòng / Quản lý dịch vụ & Hóa đơn ([BookingRoomServiceController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomServiceController.php), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [UpdateRoomRateServiceBillTest.php](file:///d:/PMS/backend/tests/Feature/UpdateRoomRateServiceBillTest.php))
+
+- **Nguyên nhân lỗi**:
+  - Đối với các đêm lưu trú đã check-in / đã post tiền phòng sang folio (`service_bills`), giao diện bảng chi tiết dịch vụ của phòng (`getRoomDisplayServices`) ưu tiên lấy đơn giá trực tiếp từ bản ghi hóa đơn trong `service_bills` để đảm bảo khớp số liệu với màn hình Hóa đơn (Checkout).
+  - Khi người dùng sửa đơn giá tiền phòng ngày 31/08 (hoặc qua popover giảm giá) trên màn hình Đăng ký/Booking:
+    - API `POST /booking-rooms/{roomId}/services` (`store`) chỉ ghi/cập nhật bảng `booking_room_services` mà bỏ qua việc cập nhật hóa đơn `service_bills` (hóa đơn `Ma = 7`, `Amount = 540,000`), không cập nhật `service_bill_details` và `room_night_bills`.
+    - Phía frontend, sau khi gọi API thành công, mảng `room.serviceBills` trong bộ nhớ client vẫn giữ hóa đơn cũ (540,000) nên khi Vue re-render lại bảng dịch vụ, hệ thống đọc lại từ `service_bills` và hiển thị lại giá 540,000.
+    - Trong khi các booking khác và ngày 01/09 chưa có hóa đơn `service_bills` nên chỉ lưu ở `booking_room_services` và cập nhật bình thường.
+
+- **Giải pháp xử lý**:
+  1. **Backend ([BookingRoomServiceController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomServiceController.php))**:
+     - Trong phương thức `store()`: Khi nhận yêu cầu cập nhật dịch vụ tiền phòng (`RM` hoặc `ROOM_CHARGE`), tìm kiếm xem phòng đã có hóa đơn tiền phòng `ServiceBill` chưa thanh toán (`Edit = 0`, `Status = 1`, `PaymentId = null`, `VatId = null`) trong ngày đó hay chưa.
+     - Nếu đã có hóa đơn chưa thanh toán:
+       - Cập nhật đơn giá và thành tiền mới (`Amount`, `Quantity`) vào `service_bills`.
+       - Tính lại cơ cấu thuế/phí (`TaxBreakdownService`) và cập nhật `service_bill_details` (cập nhật dòng Ma = 1 tiền phòng, bảo lưu tiền ăn sáng Ma = 2 và Ma = 3 nếu có cấu hình ăn sáng).
+       - Cập nhật đơn giá mới vào bảng thống kê đêm phòng `room_night_bills`.
+       - Đồng bộ `is_posted = 1` và `service_bill_id = $bill->Ma` vào `booking_room_services`.
+       - Trả về đối tượng `service_bill` đã cập nhật trong response JSON.
+     - Nếu hóa đơn đã thanh toán (`PaymentId !== null`) hoặc đã xuất VAT (`VatId !== null`): Chặn sửa và trả về mã lỗi 422 cảnh báo rõ ràng.
+  2. **Frontend ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))**:
+     - Tại `handleInlineServiceRateChange` (sửa đơn giá trực tiếp trên sub-table) và `closeDiscountPopover` (sửa qua popover giảm/tăng giá):
+       - Đồng bộ ngay giá mới vào `svc.bill_ref` và cập nhật trực tiếp vào đối tượng hóa đơn tương ứng trong mảng `room.serviceBills`.
+       - Khi API backend phản hồi `service_bill` mới, cập nhật chính xác vào `room.serviceBills` để Vue re-render hiển thị ngay lập tức đơn giá mới mà không bị nhảy lại giá cũ.
+  3. **Kiểm thử**:
+     - Viết bộ Feature Test mới [UpdateRoomRateServiceBillTest.php](file:///d:/PMS/backend/tests/Feature/UpdateRoomRateServiceBillTest.php) bao phủ 2 trường hợp: Cập nhật đơn giá tiền phòng đồng bộ sang `service_bills`, `service_bill_details`, `room_night_bills`, `booking_room_services`; và chặn cập nhật khi hóa đơn đã thanh toán. Chạy đạt **2/2 tests PASSED (14 assertions)**.
+     - Chạy regression test [BookingCompanySyncTest.php](file:///d:/PMS/backend/tests/Feature/BookingCompanySyncTest.php) đạt **3/3 tests PASSED**.
+     - Frontend production build (`npm run build`) thành công 100% trong 3.79s không phát sinh lỗi.
+     - Kiểm thử trực tiếp phương thức API trên DB thật `pms_hkt1` đối với Booking 6 - Phòng 105: hóa đơn Ma=7 cập nhật thành công giá mới và khôi phục an toàn về trạng thái gốc.
+
 ## [2026-10-02] - Khôi phục hiển thị chữ trên booking theo timeline tự nhiên (Phương án 1) ([RoomPlanPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomPlanPage.vue))
 ### Module: Kế hoạch phòng / Sơ đồ kế hoạch ([RoomPlanPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomPlanPage.vue))
 

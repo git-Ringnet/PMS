@@ -969,6 +969,21 @@ async function handleInlineServiceRateChange(room, svc, newRate) {
     svc.svc_ref.rate = newRate
     svc.svc_ref.total = (svc.svc_ref.quantity || 1) * newRate
   }
+  if (svc.bill_ref) {
+    svc.bill_ref.Amount = newRate * (svc.bill_ref.Quantity || 1)
+    svc.bill_ref.rate = newRate
+  }
+  if (room.serviceBills && Array.isArray(room.serviceBills)) {
+    const matchedBill = room.serviceBills.find(sb => {
+      const sbDate = getBillRecordDateStr(sb)
+      return (sb.Ma && svc.bill_ref && String(sb.Ma) === String(svc.bill_ref.Ma)) ||
+             (sbDate === cleanDate && isRoomCharge && isRoomChargeBillRecord(sb))
+    })
+    if (matchedBill) {
+      matchedBill.Amount = newRate * (matchedBill.Quantity || 1)
+      matchedBill.rate = newRate
+    }
+  }
 
   if (isRoomCharge) {
     if (!room.dailyRoomPrices) room.dailyRoomPrices = {}
@@ -1026,6 +1041,13 @@ async function handleInlineServiceRateChange(room, svc, newRate) {
       const res = await createBookingRoomService(room.bookingRoomId, payload)
       if (res.data?.success) {
         uiStore.showToast('Cập nhật đơn giá dịch vụ thành công!', 'success')
+        if (res.data?.service_bill && room.serviceBills && Array.isArray(room.serviceBills)) {
+          const updatedBill = res.data.service_bill
+          const idx = room.serviceBills.findIndex(b => String(b.Ma) === String(updatedBill.Ma))
+          if (idx !== -1) {
+            room.serviceBills[idx] = { ...room.serviceBills[idx], ...updatedBill }
+          }
+        }
         const freshRes = await fetchBookingRoomServices(room.bookingRoomId)
         room.services = (freshRes.data?.data || []).map(s => ({
           ...s,
@@ -3539,6 +3561,23 @@ async function closeDiscountPopover(room, svc) {
     const newRate = (room.dailyRoomPrices && room.dailyRoomPrices[cleanDate] !== undefined)
       ? room.dailyRoomPrices[cleanDate]
       : (Number(svc.rate) || 0)
+
+    if (svc.bill_ref) {
+      svc.bill_ref.Amount = newRate * (svc.bill_ref.Quantity || 1)
+      svc.bill_ref.rate = newRate
+    }
+    if (room.serviceBills && Array.isArray(room.serviceBills)) {
+      const matchedBill = room.serviceBills.find(sb => {
+        const sbDate = getBillRecordDateStr(sb)
+        return (sb.Ma && svc.bill_ref && String(sb.Ma) === String(svc.bill_ref.Ma)) ||
+               (sbDate === cleanDate && isRoomChargeBillRecord(sb))
+      })
+      if (matchedBill) {
+        matchedBill.Amount = newRate * (matchedBill.Quantity || 1)
+        matchedBill.rate = newRate
+      }
+    }
+
     try {
       const payload = {
         booking_room_id: room.bookingRoomId,
@@ -3553,6 +3592,13 @@ async function closeDiscountPopover(room, svc) {
       const res = await createBookingRoomService(room.bookingRoomId, payload)
       if (res?.data?.success) {
         uiStore.showToast('Cập nhật đơn giá phòng thành công!', 'success')
+        if (res.data?.service_bill && room.serviceBills && Array.isArray(room.serviceBills)) {
+          const updatedBill = res.data.service_bill
+          const idx = room.serviceBills.findIndex(b => String(b.Ma) === String(updatedBill.Ma))
+          if (idx !== -1) {
+            room.serviceBills[idx] = { ...room.serviceBills[idx], ...updatedBill }
+          }
+        }
         const freshRes = await fetchBookingRoomServices(room.bookingRoomId)
         room.services = (freshRes.data?.data || []).map(s => ({
           ...s,
