@@ -2317,14 +2317,14 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
         <!-- TOP HORIZONTAL METRICS BAR (Only displayed for Room Map tab) -->
         <div v-if="currentTab === 'room-map'"
-          class="relative bg-white border-b border-slate-200 px-6 py-3 shrink-0 flex items-center justify-between gap-4 select-none">
-          <div class="flex items-center gap-3 overflow-x-auto px-1.5 py-1 scrollbar-thin">
+          class="relative bg-white border-b border-slate-200 px-3 xl:px-5 py-1 xl:py-1.5 compact-low-h-metrics shrink-0 flex items-center justify-between gap-2.5 xl:gap-3.5 select-none">
+          <div class="flex items-center gap-2 xl:gap-2.5 overflow-x-auto px-1 py-0.5 scrollbar-thin">
             <!-- Date card -->
             <button @click="handleCurrentClick"
-              class="bg-white border hover:border-slate-300 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu border-slate-200/80">
+              class="bg-white border hover:border-slate-300 rounded-lg px-3 py-1.5 flex items-center gap-2.5 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu border-slate-200/80">
               <div
-                class="w-8 h-8 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-500 shrink-0">
-                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                class="w-7 h-7 rounded-md bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-500 shrink-0">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <rect x="3" y="6" width="18" height="15" rx="2" fill="#F8FAFC" stroke="#6366F1" stroke-width="2" />
                   <path d="M3 6C3 4.89543 3.89543 4 5 4H19C20.1046 4 21 4.89543 21 6V9H3V6Z" fill="#EE4444" />
                   <path d="M8 2V5" stroke="#475569" stroke-width="2" stroke-linecap="round" />
@@ -2339,18 +2339,18 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
               </div>
               <div class="flex flex-col">
                 <span class="text-[12px] leading-tight" :class="TEXT_THEME.statsValue">{{ selectedDate }}</span>
-                <span class="text-[10px] uppercase mt-0.5" :class="TEXT_THEME.statsLabel">{{ t('roomMap.current')
+                <span class="text-[9.5px] uppercase mt-0.5" :class="TEXT_THEME.statsLabel">{{ t('roomMap.current')
                   }}</span>
               </div>
             </button>
 
             <!-- Đã đến card -->
             <button @click="handleMetricClick(ROOM_STATUSES.RESERVED)"
-              class="bg-white border hover:border-slate-300 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
+              class="bg-white border hover:border-slate-300 rounded-lg px-3 py-1.5 flex items-center gap-2.5 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
               :class="activeFilter === ROOM_STATUSES.RESERVED ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
               <div
-                class="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-50 to-emerald-100/60 border border-emerald-200/50 flex items-center justify-center text-emerald-600 shadow-xs shrink-0">
-                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                class="w-7 h-7 rounded-md bg-gradient-to-br from-emerald-50 to-emerald-100/60 border border-emerald-200/50 flex items-center justify-center text-emerald-600 shadow-xs shrink-0">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path
                     d="M19 21H5C3.89543 21 3 20.1046 3 19V5C3 3.89543 3.89543 3 5 3H19C20.1046 3 21 3.89543 21 5V19C21 20.1046 20.1046 21 19 21Z"
                     fill="#F0FDF4" stroke="#22C55E" stroke-width="2" />
@@ -2362,20 +2362,20 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 </svg>
               </div>
               <div class="flex flex-col">
-                <span class="text-[10px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{
+                <span class="text-[9.5px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{
                   t('roomMap.arrivals')
                   }}</span>
-                <span class="text-[13px] mt-0.5" :class="TEXT_THEME.statsValue">{{ checkinStats }}</span>
+                <span class="text-[12px] mt-0.5" :class="TEXT_THEME.statsValue">{{ checkinStats }}</span>
               </div>
             </button>
 
             <!-- Đã đi card -->
             <button @click="handleMetricClick(ROOM_STATUSES.CHECKOUT)"
-              class="bg-white border hover:border-slate-300 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
+              class="bg-white border hover:border-slate-300 rounded-lg px-3 py-1.5 flex items-center gap-2.5 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
               :class="activeFilter === ROOM_STATUSES.CHECKOUT ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
               <div
-                class="w-8 h-8 rounded-lg bg-gradient-to-br from-rose-50 to-rose-100/60 border border-rose-200/50 flex items-center justify-center text-rose-500 shadow-xs shrink-0">
-                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                class="w-7 h-7 rounded-md bg-gradient-to-br from-rose-50 to-rose-100/60 border border-rose-200/50 flex items-center justify-center text-rose-500 shadow-xs shrink-0">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path
                     d="M19 21H5C3.89543 21 3 20.1046 3 19V5C3 3.89543 3.89543 3 5 3H19C20.1046 3 21 3.89543 21 5V19C21 20.1046 20.1046 21 19 21Z"
                     fill="#FEF2F2" stroke="#EF4444" stroke-width="2" />
@@ -2387,19 +2387,19 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 </svg>
               </div>
               <div class="flex flex-col">
-                <span class="text-[10px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{
+                <span class="text-[9.5px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{
                   t('roomMap.departures') }}</span>
-                <span class="text-[13px] mt-0.5" :class="TEXT_THEME.statsValue">{{ checkoutStats }}</span>
+                <span class="text-[12px] mt-0.5" :class="TEXT_THEME.statsValue">{{ checkoutStats }}</span>
               </div>
             </button>
 
             <!-- Đang ở card -->
             <button @click="handleMetricClick(ROOM_STATUSES.OCCUPIED)"
-              class="bg-white border hover:border-slate-300 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
+              class="bg-white border hover:border-slate-300 rounded-lg px-3 py-1.5 flex items-center gap-2.5 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
               :class="activeFilter === ROOM_STATUSES.OCCUPIED ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
               <div
-                class="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-50 to-sky-100/80 border border-sky-200/50 flex items-center justify-center text-sky-600 shadow-xs shrink-0">
-                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                class="w-7 h-7 rounded-md bg-gradient-to-br from-sky-50 to-sky-100/80 border border-sky-200/50 flex items-center justify-center text-sky-600 shadow-xs shrink-0">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M2 20V5H4V14H20V5H22V20H20V17H4V20H2C2 20 2 20 2 20Z" fill="#3B82F6" />
                   <rect x="5" y="10" width="14" height="4" rx="1" fill="#93C5FD" />
                   <rect x="6" y="7" width="4" height="2.5" rx="0.5" fill="#1D4ED8" />
@@ -2407,49 +2407,49 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 </svg>
               </div>
               <div class="flex flex-col">
-                <span class="text-[10px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{
+                <span class="text-[9.5px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{
                   t('roomMap.occupied')
                   }}</span>
-                <span class="text-[13px] mt-0.5" :class="TEXT_THEME.statsValue">{{ occupiedStats }}</span>
+                <span class="text-[12px] mt-0.5" :class="TEXT_THEME.statsValue">{{ occupiedStats }}</span>
               </div>
             </button>
 
             <!-- Khóa OOO card -->
             <button @click="handleMetricClick('OOO')"
-              class="bg-white border hover:border-slate-300 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
+              class="bg-white border hover:border-slate-300 rounded-lg px-3 py-1.5 flex items-center gap-2.5 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
               :class="activeFilter === 'OOO' ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
               <div
-                class="w-8 h-8 rounded-lg bg-gradient-to-br from-amber-50 to-amber-100/60 border border-amber-200/50 flex items-center justify-center shadow-xs shrink-0">
-                <RoomIcon name="ooo" class="w-5 h-5" />
+                class="w-7 h-7 rounded-md bg-gradient-to-br from-amber-50 to-amber-100/60 border border-amber-200/50 flex items-center justify-center shadow-xs shrink-0">
+                <RoomIcon name="ooo" class="w-4 h-4" />
               </div>
               <div class="flex flex-col">
-                <span class="text-[10px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{ t('roomMap.lockOoo')
+                <span class="text-[9.5px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{ t('roomMap.lockOoo')
                   }}</span>
-                <span class="text-[13px] mt-0.5" :class="TEXT_THEME.statsValue">{{roomStore.rooms.filter(r => r.room_status_code === 'ooo' || r.room_status_code === 'occupied_ooo' || (r.lock_type === 'OOO' && r.room_status_code !== 'housekeeping')).length }}</span>
+                <span class="text-[12px] mt-0.5" :class="TEXT_THEME.statsValue">{{roomStore.rooms.filter(r => r.room_status_code === 'ooo' || r.room_status_code === 'occupied_ooo' || (r.lock_type === 'OOO' && r.room_status_code !== 'housekeeping')).length }}</span>
               </div>
             </button>
 
             <!-- Khóa OOS card -->
             <button @click="handleMetricClick('OOS')"
-              class="bg-white border hover:border-slate-300 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
+              class="bg-white border hover:border-slate-300 rounded-lg px-3 py-1.5 flex items-center gap-2.5 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
               :class="activeFilter === 'OOS' ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
               <div
-                class="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-50 to-emerald-100/60 border border-emerald-200/40 flex items-center justify-center text-emerald-600 shadow-xs shrink-0">
-                <RoomIcon name="oos" class="w-5 h-5 text-emerald-600" />
+                class="w-7 h-7 rounded-md bg-gradient-to-br from-emerald-50 to-emerald-100/60 border border-emerald-200/40 flex items-center justify-center text-emerald-600 shadow-xs shrink-0">
+                <RoomIcon name="oos" class="w-4 h-4 text-emerald-600" />
               </div>
               <div class="flex flex-col">
-                <span class="text-[10px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{ t('roomMap.lockOos')
+                <span class="text-[9.5px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{ t('roomMap.lockOos')
                   }}</span>
-                <span class="text-[13px] mt-0.5" :class="TEXT_THEME.statsValue">{{roomStore.rooms.filter(r => r.room_status_code === 'oos' || (r.lock_type === 'OOS' && r.room_status_code !== 'housekeeping')).length }}</span>
+                <span class="text-[12px] mt-0.5" :class="TEXT_THEME.statsValue">{{roomStore.rooms.filter(r => r.room_status_code === 'oos' || (r.lock_type === 'OOS' && r.room_status_code !== 'housekeeping')).length }}</span>
               </div>
             </button>
 
             <!-- Công suất card -->
             <button @click="openStatsModal"
-              class="bg-white border hover:border-slate-300 rounded-xl px-4 py-2.5 flex items-center gap-3 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
+              class="bg-white border hover:border-slate-300 rounded-lg px-3 py-1.5 flex items-center gap-2.5 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
               :class="showStatsModal ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
               <div
-                class="w-8 h-8 rounded-full flex items-center justify-center text-slate-800 font-extrabold text-[10px] shrink-0 relative">
+                class="w-7 h-7 rounded-full flex items-center justify-center text-slate-800 font-extrabold text-[9.5px] shrink-0 relative">
                 <svg class="absolute inset-0 w-full h-full transform -rotate-90" viewBox="0 0 36 36">
                   <path class="text-slate-100" stroke="currentColor" stroke-width="4.5" fill="none"
                     d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
@@ -2458,25 +2458,25 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                     fill="none" stroke="currentColor"
                     d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
                 </svg>
-                <span class="relative z-10 text-[9px] leading-none" :class="TEXT_THEME.statsValue">
+                <span class="relative z-10 text-[8.5px] leading-none" :class="TEXT_THEME.statsValue">
                   {{ occupancyRateStats }}
                 </span>
               </div>
               <div class="flex flex-col">
-                <span class="text-[10px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{
+                <span class="text-[9.5px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{
                   t('roomMap.occupancy')
                   }}</span>
-                <span class="text-[13px] mt-0.5" :class="TEXT_THEME.statsValue">{{ occupancyRateStats }}</span>
+                <span class="text-[12px] mt-0.5" :class="TEXT_THEME.statsValue">{{ occupancyRateStats }}</span>
               </div>
             </button>
           </div>
 
           <!-- View Mode & Zoom switchers -->
-          <div class="flex items-center gap-2.5 shrink-0">
+          <div class="flex items-center gap-2 xl:gap-2.5 shrink-0">
             <div v-if="moduleContext !== 'reservation' && !isGridMode" class="bulk-status-container relative flex items-center gap-1">
               <button
                 type="button"
-                class="flex h-8 w-8 items-center justify-center rounded-md border text-white shadow-sm transition cursor-pointer"
+                class="flex h-8 w-8 items-center justify-center rounded-lg border text-white shadow-xs transition cursor-pointer"
                 :class="selectedRoomIds.length && canChangeRoomStatus && !isBulkUpdating ? 'border-emerald-700 bg-emerald-600 hover:bg-emerald-700' : 'border-slate-300 bg-slate-200 text-slate-400 hover:bg-slate-300'"
                 :disabled="isBulkUpdating"
                 title="Cập nhật tình trạng phòng"
@@ -2498,7 +2498,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
               </div>
               <button
                 type="button"
-                class="flex h-8 w-8 items-center justify-center rounded-md border text-white shadow-sm transition cursor-pointer"
+                class="flex h-8 w-8 items-center justify-center rounded-lg border text-white shadow-xs transition cursor-pointer"
                 :class="selectedRoomIds.length ? 'border-sky-400 bg-sky-400 hover:bg-sky-500' : 'border-slate-300 bg-slate-200 text-slate-400 hover:bg-slate-300'"
                 :disabled="isBulkUpdating"
                 title="In Worksheet"
@@ -2514,28 +2514,28 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
             <!-- Zoom Layout Controls -->
             <div
-              class="flex items-center gap-1 bg-slate-50 border border-slate-200/80 rounded-lg p-0.5 select-none shrink-0 font-semibold text-[11.5px] text-slate-700">
+              class="flex items-center gap-1 bg-slate-50 border border-slate-200/80 rounded-lg p-0.5 select-none shrink-0 font-semibold text-[11px] text-slate-700 h-8">
               <!-- Auto Scale Toggle Button -->
               <button @click="toggleAutoScale"
-                class="px-2.5 py-1 rounded-md cursor-pointer transition-all duration-200 text-[11px] border-none"
+                class="px-2 py-0.5 rounded-md cursor-pointer transition-all duration-200 text-[10.5px] border-none h-7 flex items-center"
                 :class="autoScale ? 'bg-sky-500 text-white font-bold shadow-xs' : 'bg-transparent text-slate-500 hover:bg-slate-100'"
                 title="Tự động thu phóng để vừa khít màn hình">
                 Auto Fit
               </button>
 
               <!-- Manual Zoom Controls (Disabled if Auto Scale is enabled) -->
-              <div class="flex items-center gap-0.5 pl-1 pr-0.5"
+              <div class="flex items-center gap-0.5 pl-1 pr-0.5 h-7"
                 :class="autoScale ? 'opacity-40 pointer-events-none' : ''">
                 <button @click="adjustManualScale('out')"
-                  class="w-5.5 h-5.5 rounded-md hover:bg-slate-200 flex items-center justify-center cursor-pointer font-extrabold border-none text-slate-600 active:scale-90 transition-transform"
+                  class="w-5 h-5 rounded hover:bg-slate-200 flex items-center justify-center cursor-pointer font-extrabold border-none text-slate-600 active:scale-90 transition-transform"
                   title="Thu nhỏ">
                   -
                 </button>
-                <span class="w-9 text-center font-bold text-slate-800 text-[10.5px] tabular-nums">
+                <span class="w-8 text-center font-bold text-slate-800 text-[10px] tabular-nums">
                   {{ Math.round(scaleFactor * 100) }}%
                 </span>
                 <button @click="adjustManualScale('in')"
-                  class="w-5.5 h-5.5 rounded-md hover:bg-slate-200 flex items-center justify-center cursor-pointer font-extrabold border-none text-slate-600 active:scale-90 transition-transform"
+                  class="w-5 h-5 rounded hover:bg-slate-200 flex items-center justify-center cursor-pointer font-extrabold border-none text-slate-600 active:scale-90 transition-transform"
                   title="Phóng to">
                   +
                 </button>
@@ -2543,35 +2543,35 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
             </div>
 
             <div class="flex items-center gap-1">
-              <button @click="isGridMode = false" class="p-2 border rounded-lg cursor-pointer transition-colors"
+              <button @click="isGridMode = false" class="h-8 w-8 flex items-center justify-center border rounded-lg cursor-pointer transition-colors"
                 :class="!isGridMode ? 'bg-[#97d5ff]/20 border-[#97d5ff] text-sky-700' : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'"
                 :title="t('roomMap.listView')">
-                <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round"
                     d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
                 </svg>
               </button>
-              <button @click="isGridMode = true" class="p-2 border rounded-lg cursor-pointer transition-colors"
+              <button @click="isGridMode = true" class="h-8 w-8 flex items-center justify-center border rounded-lg cursor-pointer transition-colors"
                 :class="isGridMode ? 'bg-[#97d5ff]/20 border-[#97d5ff] text-sky-700' : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'"
                 :title="t('roomMap.gridView')">
-                <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round"
                     d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6ZM3.75 15.75A2.25 2.25 0 0 1 6 13.5h2.25a2.25 2.25 0 0 1 2.25 2.25V18a2.25 2.25 0 0 1-2.25 2.25H6A2.25 2.25 0 0 1 3.75 18v-2.25ZM13.5 6a2.25 2.25 0 0 1 2.25-2.25H18A2.25 2.25 0 0 1 20.25 6v2.25A2.25 2.25 0 0 1 18 10.5h-2.25a2.25 2.25 0 0 1-2.25-2.25V6ZM13.5 15.75a2.25 2.25 0 0 1 2.25-2.25H18a2.25 2.25 0 0 1 2.25 2.25V18A2.25 2.25 0 0 1 18 20.25h-2.25A2.25 2.25 0 0 1 13.5 18v-2.25Z" />
                 </svg>
               </button>
-              <button @click="showFilters = !showFilters" class="p-2 border rounded-lg cursor-pointer transition-colors"
+              <button @click="showFilters = !showFilters" class="h-8 w-8 flex items-center justify-center border rounded-lg cursor-pointer transition-colors"
                 :class="showFilters ? 'bg-[#97d5ff]/20 border-[#97d5ff] text-sky-700' : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'"
                 :title="t('roomMap.toggleFilter')">
-                <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round"
                     d="M3 4a1 1 0 0 1 1-1h16a1 1 0 0 1 1 1v2.586a1 1 0 0 1-.293.707l-6.414 6.414a1 1 0 0 0-.293.707V17l-4 4v-6.586a1 1 0 0 0-.293-.707L3.293 7.293A1 1 0 0 1 3 6.586V4z" />
                 </svg>
               </button>
               <button @click="showSettings = !showSettings"
-                class="p-2 border rounded-lg cursor-pointer transition-colors settings-btn-trigger"
+                class="h-8 w-8 flex items-center justify-center border rounded-lg cursor-pointer transition-colors settings-btn-trigger"
                 :class="showSettings ? 'bg-[#97d5ff]/20 border-[#97d5ff] text-sky-700' : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'"
                 title="Cài đặt hiển thị">
-                <svg class="w-4.5 h-4.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round"
                     d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.43l-1.003.828c-.293.241-.438.613-.43.992a7.723 7.723 0 010 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.43l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 010-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.645-.869L9.594 3.94z" />
                   <circle cx="12" cy="12" r="3" />
