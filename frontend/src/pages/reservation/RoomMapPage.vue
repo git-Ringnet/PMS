@@ -2581,7 +2581,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
             <!-- Settings Dropdown Popover -->
             <div v-if="showSettings"
-              class="absolute right-6 top-16 w-72 bg-white rounded-xl shadow-2xl border border-slate-200/80 p-5 z-[50] flex flex-col gap-4 font-sans select-none animate-[fadeIn_0.15s_ease-out] settings-popover-panel text-slate-800">
+              class="absolute right-4 xl:right-6 top-[calc(100%+4px)] w-[350px] max-h-[calc(100vh-4.5rem)] overflow-y-auto scrollbar-thin bg-white rounded-xl shadow-2xl border border-slate-200/80 p-4 z-[50] flex flex-col gap-3 font-sans select-none animate-[fadeIn_0.15s_ease-out] settings-popover-panel text-slate-800">
 
               <div class="flex items-center justify-between border-b border-slate-100 pb-2">
                 <h3 class="text-sm font-black uppercase tracking-wider text-slate-800">Cài đặt hiển thị</h3>
@@ -2595,7 +2595,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
               </div>
 
               <!-- Icon Sizing section -->
-              <div class="flex flex-col gap-3">
+              <div class="flex flex-col gap-2.5">
                 <span class="text-xs font-black uppercase text-slate-400 tracking-wider text-left">Icon</span>
 
                 <!-- Group 1: Lock, Birthday, Honeymoon, Extra Bed -->
@@ -2677,19 +2677,19 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
               <!-- Room text sizing -->
               <div class="flex flex-col gap-2">
-                <span class="text-xs font-black uppercase text-slate-400 tracking-wider text-left">Kich thuoc chu</span>
+                <span class="text-xs font-black uppercase text-slate-400 tracking-wider text-left">Kích thước chữ</span>
                 <label class="flex items-center justify-between gap-3 text-xs font-bold text-slate-700">
-                  <span>So phong</span>
+                  <span class="whitespace-nowrap shrink-0 w-20 text-left">Số phòng</span>
                   <input type="range" min="10" max="24" v-model.number="settings.textSizes.roomNumber" class="flex-1 accent-sky-500" />
                   <span class="w-10 text-right text-slate-500">{{ settings.textSizes.roomNumber }}px</span>
                 </label>
                 <label class="flex items-center justify-between gap-3 text-xs font-bold text-slate-700">
-                  <span>Loai phong</span>
+                  <span class="whitespace-nowrap shrink-0 w-20 text-left">Loại phòng</span>
                   <input type="range" min="8" max="16" v-model.number="settings.textSizes.roomType" class="flex-1 accent-sky-500" />
                   <span class="w-10 text-right text-slate-500">{{ settings.textSizes.roomType }}px</span>
                 </label>
                 <label class="flex items-center justify-between gap-3 text-xs font-bold text-slate-700">
-                  <span>Ten khach</span>
+                  <span class="whitespace-nowrap shrink-0 w-20 text-left">Tên khách</span>
                   <input type="range" min="8" max="16" v-model.number="settings.textSizes.guestName" class="flex-1 accent-sky-500" />
                   <span class="w-10 text-right text-slate-500">{{ settings.textSizes.guestName }}px</span>
                 </label>
@@ -2729,7 +2729,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
               <hr class="border-slate-100" />
 
               <!-- Room Width Slider -->
-              <div class="flex flex-col gap-1.5 text-xs font-bold text-slate-700">
+              <div class="flex flex-col gap-1 text-xs font-bold text-slate-700">
                 <div class="flex justify-between">
                   <span class="text-left">Chiều dài phòng</span>
                   <span class="text-slate-500">{{ settings.roomWidth }}px</span>
@@ -2740,7 +2740,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
               </div>
 
               <!-- Room Height Slider -->
-              <div class="flex flex-col gap-1.5 text-xs font-bold text-slate-700">
+              <div class="flex flex-col gap-1 text-xs font-bold text-slate-700">
                 <div class="flex justify-between">
                   <span class="text-left">Chiều cao phòng</span>
                   <span class="text-slate-500">{{ settings.roomHeight }}px</span>
@@ -2751,13 +2751,13 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
               </div>
 
               <!-- Buttons Group -->
-              <div class="flex gap-2.5 mt-2">
+              <div class="flex gap-2.5 mt-1 pt-2 border-t border-slate-100">
                 <button @click="resetToDefaultSettings"
-                  class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black rounded-xl text-xs tracking-wider uppercase transition-colors shadow-xs border-none cursor-pointer flex items-center justify-center gap-1.5">
+                  class="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-xs uppercase transition-colors shadow-xs border border-slate-200 cursor-pointer flex items-center justify-center gap-1.5">
                   Mặc định
                 </button>
                 <button @click="saveSettings"
-                  class="flex-1 py-2.5 bg-[#97d5ff] hover:bg-[#7bc4ff] text-slate-900 font-black rounded-xl text-xs tracking-wider uppercase transition-colors shadow-xs border-none cursor-pointer flex items-center justify-center gap-1.5">
+                  class="flex-1 py-2 bg-[#0088ff] hover:bg-[#0077e6] text-white font-bold rounded-lg text-xs uppercase transition-colors shadow-xs border border-[#0088ff] cursor-pointer flex items-center justify-center gap-1.5">
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round"
                       d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
