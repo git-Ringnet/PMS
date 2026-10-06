@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;600;700&display=swap');
 @import "tailwindcss";
 
 /* Enable class-based dark mode variant for Tailwind CSS v4 */
@@ -6,7 +6,7 @@
 
 /* ===== Custom Theme ===== */
 @theme {
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-sans: 'Roboto', system-ui, -apple-system, sans-serif;
   
   /* PMS Brand Colors */
   --color-primary-50: #f0f8ff;
@@ -78,7 +78,9 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background: #ffffff;
-  color: #1e293b;
+  color: #000000D9;
+  font-size: 12px;
+  line-height: 1.5;
   overflow-x: hidden;
   transition: background-color 0.3s ease, color 0.3s ease;
 }
@@ -767,6 +769,145 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   color: #fca5a5;
   border-color: rgba(220, 38, 38, 0.5);
 }
+
+/* ==========================================================================
+   FIX FE - DÒNG 1: THỐNG NHẤT DESIGN SYSTEM TOÀN HỆ THỐNG
+   ========================================================================== */
+
+/* 1. Tiêu đề: font semi-bold (600), gồm label trên mỗi ô nhập, tiêu đề card, tab và tiêu đề modal, số tổng. Màu chữ #000000D9 */
+label,
+.form-label,
+.field-label,
+.modal-title,
+.card-title,
+.tab-title,
+.nav-tab-title,
+.font-total,
+.total-cell,
+.table-total {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  color: #000000D9;
+}
+
+/* 2. Nội dung trong ô: font regular, Màu chữ #000000D9, kích thước 12px */
+input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="reset"]),
+select,
+textarea {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 400;
+  color: #000000D9;
+}
+
+/* 3. Ô chưa nhập: regular, màu xám nhạt #A8B0BF, áp dụng cho dòng gợi ý và select đang để trống */
+input::placeholder,
+textarea::placeholder {
+  color: #A8B0BF !important;
+  font-weight: 400 !important;
+  opacity: 1;
+}
+
+/* Select khi chưa chọn giá trị (đang để rỗng) */
+select:has(option[value=""]:checked),
+select:has(option:not([value]):checked) {
+  color: #A8B0BF;
+}
+
+select option {
+  color: #000000D9;
+  font-weight: 400;
+  background-color: #ffffff;
+}
+
+select option[value=""],
+select option:disabled {
+  color: #A8B0BF;
+}
+
+/* 4. Các trường bắt buộc Điểm nhấn vàng nhạt: nền #FFF8DB, viền #F1DD8A */
+.field-required,
+.input-required,
+.pms-required,
+.required-field,
+.is-required,
+input.required,
+select.required,
+textarea.required,
+input[required]:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]),
+select[required],
+textarea[required] {
+  background-color: #FFF8DB !important;
+  border-color: #F1DD8A !important;
+}
+
+.field-required:focus,
+.input-required:focus,
+.pms-required:focus,
+.required-field:focus,
+.is-required:focus,
+input.required:focus,
+select.required:focus,
+textarea.required:focus,
+input[required]:focus,
+select[required]:focus,
+textarea[required]:focus {
+  border-color: #eab308 !important;
+  box-shadow: 0 0 0 1px #eab308 !important;
+  outline: none;
+}
+
+/* 5. Kích thước nội dung chữ đồng nhất giữa các màn hình : Nội dung 12px */
+table td,
+table th {
+  font-size: 12px;
+}
+
+table th {
+  font-weight: 600;
+  color: #000000D9;
+}
+
+/* Dark mode compatibility cho Dòng 1 */
+html.dark label,
+html.dark .form-label,
+html.dark .field-label,
+html.dark .modal-title,
+html.dark .card-title,
+html.dark .tab-title,
+html.dark .nav-tab-title,
+html.dark .font-total,
+html.dark .total-cell,
+html.dark .table-total,
+html.dark table th {
+  color: #f4f4f5 !important;
+}
+
+html.dark table td {
+  color: #e4e4e7;
+}
+
+html.dark select option {
+  color: #ffffff;
+  background-color: #080808;
+}
+
+html.dark .field-required,
+html.dark .input-required,
+html.dark .pms-required,
+html.dark .required-field,
+html.dark .is-required,
+html.dark input.required,
+html.dark select.required,
+html.dark textarea.required,
+html.dark input[required],
+html.dark select[required],
+html.dark textarea[required] {
+  background-color: #2b2613 !important;
+  border-color: #6d5b16 !important;
+  color: #ffffff !important;
+}
+
 
 
 

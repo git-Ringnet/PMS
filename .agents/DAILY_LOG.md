@@ -18,6 +18,41 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-10-06] - Thống nhất Design System toàn hệ thống (Sheet FIX FE - Dòng 1)
+### Module: Toàn bộ hệ thống Frontend ([index.html](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/index.html), [style.css](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/style.css))
+
+- **Yêu cầu & Giải pháp (Dòng 1 - FIX FE)**:
+  - **Font Roboto toàn hệ thống**: Nạp Google Fonts `Roboto` (300, 400, 500, 600, 700) trong `index.html` và `style.css`; cập nhật `@theme` `--font-sans: 'Roboto', system-ui, -apple-system, sans-serif;`.
+  - **Tiêu đề & Nhãn (Labels, Card/Tab/Modal titles, Số tổng)**: Cấu hình `semi-bold` (600), màu chữ `#000000D9`.
+  - **Nội dung trong ô (Inputs, Selects, Textareas, Table cells, Body)**: Font `regular` (400), màu chữ `#000000D9`, kích thước đồng nhất `12px`.
+  - **Ô chưa nhập (Placeholder, Select để trống)**: Font `regular`, màu xám nhạt `#A8B0BF` cho `::placeholder` và select chưa chọn giá trị.
+  - **Trường bắt buộc (Required Fields)**: Điểm nhấn vàng nhạt nền `#FFF8DB`, viền `#F1DD8A`, hỗ trợ các class tiện ích `.field-required`, `.input-required`, `.pms-required` và `input[required]`, `select[required]`. Focus viền vàng `#eab308`.
+  - **Kích thước chữ nội dung**: Đồng nhất `12px` cho `body`, form controls, table cells `td`, `th`.
+  - **Tương thích Dark mode**: Bổ sung đầy đủ bộ override màu tối cho nhãn, tiêu đề, input, select và trường bắt buộc trong dark mode.
+- **Kiểm thử**:
+  - `npm run build` hoàn thành 100% trong 5.43s không phát sinh lỗi.
+  - Kiểm tra trực quan bằng browser subagent trên các màn hình hoạt động ổn định, typography sắc nét.
+
+## [2026-10-06] - Chuẩn hóa giao diện & nghiệp vụ màn hình Phòng Trống (Sheet FIX FE - Dòng 8 đến 14)
+### Module: Phòng Trống ([AvailableRoomsPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/AvailableRoomsPage.vue), [AvailabilityDetailModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/AvailabilityDetailModal.vue))
+
+- **Yêu cầu & Giải pháp (Dòng 8 - 14 - FIX FE)**:
+  - **Dòng 8 (Giai đoạn xem)**: Mặc định nạp ngày hệ thống đến +29 ngày (~30 ngày). Bỏ lưu `pms_availability_start_date` / `pms_availability_end_date` vào `localStorage` để khi tải lại trang (F5) tự động quay về giai đoạn mặc định.
+  - **Dòng 9 (Bộ thiết lập ẩn hiện cột)**: Nút bên ngoài giữ nguyên viết tắt (`AV`, `OCC`, `ALM`,...). Bên trong pop-down 3 gạch bổ sung dịch ngôn ngữ đầy đủ (`AV - Available`, `OCC - Occupied`, `ALM - Allotment`, `OOO - Out Of Order`, `OOS - Out Of Service`, `EB - Extra Bed`, `BBC - Baby Cot`), mở rộng pop-down lên `w-56` hiển thị thẳng hàng không ngắt dòng.
+  - **Dòng 10 (Tiêu đề cột)**: Canh giữa toàn bộ tiêu đề cột, sửa thẻ `Mã Loại` và `Loại phòng` sang `text-center`.
+  - **Dòng 11 (Tổng số lượng phòng trống từng ngày)**: Đổi các ô số lượng ngày ở dòng `TỔNG` từ `font-light` sang `font-semibold text-gray-900` (in đậm đồng bộ với cột tổng và SL tối đa).
+  - **Dòng 12 (Tiêu đề Bảng Thống kê)**: Tăng kích thước chữ tiêu đề `THỐNG KÊ` lên `text-[13.5px] font-bold` (to hơn 1 size so với bảng dữ liệu).
+  - **Dòng 13 (Danh sách mục Thống kê)**:
+    - Cố định hiển thị toàn bộ 18 dòng thống kê (xóa bỏ `v-if="selectedStatuses.includes(...)"` để không bị ẩn theo bộ lọc cột phía trên).
+    - Gộp cột `Tổng` và cột trống kế bên thành 1 ô (`colspan="2"`, độ rộng 115px) với kiểu chữ `font-bold text-center`.
+    - Chuẩn hóa màu số liệu thống kê về màu đen `#000000D9 font-normal`.
+    - Chuyển màu số liệu dòng `Tổng số phòng chiếm dụng` và `Phòng trống` sang màu đỏ `#dc2626 font-semibold`.
+    - Bổ sung `border-bottom: 1px solid #e2e8f0` cho tất cả các thẻ `td` và ô sticky, giải quyết triệt để lỗi mất nét đường kẻ phân cách giữa các dòng.
+  - **Dòng 14 (Modal Chi tiết phòng trống - AvailabilityDetailModal.vue)**: Nâng cỡ chữ từ `text-[11px]` lên `text-[12px]`, font Roboto, viền `border-slate-300`, đổi nút `Đóng` sang style chuẩn `.btn-pms-close` (nền xanh, icon X, chữ trắng).
+- **Kiểm thử**:
+  - `npm run build` tại `frontend/` hoàn thành 100% trong 5.36s, không phát sinh lỗi.
+  - Đã xác thực thực tế trên giao diện qua browser subagent.
+  - Bảo toàn 100% logic và không ảnh hưởng đến bất kỳ trang hay module nào khác.
 
 ## [2026-10-05] - Mở rộng chiều ngang & hiển thị trọn vẹn popover Cài đặt hiển thị Sơ đồ phòng ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
 ### Module: Sơ đồ phòng - Cài đặt hiển thị ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
