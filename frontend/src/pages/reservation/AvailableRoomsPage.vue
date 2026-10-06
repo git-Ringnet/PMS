@@ -61,13 +61,7 @@ watch(selectedStatuses, (newVal) => {
   localStorage.setItem('pms_availability_selected_statuses', JSON.stringify(newVal))
 }, { deep: true })
 
-// Watch changes to date selections and save to localStorage
-watch([startDateYMD, endDateYMD], ([newStart, newEnd]) => {
-  if (newStart && newEnd) {
-    localStorage.setItem('pms_availability_start_date', newStart)
-    localStorage.setItem('pms_availability_end_date', newEnd)
-  }
-})
+// Giai đoạn xem mặc định theo ngày hệ thống ~ +30 ngày, không lưu localStorage để reload tự về mặc định
 
 // Generate columns representation from backend dates
 const days = computed(() => {
@@ -102,13 +96,13 @@ const activeSubColumns = computed(() => {
 // Build dynamic statuses options (only showing active ones with is_availability=true)
 const allStatusesList = computed(() => {
   return [
-    { code: 'AV', label: 'AV', color: '#0284c7', activeClasses: 'bg-sky-50 border-sky-300 text-sky-700' },
-    { code: 'OCC', label: 'OCC', color: '#3b82f6', activeClasses: 'bg-indigo-50 border-indigo-300 text-indigo-700' },
-    { code: 'ALM', label: 'ALM', color: '#f59e0b', activeClasses: 'bg-amber-50 border-amber-300 text-amber-700' },
-    { code: 'OOO', label: 'OOO', color: '#10b981', activeClasses: 'bg-emerald-50 border-emerald-300 text-emerald-700' },
-    { code: 'OOS', label: 'OOS', color: '#6b7280', activeClasses: 'bg-slate-100 border-slate-300 text-slate-700' },
-    { code: 'EB', label: 'EB', color: '#ec4899', activeClasses: 'bg-pink-50 border-pink-300 text-pink-700' },
-    { code: 'BBC', label: 'BBC', color: '#8b5cf6', activeClasses: 'bg-violet-50 border-violet-300 text-violet-700' }
+    { code: 'AV', label: 'AV', fullLabel: 'AV - Available', color: '#0284c7', activeClasses: 'bg-sky-50 border-sky-300 text-sky-700' },
+    { code: 'OCC', label: 'OCC', fullLabel: 'OCC - Occupied', color: '#3b82f6', activeClasses: 'bg-indigo-50 border-indigo-300 text-indigo-700' },
+    { code: 'ALM', label: 'ALM', fullLabel: 'ALM - Allotment', color: '#f59e0b', activeClasses: 'bg-amber-50 border-amber-300 text-amber-700' },
+    { code: 'OOO', label: 'OOO', fullLabel: 'OOO - Out Of Order', color: '#10b981', activeClasses: 'bg-emerald-50 border-emerald-300 text-emerald-700' },
+    { code: 'OOS', label: 'OOS', fullLabel: 'OOS - Out Of Service', color: '#6b7280', activeClasses: 'bg-slate-100 border-slate-300 text-slate-700' },
+    { code: 'EB', label: 'EB', fullLabel: 'EB - Extra Bed', color: '#ec4899', activeClasses: 'bg-pink-50 border-pink-300 text-pink-700' },
+    { code: 'BBC', label: 'BBC', fullLabel: 'BBC - Baby Cot', color: '#8b5cf6', activeClasses: 'bg-violet-50 border-violet-300 text-violet-700' }
   ]
 })
 
@@ -453,14 +447,10 @@ onMounted(async () => {
     console.error('Error loading registration statuses:', error)
   }
 
-  // 3. Load availability data
-  const savedStart = localStorage.getItem('pms_availability_start_date')
-  const savedEnd = localStorage.getItem('pms_availability_end_date')
-  if (savedStart && savedEnd) {
-    await loadAvailability(savedStart, savedEnd)
-  } else {
-    await loadAvailability(systemDate.value || null)
-  }
+  // 3. Load availability data (Mặc định ngày hệ thống ~ +30 ngày, reload tự động quay về mặc định)
+  localStorage.removeItem('pms_availability_start_date')
+  localStorage.removeItem('pms_availability_end_date')
+  await loadAvailability(systemDate.value || null)
 
   // Lắng nghe sự kiện realtime qua Laravel Echo
   if (echo) {
@@ -548,15 +538,15 @@ function showExportToast() {
             </svg>
           </button>
 
-          <!-- Dropdown Popup -->
+          <!-- Dropdown Popup (Thêm dịch ngôn ngữ theo Dòng 9) -->
           <div 
             v-if="isDropdownOpen" 
-            class="absolute right-0 mt-1.5 w-44 bg-white border border-slate-200 rounded-lg shadow-lg z-50 py-1 max-h-64 overflow-y-auto"
+            class="absolute right-0 mt-1.5 w-56 bg-white border border-slate-200 rounded-lg shadow-lg z-50 py-1 max-h-64 overflow-y-auto"
           >
             <label 
               v-for="status in allStatusesList" 
               :key="status.code"
-              class="flex items-center px-3 py-1.5 hover:bg-slate-50 cursor-pointer text-xs font-semibold text-gray-900 select-none"
+              class="flex items-center px-3 py-1.5 hover:bg-slate-50 cursor-pointer text-xs font-semibold text-gray-900 select-none whitespace-nowrap"
             >
               <input 
                 type="checkbox" 
@@ -581,7 +571,7 @@ function showExportToast() {
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
               </span>
-              {{ status.label }}
+              {{ status.fullLabel }}
             </label>
           </div>
         </div>
@@ -607,10 +597,10 @@ function showExportToast() {
 
         <!-- Table Headers -->
         <thead>
-          <!-- First Row: Weekdays -->
+          <!-- First Row: Weekdays (Canh giữa tiêu đề cột theo Dòng 10) -->
           <tr class="bg-slate-200 border-b border-slate-300 text-gray-900 font-semibold h-8 text-[10px]">
-            <th rowspan="2" class="p-2 border-r border-slate-300 text-left pl-3 sticky left-0 z-30 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] text-[12px] font-semibold">Mã Loại</th>
-            <th rowspan="2" class="p-2 border-r border-slate-300 sticky left-[80px] z-30 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] text-[12px] font-semibold">Loại phòng</th>
+            <th rowspan="2" class="p-2 border-r border-slate-300 text-center sticky left-0 z-30 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] text-[12px] font-semibold">Mã Loại</th>
+            <th rowspan="2" class="p-2 border-r border-slate-300 text-center sticky left-[80px] z-30 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] text-[12px] font-semibold">Loại phòng</th>
             <th rowspan="2" class="p-2 border-r border-slate-300 text-center sticky left-[250px] z-30 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] text-[12px] font-semibold">Tổng</th>
             <th rowspan="2" class="p-2 border-r border-slate-300 text-center sticky left-[300px] z-30 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] leading-tight text-[12px] font-semibold">SL Phòng Tối Đa</th>
             
@@ -723,7 +713,7 @@ function showExportToast() {
               <td 
                 v-for="(subCol, subColIndex) in activeSubColumns"
                 :key="subCol"
-                class="p-2 border-r border-slate-300 text-center text-[12px] font-light text-gray-900"
+                class="p-2 border-r border-slate-300 text-center text-[12px] font-semibold text-gray-900"
                 :class="[
                   day.isWeekend ? 'bg-[#8cc4fb]' : '',
                   subCol === 'AV' && getSumValue(subCol, day.fullDateStr) <= 0 ? 'av-negative' : 'availability-number',
@@ -738,9 +728,9 @@ function showExportToast() {
             </template>
           </tr>
 
-          <!-- THỐNG KÊ Title Header Row -->
-          <tr class="bg-slate-200 border-b border-slate-200 text-gray-900 font-semibold h-8 text-center uppercase tracking-wide text-[12px]">
-            <td colspan="4" class="p-2 sticky left-0 bg-slate-200 shadow-[inset_-1px_0_0_#e2e8f0] text-left pl-4 font-semibold">THỐNG KÊ</td>
+          <!-- THỐNG KÊ Title Header Row (Cỡ chữ to hơn 1 size theo Dòng 12) -->
+          <tr class="bg-slate-200 border-b border-slate-300 text-gray-900 h-8 text-center uppercase tracking-wide">
+            <td colspan="4" class="p-2 sticky left-0 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] text-left pl-4 font-bold text-[13.5px]">THỐNG KÊ</td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
@@ -749,18 +739,17 @@ function showExportToast() {
             ></td>
           </tr>
 
-          <!-- 1. Tổng (Always Visible) -->
-          <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px] font-normal">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Tổng</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-light">
+          <!-- 1. Tổng -->
+          <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Tổng</td>
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ (totals.grand_total * dates.length) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center font-light text-gray-900"
+              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
               :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
             >
               {{ statistics[day.fullDateStr]?.total_rooms ?? 0 }}
@@ -768,21 +757,17 @@ function showExportToast() {
           </tr>
 
           <!-- 2. OOO -->
-          <tr v-if="selectedStatuses.includes('OOO')" class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px] font-normal">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">OOO</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-light">
+          <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">OOO</td>
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.ooo ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center font-light text-gray-900"
-              :class="[
-                day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
-                (statistics[day.fullDateStr]?.ooo ?? 0) === 0 ? 'text-gray-400 font-light' : ''
-              ]"
+              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
+              :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
               :title="getStatTooltip('OOO', day.fullDateStr)"
             >
               {{ statistics[day.fullDateStr]?.ooo ?? 0 }}
@@ -790,103 +775,86 @@ function showExportToast() {
           </tr>
 
           <!-- 3. OOS -->
-          <tr v-if="selectedStatuses.includes('OOS')" class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px] font-normal">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">OOS</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-light">
+          <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">OOS</td>
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.oos ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center font-light text-gray-900"
-              :class="[
-                day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
-                (statistics[day.fullDateStr]?.oos ?? 0) === 0 ? 'text-gray-400 font-light' : ''
-              ]"
+              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
+              :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
               :title="getStatTooltip('OOS', day.fullDateStr)"
             >
               {{ statistics[day.fullDateStr]?.oos ?? 0 }}
             </td>
           </tr>
 
-          <!-- 4. Tổng số phòng có thể bán (Always Visible) -->
-          <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px] font-normal">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-gray-900 pl-4 font-semibold">Tổng số phòng có thể bán</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-gray-900 font-light">
+          <!-- 4. Tổng số phòng có thể bán -->
+          <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-gray-900 pl-4 font-semibold">Tổng số phòng có thể bán</td>
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.sellable ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center text-gray-900 font-light"
+              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
               :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
             >
               {{ statistics[day.fullDateStr]?.sellable ?? 0 }}
             </td>
           </tr>
 
-          <!-- 5. Series (Always Visible) -->
-          <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px] font-normal">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Series</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-light">
+          <!-- 5. Series -->
+          <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Series</td>
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.series ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center font-light text-gray-900"
-              :class="[
-                day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
-                (statistics[day.fullDateStr]?.series ?? 0) === 0 ? 'text-gray-400 font-light' : ''
-              ]"
+              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
+              :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
             >
               {{ statistics[day.fullDateStr]?.series ?? 0 }}
             </td>
           </tr>
 
-          <!-- 6. Allotment (Always Visible) -->
-          <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px] font-normal">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Allotment</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-light">
+          <!-- 6. Allotment -->
+          <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Allotment</td>
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.allotment ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center font-light text-gray-900"
-              :class="[
-                day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
-                (statistics[day.fullDateStr]?.allotment ?? 0) === 0 ? 'text-gray-400 font-light' : ''
-              ]"
+              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
+              :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
             >
               {{ statistics[day.fullDateStr]?.allotment ?? 0 }}
             </td>
           </tr>
 
           <!-- 7. Đặt phòng đảm bảo -->
-          <tr v-if="selectedStatuses.includes('OCC')" class="group border-b border-slate-200 h-8 text-amber-700 hover:bg-slate-50 text-[12px] font-normal">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Đặt phòng đảm bảo</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-amber-700 font-light">
+          <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Đặt phòng đảm bảo</td>
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.bk_guaranteed ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center text-amber-700 font-light"
-              :class="[
-                day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
-                (statistics[day.fullDateStr]?.bk_guaranteed ?? 0) === 0 ? 'text-gray-400 font-light' : ''
-              ]"
+              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
+              :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
               :title="getStatTooltip('OCC', day.fullDateStr)"
             >
               {{ statistics[day.fullDateStr]?.bk_guaranteed ?? 0 }}
@@ -894,59 +862,53 @@ function showExportToast() {
           </tr>
 
           <!-- 8. Đặt phòng không đảm bảo -->
-          <tr v-if="selectedStatuses.includes('OCC')" class="group border-b border-slate-200 h-8 text-red-500 hover:bg-slate-50 text-[12px] font-normal">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Đặt phòng không đảm bảo</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-red-500 font-light">
+          <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Đặt phòng không đảm bảo</td>
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.bk_nonguaranteed ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center text-red-500 font-light"
-              :class="[
-                day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
-                (statistics[day.fullDateStr]?.bk_nonguaranteed ?? 0) === 0 ? 'text-gray-400 font-light' : ''
-              ]"
+              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
+              :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
               :title="getStatTooltip('OCC', day.fullDateStr)"
             >
               {{ statistics[day.fullDateStr]?.bk_nonguaranteed ?? 0 }}
             </td>
           </tr>
 
-          <!-- 9. Tổng số phòng chiếm dụng -->
-          <tr v-if="selectedStatuses.includes('OCC')" class="group border-b border-slate-200 h-10 hover:bg-slate-50 text-[12px] font-normal">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-red-600 pl-4 font-semibold">Tổng số phòng chiếm dụng</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-red-600 font-light">
+          <!-- 9. Tổng số phòng chiếm dụng (Màu đỏ theo Dòng 13) -->
+          <tr class="group border-b border-slate-200 h-10 hover:bg-slate-50 text-[12px]">
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-red-600 pl-4 font-semibold">Tổng số phòng chiếm dụng</td>
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-red-600 font-bold">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.total_occupied ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-1 border-r border-slate-200 text-center leading-tight text-red-600 text-[12px] font-light"
+              class="p-1 border-r border-b border-slate-200 text-center leading-tight text-red-600 font-semibold text-[12px]"
               :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
               :title="getStatTooltip('OCC', day.fullDateStr)"
             >
               {{ statistics[day.fullDateStr]?.total_occupied ?? 0 }}<br/>
-              <span class="text-[9px] font-medium text-amber-700">({{ statistics[day.fullDateStr]?.occupied_pct ?? 0 }}%)</span>
+              <span class="text-[10px] font-medium text-amber-700">({{ statistics[day.fullDateStr]?.occupied_pct ?? 0 }}%)</span>
             </td>
           </tr>
 
-          <!-- 10. Phòng trống -->
-          <tr v-if="selectedStatuses.includes('AV')" class="group border-b border-slate-200 h-8 text-red-500 hover:bg-slate-50 text-[12px] font-normal">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Phòng trống</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-red-500 font-light">
+          <!-- 10. Phòng trống (Màu đỏ theo Dòng 13) -->
+          <tr class="group border-b border-slate-200 h-8 hover:bg-slate-50 text-[12px]">
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-red-600 pl-4 font-semibold">Phòng trống</td>
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-red-600 font-bold">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.av ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center text-red-500 font-light"
+              class="p-2 border-r border-b border-slate-200 text-center text-red-600 font-semibold text-[12px]"
               :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
               :title="getStatTooltip('AV', day.fullDateStr)"
             >
@@ -955,105 +917,85 @@ function showExportToast() {
           </tr>
 
           <!-- 11. Phòng nội bộ -->
-          <tr v-if="selectedStatuses.includes('AV')" class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px] font-normal">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Phòng nội bộ</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-gray-900 font-light">
+          <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Phòng nội bộ</td>
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.internal_rooms ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center font-light text-gray-900"
-              :class="[
-                day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
-                (statistics[day.fullDateStr]?.internal_rooms ?? 0) === 0 ? 'text-gray-400 font-light' : ''
-              ]"
+              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
+              :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
             >
               {{ statistics[day.fullDateStr]?.internal_rooms ?? 0 }}
             </td>
           </tr>
 
           <!-- 12. Phòng miễn phí -->
-          <tr v-if="selectedStatuses.includes('AV')" class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px] font-normal">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Phòng miễn phí</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-gray-900 font-light">
+          <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Phòng miễn phí</td>
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.free_rooms ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center font-light text-gray-900"
-              :class="[
-                day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
-                (statistics[day.fullDateStr]?.free_rooms ?? 0) === 0 ? 'text-gray-400 font-light' : ''
-              ]"
+              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
+              :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
             >
               {{ statistics[day.fullDateStr]?.free_rooms ?? 0 }}
             </td>
           </tr>
 
-          <!-- 13. Tổng khách (Always Visible) -->
-          <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px] font-normal">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Tổng khách</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-gray-900 font-light">
+          <!-- 13. Tổng khách -->
+          <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Tổng khách</td>
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.total_guests ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center font-light text-gray-900"
-              :class="[
-                day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
-                (statistics[day.fullDateStr]?.total_guests ?? 0) === 0 ? 'text-gray-400 font-light' : ''
-              ]"
+              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
+              :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
             >
               {{ statistics[day.fullDateStr]?.total_guests ?? 0 }}
             </td>
           </tr>
 
           <!-- 14. Phòng đến (Room/Pax) -->
-          <tr v-if="selectedStatuses.includes('OCC')" class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px] font-normal">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Phòng đến (Room/Pax)</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-gray-900 font-light">
+          <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Phòng đến (Room/Pax)</td>
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.arrivals_rooms ?? 0), 0) }}/{{ dates.reduce((sum, d) => sum + (statistics[d]?.arrivals_pax ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center font-light text-gray-900"
-              :class="[
-                day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
-                (statistics[day.fullDateStr]?.arrivals_rooms ?? 0) === 0 ? 'text-gray-400 font-light' : ''
-              ]"
+              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
+              :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
             >
               {{ statistics[day.fullDateStr]?.arrivals_rooms ?? 0 }}/{{ statistics[day.fullDateStr]?.arrivals_pax ?? 0 }}
             </td>
           </tr>
 
           <!-- 15. Phòng đang ở -->
-          <tr v-if="selectedStatuses.includes('OCC')" class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px] font-normal">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Phòng đang ở</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-gray-900 font-light">
+          <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Phòng đang ở</td>
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.inhouse ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center font-light text-gray-900"
-              :class="[
-                day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
-                (statistics[day.fullDateStr]?.inhouse ?? 0) === 0 ? 'text-gray-400 font-light' : ''
-              ]"
+              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
+              :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
               :title="getStatTooltip('OCC', day.fullDateStr)"
             >
               {{ statistics[day.fullDateStr]?.inhouse ?? 0 }}
@@ -1061,63 +1003,51 @@ function showExportToast() {
           </tr>
 
           <!-- 16. Thêm giường -->
-          <tr v-if="selectedStatuses.includes('EB')" class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px] font-normal">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Thêm giường</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-gray-900 font-light">
+          <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Thêm giường</td>
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.extra_beds ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center font-light text-gray-900"
-              :class="[
-                day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
-                (statistics[day.fullDateStr]?.extra_beds ?? 0) === 0 ? 'text-gray-400 font-light' : ''
-              ]"
+              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
+              :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
             >
               {{ statistics[day.fullDateStr]?.extra_beds ?? 0 }}
             </td>
           </tr>
 
           <!-- 17. Phòng hủy -->
-          <tr v-if="selectedStatuses.includes('OCC')" class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px] font-normal">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Phòng hủy</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-gray-900 font-light">
+          <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Phòng hủy</td>
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.cancellations ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center font-light text-gray-900"
-              :class="[
-                day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
-                (statistics[day.fullDateStr]?.cancellations ?? 0) === 0 ? 'text-gray-400 font-light' : ''
-              ]"
+              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
+              :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
             >
               {{ statistics[day.fullDateStr]?.cancellations ?? 0 }}
             </td>
           </tr>
 
           <!-- 18. Phòng noshow -->
-          <tr v-if="selectedStatuses.includes('OCC')" class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px] font-normal">
-            <td colspan="2" class="p-2 border-r border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold">Phòng noshow</td>
-            <td class="p-2 border-r border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-gray-900 font-light">
+          <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Phòng noshow</td>
+            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.noshow ?? 0), 0) }}
             </td>
-            <td class="p-2 border-r border-slate-200 sticky left-[300px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0]"></td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-slate-200 text-center font-light text-gray-900"
-              :class="[
-                day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50',
-                (statistics[day.fullDateStr]?.noshow ?? 0) === 0 ? 'text-gray-400 font-light' : ''
-              ]"
+              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
+              :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
             >
               {{ statistics[day.fullDateStr]?.noshow ?? 0 }}
             </td>
@@ -1143,14 +1073,19 @@ function showExportToast() {
 <style scoped>
 :deep(.availability-table td),
 :deep(.availability-table th) {
-  color: #000000d9 !important;
-  font-size: 13px !important;
+  color: #000000d9;
+  font-size: 12px !important;
   padding-top: 4px !important;
   padding-bottom: 4px !important;
+  border-bottom: 1px solid #e2e8f0;
 }
 
 :deep(.availability-table tr) {
   height: 28px;
+}
+
+:deep(.availability-table .text-red-600) {
+  color: #dc2626 !important;
 }
 
 :deep(.availability-table .av-negative) {
