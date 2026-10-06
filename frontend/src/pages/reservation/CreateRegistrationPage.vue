@@ -722,22 +722,52 @@ const defaultColumns = {
 
 const visibleColumns = ref({ ...defaultColumns })
 
-watch(() => authStore.settings?.visible_columns?.create_registration, (newVal) => {
-  if (newVal) {
-    visibleColumns.value = { ...defaultColumns, ...newVal }
-  }
-}, { immediate: true, deep: true })
+// Khởi tạo từ authStore nếu đã có sẵn
+if (authStore.settings?.visible_columns?.create_registration) {
+  visibleColumns.value = { ...defaultColumns, ...authStore.settings.visible_columns.create_registration }
+}
 
-watch(visibleColumns, (newVal) => {
-  try {
-    authStore.updateUserSettings({
-      visible_columns: {
-        create_registration: newVal
-      }
+let saveColumnsTimer = null
+let isSyncingFromStore = false
+let isSavingToStore = false
+
+// Đồng bộ từ store khi dữ liệu user settings được tải lần đầu từ API /me (nếu chưa có khi mount)
+watch(() => authStore.settings?.visible_columns?.create_registration, (newVal) => {
+  if (isSavingToStore) return
+  if (!newVal) return
+
+  const keys = Object.keys(defaultColumns)
+  const isDifferent = keys.some(k => newVal[k] !== undefined && newVal[k] !== visibleColumns.value[k])
+  if (isDifferent) {
+    isSyncingFromStore = true
+    visibleColumns.value = { ...defaultColumns, ...newVal }
+    nextTick(() => {
+      isSyncingFromStore = false
     })
-  } catch (e) {
-    console.error(e)
   }
+}, { deep: true })
+
+// Lưu thiết lập khi người dùng chủ động tích chọn cột (debounce 500ms để tránh gửi request liên tục và race condition)
+watch(visibleColumns, (newVal) => {
+  if (isSyncingFromStore) return
+
+  if (saveColumnsTimer) clearTimeout(saveColumnsTimer)
+  saveColumnsTimer = setTimeout(async () => {
+    try {
+      isSavingToStore = true
+      await authStore.updateUserSettings({
+        visible_columns: {
+          create_registration: JSON.parse(JSON.stringify(newVal))
+        }
+      })
+    } catch (e) {
+      console.error('Lỗi khi lưu cấu hình hiển thị cột:', e)
+    } finally {
+      nextTick(() => {
+        isSavingToStore = false
+      })
+    }
+  }, 500)
 }, { deep: true })
 const showColumnSelector = ref(false)
 
@@ -939,6 +969,21 @@ async function handleInlineServiceRateChange(room, svc, newRate) {
     svc.svc_ref.rate = newRate
     svc.svc_ref.total = (svc.svc_ref.quantity || 1) * newRate
   }
+  if (svc.bill_ref) {
+    svc.bill_ref.Amount = newRate * (svc.bill_ref.Quantity || 1)
+    svc.bill_ref.rate = newRate
+  }
+  if (room.serviceBills && Array.isArray(room.serviceBills)) {
+    const matchedBill = room.serviceBills.find(sb => {
+      const sbDate = getBillRecordDateStr(sb)
+      return (sb.Ma && svc.bill_ref && String(sb.Ma) === String(svc.bill_ref.Ma)) ||
+             (sbDate === cleanDate && isRoomCharge && isRoomChargeBillRecord(sb))
+    })
+    if (matchedBill) {
+      matchedBill.Amount = newRate * (matchedBill.Quantity || 1)
+      matchedBill.rate = newRate
+    }
+  }
 
   if (isRoomCharge) {
     if (!room.dailyRoomPrices) room.dailyRoomPrices = {}
@@ -996,6 +1041,13 @@ async function handleInlineServiceRateChange(room, svc, newRate) {
       const res = await createBookingRoomService(room.bookingRoomId, payload)
       if (res.data?.success) {
         uiStore.showToast('Cập nhật đơn giá dịch vụ thành công!', 'success')
+        if (res.data?.service_bill && room.serviceBills && Array.isArray(room.serviceBills)) {
+          const updatedBill = res.data.service_bill
+          const idx = room.serviceBills.findIndex(b => String(b.Ma) === String(updatedBill.Ma))
+          if (idx !== -1) {
+            room.serviceBills[idx] = { ...room.serviceBills[idx], ...updatedBill }
+          }
+        }
         const freshRes = await fetchBookingRoomServices(room.bookingRoomId)
         room.services = (freshRes.data?.data || []).map(s => ({
           ...s,
@@ -2160,6 +2212,14 @@ function notificationRoomLabel(notification) {
 }
 
 onBeforeUnmount(() => {
+  if (saveColumnsTimer) {
+    clearTimeout(saveColumnsTimer)
+    authStore.updateUserSettings({
+      visible_columns: {
+        create_registration: JSON.parse(JSON.stringify(visibleColumns.value))
+      }
+    }).catch(() => {})
+  }
   activeBookingNotificationsTimers.forEach(clearTimeout)
   document.removeEventListener('click', handleGlobalClick)
   window.removeEventListener('booking-updated', handleBookingUpdatedEvent)
@@ -3501,6 +3561,23 @@ async function closeDiscountPopover(room, svc) {
     const newRate = (room.dailyRoomPrices && room.dailyRoomPrices[cleanDate] !== undefined)
       ? room.dailyRoomPrices[cleanDate]
       : (Number(svc.rate) || 0)
+
+    if (svc.bill_ref) {
+      svc.bill_ref.Amount = newRate * (svc.bill_ref.Quantity || 1)
+      svc.bill_ref.rate = newRate
+    }
+    if (room.serviceBills && Array.isArray(room.serviceBills)) {
+      const matchedBill = room.serviceBills.find(sb => {
+        const sbDate = getBillRecordDateStr(sb)
+        return (sb.Ma && svc.bill_ref && String(sb.Ma) === String(svc.bill_ref.Ma)) ||
+               (sbDate === cleanDate && isRoomChargeBillRecord(sb))
+      })
+      if (matchedBill) {
+        matchedBill.Amount = newRate * (matchedBill.Quantity || 1)
+        matchedBill.rate = newRate
+      }
+    }
+
     try {
       const payload = {
         booking_room_id: room.bookingRoomId,
@@ -3515,6 +3592,13 @@ async function closeDiscountPopover(room, svc) {
       const res = await createBookingRoomService(room.bookingRoomId, payload)
       if (res?.data?.success) {
         uiStore.showToast('Cập nhật đơn giá phòng thành công!', 'success')
+        if (res.data?.service_bill && room.serviceBills && Array.isArray(room.serviceBills)) {
+          const updatedBill = res.data.service_bill
+          const idx = room.serviceBills.findIndex(b => String(b.Ma) === String(updatedBill.Ma))
+          if (idx !== -1) {
+            room.serviceBills[idx] = { ...room.serviceBills[idx], ...updatedBill }
+          }
+        }
         const freshRes = await fetchBookingRoomServices(room.bookingRoomId)
         room.services = (freshRes.data?.data || []).map(s => ({
           ...s,
@@ -5490,47 +5574,79 @@ async function triggerAction(actionName) {
       message: confirmMsg,
       confirmText: 'Đồng ý', cancelText: 'Hủy'
     }).then(async (confirmed) => {
-      if (confirmed) {
-        try {
-          uiStore.showToast('Đang khôi phục booking...', 'info')
-          let res = isCancelledBooking.value
-            ? await restoreBooking(tab.dbId)
-            : await revertBookingNoshow(tab.dbId)
-          if (res.data?.success) {
-            removeClosedTabId(tab.dbId)
-            uiStore.showToast(res.data?.message || 'Khôi phục booking thành công!', 'success')
-            await loadBookings()
-          } else if (res.data?.needs_confirm) {
-            uiStore.confirm({
-              title: 'Cảnh báo Over booking',
-              message: res.data.message || 'Số lượng của loại phòng sau khi khôi phục đăng ký đang bị over, bạn có muốn tiếp tục?',
-              confirmText: 'Tiếp tục', cancelText: 'Hủy'
-            }).then(async (confirmedOver) => {
-              if (confirmedOver) {
-                try {
-                  uiStore.showToast('Đang khôi phục booking (force)...', 'info')
-                  let resForce = isCancelledBooking.value
-                    ? await restoreBooking(tab.dbId, { force: true })
-                    : await revertBookingNoshow(tab.dbId, { force: true })
-                  if (resForce.data?.success) {
-                    removeClosedTabId(tab.dbId)
-                    uiStore.showToast(resForce.data?.message || 'Khôi phục booking thành công!', 'success')
-                    await loadBookings()
-                  } else {
-                    uiStore.showToast(resForce.data?.message || 'Khôi phục booking thất bại!', 'error')
-                  }
-                } catch (err) {
-                  uiStore.showToast(err.response?.data?.message || 'Khôi phục booking thất bại!', 'error')
-                }
-              }
-            })
-          } else {
-            uiStore.showToast(res.data?.message || 'Khôi phục booking thất bại!', 'error')
+      if (!confirmed) return
+
+      try {
+        let clearDuplicates = false
+        uiStore.showToast('Đang khôi phục booking...', 'info')
+        let res = isCancelledBooking.value
+          ? await restoreBooking(tab.dbId)
+          : await revertBookingNoshow(tab.dbId)
+
+        // 1. Kiểm tra trùng số phòng (với booking khác hoặc đang bị khóa OOO/OOS)
+        if (res.data?.needs_duplicate_confirm) {
+          const confirmedClear = await uiStore.confirm({
+            title: 'Cảnh báo trùng số phòng',
+            message: res.data.message,
+            confirmText: 'Có',
+            cancelText: 'Không'
+          })
+
+          if (!confirmedClear) {
+            uiStore.showToast('Đã hủy khôi phục booking.', 'info')
+            return
           }
-        } catch (err) {
-          console.error(err)
-          uiStore.showToast(err.response?.data?.message || 'Khôi phục booking thất bại!', 'error')
+
+          clearDuplicates = true
+          uiStore.showToast('Đang khôi phục booking...', 'info')
+          try {
+            res = await restoreBooking(tab.dbId, { clear_duplicate_rooms: true })
+          } catch (errDup) {
+            uiStore.showToast(errDup.response?.data?.message || 'Khôi phục booking thất bại!', 'error')
+            return
+          }
         }
+
+        // 2. Kiểm tra over loại phòng
+        if (res.data?.needs_over_confirm || res.data?.needs_confirm) {
+          const confirmedOver = await uiStore.confirm({
+            title: 'Cảnh báo Over phòng',
+            message: res.data.message || 'Loại phòng đang bị over bạn có muốn tiếp tục',
+            confirmText: 'Có',
+            cancelText: 'Không'
+          })
+
+          if (!confirmedOver) {
+            uiStore.showToast('Đã hủy khôi phục booking.', 'info')
+            return
+          }
+
+          uiStore.showToast('Đang khôi phục booking...', 'info')
+          try {
+            const forcePayload = {
+              force: true,
+              force_over: true,
+              clear_duplicate_rooms: clearDuplicates,
+            }
+            res = isCancelledBooking.value
+              ? await restoreBooking(tab.dbId, forcePayload)
+              : await revertBookingNoshow(tab.dbId, forcePayload)
+          } catch (errOver) {
+            uiStore.showToast(errOver.response?.data?.message || 'Khôi phục booking thất bại!', 'error')
+            return
+          }
+        }
+
+        if (res.data?.success) {
+          removeClosedTabId(tab.dbId)
+          uiStore.showToast(res.data?.message || 'Khôi phục booking thành công!', 'success')
+          await loadBookings()
+        } else {
+          uiStore.showToast(res.data?.message || 'Khôi phục booking thất bại!', 'error')
+        }
+      } catch (err) {
+        console.error(err)
+        uiStore.showToast(err.response?.data?.message || 'Khôi phục booking thất bại!', 'error')
       }
     })
   } else if (actionName === 'Khôi phục phòng noshow') {
@@ -5670,6 +5786,9 @@ async function handleConfirmCancelReason(payload) {
   if (!target) return
 
   if (target.type === 'booking') {
+    const authorized = await uiStore.requestAuthorization()
+    if (!authorized) return
+
     const tab = target.tab
     try {
       uiStore.showToast('Đang tiến hành hủy đăng ký...', 'info')

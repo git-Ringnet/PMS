@@ -214,6 +214,44 @@ const changePage = (page) => {
   loadLogs()
 }
 
+const handlePerPageChange = () => {
+  queryParams.value.per_page = Number(perPage.value) || 30
+  queryParams.value.page = 1
+  loadLogs()
+}
+
+const jumpPageInput = ref('')
+const handleJumpPage = () => {
+  if (!jumpPageInput.value) return
+  const p = Number(jumpPageInput.value)
+  if (p && p >= 1 && p <= lastPage.value) {
+    changePage(p)
+  } else {
+    uiStore.showToast(`Vui lòng nhập trang từ 1 đến ${lastPage.value}`, 'warning')
+  }
+  jumpPageInput.value = ''
+}
+
+// Chỉ hiển thị tối đa 3 số trang, phần còn lại dành cho ô ...
+const visiblePages = computed(() => {
+  const current = currentPage.value
+  const total = lastPage.value
+  if (total <= 3) {
+    return Array.from({ length: total }, (_, i) => i + 1)
+  }
+
+  let start = current
+  if (start + 2 > total) {
+    start = Math.max(1, total - 2)
+  }
+
+  const pages = []
+  for (let i = start; i <= Math.min(total, start + 2); i++) {
+    pages.push(i)
+  }
+  return pages
+})
+
 // Action label translation
 const getActionLabel = (action) => {
   const map = {
@@ -665,7 +703,7 @@ const handleExport = async () => {
             <td class="p-2.5 border-r border-slate-200 font-mono font-bold text-emerald-700 whitespace-nowrap">
               {{ log.target_id || '-' }}
             </td>
-            <td class="p-2.5 border-r border-slate-200 text-slate-700 font-normal min-w-[340px] max-w-[550px] whitespace-pre-wrap leading-relaxed">
+            <td class="p-2.5 border-r border-slate-200 text-slate-700 font-normal whitespace-pre-wrap leading-relaxed">
               <div v-html="formatDescriptionHtml(log.description)"></div>
             </td>
             <td class="p-2.5 text-center whitespace-nowrap">
@@ -691,34 +729,95 @@ const handleExport = async () => {
     </div>
 
     <!-- Pagination Footer -->
-    <div v-if="lastPage > 1" class="flex items-center justify-between mt-3 gap-2 select-none shrink-0 border-t border-slate-200 pt-3">
-      <div class="text-xs text-slate-600 font-bold">
-        Hiển thị {{ logs.length }} / {{ totalItems }} bản ghi (Trang {{ currentPage }} / {{ lastPage }})
+    <div v-if="totalItems > 0" class="flex flex-wrap items-center justify-between mt-3 gap-3 select-none shrink-0 border-t border-slate-200 pt-3">
+      <!-- Left: Records info & Per page selector -->
+      <div class="flex items-center gap-3 text-xs text-slate-600 font-semibold">
+        <div>
+          Hiển thị <span class="font-bold text-slate-800">{{ logs.length }}</span> / <span class="font-bold text-slate-800">{{ totalItems }}</span> bản ghi
+          <span v-if="lastPage > 1"> (Trang <span class="font-bold text-sky-700">{{ currentPage }}</span> / {{ lastPage }})</span>
+        </div>
+        <div class="h-3.5 w-[1px] bg-slate-300"></div>
+        <div class="flex items-center gap-1.5">
+          <label class="text-slate-500 font-normal">Hiển thị:</label>
+          <select 
+            v-model="perPage" 
+            @change="handlePerPageChange" 
+            class="border border-slate-300 rounded-md px-2 py-0.5 text-xs font-bold text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-sky-500 cursor-pointer shadow-2xs"
+          >
+            <option :value="30">30 dòng / trang</option>
+            <option :value="50">50 dòng / trang</option>
+            <option :value="100">100 dòng / trang</option>
+            <option :value="200">200 dòng / trang</option>
+          </select>
+        </div>
       </div>
-      <div class="flex items-center gap-1.5">
+
+      <!-- Right: Pagination Buttons & Jump to page -->
+      <div v-if="lastPage > 1" class="flex items-center gap-1.5">
+        <!-- Đầu trang << -->
+        <button 
+          @click="changePage(1)" 
+          :disabled="currentPage === 1"
+          class="h-7 min-w-[28px] px-1.5 border border-slate-300 rounded-md text-xs font-bold text-slate-600 bg-white hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          title="Về trang đầu (1)"
+        >
+          &laquo;
+        </button>
+
+        <!-- Trước < -->
         <button 
           @click="changePage(currentPage - 1)" 
           :disabled="currentPage === 1"
-          class="px-3 py-1 border border-slate-300 rounded-lg text-xs font-bold text-slate-600 bg-white hover:bg-slate-50 cursor-pointer disabled:opacity-40"
+          class="h-7 min-w-[28px] px-1.5 border border-slate-300 rounded-md text-xs font-bold text-slate-600 bg-white hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          title="Trang trước"
         >
-          &lt; Trước
+          &lsaquo;
         </button>
+
+        <!-- Các số trang (tối đa 3 trang) -->
         <button 
-          v-for="p in lastPage" 
-          :key="p"
-          @click="changePage(p)"
-          class="px-3 py-1 border rounded-lg text-xs font-bold cursor-pointer transition-all"
-          :class="currentPage === p ? 'border-sky-500 text-white font-black shadow-xs' : 'border-slate-300 text-slate-600 bg-white hover:bg-slate-50'"
-          :style="currentPage === p ? { background: themeBg } : {}"
+          v-for="page in visiblePages" 
+          :key="page"
+          @click="changePage(page)"
+          class="h-7 min-w-[28px] px-2 border rounded-md text-xs font-bold cursor-pointer transition-all"
+          :class="currentPage === page ? 'border-sky-500 text-white font-black shadow-xs' : 'border-slate-300 text-slate-600 bg-white hover:bg-slate-50'"
+          :style="currentPage === page ? { background: themeBg } : {}"
         >
-          {{ p }}
+          {{ page }}
         </button>
+
+        <!-- Ô ... nhập số trang tự động fill nhảy trang -->
+        <input 
+          v-if="lastPage > 3"
+          type="number" 
+          v-model="jumpPageInput" 
+          :min="1" 
+          :max="lastPage"
+          @keyup.enter="handleJumpPage"
+          @change="handleJumpPage"
+          placeholder="..."
+          class="h-7 w-9 text-center border border-slate-300 rounded-md text-xs font-bold text-slate-700 bg-white hover:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-500 shadow-2xs"
+          :title="`Nhập số trang muốn đến (1 - ${lastPage}) rồi Enter`"
+        />
+
+        <!-- Sau > -->
         <button 
           @click="changePage(currentPage + 1)" 
           :disabled="currentPage === lastPage"
-          class="px-3 py-1 border border-slate-300 rounded-lg text-xs font-bold text-slate-600 bg-white hover:bg-slate-50 cursor-pointer disabled:opacity-40"
+          class="h-7 min-w-[28px] px-1.5 border border-slate-300 rounded-md text-xs font-bold text-slate-600 bg-white hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          title="Trang sau"
         >
-          Sau &gt;
+          &rsaquo;
+        </button>
+
+        <!-- Cuối trang >> -->
+        <button 
+          @click="changePage(lastPage)" 
+          :disabled="currentPage === lastPage"
+          class="h-7 min-w-[28px] px-1.5 border border-slate-300 rounded-md text-xs font-bold text-slate-600 bg-white hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          :title="`Đến trang cuối (${lastPage})`"
+        >
+          &raquo;
         </button>
       </div>
     </div>

@@ -106,6 +106,11 @@ class LogActivity
                 return;
             }
 
+            // Skip user-settings - cấu hình hiển thị giao diện cá nhân, không phải audit nghiệp vụ
+            if (str_contains($path, 'user-settings')) {
+                return;
+            }
+
             $user = $request->user();
             $statusCode = $response->getStatusCode();
 

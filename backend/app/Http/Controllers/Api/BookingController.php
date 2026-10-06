@@ -16,6 +16,7 @@ use App\Models\BankAccount;
 use App\Models\PaymentMethod;
 use App\Models\RegistrationStatus;
 use App\Models\RoomClass;
+use App\Models\RoomLock;
 use App\Models\RoomRateCode;
 use App\Models\StandardRate;
 use App\Models\SystemDateRoll;
@@ -1195,6 +1196,7 @@ class BookingController extends Controller
 
                 $booking->update($validated);
                 $dayUseChanged = $booking->wasChanged('is_day_use');
+                $companyChanged = $booking->wasChanged('company_id');
                 // Do not use a mass update here: it bypasses BookingRoom's
                 // lifecycle hooks (night count and guest actual dates).
                 $booking->bookingRooms()
@@ -1620,6 +1622,10 @@ class BookingController extends Controller
                             }
                         }
                     }
+                }
+
+                if ($companyChanged) {
+                    $this->cascadeBookingCompanyUpdate($booking, $booking->company_id);
                 }
             });
         } catch (\Exception $e) {
@@ -2078,7 +2084,7 @@ class BookingController extends Controller
                 $seenAssigned[$rn][] = ['arr' => $arrStr, 'dep' => $depStr];
             }
 
-            // 2. Kiểm tra trùng số phòng với các phòng đang đặt/ở trong hệ thống
+            // 2. Kiểm tra trùng số phòng với các phòng đang đặt/ở và phòng đang khóa OOO/OOS trong hệ thống
             $duplicateRooms = [];
             foreach ($roomsToRestore as $bRoom) {
                 if (empty($bRoom->room_number)) continue;
@@ -2086,6 +2092,7 @@ class BookingController extends Controller
                 $arrDate = Carbon::parse($bRoom->arrival_date ?? $booking->arrival_date)->toDateString();
                 $depDate = Carbon::parse($bRoom->departure_date ?? $booking->departure_date)->toDateString();
 
+                // 2.1 Kiểm tra trùng với BookingRoom đang hoạt động
                 $conflict = BookingRoom::with('booking')
                     ->where('room_number', $rn)
                     ->where('id', '!=', $bRoom->id)
@@ -2112,20 +2119,46 @@ class BookingController extends Controller
                     $duplicateRooms[] = [
                         'room_number'  => $rn,
                         'booking_code' => $bCode,
+                        'is_locked'    => false,
                     ];
+                } else {
+                    // 2.2 Kiểm tra trùng với phòng đang khóa OOO / OOS (RoomLock)
+                    $lockConflict = RoomLock::where('room_number', $rn)
+                        ->whereIn('is_active', [1, 2])
+                        ->where('start_date', '<', $depDate . ' 23:59:59')
+                        ->where('end_date', '>', $arrDate . ' 00:00:00')
+                        ->first();
+
+                    if ($lockConflict) {
+                        $duplicateRooms[] = [
+                            'room_number'  => $rn,
+                            'booking_code' => null,
+                            'is_locked'    => true,
+                        ];
+                    }
                 }
             }
 
-            if (count($duplicateRooms) > 0) {
-                $details = collect($duplicateRooms)
-                    ->map(fn ($item) => "Phòng {$item['room_number']} (thuộc {$item['booking_code']})")
-                    ->unique()
-                    ->implode('; ');
+            $uniqueDuplicateRooms = collect($duplicateRooms)->unique('room_number')->values()->all();
+            $clearDuplicateRooms = $request->boolean('clear_duplicate_rooms');
+
+            // Nếu có phòng trùng và người dùng chưa xác nhận xóa số phòng bị trùng -> Bật cảnh báo xác nhận
+            if (count($uniqueDuplicateRooms) > 0 && !$clearDuplicateRooms) {
+                $conflictLines = collect($uniqueDuplicateRooms)->map(function ($item) {
+                    $line = "- R: {$item['room_number']}";
+                    if (!empty($item['booking_code'])) {
+                        $line .= " - BK: {$item['booking_code']}";
+                    }
+                    return $line;
+                })->implode("\n");
+
                 return response()->json([
-                    'success'         => false,
-                    'duplicate_rooms' => $duplicateRooms,
-                    'message'         => "Không thể khôi phục booking vì số phòng bị trùng với phòng đang đặt: {$details}.",
-                ], 422);
+                    'success'                 => false,
+                    'needs_duplicate_confirm' => true,
+                    'duplicate_rooms'         => $uniqueDuplicateRooms,
+                    'conflict_lines'          => $conflictLines,
+                    'message'                 => "Đăng ký được khôi phục có số phòng đã được đặt bởi đăng ký khác hoặc đang bị khóa. Bạn có muốn tiếp tục? (Số phòng của những phòng bị trùng sẽ được xóa khi khôi phục)\n{$conflictLines}",
+                ], 200);
             }
 
             // ========================================================
@@ -2187,29 +2220,32 @@ class BookingController extends Controller
 
             // Nếu AllowOverRoomTypeRoomKind = 0: Tuyệt đối không cho phép over phòng
             if (count($overRooms) > 0 && !$allowOver) {
-                $classNames = collect($overRooms)->map(fn ($item) => $item['class_name'])->unique()->implode(', ');
                 return response()->json([
-                    'success'    => false,
-                    'over_rooms' => array_values($overRooms),
-                    'message'    => "Số lượng của loại phòng sau khi khôi phục đăng ký đang bị over ({$classNames}). Cấu hình hệ thống không cho phép over phòng.",
+                    'success'         => false,
+                    'blocked_by_over' => true,
+                    'over_rooms'      => array_values($overRooms),
+                    'message'         => 'Loại phòng đang bị over không thể khôi phục booking',
                 ], 422);
             }
 
-            // Nếu AllowOverRoomTypeRoomKind = 1: Bật cảnh báo xác nhận nếu chưa có cờ force
-            if (count($overRooms) > 0 && !$request->boolean('force')) {
+            // Nếu AllowOverRoomTypeRoomKind = 1: Bật cảnh báo xác nhận nếu chưa có cờ force / force_over
+            $forceOver = $request->boolean('force') || $request->boolean('force_over');
+            if (count($overRooms) > 0 && !$forceOver) {
                 return response()->json([
-                    'success'       => false,
-                    'needs_confirm' => true,
-                    'over_rooms'    => array_values($overRooms),
-                    'message'       => 'Số lượng của loại phòng sau khi khôi phục đăng ký đang bị over, bạn có muốn tiếp tục?',
+                    'success'            => false,
+                    'needs_over_confirm' => true,
+                    'needs_confirm'      => true,
+                    'over_rooms'         => array_values($overRooms),
+                    'message'            => 'Loại phòng đang bị over bạn có muốn tiếp tục',
                 ], 200);
             }
 
             // ========================================================
             // TIẾN HÀNH KHÔI PHỤC BOOKING & PHÒNG
             // ========================================================
-            DB::transaction(function () use ($booking, $roomsToRestore, $sysDateStr) {
+            DB::transaction(function () use ($booking, $roomsToRestore, $sysDateStr, $clearDuplicateRooms, $uniqueDuplicateRooms) {
                 $currentUsername = Auth::user()?->username ?? 'system';
+                $duplicateRoomNumbers = collect($uniqueDuplicateRooms)->pluck('room_number')->all();
 
                 // 1. Khôi phục soft delete booking
                 $booking->restore();
@@ -2225,10 +2261,18 @@ class BookingController extends Controller
                 if ($arrivalStr >= $sysDateStr) {
                     foreach ($roomsToRestore as $bRoom) {
                         $bRoom->restore();
-                        $bRoom->update([
+
+                        $roomUpdate = [
                             'status'     => BookingRoom::STATUS_BOOKED,
                             'updated_by' => $currentUsername,
-                        ]);
+                        ];
+
+                        // Nếu xóa số phòng bị trùng: set null cho room_number
+                        if ($clearDuplicateRooms && !empty($bRoom->room_number) && in_array(trim((string)$bRoom->room_number), $duplicateRoomNumbers, true)) {
+                            $roomUpdate['room_number'] = null;
+                        }
+
+                        $bRoom->update($roomUpdate);
 
                         // Khôi phục guests
                         $bRoom->guests()->update(['status' => BookingRoomGuest::STATUS_ACTIVE]);
@@ -3559,5 +3603,69 @@ class BookingController extends Controller
             'message' => 'Khôi phục booking noshow thành công!',
             'data'    => $booking->fresh()->load(['registrationStatus', 'bookingRooms.roomClass']),
         ]);
+    }
+
+    /**
+     * Đồng bộ mã công ty sang các bảng liên quan (payments, sales_invoices, service_bills)
+     * khi booking được cập nhật công ty mới.
+     */
+    protected function cascadeBookingCompanyUpdate(Booking $booking, $newCompanyId): void
+    {
+        if (empty($newCompanyId)) {
+            return;
+        }
+
+        $bIdStr = (string) $booking->id;
+        $bIdInt = (int) $booking->id;
+        $roomIds = $booking->bookingRooms()->pluck('id')->filter()->values()->all();
+
+        // 1. Cập nhật payments (cọc và thanh toán thuộc booking hoặc các phòng của booking)
+        \App\Models\Payment::where(function ($q) use ($bIdInt, $roomIds) {
+            $q->where('booking_id', $bIdInt);
+            if (!empty($roomIds)) {
+                $q->orWhereIn('booking_room_id', $roomIds);
+            }
+        })->update(['company_id' => $newCompanyId]);
+
+        // 2. Cập nhật sales_invoices (hóa đơn thanh toán/settlement)
+        \App\Models\SalesInvoice::where(function ($q) use ($bIdInt, $roomIds) {
+            $q->where('booking_id', $bIdInt)
+                ->orWhere('legacy_booking_id', $bIdInt);
+            if (!empty($roomIds)) {
+                $q->orWhereIn('booking_room_id', $roomIds)
+                    ->orWhereIn('legacy_rental_room_id', $roomIds)
+                    ->orWhereIn('guest_room_id', $roomIds);
+            }
+        })->update(['company_id' => $newCompanyId]);
+
+        // 3. Cập nhật service_bills (SP3000):
+        // 3.1. CompanyId2: Dành cho các bill đang thuộc/quản lý bởi booking này
+        \App\Models\ServiceBill::where(function ($q) use ($bIdStr, $bIdInt, $roomIds) {
+            $q->where('RegisterID2', $bIdStr)
+                ->orWhere('RegisterID2', $bIdInt)
+                ->orWhere(function ($sub) use ($bIdStr, $bIdInt, $roomIds) {
+                    $sub->where(function ($reg) {
+                        $reg->whereNull('RegisterID2')
+                            ->orWhere('RegisterID2', '')
+                            ->orWhere('RegisterID2', '0');
+                    })->where(function ($owner) use ($bIdStr, $bIdInt, $roomIds) {
+                        $owner->where('RegisterId1', $bIdStr)
+                            ->orWhere('RegisterId1', $bIdInt);
+                        if (!empty($roomIds)) {
+                            $owner->orWhereIn('RentalRoomId1', $roomIds)
+                                ->orWhereIn('RentalRoomId2', $roomIds);
+                        }
+                    });
+                });
+        })->update(['CompanyId2' => $newCompanyId]);
+
+        // 3.2. CompanyId1: Dành cho các bill ban đầu sinh ra từ booking này (hoặc các phòng của booking)
+        \App\Models\ServiceBill::where(function ($q) use ($bIdStr, $bIdInt, $roomIds) {
+            $q->where('RegisterId1', $bIdStr)
+                ->orWhere('RegisterId1', $bIdInt);
+            if (!empty($roomIds)) {
+                $q->orWhereIn('RentalRoomId1', $roomIds);
+            }
+        })->update(['CompanyId1' => $newCompanyId]);
     }
 }

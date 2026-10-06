@@ -92,7 +92,7 @@ class ActivityLogController extends Controller
         }
 
         // Phân trang
-        $perPage = min((int) $request->input('per_page', 30), 100);
+        $perPage = min(max((int) $request->input('per_page', 30), 1), 500);
         $logs = $query->paginate($perPage);
 
         return response()->json([

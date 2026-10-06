@@ -253,8 +253,122 @@
   - Frontend production build (`npm run build`) thành công 100% không phát sinh lỗi.
   - Không thay đổi schema database runtime, đảm bảo an toàn toàn vẹn dữ liệu.
 
+## [2026-10-05] - Khắc phục Chuyển cọc (Note 29/09) & Triển khai cấu hình CheckAuthorization xác thực mật khẩu trước thao tác nhạy cảm
+### Module: Đặt phòng / Thu ngân / Cài đặt hệ thống ([HotelSettingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/HotelSettingController.php), [AuthController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/AuthController.php), [DepositModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/DepositModal.vue), [AuthPasswordModal.vue](file:///d:/PMS/frontend/src/components/AuthPasswordModal.vue), [ui-store.js](file:///d:/PMS/frontend/src/stores/ui-store.js), [CheckoutPage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))
+
+- **Khắc phục Chuyển cọc (Note 29/09, dòng 210) đồng bộ với màn hình hóa đơn chuyển thanh toán (TransferPaymentModal)**:
+  - Đồng bộ hoàn toàn logic và cấu trúc với màn hình hóa đơn chuyển thanh toán (`CheckoutPage` -> `TransferPaymentModal`):
+    - Tải toàn bộ booking hoạt động (`status` in `[0, 1]`): không loại trừ booking hiện tại (cho phép chuyển cọc giữa các phòng trong cùng booking).
+    - Cấu trúc cây dropdown phân cấp rõ ràng: Dòng cha là Booking (`BKK: Mã - Tên`), các dòng con là phòng In-House của booking đó (`Số phòng | Tên khách`).
+    - Đối với phòng con: **CHỈ** hiển thị các phòng có tình trạng 1 (In-house / Đang ở), đã có số phòng thực tế, chưa check-out và không phải phòng ảo.
+    - Tìm kiếm Client-side toàn diện: khi gõ từ khóa (mã booking, tên khách, số phòng con), dropdown lọc mượt mà theo cả cấp booking lẫn cấp phòng mà không bị gửi query server đè mất dữ liệu.
+    - Dropdown placement: tự động tính chiều cao và drop-up khi mở gần đáy màn hình, không bị che khuất.
+
+- **Triển khai thông số CheckAuthorization & Modal xác thực mật khẩu**:
+  - **Cơ chế**:
+    - Khi `CheckAuthorization == 0`: Bỏ qua xác thực, thực hiện thao tác bình thường.
+    - Khi `CheckAuthorization != 0`: Bật modal xác thực mật khẩu đăng nhập (khóa tên đăng nhập chỉ đọc, người dùng nhập mật khẩu để xác nhận). Nhập sai thông báo lỗi đỏ "Đăng nhập không thành công".
+  - **Phạm vi bảo vệ**:
+    - **Booking**: Xóa cọc, Xóa booking *(xóa phòng lẻ không yêu cầu xác thực)*.
+    - **Bill**: Xóa thanh toán, Xóa cọc, Xóa dịch vụ, Thanh toán (bao gồm cả thanh toán công nợ).
+  - **Backend**:
+    - Migration bổ sung `CheckAuthorization` (mặc định `'0'`) vào bảng `hotel_configs` trên toàn bộ 5 chi nhánh database (`php artisan migrate:all --force`).
+    - Cập nhật `HotelSettingController@show` trả về `CheckAuthorization`.
+    - Thêm endpoint `POST /api/me/verify-password` trong `AuthController@verifyPassword` kiểm tra mật khẩu user hiện tại.
+    - Viết Feature test [VerifyPasswordTest.php](file:///d:/PMS/backend/tests/Feature/VerifyPasswordTest.php) (2/2 tests PASSED).
+  - **Frontend**:
+    - Tạo component [AuthPasswordModal.vue](file:///d:/PMS/frontend/src/components/AuthPasswordModal.vue) theo đúng giao diện Provilen.
+    - Tích hợp hàm `requestAuthorization()` trong [ui-store.js](file:///d:/PMS/frontend/src/stores/ui-store.js) và nhúng modal toàn cục tại [App.vue](file:///d:/PMS/frontend/src/App.vue).
+    - Ràng buộc xác thực mật khẩu tại [DepositModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/DepositModal.vue) (xóa cọc), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue) (xóa booking), và [CheckoutPage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue) (xóa thanh toán, xóa cọc, xóa dịch vụ, thanh toán).
+  - **Kiểm thử**:
+    - Backend: Feature test pass 100%.
+    - Frontend: `npm run build` hoàn thành không lỗi.
+
+## [2026-10-05] - Khắc phục lỗi tự động bật/tắt các cột hiển thị khi check chọn ở Tab Lấy phòng (CreateRegistrationPage)
+### Module: Đặt phòng ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))
+
+- **Nguyên nhân lỗi (Race Condition & Ping-Pong Watcher)**:
+  - Khi người dùng tích chọn/bỏ chọn checkbox cột trong dropdown "CỘT HIỂN THỊ" (`visibleColumns`):
+    - `watch(visibleColumns)` không có debounce, ngay lập tức gọi API `authStore.updateUserSettings` lưu xuống server.
+    - Khi API server phản hồi, `authStore.settings` được gán lại đối tượng mới, kích hoạt watcher đối nghịch `watch(() => authStore.settings?.visible_columns?.create_registration)`.
+    - Watcher này ghi đè ngược lại `visibleColumns.value` bằng dữ liệu từ phản hồi trước đó.
+    - Khi người dùng thao tác liên tiếp nhiều checkbox, các request bất đồng bộ phản hồi lệch thời gian đè chéo lên nhau làm các checkbox và cột bảng bị nhảy bật/tắt tự động, mất trạng thái vừa chọn.
+- **Giải pháp xử lý**:
+  - Tách bạch 2 chiều dữ liệu và thêm cờ bảo vệ chống ghi đè chéo:
+    - `isSavingToStore`: Khi người dùng đang lưu cấu hình, watcher từ `authStore.settings` tuyệt đối không ghi đè lại `visibleColumns.value`.
+    - `isSyncingFromStore`: Khi đồng bộ dữ liệu ban đầu từ store, không kích hoạt watcher lưu ngược lên server.
+    - Thêm cơ chế kiểm tra `isDifferent` (chỉ cập nhật khi giá trị thực sự thay đổi).
+    - Thêm **Debounce 500ms** cho `watch(visibleColumns)` để gom toàn bộ các thao tác click liên tiếp của người dùng thành một request duy nhất sau khi dừng thao tác.
+    - Dọn dẹp và flush timer lưu ngay trong `onBeforeUnmount` nếu component bị unmount trước khi debounce kết thúc.
+- **Kiểm thử & Kết quả**:
+  - Build frontend `npm run build` thành công 100% không lỗi (4.27s).
+  - Tích chọn/bỏ chọn các cột hiển thị hoạt động mượt mà, phản hồi ngay lập tức trên UI và bảng phòng, không còn hiện tượng giật nảy hay tự động bật tắt cột.
+
+## [2026-10-02] - Xử lý Khôi phục Booking hủy: Kiểm tra Over loại phòng (AllowOverRoomTypeRoomKind) và Trùng số phòng vật lý / Khóa phòng (RoomLock)
+### Module: Đặt phòng / Khôi phục Booking ([BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [RestoreBookingConflictTest.php](file:///d:/PMS/backend/tests/Feature/RestoreBookingConflictTest.php))
+
+- **Yêu cầu & Nghiệp vụ**:
+  - Khi khôi phục một booking bị hủy (Cancelled booking), kiểm tra 2 điều kiện nghiêm ngặt:
+    1. **Trùng số phòng vật lý (Room Conflict)**:
+       - Tuyệt đối không được xảy ra trùng số phòng (kể cả khi `AllowOverRoomTypeRoomKind = 1`).
+       - Nguồn gây trùng phòng gồm:
+         a) Số phòng trùng với `BookingRoom` của booking khác đang hoạt động (`BOOKED`, `CHECKED_IN`, `CHECKED_OUT`).
+         b) Số phòng trùng với phòng đang bị khóa OOO/OOS (`RoomLock`, `is_active` in `[1, 2]`).
+       - Format cảnh báo:
+         `- R: {room_number} - BK: {booking_code}` (trùng booking khác)
+         `- R: {room_number}` (trùng do khóa OOO/OOS)
+       - Thông báo: *"Đăng ký được khôi phục có số phòng đã được đặt bởi đăng ký khác hoặc đang bị khóa. Bạn có muốn tiếp tục? (Số phòng của những phòng bị trùng sẽ được xóa khi khôi phục)"* kèm danh sách phòng trùng.
+       - Nếu chọn Có (`clear_duplicate_rooms: true`): Khôi phục booking, tự động xóa số phòng (`room_number = null`) của những phòng bị trùng, giữ nguyên phòng không trùng.
+       - Nếu chọn Không: Hủy thao tác, không khôi phục.
+    2. **Kiểm tra Over loại phòng (`AllowOverRoomTypeRoomKind`)**:
+       - `AllowOverRoomTypeRoomKind = 1`: Cho phép khôi phục nhưng hiển thị cảnh báo xác nhận *"Loại phòng đang bị over bạn có muốn tiếp tục"*. Chọn Có (`force_over: true`) -> Khôi phục. Chọn Không -> Dừng lại.
+       - `AllowOverRoomTypeRoomKind = 0`: Chặn không cho khôi phục và thông báo lỗi: *"Loại phòng đang bị over không thể khôi phục booking"*.
+- **Backend đã xử lý ([BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php))**:
+  - Import model `RoomLock`.
+  - Phương thức `restore(Request $request, $id)`:
+    - Bổ sung truy vấn kiểm tra trùng số phòng với bảng `room_locks` (`is_active` in `[1, 2]`, giao thoa thời gian lưu trú).
+    - Tạo danh sách `conflict_lines` với định dạng chuẩn `- R: ... - BK: ...` hoặc `- R: ...`.
+    - Trả về `needs_duplicate_confirm: true` khi có trùng và chưa gửi `clear_duplicate_rooms`.
+    - Kiểm tra Over phòng: nếu `AllowOverRoomTypeRoomKind = 0` và over -> trả về HTTP 422 `blocked_by_over: true` cùng câu thông báo: *"Loại phòng đang bị over không thể khôi phục booking"*. Nếu `AllowOverRoomTypeRoomKind = 1` và over -> trả về `needs_over_confirm: true` khi chưa có `force_over`.
+    - Trong DB Transaction: Nếu có `clear_duplicate_rooms: true`, tự động xóa `room_number = null` cho các phòng bị trùng trong danh sách khôi phục.
+- **Frontend đã xử lý ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))**:
+  - Tại action `'Khôi phục BK'`:
+    - Xử lý xác nhận tuần tự 2 bước:
+      - Bước 1: Nếu backend trả về `needs_duplicate_confirm` -> hiển thị confirm dialog với danh sách phòng trùng. Nếu người dùng chọn Không -> dừng lại thông báo đã hủy. Nếu chọn Có -> kích hoạt khôi phục kèm cờ `clear_duplicate_rooms: true`.
+      - Bước 2: Nếu backend trả về `needs_over_confirm` -> hiển thị confirm dialog cảnh báo loại phòng over. Nếu người dùng chọn Không -> hủy thao tác. Nếu chọn Có -> kích hoạt tiếp với `force_over: true, clear_duplicate_rooms: clearDuplicates`.
+- **Kiểm thử**:
+  - Backend: Viết bộ Feature Test [RestoreBookingConflictTest.php](file:///d:/PMS/backend/tests/Feature/RestoreBookingConflictTest.php) bao phủ đầy đủ 5 test cases:
+    1. Trùng số phòng với booking đang hoạt động -> trả về `needs_duplicate_confirm` kèm `- R: 106 - BK: GAL...`, chọn Có -> xóa số phòng về null và khôi phục thành công.
+    2. Trùng số phòng do phòng bị khóa OOO/OOS -> trả về `needs_duplicate_confirm` kèm `- R: 106`, chọn Có -> xóa số phòng về null và khôi phục thành công.
+    3. Over loại phòng khi `AllowOverRoomTypeRoomKind = 0` -> chặn lỗi 422 với thông báo yêu cầu.
+    4. Over loại phòng khi `AllowOverRoomTypeRoomKind = 1` -> trả về `needs_over_confirm`, gửi `force_over = true` -> khôi phục thành công.
+    5. Kịch bản kết hợp: vừa trùng phòng vừa over loại phòng -> xác nhận 2 bước liên tiếp -> khôi phục thành công.
+    - Kết quả: **5/5 tests PASSED (27 assertions)**.
+  - Frontend: `npm run build` -> hoàn thành thành công không lỗi (7.28s).
+
 ## [2026-10-01] - Điều chỉnh Tooltip Booking và Submenu Context Menu trên Sơ đồ phòng (Room Map - Dòng 293)
 ### Module: Sơ đồ phòng ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
+
+## [2026-10-02] - Đồng bộ cập nhật Công ty từ Booking sang Hóa đơn dịch vụ (SP3000), Thanh toán (Payments) và Hóa đơn bán (SalesInvoices)
+### Module: Đặt phòng / Thu ngân ([BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [BookingCompanySyncTest.php](file:///d:/PMS/backend/tests/Feature/BookingCompanySyncTest.php))
+
+- **Yêu cầu & Nghiệp vụ**:
+  - Khi tạo một booking ban đầu gắn với Công ty A (ví dụ ID: 3), sau đó vào sửa booking chọn lại Công ty B (ví dụ ID: 1).
+  - Hệ thống cần tự động đồng bộ mã công ty mới sang toàn bộ các bảng hóa đơn và thanh toán liên quan đến booking này, thay vì chỉ cập nhật riêng bảng `bookings`.
+- **Rà soát & Xử lý**:
+  - Đã rà soát toàn bộ CSDL và xác định 3 bảng nghiệp vụ có liên kết trực tiếp với Công ty của Booking:
+    1. `payments`: Cập nhật `company_id = $newCompanyId` cho các khoản cọc/thanh toán của booking và các phòng thuộc booking.
+    2. `sales_invoices`: Cập nhật `company_id = $newCompanyId` cho các hóa đơn thanh toán/settlement của booking.
+    3. `service_bills` (`SP3000`):
+       - `CompanyId2`: Cập nhật `= $newCompanyId` cho toàn bộ các bill đang thuộc/quản lý bởi booking (`RegisterID2 = $booking->id`, hoặc các bill chưa chuyển có `RegisterId1 = $booking->id` / `RentalRoomId1` thuộc các phòng của booking).
+       - `CompanyId1`: Cập nhật `= $newCompanyId` cho các bill ban đầu sinh ra từ booking này. Riêng các bill chuyển từ booking khác sang vẫn giữ nguyên `CompanyId1` của booking nguồn ban đầu, chỉ cập nhật `CompanyId2`.
+  - Triển khai hàm `cascadeBookingCompanyUpdate` trong [BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), tự động kích hoạt trong transaction của phương thức `update` khi phát hiện `$booking->wasChanged('company_id')`.
+- **Kiểm thử**:
+  - Viết bộ Feature Test toàn diện [BookingCompanySyncTest.php](file:///d:/PMS/backend/tests/Feature/BookingCompanySyncTest.php) bao gồm 3 test case:
+    1. Cập nhật booking sang công ty mới -> đồng bộ đồng thời sang `service_bills` (cả master & phòng), `payments` (cả master & phòng) và `sales_invoices`.
+    2. Bill chuyển từ booking khác sang chỉ cập nhật `CompanyId2`, giữ nguyên `CompanyId1` nguồn.
+    3. Cập nhật các thông tin khác của booking mà không đổi công ty -> giữ nguyên dữ liệu công ty ở các bảng liên quan.
+  - Kết quả: 3/3 tests PASSED (17 assertions).
 
 ## [2026-10-02] - Khắc phục đồng bộ tiến trình Sang ngày (Night Audit) đa tài khoản & đa tab (Reverb, BroadcastChannel, Public status check & Polling fallback)
 ### Module: Lễ tân / Sang ngày ([NightAuditController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php), [api.php](file:///d:/PMS/backend/routes/api.php), [echo.js](file:///d:/PMS/frontend/src/services/echo.js), [auth-store.js](file:///d:/PMS/frontend/src/stores/auth-store.js), [night-audit-store.js](file:///d:/PMS/frontend/src/stores/night-audit-store.js), [App.vue](file:///d:/PMS/frontend/src/App.vue), [DayClosePage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/DayClosePage.vue))

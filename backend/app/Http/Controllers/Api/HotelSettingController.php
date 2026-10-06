@@ -33,6 +33,7 @@ class HotelSettingController extends Controller
             'AllowLockRoomCauseUnassignableRoomBK',
             'RuleUserCorrectOrPostBillPaymentOldDay',
             'RoomMap_ColorRoomNumberByRoomClass',
+            'CheckAuthorization',
         ])->get()->pluck('value', 'name');
 
         $data['ColorDefaultBookingRoomMap'] = $configs->get('ColorDefaultBookingRoomMap', '#97D5FF');
@@ -46,6 +47,7 @@ class HotelSettingController extends Controller
         $data['AllowLockRoomCauseUnassignableRoomBK'] = $configs->get('AllowLockRoomCauseUnassignableRoomBK', '0');
         $data['RuleUserCorrectOrPostBillPaymentOldDay'] = $configs->get('RuleUserCorrectOrPostBillPaymentOldDay', '0');
         $data['RoomMap_ColorRoomNumberByRoomClass'] = $configs->get('RoomMap_ColorRoomNumberByRoomClass', '0');
+        $data['CheckAuthorization'] = $configs->get('CheckAuthorization', '0');
         
         $bfConfig = \App\Models\HotelConfig::where('name', 'DefaultBreakfast')->first();
         $data['DefaultBreakfast'] = $bfConfig ? intval($bfConfig->value) : 1;

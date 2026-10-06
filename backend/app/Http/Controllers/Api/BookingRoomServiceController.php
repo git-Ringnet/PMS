@@ -243,6 +243,136 @@ class BookingRoomServiceController extends Controller
             ]);
         }
 
+        // Nếu là tiền phòng (RM/ROOM_CHARGE) và đã tồn tại ServiceBill chưa thanh toán của phòng cho ngày này -> Cập nhật bill
+        $isRoomCharge = ($request->service_code === 'RM' || $request->service_code === 'ROOM_CHARGE');
+        $svcDateStr   = Carbon::parse($request->service_date)->toDateString();
+        $rate         = round((float) ($request->rate ?? 0), 2);
+        $quantity     = (float) ($request->quantity ?? 1);
+        $totalAmount  = round($rate * $quantity, 2);
+
+        $existingBill = null;
+        if ($isRoomCharge) {
+            $existingBill = ServiceBill::where(function ($q) use ($room) {
+                    $q->where('RentalRoomId1', $room->id)
+                      ->orWhere('RentalRoomId2', $room->id);
+                })
+                ->where('ServiceId', 'RM')
+                ->whereDate('Date', $svcDateStr)
+                ->where('Edit', 0)
+                ->where('Status', 1)
+                ->latest('Ma')
+                ->first();
+
+            if ($existingBill) {
+                if ($existingBill->PaymentId !== null) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Hóa đơn tiền phòng ngày ' . $svcDateStr . ' đã được thanh toán, không thể điều chỉnh đơn giá.',
+                    ], 422);
+                }
+                if ($existingBill->VatId !== null) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Hóa đơn tiền phòng ngày ' . $svcDateStr . ' đã xuất hóa đơn VAT, không thể điều chỉnh đơn giá.',
+                    ], 422);
+                }
+
+                $service = DB::transaction(function () use ($room, $request, $existingBill, $svcDateStr, $rate, $quantity, $totalAmount) {
+                    $user = Auth::user()?->username ?? 'system';
+
+                    // 1. Cập nhật ServiceBill (SP3000)
+                    $existingBill->update([
+                        'Quantity' => $quantity,
+                        'Amount'   => $totalAmount,
+                    ]);
+
+                    // 2. Cập nhật ServiceBillDetail (SP3001)
+                    $details = ServiceBillDetail::where('BillServiceId', $existingBill->Ma)->get();
+                    $roomService = HotelService::where('code', 'RM')->first();
+                    $roomTaxProfile = HotelService::taxProfile($roomService);
+
+                    $bfDetail = $details->firstWhere('ServiceId', 'BF');
+                    if ($bfDetail) {
+                        $rmBreakdown = TaxBreakdownService::breakdown($totalAmount, $roomTaxProfile['service_charge'], $roomTaxProfile['special_tax'], $roomTaxProfile['tax']);
+                        ServiceBillDetail::where('BillServiceId', $existingBill->Ma)
+                            ->where('Ma', 1)
+                            ->update([
+                                'OriginalRate'             => $rmBreakdown['original_rate'],
+                                'ServiceChargeAmount'      => $rmBreakdown['service_charge_amount'],
+                                'SpecialTaxAmount'         => $rmBreakdown['special_tax_amount'],
+                                'TaxAmount'                => $rmBreakdown['tax_amount'],
+                                'Amount'                   => $totalAmount,
+                                'DetailBillOriginalAmount' => $rmBreakdown['net_total'],
+                                'OriginalAmount'           => $rmBreakdown['net_total'],
+                            ]);
+                    } else {
+                        $singleBreakdown = TaxBreakdownService::breakdown($totalAmount, $roomTaxProfile['service_charge'], $roomTaxProfile['special_tax'], $roomTaxProfile['tax']);
+                        ServiceBillDetail::where('BillServiceId', $existingBill->Ma)
+                            ->where(function ($q) {
+                                $q->where('ServiceId', 'RM')->orWhere('Ma', 1);
+                            })
+                            ->update([
+                                'OriginalRate'             => $singleBreakdown['original_rate'],
+                                'ServiceChargeAmount'      => $singleBreakdown['service_charge_amount'],
+                                'SpecialTaxAmount'         => $singleBreakdown['special_tax_amount'],
+                                'TaxAmount'                => $singleBreakdown['tax_amount'],
+                                'Amount'                   => $totalAmount,
+                                'DetailBillOriginalAmount' => $singleBreakdown['net_total'],
+                                'OriginalAmount'           => $singleBreakdown['net_total'],
+                            ]);
+                    }
+
+                    // 3. Cập nhật RoomNightBill (SP3004) nếu có
+                    RoomNightBill::where('bill_id', $existingBill->Ma)->update([
+                        'rate' => $rate,
+                    ]);
+
+                    // 4. Cập nhật BookingRoomService
+                    return BookingRoomService::withTrashed()->updateOrCreate(
+                        [
+                            'booking_room_id' => $room->id,
+                            'service_code'    => 'RM',
+                            'service_date'    => $svcDateStr,
+                        ],
+                        [
+                            'service_name'           => $request->service_name ?: ($existingBill->DescriptionServive ?: BookingRoomService::catalogName(BookingRoomService::CODE_ROOM, 'Dịch vụ phòng nghỉ')),
+                            'guest_id'               => $request->guest_id,
+                            'quantity'               => $quantity,
+                            'rate'                   => $rate,
+                            'total_amount'           => $totalAmount,
+                            'department'             => 'FO',
+                            'service_bill_id'        => $existingBill->Ma,
+                            'service_bill_detail_no' => 1,
+                            'is_room'                => 1,
+                            'folio'                  => $existingBill->Folio ?? 1,
+                            'is_posted'              => 1,
+                            'deleted_at'             => null,
+                            'created_by'             => $user,
+                        ]
+                    );
+                });
+
+                try {
+                    \App\Services\ActivityLogService::logServiceAction(
+                        'update',
+                        $room->room_number,
+                        $room->booking?->booking_code ?? ('GAL' . $room->booking_id),
+                        $service->service_name ?: $service->service_code,
+                        $service->quantity ?? 1,
+                        $service->rate ?? 0,
+                        $request
+                    );
+                } catch (\Throwable $e) {}
+
+                return response()->json([
+                    'success'      => true,
+                    'data'         => $service,
+                    'service_bill' => $existingBill->fresh(),
+                    'message'      => 'Đã thêm/cập nhật dịch vụ thành công.',
+                ], 200);
+            }
+        }
+
         // Nếu trùng ngày + service_code → update giá, không cộng dồn
         $service = BookingRoomService::withTrashed()->updateOrCreate(
             [
