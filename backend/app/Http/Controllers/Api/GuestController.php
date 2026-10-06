@@ -1007,6 +1007,7 @@ class GuestController extends Controller
             'rate_code'         => 'nullable|string|max:100|exists:room_rate_codes,Ma',
             'extra_bed_qty'     => 'nullable|integer|min:0',
             'extra_bed_rate'    => 'nullable|numeric|min:0',
+            'breakfast'         => 'nullable|boolean',
         ]);
 
         $room = BookingRoom::find($roomId);
@@ -1040,6 +1041,7 @@ class GuestController extends Controller
             if ($request->filled('arrival_time'))   $pivotData['actual_arrival_time']  = $request->input('arrival_time');
             if ($request->filled('departure_date')) $pivotData['actual_checkout_date'] = $request->input('departure_date');
             if ($request->filled('departure_time')) $pivotData['actual_checkout_time'] = $request->input('departure_time');
+            if ($request->has('breakfast'))         $pivotData['breakfast']            = $request->boolean('breakfast');
             if (!empty($pivotData)) {
                 $pivot->update($pivotData);
             }
@@ -1084,12 +1086,18 @@ class GuestController extends Controller
         if ($request->filled('arrival_time'))   $roomData['arrival_time']   = $request->input('arrival_time');
         if ($request->filled('departure_time')) $roomData['departure_time'] = $request->input('departure_time');
         if ($request->has('rate') && $request->input('rate') !== null) {
-            $roomData['rate'] = $request->input('rate');
-            $roomData['base_price'] = $request->input('rate');
+            $roomData['rate'] = (float) $request->input('rate');
+            $roomData['base_price'] = (float) $request->input('rate');
         }
-        if ($request->has('rate_code'))      $roomData['rate_code']      = filled($request->rate_code) ? trim($request->rate_code) : null;
-        if ($request->has('extra_bed_qty') && $request->input('extra_bed_qty') !== null) $roomData['extra_bed_qty'] = $request->input('extra_bed_qty');
-        if ($request->has('extra_bed_rate') && $request->input('extra_bed_rate') !== null) $roomData['extra_bed_rate'] = $request->input('extra_bed_rate');
+        if ($request->has('rate_code')) {
+            $incomingCode = trim((string) $request->input('rate_code'));
+            $roomData['rate_code'] = (filled($incomingCode) && $incomingCode !== 'Vui lòng chọn giá phòng') ? $incomingCode : null;
+        }
+        if ($request->has('breakfast')) {
+            $roomData['breakfast'] = $request->boolean('breakfast');
+        }
+        if ($request->has('extra_bed_qty') && $request->input('extra_bed_qty') !== null) $roomData['extra_bed_qty'] = (int) $request->input('extra_bed_qty');
+        if ($request->has('extra_bed_rate') && $request->input('extra_bed_rate') !== null) $roomData['extra_bed_rate'] = (float) $request->input('extra_bed_rate');
         if ($request->has('is_day_use')) {
             $isDayUse = filter_var($request->input('is_day_use'), FILTER_VALIDATE_BOOLEAN);
             $roomData['is_day_use'] = $isDayUse ? 1 : 0;
@@ -1209,7 +1217,20 @@ class GuestController extends Controller
             ->where('guest_id', $guestId)
             ->first();
 
-        // 1. Kiểm tra ngày check-in: Chỉ cho phép xóa khách khi vừa mới check in trong ngày. Đã qua ngày thì không cho phép xóa.
+        // 1. Ràng buộc tối thiểu 1 người lớn trong phòng (Note 30/09 - Vy)
+        $activeAdults = BookingRoomGuest::where('booking_room_id', $roomId)
+            ->where('status', '!=', 100)
+            ->where('status', '!=', BookingRoomGuest::STATUS_CHECKED_OUT)
+            ->get();
+
+        if ($activeAdults->count() <= 1) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Phòng phải giữ lại tối thiểu 1 người lớn để tính tiền phòng, không thể xóa khách!',
+            ], 422);
+        }
+
+        // 2. Kiểm tra ngày check-in: Chỉ cho phép xóa khách khi vừa mới check in trong ngày. Đã qua ngày thì không cho phép xóa.
         $isStayed = ($room && $room->status === BookingRoom::STATUS_CHECKED_IN)
             || ($pivot && $pivot->status === BookingRoomGuest::STATUS_CHECKED_IN);
 
@@ -1226,15 +1247,13 @@ class GuestController extends Controller
             }
         }
 
-        // 2. Kiểm tra phát sinh hóa đơn hoặc thanh toán
+        // 3. Kiểm tra phát sinh hóa đơn hoặc thanh toán
         $hasBills = ServiceBill::where(function ($q) use ($guestId) {
                 $q->whereRaw('CAST(CustomerId1 AS CHAR) = ?', [(string) $guestId])
                   ->orWhereRaw('CAST(CustomerId2 AS CHAR) = ?', [(string) $guestId]);
             })
-            ->where(function ($q) {
-                $q->where('Edit', 0)
-                  ->orWhere('Status', 0);
-            })
+            ->where('Edit', 0)
+            ->where('Status', '!=', 2)
             ->exists();
 
         $hasPayments = Payment::where('guest_id', (string) $guestId)
@@ -1252,23 +1271,38 @@ class GuestController extends Controller
             ], 422);
         }
 
-        if ($pivot) {
-            $pivot->delete();
-        }
+        DB::transaction(function () use ($pivot, $guestId, $roomId, $room, $activeAdults) {
+            $isPrimary = (bool) ($pivot?->is_primary);
 
-        // Xóa hẳn bản ghi trong bảng guests nếu khách không còn gán ở phòng nào khác
-        $otherCount = BookingRoomGuest::where('guest_id', $guestId)->count();
-        if ($otherCount === 0) {
-            $guest = Guest::find($guestId);
-            if ($guest) {
-                $guest->delete();
+            if ($pivot) {
+                $pivot->delete();
             }
-        }
 
-        $room = BookingRoom::find($roomId);
-        if ($room) {
-            $room->update(['adults' => max(1, $room->guests()->count())]);
-        }
+            // Nếu xóa khách chính thì 1 khách phụ còn lại trong phòng update thành khách chính trong phòng
+            if ($isPrimary) {
+                $nextPrimary = $activeAdults->where('guest_id', '!=', $guestId)->first();
+                if ($nextPrimary) {
+                    $nextPrimary->update(['is_primary' => true]);
+                }
+            }
+
+            // Xóa hẳn bản ghi trong bảng guests nếu khách không còn gán ở phòng nào khác
+            $otherCount = BookingRoomGuest::where('guest_id', $guestId)->count();
+            if ($otherCount === 0) {
+                $guest = Guest::find($guestId);
+                if ($guest) {
+                    $guest->delete();
+                }
+            }
+
+            if ($room) {
+                $remainingAdults = BookingRoomGuest::where('booking_room_id', $roomId)
+                    ->where('status', '!=', 100)
+                    ->where('status', '!=', BookingRoomGuest::STATUS_CHECKED_OUT)
+                    ->count();
+                $room->update(['adults' => max(1, $remainingAdults)]);
+            }
+        });
 
         return response()->json(['success' => true, 'message' => 'Đã xóa khách khỏi phòng và cơ sở dữ liệu.']);
     }
@@ -1539,6 +1573,7 @@ class GuestController extends Controller
             'rate_code'         => 'nullable|string|max:100|exists:room_rate_codes,Ma',
             'extra_bed_qty'     => 'nullable|integer|min:0',
             'extra_bed_rate'    => 'nullable|numeric|min:0',
+            'breakfast'         => 'nullable|boolean',
         ]);
 
         $room = $child->booking_room_id
@@ -1606,10 +1641,8 @@ class GuestController extends Controller
                 $q->whereRaw('CAST(CustomerId1 AS CHAR) = ?', [(string) $childId])
                   ->orWhereRaw('CAST(CustomerId2 AS CHAR) = ?', [(string) $childId]);
             })
-            ->where(function ($q) {
-                $q->where('Edit', 0)
-                  ->orWhere('Status', 0);
-            })
+            ->where('Edit', 0)
+            ->where('Status', '!=', 2)
             ->exists();
 
         $hasPayments = Payment::where('guest_id', (string) $childId)

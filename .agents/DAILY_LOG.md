@@ -18,6 +18,25 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-10-06] - Khắc phục lỗi sửa thông tin phòng (giá phòng, thêm giường, ăn sáng, rate code) và hoàn thiện quy tắc chặn/xử lý xóa khách
+### Module: Đặt phòng / Sơ đồ phòng & Thông tin khách ([BookingDetailModal.vue](file:///d:/PMS/frontend/src/components/BookingDetailModal.vue), [GuestController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/GuestController.php), [RoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomController.php), [BookingRoomStayChargeService.php](file:///d:/PMS/backend/Services/BookingRoomStayChargeService.php))
+
+- **Yêu cầu & Nghiệp vụ xử lý**:
+  1. **Sửa thông tin phòng từ Sơ đồ phòng (Room Map $\to$ Thông tin $\to$ Sửa)**:
+     - Sửa giá phòng (ví dụ từ 650k thành 700k) lưu thành công nhưng vào lại bị hồi lại 650k: Đã sửa service đồng bộ phí lưu trú `BookingRoomStayChargeService` không dùng rate code ghi đè đơn giá phòng khi người dùng nhập giá manual; đồng thời cập nhật cả `rate` và `base_price` trong `rate.booking_rooms`.
+     - Tự động định dạng phân tách hàng nghìn (ví dụ: `1,200,000`) trực tiếp khi nhập giá phòng và giá thêm giường; xử lý an toàn khi focus, blur và lưu CSDL.
+     - Lưu & đồng bộ chính xác các trường: Thêm giường (`extra_bed_qty`, `extra_bed_rate`) và Ăn sáng (`breakfast`) trên cả pivot `booking_room_guests` và `booking_rooms`. `RoomController` trả về đúng trạng thái ăn sáng và không ghi đè số lượng giường phụ từ danh mục nếu phòng đã cấu hình bằng 0.
+     - Cho phép xóa nhanh / clear `rate_code` khi phòng đang có rate code (thêm nút xóa `X`, cho phép chọn giá trị rỗng và đồng bộ `null` xuống CSDL).
+  2. **Quy tắc chặn và xử lý nghiệp vụ khi xóa khách (Người lớn & Trẻ em)**:
+     - Chặn xóa khách nếu khách đã phát sinh hóa đơn `service_bills` (`CustomerId1`, `CustomerId2`, `Edit = 0`, `Status != 2`) hoặc phiếu thanh toán `payments` (`deleted_at IS NULL`, `edit_flag = 0` hoặc `status = 0`). Cảnh báo: *"Khách đã phát sinh hóa đơn hoặc thanh toán không thể xóa khách."*
+     - Chỉ cho phép xóa khách khi vừa check-in trong ngày (`actual_arrival_date == system_date`). Đã qua ngày (`actual_arrival_date < system_date`) thì chặn không cho xóa (áp dụng cho cả người lớn và trẻ em).
+     - Giữ lại tối thiểu 1 người lớn trong phòng để tiếp tục tính tiền phòng; chặn xóa nếu phòng chỉ còn 1 người lớn (cả frontend và backend).
+     - Khi xóa khách chính (`is_primary = true`), tự động đôn 1 khách phụ còn lại trong phòng thành khách chính (`is_primary = 1`) và cập nhật lại số lượng `adults` của phòng.
+- **Kiểm thử**:
+  - `GuestDeleteRestrictionsTest`: 9/9 test cases passed (100%).
+  - `GuestControllerFixesTest`: 4/4 test cases passed (100%).
+  - Frontend production build (`npm run build`): Thành công trong 3.94s không lỗi.
+
 ## [2026-10-05] - Tinh gọn phân trang Lịch sử thao tác & Chặn log rác cấu hình user-settings
 ### Module: Quản trị hệ thống / Lịch sử thao tác ([ActivityLogTab.vue](file:///d:/PMS/frontend/src/pages/system/components/ActivityLogTab.vue), [LogActivity.php](file:///d:/PMS/backend/app/Http/Middleware/LogActivity.php), [ActivityLogController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/ActivityLogController.php))
 

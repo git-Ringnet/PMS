@@ -227,6 +227,7 @@ class RoomController extends Controller
                 $room->guest_count = (int) $room->adults + $room->children + $room->babies;
                 $room->rate = $br->rate ?? 0;
                 $room->rate_code = $br->rate_code ?? null;
+                $room->breakfast = (bool) ($br->breakfast ?? true);
                 $room->standard_rate = (float) ($br->roomClass?->standardRates
                     ?->firstWhere('room_form_id', (int) $br->RoomKind)?->room_price ?? 0);
                 $room->booking_note = $br->booking?->note ?? '';
@@ -247,7 +248,7 @@ class RoomController extends Controller
                     ->values()
                     ->toArray();
                 $ebQty = (int) ($br->extra_bed_qty ?? 0);
-                if ($ebQty === 0 && $br->services) {
+                if ($br->extra_bed_qty === null && $br->services) {
                     $ebQty = (int) ($br->services->where('service_code', \App\Models\BookingRoomService::CODE_EXTRA_BED)->max('quantity') ?? 0);
                 }
                 $room->extra_bed_qty = $ebQty;

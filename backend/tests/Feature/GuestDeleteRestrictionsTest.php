@@ -74,7 +74,7 @@ class GuestDeleteRestrictionsTest extends TestCase
         ]);
     }
 
-    private function createBookingWithRoom(array $roomAttrs = []): array
+    private function createBookingWithRoom(array $roomAttrs = [], bool $withSecondGuest = true): array
     {
         $booking = Booking::create([
             'booking_name' => 'Nguyen Van A',
@@ -96,7 +96,7 @@ class GuestDeleteRestrictionsTest extends TestCase
             'departure_date' => '2026-08-11',
             'actual_arrival_date' => '2026-08-09',
             'status' => BookingRoom::STATUS_CHECKED_IN,
-            'adults' => 1,
+            'adults' => $withSecondGuest ? 2 : 1,
             'children_qty' => 0,
             'rate' => 1000000,
         ], $roomAttrs));
@@ -110,11 +110,26 @@ class GuestDeleteRestrictionsTest extends TestCase
             'booking_room_id' => $room->id,
             'guest_id' => $guest->id,
             'status' => BookingRoomGuest::STATUS_CHECKED_IN,
-            'actual_arrival_date' => '2026-08-09',
+            'actual_arrival_date' => $roomAttrs['actual_arrival_date'] ?? '2026-08-09',
             'is_primary' => true,
         ]);
 
-        return [$booking, $room, $guest, $pivot];
+        $guest2 = null;
+        if ($withSecondGuest) {
+            $guest2 = Guest::create([
+                'full_name' => 'Guest Two',
+                'phone' => '0909876543',
+            ]);
+            BookingRoomGuest::create([
+                'booking_room_id' => $room->id,
+                'guest_id' => $guest2->id,
+                'status' => BookingRoomGuest::STATUS_CHECKED_IN,
+                'actual_arrival_date' => $roomAttrs['actual_arrival_date'] ?? '2026-08-09',
+                'is_primary' => false,
+            ]);
+        }
+
+        return [$booking, $room, $guest, $pivot, $guest2];
     }
 
     private function createServiceBill(array $attrs): ServiceBill
@@ -130,6 +145,19 @@ class GuestDeleteRestrictionsTest extends TestCase
             'Status' => 0,
             'Amount' => 50000,
         ], $attrs));
+    }
+
+    public function test_cannot_delete_when_only_one_adult_remains(): void
+    {
+        [$booking, $room, $guest] = $this->createBookingWithRoom([], false);
+
+        $response = $this->deleteJson("/api/booking-rooms/{$room->id}/guests/{$guest->id}");
+
+        $response->assertStatus(422)
+            ->assertJson([
+                'success' => false,
+                'message' => 'Phòng phải giữ lại tối thiểu 1 người lớn để tính tiền phòng, không thể xóa khách!',
+            ]);
     }
 
     public function test_cannot_delete_guest_with_active_service_bill_customer1(): void
@@ -214,7 +242,7 @@ class GuestDeleteRestrictionsTest extends TestCase
 
     public function test_can_delete_guest_checked_in_same_day_without_bills(): void
     {
-        [$booking, $room, $guest] = $this->createBookingWithRoom([
+        [$booking, $room, $guest, $pivot, $guest2] = $this->createBookingWithRoom([
             'arrival_date' => '2026-08-09',
             'actual_arrival_date' => '2026-08-09',
         ]);
@@ -231,6 +259,16 @@ class GuestDeleteRestrictionsTest extends TestCase
             'booking_room_id' => $room->id,
             'guest_id' => $guest->id,
         ]);
+
+        // Secondary guest must be promoted to primary
+        $this->assertDatabaseHas('booking_room_guests', [
+            'booking_room_id' => $room->id,
+            'guest_id' => $guest2->id,
+            'is_primary' => 1,
+        ]);
+
+        // Room adults must be updated
+        $this->assertEquals(1, $room->fresh()->adults);
     }
 
     public function test_cannot_delete_child_with_bill_or_payment(): void
