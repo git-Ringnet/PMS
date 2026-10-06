@@ -44,10 +44,16 @@ class ActivityLogController extends Controller
         // Lọc theo mã đăng ký
         if ($request->filled('registration_code')) {
             $regCode = trim($request->registration_code);
-            $query->where(function ($q) use ($regCode) {
+            $numericId = preg_replace('/\D/', '', $regCode);
+            $query->where(function ($q) use ($regCode, $numericId) {
                 $q->where('target_label', 'like', "%{$regCode}%")
-                  ->orWhere('target_id', 'like', "%{$regCode}%")
                   ->orWhere('description', 'like', "%{$regCode}%");
+                if (!empty($numericId)) {
+                    $q->orWhere(function ($sub) use ($numericId) {
+                        $sub->where('target_type', 'Booking')
+                            ->where('target_id', $numericId);
+                    });
+                }
             });
         }
 
@@ -55,9 +61,17 @@ class ActivityLogController extends Controller
         if ($request->filled('room_code')) {
             $roomCode = trim($request->room_code);
             $query->where(function ($q) use ($roomCode) {
-                $q->where('target_id', 'like', "%{$roomCode}%")
-                  ->orWhere('target_label', 'like', "%{$roomCode}%")
-                  ->orWhere('description', 'like', "%{$roomCode}%");
+                $q->where(function ($sub) use ($roomCode) {
+                    $sub->whereIn('target_type', ['Room', 'RoomLock', 'BookingRoom', 'BookingRoomService'])
+                        ->where(function ($inner) use ($roomCode) {
+                            $inner->where('target_id', 'like', "%{$roomCode}%")
+                                  ->orWhere('target_label', 'like', "%{$roomCode}%");
+                        });
+                })
+                ->orWhere('description', 'like', "%phòng%{$roomCode}%")
+                ->orWhere('description', 'like', "%P.{$roomCode}%")
+                ->orWhereJsonContains('new_values->room_number', $roomCode)
+                ->orWhereJsonContains('old_values->room_number', $roomCode);
             });
         }
 

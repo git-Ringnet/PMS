@@ -22,6 +22,30 @@
 ## [2026-10-05] - Mở rộng chiều ngang & hiển thị trọn vẹn popover Cài đặt hiển thị Sơ đồ phòng ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
 ### Module: Sơ đồ phòng - Cài đặt hiển thị ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
 
+## [2026-10-06] - Nâng cấp toàn diện Lịch sử thao tác (Activity Log): Chuẩn hóa 100% giao diện & format mô tả chi tiết theo chuẩn hệ thống HKT gốc
+### Module: Quản trị hệ thống - Lịch sử thao tác ([ActivityLogTab.vue](file:///d:/PMS/frontend/src/pages/system/components/ActivityLogTab.vue), [LogActivity.php](file:///d:/PMS/backend/app/Http/Middleware/LogActivity.php), [ActivityLogResource.php](file:///d:/PMS/backend/app/Http/Resources/ActivityLogResource.php), [ActivityLogService.php](file:///d:/PMS/backend/app/Services/ActivityLogService.php), [BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [ActivityLogController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/ActivityLogController.php), [ActivityLogEnhancementTest.php](file:///d:/PMS/backend/tests/Feature/ActivityLogEnhancementTest.php))
+
+- **Yêu cầu & Nghiệp vụ xử lý**:
+  1. **Chuẩn hóa 100% thứ tự & định dạng các cột hiển thị theo chuẩn HKT gốc**:
+     - Thứ tự cột: `ID` | `Thời gian` (HH:mm) | `Trình duyệt` (User-Agent chi tiết) | `Màn hình` (`Booking` / tên màn hình chuẩn) | `Người dùng` (Mã NV / Username) | `Ngày` (dd/mm/yyyy) | `Hành động` (`Add`, `Modify`, `Cancel`) | `Mã đăng ký` (`SM...` / `GAL...`) | `Mã phòng` (`G0013083`, `G0021633,G0021634`, hoặc `-` đối với log đăng ký) | `Mô tả` (Mô tả chi tiết phân cấp) | `Chi tiết`.
+     - Xuất Excel: Tự động xuất đầy đủ theo đúng thứ tự 10 cột chuẩn HKT trên với UTF-8 encoding.
+  2. **Chuẩn hóa cú pháp Mô tả chi tiết (Description Format) theo chuẩn HKT**:
+     - *Tạo mới Đăng ký*: Tách thành 2 log nghiệp vụ chuẩn:
+       + Log 1: `* Thông Tin Đăng Ký {id} : -Tên nhóm : {name} -FIT : {GIT/FIT} -VAT : {Có/Không} -Ngày đến : {dd-mm-yyyy} -Ngày đi : {dd-mm-yyyy} -Số ngày : {nights} -Trạng thái : {status} -Công ty : {company} -Tour Code : ... -Liên hệ : ... -Payment : ... -Booker : ... -SalesPerson : {sales} -Market Segment : ... -Source Code : ... -Email : ... -Ghi chú đăng ký : ...` (Cột Mã phòng để trống `-`).
+       + Log 2: `* Phòng thuê : # Thêm mới : Mã: {G_id} - Giá: {price} - Loại: {class} - Dạng: {form} - Phòng:{room} - Ngày đến: {dd-mm-yyyy} - Ngày đi: {dd-mm-yyyy} - Người lớn: {adults} - Trẻ em: {children} - Trẻ em ăn sáng miễn phí: 0 - Ăn sáng: {Có/Không} - Thêm giường: {qty} - BirthDay: {Có/Không}` (Cột Mã phòng điền mã `G...`).
+     - *Cập nhật phòng thuê* (`BookingRoomController@update`):
+       + Format: `* Cập Nhật Phòng Thuê ({G_id}) : - {Field} {old} -> {new}` (Ví dụ: `* Cập Nhật Phòng Thuê (G0013083) : - Người Lớn 1 -> 2`, `- Giá: 650000 -> 700000`, `- Phòng: 101 -> 102`).
+     - *Cập nhật thông tin đăng ký*:
+       + Format: `* Cập Nhật Thông Tin Đăng Ký {id} : - {Field} : {old} -> {new}`.
+  3. **Bộ giải mã tương thích ngược**:
+     - Tự động phân giải dữ liệu log có sẵn trong CSDL sang đúng định dạng HKT thông qua `ActivityLogResource`.
+  4. **Chống ghi log trùng lặp (Double Logging Prevention)**:
+     - Gắn cờ `_activity_logged = true` khi `ActivityLogService` đã xử lý để middleware `LogActivity` bỏ qua.
+- **Kiểm thử & Đảm bảo chất lượng**:
+  - `ActivityLogEnhancementTest`: 5/5 tests PASSED (100%).
+  - `AllowInputOverAVTest`: 8/8 tests PASSED (100%).
+  - Build frontend production (`npm run build`): Hoàn thành trong 4.72s không lỗi.
+
 ## [2026-10-06] - Triển khai thông số cấu hình hệ thống AllowInputOverAV ràng buộc tạo đặt phòng và lấy thêm phòng khi hết phòng trống
 ### Module: Đặt phòng / Lễ tân / Kế hoạch phòng ([BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [HotelSettingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/HotelSettingController.php), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [QuickAssignModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/QuickAssignModal.vue), [RoomPlanPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomPlanPage.vue), [AllowInputOverAVTest.php](file:///d:/PMS/backend/tests/Feature/AllowInputOverAVTest.php))
 

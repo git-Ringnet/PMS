@@ -252,31 +252,28 @@ const visiblePages = computed(() => {
   return pages
 })
 
-// Action label translation
+// Action label translation matching HKT
 const getActionLabel = (action) => {
   const map = {
-    'New': 'Tạo mới',
-    'Modify': 'Cập nhật',
-    'CheckIn': 'Nhận phòng',
-    'CheckOut': 'Trả phòng',
-    'Cancel': 'Hủy',
-    'NoShow': 'Không đến',
-    'Lock': 'Khóa phòng',
-    'Unlock': 'Mở khóa',
-    'Payment': 'Thanh toán',
-    'Refund': 'Hoàn tiền',
-    'AddService': 'Thêm dịch vụ',
-    'DeleteService': 'Xóa dịch vụ',
-    'DayClose': 'Sang ngày',
-    'Inventory': 'Kho bãi',
-    'login': 'Đăng nhập',
-    'logout': 'Đăng xuất',
-    'login_failed': 'Đăng nhập lỗi',
-    'create': 'Thêm mới',
-    'update': 'Cập nhật',
-    'delete': 'Xóa',
-    'upload': 'Tải lên',
-    'bulk_action': 'Thao tác loạt'
+    'Add': 'Add',
+    'Modify': 'Modify',
+    'Cancel': 'Cancel',
+    'New': 'Add',
+    'create': 'Add',
+    'update': 'Modify',
+    'delete': 'Cancel',
+    'CheckIn': 'CheckIn',
+    'CheckOut': 'CheckOut',
+    'Payment': 'Payment',
+    'Refund': 'Refund',
+    'Lock': 'Lock',
+    'Unlock': 'Unlock',
+    'NoShow': 'NoShow',
+    'DayClose': 'DayClose',
+    'Inventory': 'Inventory',
+    'login': 'Login',
+    'logout': 'Logout',
+    'login_failed': 'Login Failed',
   }
   return map[action] || action
 }
@@ -285,11 +282,15 @@ const getActionLabel = (action) => {
 const getActionClass = (action) => {
   const base = 'px-2 py-0.5 rounded-full text-[10px] font-bold inline-block text-center border whitespace-nowrap '
   const map = {
-    'New': 'bg-emerald-50 text-emerald-700 border-emerald-300',
+    'Add': 'bg-emerald-50 text-emerald-700 border-emerald-300',
     'Modify': 'bg-blue-50 text-blue-700 border-blue-300',
+    'Cancel': 'bg-rose-50 text-rose-700 border-rose-300',
+    'New': 'bg-emerald-50 text-emerald-700 border-emerald-300',
+    'create': 'bg-emerald-50 text-emerald-700 border-emerald-300',
+    'update': 'bg-blue-50 text-blue-700 border-blue-300',
+    'delete': 'bg-rose-50 text-rose-700 border-rose-300',
     'CheckIn': 'bg-indigo-50 text-indigo-700 border-indigo-300',
     'CheckOut': 'bg-purple-50 text-purple-700 border-purple-300',
-    'Cancel': 'bg-rose-50 text-rose-700 border-rose-300',
     'NoShow': 'bg-orange-50 text-orange-700 border-orange-300',
     'Lock': 'bg-amber-50 text-amber-800 border-amber-300',
     'Unlock': 'bg-teal-50 text-teal-700 border-teal-300',
@@ -302,9 +303,6 @@ const getActionClass = (action) => {
     'login': 'bg-green-50 text-green-700 border-green-300',
     'logout': 'bg-slate-50 text-slate-700 border-slate-300',
     'login_failed': 'bg-red-50 text-red-700 border-red-300',
-    'create': 'bg-emerald-50 text-emerald-700 border-emerald-300',
-    'update': 'bg-blue-50 text-blue-700 border-blue-300',
-    'delete': 'bg-rose-50 text-rose-700 border-rose-300',
   }
   return base + (map[action] || 'bg-slate-50 text-slate-600 border-slate-300')
 }
@@ -338,6 +336,35 @@ const formatDateTime = (dateStr) => {
     if (hour.length === 1) hour = '0' + hour
     
     return `${day}/${month}/${year} ${hour}:${minute}:${second}`
+  } catch (e) {
+    return dateStr
+  }
+}
+
+// Time only formatter (HH:mm)
+const formatTimeOnly = (dateStr) => {
+  if (!dateStr) return '-'
+  try {
+    const d = new Date(dateStr)
+    if (isNaN(d.getTime())) return dateStr
+    const h = String(d.getHours()).padStart(2, '0')
+    const m = String(d.getMinutes()).padStart(2, '0')
+    return `${h}:${m}`
+  } catch (e) {
+    return dateStr
+  }
+}
+
+// Date only formatter (dd/mm/yyyy)
+const formatDateOnly = (dateStr) => {
+  if (!dateStr) return '-'
+  try {
+    const d = new Date(dateStr)
+    if (isNaN(d.getTime())) return dateStr
+    const day = String(d.getDate()).padStart(2, '0')
+    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const year = d.getFullYear()
+    return `${day}/${month}/${year}`
   } catch (e) {
     return dateStr
   }
@@ -390,28 +417,17 @@ const formatDescriptionHtml = (text) => {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
 
-  // Replace arrow -> with bold arrow
-  escaped = escaped.replace(/-&gt;/g, '<span class="font-bold text-sky-600 mx-1">➜</span>')
+  // Replace arrow -> with bold colored arrow
+  escaped = escaped.replace(/(-&gt;|➜|->)/g, '<span class="font-bold text-sky-600 mx-1">➜</span>')
 
   // Highlight bold prefix lines: * ... :
-  escaped = escaped.replace(/^(\*\s*[^:]+:)/m, '<span class="font-bold text-slate-900">$1</span>')
+  escaped = escaped.replace(/^(\*\s*[^:\n]+:?)/gm, '<span class="font-bold text-slate-900">$1</span>')
 
-  // Highlight field labels: -Tên:, -Ngày đến:, -Phòng:, -Giá phòng:, -Tổng tiền:, -Đặt cọc:, -Trạng thái:, -Ghi chú:, Lý do:, Mã khách:, Họ tên:
-  const labelPatterns = [
-    /-Tên:/g, /-Ngày đến:/g, /-Ngày đi:/g, /-Phòng:/g, /-Loại phòng:/g,
-    /-Giá phòng:/g, /-Giá:/g, /-Tổng tiền:/g, /-Đặt cọc:/g, /-Trạng thái:/g,
-    /-Ghi chú:/g, /-Công ty:/g, /-Nguồn:/g, /Lý do:/g, /Mã khách:/g, /Họ tên:/g,
-    /Check in cho đăng ký/g, /Check out cho đăng ký/g, /Chuyển phòng:/g, /Đổi trạng thái:/g,
-    /Nâng hạng phòng:/g, /Khóa phòng/g, /Mở khóa phòng/g
-  ]
-
-  labelPatterns.forEach(pattern => {
-    escaped = escaped.replace(pattern, (match) => `<span class="font-bold text-slate-800">${match}</span>`)
-  })
+  // Highlight bullet points: • ... :
+  escaped = escaped.replace(/(•\s*[^:\n]+:)/g, '<span class="font-semibold text-slate-800">$1</span>')
 
   // Format line breaks
-  escaped = escaped.replace(/\.Cập nhật/g, '.<br/>Cập nhật')
-  escaped = escaped.replace(/,\s*-/g, '<br/>-')
+  escaped = escaped.replace(/\n/g, '<br/>')
 
   return escaped
 }
@@ -430,21 +446,20 @@ const handleExport = async () => {
       const data = res.data.data
       
       let csvContent = '\uFEFF' // BOM for Excel encoding UTF-8
-      const headers = ['ID', 'Thời gian', 'Người dùng', 'Mã NV', 'Địa chỉ IP', 'Thiết bị', 'Phân hệ / Màn hình', 'Hành động', 'Mã đăng ký', 'Mã phòng', 'Mô tả chi tiết']
+      const headers = ['ID', 'Thời gian', 'Trình duyệt', 'Màn hình', 'Người dùng', 'Ngày', 'Hành động', 'Mã đăng ký', 'Mã phòng', 'Mô tả']
       csvContent += headers.join(',') + '\n'
       
       data.forEach(log => {
         const row = [
           log.id,
-          `"${formatDateTime(log.created_at)}"`,
-          `"${log.user_name || 'Hệ thống'}"`,
-          `"${log.employee_code || 'N/A'}"`,
-          `"${log.ip_address || 'N/A'}"`,
-          `"${parseUserAgent(log.user_agent)}"`,
-          `"${log.component || log.module || 'N/A'}"`,
+          `"${log.created_time || formatTimeOnly(log.created_at)}"`,
+          `"${(log.user_agent || '').replace(/"/g, '""')}"`,
+          `"${log.component || 'Booking'}"`,
+          `"${log.employee_code || log.user_name || 'admin'}"`,
+          `"${log.created_date || formatDateOnly(log.created_at)}"`,
           `"${getActionLabel(log.action)}"`,
-          `"${log.target_label || 'N/A'}"`,
-          `"${log.target_id || 'N/A'}"`,
+          `"${log.booking_code || '-'}"`,
+          `"${log.room_number || '-'}"`,
           `"${(log.description || '').replace(/"/g, '""')}"`
         ]
         csvContent += row.join(',') + '\n'
@@ -658,19 +673,19 @@ const handleExport = async () => {
             <th @click="toggleSort('id')" class="p-2 border-r border-slate-200 w-14 cursor-pointer hover:bg-slate-200 text-center uppercase whitespace-nowrap">
               ID <span v-if="queryParams.sort_by === 'id'" class="text-[9px] text-sky-600">{{ queryParams.sort_dir === 'asc' ? '▲' : '▼' }}</span>
             </th>
-            <th @click="toggleSort('created_at')" class="p-2 border-r border-slate-200 w-36 cursor-pointer hover:bg-slate-200 uppercase whitespace-nowrap">
+            <th @click="toggleSort('created_at')" class="p-2 border-r border-slate-200 w-20 cursor-pointer hover:bg-slate-200 text-center uppercase whitespace-nowrap">
               Thời gian <span v-if="queryParams.sort_by === 'created_at'" class="text-[9px] text-sky-600">{{ queryParams.sort_dir === 'asc' ? '▲' : '▼' }}</span>
             </th>
-            <th class="p-2 border-r border-slate-200 w-32 uppercase whitespace-nowrap">Người dùng</th>
-            <th class="p-2 border-r border-slate-200 w-28 uppercase whitespace-nowrap">Địa chỉ IP</th>
-            <th class="p-2 border-r border-slate-200 w-28 uppercase whitespace-nowrap">Thiết bị</th>
-            <th class="p-2 border-r border-slate-200 w-36 uppercase whitespace-nowrap">Phân hệ / Màn hình</th>
-            <th @click="toggleSort('action')" class="p-2 border-r border-slate-200 w-28 cursor-pointer hover:bg-slate-200 uppercase text-center whitespace-nowrap">
+            <th class="p-2 border-r border-slate-200 w-44 uppercase whitespace-nowrap">Trình duyệt</th>
+            <th class="p-2 border-r border-slate-200 w-28 uppercase text-center whitespace-nowrap">Màn hình</th>
+            <th class="p-2 border-r border-slate-200 w-28 uppercase text-center whitespace-nowrap">Người dùng</th>
+            <th class="p-2 border-r border-slate-200 w-24 uppercase text-center whitespace-nowrap">Ngày</th>
+            <th @click="toggleSort('action')" class="p-2 border-r border-slate-200 w-24 cursor-pointer hover:bg-slate-200 uppercase text-center whitespace-nowrap">
               Hành động <span v-if="queryParams.sort_by === 'action'" class="text-[9px] text-sky-600">{{ queryParams.sort_dir === 'asc' ? '▲' : '▼' }}</span>
             </th>
-            <th class="p-2 border-r border-slate-200 w-28 uppercase whitespace-nowrap">Mã đăng ký</th>
-            <th class="p-2 border-r border-slate-200 w-24 uppercase whitespace-nowrap">Mã phòng</th>
-            <th class="p-2 border-r border-slate-200 uppercase min-w-[340px]">Mô tả chi tiết</th>
+            <th class="p-2 border-r border-slate-200 w-24 uppercase text-center whitespace-nowrap">Mã đăng ký</th>
+            <th class="p-2 border-r border-slate-200 w-32 uppercase text-center whitespace-nowrap">Mã phòng</th>
+            <th class="p-2 border-r border-slate-200 uppercase min-w-[360px]">Mô tả</th>
             <th class="p-2 text-center w-20 uppercase whitespace-nowrap">Chi tiết</th>
           </tr>
         </thead>
@@ -681,29 +696,31 @@ const handleExport = async () => {
             class="border-b border-slate-200 hover:bg-sky-50/50 transition-colors font-medium text-slate-700"
           >
             <td class="p-2.5 border-r border-slate-200 text-center text-slate-500 font-mono">{{ log.id }}</td>
-            <td class="p-2.5 border-r border-slate-200 text-slate-600 font-medium whitespace-nowrap">{{ formatDateTime(log.created_at) }}</td>
-            <td class="p-2.5 border-r border-slate-200 text-slate-800">
-              <div class="font-bold text-slate-900">{{ log.user_name || 'Hệ thống' }}</div>
-              <div class="text-[10px] text-slate-400 font-normal">Mã NV: {{ log.employee_code || 'N/A' }}</div>
+            <td class="p-2.5 border-r border-slate-200 text-slate-700 font-medium text-center whitespace-nowrap font-mono">
+              {{ log.created_time || formatTimeOnly(log.created_at) }}
             </td>
-            <td class="p-2.5 border-r border-slate-200 text-slate-500 font-mono text-[11px] whitespace-nowrap">{{ log.ip_address || '-' }}</td>
-            <td class="p-2.5 border-r border-slate-200 text-slate-500 font-normal whitespace-nowrap" :title="log.user_agent">
-              {{ parseUserAgent(log.user_agent) }}
+            <td class="p-2.5 border-r border-slate-200 text-slate-500 font-normal text-[11px] break-words max-w-[200px]" :title="log.user_agent">
+              <span class="line-clamp-3 select-all hover:line-clamp-none transition-all font-mono leading-tight">{{ log.user_agent || '-' }}</span>
             </td>
-            <td class="p-2.5 border-r border-slate-200 text-slate-700">
-              <span class="font-bold text-slate-800">{{ log.component || '-' }}</span>
-              <div class="text-[10px] text-slate-400 font-normal uppercase tracking-wider">{{ log.module || 'other' }}</div>
+            <td class="p-2.5 border-r border-slate-200 text-slate-800 font-semibold text-center whitespace-nowrap">
+              {{ log.component || '-' }}
+            </td>
+            <td class="p-2.5 border-r border-slate-200 text-slate-800 text-center whitespace-nowrap">
+              <span class="font-bold text-slate-900">{{ log.employee_code || log.user_name || 'admin' }}</span>
+            </td>
+            <td class="p-2.5 border-r border-slate-200 text-slate-700 font-medium text-center whitespace-nowrap font-mono">
+              {{ log.created_date || formatDateOnly(log.created_at) }}
             </td>
             <td class="p-2.5 border-r border-slate-200 text-center whitespace-nowrap">
               <span :class="getActionClass(log.action)">{{ getActionLabel(log.action) }}</span>
             </td>
-            <td class="p-2.5 border-r border-slate-200 font-mono font-bold text-indigo-700 whitespace-nowrap">
-              {{ log.target_label || '-' }}
+            <td class="p-2.5 border-r border-slate-200 font-mono font-bold text-indigo-700 text-center whitespace-nowrap">
+              {{ log.booking_code || '-' }}
             </td>
-            <td class="p-2.5 border-r border-slate-200 font-mono font-bold text-emerald-700 whitespace-nowrap">
-              {{ log.target_id || '-' }}
+            <td class="p-2.5 border-r border-slate-200 font-mono font-bold text-emerald-700 text-center whitespace-nowrap">
+              {{ log.room_number || '-' }}
             </td>
-            <td class="p-2.5 border-r border-slate-200 text-slate-700 font-normal whitespace-pre-wrap leading-relaxed">
+            <td class="p-2.5 border-r border-slate-200 text-slate-700 font-normal whitespace-pre-wrap leading-relaxed text-xs">
               <div v-html="formatDescriptionHtml(log.description)"></div>
             </td>
             <td class="p-2.5 text-center whitespace-nowrap">
@@ -838,14 +855,15 @@ const handleExport = async () => {
         </div>
 
         <!-- Modal Info Bar -->
-        <div class="bg-slate-50 border-b border-slate-200 p-4 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-medium text-slate-700 shrink-0">
+        <div class="bg-slate-50 border-b border-slate-200 p-4 grid grid-cols-2 sm:grid-cols-6 gap-3 text-xs font-medium text-slate-700 shrink-0">
           <div>
             <span class="text-slate-400 block text-[10px] uppercase font-bold">Thời gian</span>
             <strong>{{ formatDateTime(selectedLog?.created_at) }}</strong>
           </div>
           <div>
             <span class="text-slate-400 block text-[10px] uppercase font-bold">Người thực hiện</span>
-            <strong>{{ selectedLog?.user_name }}</strong> ({{ selectedLog?.employee_code || 'N/A' }})
+            <strong>{{ selectedLog?.user_name }}</strong>
+            <div class="text-[10px] text-slate-400 font-normal">Mã NV: {{ selectedLog?.employee_code || 'N/A' }}</div>
           </div>
           <div>
             <span class="text-slate-400 block text-[10px] uppercase font-bold">Hành động</span>
@@ -853,7 +871,15 @@ const handleExport = async () => {
           </div>
           <div>
             <span class="text-slate-400 block text-[10px] uppercase font-bold">Màn hình</span>
-            <strong>{{ selectedLog?.component || selectedLog?.module }}</strong>
+            <strong>{{ selectedLog?.component || selectedLog?.module_label || selectedLog?.module }}</strong>
+          </div>
+          <div>
+            <span class="text-slate-400 block text-[10px] uppercase font-bold">Mã đăng ký</span>
+            <strong class="font-mono text-indigo-700">{{ selectedLog?.booking_code || '-' }}</strong>
+          </div>
+          <div>
+            <span class="text-slate-400 block text-[10px] uppercase font-bold">Mã phòng</span>
+            <strong class="font-mono text-emerald-700">{{ selectedLog?.room_number || '-' }}</strong>
           </div>
         </div>
 

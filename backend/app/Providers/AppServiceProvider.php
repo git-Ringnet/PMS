@@ -176,10 +176,22 @@ class AppServiceProvider extends ServiceProvider
             
             // Tìm nhãn đại diện cho Model
             $targetLabel = null;
-            foreach (['name', 'title', 'code', 'username', 'label', 'display_name', 'room_code', 'registration_code'] as $field) {
-                if (isset($model->{$field})) {
-                    $targetLabel = $model->{$field};
-                    break;
+            if ($model instanceof \App\Models\Booking) {
+                $targetLabel = $model->booking_code ?? ('GAL' . $model->id);
+            } elseif ($model instanceof \App\Models\BookingRoom) {
+                $targetLabel = $model->room_number ?: ('Phòng ' . ($model->booking_room_id ?? $model->id));
+            } elseif ($model instanceof \App\Models\Payment) {
+                $targetLabel = 'GAL' . ($model->booking_id ?? '');
+            } elseif ($model instanceof \App\Models\HotelConfig) {
+                $targetLabel = $model->config_key ?? $model->description;
+            } elseif ($model instanceof \App\Models\Room || $model instanceof \App\Models\RoomLock) {
+                $targetLabel = $model->room_number;
+            } else {
+                foreach (['name', 'title', 'code', 'booking_name', 'config_key', 'username', 'label', 'display_name', 'room_code', 'registration_code'] as $field) {
+                    if (isset($model->{$field})) {
+                        $targetLabel = $model->{$field};
+                        break;
+                    }
                 }
             }
 
@@ -221,13 +233,19 @@ class AppServiceProvider extends ServiceProvider
                 }
             }
 
-            $request->attributes->set('_last_model_change', [
+            $changeData = [
                 'target_id' => $targetId,
                 'target_type' => $targetType,
                 'target_label' => $targetLabel,
+                'action' => $action,
                 'old_values' => $oldValues,
                 'new_values' => $newValues,
-            ]);
+            ];
+
+            $modelChanges = $request->attributes->get('_model_changes', []);
+            $modelChanges[$targetType] = $changeData;
+            $request->attributes->set('_model_changes', $modelChanges);
+            $request->attributes->set('_last_model_change', $changeData);
         });
     }
 }

@@ -266,6 +266,7 @@ class BookingRoomController extends Controller
         }
 
         $isInhouse = $bookingRoom->status === BookingRoom::STATUS_CHECKED_IN;
+        $oldRoomAttributes = $bookingRoom->getAttributes();
 
         // Rule Epic 2: phòng inhouse chỉ cho sửa ngày đi, giờ đi, giá và số phòng (chuyển phòng)
         if ($isInhouse) {
@@ -457,6 +458,12 @@ class BookingRoomController extends Controller
         $warning = (isset($av) && $av < 0 && $this->allowOverAV())
             ? 'Cảnh báo: Số phòng trống của loại phòng đã bị âm (AV = ' . $av . '). Vẫn ghi nhận lưu theo cấu hình hệ thống.'
             : null;
+
+        try {
+            \App\Services\ActivityLogService::logBookingRoomUpdated($bookingRoom, $oldRoomAttributes ?? [], $bookingRoom->fresh()->getAttributes(), $request);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log BookingRoom update error: ' . $e->getMessage());
+        }
 
         return response()->json([
             'success' => true,
