@@ -560,7 +560,7 @@ onMounted(() => {
 
 <template>
   <div v-if="show" class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-2 md:p-4 animate-fadeIn select-none font-sans">
-    <div class="bg-white rounded-lg shadow-2xl w-full max-w-5xl overflow-hidden border border-sky-400 flex flex-col text-xs">
+    <div class="bg-white rounded-lg shadow-2xl w-full max-w-5xl overflow-hidden border border-sky-400 flex flex-col text-xs modal-responsive-card max-h-[min(94vh,850px)]">
       
       <!-- Header (Màu xanh dương mạ #0088ff) -->
       <div class="bg-[#0088ff] text-white px-4 py-2.5 flex items-center justify-between font-semibold shrink-0 shadow-xs">
@@ -573,7 +573,7 @@ onMounted(() => {
       </div>
 
       <!-- Body Content -->
-      <div class="p-4 space-y-4 bg-gray-50/50">
+      <div class="p-4 space-y-4 bg-gray-50/50 modal-responsive-body">
         
         <div v-if="errorMsg" class="p-2.5 bg-red-50 border border-red-200 text-red-600 rounded text-xs font-semibold">
           {{ errorMsg }}
@@ -772,7 +772,7 @@ onMounted(() => {
       </div>
 
       <!-- Footer Actions -->
-      <div class="border-t border-gray-300 p-3 flex justify-end items-center gap-2 bg-gray-50">
+      <div class="border-t border-gray-300 p-3 flex justify-end items-center gap-2 bg-gray-50 shrink-0">
         <button 
           @click="handleClose" 
           :disabled="isSubmitting"
