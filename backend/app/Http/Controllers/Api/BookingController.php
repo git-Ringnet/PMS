@@ -2840,6 +2840,7 @@ class BookingController extends Controller
         $roomAllocations = $this->normalizeRoomAllocations($roomAllocations, $excludeBookingId);
         $avService = app(RoomAvailabilityService::class);
         $allowOver = \App\Models\HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->first()?->value == '1';
+        $allowInputOver = \App\Models\HotelConfig::where('name', 'AllowInputOverAV')->first()?->value == '1';
         $payloadAssignments = [];
         $newDemandByPeriod = [];
         $periods = [];
@@ -3030,7 +3031,9 @@ class BookingController extends Controller
             }
             $effectiveAvailability = $availability + $ownActiveCount;
 
-            if ($effectiveAvailability < $newDemand && !$allowOver) {
+            $canOver = $allowOver && $allowInputOver;
+
+            if ($effectiveAvailability < $newDemand && !$canOver) {
                 $roomClass = \App\Models\RoomClass::find($period['room_class_id']);
                 throw new \Exception(
                     'Không đủ phòng trống cho loại phòng ' . ($roomClass?->name ?? 'không xác định')

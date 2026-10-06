@@ -57,6 +57,80 @@
 ## [2026-10-05] - Mở rộng chiều ngang & hiển thị trọn vẹn popover Cài đặt hiển thị Sơ đồ phòng ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
 ### Module: Sơ đồ phòng - Cài đặt hiển thị ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
 
+## [2026-10-06] - Nâng cấp toàn diện Lịch sử thao tác (Activity Log): Chuẩn hóa 100% giao diện & format mô tả chi tiết theo chuẩn hệ thống HKT gốc
+### Module: Quản trị hệ thống - Lịch sử thao tác ([ActivityLogTab.vue](file:///d:/PMS/frontend/src/pages/system/components/ActivityLogTab.vue), [LogActivity.php](file:///d:/PMS/backend/app/Http/Middleware/LogActivity.php), [ActivityLogResource.php](file:///d:/PMS/backend/app/Http/Resources/ActivityLogResource.php), [ActivityLogService.php](file:///d:/PMS/backend/app/Services/ActivityLogService.php), [BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [ActivityLogController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/ActivityLogController.php), [ActivityLogEnhancementTest.php](file:///d:/PMS/backend/tests/Feature/ActivityLogEnhancementTest.php))
+
+- **Yêu cầu & Nghiệp vụ xử lý**:
+  1. **Chuẩn hóa 100% thứ tự & định dạng các cột hiển thị theo chuẩn HKT gốc**:
+     - Thứ tự cột: `ID` | `Thời gian` (HH:mm) | `Trình duyệt` (User-Agent chi tiết) | `Màn hình` (`Booking` / tên màn hình chuẩn) | `Người dùng` (Mã NV / Username) | `Ngày` (dd/mm/yyyy) | `Hành động` (`Add`, `Modify`, `Cancel`) | `Mã đăng ký` (`SM...` / `GAL...`) | `Mã phòng` (`G0013083`, `G0021633,G0021634`, hoặc `-` đối với log đăng ký) | `Mô tả` (Mô tả chi tiết phân cấp) | `Chi tiết`.
+     - Xuất Excel: Tự động xuất đầy đủ theo đúng thứ tự 10 cột chuẩn HKT trên với UTF-8 encoding.
+  2. **Chuẩn hóa cú pháp Mô tả chi tiết (Description Format) theo chuẩn HKT**:
+     - *Tạo mới Đăng ký*: Tách thành 2 log nghiệp vụ chuẩn:
+       + Log 1: `* Thông Tin Đăng Ký {id} : -Tên nhóm : {name} -FIT : {GIT/FIT} -VAT : {Có/Không} -Ngày đến : {dd-mm-yyyy} -Ngày đi : {dd-mm-yyyy} -Số ngày : {nights} -Trạng thái : {status} -Công ty : {company} -Tour Code : ... -Liên hệ : ... -Payment : ... -Booker : ... -SalesPerson : {sales} -Market Segment : ... -Source Code : ... -Email : ... -Ghi chú đăng ký : ...` (Cột Mã phòng để trống `-`).
+       + Log 2: `* Phòng thuê : # Thêm mới : Mã: {G_id} - Giá: {price} - Loại: {class} - Dạng: {form} - Phòng:{room} - Ngày đến: {dd-mm-yyyy} - Ngày đi: {dd-mm-yyyy} - Người lớn: {adults} - Trẻ em: {children} - Trẻ em ăn sáng miễn phí: 0 - Ăn sáng: {Có/Không} - Thêm giường: {qty} - BirthDay: {Có/Không}` (Cột Mã phòng điền mã `G...`).
+     - *Cập nhật phòng thuê* (`BookingRoomController@update`):
+       + Format: `* Cập Nhật Phòng Thuê ({G_id}) : - {Field} {old} -> {new}` (Ví dụ: `* Cập Nhật Phòng Thuê (G0013083) : - Người Lớn 1 -> 2`, `- Giá: 650000 -> 700000`, `- Phòng: 101 -> 102`).
+     - *Cập nhật thông tin đăng ký*:
+       + Format: `* Cập Nhật Thông Tin Đăng Ký {id} : - {Field} : {old} -> {new}`.
+  3. **Bộ giải mã tương thích ngược**:
+     - Tự động phân giải dữ liệu log có sẵn trong CSDL sang đúng định dạng HKT thông qua `ActivityLogResource`.
+  4. **Chống ghi log trùng lặp (Double Logging Prevention)**:
+     - Gắn cờ `_activity_logged = true` khi `ActivityLogService` đã xử lý để middleware `LogActivity` bỏ qua.
+- **Kiểm thử & Đảm bảo chất lượng**:
+  - `ActivityLogEnhancementTest`: 5/5 tests PASSED (100%).
+  - `AllowInputOverAVTest`: 8/8 tests PASSED (100%).
+  - Build frontend production (`npm run build`): Hoàn thành trong 4.72s không lỗi.
+
+## [2026-10-06] - Triển khai thông số cấu hình hệ thống AllowInputOverAV ràng buộc tạo đặt phòng và lấy thêm phòng khi hết phòng trống
+### Module: Đặt phòng / Lễ tân / Kế hoạch phòng ([BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [HotelSettingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/HotelSettingController.php), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [QuickAssignModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/QuickAssignModal.vue), [RoomPlanPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomPlanPage.vue), [AllowInputOverAVTest.php](file:///d:/PMS/backend/tests/Feature/AllowInputOverAVTest.php))
+
+- **Yêu cầu & Nghiệp vụ xử lý**:
+  - Triển khai thông số `AllowInputOverAV` (Cho phép nhập/lấy phòng khi hết phòng trống: 0 - Không cho phép, 1 - Cho phép) độc lập với `AllowOverRoomTypeRoomKind`:
+    - Khi `AllowOverRoomTypeRoomKind = 1` nhưng `AllowInputOverAV = 0`: Chặn tuyệt đối việc tạo booking mới hoặc lấy thêm phòng dẫn đến âm phòng; trong khi vẫn cho phép các thao tác điều chỉnh khác (chuyển phòng, đổi ngày, khóa phòng OOO/OOS, khôi phục booking...).
+  1. **Tab Lấy phòng màn hình Booking ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))**:
+     - `AllowInputOverAV = 0`:
+       - Nếu số lượng phòng trống của loại phòng $\le 0$: Ô số lượng bị vô hiệu hóa (`disabled`), style nền xám (`bg-slate-100 text-slate-400 cursor-not-allowed`), ẩn các nút mũi tên tăng/giảm, giữ số lượng = 0.
+       - Nếu số lượng phòng trống $> 0$: Chặn không cho nhập số lượng hoặc bấm nút tăng vượt quá số phòng trống hiện có; tự động giới hạn về tối đa số phòng trống và hiển thị thông báo lỗi.
+     - `AllowInputOverAV = 1`: Cho phép nhập và bấm nút tăng/giảm bình thường ngay cả khi phòng trống $\le 0$.
+  2. **Giao phòng nhanh tại Sơ đồ phòng ([QuickAssignModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/QuickAssignModal.vue))**:
+     - `AllowInputOverAV = 0`: Kiểm tra số phòng trống thực tế của loại phòng qua API `checkAvailability`. Nếu $\le 0$, chặn thao tác nhận phòng nhanh và cảnh báo rõ ràng.
+     - `AllowInputOverAV = 1`: Cho phép tạo booking nhận phòng nhanh dẫn đến âm phòng.
+  3. **Đặt phòng nhanh tại Kế hoạch phòng ([RoomPlanPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomPlanPage.vue))**:
+     - `AllowInputOverAV = 0`: Kiểm tra số phòng trống của các loại phòng được chọn trong `saveQuickBooking`. Nếu $\le 0$ hoặc số lượng chọn vượt quá số phòng trống, chặn tạo booking và thông báo lỗi.
+     - `AllowInputOverAV = 1`: Cho phép tạo booking nhanh dẫn đến âm phòng.
+  4. **Backend ([BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [HotelSettingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/HotelSettingController.php))**:
+     - Cập nhật `HotelSettingController@show` nạp cấu hình `AllowInputOverAV`.
+     - Cập nhật seeder `HotelDefinitionSeeder` và database `hotel_configs`: `is_visible = true`, mô tả rõ ràng.
+     - Trong `BookingController@validateRoomAllocations`: Kiểm tra `$canOver = $allowOver && $allowInputOver`. Chặn ném ngoại lệ nếu `AllowInputOverAV = 0` và số phòng yêu cầu vượt quá phòng trống.
+     - Trong `BookingRoomController@store`: Chặn thêm phòng mới vào booking nếu `AllowInputOverAV = 0` và `av <= 0`.
+- **Kiểm thử**:
+  - Viết bộ Feature Test mới [AllowInputOverAVTest.php](file:///d:/PMS/backend/tests/Feature/AllowInputOverAVTest.php) bao phủ đầy đủ 8 test cases: API settings, chặn tạo booking khi hết phòng, cho phép tạo booking khi bật cấu hình, chặn thêm phòng lẻ vào booking khi hết phòng, cho phép thêm phòng lẻ, chặn thêm phòng hàng loạt (tab Lấy phòng) khi hết phòng, cho phép thêm phòng hàng loạt, và bảo toàn việc cho phép over đối với các thao tác điều chỉnh khác (khôi phục booking bị hủy). Chạy đạt **8/8 tests PASSED (100%)**.
+  - Regression tests [RestoreBookingConflictTest.php](file:///d:/PMS/backend/tests/Feature/RestoreBookingConflictTest.php) (5/5 PASSED), [GuestDeleteRestrictionsTest.php](file:///d:/PMS/backend/tests/Feature/GuestDeleteRestrictionsTest.php) (9/9 PASSED).
+  - Frontend production build (`npm run build`): Thành công trong 4.12s không phát sinh lỗi.
+
+## [2026-10-06] - Khắc phục lỗi sửa thông tin phòng (giá phòng, thêm giường, ăn sáng, rate code) và hoàn thiện quy tắc chặn/xử lý xóa khách
+### Module: Đặt phòng / Sơ đồ phòng & Thông tin khách ([BookingDetailModal.vue](file:///d:/PMS/frontend/src/components/BookingDetailModal.vue), [GuestController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/GuestController.php), [RoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomController.php), [BookingRoomStayChargeService.php](file:///d:/PMS/backend/Services/BookingRoomStayChargeService.php))
+
+- **Yêu cầu & Nghiệp vụ xử lý**:
+  1. **Sửa thông tin phòng từ Sơ đồ phòng (Room Map $\to$ Thông tin $\to$ Sửa)**:
+     - Sửa giá phòng (ví dụ từ 650k thành 700k) lưu thành công nhưng vào lại bị hồi lại 650k: Đã sửa service đồng bộ phí lưu trú `BookingRoomStayChargeService` không dùng rate code ghi đè đơn giá phòng khi người dùng nhập giá manual; đồng thời cập nhật cả `rate` và `base_price` trong `rate.booking_rooms`.
+     - Tự động định dạng phân tách hàng nghìn (ví dụ: `1,200,000`) trực tiếp khi nhập giá phòng và giá thêm giường; xử lý an toàn khi focus, blur và lưu CSDL.
+     - Lưu & đồng bộ chính xác các trường: Thêm giường (`extra_bed_qty`, `extra_bed_rate`) và Ăn sáng (`breakfast`) trên cả pivot `booking_room_guests` và `booking_rooms`. `RoomController` trả về đúng trạng thái ăn sáng và không ghi đè số lượng giường phụ từ danh mục nếu phòng đã cấu hình bằng 0.
+     - Cho phép xóa nhanh / clear `rate_code` khi phòng đang có rate code (thêm nút xóa `X`, cho phép chọn giá trị rỗng và đồng bộ `null` xuống CSDL).
+  2. **Quy tắc chặn và xử lý nghiệp vụ khi xóa khách (Người lớn & Trẻ em)**:
+     - Chặn xóa khách nếu khách đã phát sinh hóa đơn `service_bills` (`CustomerId1`, `CustomerId2`, `Edit = 0`, `Status != 2`) hoặc phiếu thanh toán `payments` (`deleted_at IS NULL`, `edit_flag = 0` hoặc `status = 0`). Cảnh báo: *"Khách đã phát sinh hóa đơn hoặc thanh toán không thể xóa khách."*
+     - Chỉ cho phép xóa khách khi vừa check-in trong ngày (`actual_arrival_date == system_date`). Đã qua ngày (`actual_arrival_date < system_date`) thì chặn không cho xóa (áp dụng cho cả người lớn và trẻ em).
+     - Giữ lại tối thiểu 1 người lớn trong phòng để tiếp tục tính tiền phòng; chặn xóa nếu phòng chỉ còn 1 người lớn (cả frontend và backend).
+     - Khi xóa khách chính (`is_primary = true`), tự động đôn 1 khách phụ còn lại trong phòng thành khách chính (`is_primary = 1`) và cập nhật lại số lượng `adults` của phòng.
+- **Kiểm thử**:
+  - `GuestDeleteRestrictionsTest`: 9/9 test cases passed (100%).
+  - `GuestControllerFixesTest`: 4/4 test cases passed (100%).
+  - Frontend production build (`npm run build`): Thành công trong 3.94s không lỗi.
+
+## [2026-10-05] - Tinh gọn phân trang Lịch sử thao tác & Chặn log rác cấu hình user-settings
+### Module: Quản trị hệ thống / Lịch sử thao tác ([ActivityLogTab.vue](file:///d:/PMS/frontend/src/pages/system/components/ActivityLogTab.vue), [LogActivity.php](file:///d:/PMS/backend/app/Http/Middleware/LogActivity.php), [ActivityLogController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/ActivityLogController.php))
+
+
 - **Yêu cầu & Giải pháp**:
   - Yêu cầu: Popover "Cài đặt hiển thị" mở rộng theo chiều ngang (tránh gãy chữ) và hiển thị trọn vẹn nội dung nếu màn hình đủ không gian (bỏ thanh cuộn dọc không cần thiết).
   - Triển khai tối ưu trong [RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue):

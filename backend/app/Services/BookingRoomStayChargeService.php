@@ -75,7 +75,7 @@ class BookingRoomStayChargeService
         $firstRate = null;
 
         for ($date = $start->copy(); $date->lt($departure); $date->addDay()) {
-            $resolvedRate = $rateCode
+            $resolvedRate = ($rateCode && $fallbackRate === null)
                 ? $this->resolveRateCodePrice(
                     $rateCode,
                     $room->roomClass?->code,
@@ -130,7 +130,7 @@ class BookingRoomStayChargeService
         // Keep the legacy room-level rate useful to readers that do not load
         // daily RM rows. A configured rate code owns this value; a manual
         // rate is already stored by the controller before this method runs.
-        if ($replaceExistingRates && $rateCode && $firstRate !== null && (float) $room->rate !== (float) $firstRate) {
+        if ($fallbackRate === null && $replaceExistingRates && $rateCode && $firstRate !== null && (float) $room->rate !== (float) $firstRate) {
             $room->update(['rate' => $firstRate]);
         }
     }

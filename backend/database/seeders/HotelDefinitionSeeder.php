@@ -399,7 +399,7 @@ class HotelDefinitionSeeder extends Seeder
             ['name' => 'AllowCreateOrUpdateBKCauseUnassignableRoomBK', 'value' => '1', 'description' => 'AllowCreateOrUpdateBKCauseUnassignableRoomBK', 'is_visible' => false],
             ['name' => 'AllowEarlyCheckout', 'value' => '1', 'description' => 'AllowEarlyCheckout', 'is_visible' => false],
             ['name' => 'AllowExtendDateRoomOverDateBooking', 'value' => '1', 'description' => 'Cho phép gia hạn phòng vượt quá ngày của booking', 'is_visible' => false],
-            ['name' => 'AllowInputOverAV', 'value' => '0', 'description' => 'AllowInputOverAV', 'is_visible' => false],
+            ['name' => 'AllowInputOverAV', 'value' => '0', 'description' => 'Cho phép nhập/lấy phòng khi hết phòng trống (0: không cho phép, 1: cho phép)', 'is_visible' => true],
             ['name' => 'AllowOverRoomTypeRoomKind', 'value' => '0', 'description' => 'Cho phép khóa phòng dẫn đến âm phòng (0: không cho, 1: cho phép kèm cảnh báo)', 'is_visible' => true],
             ['name' => 'AllowLockRoomCauseUnassignableRoomBK', 'value' => '0', 'description' => 'Cho phép khóa phòng khi vẫn còn trống dẫn đến các booking không thể gán số phòng (0: không cho, 1: cho phép kèm cảnh báo)', 'is_visible' => true],
             ['name' => 'AllowNegativeAmountDeposit', 'value' => '', 'description' => 'AllowNegativeAmountDeposit', 'is_visible' => false],

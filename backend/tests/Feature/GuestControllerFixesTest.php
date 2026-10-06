@@ -240,6 +240,58 @@ class GuestControllerFixesTest extends TestCase
         $this->assertSame(90000.0, (float) $posted->fresh()->rate);
     }
 
+    public function test_update_guest_updates_room_rate_breakfast_and_clears_rate_code(): void
+    {
+        $booking = $this->makeBooking();
+        RoomRateCode::create(['Ma' => 'BAR', 'Description' => 'Bar test rate']);
+        $room = $this->makeRoom($booking, 'G-GUEST-RATE-TEST', BookingRoom::STATUS_CHECKED_IN, [
+            'arrival_date' => '2026-08-09',
+            'departure_date' => '2026-08-11',
+            'rate' => 650000,
+            'rate_code' => 'BAR',
+            'breakfast' => false,
+            'extra_bed_qty' => 0,
+        ]);
+        $guest = Guest::create(['full_name' => 'Test Guest']);
+        BookingRoomGuest::create([
+            'booking_room_id' => $room->id,
+            'guest_id' => $guest->id,
+            'is_primary' => true,
+            'status' => BookingRoomGuest::STATUS_ACTIVE,
+        ]);
+
+        // 1. Update rate to 700k, extra_bed_qty = 1, breakfast = true, and keep rate_code BAR
+        $this->putJson("/api/booking-rooms/{$room->id}/guests/{$guest->id}", [
+            'full_name' => 'Test Guest',
+            'rate' => 700000,
+            'rate_code' => 'BAR',
+            'breakfast' => true,
+            'extra_bed_qty' => 1,
+            'extra_bed_rate' => 200000,
+        ])->assertSuccessful();
+
+        $freshRoom = $room->fresh();
+        $this->assertEquals(700000.0, (float) $freshRoom->rate);
+        $this->assertEquals(700000.0, (float) $freshRoom->base_price);
+        $this->assertTrue((bool) $freshRoom->breakfast);
+        $this->assertEquals(1, $freshRoom->extra_bed_qty);
+
+        // 2. Clear rate_code (empty string or null)
+        $this->putJson("/api/booking-rooms/{$room->id}/guests/{$guest->id}", [
+            'full_name' => 'Test Guest',
+            'rate' => 700000,
+            'rate_code' => '',
+            'breakfast' => false,
+            'extra_bed_qty' => 0,
+        ])->assertSuccessful();
+
+        $freshRoom = $room->fresh();
+        $this->assertNull($freshRoom->rate_code);
+        $this->assertEquals(700000.0, (float) $freshRoom->rate);
+        $this->assertFalse((bool) $freshRoom->breakfast);
+        $this->assertEquals(0, $freshRoom->extra_bed_qty);
+    }
+
     private function makeBooking(array $attributes = []): Booking
     {
         return Booking::create(array_merge([

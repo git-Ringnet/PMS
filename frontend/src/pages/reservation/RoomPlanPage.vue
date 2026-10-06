@@ -5,7 +5,7 @@ import { ROOM_STATUSES, roomService } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useRoomStore } from '@/stores/room-store'
 import RoomIcon from '@/components/RoomIcon.vue'
-import { fetchBookings, fetchBookingInitDropdowns, checkInRoom, unassignRoom, fetchRoomRateCodes, cancelBookingRoom, fetchSystemDate, fetchUserSettings, updateUserSettings, fetchHotelSettings, updateBookingRoom, splitBookingRoom, createBooking, lockRoomMove, unlockRoomMove } from '@/services/booking-service'
+import { fetchBookings, fetchBookingInitDropdowns, checkInRoom, unassignRoom, fetchRoomRateCodes, cancelBookingRoom, fetchSystemDate, fetchUserSettings, updateUserSettings, fetchHotelSettings, updateBookingRoom, splitBookingRoom, createBooking, lockRoomMove, unlockRoomMove, checkAvailability } from '@/services/booking-service'
 import { fetchCompanies, fetchMarkets, fetchCustomerSources } from '@/services/company-service'
 import { updateRoomPlanBookingRoomStay } from '@/services/room-plan-service'
 import CancelReasonModal from './components/CancelReasonModal.vue'
@@ -3839,6 +3839,29 @@ async function saveQuickBooking() {
       room_allocations: room_allocations,
       module: currentBookingModule.value,
       created_module: currentBookingModule.value
+    }
+
+    // Kiểm tra cấu hình AllowInputOverAV
+    const allowInputOverAV = String(hotelSettings.value?.AllowInputOverAV ?? hotelSettings.value?.allow_input_over_av ?? '0') === '1'
+    if (!allowInputOverAV) {
+      for (const alloc of room_allocations) {
+        try {
+          const avRes = await checkAvailability({
+            room_class_id: alloc.roomClassId,
+            arrival_date: alloc.arrivalDate,
+            departure_date: alloc.departureDate
+          })
+          const av = Number(avRes.data?.av) || 0
+          if (av <= 0 || alloc.quantity > av) {
+            const rcObj = roomStore.rooms ? roomStore.rooms.find(r => r.room_class_id === alloc.roomClassId || r.room_class?.id === alloc.roomClassId) : null
+            const rcName = rcObj?.room_class?.name || rcObj?.type || `ID ${alloc.roomClassId}`
+            uiStore.showToast(`Loại phòng ${rcName} không đủ phòng trống (Trống: ${av}). Không thể tạo đặt phòng nhanh khi AllowInputOverAV = 0!`, 'error')
+            return
+          }
+        } catch (avErr) {
+          console.warn('Check availability error in saveQuickBooking:', avErr)
+        }
+      }
     }
 
     await createBooking(payload)
