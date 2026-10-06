@@ -347,7 +347,7 @@ import { resolveRateCodePrice } from '@/utils/rate-code-pricing.js'
 import { useRoomStore } from '@/stores/room-store'
 import { useAuthStore } from '@/stores/auth-store'
 import http from '@/services/http'
-import { fetchBookingInitDropdowns, createBooking, checkInRoom, syncBookingRoomSpecialRequests } from '@/services/booking-service'
+import { fetchBookingInitDropdowns, createBooking, checkInRoom, syncBookingRoomSpecialRequests, checkAvailability } from '@/services/booking-service'
 import SpecialRequestsModal from './SpecialRequestsModal.vue'
 
 const props = defineProps({
@@ -823,6 +823,39 @@ async function handleSave() {
       uiStore.showToast('Chưa tải được Tình trạng đăng ký hợp lệ.', 'error')
       isSubmitting.value = false
       return
+    }
+
+    // Kiểm tra cấu hình AllowInputOverAV
+    let allowInputOverAV = '0'
+    try {
+      const cfgRes = await http.get('/hotel-configs', { params: { name: 'AllowInputOverAV' } })
+      if (cfgRes?.data?.data?.[0]?.value !== undefined) {
+        allowInputOverAV = String(cfgRes.data.data[0].value)
+      } else if (props.hotelSettings?.AllowInputOverAV !== undefined) {
+        allowInputOverAV = String(props.hotelSettings.AllowInputOverAV)
+      }
+    } catch (e) {
+      if (props.hotelSettings?.AllowInputOverAV !== undefined) {
+        allowInputOverAV = String(props.hotelSettings.AllowInputOverAV)
+      }
+    }
+
+    if (allowInputOverAV === '0' && selectedRoomClassId.value) {
+      try {
+        const avRes = await checkAvailability({
+          room_class_id: selectedRoomClassId.value,
+          arrival_date: arrivalDate.value,
+          departure_date: departureDate.value
+        })
+        const av = Number(avRes.data?.av) || 0
+        if (av <= 0) {
+          uiStore.showToast(`Loại phòng đã hết phòng trống (AV = ${av}). Không thể giao phòng nhanh khi AllowInputOverAV = 0!`, 'error')
+          isSubmitting.value = false
+          return
+        }
+      } catch (avErr) {
+        console.warn('Check availability error in QuickAssignModal:', avErr)
+      }
     }
 
     const payload = {

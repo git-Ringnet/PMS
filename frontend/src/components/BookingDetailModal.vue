@@ -200,7 +200,7 @@ async function loadRoomServices() {
     if (res.data?.success) {
       roomServices.value = res.data.data || []
       const ebList = roomServices.value.filter(s => s.service_code === 'EB')
-      if (ebList.length > 0) {
+      if (ebList.length > 0 && (props.room?.extra_bed_qty === undefined || props.room?.extra_bed_qty === null)) {
         const maxQty = Math.max(...ebList.map(s => Number(s.quantity) || 0))
         const activeEB = ebList.find(s => Number(s.rate) > 0)
         if (maxQty > 0) {
@@ -336,7 +336,9 @@ function onRateCodeChange(selectedValue = pricingInfo.value.rate_code) {
   if (!selectedCode) {
     const standardRate = Number(props.room.standard_rate || 0)
     const roomClassRate = Number(props.room.room_class?.room_price || 0)
-    pricingInfo.value.rate = formatNumber(standardRate > 0 ? standardRate : roomClassRate)
+    if (standardRate > 0 || roomClassRate > 0) {
+      pricingInfo.value.rate = formatNumber(standardRate > 0 ? standardRate : roomClassRate)
+    }
     return
   }
 
@@ -355,6 +357,12 @@ function onRateCodeChange(selectedValue = pricingInfo.value.rate_code) {
       pricingInfo.value.rate = formatNumber(newPrice)
     }
   }
+}
+
+function clearRateCode() {
+  if (!isEditingMode.value) return
+  pricingInfo.value.rate_code = ''
+  onRateCodeChange('')
 }
 
 async function onExtraBedSaved(data) {
@@ -876,8 +884,57 @@ function handleExtraBedPriceChange(delta) {
 }
 
 function onExtraBedPriceInput(e) {
-  let num = parseNumber(e.target.value) || 0
+  const raw = e.target.value
+  if (!raw || raw.trim() === '') {
+    pricingInfo.value.extra_bed_price = ''
+    return
+  }
+  let num = parseNumber(raw) || 0
   pricingInfo.value.extra_bed_price = formatNumber(num)
+}
+
+function onExtraBedPriceFocus(e) {
+  if (parseNumber(pricingInfo.value.extra_bed_price) === 0) {
+    pricingInfo.value.extra_bed_price = ''
+    e.target.value = ''
+  } else {
+    e.target.select()
+  }
+}
+
+function onExtraBedPriceBlur(e) {
+  if (!pricingInfo.value.extra_bed_price || String(pricingInfo.value.extra_bed_price).trim() === '') {
+    pricingInfo.value.extra_bed_price = '0'
+  } else {
+    pricingInfo.value.extra_bed_price = formatNumber(parseNumber(pricingInfo.value.extra_bed_price))
+  }
+}
+
+function onRateInput(e) {
+  const raw = e.target.value
+  if (!raw || raw.trim() === '') {
+    pricingInfo.value.rate = ''
+    return
+  }
+  const num = parseNumber(raw)
+  pricingInfo.value.rate = formatNumber(num)
+}
+
+function onRateFocus(e) {
+  if (parseNumber(pricingInfo.value.rate) === 0) {
+    pricingInfo.value.rate = ''
+    e.target.value = ''
+  } else {
+    e.target.select()
+  }
+}
+
+function onRateBlur(e) {
+  if (!pricingInfo.value.rate || String(pricingInfo.value.rate).trim() === '') {
+    pricingInfo.value.rate = '0'
+  } else {
+    pricingInfo.value.rate = formatNumber(parseNumber(pricingInfo.value.rate))
+  }
 }
 
 function selectGuest(g) {
@@ -1154,10 +1211,11 @@ async function handleSave() {
       departure_date: stayInfo.value.departure_date,
       departure_time: stayInfo.value.departure_time,
       is_day_use: !!stayInfo.value.hourly,
-      rate: pricingInfo.value.rate ? Number(String(pricingInfo.value.rate).replace(/\D/g, '')) : 0,
+      breakfast: !!stayInfo.value.breakfast,
+      rate: parseNumber(pricingInfo.value.rate),
       rate_code: validRateCode,
       extra_bed_qty: Number(pricingInfo.value.extra_bed_qty || 0),
-      extra_bed_rate: pricingInfo.value.extra_bed_price ? Number(String(pricingInfo.value.extra_bed_price).replace(/\D/g, '')) : 0,
+      extra_bed_rate: parseNumber(pricingInfo.value.extra_bed_price),
     }
 
     if (draftGuest.value) {
@@ -1208,6 +1266,15 @@ async function handleSave() {
           newId = res.data?.data?.id
         }
       }
+      if (props.room) {
+        props.room.rate = roomFields.rate
+        props.room.rate_code = roomFields.rate_code
+        props.room.breakfast = roomFields.breakfast
+        props.room.extra_bed_qty = roomFields.extra_bed_qty
+        props.room.extra_bed_rate = roomFields.extra_bed_rate
+      }
+      pricingInfo.value.rate = formatNumber(roomFields.rate)
+      pricingInfo.value.extra_bed_price = formatNumber(roomFields.extra_bed_rate)
       draftGuest.value = null
       isEditingMode.value = false
       showTimePicker.value = false
@@ -1257,6 +1324,15 @@ async function handleSave() {
         ...roomFields,
       })
     }
+    if (props.room) {
+      props.room.rate = roomFields.rate
+      props.room.rate_code = roomFields.rate_code
+      props.room.breakfast = roomFields.breakfast
+      props.room.extra_bed_qty = roomFields.extra_bed_qty
+      props.room.extra_bed_rate = roomFields.extra_bed_rate
+    }
+    pricingInfo.value.rate = formatNumber(roomFields.rate)
+    pricingInfo.value.extra_bed_price = formatNumber(roomFields.extra_bed_rate)
     isEditingMode.value = false
     showTimePicker.value = false
     showNameSuggestions.value = false
@@ -1289,6 +1365,16 @@ async function handleDeleteGuest() {
     uiStore.showToast('Vui lòng chọn khách cần xóa!', 'warning')
     return
   }
+
+  // Ràng buộc tối thiểu 1 người lớn trong phòng (Note 30/09 - Vy)
+  if (selectedGuest.value && !selectedGuest.value.isDraft) {
+    const realAdults = adults.value.filter(a => !a.isDraft)
+    if (realAdults.length <= 1) {
+      uiStore.showToast('Phòng phải giữ lại tối thiểu 1 người lớn để tính tiền phòng, không thể xóa khách!', 'warning')
+      return
+    }
+  }
+
   const targetName = selectedGuest.value ? selectedGuest.value.name : selectedChild.value.name
   const confirmed = await uiStore.confirm({
     title: 'Xác nhận xóa khách',
@@ -1375,13 +1461,19 @@ function formatTime24h(t) {
 }
 
 function formatNumber(val) {
-  if (!val) return '0'
-  return new Intl.NumberFormat('vi-VN').format(val)
+  if (val === null || val === undefined || val === '') return '0'
+  const num = typeof val === 'number' ? Math.round(val) : parseNumber(val)
+  return new Intl.NumberFormat('en-US').format(num)
 }
 
 function parseNumber(val) {
-  if (!val) return 0
-  const cleanStr = String(val).replace(/\D/g, '')
+  if (val === null || val === undefined || val === '') return 0
+  if (typeof val === 'number') return Math.round(val)
+  let str = String(val).trim()
+  if (str.includes('.') && /^\d+\.\d+$/.test(str)) {
+    return Math.round(parseFloat(str)) || 0
+  }
+  const cleanStr = str.replace(/\D/g, '')
   return Number(cleanStr) || 0
 }
 </script>
@@ -1801,16 +1893,35 @@ function parseNumber(val) {
               <div class="g price-grid-1">
                 <div class="f">
                   <label>Giá phòng <span class="req">*</span></label>
-                  <input type="text" v-model="pricingInfo.rate" :disabled="!isEditingMode" style="font-weight: 700;">
+                  <input
+                    type="text"
+                    :value="pricingInfo.rate"
+                    :disabled="!isEditingMode"
+                    @input="onRateInput"
+                    @focus="onRateFocus"
+                    @blur="onRateBlur"
+                    style="font-weight: 700;"
+                  >
                 </div>
                 <div class="f">
                   <label>Rate code</label>
-                    <select v-model="pricingInfo.rate_code" :disabled="!isEditingMode" @change="onRateCodeChange($event.target.value)">
-                    <option value="" disabled>-- Chọn Mã Giá --</option>
-                    <option v-for="rc in rateCodes" :key="rc.id || rc.code || rc.Ma" :value="rc.code || rc.Ma">
-                      {{ rc.code || rc.Ma }}{{ (rc.name || rc.Ten) ? ' - ' + (rc.name || rc.Ten) : '' }}
-                    </option>
-                  </select>
+                  <div class="relative flex items-center w-full">
+                    <select v-model="pricingInfo.rate_code" :disabled="!isEditingMode" @change="onRateCodeChange($event.target.value)" class="w-full" :style="isEditingMode && pricingInfo.rate_code ? 'padding-right: 24px;' : ''">
+                      <option value="">-- Chọn Mã Giá / Mặc định --</option>
+                      <option v-for="rc in rateCodes" :key="rc.id || rc.code || rc.Ma" :value="rc.code || rc.Ma">
+                        {{ rc.code || rc.Ma }}{{ (rc.name || rc.Ten) ? ' - ' + (rc.name || rc.Ten) : '' }}
+                      </option>
+                    </select>
+                    <button
+                      v-if="isEditingMode && pricingInfo.rate_code"
+                      type="button"
+                      @click="clearRateCode"
+                      class="absolute right-2 text-slate-400 hover:text-rose-500 font-bold text-sm leading-none bg-transparent border-none cursor-pointer p-0.5 z-10"
+                      title="Xóa / Bỏ chọn Rate Code"
+                    >
+                      &times;
+                    </button>
+                  </div>
                 </div>
                 <div class="f">
                   <label>Khuyến mãi / Tăng giảm</label>
@@ -1893,6 +2004,8 @@ function parseNumber(val) {
                       :value="pricingInfo.extra_bed_price"
                       :disabled="!isEditingMode"
                       @input="onExtraBedPriceInput"
+                      @focus="onExtraBedPriceFocus"
+                      @blur="onExtraBedPriceBlur"
                       class="w-full h-8 px-2.5 pr-6 font-semibold text-slate-800 border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-sky-500 bg-white text-xs text-right disabled:bg-slate-100 disabled:text-slate-500 shadow-2xs"
                     />
                     <div v-if="isEditingMode" class="absolute right-1.5 flex flex-col justify-center gap-0.5 select-none">
