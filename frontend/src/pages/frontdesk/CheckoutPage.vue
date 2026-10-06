@@ -1416,11 +1416,18 @@ const servicesList = computed(() => {
     // 1. Dịch vụ thuộc Master, bao gồm cả bill đã thanh toán để giữ lịch sử
     // trên bảng dịch vụ; tổng tiền phải thanh toán vẫn chỉ tính bill chưa trả.
     const allBillsSource = mergeServiceBills(rawB?.master_service_bills || [], rawB?.service_bills || [])
+    const linkedBillsSource = mergeServiceBills(
+      allBillsSource,
+      ...(rawB?.booking_rooms || []).map(room => [
+        ...(room.service_bills || room.serviceBills || []),
+        ...(room.current_service_bills || room.currentServiceBills || [])
+      ])
+    )
 
     const masterBills = allBillsSource.filter(sb => (
       Number(sb.Edit) !== 1
       && ![3, 4].includes(Number(sb.Status))
-      && isMasterOwnedBill(sb, rawB)
+      && isCheckoutMasterBill(sb, rawB)
     ))
 
     const masterBillIds = new Set(masterBills.map(sb => String(sb.Ma)))
@@ -1436,9 +1443,13 @@ const servicesList = computed(() => {
         if (rawR && rawR.services && Array.isArray(rawR.services)) {
           rawR.services.forEach((s, idx) => {
             if (getServiceRoomFlag(s) !== 0) return
-            const linkedBill = findLinkedBill(s, roomNo, rItem.roomId)
             if (!isPostedBookingService(s)) return
             if (s.service_bill_id && masterBillIds.has(String(s.service_bill_id))) return
+            const linkedBillId = s.service_bill_id || s.serviceBillId
+            const linkedBill = linkedBillId
+              ? linkedBillsSource.find(bill => String(bill.Ma ?? bill.id) === String(linkedBillId))
+              : null
+            if (linkedBill && (Number(linkedBill.Edit) === 1 || [3, 4].includes(Number(linkedBill.Status)) || !isCheckoutMasterBill(linkedBill, rawB))) return
             services.push(processServiceItem(withServiceBillTime(rawR, s), `${rItem.id}-${idx}`, `Phòng ${roomNo}`, roomNo))
           })
         }
@@ -2567,12 +2578,13 @@ const handleRoomDrop = async (booking, room, guest = null) => {
   const payment = draggedPayment.value
   const destination = {
     bookingId: booking?.bookingId,
-    roomId: room?.roomId,
+    roomId: room?.roomId || null,
     guestId: guest?.id || room?.primaryGuestId || null,
   }
   draggedOverRoom.value = null
 
-  if (!destination.bookingId || !destination.roomId) {
+  if (!destination.bookingId || (room && !destination.roomId)
+    || (!room && !selectedRoomItem.value && String(destination.bookingId) === String(selectedBooking.value?.bookingId))) {
     handleServiceDragEnd()
     return
   }
@@ -3628,8 +3640,12 @@ onUnmounted(() => {
                 <template v-for="b in displayedBookingsList" :key="b.id">
                   <tr
                     @click="selectBookingHeader(b)"
+                    @dragover.prevent="draggedServiceGroup && handleRoomDragOver(b, null)"
+                    @dragleave="draggedOverRoom = null"
+                    @drop.prevent.stop="draggedServiceGroup ? handleRoomDrop(b, null) : handleServiceDragEnd()"
                     :class="[
                       selectedBooking && selectedBooking.id === b.id && !selectedRoomItem ? 'bg-[#eff6ff] border-l-[3px] border-blue-600' : b.isCheckedOut ? 'bg-[#ffd4d4] border-l-[3px] border-rose-400' : 'bg-[#f0f4ff] border-l-[3px] border-indigo-500',
+                      draggedOverRoom === roomDropKey(b, null) ? 'ring-2 ring-inset ring-sky-500 bg-sky-50' : '',
                       'cursor-pointer transition-colors'
                     ]"
                   >
