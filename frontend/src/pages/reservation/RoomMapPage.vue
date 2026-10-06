@@ -2123,7 +2123,7 @@ async function submitRoomLock(force = false) {
   } catch (err) {
     const resData = err.response?.data
     if (resData?.require_confirm) {
-      const proceed = await uiStore.confirm({ title: 'Cảnh báo phòng âm', message: resData.message, confirmText: 'Tiếp tục', cancelText: 'Hủy' })
+      const proceed = await uiStore.confirm({ title: 'Cảnh báo', message: resData.message, confirmText: 'Tiếp tục', cancelText: 'Hủy' })
       if (proceed) await submitRoomLock(true)
     } else { uiStore.showToast(resData?.message || 'Không thể khóa phòng.', 'error') }
   }
@@ -2254,10 +2254,15 @@ onMounted(async () => {
   // Lắng nghe sự kiện realtime qua BroadcastChannel (đồng bộ tức thì giữa các tab)
   if (typeof BroadcastChannel !== 'undefined') {
     roomMapBc = new BroadcastChannel('pms-room-updates')
-    roomMapBc.addEventListener('message', () => {
+    roomMapBc.addEventListener('message', (event) => {
+      if (event?.data?.type === 'hotel-config-updated') {
+        loadRoomStatusPermission()
+      }
       refreshRoomMapSnapshot()
     })
   }
+
+  window.addEventListener('hotel-config-updated', loadRoomStatusPermission)
 
   // Echo là kênh chính; polling là dự phòng khi websocket gián đoạn hoặc tab vừa quay lại.
   roomMapSyncTimer = window.setInterval(refreshRoomMapSnapshot, 15000)
@@ -2269,6 +2274,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleRoomMapShortcut)
   window.removeEventListener('click', handleClickOutsideSettings)
   window.removeEventListener('resize', calculateScale)
+  window.removeEventListener('hotel-config-updated', loadRoomStatusPermission)
   document.removeEventListener('visibilitychange', refreshWhenVisible)
   if (roomMapSyncTimer) window.clearInterval(roomMapSyncTimer)
   if (roomMapBc) {

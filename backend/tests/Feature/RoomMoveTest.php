@@ -1076,4 +1076,135 @@ class RoomMoveTest extends TestCase
         $idx1002 = array_search('1002', $numbers);
         $this->assertLessThan($idx1002, $idx102, 'Thứ tự phòng phải sắp xếp tự nhiên theo số từ nhỏ đến lớn');
     }
+
+    public function test_move_targets_lists_all_physical_inhouse_rooms_and_marks_merge_eligibility()
+    {
+        $roomFormId = $this->room101->room_form_id;
+        foreach (['2', '10', '001', '104', '105'] as $number) {
+            Room::create([
+                'room_number'   => $number,
+                'room_class_id' => $this->roomClass->id,
+                'room_form_id'  => $roomFormId,
+                'floor'         => 1,
+                'status'        => 'occupied',
+                'is_internal'   => $number === '001',
+            ]);
+        }
+
+        $sourceBooking = Booking::create([
+            'booking_name'   => 'Nguồn chuyển phòng',
+            'booking_date'   => '2026-07-14',
+            'arrival_date'   => '2026-07-10',
+            'departure_date' => '2026-07-17',
+            'status'         => 1,
+            'created_by'     => 'admin_test',
+        ]);
+        $sourceRoom = BookingRoom::create([
+            'booking_id'     => $sourceBooking->id,
+            'room_class_id'  => $this->roomClass->id,
+            'room_number'    => '101',
+            'arrival_date'   => '2026-07-10',
+            'departure_date' => '2026-07-17',
+            'status'         => BookingRoom::STATUS_CHECKED_IN,
+        ]);
+
+        $targetBooking = Booking::create([
+            'booking_name'   => 'Đích chuyển phòng',
+            'booking_date'   => '2026-07-14',
+            'arrival_date'   => '2026-07-10',
+            'departure_date' => '2026-07-18',
+            'status'         => 1,
+            'created_by'     => 'admin_test',
+        ]);
+        $createTarget = function (string $number, int $status, string $departure) use ($targetBooking) {
+            return BookingRoom::create([
+                'booking_id'     => $targetBooking->id,
+                'room_class_id'  => $this->roomClass->id,
+                'room_number'    => $number,
+                'arrival_date'   => '2026-07-10',
+                'departure_date' => $departure,
+                'status'         => $status,
+            ]);
+        };
+
+        $createTarget('2', BookingRoom::STATUS_CHECKED_IN, '2026-07-17');
+        $createTarget('10', BookingRoom::STATUS_CHECKED_IN, '2026-07-18');
+        $createTarget('102', BookingRoom::STATUS_CHECKED_IN, '2026-07-16');
+        $createTarget('001', BookingRoom::STATUS_CHECKED_IN, '2026-07-18');
+        $createTarget('104', BookingRoom::STATUS_BOOKED, '2026-07-18');
+        $createTarget('105', BookingRoom::STATUS_MOVED, '2026-07-18');
+
+        $response = $this->getJson("/api/bookings/{$sourceBooking->id}/rooms/{$sourceRoom->id}/move-target-rooms");
+
+        $response->assertOk()->assertJsonPath('success', true);
+        $occupiedRooms = collect($response->json('data.occupied_rooms'));
+        $this->assertSame(['2', '10', '102'], $occupiedRooms->pluck('room_number')->all());
+        $this->assertTrue($occupiedRooms->firstWhere('room_number', '2')['can_merge']);
+        $this->assertFalse($occupiedRooms->firstWhere('room_number', '102')['can_merge']);
+    }
+
+    public function test_merge_with_earlier_target_departure_is_rejected_without_changing_data()
+    {
+        $booking = Booking::create([
+            'booking_name'   => 'Booking chuyển phòng không hợp lệ',
+            'booking_date'   => '2026-07-14',
+            'arrival_date'   => '2026-07-10',
+            'departure_date' => '2026-07-17',
+            'status'         => 1,
+            'created_by'     => 'admin_test',
+        ]);
+        $sourceRoom = BookingRoom::create([
+            'booking_id'     => $booking->id,
+            'room_class_id'  => $this->roomClass->id,
+            'room_number'    => '101',
+            'arrival_date'   => '2026-07-10',
+            'departure_date' => '2026-07-17',
+            'status'         => BookingRoom::STATUS_CHECKED_IN,
+            'adults'         => 1,
+        ]);
+        $targetRoom = BookingRoom::create([
+            'booking_id'     => $booking->id,
+            'room_class_id'  => $this->roomClass->id,
+            'room_number'    => '102',
+            'arrival_date'   => '2026-07-10',
+            'departure_date' => '2026-07-16',
+            'status'         => BookingRoom::STATUS_CHECKED_IN,
+            'adults'         => 1,
+        ]);
+        $guest = Guest::create(['full_name' => 'Khách kiểm tra bảo toàn dữ liệu']);
+        BookingRoomGuest::create([
+            'booking_room_id' => $sourceRoom->id,
+            'guest_id'        => $guest->id,
+            'is_primary'      => true,
+            'status'          => BookingRoomGuest::STATUS_CHECKED_IN,
+        ]);
+
+        $response = $this->postJson("/api/bookings/{$booking->id}/rooms/{$sourceRoom->id}/move", [
+            'move_type'          => 'merge',
+            'target_room_number' => '102',
+            'reason'             => 'Kiểm tra ngày trả không hợp lệ',
+            'selected_guest_ids' => [$guest->id],
+        ]);
+
+        $response->assertStatus(422)->assertJsonPath('success', false);
+        $this->assertDatabaseHas('booking_rooms', [
+            'id'      => $sourceRoom->id,
+            'status'  => BookingRoom::STATUS_CHECKED_IN,
+            'adults'  => 1,
+        ]);
+        $this->assertDatabaseHas('booking_rooms', [
+            'id'      => $targetRoom->id,
+            'status'  => BookingRoom::STATUS_CHECKED_IN,
+            'adults'  => 1,
+        ]);
+        $this->assertDatabaseHas('booking_room_guests', [
+            'booking_room_id' => $sourceRoom->id,
+            'guest_id'        => $guest->id,
+            'status'          => BookingRoomGuest::STATUS_CHECKED_IN,
+        ]);
+        $this->assertDatabaseMissing('booking_room_guests', [
+            'booking_room_id' => $targetRoom->id,
+            'guest_id'        => $guest->id,
+        ]);
+    }
 }

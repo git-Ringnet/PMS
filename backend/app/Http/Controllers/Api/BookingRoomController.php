@@ -1658,10 +1658,11 @@ class BookingRoomController extends Controller
 
         usort($availableRooms, fn($a, $b) => strnatcasecmp($a['room_number'], $b['room_number']));
 
-        // 2. Fetch occupied (In-House) rooms for merging (departure_date >= current room's departure_date)
+        // 2. List every physical In-House room. Keep merge eligibility separate
+        // from visibility so the UI can show the full list without weakening
+        // the existing departure-date rule enforced by moveRoom().
         $occupiedBookingRooms = BookingRoom::where('id', '!=', $bookingRoom->id)
             ->where('status', BookingRoom::STATUS_CHECKED_IN)
-            ->where('departure_date', '>=', $departureDateStr)
             ->whereHas('room', fn($q) => $q->physical())
             ->with(['guests.guest', 'roomClass', 'room.roomForm'])
             ->get();
@@ -1693,6 +1694,7 @@ class BookingRoomController extends Controller
                 'all_guests'      => $guestNames,
                 'arrival_date'    => $obrItem->arrival_date->toDateString(),
                 'departure_date'  => $obrItem->departure_date->toDateString(),
+                'can_merge'       => $obrItem->departure_date->gte($bookingRoom->departure_date),
                 'rate'            => (float)$obrItem->rate,
                 'extra_bed_rate'  => (float)($obrItem->extra_bed_rate ?? 0),
                 'status_label'    => $statusText,

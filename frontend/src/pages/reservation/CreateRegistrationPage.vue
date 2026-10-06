@@ -194,6 +194,18 @@ function removeClosedTabId(dbId) {
   localStorage.setItem(CLOSED_TABS_KEY, JSON.stringify(ids))
 }
 
+const LAST_ACTIVE_BOOKING_KEY = 'pms_last_active_booking_id'
+function getLastActiveBookingId() {
+  return sessionStorage.getItem(LAST_ACTIVE_BOOKING_KEY)
+}
+function setLastActiveBookingId(id) {
+  if (id) {
+    sessionStorage.setItem(LAST_ACTIVE_BOOKING_KEY, String(id))
+  } else {
+    sessionStorage.removeItem(LAST_ACTIVE_BOOKING_KEY)
+  }
+}
+
 // ==================== MODAL STATES ====================
 const isModalOpen = ref(false)
 const isEditModal = ref(false)
@@ -957,6 +969,21 @@ async function handleInlineServiceRateChange(room, svc, newRate) {
     svc.svc_ref.rate = newRate
     svc.svc_ref.total = (svc.svc_ref.quantity || 1) * newRate
   }
+  if (svc.bill_ref) {
+    svc.bill_ref.Amount = newRate * (svc.bill_ref.Quantity || 1)
+    svc.bill_ref.rate = newRate
+  }
+  if (room.serviceBills && Array.isArray(room.serviceBills)) {
+    const matchedBill = room.serviceBills.find(sb => {
+      const sbDate = getBillRecordDateStr(sb)
+      return (sb.Ma && svc.bill_ref && String(sb.Ma) === String(svc.bill_ref.Ma)) ||
+             (sbDate === cleanDate && isRoomCharge && isRoomChargeBillRecord(sb))
+    })
+    if (matchedBill) {
+      matchedBill.Amount = newRate * (matchedBill.Quantity || 1)
+      matchedBill.rate = newRate
+    }
+  }
 
   if (isRoomCharge) {
     if (!room.dailyRoomPrices) room.dailyRoomPrices = {}
@@ -1014,6 +1041,13 @@ async function handleInlineServiceRateChange(room, svc, newRate) {
       const res = await createBookingRoomService(room.bookingRoomId, payload)
       if (res.data?.success) {
         uiStore.showToast('Cập nhật đơn giá dịch vụ thành công!', 'success')
+        if (res.data?.service_bill && room.serviceBills && Array.isArray(room.serviceBills)) {
+          const updatedBill = res.data.service_bill
+          const idx = room.serviceBills.findIndex(b => String(b.Ma) === String(updatedBill.Ma))
+          if (idx !== -1) {
+            room.serviceBills[idx] = { ...room.serviceBills[idx], ...updatedBill }
+          }
+        }
         const freshRes = await fetchBookingRoomServices(room.bookingRoomId)
         room.services = (freshRes.data?.data || []).map(s => ({
           ...s,
@@ -2216,6 +2250,11 @@ watch(activeTabId, (newId, oldId) => {
   if (newId !== oldId) {
     selectedRows.value = []
     loadActiveBookingNotifications()
+    if (activeTab.value?.dbId) {
+      setLastActiveBookingId(activeTab.value.dbId)
+    } else if (activeTab.value?.id === 'NEW_BOOKING') {
+      setLastActiveBookingId('NEW_BOOKING')
+    }
   }
 })
 
@@ -2418,13 +2457,15 @@ async function loadBookings() {
 
     // Kiểm tra lần đầu vào trang: closedIds chưa có trong localStorage
     const isFirstLoad = localStorage.getItem(CLOSED_TABS_KEY) === null
+    const savedActiveId = getLastActiveBookingId()
 
     if (isFirstLoad && allList.length > 0) {
-      // Lần đầu: chỉ mở 1 booking mới nhất (id lớn nhất), KHÔNG đóng các booking khác
-      const latestBooking = allList.reduce((max, b) => b.id > max.id ? b : max, allList[0])
+      // Lần đầu: mở 1 booking (ưu tiên booking đã lưu từ session trước hoặc mới nhất)
+      const targetBooking = (savedActiveId && allList.find(b => String(b.id) === String(savedActiveId) || String(b.booking_code) === String(savedActiveId)))
+        || allList.reduce((max, b) => b.id > max.id ? b : max, allList[0])
       // Khởi tạo localStorage với mảng rỗng (không đánh dấu ai là closed)
       localStorage.setItem(CLOSED_TABS_KEY, JSON.stringify([]))
-      replaceBookingTab(latestBooking)
+      replaceBookingTab(targetBooking)
       nextTick(() => {
         loadActiveBookingNotifications()
       })
@@ -2436,7 +2477,10 @@ async function loadBookings() {
       const currentBooking = currentTab?.dbId
         ? list.find(b => String(b.id) === String(currentTab.dbId))
         : null
-      const nextBooking = currentBooking || (currentTab?.id === 'NEW_BOOKING'
+      const savedBooking = (!currentBooking && savedActiveId)
+        ? list.find(b => String(b.id) === String(savedActiveId) || String(b.booking_code) === String(savedActiveId))
+        : null
+      const nextBooking = currentBooking || savedBooking || (currentTab?.id === 'NEW_BOOKING'
         ? null
         : list.reduce((max, b) => !max || b.id > max.id ? b : max, null))
 
@@ -2445,9 +2489,10 @@ async function loadBookings() {
         nextTick(() => {
           loadActiveBookingNotifications()
         })
-      } else if (currentTab?.id === 'NEW_BOOKING') {
-        tabs.value = [currentTab]
-        activeTabId.value = currentTab.id
+      } else if (currentTab?.id === 'NEW_BOOKING' || savedActiveId === 'NEW_BOOKING') {
+        const blankTab = currentTab || makeBlankTab()
+        tabs.value = [blankTab]
+        activeTabId.value = blankTab.id
       } else {
         // Không còn tab nào → empty state, KHÔNG tạo blank tab
         tabs.value = []
@@ -2829,6 +2874,9 @@ function replaceBookingTab(booking) {
   const nextTab = { ...bookingToTab(booking) }
   tabs.value = [nextTab]
   activeTabId.value = nextTab.id
+  if (nextTab.dbId) {
+    setLastActiveBookingId(nextTab.dbId)
+  }
   return nextTab
 }
 
@@ -2841,10 +2889,13 @@ function handleCloseTab(tabId, event) {
   tabs.value = tabs.value.filter(t => t.id !== tabId)
   if (activeTabId.value === tabId) {
     if (tabs.value.length > 0) {
-      activeTabId.value = tabs.value[Math.max(0, index - 1)].id
+      const nextTab = tabs.value[Math.max(0, index - 1)]
+      activeTabId.value = nextTab.id
+      setLastActiveBookingId(nextTab.dbId || null)
     } else {
       // Đóng tab cuối → empty state, KHÔNG tạo blank tab
       activeTabId.value = null
+      setLastActiveBookingId(null)
     }
   }
 }
@@ -3510,6 +3561,23 @@ async function closeDiscountPopover(room, svc) {
     const newRate = (room.dailyRoomPrices && room.dailyRoomPrices[cleanDate] !== undefined)
       ? room.dailyRoomPrices[cleanDate]
       : (Number(svc.rate) || 0)
+
+    if (svc.bill_ref) {
+      svc.bill_ref.Amount = newRate * (svc.bill_ref.Quantity || 1)
+      svc.bill_ref.rate = newRate
+    }
+    if (room.serviceBills && Array.isArray(room.serviceBills)) {
+      const matchedBill = room.serviceBills.find(sb => {
+        const sbDate = getBillRecordDateStr(sb)
+        return (sb.Ma && svc.bill_ref && String(sb.Ma) === String(svc.bill_ref.Ma)) ||
+               (sbDate === cleanDate && isRoomChargeBillRecord(sb))
+      })
+      if (matchedBill) {
+        matchedBill.Amount = newRate * (matchedBill.Quantity || 1)
+        matchedBill.rate = newRate
+      }
+    }
+
     try {
       const payload = {
         booking_room_id: room.bookingRoomId,
@@ -3524,6 +3592,13 @@ async function closeDiscountPopover(room, svc) {
       const res = await createBookingRoomService(room.bookingRoomId, payload)
       if (res?.data?.success) {
         uiStore.showToast('Cập nhật đơn giá phòng thành công!', 'success')
+        if (res.data?.service_bill && room.serviceBills && Array.isArray(room.serviceBills)) {
+          const updatedBill = res.data.service_bill
+          const idx = room.serviceBills.findIndex(b => String(b.Ma) === String(updatedBill.Ma))
+          if (idx !== -1) {
+            room.serviceBills[idx] = { ...room.serviceBills[idx], ...updatedBill }
+          }
+        }
         const freshRes = await fetchBookingRoomServices(room.bookingRoomId)
         room.services = (freshRes.data?.data || []).map(s => ({
           ...s,
@@ -5062,7 +5137,17 @@ async function triggerAction(actionName) {
       uiStore.showToast('Vui lòng lưu đăng ký trước khi mở hóa đơn.', 'warning')
       return
     }
-    router.push({ path: '/frontdesk', query: { tab: 'checkout', bookingCode: tab.id } })
+    const isOldBooking = Number(tab.status) === 2 || (
+      Array.isArray(tab.rooms) && tab.rooms.length > 0 && tab.rooms.every(r => Number(r.bookingRoomStatus ?? r.status) === 2)
+    )
+    router.push({
+      path: '/frontdesk',
+      query: {
+        tab: 'checkout',
+        bookingCode: tab.id || tab.bookingCode,
+        ...(isOldBooking ? { register: 'old' } : {})
+      }
+    })
   } else if (actionName === 'Nhân bản') {
     openCopyModal()
   } else if (actionName === 'GIAO PHÒNG') {

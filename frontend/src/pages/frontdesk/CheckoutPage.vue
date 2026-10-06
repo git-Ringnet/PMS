@@ -585,6 +585,35 @@ const clearCheckoutPanels = () => {
   checkoutPreview.value = null
   checkoutError.value = ''
   checkoutUnpaidRooms.value = []
+  clearCheckoutSessionStorage()
+}
+
+const CHECKOUT_LAST_BOOKING_KEY = 'pms_checkout_last_booking_id'
+const CHECKOUT_LAST_ROOM_KEY = 'pms_checkout_last_room_id'
+const CHECKOUT_LAST_GUEST_KEY = 'pms_checkout_last_guest_id'
+
+function saveCheckoutSessionStorage(bookingId, roomId = null, guestId = null) {
+  if (bookingId) {
+    sessionStorage.setItem(CHECKOUT_LAST_BOOKING_KEY, String(bookingId))
+  } else {
+    sessionStorage.removeItem(CHECKOUT_LAST_BOOKING_KEY)
+  }
+  if (roomId) {
+    sessionStorage.setItem(CHECKOUT_LAST_ROOM_KEY, String(roomId))
+  } else {
+    sessionStorage.removeItem(CHECKOUT_LAST_ROOM_KEY)
+  }
+  if (guestId) {
+    sessionStorage.setItem(CHECKOUT_LAST_GUEST_KEY, String(guestId))
+  } else {
+    sessionStorage.removeItem(CHECKOUT_LAST_GUEST_KEY)
+  }
+}
+
+function clearCheckoutSessionStorage() {
+  sessionStorage.removeItem(CHECKOUT_LAST_BOOKING_KEY)
+  sessionStorage.removeItem(CHECKOUT_LAST_ROOM_KEY)
+  sessionStorage.removeItem(CHECKOUT_LAST_GUEST_KEY)
 }
 
 const addServiceBookingInfo = computed(() => {
@@ -2903,6 +2932,7 @@ const selectBookingHeader = (b) => {
 
   selectedBooking.value = b
   selectedRoomItem.value = null
+  saveCheckoutSessionStorage(b.bookingId || b.id, null, null)
   // Chọn Master luôn checkout toàn bộ phòng đang In-House của booking;
   // không để checkbox phòng cũ làm lệch phạm vi thao tác sang checkout riêng phòng.
   ;(b.roomItems || []).forEach(room => { room.checked = false })
@@ -2961,6 +2991,7 @@ const selectRoomItemRow = async (b, r, specificGuest = null) => {
 
   selectedBooking.value = b
   selectedRoomItem.value = r
+  saveCheckoutSessionStorage(b.bookingId || b.id, r.roomId || r.id, guest?.id || null)
   serviceFilter.value = null
   selectedServiceIds.value = []
   selectedPaymentIds.value = []
@@ -3042,12 +3073,57 @@ const openRegistrationFromCheckout = () => {
   router.push({ path: '/frontdesk', query: { tab: 'create-res', bookingCode: selectedBooking.value.code } })
 }
 
-const selectCheckoutBookingFromRoute = () => {
+const syncCheckoutFilterFromRoute = () => {
+  const queryRegister = String(route.query.register || '').trim()
+  let changed = false
+  if (['old', 'current', 'virtual'].includes(queryRegister) && appliedCheckoutFilter.value.register !== queryRegister) {
+    registerFilter.value = queryRegister
+    appliedCheckoutFilter.value.register = queryRegister
+    changed = true
+  }
+  const routeBookingKey = String(route.query.bookingCode || route.query.booking_code || route.query.booking_id || route.query.edit_id || '').trim()
+  if (routeBookingKey && appliedCheckoutFilter.value.departureEnabled) {
+    appliedCheckoutFilter.value.departureEnabled = false
+    filterDepartureChecked.value = false
+    changed = true
+  }
+  return changed
+}
+
+const selectCheckoutBookingFromRoute = async () => {
   const bookingKey = String(route.query.bookingCode || route.query.booking_code || route.query.booking_id || route.query.edit_id || '').trim()
   if (!bookingKey) return
-  const booking = allBookingsList.value.find(item => (
+  let booking = allBookingsList.value.find(item => (
     String(item.code) === bookingKey || String(item.bookingId) === bookingKey || String(item.id) === bookingKey || String(item.id) === `B${bookingKey}`
   ))
+
+  if (!booking) {
+    try {
+      const res = await fetchBookings({ search: bookingKey, status: '0,1,2,4', with_billing: true, stay_only: true })
+      const list = res.data?.data || res.data || []
+      const rawTarget = list.find(b => (
+        String(b.booking_code) === bookingKey ||
+        String(b.id) === bookingKey ||
+        `GAL${b.id}` === bookingKey ||
+        `B${b.id}` === bookingKey
+      )) || list[0]
+
+      if (rawTarget) {
+        const isTargetCheckedOut = isCheckedOutRecord(rawTarget)
+        if (isTargetCheckedOut && appliedCheckoutFilter.value.register !== 'old') {
+          registerFilter.value = 'old'
+          appliedCheckoutFilter.value.register = 'old'
+          await loadCheckoutBookings()
+          booking = allBookingsList.value.find(item => (
+            String(item.code) === bookingKey || String(item.bookingId) === bookingKey || String(item.id) === bookingKey || String(item.id) === `B${bookingKey}`
+          ))
+        }
+      }
+    } catch (err) {
+      console.error('Lỗi khi tra cứu booking theo route query:', err)
+    }
+  }
+
   if (booking) {
     const roomId = String(route.query.roomId || route.query.room_id || route.query.booking_room_id || '').trim()
     const room = roomId
@@ -3064,6 +3140,32 @@ const selectCheckoutBookingFromRoute = () => {
   }
 }
 
+const restoreCheckoutBookingFromSession = () => {
+  const savedBookingId = sessionStorage.getItem(CHECKOUT_LAST_BOOKING_KEY)
+  if (!savedBookingId) return
+  const booking = allBookingsList.value.find(item => (
+    String(item.bookingId) === savedBookingId || String(item.id) === savedBookingId || String(item.code) === savedBookingId || String(item.id) === `B${savedBookingId}`
+  ))
+  if (booking) {
+    const savedRoomId = sessionStorage.getItem(CHECKOUT_LAST_ROOM_KEY)
+    const savedGuestId = sessionStorage.getItem(CHECKOUT_LAST_GUEST_KEY)
+    const room = savedRoomId
+      ? booking.roomItems.find(item => (
+          String(item.roomId) === savedRoomId || 
+          String(item.id) === savedRoomId || 
+          String(item.id) === `R${savedRoomId}` || 
+          String(item.roomNumber) === savedRoomId ||
+          String(item.rawRoom?.id) === savedRoomId ||
+          String(item.rawRoom?.booking_room_id) === savedRoomId
+        ))
+      : null
+    const guest = (room && savedGuestId)
+      ? (room.allGuests || []).find(g => String(g?.id) === String(savedGuestId))
+      : null
+    selectBookingFromSearch(booking, room, guest)
+  }
+}
+
 const handleClickOutside = (e) => {
   if (searchContainerRef.value && !searchContainerRef.value.contains(e.target)) {
     showSearchDropdown.value = false
@@ -3077,8 +3179,14 @@ onMounted(async () => {
   await loadSystemDate()
   await loadCheckoutRolePermissions()
   await loadServiceBillAdjustmentPermission()
+  syncCheckoutFilterFromRoute()
   await loadCheckoutBookings()
-  selectCheckoutBookingFromRoute()
+  const routeBookingKey = String(route.query.bookingCode || route.query.booking_code || route.query.booking_id || route.query.edit_id || '').trim()
+  if (routeBookingKey) {
+    await selectCheckoutBookingFromRoute()
+  } else {
+    restoreCheckoutBookingFromSession()
+  }
   document.addEventListener('click', handleClickOutside)
   window.addEventListener('hotel-config-updated', onCheckoutRoleConfigUpdated)
   // Lắng nghe sự kiện realtime qua Laravel Echo
@@ -3093,9 +3201,10 @@ onMounted(async () => {
   }
 })
 
-watch(() => [route.query.bookingCode, route.query.booking_code, route.query.booking_id, route.query.roomId, route.query.room_id, route.query.booking_room_id], async () => {
+watch(() => [route.query.bookingCode, route.query.booking_code, route.query.booking_id, route.query.roomId, route.query.room_id, route.query.booking_room_id, route.query.register], async () => {
+  syncCheckoutFilterFromRoute()
   await loadCheckoutBookings()
-  selectCheckoutBookingFromRoute()
+  await selectCheckoutBookingFromRoute()
 })
 
 watch(() => [authStore.activeBranch?.id, authStore.roles], () => {
