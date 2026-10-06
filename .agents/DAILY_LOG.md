@@ -18,6 +18,33 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-10-06] - Triển khai thông số cấu hình hệ thống AllowInputOverAV ràng buộc tạo đặt phòng và lấy thêm phòng khi hết phòng trống
+### Module: Đặt phòng / Lễ tân / Kế hoạch phòng ([BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [HotelSettingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/HotelSettingController.php), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [QuickAssignModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/QuickAssignModal.vue), [RoomPlanPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomPlanPage.vue), [AllowInputOverAVTest.php](file:///d:/PMS/backend/tests/Feature/AllowInputOverAVTest.php))
+
+- **Yêu cầu & Nghiệp vụ xử lý**:
+  - Triển khai thông số `AllowInputOverAV` (Cho phép nhập/lấy phòng khi hết phòng trống: 0 - Không cho phép, 1 - Cho phép) độc lập với `AllowOverRoomTypeRoomKind`:
+    - Khi `AllowOverRoomTypeRoomKind = 1` nhưng `AllowInputOverAV = 0`: Chặn tuyệt đối việc tạo booking mới hoặc lấy thêm phòng dẫn đến âm phòng; trong khi vẫn cho phép các thao tác điều chỉnh khác (chuyển phòng, đổi ngày, khóa phòng OOO/OOS, khôi phục booking...).
+  1. **Tab Lấy phòng màn hình Booking ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))**:
+     - `AllowInputOverAV = 0`:
+       - Nếu số lượng phòng trống của loại phòng $\le 0$: Ô số lượng bị vô hiệu hóa (`disabled`), style nền xám (`bg-slate-100 text-slate-400 cursor-not-allowed`), ẩn các nút mũi tên tăng/giảm, giữ số lượng = 0.
+       - Nếu số lượng phòng trống $> 0$: Chặn không cho nhập số lượng hoặc bấm nút tăng vượt quá số phòng trống hiện có; tự động giới hạn về tối đa số phòng trống và hiển thị thông báo lỗi.
+     - `AllowInputOverAV = 1`: Cho phép nhập và bấm nút tăng/giảm bình thường ngay cả khi phòng trống $\le 0$.
+  2. **Giao phòng nhanh tại Sơ đồ phòng ([QuickAssignModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/QuickAssignModal.vue))**:
+     - `AllowInputOverAV = 0`: Kiểm tra số phòng trống thực tế của loại phòng qua API `checkAvailability`. Nếu $\le 0$, chặn thao tác nhận phòng nhanh và cảnh báo rõ ràng.
+     - `AllowInputOverAV = 1`: Cho phép tạo booking nhận phòng nhanh dẫn đến âm phòng.
+  3. **Đặt phòng nhanh tại Kế hoạch phòng ([RoomPlanPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomPlanPage.vue))**:
+     - `AllowInputOverAV = 0`: Kiểm tra số phòng trống của các loại phòng được chọn trong `saveQuickBooking`. Nếu $\le 0$ hoặc số lượng chọn vượt quá số phòng trống, chặn tạo booking và thông báo lỗi.
+     - `AllowInputOverAV = 1`: Cho phép tạo booking nhanh dẫn đến âm phòng.
+  4. **Backend ([BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [HotelSettingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/HotelSettingController.php))**:
+     - Cập nhật `HotelSettingController@show` nạp cấu hình `AllowInputOverAV`.
+     - Cập nhật seeder `HotelDefinitionSeeder` và database `hotel_configs`: `is_visible = true`, mô tả rõ ràng.
+     - Trong `BookingController@validateRoomAllocations`: Kiểm tra `$canOver = $allowOver && $allowInputOver`. Chặn ném ngoại lệ nếu `AllowInputOverAV = 0` và số phòng yêu cầu vượt quá phòng trống.
+     - Trong `BookingRoomController@store`: Chặn thêm phòng mới vào booking nếu `AllowInputOverAV = 0` và `av <= 0`.
+- **Kiểm thử**:
+  - Viết bộ Feature Test mới [AllowInputOverAVTest.php](file:///d:/PMS/backend/tests/Feature/AllowInputOverAVTest.php) bao phủ đầy đủ 8 test cases: API settings, chặn tạo booking khi hết phòng, cho phép tạo booking khi bật cấu hình, chặn thêm phòng lẻ vào booking khi hết phòng, cho phép thêm phòng lẻ, chặn thêm phòng hàng loạt (tab Lấy phòng) khi hết phòng, cho phép thêm phòng hàng loạt, và bảo toàn việc cho phép over đối với các thao tác điều chỉnh khác (khôi phục booking bị hủy). Chạy đạt **8/8 tests PASSED (100%)**.
+  - Regression tests [RestoreBookingConflictTest.php](file:///d:/PMS/backend/tests/Feature/RestoreBookingConflictTest.php) (5/5 PASSED), [GuestDeleteRestrictionsTest.php](file:///d:/PMS/backend/tests/Feature/GuestDeleteRestrictionsTest.php) (9/9 PASSED).
+  - Frontend production build (`npm run build`): Thành công trong 4.12s không phát sinh lỗi.
+
 ## [2026-10-06] - Khắc phục lỗi sửa thông tin phòng (giá phòng, thêm giường, ăn sáng, rate code) và hoàn thiện quy tắc chặn/xử lý xóa khách
 ### Module: Đặt phòng / Sơ đồ phòng & Thông tin khách ([BookingDetailModal.vue](file:///d:/PMS/frontend/src/components/BookingDetailModal.vue), [GuestController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/GuestController.php), [RoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomController.php), [BookingRoomStayChargeService.php](file:///d:/PMS/backend/Services/BookingRoomStayChargeService.php))
 

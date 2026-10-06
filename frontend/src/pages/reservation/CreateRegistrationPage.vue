@@ -143,6 +143,10 @@ const isSyncRoomDateEnabled = computed(() => {
   const val = hotelSettings.value?.SyncRoomDateByBookingDate ?? hotelSettings.value?.sync_room_date_by_booking_date
   return Number(val) === 1
 })
+const allowInputOverAV = computed(() => {
+  const val = hotelSettings.value?.AllowInputOverAV ?? hotelSettings.value?.allow_input_over_av
+  return String(val ?? '0') === '1'
+})
 const currenciesList = ref([])
 const activeCurrency = computed(() => {
   return currenciesList.value.find(c => c.is_main) || { code: 'VND', decimals_to_round: 0 }
@@ -4033,6 +4037,15 @@ async function updateRoomAvailability() {
 
 
         alloc.availableRooms = minAv
+        if (!allowInputOverAV.value) {
+          if (minAv <= 0 && (Number(alloc.quantity) || 0) > 0) {
+            alloc.quantity = 0
+            updateAllocatedRooms(alloc)
+          } else if (minAv > 0 && (Number(alloc.quantity) || 0) > minAv) {
+            alloc.quantity = minAv
+            updateAllocatedRooms(alloc)
+          }
+        }
       })
     }
   } catch (err) {
@@ -4097,8 +4110,57 @@ function updateAllocatedRooms(row) {
   }
 }
 
+function isQuantityDisabled(row) {
+  if (allowInputOverAV.value) return false
+  return (Number(row.availableRooms) || 0) <= 0
+}
+
+function handleQuantityInput(row) {
+  if (!allowInputOverAV.value) {
+    const avail = Number(row.availableRooms) || 0
+    if (avail <= 0) {
+      row.quantity = 0
+      uiStore.showToast('Loại phòng đã hết phòng trống. Không được phép nhập số lượng khi AllowInputOverAV = 0!', 'error')
+    } else if (Number(row.quantity) > avail) {
+      row.quantity = avail
+      uiStore.showToast(`Số lượng phòng không được vượt quá số phòng trống (${avail})!`, 'error')
+    }
+  }
+  updateAllocatedRooms(row)
+}
+
+function handleIncreaseQuantity(row) {
+  if (isQuantityDisabled(row)) return
+  const current = Number(row.quantity) || 0
+  const avail = Number(row.availableRooms) || 0
+  if (!allowInputOverAV.value && current >= avail) {
+    uiStore.showToast(`Số lượng phòng không được vượt quá số phòng trống (${avail})!`, 'error')
+    return
+  }
+  row.quantity = current + 1
+  updateAllocatedRooms(row)
+}
+
+function handleDecreaseQuantity(row) {
+  if (isQuantityDisabled(row)) return
+  const current = Number(row.quantity) || 0
+  if (current > 0) {
+    row.quantity = current - 1
+    updateAllocatedRooms(row)
+  }
+}
+
 function validateRoomQuantity(alloc) {
-  if (hotelSettings.value?.allow_over_room_type === 0 || hotelSettings.value?.allow_over_room_type === false) {
+  if (!allowInputOverAV.value) {
+    const avail = Number(alloc.availableRooms) || 0
+    if (avail <= 0 && (Number(alloc.quantity) || 0) > 0) {
+      alloc.quantity = 0
+      uiStore.showToast('Loại phòng đã hết phòng trống. Không được phép nhập số lượng khi AllowInputOverAV = 0!', 'error')
+    } else if (avail > 0 && (Number(alloc.quantity) || 0) > avail) {
+      alloc.quantity = avail
+      uiStore.showToast(`Số lượng phòng không được vượt quá số phòng trống (${avail})!`, 'error')
+    }
+  } else if (hotelSettings.value?.allow_over_room_type === 0 || hotelSettings.value?.allow_over_room_type === false) {
     if (alloc.quantity > alloc.availableRooms) {
       uiStore.showToast('Cảnh báo: Đã vượt quá số lượng phòng trống cho phép!', 'error')
     }
@@ -4322,6 +4384,15 @@ async function handleRowDateChange(row) {
         exclude_booking_room_id: undefined
       })
       row.availableRooms = res.data?.av !== undefined ? Number(res.data.av) : 0
+      if (!allowInputOverAV.value) {
+        if (row.availableRooms <= 0 && (Number(row.quantity) || 0) > 0) {
+          row.quantity = 0
+          updateAllocatedRooms(row)
+        } else if (row.availableRooms > 0 && (Number(row.quantity) || 0) > row.availableRooms) {
+          row.quantity = row.availableRooms
+          updateAllocatedRooms(row)
+        }
+      }
     } catch(e) {
       console.error(e)
     }
@@ -4766,6 +4837,19 @@ async function handleSaveNewBooking() {
       module:                 currentBookingModule.value,
       created_module:         currentBookingModule.value,
     }
+    if (!allowInputOverAV.value) {
+      const overAlloc = (roomAddDraft.value || []).find(r => {
+        const qty = Number(r.quantity) || 0
+        const av = Number(r.availableRooms) || 0
+        return qty > 0 && (av <= 0 || qty > av)
+      })
+      if (overAlloc) {
+        uiStore.showToast(`Loại phòng ${overAlloc.roomClassName || overAlloc.roomClassCode} không đủ phòng trống (Trống: ${overAlloc.availableRooms})!`, 'error')
+        isSavingModal.value = false
+        return
+      }
+    }
+
     if (isEditModal.value && modalForm.value.dbId) {
       if (hasRoomsToAddNow && isBookingInfoChanged) {
         const res = await updateBooking(modalForm.value.dbId, payload)
@@ -8844,11 +8928,11 @@ defineExpose({
                       
                       <!-- Số lượng -->
                       <td v-if="visibleColumns.quantity" class="py-2 px-1 bg-slate-50/30">
-                        <div class="relative w-full min-w-[40px] max-w-[60px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
-                          <input type="number" v-model.number="row.quantity" min="0" @input="updateAllocatedRooms(row)" @focus="$event.target.select()" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
-                          <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
-                            <button @click.prevent="row.quantity = (Number(row.quantity) || 0) + 1; updateAllocatedRooms(row)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
-                            <button @click.prevent="(Number(row.quantity) || 0) > 0 ? (row.quantity = (Number(row.quantity) || 0) - 1, updateAllocatedRooms(row)) : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
+                        <div class="relative w-full min-w-[40px] max-w-[60px] mx-auto border border-slate-300 rounded-md h-[30px] shadow-sm flex items-center" :class="isQuantityDisabled(row) ? 'bg-slate-100 cursor-not-allowed text-slate-400' : 'bg-white text-slate-800'">
+                          <input type="number" v-model.number="row.quantity" min="0" :disabled="isQuantityDisabled(row)" @input="handleQuantityInput(row)" @focus="$event.target.select()" class="w-full text-center focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" :class="isQuantityDisabled(row) ? 'cursor-not-allowed text-slate-400' : 'pr-4 text-slate-800'">
+                          <div v-if="!isQuantityDisabled(row)" class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
+                            <button @click.prevent="handleIncreaseQuantity(row)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
+                            <button @click.prevent="handleDecreaseQuantity(row)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
                           </div>
                         </div>
                       </td>

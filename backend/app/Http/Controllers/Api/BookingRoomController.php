@@ -43,6 +43,12 @@ class BookingRoomController extends Controller
         return $cfg && $cfg->value == '1';
     }
 
+    private function allowInputOverAV(): bool
+    {
+        $cfg = HotelConfig::where('name', 'AllowInputOverAV')->first();
+        return $cfg && $cfg->value == '1';
+    }
+
     // =========================================
     // GET: Danh sách phòng trong một booking
     // GET /bookings/{bookingId}/rooms
@@ -135,7 +141,7 @@ class BookingRoomController extends Controller
             $validated['departure_date']
         );
 
-        if ($av <= 0 && !$this->allowOverAV()) {
+        if ($av <= 0 && (!$this->allowOverAV() || !$this->allowInputOverAV())) {
             return response()->json([
                 'success' => false,
                 'message' => 'Không còn phòng trống cho loại phòng này trong khoảng ngày đã chọn. (AV = ' . $av . ')',
