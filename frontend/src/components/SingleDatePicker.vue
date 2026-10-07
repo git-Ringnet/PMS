@@ -19,7 +19,7 @@ const props = defineProps({
   },
   placeholder: {
     type: String,
-    default: 'dd/mm/yyyy'
+    default: 'dd/mm/yy'
   },
   disabled: {
     type: Boolean,
@@ -92,9 +92,18 @@ const parsedMaxDate = computed(() => {
 
 const formatDateDMY = (dateStr) => {
   if (!dateStr) return ''
-  const parts = String(dateStr).split('-')
+  const parts = String(dateStr).split(/[-\/]/)
   if (parts.length === 3) {
-    return `${parts[2]}/${parts[1]}/${parts[0]}`
+    if (parts[0].length === 4) {
+      // YYYY-MM-DD
+      const yy = parts[0].slice(-2)
+      return `${parts[2].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${yy}`
+    } else if (parts[2].length === 4) {
+      const yy = parts[2].slice(-2)
+      return `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${yy}`
+    } else if (parts[2].length === 2) {
+      return `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[2]}`
+    }
   }
   return dateStr
 }
@@ -110,7 +119,19 @@ function parseDateInput(str) {
   const trimmed = str.trim()
   if (!trimmed) return ''
 
-  // 1. Check DD/MM/YYYY or D/M/YYYY or DD-MM-YYYY
+  // 1. Check DD/MM/YY or DD-MM-YY
+  const twoDigitYearMatch = trimmed.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2})$/)
+  if (twoDigitYearMatch) {
+    const day = parseInt(twoDigitYearMatch[1], 10)
+    const month = parseInt(twoDigitYearMatch[2], 10)
+    const yy = parseInt(twoDigitYearMatch[3], 10)
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const year = yy >= 50 ? 1900 + yy : 2000 + yy
+      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    }
+  }
+
+  // 2. Check DD/MM/YYYY or D/M/YYYY or DD-MM-YYYY
   const slashMatch = trimmed.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/)
   if (slashMatch) {
     const day = parseInt(slashMatch[1], 10)
@@ -121,7 +142,19 @@ function parseDateInput(str) {
     }
   }
 
-  // 2. Check 8 digits DDMMYYYY (e.g. 18122006)
+  // 3. Check 6 digits DDMMYY (e.g. 181226)
+  const sixDigits = trimmed.match(/^(\d{2})(\d{2})(\d{2})$/)
+  if (sixDigits) {
+    const day = parseInt(sixDigits[1], 10)
+    const month = parseInt(sixDigits[2], 10)
+    const yy = parseInt(sixDigits[3], 10)
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const year = yy >= 50 ? 1900 + yy : 2000 + yy
+      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+    }
+  }
+
+  // 4. Check 8 digits DDMMYYYY (e.g. 18122026)
   const eightDigits = trimmed.match(/^(\d{2})(\d{2})(\d{4})$/)
   if (eightDigits) {
     const day = parseInt(eightDigits[1], 10)
@@ -132,7 +165,7 @@ function parseDateInput(str) {
     }
   }
 
-  // 3. Check YYYY-MM-DD
+  // 5. Check YYYY-MM-DD
   const isoMatch = trimmed.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/)
   if (isoMatch) {
     const year = parseInt(isoMatch[1], 10)
@@ -174,6 +207,23 @@ function handleTextBlur() {
     textInput.value = formatDateDMY(props.modelValue)
   }
 }
+
+function handleClear() {
+  if (props.disabled) return
+  textInput.value = ''
+  emit('update:modelValue', '')
+  emit('change', '')
+}
+
+function handleInputClick() {
+  if (!props.disabled && datepickerRef.value) {
+    try {
+      datepickerRef.value.openMenu()
+    } catch (e) {
+      // ignore
+    }
+  }
+}
 </script>
 
 <template>
@@ -189,41 +239,53 @@ function handleTextBlur() {
       @input="handleTextInput"
       @blur="handleTextBlur"
       @keydown.enter.prevent="handleTextBlur"
-      class="w-full bg-transparent border-none outline-none text-xs font-semibold text-gray-900 placeholder:text-slate-400 placeholder:font-normal p-0"
+      @click="handleInputClick"
+      class="w-full bg-transparent border-none outline-none text-xs font-semibold text-gray-900 placeholder:text-slate-400 placeholder:font-normal p-0 cursor-pointer"
       :class="disabled ? 'cursor-not-allowed text-slate-500' : ''"
       autocomplete="off"
     />
-    <VueDatePicker
-      ref="datepickerRef"
-      v-model="dateValue"
-      :locale="vi"
-      :enable-time-picker="false"
-      :min-date="parsedMinDate"
-      :max-date="parsedMaxDate"
-      :disabled="disabled"
-      :teleport="true"
-      auto-apply
-      format="dd/MM/yyyy"
-      menu-class-name="custom-datepicker-menu"
-      class="custom-single-datepicker shrink-0 ml-1"
-    >
-      <template #trigger>
-        <button
-          type="button"
-          :disabled="disabled"
-          class="p-0.5 text-slate-400 hover:text-sky-600 shrink-0 bg-transparent border-none cursor-pointer flex items-center justify-center transition-colors"
-          :class="disabled ? 'cursor-not-allowed' : ''"
-          title="Chọn từ lịch"
-        >
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-            <line x1="16" y1="2" x2="16" y2="6" />
-            <line x1="8" y1="2" x2="8" y2="6" />
-            <line x1="3" y1="10" x2="21" y2="10" />
-          </svg>
-        </button>
-      </template>
-    </VueDatePicker>
+    <div class="flex items-center shrink-0 ml-1">
+      <button
+        v-if="!disabled && modelValue"
+        type="button"
+        @click.stop="handleClear"
+        class="p-0.5 text-slate-400 hover:text-red-500 shrink-0 bg-transparent border-none cursor-pointer flex items-center justify-center transition-colors mr-1"
+        title="Xóa ngày"
+      >
+        <i class="fa-solid fa-xmark text-[11px]"></i>
+      </button>
+      <VueDatePicker
+        ref="datepickerRef"
+        v-model="dateValue"
+        :locale="vi"
+        :enable-time-picker="false"
+        :min-date="parsedMinDate"
+        :max-date="parsedMaxDate"
+        :disabled="disabled"
+        :teleport="true"
+        auto-apply
+        format="dd/MM/yy"
+        menu-class-name="custom-datepicker-menu"
+        class="custom-single-datepicker shrink-0"
+      >
+        <template #trigger>
+          <button
+            type="button"
+            :disabled="disabled"
+            class="p-0.5 text-slate-400 hover:text-sky-600 shrink-0 bg-transparent border-none cursor-pointer flex items-center justify-center transition-colors"
+            :class="disabled ? 'cursor-not-allowed' : ''"
+            title="Chọn từ lịch"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+              <line x1="16" y1="2" x2="16" y2="6" />
+              <line x1="8" y1="2" x2="8" y2="6" />
+              <line x1="3" y1="10" x2="21" y2="10" />
+            </svg>
+          </button>
+        </template>
+      </VueDatePicker>
+    </div>
   </div>
 </template>
 
