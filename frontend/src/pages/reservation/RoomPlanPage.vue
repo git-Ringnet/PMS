@@ -337,6 +337,82 @@ const lockRoomType = ref('OOO') // 'OOO' | 'OOS'
 const lockRoomForm = ref({
   note: ''
 })
+const lockRoomModalPosition = ref(null)
+const lockRoomDragState = ref(null)
+let lockRoomDragFrame = null
+
+const lockRoomModalStyle = computed(() => {
+  const position = lockRoomModalPosition.value || { x: 0, y: 0 }
+  return {
+    left: '50%',
+    top: '50%',
+    transform: `translate(calc(-50% + ${position.x}px), calc(-50% + ${position.y}px))`
+  }
+})
+
+function startLockRoomDrag(event) {
+  if (event.button !== 0) return
+  const modal = event.currentTarget?.parentElement
+  if (!modal) return
+
+  const rect = modal.getBoundingClientRect()
+  const baseLeft = (window.innerWidth - rect.width) / 2
+  const baseTop = (window.innerHeight - rect.height) / 2
+  const currentPosition = lockRoomModalPosition.value || { x: 0, y: 0 }
+  lockRoomDragState.value = {
+    modal,
+    offsetX: event.clientX - (baseLeft + currentPosition.x),
+    offsetY: event.clientY - (baseTop + currentPosition.y),
+    baseLeft,
+    baseTop,
+    width: rect.width,
+    height: rect.height,
+    clientX: event.clientX,
+    clientY: event.clientY,
+    nextPosition: currentPosition
+  }
+  modal.style.willChange = 'transform'
+  event.preventDefault()
+  window.addEventListener('mousemove', moveLockRoomDrag)
+  window.addEventListener('mouseup', stopLockRoomDrag)
+}
+
+function moveLockRoomDrag(event) {
+  if (!lockRoomDragState.value) return
+  const state = lockRoomDragState.value
+  state.clientX = event.clientX
+  state.clientY = event.clientY
+
+  if (lockRoomDragFrame) return
+  lockRoomDragFrame = requestAnimationFrame(() => {
+    const nextX = state.clientX - state.offsetX
+    const nextY = state.clientY - state.offsetY
+    const maxLeft = Math.max(0, window.innerWidth - state.width)
+    const maxTop = Math.max(0, window.innerHeight - state.height)
+    const clampedLeft = Math.min(Math.max(0, nextX), maxLeft)
+    const clampedTop = Math.min(Math.max(0, nextY), maxTop)
+    state.nextPosition = {
+      x: clampedLeft - state.baseLeft,
+      y: clampedTop - state.baseTop
+    }
+    state.modal.style.transform = `translate(calc(-50% + ${state.nextPosition.x}px), calc(-50% + ${state.nextPosition.y}px))`
+    lockRoomDragFrame = null
+  })
+}
+
+function stopLockRoomDrag() {
+  if (lockRoomDragState.value?.nextPosition) {
+    lockRoomModalPosition.value = lockRoomDragState.value.nextPosition
+    lockRoomDragState.value.modal.style.willChange = ''
+  }
+  lockRoomDragState.value = null
+  if (lockRoomDragFrame) {
+    cancelAnimationFrame(lockRoomDragFrame)
+    lockRoomDragFrame = null
+  }
+  window.removeEventListener('mousemove', moveLockRoomDrag)
+  window.removeEventListener('mouseup', stopLockRoomDrag)
+}
 
 // Cell selections state
 const selectedCells = ref([])
@@ -1681,11 +1757,35 @@ onMounted(async () => {
         loadBookings()
       })
   }
+
+  window.addEventListener('keydown', handleKeyDown)
 })
+
+function handleKeyDown(e) {
+  if (e.key === 'Escape') {
+    if (showQuickBookingModal.value) {
+      showQuickBookingModal.value = false
+    } else if (showLockRoomModal.value) {
+      showLockRoomModal.value = false
+    } else if (contextMenu.value?.visible) {
+      closeContextMenu()
+    } else if (showColorPicker.value) {
+      showColorPicker.value = false
+    } else if (showDatePickerPopover.value) {
+      showDatePickerPopover.value = false
+    } else if (showWaitlistDatePickerPopover.value) {
+      showWaitlistDatePickerPopover.value = false
+    } else if (showPlanSettings.value) {
+      showPlanSettings.value = false
+    }
+  }
+}
 
 onBeforeUnmount(() => {
   stopQuickBookingDrag()
+  stopLockRoomDrag()
   stopBookingPointerDrag()
+  window.removeEventListener('keydown', handleKeyDown)
   if (roomPlanScrollContainer.value) {
     sessionStorage.setItem(ROOM_PLAN_SCROLL_TOP_KEY, String(roomPlanScrollContainer.value.scrollTop))
     sessionStorage.setItem(ROOM_PLAN_SCROLL_LEFT_KEY, String(roomPlanScrollContainer.value.scrollLeft))
@@ -2527,6 +2627,22 @@ function getLegendStyle(name) {
   return getBookingStyle(name)
 }
 
+function getLegendLineColor(name) {
+  const match = (registrationStatuses.value || []).find(s => 
+    s.name?.toLowerCase() === name.toLowerCase() ||
+    s.code?.toLowerCase() === name.toLowerCase()
+  )
+  if (match && (match.color || match.booking_status_color)) {
+    return match.color || match.booking_status_color
+  }
+  if (name === 'Guaranteed') return '#4ce410'
+  if (name === 'Waiting') return '#ef4444'
+  if (name === 'Allotment') return '#f97316'
+  if (name === 'None Guaranteed' || name === 'Reservation') return '#c7d9e0'
+  const style = getBookingStyle(name)
+  return style.backgroundColor || style.borderColor || '#3b82f6'
+}
+
 // Sum stats at bottom
 const occStats = [108, 111, 90, 92, 105, 96, 87, 88, 99, 88, 84, 85, 66, 63, 83, 80, 48, 67, 61, 35, 47]
 const avStats = [23, 20, 41, 39, 26, 35, 44, 43, 32, 43, 47, 46, 65, 68, 48, 51, 83, 64, 70, 96, 84]
@@ -2941,10 +3057,12 @@ async function triggerMenuAction(actionName) {
   } else if (actionName === 'Khóa phòng OOO') {
     lockRoomType.value = 'OOO'
     lockRoomForm.value.note = ''
+    lockRoomModalPosition.value = null
     showLockRoomModal.value = true
   } else if (actionName === 'Khóa phòng OOS') {
     lockRoomType.value = 'OOS'
     lockRoomForm.value.note = ''
+    lockRoomModalPosition.value = null
     showLockRoomModal.value = true
   } else if (actionName === 'Danh sách chờ') {
     showWaitingList.value = true
@@ -4228,7 +4346,7 @@ function getRoomStatusIconName(item) {
         <div class="relative select-none flex items-center">
           <button 
             @click.stop="showDatePickerPopover = !showDatePickerPopover; if (showDatePickerPopover) { tempStartDateStr = formatDateStr(startDate); tempEndDateStr = formatDateStr(endDate); }" 
-            class="flex items-center gap-1.5 border border-slate-200 rounded-lg bg-slate-50 px-3 py-1.5 shadow-sm text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer h-[30px]"
+            class="flex items-center gap-1.5 border border-slate-200 rounded-lg bg-slate-50 px-3 py-1.5 shadow-sm text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer h-8"
           >
             <span>{{ dateRangeText }}</span>
             <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -4239,13 +4357,13 @@ function getRoomStatusIconName(item) {
           <!-- Date Picker Popover -->
           <div 
             v-if="showDatePickerPopover" 
-            class="absolute left-0 top-[34px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl z-50 p-3.5 flex flex-col gap-3 w-[280px]"
+            class="absolute left-0 top-[36px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl z-50 p-3.5 flex flex-col gap-3 w-[280px]"
             @click.stop
           >
             <h4 class="text-xs font-extrabold text-slate-800 dark:text-slate-100 m-0">Chọn khoảng thời gian</h4>
             <div class="flex flex-col gap-2">
               <div class="flex flex-col gap-1">
-                <span class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">Từ ngày</span>
+                <span class="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Từ ngày</span>
                 <SingleDatePicker 
                   v-model="tempStartDateStr"
                   input-class="dark:bg-slate-800 dark:text-slate-100 dark:border-slate-700"
@@ -4253,7 +4371,7 @@ function getRoomStatusIconName(item) {
                 />
               </div>
               <div class="flex flex-col gap-1">
-                <span class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">Đến ngày</span>
+                <span class="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Đến ngày</span>
                 <SingleDatePicker 
                   v-model="tempEndDateStr"
                   input-class="dark:bg-slate-800 dark:text-slate-100 dark:border-slate-700"
@@ -4287,7 +4405,7 @@ function getRoomStatusIconName(item) {
         <!-- View Button -->
         <button 
           @click="handleViewClick"
-          class="px-4 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs font-bold border-none shadow-sm transition-colors cursor-pointer h-[30px]"
+          class="px-4 py-1.5 bg-[#0088ff] hover:bg-[#0077e6] text-white rounded-lg text-xs font-semibold border-none shadow-sm transition-colors cursor-pointer h-8"
         >
           View
         </button>
@@ -4296,7 +4414,7 @@ function getRoomStatusIconName(item) {
         <div class="relative select-none flex items-center">
           <button 
             @click.stop="showPlanSettings = !showPlanSettings"
-            class="flex items-center gap-1.5 border border-slate-200 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer h-[30px] transition-colors"
+            class="flex items-center gap-1.5 border border-slate-200 rounded-lg bg-white px-3 py-1.5 text-xs font-normal text-[#000000D9] hover:bg-slate-50 cursor-pointer h-8 transition-colors"
           >
             <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M3 4h13M3 8h9m-9 4h6m4 0l4-4m0 0l4 4m-4-4v12" />
@@ -4309,7 +4427,7 @@ function getRoomStatusIconName(item) {
           
           <div 
             v-if="showPlanSettings" 
-            class="absolute left-0 top-[34px] bg-white border border-slate-200 rounded-lg shadow-xl z-50 py-1 min-w-[120px]"
+            class="absolute left-0 top-[36px] bg-white border border-slate-200 rounded-lg shadow-xl z-50 py-1 min-w-[120px]"
           >
             <button 
               v-for="opt in [
@@ -4320,8 +4438,8 @@ function getRoomStatusIconName(item) {
               ]" 
               :key="opt.value"
               @click="activeGroupSetting = opt.value; showPlanSettings = false"
-              class="w-full text-left px-3 py-2 text-xs font-semibold hover:bg-slate-50 transition-colors border-none bg-transparent cursor-pointer"
-              :class="activeGroupSetting === opt.value ? 'text-blue-500 bg-blue-50/50' : 'text-slate-700'"
+              class="w-full text-left px-3 py-2 text-xs font-normal hover:bg-slate-50 transition-colors border-none bg-transparent cursor-pointer"
+              :class="activeGroupSetting === opt.value ? 'text-blue-600 bg-blue-50/50' : 'text-[#000000D9]'"
             >
               {{ opt.label }}
             </button>
@@ -4330,7 +4448,7 @@ function getRoomStatusIconName(item) {
 
         <!-- Switch Xem đêm -->
         <div class="flex items-center gap-1.5 select-none ml-1">
-          <span class="text-[10px] text-slate-500 font-extrabold uppercase">{{ showNights ? 'Xem đêm' : 'Xem ngày' }}</span>
+          <span class="text-xs text-[#000000D9] font-normal uppercase">{{ showNights ? 'Xem đêm' : 'Xem ngày' }}</span>
           <label class="relative inline-flex items-center cursor-pointer">
             <input type="checkbox" v-model="showNights" class="sr-only peer">
             <div class="w-8 h-4.5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-blue-500"></div>
@@ -4339,7 +4457,7 @@ function getRoomStatusIconName(item) {
 
         <!-- Switch Ghi chú -->
         <div class="flex items-center gap-1.5 select-none">
-          <span class="text-[10px] text-slate-500 font-extrabold uppercase">Ghi chú</span>
+          <span class="text-xs text-[#000000D9] font-normal uppercase">Ghi chú</span>
           <label class="relative inline-flex items-center cursor-pointer">
             <input type="checkbox" v-model="showNotes" class="sr-only peer">
             <div class="w-8 h-4.5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-blue-500"></div>
@@ -4349,25 +4467,30 @@ function getRoomStatusIconName(item) {
 
       <!-- Right side controls (Search & Filter) -->
       <div class="flex items-center gap-2">
-        <!-- Dynamic Active Legends Pill Bar -->
-        <div class="flex items-center gap-1.5 select-none shrink-0 mr-1.5">
+        <!-- Dynamic Active Legends Bar -->
+        <div class="flex items-center gap-2 select-none shrink-0 mr-1.5">
           <div 
             v-for="leg in visibleLegends" 
             :key="leg.name" 
-            class="px-2 py-0.5 border rounded text-[9px] font-extrabold whitespace-nowrap shadow-2xs leading-none uppercase select-none" 
+            class="flex flex-col items-center gap-0.5 select-none" 
             :class="[
-              leg.class,
               (isAdmin && legendConfigKeys[leg.name]) ? 'cursor-pointer hover:scale-105 transition-transform duration-150' : ''
             ]"
-            :style="getLegendStyle(leg.name)"
             @click="handleLegendClick(leg.name, $event)"
           >
-            {{ leg.name }}
+            <span class="text-xs font-normal text-[#000000D9] leading-tight select-none">
+              {{ leg.name }}
+            </span>
+            <div 
+              class="h-[3px] w-full min-w-[28px] rounded-full shadow-2xs" 
+              :class="leg.class"
+              :style="{ backgroundColor: getLegendLineColor(leg.name) }"
+            ></div>
           </div>
         </div>
 
         <!-- Search Input Group -->
-        <div class="relative flex items-center border border-slate-200 rounded-lg bg-white shadow-sm overflow-hidden select-none h-[30px] pr-2.5">
+        <div class="relative flex items-center border border-slate-200 rounded-lg bg-white shadow-sm overflow-hidden select-none h-8 pr-2.5">
           <input 
             type="text" 
             v-model="searchInput" 
@@ -4394,7 +4517,7 @@ function getRoomStatusIconName(item) {
         <!-- Filter Drawer Trigger Button -->
         <button 
           @click="openFilterDrawer"
-          class="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer h-[30px]"
+          class="flex items-center gap-1.5 px-3 py-1.5 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-semibold shadow-sm transition-colors cursor-pointer h-8"
         >
           <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v3.022a1.2 1.2 0 01-.328.814l-4.747 4.748a1.2 1.2 0 00-.328.814v3.169a1.2 1.2 0 01-.694 1.086l-2.851 1.426c-.843.421-1.85-.192-1.85-1.137v-4.544a1.2 1.2 0 00-.328-.814L5.34 8.572A1.2 1.2 0 015.012 7.76V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z" />
@@ -4414,7 +4537,7 @@ function getRoomStatusIconName(item) {
 
         <!-- Header -->
         <thead @dragenter="handleGlobalDragOver($event)" @dragover="handleGlobalDragOver($event)">
-          <tr class="border-b border-slate-200 text-slate-700 font-bold select-none h-10">
+          <tr class="border-b border-slate-200 text-[#000000D9] select-none h-10">
             <th class="p-2 border-r border-slate-200 text-center sticky left-0 top-0 z-40 bg-slate-100 shadow-[inset_-1px_0_0_#e2e8f0]"></th>
             <th 
               v-for="(day, idx) in days" 
@@ -4423,14 +4546,14 @@ function getRoomStatusIconName(item) {
               :class="[
                 dragSourceStartIdx !== null && idx >= dragSourceStartIdx && idx < dragSourceEndIdx
                   ? 'bg-[#fff7cc] text-amber-900 border-[#facc15] shadow-[inset_0_-2px_0_#facc15]'
-                  : (isTodayDate(day.fullDate) ? 'bg-[#ff7043] text-white border-[#ff7043]' : (day.isWeekend ? 'bg-[#72b5f7] text-white border-[#72b5f7]' : 'bg-slate-100 text-slate-700'))
+                  : (isTodayDate(day.fullDate) ? 'bg-[#ff7043] text-white border-[#ff7043]' : (day.isWeekend ? 'bg-[#72b5f7] text-white border-[#72b5f7]' : 'bg-slate-100 text-[#000000D9]'))
               ]"
               @dragenter.prevent="handleGlobalDragOver($event)"
               @dragover.prevent="handleGlobalDragOver($event)"
             >
               <div class="flex flex-col items-center justify-center leading-tight py-0.5">
-                <span class="text-[11px] font-extrabold uppercase">{{ day.dow }}</span>
-                <span class="text-[10px] opacity-90 font-medium">{{ day.dateStr }}</span>
+                <span class="text-xs font-semibold uppercase">{{ day.dow }}</span>
+                <span class="text-xs font-normal" :class="(isTodayDate(day.fullDate) || day.isWeekend) ? 'text-white' : 'text-[#000000D9]'">{{ day.dateStr }}</span>
               </div>
             </th>
           </tr>
@@ -4450,7 +4573,7 @@ function getRoomStatusIconName(item) {
             >
               <td 
                 :colspan="days.length + 1" 
-                class="p-1 pl-3 font-bold text-slate-800 bg-slate-100 border-r border-slate-200 sticky left-0 z-20 text-[11px] shadow-[inset_-1px_0_0_#e2e8f0] text-left uppercase"
+                class="p-1 pl-3 font-semibold text-[#000000D9] bg-slate-100 border-r border-slate-200 sticky left-0 z-20 text-xs shadow-[inset_-1px_0_0_#e2e8f0] text-left uppercase"
               >
                 {{ 
                   (activeGroupSetting === 'Phòng' || activeGroupSetting === 'Tầng') && item.isVirtual 
@@ -4474,8 +4597,8 @@ function getRoomStatusIconName(item) {
                 <div class="flex items-center justify-between h-full w-full gap-0.5">
                   <!-- Room Number (Left side) -->
                   <span 
-                    class="font-normal text-slate-700 select-none truncate"
-                    :class="item.isVirtual ? 'text-[10px] font-medium max-w-[72px]' : 'text-[12px]'"
+                    class="font-normal text-[#000000D9] select-none truncate text-xs"
+                    :class="item.isVirtual ? 'max-w-[72px]' : ''"
                     :title="item.room"
                   >
                     {{ item.room }}
@@ -4483,9 +4606,9 @@ function getRoomStatusIconName(item) {
                   
                   <!-- Details & Status (Right side) -->
                   <div class="flex items-center gap-1 select-none shrink-0">
-                    <div class="flex flex-col items-end text-[9px] leading-tight font-normal text-slate-500">
-                      <span class="font-normal text-slate-700 uppercase text-[10px]">{{ item.type }}</span>
-                      <span class="text-slate-500 font-normal text-[8px]">{{ item.shape }}</span>
+                    <div class="flex flex-col items-end text-xs leading-tight font-normal text-[#000000D9]">
+                      <span class="font-normal text-[#000000D9] uppercase text-xs">{{ item.type }}</span>
+                      <span class="text-[#000000D9] font-normal text-xs">{{ item.shape }}</span>
                     </div>
 
                     <!-- Status Icon (Synchronized with RoomMapPage) -->
@@ -4493,7 +4616,7 @@ function getRoomStatusIconName(item) {
                       <RoomIcon 
                         :name="getRoomStatusIconName(item)" 
                         :monochrome="getRoomStatusIconName(item) === 'ooo'"
-                        class="w-4 h-4 text-slate-600" 
+                        class="w-4 h-4 text-[#000000D9]" 
                       />
                     </div>
                   </div>
@@ -4538,14 +4661,14 @@ function getRoomStatusIconName(item) {
                     @contextmenu.prevent.stop="handleBookingContextMenu(bk, $event)"
                     draggable="false"
                     @pointerdown="handleBookingPointerDown(bk, $event)"
-                    class="absolute top-[2px] h-[33px] border-t border-b flex items-center z-10 text-[9px] font-bold leading-tight select-none shadow-xs hover:brightness-95 hover:shadow-md transition-[filter,box-shadow] duration-150"
+                    class="absolute top-[2px] h-[33px] border-t border-b flex items-center z-10 text-xs font-normal leading-tight select-none shadow-xs hover:brightness-95 hover:shadow-md transition-[filter,box-shadow] duration-150"
                     :class="[
                       isBookingMatched(bk) ? getBookingClass(bk.type) : 'bg-slate-100 text-slate-400 border-slate-200 opacity-60',
                       splittingBooking?.bookingRoomId === bk.bookingRoomId ? 'z-30 overflow-visible' : 'overflow-hidden',
                       draggedBooking?.bookingRoomId === bk.bookingRoomId ? 'opacity-0' : '',
                       isHousekeepingModule ? 'cursor-default' : 'cursor-pointer',
-                      bk.isCheckInVisible ? 'pl-2.5 rounded-l border-l' : 'pl-0 rounded-l-none border-l-0',
-                      bk.isCheckOutVisible ? 'pr-2.5 rounded-r border-r' : 'pr-0 rounded-r-none border-r-0'
+                      bk.isCheckInVisible ? 'pl-1 rounded-l border-l' : 'pl-0 rounded-l-none border-l-0',
+                      bk.isCheckOutVisible ? 'pr-1.5 rounded-r border-r' : 'pr-0 rounded-r-none border-r-0'
                     ]"
                     :style="{
                       left: !bk.isCheckInVisible 
@@ -4604,13 +4727,16 @@ function getRoomStatusIconName(item) {
                       <!-- Đã trả phòng (CheckedOut) -->
                       <template v-if="bk.type === 'CheckedOut' || bk.status === 2">
                         <div 
-                          class="absolute bottom-0 left-0 right-0 h-[3px]"
+                          class="absolute bottom-0 left-0 right-0 h-[4px]"
                           :class="[
-                            isBookingMatched(bk) ? 'bg-slate-400' : 'bg-slate-300',
-                            bk.isCheckInVisible ? 'rounded-bl' : '',
-                            bk.isCheckOutVisible ? 'rounded-br' : ''
+                            isBookingMatched(bk) ? (bk.registrationStatusColor ? '' : 'bg-[#22c55e]') : 'bg-slate-300',
+                            bk.isCheckInVisible ? 'rounded-bl' : 'rounded-bl-none',
+                            bk.isCheckOutVisible ? 'rounded-br' : 'rounded-br-none'
                           ]"
-                          title="Trạng thái: Đã trả phòng"
+                          :style="{
+                            backgroundColor: (isBookingMatched(bk) && bk.registrationStatusColor) ? bk.registrationStatusColor : undefined
+                          }"
+                          :title="`Tình trạng đăng ký: ${bk.registrationStatusName || 'Đã trả phòng'}`"
                         ></div>
                       </template>
                       <!-- Đang lưu trú / Đặt trước: Vạch xanh (Phòng đến), vạch đỏ tại ngày check-out (Phòng đi) -->
@@ -4661,13 +4787,13 @@ function getRoomStatusIconName(item) {
                     >
                       <button 
                         @click.stop="cancelSplit" 
-                        class="bg-rose-500 hover:bg-rose-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded border-none cursor-pointer shadow-xs"
+                        class="bg-rose-500 hover:bg-rose-600 text-white text-xs font-semibold px-2 py-0.5 rounded border-none cursor-pointer shadow-xs"
                       >
                         Close
                       </button>
                       <button 
                         @click.stop="executeSplit" 
-                        class="bg-sky-500 hover:bg-sky-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded border-none cursor-pointer shadow-xs"
+                        class="bg-sky-500 hover:bg-sky-600 text-white text-xs font-semibold px-2 py-0.5 rounded border-none cursor-pointer shadow-xs"
                       >
                         Split
                       </button>
@@ -4681,12 +4807,12 @@ function getRoomStatusIconName(item) {
         <!-- Summary Footers wrapped inside tfoot for gapless sticky bottom rendering -->
         <tfoot class="sticky bottom-0 z-30 bg-white shadow-[0_-2px_4px_rgba(0,0,0,0.05)] border-t border-slate-200">
           <!-- Summary OCC Footer Row -->
-          <tr class="h-[38px] font-black text-slate-800">
+          <tr class="h-[38px] text-slate-800">
             <td 
-              class="p-1 sticky left-0 bg-[#93c5fd] shadow-[inset_-1px_-1px_0_#60a5fa] font-extrabold text-[9px] px-1 select-none leading-tight z-40 cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden"
+              class="p-1 sticky left-0 bg-[#93c5fd] shadow-[inset_-1px_-1px_0_#60a5fa] font-semibold text-xs px-1 select-none leading-tight z-40 cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden"
               :title="'Danh sách phòng bận ít nhất một ngày trong giai đoạn này:\n' + (dynamicStats.allPeriodOccRooms?.join(', ') || 'Không có')"
             >
-              <div class="flex items-center justify-between w-full text-slate-900 text-[10px] font-black gap-0.5">
+              <div class="flex items-center justify-between w-full text-slate-900 text-xs font-semibold gap-0.5">
                 <span>OCC</span>
                 <span class="truncate">{{ dynamicStats.totalOccSum }} ({{ dynamicStats.totalOccPercent }}%)</span>
               </div>
@@ -4694,7 +4820,7 @@ function getRoomStatusIconName(item) {
             <td 
               v-for="(day, idx) in days" 
               :key="day.key" 
-              class="p-1 text-center text-[9px] font-bold text-slate-800 shadow-[inset_-1px_-1px_0_#93c5fd] cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden leading-tight"
+              class="p-1 text-center text-xs font-normal text-[#000000D9] shadow-[inset_-1px_-1px_0_#93c5fd] cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden leading-tight"
               :class="[
                 dragSourceStartIdx !== null && idx >= dragSourceStartIdx && idx < dragSourceEndIdx
                   ? 'bg-[#fff7cc] shadow-[inset_-1px_-1px_0_#facc15]'
@@ -4707,12 +4833,12 @@ function getRoomStatusIconName(item) {
           </tr>
 
           <!-- Summary AV Footer Row -->
-          <tr class="bg-white h-[38px] font-black text-slate-800">
+          <tr class="bg-white h-[38px] text-slate-800">
             <td 
-              class="p-1 sticky left-0 bg-[#bae6fd] shadow-[inset_-1px_-1px_0_#7dd3fc] font-extrabold text-[9px] px-1 select-none leading-tight z-40 cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden"
+              class="p-1 sticky left-0 bg-[#bae6fd] shadow-[inset_-1px_-1px_0_#7dd3fc] font-semibold text-xs px-1 select-none leading-tight z-40 cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden"
               :title="'Danh sách phòng trống suốt giai đoạn này:\n' + (dynamicStats.allPeriodAvRooms?.join(', ') || 'Không có')"
             >
-              <div class="flex items-center justify-between w-full text-slate-900 text-[10px] font-black gap-0.5">
+              <div class="flex items-center justify-between w-full text-slate-900 text-xs font-semibold gap-0.5">
                 <span>AV</span>
                 <span>{{ dynamicStats.totalAvSum }}</span>
               </div>
@@ -4720,7 +4846,7 @@ function getRoomStatusIconName(item) {
             <td 
               v-for="(day, idx) in days" 
               :key="day.key" 
-              class="p-1 text-center text-[9px] font-bold text-slate-700 shadow-[inset_-1px_-1px_0_#e2e8f0] cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden leading-tight"
+              class="p-1 text-center text-xs font-normal text-[#000000D9] shadow-[inset_-1px_-1px_0_#e2e8f0] cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden leading-tight"
               :class="[
                 isTodayDate(day.fullDate) ? 'bg-[#ff7043]/20' : (day.isWeekend ? 'bg-[#72b5f7]/30' : 'bg-white')
               ]"
@@ -4731,12 +4857,12 @@ function getRoomStatusIconName(item) {
           </tr>
 
           <!-- Summary OOO Footer Row -->
-          <tr class="bg-white h-[38px] font-black text-slate-800">
+          <tr class="bg-white h-[38px] text-slate-800">
             <td 
-              class="p-1 sticky left-0 bg-[#bae6fd] shadow-[inset_-1px_-1px_0_#7dd3fc] font-extrabold text-[9px] px-1 select-none leading-tight z-40 cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden"
+              class="p-1 sticky left-0 bg-[#bae6fd] shadow-[inset_-1px_-1px_0_#7dd3fc] font-semibold text-xs px-1 select-none leading-tight z-40 cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden"
               :title="'Danh sách phòng khóa bảo trì ít nhất một ngày trong giai đoạn này:\n' + (dynamicStats.allPeriodOooRooms?.join(', ') || 'Không có')"
             >
-              <div class="flex items-center justify-between w-full text-slate-900 text-[10px] font-black gap-0.5">
+              <div class="flex items-center justify-between w-full text-slate-900 text-xs font-semibold gap-0.5">
                 <span>OOO</span>
                 <span>{{ dynamicStats.totalOooSum }}</span>
               </div>
@@ -4744,7 +4870,7 @@ function getRoomStatusIconName(item) {
             <td 
               v-for="(day, idx) in days" 
               :key="day.key" 
-              class="p-1 text-center text-[9px] font-bold text-slate-500 shadow-[inset_-1px_-1px_0_#e2e8f0] cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden leading-tight"
+              class="p-1 text-center text-xs font-normal text-[#000000D9] shadow-[inset_-1px_-1px_0_#e2e8f0] cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden leading-tight"
               :class="[
                 isTodayDate(day.fullDate) ? 'bg-[#ff7043]/20' : (day.isWeekend ? 'bg-[#72b5f7]/30' : 'bg-white')
               ]"
@@ -4760,7 +4886,7 @@ function getRoomStatusIconName(item) {
     <!-- Custom Tooltip -->
     <div 
       v-if="hoveredBooking" 
-      class="fixed z-[9999] bg-white text-slate-800 text-[11px] rounded-xl border border-slate-200/80 p-4 shadow-2xl pointer-events-none w-[360px] max-h-[calc(100vh-80px)] overflow-y-auto font-sans"
+      class="fixed z-[9999] bg-white text-[#000000D9] text-xs rounded-xl border border-slate-200/80 p-4 shadow-2xl pointer-events-none w-[360px] max-h-[calc(100vh-80px)] overflow-y-auto font-sans"
       :style="{
         left: `${tooltipX}px`,
         top: `${tooltipY}px`
@@ -4771,17 +4897,17 @@ function getRoomStatusIconName(item) {
         <div class="flex items-center justify-between font-bold text-xs pb-2 border-b border-slate-100 mb-2">
           <div class="flex items-center gap-1.5">
             <span :class="hoveredBooking.type === 'OOS' ? 'text-slate-500' : 'text-blue-500'">●</span>
-            <span>{{ hoveredBooking.checkInFull }}</span>
+            <span class="font-normal text-[#000000D9]">{{ hoveredBooking.checkInFull }}</span>
             <span class="mx-1 text-slate-400">~</span>
-            <span>{{ hoveredBooking.checkOutFull }}</span>
+            <span class="font-normal text-[#000000D9]">{{ hoveredBooking.checkOutFull }}</span>
           </div>
-          <div class="text-slate-400 font-extrabold uppercase">
+          <div class="text-slate-500 font-extrabold uppercase">
             {{ hoveredBooking.type || 'OOO' }}
           </div>
         </div>
-        <div class="flex flex-col gap-1.5 font-semibold text-slate-600">
-          <div>Ghi chú: <span class="text-slate-800 font-normal">{{ hoveredBooking.specialRequest || '-' }}</span></div>
-          <div>Người khóa: <span class="text-slate-800 font-normal">{{ hoveredBooking.lockUsername || 'Admin' }}</span></div>
+        <div class="flex flex-col gap-1.5 text-[#000000D9]">
+          <div><span class="font-semibold text-[#000000D9]">Ghi chú:</span> <span class="font-normal text-[#000000D9] whitespace-pre-wrap">{{ hoveredBooking.specialRequest || '-' }}</span></div>
+          <div><span class="font-semibold text-[#000000D9]">Người khóa:</span> <span class="font-normal text-[#000000D9]">{{ hoveredBooking.lockUsername || 'Admin' }}</span></div>
         </div>
       </template>
 
@@ -4790,89 +4916,89 @@ function getRoomStatusIconName(item) {
         <div class="flex flex-col gap-1.5">
           <!-- Row 1: Mã ĐK -->
           <div class="flex justify-between items-center border-b border-slate-100 pb-1.5">
-            <span class="font-extrabold text-slate-900 text-xs">Mã ĐK: {{ hoveredBooking.code }}</span>
+            <span class="text-xs"><span class="font-semibold text-[#000000D9]">Mã ĐK:</span> <span class="font-normal text-[#000000D9]">{{ hoveredBooking.code }}</span></span>
             <span
-              class="text-[9px] font-bold uppercase"
+              class="text-xs font-semibold uppercase"
               :style="{ color: getBookingStatusColor(hoveredBooking) }"
             >{{ hoveredBooking.registrationStatusName || hoveredBooking.type }}</span>
           </div>
 
           <!-- Row 2: Ngày đến ~ Ngày đi -->
-          <div class="text-slate-600 font-semibold">
-            Ngày đến: <span class="font-bold text-slate-800">{{ hoveredBooking.checkInFull }}</span> ~ Ngày đi: <span class="font-bold text-slate-800">{{ hoveredBooking.checkOutFull }}</span>
+          <div class="text-[#000000D9]">
+            <span class="font-semibold text-[#000000D9]">Ngày đến:</span> <span class="font-normal text-[#000000D9]">{{ hoveredBooking.checkInFull }}</span> <span class="font-normal text-slate-400 mx-1">~</span> <span class="font-semibold text-[#000000D9]">Ngày đi:</span> <span class="font-normal text-[#000000D9]">{{ hoveredBooking.checkOutFull }}</span>
           </div>
 
           <!-- Row 3: Tên ĐK -->
-          <div class="text-slate-600 font-semibold">
-            Tên ĐK: <span class="font-bold text-slate-800">{{ hoveredBooking.name }}{{ hoveredBooking.company && hoveredBooking.company !== 'Khách lẻ' ? `/${hoveredBooking.company}` : '' }}{{ hoveredBooking.phone ? `-${hoveredBooking.phone}` : '' }}</span>
+          <div class="text-[#000000D9]">
+            <span class="font-semibold text-[#000000D9]">Tên ĐK:</span> <span class="font-normal text-[#000000D9]">{{ hoveredBooking.name }}{{ hoveredBooking.company && hoveredBooking.company !== 'Khách lẻ' ? `/${hoveredBooking.company}` : '' }}{{ hoveredBooking.phone ? `-${hoveredBooking.phone}` : '' }}</span>
           </div>
 
           <!-- Row 4: Công ty -->
-          <div class="text-slate-600 font-semibold">
-            Công ty: <span class="font-bold text-slate-800">{{ hoveredBooking.company }}</span>
+          <div class="text-[#000000D9]">
+            <span class="font-semibold text-[#000000D9]">Công ty:</span> <span class="font-normal text-[#000000D9]">{{ hoveredBooking.company }}</span>
           </div>
 
           <!-- Row 5: Số phòng, Đêm, Giá phòng -->
-          <div class="grid grid-cols-3 gap-2 border-t border-slate-100 pt-2 text-slate-600 font-semibold">
-            <div>Số phòng: <span class="font-bold text-slate-800">{{ hoveredBooking.room }}</span></div>
-            <div>Đêm: <span class="font-bold text-slate-800">{{ hoveredBooking.nights }}</span></div>
-            <div class="text-right">Giá phòng: <span class="font-bold text-slate-800">{{ hoveredBooking.price }}</span></div>
+          <div class="grid grid-cols-3 gap-2 border-t border-slate-100 pt-2 text-[#000000D9]">
+            <div><span class="font-semibold text-[#000000D9]">Số phòng:</span> <span class="font-normal text-[#000000D9]">{{ hoveredBooking.room }}</span></div>
+            <div><span class="font-semibold text-[#000000D9]">Đêm:</span> <span class="font-normal text-[#000000D9]">{{ hoveredBooking.nights }}</span></div>
+            <div class="text-right"><span class="font-semibold text-[#000000D9]">Giá phòng:</span> <span class="font-normal text-[#000000D9]">{{ hoveredBooking.price }}</span></div>
           </div>
 
           <!-- Row 6: Số khách & Thêm giường -->
-          <div class="flex justify-between items-center text-slate-600 font-semibold pb-2 border-b border-slate-100">
+          <div class="flex justify-between items-center text-[#000000D9] pb-2 border-b border-slate-100">
             <div class="flex items-center gap-1">
-              <span>Số khách:</span>
-              <span class="flex items-center gap-2.5 ml-1.5">
-                <span class="flex items-center gap-0.5" title="Người lớn"><i class="fa-solid fa-user text-slate-400 text-[10px]"></i> {{ hoveredBooking.adults }}</span>
-                <span class="flex items-center gap-0.5" title="Trẻ em"><i class="fa-solid fa-child text-slate-400 text-[10px]"></i> {{ hoveredBooking.children }}</span>
-                <span class="flex items-center gap-0.5" title="Em bé"><i class="fa-solid fa-baby text-slate-400 text-[10px]"></i> {{ hoveredBooking.babies }}</span>
+              <span class="font-semibold text-[#000000D9]">Số khách:</span>
+              <span class="flex items-center gap-2.5 ml-1.5 font-normal text-[#000000D9]">
+                <span class="flex items-center gap-0.5" title="Người lớn"><i class="fa-solid fa-user text-slate-400 text-xs"></i> {{ hoveredBooking.adults }}</span>
+                <span class="flex items-center gap-0.5" title="Trẻ em"><i class="fa-solid fa-child text-slate-400 text-xs"></i> {{ hoveredBooking.children }}</span>
+                <span class="flex items-center gap-0.5" title="Em bé"><i class="fa-solid fa-baby text-slate-400 text-xs"></i> {{ hoveredBooking.babies }}</span>
               </span>
             </div>
-            <div>Thêm giường: <span class="font-bold text-slate-800">{{ hoveredBooking.extraBed }}</span></div>
+            <div><span class="font-semibold text-[#000000D9]">Thêm giường:</span> <span class="font-normal text-[#000000D9]">{{ hoveredBooking.extraBed }}</span></div>
           </div>
 
           <!-- Billing Info box -->
-          <div class="bg-blue-50/50 rounded-lg p-2.5 my-1 border border-blue-100/60 text-slate-600 font-semibold flex justify-between items-stretch">
+          <div class="bg-blue-50/50 rounded-lg p-2.5 my-1 border border-blue-100/60 flex justify-between items-stretch">
             <!-- Left Side: Breakdown -->
             <div class="flex-1 flex flex-col gap-1 pr-3 border-r border-slate-200/50 justify-center">
-              <div class="flex justify-between items-center text-[10px]">
-                <span class="text-slate-500">Tiền phòng cần TT :</span>
-                <span class="font-extrabold text-slate-800 ml-2">{{ formatMoney(hoveredBooking.roomChargeDue) }} ₫</span>
+              <div class="flex justify-between items-center text-xs">
+                <span class="font-semibold text-[#000000D9]">Tiền phòng cần TT :</span>
+                <span class="font-normal text-[#000000D9] ml-2">{{ formatMoney(hoveredBooking.roomChargeDue) }} ₫</span>
               </div>
-              <div class="flex justify-between items-center text-[10px]">
-                <span class="text-slate-500">Tiền DV cần TT :</span>
-                <span class="font-extrabold text-slate-800 ml-2">{{ formatMoney(hoveredBooking.serviceChargeDue) }} ₫</span>
+              <div class="flex justify-between items-center text-xs">
+                <span class="font-semibold text-[#000000D9]">Tiền DV cần TT :</span>
+                <span class="font-normal text-[#000000D9] ml-2">{{ formatMoney(hoveredBooking.serviceChargeDue) }} ₫</span>
               </div>
             </div>
 
             <!-- Right Side: Total -->
             <div class="pl-3 flex flex-col justify-center items-center shrink-0 min-w-[90px]">
-              <span class="text-[9px] text-slate-400 font-extrabold uppercase mb-0.5">Tổng cộng</span>
-              <span class="text-xs text-blue-600 font-black">{{ formatMoney(hoveredBooking.totalAmount) }} ₫</span>
+              <span class="text-xs font-semibold text-[#000000D9] uppercase mb-0.5">Tổng cộng</span>
+              <span class="text-xs text-[#155DFC] font-bold">{{ formatMoney(hoveredBooking.totalAmount) }} ₫</span>
             </div>
           </div>
 
           <!-- Payment Info -->
-          <div class="flex flex-col gap-1 text-slate-600 font-semibold pt-1">
-            <div class="flex justify-between items-center text-[10px]">
-              <span>Tổng tiền BK:</span>
-              <span class="font-extrabold text-slate-800">{{ formatMoney(hoveredBooking.bookingTotalAmount) }} ₫</span>
+          <div class="flex flex-col gap-1 text-[#000000D9] pt-1">
+            <div class="flex justify-between items-center text-xs">
+              <span class="font-semibold text-[#000000D9]">Tổng tiền BK:</span>
+              <span class="font-normal text-[#000000D9]">{{ formatMoney(hoveredBooking.bookingTotalAmount) }} ₫</span>
             </div>
-            <div class="flex justify-between items-center text-[10px]">
-              <span>Đã đặt cọc:</span>
-              <span class="font-extrabold text-slate-800">{{ formatMoney(hoveredBooking.depositAmount) }} ₫</span>
+            <div class="flex justify-between items-center text-xs">
+              <span class="font-semibold text-[#000000D9]">Đã đặt cọc:</span>
+              <span class="font-normal text-[#000000D9]">{{ formatMoney(hoveredBooking.depositAmount) }} ₫</span>
             </div>
-            <div class="flex justify-between items-center pt-1.5 border-t border-slate-100 font-extrabold text-slate-900 text-xs">
-              <span>Còn lại:</span>
-              <span class="text-rose-600 font-black">{{ formatMoney(hoveredBooking.bookingBalance) }} ₫</span>
+            <div class="flex justify-between items-center pt-1.5 border-t border-slate-100 text-xs">
+              <span class="font-semibold text-[#000000D9]">Còn lại:</span>
+              <span class="text-[#dc2626] font-bold">{{ formatMoney(hoveredBooking.bookingBalance) }} ₫</span>
             </div>
           </div>
 
           <!-- Notes -->
-          <div class="border-t border-slate-100 pt-1.5 mt-1 text-slate-600 font-semibold text-left">
-            <span>Ghi chú: </span>
-            <span class="text-slate-700 italic font-medium">{{ hoveredBooking.specialRequest || '—' }}</span>
+          <div class="border-t border-slate-100 pt-1.5 mt-1 text-left">
+            <span class="font-semibold text-[#000000D9]">Ghi chú: </span>
+            <span class="font-normal text-[#000000D9] whitespace-pre-wrap">{{ hoveredBooking.specialRequest || '—' }}</span>
           </div>
         </div>
       </template>
@@ -4892,19 +5018,19 @@ function getRoomStatusIconName(item) {
         <button 
           v-if="!isHousekeepingModule"
           @click="triggerMenuAction('Tạo')"
-          class="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 border-none bg-transparent cursor-pointer transition-colors"
+          class="w-full text-left px-4 py-2.5 text-xs font-normal text-[#000000D9] hover:bg-slate-50 border-none bg-transparent cursor-pointer transition-colors"
         >
           Tạo
         </button>
         <button 
           @click="triggerMenuAction('Khóa phòng OOO')"
-          class="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 border-none bg-transparent cursor-pointer transition-colors"
+          class="w-full text-left px-4 py-2.5 text-xs font-normal text-[#000000D9] hover:bg-slate-50 border-none bg-transparent cursor-pointer transition-colors"
         >
           Khóa phòng OOO
         </button>
         <button 
           @click="triggerMenuAction('Khóa phòng OOS')"
-          class="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 border-none bg-transparent cursor-pointer transition-colors"
+          class="w-full text-left px-4 py-2.5 text-xs font-normal text-[#000000D9] hover:bg-slate-50 border-none bg-transparent cursor-pointer transition-colors"
         >
           Khóa phòng OOS
         </button>
@@ -4914,7 +5040,7 @@ function getRoomStatusIconName(item) {
       <template v-else-if="contextMenu.type === 'cell-waitlist' && !isHousekeepingModule">
         <button 
           @click="triggerMenuAction('Danh sách chờ')"
-          class="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 border-none bg-transparent cursor-pointer transition-colors"
+          class="w-full text-left px-4 py-2.5 text-xs font-normal text-[#000000D9] hover:bg-slate-50 border-none bg-transparent cursor-pointer transition-colors"
         >
           Danh sách chờ
         </button>
@@ -4925,40 +5051,40 @@ function getRoomStatusIconName(item) {
         <button 
           v-if="canCheckInBooking(contextMenu.booking)"
           @click="triggerMenuAction('Giao phòng')"
-          class="w-full text-left px-4 py-2.5 text-xs font-bold text-emerald-600 hover:bg-emerald-50 border-none bg-transparent cursor-pointer transition-colors"
+          class="w-full text-left px-4 py-2.5 text-xs font-normal text-emerald-600 hover:bg-emerald-50 border-none bg-transparent cursor-pointer transition-colors"
         >
           Giao phòng
         </button>
         <button 
           v-if="!contextMenu.booking?.isVirtual"
           @click="triggerMenuAction('Tách Phòng')"
-          class="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 border-none bg-transparent cursor-pointer transition-colors"
+          class="w-full text-left px-4 py-2.5 text-xs font-normal text-[#000000D9] hover:bg-slate-50 border-none bg-transparent cursor-pointer transition-colors"
         >
           Tách Phòng
         </button>
         <button 
           v-if="!contextMenu.booking?.isDoNotMove"
           @click="triggerMenuAction('Khóa Di Chuyển Phòng')"
-          class="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 border-none bg-transparent cursor-pointer transition-colors"
+          class="w-full text-left px-4 py-2.5 text-xs font-normal text-[#000000D9] hover:bg-slate-50 border-none bg-transparent cursor-pointer transition-colors"
         >
           Khóa Di Chuyển Phòng
         </button>
         <button 
           v-else
           @click="triggerMenuAction('Mở Khóa Di Chuyển Phòng')"
-          class="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 border-none bg-transparent cursor-pointer transition-colors"
+          class="w-full text-left px-4 py-2.5 text-xs font-normal text-[#000000D9] hover:bg-slate-50 border-none bg-transparent cursor-pointer transition-colors"
         >
           Mở Khóa Di Chuyển Phòng
         </button>
         <button 
           @click="triggerMenuAction('Gỡ số phòng')"
-          class="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 border-none bg-transparent cursor-pointer transition-colors"
+          class="w-full text-left px-4 py-2.5 text-xs font-normal text-[#000000D9] hover:bg-slate-50 border-none bg-transparent cursor-pointer transition-colors"
         >
           Gỡ số phòng
         </button>
         <button 
           @click="triggerMenuAction('Hủy phòng')"
-          class="w-full text-left px-4 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50 border-none bg-transparent cursor-pointer transition-colors"
+          class="w-full text-left px-4 py-2.5 text-xs font-normal text-rose-600 hover:bg-rose-50 border-none bg-transparent cursor-pointer transition-colors"
         >
           Hủy phòng
         </button>
@@ -4969,14 +5095,14 @@ function getRoomStatusIconName(item) {
         <button 
           v-if="!contextMenu.booking?.isDoNotMove"
           @click="triggerMenuAction('Khóa Di Chuyển Phòng')"
-          class="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 border-none bg-transparent cursor-pointer transition-colors"
+          class="w-full text-left px-4 py-2.5 text-xs font-normal text-[#000000D9] hover:bg-slate-50 border-none bg-transparent cursor-pointer transition-colors"
         >
           Khóa Di Chuyển Phòng
         </button>
         <button 
           v-else
           @click="triggerMenuAction('Mở Khóa Di Chuyển Phòng')"
-          class="w-full text-left px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50 border-none bg-transparent cursor-pointer transition-colors"
+          class="w-full text-left px-4 py-2.5 text-xs font-normal text-[#000000D9] hover:bg-slate-50 border-none bg-transparent cursor-pointer transition-colors"
         >
           Mở Khóa Di Chuyển Phòng
         </button>
@@ -4986,7 +5112,7 @@ function getRoomStatusIconName(item) {
       <template v-else-if="contextMenu.type === 'lock-actions'">
         <button 
           @click="triggerMenuAction('Mở khóa phòng')"
-          class="w-full text-left px-4 py-2.5 text-xs font-bold text-rose-600 hover:bg-rose-50 border-none bg-transparent cursor-pointer transition-colors"
+          class="w-full text-left px-4 py-2.5 text-xs font-normal text-rose-600 hover:bg-rose-50 border-none bg-transparent cursor-pointer transition-colors"
         >
           Mở khóa phòng
         </button>
@@ -5010,16 +5136,16 @@ function getRoomStatusIconName(item) {
         <div class="flex-1 p-4 flex flex-col overflow-y-auto gap-4 bg-white text-xs select-none">
           <!-- 1. Lọc Công ty -->
           <div class="flex flex-col gap-2 relative" id="filter-company-dropdown-container">
-            <span class="font-bold text-slate-500 uppercase text-[10px] tracking-wider font-semibold">Công ty ({{ tempSelectedCompanies.length }})</span>
+            <span class="font-semibold text-[#000000D9] uppercase text-xs tracking-wider">Công ty ({{ tempSelectedCompanies.length }})</span>
             
             <!-- Custom Selector Box -->
             <div 
               @click="toggleCompanyFilterDropdown"
-              class="w-full border border-slate-200 rounded-lg px-3 py-2 text-slate-700 bg-white hover:border-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold cursor-pointer flex items-center justify-between text-[11px] min-h-[32px] shadow-2xs"
+              class="w-full border border-slate-200 rounded-lg px-3 py-2 text-[#000000D9] bg-white hover:border-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-500 font-normal cursor-pointer flex items-center justify-between text-xs min-h-[32px] shadow-2xs"
             >
               <div class="truncate max-w-[220px]">
                 <span v-if="tempSelectedCompanies.length === 0" class="text-slate-400">Chọn công ty...</span>
-                <span v-else class="text-slate-800 font-bold">
+                <span v-else class="text-[#000000D9] font-normal">
                   {{ tempSelectedCompanies.join(', ') }}
                 </span>
               </div>
@@ -5039,9 +5165,9 @@ function getRoomStatusIconName(item) {
               <div class="relative flex items-center border border-slate-200 rounded bg-slate-50 px-2 py-1 h-[28px] shrink-0">
                 <input 
                   type="text" 
-                  v-model="companySearchQuery"
+                  v-model="companySearchQuery" 
                   placeholder="Tìm công ty..."
-                  class="search-input-reset text-slate-700 text-[11px] w-full pr-5"
+                  class="search-input-reset text-[#000000D9] font-normal text-xs w-full pr-5"
                   style="border: none !important; outline: none !important; box-shadow: none !important; background-color: transparent !important; height: auto !important; padding: 0 !important; border-radius: 0 !important;"
                 />
                 <svg class="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
@@ -5051,12 +5177,12 @@ function getRoomStatusIconName(item) {
 
               <!-- List of companies -->
               <div class="overflow-y-auto flex flex-col gap-1 pr-0.5">
-                <span v-if="displayCompanies.length === 0" class="text-slate-400 text-center py-2 text-[10px]">Không tìm thấy công ty</span>
+                <span v-if="displayCompanies.length === 0" class="text-slate-400 text-center py-2 text-xs">Không tìm thấy công ty</span>
                 <label 
                   v-else
                   v-for="cName in displayCompanies" 
                   :key="cName" 
-                  class="flex items-center gap-2 cursor-pointer hover:bg-slate-100 p-1.5 rounded select-none text-[11px] text-slate-700 font-semibold truncate transition-colors"
+                  class="flex items-center gap-2 cursor-pointer hover:bg-slate-100 p-1.5 rounded select-none text-xs text-[#000000D9] font-normal truncate transition-colors"
                   :title="cName"
                 >
                   <input 
@@ -5070,7 +5196,7 @@ function getRoomStatusIconName(item) {
               </div>
 
               <!-- More matches indicator -->
-              <div v-if="companyFilterData.hasMore" class="text-slate-400 text-center py-1.5 text-[9px] italic border-t border-slate-100 mt-1 select-none pointer-events-none shrink-0 leading-tight">
+              <div v-if="companyFilterData.hasMore" class="text-slate-400 text-center py-1.5 text-xs italic border-t border-slate-100 mt-1 select-none pointer-events-none shrink-0 leading-tight">
                 Chỉ hiển thị 20 kết quả đầu tiên.<br/>Nhập thêm ký tự để thu hẹp tìm kiếm...
               </div>
             </div>
@@ -5078,12 +5204,12 @@ function getRoomStatusIconName(item) {
 
           <!-- 2. Lọc Loại phòng -->
           <div class="flex flex-col gap-2">
-            <span class="font-bold text-slate-500 uppercase text-[10px] tracking-wider font-semibold">Loại phòng ({{ tempSelectedRoomTypes.length }})</span>
+            <span class="font-semibold text-[#000000D9] uppercase text-xs tracking-wider">Loại phòng ({{ tempSelectedRoomTypes.length }})</span>
             <div class="border border-slate-200 rounded-md p-1.5 bg-slate-50/50 max-h-[220px] overflow-y-auto flex flex-col gap-1 shadow-inner">
               <label 
                 v-for="t in roomTypes" 
                 :key="t.code" 
-                class="flex items-center gap-2 cursor-pointer hover:bg-slate-100/80 p-1 rounded select-none text-[11px] text-slate-700 font-semibold truncate"
+                class="flex items-center gap-2 cursor-pointer hover:bg-slate-100/80 p-1 rounded select-none text-xs text-[#000000D9] font-normal truncate"
                 :title="t.name"
               >
                 <input 
@@ -5159,7 +5285,7 @@ function getRoomStatusIconName(item) {
                 <h4 class="text-xs font-extrabold text-slate-800 dark:text-slate-100 m-0">Chọn khoảng thời gian</h4>
                 <div class="flex flex-col gap-2">
                   <div class="flex flex-col gap-1">
-                    <span class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">Từ ngày</span>
+                    <span class="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Từ ngày</span>
                     <SingleDatePicker 
                       v-model="tempWaitlistStartDateStr"
                       input-class="dark:bg-slate-800 dark:text-slate-100 dark:border-slate-700"
@@ -5167,7 +5293,7 @@ function getRoomStatusIconName(item) {
                     />
                   </div>
                   <div class="flex flex-col gap-1">
-                    <span class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase">Đến ngày</span>
+                    <span class="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Đến ngày</span>
                     <SingleDatePicker 
                       v-model="tempWaitlistEndDateStr"
                       input-class="dark:bg-slate-800 dark:text-slate-100 dark:border-slate-700"
@@ -5178,13 +5304,13 @@ function getRoomStatusIconName(item) {
                 <div class="flex items-center justify-between border-t border-slate-100 pt-2 mt-1">
                   <button 
                     @click="showWaitlistDatePickerPopover = false"
-                    class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[11px] font-semibold border-none cursor-pointer transition-colors"
+                    class="btn-pms-close !h-7 !px-2.5 !text-xs"
                   >
                     Đóng
                   </button>
                   <button 
                     @click="saveWaitlistDateRange"
-                    class="px-4 py-1.5 bg-[#7dd3fc] hover:bg-sky-400 text-white rounded text-[11px] font-bold border-none shadow-sm cursor-pointer transition-colors"
+                    class="btn-pms-primary !h-7 !px-3 !text-xs"
                   >
                     Lưu
                   </button>
@@ -5195,7 +5321,7 @@ function getRoomStatusIconName(item) {
             <!-- View Button -->
             <button 
               @click="saveWaitlistDateRange"
-              class="px-4 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-lg text-xs font-bold border-none shadow-sm transition-colors cursor-pointer h-[32px]"
+              class="px-4 py-1.5 bg-[#0088ff] hover:bg-[#0077e6] text-white rounded-lg text-xs font-semibold border-none shadow-sm transition-colors cursor-pointer h-8"
             >
               View
             </button>
@@ -5212,29 +5338,29 @@ function getRoomStatusIconName(item) {
               </colgroup>
               <thead class="sticky top-0 z-10 bg-slate-100 text-slate-600 font-bold border-b border-slate-200 h-9">
                 <tr>
-                  <th class="px-3 py-2 font-bold text-slate-700 text-[11px]">Tên khách</th>
-                  <th class="px-2 py-2 text-center font-bold text-slate-700 text-[11px]">
+                  <th class="px-3 py-2 font-semibold text-slate-700 text-xs">Tên khách</th>
+                  <th class="px-2 py-2 text-center font-semibold text-slate-700 text-xs">
                     <span class="w-2.5 h-2.5 inline-block rounded-full bg-emerald-500 mr-1"></span>
                     Ngày đến
                   </th>
-                  <th class="px-2 py-2 text-center font-bold text-slate-700 text-[11px]">
+                  <th class="px-2 py-2 text-center font-semibold text-slate-700 text-xs">
                     <span class="w-2.5 h-2.5 inline-block rounded-full bg-rose-500 mr-1"></span>
                     Ngày đi
                   </th>
-                  <th class="px-3 py-2 text-right font-bold text-slate-700 text-[11px]">Loại phòng</th>
+                  <th class="px-3 py-2 text-right font-semibold text-slate-700 text-xs">Loại phòng</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100 font-normal text-slate-600">
                 <tr v-if="waitingListItems.length === 0" class="h-20 bg-white">
-                  <td colspan="4" class="text-center text-slate-400 py-6 select-none font-medium">
+                  <td colspan="4" class="text-center text-slate-400 py-6 select-none font-medium text-xs">
                     Không có đăng ký nào trong danh sách chờ
                   </td>
                 </tr>
                 <tr v-else v-for="(item, idx) in waitingListItems" :key="idx" class="hover:bg-slate-50/50 h-[38px]">
-                  <td class="px-3 py-2 truncate text-slate-800 font-medium text-[11px]">{{ item.guestName }}</td>
-                  <td class="px-2 py-2 text-center text-[11px] text-slate-600 font-normal">{{ item.checkIn }}</td>
-                  <td class="px-2 py-2 text-center text-[11px] text-slate-600 font-normal">{{ item.checkOut }}</td>
-                  <td class="px-3 py-2 text-right font-bold text-slate-700 text-[11px]">{{ item.type }}</td>
+                  <td class="px-3 py-2 truncate text-slate-800 font-medium text-xs">{{ item.guestName }}</td>
+                  <td class="px-2 py-2 text-center text-xs text-slate-600 font-normal">{{ item.checkIn }}</td>
+                  <td class="px-2 py-2 text-center text-xs text-slate-600 font-normal">{{ item.checkOut }}</td>
+                  <td class="px-3 py-2 text-right font-semibold text-slate-700 text-xs">{{ item.type }}</td>
                 </tr>
               </tbody>
             </table>
@@ -5242,11 +5368,12 @@ function getRoomStatusIconName(item) {
         </div>
       </div>
     </transition>
+
     <!-- Quick Booking Modal -->
     <div v-if="showQuickBookingModal" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 select-none">
-      <div :style="quickBookingModalStyle" class="absolute bg-white rounded-2xl shadow-2xl border border-slate-200 w-[450px] overflow-hidden flex flex-col font-sans">
+      <div :style="quickBookingModalStyle" class="absolute bg-white rounded-xl shadow-2xl border border-slate-200 w-[450px] overflow-hidden flex flex-col font-sans">
         <!-- Header -->
-        <div @mousedown="startQuickBookingDrag" class="h-[50px] bg-blue-600 flex items-center justify-between px-4 text-white shrink-0 cursor-move">
+        <div @mousedown="startQuickBookingDrag" :style="{ background: 'var(--pms-custom-theme, #006bdb)', color: 'var(--pms-custom-theme-text, #ffffff)' }" class="h-[50px] flex items-center justify-between px-4 text-white shrink-0 cursor-move rounded-t-xl">
           <span class="font-bold text-sm tracking-wide">Booking</span>
           <button @click="showQuickBookingModal = false" class="text-white hover:text-slate-200 bg-transparent border-none cursor-pointer flex items-center justify-center p-1 rounded-full hover:bg-white/10 transition-colors">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
@@ -5259,15 +5386,15 @@ function getRoomStatusIconName(item) {
         <div class="p-5 flex flex-col gap-4 text-xs text-left">
           <!-- Searchable Company Dropdown -->
           <div class="flex flex-col gap-1.5 relative" id="quick-booking-company-container">
-            <label class="font-bold text-slate-700 text-left w-full block">Company:</label>
+            <label class="font-semibold text-[#000000D9] text-left w-full block">Company:</label>
             <div class="relative">
               <input 
                 type="text" 
                 v-model="quickBookingCompanySearch" 
-                @focus="showQuickBookingCompanyDropdown = true"
-                @input="showQuickBookingCompanyDropdown = true"
-                placeholder="Tìm kiếm công ty..."
-                class="w-full border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold cursor-pointer pr-8"
+                @focus="showQuickBookingCompanyDropdown = true" 
+                @input="showQuickBookingCompanyDropdown = true" 
+                placeholder="Tìm kiếm công ty..." 
+                class="w-full border border-slate-200 rounded-lg px-3 py-2 text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500 font-normal cursor-pointer pr-8"
               />
               <span class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -5290,10 +5417,10 @@ function getRoomStatusIconName(item) {
               <div 
                 v-else
                 v-for="cName in filteredQuickBookingCompanies" 
-                :key="cName"
-                @click="selectQuickBookingCompany(cName)"
-                class="px-3 py-2 hover:bg-blue-50 text-slate-700 font-semibold cursor-pointer transition-colors truncate"
-                :class="quickBookingForm.company === cName ? 'bg-blue-50/50 text-blue-600 font-bold' : ''"
+                :key="cName" 
+                @click="selectQuickBookingCompany(cName)" 
+                class="px-3 py-2 hover:bg-blue-50 text-[#000000D9] font-normal cursor-pointer transition-colors truncate"
+                :class="quickBookingForm.company === cName ? 'bg-blue-50/50 text-blue-600 font-semibold' : ''"
               >
                 {{ cName }}
               </div>
@@ -5303,19 +5430,27 @@ function getRoomStatusIconName(item) {
           <!-- Market Segment & Source Code -->
           <div class="grid grid-cols-2 gap-4">
             <div class="flex flex-col gap-1.5">
-              <label class="font-bold text-slate-700 text-left w-full block">Market Segment</label>
-              <select v-model="quickBookingForm.marketId" class="w-full border border-slate-200 rounded-lg bg-[#fffbeb] px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold cursor-pointer">
-                <option :value="null" disabled>— Chọn thị trường —</option>
-                <option v-for="m in allMarkets" :key="m.id" :value="m.id">
+              <label class="font-semibold text-[#000000D9] text-left w-full block">Market Segment <span class="text-red-500">*</span></label>
+              <select 
+                v-model="quickBookingForm.marketId" 
+                class="w-full border border-[#F1DD8A] rounded-lg bg-[#FFF8DB] px-3 py-2 font-normal cursor-pointer focus:outline-none focus:ring-1 focus:ring-amber-400"
+                :class="quickBookingForm.marketId === null ? 'text-[#A8B0BF]' : 'text-[#000000D9]'"
+              >
+                <option :value="null" disabled class="text-[#A8B0BF]">— Chọn thị trường —</option>
+                <option v-for="m in allMarkets" :key="m.id" :value="m.id" class="text-[#000000D9]">
                   {{ m.name }}
                 </option>
               </select>
             </div>
             <div class="flex flex-col gap-1.5">
-              <label class="font-bold text-slate-700 text-left w-full block">Source Code</label>
-              <select v-model="quickBookingForm.customerSourceId" class="w-full border border-slate-200 rounded-lg bg-[#fffbeb] px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold cursor-pointer">
-                <option :value="null" disabled>— Chọn nguồn khách —</option>
-                <option v-for="s in allCustomerSources" :key="s.id" :value="s.id">
+              <label class="font-semibold text-[#000000D9] text-left w-full block">Source Code <span class="text-red-500">*</span></label>
+              <select 
+                v-model="quickBookingForm.customerSourceId" 
+                class="w-full border border-[#F1DD8A] rounded-lg bg-[#FFF8DB] px-3 py-2 font-normal cursor-pointer focus:outline-none focus:ring-1 focus:ring-amber-400"
+                :class="quickBookingForm.customerSourceId === null ? 'text-[#A8B0BF]' : 'text-[#000000D9]'"
+              >
+                <option :value="null" disabled class="text-[#A8B0BF]">— Chọn nguồn khách —</option>
+                <option v-for="s in allCustomerSources" :key="s.id" :value="s.id" class="text-[#000000D9]">
                   {{ s.name }}
                 </option>
               </select>
@@ -5324,16 +5459,20 @@ function getRoomStatusIconName(item) {
 
           <!-- Booking name -->
           <div class="flex flex-col gap-1.5">
-            <label class="font-bold text-slate-700 text-left w-full block">Booking name:</label>
-            <input type="text" v-model="quickBookingForm.bookingName" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold" />
+            <label class="font-semibold text-[#000000D9] text-left w-full block">Booking name <span class="text-red-500">*</span></label>
+            <input type="text" v-model="quickBookingForm.bookingName" class="w-full border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg px-3 py-2 text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-amber-400 font-normal" />
           </div>
 
           <!-- Registration status -->
           <div class="flex flex-col gap-1.5">
-            <label class="font-bold text-slate-700 text-left w-full block">Tình trạng đăng ký:</label>
-            <select v-model="quickBookingForm.registrationStatusId" class="w-full border border-slate-200 rounded-lg bg-[#fffbeb] px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold cursor-pointer">
-              <option :value="null" disabled>— Chọn tình trạng đăng ký —</option>
-              <option v-for="status in registrationStatuses.filter(s => !s.is_hidden && s.booking_status_id != null)" :key="status.id" :value="status.booking_status_id">
+            <label class="font-semibold text-[#000000D9] text-left w-full block">Tình trạng đăng ký <span class="text-red-500">*</span></label>
+            <select 
+              v-model="quickBookingForm.registrationStatusId" 
+              class="w-full border border-[#F1DD8A] rounded-lg bg-[#FFF8DB] px-3 py-2 font-normal cursor-pointer focus:outline-none focus:ring-1 focus:ring-amber-400"
+              :class="quickBookingForm.registrationStatusId === null ? 'text-[#A8B0BF]' : 'text-[#000000D9]'"
+            >
+              <option :value="null" disabled class="text-[#A8B0BF]">Vui lòng chọn tình trạng đăng ký</option>
+              <option v-for="status in registrationStatuses.filter(s => !s.is_hidden && s.booking_status_id != null)" :key="status.id" :value="status.booking_status_id" class="text-[#000000D9]">
                 {{ status.name }}
               </option>
             </select>
@@ -5341,10 +5480,15 @@ function getRoomStatusIconName(item) {
 
           <!-- Rate Code -->
           <div class="flex flex-col gap-1.5">
-            <label class="font-bold text-slate-700 text-left w-full block">Rate Code:</label>
-            <select v-model="quickBookingForm.rateCode" @change="calculateQuickBookingPrice" class="w-full border border-slate-200 rounded-lg bg-white px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold cursor-pointer">
-              <option value="Vui lòng chọn giá phòng">Vui lòng chọn giá phòng</option>
-              <option v-for="rc in rateCodes" :key="rc.Ma" :value="rc.Ma">
+            <label class="font-semibold text-[#000000D9] text-left w-full block">Rate Code:</label>
+            <select 
+              v-model="quickBookingForm.rateCode" 
+              @change="calculateQuickBookingPrice" 
+              class="w-full border border-slate-200 rounded-lg bg-white px-3 py-2 font-normal cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500"
+              :class="(quickBookingForm.rateCode === 'Vui lòng chọn giá phòng' || !quickBookingForm.rateCode) ? 'text-[#A8B0BF]' : 'text-[#000000D9]'"
+            >
+              <option value="Vui lòng chọn giá phòng" class="text-[#A8B0BF]">Vui lòng chọn giá phòng</option>
+              <option v-for="rc in rateCodes" :key="rc.Ma" :value="rc.Ma" class="text-[#000000D9]">
                 {{ rc.Ma }} - {{ rc.Description || 'Không có mô tả' }}
               </option>
             </select>
@@ -5352,9 +5496,9 @@ function getRoomStatusIconName(item) {
 
           <!-- Rate -->
           <div class="flex flex-col gap-1.5">
-            <label class="font-bold text-slate-700 text-left w-full block">{{ quickBookingRateLabel }}:</label>
+            <label class="font-semibold text-[#000000D9] text-left w-full block">{{ quickBookingRateLabel }}:</label>
             <div class="relative flex items-center border border-slate-200 rounded-lg overflow-hidden bg-white shadow-xs">
-              <input type="number" v-model="quickBookingForm.rate" :disabled="!isQuickBookingRateEditable" class="w-full border-none px-3 py-2 text-slate-800 focus:outline-none focus:ring-0 font-semibold disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed" />
+              <input type="number" v-model="quickBookingForm.rate" :disabled="!isQuickBookingRateEditable" class="w-full border-none px-3 py-2 text-[#000000D9] focus:outline-none focus:ring-0 font-normal disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed" />
               <div class="absolute right-2 flex flex-col gap-0.5 z-10">
                 <button 
                   type="button" 
@@ -5382,22 +5526,13 @@ function getRoomStatusIconName(item) {
         </div>
 
         <!-- Footer Actions -->
-        <div class="p-4 border-t border-slate-100 flex items-center justify-end gap-3 shrink-0">
-          <button 
-            @click="showQuickBookingModal = false"
-            class="flex items-center gap-1.5 px-4 py-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-bold cursor-pointer transition-colors shadow-sm"
-          >
-            <svg class="w-4 h-4 text-rose-500" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span>Đóng</span>
-          </button>
+        <div class="p-4 border-t border-slate-100 flex items-center justify-end gap-2 shrink-0 rounded-b-xl">
           <button 
             @click="saveQuickBooking"
-            class="flex items-center gap-1.5 px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white border-none rounded-lg text-xs font-bold cursor-pointer transition-colors shadow-md"
+            class="btn-pms-primary"
           >
-            <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
             </svg>
             <span>Lưu</span>
           </button>
@@ -5407,9 +5542,9 @@ function getRoomStatusIconName(item) {
 
     <!-- Lock Room Modal -->
     <div v-if="showLockRoomModal" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 select-none">
-      <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-[360px] overflow-hidden flex flex-col font-sans">
+      <div :style="lockRoomModalStyle" class="absolute bg-white rounded-xl shadow-2xl border border-slate-200 w-[360px] overflow-hidden flex flex-col font-sans">
         <!-- Header -->
-        <div class="h-[50px] bg-blue-600 flex items-center justify-between px-4 text-white shrink-0">
+        <div @mousedown="startLockRoomDrag" :style="{ background: 'var(--pms-custom-theme, #006bdb)', color: 'var(--pms-custom-theme-text, #ffffff)' }" class="h-[50px] flex items-center justify-between px-4 text-white shrink-0 rounded-t-xl cursor-move">
           <span class="font-bold text-sm tracking-wide">Lock Room {{ lockRoomType }}</span>
           <button @click="showLockRoomModal = false" class="text-white hover:text-slate-200 bg-transparent border-none cursor-pointer flex items-center justify-center p-1 rounded-full hover:bg-white/10 transition-colors">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
@@ -5420,27 +5555,18 @@ function getRoomStatusIconName(item) {
 
         <!-- Form Body -->
         <div class="p-5 flex flex-col gap-2.5 text-xs text-left">
-          <label class="font-bold text-slate-700 text-[13px] text-left w-full block">Note <span class="text-red-500">*</span></label>
-          <input type="text" v-model="lockRoomForm.note" class="w-full border border-slate-200 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500 font-semibold" placeholder="Nhập ghi chú khóa phòng..." />
+          <label class="font-semibold text-[#000000D9] text-xs text-left w-full block">Note <span class="text-red-500">*</span></label>
+          <input type="text" v-model="lockRoomForm.note" class="w-full border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg px-3 py-2 text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-amber-400 font-normal text-xs" placeholder="Nhập ghi chú khóa phòng..." />
         </div>
 
         <!-- Footer Actions -->
-        <div class="p-4 border-t border-slate-100 flex items-center justify-end gap-3 shrink-0">
-          <button 
-            @click="showLockRoomModal = false"
-            class="flex items-center gap-1.5 px-4 py-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-bold cursor-pointer transition-colors shadow-sm"
-          >
-            <svg class="w-4 h-4 text-rose-500" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span>Đóng</span>
-          </button>
+        <div class="p-4 border-t border-slate-100 flex items-center justify-end gap-2 shrink-0 rounded-b-xl">
           <button 
             @click="saveLockRoom"
-            class="flex items-center gap-1.5 px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white border-none rounded-lg text-xs font-bold cursor-pointer transition-colors shadow-md"
+            class="btn-pms-primary"
           >
-            <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
             </svg>
             <span>Lưu</span>
           </button>
@@ -5516,42 +5642,42 @@ function getRoomStatusIconName(item) {
       </div>
 
       <!-- Hex & RGB Inputs Row -->
-      <div class="grid grid-cols-5 gap-1.5 text-[10px] text-slate-400 font-bold uppercase">
+      <div class="grid grid-cols-5 gap-1.5 text-xs text-slate-400 font-bold uppercase">
         <div class="flex flex-col items-center gap-0.5">
           <input 
             type="text" 
             :value="computedHex.replace('#', '').toUpperCase()"
             @change="handleHexInputChange"
-            class="w-full text-center border border-slate-200 rounded px-1 py-1 font-mono text-[10px] uppercase text-slate-700 focus:outline-sky-400 h-6 leading-none"
+            class="w-full text-center border border-slate-200 rounded px-1 py-1 font-mono text-xs uppercase text-slate-700 focus:outline-sky-400 h-6 leading-none"
           />
-          <span class="text-[9px] font-bold text-slate-400">Hex</span>
+          <span class="text-xs font-semibold text-slate-400">Hex</span>
         </div>
         <div class="flex flex-col items-center gap-0.5">
           <input 
             type="number" 
             :value="computedRgb.r"
             @input="handleRgbInput('r', $event.target.value)"
-            class="w-full text-center border border-slate-200 rounded px-1 py-1 font-mono text-[10px] text-slate-700 focus:outline-sky-400 h-6 leading-none"
+            class="w-full text-center border border-slate-200 rounded px-1 py-1 font-mono text-xs text-slate-700 focus:outline-sky-400 h-6 leading-none"
           />
-          <span class="text-[9px] font-bold text-slate-400">R</span>
+          <span class="text-xs font-semibold text-slate-400">R</span>
         </div>
         <div class="flex flex-col items-center gap-0.5">
           <input 
             type="number" 
             :value="computedRgb.g"
             @input="handleRgbInput('g', $event.target.value)"
-            class="w-full text-center border border-slate-200 rounded px-1 py-1 font-mono text-[10px] text-slate-700 focus:outline-sky-400 h-6 leading-none"
+            class="w-full text-center border border-slate-200 rounded px-1 py-1 font-mono text-xs text-slate-700 focus:outline-sky-400 h-6 leading-none"
           />
-          <span class="text-[9px] font-bold text-slate-400">G</span>
+          <span class="text-xs font-semibold text-slate-400">G</span>
         </div>
         <div class="flex flex-col items-center gap-0.5">
           <input 
             type="number" 
             :value="computedRgb.b"
             @input="handleRgbInput('b', $event.target.value)"
-            class="w-full text-center border border-slate-200 rounded px-1 py-1 font-mono text-[10px] text-slate-700 focus:outline-sky-400 h-6 leading-none"
+            class="w-full text-center border border-slate-200 rounded px-1 py-1 font-mono text-xs text-slate-700 focus:outline-sky-400 h-6 leading-none"
           />
-          <span class="text-[9px] font-bold text-slate-400">B</span>
+          <span class="text-xs font-semibold text-slate-400">B</span>
         </div>
         <div class="flex flex-col items-center gap-0.5">
           <input 
@@ -5559,9 +5685,9 @@ function getRoomStatusIconName(item) {
             v-model="alpha"
             min="0"
             max="100"
-            class="w-full text-center border border-slate-200 rounded px-1 py-1 font-mono text-[10px] text-slate-700 focus:outline-sky-400 h-6 leading-none"
+            class="w-full text-center border border-slate-200 rounded px-1 py-1 font-mono text-xs text-slate-700 focus:outline-sky-400 h-6 leading-none"
           />
-          <span class="text-[9px] font-bold text-slate-400">A</span>
+          <span class="text-xs font-semibold text-slate-400">A</span>
         </div>
       </div>
 
@@ -5612,7 +5738,7 @@ function getRoomStatusIconName(item) {
     <div 
       v-if="draggedBooking && draggedBookingRect"
       data-room-plan-ghost
-      class="fixed z-[9999] pointer-events-none border rounded flex items-center px-2.5 text-[9px] font-bold leading-tight select-none shadow-2xl opacity-90 transition-none"
+      class="fixed z-[9999] pointer-events-none border rounded flex items-center px-2.5 text-xs font-normal leading-tight select-none shadow-2xl opacity-90 transition-none"
       :class="[
         isBookingMatched(draggedBooking) ? getBookingClass(draggedBooking.type) : 'bg-slate-100 text-slate-400 border-slate-200'
       ]"
