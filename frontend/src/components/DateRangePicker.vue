@@ -342,14 +342,12 @@ const applyRange = () => {
     <button
       type="button"
       @click="applyRange"
-      class="px-3.5 py-1 bg-[#8ecefa] hover:bg-[#72b5f7] dark:bg-blue-600 dark:hover:bg-blue-700 text-slate-800 dark:text-white text-xs font-bold rounded-lg shadow-sm cursor-pointer transition-all border border-[#7ec0f3] dark:border-blue-700 flex items-center justify-center gap-1.5 h-[32px]"
+      class="btn-pms-primary"
     >
-      <span class="w-3.5 h-3.5 rounded-full border border-current flex items-center justify-center shrink-0">
-        <svg class="w-2 h-2" fill="none" stroke="currentColor" stroke-width="3.5" viewBox="0 0 24 24">
-          <polyline points="20 6 9 17 4 12" />
-        </svg>
-      </span>
-      Áp dụng
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+        <polyline points="20 6 9 17 4 12" />
+      </svg>
+      <span>Áp dụng</span>
     </button>
   </div>
 </template>

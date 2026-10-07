@@ -270,6 +270,14 @@ const mergeServiceBills = (...groups) => {
   })
 }
 
+// A transferred bill keeps its original Master IDs for audit; only the current owner decides visibility here.
+const hasCurrentBillOwner = value => value !== undefined && value !== null && String(value) !== '' && String(value) !== '0'
+const isCheckoutMasterBill = (bill, booking) => (
+  !hasCurrentBillOwner(bill?.RentalRoomId2)
+  && !hasCurrentBillOwner(bill?.CustomerId2)
+  && isMasterOwnedBill(bill, booking)
+)
+
 // Modal states
 import AddServiceModal from './components/AddServiceModal.vue'
 import AddHousekeepingServiceModal from './components/AddHousekeepingServiceModal.vue'
@@ -957,7 +965,11 @@ const loadCheckoutBookings = async () => {
 
       const allBills = mergeServiceBills(b.master_service_bills || [], b.service_bills || [])
 
-      const masterBillsForSum = allBills.filter(sb => isMasterOwnedBill(sb, b))
+      const masterBillsForSum = allBills.filter(sb => (
+        Number(sb.Edit) !== 1
+        && ![3, 4].includes(Number(sb.Status))
+        && isCheckoutMasterBill(sb, b)
+      ))
 
       // Tổng Master phải khớp với các dòng RM đang hiển thị trên bảng dịch vụ.
       // Một số bill cũ chỉ còn liên kết ở booking_room.services nên cần bổ sung
@@ -973,9 +985,12 @@ const loadCheckoutBookings = async () => {
             if (linkedBillId && countedMasterBillIds.has(linkedBillId)) return
             if (linkedBillId) {
               const linkedBill = allBills.find(sb => String(sb.Ma) === linkedBillId)
-              if (linkedBill && Number(linkedBill.Edit) !== 1 && ![3, 4].includes(Number(linkedBill.Status))) {
-                masterServiceTotal += Number(linkedBill.Amount) || 0
-                countedMasterBillIds.add(linkedBillId)
+              if (linkedBill) {
+                if (Number(linkedBill.Edit) !== 1 && ![3, 4].includes(Number(linkedBill.Status)) && isCheckoutMasterBill(linkedBill, b)) {
+                  masterServiceTotal += Number(linkedBill.Amount) || 0
+                  countedMasterBillIds.add(linkedBillId)
+                }
+                // A transferred or cancelled bill cannot be restored by the legacy service fallback.
                 return
               }
             }
@@ -1156,7 +1171,7 @@ const handlePrepaymentSuccess = async () => {
 }
 
 const toggleBookingCheck = (b) => {
-  if (activeFilter.register === 'virtual') {
+  if (appliedCheckoutFilter.value.register === 'virtual') {
     b.checked = false
     return
   }
@@ -1401,11 +1416,18 @@ const servicesList = computed(() => {
     // 1. Dịch vụ thuộc Master, bao gồm cả bill đã thanh toán để giữ lịch sử
     // trên bảng dịch vụ; tổng tiền phải thanh toán vẫn chỉ tính bill chưa trả.
     const allBillsSource = mergeServiceBills(rawB?.master_service_bills || [], rawB?.service_bills || [])
+    const linkedBillsSource = mergeServiceBills(
+      allBillsSource,
+      ...(rawB?.booking_rooms || []).map(room => [
+        ...(room.service_bills || room.serviceBills || []),
+        ...(room.current_service_bills || room.currentServiceBills || [])
+      ])
+    )
 
     const masterBills = allBillsSource.filter(sb => (
       Number(sb.Edit) !== 1
       && ![3, 4].includes(Number(sb.Status))
-      && isMasterOwnedBill(sb, rawB)
+      && isCheckoutMasterBill(sb, rawB)
     ))
 
     const masterBillIds = new Set(masterBills.map(sb => String(sb.Ma)))
@@ -1421,9 +1443,13 @@ const servicesList = computed(() => {
         if (rawR && rawR.services && Array.isArray(rawR.services)) {
           rawR.services.forEach((s, idx) => {
             if (getServiceRoomFlag(s) !== 0) return
-            const linkedBill = findLinkedBill(s, roomNo, rItem.roomId)
             if (!isPostedBookingService(s)) return
             if (s.service_bill_id && masterBillIds.has(String(s.service_bill_id))) return
+            const linkedBillId = s.service_bill_id || s.serviceBillId
+            const linkedBill = linkedBillId
+              ? linkedBillsSource.find(bill => String(bill.Ma ?? bill.id) === String(linkedBillId))
+              : null
+            if (linkedBill && (Number(linkedBill.Edit) === 1 || [3, 4].includes(Number(linkedBill.Status)) || !isCheckoutMasterBill(linkedBill, rawB))) return
             services.push(processServiceItem(withServiceBillTime(rawR, s), `${rItem.id}-${idx}`, `Phòng ${roomNo}`, roomNo))
           })
         }
@@ -2558,12 +2584,13 @@ const handleRoomDrop = async (booking, room, guest = null) => {
   const payment = draggedPayment.value
   const destination = {
     bookingId: booking?.bookingId,
-    roomId: room?.roomId,
+    roomId: room?.roomId || null,
     guestId: guest?.id || room?.primaryGuestId || null,
   }
   draggedOverRoom.value = null
 
-  if (!destination.bookingId || !destination.roomId) {
+  if (!destination.bookingId || (room && !destination.roomId)
+    || (!room && !selectedRoomItem.value && String(destination.bookingId) === String(selectedBooking.value?.bookingId))) {
     handleServiceDragEnd()
     return
   }
@@ -2991,7 +3018,6 @@ const selectRoomItemRow = async (b, r, specificGuest = null) => {
 
   selectedBooking.value = b
   selectedRoomItem.value = r
-  saveCheckoutSessionStorage(b.bookingId || b.id, r.roomId || r.id, guest?.id || null)
   serviceFilter.value = null
   selectedServiceIds.value = []
   selectedPaymentIds.value = []
@@ -3000,6 +3026,7 @@ const selectRoomItemRow = async (b, r, specificGuest = null) => {
   roomNumber.value = r.roomNumber
   const guests = Array.isArray(r.allGuests) ? r.allGuests : []
   const guest = specificGuest || guests.find(item => item?.isPrimary) || guests[0] || null
+  saveCheckoutSessionStorage(b.bookingId || b.id, r.roomId || r.id, guest?.id || null)
   selectedGuest.value = guest?.name || r.guestName
   selectedGuestId.value = guest?.id || null
   isNoPost.value = selectedBookingNoPost.value || isNoPostEnabled(r.rawRoom?.no_post ?? r.no_post)
@@ -3240,7 +3267,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="checkout-shell flex h-[calc(100vh-48px)] bg-[#f1f5f9] text-xs text-slate-700 select-none overflow-hidden font-sans relative">
+  <div class="checkout-shell flex h-full flex-1 min-h-0 bg-[#f1f5f9] text-xs text-slate-700 select-none overflow-hidden font-sans relative">
     <LoadingOverlay :show="isLoading || isServiceOperationLoading" />
 
     <!-- LEFTSIDE TOOLBAR (Cột nút chức năng dọc bên trái - Hỗ trợ Thu gọn/Mở rộng) -->
@@ -3475,7 +3502,7 @@ onUnmounted(() => {
     </aside>
 
     <!-- RIGHT MAIN SECTION -->
-    <main class="checkout-main flex-1 grid min-w-0 grid-cols-[minmax(410px,430px)_minmax(0,1fr)] grid-rows-[45px_minmax(0,1fr)] gap-0 bg-[#f1f5f9] overflow-hidden">
+    <main class="checkout-main flex-1 grid min-w-0 grid-cols-[minmax(340px,420px)_minmax(0,1fr)] grid-rows-[45px_minmax(0,1fr)] gap-0 bg-[#f1f5f9] overflow-hidden">
 
       <!-- TOP CONTROL BAR (Nằm trên cùng toàn chiều rộng, không thuộc panel nào) -->
       <div class="checkout-header col-span-2 flex items-center justify-between gap-2 px-4 py-1.5 bg-white border-b border-slate-300 text-xs">
@@ -3625,8 +3652,12 @@ onUnmounted(() => {
                 <template v-for="b in displayedBookingsList" :key="b.id">
                   <tr
                     @click="selectBookingHeader(b)"
+                    @dragover.prevent="draggedServiceGroup && handleRoomDragOver(b, null)"
+                    @dragleave="draggedOverRoom = null"
+                    @drop.prevent.stop="draggedServiceGroup ? handleRoomDrop(b, null) : handleServiceDragEnd()"
                     :class="[
                       selectedBooking && selectedBooking.id === b.id && !selectedRoomItem ? 'bg-[#eff6ff] border-l-[3px] border-blue-600' : b.isCheckedOut ? 'bg-[#ffd4d4] border-l-[3px] border-rose-400' : 'bg-[#f0f4ff] border-l-[3px] border-indigo-500',
+                      draggedOverRoom === roomDropKey(b, null) ? 'ring-2 ring-inset ring-sky-500 bg-sky-50' : '',
                       'cursor-pointer transition-colors'
                     ]"
                   >
@@ -3699,7 +3730,7 @@ onUnmounted(() => {
         </div>
 
         <!-- BOOKING INFORMATION + FOLIO (reference layout) -->
-        <div class="checkout-info-panel bg-white rounded-none border-0 flex flex-col min-h-0 shadow-none">
+        <div class="checkout-info-panel bg-white rounded-none border-0 flex flex-col min-h-0 shadow-none overflow-y-auto">
           <div class="checkout-info-heading flex items-center justify-between border-b border-slate-300 px-2 py-1">
             <span class="checkout-info-title"><i class="fa-solid fa-bed"></i> Thông Tin Đăng Ký</span>
             <label class="flex items-center gap-1 text-[10px] font-bold text-red-600">
@@ -4043,12 +4074,12 @@ onUnmounted(() => {
             <li v-for="room in checkoutUnpaidRooms" :key="room.room_id">Phòng {{ room.room_number }} - {{ room.guest_name }}</li>
           </ul>
           <div v-if="earlyCheckoutData" class="flex justify-end gap-2">
-            <button @click="showCheckoutModal = false" :disabled="isServiceOperationLoading" class="rounded bg-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50">Đóng</button>
-            <button @click="checkoutEarlyWithoutCharge" :disabled="isServiceOperationLoading" class="rounded bg-sky-500 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Trả phòng</button>
-            <button @click="openEarlyChargeModal" :disabled="isServiceOperationLoading || earlyChargeNoPost" class="rounded bg-sky-500 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Tiền phòng</button>
+            <button @click="showCheckoutModal = false" :disabled="isServiceOperationLoading" class="btn-pms-close">Đóng</button>
+            <button @click="checkoutEarlyWithoutCharge" :disabled="isServiceOperationLoading" class="btn-pms-primary">Trả phòng</button>
+            <button @click="openEarlyChargeModal" :disabled="isServiceOperationLoading || earlyChargeNoPost" class="btn-pms-primary">Tiền phòng</button>
           </div>
         </div>
-        <div v-if="!earlyCheckoutData" class="flex justify-end gap-2 border-t px-4 py-3"><button @click="showCheckoutModal = false" class="rounded bg-slate-200 px-4 py-2 text-sm">Đóng</button><button @click="submitCheckout" :disabled="isServiceOperationLoading" class="rounded bg-sky-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{{ isRestoreCheckout ? 'Khôi phục checkout' : (selectedCheckoutRooms.length > 1 && !checkoutPreview ? 'Kiểm tra điều kiện' : (!selectedRoomItem && selectedCheckoutRooms.length === 0 ? 'Có' : 'Checkout')) }}</button></div>
+        <div v-if="!earlyCheckoutData" class="flex justify-end gap-2 border-t px-4 py-3"><button @click="showCheckoutModal = false" class="btn-pms-close">Đóng</button><button @click="submitCheckout" :disabled="isServiceOperationLoading" class="btn-pms-primary">{{ isRestoreCheckout ? 'Khôi phục checkout' : (selectedCheckoutRooms.length > 1 && !checkoutPreview ? 'Kiểm tra điều kiện' : (!selectedRoomItem && selectedCheckoutRooms.length === 0 ? 'Có' : 'Checkout')) }}</button></div>
       </div>
     </div>
 
@@ -4059,7 +4090,7 @@ onUnmounted(() => {
           <div><p class="mb-2 font-semibold">Chọn ngày</p><label v-for="date in earlyChargeDateOptions" :key="date" class="mb-1 flex items-center gap-2"><input v-model="earlyChargeDates" :value="date" type="checkbox" class="h-4 w-4 accent-sky-500" />{{ date.split('-').reverse().join('-') }}</label></div>
           <label class="flex items-center gap-4"><span>% Charge</span><input v-model.number="earlyChargePercent" type="number" min="0" max="100" step="1" class="w-32 rounded border border-slate-300 px-2 py-1.5 text-right" /></label>
         </div>
-        <div class="flex justify-end gap-2 border-t px-4 py-3"><button @click="showEarlyChargeModal = false" class="rounded bg-slate-300 px-4 py-2 text-xs font-semibold text-slate-700">Không</button><button @click="chargeEarlyCheckout" :disabled="isServiceOperationLoading || earlyChargeNoPost" class="rounded bg-sky-500 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Tiền phòng</button></div>
+        <div class="flex justify-end gap-2 border-t px-4 py-3"><button @click="showEarlyChargeModal = false" class="btn-pms-close">Không</button><button @click="chargeEarlyCheckout" :disabled="isServiceOperationLoading || earlyChargeNoPost" class="btn-pms-primary">Tiền phòng</button></div>
       </div>
     </div>
 
@@ -4418,7 +4449,8 @@ onUnmounted(() => {
 .checkout-filter-date-wrap input { width: 100%; min-width: 0; height: 22px !important; padding: 0 !important; border: 0 !important; border-radius: 0 !important; font-size: 10px !important; }
 .checkout-filter-date-wrap i { margin-left: 2px; color: #10b981; font-size: 11px; }
 .checkout-filter-actions { display: flex; justify-content: flex-end; gap: 6px; padding-top: 8px; border-top: 1px solid #f1f5f9; }
-.checkout-filter-actions button { padding: 4px 10px; border: 0; border-radius: 4px; background: #2563eb; color: #fff; font-size: 10px; font-weight: 600; }
+.checkout-filter-actions button { padding: 4px 12px; border: 0; border-radius: 4px; background: #0088ff; color: #fff; font-size: 11px; font-weight: 600; cursor: pointer; transition: background-color 0.15s; }
+.checkout-filter-actions button:hover { background: #0077e6; }
 /* Match the sample: filter popup is anchored to the whole search-bar, not the button. */
 .checkout-header > div:first-child { position: relative; }
 .checkout-register-filter { position: static !important; }

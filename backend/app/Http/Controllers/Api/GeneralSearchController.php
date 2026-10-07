@@ -176,7 +176,7 @@ class GeneralSearchController extends Controller
     {
         return [
             'company', 'market', 'registrationStatus', 'creator',
-            'bookingRooms' => fn (Builder $rooms) => $rooms->stayOnly(),
+            'bookingRooms' => fn ($rooms) => $rooms->stayOnly(),
             'bookingRooms.roomClass', 'bookingRooms.originalRoomClass', 'bookingRooms.guests.guest',
         ];
     }

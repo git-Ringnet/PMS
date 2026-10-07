@@ -979,30 +979,30 @@ const toggleRowMenu = (rowKey, event) => {
           <button 
             :disabled="isBatchEditing"
             @click="submitBulkUnlock"
-            class="px-3.5 py-1.5 border border-emerald-500 hover:bg-emerald-50 text-emerald-600 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer h-[32px] text-xs shadow-3xs disabled:opacity-40 disabled:cursor-not-allowed"
+            class="px-3.5 py-1.5 border border-emerald-500 hover:bg-emerald-50 text-emerald-600 rounded-md font-semibold flex items-center gap-1.5 transition-all cursor-pointer h-[32px] text-xs shadow-3xs disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <RoomIcon name="unlock-outline" class="w-3.5 h-3.5 text-emerald-600" />
-            Mở khóa
+            <span>Mở khóa</span>
           </button>
 
           <!-- Lock OOS -->
           <button 
             :disabled="isBatchEditing"
             @click="openBulkLockModal('OOS')"
-            class="px-3.5 py-1.5 bg-[#f97316] hover:bg-[#ea580c] text-white border-none rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer h-[32px] text-xs shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
+            class="px-3.5 py-1.5 bg-[#f97316] hover:bg-[#ea580c] text-white border-none rounded-md font-semibold flex items-center gap-1.5 transition-all cursor-pointer h-[32px] text-xs shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <RoomIcon name="oos" class="w-3.5 h-3.5 text-white" />
-            Khóa phòng OOS
+            <span>Khóa phòng OOS</span>
           </button>
 
           <!-- Lock OOO -->
           <button 
             :disabled="isBatchEditing"
             @click="openBulkLockModal('OOO')"
-            class="px-3.5 py-1.5 bg-[#ef4444] hover:bg-[#dc2626] text-white border-none rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer h-[32px] text-xs shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
+            class="px-3.5 py-1.5 bg-[#ef4444] hover:bg-[#dc2626] text-white border-none rounded-md font-semibold flex items-center gap-1.5 transition-all cursor-pointer h-[32px] text-xs shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <RoomIcon name="ooo-outline" class="w-3.5 h-3.5 text-white" />
-            Khóa phòng OOO
+            <span>Khóa phòng OOO</span>
           </button>
         </div>
       </div>
@@ -1604,21 +1604,24 @@ const toggleRowMenu = (rowKey, event) => {
         </div>
 
         <!-- Modal Footer -->
-        <div class="bg-slate-50 px-5 py-3.5 flex items-center justify-end gap-2 border-t border-slate-100 rounded-b-2xl">
+        <div class="bg-slate-50 px-5 py-3 flex items-center justify-end gap-2 border-t border-slate-100 rounded-b-2xl">
           <button 
             @click="isBulkModalOpen = false" 
-            class="px-4 py-1.5 border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 rounded-lg font-bold text-xs cursor-pointer transition-colors"
+            class="btn-pms-close"
           >
-            Đóng
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+            <span>Đóng</span>
           </button>
           <button 
             @click="submitBulkLock"
-            class="px-4 py-1.5 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-lg font-bold text-xs border-none cursor-pointer shadow-xs transition-colors flex items-center gap-1.5"
+            class="btn-pms-primary"
           >
-            <svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
             </svg>
-            {{ editingLockId ? 'Cập nhật' : 'Khóa phòng' }}
+            <span>{{ editingLockId ? 'Cập nhật' : 'Khóa phòng' }}</span>
           </button>
         </div>
       </div>

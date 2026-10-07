@@ -429,8 +429,6 @@ onUnmounted(() => {
     echo.channel('pms-channel').stopListening('.room.status.updated')
     echo.channel('pms-channel').stopListening('.reservation.updated')
   }
-  if (progressInterval) clearInterval(progressInterval)
-  if (redirectTimer) clearInterval(redirectTimer)
 })
 
 // Select all state

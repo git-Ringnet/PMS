@@ -2107,16 +2107,16 @@ onMounted(async () => {
   background: #f7f8fa;
 }
 .btn-custom.active {
-  border-color: #1f6fd6;
-  color: #1f6fd6;
+  border-color: #0088ff;
+  color: #0088ff;
 }
 .btn-ghost {
-  height: 34px;
+  height: 32px;
   border-radius: 6px;
   border: 1px solid transparent;
   background: transparent;
   color: #5b6270;
-  font-size: 13px;
+  font-size: 12px;
   padding: 0 12px;
   cursor: default;
   opacity: 0.6;
@@ -2132,21 +2132,23 @@ onMounted(async () => {
   background: #f7f8fa;
 }
 .btn-primary {
-  height: 34px;
+  height: 32px;
   border-radius: 6px;
-  border: 1px solid #1f6fd6;
-  background: #1f6fd6;
+  border: 1px solid #0088ff;
+  background: #0088ff;
   color: #fff;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
-  padding: 0 16px;
+  padding: 0 14px;
   display: inline-flex;
   align-items: center;
   cursor: pointer;
   white-space: nowrap;
+  transition: all 0.15s ease;
 }
 .btn-primary:hover {
-  background: #0c4ea0;
+  background: #0077e6;
+  border-color: #0077e6;
 }
 .btn-primary:disabled,
 .btn-primary.is-disabled {

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;600;700&display=swap');
 @import "tailwindcss";
 
 /* Enable class-based dark mode variant for Tailwind CSS v4 */
@@ -6,7 +6,7 @@
 
 /* ===== Custom Theme ===== */
 @theme {
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-sans: 'Roboto', system-ui, -apple-system, sans-serif;
   
   /* PMS Brand Colors */
   --color-primary-50: #f0f8ff;
@@ -78,7 +78,9 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background: #ffffff;
-  color: #1e293b;
+  color: #000000D9;
+  font-size: 12px;
+  line-height: 1.5;
   overflow-x: hidden;
   transition: background-color 0.3s ease, color 0.3s ease;
 }
@@ -560,4 +562,352 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   display: none;
   -webkit-appearance: none;
 }
+
+/* ===== Responsive Utilities for Multi-Screen & Laptops ===== */
+.modal-responsive-card {
+  max-width: min(96vw, 1440px);
+  max-height: min(92dvh, 900px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.modal-responsive-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* Compact spacing on low-height screens (Laptop 13-14 inch, h <= 768px) */
+@media (max-height: 768px) {
+  .compact-low-h-header {
+    height: 2.5rem !important; /* 40px */
+  }
+  .compact-low-h-subnav {
+    height: 2.25rem !important; /* 36px */
+  }
+  .compact-low-h-metrics {
+    padding-top: 0.375rem !important;
+    padding-bottom: 0.375rem !important;
+  }
+  .compact-low-h-metrics button {
+    padding-top: 0.375rem !important;
+    padding-bottom: 0.375rem !important;
+  }
+}
+
+/* ===== Unified PMS Action Buttons Design System (Dòng 4, 16, 27) ===== */
+.btn-pms-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  height: 2rem; /* 32px standard */
+  padding: 0.375rem 0.875rem;
+  background-color: #0088ff;
+  color: #ffffff;
+  font-size: 0.75rem; /* 12px text-xs */
+  font-weight: 600; /* semi-bold */
+  line-height: 1rem;
+  border-radius: 0.375rem; /* 6px */
+  border: 1px solid #0088ff;
+  box-shadow: 0 1px 2px 0 rgba(0, 136, 255, 0.15);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition: background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease, box-shadow 0.15s ease;
+}
+.btn-pms-primary:hover:not(:disabled) {
+  background-color: #0077e6;
+  border-color: #0077e6;
+  box-shadow: 0 2px 4px 0 rgba(0, 136, 255, 0.25);
+}
+.btn-pms-primary:active:not(:disabled) {
+  background-color: #0066cc;
+  border-color: #0066cc;
+}
+.btn-pms-primary:disabled,
+.btn-pms-primary.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Close & Cancel Button (Theo Dòng 16: phong cách giống nút Lưu, chữ trắng, nền xanh, có icon) */
+.btn-pms-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  height: 2rem;
+  padding: 0.375rem 0.875rem;
+  background-color: #0088ff;
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1rem;
+  border-radius: 0.375rem;
+  border: 1px solid #0088ff;
+  box-shadow: 0 1px 2px 0 rgba(0, 136, 255, 0.15);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition: background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+.btn-pms-close:hover:not(:disabled) {
+  background-color: #0077e6;
+  border-color: #0077e6;
+  box-shadow: 0 2px 4px 0 rgba(0, 136, 255, 0.25);
+}
+.btn-pms-close:active:not(:disabled) {
+  background-color: #0066cc;
+  border-color: #0066cc;
+}
+.btn-pms-close:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Danger Button (Dành cho Xoá, Xoá khách, Hủy phòng, Xóa món) */
+.btn-pms-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  height: 2rem;
+  padding: 0.375rem 0.875rem;
+  background-color: #dc2626;
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1rem;
+  border-radius: 0.375rem;
+  border: 1px solid #dc2626;
+  box-shadow: 0 1px 2px 0 rgba(220, 38, 38, 0.15);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition: background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+.btn-pms-danger:hover:not(:disabled) {
+  background-color: #b91c1c;
+  border-color: #b91c1c;
+}
+.btn-pms-danger:active:not(:disabled) {
+  background-color: #991b1b;
+  border-color: #991b1b;
+}
+.btn-pms-danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Secondary & Export Button (Dành cho Xuất excel, In, Scan, Xóa lọc, Cột hiển thị) */
+.btn-pms-secondary,
+.btn-pms-outline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  height: 2rem;
+  padding: 0.375rem 0.875rem;
+  background-color: #ffffff;
+  color: #334155; /* slate-700 */
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1rem;
+  border-radius: 0.375rem;
+  border: 1px solid #cbd5e1; /* slate-300 */
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.btn-pms-secondary:hover:not(:disabled),
+.btn-pms-outline:hover:not(:disabled) {
+  background-color: #f8fafc;
+  color: #0f172a;
+  border-color: #94a3b8;
+}
+.btn-pms-secondary:active:not(:disabled),
+.btn-pms-outline:active:not(:disabled) {
+  background-color: #f1f5f9;
+}
+.btn-pms-secondary:disabled,
+.btn-pms-outline:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Dark Dock Buttons (Dành cho footer dock nền tối #1e293b) */
+.btn-pms-dark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  height: 2rem;
+  padding: 0.375rem 0.75rem;
+  background-color: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1rem;
+  border-radius: 0.375rem;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.btn-pms-dark:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+}
+.btn-pms-dark.danger:hover:not(:disabled) {
+  background-color: rgba(220, 38, 38, 0.3);
+  color: #fca5a5;
+  border-color: rgba(220, 38, 38, 0.5);
+}
+
+/* ==========================================================================
+   FIX FE - DÒNG 1: THỐNG NHẤT DESIGN SYSTEM TOÀN HỆ THỐNG
+   ========================================================================== */
+
+/* 1. Tiêu đề: font semi-bold (600), gồm label trên mỗi ô nhập, tiêu đề card, tab và tiêu đề modal, số tổng. Màu chữ #000000D9 */
+label,
+.form-label,
+.field-label,
+.modal-title,
+.card-title,
+.tab-title,
+.nav-tab-title,
+.font-total,
+.total-cell,
+.table-total {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  color: #000000D9;
+}
+
+/* 2. Nội dung trong ô: font regular, Màu chữ #000000D9, kích thước 12px */
+input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="reset"]),
+select,
+textarea {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 400;
+  color: #000000D9;
+}
+
+/* 3. Ô chưa nhập: regular, màu xám nhạt #A8B0BF, áp dụng cho dòng gợi ý và select đang để trống */
+input::placeholder,
+textarea::placeholder {
+  color: #A8B0BF !important;
+  font-weight: 400 !important;
+  opacity: 1;
+}
+
+/* Select khi chưa chọn giá trị (đang để rỗng) */
+select:has(option[value=""]:checked),
+select:has(option:not([value]):checked) {
+  color: #A8B0BF;
+}
+
+select option {
+  color: #000000D9;
+  font-weight: 400;
+  background-color: #ffffff;
+}
+
+select option[value=""],
+select option:disabled {
+  color: #A8B0BF;
+}
+
+/* 4. Các trường bắt buộc Điểm nhấn vàng nhạt: nền #FFF8DB, viền #F1DD8A */
+.field-required,
+.input-required,
+.pms-required,
+.required-field,
+.is-required,
+input.required,
+select.required,
+textarea.required,
+input[required]:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]),
+select[required],
+textarea[required] {
+  background-color: #FFF8DB !important;
+  border-color: #F1DD8A !important;
+}
+
+.field-required:focus,
+.input-required:focus,
+.pms-required:focus,
+.required-field:focus,
+.is-required:focus,
+input.required:focus,
+select.required:focus,
+textarea.required:focus,
+input[required]:focus,
+select[required]:focus,
+textarea[required]:focus {
+  border-color: #eab308 !important;
+  box-shadow: 0 0 0 1px #eab308 !important;
+  outline: none;
+}
+
+/* 5. Kích thước nội dung chữ đồng nhất giữa các màn hình : Nội dung 12px */
+table td,
+table th {
+  font-size: 12px;
+}
+
+table th {
+  font-weight: 600;
+  color: #000000D9;
+}
+
+/* Dark mode compatibility cho Dòng 1 */
+html.dark label,
+html.dark .form-label,
+html.dark .field-label,
+html.dark .modal-title,
+html.dark .card-title,
+html.dark .tab-title,
+html.dark .nav-tab-title,
+html.dark .font-total,
+html.dark .total-cell,
+html.dark .table-total,
+html.dark table th {
+  color: #f4f4f5 !important;
+}
+
+html.dark table td {
+  color: #e4e4e7;
+}
+
+html.dark select option {
+  color: #ffffff;
+  background-color: #080808;
+}
+
+html.dark .field-required,
+html.dark .input-required,
+html.dark .pms-required,
+html.dark .required-field,
+html.dark .is-required,
+html.dark input.required,
+html.dark select.required,
+html.dark textarea.required,
+html.dark input[required],
+html.dark select[required],
+html.dark textarea[required] {
+  background-color: #2b2613 !important;
+  border-color: #6d5b16 !important;
+  color: #ffffff !important;
+}
+
+
+
 

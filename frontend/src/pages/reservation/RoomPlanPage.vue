@@ -4264,15 +4264,21 @@ function getRoomStatusIconName(item) {
             <div class="flex items-center justify-between border-t border-slate-100 pt-2 mt-1">
               <button 
                 @click="showDatePickerPopover = false"
-                class="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[11px] font-semibold border-none cursor-pointer transition-colors"
+                class="btn-pms-close"
               >
-                Đóng
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                <span>Đóng</span>
               </button>
               <button 
                 @click="saveDateRange"
-                class="px-4 py-1.5 bg-[#7dd3fc] hover:bg-sky-400 text-white rounded text-[11px] font-bold border-none shadow-sm cursor-pointer transition-colors"
+                class="btn-pms-primary"
               >
-                Lưu
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+                </svg>
+                <span>Lưu</span>
               </button>
             </div>
           </div>
@@ -5096,15 +5102,18 @@ function getRoomStatusIconName(item) {
         <div class="h-[55px] border-t border-slate-200 bg-slate-50 p-3 flex items-center justify-between shrink-0">
           <button 
             @click="clearFilters"
-            class="px-4 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-md text-xs font-bold cursor-pointer transition-colors shadow-xs"
+            class="btn-pms-secondary"
           >
-            Xóa lọc
+            <span>Xóa lọc</span>
           </button>
           <button 
             @click="applyFilters"
-            class="px-5 py-1.5 bg-blue-500 hover:bg-blue-600 text-white border-none rounded-md text-xs font-bold cursor-pointer transition-colors shadow-xs"
+            class="btn-pms-primary"
           >
-            Áp dụng
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+            <span>Áp dụng</span>
           </button>
         </div>
       </div>

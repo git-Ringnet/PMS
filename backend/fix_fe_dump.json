@@ -1,0 +1,156 @@
+{
+    "1": {
+        "B": "\nTHỐNG NHẤT CHO TOÀN FE HỆ THỐNG\nTẤT CẢ CHỮ TRONG HỆ THỐNG CHUYỂN THÀNH KIỂU CHỮ ROBOTO \n- Tiêu đề: font semi-bold (600), gồm label trên mỗi ô nhập, tiêu đề card, tab và tiêu đề modal, số tổng . Màu chữ #000000D9\n- Nội dung trong ô: font regular ,  Màu chữ #000000D9\n- Ô chưa nhập: regular, màu xám nhạt  #A8B0BF, áp dụng cho dòng gợi ý và select đang để trống\n- Các trường bắt buộc Điểm nhấn vàng nhạt: nền #FFF8DB, viền #F1DD8A"
+    },
+    "2": {
+        "A": "Tình trạng xử lý",
+        "B": "Màn hình ",
+        "C": "Mục",
+        "D": "Nội dung",
+        "E": "Hình ảnh"
+    },
+    "3": {
+        "C": "Responsive",
+        "D": "Chỉnh lại giao diện tự co giãn theo chiều rộng và chiều cao màn hình\nHiện tại khi sử dụng trên thiết bị laptop một số màn hình quá to "
+    },
+    "4": {
+        "C": "Nút chức năng",
+        "D": "Hiện tại các giao diện nút chức năng chưa đồng bộ \n=> Fix: đồng bộ giao diện các nút chức năng của các màn hình về chung 1 style "
+    },
+    "5": {
+        "C": "Thanh menu chính và phụ",
+        "D": "- Điều chỉnh lại chiểu cao của 2 thanh cho thấp lại 1 tí  để phù hợp khi xem trên laptop\n- Chỉnh lại font regular ( in hoa hay không sẽ phụ thuộc dịch ngôn ngữ)\n- Xem trên lap 14inch ,thu phóng 80% rồi vẫn bị mất thông tin user đăng nhập, ca , ngày hệ thống và chuyển ngôn ngữ \n - Modul đăng ký: xóa mục channel manager "
+    },
+    "6": {
+        "B": "Sơ đồ phòng",
+        "D": "Chỉnh lại chiều cao của khu vực được khoanh cho thấp lại 1 tí"
+    },
+    "7": {
+        "C": "Cài đặt hiển thị",
+        "D": "Màn hình laptop bị mất thông tin phía dưới"
+    },
+    "8": {
+        "B": "Phòng Trống",
+        "C": "Giai đoạn xem",
+        "D": "Mặc định từ ngày hệ thống đến ngày hệ thống +30 (ví dụ: 2\/9 - 1\/10), khi thay đổi giai đoạn xem, load lại trang tự động trở về giai đoạn mặc định"
+    },
+    "9": {
+        "C": "Bộ thiết lập ẩn hiện cột",
+        "D": "Bộ ẩn hiện cột phía trong dấu 3 gạch thêm vào phần dịch ngôn ngữ, còn danh sách bên ngoài thì mặc định tên viết tắt không cần dịch"
+    },
+    "10": {
+        "C": "Tiêu đề cột",
+        "D": "canh giữa các tiêu đề cho đồng bộ, cột Loại phòng đang canh trái"
+    },
+    "11": {
+        "C": "Tổng số lượng phòng trống từng ngày",
+        "D": "In đậm cho tất cả các ngày, hiện tại đang chỉ in đậm cho cột tổng và SL phòng tối đa"
+    },
+    "12": {
+        "C": "Tiêu đề Bảng Thống kê",
+        "D": "Cỡ chữ to hơn 1 size"
+    },
+    "13": {
+        "C": "Danh sách các nội dung ở mục thống kê",
+        "D": "- Là danh sách cố định không ẩn hiện theo bộ thiết lập ẩn hiện cột phía trên (OCC, ALM,OOO,OOS...)\n- Merge cột tổng và cột trống bên cạnh thành 1 và cho in đậm\n- Màu chữ của các ô số thống kê bị nhạt -> chuyển về màu đen và dộ đậm nhạt chỉnh cho tương đồng với màu của phần thống kê phòng trống hàng ngày ở trên\n- Mục Tổng số phòng chiếm dụng, và phòng trống màu của số thống kê đổi sang màu đỏ \n- Kiểm tra lại đường kẻ phân cách giữa các nội dung thống kê, đang lúc hiện lúc không ( ví dụ như trong hình đang mất ở phần tổng phòng chiếm dụng và số phòng trống)\n"
+    },
+    "14": {
+        "B": "Kế Hoạch Phòng",
+        "C": "màn hình chung",
+        "D": "- Màu chữ của số phòng và loại dạng phòng, icon tình trạng phòng, ngày tháng (trừ các trường hợp đặt biệt có màu nền như ngày hiện tại, thứ bảy, chủ nhật vẫn giữ chữ trắng), mục check xem đêm, ghi chú, số lượng thống kê phòng OCC, AV và phòng OOO đồng bộ về màu đen và bỏ in đậm\n- Mục select Loại phòng và danh sách drop list chuyển màu chữ về màu đen không in đậm\n- Các mục chức năng khi chuột phải vào phòng hoặc vào ô trống chuyển về chữ thường không in đậm\n- Giữ in đậm cho phần thứ ngày, Group của loại phòng và tiêu đề (OCC, AV, OOO) và số tổng\n- Thông tin của phòng không in đậm, canh trái thêm một chút để các phòng ở 1 đêm tối thiểu có thể hiển thị được 6 ký tự (ít nhất thấy được số booking)\n- Phần tình trạng đăng ký (Guaranteed, Waiting, Allotment) đổi thành dạng line (tham khảo link hotel) và lấy đúng màu theo phần định nghĩa tình trạng đăng ký \n- Đối với các phòng đã out vẫn hiển thị line tình trạng của đăng ký (hiện tại không hiện)"
+    },
+    "15": {
+        "C": "Thông tin phòng",
+        "D": "- Các đầu mục như ngày đến, ngày đi, tên đk, công ty, số phòng, đêm, giá phòng, số khách (bao gồm icon người lớn trẻ em, em bé), thêm giường, tiền phòng cần thanh toán, tổng cộng, tiền dv cần thanh toán, tổng tiền booking, đã đặt cọc, ghi chú, Còn lại -> đổi về màu chữ đen, in đậm (Semi bold), ngược lại nội dung thông tin để kiểu chữ thường - không in đậm, số tiền ở mục Tổng cộng và Còn lại vẫn giữ in đậm và màu hiện tại\n- Nội dung ghi chú khi nhập ở trong đăng ký có xuống hàng thì ở đây cũng xuống hàng tương tự "
+    },
+    "16": {
+        "C": "Tạo Booking",
+        "D": "- Màu chữ toàn bộ chuyển về màu đen\n- Tiêu đề các ô chuyển về in đậm senmi bold\n- Các giá trị nhập liệu trong các ô đưa về chữ thường, không in đậm\n- Hai ô Tình trạng đăng ký và Rate code là hai ô trống chưa có giá trị nên dòng gợi ý đổi về chữ xám nhạt, không in đậm\n- Đổi icon nút lưu cho đồng bộ với các màn hình khác (Đổi luôn trong màn hình lock room OOO và Lock room OOS)\n- Nút Đóng đổi style giống với nút Lưu có icon và chữ trắng, nền xanh (Đổi luôn trong màn hình lock room OOO và Lock room OOS)"
+    },
+    "17": {
+        "C": "Bộ lọc",
+        "D": "- Các tiêu đề Công Ty, Loại Phòng chuyển màu chữ thành màu đen, in đậm Senmi bold \n- Tên các loại phòng chuyển màu chữ đen, không in đậm"
+    },
+    "18": {
+        "B": "Đặt Cọc ",
+        "D": "Chỉnh lại font chữ theo quy ước chung\nCác trường bắt buộc là : số tiền, phương thức thanh toán , mô tả , ngày\n\n- Nội dung gợi ý trong ô tài khoản ngân hàng\nPhòng\n"
+    },
+    "19": {
+        "B": "Đăng ký",
+        "C": "Thông tin đăng ký",
+        "D": "TẤT CẢ CHỮ TRONG HỆ THỐNG CHUYỂN THÀNH KIỂU CHỮ ROBOTO \n- Tiêu đề: font semi-bold (600), gồm label trên mỗi ô nhập, tiêu đề card, tab và tiêu đề modal, số tổng . Màu chữ #000000D9\n- Nội dung trong ô: font regular ,  Màu chữ #000000D9\n- Ô chưa nhập: regular, màu xám nhạt  #A8B0BF, áp dụng cho dòng gợi ý và select đang để trống\n- Các trường bắt buộc Điểm nhấn vàng nhạt: nền #FFF8DB, viền #F1DD8A\n\nnhư hình tham khảo"
+    },
+    "20": {
+        "B": "Đăng ký",
+        "D": "Các trường  công ty,  phương thức thanh toán, thị trường, nguồn khách , người bán \n-> nếu chưa nhập thông tin font regular, màu xám nhạt  #A8B0BF, \n-- chọn công ty đối tác ---\nbỏ cái -- -- này đi chuyển thành Công ty tương tự cho các trường còn lại\n\n- Chỗ ghi chú: bk chưa có ghi chú đang để\nNhập ghi chú hoặc yêu cầu khách tại đây -> xóa luôn dòng gợi ý này, để trống ô ghi chú\n- Chỗ đặt cọc: xóa dòng mô tả chưa có khoản đặt cọc đang hiệu lực\n- Chỉnh màu lại cho nút Thêm cọc"
+    },
+    "21": {
+        "B": "ĐĂNG KÝ",
+        "C": "Thông tin đăng ký",
+        "D": "- Chỉnh lại kiểu số chỗ ô 100,000 đang khoanh để đồng bộ\n- chiều dọc card đặt cọc cho ngắn lại 1 tí , để tăng chiều dọc của phần ghi chú booking"
+    },
+    "22": {
+        "B": "ĐĂNG KÝ",
+        "C": "Chi tiết phòng booking",
+        "D": "- Đổi font và style chữ như quy ước\n- Nội dung chi tiết phòng chữ đen font regular\n- Nội dung trong 2 cột mã giá phòng và tăng giảm giá nếu chưa nhập thông tin chuyển thành regular, màu xám nhạt  #A8B0BF\n- Cột giờ đến giờ đi đang là giờ: phút:giây -> chỉnh thành giờ phút thôi "
+    },
+    "23": {
+        "B": "ĐĂNG KÝ",
+        "C": "Nút switch ",
+        "D": "Các nút switch khi ở trạng thái tắt đang bị hòa vào nền, không được nổi bật\n=> fix lại chỗ này và đồng bộ vs tất cả màn hình"
+    },
+    "24": {
+        "B": "ĐĂNG KÝ",
+        "C": "Danh mục chức năng",
+        "D": "Xem trên laptop bị mất chức năng"
+    },
+    "25": {
+        "B": "ĐĂNG KÝ",
+        "C": "Cập nhật",
+        "D": "- Đổi font và style chữ như quy ước\n- Nội dung chi tiết các ô chữ đen font regular\n- Xóa nút hủy bỏ\n- Thanh tiêu đề: cập nhật nhanh nhiều phòng -> đổi thành \"Cập nhật\"\n- Các ô để trống hiện tại đang để để trống nếu không đổi, không đổi -> xóa nội dung câu này , để trống luôn"
+    },
+    "26": {
+        "B": "ĐĂNG KÝ",
+        "C": "Nâng hạng phòng ",
+        "D": "- Xóa nút đóng\n- Đổi font và style chữ như quy ước"
+    },
+    "27": {
+        "B": "ĐĂNG KÝ",
+        "C": "Thông tin khách",
+        "D": "- Đồng bộ style các nút chức năng\n- Các phòng chưa gán số hiện tại đang để Phòng ( chưa gán) -> fix : Phòng ( Mã số phòng - lấy mã G... của phòng lên)\n-Khi kéo ngang màn hình, giữ cố định dòng group tình trạng và phòng để thấy được phòng đang nhập \n- Chỗ group tình trạng : chỉnh lại màu: xanh lá cho đăng ký , xanh biển đang ở cho đồng nhất , \nchỗ 0: đăng ký -> chuyển thành : Tình trạng : Đăng ký , bỏ số sau icon\n- Xóa nút đóng ở cuối góc phải bên dưới màn hình ",
+        "F": "- Gõ trực tiếp được: tự thêm dấu \"\/\" sau ngày và tháng (gõ 05092026 → 05\/09\/2026)."
+    },
+    "28": {
+        "B": "ĐĂNG KÝ",
+        "D": "Khi bấm sửa\n- Các trường dữ liệu là ngày tháng năm bổ sung Biểu tượng lịch bên phải ô, bấm vào mở bảng chọn ngày\n-Có nút xoá nhanh (x) xuất hiện khi ô đã có giá trị, để đưa về trạng thái trống.\n- Các cột dữ liệu có trường gợi ý như Loại giấy tờ\nChữ \"Loại\" trong danh sách giấy tờ dang giống như một mục trong danh sách -> Fix: chỉ lấy đúng các loại đang có\ntrong data, đang không thể trả về ô về trạng thái chưa chọn; phải chọn \"Loại\" mới coi là rỗng.\n=> Fix lại: Có nút xoá nhanh (x) xuất hiện khi ô đã có giá trị, để đưa về trạng thái trống.\ntương tự cho các cột danh xưng, quốc tịch, tỉnh thành, quận huyện, phường xã, loại khách, thường trú\/tạm trú, \nmục đích nhập cảnh, cửa khẩu\n\n=> fix tương tự như màn hình thông tin đăng ký"
+    },
+    "41": {
+        "B": "THÔNG TIN PHÒNG",
+        "D": "Thu gọn lại kích thước cho giao diện \nChị đang sử dụng laptop 14 inch\nđặt thu phóng 80 là vừa xem cho các giao diện nhưng trong giao diện thông tin phòng vẫn bị tràn thông tin\nPhải đặt thu phonhs 67% thì màn hình thông tin phòng mới vừa đủ xem"
+    },
+    "44": {
+        "B": "Trả phòng",
+        "C": "màn hình thông tin chung",
+        "D": "- Tiêu đề các cột ở các khu vực Danh sách đăng ký\/phòng Folio, Dịch vụ và thanh toán cùng nội dung chi tiết chuyển màu chữ thành màu đen #000000D9, tiêu đề cột in đậm Semi-Bold còn nội dung sẽ là chữ thường không in đậm\n- Tiêu đề các cột ở khu vực danh sách đăngký\/phòng chuyển về kiểu chữ thường viết hoa chữ cái đầu cho đồng bộ với các khu vực còn lại\n- Khu vực thông tin đăng ký: icon và tên khu vực chuyển màu chữ về màu đen #000000D9 in đậm Semi-bold, viết hoa chữ cái đầu mỗi từ để đồng bộ với các khu vực còn lại, tên các tiêu đề chuyển màu chữ về thành màu đen #000000D9, và in đậm Semi-bold, các value đổi thành chữ đen #000000D9, và không in đậm, giá trị của ô ghi chú nếu không có nội dung thì màu chữ gợi ý chuyển về màu #A8B0BF\n- Tên khu vực Folio chuyển màu chữ về màu đen #000000D9 in đậm Semi-bold\n- Mục Tổng dịch vụ và Tổng Thanh Toán: đổi màu chữ về màu chữ đen #000000D9 in đậm Semi-bold, màu của số tiền tổng là #155DFC\n"
+    },
+    "45": {
+        "C": "Thêm dịch vụ",
+        "D": "- Tiêu đề các ô chuyển về màu chữ đen #000000D9 in đậm Semi-bold\n- Tên hai tab Dịch vụ và Tiền phòng, tab đang chọn thì có màu xanh như hiện tại, tab còn lại có màu chữ là màu đen #000000D9 cả hai tab in đậm Semi-bold\n- Các giá trị nhập vào có màu chữ #000000D9, kiểu chữ thường không in đậm, các ô là giá trị gợi ý chưa nhập vào có màu chữ #A8B0BF\n- Các trường bắt buộc là Ngày (cả hai tab dịch vụ và tiền phòng), Dịch vụ, Số lượng, Đơn giá, thêm màu vàng nhạt: nền #FFF8DB, viền #F1DD8A\n- Tương tự cho tab Tiền Phòng, các tiêu đề có màu chữ là màu đen #000000D9 in đậm Semi-bold, giá trị nhập vào là chữ thường không in đậm và có màu chữ là màu đen\n- Ô tiền phòng tự động vì là ô không cho nhập vào nên thêm màu nền #F8FAFC, viền #E5E7EB, giá trị vẫn có màu chữ là đen #000000D9 không in đậm\n- Khu vực nhập tiền phòng: khi tắt - các tiêu đề chuyển màu chữ về màu xám nhạt không cho thao tác, khi bật thì các tiêu đề có màu chữ là màu đen #000000D9, giá trị của ô tổng tiền có màu chữ màu đen #000000D9 không in đậm. Nếu bật phần tự nhập tiền phòng thì tiêu đề Tiền phòng tự động chuyển xám, nếu phần tự nhập tiền phòng tự động tắt thì tiêu đề tự động chuyển màu chữ thành đen"
+    },
+    "46": {
+        "C": "Thêm dịch vụ buồng phòng",
+        "D": "- Đổi màu nền cho thanh tiêu đề chính và thanh tiêu đề nhóm sản phầm và nút chức năng + về 1E293B cho đồng bộ với các màn hình còn lại\n- Bỏ phần số phòng và tên khách trên thanh tiêu đề chính\n- Các Tiêu đề và nội dung chuyển màu chữ về đen, Tiêu đề in đậm Semi-bold, nội dung kiểu chữ thường\n- Mục danh sách các outlet, bỏ line màu tại outlet đang đứng, tên các outlet chuyển về màu đen in đậm Semi-bold, màu chữ của outlet đang đứng có màu #2563EB\n- hai nút chức năng Undo và Gửi về phòng đổi lại style và màu nền để đồng bộ với các màn hình khác (ví dụ màn hình Thêm dịch vụ)\n- Icon xóa món cho to lên và rõ ràng hơn\n- Tổng Thành Tiền chuyển màu chữ thành đen, số tiền tổng cũng chuyển về màu đen và in đậm"
+    },
+    "47": {
+        "C": "Tách dịch vụ",
+        "D": "- Đổi màu nền cho thanh tiêu đề chính và của nút Tách về 1E293B\n- Bỏ nút chức năng Đóng\n- Ô số tiền và Folio đổi màu nền #FFF8DB, viền #F1DD8A\n- Danh sách drop list của Folio bỏ màu nền \n- Tiêu đề Tổng đã chọn, số tiền, folio và giá trị nhập vào chuyển màu chữ thành đen #000000D9, tiêu đề in đậm Semi-bold\n- Giá trị nhập vào của ô Số tiền tự động hiển thị dấu , ngăn cách đơn vị"
+    },
+    "48": {
+        "C": "Chuyển dịch vụ",
+        "D": "- Đổi màu nền cho thanh tiêu đề chính và của nút Chuyển về 1E293B, Bỏ nút Đóng\n- Các tên tiêu đề và nội dung chuyển màu chữ về màu đen #000000D9, tiêu đề in đậm Semi-bold, Số tiền giữ nguyên màu hiện tại, đổi front chữ về Roboto cho đồng bộ\n- Giá trị nhập vào ở ô Đến Khách là nội dung nhập để tiềm kiếm chứ ko thay đổi nội dung đang chọn\nVD: nhập GAL2 để tìm booking 2 => giá trị của ô sẽ là BK GAL2 - Walkin Guest, khi chọn lại vào ô, nội dung hiện tại mờ đi khi nhập vào thì sẽ là nhập mới cho ô chứ không phải nhập thêm cho giá trị hiện tại\nĐồng thời khi chọn vào ô thì hiển thị drop list còn chọn ra ngoài ô thì hiển thị về giá trị hiện tại mất drop list\n- Độ rộng ô Ngày\/giờ và Mô tả đang quá rộng, có thể thu nhỏ lại đồng thời thu nhỏ lại chiều ngang của màn hình này"
+    },
+    "49": {
+        "C": "Tập hợp dịch vụ",
+        "D": "- Đổi màu nền cho thanh tiêu đề chính và của nút Chuyển về 1E293B, Bỏ nút Đóng\n- Tên tiêu đề các cột và nội dung chuyển màu chữ về đen #000000D9, tiêu đề in đậm Semi-bold và canh giữa \n- Số tiền đổi Front Roboto cho đồng bộ và đổi đâu , là dấu ngăn cách đơn vị (đnag là dấu chấm)"
+    }
+}
