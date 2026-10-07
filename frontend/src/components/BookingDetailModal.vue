@@ -1189,6 +1189,16 @@ function cancelEditing() {
 async function handleSave() {
   if (!isEditingMode.value) return
 
+  const missingRequiredFields = []
+  if (!String(formGuest.value.name || '').trim()) missingRequiredFields.push('Họ tên')
+  if (!String(formGuest.value.id_number || '').trim()) missingRequiredFields.push('Số giấy tờ')
+  if (!stayInfo.value.departure_date) missingRequiredFields.push('Ngày đi')
+  if (String(pricingInfo.value.rate ?? '').trim() === '') missingRequiredFields.push('Giá phòng')
+  if (missingRequiredFields.length) {
+    uiStore.showToast(`Vui lòng nhập/chọn: ${missingRequiredFields.join(', ')}`, 'warning')
+    return
+  }
+
   const confirmed = await uiStore.confirm({
     title: draftGuest.value ? 'Xác nhận thêm khách mới' : 'Xác nhận lưu thông tin',
     message: draftGuest.value
@@ -1664,6 +1674,7 @@ function parseNumber(val) {
                       <input 
                         type="text" 
                         v-model="formGuest.name" 
+                        required
                         @input="onNameInput($event.target.value)"
                         @focus="onNameFocus"
                         :disabled="!isEditingMode" 
@@ -1765,6 +1776,7 @@ function parseNumber(val) {
                   <input 
                     type="text" 
                     v-model="formGuest.id_number" 
+                    required
                     @input="onIdNumberInput($event.target.value)"
                     @focus="onIdNumberFocus"
                     :disabled="!isEditingMode"
@@ -1896,6 +1908,7 @@ function parseNumber(val) {
                   <input
                     type="text"
                     :value="pricingInfo.rate"
+                    required
                     :disabled="!isEditingMode"
                     @input="onRateInput"
                     @focus="onRateFocus"

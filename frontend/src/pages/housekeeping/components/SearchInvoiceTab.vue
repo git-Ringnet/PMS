@@ -1,4 +1,5 @@
 <template>
+  <div class="relative h-full min-h-0">
   <div class="flex flex-col h-full bg-slate-50 p-5 font-sans relative">
     
     <!-- Filters Grid Panel -->
@@ -385,6 +386,7 @@
         </div>
       </div>
     </Transition>
+  </div>
 </template>
 
 <script setup>

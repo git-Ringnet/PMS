@@ -1,5 +1,8 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
+import { useUiStore } from '@/stores/ui-store'
+
+const uiStore = useUiStore()
 
 const props = defineProps({
   isOpen: {
@@ -21,8 +24,6 @@ const form = ref({
   address: ''
 })
 
-import { watch } from 'vue'
-
 watch(() => props.isOpen, (newVal) => {
   if (newVal && props.initialData) {
     form.value.name = props.initialData.name || ''
@@ -33,7 +34,10 @@ watch(() => props.isOpen, (newVal) => {
 })
 
 const handleSave = () => {
-  if (!form.value.name) return
+  if (!String(form.value.name || '').trim()) {
+    uiStore.showToast('Vui lòng nhập Tên khách hàng.', 'warning')
+    return
+  }
   emit('save', { ...form.value })
   form.value = { name: '', phone: '', email: '', address: '' }
 }
@@ -59,7 +63,7 @@ const handleClose = () => {
       <div class="p-6 space-y-4">
         <div>
           <label class="block text-sm font-semibold text-slate-700 mb-1.5">Tên khách hàng <span class="text-red-500">*</span></label>
-          <input v-model="form.name" type="text" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all text-sm" placeholder="Nhập tên khách hàng" />
+          <input v-model="form.name" required type="text" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all text-sm" placeholder="Nhập tên khách hàng" />
         </div>
         <div>
           <label class="block text-sm font-semibold text-slate-700 mb-1.5">Số điện thoại</label>

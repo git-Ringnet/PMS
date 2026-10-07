@@ -117,7 +117,10 @@ const openCreateDepartment = () => {
 }
 
 const saveDepartment = async () => {
-  if (!departmentForm.value.code || !departmentForm.value.name) return
+  if (!String(departmentForm.value.code || '').trim() || !String(departmentForm.value.name || '').trim()) {
+    uiStore.showToast('Vui lòng nhập Mã bộ phận và Tên bộ phận.', 'warning')
+    return
+  }
   try {
     await createOrganizationDepartment({
       code: departmentForm.value.code.toUpperCase(),
@@ -142,7 +145,10 @@ const openPosition = (department, position = null) => {
 }
 
 const savePosition = async () => {
-  if (!positionForm.value.code || !positionForm.value.name) return
+  if (!String(positionForm.value.code || '').trim() || !String(positionForm.value.name || '').trim()) {
+    uiStore.showToast('Vui lòng nhập Mã vị trí và Tên vị trí công việc.', 'warning')
+    return
+  }
   try {
     const payload = {
       organization_department_id: positionForm.value.department_id,
@@ -673,6 +679,7 @@ const savePermissionMatrix = async () => {
               <label class="font-bold text-slate-700 text-xs block mb-1">Mã bộ phận *</label>
               <input
                 v-model="departmentForm.code"
+                required
                 class="w-full border border-slate-300 rounded-md p-2 text-xs font-semibold focus:outline-sky-500 bg-[#fffbeb]"
                 placeholder="Ví dụ: FO, HK, FB..."
               />
@@ -681,6 +688,7 @@ const savePermissionMatrix = async () => {
               <label class="font-bold text-slate-700 text-xs block mb-1">Tên bộ phận *</label>
               <input
                 v-model="departmentForm.name"
+                required
                 class="w-full border border-slate-300 rounded-md p-2 text-xs font-semibold focus:outline-sky-500 bg-white"
                 placeholder="Ví dụ: Bộ phận Lễ Tân"
               />
@@ -713,6 +721,7 @@ const savePermissionMatrix = async () => {
               <label class="font-bold text-slate-700 text-xs block mb-1">Mã vị trí *</label>
               <input
                 v-model="positionForm.code"
+                required
                 class="w-full border border-slate-300 rounded-md p-2 text-xs font-semibold focus:outline-sky-500 bg-[#fffbeb]"
                 placeholder="Ví dụ: FOM, FOS, FO..."
               />
@@ -721,6 +730,7 @@ const savePermissionMatrix = async () => {
               <label class="font-bold text-slate-700 text-xs block mb-1">Tên vị trí công việc *</label>
               <input
                 v-model="positionForm.name"
+                required
                 class="w-full border border-slate-300 rounded-md p-2 text-xs font-semibold focus:outline-sky-500 bg-white"
                 placeholder="Ví dụ: Trưởng Bộ Phận, Nhân Viên Lễ Tân..."
               />

@@ -70,6 +70,10 @@ async function saveMatrix() {
   uiStore.showToast('Đã lưu phân quyền theo chi nhánh', 'success')
 }
 async function saveRole() {
+  if (!String(roleForm.value.code || '').trim() || !String(roleForm.value.name || '').trim()) {
+    uiStore.showToast('Vui lòng nhập Mã vai trò và Tên vai trò.', 'warning')
+    return
+  }
   try {
     await createRole({ ...roleForm.value, department_scope: roleForm.value.department_scope || null })
     createModal.value = false
@@ -88,6 +92,14 @@ function openCopy() {
   copyModal.value = true
 }
 async function saveCopy() {
+  if (!String(copyForm.value.code || '').trim() || !String(copyForm.value.name || '').trim()) {
+    uiStore.showToast('Vui lòng nhập Mã quyền mới và Tên quyền mới.', 'warning')
+    return
+  }
+  if (!selectedRole.value) {
+    uiStore.showToast('Vui lòng chọn vai trò cần sao chép.', 'warning')
+    return
+  }
   await copyRole(selectedRole.value.id, {
     ...copyForm.value, system_branch_id: Number(selectedBranchId.value), application_code: applicationCode.value,
   })
@@ -96,6 +108,11 @@ async function saveCopy() {
   uiStore.showToast('Đã copy vai trò và quyền tại chi nhánh đang chọn', 'success')
 }
 async function saveScreen() {
+  if (!String(screenForm.value.module || '').trim() || !String(screenForm.value.screen_type || '').trim()
+    || !String(screenForm.value.screen_code || '').trim() || !String(screenForm.value.screen_name || '').trim()) {
+    uiStore.showToast('Vui lòng nhập Phân hệ, Loại chức năng, Mã kỹ thuật và Tên hiển thị.', 'warning')
+    return
+  }
   await createPermissionScreen({ ...screenForm.value, application_code: applicationCode.value })
   screenModal.value = false
   screenForm.value = { module: 'FO', screen_code: '', screen_name: '', path: '', screen_type: 'screen' }
@@ -274,11 +291,11 @@ async function saveScreen() {
           <div class="p-5 space-y-3.5">
             <div>
               <label class="font-bold text-slate-700 text-xs block mb-1">Mã vai trò (Role Code) *</label>
-              <input v-model="roleForm.code" class="w-full border border-slate-300 rounded-md p-2 text-xs font-semibold focus:outline-sky-500 bg-[#fffbeb]" placeholder="Ví dụ: FOM, HKM, FO..." />
+              <input v-model="roleForm.code" required class="w-full border border-slate-300 rounded-md p-2 text-xs font-semibold focus:outline-sky-500 bg-[#fffbeb]" placeholder="Ví dụ: FOM, HKM, FO..." />
             </div>
             <div>
               <label class="font-bold text-slate-700 text-xs block mb-1">Tên vai trò *</label>
-              <input v-model="roleForm.name" class="w-full border border-slate-300 rounded-md p-2 text-xs font-semibold focus:outline-sky-500 bg-white" placeholder="Ví dụ: Trưởng Bộ Phận Lễ Tân..." />
+              <input v-model="roleForm.name" required class="w-full border border-slate-300 rounded-md p-2 text-xs font-semibold focus:outline-sky-500 bg-white" placeholder="Ví dụ: Trưởng Bộ Phận Lễ Tân..." />
             </div>
             <div>
               <label class="font-bold text-slate-700 text-xs block mb-1">Mã bộ phận (tùy chọn)</label>
@@ -313,11 +330,11 @@ async function saveScreen() {
             </p>
             <div>
               <label class="font-bold text-slate-700 text-xs block mb-1">Mã quyền mới *</label>
-              <input v-model="copyForm.code" class="w-full border border-slate-300 rounded-md p-2 text-xs font-semibold focus:outline-sky-500 bg-[#fffbeb]" placeholder="Ví dụ: FOM_COPY, FO_NIGHT..." />
+              <input v-model="copyForm.code" required class="w-full border border-slate-300 rounded-md p-2 text-xs font-semibold focus:outline-sky-500 bg-[#fffbeb]" placeholder="Ví dụ: FOM_COPY, FO_NIGHT..." />
             </div>
             <div>
               <label class="font-bold text-slate-700 text-xs block mb-1">Tên quyền mới *</label>
-              <input v-model="copyForm.name" class="w-full border border-slate-300 rounded-md p-2 text-xs font-semibold focus:outline-sky-500 bg-white" placeholder="Tên vai trò mới..." />
+              <input v-model="copyForm.name" required class="w-full border border-slate-300 rounded-md p-2 text-xs font-semibold focus:outline-sky-500 bg-white" placeholder="Tên vai trò mới..." />
             </div>
             <div>
               <label class="font-bold text-slate-700 text-xs block mb-1">Mô tả</label>
@@ -341,11 +358,11 @@ async function saveScreen() {
           <div class="p-5 grid grid-cols-2 gap-3.5">
             <div>
               <label class="font-bold text-slate-700 text-xs block mb-1">Phân hệ (Module) *</label>
-              <input v-model="screenForm.module" class="w-full border border-slate-300 rounded-md p-2 text-xs font-semibold focus:outline-sky-500 bg-[#fffbeb]" placeholder="Ví dụ: FO, Reservation..." />
+              <input v-model="screenForm.module" required class="w-full border border-slate-300 rounded-md p-2 text-xs font-semibold focus:outline-sky-500 bg-[#fffbeb]" placeholder="Ví dụ: FO, Reservation..." />
             </div>
             <div>
               <label class="font-bold text-slate-700 text-xs block mb-1">Loại chức năng *</label>
-              <select v-model="screenForm.screen_type" class="w-full border border-slate-300 rounded-md p-2 text-xs font-semibold focus:outline-sky-500 bg-white">
+              <select v-model="screenForm.screen_type" required class="w-full border border-slate-300 rounded-md p-2 text-xs font-semibold focus:outline-sky-500 bg-white">
                 <option value="screen">Màn hình</option>
                 <option value="report">Báo cáo</option>
                 <option value="feature">Chức năng</option>
@@ -353,11 +370,11 @@ async function saveScreen() {
             </div>
             <div>
               <label class="font-bold text-slate-700 text-xs block mb-1">Mã kỹ thuật *</label>
-              <input v-model="screenForm.screen_code" class="w-full border border-slate-300 rounded-md p-2 text-xs font-semibold focus:outline-sky-500 bg-white" placeholder="Ví dụ: booking_plan..." />
+              <input v-model="screenForm.screen_code" required class="w-full border border-slate-300 rounded-md p-2 text-xs font-semibold focus:outline-sky-500 bg-white" placeholder="Ví dụ: booking_plan..." />
             </div>
             <div>
               <label class="font-bold text-slate-700 text-xs block mb-1">Tên hiển thị *</label>
-              <input v-model="screenForm.screen_name" class="w-full border border-slate-300 rounded-md p-2 text-xs font-semibold focus:outline-sky-500 bg-white" placeholder="Ví dụ: Kế hoạch phòng..." />
+              <input v-model="screenForm.screen_name" required class="w-full border border-slate-300 rounded-md p-2 text-xs font-semibold focus:outline-sky-500 bg-white" placeholder="Ví dụ: Kế hoạch phòng..." />
             </div>
             <div class="col-span-2">
               <label class="font-bold text-slate-700 text-xs block mb-1">Đường dẫn (Route Path)</label>
