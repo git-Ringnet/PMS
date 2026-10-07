@@ -11,7 +11,7 @@
     >
       <!-- MODAL HEADER -->
       <div 
-        class="flex justify-between items-center px-4 py-3 shrink-0 select-none cursor-move"
+        class="flex justify-between items-center px-4 py-3 shrink-0 select-none cursor-move rounded-t-xl"
         :style="{ background: 'var(--pms-custom-theme, #006bdb)', color: 'var(--pms-custom-theme-text, #ffffff)' }"
         @mousedown="startDragModal"
       >
@@ -66,7 +66,7 @@
       </div>
 
       <!-- MODAL FOOTER -->
-      <div class="bg-white border-t border-slate-100 px-4 py-3 flex justify-center space-x-3 shrink-0">
+      <div class="bg-white border-t border-slate-100 px-4 py-3 flex justify-center space-x-3 shrink-0 rounded-b-xl">
         <button 
           @click="close" 
           class="btn-pms-close"

@@ -9,58 +9,64 @@
     >
       <!-- MODAL HEADER -->
       <div 
-        class="bg-[#243c5a] text-white flex justify-between items-center px-4 py-3 shrink-0 select-none cursor-move"
+        class="text-white flex justify-between items-center px-4 py-2.5 shrink-0 select-none cursor-move rounded-t-xl"
+        :style="{ background: topbarThemeBg, color: 'var(--pms-custom-theme-text, #ffffff)' }"
         @mousedown="startDragModal"
       >
-        <div class="flex items-center space-x-2 font-black text-xs uppercase tracking-wider">
-            <i class="fa-solid fa-clone text-sky-400"></i>
-            <span>Nhân bản đăng ký phòng</span>
+        <div class="flex items-center space-x-2 font-semibold text-xs uppercase tracking-wider">
+          <i class="fa-solid fa-clone"></i>
+          <span>Nhân bản đăng ký phòng</span>
         </div>
         <button 
-          class="hover:text-white bg-red-500/20 px-1.5 py-0.5 rounded-md cursor-pointer border-none bg-transparent" 
+          class="hover:opacity-80 p-1 rounded cursor-pointer border-none bg-transparent text-white" 
           @click="close"
+          title="Đóng"
         >
-          <i class="fa-solid fa-xmark text-red-400"></i>
+          <i class="fa-solid fa-xmark text-sm"></i>
         </button>
       </div>
 
       <!-- MODAL BODY -->
-      <div class="p-5 flex flex-col gap-4 text-xs font-semibold text-slate-700">
-        <p class="text-slate-500 leading-relaxed font-medium">
+      <div class="p-5 flex flex-col gap-4 text-xs font-normal text-[#000000D9]">
+        <p class="text-slate-600 leading-relaxed text-xs">
           Nhân bản đăng ký này sang một thời gian mới. Toàn bộ thông tin khách hàng, loại phòng, số lượng phòng và đơn giá sẽ được sao chép tự động.
         </p>
 
         <div class="grid grid-cols-2 gap-3 mt-2">
           <div>
-            <label class="block text-slate-500 mb-1 font-bold">Ngày đến mới</label>
-            <input 
-              type="date" 
+            <label class="block text-[#000000D9] mb-1 font-semibold text-xs">Ngày đến mới <span class="text-red-500">*</span></label>
+            <SingleDatePicker
               v-model="arrivalDate"
-              class="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 bg-white"
+              placeholder="dd/mm/yy"
+              input-class="!h-[32px] !py-0 !px-2.5 !rounded-lg !border-slate-200 !text-xs !font-normal"
             />
           </div>
           <div>
-            <label class="block text-slate-500 mb-1 font-bold">Ngày đi mới</label>
-            <input 
-              type="date" 
+            <label class="block text-[#000000D9] mb-1 font-semibold text-xs">Ngày đi mới <span class="text-red-500">*</span></label>
+            <SingleDatePicker
               v-model="departureDate"
-              class="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 bg-white"
+              :min-date="arrivalDate"
+              placeholder="dd/mm/yy"
+              input-class="!h-[32px] !py-0 !px-2.5 !rounded-lg !border-slate-200 !text-xs !font-normal"
             />
           </div>
         </div>
       </div>
 
       <!-- MODAL FOOTER -->
-      <div class="bg-slate-50 border-t border-slate-100 px-4 py-3 flex justify-end space-x-2.5 shrink-0">
+      <div class="bg-slate-50 border-t border-slate-100 px-4 py-3 flex justify-end space-x-2 shrink-0 rounded-b-xl">
         <button 
           @click="close" 
-          class="px-4 py-2 border border-slate-200 text-slate-600 font-bold text-xs rounded-lg hover:bg-slate-100 cursor-pointer transition bg-white"
+          type="button"
+          class="btn-pms-close"
         >
-          Hủy
+          <i class="fa-solid fa-xmark"></i>
+          <span>Đóng</span>
         </button>
         <button 
           @click="handleConfirmCopy" 
-          class="bg-sky-500 hover:bg-sky-600 text-white font-bold text-xs px-4 py-2 rounded-lg cursor-pointer shadow-sm flex items-center space-x-1.5 transition border-none"
+          type="button"
+          class="btn-pms-primary"
         >
           <i class="fa-solid fa-check"></i>
           <span>Xác nhận nhân bản</span>
@@ -71,9 +77,11 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
+import SingleDatePicker from '@/components/SingleDatePicker.vue'
 import { copyBooking } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
+import { useAuthStore } from '@/stores/auth-store'
 
 const props = defineProps({
   show: Boolean,
@@ -85,6 +93,11 @@ const props = defineProps({
 const emit = defineEmits(['update:show', 'copied'])
 
 const uiStore = useUiStore()
+const authStore = useAuthStore()
+
+const topbarThemeBg = computed(() => {
+  return authStore.themeColor || 'var(--pms-custom-theme, #006bdb)'
+})
 
 // ==================== DRAGGABLE MODAL POSITION ====================
 const modalPos = ref({ x: 0, y: 0 })

@@ -10,18 +10,19 @@
     >
       <!-- HEADER -->
       <div 
-        class="bg-[#243c5a] text-white flex justify-between items-center px-4 py-3 shrink-0 cursor-move"
+        class="text-white flex justify-between items-center px-4 py-2.5 shrink-0 cursor-move rounded-t-xl"
+        :style="{ background: topbarThemeBg, color: 'var(--pms-custom-theme-text, #ffffff)' }"
         @mousedown="startDragModal"
       >
-        <div class="flex items-center space-x-2 font-semibold text-sm uppercase tracking-wider">
-          <i class="fa-solid fa-mug-saucer text-sky-300"></i>
+        <div class="flex items-center space-x-2 font-semibold text-xs uppercase tracking-wider">
+          <i class="fa-solid fa-mug-saucer"></i>
           <span>Chi tiết ăn sáng - PHÒNG {{ room?.roomNumber || 'CHƯA GÁN' }} ({{ room?.type }})</span>
         </div>
         <div class="flex items-center space-x-2">
           <!-- Help Icon -->
-          <i class="fa-solid fa-circle-question text-slate-300 hover:text-white text-lg cursor-pointer transition mr-1" title="Hướng dẫn tính phụ phí"></i>
-          <button class="hover:text-white bg-red-500/20 px-1.5 py-0.5 rounded-md cursor-pointer border-none bg-transparent" @click="close">
-            <i class="fa-solid fa-xmark text-red-400"></i>
+          <i class="fa-solid fa-circle-question text-white/80 hover:text-white text-base cursor-pointer transition mr-1" title="Hướng dẫn tính phụ phí"></i>
+          <button class="hover:opacity-80 p-1 rounded cursor-pointer border-none bg-transparent text-white" @click="close" title="Đóng">
+            <i class="fa-solid fa-xmark text-sm"></i>
           </button>
         </div>
       </div>
@@ -405,7 +406,7 @@
         </div>
 
         <!-- Note Text -->
-        <div class="bg-slate-50 rounded-xl p-4 text-[11px] text-slate-600 space-y-1.5 border border-slate-200">
+        <div class="bg-slate-50 rounded-lg p-4 text-[11px] text-slate-600 space-y-1.5 border border-slate-200">
           <p class="font-extrabold text-slate-800 flex items-center">
             <i class="fa-solid fa-circle-info text-sky-600 mr-1.5 text-xs"></i>
             Khi trẻ em có ăn sáng - "Phụ phí" ăn sáng được tính như sau:
@@ -418,26 +419,29 @@
       </div>
 
       <!-- FOOTER -->
-      <div class="bg-slate-50 border-t border-slate-200 px-4 py-3 shrink-0 flex items-center justify-end space-x-2">
+      <div class="bg-slate-50 border-t border-slate-200 px-4 py-3 shrink-0 flex items-center justify-end space-x-2 rounded-b-xl">
         <button
+          type="button"
           @click="save"
-          class="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4.5 py-2 rounded-lg cursor-pointer transition flex items-center space-x-1.5 border-none shadow-sm"
+          class="btn-pms-primary"
           :disabled="isLoading || localChildren.length === 0"
         >
           <i class="fa-solid fa-floppy-disk"></i>
           <span>Lưu</span>
         </button>
         <button
+          type="button"
           @click="revert"
-          class="bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 font-bold text-xs px-4.5 py-2 rounded-lg cursor-pointer transition flex items-center space-x-1.5 shadow-sm"
+          class="btn-pms-secondary"
           :disabled="isLoading || localChildren.length === 0"
         >
           <i class="fa-solid fa-rotate-left"></i>
           <span>Quay lại</span>
         </button>
         <button
+          type="button"
           @click="close"
-          class="bg-slate-500 hover:bg-slate-600 text-white font-bold text-xs px-4.5 py-2 rounded-lg cursor-pointer transition flex items-center space-x-1.5 border-none shadow-sm"
+          class="btn-pms-close"
         >
           <i class="fa-solid fa-xmark"></i>
           <span>Đóng</span>
@@ -452,7 +456,13 @@ import { ref, watch, computed } from 'vue'
 import { fetchBookingChildren, updateChildBreakfastDetail } from '@/services/booking-service'
 import { fetchHotelSettings } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
+import { useAuthStore } from '@/stores/auth-store'
 import http from '@/services/http'
+
+const authStore = useAuthStore()
+const topbarThemeBg = computed(() => {
+  return authStore.themeColor || 'var(--pms-custom-theme, #006bdb)'
+})
 import {
   applyDetailBreakfastField,
   applyParentBreakfastField,
@@ -665,9 +675,23 @@ function cleanCurrency(val) {
 
 function formatDateVi(dateStr) {
   if (!dateStr) return ''
-  const d = new Date(dateStr)
-  if (isNaN(d)) return dateStr
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
+  const str = String(dateStr).trim()
+  const parts = str.split(/[-\/]/)
+  if (parts.length === 3) {
+    if (parts[0].length === 4) {
+      const yy = parts[0].slice(-2)
+      return `${parts[2].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${yy}`
+    } else if (parts[2].length === 4) {
+      const yy = parts[2].slice(-2)
+      return `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${yy}`
+    } else if (parts[2].length === 2) {
+      return `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[2]}`
+    }
+  }
+  const d = new Date(str)
+  if (isNaN(d)) return str
+  const yy = String(d.getFullYear()).slice(-2)
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${yy}`
 }
 
 function close() {

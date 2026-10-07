@@ -10,16 +10,17 @@
     >
       <!-- MODAL HEADER -->
       <div 
-        class="bg-[#243c5a] text-white flex justify-between items-center px-4 py-2 shrink-0 cursor-move select-none"
+        class="text-white flex justify-between items-center px-4 py-2.5 shrink-0 cursor-move select-none rounded-t-xl"
+        :style="{ background: topbarThemeBg, color: 'var(--pms-custom-theme-text, #ffffff)' }"
         @mousedown="startDragModal"
       >
         <div class="flex items-center space-x-2 font-semibold text-xs uppercase tracking-wider">
-          <i class="fa-solid fa-trash-can text-red-300"></i>
+          <i class="fa-solid fa-trash-can"></i>
           <span v-if="allRooms.length <= 1">Xóa dịch vụ bổ sung - PHÒNG {{ room?.roomNumber || 'CHƯA GÁN' }}</span>
           <span v-else>Xóa dịch vụ bổ sung - {{ allRooms.length }} PHÒNG ĐÃ CHỌN</span>
         </div>
-        <button class="hover:text-white bg-red-500/20 px-1.5 py-0.5 rounded-md cursor-pointer border-none bg-transparent" @click="close">
-          <i class="fa-solid fa-xmark text-red-400"></i>
+        <button class="hover:opacity-80 p-1 rounded cursor-pointer border-none bg-transparent text-white" @click="close" title="Đóng">
+          <i class="fa-solid fa-xmark text-sm"></i>
         </button>
       </div>
 
@@ -133,7 +134,7 @@
       </div>
 
       <!-- MODAL FOOTER -->
-      <div class="bg-slate-50 border-t border-slate-200 px-4 py-2.5 shrink-0 flex items-center justify-between">
+      <div class="bg-slate-50 border-t border-slate-200 px-4 py-2.5 shrink-0 flex items-center justify-between rounded-b-xl">
         <div class="text-xs text-slate-500">
           <span v-if="selectedIds.length > 0" class="text-red-600 font-bold">
             <i class="fa-solid fa-triangle-exclamation mr-1"></i>
@@ -143,15 +144,18 @@
         </div>
         <div class="flex items-center space-x-2">
           <button
+            type="button"
             @click="close"
-            class="bg-white border border-slate-300 text-slate-600 hover:bg-slate-100 font-bold text-xs px-4 py-2 rounded-lg cursor-pointer transition"
+            class="btn-pms-close"
           >
-            Hủy
+            <i class="fa-solid fa-xmark"></i>
+            <span>Đóng</span>
           </button>
           <button
+            type="button"
             @click="confirmDelete"
             :disabled="selectedIds.length === 0 || isDeleting"
-            class="bg-red-500 hover:bg-red-600 disabled:bg-slate-300 disabled:cursor-not-allowed text-white font-bold text-xs px-4 py-2 rounded-lg cursor-pointer transition flex items-center space-x-1.5 border-none"
+            class="btn-pms-danger"
           >
             <i v-if="isDeleting" class="fa-solid fa-spinner fa-spin"></i>
             <i v-else class="fa-solid fa-trash-can"></i>
@@ -170,6 +174,7 @@ import {
   deleteBookingRoomServicesBulk
 } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
+import { useAuthStore } from '@/stores/auth-store'
 
 const props = defineProps({
   show: Boolean,
@@ -181,6 +186,11 @@ const props = defineProps({
 const emit = defineEmits(['update:show', 'deleted'])
 
 const uiStore = useUiStore()
+const authStore = useAuthStore()
+
+const topbarThemeBg = computed(() => {
+  return authStore.themeColor || 'var(--pms-custom-theme, #006bdb)'
+})
 
 // ==================== DRAGGABLE MODAL POSITION ====================
 const modalPos = ref({ x: 0, y: 0 })

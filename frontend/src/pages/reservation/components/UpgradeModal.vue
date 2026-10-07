@@ -9,33 +9,34 @@
     >
       <!-- HEADER -->
       <div 
-        class="bg-[#243c5a] text-white flex justify-between items-center px-4 py-3 shrink-0 select-none cursor-move"
+        class="text-white flex justify-between items-center px-4 py-2.5 shrink-0 select-none cursor-move rounded-t-xl"
+        :style="{ background: topbarThemeBg }"
         @mousedown="startDragModal"
       >
-        <div class="flex items-center space-x-2 font-black text-xs uppercase tracking-wider">
-          <i class="fa-solid fa-arrow-up text-sky-400"></i>
+        <div class="flex items-center space-x-2 font-bold text-xs uppercase tracking-wider text-white">
+          <i class="fa-solid fa-arrow-up text-white"></i>
           <span>Nâng hạng phòng</span>
         </div>
-        <button class="hover:text-white bg-red-500/20 px-1.5 py-0.5 rounded-md cursor-pointer border-none bg-transparent" @click="close">
-          <i class="fa-solid fa-xmark text-red-400"></i>
+        <button class="hover:bg-white/10 p-1 rounded-md cursor-pointer border-none bg-transparent text-white" @click="close">
+          <i class="fa-solid fa-xmark text-sm"></i>
         </button>
       </div>
 
       <!-- BODY -->
       <div class="p-5 space-y-4 flex-1 overflow-y-auto">
         <!-- PHÒNG ĐÃ CHỌN -->
-        <div class="text-[10px] font-black text-slate-400 tracking-wider uppercase">PHÒNG ĐÃ CHỌN ({{ targetRooms.length }})</div>
-        <div class="border border-slate-200 rounded-xl overflow-hidden shadow-xs">
+        <div class="text-[10px] font-semibold text-slate-400 tracking-wider uppercase">PHÒNG ĐÃ CHỌN ({{ targetRooms.length }})</div>
+        <div class="border border-slate-200 rounded-lg overflow-hidden shadow-xs">
           <table class="w-full text-left text-xs border-collapse">
             <thead>
-              <tr class="bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold h-8">
+              <tr class="bg-slate-50 border-b border-slate-200 text-slate-700 font-semibold h-8">
                 <th class="p-2.5">Phòng</th>
                 <th class="p-2.5">Hạng hiện tại</th>
                 <th class="p-2.5">Khách</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="r in targetRooms" :key="r.id" class="border-b border-slate-100 hover:bg-slate-50/30 h-9 font-semibold text-slate-700">
+              <tr v-for="r in targetRooms" :key="r.id" class="border-b border-slate-100 hover:bg-slate-50/30 h-9 font-normal text-slate-700">
                 <td class="p-2.5 font-bold text-sky-600">{{ r.roomNumber || 'Chưa gán' }}</td>
                 <td class="p-2.5">{{ r.type || r.shape || '-' }}</td>
                 <td class="p-2.5 text-slate-500">{{ r.guestName || '-' }}</td>
@@ -45,14 +46,14 @@
         </div>
 
         <!-- CHỌN HẠNG MỚI (GRID LAYOUT) -->
-        <div class="grid grid-cols-2 gap-4 text-xs font-bold text-slate-700">
+        <div class="grid grid-cols-2 gap-4 text-xs text-slate-700">
           <!-- Loại phòng -->
           <div>
-            <label class="block text-slate-600 mb-1.5 font-bold">Loại phòng</label>
+            <label class="block text-slate-700 mb-1.5 font-semibold">Loại phòng <span class="text-red-500">*</span></label>
             <select 
               v-model="upgradeTargetClassId" 
               @change="handleClassChange"
-              class="w-full border border-yellow-300 bg-yellow-50/50 rounded-lg h-9 px-3 text-xs font-semibold text-slate-850 focus:outline-none focus:ring-1 focus:ring-yellow-400 focus:border-yellow-400 cursor-pointer"
+              class="w-full border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg h-9 px-3 text-xs font-normal text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 cursor-pointer"
             >
               <option :value="null" disabled>— Chọn loại phòng —</option>
               <option v-for="rc in roomClasses" :key="rc.id" :value="rc.id">{{ rc.name }}</option>
@@ -61,11 +62,11 @@
 
           <!-- Dạng phòng -->
           <div>
-            <label class="block text-slate-600 mb-1.5 font-bold">Dạng phòng</label>
+            <label class="block text-slate-700 mb-1.5 font-semibold">Dạng phòng <span class="text-red-500">*</span></label>
             <select 
               v-model="upgradeTargetFormId" 
               @change="handleFormChange"
-              class="w-full border border-yellow-300 bg-yellow-50/50 rounded-lg h-9 px-3 text-xs font-semibold text-slate-850 focus:outline-none focus:ring-1 focus:ring-yellow-400 focus:border-yellow-400 cursor-pointer"
+              class="w-full border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg h-9 px-3 text-xs font-normal text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 cursor-pointer"
             >
               <option :value="null" disabled>— Chọn dạng phòng —</option>
               <option v-for="rf in availableForms" :key="rf.id" :value="rf.id">{{ rf.name }}</option>
@@ -74,13 +75,13 @@
 
           <!-- Mã giá phòng -->
           <div>
-            <label class="block text-slate-600 mb-1.5 font-bold">Mã giá phòng</label>
+            <label class="block text-slate-700 mb-1.5 font-semibold">Mã giá phòng</label>
             <select 
               v-model="upgradeTargetRateCode" 
               @change="handleRateCodeChange"
               :disabled="!upgradeChangePrice"
-              class="w-full border rounded-lg h-9 px-3 text-xs font-semibold focus:outline-none transition-colors border-slate-200"
-              :class="!upgradeChangePrice ? 'bg-[#f1f1f1] text-[#a3a3a3] cursor-not-allowed' : 'bg-white text-slate-800 focus:ring-1 focus:ring-sky-500 cursor-pointer'"
+              class="w-full border rounded-lg h-9 px-3 text-xs font-normal focus:outline-none transition-colors border-slate-200"
+              :class="!upgradeChangePrice ? 'bg-[#f1f1f1] text-[#a8b0bf] cursor-not-allowed' : 'bg-white text-slate-800 focus:ring-1 focus:ring-sky-500 cursor-pointer'"
             >
               <option value="">Chọn mã giá phòng</option>
               <option v-for="rc in roomRateCodes" :key="rc.id" :value="rc.Ma">{{ rc.Ma }}</option>
@@ -89,14 +90,14 @@
 
           <!-- Giá phòng -->
           <div>
-            <label class="block text-slate-600 mb-1.5 font-bold">Giá phòng</label>
+            <label class="block text-slate-700 mb-1.5 font-semibold">Giá phòng</label>
             <input 
               type="text" 
               :value="formatCurrencyInput(upgradeTargetPrice)"
               @input="e => upgradeTargetPrice = cleanCurrencyValue(e.target.value)"
               :disabled="!upgradeChangePrice"
-              class="w-full border rounded-lg h-9 px-3 text-xs font-semibold focus:outline-none transition-colors border-slate-200 text-right font-bold"
-              :class="!upgradeChangePrice ? 'bg-[#f1f1f1] text-[#a3a3a3] cursor-not-allowed' : 'bg-white text-slate-800 focus:ring-1 focus:ring-sky-500'"
+              class="w-full border rounded-lg h-9 px-3 text-xs font-normal focus:outline-none transition-colors border-slate-200 text-right font-medium"
+              :class="!upgradeChangePrice ? 'bg-[#f1f1f1] text-[#a8b0bf] cursor-not-allowed' : 'bg-white text-slate-800 focus:ring-1 focus:ring-sky-500'"
             />
           </div>
 
@@ -109,23 +110,16 @@
               @change="handleToggleChangePrice"
               class="rounded border-slate-300 text-sky-600 focus:ring-sky-500 w-3.5 h-3.5 cursor-pointer"
             />
-            <label for="upgradeChangePrice" class="text-xs font-extrabold text-slate-700 cursor-pointer">Thay đổi giá</label>
+            <label for="upgradeChangePrice" class="text-xs font-semibold text-slate-700 cursor-pointer">Thay đổi giá</label>
           </div>
         </div>
       </div>
 
       <!-- FOOTER -->
-      <div class="bg-slate-50 border-t border-slate-100 px-4 py-3 shrink-0 flex justify-end items-center space-x-2">
-        <button 
-          @click="close" 
-          class="bg-[#72c0e5] hover:bg-[#5bb2dc] text-white border-none rounded-lg font-bold text-xs px-4 py-2 cursor-pointer shadow-sm flex items-center space-x-1.5 transition"
-        >
-          <i class="fa-solid fa-circle-xmark"></i>
-          <span>Đóng</span>
-        </button>
+      <div class="bg-slate-50 border-t border-slate-100 px-4 py-3 shrink-0 flex justify-end items-center space-x-2 rounded-b-xl">
         <button 
           @click="confirmUpgrade" 
-          class="bg-[#72c0e5] hover:bg-[#5bb2dc] text-white border-none rounded-lg font-bold text-xs px-4 py-2 cursor-pointer shadow-sm flex items-center space-x-1.5 transition"
+          class="btn-pms-primary"
         >
           <i class="fa-solid fa-floppy-disk"></i>
           <span>Lưu</span>
@@ -138,6 +132,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { upgradeRoom } from '@/services/booking-service'
+import { useAuthStore } from '@/stores/auth-store'
 import { useUiStore } from '@/stores/ui-store'
 
 const props = defineProps({
@@ -151,7 +146,12 @@ const props = defineProps({
 
 const emit = defineEmits(['update:show', 'upgraded'])
 
+const authStore = useAuthStore()
 const uiStore = useUiStore()
+
+const topbarThemeBg = computed(() => {
+  return authStore.settings?.topbar_color || 'var(--pms-custom-theme, #006bdb)'
+})
 
 // ==================== DRAGGABLE MODAL POSITION ====================
 const modalPos = ref({ x: 0, y: 0 })
