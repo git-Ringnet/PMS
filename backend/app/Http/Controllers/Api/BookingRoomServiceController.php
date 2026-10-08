@@ -713,6 +713,53 @@ class BookingRoomServiceController extends Controller
                 'description' => $bill->DescriptionServive, 'source_room_id' => $sourceRoom->id];
         })->filter()->values();
 
+        // Một số bill Checkout/legacy không có mirror trong booking_room_services.
+        // Đọc trực tiếp owner hiện tại của ServiceBill để không bỏ sót các bill này.
+        $directRoomBills = ServiceBill::whereNull('PaymentId')
+            ->where('Status', 1)
+            ->where('Edit', 0)
+            ->where(function ($query) use ($roomLookupIds) {
+                $query->whereIn('RentalRoomId2', $roomLookupIds)
+                    ->orWhereIn('RentalRoomId1', $roomLookupIds);
+            })
+            ->get()
+            ->map(function (ServiceBill $bill) use ($rooms, $targetRoom, $targetGuestId) {
+                $sourceRoom = $rooms->first(fn (BookingRoom $room) => $this->serviceBillBelongsToRoom($bill, $room));
+                if (!$sourceRoom) return null;
+
+                $billGuestId = $bill->CustomerId2 ?: $bill->CustomerId1;
+                if ($targetRoom
+                    && $targetGuestId
+                    && (string) $sourceRoom->id === (string) $targetRoom->id
+                    && $billGuestId
+                    && (string) $billGuestId === (string) $targetGuestId) {
+                    return null;
+                }
+
+                $serviceGuest = $billGuestId
+                    ? $sourceRoom->guests->firstWhere('guest_id', (string) $billGuestId)
+                    : null;
+                $guest = optional($serviceGuest?->guest)->full_name
+                    ?: optional($sourceRoom->guests->firstWhere('is_primary', 1)?->guest)->full_name
+                    ?: $bill->Guest;
+
+                return [
+                    'bill_id' => $bill->Ma,
+                    'category' => strtoupper(trim((string) ($bill->ServiceId ?: 'DV'))),
+                    'booking_code' => $sourceRoom->booking?->booking_code ?: $sourceRoom->booking_id,
+                    'guest_id' => $billGuestId,
+                    'guest_name' => $guest,
+                    'room_number' => $sourceRoom->room_number,
+                    'amount' => (float) $bill->Amount,
+                    'description' => $bill->DescriptionServive,
+                    'source_room_id' => $sourceRoom->id,
+                ];
+            })
+            ->filter()
+            ->values();
+
+        $items = $items->concat($directRoomBills)->unique('bill_id')->values();
+
         // A bill already collected to Master has no booking_room_services row by design.
         // Keep it transferable to another room in the same booking.
         if ($targetRoom) {
@@ -732,7 +779,7 @@ class BookingRoomServiceController extends Controller
                     'description' => $bill->DescriptionServive,
                     'source_room_id' => null,
                 ]);
-            $items = $items->concat($masterItems)->values();
+            $items = $items->concat($masterItems)->unique('bill_id')->values();
         }
 
         $categoryCodes = $items->pluck('category')->filter()->unique()->values();
@@ -785,7 +832,9 @@ class BookingRoomServiceController extends Controller
                 $bill = ServiceBill::lockForUpdate()->findOrFail($billId);
                 if ($bill->PaymentId !== null || (int) $bill->Status !== 1 || (int) $bill->Edit === 1) abort(422, 'Chỉ được chuyển bill chưa thanh toán.');
                 $isMasterSource = (int) $bill->RegisterID2 === (int) $targetBooking->id && empty($bill->RentalRoomId2);
-                $sourceRoom = $isMasterSource ? null : BookingRoom::where('id', $bill->RentalRoomId2)->where('booking_id', $targetBooking->id)->lockForUpdate()->first();
+                $sourceRoomId = $bill->RentalRoomId2 ?: $bill->RentalRoomId1;
+                $sourceRoom = $isMasterSource ? null : BookingRoom::where('id', $sourceRoomId)->where('booking_id', $targetBooking->id)->lockForUpdate()->first();
+                if ($sourceRoom && !$this->serviceBillBelongsToRoom($bill, $sourceRoom)) $sourceRoom = null;
                 $sameRoomGuestTransfer = false;
                 if (!$isMasterSource && $sourceRoom && $targetRoom && $sourceRoom->id === $targetRoom->id && $targetGuest) {
                     $sameRoomGuestTransfer = true;
@@ -795,7 +844,10 @@ class BookingRoomServiceController extends Controller
                 $services = $sourceRoom
                     ? BookingRoomService::where('booking_room_id', $sourceRoom->id)->where('service_bill_id', $bill->Ma)->lockForUpdate()->get()
                     : collect();
-                if ($sourceRoom && $services->isEmpty()) abort(422, 'Không tìm thấy chi tiết dịch vụ của bill.');
+                $billGuestId = $bill->CustomerId2 ?: $bill->CustomerId1;
+                if ($sameRoomGuestTransfer && $billGuestId && (string) $billGuestId === (string) $targetGuest->guest_id) {
+                    abort(422, 'Không được chuyển dịch vụ của chính khách đang nhận bill.');
+                }
                 if ($sameRoomGuestTransfer && $services->contains(fn ($service) => (string) $service->guest_id === (string) $targetGuest->guest_id)) {
                     abort(422, 'Không được chuyển dịch vụ của chính khách đang nhận bill.');
                 }
@@ -817,6 +869,36 @@ class BookingRoomServiceController extends Controller
                 $details = ServiceBillDetail::where('BillServiceId', $bill->Ma)->get();
                 foreach ($details as $detail) { $p = $detail->replicate(); $p->BillServiceId = $positive->Ma; $p->save(); $n = $detail->replicate(); $n->BillServiceId = $negative->Ma; $n->Amount = -abs((float) $detail->Amount); $n->save(); }
                 $services->each(function (BookingRoomService $service) use ($targetRoom, $targetGuest, $positive) { $copy = $service->replicate(); $service->delete(); if (!$targetRoom) return; $copy->booking_room_id = $targetRoom->id; $copy->guest_id = $targetGuest?->guest_id; $copy->service_bill_id = $positive->Ma; $copy->folio = 1; $copy->note = mb_substr((string)$positive->DescriptionServive, 0, 950); $copy->service_name = mb_substr((string)($service->service_name ?: $positive->DescriptionServive), 0, 950); $copy->posted_at = $service->posted_at; $copy->created_at = $service->created_at; $copy->deleted_at = null; $copy->save(); });
+
+                if ($services->isEmpty() && $targetRoom) {
+                    $quantity = max((float) ($positive->Quantity ?: 1), 1);
+                    $targetService = new BookingRoomService([
+                        'booking_room_id' => $targetRoom->id,
+                        'guest_id' => $targetGuest?->guest_id,
+                        'service_bill_id' => $positive->Ma,
+                        'service_bill_detail_no' => null,
+                        'service_code' => $positive->ServiceId ?: ($positive->Outlet ?: 'DV'),
+                        'service_name' => mb_substr((string) ($positive->DescriptionServive ?: $positive->ServiceId), 0, 950),
+                        'service_date' => $positive->Date,
+                        'quantity' => $quantity,
+                        'rate' => (float) $positive->Amount / $quantity,
+                        'total_amount' => (float) $positive->Amount,
+                        'department' => $positive->DepartmentId,
+                        'note' => mb_substr((string) $positive->DescriptionServive, 0, 950),
+                        'tax' => $positive->Tax,
+                        'service_charge' => $positive->ServiceCharge,
+                        'unit' => $positive->Currency ?: 'VND',
+                        'folio' => 1,
+                        'is_room' => strtoupper((string) $positive->ServiceId) === BookingRoomService::CODE_ROOM ? 1 : 0,
+                        'is_posted' => 1,
+                        'posted_at' => $originCreatedAt,
+                        'created_by' => Auth::user()?->username ?: 'system',
+                        'updated_by' => Auth::user()?->username ?: 'system',
+                    ]);
+                    $targetService->preserveTotalAmount = true;
+                    $targetService->created_at = $originCreatedAt;
+                    $targetService->save();
+                }
 
             }
 

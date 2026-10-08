@@ -1028,6 +1028,63 @@ class BookingRoomServiceFolioTest extends TestCase
             ->assertJsonMissing(['category' => 'FO']);
     }
 
+    public function test_quick_transfer_candidates_include_checkout_bill_without_booking_room_service_mirror(): void
+    {
+        $user = $this->createFolioUser();
+        $booking = Booking::create([
+            'booking_name' => 'DIRECT-BILL', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-08',
+            'num_of_days' => 2, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
+        ]);
+        $sourceRoom = $this->makeRoom($booking, 'DIRECT-201');
+        $targetRoom = $this->makeRoom($booking, 'DIRECT-205');
+
+        $sourceBill = ServiceBill::create([
+            'Date' => '2026-08-06 00:00:00', 'OpenTime' => '10:00', 'Guest' => 'Guest source',
+            'DepartmentId' => 'FO', 'Outlet' => 'FO', 'ServiceId' => 'LA',
+            'DescriptionServive' => 'Giặt ủi',
+            'RegisterID2' => $booking->id, 'RentalRoomId2' => $sourceRoom->id,
+            'Amount' => 17250, 'Status' => 1, 'Edit' => 0, 'Username' => 'test',
+        ]);
+        $targetBill = ServiceBill::create([
+            'Date' => '2026-08-06 00:00:00', 'OpenTime' => '10:05', 'Guest' => 'Guest target',
+            'DepartmentId' => 'FO', 'Outlet' => 'FO', 'ServiceId' => 'BR',
+            'DescriptionServive' => 'Hàng đền bù',
+            'RegisterID2' => $booking->id, 'RentalRoomId2' => $targetRoom->id,
+            'Amount' => 230000, 'Status' => 1, 'Edit' => 0, 'Username' => 'test',
+        ]);
+
+        $this->actingAs($user)
+            ->getJson("/api/booking-rooms/{$targetRoom->id}/services/quick-transfer-candidates")
+            ->assertSuccessful()
+            ->assertJsonFragment([
+                'bill_id' => $sourceBill->Ma,
+                'source_room_id' => $sourceRoom->id,
+                'description' => 'Giặt ủi',
+            ])
+            ->assertJsonMissing(['bill_id' => $targetBill->Ma]);
+
+        $this->actingAs($user)
+            ->postJson("/api/booking-rooms/{$targetRoom->id}/services/quick-transfer", [
+                'bill_ids' => [$sourceBill->Ma],
+            ])
+            ->assertSuccessful();
+
+        $sourceBill->refresh();
+        $positiveBill = ServiceBill::where('RentalRoomId2', $targetRoom->id)
+            ->where('ServiceId', 'LA')
+            ->where('Edit', 0)
+            ->where('Status', 1)
+            ->firstOrFail();
+        $this->assertSame(4, (int) $sourceBill->Status);
+        $this->assertSame(1, (int) $sourceBill->Edit);
+        $this->assertDatabaseHas('booking_room_services', [
+            'booking_room_id' => $targetRoom->id,
+            'service_bill_id' => $positiveBill->Ma,
+            'service_code' => 'LA',
+            'is_posted' => 1,
+        ]);
+    }
+
     public function test_fo_service_list_only_returns_services_assigned_to_fo(): void
     {
         $user = $this->createFolioUser();
