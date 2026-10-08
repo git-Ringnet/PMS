@@ -174,7 +174,18 @@ watch(() => bulkForm.value.start_date, (newVal) => {
   }
 })
 
+const handleGlobalKeydown = (e) => {
+  if (e.key === 'Escape' || e.key === 'Esc') {
+    if (isBulkModalOpen.value) {
+      isBulkModalOpen.value = false
+    } else if (activeHistoryRoom.value) {
+      activeHistoryRoom.value = null
+    }
+  }
+}
+
 onMounted(async () => {
+  window.addEventListener('keydown', handleGlobalKeydown)
   fetchRooms()
   fetchHotelConfigs()
   try {
@@ -199,6 +210,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleGlobalKeydown)
   document.removeEventListener('click', closeAllPopovers)
   window.removeEventListener('focus', handleTabFocus)
   if (bc) {
@@ -946,32 +958,34 @@ const toggleRowMenu = (rowKey, event) => {
           <button 
             v-if="!isBatchEditing"
             @click="startBatchEdit"
-            class="px-3.5 py-1.5 border border-sky-500 hover:bg-sky-50 text-sky-600 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer h-[32px] text-xs shadow-3xs"
+            class="btn-pms-secondary h-8 px-3"
             title="Bật chế độ sửa trực tiếp danh sách phòng khóa"
           >
-            <svg class="w-3.5 h-3.5 text-sky-600" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+            <svg class="w-3.5 h-3.5 text-slate-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.83 20.013a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
             </svg>
-            Sửa
+            <span>Sửa</span>
           </button>
 
           <template v-else>
             <button 
               @click="cancelBatchEdit"
               :disabled="savingBatch"
-              class="px-3 py-1.5 border border-slate-300 hover:bg-slate-100 text-slate-600 rounded-lg font-bold flex items-center gap-1 transition-all cursor-pointer h-[32px] text-xs shadow-3xs disabled:opacity-50"
+              class="btn-pms-secondary h-8 px-3"
+              :class="{ 'opacity-50 cursor-not-allowed': savingBatch }"
             >
-              Hủy
+              <span>Hủy</span>
             </button>
             <button 
               @click="() => submitBatchSave(false)"
               :disabled="savingBatch"
-              class="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer h-[32px] text-xs shadow-2xs disabled:opacity-50"
+              class="btn-pms-primary h-8 px-3"
+              :class="{ 'opacity-50 cursor-not-allowed': savingBatch }"
             >
-              <svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
               </svg>
-              {{ savingBatch ? 'Đang lưu...' : 'Lưu' }}
+              <span>{{ savingBatch ? 'Đang lưu...' : 'Lưu' }}</span>
             </button>
           </template>
 
@@ -979,7 +993,7 @@ const toggleRowMenu = (rowKey, event) => {
           <button 
             :disabled="isBatchEditing"
             @click="submitBulkUnlock"
-            class="px-3.5 py-1.5 border border-emerald-500 hover:bg-emerald-50 text-emerald-600 rounded-md font-semibold flex items-center gap-1.5 transition-all cursor-pointer h-[32px] text-xs shadow-3xs disabled:opacity-40 disabled:cursor-not-allowed"
+            class="px-3 h-8 border border-emerald-500 hover:bg-emerald-50 text-emerald-600 rounded-lg font-semibold flex items-center gap-1.5 transition-all cursor-pointer text-xs shadow-3xs disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <RoomIcon name="unlock-outline" class="w-3.5 h-3.5 text-emerald-600" />
             <span>Mở khóa</span>
@@ -989,7 +1003,7 @@ const toggleRowMenu = (rowKey, event) => {
           <button 
             :disabled="isBatchEditing"
             @click="openBulkLockModal('OOS')"
-            class="px-3.5 py-1.5 bg-[#f97316] hover:bg-[#ea580c] text-white border-none rounded-md font-semibold flex items-center gap-1.5 transition-all cursor-pointer h-[32px] text-xs shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
+            class="px-3 h-8 bg-[#f97316] hover:bg-[#ea580c] text-white border-none rounded-lg font-semibold flex items-center gap-1.5 transition-all cursor-pointer text-xs shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <RoomIcon name="oos" class="w-3.5 h-3.5 text-white" />
             <span>Khóa phòng OOS</span>
@@ -999,7 +1013,7 @@ const toggleRowMenu = (rowKey, event) => {
           <button 
             :disabled="isBatchEditing"
             @click="openBulkLockModal('OOO')"
-            class="px-3.5 py-1.5 bg-[#ef4444] hover:bg-[#dc2626] text-white border-none rounded-md font-semibold flex items-center gap-1.5 transition-all cursor-pointer h-[32px] text-xs shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
+            class="px-3 h-8 bg-[#ef4444] hover:bg-[#dc2626] text-white border-none rounded-lg font-semibold flex items-center gap-1.5 transition-all cursor-pointer text-xs shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <RoomIcon name="ooo-outline" class="w-3.5 h-3.5 text-white" />
             <span>Khóa phòng OOO</span>
@@ -1011,7 +1025,7 @@ const toggleRowMenu = (rowKey, event) => {
       <div class="flex-1 overflow-x-auto overflow-y-auto min-h-[200px]">
         <table class="w-full text-left border-collapse text-xs">
           <thead>
-            <tr class="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold h-10 whitespace-nowrap sticky top-0 z-10 uppercase text-xs">
+            <tr class="bg-slate-50 border-b border-slate-200 text-[#000000D9] font-semibold h-9 whitespace-nowrap sticky top-0 z-10 text-xs">
               <th class="p-2.5 border-r border-slate-200 text-center w-[45px]">
                 <input 
                   type="checkbox" 
@@ -1175,7 +1189,7 @@ const toggleRowMenu = (rowKey, event) => {
                         v-model.number="editedLocks[room.currentLock.lock_id].maintenance_percent" 
                         class="border border-slate-300 rounded px-1 py-0.5 text-xs font-semibold text-slate-700 bg-white w-[50px] text-center focus:outline-sky-400"
                       />
-                      <span class="text-[11px] text-slate-400 font-bold">%</span>
+                      <span class="text-xs text-slate-400 font-semibold">%</span>
                     </div>
                   </template>
                   <template v-else>
@@ -1327,7 +1341,7 @@ const toggleRowMenu = (rowKey, event) => {
         
         <template v-else>
           <!-- Title Section -->
-          <div class="text-[9px] text-slate-400 font-black tracking-wider uppercase mb-1">Dữ liệu gần đây</div>
+          <div class="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-1">Dữ liệu gần đây</div>
           
           <!-- Event Timeline list loop -->
           <div v-for="event in timelineEvents" :key="event.id" class="flex gap-3 relative">
@@ -1344,21 +1358,21 @@ const toggleRowMenu = (rowKey, event) => {
             <!-- Card item content block -->
             <div class="flex-1 pb-4">
               <!-- Log formatted time -->
-              <div class="text-[9px] text-slate-400 font-bold mb-1">{{ formatDateTime(event.timestamp) }}</div>
+              <div class="text-xs text-slate-400 font-medium mb-1">{{ formatDateTime(event.timestamp) }}</div>
               
               <!-- Card details body -->
               <div class="bg-slate-50 border border-slate-100 rounded-xl p-3 relative hover:shadow-xs transition-shadow">
-                <h5 class="text-xs font-black text-slate-800 mb-1">{{ getTimelineEventLabel(event) }}</h5>
+                <h5 class="text-xs font-semibold text-[#000000D9] mb-1">{{ getTimelineEventLabel(event) }}</h5>
                 
                 <!-- Details specific for lock -->
-                <div v-if="event.type === 'lock'" class="text-[10px] text-slate-500 font-semibold flex flex-col gap-0.5">
+                <div v-if="event.type === 'lock'" class="text-xs text-slate-600 font-normal flex flex-col gap-0.5">
                   <div><span class="text-slate-400 font-normal">Ngày bắt đầu:</span> {{ formatDateTime(event.start_date) }}</div>
                   <div><span class="text-slate-400 font-normal">Ngày mở khóa:</span> {{ formatDateTime(event.end_date) }}</div>
-                  <div class="mt-1 font-normal italic text-slate-600"><span class="text-slate-400 not-italic font-bold">Lý do:</span> {{ event.reason || '-' }}</div>
+                  <div class="mt-1 font-normal italic text-slate-600"><span class="text-slate-400 not-italic font-semibold">Lý do:</span> {{ event.reason || '-' }}</div>
                 </div>
 
                 <!-- Details specific for unlock -->
-                <div v-else-if="event.type === 'unlock'" class="text-[10px] text-slate-500 font-semibold flex flex-col gap-0.5">
+                <div v-else-if="event.type === 'unlock'" class="text-xs text-slate-600 font-normal flex flex-col gap-0.5">
                   <div><span class="text-slate-400 font-normal">Ngày bắt đầu:</span> {{ formatDateTime(event.start_date) }}</div>
                   <div><span class="text-slate-400 font-normal">Ngày mở khóa:</span> {{ formatDateTime(event.unlock_date) }}</div>
                   <div v-if="event.unlock_username" class="mt-0.5"><span class="text-slate-400 font-normal">Người mở khóa:</span> {{ event.unlock_username }}</div>
@@ -1366,22 +1380,22 @@ const toggleRowMenu = (rowKey, event) => {
 
                 <!-- Footer meta: user and badge status -->
                 <div class="flex items-center justify-between mt-2 pt-2 border-t border-slate-150/80">
-                  <div class="flex items-center gap-1 text-[9px] text-slate-400">
-                    <svg class="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <div class="flex items-center gap-1 text-xs text-slate-400">
+                    <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
                     </svg>
                     <span>{{ event.type === 'unlock' ? (event.unlock_username || 'Admin') : (event.username || 'Admin') }}</span>
                   </div>
                   <span 
                     v-if="event.type === 'lock'"
-                    class="px-1.5 py-0.5 rounded-sm text-[8px] font-black uppercase"
+                    class="px-2 py-0.5 rounded text-xs font-semibold uppercase"
                     :class="event.maintenance_percent === 100 ? 'bg-green-50 text-green-600 border border-green-200' : 'bg-sky-50 text-sky-600 border border-sky-200'"
                   >
                     {{ event.maintenance_percent === 100 ? 'Hoàn tất' : 'Đang xử lý' }}
                   </span>
                   <span 
                     v-else
-                    class="px-1.5 py-0.5 rounded-sm text-[8px] font-black uppercase bg-emerald-50 text-emerald-600 border border-emerald-200"
+                    class="px-2 py-0.5 rounded text-xs font-semibold uppercase bg-emerald-50 text-emerald-600 border border-emerald-200"
                   >
                     Hoàn tất
                   </span>
@@ -1402,20 +1416,22 @@ const toggleRowMenu = (rowKey, event) => {
       @click.self="isBulkModalOpen = false"
     >
       <div 
-        class="bg-white shadow-2xl border border-slate-200 rounded-2xl w-[620px] max-w-[95vw]"
+        class="bg-white shadow-2xl border border-slate-200 rounded-xl w-[620px] max-w-[95vw] overflow-hidden"
         :style="{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }"
       >
         <!-- Modal Header -->
         <div 
-          class="px-5 py-3.5 flex items-center justify-between text-white border-b border-slate-100 rounded-t-2xl bg-[#8dcbf4] cursor-move select-none"
+          class="px-5 py-3 flex items-center justify-between text-white rounded-t-xl cursor-move select-none"
+          :style="{ background: 'var(--pms-custom-theme, #006bdb)', color: 'var(--pms-custom-theme-text, #ffffff)' }"
           @mousedown="startDragModal"
         >
-          <h2 class="text-xs font-black uppercase tracking-wider m-0">
+          <h2 class="text-xs font-semibold uppercase tracking-wider m-0 text-white">
             {{ editingLockId ? 'Chỉnh sửa thông tin khóa' : 'Thêm khóa' }}
           </h2>
           <button 
             @click="isBulkModalOpen = false" 
-            class="text-white hover:text-slate-100 bg-transparent border-none cursor-pointer text-sm font-black transition-colors"
+            class="text-white hover:text-slate-100 bg-transparent border-none cursor-pointer text-sm font-semibold transition-colors"
+            title="Đóng (Esc)"
           >
             ✕
           </button>
@@ -1423,13 +1439,13 @@ const toggleRowMenu = (rowKey, event) => {
 
         <!-- Modal Body Form -->
         <div 
-          class="p-5 text-slate-700 font-bold grid grid-cols-1 md:grid-cols-[7fr_5fr] gap-5"
+          class="p-5 text-[#000000D9] grid grid-cols-1 md:grid-cols-[7fr_5fr] gap-5"
         >
           <!-- Left fields col -->
           <div class="flex flex-col gap-4">
             <!-- Start Date -->
             <div class="flex flex-col gap-1">
-              <span class="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Bắt đầu</span>
+              <span class="text-xs font-semibold text-[#000000D9]">Bắt đầu</span>
               <div 
                 class="flex items-center justify-between gap-2 border border-slate-200 rounded-lg px-2.5 py-1.5 bg-slate-50/50 focus-within:border-sky-400 focus-within:bg-white transition-colors h-[32px]"
               >
@@ -1465,7 +1481,7 @@ const toggleRowMenu = (rowKey, event) => {
 
             <!-- End Date -->
             <div class="flex flex-col gap-1">
-              <span class="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Kết thúc</span>
+              <span class="text-xs font-semibold text-[#000000D9]">Kết thúc</span>
               <div 
                 class="flex items-center justify-between gap-2 border border-slate-200 rounded-lg px-2.5 py-1.5 bg-slate-50/50 focus-within:border-sky-400 focus-within:bg-white transition-colors h-[32px]"
               >
@@ -1498,11 +1514,11 @@ const toggleRowMenu = (rowKey, event) => {
 
             <!-- Room selection selector dropdown (Only visible when not editing single lock) -->
             <div class="flex flex-col gap-1 modal-room-dropdown-container">
-              <span class="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Phòng</span>
+              <span class="text-xs font-semibold text-[#000000D9]">Phòng</span>
               <div class="relative w-full">
                 <button 
                   @click.stop="editingLockId ? null : (isRoomDropdownOpen = !isRoomDropdownOpen)" 
-                  class="w-full flex items-center justify-between border border-slate-200 rounded-lg px-3 py-2 bg-slate-50/50 text-xs font-black text-slate-700 transition-all"
+                  class="w-full flex items-center justify-between border border-slate-200 rounded-lg px-3 py-2 bg-slate-50/50 text-xs font-semibold text-[#000000D9] transition-all"
                   :class="editingLockId ? 'opacity-65 cursor-not-allowed' : 'hover:border-slate-300 cursor-pointer'"
                 >
                   <span v-if="editingLockId">
@@ -1532,7 +1548,7 @@ const toggleRowMenu = (rowKey, event) => {
                       type="text" 
                       v-model="roomSearchQuery" 
                       placeholder="Tìm số phòng..." 
-                      class="border-none bg-transparent w-full focus:outline-none text-[11px] font-semibold text-slate-700"
+                      class="border-none bg-transparent w-full focus:outline-none text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF]"
                     />
                     <svg class="w-3 h-3 text-slate-400 ml-1" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -1548,7 +1564,7 @@ const toggleRowMenu = (rowKey, event) => {
                         @change="toggleSelectAllModalRooms" 
                         class="cursor-pointer"
                       />
-                      <span class="font-extrabold">Tất cả</span>
+                      <span class="font-semibold text-[#000000D9]">Tất cả</span>
                     </label>
                     <label 
                       v-for="r in modalFilteredRooms" 
@@ -1561,14 +1577,14 @@ const toggleRowMenu = (rowKey, event) => {
                         v-model="modalSelectedRoomNumbers" 
                         class="cursor-pointer"
                       />
-                      <span class="font-bold">{{ r.room_number }} - {{ r.room_type_name || '-' }}</span>
+                      <span class="font-normal text-[#000000D9]">{{ r.room_number }} - {{ r.room_type_name || '-' }}</span>
                     </label>
                   </div>
 
                   <!-- Close button inside dropdown -->
                   <button 
                     @click="isRoomDropdownOpen = false"
-                    class="w-full py-1.5 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded font-extrabold cursor-pointer border-none text-[11px] shadow-3xs transition-colors"
+                    class="w-full h-8 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-lg font-semibold cursor-pointer border-none text-xs shadow-3xs transition-colors flex items-center justify-center"
                   >
                     Xác nhận
                   </button>
@@ -1578,33 +1594,33 @@ const toggleRowMenu = (rowKey, event) => {
 
             <!-- Maintenance Progress percent -->
             <div class="flex flex-col gap-1">
-              <span class="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Tiến độ bảo trì</span>
+              <span class="text-xs font-semibold text-[#000000D9]">Tiến độ bảo trì</span>
               <div class="flex items-center border border-slate-200 rounded-lg overflow-hidden bg-slate-50/50 focus-within:border-sky-400 focus-within:bg-white transition-colors h-[32px]">
                 <input 
                   type="number" 
                   min="0" 
                   max="100" 
                   v-model="bulkForm.maintenance_percent" 
-                  class="border-none outline-none px-3 py-1.5 w-full text-xs font-bold text-slate-700 bg-transparent" 
+                  class="border-none outline-none px-3 py-1.5 w-full text-xs font-normal text-[#000000D9] bg-transparent" 
                 />
-                <span class="bg-slate-100 text-slate-500 font-black px-3.5 py-1.5 border-l border-slate-200 text-xs select-none">%</span>
+                <span class="bg-slate-100 text-slate-500 font-semibold px-3.5 py-1.5 border-l border-slate-200 text-xs select-none">%</span>
               </div>
             </div>
           </div>
 
           <!-- Right Reason note block -->
           <div class="flex flex-col gap-1">
-            <span class="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Ghi chú *</span>
+            <label class="text-xs font-semibold text-[#000000D9] block">Ghi chú <span class="text-red-500">*</span></label>
             <textarea 
               v-model="bulkForm.reason" 
               placeholder="Nhập ghi chú hoặc lý do bảo trì..."
-              class="w-full border border-slate-200 rounded-lg p-2.5 bg-slate-50/50 focus:bg-white focus:outline-sky-400 resize-none font-semibold text-xs leading-relaxed h-[138px]"
+              class="w-full border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg p-2.5 focus:outline-none focus:ring-1 focus:ring-amber-400 resize-none font-normal text-xs text-[#000000D9] leading-relaxed h-[138px]"
             ></textarea>
           </div>
         </div>
 
         <!-- Modal Footer -->
-        <div class="bg-slate-50 px-5 py-3 flex items-center justify-end gap-2 border-t border-slate-100 rounded-b-2xl">
+        <div class="bg-slate-50 px-5 py-3 flex items-center justify-end gap-2 border-t border-slate-100 rounded-b-xl">
           <button 
             @click="isBulkModalOpen = false" 
             class="btn-pms-close"
