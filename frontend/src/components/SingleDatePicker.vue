@@ -28,6 +28,14 @@ const props = defineProps({
   inputClass: {
     type: String,
     default: ''
+  },
+  textInputClass: {
+    type: String,
+    default: ''
+  },
+  fourDigitYear: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -96,11 +104,11 @@ const formatDateDMY = (dateStr) => {
   if (parts.length === 3) {
     if (parts[0].length === 4) {
       // YYYY-MM-DD
-      const yy = parts[0].slice(-2)
-      return `${parts[2].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${yy}`
+      const year = props.fourDigitYear ? parts[0] : parts[0].slice(-2)
+      return `${parts[2].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${year}`
     } else if (parts[2].length === 4) {
-      const yy = parts[2].slice(-2)
-      return `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${yy}`
+      const year = props.fourDigitYear ? parts[2] : parts[2].slice(-2)
+      return `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${year}`
     } else if (parts[2].length === 2) {
       return `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[2]}`
     }
@@ -241,7 +249,7 @@ function handleInputClick() {
       @keydown.enter.prevent="handleTextBlur"
       @click="handleInputClick"
       class="w-full bg-transparent border-none outline-none text-xs font-semibold text-gray-900 placeholder:text-slate-400 placeholder:font-normal p-0 cursor-pointer"
-      :class="disabled ? 'cursor-not-allowed text-slate-500' : ''"
+      :class="[disabled ? 'cursor-not-allowed text-slate-500' : '', textInputClass]"
       autocomplete="off"
     />
     <div class="flex items-center shrink-0 ml-1">
@@ -252,7 +260,7 @@ function handleInputClick() {
         class="p-0.5 text-slate-400 hover:text-red-500 shrink-0 bg-transparent border-none cursor-pointer flex items-center justify-center transition-colors mr-1"
         title="Xóa ngày"
       >
-        <i class="fa-solid fa-xmark text-[11px]"></i>
+        <i class="fa-solid fa-xmark" :class="fourDigitYear ? 'text-xs' : 'text-[11px]'"></i>
       </button>
       <VueDatePicker
         ref="datepickerRef"
@@ -264,7 +272,7 @@ function handleInputClick() {
         :disabled="disabled"
         :teleport="true"
         auto-apply
-        format="dd/MM/yy"
+        :format="fourDigitYear ? 'dd/MM/yyyy' : 'dd/MM/yy'"
         menu-class-name="custom-datepicker-menu"
         class="custom-single-datepicker shrink-0"
       >

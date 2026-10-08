@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useUiStore } from '@/stores/ui-store'
+import { useAuthStore } from '@/stores/auth-store'
 import http from '@/services/http'
 import {
   fetchRoomGuests,
@@ -26,8 +27,8 @@ import {
 import SpecialRequestsModal from '@/pages/reservation/components/SpecialRequestsModal.vue'
 import ChildBreakfastModal from '@/pages/reservation/components/ChildBreakfastModal.vue'
 import ExtraBedModal from '@/pages/reservation/components/ExtraBedModal.vue'
+import RoomInfoDatePicker from '@/pages/reservation/components/RoomInfoDatePicker.vue'
 import TimePicker24h from '@/components/TimePicker24h.vue'
-import SingleDatePicker from '@/components/SingleDatePicker.vue'
 import { resolveRateCodePrice } from '@/utils/rate-code-pricing.js'
 
 const props = defineProps({
@@ -51,6 +52,11 @@ function notifyChanges() {
 const router = useRouter()
 const route = useRoute()
 const uiStore = useUiStore()
+const authStore = useAuthStore()
+
+const topbarThemeBg = computed(() => {
+  return authStore.settings?.topbar_color || 'var(--pms-custom-theme, #006bdb)'
+})
 
 const isInHouse = computed(() => {
   const s = props.room?.booking_room_status ?? props.room?.bookingRoomStatus ?? props.room?.status
@@ -550,7 +556,7 @@ function onIdNumberFocus() {
 function selectSuggestion(guest) {
   if (!guest) return
   // Kế thừa thông tin khách cũ vào form hiện tại (không thay đổi ID slot khách của phòng)
-  formGuest.value.name = guest.full_name ? guest.full_name.toUpperCase() : formGuest.value.name
+  formGuest.value.name = guest.full_name || formGuest.value.name
   if (guest.title) formGuest.value.title = guest.title
   if (guest.dob) formGuest.value.dob = guest.dob
   if (guest.nationality_code) {
@@ -669,6 +675,7 @@ function handleGlobalClick(e) {
 
 onMounted(() => {
   window.addEventListener('click', handleGlobalClick, true)
+  window.addEventListener('keydown', handleKeyDown)
   loadRateCodes()
   loadSystemDate()
   loadResidenceTypes()
@@ -677,6 +684,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('click', handleGlobalClick, true)
+  window.removeEventListener('keydown', handleKeyDown)
 })
 
 // Helper: Calculate next incremental default name (Guest 1, Guest 2, Child 1...)
@@ -952,7 +960,7 @@ function selectGuest(g) {
   if (g) {
     formGuest.value = {
       title: g.title || 'Mr.',
-      name: g.name ? g.name.toUpperCase() : '',
+      name: g.name || '',
       nationality: g.nationality || 'VN',
       dob: formatDateForInput(g.dob) || '',
       email: g.email || '',
@@ -984,7 +992,7 @@ function selectChild(c) {
   showIdNumberSuggestions.value = false
   formGuest.value = {
     title: c.title || 'Mr.',
-    name: c.name ? c.name.toUpperCase() : '',
+    name: c.name || '',
     nationality: c.nationality || 'VN',
     dob: formatDateForInput(c.dob) || '',
     email: c.email || '',
@@ -1433,6 +1441,45 @@ function handleOverlayClick(e) {
   }
 }
 
+function handleKeyDown(e) {
+  if (e.key !== 'Escape') return
+  if (showSpecialRequestsModal.value || showChildBreakfastModal.value || showExtraBedModal.value) return
+  emit('close')
+}
+
+function clearGuestField(field) {
+  if (!isEditingMode.value) return
+  formGuest.value[field] = ''
+  if (field === 'name') {
+    searchQueryName.value = ''
+    nameSuggestions.value = []
+    showNameSuggestions.value = false
+  }
+  if (field === 'id_number') {
+    searchQueryIdNumber.value = ''
+    idNumberSuggestions.value = []
+    showIdNumberSuggestions.value = false
+  }
+  if (field === 'nationality') {
+    nationalitySearch.value = ''
+    showNationalitySuggestions.value = false
+  }
+}
+
+function clearStayField(field) {
+  if (!isEditingMode.value) return
+  stayInfo.value[field] = ''
+}
+
+function clearPricingField(field) {
+  if (!isEditingMode.value) return
+  if (field === 'rate_code') {
+    clearRateCode()
+    return
+  }
+  pricingInfo.value[field] = ''
+}
+
 function formatDateForInput(d) {
   if (!d) return ''
   const str = String(d)
@@ -1494,7 +1541,10 @@ function parseNumber(val) {
       <div class="card" @click.stop>
         
         <!-- HEADER -->
-        <div class="card-header">
+        <div
+          class="card-header"
+          :style="{ background: topbarThemeBg, color: 'var(--pms-custom-theme-text, #ffffff)' }"
+        >
           <div class="header-left">
             <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
@@ -1665,22 +1715,35 @@ function parseNumber(val) {
                   <div class="personal-grid">
                     <div class="f">
                       <label>Danh xưng</label>
-                      <select v-model="formGuest.title" :disabled="!isEditingMode">
-                        <option v-for="t in titlesList" :key="t" :value="t">{{ t }}</option>
-                      </select>
+                      <div class="clearable-control select-control title-control">
+                        <select v-model="formGuest.title" :disabled="!isEditingMode">
+                          <option value="">Danh xưng</option>
+                          <option v-for="t in titlesList" :key="t" :value="t">{{ t }}</option>
+                        </select>
+                        <button v-if="isEditingMode && formGuest.title" type="button" class="field-clear-btn" title="Xóa danh xưng" aria-label="Xóa danh xưng" @click="clearGuestField('title')">&times;</button>
+                      </div>
                     </div>
                     <div class="f relative suggestion-container">
                       <label>Họ tên <span class="req">*</span></label>
-                      <input 
-                        type="text" 
-                        v-model="formGuest.name" 
-                        required
-                        @input="onNameInput($event.target.value)"
-                        @focus="onNameFocus"
-                        :disabled="!isEditingMode" 
-                        style="font-weight: 700; text-transform: uppercase;"
-                        autocomplete="off"
-                      >
+                      <div class="clearable-control">
+                        <input
+                          type="text"
+                          v-model="formGuest.name"
+                          required
+                          @input="onNameInput($event.target.value)"
+                          @focus="onNameFocus"
+                          :disabled="!isEditingMode"
+                          autocomplete="off"
+                        >
+                        <button
+                          v-if="isEditingMode && formGuest.name"
+                          type="button"
+                          class="field-clear-btn"
+                          title="Xóa họ tên"
+                          aria-label="Xóa họ tên"
+                          @click="clearGuestField('name')"
+                        >&times;</button>
+                      </div>
                       <!-- Dropdown gợi ý Tên khách -->
                       <div 
                         v-if="showNameSuggestions && nameSuggestions.length > 0"
@@ -1697,15 +1760,25 @@ function parseNumber(val) {
                     </div>
                     <div class="f relative nationality-container suggestion-container">
                       <label>Quốc tịch</label>
-                      <input 
-                        type="text" 
-                        :value="nationalitySearch" 
-                        @input="onNationalityInput" 
-                        @focus="onNationalityFocus" 
-                        :disabled="!isEditingMode" 
-                        placeholder="Nhập mã hoặc tên nước..." 
-                        autocomplete="off"
-                      />
+                      <div class="clearable-control">
+                        <input
+                          type="text"
+                          :value="nationalitySearch"
+                          @input="onNationalityInput"
+                          @focus="onNationalityFocus"
+                          :disabled="!isEditingMode"
+                          placeholder="Nhập mã hoặc tên nước..."
+                          autocomplete="off"
+                        />
+                        <button
+                          v-if="isEditingMode && nationalitySearch"
+                          type="button"
+                          class="field-clear-btn"
+                          title="Xóa quốc tịch"
+                          aria-label="Xóa quốc tịch"
+                          @click="clearGuestField('nationality')"
+                        >&times;</button>
+                      </div>
                       <!-- Dropdown gợi ý Quốc tịch -->
                       <div 
                         v-if="showNationalitySuggestions && filteredNationalities.length > 0" 
@@ -1724,10 +1797,10 @@ function parseNumber(val) {
                     </div>
                     <div class="f">
                       <label>Sinh nhật</label>
-                      <SingleDatePicker
+                      <RoomInfoDatePicker
                         v-model="formGuest.dob"
                         :disabled="!isEditingMode"
-                        placeholder="dd/mm/yyyy"
+                        placeholder="dd/mm/yy"
                       />
                     </div>
                   </div>
@@ -1736,11 +1809,17 @@ function parseNumber(val) {
                   <div class="personal-grid-2">
                     <div class="f">
                       <label>Email</label>
-                      <input type="email" v-model="formGuest.email" :disabled="!isEditingMode" placeholder="name@example.com">
+                      <div class="clearable-control">
+                        <input type="email" v-model="formGuest.email" :disabled="!isEditingMode" placeholder="name@example.com">
+                        <button v-if="isEditingMode && formGuest.email" type="button" class="field-clear-btn" title="Xóa email" aria-label="Xóa email" @click="clearGuestField('email')">&times;</button>
+                      </div>
                     </div>
                     <div class="f">
                       <label>Điện thoại</label>
-                      <input type="text" v-model="formGuest.phone" :disabled="!isEditingMode" placeholder="+84...">
+                      <div class="clearable-control">
+                        <input type="text" v-model="formGuest.phone" :disabled="!isEditingMode" placeholder="+84...">
+                        <button v-if="isEditingMode && formGuest.phone" type="button" class="field-clear-btn" title="Xóa điện thoại" aria-label="Xóa điện thoại" @click="clearGuestField('phone')">&times;</button>
+                      </div>
                     </div>
                     <!-- SỐ LƯỢT LƯU TRÚ: ALWAYS DISABLED / XÁM -->
                     <div class="f">
@@ -1763,25 +1842,32 @@ function parseNumber(val) {
               <div class="g docs-grid">
                 <div class="f">
                   <label>Loại giấy tờ</label>
-                  <select v-model="formGuest.id_type" :disabled="!isEditingMode">
-                    <option value="CCCD">CCCD</option>
-                    <option value="Passport - Hộ chiếu">Passport - Hộ chiếu</option>
-                    <option value="CMND">CMND</option>
-                    <option value="Giấy khai sinh">Giấy khai sinh</option>
-                    <option value="Khác">Khác</option>
-                  </select>
+                  <div class="clearable-control select-control">
+                    <select v-model="formGuest.id_type" :disabled="!isEditingMode">
+                      <option value="">Loại giấy tờ</option>
+                      <option value="CCCD">CCCD</option>
+                      <option value="Passport - Hộ chiếu">Passport - Hộ chiếu</option>
+                      <option value="CMND">CMND</option>
+                      <option value="Giấy khai sinh">Giấy khai sinh</option>
+                      <option value="Khác">Khác</option>
+                    </select>
+                    <button v-if="isEditingMode && formGuest.id_type" type="button" class="field-clear-btn" title="Xóa loại giấy tờ" aria-label="Xóa loại giấy tờ" @click="clearGuestField('id_type')">&times;</button>
+                  </div>
                 </div>
                 <div class="f relative suggestion-container">
                   <label>Số giấy tờ <span class="req">*</span></label>
-                  <input 
-                    type="text" 
-                    v-model="formGuest.id_number" 
-                    required
-                    @input="onIdNumberInput($event.target.value)"
-                    @focus="onIdNumberFocus"
-                    :disabled="!isEditingMode"
-                    autocomplete="off"
-                  >
+                  <div class="clearable-control">
+                    <input
+                      type="text"
+                      v-model="formGuest.id_number"
+                      required
+                      @input="onIdNumberInput($event.target.value)"
+                      @focus="onIdNumberFocus"
+                      :disabled="!isEditingMode"
+                      autocomplete="off"
+                    >
+                    <button v-if="isEditingMode && formGuest.id_number" type="button" class="field-clear-btn" title="Xóa số giấy tờ" aria-label="Xóa số giấy tờ" @click="clearGuestField('id_number')">&times;</button>
+                  </div>
                   <!-- Dropdown gợi ý Số giấy tờ -->
                   <div 
                     v-if="showIdNumberSuggestions && idNumberSuggestions.length > 0"
@@ -1798,27 +1884,34 @@ function parseNumber(val) {
                 </div>
                 <div class="f">
                   <label>Ngày phát hành</label>
-                  <SingleDatePicker
+                  <RoomInfoDatePicker
                     v-model="formGuest.id_issue_date"
                     :disabled="!isEditingMode || stayInfo.hourly"
-                    placeholder="dd/mm/yyyy"
+                    placeholder="dd/mm/yy"
                   />
                 </div>
                 <div class="f">
                   <label>Thường trú / Tạm trú</label>
-                  <select v-model="formGuest.residence_type" :disabled="!isEditingMode">
-                    <option 
-                      v-for="rt in residenceTypesList" 
-                      :key="rt.id" 
-                      :value="rt.name_new_form || rt.name || rt.id"
-                    >
-                      {{ rt.name_new_form || rt.name }}
-                    </option>
-                  </select>
+                  <div class="clearable-control select-control">
+                    <select v-model="formGuest.residence_type" :disabled="!isEditingMode">
+                      <option value="">Thường trú / Tạm trú</option>
+                      <option
+                        v-for="rt in residenceTypesList"
+                        :key="rt.id"
+                        :value="rt.name_new_form || rt.name || rt.id"
+                      >
+                        {{ rt.name_new_form || rt.name }}
+                      </option>
+                    </select>
+                    <button v-if="isEditingMode && formGuest.residence_type" type="button" class="field-clear-btn" title="Xóa thường trú / tạm trú" aria-label="Xóa thường trú / tạm trú" @click="clearGuestField('residence_type')">&times;</button>
+                  </div>
                 </div>
                 <div class="f span-4">
                   <label>Địa chỉ</label>
-                  <input type="text" v-model="formGuest.address" :disabled="!isEditingMode" placeholder="Số nhà, đường, phường/xã...">
+                  <div class="clearable-control">
+                    <input type="text" v-model="formGuest.address" :disabled="!isEditingMode" placeholder="Số nhà, đường, phường/xã...">
+                    <button v-if="isEditingMode && formGuest.address" type="button" class="field-clear-btn" title="Xóa địa chỉ" aria-label="Xóa địa chỉ" @click="clearGuestField('address')">&times;</button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1835,10 +1928,10 @@ function parseNumber(val) {
                 <!-- NGÀY ĐẾN: ALWAYS DISABLED / XÁM -->
                 <div class="f">
                   <label>Ngày đến <span class="req">*</span></label>
-                  <SingleDatePicker
+                  <RoomInfoDatePicker
                     v-model="stayInfo.arrival_date"
                     disabled
-                    placeholder="dd/mm/yyyy"
+                    placeholder="dd/mm/yy"
                   />
                 </div>
                 <!-- GIỜ ĐẾN (24H FORMAT HH:mm): ALWAYS DISABLED / XÁM -->
@@ -1849,11 +1942,11 @@ function parseNumber(val) {
                 <!-- NGÀY ĐỊ -->
                 <div class="f">
                   <label>Ngày đi <span class="req">*</span></label>
-                  <SingleDatePicker
+                  <RoomInfoDatePicker
                     v-model="stayInfo.departure_date"
                     :min-date="stayInfo.arrival_date"
                     :disabled="!isEditingMode"
-                    placeholder="dd/mm/yyyy"
+                    placeholder="dd/mm/yy"
                   />
                 </div>
                 <!-- GIỜ ĐỊ (CUSTOM 24H PICKER COMPONENT: 00 -> 23 HOURS) -->
@@ -1878,7 +1971,7 @@ function parseNumber(val) {
                 <div class="f flex-shrink-0">
                   <label>N.lớn / T.em / E.bé</label>
                   <div class="occupant-box">
-                    <input type="text" v-model="stayInfo.occupants_str" disabled style="width: 82px; text-align: center; font-weight: 700;">
+                    <input type="text" v-model="stayInfo.occupants_str" disabled style="width: 82px; text-align: center; font-weight: 600;">
                     <!-- ALWAYS ENABLED SUB-FEATURE BUTTON -->
                     <button class="btn-act" @click="showChildBreakfastModal = true" style="font-size: 12px; padding: 0 10px;">Chi tiết trẻ em</button>
                   </div>
@@ -1890,7 +1983,10 @@ function parseNumber(val) {
               </div>
               <div class="f" style="margin-top: 10px;">
                 <label>Ghi chú</label>
-                <input type="text" v-model="stayInfo.notes" :disabled="!isEditingMode" placeholder="Ghi chú thêm cho lưu trú...">
+                <div class="clearable-control">
+                  <input type="text" v-model="stayInfo.notes" :disabled="!isEditingMode" placeholder="">
+                  <button v-if="isEditingMode && stayInfo.notes" type="button" class="field-clear-btn" title="Xóa ghi chú" aria-label="Xóa ghi chú" @click="clearStayField('notes')">&times;</button>
+                </div>
               </div>
             </div>
 
@@ -1905,21 +2001,23 @@ function parseNumber(val) {
               <div class="g price-grid-1">
                 <div class="f">
                   <label>Giá phòng <span class="req">*</span></label>
-                  <input
-                    type="text"
-                    :value="pricingInfo.rate"
-                    required
-                    :disabled="!isEditingMode"
-                    @input="onRateInput"
-                    @focus="onRateFocus"
-                    @blur="onRateBlur"
-                    style="font-weight: 700;"
-                  >
+                  <div class="clearable-control">
+                    <input
+                      type="text"
+                      :value="pricingInfo.rate"
+                      required
+                      :disabled="!isEditingMode"
+                      @input="onRateInput"
+                      @focus="onRateFocus"
+                      @blur="onRateBlur"
+                    >
+                    <button v-if="isEditingMode && String(pricingInfo.rate || '').trim()" type="button" class="field-clear-btn" title="Xóa giá phòng" aria-label="Xóa giá phòng" @click="clearPricingField('rate')">&times;</button>
+                  </div>
                 </div>
                 <div class="f">
                   <label>Rate code</label>
-                  <div class="relative flex items-center w-full">
-                    <select v-model="pricingInfo.rate_code" :disabled="!isEditingMode" @change="onRateCodeChange($event.target.value)" class="w-full" :style="isEditingMode && pricingInfo.rate_code ? 'padding-right: 24px;' : ''">
+                  <div class="clearable-control select-control">
+                    <select v-model="pricingInfo.rate_code" :disabled="!isEditingMode" @change="onRateCodeChange($event.target.value)" class="w-full">
                       <option value="">-- Chọn Mã Giá / Mặc định --</option>
                       <option v-for="rc in rateCodes" :key="rc.id || rc.code || rc.Ma" :value="rc.code || rc.Ma">
                         {{ rc.code || rc.Ma }}{{ (rc.name || rc.Ten) ? ' - ' + (rc.name || rc.Ten) : '' }}
@@ -1929,8 +2027,9 @@ function parseNumber(val) {
                       v-if="isEditingMode && pricingInfo.rate_code"
                       type="button"
                       @click="clearRateCode"
-                      class="absolute right-2 text-slate-400 hover:text-rose-500 font-bold text-sm leading-none bg-transparent border-none cursor-pointer p-0.5 z-10"
+                      class="field-clear-btn"
                       title="Xóa / Bỏ chọn Rate Code"
+                      aria-label="Xóa / Bỏ chọn Rate Code"
                     >
                       &times;
                     </button>
@@ -1938,9 +2037,13 @@ function parseNumber(val) {
                 </div>
                 <div class="f">
                   <label>Khuyến mãi / Tăng giảm</label>
-                  <select v-model="pricingInfo.discount_type" :disabled="!isEditingMode">
-                    <option>Tăng/Giảm giá</option><option>Giảm 10%</option><option>Early Bird</option>
-                  </select>
+                  <div class="clearable-control select-control">
+                    <select v-model="pricingInfo.discount_type" :disabled="!isEditingMode">
+                      <option value="">Khuyến mãi / Tăng giảm</option>
+                      <option>Tăng/Giảm giá</option><option>Giảm 10%</option><option>Early Bird</option>
+                    </select>
+                    <button v-if="isEditingMode && pricingInfo.discount_type" type="button" class="field-clear-btn" title="Xóa khuyến mãi / tăng giảm" aria-label="Xóa khuyến mãi / tăng giảm" @click="clearPricingField('discount_type')">&times;</button>
+                  </div>
                 </div>
                 <div class="btn-wrapper">
                   <!-- ALWAYS ENABLED SUB-FEATURE BUTTON -->
@@ -1948,7 +2051,7 @@ function parseNumber(val) {
                     <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                       <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
                       <line x1="7" y1="7" x2="7.01" y2="7"/>
-                    </svg>Yêu cầu đặc biệt<span v-if="roomSpecialRequests.length > 0" class="ml-1 px-1.5 py-0.2 text-[10px] bg-white/20 text-white rounded-full font-bold">({{ roomSpecialRequests.length }})</span>
+                    </svg>Yêu cầu đặc biệt<span v-if="roomSpecialRequests.length > 0" class="ml-1 px-1.5 py-0.5 text-xs bg-white/20 text-white rounded-full font-semibold">({{ roomSpecialRequests.length }})</span>
                   </button>
                 </div>
               </div>
@@ -1995,13 +2098,13 @@ function parseNumber(val) {
                       min="0"
                       max="10"
                       @input="onExtraBedQtyInput"
-                      class="w-full h-8 px-2.5 pr-6 font-semibold text-slate-800 border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-sky-500 bg-white text-xs disabled:bg-slate-100 disabled:text-slate-500 shadow-2xs"
+                      class="w-full h-8 px-2.5 pr-6 font-normal text-[#000000D9] border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-sky-500 bg-white text-xs disabled:bg-slate-100 disabled:text-slate-500 shadow-2xs"
                     />
                     <div v-if="isEditingMode" class="absolute right-1.5 flex flex-col justify-center gap-0.5 select-none">
-                      <button type="button" @click="handleExtraBedQtyChange(1)" class="hover:text-sky-600 text-slate-400 cursor-pointer p-0 text-[8px] leading-none border-none bg-transparent">
+                      <button type="button" @click="handleExtraBedQtyChange(1)" class="hover:text-sky-600 text-slate-400 cursor-pointer p-0 text-xs leading-none border-none bg-transparent">
                         ▲
                       </button>
-                      <button type="button" @click="handleExtraBedQtyChange(-1)" class="hover:text-sky-600 text-slate-400 cursor-pointer p-0 text-[8px] leading-none border-none bg-transparent">
+                      <button type="button" @click="handleExtraBedQtyChange(-1)" class="hover:text-sky-600 text-slate-400 cursor-pointer p-0 text-xs leading-none border-none bg-transparent">
                         ▼
                       </button>
                     </div>
@@ -2019,13 +2122,13 @@ function parseNumber(val) {
                       @input="onExtraBedPriceInput"
                       @focus="onExtraBedPriceFocus"
                       @blur="onExtraBedPriceBlur"
-                      class="w-full h-8 px-2.5 pr-6 font-semibold text-slate-800 border border-slate-300 rounded-md focus:outline-none focus:ring-1 focus:ring-sky-500 bg-white text-xs text-right disabled:bg-slate-100 disabled:text-slate-500 shadow-2xs"
+                      class="w-full h-8 px-2.5 pr-6 font-normal text-[#000000D9] border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-sky-500 bg-white text-xs text-left disabled:bg-slate-100 disabled:text-slate-500 shadow-2xs"
                     />
                     <div v-if="isEditingMode" class="absolute right-1.5 flex flex-col justify-center gap-0.5 select-none">
-                      <button type="button" @click="handleExtraBedPriceChange(50000)" class="hover:text-sky-600 text-slate-400 cursor-pointer p-0 text-[8px] leading-none border-none bg-transparent">
+                      <button type="button" @click="handleExtraBedPriceChange(50000)" class="hover:text-sky-600 text-slate-400 cursor-pointer p-0 text-xs leading-none border-none bg-transparent">
                         ▲
                       </button>
-                      <button type="button" @click="handleExtraBedPriceChange(-50000)" class="hover:text-sky-600 text-slate-400 cursor-pointer p-0 text-[8px] leading-none border-none bg-transparent">
+                      <button type="button" @click="handleExtraBedPriceChange(-50000)" class="hover:text-sky-600 text-slate-400 cursor-pointer p-0 text-xs leading-none border-none bg-transparent">
                         ▼
                       </button>
                     </div>
@@ -2089,6 +2192,7 @@ function parseNumber(val) {
 
 .card {
   background: #fff;
+  font-family: 'Roboto', system-ui, -apple-system, sans-serif;
   border-radius: 12px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
   width: 100%;
@@ -2103,7 +2207,6 @@ function parseNumber(val) {
 
 /* HEADER */
 .card-header {
-  background: #1a2e4a;
   color: #fff;
   padding: 10px 18px;
   display: flex;
@@ -2115,8 +2218,8 @@ function parseNumber(val) {
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 600;
   letter-spacing: 0.3px;
 }
 .badge-room {
@@ -2124,9 +2227,9 @@ function parseNumber(val) {
   border: 1px solid rgba(255, 255, 255, 0.25);
   border-radius: 6px;
   padding: 3px 12px;
-  font-size: 13px;
-  font-weight: 500;
-  color: #cfe8ff;
+  font-size: 12px;
+  font-weight: 400;
+  color: inherit;
 }
 .header-actions {
   display: flex;
@@ -2209,7 +2312,7 @@ function parseNumber(val) {
 .close-x-btn {
   background: none;
   border: none;
-  color: #9ca3af;
+  color: rgba(255, 255, 255, 0.82);
   font-size: 24px;
   cursor: pointer;
   margin-left: 10px;
@@ -2290,8 +2393,8 @@ input.always-gray:disabled {
 /* SECTION LABEL */
 .sec-label {
   font-size: 12px;
-  font-weight: 700;
-  color: #2563eb;
+  font-weight: 600;
+  color: #000000d9;
   letter-spacing: 0.6px;
   text-transform: uppercase;
   display: flex;
@@ -2305,8 +2408,8 @@ input.always-gray:disabled {
 /* FIELD STYLING */
 .f { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .f label {
-  font-size: 11.5px;
-  color: #475569;
+  font-size: 12px;
+  color: #000000d9;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -2315,12 +2418,13 @@ input.always-gray:disabled {
 .f label .req { color: #ef4444; }
 .f input, .f select {
   border: 1.5px solid #cbd5e1;
-  border-radius: 6px;
+  border-radius: 8px;
   padding: 5px 8px;
-  font-size: 13px;
-  color: #0f172a;
+  font-size: 12px;
+  font-weight: 400;
+  color: #000000d9;
   background: #fff;
-  height: 35px;
+  height: 32px;
   outline: none;
   width: 100%;
   box-sizing: border-box;
@@ -2328,7 +2432,41 @@ input.always-gray:disabled {
   white-space: nowrap;
   transition: border-color 0.15s, background-color 0.15s;
 }
+.f input::placeholder { color: #a8b0bf; font-weight: 400; }
+.f select:has(option[value=""]:checked) { color: #a8b0bf; font-weight: 400; }
 .f input:focus:not(:disabled), .f select:focus:not(:disabled) { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.1); }
+
+.clearable-control {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+.clearable-control > input,
+.clearable-control > select { padding-right: 30px; }
+.clearable-control.select-control > select { padding-right: 48px; }
+.field-clear-btn {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  right: 7px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.select-control .field-clear-btn { right: 25px; }
+.title-control > select { padding-right: 42px; }
+.title-control .field-clear-btn { right: 23px; }
+.field-clear-btn:hover { color: #ef4444; }
 
 .span-2 { grid-column: span 2; }
 .span-4 { grid-column: span 4; }
@@ -2343,7 +2481,7 @@ input.always-gray:disabled {
 }
 .personal-grid {
   display: grid;
-  grid-template-columns: 85px 1.5fr 1.6fr 145px;
+  grid-template-columns: 135px minmax(0, 1.5fr) minmax(0, 1.6fr) 145px;
   gap: 9px 12px;
 }
 .personal-grid-2 {
@@ -2397,8 +2535,8 @@ input.always-gray:disabled {
 .tp-head {
   background: #2563eb;
   color: #fff;
-  font-size: 10.5px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 600;
   text-align: center;
   padding: 4px 0;
   text-transform: uppercase;
@@ -2410,8 +2548,8 @@ input.always-gray:disabled {
 .tp-item {
   padding: 4px 0;
   text-align: center;
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 400;
   color: #334155;
   cursor: pointer;
   transition: background 0.1s;
@@ -2423,16 +2561,16 @@ input.always-gray:disabled {
 .g { display: grid; gap: 9px 12px; }
 .docs-grid { grid-template-columns: 1.2fr 1.2fr 140px 1fr; gap: 9px 12px; }
 .stay-grid { grid-template-columns: 1.2fr 80px 1.2fr 80px 65px; gap: 9px 10px; margin-bottom: 10px; }
-.price-grid-1 { grid-template-columns: 120px 95px 1fr auto; gap: 9px 10px; margin-bottom: 10px; align-items: end; }
+.price-grid-1 { grid-template-columns: 120px 120px minmax(130px, 1fr) auto; gap: 9px 10px; margin-bottom: 10px; align-items: end; }
 .price-grid-2 { grid-template-columns: 120px 115px auto 1fr; gap: 9px 10px; align-items: end; }
 .btn-wrapper { display: flex; align-items: flex-end; }
 
 /* SIDEBAR GUESTS */
 .g-group { margin-bottom: 12px; }
 .g-group-label {
-  font-size: 10.5px;
-  font-weight: 700;
-  color: #94a3b8;
+  font-size: 12px;
+  font-weight: 600;
+  color: #000000d9;
   letter-spacing: 0.8px;
   text-transform: uppercase;
   margin-bottom: 6px;
@@ -2450,7 +2588,7 @@ input.always-gray:disabled {
 }
 .g-item:hover { background: #f0f4ff; }
 .g-item.active { background: #eff6ff; border-color: #93c5fd; }
-.g-name { font-size: 13px; font-weight: 600; color: #1e293b; flex: 1; }
+.g-name { font-size: 12px; font-weight: 400; color: #000000d9; flex: 1; }
 .icon-rep { color: #f59e0b; display: flex; align-items: center; flex-shrink: 0; }
 .icon-sub { color: #cbd5e1; display: flex; align-items: center; flex-shrink: 0; }
 
@@ -2483,7 +2621,7 @@ input.always-gray:disabled {
 .id-avatar svg { color: #94a3b8; }
 .avatar-btns { display: flex; gap: 5px; margin-top: 6px; }
 .btn-xs {
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   border: 1px solid #cbd5e1;
   background: #fff;
@@ -2498,12 +2636,12 @@ input.always-gray:disabled {
 
 /* BUTTON ACTION BLUE (ALWAYS BLUE & CLICKABLE) */
 .btn-act {
-  height: 35px;
+  height: 32px;
   background: #2563eb !important;
   color: #fff !important;
   border: none !important;
   border-radius: 6px;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
   padding: 0 14px;
   cursor: pointer !important;
@@ -2523,33 +2661,35 @@ input.always-gray:disabled {
 .checkbox-row { display: flex; gap: 14px; align-items: center; padding-top: 16px; }
 .cb {
   display: flex; align-items: center; gap: 6px;
-  font-size: 13.5px; font-weight: 600; color: #334155; cursor: pointer;
+  font-size: 12px; font-weight: 400; color: #000000d9; cursor: pointer;
 }
 .cb input { accent-color: #2563eb; width: 15px; height: 15px; }
+
+.f :deep(.time-input-field),
+.f :deep(.tp-head),
+.f :deep(.tp-item),
+.f :deep(.clock-icon) {
+  font-size: 12px !important;
+  font-family: 'Roboto', system-ui, sans-serif;
+}
+.f :deep(.time-input-field) {
+  height: 32px;
+  color: #000000d9;
+  font-weight: 400;
+  border-radius: 8px;
+}
 
 @keyframes modalIn {
   0% { opacity: 0; transform: scale(0.98); }
   100% { opacity: 1; transform: scale(1); }
 }
 
-.f :deep(.custom-single-datepicker div[class*="border"]) {
-  height: 35px;
-  border: 1.5px solid #cbd5e1;
-  border-radius: 6px;
-  font-size: 13px;
-}
-.f :deep(.custom-single-datepicker div[class*="bg-slate-100"]) {
-  background-color: #f1f5f9 !important;
-  color: #64748b !important;
-  border-color: #cbd5e1 !important;
-}
-
 /* SECTION 1 & 2 EXTENSIONS */
 .draft-badge {
   margin-left: 6px;
   padding: 1px 5px;
-  font-size: 10px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 600;
   color: #b45309;
   background: #fef3c7;
   border: 1px solid #fde68a;
@@ -2578,9 +2718,9 @@ input.always-gray:disabled {
 
 .suggestion-item {
   padding: 6px 10px;
-  font-size: 11.5px;
-  font-weight: 600;
-  color: #1e293b;
+  font-size: 12px;
+  font-weight: 400;
+  color: #000000d9;
   border-bottom: 1px solid #f1f5f9;
   cursor: pointer;
   white-space: nowrap;
@@ -2616,7 +2756,7 @@ input.always-gray:disabled {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: #64748b;
   margin-right: 2px;
@@ -2627,7 +2767,7 @@ input.always-gray:disabled {
   align-items: center;
   gap: 5px;
   padding: 3px 9px;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 500;
   color: #0369a1;
   background: #f0f9ff;
@@ -2665,7 +2805,7 @@ input.always-gray:disabled {
   height: 14px;
   margin-left: 2px;
   border-radius: 50%;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1;
   color: #0284c7;
   background: transparent;
@@ -2687,8 +2827,8 @@ input.always-gray:disabled {
   background: #fef3c7;
   border: 1px solid #fde68a;
   color: #92400e;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 400;
   padding: 8px 14px;
   border-radius: 6px;
   margin-bottom: 12px;
@@ -2710,14 +2850,17 @@ input.always-gray:disabled {
     padding: 2px 6px !important;
     font-size: 12px !important;
   }
+  .clearable-control > input,
+  .clearable-control > select { padding-right: 30px !important; }
+  .clearable-control.select-control > select { padding-right: 48px !important; }
   .sec-label {
     padding-bottom: 4px !important;
     margin-bottom: 8px !important;
-    font-size: 11px !important;
+    font-size: 12px !important;
   }
   .draft-alert-banner {
     padding: 5px 10px;
-    font-size: 11.5px;
+    font-size: 12px;
     margin-bottom: 8px;
   }
 }

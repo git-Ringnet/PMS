@@ -1,7 +1,8 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { X, Plus, Info, Calendar } from '@lucide/vue'
+import { X, Plus, Info } from '@lucide/vue'
 import { fetchFOServicesList, postFoServiceBill, postRoomCharge } from '@/services/booking-service'
+import SingleDatePicker from '@/components/SingleDatePicker.vue'
 
 // ─────────────────────────────────────────────
 // Props & Emits
@@ -100,15 +101,6 @@ function todayYmd() {
   return `${year}-${month}-${day}`
 }
 
-// Mở lịch trình duyệt khi click vào ô date
-function openDatePicker(e) {
-  if (e.target && typeof e.target.showPicker === 'function') {
-    try {
-      e.target.showPicker()
-    } catch {}
-  }
-}
-
 // Giới hạn ngày từ booking (min = arrival_date, max = departure_date)
 const bookingMinDate = computed(() => {
   if (props.arrivalDate) return String(props.arrivalDate).slice(0, 10)
@@ -178,6 +170,9 @@ const serviceTo          = ref(props.systemDate || todayYmd())
 const folio              = ref(1)
 const currency           = ref('VND')
 const selectedService    = ref(null)
+const serviceQuery       = ref('')
+const showServiceDropdown = ref(false)
+const serviceComboRef    = ref(null)
 const quantity           = ref(1)
 const unitPrice          = ref(0)
 const unitPriceDisplay   = ref('')
@@ -211,6 +206,31 @@ function setUnitPrice(val) {
 // Danh sách dịch vụ FO
 const foServices      = ref([])
 const loadingServices = ref(false)
+const filteredFoServices = computed(() => {
+  const query = serviceQuery.value.trim().toLowerCase()
+  return query ? foServices.value.filter(service => String(service.name || '').toLowerCase().includes(query)) : foServices.value
+})
+
+function selectService(service) {
+  selectedService.value = service
+  serviceQuery.value = service?.name || ''
+  showServiceDropdown.value = false
+}
+
+function clearService() {
+  selectedService.value = null
+  serviceQuery.value = ''
+  showServiceDropdown.value = true
+}
+
+function handleServiceInput() {
+  if (selectedService.value && serviceQuery.value !== selectedService.value.name) selectedService.value = null
+  showServiceDropdown.value = true
+}
+
+function handleDocumentClick(event) {
+  if (serviceComboRef.value && !serviceComboRef.value.contains(event.target)) showServiceDropdown.value = false
+}
 
 async function loadFoServices() {
   loadingServices.value = true
@@ -308,7 +328,7 @@ function toggleRoomSurcharge() {
 // Hiển thị Tiền phòng tự động (không thập phân .00)
 const roomAutoText = computed(() => {
   if (props.roomRate && props.roomRate > 0) {
-    return Math.round(Number(props.roomRate)).toLocaleString('vi-VN')
+    return Math.round(Number(props.roomRate)).toLocaleString('en-US')
   }
   return '0'
 })
@@ -316,7 +336,7 @@ const roomAutoText = computed(() => {
 // Tổng tiền Tab 2
 const roomTotalPriceText = computed(() => {
   if (roomUpdateMode.value) {
-    return Math.round(parseFloat(customRoomRate.value) || 0).toLocaleString('vi-VN')
+    return Math.round(parseFloat(customRoomRate.value) || 0).toLocaleString('en-US')
   }
   return roomAutoText.value
 })
@@ -333,12 +353,19 @@ const roomPostMode = computed(() => {
 onMounted(() => {
   loadFoServices()
   window.addEventListener('resize', resetModalPosition)
+  document.addEventListener('click', handleDocumentClick)
 })
 
 onUnmounted(() => {
   endModalDrag()
   window.removeEventListener('resize', resetModalPosition)
+  window.removeEventListener('keydown', handleKeyDown)
+  document.removeEventListener('click', handleDocumentClick)
 })
+
+function handleKeyDown(event) {
+  if (event.key === 'Escape' && props.show && !isSubmitting.value) handleClose()
+}
 
 watch(() => props.show, (v) => {
   if (v) {
@@ -355,6 +382,8 @@ watch(() => props.show, (v) => {
     serviceTo.value   = initialDate
     folio.value       = 1
     selectedService.value = null
+    serviceQuery.value = ''
+    showServiceDropdown.value = false
     quantity.value    = 1
     setUnitPrice(0)
     description.value = ''
@@ -385,6 +414,10 @@ watch(() => props.show, (v) => {
     if (foServices.value.length === 0) {
       loadFoServices()
     }
+    window.removeEventListener('keydown', handleKeyDown)
+    window.addEventListener('keydown', handleKeyDown)
+  } else {
+    window.removeEventListener('keydown', handleKeyDown)
   }
 }, { immediate: true })
 
@@ -471,19 +504,19 @@ function handleClose() {
 
 <template>
   <div v-if="show" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-    <!-- Modal Dialog với width rộng hơn (max-w-xl) -->
+    <!-- Modal Dialog đủ rộng để hiển thị ngày dd/mm/yyyy cùng nút x và lịch -->
     <div ref="modalRef"
-      class="bg-white rounded-xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col text-sm border border-gray-100"
+      class="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col text-xs border border-gray-100"
       :style="{ transform: `translate(${modalPosition.x}px, ${modalPosition.y}px)`, transition: isDraggingModal ? 'none' : '' }">
 
-      <!-- Header Navy Dark -->
-      <div class="bg-[#1e293b] text-white px-5 py-3.5 flex items-center justify-between cursor-move select-none touch-none"
+      <div class="text-white px-5 py-3 flex items-center justify-between cursor-move select-none touch-none"
+        :style="{ background: 'var(--pms-custom-theme, #006bdb)' }"
         @pointerdown="beginModalDrag">
         <div class="flex items-center gap-2.5">
           <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
-          <span class="font-semibold text-base">Thêm dịch vụ</span>
+          <span class="font-semibold text-xs">Thêm dịch vụ</span>
         </div>
         <button @pointerdown.stop @click="handleClose" class="text-gray-300 hover:text-white transition-colors p-1">
           <X class="w-4 h-4" />
@@ -497,13 +530,13 @@ function handleClose() {
         <div>
           <label class="block text-xs font-normal text-gray-500 mb-1.5">Đăng ký</label>
           <input type="text" :value="bookingInfo" readonly
-            class="w-full px-3.5 py-2.5 bg-[#f8fafc] border border-gray-200 rounded-lg text-sm text-gray-800 font-medium cursor-default focus:outline-none" />
+            class="w-full px-3.5 py-2.5 bg-[#f8fafc] border border-gray-200 rounded-lg text-xs text-[#000000D9] font-normal cursor-default focus:outline-none" />
         </div>
 
         <!-- Tabs -->
         <div class="flex items-center gap-6 border-b border-gray-200">
           <button @click="activeTab = 'service'" :disabled="isNoPost"
-            :class="['pb-2.5 text-sm font-medium transition-all relative -mb-px',
+            :class="['pb-2.5 text-xs font-semibold transition-all relative -mb-px',
               activeTab === 'service'
                 ? 'text-blue-600 font-semibold border-b-2 border-blue-600'
                 : 'text-gray-500 hover:text-gray-800 border-b-2 border-transparent',
@@ -511,7 +544,7 @@ function handleClose() {
             Dịch vụ
           </button>
           <button @click="activeTab = 'room'" :disabled="isNoPost || roomChargeNoPost"
-            :class="['pb-2.5 text-sm font-medium transition-all relative -mb-px',
+            :class="['pb-2.5 text-xs font-semibold transition-all relative -mb-px',
               activeTab === 'room'
                 ? 'text-blue-600 font-semibold border-b-2 border-blue-600'
                 : 'text-gray-500 hover:text-gray-800 border-b-2 border-transparent',
@@ -534,19 +567,17 @@ function handleClose() {
 
           <!-- Field Ngày: 2 ô Từ ngày ~ Đến ngày rõ ràng, click mở lịch -->
           <div>
-            <label class="block text-xs font-medium text-gray-700 mb-1.5">
+            <label class="block text-xs font-semibold text-[#000000D9] mb-1.5">
               Ngày <span class="text-red-500">*</span>
             </label>
             <div class="grid grid-cols-2 gap-2">
-              <div class="relative flex items-center border border-gray-200 rounded-lg px-3 py-2 bg-white focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500">
+              <div class="relative flex items-center rounded-lg">
                 <span class="text-gray-400 text-xs font-medium mr-2 flex-shrink-0">Từ</span>
-                <input v-model="serviceFrom" type="date" :min="bookingMinDate" :max="bookingMaxDate" @click="openDatePicker"
-                  class="w-full text-xs font-medium bg-transparent border-none p-0 focus:outline-none text-gray-800 cursor-pointer" />
+                <SingleDatePicker v-model="serviceFrom" :min-date="bookingMinDate" :max-date="bookingMaxDate" placeholder="dd/mm/yyyy" four-digit-year input-class="input-required h-8" />
               </div>
-              <div class="relative flex items-center border border-gray-200 rounded-lg px-3 py-2 bg-white focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500">
+              <div class="relative flex items-center rounded-lg">
                 <span class="text-gray-400 text-xs font-medium mr-2 flex-shrink-0">Đến</span>
-                <input v-model="serviceTo" type="date" :min="bookingMinDate" :max="bookingMaxDate" @click="openDatePicker"
-                  class="w-full text-xs font-medium bg-transparent border-none p-0 focus:outline-none text-gray-800 cursor-pointer" />
+                <SingleDatePicker v-model="serviceTo" :min-date="bookingMinDate" :max-date="bookingMaxDate" placeholder="dd/mm/yyyy" four-digit-year input-class="input-required h-8" />
               </div>
             </div>
           </div>
@@ -554,30 +585,26 @@ function handleClose() {
           <!-- Field Dịch vụ + Folio -->
           <div class="grid grid-cols-4 gap-3">
             <div class="col-span-3">
-              <label class="block text-xs font-medium text-gray-700 mb-1.5">
+              <label class="block text-xs font-semibold text-[#000000D9] mb-1.5">
                 Dịch vụ <span class="text-red-500">*</span>
               </label>
-              <div class="relative">
-                <select v-model="selectedService"
-                  class="w-full border border-gray-200 rounded-lg pl-3.5 pr-9 py-2.5 text-sm bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-gray-800 font-medium appearance-none">
-                  <option :value="null" disabled>{{ loadingServices ? 'Đang tải danh sách...' : 'Chọn dịch vụ' }}</option>
-                  <option v-for="svc in foServices" :key="svc.code" :value="svc">
-                    {{ svc.name }}
-                  </option>
-                </select>
-
-                <!-- Nút X đỏ hủy chọn dịch vụ -->
-                <button v-if="selectedService" @click="selectedService = null" type="button"
-                  class="absolute right-3 top-1/2 -translate-y-1/2 text-red-500 hover:text-red-700 font-bold p-0.5 focus:outline-none"
+              <div ref="serviceComboRef" class="relative">
+                <input v-model="serviceQuery" type="text" required :placeholder="loadingServices ? 'Đang tải danh sách...' : 'Chọn dịch vụ'" @focus="showServiceDropdown = true" @input="handleServiceInput" class="h-8 w-full rounded-lg border border-[#F1DD8A] bg-[#FFF8DB] pl-3 pr-9 text-xs font-normal text-[#000000D9] outline-none placeholder:text-[#A8B0BF] focus:border-amber-500" />
+                <button v-if="serviceQuery || selectedService" @click="clearService" type="button"
+                  class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 font-bold p-0.5 focus:outline-none"
                   title="Bỏ chọn dịch vụ">
                   <X class="w-4 h-4" />
                 </button>
+                <div v-if="showServiceDropdown" class="absolute left-0 right-0 top-full z-50 mt-1 max-h-56 overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-xl">
+                  <button v-for="svc in filteredFoServices" :key="svc.code" type="button" @mousedown.prevent="selectService(svc)" class="block w-full px-3 py-2 text-left text-xs font-normal text-[#000000D9] hover:bg-slate-200">{{ svc.name }}</button>
+                  <div v-if="!loadingServices && filteredFoServices.length === 0" class="px-3 py-2 text-center text-xs text-[#A8B0BF]">Không tìm thấy dịch vụ</div>
+                </div>
               </div>
             </div>
             <div>
               <label class="block text-xs font-medium text-gray-700 mb-1.5">Folio</label>
               <select v-model.number="folio"
-                class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-gray-800 font-medium">
+                class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-xs bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-[#000000D9] font-normal">
                 <option :value="1">Folio 1</option>
                 <option :value="2">Folio 2</option>
                 <option :value="3">Folio 3</option>
@@ -588,37 +615,46 @@ function handleClose() {
           <!-- Grid: Số lượng | Đơn giá | Tổng tiền -->
           <div class="grid grid-cols-3 gap-3">
             <div>
-              <label class="block text-xs font-medium text-gray-700 mb-1.5">
+              <label class="block text-xs font-semibold text-[#000000D9] mb-1.5">
                 Số lượng <span class="text-red-500">*</span>
               </label>
-              <input v-model.number="quantity" type="number" min="0.01" step="1"
+              <div class="relative">
+              <input v-model.number="quantity" type="number" min="0.01" step="1" required
                 :disabled="!selectedService"
-                :class="['w-full border rounded-lg px-3.5 py-2.5 text-sm font-medium focus:outline-none focus:ring-1 focus:ring-blue-500',
-                  !selectedService ? 'bg-[#f8fafc] text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-white border-gray-200 text-gray-800']" />
+                :class="['w-full border rounded-lg px-3.5 py-2.5 text-xs font-normal focus:outline-none focus:ring-1 focus:ring-blue-500',
+                  !selectedService ? 'bg-[#f8fafc] text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-[#FFF8DB] border-[#F1DD8A] text-[#000000D9]']" />
+              <button v-if="selectedService && quantity" type="button" title="Xóa số lượng" @click="quantity = ''" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500"><X class="h-3.5 w-3.5" /></button>
+              </div>
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-700 mb-1.5">
+              <label class="block text-xs font-semibold text-[#000000D9] mb-1.5">
                 Đơn giá <span class="text-red-500">*</span>
               </label>
-              <input :value="unitPriceDisplay" @input="onUnitPriceInput" type="text"
+              <div class="relative">
+              <input :value="unitPriceDisplay" @input="onUnitPriceInput" type="text" required
                 :disabled="!selectedService || isPriceLocked"
-                :class="['w-full border rounded-lg px-3.5 py-2.5 text-sm font-medium focus:outline-none focus:ring-1 focus:ring-blue-500',
-                  (!selectedService || isPriceLocked) ? 'bg-[#f8fafc] text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-white border-gray-200 text-gray-800']" />
+                :class="['w-full border rounded-lg px-3.5 py-2.5 text-xs font-normal focus:outline-none focus:ring-1 focus:ring-blue-500',
+                  (!selectedService || isPriceLocked) ? 'bg-[#f8fafc] text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-[#FFF8DB] border-[#F1DD8A] text-[#000000D9]']" />
+              <button v-if="selectedService && !isPriceLocked && unitPriceDisplay" type="button" title="Xóa đơn giá" @click="setUnitPrice('')" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500"><X class="h-3.5 w-3.5" /></button>
+              </div>
             </div>
             <div>
               <label class="block text-xs font-medium text-gray-700 mb-1.5">Tổng tiền</label>
-              <input :value="totalPrice.toLocaleString('vi-VN')" readonly disabled
-                class="w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm bg-[#f8fafc] text-gray-600 font-semibold cursor-not-allowed" />
+              <input :value="totalPrice.toLocaleString('en-US')" readonly disabled
+                class="w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-xs bg-[#f8fafc] text-gray-600 font-normal cursor-not-allowed" />
             </div>
           </div>
 
           <!-- Field Mô tả -->
           <div>
             <label class="block text-xs font-medium text-gray-700 mb-1.5">Mô tả</label>
+            <div class="relative">
             <input v-model="description" type="text"
               :disabled="!selectedService"
-              :class="['w-full border rounded-lg px-3.5 py-2.5 text-sm font-medium focus:outline-none focus:ring-1 focus:ring-blue-500',
+              :class="['w-full border rounded-lg pl-3.5 pr-9 py-2.5 text-xs font-normal focus:outline-none focus:ring-1 focus:ring-blue-500',
                 !selectedService ? 'bg-[#f8fafc] text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-white border-gray-200 text-gray-800']" />
+            <button v-if="selectedService && description" type="button" title="Xóa mô tả" @click="description = ''" class="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-red-500"><X class="h-3.5 w-3.5" /></button>
+            </div>
           </div>
 
         </template>
@@ -627,25 +663,23 @@ function handleClose() {
         <template v-else>
 
           <!-- Grid: Ngày | Tiền phòng tự động -->
-          <div class="grid grid-cols-2 gap-4">
+          <div class="grid grid-cols-[3fr_2fr] gap-4">
             <div>
-              <label class="block text-xs font-medium text-gray-700 mb-1.5">
+              <label class="block text-xs font-semibold text-[#000000D9] mb-1.5">
                 Ngày <span class="text-red-500">*</span>
               </label>
-              <div class="flex items-center justify-between border border-gray-300 rounded-lg px-3 py-2.5 bg-white focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500">
+              <div class="grid grid-cols-[1fr_auto_1fr] items-center gap-1 rounded-lg">
                 <div class="flex items-center gap-1 text-xs font-medium text-gray-800 min-w-0 w-full">
-                  <input v-model="roomFrom" type="date" :min="bookingMinDate" :max="roomMaxDate" @click="openDatePicker"
-                    class="w-full text-xs font-medium bg-transparent border-none p-0 focus:outline-none text-gray-800 cursor-pointer" />
-                  <span class="text-gray-400 px-1 font-bold">~</span>
-                  <input v-model="roomTo" type="date" :min="bookingMinDate" :max="roomMaxDate" @click="openDatePicker"
-                    class="w-full text-xs font-medium bg-transparent border-none p-0 focus:outline-none text-gray-800 cursor-pointer" />
+                  <SingleDatePicker v-model="roomFrom" :min-date="bookingMinDate" :max-date="roomMaxDate" placeholder="dd/mm/yyyy" four-digit-year input-class="input-required h-8" />
                 </div>
+                <span class="text-gray-400 px-1 font-bold">~</span>
+                <SingleDatePicker v-model="roomTo" :min-date="bookingMinDate" :max-date="roomMaxDate" placeholder="dd/mm/yyyy" four-digit-year input-class="input-required h-8" />
               </div>
             </div>
             <div>
               <label class="block text-xs font-medium text-gray-700 mb-1.5">Tiền phòng tự động</label>
               <input :value="roomAutoText" readonly disabled
-                class="w-full border border-blue-500/80 rounded-lg px-3.5 py-2.5 text-sm bg-white text-gray-800 font-semibold cursor-not-allowed shadow-xs" />
+                class="w-full border border-[#E5E7EB] rounded-lg px-3.5 py-2.5 text-xs bg-[#F8FAFC] text-[#000000D9] font-normal cursor-not-allowed shadow-xs" />
             </div>
           </div>
 
@@ -656,7 +690,7 @@ function handleClose() {
               <!-- Toggle 1: Tự nhập tiền phòng -->
               <div class="flex items-center justify-between">
                 <div class="flex items-center gap-1.5">
-                  <span class="text-xs font-semibold text-gray-800">Tự nhập tiền phòng</span>
+                  <span :class="roomUpdateMode ? 'text-[#000000D9]' : 'text-slate-400'" class="text-xs font-semibold">Tự nhập tiền phòng</span>
                   <div class="relative group">
                     <Info class="w-3.5 h-3.5 text-gray-400 cursor-help" />
                     <div class="absolute bottom-5 left-0 bg-gray-800 text-white text-xs rounded px-2.5 py-1.5 w-60 opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none shadow-md">
@@ -698,11 +732,11 @@ function handleClose() {
 
             <!-- Right Side: Tổng tiền -->
             <div>
-              <label class="block text-xs font-medium text-gray-700 mb-1.5">Tổng tiền</label>
+              <label :class="roomUpdateMode ? 'text-[#000000D9]' : 'text-slate-400'" class="block text-xs font-semibold mb-1.5">Tổng tiền</label>
               <input v-if="roomUpdateMode" :value="customRoomRateDisplay" @input="onCustomRoomRateInput" type="text"
-                class="w-full border border-blue-500 rounded-lg px-3.5 py-2.5 text-sm bg-white text-gray-800 font-semibold focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                class="w-full border border-blue-500 rounded-lg px-3.5 py-2.5 text-xs bg-white text-[#000000D9] font-normal focus:outline-none focus:ring-1 focus:ring-blue-500" />
               <input v-else :value="roomAutoText" readonly disabled
-                class="w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm bg-[#f1f5f9] text-gray-500 font-semibold cursor-not-allowed" />
+                class="w-full border border-[#E5E7EB] rounded-lg px-3.5 py-2.5 text-xs bg-[#F8FAFC] text-[#000000D9] font-normal cursor-not-allowed" />
             </div>
           </div>
 
@@ -710,13 +744,16 @@ function handleClose() {
           <div class="grid grid-cols-4 gap-3">
             <div class="col-span-3">
               <label class="block text-xs font-medium text-gray-700 mb-1.5">Mô tả</label>
+              <div class="relative">
               <input v-model="roomDescription" type="text"
-                class="w-full border border-gray-200 rounded-lg px-3.5 py-2.5 text-sm bg-white text-gray-800 font-medium focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
+                class="w-full border border-gray-200 rounded-lg pl-3.5 pr-9 py-2.5 text-xs bg-white text-[#000000D9] font-normal focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
+              <button v-if="roomDescription" type="button" title="Xóa mô tả" @click="roomDescription = ''" class="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-red-500"><X class="h-3.5 w-3.5" /></button>
+              </div>
             </div>
             <div>
               <label class="block text-xs font-medium text-gray-700 mb-1.5">Folio</label>
               <select v-model.number="roomFolio"
-                class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-gray-800 font-medium">
+                class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-xs bg-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-[#000000D9] font-normal">
                 <option :value="1">Folio 1</option>
                 <option :value="2">Folio 2</option>
                 <option :value="3">Folio 3</option>
@@ -730,12 +767,8 @@ function handleClose() {
 
       <!-- Footer -->
       <div class="border-t border-gray-100 px-6 py-3.5 flex justify-end gap-3 bg-white">
-        <button @click="handleClose"
-          class="px-5 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
-          Hủy
-        </button>
         <button @click="handleSubmit" :disabled="isSubmitting || activePostBlocked || (activeTab === 'service' && !selectedService)"
-          class="px-6 py-2 text-sm font-semibold text-white bg-[#2563eb] rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-1.5 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
+          class="btn-pms-primary">
           <Plus class="w-4 h-4" />
           <span>{{ isSubmitting ? 'Đang xử lý...' : 'Thêm' }}</span>
         </button>
@@ -744,11 +777,3 @@ function handleClose() {
     </div>
   </div>
 </template>
-
-<style scoped>
-/* Style chỉ hiển thị icon lịch mặc định ở góc phải ô date, click mở bộ chọn ngày */
-input[type="date"]::-webkit-calendar-picker-indicator {
-  cursor: pointer;
-  filter: opacity(0.6);
-}
-</style>

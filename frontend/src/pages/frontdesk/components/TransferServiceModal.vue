@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { HelpCircle, X, Inbox, ArrowRightLeft, ChevronDown } from '@lucide/vue'
 
 const props = defineProps({
@@ -14,6 +14,7 @@ const emit = defineEmits(['close', 'transfer'])
 const destinationKey = ref('')
 const destinationQuery = ref('')
 const showDestinationDropdown = ref(false)
+const isEditingDestination = ref(false)
 const selectedDestination = computed(() => props.loading ? null : (props.destinations.find(item => item.key === destinationKey.value) || null))
 const filteredDestinations = computed(() => {
   const query = destinationQuery.value.trim().toLowerCase()
@@ -34,16 +35,55 @@ const roomsForDestinationBooking = (booking) => {
 const selectDestination = (destination) => {
   destinationKey.value = destination.key
   destinationQuery.value = destination.label
+  isEditingDestination.value = false
   showDestinationDropdown.value = false
+}
+
+const focusDestination = () => {
+  if (selectedDestination.value) destinationQuery.value = ''
+  isEditingDestination.value = true
+  showDestinationDropdown.value = true
+}
+
+const inputDestination = () => {
+  destinationKey.value = ''
+  isEditingDestination.value = true
+  showDestinationDropdown.value = true
+}
+
+const blurDestination = () => {
+  window.setTimeout(() => {
+    if (selectedDestination.value) destinationQuery.value = selectedDestination.value.label
+    isEditingDestination.value = false
+    showDestinationDropdown.value = false
+  }, 0)
+}
+
+const clearDestination = () => {
+  destinationKey.value = ''
+  destinationQuery.value = ''
+  isEditingDestination.value = true
+  showDestinationDropdown.value = true
+}
+
+const close = () => { if (!props.loading) emit('close') }
+function handleKeyDown(event) {
+  if (event.key === 'Escape' && props.show) close()
 }
 
 watch(() => props.show, (visible) => {
   if (visible) {
     destinationKey.value = ''
     destinationQuery.value = ''
+    isEditingDestination.value = false
     showDestinationDropdown.value = false
+    window.removeEventListener('keydown', handleKeyDown)
+    window.addEventListener('keydown', handleKeyDown)
+  } else {
+    window.removeEventListener('keydown', handleKeyDown)
   }
 })
+onBeforeUnmount(() => window.removeEventListener('keydown', handleKeyDown))
 
 const money = (value) => new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 }).format(Number(value) || 0)
 const transfer = () => {
@@ -52,36 +92,29 @@ const transfer = () => {
 }
 </script>
 
-<style scoped>
-footer button {
-  transition: background-color 150ms ease, transform 100ms ease;
-}
-footer button:hover:not(:disabled) { background-color: #0577d7; }
-footer button:active:not(:disabled) { transform: scale(.95); }
-footer button:disabled { cursor: not-allowed; opacity: .4; }
-</style>
-
 <template>
   <div v-if="show" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-    <div class="flex w-full max-w-[1725px] flex-col overflow-hidden rounded-xl border border-sky-500 bg-white text-xs shadow-2xl">
-      <header class="flex items-center justify-between bg-[#0788f5] px-4 py-2 text-white">
+    <div class="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl border border-sky-500 bg-white text-xs shadow-2xl">
+      <header class="flex shrink-0 items-center justify-between px-4 py-2 text-white" :style="{ background: 'var(--pms-custom-theme, #006bdb)' }">
         <span class="font-bold">Chuyển dịch vụ</span>
-        <div class="flex gap-2"><HelpCircle class="h-5 w-5" /><button :disabled="loading" @click="emit('close')" class="rounded transition hover:bg-white/20 active:scale-90 disabled:opacity-40"><X class="h-5 w-5" /></button></div>
+        <div class="flex gap-2"><HelpCircle class="h-5 w-5" /><button :disabled="loading" @click="close" class="rounded transition hover:bg-white/20 active:scale-90 disabled:opacity-40"><X class="h-5 w-5" /></button></div>
       </header>
 
-      <div class="space-y-4 p-4">
-        <div class="grid grid-cols-2 gap-10">
-          <label class="block"><span class="mb-1 block font-semibold">Từ khách</span><input :value="fromGuest" readonly class="h-7 w-full rounded border border-sky-400 bg-slate-100 px-2" /></label>
-          <label class="block"><span class="mb-1 block font-semibold">Đến khách</span>
+      <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden p-4">
+        <div class="grid shrink-0 grid-cols-[minmax(240px,0.8fr)_minmax(360px,1.2fr)] gap-4">
+          <label class="block"><span class="mb-1 block font-semibold text-[#000000D9]">Từ khách</span><input :value="fromGuest" readonly class="h-8 w-full rounded-lg border border-slate-200 bg-slate-100 px-2 font-normal text-[#000000D9]" /></label>
+          <label class="block"><span class="mb-1 block font-semibold text-[#000000D9]">Đến khách</span>
             <div class="relative">
               <input
                 v-model="destinationQuery"
                 type="text"
-                placeholder="Chọn khách / booking / phòng"
-                @focus="showDestinationDropdown = true"
-                @input="destinationKey = ''; showDestinationDropdown = true"
-                class="h-7 w-full rounded border border-gray-300 bg-white px-2 pr-7 outline-none focus:border-sky-500"
+                :placeholder="selectedDestination?.label || 'Chọn khách / booking / phòng'"
+                @focus="focusDestination"
+                @input="inputDestination"
+                @blur="blurDestination"
+                class="h-8 w-full rounded-lg border border-slate-200 bg-white px-2 pr-14 font-normal text-[#000000D9] outline-none placeholder:text-[#A8B0BF] focus:border-sky-500"
               />
+              <button v-if="destinationQuery || selectedDestination" type="button" title="Xóa khách đích" @mousedown.prevent @click="clearDestination" class="absolute right-7 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500"><X class="h-3.5 w-3.5" /></button>
               <ChevronDown class="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
               <div v-if="showDestinationDropdown" class="absolute left-0 right-0 top-full z-50 mt-1 max-h-72 overflow-y-auto rounded-md border border-gray-300 bg-white shadow-2xl">
                 <div v-for="booking in filteredDestinationBookings" :key="booking.key" class="border-b border-gray-100 last:border-b-0">
@@ -101,19 +134,19 @@ footer button:disabled { cursor: not-allowed; opacity: .4; }
             </select>
           </label>
         </div>
-        <p v-if="error" class="rounded border border-red-300 bg-red-50 px-3 py-2 text-red-700">{{ error }}</p>
+        <p v-if="error" class="shrink-0 rounded border border-red-300 bg-red-50 px-3 py-2 text-red-700">{{ error }}</p>
 
-        <div class="min-h-[200px] overflow-auto rounded border border-gray-300">
-          <table class="w-full border-collapse text-center"><thead class="bg-[#f0f2ea]"><tr>
-            <th class="p-2">Ngày/giờ</th><th class="p-2">Bộ phận</th><th class="p-2">Dịch vụ</th><th class="p-2">Mô tả</th><th class="p-2 text-right">Số tiền</th><th class="p-2">Đơn vị</th><th class="p-2">Folio</th><th class="p-2">Tax</th><th class="p-2">Phí phục vụ</th><th class="p-2">Người dùng</th>
+        <div class="min-h-[200px] flex-1 overflow-auto rounded border border-gray-300">
+          <table class="w-full border-collapse text-center"><thead class="sticky top-0 z-10 bg-[#f0f2ea]"><tr>
+            <th class="w-32 p-2">Ngày/giờ</th><th class="w-20 p-2">Bộ phận</th><th class="w-20 p-2">Dịch vụ</th><th class="p-2">Mô tả</th><th class="w-28 p-2 text-right">Số tiền</th><th class="w-20 p-2">Đơn vị</th><th class="w-16 p-2">Folio</th><th class="w-16 p-2">Tax</th><th class="w-24 p-2">Phí phục vụ</th><th class="w-28 p-2">Người dùng</th>
           </tr></thead><tbody>
-            <tr v-for="item in selectedDestination?.services || []" :key="item.id" :class="['border-t border-gray-200 transition-colors', item.isPaid ? 'bg-rose-100' : 'bg-white hover:bg-slate-200']"><td class="p-2">{{ item.dateTime }}</td><td>{{ item.department }}</td><td>{{ item.serviceCode }}</td><td class="text-left">{{ item.serviceName }}</td><td class="text-right font-mono text-green-600">{{ money(item.totalAmount) }}</td><td>{{ item.unit }}</td><td>{{ item.folio }}</td><td>{{ money(item.tax) }}</td><td>{{ money(item.serviceCharge) }}</td><td>{{ item.userName }}</td></tr>
+            <tr v-for="item in selectedDestination?.services || []" :key="item.id" :class="['border-t border-gray-200 transition-colors', item.isPaid ? 'bg-rose-100' : 'bg-white hover:bg-slate-200']"><td class="p-2">{{ item.dateTime }}</td><td>{{ item.department }}</td><td>{{ item.serviceCode }}</td><td class="text-left">{{ item.serviceName }}</td><td class="text-right text-green-600">{{ money(item.totalAmount) }}</td><td>{{ item.unit }}</td><td>{{ item.folio }}</td><td>{{ money(item.tax) }}</td><td>{{ money(item.serviceCharge) }}</td><td>{{ item.userName }}</td></tr>
             <tr v-if="!selectedDestination || !selectedDestination.services?.length"><td colspan="10" class="h-40 text-gray-400"><Inbox class="mx-auto mb-1 h-9 w-9" />No data</td></tr>
           </tbody></table>
         </div>
       </div>
 
-      <footer class="flex justify-end gap-2 border-t border-gray-200 p-3"><button @click="emit('close')" class="rounded bg-[#0788f5] px-4 py-1.5 font-semibold text-white"><X class="mr-1 inline h-4 w-4" />Đóng</button><button :disabled="!selectedDestination" @click="transfer" class="rounded bg-[#0788f5] px-4 py-1.5 font-semibold text-white disabled:opacity-40"><ArrowRightLeft class="mr-1 inline h-4 w-4" />Chuyển</button></footer>
+      <footer class="flex shrink-0 justify-end border-t border-gray-200 p-3"><button :disabled="!selectedDestination" @click="transfer" class="btn-pms-primary"><ArrowRightLeft class="h-4 w-4" />Chuyển</button></footer>
     </div>
   </div>
 </template>

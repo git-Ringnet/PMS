@@ -1865,12 +1865,13 @@ const roomTransferPreviewServices = (booking, room, targetGuestId = null) => {
   const isPrimary = String(guestId) === String(room.primaryGuestId)
 
   const roomServices = (room.rawRoom?.services || []).filter(service => {
+    if (!isPostedBookingService(service)) return false
     const belongsToGuest = service.guest_id
       ? String(service.guest_id) === String(guestId)
       : isPrimary
     return getServiceRoomFlag(service) === 1 && belongsToGuest
   })
-  const linkedBillIds = new Set(roomServices.map(service => service.service_bill_id).filter(Boolean).map(String))
+  const linkedBillIds = new Set(roomServices.map(service => service.service_bill_id || service.serviceBillId).filter(Boolean).map(String))
   const currentRoomBills = previewBookingBills(booking).filter(bill => {
     if (Number(bill.Edit) === 1 || [3, 4].includes(Number(bill.Status))) return false
     if (linkedBillIds.has(String(bill.Ma))) return false
@@ -1974,9 +1975,12 @@ const masterTransferPreviewServices = (booking) => {
   ))
   const billIds = new Set(masterBills.map(bill => String(bill.Ma)))
   const unlinkedMasterServices = booking.roomItems.flatMap(room => (
-    (room.rawRoom?.services || []).filter(service => getServiceRoomFlag(service) === 0 && (
-      !service.service_bill_id || !billIds.has(String(service.service_bill_id))
-    ))
+    (room.rawRoom?.services || []).filter(service => {
+      const linkedBillId = service.service_bill_id || service.serviceBillId
+      return isPostedBookingService(service)
+        && getServiceRoomFlag(service) === 0
+        && (!linkedBillId || !billIds.has(String(linkedBillId)))
+    })
   ))
 
   return groupTransferPreviewServices([...masterBills.map(toTransferPreviewBill), ...unlinkedMasterServices])
@@ -3274,13 +3278,15 @@ onUnmounted(() => {
     <aside 
       :class="[
         isSidebarCollapsed ? 'w-12' : 'w-[170px]',
-        'checkout-actions order-last bg-[#1e293b] border-l border-[#475569] flex flex-col justify-between py-2 px-2 transition-all duration-200 shrink-0 shadow-sm relative text-slate-100 overflow-x-hidden overflow-y-auto'
+        'checkout-actions order-last border-l border-white/20 flex flex-col justify-between py-2 px-2 transition-all duration-200 shrink-0 shadow-sm relative text-white overflow-x-hidden overflow-y-auto'
       ]"
+      style="background: var(--pms-custom-theme, #006bdb)"
     >
       <!-- Collapse / Expand Toggle Button -->
       <button 
         @click="toggleSidebar"
-        class="absolute -left-3 top-2 bg-[#1e293b] border border-[#475569] rounded-full p-0.5 shadow hover:bg-slate-700 z-30 text-slate-200"
+        class="absolute -left-3 top-2 border border-white/30 rounded-full p-0.5 shadow hover:brightness-90 z-30 text-white"
+        style="background: var(--pms-custom-theme, #006bdb)"
         :title="isSidebarCollapsed ? 'Mở rộng menu' : 'Thu gọn menu'"
       >
         <ChevronRight v-if="isSidebarCollapsed" class="w-3.5 h-3.5" />
@@ -3291,7 +3297,7 @@ onUnmounted(() => {
 
         <!-- NHÓM: Dịch Vụ & Phí -->
         <div class="pb-2 mb-1 border-b border-[#334155]">
-          <div v-if="!isSidebarCollapsed" class="px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-[#94a3b8] whitespace-nowrap">Dịch Vụ & Phí</div>
+          <div v-if="!isSidebarCollapsed" class="px-2 py-1 text-xs font-semibold uppercase tracking-wide text-white/80 whitespace-nowrap">Dịch Vụ & Phí</div>
 
           <!-- Thêm dịch vụ -->
           <button 
@@ -3367,7 +3373,7 @@ onUnmounted(() => {
 
         <!-- NHÓM: Thanh Toán & Cọc -->
         <div class="pb-2 mb-1 border-b border-[#334155]">
-          <div v-if="!isSidebarCollapsed" class="px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-[#94a3b8] whitespace-nowrap">Thanh Toán & Cọc</div>
+          <div v-if="!isSidebarCollapsed" class="px-2 py-1 text-xs font-semibold uppercase tracking-wide text-white/80 whitespace-nowrap">Thanh Toán & Cọc</div>
 
           <!-- Thêm đặt cọc -->
           <button 
@@ -3407,7 +3413,7 @@ onUnmounted(() => {
 
         <!-- NHÓM: In & Hóa Đơn VAT -->
         <div class="pb-2 mb-1 border-b border-[#334155]">
-          <div v-if="!isSidebarCollapsed" class="px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-[#94a3b8] whitespace-nowrap">In & Hóa Đơn VAT</div>
+          <div v-if="!isSidebarCollapsed" class="px-2 py-1 text-xs font-semibold uppercase tracking-wide text-white/80 whitespace-nowrap">In & Hóa Đơn VAT</div>
 
           <!-- In hóa đơn với Dropdown Submenu -->
           <div class="relative">
@@ -3536,11 +3542,10 @@ onUnmounted(() => {
               <div 
                 v-for="b in filteredSearchBookings" 
                 :key="b.id"
-                class="px-3 py-2 hover:bg-sky-50 cursor-pointer text-xs transition-colors"
-                @click="selectBookingFromSearch(b)"
+                class="py-1 text-xs"
               >
                 <!-- Line 1: BKK:  <mã booking>    <tên đoàn / tên booking> -->
-                <div class="grid min-w-0 grid-cols-[50px_75px_minmax(0,1fr)] items-center gap-x-3">
+                <div class="grid min-w-0 cursor-pointer grid-cols-[50px_75px_minmax(0,1fr)] items-center gap-x-3 px-3 py-1.5 transition-colors hover:bg-slate-200" @click="selectBookingFromSearch(b)">
                   <span class="font-bold text-gray-900">BKK:</span>
                   <span class="font-bold text-gray-900">{{ b.code }}</span>
                   <span class="min-w-0 truncate font-bold text-gray-800" :title="b.name">{{ b.name }}</span>
@@ -3552,7 +3557,7 @@ onUnmounted(() => {
                       v-for="(guest, gIdx) in r.allGuests"
                       :key="gIdx"
                       @click.stop="selectBookingFromSearch(b, r, guest)"
-                      class="grid min-w-0 grid-cols-[50px_75px_minmax(0,1fr)] items-center gap-x-3 mt-1.5 text-gray-700 hover:text-sky-600"
+                      class="grid min-w-0 cursor-pointer grid-cols-[50px_75px_minmax(0,1fr)] items-center gap-x-3 px-3 py-1.5 text-gray-700 transition-colors hover:bg-slate-200"
                     >
                       <span aria-hidden="true"></span>
                       <span class="text-gray-800 shrink-0">{{ r.roomNumber }}</span>
@@ -3562,7 +3567,7 @@ onUnmounted(() => {
                   <template v-else>
                     <div 
                       @click.stop="selectBookingFromSearch(b, r)"
-                      class="grid min-w-0 grid-cols-[50px_75px_minmax(0,1fr)] items-center gap-x-3 mt-1.5 text-gray-700 hover:text-sky-600"
+                      class="grid min-w-0 cursor-pointer grid-cols-[50px_75px_minmax(0,1fr)] items-center gap-x-3 px-3 py-1.5 text-gray-700 transition-colors hover:bg-slate-200"
                     >
                       <span aria-hidden="true"></span>
                       <span class="text-gray-800 shrink-0">{{ r.roomNumber }}</span>
@@ -3618,7 +3623,7 @@ onUnmounted(() => {
             <input type="checkbox" v-model="showAllGuestsInRoom" class="rounded border-gray-300 text-sky-600 focus:ring-sky-500" />
             <span>Xem tất cả khách trong phòng</span>
           </label>          <button @click="openRegistrationFromCheckout" :disabled="!selectedBooking" class="checkout-registration-button inline-flex items-center gap-1 px-2 py-1 text-xs text-blue-600 bg-white border border-blue-500 rounded hover:bg-blue-50 disabled:opacity-40 disabled:cursor-not-allowed">
-            <i class="fa-solid fa-address-card text-[11px]"></i>
+            <i class="fa-solid fa-address-card text-xs"></i>
             <span>Xem đăng ký</span>
           </button>
         </div>
@@ -3656,7 +3661,7 @@ onUnmounted(() => {
                     @dragleave="draggedOverRoom = null"
                     @drop.prevent.stop="draggedServiceGroup ? handleRoomDrop(b, null) : handleServiceDragEnd()"
                     :class="[
-                      selectedBooking && selectedBooking.id === b.id && !selectedRoomItem ? 'bg-[#eff6ff] border-l-[3px] border-blue-600' : b.isCheckedOut ? 'bg-[#ffd4d4] border-l-[3px] border-rose-400' : 'bg-[#f0f4ff] border-l-[3px] border-indigo-500',
+                      selectedBooking && selectedBooking.id === b.id && !selectedRoomItem ? 'checkout-selected-row bg-[#2563EB] border-l-[3px] border-[#1D4ED8]' : b.isCheckedOut ? 'bg-[#ffd4d4] border-l-[3px] border-rose-400' : 'bg-white border-l-[3px] border-transparent',
                       draggedOverRoom === roomDropKey(b, null) ? 'ring-2 ring-inset ring-sky-500 bg-sky-50' : '',
                       'cursor-pointer transition-colors'
                     ]"
@@ -3666,8 +3671,8 @@ onUnmounted(() => {
                     </td>
                     <td class="min-w-0 p-1 font-bold text-slate-900">
                       <div class="flex min-w-0 items-center gap-1 overflow-hidden">
-                        <i class="fa-solid fa-layer-group text-[10px] text-indigo-500"></i>
-                        <span class="shrink-0 rounded bg-slate-200 px-1 text-[10px] font-bold">{{ b.code }}</span>
+                        <i class="fa-solid fa-layer-group text-xs text-indigo-500"></i>
+                        <span class="shrink-0 rounded bg-slate-200 px-1 text-xs font-semibold">{{ b.code }}</span>
                       </div>
                     </td>
                     <td class="min-w-0 p-1 font-bold text-slate-900">
@@ -3687,7 +3692,7 @@ onUnmounted(() => {
                         @dragleave="draggedOverRoom = null"
                         @drop.prevent="handleRoomDrop(b, r, guest)"
                         :class="[
-                          selectedRoomItem && selectedRoomItem.id === r.id && String(selectedGuestId) === String(guest.id) ? 'bg-[#eff6ff] border-l-[3px] border-blue-600' : r.isCheckedOut ? 'bg-[#ffd4d4] hover:bg-[#ffc6c6]' : 'hover:bg-slate-50',
+                          selectedRoomItem && selectedRoomItem.id === r.id && String(selectedGuestId) === String(guest.id) ? 'checkout-selected-row bg-[#2563EB] border-l-[3px] border-[#1D4ED8]' : r.isCheckedOut ? 'bg-[#ffd4d4] hover:bg-[#ffc6c6]' : 'hover:bg-slate-50',
                           draggedOverRoom === roomDropKey(b, r, guest) ? 'ring-2 ring-inset ring-sky-500 bg-sky-50' : '',
                           'cursor-pointer transition-colors text-slate-900'
                         ]"
@@ -3708,7 +3713,7 @@ onUnmounted(() => {
                         @dragleave="draggedOverRoom = null"
                         @drop.prevent="handleRoomDrop(b, r)"
                         :class="[
-                          selectedRoomItem && selectedRoomItem.id === r.id ? 'bg-[#eff6ff] border-l-[3px] border-blue-600' : r.isCheckedOut ? 'bg-[#ffd4d4] hover:bg-[#ffc6c6]' : 'hover:bg-slate-50',
+                          selectedRoomItem && selectedRoomItem.id === r.id ? 'checkout-selected-row bg-[#2563EB] border-l-[3px] border-[#1D4ED8]' : r.isCheckedOut ? 'bg-[#ffd4d4] hover:bg-[#ffc6c6]' : 'hover:bg-slate-50',
                           draggedOverRoom === roomDropKey(b, r) ? 'ring-2 ring-inset ring-sky-500 bg-sky-50' : '',
                           'cursor-pointer transition-colors text-slate-900'
                         ]"
@@ -3733,26 +3738,26 @@ onUnmounted(() => {
         <div class="checkout-info-panel bg-white rounded-none border-0 flex flex-col min-h-0 shadow-none overflow-y-auto">
           <div class="checkout-info-heading flex items-center justify-between border-b border-slate-300 px-2 py-1">
             <span class="checkout-info-title"><i class="fa-solid fa-bed"></i> Thông Tin Đăng Ký</span>
-            <label class="flex items-center gap-1 text-[10px] font-bold text-red-600">
+            <label class="flex items-center gap-1 text-xs font-semibold text-red-600">
               <input type="checkbox" v-model="isNoPost" :disabled="!selectedBooking || noPostSaving || (selectedRoomItem && selectedBookingNoPost)" @change="handleNoPostChange" class="rounded border-gray-300 text-sky-600" />
               No post
             </label>
           </div>
-          <div class="grid grid-cols-2 gap-x-3 gap-y-1 px-2 py-1 text-[10px] leading-tight">
+          <div class="grid grid-cols-2 gap-x-3 gap-y-1 px-2 py-1 text-xs leading-tight">
             <div class="col-span-2"><label class="block text-slate-400">Tên đăng ký</label><span class="font-semibold text-slate-700 truncate block">{{ selectedBooking ? `${selectedBooking.code}-${selectedBooking.name}` : '--' }}</span></div>
             <div><label class="block text-slate-400">Tên khách</label><span class="font-semibold text-slate-700 truncate block">{{ selectedGuest || '--' }}</span></div>
             <div><label class="block text-slate-400">Ngày đến ~ Ngày đi</label><span class="font-semibold text-slate-700">{{ selectedBooking ? `${formatDate(selectedBooking.arrivalDate)} - ${formatDate(selectedBooking.departureDate)}` : '--' }}</span></div>
             <div><label class="block text-slate-400">Phòng / Hạng</label><span class="font-semibold text-slate-700">{{ roomNumber || '--' }} - {{ selectedRoomItem?.roomType || selectedRoomItem?.roomName || 'SUPT' }}</span></div>
             <div><label class="block text-slate-400">Trạng thái</label><span class="font-semibold text-emerald-600">In-House</span></div>
-            <div class="col-span-2"><label class="block text-slate-400"><i class="fa-regular fa-note-sticky"></i> Ghi chú:</label><textarea :value="noteText" readonly class="w-full h-7 px-1 py-0.5 bg-white border border-slate-300 rounded text-[10px] resize-none"></textarea></div>
+            <div class="col-span-2"><label class="block text-slate-400"><i class="fa-regular fa-note-sticky"></i> Ghi chú:</label><textarea :value="noteText" readonly class="w-full h-7 px-1 py-0.5 bg-white border border-slate-300 rounded text-xs resize-none"></textarea></div>
           </div>
           <div class="checkout-folio-section border-t border-slate-300 mb-auto px-2 py-1">
             <div class="checkout-folio-title"><i class="fa-solid fa-wallet"></i> Folio</div>
             <div class="grid grid-cols-2 gap-1">
-              <button @click="activeFolioTab = 'A'" :class="[String(activeFolioTab) === 'A' ? 'active border-slate-600 bg-slate-300' : 'border-slate-300 bg-white', 'checkout-folio-card border rounded px-1.5 py-0.5 text-left']"><div class="font-bold text-[10px]">Folio A</div><div class="text-right text-[15px] leading-none font-bold text-red-500">{{ formatSummaryMoney(folioTotal('A')) }}</div></button>
-              <button @click="activeFolioTab = '1'" @dragover.prevent="draggedOverFolio = 1" @dragleave="draggedOverFolio = null" @drop.prevent="handleFolioDrop(1)" :class="[String(activeFolioTab) === '1' ? 'active border-slate-600 bg-slate-300' : 'border-slate-300 bg-white', 'checkout-folio-card border rounded px-1.5 py-0.5 text-left']"><div class="font-bold text-[10px]">Folio 1</div><div class="text-right text-[15px] leading-none font-bold text-blue-600">{{ formatSummaryMoney(folioTotal(1)) }}</div></button>
-              <button @click="activeFolioTab = '2'" @dragover.prevent="draggedOverFolio = 2" @dragleave="draggedOverFolio = null" @drop.prevent="handleFolioDrop(2)" :class="[String(activeFolioTab) === '2' ? 'active border-slate-600 bg-slate-300' : 'border-slate-300 bg-white', 'checkout-folio-card border rounded px-1.5 py-0.5 text-left']"><div class="font-bold text-[10px]">Folio 2</div><div class="text-right text-[15px] leading-none font-bold text-blue-600">{{ formatSummaryMoney(folioTotal(2)) }}</div></button>
-              <button @click="activeFolioTab = '3'" @dragover.prevent="draggedOverFolio = 3" @dragleave="draggedOverFolio = null" @drop.prevent="handleFolioDrop(3)" :class="[String(activeFolioTab) === '3' ? 'active border-slate-600 bg-slate-300' : 'border-slate-300 bg-white', 'checkout-folio-card border rounded px-1.5 py-0.5 text-left']"><div class="font-bold text-[10px]">Folio 3</div><div class="text-right text-[15px] leading-none font-bold text-blue-600">{{ formatSummaryMoney(folioTotal(3)) }}</div></button>
+              <button @click="activeFolioTab = 'A'" :class="[String(activeFolioTab) === 'A' ? 'active border-slate-600 bg-slate-300' : 'border-slate-300 bg-white', 'checkout-folio-card border rounded px-1.5 py-0.5 text-left']"><div class="font-semibold text-xs">Folio A</div><div class="text-right text-[15px] leading-none font-bold text-red-500">{{ formatSummaryMoney(folioTotal('A')) }}</div></button>
+              <button @click="activeFolioTab = '1'" @dragover.prevent="draggedOverFolio = 1" @dragleave="draggedOverFolio = null" @drop.prevent="handleFolioDrop(1)" :class="[String(activeFolioTab) === '1' ? 'active border-slate-600 bg-slate-300' : 'border-slate-300 bg-white', 'checkout-folio-card border rounded px-1.5 py-0.5 text-left']"><div class="font-semibold text-xs">Folio 1</div><div class="text-right text-[15px] leading-none font-bold text-blue-600">{{ formatSummaryMoney(folioTotal(1)) }}</div></button>
+              <button @click="activeFolioTab = '2'" @dragover.prevent="draggedOverFolio = 2" @dragleave="draggedOverFolio = null" @drop.prevent="handleFolioDrop(2)" :class="[String(activeFolioTab) === '2' ? 'active border-slate-600 bg-slate-300' : 'border-slate-300 bg-white', 'checkout-folio-card border rounded px-1.5 py-0.5 text-left']"><div class="font-semibold text-xs">Folio 2</div><div class="text-right text-[15px] leading-none font-bold text-blue-600">{{ formatSummaryMoney(folioTotal(2)) }}</div></button>
+              <button @click="activeFolioTab = '3'" @dragover.prevent="draggedOverFolio = 3" @dragleave="draggedOverFolio = null" @drop.prevent="handleFolioDrop(3)" :class="[String(activeFolioTab) === '3' ? 'active border-slate-600 bg-slate-300' : 'border-slate-300 bg-white', 'checkout-folio-card border rounded px-1.5 py-0.5 text-left']"><div class="font-semibold text-xs">Folio 3</div><div class="text-right text-[15px] leading-none font-bold text-blue-600">{{ formatSummaryMoney(folioTotal(3)) }}</div></button>
             </div>
           </div>
         </div>
@@ -3866,9 +3871,9 @@ onUnmounted(() => {
                 @change="toggleAllServiceSelection($event.target.checked)"
                 class="rounded border-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
               />
-              <span class="uppercase text-[10px] text-slate-500 tracking-wide">Tổng dịch vụ:</span>
+              <span class="uppercase text-xs font-semibold text-[#000000D9] tracking-wide">Tổng dịch vụ:</span>
             </div>
-            <span class="tabular-nums text-xs pr-2 text-blue-600 font-bold text-sm">{{ formatSummaryMoney(totalServiceAmount) }}</span>
+            <span class="tabular-nums pr-2 text-[#155DFC] font-semibold text-sm">{{ formatSummaryMoney(totalServiceAmount) }}</span>
           </div>
         </div>
 
@@ -3961,9 +3966,9 @@ onUnmounted(() => {
                 @change="toggleAllPaymentSelection($event.target.checked)"
                 class="rounded border-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
               />
-              <span class="uppercase text-[10px] text-slate-500 tracking-wide">Tổng thanh toán:</span>
+              <span class="uppercase text-xs font-semibold text-[#000000D9] tracking-wide">Tổng thanh toán:</span>
             </div>
-            <span class="tabular-nums text-xs pr-2 text-emerald-600 font-bold text-sm">{{ formatMoney(totalPaymentAmount) }}</span>
+            <span class="tabular-nums pr-2 text-[#155DFC] font-semibold text-sm">{{ formatMoney(totalPaymentAmount) }}</span>
           </div>
         </div>
 
@@ -4291,7 +4296,7 @@ onUnmounted(() => {
 .checkout-services-panel { min-height: 0; }
 .checkout-payments-panel { flex: 0 0 var(--checkout-bottom-height); }
 .checkout-actions { width: 170px; min-width: 170px; }
-.checkout-actions button { font-size: 11px; }
+.checkout-actions button { font-size: 12px; }
 .checkout-actions .checkout-action-menu { padding-top: 0.5rem; }
 .checkout-actions .checkout-action-menu > div { border-color: #334155; }
 .checkout-actions .checkout-action-menu > div:last-child { margin-top: 0; }
@@ -4302,7 +4307,7 @@ onUnmounted(() => {
   .checkout-shell { --checkout-bottom-height: 275px; }
 }
 .checkout-bookings-heading { height: 24px; flex: 0 0 24px; }
-.checkout-info-panel { font-size: 10px; }
+.checkout-info-panel { font-size: 12px; }
 .checkout-info-heading { height: 24px; flex: 0 0 24px; }
 .checkout-folio-section { flex: 0 0 88px; }
 .checkout-folio-card { height: 36px; }
@@ -4322,9 +4327,9 @@ onUnmounted(() => {
 .checkout-services-panel > div:first-child,
 .checkout-payments-panel > div:first-child { background: #f8fafc; padding: 6px 10px; min-height: 29px; }
 .checkout-services-panel table th,
-.checkout-payments-panel table th { padding: 5px 8px; font-size: 11px; font-weight: 600; color: #64748b; background: #f8fafc; }
+.checkout-payments-panel table th { padding: 5px 8px; font-size: 12px; font-weight: 600; color: #64748b; background: #f8fafc; }
 .checkout-services-panel table td,
-.checkout-payments-panel table td { padding: 5px 8px; font-size: 11px; }
+.checkout-payments-panel table td { padding: 5px 8px; font-size: 12px; }
 .checkout-services-panel > div:last-child,
 .checkout-payments-panel > div:last-child { justify-content: flex-end; padding: 5px 12px; background: #f8fafc; }
 .checkout-services-panel > div:last-child input,
@@ -4341,12 +4346,12 @@ onUnmounted(() => {
 .checkout-payment-title svg { color: #0f172a !important; }
 .checkout-payment-footer { padding: 5px 12px !important; min-height: 29px; }
 .checkout-payment-footer > div { gap: 0; }
-.checkout-payment-footer > div > span:first-of-type { margin-right: 12px; color: #64748b; font-size: 10px; text-transform: uppercase; }
+.checkout-payment-footer > div > span:first-of-type { margin-right: 12px; color: #64748b; font-size: 12px; text-transform: uppercase; }
 .checkout-payment-footer > span:last-child { color: #2563eb !important; font-size: 12px; }
 /* Fallback selectors for the existing payment markup. */
 .checkout-payments-panel > div:nth-child(2) > table { table-layout: auto; width: 100%; }
 .checkout-payments-panel > div:nth-child(2) > table th,
-.checkout-payments-panel > div:nth-child(2) > table td { min-width: 0 !important; white-space: nowrap; padding: 5px 8px; font-size: 11px; }
+.checkout-payments-panel > div:nth-child(2) > table td { min-width: 0 !important; white-space: nowrap; padding: 5px 8px; font-size: 12px; }
 .checkout-payments-panel > div:nth-child(2) > table th:first-child,
 .checkout-payments-panel > div:nth-child(2) > table td:first-child { width: 25px; }
 .checkout-payments-panel > div:first-child { padding: 6px 10px; min-height: 29px; background: #f8fafc; }
@@ -4357,17 +4362,17 @@ onUnmounted(() => {
 /* Service table: exact 13-column structure from MÀN HÌNH HÓA ĐƠN.html. */
 .checkout-services-panel table { table-layout: auto; width: 100%; }
 .checkout-services-panel table th,
-.checkout-services-panel table td { min-width: 0 !important; white-space: nowrap; padding: 5px 8px; font-size: 11px; }
+.checkout-services-panel table td { min-width: 0 !important; white-space: nowrap; padding: 5px 8px; font-size: 12px; }
 .checkout-services-panel table th:first-child,
 .checkout-services-panel table td:first-child { width: 25px !important; }
 .checkout-service-title { padding: 6px 10px !important; min-height: 29px; }
 .checkout-service-title svg,
 .checkout-service-title i { color: #0f172a; }
 /* Booking list: exact 5-column layout from the reference HTML. */
-.checkout-bookings-heading { height: 29px; flex: 0 0 29px; padding: 6px 10px !important; background: #f8fafc; color: #64748b; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+.checkout-bookings-heading { height: 29px; flex: 0 0 29px; padding: 6px 10px !important; background: #f8fafc; color: #64748b; font-size: 12px; font-weight: 700; text-transform: uppercase; }
 .checkout-bookings-panel table { table-layout: fixed !important; width: 100%; border-collapse: collapse; }
-.checkout-bookings-panel table th { padding: 6px 6px; background: #f8fafc; color: #64748b; font-size: 10px; font-weight: 700; text-transform: uppercase; white-space: nowrap; }
-.checkout-bookings-panel table td { padding: 6px 6px; font-size: 11px; border-bottom: 1px solid #cbd5e1; white-space: nowrap; overflow: hidden; }
+.checkout-bookings-panel table th { padding: 6px 6px; background: #f8fafc; color: #64748b; font-size: 12px; font-weight: 700; text-transform: uppercase; white-space: nowrap; }
+.checkout-bookings-panel table td { padding: 6px 6px; font-size: 12px; border-bottom: 1px solid #cbd5e1; white-space: nowrap; overflow: hidden; }
 .checkout-bookings-panel table td:nth-child(3),
 .checkout-bookings-panel table td:nth-child(3) > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .checkout-bookings-panel table th:first-child,
@@ -4379,7 +4384,7 @@ onUnmounted(() => {
 .checkout-header > div:first-child > div:first-child { flex: 0 0 282px; width: 282px; }
 .checkout-register-filter select { width: 108px; height: 28px; }
 .checkout-header > div:last-child { gap: 12px; }
-.checkout-header > div:last-child label { font-size: 11px; font-weight: 600; }
+.checkout-header > div:last-child label { font-size: 12px; font-weight: 600; }
 .checkout-registration-button { height: 28px; min-width: 107px; font-weight: 600; }
 /* Reference layout: header is a separate full-width row; action sidebar starts below it. */
 .checkout-shell { display: block !important; position: relative; }
@@ -4391,12 +4396,12 @@ onUnmounted(() => {
 .checkout-header { height: 45px !important; min-height: 45px !important; padding: 8px 16px !important; background: #ffffff; border-bottom: 1px solid #cbd5e1; }
 .checkout-header input[type="text"] { height: 28px; padding: 5px 10px 5px 30px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px; }
 .checkout-filter-select { height: 28px !important; padding-top: 5px !important; padding-bottom: 5px !important; border-radius: 4px !important; }
-.checkout-registration-button { height: 28px !important; padding: 5px 10px !important; border-radius: 4px !important; font-size: 11px; }
+.checkout-registration-button { height: 28px !important; padding: 5px 10px !important; border-radius: 4px !important; font-size: 12px; }
 .checkout-actions { top: 48px !important; right: 2px !important; bottom: 0 !important; width: 170px !important; min-width: 170px !important; padding: 8px !important; background: #1e293b !important; border: 1px solid #475569 !important; border-radius: 6px !important; box-shadow: -2px 0 8px rgba(0,0,0,.15); overflow-x: hidden; overflow-y: auto; }
 .checkout-actions .checkout-action-menu { padding-top: 0 !important; gap: 8px !important; }
 .checkout-actions .checkout-action-menu > div { padding: 2px 0; border-bottom: 1px solid #334155; }
 .checkout-actions .checkout-action-menu > div:last-child { border-bottom: 0; }
-.checkout-actions .menu-title { font-size: 9px; color: #94a3b8; padding: 4px 8px 2px; }
+.checkout-actions .menu-title { font-size: 12px; color: #94a3b8; padding: 4px 8px 2px; }
 .checkout-actions button { border-radius: 4px; }
 /* Correct 3-column grid: header spans all columns, sidebar occupies column 3 below it. */
 .checkout-shell { display: grid !important; grid-template-columns: minmax(410px, 430px) minmax(0, 1fr) 170px; grid-template-rows: 45px minmax(0, 1fr); width: 100%; height: calc(100vh - 48px); min-width: 1024px; }
@@ -4406,7 +4411,7 @@ onUnmounted(() => {
 .checkout-billing-pane { grid-column: 2; grid-row: 2; min-width: 0; }
 .checkout-actions { position: static !important; grid-column: 3; grid-row: 2; align-self: stretch; width: auto !important; min-width: 0 !important; height: calc(100% - 3px); margin: 3px 2px 0 0; }
 /* Registration/Folio panels copied from the reference sidebar-detail sections. */
-.checkout-info-panel { background: #f8fafc !important; font-size: 10px; }
+.checkout-info-panel { background: #f8fafc !important; font-size: 12px; }
 .checkout-services-panel tbody td:nth-child(9) span,
 .checkout-payments-panel tbody td:nth-child(7) span { background: transparent !important; color: inherit !important; border-radius: 0 !important; }
 .checkout-services-panel tbody td:nth-child(9) span,
@@ -4415,41 +4420,41 @@ onUnmounted(() => {
 .checkout-actions [data-action="add-deposit"] span::after { content: 'Thanh Toán Trước'; font-size: 12px; }
 .checkout-info-heading { height: auto; min-height: 24px; padding: 4px 8px !important; border-bottom: 0 !important; color: #64748b; }
 .checkout-info-title,
-.checkout-folio-title { display: flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; }
+.checkout-folio-title { display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; }
 .checkout-info-title i,
 .checkout-folio-title i { color: #64748b; }
 .checkout-info-panel > div:nth-child(2) { padding: 4px 8px !important; gap: 2px 4px; }
-.checkout-info-panel > div:nth-child(2) label { font-size: 9px; color: #64748b; display: block; }
-.checkout-info-panel > div:nth-child(2) span { font-size: 11px; font-weight: 600; color: #0f172a; }
-.checkout-info-panel > div:nth-child(2) textarea { height: 28px; padding: 2px 6px; font-size: 11px; border: 1px solid #cbd5e1; border-radius: 4px; }
+.checkout-info-panel > div:nth-child(2) label { font-size: 12px; color: #64748b; display: block; }
+.checkout-info-panel > div:nth-child(2) span { font-size: 12px; font-weight: 600; color: #0f172a; }
+.checkout-info-panel > div:nth-child(2) textarea { height: 28px; padding: 2px 6px; font-size: 12px; border: 1px solid #cbd5e1; border-radius: 4px; }
 .checkout-info-panel > div:nth-child(2) label i { margin-right: 3px; }
 .checkout-folio-section { padding: 4px 8px !important; background: #f8fafc; border-top: 1px solid #cbd5e1; }
 .checkout-folio-title { margin-bottom: 2px; }
 .checkout-folio-section > div:last-child { gap: 4px; }
 .checkout-folio-card { height: 38px !important; padding: 3px 6px !important; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 4px; }
 .checkout-folio-card.active { background: #cbd5e1 !important; border-color: #475569 !important; }
-.checkout-folio-card div:first-child { font-size: 10px; font-weight: 700; color: #0f172a; }
+.checkout-folio-card div:first-child { font-size: 12px; font-weight: 700; color: #0f172a; }
 .checkout-folio-card div:last-child { font-size: 15px; font-weight: 700; line-height: 1; text-align: right; color: #2563eb; }
 .checkout-folio-card:first-child div:last-child { color: #ef4444; }
 /* Filter popup matching .filter-dropdown in MÀN HÌNH HÓA ĐƠN.html. */
 .checkout-register-filter { position: relative !important; }
 .checkout-filter-dropdown { position: absolute; top: 40px; left: 0; width: 380px; padding: 10px; background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,.15); z-index: 1000; }
 .checkout-filter-tabs { display: flex; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; margin-bottom: 10px; background: #f8fafc; }
-.checkout-filter-tab { flex: 1; padding: 5px 0; border: 0; border-right: 1px solid #cbd5e1; background: transparent; color: #0f172a; font-size: 10px; font-weight: 600; }
+.checkout-filter-tab { flex: 1; padding: 5px 0; border: 0; border-right: 1px solid #cbd5e1; background: transparent; color: #0f172a; font-size: 12px; font-weight: 600; }
 .checkout-filter-tab:last-child { border-right: 0; }
 .checkout-filter-tab.active { background: #2563eb; color: #fff; }
 .checkout-filter-box { padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 6px; margin-bottom: 10px; }
-.checkout-filter-box-title { margin-bottom: 4px; color: #0f172a; font-size: 10px; font-weight: 700; }
-.checkout-filter-scope { width: 100%; height: 29px; margin-bottom: 8px; padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 4px; background: #fff; font-size: 11px; }
+.checkout-filter-box-title { margin-bottom: 4px; color: #0f172a; font-size: 12px; font-weight: 700; }
+.checkout-filter-scope { width: 100%; height: 29px; margin-bottom: 8px; padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 4px; background: #fff; font-size: 12px; }
 .checkout-filter-scope:disabled { opacity: .55; cursor: not-allowed; }
 .checkout-filter-date-row { display: flex; flex-direction: column; gap: 6px; }
-.checkout-filter-date-label { display: flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.checkout-filter-date-label { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .checkout-filter-date-inputs { display: flex; gap: 4px; }
 .checkout-filter-date-wrap { display: flex; align-items: center; flex: 1; min-width: 0; padding: 3px 4px; border: 1px solid #cbd5e1; border-radius: 4px; background: #fff; }
-.checkout-filter-date-wrap input { width: 100%; min-width: 0; height: 22px !important; padding: 0 !important; border: 0 !important; border-radius: 0 !important; font-size: 10px !important; }
-.checkout-filter-date-wrap i { margin-left: 2px; color: #10b981; font-size: 11px; }
+.checkout-filter-date-wrap input { width: 100%; min-width: 0; height: 22px !important; padding: 0 !important; border: 0 !important; border-radius: 0 !important; font-size: 12px !important; }
+.checkout-filter-date-wrap i { margin-left: 2px; color: #10b981; font-size: 12px; }
 .checkout-filter-actions { display: flex; justify-content: flex-end; gap: 6px; padding-top: 8px; border-top: 1px solid #f1f5f9; }
-.checkout-filter-actions button { padding: 4px 12px; border: 0; border-radius: 4px; background: #0088ff; color: #fff; font-size: 11px; font-weight: 600; cursor: pointer; transition: background-color 0.15s; }
+.checkout-filter-actions button { padding: 4px 12px; border: 0; border-radius: 4px; background: #0088ff; color: #fff; font-size: 12px; font-weight: 600; cursor: pointer; transition: background-color 0.15s; }
 .checkout-filter-actions button:hover { background: #0077e6; }
 /* Match the sample: filter popup is anchored to the whole search-bar, not the button. */
 .checkout-header > div:first-child { position: relative; }
@@ -4462,16 +4467,16 @@ onUnmounted(() => {
 .checkout-header > div:first-child { flex: 0 0 380px !important; width: 380px !important; max-width: 380px !important; position: relative !important; }
 .checkout-header > div:first-child > div:first-child { flex: 1 1 auto !important; width: auto !important; min-width: 0 !important; }
 .checkout-header > div:first-child > div:first-child > input { height: 28px !important; padding: 5px 10px 5px 30px !important; font-size: 12px !important; }
-.checkout-filter-button { flex: 0 0 auto !important; height: 28px !important; padding: 5px 10px !important; border-radius: 4px !important; font-size: 11px !important; }
+.checkout-filter-button { flex: 0 0 auto !important; height: 28px !important; padding: 5px 10px !important; border-radius: 4px !important; font-size: 12px !important; }
 .checkout-filter-dropdown { top: 40px !important; left: 0 !important; width: 380px !important; padding: 10px !important; border-radius: 8px !important; }
 .checkout-filter-tabs { height: auto !important; margin-bottom: 10px !important; }
-.checkout-filter-tab { height: auto !important; min-height: 32px !important; padding: 5px 0 !important; font-size: 10px !important; }
+.checkout-filter-tab { height: auto !important; min-height: 32px !important; padding: 5px 0 !important; font-size: 12px !important; }
 .checkout-filter-box { padding: 8px 10px !important; margin-bottom: 10px !important; }
 .checkout-filter-scope { height: auto !important; padding: 4px 8px !important; margin-bottom: 8px !important; }
-.checkout-filter-date-wrap input { height: auto !important; padding: 0 !important; font-size: 10px !important; }
+.checkout-filter-date-wrap input { height: auto !important; padding: 0 !important; font-size: 12px !important; }
 .checkout-filter-date-wrap input:disabled { background: #f1f5f9; color: #94a3b8; cursor: not-allowed; }
-.checkout-filter-date-wrap i:last-child { color: #64748b !important; font-size: 10px !important; }
-.checkout-filter-actions button { padding: 4px 10px !important; font-size: 10px !important; }
+.checkout-filter-date-wrap i:last-child { color: #64748b !important; font-size: 12px !important; }
+.checkout-filter-actions button { padding: 4px 10px !important; font-size: 12px !important; }
 /* Native date controls and the compact blue scope selector from the reference popup. */
 .checkout-filter-scope { width: 136px !important; background: #2563eb !important; color: #fff !important; border-color: #2563eb !important; font-weight: 700; cursor: pointer; }
 .checkout-filter-scope option { background: #fff; color: #0f172a; font-weight: 400; }
@@ -4482,4 +4487,12 @@ onUnmounted(() => {
 .checkout-filter-date-wrap input[type="date"] { appearance: none; -webkit-appearance: none; }
 .checkout-filter-date-wrap i.fa-copy { cursor: pointer; }
 .checkout-filter-date-wrap i.fa-copy:hover { color: #2563eb !important; }
+.checkout-selected-row,
+.checkout-selected-row * { color: #fff !important; }
+.checkout-shell,
+.checkout-shell input,
+.checkout-shell select,
+.checkout-shell textarea,
+.checkout-shell button,
+.checkout-shell table { font-family: Roboto, Arial, sans-serif; }
 </style>
