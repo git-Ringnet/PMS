@@ -5,11 +5,11 @@
       <div class="fixed inset-0 bg-black/55 backdrop-blur-[1px]" @click="$emit('close')"></div>
 
       <!-- Modal -->
-      <div class="modal relative z-10 w-[960px] max-w-[98vw] flex flex-col font-sans text-[13px] my-auto"
+      <div class="modal relative z-10 w-[960px] max-w-[98vw] flex flex-col font-sans text-[13px] my-auto rounded-xl overflow-hidden"
         :style="{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }">
         
         <!-- Header -->
-        <div class="m-head select-none cursor-move" @mousedown="startDragModal">
+        <div class="m-head select-none cursor-move" :style="{ background: topbarThemeBg, color: 'var(--pms-custom-theme-text, #ffffff)' }" @mousedown="startDragModal">
           <div class="flex items-center gap-2">
             <i class="fa-solid fa-id-card text-[#B9CDF8]"></i>
             <h1 id="ttl">Thông tin khách</h1>
@@ -17,7 +17,9 @@
           </div>
 
           <div class="flex items-center gap-1.5 ml-auto">
-            <button type="button" @click="$emit('close')" class="x" aria-label="Đóng">×</button>
+            <button type="button" @click="$emit('close')" class="x" aria-label="Đóng">
+              <i class="fa-solid fa-xmark text-sm"></i>
+            </button>
           </div>
         </div>
 
@@ -98,13 +100,13 @@
 
               <!-- Action buttons -->
               <div class="acts">
-                <button type="button" @click="triggerPhotoInput">
-                  <svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
-                  Chụp
+                <button type="button" @click="triggerPhotoInput" class="btn-pms-secondary h-7 flex items-center justify-center gap-1.5 text-xs font-semibold">
+                  <i class="fa-solid fa-camera text-xs"></i>
+                  <span>Chụp</span>
                 </button>
-                <button type="button" @click="triggerPhotoInput">
-                  <svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M4 16l5-5 4 4 3-3 4 4"/><circle cx="16" cy="8" r="1.5"/></svg>
-                  Tải lên
+                <button type="button" @click="triggerPhotoInput" class="btn-pms-secondary h-7 flex items-center justify-center gap-1.5 text-xs font-semibold">
+                  <i class="fa-solid fa-arrow-up-from-bracket text-xs"></i>
+                  <span>Tải lên</span>
                 </button>
               </div>
               <div class="hint">Bấm ảnh nhỏ để xem lớn · Hỗ trợ tối đa 5MB</div>
@@ -120,20 +122,20 @@
                 <div class="f s2">
                   <label>Danh xưng</label>
                   <select v-model="form.title" @change="handleTitleChange">
-                    <option value="">-- Chọn --</option>
+                    <option value="">Chọn</option>
                     <option v-for="t in titles" :key="t" :value="t">{{ t }}</option>
                   </select>
                 </div>
 
                 <div class="f s6">
                   <label>Họ và tên <span class="req">*</span></label>
-                  <input v-model="form.full_name" type="text" placeholder="HỌ VÀ TÊN" style="text-transform:uppercase" />
+                  <input v-model="form.full_name" type="text" required placeholder="HỌ VÀ TÊN" style="text-transform:uppercase" />
                 </div>
 
                 <div class="f s4">
                   <label>Loại khách</label>
                   <select v-model="form.guest_type">
-                    <option value="">-- Loại khách --</option>
+                    <option value=""></option>
                     <option v-for="gt in guestTypes" :key="gt.id" :value="String(gt.id)">{{ gt.name }}</option>
                     <option v-if="form.guest_type && !guestTypes.some(gt => String(gt.id) === String(form.guest_type))" :value="form.guest_type">{{ form.guest_type }}</option>
                   </select>
@@ -141,16 +143,17 @@
 
                 <div class="f s4">
                   <label>Ngày sinh</label>
-                  <div class="wi d" @click="triggerDatePicker($event)">
-                    <input v-model="form.dob" type="date" @click="$event.target.showPicker?.()" />
-                    <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
-                  </div>
+                  <SingleDatePicker
+                    v-model="form.dob"
+                    placeholder="dd/mm/yy"
+                    input-class="!h-[30px] !py-0 !px-2 !rounded !border-[#C5CDDA] !text-xs !font-normal"
+                  />
                 </div>
 
                 <div class="f s8">
                   <label>Quốc tịch <span class="req">*</span></label>
-                  <select v-model="form.nationality_code">
-                    <option value="">-- Chọn quốc tịch --</option>
+                  <select v-model="form.nationality_code" required>
+                    <option value="">Chọn quốc tịch</option>
                     <option v-for="n in nationalities" :key="n.code" :value="n.code">{{ n.label }}</option>
                   </select>
                 </div>
@@ -164,7 +167,7 @@
                 <div class="f s3">
                   <label>Loại giấy tờ</label>
                   <select v-model="form.id_type">
-                    <option value="">-- Loại giấy tờ --</option>
+                    <option value="">Loại giấy tờ</option>
                     <option v-for="it in idTypes" :key="it.id" :value="getIdTypeValue(it)">{{ it.name }}</option>
                     <option v-if="form.id_type && !idTypes.some(it => getIdTypeValue(it) === form.id_type || it.name === form.id_type)" :value="form.id_type">{{ form.id_type }}</option>
                   </select>
@@ -172,23 +175,25 @@
 
                 <div class="f s3">
                   <label>Số giấy tờ <span class="req">*</span></label>
-                  <input v-model="form.id_number" type="text" placeholder="Số CCCD / Passport" />
+                  <input v-model="form.id_number" type="text" required placeholder="Số CCCD / Passport" />
                 </div>
 
                 <div class="f s3">
                   <label>Ngày cấp</label>
-                  <div class="wi d" @click="triggerDatePicker($event)">
-                    <input v-model="form.id_issue_date" type="date" @click="$event.target.showPicker?.()" />
-                    <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
-                  </div>
+                  <SingleDatePicker
+                    v-model="form.id_issue_date"
+                    placeholder="dd/mm/yy"
+                    input-class="!h-[30px] !py-0 !px-2 !rounded !border-[#C5CDDA] !text-xs !font-normal"
+                  />
                 </div>
 
                 <div class="f s3">
                   <label>Ngày hết hạn</label>
-                  <div class="wi d" @click="triggerDatePicker($event)">
-                    <input v-model="form.passport_expiry" type="date" @click="$event.target.showPicker?.()" />
-                    <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
-                  </div>
+                  <SingleDatePicker
+                    v-model="form.passport_expiry"
+                    placeholder="dd/mm/yy"
+                    input-class="!h-[30px] !py-0 !px-2 !rounded !border-[#C5CDDA] !text-xs !font-normal"
+                  />
                   <div v-if="isPassportExpiredBeforeDeparture" class="msg err">
                     Giấy tờ hết hạn trước ngày trả phòng
                   </div>
@@ -196,16 +201,17 @@
 
                 <div class="f s3 vf">
                   <label>Ngày nhập cảnh</label>
-                  <div class="wi d" @click="triggerDatePicker($event)">
-                    <input v-model="form.entry_date" type="date" @click="$event.target.showPicker?.()" />
-                    <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
-                  </div>
+                  <SingleDatePicker
+                    v-model="form.entry_date"
+                    placeholder="dd/mm/yy"
+                    input-class="!h-[30px] !py-0 !px-2 !rounded !border-[#C5CDDA] !text-xs !font-normal"
+                  />
                 </div>
 
                 <div class="f s3 vf">
                   <label>Cửa khẩu</label>
                   <select v-model="form.border_gate">
-                    <option value="">— Chọn cửa khẩu —</option>
+                    <option value="">Chọn cửa khẩu</option>
                     <option v-for="bg in borderGates" :key="bg.id" :value="bg.code">{{ bg.name }}</option>
                     <option v-if="form.border_gate && !borderGates.some(bg => bg.code === form.border_gate)" :value="form.border_gate">{{ form.border_gate }}</option>
                   </select>
@@ -214,7 +220,7 @@
                 <div class="f s3 vf">
                   <label>Mục đích nhập cảnh</label>
                   <select v-model="form.entry_purpose">
-                    <option value="">— Chọn mục đích —</option>
+                    <option value=""></option>
                     <option v-for="ep in entryPurposes" :key="ep.id" :value="String(ep.id)">{{ ep.name }}</option>
                     <option v-if="form.entry_purpose && !entryPurposes.some(ep => String(ep.id) === String(form.entry_purpose))" :value="form.entry_purpose">{{ form.entry_purpose }}</option>
                   </select>
@@ -223,7 +229,7 @@
                 <div class="f s3">
                   <label>Hình thức cư trú</label>
                   <select v-model="form.residence_type">
-                    <option value="">— Chọn hình thức —</option>
+                    <option value=""></option>
                     <option v-for="rt in residenceTypes" :key="rt.id" :value="String(rt.id)">{{ rt.name_new_form || rt.name }}</option>
                     <option v-if="form.residence_type && !residenceTypes.some(rt => String(rt.id) === String(form.residence_type))" :value="form.residence_type">{{ form.residence_type }}</option>
                   </select>
@@ -231,15 +237,16 @@
 
                 <div class="f s3">
                   <label>Tạm trú đến</label>
-                  <div class="wi d" @click="triggerDatePicker($event)">
-                    <input v-model="form.temp_residence_to" type="date" @click="$event.target.showPicker?.()" />
-                    <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
-                  </div>
+                  <SingleDatePicker
+                    v-model="form.temp_residence_to"
+                    placeholder="dd/mm/yy"
+                    input-class="!h-[30px] !py-0 !px-2 !rounded !border-[#C5CDDA] !text-xs !font-normal"
+                  />
                 </div>
 
                 <div class="f s3 vf">
                   <label>Số Visa</label>
-                  <input v-model="form.visa_no" type="text" placeholder="Số visa / thẻ tạm trú" />
+                  <input v-model="form.visa_no" type="text" placeholder="" />
                 </div>
               </div>
             </section>
@@ -251,7 +258,7 @@
                 <div class="f s4">
                   <label>Điện thoại</label>
                   <div class="wi">
-                    <input v-model="form.phone" type="tel" placeholder="+84 …" />
+                    <input v-model="form.phone" type="tel" placeholder="" />
                     <svg viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>
                   </div>
                 </div>
@@ -259,20 +266,20 @@
                 <div class="f s8">
                   <label>Email</label>
                   <div class="wi">
-                    <input v-model="form.email" type="email" placeholder="name@mail.com" />
+                    <input v-model="form.email" type="email" placeholder="" />
                     <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>
                   </div>
                 </div>
 
                 <div class="f s12">
                   <label>Địa chỉ</label>
-                  <input v-model="form.address" type="text" placeholder="Số nhà, tên đường, khu dân cư…" />
+                  <input v-model="form.address" type="text" placeholder="" />
                 </div>
 
                 <div class="f s4">
                   <label>Tỉnh / Thành phố</label>
                   <select v-model="form.province" @change="onProvinceChange(form.province)">
-                    <option value="">— Chọn tỉnh thành —</option>
+                    <option value=""></option>
                     <option v-for="p in provincesList" :key="p.code" :value="p.name">{{ p.name }}</option>
                   </select>
                 </div>
@@ -280,7 +287,7 @@
                 <div class="f s4">
                   <label>Quận / Huyện</label>
                   <select v-model="form.district" @change="onDistrictChange(form.district)" :disabled="!form.province">
-                    <option value="">— Chọn quận huyện —</option>
+                    <option value=""></option>
                     <option v-for="d in currentDistricts" :key="d.code" :value="d.name">{{ d.name }}</option>
                   </select>
                 </div>
@@ -288,7 +295,7 @@
                 <div class="f s4">
                   <label>Phường / Xã</label>
                   <select v-model="form.ward" :disabled="!form.district">
-                    <option value="">— Chọn phường xã —</option>
+                    <option value=""></option>
                     <option v-for="w in currentWards" :key="w.code" :value="w.name">{{ w.name }}</option>
                   </select>
                 </div>
@@ -299,7 +306,7 @@
             <section class="sec">
               <h3>Ghi chú</h3>
               <div class="f">
-                <textarea v-model="form.note" placeholder="Yêu cầu đặc biệt, lưu ý sở thích, chế độ ăn hoặc phục vụ phòng…"></textarea>
+                <textarea v-model="form.note" placeholder=""></textarea>
               </div>
             </section>
           </div>
@@ -311,14 +318,9 @@
             <span>Cập nhật: <b>{{ auditTime }}</b> · bởi <b>{{ auditUser }}</b></span>
           </div>
 
-          <button type="button" @click="handleSave" :disabled="saving" class="btn p">
-            <svg viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></svg>
+          <button type="button" @click="handleSave" :disabled="saving" class="btn-pms-primary h-8 px-4 flex items-center gap-1.5 text-xs">
+            <i class="fa-solid fa-check text-xs"></i>
             <span>{{ saving ? 'Đang lưu...' : 'Lưu' }}</span>
-            <kbd class="ml-1 text-[10px] opacity-75">Ctrl+S</kbd>
-          </button>
-
-          <button type="button" @click="$emit('close')" class="btn g">
-            <i class="fa-solid fa-xmark mr-1"></i>Đóng
           </button>
         </div>
 
@@ -339,6 +341,7 @@ import {
 } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
+import SingleDatePicker from '@/components/SingleDatePicker.vue'
 
 const props = defineProps({
   show: Boolean,
@@ -354,6 +357,10 @@ const emit = defineEmits(['close', 'saved'])
 const uiStore = useUiStore()
 const authStore = useAuthStore()
 const saving = ref(false)
+
+const topbarThemeBg = computed(() => {
+  return authStore.settings?.topbar_color || 'var(--pms-custom-theme, #006bdb)'
+})
 
 const guestPhotos = ref([])
 const curPhotoIdx = ref(0)
@@ -720,7 +727,9 @@ function stopDragModal() {
 }
 
 function handleKeyDown(e) {
-  if (props.show && e.ctrlKey && e.key.toLowerCase() === 's') {
+  if (props.show && e.key === 'Escape') {
+    emit('close')
+  } else if (props.show && e.ctrlKey && e.key.toLowerCase() === 's') {
     e.preventDefault()
     handleSave()
   }
@@ -754,7 +763,13 @@ onUnmounted(() => {
 function formatDate(d) {
   if (!d) return '—'
   try {
-    return new Date(d).toLocaleDateString('vi-VN')
+    const dt = new Date(d)
+    if (isNaN(dt.getTime())) return d
+    const pad = n => String(n).padStart(2, '0')
+    const day = pad(dt.getDate())
+    const month = pad(dt.getMonth() + 1)
+    const yy = String(dt.getFullYear()).slice(-2)
+    return `${day}/${month}/${yy}`
   } catch { return d }
 }
 
@@ -765,10 +780,10 @@ function formatDateTime(d) {
     const pad = n => String(n).padStart(2, '0')
     const day = pad(dt.getDate())
     const month = pad(dt.getMonth() + 1)
-    const year = dt.getFullYear()
+    const yy = String(dt.getFullYear()).slice(-2)
     const hours = pad(dt.getHours())
     const minutes = pad(dt.getMinutes())
-    return `${day}/${month}/${year} ${hours}:${minutes}`
+    return `${day}/${month}/${yy} ${hours}:${minutes}`
   } catch {
     return d
   }
@@ -823,6 +838,15 @@ function calculateNights(room) {
 }
 
 async function handleSave() {
+  const missingRequiredFields = []
+  if (!String(form.value.full_name || '').trim()) missingRequiredFields.push('Họ và tên')
+  if (!String(form.value.nationality_code || '').trim()) missingRequiredFields.push('Quốc tịch')
+  if (!String(form.value.id_number || '').trim()) missingRequiredFields.push('Số giấy tờ')
+  if (missingRequiredFields.length) {
+    uiStore.showToast(`Vui lòng nhập/chọn: ${missingRequiredFields.join(', ')}`, 'warning')
+    return
+  }
+
   saving.value = true
   try {
     const payload = { ...form.value }
@@ -878,12 +902,12 @@ async function handleSave() {
   --red: #D93025;
   --green: #188A4B;
   --amber: #B5730E;
-  --r: 6px;
+  --r: 8px;
 }
 
 .modal {
   background: var(--bg);
-  border-radius: 10px;
+  border-radius: 12px;
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
   color: var(--txt);
   overflow: hidden;
@@ -891,10 +915,10 @@ async function handleSave() {
 }
 
 .m-head {
-  background: var(--navy);
+  background: var(--pms-custom-theme, #006bdb);
   color: #fff;
   padding: 10px 18px;
-  border-radius: 10px 10px 0 0;
+  border-radius: 12px 12px 0 0;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -1328,7 +1352,7 @@ async function handleSave() {
   background: #fff;
   border-top: 1px solid var(--line);
   padding: 10px 18px;
-  border-radius: 0 0 10px 10px;
+  border-radius: 0 0 12px 12px;
   display: flex;
   align-items: center;
   gap: 8px;

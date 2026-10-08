@@ -4,13 +4,13 @@
     class="fixed inset-0 bg-black/20 z-[99999] flex items-center justify-center p-4 animate-in"
   >
     <div 
-      class="w-full max-w-5xl bg-white shadow-2xl rounded-2xl overflow-visible border border-slate-200 flex flex-col max-h-[90vh]"
+      class="w-full max-w-5xl bg-white shadow-2xl rounded-xl overflow-hidden border border-slate-200 flex flex-col max-h-[90vh]"
       :style="{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }"
     >
         
         <!-- HEADER -->
         <div 
-          class="flex justify-between items-center px-4 py-2 border-b border-black/10 cursor-move select-none transition-all duration-300"
+          class="flex justify-between items-center px-4 py-2 border-b border-black/10 cursor-move select-none transition-all duration-300 rounded-t-xl"
           :style="{ background: topbarThemeBg }"
           :class="isTopBarThemeDark ? 'text-white' : 'text-slate-900'"
           @mousedown="startDragModal"
@@ -31,130 +31,130 @@
             
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                    <label class="block text-[11px] text-slate-500 font-semibold mb-0.5">Tên đăng ký</label>
+                    <label class="block text-xs text-[#000000D9] font-semibold mb-1">Tên đăng ký</label>
                     <div class="relative">
-                        <select disabled class="w-full border border-slate-300 rounded-lg px-3 h-[30px] text-xs font-medium bg-slate-50 text-slate-800 appearance-none focus:outline-none shadow-sm cursor-not-allowed">
+                        <select disabled class="w-full border border-slate-300 rounded-lg px-3 h-[30px] text-xs font-normal bg-slate-50 text-[#000000D9] appearance-none focus:outline-none shadow-sm cursor-not-allowed">
                             <option>{{ bookingName || 'Chưa có tên' }}</option>
                         </select>
-                        <i class="fa-solid fa-chevron-down absolute right-3 top-2.5 text-slate-400 pointer-events-none text-[10px]"></i>
+                        <i class="fa-solid fa-chevron-down absolute right-3 top-2.5 text-slate-400 pointer-events-none text-xs"></i>
                     </div>
                 </div>
                 <div>
-                    <label class="block text-[11px] text-slate-500 font-semibold mb-0.5">Phòng (Đặt cọc riêng cho phòng)</label>
+                    <label class="block text-xs text-[#000000D9] font-semibold mb-1">Phòng (Đặt cọc riêng cho phòng)</label>
                     <div class="relative">
                         <select 
                           v-model="depositForm.bookingRoomId"
                           @change="handleRoomChange"
                           :disabled="isEditing"
-                          :class="{ 'opacity-60 cursor-not-allowed bg-slate-100': isEditing }"
-                          class="w-full border border-blue-200 rounded-lg px-3 h-[30px] text-xs font-medium bg-blue-50/70 text-slate-800 appearance-none focus:outline-none focus:border-blue-500 shadow-sm cursor-pointer"
+                          :class="[
+                            !depositForm.bookingRoomId ? 'text-[#A8B0BF]' : 'text-[#000000D9]',
+                            isEditing ? 'opacity-60 cursor-not-allowed bg-slate-100' : 'bg-white'
+                          ]"
+                          class="w-full border border-slate-300 rounded-lg px-3 h-[30px] text-xs font-normal appearance-none focus:outline-none focus:border-blue-500 shadow-sm cursor-pointer"
                         >
-                            <option :value="null">-- Đặt cọc cho toàn bộ phiếu đăng ký --</option>
-                            <option v-for="r in availableRooms" :key="getBookingRoomId(r)" :value="getBookingRoomId(r)">
+                            <option :value="null" class="text-[#A8B0BF]">– Đặt cọc cho toàn bộ phiếu đăng ký –</option>
+                            <option v-for="r in availableRooms" :key="getBookingRoomId(r)" :value="getBookingRoomId(r)" class="text-[#000000D9]">
                                 {{ formatRoomOptionLabel(r) }}
                             </option>
                         </select>
-                        <i class="fa-solid fa-chevron-down absolute right-3 top-2.5 text-slate-400 pointer-events-none text-[10px]"></i>
+                        <i class="fa-solid fa-chevron-down absolute right-3 top-2.5 text-slate-400 pointer-events-none text-xs"></i>
                     </div>
                 </div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
                 <div>
-                    <label class="block text-[11px] text-slate-500 font-semibold mb-0.5">Số tiền <span class="text-rose-500">*</span></label>
+                    <label class="block text-xs text-[#000000D9] font-semibold mb-1">Số tiền <span class="text-rose-500">*</span></label>
                     <div class="relative">
                         <input 
                           type="text" 
                           :value="formatCurrencyInput(depositForm.amount)"
+                          required
                           @input="e => depositForm.amount = cleanCurrencyValue(e.target.value)"
                           @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
                           :disabled="isEditing"
-                          :class="{ 'opacity-60 cursor-not-allowed bg-slate-100': isEditing }"
-                          class="w-full border border-blue-200 rounded-lg px-3 h-[30px] text-xs font-bold bg-blue-50/70 text-black focus:outline-none focus:border-blue-500 shadow-sm"
+                          :class="{ 'opacity-60 cursor-not-allowed !bg-slate-100 !border-slate-300': isEditing }"
+                          class="w-full border border-[#F1DD8A] rounded-lg px-3 h-[30px] text-xs font-semibold bg-[#FFF8DB] text-[#000000D9] focus:outline-none focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308] shadow-sm"
                         >
                         <div class="absolute right-1 top-0.5 flex flex-col" v-if="!isEditing">
-                            <button type="button" @click="depositForm.amount++" class="text-slate-400 hover:text-blue-500 text-[8px] leading-none px-1 border-none bg-transparent cursor-pointer"><i class="fa-solid fa-chevron-up"></i></button>
-                            <button type="button" @click="depositForm.amount = Math.max(0, depositForm.amount - 1)" class="text-slate-400 hover:text-blue-500 text-[8px] leading-none px-1 border-none bg-transparent cursor-pointer"><i class="fa-solid fa-chevron-down"></i></button>
+                            <button type="button" @click="depositForm.amount++" class="text-slate-400 hover:text-blue-500 text-[10px] leading-none px-1 border-none bg-transparent cursor-pointer"><i class="fa-solid fa-chevron-up"></i></button>
+                            <button type="button" @click="depositForm.amount = Math.max(0, depositForm.amount - 1)" class="text-slate-400 hover:text-blue-500 text-[10px] leading-none px-1 border-none bg-transparent cursor-pointer"><i class="fa-solid fa-chevron-down"></i></button>
                         </div>
                     </div>
                 </div>
 
                 <div>
-                    <label class="block text-[11px] text-slate-500 font-semibold mb-0.5">Phương thức đặt cọc <span class="text-rose-500">*</span></label>
+                    <label class="block text-xs text-[#000000D9] font-semibold mb-1">Phương thức đặt cọc <span class="text-rose-500">*</span></label>
                     <div class="relative h-[30px]">
                         <select 
                           v-model="depositForm.paymentMethodId"
+                          required
                           @change="handlePaymentMethodChange"
-                          class="w-full border border-blue-200 rounded-lg px-3 h-full text-xs font-medium bg-blue-50/70 text-black appearance-none focus:outline-none focus:border-blue-500 shadow-sm cursor-pointer"
+                          :class="!depositForm.paymentMethodId ? 'text-[#A8B0BF]' : 'text-[#000000D9]'"
+                          class="w-full border border-[#F1DD8A] rounded-lg px-3 h-full text-xs font-normal bg-[#FFF8DB] appearance-none focus:outline-none focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308] shadow-sm cursor-pointer"
                         >
-                            <option :value="null" disabled class="text-slate-400 font-normal bg-slate-100">Phương thức đặt cọc</option>
-                            <option v-for="pm in filteredPaymentMethods" :key="pm.id" :value="pm.code || pm.id">{{ pm.name }}</option>
+                            <option :value="null" disabled class="text-[#A8B0BF] font-normal bg-slate-100">Phương thức đặt cọc</option>
+                            <option v-for="pm in filteredPaymentMethods" :key="pm.id" :value="pm.code || pm.id" class="text-[#000000D9]">{{ pm.name }}</option>
                         </select>
-                        <i class="fa-solid fa-chevron-down absolute right-3 top-2.5 text-slate-400 pointer-events-none text-[10px]"></i>
+                        <i class="fa-solid fa-chevron-down absolute right-3 top-2.5 text-slate-400 pointer-events-none text-xs"></i>
                     </div>
                 </div>
 
                 <div>
-                    <label class="block text-[11px] text-slate-500 font-semibold mb-0.5">Tài khoản ngân hàng</label>
+                    <label class="block text-xs text-[#000000D9] font-semibold mb-1">Tài khoản ngân hàng</label>
                     <div class="relative">
                         <select 
                           v-model="depositForm.bankAccountId"
                           :disabled="isEditing"
-                          :class="{ 'opacity-60 cursor-not-allowed bg-slate-100': isEditing }"
-                          class="w-full border border-slate-300 rounded-lg px-3 h-[30px] text-xs bg-white text-slate-800 appearance-none focus:outline-none focus:border-blue-500 shadow-sm cursor-pointer"
+                          :class="[
+                            !depositForm.bankAccountId ? 'text-[#A8B0BF]' : 'text-[#000000D9]',
+                            isEditing ? 'opacity-60 cursor-not-allowed bg-slate-100' : 'bg-white'
+                          ]"
+                          class="w-full border border-slate-300 rounded-lg px-3 h-[30px] text-xs font-normal appearance-none focus:outline-none focus:border-blue-500 shadow-sm cursor-pointer"
                         >
-                            <option :value="null">-- Không chọn tài khoản --</option>
-                            <option v-for="account in activeBankAccounts" :key="account.id" :value="account.id">
+                            <option :value="null" class="text-[#A8B0BF]">– Không chọn tài khoản –</option>
+                            <option v-for="account in activeBankAccounts" :key="account.id" :value="account.id" class="text-[#000000D9]">
                               {{ account.code }} - {{ account.bank_account_number }} - {{ account.bank_name }}
                             </option>
                         </select>
-                        <i class="fa-solid fa-chevron-down absolute right-3 top-2.5 text-slate-400 pointer-events-none text-[10px]"></i>
+                        <i class="fa-solid fa-chevron-down absolute right-3 top-2.5 text-slate-400 pointer-events-none text-xs"></i>
                     </div>
                 </div>
 
                 <div>
-                    <label class="block text-[11px] text-slate-500 font-semibold mb-0.5">Ngày <span class="text-rose-500">*</span></label>
-                    <div 
-                      class="flex items-center space-x-2 border border-slate-300 rounded-lg px-3 h-[30px] bg-white shadow-sm text-xs font-medium text-slate-800 relative cursor-pointer"
-                      :class="{ 'opacity-60 bg-slate-100 cursor-not-allowed': isEditing }"
-                      @click="openDatePicker"
-                    >
-                        <input 
-                          ref="dateInputRef"
-                          type="date" 
-                          v-model="depositForm.date" 
-                          :disabled="isEditing"
-                          :min="minDepositDate"
-                          class="date-span-input flex-1 text-left w-full border-none focus:outline-none bg-transparent cursor-pointer"
-                        />
-                        <i class="fa-regular fa-calendar-days text-blue-500 cursor-pointer" :class="{ 'opacity-50 cursor-not-allowed': isEditing }" @click.stop="openDatePicker" title="Chọn ngày"></i>
-                        <i @click.stop="copyToClipboard(depositForm.date)" class="fa-regular fa-copy text-slate-400 hover:text-slate-600 cursor-pointer" title="Sao chép ngày"></i>
-                    </div>
+                    <label class="block text-xs text-[#000000D9] font-semibold mb-1">Ngày <span class="text-rose-500">*</span></label>
+                    <SingleDatePicker
+                      v-model="depositForm.date"
+                      :disabled="isEditing"
+                      :min-date="minDepositDate"
+                      placeholder="dd/mm/yy"
+                      input-class="!h-[30px] !py-0 !px-3 !rounded-lg !border-[#F1DD8A] !bg-[#FFF8DB] !text-xs !font-normal text-[#000000D9]"
+                    />
                 </div>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                    <label class="block text-[11px] text-slate-500 font-semibold mb-0.5">Mô tả</label>
+                    <label class="block text-xs text-[#000000D9] font-semibold mb-1">Mô tả <span class="text-rose-500">*</span></label>
                     <textarea 
                       v-model="depositForm.note"
                       placeholder="Nhập mô tả..." 
-                      class="w-full border border-blue-200 rounded-lg p-2 text-xs font-medium bg-blue-50/70 text-black focus:outline-none focus:border-blue-500 shadow-sm h-[56px] resize-none"
+                      class="w-full border border-[#F1DD8A] rounded-lg p-2 text-xs font-normal bg-[#FFF8DB] text-[#000000D9] placeholder-[#A8B0BF] focus:outline-none focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308] shadow-sm h-[56px] resize-none"
                     ></textarea>
                 </div>
                 <div>
-                    <label class="block text-[11px] text-slate-500 font-semibold mb-0.5">Lưu hình ảnh (Chứng từ / Biên lai)</label>
+                    <label class="block text-xs text-[#000000D9] font-semibold mb-1">Lưu hình ảnh (Chứng từ / Biên lai)</label>
                     <div class="border border-dashed border-slate-300 rounded-lg h-[56px] bg-slate-50 flex items-center justify-center hover:bg-slate-100 hover:border-blue-400 transition cursor-pointer relative overflow-hidden group shadow-sm" :class="{ 'cursor-not-allowed opacity-60': isEditing }">
                         <input v-if="!depositForm.image && !isEditing" :key="fileInputKey" type="file" @change="handleDepositImageUpload" class="absolute inset-0 opacity-0 cursor-pointer z-10" accept="image/*">
                         <div class="flex flex-col items-center space-y-1" v-if="!depositForm.image">
                             <i class="fa-solid fa-cloud-arrow-up text-slate-400 group-hover:text-blue-500 transition text-xs"></i>
-                            <span class="text-[10px] text-slate-500 font-medium group-hover:text-blue-600 transition">Nhấp để tải ảnh lên hoặc kéo thả vào đây</span>
+                            <span class="text-xs text-slate-500 font-normal group-hover:text-blue-600 transition">Nhấp để tải ảnh lên hoặc kéo thả vào đây</span>
                         </div>
                         <div class="flex items-center space-x-2 p-1" v-else>
                             <img :src="getImageUrl(depositForm.image)" class="h-10 w-10 object-cover rounded border cursor-pointer hover:opacity-85 transition z-20" @click.stop="openImage(getImageUrl(depositForm.image))" @error="$event.target.classList.add('hidden')" title="Nhấp để xem ảnh lớn" />
                             <div class="flex flex-col z-20">
-                                <span class="text-[10px] text-green-600 font-bold">Hình ảnh đã chọn</span>
-                                <button v-if="!isEditing" type="button" @click.stop="depositForm.image = null; selectedFile = null" class="text-[9px] text-rose-500 hover:text-rose-700 font-semibold underline mt-0.5 border-none bg-transparent cursor-pointer text-left">
+                                <span class="text-xs text-green-600 font-bold">Hình ảnh đã chọn</span>
+                                <button v-if="!isEditing" type="button" @click.stop="depositForm.image = null; selectedFile = null" class="text-xs text-rose-500 hover:text-rose-700 font-semibold underline mt-0.5 border-none bg-transparent cursor-pointer text-left">
                                     Xóa ảnh
                                 </button>
                             </div>
@@ -168,13 +168,13 @@
         <div class="bg-slate-50 p-4 border-t border-slate-200 flex-1 flex flex-col overflow-y-auto">
             
             <div class="flex justify-between items-end mb-1.5 shrink-0">
-                <h3 class="font-bold text-slate-800 text-[11px] uppercase tracking-wider flex items-center">
+                <h3 class="font-semibold text-[#000000D9] text-xs uppercase tracking-wider flex items-center">
                     Danh sách đặt cọc <span v-if="selectedRoomNumber" class="text-blue-600 font-bold ml-1.5 normal-case">(Phòng {{ selectedRoomNumber }})</span> <span class="text-rose-500 ml-1">*</span>
                 </h3>
                 
                 <div class="flex items-center space-x-3">
                     <div class="flex items-center space-x-2">
-                        <span class="text-[11px] text-slate-500 font-medium">Hiển thị xoá</span>
+                        <span class="text-xs text-[#000000D9] font-normal">Hiển thị xoá</span>
                         <button 
                           type="button"
                           @click="showDeleted = !showDeleted"
@@ -188,16 +188,13 @@
                           ></span>
                         </button>
                     </div>
-                    <button class="text-slate-400 hover:text-blue-600 transition border-none bg-transparent cursor-pointer">
-                        <i class="fa-solid fa-sliders text-xs"></i>
-                    </button>
                 </div>
             </div>
 
             <div class="bg-white border border-slate-200 rounded-xl overflow-x-auto shadow-sm mb-1">
                 <table class="w-full border-collapse text-left text-xs">
                     <thead>
-                        <tr class="bg-slate-100 text-slate-600 font-semibold border-b border-slate-200">
+                        <tr class="bg-slate-100 text-[#000000D9] font-semibold border-b border-slate-200">
                             <th class="p-2 w-10 text-center">
                                 <input 
                                   type="checkbox" 
@@ -233,18 +230,18 @@
                                   class="rounded border-slate-300 font-normal"
                                 >
                             </td>
-                            <td class="p-2 font-medium text-slate-800 align-middle">{{ dep.date }}</td>
-                            <td class="p-2 text-slate-600 align-middle">{{ dep.time }}</td>
-                            <td class="p-2 text-slate-800 align-middle">{{ paymentMethods.find(x => x.code === dep.paymentMethodId || String(x.id) === String(dep.paymentMethodId))?.name || dep.paymentMethodId || 'BT' }}</td>
-                            <td class="p-2 text-slate-600 align-middle">
-                                <span v-if="dep.roomNumber" class="inline-block bg-blue-50 text-blue-700 text-[10px] font-bold px-1.5 py-0.5 rounded border border-blue-200 mr-1.5">
+                            <td class="p-2 font-normal text-[#000000D9] align-middle">{{ dep.date }}</td>
+                            <td class="p-2 font-normal text-[#000000D9] align-middle">{{ dep.time }}</td>
+                            <td class="p-2 font-normal text-[#000000D9] align-middle">{{ paymentMethods.find(x => x.code === dep.paymentMethodId || String(x.id) === String(dep.paymentMethodId))?.name || dep.paymentMethodId || 'BT' }}</td>
+                            <td class="p-2 text-[#000000D9] align-middle">
+                                <span v-if="dep.roomNumber" class="inline-block bg-blue-50 text-blue-700 text-xs font-semibold px-1.5 py-0.5 rounded border border-blue-200 mr-1.5">
                                     Phòng {{ dep.roomNumber }}
                                 </span>
-                                <span>{{ dep.note }}</span>
+                                <span class="font-normal">{{ dep.note }}</span>
                             </td>
-                            <td class="p-2 text-right font-mono font-semibold align-middle" :class="dep.amount < 0 ? 'text-rose-600' : 'text-slate-900'">{{ dep.amount.toLocaleString('en-US') }}</td>
-                            <td class="p-2 text-center text-slate-500 align-middle">{{ dep.currency }}</td>
-                            <td class="p-2 text-slate-700 font-medium align-middle">{{ dep.recipient }}</td>
+                            <td class="p-2 text-right font-mono font-semibold align-middle" :class="dep.amount < 0 ? 'text-rose-600' : 'text-[#000000D9]'">{{ dep.amount.toLocaleString('en-US') }}</td>
+                            <td class="p-2 text-center font-normal text-[#000000D9] align-middle">{{ dep.currency }}</td>
+                            <td class="p-2 text-[#000000D9] font-normal align-middle">{{ dep.recipient }}</td>
                             <td class="p-2 text-center align-middle">
                                 <div class="flex items-center justify-center space-x-1.5">
                                     <div 
@@ -260,7 +257,7 @@
                                           class="w-full h-full object-cover"
                                           @error="markReceiptImageError(dep.id, iIdx)"
                                         />
-                                        <div v-else class="w-full h-full flex items-center justify-center bg-slate-100 text-[8px] font-bold text-slate-500 text-center leading-tight px-0.5">
+                                        <div v-else class="w-full h-full flex items-center justify-center bg-slate-100 text-[10px] font-bold text-slate-500 text-center leading-tight px-0.5">
                                             {{ img && img !== 'Chứng từ' ? 'Không tải được chứng từ' : 'Ảnh' }}
                                         </div>
                                     </div>
@@ -276,7 +273,7 @@
         </div>
 
         <!-- FOOTER ACTIONS -->
-        <div class="bg-white border-t border-slate-200 p-2.5 px-4 flex justify-between items-center shrink-0">
+        <div class="bg-white border-t border-slate-200 p-2.5 px-4 flex justify-between items-center shrink-0 rounded-b-xl">
             
             <div class="flex items-center space-x-2" v-if="!showDeleted">
                 <button type="button" @click="splitDeposit" :disabled="isSubmitting || isEditing" class="btn-pms-secondary" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting || isEditing }">
@@ -317,7 +314,7 @@
         <div v-if="isSplitOpen" class="fixed inset-0 bg-black/60 z-[100000] flex items-center justify-center p-4 backdrop-blur-xs" style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
             <div class="w-full max-w-md bg-white rounded-xl shadow-2xl overflow-hidden border border-slate-200 flex flex-col animate-in fade-in duration-200">
                 <div 
-                  class="flex justify-between items-center px-4 py-2.5 border-b border-black/10 transition-all duration-300"
+                  class="flex justify-between items-center px-4 py-2.5 border-b border-black/10 transition-all duration-300 rounded-t-xl"
                   :style="{ background: topbarThemeBg }"
                   :class="isTopBarThemeDark ? 'text-white' : 'text-slate-900'"
                 >
@@ -404,7 +401,7 @@
                         </div>
                     </div>
                 </div>
-                <div class="bg-slate-50 px-5 py-3 border-t border-slate-200 flex justify-end gap-2">
+                <div class="bg-slate-50 px-5 py-3 border-t border-slate-200 flex justify-end gap-2 rounded-b-xl">
                     <button type="button" @click="isSplitOpen = false" class="px-4 py-1.5 bg-[#e2e8f0] hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition text-xs cursor-pointer border-none">
                         Hủy
                     </button>
@@ -585,7 +582,7 @@
         <!-- Delete reason form required by the payment reversal API -->
         <div v-if="isDeleteReasonOpen" class="fixed inset-0 bg-black/60 z-[2100000] flex items-center justify-center p-4" @click.self="closeDeleteReason">
             <div class="w-full max-w-md bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden">
-                <div class="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
+                <div class="px-4 py-3 border-b border-slate-200 flex items-center justify-between rounded-t-xl">
                     <h3 class="text-sm font-bold text-slate-800">Lý do xóa đặt cọc</h3>
                     <button type="button" @click="closeDeleteReason" class="border-none bg-transparent text-slate-500 hover:text-slate-800 cursor-pointer">
                       <i class="fa-solid fa-xmark"></i>
@@ -610,7 +607,7 @@
                     ></textarea>
                     <div class="mt-1 text-right text-[10px] text-slate-400">{{ deleteReason.length }}/1000</div>
                 </div>
-                <div class="px-4 py-3 border-t border-slate-200 bg-slate-50 flex justify-end gap-2">
+                <div class="px-4 py-3 border-t border-slate-200 bg-slate-50 flex justify-end gap-2 rounded-b-xl">
                     <button type="button" @click="closeDeleteReason" class="px-4 py-1.5 bg-white border border-slate-300 text-slate-700 rounded-lg text-xs font-semibold cursor-pointer">Hủy</button>
                     <button type="button" @click="confirmDelete" :disabled="!deleteReason.trim() || isSubmitting" class="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold border-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">Xóa đặt cọc</button>
                 </div>
@@ -622,6 +619,7 @@
 
 <script setup>
 import { ref, watch, computed, onUnmounted, nextTick } from 'vue'
+import SingleDatePicker from '@/components/SingleDatePicker.vue'
 import {
   fetchPayments,
   createPayment,
@@ -1370,8 +1368,16 @@ async function addDeposit() {
     uiStore.showToast('Vui lòng nhập số tiền đặt cọc hợp lệ!', 'warning')
     return
   }
+  if (!depositForm.value.paymentMethodId) {
+    uiStore.showToast('Vui lòng chọn phương thức đặt cọc!', 'warning')
+    return
+  }
   if (!depositForm.value.note || !depositForm.value.note.trim()) {
     uiStore.showToast('Vui lòng nhập mô tả!', 'warning')
+    return
+  }
+  if (!depositForm.value.date) {
+    uiStore.showToast('Vui lòng chọn ngày đặt cọc!', 'warning')
     return
   }
 
@@ -1494,6 +1500,14 @@ function editDeposit() {
 
 async function saveDeposit() {
   if (isSubmitting.value) return
+  if (!depositForm.value.paymentMethodId) {
+    uiStore.showToast('Vui lòng chọn phương thức đặt cọc.', 'warning')
+    return
+  }
+  if (!depositForm.value.date) {
+    uiStore.showToast('Vui lòng chọn ngày đặt cọc.', 'warning')
+    return
+  }
   if (!depositForm.value.id) {
     await addDeposit()
     return

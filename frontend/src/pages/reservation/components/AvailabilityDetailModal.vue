@@ -124,11 +124,11 @@ onUnmounted(() => endDrag())
   <Teleport to="body">
     <div v-if="show" class="fixed inset-0 z-[100] bg-slate-950/55 flex items-center justify-center p-3">
       <section
-        class="w-[min(1700px,98vw)] h-[78vh] max-h-[78vh] overflow-hidden rounded-lg bg-white shadow-2xl border border-slate-300 font-sans"
+        class="w-[min(1700px,98vw)] h-[78vh] max-h-[78vh] overflow-hidden rounded-xl bg-white shadow-2xl border border-slate-300 font-sans"
         :style="{ transform: `translate(${position.x}px, ${position.y}px)` }"
       >
         <header
-          class="h-10 flex items-center justify-between px-4 cursor-move select-none"
+          class="h-10 flex items-center justify-between px-4 cursor-move select-none rounded-t-xl"
           style="background: var(--pms-custom-theme, #006bdb); color: var(--pms-custom-theme-text, #ffffff)"
           @pointerdown="beginDrag"
         >
@@ -236,7 +236,7 @@ onUnmounted(() => endDrag())
           </div>
         </div>
 
-        <footer class="flex justify-end gap-2 px-3 py-2 bg-white border-t border-slate-300">
+        <footer class="flex justify-end gap-2 px-3 py-2 bg-white border-t border-slate-300 rounded-b-xl">
           <button
             type="button"
             class="btn-pms-close flex items-center gap-1.5"

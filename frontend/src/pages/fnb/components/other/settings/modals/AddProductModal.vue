@@ -975,6 +975,9 @@ const handleSave = () => {
                   <!-- Custom Tree-select Trigger -->
                   <div 
                     @click="isCategoryDropdownOpen = !isCategoryDropdownOpen"
+                    role="combobox"
+                    aria-required="true"
+                    :aria-expanded="isCategoryDropdownOpen"
                     class="flex-1 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold bg-white cursor-pointer flex justify-between items-center h-[32px] select-none"
                   >
                     <span class="truncate" :class="productCategoryId ? 'text-slate-800 font-bold' : 'text-slate-400'">
@@ -1078,6 +1081,7 @@ const handleSave = () => {
                 <input 
                   type="text" 
                   v-model="name" 
+                  aria-required="true"
                   class="w-full border border-amber-200/60 rounded-lg px-2.5 py-1 text-xs font-semibold focus:outline-none bg-amber-50/30 hover:bg-amber-50/40 focus:bg-amber-50/60 font-bold h-[32px]"
                   placeholder="Nhập tên món ăn"
                 />

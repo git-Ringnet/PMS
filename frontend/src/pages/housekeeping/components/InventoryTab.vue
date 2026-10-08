@@ -689,11 +689,20 @@ function openTransferModal(item, day = null) {
 }
 
 async function submitTransfer() {
+  if (!transferForm.value.transfer_to_warehouse_id) {
+    uiStore.showToast('Vui lòng chọn Kho đích.', 'warning')
+    return
+  }
+  const transferQuantity = Number(transferForm.value.quantity)
+  if (!Number.isFinite(transferQuantity) || transferQuantity <= 0) {
+    uiStore.showToast('Vui lòng nhập Số lượng lớn hơn 0.', 'warning')
+    return
+  }
   isSaving.value = true
   try {
     const res = await http.post('/inventory/transfer', {
       ...transferForm.value,
-      quantity: parseFloat(transferForm.value.quantity),
+      quantity: transferQuantity,
     })
     uiStore.showToast(res.data.message, 'success')
     showTransferModal.value = false
@@ -1513,7 +1522,7 @@ const otherWarehouses = computed(() =>
               </div>
               <div class="flex flex-col gap-1.5">
                 <label class="text-[12px] font-bold text-slate-700">Kho đích <span class="text-rose-500">*</span></label>
-                <select v-model="transferForm.transfer_to_warehouse_id" class="w-full text-[13px] border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-[var(--hk-primary)] transition-all bg-white shadow-sm">
+                <select v-model="transferForm.transfer_to_warehouse_id" required class="w-full text-[13px] border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-[var(--hk-primary)] transition-all bg-white shadow-sm">
                   <option :value="null">-- Chọn kho đích --</option>
                   <option v-for="w in otherWarehouses" :key="w.id" :value="w.id">{{ w.name }}</option>
                 </select>
@@ -1526,7 +1535,7 @@ const otherWarehouses = computed(() =>
               </div>
               <div class="flex flex-col gap-1.5">
                 <label class="text-[12px] font-bold text-slate-700">Số lượng <span class="text-rose-500">*</span></label>
-                <input type="number" min="0.001" v-model="transferForm.quantity" placeholder="0" class="w-full text-[13px] border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-[var(--hk-primary)] focus:ring-2 focus:ring-[var(--hk-primary-light)] transition-all bg-white shadow-sm" />
+                <input type="number" min="0.001" required v-model="transferForm.quantity" placeholder="0" class="w-full text-[13px] border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-[var(--hk-primary)] focus:ring-2 focus:ring-[var(--hk-primary-light)] transition-all bg-white shadow-sm" />
               </div>
             </div>
           </div>

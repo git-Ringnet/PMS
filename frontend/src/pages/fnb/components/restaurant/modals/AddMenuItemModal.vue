@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
 
 const props = defineProps({
   isOpen: {
@@ -26,6 +26,22 @@ const formData = ref({
   alcoholic: false,
   isSelling: true
 })
+
+const requiredFieldsContainer = ref(null)
+
+const handleSave = async () => {
+  const hasMissingRequiredField = !String(formData.value.code || '').trim()
+    || !String(formData.value.name || '').trim()
+    || !String(formData.value.menuType || '').trim()
+    || !String(formData.value.serviceGroup || '').trim()
+  if (hasMissingRequiredField) {
+    activeTab.value = 'info'
+    await nextTick()
+    requiredFieldsContainer.value?.querySelector('[required]:invalid')?.reportValidity()
+    return
+  }
+  emit('save')
+}
 
 </script>
 
@@ -63,13 +79,13 @@ const formData = ref({
         </div>
 
         <!-- Tab Content: Info -->
-        <div v-if="activeTab === 'info'" class="p-6 grid grid-cols-3 gap-6 flex-1 overflow-auto">
+        <div v-if="activeTab === 'info'" ref="requiredFieldsContainer" class="p-6 grid grid-cols-3 gap-6 flex-1 overflow-auto">
           <div class="col-span-2 grid grid-cols-2 gap-x-6 gap-y-5">
             <!-- Left Column of Info -->
             <div class="space-y-1">
               <label class="text-sm font-medium text-slate-700">Mã <span class="text-red-500">*</span></label>
               <div class="relative">
-                <input type="text" class="w-full pl-3 pr-8 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-sky-500 bg-[#f8f9fa]" />
+                <input v-model="formData.code" required type="text" class="w-full pl-3 pr-8 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-sky-500 bg-[#f8f9fa]" />
                 <button class="absolute right-2 top-2.5 text-slate-400 hover:text-slate-600">
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                 </button>
@@ -78,7 +94,7 @@ const formData = ref({
             
             <div class="space-y-1">
               <label class="text-sm font-medium text-slate-700">Tên <span class="text-red-500">*</span></label>
-              <input type="text" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-sky-500" />
+              <input v-model="formData.name" required type="text" class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-sky-500" />
             </div>
 
             <div class="space-y-1">
@@ -88,14 +104,14 @@ const formData = ref({
 
             <div class="space-y-1">
               <label class="text-sm font-medium text-slate-700">Loại thực đơn <span class="text-red-500">*</span></label>
-              <select class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-sky-500 bg-white">
+              <select v-model="formData.menuType" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-sky-500 bg-white">
                 <option value=""></option>
               </select>
             </div>
 
             <div class="space-y-1">
               <label class="text-sm font-medium text-slate-700">Nhóm dịch vụ <span class="text-red-500">*</span></label>
-              <select class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-sky-500 bg-white">
+              <select v-model="formData.serviceGroup" required class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-sky-500 bg-white">
                 <option value=""></option>
               </select>
             </div>
@@ -499,7 +515,7 @@ const formData = ref({
         <button @click="emit('close')" class="px-5 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg text-sm font-medium transition-colors">
           Hủy
         </button>
-        <button @click="emit('save')" class="px-5 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-sm font-medium transition-colors">
+        <button @click="handleSave" class="px-5 py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-sm font-medium transition-colors">
           Lưu
         </button>
       </div>

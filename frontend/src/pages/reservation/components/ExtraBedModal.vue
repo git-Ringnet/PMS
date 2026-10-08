@@ -10,22 +10,23 @@
     >
       <!-- MODAL HEADER -->
       <div 
-        class="bg-[#243c5a] text-white flex justify-between items-center px-4 py-3 shrink-0 select-none cursor-move"
+        class="text-white flex justify-between items-center px-4 py-2.5 shrink-0 select-none cursor-move rounded-t-xl"
+        :style="{ background: topbarThemeBg, color: 'var(--pms-custom-theme-text, #ffffff)' }"
         @mousedown="startDragModal"
       >
-        <div class="flex items-center space-x-2 font-black text-xs uppercase tracking-wider">
-          <i class="fa-solid fa-bed text-sky-400"></i>
+        <div class="flex items-center space-x-2 font-semibold text-xs uppercase tracking-wider">
+          <i class="fa-solid fa-bed"></i>
           <span>Chi tiết thêm giường - PHÒNG {{ room?.roomNumber || room?.type || room?.shape || 'CHƯA GÁN' }}</span>
         </div>
-        <button class="hover:text-white bg-red-500/20 px-1.5 py-0.5 rounded-md cursor-pointer border-none bg-transparent" @click="close">
-          <i class="fa-solid fa-xmark text-red-400"></i>
+        <button class="hover:opacity-80 p-1 rounded cursor-pointer border-none bg-transparent text-white" @click="close" title="Đóng">
+          <i class="fa-solid fa-xmark text-sm"></i>
         </button>
       </div>
 
       <!-- MODAL BODY -->
       <div class="p-5 space-y-4 flex-1 overflow-y-auto text-xs font-semibold text-slate-700">
         <!-- TABLE GIÁ THÊM GIƯỜNG -->
-        <div class="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+        <div class="border border-slate-200 rounded-lg overflow-hidden shadow-2xs">
           <table class="w-full text-left text-xs border-collapse">
             <thead>
               <tr class="bg-slate-50/80 border-b border-slate-200 text-slate-600 font-extrabold h-10 text-center">
@@ -246,17 +247,19 @@
       </div>
 
       <!-- MODAL FOOTER -->
-      <div class="bg-slate-50 border-t border-slate-100 px-5 py-3 flex items-center justify-end space-x-2 shrink-0">
+      <div class="bg-slate-50 border-t border-slate-100 px-5 py-3 flex items-center justify-end space-x-2 shrink-0 rounded-b-xl">
         <button 
+          type="button"
           @click="close" 
-          class="bg-[#72c0e5] hover:bg-[#5bb2dc] text-white border-none rounded-lg font-bold text-xs px-4 py-2 cursor-pointer shadow-sm flex items-center space-x-1.5 transition"
+          class="btn-pms-close"
         >
           <i class="fa-solid fa-rotate-left"></i>
           <span>Quay lại</span>
         </button>
         <button 
+          type="button"
           @click="save" 
-          class="bg-[#72c0e5] hover:bg-[#5bb2dc] text-white border-none rounded-lg font-bold text-xs px-4 py-2 cursor-pointer shadow-sm flex items-center space-x-1.5 transition"
+          class="btn-pms-primary"
         >
           <i class="fa-solid fa-floppy-disk"></i>
           <span>Lưu</span>
@@ -272,7 +275,7 @@
         @click="constraintModal.show = false"
       >
         <div
-          class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-[420px] overflow-hidden border border-slate-200/90 dark:border-slate-800 animate-[zoom_0.25s_cubic-bezier(0.34,1.56,0.64,1)]"
+          class="bg-white dark:bg-slate-900 rounded-xl shadow-2xl w-full max-w-[420px] overflow-hidden border border-slate-200/90 dark:border-slate-800 animate-[zoom_0.25s_cubic-bezier(0.34,1.56,0.64,1)]"
           @click.stop
         >
           <div class="p-6 text-center">
@@ -313,6 +316,12 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
+import { useAuthStore } from '@/stores/auth-store'
+
+const authStore = useAuthStore()
+const topbarThemeBg = computed(() => {
+  return authStore.themeColor || 'var(--pms-custom-theme, #006bdb)'
+})
 
 const props = defineProps({
   show: Boolean,

@@ -10,15 +10,16 @@
     >
       <!-- MODAL HEADER -->
       <div 
-        class="bg-[#243c5a] text-white flex justify-between items-center px-4 py-3 shrink-0 cursor-move"
+        class="text-white flex justify-between items-center px-4 py-2.5 shrink-0 cursor-move rounded-t-xl"
+        :style="{ background: topbarThemeBg, color: 'var(--pms-custom-theme-text, #ffffff)' }"
         @mousedown="startDragModal"
       >
-        <div class="flex items-center space-x-2 font-semibold text-sm uppercase tracking-wider">
+        <div class="flex items-center space-x-2 font-semibold text-xs uppercase tracking-wider">
           <i class="fa-solid fa-star text-amber-300"></i>
           <span>Yêu cầu đặc biệt - PHÒNG {{ room?.roomNumber || 'CHƯA GÁN' }}</span>
         </div>
-        <button class="hover:text-white bg-red-500/20 px-1.5 py-0.5 rounded-md cursor-pointer border-none bg-transparent" @click="close">
-          <i class="fa-solid fa-xmark text-red-400 text-lg"></i>
+        <button class="hover:opacity-80 p-1 rounded cursor-pointer border-none bg-transparent text-white" @click="close" title="Đóng">
+          <i class="fa-solid fa-xmark text-sm"></i>
         </button>
       </div>
 
@@ -110,14 +111,15 @@
       </div>
 
       <!-- MODAL FOOTER -->
-      <div class="bg-slate-50 border-t border-slate-200 px-4 py-3 shrink-0 flex items-center justify-between">
+      <div class="bg-slate-50 border-t border-slate-200 px-4 py-3 shrink-0 flex items-center justify-between rounded-b-xl">
         <!-- Bottom Left: Tạo mới -->
         <div>
           <button
+            type="button"
             @click="showCreateModal = true"
-            class="bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 font-bold text-xs px-3.5 py-1.5 rounded-lg cursor-pointer transition flex items-center space-x-1.5"
+            class="btn-pms-secondary"
           >
-            <i class="fa-solid fa-square-plus text-sky-500"></i>
+            <i class="fa-solid fa-plus text-sky-500"></i>
             <span>Tạo mới</span>
           </button>
         </div>
@@ -125,15 +127,18 @@
         <!-- Bottom Right: Đóng & Lưu -->
         <div class="flex items-center space-x-2">
           <button
+            type="button"
             @click="close"
-            class="bg-white border border-slate-300 text-slate-600 hover:bg-slate-100 font-bold text-xs px-4 py-2 rounded-lg cursor-pointer transition"
+            class="btn-pms-close"
           >
-            Đóng
+            <i class="fa-solid fa-xmark"></i>
+            <span>Đóng</span>
           </button>
           <button
+            type="button"
             @click="save"
             :disabled="isSaving || isLoading"
-            class="bg-sky-500 hover:bg-sky-600 disabled:bg-slate-300 text-white font-bold text-xs px-5 py-2 rounded-lg cursor-pointer transition flex items-center space-x-1.5 border-none shadow-sm"
+            class="btn-pms-primary"
           >
             <i v-if="isSaving" class="fa-solid fa-spinner fa-spin"></i>
             <i v-else class="fa-solid fa-floppy-disk"></i>
@@ -151,7 +156,10 @@
     >
       <div class="bg-white rounded-xl shadow-2xl w-full max-w-[340px] overflow-hidden border border-gray-300 flex flex-col animate-in fade-in zoom-in-95 duration-150">
         <!-- HEADER -->
-        <div class="bg-blue-500 text-white flex justify-between items-center px-4 py-2.5 shrink-0">
+        <div 
+          class="text-white flex justify-between items-center px-4 py-2.5 shrink-0 rounded-t-xl"
+          :style="{ background: topbarThemeBg, color: 'var(--pms-custom-theme-text, #ffffff)' }"
+        >
           <span class="font-bold text-xs uppercase tracking-wider">Thêm yêu cầu đặc biệt</span>
           <button class="hover:text-white bg-transparent border-none cursor-pointer flex items-center bg-transparent" @click="cancelCreate">
             <i class="fa-solid fa-xmark text-white text-lg"></i>
@@ -184,17 +192,20 @@
         </div>
 
         <!-- FOOTER -->
-        <div class="bg-slate-50 border-t border-slate-200 px-4 py-3 shrink-0 flex items-center justify-end space-x-2">
+        <div class="bg-slate-50 border-t border-slate-200 px-4 py-3 shrink-0 flex items-center justify-end space-x-2 rounded-b-xl">
           <button
+            type="button"
             @click="cancelCreate"
-            class="bg-white border border-slate-300 text-slate-600 hover:bg-slate-100 font-bold text-xs px-4 py-2 rounded-lg cursor-pointer transition bg-transparent"
+            class="btn-pms-close"
           >
-            Đóng
+            <i class="fa-solid fa-xmark"></i>
+            <span>Đóng</span>
           </button>
           <button
+            type="button"
             @click="submitCreate"
             :disabled="isCreatingMaster || !newRequestForm.name"
-            class="bg-blue-500 hover:bg-blue-600 disabled:bg-slate-300 text-white font-bold text-xs px-4 py-2 rounded-lg cursor-pointer transition border-none flex items-center space-x-1.5"
+            class="btn-pms-primary"
           >
             <i v-if="isCreatingMaster" class="fa-solid fa-spinner fa-spin"></i>
             <i v-else class="fa-solid fa-floppy-disk"></i>
@@ -216,6 +227,12 @@ import {
   syncBookingRoomSpecialRequests
 } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
+import { useAuthStore } from '@/stores/auth-store'
+
+const authStore = useAuthStore()
+const topbarThemeBg = computed(() => {
+  return authStore.themeColor || 'var(--pms-custom-theme, #006bdb)'
+})
 
 const props = defineProps({
   show: Boolean,

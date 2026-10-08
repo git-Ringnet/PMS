@@ -1745,12 +1745,31 @@ function openRoomShortcutScreen(room) {
 }
 
 function handleRoomMapShortcut(event) {
+  if (event.key === 'Escape') {
+    if (showRoomLockModal.value) {
+      showRoomLockModal.value = false
+      event.preventDefault()
+      return
+    }
+    if (showSettings.value) {
+      showSettings.value = false
+      event.preventDefault()
+      return
+    }
+    if (showStatsModal.value) {
+      showStatsModal.value = false
+      event.preventDefault()
+      return
+    }
+  }
+
   const target = event.target
   if (target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return
   if (currentTab.value !== 'room-map') return
 
   // Không cho phép bấm phím tắt khi đang mở bất kỳ modal nào (Thông tin, Chuyển phòng, Đặt cọc, Khóa phòng,...)
   if (
+    showSettings.value ||
     showBookingDetailModal.value ||
     showRoomMoveModal.value ||
     showDetailModal.value ||
@@ -2581,184 +2600,188 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
             <!-- Settings Dropdown Popover -->
             <div v-if="showSettings"
-              class="absolute right-4 xl:right-6 top-[calc(100%+4px)] w-[350px] max-h-[calc(100vh-4.5rem)] overflow-y-auto scrollbar-thin bg-white rounded-xl shadow-2xl border border-slate-200/80 p-4 z-[50] flex flex-col gap-3 font-sans select-none animate-[fadeIn_0.15s_ease-out] settings-popover-panel text-slate-800">
+              class="absolute right-4 xl:right-6 top-[calc(100%+4px)] w-[350px] max-h-[calc(100vh-5.5rem)] bg-white rounded-xl shadow-2xl border border-slate-200/80 p-3 z-[50] flex flex-col font-sans select-none animate-[fadeIn_0.15s_ease-out] settings-popover-panel text-slate-800">
 
-              <div class="flex items-center justify-between border-b border-slate-100 pb-2">
-                <h3 class="text-sm font-black uppercase tracking-wider text-slate-800">Cài đặt hiển thị</h3>
-                <button @click="showSettings = false"
-                  class="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer flex items-center justify-center transition-colors"
-                  title="Đóng">
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+              <!-- Fixed Header -->
+              <div class="shrink-0 flex items-center justify-between border-b border-slate-100 pb-1.5 mb-1.5">
+                <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-800">Cài đặt hiển thị</h3>
+                <button type="button" @click="showSettings = false"
+                  class="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer flex items-center justify-center transition-colors"
+                  title="Đóng (Esc)">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
               </div>
 
-              <!-- Icon Sizing section -->
-              <div class="flex flex-col gap-2.5">
-                <span class="text-xs font-black uppercase text-slate-400 tracking-wider text-left">Icon</span>
+              <!-- Body (Scrollable on small screens, expanded without scrollbar on large screens) -->
+              <div class="settings-popover-body flex-1 min-h-0 overflow-y-auto pr-1 flex flex-col gap-2 scrollbar-thin">
+                <!-- Icon Sizing section -->
+                <div class="flex flex-col gap-2">
+                  <span class="text-xs font-semibold uppercase text-slate-500 tracking-wider text-left">Icon</span>
 
-                <!-- Group 1: Lock, Birthday, Honeymoon, Extra Bed -->
-                <div class="flex flex-col gap-1">
-                  <div class="flex items-center justify-between text-slate-700">
-                    <div class="flex items-center gap-2">
-                      <RoomIcon name="ooo" class="w-5 h-5 text-amber-500" />
-                      <RoomIcon name="birthday" class="w-5 h-5 text-pink-500" />
-                      <RoomIcon name="honeymoon" class="w-5 h-5 text-red-500" />
-                      <RoomIcon name="extra-bed" class="w-5 h-5 text-slate-600" />
+                  <!-- Group 1: Lock, Birthday, Honeymoon, Extra Bed -->
+                  <div class="flex flex-col gap-0.5">
+                    <div class="flex items-center justify-between text-slate-700">
+                      <div class="flex items-center gap-2">
+                        <RoomIcon name="ooo" class="w-5 h-5 text-amber-500" />
+                        <RoomIcon name="birthday" class="w-5 h-5 text-pink-500" />
+                        <RoomIcon name="honeymoon" class="w-5 h-5 text-red-500" />
+                        <RoomIcon name="extra-bed" class="w-5 h-5 text-slate-600" />
+                      </div>
+                      <span class="text-xs text-slate-500 font-medium">{{ settings.iconSizes.group1 }}px</span>
                     </div>
-                    <span class="text-[11px] text-slate-500 font-black">{{ settings.iconSizes.group1 }}px</span>
+                    <input type="range" min="12" max="50" v-model.number="settings.iconSizes.group1"
+                      class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                      :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group1 - 12) / (50 - 12) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group1 - 12) / (50 - 12) * 100) + '%, #e2e8f0 100%)' }" />
                   </div>
-                  <input type="range" min="12" max="50" v-model.number="settings.iconSizes.group1"
-                    class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
-                    :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group1 - 12) / (50 - 12) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group1 - 12) / (50 - 12) * 100) + '%, #e2e8f0 100%)' }" />
+
+                  <!-- Group 2: Clean, Double check, Dirty -->
+                  <div class="flex flex-col gap-0.5">
+                    <div class="flex items-center justify-between text-slate-700">
+                      <div class="flex items-center gap-2">
+                        <RoomIcon name="clean" class="w-5 h-5 text-emerald-500" />
+                        <RoomIcon name="double-check" class="w-5 h-5 text-blue-500" />
+                        <RoomIcon name="dirty" class="w-5 h-5 text-amber-600" />
+                      </div>
+                      <span class="text-xs text-slate-500 font-medium">{{ settings.iconSizes.group2 }}px</span>
+                    </div>
+                    <input type="range" min="12" max="50" v-model.number="settings.iconSizes.group2"
+                      class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                      :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group2 - 12) / (50 - 12) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group2 - 12) / (50 - 12) * 100) + '%, #e2e8f0 100%)' }" />
+                  </div>
+
+                  <!-- Group 3: Green status dot, Red status dot, Split dot -->
+                  <div class="flex flex-col gap-0.5">
+                    <div class="flex items-center justify-between">
+                      <div class="flex items-center gap-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 border border-white/20 shadow-xs"></span>
+                        <span class="w-2.5 h-2.5 rounded-full bg-red-500 border border-white/20 shadow-xs"></span>
+                        <span
+                          class="w-2.5 h-2.5 rounded-full border border-white/20 shadow-xs bg-gradient-to-r from-emerald-500 from-50% to-red-500 to-50%"></span>
+                      </div>
+                      <span class="text-xs text-slate-500 font-medium">{{ settings.iconSizes.group3 }}px</span>
+                    </div>
+                    <input type="range" min="6" max="50" v-model.number="settings.iconSizes.group3"
+                      class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                      :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group3 - 6) / (50 - 6) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group3 - 6) / (50 - 6) * 100) + '%, #e2e8f0 100%)' }" />
+                  </div>
+
+                  <!-- Group 4: Walkin -->
+                  <div class="flex flex-col gap-0.5">
+                    <div class="flex items-center justify-between text-slate-700">
+                      <div class="flex items-center gap-2">
+                        <RoomIcon name="walkin" class="w-5 h-5 text-slate-600" />
+                      </div>
+                      <span class="text-xs text-slate-500 font-medium">{{ settings.iconSizes.group4 }}px</span>
+                    </div>
+                    <input type="range" min="12" max="50" v-model.number="settings.iconSizes.group4"
+                      class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                      :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group4 - 12) / (50 - 12) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group4 - 12) / (50 - 12) * 100) + '%, #e2e8f0 100%)' }" />
+                  </div>
+
+                  <!-- Group 5: Priority, DND -->
+                  <div class="flex flex-col gap-0.5">
+                    <div class="flex items-center justify-between text-slate-700">
+                      <div class="flex items-center gap-2">
+                        <RoomIcon name="priority" class="w-5 h-5 text-sky-500" />
+                        <RoomIcon name="dnd" class="w-5 h-5 text-slate-500" />
+                      </div>
+                      <span class="text-xs text-slate-500 font-medium">{{ settings.iconSizes.group5 }}px</span>
+                    </div>
+                    <input type="range" min="12" max="50" v-model.number="settings.iconSizes.group5"
+                      class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                      :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group5 - 12) / (50 - 12) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group5 - 12) / (50 - 12) * 100) + '%, #e2e8f0 100%)' }" />
+                  </div>
                 </div>
 
-                <!-- Group 2: Clean, Double check, Dirty -->
-                <div class="flex flex-col gap-1">
-                  <div class="flex items-center justify-between text-slate-700">
-                    <div class="flex items-center gap-2">
-                      <RoomIcon name="clean" class="w-5 h-5 text-emerald-500" />
-                      <RoomIcon name="double-check" class="w-5 h-5 text-blue-500" />
-                      <RoomIcon name="dirty" class="w-5 h-5 text-amber-600" />
-                    </div>
-                    <span class="text-[11px] text-slate-500 font-black">{{ settings.iconSizes.group2 }}px</span>
-                  </div>
-                  <input type="range" min="12" max="50" v-model.number="settings.iconSizes.group2"
-                    class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
-                    :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group2 - 12) / (50 - 12) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group2 - 12) / (50 - 12) * 100) + '%, #e2e8f0 100%)' }" />
+                <hr class="border-slate-100" />
+
+                <!-- Room text sizing -->
+                <div class="flex flex-col gap-1.5">
+                  <span class="text-xs font-semibold uppercase text-slate-500 tracking-wider text-left">Kích thước chữ</span>
+                  <label class="flex items-center justify-between gap-3 text-xs font-medium text-slate-700">
+                    <span class="whitespace-nowrap shrink-0 w-20 text-left">Số phòng</span>
+                    <input type="range" min="10" max="24" v-model.number="settings.textSizes.roomNumber" class="flex-1 accent-sky-500" />
+                    <span class="w-10 text-right text-slate-500">{{ settings.textSizes.roomNumber }}px</span>
+                  </label>
+                  <label class="flex items-center justify-between gap-3 text-xs font-medium text-slate-700">
+                    <span class="whitespace-nowrap shrink-0 w-20 text-left">Loại phòng</span>
+                    <input type="range" min="8" max="16" v-model.number="settings.textSizes.roomType" class="flex-1 accent-sky-500" />
+                    <span class="w-10 text-right text-slate-500">{{ settings.textSizes.roomType }}px</span>
+                  </label>
+                  <label class="flex items-center justify-between gap-3 text-xs font-medium text-slate-700">
+                    <span class="whitespace-nowrap shrink-0 w-20 text-left">Tên khách</span>
+                    <input type="range" min="8" max="16" v-model.number="settings.textSizes.guestName" class="flex-1 accent-sky-500" />
+                    <span class="w-10 text-right text-slate-500">{{ settings.textSizes.guestName }}px</span>
+                  </label>
                 </div>
 
-                <!-- Group 3: Green status dot, Red status dot, Split dot -->
-                <div class="flex flex-col gap-1">
-                  <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-2">
-                      <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 border border-white/20 shadow-xs"></span>
-                      <span class="w-2.5 h-2.5 rounded-full bg-red-500 border border-white/20 shadow-xs"></span>
-                      <span
-                        class="w-2.5 h-2.5 rounded-full border border-white/20 shadow-xs bg-gradient-to-r from-emerald-500 from-50% to-red-500 to-50%"></span>
+                <hr class="border-slate-100" />
+
+                <!-- Exact Position Toggle -->
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-medium text-slate-700">Vị trí chính xác</span>
+                  <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" v-model="settings.exactPosition" class="sr-only peer" />
+                    <div
+                      class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-500">
                     </div>
-                    <span class="text-[11px] text-slate-500 font-black">{{ settings.iconSizes.group3 }}px</span>
-                  </div>
-                  <input type="range" min="6" max="50" v-model.number="settings.iconSizes.group3"
-                    class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
-                    :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group3 - 6) / (50 - 6) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group3 - 6) / (50 - 6) * 100) + '%, #e2e8f0 100%)' }" />
+                  </label>
                 </div>
 
-                <!-- Group 4: Walkin -->
-                <div class="flex flex-col gap-1">
-                  <div class="flex items-center justify-between text-slate-700">
-                    <div class="flex items-center gap-2">
-                      <RoomIcon name="walkin" class="w-5 h-5 text-slate-600" />
-                    </div>
-                    <span class="text-[11px] text-slate-500 font-black">{{ settings.iconSizes.group4 }}px</span>
-                  </div>
-                  <input type="range" min="12" max="50" v-model.number="settings.iconSizes.group4"
-                    class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
-                    :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group4 - 12) / (50 - 12) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group4 - 12) / (50 - 12) * 100) + '%, #e2e8f0 100%)' }" />
-                </div>
-
-                <!-- Group 5: Priority, DND -->
-                <div class="flex flex-col gap-1">
-                  <div class="flex items-center justify-between text-slate-700">
-                    <div class="flex items-center gap-2">
-                      <RoomIcon name="priority" class="w-5 h-5 text-sky-500" />
-                      <RoomIcon name="dnd" class="w-5 h-5 text-slate-500" />
-                    </div>
-                    <span class="text-[11px] text-slate-500 font-black">{{ settings.iconSizes.group5 }}px</span>
-                  </div>
-                  <input type="range" min="12" max="50" v-model.number="settings.iconSizes.group5"
-                    class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
-                    :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group5 - 12) / (50 - 12) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group5 - 12) / (50 - 12) * 100) + '%, #e2e8f0 100%)' }" />
-                </div>
-              </div>
-
-              <hr class="border-slate-100" />
-
-              <!-- Room text sizing -->
-              <div class="flex flex-col gap-2">
-                <span class="text-xs font-black uppercase text-slate-400 tracking-wider text-left">Kích thước chữ</span>
-                <label class="flex items-center justify-between gap-3 text-xs font-bold text-slate-700">
-                  <span class="whitespace-nowrap shrink-0 w-20 text-left">Số phòng</span>
-                  <input type="range" min="10" max="24" v-model.number="settings.textSizes.roomNumber" class="flex-1 accent-sky-500" />
-                  <span class="w-10 text-right text-slate-500">{{ settings.textSizes.roomNumber }}px</span>
-                </label>
-                <label class="flex items-center justify-between gap-3 text-xs font-bold text-slate-700">
-                  <span class="whitespace-nowrap shrink-0 w-20 text-left">Loại phòng</span>
-                  <input type="range" min="8" max="16" v-model.number="settings.textSizes.roomType" class="flex-1 accent-sky-500" />
-                  <span class="w-10 text-right text-slate-500">{{ settings.textSizes.roomType }}px</span>
-                </label>
-                <label class="flex items-center justify-between gap-3 text-xs font-bold text-slate-700">
-                  <span class="whitespace-nowrap shrink-0 w-20 text-left">Tên khách</span>
-                  <input type="range" min="8" max="16" v-model.number="settings.textSizes.guestName" class="flex-1 accent-sky-500" />
-                  <span class="w-10 text-right text-slate-500">{{ settings.textSizes.guestName }}px</span>
-                </label>
-              </div>
-
-              <hr class="border-slate-100" />
-
-              <!-- Exact Position Toggle -->
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-bold text-slate-700">Vị trí chính xác</span>
-                <label class="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" v-model="settings.exactPosition" class="sr-only peer" />
+                <!-- Floor Orientation Toggle -->
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-medium text-slate-700">Hướng của tầng</span>
                   <div
-                    class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-500">
+                    class="flex items-center bg-slate-100 rounded-lg p-0.5 border border-slate-200 text-xs font-medium">
+                    <button type="button" @click="settings.floorOrientation = 'Ngang'"
+                      class="px-2.5 py-1 rounded-md transition-all border-none cursor-pointer"
+                      :class="settings.floorOrientation === 'Ngang' ? 'bg-sky-500 text-white shadow-xs' : 'text-slate-500 bg-transparent hover:bg-slate-200'">
+                      Ngang
+                    </button>
+                    <button type="button" @click="settings.floorOrientation = 'Dọc'"
+                      class="px-2.5 py-1 rounded-md transition-all border-none cursor-pointer"
+                      :class="settings.floorOrientation === 'Dọc' ? 'bg-sky-500 text-white shadow-xs' : 'text-slate-500 bg-transparent hover:bg-slate-200'">
+                      Dọc
+                    </button>
                   </div>
-                </label>
-              </div>
+                </div>
 
-              <!-- Floor Orientation Toggle -->
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-bold text-slate-700">Hướng của tầng</span>
-                <div
-                  class="flex items-center bg-slate-100 rounded-lg p-0.5 border border-slate-200 text-[11px] font-black">
-                  <button @click="settings.floorOrientation = 'Ngang'"
-                    class="px-2.5 py-1 rounded-md transition-all border-none cursor-pointer"
-                    :class="settings.floorOrientation === 'Ngang' ? 'bg-sky-500 text-white shadow-xs' : 'text-slate-500 bg-transparent hover:bg-slate-200'">
-                    Ngang
-                  </button>
-                  <button @click="settings.floorOrientation = 'Dọc'"
-                    class="px-2.5 py-1 rounded-md transition-all border-none cursor-pointer"
-                    :class="settings.floorOrientation === 'Dọc' ? 'bg-sky-500 text-white shadow-xs' : 'text-slate-500 bg-transparent hover:bg-slate-200'">
-                    Dọc
-                  </button>
+                <hr class="border-slate-100" />
+
+                <!-- Room Width Slider -->
+                <div class="flex flex-col gap-0.5 text-xs font-medium text-slate-700">
+                  <div class="flex justify-between">
+                    <span class="text-left">Chiều dài phòng</span>
+                    <span class="text-slate-500">{{ settings.roomWidth }}px</span>
+                  </div>
+                  <input type="range" min="80" max="300" v-model.number="settings.roomWidth"
+                    class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                    :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.roomWidth - 80) / (300 - 80) * 100) + '%, #e2e8f0 ' + ((settings.roomWidth - 80) / (300 - 80) * 100) + '%, #e2e8f0 100%)' }" />
+                </div>
+
+                <!-- Room Height Slider -->
+                <div class="flex flex-col gap-0.5 text-xs font-medium text-slate-700">
+                  <div class="flex justify-between">
+                    <span class="text-left">Chiều cao phòng</span>
+                    <span class="text-slate-500">{{ settings.roomHeight }}px</span>
+                  </div>
+                  <input type="range" min="40" max="200" v-model.number="settings.roomHeight"
+                    class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                    :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.roomHeight - 40) / (200 - 40) * 100) + '%, #e2e8f0 ' + ((settings.roomHeight - 40) / (200 - 40) * 100) + '%, #e2e8f0 100%)' }" />
                 </div>
               </div>
 
-              <hr class="border-slate-100" />
-
-              <!-- Room Width Slider -->
-              <div class="flex flex-col gap-1 text-xs font-bold text-slate-700">
-                <div class="flex justify-between">
-                  <span class="text-left">Chiều dài phòng</span>
-                  <span class="text-slate-500">{{ settings.roomWidth }}px</span>
-                </div>
-                <input type="range" min="80" max="300" v-model.number="settings.roomWidth"
-                  class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
-                  :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.roomWidth - 80) / (300 - 80) * 100) + '%, #e2e8f0 ' + ((settings.roomWidth - 80) / (300 - 80) * 100) + '%, #e2e8f0 100%)' }" />
-              </div>
-
-              <!-- Room Height Slider -->
-              <div class="flex flex-col gap-1 text-xs font-bold text-slate-700">
-                <div class="flex justify-between">
-                  <span class="text-left">Chiều cao phòng</span>
-                  <span class="text-slate-500">{{ settings.roomHeight }}px</span>
-                </div>
-                <input type="range" min="40" max="200" v-model.number="settings.roomHeight"
-                  class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
-                  :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.roomHeight - 40) / (200 - 40) * 100) + '%, #e2e8f0 ' + ((settings.roomHeight - 40) / (200 - 40) * 100) + '%, #e2e8f0 100%)' }" />
-              </div>
-
-              <!-- Buttons Group -->
-              <div class="flex gap-2.5 mt-1 pt-2 border-t border-slate-100">
-                <button @click="resetToDefaultSettings"
-                  class="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-xs uppercase transition-colors shadow-xs border border-slate-200 cursor-pointer flex items-center justify-center gap-1.5">
+              <!-- Fixed Footer -->
+              <div class="shrink-0 pt-2 mt-1.5 border-t border-slate-100 flex gap-2">
+                <button type="button" @click="resetToDefaultSettings"
+                  class="flex-1 h-8 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-md text-xs transition-colors shadow-xs border border-slate-200 cursor-pointer flex items-center justify-center gap-1.5">
                   Mặc định
                 </button>
-                <button @click="saveSettings"
-                  class="flex-1 py-2 bg-[#0088ff] hover:bg-[#0077e6] text-white font-bold rounded-lg text-xs uppercase transition-colors shadow-xs border border-[#0088ff] cursor-pointer flex items-center justify-center gap-1.5">
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <button type="button" @click="saveSettings"
+                  class="btn-pms-primary flex-1 h-8">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round"
                       d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
@@ -2796,7 +2819,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
               <!-- Tab 3: D.S Công Việc ShiftWorkPage -->
               <div v-else-if="currentTab === 'shift-work'" class="h-full overflow-hidden">
-                <ShiftWorkPage />
+                <ShiftWorkPage @edit-booking="handleEditBookingFromPlan" />
               </div>
 
               <!-- Tab 4: Công Ty CompanySettingsPage -->
@@ -3288,7 +3311,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                             <span
                               :class="[
                                 isRoomNumberRed(room) ? 'text-red-600 font-black' : (room.booking_color ? 'text-inherit' : 'text-gray-900'),
-                                isArrivingTomorrow(room) ? 'underline font-black decoration-2' : ''
+                                isArrivingTomorrow(room) ? 'underline decoration-1 underline-offset-[2px]' : ''
                               ]"
                               :style="getRoomNumberStyle(room)">
                               {{ room.room_number }}
@@ -3790,7 +3813,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                           <span
                             :class="[
                               isRoomNumberRed(room) ? 'text-red-600 font-black' : '',
-                              isArrivingTomorrow(room) ? 'underline font-black decoration-2' : ''
+                              isArrivingTomorrow(room) ? 'underline decoration-1 underline-offset-[2px]' : ''
                             ]"
                             :style="getRoomNumberStyle(room)"
                             class="inline-flex items-center justify-center gap-1">
@@ -4533,13 +4556,21 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
       <div v-if="showStatsModal"
         class="fixed inset-0 z-[99999] flex items-center justify-center bg-black/55 backdrop-blur-[2px] p-4 select-none">
         <div
-          class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden border border-slate-200 flex flex-col max-h-[90vh] animate-[fadeIn_0.2s_ease-out]">
+          class="bg-white rounded-xl shadow-2xl w-full max-w-4xl overflow-hidden border border-slate-200 flex flex-col max-h-[90vh] animate-[fadeIn_0.2s_ease-out]">
           <!-- Header -->
-          <div class="bg-blue-600 text-white px-5 py-3 flex items-center justify-between">
-            <h3 class="text-sm font-extrabold tracking-wide uppercase">Thống kê</h3>
-            <button @click="showStatsModal = false"
-              class="text-white/80 hover:text-white bg-transparent border-none text-lg font-black cursor-pointer leading-none">
-              ✕
+          <div 
+            class="px-5 py-3 flex items-center justify-between text-white rounded-t-xl"
+            :style="{ background: 'var(--pms-custom-theme, #006bdb)', color: 'var(--pms-custom-theme-text, #ffffff)' }"
+          >
+            <h3 class="text-xs font-semibold tracking-wide uppercase text-white">Thống kê</h3>
+            <button
+              @click="showStatsModal = false"
+              class="w-6 h-6 rounded-md bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors border-none cursor-pointer text-white"
+              title="Đóng (Esc)"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
             </button>
           </div>
 
@@ -4587,8 +4618,8 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 <thead>
                   <tr class="text-slate-500 font-bold border-b border-slate-100">
                     <th class="pb-1.5 text-left font-semibold">Trạng thái</th>
-                    <th class="pb-1.5 text-right w-16 font-bold text-[11px] text-red-500">Occ</th>
-                    <th class="pb-1.5 text-right w-16 font-bold text-[11px] text-emerald-500">Vac</th>
+                    <th class="pb-1.5 text-right w-16 font-semibold text-xs text-red-500">Occ</th>
+                    <th class="pb-1.5 text-right w-16 font-semibold text-xs text-emerald-500">Vac</th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100 text-slate-700">
@@ -4619,8 +4650,8 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 <thead>
                   <tr class="text-slate-500 font-bold border-b border-slate-100">
                     <th class="pb-1.5 text-left font-semibold">Trạng thái</th>
-                    <th class="pb-1.5 text-right w-16 font-bold text-[11px]">Room</th>
-                    <th class="pb-1.5 text-right w-16 font-bold text-[11px]">Pax</th>
+                    <th class="pb-1.5 text-right w-16 font-semibold text-xs">Room</th>
+                    <th class="pb-1.5 text-right w-16 font-semibold text-xs">Pax</th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100 text-slate-700">
@@ -4688,9 +4719,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                   <thead>
                     <tr class="text-slate-500 font-bold border-b border-slate-100">
                       <th class="pb-1.5 text-left font-semibold">Dự báo</th>
-                      <th class="pb-1.5 text-right w-14 font-bold text-[11px]">Room</th>
-                      <th class="pb-1.5 text-right w-14 font-bold text-[11px]">Pax</th>
-                      <th class="pb-1.5 text-right w-16 font-bold text-[11px]">%</th>
+                      <th class="pb-1.5 text-right w-14 font-semibold text-xs">Room</th>
+                      <th class="pb-1.5 text-right w-14 font-semibold text-xs">Pax</th>
+                      <th class="pb-1.5 text-right w-16 font-semibold text-xs">%</th>
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-slate-100 text-slate-700">
@@ -4929,33 +4960,52 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
     <!-- Room Lock Modal -->
     <Teleport to="body">
       <div v-if="showRoomLockModal" class="fixed inset-0 z-[1000000] flex items-center justify-center bg-slate-900/40 p-4" @click.self="showRoomLockModal = false">
-        <div class="w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl" :style="{ transform: `translate(${roomLockModalPos.x}px, ${roomLockModalPos.y}px)` }">
-          <div class="flex cursor-move select-none items-center justify-between px-5 py-3 text-white" @mousedown="startRoomLockDrag" :style="{ background: 'var(--pms-custom-theme, #85c2ea)' }">
-            <h3 class="text-sm font-black uppercase">Thêm khóa {{ roomLockForm.lockType }}</h3>
-            <button type="button" class="text-xl" @click="showRoomLockModal = false">×</button>
+        <div class="w-full max-w-2xl overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl animate-modal-slide" :style="{ transform: `translate(${roomLockModalPos.x}px, ${roomLockModalPos.y}px)` }">
+          <div class="flex cursor-move select-none items-center justify-between px-4 py-2.5 text-white rounded-t-xl" @mousedown="startRoomLockDrag" :style="{ background: 'var(--pms-custom-theme, #006bdb)', color: 'var(--pms-custom-theme-text, #ffffff)' }">
+            <h3 class="text-xs font-semibold uppercase tracking-wide">Thêm khóa {{ roomLockForm.lockType }}</h3>
+            <button
+              type="button"
+              class="w-6 h-6 rounded-md bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors border-none cursor-pointer text-white"
+              title="Đóng (Esc)"
+              @click="showRoomLockModal = false"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
           <div class="grid grid-cols-1 gap-5 p-5 md:grid-cols-2">
             <div class="space-y-4">
-              <label class="block text-[11px] font-bold uppercase text-slate-500">Bắt đầu
-                <input v-model="roomLockForm.startDate" type="date" disabled class="mt-1 w-full cursor-not-allowed rounded border border-slate-200 bg-slate-100 px-3 py-2 text-sm text-slate-500" />
+              <label class="block text-xs font-semibold text-[#000000D9]">Bắt đầu
+                <input v-model="roomLockForm.startDate" type="date" disabled class="mt-1 w-full h-8 cursor-not-allowed rounded-lg border border-slate-200 bg-slate-100 px-3 text-xs font-normal text-slate-500" />
               </label>
-              <label class="block text-[11px] font-bold uppercase text-slate-500">Kết thúc *
+              <label class="block text-xs font-semibold text-[#000000D9]">Kết thúc <span class="text-rose-500">*</span>
                 <div class="relative mt-1">
-                  <input ref="lockEndDateInput" v-model="roomLockForm.endDate" type="date" :min="roomLockForm.startDate" @click="openLockEndDatePicker" class="w-full cursor-pointer rounded border border-slate-300 bg-white px-3 py-2 pr-10 text-sm text-slate-700 appearance-auto [&::-webkit-calendar-picker-indicator]:opacity-0" />
+                  <input ref="lockEndDateInput" v-model="roomLockForm.endDate" type="date" :min="roomLockForm.startDate" @click="openLockEndDatePicker" class="w-full h-8 cursor-pointer rounded-lg border border-[#F1DD8A] bg-[#FFF8DB] px-3 pr-10 text-xs font-semibold text-[#000000D9] appearance-auto [&::-webkit-calendar-picker-indicator]:opacity-0 focus:outline-none focus:ring-1 focus:ring-amber-400" />
                   <svg @click="openLockEndDatePicker" class="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 cursor-pointer text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
                 </div>
               </label>
-              <label class="block text-[11px] font-bold uppercase text-slate-500">Phòng
-                <input :value="roomLockForm.room?.room_number || ''" disabled class="mt-1 w-full cursor-not-allowed rounded border border-slate-200 bg-slate-100 px-3 py-2 text-sm text-slate-500" />
+              <label class="block text-xs font-semibold text-[#000000D9]">Phòng
+                <input :value="roomLockForm.room?.room_number || ''" disabled class="mt-1 w-full h-8 cursor-not-allowed rounded-lg border border-slate-200 bg-slate-100 px-3 text-xs font-normal text-slate-500" />
               </label>
             </div>
-            <label class="block text-[11px] font-bold uppercase text-slate-500">Ghi chú *
-              <textarea v-model="roomLockForm.reason" rows="6" required placeholder="Nhập ghi chú hoặc lý do bảo trì..." class="mt-1 w-full resize-none rounded border px-3 py-2 text-sm"></textarea>
+            <label class="block text-xs font-semibold text-[#000000D9]">Ghi chú <span class="text-rose-500">*</span>
+              <textarea v-model="roomLockForm.reason" rows="6" required placeholder="Nhập ghi chú hoặc lý do bảo trì..." class="mt-1 w-full resize-none rounded-lg border border-[#F1DD8A] bg-[#FFF8DB] px-3 py-2 text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF] focus:outline-none focus:ring-1 focus:ring-amber-400"></textarea>
             </label>
           </div>
-          <div class="flex justify-end gap-2 border-t bg-slate-50 px-5 py-3">
-            <button type="button" class="rounded border px-4 py-2 text-sm" @click="showRoomLockModal = false">Hủy</button>
-            <button type="button" class="rounded bg-blue-600 px-4 py-2 text-sm font-bold text-white" @click="submitRoomLock()">Khóa phòng</button>
+          <div class="flex justify-end gap-2 border-t bg-slate-50 px-5 py-3 rounded-b-xl">
+            <button type="button" class="btn-pms-close h-8 px-4 text-xs font-semibold rounded-lg flex items-center gap-1.5 cursor-pointer" @click="showRoomLockModal = false">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              Đóng
+            </button>
+            <button type="button" class="btn-pms-primary h-8 px-4 text-xs font-semibold rounded-lg flex items-center gap-1.5 cursor-pointer" @click="submitRoomLock()">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+              Khóa phòng
+            </button>
           </div>
         </div>
       </div>
@@ -5068,6 +5118,14 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
   width: 6px;
 }
 
+.scrollbar-thin {
+  scrollbar-width: thin;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 4px;
+}
+
 .scrollbar-thin::-webkit-scrollbar-track {
   background: transparent;
 }
@@ -5079,6 +5137,17 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
   background: #7bc4ff;
+}
+
+/* Popover Cài đặt hiển thị: Trên màn hình lớn (chiều cao >= 650px) hiển thị trọn vẹn không hiện thanh cuộn */
+@media (min-height: 650px) {
+  .settings-popover-panel {
+    max-height: none !important;
+  }
+  .settings-popover-panel .settings-popover-body {
+    overflow-y: visible !important;
+    padding-right: 0 !important;
+  }
 }
 
 .filter-panel-wrapper {

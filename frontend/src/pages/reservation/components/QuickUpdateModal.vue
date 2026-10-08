@@ -13,30 +13,28 @@
     >
       <!-- HEADER -->
       <div 
-        class="flex justify-between items-center px-4 py-2.5 shrink-0 select-none cursor-move"
+        class="flex justify-between items-center px-4 py-2.5 shrink-0 select-none cursor-move rounded-t-xl"
         :style="{
-          background: 'var(--pms-custom-theme, #006bdb)',
-          color: 'var(--pms-custom-theme-text, #ffffff)'
+          background: topbarThemeBg,
+          color: '#ffffff'
         }"
         @mousedown="startDragModal"
       >
-        <div class="flex items-center space-x-2 font-black text-xs uppercase tracking-wider">
+        <div class="flex items-center space-x-2 font-bold text-xs uppercase tracking-wider text-white">
           <i class="fa-solid fa-pen-to-square"></i>
-          <span>Cập nhật nhanh nhiều phòng</span>
+          <span>Cập nhật</span>
         </div>
         <div class="flex items-center space-x-2">
           <button 
             type="button"
-            class="p-1 hover:bg-white/10 rounded-md cursor-pointer border-none bg-transparent flex items-center justify-center"
-            :style="{ color: 'var(--pms-custom-theme-text, #ffffff)' }"
+            class="p-1 hover:bg-white/10 rounded-md cursor-pointer border-none bg-transparent flex items-center justify-center text-white"
             title="Trợ giúp"
           >
             <i class="fa-regular fa-circle-question text-base"></i>
           </button>
           <button 
             type="button" 
-            class="p-1 hover:bg-white/10 rounded-md cursor-pointer border-none bg-transparent flex items-center justify-center" 
-            :style="{ color: 'var(--pms-custom-theme-text, #ffffff)' }"
+            class="p-1 hover:bg-white/10 rounded-md cursor-pointer border-none bg-transparent flex items-center justify-center text-white" 
             @click="close"
           >
             <i class="fa-solid fa-xmark text-base"></i>
@@ -147,13 +145,12 @@
 
           <!-- Rate -->
           <div>
-            <label class="block text-slate-600 mb-1 font-bold">Giá</label>
+            <label class="block text-slate-600 mb-1 font-semibold text-xs">Giá</label>
             <input 
               type="text" 
-              placeholder="Để trống nếu không đổi"
               :value="formatCurrencyInput(form.rate)"
               @input="e => form.rate = cleanCurrencyValue(e.target.value)"
-              class="w-full border rounded-lg h-9 px-3 text-xs focus:outline-none transition-colors border-slate-300 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 text-right font-bold text-slate-800"
+              class="w-full border rounded-lg h-9 px-3 text-xs focus:outline-none transition-colors border-slate-300 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 text-right font-medium text-slate-800"
             />
           </div>
 
@@ -161,22 +158,20 @@
           <div>
             <div class="grid grid-cols-2 gap-2">
               <div>
-                <label class="block text-slate-600 mb-1 font-bold">Người lớn</label>
+                <label class="block text-slate-600 mb-1 font-semibold text-xs">Người lớn</label>
                 <input 
                   type="number" 
                   v-model.number="form.adults"
-                  placeholder="Không đổi"
                   min="1"
                   :disabled="isOccupantsDisabled"
                   class="w-full border rounded-lg h-9 px-3 text-xs focus:outline-none transition-colors border-slate-300 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed text-center"
                 />
               </div>
               <div>
-                <label class="block text-slate-600 mb-1 font-bold">Trẻ em</label>
+                <label class="block text-slate-600 mb-1 font-semibold text-xs">Trẻ em</label>
                 <input 
                   type="number" 
                   v-model.number="form.children_qty"
-                  placeholder="Không đổi"
                   min="0"
                   :disabled="isOccupantsDisabled"
                   class="w-full border rounded-lg h-9 px-3 text-xs focus:outline-none transition-colors border-slate-300 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed text-center"
@@ -187,11 +182,10 @@
 
           <!-- Extra Bed Qty -->
           <div>
-            <label class="block text-slate-600 mb-1 font-bold">Thêm giường</label>
+            <label class="block text-slate-600 mb-1 font-semibold text-xs">Thêm giường</label>
             <input 
               type="number" 
               v-model.number="form.extra_bed_qty"
-              placeholder="Không đổi"
               min="0"
               :disabled="isExtraBedDisabled"
               class="w-full border rounded-lg h-9 px-3 text-xs focus:outline-none transition-colors border-slate-300 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed text-center"
@@ -200,36 +194,24 @@
 
           <!-- Extra Bed Price -->
           <div>
-            <label class="block text-slate-600 mb-1 font-bold">Giá thêm giường</label>
+            <label class="block text-slate-600 mb-1 font-semibold text-xs">Giá thêm giường</label>
             <input 
               type="text" 
-              placeholder="Để trống nếu không đổi"
               :value="formatCurrencyInput(form.extra_bed_rate)"
               @input="e => form.extra_bed_rate = cleanCurrencyValue(e.target.value)"
               :disabled="isExtraBedDisabled"
-              class="w-full border rounded-lg h-9 px-3 text-xs focus:outline-none transition-colors border-slate-300 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed text-right font-bold text-slate-800"
+              class="w-full border rounded-lg h-9 px-3 text-xs focus:outline-none transition-colors border-slate-300 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed text-right font-medium text-slate-800"
             />
           </div>
         </div>
       </div>
 
       <!-- FOOTER -->
-      <div class="bg-slate-50 border-t border-slate-100 px-4 py-3 shrink-0 flex justify-end items-center space-x-2">
-        <button 
-          @click="close" 
-          :disabled="isSaving"
-          class="px-4 py-2 border border-gray-300 text-gray-700 font-bold rounded-xl hover:bg-gray-50 transition text-xs cursor-pointer bg-white disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Hủy bỏ
-        </button>
+      <div class="bg-slate-50 border-t border-slate-100 px-4 py-3 shrink-0 flex justify-end items-center space-x-2 rounded-b-xl">
         <button 
           @click="submitSave" 
           :disabled="isSaving"
-          class="px-5 py-2 text-white font-bold rounded-xl transition flex items-center space-x-1.5 shadow-md text-xs cursor-pointer border-none disabled:opacity-50 disabled:cursor-not-allowed"
-          :style="{
-            background: 'var(--pms-custom-theme, #006bdb)',
-            color: 'var(--pms-custom-theme-text, #ffffff)'
-          }"
+          class="btn-pms-primary"
         >
           <i v-if="isSaving" class="fa-solid fa-circle-notch animate-spin"></i>
           <i v-else class="fa-regular fa-floppy-disk"></i>
@@ -257,6 +239,10 @@ const emit = defineEmits(['update:show', 'saved'])
 
 const authStore = useAuthStore()
 const uiStore = useUiStore()
+
+const topbarThemeBg = computed(() => {
+  return authStore.settings?.topbar_color || 'var(--pms-custom-theme, #006bdb)'
+})
 
 // ==================== STATE DECLARATIONS ====================
 const isSaving = ref(false)

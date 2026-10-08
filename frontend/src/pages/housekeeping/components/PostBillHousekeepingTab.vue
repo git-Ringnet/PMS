@@ -6,29 +6,35 @@
       <!-- INFO STRIP -->
       <div class="info-strip flex items-center gap-3 p-2.5 bg-slate-100 border-b border-slate-200 shrink-0 flex-wrap">
         <div class="info-field flex flex-col gap-1 min-w-[320px] max-w-[450px] relative" ref="dropdownRef">
-          <label class="text-[10.5px] font-semibold text-slate-700 tracking-wider">Phòng / Khách</label>
+          <label :class="isFoModal ? 'text-xs font-semibold text-[#000000D9]' : 'text-xs font-semibold text-slate-700 tracking-wider'">Phòng / Khách <span v-if="isFoModal" class="text-red-500">*</span></label>
           <div 
-            @click="!isModal && (isDropdownOpen = !isDropdownOpen)"
-            class="flex items-center justify-between bg-white border border-slate-300 rounded px-3 h-8 text-xs font-semibold shadow-xs cursor-pointer hover:border-[#1a6b8a] transition-colors select-none"
-            :class="{ 'opacity-80 cursor-not-allowed bg-slate-50': isModal }"
+            @click="canSelectRoom && (isDropdownOpen = !isDropdownOpen)"
+            class="flex items-center justify-between rounded-lg px-3 h-8 text-xs shadow-xs transition-colors select-none"
+            :class="[
+              canSelectRoom ? 'cursor-pointer' : 'cursor-not-allowed opacity-80 bg-slate-50',
+              isFoModal ? 'border border-[#F1DD8A] bg-[#FFF8DB] hover:border-amber-500' : 'border border-slate-300 bg-white hover:border-[#1a6b8a]'
+            ]"
           >
             <div v-if="selectedOption" class="flex items-center gap-1.5 truncate">
-              <span class="text-[#1a6b8a] font-bold shrink-0">{{ selectedOption.code }}</span>
+              <span :class="isFoModal ? 'text-[#000000D9] font-semibold' : 'text-[#1a6b8a] font-bold'" class="shrink-0">{{ selectedOption.code }}</span>
               <span class="text-slate-300">·</span>
-              <span class="font-bold text-slate-800 shrink-0">{{ selectedOption.roomNumber }}</span>
+              <span class="font-normal text-[#000000D9] shrink-0">{{ selectedOption.roomNumber }}</span>
               <span class="text-slate-300">·</span>
-              <span class="text-slate-700 truncate font-normal">{{ selectedOption.guestName }}</span>
-              <span v-if="selectedOption.bookingNoPost || selectedOption.roomNoPost" class="ml-1 shrink-0 rounded bg-rose-100 px-1.5 py-0.5 text-[9px] font-bold text-rose-700">No Post</span>
+              <span class="text-[#000000D9] truncate" :class="selectedOption.isPrimary ? 'font-semibold' : 'font-normal'">{{ selectedOption.guestName }}</span>
+              <span v-if="selectedOption.bookingNoPost || selectedOption.roomNoPost" class="ml-1 shrink-0 rounded bg-rose-100 px-1.5 py-0.5 text-xs font-bold text-rose-700">No Post</span>
             </div>
             <div v-else class="text-slate-400 font-normal italic">
               -- Chọn phòng / khách --
             </div>
-            <span class="text-slate-400 text-[9px] ml-2 shrink-0">▼</span>
+            <div class="ml-2 flex shrink-0 items-center gap-1">
+              <button v-if="selectedOption && canSelectRoom" type="button" title="Xóa phòng/khách" @click.stop="clearSelectedOption" class="text-slate-400 hover:text-red-500"><X class="h-3.5 w-3.5" /></button>
+              <span class="text-xs text-slate-400">▼</span>
+            </div>
           </div>
 
           <!-- Dropdown Menu -->
           <div 
-            v-if="isDropdownOpen && !isModal" 
+            v-if="isDropdownOpen && canSelectRoom"
             class="absolute left-0 top-full mt-1 w-full min-w-[340px] max-h-60 bg-white border border-slate-300 rounded shadow-xl z-50 flex flex-col overflow-hidden"
           >
             <!-- Search inside dropdown -->
@@ -51,9 +57,9 @@
                   class="border-b border-slate-100 last:border-none"
                 >
                   <!-- Master Group Header (Non-selectable) -->
-                  <div class="px-3 py-1.5 bg-slate-100/90 text-[11px] font-bold text-[#1a6b8a] sticky top-0 z-10 border-y border-slate-200/80 flex items-center justify-between select-none">
+                  <div class="px-3 py-1.5 bg-slate-100/90 text-xs font-semibold text-[#000000D9] sticky top-0 z-10 border-y border-slate-200/80 flex items-center justify-between select-none">
                     <div class="flex items-center gap-1.5 truncate">
-                      <span class="font-bold text-[#1a6b8a]">{{ grp.code }}</span>
+                      <span class="font-semibold text-[#000000D9]">{{ grp.code }}</span>
                       <span v-if="grp.bookingName" class="text-slate-600 font-normal">· {{ grp.bookingName }}</span>
                     </div>
                   </div>
@@ -69,7 +75,7 @@
                     <span class="font-bold text-slate-800 shrink-0">{{ opt.roomNumber }}</span>
                     <span class="text-slate-300">·</span>
                     <span class="text-slate-700 truncate" :class="opt.isPrimary ? 'font-bold' : 'font-normal'">{{ opt.guestName }}</span>
-                    <span v-if="opt.bookingNoPost || opt.roomNoPost" class="ml-auto shrink-0 rounded bg-rose-100 px-1.5 py-0.5 text-[9px] font-bold text-rose-700">No Post</span>
+                    <span v-if="opt.bookingNoPost || opt.roomNoPost" class="ml-auto shrink-0 rounded bg-rose-100 px-1.5 py-0.5 text-xs font-bold text-rose-700">No Post</span>
                   </div>
                 </div>
               </template>
@@ -81,12 +87,13 @@
         </div>
 
         <div class="info-field flex flex-col gap-1">
-          <label class="text-[10.5px] font-semibold text-slate-700 tracking-wider">Ngày</label>
-          <input type="date" v-model="form.date" :max="systemDate" class="h-8 px-2.5 border border-slate-300 rounded text-xs text-slate-800 bg-white focus:outline-none focus:border-[#1a6b8a] w-[135px] cursor-pointer" />
+          <label :class="isFoModal ? 'text-xs font-semibold text-[#000000D9]' : 'text-xs font-semibold text-slate-700 tracking-wider'">Ngày <span v-if="isFoModal" class="text-red-500">*</span></label>
+          <SingleDatePicker v-if="isFoModal" v-model="form.date" :min-date="selectedStayMinDate" :max-date="selectedStayMaxDate" placeholder="dd/mm/yyyy" four-digit-year input-class="input-required h-8 w-[145px]" />
+          <input v-else type="date" v-model="form.date" :max="systemDate" class="h-8 px-2.5 border border-slate-300 rounded text-xs text-slate-800 bg-white focus:outline-none focus:border-[#1a6b8a] w-[135px] cursor-pointer" />
         </div>
 
         <div class="info-field flex flex-col gap-1">
-          <label class="text-[10.5px] font-semibold text-slate-700 tracking-wider">Tăng giá</label>
+          <label class="text-xs font-semibold text-slate-700 tracking-wider">Tăng giá</label>
           <div class="pct flex items-center" :class="{ 'opacity-40 pointer-events-none': form.isFree }">
             <input 
               type="number" 
@@ -101,7 +108,7 @@
         </div>
 
         <div class="info-field flex flex-col gap-1">
-          <label class="text-[10.5px] font-semibold text-slate-700 tracking-wider">Chiết khấu</label>
+          <label class="text-xs font-semibold text-slate-700 tracking-wider">Chiết khấu</label>
           <div class="pct flex items-center" :class="{ 'opacity-40 pointer-events-none': form.isFree }">
             <input 
               type="number" 
@@ -116,7 +123,7 @@
         </div>
 
         <div class="info-field flex flex-col gap-1">
-          <label class="text-[10.5px] font-semibold text-slate-700 tracking-wider">&nbsp;</label>
+          <label class="text-xs font-semibold text-slate-700 tracking-wider">&nbsp;</label>
           <label class="mienPhi-wrap flex items-center gap-2 h-8 cursor-pointer select-none text-xs font-semibold text-slate-700 hover:text-slate-900" :class="{ 'text-emerald-600 font-bold': form.isFree }">
             <input type="checkbox" v-model="form.isFree" @change="onMienPhiChange" class="w-4 h-4 accent-emerald-600 cursor-pointer" />
             <span>Miễn phí</span>
@@ -124,12 +131,15 @@
         </div>
 
         <div class="info-field flex-1 flex flex-col gap-1">
-          <label class="text-[10.5px] font-semibold text-slate-700 tracking-wider">Ghi chú</label>
-          <textarea v-model="form.note" placeholder="Ghi chú..." class="h-8 px-2.5 py-1 border border-slate-300 rounded text-xs text-slate-800 bg-white focus:outline-none focus:border-[#1a6b8a] resize-none w-full leading-tight"></textarea>
+          <label class="text-xs font-semibold text-slate-700 tracking-wider">Ghi chú</label>
+          <div class="relative">
+            <textarea v-model="form.note" class="h-8 w-full rounded border border-slate-300 bg-white py-1 pl-2.5 pr-8 text-xs leading-tight text-slate-800 focus:border-[#1a6b8a] focus:outline-none resize-none"></textarea>
+            <button v-if="form.note" type="button" title="Xóa ghi chú" @click="form.note = ''" class="absolute right-1 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-red-500"><X class="h-3.5 w-3.5" /></button>
+          </div>
         </div>
       </div>
 
-      <div v-if="isPostBlocked" class="shrink-0 border-b border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-medium text-rose-700" role="alert">
+      <div v-if="isPostBlocked" class="shrink-0 border-b border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700" role="alert">
         {{ postBlockMessage }}
       </div>
 
@@ -144,8 +154,11 @@
               v-for="tKey in tabKeys"
               :key="tKey"
               @click="switchTab(tKey)"
-              class="tab flex-1 h-10 px-1 text-xs font-medium text-slate-400 text-center border-b-2 transition-all cursor-pointer bg-none border-transparent -mb-[2px]"
-              :class="[currentTab === tKey ? 'text-slate-800 font-bold border-b-[#1a6b8a]' : 'hover:text-slate-600']"
+              class="tab flex-1 h-10 px-1 text-xs text-center border-b-2 transition-colors cursor-pointer bg-none -mb-[2px]"
+              :class="currentTab === tKey
+                ? (isFoModal ? 'font-semibold border-transparent' : 'text-slate-800 font-bold border-b-[#1a6b8a]')
+                : (isFoModal ? 'font-semibold border-transparent hover:text-[#2563EB]' : 'font-medium text-slate-400 border-transparent hover:text-slate-600')"
+              :style="isFoModal ? { color: currentTab === tKey ? '#2563EB' : '#000000D9', fontWeight: '600', borderBottomColor: 'transparent' } : undefined"
             >
               {{ tabLabels[tKey] }}
             </button>
@@ -159,8 +172,9 @@
                 type="text" 
                 v-model="productSearchQuery" 
                 placeholder="Tìm sản phẩm..." 
-                class="w-full h-8 pl-8 pr-2.5 text-xs border border-slate-300 rounded bg-slate-50 focus:bg-white focus:border-[#1a6b8a] outline-none transition-colors"
+                class="w-full h-8 pl-8 pr-8 text-xs border border-slate-300 rounded-lg bg-slate-50 focus:bg-white focus:border-[#1a6b8a] outline-none transition-colors"
               />
+              <button v-if="productSearchQuery" type="button" title="Xóa tìm kiếm" @click="productSearchQuery = ''" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500"><X class="h-3.5 w-3.5" /></button>
             </div>
           </div>
 
@@ -168,7 +182,7 @@
           <div class="product-list flex-1 overflow-y-auto">
             <template v-if="filteredProductSubgroups.length > 0">
               <div v-for="sub in filteredProductSubgroups" :key="sub.name">
-                <div class="subgroup-header px-3.5 py-1 text-[10px] font-bold uppercase tracking-wider text-white bg-[#1a6b8a] border-b border-slate-200 flex items-center gap-1.5 opacity-90">
+                <div class="subgroup-header px-3.5 py-1 text-xs font-semibold uppercase tracking-wider text-white border-b border-slate-200 flex items-center gap-1.5 opacity-90" :style="{ background: isFoModal ? 'var(--pms-custom-theme, #006bdb)' : '#1a6b8a' }">
                   {{ sub.name }}
                 </div>
                 <template v-if="sub.items && sub.items.length > 0">
@@ -186,19 +200,20 @@
                     </div>
                     <div class="product-info flex-1 min-w-0">
                       <div class="product-name text-xs text-slate-800 font-normal leading-tight truncate">{{ p.name }}</div>
-                      <div class="product-price text-[11px] text-[#1a6b8a] font-semibold mt-0.5">{{ formatCurrency(p.price) }} đ</div>
+                      <div class="product-price text-xs text-[#1a6b8a] font-semibold mt-0.5">{{ formatCurrency(p.price) }} đ</div>
                     </div>
                     <button 
                       @click.stop="addToCart(p)"
                       :disabled="isPostBlocked"
-                      class="product-add w-6 h-6 rounded-full bg-[#1a6b8a] hover:bg-[#155a76] text-white border-none text-base cursor-pointer flex items-center justify-center shrink-0 transition-colors leading-none disabled:cursor-not-allowed disabled:opacity-40"
+                      class="product-add w-6 h-6 rounded-full text-white border-none cursor-pointer flex items-center justify-center shrink-0 transition-colors leading-none disabled:cursor-not-allowed disabled:opacity-40"
+                      :style="{ background: isFoModal ? 'var(--pms-custom-theme, #006bdb)' : '#1a6b8a' }"
                       title="Thêm"
                     >
-                      +
+                      <Plus class="h-4 w-4" />
                     </button>
                   </div>
                 </template>
-                <div v-else class="px-3.5 py-2 text-[11px] text-slate-400 italic border-b border-slate-100 bg-slate-50/50">
+                <div v-else class="px-3.5 py-2 text-xs text-slate-400 italic border-b border-slate-100 bg-slate-50/50">
                   Chưa có sản phẩm trong nhóm này
                 </div>
               </div>
@@ -213,11 +228,11 @@
         <!-- RIGHT: SELECTED SERVICES TABLE -->
         <div class="col-right flex flex-col overflow-hidden bg-white">
           <!-- Table Header -->
-          <div class="tbl-head grid grid-cols-[36px_1fr_88px_52px_80px_80px_88px_36px] bg-slate-100 border-b-2 border-slate-200 px-3 h-10 items-center gap-1.5 shrink-0">
-            <div class="th font-bold text-[11px] text-slate-700 text-center">STT</div>
-            <div class="th font-bold text-[11px] text-slate-700 text-center">Sản phẩm</div>
-            <div class="th font-bold text-[11px] text-slate-700 text-center">Giá</div>
-            <div class="th font-bold text-[11px] text-slate-700 text-center">SL</div>
+          <div class="tbl-head grid bg-slate-100 border-b-2 border-slate-200 px-3 h-10 items-center gap-1.5 shrink-0" :class="isFoModal ? 'grid-cols-[36px_1fr_88px_80px_80px_80px_88px_42px]' : 'grid-cols-[36px_1fr_88px_52px_80px_80px_88px_36px]'">
+            <div class="th font-bold text-xs text-slate-700 text-center">STT</div>
+            <div class="th font-bold text-xs text-slate-700 text-center">Sản phẩm</div>
+            <div class="th font-bold text-xs text-slate-700 text-center">Giá</div>
+            <div class="th font-bold text-xs text-slate-700 text-center">SL</div>
             
             <!-- Toggle Discount / Surcharge Mode -->
             <div class="th-toggle-wrap relative flex flex-col items-center">
@@ -226,20 +241,20 @@
                 class="th-toggle flex flex-col items-center justify-center cursor-pointer select-none p-1 rounded hover:bg-slate-200 transition-colors"
                 :class="{ 'text-amber-600': discountMode === 'pt', 'pointer-events-none opacity-40': form.isFree }"
               >
-                <span class="th-main text-[11px] font-bold" :class="discountMode === 'pt' ? 'text-amber-600' : 'text-slate-700'">
+                <span class="th-main text-xs font-bold" :class="discountMode === 'pt' ? 'text-amber-600' : 'text-slate-700'">
                   {{ discountMode === 'pt' ? '% Phụ thu' : '% Giảm' }}
                 </span>
-                <span class="th-hint text-[9.5px] text-slate-400 whitespace-nowrap" :class="{ 'text-amber-600/70': discountMode === 'pt' }">
+                <span class="th-hint text-xs text-slate-400 whitespace-nowrap" :class="{ 'text-amber-600/70': discountMode === 'pt' }">
                   ↔ click: {{ discountMode === 'pt' ? 'Giảm giá' : 'Phụ thu' }}
                 </span>
               </div>
             </div>
 
-            <div class="th font-bold text-[11px] text-slate-700 text-center">
+            <div class="th font-bold text-xs text-slate-700 text-center">
               {{ discountMode === 'pt' ? 'Tiền phụ thu' : 'Tiền giảm' }}
             </div>
-            <div class="th font-bold text-[11px] text-slate-700 text-center">Thành tiền</div>
-            <div class="th font-bold text-[11px] text-slate-700 text-center"></div>
+            <div class="th font-bold text-xs text-slate-700 text-center">Thành tiền</div>
+            <div class="th font-bold text-xs text-slate-700 text-center"></div>
           </div>
 
           <!-- Table Body -->
@@ -248,7 +263,7 @@
               <template v-for="grpKey in tabKeys" :key="grpKey">
                 <template v-if="groupedCart[grpKey] && groupedCart[grpKey].length > 0">
                   <!-- Group Header -->
-                  <div class="group-header px-2 py-1 text-[10.5px] font-bold uppercase tracking-wider text-slate-400 bg-slate-100 border-b border-slate-200 flex items-center gap-1.5">
+                  <div class="group-header px-2 py-1 text-xs font-bold uppercase tracking-wider text-slate-400 bg-slate-100 border-b border-slate-200 flex items-center gap-1.5">
                     <span class="group-dot w-1.75 h-1.75 rounded-full" :style="{ background: GROUP_COLORS[grpKey] || '#64748b' }"></span>
                     <span>{{ GROUP_LABELS[grpKey] }}</span>
                   </div>
@@ -257,14 +272,20 @@
                   <div 
                     v-for="(item, idx) in groupedCart[grpKey]" 
                     :key="item.product.id"
-                    class="tbl-row grid grid-cols-[36px_1fr_88px_52px_80px_80px_88px_36px] px-3 gap-1.5 items-center min-h-[44px] border-b border-slate-200 hover:bg-slate-50 transition-colors text-xs"
+                    class="tbl-row grid px-3 gap-1.5 items-center min-h-[44px] border-b border-slate-200 hover:bg-slate-50 transition-colors text-xs"
+                    :class="isFoModal ? 'grid-cols-[36px_1fr_88px_80px_80px_80px_88px_42px]' : 'grid-cols-[36px_1fr_88px_52px_80px_80px_88px_36px]'"
                   >
                     <div class="cell-stt text-center text-slate-400">{{ getItemIndex(grpKey, idx) }}</div>
                     <div class="cell-name text-slate-800 font-normal truncate" :title="item.product.name">{{ item.product.name }}</div>
                     <div class="cell-price text-center text-slate-800">{{ formatCurrency(item.product.price) }}</div>
                     
                     <!-- Qty Input -->
-                    <div>
+                    <div v-if="isFoModal" class="flex h-7 overflow-hidden rounded-lg border border-slate-300 bg-white">
+                      <button type="button" title="Giảm số lượng" @click="item.qty = Math.max(1, Number(item.qty || 1) - 1); refreshCart()" class="flex w-5 items-center justify-center text-slate-500 hover:bg-slate-100"><Minus class="h-3 w-3" /></button>
+                      <input type="number" v-model.number="item.qty" min="1" @input="refreshCart" class="min-w-0 flex-1 border-x border-slate-200 text-center text-xs text-[#000000D9] outline-none" />
+                      <button type="button" title="Tăng số lượng" @click="item.qty = Number(item.qty || 0) + 1; refreshCart()" class="flex w-5 items-center justify-center text-slate-500 hover:bg-slate-100"><Plus class="h-3 w-3" /></button>
+                    </div>
+                    <div v-else>
                       <input 
                         type="number" 
                         v-model.number="item.qty" 
@@ -286,7 +307,7 @@
                         @input="refreshCart"
                         class="cell-input w-full h-7 border border-slate-300 rounded text-center text-xs text-slate-800 focus:border-[#1a6b8a] outline-none pr-5 disabled:bg-slate-100 disabled:opacity-50"
                       />
-                      <span class="pct-unit absolute right-1.5 top-1/2 -translate-y-1/2 text-[11px] text-slate-400 pointer-events-none">%</span>
+                      <span class="pct-unit absolute right-1.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 pointer-events-none">%</span>
                     </div>
 
                     <!-- Discount / Surcharge Value -->
@@ -312,7 +333,7 @@
                         class="w-7 h-7 rounded text-rose-300 hover:text-rose-600 hover:bg-rose-50 flex items-center justify-center transition-colors cursor-pointer border-none bg-transparent"
                         title="Xóa"
                       >
-                        🗑
+                        <Trash2 :class="isFoModal ? 'h-5 w-5' : 'h-4 w-4'" />
                       </button>
                     </div>
                   </div>
@@ -342,7 +363,7 @@
           <button @click="undoCart" class="btn btn-cancel h-9 px-4 rounded border border-rose-700 !bg-rose-600 hover:!bg-rose-700 !text-white text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1.5 shadow-xs">
             <span>↩ Undo</span>
           </button>
-          <button @click="sendToRoom" :disabled="isSending || isPostBlocked" class="btn btn-save h-9 px-5 rounded !bg-[#1a6b8a] hover:!bg-[#155a76] !text-white text-xs font-semibold cursor-pointer transition-colors border-none flex items-center gap-1.5 shadow-xs disabled:cursor-not-allowed disabled:opacity-50">
+          <button @click="sendToRoom" :disabled="isSending || isPostBlocked" :class="isFoModal ? 'btn-pms-primary' : 'btn btn-save h-9 px-5 rounded !bg-[#1a6b8a] hover:!bg-[#155a76] !text-white text-xs font-semibold cursor-pointer transition-colors border-none flex items-center gap-1.5 shadow-xs disabled:cursor-not-allowed disabled:opacity-50'">
             <span v-if="isSending" class="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
             <span>💾 Gửi về phòng</span>
           </button>
@@ -355,12 +376,14 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { Minus, Plus, Trash2, X } from '@lucide/vue'
 import { useUiStore } from '@/stores/ui-store'
 import { fetchBookings, fetchSystemDate } from '@/services/booking-service'
 import http from '@/services/http'
 import { fetchHousekeepingOutlets } from '@/services/housekeeping-outlet-service'
 // Import LoadingOverlay component của hệ thống
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
+import SingleDatePicker from '@/components/SingleDatePicker.vue'
 
 const props = defineProps({
   initialRoomId: {
@@ -406,6 +429,8 @@ const isNoPostEnabled = value => value === true || value === 1 || ['1', 'true', 
 const bookingGroups = ref([])
 const roomGuestOptions = ref([])
 const selectedOption = ref(null)
+const isFoModal = computed(() => props.isModal && String(props.postingSource || '').toUpperCase() === 'FO')
+const canSelectRoom = computed(() => !props.isModal || isFoModal.value)
 const isPostBlocked = computed(() => Boolean(selectedOption.value?.bookingNoPost || selectedOption.value?.roomNoPost))
 const postBlockMessage = computed(() => selectedOption.value?.bookingNoPost
   ? 'Booking đang bật No Post — không thể thêm hoặc gửi dịch vụ.'
@@ -483,6 +508,20 @@ const selectOption = (opt) => {
   }
   isDropdownOpen.value = false
 }
+
+const clearSelectedOption = () => {
+  selectOption(null)
+  roomSearchQuery.value = ''
+  isDropdownOpen.value = true
+}
+
+const selectedStayMinDate = computed(() => selectedOption.value?.arrivalDate || null)
+const selectedStayMaxDate = computed(() => {
+  const departure = selectedOption.value?.departureDate || null
+  if (!departure) return systemDate.value || null
+  if (!systemDate.value) return departure
+  return departure < systemDate.value ? departure : systemDate.value
+})
 
 const syncSelectedOption = () => {
   if (!roomGuestOptions.value.length) return
@@ -585,6 +624,8 @@ const loadBookingRooms = async () => {
                   isPrimary: g.isPrimary,
                   bookingNoPost: isNoPostEnabled(b.no_post),
                   roomNoPost: isNoPostEnabled(r.no_post),
+                  arrivalDate: String(r.arrival_date || b.arrival_date || '').slice(0, 10),
+                  departureDate: String(r.departure_date || b.departure_date || '').slice(0, 10),
                   label: `${code} · ${roomNoDisplay} · ${g.name}`
                 }
                 allOptions.push(opt)
@@ -604,6 +645,8 @@ const loadBookingRooms = async () => {
                 isPrimary: true,
                 bookingNoPost: isNoPostEnabled(b.no_post),
                 roomNoPost: isNoPostEnabled(r.no_post),
+                arrivalDate: String(r.arrival_date || b.arrival_date || '').slice(0, 10),
+                departureDate: String(r.departure_date || b.departure_date || '').slice(0, 10),
                 label: `${code} · ${roomNoDisplay} · ${fallbackGuest}`
               }
               allOptions.push(opt)
@@ -899,6 +942,12 @@ const sendToRoom = async () => {
   }
   if (!form.value.roomId) {
     uiStore.showToast('Vui lòng chọn phòng trước khi gửi.', 'warning')
+    return
+  }
+  if (isFoModal.value && (!form.value.date
+    || (selectedStayMinDate.value && form.value.date < selectedStayMinDate.value)
+    || (selectedStayMaxDate.value && form.value.date > selectedStayMaxDate.value))) {
+    uiStore.showToast('Ngày post bill phải nằm trong thời gian lưu trú của phòng.', 'warning')
     return
   }
   if (cart.value.length === 0) {

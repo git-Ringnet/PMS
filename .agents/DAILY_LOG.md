@@ -18,6 +18,316 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-10-08] - Fix Ô Ngày & Giờ bị khuất (Thanh toán trước) và Căn giữa bảng (Thanh toán) trong Checkout
+### Module: Thu ngân / Trả phòng ([PrepaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/PrepaymentModal.vue), [PaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/PaymentModal.vue))
+
+- **Yêu cầu & Giải pháp hoàn thành**:
+  - **1. Khắc phục ô Ngày và Giờ bị khuất trong Thanh toán trước ([PrepaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/PrepaymentModal.vue) - Ảnh 1)**:
+    - Bố cục grid: Tái cấu trúc grid thành 2 cột `col-span-7` (trái: thông tin thanh toán) và `col-span-5` (phải: mô tả) đồng bộ cả 2 hàng từ trên xuống dưới, tạo thêm không gian rộng rãi cho cụm bên trái.
+    - Phân bổ cột tối ưu cho hàng Ca, Giờ, Ngày, Tiền tệ: Áp dụng `grid-cols-[85px_155px_1fr_85px] items-start`:
+      + **Ca**: 85px với `pr-8`, nút xóa `x` tại `right-5` và chevron `right-1.5`, tên ca căn giữa gọn gàng.
+      + **Giờ**: 155px rộng rãi với `pl-2 pr-8`, nút xóa `x` tại `right-2`, hiển thị trọn vẹn cả 12h (`hh:mm AM/PM`, vd: `07:21 PM`) và 24h, không còn bị cắt chữ và tách biệt với icon đồng hồ/nút xóa.
+      + **Ngày**: Nhận không gian `1fr` (~220px), hiển thị trọn vẹn `31/08/2026` hoặc placeholder `dd/mm/yyyy` ở giữa, nút `x` và icon lịch rõ ràng bên phải.
+      + **Tiền tệ**: 85px cân đối với ô Ca, hiển thị cờ đỏ sao vàng, mã `VND` căn giữa đẹp mắt.
+  - **2. Căn giữa các cột trong bảng Thanh toán ([PaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/PaymentModal.vue) - Ảnh 2)**:
+    - Tiêu đề cột (`th`): Căn giữa (`text-center`) toàn bộ tiêu đề: *Mô tả, Phương thức thanh toán, Tài khoản ngân hàng, Tiền tệ, Tổng tiền, Thao tác*.
+    - Nội dung dữ liệu (`td`): Căn giữa (`text-center`) cho các cột: *Phương thức thanh toán, Tài khoản ngân hàng, Tiền tệ, Tổng tiền* (sử dụng `tabular-nums` căn giữa hài hòa) và *Thao tác*. Cột *Mô tả* giữ nhập liệu text-left.
+    - Bảng danh sách thanh toán trước ([PrepaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/PrepaymentModal.vue)): Đồng bộ canh giữa tiêu đề và dữ liệu các cột *Ngày, Giờ, HTTT*.
+- **Kiểm thử**:
+  - `npm run build` thành công 100% (5.72s), 0 lỗi.
+  - Unit tests `room-info-date-utils.test.js` (5/5 pass) và `available-rooms-view-state.test.js` (4/4 pass).
+
+## [2026-10-08] - Fix Dòng 48 & 49 (Sheet FIX FE): Danh sách công việc ca lễ tân
+### Module: Danh sách công việc ([ShiftWorkPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/ShiftWorkPage.vue)) & Sơ đồ phòng ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
+
+- **Yêu cầu & Giải pháp hoàn thành**:
+  - **Dòng 48 - Danh sách công việc ([ShiftWorkPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/ShiftWorkPage.vue))**:
+    - **1. Chuẩn hóa Tiêu đề bảng**: Canh giữa (`text-center`) toàn bộ tiêu đề cột (`th`) của 6 tab (*Phòng đến, Phòng đi, Đăng ký chờ xác nhận, Đón tiễn khách, Noshow, Sinh nhật khách*), áp dụng `font-semibold text-slate-800 text-xs h-9 bg-slate-100`.
+    - **2. Tăng size chữ chuẩn FE & Dữ liệu chữ thường**: Đưa toàn bộ các cỡ chữ nhỏ (`11.5px`, `11px`, `10px`) lên chuẩn `text-xs` (12px) Roboto. Giá trị nội dung các cột chuyển về kiểu chữ thường `font-normal text-slate-800` (không in đậm).
+    - **3. Ô Ngày nhập tay & format chuẩn**: Hỗ trợ gõ tay trực tiếp định dạng ngày tháng `dd/mm/yy` (nhận diện tự động 6 số `081026` hoặc 8 số `08102026`), tích hợp bộ helper `room-info-date-utils.js`, kết hợp nút icon lịch mở popup native datepicker và nút copy ngày. Áp dụng đồng bộ cho cả ô ngày đơn và ô khoảng *Từ ngày - Đến ngày*.
+    - **4. Nút xóa nhanh `(x)`**: Bổ sung nút `(x)` tách biệt cạnh icon lịch xuất hiện khi ô ngày có dữ liệu, bấm vào đưa về trạng thái trống và tự động tải lại dữ liệu.
+    - **5. Thanh Header nhóm Booking & Ghi chú xuống hàng (Dòng 49)**:
+      - Bố trí thanh banner 2 dòng:
+        + Dòng 1: `[-] Booking {code}: {name} {arrival}~{departure} _ Room Night: {rn} _ Phòng: {rooms}`.
+        + Dòng 2: `Ghi chú: {notes}` hỗ trợ xuống dòng tự nhiên (`whitespace-pre-wrap break-words`) chuẩn theo thiết kế Dòng 49, tự động lọc sạch tiền tố "Ghi chú:" lặp lại qua hàm `getCleanNote`.
+      - Cột phải: `Đặt cọc : {formatMoney(deposit)}` và `Tổng tiền : {formatMoney(totalAmount)}` (tab Phòng đến) / `Tổng DV` và `Tổng TT` (tab Phòng đi).
+      - Chuẩn hóa toàn bộ dữ liệu các hàng về chữ thường `font-normal text-slate-800` theo đúng yêu cầu (không in đậm số phòng, số tiền hay mã đăng ký).
+    - **6. Double-click Mã Đăng ký mở Tạo đăng ký**: Bổ sung sự kiện `@dblclick="handleOpenBooking"` tại cột Mã Đăng ký / Mã BK / Mã ĐK ở tất cả các tab; tự động xóa khỏi danh sách đóng `pms_closed_tabs`, phát emit `@edit-booking` và điều hướng sang tab Tạo đăng ký (`tab=create-res&bookingCode={code}`) trong [RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue) để mở chi tiết booking vừa chọn.
+    - **7. Tab Đăng ký chờ xác nhận - Icon Lưu ghi chú**: Đổi màu nút Lưu đĩa mềm khi ở trạng thái chỉnh sửa sang màu xanh ngọc tươi sáng rõ nét `bg-emerald-500 hover:bg-emerald-600 text-white shadow` (khi disabled hiển thị `bg-slate-200 text-slate-400`); nút Bút chì chuẩn xanh `bg-sky-500 hover:bg-sky-600 text-white`.
+  - **Bảo toàn 100% logic**:
+    - Không làm thay đổi bất kỳ logic API hay nghiệp vụ nào của các module khác.
+    - Component [RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue) chỉ gắn thêm lắng nghe `@edit-booking="handleEditBookingFromPlan"` tái sử dụng logic sẵn có.
+- **Kiểm thử**:
+  - `npm run build` thành công 100% (4.42s), 0 lỗi cú pháp hoặc template.
+
+## [2026-10-08] - Đồng bộ toàn diện Font chữ, Cỡ chữ (>= 12px Roboto), Form/Modal và Nút bấm theo FE Design System
+### Module: Danh sách phòng đến/đi/ở ([CheckInPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/CheckInPage.vue)), Khóa phòng OOO/OOS ([LockRoomPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/LockRoomPage.vue)), Công suất & Thống kê ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue) & [AvailableRoomsPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/AvailableRoomsPage.vue))
+
+- **Yêu cầu & Giải pháp hoàn thành**:
+  - **1. Danh sách phòng đến/đi/ở ([CheckInPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/CheckInPage.vue))**:
+    - Nút chức năng toolbar: Nút "Nhận phòng" và "Hóa đơn" chuẩn hóa `.btn-pms-primary h-8 px-3 text-xs font-semibold`, nút "Hủy nhận phòng" chuẩn hóa `.btn-pms-danger h-8 px-3 text-xs font-semibold`.
+    - Modal Xác nhận Hủy nhận phòng: Đổi sang bo góc `rounded-xl`, header theme `var(--pms-custom-theme, #006bdb)` `rounded-t-xl`, nút Đóng có title "Đóng (Esc)", bổ sung event listener phím tắt `Escape` để đóng form nhanh (cleanup khi unmount), 2 nút lựa chọn tình trạng phòng chuẩn `h-8 rounded-lg text-xs font-semibold`.
+    - Typography: Loại bỏ toàn bộ `text-[10px]` ở icon đóng mở booking và badge trạng thái `Guaranteed` sang `text-xs font-semibold`.
+  - **2. Khóa phòng OOO/OOS ([LockRoomPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/LockRoomPage.vue))**:
+    - Nút toolbar: Sửa/Hủy hàng loạt chuyển sang `.btn-pms-secondary h-8 px-3`, Lưu hàng loạt chuyển sang `.btn-pms-primary h-8 px-3`, Mở khóa và Khóa phòng OOS/OOO đồng bộ `h-8 px-3 rounded-lg text-xs font-semibold`.
+    - Header bảng: `bg-slate-50 text-[#000000D9] font-semibold h-9 text-xs`.
+    - Modal Thêm/Sửa khóa phòng: Bo góc `rounded-xl overflow-hidden`, header theme `var(--pms-custom-theme, #006bdb)` `rounded-t-xl`, title `text-xs font-semibold uppercase`, nhãn form chuẩn `text-xs font-semibold text-[#000000D9]`, trường bắt buộc "Ghi chú *" có dấu `*` đỏ và ô textarea áp dụng `bg-[#FFF8DB] border-[#F1DD8A] focus:ring-amber-400`.
+    - Phím tắt `Esc`: Đã gắn listener `keydown` đóng modal khóa phòng và phòng lịch sử khi bấm `Escape` (cleanup trong `onBeforeUnmount`).
+    - Typography & Dropdown: Xóa bỏ toàn bộ cỡ chữ < 12px (`text-[9px]`, `text-[10px]`, `text-[11px]`) ở ô nhập %, dropdown chọn phòng và lịch sử khóa phòng thành `text-xs`.
+  - **3. Công suất & Thống kê ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue) & [AvailableRoomsPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/AvailableRoomsPage.vue))**:
+    - Modal Thống kê ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue)): Bo góc `rounded-xl overflow-hidden`, header theme `var(--pms-custom-theme, #006bdb)` `rounded-t-xl`, nút đóng SVG chuẩn title "Đóng (Esc)", hỗ trợ phím `Esc`, đổi các tiêu đề cột `th` sang `text-xs font-semibold`.
+    - Modal Khóa phòng nhanh ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue)): Bo góc `rounded-xl overflow-hidden`, header theme `var(--pms-custom-theme, #006bdb)` `rounded-t-xl`, hỗ trợ phím `Esc` đóng nhanh (kể cả khi đang focus ở ô nhập liệu), các trường bắt buộc có `*` đỏ và nền vàng viền vàng nhạt `#FFF8DB`/`#F1DD8A`, nút Đóng (`.btn-pms-close`) và Khóa phòng (`.btn-pms-primary`).
+    - [AvailableRoomsPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/AvailableRoomsPage.vue): Đổi toàn bộ các tiêu đề cột `th` từ `text-[10px]` sang `text-xs font-semibold`, nút thu/mở OCC từ `text-[11px]` sang `text-xs`, tỷ lệ công suất chiếm dụng dòng 9 chuyển sang `text-xs font-semibold`.
+  - **4. Bảo toàn 100% logic**:
+    - Không thay đổi bất kỳ logic tính toán, API hay CSDL runtime.
+- **Kiểm thử**:
+  - `npm run build` thành công 100% (5.56s, 0 lỗi biên dịch).
+  - Backend route list và unit test chạy hoàn toàn trơn tru.
+
+## [2026-10-08] - Sửa nét gạch chân số phòng (Dòng 20) và Bỏ gạch chéo số 0 cột NL/TE/EB (Dòng 21 Sheet FIX FE)
+### Module: Sơ đồ phòng ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue)) & Danh sách phòng đến/đi/ở ([CheckInPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/CheckInPage.vue))
+
+- **Yêu cầu & Giải pháp hoàn thành**:
+  - **Dòng 20 - Sơ đồ phòng ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue))**:
+    - Chỉnh nét gạch chân số phòng cho "Phòng có ngày đến ngày mai" từ nét dày `font-black decoration-2` sang nét mảnh `decoration-1 underline-offset-[2px]` ở cả chế độ xem dạng thẻ (Grid card view - dòng 3302) và xem chi tiết theo tọa độ (Exact position view - dòng 3804).
+  - **Dòng 21 - Danh sách phòng đến, đi, ở ([CheckInPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/CheckInPage.vue))**:
+    - **Bỏ font-mono ở cột NL/TE/EB**: Loại bỏ class `font-mono` gây lỗi số 0 bị gạch chéo (`Ø`) trong phông monospaced. Thay bằng Roboto chuẩn với `tabular-nums text-xs text-[#000000D9]` (dòng cha `font-semibold`, dòng con `font-normal`) giúp số `0` hiển thị tròn bình thường `8/0/0`, `2/0/0`.
+    - **Đồng bộ cột số tiền & typography theo FE Design System**:
+      - Chuyển các cột số tiền chế độ Trả phòng từ `font-mono` sang `tabular-nums text-right text-xs` (dòng cha `font-semibold text-[#000000D9]`, dòng con `font-normal text-[#000000D9]`).
+      - Tiêu đề bảng (`th`): Đổi sang `text-xs font-semibold text-[#000000D9]`.
+      - Tiêu đề khu vực (`h2`) & badge đếm phòng: Đồng bộ `text-xs font-semibold text-[#000000D9]`, loại bỏ các font size < 12px (`text-[11px]`).
+      - Ghi chú dòng con: Nâng từ `text-[11px]` lên `text-xs` (12px) theo FE Design System.
+  - **Bảo toàn 100% logic**: Giữ nguyên toàn bộ logic tính toán công suất (`getBookingOccupancyText`, `getRoomOccupancyText`), tài chính, lọc, check-in/hủy check-in và API.
+- **Kiểm thử**:
+  - `npm run build` thành công 100% (6.70s), không có bất kỳ lỗi biên dịch nào.
+
+## [2026-10-08] - Sửa Popover Cài đặt hiển thị trên màn hình laptop (Sơ đồ phòng - RoomMapPage.vue) (Dòng 7 Sheet FIX FE)
+### Module: Sơ đồ phòng (Room Map) ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
+
+- **Yêu cầu & Giải pháp hoàn thành (Dòng 7 Sheet FIX FE - "Màn hình laptop bị mất thông tin phía dưới" & Tối ưu màn hình lớn)**:
+  - **Màn hình lớn hiển thị trọn vẹn không hiện thanh cuộn**:
+    - Bổ sung media query `@media (min-height: 650px)` cho `.settings-popover-panel` với `max-height: none !important;` và `.settings-popover-body` với `overflow-y: visible !important; padding-right: 0 !important;`.
+    - Tinh gọn khoảng cách dọc (container `p-3`, icon groups `gap-0.5`, body `gap-2`, footer `pt-2 mt-1.5`) giúp toàn bộ nội dung popover chỉ cao ~500px, hiển thị 100% trọn vẹn tất cả thanh trượt và nút chức năng mà không xuất hiện bất kỳ thanh cuộn nào trên màn hình lớn.
+  - **Khắc phục tràn viewport khi ở màn hình nhỏ / laptop thấp**:
+    - Trên màn hình có chiều cao hạn chế (< 650px), container tự động áp dụng `max-h-[calc(100vh-5.5rem)]`, body cuộn nội bộ mượt mà với `scrollbar-thin` (4px).
+  - **Tách cấu trúc Header - Body - Footer độc lập**:
+    - **Header cố định (`shrink-0`)**: Tiêu đề "Cài đặt hiển thị" chuẩn `text-xs font-semibold`, nút đóng `x` có title "Đóng (Esc)".
+    - **Body (`settings-popover-body`)**: Chứa toàn bộ các slider chỉnh kích thước Icon, cỡ chữ, hướng tầng, chiều dài/cao phòng; nâng cỡ chữ các nhãn từ `text-[11px]` lên `text-xs` (>= 12px) theo FE Design System.
+    - **Footer cố định (`shrink-0`)**: Đưa 2 nút **Mặc định** và **Lưu** cố định ở chân popover. Nút Lưu đồng bộ sang class chuẩn `.btn-pms-primary` (chiều cao 32px `h-8`).
+  - **Phím tắt Esc & Khóa phím tắt nền**:
+    - Nhấn phím `Esc` khi popover cài đặt đang mở sẽ tự động đóng popover.
+    - Bổ sung `showSettings.value` vào guard trong `handleRoomMapShortcut` để ngăn phím tắt số 1, 2, 3 đổi trạng thái phòng ở nền khi người dùng đang thao tác trong popover cài đặt.
+  - **Bảo toàn 100% logic**: Giữ nguyên toàn bộ logic lưu/khôi phục cài đặt (`saveSettings`, `resetToDefaultSettings`, `authStore.updateUserSettings`) và các bộ lọc khác.
+- **Kiểm thử**:
+  - `npm run build` thành công 100% (7.78s), 0 lỗi biên dịch.
+
+## [2026-10-07] - Chuẩn hóa Modal Đặt phòng nhanh & Modal Khóa phòng (Kế hoạch phòng - RoomPlanPage.vue)
+### Module: Kế hoạch phòng (Room Plan) ([RoomPlanPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomPlanPage.vue))
+
+- **Yêu cầu & Giải pháp hoàn thành**:
+  - **Modal Đặt phòng nhanh (`showQuickBookingModal`)**:
+    - Container: Đồng bộ bo góc `rounded-xl overflow-hidden` (thay vì `rounded-2xl`).
+    - Header: Đồng bộ màu theme hệ thống `:style="{ background: 'var(--pms-custom-theme, #006bdb)', color: 'var(--pms-custom-theme-text, #ffffff)' }"` và bo góc `rounded-t-xl`.
+    - Trường bắt buộc: Bổ sung dấu sao đỏ `<span class="text-red-500">*</span>` trên Market Segment, Source Code, Booking name, Tình trạng đăng ký; gán nền vàng nhạt `#FFF8DB` và viền `#F1DD8A` cho ô nhập `Booking name`.
+    - Footer: Bổ sung `rounded-b-xl`, **bỏ nút Đóng** (`.btn-pms-close`) vì người dùng đã có nút 'x' trên header, chỉ giữ lại nút Lưu (`.btn-pms-primary`).
+  - **Modal Khóa phòng (`showLockRoomModal`)**:
+    - Container: Đồng bộ bo góc `rounded-xl overflow-hidden` (thay vì `rounded-2xl`).
+    - Header: Đồng bộ màu theme hệ thống `:style="{ background: 'var(--pms-custom-theme, #006bdb)', color: 'var(--pms-custom-theme-text, #ffffff)' }"` và bo góc `rounded-t-xl`.
+    - Footer: Bổ sung `rounded-b-xl`, **bỏ nút Đóng** (`.btn-pms-close`) vì đã có nút 'x' trên header, chỉ giữ lại nút Lưu (`.btn-pms-primary`).
+  - **Bổ sung tính năng kéo thả di chuyển modal (Drag & Drop)**:
+    - **Modal Khóa phòng (`showLockRoomModal`)** trên [RoomPlanPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomPlanPage.vue): Bổ sung `lockRoomModalStyle`, `startLockRoomDrag`, `moveLockRoomDrag`, `stopLockRoomDrag` giống hệt Modal Đặt phòng nhanh (`cursor-move`, tính toán tọa độ theo requestAnimationFrame, giới hạn trong viewport, cleanup trong `onBeforeUnmount`).
+    - **Modal Thông báo booking ([BookingNotificationsModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/BookingNotificationsModal.vue))**: Bổ sung `modalPos`, `startDragModal`, `onDragModal`, `stopDragModal`, class `cursor-move` trên header và cleanup trong `onBeforeUnmount`.
+  - **Quy chuẩn & Bổ sung phím tắt Esc đóng form nhanh**:
+    - Cập nhật quy chuẩn toàn hệ thống vào [.codex/docs/frontend_design_system/README.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/frontend_design_system/README.md) (Mục 6.4 & 6.5), [AGENTS.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/AGENTS.md) và [.agents/AGENTS.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.agents/AGENTS.md): Tất cả các form/modal khi mở bắt buộc hỗ trợ phím `Esc` để đóng nhanh; khi đã có nút [X] header và phím `Esc`, có thể tinh giản bỏ nút Đóng ở footer.
+    - Đã gắn handler `Escape` và cleanup `removeEventListener` cho Modal Đặt phòng nhanh, Modal Khóa phòng (RoomPlanPage.vue), Modal Thông báo booking (BookingNotificationsModal.vue) và Thẻ thông tin khách (GuestDetailModal.vue).
+  - **Bảo toàn 100% logic nghiệp vụ**: Không thay đổi logic xử lý lưu (`saveQuickBooking`, `saveLockRoom`), API hay dữ liệu form.
+- **Kiểm thử**:
+  - `npm run build` thành công 100% (3.96s), 0 lỗi biên dịch.
+  - Không mở trình duyệt theo yêu cầu ("tôi tự test").
+
+## [2026-10-07] - Quét và chuẩn hóa toàn bộ Form/Modal module Tạo đăng ký (Border Radius & FE Design System)
+### Module: Đăng ký (Reservation) ([CreateRegistrationPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue) & reservation components)
+
+- **Yêu cầu & Giải pháp hoàn thành**:
+  - **Quét và đồng bộ triệt để bo góc (`rounded-xl` / `rounded-lg`) & `overflow-hidden`**:
+    - **[DepositModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/DepositModal.vue)** (Modal Đặt cọc - Ảnh 1): Sửa khung container từ `rounded-2xl overflow-visible` thành `rounded-xl overflow-hidden`, bổ sung `rounded-t-xl` cho header, `rounded-b-xl` cho footer và các sub-modal tách cọc (`isSplitOpen`), xóa cọc (`isDeleteReasonOpen`), chuyển cọc (`isTransferOpen`).
+    - **[QuickAssignModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/QuickAssignModal.vue)** (Modal Nhận phòng nhanh): Sửa khung modal từ `rounded-2xl` thành `rounded-xl overflow-hidden`, header `rounded-t-xl`, footer `rounded-b-xl`, chuẩn hóa các card con bên trong (Thông tin, Khách hàng, Giá) về `rounded-lg` (8px). Đồng bộ các nút thao tác footer sang `.btn-pms-close` và `.btn-pms-primary`.
+    - **[CancelReasonModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/CancelReasonModal.vue)** (Modal Lý do hủy): Bổ sung `rounded-t-xl` cho header và `rounded-b-xl` cho footer.
+    - **[CopyModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/CopyModal.vue)** (Modal Nhân bản): Bổ sung `rounded-t-xl` cho header và `rounded-b-xl` cho footer.
+    - **[QuickUpdateModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/QuickUpdateModal.vue)** (Modal Cập nhật nhanh): Bổ sung `rounded-t-xl` cho header và `rounded-b-xl` cho footer.
+    - **[UpgradeModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/UpgradeModal.vue)** (Modal Nâng hạng phòng): Bổ sung `rounded-t-xl` cho header và `rounded-b-xl` cho footer.
+    - **[GuestInfoModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/GuestInfoModal.vue)** (Modal Thông tin khách): Bổ sung `overflow-hidden` cho khung modal `rounded-xl` để góc không bị lẹm khi cuộn bảng.
+    - **[GuestDetailModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/GuestDetailModal.vue)** (Thẻ thông tin khách): Gán `rounded-xl overflow-hidden` trên modal wrapper, cập nhật biến `--r: 8px;` cho các section card bên trong.
+    - **[AvailabilityDetailModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/AvailabilityDetailModal.vue)** (Modal Chi tiết tình trạng phòng): Sửa khung container từ `rounded-lg` thành `rounded-xl overflow-hidden`, header `rounded-t-xl`, footer `rounded-b-xl`.
+    - **[BookingNotificationsModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/BookingNotificationsModal.vue)** (Modal Thông báo booking): Bổ sung `rounded-t-xl` cho header và `rounded-b-xl` cho footer.
+    - **[ServicesModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/ServicesModal.vue)** (Modal Dịch vụ bổ sung): Bổ sung `rounded-b-xl` cho footer.
+    - **[DeleteServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/DeleteServiceModal.vue)** (Modal Xóa dịch vụ): Đồng bộ header `topbarThemeBg` `rounded-t-xl`, footer `rounded-b-xl`.
+    - **[ExtraBedModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/ExtraBedModal.vue)** (Modal Thêm giường): Sửa card bảng con từ `rounded-xl` về `rounded-lg` (8px), header `topbarThemeBg` `rounded-t-xl`, footer `rounded-b-xl`.
+    - **[ChildBreakfastModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/ChildBreakfastModal.vue)** (Modal Chi tiết ăn sáng trẻ em): Chuẩn hóa card ghi chú về `rounded-lg` (8px), header `rounded-t-xl`, footer `rounded-b-xl`.
+    - **[SpecialRequestsModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/SpecialRequestsModal.vue)** (Modal Yêu cầu đặc biệt): Đồng bộ header `topbarThemeBg` `rounded-t-xl`, footer `rounded-b-xl`, chuẩn hóa modal con tạo yêu cầu về `rounded-b-xl` cùng nút `.btn-pms-close` và `.btn-pms-primary`.
+    - **[ChargeNoshowModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/ChargeNoshowModal.vue)** (Modal Charge Noshow): Đồng bộ header `rounded-t-xl`, footer `rounded-b-xl`.
+    - **[SystemSearchModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/SystemSearchModal.vue)** (Modal Tìm kiếm hệ thống): Đồng bộ container `rounded-xl overflow-hidden` và header `rounded-t-xl`.
+    - **[CreateRegistrationPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue)** (Modal Tạo/Thông tin đăng ký chính): Bổ sung `rounded-t-xl` cho header thanh trên cùng đồng bộ với bo góc `rounded-xl` của modal chính.
+- **Kiểm thử**:
+  - `npm run build` thành công 100% trong 4.91s, 0 lỗi biên dịch.
+  - Không mở trình duyệt theo yêu cầu.
+
+## [2026-10-07] - Bỏ nút Đóng footer & Bỏ gợi ý ctrl+s tại nút Lưu ([GuestDetailModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/GuestDetailModal.vue))
+### Module: Đăng ký (Reservation) ([GuestDetailModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/GuestDetailModal.vue))
+
+- **Yêu cầu & Giải pháp hoàn thành**:
+  - Bỏ nút Đóng ở footer: Xóa button Đóng (`.btn-pms-close`) tại footer của form Thông tin khách (người dùng đóng modal qua nút X trên header).
+  - Bỏ nhãn phím tắt `ctrl+s` ở nút Lưu: Xóa thẻ `<kbd>ctrl+s</kbd>`, nút Lưu giữ icon check `fa-solid fa-check` và nhãn "Lưu" chuẩn `.btn-pms-primary`.
+- **Kiểm thử**:
+  - `npm run build` hoàn thành 100% không phát sinh lỗi (4.40s). Người dùng tự kiểm tra trên web theo yêu cầu.
+
+## [2026-10-07] - Đồng bộ Modal Nhân bản, Modal Thông báo booking & Dropdown Cột hiển thị (Tạo đăng ký)
+### Module: Đăng ký (Reservation) ([CopyModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/CopyModal.vue), [BookingNotificationsModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/BookingNotificationsModal.vue), [CreateRegistrationPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))
+
+- **Yêu cầu & Giải pháp hoàn thành**:
+  - **Ảnh 1 - Modal Nhân bản đăng ký phòng ([CopyModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/CopyModal.vue))**:
+    - Thanh trên cùng: Đồng bộ theo theme hệ thống `:style="{ background: topbarThemeBg, color: 'var(--pms-custom-theme-text, #ffffff)' }"`, xóa màu navy hardcode `#243c5a`. Nút đóng đổi icon chuẩn `fa-solid fa-xmark`.
+    - Ô chọn ngày: Thay 2 ô date native sang `SingleDatePicker` với `placeholder="dd/mm/yy"`, định dạng `dd/mm/yy` cho Ngày đến mới và Ngày đi mới.
+    - Nút chức năng footer: Nút Đóng dùng `.btn-pms-close`, nút Xác nhận nhân bản dùng `.btn-pms-primary` với icon check `fa-solid fa-check`.
+    - Bo góc modal: Chuẩn `rounded-xl` (12px).
+  - **Ảnh 2 - Modal Thông báo booking ([BookingNotificationsModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/BookingNotificationsModal.vue))**:
+    - Thanh trên cùng: Đồng bộ màu theme hệ thống `topbarThemeBg`, tiêu đề 12px `text-xs font-semibold`, nút đóng dùng `fa-solid fa-xmark`, bỏ viền xanh `border-blue-400`.
+    - Ô chọn ngày & định dạng: Thay thế `input[type="date"]` sang `SingleDatePicker` (`placeholder="dd/mm/yy"`). Ngày tháng hiển thị ở Thông tin đăng ký và bảng danh sách đồng bộ chuẩn `dd/mm/yy`.
+    - Bỏ dấu sao đỏ `*` thừa ở tiêu đề "Thông tin đăng ký" và "Thông tin" (chỉ giữ ở các trường nhập liệu bắt buộc: Mô tả, Ngày bắt đầu, Ngày kết thúc).
+    - Đồng bộ nút footer: Thay class `.action` tùy biến thành các nút chuẩn hệ thống: Thêm (`.btn-pms-primary`), Sửa (`.btn-pms-secondary`), Lưu (`.btn-pms-primary`), Xóa (`.btn-pms-danger`), Đóng (`.btn-pms-close` với nhãn tiếng Việt "Đóng", icon `fa-solid fa-xmark`).
+  - **Ảnh 3 - Dropdown Cột hiển thị ([CreateRegistrationPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))**:
+    - Font chữ: Nâng cấp chuẩn FE Design System 12px `text-xs font-normal text-[#000000D9]`, tiêu đề cột `text-xs font-semibold uppercase`.
+    - Bố cục & Scroll: Thêm padding đáy `pb-3.5`, `max-h-72` với padding hợp lý giúp các dòng cuối (như Nâng hạng phòng, Ăn sáng,...) không bị cắt chân.
+    - Đóng dropdown: Bổ sung lớp nền backdrop click-outside để khi click ra ngoài dropdown tự động thu lại mượt mà.
+- **Kiểm thử**:
+  - `npm run build` thành công 100% trong 7.84s, 0 lỗi.
+  - Không mở trình duyệt tự động kiểm thử (người dùng tự kiểm tra theo yêu cầu).
+
+## [2026-10-07] - Sửa triệt để Click Icon Lịch (GuestInfoModal) & Đồng bộ toàn diện Thẻ thông tin khách (GuestDetailModal)
+### Module: Đăng ký (Reservation) ([GuestInfoModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/GuestInfoModal.vue), [GuestDetailModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/GuestDetailModal.vue))
+
+- **Yêu cầu & Giải pháp hoàn thành**:
+  - **Ảnh 1 - Khắc phục ấn vào icon không hiện lịch ([GuestInfoModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/GuestInfoModal.vue))**:
+    - Nguyên nhân: Trước đó lớp phủ input date native có `@click.stop` nhưng không gọi `showPicker()`, chặn sự kiện click tới wrapper khiến click vào icon lịch không kích hoạt popup lịch.
+    - Giải pháp: Chuyển input date sang `pointer-events-none` và gắn `@click.stop="openDateCellPicker($event)"` trực tiếp vào wrapper icon lịch. Hàm `openDateCellPicker` đồng bộ gọi `.showPicker()` trên input date native nằm bên trong cell. Áp dụng cho cả bảng khách người lớn và trẻ em. Bấm vào icon lịch hoặc ô text đều mở lịch ngay lập tức.
+  - **Ảnh 2 - Đồng bộ form Thẻ thông tin khách ([GuestDetailModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/GuestDetailModal.vue))**:
+    - Thanh trên cùng: Đồng bộ màu theme hệ thống `:style="{ background: topbarThemeBg, color: 'var(--pms-custom-theme-text, #ffffff)' }"` (`var(--pms-custom-theme, #006bdb)`), xóa bỏ màu navy hardcode `#1E2D4A`.
+    - Bo góc modal: Đồng bộ chuẩn `rounded-xl` (12px) cho container modal, header và footer.
+    - Ô chọn ngày: Thay thế toàn bộ 5 ô date native (`mm/dd/yyyy`) sang `SingleDatePicker` chuẩn hệ thống: Ngày sinh (`form.dob`), Ngày cấp (`form.id_issue_date`), Ngày hết hạn (`form.passport_expiry`), Ngày nhập cảnh (`form.entry_date`), Tạm trú đến (`form.temp_residence_to`). Hiển thị và placeholder chuẩn `dd/mm/yy`, có nút xóa nhanh `x` tách biệt cạnh icon lịch.
+    - Dải thông tin đặt phòng (`.stay`): Định dạng Ngày đến / Ngày đi chuẩn `dd/mm/yy` (`formatDate`).
+    - Bỏ tiền tố `--` & `—`: Danh xưng (`Chọn`), Quốc tịch (`Chọn quốc tịch`), Loại giấy tờ (`Loại giấy tờ`), Cửa khẩu (`Chọn cửa khẩu`).
+    - Bỏ gợi ý (placeholder / default option): Xóa sạch gợi ý trong 11 ô: Loại khách, Số Visa, Mục đích nhập cảnh, Hình thức cư trú, Điện thoại, Email, Địa chỉ, Tỉnh / Thành phố, Quận / Huyện, Phường / Xã, Ghi chú.
+    - Đồng bộ toàn bộ nút: Nút đóng Header dùng icon FontAwesome `fa-solid fa-xmark`; nút Chụp và Tải lên phần ảnh dùng `.btn-pms-secondary h-7` với icon `fa-camera`, `fa-arrow-up-from-bracket`; nút Lưu (`.btn-pms-primary`) và Đóng (`.btn-pms-close`) ở footer.
+- **Kiểm thử**:
+  - `npm run build` hoàn tất 100% không phát sinh lỗi (5.31s). Không mở browser subagent theo yêu cầu người dùng tự test.
+  - 100% không ảnh hưởng logic backend, DB schema, API hợp đồng hay các màn hình khác.
+
+## [2026-10-07] - Hoàn thiện Dòng 30 (Thêm dịch vụ bổ sung), Sửa lỗi ô ngày tháng & Nút x, Sửa tràn Sidebar màn hình nhỏ
+### Module: Đăng ký (Reservation) ([ServicesModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/ServicesModal.vue), [GuestInfoModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/GuestInfoModal.vue), [SingleDatePicker.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/components/SingleDatePicker.vue), [CreateRegistrationPage.css](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/CreateRegistrationPage.css))
+
+- **Yêu cầu & Giải pháp hoàn thành**:
+  - **Ảnh 1 - Fix tràn chân trang Sidebar Chức năng (`.dock`)**:
+    - [CreateRegistrationPage.css](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/CreateRegistrationPage.css): Thiết lập `max-height: calc(100vh - 165px)`, bổ sung media queries `@media (max-height: 820px)` và `@media (max-height: 720px)`, co giãn chiều cao items (26px / 23px) để toàn bộ 13 items hiển thị trọn vẹn trên màn hình laptop 14 inch mà không bao giờ bị cắt chân.
+  - **Ảnh 2 - Thống nhất định dạng ngày `dd/mm/yy`, Mở lịch khi click & Sửa lỗi nút `x` dính sát text**:
+    - [GuestInfoModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/GuestInfoModal.vue): Ô chọn ngày tích hợp bộ mở lịch (click vào ô text hoặc icon lịch đều kích hoạt popup lịch chọn ngày), text hiển thị dạng `dd/mm/yy`, placeholder `dd/mm/yy`, nút xóa nhanh `x` tách biệt cạnh icon lịch không đè lên text, hỗ trợ gõ tay nhanh (`dd/mm/yy` hoặc `ddmmyy`). Áp dụng đồng bộ cho cả bảng khách người lớn và trẻ em.
+    - [SingleDatePicker.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/components/SingleDatePicker.vue): Chuyển placeholder và format sang `dd/mm/yy`, hỗ trợ mở lịch khi click vào ô text (`openMenu()`), hỗ trợ parse 2 số cuối của năm (`ddmmyy`), bố trí nút xóa `(x)` tách biệt cạnh icon lịch.
+    - [CreateRegistrationPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue) & [ChildBreakfastModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/ChildBreakfastModal.vue): Đồng bộ hiển thị `dd/mm/yy`.
+    - Tài liệu quy chuẩn: Cập nhật [.codex/docs/frontend_design_system/README.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/frontend_design_system/README.md), [AGENTS.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/AGENTS.md), [.agents/AGENTS.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.agents/AGENTS.md).
+  - **Dòng 30 (Sheet FIX FE - Thêm dịch vụ bổ sung)** ([ServicesModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/ServicesModal.vue)):
+    - Đổi font Roboto, nâng toàn bộ font size từ 11px/9px lên 12px (`text-xs`) đồng bộ hệ thống, màu `#000000D9`.
+    - Thanh tiêu đề modal: Đồng bộ với màu theme hệ thống (`topbarThemeBg`), nút đóng hover nền trắng/10 text trắng đồng bộ.
+    - Cột Dịch vụ bên trái: Ẩn hoàn toàn mã dịch vụ và đơn giá, chỉ hiển thị tên dịch vụ `svc.name` rõ ràng.
+    - Cột Ngày: Khắc phục lỗi timezone trong `getStayDates` (tạo date bằng year/month/day), chuẩn hóa định dạng ngày có số 0 đứng trước (`01`, `02`,...).
+    - Cột FIT/GIT: Đổi nhãn `FIT` thành `Phòng`, `GIT` thành `Master`; switch trượt tương ứng, có thể click trực tiếp vào nhãn `Phòng` hoặc `Master`.
+    - Footer: Nút Đóng dùng `.btn-pms-close`, nút Lưu dùng `.btn-pms-primary`, hiển thị tổng tiền có dấu phẩy phân cách.
+- **Kiểm thử**:
+  - `npm run build` hoàn thành 100% trong 5.84s, 0 lỗi cú pháp / bundle.
+  - 100% không ảnh hưởng logic backend, DB schema, API hợp đồng hay các màn hình khác.
+
+## [2026-10-07] - Chuẩn hóa giao diện & nghiệp vụ Đăng ký và các Modal (Sheet FIX FE - Dòng 20 đến Dòng 29)
+### Module: Đăng ký (Reservation) ([CreateRegistrationPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [CreateRegistrationPage.css](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/CreateRegistrationPage.css), [QuickUpdateModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/QuickUpdateModal.vue), [UpgradeModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/UpgradeModal.vue), [GuestInfoModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/GuestInfoModal.vue))
+
+- **Yêu cầu & Giải pháp (Dòng 20 - 29 - FIX FE & 4 Rule toàn hệ thống)**:
+  - **4 Quy tắc FE toàn hệ thống bổ sung**:
+    - Màu thanh trên cùng form/modal đồng bộ màu hệ thống (`topbarThemeBg`).
+    - Ngày tháng năm chuẩn định dạng `dd/mm/yyyy` (hoặc `dd/mm/yy`).
+    - Số phân cách dấu phẩy hàng nghìn, triệu, tỉ (`100,000`).
+    - Mức bo tròn các form/modal đồng nhất (`rounded-xl` modal, `rounded-lg` card/box).
+    - Cập nhật tài liệu: [.codex/docs/frontend_design_system/README.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/frontend_design_system/README.md) (mục 6.1, 6.2, 6.5), [AGENTS.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/AGENTS.md), [.agents/AGENTS.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.agents/AGENTS.md).
+  - **Màn hình Đăng ký (Dòng 20, 21, 22, 23, 24, 25)**:
+    - **Dòng 20**: Trường bắt buộc Tên đăng ký, Tình trạng đăng ký, Công ty: áp dụng điểm nhấn nền vàng nhạt `#FFF8DB`, viền `#F1DD8A`, focus ring amber.
+    - **Dòng 21**: Bỏ tiền tố `-- --` trong options; đổi placeholder option thành nhãn ngắn gọn (`Công ty`, `Phương thức thanh toán`, `Thị trường`, `Nguồn khách`, `Người bán`, `Người đặt phòng`); khi chưa chọn hiển thị regular màu xám `#A8B0BF`.
+    - **Dòng 21 & 22**:
+      - Đặt cọc: Nút "Thêm cọc" dùng `.btn-pms-primary` (h-7); xóa dòng text thừa "Chưa có khoản đặt cọc đang hiệu lực."; số tiền cọc bỏ `font-mono` dùng Roboto font-semibold text-[#000000D9] có dấu phẩy; thu gọn chiều cao tối đa bảng cọc (`max-h-[130px]`).
+      - Ghi chú: Xóa placeholder dài thành `""` rỗng; tăng chiều cao textarea lên `min-h-[135px]`.
+    - **Dòng 23**: Bảng danh sách phòng (cả Mode A và Mode B nested):
+      - Giờ đến, Giờ đi cắt `HH:mm:ss` còn `HH:mm` (hàm `formatTimeHHmm`).
+      - Mã giá phòng, Tăng giảm giá: Khi chưa chọn/chưa nhập chuyển thành font-normal màu `#A8B0BF`.
+      - Thêm sort client-side asc/desc theo Ngày đến, Ngày đi, Số phòng kèm icon sort trên thẻ `th`.
+    - **Dòng 24**: Switch Ăn sáng & Ở theo giờ ở trạng thái OFF chuyển thành `w-8 h-4 bg-slate-300 border border-slate-400/80` nổi bật rõ nét, không bị chìm vào nền.
+    - **Dòng 25**: Sidebar Chức năng (`.dock`) thêm media query `@media (max-height: 820px)` thu nhỏ kích thước items (`height: 28px`, padding gọn hơn) đảm bảo không bị khuất chức năng trên laptop 14 inch.
+  - **Modal Cập nhật (Dòng 26 - QuickUpdateModal.vue)**:
+    - Header theme sync `topbarThemeBg`, đổi tiêu đề thành `Cập nhật`.
+    - Xóa nút "Hủy bỏ", nút Lưu dùng `.btn-pms-primary`. Xóa triệt để các placeholder "Không đổi", "Để trống nếu không đổi".
+  - **Modal Nâng hạng (Dòng 27 - UpgradeModal.vue)**:
+    - Header theme sync `topbarThemeBg`. Xóa nút "Đóng", nút Lưu dùng `.btn-pms-primary`.
+    - Trường bắt buộc: Loại phòng, Dạng phòng style `bg-[#FFF8DB] border-[#F1DD8A] *`.
+  - **Modal Thông tin khách (Dòng 28, 29 - GuestInfoModal.vue)**:
+    - Header theme sync `topbarThemeBg`, các nút chức năng đồng bộ `.btn-pms-*`.
+    - Phòng chưa gán hiển thị `Phòng: (G0000001)` theo mã đặt phòng.
+    - Cố định sticky cột/nhóm tình trạng khi cuộn ngang (`w-fit sticky left-3`).
+    - Badge nhóm: `Tình trạng: Đăng ký` (xanh lá), `Tình trạng: Đang ở` (xanh biển), bỏ số sau icon.
+    - Bỏ nút "Đóng" footer; bo góc `rounded-xl`.
+    - Thêm date picker mở lịch và nút xóa nhanh `(x)` cho ngày tháng; xóa option "Loại" làm data và thêm nút xóa nhanh `(x)` cho tất cả dropdown.
+- **Kiểm thử**:
+  - `npm run build` tại `frontend/` hoàn thành 100% trong 5.00s, 0 lỗi.
+  - 100% không đổi backend, API, DB schema hay luồng nghiệp vụ.
+
+## [2026-10-07] - Chuẩn hóa giao diện & nghiệp vụ Đặt Cọc (Sheet FIX FE - Dòng 19)
+### Module: Đặt Cọc ([DepositModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/DepositModal.vue))
+
+- **Yêu cầu & Giải pháp (Dòng 19 - FIX FE)**:
+  - **4 Trường bắt buộc**: Chuẩn hóa điểm nhấn vàng nhạt (nền `#FFF8DB`, viền `#F1DD8A`, focus ring `#eab308`) cho Số tiền, Phương thức đặt cọc, Mô tả và Ngày. Bổ sung hoa thị đỏ `*` cho trường Mô tả.
+  - **Ràng buộc lưu/thêm**: Củng cố validation trong `addDeposit` và `saveDeposit`, chặn lưu khi thiếu bất kỳ trường nào trong 4 trường bắt buộc (`amount > 0`, `paymentMethodId`, `note.trim()`, `date`).
+  - **Typography & Font size (Dòng 1)**: Đồng bộ 100% font chữ Roboto, cỡ chữ 12px (`text-xs`), tiêu đề/label/header `semi-bold` `#000000D9`, nội dung ô nhập/dữ liệu bảng `font-normal` `#000000D9`, loại bỏ toàn bộ cỡ chữ nhỏ lẻ `< 12px`.
+  - **Nội dung gợi ý & Placeholder**: Chuyển ô Phòng về nền trắng viền xám tiêu chuẩn; áp dụng màu xám `#A8B0BF` cho trạng thái chưa chọn ở ô Tài khoản ngân hàng (`– Không chọn tài khoản –`) và ô Phòng (`– Đặt cọc cho toàn bộ phiếu đăng ký –`).
+  - **Kiểm thử**: Frontend build `npm run build` thành công 100% (6.60s, 0 lỗi); không đổi backend, API, CSDL; 0 ảnh hưởng các component cha (`RoomMapPage`, `CreateRegistrationPage`).
+
+## [2026-10-07] - Thiết lập tài liệu FE Design System & Cập nhật Agent Rules
+### Module: Tài liệu hệ thống & Quy chuẩn Agent ([.codex/docs/frontend_design_system/README.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/frontend_design_system/README.md), [AGENTS.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/AGENTS.md), [.agents/AGENTS.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.agents/AGENTS.md))
+
+- **Nội dung hoàn thành**:
+  - Soạn thảo cặn kẽ tài liệu quy chuẩn thiết kế toàn hệ thống FE tại [.codex/docs/frontend_design_system/README.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/frontend_design_system/README.md) dựa trên Sheet `FIX FE` (Dòng 1, 3, 4, 5, 16, 17, 27):
+    - Typography: Font Roboto; kích thước chữ đồng nhất 12px (`text-xs`); tiêu đề/nhãn/tổng `semi-bold` (600) `#000000D9`; ô nhập `regular` (400) `#000000D9`; placeholder xám `#A8B0BF`. Cấm dùng cỡ chữ < 12px.
+    - Trường bắt buộc: Nền vàng nhạt `#FFF8DB`, viền `#F1DD8A` (focus `#eab308`), nhãn có `*` đỏ và validate chặn lưu khi rỗng.
+    - Nút chức năng (Action Buttons): Lưu (`.btn-pms-primary`), Đóng (`.btn-pms-close` nền xanh chữ trắng có icon X giống nút Lưu), Xóa (`.btn-pms-danger`), Công cụ (`.btn-pms-secondary`). Toolbar h-8 (32px).
+    - Modal/Drawer: Header xanh cao 50px, body cuộn nội bộ max-height co giãn linh hoạt, footer căn phải cặp nút Đóng/Lưu chuẩn.
+    - Responsive & Laptop 14 inch: Container isolation, tránh hardcode height lớn.
+  - Cập nhật quy tắc bắt buộc trong [AGENTS.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/AGENTS.md) và [.agents/AGENTS.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.agents/AGENTS.md):
+    - Mọi phiên làm việc khi tạo trang mới, form mới, modal mới hoặc sửa bất kỳ phần giao diện nào đều phải đọc và tuân thủ tài liệu này để đảm bảo toàn bộ FE đồng nhất.
+
+## [2026-10-07] - Chuẩn hóa UI/UX Kế hoạch phòng & Đồng bộ 12px toàn diện (Sheet FIX FE - Dòng 1, 4, 15 đến 18)
+### Module: Kế hoạch phòng ([RoomPlanPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomPlanPage.vue))
+
+- **Yêu cầu & Giải pháp (Dòng 1, 4, 15 - 18 - FIX FE)**:
+  - **Đồng bộ kích thước chữ 12px toàn phân hệ (Dòng 1)**:
+    - Loại bỏ triệt để 100% các cỡ chữ nhỏ (`text-[8px]`, `text-[9px]`, `text-[10px]`, `text-[11px]`) đưa về chuẩn `text-xs` (12px).
+    - Top bar: Khoảng ngày popover ("Từ ngày", "Đến ngày"), switch "Xem đêm/ngày", switch "Ghi chú", các nhãn legend chuyển về `text-xs` (12px).
+    - Timeline Grid: Header cột ngày (`day.dow`, `day.dateStr`), group loại phòng/tầng, tên loại phòng con (`item.type`, `item.shape`), số phòng đưa về `text-xs` (12px).
+    - Booking Bars: Nâng từ `text-[9px]` lên `text-xs` (12px) `font-normal`, giữ lề `pl-1` để phòng 1 đêm hiển thị tối thiểu 6 ký tự.
+    - Footer Thống kê: Tiêu đề & tổng OCC, AV, OOO giữ `semi-bold text-xs`, số liệu hàng ngày chuyển sang `font-normal text-xs text-[#000000D9]`.
+    - Tooltip hover: Toàn bộ đầu mục và giá trị nâng từ 10px-11px lên `text-xs` (12px); hỗ trợ `whitespace-pre-wrap` xuống dòng ghi chú.
+    - Drawer Bộ lọc & Danh sách chờ: Đồng bộ toàn bộ chữ sang `text-xs` (12px).
+  - **Đồng bộ Nút chức năng (Dòng 4 & Dòng 17)**:
+    - Nút Lưu: Sử dụng style `.btn-pms-primary` (nền xanh `#0088ff`, chữ trắng, icon đĩa mềm, font semi-bold 12px).
+    - Nút Đóng: Sử dụng style `.btn-pms-close` (nền xanh `#0088ff`, chữ trắng, icon dấu X, font semi-bold 12px) trên tất cả các modal và popover.
+    - Chuẩn hóa chiều cao các nút trên thanh công cụ topbar thành 32px (`h-8`).
+    - Note trong modal Lock Room OOO/OOS: Áp dụng nền vàng nhạt `#FFF8DB` viền `#F1DD8A` cho trường bắt buộc.
+- **Kiểm thử**:
+    - `npm run build` hoàn thành 100% (6.68s, 0 lỗi).
+    - 0 ảnh hưởng backend, API, CSDL hay các module khác.
+
+
 ## [2026-10-06] - Thống nhất Design System toàn hệ thống (Sheet FIX FE - Dòng 1)
 ### Module: Toàn bộ hệ thống Frontend ([index.html](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/index.html), [style.css](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/style.css))
 

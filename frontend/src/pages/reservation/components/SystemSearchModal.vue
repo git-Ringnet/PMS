@@ -5,13 +5,13 @@
     @click="close"
   >
     <div 
-      class="absolute pointer-events-auto bg-white rounded-2xl shadow-2xl w-[min(730px,calc(100vw-12px))] flex flex-col overflow-visible border border-slate-200"
+      class="absolute pointer-events-auto bg-white rounded-xl shadow-2xl w-[min(730px,calc(100vw-12px))] flex flex-col overflow-hidden border border-slate-200"
       :style="{ top: `${position.top}px`, right: `${position.right}px`, transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }"
       @click.stop
     >
       <!-- DÒNG 1: INPUT SEARCH HEADER -->
       <div 
-        class="flex items-center px-5 py-3 border-b border-slate-100 rounded-t-2xl bg-white relative cursor-move select-none"
+        class="flex items-center px-5 py-3 border-b border-slate-100 rounded-t-xl bg-white relative cursor-move select-none"
         @mousedown="startDragModal"
       >
         <i class="fa-solid fa-magnifying-glass text-slate-400 text-sm mr-3"></i>

@@ -4,12 +4,12 @@
     class="fixed inset-0 z-[99990] flex items-center justify-center p-4 bg-transparent pointer-events-none select-none"
   >
     <div
-      class="pointer-events-auto bg-white rounded-2xl shadow-2xl w-full max-w-[760px] overflow-hidden border border-slate-300 flex flex-col animate-[fadeIn_0.15s_ease-out]"
+      class="pointer-events-auto bg-white rounded-xl shadow-2xl w-full max-w-[760px] overflow-hidden border border-slate-300 flex flex-col animate-[fadeIn_0.15s_ease-out]"
       :style="{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }"
     >
       <!-- HEADER -->
       <div
-        class="text-white flex justify-between items-center px-4 py-3 shrink-0 cursor-move select-none"
+        class="text-white flex justify-between items-center px-4 py-3 shrink-0 cursor-move select-none rounded-t-xl"
         :style="{ background: themeBg }"
         @mousedown="startDragModal"
       >
@@ -28,7 +28,7 @@
       <!-- BODY -->
       <div class="p-4 grid grid-cols-1 md:grid-cols-2 gap-3.5 text-xs text-slate-700 bg-white">
         <!-- LEFT COLUMN: THÔNG TIN -->
-        <div class="border border-slate-300 rounded-xl p-3 flex flex-col gap-2.5 relative">
+        <div class="border border-slate-300 rounded-lg p-3 flex flex-col gap-2.5 relative">
           <div class="font-bold text-slate-800 text-xs">Thông tin</div>
 
           <!-- Row 1: Ngày đến & Ngày đi -->
@@ -162,7 +162,7 @@
           </div>
 
           <!-- Khách hàng Box -->
-          <div class="border border-slate-300 rounded-xl p-2.5 flex flex-col gap-2 mt-0.5">
+          <div class="border border-slate-300 rounded-lg p-2.5 flex flex-col gap-2 mt-0.5">
             <div class="font-bold text-slate-800 text-[11px]">Khách hàng</div>
             <div class="grid grid-cols-12 gap-2 items-center">
               <div class="col-span-4 flex flex-col gap-1">
@@ -210,7 +210,7 @@
         </div>
 
         <!-- RIGHT COLUMN: GIÁ -->
-        <div class="border border-slate-300 rounded-xl p-3 flex flex-col gap-2.5 relative">
+        <div class="border border-slate-300 rounded-lg p-3 flex flex-col gap-2.5 relative">
           <div class="font-bold text-slate-800 text-xs">Giá</div>
 
           <div class="grid grid-cols-2 gap-2">
@@ -295,18 +295,13 @@
       </div>
 
       <!-- FOOTER -->
-      <div class="px-4 py-3 bg-white border-t border-slate-100 flex items-center justify-end gap-2.5 shrink-0">
+      <div class="px-4 py-3 bg-white border-t border-slate-100 flex items-center justify-end gap-2.5 shrink-0 rounded-b-xl">
         <button
           type="button"
           @click="close"
-          class="px-5 py-2 text-white rounded-lg font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all border-none cursor-pointer hover:opacity-90"
-          :style="{ background: themeBg }"
+          class="btn-pms-close"
         >
-          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="15" y1="9" x2="9" y2="15"></line>
-            <line x1="9" y1="9" x2="15" y2="15"></line>
-          </svg>
+          <i class="fa-solid fa-xmark"></i>
           <span>Đóng</span>
         </button>
 
@@ -314,15 +309,10 @@
           type="button"
           @click="handleSave"
           :disabled="isSubmitting"
-          class="px-5 py-2 disabled:opacity-50 text-white rounded-lg font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all border-none cursor-pointer hover:opacity-90"
-          :style="{ background: themeBg }"
+          class="btn-pms-primary"
         >
-          <svg v-if="!isSubmitting" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
-            <polyline points="17 21 17 13 7 13 7 21"></polyline>
-            <polyline points="7 3 7 8 15 8"></polyline>
-          </svg>
-          <span v-if="isSubmitting" class="animate-spin text-xs">⏳</span>
+          <span v-if="isSubmitting" class="fa-solid fa-circle-notch animate-spin text-xs"></span>
+          <i v-else class="fa-solid fa-floppy-disk text-xs"></i>
           <span>Lưu</span>
         </button>
       </div>

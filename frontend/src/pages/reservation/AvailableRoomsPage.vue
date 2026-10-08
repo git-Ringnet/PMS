@@ -8,6 +8,7 @@ import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import echo from '@/services/echo'
 import DateRangePicker from '@/components/DateRangePicker.vue'
 import AvailabilityDetailModal from './components/AvailabilityDetailModal.vue'
+import { getAvailableRoomsDateRange, setAvailableRoomsDateRange } from './available-rooms-view-state'
 
 const uiStore = useUiStore()
 const route = useRoute()
@@ -61,7 +62,7 @@ watch(selectedStatuses, (newVal) => {
   localStorage.setItem('pms_availability_selected_statuses', JSON.stringify(newVal))
 }, { deep: true })
 
-// Giai đoạn xem mặc định theo ngày hệ thống ~ +30 ngày, không lưu localStorage để reload tự về mặc định
+// Giữ giai đoạn xem khi đổi màn trong SPA; reload trình duyệt vẫn quay về mặc định hệ thống ~ +30 ngày
 
 // Generate columns representation from backend dates
 const days = computed(() => {
@@ -390,6 +391,7 @@ async function loadAvailability(start = null, end = null) {
 
       startDateYMD.value = data.start_date
       endDateYMD.value = data.end_date
+      setAvailableRoomsDateRange(startDateYMD.value, endDateYMD.value)
     }
   } catch (error) {
     console.error('Error fetching availability:', error)
@@ -447,10 +449,12 @@ onMounted(async () => {
     console.error('Error loading registration statuses:', error)
   }
 
-  // 3. Load availability data (Mặc định ngày hệ thống ~ +30 ngày, reload tự động quay về mặc định)
-  localStorage.removeItem('pms_availability_start_date')
-  localStorage.removeItem('pms_availability_end_date')
-  await loadAvailability(systemDate.value || null)
+  // 3. Khôi phục giai đoạn khi quay lại màn; lần tải trang mới dùng mặc định hệ thống ~ +30 ngày
+  const savedDateRange = getAvailableRoomsDateRange()
+  await loadAvailability(
+    savedDateRange?.startDate || systemDate.value || null,
+    savedDateRange?.endDate || null
+  )
 
   // Lắng nghe sự kiện realtime qua Laravel Echo
   if (echo) {
@@ -516,7 +520,7 @@ function showExportToast() {
             :key="status.code"
             type="button"
             @click="toggleStatus(status.code)"
-            class="px-2.5 py-1 text-[11px] font-semibold rounded border cursor-pointer transition-all shadow-sm flex items-center h-[28px]"
+            class="px-2.5 py-1 text-xs font-semibold rounded-lg border cursor-pointer transition-all shadow-sm flex items-center h-8"
             :class="[
               selectedStatuses.includes(status.code) 
                 ? status.activeClasses
@@ -598,17 +602,17 @@ function showExportToast() {
         <!-- Table Headers -->
         <thead>
           <!-- First Row: Weekdays (Canh giữa tiêu đề cột theo Dòng 10) -->
-          <tr class="bg-slate-200 border-b border-slate-300 text-gray-900 font-semibold h-8 text-[10px]">
-            <th rowspan="2" class="p-2 border-r border-slate-300 text-center sticky left-0 z-30 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] text-[12px] font-semibold">Mã Loại</th>
-            <th rowspan="2" class="p-2 border-r border-slate-300 text-center sticky left-[80px] z-30 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] text-[12px] font-semibold">Loại phòng</th>
-            <th rowspan="2" class="p-2 border-r border-slate-300 text-center sticky left-[250px] z-30 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] text-[12px] font-semibold">Tổng</th>
-            <th rowspan="2" class="p-2 border-r border-slate-300 text-center sticky left-[300px] z-30 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] leading-tight text-[12px] font-semibold">SL Phòng Tối Đa</th>
+          <tr class="bg-slate-200 border-b border-slate-300 text-gray-900 font-semibold h-8 text-xs">
+            <th rowspan="2" class="p-2 border-r border-slate-300 text-center sticky left-0 z-30 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] text-xs font-semibold">Mã Loại</th>
+            <th rowspan="2" class="p-2 border-r border-slate-300 text-center sticky left-[80px] z-30 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] text-xs font-semibold">Loại phòng</th>
+            <th rowspan="2" class="p-2 border-r border-slate-300 text-center sticky left-[250px] z-30 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] text-xs font-semibold">Tổng</th>
+            <th rowspan="2" class="p-2 border-r border-slate-300 text-center sticky left-[300px] z-30 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] leading-tight text-xs font-semibold">SL Phòng Tối Đa</th>
             
             <th 
               v-for="(day, idx) in days" 
               :key="idx" 
               :colspan="activeSubColumns.length"
-              class="p-1 border-r border-slate-200 text-center text-[10px] font-semibold"
+              class="p-1 border-r border-slate-200 text-center text-xs font-semibold"
               :class="[idx > 0 ? 'border-l-2 border-slate-300' : '', day.isWeekend ? 'bg-[#8cc4fb]' : 'bg-slate-200']"
             >
               {{ day.dow }}<br/>{{ day.dateStr }}
@@ -616,12 +620,12 @@ function showExportToast() {
           </tr>
 
           <!-- Second Row: Sub-Columns (AV, OOO, OOS...) -->
-          <tr class="bg-slate-200 border-b border-slate-200 text-gray-900 font-semibold h-8 text-[10px]">
+          <tr class="bg-slate-200 border-b border-slate-200 text-gray-900 font-semibold h-8 text-xs">
             <template v-for="(day, dayIndex) in days" :key="day.fullDateStr">
               <th 
                 v-for="(subCol, subColIndex) in activeSubColumns"
                 :key="subCol"
-                class="p-1 border-r border-slate-200 text-center text-[10px] font-semibold"
+                class="p-1 border-r border-slate-200 text-center text-xs font-semibold"
                 :class="[subColIndex === 0 && dayIndex > 0 ? 'border-l-2 border-slate-300' : '', day.isWeekend ? 'bg-[#8cc4fb]' : 'bg-slate-200']"
               >
                 {{ subCol }}
@@ -636,11 +640,11 @@ function showExportToast() {
           <template v-for="(rc, rcIndex) in roomClasses" :key="rc.code">
           <tr class="border-b border-slate-200 h-8" :style="{ backgroundColor: roomRowBackground(rcIndex) }">
             <!-- Room Type Identifiers (Sticky on Left) -->
-            <td class="p-2 border-r border-slate-200 text-left pl-2 font-semibold sticky left-0 shadow-[inset_-1px_0_0_#e2e8f0] text-[12px]" :style="{ backgroundColor: roomRowBackground(rcIndex) }">
+            <td class="p-2 border-r border-slate-200 text-left pl-2 font-semibold sticky left-0 shadow-[inset_-1px_0_0_#e2e8f0] text-xs" :style="{ backgroundColor: roomRowBackground(rcIndex) }">
               <div class="flex items-center gap-1 justify-start">
                 <button
                   type="button"
-                  class="w-3.5 h-3.5 flex items-center justify-center border border-sky-300 bg-sky-100 text-sky-700 leading-none text-[11px] font-bold cursor-pointer"
+                  class="w-3.5 h-3.5 flex items-center justify-center border border-sky-300 bg-sky-100 text-sky-700 leading-none text-xs font-bold cursor-pointer"
                   :title="isRoomClassExpanded(rc.code) ? 'Thu booking OCC' : 'Mở booking OCC'"
                   @click.stop="toggleRoomClass(rc.code)"
                 >{{ isRoomClassExpanded(rc.code) ? '−' : '+' }}</button>
@@ -894,7 +898,7 @@ function showExportToast() {
               :title="getStatTooltip('OCC', day.fullDateStr)"
             >
               {{ statistics[day.fullDateStr]?.total_occupied ?? 0 }}<br/>
-              <span class="text-[10px] font-medium text-amber-700">({{ statistics[day.fullDateStr]?.occupied_pct ?? 0 }}%)</span>
+              <span class="text-xs font-semibold text-amber-700">({{ statistics[day.fullDateStr]?.occupied_pct ?? 0 }}%)</span>
             </td>
           </tr>
 

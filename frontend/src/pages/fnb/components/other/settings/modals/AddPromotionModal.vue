@@ -21,6 +21,7 @@ const props = defineProps({
 const emit = defineEmits(['close', 'save'])
 
 const name = ref('')
+const validationError = ref('')
 const outletId = ref(null) // null = Tất cả
 const companyId = ref(null)
 const customerSourceId = ref(null)
@@ -118,6 +119,11 @@ watch(() => props.show, (newVal) => {
 })
 
 const handleSave = () => {
+    if (!String(name.value || '').trim()) {
+        validationError.value = 'Vui lòng nhập tên chương trình.'
+        return
+    }
+    validationError.value = ''
     let company_id = null;
     let customer_source_id = null;
 
@@ -215,7 +221,8 @@ const calculateNewPrice = (item) => {
             <div class="grid grid-cols-4 gap-4">
                 <div class="col-span-2 lg:col-span-1">
                     <label class="block text-xs font-medium text-slate-700 mb-1">Tên chương trình <span class="text-red-500">*</span></label>
-                    <input v-model="name" type="text" class="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500" />
+                    <input v-model="name" @input="validationError = ''" required type="text" class="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500" />
+                    <p v-if="validationError" class="mt-1 text-xs text-red-600">{{ validationError }}</p>
                 </div>
                 
                 <div class="col-span-2 lg:col-span-1">
