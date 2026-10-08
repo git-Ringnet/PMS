@@ -1,6 +1,7 @@
 <script setup>
-import { ref, watch, computed, onMounted } from 'vue'
-import { X, Plus, Save } from '@lucide/vue'
+import { ref, watch, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ChevronDown, X, Plus, Save } from '@lucide/vue'
+import SingleDatePicker from '@/components/SingleDatePicker.vue'
 import http from '@/services/http'
 import { fetchBankAccounts as fetchConfiguredBankAccounts } from '@/services/company-service'
 import { useUiStore } from '@/stores/ui-store'
@@ -69,6 +70,10 @@ const shiftTimeError = ref('')
 const currency = ref('VND')
 const isSubmitting = ref(false)
 const errorMsg = ref('')
+
+function handleEscape(event) {
+  if (event.key === 'Escape' && props.show && !isSubmitting.value) handleClose()
+}
 
 function formatMoney(value) {
   const number = Number(value)
@@ -290,6 +295,7 @@ watch(() => props.show, (visible) => {
     dateStr.value = props.systemDate || todayDateStr()
     workShift.value = ''
     fetchWorkShifts()
+    document.addEventListener('keydown', handleEscape)
     const rawRId = props.selectedRoomId
     selectedTargetRoomId.value = (rawRId !== null && rawRId !== undefined && rawRId !== '' && rawRId !== 'null') ? rawRId : null
     if (paymentMethods.value.length === 0) {
@@ -298,6 +304,8 @@ watch(() => props.show, (visible) => {
       paymentMethodId.value = paymentMethods.value[0].id || paymentMethods.value[0].code
     }
     updateDefaultDescription()
+  } else {
+    document.removeEventListener('keydown', handleEscape)
   }
 }, { immediate: true })
 
@@ -323,6 +331,10 @@ const handleSubmit = async () => {
   }
   if (!paymentMethodId.value) {
     errorMsg.value = 'Vui lòng chọn hình thức thanh toán.'
+    return
+  }
+  if (!dateStr.value) {
+    errorMsg.value = 'Vui lòng nhập ngày thanh toán.'
     return
   }
   if (!props.bookingId) {
@@ -393,15 +405,17 @@ const handleClose = () => {
 onMounted(() => {
   fetchPaymentMethods()
 })
+
+onBeforeUnmount(() => document.removeEventListener('keydown', handleEscape))
 </script>
 
 <template>
   <div v-if="show" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-2 md:p-4 animate-fadeIn select-none font-sans">
-    <div class="bg-white rounded-lg shadow-2xl w-full max-w-5xl overflow-hidden border border-sky-400 flex flex-col text-xs">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-5xl overflow-hidden border border-sky-400 flex flex-col text-xs">
       
       <!-- Header (Màu xanh dương mạ #0088ff chuẩn Ảnh 2) -->
-      <div class="bg-[#0088ff] text-white px-4 py-2.5 flex items-center justify-between font-semibold shrink-0 shadow-xs">
-        <span class="text-sm font-bold tracking-wide">Thanh toán trước</span>
+      <div class="text-white px-4 py-2.5 flex items-center justify-between font-semibold shrink-0 shadow-xs" style="background: var(--pms-custom-theme, #006bdb)">
+        <span class="text-xs font-semibold tracking-wide">Thanh toán trước</span>
         <button @click="handleClose" class="hover:bg-white/20 p-1 rounded transition-colors text-white cursor-pointer" title="Đóng">
           <X class="w-4 h-4" />
         </button>
@@ -415,27 +429,30 @@ onMounted(() => {
 
         <!-- HÀNG 1: Tên đăng ký & Hình thức thanh toán (kèm Tài khoản ngân hàng nếu chọn CK) -->
         <div class="grid grid-cols-12 gap-4 items-end">
-          <!-- Tên đăng ký (Trái - 6 cols) -->
-          <div class="col-span-6">
+          <!-- Tên đăng ký (Trái - 7 cols đồng bộ với cột thông tin thanh toán bên dưới) -->
+          <div class="col-span-7">
             <label class="block font-semibold text-gray-700 mb-1 text-xs">Tên đăng ký</label>
             <select disabled class="w-full px-2.5 py-1.5 bg-gray-100 border border-gray-300 rounded font-medium text-gray-700 focus:outline-none cursor-not-allowed text-xs">
               <option :value="registrationDisplay">{{ registrationDisplay }}</option>
             </select>
           </div>
 
-          <!-- Hình thức thanh toán & Tài khoản ngân hàng (Phải - 6 cols) -->
-          <div class="col-span-6">
+          <!-- Hình thức thanh toán & Tài khoản ngân hàng (Phải - 5 cols đồng bộ với Mô tả) -->
+          <div class="col-span-5">
             <div class="grid grid-cols-12 gap-2">
               <!-- HTTT -->
               <div :class="isBankTransfer ? 'col-span-6' : 'col-span-12'">
                 <label class="block font-semibold text-gray-700 mb-1 text-xs">Hình thức thanh toán <span class="text-red-500">*</span></label>
                 <div class="flex gap-1">
-                  <select v-model="paymentMethodId" class="flex-1 min-w-0 px-2 py-1.5 bg-[#ffffcc] border border-gray-300 rounded text-gray-900 font-bold focus:outline-none text-xs truncate">
-                    <option value="" disabled>-- Chọn hình thức --</option>
-                    <option v-for="m in paymentMethods" :key="m.id || m.code" :value="m.id || m.code">
+                  <div class="relative flex-1 min-w-0">
+                  <select v-model="paymentMethodId" class="w-full h-8 appearance-none pl-2 pr-12 bg-[#FFF8DB] border border-[#F1DD8A] rounded text-[#000000D9] font-normal focus:outline-none focus:border-yellow-500 text-xs truncate">
+                    <option v-for="m in paymentMethods" :key="m.id || m.code" :value="m.id || m.code" class="bg-white">
                       {{ m.name }}
                     </option>
                   </select>
+                  <button v-if="paymentMethodId" type="button" class="absolute right-7 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-red-500" title="Xóa hình thức thanh toán" @click="paymentMethodId = ''"><X class="h-3.5 w-3.5" /></button>
+                  <ChevronDown class="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                  </div>
                   <button type="button" class="bg-sky-500 hover:bg-sky-600 text-white px-2 py-1.5 rounded font-bold shadow-xs transition-colors shrink-0" title="Thêm HTTT">
                     <Plus class="w-3.5 h-3.5" />
                   </button>
@@ -459,67 +476,76 @@ onMounted(() => {
         <!-- HÀNG 2 & 3: Số tiền, Phòng, Ca, Giờ, Ngày, Tiền tệ & Mô tả Textarea -->
         <div class="grid grid-cols-12 gap-4 items-stretch">
           
-          <!-- Cột Trái: Số tiền, Phòng, Ca làm việc, Giờ, Ngày, Tiền tệ (6 cols) -->
-          <div class="col-span-6 space-y-3 flex flex-col justify-between">
+          <!-- Cột Trái: Số tiền, Phòng, Ca làm việc, Giờ, Ngày, Tiền tệ (7 cols rộng rãi) -->
+          <div class="col-span-7 space-y-3 flex flex-col justify-between">
             <!-- Hàng Số tiền & Phòng -->
             <div class="grid grid-cols-2 gap-3">
               <div>
                 <label class="block font-semibold text-gray-700 mb-1 text-xs">Số tiền <span class="text-red-500">*</span></label>
+                <div class="relative">
                 <input 
                   type="text" 
                   v-model="displayAmount" 
                   placeholder="0"
-                  class="w-full px-2.5 py-1.5 bg-[#ffffcc] border border-gray-300 rounded font-bold text-gray-900 focus:outline-none text-sm text-right tabular-nums tracking-wide"
+                  class="w-full h-8 pl-2.5 pr-8 py-1.5 bg-[#FFF8DB] border border-[#F1DD8A] rounded font-normal text-[#000000D9] focus:outline-none focus:border-yellow-500 text-xs text-left tabular-nums tracking-wide"
                 />
+                <button v-if="amount" type="button" class="absolute right-1 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700" title="Xóa số tiền" @click="amount = 0"><X class="h-3.5 w-3.5" /></button>
+                </div>
               </div>
 
               <div>
                 <label class="block font-semibold text-gray-700 mb-1 text-xs">Phòng</label>
-                <select v-model="selectedTargetRoomId" class="w-full px-2.5 py-1.5 bg-white border border-gray-300 rounded font-semibold text-gray-800 focus:outline-none text-xs">
+                <div class="relative">
+                <select v-model="selectedTargetRoomId" class="h-8 w-full appearance-none rounded border border-gray-300 bg-white py-1.5 pl-2.5 pr-12 text-xs font-normal text-[#000000D9] focus:outline-none">
                   <option :value="null">Master Header</option>
                   <option v-for="r in roomOptions" :key="r.roomId || r.id" :value="r.roomId || r.id">
                     Phòng {{ r.roomNumber || r.room_number || r.id }}
                   </option>
                 </select>
+                <button v-if="selectedTargetRoomId !== ''" type="button" class="absolute right-7 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-red-500" title="Xóa phòng" @click="selectedTargetRoomId = ''"><X class="h-3.5 w-3.5" /></button>
+                <ChevronDown class="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                </div>
               </div>
             </div>
 
-            <!-- Hàng Ca làm việc, Giờ, Ngày, Tiền tệ (Khoảng cách rộng rãi không bị chật) -->
-            <div class="grid grid-cols-12 gap-2 items-end">
-              <!-- Ca làm việc (Nền vàng #ffffcc) -->
-              <div class="col-span-2">
-                <label class="block font-medium text-gray-700 mb-1 text-[11px]">Ca</label>
-                <select v-model="workShift" :disabled="shiftLoadState !== 'ready'" @change="handleWorkShiftChange" class="w-full px-1.5 py-1 bg-[#ffffcc] border border-gray-300 rounded font-bold text-xs focus:outline-none text-center disabled:bg-gray-100">
-                  <option value="" disabled>Chọn ca</option>
-                  <option v-for="shift in workShiftsList" :key="shift.id ?? shift.name" :value="String(shift.id ?? shift.name)">
+            <!-- Hàng Ca làm việc, Giờ, Ngày, Tiền tệ (Được phân bổ hợp lý, hiển thị trọn vẹn thông tin) -->
+            <div class="grid grid-cols-[85px_155px_1fr_85px] gap-2 items-start">
+              <!-- Ca làm việc (85px) -->
+              <div class="min-w-0">
+                <label class="block font-semibold text-[#000000D9] mb-1 text-xs">Ca <span class="text-red-500">*</span></label>
+                <div class="relative">
+                <select v-model="workShift" :disabled="shiftLoadState !== 'ready'" @change="handleWorkShiftChange" class="h-8 w-full appearance-none rounded border border-[#F1DD8A] bg-[#FFF8DB] py-1 pl-1.5 pr-8 text-center text-xs font-normal focus:border-yellow-500 focus:outline-none disabled:bg-gray-100">
+                  <option v-for="shift in workShiftsList" :key="shift.id ?? shift.name" :value="String(shift.id ?? shift.name)" class="bg-white">
                     {{ shift.name }}
                   </option>
                 </select>
-              </div>
-
-              <!-- Giờ -->
-              <div class="col-span-3">
-                <label class="block font-medium text-gray-700 mb-1 text-[11px]">Giờ</label>
-                <div class="relative">
-                  <input type="time" v-model="timeStr" :min="shiftTimeMin" :max="shiftTimeMax" :disabled="shiftLoadState !== 'ready' || !workShift" step="60" @change="handleTimeChange" class="w-full min-w-0 px-1.5 py-1 bg-white border border-gray-300 rounded text-center text-xs font-mono font-semibold disabled:bg-gray-100" />
-                </div>
-                <p v-if="shiftTimeError" class="mt-0.5 text-[9px] leading-3 text-red-600">{{ shiftTimeError }}</p>
-              </div>
-
-              <!-- Ngày -->
-              <div class="col-span-4">
-                <label class="block font-medium text-gray-700 mb-1 text-[11px]">Ngày</label>
-                <div class="relative">
-                  <input type="date" v-model="dateStr" class="w-full px-1.5 py-1 bg-white border border-gray-300 rounded text-center text-[11px] font-mono font-semibold" />
+                <button v-if="workShift && shiftLoadState === 'ready'" type="button" class="absolute right-5 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-red-500" title="Xóa ca" @click="workShift = ''"><X class="h-3.5 w-3.5" /></button>
+                <ChevronDown class="pointer-events-none absolute right-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500" />
                 </div>
               </div>
 
-              <!-- Tiền tệ -->
-              <div class="col-span-3">
-                <label class="block font-medium text-gray-700 mb-1 text-[11px]">Tiền tệ</label>
-                <div class="flex items-center gap-1 bg-white border border-gray-300 px-1.5 py-1 rounded">
-                  <span class="w-3.5 h-3.5 bg-red-600 rounded-full flex items-center justify-center text-[8px] text-yellow-300 font-bold shrink-0">★</span>
-                  <select v-model="currency" class="bg-transparent focus:outline-none font-bold text-[11px] w-full">
+              <!-- Giờ (155px rộng rãi, hiển thị trọn vẹn cả 12h AM/PM và 24h, kèm icon đồng hồ & nút xóa) -->
+              <div class="min-w-0">
+                <label class="block font-semibold text-[#000000D9] mb-1 text-xs">Giờ <span class="text-red-500">*</span></label>
+                <div class="relative">
+                  <input type="time" v-model="timeStr" :min="shiftTimeMin" :max="shiftTimeMax" :disabled="shiftLoadState !== 'ready' || !workShift" step="60" @change="handleTimeChange" class="w-full min-w-0 h-8 pl-2 pr-8 bg-[#FFF8DB] border border-[#F1DD8A] rounded text-center text-xs font-normal disabled:bg-gray-100 focus:outline-none focus:border-yellow-500" />
+                  <button v-if="timeStr && shiftLoadState === 'ready' && workShift" type="button" class="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-red-500 cursor-pointer border-none bg-transparent flex items-center justify-center transition-colors" title="Xóa giờ" @click="timeStr = ''"><X class="h-3.5 w-3.5" /></button>
+                </div>
+                <p v-if="shiftTimeError" class="mt-0.5 text-xs leading-4 text-red-600 truncate">{{ shiftTimeError }}</p>
+              </div>
+
+              <!-- Ngày (1fr ~220px hiển thị đẹp mắt dd/mm/yyyy kèm icon lịch và nút xóa) -->
+              <div class="min-w-0">
+                <label class="block font-semibold text-[#000000D9] mb-1 text-xs">Ngày <span class="text-red-500">*</span></label>
+                <SingleDatePicker v-model="dateStr" :max-date="systemDate || undefined" placeholder="dd/mm/yyyy" four-digit-year input-class="!h-8 !bg-[#FFF8DB] !border-[#F1DD8A] !text-xs !font-normal !px-2" text-input-class="!font-normal text-center" />
+              </div>
+
+              <!-- Tiền tệ (85px cân đối với ô Ca) -->
+              <div class="min-w-0">
+                <label class="block font-semibold text-[#000000D9] mb-1 text-xs">Tiền tệ</label>
+                <div class="flex h-8 items-center gap-1.5 rounded border border-gray-300 bg-white px-2 py-1">
+                  <span class="w-4 h-4 bg-red-600 rounded-full flex items-center justify-center text-xs text-yellow-300 font-bold shrink-0">★</span>
+                  <select v-model="currency" class="bg-transparent focus:outline-none font-normal text-xs w-full text-center">
                     <option value="VND">VND</option>
                   </select>
                 </div>
@@ -528,14 +554,16 @@ onMounted(() => {
 
           </div>
 
-          <!-- Cột Phải: Ô Mô tả Textarea (Nền vàng #ffffcc phủ toàn bộ chiều cao) -->
-          <div class="col-span-6 flex flex-col">
+          <!-- Cột Phải: Ô Mô tả Textarea (5 cols rộng rãi) -->
+          <div class="col-span-5 flex flex-col">
             <label class="block font-semibold text-gray-700 mb-1 text-xs">Mô tả</label>
+            <div class="relative flex-1">
             <textarea 
               v-model="description" 
-              placeholder="Mô tả..."
-              class="w-full flex-1 p-2.5 bg-[#ffffcc] border border-gray-300 rounded text-xs text-gray-900 font-medium focus:outline-none resize-none min-h-[95px]"
+              class="h-full w-full p-2.5 pr-9 bg-white border border-gray-300 rounded text-xs text-[#000000D9] font-normal focus:outline-none resize-none min-h-[95px]"
             ></textarea>
+            <button v-if="description" type="button" title="Xóa mô tả" @click="description = ''" class="absolute right-2 top-2 p-1 text-slate-400 hover:text-red-500"><X class="h-3.5 w-3.5" /></button>
+            </div>
           </div>
 
         </div>
@@ -545,16 +573,22 @@ onMounted(() => {
         <div class="mb-2 text-xs font-bold uppercase tracking-wide text-slate-700">Danh sách thanh toán trước</div>
         <div class="max-h-36 overflow-auto rounded border border-slate-200">
           <table class="w-full text-left text-xs">
-            <thead class="sticky top-0 bg-slate-100 text-slate-600">
-              <tr><th class="px-2 py-1.5">Ngày</th><th class="px-2 py-1.5">Giờ</th><th class="px-2 py-1.5">HTTT</th><th class="px-2 py-1.5">Mô tả</th><th class="px-2 py-1.5 text-right">Số tiền</th></tr>
+            <thead class="sticky top-0 bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
+              <tr>
+                <th class="px-2.5 py-1.5 text-center">Ngày</th>
+                <th class="px-2.5 py-1.5 text-center">Giờ</th>
+                <th class="px-2.5 py-1.5 text-center">HTTT</th>
+                <th class="px-2.5 py-1.5 text-center">Mô tả</th>
+                <th class="px-2.5 py-1.5 text-center">Số tiền</th>
+              </tr>
             </thead>
             <tbody>
-              <tr v-for="deposit in depositRows" :key="deposit.id" class="border-t border-slate-100">
-                <td class="px-2 py-1.5">{{ formatDepositDate(deposit.date) }}</td>
-                <td class="px-2 py-1.5">{{ deposit.open_time || '--' }}</td>
-                <td class="px-2 py-1.5">{{ deposit.payment_method?.name || deposit.payment_method_id || '--' }}</td>
-                <td class="px-2 py-1.5">{{ deposit.description || '--' }}</td>
-                <td class="px-2 py-1.5 text-right tabular-nums font-semibold">{{ formatDepositAmount(deposit.amount) }}</td>
+              <tr v-for="deposit in depositRows" :key="deposit.id" class="border-t border-slate-100 hover:bg-slate-50/50">
+                <td class="px-2.5 py-1.5 text-center">{{ formatDepositDate(deposit.date) }}</td>
+                <td class="px-2.5 py-1.5 text-center">{{ deposit.open_time || '--' }}</td>
+                <td class="px-2.5 py-1.5 text-center font-medium">{{ deposit.payment_method?.name || deposit.payment_method_id || '--' }}</td>
+                <td class="px-2.5 py-1.5 text-slate-700">{{ deposit.description || '--' }}</td>
+                <td class="px-2.5 py-1.5 text-right tabular-nums font-semibold text-emerald-700">{{ formatDepositAmount(deposit.amount) }}</td>
               </tr>
               <tr v-if="depositRows.length === 0"><td colspan="5" class="px-2 py-3 text-center text-slate-400">Chưa có thanh toán trước.</td></tr>
             </tbody>
@@ -565,18 +599,9 @@ onMounted(() => {
       <!-- Footer Actions (Nút Đóng và Nút Lưu mạ xanh #0088ff chuẩn Ảnh 2) -->
       <div class="border-t border-gray-300 p-3 flex justify-end items-center gap-2 bg-gray-50">
         <button 
-          @click="handleClose" 
-          :disabled="isSubmitting"
-          class="bg-[#0088ff] hover:bg-sky-600 text-white px-4 py-1.5 rounded flex items-center gap-1.5 font-bold shadow-xs transition-colors disabled:opacity-50 cursor-pointer text-xs"
-        >
-          <X class="w-4 h-4" />
-          <span>Đóng</span>
-        </button>
-
-        <button 
           @click="handleSubmit"
           :disabled="isSubmitting || shiftLoadState !== 'ready'"
-          class="bg-[#0088ff] hover:bg-sky-600 text-white px-4 py-1.5 rounded flex items-center gap-1.5 font-bold shadow-xs transition-colors disabled:opacity-50 cursor-pointer text-xs"
+          class="btn-pms-primary h-8 px-4 flex items-center gap-1.5 disabled:opacity-50 cursor-pointer text-xs"
         >
           <Save class="w-4 h-4" />
           <span>{{ isSubmitting ? 'Đang lưu...' : 'Lưu' }}</span>
