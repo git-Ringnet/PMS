@@ -18,6 +18,109 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-10-08] - Fix Ô Ngày & Giờ bị khuất (Thanh toán trước) và Căn giữa bảng (Thanh toán) trong Checkout
+### Module: Thu ngân / Trả phòng ([PrepaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/PrepaymentModal.vue), [PaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/PaymentModal.vue))
+
+- **Yêu cầu & Giải pháp hoàn thành**:
+  - **1. Khắc phục ô Ngày và Giờ bị khuất trong Thanh toán trước ([PrepaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/PrepaymentModal.vue) - Ảnh 1)**:
+    - Bố cục grid: Tái cấu trúc grid thành 2 cột `col-span-7` (trái: thông tin thanh toán) và `col-span-5` (phải: mô tả) đồng bộ cả 2 hàng từ trên xuống dưới, tạo thêm không gian rộng rãi cho cụm bên trái.
+    - Phân bổ cột tối ưu cho hàng Ca, Giờ, Ngày, Tiền tệ: Áp dụng `grid-cols-[85px_155px_1fr_85px] items-start`:
+      + **Ca**: 85px với `pr-8`, nút xóa `x` tại `right-5` và chevron `right-1.5`, tên ca căn giữa gọn gàng.
+      + **Giờ**: 155px rộng rãi với `pl-2 pr-8`, nút xóa `x` tại `right-2`, hiển thị trọn vẹn cả 12h (`hh:mm AM/PM`, vd: `07:21 PM`) và 24h, không còn bị cắt chữ và tách biệt với icon đồng hồ/nút xóa.
+      + **Ngày**: Nhận không gian `1fr` (~220px), hiển thị trọn vẹn `31/08/2026` hoặc placeholder `dd/mm/yyyy` ở giữa, nút `x` và icon lịch rõ ràng bên phải.
+      + **Tiền tệ**: 85px cân đối với ô Ca, hiển thị cờ đỏ sao vàng, mã `VND` căn giữa đẹp mắt.
+  - **2. Căn giữa các cột trong bảng Thanh toán ([PaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/PaymentModal.vue) - Ảnh 2)**:
+    - Tiêu đề cột (`th`): Căn giữa (`text-center`) toàn bộ tiêu đề: *Mô tả, Phương thức thanh toán, Tài khoản ngân hàng, Tiền tệ, Tổng tiền, Thao tác*.
+    - Nội dung dữ liệu (`td`): Căn giữa (`text-center`) cho các cột: *Phương thức thanh toán, Tài khoản ngân hàng, Tiền tệ, Tổng tiền* (sử dụng `tabular-nums` căn giữa hài hòa) và *Thao tác*. Cột *Mô tả* giữ nhập liệu text-left.
+    - Bảng danh sách thanh toán trước ([PrepaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/PrepaymentModal.vue)): Đồng bộ canh giữa tiêu đề và dữ liệu các cột *Ngày, Giờ, HTTT*.
+- **Kiểm thử**:
+  - `npm run build` thành công 100% (5.72s), 0 lỗi.
+  - Unit tests `room-info-date-utils.test.js` (5/5 pass) và `available-rooms-view-state.test.js` (4/4 pass).
+
+## [2026-10-08] - Fix Dòng 48 & 49 (Sheet FIX FE): Danh sách công việc ca lễ tân
+### Module: Danh sách công việc ([ShiftWorkPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/ShiftWorkPage.vue)) & Sơ đồ phòng ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
+
+- **Yêu cầu & Giải pháp hoàn thành**:
+  - **Dòng 48 - Danh sách công việc ([ShiftWorkPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/ShiftWorkPage.vue))**:
+    - **1. Chuẩn hóa Tiêu đề bảng**: Canh giữa (`text-center`) toàn bộ tiêu đề cột (`th`) của 6 tab (*Phòng đến, Phòng đi, Đăng ký chờ xác nhận, Đón tiễn khách, Noshow, Sinh nhật khách*), áp dụng `font-semibold text-slate-800 text-xs h-9 bg-slate-100`.
+    - **2. Tăng size chữ chuẩn FE & Dữ liệu chữ thường**: Đưa toàn bộ các cỡ chữ nhỏ (`11.5px`, `11px`, `10px`) lên chuẩn `text-xs` (12px) Roboto. Giá trị nội dung các cột chuyển về kiểu chữ thường `font-normal text-slate-800` (không in đậm).
+    - **3. Ô Ngày nhập tay & format chuẩn**: Hỗ trợ gõ tay trực tiếp định dạng ngày tháng `dd/mm/yy` (nhận diện tự động 6 số `081026` hoặc 8 số `08102026`), tích hợp bộ helper `room-info-date-utils.js`, kết hợp nút icon lịch mở popup native datepicker và nút copy ngày. Áp dụng đồng bộ cho cả ô ngày đơn và ô khoảng *Từ ngày - Đến ngày*.
+    - **4. Nút xóa nhanh `(x)`**: Bổ sung nút `(x)` tách biệt cạnh icon lịch xuất hiện khi ô ngày có dữ liệu, bấm vào đưa về trạng thái trống và tự động tải lại dữ liệu.
+    - **5. Thanh Header nhóm Booking & Ghi chú xuống hàng (Dòng 49)**:
+      - Bố trí thanh banner 2 dòng:
+        + Dòng 1: `[-] Booking {code}: {name} {arrival}~{departure} _ Room Night: {rn} _ Phòng: {rooms}`.
+        + Dòng 2: `Ghi chú: {notes}` hỗ trợ xuống dòng tự nhiên (`whitespace-pre-wrap break-words`) chuẩn theo thiết kế Dòng 49, tự động lọc sạch tiền tố "Ghi chú:" lặp lại qua hàm `getCleanNote`.
+      - Cột phải: `Đặt cọc : {formatMoney(deposit)}` và `Tổng tiền : {formatMoney(totalAmount)}` (tab Phòng đến) / `Tổng DV` và `Tổng TT` (tab Phòng đi).
+      - Chuẩn hóa toàn bộ dữ liệu các hàng về chữ thường `font-normal text-slate-800` theo đúng yêu cầu (không in đậm số phòng, số tiền hay mã đăng ký).
+    - **6. Double-click Mã Đăng ký mở Tạo đăng ký**: Bổ sung sự kiện `@dblclick="handleOpenBooking"` tại cột Mã Đăng ký / Mã BK / Mã ĐK ở tất cả các tab; tự động xóa khỏi danh sách đóng `pms_closed_tabs`, phát emit `@edit-booking` và điều hướng sang tab Tạo đăng ký (`tab=create-res&bookingCode={code}`) trong [RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue) để mở chi tiết booking vừa chọn.
+    - **7. Tab Đăng ký chờ xác nhận - Icon Lưu ghi chú**: Đổi màu nút Lưu đĩa mềm khi ở trạng thái chỉnh sửa sang màu xanh ngọc tươi sáng rõ nét `bg-emerald-500 hover:bg-emerald-600 text-white shadow` (khi disabled hiển thị `bg-slate-200 text-slate-400`); nút Bút chì chuẩn xanh `bg-sky-500 hover:bg-sky-600 text-white`.
+  - **Bảo toàn 100% logic**:
+    - Không làm thay đổi bất kỳ logic API hay nghiệp vụ nào của các module khác.
+    - Component [RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue) chỉ gắn thêm lắng nghe `@edit-booking="handleEditBookingFromPlan"` tái sử dụng logic sẵn có.
+- **Kiểm thử**:
+  - `npm run build` thành công 100% (4.42s), 0 lỗi cú pháp hoặc template.
+
+## [2026-10-08] - Đồng bộ toàn diện Font chữ, Cỡ chữ (>= 12px Roboto), Form/Modal và Nút bấm theo FE Design System
+### Module: Danh sách phòng đến/đi/ở ([CheckInPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/CheckInPage.vue)), Khóa phòng OOO/OOS ([LockRoomPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/LockRoomPage.vue)), Công suất & Thống kê ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue) & [AvailableRoomsPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/AvailableRoomsPage.vue))
+
+- **Yêu cầu & Giải pháp hoàn thành**:
+  - **1. Danh sách phòng đến/đi/ở ([CheckInPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/CheckInPage.vue))**:
+    - Nút chức năng toolbar: Nút "Nhận phòng" và "Hóa đơn" chuẩn hóa `.btn-pms-primary h-8 px-3 text-xs font-semibold`, nút "Hủy nhận phòng" chuẩn hóa `.btn-pms-danger h-8 px-3 text-xs font-semibold`.
+    - Modal Xác nhận Hủy nhận phòng: Đổi sang bo góc `rounded-xl`, header theme `var(--pms-custom-theme, #006bdb)` `rounded-t-xl`, nút Đóng có title "Đóng (Esc)", bổ sung event listener phím tắt `Escape` để đóng form nhanh (cleanup khi unmount), 2 nút lựa chọn tình trạng phòng chuẩn `h-8 rounded-lg text-xs font-semibold`.
+    - Typography: Loại bỏ toàn bộ `text-[10px]` ở icon đóng mở booking và badge trạng thái `Guaranteed` sang `text-xs font-semibold`.
+  - **2. Khóa phòng OOO/OOS ([LockRoomPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/LockRoomPage.vue))**:
+    - Nút toolbar: Sửa/Hủy hàng loạt chuyển sang `.btn-pms-secondary h-8 px-3`, Lưu hàng loạt chuyển sang `.btn-pms-primary h-8 px-3`, Mở khóa và Khóa phòng OOS/OOO đồng bộ `h-8 px-3 rounded-lg text-xs font-semibold`.
+    - Header bảng: `bg-slate-50 text-[#000000D9] font-semibold h-9 text-xs`.
+    - Modal Thêm/Sửa khóa phòng: Bo góc `rounded-xl overflow-hidden`, header theme `var(--pms-custom-theme, #006bdb)` `rounded-t-xl`, title `text-xs font-semibold uppercase`, nhãn form chuẩn `text-xs font-semibold text-[#000000D9]`, trường bắt buộc "Ghi chú *" có dấu `*` đỏ và ô textarea áp dụng `bg-[#FFF8DB] border-[#F1DD8A] focus:ring-amber-400`.
+    - Phím tắt `Esc`: Đã gắn listener `keydown` đóng modal khóa phòng và phòng lịch sử khi bấm `Escape` (cleanup trong `onBeforeUnmount`).
+    - Typography & Dropdown: Xóa bỏ toàn bộ cỡ chữ < 12px (`text-[9px]`, `text-[10px]`, `text-[11px]`) ở ô nhập %, dropdown chọn phòng và lịch sử khóa phòng thành `text-xs`.
+  - **3. Công suất & Thống kê ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue) & [AvailableRoomsPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/AvailableRoomsPage.vue))**:
+    - Modal Thống kê ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue)): Bo góc `rounded-xl overflow-hidden`, header theme `var(--pms-custom-theme, #006bdb)` `rounded-t-xl`, nút đóng SVG chuẩn title "Đóng (Esc)", hỗ trợ phím `Esc`, đổi các tiêu đề cột `th` sang `text-xs font-semibold`.
+    - Modal Khóa phòng nhanh ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue)): Bo góc `rounded-xl overflow-hidden`, header theme `var(--pms-custom-theme, #006bdb)` `rounded-t-xl`, hỗ trợ phím `Esc` đóng nhanh (kể cả khi đang focus ở ô nhập liệu), các trường bắt buộc có `*` đỏ và nền vàng viền vàng nhạt `#FFF8DB`/`#F1DD8A`, nút Đóng (`.btn-pms-close`) và Khóa phòng (`.btn-pms-primary`).
+    - [AvailableRoomsPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/AvailableRoomsPage.vue): Đổi toàn bộ các tiêu đề cột `th` từ `text-[10px]` sang `text-xs font-semibold`, nút thu/mở OCC từ `text-[11px]` sang `text-xs`, tỷ lệ công suất chiếm dụng dòng 9 chuyển sang `text-xs font-semibold`.
+  - **4. Bảo toàn 100% logic**:
+    - Không thay đổi bất kỳ logic tính toán, API hay CSDL runtime.
+- **Kiểm thử**:
+  - `npm run build` thành công 100% (5.56s, 0 lỗi biên dịch).
+  - Backend route list và unit test chạy hoàn toàn trơn tru.
+
+## [2026-10-08] - Sửa nét gạch chân số phòng (Dòng 20) và Bỏ gạch chéo số 0 cột NL/TE/EB (Dòng 21 Sheet FIX FE)
+### Module: Sơ đồ phòng ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue)) & Danh sách phòng đến/đi/ở ([CheckInPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/CheckInPage.vue))
+
+- **Yêu cầu & Giải pháp hoàn thành**:
+  - **Dòng 20 - Sơ đồ phòng ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue))**:
+    - Chỉnh nét gạch chân số phòng cho "Phòng có ngày đến ngày mai" từ nét dày `font-black decoration-2` sang nét mảnh `decoration-1 underline-offset-[2px]` ở cả chế độ xem dạng thẻ (Grid card view - dòng 3302) và xem chi tiết theo tọa độ (Exact position view - dòng 3804).
+  - **Dòng 21 - Danh sách phòng đến, đi, ở ([CheckInPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/CheckInPage.vue))**:
+    - **Bỏ font-mono ở cột NL/TE/EB**: Loại bỏ class `font-mono` gây lỗi số 0 bị gạch chéo (`Ø`) trong phông monospaced. Thay bằng Roboto chuẩn với `tabular-nums text-xs text-[#000000D9]` (dòng cha `font-semibold`, dòng con `font-normal`) giúp số `0` hiển thị tròn bình thường `8/0/0`, `2/0/0`.
+    - **Đồng bộ cột số tiền & typography theo FE Design System**:
+      - Chuyển các cột số tiền chế độ Trả phòng từ `font-mono` sang `tabular-nums text-right text-xs` (dòng cha `font-semibold text-[#000000D9]`, dòng con `font-normal text-[#000000D9]`).
+      - Tiêu đề bảng (`th`): Đổi sang `text-xs font-semibold text-[#000000D9]`.
+      - Tiêu đề khu vực (`h2`) & badge đếm phòng: Đồng bộ `text-xs font-semibold text-[#000000D9]`, loại bỏ các font size < 12px (`text-[11px]`).
+      - Ghi chú dòng con: Nâng từ `text-[11px]` lên `text-xs` (12px) theo FE Design System.
+  - **Bảo toàn 100% logic**: Giữ nguyên toàn bộ logic tính toán công suất (`getBookingOccupancyText`, `getRoomOccupancyText`), tài chính, lọc, check-in/hủy check-in và API.
+- **Kiểm thử**:
+  - `npm run build` thành công 100% (6.70s), không có bất kỳ lỗi biên dịch nào.
+
+## [2026-10-08] - Sửa Popover Cài đặt hiển thị trên màn hình laptop (Sơ đồ phòng - RoomMapPage.vue) (Dòng 7 Sheet FIX FE)
+### Module: Sơ đồ phòng (Room Map) ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
+
+- **Yêu cầu & Giải pháp hoàn thành (Dòng 7 Sheet FIX FE - "Màn hình laptop bị mất thông tin phía dưới" & Tối ưu màn hình lớn)**:
+  - **Màn hình lớn hiển thị trọn vẹn không hiện thanh cuộn**:
+    - Bổ sung media query `@media (min-height: 650px)` cho `.settings-popover-panel` với `max-height: none !important;` và `.settings-popover-body` với `overflow-y: visible !important; padding-right: 0 !important;`.
+    - Tinh gọn khoảng cách dọc (container `p-3`, icon groups `gap-0.5`, body `gap-2`, footer `pt-2 mt-1.5`) giúp toàn bộ nội dung popover chỉ cao ~500px, hiển thị 100% trọn vẹn tất cả thanh trượt và nút chức năng mà không xuất hiện bất kỳ thanh cuộn nào trên màn hình lớn.
+  - **Khắc phục tràn viewport khi ở màn hình nhỏ / laptop thấp**:
+    - Trên màn hình có chiều cao hạn chế (< 650px), container tự động áp dụng `max-h-[calc(100vh-5.5rem)]`, body cuộn nội bộ mượt mà với `scrollbar-thin` (4px).
+  - **Tách cấu trúc Header - Body - Footer độc lập**:
+    - **Header cố định (`shrink-0`)**: Tiêu đề "Cài đặt hiển thị" chuẩn `text-xs font-semibold`, nút đóng `x` có title "Đóng (Esc)".
+    - **Body (`settings-popover-body`)**: Chứa toàn bộ các slider chỉnh kích thước Icon, cỡ chữ, hướng tầng, chiều dài/cao phòng; nâng cỡ chữ các nhãn từ `text-[11px]` lên `text-xs` (>= 12px) theo FE Design System.
+    - **Footer cố định (`shrink-0`)**: Đưa 2 nút **Mặc định** và **Lưu** cố định ở chân popover. Nút Lưu đồng bộ sang class chuẩn `.btn-pms-primary` (chiều cao 32px `h-8`).
+  - **Phím tắt Esc & Khóa phím tắt nền**:
+    - Nhấn phím `Esc` khi popover cài đặt đang mở sẽ tự động đóng popover.
+    - Bổ sung `showSettings.value` vào guard trong `handleRoomMapShortcut` để ngăn phím tắt số 1, 2, 3 đổi trạng thái phòng ở nền khi người dùng đang thao tác trong popover cài đặt.
+  - **Bảo toàn 100% logic**: Giữ nguyên toàn bộ logic lưu/khôi phục cài đặt (`saveSettings`, `resetToDefaultSettings`, `authStore.updateUserSettings`) và các bộ lọc khác.
+- **Kiểm thử**:
+  - `npm run build` thành công 100% (7.78s), 0 lỗi biên dịch.
+
 ## [2026-10-07] - Chuẩn hóa Modal Đặt phòng nhanh & Modal Khóa phòng (Kế hoạch phòng - RoomPlanPage.vue)
 ### Module: Kế hoạch phòng (Room Plan) ([RoomPlanPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomPlanPage.vue))
 
