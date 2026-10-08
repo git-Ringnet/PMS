@@ -40,6 +40,28 @@ const authStore = useAuthStore()
 const { can } = usePermission()
 const route = useRoute()
 const router = useRouter()
+// Route context only restricts the shared Sale view. It never grants API access.
+const checkoutInvoiceMutationAllowed = ref(false)
+const isSaleInvoiceReadOnly = computed(() => (
+  checkoutInvoiceMutationAllowed.value !== true
+  || String(route.path || '').replace(/\/$/u, '') === '/reservation'
+  || String(route.query.module || '').toLowerCase() === 'sale'
+  || ['1', 'true'].includes(String(route.query.readOnly || '').toLowerCase())
+))
+const loadCheckoutInvoiceCapability = async () => {
+  checkoutInvoiceMutationAllowed.value = false
+  try {
+    const response = await http.get('/bookings/init-dropdowns')
+    checkoutInvoiceMutationAllowed.value = response.data?.data?.booking_capabilities?.checkout_invoice_mutation_allowed === true
+  } catch (error) {
+    checkoutInvoiceMutationAllowed.value = false
+  }
+}
+const denySaleInvoiceMutation = () => {
+  if (!isSaleInvoiceReadOnly.value) return false
+  uiStore.showToast('Hóa đơn trong màn hình Sale chỉ được xem.', 'warning')
+  return true
+}
 const canAdjustRoomRate = ref(false)
 const canModifyRateBillService = ref(false)
 
@@ -319,6 +341,7 @@ const isRestoreCheckout = computed(() => {
   return Number(selectedBooking.value?.rawBooking?.status ?? selectedBooking.value?.status) === 2
 })
 const openCheckoutModal = () => {
+  if (denySaleInvoiceMutation()) return
   const checkedRooms = selectedCheckoutRooms.value
   if (!selectedBooking.value && checkedRooms.length === 0) return
   if (checkedRooms.length > 0) {
@@ -356,6 +379,7 @@ const openCheckoutModal = () => {
   showCheckoutModal.value = true
 }
 const submitCheckout = async () => {
+  if (denySaleInvoiceMutation()) return
   checkoutError.value = ''
   checkoutUnpaidRooms.value = []
   if (selectedRoomItem.value?.isVirtual || selectedCheckoutRooms.value.some(({ room }) => room.isVirtual)) {
@@ -433,6 +457,7 @@ const submitCheckout = async () => {
   } finally { isServiceOperationLoading.value = false }
 }
 const chargeEarlyCheckout = async () => {
+  if (denySaleInvoiceMutation()) return
   if (selectedRoomItem.value?.isVirtual) {
     checkoutError.value = 'Folio phòng ảo không phát sinh tiền phòng RM.'
     return
@@ -456,6 +481,7 @@ const chargeEarlyCheckout = async () => {
 }
 
 const openEarlyChargeModal = () => {
+  if (denySaleInvoiceMutation()) return
   if (!earlyCheckoutData.value) return
   if (earlyChargeNoPost.value) {
     uiStore.showToast('Phòng hoặc booking đang bật No Post — không thể post tiền phòng.', 'warning')
@@ -475,6 +501,7 @@ const openEarlyChargeModal = () => {
 }
 
 const checkoutEarlyWithoutCharge = async () => {
+  if (denySaleInvoiceMutation()) return
   if (!selectedRoomItem.value) return
   if (selectedRoomItem.value.isVirtual) {
     checkoutError.value = 'Folio phòng ảo chỉ dùng cho dịch vụ, không thể checkout.'
@@ -496,6 +523,7 @@ const checkoutEarlyWithoutCharge = async () => {
 
 
 const openAddHousekeepingService = () => {
+  if (denySaleInvoiceMutation()) return
   // Dòng master chỉ đại diện booking; dịch vụ BP luôn hạch toán cho một phòng cụ thể.
   if (!selectedRoomItem.value) return
   if (selectedRoomItem.value.isVirtual) {
@@ -565,6 +593,7 @@ const earlyChargeNoPost = computed(() => {
 })
 
 const openAddServiceModal = () => {
+  if (denySaleInvoiceMutation()) return
   if (isSelectedPostBlocked.value) {
     uiStore.showToast(noPostBlockMessage.value, 'warning')
     return
@@ -728,6 +757,7 @@ const loadSystemDate = async () => {
 }
 
 const openAdjustRoomRateModal = async () => {
+  if (denySaleInvoiceMutation()) return
   if (!canAdjustRoomRate.value) {
     uiStore.showToast('Tài khoản không có quyền điều chỉnh tiền phòng.', 'warning')
     return
@@ -2063,10 +2093,12 @@ const transferDestinations = computed(() => allBookingsList.value.filter(isTrans
 }))
 
 const openSplitServiceModal = () => {
+  if (denySaleInvoiceMutation()) return
   if (canSplitSelectedServices.value) showSplitServiceModal.value = true
 }
 
 const openSplitAction = () => {
+  if (denySaleInvoiceMutation()) return
   if (canSplitSelectedDeposit.value) {
     showSplitDepositModal.value = true
     return
@@ -2108,6 +2140,7 @@ const toggleAllPaymentSelection = (checked) => {
 }
 
 const openCancelServiceModal = async () => {
+  if (denySaleInvoiceMutation()) return
   if (canOpenCancelServiceModal.value) {
     const authorized = await uiStore.requestAuthorization()
     if (!authorized) return
@@ -2116,6 +2149,7 @@ const openCancelServiceModal = async () => {
 }
 
 const openServiceAdjustment = async () => {
+  if (denySaleInvoiceMutation()) return
   if (!canAdjustSelectedServicePrice.value) return
   if (isSelectedPostBlocked.value) {
     uiStore.showToast('Booking hoặc phòng đang bật No Post — không thể điều chỉnh dịch vụ.', 'warning')
@@ -2181,6 +2215,7 @@ const openServiceAdjustment = async () => {
 }
 
 const cancelSelectedServices = async (reason) => {
+  if (denySaleInvoiceMutation()) return
   if (!canCancelSelectedServices.value) return
   isServiceOperationLoading.value = true
   try {
@@ -2204,6 +2239,7 @@ const cancelSelectedServices = async (reason) => {
 }
 
 const openTransferServiceModal = () => {
+  if (denySaleInvoiceMutation()) return
   if (canTransferSelectedServices.value) {
     transferServiceError.value = ''
     showTransferServiceModal.value = true
@@ -2211,6 +2247,7 @@ const openTransferServiceModal = () => {
 }
 
 const openTransferPaymentModal = () => {
+  if (denySaleInvoiceMutation()) return
   if (canTransferSelectedDeposit.value) {
     transferPaymentError.value = ''
     showTransferPaymentModal.value = true
@@ -2218,6 +2255,7 @@ const openTransferPaymentModal = () => {
 }
 
 const openDebtSettlementModal = async () => {
+  if (denySaleInvoiceMutation()) return
   if (canOpenDebtSettlement.value) {
     const authorized = await uiStore.requestAuthorization()
     if (!authorized) return
@@ -2231,6 +2269,7 @@ const handleDebtSettlementSuccess = async (message) => {
 }
 
 const openQuickTransferBillModal = async () => {
+  if (denySaleInvoiceMutation()) return
   if (!hasQuickTransferTarget.value) {
     uiStore.showToast('Vui lòng chọn phòng nhận dịch vụ.', 'warning')
     return
@@ -2254,6 +2293,7 @@ const openQuickTransferBillModal = async () => {
 }
 
 const submitQuickTransferBills = async (billIds) => {
+  if (denySaleInvoiceMutation()) return
   if (!hasQuickTransferTarget.value || !billIds.length) return
   quickTransferLoadingText.value = 'Đang chuyển bill nhanh...'
   isServiceOperationLoading.value = true
@@ -2280,6 +2320,7 @@ const refreshAfterServiceOperation = async (folio = null) => {
 }
 
 const splitSelectedServices = async (payload) => {
+  if (denySaleInvoiceMutation()) return
   if (!canSplitSelectedServices.value) return
   isServiceOperationLoading.value = true
   try {
@@ -2301,6 +2342,7 @@ const splitSelectedServices = async (payload) => {
 }
 
 const splitSelectedDeposit = async ({ amount, folio }) => {
+  if (denySaleInvoiceMutation()) return
   if (!canSplitSelectedDeposit.value) return
   const payment = selectedPaymentItems.value[0]
   const targetAmount = Number(amount)
@@ -2325,6 +2367,7 @@ const splitSelectedDeposit = async ({ amount, folio }) => {
 }
 
 const transferSelectedServices = async (destination) => {
+  if (denySaleInvoiceMutation()) return
   if (!canTransferSelectedServices.value) return
   const isMaster = !selectedRoomItem.value
   const quickTransferTargetId = isMaster ? resolveQuickTransferTargetId(destination) : null
@@ -2371,6 +2414,7 @@ const transferSelectedServices = async (destination) => {
 }
 
 const transferSelectedPayment = async (destination) => {
+  if (denySaleInvoiceMutation()) return
   if (!canTransferSelectedDeposit.value) return
   isServiceOperationLoading.value = true
   try {
@@ -2432,6 +2476,7 @@ const roomDropKey = (booking, room, guest = null) => [
 ].join(':')
 
 const startDescriptionEdit = (type, item) => {
+  if (denySaleInvoiceMutation()) return
   const id = type === 'payment' ? item?.id : item?.serviceBillId
   if (!id || String(id).startsWith('P-fallback')) return
   editingDescription.value = { type, id: String(id) }
@@ -2449,6 +2494,7 @@ const cancelDescriptionEdit = () => {
 }
 
 const saveDescriptionEdit = async () => {
+  if (denySaleInvoiceMutation()) return
   if (!editingDescription.value || isDescriptionSaving.value) return
   const { type, id } = editingDescription.value
   const description = descriptionDraft.value.trim()
@@ -2485,6 +2531,10 @@ const handlePaymentDragStart = (payment, event) => {
 }
 
 const handleFolioDrop = async (folio) => {
+  if (denySaleInvoiceMutation()) {
+    handleServiceDragEnd()
+    return
+  }
   const group = draggedServiceGroup.value
   const payment = draggedPayment.value
   const targetFolio = Number(folio)
@@ -2580,6 +2630,10 @@ const handleRoomDragOver = (booking, room, guest = null) => {
 }
 
 const handleRoomDrop = async (booking, room, guest = null) => {
+  if (denySaleInvoiceMutation()) {
+    handleServiceDragEnd()
+    return
+  }
   const group = draggedServiceGroup.value
   const payment = draggedPayment.value
   const destination = {
@@ -2849,6 +2903,7 @@ const currentFolioDepositTotal = computed(() => {
 })
 
 const openPaymentModal = async () => {
+  if (denySaleInvoiceMutation()) return
   if (!selectedBooking.value) {
     uiStore.showToast('Vui lòng chọn Booking hoặc phòng cần thanh toán.', 'warning')
     return
@@ -2867,6 +2922,11 @@ const openPaymentModal = async () => {
   showPaymentModal.value = true
 }
 
+const openPrepaymentModal = () => {
+  if (denySaleInvoiceMutation()) return
+  showPrepaymentModal.value = true
+}
+
 const handlePaymentSuccess = async () => {
   showPaymentModal.value = false
   await refreshCheckoutData()
@@ -2876,6 +2936,7 @@ const handlePaymentSuccess = async () => {
 }
 
 const openDeletePaymentModal = async () => {
+  if (denySaleInvoiceMutation()) return
   if (selectedPaymentItems.value.length === 0) {
     uiStore.showToast('Vui lòng chọn bản ghi thanh toán/cọc cần xóa.', 'warning')
     return
@@ -2899,6 +2960,7 @@ const openDeletePaymentModal = async () => {
 }
 
 const deleteSelectedPayment = async (reason) => {
+  if (denySaleInvoiceMutation()) return
   const payment = selectedPaymentItems.value[0]
   if (!payment?.id) return
   isServiceOperationLoading.value = true
@@ -2981,6 +3043,8 @@ const selectRoomItemRow = async (b, r, specificGuest = null) => {
   }
 
   if (r.requiresFolio) {
+    // Opening a Sale invoice must not initialize a virtual folio as a side effect.
+    if (denySaleInvoiceMutation()) return
     const roomNumberKey = String(r.roomNumber || '')
     if (!roomNumberKey || virtualFolioLoadingRoomNumbers.value.has(roomNumberKey)) return
 
@@ -3033,6 +3097,10 @@ const selectRoomItemRow = async (b, r, specificGuest = null) => {
 }
 
 const handleNoPostChange = async (event) => {
+  if (denySaleInvoiceMutation()) {
+    event.target.checked = isNoPost.value
+    return
+  }
   if (!selectedBooking.value || noPostSaving.value) return
 
   const noPost = event.target.checked
@@ -3093,6 +3161,7 @@ const selectBookingFromSearch = (b, r = null, specificGuest = null) => {
 }
 
 const openRegistrationFromCheckout = () => {
+  if (denySaleInvoiceMutation()) return
   if (!selectedBooking.value?.code) {
     uiStore.showToast('Vui lòng chọn đăng ký trước.', 'warning')
     return
@@ -3204,6 +3273,7 @@ const handleClickOutside = (e) => {
 
 onMounted(async () => {
   await loadSystemDate()
+  await loadCheckoutInvoiceCapability()
   await loadCheckoutRolePermissions()
   await loadServiceBillAdjustmentPermission()
   syncCheckoutFilterFromRoute()
@@ -3235,6 +3305,7 @@ watch(() => [route.query.bookingCode, route.query.booking_code, route.query.book
 })
 
 watch(() => [authStore.activeBranch?.id, authStore.roles], () => {
+  loadCheckoutInvoiceCapability()
   canAdjustRoomRate.value = false
   loadCheckoutRolePermissions()
   canModifyRateBillService.value = false
@@ -3271,7 +3342,7 @@ onUnmounted(() => {
     <LoadingOverlay :show="isLoading || isServiceOperationLoading" />
 
     <!-- LEFTSIDE TOOLBAR (Cột nút chức năng dọc bên trái - Hỗ trợ Thu gọn/Mở rộng) -->
-    <aside 
+    <aside v-if="!isSaleInvoiceReadOnly"
       :class="[
         isSidebarCollapsed ? 'w-12' : 'w-[170px]',
         'checkout-actions order-last bg-[#1e293b] border-l border-[#475569] flex flex-col justify-between py-2 px-2 transition-all duration-200 shrink-0 shadow-sm relative text-slate-100 overflow-x-hidden overflow-y-auto'
@@ -3372,7 +3443,7 @@ onUnmounted(() => {
           <!-- Thêm đặt cọc -->
           <button 
             v-if="can('fo.payment.create')"
-            @click="showPrepaymentModal = true"
+            @click="openPrepaymentModal"
             class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded text-[#cbd5e1] hover:bg-[#334155] hover:text-white transition-colors text-xs cursor-pointer"
             :title="isSidebarCollapsed ? 'Thanh toán trước' : ''"
           >
@@ -3734,7 +3805,7 @@ onUnmounted(() => {
           <div class="checkout-info-heading flex items-center justify-between border-b border-slate-300 px-2 py-1">
             <span class="checkout-info-title"><i class="fa-solid fa-bed"></i> Thông Tin Đăng Ký</span>
             <label class="flex items-center gap-1 text-[10px] font-bold text-red-600">
-              <input type="checkbox" v-model="isNoPost" :disabled="!selectedBooking || noPostSaving || (selectedRoomItem && selectedBookingNoPost)" @change="handleNoPostChange" class="rounded border-gray-300 text-sky-600" />
+              <input type="checkbox" v-model="isNoPost" :disabled="isSaleInvoiceReadOnly || !selectedBooking || noPostSaving || (selectedRoomItem && selectedBookingNoPost)" @change="handleNoPostChange" class="rounded border-gray-300 text-sky-600" />
               No post
             </label>
           </div>

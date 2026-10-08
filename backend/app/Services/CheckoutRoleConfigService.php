@@ -69,6 +69,118 @@ class CheckoutRoleConfigService
         return $this->userHasConfiguredRole($user, ['RuleUserModifyRateBillService'], $branchId);
     }
 
+    /** Sale may edit only the configured Inhouse rate/departure fields when enabled. */
+    public function allowSaleInhouseRateDeparture(?int $branchId = null): bool
+    {
+        return $this->isEnabled('AllowReserUpdateRate_DeptDateRoomInhouse');
+    }
+
+    /**
+     * UI capability describing whether the current user has any checkout invoice
+     * mutation permission in the resolved branch. Route middleware remains the
+     * authority for each individual API mutation.
+     */
+    public function canMutateCheckoutInvoice(?User $user, ?int $branchId): bool
+    {
+        if (!$user) {
+            return false;
+        }
+
+        foreach ([
+            'fo.service.add',
+            'fo.service.edit',
+            'fo.service.delete',
+            'fo.payment.create',
+            'fo.checkout',
+        ] as $permission) {
+            if ($user->hasPermission($permission, $branchId)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** S11 role grant is additional to the existing booking edit permission. */
+    public function canUpdateCheckedOutBooking(?User $user, ?int $branchId): bool
+    {
+        return $user !== null
+            && $user->hasPermission('fo.booking.edit', $branchId)
+            && $this->hasExactConfiguredRoleCode($user, 'RoleUserUpdateCheckoutBooking', $branchId);
+    }
+
+    /**
+     * Open a Do Not Move lock when the user has the canonical exact role.
+     * In addition, the user who locked it is allowed to open if the parameter is unassigned.
+     */
+    public function canOpenDoNotMove(?User $user, ?int $branchId, int|string|null $lockOwnerUserId): bool
+    {
+        if (!$user || !$user->hasPermission('fo.booking.edit', $branchId)) {
+            return false;
+        }
+
+        $configuredCodes = $this->getConfiguredRoleCodes('RoleUserOpenDoNotMove');
+        if ($configuredCodes === []) {
+            return $lockOwnerUserId !== null && (string) $user->getKey() === (string) $lockOwnerUserId;
+        }
+
+        return $this->hasExactConfiguredRoleCode($user, 'RoleUserOpenDoNotMove', $branchId);
+    }
+
+    public function getConfiguredRoleCodes(string $configName): array
+    {
+        $allowedCodes = preg_split(
+            '/[,;|]+/',
+            (string) HotelConfig::query()->where('name', $configName)->value('value'),
+            -1,
+            PREG_SPLIT_NO_EMPTY
+        ) ?: [];
+
+        return array_values(array_unique(array_filter(array_map(
+            fn ($code) => $this->normalize((string) $code),
+            $allowedCodes
+        ), fn (string $code) => $code !== '' && $code !== '0')));
+    }
+
+    private function hasExactConfiguredRoleCode(User $user, string $configName, ?int $branchId): bool
+    {
+        $allowedCodes = $this->getConfiguredRoleCodes($configName);
+        if ($allowedCodes === []) {
+            return false;
+        }
+
+        $applicationCode = strtoupper((string) config('database_domains.default_application_code', 'PMS'));
+        $newAssignments = $user->userBranchPositions()
+            ->where('application_code', $applicationCode)
+            ->exists();
+
+        if ($newAssignments) {
+            $assignedRoleCodes = $user->userBranchPositions()
+                ->where('application_code', $applicationCode)
+                ->when($branchId, fn ($query) => $query->where('system_branch_id', $branchId))
+                ->get()
+                ->map(fn ($assignment) => PositionBranchRole::query()
+                    ->where('position_id', $assignment->position_id)
+                    ->where('system_branch_id', $assignment->system_branch_id)
+                    ->where('application_code', $applicationCode)
+                    ->where('is_active', true)
+                    ->with('role:id,code')
+                    ->first()?->role?->code)
+                ->filter()
+                ->map(fn ($code) => $this->normalize((string) $code));
+        } else {
+            $assignedRoleCodes = $user->roles()
+                ->when($branchId, fn ($query) => $query->where(function ($nested) use ($branchId) {
+                    $nested->whereNull('user_roles.system_branch_id')
+                        ->orWhere('user_roles.system_branch_id', $branchId);
+                }))
+                ->pluck('roles.code')
+                ->map(fn ($code) => $this->normalize((string) $code));
+        }
+
+        return $assignedRoleCodes->intersect($allowedCodes)->isNotEmpty();
+    }
+
     /** @return array<int, string> */
     private function userRoleIdentifiers(User $user, ?int $branchId): array
     {

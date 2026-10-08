@@ -427,6 +427,14 @@ class HotelDefinitionSeeder extends Seeder
             ['name' => 'RoomMap_ColorRoomNumberByRoomClass', 'value' => '0', 'description' => 'Hiển thị màu số phòng theo loại phòng trên Room Map (0: màu đen mặc định, phòng check-in hôm nay hiển thị đỏ; 1: màu số phòng theo room_classes.color, không đổi đỏ khi check-in)', 'is_visible' => true],
             // Section 18 - Trạng thái đăng ký khi hủy booking
             ['name' => 'RegistrationStatusId_BookingCancel', 'value' => '0', 'description' => 'Mã tình trạng đăng ký (registration_status_id) cập nhật cho booking khi hủy BK (0: giữ nguyên tình trạng cũ, khác 0: lưu theo giá trị của thông số, VD: 28)', 'is_visible' => true],
+            // Section 9 - Nhân bản booking
+            ['name' => 'IsCopyAllBooking', 'value' => '1', 'description' => 'Cho phép nhân bản cả phòng khi copy booking (1: Nhân bản cả thông tin booking và các phòng; 0: Chỉ nhân bản thông tin booking header, không copy phòng)', 'is_visible' => true],
+            // Section 10 - Cập nhật phòng inhouse tại sale
+            ['name' => 'AllowReserUpdateRate_DeptDateRoomInhouse', 'value' => '0', 'description' => 'Cho phép Sale cập nhật giá phòng, ngày đi và giờ đi của phòng Inhouse (0: Không, 1: Có).', 'is_visible' => true],
+            // Section 11 - Phân quyền cập nhật booking sau checkout
+            ['name' => 'RoleUserUpdateCheckoutBooking', 'value' => '', 'description' => 'Danh sách mã role được sửa metadata booking đã checkout; cần có quyền fo.booking.edit. Để trống sẽ từ chối.', 'is_visible' => true],
+            // Section 12 - Phân quyền mở khóa Do Not Move
+            ['name' => 'RoleUserOpenDoNotMove', 'value' => '', 'description' => 'Danh sách mã role chính xác được phép mở khóa Do Not Move; cần có quyền fo.booking.edit. Để trống sẽ từ chối role được cấu hình.', 'is_visible' => true],
         ];
 
         foreach ($configs as $cfg) {

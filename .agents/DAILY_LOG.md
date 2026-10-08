@@ -18,6 +18,110 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-10-08] - Hoàn tất Undo Section 13 (Hủy tính năng ẩn dịch vụ bổ sung) & Đồng bộ cấu hình 12 Section trên 4 chi nhánh
+### Module: Đặt phòng / Dịch vụ bổ sung ([ServicesModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/ServicesModal.vue), [HotelSettingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/HotelSettingController.php), [HotelDefinitionSeeder.php](file:///d:/PMS/backend/database/seeders/HotelDefinitionSeeder.php), [BookingThreeSectionsWordDocValidationTest.php](file:///d:/PMS/backend/tests/Feature/Booking/BookingThreeSectionsWordDocValidationTest.php))
+
+- **Undo hoàn toàn tính năng Section 13 theo chỉ đạo**:
+  - Revert sạch sẽ [ServicesModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/ServicesModal.vue) về nguyên bản, giữ nguyên danh sách dịch vụ bổ sung đầy đủ không lọc bỏ dịch vụ inactive.
+  - Xóa file tiện ích lọc catalog `frontend/src/utils/booking-service-catalog.js` và file test `frontend/tests/booking-service-catalog.test.js`.
+  - Cập nhật bộ test [BookingThreeSectionsWordDocValidationTest.php](file:///d:/PMS/backend/tests/Feature/Booking/BookingThreeSectionsWordDocValidationTest.php): loại bỏ test case Section 13, giữ 12/12 Section còn lại.
+- **Dọn dẹp thư mục trung gian**:
+  - Đã xóa toàn bộ thư mục `docs/booking-3/` (34 file tài liệu bóc tách, script và hình ảnh trung gian), giữ lại chuẩn xác 100% các file code thay đổi chính và file test của 12 Section.
+- **Rà soát & Đồng bộ thông số cấu hình 12 Section còn lại trên cả 4 chi nhánh**:
+  - Đã nạp đầy đủ thông số cấu hình tại [HotelSettingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/HotelSettingController.php) và [HotelDefinitionSeeder.php](file:///d:/PMS/backend/database/seeders/HotelDefinitionSeeder.php):
+    + `AllowReserUpdateRate_DeptDateRoomInhouse`
+    + `IsCopyAllBooking`
+    + `RoleUserUpdateCheckoutBooking`
+    + `RoleUserOpenDoNotMove`
+    + `AllowInputOverAV`
+    + `AllowOverRoomTypeRoomKind`
+    + `SyncRoomDateByBookingDate`
+  - Đã seed và đồng bộ trực tiếp vào database cả 4 chi nhánh (`pms_hkt1`, `pms_hkt2`, `pms_hkt3`, `pms_hkt4`), bảo đảm `is_visible = true`.
+- **Kiểm thử & Đảm bảo chất lượng**:
+  - Backend: 12/12 Section tests PASSED (67 assertions).
+  - Frontend: 67/67 unit tests PASSED.
+  - Build Vite: Hoàn thành 100% không phát sinh lỗi.
+
+## [2026-10-08] - Khắc phục Section 10: Ràng buộc thông số AllowReserUpdateRate_DeptDateRoomInhouse & Chuẩn hóa Lịch DatePicker theo ngày hệ thống PMS
+### Module: Đặt phòng / Lễ tân / Cập nhật nhanh ([HotelSettingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/HotelSettingController.php), [SingleDatePicker.vue](file:///d:/PMS/frontend/src/components/SingleDatePicker.vue), [QuickUpdateModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/QuickUpdateModal.vue), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [quick-update-inhouse-permission.test.js](file:///d:/PMS/frontend/tests/quick-update-inhouse-permission.test.js))
+
+- **Khắc phục thông số `AllowReserUpdateRate_DeptDateRoomInhouse` không chặn sửa phòng Inhouse**:
+  - API `HotelSettingController@show`: Bổ sung `AllowReserUpdateRate_DeptDateRoomInhouse` và `IsCopyAllBooking` vào danh sách `whereIn` nạp cấu hình, đảm bảo Frontend luôn nhận được cấu hình đầy đủ.
+  - Phân hệ thao tác tại `CreateRegistrationPage.vue`: Chuẩn hóa prop `:current-module="'SALE'"` khi mở `QuickUpdateModal`, đảm bảo thao tác tại tab "Tạo Đăng Ký" luôn chịu ràng buộc của quy tắc Sale/Reservation theo đúng mô tả Section 10.
+  - Giao diện `QuickUpdateModal.vue`:
+    - Khi `AllowReserUpdateRate_DeptDateRoomInhouse = 0`: Tự động khóa (`disabled`) Ngày trả phòng, Giờ đi, Giá phòng của các phòng Inhouse; bổ sung styling nền xám vô hiệu hóa cho ô Giá.
+    - Cập nhật banner lưu ý hiển thị trạng thái động bám sát Section 10.
+- **Chuẩn hóa Lịch chọn ngày (DatePicker) mở theo ngày hệ thống PMS**:
+  - Thay thế toàn bộ `<input type="date">` của trình duyệt trong `QuickUpdateModal.vue` bằng component `SingleDatePicker.vue`.
+  - `SingleDatePicker.vue`: Bổ sung prop `startDate`, tự động truyền `:start-date="parsedStartDate"` cho `VueDatePicker`. Khi người dùng mở lịch ở ô đang rỗng, popup luôn tập trung mở đúng tại tháng/năm của ngày hệ thống PMS (`systemDate`), loại bỏ hoàn toàn việc bị nhảy sang ngày của máy tính cá nhân.
+- **Rà soát & Đồng bộ toàn diện thông số cấu hình 13 Section trên cả 4 chi nhánh**:
+  - Đã đối chiếu toàn bộ 13 Section theo tài liệu Word:
+    + Section 6: `SyncRoomDateByBookingDate`
+    + Section 8: `canMutateCheckoutInvoice` (Middleware & Capability)
+    + Section 9: `IsCopyAllBooking` & `AllowOverRoomTypeRoomKind`
+    + Section 10: `AllowReserUpdateRate_DeptDateRoomInhouse`
+    + Section 11: `RoleUserUpdateCheckoutBooking`
+    + Section 12: `RoleUserOpenDoNotMove`
+  - Đã nạp đầy đủ toàn bộ 7 thông số cấu hình vào `HotelSettingController@show` và `BookingController@initDropdowns`.
+  - Đã cập nhật seeder [`HotelDefinitionSeeder.php`](file:///d:/PMS/backend/database/seeders/HotelDefinitionSeeder.php) và thực hiện đồng bộ trực tiếp bảo đảm 100% cả 4 database chi nhánh (`pms_hkt1`, `pms_hkt2`, `pms_hkt3`, `pms_hkt4`) đều có đầy đủ tất cả thông số cấu hình với `is_visible = true`.
+- **Kiểm thử & Đảm bảo chất lượng**:
+  - Frontend: Thêm bộ test `quick-update-inhouse-permission.test.js`, tổng cộng 70/70 unit tests PASSED.
+  - Backend: Toàn bộ bộ test 13 Section ([BookingThreeSectionsWordDocValidationTest.php](file:///d:/PMS/backend/tests/Feature/Booking/BookingThreeSectionsWordDocValidationTest.php)) đạt 13/13 PASSED.
+  - Build sản phẩm (`npm run build`): Biên dịch hoàn tất thành công 100% trong 7.57s.
+
+## [2026-10-08] - Xây dựng bộ Feature Test đối chiếu 100% 13 Section theo tài liệu "Các vấn đề liên quan tới booking 3.docx"
+### Module: Đặt phòng / Lễ tân / Quản trị hệ thống ([BookingThreeSectionsWordDocValidationTest.php](file:///d:/PMS/backend/tests/Feature/Booking/BookingThreeSectionsWordDocValidationTest.php))
+
+- **Triển khai bộ kiểm thử tự động 13 Section bám sát kịch bản tài liệu Word**:
+  - `test_section_01_chuyen_phong_ngay_nhan_phong_khong_co_bill`: Kiểm thử chuyển phòng ngày nhận (1501 -> 902), phòng cũ về 0 đêm, phòng mới 3 đêm. **PASSED**.
+  - `test_section_02_chuyen_phong_sau_khi_post_truoc_tien_phong_va_co_eb_khong_trung_sang_ngay`: Kiểm thử chuyển phòng sau khi post trước tiền phòng và có EB, không bị tính trùng khi sang ngày. **PASSED**.
+  - `test_section_03_chuyen_phong_sau_khi_o_qua_dem`: Kiểm thử chuyển phòng sau khi ở qua đêm (410 -> 902), chia đoạn ngày chính xác (1 đêm phòng cũ, 2 đêm phòng mới). **PASSED**.
+  - `test_section_04_chuyen_khach_chinh_sang_phong_moi_tach_thanh_hai_phong`: Kiểm thử tách khách chính phòng 907 sang 410, đăng ký hiển thị 2 phòng active độc lập. **PASSED**.
+  - `test_section_05_chuyen_phong_tai_ngay_phong_check_out_ve_khong_dem`: Kiểm thử chuyển phòng ngày check-out, phòng mới về 0 đêm không sinh tiền phòng giả. **PASSED**.
+  - `test_section_06_sua_ngay_phong_khong_tu_dong_keo_ngay_booking`: Kiểm thử sửa ngày phòng không tự động kéo ngày booking (giữ nguyên 31/08 - 03/09). **PASSED**.
+  - `test_section_07_chan_lay_phong_co_ngay_den_nho_hon_ngay_he_thong`: Chặn lấy phòng có ngày đến 31/08 khi ngày hệ thống là 01/09 (báo lỗi 422 chuẩn). **PASSED**.
+  - `test_section_08_modun_sale_xem_hoa_don_o_che_do_chi_doc_chan_mutations`: Khóa toàn bộ mutation ghi trên hóa đơn khi truy cập từ Sale (403). **PASSED**.
+  - `test_section_09_nhan_ban_booking_theo_mo_ta_nghiep_vu_e25`: Kiểm thử đầy đủ 4 nhánh của Section 9 (IsCopyAll=0, IsCopyAll=1, hết phòng AllowOver=1 hỏi phòng âm, hết phòng AllowOver=0 hỏi hết phòng). **PASSED**.
+  - `test_section_10_modun_sale_cap_nhat_phong_inhouse_theo_thong_so`: Kiểm thử thông số AllowReserUpdateRate_DeptDateRoomInhouse cho phép (=1) và chặn (=0) Sale sửa phòng Inhouse. **PASSED**.
+  - `test_section_11_role_user_cap_nhat_thong_tin_dang_ky_da_checkout`: Kiểm thử cấu hình RoleUserUpdateCheckoutBooking cho phép sửa 4 metadata của booking status=2 và chặn trường khác. **PASSED**.
+  - `test_section_12_role_user_open_do_not_move_va_owner_fallback`: Kiểm thử RoleUserOpenDoNotMove mở khóa theo role và fallback cho người tạo khóa. **PASSED**.
+  - `test_section_13_danh_muc_them_dich_vu_bo_sung_an_inactive_ngoai_le_rm`: Kiểm thử ẩn dịch vụ inactive và giữ ngoại lệ hiển thị mã RM (Tiền phòng). **PASSED**.
+- **Kết quả kiểm thử**: **13/13 Section tests PASSED (100%)** với 69 assertions.
+- **Bổ sung cấu hình `IsCopyAllBooking` vào database và migration hệ thống**:
+  - Tạo migration `2026_10_08_123000_add_is_copy_all_booking_hotel_config.php` để khởi tạo cấu hình `IsCopyAllBooking` (mặc định = 1, `is_visible` = 1) vào bảng `hotel_configs`.
+  - Thực thi `php artisan migrate:all` trên tất cả 4 database chi nhánh (`pms_hkt1`, `pms_hkt2`, `pms_hkt3`, `pms_hkt4`).
+  - Giao diện **Định nghĩa khách sạn -> Cấu hình** đã tìm kiếm và hiển thị đầy đủ thông số `IsCopyAllBooking`.
+
+
+## [2026-10-07] - Hoàn thiện các Section S08, S09, S11, S12 theo tài liệu Booking 3 & MÔ TẢ NGHIỆP VỤ !E25
+### Module: Đặt phòng / Lễ tân / Quản trị hệ thống ([BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [CopyModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/CopyModal.vue), [CheckoutRoleConfigService.php](file:///d:/PMS/backend/app/Services/CheckoutRoleConfigService.php), [RequireFrontDeskInvoiceMutation.php](file:///d:/PMS/backend/app/Http/Middleware/RequireFrontDeskInvoiceMutation.php), [BookingThreeCopyCharacterizationTest.php](file:///d:/PMS/backend/tests/Feature/Booking/BookingThreeCopyCharacterizationTest.php))
+
+- **Section S09 (Nhân bản Booking theo MÔ TẢ NGHIỆP VỤ !E25)**:
+  - Cấu hình `IsCopyAllBooking`:
+    - `= 0`: Chỉ nhân bản thông tin booking header (Sp2000), không nhân bản phòng.
+    - `= 1` (hoặc chưa cấu hình): Nhân bản cả thông tin booking và các dòng phòng thuê (Sp2100, Sp2200, Sp2300, trẻ em Sp2400/Sp2500).
+  - Kiểm tra phòng trống AV qua `RoomAvailabilityService`:
+    - Nếu thiếu phòng và `AllowOverRoomTypeRoomKind = 1`: Trả 422 `require_confirm: 'over_warning'` kèm câu hỏi *"Phòng âm bạn có muốn tiếp tục thao tác"*. Người dùng chọn tiếp tục (`confirm_over: true`) thì cho phép tạo booking âm phòng.
+    - Nếu thiếu phòng và `AllowOverRoomTypeRoomKind = 0`: Trả 422 `require_confirm: 'no_rooms_available'` kèm thông báo *"Không còn phòng trống, bạn có muốn tiếp tục thao tác"*. Người dùng chọn Có (`copy_header_only: true`) thì tạo booking mới nhưng chỉ copy header, không copy phòng. Người dùng chọn Không thì hủy thao tác (không tạo mới).
+  - Chuẩn hóa trường ngày hệ thống: `booking_date`, `confirm_date` trên booking và audit date sử dụng ngày hệ thống PMS (`SystemDateRoll`), không lấy `now()`.
+  - Không sao chép các thông tin cọc (`deposit_details`, `payment_value`) và dịch vụ tự động theo đúng mô tả E25.
+  - UI `CopyModal.vue`: Bổ sung xử lý hộp thoại xác nhận động cho cả hai nhánh `over_warning` và `no_rooms_available`.
+
+- **Section S08 (Hóa đơn chỉ đọc tại Module Sale)**:
+  - Khóa toàn bộ 24 endpoint biến đổi hóa đơn lễ tân thông qua middleware `RequireFrontDeskInvoiceMutation`: khi mở hóa đơn từ Sale, mọi thao tác ghi/sửa/xóa đều bị từ chối 403.
+  - Bảo đảm các thao tác checkout hợp lệ của Lễ tân vẫn hoạt động thông suốt.
+
+- **Section S11 (Cập nhật thông tin Booking sau khi Check-out - status = 2)**:
+  - `BookingController@updateCheckedOutBookingMetadata`: Chỉ cho phép sửa 4 trường metadata (`booking_name`, `customer_source_id`, `booker_id`, `note`), chặn toàn bộ các trường tài chính, ngày, trạng thái phòng.
+  - Phân quyền nghiêm ngặt theo `RoleUserUpdateCheckoutBooking` thông qua `CheckoutRoleConfigService`.
+
+- **Section S12 (Mở khóa Do Not Move)**:
+  - `CheckoutRoleConfigService@canOpenDoNotMove`: Kiểm tra role canonical được cấp phép qua `RoleUserOpenDoNotMove`. Trường hợp tham số chưa cấu hình, fallback cho phép chính user đã tạo khóa phòng mở khóa.
+
+- **Kiểm thử**:
+  - Backend: 201/201 tests PASSED (1,100 assertions), bao gồm toàn bộ test suite Booking, Checkout, và ActivityLog.
+  - Frontend: 67/67 unit tests PASSED; `npm run build` hoàn thành thành công trong 3.55s.
+
 ## [2026-10-06] - Thống nhất Design System toàn hệ thống (Sheet FIX FE - Dòng 1)
 ### Module: Toàn bộ hệ thống Frontend ([index.html](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/index.html), [style.css](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/style.css))
 
@@ -5145,3 +5249,26 @@
 - Chưa chạy migration/database thật hoặc nghiệm thu browser/PDF với dữ liệu thật.
 
 
+
+
+## [2026-10-07] - Booking 3: triển khai và kiểm tra tích hợp tại D:\PMS
+
+- Điều phối 3 sub-agent GPT-6 Luna High theo yêu cầu người dùng; chuyển từ worktree C: về dự án chính D:\PMS sau đối chiếu base và apply-check.
+- S01–05: move giữ bill nguồn, setup tương lai, chuỗi lịch sử, chống RM/EB trùng và zero-night; lịch sử chỉ đọc và không cộng tiền lặp ở subtotal.
+- S06/07/13: bỏ auto min/max ở Edit, chặn ngày phòng mới trước ngày PMS, active catalog và ngoại lệ RM, giữ setup inactive đã lưu.
+- S08/10: Sale invoice chỉ đọc ở Sale, capability xác thực và FO gate checkout/no-post, strict config cho rate/departure Inhouse và chống giả mạo FO. Giữ quyền API dùng chung cho Sale/HK.
+- S09 chưa đổi vì thiếu sheet dòng25; S11 chờ allow-list field; S12 giữ owner fallback hiện có, chờ xác nhận precedence.
+- Frontend 31/31 pass; build pass; backend nhóm liên quan 59 tests/54 pass/5 fail/295 assertions. Năm fail Folio có từ baseline, chưa sửa ngoài phạm vi.
+- PHP lint/diff-check/validator tài liệu pass. Docs: docs/booking-3 (13 section, 9 ảnh, 73 case và hướng dẫn trực tiếp), IMPLEMENTATION_STATUS và ba báo cáo agent.
+- Chưa UAT/browser/concurrency engine thật; chưa commit/push hoặc migrate DB vận hành.
+
+- Booking 3: chỉnh PLAN thành bảng tiến độ, phân công, 13 section với trạng thái/file/ba bước/test, ma trận file có link và thứ tự nghiệm thu. Lưu khảo sát cũ ở ANALYSIS_REFERENCE.md; chưa thay code chức năng trong lượt chỉnh format.
+
+- Booking 3 tiếp tục: đóng HK post/cancel và guest-checkout API thiếu guard; UI HK theo quyền; chống HK spoof Inhouse; giữ paid bill trong move dedupe và từ chối sửa paid RM; reversed bill được repost hợp lệ.
+- Thêm HTTP deny24endpoint, paid/reversed/multi-move/partial-selected guest, branch/application position-role, unlock retry và mixed allocation rollback tests. Cập nhật fixture FO và kỳ vọng test legacy phù hợp strict S10 và bill tài chính không bắt buộc mirror.
+- Regression cuối tại D:\PMS: backend121/121 pass703assertions; frontend31/31 pass; buildpass. Không thay DB vận hành; S09sheet/S11field/S12precedence vẫn chờ nghiệp vụ, UAT/engine concurrency chưa chạy.
+
+- Booking 3 sau yêu cầu tiếp tục: hoàn thiện S11 dialog/API riêng cho booking status2, allow-list mặc định tên/nguồn/booker/note; quyền nền+role, reject field khác, giữ snapshot room/bill/payment và audit.
+- S12 serialize cả tạo lock/unlock, role canonical/owner fallback với quyền nền; test tạo lại, role allow/deny, owner và retry audit đạt. Hai mặc định là lựa chọn agent, chưa phải quyết định người dùng xác nhận.
+- S09 characterization4/4 pass35assertions, giữ copy production; DOCX không embedded/external sheet, cần source dòng25.
+- Regression cuối D:\PMS backend130/130 pass773assertions; frontend31/31pass, buildpass. 12 section đã có triển khai theo phạm vi hiện tại, chưa nghiệm thu UAT13/13; không DB vận hành/commit/push.

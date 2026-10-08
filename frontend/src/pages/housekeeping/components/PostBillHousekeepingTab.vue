@@ -342,7 +342,7 @@
           <button @click="undoCart" class="btn btn-cancel h-9 px-4 rounded border border-rose-700 !bg-rose-600 hover:!bg-rose-700 !text-white text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1.5 shadow-xs">
             <span>↩ Undo</span>
           </button>
-          <button @click="sendToRoom" :disabled="isSending || isPostBlocked" class="btn btn-save h-9 px-5 rounded !bg-[#1a6b8a] hover:!bg-[#155a76] !text-white text-xs font-semibold cursor-pointer transition-colors border-none flex items-center gap-1.5 shadow-xs disabled:cursor-not-allowed disabled:opacity-50">
+          <button v-if="canPostHousekeepingBill" @click="sendToRoom" :disabled="isSending || isPostBlocked" class="btn btn-save h-9 px-5 rounded !bg-[#1a6b8a] hover:!bg-[#155a76] !text-white text-xs font-semibold cursor-pointer transition-colors border-none flex items-center gap-1.5 shadow-xs disabled:cursor-not-allowed disabled:opacity-50">
             <span v-if="isSending" class="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
             <span>💾 Gửi về phòng</span>
           </button>
@@ -356,6 +356,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useUiStore } from '@/stores/ui-store'
+import { usePermission } from '@/composables/usePermission'
 import { fetchBookings, fetchSystemDate } from '@/services/booking-service'
 import http from '@/services/http'
 import { fetchHousekeepingOutlets } from '@/services/housekeeping-outlet-service'
@@ -400,6 +401,8 @@ const props = defineProps({
 const emit = defineEmits(['close', 'success'])
 
 const uiStore = useUiStore()
+const { can, canAny } = usePermission()
+const canPostHousekeepingBill = computed(() => canAny(['hk.service.bill', 'fo.service.add', 'fo.service.edit']))
 
 const isNoPostEnabled = value => value === true || value === 1 || ['1', 'true', 'yes'].includes(String(value ?? '').trim().toLowerCase())
 
@@ -893,6 +896,10 @@ const refreshCart = () => {
 }
 
 const sendToRoom = async () => {
+  if (!canPostHousekeepingBill.value) {
+    uiStore.showToast('Bạn không có quyền lập hóa đơn dịch vụ.', 'warning')
+    return
+  }
   if (isPostBlocked.value) {
     uiStore.showToast(postBlockMessage.value, 'warning')
     return

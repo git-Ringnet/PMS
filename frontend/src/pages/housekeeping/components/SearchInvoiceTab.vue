@@ -160,7 +160,8 @@
             <span>Xem</span>
           </button>
           <button 
-            @click="showAddModal = true"
+            v-if="canPostHousekeepingBill"
+            @click="openAddModal"
             class="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg flex items-center transition-all text-xs font-bold shadow-sm gap-1.5 h-[32px] cursor-pointer"
           >
             <Plus class="w-3.5 h-3.5" stroke-width="3" />
@@ -298,7 +299,7 @@
     <!-- Thêm Dịch Vụ BP Modal -->
     <Transition name="hk-modal">
       <div 
-        v-if="showAddModal" 
+        v-if="showAddModal && canPostHousekeepingBill"
         class="fixed inset-0 z-[100] flex justify-center items-center bg-slate-900/50 backdrop-blur-sm"
       >
         <div class="bg-white rounded-xl shadow-2xl flex flex-col w-[95vw] h-[95vh] max-w-[1400px] overflow-hidden border border-slate-200 transform transition-all">
@@ -365,14 +366,14 @@
           </div>
           <div class="flex items-center gap-2 border-t border-slate-200 p-4">
             <button type="button" class="rounded-lg bg-sky-400 px-4 py-2 text-xs font-bold text-white hover:bg-sky-500" @click="printInvoice(detailTarget)">In</button>
-            <button v-if="detailTarget.canCancel" type="button" class="rounded-lg bg-sky-400 px-4 py-2 text-xs font-bold text-white hover:bg-sky-500" @click="openCancelModal(detailTarget)">Hủy hóa đơn</button>
+            <button v-if="detailTarget.canCancel && canCancelHousekeepingBill" type="button" class="rounded-lg bg-sky-400 px-4 py-2 text-xs font-bold text-white hover:bg-sky-500" @click="openCancelModal(detailTarget)">Hủy hóa đơn</button>
           </div>
         </div>
       </div>
     </Transition>
 
     <Transition name="hk-modal">
-      <div v-if="cancelTarget" class="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+      <div v-if="cancelTarget && canCancelHousekeepingBill" class="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
         <div class="w-full max-w-md rounded-xl bg-white shadow-2xl border border-slate-200 p-5">
           <h3 class="text-sm font-black text-slate-800">Xác nhận xóa hóa đơn</h3>
           <p class="mt-2 text-xs text-slate-600">Hóa đơn #{{ cancelTarget.id }} sẽ được ghi nhận bằng dòng âm audit.</p>
@@ -394,9 +395,13 @@ import { Calendar, Plus, Inbox, ChevronDown, CheckCircle2, X, HelpCircle } from 
 import PostBillHousekeepingTab from './PostBillHousekeepingTab.vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
+import { usePermission } from '@/composables/usePermission'
 
 const route = useRoute()
 const uiStore = useUiStore()
+const { can } = usePermission()
+const canPostHousekeepingBill = computed(() => can('hk.service.bill') || can('fo.service.add') || can('fo.service.edit'))
+const canCancelHousekeepingBill = computed(() => can('hk.service.delete'))
 
 // Mock Invoice data
 const mockInvoices = ref([
@@ -701,7 +706,13 @@ const formatCurrency = (value) => {
   return new Intl.NumberFormat('vi-VN').format(value)
 }
 
+const openAddModal = () => {
+  if (!canPostHousekeepingBill.value) return
+  showAddModal.value = true
+}
+
 const openCancelModal = (invoice) => {
+  if (!canCancelHousekeepingBill.value) return
   cancelTarget.value = invoice
   cancelReason.value = ''
 }
@@ -721,7 +732,7 @@ const closeCancelModal = () => {
 }
 
 const cancelInvoice = async () => {
-  if (!cancelTarget.value || !cancelReason.value.trim()) return
+  if (!canCancelHousekeepingBill.value || !cancelTarget.value || !cancelReason.value.trim()) return
   isCancelling.value = true
   try {
     await http.post(`/housekeeping/service-bills/${cancelTarget.value.id}/cancel`, { reason: cancelReason.value.trim() })

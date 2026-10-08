@@ -21,6 +21,10 @@ const props = defineProps({
     type: String,
     default: 'dd/mm/yyyy'
   },
+  startDate: {
+    type: [String, Date],
+    default: null
+  },
   disabled: {
     type: Boolean,
     default: false
@@ -84,6 +88,17 @@ const parsedMaxDate = computed(() => {
   if (!props.maxDate) return null
   if (props.maxDate instanceof Date) return props.maxDate
   const parts = String(props.maxDate).split('-')
+  if (parts.length === 3) {
+    return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10))
+  }
+  return null
+})
+
+// Parse startDate prop to Date object (focus month when empty)
+const parsedStartDate = computed(() => {
+  if (!props.startDate) return null
+  if (props.startDate instanceof Date) return props.startDate
+  const parts = String(props.startDate).split('-')
   if (parts.length === 3) {
     return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10))
   }
@@ -198,6 +213,7 @@ function handleTextBlur() {
       v-model="dateValue"
       :locale="vi"
       :enable-time-picker="false"
+      :start-date="parsedStartDate"
       :min-date="parsedMinDate"
       :max-date="parsedMaxDate"
       :disabled="disabled"

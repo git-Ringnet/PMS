@@ -43,6 +43,7 @@ class VirtualRoomFolioTest extends TestCase
         ]);
         $permissions = collect([
             ['fo.checkout', 'Checkout'],
+            ['fo.frontdesk.view', 'View front desk'],
             ['fo.service.add', 'Add service'],
             ['fo.service.edit', 'Edit service'],
             ['fo.booking.edit', 'Edit booking'],
@@ -421,7 +422,7 @@ class VirtualRoomFolioTest extends TestCase
         $response = app(NightAuditController::class)->runNightAudit(Request::create('/api/night-audit/run', 'POST', [
             'occupied_to_dirty' => false,
             'empty_to_inspect' => false,
-        ]));
+        ]), app(\App\Services\NightAuditSnapshotService::class));
 
         $this->assertSame(200, $response->getStatusCode());
         $this->assertTrue($response->getData()->success);

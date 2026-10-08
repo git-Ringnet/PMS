@@ -91,6 +91,11 @@ class BookingRoomStayChargeService
                 continue;
             }
 
+            if (app(BookingRoomMoveService::class)->hasPostedService($room, $date, $roomServiceCodes)) {
+                $existingRows->where('is_posted', 0)->each(fn (BookingRoomService $service) => $service->delete());
+                continue;
+            }
+
             $existing = $existingRows->first();
             // A date-only edit should retain an agreed/manual rate on a
             // surviving unposted night. Recalculate it only when the request

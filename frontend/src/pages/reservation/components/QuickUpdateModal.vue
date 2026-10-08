@@ -71,8 +71,12 @@
             <strong>Lưu ý:</strong> Danh sách chọn chứa phòng đang lưu trú (Inhouse). Theo quy định:
             <ul class="list-disc pl-4 mt-1 space-y-0.5">
               <li>Không được chỉnh sửa ngày đến và giờ đến.</li>
-              <li>Đối với bộ phận Sales: chỉ được phép cập nhật Giá phòng.</li>
-              <li>Đối với bộ phận Lễ tân: được phép cập nhật Ngày đi, Giờ đi và Giá phòng.</li>
+              <li v-if="allowSaleInhouseRateDeparture">
+                Cấu hình <span class="font-mono font-bold">AllowReserUpdateRate_DeptDateRoomInhouse = 1</span>: Cho phép điều chỉnh Ngày đi, Giờ đi và Giá phòng.
+              </li>
+              <li v-else class="text-red-700 font-semibold">
+                Cấu hình <span class="font-mono font-bold">AllowReserUpdateRate_DeptDateRoomInhouse = 0</span>: Không được phép điều chỉnh Ngày đi, Giờ đi và Giá phòng.
+              </li>
             </ul>
           </div>
         </div>
@@ -82,21 +86,14 @@
           <!-- Arrival Date -->
           <div>
             <label class="block text-slate-600 mb-1 font-bold">Ngày nhận phòng</label>
-            <div class="relative flex items-center">
-              <input 
-                ref="arrivalDateInputRef"
-                type="date" 
-                v-model="form.arrival_date" 
-                :disabled="isArrivalDisabled"
-                :min="minArrivalDate"
-                @click="openArrivalDatePicker"
-                class="w-full border rounded-lg h-9 pl-3 pr-9 text-xs focus:outline-none transition-colors border-slate-300 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed cursor-pointer"
-              />
-              <i 
-                class="fa-regular fa-calendar-days text-slate-400 absolute right-3 pointer-events-none text-sm"
-                :class="{ 'opacity-50': isArrivalDisabled }"
-              ></i>
-            </div>
+            <SingleDatePicker
+              v-model="form.arrival_date"
+              :start-date="systemDateNormalized"
+              :min-date="minArrivalDate"
+              :disabled="isArrivalDisabled"
+              placeholder="dd/mm/yyyy"
+              input-class="h-9 rounded-lg border-slate-300 focus-within:border-sky-500 focus-within:ring-1 focus-within:ring-sky-500"
+            />
           </div>
 
           <!-- Arrival Time -->
@@ -115,21 +112,14 @@
           <!-- Departure Date -->
           <div>
             <label class="block text-slate-600 mb-1 font-bold">Ngày trả phòng</label>
-            <div class="relative flex items-center">
-              <input 
-                ref="departureDateInputRef"
-                type="date" 
-                v-model="form.departure_date" 
-                :disabled="isDepartureDisabled"
-                :min="minDepartureDate"
-                @click="openDepartureDatePicker"
-                class="w-full border rounded-lg h-9 pl-3 pr-9 text-xs focus:outline-none transition-colors border-slate-300 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed cursor-pointer"
-              />
-              <i 
-                class="fa-regular fa-calendar-days text-slate-400 absolute right-3 pointer-events-none text-sm"
-                :class="{ 'opacity-50': isDepartureDisabled }"
-              ></i>
-            </div>
+            <SingleDatePicker
+              v-model="form.departure_date"
+              :start-date="systemDateNormalized"
+              :min-date="minDepartureDate"
+              :disabled="isDepartureDisabled"
+              placeholder="dd/mm/yyyy"
+              input-class="h-9 rounded-lg border-slate-300 focus-within:border-sky-500 focus-within:ring-1 focus-within:ring-sky-500"
+            />
           </div>
 
           <!-- Departure Time -->
@@ -151,9 +141,10 @@
             <input 
               type="text" 
               placeholder="Để trống nếu không đổi"
+              :disabled="isRateDisabled"
               :value="formatCurrencyInput(form.rate)"
               @input="e => form.rate = cleanCurrencyValue(e.target.value)"
-              class="w-full border rounded-lg h-9 px-3 text-xs focus:outline-none transition-colors border-slate-300 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 text-right font-bold text-slate-800"
+              class="w-full border rounded-lg h-9 px-3 text-xs focus:outline-none transition-colors border-slate-300 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed text-right font-bold text-slate-800"
             />
           </div>
 
@@ -242,20 +233,21 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { useAuthStore } from '@/stores/auth-store'
 import { useUiStore } from '@/stores/ui-store'
 import http from '@/services/http'
+import SingleDatePicker from '@/components/SingleDatePicker.vue'
 
 const props = defineProps({
   show: Boolean,
   bookingId: Number,
   targetRooms: { type: Array, default: () => [] },
-  systemDate: { type: String, default: '' }
+  systemDate: { type: String, default: '' },
+  currentModule: { type: String, default: 'SALE' },
+  allowSaleInhouseRateDeparture: { type: Boolean, default: false }
 })
 
 const emit = defineEmits(['update:show', 'saved'])
 
-const authStore = useAuthStore()
 const uiStore = useUiStore()
 
 // ==================== STATE DECLARATIONS ====================
@@ -273,9 +265,6 @@ const form = ref({
   confirm_overbooking: false
 })
 
-const arrivalDateInputRef = ref(null)
-const departureDateInputRef = ref(null)
-
 // ==================== COMPUTED PROPERTIES ====================
 const systemDateNormalized = computed(() => {
   return normalizeToYmd(props.systemDate) || new Date().toISOString().split('T')[0]
@@ -292,23 +281,20 @@ function roomStatus(room) {
   return room?.bookingRoomStatus ?? room?.status
 }
 
-const isFO = computed(() => {
-  const dept = authStore.user?.department_code?.toLowerCase()
-  const username = authStore.user?.username?.toLowerCase()
-  return dept === 'fo' || username === 'testuser' || username === 'admin'
+const canEditInhouseRateDeparture = computed(() => {
+  if (props.currentModule === 'SALE') {
+    return props.allowSaleInhouseRateDeparture === true
+  }
+  return props.currentModule === 'FO'
 })
 
-// Field disabled states
+// Field disabled states. The module prop only narrows the client UI; the
+// bulk-update endpoint independently checks permissions and the hotel config.
 const isArrivalDisabled = computed(() => hasCheckedInRoom.value)
 const isOccupantsDisabled = computed(() => hasCheckedInRoom.value)
 const isExtraBedDisabled = computed(() => hasCheckedInRoom.value)
-
-const isDepartureDisabled = computed(() => {
-  if (hasCheckedInRoom.value) {
-    return !isFO.value
-  }
-  return false
-})
+const isDepartureDisabled = computed(() => hasCheckedInRoom.value && !canEditInhouseRateDeparture.value)
+const isRateDisabled = computed(() => hasCheckedInRoom.value && !canEditInhouseRateDeparture.value)
 
 const minArrivalDate = computed(() => systemDateNormalized.value)
 const minDepartureDate = computed(() => {
@@ -397,28 +383,6 @@ function normalizeToYmd(dateStr) {
 }
 
 
-function openArrivalDatePicker() {
-  if (isArrivalDisabled.value) return
-  if (arrivalDateInputRef.value) {
-    if (typeof arrivalDateInputRef.value.showPicker === 'function') {
-      try { arrivalDateInputRef.value.showPicker() } catch (e) { arrivalDateInputRef.value.focus() }
-    } else {
-      arrivalDateInputRef.value.focus()
-    }
-  }
-}
-
-function openDepartureDatePicker() {
-  if (isDepartureDisabled.value) return
-  if (departureDateInputRef.value) {
-    if (typeof departureDateInputRef.value.showPicker === 'function') {
-      try { departureDateInputRef.value.showPicker() } catch (e) { departureDateInputRef.value.focus() }
-    } else {
-      departureDateInputRef.value.focus()
-    }
-  }
-}
-
 // ==================== DRAGGABLE MODAL POSITION ====================
 const modalPos = ref({ x: 0, y: 0 })
 const isDraggingModal = ref(false)
@@ -483,7 +447,8 @@ async function submitSave() {
     // Collect non-empty payload attributes
     const payload = {
       room_ids: props.targetRooms.map(r => String(r.bookingRoomId)),
-      confirm_overbooking: form.value.confirm_overbooking
+      confirm_overbooking: form.value.confirm_overbooking,
+      current_module: props.currentModule
     }
 
     if (form.value.arrival_date) payload.arrival_date = form.value.arrival_date
