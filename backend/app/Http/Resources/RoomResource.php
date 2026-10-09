@@ -56,21 +56,28 @@ class RoomResource extends JsonResource
             'lock_maintenance_percent' => $this->status === 'maintenance' ? ($this->activeLock?->maintenance_percent ?? 0) : 0,
             'lock_status' => $this->status === 'maintenance' ? ($this->activeLock?->status ?? '') : '',
             'lock_username' => $this->status === 'maintenance' ? ($this->activeLock?->username ?? '') : '',
-            'active_locks' => $this->relationLoaded('allActiveLocks') ? $this->allActiveLocks->map(fn($lock) => [
-                'id' => $lock->id,
-                'lock_id' => $lock->id,
-                'lock_type' => $lock->lock_type,
-                'lock_start_date' => $lock->start_date instanceof \DateTimeInterface ? $lock->start_date?->format('Y-m-d H:i:s') : $lock->start_date,
-                'lock_end_date' => $lock->end_date instanceof \DateTimeInterface ? $lock->end_date?->format('Y-m-d H:i:s') : $lock->end_date,
-                'lock_reason' => $lock->reason,
-                'lock_maintenance_percent' => $lock->maintenance_percent ?? 0,
-                'lock_status' => $lock->status ?? '',
-                'is_active' => (int) ($lock->is_active ?? 1),
-                'lock_username' => $lock->username ?? '',
-                'unlock_username' => $lock->unlock_username ?? '',
-                'unlocked_at' => $lock->unlocked_at instanceof \DateTimeInterface ? $lock->unlocked_at?->format('Y-m-d H:i:s') : $lock->unlocked_at,
-                'is_future' => \Carbon\Carbon::parse($lock->start_date)->gt(now()),
-            ]) : [],
+            'active_locks' => $this->relationLoaded('allActiveLocks') ? $this->allActiveLocks->map(function ($lock) use ($request) {
+                $sysDate = $request->attributes->get('pms_system_date');
+                if (!$sysDate) {
+                    $sysDate = \App\Models\SystemDateRoll::latest('id')->value('system_date') ?: now()->toDateString();
+                    $request->attributes->set('pms_system_date', $sysDate);
+                }
+                return [
+                    'id' => $lock->id,
+                    'lock_id' => $lock->id,
+                    'lock_type' => $lock->lock_type,
+                    'lock_start_date' => $lock->start_date instanceof \DateTimeInterface ? $lock->start_date?->format('Y-m-d H:i:s') : $lock->start_date,
+                    'lock_end_date' => $lock->end_date instanceof \DateTimeInterface ? $lock->end_date?->format('Y-m-d H:i:s') : $lock->end_date,
+                    'lock_reason' => $lock->reason,
+                    'lock_maintenance_percent' => $lock->maintenance_percent ?? 0,
+                    'lock_status' => $lock->status ?? '',
+                    'is_active' => (int) ($lock->is_active ?? 1),
+                    'lock_username' => $lock->username ?? '',
+                    'unlock_username' => $lock->unlock_username ?? '',
+                    'unlocked_at' => $lock->unlocked_at instanceof \DateTimeInterface ? $lock->unlocked_at?->format('Y-m-d H:i:s') : $lock->unlocked_at,
+                    'is_future' => \Carbon\Carbon::parse($lock->start_date)->startOfDay()->gt(\Carbon\Carbon::parse($sysDate)->startOfDay()),
+                ];
+            }) : [],
             'booking_color' => $this->booking_color,
             'arrival_date' => $this->arrival_date,
             'departure_date' => $this->departure_date,

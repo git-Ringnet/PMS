@@ -450,19 +450,19 @@ const savePermissionMatrix = async () => {
           <table class="w-full border-collapse text-xs">
             <thead>
               <tr class="bg-slate-100/90 text-left border-b border-slate-200 text-slate-700 font-bold">
-                <th class="p-2.5 w-28 border-r border-slate-200">Mã NV</th>
-                <th class="p-2.5 border-r border-slate-200">Tên nhân viên</th>
-                <th class="p-2.5">Email</th>
+                <th class="p-2.5 w-28 border-r border-slate-200 text-center align-middle border">Mã NV</th>
+                <th class="p-2.5 border-r border-slate-200 text-center align-middle border">Tên Nhân Viên</th>
+                <th class="p-2.5 text-center align-middle border-r border-slate-200 border">Email</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
               <tr v-for="user in currentUsers" :key="user.id" class="hover:bg-slate-50 transition-colors">
-                <td class="p-2.5 font-medium text-slate-600 border-r border-slate-100">{{ user.employee_code || '-' }}</td>
-                <td class="p-2.5 font-bold text-slate-800 border-r border-slate-100">{{ user.name }}</td>
-                <td class="p-2.5 text-slate-600">{{ user.email }}</td>
+                <td class="p-2.5 font-medium text-slate-600 border-slate-100">{{ user.employee_code || '-' }}</td>
+                <td class="p-2.5 font-bold text-slate-800 border-slate-100">{{ user.name }}</td>
+                <td class="p-2.5 text-slate-600 border-slate-200">{{ user.email }}</td>
               </tr>
               <tr v-if="!currentUsers.length">
-                <td colspan="3" class="p-8 text-center text-slate-400 font-medium">Chưa có nhân viên ở vị trí này</td>
+                <td colspan="3" class="p-8 text-center text-slate-400 font-medium border-slate-200">Chưa có nhân viên ở vị trí này</td>
               </tr>
             </tbody>
           </table>
@@ -505,10 +505,10 @@ const savePermissionMatrix = async () => {
               <table class="w-full border-collapse text-xs">
                 <thead>
                   <tr class="bg-slate-100/90 text-slate-700 font-bold border-b border-slate-200">
-                    <th class="p-2.5 w-12 text-center border-r border-slate-200"></th>
-                    <th class="text-left p-2.5 border-r border-slate-200">Chi nhánh</th>
-                    <th class="text-left p-2.5 border-r border-slate-200">Vị Trí Công Việc</th>
-                    <th class="p-2.5 text-center w-36">Phân Quyền</th>
+                    <th class="p-2.5 w-12 text-center border-r border-slate-200 align-middle border"></th>
+                    <th class="text-center p-2.5 border-r border-slate-200 align-middle border">Chi Nhánh</th>
+                    <th class="text-center p-2.5 border-r border-slate-200 align-middle border">Vị Trí Công Việc</th>
+                    <th class="p-2.5 text-center w-36 align-middle border-r border-slate-200 border">Phân Quyền</th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100">
@@ -518,17 +518,17 @@ const savePermissionMatrix = async () => {
                     class="transition-colors"
                     :class="row.enabled ? 'bg-sky-50/40 hover:bg-sky-50/60' : 'hover:bg-slate-50'"
                   >
-                    <td class="p-2.5 text-center border-r border-slate-100">
+                    <td class="p-2.5 text-center border-slate-100">
                       <input
                         v-model="row.enabled"
                         type="checkbox"
                         class="w-4 h-4 rounded border-slate-300 text-sky-500 accent-sky-500 cursor-pointer"
                       />
                     </td>
-                    <td class="p-2.5 font-semibold text-slate-800 border-r border-slate-100">
+                    <td class="p-2.5 font-semibold text-slate-800 border-slate-100">
                       {{ row.branch.name }}
                     </td>
-                    <td class="p-2.5 border-r border-slate-100">
+                    <td class="p-2.5 border-slate-100">
                       <select
                         v-model="row.role_id"
                         :disabled="!row.enabled"
@@ -538,7 +538,7 @@ const savePermissionMatrix = async () => {
                         <option v-for="role in roles" :key="role.id" :value="role.id">{{ role.name }}</option>
                       </select>
                     </td>
-                    <td class="p-2.5 text-center">
+                    <td class="p-2.5 text-center border-slate-200">
                       <button
                         v-if="row.enabled && row.role_id"
                         class="px-4 py-1 bg-[#72c6e6] hover:bg-[#5db3d4] text-white rounded-md text-xs font-bold border-none cursor-pointer transition-colors shadow-2xs"
@@ -615,11 +615,11 @@ const savePermissionMatrix = async () => {
               <table class="w-full border-collapse text-xs">
                 <thead>
                   <tr class="bg-slate-50 text-slate-600 font-bold border-b border-slate-100">
-                    <th class="text-left p-2.5 pl-6">Màn hình</th>
-                    <th class="w-20 text-center p-2.5">View</th>
-                    <th class="w-20 text-center p-2.5">Add</th>
-                    <th class="w-20 text-center p-2.5">Delete</th>
-                    <th class="w-20 text-center p-2.5">Edit</th>
+                    <th class="text-center p-2.5 pl-6 align-middle border-r border-slate-200 border">Màn Hình</th>
+                    <th class="w-20 text-center p-2.5 align-middle border-r border-slate-200 border">View</th>
+                    <th class="w-20 text-center p-2.5 align-middle border-r border-slate-200 border">Add</th>
+                    <th class="w-20 text-center p-2.5 align-middle border-r border-slate-200 border">Delete</th>
+                    <th class="w-20 text-center p-2.5 align-middle border-r border-slate-200 border">Edit</th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100">
@@ -628,12 +628,12 @@ const savePermissionMatrix = async () => {
                     :key="screen.code"
                     class="hover:bg-slate-50/80 transition-colors"
                   >
-                    <td class="p-2.5 pl-6">
+                    <td class="p-2.5 pl-6 border-slate-200">
                       <span class="font-semibold text-slate-800">{{ screen.name }}</span>
                       <small v-if="screen.path" class="block text-slate-400 text-[10px]">{{ screen.path }}</small>
                     </td>
                     <!-- Checkbox cells in order: View, Add, Delete, Edit -->
-                    <td v-for="action in ['view', 'add', 'delete', 'edit']" :key="action" class="text-center p-2.5">
+                    <td v-for="action in ['view', 'add', 'delete', 'edit']" :key="action" class="text-center p-2.5 border-slate-200">
                       <input
                         v-if="screen.actions[action]"
                         type="checkbox"

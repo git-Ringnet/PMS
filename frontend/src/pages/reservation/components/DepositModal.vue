@@ -127,7 +127,9 @@
                       v-model="depositForm.date"
                       :disabled="isEditing"
                       :min-date="minDepositDate"
-                      placeholder="dd/mm/yy"
+                      :start-date="systemDate || depositForm.date"
+                      placeholder="dd/mm/yyyy"
+                      four-digit-year
                       input-class="!h-[30px] !py-0 !px-3 !rounded-lg !border-[#F1DD8A] !bg-[#FFF8DB] !text-xs !font-normal text-[#000000D9]"
                     />
                 </div>
@@ -195,7 +197,7 @@
                 <table class="w-full border-collapse text-left text-xs">
                     <thead>
                         <tr class="bg-slate-100 text-[#000000D9] font-semibold border-b border-slate-200">
-                            <th class="p-2 w-10 text-center">
+                            <th class="p-2 w-10 text-center align-middle border-r border-slate-200 border">
                                 <input 
                                   type="checkbox" 
                                   class="rounded border-slate-300 font-normal"
@@ -204,14 +206,14 @@
                                   @change="selectedDepositIds = $event.target.checked ? visibleDeposits.map(d => d.id) : []"
                                 >
                             </th>
-                            <th class="p-2 min-w-[80px]">Ngày</th>
-                            <th class="p-2 min-w-[60px]">Giờ</th>
-                            <th class="p-2 min-w-[130px]">Phương thức thanh toán</th>
-                            <th class="p-2 min-w-[150px]">Mô tả</th>
-                            <th class="p-2 min-w-[90px] text-right">Số tiền</th>
-                            <th class="p-2 min-w-[60px] text-center">Tiền tệ</th>
-                            <th class="p-2 min-w-[110px]">Người nhận</th>
-                            <th class="p-2 min-w-[100px] text-center">Chứng từ</th>
+                            <th class="p-2 min-w-[80px] text-center align-middle border-r border-slate-200 border">Ngày</th>
+                            <th class="p-2 min-w-[60px] text-center align-middle border-r border-slate-200 border">Giờ</th>
+                            <th class="p-2 min-w-[130px] text-center align-middle border-r border-slate-200 border">Phương Thức Thanh Toán</th>
+                            <th class="p-2 min-w-[150px] text-center align-middle border-r border-slate-200 border">Mô Tả</th>
+                            <th class="p-2 min-w-[90px] text-center align-middle border-r border-slate-200 border">Số Tiền</th>
+                            <th class="p-2 min-w-[60px] text-center align-middle border-r border-slate-200 border">Tiền Tệ</th>
+                            <th class="p-2 min-w-[110px] text-center align-middle border-r border-slate-200 border">Người Nhận</th>
+                            <th class="p-2 min-w-[100px] text-center align-middle border-r border-slate-200 border">Chứng Từ</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -221,7 +223,7 @@
                           class="border-b border-slate-100 hover:bg-slate-50/80 transition"
                           :class="{ 'bg-blue-50/30': selectedDepositIds.includes(dep.id), 'bg-rose-50/40 text-rose-700': dep.amount < 0 || dep.edit_flag === 1 }"
                         >
-                            <td class="p-2 text-center align-middle">
+                            <td class="p-2 text-center align-middle border-slate-200">
                                 <input 
                                   type="checkbox" 
                                   :value="dep.id" 
@@ -230,19 +232,19 @@
                                   class="rounded border-slate-300 font-normal"
                                 >
                             </td>
-                            <td class="p-2 font-normal text-[#000000D9] align-middle">{{ dep.date }}</td>
-                            <td class="p-2 font-normal text-[#000000D9] align-middle">{{ dep.time }}</td>
-                            <td class="p-2 font-normal text-[#000000D9] align-middle">{{ paymentMethods.find(x => x.code === dep.paymentMethodId || String(x.id) === String(dep.paymentMethodId))?.name || dep.paymentMethodId || 'BT' }}</td>
-                            <td class="p-2 text-[#000000D9] align-middle">
+                            <td class="p-2 font-normal text-[#000000D9] align-middle border-slate-200">{{ dep.date }}</td>
+                            <td class="p-2 font-normal text-[#000000D9] align-middle border-slate-200">{{ dep.time }}</td>
+                            <td class="p-2 font-normal text-[#000000D9] align-middle border-slate-200">{{ paymentMethods.find(x => x.code === dep.paymentMethodId || String(x.id) === String(dep.paymentMethodId))?.name || dep.paymentMethodId || 'BT' }}</td>
+                            <td class="p-2 text-[#000000D9] align-middle border-slate-200">
                                 <span v-if="dep.roomNumber" class="inline-block bg-blue-50 text-blue-700 text-xs font-semibold px-1.5 py-0.5 rounded border border-blue-200 mr-1.5">
                                     Phòng {{ dep.roomNumber }}
                                 </span>
                                 <span class="font-normal">{{ dep.note }}</span>
                             </td>
-                            <td class="p-2 text-right font-mono font-semibold align-middle" :class="dep.amount < 0 ? 'text-rose-600' : 'text-[#000000D9]'">{{ dep.amount.toLocaleString('en-US') }}</td>
-                            <td class="p-2 text-center font-normal text-[#000000D9] align-middle">{{ dep.currency }}</td>
-                            <td class="p-2 text-[#000000D9] font-normal align-middle">{{ dep.recipient }}</td>
-                            <td class="p-2 text-center align-middle">
+                            <td class="p-2 text-right font-mono font-semibold align-middle border-slate-200" :class="dep.amount < 0 ? 'text-rose-600' : 'text-[#000000D9]'">{{ dep.amount.toLocaleString('en-US') }}</td>
+                            <td class="p-2 text-center font-normal text-[#000000D9] align-middle border-slate-200">{{ dep.currency }}</td>
+                            <td class="p-2 text-[#000000D9] font-normal align-middle border-slate-200">{{ dep.recipient }}</td>
+                            <td class="p-2 text-center align-middle border-slate-200">
                                 <div class="flex items-center justify-center space-x-1.5">
                                     <div 
                                       v-for="(img, iIdx) in (dep.images || [])" 
@@ -265,7 +267,7 @@
                             </td>
                         </tr>
                         <tr v-if="!visibleDeposits || visibleDeposits.length === 0" class="border-b border-slate-100">
-                            <td colspan="9" class="p-4 text-center text-slate-400 italic">Chưa có thông tin đặt cọc.</td>
+                            <td colspan="9" class="p-4 text-center text-slate-400 italic border-slate-200">Chưa có thông tin đặt cọc.</td>
                         </tr>
                     </tbody>
                 </table>
@@ -764,7 +766,7 @@ function openDatePicker() {
 }
 
 // System date state
-const systemDate = ref(new Date().toISOString().split('T')[0])
+const systemDate = ref(authStore.systemDate || localStorage.getItem('pms_system_date') || new Date().toISOString().split('T')[0])
 const oldDayRuleSubjects = ref('')
 
 // Custom Split Modal States
@@ -1052,6 +1054,7 @@ async function loadOperationalSettings() {
     ])
     if (systemDateResponse.data?.data?.system_date) {
       systemDate.value = systemDateResponse.data.data.system_date
+      authStore.setSystemDate(systemDate.value)
     }
     oldDayRuleSubjects.value = hotelSettingsResponse.data?.data?.RuleUserCorrectOrPostBillPaymentOldDay || ''
   } catch (err) {

@@ -30,20 +30,20 @@
           <table class="w-full text-left text-xs border-collapse">
             <thead>
               <tr class="bg-slate-50/80 border-b border-slate-200 text-slate-600 font-extrabold h-10 text-center">
-                <th class="p-2.5 text-left pl-4 w-28">Ngày</th>
-                <th class="p-2.5 text-center w-28">Số Lượng</th>
-                <th class="p-2.5 text-center w-36">Thành Tiền</th>
-                <th class="p-2.5 text-right pr-4 w-32">Tổng Tiền</th>
-                <th class="p-2.5 text-center w-28">FIT/GIT</th>
+                <th class="p-2.5 text-center pl-4 w-28 align-middle border-r border-slate-200 border">Ngày</th>
+                <th class="p-2.5 text-center w-28 align-middle border-r border-slate-200 border">Số Lượng</th>
+                <th class="p-2.5 text-center w-36 align-middle border-r border-slate-200 border">Thành Tiền</th>
+                <th class="p-2.5 text-center pr-4 w-32 align-middle border-r border-slate-200 border">Tổng Tiền</th>
+                <th class="p-2.5 text-center w-28 align-middle border-r border-slate-200 border">FIT/GIT</th>
               </tr>
             </thead>
             <tbody>
               <!-- HÀNG TOTAL (TỔNG CHUNG) -->
               <tr class="bg-white font-bold border-b border-slate-200 h-12 text-slate-800">
-                <td class="p-2.5 text-left pl-4 font-bold text-sky-600">Total</td>
+                <td class="p-2.5 text-left pl-4 font-bold text-sky-600 border-slate-200">Total</td>
                 
                 <!-- SỐ LƯỢNG (VỚI MŨI TÊN TĂNG GIẢM LÊN XUỐNG) -->
-                <td class="p-2.5 text-center">
+                <td class="p-2.5 text-center border-slate-200">
                   <div class="relative inline-flex items-center justify-center">
                     <div 
                       v-if="isAllPastOrLocked" 
@@ -73,7 +73,7 @@
                 </td>
 
                 <!-- THÀNH TIỀN (VỚI MŨI TÊN TĂNG GIẢM LÊN XUỐNG) -->
-                <td class="p-2.5 text-center">
+                <td class="p-2.5 text-center border-slate-200">
                   <div class="relative inline-flex items-center justify-center w-full">
                     <div 
                       v-if="isAllPastOrLocked" 
@@ -101,12 +101,12 @@
                 </td>
 
                 <!-- TỔNG TIỀN -->
-                <td class="p-2.5 text-right font-extrabold text-slate-800 pr-4">
+                <td class="p-2.5 text-right font-extrabold text-slate-800 pr-4 border-slate-200">
                   {{ formatCurrencyInput(computedTotalSum) }}
                 </td>
 
                 <!-- FIT / GIT TOGGLE SWITCH -->
-                <td class="p-2.5 text-center">
+                <td class="p-2.5 text-center border-slate-200">
                   <div class="relative inline-flex items-center justify-center">
                     <div 
                       v-if="isAllPastOrLocked" 
@@ -139,7 +139,7 @@
                   :class="(night.isLocked || night.isPast) ? 'bg-slate-50/80 opacity-60' : 'bg-white'"
                 >
                   <!-- NGÀY -->
-                  <td class="p-2.5 text-left pl-4 font-semibold text-slate-700">
+                  <td class="p-2.5 text-left pl-4 font-semibold text-slate-700 border-slate-200">
                     <span>{{ night.displayDate }}</span>
                     <span v-if="night.isLocked && !night.isPast" class="ml-1.5 text-[9px] text-slate-600 bg-slate-100 border border-slate-300 px-1 py-0.2 rounded font-bold">
                       Đã chốt
@@ -150,7 +150,7 @@
                   </td>
 
                   <!-- SỐ LƯỢNG NGHỈ TỪNG ĐÊM -->
-                  <td class="p-2.5 text-center">
+                  <td class="p-2.5 text-center border-slate-200">
                     <div class="relative inline-flex items-center justify-center">
                       <div 
                         v-if="night.isLocked || night.isPast" 
@@ -180,7 +180,7 @@
                   </td>
 
                   <!-- THÀNH TIỀN TỪNG ĐÊM -->
-                  <td class="p-2.5 text-center">
+                  <td class="p-2.5 text-center border-slate-200">
                     <div class="relative inline-flex items-center justify-center w-full">
                       <div 
                         v-if="night.isLocked || night.isPast" 
@@ -208,12 +208,12 @@
                   </td>
 
                   <!-- TỔNG TIỀN TỪNG ĐÊM -->
-                  <td class="p-2.5 text-right font-bold pr-4" :class="(night.isLocked || night.isPast) ? 'text-slate-400' : 'text-slate-800'">
+                  <td class="p-2.5 text-right font-bold pr-4 border-slate-200" :class="(night.isLocked || night.isPast) ? 'text-slate-400' : 'text-slate-800'">
                     {{ formatCurrencyInput(night.total) }}
                   </td>
 
                   <!-- FIT/GIT TOGGLE SWITCH TỪNG ĐÊM -->
-                  <td class="p-2.5 text-center">
+                  <td class="p-2.5 text-center border-slate-200">
                     <div class="relative inline-flex items-center justify-center">
                       <div 
                         v-if="night.isLocked || night.isPast" 
@@ -237,7 +237,7 @@
                 </tr>
               </template>
               <tr v-else>
-                <td colspan="5" class="p-6 text-center text-slate-400 font-medium italic">
+                <td colspan="5" class="p-6 text-center text-slate-400 font-medium italic border-slate-200">
                   Không tìm thấy danh sách đêm lưu trú.
                 </td>
               </tr>

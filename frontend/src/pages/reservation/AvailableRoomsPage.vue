@@ -603,16 +603,16 @@ function showExportToast() {
         <thead>
           <!-- First Row: Weekdays (Canh giữa tiêu đề cột theo Dòng 10) -->
           <tr class="bg-slate-200 border-b border-slate-300 text-gray-900 font-semibold h-8 text-xs">
-            <th rowspan="2" class="p-2 border-r border-slate-300 text-center sticky left-0 z-30 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] text-xs font-semibold">Mã Loại</th>
-            <th rowspan="2" class="p-2 border-r border-slate-300 text-center sticky left-[80px] z-30 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] text-xs font-semibold">Loại phòng</th>
-            <th rowspan="2" class="p-2 border-r border-slate-300 text-center sticky left-[250px] z-30 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] text-xs font-semibold">Tổng</th>
-            <th rowspan="2" class="p-2 border-r border-slate-300 text-center sticky left-[300px] z-30 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] leading-tight text-xs font-semibold">SL Phòng Tối Đa</th>
+            <th rowspan="2" class="p-2 border-r border-slate-300 text-center sticky left-0 z-30 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] text-xs font-semibold align-middle border">Mã Loại</th>
+            <th rowspan="2" class="p-2 border-r border-slate-300 text-center sticky left-[80px] z-30 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] text-xs font-semibold align-middle border">Loại Phòng</th>
+            <th rowspan="2" class="p-2 border-r border-slate-300 text-center sticky left-[250px] z-30 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] text-xs font-semibold align-middle border">Tổng</th>
+            <th rowspan="2" class="p-2 border-r border-slate-300 text-center sticky left-[300px] z-30 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] leading-tight text-xs font-semibold align-middle border">SL Phòng Tối Đa</th>
             
             <th 
               v-for="(day, idx) in days" 
               :key="idx" 
               :colspan="activeSubColumns.length"
-              class="p-1 border-r border-slate-200 text-center text-xs font-semibold"
+              class="p-1 border-r border-slate-200 text-center text-xs font-semibold align-middle border"
               :class="[idx > 0 ? 'border-l-2 border-slate-300' : '', day.isWeekend ? 'bg-[#8cc4fb]' : 'bg-slate-200']"
             >
               {{ day.dow }}<br/>{{ day.dateStr }}
@@ -625,7 +625,7 @@ function showExportToast() {
               <th 
                 v-for="(subCol, subColIndex) in activeSubColumns"
                 :key="subCol"
-                class="p-1 border-r border-slate-200 text-center text-xs font-semibold"
+                class="p-1 border-r border-slate-200 text-center text-xs font-semibold align-middle border"
                 :class="[subColIndex === 0 && dayIndex > 0 ? 'border-l-2 border-slate-300' : '', day.isWeekend ? 'bg-[#8cc4fb]' : 'bg-slate-200']"
               >
                 {{ subCol }}
@@ -640,7 +640,7 @@ function showExportToast() {
           <template v-for="(rc, rcIndex) in roomClasses" :key="rc.code">
           <tr class="border-b border-slate-200 h-8" :style="{ backgroundColor: roomRowBackground(rcIndex) }">
             <!-- Room Type Identifiers (Sticky on Left) -->
-            <td class="p-2 border-r border-slate-200 text-left pl-2 font-semibold sticky left-0 shadow-[inset_-1px_0_0_#e2e8f0] text-xs" :style="{ backgroundColor: roomRowBackground(rcIndex) }">
+            <td class="p-2 border-slate-200 text-left pl-2 font-semibold sticky left-0 shadow-[inset_-1px_0_0_#e2e8f0] text-xs" :style="{ backgroundColor: roomRowBackground(rcIndex) }">
               <div class="flex items-center gap-1 justify-start">
                 <button
                   type="button"
@@ -651,13 +651,13 @@ function showExportToast() {
                 {{ rc.code }}
               </div>
             </td>
-            <td class="p-2 border-r border-slate-200 font-semibold sticky left-[80px] shadow-[inset_-1px_0_0_#e2e8f0] truncate text-[12px]" :style="{ backgroundColor: roomRowBackground(rcIndex) }">
+            <td class="p-2 border-slate-200 font-semibold sticky left-[80px] shadow-[inset_-1px_0_0_#e2e8f0] truncate text-[12px]" :style="{ backgroundColor: roomRowBackground(rcIndex) }">
               {{ rc.name }}
             </td>
-            <td class="p-2 border-r border-slate-200 text-center font-semibold sticky left-[250px] shadow-[inset_-1px_0_0_#e2e8f0] text-[12px]" :style="{ backgroundColor: roomRowBackground(rcIndex) }">
+            <td class="p-2 border-slate-200 text-center font-semibold sticky left-[250px] shadow-[inset_-1px_0_0_#e2e8f0] text-[12px]" :style="{ backgroundColor: roomRowBackground(rcIndex) }">
               {{ rc.total }}
             </td>
-            <td class="p-2 border-r border-slate-200 text-center font-semibold sticky left-[300px] shadow-[inset_-1px_0_0_#e2e8f0] text-[12px]" :style="{ backgroundColor: roomRowBackground(rcIndex) }">
+            <td class="p-2 border-slate-200 text-center font-semibold sticky left-[300px] shadow-[inset_-1px_0_0_#e2e8f0] text-[12px]" :style="{ backgroundColor: roomRowBackground(rcIndex) }">
               {{ rc.max_rooms ?? 0 }}
             </td>
 
@@ -669,7 +669,7 @@ function showExportToast() {
                 :class="[getCellClass(subCol, getSubColValue(rc.code, day.fullDateStr, subCol), day.isWeekend, isDetailClickable(subCol)), subColIndex === 0 && dayIndex > 0 ? 'border-l-2 border-slate-300' : '']"
                 :title="getCellTooltip(rc.code, day.fullDateStr, subCol)"
                 @click="openAvailabilityDetails(day.fullDateStr, subCol, rc)"
-              >
+               class="border-r border-slate-200">
                 {{ getSubColValue(rc.code, day.fullDateStr, subCol) }}
               </td>
             </template>
@@ -682,13 +682,13 @@ function showExportToast() {
               :key="`${rc.code}-occ-lane-${laneIndex}`"
               class="h-6 border-b border-slate-100 bg-white"
             >
-              <td colspan="4" class="p-0 sticky left-0 z-10 bg-white border-r border-slate-200 shadow-[inset_-1px_0_0_#e2e8f0]">
+              <td colspan="4" class="p-0 sticky left-0 z-10 bg-white border-slate-200 shadow-[inset_-1px_0_0_#e2e8f0]">
                 <div class="h-6 mx-1"></div>
               </td>
               <template v-for="(cell, cellIndex) in bookingTimelineCells(lane)" :key="`${rc.code}-${laneIndex}-${cellIndex}`">
                 <td
                   :colspan="cell.span * activeSubColumns.length"
-                  class="p-0 border-r border-slate-100"
+                  class="p-0 border-slate-100"
                   @dblclick="cell.visible && openBookingFromModal(cell.booking)"
                 >
                   <div
@@ -704,12 +704,12 @@ function showExportToast() {
 
           <!-- TỔNG Row (Sum totals) -->
           <tr class="bg-slate-200 border-b border-slate-300 h-8 text-[12px]">
-            <td class="p-2 border-r border-slate-300 text-center sticky left-0 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] font-semibold">TỔNG</td>
-            <td class="p-2 border-r border-slate-300 sticky left-[80px] bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1]"></td>
-            <td class="p-2 border-r border-slate-300 text-center sticky left-[250px] bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] font-semibold">
+            <td class="p-2 border-slate-300 text-center sticky left-0 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] font-semibold">TỔNG</td>
+            <td class="p-2 border-slate-300 sticky left-[80px] bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1]"></td>
+            <td class="p-2 border-slate-300 text-center sticky left-[250px] bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] font-semibold">
               {{ totals.grand_total }}
             </td>
-            <td class="p-2 border-r border-slate-300 text-center sticky left-[300px] bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] font-semibold">
+            <td class="p-2 border-slate-300 text-center sticky left-[300px] bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] font-semibold">
               {{ totals.grand_max_rooms ?? 0 }}
             </td>
 
@@ -717,7 +717,7 @@ function showExportToast() {
               <td 
                 v-for="(subCol, subColIndex) in activeSubColumns"
                 :key="subCol"
-                class="p-2 border-r border-slate-300 text-center text-[12px] font-semibold text-gray-900"
+                class="p-2 border-slate-300 text-center text-[12px] font-semibold text-gray-900"
                 :class="[
                   day.isWeekend ? 'bg-[#8cc4fb]' : '',
                   subCol === 'AV' && getSumValue(subCol, day.fullDateStr) <= 0 ? 'av-negative' : 'availability-number',
@@ -734,26 +734,26 @@ function showExportToast() {
 
           <!-- THỐNG KÊ Title Header Row (Cỡ chữ to hơn 1 size theo Dòng 12) -->
           <tr class="bg-slate-200 border-b border-slate-300 text-gray-900 h-8 text-center uppercase tracking-wide">
-            <td colspan="4" class="p-2 sticky left-0 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] text-left pl-4 font-bold text-[13.5px]">THỐNG KÊ</td>
+            <td colspan="4" class="p-2 sticky left-0 bg-slate-200 shadow-[inset_-1px_0_0_#cbd5e1] text-left pl-4 font-bold text-[13.5px] border-slate-200">THỐNG KÊ</td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-1 border-r border-slate-200 bg-slate-200"
+              class="p-1 border-slate-200 bg-slate-200"
             ></td>
           </tr>
 
           <!-- 1. Tổng -->
           <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Tổng</td>
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
+            <td colspan="2" class="p-2 border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Tổng</td>
+            <td colspan="2" class="p-2 border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ (totals.grand_total * dates.length) }}
             </td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
+              class="p-2 border-b border-slate-200 text-center font-normal text-gray-900"
               :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
             >
               {{ statistics[day.fullDateStr]?.total_rooms ?? 0 }}
@@ -762,15 +762,15 @@ function showExportToast() {
 
           <!-- 2. OOO -->
           <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">OOO</td>
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
+            <td colspan="2" class="p-2 border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">OOO</td>
+            <td colspan="2" class="p-2 border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.ooo ?? 0), 0) }}
             </td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
+              class="p-2 border-b border-slate-200 text-center font-normal text-gray-900"
               :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
               :title="getStatTooltip('OOO', day.fullDateStr)"
             >
@@ -780,15 +780,15 @@ function showExportToast() {
 
           <!-- 3. OOS -->
           <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">OOS</td>
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
+            <td colspan="2" class="p-2 border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">OOS</td>
+            <td colspan="2" class="p-2 border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.oos ?? 0), 0) }}
             </td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
+              class="p-2 border-b border-slate-200 text-center font-normal text-gray-900"
               :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
               :title="getStatTooltip('OOS', day.fullDateStr)"
             >
@@ -798,15 +798,15 @@ function showExportToast() {
 
           <!-- 4. Tổng số phòng có thể bán -->
           <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-gray-900 pl-4 font-semibold">Tổng số phòng có thể bán</td>
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
+            <td colspan="2" class="p-2 border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-gray-900 pl-4 font-semibold">Tổng số phòng có thể bán</td>
+            <td colspan="2" class="p-2 border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.sellable ?? 0), 0) }}
             </td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
+              class="p-2 border-b border-slate-200 text-center font-normal text-gray-900"
               :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
             >
               {{ statistics[day.fullDateStr]?.sellable ?? 0 }}
@@ -815,15 +815,15 @@ function showExportToast() {
 
           <!-- 5. Series -->
           <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Series</td>
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
+            <td colspan="2" class="p-2 border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Series</td>
+            <td colspan="2" class="p-2 border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.series ?? 0), 0) }}
             </td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
+              class="p-2 border-b border-slate-200 text-center font-normal text-gray-900"
               :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
             >
               {{ statistics[day.fullDateStr]?.series ?? 0 }}
@@ -832,15 +832,15 @@ function showExportToast() {
 
           <!-- 6. Allotment -->
           <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Allotment</td>
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
+            <td colspan="2" class="p-2 border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Allotment</td>
+            <td colspan="2" class="p-2 border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.allotment ?? 0), 0) }}
             </td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
+              class="p-2 border-b border-slate-200 text-center font-normal text-gray-900"
               :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
             >
               {{ statistics[day.fullDateStr]?.allotment ?? 0 }}
@@ -849,15 +849,15 @@ function showExportToast() {
 
           <!-- 7. Đặt phòng đảm bảo -->
           <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Đặt phòng đảm bảo</td>
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
+            <td colspan="2" class="p-2 border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Đặt phòng đảm bảo</td>
+            <td colspan="2" class="p-2 border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.bk_guaranteed ?? 0), 0) }}
             </td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
+              class="p-2 border-b border-slate-200 text-center font-normal text-gray-900"
               :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
               :title="getStatTooltip('OCC', day.fullDateStr)"
             >
@@ -867,15 +867,15 @@ function showExportToast() {
 
           <!-- 8. Đặt phòng không đảm bảo -->
           <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Đặt phòng không đảm bảo</td>
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
+            <td colspan="2" class="p-2 border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Đặt phòng không đảm bảo</td>
+            <td colspan="2" class="p-2 border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.bk_nonguaranteed ?? 0), 0) }}
             </td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
+              class="p-2 border-b border-slate-200 text-center font-normal text-gray-900"
               :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
               :title="getStatTooltip('OCC', day.fullDateStr)"
             >
@@ -885,15 +885,15 @@ function showExportToast() {
 
           <!-- 9. Tổng số phòng chiếm dụng (Màu đỏ theo Dòng 13) -->
           <tr class="group border-b border-slate-200 h-10 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-red-600 pl-4 font-semibold">Tổng số phòng chiếm dụng</td>
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-red-600 font-bold">
+            <td colspan="2" class="p-2 border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-red-600 pl-4 font-semibold">Tổng số phòng chiếm dụng</td>
+            <td colspan="2" class="p-2 border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-red-600 font-bold">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.total_occupied ?? 0), 0) }}
             </td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-1 border-r border-b border-slate-200 text-center leading-tight text-red-600 font-semibold text-[12px]"
+              class="p-1 border-b border-slate-200 text-center leading-tight text-red-600 font-semibold text-[12px]"
               :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
               :title="getStatTooltip('OCC', day.fullDateStr)"
             >
@@ -904,15 +904,15 @@ function showExportToast() {
 
           <!-- 10. Phòng trống (Màu đỏ theo Dòng 13) -->
           <tr class="group border-b border-slate-200 h-8 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-red-600 pl-4 font-semibold">Phòng trống</td>
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-red-600 font-bold">
+            <td colspan="2" class="p-2 border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-red-600 pl-4 font-semibold">Phòng trống</td>
+            <td colspan="2" class="p-2 border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] text-red-600 font-bold">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.av ?? 0), 0) }}
             </td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-b border-slate-200 text-center text-red-600 font-semibold text-[12px]"
+              class="p-2 border-b border-slate-200 text-center text-red-600 font-semibold text-[12px]"
               :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
               :title="getStatTooltip('AV', day.fullDateStr)"
             >
@@ -922,15 +922,15 @@ function showExportToast() {
 
           <!-- 11. Phòng nội bộ -->
           <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Phòng nội bộ</td>
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
+            <td colspan="2" class="p-2 border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Phòng nội bộ</td>
+            <td colspan="2" class="p-2 border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.internal_rooms ?? 0), 0) }}
             </td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
+              class="p-2 border-b border-slate-200 text-center font-normal text-gray-900"
               :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
             >
               {{ statistics[day.fullDateStr]?.internal_rooms ?? 0 }}
@@ -939,15 +939,15 @@ function showExportToast() {
 
           <!-- 12. Phòng miễn phí -->
           <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Phòng miễn phí</td>
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
+            <td colspan="2" class="p-2 border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Phòng miễn phí</td>
+            <td colspan="2" class="p-2 border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.free_rooms ?? 0), 0) }}
             </td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
+              class="p-2 border-b border-slate-200 text-center font-normal text-gray-900"
               :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
             >
               {{ statistics[day.fullDateStr]?.free_rooms ?? 0 }}
@@ -956,15 +956,15 @@ function showExportToast() {
 
           <!-- 13. Tổng khách -->
           <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Tổng khách</td>
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
+            <td colspan="2" class="p-2 border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Tổng khách</td>
+            <td colspan="2" class="p-2 border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.total_guests ?? 0), 0) }}
             </td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
+              class="p-2 border-b border-slate-200 text-center font-normal text-gray-900"
               :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
             >
               {{ statistics[day.fullDateStr]?.total_guests ?? 0 }}
@@ -973,15 +973,15 @@ function showExportToast() {
 
           <!-- 14. Phòng đến (Room/Pax) -->
           <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Phòng đến (Room/Pax)</td>
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
+            <td colspan="2" class="p-2 border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Phòng đến (Room/Pax)</td>
+            <td colspan="2" class="p-2 border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.arrivals_rooms ?? 0), 0) }}/{{ dates.reduce((sum, d) => sum + (statistics[d]?.arrivals_pax ?? 0), 0) }}
             </td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
+              class="p-2 border-b border-slate-200 text-center font-normal text-gray-900"
               :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
             >
               {{ statistics[day.fullDateStr]?.arrivals_rooms ?? 0 }}/{{ statistics[day.fullDateStr]?.arrivals_pax ?? 0 }}
@@ -990,15 +990,15 @@ function showExportToast() {
 
           <!-- 15. Phòng đang ở -->
           <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Phòng đang ở</td>
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
+            <td colspan="2" class="p-2 border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Phòng đang ở</td>
+            <td colspan="2" class="p-2 border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.inhouse ?? 0), 0) }}
             </td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
+              class="p-2 border-b border-slate-200 text-center font-normal text-gray-900"
               :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
               :title="getStatTooltip('OCC', day.fullDateStr)"
             >
@@ -1008,15 +1008,15 @@ function showExportToast() {
 
           <!-- 16. Thêm giường -->
           <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Thêm giường</td>
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
+            <td colspan="2" class="p-2 border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Thêm giường</td>
+            <td colspan="2" class="p-2 border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.extra_beds ?? 0), 0) }}
             </td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
+              class="p-2 border-b border-slate-200 text-center font-normal text-gray-900"
               :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
             >
               {{ statistics[day.fullDateStr]?.extra_beds ?? 0 }}
@@ -1025,15 +1025,15 @@ function showExportToast() {
 
           <!-- 17. Phòng hủy -->
           <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Phòng hủy</td>
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
+            <td colspan="2" class="p-2 border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Phòng hủy</td>
+            <td colspan="2" class="p-2 border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.cancellations ?? 0), 0) }}
             </td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
+              class="p-2 border-b border-slate-200 text-center font-normal text-gray-900"
               :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
             >
               {{ statistics[day.fullDateStr]?.cancellations ?? 0 }}
@@ -1042,15 +1042,15 @@ function showExportToast() {
 
           <!-- 18. Phòng noshow -->
           <tr class="group border-b border-slate-200 h-8 text-gray-900 hover:bg-slate-50 text-[12px]">
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Phòng noshow</td>
-            <td colspan="2" class="p-2 border-r border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
+            <td colspan="2" class="p-2 border-b border-slate-200 sticky left-0 bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] pl-4 font-semibold text-gray-900">Phòng noshow</td>
+            <td colspan="2" class="p-2 border-b border-slate-200 text-center sticky left-[250px] bg-white group-hover:bg-slate-50 shadow-[inset_-1px_0_0_#e2e8f0] font-bold text-gray-900">
               {{ dates.reduce((sum, d) => sum + (statistics[d]?.noshow ?? 0), 0) }}
             </td>
             <td 
               v-for="day in days" 
               :key="day.fullDateStr" 
               :colspan="activeSubColumns.length"
-              class="p-2 border-r border-b border-slate-200 text-center font-normal text-gray-900"
+              class="p-2 border-b border-slate-200 text-center font-normal text-gray-900"
               :class="[day.isWeekend ? 'bg-[#8cc4fb] group-hover:bg-[#72b5f7]' : 'group-hover:bg-slate-50']"
             >
               {{ statistics[day.fullDateStr]?.noshow ?? 0 }}

@@ -62,19 +62,21 @@
 
                 <div class="flex items-center gap-2">
                   <div class="relative flex-1 min-w-0">
-                    <input 
-                      type="date" 
+                    <SingleDatePicker
                       v-model="tempFromDate"
-                      class="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-[12px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] transition-all min-w-0 bg-white"
+                      :start-date="tempFromDate || systemDate"
+                      placeholder="dd/mm/yyyy"
+                      four-digit-year
                       @change="tempDateRangeType = 'custom'"
                     />
                   </div>
                   <span class="text-slate-400 font-medium shrink-0">~</span>
                   <div class="relative flex-1 min-w-0">
-                    <input 
-                      type="date" 
+                    <SingleDatePicker
                       v-model="tempToDate"
-                      class="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-[12px] text-slate-700 focus:outline-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] transition-all min-w-0 bg-white"
+                      :start-date="tempToDate || tempFromDate || systemDate"
+                      placeholder="dd/mm/yyyy"
+                      four-digit-year
                       @change="tempDateRangeType = 'custom'"
                     />
                   </div>
@@ -198,42 +200,42 @@
         <table class="w-full text-left border-collapse whitespace-nowrap min-w-max text-xs">
           <thead class="bg-slate-100/90 text-slate-650 text-[11px] font-bold border-b border-slate-200 sticky top-0 uppercase tracking-wider z-10">
             <tr>
-              <th class="py-3 px-4 border-r border-slate-200 text-center">Mã</th>
-              <th class="py-3 px-4 border-r border-slate-200 text-center">Mã ĐK</th>
-              <th class="py-3 px-4 border-r border-slate-200 text-center">Phòng</th>
-              <th class="py-3 px-4 border-r border-slate-200 text-center">Giờ</th>
-              <th class="py-3 px-4 border-r border-slate-200 text-center">Miễn phí</th>
-              <th class="py-3 px-4 border-r border-slate-200 text-right">Giá</th>
-              <th class="py-3 px-4 border-r border-slate-200 text-center">Mã thanh toán</th>
-              <th class="py-3 px-4 border-r border-slate-200 text-center">Mã hóa đơn tay</th>
-              <th class="py-3 px-4 border-r border-slate-200 text-center">Người dùng</th>
-              <th class="py-3 px-4 border-r border-slate-200 text-center">Đã xoá</th>
-              <th class="py-3 px-4 border-r border-slate-200 text-center">Bộ phận</th>
-              <th class="py-3 px-4 text-center">Khu Vực</th>
+              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Mã</th>
+              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Mã ĐK</th>
+              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Phòng</th>
+              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Giờ</th>
+              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Miễn Phí</th>
+              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Giá</th>
+              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Mã Thanh Toán</th>
+              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Mã Hóa Đơn Tay</th>
+              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Người Dùng</th>
+              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Đã Xoá</th>
+              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Bộ Phận</th>
+              <th class="py-3 px-4 text-center align-middle border-r border-slate-200 border">Khu Vực</th>
             </tr>
           </thead>
 
           <tbody v-if="isSearching">
             <!-- loading skeleton state -->
             <tr v-for="i in 5" :key="'sk-'+i" class="animate-pulse">
-              <td class="py-4 px-4"><div class="h-3.5 bg-slate-200 rounded w-10 mx-auto"></div></td>
-              <td class="py-4 px-4"><div class="h-3.5 bg-slate-200 rounded w-12 mx-auto"></div></td>
-              <td class="py-4 px-4"><div class="h-3.5 bg-slate-200 rounded w-16 mx-auto"></div></td>
-              <td class="py-4 px-4"><div class="h-3.5 bg-slate-200 rounded w-24 mx-auto"></div></td>
-              <td class="py-4 px-4"><div class="h-3.5 bg-slate-200 rounded w-8 mx-auto"></div></td>
-              <td class="py-4 px-4"><div class="h-3.5 bg-slate-200 rounded w-16 ml-auto"></div></td>
-              <td class="py-4 px-4"><div class="h-3.5 bg-slate-200 rounded w-14 mx-auto"></div></td>
-              <td class="py-4 px-4"><div class="h-3.5 bg-slate-200 rounded w-10 mx-auto"></div></td>
-              <td class="py-4 px-4"><div class="h-3.5 bg-slate-200 rounded w-20 mx-auto"></div></td>
-              <td class="py-4 px-4"><div class="h-3.5 bg-slate-200 rounded w-8 mx-auto"></div></td>
-              <td class="py-4 px-4"><div class="h-3.5 bg-slate-200 rounded w-16 mx-auto"></div></td>
-              <td class="py-4 px-4"><div class="h-3.5 bg-slate-200 rounded w-12 mx-auto"></div></td>
+              <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-10 mx-auto"></div></td>
+              <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-12 mx-auto"></div></td>
+              <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-16 mx-auto"></div></td>
+              <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-24 mx-auto"></div></td>
+              <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-8 mx-auto"></div></td>
+              <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-16 ml-auto"></div></td>
+              <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-14 mx-auto"></div></td>
+              <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-10 mx-auto"></div></td>
+              <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-20 mx-auto"></div></td>
+              <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-8 mx-auto"></div></td>
+              <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-16 mx-auto"></div></td>
+              <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-12 mx-auto"></div></td>
             </tr>
           </tbody>
 
           <tbody v-else-if="!hasLoadedData" class="divide-y divide-slate-100">
             <tr>
-              <td colspan="12" class="p-20 text-center bg-white">
+              <td colspan="12" class="p-20 text-center bg-white border-slate-200">
                 <div class="flex flex-col items-center justify-center gap-3">
                   <div class="bg-slate-50 rounded-full p-4 border border-slate-100 animate-bounce">
                     <Inbox class="w-10 h-10 text-slate-350" stroke-width="1.5" />
@@ -249,7 +251,7 @@
 
           <tbody v-else-if="filteredInvoices.length === 0">
             <tr>
-              <td colspan="12" class="p-20 text-center bg-white text-slate-400">
+              <td colspan="12" class="p-20 text-center bg-white text-slate-400 border-slate-200">
                 <div class="flex flex-col items-center justify-center gap-3">
                   <span class="text-4xl">🔍</span>
                   <p class="font-bold text-slate-700 text-[14px]">Không tìm thấy hóa đơn phù hợp</p>
@@ -266,30 +268,30 @@
               class="hover:bg-slate-50/80 transition-colors text-slate-700 font-medium cursor-pointer"
               @click="openInvoiceDetail(inv)"
             >
-              <td class="py-2.5 px-4 font-bold text-sky-800 border-r border-slate-100 text-center">{{ inv.id }}</td>
-              <td class="py-2.5 px-4 font-mono text-center border-r border-slate-100">{{ inv.regCode }}</td>
-              <td class="py-2.5 px-4 font-bold text-center text-sky-750 border-r border-slate-100">Phòng {{ inv.room }}</td>
-              <td class="py-2.5 px-4 text-center border-r border-slate-100">{{ inv.time }}</td>
-              <td class="py-2.5 px-4 text-center border-r border-slate-100">
+              <td class="py-2.5 px-4 font-bold text-sky-800 border-slate-100 text-center">{{ inv.id }}</td>
+              <td class="py-2.5 px-4 font-mono text-center border-slate-100">{{ inv.regCode }}</td>
+              <td class="py-2.5 px-4 font-bold text-center text-sky-750 border-slate-100">Phòng {{ inv.room }}</td>
+              <td class="py-2.5 px-4 text-center border-slate-100">{{ inv.time }}</td>
+              <td class="py-2.5 px-4 text-center border-slate-100">
                 <span class="px-1.5 py-0.5 rounded text-[10px] font-bold" :class="inv.isFree ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'">
                   {{ inv.isFree ? 'FREE' : 'NO' }}
                 </span>
               </td>
-              <td class="py-2.5 px-4 text-right border-r border-slate-100 font-bold text-slate-800">{{ formatCurrency(inv.price) }}</td>
-              <td class="py-2.5 px-4 text-center border-r border-slate-100 font-mono text-xs">{{ inv.payCode || '—' }}</td>
-              <td class="py-2.5 px-4 text-center border-r border-slate-100 font-mono text-xs">{{ inv.manualCode || '—' }}</td>
-              <td class="py-2.5 px-4 border-r border-slate-100 text-center">{{ inv.user }}</td>
-              <td class="py-2.5 px-4 text-center border-r border-slate-100">
+              <td class="py-2.5 px-4 text-right border-slate-100 font-bold text-slate-800">{{ formatCurrency(inv.price) }}</td>
+              <td class="py-2.5 px-4 text-center border-slate-100 font-mono text-xs">{{ inv.payCode || '—' }}</td>
+              <td class="py-2.5 px-4 text-center border-slate-100 font-mono text-xs">{{ inv.manualCode || '—' }}</td>
+              <td class="py-2.5 px-4 border-slate-100 text-center">{{ inv.user }}</td>
+              <td class="py-2.5 px-4 text-center border-slate-100">
                 <span class="px-1.5 py-0.5 rounded text-[10px] font-bold" :class="inv.isDeleted ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 text-slate-500'">
                   {{ inv.isDeleted ? 'YES' : 'NO' }}
                 </span>
               </td>
-              <td class="py-2.5 px-4 text-center border-r border-slate-100">
+              <td class="py-2.5 px-4 text-center border-slate-100">
                 <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold" :class="getDeptClass(inv.dept)">
                   {{ inv.dept }}
                 </span>
               </td>
-              <td class="py-2.5 px-4 font-semibold text-slate-600 text-center">{{ inv.zone }}</td>
+              <td class="py-2.5 px-4 font-semibold text-slate-600 text-center border-slate-200">{{ inv.zone }}</td>
             </tr>
           </tbody>
         </table>
@@ -348,18 +350,18 @@
             <div class="mt-5 overflow-hidden rounded-lg border border-slate-200">
               <table class="w-full border-collapse text-xs">
                 <thead class="bg-slate-100 text-slate-700">
-                  <tr><th class="border-r border-slate-200 px-3 py-2 text-left">STT</th><th class="border-r border-slate-200 px-3 py-2 text-left">Sản phẩm</th><th class="border-r border-slate-200 px-3 py-2 text-right">Số lượng</th><th class="border-r border-slate-200 px-3 py-2 text-right">Đơn giá</th><th class="px-3 py-2 text-right">Số tiền</th></tr>
+                  <tr><th class="border-r border-slate-200 px-3 py-2 text-center align-middle border">STT</th><th class="border-r border-slate-200 px-3 py-2 text-center align-middle border">Sản Phẩm</th><th class="border-r border-slate-200 px-3 py-2 text-center align-middle border">Số Lượng</th><th class="border-r border-slate-200 px-3 py-2 text-center align-middle border">Đơn Giá</th><th class="px-3 py-2 text-center align-middle border-r border-slate-200 border">Số Tiền</th></tr>
                 </thead>
                 <tbody>
                   <tr v-for="(item, index) in detailTarget.products" :key="`${detailTarget.id}-${index}`" class="border-t border-slate-200">
-                    <td class="border-r border-slate-200 px-3 py-2">{{ index + 1 }}</td>
-                    <td class="border-r border-slate-200 px-3 py-2">{{ item.name || '—' }}</td>
-                    <td class="border-r border-slate-200 px-3 py-2 text-right">{{ item.quantity || 0 }}</td>
-                    <td class="border-r border-slate-200 px-3 py-2 text-right">{{ formatCurrency(item.rate || 0) }}</td>
-                    <td class="px-3 py-2 text-right">{{ formatCurrency(item.amount || 0) }}</td>
+                    <td class="border-slate-200 px-3 py-2">{{ index + 1 }}</td>
+                    <td class="border-slate-200 px-3 py-2">{{ item.name || '—' }}</td>
+                    <td class="border-slate-200 px-3 py-2 text-right">{{ item.quantity || 0 }}</td>
+                    <td class="border-slate-200 px-3 py-2 text-right">{{ formatCurrency(item.rate || 0) }}</td>
+                    <td class="px-3 py-2 text-right border-slate-200">{{ formatCurrency(item.amount || 0) }}</td>
                   </tr>
-                  <tr v-if="!detailTarget.products.length" class="border-t border-slate-200"><td colspan="5" class="px-3 py-6 text-center text-slate-400">Không có chi tiết sản phẩm</td></tr>
-                  <tr class="border-t border-slate-200 font-bold"><td colspan="4" class="px-3 py-2 text-left">Tổng tiền</td><td class="px-3 py-2 text-right">{{ formatCurrency(detailTarget.price) }}</td></tr>
+                  <tr v-if="!detailTarget.products.length" class="border-t border-slate-200"><td colspan="5" class="px-3 py-6 text-center text-slate-400 border-slate-200">Không có chi tiết sản phẩm</td></tr>
+                  <tr class="border-t border-slate-200 font-bold"><td colspan="4" class="px-3 py-2 text-left border-slate-200">Tổng tiền</td><td class="px-3 py-2 text-right border-slate-200">{{ formatCurrency(detailTarget.price) }}</td></tr>
                 </tbody>
               </table>
             </div>
@@ -396,9 +398,12 @@ import { Calendar, Plus, Inbox, ChevronDown, CheckCircle2, X, HelpCircle } from 
 import PostBillHousekeepingTab from './PostBillHousekeepingTab.vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
+import { useAuthStore } from '@/stores/auth-store'
+import SingleDatePicker from '@/components/SingleDatePicker.vue'
 
 const route = useRoute()
 const uiStore = useUiStore()
+const authStore = useAuthStore()
 
 // Mock Invoice data
 const mockInvoices = ref([
@@ -466,6 +471,7 @@ onMounted(async () => {
     const businessDate = data?.data?.system_date
     if (businessDate) {
       systemDate.value = businessDate
+      authStore.setSystemDate(businessDate)
       fromDate.value = businessDate
       toDate.value = businessDate
       tempFromDate.value = businessDate
@@ -498,7 +504,7 @@ const getToday = () => {
   return d.toISOString().split('T')[0]
 }
 
-const systemDate = ref(getToday())
+const systemDate = ref(authStore.systemDate || localStorage.getItem('pms_system_date') || getToday())
 const fromDate = ref(systemDate.value)
 const toDate = ref(systemDate.value)
 const tempFromDate = ref(systemDate.value)
@@ -746,7 +752,7 @@ const printInvoice = (invoice) => {
     uiStore.showToast('Trình duyệt đã chặn cửa sổ in.', 'warning')
     return
   }
-  printWindow.document.write(`<html><head><title>Hóa đơn #${invoice.id}</title><style>body{font-family:Arial,sans-serif;padding:24px}table{width:100%;border-collapse:collapse;margin-top:16px}th,td{border:1px solid #ddd;padding:8px;text-align:left}th:nth-child(2),td:nth-child(2),th:nth-child(3),td:nth-child(3){text-align:right}</style></head><body><h2>HÓA ĐƠN DỊCH VỤ BUỒNG PHÒNG</h2><p>Mã HĐ: ${invoice.id} | Mã ĐK: ${invoice.regCode} | Phòng: ${invoice.room}</p><p>Ngày giờ: ${invoice.time} | Bộ phận: ${invoice.dept} | Outlet: ${invoice.zone}</p><table><thead><tr><th>Sản phẩm</th><th>Số lượng</th><th>Thành tiền</th></tr></thead><tbody>${rows}</tbody></table><h3>Tổng tiền: ${formatCurrency(invoice.price)}</h3></body></html>`)
+  printWindow.document.write(`<html><head><title>Hóa đơn #${invoice.id}</title><style>body{font-family:Arial,sans-serif;padding:24px}table{width:100%;border-collapse:collapse;margin-top:16px}th,td{border:1px solid #ddd;padding:8px;text-align:left}th:nth-child(2),td:nth-child(2),th:nth-child(3),td:nth-child(3){text-align:right}</style></head><body><h2>HÓA ĐƠN DỊCH VỤ BUỒNG PHÒNG</h2><p>Mã HĐ: ${invoice.id} | Mã ĐK: ${invoice.regCode} | Phòng: ${invoice.room}</p><p>Ngày giờ: ${invoice.time} | Bộ phận: ${invoice.dept} | Outlet: ${invoice.zone}</p><table><thead><tr><th class="text-center align-middle border border-slate-200">Sản Phẩm</th><th class="text-center align-middle border border-slate-200">Số Lượng</th><th class="text-center align-middle border border-slate-200">Thành Tiền</th></tr></thead><tbody>${rows}</tbody></table><h3>Tổng tiền: ${formatCurrency(invoice.price)}</h3></body></html>`)
   printWindow.document.close()
   printWindow.focus()
   printWindow.print()

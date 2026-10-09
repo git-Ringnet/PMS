@@ -237,11 +237,11 @@ async function saveScreen() {
           <table class="w-full border-collapse text-xs">
             <thead>
               <tr class="bg-slate-50 text-slate-600 font-bold border-b border-slate-100">
-                <th class="text-left p-2.5 pl-6">Màn hình</th>
-                <th class="w-20 text-center p-2.5">View</th>
-                <th class="w-20 text-center p-2.5">Add</th>
-                <th class="w-20 text-center p-2.5">Delete</th>
-                <th class="w-20 text-center p-2.5">Edit</th>
+                <th class="text-center p-2.5 pl-6 align-middle border-r border-slate-200 border">Màn Hình</th>
+                <th class="w-20 text-center p-2.5 align-middle border-r border-slate-200 border">View</th>
+                <th class="w-20 text-center p-2.5 align-middle border-r border-slate-200 border">Add</th>
+                <th class="w-20 text-center p-2.5 align-middle border-r border-slate-200 border">Delete</th>
+                <th class="w-20 text-center p-2.5 align-middle border-r border-slate-200 border">Edit</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
@@ -250,11 +250,11 @@ async function saveScreen() {
                 :key="row.key"
                 class="hover:bg-slate-50/80 transition-colors"
               >
-                <td class="p-2.5 pl-6">
+                <td class="p-2.5 pl-6 border-slate-200">
                   <span class="font-semibold text-slate-800">{{ row.name }}</span>
                   <small v-if="row.path" class="block text-slate-400 text-[10px]">{{ row.path }}</small>
                 </td>
-                <td v-for="action in ['view', 'add', 'delete', 'edit']" :key="action" class="text-center p-2.5">
+                <td v-for="action in ['view', 'add', 'delete', 'edit']" :key="action" class="text-center p-2.5 border-slate-200">
                   <input
                     v-if="row.actions[action]"
                     type="checkbox"
@@ -266,7 +266,7 @@ async function saveScreen() {
                 </td>
               </tr>
               <tr v-if="!screenRows.filter(r => r.module === module).length">
-                <td colspan="5" class="p-4 text-center text-slate-400 text-xs italic">
+                <td colspan="5" class="p-4 text-center text-slate-400 text-xs italic border-slate-200">
                   Chưa có màn hình nào trong phân hệ này
                 </td>
               </tr>

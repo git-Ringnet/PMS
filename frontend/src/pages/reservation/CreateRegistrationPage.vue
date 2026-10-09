@@ -137,7 +137,7 @@ function formatLocalYYYYMMDD(dVal) {
   return `${year}-${month}-${day}`
 }
 
-const systemDate = ref(formatLocalYYYYMMDD(new Date()))
+const systemDate = ref(authStore.systemDate || localStorage.getItem('pms_system_date') || formatLocalYYYYMMDD(new Date()))
 const hotelSettings = ref({})
 const isSyncRoomDateEnabled = computed(() => {
   const val = hotelSettings.value?.SyncRoomDateByBookingDate ?? hotelSettings.value?.sync_room_date_by_booking_date
@@ -776,32 +776,32 @@ watch(visibleColumns, (newVal) => {
 const showColumnSelector = ref(false)
 
 const columns = ref([
-  { key: 'type', label: 'Loại phòng', visible: true, width: 'w-[125px]' },
-  { key: 'shape', label: 'Dạng phòng', visible: true, width: 'w-[75px]', center: true },
-  { key: 'roomNumber', label: 'Số phòng', visible: true, width: 'auto', center: true },
-  { key: 'checkIn', label: 'Ngày đến', visible: true, width: 'w-[100px]', center: true },
-  { key: 'checkOut', label: 'Ngày đi', visible: true, width: 'w-[100px]', center: true },
+  { key: 'type', label: 'Loại Phòng', visible: true, width: 'w-[125px]' },
+  { key: 'shape', label: 'Dạng Phòng', visible: true, width: 'w-[75px]', center: true },
+  { key: 'roomNumber', label: 'Số Phòng', visible: true, width: 'auto', center: true },
+  { key: 'checkIn', label: 'Ngày Đến', visible: true, width: 'w-[100px]', center: true },
+  { key: 'checkOut', label: 'Ngày Đi', visible: true, width: 'w-[100px]', center: true },
   { key: 'nights', label: 'Đêm', visible: true, width: 'w-[60px]', center: true },
   { key: 'price', label: 'Giá', visible: true, width: 'w-[95px]', right: true },
-  { key: 'rateCode', label: 'Mã giá phòng', visible: true, width: 'auto' },
-  { key: 'adjustment', label: 'Giảm/tăng giá', visible: true, width: 'w-[80px]', right: true },
-  { key: 'guestName', label: 'Tên khách', visible: true, width: 'auto' },
+  { key: 'rateCode', label: 'Mã Giá Phòng', visible: true, width: 'auto' },
+  { key: 'adjustment', label: 'Giảm/Tăng Giá', visible: true, width: 'w-[80px]', right: true },
+  { key: 'guestName', label: 'Tên Khách', visible: true, width: 'auto' },
   { key: 'adults', label: 'N.Lớn', visible: true, width: 'w-[65px]', center: true },
-  { key: 'babies', label: 'Em bé', visible: true, width: 'w-[65px]', center: true },
-  { key: 'children', label: 'Trẻ em', visible: true, width: 'w-[65px]', center: true },
-  { key: 'childBreakfast', label: 'Chi tiết ăn sáng trẻ', visible: true, width: 'w-[130px]', center: true },
-  { key: 'breakfast', label: 'Ăn sáng', visible: true, width: 'w-[75px]', center: true },
-  { key: 'extraBed', label: 'Thêm giường', visible: true, width: 'w-[90px]', center: true },
-  { key: 'extraBedPrice', label: 'Giá thêm giường', visible: true, width: 'w-[115px]', right: true },
-  { key: 'hourly', label: 'Ở theo giờ', visible: true, width: 'w-[85px]', center: true },
-  { key: 'specialRequests', label: 'Yêu cầu đặc biệt', visible: true, width: 'w-[125px]', center: true },
-  { key: 'arrivalTime', label: 'Giờ đến', visible: true, width: 'w-[90px]', center: true },
-  { key: 'hoursOut', label: 'Giờ đi', visible: true, width: 'w-[90px]', center: true },
-  { key: 'isPreassigned', label: 'Đặt trước', visible: false, width: 'w-[80px]', center: true },
-  { key: 'initialRoomClass', label: 'LP Khởi tạo', visible: true, width: 'w-[105px]' },
-  { key: 'transferredFrom', label: 'Phòng chuyển', visible: true, width: 'w-[100px]', center: true },
+  { key: 'babies', label: 'Em Bé', visible: true, width: 'w-[65px]', center: true },
+  { key: 'children', label: 'Trẻ Em', visible: true, width: 'w-[65px]', center: true },
+  { key: 'childBreakfast', label: 'Chi Tiết Ăn Sáng Trẻ', visible: true, width: 'w-[130px]', center: true },
+  { key: 'breakfast', label: 'Ăn Sáng', visible: true, width: 'w-[75px]', center: true },
+  { key: 'extraBed', label: 'Thêm Giường', visible: true, width: 'w-[90px]', center: true },
+  { key: 'extraBedPrice', label: 'Giá Thêm Giường', visible: true, width: 'w-[115px]', right: true },
+  { key: 'hourly', label: 'Ở Theo Giờ', visible: true, width: 'w-[85px]', center: true },
+  { key: 'specialRequests', label: 'Yêu Cầu Đặc Biệt', visible: true, width: 'w-[125px]', center: true },
+  { key: 'arrivalTime', label: 'Giờ Đến', visible: true, width: 'w-[90px]', center: true },
+  { key: 'hoursOut', label: 'Giờ Đi', visible: true, width: 'w-[90px]', center: true },
+  { key: 'isPreassigned', label: 'Đặt Trước', visible: false, width: 'w-[80px]', center: true },
+  { key: 'initialRoomClass', label: 'LP Khởi Tạo', visible: true, width: 'w-[105px]' },
+  { key: 'transferredFrom', label: 'Phòng Chuyển', visible: true, width: 'w-[100px]', center: true },
   { key: 'allotmentCode', label: 'Mã ALM', visible: true, width: 'w-[100px]' },
-  { key: 'roomCode', label: 'Mã phòng', visible: true, width: 'w-[100px]' },
+  { key: 'roomCode', label: 'Mã Phòng', visible: true, width: 'w-[100px]' },
 ])
 
 const tableWidth = computed(() => {
@@ -2321,8 +2321,10 @@ async function loadDropdowns() {
 
     if (data.system_date && data.system_date.system_date) {
       systemDate.value = parseApiDate(data.system_date.system_date)
+      authStore.setSystemDate(systemDate.value)
     } else if (data.system_time) {
       systemDate.value = parseApiDate(data.system_time)
+      authStore.setSystemDate(systemDate.value)
     } else {
       systemDate.value = ''
     }
@@ -4981,23 +4983,22 @@ function parseDateVi(dateStr) {
 
 function formatDateVi(dateStr) {
   if (!dateStr) return ''
-  const str = String(dateStr).trim()
+  const str = String(dateStr).split('T')[0].split(' ')[0].trim()
   const parts = str.split(/[-\/]/)
   if (parts.length === 3) {
     if (parts[0].length === 4) {
-      const yy = parts[0].slice(-2)
-      return `${parts[2].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${yy}`
+      return `${parts[2].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[0]}`
     } else if (parts[2].length === 4) {
-      const yy = parts[2].slice(-2)
-      return `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${yy}`
-    } else if (parts[2].length === 2) {
       return `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[2]}`
+    } else if (parts[2].length === 2) {
+      const yy = parseInt(parts[2], 10)
+      const fullYear = yy >= 50 ? 1900 + yy : 2000 + yy
+      return `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${fullYear}`
     }
   }
   const d = new Date(str)
-  if (isNaN(d)) return str
-  const yy = String(d.getFullYear()).slice(-2)
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${yy}`
+  if (isNaN(d.getTime())) return str
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`
 }
 
 const vacantRoomsMap = ref({})
@@ -6559,7 +6560,7 @@ defineExpose({
             </colgroup>
             <thead>
               <tr class="bg-slate-50 border-b border-slate-200 text-gray-900 font-bold select-none whitespace-nowrap h-9 text-xs">
-                <th class="p-0 border-r border-slate-200 text-center" colspan="4">
+                <th class="p-0 border-r border-slate-200 text-center align-middle border" colspan="4">
                   <div class="flex items-center justify-start h-full">
                     <div class="w-[30px] shrink-0"></div>
                     <div class="w-[30px] shrink-0 flex items-center justify-center">
@@ -6567,7 +6568,7 @@ defineExpose({
                     </div>
                   </div>
                 </th>
-                <th class="p-2 border-r border-slate-200 text-center w-[40px]">STT</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[40px] align-middle border">STT</th>
                 <th v-for="col in columns.filter(c => c.visible)" 
                     :key="col.key"
                     draggable="true"
@@ -6575,16 +6576,16 @@ defineExpose({
                     @dragover.prevent
                     @drop="handleDrop(col.key)"
                     @click="handleSortRoomColumn(col.key)"
-                    class="p-1 border-r border-slate-200 select-none hover:bg-slate-100 transition-colors group/hdr"
+                    class="p-1 border-r border-slate-200 select-none hover:bg-slate-100 transition-colors group/hdr text-center align-middle border"
                     :class="[
                       col.width, 
                       col.center ? 'text-center' : '', 
-                      col.right ? 'text-right' : '',
+                      col.right ? 'text-center' : '',
                       ['checkIn', 'checkOut', 'roomNumber'].includes(col.key) ? 'cursor-pointer' : 'cursor-move'
                     ]"
                 >
                   <div class="flex items-center justify-center gap-0.5 w-full relative">
-                    <span class="text-xs uppercase font-semibold text-slate-700 tracking-wider text-center leading-tight whitespace-normal break-words">{{ col.label }}</span>
+                    <span class="text-xs font-semibold text-slate-700 tracking-wider text-center leading-tight whitespace-normal break-words">{{ col.label }}</span>
                     <span v-if="['checkIn', 'checkOut', 'roomNumber'].includes(col.key)" class="inline-flex items-center ml-0.5">
                       <i v-if="roomSortField === col.key" :class="roomSortOrder === 'asc' ? 'fa-solid fa-arrow-up-short-wide text-blue-600' : 'fa-solid fa-arrow-down-wide-short text-blue-600'" class="text-[10px]"></i>
                       <i v-else class="fa-solid fa-sort text-slate-300 text-[9px] group-hover/hdr:text-slate-500"></i>
@@ -6592,7 +6593,7 @@ defineExpose({
                     <span class="text-slate-300 text-[8px] font-black cursor-grab select-none shrink-0 opacity-40 group-hover/hdr:opacity-100 transition-opacity ml-0.5">⋮</span>
                   </div>
                 </th>
-                <th class="p-2 text-right w-[120px] bg-slate-100 text-slate-700 font-extrabold sticky-shadow-left z-20">Tổng cộng</th>
+                <th class="p-2 text-center w-[120px] bg-slate-100 text-slate-700 font-extrabold sticky-shadow-left z-20 align-middle border-r border-slate-200 border">Tổng Cộng</th>
               </tr>
             </thead>
             <tbody class="font-semibold text-gray-900 select-text">
@@ -6606,8 +6607,8 @@ defineExpose({
                       class="bg-slate-50/70 border-b border-slate-200 font-bold h-8 text-gray-900 cursor-pointer select-none"
                       @click="toggleGroupCollapse(group.typeName)"
                     >
-                      <td class="p-2 border-r border-slate-200 text-center bg-slate-100/10"></td>
-                      <td class="p-2 border-r border-slate-200 text-center" @click.stop>
+                      <td class="p-2 border-slate-200 text-center bg-slate-100/10"></td>
+                      <td class="p-2 border-slate-200 text-center" @click.stop>
                         <button 
                           @click="toggleGroupCollapse(group.typeName)" 
                           class="w-5 h-5 flex items-center justify-center rounded bg-[#8cc3f3] hover:bg-[#6baae6] text-white font-bold select-none cursor-pointer border-none"
@@ -6616,17 +6617,17 @@ defineExpose({
                           {{ collapsedSections[group.typeName] ? '+' : '−' }}
                         </button>
                       </td>
-                      <td class="p-2 border-r border-slate-200 text-center" @click.stop>
+                      <td class="p-2 border-slate-200 text-center" @click.stop>
                         <input 
                           type="checkbox" 
                           :checked="group.rooms.length > 0 && group.rooms.every(r => selectedRows.includes(r.id))" 
                           @change="e => handleSelectAllInGroup(group.rooms, e.target.checked)" 
                         />
                       </td>
-                      <td :colspan="columns.filter(c => c.visible).length + 2" class="p-2 text-gray-900 font-bold text-xs uppercase tracking-wider pl-4">
+                      <td :colspan="columns.filter(c => c.visible).length + 2" class="p-2 text-gray-900 font-bold text-xs uppercase tracking-wider pl-4 border-r border-slate-200">
                         {{ group.typeName }} ({{ group.rooms.length }})
                       </td>
-                      <td class="bg-[#e2e8f0] sticky-shadow-left z-10"></td>
+                      <td class="bg-[#e2e8f0] sticky-shadow-left z-10 border-slate-200"></td>
                     </tr>
 
                   <!-- Rooms in Group -->
@@ -6641,9 +6642,9 @@ defineExpose({
                         :title="isRoomEditLocked(room) ? 'Phòng đã phát sinh, không được chỉnh sửa' : ''"
                         @click="handleRowSelect(room.id)"
                       >
-                        <td class="p-2 border-r border-slate-200 text-center bg-slate-100/10"></td>
-                        <td class="p-2 border-r border-slate-200 text-center bg-slate-100/10"></td>
-                        <td class="p-2 border-r border-slate-200 text-center" @click.stop>
+                        <td class="p-2 border-slate-200 text-center bg-slate-100/10"></td>
+                        <td class="p-2 border-slate-200 text-center bg-slate-100/10"></td>
+                        <td class="p-2 border-slate-200 text-center" @click.stop>
                           <button 
                             @click="toggleRoomExpand(room)"
                             class="w-5 h-5 flex items-center justify-center rounded transition-colors text-white font-bold select-none cursor-pointer"
@@ -6653,10 +6654,10 @@ defineExpose({
                             {{ expandedRooms.includes(room.id) ? '−' : '+' }}
                           </button>
                         </td>
-                        <td class="p-2 border-r border-slate-200 text-center" @click.stop>
+                        <td class="p-2 border-slate-200 text-center" @click.stop>
                           <input type="checkbox" :checked="selectedRows.includes(room.id)" @change="handleRowSelect(room.id)" />
                         </td>
-                        <td class="p-2 border-r border-slate-200 text-center text-gray-500 font-semibold bg-slate-50/30">{{ idx + 1 }}</td>
+                        <td class="p-2 border-slate-200 text-center text-gray-500 font-semibold bg-slate-50/30">{{ idx + 1 }}</td>
                         <td v-for="col in columns.filter(c => c.visible)" 
                             :key="col.key" 
                             class="p-2 border-r border-slate-200" 
@@ -7069,17 +7070,17 @@ defineExpose({
                           <span v-else>{{ room.roomCode || '-' }}</span>
                         </template>
                         </td>
-                        <td class="p-2 text-right text-gray-900 font-bold bg-[#f1f5f9] group-hover:bg-[#e2e8f0] sticky-shadow-left z-10" @click.stop>{{ (Number(room.total) || 0).toLocaleString('en-US') }}</td>
+                        <td class="p-2 text-right text-gray-900 font-bold bg-[#f1f5f9] group-hover:bg-[#e2e8f0] sticky-shadow-left z-10 border-slate-200" @click.stop>{{ (Number(room.total) || 0).toLocaleString('en-US') }}</td>
                       </tr>
 
                       <!-- Expanded Services Row -->
                       <tr v-if="expandedRooms.includes(room.id)" :key="`services-${room.id}`" class="bg-slate-50/30">
-                        <td class="p-0 border-r border-b border-slate-200 bg-slate-50/10"></td>
-                        <td class="p-0 border-r border-b border-slate-200 bg-slate-50/10"></td>
-                        <td class="p-0 border-r border-b border-slate-200 bg-slate-50/10"></td>
-                        <td class="p-0 border-r border-b border-slate-200 bg-slate-50/10"></td>
-                        <td class="p-0 border-r border-b border-slate-200 bg-slate-50/10"></td>
-                        <td :colspan="columns.filter(c => c.visible).length + 1" class="p-3 border-b border-slate-200 bg-slate-50/20 text-left pl-6">
+                        <td class="p-0 border-b border-slate-200 bg-slate-50/10"></td>
+                        <td class="p-0 border-b border-slate-200 bg-slate-50/10"></td>
+                        <td class="p-0 border-b border-slate-200 bg-slate-50/10"></td>
+                        <td class="p-0 border-b border-slate-200 bg-slate-50/10"></td>
+                        <td class="p-0 border-b border-slate-200 bg-slate-50/10"></td>
+                        <td :colspan="columns.filter(c => c.visible).length + 1" class="p-3 border-b border-slate-200 bg-slate-50/20 text-left pl-6 border-r">
                           <div class="max-w-[850px] border border-slate-200 rounded shadow-xs overflow-visible bg-white my-1" @click.stop>
                             <table class="w-full text-left border-collapse text-[11px] table-fixed">
                               <colgroup>
@@ -7094,14 +7095,14 @@ defineExpose({
                               </colgroup>
                               <thead>
                                 <tr class="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 select-none">
-                                  <th class="p-2 border-r border-slate-200">Ngày</th>
-                                  <th class="p-2 border-r border-slate-200">Dịch vụ</th>
-                                  <th class="p-2 border-r border-slate-200">Mã Giá Phòng</th>
-                                  <th class="p-2 border-r border-slate-200 text-center">Tăng/giảm giá</th>
-                                  <th class="p-2 border-r border-slate-200 text-center">Số lượng</th>
-                                  <th class="p-2 border-r border-slate-200 text-right">Đơn giá</th>
-                                  <th class="p-2 border-r border-slate-200 text-right">Thành tiền</th>
-                                  <th class="p-2 text-center">GIT/FIT</th>
+                                  <th class="p-2 border-r border-slate-200 text-center align-middle border">Ngày</th>
+                                  <th class="p-2 border-r border-slate-200 text-center align-middle border">Dịch Vụ</th>
+                                  <th class="p-2 border-r border-slate-200 text-center align-middle border">Mã Giá Phòng</th>
+                                  <th class="p-2 border-r border-slate-200 text-center align-middle border">Tăng/Giảm Giá</th>
+                                  <th class="p-2 border-r border-slate-200 text-center align-middle border">Số Lượng</th>
+                                  <th class="p-2 border-r border-slate-200 text-center align-middle border">Đơn Giá</th>
+                                  <th class="p-2 border-r border-slate-200 text-center align-middle border">Thành Tiền</th>
+                                  <th class="p-2 text-center align-middle border-r border-slate-200 border">GIT/FIT</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -7110,10 +7111,10 @@ defineExpose({
                                   :key="svc.id" 
                                   class="border-b border-slate-100 hover:bg-slate-50/80 text-slate-600 font-semibold"
                                 >
-                                  <td class="p-2 border-r border-slate-100">{{ formatDateVi(svc.service_date) }}</td>
-                                  <td class="p-2 border-r border-slate-100 text-slate-800 font-bold">{{ svc.service_name }}</td>
-                                  <td class="p-2 border-r border-slate-100 text-slate-400 italic">—</td>
-                                  <td class="p-2 border-r border-slate-100 text-center relative">
+                                  <td class="p-2 border-slate-100">{{ formatDateVi(svc.service_date) }}</td>
+                                  <td class="p-2 border-slate-100 text-slate-800 font-bold">{{ svc.service_name }}</td>
+                                  <td class="p-2 border-slate-100 text-slate-400 italic">—</td>
+                                  <td class="p-2 border-slate-100 text-center relative">
                                     <template v-if="isRoomChargeService(svc) && !isChildBreakfastService(svc)">
                                       <div 
                                         v-if="isEditing && isServiceRateEditable(svc.service_date)"
@@ -7212,8 +7213,8 @@ defineExpose({
                                     </template>
                                     <span v-else class="text-slate-400 italic">—</span>
                                   </td>
-                                  <td class="p-2 border-r border-slate-100 text-center text-slate-700">{{ svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1 }}</td>
-                                  <td class="p-2 border-r border-slate-100 text-right">
+                                  <td class="p-2 border-slate-100 text-center text-slate-700">{{ svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1 }}</td>
+                                  <td class="p-2 border-slate-100 text-right">
                                     <input 
                                       v-if="isEditing && isServiceRateEditable(svc.service_date)"
                                       type="text"
@@ -7226,8 +7227,8 @@ defineExpose({
                                       {{ (Number(svc.rate) || 0).toLocaleString('en-US') }}
                                     </span>
                                   </td>
-                                  <td class="p-2 border-r border-slate-100 text-right text-sky-700 font-bold">{{ (Number(svc.quantity || 1) * Number(svc.rate || 0)).toLocaleString('en-US') }}</td>
-                                  <td class="p-2 text-center">
+                                  <td class="p-2 border-slate-100 text-right text-sky-700 font-bold">{{ (Number(svc.quantity || 1) * Number(svc.rate || 0)).toLocaleString('en-US') }}</td>
+                                  <td class="p-2 text-center border-slate-200">
                                     <span
                                       class="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase select-none"
                                       :class="Number(svc.is_room) === 1 ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-700'"
@@ -7253,7 +7254,7 @@ defineExpose({
                       :class="statusGroup.statusOrder === 3 ? 'bg-[#fbd9ee] border-pink-300 text-pink-900 font-extrabold' : statusGroup.statusOrder === 1 ? 'bg-blue-200 border-blue-300 text-blue-950' : [2, 4].includes(statusGroup.statusOrder) ? 'bg-[#d8dee8] border-slate-300 text-slate-800' : 'bg-[#dbeafe]/60 border-blue-200 text-blue-900'"
                       @click="toggleGroupCollapse('status_' + statusGroup.statusName)"
                     >
-                      <td class="p-2 border-r text-center" :class="statusGroup.statusOrder === 3 ? 'bg-[#fbd9ee] border-pink-300' : statusGroup.statusOrder === 1 ? 'bg-blue-200 border-blue-300' : [2, 4].includes(statusGroup.statusOrder) ? 'bg-[#d8dee8] border-slate-300' : 'bg-[#dbeafe]/60 border-blue-200'" @click.stop>
+                      <td class="p-2 text-center" :class="statusGroup.statusOrder === 3 ? 'bg-[#fbd9ee] border-pink-300' : statusGroup.statusOrder === 1 ? 'bg-blue-200 border-blue-300' : [2, 4].includes(statusGroup.statusOrder) ? 'bg-[#d8dee8] border-slate-300' : 'bg-[#dbeafe]/60 border-blue-200'" @click.stop>
                         <button 
                           @click="toggleGroupCollapse('status_' + statusGroup.statusName)" 
                           class="w-5 h-5 flex items-center justify-center rounded text-white font-bold select-none cursor-pointer border-none"
@@ -7263,7 +7264,7 @@ defineExpose({
                           {{ collapsedSections['status_' + statusGroup.statusName] ? '+' : '−' }}
                         </button>
                       </td>
-                      <td class="p-2 border-r text-center" :class="statusGroup.statusOrder === 3 ? 'bg-[#fbd9ee] border-pink-300' : statusGroup.statusOrder === 1 ? 'bg-blue-200 border-blue-300' : [2, 4].includes(statusGroup.statusOrder) ? 'bg-[#d8dee8] border-slate-300' : 'bg-[#dbeafe]/60 border-blue-200'" @click.stop>
+                      <td class="p-2 text-center" :class="statusGroup.statusOrder === 3 ? 'bg-[#fbd9ee] border-pink-300' : statusGroup.statusOrder === 1 ? 'bg-blue-200 border-blue-300' : [2, 4].includes(statusGroup.statusOrder) ? 'bg-[#d8dee8] border-slate-300' : 'bg-[#dbeafe]/60 border-blue-200'" @click.stop>
                         <input 
                           type="checkbox" 
                           :checked="statusGroup.typeGroups.flatMap(g => g.rooms).length > 0 && statusGroup.typeGroups.flatMap(g => g.rooms).every(r => selectedRows.includes(r.id))" 
@@ -7273,7 +7274,7 @@ defineExpose({
                       <td :colspan="columns.filter(c => c.visible).length + 3" class="p-2 font-bold text-xs uppercase tracking-wider" :class="statusGroup.statusOrder === 3 ? 'bg-[#fbd9ee] text-pink-900 font-black' : statusGroup.statusOrder === 1 ? 'bg-blue-200 text-blue-950' : [2, 4].includes(statusGroup.statusOrder) ? 'bg-[#d8dee8] text-slate-800' : 'bg-[#dbeafe]/60 text-blue-900'">
                         Tình trạng: {{ statusGroup.statusName }} ({{ statusGroup.typeGroups.reduce((acc, curr) => acc + curr.rooms.length, 0) }})
                       </td>
-                      <td class="sticky-shadow-left z-10" :class="statusGroup.statusOrder === 3 ? 'bg-[#f7c9e4]' : statusGroup.statusOrder === 1 ? 'bg-blue-300' : [2, 4].includes(statusGroup.statusOrder) ? 'bg-[#cfd6e0]' : 'bg-[#bfdbfe]' "></td>
+                      <td class="sticky-shadow-left z-10" :class="statusGroup.statusOrder === 3 ? 'bg-[#f7c9e4]' : statusGroup.statusOrder === 1 ? 'bg-blue-300' : [2, 4].includes(statusGroup.statusOrder) ? 'bg-[#cfd6e0]' : 'bg-[#bfdbfe]'"></td>
                     </tr>
 
                     <!-- Room-type sub-groups within this status section -->
@@ -7284,8 +7285,8 @@ defineExpose({
                           class="bg-slate-50/70 border-b border-slate-200 font-bold h-8 text-gray-900 cursor-pointer select-none"
                           @click="toggleGroupCollapse(statusGroup.statusName + '_' + group.typeName)"
                         >
-                          <td class="p-2 border-r border-slate-200 text-center bg-slate-100/10"></td>
-                          <td class="p-2 border-r border-slate-200 text-center" @click.stop>
+                          <td class="p-2 border-slate-200 text-center bg-slate-100/10"></td>
+                          <td class="p-2 border-slate-200 text-center" @click.stop>
                             <button 
                               @click="toggleGroupCollapse(statusGroup.statusName + '_' + group.typeName)" 
                               class="w-5 h-5 flex items-center justify-center rounded bg-[#8cc3f3] hover:bg-[#6baae6] text-white font-bold select-none cursor-pointer border-none"
@@ -7294,7 +7295,7 @@ defineExpose({
                               {{ collapsedSections[statusGroup.statusName + '_' + group.typeName] ? '+' : '−' }}
                             </button>
                           </td>
-                          <td class="p-2 border-r border-slate-200 text-center" @click.stop>
+                          <td class="p-2 border-slate-200 text-center" @click.stop>
                             <input 
                               type="checkbox" 
                               :checked="group.rooms.length > 0 && group.rooms.every(r => selectedRows.includes(r.id))" 
@@ -7320,9 +7321,9 @@ defineExpose({
                               :title="isRoomEditLocked(room) ? 'Phòng đã phát sinh, không được chỉnh sửa' : ''"
                               @click="handleRowSelect(room.id)"
                             >
-                              <td class="p-2 border-r border-slate-200 text-center bg-slate-100/10"></td>
-                              <td class="p-2 border-r border-slate-200 text-center bg-slate-100/10"></td>
-                              <td class="p-2 border-r border-slate-200 text-center" @click.stop>
+                              <td class="p-2 border-slate-200 text-center bg-slate-100/10"></td>
+                              <td class="p-2 border-slate-200 text-center bg-slate-100/10"></td>
+                              <td class="p-2 border-slate-200 text-center" @click.stop>
                                 <button 
                                   @click="toggleRoomExpand(room)"
                                   class="w-5 h-5 flex items-center justify-center rounded transition-colors text-white font-bold select-none cursor-pointer"
@@ -7332,10 +7333,10 @@ defineExpose({
                                   {{ expandedRooms.includes(room.id) ? '−' : '+' }}
                                 </button>
                               </td>
-                              <td class="p-2 border-r border-slate-200 text-center" @click.stop>
+                              <td class="p-2 border-slate-200 text-center" @click.stop>
                                 <input type="checkbox" :checked="selectedRows.includes(room.id)" @change="handleRowSelect(room.id)" />
                               </td>
-                              <td class="p-2 border-r border-slate-200 text-center text-gray-500 font-semibold bg-slate-50/30">{{ idx + 1 }}</td>
+                              <td class="p-2 border-slate-200 text-center text-gray-500 font-semibold bg-slate-50/30">{{ idx + 1 }}</td>
                               <td v-for="col in columns.filter(c => c.visible)" 
                                   :key="col.key" 
                                   class="p-2 border-r border-slate-200" 
@@ -7753,11 +7754,11 @@ defineExpose({
 
                             <!-- Expanded Services Row (read-only for checked-in) -->
                             <tr v-if="expandedRooms.includes(room.id)" :key="`services-b-${room.id}`" class="bg-slate-50/30">
-                              <td class="p-0 border-r border-b border-slate-200 bg-slate-50/10"></td>
-                              <td class="p-0 border-r border-b border-slate-200 bg-slate-50/10"></td>
-                              <td class="p-0 border-r border-b border-slate-200 bg-slate-50/10"></td>
-                              <td class="p-0 border-r border-b border-slate-200 bg-slate-50/10"></td>
-                              <td class="p-0 border-r border-b border-slate-200 bg-slate-50/10"></td>
+                              <td class="p-0 border-b border-slate-200 bg-slate-50/10"></td>
+                              <td class="p-0 border-b border-slate-200 bg-slate-50/10"></td>
+                              <td class="p-0 border-b border-slate-200 bg-slate-50/10"></td>
+                              <td class="p-0 border-b border-slate-200 bg-slate-50/10"></td>
+                              <td class="p-0 border-b border-slate-200 bg-slate-50/10"></td>
                               <td :colspan="columns.filter(c => c.visible).length + 1" class="p-3 border-b border-slate-200 bg-slate-50/20 text-left pl-6">
                                 <div class="max-w-[850px] border border-slate-200 rounded shadow-xs overflow-visible bg-white my-1" @click.stop>
                                   <table class="w-full text-left border-collapse text-[11px] table-fixed">
@@ -7771,12 +7772,12 @@ defineExpose({
                                      </colgroup>
                                      <thead>
                                        <tr class="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
-                                         <th class="p-2 border-r border-slate-200">Ngày</th>
-                                         <th class="p-2 border-r border-slate-200">Dịch vụ</th>
-                                         <th class="p-2 border-r border-slate-200 text-center">Tăng/giảm giá</th>
-                                         <th class="p-2 border-r border-slate-200 text-center">Số lượng</th>
-                                         <th class="p-2 border-r border-slate-200 text-right">Đơn giá</th>
-                                         <th class="p-2 text-right">Thành tiền</th>
+                                         <th class="p-2 border-r border-slate-200 text-center align-middle border">Ngày</th>
+                                         <th class="p-2 border-r border-slate-200 text-center align-middle border">Dịch Vụ</th>
+                                         <th class="p-2 border-r border-slate-200 text-center align-middle border">Tăng/Giảm Giá</th>
+                                         <th class="p-2 border-r border-slate-200 text-center align-middle border">Số Lượng</th>
+                                         <th class="p-2 border-r border-slate-200 text-center align-middle border">Đơn Giá</th>
+                                         <th class="p-2 text-center align-middle border-r border-slate-200 border">Thành Tiền</th>
                                        </tr>
                                      </thead>
                                     <tbody>
@@ -7785,9 +7786,9 @@ defineExpose({
                                         :key="svc.id" 
                                         class="border-b border-slate-100 hover:bg-slate-50/80 text-slate-600 font-semibold group"
                                       >
-                                        <td class="p-2 border-r border-slate-100">{{ formatDateVi(svc.service_date) }}</td>
-                                        <td class="p-2 border-r border-slate-100 text-slate-800 font-bold">{{ svc.service_name }}</td>
-                                         <td class="p-2 border-r border-slate-100 text-center relative">
+                                        <td class="p-2 border-slate-100">{{ formatDateVi(svc.service_date) }}</td>
+                                        <td class="p-2 border-slate-100 text-slate-800 font-bold">{{ svc.service_name }}</td>
+                                         <td class="p-2 border-slate-100 text-center relative">
                                            <template v-if="isRoomChargeService(svc) && !isChildBreakfastService(svc)">
                                              <div 
                                                v-if="isServiceRateEditable(svc.service_date)"
@@ -7886,7 +7887,7 @@ defineExpose({
                                            </template>
                                            <span v-else class="text-slate-400 italic">—</span>
                                          </td>
-                                        <td class="p-2 border-r border-slate-100 text-center text-slate-700">
+                                        <td class="p-2 border-slate-100 text-center text-slate-700">
                                           <input 
                                             v-if="isServiceRateEditable(svc.service_date) && !isRoomChargeService(svc) && !isChildBreakfastService(svc)"
                                             type="number"
@@ -7897,7 +7898,7 @@ defineExpose({
                                           />
                                           <span v-else>{{ svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1 }}</span>
                                         </td>
-                                        <td class="p-2 border-r border-slate-100 text-right">
+                                        <td class="p-2 border-slate-100 text-right">
                                           <input 
                                             v-if="isServiceRateEditable(svc.service_date)"
                                             type="text"
@@ -7910,7 +7911,7 @@ defineExpose({
                                             {{ (Number(svc.rate) || 0).toLocaleString('en-US') }}
                                           </span>
                                         </td>
-                                        <td class="p-2 text-right text-sky-700 font-bold">
+                                        <td class="p-2 text-right text-sky-700 font-bold border-slate-200">
                                           <div class="flex items-center justify-end space-x-2">
                                             <span>{{ (Number(svc.quantity || 1) * Number(svc.rate || 0)).toLocaleString('en-US') }}</span>
                                             <button 
@@ -7954,9 +7955,9 @@ defineExpose({
               </colgroup>
               <tfoot>
               <tr class="h-9">
-                <td class="p-2 border-r border-[#cbd5e1] text-center w-[35px]"></td>
-                <td class="p-2 border-r border-[#cbd5e1] text-center w-[50px]"></td>
-                <td class="p-2 border-r border-[#cbd5e1] text-center w-[45px]"></td>
+                <td class="p-2 border-[#cbd5e1] text-center w-[35px]"></td>
+                <td class="p-2 border-[#cbd5e1] text-center w-[50px]"></td>
+                <td class="p-2 border-[#cbd5e1] text-center w-[45px]"></td>
                 <td v-for="col in columns.filter(c => c.visible)" 
                     :key="col.key" 
                     class="p-2 border-r border-[#cbd5e1] font-bold" 
@@ -8287,27 +8288,32 @@ defineExpose({
               </div>
 
               <!-- Ngày lưu trú -->
-              <div class="flex flex-col shrink-0 w-[235px]">
+              <div class="flex flex-col shrink-0 w-[240px]">
                 <span class="text-[11px] text-slate-500 font-bold mb-1">Ngày lưu trú</span>
-                <div class="flex items-center space-x-1 text-xs font-semibold text-slate-800 border border-slate-300 rounded-lg px-2 h-[34px] bg-white shadow-2xs w-full focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
-                  <i class="fa-regular fa-calendar text-blue-500 shrink-0 text-xs"></i>
-                  <input 
-                    type="date" 
-                    v-model="modalForm.checkIn" 
-                    :min="systemDate"
-                    @change="handleCheckInChange"
-                    @click="$event.target.showPicker && $event.target.showPicker()"
-                    class="date-span-input checkin-date-input text-xs font-bold text-slate-800"
-                  />
-                  <i class="fa-solid fa-arrow-right text-slate-400 text-[10px] shrink-0"></i>
-                  <input 
-                    type="date" 
-                    v-model="modalForm.checkOut" 
-                    :min="modalForm.checkIn"
-                    @change="handleDateChange"
-                    @click="$event.target.showPicker && $event.target.showPicker()"
-                    class="date-span-input checkout-date-input text-xs font-bold text-slate-800"
-                  />
+                <div class="flex items-center space-x-1">
+                  <div class="w-[115px]">
+                    <SingleDatePicker
+                      v-model="modalForm.checkIn"
+                      :min-date="systemDate"
+                      :start-date="systemDate || modalForm.checkIn"
+                      @change="handleCheckInChange"
+                      placeholder="dd/mm/yyyy"
+                      four-digit-year
+                      input-class="!h-[34px]"
+                    />
+                  </div>
+                  <span class="text-slate-400 font-bold text-xs">~</span>
+                  <div class="w-[115px]">
+                    <SingleDatePicker
+                      v-model="modalForm.checkOut"
+                      :min-date="modalForm.checkIn"
+                      :start-date="modalForm.checkIn || systemDate"
+                      @change="handleDateChange"
+                      placeholder="dd/mm/yyyy"
+                      four-digit-year
+                      input-class="!h-[34px]"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -8354,17 +8360,19 @@ defineExpose({
               </div>
 
               <!-- Ngày xác nhận -->
-              <div class="flex flex-col shrink-0 w-[150px]">
+              <div class="flex flex-col shrink-0 w-[160px]">
                 <span class="text-[11px] text-slate-500 font-bold mb-1">Ngày xác nhận</span>
-                <div class="flex items-center space-x-1.5 text-xs text-slate-800 border border-slate-300 rounded-lg px-2 h-[34px] bg-white shadow-2xs relative w-full focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100 transition-all">
-                  <input 
-                    type="date" 
-                    v-model="modalForm.confirmDate" 
-                    @click="$event.target.showPicker && $event.target.showPicker()"
-                    class="date-span-input w-full text-xs font-semibold"
-                  />
-                  <i class="fa-regular fa-calendar text-slate-400 pointer-events-none shrink-0 text-xs"></i>
-                  <button @click="copyConfirmDate" type="button" class="text-slate-400 hover:text-blue-600 cursor-pointer border-none bg-transparent p-0.5 shrink-0 rounded" title="Sao chép ngày check-in">
+                <div class="flex items-center space-x-1">
+                  <div class="flex-1">
+                    <SingleDatePicker
+                      v-model="modalForm.confirmDate"
+                      :start-date="systemDate || modalForm.confirmDate"
+                      placeholder="dd/mm/yyyy"
+                      four-digit-year
+                      input-class="!h-[34px]"
+                    />
+                  </div>
+                  <button @click="copyConfirmDate" type="button" class="text-slate-400 hover:text-blue-600 cursor-pointer border border-slate-200 bg-white p-2 rounded-lg shrink-0 flex items-center justify-center h-[34px]" title="Sao chép ngày check-in">
                     <i class="fa-regular fa-copy text-xs"></i>
                   </button>
                 </div>
@@ -8739,22 +8747,22 @@ defineExpose({
                 <table class="w-full text-left border-collapse text-xs table-auto">
                   <thead class="bg-slate-50 text-slate-500 font-semibold border-y border-slate-200">
                     <tr>
-                      <th class="py-2 px-2 text-center w-[8%] font-semibold text-[11px]">Đón/Đưa</th>
-                      <th class="py-2 px-2 text-center w-[12%] font-semibold text-[11px]">Phương tiện</th>
-                      <th class="py-2 px-2 text-center w-[11%] font-semibold text-[11px]">Mã hiệu / Biển số</th>
-                      <th class="py-2 px-2 text-center w-[12%] font-semibold text-[11px]">Ngày đón/đưa</th>
-                      <th class="py-2 px-2 text-center w-[8%] font-semibold text-[11px]">Giờ</th>
-                      <th class="py-2 px-2 text-center w-[10%] font-semibold text-[11px]">Hiện giá</th>
-                      <th class="py-2 px-2 text-center w-[15%] font-semibold text-[11px]">Địa điểm</th>
-                      <th class="py-2 px-2 text-center w-[18%] font-semibold text-[11px]">Ghi chú</th>
-                      <th class="py-2 px-2 w-[6%] text-center font-semibold text-[11px]">Hành động</th>
+                      <th class="py-2 px-2 text-center w-[8%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Đón/Đưa</th>
+                      <th class="py-2 px-2 text-center w-[12%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Phương Tiện</th>
+                      <th class="py-2 px-2 text-center w-[11%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Mã Hiệu / Biển Số</th>
+                      <th class="py-2 px-2 text-center w-[12%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Ngày Đón/Đưa</th>
+                      <th class="py-2 px-2 text-center w-[8%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Giờ</th>
+                      <th class="py-2 px-2 text-center w-[10%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Hiện Giá</th>
+                      <th class="py-2 px-2 text-center w-[15%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Địa Điểm</th>
+                      <th class="py-2 px-2 text-center w-[18%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Ghi Chú</th>
+                      <th class="py-2 px-2 w-[6%] text-center font-semibold text-[11px] align-middle border-r border-slate-200 border">Hành Động</th>
                     </tr>
                   </thead>
                   <tbody class="text-[11px] text-slate-700 font-medium">
                     <tr v-for="(row, idx) in modalForm.shuttleInfo" :key="row.id" class="border-b border-slate-200 hover:bg-slate-50/50 transition-colors">
                       
                       <!-- Đón/Đưa -->
-                      <td class="py-2 px-2">
+                      <td class="py-2 px-2 border-slate-200">
                         <select v-model="row.type" class="w-full border border-slate-300 rounded-md h-[30px] px-2 text-slate-700 focus:outline-none bg-white cursor-pointer shadow-sm text-[11px] font-bold">
                           <option value="Đón">Đón</option>
                           <option value="Đưa">Đưa</option>
@@ -8762,7 +8770,7 @@ defineExpose({
                       </td>
 
                       <!-- Phương tiện -->
-                      <td class="py-2 px-2">
+                      <td class="py-2 px-2 border-slate-200">
                         <select v-model="row.vehicle" class="w-full border border-slate-300 rounded-md h-[30px] px-2 text-slate-700 focus:outline-none bg-white cursor-pointer shadow-sm text-[11px]">
                           <option value="Select Value" disabled>— Chọn xe —</option>
                           <option value="4 Seater car">4 Seater car</option>
@@ -8774,27 +8782,34 @@ defineExpose({
                       </td>
 
                       <!-- Mã hiệu / Biển số -->
-                      <td class="py-2 px-2">
+                      <td class="py-2 px-2 border-slate-200">
                         <input type="text" v-model="row.code" placeholder="Mã hiệu / Biển số" class="w-full border border-slate-300 rounded-md h-[30px] px-2 text-slate-700 focus:outline-none bg-white shadow-sm text-[11px] font-bold" />
                       </td>
 
                       <!-- Ngày -->
-                      <td class="py-2 px-2">
-                        <div class="flex items-center justify-between border border-slate-300 rounded-md px-2 bg-white h-[30px] shadow-sm">
-                          <input type="date" v-model="row.date" @click="$event.target.showPicker && $event.target.showPicker()" class="border-none bg-transparent p-0 text-[11px] font-bold text-slate-700 w-full focus:outline-none cursor-pointer date-span-input" />
-                          <button @click.prevent="row.date = modalForm.checkIn" class="p-0.5 hover:bg-slate-100 rounded text-slate-400 border-none bg-transparent cursor-pointer ml-1" title="Sao chép ngày check-in">
+                      <td class="py-2 px-2 border-slate-200">
+                        <div class="flex items-center space-x-1 min-w-[125px]">
+                          <SingleDatePicker
+                            v-model="row.date"
+                            :start-date="modalForm.checkIn || systemDate"
+                            placeholder="dd/mm/yyyy"
+                            four-digit-year
+                            input-class="!h-[30px] !px-1.5"
+                            text-input-class="!text-[11px] !font-bold"
+                          />
+                          <button @click.prevent="row.date = modalForm.checkIn" type="button" class="p-1 hover:bg-slate-100 rounded text-slate-400 border border-slate-200 bg-white cursor-pointer shrink-0 h-[30px] flex items-center justify-center" title="Sao chép ngày check-in">
                             <i class="fa-regular fa-calendar-days text-[11px]"></i>
                           </button>
                         </div>
                       </td>
 
                       <!-- Giờ -->
-                      <td class="py-2 px-2">
+                      <td class="py-2 px-2 border-slate-200">
                         <input type="time" v-model="row.time" class="border border-slate-300 rounded-md px-2 text-[11px] font-bold text-slate-700 w-full focus:outline-none bg-white cursor-pointer shadow-sm h-[30px]" />
                       </td>
 
                       <!-- Hiện giá -->
-                      <td class="py-2 px-2">
+                      <td class="py-2 px-2 border-slate-200">
                         <div class="relative w-full border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
                           <input type="text" :value="formatCurrencyInput(row.price)" @input="e => row.price = cleanCurrencyValue(e.target.value)" @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }" class="w-full text-right pl-2 pr-5 focus:outline-none text-[11px] bg-transparent border-none outline-none font-bold text-slate-800">
                           <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
@@ -8805,7 +8820,7 @@ defineExpose({
                       </td>
 
                       <!-- Địa điểm -->
-                      <td class="py-2 px-2">
+                      <td class="py-2 px-2 border-slate-200">
                         <select v-model="row.location" class="w-full border border-slate-300 rounded-md h-[30px] px-2 text-slate-700 focus:outline-none bg-white cursor-pointer shadow-sm text-[11px]">
                           <option value="" disabled>— Chọn địa điểm —</option>
                           <option value="Sân bay Cam Ranh">Sân bay Cam Ranh</option>
@@ -8817,19 +8832,19 @@ defineExpose({
                       </td>
 
                       <!-- Ghi chú -->
-                      <td class="py-2 px-2">
+                      <td class="py-2 px-2 border-slate-200">
                         <input type="text" v-model="row.note" placeholder="Nhập ghi chú..." class="w-full border border-slate-300 rounded-md h-[30px] px-2 text-slate-700 focus:outline-none bg-white shadow-sm text-[11px]" />
                       </td>
 
                       <!-- Hành động (Xóa) -->
-                      <td class="py-2 px-2 text-center">
+                      <td class="py-2 px-2 text-center border-slate-200">
                         <button @click.prevent="removeShuttleRow(idx)" class="text-rose-500 hover:text-rose-700 hover:underline border-none bg-transparent cursor-pointer font-bold text-xs">
                           <i class="fa-regular fa-trash-can mr-1"></i>Xóa
                         </button>
                       </td>
                     </tr>
                     <tr v-if="modalForm.shuttleInfo.length === 0">
-                      <td colspan="9" class="py-8 text-center text-slate-400 font-bold text-xs bg-slate-50/10">
+                      <td colspan="9" class="py-8 text-center text-slate-400 font-bold text-xs bg-slate-50/10 border-slate-200">
                         Chưa có lịch đưa đón nào được thêm. Bấm nút (+) bên dưới để thêm mới.
                       </td>
                     </tr>
@@ -8939,20 +8954,20 @@ defineExpose({
                 <table class="min-w-[1300px] w-full border-collapse text-left text-xs table-auto">
                   <thead class="bg-slate-50 text-slate-500 font-semibold border-y border-slate-200">
                     <tr>
-                      <th v-if="visibleColumns.roomType" class="py-2 px-2 text-center w-[6%] font-semibold text-[11px]">Loại/Dạng</th>
-                      <th v-if="visibleColumns.dates" class="py-2 px-2 text-center w-[17%] font-semibold text-[11px]">Ngày đến ~ Ngày đi</th>
-                      <th v-if="visibleColumns.occupancy" class="py-2 px-1 text-center w-[5%] font-semibold text-[11px]">Chiếm dụng</th>
-                      <th v-if="visibleColumns.availability" class="py-2 px-1 text-center w-[5%] font-semibold text-[11px]">Trống</th>
-                      <th v-if="visibleColumns.quantity" class="py-2 px-1 text-center w-[7%] font-semibold text-[11px] bg-slate-100/50">Số lượng</th>
-                      <th v-if="visibleColumns.price" class="py-2 px-1 text-center w-[10%] font-semibold text-[11px]">Giá phòng</th>
-                      <th v-if="visibleColumns.rateCode" class="py-2 px-2 text-center w-[13%] font-semibold text-[11px]">Mã giá phòng</th>
-                      <th v-if="visibleColumns.discount" class="py-2 px-2 text-center w-[10%] font-semibold text-[11px]">Tăng/Giảm</th>
-                      <th v-if="visibleColumns.upgrade" class="py-2 px-2 text-center w-[11%] font-semibold text-[11px]">Nâng hạng</th>
-                      <th v-if="visibleColumns.adults" class="py-2 px-1 text-center w-[5%] font-semibold text-[11px]">Người lớn</th>
-                      <th v-if="visibleColumns.babies" class="py-2 px-1 text-center w-[5%] font-semibold text-[11px]">Em bé</th>
-                      <th v-if="visibleColumns.children" class="py-2 px-1 text-center w-[5%] font-semibold text-[11px]">Trẻ em</th>
-                      <th v-if="visibleColumns.childBreakfastRate" class="py-2 px-1 text-center w-[11%] font-semibold text-[11px]">Giá ăn sáng trẻ em</th>
-                      <th v-if="visibleColumns.breakfast" class="py-2 px-1 text-center w-[4%] font-semibold text-[11px]">Ăn sáng</th>
+                      <th v-if="visibleColumns.roomType" class="py-2 px-2 text-center w-[6%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Loại/Dạng</th>
+                      <th v-if="visibleColumns.dates" class="py-2 px-2 text-center w-[17%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Ngày Đến ~ Ngày Đi</th>
+                      <th v-if="visibleColumns.occupancy" class="py-2 px-1 text-center w-[5%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Chiếm Dụng</th>
+                      <th v-if="visibleColumns.availability" class="py-2 px-1 text-center w-[5%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Trống</th>
+                      <th v-if="visibleColumns.quantity" class="py-2 px-1 text-center w-[7%] font-semibold text-[11px] bg-slate-100/50 align-middle border-r border-slate-200 border">Số Lượng</th>
+                      <th v-if="visibleColumns.price" class="py-2 px-1 text-center w-[10%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Giá Phòng</th>
+                      <th v-if="visibleColumns.rateCode" class="py-2 px-2 text-center w-[13%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Mã Giá Phòng</th>
+                      <th v-if="visibleColumns.discount" class="py-2 px-2 text-center w-[10%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Tăng/Giảm</th>
+                      <th v-if="visibleColumns.upgrade" class="py-2 px-2 text-center w-[11%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Nâng Hạng</th>
+                      <th v-if="visibleColumns.adults" class="py-2 px-1 text-center w-[5%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Người Lớn</th>
+                      <th v-if="visibleColumns.babies" class="py-2 px-1 text-center w-[5%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Em Bé</th>
+                      <th v-if="visibleColumns.children" class="py-2 px-1 text-center w-[5%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Trẻ Em</th>
+                      <th v-if="visibleColumns.childBreakfastRate" class="py-2 px-1 text-center w-[11%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Giá Ăn Sáng Trẻ Em</th>
+                      <th v-if="visibleColumns.breakfast" class="py-2 px-1 text-center w-[4%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Ăn Sáng</th>
                     </tr>
                   </thead>
                   
@@ -8960,41 +8975,49 @@ defineExpose({
                     <tr v-for="(row, idx) in roomAddDraft" :key="row.roomClassId" class="border-b border-slate-200 hover:bg-slate-50/50 transition-colors">
                       
                       <!-- Loại/Dạng -->
-                      <td v-if="visibleColumns.roomType" class="py-2 px-2 font-bold text-slate-900">{{ row.roomClassCode }}</td>
+                      <td v-if="visibleColumns.roomType" class="py-2 px-2 font-bold text-slate-900 border-slate-200">{{ row.roomClassCode }}</td>
                       
                       <!-- Ngày đến ~ Ngày đi -->
-                      <td v-if="visibleColumns.dates" class="py-2 px-2">
-                        <div class="flex items-center justify-center space-x-1 border border-slate-300 rounded-md px-1.5 py-0.5 bg-white h-[30px] shadow-sm text-center whitespace-nowrap">
-                          <input 
-                            type="date" 
-                            v-model="row.arrivalDate" 
-                            :min="systemDate"
-                            @change="handleRowDateChange(row)"
-                            @click="$event.target.showPicker && $event.target.showPicker()"
-                            class="date-span-input text-[11px] font-bold text-slate-700 focus:outline-none cursor-pointer bg-transparent border-none p-0 outline-none w-[76px]"
-                          />
-                          <span class="text-slate-400">~</span>
-                          <input 
-                            type="date" 
-                            v-model="row.departureDate" 
-                            :min="row.arrivalDate"
-                            @change="handleRowDateChange(row)"
-                            @click="$event.target.showPicker && $event.target.showPicker()"
-                            class="date-span-input text-[11px] font-bold text-slate-700 focus:outline-none cursor-pointer bg-transparent border-none p-0 outline-none w-[76px]"
-                          />
+                      <td v-if="visibleColumns.dates" class="py-2 px-2 border-slate-200">
+                        <div class="flex items-center justify-center space-x-1 whitespace-nowrap">
+                          <div class="w-[110px]">
+                            <SingleDatePicker
+                              v-model="row.arrivalDate"
+                              :min-date="systemDate"
+                              :start-date="systemDate || row.arrivalDate"
+                              @change="handleRowDateChange(row)"
+                              placeholder="dd/mm/yyyy"
+                              four-digit-year
+                              input-class="!h-[30px] !px-1.5"
+                              text-input-class="!text-[11px] !font-bold"
+                            />
+                          </div>
+                          <span class="text-slate-400 font-bold text-xs">~</span>
+                          <div class="w-[110px]">
+                            <SingleDatePicker
+                              v-model="row.departureDate"
+                              :min-date="row.arrivalDate"
+                              :start-date="row.arrivalDate || systemDate"
+                              @change="handleRowDateChange(row)"
+                              placeholder="dd/mm/yyyy"
+                              four-digit-year
+                              input-class="!h-[30px] !px-1.5"
+                              text-input-class="!text-[11px] !font-bold"
+                            />
+                          </div>
                         </div>
                       </td>
                       
                       <!-- Chiếm dụng -->
-                      <td v-if="visibleColumns.occupancy" class="py-2 px-1 text-center font-semibold text-slate-600">{{ getOccupancyCount(row) }}</td>
+                      <td v-if="visibleColumns.occupancy" class="py-2 px-1 text-center font-semibold text-slate-600 border-slate-200">{{ getOccupancyCount(row) }}</td>
                       
                       <!-- Phòng trống -->
-                      <td v-if="visibleColumns.availability" class="py-2 px-1 text-center font-bold" :class="row.availableRooms <= 0 ? 'text-rose-600' : 'text-slate-800'">
+                      <td v-if="visibleColumns.availability" class="py-2 px-1 text-center font-bold border-slate-200" :class="row.availableRooms <= 0 ? 'text-rose-600' : 'text-slate-800'">
                         {{ row.availableRooms }}
                       </td>
                       
                       <!-- Số lượng -->
-                      <td v-if="visibleColumns.quantity" class="py-2 px-1 bg-slate-50/30">
+                      <td v-if="visibleColumns.quantity" class="py-2 px-1 bg-slate-50/30 border-slate-200">
                         <div class="relative w-full min-w-[40px] max-w-[60px] mx-auto border border-slate-300 rounded-md h-[30px] shadow-sm flex items-center" :class="isQuantityDisabled(row) ? 'bg-slate-100 cursor-not-allowed text-slate-400' : 'bg-white text-slate-800'">
                           <input type="number" v-model.number="row.quantity" min="0" :disabled="isQuantityDisabled(row)" @input="handleQuantityInput(row)" @focus="$event.target.select()" class="w-full text-center focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" :class="isQuantityDisabled(row) ? 'cursor-not-allowed text-slate-400' : 'pr-4 text-slate-800'">
                           <div v-if="!isQuantityDisabled(row)" class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
@@ -9005,7 +9028,7 @@ defineExpose({
                       </td>
 
                       <!-- Giá phòng -->
-                      <td v-if="visibleColumns.price" class="py-2 px-1">
+                      <td v-if="visibleColumns.price" class="py-2 px-1 border-slate-200">
                         <div class="relative w-full min-w-[70px] mx-auto border border-slate-300 rounded-md h-[30px] shadow-sm flex items-center" :class="isPriceDisabled(row) ? 'bg-slate-100 cursor-not-allowed' : 'bg-white'">
                           <input type="text" :value="formatCurrencyInput(row.price)" :disabled="isPriceDisabled(row)" @input="e => { row.price = cleanCurrencyValue(e.target.value); row.basePrice = row.price; syncAllocationToRooms(row) }" @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }" class="w-full text-right pl-2 pr-5 focus:outline-none text-[11px] bg-transparent border-none outline-none font-bold" :class="isPriceDisabled(row) ? 'text-slate-400 cursor-not-allowed' : 'text-slate-800'">
                           <div v-if="!isPriceDisabled(row)" class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
@@ -9016,7 +9039,7 @@ defineExpose({
                       </td>
 
                       <!-- Mã giá phòng -->
-                      <td v-if="visibleColumns.rateCode" class="py-2 px-2">
+                      <td v-if="visibleColumns.rateCode" class="py-2 px-2 border-slate-200">
                         <select 
                           v-model="row.rateCode" 
                           @change="handleRateCodeChange(row, $event.target.value)"
@@ -9028,7 +9051,7 @@ defineExpose({
                       </td>
 
                       <!-- Tăng/Giảm -->
-                      <td v-if="visibleColumns.discount" class="py-2 px-2 relative">
+                      <td v-if="visibleColumns.discount" class="py-2 px-2 relative border-slate-200">
                         <div 
                           @click.stop="toggleDiscountPopover(row)"
                           class="w-full border border-slate-300 rounded-md h-[30px] px-2 text-slate-700 shadow-sm text-[11px] flex items-center justify-between cursor-pointer bg-white"
@@ -9114,7 +9137,7 @@ defineExpose({
                       </td>
 
                       <!-- Nâng hạng -->
-                      <td v-if="visibleColumns.upgrade" class="py-2 px-2">
+                      <td v-if="visibleColumns.upgrade" class="py-2 px-2 border-slate-200">
                         <div class="relative">
                           <select v-model="row.upgradeClassId" @change="syncAllocationToRooms(row)" class="w-full border border-slate-300 rounded-md h-[30px] pl-2 pr-5 appearance-none focus:outline-none text-slate-700 bg-white shadow-sm cursor-pointer text-[11px]">
                             <option :value="null">Gốc</option>
@@ -9125,7 +9148,7 @@ defineExpose({
                       </td>
 
                       <!-- Người lớn -->
-                      <td v-if="visibleColumns.adults" class="py-2 px-1">
+                      <td v-if="visibleColumns.adults" class="py-2 px-1 border-slate-200">
                         <div class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
                           <input type="number" v-model.number="row.adults" min="1" @input="syncAllocationToRooms(row)" @focus="$event.target.select()" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
                           <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
@@ -9136,7 +9159,7 @@ defineExpose({
                       </td>
 
                       <!-- Em bé -->
-                      <td v-if="visibleColumns.babies" class="py-2 px-1">
+                      <td v-if="visibleColumns.babies" class="py-2 px-1 border-slate-200">
                         <div class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
                           <input type="number" v-model.number="row.babies" min="0" @input="syncAllocationToRooms(row)" @focus="$event.target.select()" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
                           <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
@@ -9147,7 +9170,7 @@ defineExpose({
                       </td>
 
                       <!-- Trẻ em -->
-                      <td v-if="visibleColumns.children" class="py-2 px-1">
+                      <td v-if="visibleColumns.children" class="py-2 px-1 border-slate-200">
                         <div class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
                           <input type="number" v-model.number="row.children" min="0" @input="syncAllocationToRooms(row)" @focus="$event.target.select()" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
                           <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
@@ -9158,7 +9181,7 @@ defineExpose({
                       </td>
 
                       <!-- Giá ăn sáng trẻ em -->
-                      <td v-if="visibleColumns.childBreakfastRate" class="py-2 px-1">
+                      <td v-if="visibleColumns.childBreakfastRate" class="py-2 px-1 border-slate-200">
                         <div class="relative w-full min-w-[90px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
                           <input type="text" :value="formatCurrencyInput(row.childBreakfastRate)" @input="e => { row.childBreakfastRate = cleanCurrencyValue(e.target.value); syncAllocationToRooms(row) }" @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }" class="w-full text-right pl-2 pr-5 focus:outline-none text-[11px] bg-transparent border-none outline-none font-bold text-slate-800">
                           <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
@@ -9169,7 +9192,7 @@ defineExpose({
                       </td>
 
                       <!-- Ăn sáng -->
-                      <td v-if="visibleColumns.breakfast" class="py-2 px-1 text-center">
+                      <td v-if="visibleColumns.breakfast" class="py-2 px-1 text-center border-slate-200">
                         <input type="checkbox" v-model="row.breakfastIncluded" @change="syncAllocationToRooms(row)" class="w-4 h-4 accent-blue-500 cursor-pointer rounded border-slate-300">
                       </td>
 
@@ -9178,20 +9201,20 @@ defineExpose({
                   
                   <tfoot class="bg-white font-bold text-slate-900 border-t border-slate-300 text-[11px]">
                     <tr>
-                      <td v-if="visibleColumns.roomType" class="py-2.5 px-2 text-left text-slate-800">Tổng</td>
-                      <td v-if="visibleColumns.dates" class="py-2.5 px-2"></td>
-                      <td v-if="visibleColumns.occupancy" class="py-2.5 px-1 text-center"></td>
-                      <td v-if="visibleColumns.availability" class="py-2.5 px-1 text-center text-[11px] font-semibold">{{ allocationsSummary.availableRooms }}</td>
-                      <td v-if="visibleColumns.quantity" class="py-2.5 px-1 text-center text-[11px] font-semibold text-sky-600 bg-slate-100/30">{{ allocationsSummary.quantity }}</td>
-                      <td v-if="visibleColumns.price" class="py-2.5 px-1"></td>
-                      <td v-if="visibleColumns.rateCode" class="py-2.5 px-2"></td>
-                      <td v-if="visibleColumns.discount" class="py-2.5 px-2"></td>
-                      <td v-if="visibleColumns.upgrade" class="py-2.5 px-2"></td>
-                      <td v-if="visibleColumns.adults" class="py-2.5 px-1 text-center text-[11px] font-semibold text-slate-800">{{ allocationsSummary.adults }}</td>
-                      <td v-if="visibleColumns.babies" class="py-2.5 px-1 text-center text-[11px] font-semibold text-slate-800">{{ allocationsSummary.babies }}</td>
-                      <td v-if="visibleColumns.children" class="py-2.5 px-1 text-center text-[11px] font-semibold text-slate-800">{{ allocationsSummary.children }}</td>
-                      <td v-if="visibleColumns.childBreakfastRate" class="py-2.5 px-1"></td>
-                      <td v-if="visibleColumns.breakfast" class="py-2.5 px-1"></td>
+                      <td v-if="visibleColumns.roomType" class="py-2.5 px-2 text-left text-slate-800 border-slate-200">Tổng</td>
+                      <td v-if="visibleColumns.dates" class="py-2.5 px-2 border-slate-200"></td>
+                      <td v-if="visibleColumns.occupancy" class="py-2.5 px-1 text-center border-slate-200"></td>
+                      <td v-if="visibleColumns.availability" class="py-2.5 px-1 text-center text-[11px] font-semibold border-slate-200">{{ allocationsSummary.availableRooms }}</td>
+                      <td v-if="visibleColumns.quantity" class="py-2.5 px-1 text-center text-[11px] font-semibold text-sky-600 bg-slate-100/30 border-slate-200">{{ allocationsSummary.quantity }}</td>
+                      <td v-if="visibleColumns.price" class="py-2.5 px-1 border-slate-200"></td>
+                      <td v-if="visibleColumns.rateCode" class="py-2.5 px-2 border-slate-200"></td>
+                      <td v-if="visibleColumns.discount" class="py-2.5 px-2 border-slate-200"></td>
+                      <td v-if="visibleColumns.upgrade" class="py-2.5 px-2 border-slate-200"></td>
+                      <td v-if="visibleColumns.adults" class="py-2.5 px-1 text-center text-[11px] font-semibold text-slate-800 border-slate-200">{{ allocationsSummary.adults }}</td>
+                      <td v-if="visibleColumns.babies" class="py-2.5 px-1 text-center text-[11px] font-semibold text-slate-800 border-slate-200">{{ allocationsSummary.babies }}</td>
+                      <td v-if="visibleColumns.children" class="py-2.5 px-1 text-center text-[11px] font-semibold text-slate-800 border-slate-200">{{ allocationsSummary.children }}</td>
+                      <td v-if="visibleColumns.childBreakfastRate" class="py-2.5 px-1 border-slate-200"></td>
+                      <td v-if="visibleColumns.breakfast" class="py-2.5 px-1 border-slate-200"></td>
                     </tr>
                   </tfoot>
                 </table>

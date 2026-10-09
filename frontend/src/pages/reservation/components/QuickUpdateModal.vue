@@ -80,21 +80,14 @@
           <!-- Arrival Date -->
           <div>
             <label class="block text-slate-600 mb-1 font-bold">Ngày nhận phòng</label>
-            <div class="relative flex items-center">
-              <input 
-                ref="arrivalDateInputRef"
-                type="date" 
-                v-model="form.arrival_date" 
-                :disabled="isArrivalDisabled"
-                :min="minArrivalDate"
-                @click="openArrivalDatePicker"
-                class="w-full border rounded-lg h-9 pl-3 pr-9 text-xs focus:outline-none transition-colors border-slate-300 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed cursor-pointer"
-              />
-              <i 
-                class="fa-regular fa-calendar-days text-slate-400 absolute right-3 pointer-events-none text-sm"
-                :class="{ 'opacity-50': isArrivalDisabled }"
-              ></i>
-            </div>
+            <SingleDatePicker
+              v-model="form.arrival_date"
+              :disabled="isArrivalDisabled"
+              :min-date="minArrivalDate"
+              :start-date="form.arrival_date || systemDateNormalized"
+              placeholder="dd/mm/yyyy"
+              four-digit-year
+            />
           </div>
 
           <!-- Arrival Time -->
@@ -113,21 +106,14 @@
           <!-- Departure Date -->
           <div>
             <label class="block text-slate-600 mb-1 font-bold">Ngày trả phòng</label>
-            <div class="relative flex items-center">
-              <input 
-                ref="departureDateInputRef"
-                type="date" 
-                v-model="form.departure_date" 
-                :disabled="isDepartureDisabled"
-                :min="minDepartureDate"
-                @click="openDepartureDatePicker"
-                class="w-full border rounded-lg h-9 pl-3 pr-9 text-xs focus:outline-none transition-colors border-slate-300 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed cursor-pointer"
-              />
-              <i 
-                class="fa-regular fa-calendar-days text-slate-400 absolute right-3 pointer-events-none text-sm"
-                :class="{ 'opacity-50': isDepartureDisabled }"
-              ></i>
-            </div>
+            <SingleDatePicker
+              v-model="form.departure_date"
+              :disabled="isDepartureDisabled"
+              :min-date="minDepartureDate"
+              :start-date="form.departure_date || form.arrival_date || systemDateNormalized"
+              placeholder="dd/mm/yyyy"
+              four-digit-year
+            />
           </div>
 
           <!-- Departure Time -->
@@ -227,6 +213,7 @@ import { ref, computed, watch } from 'vue'
 import { useAuthStore } from '@/stores/auth-store'
 import { useUiStore } from '@/stores/ui-store'
 import http from '@/services/http'
+import SingleDatePicker from '@/components/SingleDatePicker.vue'
 
 const props = defineProps({
   show: Boolean,
@@ -264,7 +251,7 @@ const departureDateInputRef = ref(null)
 
 // ==================== COMPUTED PROPERTIES ====================
 const systemDateNormalized = computed(() => {
-  return normalizeToYmd(props.systemDate) || new Date().toISOString().split('T')[0]
+  return normalizeToYmd(props.systemDate) || authStore.systemDate || localStorage.getItem('pms_system_date') || new Date().toISOString().split('T')[0]
 })
 
 const hasCheckedInRoom = computed(() => {

@@ -332,29 +332,29 @@ const calculateNewPrice = (item) => {
                   <table class="w-full text-xs text-left text-slate-600">
                       <thead class="bg-slate-50 border-b border-slate-200 sticky top-0">
                           <tr>
-                              <th class="px-2 py-2 border-r border-slate-200">Mã</th>
-                              <th class="px-2 py-2 border-r border-slate-200">Tên</th>
-                              <th class="px-2 py-2 border-r border-slate-200 text-right">Đơn giá</th>
-                              <th class="px-2 py-2 border-r border-slate-200 text-right">Giảm giá</th>
-                              <th class="px-2 py-2 border-r border-slate-200 text-right">Đơn giá mới</th>
-                              <th class="px-2 py-2 w-8 text-center"></th>
+                              <th class="px-2 py-2 border-r border-slate-200 text-center align-middle border">Mã</th>
+                              <th class="px-2 py-2 border-r border-slate-200 text-center align-middle border">Tên</th>
+                              <th class="px-2 py-2 border-r border-slate-200 text-center align-middle border">Đơn Giá</th>
+                              <th class="px-2 py-2 border-r border-slate-200 text-center align-middle border">Giảm Giá</th>
+                              <th class="px-2 py-2 border-r border-slate-200 text-center align-middle border">Đơn Giá Mới</th>
+                              <th class="px-2 py-2 w-8 text-center align-middle border-r border-slate-200 border"></th>
                           </tr>
                       </thead>
                       <tbody>
                           <tr v-for="(item, idx) in promotionProducts" :key="item.id || item.fb_product_id" class="border-b border-slate-100 hover:bg-slate-50">
-                              <td class="px-2 py-2 border-r border-slate-100">{{ item.product_code || item.code }}</td>
-                              <td class="px-2 py-2 border-r border-slate-100 truncate max-w-[100px]" :title="item.name">{{ item.name }}</td>
-                              <td class="px-2 py-2 border-r border-slate-100 text-right">{{ getBasePrice(item).toLocaleString() }}</td>
-                              <td class="px-2 py-2 border-r border-slate-100 text-right text-red-500">{{ (getBasePrice(item) - calculateNewPrice(item)).toLocaleString() }}</td>
-                              <td class="px-2 py-2 border-r border-slate-100 text-right font-medium text-[#78C5E7]">{{ calculateNewPrice(item).toLocaleString() }}</td>
-                              <td class="px-2 py-2 text-center">
+                              <td class="px-2 py-2 border-slate-100">{{ item.product_code || item.code }}</td>
+                              <td class="px-2 py-2 border-slate-100 truncate max-w-[100px]" :title="item.name">{{ item.name }}</td>
+                              <td class="px-2 py-2 border-slate-100 text-right">{{ getBasePrice(item).toLocaleString() }}</td>
+                              <td class="px-2 py-2 border-slate-100 text-right text-red-500">{{ (getBasePrice(item) - calculateNewPrice(item)).toLocaleString() }}</td>
+                              <td class="px-2 py-2 border-slate-100 text-right font-medium text-[#78C5E7]">{{ calculateNewPrice(item).toLocaleString() }}</td>
+                              <td class="px-2 py-2 text-center border-slate-200">
                                   <button @click="removeProduct(idx)" class="text-red-500 hover:text-red-700" title="Xóa">
                                       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                                   </button>
                               </td>
                           </tr>
                           <tr v-if="promotionProducts.length === 0">
-                              <td colspan="5" class="px-2 py-8 text-center text-slate-400">Chưa có sản phẩm nào</td>
+                              <td colspan="5" class="px-2 py-8 text-center text-slate-400 border-slate-200">Chưa có sản phẩm nào</td>
                           </tr>
                       </tbody>
                   </table>
