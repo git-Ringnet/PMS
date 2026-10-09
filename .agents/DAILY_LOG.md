@@ -18,6 +18,21 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-10-09] - Giải quyết xung đột (Merge Conflict) tích hợp nhánh kaynblue vào main
+### Module: Toàn bộ hệ thống Frontend & Nhật ký ([SingleDatePicker.vue](file:///d:/PMS/frontend/src/components/SingleDatePicker.vue), [CheckoutPage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue), [PostBillHousekeepingTab.vue](file:///d:/PMS/frontend/src/pages/housekeeping/components/PostBillHousekeepingTab.vue), [QuickUpdateModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/QuickUpdateModal.vue), [DAILY_LOG.md](file:///d:/PMS/.agents/DAILY_LOG.md))
+
+- **Kết hợp bảo toàn 100% tính năng cả hai nhánh**:
+  - [SingleDatePicker.vue](file:///d:/PMS/frontend/src/components/SingleDatePicker.vue): Giữ nguyên nút xóa nhanh (x) và định dạng `dd/mm/yy` / `dd/MM/yyyy` từ `main`, đồng thời tích hợp prop `startDate` (`parsedStartDate`) từ `kaynblue` giúp popup lịch mở đúng theo ngày hệ thống PMS khi ô rỗng.
+  - [CheckoutPage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue): Giữ nguyên class `text-xs font-semibold` chuẩn FE Design System từ `main`, bổ sung ràng buộc vô hiệu hóa `isSaleInvoiceReadOnly` từ `kaynblue`.
+  - [PostBillHousekeepingTab.vue](file:///d:/PMS/frontend/src/pages/housekeeping/components/PostBillHousekeepingTab.vue): Giữ cấu trúc class động `isFoModal ? 'btn-pms-primary' : '...'` từ `main`, tích hợp điều kiện kiểm tra quyền `v-if="canPostHousekeepingBill"` từ `kaynblue`.
+  - [QuickUpdateModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/QuickUpdateModal.vue): Giữ định dạng typography và styling chuẩn FE Design System (`font-semibold text-xs`, `font-medium text-slate-800`), nạp đầy đủ `useAuthStore` để render `topbarThemeBg`, tích hợp thuộc tính `placeholder` và `:disabled="isRateDisabled"` cho ô Giá từ `kaynblue`.
+  - [.agents/DAILY_LOG.md](file:///d:/PMS/.agents/DAILY_LOG.md): Tích hợp nối tiếp đầy đủ toàn bộ nhật ký công việc của cả hai nhánh.
+- **Kiểm thử**:
+  - Frontend: 76/76 unit tests PASSED (`node --test tests/*.test.js`).
+  - Frontend build: `npm run build` biên dịch thành công 100% trong 4.36s.
+  - Backend: 12/12 Section tests PASSED (`php artisan test --filter=BookingThreeSectionsWordDocValidationTest`).
+  - Hoàn tất merge commit vào nhánh `main`.
+
 ## [2026-10-08] - Fix Ô Ngày & Giờ bị khuất (Thanh toán trước) và Căn giữa bảng (Thanh toán) trong Checkout
 ### Module: Thu ngân / Trả phòng ([PrepaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/PrepaymentModal.vue), [PaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/PaymentModal.vue))
 
