@@ -155,36 +155,72 @@ function close() {
   emit('update:show', false)
 }
 
-async function handleConfirmCopy() {
-  if (!props.bookingId) return
-  
-  if (!arrivalDate.value || !departureDate.value) {
-    uiStore.showToast('Vui lòng chọn đầy đủ ngày đến và ngày đi!', 'warning')
-    return
+async function executeCopy(payload = {}) {
+  const requestData = {
+    arrival_date: arrivalDate.value,
+    departure_date: departureDate.value,
+    ...payload,
   }
-  
-  if (departureDate.value <= arrivalDate.value) {
-    uiStore.showToast('Ngày đi phải lớn hơn ngày đến!', 'warning')
-    return
-  }
-  
-  uiStore.showToast('Đang thực hiện nhân bản đăng ký...', 'info')
+
   try {
-    const res = await copyBooking(props.bookingId, {
-      arrival_date: arrivalDate.value,
-      departure_date: departureDate.value
-    })
-    
+    const res = await copyBooking(props.bookingId, requestData)
     if (res.data?.success) {
       uiStore.showToast(res.data.message || 'Nhân bản đăng ký thành công!', 'success')
       close()
       emit('copied', res.data.data)
+      return true
     } else {
       uiStore.showToast(res.data?.message || 'Nhân bản thất bại!', 'error')
+      return false
     }
   } catch (err) {
+    const errorData = err.response?.data
+    if (errorData?.require_confirm === 'over_warning') {
+      const confirmed = await uiStore.confirm({
+        title: 'Cảnh báo phòng âm',
+        message: errorData.message || 'Phòng âm bạn có muốn tiếp tục thao tác',
+        confirmText: 'Có',
+        cancelText: 'Không',
+      })
+      if (confirmed) {
+        return await executeCopy({ confirm_over: true })
+      }
+      return false
+    }
+
+    if (errorData?.require_confirm === 'no_rooms_available') {
+      const confirmed = await uiStore.confirm({
+        title: 'Không còn phòng trống',
+        message: errorData.message || 'Không còn phòng trống, bạn có muốn tiếp tục thao tác',
+        confirmText: 'Có',
+        cancelText: 'Không',
+      })
+      if (confirmed) {
+        return await executeCopy({ copy_header_only: true })
+      }
+      return false
+    }
+
     console.error('Copy booking error:', err)
-    uiStore.showToast(err.response?.data?.message || 'Có lỗi xảy ra khi nhân bản đăng ký!', 'error')
+    uiStore.showToast(errorData?.message || 'Có lỗi xảy ra khi nhân bản đăng ký!', 'error')
+    return false
   }
+}
+
+async function handleConfirmCopy() {
+  if (!props.bookingId) return
+
+  if (!arrivalDate.value || !departureDate.value) {
+    uiStore.showToast('Vui lòng chọn đầy đủ ngày đến và ngày đi!', 'warning')
+    return
+  }
+
+  if (departureDate.value <= arrivalDate.value) {
+    uiStore.showToast('Ngày đi phải lớn hơn ngày đến!', 'warning')
+    return
+  }
+
+  uiStore.showToast('Đang thực hiện nhân bản đăng ký...', 'info')
+  await executeCopy()
 }
 </script>

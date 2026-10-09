@@ -423,7 +423,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     Route::post('bookings/{booking}/add-rooms', [\App\Http\Controllers\Api\BookingController::class, 'addRooms'])->middleware('permission:fo.booking.edit');
     Route::put('bookings/{booking}', [\App\Http\Controllers\Api\BookingController::class, 'update'])->middleware('permission:fo.booking.edit');
     Route::delete('bookings/{booking}', [\App\Http\Controllers\Api\BookingController::class, 'destroy'])->middleware('permission:fo.booking.cancel');
-    Route::patch('bookings/{bookingId}/no-post', [\App\Http\Controllers\Api\BookingNoPostController::class, 'updateBooking'])->middleware('permission:fo.booking.edit');
+    Route::patch('bookings/{bookingId}/no-post', [\App\Http\Controllers\Api\BookingNoPostController::class, 'updateBooking'])->middleware(['permission:fo.booking.edit', \App\Http\Middleware\RequireFrontDeskInvoiceMutation::class]);
 
     // #19 — Nhân bản booking
     Route::post('bookings/{id}/copy', [\App\Http\Controllers\Api\BookingController::class, 'copy'])->middleware('permission:fo.booking.create');
@@ -475,15 +475,15 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
         Route::post('/quick-transfer', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'quickTransfer'])->middleware('permission:fo.service.edit');
         Route::post('/split-folio', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'splitFolio'])->middleware('permission:fo.service.edit');
     });
-    Route::patch('booking-rooms/{roomId}/no-post', [\App\Http\Controllers\Api\BookingNoPostController::class, 'updateRoom']);
+    Route::patch('booking-rooms/{roomId}/no-post', [\App\Http\Controllers\Api\BookingNoPostController::class, 'updateRoom'])->middleware(['permission:fo.booking.edit', \App\Http\Middleware\RequireFrontDeskInvoiceMutation::class]);
     Route::get('/booking-services/extra-bed-rate', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'defaultExtraBedRate']);
     Route::get('/service-bills/{billId}/details', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'billDetails']);
     Route::patch('/service-bills/{billId}/description', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'updateDescription'])->middleware('permission:fo.service.edit,fo.service.add');
     // Danh sách dịch vụ FO (dùng cho dropdown chọn dịch vụ)
     Route::get('/booking-services/fo-list', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'foServiceList']);
-    Route::post('/booking-room-services/post-housekeeping-bill', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'postHousekeepingBill']);
+    Route::post('/booking-room-services/post-housekeeping-bill', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'postHousekeepingBill'])->middleware('permission:hk.service.bill,fo.service.add,fo.service.edit');
     Route::get('/housekeeping/service-bills', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'searchHousekeepingInvoices']);
-    Route::post('/housekeeping/service-bills/{billId}/cancel', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'cancelHousekeepingInvoice']);
+    Route::post('/housekeeping/service-bills/{billId}/cancel', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'cancelHousekeepingInvoice'])->middleware('permission:hk.service.delete');
     Route::post('/booking-room-services/post-fo-service-bill', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'postFoServiceBill'])->middleware('permission:fo.service.add,fo.service.edit');
     Route::post('/booking-room-services/post-room-charge', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'postRoomCharge'])->middleware('permission:fo.service.add,fo.service.edit');
     Route::post('/bookings/{bookingId}/adjust-room-rate', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'adjustRoomRate'])->middleware('permission:fo.service.edit,fo.service.add');
@@ -509,16 +509,16 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
         Route::get('/', [\App\Http\Controllers\Api\GuestController::class, 'roomGuests']);
         Route::get('/on-date', [\App\Http\Controllers\Api\GuestController::class, 'getGuestsOnDate']);
         Route::post('/', [\App\Http\Controllers\Api\GuestController::class, 'addGuest']);
-        Route::post('/{guestId}/checkout', [\App\Http\Controllers\Api\GuestController::class, 'checkoutGuest']);
+        Route::post('/{guestId}/checkout', [\App\Http\Controllers\Api\GuestController::class, 'checkoutGuest'])->middleware(['permission:fo.checkout', \App\Http\Middleware\RequireFrontDeskInvoiceMutation::class]);
         Route::put('/{guestId}', [\App\Http\Controllers\Api\GuestController::class, 'updateGuest']);
         Route::delete('/{guestId}', [\App\Http\Controllers\Api\GuestController::class, 'removeGuest']);
     });
-    Route::post('/booking-rooms/{roomId}/checkout', [\App\Http\Controllers\Api\GuestController::class, 'checkoutRoom'])->middleware('permission:fo.checkout');
-    Route::post('/bookings/{bookingId}/checkout-preview', [\App\Http\Controllers\Api\GuestController::class, 'previewCheckoutRooms'])->middleware('permission:fo.checkout');
-    Route::post('/bookings/{bookingId}/checkout', [\App\Http\Controllers\Api\GuestController::class, 'checkoutBooking'])->middleware('permission:fo.checkout');
-    Route::post('/booking-rooms/{roomId}/children/{childId}/checkout', [\App\Http\Controllers\Api\GuestController::class, 'checkoutChild'])->middleware('permission:fo.checkout');
-    Route::post('/booking-rooms/{roomId}/restore-checkout', [\App\Http\Controllers\Api\GuestController::class, 'restoreRoomCheckout'])->middleware('permission:fo.checkout');
-    Route::post('/bookings/{bookingId}/restore-checkout', [\App\Http\Controllers\Api\GuestController::class, 'restoreBookingCheckout'])->middleware('permission:fo.checkout');
+    Route::post('/booking-rooms/{roomId}/checkout', [\App\Http\Controllers\Api\GuestController::class, 'checkoutRoom'])->middleware(['permission:fo.checkout', \App\Http\Middleware\RequireFrontDeskInvoiceMutation::class]);
+    Route::post('/bookings/{bookingId}/checkout-preview', [\App\Http\Controllers\Api\GuestController::class, 'previewCheckoutRooms'])->middleware(['permission:fo.checkout', \App\Http\Middleware\RequireFrontDeskInvoiceMutation::class]);
+    Route::post('/bookings/{bookingId}/checkout', [\App\Http\Controllers\Api\GuestController::class, 'checkoutBooking'])->middleware(['permission:fo.checkout', \App\Http\Middleware\RequireFrontDeskInvoiceMutation::class]);
+    Route::post('/booking-rooms/{roomId}/children/{childId}/checkout', [\App\Http\Controllers\Api\GuestController::class, 'checkoutChild'])->middleware(['permission:fo.checkout', \App\Http\Middleware\RequireFrontDeskInvoiceMutation::class]);
+    Route::post('/booking-rooms/{roomId}/restore-checkout', [\App\Http\Controllers\Api\GuestController::class, 'restoreRoomCheckout'])->middleware(['permission:fo.checkout', \App\Http\Middleware\RequireFrontDeskInvoiceMutation::class]);
+    Route::post('/bookings/{bookingId}/restore-checkout', [\App\Http\Controllers\Api\GuestController::class, 'restoreBookingCheckout'])->middleware(['permission:fo.checkout', \App\Http\Middleware\RequireFrontDeskInvoiceMutation::class]);
     Route::get('/bookings/{bookingId}/children', [\App\Http\Controllers\Api\GuestController::class, 'bookingChildren']);
 
     Route::post('/bookings/{bookingId}/children', [\App\Http\Controllers\Api\GuestController::class, 'addChild'])->middleware('permission:fo.booking.edit');

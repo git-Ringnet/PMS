@@ -507,6 +507,11 @@ class BookingRoom extends Model
         
         $attributes['room_number'] = $newRoomNumber;
         $attributes['arrival_date'] = $systemDate->toDateString();
+        $originalDepartureDate = $this->departure_date->toDateString();
+        $segmentNights = max(0, $systemDate->diffInDays(\Carbon\Carbon::parse($originalDepartureDate), false));
+        $attributes['departure_date'] = $originalDepartureDate;
+        $attributes['ActutalNumOfDays'] = $segmentNights;
+        $attributes['NumOfDays'] = $segmentNights;
         $attributes['actual_arrival_date'] = $this->actual_arrival_date 
             ? $this->actual_arrival_date->toDateString() 
             : $this->arrival_date->toDateString();
@@ -519,6 +524,14 @@ class BookingRoom extends Model
         
         // Tạo phòng mới
         $newRoom = self::create($attributes);
+        if ($segmentNights === 0) {
+            // The legacy model hook normalizes active zero-length stays to one
+            // night. A move segment must retain the actual [D,D) interval.
+            $newRoom->forceFill([
+                'ActutalNumOfDays' => 0,
+                'NumOfDays' => 0,
+            ])->save();
+        }
         
         // Chuyển / Sao chép Khách lưu trú
         foreach ($this->guests as $gPivot) {
@@ -577,18 +590,19 @@ class BookingRoom extends Model
         }
         
         // Chuyển các dịch vụ trong tương lai (từ ngày hệ thống trở đi) sang phòng mới
-        foreach ($this->services as $service) {
-            $sDate = \Carbon\Carbon::parse($service->service_date);
-            if ($sDate->greaterThanOrEqualTo($systemDate)) {
-                $service->update([
-                    'booking_room_id' => $newRoom->id,
-                ]);
-            }
-        }
+        app(\App\Services\BookingRoomMoveService::class)->transferUnpostedServices(
+            $this,
+            $newRoom,
+            $systemDate->toDateString(),
+            $originalDepartureDate,
+        );
         
         // Cập nhật thông tin phòng cũ (đã chuyển)
+        $actualDaysStayed = max(0, \Carbon\Carbon::parse($originalArrivalDate)->diffInDays($systemDate));
         $this->update([
             'departure_date' => $systemDate->toDateString(),
+            'ActutalNumOfDays' => $actualDaysStayed,
+            'NumOfDays' => $actualDaysStayed,
             'departure_time' => $moveTime,
             'status' => self::STATUS_MOVED,
             'move_room' => $newRoom->id,

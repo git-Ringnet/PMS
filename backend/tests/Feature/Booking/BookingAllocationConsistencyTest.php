@@ -9,8 +9,10 @@ use App\Models\CustomerSource;
 use App\Models\HotelConfig;
 use App\Models\HotelSetting;
 use App\Models\Market;
+use App\Models\Payment;
 use App\Models\Permission;
 use App\Models\RegistrationStatus;
+use App\Models\ServiceBill;
 use App\Models\Role;
 use App\Models\Room;
 use App\Models\RoomClass;
@@ -358,5 +360,292 @@ class BookingAllocationConsistencyTest extends TestCase
                     ->count()
             );
         }
+    }
+
+    public function test_new_booking_rejects_room_allocation_before_pms_system_date(): void
+    {
+        $response = $this->postJson('/api/bookings', [
+            'booking_name' => 'Past Allocation Booking',
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-08',
+            'num_of_days' => 1,
+            'registration_status_id' => $this->registrationStatus->booking_status_id,
+            'company_id' => 1,
+            'market_id' => 1,
+            'customer_source_id' => 1,
+            'room_allocations' => [[
+                'roomClassId' => $this->roomClass->id,
+                'quantity' => 1,
+                'price' => 100000,
+                'rooms' => [[
+                    'roomNumber' => null,
+                    'arrivalDate' => '2026-08-06',
+                    'departureDate' => '2026-08-07',
+                ]],
+            ]],
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonFragment([
+                'message' => 'Ngày đến của phòng nhỏ hơn ngày hệ thống, vui lòng kiểm tra lại thông tin.',
+            ]);
+        $this->assertDatabaseMissing('bookings', ['booking_name' => 'Past Allocation Booking']);
+    }
+
+    public function test_add_only_rejects_past_room_allocation_atomically(): void
+    {
+        $booking = $this->createBooking();
+        $response = $this->postJson("/api/bookings/{$booking->id}/add-rooms", [
+            'intent' => 'add_only',
+            'room_allocations' => [
+                [
+                    'roomClassId' => $this->roomClass->id,
+                    'quantity' => 1,
+                    'price' => 100000,
+                    'rooms' => [[
+                        'arrivalDate' => '2026-08-07',
+                        'departureDate' => '2026-08-08',
+                    ]],
+                ],
+                [
+                    'roomClassId' => $this->roomClass->id,
+                    'quantity' => 1,
+                    'price' => 100000,
+                    'rooms' => [[
+                        'arrivalDate' => '2026-08-06',
+                        'departureDate' => '2026-08-07',
+                    ]],
+                ],
+            ],
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonFragment([
+                'message' => 'Ngày đến của phòng nhỏ hơn ngày hệ thống, vui lòng kiểm tra lại thông tin.',
+            ]);
+        $this->assertSame(0, BookingRoom::where('booking_id', $booking->id)->count());
+    }
+
+    public function test_update_rejects_new_past_allocation_and_restores_existing_rooms_atomically(): void
+    {
+        $booking = $this->createBooking();
+        $existingRoom = BookingRoom::create([
+            'id' => 'G-ALLOC-UPDATE-EXISTING',
+            'booking_id' => $booking->id,
+            'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-08',
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $response = $this->putJson("/api/bookings/{$booking->id}", [
+            'booking_name' => $booking->booking_name,
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-08',
+            'num_of_days' => 1,
+            'registration_status_id' => $this->registrationStatus->booking_status_id,
+            'company_id' => 1,
+            'market_id' => 1,
+            'customer_source_id' => 1,
+            'room_allocations' => [[
+                'roomClassId' => $this->roomClass->id,
+                'quantity' => 2,
+                'rooms' => [
+                    [
+                        'bookingRoomId' => $existingRoom->id,
+                        'arrivalDate' => '2026-08-07',
+                        'departureDate' => '2026-08-08',
+                    ],
+                    [
+                        'arrivalDate' => '2026-08-06',
+                        'departureDate' => '2026-08-07',
+                    ],
+                ],
+            ]],
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonFragment([
+                'message' => 'Ngày đến của phòng nhỏ hơn ngày hệ thống, vui lòng kiểm tra lại thông tin.',
+            ]);
+        $this->assertSame(1, BookingRoom::where('booking_id', $booking->id)->count());
+        $this->assertSame('2026-08-07', $existingRoom->fresh()->arrival_date->toDateString());
+        $this->assertSame(BookingRoom::STATUS_BOOKED, (int) $existingRoom->fresh()->status);
+    }
+    private function grantCheckoutMetadataRole(): void
+    {
+        $role = Role::create([
+            'code' => 'checkout_metadata_editor',
+            'name' => 'Checkout metadata editor',
+            'level' => 3,
+            'department_scope' => 'FO',
+            'is_active' => true,
+        ]);
+        $this->user->roles()->attach($role->id);
+        HotelConfig::updateOrCreate(
+            ['name' => 'RoleUserUpdateCheckoutBooking'],
+            ['value' => 'checkout_metadata_editor']
+        );
+    }
+
+    public function test_authorized_checkout_role_can_update_only_booking_metadata_without_touching_rooms_or_bills(): void
+    {
+        $this->grantCheckoutMetadataRole();
+        $booking = $this->createBooking([
+            'status' => Booking::STATUS_CHECKOUT,
+            'booking_name' => 'Checked out before',
+            'company_id' => 1,
+            'payment_value' => 250000,
+        ]);
+        $room = BookingRoom::create([
+            'id' => 'G-CHECKOUT-METADATA-ROOM',
+            'booking_id' => $booking->id,
+            'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-08',
+            'rate' => 200000,
+            'status' => BookingRoom::STATUS_CHECKED_OUT,
+        ]);
+        $payment = Payment::create([
+            'booking_id' => $booking->id,
+            'booking_room_id' => $room->id,
+            'date' => '2026-08-07',
+            'amount' => 250000,
+            'pack2' => Payment::PACK2_DEPOSIT,
+            'status' => Payment::STATUS_PAID,
+            'edit_flag' => 0,
+            'username' => 'allocation_test_user',
+        ]);
+        $bill = ServiceBill::create([
+            'RegisterId1' => $booking->id,
+            'RegisterID2' => $booking->id,
+            'RentalRoomId1' => $room->id,
+            'RentalRoomId2' => $room->id,
+            'ServiceId' => 'RM',
+            'Date' => '2026-08-07 12:00:00',
+            'OpenTime' => '12:00',
+            'Guest' => 'Test guest',
+            'DepartmentId' => 'FO',
+            'Username' => 'allocation_test_user',
+            'Amount' => 200000,
+            'Quantity' => 1,
+            'Status' => 1,
+            'Edit' => 0,
+        ]);
+
+        $roomSnapshot = $room->fresh()->getRawOriginal();
+        $billSnapshot = ServiceBill::findOrFail($bill->Ma)->getRawOriginal();
+        $paymentSnapshot = Payment::findOrFail($payment->id)->getRawOriginal();
+
+        $response = $this->putJson("/api/bookings/{$booking->id}", [
+            'booking_name' => 'Checked out updated',
+            'customer_source_id' => 1,
+            'booker_id' => null,
+            'note' => 'Metadata note',
+        ]);
+
+        $response->assertSuccessful()
+            ->assertJsonPath('data.status', Booking::STATUS_CHECKOUT)
+            ->assertJsonPath('data.booking_name', 'Checked out updated')
+            ->assertJsonPath('data.note', 'Metadata note');
+        $this->assertDatabaseHas('bookings', [
+            'id' => $booking->id,
+            'status' => Booking::STATUS_CHECKOUT,
+            'booking_name' => 'Checked out updated',
+            'customer_source_id' => 1,
+            'note' => 'Metadata note',
+            'company_id' => 1,
+            'payment_value' => 250000,
+        ]);
+        $this->assertSame('2026-08-07', $booking->fresh()->arrival_date->toDateString());
+        $this->assertSame('2026-08-08', $booking->fresh()->departure_date->toDateString());
+        $this->assertDatabaseHas('booking_rooms', [
+            'id' => $room->id,
+            'booking_id' => $booking->id,
+            'rate' => 200000,
+            'status' => BookingRoom::STATUS_CHECKED_OUT,
+        ]);
+        $this->assertDatabaseHas('service_bills', ['Ma' => $bill->Ma, 'Amount' => 200000]);
+        $this->assertSame(1, ServiceBill::where('RegisterId1', $booking->id)->count());
+        $this->assertSame($roomSnapshot, $room->fresh()->getRawOriginal());
+        $this->assertSame($billSnapshot, ServiceBill::findOrFail($bill->Ma)->getRawOriginal());
+        $this->assertEqualsCanonicalizing($paymentSnapshot, Payment::findOrFail($payment->id)->getRawOriginal());
+        $this->assertDatabaseHas('activity_logs', [
+            'user_id' => $this->user->id,
+            'action' => 'Modify',
+            'module' => 'reservation',
+            'target_id' => (string) $booking->id,
+        ]);
+    }
+
+    public function test_checkout_update_requires_exact_configured_role_and_rejects_forbidden_fields(): void
+    {
+        $booking = $this->createBooking([
+            'status' => Booking::STATUS_CHECKOUT,
+            'booking_name' => 'Original checkout name',
+        ]);
+
+        $this->putJson("/api/bookings/{$booking->id}", ['booking_name' => 'Denied'])
+            ->assertForbidden();
+        $this->assertSame('Original checkout name', $booking->fresh()->booking_name);
+
+        $this->grantCheckoutMetadataRole();
+        $this->putJson("/api/bookings/{$booking->id}", [
+            'booking_name' => 'Must not persist',
+            'arrival_date' => '2026-08-09',
+        ])->assertStatus(422);
+
+        $this->assertSame('Original checkout name', $booking->fresh()->booking_name);
+        $this->assertSame('2026-08-07', $booking->fresh()->arrival_date->toDateString());
+        $this->assertSame(Booking::STATUS_CHECKOUT, (int) $booking->fresh()->status);
+    }
+
+    public function test_deleted_booking_stays_blocked_even_for_checkout_metadata_role(): void
+    {
+        $this->grantCheckoutMetadataRole();
+        $booking = $this->createBooking([
+            'status' => Booking::STATUS_DELETED,
+            'booking_name' => 'Deleted booking',
+        ]);
+
+        $this->putJson("/api/bookings/{$booking->id}", ['booking_name' => 'No'])
+            ->assertStatus(422);
+        $this->assertSame('Deleted booking', $booking->fresh()->booking_name);
+        $this->assertSame(Booking::STATUS_DELETED, (int) $booking->fresh()->status);
+    }
+    public function test_existing_historical_reservation_room_remains_editable(): void
+    {
+        $booking = $this->createBooking([
+            'arrival_date' => '2026-08-06',
+            'departure_date' => '2026-08-07',
+        ]);
+        $room = BookingRoom::create([
+            'id' => 'G-ALLOC-HISTORICAL',
+            'booking_id' => $booking->id,
+            'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-06',
+            'departure_date' => '2026-08-07',
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $response = $this->putJson("/api/bookings/{$booking->id}", [
+            'booking_name' => $booking->booking_name,
+            'arrival_date' => '2026-08-06',
+            'departure_date' => '2026-08-07',
+            'num_of_days' => 1,
+            'registration_status_id' => $this->registrationStatus->booking_status_id,
+            'company_id' => 1,
+            'market_id' => 1,
+            'customer_source_id' => 1,
+            'room_allocations' => [[
+                'roomClassId' => $this->roomClass->id,
+                'quantity' => 1,
+                'rooms' => [['bookingRoomId' => $room->id]],
+            ]],
+        ]);
+
+        $response->assertSuccessful();
+        $this->assertSame('2026-08-06', $room->fresh()->arrival_date->toDateString());
+        $this->assertSame(BookingRoom::STATUS_BOOKED, (int) $room->fresh()->status);
     }
 }

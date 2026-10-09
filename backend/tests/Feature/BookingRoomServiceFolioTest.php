@@ -559,10 +559,10 @@ class BookingRoomServiceFolioTest extends TestCase
         $this->assertDatabaseHas('service_bill_details', [
             'BillServiceId' => $bill->Ma, 'ServiceCharge' => 5, 'SpecialTax' => 2, 'Tax' => 10,
         ]);
-        $this->assertDatabaseHas('booking_room_services', [
-            'booking_room_id' => $room->id, 'guest_id' => $secondary->id, 'service_code' => 'MB',
-            'service_charge' => 5, 'tax' => 10,
-        ]);
+        // A direct posted bill does not require a pre-existing service setup mirror.
+        $this->assertSame(1, ServiceBill::where('RentalRoomId1', $room->id)
+            ->where('ServiceId', 'MB')->where('Edit', 0)->count());
+        $this->assertEquals(100000, $bill->Amount);
     }
 
     public function test_front_desk_room_charge_keeps_the_selected_secondary_guest(): void
@@ -597,8 +597,10 @@ class BookingRoomServiceFolioTest extends TestCase
             'CustomerId1' => $secondary->id, 'CustomerId2' => $secondary->id,
             'ServiceCharge' => 6, 'SpecialTax' => 3, 'Tax' => 9,
         ]);
-        $this->assertDatabaseHas('booking_room_services', [
-            'booking_room_id' => $room->id, 'guest_id' => $secondary->id, 'service_code' => 'ER',
+        $surchargeBill = ServiceBill::where('RentalRoomId1', $room->id)->where('ServiceId', 'ER')->sole();
+        $this->assertEquals(100000, $surchargeBill->Amount);
+        $this->assertDatabaseHas('service_bill_details', [
+            'BillServiceId' => $surchargeBill->Ma, 'ServiceCharge' => 6, 'SpecialTax' => 3, 'Tax' => 9,
         ]);
     }
 
@@ -648,6 +650,44 @@ class BookingRoomServiceFolioTest extends TestCase
         $this->assertSame(1, ServiceBill::where('ServiceId', 'RM')->count());
     }
 
+    public function test_supplementary_room_charge_uses_existing_bill_update_path_without_creating_a_duplicate(): void
+    {
+        $user = $this->createFolioUser();
+        $date = now()->toDateString();
+        $booking = Booking::create([
+            'booking_name' => 'RM supplementary path', 'arrival_date' => $date, 'departure_date' => now()->addDay()->toDateString(),
+            'num_of_days' => 1, 'booking_date' => $date, 'created_by' => $user->username,
+        ]);
+        $room = $this->makeRoom($booking, 'RM-SUPPLEMENTARY-01');
+        $bill = ServiceBill::create([
+            'Date' => $date . ' 00:00:00', 'OpenTime' => '00:00', 'Guest' => 'Room Guest',
+            'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'DescriptionServive' => 'Dịch vụ phòng nghỉ',
+            'Amount' => 500000, 'RegisterId1' => $booking->id, 'RentalRoomId1' => $room->id,
+            'RegisterID2' => $booking->id, 'RentalRoomId2' => $room->id,
+            'Edit' => 0, 'Status' => 1, 'Username' => $user->username,
+        ]);
+        BookingRoomService::create([
+            'booking_room_id' => $room->id, 'service_bill_id' => $bill->Ma,
+            'service_code' => 'RM', 'service_date' => $date, 'quantity' => 1,
+            'rate' => 500000, 'folio' => 1, 'is_room' => 1, 'is_posted' => 1,
+        ]);
+        $this->assertSame(1, ServiceBill::where('ServiceId', 'RM')->whereDate('Date', $date)->count(), 'fixture RM bill count');
+
+        $this->actingAs($user)
+            ->postJson("/api/booking-rooms/{$room->id}/services", [
+                'service_code' => 'RM', 'service_name' => 'Dịch vụ phòng nghỉ',
+                'service_date' => $date, 'quantity' => 1, 'rate' => 550000, 'is_room' => 1,
+            ])
+            ->assertSuccessful()
+            ->assertJsonStructure(['service_bill']);
+
+        $roomBills = ServiceBill::where('ServiceId', 'RM')->whereDate('Date', $date)->get(['Ma', 'Amount', 'Status', 'Edit']);
+        $this->assertSame(1, $roomBills->count(), 'after RM update: ' . $roomBills->toJson());
+        $this->assertDatabaseHas('service_bills', ['Ma' => $bill->Ma, 'Amount' => 550000]);
+        $this->assertSame(1, BookingRoomService::where('booking_room_id', $room->id)
+            ->where('service_code', 'RM')->whereDate('service_date', $date)->count());
+    }
+
     public function test_front_desk_git_service_is_owned_by_master_while_preserving_source_room(): void
     {
         $user = $this->createFolioUser();
@@ -677,9 +717,9 @@ class BookingRoomServiceFolioTest extends TestCase
             'RegisterId1' => $booking->id, 'RentalRoomId1' => $room->id, 'CustomerId1' => $guest->id,
             'RegisterID2' => $booking->id, 'RentalRoomId2' => null, 'CustomerId2' => null,
         ]);
-        $this->assertDatabaseHas('booking_room_services', [
-            'booking_room_id' => $room->id, 'guest_id' => $guest->id, 'service_code' => 'MB', 'is_room' => 0,
-        ]);
+        $masterBill = ServiceBill::where('RegisterId1', $booking->id)->where('ServiceId', 'MB')->sole();
+        $this->assertEquals(100000, $masterBill->Amount);
+        $this->assertDatabaseHas('service_bill_details', ['BillServiceId' => $masterBill->Ma, 'Amount' => 100000]);
     }
 
     public function test_master_auto_room_charge_posts_only_inhouse_rooms_with_assigned_room_numbers(): void
@@ -749,7 +789,8 @@ class BookingRoomServiceFolioTest extends TestCase
         $user = $this->createFolioUser();
         $role = $user->roles()->firstOrFail();
         $permission = \App\Models\Permission::firstOrCreate(['code' => 'fo.booking.edit'], ['name' => 'fo.booking.edit', 'module' => 'FO']);
-        $role->permissions()->syncWithoutDetaching([$permission->id]);
+        $frontDeskView = \App\Models\Permission::firstOrCreate(['code' => 'fo.frontdesk.view'], ['name' => 'fo.frontdesk.view', 'module' => 'FO']);
+        $role->permissions()->syncWithoutDetaching([$permission->id, $frontDeskView->id]);
 
         $booking = Booking::create([
             'booking_name' => 'No Post scope test', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-07',
@@ -963,12 +1004,12 @@ class BookingRoomServiceFolioTest extends TestCase
         $this->assertSame(4, (int) $sourceBill->Status);
         $this->assertTrue((bool) $booking->fresh()->is_master_room_rate);
         $this->assertSame((string) $positiveBill->Ma, (string) $negativeBill->Pack1);
-        $this->assertDatabaseHas('booking_room_services', [
-            'booking_room_id' => $targetRoom->id,
-            'guest_id' => $guest->id,
-            'service_bill_id' => $positiveBill->Ma,
-            'folio' => 1,
-        ]);
+        $this->assertSame((string) $guest->id, (string) $positiveBill->CustomerId2);
+        $this->assertSame(1, (int) $positiveBill->Folio);
+        $this->assertEquals(100000, $positiveBill->Amount);
+        $this->assertEquals(-100000, $negativeBill->Amount);
+        $this->assertEquals(100000, ServiceBill::where('RegisterId1', $booking->id)
+            ->where('Edit', 0)->where('Status', 1)->sum('Amount'));
     }
 
     public function test_quick_transfer_candidates_group_by_bill_service_and_use_fo_description(): void
@@ -1167,9 +1208,11 @@ class BookingRoomServiceFolioTest extends TestCase
         $this->assertDatabaseHas('housekeeping_service_bills', [
             'BillServiceId' => $bill->Ma, 'BillServicesCharge' => 5, 'BillSpecialTax' => 2, 'BillTax' => 10,
         ]);
-        $this->assertDatabaseHas('booking_room_services', [
-            'service_bill_id' => $bill->Ma, 'service_charge' => 5, 'tax' => 10,
+        $hkBill = HousekeepingServiceBill::where('BillServiceId', $bill->Ma)->sole();
+        $this->assertDatabaseHas('housekeeping_service_bill_details', [
+            'BillId' => $hkBill->getKey(), 'MaProduct' => $product->id, 'Quantity' => 1,
         ]);
+        $this->assertEquals(100000, $bill->Amount);
     }
 
     public function test_no_post_blocks_front_desk_fo_and_housekeeping_posting_with_consistent_warning(): void

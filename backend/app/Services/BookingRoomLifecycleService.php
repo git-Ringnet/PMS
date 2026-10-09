@@ -108,6 +108,18 @@ class BookingRoomLifecycleService
                 continue;
             }
 
+            $postedOnPreviousRoom = app(BookingRoomMoveService::class)->hasPostedService(
+                $room,
+                $date,
+                [BookingRoomService::CODE_EXTRA_BED, BookingRoomService::catalogCode(BookingRoomService::CODE_EXTRA_BED)],
+            );
+            if ($postedOnPreviousRoom) {
+                if ($row) {
+                    $row->delete();
+                }
+                continue;
+            }
+
             $rate = ($row && $row->rate !== null && (float) $row->rate > 0)
                 ? (float) $row->rate
                 : (float) ($room->extra_bed_rate ?? 0);

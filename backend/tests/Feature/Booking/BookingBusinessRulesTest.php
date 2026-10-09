@@ -47,7 +47,7 @@ class BookingBusinessRulesTest extends TestCase
 
         $this->user = User::factory()->create(['username' => 'test_user']);
         $role = Role::create(['code' => 'booking_rules_test', 'name' => 'Booking rules test', 'level' => 3, 'department_scope' => 'FO', 'is_active' => true]);
-        foreach (['fo.booking.create', 'fo.booking.edit', 'fo.checkin', 'fo.checkout', 'fo.room.move', 'fo.service.view', 'fo.service.add', 'fo.service.edit', 'fo.service.delete'] as $code) {
+        foreach (['fo.booking.create', 'fo.booking.edit', 'fo.frontdesk.view', 'fo.checkin', 'fo.checkout', 'fo.room.move', 'fo.service.view', 'fo.service.add', 'fo.service.edit', 'fo.service.delete'] as $code) {
             $permission = Permission::firstOrCreate(['code' => $code], ['name' => $code, 'module' => 'FO']);
             $role->permissions()->syncWithoutDetaching([$permission->id]);
         }
@@ -773,8 +773,8 @@ class BookingBusinessRulesTest extends TestCase
                         [
                             'roomNumber' => '101',
                             'guestName' => 'Out of bounds Guest',
-                            'arrivalDate' => '2026-08-06', // Outside booking arrival
-                            'departureDate' => '2026-08-09',
+                            'arrivalDate' => '2026-08-07', // Valid PMS date; isolate containment validation
+                            'departureDate' => '2026-08-10', // Outside booking departure
                         ]
                     ]
                 ]
@@ -1654,40 +1654,37 @@ class BookingBusinessRulesTest extends TestCase
         // 5. Test Inhouse restrictions: set room1 status to CHECKED_IN
         $room1->update(['status' => BookingRoom::STATUS_CHECKED_IN]);
 
-        // Scenario A: Non-FO user tries to update inhouse room dates.
-        // Arrival and Departure dates should remain unchanged. Only Rate is allowed.
-        $this->user->update(['department_code' => 'SALES']); // Set to non-FO
+        // Sale must reject unsupported fields atomically, even with FO grants.
+        $this->postJson("/api/bookings/{$booking->id}/rooms/bulk-update", [
+            'current_module' => 'SALE', 'room_ids' => [$room1->id],
+            'arrival_date' => '2026-08-23', 'departure_date' => '2026-08-27', 'rate' => 180000,
+        ])->assertStatus(422);
+        $this->assertEquals('2026-08-22', $room1->fresh()->arrival_date->toDateString());
+        $this->assertEquals('2026-08-26', $room1->fresh()->departure_date->toDateString());
+        $this->assertEquals(150000, $room1->fresh()->rate);
 
-        $payloadNonFO = [
-            'room_ids' => ['G0000001'],
-            'arrival_date' => '2026-08-23', // Should be ignored
-            'departure_date' => '2026-08-27', // Should be ignored for non-FO
-            'rate' => 180000, // Allowed
-        ];
+        HotelConfig::updateOrCreate(['name' => 'AllowReserUpdateRate_DeptDateRoomInhouse'], ['value' => '0']);
+        $this->postJson("/api/bookings/{$booking->id}/rooms/bulk-update", [
+            'current_module' => 'SALE', 'room_ids' => [$room1->id], 'rate' => 180000,
+        ])->assertStatus(403);
+        $this->assertEquals(150000, $room1->fresh()->rate);
 
-        $responseNonFO = $this->postJson("/api/bookings/{$booking->id}/rooms/bulk-update", $payloadNonFO);
-        $responseNonFO->assertSuccessful();
+        HotelConfig::where('name', 'AllowReserUpdateRate_DeptDateRoomInhouse')->update(['value' => '1']);
+        $this->postJson("/api/bookings/{$booking->id}/rooms/bulk-update", [
+            'current_module' => 'SALE', 'room_ids' => [$room1->id],
+            'departure_date' => '2026-08-27', 'rate' => 180000,
+        ])->assertSuccessful();
+        $this->assertEquals('2026-08-22', $room1->fresh()->arrival_date->toDateString());
+        $this->assertEquals('2026-08-27', $room1->fresh()->departure_date->toDateString());
+        $this->assertEquals(180000, $room1->fresh()->rate);
 
-        $room1->refresh();
-        $this->assertEquals('2026-08-22', $room1->arrival_date->toDateString());
-        $this->assertEquals('2026-08-26', $room1->departure_date->toDateString()); // Unchanged
-        $this->assertEquals(180000, $room1->rate); // Changed
-
-        // Scenario B: FO user tries to update inhouse room dates.
-        // Departure date should be allowed to change.
-        $this->user->update(['department_code' => 'FO']); // Set to FO
-
-        $payloadFO = [
-            'room_ids' => ['G0000001'],
-            'departure_date' => '2026-08-27', // Allowed for FO
-        ];
-
-        $responseFO = $this->postJson("/api/bookings/{$booking->id}/rooms/bulk-update", $payloadFO);
-        $responseFO->assertSuccessful();
-
-        $room1->refresh();
-        $this->assertEquals('2026-08-22', $room1->arrival_date->toDateString()); // Unchanged
-        $this->assertEquals('2026-08-27', $room1->departure_date->toDateString()); // Changed
+        // FO entry requires an actual FO grant, regardless of department labels.
+        HotelConfig::where('name', 'AllowReserUpdateRate_DeptDateRoomInhouse')->update(['value' => '0']);
+        $this->postJson("/api/bookings/{$booking->id}/rooms/bulk-update", [
+            'current_module' => 'FO', 'room_ids' => [$room1->id], 'departure_date' => '2026-08-28',
+        ])->assertSuccessful();
+        $this->assertEquals('2026-08-22', $room1->fresh()->arrival_date->toDateString());
+        $this->assertEquals('2026-08-28', $room1->fresh()->departure_date->toDateString());
     }
 
     /**
