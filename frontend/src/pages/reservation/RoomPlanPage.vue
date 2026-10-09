@@ -15,6 +15,7 @@ import echo from '@/services/echo'
 import { calculateRoomPlanBookingAmounts, calculateRoomPlanRoomAmounts } from '@/utils/room-plan-amounts.js'
 import { resolveRateCodePrice } from '@/utils/rate-code-pricing.js'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
+import { getRoomPlanDateRange, setRoomPlanDateRange } from './room-plan-view-state.js'
 
 const uiStore = useUiStore()
 const roomStore = useRoomStore()
@@ -60,7 +61,7 @@ const presetColors = [
   '#9B59B6', '#1ABC9C', '#34495E', '#FFFFFF'
 ]
 
-const systemDate = ref('')
+const systemDate = ref(authStore.systemDate || localStorage.getItem('pms_system_date') || '')
 
 // Hsv/Rgb/Hex Helpers
 function hsvToRgb(h, s, v) {
@@ -168,9 +169,31 @@ const pickerPresets = [
 const emit = defineEmits(['loading', 'edit-booking'])
 
 const getInitialDates = () => {
-  const start = new Date()
-  const end = new Date()
-  end.setDate(start.getDate() + 29)
+  const targetSysDate = authStore.systemDate || localStorage.getItem('pms_system_date')
+  let start
+  if (targetSysDate) {
+    const parts = String(targetSysDate).split('-')
+    if (parts.length === 3) {
+      start = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))
+    } else {
+      start = new Date()
+    }
+  } else {
+    start = new Date()
+  }
+
+  // Khôi phục giai đoạn đang xem từ bộ nhớ RAM khi chuyển đổi giữa các tab SPA (theo Dòng 8)
+  const savedState = getRoomPlanDateRange()
+  let end
+  if (savedState) {
+    const sParts = savedState.startDate.split('-')
+    const eParts = savedState.endDate.split('-')
+    start = new Date(Number(sParts[0]), Number(sParts[1]) - 1, Number(sParts[2]))
+    end = new Date(Number(eParts[0]), Number(eParts[1]) - 1, Number(eParts[2]))
+  } else {
+    end = new Date(start)
+    end.setDate(start.getDate() + 29)
+  }
   
   const format = (d) => {
     const y = d.getFullYear()
@@ -183,7 +206,7 @@ const getInitialDates = () => {
     const y = d.getFullYear()
     const m = String(d.getMonth() + 1).padStart(2, '0')
     const dd = String(d.getDate()).padStart(2, '0')
-    return `${dd} / ${m} / ${y}`
+    return `${dd}/${m}/${y}`
   }
   
   return {
@@ -494,8 +517,16 @@ function restoreRoomPlanScrollPosition() {
 }
 
 function saveDateRange() {
-  const start = new Date(tempStartDateStr.value)
-  const end = new Date(tempEndDateStr.value)
+  const startParts = String(tempStartDateStr.value).split('-')
+  const endParts = String(tempEndDateStr.value).split('-')
+  let start, end
+  if (startParts.length === 3 && endParts.length === 3) {
+    start = new Date(Number(startParts[0]), Number(startParts[1]) - 1, Number(startParts[2]))
+    end = new Date(Number(endParts[0]), Number(endParts[1]) - 1, Number(endParts[2]))
+  } else {
+    start = new Date(tempStartDateStr.value)
+    end = new Date(tempEndDateStr.value)
+  }
   if (isNaN(start.getTime()) || isNaN(end.getTime())) {
     uiStore.showToast('Định dạng ngày không hợp lệ', 'error')
     return
@@ -507,8 +538,10 @@ function saveDateRange() {
   startDate.value = start
   endDate.value = end
   dateRangeText.value = `${formatDateToDMY(formatDateStr(start))} ~ ${formatDateToDMY(formatDateStr(end))}`
-  sessionStorage.setItem(ROOM_PLAN_START_DATE_KEY, formatDateStr(start))
-  sessionStorage.setItem(ROOM_PLAN_END_DATE_KEY, formatDateStr(end))
+  // Lưu vào in-memory view-state (giữ nguyên khi chuyển màn hình; reload F5 tự động về mặc định theo Dòng 8)
+  setRoomPlanDateRange(formatDateStr(start), formatDateStr(end))
+  sessionStorage.removeItem(ROOM_PLAN_START_DATE_KEY)
+  sessionStorage.removeItem(ROOM_PLAN_END_DATE_KEY)
   showDatePickerPopover.value = false
 }
 
@@ -1673,8 +1706,9 @@ onMounted(async () => {
     // Apply system date
     if (sysDateRes.status === 'fulfilled' && sysDateRes.value?.data?.data?.system_date) {
       sysDateStr = sysDateRes.value.data.data.system_date
+      authStore.setSystemDate(sysDateStr)
     }
-    systemDate.value = sysDateStr || formatDateStr(new Date())
+    systemDate.value = sysDateStr || authStore.systemDate || localStorage.getItem('pms_system_date') || formatDateStr(new Date())
 
     // Apply user settings
     if (userSettingsRes.status === 'fulfilled' && userSettingsRes.value?.data?.data) {
@@ -1692,16 +1726,29 @@ onMounted(async () => {
     console.error('Failed to load initial settings:', err)
   }
 
-  // 2. Initialize date range: restore from sessionStorage if available, else system date + 30 days
-  const savedStartDate = sessionStorage.getItem(ROOM_PLAN_START_DATE_KEY)
-  const savedEndDate = sessionStorage.getItem(ROOM_PLAN_END_DATE_KEY)
-  let baseDate = sysDateStr ? new Date(sysDateStr) : new Date()
-  let endDateVal = new Date(baseDate)
-  endDateVal.setDate(baseDate.getDate() + 29)
+  // 2. Initialize date range: Khôi phục giai đoạn khi chuyển giữa các màn hình trong SPA; khi F5 reload quay về mặc định hệ thống ~ +30 ngày (Dòng 8)
+  const savedDateRange = getRoomPlanDateRange()
+  let baseDate
+  let endDateVal
 
-  if (savedStartDate && savedEndDate && !isNaN(new Date(savedStartDate).getTime()) && !isNaN(new Date(savedEndDate).getTime())) {
-    baseDate = new Date(savedStartDate)
-    endDateVal = new Date(savedEndDate)
+  if (savedDateRange) {
+    const sParts = savedDateRange.startDate.split('-')
+    const eParts = savedDateRange.endDate.split('-')
+    baseDate = new Date(Number(sParts[0]), Number(sParts[1]) - 1, Number(sParts[2]))
+    endDateVal = new Date(Number(eParts[0]), Number(eParts[1]) - 1, Number(eParts[2]))
+  } else {
+    // Mặc định từ ngày hệ thống đến ngày hệ thống + 29 ngày (30 ngày)
+    const targetSys = sysDateStr || authStore.systemDate || localStorage.getItem('pms_system_date')
+    if (targetSys) {
+      const parts = String(targetSys).split('-')
+      baseDate = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))
+    } else {
+      baseDate = new Date()
+    }
+    endDateVal = new Date(baseDate)
+    endDateVal.setDate(baseDate.getDate() + 29)
+    sessionStorage.removeItem(ROOM_PLAN_START_DATE_KEY)
+    sessionStorage.removeItem(ROOM_PLAN_END_DATE_KEY)
   }
 
   suppressDateRangeReload = true
@@ -3474,7 +3521,7 @@ function getDragVerticalBounds(force = false) {
   const theadEl = scrollContainer.querySelector('thead')
   const tfootEl = scrollContainer.querySelector('tfoot')
 
-  // The <thead> itself scrolls with the table; only its <th> cells are sticky.
+  // The <thead> itself scrolls with the table; only its <th class="text-center align-middle border border-slate-200"> cells are sticky.
   // Reading the thead rect therefore gives an off-screen/negative position
   // after scrolling down and prevents upward auto-scroll from ever starting.
   const stickyHeaderCells = theadEl ? Array.from(theadEl.querySelectorAll('th')) : []
@@ -4366,6 +4413,7 @@ function getRoomStatusIconName(item) {
                 <span class="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Từ ngày</span>
                 <SingleDatePicker 
                   v-model="tempStartDateStr"
+                  :start-date="systemDate"
                   input-class="dark:bg-slate-800 dark:text-slate-100 dark:border-slate-700"
                   placeholder="Chọn ngày bắt đầu"
                 />
@@ -4374,6 +4422,7 @@ function getRoomStatusIconName(item) {
                 <span class="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Đến ngày</span>
                 <SingleDatePicker 
                   v-model="tempEndDateStr"
+                  :start-date="systemDate"
                   input-class="dark:bg-slate-800 dark:text-slate-100 dark:border-slate-700"
                   placeholder="Chọn ngày kết thúc"
                 />
@@ -4538,11 +4587,11 @@ function getRoomStatusIconName(item) {
         <!-- Header -->
         <thead @dragenter="handleGlobalDragOver($event)" @dragover="handleGlobalDragOver($event)">
           <tr class="border-b border-slate-200 text-[#000000D9] select-none h-10">
-            <th class="p-2 border-r border-slate-200 text-center sticky left-0 top-0 z-40 bg-slate-100 shadow-[inset_-1px_0_0_#e2e8f0]"></th>
+            <th class="p-2 border-r border-slate-200 text-center sticky left-0 top-0 z-40 bg-slate-100 shadow-[inset_-1px_0_0_#e2e8f0] border"></th>
             <th 
               v-for="(day, idx) in days" 
               :key="day.key" 
-              class="p-1 border-r border-slate-200 text-center sticky top-0 z-30 shadow-[inset_0_-1px_0_#e2e8f0]"
+              class="p-1 border-r border-slate-200 text-center sticky top-0 z-30 shadow-[inset_0_-1px_0_#e2e8f0] align-middle border"
               :class="[
                 dragSourceStartIdx !== null && idx >= dragSourceStartIdx && idx < dragSourceEndIdx
                   ? 'bg-[#fff7cc] text-amber-900 border-[#facc15] shadow-[inset_0_-2px_0_#facc15]'
@@ -4573,7 +4622,7 @@ function getRoomStatusIconName(item) {
             >
               <td 
                 :colspan="days.length + 1" 
-                class="p-1 pl-3 font-semibold text-[#000000D9] bg-slate-100 border-r border-slate-200 sticky left-0 z-20 text-xs shadow-[inset_-1px_0_0_#e2e8f0] text-left uppercase"
+                class="p-1 pl-3 font-semibold text-[#000000D9] bg-slate-100 border-slate-200 sticky left-0 z-20 text-xs shadow-[inset_-1px_0_0_#e2e8f0] text-left uppercase"
               >
                 {{ 
                   (activeGroupSetting === 'Phòng' || activeGroupSetting === 'Tầng') && item.isVirtual 
@@ -4589,10 +4638,8 @@ function getRoomStatusIconName(item) {
             >
               <!-- Room Info (Sticky Left) -->
               <td 
-                class="p-0.5 px-1 border-r border-slate-300 sticky left-0 z-20 shadow-[inset_-1px_0_0_#cbd5e1] h-[37px] overflow-hidden transition-colors"
-                :class="[
-                  dragSourceRoom === item.room ? '!bg-[#fff7cc] !text-amber-900 shadow-[inset_-1px_0_0_#facc15]' : (item.isVirtual ? 'bg-[#fdf6e2]' : 'bg-white')
-                ]"
+                class="p-0.5 px-1 border-slate-300 sticky left-0 z-20 shadow-[inset_-1px_0_0_#cbd5e1] h-[37px] overflow-hidden transition-colors"
+                :class="[ dragSourceRoom === item.room ? '!bg-[#fff7cc] !text-amber-900 shadow-[inset_-1px_0_0_#facc15]' : (item.isVirtual ? 'bg-[#fdf6e2]' : 'bg-white') ]"
               >
                 <div class="flex items-center justify-between h-full w-full gap-0.5">
                   <!-- Room Number (Left side) -->
@@ -4809,7 +4856,7 @@ function getRoomStatusIconName(item) {
           <!-- Summary OCC Footer Row -->
           <tr class="h-[38px] text-slate-800">
             <td 
-              class="p-1 sticky left-0 bg-[#93c5fd] shadow-[inset_-1px_-1px_0_#60a5fa] font-semibold text-xs px-1 select-none leading-tight z-40 cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden"
+              class="p-1 sticky left-0 bg-[#93c5fd] shadow-[inset_-1px_-1px_0_#60a5fa] font-semibold text-xs px-1 select-none leading-tight z-40 cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden border-slate-200"
               :title="'Danh sách phòng bận ít nhất một ngày trong giai đoạn này:\n' + (dynamicStats.allPeriodOccRooms?.join(', ') || 'Không có')"
             >
               <div class="flex items-center justify-between w-full text-slate-900 text-xs font-semibold gap-0.5">
@@ -4820,7 +4867,7 @@ function getRoomStatusIconName(item) {
             <td 
               v-for="(day, idx) in days" 
               :key="day.key" 
-              class="p-1 text-center text-xs font-normal text-[#000000D9] shadow-[inset_-1px_-1px_0_#93c5fd] cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden leading-tight"
+              class="p-1 text-center text-xs font-normal text-[#000000D9] shadow-[inset_-1px_-1px_0_#93c5fd] cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden leading-tight border-r border-slate-200"
               :class="[
                 dragSourceStartIdx !== null && idx >= dragSourceStartIdx && idx < dragSourceEndIdx
                   ? 'bg-[#fff7cc] shadow-[inset_-1px_-1px_0_#facc15]'
@@ -4835,7 +4882,7 @@ function getRoomStatusIconName(item) {
           <!-- Summary AV Footer Row -->
           <tr class="bg-white h-[38px] text-slate-800">
             <td 
-              class="p-1 sticky left-0 bg-[#bae6fd] shadow-[inset_-1px_-1px_0_#7dd3fc] font-semibold text-xs px-1 select-none leading-tight z-40 cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden"
+              class="p-1 sticky left-0 bg-[#bae6fd] shadow-[inset_-1px_-1px_0_#7dd3fc] font-semibold text-xs px-1 select-none leading-tight z-40 cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden border-slate-200"
               :title="'Danh sách phòng trống suốt giai đoạn này:\n' + (dynamicStats.allPeriodAvRooms?.join(', ') || 'Không có')"
             >
               <div class="flex items-center justify-between w-full text-slate-900 text-xs font-semibold gap-0.5">
@@ -4846,10 +4893,8 @@ function getRoomStatusIconName(item) {
             <td 
               v-for="(day, idx) in days" 
               :key="day.key" 
-              class="p-1 text-center text-xs font-normal text-[#000000D9] shadow-[inset_-1px_-1px_0_#e2e8f0] cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden leading-tight"
-              :class="[
-                isTodayDate(day.fullDate) ? 'bg-[#ff7043]/20' : (day.isWeekend ? 'bg-[#72b5f7]/30' : 'bg-white')
-              ]"
+              class="p-1 text-center text-xs font-normal text-[#000000D9] shadow-[inset_-1px_-1px_0_#e2e8f0] cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden leading-tight border-r border-slate-200"
+              :class="[ isTodayDate(day.fullDate) ? 'bg-[#ff7043]/20' : (day.isWeekend ? 'bg-[#72b5f7]/30' : 'bg-white') ]"
               :title="'Danh sách phòng trống ngày ' + day.dateStr + ':\n' + (dynamicStats.avRooms[idx]?.join(', ') || 'Không có')"
             >
               {{ dynamicStats.av[idx] }}
@@ -4859,7 +4904,7 @@ function getRoomStatusIconName(item) {
           <!-- Summary OOO Footer Row -->
           <tr class="bg-white h-[38px] text-slate-800">
             <td 
-              class="p-1 sticky left-0 bg-[#bae6fd] shadow-[inset_-1px_-1px_0_#7dd3fc] font-semibold text-xs px-1 select-none leading-tight z-40 cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden"
+              class="p-1 sticky left-0 bg-[#bae6fd] shadow-[inset_-1px_-1px_0_#7dd3fc] font-semibold text-xs px-1 select-none leading-tight z-40 cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden border-slate-200"
               :title="'Danh sách phòng khóa bảo trì ít nhất một ngày trong giai đoạn này:\n' + (dynamicStats.allPeriodOooRooms?.join(', ') || 'Không có')"
             >
               <div class="flex items-center justify-between w-full text-slate-900 text-xs font-semibold gap-0.5">
@@ -4870,10 +4915,8 @@ function getRoomStatusIconName(item) {
             <td 
               v-for="(day, idx) in days" 
               :key="day.key" 
-              class="p-1 text-center text-xs font-normal text-[#000000D9] shadow-[inset_-1px_-1px_0_#e2e8f0] cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden leading-tight"
-              :class="[
-                isTodayDate(day.fullDate) ? 'bg-[#ff7043]/20' : (day.isWeekend ? 'bg-[#72b5f7]/30' : 'bg-white')
-              ]"
+              class="p-1 text-center text-xs font-normal text-[#000000D9] shadow-[inset_-1px_-1px_0_#e2e8f0] cursor-help h-[38px] box-border whitespace-nowrap overflow-hidden leading-tight border-r border-slate-200"
+              :class="[ isTodayDate(day.fullDate) ? 'bg-[#ff7043]/20' : (day.isWeekend ? 'bg-[#72b5f7]/30' : 'bg-white') ]"
               :title="'Danh sách phòng khóa bảo trì ngày ' + day.dateStr + ':\n' + (dynamicStats.oooRooms[idx]?.join(', ') || 'Không có')"
             >
               {{ dynamicStats.ooo[idx] }}
@@ -5288,6 +5331,7 @@ function getRoomStatusIconName(item) {
                     <span class="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Từ ngày</span>
                     <SingleDatePicker 
                       v-model="tempWaitlistStartDateStr"
+                      :start-date="systemDate"
                       input-class="dark:bg-slate-800 dark:text-slate-100 dark:border-slate-700"
                       placeholder="Chọn ngày bắt đầu"
                     />
@@ -5296,6 +5340,7 @@ function getRoomStatusIconName(item) {
                     <span class="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase">Đến ngày</span>
                     <SingleDatePicker 
                       v-model="tempWaitlistEndDateStr"
+                      :start-date="systemDate"
                       input-class="dark:bg-slate-800 dark:text-slate-100 dark:border-slate-700"
                       placeholder="Chọn ngày kết thúc"
                     />
@@ -5338,29 +5383,29 @@ function getRoomStatusIconName(item) {
               </colgroup>
               <thead class="sticky top-0 z-10 bg-slate-100 text-slate-600 font-bold border-b border-slate-200 h-9">
                 <tr>
-                  <th class="px-3 py-2 font-semibold text-slate-700 text-xs">Tên khách</th>
-                  <th class="px-2 py-2 text-center font-semibold text-slate-700 text-xs">
+                  <th class="px-3 py-2 font-semibold text-slate-700 text-xs text-center align-middle border-r border-slate-200 border">Tên Khách</th>
+                  <th class="px-2 py-2 text-center font-semibold text-slate-700 text-xs align-middle border-r border-slate-200 border">
                     <span class="w-2.5 h-2.5 inline-block rounded-full bg-emerald-500 mr-1"></span>
-                    Ngày đến
+                    Ngày Đến
                   </th>
-                  <th class="px-2 py-2 text-center font-semibold text-slate-700 text-xs">
+                  <th class="px-2 py-2 text-center font-semibold text-slate-700 text-xs align-middle border-r border-slate-200 border">
                     <span class="w-2.5 h-2.5 inline-block rounded-full bg-rose-500 mr-1"></span>
-                    Ngày đi
+                    Ngày Đi
                   </th>
-                  <th class="px-3 py-2 text-right font-semibold text-slate-700 text-xs">Loại phòng</th>
+                  <th class="px-3 py-2 text-center font-semibold text-slate-700 text-xs align-middle border-r border-slate-200 border">Loại Phòng</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100 font-normal text-slate-600">
                 <tr v-if="waitingListItems.length === 0" class="h-20 bg-white">
-                  <td colspan="4" class="text-center text-slate-400 py-6 select-none font-medium text-xs">
+                  <td colspan="4" class="text-center text-slate-400 py-6 select-none font-medium text-xs border-slate-200">
                     Không có đăng ký nào trong danh sách chờ
                   </td>
                 </tr>
                 <tr v-else v-for="(item, idx) in waitingListItems" :key="idx" class="hover:bg-slate-50/50 h-[38px]">
-                  <td class="px-3 py-2 truncate text-slate-800 font-medium text-xs">{{ item.guestName }}</td>
-                  <td class="px-2 py-2 text-center text-xs text-slate-600 font-normal">{{ item.checkIn }}</td>
-                  <td class="px-2 py-2 text-center text-xs text-slate-600 font-normal">{{ item.checkOut }}</td>
-                  <td class="px-3 py-2 text-right font-semibold text-slate-700 text-xs">{{ item.type }}</td>
+                  <td class="px-3 py-2 truncate text-slate-800 font-medium text-xs border-slate-200">{{ item.guestName }}</td>
+                  <td class="px-2 py-2 text-center text-xs text-slate-600 font-normal border-slate-200">{{ item.checkIn }}</td>
+                  <td class="px-2 py-2 text-center text-xs text-slate-600 font-normal border-slate-200">{{ item.checkOut }}</td>
+                  <td class="px-3 py-2 text-right font-semibold text-slate-700 text-xs border-slate-200">{{ item.type }}</td>
                 </tr>
               </tbody>
             </table>

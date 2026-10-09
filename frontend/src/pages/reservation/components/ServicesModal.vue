@@ -124,11 +124,11 @@
             <table class="w-full border-collapse text-left text-xs">
               <thead>
                 <tr class="bg-slate-50 border-b border-slate-200 text-[#000000D9] font-semibold h-8">
-                  <th class="p-2 pl-3">Dịch vụ</th>
-                  <th class="p-2 text-center w-24">Số lượng</th>
-                  <th class="p-2 text-right w-36">Đơn giá (VND)</th>
-                  <th class="p-2 text-right w-36">Thành tiền</th>
-                  <th class="p-2 text-center w-36">Phòng / Master</th>
+                  <th class="p-2 pl-3 text-center align-middle border-r border-slate-200 border">Dịch Vụ</th>
+                  <th class="p-2 text-center w-24 align-middle border-r border-slate-200 border">Số Lượng</th>
+                  <th class="p-2 text-center w-36 align-middle border-r border-slate-200 border">Đơn Giá (VND)</th>
+                  <th class="p-2 text-center w-36 align-middle border-r border-slate-200 border">Thành Tiền</th>
+                  <th class="p-2 text-center w-36 align-middle border-r border-slate-200 border">Phòng / Master</th>
                 </tr>
               </thead>
               <tbody>
@@ -137,10 +137,10 @@
                   :key="item.service_code"
                   class="border-b border-slate-100 hover:bg-slate-50/50 h-10 align-middle"
                 >
-                  <td class="p-2 pl-3 font-semibold text-[#000000D9]">
+                  <td class="p-2 pl-3 font-semibold text-[#000000D9] border-slate-200">
                     {{ item.service_name }}
                   </td>
-                  <td class="p-2 text-center">
+                  <td class="p-2 text-center border-slate-200">
                     <input 
                       type="number" 
                       v-model.number="item.quantity" 
@@ -149,7 +149,7 @@
                       class="w-16 border border-slate-300 rounded px-1.5 py-0.5 text-center font-normal text-xs text-[#000000D9] focus:outline-none focus:border-blue-500"
                     />
                   </td>
-                  <td class="p-2 text-right">
+                  <td class="p-2 text-right border-slate-200">
                     <input 
                       type="text" 
                       :value="formatCurrencyInput(item.rate)" 
@@ -157,10 +157,10 @@
                       class="w-28 border border-slate-300 rounded px-2 py-0.5 text-right font-normal text-xs text-[#000000D9] focus:outline-none focus:border-blue-500"
                     />
                   </td>
-                  <td class="p-2 text-right font-semibold text-blue-700">
+                  <td class="p-2 text-right font-semibold text-blue-700 border-slate-200">
                     {{ formatCurrencyInput(item.quantity * item.rate) }}
                   </td>
-                  <td class="p-2 text-center">
+                  <td class="p-2 text-center border-slate-200">
                     <!-- Toggle Phòng / Master -->
                     <div class="flex items-center justify-center space-x-1.5 select-none">
                       <span 
@@ -198,7 +198,7 @@
                   </td>
                 </tr>
                 <tr v-if="serviceItems.length === 0">
-                  <td colspan="5" class="p-8 text-center text-slate-400 italic text-xs">
+                  <td colspan="5" class="p-8 text-center text-slate-400 italic text-xs border-slate-200">
                     Chưa chọn dịch vụ nào. Hãy tích chọn dịch vụ ở cột bên trái!
                   </td>
                 </tr>

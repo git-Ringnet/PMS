@@ -22,6 +22,7 @@ export const useAuthStore = defineStore('auth', {
     branches: JSON.parse(localStorage.getItem('pms_branches') || '[]'),
     activeBranch: JSON.parse(localStorage.getItem('pms_active_branch') || 'null'),
     roles: JSON.parse(localStorage.getItem('pms_roles') || '[]'),
+    systemDate: localStorage.getItem('pms_system_date') || '',
   }),
 
   getters: {
@@ -67,6 +68,7 @@ export const useAuthStore = defineStore('auth', {
             localStorage.setItem('pms_roles', JSON.stringify(this.roles))
           }
           cleanOldLocalConfigs()
+          this.fetchSystemDate()
         } catch (err) {
           console.error('Không thể xác thực user hiện tại', err)
           this.logout()
@@ -74,6 +76,26 @@ export const useAuthStore = defineStore('auth', {
           this.loading = false
         }
       }
+    },
+
+    setSystemDate(date) {
+      if (date) {
+        this.systemDate = String(date).split('T')[0].split(' ')[0]
+        localStorage.setItem('pms_system_date', this.systemDate)
+      }
+    },
+
+    async fetchSystemDate() {
+      try {
+        const res = await http.get('/system-date')
+        if (res.data?.success && res.data.data?.system_date) {
+          this.setSystemDate(res.data.data.system_date)
+          return this.systemDate
+        }
+      } catch (e) {
+        console.error('Lỗi khi fetchSystemDate trong authStore:', e)
+      }
+      return this.systemDate
     },
 
     async login(username, password) {

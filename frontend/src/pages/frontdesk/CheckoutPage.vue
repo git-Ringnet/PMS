@@ -30,6 +30,7 @@ import { isCheckedOutRecord } from '@/utils/checkout-status'
 import { billBelongsToCurrentRoom, isMasterBillRecord, isMasterOwnedBill, serviceBillCurrentGuestId } from '@/utils/service-bill-ownership'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import AdjustRoomRateModal from './components/AdjustRoomRateModal.vue'
+import SingleDatePicker from '@/components/SingleDatePicker.vue'
 import echo from '@/services/echo'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
@@ -125,6 +126,7 @@ const toggleSidebar = () => {
 }
 
 // UI State
+const systemDate = ref(authStore.systemDate || localStorage.getItem('pms_system_date') || '')
 const searchQuery = ref('')
 const registerFilter = ref('current')
 const showRegisterFilterDropdown = ref(false)
@@ -569,7 +571,6 @@ const toggleCheckoutGuest = (roomId, guestId, checked) => {
 }
 const selectedBooking = ref(null)
 const selectedRoomItem = ref(null)
-const systemDate = ref('')
 const isNoPostEnabled = value => value === true || value === 1 || ['1', 'true', 'yes'].includes(String(value ?? '').trim().toLowerCase())
 const selectedBookingNoPost = computed(() => isNoPostEnabled(selectedBooking.value?.rawBooking?.no_post ?? selectedBooking.value?.no_post))
 const selectedRoomNoPost = computed(() => isNoPostEnabled(selectedRoomItem.value?.rawRoom?.no_post ?? selectedRoomItem.value?.no_post))
@@ -684,13 +685,13 @@ const searchContainerRef = ref(null)
 const filterContainerRef = ref(null)
 
 function formatDate(dateStr) {
-  if (!dateStr) return '-- / -- / ----'
+  if (!dateStr) return '--/--/----'
   const d = new Date(dateStr)
   if (isNaN(d.getTime())) return dateStr
   const day = String(d.getDate()).padStart(2, '0')
   const month = String(d.getMonth() + 1).padStart(2, '0')
   const year = d.getFullYear()
-  return `${day} / ${month} / ${year}`
+  return `${day}/${month}/${year}`
 }
 
 function formatTime(value) {
@@ -749,6 +750,7 @@ const loadSystemDate = async () => {
     const res = await fetchSystemDate()
     if (res.data?.data?.system_date) {
       systemDate.value = res.data.data.system_date
+      authStore.setSystemDate(res.data.data.system_date)
       if (filterDateScope.value !== 'custom') setFilterDatesForScope(filterDateScope.value)
     }
   } catch (err) {
@@ -3674,9 +3676,31 @@ onUnmounted(() => {
                 </select>
                 <div class="checkout-filter-date-row">
                   <label class="checkout-filter-date-label"><input type="checkbox" v-model="filterDepartureChecked" class="rounded border-gray-300 text-blue-600" /> Ngày đi ĐK</label>
-                  <div class="checkout-filter-date-inputs">
-                    <div class="checkout-filter-date-wrap" @click="openDatePicker"><input type="date" v-model="filterDateFrom" @change="filterDateScope = 'custom'" :disabled="!filterDepartureChecked" /><i class="fa-regular fa-calendar-days"></i><i class="fa-regular fa-copy" @click.stop="copyFilterDate('from')" title="Chép ngày sang ô bên phải"></i></div>
-                    <div class="checkout-filter-date-wrap" @click="openDatePicker"><input type="date" v-model="filterDateTo" @change="filterDateScope = 'custom'" :disabled="!filterDepartureChecked" /><i class="fa-regular fa-calendar-days"></i><i class="fa-regular fa-copy" @click.stop="copyFilterDate('to')" title="Chép ngày sang ô bên trái"></i></div>
+                  <div class="checkout-filter-date-inputs flex items-center gap-1">
+                    <SingleDatePicker
+                      v-model="filterDateFrom"
+                      @change="filterDateScope = 'custom'"
+                      :disabled="!filterDepartureChecked"
+                      :start-date="filterDateFrom || systemDate || authStore.systemDate"
+                      placeholder="dd/mm/yyyy"
+                      four-digit-year
+                      class="w-[110px]"
+                    />
+                    <button type="button" @click.stop="copyFilterDate('from')" title="Chép ngày sang ô bên phải" class="p-1 text-slate-400 hover:text-sky-600 bg-transparent border-none cursor-pointer">
+                      <i class="fa-regular fa-copy text-xs"></i>
+                    </button>
+                    <SingleDatePicker
+                      v-model="filterDateTo"
+                      @change="filterDateScope = 'custom'"
+                      :disabled="!filterDepartureChecked"
+                      :start-date="filterDateTo || filterDateFrom || systemDate || authStore.systemDate"
+                      placeholder="dd/mm/yyyy"
+                      four-digit-year
+                      class="w-[110px]"
+                    />
+                    <button type="button" @click.stop="copyFilterDate('to')" title="Chép ngày sang ô bên trái" class="p-1 text-slate-400 hover:text-sky-600 bg-transparent border-none cursor-pointer">
+                      <i class="fa-regular fa-copy text-xs"></i>
+                    </button>
                   </div>
                 </div>
               </div>
@@ -3717,11 +3741,11 @@ onUnmounted(() => {
               </colgroup>
               <thead class="bg-[#f0f2ea] sticky top-0 border-b border-gray-300 text-gray-700 font-semibold">
                 <tr>
-                  <th class="p-1 w-[25px] text-center"></th>
-                  <th class="p-1 text-center">ĐK/Phòng</th>
-                  <th class="p-1 text-center">Tên khách</th>
-                  <th class="p-1 text-right">Tổng DV</th>
-                  <th class="p-1 text-right">Đã TT</th>
+                  <th class="p-1 w-[25px] text-center align-middle border-r border-slate-200 border"></th>
+                  <th class="p-1 text-center align-middle border-r border-slate-200 border">ĐK/Phòng</th>
+                  <th class="p-1 text-center align-middle border-r border-slate-200 border">Tên Khách</th>
+                  <th class="p-1 text-center align-middle border-r border-slate-200 border">Tổng DV</th>
+                  <th class="p-1 text-center align-middle border-r border-slate-200 border">Đã TT</th>
                 </tr>
               </thead>
                             <tbody class="divide-y divide-gray-200">
@@ -3737,20 +3761,20 @@ onUnmounted(() => {
                       'cursor-pointer transition-colors'
                     ]"
                   >
-                    <td class="p-1 w-[25px] text-center">
+                    <td class="p-1 w-[25px] text-center border-slate-200">
                     <input type="checkbox" v-model="b.checked" :disabled="appliedCheckoutFilter.register === 'virtual' || Boolean(b.rawBooking?.is_service_only)" @change="toggleBookingCheck(b)" @click.stop class="rounded border-gray-300 text-sky-600 disabled:cursor-not-allowed disabled:opacity-40" />
                     </td>
-                    <td class="min-w-0 p-1 font-bold text-slate-900">
+                    <td class="min-w-0 p-1 font-bold text-slate-900 border-slate-200">
                       <div class="flex min-w-0 items-center gap-1 overflow-hidden">
                         <i class="fa-solid fa-layer-group text-xs text-indigo-500"></i>
                         <span class="shrink-0 rounded bg-slate-200 px-1 text-xs font-semibold">{{ b.code }}</span>
                       </div>
                     </td>
-                    <td class="min-w-0 p-1 font-bold text-slate-900">
+                    <td class="min-w-0 p-1 font-bold text-slate-900 border-slate-200">
                       <span class="block w-full min-w-0 truncate" :title="b.name">{{ b.name }}</span>
                     </td>
-                    <td class="p-1 text-right tabular-nums text-slate-900">{{ formatSummaryMoney(b.totalService) }}</td>
-                    <td class="p-1 text-right tabular-nums text-slate-900">{{ formatMoney(b.paidAmount) }}</td>
+                    <td class="p-1 text-right tabular-nums text-slate-900 border-slate-200">{{ formatSummaryMoney(b.totalService) }}</td>
+                    <td class="p-1 text-right tabular-nums text-slate-900 border-slate-200">{{ formatMoney(b.paidAmount) }}</td>
                   </tr>
 
                   <template v-for="r in b.roomItems" :key="r.id">
@@ -3768,13 +3792,13 @@ onUnmounted(() => {
                           'cursor-pointer transition-colors text-slate-900'
                         ]"
                       >
-                        <td class="p-1 w-[25px] text-center">
+                        <td class="p-1 w-[25px] text-center border-slate-200">
                           <input type="checkbox" v-model="r.checked" :disabled="r.isVirtual" @click.stop class="rounded border-gray-300 text-sky-600 disabled:cursor-not-allowed disabled:opacity-40" />
                         </td>
-                        <td class="p-1 pl-10 text-slate-900 text-center">{{ r.roomNumber }}</td>
-                        <td class="min-w-0 p-1 truncate text-slate-700" :title="guest.name">{{ guest.name }}</td>
-                        <td class="p-1 text-right tabular-nums">{{ formatSummaryMoney(guestRoomServiceAmount(b, r, guest.id)) }}</td>
-                        <td class="p-1 text-right tabular-nums">{{ formatMoney(guestRoomPaidAmount(b, r, guest.id)) }}</td>
+                        <td class="p-1 pl-10 text-slate-900 text-center border-slate-200">{{ r.roomNumber }}</td>
+                        <td class="min-w-0 p-1 truncate text-slate-700 border-slate-200" :title="guest.name">{{ guest.name }}</td>
+                        <td class="p-1 text-right tabular-nums border-slate-200">{{ formatSummaryMoney(guestRoomServiceAmount(b, r, guest.id)) }}</td>
+                        <td class="p-1 text-right tabular-nums border-slate-200">{{ formatMoney(guestRoomPaidAmount(b, r, guest.id)) }}</td>
                       </tr>
                     </template>
                     <template v-else>
@@ -3789,13 +3813,13 @@ onUnmounted(() => {
                           'cursor-pointer transition-colors text-slate-900'
                         ]"
                       >
-                        <td class="p-1 w-[25px] text-center">
+                        <td class="p-1 w-[25px] text-center border-slate-200">
                           <input type="checkbox" v-model="r.checked" :disabled="r.isVirtual" @click.stop class="rounded border-gray-300 text-sky-600 disabled:cursor-not-allowed disabled:opacity-40" />
                         </td>
-                        <td class="p-1 pl-10 text-slate-900 text-center">{{ r.roomNumber }}</td>
-                        <td class="min-w-0 p-1 truncate text-slate-700" :title="r.guestName">{{ r.guestName }}</td>
-                        <td class="p-1 text-right tabular-nums">{{ formatSummaryMoney(guestRoomServiceAmount(b, r, r.primaryGuestId)) }}</td>
-                        <td class="p-1 text-right tabular-nums">{{ formatMoney(guestRoomPaidAmount(b, r, r.primaryGuestId)) }}</td>
+                        <td class="p-1 pl-10 text-slate-900 text-center border-slate-200">{{ r.roomNumber }}</td>
+                        <td class="min-w-0 p-1 truncate text-slate-700 border-slate-200" :title="r.guestName">{{ r.guestName }}</td>
+                        <td class="p-1 text-right tabular-nums border-slate-200">{{ formatSummaryMoney(guestRoomServiceAmount(b, r, r.primaryGuestId)) }}</td>
+                        <td class="p-1 text-right tabular-nums border-slate-200">{{ formatMoney(guestRoomPaidAmount(b, r, r.primaryGuestId)) }}</td>
                       </tr>
                     </template>
                   </template>
@@ -3848,7 +3872,7 @@ onUnmounted(() => {
             <table class="w-full border-collapse text-left whitespace-nowrap text-xs">
               <thead class="bg-[#f0f2ea] sticky top-0 border-b border-gray-300 text-gray-700 font-semibold">
                 <tr>
-                  <th class="px-2 py-1.5 w-8 text-center">
+                  <th class="px-2 py-1.5 w-8 text-center align-middle border-r border-slate-200 border">
                     <input
                       type="checkbox"
                       :checked="areAllServicesSelected"
@@ -3857,18 +3881,18 @@ onUnmounted(() => {
                       class="rounded border-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
                     />
                   </th>
-                  <th class="px-2.5 py-1.5">Ngày/giờ</th>
-                  <th class="px-2.5 py-1.5">Dịch vụ</th>
-                  <th class="px-2.5 py-1.5">Mô tả</th>
-                  <th class="px-2.5 py-1.5">Bộ phận</th>
-                  <th class="px-2.5 py-1.5 text-right">Số tiền</th>
-                  <th class="px-2.5 py-1.5 text-center">SL</th>
-                  <th class="px-2.5 py-1.5">Mã TT</th>
-                  <th class="px-2.5 py-1.5">Folio</th>
-                  <th class="px-2.5 py-1.5 text-right">Tax</th>
-                  <th class="px-2.5 py-1.5 text-right">Phí phục vụ</th>
-                  <th class="px-2.5 py-1.5">Số VAT</th>
-                  <th class="px-2.5 py-1.5">Người dùng</th>
+                  <th class="px-2.5 py-1.5 text-center align-middle border-r border-slate-200 border">Ngày/Giờ</th>
+                  <th class="px-2.5 py-1.5 text-center align-middle border-r border-slate-200 border">Dịch Vụ</th>
+                  <th class="px-2.5 py-1.5 text-center align-middle border-r border-slate-200 border">Mô Tả</th>
+                  <th class="px-2.5 py-1.5 text-center align-middle border-r border-slate-200 border">Bộ Phận</th>
+                  <th class="px-2.5 py-1.5 text-center align-middle border-r border-slate-200 border">Số Tiền</th>
+                  <th class="px-2.5 py-1.5 text-center align-middle border-r border-slate-200 border">SL</th>
+                  <th class="px-2.5 py-1.5 text-center align-middle border-r border-slate-200 border">Mã TT</th>
+                  <th class="px-2.5 py-1.5 text-center align-middle border-r border-slate-200 border">Folio</th>
+                  <th class="px-2.5 py-1.5 text-center align-middle border-r border-slate-200 border">Tax</th>
+                  <th class="px-2.5 py-1.5 text-center align-middle border-r border-slate-200 border">Phí Phục Vụ</th>
+                  <th class="px-2.5 py-1.5 text-center align-middle border-r border-slate-200 border">Số VAT</th>
+                  <th class="px-2.5 py-1.5 text-center align-middle border-r border-slate-200 border">Người Dùng</th>
                 </tr>
               </thead>
               <tbody>
@@ -3886,7 +3910,7 @@ onUnmounted(() => {
                   ]"
                   :title="canTransferServiceGroup(group) ? 'Kéo sang Folio khác' : 'Xem chi tiết hóa đơn'"
                 >
-                  <td class="px-2 py-1.5 text-center">
+                  <td class="px-2 py-1.5 text-center border-slate-200">
                     <input
                       type="checkbox"
                       :checked="isServiceGroupSelected(group)"
@@ -3896,9 +3920,9 @@ onUnmounted(() => {
                       class="rounded border-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
                     />
                   </td>
-                  <td class="px-2.5 py-1.5 tabular-nums">{{ group.dateTime }}</td>
-                  <td class="px-2.5 py-1.5 font-bold text-slate-900">{{ group.code }}</td>
-                  <td class="px-2.5 py-1.5" @click.stop="startDescriptionEdit('service', group)">
+                  <td class="px-2.5 py-1.5 tabular-nums border-slate-200">{{ group.dateTime }}</td>
+                  <td class="px-2.5 py-1.5 font-bold text-slate-900 border-slate-200">{{ group.code }}</td>
+                  <td class="px-2.5 py-1.5 border-slate-200" @click.stop="startDescriptionEdit('service', group)">
                     <input
                       v-if="isDescriptionEditing('service', group.serviceBillId)"
                       v-model="descriptionDraft"
@@ -3910,17 +3934,17 @@ onUnmounted(() => {
                     />
                     <span v-else class="cursor-text" title="Click để chỉnh sửa mô tả">{{ group.name }}</span>
                   </td>
-                  <td class="px-2.5 py-1.5">{{ group.department }}</td>
-                  <td class="px-2.5 py-1.5 text-right tabular-nums font-bold">{{ formatSummaryMoney(group.totalAmount) }}</td>
-                  <td class="px-2.5 py-1.5 text-center tabular-nums">{{ group.quantity }}</td>
-                  <td class="px-2.5 py-1.5 tabular-nums font-bold text-red-600">{{ group.paymentCode }}</td>
-                  <td class="px-2.5 py-1.5 text-center font-bold">
+                  <td class="px-2.5 py-1.5 border-slate-200">{{ group.department }}</td>
+                  <td class="px-2.5 py-1.5 text-right tabular-nums font-bold border-slate-200">{{ formatSummaryMoney(group.totalAmount) }}</td>
+                  <td class="px-2.5 py-1.5 text-center tabular-nums border-slate-200">{{ group.quantity }}</td>
+                  <td class="px-2.5 py-1.5 tabular-nums font-bold text-red-600 border-slate-200">{{ group.paymentCode }}</td>
+                  <td class="px-2.5 py-1.5 text-center font-bold border-slate-200">
                     <span class="px-2 py-0.5 text-xs font-bold inline-block">{{ group.folio }}</span>
                   </td>
-                  <td class="px-2.5 py-1.5 text-right tabular-nums">{{ group.tax ? formatMoney(group.tax) : '' }}</td>
-                  <td class="px-2.5 py-1.5 text-right tabular-nums">{{ group.serviceCharge ? formatMoney(group.serviceCharge) : '' }}</td>
-                  <td class="px-2.5 py-1.5">{{ group.items[0]?.vatNo }}</td>
-                  <td class="px-2.5 py-1.5">{{ group.items[0]?.userName }}</td>
+                  <td class="px-2.5 py-1.5 text-right tabular-nums border-slate-200">{{ group.tax ? formatMoney(group.tax) : '' }}</td>
+                  <td class="px-2.5 py-1.5 text-right tabular-nums border-slate-200">{{ group.serviceCharge ? formatMoney(group.serviceCharge) : '' }}</td>
+                  <td class="px-2.5 py-1.5 border-slate-200">{{ group.items[0]?.vatNo }}</td>
+                  <td class="px-2.5 py-1.5 border-slate-200">{{ group.items[0]?.userName }}</td>
                 </tr>
               </tbody>
             </table>
@@ -3959,17 +3983,17 @@ onUnmounted(() => {
             <table class="checkout-payment-table w-full border-collapse text-left whitespace-nowrap text-xs">
               <thead class="bg-[#f0f2ea] sticky top-0 border-b border-gray-300 text-gray-700 font-semibold">
                 <tr>
-                  <th class="px-2 py-1.5 w-8 text-center"><input type="checkbox" :checked="areAllPaymentsSelected" :disabled="paymentSelectionIds.length === 0" @change="toggleAllPaymentSelection($event.target.checked)" class="rounded border-gray-300 disabled:cursor-not-allowed disabled:opacity-50" /></th>
-                  <th class="px-2.5 py-1.5">Ngày/giờ</th>
-                  <th class="px-2.5 py-1.5">Bộ phận</th>
-                  <th class="px-2.5 py-1.5">Mô tả</th>
-                  <th class="px-2.5 py-1.5">HTTT</th>
-                  <th class="px-2.5 py-1.5 text-right">Số tiền</th>
-                  <th class="px-2.5 py-1.5">Folio</th>
-                  <th class="px-2.5 py-1.5">Mã thanh toán</th>
-                  <th class="px-2.5 py-1.5">Số VAT</th>
-                  <th class="px-2.5 py-1.5">Giải trừ CN</th>
-                  <th class="px-2.5 py-1.5">Người dùng</th>
+                  <th class="px-2 py-1.5 w-8 text-center align-middle border-r border-slate-200 border"><input type="checkbox" :checked="areAllPaymentsSelected" :disabled="paymentSelectionIds.length === 0" @change="toggleAllPaymentSelection($event.target.checked)" class="rounded border-gray-300 disabled:cursor-not-allowed disabled:opacity-50" /></th>
+                  <th class="px-2.5 py-1.5 text-center align-middle border-r border-slate-200 border">Ngày/Giờ</th>
+                  <th class="px-2.5 py-1.5 text-center align-middle border-r border-slate-200 border">Bộ Phận</th>
+                  <th class="px-2.5 py-1.5 text-center align-middle border-r border-slate-200 border">Mô Tả</th>
+                  <th class="px-2.5 py-1.5 text-center align-middle border-r border-slate-200 border">HTTT</th>
+                  <th class="px-2.5 py-1.5 text-center align-middle border-r border-slate-200 border">Số Tiền</th>
+                  <th class="px-2.5 py-1.5 text-center align-middle border-r border-slate-200 border">Folio</th>
+                  <th class="px-2.5 py-1.5 text-center align-middle border-r border-slate-200 border">Mã Thanh Toán</th>
+                  <th class="px-2.5 py-1.5 text-center align-middle border-r border-slate-200 border">Số VAT</th>
+                  <th class="px-2.5 py-1.5 text-center align-middle border-r border-slate-200 border">Giải Trừ CN</th>
+                  <th class="px-2.5 py-1.5 text-center align-middle border-r border-slate-200 border">Người Dùng</th>
                 </tr>
               </thead>
               <tbody>
@@ -3986,7 +4010,7 @@ onUnmounted(() => {
                   ]"
                   :title="canTransferPayment(p) ? 'Kéo sang Folio khác' : 'Cọc đã dùng để thanh toán không thể chuyển Folio'"
                 >
-                  <td class="px-2 py-1.5 text-center">
+                  <td class="px-2 py-1.5 text-center border-slate-200">
                     <input
                       type="checkbox"
                       :checked="isPaymentSelected(p)"
@@ -3995,9 +4019,9 @@ onUnmounted(() => {
                       class="rounded border-gray-300"
                     />
                   </td>
-                  <td class="px-2.5 py-1.5 tabular-nums">{{ p.dateTime }}</td>
-                  <td class="px-2.5 py-1.5">{{ p.department }}</td>
-                  <td class="px-2.5 py-1.5" :class="p.paymentCode ? 'text-red-600 font-medium' : 'text-gray-800'" @click.stop="startDescriptionEdit('payment', p)">
+                  <td class="px-2.5 py-1.5 tabular-nums border-slate-200">{{ p.dateTime }}</td>
+                  <td class="px-2.5 py-1.5 border-slate-200">{{ p.department }}</td>
+                  <td class="px-2.5 py-1.5 border-slate-200" :class="p.paymentCode ? 'text-red-600 font-medium' : 'text-gray-800'" @click.stop="startDescriptionEdit('payment', p)">
                     <input
                       v-if="isDescriptionEditing('payment', p.id)"
                       v-model="descriptionDraft"
@@ -4009,13 +4033,13 @@ onUnmounted(() => {
                     />
                     <span v-else class="cursor-text" title="Click để chỉnh sửa mô tả">{{ p.description }}</span>
                   </td>
-                  <td class="px-2.5 py-1.5 font-medium text-emerald-600">{{ p.paymentMethod }}</td>
-                  <td class="px-2.5 py-1.5 text-right tabular-nums font-bold text-slate-900">{{ formatMoney(p.amount) }}</td>
-                  <td class="px-2.5 py-1.5 text-center font-bold"><span class="inline-block px-2 py-0.5 text-xs">{{ p.folio }}</span></td>
-                  <td class="px-2.5 py-1.5 tabular-nums font-bold text-red-600">{{ p.paymentCode }}</td>
-                  <td class="px-2.5 py-1.5">{{ p.vatNo }}</td>
-                  <td class="px-2.5 py-1.5">{{ p.accounting }}</td>
-                  <td class="px-2.5 py-1.5">{{ p.userName }}</td>
+                  <td class="px-2.5 py-1.5 font-medium text-emerald-600 border-slate-200">{{ p.paymentMethod }}</td>
+                  <td class="px-2.5 py-1.5 text-right tabular-nums font-bold text-slate-900 border-slate-200">{{ formatMoney(p.amount) }}</td>
+                  <td class="px-2.5 py-1.5 text-center font-bold border-slate-200"><span class="inline-block px-2 py-0.5 text-xs">{{ p.folio }}</span></td>
+                  <td class="px-2.5 py-1.5 tabular-nums font-bold text-red-600 border-slate-200">{{ p.paymentCode }}</td>
+                  <td class="px-2.5 py-1.5 border-slate-200">{{ p.vatNo }}</td>
+                  <td class="px-2.5 py-1.5 border-slate-200">{{ p.accounting }}</td>
+                  <td class="px-2.5 py-1.5 border-slate-200">{{ p.userName }}</td>
                 </tr>
               </tbody>
             </table>
@@ -4084,11 +4108,11 @@ onUnmounted(() => {
               <table class="w-full border-collapse text-xs">
                 <thead class="bg-gray-50 text-gray-600">
                   <tr>
-                    <th class="border border-gray-200 px-3 py-2 text-center w-12">STT</th>
-                    <th class="border border-gray-200 px-3 py-2 text-left">Sản phẩm</th>
-                    <th class="border border-gray-200 px-3 py-2 text-center w-16">SL</th>
-                    <th class="border border-gray-200 px-3 py-2 text-right w-24">Giá</th>
-                    <th class="border border-gray-200 px-3 py-2 text-right w-28">Số tiền</th>
+                    <th class="border border-gray-200 px-3 py-2 text-center w-12 align-middle">STT</th>
+                    <th class="border border-gray-200 px-3 py-2 text-center align-middle">Sản Phẩm</th>
+                    <th class="border border-gray-200 px-3 py-2 text-center w-16 align-middle">SL</th>
+                    <th class="border border-gray-200 px-3 py-2 text-center w-24 align-middle">Giá</th>
+                    <th class="border border-gray-200 px-3 py-2 text-center w-28 align-middle">Số Tiền</th>
                   </tr>
                 </thead>
                 <tbody>

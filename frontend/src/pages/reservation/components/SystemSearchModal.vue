@@ -50,28 +50,24 @@
           </label>
 
           <!-- KHOẢNG NGÀY (CHỈ HIỂN THỊ KHI BẬT) -->
-          <div v-if="filterByArrivalDate" class="flex items-center space-x-1.5 border border-slate-300 rounded-md px-2.5 py-1 bg-white shadow-2xs">
-            <div class="flex items-center cursor-pointer" @click="openFromDatePicker">
-              <input 
-                ref="fromInputRef"
-                type="date" 
-                v-model="searchFromDate" 
-                @change="executeGlobalSearch"
-                class="w-[105px] text-center font-semibold text-xs text-slate-800 outline-none border-none bg-transparent cursor-pointer"
-              />
-              <i class="fa-regular fa-calendar text-slate-400 text-[11px] ml-1"></i>
-            </div>
-            <span class="text-slate-400 px-1">-</span>
-            <div class="flex items-center cursor-pointer" @click="openToDatePicker">
-              <input 
-                ref="toInputRef"
-                type="date" 
-                v-model="searchToDate" 
-                @change="executeGlobalSearch"
-                class="w-[105px] text-center font-semibold text-xs text-slate-800 outline-none border-none bg-transparent cursor-pointer"
-              />
-              <i class="fa-regular fa-calendar text-slate-400 text-[11px] ml-1"></i>
-            </div>
+          <div v-if="filterByArrivalDate" class="flex items-center space-x-1.5">
+            <SingleDatePicker
+              v-model="searchFromDate"
+              @change="executeGlobalSearch"
+              :start-date="searchFromDate || sysDate"
+              placeholder="dd/mm/yyyy"
+              four-digit-year
+              class="w-[115px]"
+            />
+            <span class="text-slate-400 px-0.5">-</span>
+            <SingleDatePicker
+              v-model="searchToDate"
+              @change="executeGlobalSearch"
+              :start-date="searchToDate || searchFromDate || sysDate"
+              placeholder="dd/mm/yyyy"
+              four-digit-year
+              class="w-[115px]"
+            />
           </div>
         </div>
 
@@ -145,11 +141,11 @@
           <table class="w-full text-left text-xs border-collapse">
             <thead>
               <tr class="bg-slate-50 border-b border-slate-200 text-slate-500 font-extrabold uppercase text-[10px] tracking-wider h-9">
-                <th class="p-2.5 pl-5 w-24">MÃ ĐK</th>
-                <th class="p-2.5">TÊN ĐĂNG KÝ</th>
-                <th class="p-2.5 w-32 text-center">MÃ THAM CHIẾU</th>
-                <th class="p-2.5 w-28 text-center">NGÀY ĐẾN</th>
-                <th class="p-2.5 w-32 text-center pr-5">TRẠNG THÁI</th>
+                <th class="p-2.5 pl-5 w-24 text-center align-middle border-r border-slate-200 border">MÃ ĐK</th>
+                <th class="p-2.5 text-center align-middle border-r border-slate-200 border">TÊN ĐĂNG KÝ</th>
+                <th class="p-2.5 w-32 text-center align-middle border-r border-slate-200 border">MÃ THAM CHIẾU</th>
+                <th class="p-2.5 w-28 text-center align-middle border-r border-slate-200 border">NGÀY ĐẾN</th>
+                <th class="p-2.5 w-32 text-center pr-5 align-middle border-r border-slate-200 border">TRẠNG THÁI</th>
               </tr>
             </thead>
             <tbody>
@@ -160,12 +156,12 @@
                 @click="selectBooking(b)"
               >
                 <!-- MÃ ĐK -->
-                <td class="p-2.5 pl-5 font-bold font-mono text-sky-600">
+                <td class="p-2.5 pl-5 font-bold font-mono text-sky-600 border-slate-200">
                   {{ b.booking_code || b.id }}
                 </td>
 
                 <!-- TÊN ĐĂNG KÝ -->
-                <td class="p-2.5">
+                <td class="p-2.5 border-slate-200">
                   <div class="font-bold text-slate-800 text-xs">
                     {{ b.booking_name }}
                   </div>
@@ -175,17 +171,17 @@
                 </td>
 
                 <!-- MÃ THAM CHIẾU -->
-                <td class="p-2.5 text-center text-slate-400 font-mono text-xs">
+                <td class="p-2.5 text-center text-slate-400 font-mono text-xs border-slate-200">
                   {{ b.external_booking_code || '-' }}
                 </td>
 
                 <!-- NGÀY ĐẾN -->
-                <td class="p-2.5 text-center font-semibold text-slate-700 text-xs">
+                <td class="p-2.5 text-center font-semibold text-slate-700 text-xs border-slate-200">
                   {{ formatDateDisplay(getMatchingArrivalDate(b)) }}
                 </td>
 
                 <!-- TRẠNG THÁI (LẤY THEO STATUS 0,1,2,3,4) -->
-                <td class="p-2.5 text-center pr-5">
+                <td class="p-2.5 text-center pr-5 border-slate-200">
                   <span 
                     class="px-2.5 py-1 rounded-md text-[11px] font-bold inline-block border shadow-2xs"
                     :class="getStatusBadgeStyle(getDisplayStatus(b))"
@@ -216,6 +212,8 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { fetchBookings } from '@/services/booking-service'
+import { useAuthStore } from '@/stores/auth-store'
+import SingleDatePicker from '@/components/SingleDatePicker.vue'
 
 const props = defineProps({
   show: Boolean,
@@ -228,6 +226,9 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['update:show', 'update:query', 'select-booking'])
+
+const authStore = useAuthStore()
+const sysDate = computed(() => props.systemDate || authStore.systemDate || localStorage.getItem('pms_system_date') || new Date().toISOString().split('T')[0])
 
 const globalSearchQuery = computed({
   get: () => props.query,
@@ -425,11 +426,11 @@ function onDisplayToDateBlur() {
 
 function handleFilterByArrivalDateChange() {
   if (filterByArrivalDate.value) {
-    const sysDate = props.systemDate || new Date().toISOString().split('T')[0]
-    searchFromDate.value = sysDate
-    searchToDate.value = sysDate
-    displayFromDate.value = formatDateDisplay(sysDate)
-    displayToDate.value = formatDateDisplay(sysDate)
+    const sysDateVal = sysDate.value
+    searchFromDate.value = sysDateVal
+    searchToDate.value = sysDateVal
+    displayFromDate.value = formatDateDisplay(sysDateVal)
+    displayToDate.value = formatDateDisplay(sysDateVal)
   }
   executeGlobalSearch()
 }
@@ -448,11 +449,11 @@ watch(() => props.show, (newVal) => {
     selectedStatuses.value = [0, 1, 2, 3, 4]
     tempSelectedStatuses.value = [0, 1, 2, 3, 4]
 
-    const sysDate = props.systemDate || new Date().toISOString().split('T')[0]
-    searchFromDate.value = sysDate
-    searchToDate.value = sysDate
-    displayFromDate.value = formatDateDisplay(sysDate)
-    displayToDate.value = formatDateDisplay(sysDate)
+    const sysDateVal = sysDate.value
+    searchFromDate.value = sysDateVal
+    searchToDate.value = sysDateVal
+    displayFromDate.value = formatDateDisplay(sysDateVal)
+    displayToDate.value = formatDateDisplay(sysDateVal)
 
     executeGlobalSearch()
 

@@ -86,10 +86,11 @@
             <label class="block text-slate-600 mb-1 font-bold">Ngày nhận phòng</label>
             <SingleDatePicker
               v-model="form.arrival_date"
-              :start-date="systemDateNormalized"
+              :start-date="form.arrival_date || systemDateNormalized"
               :min-date="minArrivalDate"
               :disabled="isArrivalDisabled"
               placeholder="dd/mm/yyyy"
+              four-digit-year
               input-class="h-9 rounded-lg border-slate-300 focus-within:border-sky-500 focus-within:ring-1 focus-within:ring-sky-500"
             />
           </div>
@@ -112,10 +113,11 @@
             <label class="block text-slate-600 mb-1 font-bold">Ngày trả phòng</label>
             <SingleDatePicker
               v-model="form.departure_date"
-              :start-date="systemDateNormalized"
+              :start-date="form.departure_date || form.arrival_date || systemDateNormalized"
               :min-date="minDepartureDate"
               :disabled="isDepartureDisabled"
               placeholder="dd/mm/yyyy"
+              four-digit-year
               input-class="h-9 rounded-lg border-slate-300 focus-within:border-sky-500 focus-within:ring-1 focus-within:ring-sky-500"
             />
           </div>
@@ -256,7 +258,7 @@ const form = ref({
 
 // ==================== COMPUTED PROPERTIES ====================
 const systemDateNormalized = computed(() => {
-  return normalizeToYmd(props.systemDate) || new Date().toISOString().split('T')[0]
+  return normalizeToYmd(props.systemDate) || authStore.systemDate || localStorage.getItem('pms_system_date') || new Date().toISOString().split('T')[0]
 })
 
 const hasCheckedInRoom = computed(() => {

@@ -72,9 +72,9 @@ const presets = computed(() => {
 })
 
 const formatDate = (value) => {
-  if (!value) return '-- / -- / ----'
+  if (!value) return '--/--/----'
   const [year, month, day] = String(value).split('-')
-  return year && month && day ? `${day} / ${month} / ${year}` : value
+  return year && month && day ? `${day}/${month}/${year}` : value
 }
 
 const matchingPreset = () => presets.value.find(item => item.start === props.startDate && item.end === props.endDate)?.value || 'custom'

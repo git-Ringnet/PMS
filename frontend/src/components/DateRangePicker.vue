@@ -1,8 +1,9 @@
 <script setup>
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { VueDatePicker } from '@vuepic/vue-datepicker'
 import '@vuepic/vue-datepicker/dist/main.css'
 import { vi } from 'date-fns/locale'
+import { useAuthStore } from '@/stores/auth-store'
 
 const props = defineProps({
   // Mode 1: v-model:startDate & v-model:endDate (YMD format strings, e.g. "2026-06-24")
@@ -22,11 +23,24 @@ const props = defineProps({
 
 const emit = defineEmits(['update:startDate', 'update:endDate', 'change'])
 
+const authStore = useAuthStore()
+
 // States
 const selectedRangeKey = ref('custom')
 const localStartDate = ref(null)
 const localEndDate = ref(null)
 const isDark = ref(false)
+
+const parsedStartDate = computed(() => {
+  const target = props.systemDate || authStore.systemDate || localStorage.getItem('pms_system_date')
+  if (target) {
+    const parts = String(target).split('-')
+    if (parts.length === 3) {
+      return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))
+    }
+  }
+  return null
+})
 
 // Formatting helpers
 const parseYMD = (ymdStr) => {
@@ -76,7 +90,8 @@ const formatDateDMY = (ymdStr) => {
 
 // Preset range calculations
 const getRanges = () => {
-  const today = props.systemDate ? parseYMD(props.systemDate) : new Date()
+  const targetDateStr = props.systemDate || authStore.systemDate || localStorage.getItem('pms_system_date')
+  const today = targetDateStr ? parseYMD(targetDateStr) : new Date()
   const getStartOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate())
   const todayStart = getStartOfDay(today)
 
@@ -291,6 +306,7 @@ const applyRange = () => {
       <span class="text-gray-400 dark:text-zinc-500 mr-1 text-[11px] font-semibold whitespace-nowrap">Từ:</span>
       <VueDatePicker
         v-model="localStartDate"
+        :start-date="parsedStartDate"
         :locale="vi"
         :dark="isDark"
         :enable-time-picker="false"
@@ -317,6 +333,7 @@ const applyRange = () => {
       <span class="text-gray-400 dark:text-zinc-500 mr-1 text-[11px] font-semibold whitespace-nowrap">Đến:</span>
       <VueDatePicker
         v-model="localEndDate"
+        :start-date="parsedStartDate"
         :locale="vi"
         :dark="isDark"
         :enable-time-picker="false"

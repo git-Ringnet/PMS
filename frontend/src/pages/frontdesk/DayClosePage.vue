@@ -67,14 +67,80 @@ const arrivalsProcessed = ref(true)
 
 // Controls cho Modals
 const showArrivalModal = ref(false)
-const arrivalFeeOption = ref('all_charged') // 'all_charged' | 'no_charge' | 'has_charge'
+const arrivalFeeOption = ref('room_only') // 'all_charged' | 'room_only' | 'no_charge'
 
 const showExtendStayModal = ref(false)
 const extendNightsInput = ref(1)
 
 // [Bug A] Noshow modal
 const showNoshowModal = ref(false)
-const noshowFeeOption = ref('no_charge') // 'all_charged' | 'room_only' | 'no_charge'
+const noshowFeeOption = ref('room_only') // 'all_charged' | 'room_only' | 'no_charge'
+
+const modalPositions = ref({
+  arrival: { x: 0, y: 0 },
+  noshow: { x: 0, y: 0 },
+})
+let modalDragState = null
+
+function closeArrivalModal() {
+  showArrivalModal.value = false
+  stopModalDrag()
+}
+
+function closeNoshowModal() {
+  showNoshowModal.value = false
+  stopModalDrag()
+}
+
+function startModalDrag(modalName, event) {
+  if (event.button !== 0 || event.target.closest('button, input, label')) return
+
+  const dialog = event.currentTarget.closest(`[data-day-close-modal="${modalName}"]`)
+  if (!dialog) return
+
+  const currentPosition = modalPositions.value[modalName]
+  const rect = dialog.getBoundingClientRect()
+  modalDragState = {
+    modalName,
+    pointerX: event.clientX,
+    pointerY: event.clientY,
+    positionX: currentPosition.x,
+    positionY: currentPosition.y,
+    baseLeft: rect.left - currentPosition.x,
+    baseTop: rect.top - currentPosition.y,
+    width: rect.width,
+    height: rect.height,
+  }
+  window.addEventListener('mousemove', moveModalDrag)
+  window.addEventListener('mouseup', stopModalDrag)
+}
+
+function moveModalDrag(event) {
+  if (!modalDragState) return
+
+  const padding = 8
+  const maxX = Math.max(padding, window.innerWidth - modalDragState.width - padding)
+  const maxY = Math.max(padding, window.innerHeight - modalDragState.height - padding)
+  const targetLeft = Math.min(maxX, Math.max(padding, modalDragState.baseLeft + modalDragState.positionX + event.clientX - modalDragState.pointerX))
+  const targetTop = Math.min(maxY, Math.max(padding, modalDragState.baseTop + modalDragState.positionY + event.clientY - modalDragState.pointerY))
+
+  modalPositions.value[modalDragState.modalName] = {
+    x: targetLeft - modalDragState.baseLeft,
+    y: targetTop - modalDragState.baseTop,
+  }
+}
+
+function stopModalDrag() {
+  modalDragState = null
+  window.removeEventListener('mousemove', moveModalDrag)
+  window.removeEventListener('mouseup', stopModalDrag)
+}
+
+function handleModalEscape(event) {
+  if (event.key !== 'Escape') return
+  if (showArrivalModal.value) closeArrivalModal()
+  if (showNoshowModal.value) closeNoshowModal()
+}
 
 const canRollDay = computed(() => {
   return arrivalCount.value === 0 && departureCount.value === 0
@@ -413,6 +479,7 @@ watch(activeFilterTab, () => {
 
 onMounted(() => {
   fetchRealData()
+  window.addEventListener('keydown', handleModalEscape)
   if (echo) {
     echo.channel('pms-channel')
       .listen('.room.status.updated', () => {
@@ -425,6 +492,8 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  window.removeEventListener('keydown', handleModalEscape)
+  stopModalDrag()
   if (echo) {
     echo.channel('pms-channel').stopListening('.room.status.updated')
     echo.channel('pms-channel').stopListening('.reservation.updated')
@@ -620,6 +689,7 @@ function handleUpdateArrivalDate() {
     uiStore.showToast('Vui lòng tích chọn ít nhất 1 phòng đến để cập nhật.', 'warning')
     return
   }
+  arrivalFeeOption.value = 'room_only'
   showArrivalModal.value = true
 }
 
@@ -633,16 +703,14 @@ async function confirmArrivalUpdate() {
 
   try {
     isLoading.value = true
-    showArrivalModal.value = false
-
-    const mappedOption = arrivalFeeOption.value === 'has_charge' ? 'room_only' : arrivalFeeOption.value
+    closeArrivalModal()
 
     for (const item of selected) {
       const parts = item.id.split('-')
       const bookingRoomId = parts[parts.length - 1]
       await http.post('/night-audit/late-check-in', {
         booking_room_id: bookingRoomId,
-        charge_option: mappedOption,
+        charge_option: arrivalFeeOption.value,
         reason: 'Late Check-in'
       })
     }
@@ -663,20 +731,20 @@ function handleNoShow() {
     uiStore.showToast('Vui lòng tích chọn ít nhất 1 phòng đến để noshow.', 'warning')
     return
   }
-  noshowFeeOption.value = 'no_charge'
+  noshowFeeOption.value = 'room_only'
   showNoshowModal.value = true
 }
 
 async function confirmNoshow() {
   const selected = getSelectedDepartureItems()
   if (selected.length === 0) {
-    showNoshowModal.value = false
+    closeNoshowModal()
     return
   }
 
   try {
     isLoading.value = true
-    showNoshowModal.value = false
+    closeNoshowModal()
 
     let warningMsg = null
     for (const item of selected) {
@@ -720,9 +788,9 @@ async function confirmNoshow() {
             :key="tab.id"
             @click="activeFilterTab = tab.id"
             :class="[
-              'px-3 py-1.5 rounded font-medium transition-colors cursor-pointer text-xs',
+              'px-3 py-1.5 rounded font-semibold transition-colors cursor-pointer text-xs',
               activeFilterTab === tab.id
-                ? 'bg-white text-blue-600 font-bold shadow-xs'
+                ? 'bg-white text-blue-600 shadow-xs'
                 : 'text-gray-700 hover:text-gray-900'
             ]"
           >
@@ -780,34 +848,34 @@ async function confirmNoshow() {
         <table class="w-full text-left border-collapse">
           <thead>
             <tr class="bg-[#e9ecef] text-gray-800 font-bold border-b border-gray-300 text-[11px]">
-              <th class="py-2.5 px-3 w-12 text-center border-r border-gray-300">
+              <th class="py-2.5 px-3 w-12 text-center border-r border-gray-300 align-middle border">
                 <input
                   type="checkbox"
                   v-model="isAllSelected"
                   class="w-5 h-5 rounded border-gray-400 text-blue-600 focus:ring-blue-500 cursor-pointer align-middle"
                 />
               </th>
-              <th class="py-2.5 px-3 border-r border-gray-300">Đăng ký</th>
-              <th class="py-2.5 px-3 w-16 text-center border-r border-gray-300">VAT</th>
-              <th class="py-2.5 px-3 border-r border-gray-300">Phòng</th>
-              <th class="py-2.5 px-3 border-r border-gray-300">Loại Phòng</th>
-              <th class="py-2.5 px-3 border-r border-gray-300">Khách</th>
-              <th class="py-2.5 px-3 border-r border-gray-300 text-center">Phòng đến</th>
-              <th class="py-2.5 px-3 border-r border-gray-300 text-center">Đêm</th>
-              <th class="py-2.5 px-3 border-r border-gray-300 text-center">Phòng đi</th>
-              <th class="py-2.5 px-3 w-20 text-center border-r border-gray-300">Ăn Sáng</th>
-              <th class="py-2.5 px-3 border-r border-gray-300 text-center">Người lớn</th>
-              <th class="py-2.5 px-3 border-r border-gray-300 text-center">Trẻ em</th>
-              <th class="py-2.5 px-3 border-r border-gray-300">Mã giá phòng</th>
-              <th class="py-2.5 px-3 border-r border-gray-300 text-right">Giá</th>
-              <th class="py-2.5 px-3 border-r border-gray-300 text-center">Thêm giường</th>
-              <th class="py-2.5 px-3 text-right">Giá thêm giường</th>
+              <th class="py-2.5 px-3 border-r border-gray-300 text-center align-middle border">Đăng Ký</th>
+              <th class="py-2.5 px-3 w-16 text-center border-r border-gray-300 align-middle border">VAT</th>
+              <th class="py-2.5 px-3 border-r border-gray-300 text-center align-middle border">Phòng</th>
+              <th class="py-2.5 px-3 border-r border-gray-300 text-center align-middle border">Loại Phòng</th>
+              <th class="py-2.5 px-3 border-r border-gray-300 text-center align-middle border">Khách</th>
+              <th class="py-2.5 px-3 border-r border-gray-300 text-center align-middle border">Phòng Đến</th>
+              <th class="py-2.5 px-3 border-r border-gray-300 text-center align-middle border">Đêm</th>
+              <th class="py-2.5 px-3 border-r border-gray-300 text-center align-middle border">Phòng Đi</th>
+              <th class="py-2.5 px-3 w-20 text-center border-r border-gray-300 align-middle border">Ăn Sáng</th>
+              <th class="py-2.5 px-3 border-r border-gray-300 text-center align-middle border">Người Lớn</th>
+              <th class="py-2.5 px-3 border-r border-gray-300 text-center align-middle border">Trẻ Em</th>
+              <th class="py-2.5 px-3 border-r border-gray-300 text-center align-middle border">Mã Giá Phòng</th>
+              <th class="py-2.5 px-3 border-r border-gray-300 text-center align-middle border">Giá</th>
+              <th class="py-2.5 px-3 border-r border-gray-300 text-center align-middle border">Thêm Giường</th>
+              <th class="py-2.5 px-3 text-center align-middle border-r border-slate-200 border">Giá Thêm Giường</th>
             </tr>
           </thead>
           <tbody>
             <!-- Empty State -->
             <tr v-if="!isLoading && groupData.length === 0">
-              <td colspan="16" class="py-12 text-center text-gray-400 font-medium">
+              <td colspan="16" class="py-12 text-center text-gray-400 font-medium border-slate-200">
                 Không tìm thấy dữ liệu phòng cho ngày hệ thống hiện tại.
               </td>
             </tr>
@@ -815,7 +883,7 @@ async function confirmNoshow() {
             <template v-else-if="!isLoading" v-for="group in groupData" :key="group.id">
               <!-- Group Header Row -->
               <tr class="bg-white border-b border-gray-300 text-gray-900 font-bold hover:bg-gray-50 transition-colors">
-                <td class="py-2 px-3 text-center border-r border-gray-300 whitespace-nowrap">
+                <td class="py-2 px-3 text-center border-gray-300 whitespace-nowrap">
                   <div class="flex items-center justify-center space-x-2">
                     <button
                       @click="group.expanded = !group.expanded"
@@ -832,7 +900,7 @@ async function confirmNoshow() {
                     />
                   </div>
                 </td>
-                <td colspan="15" class="py-2 px-3 font-bold text-gray-900">
+                <td colspan="15" class="py-2 px-3 font-bold text-gray-900 border-slate-200">
                   {{ group.companyName }}
                 </td>
               </tr>
@@ -842,9 +910,12 @@ async function confirmNoshow() {
                 <tr
                   v-for="item in group.items"
                   :key="item.id"
-                  class="border-b border-gray-200 hover:bg-blue-50/40 transition-colors text-gray-800"
+                    :class="[
+                      'border-b border-gray-200 transition-colors text-xs font-normal text-[#000000D9]',
+                      item.selected ? 'bg-blue-50 hover:bg-blue-100' : 'hover:bg-slate-50',
+                    ]"
                 >
-                  <td class="py-2 px-3 text-center border-r border-gray-200">
+                  <td class="py-2 px-3 text-center border-gray-200">
                     <input
                       type="checkbox"
                       v-model="item.selected"
@@ -852,31 +923,31 @@ async function confirmNoshow() {
                       class="w-5 h-5 rounded border-gray-400 text-blue-600 focus:ring-blue-500 cursor-pointer align-middle"
                     />
                   </td>
-                  <td class="py-2 px-3 border-r border-gray-200 font-medium text-gray-900">{{ item.bookingCode }}</td>
-                  <td class="py-2 px-3 border-r border-gray-200 text-center">
+                  <td class="py-2 px-3 border-gray-200 font-medium text-gray-900">{{ item.bookingCode }}</td>
+                  <td class="py-2 px-3 border-gray-200 text-center">
                     <label class="relative inline-flex items-center cursor-default select-none pointer-events-none">
                       <input type="checkbox" :checked="item.vat" disabled class="sr-only peer" />
                       <div class="w-9 h-5 bg-gray-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#3b82f6]"></div>
                     </label>
                   </td>
-                  <td class="py-2 px-3 border-r border-gray-200 font-semibold text-gray-900">{{ item.roomNumber }}</td>
-                  <td class="py-2 px-3 border-r border-gray-200 text-gray-800">{{ item.roomType }}</td>
-                  <td class="py-2 px-3 border-r border-gray-200 font-medium text-gray-900">{{ item.guestName }}</td>
-                  <td class="py-2 px-3 border-r border-gray-200 text-center whitespace-nowrap">{{ item.arrivalDate }}</td>
-                  <td class="py-2 px-3 border-r border-gray-200 text-center font-medium">{{ item.nights }}</td>
-                  <td class="py-2 px-3 border-r border-gray-200 text-center whitespace-nowrap">{{ item.departureDate }}</td>
-                  <td class="py-2 px-3 border-r border-gray-200 text-center">
+                  <td class="py-2 px-3 border-gray-200 font-semibold text-gray-900">{{ item.roomNumber }}</td>
+                  <td class="py-2 px-3 border-gray-200 text-gray-800">{{ item.roomType }}</td>
+                  <td class="py-2 px-3 border-gray-200 font-medium text-gray-900">{{ item.guestName }}</td>
+                  <td class="py-2 px-3 border-gray-200 text-center whitespace-nowrap">{{ item.arrivalDate }}</td>
+                  <td class="py-2 px-3 border-gray-200 text-center font-medium">{{ item.nights }}</td>
+                  <td class="py-2 px-3 border-gray-200 text-center whitespace-nowrap">{{ item.departureDate }}</td>
+                  <td class="py-2 px-3 border-gray-200 text-center">
                     <label class="relative inline-flex items-center cursor-default select-none pointer-events-none">
                       <input type="checkbox" :checked="item.breakfast" disabled class="sr-only peer" />
                       <div class="w-9 h-5 bg-gray-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#3b82f6]"></div>
                     </label>
                   </td>
-                  <td class="py-2 px-3 border-r border-gray-200 text-center">{{ item.adults }}</td>
-                  <td class="py-2 px-3 border-r border-gray-200 text-center">{{ item.children }}</td>
-                  <td class="py-2 px-3 border-r border-gray-200 text-gray-500">{{ item.rateCode || '-' }}</td>
-                  <td class="py-2 px-3 border-r border-gray-200 text-right font-medium text-gray-900">{{ formatPrice(item.price) }}</td>
-                  <td class="py-2 px-3 border-r border-gray-200 text-center">{{ item.extraBed }}</td>
-                  <td class="py-2 px-3 text-right text-gray-900">{{ formatPrice(item.extraBedPrice) }}</td>
+                  <td class="py-2 px-3 border-gray-200 text-center">{{ item.adults }}</td>
+                  <td class="py-2 px-3 border-gray-200 text-center">{{ item.children }}</td>
+                  <td class="py-2 px-3 border-gray-200 text-gray-500">{{ item.rateCode || '-' }}</td>
+                  <td class="py-2 px-3 border-gray-200 text-right font-medium text-gray-900">{{ formatPrice(item.price) }}</td>
+                  <td class="py-2 px-3 border-gray-200 text-center">{{ item.extraBed }}</td>
+                  <td class="py-2 px-3 text-right text-gray-900 border-slate-200">{{ formatPrice(item.extraBedPrice) }}</td>
                 </tr>
               </template>
             </template>
@@ -969,54 +1040,54 @@ async function confirmNoshow() {
 
     <!-- MODAL NOSHOW - TUY CHON TINH PHI -->
     <div v-if="showNoshowModal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div class="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
-        <div class="bg-red-600 text-white px-4 py-3 font-semibold flex justify-between items-center text-sm">
+      <div
+        data-day-close-modal="noshow"
+        class="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden"
+        :style="{ transform: `translate(${modalPositions.noshow.x}px, ${modalPositions.noshow.y}px)` }"
+      >
+        <div
+          class="text-white px-4 py-3 font-semibold flex justify-between items-center text-xs cursor-move select-none"
+          :style="{ background: 'var(--pms-custom-theme, #006bdb)', color: 'var(--pms-custom-theme-text, #ffffff)' }"
+          @mousedown="startModalDrag('noshow', $event)"
+        >
           <div class="flex items-center gap-2">
             <UserX class="w-4 h-4" />
             <span>Noshow - Tuỳ chọn tính phí</span>
           </div>
-          <button @click="showNoshowModal = false" class="hover:opacity-80 text-white font-bold text-base">&times;</button>
+          <button type="button" class="hover:bg-white/10 text-white p-1 rounded" title="Đóng (Esc)" @mousedown.stop @click="closeNoshowModal">&times;</button>
         </div>
         <div class="p-5 space-y-4 text-xs">
-          <p class="text-gray-700 font-medium">Vui lòng chọn hình thức tính phí khi ghi nhận Noshow:</p>
+          <p class="text-[#000000D9] font-semibold">Vui lòng chọn hình thức tính phí khi cập nhật ngày đến.</p>
           <div class="space-y-2.5">
-            <label class="flex items-start gap-3 p-3 border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer transition-colors">
-              <input type="radio" v-model="noshowFeeOption" value="all_charged" class="mt-0.5 text-red-600 focus:ring-red-500" />
+            <label class="flex items-start gap-3 p-3 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors">
+              <input type="radio" v-model="noshowFeeOption" value="all_charged" class="mt-0.5 text-blue-600 focus:ring-blue-500" />
               <div>
-                <div class="font-bold text-gray-800">Tất cả tính phí</div>
-                <div class="text-gray-500 text-[11px]">Tính tiền phòng + dịch vụ bổ sung của đêm đầu tiên (ngày đến).</div>
+                <div class="font-semibold text-[#000000D9]">Tính phí tất cả</div>
+                <div class="text-[#000000D9]">Cập nhật ngày đến và tính phí tất cả tiền phòng, các dịch vụ bổ sung của phòng nếu có.</div>
               </div>
             </label>
 
-            <label class="flex items-start gap-3 p-3 border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer transition-colors">
-              <input type="radio" v-model="noshowFeeOption" value="room_only" class="mt-0.5 text-red-600 focus:ring-red-500" />
+            <label class="flex items-start gap-3 p-3 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors">
+              <input type="radio" v-model="noshowFeeOption" value="room_only" class="mt-0.5 text-blue-600 focus:ring-blue-500" />
               <div>
-                <div class="font-bold text-gray-800">Chỉ tính tiền phòng</div>
-                <div class="text-gray-500 text-[11px]">Tính 1 đêm tiền phòng đầu tiên (ngày đến), không tính các dịch vụ kèm theo.</div>
+                <div class="font-semibold text-[#000000D9]">Tính phí tiền phòng</div>
+                <div class="text-[#000000D9]">Cập nhật ngày đến và chỉ tính phí tiền phòng.</div>
               </div>
             </label>
 
-            <label class="flex items-start gap-3 p-3 border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer transition-colors">
-              <input type="radio" v-model="noshowFeeOption" value="no_charge" class="mt-0.5 text-red-600 focus:ring-red-500" />
+            <label class="flex items-start gap-3 p-3 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors">
+              <input type="radio" v-model="noshowFeeOption" value="no_charge" class="mt-0.5 text-blue-600 focus:ring-blue-500" />
               <div>
-                <div class="font-bold text-gray-800">Không tính phí</div>
-                <div class="text-gray-500 text-[11px]">Miễn phí toàn bộ, không ghi nhận bất kỳ khoản tiền nào.</div>
+                <div class="font-semibold text-[#000000D9]">Không tính phí</div>
+                <div class="text-[#000000D9]">Chỉ cập nhật ngày đến, không tính phí tiền phòng.</div>
               </div>
             </label>
           </div>
         </div>
-        <div class="bg-gray-50 px-4 py-3 flex justify-end space-x-2 border-t border-gray-200">
-          <button
-            @click="showNoshowModal = false"
-            class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded font-medium text-xs transition-colors"
-          >
-            Hủy
-          </button>
-          <button
-            @click="confirmNoshow"
-            class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded font-semibold text-xs transition-colors"
-          >
-            Xác nhận Noshow
+        <div class="bg-white px-4 py-3 flex justify-end border-t border-slate-200 rounded-b-xl">
+          <button type="button" class="btn-pms-primary flex items-center gap-1.5" @click="confirmNoshow">
+            <CheckCircle2 class="w-3.5 h-3.5" />
+            <span>Xác nhận Noshow</span>
           </button>
         </div>
       </div>
@@ -1067,54 +1138,54 @@ async function confirmNoshow() {
 
     <!-- MODAL CAP NHAT PHONG DEN -->
     <div v-if="showArrivalModal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div class="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
-        <div class="bg-blue-600 text-white px-4 py-3 font-semibold flex justify-between items-center text-sm">
+      <div
+        data-day-close-modal="arrival"
+        class="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden"
+        :style="{ transform: `translate(${modalPositions.arrival.x}px, ${modalPositions.arrival.y}px)` }"
+      >
+        <div
+          class="text-white px-4 py-3 font-semibold flex justify-between items-center text-xs cursor-move select-none"
+          :style="{ background: 'var(--pms-custom-theme, #006bdb)', color: 'var(--pms-custom-theme-text, #ffffff)' }"
+          @mousedown="startModalDrag('arrival', $event)"
+        >
           <div class="flex items-center gap-2">
             <RefreshCw class="w-4 h-4" />
-            <span>Cập nhật phòng đến - Tùy chọn tính phí</span>
+            <span>Cập nhật ngày đến - Tùy chọn tính phí</span>
           </div>
-          <button @click="showArrivalModal = false" class="hover:opacity-80 text-white font-bold text-base">&times;</button>
+          <button type="button" class="hover:bg-white/10 text-white p-1 rounded" title="Đóng (Esc)" @mousedown.stop @click="closeArrivalModal">&times;</button>
         </div>
         <div class="p-5 space-y-4 text-xs">
-          <p class="text-gray-700 font-medium">Vui lòng chọn hình thức tính phí khi cập nhật phòng đến:</p>
+          <p class="text-[#000000D9] font-semibold">Vui lòng chọn hình thức tính phí khi cập nhật ngày đến.</p>
           <div class="space-y-2.5">
-            <label class="flex items-start gap-3 p-3 border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer transition-colors">
+            <label class="flex items-start gap-3 p-3 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors">
               <input type="radio" v-model="arrivalFeeOption" value="all_charged" class="mt-0.5 text-blue-600 focus:ring-blue-500" />
               <div>
-                <div class="font-bold text-gray-800">Tất cả tính phí</div>
-                <div class="text-gray-500 text-[11px]">Tính đầy đủ phí phòng cho tất cả các lượt phòng đến trong ngày.</div>
+                <div class="font-semibold text-[#000000D9]">Tính phí tất cả</div>
+                <div class="text-[#000000D9]">Cập nhật ngày đến và tính phí tất cả tiền phòng, các dịch vụ bổ sung của phòng nếu có.</div>
               </div>
             </label>
 
-            <label class="flex items-start gap-3 p-3 border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer transition-colors">
+            <label class="flex items-start gap-3 p-3 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors">
+              <input type="radio" v-model="arrivalFeeOption" value="room_only" class="mt-0.5 text-blue-600 focus:ring-blue-500" />
+              <div>
+                <div class="font-semibold text-[#000000D9]">Tính phí tiền phòng</div>
+                <div class="text-[#000000D9]">Cập nhật ngày đến và chỉ tính phí tiền phòng.</div>
+              </div>
+            </label>
+
+            <label class="flex items-start gap-3 p-3 border border-slate-200 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors">
               <input type="radio" v-model="arrivalFeeOption" value="no_charge" class="mt-0.5 text-blue-600 focus:ring-blue-500" />
               <div>
-                <div class="font-bold text-gray-800">Không tính phí</div>
-                <div class="text-gray-500 text-[11px]">Miễn phí tiền phòng (0 VNĐ) cho tất cả lượt phòng đến.</div>
-              </div>
-            </label>
-
-            <label class="flex items-start gap-3 p-3 border border-gray-200 rounded-md hover:bg-gray-50 cursor-pointer transition-colors">
-              <input type="radio" v-model="arrivalFeeOption" value="has_charge" class="mt-0.5 text-blue-600 focus:ring-blue-500" />
-              <div>
-                <div class="font-bold text-gray-800">Có tính phí</div>
-                <div class="text-gray-500 text-[11px]">Giữ nguyên phí chuẩn và áp dụng phí riêng theo từng phòng.</div>
+                <div class="font-semibold text-[#000000D9]">Không tính phí</div>
+                <div class="text-[#000000D9]">Chỉ cập nhật ngày đến, không tính phí tiền phòng.</div>
               </div>
             </label>
           </div>
         </div>
-        <div class="bg-gray-50 px-4 py-3 flex justify-end space-x-2 border-t border-gray-200">
-          <button
-            @click="showArrivalModal = false"
-            class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded font-medium text-xs transition-colors"
-          >
-            Hủy
-          </button>
-          <button
-            @click="confirmArrivalUpdate"
-            class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-semibold text-xs transition-colors"
-          >
-            Xác nhận cập nhật
+        <div class="bg-white px-4 py-3 flex justify-end border-t border-slate-200 rounded-b-xl">
+          <button type="button" class="btn-pms-primary flex items-center gap-1.5" @click="confirmArrivalUpdate">
+            <CheckCircle2 class="w-3.5 h-3.5" />
+            <span>Xác nhận cập nhật</span>
           </button>
         </div>
       </div>
@@ -1122,6 +1193,96 @@ async function confirmNoshow() {
 
   </div>
 </template>
+
+<style scoped>
+/* FIX FE row 51: keep the day-close counters readable without changing their data or click behavior. */
+.day-close-page table thead {
+  font-size: 0.75rem !important;
+  font-weight: 600;
+  color: rgb(0 0 0 / 85%);
+}
+
+.day-close-page table thead th {
+  text-align: center !important;
+  vertical-align: middle;
+  background-color: rgb(241 245 249) !important;
+  border-color: rgb(203 213 225) !important;
+}
+
+.day-close-page table tbody td {
+  font-size: 0.75rem;
+  color: rgb(0 0 0 / 85%);
+}
+
+.day-close-page table tbody tr:not([class*="font-bold"]):not([class*="font-semibold"]) td,
+.day-close-page table tbody tr:not([class*="font-bold"]):not([class*="font-semibold"]) td * {
+  font-weight: 400 !important;
+}
+
+.day-close-page table tbody tr:is([class*="font-bold"], [class*="font-semibold"]) td,
+.day-close-page table tbody tr:is([class*="font-bold"], [class*="font-semibold"]) td * {
+  font-weight: 600 !important;
+}
+
+.day-close-page :is(
+    [class*="text-[9px]"],
+    [class*="text-[10px]"],
+    [class*="text-[11px]"]
+  ) {
+  font-size: 0.75rem !important;
+}
+
+.day-close-page :is(
+    [class*="fixed"][class*="bottom-0"],
+    [class*="sticky"][class*="bottom-0"]
+  ) button {
+  display: inline-flex;
+  width: auto !important;
+  min-width: max-content !important;
+  height: 2rem !important;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  padding-inline: 0.75rem;
+  white-space: nowrap;
+  overflow: visible;
+}
+
+.day-close-page :is(
+    [style*="#7ca668"],
+    [style*="#8c594d"],
+    [class*="bg-[#7ca668]"],
+    [class*="bg-[#8c594d]"]
+  ) {
+  width: 4rem !important;
+  height: 4rem !important;
+  min-width: 4rem;
+  font-size: 0.75rem !important;
+  line-height: 1.15;
+}
+
+.day-close-page :is(
+    [style*="#7ca668"],
+    [style*="#8c594d"],
+    [class*="bg-[#7ca668]"],
+    [class*="bg-[#8c594d]"]
+  ) span {
+  font-size: 0.75rem !important;
+  font-weight: 600;
+  transform: none;
+  white-space: nowrap;
+}
+
+.day-close-page :is(
+    [style*="#7ca668"],
+    [style*="#8c594d"],
+    [class*="bg-[#7ca668]"],
+    [class*="bg-[#8c594d]"]
+  ) span:last-child {
+  font-size: 0.875rem !important;
+  line-height: 1;
+}
+</style>
 
 <style scoped>
 /* Custom scrollbar hiding utility */

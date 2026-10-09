@@ -104,11 +104,11 @@
           <table class="w-full text-[12.5px] border-collapse min-w-max">
             <thead class="sticky top-0 z-30 bg-slate-100 border-b border-slate-200 text-slate-700">
               <tr>
-                <th class="sticky left-0 top-0 z-40 py-2.5 px-3 border-r border-slate-200 text-center font-semibold w-12 min-w-[48px] max-w-[48px] bg-slate-100">
+                <th class="sticky left-0 top-0 z-40 py-2.5 px-3 border-r border-slate-200 text-center font-semibold w-12 min-w-[48px] max-w-[48px] bg-slate-100 align-middle border">
                   STT
                 </th>
                 <th v-for="col in visibleColumns" :key="col.key"
-                  class="py-2.5 px-3 border-r border-slate-200 text-left font-semibold whitespace-nowrap bg-slate-100"
+                  class="py-2.5 px-3 border-r border-slate-200 text-center font-semibold whitespace-nowrap bg-slate-100 align-middle border"
                   :class="isLastFrozenCol(col.key) ? 'border-r-2 border-slate-300 shadow-[3px_0_5px_-2px_rgba(0,0,0,0.15)]' : ''"
                   :style="[
                     col.width ? `width:${col.width}; min-width:${col.width}` : '',
@@ -123,7 +123,7 @@
               <template v-for="sg in groupedByStatus" :key="'status-' + sg.id">
                 <!-- Status Group Header -->
                 <tr class="border-y-2 select-none" :class="sg.headerBg">
-                  <td :colspan="visibleColumns.length + 1" class="py-2 px-3 text-xs font-semibold">
+                  <td :colspan="visibleColumns.length + 1" class="py-2 px-3 text-xs font-semibold border-slate-200">
                     <div class="flex items-center justify-between">
                       <div class="flex items-center gap-2 cursor-pointer sticky left-3 w-fit" @click="toggleStatusGroup(sg.id)">
                         <button type="button" class="w-5 h-5 flex items-center justify-center rounded bg-white/80 border border-slate-300 text-slate-700 text-xs shadow-xs hover:bg-white cursor-pointer">
@@ -149,7 +149,7 @@
                   <template v-for="roomGroup in sg.rooms" :key="'room-' + roomGroup.booking_room_id">
                     <!-- Room group header -->
                     <tr class="bg-slate-100/90 font-semibold border-b border-slate-200">
-                      <td :colspan="visibleColumns.length + 1" class="py-1.5 px-4 text-xs text-slate-800 bg-[#f1f5f9]">
+                      <td :colspan="visibleColumns.length + 1" class="py-1.5 px-4 text-xs text-slate-800 bg-[#f1f5f9] border-slate-200">
                         <div class="flex items-center gap-2 sticky left-3 w-fit">
                           <i class="fa-solid fa-hotel text-slate-500 text-xs"></i>
                           <span class="font-semibold">Phòng: {{ roomGroup.room_number || `(${roomGroup.booking_room_id || 'Chưa gán'})` }}</span>
@@ -174,7 +174,7 @@
                     >
                       <!-- STT Cell (Sticky Left 0) -->
                       <td @dblclick.stop="openGuestDetail(roomGroup, guest, 'adult')"
-                        class="sticky left-0 z-20 py-2 px-3 border-r border-slate-200 text-center text-slate-500 font-semibold cursor-pointer select-none group-hover:bg-blue-50/80"
+                        class="sticky left-0 z-20 py-2 px-3 border-slate-200 text-center text-slate-500 font-semibold cursor-pointer select-none group-hover:bg-blue-50/80"
                         :class="idx % 2 === 0 ? 'bg-white' : 'bg-[#fcfdfe]'"
                         style="width: 48px; min-width: 48px; max-width: 48px;"
                         title="Nhấp đúp chuột để mở thẻ thông tin khách">
@@ -182,11 +182,8 @@
                       </td>
 
                       <td v-for="col in visibleColumns" :key="col.key"
-                        class="py-1.5 px-2 border-r border-slate-200 whitespace-nowrap text-slate-700 group-hover:bg-blue-50/80"
-                        :class="[
-                          idx % 2 === 0 ? 'bg-white' : 'bg-[#fcfdfe]',
-                          isLastFrozenCol(col.key) ? 'border-r-2 border-slate-300 shadow-[3px_0_5px_-2px_rgba(0,0,0,0.15)]' : ''
-                        ]"
+                        class="py-1.5 px-2 border-slate-200 whitespace-nowrap text-slate-700 group-hover:bg-blue-50/80"
+                        :class="[ idx % 2 === 0 ? 'bg-white' : 'bg-[#fcfdfe]', isLastFrozenCol(col.key) ? 'shadow-[3px_0_5px_-2px_rgba(0,0,0,0.15)]' : '' ]"
                         :style="[
                           col.width ? `width:${col.width}; min-width:${col.width}` : '',
                           getColumnStickyStyle(col.key, false)
@@ -415,7 +412,7 @@
                     >
                       <!-- STT Cell (Sticky Left 0) -->
                       <td @dblclick.stop="openGuestDetail(roomGroup, child, 'child')"
-                        class="sticky left-0 z-20 py-2 px-3 border-r border-slate-200 text-center text-slate-500 font-semibold cursor-pointer select-none group-hover:bg-blue-50/80"
+                        class="sticky left-0 z-20 py-2 px-3 border-slate-200 text-center text-slate-500 font-semibold cursor-pointer select-none group-hover:bg-blue-50/80"
                         :class="(roomGroup.guests.length + cidx) % 2 === 0 ? 'bg-white' : 'bg-[#fcfdfe]'"
                         style="width: 48px; min-width: 48px; max-width: 48px;"
                         title="Nhấp đúp chuột để mở thẻ thông tin trẻ em">
@@ -423,11 +420,8 @@
                       </td>
 
                       <td v-for="col in visibleColumns" :key="col.key"
-                        class="py-1.5 px-2 border-r border-slate-200 whitespace-nowrap text-slate-700 group-hover:bg-blue-50/80"
-                        :class="[
-                          (roomGroup.guests.length + cidx) % 2 === 0 ? 'bg-white' : 'bg-[#fcfdfe]',
-                          isLastFrozenCol(col.key) ? 'border-r-2 border-slate-300 shadow-[3px_0_5px_-2px_rgba(0,0,0,0.15)]' : ''
-                        ]"
+                        class="py-1.5 px-2 border-slate-200 whitespace-nowrap text-slate-700 group-hover:bg-blue-50/80"
+                        :class="[ (roomGroup.guests.length + cidx) % 2 === 0 ? 'bg-white' : 'bg-[#fcfdfe]', isLastFrozenCol(col.key) ? 'shadow-[3px_0_5px_-2px_rgba(0,0,0,0.15)]' : '' ]"
                         :style="[
                           col.width ? `width:${col.width}; min-width:${col.width}` : '',
                           getColumnStickyStyle(col.key, false)
@@ -654,7 +648,7 @@
 
               <!-- Overall empty -->
               <tr v-if="groupedByStatus.length === 0">
-                <td :colspan="visibleColumns.length + 1" class="py-16 text-center text-slate-400 text-[13px]">
+                <td :colspan="visibleColumns.length + 1" class="py-16 text-center text-slate-400 text-[13px] border-slate-200">
                   Chưa có dữ liệu. Vui lòng lưu thông tin đăng ký trước.
                 </td>
               </tr>
@@ -862,29 +856,29 @@ const groupedByStatus = computed(() => {
 
 // ==================== COLUMNS CONFIG & STICKY ====================
 const DEFAULT_COLUMNS = [
-  { key: 'room_number',      label: 'Số phòng',           visible: true,  width: '70px',  fixed: true },
-  { key: 'title',            label: 'Danh xưng',          visible: true,  width: '75px',  fixed: true },
-  { key: 'full_name',        label: 'Họ và tên',          visible: true,  width: '150px', fixed: true },
-  { key: 'dob',              label: 'Ngày sinh',          visible: true,  width: '90px' },
-  { key: 'nationality_code', label: 'Quốc tịch',          visible: true,  width: '180px' },
-  { key: 'id_type',          label: 'Loại giấy tờ',      visible: true,  width: '100px' },
-  { key: 'id_number',        label: 'Số giấy tờ',        visible: true,  width: '110px' },
-  { key: 'passport_expiry',  label: 'Ngày hết hạn',      visible: true,  width: '95px' },
-  { key: 'province',         label: 'Tỉnh thành',         visible: true,  width: '110px' },
+  { key: 'room_number',      label: 'Số Phòng',           visible: true,  width: '70px',  fixed: true },
+  { key: 'title',            label: 'Danh Xưng',          visible: true,  width: '75px',  fixed: true },
+  { key: 'full_name',        label: 'Họ Và Tên',          visible: true,  width: '150px', fixed: true },
+  { key: 'dob',              label: 'Ngày Sinh',          visible: true,  width: '90px' },
+  { key: 'nationality_code', label: 'Quốc Tịch',          visible: true,  width: '180px' },
+  { key: 'id_type',          label: 'Loại Giấy Tờ',      visible: true,  width: '100px' },
+  { key: 'id_number',        label: 'Số Giấy Tờ',        visible: true,  width: '110px' },
+  { key: 'passport_expiry',  label: 'Ngày Hết Hạn',      visible: true,  width: '95px' },
+  { key: 'province',         label: 'Tỉnh Thành',         visible: true,  width: '110px' },
   { key: 'district',         label: 'Quận/ Huyện',       visible: true,  width: '100px' },
   { key: 'ward',             label: 'Phường/ Xã',        visible: true,  width: '100px' },
-  { key: 'phone',            label: 'Điện thoại',         visible: true,  width: '100px' },
+  { key: 'phone',            label: 'Điện Thoại',         visible: true,  width: '100px' },
   { key: 'email',            label: 'Email',               visible: true,  width: '140px' },
-  { key: 'address',          label: 'Địa chỉ',            visible: true,  width: '260px' },
-  { key: 'guest_type',       label: 'Loại khách',         visible: true,  width: '80px' },
+  { key: 'address',          label: 'Địa Chỉ',            visible: true,  width: '260px' },
+  { key: 'guest_type',       label: 'Loại Khách',         visible: true,  width: '80px' },
   { key: 'visa_no',          label: 'Số Visa',             visible: true,  width: '90px' },
-  { key: 'residence_type',   label: 'Thường trú/Tạm trú', visible: true,  width: '120px' },
-  { key: 'temp_residence_to',label: 'Tạm trú đến',       visible: true,  width: '95px' },
-  { key: 'entry_date',       label: 'Ngày nhập cảnh',    visible: true,  width: '100px' },
-  { key: 'visa_expiry_date', label: 'Ngày hết hạn Visa', visible: true,  width: '100px' },
-  { key: 'entry_purpose',    label: 'Mục đích nhập cảnh', visible: true,  width: '130px' },
-  { key: 'border_gate',      label: 'Cửa khẩu',          visible: true,  width: '100px' },
-  { key: 'note',             label: 'Ghi chú',            visible: true,  width: '140px' },
+  { key: 'residence_type',   label: 'Thường Trú/Tạm Trú', visible: true,  width: '120px' },
+  { key: 'temp_residence_to',label: 'Tạm Trú Đến',       visible: true,  width: '95px' },
+  { key: 'entry_date',       label: 'Ngày Nhập Cảnh',    visible: true,  width: '100px' },
+  { key: 'visa_expiry_date', label: 'Ngày Hết Hạn Visa', visible: true,  width: '100px' },
+  { key: 'entry_purpose',    label: 'Mục Đích Nhập Cảnh', visible: true,  width: '130px' },
+  { key: 'border_gate',      label: 'Cửa Khẩu',          visible: true,  width: '100px' },
+  { key: 'note',             label: 'Ghi Chú',            visible: true,  width: '140px' },
 ]
 
 const allColumns = ref(JSON.parse(JSON.stringify(DEFAULT_COLUMNS)))
@@ -1659,7 +1653,7 @@ function handleExportExcel() {
   try {
     let html = `<meta charset="utf-8"><table><tr>`
     visibleColumns.value.forEach(col => {
-      html += `<th style="background-color: #1E2D4A; color: #ffffff; font-weight: bold; padding: 8px; border: 1px solid #cbd5e1;">${col.label}</th>`
+      html += `<th style="background-color: #1E2D4A; color: #ffffff; font-weight: bold; padding: 8px; border: 1px solid #cbd5e1;" class="text-center align-middle border border-slate-200">${col.label}</th>`
     })
     html += `</tr>`
     

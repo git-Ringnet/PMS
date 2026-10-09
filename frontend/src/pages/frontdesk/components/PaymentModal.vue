@@ -731,24 +731,24 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleEscape))
           <table class="w-full border-collapse text-left whitespace-nowrap text-xs">
             <thead class="bg-[#f0f2ea] sticky top-0 border-b border-gray-300 text-gray-700 font-semibold">
               <tr>
-                <th class="px-2.5 py-1.5 border-r border-gray-300 text-center min-w-[160px]">Mô tả</th>
-                <th class="px-2.5 py-1.5 border-r border-gray-300 text-center min-w-[120px]">Phương thức thanh toán</th>
-                <th class="px-2.5 py-1.5 border-r border-gray-300 text-center min-w-[140px]">Tài khoản ngân hàng</th>
-                <th class="px-2.5 py-1.5 border-r border-gray-300 text-center min-w-[70px]">Tiền tệ</th>
-                <th class="px-2.5 py-1.5 border-r border-gray-300 text-center min-w-[100px]">Tổng tiền</th>
-                <th class="px-2.5 py-1.5 text-center min-w-[50px]">Thao tác</th>
+                <th class="px-2.5 py-1.5 border-r border-gray-300 text-center min-w-[160px] align-middle border">Mô Tả</th>
+                <th class="px-2.5 py-1.5 border-r border-gray-300 text-center min-w-[120px] align-middle border">Phương Thức Thanh Toán</th>
+                <th class="px-2.5 py-1.5 border-r border-gray-300 text-center min-w-[140px] align-middle border">Tài Khoản Ngân Hàng</th>
+                <th class="px-2.5 py-1.5 border-r border-gray-300 text-center min-w-[70px] align-middle border">Tiền Tệ</th>
+                <th class="px-2.5 py-1.5 border-r border-gray-300 text-center min-w-[100px] align-middle border">Tổng Tiền</th>
+                <th class="px-2.5 py-1.5 text-center min-w-[50px] align-middle border-r border-slate-200 border">Thao Tác</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="(item, idx) in addedPayments" :key="item.id" class="hover:bg-amber-50/50 border-b border-gray-200">
-                <td class="px-2.5 py-1 border-r border-gray-200">
+                <td class="px-2.5 py-1 border-gray-200">
                   <input type="text" v-model="item.note" class="w-full px-1.5 py-0.5 border border-gray-300 rounded text-xs" />
                 </td>
-                <td class="px-2.5 py-1.5 border-r border-gray-200 text-center font-bold text-gray-800">{{ item.method_code }}</td>
-                <td class="px-2.5 py-1.5 border-r border-gray-200 text-center text-gray-700">{{ item.bank_account || '--' }}</td>
-                <td class="px-2.5 py-1.5 border-r border-gray-200 text-center font-bold text-gray-800">{{ item.currency }}</td>
-                <td class="px-2.5 py-1.5 border-r border-gray-200 text-center tabular-nums font-bold text-emerald-700">{{ formatMoney(item.amount) }}</td>
-                <td class="px-2.5 py-1.5 text-center">
+                <td class="px-2.5 py-1.5 border-gray-200 text-center font-bold text-gray-800">{{ item.method_code }}</td>
+                <td class="px-2.5 py-1.5 border-gray-200 text-center text-gray-700">{{ item.bank_account || '--' }}</td>
+                <td class="px-2.5 py-1.5 border-gray-200 text-center font-bold text-gray-800">{{ item.currency }}</td>
+                <td class="px-2.5 py-1.5 border-gray-200 text-center tabular-nums font-bold text-emerald-700">{{ formatMoney(item.amount) }}</td>
+                <td class="px-2.5 py-1.5 text-center border-slate-200">
                   <button @click="handleRemovePaymentItem(idx)" :disabled="isZeroBalanceSettlement" class="text-sky-500 hover:text-sky-700 p-1 rounded disabled:cursor-not-allowed disabled:opacity-40" title="Xóa dòng">
                     <Trash2 class="w-3.5 h-3.5" />
                   </button>

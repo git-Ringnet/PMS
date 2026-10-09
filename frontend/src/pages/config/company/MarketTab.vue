@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { fetchMarkets, createMarket, updateMarket, deleteMarket } from '@/services/company-service'
 import { useUiStore } from '@/stores/ui-store'
 
@@ -12,16 +12,53 @@ const isModalOpen = ref(false)
 const isEditMode = ref(false)
 const currentId = ref(null)
 const form = ref({ code: '', name: '' })
+const modalPosition = ref({ x: 0, y: 0 })
+let modalDragState = null
+
+const startModalDrag = (event) => {
+  if (event.button !== 0 || event.target.closest('button, input, select, textarea, label')) return
+  event.preventDefault()
+  modalDragState = {
+    startX: event.clientX,
+    startY: event.clientY,
+    initX: modalPosition.value.x,
+    initY: modalPosition.value.y,
+  }
+  window.addEventListener('mousemove', moveModalDrag)
+  window.addEventListener('mouseup', stopModalDrag)
+}
+
+const moveModalDrag = (event) => {
+  if (!modalDragState) return
+  const { startX, startY, initX, initY } = modalDragState
+  modalPosition.value = {
+    x: initX + (event.clientX - startX),
+    y: initY + (event.clientY - startY),
+  }
+}
+
+const stopModalDrag = () => {
+  modalDragState = null
+  window.removeEventListener('mousemove', moveModalDrag)
+  window.removeEventListener('mouseup', stopModalDrag)
+}
+
+const handleEscape = (e) => {
+  if (e.key === 'Escape' && isModalOpen.value) {
+    isModalOpen.value = false
+  }
+}
 
 onMounted(() => {
   loadData()
   document.addEventListener('click', closeAllPopovers)
+  window.addEventListener('keydown', handleEscape)
 })
-
-import { onBeforeUnmount, computed } from 'vue'
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', closeAllPopovers)
+  window.removeEventListener('keydown', handleEscape)
+  stopModalDrag()
 })
 
 const searchQueryCode = ref('')
@@ -84,6 +121,7 @@ const openAddModal = () => {
   isEditMode.value = false
   currentId.value = null
   form.value = { code: '', name: '' }
+  modalPosition.value = { x: 0, y: 0 }
   isModalOpen.value = true
 }
 
@@ -91,6 +129,7 @@ const openEditModal = (item) => {
   isEditMode.value = true
   currentId.value = item.id
   form.value = { code: item.code, name: item.name }
+  modalPosition.value = { x: 0, y: 0 }
   isModalOpen.value = true
 }
 
@@ -149,7 +188,7 @@ const handleDelete = async (item) => {
     <div class="flex items-center mb-3">
       <button 
         @click="openAddModal"
-        class="px-3.5 py-1.5 bg-[#5fa5e6] hover:bg-[#4d92d4] text-white rounded-md text-xs font-bold border-none cursor-pointer flex items-center gap-1 shadow-xs transition-colors"
+        class="btn-pms-primary"
       >
         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
@@ -164,8 +203,8 @@ const handleDelete = async (item) => {
         <thead>
           <tr class="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold select-none h-9">
             <!-- ID -->
-            <th class="p-2 border-r border-slate-200 text-slate-700 font-bold text-xs uppercase w-20 cursor-pointer hover:bg-slate-200 select-none transition-colors" @click="toggleSort">
-              <div class="flex items-center justify-between gap-1">
+            <th class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap w-20 cursor-pointer hover:bg-slate-200 select-none transition-colors" @click="toggleSort">
+              <div class="flex items-center justify-center gap-1">
                 <span>ID</span>
                 <span class="flex flex-col text-[9px] leading-[6px] text-slate-400">
                   <span :class="{'text-sky-500': sortField === 'id' && sortDir === 'asc'}">▲</span>
@@ -175,8 +214,8 @@ const handleDelete = async (item) => {
             </th>
 
             <!-- Mã -->
-            <th class="p-2 border-r border-slate-200 text-slate-700 font-bold text-xs uppercase relative popover-container select-none">
-              <div class="flex items-center justify-between gap-1.5">
+            <th class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap relative popover-container select-none">
+              <div class="flex items-center justify-center gap-1.5">
                 <span>Mã</span>
                 <button 
                   @click.stop="isSearchCodeOpen = !isSearchCodeOpen; isSearchNameOpen = false" 
@@ -210,8 +249,8 @@ const handleDelete = async (item) => {
             </th>
 
             <!-- Tên -->
-            <th class="p-2 border-r border-slate-200 text-slate-700 font-bold text-xs uppercase relative popover-container select-none">
-              <div class="flex items-center justify-between gap-1.5">
+            <th class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap relative popover-container select-none">
+              <div class="flex items-center justify-center gap-1.5">
                 <span>Tên</span>
                 <button 
                   @click.stop="isSearchNameOpen = !isSearchNameOpen; isSearchCodeOpen = false" 
@@ -244,7 +283,7 @@ const handleDelete = async (item) => {
               </div>
             </th>
 
-            <th class="p-2 border-r border-slate-200 text-slate-700 font-bold text-xs uppercase text-center w-24">Hành động</th>
+            <th class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap w-24">Hành Động</th>
           </tr>
         </thead>
         <tbody>
@@ -254,15 +293,16 @@ const handleDelete = async (item) => {
             class="border-b border-slate-200 hover:bg-[#bdecfe]/50 cursor-pointer h-9 transition-colors"
             @dblclick="openEditModal(item)"
           >
-            <td class="p-2 border-r border-slate-200 text-slate-600 font-normal">{{ item.id }}</td>
-            <td class="p-2 border-r border-slate-200 text-slate-800 font-normal">{{ item.code }}</td>
-            <td class="p-2 border-r border-slate-200 text-slate-700 font-normal">{{ item.name }}</td>
-            <td class="p-2 border-r border-slate-200 text-center">
+            <td class="p-2 text-slate-600 font-normal text-center whitespace-nowrap">{{ item.id }}</td>
+            <td class="p-2 text-slate-800 font-semibold whitespace-nowrap">{{ item.code }}</td>
+            <td class="p-2 text-slate-700 font-normal whitespace-nowrap">{{ item.name }}</td>
+            <td class="p-2 text-center whitespace-nowrap">
               <button 
                 @click.stop="handleDelete(item)"
-                class="p-1 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded cursor-pointer border-none transition-colors inline-flex items-center justify-center"
+                class="w-7 h-7 bg-red-600 hover:bg-red-700 text-white rounded cursor-pointer border-none transition-colors inline-flex items-center justify-center shadow-xs"
+                title="Xóa thị trường"
               >
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                 </svg>
               </button>
@@ -288,12 +328,21 @@ const handleDelete = async (item) => {
     v-if="isModalOpen" 
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-xs"
   >
-    <div class="bg-white rounded-xl w-full max-w-sm shadow-2xl overflow-hidden border border-slate-100 animate-in">
+    <div 
+      class="bg-white rounded-xl w-full max-w-sm shadow-2xl overflow-hidden border border-slate-100 company-modal-fade"
+      :style="{ transform: `translate(${modalPosition.x}px, ${modalPosition.y}px)` }"
+    >
       <!-- Modal Header -->
-      <div class="bg-[#8dcbf4] px-5 py-3 flex items-center justify-between text-white select-none">
-        <h2 class="text-xs font-bold uppercase tracking-wider">{{ isEditMode ? 'Sửa thị trường' : 'Thêm thị trường' }}</h2>
+      <div 
+        @mousedown="startModalDrag"
+        :style="{ background: 'var(--pms-custom-theme, #006bdb)' }" 
+        class="px-5 py-3 flex items-center justify-between text-white select-none cursor-move"
+      >
+        <h2 class="text-xs font-semibold tracking-wide">{{ isEditMode ? 'Sửa Thị Trường' : 'Thêm Thị Trường' }}</h2>
         <button 
+          @mousedown.stop
           @click="isModalOpen = false" 
+          title="Đóng (Esc)"
           class="text-white/80 hover:text-white bg-transparent border-none cursor-pointer text-lg font-light leading-none"
         >
           ✕
@@ -303,39 +352,41 @@ const handleDelete = async (item) => {
       <!-- Modal Body -->
       <div class="p-5 flex flex-col gap-3 text-xs">
         <div class="flex flex-col gap-1">
-          <label class="font-bold text-slate-600">Mã *</label>
-          <input 
-            v-model="form.code" 
-            type="text" 
-            placeholder="Nhập mã thị trường..."
-            class="border border-slate-200 bg-[#fffbeb] rounded-md p-1.5 font-bold focus:outline-sky-500 text-xs uppercase"
-          />
+          <span class="font-semibold text-[#000000D9]">Mã<span class="text-red-500">*</span></span>
+          <div class="relative">
+            <input 
+              v-model="form.code" 
+              required
+              aria-required="true"
+              type="text" 
+              placeholder="Nhập mã thị trường..."
+              class="input-required w-full h-8 rounded-lg px-2 pr-8 text-xs font-normal uppercase"
+            />
+            <button v-if="form.code" @click.stop="form.code = ''" type="button" class="input-clear-button" title="Xóa">✕</button>
+          </div>
         </div>
         <div class="flex flex-col gap-1">
-          <label class="font-bold text-slate-600">Tên *</label>
-          <input 
-            v-model="form.name" 
-            type="text" 
-            placeholder="Nhập tên thị trường..."
-            class="border border-slate-200 bg-[#fffbeb] rounded-md p-1.5 font-semibold focus:outline-sky-500 text-xs"
-          />
+          <span class="font-semibold text-[#000000D9]">Tên<span class="text-red-500">*</span></span>
+          <div class="relative">
+            <input 
+              v-model="form.name" 
+              required
+              aria-required="true"
+              type="text" 
+              placeholder="Nhập tên thị trường..."
+              class="input-required w-full h-8 rounded-lg px-2 pr-8 text-xs font-normal"
+            />
+            <button v-if="form.name" @click.stop="form.name = ''" type="button" class="input-clear-button" title="Xóa">✕</button>
+          </div>
         </div>
       </div>
 
       <!-- Modal Footer -->
       <div class="bg-slate-50 px-5 py-3 flex items-center justify-end gap-2 border-t border-slate-100">
-        <!-- Nút Đóng -->
-        <button 
-          @click="isModalOpen = false" 
-          class="px-4 py-1.5 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-md font-bold text-xs cursor-pointer border-none flex items-center gap-1 shadow-xs transition-colors"
-        >
-          <span class="inline-flex items-center justify-center border border-white rounded-full w-3.5 h-3.5 text-[8px] font-extrabold">✕</span>
-          Đóng
-        </button>
         <!-- Nút Lưu -->
         <button 
-          @click="saveItem"
-          class="px-4 py-1.5 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-md font-bold text-xs cursor-pointer border-none flex items-center gap-1 shadow-xs transition-colors"
+          @click="saveItem" 
+          class="btn-pms-primary"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
@@ -348,11 +399,25 @@ const handleDelete = async (item) => {
 </template>
 
 <style scoped>
-.animate-in {
-  animation: fadeIn 0.2s ease-out forwards;
+.company-modal-fade {
+  animation: companyModalOpacityFade 0.12s ease-out;
 }
-@keyframes fadeIn {
-  from { opacity: 0; transform: scale(0.95); }
-  to { opacity: 1; transform: scale(1); }
+@keyframes companyModalOpacityFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
+.input-clear-button {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  z-index: 10;
+  transform: translateY(-50%);
+  border: 0;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+.input-clear-button:hover { color: #475569; }
 </style>
