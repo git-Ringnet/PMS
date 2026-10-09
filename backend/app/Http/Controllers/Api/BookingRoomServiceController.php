@@ -46,7 +46,11 @@ class BookingRoomServiceController extends Controller
             ->orderBy('id')
             ->get();
 
-        return response()->json(['success' => true, 'data' => $services]);
+        return response()->json([
+            'success' => true,
+            'data' => $services,
+            'move_history_bills' => app(\App\Services\BookingRoomMoveService::class)->postedHistoryBills($room),
+        ]);
     }
 
     public function billDetails($billId)
@@ -259,11 +263,17 @@ class BookingRoomServiceController extends Controller
                 ->where('ServiceId', 'RM')
                 ->whereDate('Date', $svcDateStr)
                 ->where('Edit', 0)
-                ->where('Status', 1)
+                ->whereIn('Status', [1, 2])
                 ->latest('Ma')
                 ->first();
 
             if ($existingBill) {
+                if ((int) $existingBill->Status !== 1) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Hóa đơn tiền phòng ngày ' . $svcDateStr . ' đã được post và không thể tạo hoặc điều chỉnh lần nữa.',
+                    ], 422);
+                }
                 if ($existingBill->PaymentId !== null) {
                     return response()->json([
                         'success' => false,
@@ -328,28 +338,37 @@ class BookingRoomServiceController extends Controller
                     ]);
 
                     // 4. Cập nhật BookingRoomService
-                    return BookingRoomService::withTrashed()->updateOrCreate(
-                        [
-                            'booking_room_id' => $room->id,
-                            'service_code'    => 'RM',
-                            'service_date'    => $svcDateStr,
-                        ],
-                        [
-                            'service_name'           => $request->service_name ?: ($existingBill->DescriptionServive ?: BookingRoomService::catalogName(BookingRoomService::CODE_ROOM, 'Dịch vụ phòng nghỉ')),
-                            'guest_id'               => $request->guest_id,
-                            'quantity'               => $quantity,
-                            'rate'                   => $rate,
-                            'total_amount'           => $totalAmount,
-                            'department'             => 'FO',
-                            'service_bill_id'        => $existingBill->Ma,
-                            'service_bill_detail_no' => 1,
-                            'is_room'                => 1,
-                            'folio'                  => $existingBill->Folio ?? 1,
-                            'is_posted'              => 1,
-                            'deleted_at'             => null,
-                            'created_by'             => $user,
-                        ]
-                    );
+                    $service = BookingRoomService::withTrashed()
+                        ->where('booking_room_id', $room->id)
+                        ->where('service_code', 'RM')
+                        ->whereDate('service_date', $svcDateStr)
+                        ->first();
+                    $values = [
+                        'service_name' => $request->service_name ?: ($existingBill->DescriptionServive ?: BookingRoomService::catalogName(BookingRoomService::CODE_ROOM, 'Dịch vụ phòng nghỉ')),
+                        'guest_id' => $request->guest_id,
+                        'quantity' => $quantity,
+                        'rate' => $rate,
+                        'total_amount' => $totalAmount,
+                        'department' => 'FO',
+                        'service_bill_id' => $existingBill->Ma,
+                        'service_bill_detail_no' => 1,
+                        'is_room' => 1,
+                        'folio' => $existingBill->Folio ?? 1,
+                        'is_posted' => 1,
+                        'deleted_at' => null,
+                        'created_by' => $user,
+                    ];
+                    if ($service) {
+                        $service->fill($values)->save();
+                        return $service;
+                    }
+
+                    return BookingRoomService::create([
+                        'booking_room_id' => $room->id,
+                        'service_code' => 'RM',
+                        'service_date' => $svcDateStr,
+                        ...$values,
+                    ]);
                 });
 
                 try {
@@ -2293,12 +2312,20 @@ class BookingRoomServiceController extends Controller
         if ($isBookingPost) {
             $roomsToPost = $roomsToPost->reject(fn (BookingRoom $targetRoom) => $targetRoom->isVirtual())->values();
         }
+        $roomsToPost = $roomsToPost->reject(fn (BookingRoom $targetRoom): bool =>
+            !$targetRoom->is_day_use
+            && $targetRoom->arrival_date
+            && $targetRoom->departure_date
+            && $targetRoom->departure_date->lessThanOrEqualTo($targetRoom->arrival_date)
+        )->values();
         if ($roomsToPost->isEmpty()) {
             $virtualOnly = $booking?->is_service_only || ($booking && $booking->bookingRooms->contains(fn (BookingRoom $targetRoom) => $targetRoom->isVirtual()));
             return response()->json([
                 'success' => false,
                 'code' => $virtualOnly ? 'virtual_room' : null,
-                'message' => $virtualOnly ? 'Booking chỉ chứa folio phòng ảo, không có tiền phòng để post.' : 'Không có phòng nào để post tiền phòng.',
+                'message' => $virtualOnly
+                    ? 'Booking chỉ chứa folio phòng ảo, không có tiền phòng để post.'
+                    : 'Không có đêm lưu trú hợp lệ để post tiền phòng.',
             ], 422);
         }
 
@@ -2498,9 +2525,13 @@ class BookingRoomServiceController extends Controller
                             ->where('RentalRoomId1', $targetRoom->id)
                             ->where('ServiceId', 'RM')
                             ->whereDate('Date', $current->toDateString())
+                            ->where('Status', 1)
                             ->where('Edit', 0)
                             ->first();
-                        if ($existingBill) {
+                        $hasMovedRoomNight = !$existingBill
+                            && app(\App\Services\BookingRoomMoveService::class)
+                                ->hasPostedRoomNight($targetRoom, $current, (bool) $isRoomNight);
+                        if ($existingBill || $hasMovedRoomNight) {
                             // Phòng đã có tiền phòng cho ngày này -> Bỏ qua không thêm lại
                             if (!in_array($roomLabel, $skippedRooms)) {
                                 $skippedRooms[] = $roomLabel;
@@ -2515,8 +2546,17 @@ class BookingRoomServiceController extends Controller
                             ->where('RentalRoomId1', $targetRoom->id)
                             ->where('ServiceId', 'RM')
                             ->whereDate('Date', $current->toDateString())
+                            ->where('Status', 1)
                             ->where('Edit', 0)
                             ->first();
+                        if (!$existingBill && app(\App\Services\BookingRoomMoveService::class)
+                            ->hasPostedRoomNight($targetRoom, $current, (bool) $isRoomNight)) {
+                            if (!in_array($roomLabel, $skippedRooms)) {
+                                $skippedRooms[] = $roomLabel;
+                            }
+                            $current->addDay();
+                            continue;
+                        }
                         if ($existingBill) {
                             $existingBill->update([
                                 'Amount'             => $totalAmount,

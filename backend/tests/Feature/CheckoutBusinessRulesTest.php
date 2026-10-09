@@ -40,7 +40,7 @@ class CheckoutBusinessRulesTest extends TestCase
             ['code' => 'checkout_rules_test'],
             ['name' => 'Checkout rules test', 'level' => 3, 'department_scope' => 'FO', 'is_active' => true]
         );
-        foreach (['fo.checkout', 'fo.service.add', 'fo.service.edit'] as $permissionCode) {
+        foreach (['fo.checkout', 'fo.frontdesk.view', 'fo.service.add', 'fo.service.edit'] as $permissionCode) {
             $permission = Permission::firstOrCreate(
                 ['code' => $permissionCode],
                 ['name' => $permissionCode, 'module' => 'FO']

@@ -60,6 +60,11 @@ class BookingRoomController extends Controller
             ->with(['roomClass', 'originalRoomClass', 'room', 'specialRequests.specialRequest'])
             ->get();
 
+        $moveService = app(\App\Services\BookingRoomMoveService::class);
+        $rooms->each(function (BookingRoom $room) use ($moveService): void {
+            $room->setAttribute('move_history_bills', $moveService->postedHistoryBills($room));
+        });
+
         return response()->json(['success' => true, 'data' => $rooms]);
     }
 
@@ -504,11 +509,65 @@ class BookingRoomController extends Controller
             ->whereIn('id', $request->room_ids)
             ->get();
 
+        $currentUser = Auth::user();
+        $branchId = $request->attributes->get('_branch_id') ?? $currentUser?->primary_branch_id;
+        $currentModule = ModuleCode::normalize($request->input('current_module', ModuleCode::RESERVATION));
+        $roleConfig = app(\App\Services\CheckoutRoleConfigService::class);
+        $hasFoEditPermission = $currentUser?->hasPermission('fo.booking.edit', $branchId) ?? false;
+        $hasFoEntryPermission = $currentUser?->hasPermission('fo.frontdesk.view', $branchId) ?? false;
+        $canUseFrontDeskContext = $hasFoEditPermission && $hasFoEntryPermission;
+        if ($currentModule === ModuleCode::FRONTDESK && !$canUseFrontDeskContext) {
+            return response()->json(['success' => false, 'message' => 'Bạn không có quyền cập nhật phòng tại Lễ tân.'], 403);
+        }
+        $saleMayEditInhouseRateDeparture = $currentModule === ModuleCode::RESERVATION
+            && $roleConfig->allowSaleInhouseRateDeparture($branchId);
+        $canEditInhouseRateDeparture = $currentModule === ModuleCode::FRONTDESK
+            ? $canUseFrontDeskContext
+            : $saleMayEditInhouseRateDeparture;
+
+        $hasInhouseSelection = $rooms->contains(fn (BookingRoom $room): bool =>
+            (int) $room->status === BookingRoom::STATUS_CHECKED_IN
+        );
+        $fieldWasSubmitted = fn (string $field): bool => $request->input($field) !== null && $request->input($field) !== '';
+        $rateDepartureFieldsSubmitted = collect(['rate', 'departure_date', 'departure_time'])
+            ->contains($fieldWasSubmitted);
+        if ($currentModule === ModuleCode::HOUSEKEEPING && $hasInhouseSelection) {
+            $inhouseRestrictedFields = collect([
+                'rate', 'departure_date', 'departure_time', 'arrival_date', 'arrival_time',
+                'adults', 'children_qty', 'extra_bed_qty', 'extra_bed_rate',
+            ])->filter($fieldWasSubmitted);
+            if ($inhouseRestrictedFields->isNotEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Housekeeping không thể cập nhật thông tin booking room đang Inhouse.',
+                    'fields' => $inhouseRestrictedFields->values(),
+                ], 403);
+            }
+        }
+        if ($currentModule === ModuleCode::RESERVATION && $hasInhouseSelection) {
+            $unsupportedInhouseFields = collect([
+                'arrival_date', 'arrival_time', 'adults', 'children_qty', 'extra_bed_qty', 'extra_bed_rate',
+            ])->filter($fieldWasSubmitted);
+            if ($unsupportedInhouseFields->isNotEmpty()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Sale chỉ được cập nhật giá, ngày đi và giờ đi của phòng đang ở theo cấu hình.',
+                    'fields' => $unsupportedInhouseFields->values(),
+                ], 422);
+            }
+
+            if ($rateDepartureFieldsSubmitted && !$saleMayEditInhouseRateDeparture) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cấu hình hiện tại không cho phép Sale cập nhật giá hoặc ngày đi của phòng đang ở.',
+                ], 403);
+            }
+        }
+
         $errors  = [];
         $updated = [];
 
         $sysDateStr = $this->avService->getSystemDate()->toDateString();
-        $isFO = strtolower(Auth::user()?->department_code ?? '') === 'fo' || (Auth::user()?->username === 'testuser') || (Auth::user()?->username === 'admin');
         $allowOver = $this->allowOverAV();
 
         // 1. Validate dates and AV for all rooms first to avoid partial updates
@@ -574,17 +633,18 @@ class BookingRoomController extends Controller
                 $isInhouse = $room->status === BookingRoom::STATUS_CHECKED_IN;
 
                 if ($isInhouse) {
-                    // Inhouse room: only update departure_date, departure_time, and rate (if FO), or only rate (if non-FO)
+                    // Inhouse rooms accept rate/departure edits only from FO
+                    // RBAC or the Sale-specific configuration allow-list.
                     $data = [
                         'updated_by' => Auth::user()?->username ?? 'system',
                     ];
 
-                    if ($request->filled('rate')) {
+                    if ($canEditInhouseRateDeparture && $request->filled('rate')) {
                         $data['rate'] = $request->rate;
                         $data['base_price'] = $request->rate;
                     }
 
-                    if ($isFO) {
+                    if ($canEditInhouseRateDeparture) {
                         if ($request->filled('departure_date')) {
                             $data['departure_date'] = $request->departure_date;
                         }
@@ -1164,96 +1224,89 @@ class BookingRoomController extends Controller
     // =========================================
     public function lockMove(Request $request, $bookingId, $roomId)
     {
-        $bookingRoom = BookingRoom::where('booking_id', $bookingId)->findOrFail($roomId);
+        $request->validate(['note' => 'nullable|string|max:255']);
 
-        if ($bookingRoom->isVirtual()) {
-            return response()->json(['success' => false, 'code' => 'virtual_room', 'message' => 'Folio phòng ảo không hỗ trợ khóa chuyển phòng.'], 422);
-        }
-
-        if (empty($bookingRoom->room_number)) {
-            return response()->json(['success' => false, 'message' => 'Phòng chưa được gán số phòng. Vui lòng gán số phòng trước khi khóa chuyển phòng.'], 422);
-        }
-
-        if ($bookingRoom->is_do_not_move) {
-            return response()->json(['success' => false, 'message' => 'Phòng đã đang khóa chuyển phòng.'], 422);
-        }
-
-        $request->validate(['note' => 'nullable|string']);
-
-        DB::beginTransaction();
         try {
-            $bookingRoom->update(['is_do_not_move' => 1]);
+            return DB::transaction(function () use ($bookingId, $roomId, $request) {
+                $bookingRoom = BookingRoom::where('booking_id', $bookingId)
+                    ->lockForUpdate()
+                    ->findOrFail($roomId);
 
-            RoomDoNotMoveLock::create([
-                'booking_room_id'    => $roomId,
-                'locked_by_user_id'  => Auth::id() ?? 0,
-                'locked_by_username' => Auth::user()?->username ?? 'system',
-                'locked_at'          => now(),
-                'note'               => $request->note,
-            ]);
-            DB::commit();
-        } catch (\Exception $e) {
-            DB::rollBack();
+                if ($bookingRoom->isVirtual()) {
+                    return response()->json(['success' => false, 'code' => 'virtual_room', 'message' => 'Folio phòng ảo không hỗ trợ khóa chuyển phòng.'], 422);
+                }
+
+                if (empty($bookingRoom->room_number)) {
+                    return response()->json(['success' => false, 'message' => 'Phòng chưa được gán số phòng. Vui lòng gán số phòng trước khi khóa chuyển phòng.'], 422);
+                }
+
+                if ($bookingRoom->is_do_not_move || $bookingRoom->activeDoNotMoveLock()->lockForUpdate()->exists()) {
+                    return response()->json(['success' => false, 'message' => 'Phòng đã đang khóa chuyển phòng.'], 422);
+                }
+
+                $bookingRoom->update(['is_do_not_move' => 1]);
+
+                RoomDoNotMoveLock::create([
+                    'booking_room_id'    => $roomId,
+                    'locked_by_user_id'  => Auth::id() ?? 0,
+                    'locked_by_username' => Auth::user()?->username ?? 'system',
+                    'locked_at'          => now(),
+                    'note'               => $request->note,
+                ]);
+
+                return response()->json(['success' => true, 'message' => 'Đã khóa chuyển phòng (Do Not Move).']);
+            });
+        } catch (\Throwable $e) {
             return response()->json(['success' => false, 'message' => 'Lỗi: ' . $e->getMessage()], 500);
         }
-
-        return response()->json(['success' => true, 'message' => 'Đã khóa chuyển phòng (Do Not Move).']);
     }
-
     // =========================================
     // DELETE: Mở khóa Do Not Move (Epic 11)
     // DELETE /bookings/{bookingId}/rooms/{roomId}/lock-move
     // =========================================
     public function unlockMove($bookingId, $roomId)
     {
-        $bookingRoom = BookingRoom::where('booking_id', $bookingId)->findOrFail($roomId);
+        $currentUser = Auth::user();
+        $currentUserId = $currentUser?->getKey();
+        $currentUsername = $currentUser?->username;
+        $branchId = request()->attributes->get('_branch_id') ?? $currentUser?->primary_branch_id;
 
-        if ($bookingRoom->isVirtual()) {
-            return response()->json(['success' => false, 'code' => 'virtual_room', 'message' => 'Folio phòng ảo không hỗ trợ mở khóa chuyển phòng.'], 422);
-        }
-        $activeLock  = $bookingRoom->activeDoNotMoveLock;
-
-        if (!$bookingRoom->is_do_not_move || !$activeLock) {
-            return response()->json(['success' => false, 'message' => 'Phòng không đang bị khóa.'], 422);
-        }
-
-        $currentUserId = Auth::id();
-        $currentUsername = Auth::user()?->username;
-
-        // Rule: chỉ người đã khóa mới unlock, trừ khi có quyền đặc biệt
-        if ($activeLock->locked_by_user_id !== $currentUserId) {
-            $allowAllUnlock = HotelConfig::where('name', 'Booking_RuleUserUnLockDoNotMove')
-                ->where('value', $currentUsername)
-                ->orWhere(fn($q) => $q->where('name', 'Booking_RuleUserUnLockDoNotMove')
-                    ->whereRaw("FIND_IN_SET(?, value)", [$currentUsername]))
-                ->exists();
-
-            if (!$allowAllUnlock) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Chỉ người đã khóa (' . $activeLock->locked_by_username . ') mới có thể mở khóa.',
-                ], 403);
-            }
-        }
-
-        DB::beginTransaction();
         try {
-            $activeLock->update([
-                'unlocked_by_user_id'  => $currentUserId,
-                'unlocked_by_username' => $currentUsername,
-                'unlocked_at'          => now(),
-            ]);
-            $bookingRoom->update(['is_do_not_move' => 0]);
-            DB::commit();
-        } catch (\Exception $e) {
-            DB::rollBack();
+            return DB::transaction(function () use ($bookingId, $roomId, $currentUser, $currentUserId, $currentUsername, $branchId) {
+                $bookingRoom = BookingRoom::where('booking_id', $bookingId)
+                    ->lockForUpdate()
+                    ->findOrFail($roomId);
+
+                if ($bookingRoom->isVirtual()) {
+                    return response()->json(['success' => false, 'code' => 'virtual_room', 'message' => 'Folio phòng ảo không hỗ trợ mở khóa chuyển phòng.'], 422);
+                }
+
+                $activeLock = $bookingRoom->activeDoNotMoveLock()->lockForUpdate()->first();
+                if (!$bookingRoom->is_do_not_move || !$activeLock) {
+                    return response()->json(['success' => false, 'message' => 'Phòng không còn bị khóa.', 'code' => 'lock_not_active'], 409);
+                }
+
+                $roleConfig = app(\App\Services\CheckoutRoleConfigService::class);
+                if (!$roleConfig->canOpenDoNotMove($currentUser, $branchId, $activeLock->locked_by_user_id)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Bạn không có quyền mở khóa chuyển phòng này.',
+                    ], 403);
+                }
+
+                $activeLock->update([
+                    'unlocked_by_user_id'  => $currentUserId,
+                    'unlocked_by_username' => $currentUsername,
+                    'unlocked_at'          => now(),
+                ]);
+                $bookingRoom->update(['is_do_not_move' => 0]);
+
+                return response()->json(['success' => true, 'message' => 'Đã mở khóa chuyển phòng.']);
+            });
+        } catch (\Throwable $e) {
             return response()->json(['success' => false, 'message' => 'Lỗi: ' . $e->getMessage()], 500);
         }
-
-        return response()->json(['success' => true, 'message' => 'Đã mở khóa chuyển phòng.']);
     }
-
-    // =========================================
     // Auto Room Assignment (Epic 3)
     // POST /bookings/{bookingId}/rooms/{roomId}/auto-assign
     // =========================================
@@ -1991,7 +2044,9 @@ class BookingRoomController extends Controller
                     $attributes['departure_date']      = $originalDepartureStr;
                     $attributes['actual_arrival_date'] = $originalArrivalStr;
                     $attributes['arrival_time']        = $timeStr;
-                    $attributes['ActutalNumOfDays']    = max(1, \Carbon\Carbon::parse($sysDateStr)->diffInDays(\Carbon\Carbon::parse($originalDepartureStr)));
+                    $segmentNights = max(0, \Carbon\Carbon::parse($sysDateStr)->diffInDays(\Carbon\Carbon::parse($originalDepartureStr), false));
+                    $attributes['ActutalNumOfDays']    = $segmentNights;
+                    $attributes['NumOfDays']           = $segmentNights;
                     $attributes['adults']              = $movedAdultsCount;
                     $attributes['children_qty']        = $movedRegularChildrenCount;
                     $attributes['babies']              = $movedBabiesCount;
@@ -2017,6 +2072,16 @@ class BookingRoomController extends Controller
 
                     // Insert new booking room record (Sp2100)
                     $newRoom = BookingRoom::create($attributes);
+                    // The model's legacy creation hook normalizes active
+                    // zero-length non-Day-Use stays to one night. This row is
+                    // a deliberate move segment, so persist its date-derived
+                    // zero-night count after creation.
+                    if ($segmentNights === 0) {
+                        $newRoom->forceFill([
+                            'ActutalNumOfDays' => 0,
+                            'NumOfDays' => 0,
+                        ])->save();
+                    }
 
                     // Chuẩn hóa dữ liệu khách cũ trước khi tách lịch sử chuyển phòng.
                     // Legacy có thể để trống giờ đến ở booking_room_guests.
@@ -2119,18 +2184,25 @@ class BookingRoomController extends Controller
                     // --- 4. TRANSFER LINKED RECORDS (Sp2401, Sp2102, Sp2107, Sp3000, Sp3002) ---
                     if ($isAllGuestsMoved) {
                     // Sp2401 & Sp2102 & Sp3000: Transfer future/unbilled services from system_date onwards
-                    \App\Models\BookingRoomService::where('booking_room_id', $bookingRoom->id)
-                        ->where('service_date', '>=', $sysDateStr)
-                        ->update(['booking_room_id' => $newRoom->id]);
+                    app(\App\Services\BookingRoomMoveService::class)->transferUnpostedServices(
+                        $bookingRoom,
+                        $newRoom,
+                        $sysDateStr,
+                        $originalDepartureStr,
+                    );
 
                     // Sp2107: Transfer special requests
                     \App\Models\BookingRoomSpecialRequest::where('booking_room_id', $bookingRoom->id)
                         ->update(['booking_room_id' => $newRoom->id]);
 
-                    // Sp3002: Transfer room-level payments/deposits (Register-level payments with booking_room_id = null remain unchanged)
-                    \App\Models\Payment::where('booking_room_id', $bookingRoom->id)
-                        ->update(['booking_room_id' => $newRoom->id]);
-
+                    } else {
+                        app(\App\Services\BookingRoomMoveService::class)->copyUnpostedServices(
+                            $bookingRoom,
+                            $newRoom,
+                            $sysDateStr,
+                            $originalDepartureStr,
+                            $movedGuestIds,
+                        );
                     }
                     // A room move keeps the stay in-house. Re-read the room
                     // statuses so a stale reservation header cannot survive

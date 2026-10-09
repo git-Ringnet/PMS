@@ -751,20 +751,19 @@ class NightAuditController extends Controller
                 $postedBillsCount = 0;
 
                 foreach ($inhouseRooms as $targetRoom) {
-                    $expectedRoomNight = $this->roomNightFlag($targetRoom);
-                    $hasStandardRM = false;
-                    $existingRMBills = ServiceBill::where('RegisterId1', $targetRoom->booking_id)
-                        ->where('RentalRoomId1', $targetRoom->id)
-                        ->where('ServiceId', 'RM')
-                        ->whereDate('Date', $systemDate->toDateString())
-                        ->where('Edit', 0)
-                        ->pluck('Ma');
-
-                    if ($existingRMBills->isNotEmpty()) {
-                        $hasStandardRM = RoomNightBill::whereIn('bill_id', $existingRMBills)
-                            ->where('is_room_night', $expectedRoomNight)
-                            ->exists();
+                    if (!$targetRoom->is_day_use
+                        && $targetRoom->arrival_date
+                        && $targetRoom->departure_date
+                        && $targetRoom->departure_date->lessThanOrEqualTo($targetRoom->arrival_date)) {
+                        // A checkout-day move creates a real [D,D) segment.
+                        // Keep it visible in-house for the checkout flow, but
+                        // never turn it into a room night or setup-service post.
+                        continue;
                     }
+
+                    $expectedRoomNight = $this->roomNightFlag($targetRoom);
+                    $hasStandardRM = app(\App\Services\BookingRoomMoveService::class)
+                        ->hasPostedRoomNight($targetRoom, $systemDate, $expectedRoomNight);
 
                     if (!$hasStandardRM) {
                         $this->postSingleNightCharge($targetRoom, $systemDate, 'room_only', $username, 'Tự động post tiền phòng - Sang ngày');

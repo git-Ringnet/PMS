@@ -35,6 +35,10 @@ class HotelSettingController extends Controller
             'RuleUserCorrectOrPostBillPaymentOldDay',
             'RoomMap_ColorRoomNumberByRoomClass',
             'CheckAuthorization',
+            'AllowReserUpdateRate_DeptDateRoomInhouse',
+            'IsCopyAllBooking',
+            'RoleUserUpdateCheckoutBooking',
+            'RoleUserOpenDoNotMove',
         ])->get()->pluck('value', 'name');
 
         $data['ColorDefaultBookingRoomMap'] = $configs->get('ColorDefaultBookingRoomMap', '#97D5FF');
@@ -50,6 +54,10 @@ class HotelSettingController extends Controller
         $data['RuleUserCorrectOrPostBillPaymentOldDay'] = $configs->get('RuleUserCorrectOrPostBillPaymentOldDay', '0');
         $data['RoomMap_ColorRoomNumberByRoomClass'] = $configs->get('RoomMap_ColorRoomNumberByRoomClass', '0');
         $data['CheckAuthorization'] = $configs->get('CheckAuthorization', '0');
+        $data['AllowReserUpdateRate_DeptDateRoomInhouse'] = $configs->get('AllowReserUpdateRate_DeptDateRoomInhouse', '0');
+        $data['IsCopyAllBooking'] = $configs->get('IsCopyAllBooking', '1');
+        $data['RoleUserUpdateCheckoutBooking'] = $configs->get('RoleUserUpdateCheckoutBooking', '');
+        $data['RoleUserOpenDoNotMove'] = $configs->get('RoleUserOpenDoNotMove', '');
         
         $bfConfig = \App\Models\HotelConfig::where('name', 'DefaultBreakfast')->first();
         $data['DefaultBreakfast'] = $bfConfig ? intval($bfConfig->value) : 1;

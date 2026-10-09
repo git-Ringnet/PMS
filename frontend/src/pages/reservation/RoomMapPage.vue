@@ -30,6 +30,7 @@ import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import echo from '@/services/echo'
 import ReportsPage from '@/pages/reports/ReportsPage.vue'
 import GeneralSearchPage from '@/pages/frontdesk/GeneralSearchPage.vue'
+import CheckoutPage from '@/pages/frontdesk/CheckoutPage.vue'
 
 const roomStore = useRoomStore()
 const uiStore = useUiStore()
@@ -2329,7 +2330,8 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 </script>
 
 <template>
-  <div class="h-full w-full">
+  <CheckoutPage v-if="currentTab === 'checkout'" />
+  <div v-else class="h-full w-full">
     <div class="flex h-full w-full overflow-hidden bg-white">
       <!-- Main Content Area Wrapper -->
       <div class="flex-1 flex flex-col min-h-0 min-w-0 bg-white" :style="{ zoom: scaleFactor }">

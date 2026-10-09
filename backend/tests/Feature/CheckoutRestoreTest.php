@@ -36,11 +36,10 @@ class CheckoutRestoreTest extends TestCase
             ['code' => 'checkout_restore_test'],
             ['name' => 'Checkout restore test', 'level' => 3, 'department_scope' => 'FO', 'is_active' => true]
         );
-        $permission = Permission::firstOrCreate(
-            ['code' => 'fo.checkout'],
-            ['name' => 'Check-out / Trả phòng', 'module' => 'FO']
-        );
-        $role->permissions()->syncWithoutDetaching([$permission->id]);
+        foreach (['fo.checkout', 'fo.frontdesk.view'] as $code) {
+            $permission = Permission::firstOrCreate(['code' => $code], ['name' => $code, 'module' => 'FO']);
+            $role->permissions()->syncWithoutDetaching([$permission->id]);
+        }
         $user->roles()->attach($role->id);
         $this->actingAs($user);
         DB::table('booking_statuses')->insert([
