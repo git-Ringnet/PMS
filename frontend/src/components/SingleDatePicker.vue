@@ -3,6 +3,9 @@ import { ref, computed, watch } from 'vue'
 import { VueDatePicker } from '@vuepic/vue-datepicker'
 import '@vuepic/vue-datepicker/dist/main.css'
 import { vi } from 'date-fns/locale'
+import { useAuthStore } from '@/stores/auth-store'
+
+const authStore = useAuthStore()
 
 const props = defineProps({
   modelValue: {
@@ -17,9 +20,13 @@ const props = defineProps({
     type: [String, Date],
     default: null
   },
+  startDate: {
+    type: [String, Date],
+    default: null
+  },
   placeholder: {
     type: String,
-    default: 'dd/mm/yy'
+    default: 'dd/mm/yyyy'
   },
   disabled: {
     type: Boolean,
@@ -35,7 +42,7 @@ const props = defineProps({
   },
   fourDigitYear: {
     type: Boolean,
-    default: false
+    default: true
   }
 })
 
@@ -98,6 +105,22 @@ const parsedMaxDate = computed(() => {
   return null
 })
 
+// Parse startDate prop or fallback to authStore.systemDate
+const parsedStartDate = computed(() => {
+  const raw = props.startDate || authStore.systemDate || localStorage.getItem('pms_system_date')
+  if (!raw) return null
+  if (raw instanceof Date) return raw
+  const parts = String(raw).split(/[-\/]/)
+  if (parts.length === 3) {
+    if (parts[0].length === 4) {
+      return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10))
+    } else {
+      return new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10))
+    }
+  }
+  return null
+})
+
 const formatDateDMY = (dateStr) => {
   if (!dateStr) return ''
   const parts = String(dateStr).split(/[-\/]/)
@@ -110,6 +133,11 @@ const formatDateDMY = (dateStr) => {
       const year = props.fourDigitYear ? parts[2] : parts[2].slice(-2)
       return `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${year}`
     } else if (parts[2].length === 2) {
+      if (props.fourDigitYear) {
+        const yy = parseInt(parts[2], 10)
+        const fullYear = yy >= 50 ? 1900 + yy : 2000 + yy
+        return `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${fullYear}`
+      }
       return `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[2]}`
     }
   }
@@ -127,15 +155,17 @@ function parseDateInput(str) {
   const trimmed = str.trim()
   if (!trimmed) return ''
 
-  // 1. Check DD/MM/YY or DD-MM-YY
-  const twoDigitYearMatch = trimmed.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2})$/)
-  if (twoDigitYearMatch) {
-    const day = parseInt(twoDigitYearMatch[1], 10)
-    const month = parseInt(twoDigitYearMatch[2], 10)
-    const yy = parseInt(twoDigitYearMatch[3], 10)
-    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
-      const year = yy >= 50 ? 1900 + yy : 2000 + yy
-      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  // 1. Check DD/MM/YY or DD-MM-YY (only when not fourDigitYear)
+  if (!props.fourDigitYear) {
+    const twoDigitYearMatch = trimmed.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2})$/)
+    if (twoDigitYearMatch) {
+      const day = parseInt(twoDigitYearMatch[1], 10)
+      const month = parseInt(twoDigitYearMatch[2], 10)
+      const yy = parseInt(twoDigitYearMatch[3], 10)
+      if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+        const year = yy >= 50 ? 1900 + yy : 2000 + yy
+        return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+      }
     }
   }
 
@@ -150,15 +180,17 @@ function parseDateInput(str) {
     }
   }
 
-  // 3. Check 6 digits DDMMYY (e.g. 181226)
-  const sixDigits = trimmed.match(/^(\d{2})(\d{2})(\d{2})$/)
-  if (sixDigits) {
-    const day = parseInt(sixDigits[1], 10)
-    const month = parseInt(sixDigits[2], 10)
-    const yy = parseInt(sixDigits[3], 10)
-    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
-      const year = yy >= 50 ? 1900 + yy : 2000 + yy
-      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  // 3. Check 6 digits DDMMYY (e.g. 181226) - only when not fourDigitYear
+  if (!props.fourDigitYear) {
+    const sixDigits = trimmed.match(/^(\d{2})(\d{2})(\d{2})$/)
+    if (sixDigits) {
+      const day = parseInt(sixDigits[1], 10)
+      const month = parseInt(sixDigits[2], 10)
+      const yy = parseInt(sixDigits[3], 10)
+      if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+        const year = yy >= 50 ? 1900 + yy : 2000 + yy
+        return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+      }
     }
   }
 
@@ -187,12 +219,107 @@ function parseDateInput(str) {
   return null
 }
 
-function handleTextInput() {
+let isDeletingKey = false
+
+function maskDateInput(val, isDeleting = false) {
+  if (!val) return ''
+  let str = String(val)
+
+  if (isDeleting) {
+    const digits = str.replace(/\D/g, '').slice(0, 8)
+    if (digits.length <= 2) return digits
+    if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`
+    return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`
+  }
+
+  // Handle single digit followed by slash for day e.g. '5/' -> '05/'
+  if (/^\d\//.test(str)) {
+    str = '0' + str
+  }
+
+  let digits = str.replace(/\D/g, '')
+  let dayPart = ''
+  if (digits.length >= 2) {
+    let dayNum = parseInt(digits.slice(0, 2), 10)
+    if (dayNum > 31) dayNum = 31
+    if (dayNum === 0) dayNum = 1
+    dayPart = String(dayNum).padStart(2, '0')
+  } else if (digits.length === 1) {
+    return digits
+  } else {
+    return ''
+  }
+
+  let rest = digits.slice(2)
+  let monthPart = ''
+  let yearPart = ''
+  const maxYear = 4
+
+  if (rest.length > 0) {
+    const firstMonthChar = rest[0]
+    // Nếu số đầu ở phần tháng lớn hơn 1 (2..9) thì tự chuyển thành 0X/ và chuyển sang nhập năm
+    if (firstMonthChar >= '2' && firstMonthChar <= '9') {
+      monthPart = '0' + firstMonthChar
+      yearPart = rest.slice(1).slice(0, maxYear)
+    } else if (firstMonthChar === '0') {
+      if (rest.length === 1) {
+        return `${dayPart}/0`
+      } else {
+        let secondMonthChar = rest[1]
+        if (secondMonthChar === '0') secondMonthChar = '1'
+        monthPart = '0' + secondMonthChar
+        yearPart = rest.slice(2).slice(0, maxYear)
+      }
+    } else if (firstMonthChar === '1') {
+      if (rest.length === 1) {
+        return `${dayPart}/1`
+      } else {
+        let monthNum = parseInt(rest.slice(0, 2), 10)
+        // Rào lại ở tháng chỉ nhập được 12 tháng thôi (nếu > 12 thì giữ 12)
+        if (monthNum > 12) monthNum = 12
+        monthPart = String(monthNum).padStart(2, '0')
+        yearPart = rest.slice(2).slice(0, maxYear)
+      }
+    }
+  } else {
+    return `${dayPart}/`
+  }
+
+  if (monthPart) {
+    if (yearPart) {
+      return `${dayPart}/${monthPart}/${yearPart}`
+    } else {
+      return `${dayPart}/${monthPart}/`
+    }
+  }
+
+  return `${dayPart}/`
+}
+
+function handleKeydown(e) {
+  if (e.key === 'Backspace' || e.key === 'Delete') {
+    isDeletingKey = true
+  } else {
+    isDeletingKey = false
+  }
+}
+
+function handleTextInput(e) {
   if (props.disabled) return
-  const parsedYmd = parseDateInput(textInput.value)
-  if (parsedYmd) {
-    emit('update:modelValue', parsedYmd)
-    emit('change', parsedYmd)
+  const isDeleting = (e && e.inputType && e.inputType.startsWith('delete')) || isDeletingKey
+  isDeletingKey = false
+
+  const raw = textInput.value || ''
+  textInput.value = maskDateInput(raw, isDeleting)
+
+  const digits = textInput.value.replace(/\D/g, '')
+  const requiredLength = 8
+  if (digits.length === requiredLength) {
+    const parsedYmd = parseDateInput(textInput.value)
+    if (parsedYmd) {
+      emit('update:modelValue', parsedYmd)
+      emit('change', parsedYmd)
+    }
   }
 }
 
@@ -244,6 +371,7 @@ function handleInputClick() {
       v-model="textInput"
       :disabled="disabled"
       :placeholder="placeholder"
+      @keydown="handleKeydown"
       @input="handleTextInput"
       @blur="handleTextBlur"
       @keydown.enter.prevent="handleTextBlur"
@@ -265,6 +393,7 @@ function handleInputClick() {
       <VueDatePicker
         ref="datepickerRef"
         v-model="dateValue"
+        :start-date="parsedStartDate"
         :locale="vi"
         :enable-time-picker="false"
         :min-date="parsedMinDate"
