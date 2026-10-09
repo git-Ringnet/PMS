@@ -6533,7 +6533,7 @@ defineExpose({
         <div class="flex items-center gap-1.5">
           <span class="label">Ngày đến/đi:</span>
           <div v-if="isEditing" class="inline-flex items-center space-x-1.5" @click.stop>
-            <div class="relative w-[116px]">
+            <div class="relative w-[142px]">
               <SingleDatePicker
                 v-model="activeTab.checkIn"
                 :disabled="!isSyncRoomDateEnabled"
@@ -6548,7 +6548,7 @@ defineExpose({
               ></div>
             </div>
             <span class="text-slate-400 font-bold">~</span>
-            <div class="relative w-[116px]">
+            <div class="relative w-[142px]">
               <SingleDatePicker
                 v-model="activeTab.checkOut"
                 :disabled="!isSyncRoomDateEnabled"
@@ -8343,10 +8343,10 @@ defineExpose({
               </div>
 
               <!-- Ngày lưu trú -->
-              <div class="flex flex-col shrink-0 w-[240px]">
+              <div class="flex flex-col shrink-0 w-[314px]">
                 <span class="text-[11px] text-slate-500 font-bold mb-1">Ngày lưu trú</span>
                 <div class="flex items-center space-x-1">
-                  <div class="w-[115px]">
+                  <div class="w-[148px]">
                     <SingleDatePicker
                       v-model="modalForm.checkIn"
                       :min-date="systemDate"
@@ -8354,11 +8354,12 @@ defineExpose({
                       @change="handleCheckInChange"
                       placeholder="dd/mm/yyyy"
                       four-digit-year
-                      input-class="!h-[34px]"
+                      input-class="!h-[34px] !px-2"
+                      text-input-class="!text-xs font-semibold"
                     />
                   </div>
                   <span class="text-slate-400 font-bold text-xs">~</span>
-                  <div class="w-[115px]">
+                  <div class="w-[148px]">
                     <SingleDatePicker
                       v-model="modalForm.checkOut"
                       :min-date="modalForm.checkIn"
@@ -8366,7 +8367,8 @@ defineExpose({
                       @change="handleDateChange"
                       placeholder="dd/mm/yyyy"
                       four-digit-year
-                      input-class="!h-[34px]"
+                      input-class="!h-[34px] !px-2"
+                      text-input-class="!text-xs font-semibold"
                     />
                   </div>
                 </div>
@@ -8415,7 +8417,7 @@ defineExpose({
               </div>
 
               <!-- Ngày xác nhận -->
-              <div class="flex flex-col shrink-0 w-[160px]">
+              <div class="flex flex-col shrink-0 w-[187px]">
                 <span class="text-[11px] text-slate-500 font-bold mb-1">Ngày xác nhận</span>
                 <div class="flex items-center space-x-1">
                   <div class="flex-1">
@@ -8424,7 +8426,8 @@ defineExpose({
                       :start-date="systemDate || modalForm.confirmDate"
                       placeholder="dd/mm/yyyy"
                       four-digit-year
-                      input-class="!h-[34px]"
+                      input-class="!h-[34px] !px-2"
+                      text-input-class="!text-xs font-semibold"
                     />
                   </div>
                   <button @click="copyConfirmDate" type="button" class="text-slate-400 hover:text-blue-600 cursor-pointer border border-slate-200 bg-white p-2 rounded-lg shrink-0 flex items-center justify-center h-[34px]" title="Sao chép ngày check-in">
@@ -8805,7 +8808,7 @@ defineExpose({
                       <th class="py-2 px-2 text-center w-[8%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Đón/Đưa</th>
                       <th class="py-2 px-2 text-center w-[12%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Phương Tiện</th>
                       <th class="py-2 px-2 text-center w-[11%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Mã Hiệu / Biển Số</th>
-                      <th class="py-2 px-2 text-center w-[12%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Ngày Đón/Đưa</th>
+                      <th class="py-2 px-2 text-center min-w-[170px] w-[14%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Ngày Đón/Đưa</th>
                       <th class="py-2 px-2 text-center w-[8%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Giờ</th>
                       <th class="py-2 px-2 text-center w-[10%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Hiện Giá</th>
                       <th class="py-2 px-2 text-center w-[15%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Địa Điểm</th>
@@ -8843,15 +8846,17 @@ defineExpose({
 
                       <!-- Ngày -->
                       <td class="py-2 px-2 border-slate-200">
-                        <div class="flex items-center space-x-1 min-w-[125px]">
-                          <SingleDatePicker
-                            v-model="row.date"
-                            :start-date="modalForm.checkIn || systemDate"
-                            placeholder="dd/mm/yyyy"
-                            four-digit-year
-                            input-class="!h-[30px] !px-1.5"
-                            text-input-class="!text-[11px] !font-bold"
-                          />
+                        <div class="flex items-center space-x-1 min-w-[177px]">
+                          <div class="flex-1 min-w-[142px]">
+                            <SingleDatePicker
+                              v-model="row.date"
+                              :start-date="modalForm.checkIn || systemDate"
+                              placeholder="dd/mm/yyyy"
+                              four-digit-year
+                              input-class="!h-[30px] !px-1.5"
+                              text-input-class="!text-xs !font-bold"
+                            />
+                          </div>
                           <button @click.prevent="row.date = modalForm.checkIn" type="button" class="p-1 hover:bg-slate-100 rounded text-slate-400 border border-slate-200 bg-white cursor-pointer shrink-0 h-[30px] flex items-center justify-center" title="Sao chép ngày check-in">
                             <i class="fa-regular fa-calendar-days text-[11px]"></i>
                           </button>
@@ -9006,11 +9011,11 @@ defineExpose({
 
               <!-- Grid rooms table allocations -->
               <div class="w-full px-4 pb-4 overflow-x-auto">
-                <table class="min-w-[1300px] w-full border-collapse text-left text-xs table-auto">
+                <table class="min-w-[1420px] w-full border-collapse text-left text-xs table-auto">
                   <thead class="bg-slate-50 text-slate-500 font-semibold border-y border-slate-200">
                     <tr>
                       <th v-if="visibleColumns.roomType" class="py-2 px-2 text-center w-[6%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Loại/Dạng</th>
-                      <th v-if="visibleColumns.dates" class="py-2 px-2 text-center w-[17%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Ngày Đến ~ Ngày Đi</th>
+                      <th v-if="visibleColumns.dates" class="py-2 px-2 text-center min-w-[310px] w-[22%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Ngày Đến ~ Ngày Đi</th>
                       <th v-if="visibleColumns.occupancy" class="py-2 px-1 text-center w-[5%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Chiếm Dụng</th>
                       <th v-if="visibleColumns.availability" class="py-2 px-1 text-center w-[5%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Trống</th>
                       <th v-if="visibleColumns.quantity" class="py-2 px-1 text-center w-[7%] font-semibold text-[11px] bg-slate-100/50 align-middle border-r border-slate-200 border">Số Lượng</th>
@@ -9035,7 +9040,7 @@ defineExpose({
                       <!-- Ngày đến ~ Ngày đi -->
                       <td v-if="visibleColumns.dates" class="py-2 px-2 border-slate-200">
                         <div class="flex items-center justify-center space-x-1 whitespace-nowrap">
-                          <div class="w-[110px]">
+                          <div class="w-[144px]">
                             <SingleDatePicker
                               v-model="row.arrivalDate"
                               :min-date="systemDate"
@@ -9044,11 +9049,11 @@ defineExpose({
                               placeholder="dd/mm/yyyy"
                               four-digit-year
                               input-class="!h-[30px] !px-1.5"
-                              text-input-class="!text-[11px] !font-bold"
+                              text-input-class="!text-xs !font-bold"
                             />
                           </div>
                           <span class="text-slate-400 font-bold text-xs">~</span>
-                          <div class="w-[110px]">
+                          <div class="w-[144px]">
                             <SingleDatePicker
                               v-model="row.departureDate"
                               :min-date="row.arrivalDate"
@@ -9057,7 +9062,7 @@ defineExpose({
                               placeholder="dd/mm/yyyy"
                               four-digit-year
                               input-class="!h-[30px] !px-1.5"
-                              text-input-class="!text-[11px] !font-bold"
+                              text-input-class="!text-xs !font-bold"
                             />
                           </div>
                         </div>
