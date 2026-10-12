@@ -19,6 +19,31 @@
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
 
+## [2026-10-12] - Triển khai hoàn thiện 3 tính năng in ấn tại màn hình Tạo đăng ký (Dòng 346, 347, 348)
+### Module: Đặt phòng - Sales ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [BookingPrintPreviewModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/BookingPrintPreviewModal.vue), [PrintServiceSelectModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/PrintServiceSelectModal.vue), [BookingPrintController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingPrintController.php))
+
+- **Yêu cầu nghiệp vụ (Dòng 346, 347, 348 file DANH SÁCH BẢNG TRONG HỆ THỐNG (5).xlsx)**:
+  - *Dòng 346 - In confirm (Phiếu xác nhận đặt phòng)*:
+    - Nút "In" trên toolbar chính hiển thị dropdown 2 cấp: `Hiện giá` / `Không hiện giá` ➔ Submenu `In xác nhận đặt phòng ENG`, `In xác nhận đặt phòng VN`, và `Mẫu xác nhận đăng ký`.
+    - Mặc định in tổng tiền phòng = tổng booking; hỗ trợ nút "Chọn dịch vụ in (kèm DV Lễ tân)" cho phép Sales tick chọn các dịch vụ (bao gồm cả các dịch vụ Lễ tân post qua `service_bills`) để in đủ tổng công nợ ngoài tiền phòng.
+  - *Dòng 347 - In phiếu đăng ký khách (Registration Card)*:
+    - Nút trong sidebar phải (Action Dock) hỗ trợ mở menu con `Hiện giá` / `Không hiện giá`.
+    - Tự động nạp danh sách phòng được chọn hoặc toàn bộ phòng của booking; cho phép xem trước và in khổ A4 chuẩn với đầy đủ chữ ký khách / chữ ký lễ tân.
+  - *Dòng 348 - In hóa đơn tạm tính (Pro-forma Invoice)*:
+    - Nút trong sidebar phải (Action Dock) mở menu xổ 4 lựa chọn: `In tất cả`, `In tiền phòng`, `In dịch vụ`, `Chọn dịch vụ in`.
+    - Hóa đơn hiển thị bảng chi tiết dịch vụ, cọc, VAT, phí phục vụ và đọc số tiền bằng chữ tiếng Việt.
+- **Triển khai kỹ thuật**:
+  - *Backend*: Tạo mới [BookingPrintController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingPrintController.php) và route `GET /api/bookings/{id}/print-data`. Controller tổng hợp thông tin khách sạn, booking, danh sách phòng, chi tiết từng dòng phòng, toàn bộ dịch vụ (kể cả dịch vụ Lễ tân post từ `service_bills`), các khoản cọc thanh toán, tổng kết công nợ và hàm chuyển số tiền thành chữ tiếng Việt `convertNumberToVietnameseWords()`.
+  - *Frontend Modals*:
+    - [BookingPrintPreviewModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/BookingPrintPreviewModal.vue): Cập nhật thiết kế khớp 100% theo các file Excel thực tế tại `D:\PMS\MẪU IN`:
+      + `BookingConfirmationGalliotVN_NVD271.xlsx`: Mẫu Xác nhận đặt phòng VN (thông tin xuất hóa đơn đỏ, tài khoản ngân hàng MB Bank, các chính sách mùa cao/thấp điểm, trẻ em, hủy phòng).
+      + `BookingConfirmationForSalesTulip.xlsx`: Mẫu Xác nhận đặt phòng ENG cho Sales (checkbox Buffet breakfast, Service charge & VAT, 4 chữ ký: Lễ tân, FOM/GM, Khách, Sale).
+      + `RegistrationFormMultipleRoomTulip.xlsx` & `RegistrationFormStarletHotel.xlsx`: Mẫu Phiếu đăng ký lưu trú đoàn/nhiều phòng & phòng đơn (bảng danh sách phòng, điều khoản trách nhiệm 3 thứ tiếng Việt - Anh - Nga, 3 chữ ký: Nhân viên, Giám sát, Khách hàng).
+      + `TemporaryReport.xlsx` / `TemporaryReport (1).xlsx`: Mẫu Bảng kê dịch vụ / Hóa đơn tạm tính INVOICE (bảng kê dịch vụ chi tiết, bảng thanh toán Deposit/Payment Method, số tiền bằng chữ).
+      + `Receipt.xlsx`: Mẫu Phiếu thu / Biên nhận.
+    - [PrintServiceSelectModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/PrintServiceSelectModal.vue): Modal chọn dịch vụ in theo chuẩn FE Design System (Roboto, 12px, nền vàng bắt buộc, tab bộ lọc: Tất cả / Tiền phòng / Dịch vụ Sales / Lễ tân post, checkbox chọn tất cả và tính toán tổng tiền trực tiếp).
+  - *Frontend Tích hợp*: Cập nhật [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue) (menu dropdown 2 cấp tại toolbar, expandable accordion 4 options tại dock sidebar phải, teleport modal, phím Esc) và [CreateRegistrationPage.css](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.css).
+
 ## [2026-10-12] - Rà soát toàn diện DANH SÁCH BẢNG TRONG HỆ THỐNG (5).xlsx, bỏ Allotment và đổi Khách note sang PMS note
 ### Module: Checklist Nghiệm thu PMS ([Checklist_nghiem_thu_PMS_5_Dot1_v6.xlsx](file:///d:/PMS/file%20word%20can%20len%20plan/Checklist_nghiem_thu_PMS_5_Dot1_v6.xlsx), [Chi_tiet_chuc_nang_PMS_tung_module_2026-10-09.md](file:///d:/PMS/file%20word%20can%20len%20plan/Chi_tiet_chuc_nang_PMS_tung_module_2026-10-09.md))
 

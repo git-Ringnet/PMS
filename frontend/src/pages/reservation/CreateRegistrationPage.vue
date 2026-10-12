@@ -36,6 +36,8 @@ import CancelReasonModal from './components/CancelReasonModal.vue'
 import ChargeNoshowModal from './components/ChargeNoshowModal.vue'
 import QuickUpdateModal from './components/QuickUpdateModal.vue'
 import BookingNotificationsModal from './components/BookingNotificationsModal.vue'
+import BookingPrintPreviewModal from './components/BookingPrintPreviewModal.vue'
+import PrintServiceSelectModal from './components/PrintServiceSelectModal.vue'
 import {
   fetchMarkets,
   fetchCustomerSources,
@@ -289,6 +291,109 @@ const globalSearchBtnRef = ref(null)
 const globalSearchModalPosition = ref({ top: 120, right: 16 })
 const isSubListOpen = ref(false)
 const isPrintPrice = ref(true)
+
+// ==================== PRINTING STATE & ACTIONS (Row 346, 347, 348) ====================
+const isInvoiceSubListOpen = ref(false)
+const isTopPrintMenuOpen = ref(false)
+const isPrintPreviewModalOpen = ref(false)
+const isPrintServiceSelectModalOpen = ref(false)
+const printPreviewModalType = ref('confirmation_vn')
+const printPreviewModalShowPrice = ref(true)
+const printBookingModalData = ref(null)
+const selectedPrintServices = ref([])
+const selectedPrintRooms = ref([])
+
+async function loadBookingPrintData(targetRooms = null) {
+  const tab = activeTab.value
+  if (!tab || !tab.dbId) {
+    uiStore.showToast('Vui lòng chọn hoặc lưu thông tin đăng ký trước khi in!', 'warning')
+    return null
+  }
+  try {
+    const params = {}
+    if (targetRooms && targetRooms.length > 0) {
+      params.room_ids = targetRooms.map(r => r.id || r.bookingRoomId).filter(Boolean).join(',')
+    }
+    const res = await http.get(`/bookings/${tab.dbId}/print-data`, { params })
+    if (res.data?.success) {
+      printBookingModalData.value = res.data.data
+      return res.data.data
+    } else {
+      uiStore.showToast(res.data?.message || 'Không thể tải dữ liệu in!', 'error')
+      return null
+    }
+  } catch (err) {
+    console.error('Error loading print data:', err)
+    uiStore.showToast('Lỗi khi tải dữ liệu mẫu in từ hệ thống!', 'error')
+    return null
+  }
+}
+
+async function openBookingConfirmationPrint(lang = 'vn', showPrice = true) {
+  isTopPrintMenuOpen.value = false
+  const data = await loadBookingPrintData()
+  if (!data) return
+  printPreviewModalType.value = lang === 'eng' ? 'confirmation_eng' : 'confirmation_vn'
+  printPreviewModalShowPrice.value = showPrice
+  selectedPrintServices.value = data.services || []
+  selectedPrintRooms.value = data.rooms || []
+  isPrintPreviewModalOpen.value = true
+}
+
+async function openBookingConfirmationCustomServices(lang = 'vn', showPrice = true) {
+  isTopPrintMenuOpen.value = false
+  const data = await loadBookingPrintData()
+  if (!data) return
+  printPreviewModalType.value = lang === 'eng' ? 'confirmation_eng' : 'confirmation_vn'
+  printPreviewModalShowPrice.value = showPrice
+  selectedPrintServices.value = data.services || []
+  selectedPrintRooms.value = data.rooms || []
+  isPrintServiceSelectModalOpen.value = true
+}
+
+async function openRegistrationCardPrint(showPrice = true) {
+  isSubListOpen.value = false
+  const tab = activeTab.value
+  const selected = tab?.rooms?.filter(r => selectedRows.value.includes(r.id)) || []
+  const data = await loadBookingPrintData(selected.length > 0 ? selected : null)
+  if (!data) return
+  printPreviewModalType.value = 'registration_card'
+  printPreviewModalShowPrice.value = showPrice
+  selectedPrintRooms.value = selected.length > 0 ? selected : data.rooms
+  isPrintPreviewModalOpen.value = true
+}
+
+async function openProformaInvoicePrint(mode = 'all') {
+  isInvoiceSubListOpen.value = false
+  const tab = activeTab.value
+  const selected = tab?.rooms?.filter(r => selectedRows.value.includes(r.id)) || []
+  const data = await loadBookingPrintData(selected.length > 0 ? selected : null)
+  if (!data) return
+
+  printPreviewModalType.value = 'proforma_invoice'
+  printPreviewModalShowPrice.value = isPrintPrice.value
+  selectedPrintRooms.value = selected.length > 0 ? selected : data.rooms
+
+  if (mode === 'all') {
+    selectedPrintServices.value = data.services || []
+    isPrintPreviewModalOpen.value = true
+  } else if (mode === 'room') {
+    selectedPrintServices.value = (data.services || []).filter(s => s.is_room)
+    isPrintPreviewModalOpen.value = true
+  } else if (mode === 'service') {
+    selectedPrintServices.value = (data.services || []).filter(s => !s.is_room)
+    isPrintPreviewModalOpen.value = true
+  } else if (mode === 'select') {
+    selectedPrintServices.value = data.services || []
+    isPrintServiceSelectModalOpen.value = true
+  }
+}
+
+function handleConfirmSelectedPrintServices(selectedServices) {
+  selectedPrintServices.value = selectedServices
+  isPrintServiceSelectModalOpen.value = false
+  isPrintPreviewModalOpen.value = true
+}
 
 const tableWrapRef = ref(null)
 const footerScrollRef = ref(null)
@@ -5860,40 +5965,12 @@ async function triggerAction(actionName) {
     })
   } else if (actionName === 'Xuất Excel') {
     uiStore.showToast('Đang tải xuống tệp Excel danh sách phòng...', 'success')
+  } else if (actionName === 'In') {
+    isTopPrintMenuOpen.value = !isTopPrintMenuOpen.value
   } else if (actionName === 'In phiếu đăng ký khách') {
-    const tab = activeTab.value
-    const selected = tab?.rooms?.filter(r => selectedRows.value.includes(r.id)) || []
-    if (selected.length === 0) {
-      uiStore.showToast('Vui lòng tích chọn phòng cần in phiếu đăng ký!', 'warning')
-      return
-    }
-    uiStore.confirm({
-      title: 'Xác nhận in phiếu đăng ký',
-      message: `Bạn có chắc chắn muốn in phiếu đăng ký khách cho ${selected.length} phòng đã chọn?`,
-      confirmText: 'In phiếu', cancelText: 'Hủy'
-    }).then((confirmed) => {
-      if (confirmed) {
-        uiStore.showToast('Đang in phiếu đăng ký khách (Registration Card)...', 'success')
-        setTimeout(() => window.print(), 500)
-      }
-    })
+    openRegistrationCardPrint(isPrintPrice.value)
   } else if (actionName === 'In hoá đơn tạm') {
-    const tab = activeTab.value
-    const selected = tab?.rooms?.filter(r => selectedRows.value.includes(r.id)) || []
-    if (selected.length === 0) {
-      uiStore.showToast('Vui lòng tích chọn phòng cần in hóa đơn tạm!', 'warning')
-      return
-    }
-    uiStore.confirm({
-      title: 'Xác nhận in hóa đơn tạm',
-      message: `Bạn có chắc chắn muốn in hóa đơn tạm tính cho ${selected.length} phòng đã chọn?`,
-      confirmText: 'In hóa đơn', cancelText: 'Hủy'
-    }).then((confirmed) => {
-      if (confirmed) {
-        uiStore.showToast('Đang in hóa đơn tạm tính (Pro-forma Invoice)...', 'success')
-        setTimeout(() => window.print(), 500)
-      }
-    })
+    isInvoiceSubListOpen.value = !isInvoiceSubListOpen.value
   } else if (actionName === 'Khôi phục BK') {
     const tab = activeTab.value
     if (!tab || !tab.dbId) return
@@ -6628,10 +6705,102 @@ defineExpose({
           Xoá
         </button>
 
-        <button class="btn" @click="triggerAction('In')">
-          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7"/><rect x="6" y="14" width="12" height="8"/><path d="M6 14H4a2 2 0 01-2-2v-3a2 2 0 012-2h16a2 2 0 012 2v3a2 2 0 01-2 2h-2"/></svg>
-          In
-        </button>
+        <!-- IN DROPDOWN BUTTON (Row 346) -->
+        <div class="relative inline-block text-left">
+          <button 
+            type="button" 
+            class="btn flex items-center gap-1.5" 
+            @click.stop="isTopPrintMenuOpen = !isTopPrintMenuOpen"
+            title="In phiếu xác nhận đặt phòng / Mẫu in"
+          >
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7"/><rect x="6" y="14" width="12" height="8"/><path d="M6 14H4a2 2 0 01-2-2v-3a2 2 0 012-2h16a2 2 0 012 2v3a2 2 0 01-2 2h-2"/></svg>
+            <span>In</span>
+            <span class="text-[9px] opacity-75">▼</span>
+          </button>
+
+          <!-- Backdrop to close dropdown -->
+          <div 
+            v-if="isTopPrintMenuOpen" 
+            class="fixed inset-0 z-45 cursor-default" 
+            @click="isTopPrintMenuOpen = false"
+          ></div>
+
+          <!-- Dropdown Menu -->
+          <div 
+            v-if="isTopPrintMenuOpen" 
+            class="absolute right-0 mt-1.5 w-52 bg-white border border-slate-200 rounded-lg shadow-xl z-50 py-1 text-xs select-none text-slate-800"
+          >
+            <!-- Hiện giá -> Submenu cấp 2 -->
+            <div class="relative group/showprice">
+              <div class="px-3.5 py-2 hover:bg-slate-100 flex items-center justify-between font-semibold text-slate-800 cursor-pointer">
+                <span>Hiện giá</span>
+                <span class="text-slate-400 font-bold">›</span>
+              </div>
+              <div class="hidden group-hover/showprice:block absolute right-full top-0 mr-1 w-56 bg-white border border-slate-200 rounded-lg shadow-xl py-1 z-55">
+                <button 
+                  type="button" 
+                  @click.stop="openBookingConfirmationPrint('eng', true)" 
+                  class="w-full text-left px-3.5 py-2 hover:bg-sky-50 text-slate-700 font-medium cursor-pointer"
+                >
+                  In xác nhận đặt phòng ENG
+                </button>
+                <button 
+                  type="button" 
+                  @click.stop="openBookingConfirmationPrint('vn', true)" 
+                  class="w-full text-left px-3.5 py-2 hover:bg-sky-50 text-slate-700 font-medium cursor-pointer"
+                >
+                  In xác nhận đặt phòng VN
+                </button>
+              </div>
+            </div>
+
+            <!-- Không hiện giá -> Submenu cấp 2 -->
+            <div class="relative group/hideprice">
+              <div class="px-3.5 py-2 hover:bg-slate-100 flex items-center justify-between font-semibold text-slate-800 cursor-pointer">
+                <span>Không hiện giá</span>
+                <span class="text-slate-400 font-bold">›</span>
+              </div>
+              <div class="hidden group-hover/hideprice:block absolute right-full top-0 mr-1 w-56 bg-white border border-slate-200 rounded-lg shadow-xl py-1 z-55">
+                <button 
+                  type="button" 
+                  @click.stop="openBookingConfirmationPrint('eng', false)" 
+                  class="w-full text-left px-3.5 py-2 hover:bg-sky-50 text-slate-700 font-medium cursor-pointer"
+                >
+                  In xác nhận đặt phòng ENG
+                </button>
+                <button 
+                  type="button" 
+                  @click.stop="openBookingConfirmationPrint('vn', false)" 
+                  class="w-full text-left px-3.5 py-2 hover:bg-sky-50 text-slate-700 font-medium cursor-pointer"
+                >
+                  In xác nhận đặt phòng VN
+                </button>
+              </div>
+            </div>
+
+            <div class="border-t border-slate-100 my-1"></div>
+
+            <!-- Mẫu xác nhận đăng ký -->
+            <button 
+              type="button" 
+              @click.stop="openBookingConfirmationPrint('vn', isPrintPrice)" 
+              class="w-full text-left px-3.5 py-2 hover:bg-sky-50 text-slate-700 font-semibold cursor-pointer"
+            >
+              Mẫu xác nhận đăng ký
+            </button>
+
+            <!-- Tùy chọn in tổng dịch vụ sử dụng (Sale chọn dịch vụ - kèm cả Lễ tân post) -->
+            <button 
+              type="button" 
+              @click.stop="openBookingConfirmationCustomServices('vn', isPrintPrice)" 
+              class="w-full text-left px-3.5 py-2 hover:bg-amber-50 text-amber-900 font-bold flex items-center gap-1.5 border-t border-slate-100 cursor-pointer"
+              title="Mở bảng chọn dịch vụ để Sale in đủ tổng công nợ ngoài tiền phòng (kèm dịch vụ Lễ tân post)"
+            >
+              <svg class="w-3.5 h-3.5 text-amber-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
+              <span>Chọn dịch vụ in (kèm DV Lễ tân)</span>
+            </button>
+          </div>
+        </div>
 
         <button class="btn" @click="triggerAction('Thông báo')">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg>
@@ -8387,14 +8556,21 @@ defineExpose({
               <span class="chevron" :class="{ open: isSubListOpen }">›</span>
             </div>
             <div class="sub-list" :class="{ open: isSubListOpen }">
-              <div class="sub-item" :class="{ selected: isPrintPrice }" @click.stop="isPrintPrice = true"><span class="sub-dot"></span>Hiện giá</div>
-              <div class="sub-item" :class="{ selected: !isPrintPrice }" @click.stop="isPrintPrice = false"><span class="sub-dot"></span>Không hiện giá</div>
+              <div class="sub-item" :class="{ selected: isPrintPrice }" @click.stop="isPrintPrice = true; openRegistrationCardPrint(true)"><span class="sub-dot"></span>Hiện giá</div>
+              <div class="sub-item" :class="{ selected: !isPrintPrice }" @click.stop="isPrintPrice = false; openRegistrationCardPrint(false)"><span class="sub-dot"></span>Không hiện giá</div>
             </div>
-            <div class="dock-item" @click="triggerAction('In hoá đơn tạm')">
+            <div class="dock-item expandable" @click="isInvoiceSubListOpen = !isInvoiceSubListOpen">
               <span class="di">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><path d="M6 9V2h12v7"/><rect x="6" y="14" width="12" height="8"/><path d="M6 14H4a2 2 0 01-2-2v-3a2 2 0 012-2h16a2 2 0 012 2v3a2 2 0 01-2 2h-2"/></svg>
               </span>
               <span class="lbl">In hoá đơn tạm</span>
+              <span class="chevron" :class="{ open: isInvoiceSubListOpen }">›</span>
+            </div>
+            <div class="sub-list" :class="{ open: isInvoiceSubListOpen }">
+              <div class="sub-item" @click.stop="openProformaInvoicePrint('all')"><span class="sub-dot"></span>In tất cả</div>
+              <div class="sub-item" @click.stop="openProformaInvoicePrint('room')"><span class="sub-dot"></span>In tiền phòng</div>
+              <div class="sub-item" @click.stop="openProformaInvoicePrint('service')"><span class="sub-dot"></span>In dịch vụ</div>
+              <div class="sub-item" @click.stop="openProformaInvoicePrint('select')"><span class="sub-dot"></span>Chọn dịch vụ in</div>
             </div>
           </div>
 
@@ -9738,6 +9914,27 @@ defineExpose({
         @saved="handleChargeNoshowSaved"
       />
     </Teleport>
+
+    <!-- MODAL XEM TRƯỚC VÀ IN ẤN (DÒNG 346, 347, 348) -->
+    <BookingPrintPreviewModal
+      :isOpen="isPrintPreviewModalOpen"
+      :initialType="printPreviewModalType"
+      :initialShowPrice="printPreviewModalShowPrice"
+      :printData="printBookingModalData"
+      :selectedServices="selectedPrintServices"
+      :selectedRooms="selectedPrintRooms"
+      @close="isPrintPreviewModalOpen = false"
+      @openServiceSelect="isPrintServiceSelectModalOpen = true"
+    />
+
+    <!-- MODAL CHỌN DỊCH VỤ IN (CHO SALES & LỄ TÂN) -->
+    <PrintServiceSelectModal
+      :isOpen="isPrintServiceSelectModalOpen"
+      :services="printBookingModalData?.services || []"
+      :initialSelectedIds="(selectedPrintServices || []).map(s => s.id)"
+      @close="isPrintServiceSelectModalOpen = false"
+      @confirm="handleConfirmSelectedPrintServices"
+    />
 
     <!-- Global Loading Overlay -->
     <LoadingOverlay :show="isLoading" />
