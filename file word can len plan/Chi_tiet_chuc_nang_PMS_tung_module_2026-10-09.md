@@ -1,22 +1,23 @@
-# CHECKLIST NGHIỆM THU TÍNH NĂNG & BÁO CÁO PMS (ĐỐI CHIẾU SÁT THỰC TẾ LỖI KHÁCH HÀNG)
+# CHECKLIST NGHIỆM THU TÍNH NĂNG & BÁO CÁO PMS (ĐỐI CHIẾU SÁT THỰC TẾ LỖI KHÁCH HÀNG — CẬP NHẬT FILE 5)
 
-> Căn cứ dữ liệu kiểm tra nghiệm thu ngày 09/10/2026 trên chi nhánh **HKT1** (Ngày nghiệp vụ 30/08/2026).
+> Căn cứ dữ liệu kiểm tra nghiệm thu ngày 12/10/2026 trên chi nhánh **HKT1** (Ngày nghiệp vụ 30/08/2026).
 > Đã tinh gọn: Mỗi báo cáo gom về đúng 1 mục hoàn chỉnh, không phân mảnh tham số.
-> Đã đối chiếu đầy đủ với sheet **THEO DÕI VẤN ĐỀ CẦN ĐIỀU CHỈNH** trong file `DANH SÁCH BẢNG TRONG HỆ THỐNG (3).xlsx`: Phân loại chính xác các mục còn lỗi/lưu ý sang màu Vàng kèm note lỗi cụ thể của khách hàng, tuyệt đối không tự ý chấm Pass hết.
-> File Excel: [Checklist_nghiem_thu_PMS_5_bo_phan_chinh_thuc_2026-10-09.xlsx](Checklist_nghiem_thu_PMS_5_bo_phan_chinh_thuc_2026-10-09.xlsx)
+> Đã đối chiếu đầy đủ với sheet **THEO DÕI VẤN ĐỀ CẦN ĐIỀU CHỈNH** trong file `DANH SÁCH BẢNG TRONG HỆ THỐNG (5).xlsx`: Phân loại chính xác các mục còn lỗi/lưu ý sang màu Vàng kèm note lỗi cụ thể của khách hàng, tuyệt đối không tự ý chấm Pass hết; đã loại bỏ hoàn toàn 6 dòng ERP mở rộng giai đoạn sau.
+> File Excel: [Checklist_nghiem_thu_PMS_5_Dot1.xlsx](Checklist_nghiem_thu_PMS_5_Dot1.xlsx) (và bản cập nhật [Checklist_nghiem_thu_PMS_5_Dot1_v6.xlsx](Checklist_nghiem_thu_PMS_5_Dot1_v6.xlsx))
 
-## TỔNG QUAN PHÂN BỔ 903 MỤC CHỨC NĂNG (5 PHÂN HỆ / BỘ PHẬN CHÍNH THỨC)
+## TỔNG QUAN PHÂN BỔ 891 MỤC CHỨC NĂNG (5 PHÂN HỆ / BỘ PHẬN CHÍNH THỨC)
 
 | Phân hệ / Bộ phận | Chức năng nghiệp vụ | Báo cáo hoàn chỉnh | Tổng số mục | Đã hoàn thành (Xanh) | Hoàn thành có lỗi/lưu ý (Vàng) | Chưa đạt / Đang phát triển (Đỏ) |
 |---|---|---|---|---|---|---|
-| **Lễ tân (FO)** | 301 | 59 | **360** | 328 | 28 | 4 |
-| **Buồng phòng (HK)** | 165 | 2 | **167** | 163 | 4 | 0 |
-| **Đặt phòng / Sales** | 219 | 56 | **275** | 257 | 13 | 5 |
-| **Cấu hình hệ thống (Hotel Config)** | 58 | 0 | **58** | 54 | 4 | 0 |
-| **Hệ thống (Provista System)** | 43 | 0 | **43** | 36 | 1 | 6 |
-| **Tổng cộng (5 Bộ phận chính)** | **786** | **117** | **903** | **838** | **50** | **15** |
+| **Lễ tân (FO)** | 301 | 59 | **360** | 298 | 58 | 4 |
+| **Buồng phòng (HK)** | 165 | 2 | **167** | 154 | 13 | 0 |
+| **Đặt phòng / Sales** | 213 | 56 | **269** | 237 | 32 | 0 |
+| **Cấu hình hệ thống (Hotel Config)** | 58 | 0 | **58** | 46 | 12 | 0 |
+| **Hệ thống (Provista System)** | 37 | 0 | **37** | 35 | 2 | 0 |
+| **Tổng cộng (5 Bộ phận chính)** | **774** | **117** | **891** | **770** | **117** | **4** |
 
-> *Ghi chú Excel:* File Excel chính thức [Checklist_nghiem_thu_PMS_5_bo_phan_chinh_thuc_2026-10-09.xlsx](Checklist_nghiem_thu_PMS_5_bo_phan_chinh_thuc_2026-10-09.xlsx) bao gồm đầy đủ **1.748 dòng kiểm thử** chi tiết, gồm 5 sheet bộ phận chính và loại bỏ hoàn toàn các sheet phụ/siêu dữ liệu.
+> *Ghi chú Excel:* File Excel chính thức chuẩn hóa 5 sheet bộ phận chính, loại bỏ sạch các ghost rows, 6 dòng ERP mở rộng và 6 dòng Allotment/Channel Manager (chưa cần thiết trong Đợt 1), đồng thời chuyển toàn bộ nhãn phản hồi từ "Khách note" sang "PMS note", đồng bộ 100% chuẩn giao diện (Calibri 11pt Regular, chiều cao dòng 46pt, header Cyan #49ACC0 cao 32pt, thanh tiêu đề Navy #204F79).
+
 
 ---
 
@@ -146,10 +147,10 @@
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Tách phòng" hoạt động ổn định trên hệ thống.`
 - **Chuyển phòng trên lịch**
   - *Mô tả / Tham số:* Chỉ chuyển khi phòng nhận phù hợp giai đoạn và điều kiện phòng.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (Khách note Dòng 305, 306, 530): Cần kiểm tra chuyển phòng sau khi ở qua đêm / ngày checkout; cấu hình AllowOverRoomTypeRoomKind=1 khi Suite=0 chưa cảnh báo đúng.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (PMS note Dòng 305, 306, 530): Cần kiểm tra chuyển phòng sau khi ở qua đêm / ngày checkout; cấu hình AllowOverRoomTypeRoomKind=1 khi Suite=0 chưa cảnh báo đúng.`
 - **Khóa/mở chuyển phòng**
   - *Mô tả / Tham số:* Tôn trọng khóa di chuyển và quyền thao tác.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (Khách note Dòng 305, 306, 530): Cần kiểm tra chuyển phòng sau khi ở qua đêm / ngày checkout; cấu hình AllowOverRoomTypeRoomKind=1 khi Suite=0 chưa cảnh báo đúng.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (PMS note Dòng 305, 306, 530): Cần kiểm tra chuyển phòng sau khi ở qua đêm / ngày checkout; cấu hình AllowOverRoomTypeRoomKind=1 khi Suite=0 chưa cảnh báo đúng.`
 - **Gỡ số phòng**
   - *Mô tả / Tham số:* Bỏ gán số phòng, giữ dòng đăng ký và số lượng allocation.
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Gỡ số phòng" hoạt động ổn định trên hệ thống.`
@@ -739,10 +740,10 @@
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Tách phòng" hoạt động ổn định trên hệ thống.`
 - **Chuyển phòng trên lịch**
   - *Mô tả / Tham số:* Chỉ chuyển khi phòng nhận phù hợp giai đoạn và điều kiện phòng.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (Khách note Dòng 305, 306, 530): Cần kiểm tra chuyển phòng sau khi ở qua đêm / ngày checkout; cấu hình AllowOverRoomTypeRoomKind=1 khi Suite=0 chưa cảnh báo đúng.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (PMS note Dòng 305, 306, 530): Cần kiểm tra chuyển phòng sau khi ở qua đêm / ngày checkout; cấu hình AllowOverRoomTypeRoomKind=1 khi Suite=0 chưa cảnh báo đúng.`
 - **Khóa/mở chuyển phòng**
   - *Mô tả / Tham số:* Tôn trọng khóa di chuyển và quyền thao tác.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (Khách note Dòng 305, 306, 530): Cần kiểm tra chuyển phòng sau khi ở qua đêm / ngày checkout; cấu hình AllowOverRoomTypeRoomKind=1 khi Suite=0 chưa cảnh báo đúng.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (PMS note Dòng 305, 306, 530): Cần kiểm tra chuyển phòng sau khi ở qua đêm / ngày checkout; cấu hình AllowOverRoomTypeRoomKind=1 khi Suite=0 chưa cảnh báo đúng.`
 - **Gỡ số phòng**
   - *Mô tả / Tham số:* Bỏ gán số phòng, giữ dòng đăng ký và số lượng allocation.
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Gỡ số phòng" hoạt động ổn định trên hệ thống.`
@@ -895,13 +896,13 @@
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Ngày/giờ từng phòng" hoạt động ổn định trên hệ thống.`
 - **Phòng Day Use/ở theo giờ**
   - *Mô tả / Tham số:* Chấp nhận ngày đến=ngày đi, hiển thị đêm/phí đúng quy tắc.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (Khách note Dòng 529, 535): Chưa cập nhật đúng ngày đến = ngày đi; số lượng thống kê đến/đi/ở màn hình Room map bị lệch khi có phòng Day use.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (PMS note Dòng 529, 535): Chưa cập nhật đúng ngày đến = ngày đi; số lượng thống kê đến/đi/ở màn hình Room map bị lệch khi có phòng Day use.`
 - **Tự động gán phòng**
   - *Mô tả / Tham số:* Gán đủ số phòng khả dụng, ưu tiên tầng thấp và phòng gần nhau.
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Tự động gán phòng" hoạt động ổn định trên hệ thống.`
 - **Gán phòng thủ công**
   - *Mô tả / Tham số:* Không gán trùng giai đoạn; tính cả Day Use và phòng khóa.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (Khách note Dòng 89): Chưa tạo được booking có ngày đến = ngày đi (Day use) trừ phòng AV; phòng in 1 out 2 gán phòng 101 thì phòng khác in 2 out 3 không gán được cho 101.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (PMS note Dòng 89): Chưa tạo được booking có ngày đến = ngày đi (Day use) trừ phòng AV; phòng in 1 out 2 gán phòng 101 thì phòng khác in 2 out 3 không gán được cho 101.`
 - **Nâng hạng phòng**
   - *Mô tả / Tham số:* Kiểm tra AV loại nhận, giữ loại khởi tạo và cập nhật giá theo lựa chọn.
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Nâng hạng phòng" hoạt động ổn định trên hệ thống.`
@@ -919,10 +920,10 @@
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Hủy phòng" hoạt động ổn định trên hệ thống.`
 - **Chuyển phòng**
   - *Mô tả / Tham số:* Kiểm tra giai đoạn trống, trạng thái Ready và giới hạn AV trước khi chuyển.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (Khách note Dòng 305, 306, 530): Cần kiểm tra chuyển phòng sau khi ở qua đêm / ngày checkout; cấu hình AllowOverRoomTypeRoomKind=1 khi Suite=0 chưa cảnh báo đúng.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (PMS note Dòng 305, 306, 530): Cần kiểm tra chuyển phòng sau khi ở qua đêm / ngày checkout; cấu hình AllowOverRoomTypeRoomKind=1 khi Suite=0 chưa cảnh báo đúng.`
 - **Khóa/mở chuyển phòng**
   - *Mô tả / Tham số:* Trạng thái khóa bảo vệ đúng dòng phòng và được lưu.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (Khách note Dòng 305, 306, 530): Cần kiểm tra chuyển phòng sau khi ở qua đêm / ngày checkout; cấu hình AllowOverRoomTypeRoomKind=1 khi Suite=0 chưa cảnh báo đúng.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (PMS note Dòng 305, 306, 530): Cần kiểm tra chuyển phòng sau khi ở qua đêm / ngày checkout; cấu hình AllowOverRoomTypeRoomKind=1 khi Suite=0 chưa cảnh báo đúng.`
 - **Charge No-show**
   - *Mô tả / Tham số:* Nhập mức phạt, lưu bill đúng ngày/bộ phận và booking.
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Charge No-show" hoạt động ổn định trên hệ thống.`
@@ -1000,7 +1001,7 @@
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Extra Bed" hoạt động ổn định trên hệ thống.`
 - **Chi tiết ăn sáng trẻ em**
   - *Mô tả / Tham số:* Nhập hồ sơ trẻ, tuổi, ngày và giá phụ thu; hỗ trợ nhập giá khác 0.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (Khách note Dòng 88, 537): Thông số Booking_AutoExtraChargeBFChild chưa hoạt động đúng, bật extra charge chưa tự cộng vào tổng booking.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (PMS note Dòng 88, 537): Thông số Booking_AutoExtraChargeBFChild chưa hoạt động đúng, bật extra charge chưa tự cộng vào tổng booking.`
 - **Yêu cầu đặc biệt**
   - *Mô tả / Tham số:* Chọn/tạo yêu cầu, ghi nội dung, số lượng và lưu đúng phòng.
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Yêu cầu đặc biệt" hoạt động ổn định trên hệ thống.`
@@ -1120,10 +1121,10 @@
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Mở tìm kiếm chung" hoạt động ổn định trên hệ thống.`
 - **Tìm đăng ký**
   - *Mô tả / Tham số:* Tra cứu mã BK, tình trạng và bộ lọc nâng cao.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (Khách note Dòng 541): Tab Đăng ký và Phòng đôi khi báo Server Error; tab khách thiếu phân trang và thông tin phòng.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (PMS note Dòng 541): Tab Đăng ký và Phòng đôi khi báo Server Error; tab khách thiếu phân trang và thông tin phòng.`
 - **Tìm phòng**
   - *Mô tả / Tham số:* Tra cứu số phòng, khách, thời gian và tình trạng lưu trú.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (Khách note Dòng 541): Tab Đăng ký và Phòng đôi khi báo Server Error; tab khách thiếu phân trang và thông tin phòng.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (PMS note Dòng 541): Tab Đăng ký và Phòng đôi khi báo Server Error; tab khách thiếu phân trang và thông tin phòng.`
 - **Tìm khách**
   - *Mô tả / Tham số:* Tìm hồ sơ khách, thông tin liên hệ/giấy tờ theo các trường trên màn hình.
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Tìm khách" hoạt động ổn định trên hệ thống.`
@@ -1156,7 +1157,7 @@
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "No-show một ngày/giai đoạn" hoạt động ổn định trên hệ thống.`
 - **Nhận phòng từ tìm kiếm**
   - *Mô tả / Tham số:* Chặn phòng không hợp lệ và cập nhật trạng thái đồng bộ.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng lưu ý (Khách note Dòng 257): Bảng booking_rooms, booking_room_guest chưa ghi nhận giờ check-in thực tế của phòng.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng lưu ý (PMS note Dòng 257): Bảng booking_rooms, booking_room_guest chưa ghi nhận giờ check-in thực tế của phòng.`
 
 ## Module: Lịch sử thao tác (6 mục)
 
@@ -1183,10 +1184,10 @@
 
 - **Mở danh mục công ty**
   - *Mô tả / Tham số:* Hiển thị công ty, market, source, chi nhánh, người đặt phòng.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (Khách note Dòng 11, Dòng 56-57 FIX FE): Chưa có cột STT và cờ isuse; form thêm công ty chưa thể đưa dropdown về trạng thái chưa chọn.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (PMS note Dòng 11, Dòng 56-57 FIX FE): Chưa có cột STT và cờ isuse; form thêm công ty chưa thể đưa dropdown về trạng thái chưa chọn.`
 - **Thêm/sửa công ty**
   - *Mô tả / Tham số:* Mã, tên, địa chỉ, MST, liên hệ, trạng thái hợp lệ; không trùng mã.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (Khách note Dòng 11, Dòng 56-57 FIX FE): Chưa có cột STT và cờ isuse; form thêm công ty chưa thể đưa dropdown về trạng thái chưa chọn.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (PMS note Dòng 11, Dòng 56-57 FIX FE): Chưa có cột STT và cờ isuse; form thêm công ty chưa thể đưa dropdown về trạng thái chưa chọn.`
 - **Xóa công ty**
   - *Mô tả / Tham số:* Chặn khi bị ràng buộc booking/dữ liệu nghiệp vụ.
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Xóa công ty" hoạt động ổn định trên hệ thống.`
@@ -1647,10 +1648,10 @@
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Tách phòng" hoạt động ổn định trên hệ thống.`
 - **Chuyển phòng trên lịch**
   - *Mô tả / Tham số:* Chỉ chuyển khi phòng nhận phù hợp giai đoạn và điều kiện phòng.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (Khách note Dòng 305, 306, 530): Cần kiểm tra chuyển phòng sau khi ở qua đêm / ngày checkout; cấu hình AllowOverRoomTypeRoomKind=1 khi Suite=0 chưa cảnh báo đúng.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (PMS note Dòng 305, 306, 530): Cần kiểm tra chuyển phòng sau khi ở qua đêm / ngày checkout; cấu hình AllowOverRoomTypeRoomKind=1 khi Suite=0 chưa cảnh báo đúng.`
 - **Khóa/mở chuyển phòng**
   - *Mô tả / Tham số:* Tôn trọng khóa di chuyển và quyền thao tác.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (Khách note Dòng 305, 306, 530): Cần kiểm tra chuyển phòng sau khi ở qua đêm / ngày checkout; cấu hình AllowOverRoomTypeRoomKind=1 khi Suite=0 chưa cảnh báo đúng.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (PMS note Dòng 305, 306, 530): Cần kiểm tra chuyển phòng sau khi ở qua đêm / ngày checkout; cấu hình AllowOverRoomTypeRoomKind=1 khi Suite=0 chưa cảnh báo đúng.`
 - **Gỡ số phòng**
   - *Mô tả / Tham số:* Bỏ gán số phòng, giữ dòng đăng ký và số lượng allocation.
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Gỡ số phòng" hoạt động ổn định trên hệ thống.`
@@ -1803,13 +1804,13 @@
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Ngày/giờ từng phòng" hoạt động ổn định trên hệ thống.`
 - **Phòng Day Use/ở theo giờ**
   - *Mô tả / Tham số:* Chấp nhận ngày đến=ngày đi, hiển thị đêm/phí đúng quy tắc.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (Khách note Dòng 529, 535): Chưa cập nhật đúng ngày đến = ngày đi; số lượng thống kê đến/đi/ở màn hình Room map bị lệch khi có phòng Day use.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (PMS note Dòng 529, 535): Chưa cập nhật đúng ngày đến = ngày đi; số lượng thống kê đến/đi/ở màn hình Room map bị lệch khi có phòng Day use.`
 - **Tự động gán phòng**
   - *Mô tả / Tham số:* Gán đủ số phòng khả dụng, ưu tiên tầng thấp và phòng gần nhau.
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Tự động gán phòng" hoạt động ổn định trên hệ thống.`
 - **Gán phòng thủ công**
   - *Mô tả / Tham số:* Không gán trùng giai đoạn; tính cả Day Use và phòng khóa.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (Khách note Dòng 89): Chưa tạo được booking có ngày đến = ngày đi (Day use) trừ phòng AV; phòng in 1 out 2 gán phòng 101 thì phòng khác in 2 out 3 không gán được cho 101.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (PMS note Dòng 89): Chưa tạo được booking có ngày đến = ngày đi (Day use) trừ phòng AV; phòng in 1 out 2 gán phòng 101 thì phòng khác in 2 out 3 không gán được cho 101.`
 - **Nâng hạng phòng**
   - *Mô tả / Tham số:* Kiểm tra AV loại nhận, giữ loại khởi tạo và cập nhật giá theo lựa chọn.
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Nâng hạng phòng" hoạt động ổn định trên hệ thống.`
@@ -1827,10 +1828,10 @@
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Hủy phòng" hoạt động ổn định trên hệ thống.`
 - **Chuyển phòng**
   - *Mô tả / Tham số:* Kiểm tra giai đoạn trống, trạng thái Ready và giới hạn AV trước khi chuyển.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (Khách note Dòng 305, 306, 530): Cần kiểm tra chuyển phòng sau khi ở qua đêm / ngày checkout; cấu hình AllowOverRoomTypeRoomKind=1 khi Suite=0 chưa cảnh báo đúng.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (PMS note Dòng 305, 306, 530): Cần kiểm tra chuyển phòng sau khi ở qua đêm / ngày checkout; cấu hình AllowOverRoomTypeRoomKind=1 khi Suite=0 chưa cảnh báo đúng.`
 - **Khóa/mở chuyển phòng**
   - *Mô tả / Tham số:* Trạng thái khóa bảo vệ đúng dòng phòng và được lưu.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (Khách note Dòng 305, 306, 530): Cần kiểm tra chuyển phòng sau khi ở qua đêm / ngày checkout; cấu hình AllowOverRoomTypeRoomKind=1 khi Suite=0 chưa cảnh báo đúng.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (PMS note Dòng 305, 306, 530): Cần kiểm tra chuyển phòng sau khi ở qua đêm / ngày checkout; cấu hình AllowOverRoomTypeRoomKind=1 khi Suite=0 chưa cảnh báo đúng.`
 - **Charge No-show**
   - *Mô tả / Tham số:* Nhập mức phạt, lưu bill đúng ngày/bộ phận và booking.
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Charge No-show" hoạt động ổn định trên hệ thống.`
@@ -1908,7 +1909,7 @@
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Extra Bed" hoạt động ổn định trên hệ thống.`
 - **Chi tiết ăn sáng trẻ em**
   - *Mô tả / Tham số:* Nhập hồ sơ trẻ, tuổi, ngày và giá phụ thu; hỗ trợ nhập giá khác 0.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (Khách note Dòng 88, 537): Thông số Booking_AutoExtraChargeBFChild chưa hoạt động đúng, bật extra charge chưa tự cộng vào tổng booking.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (PMS note Dòng 88, 537): Thông số Booking_AutoExtraChargeBFChild chưa hoạt động đúng, bật extra charge chưa tự cộng vào tổng booking.`
 - **Yêu cầu đặc biệt**
   - *Mô tả / Tham số:* Chọn/tạo yêu cầu, ghi nội dung, số lượng và lưu đúng phòng.
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Yêu cầu đặc biệt" hoạt động ổn định trên hệ thống.`
@@ -2031,10 +2032,10 @@
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Mở tìm kiếm chung" hoạt động ổn định trên hệ thống.`
 - **Tìm đăng ký**
   - *Mô tả / Tham số:* Tra cứu mã BK, tình trạng và bộ lọc nâng cao.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (Khách note Dòng 541): Tab Đăng ký và Phòng đôi khi báo Server Error; tab khách thiếu phân trang và thông tin phòng.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (PMS note Dòng 541): Tab Đăng ký và Phòng đôi khi báo Server Error; tab khách thiếu phân trang và thông tin phòng.`
 - **Tìm phòng**
   - *Mô tả / Tham số:* Tra cứu số phòng, khách, thời gian và tình trạng lưu trú.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (Khách note Dòng 541): Tab Đăng ký và Phòng đôi khi báo Server Error; tab khách thiếu phân trang và thông tin phòng.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (PMS note Dòng 541): Tab Đăng ký và Phòng đôi khi báo Server Error; tab khách thiếu phân trang và thông tin phòng.`
 - **Tìm khách**
   - *Mô tả / Tham số:* Tìm hồ sơ khách, thông tin liên hệ/giấy tờ theo các trường trên màn hình.
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Tìm khách" hoạt động ổn định trên hệ thống.`
@@ -2067,7 +2068,7 @@
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "No-show một ngày/giai đoạn" hoạt động ổn định trên hệ thống.`
 - **Nhận phòng từ tìm kiếm**
   - *Mô tả / Tham số:* Chặn phòng không hợp lệ và cập nhật trạng thái đồng bộ.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng lưu ý (Khách note Dòng 257): Bảng booking_rooms, booking_room_guest chưa ghi nhận giờ check-in thực tế của phòng.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng lưu ý (PMS note Dòng 257): Bảng booking_rooms, booking_room_guest chưa ghi nhận giờ check-in thực tế của phòng.`
 
 ## Module: Lịch sử thao tác (6 mục)
 
@@ -2100,34 +2101,34 @@
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Lọc ngày/tình trạng" hoạt động ổn định trên hệ thống.`
 - **Nhận phòng**
   - *Mô tả / Tham số:* Check-in phòng đã gán và sẵn sàng; cập nhật booking, phòng và khách.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng lưu ý (Khách note Dòng 257): Bảng booking_rooms, booking_room_guest chưa ghi nhận giờ check-in thực tế của phòng.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng lưu ý (PMS note Dòng 257): Bảng booking_rooms, booking_room_guest chưa ghi nhận giờ check-in thực tế của phòng.`
 - **Nhận phòng hàng loạt**
   - *Mô tả / Tham số:* Chỉ nhận phòng đã chọn, mỗi phòng được kiểm tra trạng thái.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng lưu ý (Khách note Dòng 257): Bảng booking_rooms, booking_room_guest chưa ghi nhận giờ check-in thực tế của phòng.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng lưu ý (PMS note Dòng 257): Bảng booking_rooms, booking_room_guest chưa ghi nhận giờ check-in thực tế của phòng.`
 - **Chặn nhận phòng bẩn/chờ kiểm tra**
   - *Mô tả / Tham số:* Cảnh báo phòng Dirty/Vacant Clean và tôn trọng cấu hình Ready.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng lưu ý (Khách note Dòng 257): Bảng booking_rooms, booking_room_guest chưa ghi nhận giờ check-in thực tế của phòng.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng lưu ý (PMS note Dòng 257): Bảng booking_rooms, booking_room_guest chưa ghi nhận giờ check-in thực tế của phòng.`
 - **Hủy nhận phòng**
   - *Mô tả / Tham số:* Xác nhận hủy; chặn khi có nghiệp vụ ràng buộc; khôi phục trạng thái đúng.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng lưu ý (Khách note Dòng 257): Bảng booking_rooms, booking_room_guest chưa ghi nhận giờ check-in thực tế của phòng.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng lưu ý (PMS note Dòng 257): Bảng booking_rooms, booking_room_guest chưa ghi nhận giờ check-in thực tế của phòng.`
 - **Hóa đơn từ phòng**
   - *Mô tả / Tham số:* Mở đúng booking/room/guest trên checkout.
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Hóa đơn từ phòng" hoạt động ổn định trên hệ thống.`
 - **Nhận phòng nhanh từ menu**
   - *Mô tả / Tham số:* Mở đúng form walk-in/check-in, không chỉ quay về sơ đồ.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng lưu ý (Khách note Dòng 257): Bảng booking_rooms, booking_room_guest chưa ghi nhận giờ check-in thực tế của phòng.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng lưu ý (PMS note Dòng 257): Bảng booking_rooms, booking_room_guest chưa ghi nhận giờ check-in thực tế của phòng.`
 - **Tạo thẻ khóa phòng**
   - *Mô tả / Tham số:* Mở nghiệp vụ tạo thẻ và kết nối thiết bị khi được cấu hình.
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Tạo thẻ khóa phòng" hoạt động ổn định trên hệ thống.`
 - **Chuyển phòng từ sơ đồ**
   - *Mô tả / Tham số:* Phòng nhận Ready, đủ AV và giai đoạn phù hợp; giữ bill/cọc/khách.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (Khách note Dòng 305, 306, 530): Cần kiểm tra chuyển phòng sau khi ở qua đêm / ngày checkout; cấu hình AllowOverRoomTypeRoomKind=1 khi Suite=0 chưa cảnh báo đúng.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (PMS note Dòng 305, 306, 530): Cần kiểm tra chuyển phòng sau khi ở qua đêm / ngày checkout; cấu hình AllowOverRoomTypeRoomKind=1 khi Suite=0 chưa cảnh báo đúng.`
 
 ## Module: Hóa đơn - tra cứu và Folio (14 mục)
 
 - **Mở màn hình trả phòng/hóa đơn**
   - *Mô tả / Tham số:* Hiển thị bộ chọn booking/phòng, thông tin khách, dịch vụ, thanh toán và Folio.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng lưu ý (Khách note Dòng 241): Phòng có 2 khách thực hiện check-out 1 khách thì hệ thống chưa cập nhật lại số lượng khách còn lưu trú.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng lưu ý (PMS note Dòng 241): Phòng có 2 khách thực hiện check-out 1 khách thì hệ thống chưa cập nhật lại số lượng khách còn lưu trú.`
 - **Tìm booking/phòng/khách**
   - *Mô tả / Tham số:* Kết quả phù hợp số phòng, tên khách hoặc mã booking.
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Tìm booking/phòng/khách" hoạt động ổn định trên hệ thống.`
@@ -2262,19 +2263,19 @@
 
 - **Trả phòng đúng hạn**
   - *Mô tả / Tham số:* Chốt phòng hợp lệ, số dư được xử lý; chuyển tình trạng phòng theo quy tắc.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng lưu ý (Khách note Dòng 241): Phòng có 2 khách thực hiện check-out 1 khách thì hệ thống chưa cập nhật lại số lượng khách còn lưu trú.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng lưu ý (PMS note Dòng 241): Phòng có 2 khách thực hiện check-out 1 khách thì hệ thống chưa cập nhật lại số lượng khách còn lưu trú.`
 - **Trả phòng sớm có tính phí**
   - *Mô tả / Tham số:* Tính đúng đêm/phí còn lại và cập nhật bill.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng lưu ý (Khách note Dòng 241): Phòng có 2 khách thực hiện check-out 1 khách thì hệ thống chưa cập nhật lại số lượng khách còn lưu trú.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng lưu ý (PMS note Dòng 241): Phòng có 2 khách thực hiện check-out 1 khách thì hệ thống chưa cập nhật lại số lượng khách còn lưu trú.`
 - **Trả phòng sớm không tính phí**
   - *Mô tả / Tham số:* Cắt giai đoạn/dịch vụ tự động theo ngày đi thực tế.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng lưu ý (Khách note Dòng 241): Phòng có 2 khách thực hiện check-out 1 khách thì hệ thống chưa cập nhật lại số lượng khách còn lưu trú.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng lưu ý (PMS note Dòng 241): Phòng có 2 khách thực hiện check-out 1 khách thì hệ thống chưa cập nhật lại số lượng khách còn lưu trú.`
 - **Trả phòng hàng loạt**
   - *Mô tả / Tham số:* Chỉ checkout phòng đã chọn và không bỏ qua ràng buộc tiền/quyền.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng lưu ý (Khách note Dòng 241): Phòng có 2 khách thực hiện check-out 1 khách thì hệ thống chưa cập nhật lại số lượng khách còn lưu trú.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng lưu ý (PMS note Dòng 241): Phòng có 2 khách thực hiện check-out 1 khách thì hệ thống chưa cập nhật lại số lượng khách còn lưu trú.`
 - **Khôi phục trả phòng**
   - *Mô tả / Tham số:* Kiểm tra xung đột số phòng/booking trước khi restore.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng lưu ý (Khách note Dòng 241): Phòng có 2 khách thực hiện check-out 1 khách thì hệ thống chưa cập nhật lại số lượng khách còn lưu trú.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng lưu ý (PMS note Dòng 241): Phòng có 2 khách thực hiện check-out 1 khách thì hệ thống chưa cập nhật lại số lượng khách còn lưu trú.`
 - **Phòng ảo**
   - *Mô tả / Tham số:* Quản lý folio và bill của phòng ảo, phân biệt với phòng vật lý.
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Phòng ảo" hoạt động ổn định trên hệ thống.`
@@ -2295,7 +2296,7 @@
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Thông tin khai báo" hoạt động ổn định trên hệ thống.`
 - **Khách sau chuyển phòng**
   - *Mô tả / Tham số:* Ngày chuyển hiển thị phòng mới; phòng cũ chỉ xuất khi chọn lịch sử phòng chuyển.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (Khách note Dòng 305, 306, 530): Cần kiểm tra chuyển phòng sau khi ở qua đêm / ngày checkout; cấu hình AllowOverRoomTypeRoomKind=1 khi Suite=0 chưa cảnh báo đúng.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (PMS note Dòng 305, 306, 530): Cần kiểm tra chuyển phòng sau khi ở qua đêm / ngày checkout; cấu hình AllowOverRoomTypeRoomKind=1 khi Suite=0 chưa cảnh báo đúng.`
 - **Xuất Excel chung**
   - *Mô tả / Tham số:* Chỉ xuất khách được chọn và đúng ngày.
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Xuất Excel chung" hoạt động ổn định trên hệ thống.`
@@ -2349,7 +2350,7 @@
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Phòng đi" hoạt động ổn định trên hệ thống.`
 - **Ở theo giờ**
   - *Mô tả / Tham số:* Xử lý phòng day use/hourly đúng ngày nghiệp vụ.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (Khách note Dòng 529, 535): Chưa cập nhật đúng ngày đến = ngày đi; số lượng thống kê đến/đi/ở màn hình Room map bị lệch khi có phòng Day use.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (PMS note Dòng 529, 535): Chưa cập nhật đúng ngày đến = ngày đi; số lượng thống kê đến/đi/ở màn hình Room map bị lệch khi có phòng Day use.`
 - **Post tiền phòng trước audit**
   - *Mô tả / Tham số:* Không thu lặp đêm đã post; tính thuế/phí đúng.
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Post tiền phòng trước audit" hoạt động ổn định trên hệ thống.`
@@ -2370,7 +2371,7 @@
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Cấu hình chuyển tình trạng HK" hoạt động ổn định trên hệ thống.`
 - **Xác nhận sang ngày**
   - *Mô tả / Tham số:* Có xác nhận trước khi đổi ngày nghiệp vụ.
-  - *Đánh giá cá nhân:* `Hoàn thành quy trình — Cần thử nghiệm thực tế (Khách note Dòng 259): Cần kiểm tra xử lý phòng có ngày đến = ngày hệ thống chưa gán số khi chạy audit.`
+  - *Đánh giá cá nhân:* `Hoàn thành quy trình — Cần thử nghiệm thực tế (PMS note Dòng 259): Cần kiểm tra xử lý phòng có ngày đến = ngày hệ thống chưa gán số khi chạy audit.`
 - **Chặn chạy lặp/force rerun**
   - *Mô tả / Tham số:* Không post bill trùng; tái chạy cần tuân quy tắc đã cấu hình.
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Chặn chạy lặp/force rerun" hoạt động ổn định trên hệ thống.`
@@ -2379,7 +2380,7 @@
   - *Đánh giá cá nhân:* `Đã hoàn thành: Chức năng "Tiến trình audit" hoạt động ổn định trên hệ thống.`
 - **Hoàn tất audit**
   - *Mô tả / Tham số:* Ngày nghiệp vụ tăng đúng một ngày, bill tự động/extra bed/ăn sáng không lặp.
-  - *Đánh giá cá nhân:* `Hoàn thành quy trình — Cần thử nghiệm thực tế (Khách note Dòng 259): Cần kiểm tra xử lý phòng có ngày đến = ngày hệ thống chưa gán số khi chạy audit.`
+  - *Đánh giá cá nhân:* `Hoàn thành quy trình — Cần thử nghiệm thực tế (PMS note Dòng 259): Cần kiểm tra xử lý phòng có ngày đến = ngày hệ thống chưa gán số khi chạy audit.`
 
 ## Module: Tình trạng buồng phòng (9 mục)
 
@@ -2679,7 +2680,7 @@
   - *Đánh giá cá nhân:* `Đã hoàn thành: Danh mục dịch vụ khách sạn hoạt động đầy đủ, cho phép quản lý chi tiết từng dịch vụ.`
 - **Dịch vụ khách sạn - Cấu hình thuế VAT & Phí phục vụ**
   - *Mô tả / Tham số:* Thiết lập thuế suất VAT (%) và tỷ lệ phí phục vụ (%) cho từng dịch vụ khách sạn.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (Khách note Dòng 115): Màn hình dịch vụ khách sạn đang thiếu thông tin cấu hình phí phục vụ (service charge %).`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (PMS note Dòng 115): Màn hình dịch vụ khách sạn đang thiếu thông tin cấu hình phí phục vụ (service charge %).`
 - **Dịch vụ khách sạn - Thao tác Thêm / Sửa / Xóa**
   - *Mô tả / Tham số:* Thêm mới dịch vụ, chỉnh sửa thông tin dịch vụ và xóa hoặc tạm ngưng các dịch vụ không còn hoạt động.
   - *Đánh giá cá nhân:* `Đã hoàn thành: Thao tác thêm mới, sửa, bật/tắt trạng thái dịch vụ hoạt động ổn định.`
@@ -2691,7 +2692,7 @@
   - *Đánh giá cá nhân:* `Đã hoàn thành: Các tham số cấu hình chung được lưu trữ và áp dụng chính xác cho toàn hệ thống.`
 - **Cấu hình khách sạn - Tham số bán vượt phòng (Allow Over)**
   - *Mô tả / Tham số:* Cấu hình tham số cho phép hoặc chặn bán vượt phòng (AllowOverRoomTypeRoomKind) khi tạo đặt phòng hoặc chuyển trạng thái booking.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (Khách note Dòng 530, 531): Cần kiểm soát chặt chẽ việc chặn overbooking khi chuyển đổi trạng thái booking từ Waiting sang Guaranteed và khi cập nhật ngày phòng.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (PMS note Dòng 530, 531): Cần kiểm soát chặt chẽ việc chặn overbooking khi chuyển đổi trạng thái booking từ Waiting sang Guaranteed và khi cập nhật ngày phòng.`
 - **Cấu hình khách sạn - Phụ thu Check-in sớm / Check-out muộn**
   - *Mô tả / Tham số:* Thiết lập quy tắc và tỷ lệ phần trăm phụ thu khi khách nhận phòng sớm hoặc trả phòng muộn theo từng khung giờ quy định.
   - *Đánh giá cá nhân:* `Đã hoàn thành: Thiết lập quy tắc tính phụ thu check-in sớm / check-out muộn hoạt động tốt.`
@@ -2808,7 +2809,7 @@
   - *Đánh giá cá nhân:* `Đã hoàn thành: Quản lý thêm, sửa, xóa outlet buồng phòng hoạt động đầy đủ.`
 - **Menu hàng hóa buồng phòng - Danh mục & Hình ảnh**
   - *Mô tả / Tham số:* Quản lý danh mục hàng hóa minibar và bảng giá giặt ủi gắn với từng outlet, tải lên hình ảnh minh họa sản phẩm.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (Khách note Dòng 540): Chức năng thêm hình ảnh đại diện cho sản phẩm/hàng hóa buồng phòng chưa hiển thị được ảnh sau khi tải lên.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (PMS note Dòng 540): Chức năng thêm hình ảnh đại diện cho sản phẩm/hàng hóa buồng phòng chưa hiển thị được ảnh sau khi tải lên.`
 
 ## Module: Mẫu & Báo cáo (7 mục)
 
@@ -2832,7 +2833,7 @@
   - *Đánh giá cá nhân:* `Đã hoàn thành: Trình quản lý nguồn dữ liệu báo cáo hoạt động ổn định, cung cấp dữ liệu cho mẫu in.`
 - **Định nghĩa danh mục báo cáo - Phân nhóm & Bộ lọc**
   - *Mô tả / Tham số:* Khai báo danh mục báo cáo tùy chỉnh: Mã báo cáo, Tên báo cáo, Nhóm hiển thị, Vị trí menu và các tham số lọc điều kiện.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (Khách note Dòng 325): Chức năng cấu hình danh mục báo cáo cần tối ưu giao diện trực quan hơn, xem xét tách riêng màn hình cấu hình thứ tự kéo thả theo từng module.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (PMS note Dòng 325): Chức năng cấu hình danh mục báo cáo cần tối ưu giao diện trực quan hơn, xem xét tách riêng màn hình cấu hình thứ tự kéo thả theo từng module.`
 
 ## Module: Sao lưu & Khôi phục Database (7 mục)
 
@@ -2935,7 +2936,7 @@
   - *Đánh giá cá nhân:* `Đã hoàn thành: Tính năng sao chép phân quyền hoạt động nhanh chóng và chính xác 100%.`
 - **Phân quyền xem báo cáo theo Rule**
   - *Mô tả / Tham số:* Phân quyền chi tiết quyền truy cập và xem từng báo cáo hệ thống theo vai trò người dùng.
-  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (Khách note Dòng 326): Cần rà soát và hoàn thiện cơ chế phân quyền xem/không được xem báo cáo chi tiết theo rule vai trò người dùng.`
+  - *Đánh giá cá nhân:* `Hoàn thành nhưng còn lỗi (PMS note Dòng 326): Cần rà soát và hoàn thiện cơ chế phân quyền xem/không được xem báo cáo chi tiết theo rule vai trò người dùng.`
 
 ## Module: Nhân viên & Tài khoản (7 mục)
 

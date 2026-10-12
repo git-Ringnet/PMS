@@ -19,6 +19,34 @@
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
 
+## [2026-10-12] - Rà soát toàn diện DANH SÁCH BẢNG TRONG HỆ THỐNG (5).xlsx, bỏ Allotment và đổi Khách note sang PMS note
+### Module: Checklist Nghiệm thu PMS ([Checklist_nghiem_thu_PMS_5_Dot1_v6.xlsx](file:///d:/PMS/file%20word%20can%20len%20plan/Checklist_nghiem_thu_PMS_5_Dot1_v6.xlsx), [Chi_tiet_chuc_nang_PMS_tung_module_2026-10-09.md](file:///d:/PMS/file%20word%20can%20len%20plan/Chi_tiet_chuc_nang_PMS_tung_module_2026-10-09.md))
+
+- **Đối chiếu file `DANH SÁCH BẢNG TRONG HỆ THỐNG (5).xlsx` (Sheet THEO DÕI VẤN ĐỀ CẦN ĐIỀU CHỈNH)**:
+  - Xác nhận 268 mục đã được đội dự án xử lý xong (`Đã xử lý` / `Done`).
+  - Trích xuất và phân loại 120 vấn đề còn tồn đọng/chưa xử lý (40 mục dán nhãn `Chưa xử lý`, 61 mục mới tháng 10/2026, 15 mục test chuyên sâu của Vy).
+- **Cập nhật chính thức theo yêu cầu mới nhất của người dùng**:
+  - **1. Xóa bỏ hoàn toàn Module `Allotment và Channel Manager` (6 dòng tại sheet Đặt phòng - Sales, gồm 5 dòng Đỏ và 1 dòng Xanh)**: Đưa phân hệ này về giai đoạn sau vì Đợt 1 chưa cần. Sau khi xóa, sheet `Đặt phòng - Sales` sạch 100% dòng Đỏ (0 Đỏ).
+  - **2. Đổi tên ghi chú trên toàn bộ hệ thống**: Thay thế toàn bộ 112 vị trí ghi chú từ `"Khách note"` sang `"PMS note"` (ví dụ: `Hoàn thành nhưng còn lỗi (PMS note Dòng 341 file 5): ...`).
+  - **3. Chuyển đồng bộ 69 mục tương ứng từ Xanh sang VÀNG (`Hoàn thành nhưng còn lỗi / Cần điều chỉnh`) kèm số dòng và nội dung lỗi cụ thể**:
+    - *In ấn & Mẫu biểu*: In confirm (Dòng 346), Phiếu đăng ký (Dòng 347), Tạm tính (Dòng 348), Biên nhận (Dòng 349), In phân công & lịch NV buồng (Dòng 356).
+    - *Rate code & Giá phòng*: Đổi loại phòng tự nhảy giá (Dòng 534), Sửa rate code tự cập nhật booking cũ (Dòng 531, 535), Giá cuối tuần BAR (Dòng 538), Kế hoạch phòng (Dòng 161).
+    - *Dịch vụ, Phụ thu trẻ em & Extra bed*: Phụ thu ăn sáng trẻ em `Booking_AutoExtraChargeBFChild=1` (Dòng 49, 368, 383, 536, 549), Lưu ăn sáng bảng `booking_rooms` (Dòng 27), Xóa extra bed và SL ngày cuối (Dòng 343, 364, 366), Ẩn/hiện dịch vụ trừ RM (Dòng 342).
+    - *Quản lý Booking & Lấy phòng*: Overbooking tình trạng Waiting (Dòng 362, 538, 541, 542), Hủy booking tự nhảy sang tạo mới (Dòng 373, 378), Khôi phục booking hủy lệch ngày (Dòng 379, 380), Sửa ngày đến/đi và Day use (Dòng 546, 547), Chuyển khách/phòng (Dòng 166, 183, 246, 251).
+    - *Hóa đơn & Post bill*: Phòng Day use không post được bill (Dòng 544), Check-out giữ master bill bị load mất và thiếu viền hồng (Dòng 371, 372), Re-checkout (Dòng 374), Rút ngắn ngày ở dư tiền dịch vụ (Dòng 375), Định dạng dấu phẩy hàng nghìn và thanh toán 0đ (Dòng 213, 228, 233, 241), Post tiền phòng tự động (Dòng 359, 377).
+    - *Khai báo lưu trú & Thẻ khách*: Xuất Excel Hộ chiếu ra CCCD và sai ngày sinh (Dòng 297, 298, 299, 531), Popup thẻ khách không cho gõ tay ngày tháng và thiếu tìm kiếm dropdown (Dòng 545), Lỗi tải ảnh khách (Dòng 332).
+    - *Sơ đồ phòng (Room Map) & Khóa phòng*: Lệch công suất khi có Day use (Dòng 150, 351, 540), Phòng khóa ngày hôm sau chặn đặt phòng đêm nay (Dòng 381), Sửa nội dung khóa phòng (Dòng 153, 156, 288).
+    - *Buồng phòng & Tồn kho*: Kiểm kê định kỳ hiện hết outlet (Dòng 370), Chuyển kho Amenity (Dòng 370), Menu HK lệch giá và thêm ảnh không hiện (Dòng 195, 196, 353), Load trắng trang (Dòng 197, 341), Quyền xóa bill HK (Dòng 202, 340).
+    - *Cấu hình & Hệ thống*: Không tải lên được logo khách sạn (Dòng 382), Phân quyền chi nhánh mặc định (Dòng 395), Phân quyền xem báo cáo (Dòng 326, 327).
+  - **4. Dọn sạch cấu trúc**: Xóa bỏ hoàn toàn 6 dòng ERP mở rộng (Dòng 42-47 tại sheet Hệ thống) và dọn sạch 100% ghost rows rác tham chiếu `#'Bằng chứng'` ở phía dưới các sheet.
+- **Thống kê phân bổ chính thức sau cập nhật (Tổng 891 mục)**:
+  - *Lễ tân (FO)*: 360 mục (298 Xanh, 58 Vàng, 4 Đỏ).
+  - *Buồng phòng (HK)*: 167 mục (154 Xanh, 13 Vàng, 0 Đỏ).
+  - *Đặt phòng / Sales*: 269 mục (237 Xanh, 32 Vàng, 0 Đỏ).
+  - *Cấu hình hệ thống*: 58 mục (46 Xanh, 12 Vàng, 0 Đỏ).
+  - *Hệ thống (Provista System)*: 37 mục (35 Xanh, 2 Vàng, 0 Đỏ).
+  - *Tổng cộng*: 891 mục (770 Đạt - Xanh, 117 Cần lưu ý/điều chỉnh - Vàng, 4 Chưa đạt - Đỏ).
+
 ## [2026-10-12] - Xử lý triệt để Dòng 310: Giữ nguyên Booking status in (2, 3, 4) và vị trí cuộn Room Plan khi chuyển màn hình
 ### Module: Booking / Hóa đơn / Kế hoạch phòng ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [CheckoutPage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue), [RoomPlanPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomPlanPage.vue), [row-310-booking-restore-navigation.test.js](file:///d:/PMS/frontend/tests/row-310-booking-restore-navigation.test.js))
 
