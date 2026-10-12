@@ -375,9 +375,45 @@ async function onExtraBedSaved(data) {
   if (data) {
     if (data.quantity !== undefined) {
       pricingInfo.value.extra_bed_qty = data.quantity
+      if (props.room) {
+        props.room.extra_bed_qty = data.quantity
+        props.room.extraBedQty = data.quantity
+      }
     }
     if (data.rate !== undefined) {
       pricingInfo.value.extra_bed_price = formatNumber(data.rate)
+      if (props.room) {
+        props.room.extra_bed_rate = data.rate
+        props.room.extraBedPrice = data.rate
+      }
+    }
+    if (data.dailyRates && Array.isArray(data.dailyRates)) {
+      data.dailyRates.forEach(d => {
+        const dDate = formatDateForInput(d.dateStr || d.date || '')
+        const existingIdx = roomServices.value.findIndex(s => s.service_code === 'EB' && formatDateForInput(s.service_date) === dDate)
+        const qty = Number(d.quantity) || 0
+        if (qty > 0) {
+          if (existingIdx !== -1) {
+            roomServices.value[existingIdx].quantity = qty
+            roomServices.value[existingIdx].rate = Number(d.rate) || 0
+            roomServices.value[existingIdx].is_room = d.isRoom ? 1 : 0
+          } else {
+            roomServices.value.push({
+              id: `local-eb-${dDate}`,
+              service_code: 'EB',
+              service_name: 'Extra Bed',
+              service_date: dDate,
+              quantity: qty,
+              rate: Number(d.rate) || 0,
+              is_room: d.isRoom ? 1 : 0
+            })
+          }
+        } else {
+          if (existingIdx !== -1) {
+            roomServices.value.splice(existingIdx, 1)
+          }
+        }
+      })
     }
     if (bookingRoomId.value) {
       try {
@@ -610,26 +646,45 @@ function highlightGuestSuggestion(g, query) {
   return parts.join(' - ')
 }
 
-const formattedRoomForModals = computed(() => ({
-  ...props.room,
-  bookingRoomId: bookingRoomId.value,
-  booking_room_id: bookingRoomId.value,
-  bookingId: bookingId.value,
-  booking_id: bookingId.value,
-  roomNumber: props.room.room_number || props.room.roomNumber || '',
-  type: props.room.room_type_name || props.room.room_type || '',
-  arrival_date: stayInfo.value.arrival_date || props.room.arrival_date,
-  departure_date: stayInfo.value.departure_date || props.room.departure_date,
-  arrivalDate: stayInfo.value.arrival_date || props.room.arrival_date,
-  departureDate: stayInfo.value.departure_date || props.room.departure_date,
-  extraBedQty: Number(pricingInfo.value.extra_bed_qty || 0),
-  extraBedPrice: parseNumber(pricingInfo.value.extra_bed_price) || 300000,
-  rate: props.room.rate,
-  services: roomServices.value.length > 0 ? roomServices.value : (props.room.services || []),
-  specialRequests: Array.isArray(props.room.specialRequests)
-    ? props.room.specialRequests
-    : (Array.isArray(props.room.special_requests) ? props.room.special_requests : []),
-}))
+const formattedRoomForModals = computed(() => {
+  const currentServices = roomServices.value.length > 0 ? roomServices.value : (props.room?.services || [])
+  const ebServices = currentServices.filter(s => s.service_code === 'EB')
+  const dailyExtraBeds = ebServices.map(s => {
+    const rawDate = s.service_date || s.dateStr || s.date || ''
+    const cleanDate = formatDateForInput(rawDate)
+    return {
+      id: s.id,
+      dateStr: cleanDate,
+      date: cleanDate,
+      quantity: Number(s.quantity) || 0,
+      rate: Number(s.rate) || 0,
+      isRoom: s.is_room !== 0,
+      isPosted: Boolean(s.is_posted)
+    }
+  })
+
+  return {
+    ...props.room,
+    bookingRoomId: bookingRoomId.value,
+    booking_room_id: bookingRoomId.value,
+    bookingId: bookingId.value,
+    booking_id: bookingId.value,
+    roomNumber: props.room?.room_number || props.room?.roomNumber || '',
+    type: props.room?.room_type_name || props.room?.room_type || '',
+    arrival_date: stayInfo.value.arrival_date || props.room?.arrival_date,
+    departure_date: stayInfo.value.departure_date || props.room?.departure_date,
+    arrivalDate: stayInfo.value.arrival_date || props.room?.arrival_date,
+    departureDate: stayInfo.value.departure_date || props.room?.departure_date,
+    extraBedQty: Number(pricingInfo.value.extra_bed_qty || 0),
+    extraBedPrice: parseNumber(pricingInfo.value.extra_bed_price) || 300000,
+    rate: props.room?.rate,
+    services: currentServices,
+    dailyExtraBeds: dailyExtraBeds.length > 0 ? dailyExtraBeds : null,
+    specialRequests: Array.isArray(props.room?.specialRequests)
+      ? props.room.specialRequests
+      : (Array.isArray(props.room?.special_requests) ? props.room.special_requests : []),
+  }
+})
 
 // Custom 24h TimePicker Computed & Functions
 const currentHour = computed(() => {
