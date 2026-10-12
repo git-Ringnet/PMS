@@ -144,9 +144,9 @@
           </select>
         </div>
 
-        <!-- Khu vực filter -->
+        <!-- Outlet filter -->
         <div class="flex flex-col gap-1.5 w-[110px]">
-          <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Khu vực</label>
+          <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Outlet</label>
           <select 
             v-model="filterState.zone"
             class="border border-slate-300 rounded-lg px-2.5 py-1.5 text-[12px] text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] transition-all shadow-sm cursor-pointer"
@@ -201,42 +201,46 @@
         <table class="w-full text-left border-collapse whitespace-nowrap min-w-max text-xs">
           <thead class="bg-slate-100/90 text-slate-650 text-[11px] font-bold border-b border-slate-200 sticky top-0 uppercase tracking-wider z-10">
             <tr>
-              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Mã</th>
-              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Mã ĐK</th>
+              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">STT</th>
+              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Ngày - Giờ</th>
               <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Phòng</th>
-              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Giờ</th>
-              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Miễn Phí</th>
+              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Dịch Vụ</th>
+              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border min-w-[220px]">Mô Tả Sản Phẩm</th>
               <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Giá</th>
-              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Mã Thanh Toán</th>
-              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Mã Hóa Đơn Tay</th>
-              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Người Dùng</th>
-              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Đã Xoá</th>
+              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Miễn Phí</th>
+              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Mã TT</th>
+              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Mã HĐ Tay</th>
               <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Bộ Phận</th>
-              <th class="py-3 px-4 text-center align-middle border-r border-slate-200 border">Khu Vực</th>
+              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">User</th>
+              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Outlet</th>
+              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Đã Xóa</th>
+              <th class="py-3 px-4 text-center align-middle border-r border-slate-200 border">Thao Tác</th>
             </tr>
           </thead>
 
           <tbody v-if="isSearching">
             <!-- loading skeleton state -->
             <tr v-for="i in 5" :key="'sk-'+i" class="animate-pulse">
-              <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-10 mx-auto"></div></td>
-              <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-12 mx-auto"></div></td>
-              <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-16 mx-auto"></div></td>
-              <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-24 mx-auto"></div></td>
               <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-8 mx-auto"></div></td>
+              <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-24 mx-auto"></div></td>
+              <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-16 mx-auto"></div></td>
+              <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-16 mx-auto"></div></td>
+              <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-40"></div></td>
               <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-16 ml-auto"></div></td>
+              <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-6 mx-auto"></div></td>
               <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-14 mx-auto"></div></td>
               <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-10 mx-auto"></div></td>
-              <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-20 mx-auto"></div></td>
-              <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-8 mx-auto"></div></td>
-              <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-16 mx-auto"></div></td>
               <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-12 mx-auto"></div></td>
+              <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-20 mx-auto"></div></td>
+              <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-12 mx-auto"></div></td>
+              <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-6 mx-auto"></div></td>
+              <td class="py-4 px-4 border-slate-200"><div class="h-3.5 bg-slate-200 rounded w-16 mx-auto"></div></td>
             </tr>
           </tbody>
 
           <tbody v-else-if="!hasLoadedData" class="divide-y divide-slate-100">
             <tr>
-              <td colspan="12" class="p-20 text-center bg-white border-slate-200">
+              <td colspan="14" class="p-20 text-center bg-white border-slate-200">
                 <div class="flex flex-col items-center justify-center gap-3">
                   <div class="bg-slate-50 rounded-full p-4 border border-slate-100 animate-bounce">
                     <Inbox class="w-10 h-10 text-slate-350" stroke-width="1.5" />
@@ -252,7 +256,7 @@
 
           <tbody v-else-if="filteredInvoices.length === 0">
             <tr>
-              <td colspan="12" class="p-20 text-center bg-white text-slate-400 border-slate-200">
+              <td colspan="14" class="p-20 text-center bg-white text-slate-400 border-slate-200">
                 <div class="flex flex-col items-center justify-center gap-3">
                   <span class="text-4xl">🔍</span>
                   <p class="font-bold text-slate-700 text-[14px]">Không tìm thấy hóa đơn phù hợp</p>
@@ -264,35 +268,111 @@
 
           <tbody v-else class="divide-y divide-slate-100">
             <tr 
-              v-for="inv in filteredInvoices" 
+              v-for="(inv, index) in filteredInvoices" 
               :key="inv.id"
-              class="hover:bg-slate-50/80 transition-colors text-slate-700 font-medium cursor-pointer"
+              class="transition-colors cursor-pointer"
+              :class="inv.isDeleted 
+                ? 'invoice-deleted italic text-red-600 bg-red-50/50 hover:bg-red-50/80 font-normal' 
+                : 'text-slate-700 hover:bg-slate-50/80 font-medium'"
               @click="openInvoiceDetail(inv)"
             >
-              <td class="py-2.5 px-4 font-bold text-sky-800 border-slate-100 text-center">{{ inv.id }}</td>
-              <td class="py-2.5 px-4 font-mono text-center border-slate-100">{{ inv.regCode }}</td>
-              <td class="py-2.5 px-4 font-bold text-center text-sky-750 border-slate-100">Phòng {{ inv.room }}</td>
-              <td class="py-2.5 px-4 text-center border-slate-100">{{ inv.time }}</td>
-              <td class="py-2.5 px-4 text-center border-slate-100">
-                <span class="px-1.5 py-0.5 rounded text-[10px] font-bold" :class="inv.isFree ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-500'">
-                  {{ inv.isFree ? 'FREE' : 'NO' }}
-                </span>
+              <!-- 1. STT -->
+              <td class="py-2.5 px-4 text-center font-bold border-slate-100" :class="inv.isDeleted ? 'text-red-600' : 'text-slate-500'">{{ index + 1 }}</td>
+              
+              <!-- 2. Ngày - Giờ -->
+              <td class="py-2.5 px-4 text-center border-slate-100">{{ inv.time || '—' }}</td>
+              
+              <!-- 3. Phòng -->
+              <td class="py-2.5 px-4 font-bold text-center border-slate-100" :class="!inv.isDeleted ? 'text-sky-750' : 'text-red-600'">
+                {{ inv.room ? 'Phòng ' + inv.room : '—' }}
               </td>
-              <td class="py-2.5 px-4 text-right border-slate-100 font-bold text-slate-800">{{ formatCurrency(inv.price) }}</td>
+              
+              <!-- 4. Dịch vụ -->
+              <td class="py-2.5 px-4 text-center font-semibold border-slate-100">
+                {{ inv.service || inv.zone || inv.dept || '—' }}
+              </td>
+
+              <!-- 5. Mô tả sản phẩm (danh sách tên + số lượng x{sl}) -->
+              <td class="py-2.5 px-4 border-slate-100 text-left whitespace-normal">
+                <div v-if="inv.products && inv.products.length" class="flex flex-col gap-1">
+                  <div 
+                    v-for="(p, pIdx) in inv.products" 
+                    :key="pIdx"
+                    class="text-[12px] leading-snug flex items-center justify-between gap-2"
+                  >
+                    <span>{{ p.name }}</span>
+                    <span class="font-bold text-[11px] shrink-0" :class="inv.isDeleted ? 'text-red-400' : 'text-slate-400'">×{{ p.quantity }}</span>
+                  </div>
+                </div>
+                <span v-else class="text-slate-400">—</span>
+              </td>
+
+              <!-- 6. Tổng tiền -->
+              <td class="py-2.5 px-4 text-right border-slate-100 font-bold" :class="inv.isDeleted ? 'text-red-600' : 'text-slate-800'">
+                {{ formatCurrency(inv.price) }}
+              </td>
+
+              <!-- 7. Miễn phí (checkbox) -->
+              <td class="py-2.5 px-4 text-center border-slate-100">
+                <input 
+                  type="checkbox" 
+                  :checked="inv.isFree" 
+                  disabled 
+                  class="w-4 h-4 rounded border-slate-300 text-sky-600 pointer-events-none accent-sky-600 align-middle"
+                />
+              </td>
+
+              <!-- 8. Mã TT -->
               <td class="py-2.5 px-4 text-center border-slate-100 font-mono text-xs">{{ inv.payCode || '—' }}</td>
+
+              <!-- 9. Mã HĐ tay -->
               <td class="py-2.5 px-4 text-center border-slate-100 font-mono text-xs">{{ inv.manualCode || '—' }}</td>
-              <td class="py-2.5 px-4 border-slate-100 text-center">{{ inv.user }}</td>
-              <td class="py-2.5 px-4 text-center border-slate-100">
-                <span class="px-1.5 py-0.5 rounded text-[10px] font-bold" :class="inv.isDeleted ? 'bg-rose-100 text-rose-800' : 'bg-slate-100 text-slate-500'">
-                  {{ inv.isDeleted ? 'YES' : 'NO' }}
-                </span>
-              </td>
+
+              <!-- 10. Bộ phận -->
               <td class="py-2.5 px-4 text-center border-slate-100">
                 <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold" :class="getDeptClass(inv.dept)">
-                  {{ inv.dept }}
+                  {{ inv.dept || 'HK' }}
                 </span>
               </td>
-              <td class="py-2.5 px-4 font-semibold text-slate-600 text-center border-slate-200">{{ inv.zone }}</td>
+
+              <!-- 11. User -->
+              <td class="py-2.5 px-4 text-center border-slate-100">{{ inv.user || '—' }}</td>
+
+              <!-- 12. Outlet -->
+              <td class="py-2.5 px-4 font-semibold text-slate-600 text-center border-slate-100">{{ inv.zone || '—' }}</td>
+
+              <!-- 13. Đã xóa (checkbox) -->
+              <td class="py-2.5 px-4 text-center border-slate-100">
+                <input 
+                  type="checkbox" 
+                  :checked="inv.isDeleted" 
+                  disabled 
+                  class="w-4 h-4 rounded border-slate-300 text-red-600 pointer-events-none accent-red-600 align-middle"
+                />
+              </td>
+
+              <!-- 14. Thao tác (In / Xóa) -->
+              <td class="py-2 px-4 text-center border-slate-100" @click.stop>
+                <div class="flex items-center justify-center gap-1.5">
+                  <button 
+                    type="button"
+                    @click.stop="printInvoice(inv)"
+                    title="In hóa đơn"
+                    class="p-1.5 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 hover:text-sky-700 transition-colors border border-sky-200 cursor-pointer flex items-center justify-center shadow-xs"
+                  >
+                    <Printer class="w-3.5 h-3.5" />
+                  </button>
+                  <button 
+                    type="button"
+                    v-if="inv.canCancel && !inv.isDeleted"
+                    @click.stop="openCancelModal(inv)"
+                    title="Hủy hóa đơn"
+                    class="p-1.5 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 transition-colors border border-rose-200 cursor-pointer flex items-center justify-center shadow-xs"
+                  >
+                    <Trash2 class="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -329,7 +409,8 @@
         </div>
       </div>
     </Transition>
-  </div>
+
+    <!-- Drawer Chi Tiết Hóa Đơn -->
     <Transition name="hk-drawer">
       <div v-if="detailTarget" class="fixed inset-0 z-[110] bg-slate-900/25" @click.self="closeInvoiceDetail">
         <div class="fixed right-0 top-0 flex h-full w-full max-w-[560px] flex-col overflow-hidden bg-white shadow-2xl">
@@ -369,12 +450,13 @@
           </div>
           <div class="flex items-center gap-2 border-t border-slate-200 p-4">
             <button type="button" class="rounded-lg bg-sky-400 px-4 py-2 text-xs font-bold text-white hover:bg-sky-500" @click="printInvoice(detailTarget)">In</button>
-            <button v-if="detailTarget.canCancel && canCancelHousekeepingBill" type="button" class="rounded-lg bg-sky-400 px-4 py-2 text-xs font-bold text-white hover:bg-sky-500" @click="openCancelModal(detailTarget)">Hủy hóa đơn</button>
+            <button v-if="detailTarget.canCancel && !detailTarget.isDeleted && canCancelHousekeepingBill" type="button" class="rounded-lg bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-700" @click="openCancelModal(detailTarget)">Hủy hóa đơn</button>
           </div>
         </div>
       </div>
     </Transition>
 
+    <!-- Modal Xác Nhận Hủy/Xóa Hóa Đơn -->
     <Transition name="hk-modal">
       <div v-if="cancelTarget && canCancelHousekeepingBill" class="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
         <div class="w-full max-w-md rounded-xl bg-white shadow-2xl border border-slate-200 p-5">
@@ -383,19 +465,20 @@
           <label class="mt-4 block text-[11px] font-bold text-slate-600">Lý do xóa</label>
           <input v-model="cancelReason" type="text" maxlength="255" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-sky-200" placeholder="Nhập lý do" />
           <div class="mt-4 flex justify-end gap-2">
-            <button type="button" class="rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700" @click="closeCancelModal">Đóng</button>
-            <button type="button" class="rounded-lg bg-rose-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50" :disabled="isCancelling || !cancelReason.trim()" @click="cancelInvoice">{{ isCancelling ? 'Đang xử lý...' : 'Xác nhận xóa' }}</button>
+            <button type="button" class="rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700 cursor-pointer" @click="closeCancelModal">Đóng</button>
+            <button type="button" class="rounded-lg bg-rose-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50 cursor-pointer" :disabled="isCancelling || !cancelReason.trim()" @click="cancelInvoice">{{ isCancelling ? 'Đang xử lý...' : 'Xác nhận xóa' }}</button>
           </div>
         </div>
       </div>
     </Transition>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { Calendar, Plus, Inbox, ChevronDown, CheckCircle2, X, HelpCircle } from '@lucide/vue'
+import { Calendar, Plus, Inbox, ChevronDown, CheckCircle2, X, HelpCircle, Printer, Trash2 } from '@lucide/vue'
 import PostBillHousekeepingTab from './PostBillHousekeepingTab.vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
@@ -462,6 +545,7 @@ const triggerSearch = async () => {
       time: item.date ? `${item.date.split('-').reverse().join('-')} ${item.time || ''}` : '',
       isFree: item.is_free, price: item.amount, payCode: item.payment_id || '',
       manualCode: item.manual_invoice_code || '', user: item.username || '',
+      service: item.service || item.outlet || item.department || 'Dịch vụ HK',
       isDeleted: item.is_deleted, canCancel: item.can_cancel === true, dept: item.department || '', zone: item.outlet || ''
     }))
   } finally {
@@ -650,9 +734,14 @@ const closeClickOutside = (e) => {
 const showAddModal = ref(false)
 
 const parseInvoiceDate = (dateStr) => {
-  const [dPart] = dateStr.split(' ')
-  const [d, m, y] = dPart.split('-')
-  return new Date(y, m - 1, d)
+  if (!dateStr || typeof dateStr !== 'string') return new Date(0)
+  const [dPart] = dateStr.trim().split(' ')
+  if (!dPart) return new Date(0)
+  const parts = dPart.split('-')
+  if (parts.length !== 3) return new Date(0)
+  const [d, m, y] = parts
+  const parsed = new Date(Number(y), Number(m) - 1, Number(d))
+  return isNaN(parsed.getTime()) ? new Date(0) : parsed
 }
 
 // Invoices computation
@@ -757,16 +846,99 @@ const cancelInvoice = async () => {
 }
 
 const printInvoice = (invoice) => {
-  const rows = invoice.products.map(item => `<tr><td>${item.name || ''}</td><td>${item.quantity || 0}</td><td>${formatCurrency(item.amount || 0)}</td></tr>`).join('')
-  const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=800,height=600')
+  const rows = (invoice.products || []).map(item => `
+    <tr>
+      <td>${item.name || '—'}</td>
+      <td style="text-align:center">${item.quantity || 0}</td>
+      <td style="text-align:right">${formatCurrency(item.rate || 0)}</td>
+      <td style="text-align:right">${formatCurrency(item.amount || 0)}</td>
+    </tr>
+  `).join('') || '<tr><td colspan="4" style="text-align:center;color:#888;padding:16px;">Không có chi tiết sản phẩm</td></tr>'
+
+  const printWindow = window.open('', '_blank', 'width=850,height=650')
   if (!printWindow) {
-    uiStore.showToast('Trình duyệt đã chặn cửa sổ in.', 'warning')
+    uiStore.showToast('Trình duyệt đã chặn cửa sổ in. Vui lòng cho phép popup.', 'warning')
     return
   }
-  printWindow.document.write(`<html><head><title>Hóa đơn #${invoice.id}</title><style>body{font-family:Arial,sans-serif;padding:24px}table{width:100%;border-collapse:collapse;margin-top:16px}th,td{border:1px solid #ddd;padding:8px;text-align:left}th:nth-child(2),td:nth-child(2),th:nth-child(3),td:nth-child(3){text-align:right}</style></head><body><h2>HÓA ĐƠN DỊCH VỤ BUỒNG PHÒNG</h2><p>Mã HĐ: ${invoice.id} | Mã ĐK: ${invoice.regCode} | Phòng: ${invoice.room}</p><p>Ngày giờ: ${invoice.time} | Bộ phận: ${invoice.dept} | Outlet: ${invoice.zone}</p><table><thead><tr><th class="text-center align-middle border border-slate-200">Sản Phẩm</th><th class="text-center align-middle border border-slate-200">Số Lượng</th><th class="text-center align-middle border border-slate-200">Thành Tiền</th></tr></thead><tbody>${rows}</tbody></table><h3>Tổng tiền: ${formatCurrency(invoice.price)}</h3></body></html>`)
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Hóa đơn #${invoice.id}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; padding: 28px; color: #1e293b; margin: 0; }
+    .header { border-bottom: 2px solid #0284c7; padding-bottom: 12px; margin-bottom: 20px; }
+    h2 { margin: 0 0 6px 0; color: #0284c7; font-size: 20px; text-transform: uppercase; }
+    .meta-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; font-size: 13px; margin-bottom: 20px; }
+    .meta-item { display: flex; flex-direction: column; }
+    .meta-label { font-weight: bold; color: #64748b; font-size: 11px; text-transform: uppercase; }
+    .meta-value { font-size: 13px; color: #0f172a; margin-top: 2px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 13px; }
+    th, td { border: 1px solid #cbd5e1; padding: 8px 12px; }
+    th { background: #f8fafc; font-weight: bold; text-transform: uppercase; font-size: 11px; color: #475569; }
+    .total-row { font-weight: bold; font-size: 14px; background: #f1f5f9; }
+    .footer { margin-top: 40px; display: flex; justify-content: space-between; font-size: 12px; color: #475569; }
+    .sign-box { text-align: center; width: 180px; }
+    .sign-box .sign-title { font-weight: bold; margin-bottom: 60px; }
+    @media print {
+      body { padding: 0; }
+      @page { margin: 15mm; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h2>Hóa Đơn Dịch Vụ Buồng Phòng</h2>
+    <div style="font-size: 12px; color: #64748b;">Mã hóa đơn: #${invoice.id}</div>
+  </div>
+
+  <div class="meta-grid">
+    <div class="meta-item"><span class="meta-label">Mã ĐK</span><span class="meta-value">${invoice.regCode || '—'}</span></div>
+    <div class="meta-item"><span class="meta-label">Phòng</span><span class="meta-value">${invoice.room ? 'Phòng ' + invoice.room : '—'}</span></div>
+    <div class="meta-item"><span class="meta-label">Khách hàng</span><span class="meta-value">${invoice.guestName || '—'}</span></div>
+    <div class="meta-item"><span class="meta-label">Ngày giờ</span><span class="meta-value">${invoice.time || '—'}</span></div>
+    <div class="meta-item"><span class="meta-label">Dịch vụ</span><span class="meta-value">${invoice.service || invoice.dept || '—'}</span></div>
+    <div class="meta-item"><span class="meta-label">Người lập</span><span class="meta-value">${invoice.user || '—'}</span></div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="text-align:left">Sản phẩm</th>
+        <th style="text-align:center;width:80px">Số lượng</th>
+        <th style="text-align:right;width:120px">Đơn giá</th>
+        <th style="text-align:right;width:140px">Thành tiền</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${rows}
+      <tr class="total-row">
+        <td colspan="3" style="text-align:right">Tổng cộng:</td>
+        <td style="text-align:right">${formatCurrency(invoice.price)}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="footer">
+    <div class="sign-box">
+      <div class="sign-title">Khách hàng</div>
+      <div>(Ký và ghi rõ họ tên)</div>
+    </div>
+    <div class="sign-box">
+      <div class="sign-title">Nhân viên thực hiện</div>
+      <div>(Ký và ghi rõ họ tên)</div>
+    </div>
+  </div>
+</body>
+</html>`
+
+  printWindow.document.open()
+  printWindow.document.write(html)
   printWindow.document.close()
   printWindow.focus()
-  printWindow.print()
+  setTimeout(() => {
+    printWindow.print()
+  }, 350)
 }
 
 onMounted(() => {
@@ -855,5 +1027,15 @@ onUnmounted(() => {
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+
+/* A cancelled bill is shown as its positive and reversal entries. Keep every
+   label visually distinct from a normal bill: red, italic, and never bold. */
+.invoice-deleted td,
+.invoice-deleted td * {
+  color: #dc2626 !important;
+  font-style: italic;
+  font-weight: 400 !important;
 }
 </style>

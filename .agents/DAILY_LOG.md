@@ -18,6 +18,23 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-10-12] - Giải quyết xung đột Merge & Đồng bộ giao diện Bảng Tìm kiếm hóa đơn (SearchInvoiceTab.vue)
+### Module: Buồng phòng / Tìm kiếm hóa đơn ([SearchInvoiceTab.vue](file:///c:/xampp/htdocs/PMS/frontend/src/pages/housekeeping/components/SearchInvoiceTab.vue))
+
+- **Nguyên nhân**: Quá trình merge/pop stash để lại các conflict markers (`<<<<<<< Updated upstream`, `=======`, `>>>>>>> Stashed changes`) trong file [SearchInvoiceTab.vue](file:///c:/xampp/htdocs/PMS/frontend/src/pages/housekeeping/components/SearchInvoiceTab.vue).
+- **Chi tiết xử lý**:
+  - **Giao diện bảng (đồng bộ theo nhánh upstream / FE Design System)**: Header bảng dùng nền xám sáng `bg-slate-100/90 text-slate-650 text-[11px] font-bold border-b border-slate-200`, tất cả `<th>` có `py-3 px-4 border-r border-slate-200 text-center align-middle border`, dữ liệu `<td>` dùng padding `py-2.5 px-4` và bỏ viền dọc (`border-slate-100`, không dùng `border-r`), bỏ style đè màu chữ trắng `thead th`.
+  - **Cột & chức năng (bảo toàn 100% theo stash)**:
+    - Đầy đủ 14 cột chức năng: `STT`, `Ngày - Giờ`, `Phòng`, `Dịch Vụ`, `Mô Tả Sản Phẩm`, `Giá`, `Miễn Phí`, `Mã TT`, `Mã HĐ Tay`, `Bộ Phận`, `User`, `Outlet`, `Đã Xóa`, `Thao Tác`.
+    - Cột Mô tả sản phẩm render danh sách tên món + số lượng.
+    - Cột Thao tác hỗ trợ In và Hủy hóa đơn (với quyền `canCancel` và audit ngược âm).
+    - Cột Miễn phí và Đã xóa dạng checkbox.
+    - Template in hóa đơn popup HTML đầy đủ thông tin metadata, bảng kê chi tiết và ô chữ ký.
+    - Đồng bộ bộ chọn ngày [SingleDatePicker.vue](file:///c:/xampp/htdocs/PMS/frontend/src/components/SingleDatePicker.vue) và `systemDate` từ nhánh upstream.
+- **Kiểm thử**:
+  - `npm run build` biên dịch thành công 100% (7.84s), 0 lỗi cú pháp/template.
+  - Unit tests: 76/76 unit tests PASSED (`node --test tests/*.test.js`).
+
 ## [2026-10-09] - Chuẩn hóa FE Dòng 54, 55, 56: Module Khách hàng doanh nghiệp / Công ty (CompanyTab, MarketTab, CustomerSourceTab, BranchTab, BookerTab)
 ### Module: Cấu hình / Khách hàng doanh nghiệp (Config / Company)
 
