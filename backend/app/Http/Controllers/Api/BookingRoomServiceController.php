@@ -162,7 +162,8 @@ class BookingRoomServiceController extends Controller
                 $query->where('code', 'FO');
             })
             ->orderBy('name')
-            ->get(['code', 'name', 'price', 'unit', 'short_name']);
+            // The dropdown must show the configured full service name only.
+            ->get(['code', 'name', 'price', 'unit']);
 
         return response()->json(['success' => true, 'data' => $services]);
     }
@@ -1899,6 +1900,7 @@ class BookingRoomServiceController extends Controller
                 'date' => $billDate ? Carbon::parse($billDate)->format('Y-m-d') : null,
                 'time' => $serviceBill?->OpenTime ?: ($billDate ? Carbon::parse($billDate)->format('H:i') : null),
                 'outlet' => $bill->Outlet,
+                'service' => $serviceBill?->DescriptionServive ?: ($serviceBill?->ServiceId ?: ($bill->Outlet ?: 'Dịch vụ HK')),
                 'products' => $items,
                 'is_free' => $serviceBill?->PaymentId && $freePaymentIds->has((string) $serviceBill->PaymentId),
                 'amount' => (float) $bill->BillAmount,
@@ -2049,7 +2051,10 @@ class BookingRoomServiceController extends Controller
         }
 
         // Lấy thông tin dịch vụ FO
-        $foService = HotelService::where('code', $request->service_code)->first();
+        $foService = HotelService::where('code', $request->service_code)
+            ->where('is_active', true)
+            ->whereHas('departments', fn ($query) => $query->where('code', 'FO'))
+            ->first();
         if (!$foService) {
             return response()->json(['success' => false, 'message' => 'Mã dịch vụ không tồn tại.'], 422);
         }

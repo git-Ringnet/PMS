@@ -26,7 +26,8 @@ const serviceFormState = reactive({
   unit: '',
   price: 0,
   is_active: true,
-  department_id: null
+  department_id: null,
+  department_ids: []
 })
 
 const fetchDepartments = async () => {
@@ -65,7 +66,8 @@ const openAddServiceModal = () => {
     unit: '',
     price: 0,
     is_active: true,
-    department_id: departments.value.find(department => department.code === 'FO')?.id || departments.value[0]?.id || null
+    department_id: departments.value.find(department => department.code === 'FO')?.id || departments.value[0]?.id || null,
+    department_ids: [departments.value.find(department => department.code === 'FO')?.id || departments.value[0]?.id].filter(Boolean)
   })
   isServiceModalOpen.value = true
 }
@@ -87,19 +89,26 @@ const openEditServiceModal = (service) => {
     unit: service.unit,
     price: service.price,
     is_active: service.is_active !== false,
-    department_id: service.department_id
+    department_id: service.department_id,
+    department_ids: service.department_ids?.length ? [...service.department_ids] : [service.department_id].filter(Boolean)
   })
   isServiceModalOpen.value = true
 }
 
 const saveService = async () => {
-  if (!serviceFormState.code || !serviceFormState.name || !serviceFormState.department_id) {
-    uiStore.showToast('Vui lòng điền mã, tên dịch vụ và bộ phận', 'warning')
+  if (!serviceFormState.code || !serviceFormState.name || !serviceFormState.department_ids.length) {
+    uiStore.showToast('Vui lòng điền mã, tên dịch vụ và chọn ít nhất một bộ phận', 'warning')
     return
   }
   loading.value = true
   try {
-    const payload = { ...serviceFormState }
+    const payload = {
+      ...serviceFormState,
+      // Keep a stable primary value for legacy records while allowing many outlets.
+      department_id: serviceFormState.department_ids.includes(serviceFormState.department_id)
+        ? serviceFormState.department_id
+        : serviceFormState.department_ids[0],
+    }
     if (isEditMode.value) {
       await http.put(`/hotel-services/${serviceFormState.id}`, payload)
       uiStore.showToast('Cập nhật dịch vụ thành công!', 'success')
@@ -264,7 +273,9 @@ onMounted(() => {
             <td class="p-3 text-slate-600 font-semibold">{{ s.short_name || '-' }}</td>
             <td class="p-3 text-slate-600 font-semibold">{{ s.unit || '-' }}</td>
             <td class="p-3 text-right font-extrabold text-sky-700">{{ formatCurrency(s.price) }}</td>
-            <td class="p-3 text-slate-500 font-semibold text-xs">{{ s.department_name || '-' }}</td>
+            <td class="p-3 text-slate-500 font-semibold text-xs">
+              {{ s.departments?.length ? s.departments.map(department => department.code).join(', ') : (s.department_name || '-') }}
+            </td>
             <td class="p-3 text-right">
               <div class="flex items-center justify-end gap-1">
                 <button @click.stop="deleteService(s.id)"
@@ -326,13 +337,14 @@ onMounted(() => {
               </div>
 
               <div class="flex flex-col gap-1.5">
-                <span>Bộ phận</span>
-                <select v-model="serviceFormState.department_id"
-                  class="border border-slate-200 rounded-lg p-2.5 bg-white focus:outline-sky-500 text-sm font-semibold">
-                  <option v-for="department in departments" :key="department.id" :value="department.id">
-                    {{ department.code }} - {{ department.name }}
-                  </option>
-                </select>
+                <span>Bộ phận sử dụng khi post bill</span>
+                <div class="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 p-2.5">
+                  <label v-for="department in departments" :key="department.id" class="flex items-center gap-2 cursor-pointer font-semibold">
+                    <input v-model="serviceFormState.department_ids" type="checkbox" :value="department.id" class="rounded border-slate-300 text-sky-500" />
+                    <span>{{ department.code }} - {{ department.name }}</span>
+                  </label>
+                </div>
+                <p class="text-xs font-medium text-slate-400">Dịch vụ chỉ xuất hiện ở màn hình post bill của các bộ phận được chọn.</p>
               </div>
 
               <label class="flex items-center gap-2 cursor-pointer">

@@ -500,12 +500,17 @@ const ROOM_PLAN_SCROLL_LEFT_KEY = 'pms_roomplan_scroll_left'
 const ROOM_PLAN_START_DATE_KEY = 'pms_roomplan_start_date'
 const ROOM_PLAN_END_DATE_KEY = 'pms_roomplan_end_date'
 
+let isRestoringPlanScroll = true
+let planScrollRestoreAttempts = 0
+const MAX_PLAN_SCROLL_ATTEMPTS = 30
 let roomPlanScrollSaveTimeout = null
+
 function handleRoomPlanScroll(event) {
   hideTooltip()
+  if (isRestoringPlanScroll) return
   clearTimeout(roomPlanScrollSaveTimeout)
   roomPlanScrollSaveTimeout = setTimeout(() => {
-    if (roomPlanScrollContainer.value) {
+    if (roomPlanScrollContainer.value && !isRestoringPlanScroll) {
       sessionStorage.setItem(ROOM_PLAN_SCROLL_TOP_KEY, String(roomPlanScrollContainer.value.scrollTop))
       sessionStorage.setItem(ROOM_PLAN_SCROLL_LEFT_KEY, String(roomPlanScrollContainer.value.scrollLeft))
     }
@@ -513,26 +518,55 @@ function handleRoomPlanScroll(event) {
 }
 
 function restoreRoomPlanScrollPosition() {
-  const savedTop = sessionStorage.getItem(ROOM_PLAN_SCROLL_TOP_KEY)
-  const savedLeft = sessionStorage.getItem(ROOM_PLAN_SCROLL_LEFT_KEY)
-  if (savedTop === null && savedLeft === null) return
+  const savedTopRaw = sessionStorage.getItem(ROOM_PLAN_SCROLL_TOP_KEY)
+  const savedLeftRaw = sessionStorage.getItem(ROOM_PLAN_SCROLL_LEFT_KEY)
+  if (savedTopRaw === null && savedLeftRaw === null) {
+    isRestoringPlanScroll = false
+    return
+  }
+  const targetTop = savedTopRaw !== null ? Math.max(0, Number(savedTopRaw)) : 0
+  const targetLeft = savedLeftRaw !== null ? Math.max(0, Number(savedLeftRaw)) : 0
 
-  const applyScroll = () => {
-    if (!roomPlanScrollContainer.value) return false
-    if (savedTop !== null) {
-      roomPlanScrollContainer.value.scrollTop = Number(savedTop)
+  isRestoringPlanScroll = true
+  planScrollRestoreAttempts = 0
+
+  const attemptApply = () => {
+    const el = roomPlanScrollContainer.value
+    if (!el) {
+      if (planScrollRestoreAttempts < MAX_PLAN_SCROLL_ATTEMPTS) {
+        planScrollRestoreAttempts++
+        setTimeout(attemptApply, 60)
+      } else {
+        isRestoringPlanScroll = false
+      }
+      return
     }
-    if (savedLeft !== null) {
-      roomPlanScrollContainer.value.scrollLeft = Number(savedLeft)
+
+    const maxScrollY = Math.max(0, el.scrollHeight - el.clientHeight)
+    const maxScrollX = Math.max(0, el.scrollWidth - el.clientWidth)
+
+    // Nếu targetTop > 0 mà chiều cao thực tế chưa nở đủ (maxScrollY chưa đến targetTop) và chưa hết số lần thử
+    if (targetTop > 0 && maxScrollY < Math.min(targetTop, 50) && planScrollRestoreAttempts < MAX_PLAN_SCROLL_ATTEMPTS) {
+      planScrollRestoreAttempts++
+      setTimeout(attemptApply, 80)
+      return
     }
-    return true
+
+    if (savedTopRaw !== null) el.scrollTop = targetTop
+    if (savedLeftRaw !== null) el.scrollLeft = targetLeft
+
+    requestAnimationFrame(() => {
+      if (el) {
+        if (savedTopRaw !== null) el.scrollTop = targetTop
+        if (savedLeftRaw !== null) el.scrollLeft = targetLeft
+      }
+      setTimeout(() => {
+        isRestoringPlanScroll = false
+      }, 150)
+    })
   }
 
-  nextTick(() => {
-    applyScroll()
-    setTimeout(applyScroll, 50)
-    setTimeout(applyScroll, 200)
-  })
+  nextTick(attemptApply)
 }
 
 function saveDateRange() {
@@ -1707,7 +1741,9 @@ async function loadBookings() {
     if (requestId === loadBookingsRequestId) {
       loadingBookings.value = false
       emit('loading', false)
-      restoreRoomPlanScrollPosition()
+      nextTick(() => {
+        restoreRoomPlanScrollPosition()
+      })
     }
   }
 }
@@ -1902,7 +1938,7 @@ onBeforeUnmount(() => {
   stopLockRoomDrag()
   stopBookingPointerDrag()
   window.removeEventListener('keydown', handleKeyDown)
-  if (roomPlanScrollContainer.value) {
+  if (roomPlanScrollContainer.value && !isRestoringPlanScroll) {
     sessionStorage.setItem(ROOM_PLAN_SCROLL_TOP_KEY, String(roomPlanScrollContainer.value.scrollTop))
     sessionStorage.setItem(ROOM_PLAN_SCROLL_LEFT_KEY, String(roomPlanScrollContainer.value.scrollLeft))
   }
@@ -1931,8 +1967,10 @@ watch([startDate, endDate], () => {
 
 let isInitialPlanScrollRestored = false
 watch(dbRooms, (newVal) => {
-  if (!isInitialPlanScrollRestored && newVal && newVal.length > 0) {
-    restoreRoomPlanScrollPosition()
+  if (newVal && newVal.length > 0) {
+    nextTick(() => {
+      restoreRoomPlanScrollPosition()
+    })
     isInitialPlanScrollRestored = true
   }
 })
