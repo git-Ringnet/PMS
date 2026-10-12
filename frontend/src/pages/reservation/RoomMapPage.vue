@@ -12,6 +12,7 @@ import { TEXT_THEME } from '@/utils/theme'
 import BookingDetailModal from '@/components/BookingDetailModal.vue'
 import RoomMoveModal from '@/components/RoomMoveModal.vue'
 import RoomIcon from '@/components/RoomIcon.vue'
+import SingleDatePicker from '@/components/SingleDatePicker.vue'
 import DepositModal from './components/DepositModal.vue'
 import AvailableRoomsPage from './AvailableRoomsPage.vue'
 import RoomPlanPage from './RoomPlanPage.vue'
@@ -53,7 +54,7 @@ const moduleContext = computed(() => {
 })
 const canChangeRoomStatus = ref(false)
 const canCancelCheckIn = ref(false)
-const systemDate = ref('')
+const systemDate = ref(authStore.systemDate || localStorage.getItem('pms_system_date') || '')
 const hotelSettings = ref({})
 const showRoomLockModal = ref(false)
 const roomLockForm = ref({ room: null, lockType: 'OOO', startDate: '', endDate: '', reason: '' })
@@ -271,7 +272,7 @@ function handleClickOutsideSettings(event) {
 
 // Top toggle state: isFuture (false = Hiện tại, true = Tương Lai)
 const isFuture = ref(false)
-const rawDate = ref(new Date().toISOString().split('T')[0])
+const rawDate = ref(authStore.systemDate || localStorage.getItem('pms_system_date') || new Date().toISOString().split('T')[0])
 
 // Bottom toggle state: isGridMode (true = Bảng, false = Lưới)
 const isGridMode = ref(true)
@@ -353,7 +354,7 @@ const selectedDate = computed(() => {
 
 watch(isFuture, (newVal) => {
   if (!newVal) {
-    rawDate.value = new Date().toISOString().split('T')[0]
+    rawDate.value = systemDate.value || authStore.systemDate || localStorage.getItem('pms_system_date') || new Date().toISOString().split('T')[0]
   }
 })
 
@@ -2226,6 +2227,7 @@ onMounted(async () => {
     const dateRes = await fetchSystemDate()
     if (dateRes?.data?.success && dateRes?.data?.data?.system_date) {
       systemDate.value = dateRes.data.data.system_date
+      authStore.setSystemDate(dateRes.data.data.system_date)
       rawDate.value = systemDate.value
     }
   } catch (err) {
@@ -2879,12 +2881,12 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 <table class="w-full text-left border-collapse text-xs">
                   <thead>
                     <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
-                      <th class="p-2.5">{{ t('roomMap.partnerOta') }}</th>
-                      <th class="p-2.5">{{ t('roomMap.allotmentRoomType') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.allotmentQty') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.allotmentSold') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.allotmentRemaining') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.allotmentStatus') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.partnerOta') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.allotmentRoomType') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.allotmentQty') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.allotmentSold') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.allotmentRemaining') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.allotmentStatus') }}</th>
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
@@ -2894,14 +2896,14 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                       { partner: 'Travel Concierge', type: 'Standard Twin', allocated: 8, sold: 8, status: 'Đã hết' },
                       { partner: 'Trip.com', type: 'Standard Double', allocated: 6, sold: 1, status: 'Đang mở' }
                     ]" :key="item.partner" class="hover:bg-slate-50 h-10">
-                      <td class="p-2.5 text-slate-900 font-black">{{ item.partner }}</td>
-                      <td class="p-2.5">{{ item.type }}</td>
-                      <td class="p-2.5 text-center text-slate-900">{{ item.allocated }} {{
+                      <td class="p-2.5 text-slate-900 font-black border-slate-200">{{ item.partner }}</td>
+                      <td class="p-2.5 border-slate-200">{{ item.type }}</td>
+                      <td class="p-2.5 text-center text-slate-900 border-slate-200">{{ item.allocated }} {{
                         t('roomMap.allotmentRoomsUnit')
                         }}</td>
-                      <td class="p-2.5 text-center text-sky-600">{{ item.sold }}</td>
-                      <td class="p-2.5 text-center text-slate-500">{{ item.allocated - item.sold }}</td>
-                      <td class="p-2.5 text-center">
+                      <td class="p-2.5 text-center text-sky-600 border-slate-200">{{ item.sold }}</td>
+                      <td class="p-2.5 text-center text-slate-500 border-slate-200">{{ item.allocated - item.sold }}</td>
+                      <td class="p-2.5 text-center border-slate-200">
                         <span class="px-2 py-0.5 rounded text-[10px] font-black border"
                           :class="item.status === 'Đang mở' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-red-50 text-red-500 border-red-100'">
                           {{ item.status === 'Đang mở' ? t('roomMap.allotmentOpen') : t('roomMap.allotmentSoldOut') }}
@@ -2924,12 +2926,12 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 <table class="w-full text-left border-collapse text-xs">
                   <thead>
                     <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
-                      <th class="p-2.5">{{ t('roomMap.allotmentIdCode') }}</th>
-                      <th class="p-2.5">{{ t('roomMap.allotmentPartner') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.allotmentRoomNo') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.allotmentStartDate') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.allotmentEndDate') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.allotmentUnlock') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.allotmentIdCode') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.allotmentPartner') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.allotmentRoomNo') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.allotmentStartDate') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.allotmentEndDate') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.allotmentUnlock') }}</th>
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
@@ -2938,12 +2940,12 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                       { id: 'AL-1012', partner: 'Booking.com', room: '304', start: '12-06-2026', end: '22-06-2026', active: true },
                       { id: 'AL-1015', partner: 'Travel Concierge', room: '104', start: '15-06-2026', end: '25-06-2026', active: false }
                     ]" :key="item.id" class="hover:bg-slate-50 h-10">
-                      <td class="p-2.5 text-slate-900 font-black">{{ item.id }}</td>
-                      <td class="p-2.5 text-slate-900">{{ item.partner }}</td>
-                      <td class="p-2.5 text-center font-black">{{ item.room }}</td>
-                      <td class="p-2.5 text-center text-slate-500">{{ item.start }}</td>
-                      <td class="p-2.5 text-center text-slate-500">{{ item.end }}</td>
-                      <td class="p-2.5 text-center">
+                      <td class="p-2.5 text-slate-900 font-black border-slate-200">{{ item.id }}</td>
+                      <td class="p-2.5 text-slate-900 border-slate-200">{{ item.partner }}</td>
+                      <td class="p-2.5 text-center font-black border-slate-200">{{ item.room }}</td>
+                      <td class="p-2.5 text-center text-slate-500 border-slate-200">{{ item.start }}</td>
+                      <td class="p-2.5 text-center text-slate-500 border-slate-200">{{ item.end }}</td>
+                      <td class="p-2.5 text-center border-slate-200">
                         <span class="px-2 py-0.5 rounded text-[10px] font-black border"
                           :class="item.active ? 'bg-sky-50 text-sky-600 border-sky-100' : 'bg-slate-100 text-slate-500 border-slate-200'">
                           {{ item.active ? t('roomMap.allotmentOpen') : t('roomMap.allotmentLocked') }}
@@ -3007,12 +3009,12 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 <table class="w-full text-left border-collapse text-xs">
                   <thead>
                     <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
-                      <th class="p-2.5">{{ t('roomMap.regIdCode') }}</th>
-                      <th class="p-2.5">{{ t('roomMap.regCustomer') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.regRoomNo') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.regCheckIn') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.regCheckOut') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.regStatus') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.regIdCode') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.regCustomer') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.regRoomNo') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.regCheckIn') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.regCheckOut') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.regStatus') }}</th>
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
@@ -3021,12 +3023,12 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                       { id: 'REG-553', guest: 'Mr. Rachid Boufarki', room: '204', in: '14-06-2026', out: '18-06-2026', status: 'Hoạt động' },
                       { id: 'REG-554', guest: 'Walkin Guest', room: '302', in: '15-06-2026', out: '16-06-2026', status: 'Hoàn thành' }
                     ]" :key="item.id" class="hover:bg-slate-50 h-10">
-                      <td class="p-2.5 text-slate-900 font-black text-sm">{{ item.id }}</td>
-                      <td class="p-2.5 text-slate-900">{{ item.guest }}</td>
-                      <td class="p-2.5 text-center font-black">{{ item.room }}</td>
-                      <td class="p-2.5 text-center text-slate-500">{{ item.in }}</td>
-                      <td class="p-2.5 text-center text-slate-500">{{ item.out }}</td>
-                      <td class="p-2.5 text-center">
+                      <td class="p-2.5 text-slate-900 font-black text-sm border-slate-200">{{ item.id }}</td>
+                      <td class="p-2.5 text-slate-900 border-slate-200">{{ item.guest }}</td>
+                      <td class="p-2.5 text-center font-black border-slate-200">{{ item.room }}</td>
+                      <td class="p-2.5 text-center text-slate-500 border-slate-200">{{ item.in }}</td>
+                      <td class="p-2.5 text-center text-slate-500 border-slate-200">{{ item.out }}</td>
+                      <td class="p-2.5 text-center border-slate-200">
                         <span class="px-2 py-0.5 rounded text-[10px] font-black border"
                           :class="item.status === 'Hoạt động' ? 'bg-sky-50 text-sky-600 border-sky-100' : 'bg-slate-100 text-slate-500 border-slate-200'">
                           {{ item.status === 'Hoạt động' ? t('roomMap.regActive') : t('roomMap.regCompleted') }}
@@ -3064,11 +3066,11 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 <table class="w-full text-left border-collapse text-xs mt-2">
                   <thead>
                     <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
-                      <th class="p-2.5">{{ t('roomMap.statRoomCategory') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.statTotalRooms') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.statOccupiedRooms') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.statRepairRooms') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.statEfficiency') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.statRoomCategory') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.statTotalRooms') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.statOccupiedRooms') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.statRepairRooms') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.statEfficiency') }}</th>
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
@@ -3077,11 +3079,11 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                       { name: 'Deluxe Twin', total: 25, occ: 20, repair: 0, rate: '80.0%' },
                       { name: 'Executive Suite', total: 12, occ: 7, repair: 2, rate: '58.3%' }
                     ]" :key="item.name" class="hover:bg-slate-50 h-10">
-                      <td class="p-2.5 text-slate-900 font-black">{{ item.name }}</td>
-                      <td class="p-2.5 text-center text-slate-800">{{ item.total }}</td>
-                      <td class="p-2.5 text-center text-sky-600">{{ item.occ }}</td>
-                      <td class="p-2.5 text-center text-rose-500">{{ item.repair }}</td>
-                      <td class="p-2.5 text-center text-slate-900">{{ item.rate }}</td>
+                      <td class="p-2.5 text-slate-900 font-black border-slate-200">{{ item.name }}</td>
+                      <td class="p-2.5 text-center text-slate-800 border-slate-200">{{ item.total }}</td>
+                      <td class="p-2.5 text-center text-sky-600 border-slate-200">{{ item.occ }}</td>
+                      <td class="p-2.5 text-center text-rose-500 border-slate-200">{{ item.repair }}</td>
+                      <td class="p-2.5 text-center text-slate-900 border-slate-200">{{ item.rate }}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -3100,10 +3102,10 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 <table class="w-full text-left border-collapse text-xs">
                   <thead>
                     <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
-                      <th class="p-2.5">{{ t('roomMap.roomsReportStatus') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.roomsReportQty') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.roomsReportPct') }}</th>
-                      <th class="p-2.5">{{ t('roomMap.roomsReportNotes') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.roomsReportStatus') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.roomsReportQty') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.roomsReportPct') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.roomsReportNotes') }}</th>
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
@@ -3113,11 +3115,11 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                       { key: 'roomsDirtyVacant', count: 15, pct: '14.0%' },
                       { key: 'roomsMaintenance', count: 5, pct: '4.6%' }
                     ]" :key="item.key" class="hover:bg-slate-50 h-10">
-                      <td class="p-2.5 text-slate-900 font-black">{{ t('roomMap.' + item.key) }}</td>
-                      <td class="p-2.5 text-center font-black text-slate-800">{{ item.count }} {{
+                      <td class="p-2.5 text-slate-900 font-black border-slate-200">{{ t('roomMap.' + item.key) }}</td>
+                      <td class="p-2.5 text-center font-black text-slate-800 border-slate-200">{{ item.count }} {{
                         t('roomMap.allotmentRoomsUnit') }}</td>
-                      <td class="p-2.5 text-center text-sky-600">{{ item.pct }}</td>
-                      <td class="p-2.5 text-slate-500 font-medium">{{ t('roomMap.' + item.key + 'Desc') }}</td>
+                      <td class="p-2.5 text-center text-sky-600 border-slate-200">{{ item.pct }}</td>
+                      <td class="p-2.5 text-slate-500 font-medium border-slate-200">{{ t('roomMap.' + item.key + 'Desc') }}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -3135,11 +3137,11 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 <table class="w-full text-left border-collapse text-xs">
                   <thead>
                     <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
-                      <th class="p-2.5">{{ t('roomMap.cancelIdCode') }}</th>
-                      <th class="p-2.5">{{ t('roomMap.cancelGuestName') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.cancelDate') }}</th>
-                      <th class="p-2.5 text-right">{{ t('roomMap.cancelValue') }}</th>
-                      <th class="p-2.5">{{ t('roomMap.cancelReason') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.cancelIdCode') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.cancelGuestName') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.cancelDate') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.cancelValue') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.cancelReason') }}</th>
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
@@ -3148,11 +3150,11 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                       { id: 'CN-202', guest: 'Ms. Nguyen Kim Chi', date: '10-06-2026', val: '3.600.000', reasonKey: 'cancelReason2' },
                       { id: 'CN-203', guest: 'Mr. Park Jung Woo', date: '12-06-2026', val: '1.200.000', reasonKey: 'cancelReason3' }
                     ]" :key="item.id" class="hover:bg-slate-50 h-10">
-                      <td class="p-2.5 text-rose-600 font-black text-sm">{{ item.id }}</td>
-                      <td class="p-2.5 text-slate-900">{{ item.guest }}</td>
-                      <td class="p-2.5 text-center text-slate-500">{{ item.date }}</td>
-                      <td class="p-2.5 text-right text-slate-800 font-black">{{ item.val }} đ</td>
-                      <td class="p-2.5 text-slate-500 font-medium truncate max-w-[300px]">{{ t('roomMap.' +
+                      <td class="p-2.5 text-rose-600 font-black text-sm border-slate-200">{{ item.id }}</td>
+                      <td class="p-2.5 text-slate-900 border-slate-200">{{ item.guest }}</td>
+                      <td class="p-2.5 text-center text-slate-500 border-slate-200">{{ item.date }}</td>
+                      <td class="p-2.5 text-right text-slate-800 font-black border-slate-200">{{ item.val }} đ</td>
+                      <td class="p-2.5 text-slate-500 font-medium truncate max-w-[300px] border-slate-200">{{ t('roomMap.' +
                         item.reasonKey) }}</td>
                     </tr>
                   </tbody>
@@ -3177,11 +3179,11 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 <table class="w-full text-left border-collapse text-xs">
                   <thead>
                     <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
-                      <th class="p-2.5">{{ t('roomMap.channelManagerOtaLink') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.channelManagerAvailRooms') }}</th>
-                      <th class="p-2.5 text-right">{{ t('roomMap.channelManagerSyncRates') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.channelManagerLastSync') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.channelManagerConnStatus') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.channelManagerOtaLink') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.channelManagerAvailRooms') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.channelManagerSyncRates') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.channelManagerLastSync') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.channelManagerConnStatus') }}</th>
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
@@ -3190,14 +3192,14 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                       { channel: 'Booking.com XML Sync', rooms: 12, rate: '680.000 đ', timeKey: 'channelManagerMinsAgo', timeVal: 5, status: 'active' },
                       { channel: 'Expedia.com OTA link', rooms: 8, rate: '720.000 đ', timeKey: 'channelManagerHourAgo', timeVal: 1, status: 'reconnecting' }
                     ]" :key="item.channel" class="hover:bg-slate-50 h-10">
-                      <td class="p-2.5 text-slate-900 font-black">{{ item.channel }}</td>
-                      <td class="p-2.5 text-center font-black text-slate-800">{{ item.rooms }} {{
+                      <td class="p-2.5 text-slate-900 font-black border-slate-200">{{ item.channel }}</td>
+                      <td class="p-2.5 text-center font-black text-slate-800 border-slate-200">{{ item.rooms }} {{
                         t('roomMap.allotmentRoomsUnit') }}</td>
-                      <td class="p-2.5 text-right text-emerald-600 font-black">{{ item.rate }}</td>
-                      <td class="p-2.5 text-center text-slate-400">{{ t('roomMap.' + item.timeKey, { n: item.timeVal })
+                      <td class="p-2.5 text-right text-emerald-600 font-black border-slate-200">{{ item.rate }}</td>
+                      <td class="p-2.5 text-center text-slate-400 border-slate-200">{{ t('roomMap.' + item.timeKey, { n: item.timeVal })
                         }}
                       </td>
-                      <td class="p-2.5 text-center">
+                      <td class="p-2.5 text-center border-slate-200">
                         <span class="px-2 py-0.5 rounded text-[10px] font-black border"
                           :class="item.status === 'active' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-amber-50 text-amber-600 border-amber-100'">
                           {{ item.status === 'active' ? t('roomMap.regActive') : t('roomMap.channelManagerReconnecting')
@@ -3403,14 +3405,14 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                     <thead>
                       <tr class="bg-slate-50 border-b border-slate-200 select-none whitespace-nowrap text-slate-700 font-semibold" :class="TEXT_THEME.tableHeader">
                         <!-- 1. Checkbox / STT -->
-                        <th class="p-2 border-r border-slate-200 text-center w-[55px]">
+                        <th class="p-2 border-r border-slate-200 text-center w-[55px] align-middle border">
                           <div class="flex items-center justify-center">
                             <input type="checkbox" :checked="allVisibleRoomsSelected" @change="toggleSelectVisibleRooms" class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
                           </div>
                         </th>
 
                         <!-- 2. TTĐK [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[90px]" title="Tình trạng đăng ký (TTĐK)">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[90px] text-center align-middle border" title="Tình trạng đăng ký (TTĐK)">
                           <div class="flex items-center justify-between gap-1 w-full">
                             <span class="truncate" title="Tình trạng đăng ký (TTĐK)">TTĐK</span>
                             <button type="button" @click.stop="toggleColFilter('ttdk')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('ttdk') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc TTĐK">
@@ -3433,7 +3435,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 3. TT Phòng [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[90px]" title="Tình trạng phòng">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[90px] text-center align-middle border" title="Tình trạng phòng">
                           <div class="flex items-center justify-between gap-1 w-full">
                             <span class="truncate" title="Tình trạng phòng">TT Phòng</span>
                             <button type="button" @click.stop="toggleColFilter('roomStatus')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('roomStatus') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc TT Phòng">
@@ -3456,7 +3458,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 4. Tầng [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[70px]" title="Tầng">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[70px] text-center align-middle border" title="Tầng">
                           <div class="flex items-center justify-between gap-1 w-full">
                             <span class="truncate" title="Tầng">Tầng</span>
                             <button type="button" @click.stop="toggleColFilter('floor')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('floor') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc tầng">
@@ -3479,7 +3481,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 5. Phòng [🔍] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[80px]" title="Số phòng">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[80px] text-center align-middle border" title="Số phòng">
                           <div class="flex items-center justify-between gap-1 w-full">
                             <span class="truncate" title="Số phòng">Phòng</span>
                             <button type="button" @click.stop="toggleColFilter('roomNumber')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('roomNumber') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Tìm số phòng">
@@ -3499,9 +3501,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 6. Loại phòng [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[100px]" title="Loại phòng">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[100px] text-center align-middle border" title="Loại phòng">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate" title="Loại phòng">Loại phòng</span>
+                            <span class="truncate" title="Loại phòng">Loại Phòng</span>
                             <button type="button" @click.stop="toggleColFilter('roomType')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('roomType') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc loại phòng">
                               <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 10 10"><path d="M0 1h10L6 5.5v3.5l-2-1V5.5L0 1z"/></svg>
                             </button>
@@ -3509,7 +3511,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                           <!-- Popover -->
                           <div v-if="activeColFilter === 'roomType'" class="col-filter-popover absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200 rounded shadow-xl p-2.5 min-w-[160px] text-xs font-normal normal-case text-slate-800 text-left" @click.stop>
                             <div class="space-y-1 mb-2 max-h-48 overflow-y-auto pr-1">
-                              <div v-if="dynamicRoomTypeOptions.length === 0" class="text-slate-400 text-[11px] py-1">Không có loại phòng</div>
+                              <div v-if="dynamicRoomTypeOptions.length === 0" class="text-slate-400 text-[11px] py-1">Không Có Loại Phòng</div>
                               <label v-for="opt in dynamicRoomTypeOptions" :key="opt.value" class="flex items-center gap-2 py-1 px-1.5 hover:bg-slate-50 rounded cursor-pointer select-none text-slate-700">
                                 <input type="checkbox" :value="opt.value" v-model="tempCheckboxFilters.roomType" class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
                                 <span class="truncate">{{ opt.label }}</span>
@@ -3523,9 +3525,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 7. Dạng phòng [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[100px]" title="Dạng phòng">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[100px] text-center align-middle border" title="Dạng phòng">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate" title="Dạng phòng">Dạng phòng</span>
+                            <span class="truncate" title="Dạng phòng">Dạng Phòng</span>
                             <button type="button" @click.stop="toggleColFilter('roomShape')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('roomShape') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc dạng phòng">
                               <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 10 10"><path d="M0 1h10L6 5.5v3.5l-2-1V5.5L0 1z"/></svg>
                             </button>
@@ -3533,7 +3535,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                           <!-- Popover -->
                           <div v-if="activeColFilter === 'roomShape'" class="col-filter-popover absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200 rounded shadow-xl p-2.5 min-w-[150px] text-xs font-normal normal-case text-slate-800 text-left" @click.stop>
                             <div class="space-y-1 mb-2 max-h-48 overflow-y-auto pr-1">
-                              <div v-if="dynamicRoomShapeOptions.length === 0" class="text-slate-400 text-[11px] py-1">Không có dạng phòng</div>
+                              <div v-if="dynamicRoomShapeOptions.length === 0" class="text-slate-400 text-[11px] py-1">Không Có Dạng Phòng</div>
                               <label v-for="opt in dynamicRoomShapeOptions" :key="opt.value" class="flex items-center gap-2 py-1 px-1.5 hover:bg-slate-50 rounded cursor-pointer select-none text-slate-700">
                                 <input type="checkbox" :value="opt.value" v-model="tempCheckboxFilters.roomShape" class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
                                 <span class="truncate">{{ opt.label }}</span>
@@ -3547,9 +3549,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 8. Tên khách [🔍] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[180px]" title="Tên khách">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[180px] text-center align-middle border" title="Tên khách">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate" title="Tên khách">Tên khách</span>
+                            <span class="truncate" title="Tên khách">Tên Khách</span>
                             <button type="button" @click.stop="toggleColFilter('guestName')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('guestName') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Tìm tên khách">
                               <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                             </button>
@@ -3567,7 +3569,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 9. Mã ĐK [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[90px]" title="Mã đăng ký (Mã ĐK)">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[90px] text-center align-middle border" title="Mã đăng ký (Mã ĐK)">
                           <div class="flex items-center justify-between gap-1 w-full">
                             <span class="truncate" title="Mã đăng ký (Mã ĐK)">Mã ĐK</span>
                             <button type="button" @click.stop="toggleColFilter('regId')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('regId') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc mã đăng ký">
@@ -3587,9 +3589,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 10. Tên đăng ký [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[220px]" title="Tên đăng ký">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[220px] text-center align-middle border" title="Tên đăng ký">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate" title="Tên đăng ký">Tên đăng ký</span>
+                            <span class="truncate" title="Tên đăng ký">Tên Đăng Ký</span>
                             <button type="button" @click.stop="toggleColFilter('regName')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('regName') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc tên đăng ký">
                               <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 10 10"><path d="M0 1h10L6 5.5v3.5l-2-1V5.5L0 1z"/></svg>
                             </button>
@@ -3607,9 +3609,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 11. Ngày đến -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[100px]" title="Ngày đến">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[100px] text-center align-middle border" title="Ngày đến">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate" title="Ngày đến">Ngày đến</span>
+                            <span class="truncate" title="Ngày đến">Ngày Đến</span>
                             <button type="button" @click.stop="toggleColFilter('arrivalDate')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('arrivalDate') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc ngày đến">
                               <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                             </button>
@@ -3627,9 +3629,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 12. Ngày đi -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[100px]" title="Ngày đi">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[100px] text-center align-middle border" title="Ngày đi">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate" title="Ngày đi">Ngày đi</span>
+                            <span class="truncate" title="Ngày đi">Ngày Đi</span>
                             <button type="button" @click.stop="toggleColFilter('departureDate')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('departureDate') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc ngày đi">
                               <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                             </button>
@@ -3647,9 +3649,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 13. Công ty [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[200px]" title="Công ty / Đại lý">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[200px] text-center align-middle border" title="Công ty / Đại lý">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate" title="Công ty / Đại lý">Công ty</span>
+                            <span class="truncate" title="Công ty / Đại lý">Công Ty</span>
                             <button type="button" @click.stop="toggleColFilter('company')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('company') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc công ty">
                               <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 10 10"><path d="M0 1h10L6 5.5v3.5l-2-1V5.5L0 1z"/></svg>
                             </button>
@@ -3657,7 +3659,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                           <!-- Popover (aligned right) -->
                           <div v-if="activeColFilter === 'company'" class="col-filter-popover absolute top-full mt-1 right-0 z-50 bg-white border border-slate-200 rounded shadow-xl p-2.5 min-w-[220px] max-w-[300px] text-xs font-normal normal-case text-slate-800 text-left" @click.stop>
                             <div class="space-y-1 mb-2 max-h-48 overflow-y-auto pr-1">
-                              <div v-if="dynamicCompanyOptions.length === 0" class="text-slate-400 text-[11px] py-1">Không có dữ liệu công ty</div>
+                              <div v-if="dynamicCompanyOptions.length === 0" class="text-slate-400 text-[11px] py-1">Không Có Dữ Liệu Công Ty</div>
                               <label v-for="opt in dynamicCompanyOptions" :key="opt.value" class="flex items-center gap-2 py-1 px-1.5 hover:bg-slate-50 rounded cursor-pointer select-none text-slate-700">
                                 <input type="checkbox" :value="opt.value" v-model="tempCheckboxFilters.company" class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
                                 <span class="truncate" :title="opt.label">{{ opt.label }}</span>
@@ -3671,9 +3673,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 14. Thêm giường [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[90px]" title="Thêm giường (Extra bed)">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[90px] text-center align-middle border" title="Thêm giường (Extra bed)">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate" title="Thêm giường (Extra bed)">Thêm giường</span>
+                            <span class="truncate" title="Thêm giường (Extra bed)">Thêm Giường</span>
                             <button type="button" @click.stop="toggleColFilter('extraBed')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('extraBed') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc thêm giường">
                               <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 10 10"><path d="M0 1h10L6 5.5v3.5l-2-1V5.5L0 1z"/></svg>
                             </button>
@@ -3694,9 +3696,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 15. Yêu cầu ĐB [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[95px]" title="Yêu cầu đặc biệt (YCĐB)">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[95px] text-center align-middle border" title="Yêu cầu đặc biệt (YCĐB)">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate" title="Yêu cầu đặc biệt (YCĐB)">Yêu cầu ĐB</span>
+                            <span class="truncate" title="Yêu cầu đặc biệt (YCĐB)">Yêu Cầu ĐB</span>
                             <button type="button" @click.stop="toggleColFilter('specialRequests')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('specialRequests') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc yêu cầu đặc biệt">
                               <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 10 10"><path d="M0 1h10L6 5.5v3.5l-2-1V5.5L0 1z"/></svg>
                             </button>
@@ -3717,9 +3719,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 16. Nhận phòng trễ [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[110px]" title="Nhận phòng trễ (Late check-in)">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[110px] text-center align-middle border" title="Nhận phòng trễ (Late check-in)">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate" title="Nhận phòng trễ (Late check-in)">Nhận phòng trễ</span>
+                            <span class="truncate" title="Nhận phòng trễ (Late check-in)">Nhận Phòng Trễ</span>
                             <button type="button" @click.stop="toggleColFilter('lateCheckin')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('lateCheckin') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc nhận phòng trễ">
                               <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 10 10"><path d="M0 1h10L6 5.5v3.5l-2-1V5.5L0 1z"/></svg>
                             </button>
@@ -3740,9 +3742,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 17. Chuyển phòng kế hoạch [▾] -->
-                        <th class="p-2 relative col-filter-container w-[130px]" title="Chuyển phòng kế hoạch">
+                        <th class="p-2 relative col-filter-container w-[130px] text-center align-middle border-r border-slate-200 border" title="Chuyển phòng kế hoạch">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate" title="Chuyển phòng kế hoạch">Chuyển phòng kế hoạch</span>
+                            <span class="truncate" title="Chuyển phòng kế hoạch">Chuyển Phòng Kế Hoạch</span>
                             <button type="button" @click.stop="toggleColFilter('planMove')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('planMove') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc chuyển phòng">
                               <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 10 10"><path d="M0 1h10L6 5.5v3.5l-2-1V5.5L0 1z"/></svg>
                             </button>
@@ -3766,7 +3768,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
                     <tbody>
                       <tr v-if="displayedTableRooms.length === 0">
-                        <td colspan="17" class="text-center py-10 text-slate-400 text-xs">
+                        <td colspan="17" class="text-center py-10 text-slate-400 text-xs border-slate-200">
                           Không có phòng nào khớp với điều kiện lọc
                         </td>
                       </tr>
@@ -3781,7 +3783,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         @contextmenu.prevent="handleContextMenu($event, room)"
                       >
                         <!-- 1. STT + Checkbox -->
-                        <td class="p-2 border-r border-slate-200 text-center select-none" @click.stop>
+                        <td class="p-2 border-slate-200 text-center select-none" @click.stop>
                           <div class="flex items-center justify-center gap-1.5">
                             <input type="checkbox" :checked="selectedRoomIds.includes(room.id)" @change="toggleRoomSelection(room)" class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" aria-label="Chọn phòng" />
                             <span class="text-[11px] text-slate-600 font-medium">{{ idx + 1 }}</span>
@@ -3789,7 +3791,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </td>
 
                         <!-- 2. TTĐK (Arrival / Departure dots) -->
-                        <td class="p-2 border-r border-slate-200 text-center">
+                        <td class="p-2 border-slate-200 text-center">
                           <div class="flex items-center justify-center gap-1">
                             <span v-if="hasArrivalToday(room)" class="w-2.5 h-2.5 rounded-full block bg-emerald-500 shadow-xs" title="Phòng đến (Xanh lá)"></span>
                             <span v-if="hasDepartureToday(room)" class="w-2.5 h-2.5 rounded-full block bg-red-500 shadow-xs" title="Phòng đi (Đỏ)"></span>
@@ -3798,7 +3800,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </td>
 
                         <!-- 3. TT Phòng -->
-                        <td class="p-2 border-r border-slate-200 text-center">
+                        <td class="p-2 border-slate-200 text-center">
                           <div class="flex items-center justify-center">
                             <RoomIcon v-if="getRoomStatusIconName(room)" :name="getRoomStatusIconName(room)" :monochrome="false" :class="getRoomStatusIconClass(room)" class="w-5 h-5 mx-auto" />
                             <span v-else class="text-slate-400">-</span>
@@ -3806,12 +3808,12 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </td>
 
                         <!-- 4. Tầng -->
-                        <td class="p-2 border-r border-slate-200 text-center text-[11px] font-medium">
+                        <td class="p-2 border-slate-200 text-center text-[11px] font-medium">
                           {{ room.floor }}
                         </td>
 
                         <!-- 5. Phòng -->
-                        <td class="p-2 border-r border-slate-200 text-center font-bold text-[13px]">
+                        <td class="p-2 border-slate-200 text-center font-bold text-[13px]">
                           <span
                             :class="[
                               isRoomNumberRed(room) ? 'text-red-600 font-black' : '',
@@ -3833,62 +3835,62 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </td>
 
                         <!-- 6. Loại phòng -->
-                        <td class="p-2 border-r border-slate-200 text-center font-medium">
+                        <td class="p-2 border-slate-200 text-center font-medium">
                           {{ room.room_type || room.room_class?.code || '-' }}
                         </td>
 
                         <!-- 7. Dạng phòng -->
-                        <td class="p-2 border-r border-slate-200 text-center text-[11px]">
+                        <td class="p-2 border-slate-200 text-center text-[11px]">
                           {{ getRoomTypeShape(room) || '-' }}
                         </td>
 
                         <!-- 8. Tên khách -->
-                        <td class="p-2 border-r border-slate-200 truncate font-medium" :title="getMockGuestName(room)">
+                        <td class="p-2 border-slate-200 truncate font-medium" :title="getMockGuestName(room)">
                           {{ getMockGuestName(room) || '-' }}
                         </td>
 
                         <!-- 9. Mã ĐK -->
-                        <td class="p-2 border-r border-slate-200 text-center text-[11px]">
+                        <td class="p-2 border-slate-200 text-center text-[11px]">
                           {{ getMockRegId(room) || '-' }}
                         </td>
 
                         <!-- 10. Tên đăng ký -->
-                        <td class="p-2 border-r border-slate-200 truncate text-[11px]" :title="getMockRegName(room)">
+                        <td class="p-2 border-slate-200 truncate text-[11px]" :title="getMockRegName(room)">
                           {{ getMockRegName(room) || '-' }}
                         </td>
 
                         <!-- 11. Ngày đến -->
-                        <td class="p-2 border-r border-slate-200 text-center text-[11px]">
+                        <td class="p-2 border-slate-200 text-center text-[11px]">
                           {{ formatDateShort(room.arrival_date || room.actual_arrival_date || room.check_in) || '-' }}
                         </td>
 
                         <!-- 12. Ngày đi -->
-                        <td class="p-2 border-r border-slate-200 text-center text-[11px]">
+                        <td class="p-2 border-slate-200 text-center text-[11px]">
                           {{ formatDateShort(room.departure_date || room.actual_departure_date || room.check_out) || '-' }}
                         </td>
 
                         <!-- 13. Công ty -->
-                        <td class="p-2 border-r border-slate-200 truncate text-[11px]" :title="getMockCompany(room)">
+                        <td class="p-2 border-slate-200 truncate text-[11px]" :title="getMockCompany(room)">
                           {{ getMockCompany(room) || '-' }}
                         </td>
 
                         <!-- 14. Thêm giường -->
-                        <td class="p-2 border-r border-slate-200 text-center">
+                        <td class="p-2 border-slate-200 text-center">
                           {{ room.extra_bed_qty || '-' }}
                         </td>
 
                         <!-- 15. Yêu cầu ĐB -->
-                        <td class="p-2 border-r border-slate-200 text-center truncate" :title="getListSpecialRequests(room)">
+                        <td class="p-2 border-slate-200 text-center truncate" :title="getListSpecialRequests(room)">
                           {{ getListSpecialRequests(room) || '-' }}
                         </td>
 
                         <!-- 16. Nhận phòng trễ -->
-                        <td class="p-2 border-r border-slate-200 text-center">
+                        <td class="p-2 border-slate-200 text-center">
                           {{ getListLateCheckin(room) }}
                         </td>
 
                         <!-- 17. Chuyển phòng kế hoạch -->
-                        <td class="p-2 text-center">
+                        <td class="p-2 text-center border-slate-200">
                           <span v-if="room.plan_move || room.is_plan_move" class="text-amber-600 font-medium">Có</span>
                           <span v-else class="text-slate-400">-</span>
                         </td>
@@ -3928,9 +3930,13 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                   <!-- Ngày filter -->
                   <div class="flex flex-col gap-1.5">
                     <span :class="TEXT_THEME.sidebarLabel">{{ t('roomMap.date') }}</span>
-                    <input type="date" v-model="rawDate"
-                      class="border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-[#97d5ff] bg-white"
-                      :class="TEXT_THEME.sidebarLabel" />
+                    <SingleDatePicker
+                      v-model="rawDate"
+                      :start-date="systemDate || rawDate"
+                      placeholder="dd/mm/yyyy"
+                      four-digit-year
+                      input-class="h-9 bg-white border-slate-200"
+                    />
                   </div>
 
                   <!-- Tầng filter -->
@@ -4585,20 +4591,20 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 <div class="flex items-center justify-between">
                   <span class="font-semibold">Tổng phòng</span>
                   <span
-                    class="px-2 py-0.5 bg-slate-100 border border-slate-200 rounded font-bold text-slate-800 text-right min-w-[50px] inline-block tabular-nums">{{
+                    class="px-2 py-0.5 bg-slate-100 border border-slate-200 rounded font-bold text-slate-800 text-center min-w-[50px] inline-block tabular-nums">{{
                       roomMapStatistics.totalRooms }}</span>
                 </div>
                 <div class="flex items-center justify-between">
                   <span class="font-semibold text-amber-700">OOO</span>
                   <span
-                    class="px-2 py-0.5 bg-amber-50 border border-amber-200 rounded font-bold text-amber-800 text-right min-w-[50px] inline-block tabular-nums">{{
+                    class="px-2 py-0.5 bg-amber-50 border border-amber-200 rounded font-bold text-amber-800 text-center min-w-[50px] inline-block tabular-nums">{{
                       roomMapStatistics.ooo
                     }}</span>
                 </div>
                 <div class="flex items-center justify-between">
                   <span class="font-semibold text-emerald-700">OOS</span>
                   <span
-                    class="px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded font-bold text-emerald-800 text-right min-w-[50px] inline-block tabular-nums">{{
+                    class="px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded font-bold text-emerald-800 text-center min-w-[50px] inline-block tabular-nums">{{
                       roomMapStatistics.oos
                     }}</span>
                 </div>
@@ -4606,7 +4612,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                   class="flex items-center justify-between pt-1 border-t border-dashed border-slate-200 font-bold text-slate-900">
                   <span>Tổng phòng có thể bán</span>
                   <span
-                    class="px-2 py-0.5 bg-blue-50 border border-blue-200 rounded text-blue-700 text-right min-w-[50px] inline-block tabular-nums">{{
+                    class="px-2 py-0.5 bg-blue-50 border border-blue-200 rounded text-blue-700 text-center min-w-[50px] inline-block tabular-nums">{{
                       roomMapStatistics.saleableRooms
                     }}</span>
                 </div>
@@ -4619,26 +4625,26 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
               <table class="w-full text-xs border-collapse">
                 <thead>
                   <tr class="text-slate-500 font-bold border-b border-slate-100">
-                    <th class="pb-1.5 text-left font-semibold">Trạng thái</th>
-                    <th class="pb-1.5 text-right w-16 font-semibold text-xs text-red-500">Occ</th>
-                    <th class="pb-1.5 text-right w-16 font-semibold text-xs text-emerald-500">Vac</th>
+                    <th class="pb-1.5 text-center font-semibold align-middle border-r border-slate-200 border">Trạng Thái</th>
+                    <th class="pb-1.5 text-center w-16 font-semibold text-xs text-red-500 align-middle border-r border-slate-200 border">Occ</th>
+                    <th class="pb-1.5 text-center w-16 font-semibold text-xs text-emerald-500 align-middle border-r border-slate-200 border">Vac</th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100 text-slate-700">
                   <tr class="h-8">
-                    <td class="font-semibold">Phòng sẵn sàng</td>
-                    <td class="text-right font-bold tabular-nums">{{ roomMapStatistics.occupiedReady }}</td>
-                    <td class="text-right font-bold tabular-nums">{{ roomMapStatistics.vacantReady }}</td>
+                    <td class="font-semibold border-slate-200">Phòng sẵn sàng</td>
+                    <td class="text-center font-bold tabular-nums border-slate-200">{{ roomMapStatistics.occupiedReady }}</td>
+                    <td class="text-center font-bold tabular-nums border-slate-200">{{ roomMapStatistics.vacantReady }}</td>
                   </tr>
                   <tr class="h-8">
-                    <td class="font-semibold">Phòng sạch</td>
-                    <td class="text-right font-bold tabular-nums">{{ roomMapStatistics.occupiedClean }}</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.vacantClean }}</td>
+                    <td class="font-semibold border-slate-200">Phòng sạch</td>
+                    <td class="text-center font-bold tabular-nums border-slate-200">{{ roomMapStatistics.occupiedClean }}</td>
+                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.vacantClean }}</td>
                   </tr>
                   <tr class="h-8">
-                    <td class="font-semibold">Phòng dơ</td>
-                    <td class="text-right font-bold text-red-600 tabular-nums">{{ roomMapStatistics.occupiedDirty }}</td>
-                    <td class="text-right font-bold text-red-600 tabular-nums">{{ roomMapStatistics.vacantDirty }}</td>
+                    <td class="font-semibold border-slate-200">Phòng dơ</td>
+                    <td class="text-center font-bold text-red-600 tabular-nums border-slate-200">{{ roomMapStatistics.occupiedDirty }}</td>
+                    <td class="text-center font-bold text-red-600 tabular-nums border-slate-200">{{ roomMapStatistics.vacantDirty }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -4651,61 +4657,61 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
               <table class="w-full text-xs border-collapse">
                 <thead>
                   <tr class="text-slate-500 font-bold border-b border-slate-100">
-                    <th class="pb-1.5 text-left font-semibold">Trạng thái</th>
-                    <th class="pb-1.5 text-right w-16 font-semibold text-xs">Room</th>
-                    <th class="pb-1.5 text-right w-16 font-semibold text-xs">Pax</th>
+                    <th class="pb-1.5 text-center font-semibold align-middle border-r border-slate-200 border">Trạng Thái</th>
+                    <th class="pb-1.5 text-center w-16 font-semibold text-xs align-middle border-r border-slate-200 border">Room</th>
+                    <th class="pb-1.5 text-center w-16 font-semibold text-xs align-middle border-r border-slate-200 border">Pax</th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100 text-slate-700">
                   <tr class="h-7.5">
-                    <td class="font-semibold">Phòng chưa trả</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.pendingCheckoutRooms }}</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.pendingCheckoutPax }}</td>
+                    <td class="font-semibold border-slate-200">Phòng chưa trả</td>
+                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.pendingCheckoutRooms }}</td>
+                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.pendingCheckoutPax }}</td>
                   </tr>
                   <tr class="h-7.5">
-                    <td class="font-semibold">Phòng đã trả</td>
-                    <td class="text-right font-bold text-red-500 tabular-nums">{{ roomMapStatistics.checkedOutRooms }}</td>
-                    <td class="text-right font-bold text-red-500 tabular-nums">-</td>
+                    <td class="font-semibold border-slate-200">Phòng đã trả</td>
+                    <td class="text-center font-bold text-red-500 tabular-nums border-slate-200">{{ roomMapStatistics.checkedOutRooms }}</td>
+                    <td class="text-center font-bold text-red-500 tabular-nums border-slate-200">-</td>
                   </tr>
                   <tr class="h-7.5">
-                    <td class="font-semibold">Phòng đến</td>
-                    <td class="text-right font-bold text-emerald-600 tabular-nums">{{ roomMapStatistics.arrivalsRooms }}</td>
-                    <td class="text-right font-bold text-emerald-600 tabular-nums">{{ roomMapStatistics.arrivalsPax }}</td>
+                    <td class="font-semibold border-slate-200">Phòng đến</td>
+                    <td class="text-center font-bold text-emerald-600 tabular-nums border-slate-200">{{ roomMapStatistics.arrivalsRooms }}</td>
+                    <td class="text-center font-bold text-emerald-600 tabular-nums border-slate-200">{{ roomMapStatistics.arrivalsPax }}</td>
                   </tr>
                   <tr class="h-7.5">
-                    <td class="font-semibold">Phòng đến đã gán phòng</td>
-                    <td class="text-right font-bold text-emerald-600 tabular-nums">{{ roomMapStatistics.assignedArrivalRooms }}</td>
-                    <td class="text-right font-bold text-emerald-600 tabular-nums">{{ roomMapStatistics.assignedArrivalPax }}</td>
+                    <td class="font-semibold border-slate-200">Phòng đến đã gán phòng</td>
+                    <td class="text-center font-bold text-emerald-600 tabular-nums border-slate-200">{{ roomMapStatistics.assignedArrivalRooms }}</td>
+                    <td class="text-center font-bold text-emerald-600 tabular-nums border-slate-200">{{ roomMapStatistics.assignedArrivalPax }}</td>
                   </tr>
                   <tr class="h-7.5">
-                    <td class="font-semibold">Phòng đã đến</td>
-                    <td class="text-right font-bold text-slate-800 tabular-nums">{{ roomMapStatistics.checkedInRooms }}</td>
-                    <td class="text-right font-bold text-slate-800 tabular-nums">{{ roomMapStatistics.checkedInPax }}</td>
+                    <td class="font-semibold border-slate-200">Phòng đã đến</td>
+                    <td class="text-center font-bold text-slate-800 tabular-nums border-slate-200">{{ roomMapStatistics.checkedInRooms }}</td>
+                    <td class="text-center font-bold text-slate-800 tabular-nums border-slate-200">{{ roomMapStatistics.checkedInPax }}</td>
                   </tr>
                   <tr class="h-7.5">
-                    <td class="font-semibold text-sky-700">Phòng đang ở</td>
-                    <td class="text-right font-bold text-sky-700 tabular-nums">{{ roomMapStatistics.occupiedRooms }}</td>
-                    <td class="text-right font-bold text-sky-700 tabular-nums">{{ roomMapStatistics.occupiedPax }}</td>
+                    <td class="font-semibold text-sky-700 border-slate-200">Phòng đang ở</td>
+                    <td class="text-center font-bold text-sky-700 tabular-nums border-slate-200">{{ roomMapStatistics.occupiedRooms }}</td>
+                    <td class="text-center font-bold text-sky-700 tabular-nums border-slate-200">{{ roomMapStatistics.occupiedPax }}</td>
                   </tr>
                   <tr class="h-7.5">
-                    <td class="font-semibold">Trả phòng sớm</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.earlyCheckoutRooms }}</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">-</td>
+                    <td class="font-semibold border-slate-200">Trả phòng sớm</td>
+                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.earlyCheckoutRooms }}</td>
+                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">-</td>
                   </tr>
                   <tr class="h-7.5">
-                    <td class="font-semibold">Phòng ở theo giờ</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.hourlyRooms }}</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">-</td>
+                    <td class="font-semibold border-slate-200">Phòng ở theo giờ</td>
+                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.hourlyRooms }}</td>
+                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">-</td>
                   </tr>
                   <tr class="h-7.5">
-                    <td class="font-semibold">Đặt phòng trong ngày</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.sameDayBookings }}</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.arrivalsPax }}</td>
+                    <td class="font-semibold border-slate-200">Đặt phòng trong ngày</td>
+                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.sameDayBookings }}</td>
+                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.arrivalsPax }}</td>
                   </tr>
                   <tr class="h-7.5">
-                    <td class="font-semibold">Khách vãng lai</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.walkInRooms }}</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">-</td>
+                    <td class="font-semibold border-slate-200">Khách vãng lai</td>
+                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.walkInRooms }}</td>
+                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">-</td>
                   </tr>
                 </tbody>
               </table>
@@ -4720,60 +4726,60 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 <table class="w-full text-xs border-collapse">
                   <thead>
                     <tr class="text-slate-500 font-bold border-b border-slate-100">
-                      <th class="pb-1.5 text-left font-semibold">Dự báo</th>
-                      <th class="pb-1.5 text-right w-14 font-semibold text-xs">Room</th>
-                      <th class="pb-1.5 text-right w-14 font-semibold text-xs">Pax</th>
-                      <th class="pb-1.5 text-right w-16 font-semibold text-xs">%</th>
+                      <th class="pb-1.5 text-center font-semibold align-middle border-r border-slate-200 border">Dự Báo</th>
+                      <th class="pb-1.5 text-center w-14 font-semibold text-xs align-middle border-r border-slate-200 border">Room</th>
+                      <th class="pb-1.5 text-center w-14 font-semibold text-xs align-middle border-r border-slate-200 border">Pax</th>
+                      <th class="pb-1.5 text-center w-16 font-semibold text-xs align-middle border-r border-slate-200 border">%</th>
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-slate-100 text-slate-700">
                     <tr class="h-7">
-                      <td class="font-semibold">Khách lẻ</td>
-                      <td class="text-right font-bold tabular-nums">{{ roomMapStatistics.retailRooms }}</td>
-                      <td class="text-right font-bold tabular-nums">{{ roomMapStatistics.retailPax }}</td>
-                      <td class="text-right font-bold text-slate-400">-</td>
+                      <td class="font-semibold border-slate-200">Khách lẻ</td>
+                      <td class="text-center font-bold tabular-nums border-slate-200">{{ roomMapStatistics.retailRooms }}</td>
+                      <td class="text-center font-bold tabular-nums border-slate-200">{{ roomMapStatistics.retailPax }}</td>
+                      <td class="text-center font-bold text-slate-400 border-slate-200">-</td>
                     </tr>
                     <tr class="h-7">
-                      <td class="font-semibold">Khách đoàn</td>
-                      <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.groupRooms }}</td>
-                      <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.groupPax }}</td>
-                      <td class="text-right font-bold text-slate-400">-</td>
+                      <td class="font-semibold border-slate-200">Khách đoàn</td>
+                      <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.groupRooms }}</td>
+                      <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.groupPax }}</td>
+                      <td class="text-center font-bold text-slate-400 border-slate-200">-</td>
                     </tr>
                     <tr class="h-7">
-                      <td class="font-semibold">Phòng ở (ko b/g COMP.HU)</td>
-                      <td class="text-right font-bold tabular-nums">{{ roomMapStatistics.chargeableRooms }}</td>
-                      <td class="text-right font-bold tabular-nums">{{ roomMapStatistics.chargeablePax }}</td>
-                      <td class="text-right font-bold text-sky-600 tabular-nums">{{ roomMapStatistics.occupancyRate }}%</td>
+                      <td class="font-semibold border-slate-200">Phòng ở (ko b/g COMP.HU)</td>
+                      <td class="text-center font-bold tabular-nums border-slate-200">{{ roomMapStatistics.chargeableRooms }}</td>
+                      <td class="text-center font-bold tabular-nums border-slate-200">{{ roomMapStatistics.chargeablePax }}</td>
+                      <td class="text-center font-bold text-sky-600 tabular-nums border-slate-200">{{ roomMapStatistics.occupancyRate }}%</td>
                     </tr>
                     <tr class="h-7">
-                      <td class="font-semibold">Phòng COMP</td>
-                      <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.compRooms }}</td>
-                      <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.compPax }}</td>
-                      <td class="text-right font-bold text-slate-400">-</td>
+                      <td class="font-semibold border-slate-200">Phòng COMP</td>
+                      <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.compRooms }}</td>
+                      <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.compPax }}</td>
+                      <td class="text-center font-bold text-slate-400 border-slate-200">-</td>
                     </tr>
                     <tr class="h-7">
-                      <td class="font-semibold">Phòng ở (ko b/g HU)</td>
-                      <td class="text-right font-bold tabular-nums">{{ roomMapStatistics.chargeableRooms + roomMapStatistics.compRooms }}</td>
-                      <td class="text-right font-bold tabular-nums">{{ roomMapStatistics.chargeablePax + roomMapStatistics.compPax }}</td>
-                      <td class="text-right font-bold text-sky-600 tabular-nums">{{ roomMapStatistics.occupancyRate }}%</td>
+                      <td class="font-semibold border-slate-200">Phòng ở (ko b/g HU)</td>
+                      <td class="text-center font-bold tabular-nums border-slate-200">{{ roomMapStatistics.chargeableRooms + roomMapStatistics.compRooms }}</td>
+                      <td class="text-center font-bold tabular-nums border-slate-200">{{ roomMapStatistics.chargeablePax + roomMapStatistics.compPax }}</td>
+                      <td class="text-center font-bold text-sky-600 tabular-nums border-slate-200">{{ roomMapStatistics.occupancyRate }}%</td>
                     </tr>
                     <tr class="h-7">
-                      <td class="font-semibold">Phòng nội bộ</td>
-                      <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.internalRooms }}</td>
-                      <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.internalPax }}</td>
-                      <td class="text-right font-bold text-slate-400">-</td>
+                      <td class="font-semibold border-slate-200">Phòng nội bộ</td>
+                      <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.internalRooms }}</td>
+                      <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.internalPax }}</td>
+                      <td class="text-center font-bold text-slate-400 border-slate-200">-</td>
                     </tr>
                     <tr class="h-7">
-                      <td class="font-semibold text-blue-700">Phòng ở</td>
-                      <td class="text-right font-bold text-blue-700 tabular-nums">{{ roomMapStatistics.endOfDayRooms }}</td>
-                      <td class="text-right font-bold text-blue-700 tabular-nums">{{ roomMapStatistics.endOfDayPax }}</td>
-                      <td class="text-right font-bold text-blue-700 tabular-nums">{{ roomMapStatistics.occupancyRate }}%</td>
+                      <td class="font-semibold text-blue-700 border-slate-200">Phòng ở</td>
+                      <td class="text-center font-bold text-blue-700 tabular-nums border-slate-200">{{ roomMapStatistics.endOfDayRooms }}</td>
+                      <td class="text-center font-bold text-blue-700 tabular-nums border-slate-200">{{ roomMapStatistics.endOfDayPax }}</td>
+                      <td class="text-center font-bold text-blue-700 tabular-nums border-slate-200">{{ roomMapStatistics.occupancyRate }}%</td>
                     </tr>
                     <tr class="h-7">
-                      <td class="font-semibold text-red-500">Phòng trống</td>
-                      <td class="text-right font-bold text-red-500 tabular-nums">{{ roomMapStatistics.vacantRooms }}</td>
-                      <td class="text-right font-bold text-slate-400 tabular-nums">-</td>
-                      <td class="text-right font-bold text-slate-400">-</td>
+                      <td class="font-semibold text-red-500 border-slate-200">Phòng trống</td>
+                      <td class="text-center font-bold text-red-500 tabular-nums border-slate-200">{{ roomMapStatistics.vacantRooms }}</td>
+                      <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">-</td>
+                      <td class="text-center font-bold text-slate-400 border-slate-200">-</td>
                     </tr>
                   </tbody>
                 </table>
@@ -4785,15 +4791,15 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 <h5 class="font-bold text-slate-900 mb-1 select-none">Dự báo</h5>
                 <div class="flex items-center justify-between">
                   <span class="font-semibold">Doanh thu</span>
-                  <span class="font-bold text-emerald-600">{{ formatVnd(roomMapStatistics.projectedRevenue) }}</span>
+                  <span class="w-[120px] text-center font-bold text-emerald-600">{{ formatVnd(roomMapStatistics.projectedRevenue) }}</span>
                 </div>
                 <div class="flex items-center justify-between">
                   <span class="font-semibold">Giá phòng trung bình (ko b/g HU)</span>
-                  <span class="font-bold text-slate-800">{{ formatVnd(roomMapStatistics.averageRate) }}</span>
+                  <span class="w-[120px] text-center font-bold text-slate-800">{{ formatVnd(roomMapStatistics.averageRate) }}</span>
                 </div>
                 <div class="flex items-center justify-between">
                   <span class="font-semibold">DT bình quân/ Tổng phòng có thể bán</span>
-                  <span class="font-bold text-slate-800">{{ formatVnd(roomMapStatistics.revenuePerSaleableRoom) }}</span>
+                  <span class="w-[120px] text-center font-bold text-slate-800">{{ formatVnd(roomMapStatistics.revenuePerSaleableRoom) }}</span>
                 </div>
               </div>
             </div>
@@ -4978,15 +4984,29 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
           </div>
           <div class="grid grid-cols-1 gap-5 p-5 md:grid-cols-2">
             <div class="space-y-4">
-              <label class="block text-xs font-semibold text-[#000000D9]">Bắt đầu
-                <input v-model="roomLockForm.startDate" type="date" disabled class="mt-1 w-full h-8 cursor-not-allowed rounded-lg border border-slate-200 bg-slate-100 px-3 text-xs font-normal text-slate-500" />
-              </label>
-              <label class="block text-xs font-semibold text-[#000000D9]">Kết thúc <span class="text-rose-500">*</span>
-                <div class="relative mt-1">
-                  <input ref="lockEndDateInput" v-model="roomLockForm.endDate" type="date" :min="roomLockForm.startDate" @click="openLockEndDatePicker" class="w-full h-8 cursor-pointer rounded-lg border border-[#F1DD8A] bg-[#FFF8DB] px-3 pr-10 text-xs font-semibold text-[#000000D9] appearance-auto [&::-webkit-calendar-picker-indicator]:opacity-0 focus:outline-none focus:ring-1 focus:ring-amber-400" />
-                  <svg @click="openLockEndDatePicker" class="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 cursor-pointer text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-                </div>
-              </label>
+              <div>
+                <span class="block text-xs font-semibold text-[#000000D9] mb-1">Bắt đầu</span>
+                <SingleDatePicker
+                  v-model="roomLockForm.startDate"
+                  disabled
+                  four-digit-year
+                  placeholder="dd/mm/yyyy"
+                  input-class="!h-8 !bg-slate-100"
+                  text-input-class="!font-normal !text-slate-500"
+                />
+              </div>
+              <div>
+                <span class="block text-xs font-semibold text-[#000000D9] mb-1">Kết thúc <span class="text-rose-500">*</span></span>
+                <SingleDatePicker
+                  v-model="roomLockForm.endDate"
+                  :min-date="roomLockForm.startDate"
+                  :start-date="roomLockForm.startDate || systemDate"
+                  four-digit-year
+                  placeholder="dd/mm/yyyy"
+                  input-class="!h-8 !border-[#F1DD8A] !bg-[#FFF8DB]"
+                  text-input-class="!font-semibold !text-[#000000D9]"
+                />
+              </div>
               <label class="block text-xs font-semibold text-[#000000D9]">Phòng
                 <input :value="roomLockForm.room?.room_number || ''" disabled class="mt-1 w-full h-8 cursor-not-allowed rounded-lg border border-slate-200 bg-slate-100 px-3 text-xs font-normal text-slate-500" />
               </label>

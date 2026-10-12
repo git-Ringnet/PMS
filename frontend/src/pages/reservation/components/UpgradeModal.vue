@@ -30,16 +30,16 @@
           <table class="w-full text-left text-xs border-collapse">
             <thead>
               <tr class="bg-slate-50 border-b border-slate-200 text-slate-700 font-semibold h-8">
-                <th class="p-2.5">Phòng</th>
-                <th class="p-2.5">Hạng hiện tại</th>
-                <th class="p-2.5">Khách</th>
+                <th class="p-2.5 text-center align-middle border-r border-slate-200 border">Phòng</th>
+                <th class="p-2.5 text-center align-middle border-r border-slate-200 border">Hạng Hiện Tại</th>
+                <th class="p-2.5 text-center align-middle border-r border-slate-200 border">Khách</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="r in targetRooms" :key="r.id" class="border-b border-slate-100 hover:bg-slate-50/30 h-9 font-normal text-slate-700">
-                <td class="p-2.5 font-bold text-sky-600">{{ r.roomNumber || 'Chưa gán' }}</td>
-                <td class="p-2.5">{{ r.type || r.shape || '-' }}</td>
-                <td class="p-2.5 text-slate-500">{{ r.guestName || '-' }}</td>
+                <td class="p-2.5 font-bold text-sky-600 border-slate-200">{{ r.roomNumber || 'Chưa gán' }}</td>
+                <td class="p-2.5 border-slate-200">{{ r.type || r.shape || '-' }}</td>
+                <td class="p-2.5 text-slate-500 border-slate-200">{{ r.guestName || '-' }}</td>
               </tr>
             </tbody>
           </table>

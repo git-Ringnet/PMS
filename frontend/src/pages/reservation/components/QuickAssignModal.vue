@@ -35,76 +35,52 @@
           <div class="grid grid-cols-2 gap-2">
             <!-- Ngày đến -->
             <div class="flex flex-col gap-1">
-              <label class="text-[11px] font-bold text-slate-600">Ngày đến</label>
-              <div
-                @click="openDatePicker('arrival')"
-                class="flex items-center justify-between px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white hover:border-sky-400 cursor-pointer transition-colors relative"
-              >
-                <span class="font-bold text-slate-800">{{ formatDisplayDate(arrivalDate) }}</span>
-                <div class="flex items-center gap-1 text-slate-400">
-                  <svg class="w-3.5 h-3.5 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                    <line x1="16" y1="2" x2="16" y2="6" />
-                    <line x1="8" y1="2" x2="8" y2="6" />
-                    <line x1="3" y1="10" x2="21" y2="10" />
+              <div class="flex items-center justify-between">
+                <label class="text-[11px] font-bold text-slate-600">Ngày đến</label>
+                <button
+                  type="button"
+                  @click.stop="copyDateToClipboard(arrivalDate)"
+                  class="p-0.5 hover:text-sky-600 bg-transparent border-none cursor-pointer text-slate-400"
+                  title="Sao chép ngày đến"
+                >
+                  <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                   </svg>
-                  <button
-                    type="button"
-                    @click.stop="copyDateToClipboard(arrivalDate)"
-                    class="p-0.5 hover:text-sky-600 bg-transparent border-none cursor-pointer"
-                    title="Sao chép ngày đến"
-                  >
-                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                    </svg>
-                  </button>
-                </div>
-                <input
-                  ref="arrivalInputRef"
-                  type="date"
-                  v-model="arrivalDate"
-                  @change="onArrivalDateChange"
-                  class="absolute inset-0 opacity-0 pointer-events-none w-full h-full"
-                />
+                </button>
               </div>
+              <SingleDatePicker
+                v-model="arrivalDate"
+                @change="onArrivalDateChange"
+                :start-date="arrivalDate || authStore.systemDate"
+                placeholder="dd/mm/yyyy"
+                four-digit-year
+              />
             </div>
 
             <!-- Ngày đi -->
             <div class="flex flex-col gap-1">
-              <label class="text-[11px] font-bold text-slate-600">Ngày đi</label>
-              <div
-                @click="openDatePicker('departure')"
-                class="flex items-center justify-between px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white hover:border-sky-400 cursor-pointer transition-colors relative"
-              >
-                <span class="font-bold text-slate-800">{{ formatDisplayDate(departureDate) }}</span>
-                <div class="flex items-center gap-1 text-slate-400">
-                  <svg class="w-3.5 h-3.5 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                    <line x1="16" y1="2" x2="16" y2="6" />
-                    <line x1="8" y1="2" x2="8" y2="6" />
-                    <line x1="3" y1="10" x2="21" y2="10" />
+              <div class="flex items-center justify-between">
+                <label class="text-[11px] font-bold text-slate-600">Ngày đi</label>
+                <button
+                  type="button"
+                  @click.stop="copyArrivalToDeparture"
+                  class="p-0.5 hover:text-sky-600 bg-transparent border-none cursor-pointer text-slate-400"
+                  title="Sao chép từ ngày đến (Ở theo giờ)"
+                >
+                  <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                   </svg>
-                  <button
-                    type="button"
-                    @click.stop="copyArrivalToDeparture"
-                    class="p-0.5 hover:text-sky-600 bg-transparent border-none cursor-pointer"
-                    title="Sao chép từ ngày đến (Ở theo giờ)"
-                  >
-                    <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-                    </svg>
-                  </button>
-                </div>
-                <input
-                  ref="departureInputRef"
-                  type="date"
-                  v-model="departureDate"
-                  @change="onDepartureDateChange"
-                  class="absolute inset-0 opacity-0 pointer-events-none w-full h-full"
-                />
+                </button>
               </div>
+              <SingleDatePicker
+                v-model="departureDate"
+                @change="onDepartureDateChange"
+                :start-date="departureDate || arrivalDate || authStore.systemDate"
+                placeholder="dd/mm/yyyy"
+                four-digit-year
+              />
             </div>
           </div>
 
@@ -339,6 +315,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import http from '@/services/http'
 import { fetchBookingInitDropdowns, createBooking, checkInRoom, syncBookingRoomSpecialRequests, checkAvailability } from '@/services/booking-service'
 import SpecialRequestsModal from './SpecialRequestsModal.vue'
+import SingleDatePicker from '@/components/SingleDatePicker.vue'
 
 const props = defineProps({
   show: {
@@ -672,7 +649,7 @@ async function loadDropdowns() {
 }
 
 function initModalValues() {
-  const today = props.initialDate || new Date().toISOString().split('T')[0]
+  const today = props.initialDate || authStore.systemDate || localStorage.getItem('pms_system_date') || new Date().toISOString().split('T')[0]
   arrivalDate.value = today
 
   // Mặc định 1 đêm

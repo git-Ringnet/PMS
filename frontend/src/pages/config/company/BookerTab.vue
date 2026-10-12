@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { fetchBookers, createBooker, updateBooker, deleteBooker } from '@/services/company-service'
 import { useUiStore } from '@/stores/ui-store'
 
@@ -12,16 +12,53 @@ const isModalOpen = ref(false)
 const isEditMode = ref(false)
 const currentId = ref(null)
 const form = ref({ name: '', email: '', phone: '', address: '', notes: '' })
+const modalPosition = ref({ x: 0, y: 0 })
+let modalDragState = null
+
+const startModalDrag = (event) => {
+  if (event.button !== 0 || event.target.closest('button, input, select, textarea, label')) return
+  event.preventDefault()
+  modalDragState = {
+    startX: event.clientX,
+    startY: event.clientY,
+    initX: modalPosition.value.x,
+    initY: modalPosition.value.y,
+  }
+  window.addEventListener('mousemove', moveModalDrag)
+  window.addEventListener('mouseup', stopModalDrag)
+}
+
+const moveModalDrag = (event) => {
+  if (!modalDragState) return
+  const { startX, startY, initX, initY } = modalDragState
+  modalPosition.value = {
+    x: initX + (event.clientX - startX),
+    y: initY + (event.clientY - startY),
+  }
+}
+
+const stopModalDrag = () => {
+  modalDragState = null
+  window.removeEventListener('mousemove', moveModalDrag)
+  window.removeEventListener('mouseup', stopModalDrag)
+}
+
+const handleEscape = (e) => {
+  if (e.key === 'Escape' && isModalOpen.value) {
+    isModalOpen.value = false
+  }
+}
 
 onMounted(() => {
   loadData()
   document.addEventListener('click', closeAllPopovers)
+  window.addEventListener('keydown', handleEscape)
 })
-
-import { onBeforeUnmount, computed } from 'vue'
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', closeAllPopovers)
+  window.removeEventListener('keydown', handleEscape)
+  stopModalDrag()
 })
 
 const searchQueryId = ref('')
@@ -84,6 +121,7 @@ const openAddModal = () => {
   isEditMode.value = false
   currentId.value = null
   form.value = { name: '', email: '', phone: '', address: '', notes: '' }
+  modalPosition.value = { x: 0, y: 0 }
   isModalOpen.value = true
 }
 
@@ -97,6 +135,7 @@ const openEditModal = (item) => {
     address: item.address || '',
     notes: item.notes || ''
   }
+  modalPosition.value = { x: 0, y: 0 }
   isModalOpen.value = true
 }
 
@@ -151,7 +190,7 @@ const handleDelete = async (item) => {
     <div class="flex items-center mb-3">
       <button 
         @click="openAddModal"
-        class="px-3.5 py-1.5 bg-[#5fa5e6] hover:bg-[#4d92d4] text-white rounded-md text-xs font-bold border-none cursor-pointer flex items-center gap-1 shadow-xs transition-colors"
+        class="btn-pms-primary"
       >
         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
@@ -166,8 +205,8 @@ const handleDelete = async (item) => {
         <thead>
           <tr class="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold select-none h-9">
             <!-- Mã / ID -->
-            <th class="p-2 border-r border-slate-200 text-slate-700 font-bold text-xs uppercase w-16 text-center cursor-pointer hover:bg-slate-200 select-none relative popover-container transition-colors">
-              <div class="flex items-center justify-between gap-1" @click="toggleSort">
+            <th class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap w-16 cursor-pointer hover:bg-slate-200 select-none relative popover-container transition-colors">
+              <div class="flex items-center justify-center gap-1" @click="toggleSort">
                 <span>Mã</span>
                 <div class="flex items-center gap-1">
                   <span class="flex flex-col text-[9px] leading-[6px] text-slate-400">
@@ -179,7 +218,7 @@ const handleDelete = async (item) => {
                     class="p-0.5 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-600 border-none bg-transparent cursor-pointer flex items-center justify-center transition-colors"
                     :class="{'text-sky-500 bg-sky-50 hover:bg-sky-100': searchQueryId}"
                   >
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
                   </button>
@@ -207,9 +246,9 @@ const handleDelete = async (item) => {
             </th>
 
             <!-- Tên -->
-            <th class="p-2 border-r border-slate-200 text-slate-700 font-bold text-xs uppercase relative popover-container select-none">
-              <div class="flex items-center justify-between gap-1.5">
-                <span>Tên</span>
+            <th class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap relative popover-container select-none">
+              <div class="flex items-center justify-center gap-1.5">
+                <span>Tên Người Đặt Phòng</span>
                 <button 
                   @click.stop="isSearchNameOpen = !isSearchNameOpen; isSearchIdOpen = false" 
                   class="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-600 border-none bg-transparent cursor-pointer flex items-center justify-center transition-colors"
@@ -241,11 +280,11 @@ const handleDelete = async (item) => {
               </div>
             </th>
 
-            <th class="p-2 border-r border-slate-200 text-slate-700 font-bold text-xs uppercase">Email</th>
-            <th class="p-2 border-r border-slate-200 text-slate-700 font-bold text-xs uppercase">Số điện thoại</th>
-            <th class="p-2 border-r border-slate-200 text-slate-700 font-bold text-xs uppercase">Địa chỉ</th>
-            <th class="p-2 border-r border-slate-200 text-slate-700 font-bold text-xs uppercase">Ghi chú</th>
-            <th class="p-2 border-r border-slate-200 text-slate-700 font-bold text-xs uppercase text-center w-24">Action</th>
+            <th class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap">Email</th>
+            <th class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap">Số Điện Thoại</th>
+            <th class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap">Địa Chỉ</th>
+            <th class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap">Ghi Chú</th>
+            <th class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap w-24">Hành Động</th>
           </tr>
         </thead>
         <tbody>
@@ -255,18 +294,19 @@ const handleDelete = async (item) => {
             class="border-b border-slate-200 hover:bg-[#bdecfe]/50 cursor-pointer h-9 transition-colors"
             @dblclick="openEditModal(item)"
           >
-            <td class="p-2 border-r border-slate-200 text-slate-600 text-center font-normal">{{ item.id }}</td>
-            <td class="p-2 border-r border-slate-200 text-slate-700 font-normal">{{ item.name }}</td>
-            <td class="p-2 border-r border-slate-200 text-slate-700 font-normal">{{ item.email || '' }}</td>
-            <td class="p-2 border-r border-slate-200 text-slate-700 font-normal">{{ item.phone || '' }}</td>
-            <td class="p-2 border-r border-slate-200 text-slate-600 max-w-[200px] truncate font-normal">{{ item.address || '' }}</td>
-            <td class="p-2 border-r border-slate-200 text-slate-500 max-w-[150px] truncate font-normal">{{ item.notes || '' }}</td>
-            <td class="p-2 border-r border-slate-200 text-center">
+            <td class="p-2 text-slate-600 text-center font-normal whitespace-nowrap">{{ item.id }}</td>
+            <td class="p-2 text-slate-800 font-semibold whitespace-nowrap">{{ item.name }}</td>
+            <td class="p-2 text-slate-700 font-normal whitespace-nowrap">{{ item.email || '' }}</td>
+            <td class="p-2 text-slate-700 font-normal whitespace-nowrap">{{ item.phone || '' }}</td>
+            <td class="p-2 text-slate-600 max-w-[200px] truncate font-normal whitespace-nowrap">{{ item.address || '' }}</td>
+            <td class="p-2 text-slate-500 max-w-[150px] truncate font-normal whitespace-nowrap">{{ item.notes || '' }}</td>
+            <td class="p-2 text-center whitespace-nowrap">
               <button 
                 @click.stop="handleDelete(item)"
-                class="p-1 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded cursor-pointer border-none transition-colors inline-flex items-center justify-center"
+                class="w-7 h-7 bg-red-600 hover:bg-red-700 text-white rounded cursor-pointer border-none transition-colors inline-flex items-center justify-center shadow-xs"
+                title="Xóa người đặt phòng"
               >
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                 </svg>
               </button>
@@ -292,48 +332,101 @@ const handleDelete = async (item) => {
     v-if="isModalOpen" 
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-xs"
   >
-    <div class="bg-white rounded-xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-100 animate-in">
-      <div class="bg-[#8dcbf4] px-5 py-3 flex items-center justify-between text-white select-none">
-        <h2 class="text-xs font-bold uppercase tracking-wider">{{ isEditMode ? 'Sửa người đặt phòng' : 'Thêm người đặt phòng' }}</h2>
-        <button @click="isModalOpen = false" class="text-white/80 hover:text-white bg-transparent border-none cursor-pointer text-lg font-light leading-none">✕</button>
+    <div 
+      class="bg-white rounded-xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-100 company-modal-fade"
+      :style="{ transform: `translate(${modalPosition.x}px, ${modalPosition.y}px)` }"
+    >
+      <!-- Modal Header -->
+      <div 
+        @mousedown="startModalDrag"
+        :style="{ background: 'var(--pms-custom-theme, #006bdb)' }" 
+        class="px-5 py-3 flex items-center justify-between text-white select-none cursor-move"
+      >
+        <h2 class="text-xs font-semibold tracking-wide">{{ isEditMode ? 'Sửa Người Đặt Phòng' : 'Thêm Người Đặt Phòng' }}</h2>
+        <button 
+          @mousedown.stop
+          @click="isModalOpen = false" 
+          title="Đóng (Esc)"
+          class="text-white/80 hover:text-white bg-transparent border-none cursor-pointer text-lg font-light leading-none"
+        >
+          ✕
+        </button>
       </div>
+
+      <!-- Modal Body -->
       <div class="p-5 flex flex-col gap-3 text-xs">
         <div class="flex flex-col gap-1">
-          <label class="font-bold text-slate-600">Tên *</label>
-          <input v-model="form.name" type="text" placeholder="Nhập tên..." class="border border-slate-200 bg-[#fffbeb] rounded-md p-1.5 font-semibold focus:outline-sky-500 text-xs" />
+          <span class="font-semibold text-[#000000D9]">Tên<span class="text-red-500">*</span></span>
+          <div class="relative">
+            <input 
+              v-model="form.name" 
+              required
+              aria-required="true"
+              type="text" 
+              placeholder="Nhập tên người đặt phòng..." 
+              class="input-required w-full h-8 rounded-lg px-2 pr-8 text-xs font-normal"
+            />
+            <button v-if="form.name" @click.stop="form.name = ''" type="button" class="input-clear-button" title="Xóa">✕</button>
+          </div>
         </div>
         <div class="grid grid-cols-2 gap-4">
           <div class="flex flex-col gap-1">
-            <label class="font-bold text-slate-600">Email</label>
-            <input v-model="form.email" type="email" placeholder="email@example.com" class="border border-slate-200 rounded-md p-1.5 font-semibold focus:outline-sky-500 text-xs" />
+            <span class="font-semibold text-[#000000D9]">Email</span>
+            <div class="relative">
+              <input 
+                v-model="form.email" 
+                type="email" 
+                placeholder="email@example.com" 
+                class="w-full h-8 rounded-lg border border-slate-200 px-2 pr-8 text-xs font-normal focus:border-sky-500 focus:outline-none"
+              />
+              <button v-if="form.email" @click.stop="form.email = ''" type="button" class="input-clear-button" title="Xóa">✕</button>
+            </div>
           </div>
           <div class="flex flex-col gap-1">
-            <label class="font-bold text-slate-600">Số điện thoại</label>
-            <input v-model="form.phone" type="text" placeholder="0xxx xxx xxx" class="border border-slate-200 rounded-md p-1.5 font-semibold focus:outline-sky-500 text-xs" />
+            <span class="font-semibold text-[#000000D9]">Số Điện Thoại</span>
+            <div class="relative">
+              <input 
+                v-model="form.phone" 
+                type="text" 
+                placeholder="0xxx xxx xxx" 
+                class="w-full h-8 rounded-lg border border-slate-200 px-2 pr-8 text-xs font-normal focus:border-sky-500 focus:outline-none"
+              />
+              <button v-if="form.phone" @click.stop="form.phone = ''" type="button" class="input-clear-button" title="Xóa">✕</button>
+            </div>
           </div>
         </div>
         <div class="flex flex-col gap-1">
-          <label class="font-bold text-slate-600">Địa chỉ</label>
-          <textarea v-model="form.address" rows="2" placeholder="Nhập địa chỉ..." class="border border-slate-200 rounded-md p-1.5 font-semibold focus:outline-sky-500 text-xs resize-none"></textarea>
+          <span class="font-semibold text-[#000000D9]">Địa Chỉ</span>
+          <div class="relative">
+            <textarea 
+              v-model="form.address" 
+              rows="2" 
+              placeholder="Nhập địa chỉ..." 
+              class="w-full border border-slate-200 rounded-lg p-2 pr-8 text-xs font-normal focus:border-sky-500 focus:outline-none resize-none"
+            ></textarea>
+            <button v-if="form.address" @click.stop="form.address = ''" type="button" class="input-clear-button !top-2.5 !transform-none" title="Xóa">✕</button>
+          </div>
         </div>
         <div class="flex flex-col gap-1">
-          <label class="font-bold text-slate-600">Ghi chú</label>
-          <textarea v-model="form.notes" rows="2" placeholder="Ghi chú..." class="border border-slate-200 rounded-md p-1.5 font-semibold focus:outline-sky-500 text-xs resize-none"></textarea>
+          <span class="font-semibold text-[#000000D9]">Ghi Chú</span>
+          <div class="relative">
+            <textarea 
+              v-model="form.notes" 
+              rows="2" 
+              placeholder="Ghi chú..." 
+              class="w-full border border-slate-200 rounded-lg p-2 pr-8 text-xs font-normal focus:border-sky-500 focus:outline-none resize-none"
+            ></textarea>
+            <button v-if="form.notes" @click.stop="form.notes = ''" type="button" class="input-clear-button !top-2.5 !transform-none" title="Xóa">✕</button>
+          </div>
         </div>
       </div>
+
+      <!-- Modal Footer -->
       <div class="bg-slate-50 px-5 py-3 flex items-center justify-end gap-2 border-t border-slate-100">
-        <!-- Nút Đóng -->
-        <button 
-          @click="isModalOpen = false" 
-          class="px-4 py-1.5 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-md font-bold text-xs cursor-pointer border-none flex items-center gap-1 shadow-xs transition-colors"
-        >
-          <span class="inline-flex items-center justify-center border border-white rounded-full w-3.5 h-3.5 text-[8px] font-extrabold">✕</span>
-          Đóng
-        </button>
         <!-- Nút Lưu -->
         <button 
-          @click="saveItem"
-          class="px-4 py-1.5 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-md font-bold text-xs cursor-pointer border-none flex items-center gap-1 shadow-xs transition-colors"
+          @click="saveItem" 
+          class="btn-pms-primary"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
@@ -346,11 +439,25 @@ const handleDelete = async (item) => {
 </template>
 
 <style scoped>
-.animate-in {
-  animation: fadeIn 0.2s ease-out forwards;
+.company-modal-fade {
+  animation: companyModalOpacityFade 0.12s ease-out;
 }
-@keyframes fadeIn {
-  from { opacity: 0; transform: scale(0.95); }
-  to { opacity: 1; transform: scale(1); }
+@keyframes companyModalOpacityFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
+.input-clear-button {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  z-index: 10;
+  transform: translateY(-50%);
+  border: 0;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+.input-clear-button:hover { color: #475569; }
 </style>

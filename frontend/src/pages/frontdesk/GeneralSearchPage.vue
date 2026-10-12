@@ -8,6 +8,7 @@ import echo from '@/services/echo'
 import http from '@/services/http'
 import GuestInfoModal from '@/pages/reservation/components/GuestInfoModal.vue'
 import CopyModal from '@/pages/reservation/components/CopyModal.vue'
+import SingleDatePicker from '@/components/SingleDatePicker.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -179,8 +180,8 @@ function handleDrop(zone, event) {
 // Filter values
 const emptyFilters = () => ({
   use_date: false,
-  from_date: '',
-  to_date: '',
+  from_date: auth.systemDate || localStorage.getItem('pms_system_date') || '',
+  to_date: auth.systemDate || localStorage.getItem('pms_system_date') || '',
   search: '',
   status: '',
   booking_code: '',
@@ -421,6 +422,7 @@ async function initDefaultDates() {
     const res = await http.get('/system-date')
     if (res.data?.success && res.data.data?.system_date) {
       const sysDate = res.data.data.system_date
+      auth.setSystemDate(sysDate)
       if (!filters.value.from_date) filters.value.from_date = sysDate
       if (!filters.value.to_date) filters.value.to_date = sysDate
     }
@@ -496,69 +498,69 @@ function getSubtableTotals(groups) {
 const DEFAULT_TABLE_COLUMNS = {
   booking: [
     { key: 'booking_code', label: 'Mã BK', visible: true, sortable: true },
-    { key: 'reference_code', label: 'Mã tham chiếu', visible: true },
-    { key: 'booking_name', label: 'Tên đăng ký', visible: true },
-    { key: 'company', label: 'Công ty', visible: true },
-    { key: 'market', label: 'Thị trường', visible: true },
-    { key: 'arrival_date', label: 'Ngày đến', visible: true, sortable: true },
-    { key: 'departure_date', label: 'Ngày đi', visible: true, sortable: true },
+    { key: 'reference_code', label: 'Mã Tham Chiếu', visible: true },
+    { key: 'booking_name', label: 'Tên Đăng Ký', visible: true },
+    { key: 'company', label: 'Công Ty', visible: true },
+    { key: 'market', label: 'Thị Trường', visible: true },
+    { key: 'arrival_date', label: 'Ngày Đến', visible: true, sortable: true },
+    { key: 'departure_date', label: 'Ngày Đi', visible: true, sortable: true },
     { key: 'nights', label: 'Đêm', visible: true, sortable: true },
-    { key: 'original_room_types', label: 'LP khởi tạo', visible: true },
-    { key: 'actual_room_types', label: 'LP thực tế', visible: true },
+    { key: 'original_room_types', label: 'LP Khởi Tạo', visible: true },
+    { key: 'actual_room_types', label: 'LP Thực Tế', visible: true },
     { key: 'total_amount', label: 'Tổng', visible: true, isNumber: true },
-    { key: 'deposit_amount', label: 'Đặt cọc', visible: true, isNumber: true },
-    { key: 'registration_status', label: 'Khởi tạo', visible: true },
-    { key: 'operation_status', label: 'Thực tế', visible: true },
-    { key: 'contact_phone', label: 'Liên hệ', visible: true },
-    { key: 'note', label: 'Ghi chú', visible: true },
-    { key: 'booking_date', label: 'Ngày đăng ký', visible: true, sortable: true },
-    { key: 'sales_person', label: 'Người bán', visible: true },
-    { key: 'created_by', label: 'Người tạo', visible: true }
+    { key: 'deposit_amount', label: 'Đặt Cọc', visible: true, isNumber: true },
+    { key: 'registration_status', label: 'Khởi Tạo', visible: true },
+    { key: 'operation_status', label: 'Thực Tế', visible: true },
+    { key: 'contact_phone', label: 'Liên Hệ', visible: true },
+    { key: 'note', label: 'Ghi Chú', visible: true },
+    { key: 'booking_date', label: 'Ngày Đăng Ký', visible: true, sortable: true },
+    { key: 'sales_person', label: 'Người Bán', visible: true },
+    { key: 'created_by', label: 'Người Tạo', visible: true }
   ],
   room: [
     { key: 'room_number', label: 'Phòng', visible: true, sortable: true },
-    { key: 'room_status', label: 'Tình trạng phòng', visible: true },
-    { key: 'guest_name', label: 'Tên khách', visible: true },
-    { key: 'arrival_date', label: 'Ngày đến', visible: true, sortable: true },
-    { key: 'departure_date', label: 'Ngày đi', visible: true, sortable: true },
-    { key: 'nights', label: 'Số đêm', visible: true, sortable: true },
-    { key: 'rate', label: 'Giá phòng', visible: true, sortable: true, isNumber: true },
-    { key: 'rate_code', label: 'Mã giá phòng', visible: true },
-    { key: 'actual_room_class', label: 'LP thực tế', visible: true },
-    { key: 'original_room_class', label: 'LP khởi tạo', visible: true },
-    { key: 'extra_bed_qty', label: 'Thêm giường', visible: true },
+    { key: 'room_status', label: 'Tình Trạng Phòng', visible: true },
+    { key: 'guest_name', label: 'Tên Khách', visible: true },
+    { key: 'arrival_date', label: 'Ngày Đến', visible: true, sortable: true },
+    { key: 'departure_date', label: 'Ngày Đi', visible: true, sortable: true },
+    { key: 'nights', label: 'Số Đêm', visible: true, sortable: true },
+    { key: 'rate', label: 'Giá Phòng', visible: true, sortable: true, isNumber: true },
+    { key: 'rate_code', label: 'Mã Giá Phòng', visible: true },
+    { key: 'actual_room_class', label: 'LP Thực Tế', visible: true },
+    { key: 'original_room_class', label: 'LP Khởi Tạo', visible: true },
+    { key: 'extra_bed_qty', label: 'Thêm Giường', visible: true },
     { key: 'extra_bed_rate', label: 'Giá TG', visible: true, isNumber: true },
-    { key: 'adults', label: 'Người lớn', visible: true },
-    { key: 'children', label: 'Trẻ em', visible: true },
-    { key: 'note', label: 'Ghi chú', visible: true },
-    { key: 'service_total', label: 'Tổng dịch vụ', visible: true, isNumber: true },
-    { key: 'paid_total', label: 'Thanh toán', visible: true, isNumber: true },
-    { key: 'checkin_time', label: 'Giờ đến', visible: true },
-    { key: 'checkout_time', label: 'Giờ đi', visible: true },
-    { key: 'booking_date', label: 'Ngày đăng ký', visible: true }
+    { key: 'adults', label: 'Người Lớn', visible: true },
+    { key: 'children', label: 'Trẻ Em', visible: true },
+    { key: 'note', label: 'Ghi Chú', visible: true },
+    { key: 'service_total', label: 'Tổng Dịch Vụ', visible: true, isNumber: true },
+    { key: 'paid_total', label: 'Thanh Toán', visible: true, isNumber: true },
+    { key: 'checkin_time', label: 'Giờ Đến', visible: true },
+    { key: 'checkout_time', label: 'Giờ Đi', visible: true },
+    { key: 'booking_date', label: 'Ngày Đăng Ký', visible: true }
   ],
   guest: [
-    { key: 'guest_name', label: 'Tên khách', visible: true, sortable: true },
-    { key: 'booking_code', label: 'Đăng ký', visible: true },
+    { key: 'guest_name', label: 'Tên Khách', visible: true, sortable: true },
+    { key: 'booking_code', label: 'Đăng Ký', visible: true },
     { key: 'room_number', label: 'Phòng', visible: true },
-    { key: 'arrival_date', label: 'Ngày đến', visible: true, sortable: true },
-    { key: 'departure_date', label: 'Ngày đi', visible: true, sortable: true },
-    { key: 'nights', label: 'Số đêm', visible: true, sortable: true },
-    { key: 'rate', label: 'Giá phòng', visible: true, isNumber: true },
-    { key: 'rate_code', label: 'Mã giá phòng', visible: true },
-    { key: 'company', label: 'Công ty DL', visible: true },
-    { key: 'id_type', label: 'Loại giấy tờ', visible: true },
-    { key: 'id_number', label: 'Số giấy tờ', visible: true },
+    { key: 'arrival_date', label: 'Ngày Đến', visible: true, sortable: true },
+    { key: 'departure_date', label: 'Ngày Đi', visible: true, sortable: true },
+    { key: 'nights', label: 'Số Đêm', visible: true, sortable: true },
+    { key: 'rate', label: 'Giá Phòng', visible: true, isNumber: true },
+    { key: 'rate_code', label: 'Mã Giá Phòng', visible: true },
+    { key: 'company', label: 'Công Ty DL', visible: true },
+    { key: 'id_type', label: 'Loại Giấy Tờ', visible: true },
+    { key: 'id_number', label: 'Số Giấy Tờ', visible: true },
     { key: 'email', label: 'Email', visible: true },
     { key: 'phone', label: 'SĐT', visible: true },
-    { key: 'dob', label: 'Ngày sinh', visible: true },
-    { key: 'nationality', label: 'Quốc tịch', visible: true },
-    { key: 'province', label: 'Tỉnh thành', visible: true },
-    { key: 'address', label: 'Địa chỉ', visible: true },
+    { key: 'dob', label: 'Ngày Sinh', visible: true },
+    { key: 'nationality', label: 'Quốc Tịch', visible: true },
+    { key: 'province', label: 'Tỉnh Thành', visible: true },
+    { key: 'address', label: 'Địa Chỉ', visible: true },
     { key: 'visa_no', label: 'Visa', visible: true },
-    { key: 'visa_expiry_date', label: 'Ngày hết hạn', visible: true },
-    { key: 'entry_date', label: 'Ngày nhập cảnh', visible: true },
-    { key: 'border_gate', label: 'Cửa khẩu', visible: true }
+    { key: 'visa_expiry_date', label: 'Ngày Hết Hạn', visible: true },
+    { key: 'entry_date', label: 'Ngày Nhập Cảnh', visible: true },
+    { key: 'border_gate', label: 'Cửa Khẩu', visible: true }
   ]
 }
 
@@ -1378,30 +1380,24 @@ onMounted(async () => {
         </label>
 
         <!-- Date Range Box -->
-        <div class="date-range-box" :class="{ disabled: !filters.use_date }">
-          <input
-            ref="fromDateInput"
+        <div class="flex items-center gap-1.5" :class="{ 'opacity-50 pointer-events-none': !filters.use_date }">
+          <SingleDatePicker
             v-model="filters.from_date"
-            type="date"
             :disabled="!filters.use_date"
-            @click="openDatePicker(fromDateInput)"
-          >
-          <span class="range-sep">~</span>
-          <input
-            ref="toDateInput"
+            :start-date="filters.from_date || auth.systemDate"
+            placeholder="dd/mm/yyyy"
+            four-digit-year
+            class="w-[110px]"
+          />
+          <span class="range-sep text-slate-400">~</span>
+          <SingleDatePicker
             v-model="filters.to_date"
-            type="date"
             :disabled="!filters.use_date"
-            @click="openDatePicker(toDateInput)"
-          >
-          <button
-            class="calendar-btn"
-            :disabled="!filters.use_date"
-            title="Chọn lịch"
-            @click="openDatePicker(fromDateInput)"
-          >
-            📅
-          </button>
+            :start-date="filters.to_date || filters.from_date || auth.systemDate"
+            placeholder="dd/mm/yyyy"
+            four-digit-year
+            class="w-[110px]"
+          />
         </div>
 
         <div class="divider-hint">Kéo field vào/ra để tùy chỉnh</div>
@@ -1471,11 +1467,12 @@ onMounted(async () => {
 
               <!-- Date Controls -->
               <template v-else-if="FIELD_DEFINITIONS[id].type === 'date'">
-                <input
+                <SingleDatePicker
                   v-model="filters[FIELD_DEFINITIONS[id].field]"
-                  type="date"
-                  :placeholder="FIELD_DEFINITIONS[id].placeholder"
-                >
+                  :start-date="filters[FIELD_DEFINITIONS[id].field] || auth.systemDate"
+                  placeholder="dd/mm/yyyy"
+                  four-digit-year
+                />
               </template>
 
               <!-- Input Controls -->
@@ -1555,10 +1552,12 @@ onMounted(async () => {
                 </select>
               </template>
               <template v-else-if="FIELD_DEFINITIONS[id].type === 'date'">
-                <input
+                <SingleDatePicker
                   v-model="advDraft[FIELD_DEFINITIONS[id].field]"
-                  type="date"
-                >
+                  :start-date="advDraft[FIELD_DEFINITIONS[id].field] || auth.systemDate"
+                  placeholder="dd/mm/yyyy"
+                  four-digit-year
+                />
               </template>
               <template v-else>
                 <input
@@ -1662,15 +1661,15 @@ onMounted(async () => {
       <table v-if="tab === 'booking'" class="data-table">
         <thead>
           <tr>
-            <th style="width: 36px; text-align: center;">
+            <th style="width: 36px; text-align: center;" class="text-center align-middle border-r border-slate-200 border">
               <input type="checkbox" :checked="allCurrentSelected" @change="toggleAllSelected">
             </th>
-            <th style="width: 36px; text-align: center;"></th>
+            <th style="width: 36px; text-align: center;" class="text-center align-middle border-r border-slate-200 border"></th>
             <template v-for="col in visibleCols" :key="col.key">
               <th
                 :class="{ sortable: col.sortable, number: col.isNumber }"
                 @click="col.sortable ? setSort(col.key) : null"
-              >
+               class="text-center align-middle border-r border-slate-200 border">
                 {{ col.label }} <span v-if="col.sortable">{{ sortIcon(col.key) }}</span>
               </th>
             </template>
@@ -1679,10 +1678,10 @@ onMounted(async () => {
         <tbody>
           <template v-for="row in rows" :key="row.id">
             <tr :class="{ selected: isSelected(row) }">
-              <td style="text-align: center;">
+              <td style="text-align: center;" class="border-slate-200">
                 <input type="checkbox" :checked="isSelected(row)" @change="toggleSelected(row)">
               </td>
-              <td style="text-align: center;">
+              <td style="text-align: center;" class="border-slate-200">
                 <button class="expand-btn" @click="toggleBooking(row.id)">
                   {{ expandedBookings.has(row.id) ? '−' : '+' }}
                 </button>
@@ -1690,50 +1689,50 @@ onMounted(async () => {
 
               <!-- Dynamic columns according to active reordered columns -->
               <template v-for="col in visibleCols" :key="col.key">
-                <td v-if="col.key === 'booking_code'" class="mono">{{ row.booking_code }}</td>
-                <td v-else-if="col.key === 'reference_code'">{{ row.reference_code || '—' }}</td>
-                <td v-else-if="col.key === 'booking_name'" class="name-cell font-medium">{{ row.booking_name }}</td>
-                <td v-else-if="col.key === 'company'" class="wrap-cell">{{ row.company || 'KHÁCH LẺ' }}</td>
-                <td v-else-if="col.key === 'market'" class="wrap-cell">{{ row.market || '—' }}</td>
-                <td v-else-if="col.key === 'arrival_date'">{{ date(row.arrival_date) }}</td>
-                <td v-else-if="col.key === 'departure_date'">{{ date(row.departure_date) }}</td>
-                <td v-else-if="col.key === 'nights'">{{ row.nights }}</td>
-                <td v-else-if="col.key === 'original_room_types'" class="room-class-cell">{{ row.original_room_types || '—' }}</td>
-                <td v-else-if="col.key === 'actual_room_types'" class="room-class-cell">{{ row.actual_room_types || '—' }}</td>
-                <td v-else-if="col.key === 'total_amount'" class="number font-medium">{{ money(row.total_amount) }}</td>
-                <td v-else-if="col.key === 'deposit_amount'" class="number">{{ money(row.deposit_amount) }}</td>
-                <td v-else-if="col.key === 'registration_status'">
+                <td v-if="col.key === 'booking_code'" class="mono border-slate-200">{{ row.booking_code }}</td>
+                <td v-else-if="col.key === 'reference_code'" class="border-slate-200">{{ row.reference_code || '—' }}</td>
+                <td v-else-if="col.key === 'booking_name'" class="name-cell font-medium border-slate-200">{{ row.booking_name }}</td>
+                <td v-else-if="col.key === 'company'" class="wrap-cell border-slate-200">{{ row.company || 'KHÁCH LẺ' }}</td>
+                <td v-else-if="col.key === 'market'" class="wrap-cell border-slate-200">{{ row.market || '—' }}</td>
+                <td v-else-if="col.key === 'arrival_date'" class="border-slate-200">{{ date(row.arrival_date) }}</td>
+                <td v-else-if="col.key === 'departure_date'" class="border-slate-200">{{ date(row.departure_date) }}</td>
+                <td v-else-if="col.key === 'nights'" class="border-slate-200">{{ row.nights }}</td>
+                <td v-else-if="col.key === 'original_room_types'" class="room-class-cell border-slate-200">{{ row.original_room_types || '—' }}</td>
+                <td v-else-if="col.key === 'actual_room_types'" class="room-class-cell border-slate-200">{{ row.actual_room_types || '—' }}</td>
+                <td v-else-if="col.key === 'total_amount'" class="number font-medium border-slate-200">{{ money(row.total_amount) }}</td>
+                <td v-else-if="col.key === 'deposit_amount'" class="number border-slate-200">{{ money(row.deposit_amount) }}</td>
+                <td v-else-if="col.key === 'registration_status'" class="border-slate-200">
                   <span class="status-pill status-guaranteed">{{ row.registration_status || 'Guaranteed' }}</span>
                 </td>
-                <td v-else-if="col.key === 'operation_status'">
+                <td v-else-if="col.key === 'operation_status'" class="border-slate-200">
                   <span class="status-pill" :class="`status-${row.operation_status}`">{{ statusText(row.operation_status) }}</span>
                 </td>
-                <td v-else-if="col.key === 'contact_phone'">{{ row.contact_phone || '—' }}</td>
-                <td v-else-if="col.key === 'note'" class="note-cell">{{ row.note || '—' }}</td>
-                <td v-else-if="col.key === 'booking_date'">{{ date(row.booking_date) }}</td>
-                <td v-else-if="col.key === 'sales_person'" class="wrap-cell">{{ row.sales_person || '—' }}</td>
-                <td v-else-if="col.key === 'created_by'" class="wrap-cell">{{ row.created_by || '—' }}</td>
-                <td v-else>{{ row[col.key] || '—' }}</td>
+                <td v-else-if="col.key === 'contact_phone'" class="border-slate-200">{{ row.contact_phone || '—' }}</td>
+                <td v-else-if="col.key === 'note'" class="note-cell border-slate-200">{{ row.note || '—' }}</td>
+                <td v-else-if="col.key === 'booking_date'" class="border-slate-200">{{ date(row.booking_date) }}</td>
+                <td v-else-if="col.key === 'sales_person'" class="wrap-cell border-slate-200">{{ row.sales_person || '—' }}</td>
+                <td v-else-if="col.key === 'created_by'" class="wrap-cell border-slate-200">{{ row.created_by || '—' }}</td>
+                <td v-else class="border-slate-200">{{ row[col.key] || '—' }}</td>
               </template>
             </tr>
 
             <!-- SUB-TABLE PHÒNG CON KHI MỞ RỘNG (Gọn gàng đúng theo Ảnh 3) -->
             <tr v-if="expandedBookings.has(row.id)" class="subtable-row">
-              <td colspan="2"></td>
-              <td :colspan="visibleCols.length" class="subtable-td">
+              <td colspan="2" class="border-slate-200"></td>
+              <td :colspan="visibleCols.length" class="subtable-td border-slate-200">
                 <div class="subtable-container">
                   <table class="compact-subtable">
                     <thead>
                       <tr>
-                        <th class="text-left" style="min-width: 100px;">Loại Phòng</th>
-                        <th class="text-center" style="width: 70px;">#Phòng</th>
-                        <th class="text-center" style="width: 70px;">#N.Lớn</th>
-                        <th class="text-center" style="width: 70px;">#T.Em</th>
-                        <th class="text-center" style="width: 95px;">Ngày Đến</th>
-                        <th class="text-center" style="width: 95px;">Ngày Đi</th>
-                        <th class="text-center" style="width: 105px;">Mã Giá Phòng</th>
-                        <th class="number" style="width: 95px;">Giá Phòng</th>
-                        <th class="number" style="width: 95px;">Tổng</th>
+                        <th class="text-center align-middle border-r border-slate-200 border" style="min-width: 100px;">Loại Phòng</th>
+                        <th class="text-center align-middle border-r border-slate-200 border" style="width: 70px;">#Phòng</th>
+                        <th class="text-center align-middle border-r border-slate-200 border" style="width: 70px;">#N.Lớn</th>
+                        <th class="text-center align-middle border-r border-slate-200 border" style="width: 70px;">#T.Em</th>
+                        <th class="text-center align-middle border-r border-slate-200 border" style="width: 95px;">Ngày Đến</th>
+                        <th class="text-center align-middle border-r border-slate-200 border" style="width: 95px;">Ngày Đi</th>
+                        <th class="text-center align-middle border-r border-slate-200 border" style="width: 105px;">Mã Giá Phòng</th>
+                        <th class="number text-center align-middle border-r border-slate-200 border" style="width: 95px;">Giá Phòng</th>
+                        <th class="number text-center align-middle border-r border-slate-200 border" style="width: 95px;">Tổng</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1741,27 +1740,27 @@ onMounted(async () => {
                         v-for="(grp, gIdx) in getBookingRoomGroups(row.rooms)"
                         :key="gIdx"
                       >
-                        <td class="text-left font-bold text-slate-800">{{ grp.room_type }}</td>
-                        <td class="text-center">{{ grp.room_count }}</td>
-                        <td class="text-center">{{ grp.adults }}</td>
-                        <td class="text-center">{{ grp.children }}</td>
-                        <td class="text-center">{{ date(grp.arrival_date) }}</td>
-                        <td class="text-center">{{ date(grp.departure_date) }}</td>
-                        <td class="text-center">{{ grp.rate_code }}</td>
-                        <td class="number">{{ money(grp.rate) }}</td>
-                        <td class="number">{{ money(grp.service_total) }}</td>
+                        <td class="text-left font-bold text-slate-800 border-slate-200">{{ grp.room_type }}</td>
+                        <td class="text-center border-slate-200">{{ grp.room_count }}</td>
+                        <td class="text-center border-slate-200">{{ grp.adults }}</td>
+                        <td class="text-center border-slate-200">{{ grp.children }}</td>
+                        <td class="text-center border-slate-200">{{ date(grp.arrival_date) }}</td>
+                        <td class="text-center border-slate-200">{{ date(grp.departure_date) }}</td>
+                        <td class="text-center border-slate-200">{{ grp.rate_code }}</td>
+                        <td class="number border-slate-200">{{ money(grp.rate) }}</td>
+                        <td class="number border-slate-200">{{ money(grp.service_total) }}</td>
                       </tr>
                       <!-- Total summary row at bottom of subtable (Image 3) -->
                       <tr class="subtable-total-row">
-                        <td class="text-left font-bold">Tổng</td>
-                        <td class="text-center font-bold">{{ getSubtableTotals(getBookingRoomGroups(row.rooms)).rooms }}</td>
-                        <td class="text-center font-bold">{{ getSubtableTotals(getBookingRoomGroups(row.rooms)).adults }}</td>
-                        <td class="text-center font-bold">{{ getSubtableTotals(getBookingRoomGroups(row.rooms)).children }}</td>
-                        <td></td>
-                        <td></td>
-                        <td></td>
-                        <td></td>
-                        <td class="number font-bold">{{ money(getSubtableTotals(getBookingRoomGroups(row.rooms)).total) }}</td>
+                        <td class="text-left font-bold border-slate-200">Tổng</td>
+                        <td class="text-center font-bold border-slate-200">{{ getSubtableTotals(getBookingRoomGroups(row.rooms)).rooms }}</td>
+                        <td class="text-center font-bold border-slate-200">{{ getSubtableTotals(getBookingRoomGroups(row.rooms)).adults }}</td>
+                        <td class="text-center font-bold border-slate-200">{{ getSubtableTotals(getBookingRoomGroups(row.rooms)).children }}</td>
+                        <td class="border-slate-200"></td>
+                        <td class="border-slate-200"></td>
+                        <td class="border-slate-200"></td>
+                        <td class="border-slate-200"></td>
+                        <td class="number font-bold border-slate-200">{{ money(getSubtableTotals(getBookingRoomGroups(row.rooms)).total) }}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -1779,15 +1778,15 @@ onMounted(async () => {
       <table v-else-if="tab === 'room'" class="data-table room-table">
         <thead>
           <tr>
-            <th style="width: 36px; text-align: center;">
+            <th style="width: 36px; text-align: center;" class="text-center align-middle border-r border-slate-200 border">
               <input type="checkbox" :checked="allCurrentSelected" @change="toggleAllSelected">
             </th>
-            <th style="width: 36px; text-align: center;"></th>
+            <th style="width: 36px; text-align: center;" class="text-center align-middle border-r border-slate-200 border"></th>
             <template v-for="col in visibleCols" :key="col.key">
               <th
                 :class="{ sortable: col.sortable, number: col.isNumber }"
                 @click="col.sortable ? setSort(col.key) : null"
-              >
+               class="text-center align-middle border-r border-slate-200 border">
                 {{ col.label }} <span v-if="col.sortable">{{ sortIcon(col.key) }}</span>
               </th>
             </template>
@@ -1797,12 +1796,12 @@ onMounted(async () => {
           <template v-for="group in rows" :key="group.booking_id">
             <!-- MASTER BOOKING BANNER -->
             <tr class="master-banner-row">
-              <td style="text-align: center;">
+              <td style="text-align: center;" class="border-slate-200">
                 <button class="expand-btn" @click="toggleRoomGroup(group.booking_id)">
                   {{ expandedRoomGroups.has(group.booking_id) ? '−' : '+' }}
                 </button>
               </td>
-              <td :colspan="Math.max(1, visibleCols.length - 2)" class="master-banner-left">
+              <td :colspan="Math.max(1, visibleCols.length - 2)" class="master-banner-left border-slate-200">
                 <div class="banner-title">
                   <strong>Booking {{ group.booking_code }}: {{ group.booking_name }}</strong>
                   <span class="banner-dates">· {{ date(group.arrival_date) }} ~ {{ date(group.departure_date) }}</span>
@@ -1810,7 +1809,7 @@ onMounted(async () => {
                 </div>
                 <div class="banner-note">Ghi chú: {{ group.note || '—' }}</div>
               </td>
-              <td colspan="3" class="master-banner-right">
+              <td colspan="3" class="master-banner-right border-slate-200">
                 <div class="banner-money">Tiền dịch vụ: <strong>{{ money(group.service_total) }}</strong></div>
                 <div class="banner-money">Tiền đã thanh toán: <strong>{{ money(group.paid_total) }}</strong></div>
               </td>
@@ -1823,42 +1822,42 @@ onMounted(async () => {
                 :key="room.id"
                 :class="{ selected: isSelected(room) }"
               >
-                <td style="text-align: center;">
+                <td style="text-align: center;" class="border-slate-200">
                   <input type="checkbox" :checked="isSelected(room)" @change="toggleSelected(room)">
                 </td>
-                <td></td>
+                <td class="border-slate-200"></td>
 
                 <!-- Dynamic room columns according to active reordered columns -->
                 <template v-for="col in visibleCols" :key="col.key">
-                  <td v-if="col.key === 'room_number'" class="mono">{{ room.room_number || '—' }}</td>
-                  <td v-else-if="col.key === 'room_status'">
+                  <td v-if="col.key === 'room_number'" class="mono border-slate-200">{{ room.room_number || '—' }}</td>
+                  <td v-else-if="col.key === 'room_status'" class="border-slate-200">
                     <span class="status-pill" :class="`status-${room.room_status}`">{{ statusText(room.room_status) }}</span>
                   </td>
-                  <td v-else-if="col.key === 'guest_name'" class="name-cell font-medium">{{ room.guest_name || '—' }}</td>
-                  <td v-else-if="col.key === 'arrival_date'">{{ date(room.arrival_date) }}</td>
-                  <td v-else-if="col.key === 'departure_date'">{{ date(room.departure_date) }}</td>
-                  <td v-else-if="col.key === 'nights'">{{ room.nights }}</td>
-                  <td v-else-if="col.key === 'rate'" class="number font-medium">{{ money(room.rate) }}</td>
-                  <td v-else-if="col.key === 'rate_code'">{{ room.rate_code || '—' }}</td>
-                  <td v-else-if="col.key === 'actual_room_class'" class="room-class-cell">{{ room.room_class?.code || '—' }}</td>
-                  <td v-else-if="col.key === 'original_room_class'" class="room-class-cell">{{ room.original_room_class?.code || '—' }}</td>
-                  <td v-else-if="col.key === 'extra_bed_qty'">{{ room.extra_bed_qty }}</td>
-                  <td v-else-if="col.key === 'extra_bed_rate'" class="number">{{ money(room.extra_bed_rate) }}</td>
-                  <td v-else-if="col.key === 'adults'">{{ room.adults }}</td>
-                  <td v-else-if="col.key === 'children'">{{ room.children }}</td>
-                  <td v-else-if="col.key === 'note'" class="note-cell">{{ room.note || '—' }}</td>
-                  <td v-else-if="col.key === 'service_total'" class="number font-medium">{{ money(room.service_total) }}</td>
-                  <td v-else-if="col.key === 'paid_total'" class="number">{{ money(room.paid_total) }}</td>
-                  <td v-else-if="col.key === 'checkin_time'">{{ room.checkin_time || '—' }}</td>
-                  <td v-else-if="col.key === 'checkout_time'">{{ room.checkout_time || '12:30' }}</td>
-                  <td v-else-if="col.key === 'booking_date'">{{ date(room.booking_date) }}</td>
-                  <td v-else>{{ room[col.key] || '—' }}</td>
+                  <td v-else-if="col.key === 'guest_name'" class="name-cell font-medium border-slate-200">{{ room.guest_name || '—' }}</td>
+                  <td v-else-if="col.key === 'arrival_date'" class="border-slate-200">{{ date(room.arrival_date) }}</td>
+                  <td v-else-if="col.key === 'departure_date'" class="border-slate-200">{{ date(room.departure_date) }}</td>
+                  <td v-else-if="col.key === 'nights'" class="border-slate-200">{{ room.nights }}</td>
+                  <td v-else-if="col.key === 'rate'" class="number font-medium border-slate-200">{{ money(room.rate) }}</td>
+                  <td v-else-if="col.key === 'rate_code'" class="border-slate-200">{{ room.rate_code || '—' }}</td>
+                  <td v-else-if="col.key === 'actual_room_class'" class="room-class-cell border-slate-200">{{ room.room_class?.code || '—' }}</td>
+                  <td v-else-if="col.key === 'original_room_class'" class="room-class-cell border-slate-200">{{ room.original_room_class?.code || '—' }}</td>
+                  <td v-else-if="col.key === 'extra_bed_qty'" class="border-slate-200">{{ room.extra_bed_qty }}</td>
+                  <td v-else-if="col.key === 'extra_bed_rate'" class="number border-slate-200">{{ money(room.extra_bed_rate) }}</td>
+                  <td v-else-if="col.key === 'adults'" class="border-slate-200">{{ room.adults }}</td>
+                  <td v-else-if="col.key === 'children'" class="border-slate-200">{{ room.children }}</td>
+                  <td v-else-if="col.key === 'note'" class="note-cell border-slate-200">{{ room.note || '—' }}</td>
+                  <td v-else-if="col.key === 'service_total'" class="number font-medium border-slate-200">{{ money(room.service_total) }}</td>
+                  <td v-else-if="col.key === 'paid_total'" class="number border-slate-200">{{ money(room.paid_total) }}</td>
+                  <td v-else-if="col.key === 'checkin_time'" class="border-slate-200">{{ room.checkin_time || '—' }}</td>
+                  <td v-else-if="col.key === 'checkout_time'" class="border-slate-200">{{ room.checkout_time || '12:30' }}</td>
+                  <td v-else-if="col.key === 'booking_date'" class="border-slate-200">{{ date(room.booking_date) }}</td>
+                  <td v-else class="border-slate-200">{{ room[col.key] || '—' }}</td>
                 </template>
               </tr>
             </template>
           </template>
           <tr v-if="!loading && rows.length === 0" class="empty-row">
-            <td :colspan="visibleCols.length + 2">Không có kết quả nào phù hợp</td>
+            <td :colspan="visibleCols.length + 2" class="border-slate-200">Không có kết quả nào phù hợp</td>
           </tr>
         </tbody>
       </table>
@@ -1867,14 +1866,14 @@ onMounted(async () => {
       <table v-else class="data-table guest-table">
         <thead>
           <tr>
-            <th style="width: 36px; text-align: center;">
+            <th style="width: 36px; text-align: center;" class="text-center align-middle border-r border-slate-200 border">
               <input type="checkbox" :checked="allCurrentSelected" @change="toggleAllSelected">
             </th>
             <template v-for="col in visibleCols" :key="col.key">
               <th
                 :class="{ sortable: col.sortable, number: col.isNumber }"
                 @click="col.sortable ? setSort(col.key) : null"
-              >
+               class="text-center align-middle border-r border-slate-200 border">
                 {{ col.label }} <span v-if="col.sortable">{{ sortIcon(col.key) }}</span>
               </th>
             </template>
@@ -1886,38 +1885,38 @@ onMounted(async () => {
             :key="row.id"
             :class="{ selected: isSelected(row) }"
           >
-            <td style="text-align: center;">
+            <td style="text-align: center;" class="border-slate-200">
               <input type="checkbox" :checked="isSelected(row)" @change="toggleSelected(row)">
             </td>
 
             <!-- Dynamic guest columns according to active reordered columns -->
             <template v-for="col in visibleCols" :key="col.key">
-              <td v-if="col.key === 'guest_name'" class="name-cell font-medium">{{ row.guest_name }}</td>
-              <td v-else-if="col.key === 'booking_code'" class="mono">{{ row.booking_code }}</td>
-              <td v-else-if="col.key === 'room_number'">{{ row.room_number || '—' }}</td>
-              <td v-else-if="col.key === 'arrival_date'">{{ date(row.arrival_date) }}</td>
-              <td v-else-if="col.key === 'departure_date'">{{ date(row.departure_date) }}</td>
-              <td v-else-if="col.key === 'nights'">{{ row.nights }}</td>
-              <td v-else-if="col.key === 'rate'" class="number font-medium">{{ money(row.rate) }}</td>
-              <td v-else-if="col.key === 'rate_code'">{{ row.rate_code || '—' }}</td>
-              <td v-else-if="col.key === 'company'" class="wrap-cell">{{ row.company || 'KHÁCH LẺ' }}</td>
-              <td v-else-if="col.key === 'id_type'">{{ row.id_type || '—' }}</td>
-              <td v-else-if="col.key === 'id_number'">{{ row.id_number || '—' }}</td>
-              <td v-else-if="col.key === 'email'" class="wrap-cell">{{ row.email || '—' }}</td>
-              <td v-else-if="col.key === 'phone'">{{ row.phone || '—' }}</td>
-              <td v-else-if="col.key === 'dob'">{{ date(row.dob) }}</td>
-              <td v-else-if="col.key === 'nationality'" class="wrap-cell">{{ row.nationality || '—' }}</td>
-              <td v-else-if="col.key === 'province'" class="wrap-cell">{{ row.province || '—' }}</td>
-              <td v-else-if="col.key === 'address'" class="note-cell">{{ row.address || '—' }}</td>
-              <td v-else-if="col.key === 'visa_no'">{{ row.visa_no || '—' }}</td>
-              <td v-else-if="col.key === 'visa_expiry_date'">{{ date(row.visa_expiry_date) }}</td>
-              <td v-else-if="col.key === 'entry_date'">{{ date(row.entry_date) }}</td>
-              <td v-else-if="col.key === 'border_gate'" class="wrap-cell">{{ row.border_gate || '—' }}</td>
-              <td v-else>{{ row[col.key] || '—' }}</td>
+              <td v-if="col.key === 'guest_name'" class="name-cell font-medium border-slate-200">{{ row.guest_name }}</td>
+              <td v-else-if="col.key === 'booking_code'" class="mono border-slate-200">{{ row.booking_code }}</td>
+              <td v-else-if="col.key === 'room_number'" class="border-slate-200">{{ row.room_number || '—' }}</td>
+              <td v-else-if="col.key === 'arrival_date'" class="border-slate-200">{{ date(row.arrival_date) }}</td>
+              <td v-else-if="col.key === 'departure_date'" class="border-slate-200">{{ date(row.departure_date) }}</td>
+              <td v-else-if="col.key === 'nights'" class="border-slate-200">{{ row.nights }}</td>
+              <td v-else-if="col.key === 'rate'" class="number font-medium border-slate-200">{{ money(row.rate) }}</td>
+              <td v-else-if="col.key === 'rate_code'" class="border-slate-200">{{ row.rate_code || '—' }}</td>
+              <td v-else-if="col.key === 'company'" class="wrap-cell border-slate-200">{{ row.company || 'KHÁCH LẺ' }}</td>
+              <td v-else-if="col.key === 'id_type'" class="border-slate-200">{{ row.id_type || '—' }}</td>
+              <td v-else-if="col.key === 'id_number'" class="border-slate-200">{{ row.id_number || '—' }}</td>
+              <td v-else-if="col.key === 'email'" class="wrap-cell border-slate-200">{{ row.email || '—' }}</td>
+              <td v-else-if="col.key === 'phone'" class="border-slate-200">{{ row.phone || '—' }}</td>
+              <td v-else-if="col.key === 'dob'" class="border-slate-200">{{ date(row.dob) }}</td>
+              <td v-else-if="col.key === 'nationality'" class="wrap-cell border-slate-200">{{ row.nationality || '—' }}</td>
+              <td v-else-if="col.key === 'province'" class="wrap-cell border-slate-200">{{ row.province || '—' }}</td>
+              <td v-else-if="col.key === 'address'" class="note-cell border-slate-200">{{ row.address || '—' }}</td>
+              <td v-else-if="col.key === 'visa_no'" class="border-slate-200">{{ row.visa_no || '—' }}</td>
+              <td v-else-if="col.key === 'visa_expiry_date'" class="border-slate-200">{{ date(row.visa_expiry_date) }}</td>
+              <td v-else-if="col.key === 'entry_date'" class="border-slate-200">{{ date(row.entry_date) }}</td>
+              <td v-else-if="col.key === 'border_gate'" class="wrap-cell border-slate-200">{{ row.border_gate || '—' }}</td>
+              <td v-else class="border-slate-200">{{ row[col.key] || '—' }}</td>
             </template>
           </tr>
           <tr v-if="!loading && rows.length === 0" class="empty-row">
-            <td :colspan="visibleCols.length + 1">Không có kết quả nào phù hợp</td>
+            <td :colspan="visibleCols.length + 1" class="border-slate-200">Không có kết quả nào phù hợp</td>
           </tr>
         </tbody>
       </table>

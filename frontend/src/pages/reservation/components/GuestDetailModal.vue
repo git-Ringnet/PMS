@@ -145,7 +145,8 @@
                   <label>Ngày sinh</label>
                   <SingleDatePicker
                     v-model="form.dob"
-                    placeholder="dd/mm/yy"
+                    placeholder="dd/mm/yyyy"
+                    four-digit-year
                     input-class="!h-[30px] !py-0 !px-2 !rounded !border-[#C5CDDA] !text-xs !font-normal"
                   />
                 </div>
@@ -182,7 +183,8 @@
                   <label>Ngày cấp</label>
                   <SingleDatePicker
                     v-model="form.id_issue_date"
-                    placeholder="dd/mm/yy"
+                    placeholder="dd/mm/yyyy"
+                    four-digit-year
                     input-class="!h-[30px] !py-0 !px-2 !rounded !border-[#C5CDDA] !text-xs !font-normal"
                   />
                 </div>
@@ -191,7 +193,8 @@
                   <label>Ngày hết hạn</label>
                   <SingleDatePicker
                     v-model="form.passport_expiry"
-                    placeholder="dd/mm/yy"
+                    placeholder="dd/mm/yyyy"
+                    four-digit-year
                     input-class="!h-[30px] !py-0 !px-2 !rounded !border-[#C5CDDA] !text-xs !font-normal"
                   />
                   <div v-if="isPassportExpiredBeforeDeparture" class="msg err">
@@ -203,7 +206,8 @@
                   <label>Ngày nhập cảnh</label>
                   <SingleDatePicker
                     v-model="form.entry_date"
-                    placeholder="dd/mm/yy"
+                    placeholder="dd/mm/yyyy"
+                    four-digit-year
                     input-class="!h-[30px] !py-0 !px-2 !rounded !border-[#C5CDDA] !text-xs !font-normal"
                   />
                 </div>
@@ -239,7 +243,8 @@
                   <label>Tạm trú đến</label>
                   <SingleDatePicker
                     v-model="form.temp_residence_to"
-                    placeholder="dd/mm/yy"
+                    placeholder="dd/mm/yyyy"
+                    four-digit-year
                     input-class="!h-[30px] !py-0 !px-2 !rounded !border-[#C5CDDA] !text-xs !font-normal"
                   />
                 </div>
@@ -768,8 +773,8 @@ function formatDate(d) {
     const pad = n => String(n).padStart(2, '0')
     const day = pad(dt.getDate())
     const month = pad(dt.getMonth() + 1)
-    const yy = String(dt.getFullYear()).slice(-2)
-    return `${day}/${month}/${yy}`
+    const yyyy = String(dt.getFullYear())
+    return `${day}/${month}/${yyyy}`
   } catch { return d }
 }
 
@@ -780,10 +785,10 @@ function formatDateTime(d) {
     const pad = n => String(n).padStart(2, '0')
     const day = pad(dt.getDate())
     const month = pad(dt.getMonth() + 1)
-    const yy = String(dt.getFullYear()).slice(-2)
+    const yyyy = String(dt.getFullYear())
     const hours = pad(dt.getHours())
     const minutes = pad(dt.getMinutes())
-    return `${day}/${month}/${yy} ${hours}:${minutes}`
+    return `${day}/${month}/${yyyy} ${hours}:${minutes}`
   } catch {
     return d
   }

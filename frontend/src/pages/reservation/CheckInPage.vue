@@ -5,12 +5,15 @@ import { fetchBookings, checkInRoom, undoCheckInRoom, cancelBookingRoom, fetchSy
 import { ROOM_STATUS_ICON_MAP, roomService } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useRoomStore } from '@/stores/room-store'
+import { useAuthStore } from '@/stores/auth-store'
 import { t } from '@/utils/i18n'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import RoomIcon from '@/components/RoomIcon.vue'
+import SingleDatePicker from '@/components/SingleDatePicker.vue'
 
 const uiStore = useUiStore()
 const roomStore = useRoomStore()
+const authStore = useAuthStore()
 
 let pmsBc = null
 if (typeof BroadcastChannel !== 'undefined') {
@@ -51,7 +54,7 @@ const canUndoForDate = computed(() => {
 const bookings = ref([])
 const loading = ref(false)
 const searchQuery = ref('')
-const searchDate = ref(props.initialDate || '')
+const searchDate = ref(props.initialDate || authStore.systemDate || localStorage.getItem('pms_system_date') || '')
 const dateInputRef = ref(null)
 
 watch(() => props.initialDate, (newVal) => {
@@ -97,14 +100,17 @@ const fetchSysDate = async () => {
   try {
     const res = await fetchSystemDate()
     const resolvedDate = res.data?.data?.system_date || res.data?.system_date || ''
-    systemDate.value = resolvedDate
+    if (resolvedDate) {
+      systemDate.value = resolvedDate
+      authStore.setSystemDate(resolvedDate)
+    }
     if (props.initialDate) {
       searchDate.value = props.initialDate
     } else if (resolvedDate) {
       searchDate.value = resolvedDate
     }
   } catch (err) {
-    console.error('fetchSystemDate error:', err)
+    console.error('fetchSysDate error:', err)
   }
 }
 
@@ -861,24 +867,13 @@ watch(() => props.displayMode, async () => {
     <div class="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between gap-4 shrink-0 shadow-xs">
       <!-- Left: Date Picker -->
       <div class="flex items-center gap-3">
-        <div class="flex items-center border border-slate-200 rounded-lg bg-white shadow-xs hover:border-slate-300 transition-colors h-8">
-          <span 
-            @click="triggerDatePicker"
-            class="text-xs font-semibold text-[#000000D9] px-3 py-1 cursor-pointer flex items-center gap-2 h-full"
-          >
-            <svg class="w-4 h-4 text-indigo-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-              <line x1="16" y1="2" x2="16" y2="6" />
-              <line x1="8" y1="2" x2="8" y2="6" />
-              <line x1="3" y1="10" x2="21" y2="10" />
-            </svg>
-            {{ formatDateDisplay(searchDate) }}
-          </span>
-          <input
-            ref="dateInputRef"
-            type="date"
+        <div class="w-[145px]">
+          <SingleDatePicker
             v-model="searchDate"
-            class="w-0 h-0 opacity-0 p-0 border-none absolute -z-10"
+            :start-date="systemDate || searchDate"
+            placeholder="dd/mm/yyyy"
+            four-digit-year
+            input-class="!h-8"
           />
         </div>
         <span class="text-xs text-slate-400 font-semibold">Ngày hệ thống hiện tại</span>
@@ -954,7 +949,7 @@ watch(() => props.displayMode, async () => {
           <table class="w-full text-left border-collapse text-xs table-fixed">
             <thead>
               <tr class="bg-slate-50 border-b border-slate-200 text-[#000000D9] font-semibold select-none h-9 text-xs">
-                <th class="p-2.5 text-center w-10">
+                <th class="p-2.5 text-center w-10 align-middle border-r border-slate-200 border">
                   <input
                     v-if="!isReadOnlyModule"
                     type="checkbox"
@@ -963,26 +958,26 @@ watch(() => props.displayMode, async () => {
                     class="rounded border-slate-300 text-sky-600 focus:ring-sky-500 w-3.5 h-3.5"
                   />
                 </th>
-                <th class="p-2.5 w-[130px]">Mã DK</th>
-                <th class="p-2.5 w-[140px]">Mã Tham chiếu</th>
-                <th class="p-2.5 w-[250px]">Tên BK / Khách</th>
-                <th class="p-2.5 w-[180px]">Công ty</th>
-                <th class="p-2.5 text-center w-[120px]">Trạng thái</th>
-                <th class="p-2.5 text-center w-[100px]">Ngày đến</th>
-                <th class="p-2.5 text-center w-[100px]">Ngày đi</th>
-                <th class="p-2.5 text-center w-[80px]">Phòng</th>
-                <th class="p-2.5 text-center w-[90px]">NL/TE/EB</th>
-                <th class="p-2.5 w-[160px]">Yêu cầu ĐB</th>
-                <th v-if="isDepartureMode" class="p-2.5 text-right w-[120px]">Tổng cộng</th>
-                <th v-if="isDepartureMode" class="p-2.5 text-right w-[120px]">Đã thanh toán</th>
-                <th v-if="isDepartureMode" class="p-2.5 text-right w-[120px]">Chưa thanh toán</th>
-                <th class="p-2.5 pl-4">Ghi chú</th>
+                <th class="p-2.5 w-[130px] text-center align-middle border-r border-slate-200 border">Mã DK</th>
+                <th class="p-2.5 w-[140px] text-center align-middle border-r border-slate-200 border">Mã Tham Chiếu</th>
+                <th class="p-2.5 w-[250px] text-center align-middle border-r border-slate-200 border">Tên BK / Khách</th>
+                <th class="p-2.5 w-[180px] text-center align-middle border-r border-slate-200 border">Công Ty</th>
+                <th class="p-2.5 text-center w-[120px] align-middle border-r border-slate-200 border">Trạng Thái</th>
+                <th class="p-2.5 text-center w-[100px] align-middle border-r border-slate-200 border">Ngày Đến</th>
+                <th class="p-2.5 text-center w-[100px] align-middle border-r border-slate-200 border">Ngày Đi</th>
+                <th class="p-2.5 text-center w-[80px] align-middle border-r border-slate-200 border">Phòng</th>
+                <th class="p-2.5 text-center w-[90px] align-middle border-r border-slate-200 border">NL/TE/EB</th>
+                <th class="p-2.5 w-[160px] text-center align-middle border-r border-slate-200 border">Yêu Cầu ĐB</th>
+                <th v-if="isDepartureMode" class="p-2.5 text-center w-[120px] align-middle border-r border-slate-200 border">Tổng Cộng</th>
+                <th v-if="isDepartureMode" class="p-2.5 text-center w-[120px] align-middle border-r border-slate-200 border">Đã Thanh Toán</th>
+                <th v-if="isDepartureMode" class="p-2.5 text-center w-[120px] align-middle border-r border-slate-200 border">Chưa Thanh Toán</th>
+                <th class="p-2.5 pl-4 text-center align-middle border-r border-slate-200 border">Ghi Chú</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-200">
               <template v-if="chuaDenBookings.length === 0">
                 <tr>
-                  <td :colspan="isDepartureMode ? 15 : 12" class="p-8 text-center text-slate-400 font-medium bg-slate-50/30">
+                  <td :colspan="isDepartureMode ? 15 : 12" class="p-8 text-center text-slate-400 font-medium bg-slate-50/30 border-slate-200">
                     Không có phòng nào chưa đến trong ngày hôm nay.
                   </td>
                 </tr>
@@ -991,7 +986,7 @@ watch(() => props.displayMode, async () => {
               <template v-else v-for="booking in chuaDenBookings" :key="booking.id">
                 <!-- Parent Row -->
                 <tr class="hover:bg-slate-50/50 transition-colors h-10 font-semibold bg-slate-50/20">
-                  <td class="p-2.5 text-center">
+                  <td class="p-2.5 text-center border-slate-200">
                     <input
                       v-if="!isReadOnlyModule"
                       type="checkbox"
@@ -1001,7 +996,7 @@ watch(() => props.displayMode, async () => {
                       class="rounded border-slate-300 text-sky-600 focus:ring-sky-500 w-3.5 h-3.5"
                     />
                   </td>
-                  <td class="p-2.5 font-bold text-slate-900 flex items-center gap-1.5 h-10">
+                  <td class="p-2.5 font-bold text-slate-900 flex items-center gap-1.5 h-10 border-slate-200">
                     <button
                       @click="toggleCollapse(booking.id)"
                       class="w-4 h-4 flex items-center justify-center text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0"
@@ -1011,23 +1006,23 @@ watch(() => props.displayMode, async () => {
                     <span v-if="props.currentModule !== 'housekeeping'" class="cursor-pointer hover:text-sky-700" title="Double-click để mở booking" @dblclick.stop="openBooking(booking)">{{ booking.booking_code }}</span>
                     <span v-else>{{ booking.booking_code }}</span>
                   </td>
-                  <td class="p-2.5 text-slate-500">{{ booking.external_booking_code || '-' }}</td>
-                  <td class="p-2.5 text-slate-800 font-bold uppercase truncate">{{ booking.booking_name }}</td>
-                  <td class="p-2.5 text-slate-600 truncate">{{ booking.company?.name || 'KHÁCH LẺ' }}</td>
-                  <td class="p-2.5 text-center">
+                  <td class="p-2.5 text-slate-500 border-slate-200">{{ booking.external_booking_code || '-' }}</td>
+                  <td class="p-2.5 text-slate-800 font-bold uppercase truncate border-slate-200">{{ booking.booking_name }}</td>
+                  <td class="p-2.5 text-slate-600 truncate border-slate-200">{{ booking.company?.name || 'KHÁCH LẺ' }}</td>
+                  <td class="p-2.5 text-center border-slate-200">
                     <span class="px-2 py-0.5 rounded text-xs font-semibold border bg-emerald-50 text-emerald-600 border-emerald-100">
                       {{ booking.registration_status?.name || 'Guaranteed' }}
                     </span>
                   </td>
-                  <td class="p-2.5 text-center text-slate-600">{{ formatDateDisplay(booking.booking_rooms?.[0]?.arrival_date || booking.arrival_date) }}</td>
-                  <td class="p-2.5 text-center text-slate-600">{{ formatDateDisplay(booking.booking_rooms?.[0]?.departure_date || booking.departure_date) }}</td>
-                  <td class="p-2.5 text-center font-bold text-slate-700">{{ booking.booking_rooms.length }}</td>
-                  <td class="p-2.5 text-center tabular-nums text-xs font-semibold text-[#000000D9]">{{ getBookingOccupancyText(booking) }}</td>
-                  <td class="p-2.5 text-slate-600 truncate max-w-[160px]" :title="getBookingSpecialRequestsText(booking)">{{ getBookingSpecialRequestsText(booking) }}</td>
-                  <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-semibold text-[#000000D9]">{{ formatMoney(bookingFinancialSummary(booking).total) }}</td>
-                  <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-semibold text-emerald-600">{{ formatMoney(bookingFinancialSummary(booking).paid) }}</td>
-                  <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-semibold text-rose-600">{{ formatMoney(bookingFinancialSummary(booking).unpaid) }}</td>
-                  <td class="p-2.5 pl-4 text-slate-500 italic truncate max-w-[200px]" :title="booking.note">{{ booking.note || '-' }}</td>
+                  <td class="p-2.5 text-center text-slate-600 border-slate-200">{{ formatDateDisplay(booking.booking_rooms?.[0]?.arrival_date || booking.arrival_date) }}</td>
+                  <td class="p-2.5 text-center text-slate-600 border-slate-200">{{ formatDateDisplay(booking.booking_rooms?.[0]?.departure_date || booking.departure_date) }}</td>
+                  <td class="p-2.5 text-center font-bold text-slate-700 border-slate-200">{{ booking.booking_rooms.length }}</td>
+                  <td class="p-2.5 text-center tabular-nums text-xs font-semibold text-[#000000D9] border-slate-200">{{ getBookingOccupancyText(booking) }}</td>
+                  <td class="p-2.5 text-slate-600 truncate max-w-[160px] border-slate-200" :title="getBookingSpecialRequestsText(booking)">{{ getBookingSpecialRequestsText(booking) }}</td>
+                  <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-semibold text-[#000000D9] border-slate-200">{{ formatMoney(bookingFinancialSummary(booking).total) }}</td>
+                  <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-semibold text-emerald-600 border-slate-200">{{ formatMoney(bookingFinancialSummary(booking).paid) }}</td>
+                  <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-semibold text-rose-600 border-slate-200">{{ formatMoney(bookingFinancialSummary(booking).unpaid) }}</td>
+                  <td class="p-2.5 pl-4 text-slate-500 italic truncate max-w-[200px] border-slate-200" :title="booking.note">{{ booking.note || '-' }}</td>
                 </tr>
 
                 <!-- Child Rows -->
@@ -1037,7 +1032,7 @@ watch(() => props.displayMode, async () => {
                   :key="room.id"
                   class="border-b border-slate-100 hover:bg-slate-50/30 transition-colors h-9"
                 >
-                  <td class="p-2.5 text-center bg-slate-50/5">
+                  <td class="p-2.5 text-center bg-slate-50/5 border-slate-200">
                     <input
                       v-if="!isReadOnlyModule"
                       type="checkbox"
@@ -1046,7 +1041,7 @@ watch(() => props.displayMode, async () => {
                       class="rounded border-slate-300 text-sky-600 focus:ring-sky-500 w-3.5 h-3.5"
                     />
                   </td>
-                  <td class="p-2.5 pl-6 font-bold text-sky-600 flex items-center gap-1.5 h-9">
+                  <td class="p-2.5 pl-6 font-bold text-sky-600 flex items-center gap-1.5 h-9 border-slate-200">
                     <span>{{ room.room_number || '--' }}</span>
                     <RoomIcon
                       v-if="getRoomStatusIcon(room)"
@@ -1057,22 +1052,22 @@ watch(() => props.displayMode, async () => {
                       :title="getRoomStatusTooltip(room)"
                     />
                   </td>
-                  <td class="p-2.5"></td>
-                  <td class="p-2.5 text-slate-600 truncate pl-6 flex items-center gap-1.5 h-9">
+                  <td class="p-2.5 border-slate-200"></td>
+                  <td class="p-2.5 text-slate-600 truncate pl-6 flex items-center gap-1.5 h-9 border-slate-200">
                     <span class="w-1.5 h-1.5 rounded-full bg-slate-300 shrink-0"></span>
                     <span>{{ getRoomGuestName(room, booking) }}</span>
                   </td>
-                  <td class="p-2.5"></td>
-                  <td class="p-2.5 text-center"></td>
-                  <td class="p-2.5 text-center text-slate-500">{{ formatDateDisplay(room.arrival_date) }}</td>
-                  <td class="p-2.5 text-center text-slate-500">{{ formatDateDisplay(room.departure_date) }}</td>
-                  <td class="p-2.5 text-center"></td>
-                  <td class="p-2.5 text-center tabular-nums text-xs font-normal text-[#000000D9]">{{ getRoomOccupancyText(room) }}</td>
-                  <td class="p-2.5 text-slate-500 truncate max-w-[160px]" :title="getRoomSpecialRequestsText(room)">{{ getRoomSpecialRequestsText(room) }}</td>
-                  <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-normal text-[#000000D9]">{{ formatMoney(roomFinancialSummary(booking, room).total) }}</td>
-                  <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-normal text-emerald-600">{{ formatMoney(roomFinancialSummary(booking, room).paid) }}</td>
-                  <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-normal text-rose-600">{{ formatMoney(roomFinancialSummary(booking, room).unpaid) }}</td>
-                  <td class="p-2.5 pl-4 text-slate-400 text-xs truncate">{{ room.note || '-' }}</td>
+                  <td class="p-2.5 border-slate-200"></td>
+                  <td class="p-2.5 text-center border-slate-200"></td>
+                  <td class="p-2.5 text-center text-slate-500 border-slate-200">{{ formatDateDisplay(room.arrival_date) }}</td>
+                  <td class="p-2.5 text-center text-slate-500 border-slate-200">{{ formatDateDisplay(room.departure_date) }}</td>
+                  <td class="p-2.5 text-center border-slate-200"></td>
+                  <td class="p-2.5 text-center tabular-nums text-xs font-normal text-[#000000D9] border-slate-200">{{ getRoomOccupancyText(room) }}</td>
+                  <td class="p-2.5 text-slate-500 truncate max-w-[160px] border-slate-200" :title="getRoomSpecialRequestsText(room)">{{ getRoomSpecialRequestsText(room) }}</td>
+                  <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-normal text-[#000000D9] border-slate-200">{{ formatMoney(roomFinancialSummary(booking, room).total) }}</td>
+                  <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-normal text-emerald-600 border-slate-200">{{ formatMoney(roomFinancialSummary(booking, room).paid) }}</td>
+                  <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-normal text-rose-600 border-slate-200">{{ formatMoney(roomFinancialSummary(booking, room).unpaid) }}</td>
+                  <td class="p-2.5 pl-4 text-slate-400 text-xs truncate border-slate-200">{{ room.note || '-' }}</td>
                 </tr>
               </template>
             </tbody>
@@ -1109,7 +1104,7 @@ watch(() => props.displayMode, async () => {
           <table class="w-full text-left border-collapse text-xs table-fixed">
             <thead>
               <tr class="bg-slate-50 border-b border-slate-200 text-[#000000D9] font-semibold select-none h-9 text-xs">
-                <th class="p-2.5 text-center w-10">
+                <th class="p-2.5 text-center w-10 align-middle border-r border-slate-200 border">
                   <input
                     v-if="!isReadOnlyModule"
                     type="checkbox"
@@ -1118,26 +1113,26 @@ watch(() => props.displayMode, async () => {
                     class="rounded border-slate-300 text-sky-600 focus:ring-sky-500 w-3.5 h-3.5"
                   />
                 </th>
-                <th class="p-2.5 w-[130px]">Mã DK</th>
-                <th class="p-2.5 w-[140px]">Mã Tham chiếu</th>
-                <th class="p-2.5 w-[250px]">Tên BK / Khách</th>
-                <th class="p-2.5 w-[180px]">Công ty</th>
-                <th class="p-2.5 text-center w-[120px]">Trạng thái</th>
-                <th class="p-2.5 text-center w-[100px]">Ngày đến</th>
-                <th class="p-2.5 text-center w-[100px]">Ngày đi</th>
-                <th class="p-2.5 text-center w-[80px]">Phòng</th>
-                <th class="p-2.5 text-center w-[90px]">NL/TE/EB</th>
-                <th class="p-2.5 w-[160px]">Yêu cầu ĐB</th>
-                <th v-if="isDepartureMode" class="p-2.5 text-right w-[120px]">Tổng cộng</th>
-                <th v-if="isDepartureMode" class="p-2.5 text-right w-[120px]">Đã thanh toán</th>
-                <th v-if="isDepartureMode" class="p-2.5 text-right w-[120px]">Chưa thanh toán</th>
-                <th class="p-2.5 pl-4">Ghi chú</th>
+                <th class="p-2.5 w-[130px] text-center align-middle border-r border-slate-200 border">Mã DK</th>
+                <th class="p-2.5 w-[140px] text-center align-middle border-r border-slate-200 border">Mã Tham Chiếu</th>
+                <th class="p-2.5 w-[250px] text-center align-middle border-r border-slate-200 border">Tên BK / Khách</th>
+                <th class="p-2.5 w-[180px] text-center align-middle border-r border-slate-200 border">Công Ty</th>
+                <th class="p-2.5 text-center w-[120px] align-middle border-r border-slate-200 border">Trạng Thái</th>
+                <th class="p-2.5 text-center w-[100px] align-middle border-r border-slate-200 border">Ngày Đến</th>
+                <th class="p-2.5 text-center w-[100px] align-middle border-r border-slate-200 border">Ngày Đi</th>
+                <th class="p-2.5 text-center w-[80px] align-middle border-r border-slate-200 border">Phòng</th>
+                <th class="p-2.5 text-center w-[90px] align-middle border-r border-slate-200 border">NL/TE/EB</th>
+                <th class="p-2.5 w-[160px] text-center align-middle border-r border-slate-200 border">Yêu Cầu ĐB</th>
+                <th v-if="isDepartureMode" class="p-2.5 text-center w-[120px] align-middle border-r border-slate-200 border">Tổng Cộng</th>
+                <th v-if="isDepartureMode" class="p-2.5 text-center w-[120px] align-middle border-r border-slate-200 border">Đã Thanh Toán</th>
+                <th v-if="isDepartureMode" class="p-2.5 text-center w-[120px] align-middle border-r border-slate-200 border">Chưa Thanh Toán</th>
+                <th class="p-2.5 pl-4 text-center align-middle border-r border-slate-200 border">Ghi Chú</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-200">
               <template v-if="daDenBookings.length === 0">
                 <tr>
-                  <td :colspan="isDepartureMode ? 15 : 12" class="p-8 text-center text-slate-400 font-medium bg-slate-50/30">
+                  <td :colspan="isDepartureMode ? 15 : 12" class="p-8 text-center text-slate-400 font-medium bg-slate-50/30 border-slate-200">
                     Không có phòng nào đã đến trong ngày hôm nay.
                   </td>
                 </tr>
@@ -1146,7 +1141,7 @@ watch(() => props.displayMode, async () => {
               <template v-else v-for="booking in daDenBookings" :key="booking.id">
                 <!-- Parent Row -->
                 <tr class="hover:bg-slate-50/50 transition-colors h-10 font-semibold bg-slate-50/20">
-                  <td class="p-2.5 text-center">
+                  <td class="p-2.5 text-center border-slate-200">
                     <input
                       v-if="!isReadOnlyModule"
                       type="checkbox"
@@ -1156,7 +1151,7 @@ watch(() => props.displayMode, async () => {
                       class="rounded border-slate-300 text-sky-600 focus:ring-sky-500 w-3.5 h-3.5"
                     />
                   </td>
-                  <td class="p-2.5 font-bold text-slate-900 flex items-center gap-1.5 h-10">
+                  <td class="p-2.5 font-bold text-slate-900 flex items-center gap-1.5 h-10 border-slate-200">
                     <button
                       @click="toggleCollapse(booking.id)"
                       class="w-4 h-4 flex items-center justify-center text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0"
@@ -1166,23 +1161,23 @@ watch(() => props.displayMode, async () => {
                     <span v-if="props.currentModule !== 'housekeeping'" class="cursor-pointer hover:text-sky-700" title="Double-click để mở booking" @dblclick.stop="openBooking(booking)">{{ booking.booking_code }}</span>
                     <span v-else>{{ booking.booking_code }}</span>
                   </td>
-                  <td class="p-2.5 text-slate-500">{{ booking.external_booking_code || '-' }}</td>
-                  <td class="p-2.5 text-slate-800 font-bold uppercase truncate">{{ booking.booking_name }}</td>
-                  <td class="p-2.5 text-slate-600 truncate">{{ booking.company?.name || 'KHÁCH LẺ' }}</td>
-                  <td class="p-2.5 text-center">
+                  <td class="p-2.5 text-slate-500 border-slate-200">{{ booking.external_booking_code || '-' }}</td>
+                  <td class="p-2.5 text-slate-800 font-bold uppercase truncate border-slate-200">{{ booking.booking_name }}</td>
+                  <td class="p-2.5 text-slate-600 truncate border-slate-200">{{ booking.company?.name || 'KHÁCH LẺ' }}</td>
+                  <td class="p-2.5 text-center border-slate-200">
                     <span class="px-2 py-0.5 rounded text-xs font-semibold border bg-emerald-50 text-emerald-600 border-emerald-100">
                       {{ booking.registration_status?.name || 'Guaranteed' }}
                     </span>
                   </td>
-                  <td class="p-2.5 text-center text-slate-600">{{ formatDateDisplay(booking.booking_rooms?.[0]?.arrival_date || booking.arrival_date) }}</td>
-                  <td class="p-2.5 text-center text-slate-600">{{ formatDateDisplay(booking.booking_rooms?.[0]?.departure_date || booking.departure_date) }}</td>
-                  <td class="p-2.5 text-center font-bold text-slate-700">{{ booking.booking_rooms.length }}</td>
-                  <td class="p-2.5 text-center tabular-nums text-xs font-semibold text-[#000000D9]">{{ getBookingOccupancyText(booking) }}</td>
-                  <td class="p-2.5 text-slate-600 truncate max-w-[160px]" :title="getBookingSpecialRequestsText(booking)">{{ getBookingSpecialRequestsText(booking) }}</td>
-                  <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-semibold text-[#000000D9]">{{ formatMoney(bookingFinancialSummary(booking).total) }}</td>
-                  <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-semibold text-emerald-600">{{ formatMoney(bookingFinancialSummary(booking).paid) }}</td>
-                  <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-semibold text-rose-600">{{ formatMoney(bookingFinancialSummary(booking).unpaid) }}</td>
-                  <td class="p-2.5 pl-4 text-slate-500 italic truncate max-w-[200px]" :title="booking.note">{{ booking.note || '-' }}</td>
+                  <td class="p-2.5 text-center text-slate-600 border-slate-200">{{ formatDateDisplay(booking.booking_rooms?.[0]?.arrival_date || booking.arrival_date) }}</td>
+                  <td class="p-2.5 text-center text-slate-600 border-slate-200">{{ formatDateDisplay(booking.booking_rooms?.[0]?.departure_date || booking.departure_date) }}</td>
+                  <td class="p-2.5 text-center font-bold text-slate-700 border-slate-200">{{ booking.booking_rooms.length }}</td>
+                  <td class="p-2.5 text-center tabular-nums text-xs font-semibold text-[#000000D9] border-slate-200">{{ getBookingOccupancyText(booking) }}</td>
+                  <td class="p-2.5 text-slate-600 truncate max-w-[160px] border-slate-200" :title="getBookingSpecialRequestsText(booking)">{{ getBookingSpecialRequestsText(booking) }}</td>
+                  <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-semibold text-[#000000D9] border-slate-200">{{ formatMoney(bookingFinancialSummary(booking).total) }}</td>
+                  <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-semibold text-emerald-600 border-slate-200">{{ formatMoney(bookingFinancialSummary(booking).paid) }}</td>
+                  <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-semibold text-rose-600 border-slate-200">{{ formatMoney(bookingFinancialSummary(booking).unpaid) }}</td>
+                  <td class="p-2.5 pl-4 text-slate-500 italic truncate max-w-[200px] border-slate-200" :title="booking.note">{{ booking.note || '-' }}</td>
                 </tr>
 
                 <!-- Child Rows -->
@@ -1192,7 +1187,7 @@ watch(() => props.displayMode, async () => {
                   :key="room.id"
                   class="border-b border-slate-100 hover:bg-slate-50/30 transition-colors h-9"
                 >
-                  <td class="p-2.5 text-center bg-slate-50/5">
+                  <td class="p-2.5 text-center bg-slate-50/5 border-slate-200">
                     <input
                       v-if="!isReadOnlyModule"
                       type="checkbox"
@@ -1201,7 +1196,7 @@ watch(() => props.displayMode, async () => {
                       class="rounded border-slate-300 text-sky-600 focus:ring-sky-500 w-3.5 h-3.5"
                     />
                   </td>
-                  <td class="p-2.5 pl-6 font-bold text-sky-600 flex items-center gap-1.5 h-9">
+                  <td class="p-2.5 pl-6 font-bold text-sky-600 flex items-center gap-1.5 h-9 border-slate-200">
                     <span>{{ room.room_number || '--' }}</span>
                     <RoomIcon
                       v-if="getRoomStatusIcon(room)"
@@ -1212,22 +1207,22 @@ watch(() => props.displayMode, async () => {
                       :title="getRoomStatusTooltip(room)"
                     />
                   </td>
-                  <td class="p-2.5"></td>
-                  <td class="p-2.5 text-slate-600 truncate pl-6 flex items-center gap-1.5 h-9">
+                  <td class="p-2.5 border-slate-200"></td>
+                  <td class="p-2.5 text-slate-600 truncate pl-6 flex items-center gap-1.5 h-9 border-slate-200">
                     <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
                     <span>{{ getRoomGuestName(room, booking) }}</span>
                   </td>
-                  <td class="p-2.5"></td>
-                  <td class="p-2.5 text-center"></td>
-                  <td class="p-2.5 text-center text-slate-500">{{ formatDateDisplay(room.arrival_date) }}</td>
-                  <td class="p-2.5 text-center text-slate-500">{{ formatDateDisplay(room.departure_date) }}</td>
-                  <td class="p-2.5 text-center"></td>
-                  <td class="p-2.5 text-center tabular-nums text-xs font-normal text-[#000000D9]">{{ getRoomOccupancyText(room) }}</td>
-                  <td class="p-2.5 text-slate-500 truncate max-w-[160px]" :title="getRoomSpecialRequestsText(room)">{{ getRoomSpecialRequestsText(room) }}</td>
-                  <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-normal text-[#000000D9]">{{ formatMoney(roomFinancialSummary(booking, room).total) }}</td>
-                  <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-normal text-emerald-600">{{ formatMoney(roomFinancialSummary(booking, room).paid) }}</td>
-                  <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-normal text-rose-600">{{ formatMoney(roomFinancialSummary(booking, room).unpaid) }}</td>
-                  <td class="p-2.5 pl-4 text-slate-400 text-xs truncate">{{ room.note || '-' }}</td>
+                  <td class="p-2.5 border-slate-200"></td>
+                  <td class="p-2.5 text-center border-slate-200"></td>
+                  <td class="p-2.5 text-center text-slate-500 border-slate-200">{{ formatDateDisplay(room.arrival_date) }}</td>
+                  <td class="p-2.5 text-center text-slate-500 border-slate-200">{{ formatDateDisplay(room.departure_date) }}</td>
+                  <td class="p-2.5 text-center border-slate-200"></td>
+                  <td class="p-2.5 text-center tabular-nums text-xs font-normal text-[#000000D9] border-slate-200">{{ getRoomOccupancyText(room) }}</td>
+                  <td class="p-2.5 text-slate-500 truncate max-w-[160px] border-slate-200" :title="getRoomSpecialRequestsText(room)">{{ getRoomSpecialRequestsText(room) }}</td>
+                  <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-normal text-[#000000D9] border-slate-200">{{ formatMoney(roomFinancialSummary(booking, room).total) }}</td>
+                  <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-normal text-emerald-600 border-slate-200">{{ formatMoney(roomFinancialSummary(booking, room).paid) }}</td>
+                  <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-normal text-rose-600 border-slate-200">{{ formatMoney(roomFinancialSummary(booking, room).unpaid) }}</td>
+                  <td class="p-2.5 pl-4 text-slate-400 text-xs truncate border-slate-200">{{ room.note || '-' }}</td>
                 </tr>
               </template>
             </tbody>

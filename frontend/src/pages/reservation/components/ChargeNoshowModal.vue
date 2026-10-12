@@ -43,17 +43,18 @@
         <div class="grid grid-cols-2 gap-4">
           <div>
             <label class="block text-xs font-medium text-gray-700 mb-1.5">Ngày *</label>
-            <div class="flex items-center space-x-2 border border-gray-200 rounded-lg px-3 py-2 bg-white">
-              <input 
-                type="date" 
+            <div class="grid grid-cols-2 gap-2 items-center">
+              <SingleDatePicker
                 v-model="dateFrom"
-                class="w-full text-xs font-medium bg-transparent border-none p-0 focus:outline-none text-gray-800 cursor-pointer"
+                :start-date="dateFrom || authStore.systemDate"
+                placeholder="dd/mm/yyyy"
+                four-digit-year
               />
-              <span class="text-gray-400">~</span>
-              <input 
-                type="date" 
+              <SingleDatePicker
                 v-model="dateTo"
-                class="w-full text-xs font-medium bg-transparent border-none p-0 focus:outline-none text-gray-800 cursor-pointer"
+                :start-date="dateTo || dateFrom || authStore.systemDate"
+                placeholder="dd/mm/yyyy"
+                four-digit-year
               />
             </div>
           </div>
@@ -182,6 +183,7 @@ import { ref, watch, computed } from 'vue'
 import { chargeRoomNoshow } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
+import SingleDatePicker from '@/components/SingleDatePicker.vue'
 
 const authStore = useAuthStore()
 const topbarThemeBg = computed(() => {

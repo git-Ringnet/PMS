@@ -93,7 +93,9 @@
               <label class="block text-xs font-semibold text-[#000000D9] mb-1">Ngày bắt đầu <span class="text-red-500">*</span></label>
               <SingleDatePicker
                 v-model="form.starts_on"
-                placeholder="dd/mm/yy"
+                :start-date="props.systemDate || form.starts_on"
+                placeholder="dd/mm/yyyy"
+                four-digit-year
                 input-class="!h-[32px] !py-0 !px-2.5 !rounded-lg !border-slate-200 !text-xs !font-normal"
               />
             </div>
@@ -102,7 +104,9 @@
               <SingleDatePicker
                 v-model="form.ends_on"
                 :min-date="form.starts_on"
-                placeholder="dd/mm/yy"
+                :start-date="form.starts_on || props.systemDate"
+                placeholder="dd/mm/yyyy"
+                four-digit-year
                 input-class="!h-[32px] !py-0 !px-2.5 !rounded-lg !border-slate-200 !text-xs !font-normal"
               />
             </div>
@@ -119,18 +123,18 @@
             <table class="w-full min-w-[620px] text-left text-xs">
               <thead class="bg-slate-50 text-[#000000D9] border-b border-slate-200">
                 <tr>
-                  <th class="px-3 py-2.5 font-semibold">Phạm vi</th>
-                  <th class="px-3 py-2.5 font-semibold">Ngày bắt đầu</th>
-                  <th class="px-3 py-2.5 font-semibold">Ngày kết thúc</th>
-                  <th class="px-3 py-2.5 font-semibold">Mô tả</th>
+                  <th class="px-3 py-2.5 font-semibold text-center align-middle border-r border-slate-200 border">Phạm Vi</th>
+                  <th class="px-3 py-2.5 font-semibold text-center align-middle border-r border-slate-200 border">Ngày Bắt Đầu</th>
+                  <th class="px-3 py-2.5 font-semibold text-center align-middle border-r border-slate-200 border">Ngày Kết Thúc</th>
+                  <th class="px-3 py-2.5 font-semibold text-center align-middle border-r border-slate-200 border">Mô Tả</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-if="loading">
-                  <td colspan="4" class="px-3 py-6 text-center text-slate-400">Đang tải...</td>
+                  <td colspan="4" class="px-3 py-6 text-center text-slate-400 border-slate-200">Đang tải...</td>
                 </tr>
                 <tr v-else-if="!notifications.length">
-                  <td colspan="4" class="px-3 py-6 text-center text-slate-400">Chưa có thông báo cho đăng ký này.</td>
+                  <td colspan="4" class="px-3 py-6 text-center text-slate-400 border-slate-200">Chưa có thông báo cho đăng ký này.</td>
                 </tr>
                 <tr 
                   v-for="item in notifications" 
@@ -139,10 +143,10 @@
                   :class="selectedId === item.id ? 'bg-sky-100/70 font-medium' : ''" 
                   @click="selectedId = item.id"
                 >
-                  <td class="px-3 py-2 text-[#000000D9]">{{ scopeLabel(item) }}</td>
-                  <td class="px-3 py-2 text-[#000000D9]">{{ formatDate(item.starts_on) }}</td>
-                  <td class="px-3 py-2 text-[#000000D9]">{{ formatDate(item.ends_on) }}</td>
-                  <td class="max-w-96 whitespace-pre-wrap px-3 py-2 text-[#000000D9]">{{ item.description }}</td>
+                  <td class="px-3 py-2 text-[#000000D9] border-slate-200">{{ scopeLabel(item) }}</td>
+                  <td class="px-3 py-2 text-[#000000D9] border-slate-200">{{ formatDate(item.starts_on) }}</td>
+                  <td class="px-3 py-2 text-[#000000D9] border-slate-200">{{ formatDate(item.ends_on) }}</td>
+                  <td class="max-w-96 whitespace-pre-wrap px-3 py-2 text-[#000000D9] border-slate-200">{{ item.description }}</td>
                 </tr>
               </tbody>
             </table>
@@ -282,7 +286,8 @@ const allRoomsSelected = computed(() => rooms.value.length > 0 && pickerRoomIds.
 function formatDate(value) { 
   if (!value) return '—'
   const [y, m, d] = String(value).slice(0, 10).split('-')
-  return y && m && d ? `${d}/${m}/${y.slice(-2)}` : value
+  const yyyy = y && y.length === 2 ? (parseInt(y, 10) >= 50 ? '19' + y : '20' + y) : y
+  return y && m && d ? `${d}/${m}/${yyyy}` : value
 }
 
 function scopeLabel(item) { 

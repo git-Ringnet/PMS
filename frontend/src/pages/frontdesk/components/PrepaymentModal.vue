@@ -575,22 +575,22 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleEscape))
           <table class="w-full text-left text-xs">
             <thead class="sticky top-0 bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
               <tr>
-                <th class="px-2.5 py-1.5 text-center">Ngày</th>
-                <th class="px-2.5 py-1.5 text-center">Giờ</th>
-                <th class="px-2.5 py-1.5 text-center">HTTT</th>
-                <th class="px-2.5 py-1.5 text-center">Mô tả</th>
-                <th class="px-2.5 py-1.5 text-center">Số tiền</th>
+                <th class="px-2.5 py-1.5 text-center align-middle border-r border-slate-200 border">Ngày</th>
+                <th class="px-2.5 py-1.5 text-center align-middle border-r border-slate-200 border">Giờ</th>
+                <th class="px-2.5 py-1.5 text-center align-middle border-r border-slate-200 border">HTTT</th>
+                <th class="px-2.5 py-1.5 text-center align-middle border-r border-slate-200 border">Mô Tả</th>
+                <th class="px-2.5 py-1.5 text-center align-middle border-r border-slate-200 border">Số Tiền</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="deposit in depositRows" :key="deposit.id" class="border-t border-slate-100 hover:bg-slate-50/50">
-                <td class="px-2.5 py-1.5 text-center">{{ formatDepositDate(deposit.date) }}</td>
-                <td class="px-2.5 py-1.5 text-center">{{ deposit.open_time || '--' }}</td>
-                <td class="px-2.5 py-1.5 text-center font-medium">{{ deposit.payment_method?.name || deposit.payment_method_id || '--' }}</td>
-                <td class="px-2.5 py-1.5 text-slate-700">{{ deposit.description || '--' }}</td>
-                <td class="px-2.5 py-1.5 text-right tabular-nums font-semibold text-emerald-700">{{ formatDepositAmount(deposit.amount) }}</td>
+                <td class="px-2.5 py-1.5 text-center border-slate-200">{{ formatDepositDate(deposit.date) }}</td>
+                <td class="px-2.5 py-1.5 text-center border-slate-200">{{ deposit.open_time || '--' }}</td>
+                <td class="px-2.5 py-1.5 text-center font-medium border-slate-200">{{ deposit.payment_method?.name || deposit.payment_method_id || '--' }}</td>
+                <td class="px-2.5 py-1.5 text-slate-700 border-slate-200">{{ deposit.description || '--' }}</td>
+                <td class="px-2.5 py-1.5 text-right tabular-nums font-semibold text-emerald-700 border-slate-200">{{ formatDepositAmount(deposit.amount) }}</td>
               </tr>
-              <tr v-if="depositRows.length === 0"><td colspan="5" class="px-2 py-3 text-center text-slate-400">Chưa có thanh toán trước.</td></tr>
+              <tr v-if="depositRows.length === 0"><td colspan="5" class="px-2 py-3 text-center text-slate-400 border-slate-200">Chưa có thanh toán trước.</td></tr>
             </tbody>
           </table>
         </div>

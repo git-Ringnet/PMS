@@ -37,7 +37,8 @@
             <label class="block text-[#000000D9] mb-1 font-semibold text-xs">Ngày đến mới <span class="text-red-500">*</span></label>
             <SingleDatePicker
               v-model="arrivalDate"
-              placeholder="dd/mm/yy"
+              placeholder="dd/mm/yyyy"
+              four-digit-year
               input-class="!h-[32px] !py-0 !px-2.5 !rounded-lg !border-slate-200 !text-xs !font-normal"
             />
           </div>
@@ -46,7 +47,8 @@
             <SingleDatePicker
               v-model="departureDate"
               :min-date="arrivalDate"
-              placeholder="dd/mm/yy"
+              placeholder="dd/mm/yyyy"
+              four-digit-year
               input-class="!h-[32px] !py-0 !px-2.5 !rounded-lg !border-slate-200 !text-xs !font-normal"
             />
           </div>

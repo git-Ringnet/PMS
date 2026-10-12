@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useUiStore } from '@/stores/ui-store'
+import { useAuthStore } from '@/stores/auth-store'
 import { fetchSystemDate } from '@/services/booking-service'
 import {
   fetchArrivals,
@@ -21,6 +22,7 @@ const router = useRouter()
 const route = useRoute()
 const emit = defineEmits(['edit-booking'])
 const uiStore = useUiStore()
+const authStore = useAuthStore()
 
 // Sub-tabs list
 const tabs = [
@@ -89,8 +91,8 @@ function formatDateInput(dateStr) {
   const clean = String(dateStr).split('T')[0].split(' ')[0]
   const parts = clean.split('-')
   if (parts.length !== 3) return dateStr
-  const yy = parts[0].length === 4 ? parts[0].slice(-2) : parts[0]
-  return `${parts[2]}/${parts[1]}/${yy}`
+  const yyyy = parts[0].length === 2 ? (parseInt(parts[0], 10) >= 50 ? '19' + parts[0] : '20' + parts[0]) : parts[0]
+  return `${parts[2]}/${parts[1]}/${yyyy}`
 }
 
 function getCleanNote(notes) {
@@ -138,7 +140,7 @@ function triggerDateToPicker() {
 function onSearchDateInput(e) {
   searchDateText.value = maskDateInput(e.target.value)
   const digits = searchDateText.value.replace(/\D/g, '')
-  if (digits.length === 6 || digits.length === 8) {
+  if (digits.length === 8) {
     const parsed = parseDmyInput(searchDateText.value)
     if (parsed) {
       searchDate.value = parsed
@@ -181,7 +183,7 @@ function onPickerDateChange() {
 function onDateFromInput(e) {
   searchDateFromText.value = maskDateInput(e.target.value)
   const digits = searchDateFromText.value.replace(/\D/g, '')
-  if (digits.length === 6 || digits.length === 8) {
+  if (digits.length === 8) {
     const parsed = parseDmyInput(searchDateFromText.value)
     if (parsed) {
       searchDateFrom.value = parsed
@@ -224,7 +226,7 @@ function onPickerDateFromChange() {
 function onDateToInput(e) {
   searchDateToText.value = maskDateInput(e.target.value)
   const digits = searchDateToText.value.replace(/\D/g, '')
-  if (digits.length === 6 || digits.length === 8) {
+  if (digits.length === 8) {
     const parsed = parseDmyInput(searchDateToText.value)
     if (parsed) {
       searchDateTo.value = parsed
@@ -263,7 +265,7 @@ function onPickerDateToChange() {
   loadTabData()
 }
 
-const currentSystemDate = ref('')
+const currentSystemDate = ref(authStore.systemDate || localStorage.getItem('pms_system_date') || '')
 
 function setDateToday() {
   const today = currentSystemDate.value || new Date().toISOString().slice(0, 10)
@@ -351,12 +353,13 @@ watch(activeTab, () => {
 })
 
 async function initDates() {
-  let today = new Date().toISOString().slice(0, 10)
+  let today = authStore.systemDate || localStorage.getItem('pms_system_date') || new Date().toISOString().slice(0, 10)
   try {
     const res = await fetchSystemDate()
     const rawDate = res.data?.data?.system_date || res.data?.system_date
     if (rawDate) {
       today = String(rawDate).split('T')[0].split(' ')[0]
+      authStore.setSystemDate(today)
     }
   } catch (err) {
     console.warn('Cannot fetch system date:', err)
@@ -619,8 +622,8 @@ function formatMoney(num) {
             @input="onSearchDateInput"
             @blur="onSearchDateBlur"
             @keyup.enter="onSearchDateEnter"
-            placeholder="dd/mm/yy"
-            class="w-[84px] text-xs font-normal text-slate-800 bg-transparent border-none outline-none text-center"
+            placeholder="dd/mm/yyyy"
+            class="w-[95px] text-xs font-normal text-slate-800 bg-transparent border-none outline-none text-center"
           />
           <input
             ref="dateInputRef"
@@ -740,8 +743,8 @@ function formatMoney(num) {
             @input="onDateFromInput"
             @blur="onDateFromBlur"
             @keyup.enter="onDateFromEnter"
-            placeholder="dd/mm/yy"
-            class="w-[84px] text-xs font-normal text-slate-800 bg-transparent border-none outline-none text-center"
+            placeholder="dd/mm/yyyy"
+            class="w-[95px] text-xs font-normal text-slate-800 bg-transparent border-none outline-none text-center"
           />
           <input
             ref="dateFromInputRef"
@@ -800,8 +803,8 @@ function formatMoney(num) {
             @input="onDateToInput"
             @blur="onDateToBlur"
             @keyup.enter="onDateToEnter"
-            placeholder="dd/mm/yy"
-            class="w-[84px] text-xs font-normal text-slate-800 bg-transparent border-none outline-none text-center"
+            placeholder="dd/mm/yyyy"
+            class="w-[95px] text-xs font-normal text-slate-800 bg-transparent border-none outline-none text-center"
           />
           <input
             ref="dateToInputRef"
@@ -932,33 +935,33 @@ function formatMoney(num) {
           <table class="w-full text-left border-collapse text-xs min-w-[1600px] table-fixed">
             <thead>
               <tr class="bg-slate-100 border-b border-slate-200 text-slate-800 font-semibold select-none h-9 text-xs">
-                <th class="py-2 px-2 text-center w-[110px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Mã đăng ký <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
-                <th class="py-2 px-2 text-center w-[220px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Tên đăng ký <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
-                <th class="py-2 px-2 text-center w-[130px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Tình trạng đăng ký</th>
-                <th class="py-2 px-2 text-center w-[130px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Loại phòng</th>
-                <th class="py-2 px-2 text-center w-[75px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Phòng <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
-                <th class="py-2 px-2 text-center w-[95px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Ngày đến <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
-                <th class="py-2 px-2 text-center w-[95px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Ngày đi <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
-                <th class="py-2 px-2 text-center w-[75px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Đêm phòng</th>
-                <th class="py-2 px-2 text-center w-[65px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Người lớn</th>
-                <th class="py-2 px-2 text-center w-[65px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Trẻ em</th>
-                <th class="py-2 px-2 text-center w-[100px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Giá phòng</th>
-                <th class="py-2 px-2 text-center w-[90px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Mã giá phòng</th>
-                <th class="py-2 px-2 text-center w-[110px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Tổng phòng</th>
-                <th class="py-2 px-2 text-center w-[180px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Yêu cầu ĐB</th>
-                <th class="py-2 px-2 text-center w-[170px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Công ty</th>
+                <th class="py-2 px-2 text-center w-[110px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Mã Đăng Ký <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
+                <th class="py-2 px-2 text-center w-[220px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Tên Đăng Ký <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
+                <th class="py-2 px-2 text-center w-[130px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Tình Trạng Đăng Ký</th>
+                <th class="py-2 px-2 text-center w-[130px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Loại Phòng</th>
+                <th class="py-2 px-2 text-center w-[75px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Phòng <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
+                <th class="py-2 px-2 text-center w-[95px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Ngày Đến <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
+                <th class="py-2 px-2 text-center w-[95px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Ngày Đi <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
+                <th class="py-2 px-2 text-center w-[75px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Đêm Phòng</th>
+                <th class="py-2 px-2 text-center w-[65px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Người Lớn</th>
+                <th class="py-2 px-2 text-center w-[65px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Trẻ Em</th>
+                <th class="py-2 px-2 text-center w-[100px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Giá Phòng</th>
+                <th class="py-2 px-2 text-center w-[90px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Mã Giá Phòng</th>
+                <th class="py-2 px-2 text-center w-[110px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Tổng Phòng</th>
+                <th class="py-2 px-2 text-center w-[180px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Yêu Cầu ĐB</th>
+                <th class="py-2 px-2 text-center w-[170px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border-r border-slate-200 border">Công Ty</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="arrivalsData.length === 0 && !isLoading">
-                <td colspan="15" class="p-8 text-center text-slate-400 font-normal">
+                <td colspan="15" class="p-8 text-center text-slate-400 font-normal border-slate-200">
                   Không có danh sách phòng đến trong ngày này.
                 </td>
               </tr>
               <template v-for="booking in arrivalsData" :key="booking.id">
                 <!-- Group Header Banner Row (Layout theo Dòng 49) -->
                 <tr class="border-b border-t border-slate-200 bg-[#edf5fc]">
-                  <td colspan="15" class="py-2 px-3">
+                  <td colspan="15" class="py-2 px-3 border-slate-200">
                     <div class="flex items-start justify-between gap-4 text-xs">
                       <!-- Left Info String -->
                       <div class="flex items-start gap-2 min-w-0 flex-1">
@@ -1010,52 +1013,52 @@ function formatMoney(num) {
                   class="border-b border-slate-100 h-8 hover:bg-slate-50 transition-colors text-xs font-normal"
                 >
                   <td
-                    class="py-1.5 px-2.5 text-sky-700 text-center cursor-pointer hover:underline select-none"
+                    class="py-1.5 px-2.5 text-sky-700 text-center cursor-pointer hover:underline select-none border-slate-200"
                     @dblclick="handleOpenBooking(booking.id, booking.bookingCode)"
                     title="Nhấp đúp để mở Tạo đăng ký"
                   >
                     {{ booking.id }}
                   </td>
-                  <td class="py-1.5 px-2.5 text-slate-800 break-words whitespace-normal leading-tight">
+                  <td class="py-1.5 px-2.5 text-slate-800 break-words whitespace-normal leading-tight border-slate-200">
                     {{ booking.bookingName }}
                   </td>
-                  <td class="py-1.5 px-2 text-center text-slate-700">
+                  <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200">
                     {{ room.status }}
                   </td>
-                  <td class="py-1.5 px-2 text-slate-700 truncate">
+                  <td class="py-1.5 px-2 text-slate-700 truncate border-slate-200">
                     {{ room.roomType }}
                   </td>
-                  <td class="py-1.5 px-2 text-center text-slate-800">
+                  <td class="py-1.5 px-2 text-center text-slate-800 border-slate-200">
                     {{ room.roomNumber }}
                   </td>
-                  <td class="py-1.5 px-2 text-center text-slate-700">
+                  <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200">
                     {{ room.arrivalDate }}
                   </td>
-                  <td class="py-1.5 px-2 text-center text-slate-700">
+                  <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200">
                     {{ room.departureDate }}
                   </td>
-                  <td class="py-1.5 px-2 text-center text-slate-700">
+                  <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200">
                     {{ room.nights }}
                   </td>
-                  <td class="py-1.5 px-2 text-center text-slate-700">
+                  <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200">
                     {{ room.adults }}
                   </td>
-                  <td class="py-1.5 px-2 text-center text-slate-700" :class="{ 'text-sky-600': room.children > 0 }">
+                  <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200" :class="{ 'text-sky-600': room.children > 0 }">
                     {{ room.children }}
                   </td>
-                  <td class="py-1.5 px-2 text-right text-slate-800">
+                  <td class="py-1.5 px-2 text-right text-slate-800 border-slate-200">
                     {{ formatMoney(room.price) }}
                   </td>
-                  <td class="py-1.5 px-2 text-center text-slate-700">
+                  <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200">
                     {{ room.rateCode }}
                   </td>
-                  <td class="py-1.5 px-2 text-right text-slate-800">
+                  <td class="py-1.5 px-2 text-right text-slate-800 border-slate-200">
                     {{ formatMoney(room.roomTotal) }}
                   </td>
-                  <td class="py-1.5 px-2.5 text-slate-600 truncate" :title="room.specialRequest">
+                  <td class="py-1.5 px-2.5 text-slate-600 truncate border-slate-200" :title="room.specialRequest">
                     {{ room.specialRequest }}
                   </td>
-                  <td class="py-1.5 px-2.5 text-slate-700 break-words whitespace-normal leading-tight">
+                  <td class="py-1.5 px-2.5 text-slate-700 break-words whitespace-normal leading-tight border-slate-200">
                     {{ room.company }}
                   </td>
                 </tr>
@@ -1071,34 +1074,34 @@ function formatMoney(num) {
           <table class="w-full text-left border-collapse text-xs min-w-[1600px] table-fixed">
             <thead>
               <tr class="bg-slate-100 border-b border-slate-200 text-slate-800 font-semibold select-none h-9 text-xs">
-                <th class="py-2 px-2 text-center w-[110px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Mã đăng ký <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
-                <th class="py-2 px-2 text-center w-[220px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Tên đăng ký <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
-                <th class="py-2 px-2 text-center w-[130px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Tình trạng đăng ký</th>
-                <th class="py-2 px-2 text-center w-[130px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Loại phòng</th>
-                <th class="py-2 px-2 text-center w-[75px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Phòng <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
-                <th class="py-2 px-2 text-center w-[95px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Ngày đến <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
-                <th class="py-2 px-2 text-center w-[95px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Ngày đi <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
-                <th class="py-2 px-2 text-center w-[75px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Đêm phòng</th>
-                <th class="py-2 px-2 text-center w-[65px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Người lớn</th>
-                <th class="py-2 px-2 text-center w-[65px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Trẻ em</th>
-                <th class="py-2 px-2 text-center w-[100px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Giá phòng</th>
-                <th class="py-2 px-2 text-center w-[90px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Mã giá phòng</th>
-                <th class="py-2 px-2 text-center w-[105px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Tổng DV</th>
-                <th class="py-2 px-2 text-center w-[105px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Tổng TT</th>
-                <th class="py-2 px-2 text-center w-[180px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Yêu cầu ĐB</th>
-                <th class="py-2 px-2 text-center w-[170px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Công ty</th>
+                <th class="py-2 px-2 text-center w-[110px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Mã Đăng Ký <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
+                <th class="py-2 px-2 text-center w-[220px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Tên Đăng Ký <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
+                <th class="py-2 px-2 text-center w-[130px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Tình Trạng Đăng Ký</th>
+                <th class="py-2 px-2 text-center w-[130px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Loại Phòng</th>
+                <th class="py-2 px-2 text-center w-[75px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Phòng <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
+                <th class="py-2 px-2 text-center w-[95px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Ngày Đến <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
+                <th class="py-2 px-2 text-center w-[95px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Ngày Đi <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
+                <th class="py-2 px-2 text-center w-[75px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Đêm Phòng</th>
+                <th class="py-2 px-2 text-center w-[65px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Người Lớn</th>
+                <th class="py-2 px-2 text-center w-[65px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Trẻ Em</th>
+                <th class="py-2 px-2 text-center w-[100px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Giá Phòng</th>
+                <th class="py-2 px-2 text-center w-[90px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Mã Giá Phòng</th>
+                <th class="py-2 px-2 text-center w-[105px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Tổng DV</th>
+                <th class="py-2 px-2 text-center w-[105px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Tổng TT</th>
+                <th class="py-2 px-2 text-center w-[180px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Yêu Cầu ĐB</th>
+                <th class="py-2 px-2 text-center w-[170px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border-r border-slate-200 border">Công Ty</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="departuresData.length === 0 && !isLoading">
-                <td colspan="16" class="p-8 text-center text-slate-400 font-normal">
+                <td colspan="16" class="p-8 text-center text-slate-400 font-normal border-slate-200">
                   Không có danh sách phòng đi trong ngày này.
                 </td>
               </tr>
               <template v-for="booking in departuresData" :key="booking.id">
                 <!-- Group Header Banner Row (Layout theo Dòng 49) -->
                 <tr class="border-b border-t border-slate-200 bg-[#edf5fc]">
-                  <td colspan="16" class="py-2 px-3">
+                  <td colspan="16" class="py-2 px-3 border-slate-200">
                     <div class="flex items-start justify-between gap-4 text-xs">
                       <!-- Left Info String -->
                       <div class="flex items-start gap-2 min-w-0 flex-1">
@@ -1150,55 +1153,55 @@ function formatMoney(num) {
                   class="border-b border-slate-100 h-8 hover:bg-slate-50 transition-colors text-xs font-normal"
                 >
                   <td
-                    class="py-1.5 px-2.5 text-sky-700 text-center cursor-pointer hover:underline select-none"
+                    class="py-1.5 px-2.5 text-sky-700 text-center cursor-pointer hover:underline select-none border-slate-200"
                     @dblclick="handleOpenBooking(booking.id, booking.bookingCode)"
                     title="Nhấp đúp để mở Tạo đăng ký"
                   >
                     {{ booking.id }}
                   </td>
-                  <td class="py-1.5 px-2.5 text-slate-800 break-words whitespace-normal leading-tight">
+                  <td class="py-1.5 px-2.5 text-slate-800 break-words whitespace-normal leading-tight border-slate-200">
                     {{ booking.bookingName }}
                   </td>
-                  <td class="py-1.5 px-2 text-center text-slate-700">
+                  <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200">
                     {{ room.status }}
                   </td>
-                  <td class="py-1.5 px-2 text-slate-700 truncate">
+                  <td class="py-1.5 px-2 text-slate-700 truncate border-slate-200">
                     {{ room.roomType }}
                   </td>
-                  <td class="py-1.5 px-2 text-center text-slate-800">
+                  <td class="py-1.5 px-2 text-center text-slate-800 border-slate-200">
                     {{ room.roomNumber }}
                   </td>
-                  <td class="py-1.5 px-2 text-center text-slate-700">
+                  <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200">
                     {{ room.arrivalDate }}
                   </td>
-                  <td class="py-1.5 px-2 text-center text-slate-700">
+                  <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200">
                     {{ room.departureDate }}
                   </td>
-                  <td class="py-1.5 px-2 text-center text-slate-700">
+                  <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200">
                     {{ room.nights }}
                   </td>
-                  <td class="py-1.5 px-2 text-center text-slate-700">
+                  <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200">
                     {{ room.adults }}
                   </td>
-                  <td class="py-1.5 px-2 text-center text-slate-700" :class="{ 'text-sky-600': room.children > 0 }">
+                  <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200" :class="{ 'text-sky-600': room.children > 0 }">
                     {{ room.children }}
                   </td>
-                  <td class="py-1.5 px-2 text-right text-slate-800">
+                  <td class="py-1.5 px-2 text-right text-slate-800 border-slate-200">
                     {{ formatMoney(room.price) }}
                   </td>
-                  <td class="py-1.5 px-2 text-center text-slate-700">
+                  <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200">
                     {{ room.rateCode }}
                   </td>
-                  <td class="py-1.5 px-2 text-right text-slate-800">
+                  <td class="py-1.5 px-2 text-right text-slate-800 border-slate-200">
                     {{ formatMoney(room.totalServices) }}
                   </td>
-                  <td class="py-1.5 px-2 text-right text-emerald-700">
+                  <td class="py-1.5 px-2 text-right text-emerald-700 border-slate-200">
                     {{ formatMoney(room.totalPayment) }}
                   </td>
-                  <td class="py-1.5 px-2.5 text-slate-600 truncate" :title="room.specialRequest">
+                  <td class="py-1.5 px-2.5 text-slate-600 truncate border-slate-200" :title="room.specialRequest">
                     {{ room.specialRequest }}
                   </td>
-                  <td class="py-1.5 px-2.5 text-slate-700 break-words whitespace-normal leading-tight">
+                  <td class="py-1.5 px-2.5 text-slate-700 break-words whitespace-normal leading-tight border-slate-200">
                     {{ room.company }}
                   </td>
                 </tr>
@@ -1214,31 +1217,31 @@ function formatMoney(num) {
           <table class="w-full text-left border-collapse text-xs min-w-[1600px] table-fixed">
             <thead>
               <tr class="bg-slate-100 border-b border-slate-200 text-slate-800 font-semibold select-none h-9 text-xs">
-                <th class="p-2 border-r border-slate-200 text-center w-[50px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">STT</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[120px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Mã ĐK</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[200px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Tên đăng ký</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[140px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Tình trạng đăng ký</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[180px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Công ty</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[110px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Ngày xác nhận</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[100px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Ngày đến</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[100px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Ngày đi</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[70px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Đêm</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[160px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Loại phòng</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[110px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Đặt cọc</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[150px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Liên hệ</th>
-                <th class="p-2 text-center w-[250px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Ghi chú (Sale)</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[50px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">STT</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[120px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Mã ĐK</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[200px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Tên Đăng Ký</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[140px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Tình Trạng Đăng Ký</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[180px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Công Ty</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[110px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Ngày Xác Nhận</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[100px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Ngày Đến</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[100px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Ngày Đi</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[70px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Đêm</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[160px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Loại Phòng</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[110px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Đặt Cọc</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[150px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Liên Hệ</th>
+                <th class="p-2 text-center w-[250px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border-r border-slate-200 border">Ghi Chú (Sale)</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="pendingConfirmationData.length === 0 && !isLoading">
-                <td colspan="13" class="p-8 text-center text-slate-400 font-normal">
+                <td colspan="13" class="p-8 text-center text-slate-400 font-normal border-slate-200">
                   Không có đăng ký nào chờ xác nhận trong giai đoạn này.
                 </td>
               </tr>
               <template v-for="dateGroup in sortedPendingDates" :key="dateGroup">
                 <!-- Group Header Row (Date group) -->
                 <tr class="group border-b border-slate-200 h-9 bg-slate-50/80">
-                  <td class="p-2 border-r border-slate-200 text-center bg-white group-hover:bg-[#bdecfe]/40 transition-colors">
+                  <td class="p-2 border-slate-200 text-center bg-white group-hover:bg-[#bdecfe]/40 transition-colors">
                     <button
                       @click="toggleGroupCollapse('pending-' + dateGroup)"
                       type="button"
@@ -1247,7 +1250,7 @@ function formatMoney(num) {
                       {{ isGroupCollapsed('pending-' + dateGroup) ? '+' : '-' }}
                     </button>
                   </td>
-                  <td colspan="12" class="p-2.5 text-left font-semibold text-slate-800 bg-white group-hover:bg-[#bdecfe]/40 transition-colors">
+                  <td colspan="12" class="p-2.5 text-left font-semibold text-slate-800 bg-white group-hover:bg-[#bdecfe]/40 transition-colors border-slate-200">
                     {{ dateGroup }}
                   </td>
                 </tr>
@@ -1259,47 +1262,47 @@ function formatMoney(num) {
                   :key="item.id"
                   class="group border-b border-slate-200 h-8 hover:bg-[#bdecfe]/30 transition-colors text-xs font-normal"
                 >
-                  <td class="p-2 border-r border-slate-200 text-center text-slate-600">
+                  <td class="p-2 border-slate-200 text-center text-slate-600">
                     {{ idx + 1 }}
                   </td>
                   <td
-                    class="p-2 border-r border-slate-200 text-center text-sky-700 cursor-pointer hover:underline select-none"
+                    class="p-2 border-slate-200 text-center text-sky-700 cursor-pointer hover:underline select-none"
                     @dblclick="handleOpenBooking(item.id, item.bookingCode)"
                     title="Nhấp đúp để mở Tạo đăng ký"
                   >
                     {{ item.id }}
                   </td>
-                  <td class="p-2 border-r border-slate-200 text-slate-800 break-words whitespace-normal leading-tight">
+                  <td class="p-2 border-slate-200 text-slate-800 break-words whitespace-normal leading-tight">
                     {{ item.bookingName }}
                   </td>
-                  <td class="p-2 border-r border-slate-200 text-center text-slate-600">
+                  <td class="p-2 border-slate-200 text-center text-slate-600">
                     {{ item.status }}
                   </td>
-                  <td class="p-2 border-r border-slate-200 text-slate-600 break-words whitespace-normal leading-tight">
+                  <td class="p-2 border-slate-200 text-slate-600 break-words whitespace-normal leading-tight">
                     {{ item.company }}
                   </td>
-                  <td class="p-2 border-r border-slate-200 text-center text-slate-600">
+                  <td class="p-2 border-slate-200 text-center text-slate-600">
                     {{ item.confirmDate }}
                   </td>
-                  <td class="p-2 border-r border-slate-200 text-center text-slate-600">
+                  <td class="p-2 border-slate-200 text-center text-slate-600">
                     {{ item.arrivalDate }}
                   </td>
-                  <td class="p-2 border-r border-slate-200 text-center text-slate-600">
+                  <td class="p-2 border-slate-200 text-center text-slate-600">
                     {{ item.departureDate }}
                   </td>
-                  <td class="p-2 border-r border-slate-200 text-center text-slate-700">
+                  <td class="p-2 border-slate-200 text-center text-slate-700">
                     {{ item.nights }}
                   </td>
-                  <td class="p-2 border-r border-slate-200 text-slate-700 truncate" :title="item.roomTypes">
+                  <td class="p-2 border-slate-200 text-slate-700 truncate" :title="item.roomTypes">
                     {{ item.roomTypes }}
                   </td>
-                  <td class="p-2 border-r border-slate-200 text-right text-slate-800">
+                  <td class="p-2 border-slate-200 text-right text-slate-800">
                     {{ formatMoney(item.deposit) }}
                   </td>
-                  <td class="p-2 border-r border-slate-200 text-slate-600 truncate" :title="item.contact">
+                  <td class="p-2 border-slate-200 text-slate-600 truncate" :title="item.contact">
                     {{ item.contact }}
                   </td>
-                  <td class="p-1">
+                  <td class="p-1 border-slate-200">
                     <div class="flex items-center gap-1 w-full">
                       <input
                         type="text"
@@ -1356,30 +1359,30 @@ function formatMoney(num) {
           <table class="w-full text-left border-collapse text-xs min-w-[1300px] table-fixed">
             <thead>
               <tr class="bg-slate-100 border-b border-slate-200 text-slate-800 font-semibold select-none h-9 text-xs">
-                <th class="p-2 border-r border-slate-200 text-center w-[50px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">STT</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[120px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Mã ĐK</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[180px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Tên đăng ký</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[90px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Phòng</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[160px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Khách hàng</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[120px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Loại đưa đón</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[110px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Chuyến bay</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[80px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Giờ</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[60px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Pax</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[180px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Phương tiện</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[160px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Ghi chú</th>
-                <th class="p-2 text-center w-[100px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Trạng thái</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[50px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">STT</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[120px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Mã ĐK</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[180px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Tên Đăng Ký</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[90px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Phòng</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[160px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Khách Hàng</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[120px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Loại Đưa Đón</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[110px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Chuyến Bay</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[80px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Giờ</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[60px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Pax</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[180px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Phương Tiện</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[160px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Ghi Chú</th>
+                <th class="p-2 text-center w-[100px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border-r border-slate-200 border">Trạng Thái</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="shuttleData.length === 0 && !isLoading">
-                <td colspan="12" class="p-8 text-center text-slate-400 font-normal">
+                <td colspan="12" class="p-8 text-center text-slate-400 font-normal border-slate-200">
                   Không có thông tin đón tiễn khách trong ngày này.
                 </td>
               </tr>
               <template v-for="dateGroup in sortedShuttleDates" :key="dateGroup">
                 <!-- Group Header Row -->
                 <tr class="group border-b border-slate-200 h-9 bg-slate-50/80">
-                  <td class="p-2 border-r border-slate-200 text-center bg-white group-hover:bg-[#bdecfe]/40 transition-colors">
+                  <td class="p-2 border-slate-200 text-center bg-white group-hover:bg-[#bdecfe]/40 transition-colors">
                     <button
                       @click="toggleGroupCollapse('shuttle-' + dateGroup)"
                       type="button"
@@ -1388,7 +1391,7 @@ function formatMoney(num) {
                       {{ isGroupCollapsed('shuttle-' + dateGroup) ? '+' : '-' }}
                     </button>
                   </td>
-                  <td colspan="11" class="p-2 border-r border-slate-200 text-left font-semibold text-slate-800 bg-white group-hover:bg-[#bdecfe]/40 transition-colors">
+                  <td colspan="11" class="p-2 border-slate-200 text-left font-semibold text-slate-800 bg-white group-hover:bg-[#bdecfe]/40 transition-colors">
                     {{ dateGroup }}
                   </td>
                 </tr>
@@ -1400,44 +1403,44 @@ function formatMoney(num) {
                   :key="item.id + '-' + sIdx"
                   class="group border-b border-slate-200 h-8 hover:bg-[#bdecfe]/30 transition-colors text-xs font-normal"
                 >
-                  <td class="p-2 border-r border-slate-200 text-center text-slate-600">
+                  <td class="p-2 border-slate-200 text-center text-slate-600">
                     {{ sIdx + 1 }}
                   </td>
                   <td
-                    class="p-2 border-r border-slate-200 text-center text-sky-700 cursor-pointer hover:underline select-none"
+                    class="p-2 border-slate-200 text-center text-sky-700 cursor-pointer hover:underline select-none"
                     @dblclick="handleOpenBooking(item.id, item.bookingCode)"
                     title="Nhấp đúp để mở Tạo đăng ký"
                   >
                     {{ item.id }}
                   </td>
-                  <td class="p-2 border-r border-slate-200 text-slate-800 break-words whitespace-normal leading-tight">
+                  <td class="p-2 border-slate-200 text-slate-800 break-words whitespace-normal leading-tight">
                     {{ item.bookingName }}
                   </td>
-                  <td class="p-2 border-r border-slate-200 text-center text-slate-800">
+                  <td class="p-2 border-slate-200 text-center text-slate-800">
                     {{ item.roomNumber }}
                   </td>
-                  <td class="p-2 border-r border-slate-200 text-slate-700">
+                  <td class="p-2 border-slate-200 text-slate-700">
                     {{ item.guestName }}
                   </td>
-                  <td class="p-2 border-r border-slate-200 text-center text-sky-700">
+                  <td class="p-2 border-slate-200 text-center text-sky-700">
                     {{ item.shuttleType }}
                   </td>
-                  <td class="p-2 border-r border-slate-200 text-center text-slate-700">
+                  <td class="p-2 border-slate-200 text-center text-slate-700">
                     {{ item.flightCode }}
                   </td>
-                  <td class="p-2 border-r border-slate-200 text-center text-slate-700">
+                  <td class="p-2 border-slate-200 text-center text-slate-700">
                     {{ item.flightTime }}
                   </td>
-                  <td class="p-2 border-r border-slate-200 text-center text-slate-700">
+                  <td class="p-2 border-slate-200 text-center text-slate-700">
                     {{ item.pax }}
                   </td>
-                  <td class="p-2 border-r border-slate-200 text-slate-600 truncate">
+                  <td class="p-2 border-slate-200 text-slate-600 truncate">
                     {{ item.vehicle }}
                   </td>
-                  <td class="p-2 border-r border-slate-200 text-slate-600 truncate" :title="item.notes">
+                  <td class="p-2 border-slate-200 text-slate-600 truncate" :title="item.notes">
                     {{ item.notes }}
                   </td>
-                  <td class="p-2 text-center text-slate-600">
+                  <td class="p-2 text-center text-slate-600 border-slate-200">
                     {{ item.status }}
                   </td>
                 </tr>
@@ -1453,25 +1456,25 @@ function formatMoney(num) {
           <table class="w-full text-left border-collapse text-xs min-w-[1500px] table-fixed">
             <thead>
               <tr class="bg-slate-100 border-b border-slate-200 text-slate-800 font-semibold select-none h-9 text-xs">
-                <th class="p-2 border-r border-slate-200 text-center w-[50px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">STT</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[80px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Phòng</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[120px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Mã BK</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[200px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Tên nhóm</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[140px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Loại phòng</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[100px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Ngày đến</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[70px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Số Đêm</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[100px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Ngày Vắng</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[70px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Giờ</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[110px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Tổng tiền</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[100px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Người Dùng</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[60px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Ca</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[200px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Lý Do</th>
-                <th class="p-2 text-center w-[140px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Công ty</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[50px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">STT</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[80px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Phòng</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[120px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Mã BK</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[200px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Tên Nhóm</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[140px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Loại Phòng</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[100px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Ngày Đến</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[70px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Số Đêm</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[100px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Ngày Vắng</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[70px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Giờ</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[110px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Tổng Tiền</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[100px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Người Dùng</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[60px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Ca</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[200px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Lý Do</th>
+                <th class="p-2 text-center w-[140px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border-r border-slate-200 border">Công Ty</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="filteredNoshowData.length === 0 && !isLoading">
-                <td colspan="14" class="p-8 text-center text-slate-400 font-normal">
+                <td colspan="14" class="p-8 text-center text-slate-400 font-normal border-slate-200">
                   Không có dữ liệu phòng không đến.
                 </td>
               </tr>
@@ -1480,53 +1483,53 @@ function formatMoney(num) {
                 :key="item.id + '-' + nIdx"
                 class="group border-b border-slate-200 h-8 hover:bg-[#bdecfe]/30 transition-colors text-xs font-normal"
               >
-                <td class="p-2 border-r border-slate-200 text-center text-slate-600">
+                <td class="p-2 border-slate-200 text-center text-slate-600">
                   {{ nIdx + 1 }}
                 </td>
                 <td
-                  class="p-2 border-r border-slate-200 text-center text-slate-800"
+                  class="p-2 border-slate-200 text-center text-slate-800"
                   :class="[item.roomNumber ? 'bg-[#c9eeff]/60' : 'bg-white']"
                 >
                   {{ item.roomNumber }}
                 </td>
                 <td
-                  class="p-2 border-r border-slate-200 text-center text-sky-700 cursor-pointer hover:underline select-none"
+                  class="p-2 border-slate-200 text-center text-sky-700 cursor-pointer hover:underline select-none"
                   @dblclick="handleOpenBooking(item.id, item.bookingCode)"
                   title="Nhấp đúp để mở Tạo đăng ký"
                 >
                   {{ item.id }}
                 </td>
-                <td class="p-2 border-r border-slate-200 text-slate-800 break-words whitespace-normal leading-tight">
+                <td class="p-2 border-slate-200 text-slate-800 break-words whitespace-normal leading-tight">
                   {{ item.bookingName }}
                 </td>
-                <td class="p-2 border-r border-slate-200 text-slate-700 truncate">
+                <td class="p-2 border-slate-200 text-slate-700 truncate">
                   {{ item.roomType }}
                 </td>
-                <td class="p-2 border-r border-slate-200 text-center text-slate-600">
+                <td class="p-2 border-slate-200 text-center text-slate-600">
                   {{ item.arrivalDate }}
                 </td>
-                <td class="p-2 border-r border-slate-200 text-center text-slate-700">
+                <td class="p-2 border-slate-200 text-center text-slate-700">
                   {{ item.nights }}
                 </td>
-                <td class="p-2 border-r border-slate-200 text-center text-slate-600">
+                <td class="p-2 border-slate-200 text-center text-slate-600">
                   {{ item.noshowDate }}
                 </td>
-                <td class="p-2 border-r border-slate-200 text-center text-slate-600">
+                <td class="p-2 border-slate-200 text-center text-slate-600">
                   {{ item.noshowTime }}
                 </td>
-                <td class="p-2 border-r border-slate-200 text-right text-slate-800">
+                <td class="p-2 border-slate-200 text-right text-slate-800">
                   {{ formatMoney(item.totalAmount) }}
                 </td>
-                <td class="p-2 border-r border-slate-200 text-center text-slate-600">
+                <td class="p-2 border-slate-200 text-center text-slate-600">
                   {{ item.username }}
                 </td>
-                <td class="p-2 border-r border-slate-200 text-center text-slate-600">
+                <td class="p-2 border-slate-200 text-center text-slate-600">
                   {{ item.shift }}
                 </td>
-                <td class="p-2 border-r border-slate-200 text-slate-600 truncate" :title="item.reason">
+                <td class="p-2 border-slate-200 text-slate-600 truncate" :title="item.reason">
                   {{ item.reason }}
                 </td>
-                <td class="p-2 text-slate-600 truncate">
+                <td class="p-2 text-slate-600 truncate border-slate-200">
                   {{ item.company }}
                 </td>
               </tr>
@@ -1541,32 +1544,32 @@ function formatMoney(num) {
           <table class="w-full text-left border-collapse text-xs min-w-[1700px] table-fixed">
             <thead>
               <tr class="bg-slate-100 border-b border-slate-200 text-slate-800 font-semibold select-none h-9 text-xs">
-                <th class="p-2 border-r border-slate-200 text-center w-[50px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">STT</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[120px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Mã ĐK</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[80px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Phòng</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[180px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Tên khách</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[100px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Sinh nhật</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[60px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Tuổi</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[110px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Loại giấy tờ</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[120px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Số giấy tờ</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[100px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Quốc tịch</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[120px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Điện thoại</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[160px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Email</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[100px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Ngày đến</th>
-                <th class="p-2 border-r border-slate-200 text-center w-[100px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Ngày đi</th>
-                <th class="p-2 text-center w-[160px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)]">Công ty</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[50px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">STT</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[120px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Mã ĐK</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[80px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Phòng</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[180px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Tên Khách</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[100px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Sinh Nhật</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[60px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Tuổi</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[110px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Loại Giấy Tờ</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[120px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Số Giấy Tờ</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[100px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Quốc Tịch</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[120px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Điện Thoại</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[160px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Email</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[100px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Ngày Đến</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[100px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Ngày Đi</th>
+                <th class="p-2 text-center w-[160px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border-r border-slate-200 border">Công Ty</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="birthdaysData.length === 0 && !isLoading">
-                <td colspan="14" class="p-8 text-center text-slate-400 font-normal">
+                <td colspan="14" class="p-8 text-center text-slate-400 font-normal border-slate-200">
                   Không có khách sinh nhật trong giai đoạn này.
                 </td>
               </tr>
               <template v-for="dateGroup in sortedBirthdayDates" :key="dateGroup">
                 <!-- Group Header Row -->
                 <tr class="group border-b border-slate-200 h-9 bg-slate-50/80">
-                  <td class="p-2 border-r border-slate-200 text-center bg-white group-hover:bg-[#bdecfe]/40 transition-colors">
+                  <td class="p-2 border-slate-200 text-center bg-white group-hover:bg-[#bdecfe]/40 transition-colors">
                     <button
                       @click="toggleGroupCollapse('birthdays-' + dateGroup)"
                       type="button"
@@ -1575,7 +1578,7 @@ function formatMoney(num) {
                       {{ isGroupCollapsed('birthdays-' + dateGroup) ? '+' : '-' }}
                     </button>
                   </td>
-                  <td colspan="13" class="p-2 border-r border-slate-200 text-left font-semibold text-slate-800 bg-white group-hover:bg-[#bdecfe]/40 transition-colors">
+                  <td colspan="13" class="p-2 border-slate-200 text-left font-semibold text-slate-800 bg-white group-hover:bg-[#bdecfe]/40 transition-colors">
                     {{ dateGroup }}
                   </td>
                 </tr>
@@ -1587,53 +1590,53 @@ function formatMoney(num) {
                   :key="item.bookingCode + '-' + bIdx"
                   class="group border-b border-slate-200 h-8 hover:bg-[#bdecfe]/30 transition-colors text-xs font-normal"
                 >
-                  <td class="p-2 border-r border-slate-200 text-center text-slate-600">
+                  <td class="p-2 border-slate-200 text-center text-slate-600">
                     {{ bIdx + 1 }}
                   </td>
                   <td
-                    class="p-2 border-r border-slate-200 text-center text-sky-700 cursor-pointer hover:underline select-none"
+                    class="p-2 border-slate-200 text-center text-sky-700 cursor-pointer hover:underline select-none"
                     @dblclick="handleOpenBooking(item.bookingCode, item.bookingCode)"
                     title="Nhấp đúp để mở Tạo đăng ký"
                   >
                     {{ item.bookingCode }}
                   </td>
                   <td
-                    class="p-2 border-r border-slate-200 text-center text-slate-800"
+                    class="p-2 border-slate-200 text-center text-slate-800"
                     :class="[item.roomNumber ? 'bg-[#c9eeff]/60' : 'bg-white']"
                   >
                     {{ item.roomNumber }}
                   </td>
-                  <td class="p-2 border-r border-slate-200 text-slate-800 break-words whitespace-normal leading-tight">
+                  <td class="p-2 border-slate-200 text-slate-800 break-words whitespace-normal leading-tight">
                     {{ item.guestName }}
                   </td>
-                  <td class="p-2 border-r border-slate-200 text-center text-slate-600">
+                  <td class="p-2 border-slate-200 text-center text-slate-600">
                     {{ item.birthday }}
                   </td>
-                  <td class="p-2 border-r border-slate-200 text-center text-slate-700">
+                  <td class="p-2 border-slate-200 text-center text-slate-700">
                     {{ item.age }}
                   </td>
-                  <td class="p-2 border-r border-slate-200 text-center text-slate-600">
+                  <td class="p-2 border-slate-200 text-center text-slate-600">
                     {{ item.idType }}
                   </td>
-                  <td class="p-2 border-r border-slate-200 text-center text-slate-600 font-mono">
+                  <td class="p-2 border-slate-200 text-center text-slate-600 font-mono">
                     {{ item.idNumber }}
                   </td>
-                  <td class="p-2 border-r border-slate-200 text-center text-slate-600">
+                  <td class="p-2 border-slate-200 text-center text-slate-600">
                     {{ item.nationality }}
                   </td>
-                  <td class="p-2 border-r border-slate-200 text-slate-600 truncate">
+                  <td class="p-2 border-slate-200 text-slate-600 truncate">
                     {{ item.phone }}
                   </td>
-                  <td class="p-2 border-r border-slate-200 text-slate-600 truncate">
+                  <td class="p-2 border-slate-200 text-slate-600 truncate">
                     {{ item.email }}
                   </td>
-                  <td class="p-2 border-r border-slate-200 text-center text-slate-600">
+                  <td class="p-2 border-slate-200 text-center text-slate-600">
                     {{ item.arrivalDate }}
                   </td>
-                  <td class="p-2 border-r border-slate-200 text-center text-slate-600">
+                  <td class="p-2 border-slate-200 text-center text-slate-600">
                     {{ item.departureDate }}
                   </td>
-                  <td class="p-2 text-slate-600 break-words whitespace-normal leading-tight">
+                  <td class="p-2 text-slate-600 break-words whitespace-normal leading-tight border-slate-200">
                     {{ item.company }}
                   </td>
                 </tr>

@@ -7,6 +7,7 @@ import { fetchSystemDate } from '@/services/booking-service'
 import { useAuthStore } from '@/stores/auth-store'
 import { useUiStore } from '@/stores/ui-store'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
+import SingleDatePicker from '@/components/SingleDatePicker.vue'
 
 const route = useRoute()
 const authStore = useAuthStore()
@@ -150,10 +151,11 @@ async function loadInitialData() {
   isLoading.value = true
   try {
     const localDate = new Date()
-    let sysDate = `${localDate.getFullYear()}-${String(localDate.getMonth() + 1).padStart(2, '0')}-${String(localDate.getDate()).padStart(2, '0')}`
+    let sysDate = authStore.systemDate || localStorage.getItem('pms_system_date') || `${localDate.getFullYear()}-${String(localDate.getMonth() + 1).padStart(2, '0')}-${String(localDate.getDate()).padStart(2, '0')}`
     try {
       const dateRes = await fetchSystemDate()
       sysDate = dateRes?.data?.data?.system_date || dateRes?.data?.system_date || sysDate
+      authStore.setSystemDate(sysDate)
     } catch (err) {
       console.error('fetchSystemDate error', err)
     }
@@ -1033,7 +1035,7 @@ const otherWarehouses = computed(() =>
         <table class="w-full text-left border-collapse text-[13px] whitespace-nowrap min-w-max">
           <thead class="sticky top-0 z-20 backdrop-blur-md bg-white/95">
             <tr class="bg-slate-100 text-slate-750 font-bold border-b border-slate-300 uppercase tracking-wider text-[11px]">
-              <th rowspan="2" class="py-3 px-4 border-r border-slate-200 w-64 min-w-[256px] text-center align-middle sticky left-0 z-30 shadow-[1px_0_0_0_#e2e8f0] bg-slate-100">
+              <th rowspan="2" class="py-3 px-4 border-r border-slate-200 w-64 min-w-[256px] text-center align-middle sticky left-0 z-30 shadow-[1px_0_0_0_#e2e8f0] bg-slate-100 border">
                 <div class="flex flex-col items-center justify-center gap-2">
                   <div class="flex items-center">
                     Sản Phẩm <Search @click="showProductSearch = !showProductSearch" class="w-3.5 h-3.5 inline-block ml-1.5 text-slate-400 cursor-pointer hover:text-[var(--hk-primary-dark)] transition-colors" />
@@ -1044,8 +1046,8 @@ const otherWarehouses = computed(() =>
                   </div>
                 </div>
               </th>
-              <th rowspan="2" class="col-ton-dk py-3 px-4 bg-slate-100 text-center align-middle sticky left-[256px] z-30 text-slate-800 font-bold">Tồn ĐK</th>
-              <th v-for="day in days" :key="day" colspan="3" class="py-1.5 px-1 text-center border-r border-slate-200 transition-colors group/day" :class="isSystemDate(day) ? 'col-today-header font-black' : (day % 2 === 0 ? 'col-alt-header text-slate-800' : 'bg-slate-50/50')">
+              <th rowspan="2" class="col-ton-dk py-3 px-4 bg-slate-100 text-center align-middle sticky left-[256px] z-30 text-slate-800 font-bold border-r border-slate-200 border">Tồn ĐK</th>
+              <th v-for="day in days" :key="day" colspan="3" class="py-1.5 px-1 text-center border-r border-slate-200 transition-colors group/day align-middle border" :class="isSystemDate(day) ? 'col-today-header font-black' : (day % 2 === 0 ? 'col-alt-header text-slate-800' : 'bg-slate-50/50')">
                 <div class="flex flex-col items-center gap-0.5">
                   <span>{{ day }}</span>
                   <button
@@ -1059,16 +1061,16 @@ const otherWarehouses = computed(() =>
                   </button>
                 </div>
               </th>
-              <th rowspan="2" class="py-3 px-4 border-r border-slate-200 bg-slate-100 text-center align-middle">SLN</th>
-              <th rowspan="2" class="py-3 px-4 border-r border-slate-200 bg-slate-100 text-center align-middle">SLX</th>
-              <th rowspan="2" class="py-3 px-4 border-r border-slate-200 bg-slate-100 text-center align-middle">SLC</th>
-              <th rowspan="2" class="col-ton-cuoi py-3 px-4 bg-slate-100 text-center align-middle sticky right-0 text-[var(--hk-primary-dark)] font-black">Tồn Cuối</th>
+              <th rowspan="2" class="py-3 px-4 border-r border-slate-200 bg-slate-100 text-center align-middle border">SLN</th>
+              <th rowspan="2" class="py-3 px-4 border-r border-slate-200 bg-slate-100 text-center align-middle border">SLX</th>
+              <th rowspan="2" class="py-3 px-4 border-r border-slate-200 bg-slate-100 text-center align-middle border">SLC</th>
+              <th rowspan="2" class="col-ton-cuoi py-3 px-4 bg-slate-100 text-center align-middle sticky right-0 text-[var(--hk-primary-dark)] font-black border-r border-slate-200 border">Tồn Cuối</th>
             </tr>
             <tr class="bg-slate-100/80 text-slate-500 font-bold border-b border-slate-250 text-[10px] uppercase">
               <template v-for="day in days" :key="'sub'+day">
-                <th class="py-1.5 px-2 text-center border-r border-slate-200 font-medium transition-colors" :class="isSystemDate(day) ? 'col-today-subheader text-amber-900' : (day % 2 === 0 ? 'col-alt-subheader text-slate-700' : 'bg-slate-50/20')">Nhập</th>
-                <th class="py-1.5 px-2 text-center border-r border-slate-200 font-medium transition-colors" :class="isSystemDate(day) ? 'col-today-subheader text-amber-900' : (day % 2 === 0 ? 'col-alt-subheader text-slate-700' : 'bg-slate-50/20')">Xuất</th>
-                <th class="py-1.5 px-2 text-center border-r border-slate-200 font-medium transition-colors" :class="isSystemDate(day) ? 'col-today-subheader text-amber-900' : (day % 2 === 0 ? 'col-alt-subheader text-slate-700' : 'bg-slate-50/20')">Chuyển</th>
+                <th class="py-1.5 px-2 text-center border-r border-slate-200 font-medium transition-colors align-middle border" :class="isSystemDate(day) ? 'col-today-subheader text-amber-900' : (day % 2 === 0 ? 'col-alt-subheader text-slate-700' : 'bg-slate-50/20')">Nhập</th>
+                <th class="py-1.5 px-2 text-center border-r border-slate-200 font-medium transition-colors align-middle border" :class="isSystemDate(day) ? 'col-today-subheader text-amber-900' : (day % 2 === 0 ? 'col-alt-subheader text-slate-700' : 'bg-slate-50/20')">Xuất</th>
+                <th class="py-1.5 px-2 text-center border-r border-slate-200 font-medium transition-colors align-middle border" :class="isSystemDate(day) ? 'col-today-subheader text-amber-900' : (day % 2 === 0 ? 'col-alt-subheader text-slate-700' : 'bg-slate-50/20')">Chuyển</th>
               </template>
             </tr>
           </thead>
@@ -1077,23 +1079,23 @@ const otherWarehouses = computed(() =>
             <!-- Loading Skeleton -->
             <template v-if="isLoading">
               <tr v-for="i in 4" :key="'sk-'+i" class="animate-pulse">
-                <td class="py-2.5 px-4 border-r border-slate-200 sticky left-0 z-10 bg-white shadow-[1px_0_0_0_#e2e8f0]"><div class="h-4 w-40 bg-slate-200 rounded"></div></td>
-                <td class="col-ton-dk py-2.5 px-2 sticky left-[256px] bg-white"><div class="h-4 w-8 bg-slate-200 rounded mx-auto"></div></td>
+                <td class="py-2.5 px-4 border-slate-200 sticky left-0 z-10 bg-white shadow-[1px_0_0_0_#e2e8f0]"><div class="h-4 w-40 bg-slate-200 rounded"></div></td>
+                <td class="col-ton-dk py-2.5 px-2 sticky left-[256px] bg-white border-slate-200"><div class="h-4 w-8 bg-slate-200 rounded mx-auto"></div></td>
                 <template v-for="day in days" :key="'sk-day-'+day">
-                  <td class="py-2.5 px-2 border-r border-slate-200"><div class="h-4 w-6 bg-slate-100 rounded mx-auto"></div></td>
-                  <td class="py-2.5 px-2 border-r border-slate-200"><div class="h-4 w-6 bg-slate-100 rounded mx-auto"></div></td>
-                  <td class="py-2.5 px-2 border-r border-slate-200"><div class="h-4 w-6 bg-slate-100 rounded mx-auto"></div></td>
+                  <td class="py-2.5 px-2 border-slate-200"><div class="h-4 w-6 bg-slate-100 rounded mx-auto"></div></td>
+                  <td class="py-2.5 px-2 border-slate-200"><div class="h-4 w-6 bg-slate-100 rounded mx-auto"></div></td>
+                  <td class="py-2.5 px-2 border-slate-200"><div class="h-4 w-6 bg-slate-100 rounded mx-auto"></div></td>
                 </template>
-                <td class="py-2.5 px-2 border-r border-slate-200"><div class="h-4 w-8 bg-slate-200 rounded mx-auto"></div></td>
-                <td class="py-2.5 px-2 border-r border-slate-200"><div class="h-4 w-8 bg-slate-200 rounded mx-auto"></div></td>
-                <td class="py-2.5 px-2 border-r border-slate-200"><div class="h-4 w-8 bg-slate-200 rounded mx-auto"></div></td>
-                <td class="col-ton-cuoi py-2.5 px-4 sticky right-0 bg-white"><div class="h-4 w-12 bg-slate-200 rounded mx-auto"></div></td>
+                <td class="py-2.5 px-2 border-slate-200"><div class="h-4 w-8 bg-slate-200 rounded mx-auto"></div></td>
+                <td class="py-2.5 px-2 border-slate-200"><div class="h-4 w-8 bg-slate-200 rounded mx-auto"></div></td>
+                <td class="py-2.5 px-2 border-slate-200"><div class="h-4 w-8 bg-slate-200 rounded mx-auto"></div></td>
+                <td class="col-ton-cuoi py-2.5 px-4 sticky right-0 bg-white border-slate-200"><div class="h-4 w-12 bg-slate-200 rounded mx-auto"></div></td>
               </tr>
             </template>
 
             <!-- Chưa có kho -->
             <tr v-else-if="!activeWarehouseId">
-              <td :colspan="6 + days.length * 3" class="py-20 text-center text-slate-400">
+              <td :colspan="6 + days.length * 3" class="py-20 text-center text-slate-400 border-slate-200">
                 <div class="flex flex-col items-center gap-3">
                   <span class="text-4xl">🏪</span>
                   <p class="font-bold text-slate-700 text-sm">Chưa có kho nào</p>
@@ -1104,7 +1106,7 @@ const otherWarehouses = computed(() =>
 
             <!-- Chưa có phiếu kiểm kê -->
             <tr v-else-if="!currentCheck">
-              <td :colspan="6 + days.length * 3" class="py-20 text-center text-slate-400">
+              <td :colspan="6 + days.length * 3" class="py-20 text-center text-slate-400 border-slate-200">
                 <div class="flex flex-col items-center gap-3">
                   <span class="text-4xl">📋</span>
                   <p class="font-bold text-slate-700 text-sm">Chưa có phiếu kiểm kê tháng {{ currentMonth }}</p>
@@ -1115,7 +1117,7 @@ const otherWarehouses = computed(() =>
 
             <!-- Không có SP sau filter -->
             <tr v-else-if="tableItems.length === 0">
-              <td :colspan="6 + days.length * 3" class="py-20 text-center text-slate-400">
+              <td :colspan="6 + days.length * 3" class="py-20 text-center text-slate-400 border-slate-200">
                 <div class="flex flex-col items-center gap-3">
                   <span class="text-4xl animate-bounce">📦</span>
                   <p class="font-bold text-slate-700 text-sm">Không có dữ liệu tồn kho trùng khớp</p>
@@ -1131,7 +1133,7 @@ const otherWarehouses = computed(() =>
               class="hover:bg-slate-50 transition-colors border-b border-slate-100 group"
             >
               <!-- Product name + actions -->
-              <td class="py-2 px-4 border-r border-slate-200 sticky left-0 z-10 bg-white group-hover:bg-slate-50 font-semibold min-w-[256px] text-slate-600 shadow-[1px_0_0_0_#e2e8f0]">
+              <td class="py-2 px-4 border-slate-200 sticky left-0 z-10 bg-white group-hover:bg-slate-50 font-semibold min-w-[256px] text-slate-600 shadow-[1px_0_0_0_#e2e8f0]">
                 <div class="flex items-center justify-between gap-1">
                   <span>{{ item.product_name }}</span>
                   <div class="flex items-center gap-0.5">
@@ -1143,12 +1145,12 @@ const otherWarehouses = computed(() =>
                 </div>
               </td>
               <!-- Tồn đầu kỳ -->
-              <td class="col-ton-dk py-2 px-2 text-center text-slate-700 font-semibold bg-white group-hover:bg-slate-50 min-w-[80px]">
+              <td class="col-ton-dk py-2 px-2 text-center text-slate-700 font-semibold bg-white group-hover:bg-slate-50 min-w-[80px] border-slate-200">
                 {{ getInitialStockLabel(item) }}
               </td>
               <!-- Nhật ký từng ngày (3 cột: nhập / xuất / chuyển) -->
               <template v-for="day in days" :key="'item-day-'+day">
-                <td class="py-0.5 px-0.5 border-r border-slate-200 text-center transition-colors" :class="isSystemDate(day) ? 'col-today-body' : (day % 2 === 0 ? 'col-alt-body' : '')">
+                <td class="py-0.5 px-0.5 border-slate-200 text-center transition-colors" :class="isSystemDate(day) ? 'col-today-body' : (day % 2 === 0 ? 'col-alt-body' : '')">
                   <input
                     type="number" min="0"
                     :value="getLogVal(item.product_id, day, 'receive') || ''"
@@ -1157,7 +1159,7 @@ const otherWarehouses = computed(() =>
                     placeholder=""
                   />
                 </td>
-                <td class="py-0.5 px-0.5 border-r border-slate-200 text-center transition-colors" :class="isSystemDate(day) ? 'col-today-body' : (day % 2 === 0 ? 'col-alt-body' : '')">
+                <td class="py-0.5 px-0.5 border-slate-200 text-center transition-colors" :class="isSystemDate(day) ? 'col-today-body' : (day % 2 === 0 ? 'col-alt-body' : '')">
                   <input
                     type="number" min="0"
                     :value="getLogVal(item.product_id, day, 'export') || ''"
@@ -1167,7 +1169,7 @@ const otherWarehouses = computed(() =>
                   />
                 </td>
                 <td
-                  class="py-0.5 px-0.5 border-r border-slate-200 text-center cursor-pointer transition-colors select-none"
+                  class="py-0.5 px-0.5 border-slate-200 text-center cursor-pointer transition-colors select-none"
                   :class="isSystemDate(day) ? 'col-today-body hover:bg-amber-100/30' : (day % 2 === 0 ? 'col-alt-body hover:bg-slate-100' : 'hover:bg-slate-100')"
                   @click="openTransferModal(item, day)"
                   title="Click để chuyển kho"
@@ -1181,11 +1183,11 @@ const otherWarehouses = computed(() =>
                 </td>
               </template>
               <!-- Tổng tháng -->
-              <td class="py-2 px-2 border-r border-slate-200 text-center text-slate-700 bg-white group-hover:bg-slate-50 font-semibold">{{ item.totalReceive || '' }}</td>
-              <td class="py-2 px-2 border-r border-slate-200 text-center text-slate-700 bg-white group-hover:bg-slate-50 font-semibold">{{ item.totalExport || '' }}</td>
-              <td class="py-2 px-2 border-r border-slate-200 text-center text-slate-700 bg-white group-hover:bg-slate-50 font-semibold">{{ item.totalTransfer || '' }}</td>
+              <td class="py-2 px-2 border-slate-200 text-center text-slate-700 bg-white group-hover:bg-slate-50 font-semibold">{{ item.totalReceive || '' }}</td>
+              <td class="py-2 px-2 border-slate-200 text-center text-slate-700 bg-white group-hover:bg-slate-50 font-semibold">{{ item.totalExport || '' }}</td>
+              <td class="py-2 px-2 border-slate-200 text-center text-slate-700 bg-white group-hover:bg-slate-50 font-semibold">{{ item.totalTransfer || '' }}</td>
               <!-- Tồn cuối -->
-              <td class="col-ton-cuoi py-2 px-4 text-right font-black sticky right-0 bg-white group-hover:bg-slate-50 text-sm"
+              <td class="col-ton-cuoi py-2 px-4 text-right font-black sticky right-0 bg-white group-hover:bg-slate-50 text-sm border-slate-200"
                 :class="item.finalStock < 50 ? 'text-rose-600' : 'text-[var(--hk-primary-dark)]'"
               >
                 {{ item.finalStock?.toLocaleString() }}
@@ -1341,19 +1343,19 @@ const otherWarehouses = computed(() =>
               <table class="w-full text-left border-collapse text-[12px] whitespace-nowrap">
                 <thead class="bg-slate-50 border-b border-slate-200 text-[11px] uppercase tracking-wider text-slate-600 font-bold sticky top-0 z-10 shadow-[0_1px_0_0_#e2e8f0]">
                   <tr>
-                    <th class="py-3 px-3 border-r border-slate-200 text-center w-28">Mã Kiểm Kê</th>
-                    <th class="py-3 px-3 border-r border-slate-200 text-center w-24">Mã SP</th>
-                    <th class="py-3 px-4 border-r border-slate-200">Tên SP</th>
-                    <th class="py-3 px-2 border-r border-slate-200 text-center w-24">Đơn Vị</th>
-                    <th class="py-3 px-2 border-r border-slate-200 text-center w-36">Tồn Đầu Kỳ</th>
-                    <th class="py-3 px-2 border-r border-slate-200 text-center w-36">Số Lượng Thực Tế</th>
-                    <th class="py-3 px-2 border-r border-slate-200 text-center w-28">Số Chênh Lệch</th>
-                    <th class="py-3 px-4 text-center">Ghi Chú</th>
+                    <th class="py-3 px-3 border-r border-slate-200 text-center w-28 align-middle border">Mã Kiểm Kê</th>
+                    <th class="py-3 px-3 border-r border-slate-200 text-center w-24 align-middle border">Mã SP</th>
+                    <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Tên SP</th>
+                    <th class="py-3 px-2 border-r border-slate-200 text-center w-24 align-middle border">Đơn Vị</th>
+                    <th class="py-3 px-2 border-r border-slate-200 text-center w-36 align-middle border">Tồn Đầu Kỳ</th>
+                    <th class="py-3 px-2 border-r border-slate-200 text-center w-36 align-middle border">Số Lượng Thực Tế</th>
+                    <th class="py-3 px-2 border-r border-slate-200 text-center w-28 align-middle border">Số Chênh Lệch</th>
+                    <th class="py-3 px-4 text-center align-middle border-r border-slate-200 border">Ghi Chú</th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100 text-[13px] text-slate-700">
                   <tr v-if="!currentCheck || !modalCheckItems.length">
-                    <td colspan="8" class="py-12 text-center text-slate-400">
+                    <td colspan="8" class="py-12 text-center text-slate-400 border-slate-200">
                       <div class="flex flex-col items-center gap-2">
                         <span class="text-3xl">📦</span>
                         <p class="font-semibold text-slate-600">Chưa có sản phẩm trong phiếu kiểm kê</p>
@@ -1362,30 +1364,30 @@ const otherWarehouses = computed(() =>
                     </td>
                   </tr>
                   <tr v-else v-for="(item, idx) in modalCheckItems" :key="item.id" class="hover:bg-slate-50 transition-colors">
-                    <td class="py-2 px-3 border-r border-slate-200 text-center text-slate-500 font-mono">KK-{{ currentCheck.id }}</td>
-                    <td class="py-2 px-3 border-r border-slate-200 text-center text-slate-500 font-mono">{{ item.product_code }}</td>
-                    <td class="py-2 px-4 border-r border-slate-200 font-semibold text-slate-800">{{ item.product_name }}</td>
-                    <td class="py-2 px-2 border-r border-slate-200 text-center text-slate-600">{{ item.unit || '—' }}</td>
-                    <td class="py-2 px-2 border-r border-slate-200 text-center">
+                    <td class="py-2 px-3 border-slate-200 text-center text-slate-500 font-mono">KK-{{ currentCheck.id }}</td>
+                    <td class="py-2 px-3 border-slate-200 text-center text-slate-500 font-mono">{{ item.product_code }}</td>
+                    <td class="py-2 px-4 border-slate-200 font-semibold text-slate-800">{{ item.product_name }}</td>
+                    <td class="py-2 px-2 border-slate-200 text-center text-slate-600">{{ item.unit || '—' }}</td>
+                    <td class="py-2 px-2 border-slate-200 text-center">
                       <input type="number" min="0"
                         :value="item.well_balance"
                         @change="e => onWellBalanceInput(item, e.target.value)"
                         class="w-20 text-center text-[13px] border border-slate-300 rounded px-2 py-1 focus:outline-none focus:border-[var(--hk-primary)] focus:ring-1 focus:ring-[var(--hk-primary)] transition-all bg-white"
                       />
                     </td>
-                    <td class="py-2 px-2 border-r border-slate-200 text-center">
+                    <td class="py-2 px-2 border-slate-200 text-center">
                       <input type="number" min="0"
                         :value="item.stoke_take"
                         @change="e => onStokeTakeInput(item, e.target.value)"
                         class="w-20 text-center text-[13px] border border-slate-300 rounded px-2 py-1 focus:outline-none focus:border-[var(--hk-primary)] focus:ring-1 focus:ring-[var(--hk-primary)] transition-all bg-white"
                       />
                     </td>
-                    <td class="py-2 px-2 border-r border-slate-200 text-center font-bold"
+                    <td class="py-2 px-2 border-slate-200 text-center font-bold"
                       :class="item.different_qty > 0 ? 'text-emerald-600' : item.different_qty < 0 ? 'text-rose-600' : 'text-[var(--hk-primary-dark)]'"
                     >
                       {{ item.different_qty >= 0 ? '+' : '' }}{{ item.different_qty }}
                     </td>
-                    <td class="py-2 px-3">
+                    <td class="py-2 px-3 border-slate-200">
                       <input type="text" :value="item.note"
                         @change="e => { item.note = e.target.value; updateCheckItem(item.id, { note: e.target.value }) }"
                         placeholder="..." class="w-full text-[13px] border border-slate-300 rounded-md px-2 py-1 focus:outline-none focus:border-[var(--hk-primary)] focus:ring-1 focus:ring-[var(--hk-primary)] transition-all bg-white"
@@ -1435,23 +1437,23 @@ const otherWarehouses = computed(() =>
             <table class="w-full text-left border-collapse text-[13px]">
               <thead class="bg-slate-100 sticky top-0 z-10 shadow-sm border-b border-slate-200 font-bold uppercase">
                 <tr>
-                  <th class="py-2.5 px-3 border-r border-slate-200 w-12 text-center">
+                  <th class="py-2.5 px-3 border-r border-slate-200 w-12 text-center align-middle border">
                     <input type="checkbox" :checked="isAllSelected" @change="e => toggleSelectAll(e.target.checked)" class="w-4 h-4 rounded border-slate-300 text-sky-500 focus:ring-sky-500 cursor-pointer" />
                   </th>
-                  <th class="py-2.5 px-4 text-slate-700 text-[11px]">Sản Phẩm Buồng Phòng</th>
+                  <th class="py-2.5 px-4 text-slate-700 text-[11px] text-center align-middle border-r border-slate-200 border">Sản Phẩm Buồng Phòng</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100 text-slate-700">
                 <tr v-if="productsInStock.length === 0">
-                  <td colspan="2" class="py-8 text-center text-slate-400 text-sm">Không có sản phẩm buồng phòng nào</td>
+                  <td colspan="2" class="py-8 text-center text-slate-400 text-sm border-slate-200">Không có sản phẩm buồng phòng nào</td>
                 </tr>
                 <template v-else v-for="wh in productsInStock" :key="'wh-'+wh.id">
                   <!-- Outlet Row (e.g. Minibar, Giặt ủi...) -->
                   <tr class="bg-slate-50 hover:bg-slate-100 transition-colors">
-                    <td class="py-2.5 px-3 border-r border-slate-200 text-center w-12">
+                    <td class="py-2.5 px-3 border-slate-200 text-center w-12">
                       <input type="checkbox" :checked="isOutletSelected(wh)" @change="e => toggleOutletSelect(wh, e.target.checked)" class="w-4 h-4 rounded border-slate-300 text-sky-500 focus:ring-sky-500 cursor-pointer" />
                     </td>
-                    <td class="py-2.5 px-4 cursor-pointer" @click="toggleOutlet(wh.id)">
+                    <td class="py-2.5 px-4 cursor-pointer border-slate-200" @click="toggleOutlet(wh.id)">
                       <div class="flex items-center gap-2 select-none">
                         <div class="w-5 h-5 bg-[var(--hk-primary-dark)] flex items-center justify-center text-white text-[12px] leading-none pb-[1.5px] rounded-md shadow-sm font-bold">{{ expandedOutlets[wh.id] ? '-' : '+' }}</div>
                         <span class="font-bold text-slate-800">{{ wh.name }} ({{ wh.code }})</span>
@@ -1463,10 +1465,10 @@ const otherWarehouses = computed(() =>
                     <template v-for="cat in wh.categories" :key="'cat-'+cat.id">
                       <!-- Category Row (e.g. Nước ngọt, Bia...) -->
                       <tr class="bg-white hover:bg-slate-50/50 transition-colors">
-                        <td class="py-2.5 px-3 border-r border-slate-200 text-center">
+                        <td class="py-2.5 px-3 border-slate-200 text-center">
                           <input type="checkbox" :checked="isCategorySelected(cat)" @change="e => toggleCategorySelect(cat, e.target.checked)" class="w-4 h-4 rounded border-slate-300 text-sky-500 focus:ring-sky-500 cursor-pointer" />
                         </td>
-                        <td class="py-2.5 px-4 pl-8 cursor-pointer" @click="toggleCategory(cat.id)">
+                        <td class="py-2.5 px-4 pl-8 cursor-pointer border-slate-200" @click="toggleCategory(cat.id)">
                           <div class="flex items-center gap-2 select-none">
                             <div class="w-4 h-4 bg-[var(--hk-primary)] flex items-center justify-center text-white text-[11px] leading-none pb-[1px] rounded-sm shadow-sm font-bold">{{ expandedCategories[cat.id] ? '-' : '+' }}</div>
                             <span class="font-bold text-slate-700">{{ cat.name }}</span>
@@ -1476,10 +1478,10 @@ const otherWarehouses = computed(() =>
                       <!-- Products if Category is expanded -->
                       <template v-if="expandedCategories[cat.id]">
                         <tr v-for="p in cat.products" :key="'prod-'+p.id" class="hover:bg-slate-50 transition-colors bg-white">
-                          <td class="py-2.5 px-3 border-r border-slate-200 text-center">
+                          <td class="py-2.5 px-3 border-slate-200 text-center">
                             <input type="checkbox" :value="p.id" v-model="selectedProductIds" class="w-4 h-4 rounded border-slate-300 text-sky-500 focus:ring-sky-500 cursor-pointer" />
                           </td>
-                          <td class="py-2.5 px-4 pl-14 text-slate-600 font-semibold select-none">{{ p.name }}</td>
+                          <td class="py-2.5 px-4 pl-14 text-slate-600 font-semibold select-none border-slate-200">{{ p.name }}</td>
                         </tr>
                       </template>
                     </template>
@@ -1531,7 +1533,13 @@ const otherWarehouses = computed(() =>
             <div class="grid grid-cols-2 gap-4">
               <div class="flex flex-col gap-1.5">
                 <label class="text-[12px] font-bold text-slate-700">Ngày</label>
-                <input type="date" v-model="transferForm.date" class="w-full text-[13px] border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-[var(--hk-primary)] transition-all bg-white shadow-sm" />
+                <SingleDatePicker
+                  v-model="transferForm.date"
+                  :start-date="transferForm.date || systemDate"
+                  placeholder="dd/mm/yyyy"
+                  four-digit-year
+                  input-class="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 outline-none focus:border-[var(--hk-primary)] transition-all bg-white shadow-sm"
+                />
               </div>
               <div class="flex flex-col gap-1.5">
                 <label class="text-[12px] font-bold text-slate-700">Số lượng <span class="text-rose-500">*</span></label>
@@ -1595,18 +1603,18 @@ const otherWarehouses = computed(() =>
                   <table class="w-full text-left text-xs border-collapse">
                     <thead>
                       <tr class="bg-slate-50 text-slate-500 font-bold border-b border-slate-150">
-                        <th class="py-2.5 px-3">Sản phẩm</th>
-                        <th class="py-2.5 px-3 text-center">Sổ sách</th>
-                        <th class="py-2.5 px-3 text-center">Thực tế</th>
-                        <th class="py-2.5 px-3 text-right">Chênh lệch</th>
+                        <th class="py-2.5 px-3 text-center align-middle border-r border-slate-200 border">Sản Phẩm</th>
+                        <th class="py-2.5 px-3 text-center align-middle border-r border-slate-200 border">Sổ Sách</th>
+                        <th class="py-2.5 px-3 text-center align-middle border-r border-slate-200 border">Thực Tế</th>
+                        <th class="py-2.5 px-3 text-center align-middle border-r border-slate-200 border">Chênh Lệch</th>
                       </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100 font-medium">
                       <tr v-for="item in statsData.discrepancyList" :key="item.id" class="hover:bg-slate-50 transition-colors">
-                        <td class="py-2 px-3 text-slate-700">{{ item.product_name }}</td>
-                        <td class="py-2 px-3 text-center text-slate-500">{{ item.well_balance }}</td>
-                        <td class="py-2 px-3 text-center text-slate-700">{{ item.stoke_take }}</td>
-                        <td class="py-2 px-3 text-right font-bold" :class="parseFloat(item.different_qty) > 0 ? 'text-emerald-600' : 'text-rose-600'">
+                        <td class="py-2 px-3 text-slate-700 border-slate-200">{{ item.product_name }}</td>
+                        <td class="py-2 px-3 text-center text-slate-500 border-slate-200">{{ item.well_balance }}</td>
+                        <td class="py-2 px-3 text-center text-slate-700 border-slate-200">{{ item.stoke_take }}</td>
+                        <td class="py-2 px-3 text-right font-bold border-slate-200" :class="parseFloat(item.different_qty) > 0 ? 'text-emerald-600' : 'text-rose-600'">
                           {{ parseFloat(item.different_qty) > 0 ? '+' : '' }}{{ item.different_qty }}
                         </td>
                       </tr>
@@ -1648,14 +1656,14 @@ const otherWarehouses = computed(() =>
                   <table class="w-full text-left text-xs border-collapse">
                     <thead>
                       <tr class="bg-slate-50 text-slate-500 font-bold border-b border-slate-150">
-                        <th class="py-2.5 px-3">Sản phẩm</th>
-                        <th class="py-2.5 px-3 text-right">Tồn cuối</th>
+                        <th class="py-2.5 px-3 text-center align-middle border-r border-slate-200 border">Sản Phẩm</th>
+                        <th class="py-2.5 px-3 text-center align-middle border-r border-slate-200 border">Tồn Cuối</th>
                       </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-100 font-medium">
                       <tr v-for="item in statsData.lowStockProducts" :key="item.product_id" class="hover:bg-slate-50 transition-colors">
-                        <td class="py-2 px-3 text-slate-700">{{ item.product_name }}</td>
-                        <td class="py-2 px-3 text-right text-rose-600">{{ item.finalStock }}</td>
+                        <td class="py-2 px-3 text-slate-700 border-slate-200">{{ item.product_name }}</td>
+                        <td class="py-2 px-3 text-right text-rose-600 border-slate-200">{{ item.finalStock }}</td>
                       </tr>
                     </tbody>
                   </table>

@@ -4,7 +4,7 @@ import {
   fetchCompanies, createCompany, updateCompany, deleteCompany,
   fetchMarkets, fetchCustomerSources, fetchBranches, fetchBookers, fetchUsers,
   createMarket, createCustomerSource, createBranch, createBooker,
-  syncCompanies, exportCompaniesExcel, importCompaniesExcel, companyTemplateExcel
+  exportCompaniesExcel, importCompaniesExcel, companyTemplateExcel
 } from '@/services/company-service'
 import { useUiStore } from '@/stores/ui-store'
 
@@ -26,19 +26,18 @@ const isColumnSelectorOpen = ref(false)
 const columns = ref([
   { id: 'code', label: 'Mã', visible: true },
   { id: 'name', label: 'Tên', visible: true },
-  { id: 'trading_name', label: 'Tên giao dịch', visible: true },
-  { id: 'address', label: 'Địa chỉ', visible: true },
+  { id: 'trading_name', label: 'Tên Giao Dịch', visible: true },
+  { id: 'address', label: 'Địa Chỉ', visible: true },
   { id: 'tax_code', label: 'Tax', visible: true },
-  { id: 'phone', label: 'Số điện thoại', visible: true },
+  { id: 'phone', label: 'Số Điện Thoại', visible: true },
   { id: 'email', label: 'Email', visible: true },
-  { id: 'customer_source', label: 'Nguồn khách', visible: true },
-  { id: 'market', label: 'Thị trường', visible: true },
-  { id: 'max_debt', label: 'Công nợ tối đa', visible: true },
-  { id: 'bank_account', label: 'Tài khoản ngân hàng', visible: true },
-  { id: 'booker', label: 'Người đặt phòng', visible: true },
-  { id: 'sales_person', label: 'Người bán', visible: true },
-  { id: 'rate_code', label: 'Mã giá phòng', visible: true },
-  { id: 'branch', label: 'Chi nhánh', visible: true },
+  { id: 'customer_source', label: 'Nguồn Khách', visible: true },
+  { id: 'market', label: 'Thị Trường', visible: true },
+  { id: 'max_debt', label: 'Công Nợ Tối Đa', visible: true },
+  { id: 'bank_account', label: 'Tài Khoản Ngân Hàng', visible: true },
+  { id: 'booker', label: 'Người Đặt Phòng', visible: true },
+  { id: 'sales_person', label: 'Người Bán', visible: true },
+  { id: 'branch', label: 'Chi Nhánh', visible: true },
 ])
 
 const isColumnVisible = (columnId) => {
@@ -76,6 +75,14 @@ const closeAllPopovers = (e) => {
 const isModalOpen = ref(false)
 const isEditMode = ref(false)
 const currentId = ref(null)
+const modalPositions = ref({
+  company: { x: 0, y: 0 },
+  market: { x: 0, y: 0 },
+  customerSource: { x: 0, y: 0 },
+  branch: { x: 0, y: 0 },
+  booker: { x: 0, y: 0 },
+})
+let modalDragState = null
 
 const emptyForm = () => ({
   code: '',
@@ -103,11 +110,62 @@ onMounted(() => {
   loadData()
   loadLookups()
   document.addEventListener('click', closeAllPopovers)
+  window.addEventListener('keydown', handleModalEscape)
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', closeAllPopovers)
+  window.removeEventListener('keydown', handleModalEscape)
+  stopModalDrag()
 })
+
+const resetModalPosition = (modalName) => {
+  modalPositions.value[modalName] = { x: 0, y: 0 }
+}
+
+const closeCompanyModal = () => { isModalOpen.value = false }
+const closeQuickMarketModal = () => { isQuickMarketOpen.value = false }
+const closeQuickCustomerSourceModal = () => { isQuickCustomerSourceOpen.value = false }
+const closeQuickBranchModal = () => { isQuickBranchOpen.value = false }
+const closeQuickBookerModal = () => { isQuickBookerOpen.value = false }
+
+const handleModalEscape = (event) => {
+  if (event.key !== 'Escape') return
+  if (isQuickBookerOpen.value) return closeQuickBookerModal()
+  if (isQuickBranchOpen.value) return closeQuickBranchModal()
+  if (isQuickCustomerSourceOpen.value) return closeQuickCustomerSourceModal()
+  if (isQuickMarketOpen.value) return closeQuickMarketModal()
+  if (isModalOpen.value) closeCompanyModal()
+}
+
+const startModalDrag = (modalName, event) => {
+  if (event.button !== 0 || event.target.closest('button, input, select, textarea, label')) return
+  event.preventDefault()
+  modalDragState = {
+    modalName,
+    startX: event.clientX,
+    startY: event.clientY,
+    initX: modalPositions.value[modalName]?.x || 0,
+    initY: modalPositions.value[modalName]?.y || 0,
+  }
+  window.addEventListener('mousemove', moveModalDrag)
+  window.addEventListener('mouseup', stopModalDrag)
+}
+
+const moveModalDrag = (event) => {
+  if (!modalDragState) return
+  const { modalName, startX, startY, initX, initY } = modalDragState
+  modalPositions.value[modalName] = {
+    x: initX + (event.clientX - startX),
+    y: initY + (event.clientY - startY),
+  }
+}
+
+const stopModalDrag = () => {
+  modalDragState = null
+  window.removeEventListener('mousemove', moveModalDrag)
+  window.removeEventListener('mouseup', stopModalDrag)
+}
 
 const loadLookups = async () => {
   try {
@@ -118,11 +176,11 @@ const loadLookups = async () => {
       fetchBookers(),
       fetchUsers({ per_page: 1000 })
     ])
-    markets.value = mRes.data.data || []
-    customerSources.value = csRes.data.data || []
-    branches.value = bRes.data.data || []
-    bookers.value = bkRes.data.data || []
-    users.value = (uRes.data.data || []).filter(u => u.is_active_user !== false && u.is_active_user !== 0)
+    markets.value = (mRes.data.data || []).filter(m => m && m.name)
+    customerSources.value = (csRes.data.data || []).filter(cs => cs && cs.name)
+    branches.value = (bRes.data.data || []).filter(b => b && b.name)
+    bookers.value = (bkRes.data.data || []).filter(bk => bk && bk.name)
+    users.value = (uRes.data.data || []).filter(u => u && u.name && u.is_active_user !== false && u.is_active_user !== 0)
   } catch (err) {
     console.error('Error loading lookups:', err)
   }
@@ -144,6 +202,7 @@ const openAddModal = () => {
   isEditMode.value = false
   currentId.value = null
   form.value = emptyForm()
+  resetModalPosition('company')
   isModalOpen.value = true
 }
 
@@ -169,24 +228,17 @@ const openEditModal = (item) => {
     branch_id: item.branch_id || '',
     is_active: item.is_active !== undefined ? item.is_active : true,
   }
+  resetModalPosition('company')
   isModalOpen.value = true
 }
 
 const saveItem = async () => {
-  if (!form.value.name) {
+  if (!form.value.name?.trim()) {
     uiStore.showToast('Vui lòng nhập tên công ty', 'warning')
     return
   }
-  if (!form.value.trading_name) {
+  if (!form.value.trading_name?.trim()) {
     uiStore.showToast('Vui lòng nhập tên giao dịch', 'warning')
-    return
-  }
-  if (!form.value.market_id) {
-    uiStore.showToast('Vui lòng chọn thị trường', 'warning')
-    return
-  }
-  if (!form.value.customer_source_id) {
-    uiStore.showToast('Vui lòng chọn nguồn khách', 'warning')
     return
   }
   loading.value = true
@@ -197,6 +249,7 @@ const saveItem = async () => {
     if (!payload.branch_id) payload.branch_id = null
     if (!payload.booker_id) payload.booker_id = null
     if (!payload.sales_person_id) payload.sales_person_id = null
+    payload.max_debt = payload.max_debt === '' ? null : Number(payload.max_debt || 0)
 
     if (isEditMode.value) {
       await updateCompany(currentId.value, payload)
@@ -205,7 +258,7 @@ const saveItem = async () => {
       await createCompany(payload)
       uiStore.showToast('Thêm công ty thành công!', 'success')
     }
-    isModalOpen.value = false
+    closeCompanyModal()
     loadData()
   } catch (err) {
     console.error(err)
@@ -258,6 +311,30 @@ const quickBranchForm = ref({ name: '' })
 const isQuickBookerOpen = ref(false)
 const quickBookerForm = ref({ name: '', email: '', phone: '', address: '', notes: '' })
 
+const openQuickMarketModal = () => {
+  quickMarketForm.value = { code: '', name: '' }
+  resetModalPosition('market')
+  isQuickMarketOpen.value = true
+}
+
+const openQuickCustomerSourceModal = () => {
+  quickCustomerSourceForm.value = { code: '', name: '' }
+  resetModalPosition('customerSource')
+  isQuickCustomerSourceOpen.value = true
+}
+
+const openQuickBranchModal = () => {
+  quickBranchForm.value = { name: '' }
+  resetModalPosition('branch')
+  isQuickBranchOpen.value = true
+}
+
+const openQuickBookerModal = () => {
+  quickBookerForm.value = { name: '', email: '', phone: '', address: '', notes: '' }
+  resetModalPosition('booker')
+  isQuickBookerOpen.value = true
+}
+
 // Quick create functions
 const saveQuickMarket = async () => {
   if (!quickMarketForm.value.name) {
@@ -276,7 +353,7 @@ const saveQuickMarket = async () => {
     if (res.data?.data?.id) {
       form.value.market_id = res.data.data.id
     }
-    isQuickMarketOpen.value = false
+    closeQuickMarketModal()
   } catch (err) {
     console.error(err)
     uiStore.showToast(err.response?.data?.message || 'Có lỗi xảy ra', 'error')
@@ -300,7 +377,7 @@ const saveQuickCustomerSource = async () => {
     if (res.data?.data?.id) {
       form.value.customer_source_id = res.data.data.id
     }
-    isQuickCustomerSourceOpen.value = false
+    closeQuickCustomerSourceModal()
   } catch (err) {
     console.error(err)
     uiStore.showToast(err.response?.data?.message || 'Có lỗi xảy ra', 'error')
@@ -320,7 +397,7 @@ const saveQuickBranch = async () => {
     if (res.data?.data?.id) {
       form.value.branch_id = res.data.data.id
     }
-    isQuickBranchOpen.value = false
+    closeQuickBranchModal()
   } catch (err) {
     console.error(err)
     uiStore.showToast(err.response?.data?.message || 'Có lỗi xảy ra', 'error')
@@ -340,7 +417,7 @@ const saveQuickBooker = async () => {
     if (res.data?.data?.id) {
       form.value.booker_id = res.data.data.id
     }
-    isQuickBookerOpen.value = false
+    closeQuickBookerModal()
   } catch (err) {
     console.error(err)
     uiStore.showToast(err.response?.data?.message || 'Có lỗi xảy ra', 'error')
@@ -498,18 +575,14 @@ const isBranchFiltered = computed(() => selectedBranches.value.length > 0)
 
 const fileInput = ref(null)
 
-const handleSync = async () => {
-  loading.value = true
-  try {
-    const res = await syncCompanies()
-    uiStore.showToast(res.data.message || 'Đồng bộ dữ liệu thành công!', 'success')
-    await loadData()
-  } catch (err) {
-    console.error(err)
-    uiStore.showToast(err.response?.data?.message || 'Không thể đồng bộ dữ liệu', 'error')
-  } finally {
-    loading.value = false
-  }
+const formatMaxDebt = (value) => {
+  if (value === '' || value === null || value === undefined) return ''
+  return Number(value || 0).toLocaleString('en-US')
+}
+
+const setMaxDebt = (event) => {
+  const digits = event.target.value.replace(/[^0-9]/g, '')
+  form.value.max_debt = digits === '' ? '' : Number(digits)
 }
 
 const handleExport = async () => {
@@ -589,32 +662,26 @@ const handleDownloadTemplate = async () => {
       <div class="flex items-center gap-2 flex-wrap">
         <button 
           @click="openAddModal"
-          class="px-3.5 py-1.5 bg-[#5fa5e6] hover:bg-[#4d92d4] text-white rounded-md text-xs font-bold border-none cursor-pointer flex items-center gap-1 shadow-xs transition-colors"
+          class="btn-pms-primary"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
           </svg>
           Thêm
         </button>
-        <button @click="handleSync" class="px-3.5 py-1.5 bg-[#10b981] hover:bg-[#059669] text-white rounded-md text-xs font-bold border-none cursor-pointer flex items-center gap-1.5 shadow-xs transition-colors">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-          Đồng bộ
-        </button>
-        <button @click="handleExport" class="px-3.5 py-1.5 bg-[#5fa5e6] hover:bg-[#4d92d4] text-white rounded-md text-xs font-bold border-none cursor-pointer flex items-center gap-1.5 shadow-xs transition-colors">
+        <button @click="handleExport" class="btn-pms-secondary">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
           Xuất excel
         </button>
-        <button @click="triggerImport" class="px-3.5 py-1.5 bg-[#5fa5e6] hover:bg-[#4d92d4] text-white rounded-md text-xs font-bold border-none cursor-pointer flex items-center gap-1.5 shadow-xs transition-colors">
+        <button @click="triggerImport" class="btn-pms-secondary">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
           </svg>
           Nhập excel
         </button>
-        <button @click="handleDownloadTemplate" class="px-3.5 py-1.5 bg-[#f8fafc] hover:bg-slate-100 text-slate-650 rounded-md text-xs font-bold border border-slate-200 cursor-pointer flex items-center gap-1.5 shadow-xs transition-colors" title="Tải file CSV mẫu để nhập liệu">
+        <button @click="handleDownloadTemplate" class="btn-pms-secondary" title="Tải file CSV mẫu để nhập liệu">
           <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
           </svg>
@@ -662,10 +729,10 @@ const handleDownloadTemplate = async () => {
         <thead>
           <tr class="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold select-none h-9">
             <!-- Mã -->
-            <th v-if="isColumnVisible('code')" class="p-2 border-r border-slate-200 text-slate-700 font-bold text-xs uppercase whitespace-nowrap w-24 cursor-pointer hover:bg-slate-200 select-none transition-colors" @click="toggleSort('code')">
-              <div class="flex items-center justify-between gap-1.5">
+            <th v-if="isColumnVisible('code')" class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap w-24 cursor-pointer hover:bg-slate-200 select-none transition-colors" @click="toggleSort('code')">
+              <div class="flex items-center justify-center gap-1.5">
                 <span>Mã</span>
-                <span class="flex flex-col text-[9px] leading-[6px] text-slate-400">
+                <span class="flex flex-col text-xs leading-[10px] text-slate-400">
                   <span :class="{'text-sky-500': sortField === 'code' && sortDir === 'asc'}">▲</span>
                   <span :class="{'text-sky-500': sortField === 'code' && sortDir === 'desc'}">▼</span>
                 </span>
@@ -673,8 +740,8 @@ const handleDownloadTemplate = async () => {
             </th>
 
             <!-- Tên -->
-            <th v-if="isColumnVisible('name')" class="p-2 border-r border-slate-200 text-slate-700 font-bold text-xs uppercase whitespace-nowrap relative popover-container select-none">
-              <div class="flex items-center justify-between gap-1.5">
+            <th v-if="isColumnVisible('name')" class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap relative popover-container select-none">
+              <div class="flex items-center justify-center gap-1.5">
                 <span>Tên</span>
                 <button 
                   @click.stop="isSearchOpen = !isSearchOpen" 
@@ -708,10 +775,10 @@ const handleDownloadTemplate = async () => {
             </th>
 
             <!-- Tên giao dịch -->
-            <th v-if="isColumnVisible('trading_name')" class="p-2 border-r border-slate-200 text-slate-700 font-bold text-xs uppercase whitespace-nowrap cursor-pointer hover:bg-slate-200 select-none transition-colors" @click="toggleSort('trading_name')">
-              <div class="flex items-center justify-between gap-1.5">
-                <span>Tên giao dịch</span>
-                <span class="flex flex-col text-[9px] leading-[6px] text-slate-400">
+            <th v-if="isColumnVisible('trading_name')" class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap cursor-pointer hover:bg-slate-200 select-none transition-colors" @click="toggleSort('trading_name')">
+              <div class="flex items-center justify-center gap-1.5">
+                <span>Tên Giao Dịch</span>
+                <span class="flex flex-col text-xs leading-[10px] text-slate-400">
                   <span :class="{'text-sky-500': sortField === 'trading_name' && sortDir === 'asc'}">▲</span>
                   <span :class="{'text-sky-500': sortField === 'trading_name' && sortDir === 'desc'}">▼</span>
                 </span>
@@ -719,21 +786,21 @@ const handleDownloadTemplate = async () => {
             </th>
 
             <!-- Địa chỉ -->
-            <th v-if="isColumnVisible('address')" class="p-2 border-r border-slate-200 text-slate-700 font-bold text-xs uppercase whitespace-nowrap">Địa chỉ</th>
+            <th v-if="isColumnVisible('address')" class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap">Địa Chỉ</th>
 
             <!-- Tax -->
-            <th v-if="isColumnVisible('tax_code')" class="p-2 border-r border-slate-200 text-slate-700 font-bold text-xs uppercase whitespace-nowrap w-24">Tax</th>
+            <th v-if="isColumnVisible('tax_code')" class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap w-24">Tax</th>
 
             <!-- Số điện thoại -->
-            <th v-if="isColumnVisible('phone')" class="p-2 border-r border-slate-200 text-slate-700 font-bold text-xs uppercase whitespace-nowrap">Số điện thoại</th>
+            <th v-if="isColumnVisible('phone')" class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap">Số Điện Thoại</th>
 
             <!-- Email -->
-            <th v-if="isColumnVisible('email')" class="p-2 border-r border-slate-200 text-slate-700 font-bold text-xs uppercase whitespace-nowrap">Email</th>
+            <th v-if="isColumnVisible('email')" class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap">Email</th>
 
             <!-- Nguồn khách -->
-            <th v-if="isColumnVisible('customer_source')" class="p-2 border-r border-slate-200 text-slate-700 font-bold text-xs uppercase whitespace-nowrap relative popover-container select-none">
-              <div class="flex items-center justify-between gap-1.5">
-                <span>Nguồn khách</span>
+            <th v-if="isColumnVisible('customer_source')" class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap relative popover-container select-none">
+              <div class="flex items-center justify-center gap-1.5">
+                <span>Nguồn Khách</span>
                 <button 
                   @click.stop="openFilter('source')" 
                   class="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-600 border-none bg-transparent cursor-pointer flex items-center justify-center transition-colors"
@@ -761,9 +828,9 @@ const handleDownloadTemplate = async () => {
             </th>
 
             <!-- Thị trường -->
-            <th v-if="isColumnVisible('market')" class="p-2 border-r border-slate-200 text-slate-700 font-bold text-xs uppercase whitespace-nowrap relative popover-container select-none">
-              <div class="flex items-center justify-between gap-1.5">
-                <span>Thị trường</span>
+            <th v-if="isColumnVisible('market')" class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap relative popover-container select-none">
+              <div class="flex items-center justify-center gap-1.5">
+                <span>Thị Trường</span>
                 <button 
                   @click.stop="openFilter('market')" 
                   class="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-600 border-none bg-transparent cursor-pointer flex items-center justify-center transition-colors"
@@ -791,15 +858,15 @@ const handleDownloadTemplate = async () => {
             </th>
 
             <!-- Công nợ tối đa -->
-            <th v-if="isColumnVisible('max_debt')" class="p-2 border-r border-slate-200 text-slate-700 font-bold text-xs uppercase whitespace-nowrap text-right">Công nợ tối đa</th>
+            <th v-if="isColumnVisible('max_debt')" class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap">Công Nợ Tối Đa</th>
 
             <!-- Tài khoản ngân hàng -->
-            <th v-if="isColumnVisible('bank_account')" class="p-2 border-r border-slate-200 text-slate-700 font-bold text-xs uppercase whitespace-nowrap">Tài khoản ngân hàng</th>
+            <th v-if="isColumnVisible('bank_account')" class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap">Tài Khoản Ngân Hàng</th>
 
             <!-- Người đặt phòng -->
-            <th v-if="isColumnVisible('booker')" class="p-2 border-r border-slate-200 text-slate-700 font-bold text-xs uppercase whitespace-nowrap relative popover-container select-none">
-              <div class="flex items-center justify-between gap-1.5">
-                <span>Người đặt phòng</span>
+            <th v-if="isColumnVisible('booker')" class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap relative popover-container select-none">
+              <div class="flex items-center justify-center gap-1.5">
+                <span>Người Đặt Phòng</span>
                 <button 
                   @click.stop="openFilter('booker')" 
                   class="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-600 border-none bg-transparent cursor-pointer flex items-center justify-center transition-colors"
@@ -827,15 +894,12 @@ const handleDownloadTemplate = async () => {
             </th>
 
             <!-- Người bán -->
-            <th v-if="isColumnVisible('sales_person')" class="p-2 border-r border-slate-200 text-slate-700 font-bold text-xs uppercase whitespace-nowrap">Người bán</th>
-
-            <!-- Mã giá phòng -->
-            <th v-if="isColumnVisible('rate_code')" class="p-2 border-r border-slate-200 text-slate-700 font-bold text-xs uppercase whitespace-nowrap">Mã giá phòng</th>
+            <th v-if="isColumnVisible('sales_person')" class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap">Người Bán</th>
 
             <!-- Chi nhánh -->
-            <th v-if="isColumnVisible('branch')" class="p-2 border-r border-slate-200 text-slate-700 font-bold text-xs uppercase whitespace-nowrap relative popover-container select-none">
-              <div class="flex items-center justify-between gap-1.5">
-                <span>Chi nhánh</span>
+            <th v-if="isColumnVisible('branch')" class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap relative popover-container select-none">
+              <div class="flex items-center justify-center gap-1.5">
+                <span>Chi Nhánh</span>
                 <button 
                   @click.stop="openFilter('branch')" 
                   class="p-1 hover:bg-slate-200 rounded text-slate-400 hover:text-slate-600 border-none bg-transparent cursor-pointer flex items-center justify-center transition-colors"
@@ -863,7 +927,7 @@ const handleDownloadTemplate = async () => {
             </th>
 
             <!-- Xóa -->
-            <th class="p-2 border-r border-slate-200 text-slate-700 font-bold text-xs uppercase whitespace-nowrap text-center w-20">Xóa</th>
+            <th class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap text-center w-20">Xóa</th>
           </tr>
         </thead>
         <tbody>
@@ -873,27 +937,27 @@ const handleDownloadTemplate = async () => {
             class="border-b border-slate-200 hover:bg-[#bdecfe]/50 cursor-pointer h-9 transition-colors"
             @dblclick="openEditModal(item)"
           >
-            <td v-if="isColumnVisible('code')" class="p-2 border-r border-slate-200 text-slate-700 font-semibold whitespace-nowrap">{{ item.code }}</td>
-            <td v-if="isColumnVisible('name')" class="p-2 border-r border-slate-200 text-slate-800 font-semibold whitespace-nowrap">{{ item.name }}</td>
-            <td v-if="isColumnVisible('trading_name')" class="p-2 border-r border-slate-200 text-slate-600 font-normal whitespace-nowrap">{{ item.trading_name || '' }}</td>
-            <td v-if="isColumnVisible('address')" class="p-2 border-r border-slate-200 text-slate-600 font-normal max-w-[200px] truncate" :title="item.address">{{ item.address || '' }}</td>
-            <td v-if="isColumnVisible('tax_code')" class="p-2 border-r border-slate-200 text-slate-600 font-normal whitespace-nowrap">{{ item.tax_code || '' }}</td>
-            <td v-if="isColumnVisible('phone')" class="p-2 border-r border-slate-200 text-slate-600 font-normal whitespace-nowrap">{{ item.phone || '' }}</td>
-            <td v-if="isColumnVisible('email')" class="p-2 border-r border-slate-200 text-slate-600 font-normal whitespace-nowrap text-xs">{{ item.email || '' }}</td>
-            <td v-if="isColumnVisible('customer_source')" class="p-2 border-r border-slate-200 text-slate-600 font-normal whitespace-nowrap text-xs">{{ item.customer_source?.name || '' }}</td>
-            <td v-if="isColumnVisible('market')" class="p-2 border-r border-slate-200 text-slate-600 font-normal whitespace-nowrap text-xs">{{ item.market?.name || '' }}</td>
-            <td v-if="isColumnVisible('max_debt')" class="p-2 border-r border-slate-200 text-slate-600 font-semibold whitespace-nowrap text-right">{{ item.max_debt ? Number(item.max_debt).toLocaleString('vi-VN') : '' }}</td>
-            <td v-if="isColumnVisible('bank_account')" class="p-2 border-r border-slate-200 text-slate-600 font-normal whitespace-nowrap text-xs">{{ item.bank_account || '' }}</td>
-            <td v-if="isColumnVisible('booker')" class="p-2 border-r border-slate-200 text-slate-600 font-normal whitespace-nowrap text-xs">{{ item.booker?.name || '' }}</td>
-            <td v-if="isColumnVisible('sales_person')" class="p-2 border-r border-slate-200 text-slate-600 font-normal whitespace-nowrap text-xs">{{ item.sales_person?.name || '' }}</td>
-            <td v-if="isColumnVisible('rate_code')" class="p-2 border-r border-slate-200 text-slate-600 font-normal whitespace-nowrap">{{ item.rate_code || '' }}</td>
-            <td v-if="isColumnVisible('branch')" class="p-2 border-r border-slate-200 text-slate-600 font-normal whitespace-nowrap text-xs">{{ item.branch?.name || '' }}</td>
-            <td class="p-2 border-r border-slate-200 text-center">
+            <td v-if="isColumnVisible('code')" class="p-2 text-slate-700 font-semibold whitespace-nowrap">{{ item.code }}</td>
+            <td v-if="isColumnVisible('name')" class="p-2 text-slate-800 font-semibold whitespace-nowrap">{{ item.name }}</td>
+            <td v-if="isColumnVisible('trading_name')" class="p-2 text-slate-600 font-normal whitespace-nowrap">{{ item.trading_name || '' }}</td>
+            <td v-if="isColumnVisible('address')" class="p-2 text-slate-600 font-normal max-w-[200px] truncate" :title="item.address">{{ item.address || '' }}</td>
+            <td v-if="isColumnVisible('tax_code')" class="p-2 text-slate-600 font-normal whitespace-nowrap">{{ item.tax_code || '' }}</td>
+            <td v-if="isColumnVisible('phone')" class="p-2 text-slate-600 font-normal whitespace-nowrap">{{ item.phone || '' }}</td>
+            <td v-if="isColumnVisible('email')" class="p-2 text-slate-600 font-normal whitespace-nowrap text-xs">{{ item.email || '' }}</td>
+            <td v-if="isColumnVisible('customer_source')" class="p-2 text-slate-600 font-normal whitespace-nowrap text-xs">{{ item.customer_source?.name || '' }}</td>
+            <td v-if="isColumnVisible('market')" class="p-2 text-slate-600 font-normal whitespace-nowrap text-xs">{{ item.market?.name || '' }}</td>
+            <td v-if="isColumnVisible('max_debt')" class="p-2 text-slate-600 font-semibold whitespace-nowrap text-right">{{ item.max_debt ? Number(item.max_debt).toLocaleString('en-US') : '' }}</td>
+            <td v-if="isColumnVisible('bank_account')" class="p-2 text-slate-600 font-normal whitespace-nowrap text-xs">{{ item.bank_account || '' }}</td>
+            <td v-if="isColumnVisible('booker')" class="p-2 text-slate-600 font-normal whitespace-nowrap text-xs">{{ item.booker?.name || '' }}</td>
+            <td v-if="isColumnVisible('sales_person')" class="p-2 text-slate-600 font-normal whitespace-nowrap text-xs">{{ item.sales_person?.name || '' }}</td>
+            <td v-if="isColumnVisible('branch')" class="p-2 text-slate-600 font-normal whitespace-nowrap text-xs">{{ item.branch?.name || '' }}</td>
+            <td class="p-2 text-center">
               <button 
                 @click.stop="handleDelete(item)"
-                class="p-1 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded cursor-pointer border-none transition-colors inline-flex items-center justify-center"
+                class="w-7 h-7 bg-red-600 hover:bg-red-700 text-white rounded cursor-pointer border-none transition-colors inline-flex items-center justify-center shadow-xs"
+                title="Xóa công ty"
               >
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                 </svg>
               </button>
@@ -928,7 +992,7 @@ const handleDownloadTemplate = async () => {
         class="px-2.5 py-1 border border-slate-200 rounded text-xs text-slate-500 bg-white hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
       >&gt;</button>
       <span class="text-xs text-slate-400 ml-2 mr-1">Tổng: {{ meta.total }}</span>
-      <select v-model="perPage" @change="changePerPage" class="border border-slate-200 rounded px-1.5 py-0.5 bg-white text-[11px] text-slate-500 focus:outline-none cursor-pointer">
+      <select v-model="perPage" @change="changePerPage" class="border border-slate-200 rounded px-1.5 py-0.5 bg-white text-xs text-slate-500 focus:outline-none cursor-pointer">
         <option :value="10">10 / page</option>
         <option :value="20">20 / page</option>
         <option :value="50">50 / page</option>
@@ -942,11 +1006,11 @@ const handleDownloadTemplate = async () => {
     v-if="isModalOpen" 
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-xs"
   >
-    <div class="bg-white rounded-xl w-full max-w-2xl shadow-2xl overflow-hidden border border-slate-100 animate-in">
+    <div data-company-modal="company" class="bg-white rounded-xl w-full max-w-2xl shadow-2xl overflow-hidden border border-slate-100 company-modal-fade" :style="{ transform: `translate(${modalPositions.company.x}px, ${modalPositions.company.y}px)` }">
       <!-- Header -->
-      <div class="bg-[#8dcbf4] px-5 py-3 flex items-center justify-between text-white select-none">
-        <h2 class="text-xs font-bold uppercase tracking-wider">{{ isEditMode ? 'Sửa công ty' : 'Thêm công ty' }}</h2>
-        <button @click="isModalOpen = false" class="text-white/80 hover:text-white bg-transparent border-none cursor-pointer text-lg font-light leading-none">✕</button>
+      <div @mousedown="startModalDrag('company', $event)" :style="{ background: 'var(--pms-custom-theme, #006bdb)' }" class="px-5 py-3 flex items-center justify-between text-white select-none cursor-move">
+        <h2 class="text-xs font-semibold tracking-wide">{{ isEditMode ? 'Sửa Công Ty' : 'Thêm Công Ty' }}</h2>
+        <button @mousedown.stop @click="closeCompanyModal" title="Đóng (Esc)" class="text-white/80 hover:text-white hover:bg-white/10 rounded bg-transparent border-none cursor-pointer text-lg font-light leading-none">✕</button>
       </div>
 
       <!-- Body -->
@@ -955,13 +1019,13 @@ const handleDownloadTemplate = async () => {
         <!-- Nhóm Thông tin -->
         <div class="flex flex-col gap-2.5">
           <div class="flex items-center justify-between border-b border-slate-100 pb-1.5">
-            <h3 class="text-xs font-bold text-slate-800">Thông tin<span class="text-red-500">*</span></h3>
+            <h3 class="text-xs font-bold text-slate-800">Thông tin</h3>
             <!-- Toggle Không sử dụng -->
             <div class="flex items-center gap-2 select-none">
-              <span class="text-xs text-slate-500 font-semibold">Không sử dụng</span>
+              <span class="text-xs text-slate-600 font-semibold">Không sử dụng</span>
               <label class="relative inline-flex items-center cursor-pointer">
                 <input type="checkbox" :checked="!form.is_active" @change="form.is_active = !$event.target.checked" class="sr-only peer" />
-                <div class="w-9 h-5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500"></div>
+                <div class="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-500"></div>
               </label>
             </div>
           </div>
@@ -971,42 +1035,51 @@ const handleDownloadTemplate = async () => {
             <div class="flex flex-col gap-2.5">
               <!-- Mã -->
               <div class="flex flex-col gap-1">
-                <span class="font-bold text-slate-600">Mã</span>
-                <input :value="isEditMode ? form.code : 'Code'" type="text" readonly class="border border-slate-200 bg-slate-100 rounded-md p-1.5 font-semibold text-slate-500 focus:outline-none text-xs" />
+                <span class="font-semibold text-[#000000D9]">Mã</span>
+                <input :value="isEditMode ? form.code : 'Code'" type="text" readonly class="border border-slate-200 bg-slate-100 rounded-lg h-8 px-2 font-normal text-slate-500 focus:outline-none text-xs" />
               </div>
               <!-- Tên -->
               <div class="flex flex-col gap-1">
-                <span class="font-bold text-slate-600">Tên</span>
-                <input v-model="form.name" type="text" placeholder="Tên" class="border border-slate-200 bg-[#fffbeb] rounded-md p-1.5 font-semibold focus:outline-sky-500 text-xs" />
+                <span class="font-semibold text-[#000000D9]">Tên<span class="text-red-500">*</span></span>
+                <div class="relative">
+                  <input v-model="form.name" required aria-required="true" type="text" placeholder="Tên" class="input-required w-full h-8 pr-8 rounded-lg px-2 text-xs font-normal" />
+                  <button v-if="form.name" @click.stop="form.name = ''" type="button" class="input-clear-button" title="Xóa">✕</button>
+                </div>
               </div>
               <!-- Tên giao dịch -->
               <div class="flex flex-col gap-1">
-                <span class="font-bold text-slate-600">Tên giao dịch</span>
-                <input v-model="form.trading_name" type="text" placeholder="Tên giao dịch" class="border border-slate-200 bg-[#fffbeb] rounded-md p-1.5 font-semibold focus:outline-sky-500 text-xs" />
+                <span class="font-semibold text-[#000000D9]">Tên Giao Dịch<span class="text-red-500">*</span></span>
+                <div class="relative">
+                  <input v-model="form.trading_name" required aria-required="true" type="text" placeholder="Tên giao dịch" class="input-required w-full h-8 pr-8 rounded-lg px-2 text-xs font-normal" />
+                  <button v-if="form.trading_name" @click.stop="form.trading_name = ''" type="button" class="input-clear-button" title="Xóa">✕</button>
+                </div>
               </div>
               <!-- Công nợ tối đa -->
               <div class="flex flex-col gap-1">
-                <span class="font-bold text-slate-600">Công nợ tối đa</span>
-                <input v-model="form.max_debt" type="number" placeholder="Công nợ tối đa" class="border border-slate-200 rounded-md p-1.5 font-semibold focus:outline-sky-500 text-xs" />
+                <span class="font-semibold text-[#000000D9]">Công Nợ Tối Đa</span>
+                <div class="relative">
+                  <input :value="formatMaxDebt(form.max_debt)" @input="setMaxDebt" inputmode="numeric" type="text" placeholder="Công nợ tối đa" class="w-full h-8 border border-slate-200 rounded-lg px-2 pr-8 text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                  <button v-if="form.max_debt !== '' && form.max_debt !== null" @click.stop="form.max_debt = ''" type="button" class="input-clear-button" title="Xóa">✕</button>
+                </div>
               </div>
               <!-- Người đặt phòng -->
               <div class="flex flex-col gap-1">
-                <span class="font-bold text-slate-600">Người đặt phòng</span>
+                <span class="font-semibold text-[#000000D9]">Người Đặt Phòng</span>
                 <div class="flex items-center gap-1">
-                  <select v-model="form.booker_id" class="flex-1 border border-slate-200 rounded-md p-1.5 bg-white font-semibold focus:outline-sky-500 text-xs">
-                    <option value="">Người đặt phòng</option>
+                  <select v-model="form.booker_id" class="flex-1 h-8 border border-slate-200 rounded-lg px-2 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500">
+                    <option value="">Chưa chọn</option>
                     <option v-for="bk in bookers" :key="bk.id" :value="bk.id">{{ bk.name }}</option>
                   </select>
-                  <button @click="isQuickBookerOpen = true; quickBookerForm = { name: '', email: '', phone: '', address: '', notes: '' }" type="button" class="w-7 h-7 rounded-full bg-white border border-[#8dcbf4] hover:bg-[#8dcbf4]/10 text-[#5fa5e6] flex items-center justify-center font-bold text-base transition-colors select-none cursor-pointer">
+                  <button @click="openQuickBookerModal" type="button" title="Thêm nhanh người đặt phòng" class="w-7 h-7 rounded-full bg-white border border-sky-300 hover:bg-sky-50 text-sky-600 flex items-center justify-center font-bold text-base transition-colors select-none cursor-pointer">
                     +
                   </button>
                 </div>
               </div>
               <!-- Người bán -->
               <div class="flex flex-col gap-1">
-                <span class="font-bold text-slate-600">Người bán</span>
-                <select v-model="form.sales_person_id" class="border border-slate-200 rounded-md p-1.5 bg-white font-semibold focus:outline-sky-500 text-xs">
-                  <option value="">Người bán</option>
+                <span class="font-semibold text-[#000000D9]">Người Bán</span>
+                <select v-model="form.sales_person_id" class="w-full h-8 border border-slate-200 rounded-lg px-2 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500">
+                  <option value="">Chưa chọn</option>
                   <option v-for="u in users" :key="u.id" :value="u.id">{{ u.name }}</option>
                 </select>
               </div>
@@ -1016,22 +1089,24 @@ const handleDownloadTemplate = async () => {
             <div class="flex flex-col gap-2.5">
               <!-- Địa chỉ -->
               <div class="flex flex-col gap-1">
-                <span class="font-bold text-slate-600">Địa chỉ</span>
+                <span class="font-semibold text-[#000000D9]">Địa Chỉ</span>
                 <div class="relative flex items-center">
                   <span class="absolute left-2.5 text-slate-400">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 014 0m-5 8a2 2 0 100-4 2 2 0 000 4zm5.333-2c0-.737-.324-1.4-.84-1.847A3.001 3.001 0 0012 11h.012a3.001 3.001 0 002.828 1.847c-.516.447-.84 1.11-.84 1.847" />
                     </svg>
                   </span>
-                  <input v-model="form.address" type="text" placeholder="Địa chỉ" class="pl-8 w-full border border-slate-200 rounded-md p-1.5 font-semibold focus:outline-sky-500 text-xs" />
+                  <input v-model="form.address" type="text" placeholder="Địa chỉ" class="pl-8 pr-8 w-full h-8 border border-slate-200 rounded-lg px-2 text-xs font-normal focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                  <button v-if="form.address" @click.stop="form.address = ''" type="button" class="input-clear-button" title="Xóa">✕</button>
                 </div>
               </div>
               <!-- Tax -->
               <div class="flex flex-col gap-1">
-                <span class="font-bold text-slate-600">Tax</span>
+                <span class="font-semibold text-[#000000D9]">Tax</span>
                 <div class="relative flex items-center">
-                  <input v-model="form.tax_code" type="text" placeholder="Tax" class="pr-8 w-full border border-slate-200 rounded-md p-1.5 font-semibold focus:outline-sky-500 text-xs" />
-                  <span class="absolute right-2.5 text-slate-400">
+                  <input v-model="form.tax_code" type="text" placeholder="Tax" class="pr-8 w-full h-8 border border-slate-200 rounded-lg px-2 text-xs font-normal focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                  <button v-if="form.tax_code" @click.stop="form.tax_code = ''" type="button" class="input-clear-button" title="Xóa">✕</button>
+                  <span v-if="!form.tax_code" class="absolute right-2.5 text-slate-400">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
@@ -1040,49 +1115,44 @@ const handleDownloadTemplate = async () => {
               </div>
               <!-- Số điện thoại -->
               <div class="flex flex-col gap-1">
-                <span class="font-bold text-slate-600">Số điện thoại</span>
+                <span class="font-semibold text-[#000000D9]">Số Điện Thoại</span>
                 <div class="relative flex items-center">
                   <span class="absolute left-2.5 text-slate-400">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.94.725l.548 2.2a1 1 0 01-.321.988l-1.305.98a10.582 10.582 0 004.872 4.872l.98-1.305a1 1 0 01.988-.321l2.2.548a1 1 0 01.725.94V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                     </svg>
                   </span>
-                  <input v-model="form.phone" type="text" placeholder="Số điện thoại" class="pl-8 w-full border border-slate-200 rounded-md p-1.5 font-semibold focus:outline-sky-500 text-xs" />
+                  <input v-model="form.phone" type="text" placeholder="Số điện thoại" class="pl-8 pr-8 w-full h-8 border border-slate-200 rounded-lg px-2 text-xs font-normal focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                  <button v-if="form.phone" @click.stop="form.phone = ''" type="button" class="input-clear-button" title="Xóa">✕</button>
                 </div>
               </div>
               <!-- Email -->
               <div class="flex flex-col gap-1">
-                <span class="font-bold text-slate-600">Email</span>
+                <span class="font-semibold text-[#000000D9]">Email</span>
                 <div class="relative flex items-center">
                   <span class="absolute left-2.5 text-slate-400">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                     </svg>
                   </span>
-                  <input v-model="form.email" type="email" placeholder="Email" class="pl-8 w-full border border-slate-200 rounded-md p-1.5 font-semibold focus:outline-sky-500 text-xs" />
+                  <input v-model="form.email" type="email" placeholder="Email" class="pl-8 pr-8 w-full h-8 border border-slate-200 rounded-lg px-2 text-xs font-normal focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                  <button v-if="form.email" @click.stop="form.email = ''" type="button" class="input-clear-button" title="Xóa">✕</button>
                 </div>
               </div>
               <!-- Tài khoản ngân hàng -->
               <div class="flex flex-col gap-1">
-                <span class="font-bold text-slate-600">Tài khoản ngân hàng</span>
-                <input v-model="form.bank_account" type="text" placeholder="Tài khoản ngân hàng" class="border border-slate-200 rounded-md p-1.5 font-semibold focus:outline-sky-500 text-xs" />
-              </div>
-              <!-- Mã giá phòng -->
-              <div class="flex flex-col gap-1">
-                <span class="font-bold text-slate-600">Mã giá phòng</span>
-                <select v-model="form.rate_code" class="border border-slate-200 rounded-md p-1.5 bg-white font-semibold focus:outline-sky-500 text-xs">
-                  <option value="">Mã giá phòng</option>
-                  <option value="STANDARD">Standard Rate</option>
-                  <option value="CORP">Corporate Rate</option>
-                  <option value="PROMO">Promotion Rate</option>
-                </select>
+                <span class="font-semibold text-[#000000D9]">Tài Khoản Ngân Hàng</span>
+                <div class="relative">
+                  <input v-model="form.bank_account" type="text" placeholder="Tài khoản ngân hàng" class="w-full h-8 border border-slate-200 rounded-lg px-2 pr-8 text-xs font-normal focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                  <button v-if="form.bank_account" @click.stop="form.bank_account = ''" type="button" class="input-clear-button" title="Xóa">✕</button>
+                </div>
               </div>
               <!-- Cho phép thanh toán công nợ -->
               <div class="flex items-center justify-between pt-1 select-none">
-                <span class="font-bold text-slate-600">Cho phép thanh toán công nợ</span>
+                <span class="font-semibold text-[#000000D9]">Cho phép thanh toán công nợ</span>
                 <label class="relative inline-flex items-center cursor-pointer">
                   <input type="checkbox" v-model="form.sync_acc" class="sr-only peer" />
-                  <div class="w-9 h-5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#8dcbf4]"></div>
+                  <div class="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-500"></div>
                 </label>
               </div>
             </div>
@@ -1094,33 +1164,33 @@ const handleDownloadTemplate = async () => {
 
         <!-- Nhóm Thống kê -->
         <div class="flex flex-col gap-2.5">
-          <h3 class="text-xs font-bold text-slate-800 border-b border-slate-100 pb-1.5">Thống kê<span class="text-red-500">*</span></h3>
+          <h3 class="text-xs font-bold text-slate-800 border-b border-slate-100 pb-1.5">Thống kê</h3>
           
           <div class="grid grid-cols-2 gap-x-5 gap-y-2.5">
             <!-- Cột trái -->
             <div class="flex flex-col gap-2.5">
               <!-- Thị trường -->
               <div class="flex flex-col gap-1">
-                <span class="font-bold text-slate-600">Thị trường</span>
+                <span class="font-semibold text-[#000000D9]">Thị Trường</span>
                 <div class="flex items-center gap-1">
-                  <select v-model="form.market_id" class="flex-1 border border-slate-200 bg-[#fffbeb] rounded-md p-1.5 font-semibold focus:outline-sky-500 text-xs">
-                    <option value="">Thị trường</option>
+                  <select v-model="form.market_id" class="flex-1 h-8 border border-slate-200 rounded-lg px-2 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500">
+                    <option value="">Chưa chọn</option>
                     <option v-for="m in markets" :key="m.id" :value="m.id">{{ m.name }}</option>
                   </select>
-                  <button @click="isQuickMarketOpen = true; quickMarketForm = { code: '', name: '' }" type="button" class="w-7 h-7 rounded-full bg-white border border-[#8dcbf4] hover:bg-[#8dcbf4]/10 text-[#5fa5e6] flex items-center justify-center font-bold text-base transition-colors select-none cursor-pointer">
+                  <button @click="openQuickMarketModal" type="button" title="Thêm nhanh thị trường" class="w-7 h-7 rounded-full bg-white border border-sky-300 hover:bg-sky-50 text-sky-600 flex items-center justify-center font-bold text-base transition-colors select-none cursor-pointer">
                     +
                   </button>
                 </div>
               </div>
               <!-- Nguồn khách -->
               <div class="flex flex-col gap-1">
-                <span class="font-bold text-slate-600">Nguồn khách</span>
+                <span class="font-semibold text-[#000000D9]">Nguồn Khách</span>
                 <div class="flex items-center gap-1">
-                  <select v-model="form.customer_source_id" class="flex-1 border border-slate-200 bg-[#fffbeb] rounded-md p-1.5 font-semibold focus:outline-sky-500 text-xs">
-                    <option value="">Nguồn khách</option>
+                  <select v-model="form.customer_source_id" class="flex-1 h-8 border border-slate-200 rounded-lg px-2 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500">
+                    <option value="">Chưa chọn</option>
                     <option v-for="s in customerSources" :key="s.id" :value="s.id">{{ s.name }}</option>
                   </select>
-                  <button @click="isQuickCustomerSourceOpen = true; quickCustomerSourceForm = { code: '', name: '' }" type="button" class="w-7 h-7 rounded-full bg-white border border-[#8dcbf4] hover:bg-[#8dcbf4]/10 text-[#5fa5e6] flex items-center justify-center font-bold text-base transition-colors select-none cursor-pointer">
+                  <button @click="openQuickCustomerSourceModal" type="button" title="Thêm nhanh nguồn khách" class="w-7 h-7 rounded-full bg-white border border-sky-300 hover:bg-sky-50 text-sky-600 flex items-center justify-center font-bold text-base transition-colors select-none cursor-pointer">
                     +
                   </button>
                 </div>
@@ -1131,21 +1201,16 @@ const handleDownloadTemplate = async () => {
             <div class="flex flex-col gap-2.5">
               <!-- Chi nhánh -->
               <div class="flex flex-col gap-1">
-                <span class="font-bold text-slate-600">Chi nhánh</span>
+                <span class="font-semibold text-[#000000D9]">Chi Nhánh</span>
                 <div class="flex items-center gap-1">
-                  <select v-model="form.branch_id" class="flex-1 border border-slate-200 rounded-md p-1.5 bg-white font-semibold focus:outline-sky-500 text-xs">
-                    <option value="">Chi nhánh</option>
+                  <select v-model="form.branch_id" class="flex-1 h-8 border border-slate-200 rounded-lg px-2 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500">
+                    <option value="">Chưa chọn</option>
                     <option v-for="b in branches" :key="b.id" :value="b.id">{{ b.name }}</option>
                   </select>
-                  <button @click="isQuickBranchOpen = true; quickBranchForm = { name: '' }" type="button" class="w-7 h-7 rounded-full bg-white border border-[#8dcbf4] hover:bg-[#8dcbf4]/10 text-[#5fa5e6] flex items-center justify-center font-bold text-base transition-colors select-none cursor-pointer">
+                  <button @click="openQuickBranchModal" type="button" title="Thêm nhanh chi nhánh" class="w-7 h-7 rounded-full bg-white border border-sky-300 hover:bg-sky-50 text-sky-600 flex items-center justify-center font-bold text-base transition-colors select-none cursor-pointer">
                     +
                   </button>
                 </div>
-              </div>
-              <!-- Mã OTA -->
-              <div class="flex flex-col gap-1">
-                <span class="font-bold text-slate-600">Mã OTA</span>
-                <input v-model="form.rate_code" type="text" placeholder="Mã OTA" class="border border-slate-200 rounded-md p-1.5 font-semibold focus:outline-sky-500 text-xs" />
               </div>
             </div>
           </div>
@@ -1155,18 +1220,10 @@ const handleDownloadTemplate = async () => {
 
       <!-- Footer -->
       <div class="bg-slate-50 px-5 py-3 flex items-center justify-end gap-2 border-t border-slate-100">
-        <!-- Nút Đóng -->
-        <button 
-          @click="isModalOpen = false" 
-          class="px-4 py-1.5 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-md font-bold text-xs cursor-pointer border-none flex items-center gap-1 shadow-xs transition-colors"
-        >
-          <span class="inline-flex items-center justify-center border border-white rounded-full w-3.5 h-3.5 text-[8px] font-extrabold">✕</span>
-          Đóng
-        </button>
         <!-- Nút Lưu -->
         <button 
           @click="saveItem" 
-          class="px-4 py-1.5 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-md font-bold text-xs cursor-pointer border-none flex items-center gap-1 shadow-xs transition-colors"
+          class="btn-pms-primary"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
@@ -1182,27 +1239,23 @@ const handleDownloadTemplate = async () => {
     v-if="isQuickMarketOpen" 
     class="fixed inset-0 z-60 flex items-center justify-center bg-black/60 backdrop-blur-xs animate-fade-in animate-in"
   >
-    <div class="bg-white rounded-xl w-full max-w-sm shadow-2xl overflow-hidden border border-slate-100">
-      <div class="bg-[#8dcbf4] px-5 py-3 flex items-center justify-between text-white select-none">
-        <h2 class="text-xs font-bold uppercase tracking-wider">Thêm thị trường</h2>
-        <button @click="isQuickMarketOpen = false" class="text-white/80 hover:text-white bg-transparent border-none cursor-pointer text-lg font-light leading-none">✕</button>
+    <div data-company-modal="market" class="bg-white rounded-xl w-full max-w-sm shadow-2xl overflow-hidden border border-slate-100" :style="{ transform: `translate(${modalPositions.market.x}px, ${modalPositions.market.y}px)` }">
+      <div @mousedown="startModalDrag('market', $event)" :style="{ background: 'var(--pms-custom-theme, #006bdb)' }" class="px-5 py-3 flex items-center justify-between text-white select-none cursor-move">
+        <h2 class="text-xs font-semibold tracking-wide">Thêm Thị Trường</h2>
+        <button @mousedown.stop @click="closeQuickMarketModal" title="Đóng (Esc)" class="text-white/80 hover:text-white hover:bg-white/10 rounded bg-transparent border-none cursor-pointer text-lg font-light leading-none">✕</button>
       </div>
       <div class="p-5 flex flex-col gap-3 text-xs">
         <div class="flex flex-col gap-1">
           <label class="font-bold text-slate-600">Tên *</label>
-          <input v-model="quickMarketForm.name" type="text" placeholder="Nhập tên thị trường..." class="border border-slate-200 bg-[#fffbeb] rounded-md p-1.5 font-semibold focus:outline-sky-500 text-xs" />
+          <div class="relative"><input v-model="quickMarketForm.name" required type="text" placeholder="Nhập tên thị trường..." class="input-required w-full h-8 rounded-lg px-2 pr-8 text-xs font-normal" /><button v-if="quickMarketForm.name" @click.stop="quickMarketForm.name = ''" type="button" class="input-clear-button" title="Xóa">✕</button></div>
         </div>
         <div class="flex flex-col gap-1">
           <label class="font-bold text-slate-600">Mã *</label>
-          <input v-model="quickMarketForm.code" type="text" placeholder="Nhập mã thị trường..." class="border border-slate-200 bg-[#fffbeb] rounded-md p-1.5 font-bold focus:outline-sky-500 text-xs uppercase" />
+          <div class="relative"><input v-model="quickMarketForm.code" required type="text" placeholder="Nhập mã thị trường..." class="input-required w-full h-8 rounded-lg px-2 pr-8 text-xs font-normal uppercase" /><button v-if="quickMarketForm.code" @click.stop="quickMarketForm.code = ''" type="button" class="input-clear-button" title="Xóa">✕</button></div>
         </div>
       </div>
       <div class="bg-slate-50 px-5 py-3 flex items-center justify-end gap-2 border-t border-slate-100">
-        <button @click="isQuickMarketOpen = false" class="px-4 py-1.5 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-md font-bold text-xs cursor-pointer border-none flex items-center gap-1 shadow-xs transition-colors">
-          <span class="inline-flex items-center justify-center border border-white rounded-full w-3.5 h-3.5 text-[8px] font-extrabold">✕</span>
-          Đóng
-        </button>
-        <button @click="saveQuickMarket" class="px-4 py-1.5 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-md font-bold text-xs cursor-pointer border-none flex items-center gap-1 shadow-xs transition-colors">
+        <button @click="saveQuickMarket" class="btn-pms-primary">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
           </svg>
@@ -1217,27 +1270,23 @@ const handleDownloadTemplate = async () => {
     v-if="isQuickCustomerSourceOpen" 
     class="fixed inset-0 z-60 flex items-center justify-center bg-black/60 backdrop-blur-xs animate-fade-in animate-in"
   >
-    <div class="bg-white rounded-xl w-full max-w-sm shadow-2xl overflow-hidden border border-slate-100">
-      <div class="bg-[#8dcbf4] px-5 py-3 flex items-center justify-between text-white select-none">
-        <h2 class="text-xs font-bold uppercase tracking-wider">Thêm nguồn khách</h2>
-        <button @click="isQuickCustomerSourceOpen = false" class="text-white/80 hover:text-white bg-transparent border-none cursor-pointer text-lg font-light leading-none">✕</button>
+    <div data-company-modal="customerSource" class="bg-white rounded-xl w-full max-w-sm shadow-2xl overflow-hidden border border-slate-100" :style="{ transform: `translate(${modalPositions.customerSource.x}px, ${modalPositions.customerSource.y}px)` }">
+      <div @mousedown="startModalDrag('customerSource', $event)" :style="{ background: 'var(--pms-custom-theme, #006bdb)' }" class="px-5 py-3 flex items-center justify-between text-white select-none cursor-move">
+        <h2 class="text-xs font-semibold tracking-wide">Thêm Nguồn Khách</h2>
+        <button @mousedown.stop @click="closeQuickCustomerSourceModal" title="Đóng (Esc)" class="text-white/80 hover:text-white hover:bg-white/10 rounded bg-transparent border-none cursor-pointer text-lg font-light leading-none">✕</button>
       </div>
       <div class="p-5 flex flex-col gap-3 text-xs">
         <div class="flex flex-col gap-1">
           <label class="font-bold text-slate-600">Tên *</label>
-          <input v-model="quickCustomerSourceForm.name" type="text" placeholder="Nhập tên nguồn khách..." class="border border-slate-200 bg-[#fffbeb] rounded-md p-1.5 font-semibold focus:outline-sky-500 text-xs" />
+          <div class="relative"><input v-model="quickCustomerSourceForm.name" required type="text" placeholder="Nhập tên nguồn khách..." class="input-required w-full h-8 rounded-lg px-2 pr-8 text-xs font-normal" /><button v-if="quickCustomerSourceForm.name" @click.stop="quickCustomerSourceForm.name = ''" type="button" class="input-clear-button" title="Xóa">✕</button></div>
         </div>
         <div class="flex flex-col gap-1">
           <label class="font-bold text-slate-600">Mã *</label>
-          <input v-model="quickCustomerSourceForm.code" type="text" placeholder="Nhập mã nguồn khách..." class="border border-slate-200 bg-[#fffbeb] rounded-md p-1.5 font-bold focus:outline-sky-500 text-xs uppercase" />
+          <div class="relative"><input v-model="quickCustomerSourceForm.code" required type="text" placeholder="Nhập mã nguồn khách..." class="input-required w-full h-8 rounded-lg px-2 pr-8 text-xs font-normal uppercase" /><button v-if="quickCustomerSourceForm.code" @click.stop="quickCustomerSourceForm.code = ''" type="button" class="input-clear-button" title="Xóa">✕</button></div>
         </div>
       </div>
       <div class="bg-slate-50 px-5 py-3 flex items-center justify-end gap-2 border-t border-slate-100">
-        <button @click="isQuickCustomerSourceOpen = false" class="px-4 py-1.5 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-md font-bold text-xs cursor-pointer border-none flex items-center gap-1 shadow-xs transition-colors">
-          <span class="inline-flex items-center justify-center border border-white rounded-full w-3.5 h-3.5 text-[8px] font-extrabold">✕</span>
-          Đóng
-        </button>
-        <button @click="saveQuickCustomerSource" class="px-4 py-1.5 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-md font-bold text-xs cursor-pointer border-none flex items-center gap-1 shadow-xs transition-colors">
+        <button @click="saveQuickCustomerSource" class="btn-pms-primary">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
           </svg>
@@ -1252,23 +1301,19 @@ const handleDownloadTemplate = async () => {
     v-if="isQuickBranchOpen" 
     class="fixed inset-0 z-60 flex items-center justify-center bg-black/60 backdrop-blur-xs animate-fade-in animate-in"
   >
-    <div class="bg-white rounded-xl w-full max-w-sm shadow-2xl overflow-hidden border border-slate-100">
-      <div class="bg-[#8dcbf4] px-5 py-3 flex items-center justify-between text-white select-none">
-        <h2 class="text-xs font-bold uppercase tracking-wider">Thêm chi nhánh</h2>
-        <button @click="isQuickBranchOpen = false" class="text-white/80 hover:text-white bg-transparent border-none cursor-pointer text-lg font-light leading-none">✕</button>
+    <div data-company-modal="branch" class="bg-white rounded-xl w-full max-w-sm shadow-2xl overflow-hidden border border-slate-100" :style="{ transform: `translate(${modalPositions.branch.x}px, ${modalPositions.branch.y}px)` }">
+      <div @mousedown="startModalDrag('branch', $event)" :style="{ background: 'var(--pms-custom-theme, #006bdb)' }" class="px-5 py-3 flex items-center justify-between text-white select-none cursor-move">
+        <h2 class="text-xs font-semibold tracking-wide">Thêm Chi Nhánh</h2>
+        <button @mousedown.stop @click="closeQuickBranchModal" title="Đóng (Esc)" class="text-white/80 hover:text-white hover:bg-white/10 rounded bg-transparent border-none cursor-pointer text-lg font-light leading-none">✕</button>
       </div>
       <div class="p-5 flex flex-col gap-3 text-xs">
         <div class="flex flex-col gap-1">
           <label class="font-bold text-slate-600">Tên chi nhánh *</label>
-          <input v-model="quickBranchForm.name" type="text" placeholder="Nhập tên chi nhánh..." class="border border-slate-200 bg-[#fffbeb] rounded-md p-1.5 font-semibold focus:outline-sky-500 text-xs" />
+          <div class="relative"><input v-model="quickBranchForm.name" required type="text" placeholder="Nhập tên chi nhánh..." class="input-required w-full h-8 rounded-lg px-2 pr-8 text-xs font-normal" /><button v-if="quickBranchForm.name" @click.stop="quickBranchForm.name = ''" type="button" class="input-clear-button" title="Xóa">✕</button></div>
         </div>
       </div>
       <div class="bg-slate-50 px-5 py-3 flex items-center justify-end gap-2 border-t border-slate-100">
-        <button @click="isQuickBranchOpen = false" class="px-4 py-1.5 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-md font-bold text-xs cursor-pointer border-none flex items-center gap-1 shadow-xs transition-colors">
-          <span class="inline-flex items-center justify-center border border-white rounded-full w-3.5 h-3.5 text-[8px] font-extrabold">✕</span>
-          Đóng
-        </button>
-        <button @click="saveQuickBranch" class="px-4 py-1.5 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-md font-bold text-xs cursor-pointer border-none flex items-center gap-1 shadow-xs transition-colors">
+        <button @click="saveQuickBranch" class="btn-pms-primary">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
           </svg>
@@ -1283,41 +1328,37 @@ const handleDownloadTemplate = async () => {
     v-if="isQuickBookerOpen" 
     class="fixed inset-0 z-60 flex items-center justify-center bg-black/60 backdrop-blur-xs animate-fade-in animate-in"
   >
-    <div class="bg-white rounded-xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-100">
-      <div class="bg-[#8dcbf4] px-5 py-3 flex items-center justify-between text-white select-none">
-        <h2 class="text-xs font-bold uppercase tracking-wider">Thêm người đặt phòng</h2>
-        <button @click="isQuickBookerOpen = false" class="text-white/80 hover:text-white bg-transparent border-none cursor-pointer text-lg font-light leading-none">✕</button>
+    <div data-company-modal="booker" class="bg-white rounded-xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-100" :style="{ transform: `translate(${modalPositions.booker.x}px, ${modalPositions.booker.y}px)` }">
+      <div @mousedown="startModalDrag('booker', $event)" :style="{ background: 'var(--pms-custom-theme, #006bdb)' }" class="px-5 py-3 flex items-center justify-between text-white select-none cursor-move">
+        <h2 class="text-xs font-semibold tracking-wide">Thêm Người Đặt Phòng</h2>
+        <button @mousedown.stop @click="closeQuickBookerModal" title="Đóng (Esc)" class="text-white/80 hover:text-white hover:bg-white/10 rounded bg-transparent border-none cursor-pointer text-lg font-light leading-none">✕</button>
       </div>
       <div class="p-5 flex flex-col gap-3 text-xs">
         <div class="flex flex-col gap-1">
-          <label class="font-bold text-slate-600">Tên *</label>
-          <input v-model="quickBookerForm.name" type="text" placeholder="Nhập tên..." class="border border-slate-200 bg-[#fffbeb] rounded-md p-1.5 font-semibold focus:outline-sky-500 text-xs" />
+          <span class="font-semibold text-[#000000D9]">Tên<span class="text-red-500">*</span></span>
+          <div class="relative"><input v-model="quickBookerForm.name" required type="text" placeholder="Nhập tên người đặt phòng..." class="input-required w-full h-8 rounded-lg px-2 pr-8 text-xs font-normal" /><button v-if="quickBookerForm.name" @click.stop="quickBookerForm.name = ''" type="button" class="input-clear-button" title="Xóa">✕</button></div>
         </div>
         <div class="grid grid-cols-2 gap-4">
           <div class="flex flex-col gap-1">
-            <label class="font-bold text-slate-600">Email</label>
-            <input v-model="quickBookerForm.email" type="email" placeholder="email@example.com" class="border border-slate-200 rounded-md p-1.5 font-semibold focus:outline-sky-500 text-xs" />
+            <span class="font-semibold text-[#000000D9]">Email</span>
+            <div class="relative"><input v-model="quickBookerForm.email" type="email" placeholder="email@example.com" class="w-full h-8 border border-slate-200 rounded-lg px-2 pr-8 text-xs font-normal focus:outline-none focus:ring-1 focus:ring-blue-500" /><button v-if="quickBookerForm.email" @click.stop="quickBookerForm.email = ''" type="button" class="input-clear-button" title="Xóa">✕</button></div>
           </div>
           <div class="flex flex-col gap-1">
-            <label class="font-bold text-slate-600">Số điện thoại</label>
-            <input v-model="quickBookerForm.phone" type="text" placeholder="0xxx xxx xxx" class="border border-slate-200 rounded-md p-1.5 font-semibold focus:outline-sky-500 text-xs" />
+            <span class="font-semibold text-[#000000D9]">Số Điện Thoại</span>
+            <div class="relative"><input v-model="quickBookerForm.phone" type="text" placeholder="0xxx xxx xxx" class="w-full h-8 border border-slate-200 rounded-lg px-2 pr-8 text-xs font-normal focus:outline-none focus:ring-1 focus:ring-blue-500" /><button v-if="quickBookerForm.phone" @click.stop="quickBookerForm.phone = ''" type="button" class="input-clear-button" title="Xóa">✕</button></div>
           </div>
         </div>
         <div class="flex flex-col gap-1">
-          <label class="font-bold text-slate-600">Địa chỉ</label>
-          <textarea v-model="quickBookerForm.address" rows="2" placeholder="Nhập địa chỉ..." class="border border-slate-200 rounded-md p-1.5 font-semibold focus:outline-sky-500 text-xs resize-none"></textarea>
+          <span class="font-semibold text-[#000000D9]">Địa Chỉ</span>
+          <div class="relative"><textarea v-model="quickBookerForm.address" rows="2" placeholder="Nhập địa chỉ..." class="w-full border border-slate-200 rounded-lg p-2 pr-8 text-xs font-normal resize-none focus:outline-none focus:ring-1 focus:ring-blue-500"></textarea><button v-if="quickBookerForm.address" @click.stop="quickBookerForm.address = ''" type="button" class="input-clear-button !top-2.5 !transform-none" title="Xóa">✕</button></div>
         </div>
         <div class="flex flex-col gap-1">
-          <label class="font-bold text-slate-600">Ghi chú</label>
-          <textarea v-model="quickBookerForm.notes" rows="2" placeholder="Ghi chú..." class="border border-slate-200 rounded-md p-1.5 font-semibold focus:outline-sky-500 text-xs resize-none"></textarea>
+          <span class="font-semibold text-[#000000D9]">Ghi Chú</span>
+          <div class="relative"><textarea v-model="quickBookerForm.notes" rows="2" placeholder="Ghi chú..." class="w-full border border-slate-200 rounded-lg p-2 pr-8 text-xs font-normal resize-none focus:outline-none focus:ring-1 focus:ring-blue-500"></textarea><button v-if="quickBookerForm.notes" @click.stop="quickBookerForm.notes = ''" type="button" class="input-clear-button !top-2.5 !transform-none" title="Xóa">✕</button></div>
         </div>
       </div>
       <div class="bg-slate-50 px-5 py-3 flex items-center justify-end gap-2 border-t border-slate-100">
-        <button @click="isQuickBookerOpen = false" class="px-4 py-1.5 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-md font-bold text-xs cursor-pointer border-none flex items-center gap-1 shadow-xs transition-colors">
-          <span class="inline-flex items-center justify-center border border-white rounded-full w-3.5 h-3.5 text-[8px] font-extrabold">✕</span>
-          Đóng
-        </button>
-        <button @click="saveQuickBooker" class="px-4 py-1.5 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-md font-bold text-xs cursor-pointer border-none flex items-center gap-1 shadow-xs transition-colors">
+        <button @click="saveQuickBooker" class="btn-pms-primary">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
           </svg>
@@ -1329,11 +1370,27 @@ const handleDownloadTemplate = async () => {
 </template>
 
 <style scoped>
-.animate-in {
-  animation: fadeIn 0.2s ease-out forwards;
+.company-modal-fade {
+  animation: companyModalOpacityFade 0.12s ease-out;
 }
-@keyframes fadeIn {
-  from { opacity: 0; transform: scale(0.95); }
-  to { opacity: 1; transform: scale(1); }
+@keyframes companyModalOpacityFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
+.input-clear-button {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  z-index: 10;
+  transform: translateY(-50%);
+  border: 0;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+.input-clear-button:hover { color: #475569; }
+.company-toggle-track { transition: background-color 0.2s ease; }
+.peer:checked + .company-toggle-track { background: var(--pms-custom-theme, #006bdb); }
 </style>

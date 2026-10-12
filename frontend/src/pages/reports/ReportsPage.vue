@@ -14,7 +14,7 @@ const route = useRoute()
 const authStore = useAuthStore()
 const uiStore = useUiStore()
 const loading = ref(false)
-const systemDate = ref('')
+const systemDate = ref(authStore.systemDate || localStorage.getItem('pms_system_date') || '')
 const reports = ref([])
 const activeTabId = ref(null)
 const openTabs = ref([])
@@ -95,9 +95,11 @@ const localToday = () => {
 const fetchSystemDate = async () => {
   try {
     const response = await http.get('/system-date')
-    systemDate.value = response.data?.data?.system_date || localToday()
+    const sysDate = response.data?.data?.system_date || localToday()
+    systemDate.value = sysDate
+    authStore.setSystemDate(sysDate)
   } catch {
-    systemDate.value = localToday()
+    systemDate.value = authStore.systemDate || localToday()
   }
 }
 
@@ -632,11 +634,13 @@ onBeforeUnmount(() => {
               />
 
               <SingleDatePicker
-                v-else-if="parameter.control === 'date' && usesCustomDatePicker(activeTab)"
+                v-else-if="parameter.control === 'date'"
                 v-model="activeTab.parameters[parameter.name]"
+                :start-date="activeTab.parameters[parameter.name] || systemDate"
                 :input-class="parameter.required ? 'input-required' : ''"
+                placeholder="dd/mm/yyyy"
+                four-digit-year
               />
-              <input v-else-if="parameter.control === 'date'" v-model="activeTab.parameters[parameter.name]" type="date" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-sky-400" :class="parameter.required ? 'input-required' : ''" />
               <input v-else-if="parameter.control !== 'checkbox'" v-model="activeTab.parameters[parameter.name]" :type="parameter.control || 'text'" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-sky-400" :class="parameter.required ? 'input-required' : ''" />
               </div>
 

@@ -50,7 +50,7 @@
               </colgroup>
               <thead>
                 <tr class="bg-slate-100 border-b border-slate-200 text-slate-600 font-bold h-9 sticky top-0 z-10 select-none">
-                  <th class="p-2 text-center border-r border-slate-200">
+                  <th class="p-2 text-center border-r border-slate-200 align-middle border">
                     <input
                       type="checkbox"
                       :checked="isAllSelected"
@@ -58,14 +58,14 @@
                       class="w-3.5 h-3.5 cursor-pointer rounded"
                     />
                   </th>
-                  <th class="p-2 border-r border-slate-200">Mã</th>
-                  <th class="p-2 border-r border-slate-200">Tên yêu cầu đặc biệt</th>
-                  <th class="p-2 text-center">Xóa</th>
+                  <th class="p-2 border-r border-slate-200 text-center align-middle border">Mã</th>
+                  <th class="p-2 border-r border-slate-200 text-center align-middle border">Tên Yêu Cầu Đặc Biệt</th>
+                  <th class="p-2 text-center align-middle border-r border-slate-200 border">Xóa</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-if="isLoading" class="h-32 text-center text-slate-400">
-                  <td colspan="4">
+                  <td colspan="4" class="border-slate-200">
                     <div class="flex flex-col items-center justify-center space-y-2">
                       <i class="fa-solid fa-circle-notch fa-spin text-sky-500 text-2xl"></i>
                       <span class="text-xs font-semibold">Đang tải danh mục yêu cầu đặc biệt...</span>
@@ -73,7 +73,7 @@
                   </td>
                 </tr>
                 <tr v-else-if="filteredCatalog.length === 0" class="h-20 text-center text-slate-400 italic text-xs">
-                  <td colspan="4">Không tìm thấy yêu cầu đặc biệt nào.</td>
+                  <td colspan="4" class="border-slate-200">Không tìm thấy yêu cầu đặc biệt nào.</td>
                 </tr>
                 <tr
                   v-else
@@ -82,7 +82,7 @@
                   class="border-b border-slate-100 hover:bg-slate-50/70 h-10 transition-colors font-semibold"
                   :class="{ 'bg-sky-50/30': selectedIds.includes(item.id) }"
                 >
-                  <td class="p-2 text-center border-r border-slate-100">
+                  <td class="p-2 text-center border-slate-100">
                     <input
                       type="checkbox"
                       :value="item.id"
@@ -90,9 +90,9 @@
                       class="w-3.5 h-3.5 cursor-pointer"
                     />
                   </td>
-                  <td class="p-2 border-r border-slate-100 font-mono text-[10px] text-slate-500 select-all">{{ item.code }}</td>
-                  <td class="p-2 border-r border-slate-100 text-slate-700 text-xs">{{ item.name }}</td>
-                  <td class="p-2 text-center">
+                  <td class="p-2 border-slate-100 font-mono text-[10px] text-slate-500 select-all">{{ item.code }}</td>
+                  <td class="p-2 border-slate-100 text-slate-700 text-xs">{{ item.name }}</td>
+                  <td class="p-2 text-center border-slate-200">
                     <button
                       type="button"
                       @click="deleteMasterRequest(item)"

@@ -43,12 +43,12 @@
           <table class="w-full border-collapse text-left text-xs">
             <thead>
               <tr class="bg-slate-100 border-b border-slate-200 text-slate-600 font-bold h-10">
-                <th class="p-3 w-[250px]">Ngày</th>
-                <th class="p-3 w-[160px] text-right">Thành Tiền</th>
-                <th class="p-3 w-[110px] text-center">Ăn sáng</th>
-                <th class="p-3 w-[110px] text-center">Miễn phí</th>
-                <th class="p-3 w-[110px] text-center">Phụ Phí</th>
-                <th class="p-3 w-[130px] text-center">FIT/GIT</th>
+                <th class="p-3 w-[250px] text-center align-middle border-r border-slate-200 border">Ngày</th>
+                <th class="p-3 w-[160px] text-center align-middle border-r border-slate-200 border">Thành Tiền</th>
+                <th class="p-3 w-[110px] text-center align-middle border-r border-slate-200 border">Ăn Sáng</th>
+                <th class="p-3 w-[110px] text-center align-middle border-r border-slate-200 border">Miễn Phí</th>
+                <th class="p-3 w-[110px] text-center align-middle border-r border-slate-200 border">Phụ Phí</th>
+                <th class="p-3 w-[130px] text-center align-middle border-r border-slate-200 border">FIT/GIT</th>
               </tr>
             </thead>
             <tbody>
@@ -56,7 +56,7 @@
               <template v-if="babies.length > 0">
                 <!-- Group Header -->
                 <tr class="bg-slate-50 border-b border-slate-200 text-slate-700 font-bold h-9">
-                  <td colspan="6" class="p-3 pr-4">
+                  <td colspan="6" class="p-3 pr-4 border-slate-200">
                     <div class="flex items-center justify-between">
                       <div class="flex items-center cursor-pointer" @click="isBabyGroupExpanded = !isBabyGroupExpanded">
                         <i 
@@ -74,7 +74,7 @@
                 <template v-if="isBabyGroupExpanded" v-for="child in babies" :key="child.id">
                   <!-- Parent Row -->
                   <tr class="border-b border-slate-200 h-12 hover:bg-slate-50/50">
-                    <td class="p-3 pl-6 font-semibold text-slate-700">
+                    <td class="p-3 pl-6 font-semibold text-slate-700 border-slate-200">
                       <div class="flex items-center cursor-pointer" @click="toggleExpand(child.id)">
                         <i 
                           class="fa-solid mr-2 text-blue-500"
@@ -84,7 +84,7 @@
                       </div>
                     </td>
                     <!-- Parent Amount (Bulk) -->
-                    <td class="p-3 text-right">
+                    <td class="p-3 text-right border-slate-200">
                       <div class="flex items-center justify-end">
                         <input 
                           type="text" 
@@ -97,7 +97,7 @@
                       </div>
                     </td>
                     <!-- Parent Breakfast Toggle -->
-                    <td class="p-3 text-center">
+                    <td class="p-3 text-center border-slate-200">
                       <label class="relative inline-flex items-center cursor-pointer select-none">
                         <input 
                           type="checkbox" 
@@ -109,7 +109,7 @@
                       </label>
                     </td>
                     <!-- Parent Free Toggle -->
-                    <td class="p-3 text-center">
+                    <td class="p-3 text-center border-slate-200">
                       <label class="relative inline-flex items-center cursor-pointer select-none">
                         <input 
                           type="checkbox" 
@@ -122,7 +122,7 @@
                       </label>
                     </td>
                     <!-- Parent Extra Charge Toggle -->
-                    <td class="p-3 text-center">
+                    <td class="p-3 text-center border-slate-200">
                       <label class="relative inline-flex items-center cursor-pointer select-none">
                         <input 
                           type="checkbox" 
@@ -135,7 +135,7 @@
                       </label>
                     </td>
                     <!-- Parent FIT/GIT Toggle -->
-                    <td class="p-3 text-center flex justify-center items-center h-12">
+                    <td class="p-3 text-center flex justify-center items-center h-12 border-slate-200">
                       <div 
                         @click="onParentFieldChange(child, 'is_room', !child.is_room)"
                         class="w-14 h-5 rounded-full cursor-pointer relative transition-colors duration-200 flex items-center justify-between px-2 text-[9px] font-black text-white select-none shadow-inner"
@@ -154,12 +154,12 @@
                   <!-- Child Date Rows (Expanded) -->
                   <template v-if="isExpanded(child.id)" v-for="d in child.breakfast_details" :key="d.id">
                     <tr class="bg-slate-50/30 border-b border-slate-100 h-10 text-[11px]">
-                      <td class="p-2 pl-12 font-mono text-slate-500">
+                      <td class="p-2 pl-12 font-mono text-slate-500 border-slate-200">
                         <i class="fa-regular fa-calendar-days mr-1.5 text-slate-400"></i>
                         {{ formatDateVi(d.service_date) }}
                       </td>
                       <!-- Amount -->
-                      <td class="p-2 text-right">
+                      <td class="p-2 text-right border-slate-200">
                         <div class="flex items-center justify-end">
                           <input 
                             type="text" 
@@ -172,7 +172,7 @@
                         </div>
                       </td>
                       <!-- Breakfast -->
-                      <td class="p-2 text-center">
+                      <td class="p-2 text-center border-slate-200">
                         <label class="relative inline-flex items-center cursor-pointer scale-90 select-none">
                           <input 
                             type="checkbox" 
@@ -184,7 +184,7 @@
                         </label>
                       </td>
                       <!-- Free -->
-                      <td class="p-2 text-center">
+                      <td class="p-2 text-center border-slate-200">
                         <label class="relative inline-flex items-center cursor-pointer scale-90 select-none">
                           <input 
                             type="checkbox" 
@@ -197,7 +197,7 @@
                         </label>
                       </td>
                       <!-- Extra Charge -->
-                      <td class="p-2 text-center">
+                      <td class="p-2 text-center border-slate-200">
                         <label class="relative inline-flex items-center cursor-pointer scale-90 select-none">
                           <input 
                             type="checkbox" 
@@ -210,7 +210,7 @@
                         </label>
                       </td>
                       <!-- FIT/GIT -->
-                      <td class="p-2 text-center flex justify-center items-center h-10">
+                      <td class="p-2 text-center flex justify-center items-center h-10 border-slate-200">
                         <div 
                           @click="d.is_room = !d.is_room"
                           class="w-12 h-4.5 rounded-full cursor-pointer relative transition-colors duration-200 flex items-center justify-between px-2 text-[8px] font-black text-white select-none shadow-inner"
@@ -233,7 +233,7 @@
               <template v-if="childrenList.length > 0">
                 <!-- Group Header -->
                 <tr class="bg-slate-50 border-b border-slate-200 text-slate-700 font-bold h-9">
-                  <td colspan="6" class="p-3 pr-4">
+                  <td colspan="6" class="p-3 pr-4 border-slate-200">
                     <div class="flex items-center justify-between">
                       <div class="flex items-center cursor-pointer" @click="isChildGroupExpanded = !isChildGroupExpanded">
                         <i 
@@ -251,7 +251,7 @@
                 <template v-if="isChildGroupExpanded" v-for="child in childrenList" :key="child.id">
                   <!-- Parent Row -->
                   <tr class="border-b border-slate-200 h-12 hover:bg-slate-50/50">
-                    <td class="p-3 pl-6 font-semibold text-slate-700">
+                    <td class="p-3 pl-6 font-semibold text-slate-700 border-slate-200">
                       <div class="flex items-center cursor-pointer" @click="toggleExpand(child.id)">
                         <i 
                           class="fa-solid mr-2 text-blue-500"
@@ -261,7 +261,7 @@
                       </div>
                     </td>
                     <!-- Parent Amount (Bulk) -->
-                    <td class="p-3 text-right">
+                    <td class="p-3 text-right border-slate-200">
                       <div class="flex items-center justify-end">
                         <input 
                           type="text" 
@@ -274,7 +274,7 @@
                       </div>
                     </td>
                     <!-- Parent Breakfast Toggle -->
-                    <td class="p-3 text-center">
+                    <td class="p-3 text-center border-slate-200">
                       <label class="relative inline-flex items-center cursor-pointer select-none">
                         <input 
                           type="checkbox" 
@@ -286,7 +286,7 @@
                       </label>
                     </td>
                     <!-- Parent Free Toggle -->
-                    <td class="p-3 text-center">
+                    <td class="p-3 text-center border-slate-200">
                       <label class="relative inline-flex items-center cursor-pointer select-none">
                         <input 
                           type="checkbox" 
@@ -298,7 +298,7 @@
                       </label>
                     </td>
                     <!-- Parent Extra Charge Toggle -->
-                    <td class="p-3 text-center">
+                    <td class="p-3 text-center border-slate-200">
                       <label class="relative inline-flex items-center cursor-pointer select-none">
                         <input 
                           type="checkbox" 
@@ -310,7 +310,7 @@
                       </label>
                     </td>
                     <!-- Parent FIT/GIT Toggle -->
-                    <td class="p-3 text-center flex justify-center items-center h-12">
+                    <td class="p-3 text-center flex justify-center items-center h-12 border-slate-200">
                       <div 
                         @click="onParentFieldChange(child, 'is_room', !child.is_room)"
                         class="w-14 h-5 rounded-full cursor-pointer relative transition-colors duration-200 flex items-center justify-between px-2 text-[9px] font-black text-white select-none shadow-inner"
@@ -329,12 +329,12 @@
                   <!-- Child Date Rows (Expanded) -->
                   <template v-if="isExpanded(child.id)" v-for="d in child.breakfast_details" :key="d.id">
                     <tr class="bg-slate-50/30 border-b border-slate-100 h-10 text-[11px]">
-                      <td class="p-2 pl-12 font-mono text-slate-500">
+                      <td class="p-2 pl-12 font-mono text-slate-500 border-slate-200">
                         <i class="fa-regular fa-calendar-days mr-1.5 text-slate-400"></i>
                         {{ formatDateVi(d.service_date) }}
                       </td>
                       <!-- Amount -->
-                      <td class="p-2 text-right">
+                      <td class="p-2 text-right border-slate-200">
                         <div class="flex items-center justify-end">
                           <input 
                             type="text" 
@@ -347,7 +347,7 @@
                         </div>
                       </td>
                       <!-- Breakfast -->
-                      <td class="p-2 text-center">
+                      <td class="p-2 text-center border-slate-200">
                         <label class="relative inline-flex items-center cursor-pointer scale-90 select-none">
                           <input 
                             type="checkbox" 
@@ -359,7 +359,7 @@
                         </label>
                       </td>
                       <!-- Free -->
-                      <td class="p-2 text-center">
+                      <td class="p-2 text-center border-slate-200">
                         <label class="relative inline-flex items-center cursor-pointer scale-90 select-none">
                           <input 
                             type="checkbox" 
@@ -371,7 +371,7 @@
                         </label>
                       </td>
                       <!-- Extra Charge -->
-                      <td class="p-2 text-center">
+                      <td class="p-2 text-center border-slate-200">
                         <label class="relative inline-flex items-center cursor-pointer scale-90 select-none">
                           <input 
                             type="checkbox" 
@@ -383,7 +383,7 @@
                         </label>
                       </td>
                       <!-- FIT/GIT -->
-                      <td class="p-2 text-center flex justify-center items-center h-10">
+                      <td class="p-2 text-center flex justify-center items-center h-10 border-slate-200">
                         <div 
                           @click="d.is_room = !d.is_room"
                           class="w-12 h-4.5 rounded-full cursor-pointer relative transition-colors duration-200 flex items-center justify-between px-2 text-[8px] font-black text-white select-none shadow-inner"
