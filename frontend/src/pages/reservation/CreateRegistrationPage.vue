@@ -328,14 +328,6 @@ async function openGlobalSearchFromQuery() {
   await router.replace({ query })
 }
 
-watch(() => route.query, async (query) => {
-  const code = query?.edit_id || query?.booking_code || query?.booking_id || query?.edit_code
-  if (code) {
-    await nextTick()
-    await openBookingModalByCode(code)
-  }
-}, { immediate: true })
-
 function getColWidthPx(col) {
   if (!col || !col.width) return 'auto'
   const match = col.width.match(/w-\[(\d+)px\]/)
@@ -653,17 +645,18 @@ const isDepositModalOpen = ref(false)
 
 function parseApiDate(dateStr) {
   if (!dateStr) return ''
-  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr
-  if (dateStr.includes('T')) {
-    const d = new Date(dateStr)
-    if (!isNaN(d)) {
+  const s = String(dateStr).trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+  if (s.includes('T') || s.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(s)) {
+    const d = new Date(s)
+    if (!isNaN(d.getTime())) {
       const year = d.getFullYear()
       const month = String(d.getMonth() + 1).padStart(2, '0')
       const day = String(d.getDate()).padStart(2, '0')
       return `${year}-${month}-${day}`
     }
   }
-  return dateStr.substring(0, 10)
+  return s.substring(0, 10)
 }
 
 function openDepositModal() {
@@ -928,7 +921,8 @@ function handleServiceRateChange(room, svc, newRate) {
   if (svc.svc_ref) {
     svc.svc_ref.rate = newRate
     svc.svc_ref.service_date = cleanDate
-    svc.svc_ref.total = (svc.svc_ref.quantity || 1) * newRate
+    const refQty = svc.svc_ref.quantity !== undefined && svc.svc_ref.quantity !== null ? Number(svc.svc_ref.quantity) : 1
+    svc.svc_ref.total = refQty * newRate
     if (svc.service_code === 'BD') {
       svc.svc_ref.amount = newRate
     }
@@ -942,7 +936,8 @@ function handleServiceRateChange(room, svc, newRate) {
     if (target) {
       target.service_date = cleanDate
       target.rate = newRate
-      target.total = (target.quantity || 1) * newRate
+      const targetQty = target.quantity !== undefined && target.quantity !== null ? Number(target.quantity) : 1
+      target.total = targetQty * newRate
     }
   }
 
@@ -950,18 +945,20 @@ function handleServiceRateChange(room, svc, newRate) {
     room.extraBedPrice = newRate
     if (!room.dailyExtraBeds) room.dailyExtraBeds = []
     const existing = room.dailyExtraBeds.find(d => cleanDateStr(d.dateStr || d.date) === cleanDate)
+    const currentQty = svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1
     if (existing) {
       existing.dateStr = cleanDate
       existing.date = cleanDate
       existing.rate = newRate
-      existing.total = (existing.quantity || 1) * newRate
+      const existQty = existing.quantity !== undefined && existing.quantity !== null ? Number(existing.quantity) : 1
+      existing.total = existQty * newRate
     } else {
       room.dailyExtraBeds.push({
         dateStr: cleanDate,
         date: cleanDate,
-        quantity: svc.quantity || 1,
+        quantity: currentQty,
         rate: newRate,
-        total: (svc.quantity || 1) * newRate,
+        total: currentQty * newRate,
         isRoom: svc.is_room !== false
       })
     }
@@ -1541,9 +1538,18 @@ function getRoomDisplayServices(room) {
       const dStr = `${yyyy}-${mm}-${dd}`
       const isPastNight = sysDate ? (dStr < sysDate) : false
 
-      const hasEbConfig = (room.dailyExtraBeds && room.dailyExtraBeds.some(d => (d.dateStr === dStr || d.date === dStr) && Number(d.quantity) > 0)) ||
-        (room.services && room.services.some(s => s.service_code === 'EB' && cleanDateStr(s.service_date) === dStr && Number(s.quantity) > 0)) ||
-        (Number(room.extraBedQty) > 0 && Number(room.extraBedPrice) > 0)
+      // Kiểm tra xem phòng có cấu hình EB theo từng ngày (dailyExtraBeds hoặc services có EB) hay không
+      const hasDailyEbConfig = (room.dailyExtraBeds && room.dailyExtraBeds.length > 0) ||
+        (room.services && room.services.some(s => s.service_code === 'EB'))
+
+      let hasEbConfig = false
+      if (hasDailyEbConfig) {
+        // Đã cấu hình theo từng ngày: Hiển thị dòng Giường phụ cho tất cả các đêm của chu kỳ lưu trú
+        hasEbConfig = true
+      } else {
+        // Chưa cấu hình theo từng ngày: Dùng cấu hình chung của phòng cho tất cả các đêm
+        hasEbConfig = Number(room.extraBedQty) > 0 && Number(room.extraBedPrice) > 0
+      }
 
       if (!hasEbConfig) continue
 
@@ -1574,16 +1580,17 @@ function getRoomDisplayServices(room) {
         }
       } else {
         // Hôm nay & Tương lai: Lấy theo dự kiến đã cài trong BK
-        const daily = (room.dailyExtraBeds || []).find(d => (d.dateStr === dStr || d.date === dStr) && Number(d.quantity) > 0)
+        const daily = (room.dailyExtraBeds || []).find(d => cleanDateStr(d.dateStr || d.date) === dStr)
         const ebSvc = (room.services || []).find(s => s.service_code === 'EB' && cleanDateStr(s.service_date) === dStr)
+        const defaultEbPrice = Number(room.extraBedPrice) || 300000
         if (daily) {
           list.push({
             id: `daily-eb-${room.id}-${dStr}`,
             service_date: dStr,
             service_name: 'Giường phụ (Extra Bed)',
             service_code: 'EB',
-            quantity: Number(daily.quantity) || 1,
-            rate: Number(daily.rate) || 0,
+            quantity: Number(daily.quantity) || 0,
+            rate: Number(daily.rate) || defaultEbPrice,
             is_room: daily.isRoom !== false,
             svc_ref: daily
           })
@@ -1593,10 +1600,20 @@ function getRoomDisplayServices(room) {
             service_date: dStr,
             service_name: ebSvc.service_name || 'Giường phụ (Extra Bed)',
             service_code: 'EB',
-            quantity: Number(ebSvc.quantity) || 1,
-            rate: Number(ebSvc.rate) || 0,
+            quantity: Number(ebSvc.quantity) || 0,
+            rate: Number(ebSvc.rate) || defaultEbPrice,
             is_room: ebSvc.is_room !== 0,
             svc_ref: ebSvc
+          })
+        } else if (hasDailyEbConfig) {
+          list.push({
+            id: `daily-eb-${room.id}-${dStr}`,
+            service_date: dStr,
+            service_name: 'Giường phụ (Extra Bed)',
+            service_code: 'EB',
+            quantity: 0,
+            rate: defaultEbPrice,
+            is_room: true
           })
         } else if (Number(room.extraBedQty) > 0) {
           list.push({
@@ -1604,8 +1621,8 @@ function getRoomDisplayServices(room) {
             service_date: dStr,
             service_name: 'Giường phụ (Extra Bed)',
             service_code: 'EB',
-            quantity: Number(room.extraBedQty) || 1,
-            rate: Number(room.extraBedPrice) || 0,
+            quantity: Number(room.extraBedQty),
+            rate: defaultEbPrice,
             is_room: true
           })
         }
@@ -2200,8 +2217,10 @@ onMounted(async () => {
     await Promise.all([loadDropdowns(), loadBookings()])
     hydrateLoadedRateCodePrices()
     
-    if (route.query.bookingCode) {
-      await openBookingModalByCode(route.query.bookingCode)
+    const initialCode = route.query.bookingCode || route.query.edit_id || route.query.booking_code || route.query.booking_id || route.query.edit_code
+    if (initialCode) {
+      await openBookingModalByCode(initialCode)
+      syncUrlBookingCode(initialCode)
       await openDepositFromQuery()
       await openNotificationFromQuery()
     } else if (route.query.action === 'new' || route.query.newBooking === 'true' || route.query.roomNumber) {
@@ -2289,8 +2308,19 @@ onBeforeUnmount(() => {
 })
 
 watch(() => route.query, async (newQuery) => {
-  if (newQuery.bookingCode) {
-    await openBookingModalByCode(newQuery.bookingCode)
+  const targetCode = newQuery.bookingCode || newQuery.edit_id || newQuery.booking_code || newQuery.booking_id || newQuery.edit_code
+  if (targetCode) {
+    const isAlreadyActive = activeTab.value && (
+      String(activeTab.value.id) === String(targetCode) ||
+      String(activeTab.value.bookingCode) === String(targetCode) ||
+      String(activeTab.value.dbId) === String(targetCode)
+    )
+    if (!isAlreadyActive) {
+      await openBookingModalByCode(targetCode)
+    }
+    if (newQuery.edit_id || newQuery.booking_code || newQuery.booking_id || newQuery.edit_code) {
+      syncUrlBookingCode(targetCode)
+    }
     await openDepositFromQuery()
     await openNotificationFromQuery()
     nextTick(() => {
@@ -2308,8 +2338,12 @@ watch(activeTabId, (newId, oldId) => {
     loadActiveBookingNotifications()
     if (activeTab.value?.dbId) {
       setLastActiveBookingId(activeTab.value.dbId)
+      syncUrlBookingCode(activeTab.value.bookingCode || activeTab.value.id)
     } else if (activeTab.value?.id === 'NEW_BOOKING') {
       setLastActiveBookingId('NEW_BOOKING')
+      syncUrlBookingCode(null)
+    } else if (!activeTab.value) {
+      syncUrlBookingCode(null)
     }
   }
 })
@@ -2514,12 +2548,37 @@ async function loadBookings() {
 
     // Kiểm tra lần đầu vào trang: closedIds chưa có trong localStorage
     const isFirstLoad = localStorage.getItem(CLOSED_TABS_KEY) === null
-    const savedActiveId = getLastActiveBookingId()
+    const queryBookingKey = String(route.query.bookingCode || route.query.edit_id || route.query.booking_code || route.query.booking_id || route.query.edit_code || '').trim()
+    const savedActiveId = queryBookingKey || getLastActiveBookingId()
+
+    // Helper tra cứu riêng booking khi không có trong allList (do status in (2, 3, 4): checkout, hủy, noshow)
+    const fetchSpecificBookingFallback = async (bookingKey) => {
+      if (!bookingKey || bookingKey === 'NEW_BOOKING') return null
+      try {
+        const singleRes = await fetchBooking(bookingKey)
+        const b = singleRes.data?.data || singleRes.data
+        if (b && (b.id || b.booking_code)) return b
+      } catch (e) {
+        // Fallback tra cứu qua fetchBookings search
+      }
+      try {
+        const searchRes = await fetchBookings({ search: bookingKey, stay_only: true })
+        const sList = searchRes.data?.data || searchRes.data || []
+        return sList.find(b => String(b.id) === String(bookingKey) || String(b.booking_code) === String(bookingKey)) || sList[0] || null
+      } catch (errSearch) {
+        return null
+      }
+    }
 
     if (isFirstLoad && allList.length > 0) {
       // Lần đầu: mở 1 booking (ưu tiên booking đã lưu từ session trước hoặc mới nhất)
-      const targetBooking = (savedActiveId && allList.find(b => String(b.id) === String(savedActiveId) || String(b.booking_code) === String(savedActiveId)))
-        || allList.reduce((max, b) => b.id > max.id ? b : max, allList[0])
+      let targetBooking = (savedActiveId && allList.find(b => String(b.id) === String(savedActiveId) || String(b.booking_code) === String(savedActiveId)))
+      if (!targetBooking && savedActiveId && savedActiveId !== 'NEW_BOOKING') {
+        targetBooking = await fetchSpecificBookingFallback(savedActiveId)
+      }
+      if (!targetBooking) {
+        targetBooking = allList.reduce((max, b) => b.id > max.id ? b : max, allList[0])
+      }
       // Khởi tạo localStorage với mảng rỗng (không đánh dấu ai là closed)
       localStorage.setItem(CLOSED_TABS_KEY, JSON.stringify([]))
       replaceBookingTab(targetBooking)
@@ -2531,13 +2590,30 @@ async function loadBookings() {
       const closedIds = getClosedTabIds()
       const list = allList.filter(b => !closedIds.includes(String(b.id)))
       const currentTab = tabs.value[0]
-      const currentBooking = currentTab?.dbId
+      let currentBooking = currentTab?.dbId
         ? list.find(b => String(b.id) === String(currentTab.dbId))
         : null
-      const savedBooking = (!currentBooking && savedActiveId)
+      let savedBooking = (!currentBooking && savedActiveId && !closedIds.includes(String(savedActiveId)))
         ? list.find(b => String(b.id) === String(savedActiveId) || String(b.booking_code) === String(savedActiveId))
         : null
-      const nextBooking = currentBooking || savedBooking || (currentTab?.id === 'NEW_BOOKING'
+
+      // Nếu đang ở tab hoặc session lưu booking thuộc status in (2, 3, 4) (đã checkout, hủy, noshow) không có trong list
+      const targetFallbackId = (!currentBooking && currentTab?.dbId && !closedIds.includes(String(currentTab.dbId)))
+        ? currentTab.dbId
+        : (!currentBooking && !savedBooking && savedActiveId && savedActiveId !== 'NEW_BOOKING' && !closedIds.includes(String(savedActiveId)) ? savedActiveId : null)
+
+      if (targetFallbackId) {
+        const fallbackBooking = await fetchSpecificBookingFallback(targetFallbackId)
+        if (fallbackBooking) {
+          if (currentTab?.dbId && String(currentTab.dbId) === String(fallbackBooking.id)) {
+            currentBooking = fallbackBooking
+          } else {
+            savedBooking = fallbackBooking
+          }
+        }
+      }
+
+      const nextBooking = currentBooking || savedBooking || (currentTab?.id === 'NEW_BOOKING' || savedActiveId === 'NEW_BOOKING'
         ? null
         : list.reduce((max, b) => !max || b.id > max.id ? b : max, null))
 
@@ -2582,9 +2658,9 @@ function bookingToTab(b) {
       }
       const priceNum = Number(br.rate) || 0
       const servicesList = br.services || []
-      const servicesTotal = servicesList.filter(svc => svc.service_code !== 'EB' && svc.service_code !== 'RM' && svc.service_code !== 'ROOM_CHARGE').reduce((sum, svc) => sum + (Number(svc.rate) * Number(svc.quantity || 1)), 0)
-      const roomChargeTotal = servicesList.filter(svc => svc.service_code === 'RM' || svc.service_code === 'ROOM_CHARGE').reduce((sum, svc) => sum + (Number(svc.rate) * Number(svc.quantity || 1)), 0)
-      const extraBedDetailTotal = servicesList.filter(svc => svc.service_code === 'EB').reduce((sum, svc) => sum + (Number(svc.rate) * Number(svc.quantity || 1)), 0)
+      const servicesTotal = servicesList.filter(svc => svc.service_code !== 'EB' && svc.service_code !== 'RM' && svc.service_code !== 'ROOM_CHARGE').reduce((sum, svc) => sum + (Number(svc.rate) * (svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1)), 0)
+      const roomChargeTotal = servicesList.filter(svc => svc.service_code === 'RM' || svc.service_code === 'ROOM_CHARGE').reduce((sum, svc) => sum + (Number(svc.rate) * (svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1)), 0)
+      const extraBedDetailTotal = servicesList.filter(svc => svc.service_code === 'EB').reduce((sum, svc) => sum + (Number(svc.rate) * (svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1)), 0)
       const totalNum = (roomChargeTotal || (priceNum * nightsCount)) + extraBedDetailTotal + servicesTotal
 
       const primaryGuestPivot = br.guests ? br.guests.find(g => g.is_primary) || br.guests[0] : null
@@ -2598,19 +2674,53 @@ function bookingToTab(b) {
         if (dStr) dailyRoomPrices[dStr] = Number(s.rate) || 0
       })
 
-      const dailyExtraBeds = servicesList.filter(s => s.service_code === 'EB').map(s => {
-        const dStr = parseApiDate(s.service_date)
-        const q = Number(s.quantity) || 0
-        const r = Number(s.rate) || 0
-        return {
-          dateStr: dStr,
-          date: dStr,
-          quantity: q,
-          rate: r,
-          total: q * r,
-          isRoom: s.is_room !== 0
+      const ebServicesList = servicesList.filter(s => s.service_code === 'EB')
+      const defaultEbRate = Number(br.extra_bed_rate) || 300000
+      let dailyExtraBeds = []
+      if (ebServicesList.length > 0) {
+        const ebMap = {}
+        ebServicesList.forEach(s => {
+          const dStr = parseApiDate(s.service_date)
+          if (dStr) ebMap[dStr] = s
+        })
+        const checkInClean = parseApiDate(br.arrival_date || b.arrival_date)
+        const checkOutClean = parseApiDate(br.departure_date || b.departure_date)
+        if (checkInClean && checkOutClean) {
+          const pIn = checkInClean.split('-')
+          const pOut = checkOutClean.split('-')
+          let c = pIn.length === 3 ? new Date(Number(pIn[0]), Number(pIn[1]) - 1, Number(pIn[2])) : new Date(checkInClean)
+          const e = pOut.length === 3 ? new Date(Number(pOut[0]), Number(pOut[1]) - 1, Number(pOut[2])) : new Date(checkOutClean)
+          while (c < e) {
+            const dStr = `${c.getFullYear()}-${String(c.getMonth() + 1).padStart(2, '0')}-${String(c.getDate()).padStart(2, '0')}`
+            const s = ebMap[dStr]
+            const q = s ? (Number(s.quantity) || 0) : 0
+            const r = s ? (Number(s.rate) || 0) : defaultEbRate
+            dailyExtraBeds.push({
+              dateStr: dStr,
+              date: dStr,
+              quantity: q,
+              rate: r,
+              total: q * r,
+              isRoom: s ? (s.is_room !== 0) : false
+            })
+            c.setDate(c.getDate() + 1)
+          }
+        } else {
+          dailyExtraBeds = ebServicesList.map(s => {
+            const dStr = parseApiDate(s.service_date)
+            const q = Number(s.quantity) || 0
+            const r = Number(s.rate) || 0
+            return {
+              dateStr: dStr,
+              date: dStr,
+              quantity: q,
+              rate: r,
+              total: q * r,
+              isRoom: s.is_room !== 0
+            }
+          })
         }
-      })
+      }
 
       const rawBills = [
         ...(br.service_bills || br.serviceBills || []),
@@ -2926,7 +3036,38 @@ function makeBlankTab() {
 }
 
 // ==================== TAB HANDLERS ====================
-function handleTabClick(tabId) { activeTabId.value = tabId }
+function syncUrlBookingCode(bookingCode) {
+  const currentQueryCode = route.query.bookingCode
+  const hasLegacyParams = !!(route.query.edit_id || route.query.booking_code || route.query.booking_id || route.query.edit_code)
+  const nextQuery = { ...route.query }
+  delete nextQuery.edit_id
+  delete nextQuery.booking_code
+  delete nextQuery.booking_id
+  delete nextQuery.edit_code
+
+  if (bookingCode) {
+    nextQuery.tab = nextQuery.tab || 'create-res'
+    nextQuery.bookingCode = String(bookingCode)
+    if (String(currentQueryCode || '') !== String(bookingCode) || hasLegacyParams) {
+      router.replace({ query: nextQuery }).catch(() => {})
+    }
+  } else {
+    delete nextQuery.bookingCode
+    if (currentQueryCode || hasLegacyParams) {
+      router.replace({ query: nextQuery }).catch(() => {})
+    }
+  }
+}
+
+function handleTabClick(tabId) {
+  activeTabId.value = tabId
+  const currentTab = tabs.value.find(t => t.id === tabId)
+  if (currentTab?.dbId) {
+    syncUrlBookingCode(currentTab.bookingCode || currentTab.id)
+  } else {
+    syncUrlBookingCode(null)
+  }
+}
 
 function replaceBookingTab(booking) {
   const nextTab = { ...bookingToTab(booking) }
@@ -2935,6 +3076,7 @@ function replaceBookingTab(booking) {
   if (nextTab.dbId) {
     setLastActiveBookingId(nextTab.dbId)
   }
+  syncUrlBookingCode(nextTab.bookingCode || nextTab.id)
   return nextTab
 }
 
@@ -2950,10 +3092,16 @@ function handleCloseTab(tabId, event) {
       const nextTab = tabs.value[Math.max(0, index - 1)]
       activeTabId.value = nextTab.id
       setLastActiveBookingId(nextTab.dbId || null)
+      if (nextTab.dbId) {
+        syncUrlBookingCode(nextTab.bookingCode || nextTab.id)
+      } else {
+        syncUrlBookingCode(null)
+      }
     } else {
       // Đóng tab cuối → empty state, KHÔNG tạo blank tab
       activeTabId.value = null
       setLastActiveBookingId(null)
+      syncUrlBookingCode(null)
     }
   }
 }
@@ -6181,6 +6329,45 @@ async function handleExtraBedSaved({ quantity, rate, totalExtraBedPrice, dailyRa
   }
   if (dailyRates) {
     room.dailyExtraBeds = dailyRates
+    if (!room.services) room.services = []
+    dailyRates.forEach(d => {
+      const dDate = cleanDateStr(d.dateStr || d.date)
+      const existingIdx = room.services.findIndex(s => s.service_code === 'EB' && cleanDateStr(s.service_date) === dDate)
+      const qty = Number(d.quantity) || 0
+      if (qty > 0) {
+        if (existingIdx !== -1) {
+          room.services[existingIdx].quantity = qty
+          room.services[existingIdx].rate = Number(d.rate) || 0
+          room.services[existingIdx].is_room = d.isRoom ? 1 : 0
+        } else {
+          room.services.push({
+            id: `local-eb-${room.id}-${dDate}`,
+            service_code: 'EB',
+            service_name: 'Giường phụ (Extra Bed)',
+            service_date: dDate,
+            quantity: qty,
+            rate: Number(d.rate) || 0,
+            is_room: d.isRoom ? 1 : 0
+          })
+        }
+      } else {
+        if (existingIdx !== -1) {
+          room.services[existingIdx].quantity = 0
+          room.services[existingIdx].rate = Number(d.rate) || Number(room.extraBedPrice) || 300000
+          room.services[existingIdx].is_room = d.isRoom ? 1 : 0
+        } else {
+          room.services.push({
+            id: `local-eb-${room.id}-${dDate}`,
+            service_code: 'EB',
+            service_name: 'Giường phụ (Extra Bed)',
+            service_date: dDate,
+            quantity: 0,
+            rate: Number(d.rate) || Number(room.extraBedPrice) || 300000,
+            is_room: d.isRoom ? 1 : 0
+          })
+        }
+      }
+    })
   }
   room.total = calculateRoomTotal(room)
 
@@ -6289,6 +6476,7 @@ async function openBookingModalByCode(bookingCode, forceReload = false) {
   if (foundTab && !forceReload) {
     removeClosedTabId(foundTab.dbId)
     activeTabId.value = foundTab.id
+    syncUrlBookingCode(foundTab.bookingCode || foundTab.id)
     await loadActiveBookingNotifications(foundTab)
   } else {
     try {
@@ -6306,6 +6494,21 @@ async function openBookingModalByCode(bookingCode, forceReload = false) {
         replaceBookingTab(bItem)
         await nextTick()
         await loadActiveBookingNotifications(activeTab.value)
+      } else {
+        const singleRes = await fetchBooking(bookingCode)
+        const bItem = singleRes.data?.data || singleRes.data
+        if (bItem && (bItem.id || bItem.booking_code)) {
+          removeClosedTabId(bItem.id)
+          const tabObj = bookingToTab(bItem)
+          tabObj.rooms.forEach(room => {
+            if (room.rateCode && room.rateCode !== 'Vui lòng chọn giá phòng') {
+              applyRateCodeDailyPricesToRoom(room)
+            }
+          })
+          replaceBookingTab(bItem)
+          await nextTick()
+          await loadActiveBookingNotifications(activeTab.value)
+        }
       }
     } catch (err) {
       console.error('Lỗi khi mở booking theo mã:', err)
@@ -7281,7 +7484,7 @@ defineExpose({
                                       {{ (Number(svc.rate) || 0).toLocaleString('en-US') }}
                                     </span>
                                   </td>
-                                  <td class="p-2 border-r border-slate-100 text-right text-sky-700 font-bold">{{ (Number(svc.quantity || 1) * Number(svc.rate || 0)).toLocaleString('en-US') }}</td>
+                                  <td class="p-2 border-r border-slate-100 text-right text-sky-700 font-bold">{{ (Number(svc.quantity !== undefined && svc.quantity !== null ? svc.quantity : 1) * Number(svc.rate || 0)).toLocaleString('en-US') }}</td>
                                   <td class="p-2 text-center">
                                     <span
                                       class="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase select-none"
@@ -7967,7 +8170,7 @@ defineExpose({
                                         </td>
                                         <td class="p-2 text-right text-sky-700 font-bold">
                                           <div class="flex items-center justify-end space-x-2">
-                                            <span>{{ (Number(svc.quantity || 1) * Number(svc.rate || 0)).toLocaleString('en-US') }}</span>
+                                            <span>{{ (Number(svc.quantity !== undefined && svc.quantity !== null ? svc.quantity : 1) * Number(svc.rate || 0)).toLocaleString('en-US') }}</span>
                                             <button 
                                               v-if="isServiceDisplayEditable(svc) && !isRoomChargeService(svc)"
                                               @click.stop="handleInlineServiceDelete(room, svc)"

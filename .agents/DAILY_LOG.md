@@ -18,6 +18,106 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-10-12] - Xử lý triệt để Dòng 310: Giữ nguyên Booking status in (2, 3, 4) và vị trí cuộn Room Plan khi chuyển màn hình
+### Module: Booking / Hóa đơn / Kế hoạch phòng ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [CheckoutPage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue), [RoomPlanPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomPlanPage.vue), [row-310-booking-restore-navigation.test.js](file:///d:/PMS/frontend/tests/row-310-booking-restore-navigation.test.js))
+
+- **Yêu cầu & Hiện tượng (Khách note ngày 12/10 chữ đỏ tại Dòng 310 Sheet THEO DÕI VẤN ĐỀ CẦN ĐIỀU CHỈNH)**:
+  - *Màn hình Booking (`CreateRegistrationPage.vue`)*: Đang check chọn xem booking có `status in (2, 3, 4)` (Check out = 2, Hủy = 3, Noshow = 4 - ví dụ Booking 13), bấm sang màn hình khác rồi quay lại thì hệ thống tự động nhảy sang booking mới nhất thay vì giữ booking đang xem.
+  - *Màn hình Hóa đơn (`CheckoutPage.vue`)*: Hiện tượng tương tự, khi quay lại màn hình hóa đơn không giữ được booking/phòng đã chọn nếu booking đó thuộc trạng thái checkout/hủy/noshow.
+  - *Màn hình Kế hoạch phòng (`RoomPlanPage.vue`)*: Đang xem và cuộn tới vị trí phòng cần thao tác, bấm sang màn hình khác rồi quay lại thì giao diện load lại từ đầu (bị reset vị trí cuộn về top 0) khiến người dùng phải kéo lại từ đầu.
+- **Nguyên nhân gốc rễ (Root Cause)**:
+  - *Booking*: `loadBookings()` mặc định chỉ gọi API `fetchBookings({ status: '0,1', stay_only: true })`. Các booking có `status in (2, 3, 4)` không nằm trong danh sách trả về. Khi remount, `savedActiveId` không tìm thấy trong danh sách nên hàm fallback lấy booking mới nhất `list.reduce(...)` và ghi đè `setLastActiveBookingId`, làm mất hoàn toàn booking đang xem.
+  - *Hóa đơn*: `restoreCheckoutBookingFromSession()` chỉ tìm kiếm nội bộ trong `allBookingsList.value`. Khi ở chế độ mặc định (`register !== 'old'`), danh sách chỉ nạp `status: '0,1,4'` và lọc bỏ phòng checkout, nên booking status 2, 3, 4 bị bỏ qua hoàn toàn.
+  - *Kế hoạch phòng*: Khi remount, container được render ban đầu với `scrollTop = 0`. Sự kiện cuộn tự nhiên hoặc layout ban đầu kích hoạt `handleRoomPlanScroll`, sau 100ms ghi đè `0` vào `sessionStorage` trước khi dữ liệu phòng/booking kịp render đủ chiều cao, làm mất vị trí cuộn cũ.
+- **Giải pháp xử lý triệt để**:
+  - **1. Màn hình Booking ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))**:
+    - Trong `loadBookings()`: Bổ sung helper `fetchSpecificBookingFallback(bookingKey)`: Nếu `savedActiveId` (hoặc `currentTab.dbId`) không có trong `allList` do thuộc `status in (2, 3, 4)`, tự động gọi tra cứu riêng theo ID/mã booking (`fetchBooking` / `fetchBookings`).
+    - Nạp đúng booking này làm `savedBooking` / `currentBooking` để `replaceBookingTab` hiển thị chính xác booking người dùng đang xem, tuyệt đối không nhảy sang booking mới nhất.
+    - Trong `openBookingModalByCode`: Bổ sung nhánh fallback gọi `fetchBooking` khi tra cứu theo mã trả về rỗng.
+  - **2. Màn hình Hóa đơn ([CheckoutPage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue))**:
+    - Nâng cấp `restoreCheckoutBookingFromSession` thành hàm `async`: Nếu `allBookingsList` chưa có booking đã lưu từ session, gọi fallback `fetchBookings({ search: savedBookingId, status: '0,1,2,3,4', with_billing: true, stay_only: true })`.
+    - Khi booking thuộc `status in (2, 3, 4)` hoặc đã checkout, tự động kích hoạt `registerFilter.value = 'old'` và `appliedCheckoutFilter.value.register = 'old'`, nạp lại dữ liệu và tự động chọn đúng booking, phòng và khách tương ứng.
+    - Đồng bộ `status: '0,1,2,3,4'` cho `loadCheckoutBookings` (khi `register === 'old'`) và `selectCheckoutBookingFromRoute`.
+  - **3. Màn hình Kế hoạch phòng ([RoomPlanPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomPlanPage.vue))**:
+    - Thiết lập cờ `isRestoringPlanScroll`: Chặn triệt để việc `handleRoomPlanScroll` lưu đè `scrollTop: 0` vào `sessionStorage` trong lúc component đang remount và nạp dữ liệu.
+    - Nâng cấp `restoreRoomPlanScrollPosition()`: Có cơ chế chờ và retry áp dụng vị trí cuộn cho đến khi container bảng render đủ chiều cao cuộn (`scrollHeight - clientHeight >= targetTop`). Sau khi khôi phục thành công mới gỡ cờ bảo vệ.
+    - Đồng bộ gọi khôi phục cuộn trong `watch(dbRooms)` và `loadBookings().finally` sau `nextTick`.
+- **Kiểm thử**:
+  - Tạo file unit test [row-310-booking-restore-navigation.test.js](file:///d:/PMS/frontend/tests/row-310-booking-restore-navigation.test.js) kiểm thử toàn diện: giữ booking status 2, 3, 4 khi điều hướng, tự động đổi scope old trong Checkout, bảo toàn scroll position trong Room Plan -> **82/82 tests PASSED** (`node --test tests/*.test.js`).
+  - Chạy `npm run build` đóng gói Frontend thành công 100% trong 18.14s.
+
+## [2026-10-09] - Hoàn thiện Checklist Nghiệm thu PMS chuẩn 5 Bộ phận & Khảo sát 2 Phân hệ Cấu hình / Provista System
+### Module: Checklist Nghiệm thu PMS ([Checklist_nghiem_thu_PMS_5_bo_phan_chinh_thuc_2026-10-09.xlsx](file:///d:/PMS/file%20word%20can%20len%20plan/Checklist_nghiem_thu_PMS_5_bo_phan_chinh_thuc_2026-10-09.xlsx), [Chi_tiet_chuc_nang_PMS_tung_module_2026-10-09.md](file:///d:/PMS/file%20word%20can%20len%20plan/Chi_tiet_chuc_nang_PMS_tung_module_2026-10-09.md))
+
+- **Yêu cầu & Nội dung hoàn thành**:
+  - **1. Loại bỏ toàn bộ sheet phụ / siêu dữ liệu**: Đã xóa triệt để 4 sheet bị gạch chéo (`Tổng quan`, `Lỗi phát hiện`, `Bằng chứng`, `Kiểm tra lại DOCX`). File nghiệm thu chỉ giữ lại các bộ phận chính.
+  - **2. Bổ sung đầy đủ 2 phân hệ lớn còn thiếu**:
+    - **Cấu hình hệ thống (Hotel Config)** (`/config`): Khảo sát và phân loại chi tiết 7 module (Định nghĩa khách sạn, Định nghĩa phòng, Định nghĩa hệ thống, Thiết lập giá, Định nghĩa buồng phòng, Mẫu & Báo cáo, Sao lưu & Khôi phục Database) gồm 58 hạng mục chức năng.
+    - **Hệ thống (Provista System)** (`/system`): Khảo sát và phân loại chi tiết 8 module (Thông tin công ty, Chi nhánh, Cơ cấu tổ chức, Vai trò & Phân quyền, Nhân viên & Tài khoản, Lịch sử thao tác, Tài khoản ngân hàng, Danh mục Quản lý & Kế toán mở rộng ERP) gồm 43 hạng mục chức năng.
+  - **3. Đối chiếu nhật ký lỗi khách hàng**:
+    - Chuyển màu Vàng kèm note chi tiết các mục khách note trong `DANH SÁCH BẢNG TRONG HỆ THỐNG (3).xlsx`: Phí phục vụ dịch vụ khách sạn (Dòng 115), Chặn overbooking chuyển trạng thái (Dòng 530, 531), Ảnh sản phẩm buồng phòng (Dòng 540), Trực quan hóa danh mục báo cáo kéo thả (Dòng 325), Phân quyền xem báo cáo theo rule (Dòng 326).
+    - Đánh dấu màu Đỏ các danh mục Quản lý & Kế toán mở rộng ERP đang disabled chuẩn bị giai đoạn sau.
+  - **4. Kết quả & Thống kê**:
+    - Sheet `Lễ tân`: 786 chức năng (328 Xanh, 28 Vàng, 4 Đỏ, 426 Xám).
+    - Sheet `Buồng phòng`: 183 chức năng (163 Xanh, 4 Vàng, 0 Đỏ, 16 Xám).
+    - Sheet `Đặt phòng - Sales`: 678 chức năng (257 Xanh, 13 Vàng, 5 Đỏ, 403 Xám).
+    - Sheet `Cấu hình hệ thống`: 58 chức năng (54 Xanh, 4 Vàng, 0 Đỏ, 0 Xám).
+    - Sheet `Hệ thống (Provista System)`: 43 chức năng (36 Xanh, 1 Vàng, 6 Đỏ, 0 Xám).
+    - Tổng cộng: **1.748 dòng kiểm thử** chi tiết trên 5 sheet bộ phận chính thức.
+  - **5. Đồng bộ giao diện 100% (FE / Excel Design System)**:
+    - Bỏ in đậm (bold) tại Cột A & Cột B trên 2 sheet mới, chuyển sang font `Calibri 11pt Regular` màu `#00243746` đồng bộ 100% với 3 sheet gốc.
+    - Đồng bộ chiều cao hàng (Row Height) đúng `46.0pt` cho toàn bộ các dòng dữ liệu, căn lề `top-align` thoáng mắt, hết hiện tượng dòng bị ép sát nhau.
+    - Đồng bộ banner tiêu đề dòng 1 (Navy `#204F79` phủ toàn bộ A1:D1, chữ trắng 19pt bold, cao 36pt) và bật bộ lọc tự động `auto_filter` trên dòng 4 (`A4:D...`).
+
+
+
+## [2026-10-09] - Sửa lỗi Modal Chi tiết thêm giường ngày 31/08 tự động gán SL 1 (Timezone Mismatch ISO UTC)
+### Module: Đăng ký / Sơ đồ phòng ([ExtraBedModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/ExtraBedModal.vue), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [BookingDetailModal.vue](file:///d:/PMS/frontend/src/pages/frontdesk/components/BookingDetailModal.vue), [extrabed-and-url-sync.test.js](file:///d:/PMS/frontend/tests/extrabed-and-url-sync.test.js))
+
+- **Hiện tượng**:
+  - Khách hàng cấu hình phòng 106 lưu trú 4 đêm (30/08/2026 - 03/09/2026): Ngày 30/08 = 0, Ngày 31/08 = 0, Ngày 01/09 = 1, Ngày 02/09 = 1.
+  - Sau khi lưu, bảng chi tiết dịch vụ bên ngoài hiển thị đúng 100%: 30/08 SL 0 (0đ), 31/08 SL 0 (0đ), 01/09 SL 1 (300,000đ), 02/09 SL 1 (300,000đ).
+  - Nhưng khi mở lại modal *"Chi tiết thêm giường"*, ngày 31/08/2026 lại hiển thị `Số lượng: 1`, `Thành tiền: 300,000đ`, hàng Total tính thành 900,000đ (thay vì 600,000đ).
+- **Nguyên nhân gốc rễ (Root Cause)**:
+  - Khi lưu Extra Bed, Backend xóa các bản ghi có số lượng 0, chỉ lưu các ngày có số lượng > 0 (01/09 và 02/09).
+  - Dưới CSDL / API, ngày 01/09 được serialize theo chuẩn ISO8601 UTC: `"2026-08-31T17:00:00.000000Z"` (17h00 ngày 31/08 theo UTC chính là 00h00 ngày 01/09 theo giờ Việt Nam UTC+7).
+  - Hàm `cleanDate` trong [ExtraBedModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/ExtraBedModal.vue) trước đó chỉ lấy 10 ký tự đầu (`s.substring(0, 10)`), biến `"2026-08-31T17:00:00.000000Z"` thành `"2026-08-31"`.
+  - Kết quả: Khi modal duyệt qua các đêm lưu trú, tại đêm `2026-08-31`, nó so sánh trúng bản ghi EB dịch vụ của ngày 01/09 (SL 1), khiến ngày 31/08 bị gán số lượng 1 thay vì 0.
+- **Giải pháp**:
+  - Trong [ExtraBedModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/ExtraBedModal.vue): Sửa `cleanDate` và `buildStayDates` chuyển đổi chuỗi ngày có định dạng ISO UTC (`'T'`, `'Z'`) sang ngày theo múi giờ địa phương (`new Date(s)` lấy `getFullYear()`, `getMonth()`, `getDate()`) đồng bộ 100% với `parseApiDate`.
+  - Trong [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue): Trong hàm `bookingToTab`, khi phòng có cấu hình EB, nạp đầy đủ toàn bộ các đêm của chu kỳ lưu trú vào `room.dailyExtraBeds` với các đêm không có dịch vụ được gán rõ ràng `quantity: 0`, `rate: defaultEbRate`, `total: 0`. Cập nhật `parseApiDate` bao quát đầy đủ các định dạng ISO timestamp.
+  - Trong [BookingDetailModal.vue](file:///d:/PMS/frontend/src/components/BookingDetailModal.vue): Đồng bộ việc parse ngày cho `dailyExtraBeds` qua hàm `formatDateForInput`.
+- **Kiểm thử**:
+  - Bổ sung test case trong [extrabed-and-url-sync.test.js](file:///d:/PMS/frontend/tests/extrabed-and-url-sync.test.js) kiểm tra toàn diện kịch bản 30/08 và 31/08 SL 0, 01/09 và 02/09 SL 1 -> modal hiển thị đúng SL 0 cho 30 và 31, tổng tiền 600,000 VND.
+  - 79/79 unit tests Frontend PASSED (`node --test tests/*.test.js`).
+  - Đóng gói Vite (`npm run build`) thành công 100% (4.54s).
+
+## [2026-10-09] - Hoàn thiện triệt để Dòng 342 (Chi tiết thêm giường ngày cuối SL 0) & Dòng 343 (Đồng bộ URL link khi tìm kiếm BK)
+### Module: Đăng ký / Sơ đồ phòng ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [GeneralSearchPage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/GeneralSearchPage.vue), [ExtraBedModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/ExtraBedModal.vue), [booking-room-move-history.js](file:///d:/PMS/frontend/src/utils/booking-room-move-history.js), [extrabed-and-url-sync.test.js](file:///d:/PMS/frontend/tests/extrabed-and-url-sync.test.js))
+
+- **Yêu cầu & Giải pháp xử lý triệt để**:
+  - **1. Dòng 342: Module Đăng ký / Sơ đồ phòng -> Thêm giường (Ngày cuối set up 0 kê giường -> SL 0, nhưng trong chi tiết giường vẫn thể hiện sl 1)**:
+    - **Phân tích thực tế từ ảnh khách hàng gửi**:
+      + Trong popup *"Chi tiết thêm giường"*, người dùng setup ngày cuối (02/09/2026) kê `0` giường (SL 0).
+      + Trong bảng chi tiết dịch vụ bên trái: Các ngày trước đều có 2 dòng (`Dịch vụ phòng nghỉ` SL 1 và `Giường phụ (Extra Bed)` SL 1). Nhưng riêng ngày cuối 02/09/2026, logic cũ `if (!hasEbConfig) continue` đã ẩn dòng giường phụ, chỉ còn duy nhất dòng `Dịch vụ phòng nghỉ` (SL 1) -> Khách hàng nhìn vào thấy ngày 02/09/2026 chỉ có SL 1 (tiền phòng) nên tưởng nhầm hệ thống vẫn thể hiện giường phụ SL 1 hoặc thiếu dòng giường phụ SL 0.
+      + Đồng thời, ở các chỗ tính thành tiền và tổng (`calculateChargeableServiceTotals`, template render dòng dịch vụ, `calculateNightAdjustedPrice`), toán tử `quantity || 1` ép giá trị `0` thành `1`, dẫn đến nếu có bản ghi SL 0 thì tiền vẫn bị tính như SL 1.
+    - **Giải pháp**:
+      + Trong `getRoomDisplayServices(room)`: Khi phòng có cấu hình giường phụ theo ngày (`hasDailyEbConfig`), tất cả các đêm của chu kỳ lưu trú đều hiển thị dòng `Giường phụ (Extra Bed)`. Đêm nào kê 0 giường thì hiển thị rõ ràng `Giường phụ (Extra Bed)` với `Số lượng: 0`, `Thành tiền: 0` (đơn giá vẫn giữ nguyên để tham khảo).
+      + Trong `handleExtraBedSaved`: Lưu giữ trạng thái `quantity: 0` của dịch vụ EB trong `room.services` và `room.dailyExtraBeds`.
+      + Sửa triệt để các biểu thức `quantity || 1` thành `(quantity !== undefined && quantity !== null ? Number(quantity) : 1)` trong [booking-room-move-history.js](file:///d:/PMS/frontend/src/utils/booking-room-move-history.js), `bookingToTab`, `calculateNightAdjustedPrice` và template table để số lượng 0 nhân với đơn giá ra đúng thành tiền 0.
+  - **2. Dòng 343: Module Đăng ký -> Lỗi load BK (Tìm kiếm booking chọn BK khác nhưng link vẫn giữ BK cũ -> F5 load nhầm)**:
+    - **Phân tích thực tế**:
+      + Tại [GeneralSearchPage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/GeneralSearchPage.vue) (menu *"Tìm Kiếm Chung"* nơi có bảng checkbox cho phép người dùng *"check chọn 1 booking để xem"*): Dòng 684 hàm `handleActionRegister` đẩy param `edit_id: bookingCode` thay vì chuẩn `bookingCode`.
+      + Tại [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue): Tồn tại một watcher cũ độc lập ở dòng 331 `watch(() => route.query)` ưu tiên đọc `query.edit_id` trước. Khi người dùng chuyển sang BK khác, hàm `syncUrlBookingCode` trước đó không xóa các query rác cũ (`edit_id`, `booking_code`, `booking_id`, `edit_code`) nên `edit_id` cũ vẫn còn kẹt trong URL. Khi F5 trang, watcher dòng 331 đọc trúng `edit_id` cũ và nạp lại booking cũ.
+    - **Giải pháp**:
+      + Sửa [GeneralSearchPage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/GeneralSearchPage.vue) `handleActionRegister`: Đổi `edit_id: bookingCode` thành chuẩn `bookingCode: bookingCode`.
+      + Sửa [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue):
+        * Chuẩn hóa `syncUrlBookingCode`: Tự động xóa sạch mọi param rác (`edit_id`, `booking_code`, `booking_id`, `edit_code`), chỉ giữ lại duy nhất tham số chuẩn `bookingCode`.
+        * Xóa bỏ watcher trùng lặp ở dòng 331, hợp nhất toàn bộ logic vào watcher chính tại dòng 2306 và hook `onMounted` với guard kiểm tra tab đang active để tránh reload lặp.
+- **Kiểm thử & Đóng gói**:
+  - Unit test [extrabed-and-url-sync.test.js](file:///d:/PMS/frontend/tests/extrabed-and-url-sync.test.js) kiểm thử cả 2 case: giường phụ ngày cuối SL 0 (thành tiền 0) và đồng bộ URL xóa sạch legacy query params -> **78/78 tests PASSED**.
+  - Chạy `npm run build` đóng gói Frontend vào `backend/public/build` thành công 100% trong 4.61s.
+
 ## [2026-10-09] - Giải quyết xung đột (Merge Conflict) tích hợp nhánh kaynblue vào main
 ### Module: Toàn bộ hệ thống Frontend & Nhật ký ([SingleDatePicker.vue](file:///d:/PMS/frontend/src/components/SingleDatePicker.vue), [CheckoutPage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue), [PostBillHousekeepingTab.vue](file:///d:/PMS/frontend/src/pages/housekeeping/components/PostBillHousekeepingTab.vue), [QuickUpdateModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/QuickUpdateModal.vue), [DAILY_LOG.md](file:///d:/PMS/.agents/DAILY_LOG.md))
 

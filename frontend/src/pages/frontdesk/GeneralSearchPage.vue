@@ -681,7 +681,7 @@ function handleActionRegister() {
     return
   }
   const targetPath = route.path.startsWith('/frontdesk') ? '/frontdesk' : '/reservation'
-  router.push({ path: targetPath, query: { tab: 'create-res', edit_id: bookingCode } })
+  router.push({ path: targetPath, query: { tab: 'create-res', bookingCode: bookingCode } })
 }
 
 function handleActionInvoice() {

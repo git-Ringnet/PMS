@@ -776,8 +776,8 @@ const loadCheckoutBookings = async () => {
     const activeFilter = appliedCheckoutFilter.value
     const params = {}
     if (activeFilter.register === 'old') {
-      // Đăng ký cũ gồm Master checkout, Booking còn hiệu lực có phòng checkout và Noshow.
-      params.status = '0,1,2,4'
+      // Đăng ký cũ gồm Master checkout, Booking còn hiệu lực có phòng checkout, Noshow và Hủy (status in 0, 1, 2, 3, 4).
+      params.status = '0,1,2,3,4'
     } else {
       params.status = '0,1,4'
     }
@@ -823,7 +823,7 @@ const loadCheckoutBookings = async () => {
             (b.service_bills || []).some(sb => String(sb.RentalRoomId1) === String(r.id) || String(sb.RentalRoomId2) === String(r.id)) ||
             (b.master_service_bills || []).some(sb => String(sb.RentalRoomId1) === String(r.id) || String(sb.RentalRoomId2) === String(r.id));
           const includeRoom = activeFilter.register === 'old'
-            ? roomIsCheckedOut || isNoshowRoom || (Number(r.status) === 0 && hasTransactions)
+            ? roomIsCheckedOut || isNoshowRoom || Number(r.status) === 3 || (Number(r.status) === 0 && hasTransactions)
             : activeFilter.register === 'virtual'
               ? isVirtualRoom && [0, 1].includes(Number(r.status)) && !roomIsCheckedOut
               : Number(r.status) === 1 && !roomIsCheckedOut
@@ -1039,7 +1039,7 @@ const loadCheckoutBookings = async () => {
         .reduce((sum, p) => sum + Number(p.amount || 0), 0)
 
       const includeBooking = activeFilter.register === 'old'
-        ? bookingIsCheckedOut || roomItems.length > 0
+        ? bookingIsCheckedOut || [2, 3, 4].includes(Number(b.status)) || roomItems.length > 0
         : activeFilter.register === 'virtual'
           ? bookingIsVirtual
           : true
@@ -3199,7 +3199,7 @@ const selectCheckoutBookingFromRoute = async () => {
 
   if (!booking) {
     try {
-      const res = await fetchBookings({ search: bookingKey, status: '0,1,2,4', with_billing: true, stay_only: true })
+      const res = await fetchBookings({ search: bookingKey, status: '0,1,2,3,4', with_billing: true, stay_only: true })
       const list = res.data?.data || res.data || []
       const rawTarget = list.find(b => (
         String(b.booking_code) === bookingKey ||
@@ -3209,7 +3209,7 @@ const selectCheckoutBookingFromRoute = async () => {
       )) || list[0]
 
       if (rawTarget) {
-        const isTargetCheckedOut = isCheckedOutRecord(rawTarget)
+        const isTargetCheckedOut = isCheckedOutRecord(rawTarget) || [2, 3, 4].includes(Number(rawTarget.status))
         if (isTargetCheckedOut && appliedCheckoutFilter.value.register !== 'old') {
           registerFilter.value = 'old'
           appliedCheckoutFilter.value.register = 'old'
@@ -3240,12 +3240,40 @@ const selectCheckoutBookingFromRoute = async () => {
   }
 }
 
-const restoreCheckoutBookingFromSession = () => {
+const restoreCheckoutBookingFromSession = async () => {
   const savedBookingId = sessionStorage.getItem(CHECKOUT_LAST_BOOKING_KEY)
   if (!savedBookingId) return
-  const booking = allBookingsList.value.find(item => (
+  let booking = allBookingsList.value.find(item => (
     String(item.bookingId) === savedBookingId || String(item.id) === savedBookingId || String(item.code) === savedBookingId || String(item.id) === `B${savedBookingId}`
   ))
+
+  if (!booking) {
+    try {
+      const res = await fetchBookings({ search: savedBookingId, status: '0,1,2,3,4', with_billing: true, stay_only: true })
+      const list = res.data?.data || res.data || []
+      const rawTarget = list.find(b => (
+        String(b.booking_code) === savedBookingId ||
+        String(b.id) === savedBookingId ||
+        `GAL${b.id}` === savedBookingId ||
+        `B${b.id}` === savedBookingId
+      )) || list[0]
+
+      if (rawTarget) {
+        const isTargetCheckedOut = isCheckedOutRecord(rawTarget) || [2, 3, 4].includes(Number(rawTarget.status))
+        if (isTargetCheckedOut && appliedCheckoutFilter.value.register !== 'old') {
+          registerFilter.value = 'old'
+          appliedCheckoutFilter.value.register = 'old'
+          await loadCheckoutBookings()
+          booking = allBookingsList.value.find(item => (
+            String(item.code) === savedBookingId || String(item.bookingId) === savedBookingId || String(item.id) === savedBookingId || String(item.id) === `B${savedBookingId}`
+          ))
+        }
+      }
+    } catch (err) {
+      console.error('Lỗi khi khôi phục booking checkout từ session:', err)
+    }
+  }
+
   if (booking) {
     const savedRoomId = sessionStorage.getItem(CHECKOUT_LAST_ROOM_KEY)
     const savedGuestId = sessionStorage.getItem(CHECKOUT_LAST_GUEST_KEY)
@@ -3286,7 +3314,7 @@ onMounted(async () => {
   if (routeBookingKey) {
     await selectCheckoutBookingFromRoute()
   } else {
-    restoreCheckoutBookingFromSession()
+    await restoreCheckoutBookingFromSession()
   }
   document.addEventListener('click', handleClickOutside)
   window.addEventListener('hotel-config-updated', onCheckoutRoleConfigUpdated)

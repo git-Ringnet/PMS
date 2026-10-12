@@ -410,6 +410,22 @@ const computedTotalSum = computed(() => {
   return dailyRates.value.reduce((sum, d) => sum + (Number(d.total) || 0), 0)
 })
 
+function cleanDate(d) {
+  if (!d) return ''
+  const s = String(d).trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+  if (s.includes('T') || s.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(s)) {
+    const dt = new Date(s)
+    if (!isNaN(dt.getTime())) {
+      const year = dt.getFullYear()
+      const month = String(dt.getMonth() + 1).padStart(2, '0')
+      const day = String(dt.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+  }
+  return s.substring(0, 10)
+}
+
 function formatDisplayDate(dateStr) {
   if (!dateStr) return ''
   const parts = dateStr.split('-')
@@ -436,15 +452,23 @@ function cleanCurrencyValue(val) {
 
 function buildStayDates(checkInStr, checkOutStr) {
   const dates = []
-  if (!checkInStr) return [new Date().toISOString().split('T')[0]]
+  const cIn = cleanDate(checkInStr)
+  const cOut = cleanDate(checkOutStr)
+  if (!cIn) return [new Date().toISOString().split('T')[0]]
 
-  let curr = new Date(checkInStr)
-  let end = checkOutStr ? new Date(checkOutStr) : new Date(curr.getTime() + 86400000)
+  const partsIn = cIn.split('-')
+  let curr = partsIn.length === 3 
+    ? new Date(Number(partsIn[0]), Number(partsIn[1]) - 1, Number(partsIn[2]))
+    : new Date(cIn)
+
+  const partsOut = cOut ? cOut.split('-') : []
+  let end = partsOut.length === 3
+    ? new Date(Number(partsOut[0]), Number(partsOut[1]) - 1, Number(partsOut[2]))
+    : (cOut ? new Date(cOut) : new Date(curr.getTime() + 86400000))
 
   if (isNaN(curr.getTime())) curr = new Date()
   if (isNaN(end.getTime()) || curr >= end) {
-    const dStr = checkInStr || new Date().toISOString().split('T')[0]
-    return [dStr]
+    return [cIn || new Date().toISOString().split('T')[0]]
   }
 
   while (curr < end) {
@@ -454,7 +478,7 @@ function buildStayDates(checkInStr, checkOutStr) {
     dates.push(`${yyyy}-${mm}-${dd}`)
     curr.setDate(curr.getDate() + 1)
   }
-  return dates.length ? dates : [checkInStr || new Date().toISOString().split('T')[0]]
+  return dates.length ? dates : [cIn || new Date().toISOString().split('T')[0]]
 }
 
 watch(() => props.show, (newVal) => {
@@ -485,8 +509,8 @@ watch(() => props.show, (newVal) => {
 
     dailyRates.value = stayDates.map(dStr => {
       const isPastDate = sysDateStr ? dStr < sysDateStr : false
-      const found = existingDaily.find(ed => ed.dateStr === dStr || ed.date === dStr)
-      const foundSvc = ebServices.find(s => s.service_date === dStr || s.dateStr === dStr)
+      const found = existingDaily.find(ed => cleanDate(ed.dateStr || ed.date) === dStr)
+      const foundSvc = ebServices.find(s => cleanDate(s.service_date || s.dateStr || s.date) === dStr)
       const isPosted = Boolean(foundSvc && Number(foundSvc.is_posted) === 1)
       const isLocked = isPastDate || isPosted
 
