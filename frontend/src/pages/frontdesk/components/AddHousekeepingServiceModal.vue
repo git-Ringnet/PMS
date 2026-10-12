@@ -1,4 +1,5 @@
 <script setup>
+import { onBeforeUnmount, watch } from 'vue'
 import { X } from '@lucide/vue'
 import PostBillHousekeepingTab from '@/pages/housekeeping/components/PostBillHousekeepingTab.vue'
 
@@ -36,6 +37,16 @@ const handleClose = () => {
   emit('close')
 }
 
+function handleKeyDown(event) {
+  if (event.key === 'Escape' && props.show) handleClose()
+}
+
+watch(() => props.show, (visible) => {
+  window.removeEventListener('keydown', handleKeyDown)
+  if (visible) window.addEventListener('keydown', handleKeyDown)
+})
+onBeforeUnmount(() => window.removeEventListener('keydown', handleKeyDown))
+
 const handleSuccess = (data) => {
   emit('submit', data)
 }
@@ -43,12 +54,12 @@ const handleSuccess = (data) => {
 
 <template>
   <div v-if="show" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-2 md:p-4 animate-fadeIn">
-    <div class="bg-white rounded-lg shadow-2xl w-full max-w-6xl h-[90vh] overflow-hidden border border-slate-300 flex flex-col text-xs">
+    <div class="bg-white rounded-xl shadow-2xl w-full max-w-6xl h-[90vh] overflow-hidden border border-slate-300 flex flex-col text-xs">
       <!-- Header -->
-      <div class="bg-[#1a6b8a] text-white px-4 py-2.5 flex items-center justify-between font-semibold shrink-0 shadow-sm">
+      <div class="text-white px-4 py-2.5 flex items-center justify-between font-semibold shrink-0 shadow-sm" :style="{ background: 'var(--pms-custom-theme, #006bdb)' }">
         <div class="flex items-center gap-2">
           <span class="text-sm font-bold">Thêm dịch vụ buồng phòng</span>
-          <span v-if="bookingInfo" class="bg-white/20 px-2 py-0.5 rounded text-[11px] font-normal tracking-wide">{{ bookingInfo }}</span>
+          <span v-if="bookingInfo" class="bg-white/20 px-2 py-0.5 rounded text-xs font-normal tracking-wide">{{ bookingInfo }}</span>
         </div>
         <div class="flex items-center gap-2">
           <button @click="handleClose" class="hover:bg-white/20 p-1 rounded transition-colors text-white cursor-pointer" title="Đóng">

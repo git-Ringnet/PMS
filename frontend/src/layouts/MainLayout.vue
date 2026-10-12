@@ -211,6 +211,7 @@ const fetchSystemDate = async () => {
     const res = await http.get('/system-date')
     if (res.data && res.data.success && res.data.data) {
       systemDate.value = res.data.data.system_date
+      authStore.setSystemDate(res.data.data.system_date)
       if (res.data.data.shift) {
         dbShift.value = res.data.data.shift
         activeShiftName.value = res.data.data.shift

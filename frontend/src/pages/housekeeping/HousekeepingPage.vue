@@ -161,7 +161,7 @@ onUnmounted(() => document.removeEventListener('click', closeFab))
           <component
             :is="activeComponent"
             :key="activeTabKey"
-            :initial-room-id="activeTabKey === 'add-service' ? route.query.bookingRoomId || '' : ''"
+            v-bind="activeTabKey === 'add-service' ? { initialRoomId: route.query.bookingRoomId || '' } : {}"
           />
         </Transition>
       </div>

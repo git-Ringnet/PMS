@@ -292,7 +292,7 @@
                 
                 <div class="flex flex-col gap-1.5">
                   <label class="font-bold text-slate-700 text-[12px]">Tên sản phẩm <span class="text-rose-500">*</span></label>
-                  <input type="text" v-model="newProduct.name" placeholder="Nhập tên sản phẩm..." class="border border-slate-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] transition-all font-semibold text-[13px] bg-white shadow-sm" />
+                  <input type="text" required v-model="newProduct.name" placeholder="Nhập tên sản phẩm..." class="border border-slate-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] transition-all font-semibold text-[13px] bg-white shadow-sm" />
                 </div>
 
                 <div class="flex flex-col gap-1.5">
@@ -855,7 +855,14 @@ const editProduct = (product) => {
 }
 
 const saveProduct = async () => {
-  if (!newProduct.value.name || !newProduct.value.groupId) return
+  if (!String(newProduct.value.name || '').trim()) {
+    uiStore.showToast('Vui lòng nhập Tên sản phẩm.', 'warning')
+    return
+  }
+  if (!newProduct.value.groupId) {
+    uiStore.showToast('Vui lòng chọn Nhóm sản phẩm.', 'warning')
+    return
+  }
   
   const formData = new FormData()
   formData.append('product_category_id', newProduct.value.groupId)

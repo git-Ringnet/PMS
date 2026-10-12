@@ -975,6 +975,9 @@ const handleSave = () => {
                   <!-- Custom Tree-select Trigger -->
                   <div 
                     @click="isCategoryDropdownOpen = !isCategoryDropdownOpen"
+                    role="combobox"
+                    aria-required="true"
+                    :aria-expanded="isCategoryDropdownOpen"
                     class="flex-1 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold bg-white cursor-pointer flex justify-between items-center h-[32px] select-none"
                   >
                     <span class="truncate" :class="productCategoryId ? 'text-slate-800 font-bold' : 'text-slate-400'">
@@ -1078,6 +1081,7 @@ const handleSave = () => {
                 <input 
                   type="text" 
                   v-model="name" 
+                  aria-required="true"
                   class="w-full border border-amber-200/60 rounded-lg px-2.5 py-1 text-xs font-semibold focus:outline-none bg-amber-50/30 hover:bg-amber-50/40 focus:bg-amber-50/60 font-bold h-[32px]"
                   placeholder="Nhập tên món ăn"
                 />
@@ -1612,26 +1616,26 @@ const handleSave = () => {
               <table class="w-full border-collapse bg-white">
                 <thead>
                   <tr class="bg-slate-50 text-slate-500 font-bold border-b border-slate-200 text-left text-xs">
-                    <th class="p-3 w-24">Mã</th>
-                    <th class="p-3 min-w-[200px]">Tên</th>
-                    <th class="p-3 w-24 text-center">Số lượng</th>
-                    <th class="p-3 w-28 text-right">Giá gốc</th>
-                    <th class="p-3 w-28 text-right">Đơn giá</th>
-                    <th class="p-3 w-28 text-right">Phí phục vụ</th>
-                    <th class="p-3 w-28 text-right">Thuế đặc biệt</th>
-                    <th class="p-3 w-28 text-right">VAT</th>
-                    <th class="p-3 w-16 text-center">Xóa</th>
+                    <th class="p-3 w-24 text-center align-middle border-r border-slate-200 border">Mã</th>
+                    <th class="p-3 min-w-[200px] text-center align-middle border-r border-slate-200 border">Tên</th>
+                    <th class="p-3 w-24 text-center align-middle border-r border-slate-200 border">Số Lượng</th>
+                    <th class="p-3 w-28 text-center align-middle border-r border-slate-200 border">Giá Gốc</th>
+                    <th class="p-3 w-28 text-center align-middle border-r border-slate-200 border">Đơn Giá</th>
+                    <th class="p-3 w-28 text-center align-middle border-r border-slate-200 border">Phí Phục Vụ</th>
+                    <th class="p-3 w-28 text-center align-middle border-r border-slate-200 border">Thuế Đặc Biệt</th>
+                    <th class="p-3 w-28 text-center align-middle border-r border-slate-200 border">VAT</th>
+                    <th class="p-3 w-16 text-center align-middle border-r border-slate-200 border">Xóa</th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100 text-xs">
                   <tr v-for="(item, idx) in comboItems" :key="idx" class="hover:bg-slate-50/50">
-                    <td class="p-3 font-semibold text-slate-700">
+                    <td class="p-3 font-semibold text-slate-700 border-slate-200">
                       {{ item.childProduct?.product_code || '-' }}
                     </td>
-                    <td class="p-3 font-semibold text-slate-700">
+                    <td class="p-3 font-semibold text-slate-700 border-slate-200">
                       {{ item.childProduct?.name || 'Unknown' }}
                     </td>
-                    <td class="p-3 text-center">
+                    <td class="p-3 text-center border-slate-200">
                       <input 
                         type="number" 
                         v-model.number="item.quantity"
@@ -1639,29 +1643,29 @@ const handleSave = () => {
                         class="w-full border border-slate-200 rounded px-2 py-0.5 text-center font-bold"
                       />
                     </td>
-                    <td class="p-3 text-right">
+                    <td class="p-3 text-right border-slate-200">
                       {{ Number((item.childProduct?.original_amount || 0) * item.quantity).toLocaleString() }}
                     </td>
-                    <td class="p-3 text-right font-bold">
+                    <td class="p-3 text-right font-bold border-slate-200">
                       {{ Number((item.childProduct?.price || 0) * item.quantity).toLocaleString() }}
                     </td>
-                    <td class="p-3 text-right">
+                    <td class="p-3 text-right border-slate-200">
                       {{ Number((item.childProduct?.service_charge_amount || 0) * item.quantity).toLocaleString() }}
                     </td>
-                    <td class="p-3 text-right">
+                    <td class="p-3 text-right border-slate-200">
                       {{ Number((item.childProduct?.special_tax_amount || 0) * item.quantity).toLocaleString() }}
                     </td>
-                    <td class="p-3 text-right">
+                    <td class="p-3 text-right border-slate-200">
                       {{ Number((item.childProduct?.tax_amount || 0) * item.quantity).toLocaleString() }}
                     </td>
-                    <td class="p-3 text-center">
+                    <td class="p-3 text-center border-slate-200">
                       <button @click="removeComboRow(idx)" class="text-rose-500 hover:text-rose-600 transition">
                         <svg class="w-4 h-4 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
                       </button>
                     </td>
                   </tr>
                   <tr v-if="comboItems.length === 0">
-                    <td colspan="9" class="p-8 text-center text-slate-400 font-semibold italic">
+                    <td colspan="9" class="p-8 text-center text-slate-400 font-semibold italic border-slate-200">
                       Chưa có thực đơn nào trong Combo. Vui lòng nhấn "Thêm thực đơn".
                     </td>
                   </tr>

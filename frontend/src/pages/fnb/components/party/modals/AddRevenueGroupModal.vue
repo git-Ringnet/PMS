@@ -15,9 +15,14 @@ const form = ref({
   name: '',
   description: ''
 })
+const validationError = ref('')
 
 const handleSave = () => {
-  if (!form.value.name) return
+  if (!String(form.value.code || '').trim() || !String(form.value.name || '').trim()) {
+    validationError.value = 'Vui lòng nhập Mã nhóm và Tên nhóm.'
+    return
+  }
+  validationError.value = ''
   emit('save', { ...form.value })
   form.value = { code: '', name: '', description: '' }
 }
@@ -45,11 +50,12 @@ const handleClose = () => {
       <div class="p-6 space-y-4">
         <div>
           <label class="block text-sm font-semibold text-slate-700 mb-1.5">Mã nhóm <span class="text-red-500">*</span></label>
-          <input v-model="form.code" type="text" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all text-sm" placeholder="Nhập mã nhóm" />
+          <input v-model="form.code" required type="text" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all text-sm" placeholder="Nhập mã nhóm" />
         </div>
         <div>
           <label class="block text-sm font-semibold text-slate-700 mb-1.5">Tên nhóm <span class="text-red-500">*</span></label>
-          <input v-model="form.name" type="text" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all text-sm" placeholder="Nhập tên nhóm" />
+          <input v-model="form.name" required type="text" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all text-sm" placeholder="Nhập tên nhóm" />
+          <p v-if="validationError" class="text-xs text-red-600">{{ validationError }}</p>
         </div>
         <div>
           <label class="block text-sm font-semibold text-slate-700 mb-1.5">Mô tả</label>

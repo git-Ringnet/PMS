@@ -2,10 +2,14 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
+import { useAuthStore } from '@/stores/auth-store'
 import { fetchSystemDate } from '@/services/booking-service'
 import RoomIcon from '@/components/RoomIcon.vue'
+import SingleDatePicker from '@/components/SingleDatePicker.vue'
+import { getLockRoomState, setLockRoomState } from './lock-room-view-state.js'
 
 const uiStore = useUiStore()
+const authStore = useAuthStore()
 
 // ==================== DRAGGABLE MODAL POSITION ====================
 const modalPos = ref({ x: 0, y: 0 })
@@ -46,20 +50,23 @@ function stopDragModal() {
   document.removeEventListener('mouseup', stopDragModal)
 }
 
+// Khôi phục in-memory state từ module riêng biệt ngoài vòng đời component (Dòng 50)
+const initialLockState = getLockRoomState()
+
 // State variables
-const rooms = ref([])
-const hotelConfigs = ref([])
-const systemDate = ref('')
+const rooms = ref(initialLockState.rooms ? [...initialLockState.rooms] : [])
+const hotelConfigs = ref(initialLockState.hotelConfigs ? [...initialLockState.hotelConfigs] : [])
+const systemDate = ref(authStore.systemDate || localStorage.getItem('pms_system_date') || '')
 const loading = ref(false)
-const selectedRowKeys = ref([]) // Binds to lock_id (if locked) or room_number (if available)
+const selectedRowKeys = ref(initialLockState.selectedRowKeys ? [...initialLockState.selectedRowKeys] : []) // Binds to lock_id (if locked) or room_number (if available)
 
 // Filters
-const searchQuery = ref('')
-const statusFilter = ref('Tất cả trạng thái')
-const roomTypeFilter = ref('Tất cả loại phòng')
+const searchQuery = ref(initialLockState.searchQuery || '')
+const statusFilter = ref(initialLockState.statusFilter || 'Tất cả trạng thái')
+const roomTypeFilter = ref(initialLockState.roomTypeFilter || 'Tất cả loại phòng')
 
 // Accordion collapsed state per floor
-const collapsedFloors = ref({})
+const collapsedFloors = ref({ ...initialLockState.collapsedFloors })
 
 const isFloorCollapsed = (floor) => {
   return !!collapsedFloors.value[floor]
@@ -70,7 +77,7 @@ const toggleFloor = (floor) => {
 }
 
 // Pagination (mocked to 1 page)
-const currentPage = ref(1)
+const currentPage = ref(initialLockState.currentPage || 1)
 const perPage = ref(15)
 
 // Dropdown row menu tracking
@@ -114,6 +121,8 @@ let bc = null
 
 const getTodayString = () => {
   if (systemDate.value) return systemDate.value
+  const cached = authStore.systemDate || localStorage.getItem('pms_system_date')
+  if (cached) return cached
   const d = new Date()
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Asia/Ho_Chi_Minh',
@@ -136,36 +145,19 @@ const isEditingActiveLock = computed(() => {
   return startDateStr <= sysDate
 })
 
-const startDateInputRef = ref(null)
-const endDateInputRef = ref(null)
 
-const openStartDatePicker = () => {
-  if (isEditingActiveLock.value) return
-  if (startDateInputRef.value) {
-    if (typeof startDateInputRef.value.showPicker === 'function') {
-      try {
-        startDateInputRef.value.showPicker()
-      } catch (e) {
-        startDateInputRef.value.focus()
-      }
-    } else {
-      startDateInputRef.value.focus()
-    }
-  }
+
+function stepMaintenancePercent(delta) {
+  const current = parseInt(bulkForm.value.maintenance_percent, 10) || 0
+  const next = Math.max(0, Math.min(100, current + delta))
+  bulkForm.value.maintenance_percent = next
 }
 
-const openEndDatePicker = () => {
-  if (endDateInputRef.value) {
-    if (typeof endDateInputRef.value.showPicker === 'function') {
-      try {
-        endDateInputRef.value.showPicker()
-      } catch (e) {
-        endDateInputRef.value.focus()
-      }
-    } else {
-      endDateInputRef.value.focus()
-    }
-  }
+function stepBatchMaintenancePercent(lockId, delta) {
+  if (!editedLocks.value[lockId]) return
+  const current = parseInt(editedLocks.value[lockId].maintenance_percent, 10) || 0
+  const next = Math.max(0, Math.min(100, current + delta))
+  editedLocks.value[lockId].maintenance_percent = next
 }
 
 watch(() => bulkForm.value.start_date, (newVal) => {
@@ -174,41 +166,67 @@ watch(() => bulkForm.value.start_date, (newVal) => {
   }
 })
 
+const handleGlobalKeydown = (e) => {
+  if (e.key === 'Escape' || e.key === 'Esc') {
+    if (isBulkModalOpen.value) {
+      isBulkModalOpen.value = false
+    } else if (activeHistoryRoom.value) {
+      activeHistoryRoom.value = null
+    }
+  }
+}
+
 onMounted(async () => {
-  fetchRooms()
-  fetchHotelConfigs()
+  window.addEventListener('keydown', handleGlobalKeydown)
+  
+  // Chỉ tải từ server khi chưa có cache trong RAM (lần đầu vào hoặc F5); nếu đã có thì giữ nguyên dữ liệu, không load lại (Dòng 50)
+  const currentState = getLockRoomState()
+  if (!currentState.rooms || currentState.rooms.length === 0) {
+    fetchRooms()
+  }
+  if (!currentState.hotelConfigs || currentState.hotelConfigs.length === 0) {
+    fetchHotelConfigs()
+  }
+
   try {
     const sysRes = await fetchSystemDate()
     if (sysRes.data && sysRes.data.success && sysRes.data.data?.system_date) {
       systemDate.value = sysRes.data.data.system_date
+      authStore.setSystemDate(sysRes.data.data.system_date)
     }
   } catch (e) {
     console.error('Lỗi khi tải ngày hệ thống:', e)
   }
   document.addEventListener('click', closeAllPopovers)
-  window.addEventListener('focus', handleTabFocus)
   
   if (typeof BroadcastChannel !== 'undefined') {
     bc = new BroadcastChannel('pms-room-updates')
     bc.onmessage = (event) => {
       if (event.data === 'rooms-updated') {
-        fetchRooms()
+        fetchRooms(true)
       }
     }
   }
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleGlobalKeydown)
   document.removeEventListener('click', closeAllPopovers)
-  window.removeEventListener('focus', handleTabFocus)
   if (bc) {
     bc.close()
   }
+  // Ghi nhớ trạng thái bộ lọc và lựa chọn vào module cache ngoài component trước khi unmount
+  setLockRoomState({
+    rooms: rooms.value,
+    hotelConfigs: hotelConfigs.value,
+    searchQuery: searchQuery.value,
+    statusFilter: statusFilter.value,
+    roomTypeFilter: roomTypeFilter.value,
+    collapsedFloors: { ...collapsedFloors.value },
+    selectedRowKeys: [...selectedRowKeys.value],
+    currentPage: currentPage.value
+  })
 })
-
-const handleTabFocus = () => {
-  fetchRooms()
-}
 
 const closeAllPopovers = (e) => {
   if (!e.target.closest('.row-menu-container')) {
@@ -220,16 +238,20 @@ const closeAllPopovers = (e) => {
 }
 
 // Fetch all rooms from API
-const fetchRooms = async () => {
-  loading.value = true
+const fetchRooms = async (silent = false) => {
+  if (!silent && (!rooms.value || rooms.value.length === 0)) {
+    loading.value = true
+  }
   try {
     const res = await http.get('/rooms')
     if (res.data && res.data.success) {
-      rooms.value = (res.data.data || []).filter(r => !r.is_internal)
+      const data = (res.data.data || []).filter(r => !r.is_internal)
+      rooms.value = data
+      setLockRoomState({ rooms: data })
     }
   } catch (err) {
     console.error('Lỗi khi tải danh sách phòng:', err)
-    uiStore.showToast('Không thể tải danh sách phòng', 'error')
+    if (!silent) uiStore.showToast('Không thể tải danh sách phòng', 'error')
   } finally {
     loading.value = false
   }
@@ -241,6 +263,7 @@ const fetchHotelConfigs = async () => {
     const res = await http.get('/hotel-configs')
     if (res.data && res.data.success) {
       hotelConfigs.value = res.data.data || []
+      setLockRoomState({ hotelConfigs: hotelConfigs.value })
       // Apply default end_time to form
       bulkForm.value.end_time = defaultLockEndTime.value
     }
@@ -262,6 +285,11 @@ const parseDateInLocalTimezone = (dateStr) => {
 // Format date to DD/MM/YYYY for display
 const formatDateDisplay = (dateStr) => {
   if (!dateStr) return ''
+  const clean = String(dateStr).split(' ')[0].split('T')[0]
+  const parts = clean.split('-')
+  if (parts.length === 3 && parts[0].length === 4) {
+    return `${parts[2]}/${parts[1]}/${parts[0]}`
+  }
   const d = parseDateInLocalTimezone(dateStr)
   if (isNaN(d.getTime())) return dateStr
   try {
@@ -918,6 +946,17 @@ const toggleRowMenu = (rowKey, event) => {
               placeholder="Tìm kiếm số phòng..." 
               class="border-none bg-transparent w-full focus:outline-none text-xs font-semibold text-slate-700 placeholder:text-slate-400 placeholder:font-normal"
             />
+            <button
+              v-if="searchQuery"
+              type="button"
+              @click="searchQuery = ''"
+              class="text-slate-400 hover:text-slate-600 ml-1 shrink-0 bg-transparent border-none p-0 cursor-pointer flex items-center"
+              title="Xóa tìm kiếm"
+            >
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
 
           <!-- Status Dropdown -->
@@ -946,32 +985,34 @@ const toggleRowMenu = (rowKey, event) => {
           <button 
             v-if="!isBatchEditing"
             @click="startBatchEdit"
-            class="px-3.5 py-1.5 border border-sky-500 hover:bg-sky-50 text-sky-600 rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer h-[32px] text-xs shadow-3xs"
+            class="btn-pms-secondary h-8 px-3"
             title="Bật chế độ sửa trực tiếp danh sách phòng khóa"
           >
-            <svg class="w-3.5 h-3.5 text-sky-600" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+            <svg class="w-3.5 h-3.5 text-slate-600" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.83 20.013a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
             </svg>
-            Sửa
+            <span>Sửa</span>
           </button>
 
           <template v-else>
             <button 
               @click="cancelBatchEdit"
               :disabled="savingBatch"
-              class="px-3 py-1.5 border border-slate-300 hover:bg-slate-100 text-slate-600 rounded-lg font-bold flex items-center gap-1 transition-all cursor-pointer h-[32px] text-xs shadow-3xs disabled:opacity-50"
+              class="btn-pms-secondary h-8 px-3"
+              :class="{ 'opacity-50 cursor-not-allowed': savingBatch }"
             >
-              Hủy
+              <span>Hủy</span>
             </button>
             <button 
               @click="() => submitBatchSave(false)"
               :disabled="savingBatch"
-              class="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold flex items-center gap-1.5 transition-all cursor-pointer h-[32px] text-xs shadow-2xs disabled:opacity-50"
+              class="btn-pms-primary h-8 px-3"
+              :class="{ 'opacity-50 cursor-not-allowed': savingBatch }"
             >
-              <svg class="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
               </svg>
-              {{ savingBatch ? 'Đang lưu...' : 'Lưu' }}
+              <span>{{ savingBatch ? 'Đang lưu...' : 'Lưu' }}</span>
             </button>
           </template>
 
@@ -979,7 +1020,7 @@ const toggleRowMenu = (rowKey, event) => {
           <button 
             :disabled="isBatchEditing"
             @click="submitBulkUnlock"
-            class="px-3.5 py-1.5 border border-emerald-500 hover:bg-emerald-50 text-emerald-600 rounded-md font-semibold flex items-center gap-1.5 transition-all cursor-pointer h-[32px] text-xs shadow-3xs disabled:opacity-40 disabled:cursor-not-allowed"
+            class="px-3 h-8 border border-emerald-500 hover:bg-emerald-50 text-emerald-600 rounded-lg font-semibold flex items-center gap-1.5 transition-all cursor-pointer text-xs shadow-3xs disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <RoomIcon name="unlock-outline" class="w-3.5 h-3.5 text-emerald-600" />
             <span>Mở khóa</span>
@@ -989,7 +1030,7 @@ const toggleRowMenu = (rowKey, event) => {
           <button 
             :disabled="isBatchEditing"
             @click="openBulkLockModal('OOS')"
-            class="px-3.5 py-1.5 bg-[#f97316] hover:bg-[#ea580c] text-white border-none rounded-md font-semibold flex items-center gap-1.5 transition-all cursor-pointer h-[32px] text-xs shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
+            class="px-3 h-8 bg-[#f97316] hover:bg-[#ea580c] text-white border-none rounded-lg font-semibold flex items-center gap-1.5 transition-all cursor-pointer text-xs shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <RoomIcon name="oos" class="w-3.5 h-3.5 text-white" />
             <span>Khóa phòng OOS</span>
@@ -999,7 +1040,7 @@ const toggleRowMenu = (rowKey, event) => {
           <button 
             :disabled="isBatchEditing"
             @click="openBulkLockModal('OOO')"
-            class="px-3.5 py-1.5 bg-[#ef4444] hover:bg-[#dc2626] text-white border-none rounded-md font-semibold flex items-center gap-1.5 transition-all cursor-pointer h-[32px] text-xs shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
+            class="px-3 h-8 bg-[#ef4444] hover:bg-[#dc2626] text-white border-none rounded-lg font-semibold flex items-center gap-1.5 transition-all cursor-pointer text-xs shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <RoomIcon name="ooo-outline" class="w-3.5 h-3.5 text-white" />
             <span>Khóa phòng OOO</span>
@@ -1011,8 +1052,8 @@ const toggleRowMenu = (rowKey, event) => {
       <div class="flex-1 overflow-x-auto overflow-y-auto min-h-[200px]">
         <table class="w-full text-left border-collapse text-xs">
           <thead>
-            <tr class="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold h-10 whitespace-nowrap sticky top-0 z-10 uppercase text-xs">
-              <th class="p-2.5 border-r border-slate-200 text-center w-[45px]">
+            <tr class="bg-slate-50 border-b border-slate-200 text-[#000000D9] font-semibold h-9 whitespace-nowrap sticky top-0 z-10 text-xs">
+              <th class="p-2.5 border-r border-slate-200 text-center w-[45px] align-middle border">
                 <input 
                   type="checkbox" 
                   @change="toggleSelectAll" 
@@ -1020,24 +1061,24 @@ const toggleRowMenu = (rowKey, event) => {
                   class="cursor-pointer w-4 h-4" 
                 />
               </th>
-              <th class="p-2.5 border-r border-slate-200 w-[80px] text-center">Phòng</th>
-              <th class="p-2.5 border-r border-slate-200">Loại phòng</th>
-              <th class="p-2.5 border-r border-slate-200 text-center w-[130px]">Trạng thái phòng</th>
-              <th class="p-2.5 border-r border-slate-200 text-center w-[110px]">Ngày bắt đầu</th>
-              <th class="p-2.5 border-r border-slate-200 text-center w-[110px]">Ngày mở khóa</th>
-              <th class="p-2.5 border-r border-slate-200 min-w-[180px]">Lý do/Mô tả</th>
-              <th class="p-2.5 border-r border-slate-200 w-[110px]">Người dùng</th>
-              <th class="p-2.5 border-r border-slate-200 text-center w-[85px]">Bảo trì (%)</th>
-              <th class="p-2.5 border-r border-slate-200 text-center w-[125px]">Trạng thái bảo trì</th>
-              <th class="p-2.5 text-center w-[50px]"></th>
+              <th class="p-2.5 border-r border-slate-200 w-[80px] text-center align-middle border">Phòng</th>
+              <th class="p-2.5 border-r border-slate-200 text-center align-middle border">Loại Phòng</th>
+              <th class="p-2.5 border-r border-slate-200 text-center w-[130px] align-middle border">Trạng Thái Phòng</th>
+              <th class="p-2.5 border-r border-slate-200 text-center w-[125px] align-middle border">Ngày Bắt Đầu</th>
+              <th class="p-2.5 border-r border-slate-200 text-center w-[125px] align-middle border">Ngày Mở Khóa</th>
+              <th class="p-2.5 border-r border-slate-200 min-w-[180px] text-center align-middle border">Lý Do/Mô Tả</th>
+              <th class="p-2.5 border-r border-slate-200 w-[110px] text-center align-middle border">Người Dùng</th>
+              <th class="p-2.5 border-r border-slate-200 text-center w-[85px] align-middle border">Bảo Trì (%)</th>
+              <th class="p-2.5 border-r border-slate-200 text-center w-[125px] align-middle border">Trạng Thái Bảo Trì</th>
+              <th class="p-2.5 text-center w-[50px] align-middle border-r border-slate-200 border"></th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="loading" class="h-24">
-              <td colspan="11" class="text-center text-slate-500 font-semibold text-xs">Đang tải danh sách phòng...</td>
+              <td colspan="11" class="text-center text-slate-500 font-semibold text-xs border-slate-200">Đang tải danh sách phòng...</td>
             </tr>
             <tr v-else-if="sortedFloors.length === 0" class="h-24">
-              <td colspan="11" class="text-center text-slate-400 italic text-xs">Không tìm thấy phòng nào phù hợp</td>
+              <td colspan="11" class="text-center text-slate-400 italic text-xs border-slate-200">Không tìm thấy phòng nào phù hợp</td>
             </tr>
             
             <template v-else v-for="floor in sortedFloors" :key="floor">
@@ -1046,7 +1087,7 @@ const toggleRowMenu = (rowKey, event) => {
                 @click="toggleFloor(floor)"
                 class="bg-slate-50 border-b border-slate-200 font-extrabold h-9 cursor-pointer hover:bg-slate-100 transition-colors"
               >
-                <td colspan="11" class="p-2.5 pl-4 text-slate-700 bg-slate-50/80">
+                <td colspan="11" class="p-2.5 pl-4 text-slate-700 bg-slate-50/80 border-slate-200">
                   <div class="flex items-center gap-2 text-xs uppercase tracking-wider font-extrabold">
                     <svg 
                       class="w-3.5 h-3.5 text-slate-400 transform transition-transform animate-duration-150" 
@@ -1071,7 +1112,7 @@ const toggleRowMenu = (rowKey, event) => {
                 }"
               >
                 <!-- Checkbox -->
-                <td class="p-2.5 border-r border-slate-200 text-center">
+                <td class="p-2.5 border-slate-200 text-center">
                   <input 
                     type="checkbox" 
                     :value="room.currentLock ? room.currentLock.lock_id : room.room_number" 
@@ -1081,13 +1122,13 @@ const toggleRowMenu = (rowKey, event) => {
                 </td>
 
                 <!-- Room Number -->
-                <td class="p-2.5 border-r border-slate-200 font-extrabold text-slate-800 text-center">{{ room.room_number }}</td>
+                <td class="p-2.5 border-slate-200 font-extrabold text-slate-800 text-center">{{ room.room_number }}</td>
 
                 <!-- Room Class Name -->
-                <td class="p-2.5 border-r border-slate-200 text-slate-655 font-medium">{{ room.room_type_name || '-' }}</td>
+                <td class="p-2.5 border-slate-200 text-slate-655 font-medium">{{ room.room_type_name || '-' }}</td>
 
                 <!-- Room Status dot badge -->
-                <td class="p-2.5 border-r border-slate-200 text-center">
+                <td class="p-2.5 border-slate-200 text-center">
                   <span 
                     v-if="room.lock_type?.toUpperCase() === 'OOO'"
                     class="px-2.5 py-1 rounded-full font-bold text-xs inline-flex items-center gap-1.5 shadow-3xs"
@@ -1104,25 +1145,23 @@ const toggleRowMenu = (rowKey, event) => {
                     <span class="w-1.5 h-1.5 rounded-full" :class="room.currentLock?.is_future ? 'bg-orange-400' : 'bg-orange-500'"></span>
                     OOS
                   </span>
-                  <span 
-                    v-else
-                    class="px-2.5 py-1 rounded-full font-bold text-xs bg-green-50 text-green-700 border border-green-200 inline-flex items-center gap-1.5 shadow-3xs"
-                  >
-                    <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span> Sẵn sàng
-                  </span>
                 </td>
 
                 <!-- Start Date -->
-                <td class="p-2 border-r border-slate-200 text-center font-normal text-slate-500">
+                <td class="p-2 border-slate-200 text-center font-normal text-slate-500">
                   <template v-if="isBatchEditing && room.currentLock && editedLocks[room.currentLock.lock_id]">
-                    <input 
-                      type="date" 
-                      v-model="editedLocks[room.currentLock.lock_id].start_date" 
-                      :disabled="isLockStartDateDisabled(room.currentLock)"
-                      :min="isLockStartDateDisabled(room.currentLock) ? undefined : (systemDate || getTodayString())"
-                      :title="isLockStartDateDisabled(room.currentLock) ? 'Ngày bắt đầu <= ngày hệ thống nên không được sửa' : ''"
-                      class="border border-slate-300 rounded px-1.5 py-0.5 text-xs font-semibold text-slate-700 bg-white w-full max-w-[125px] disabled:bg-slate-100 disabled:opacity-60 disabled:cursor-not-allowed focus:outline-sky-400"
-                    />
+                    <div class="max-w-[130px] mx-auto">
+                      <SingleDatePicker 
+                        v-model="editedLocks[room.currentLock.lock_id].start_date" 
+                        :disabled="isLockStartDateDisabled(room.currentLock)"
+                        :min-date="isLockStartDateDisabled(room.currentLock) ? undefined : (systemDate || getTodayString())"
+                        :title="isLockStartDateDisabled(room.currentLock) ? 'Ngày bắt đầu <= ngày hệ thống nên không được sửa' : ''"
+                        placeholder="dd/mm/yyyy"
+                        four-digit-year
+                        input-class="!h-7 !px-1.5"
+                        text-input-class="!font-normal text-center"
+                      />
+                    </div>
                   </template>
                   <template v-else>
                     {{ formatDateDisplay(room.lock_start_date) || '-' }}
@@ -1130,14 +1169,18 @@ const toggleRowMenu = (rowKey, event) => {
                 </td>
 
                 <!-- End Date -->
-                <td class="p-2 border-r border-slate-200 text-center font-normal text-slate-500">
+                <td class="p-2 border-slate-200 text-center font-normal text-slate-500">
                   <template v-if="isBatchEditing && room.currentLock && editedLocks[room.currentLock.lock_id]">
-                    <input 
-                      type="date" 
-                      v-model="editedLocks[room.currentLock.lock_id].end_date" 
-                      :min="isLockStartDateDisabled(room.currentLock) ? (systemDate || getTodayString()) : (editedLocks[room.currentLock.lock_id].start_date || systemDate || getTodayString())"
-                      class="border border-slate-300 rounded px-1.5 py-0.5 text-xs font-semibold text-slate-700 bg-white w-full max-w-[125px] focus:outline-sky-400"
-                    />
+                    <div class="max-w-[130px] mx-auto">
+                      <SingleDatePicker 
+                        v-model="editedLocks[room.currentLock.lock_id].end_date" 
+                        :min-date="isLockStartDateDisabled(room.currentLock) ? (systemDate || getTodayString()) : (editedLocks[room.currentLock.lock_id].start_date || systemDate || getTodayString())"
+                        placeholder="dd/mm/yyyy"
+                        four-digit-year
+                        input-class="!h-7 !px-1.5"
+                        text-input-class="!font-normal text-center"
+                      />
+                    </div>
                   </template>
                   <template v-else>
                     {{ formatDateDisplay(room.lock_end_date) || '-' }}
@@ -1145,14 +1188,27 @@ const toggleRowMenu = (rowKey, event) => {
                 </td>
 
                 <!-- Lock Reason -->
-                <td class="p-2 border-r border-slate-200 font-normal text-slate-600 truncate max-w-[200px]" :title="room.lock_reason">
+                <td class="p-2 border-slate-200 font-normal text-slate-600 truncate max-w-[200px]" :title="room.lock_reason">
                   <template v-if="isBatchEditing && room.currentLock && editedLocks[room.currentLock.lock_id]">
-                    <input 
-                      type="text" 
-                      v-model="editedLocks[room.currentLock.lock_id].reason" 
-                      placeholder="Lý do/mô tả..."
-                      class="border border-slate-300 rounded px-2 py-0.5 text-xs font-normal text-slate-700 bg-white w-full focus:outline-sky-400"
-                    />
+                    <div class="relative flex items-center w-full">
+                      <input 
+                        type="text" 
+                        v-model="editedLocks[room.currentLock.lock_id].reason" 
+                        placeholder="Lý do/mô tả..."
+                        class="border border-slate-300 rounded pl-2 pr-6 py-0.5 text-xs font-normal text-slate-700 bg-white w-full focus:outline-sky-400"
+                      />
+                      <button
+                        v-if="editedLocks[room.currentLock.lock_id].reason"
+                        type="button"
+                        @click="editedLocks[room.currentLock.lock_id].reason = ''"
+                        class="absolute right-1 text-slate-400 hover:text-rose-500 p-0.5 rounded cursor-pointer border-none bg-transparent flex items-center justify-center transition-colors"
+                        title="Xóa lý do"
+                      >
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
                   </template>
                   <template v-else>
                     {{ room.lock_reason || '-' }}
@@ -1160,22 +1216,34 @@ const toggleRowMenu = (rowKey, event) => {
                 </td>
 
                 <!-- Username -->
-                <td class="p-2.5 border-r border-slate-200 font-normal text-slate-500">
+                <td class="p-2.5 border-slate-200 font-normal text-slate-500">
                   {{ room.lock_username || '-' }}
                 </td>
 
                 <!-- Maintenance Percent -->
-                <td class="p-2 border-r border-slate-200 text-center font-normal text-slate-500">
+                <td class="p-2 border-slate-200 text-center font-normal text-slate-500">
                   <template v-if="isBatchEditing && room.currentLock && editedLocks[room.currentLock.lock_id]">
-                    <div class="flex items-center justify-center gap-1">
+                    <div class="flex items-center justify-center gap-0.5 max-w-[95px] mx-auto">
+                      <button 
+                        type="button" 
+                        @click="stepBatchMaintenancePercent(room.currentLock.lock_id, -5)"
+                        class="w-5 h-6 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center border border-slate-200 cursor-pointer font-bold text-xs shrink-0 select-none"
+                        title="Giảm 5%"
+                      >-</button>
                       <input 
                         type="number" 
                         min="0" 
                         max="100" 
                         v-model.number="editedLocks[room.currentLock.lock_id].maintenance_percent" 
-                        class="border border-slate-300 rounded px-1 py-0.5 text-xs font-semibold text-slate-700 bg-white w-[50px] text-center focus:outline-sky-400"
+                        class="border border-slate-300 rounded px-1 py-0.5 text-xs font-semibold text-slate-700 bg-white w-[38px] text-center focus:outline-sky-400"
                       />
-                      <span class="text-[11px] text-slate-400 font-bold">%</span>
+                      <button 
+                        type="button" 
+                        @click="stepBatchMaintenancePercent(room.currentLock.lock_id, 5)"
+                        class="w-5 h-6 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center border border-slate-200 cursor-pointer font-bold text-xs shrink-0 select-none"
+                        title="Tăng 5%"
+                      >+</button>
+                      <span class="text-xs text-slate-400 font-semibold ml-0.5">%</span>
                     </div>
                   </template>
                   <template v-else>
@@ -1184,14 +1252,14 @@ const toggleRowMenu = (rowKey, event) => {
                 </td>
 
                 <!-- Maintenance status -->
-                <td class="p-2.5 border-r border-slate-200 text-center">
+                <td class="p-2.5 border-slate-200 text-center">
                   <span :class="getMaintenanceStatusClass(room)">
                     {{ getMaintenanceStatusLabel(room) }}
                   </span>
                 </td>
 
                 <!-- Row actions (⋮ menu) -->
-                <td class="p-2.5 text-center relative row-menu-container">
+                <td class="p-2.5 text-center relative row-menu-container border-slate-200">
                   <button 
                     @click.stop="toggleRowMenu(room.currentLock ? 'lock-' + room.currentLock.lock_id : 'room-' + room.id, $event)"
                     class="w-6.5 h-6.5 rounded hover:bg-slate-100 flex items-center justify-center border-none cursor-pointer text-slate-400 hover:text-slate-600 transition-colors mx-auto"
@@ -1327,7 +1395,7 @@ const toggleRowMenu = (rowKey, event) => {
         
         <template v-else>
           <!-- Title Section -->
-          <div class="text-[9px] text-slate-400 font-black tracking-wider uppercase mb-1">Dữ liệu gần đây</div>
+          <div class="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-1">Dữ liệu gần đây</div>
           
           <!-- Event Timeline list loop -->
           <div v-for="event in timelineEvents" :key="event.id" class="flex gap-3 relative">
@@ -1344,21 +1412,21 @@ const toggleRowMenu = (rowKey, event) => {
             <!-- Card item content block -->
             <div class="flex-1 pb-4">
               <!-- Log formatted time -->
-              <div class="text-[9px] text-slate-400 font-bold mb-1">{{ formatDateTime(event.timestamp) }}</div>
+              <div class="text-xs text-slate-400 font-medium mb-1">{{ formatDateTime(event.timestamp) }}</div>
               
               <!-- Card details body -->
               <div class="bg-slate-50 border border-slate-100 rounded-xl p-3 relative hover:shadow-xs transition-shadow">
-                <h5 class="text-xs font-black text-slate-800 mb-1">{{ getTimelineEventLabel(event) }}</h5>
+                <h5 class="text-xs font-semibold text-[#000000D9] mb-1">{{ getTimelineEventLabel(event) }}</h5>
                 
                 <!-- Details specific for lock -->
-                <div v-if="event.type === 'lock'" class="text-[10px] text-slate-500 font-semibold flex flex-col gap-0.5">
+                <div v-if="event.type === 'lock'" class="text-xs text-slate-600 font-normal flex flex-col gap-0.5">
                   <div><span class="text-slate-400 font-normal">Ngày bắt đầu:</span> {{ formatDateTime(event.start_date) }}</div>
                   <div><span class="text-slate-400 font-normal">Ngày mở khóa:</span> {{ formatDateTime(event.end_date) }}</div>
-                  <div class="mt-1 font-normal italic text-slate-600"><span class="text-slate-400 not-italic font-bold">Lý do:</span> {{ event.reason || '-' }}</div>
+                  <div class="mt-1 font-normal italic text-slate-600"><span class="text-slate-400 not-italic font-semibold">Lý do:</span> {{ event.reason || '-' }}</div>
                 </div>
 
                 <!-- Details specific for unlock -->
-                <div v-else-if="event.type === 'unlock'" class="text-[10px] text-slate-500 font-semibold flex flex-col gap-0.5">
+                <div v-else-if="event.type === 'unlock'" class="text-xs text-slate-600 font-normal flex flex-col gap-0.5">
                   <div><span class="text-slate-400 font-normal">Ngày bắt đầu:</span> {{ formatDateTime(event.start_date) }}</div>
                   <div><span class="text-slate-400 font-normal">Ngày mở khóa:</span> {{ formatDateTime(event.unlock_date) }}</div>
                   <div v-if="event.unlock_username" class="mt-0.5"><span class="text-slate-400 font-normal">Người mở khóa:</span> {{ event.unlock_username }}</div>
@@ -1366,22 +1434,22 @@ const toggleRowMenu = (rowKey, event) => {
 
                 <!-- Footer meta: user and badge status -->
                 <div class="flex items-center justify-between mt-2 pt-2 border-t border-slate-150/80">
-                  <div class="flex items-center gap-1 text-[9px] text-slate-400">
-                    <svg class="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <div class="flex items-center gap-1 text-xs text-slate-400">
+                    <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
                     </svg>
                     <span>{{ event.type === 'unlock' ? (event.unlock_username || 'Admin') : (event.username || 'Admin') }}</span>
                   </div>
                   <span 
                     v-if="event.type === 'lock'"
-                    class="px-1.5 py-0.5 rounded-sm text-[8px] font-black uppercase"
+                    class="px-2 py-0.5 rounded text-xs font-semibold uppercase"
                     :class="event.maintenance_percent === 100 ? 'bg-green-50 text-green-600 border border-green-200' : 'bg-sky-50 text-sky-600 border border-sky-200'"
                   >
                     {{ event.maintenance_percent === 100 ? 'Hoàn tất' : 'Đang xử lý' }}
                   </span>
                   <span 
                     v-else
-                    class="px-1.5 py-0.5 rounded-sm text-[8px] font-black uppercase bg-emerald-50 text-emerald-600 border border-emerald-200"
+                    class="px-2 py-0.5 rounded text-xs font-semibold uppercase bg-emerald-50 text-emerald-600 border border-emerald-200"
                   >
                     Hoàn tất
                   </span>
@@ -1402,20 +1470,22 @@ const toggleRowMenu = (rowKey, event) => {
       @click.self="isBulkModalOpen = false"
     >
       <div 
-        class="bg-white shadow-2xl border border-slate-200 rounded-2xl w-[620px] max-w-[95vw]"
+        class="bg-white shadow-2xl border border-slate-200 rounded-xl w-[620px] max-w-[95vw] overflow-hidden"
         :style="{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }"
       >
         <!-- Modal Header -->
         <div 
-          class="px-5 py-3.5 flex items-center justify-between text-white border-b border-slate-100 rounded-t-2xl bg-[#8dcbf4] cursor-move select-none"
+          class="px-5 py-3 flex items-center justify-between text-white rounded-t-xl cursor-move select-none"
+          :style="{ background: 'var(--pms-custom-theme, #006bdb)', color: 'var(--pms-custom-theme-text, #ffffff)' }"
           @mousedown="startDragModal"
         >
-          <h2 class="text-xs font-black uppercase tracking-wider m-0">
+          <h2 class="text-xs font-semibold uppercase tracking-wider m-0 text-white">
             {{ editingLockId ? 'Chỉnh sửa thông tin khóa' : 'Thêm khóa' }}
           </h2>
           <button 
             @click="isBulkModalOpen = false" 
-            class="text-white hover:text-slate-100 bg-transparent border-none cursor-pointer text-sm font-black transition-colors"
+            class="text-white hover:text-slate-100 bg-transparent border-none cursor-pointer text-sm font-semibold transition-colors"
+            title="Đóng (Esc)"
           >
             ✕
           </button>
@@ -1423,95 +1493,62 @@ const toggleRowMenu = (rowKey, event) => {
 
         <!-- Modal Body Form -->
         <div 
-          class="p-5 text-slate-700 font-bold grid grid-cols-1 md:grid-cols-[7fr_5fr] gap-5"
+          class="p-5 text-[#000000D9] grid grid-cols-1 md:grid-cols-[7fr_5fr] gap-5"
         >
           <!-- Left fields col -->
           <div class="flex flex-col gap-4">
             <!-- Start Date -->
             <div class="flex flex-col gap-1">
-              <span class="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Bắt đầu</span>
-              <div 
-                class="flex items-center justify-between gap-2 border border-slate-200 rounded-lg px-2.5 py-1.5 bg-slate-50/50 focus-within:border-sky-400 focus-within:bg-white transition-colors h-[32px]"
-              >
-                <input 
-                  ref="startDateInputRef"
-                  type="date" 
-                  v-model="bulkForm.start_date" 
-                  :min="isEditingActiveLock ? undefined : (systemDate || getTodayString())"
-                  :disabled="isEditingActiveLock"
-                  :title="isEditingActiveLock ? 'Ngày bắt đầu <= ngày hệ thống nên không được sửa' : ''"
-                  class="border-none outline-none font-bold text-slate-700 text-xs bg-transparent w-full disabled:opacity-60 disabled:cursor-not-allowed" 
-                />
-                <button
-                  type="button"
-                  :disabled="isEditingActiveLock"
-                  @click="openStartDatePicker"
-                  class="text-slate-400 hover:text-slate-600 cursor-pointer shrink-0 disabled:opacity-40 disabled:cursor-not-allowed bg-transparent border-none p-0 flex items-center"
-                  title="Mở lịch"
-                >
-                  <svg 
-                    class="w-4 h-4" 
-                    fill="none" 
-                    stroke="currentColor" 
-                    viewBox="0 0 24 24" 
-                    stroke-width="2"
-                  >
-                    <rect x="3" y="4" width="18" height="17" rx="2"/>
-                    <path d="M16 2v4M8 2v4M3 10h18"/>
-                  </svg>
-                </button>
-              </div>
+              <span class="text-xs font-semibold text-[#000000D9]">Bắt đầu</span>
+              <SingleDatePicker 
+                v-model="bulkForm.start_date" 
+                :disabled="isEditingActiveLock"
+                :min-date="isEditingActiveLock ? undefined : (systemDate || getTodayString())"
+                :title="isEditingActiveLock ? 'Ngày bắt đầu <= ngày hệ thống nên không được sửa' : ''"
+                placeholder="dd/mm/yyyy"
+                four-digit-year
+                input-class="!h-8"
+                text-input-class="!font-normal"
+              />
             </div>
 
             <!-- End Date -->
             <div class="flex flex-col gap-1">
-              <span class="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Kết thúc</span>
-              <div 
-                class="flex items-center justify-between gap-2 border border-slate-200 rounded-lg px-2.5 py-1.5 bg-slate-50/50 focus-within:border-sky-400 focus-within:bg-white transition-colors h-[32px]"
-              >
-                <input 
-                  ref="endDateInputRef"
-                  type="date" 
-                  v-model="bulkForm.end_date" 
-                  :min="isEditingActiveLock ? (systemDate || getTodayString()) : (bulkForm.start_date || systemDate || getTodayString())"
-                  class="border-none outline-none font-bold text-slate-700 text-xs bg-transparent w-full" 
-                />
-                <button
-                  type="button"
-                  @click="openEndDatePicker"
-                  class="text-slate-400 hover:text-slate-600 cursor-pointer shrink-0 bg-transparent border-none p-0 flex items-center"
-                  title="Mở lịch"
-                >
-                  <svg 
-                    class="w-4 h-4" 
-                    fill="none" 
-                    stroke="currentColor" 
-                    viewBox="0 0 24 24" 
-                    stroke-width="2"
-                  >
-                    <rect x="3" y="4" width="18" height="17" rx="2"/>
-                    <path d="M16 2v4M8 2v4M3 10h18"/>
-                  </svg>
-                </button>
-              </div>
+              <span class="text-xs font-semibold text-[#000000D9]">Kết thúc</span>
+              <SingleDatePicker 
+                v-model="bulkForm.end_date" 
+                :min-date="isEditingActiveLock ? (systemDate || getTodayString()) : (bulkForm.start_date || systemDate || getTodayString())"
+                placeholder="dd/mm/yyyy"
+                four-digit-year
+                input-class="!h-8"
+                text-input-class="!font-normal"
+              />
             </div>
 
             <!-- Room selection selector dropdown (Only visible when not editing single lock) -->
             <div class="flex flex-col gap-1 modal-room-dropdown-container">
-              <span class="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Phòng</span>
+              <span class="text-xs font-semibold text-[#000000D9]">Phòng</span>
               <div class="relative w-full">
                 <button 
                   @click.stop="editingLockId ? null : (isRoomDropdownOpen = !isRoomDropdownOpen)" 
-                  class="w-full flex items-center justify-between border border-slate-200 rounded-lg px-3 py-2 bg-slate-50/50 text-xs font-black text-slate-700 transition-all"
-                  :class="editingLockId ? 'opacity-65 cursor-not-allowed' : 'hover:border-slate-300 cursor-pointer'"
+                  class="w-full flex items-center justify-between border border-slate-200 rounded-lg px-3 py-2 text-xs font-semibold text-[#000000D9] transition-all"
+                  :class="editingLockId ? 'bg-slate-100/70 opacity-65 cursor-not-allowed' : 'bg-white hover:border-slate-300 cursor-pointer'"
                 >
                   <span v-if="editingLockId">
                     Phòng: {{ modalSelectedRoomNumbers[0] }}
                   </span>
-                  <span v-else>Chọn: {{ modalSelectedRoomNumbers.length }} phòng</span>
+                  <span v-else-if="modalSelectedRoomNumbers.length === 0" class="text-[#A8B0BF] font-normal">
+                    Chọn phòng...
+                  </span>
+                  <span v-else-if="modalSelectedRoomNumbers.length === 1">
+                    Phòng: {{ modalSelectedRoomNumbers[0] }}
+                  </span>
+                  <span v-else class="truncate block max-w-[280px]" :title="modalSelectedRoomNumbers.join(', ')">
+                    Phòng: {{ modalSelectedRoomNumbers.join(', ') }}
+                  </span>
                   <svg 
                     v-if="!editingLockId"
-                    class="w-3.5 h-3.5 text-slate-400 transform transition-transform" 
+                    class="w-3.5 h-3.5 text-slate-400 transform transition-transform shrink-0 ml-1" 
                     :class="{'rotate-180': isRoomDropdownOpen}"
                     fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"
                   >
@@ -1532,9 +1569,20 @@ const toggleRowMenu = (rowKey, event) => {
                       type="text" 
                       v-model="roomSearchQuery" 
                       placeholder="Tìm số phòng..." 
-                      class="border-none bg-transparent w-full focus:outline-none text-[11px] font-semibold text-slate-700"
+                      class="border-none bg-transparent w-full focus:outline-none text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF]"
                     />
-                    <svg class="w-3 h-3 text-slate-400 ml-1" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                    <button
+                      v-if="roomSearchQuery"
+                      type="button"
+                      @click="roomSearchQuery = ''"
+                      class="text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer border-none bg-transparent flex items-center justify-center transition-colors mr-1"
+                      title="Xóa tìm kiếm"
+                    >
+                      <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                    <svg class="w-3 h-3 text-slate-400 ml-1 shrink-0" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
                   </div>
@@ -1548,7 +1596,7 @@ const toggleRowMenu = (rowKey, event) => {
                         @change="toggleSelectAllModalRooms" 
                         class="cursor-pointer"
                       />
-                      <span class="font-extrabold">Tất cả</span>
+                      <span class="font-semibold text-[#000000D9]">Tất cả</span>
                     </label>
                     <label 
                       v-for="r in modalFilteredRooms" 
@@ -1561,14 +1609,14 @@ const toggleRowMenu = (rowKey, event) => {
                         v-model="modalSelectedRoomNumbers" 
                         class="cursor-pointer"
                       />
-                      <span class="font-bold">{{ r.room_number }} - {{ r.room_type_name || '-' }}</span>
+                      <span class="font-normal text-[#000000D9]">{{ r.room_number }} - {{ r.room_type_name || '-' }}</span>
                     </label>
                   </div>
 
                   <!-- Close button inside dropdown -->
                   <button 
                     @click="isRoomDropdownOpen = false"
-                    class="w-full py-1.5 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded font-extrabold cursor-pointer border-none text-[11px] shadow-3xs transition-colors"
+                    class="w-full h-8 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-lg font-semibold cursor-pointer border-none text-xs shadow-3xs transition-colors flex items-center justify-center"
                   >
                     Xác nhận
                   </button>
@@ -1578,42 +1626,58 @@ const toggleRowMenu = (rowKey, event) => {
 
             <!-- Maintenance Progress percent -->
             <div class="flex flex-col gap-1">
-              <span class="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Tiến độ bảo trì</span>
-              <div class="flex items-center border border-slate-200 rounded-lg overflow-hidden bg-slate-50/50 focus-within:border-sky-400 focus-within:bg-white transition-colors h-[32px]">
+              <span class="text-xs font-semibold text-[#000000D9]">Tiến độ bảo trì</span>
+              <div class="flex items-center border border-slate-200 rounded-lg overflow-hidden bg-white focus-within:border-sky-400 transition-colors h-[32px]">
+                <button 
+                  type="button" 
+                  @click="stepMaintenancePercent(-5)"
+                  class="px-2.5 h-full bg-slate-50 hover:bg-slate-100 text-slate-600 border-r border-slate-200 cursor-pointer font-bold text-xs select-none"
+                  title="Giảm 5%"
+                >-</button>
                 <input 
                   type="number" 
                   min="0" 
                   max="100" 
-                  v-model="bulkForm.maintenance_percent" 
-                  class="border-none outline-none px-3 py-1.5 w-full text-xs font-bold text-slate-700 bg-transparent" 
+                  v-model.number="bulkForm.maintenance_percent" 
+                  class="border-none outline-none px-3 py-1.5 w-full text-xs font-normal text-[#000000D9] bg-transparent text-center" 
                 />
-                <span class="bg-slate-100 text-slate-500 font-black px-3.5 py-1.5 border-l border-slate-200 text-xs select-none">%</span>
+                <button 
+                  type="button" 
+                  @click="stepMaintenancePercent(5)"
+                  class="px-2.5 h-full bg-slate-50 hover:bg-slate-100 text-slate-600 border-l border-slate-200 cursor-pointer font-bold text-xs select-none"
+                  title="Tăng 5%"
+                >+</button>
+                <span class="bg-slate-100 text-slate-500 font-semibold px-3 py-1.5 border-l border-slate-200 text-xs select-none">%</span>
               </div>
             </div>
           </div>
 
           <!-- Right Reason note block -->
           <div class="flex flex-col gap-1">
-            <span class="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Ghi chú *</span>
-            <textarea 
-              v-model="bulkForm.reason" 
-              placeholder="Nhập ghi chú hoặc lý do bảo trì..."
-              class="w-full border border-slate-200 rounded-lg p-2.5 bg-slate-50/50 focus:bg-white focus:outline-sky-400 resize-none font-semibold text-xs leading-relaxed h-[138px]"
-            ></textarea>
+            <label class="text-xs font-semibold text-[#000000D9] block">Ghi chú <span class="text-red-500">*</span></label>
+            <div class="relative w-full">
+              <textarea 
+                v-model="bulkForm.reason" 
+                placeholder="Nhập ghi chú hoặc lý do bảo trì..."
+                class="w-full border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg p-2.5 pr-8 focus:outline-none focus:ring-1 focus:ring-amber-400 resize-none font-normal text-xs text-[#000000D9] leading-relaxed h-[138px]"
+              ></textarea>
+              <button
+                v-if="bulkForm.reason"
+                type="button"
+                @click="bulkForm.reason = ''"
+                class="absolute right-2 top-2 text-slate-400 hover:text-rose-500 p-0.5 rounded cursor-pointer border-none bg-transparent flex items-center justify-center transition-colors"
+                title="Xóa ghi chú"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
 
         <!-- Modal Footer -->
-        <div class="bg-slate-50 px-5 py-3 flex items-center justify-end gap-2 border-t border-slate-100 rounded-b-2xl">
-          <button 
-            @click="isBulkModalOpen = false" 
-            class="btn-pms-close"
-          >
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-            <span>Đóng</span>
-          </button>
+        <div class="bg-slate-50 px-5 py-3 flex items-center justify-end gap-2 border-t border-slate-100 rounded-b-xl">
           <button 
             @click="submitBulkLock"
             class="btn-pms-primary"

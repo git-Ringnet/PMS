@@ -1,5 +1,8 @@
 <script setup>
 import { ref } from 'vue'
+import { useUiStore } from '@/stores/ui-store'
+
+const uiStore = useUiStore()
 
 const props = defineProps({
   isOpen: {
@@ -19,7 +22,10 @@ const form = ref({
 })
 
 const handleSave = () => {
-  if (!form.value.name) return
+  if (!String(form.value.name || '').trim()) {
+    uiStore.showToast('Vui lòng nhập Tên công ty.', 'warning')
+    return
+  }
   emit('save', { ...form.value })
   form.value = { name: '', taxCode: '', phone: '', email: '', address: '' }
 }
@@ -45,7 +51,7 @@ const handleClose = () => {
       <div class="p-6 grid grid-cols-2 gap-4">
         <div class="col-span-2">
           <label class="block text-sm font-semibold text-slate-700 mb-1.5">Tên công ty <span class="text-red-500">*</span></label>
-          <input v-model="form.name" type="text" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all text-sm" placeholder="Nhập tên công ty" />
+          <input v-model="form.name" required type="text" class="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 transition-all text-sm" placeholder="Nhập tên công ty" />
         </div>
         <div>
           <label class="block text-sm font-semibold text-slate-700 mb-1.5">Mã số thuế</label>

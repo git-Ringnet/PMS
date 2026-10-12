@@ -82,7 +82,7 @@ watch(() => props.isOpen, (newVal) => {
 })
 
 const handleSave = () => {
-  if (!form.value.code || !form.value.name) {
+  if (!String(form.value.code || '').trim() || !String(form.value.name || '').trim()) {
     uiStore.alert('Vui lòng nhập Mã và Tên!')
     return
   }
@@ -107,11 +107,11 @@ const handleSave = () => {
         <div class="grid grid-cols-2 gap-4">
           <div class="space-y-1">
             <label class="font-semibold text-slate-600">Mã <span class="text-red-500">*</span></label>
-            <input type="text" v-model="form.code" :disabled="!!outlet" class="w-full px-3 py-1.5 border border-slate-300 rounded-md focus:outline-none focus:border-sky-500 disabled:bg-slate-100" />
+            <input type="text" v-model="form.code" required :disabled="!!outlet" class="w-full px-3 py-1.5 border border-slate-300 rounded-md focus:outline-none focus:border-sky-500 disabled:bg-slate-100" />
           </div>
           <div class="space-y-1">
             <label class="font-semibold text-slate-600">Tên <span class="text-red-500">*</span></label>
-            <input type="text" v-model="form.name" class="w-full px-3 py-1.5 border border-slate-300 rounded-md focus:outline-none focus:border-sky-500" />
+            <input type="text" v-model="form.name" required class="w-full px-3 py-1.5 border border-slate-300 rounded-md focus:outline-none focus:border-sky-500" />
           </div>
         </div>
 

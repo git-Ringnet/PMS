@@ -7,6 +7,7 @@ const props = defineProps({
   startDate: { type: String, default: '' },
   endDate: { type: String, default: '' },
   systemDate: { type: String, default: '' },
+  requiredHighlight: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['update:startDate', 'update:endDate', 'change'])
@@ -71,9 +72,9 @@ const presets = computed(() => {
 })
 
 const formatDate = (value) => {
-  if (!value) return '-- / -- / ----'
+  if (!value) return '--/--/----'
   const [year, month, day] = String(value).split('-')
-  return year && month && day ? `${day} / ${month} / ${year}` : value
+  return year && month && day ? `${day}/${month}/${year}` : value
 }
 
 const matchingPreset = () => presets.value.find(item => item.start === props.startDate && item.end === props.endDate)?.value || 'custom'
@@ -174,7 +175,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
 
 <template>
   <div ref="root" class="relative mt-1">
-    <button type="button" class="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-xs font-medium text-slate-700 hover:border-sky-300" @click="open = !open">
+    <button type="button" class="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-xs font-medium text-slate-700 hover:border-sky-300" :class="requiredHighlight ? 'input-required' : ''" @click="open = !open">
       <span class="truncate">{{ displayText }}</span>
       <CalendarDays class="h-4 w-4 shrink-0 cursor-pointer text-sky-400" title="Mở bộ chọn ngày" @click.stop="open = true" />
     </button>

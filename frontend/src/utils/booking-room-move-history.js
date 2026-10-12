@@ -59,7 +59,8 @@ export function calculateChargeableServiceTotals(services) {
   const totals = { roomCharge: 0, extraBed: 0, services: 0, total: 0 }
   for (const service of Array.isArray(services) ? services : []) {
     if (isMoveHistoryBillReference(service)) continue
-    const amount = Number(service.rate) * Number(service.quantity || 1)
+    const qty = service.quantity !== undefined && service.quantity !== null ? Number(service.quantity) : 1
+    const amount = Number(service.rate) * qty
     const code = String(service.service_code ?? service.ServiceId ?? '').trim().toUpperCase()
     if (['ROOM_CHARGE', 'RM', 'ER'].includes(code)) totals.roomCharge += amount
     else if (code === 'EB') totals.extraBed += amount

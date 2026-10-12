@@ -10,39 +10,40 @@
     >
       <!-- MODAL HEADER -->
       <div 
-        class="bg-[#243c5a] text-white flex justify-between items-center px-4 py-3 shrink-0 select-none cursor-move"
+        class="text-white flex justify-between items-center px-4 py-2.5 shrink-0 select-none cursor-move rounded-t-xl"
+        :style="{ background: topbarThemeBg, color: 'var(--pms-custom-theme-text, #ffffff)' }"
         @mousedown="startDragModal"
       >
-        <div class="flex items-center space-x-2 font-black text-xs uppercase tracking-wider">
-          <i class="fa-solid fa-bed text-sky-400"></i>
+        <div class="flex items-center space-x-2 font-semibold text-xs uppercase tracking-wider">
+          <i class="fa-solid fa-bed"></i>
           <span>Chi tiết thêm giường - PHÒNG {{ room?.roomNumber || room?.type || room?.shape || 'CHƯA GÁN' }}</span>
         </div>
-        <button class="hover:text-white bg-red-500/20 px-1.5 py-0.5 rounded-md cursor-pointer border-none bg-transparent" @click="close">
-          <i class="fa-solid fa-xmark text-red-400"></i>
+        <button class="hover:opacity-80 p-1 rounded cursor-pointer border-none bg-transparent text-white" @click="close" title="Đóng">
+          <i class="fa-solid fa-xmark text-sm"></i>
         </button>
       </div>
 
       <!-- MODAL BODY -->
       <div class="p-5 space-y-4 flex-1 overflow-y-auto text-xs font-semibold text-slate-700">
         <!-- TABLE GIÁ THÊM GIƯỜNG -->
-        <div class="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+        <div class="border border-slate-200 rounded-lg overflow-hidden shadow-2xs">
           <table class="w-full text-left text-xs border-collapse">
             <thead>
               <tr class="bg-slate-50/80 border-b border-slate-200 text-slate-600 font-extrabold h-10 text-center">
-                <th class="p-2.5 text-left pl-4 w-28">Ngày</th>
-                <th class="p-2.5 text-center w-28">Số Lượng</th>
-                <th class="p-2.5 text-center w-36">Thành Tiền</th>
-                <th class="p-2.5 text-right pr-4 w-32">Tổng Tiền</th>
-                <th class="p-2.5 text-center w-28">FIT/GIT</th>
+                <th class="p-2.5 text-center pl-4 w-28 align-middle border-r border-slate-200 border">Ngày</th>
+                <th class="p-2.5 text-center w-28 align-middle border-r border-slate-200 border">Số Lượng</th>
+                <th class="p-2.5 text-center w-36 align-middle border-r border-slate-200 border">Thành Tiền</th>
+                <th class="p-2.5 text-center pr-4 w-32 align-middle border-r border-slate-200 border">Tổng Tiền</th>
+                <th class="p-2.5 text-center w-28 align-middle border-r border-slate-200 border">FIT/GIT</th>
               </tr>
             </thead>
             <tbody>
               <!-- HÀNG TOTAL (TỔNG CHUNG) -->
               <tr class="bg-white font-bold border-b border-slate-200 h-12 text-slate-800">
-                <td class="p-2.5 text-left pl-4 font-bold text-sky-600">Total</td>
+                <td class="p-2.5 text-left pl-4 font-bold text-sky-600 border-slate-200">Total</td>
                 
                 <!-- SỐ LƯỢNG (VỚI MŨI TÊN TĂNG GIẢM LÊN XUỐNG) -->
-                <td class="p-2.5 text-center">
+                <td class="p-2.5 text-center border-slate-200">
                   <div class="relative inline-flex items-center justify-center">
                     <div 
                       v-if="isAllPastOrLocked" 
@@ -72,7 +73,7 @@
                 </td>
 
                 <!-- THÀNH TIỀN (VỚI MŨI TÊN TĂNG GIẢM LÊN XUỐNG) -->
-                <td class="p-2.5 text-center">
+                <td class="p-2.5 text-center border-slate-200">
                   <div class="relative inline-flex items-center justify-center w-full">
                     <div 
                       v-if="isAllPastOrLocked" 
@@ -100,12 +101,12 @@
                 </td>
 
                 <!-- TỔNG TIỀN -->
-                <td class="p-2.5 text-right font-extrabold text-slate-800 pr-4">
+                <td class="p-2.5 text-right font-extrabold text-slate-800 pr-4 border-slate-200">
                   {{ formatCurrencyInput(computedTotalSum) }}
                 </td>
 
                 <!-- FIT / GIT TOGGLE SWITCH -->
-                <td class="p-2.5 text-center">
+                <td class="p-2.5 text-center border-slate-200">
                   <div class="relative inline-flex items-center justify-center">
                     <div 
                       v-if="isAllPastOrLocked" 
@@ -138,7 +139,7 @@
                   :class="(night.isLocked || night.isPast) ? 'bg-slate-50/80 opacity-60' : 'bg-white'"
                 >
                   <!-- NGÀY -->
-                  <td class="p-2.5 text-left pl-4 font-semibold text-slate-700">
+                  <td class="p-2.5 text-left pl-4 font-semibold text-slate-700 border-slate-200">
                     <span>{{ night.displayDate }}</span>
                     <span v-if="night.isLocked && !night.isPast" class="ml-1.5 text-[9px] text-slate-600 bg-slate-100 border border-slate-300 px-1 py-0.2 rounded font-bold">
                       Đã chốt
@@ -149,7 +150,7 @@
                   </td>
 
                   <!-- SỐ LƯỢNG NGHỈ TỪNG ĐÊM -->
-                  <td class="p-2.5 text-center">
+                  <td class="p-2.5 text-center border-slate-200">
                     <div class="relative inline-flex items-center justify-center">
                       <div 
                         v-if="night.isLocked || night.isPast" 
@@ -179,7 +180,7 @@
                   </td>
 
                   <!-- THÀNH TIỀN TỪNG ĐÊM -->
-                  <td class="p-2.5 text-center">
+                  <td class="p-2.5 text-center border-slate-200">
                     <div class="relative inline-flex items-center justify-center w-full">
                       <div 
                         v-if="night.isLocked || night.isPast" 
@@ -207,12 +208,12 @@
                   </td>
 
                   <!-- TỔNG TIỀN TỪNG ĐÊM -->
-                  <td class="p-2.5 text-right font-bold pr-4" :class="(night.isLocked || night.isPast) ? 'text-slate-400' : 'text-slate-800'">
+                  <td class="p-2.5 text-right font-bold pr-4 border-slate-200" :class="(night.isLocked || night.isPast) ? 'text-slate-400' : 'text-slate-800'">
                     {{ formatCurrencyInput(night.total) }}
                   </td>
 
                   <!-- FIT/GIT TOGGLE SWITCH TỪNG ĐÊM -->
-                  <td class="p-2.5 text-center">
+                  <td class="p-2.5 text-center border-slate-200">
                     <div class="relative inline-flex items-center justify-center">
                       <div 
                         v-if="night.isLocked || night.isPast" 
@@ -236,7 +237,7 @@
                 </tr>
               </template>
               <tr v-else>
-                <td colspan="5" class="p-6 text-center text-slate-400 font-medium italic">
+                <td colspan="5" class="p-6 text-center text-slate-400 font-medium italic border-slate-200">
                   Không tìm thấy danh sách đêm lưu trú.
                 </td>
               </tr>
@@ -246,17 +247,19 @@
       </div>
 
       <!-- MODAL FOOTER -->
-      <div class="bg-slate-50 border-t border-slate-100 px-5 py-3 flex items-center justify-end space-x-2 shrink-0">
+      <div class="bg-slate-50 border-t border-slate-100 px-5 py-3 flex items-center justify-end space-x-2 shrink-0 rounded-b-xl">
         <button 
+          type="button"
           @click="close" 
-          class="bg-[#72c0e5] hover:bg-[#5bb2dc] text-white border-none rounded-lg font-bold text-xs px-4 py-2 cursor-pointer shadow-sm flex items-center space-x-1.5 transition"
+          class="btn-pms-close"
         >
           <i class="fa-solid fa-rotate-left"></i>
           <span>Quay lại</span>
         </button>
         <button 
+          type="button"
           @click="save" 
-          class="bg-[#72c0e5] hover:bg-[#5bb2dc] text-white border-none rounded-lg font-bold text-xs px-4 py-2 cursor-pointer shadow-sm flex items-center space-x-1.5 transition"
+          class="btn-pms-primary"
         >
           <i class="fa-solid fa-floppy-disk"></i>
           <span>Lưu</span>
@@ -272,7 +275,7 @@
         @click="constraintModal.show = false"
       >
         <div
-          class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-[420px] overflow-hidden border border-slate-200/90 dark:border-slate-800 animate-[zoom_0.25s_cubic-bezier(0.34,1.56,0.64,1)]"
+          class="bg-white dark:bg-slate-900 rounded-xl shadow-2xl w-full max-w-[420px] overflow-hidden border border-slate-200/90 dark:border-slate-800 animate-[zoom_0.25s_cubic-bezier(0.34,1.56,0.64,1)]"
           @click.stop
         >
           <div class="p-6 text-center">
@@ -313,6 +316,12 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
+import { useAuthStore } from '@/stores/auth-store'
+
+const authStore = useAuthStore()
+const topbarThemeBg = computed(() => {
+  return authStore.themeColor || 'var(--pms-custom-theme, #006bdb)'
+})
 
 const props = defineProps({
   show: Boolean,
@@ -401,6 +410,22 @@ const computedTotalSum = computed(() => {
   return dailyRates.value.reduce((sum, d) => sum + (Number(d.total) || 0), 0)
 })
 
+function cleanDate(d) {
+  if (!d) return ''
+  const s = String(d).trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+  if (s.includes('T') || s.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(s)) {
+    const dt = new Date(s)
+    if (!isNaN(dt.getTime())) {
+      const year = dt.getFullYear()
+      const month = String(dt.getMonth() + 1).padStart(2, '0')
+      const day = String(dt.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+  }
+  return s.substring(0, 10)
+}
+
 function formatDisplayDate(dateStr) {
   if (!dateStr) return ''
   const parts = dateStr.split('-')
@@ -427,15 +452,23 @@ function cleanCurrencyValue(val) {
 
 function buildStayDates(checkInStr, checkOutStr) {
   const dates = []
-  if (!checkInStr) return [new Date().toISOString().split('T')[0]]
+  const cIn = cleanDate(checkInStr)
+  const cOut = cleanDate(checkOutStr)
+  if (!cIn) return [new Date().toISOString().split('T')[0]]
 
-  let curr = new Date(checkInStr)
-  let end = checkOutStr ? new Date(checkOutStr) : new Date(curr.getTime() + 86400000)
+  const partsIn = cIn.split('-')
+  let curr = partsIn.length === 3 
+    ? new Date(Number(partsIn[0]), Number(partsIn[1]) - 1, Number(partsIn[2]))
+    : new Date(cIn)
+
+  const partsOut = cOut ? cOut.split('-') : []
+  let end = partsOut.length === 3
+    ? new Date(Number(partsOut[0]), Number(partsOut[1]) - 1, Number(partsOut[2]))
+    : (cOut ? new Date(cOut) : new Date(curr.getTime() + 86400000))
 
   if (isNaN(curr.getTime())) curr = new Date()
   if (isNaN(end.getTime()) || curr >= end) {
-    const dStr = checkInStr || new Date().toISOString().split('T')[0]
-    return [dStr]
+    return [cIn || new Date().toISOString().split('T')[0]]
   }
 
   while (curr < end) {
@@ -445,7 +478,7 @@ function buildStayDates(checkInStr, checkOutStr) {
     dates.push(`${yyyy}-${mm}-${dd}`)
     curr.setDate(curr.getDate() + 1)
   }
-  return dates.length ? dates : [checkInStr || new Date().toISOString().split('T')[0]]
+  return dates.length ? dates : [cIn || new Date().toISOString().split('T')[0]]
 }
 
 watch(() => props.show, (newVal) => {
@@ -476,8 +509,8 @@ watch(() => props.show, (newVal) => {
 
     dailyRates.value = stayDates.map(dStr => {
       const isPastDate = sysDateStr ? dStr < sysDateStr : false
-      const found = existingDaily.find(ed => ed.dateStr === dStr || ed.date === dStr)
-      const foundSvc = ebServices.find(s => s.service_date === dStr || s.dateStr === dStr)
+      const found = existingDaily.find(ed => cleanDate(ed.dateStr || ed.date) === dStr)
+      const foundSvc = ebServices.find(s => cleanDate(s.service_date || s.dateStr || s.date) === dStr)
       const isPosted = Boolean(foundSvc && Number(foundSvc.is_posted) === 1)
       const isLocked = isPastDate || isPosted
 

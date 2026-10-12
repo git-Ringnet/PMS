@@ -12,6 +12,7 @@ import { TEXT_THEME } from '@/utils/theme'
 import BookingDetailModal from '@/components/BookingDetailModal.vue'
 import RoomMoveModal from '@/components/RoomMoveModal.vue'
 import RoomIcon from '@/components/RoomIcon.vue'
+import SingleDatePicker from '@/components/SingleDatePicker.vue'
 import DepositModal from './components/DepositModal.vue'
 import AvailableRoomsPage from './AvailableRoomsPage.vue'
 import RoomPlanPage from './RoomPlanPage.vue'
@@ -53,7 +54,7 @@ const moduleContext = computed(() => {
 })
 const canChangeRoomStatus = ref(false)
 const canCancelCheckIn = ref(false)
-const systemDate = ref('')
+const systemDate = ref(authStore.systemDate || localStorage.getItem('pms_system_date') || '')
 const hotelSettings = ref({})
 const showRoomLockModal = ref(false)
 const roomLockForm = ref({ room: null, lockType: 'OOO', startDate: '', endDate: '', reason: '' })
@@ -271,7 +272,7 @@ function handleClickOutsideSettings(event) {
 
 // Top toggle state: isFuture (false = Hiện tại, true = Tương Lai)
 const isFuture = ref(false)
-const rawDate = ref(new Date().toISOString().split('T')[0])
+const rawDate = ref(authStore.systemDate || localStorage.getItem('pms_system_date') || new Date().toISOString().split('T')[0])
 
 // Bottom toggle state: isGridMode (true = Bảng, false = Lưới)
 const isGridMode = ref(true)
@@ -353,7 +354,7 @@ const selectedDate = computed(() => {
 
 watch(isFuture, (newVal) => {
   if (!newVal) {
-    rawDate.value = new Date().toISOString().split('T')[0]
+    rawDate.value = systemDate.value || authStore.systemDate || localStorage.getItem('pms_system_date') || new Date().toISOString().split('T')[0]
   }
 })
 
@@ -1746,12 +1747,31 @@ function openRoomShortcutScreen(room) {
 }
 
 function handleRoomMapShortcut(event) {
+  if (event.key === 'Escape') {
+    if (showRoomLockModal.value) {
+      showRoomLockModal.value = false
+      event.preventDefault()
+      return
+    }
+    if (showSettings.value) {
+      showSettings.value = false
+      event.preventDefault()
+      return
+    }
+    if (showStatsModal.value) {
+      showStatsModal.value = false
+      event.preventDefault()
+      return
+    }
+  }
+
   const target = event.target
   if (target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return
   if (currentTab.value !== 'room-map') return
 
   // Không cho phép bấm phím tắt khi đang mở bất kỳ modal nào (Thông tin, Chuyển phòng, Đặt cọc, Khóa phòng,...)
   if (
+    showSettings.value ||
     showBookingDetailModal.value ||
     showRoomMoveModal.value ||
     showDetailModal.value ||
@@ -2207,6 +2227,7 @@ onMounted(async () => {
     const dateRes = await fetchSystemDate()
     if (dateRes?.data?.success && dateRes?.data?.data?.system_date) {
       systemDate.value = dateRes.data.data.system_date
+      authStore.setSystemDate(dateRes.data.data.system_date)
       rawDate.value = systemDate.value
     }
   } catch (err) {
@@ -2583,184 +2604,188 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
             <!-- Settings Dropdown Popover -->
             <div v-if="showSettings"
-              class="absolute right-4 xl:right-6 top-[calc(100%+4px)] w-[350px] max-h-[calc(100vh-4.5rem)] overflow-y-auto scrollbar-thin bg-white rounded-xl shadow-2xl border border-slate-200/80 p-4 z-[50] flex flex-col gap-3 font-sans select-none animate-[fadeIn_0.15s_ease-out] settings-popover-panel text-slate-800">
+              class="absolute right-4 xl:right-6 top-[calc(100%+4px)] w-[350px] max-h-[calc(100vh-5.5rem)] bg-white rounded-xl shadow-2xl border border-slate-200/80 p-3 z-[50] flex flex-col font-sans select-none animate-[fadeIn_0.15s_ease-out] settings-popover-panel text-slate-800">
 
-              <div class="flex items-center justify-between border-b border-slate-100 pb-2">
-                <h3 class="text-sm font-black uppercase tracking-wider text-slate-800">Cài đặt hiển thị</h3>
-                <button @click="showSettings = false"
-                  class="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer flex items-center justify-center transition-colors"
-                  title="Đóng">
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+              <!-- Fixed Header -->
+              <div class="shrink-0 flex items-center justify-between border-b border-slate-100 pb-1.5 mb-1.5">
+                <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-800">Cài đặt hiển thị</h3>
+                <button type="button" @click="showSettings = false"
+                  class="p-1 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer flex items-center justify-center transition-colors"
+                  title="Đóng (Esc)">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
               </div>
 
-              <!-- Icon Sizing section -->
-              <div class="flex flex-col gap-2.5">
-                <span class="text-xs font-black uppercase text-slate-400 tracking-wider text-left">Icon</span>
+              <!-- Body (Scrollable on small screens, expanded without scrollbar on large screens) -->
+              <div class="settings-popover-body flex-1 min-h-0 overflow-y-auto pr-1 flex flex-col gap-2 scrollbar-thin">
+                <!-- Icon Sizing section -->
+                <div class="flex flex-col gap-2">
+                  <span class="text-xs font-semibold uppercase text-slate-500 tracking-wider text-left">Icon</span>
 
-                <!-- Group 1: Lock, Birthday, Honeymoon, Extra Bed -->
-                <div class="flex flex-col gap-1">
-                  <div class="flex items-center justify-between text-slate-700">
-                    <div class="flex items-center gap-2">
-                      <RoomIcon name="ooo" class="w-5 h-5 text-amber-500" />
-                      <RoomIcon name="birthday" class="w-5 h-5 text-pink-500" />
-                      <RoomIcon name="honeymoon" class="w-5 h-5 text-red-500" />
-                      <RoomIcon name="extra-bed" class="w-5 h-5 text-slate-600" />
+                  <!-- Group 1: Lock, Birthday, Honeymoon, Extra Bed -->
+                  <div class="flex flex-col gap-0.5">
+                    <div class="flex items-center justify-between text-slate-700">
+                      <div class="flex items-center gap-2">
+                        <RoomIcon name="ooo" class="w-5 h-5 text-amber-500" />
+                        <RoomIcon name="birthday" class="w-5 h-5 text-pink-500" />
+                        <RoomIcon name="honeymoon" class="w-5 h-5 text-red-500" />
+                        <RoomIcon name="extra-bed" class="w-5 h-5 text-slate-600" />
+                      </div>
+                      <span class="text-xs text-slate-500 font-medium">{{ settings.iconSizes.group1 }}px</span>
                     </div>
-                    <span class="text-[11px] text-slate-500 font-black">{{ settings.iconSizes.group1 }}px</span>
+                    <input type="range" min="12" max="50" v-model.number="settings.iconSizes.group1"
+                      class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                      :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group1 - 12) / (50 - 12) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group1 - 12) / (50 - 12) * 100) + '%, #e2e8f0 100%)' }" />
                   </div>
-                  <input type="range" min="12" max="50" v-model.number="settings.iconSizes.group1"
-                    class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
-                    :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group1 - 12) / (50 - 12) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group1 - 12) / (50 - 12) * 100) + '%, #e2e8f0 100%)' }" />
+
+                  <!-- Group 2: Clean, Double check, Dirty -->
+                  <div class="flex flex-col gap-0.5">
+                    <div class="flex items-center justify-between text-slate-700">
+                      <div class="flex items-center gap-2">
+                        <RoomIcon name="clean" class="w-5 h-5 text-emerald-500" />
+                        <RoomIcon name="double-check" class="w-5 h-5 text-blue-500" />
+                        <RoomIcon name="dirty" class="w-5 h-5 text-amber-600" />
+                      </div>
+                      <span class="text-xs text-slate-500 font-medium">{{ settings.iconSizes.group2 }}px</span>
+                    </div>
+                    <input type="range" min="12" max="50" v-model.number="settings.iconSizes.group2"
+                      class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                      :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group2 - 12) / (50 - 12) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group2 - 12) / (50 - 12) * 100) + '%, #e2e8f0 100%)' }" />
+                  </div>
+
+                  <!-- Group 3: Green status dot, Red status dot, Split dot -->
+                  <div class="flex flex-col gap-0.5">
+                    <div class="flex items-center justify-between">
+                      <div class="flex items-center gap-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 border border-white/20 shadow-xs"></span>
+                        <span class="w-2.5 h-2.5 rounded-full bg-red-500 border border-white/20 shadow-xs"></span>
+                        <span
+                          class="w-2.5 h-2.5 rounded-full border border-white/20 shadow-xs bg-gradient-to-r from-emerald-500 from-50% to-red-500 to-50%"></span>
+                      </div>
+                      <span class="text-xs text-slate-500 font-medium">{{ settings.iconSizes.group3 }}px</span>
+                    </div>
+                    <input type="range" min="6" max="50" v-model.number="settings.iconSizes.group3"
+                      class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                      :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group3 - 6) / (50 - 6) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group3 - 6) / (50 - 6) * 100) + '%, #e2e8f0 100%)' }" />
+                  </div>
+
+                  <!-- Group 4: Walkin -->
+                  <div class="flex flex-col gap-0.5">
+                    <div class="flex items-center justify-between text-slate-700">
+                      <div class="flex items-center gap-2">
+                        <RoomIcon name="walkin" class="w-5 h-5 text-slate-600" />
+                      </div>
+                      <span class="text-xs text-slate-500 font-medium">{{ settings.iconSizes.group4 }}px</span>
+                    </div>
+                    <input type="range" min="12" max="50" v-model.number="settings.iconSizes.group4"
+                      class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                      :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group4 - 12) / (50 - 12) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group4 - 12) / (50 - 12) * 100) + '%, #e2e8f0 100%)' }" />
+                  </div>
+
+                  <!-- Group 5: Priority, DND -->
+                  <div class="flex flex-col gap-0.5">
+                    <div class="flex items-center justify-between text-slate-700">
+                      <div class="flex items-center gap-2">
+                        <RoomIcon name="priority" class="w-5 h-5 text-sky-500" />
+                        <RoomIcon name="dnd" class="w-5 h-5 text-slate-500" />
+                      </div>
+                      <span class="text-xs text-slate-500 font-medium">{{ settings.iconSizes.group5 }}px</span>
+                    </div>
+                    <input type="range" min="12" max="50" v-model.number="settings.iconSizes.group5"
+                      class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                      :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group5 - 12) / (50 - 12) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group5 - 12) / (50 - 12) * 100) + '%, #e2e8f0 100%)' }" />
+                  </div>
                 </div>
 
-                <!-- Group 2: Clean, Double check, Dirty -->
-                <div class="flex flex-col gap-1">
-                  <div class="flex items-center justify-between text-slate-700">
-                    <div class="flex items-center gap-2">
-                      <RoomIcon name="clean" class="w-5 h-5 text-emerald-500" />
-                      <RoomIcon name="double-check" class="w-5 h-5 text-blue-500" />
-                      <RoomIcon name="dirty" class="w-5 h-5 text-amber-600" />
-                    </div>
-                    <span class="text-[11px] text-slate-500 font-black">{{ settings.iconSizes.group2 }}px</span>
-                  </div>
-                  <input type="range" min="12" max="50" v-model.number="settings.iconSizes.group2"
-                    class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
-                    :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group2 - 12) / (50 - 12) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group2 - 12) / (50 - 12) * 100) + '%, #e2e8f0 100%)' }" />
+                <hr class="border-slate-100" />
+
+                <!-- Room text sizing -->
+                <div class="flex flex-col gap-1.5">
+                  <span class="text-xs font-semibold uppercase text-slate-500 tracking-wider text-left">Kích thước chữ</span>
+                  <label class="flex items-center justify-between gap-3 text-xs font-medium text-slate-700">
+                    <span class="whitespace-nowrap shrink-0 w-20 text-left">Số phòng</span>
+                    <input type="range" min="10" max="24" v-model.number="settings.textSizes.roomNumber" class="flex-1 accent-sky-500" />
+                    <span class="w-10 text-right text-slate-500">{{ settings.textSizes.roomNumber }}px</span>
+                  </label>
+                  <label class="flex items-center justify-between gap-3 text-xs font-medium text-slate-700">
+                    <span class="whitespace-nowrap shrink-0 w-20 text-left">Loại phòng</span>
+                    <input type="range" min="8" max="16" v-model.number="settings.textSizes.roomType" class="flex-1 accent-sky-500" />
+                    <span class="w-10 text-right text-slate-500">{{ settings.textSizes.roomType }}px</span>
+                  </label>
+                  <label class="flex items-center justify-between gap-3 text-xs font-medium text-slate-700">
+                    <span class="whitespace-nowrap shrink-0 w-20 text-left">Tên khách</span>
+                    <input type="range" min="8" max="16" v-model.number="settings.textSizes.guestName" class="flex-1 accent-sky-500" />
+                    <span class="w-10 text-right text-slate-500">{{ settings.textSizes.guestName }}px</span>
+                  </label>
                 </div>
 
-                <!-- Group 3: Green status dot, Red status dot, Split dot -->
-                <div class="flex flex-col gap-1">
-                  <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-2">
-                      <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 border border-white/20 shadow-xs"></span>
-                      <span class="w-2.5 h-2.5 rounded-full bg-red-500 border border-white/20 shadow-xs"></span>
-                      <span
-                        class="w-2.5 h-2.5 rounded-full border border-white/20 shadow-xs bg-gradient-to-r from-emerald-500 from-50% to-red-500 to-50%"></span>
+                <hr class="border-slate-100" />
+
+                <!-- Exact Position Toggle -->
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-medium text-slate-700">Vị trí chính xác</span>
+                  <label class="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" v-model="settings.exactPosition" class="sr-only peer" />
+                    <div
+                      class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-500">
                     </div>
-                    <span class="text-[11px] text-slate-500 font-black">{{ settings.iconSizes.group3 }}px</span>
-                  </div>
-                  <input type="range" min="6" max="50" v-model.number="settings.iconSizes.group3"
-                    class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
-                    :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group3 - 6) / (50 - 6) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group3 - 6) / (50 - 6) * 100) + '%, #e2e8f0 100%)' }" />
+                  </label>
                 </div>
 
-                <!-- Group 4: Walkin -->
-                <div class="flex flex-col gap-1">
-                  <div class="flex items-center justify-between text-slate-700">
-                    <div class="flex items-center gap-2">
-                      <RoomIcon name="walkin" class="w-5 h-5 text-slate-600" />
-                    </div>
-                    <span class="text-[11px] text-slate-500 font-black">{{ settings.iconSizes.group4 }}px</span>
-                  </div>
-                  <input type="range" min="12" max="50" v-model.number="settings.iconSizes.group4"
-                    class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
-                    :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group4 - 12) / (50 - 12) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group4 - 12) / (50 - 12) * 100) + '%, #e2e8f0 100%)' }" />
-                </div>
-
-                <!-- Group 5: Priority, DND -->
-                <div class="flex flex-col gap-1">
-                  <div class="flex items-center justify-between text-slate-700">
-                    <div class="flex items-center gap-2">
-                      <RoomIcon name="priority" class="w-5 h-5 text-sky-500" />
-                      <RoomIcon name="dnd" class="w-5 h-5 text-slate-500" />
-                    </div>
-                    <span class="text-[11px] text-slate-500 font-black">{{ settings.iconSizes.group5 }}px</span>
-                  </div>
-                  <input type="range" min="12" max="50" v-model.number="settings.iconSizes.group5"
-                    class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
-                    :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.iconSizes.group5 - 12) / (50 - 12) * 100) + '%, #e2e8f0 ' + ((settings.iconSizes.group5 - 12) / (50 - 12) * 100) + '%, #e2e8f0 100%)' }" />
-                </div>
-              </div>
-
-              <hr class="border-slate-100" />
-
-              <!-- Room text sizing -->
-              <div class="flex flex-col gap-2">
-                <span class="text-xs font-black uppercase text-slate-400 tracking-wider text-left">Kích thước chữ</span>
-                <label class="flex items-center justify-between gap-3 text-xs font-bold text-slate-700">
-                  <span class="whitespace-nowrap shrink-0 w-20 text-left">Số phòng</span>
-                  <input type="range" min="10" max="24" v-model.number="settings.textSizes.roomNumber" class="flex-1 accent-sky-500" />
-                  <span class="w-10 text-right text-slate-500">{{ settings.textSizes.roomNumber }}px</span>
-                </label>
-                <label class="flex items-center justify-between gap-3 text-xs font-bold text-slate-700">
-                  <span class="whitespace-nowrap shrink-0 w-20 text-left">Loại phòng</span>
-                  <input type="range" min="8" max="16" v-model.number="settings.textSizes.roomType" class="flex-1 accent-sky-500" />
-                  <span class="w-10 text-right text-slate-500">{{ settings.textSizes.roomType }}px</span>
-                </label>
-                <label class="flex items-center justify-between gap-3 text-xs font-bold text-slate-700">
-                  <span class="whitespace-nowrap shrink-0 w-20 text-left">Tên khách</span>
-                  <input type="range" min="8" max="16" v-model.number="settings.textSizes.guestName" class="flex-1 accent-sky-500" />
-                  <span class="w-10 text-right text-slate-500">{{ settings.textSizes.guestName }}px</span>
-                </label>
-              </div>
-
-              <hr class="border-slate-100" />
-
-              <!-- Exact Position Toggle -->
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-bold text-slate-700">Vị trí chính xác</span>
-                <label class="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" v-model="settings.exactPosition" class="sr-only peer" />
+                <!-- Floor Orientation Toggle -->
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-medium text-slate-700">Hướng của tầng</span>
                   <div
-                    class="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-500">
+                    class="flex items-center bg-slate-100 rounded-lg p-0.5 border border-slate-200 text-xs font-medium">
+                    <button type="button" @click="settings.floorOrientation = 'Ngang'"
+                      class="px-2.5 py-1 rounded-md transition-all border-none cursor-pointer"
+                      :class="settings.floorOrientation === 'Ngang' ? 'bg-sky-500 text-white shadow-xs' : 'text-slate-500 bg-transparent hover:bg-slate-200'">
+                      Ngang
+                    </button>
+                    <button type="button" @click="settings.floorOrientation = 'Dọc'"
+                      class="px-2.5 py-1 rounded-md transition-all border-none cursor-pointer"
+                      :class="settings.floorOrientation === 'Dọc' ? 'bg-sky-500 text-white shadow-xs' : 'text-slate-500 bg-transparent hover:bg-slate-200'">
+                      Dọc
+                    </button>
                   </div>
-                </label>
-              </div>
+                </div>
 
-              <!-- Floor Orientation Toggle -->
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-bold text-slate-700">Hướng của tầng</span>
-                <div
-                  class="flex items-center bg-slate-100 rounded-lg p-0.5 border border-slate-200 text-[11px] font-black">
-                  <button @click="settings.floorOrientation = 'Ngang'"
-                    class="px-2.5 py-1 rounded-md transition-all border-none cursor-pointer"
-                    :class="settings.floorOrientation === 'Ngang' ? 'bg-sky-500 text-white shadow-xs' : 'text-slate-500 bg-transparent hover:bg-slate-200'">
-                    Ngang
-                  </button>
-                  <button @click="settings.floorOrientation = 'Dọc'"
-                    class="px-2.5 py-1 rounded-md transition-all border-none cursor-pointer"
-                    :class="settings.floorOrientation === 'Dọc' ? 'bg-sky-500 text-white shadow-xs' : 'text-slate-500 bg-transparent hover:bg-slate-200'">
-                    Dọc
-                  </button>
+                <hr class="border-slate-100" />
+
+                <!-- Room Width Slider -->
+                <div class="flex flex-col gap-0.5 text-xs font-medium text-slate-700">
+                  <div class="flex justify-between">
+                    <span class="text-left">Chiều dài phòng</span>
+                    <span class="text-slate-500">{{ settings.roomWidth }}px</span>
+                  </div>
+                  <input type="range" min="80" max="300" v-model.number="settings.roomWidth"
+                    class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                    :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.roomWidth - 80) / (300 - 80) * 100) + '%, #e2e8f0 ' + ((settings.roomWidth - 80) / (300 - 80) * 100) + '%, #e2e8f0 100%)' }" />
+                </div>
+
+                <!-- Room Height Slider -->
+                <div class="flex flex-col gap-0.5 text-xs font-medium text-slate-700">
+                  <div class="flex justify-between">
+                    <span class="text-left">Chiều cao phòng</span>
+                    <span class="text-slate-500">{{ settings.roomHeight }}px</span>
+                  </div>
+                  <input type="range" min="40" max="200" v-model.number="settings.roomHeight"
+                    class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                    :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.roomHeight - 40) / (200 - 40) * 100) + '%, #e2e8f0 ' + ((settings.roomHeight - 40) / (200 - 40) * 100) + '%, #e2e8f0 100%)' }" />
                 </div>
               </div>
 
-              <hr class="border-slate-100" />
-
-              <!-- Room Width Slider -->
-              <div class="flex flex-col gap-1 text-xs font-bold text-slate-700">
-                <div class="flex justify-between">
-                  <span class="text-left">Chiều dài phòng</span>
-                  <span class="text-slate-500">{{ settings.roomWidth }}px</span>
-                </div>
-                <input type="range" min="80" max="300" v-model.number="settings.roomWidth"
-                  class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
-                  :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.roomWidth - 80) / (300 - 80) * 100) + '%, #e2e8f0 ' + ((settings.roomWidth - 80) / (300 - 80) * 100) + '%, #e2e8f0 100%)' }" />
-              </div>
-
-              <!-- Room Height Slider -->
-              <div class="flex flex-col gap-1 text-xs font-bold text-slate-700">
-                <div class="flex justify-between">
-                  <span class="text-left">Chiều cao phòng</span>
-                  <span class="text-slate-500">{{ settings.roomHeight }}px</span>
-                </div>
-                <input type="range" min="40" max="200" v-model.number="settings.roomHeight"
-                  class="w-full h-1 rounded-lg appearance-none cursor-pointer accent-sky-500"
-                  :style="{ background: 'linear-gradient(to right, #0ea5e9 0%, #0ea5e9 ' + ((settings.roomHeight - 40) / (200 - 40) * 100) + '%, #e2e8f0 ' + ((settings.roomHeight - 40) / (200 - 40) * 100) + '%, #e2e8f0 100%)' }" />
-              </div>
-
-              <!-- Buttons Group -->
-              <div class="flex gap-2.5 mt-1 pt-2 border-t border-slate-100">
-                <button @click="resetToDefaultSettings"
-                  class="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg text-xs uppercase transition-colors shadow-xs border border-slate-200 cursor-pointer flex items-center justify-center gap-1.5">
+              <!-- Fixed Footer -->
+              <div class="shrink-0 pt-2 mt-1.5 border-t border-slate-100 flex gap-2">
+                <button type="button" @click="resetToDefaultSettings"
+                  class="flex-1 h-8 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-md text-xs transition-colors shadow-xs border border-slate-200 cursor-pointer flex items-center justify-center gap-1.5">
                   Mặc định
                 </button>
-                <button @click="saveSettings"
-                  class="flex-1 py-2 bg-[#0088ff] hover:bg-[#0077e6] text-white font-bold rounded-lg text-xs uppercase transition-colors shadow-xs border border-[#0088ff] cursor-pointer flex items-center justify-center gap-1.5">
-                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <button type="button" @click="saveSettings"
+                  class="btn-pms-primary flex-1 h-8">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round"
                       d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
@@ -2798,7 +2823,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
               <!-- Tab 3: D.S Công Việc ShiftWorkPage -->
               <div v-else-if="currentTab === 'shift-work'" class="h-full overflow-hidden">
-                <ShiftWorkPage />
+                <ShiftWorkPage @edit-booking="handleEditBookingFromPlan" />
               </div>
 
               <!-- Tab 4: Công Ty CompanySettingsPage -->
@@ -2856,12 +2881,12 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 <table class="w-full text-left border-collapse text-xs">
                   <thead>
                     <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
-                      <th class="p-2.5">{{ t('roomMap.partnerOta') }}</th>
-                      <th class="p-2.5">{{ t('roomMap.allotmentRoomType') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.allotmentQty') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.allotmentSold') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.allotmentRemaining') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.allotmentStatus') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.partnerOta') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.allotmentRoomType') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.allotmentQty') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.allotmentSold') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.allotmentRemaining') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.allotmentStatus') }}</th>
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
@@ -2871,14 +2896,14 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                       { partner: 'Travel Concierge', type: 'Standard Twin', allocated: 8, sold: 8, status: 'Đã hết' },
                       { partner: 'Trip.com', type: 'Standard Double', allocated: 6, sold: 1, status: 'Đang mở' }
                     ]" :key="item.partner" class="hover:bg-slate-50 h-10">
-                      <td class="p-2.5 text-slate-900 font-black">{{ item.partner }}</td>
-                      <td class="p-2.5">{{ item.type }}</td>
-                      <td class="p-2.5 text-center text-slate-900">{{ item.allocated }} {{
+                      <td class="p-2.5 text-slate-900 font-black border-slate-200">{{ item.partner }}</td>
+                      <td class="p-2.5 border-slate-200">{{ item.type }}</td>
+                      <td class="p-2.5 text-center text-slate-900 border-slate-200">{{ item.allocated }} {{
                         t('roomMap.allotmentRoomsUnit')
                         }}</td>
-                      <td class="p-2.5 text-center text-sky-600">{{ item.sold }}</td>
-                      <td class="p-2.5 text-center text-slate-500">{{ item.allocated - item.sold }}</td>
-                      <td class="p-2.5 text-center">
+                      <td class="p-2.5 text-center text-sky-600 border-slate-200">{{ item.sold }}</td>
+                      <td class="p-2.5 text-center text-slate-500 border-slate-200">{{ item.allocated - item.sold }}</td>
+                      <td class="p-2.5 text-center border-slate-200">
                         <span class="px-2 py-0.5 rounded text-[10px] font-black border"
                           :class="item.status === 'Đang mở' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-red-50 text-red-500 border-red-100'">
                           {{ item.status === 'Đang mở' ? t('roomMap.allotmentOpen') : t('roomMap.allotmentSoldOut') }}
@@ -2901,12 +2926,12 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 <table class="w-full text-left border-collapse text-xs">
                   <thead>
                     <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
-                      <th class="p-2.5">{{ t('roomMap.allotmentIdCode') }}</th>
-                      <th class="p-2.5">{{ t('roomMap.allotmentPartner') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.allotmentRoomNo') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.allotmentStartDate') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.allotmentEndDate') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.allotmentUnlock') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.allotmentIdCode') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.allotmentPartner') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.allotmentRoomNo') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.allotmentStartDate') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.allotmentEndDate') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.allotmentUnlock') }}</th>
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
@@ -2915,12 +2940,12 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                       { id: 'AL-1012', partner: 'Booking.com', room: '304', start: '12-06-2026', end: '22-06-2026', active: true },
                       { id: 'AL-1015', partner: 'Travel Concierge', room: '104', start: '15-06-2026', end: '25-06-2026', active: false }
                     ]" :key="item.id" class="hover:bg-slate-50 h-10">
-                      <td class="p-2.5 text-slate-900 font-black">{{ item.id }}</td>
-                      <td class="p-2.5 text-slate-900">{{ item.partner }}</td>
-                      <td class="p-2.5 text-center font-black">{{ item.room }}</td>
-                      <td class="p-2.5 text-center text-slate-500">{{ item.start }}</td>
-                      <td class="p-2.5 text-center text-slate-500">{{ item.end }}</td>
-                      <td class="p-2.5 text-center">
+                      <td class="p-2.5 text-slate-900 font-black border-slate-200">{{ item.id }}</td>
+                      <td class="p-2.5 text-slate-900 border-slate-200">{{ item.partner }}</td>
+                      <td class="p-2.5 text-center font-black border-slate-200">{{ item.room }}</td>
+                      <td class="p-2.5 text-center text-slate-500 border-slate-200">{{ item.start }}</td>
+                      <td class="p-2.5 text-center text-slate-500 border-slate-200">{{ item.end }}</td>
+                      <td class="p-2.5 text-center border-slate-200">
                         <span class="px-2 py-0.5 rounded text-[10px] font-black border"
                           :class="item.active ? 'bg-sky-50 text-sky-600 border-sky-100' : 'bg-slate-100 text-slate-500 border-slate-200'">
                           {{ item.active ? t('roomMap.allotmentOpen') : t('roomMap.allotmentLocked') }}
@@ -2984,12 +3009,12 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 <table class="w-full text-left border-collapse text-xs">
                   <thead>
                     <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
-                      <th class="p-2.5">{{ t('roomMap.regIdCode') }}</th>
-                      <th class="p-2.5">{{ t('roomMap.regCustomer') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.regRoomNo') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.regCheckIn') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.regCheckOut') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.regStatus') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.regIdCode') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.regCustomer') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.regRoomNo') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.regCheckIn') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.regCheckOut') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.regStatus') }}</th>
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
@@ -2998,12 +3023,12 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                       { id: 'REG-553', guest: 'Mr. Rachid Boufarki', room: '204', in: '14-06-2026', out: '18-06-2026', status: 'Hoạt động' },
                       { id: 'REG-554', guest: 'Walkin Guest', room: '302', in: '15-06-2026', out: '16-06-2026', status: 'Hoàn thành' }
                     ]" :key="item.id" class="hover:bg-slate-50 h-10">
-                      <td class="p-2.5 text-slate-900 font-black text-sm">{{ item.id }}</td>
-                      <td class="p-2.5 text-slate-900">{{ item.guest }}</td>
-                      <td class="p-2.5 text-center font-black">{{ item.room }}</td>
-                      <td class="p-2.5 text-center text-slate-500">{{ item.in }}</td>
-                      <td class="p-2.5 text-center text-slate-500">{{ item.out }}</td>
-                      <td class="p-2.5 text-center">
+                      <td class="p-2.5 text-slate-900 font-black text-sm border-slate-200">{{ item.id }}</td>
+                      <td class="p-2.5 text-slate-900 border-slate-200">{{ item.guest }}</td>
+                      <td class="p-2.5 text-center font-black border-slate-200">{{ item.room }}</td>
+                      <td class="p-2.5 text-center text-slate-500 border-slate-200">{{ item.in }}</td>
+                      <td class="p-2.5 text-center text-slate-500 border-slate-200">{{ item.out }}</td>
+                      <td class="p-2.5 text-center border-slate-200">
                         <span class="px-2 py-0.5 rounded text-[10px] font-black border"
                           :class="item.status === 'Hoạt động' ? 'bg-sky-50 text-sky-600 border-sky-100' : 'bg-slate-100 text-slate-500 border-slate-200'">
                           {{ item.status === 'Hoạt động' ? t('roomMap.regActive') : t('roomMap.regCompleted') }}
@@ -3041,11 +3066,11 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 <table class="w-full text-left border-collapse text-xs mt-2">
                   <thead>
                     <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
-                      <th class="p-2.5">{{ t('roomMap.statRoomCategory') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.statTotalRooms') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.statOccupiedRooms') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.statRepairRooms') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.statEfficiency') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.statRoomCategory') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.statTotalRooms') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.statOccupiedRooms') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.statRepairRooms') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.statEfficiency') }}</th>
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
@@ -3054,11 +3079,11 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                       { name: 'Deluxe Twin', total: 25, occ: 20, repair: 0, rate: '80.0%' },
                       { name: 'Executive Suite', total: 12, occ: 7, repair: 2, rate: '58.3%' }
                     ]" :key="item.name" class="hover:bg-slate-50 h-10">
-                      <td class="p-2.5 text-slate-900 font-black">{{ item.name }}</td>
-                      <td class="p-2.5 text-center text-slate-800">{{ item.total }}</td>
-                      <td class="p-2.5 text-center text-sky-600">{{ item.occ }}</td>
-                      <td class="p-2.5 text-center text-rose-500">{{ item.repair }}</td>
-                      <td class="p-2.5 text-center text-slate-900">{{ item.rate }}</td>
+                      <td class="p-2.5 text-slate-900 font-black border-slate-200">{{ item.name }}</td>
+                      <td class="p-2.5 text-center text-slate-800 border-slate-200">{{ item.total }}</td>
+                      <td class="p-2.5 text-center text-sky-600 border-slate-200">{{ item.occ }}</td>
+                      <td class="p-2.5 text-center text-rose-500 border-slate-200">{{ item.repair }}</td>
+                      <td class="p-2.5 text-center text-slate-900 border-slate-200">{{ item.rate }}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -3077,10 +3102,10 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 <table class="w-full text-left border-collapse text-xs">
                   <thead>
                     <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
-                      <th class="p-2.5">{{ t('roomMap.roomsReportStatus') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.roomsReportQty') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.roomsReportPct') }}</th>
-                      <th class="p-2.5">{{ t('roomMap.roomsReportNotes') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.roomsReportStatus') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.roomsReportQty') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.roomsReportPct') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.roomsReportNotes') }}</th>
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
@@ -3090,11 +3115,11 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                       { key: 'roomsDirtyVacant', count: 15, pct: '14.0%' },
                       { key: 'roomsMaintenance', count: 5, pct: '4.6%' }
                     ]" :key="item.key" class="hover:bg-slate-50 h-10">
-                      <td class="p-2.5 text-slate-900 font-black">{{ t('roomMap.' + item.key) }}</td>
-                      <td class="p-2.5 text-center font-black text-slate-800">{{ item.count }} {{
+                      <td class="p-2.5 text-slate-900 font-black border-slate-200">{{ t('roomMap.' + item.key) }}</td>
+                      <td class="p-2.5 text-center font-black text-slate-800 border-slate-200">{{ item.count }} {{
                         t('roomMap.allotmentRoomsUnit') }}</td>
-                      <td class="p-2.5 text-center text-sky-600">{{ item.pct }}</td>
-                      <td class="p-2.5 text-slate-500 font-medium">{{ t('roomMap.' + item.key + 'Desc') }}</td>
+                      <td class="p-2.5 text-center text-sky-600 border-slate-200">{{ item.pct }}</td>
+                      <td class="p-2.5 text-slate-500 font-medium border-slate-200">{{ t('roomMap.' + item.key + 'Desc') }}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -3112,11 +3137,11 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 <table class="w-full text-left border-collapse text-xs">
                   <thead>
                     <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
-                      <th class="p-2.5">{{ t('roomMap.cancelIdCode') }}</th>
-                      <th class="p-2.5">{{ t('roomMap.cancelGuestName') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.cancelDate') }}</th>
-                      <th class="p-2.5 text-right">{{ t('roomMap.cancelValue') }}</th>
-                      <th class="p-2.5">{{ t('roomMap.cancelReason') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.cancelIdCode') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.cancelGuestName') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.cancelDate') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.cancelValue') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.cancelReason') }}</th>
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
@@ -3125,11 +3150,11 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                       { id: 'CN-202', guest: 'Ms. Nguyen Kim Chi', date: '10-06-2026', val: '3.600.000', reasonKey: 'cancelReason2' },
                       { id: 'CN-203', guest: 'Mr. Park Jung Woo', date: '12-06-2026', val: '1.200.000', reasonKey: 'cancelReason3' }
                     ]" :key="item.id" class="hover:bg-slate-50 h-10">
-                      <td class="p-2.5 text-rose-600 font-black text-sm">{{ item.id }}</td>
-                      <td class="p-2.5 text-slate-900">{{ item.guest }}</td>
-                      <td class="p-2.5 text-center text-slate-500">{{ item.date }}</td>
-                      <td class="p-2.5 text-right text-slate-800 font-black">{{ item.val }} đ</td>
-                      <td class="p-2.5 text-slate-500 font-medium truncate max-w-[300px]">{{ t('roomMap.' +
+                      <td class="p-2.5 text-rose-600 font-black text-sm border-slate-200">{{ item.id }}</td>
+                      <td class="p-2.5 text-slate-900 border-slate-200">{{ item.guest }}</td>
+                      <td class="p-2.5 text-center text-slate-500 border-slate-200">{{ item.date }}</td>
+                      <td class="p-2.5 text-right text-slate-800 font-black border-slate-200">{{ item.val }} đ</td>
+                      <td class="p-2.5 text-slate-500 font-medium truncate max-w-[300px] border-slate-200">{{ t('roomMap.' +
                         item.reasonKey) }}</td>
                     </tr>
                   </tbody>
@@ -3154,11 +3179,11 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 <table class="w-full text-left border-collapse text-xs">
                   <thead>
                     <tr class="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold select-none h-9">
-                      <th class="p-2.5">{{ t('roomMap.channelManagerOtaLink') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.channelManagerAvailRooms') }}</th>
-                      <th class="p-2.5 text-right">{{ t('roomMap.channelManagerSyncRates') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.channelManagerLastSync') }}</th>
-                      <th class="p-2.5 text-center">{{ t('roomMap.channelManagerConnStatus') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.channelManagerOtaLink') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.channelManagerAvailRooms') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.channelManagerSyncRates') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.channelManagerLastSync') }}</th>
+                      <th class="p-2.5 text-center align-middle border-r border-slate-200 border">{{ t('roomMap.channelManagerConnStatus') }}</th>
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-slate-100 font-bold text-slate-700">
@@ -3167,14 +3192,14 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                       { channel: 'Booking.com XML Sync', rooms: 12, rate: '680.000 đ', timeKey: 'channelManagerMinsAgo', timeVal: 5, status: 'active' },
                       { channel: 'Expedia.com OTA link', rooms: 8, rate: '720.000 đ', timeKey: 'channelManagerHourAgo', timeVal: 1, status: 'reconnecting' }
                     ]" :key="item.channel" class="hover:bg-slate-50 h-10">
-                      <td class="p-2.5 text-slate-900 font-black">{{ item.channel }}</td>
-                      <td class="p-2.5 text-center font-black text-slate-800">{{ item.rooms }} {{
+                      <td class="p-2.5 text-slate-900 font-black border-slate-200">{{ item.channel }}</td>
+                      <td class="p-2.5 text-center font-black text-slate-800 border-slate-200">{{ item.rooms }} {{
                         t('roomMap.allotmentRoomsUnit') }}</td>
-                      <td class="p-2.5 text-right text-emerald-600 font-black">{{ item.rate }}</td>
-                      <td class="p-2.5 text-center text-slate-400">{{ t('roomMap.' + item.timeKey, { n: item.timeVal })
+                      <td class="p-2.5 text-right text-emerald-600 font-black border-slate-200">{{ item.rate }}</td>
+                      <td class="p-2.5 text-center text-slate-400 border-slate-200">{{ t('roomMap.' + item.timeKey, { n: item.timeVal })
                         }}
                       </td>
-                      <td class="p-2.5 text-center">
+                      <td class="p-2.5 text-center border-slate-200">
                         <span class="px-2 py-0.5 rounded text-[10px] font-black border"
                           :class="item.status === 'active' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-amber-50 text-amber-600 border-amber-100'">
                           {{ item.status === 'active' ? t('roomMap.regActive') : t('roomMap.channelManagerReconnecting')
@@ -3290,7 +3315,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                             <span
                               :class="[
                                 isRoomNumberRed(room) ? 'text-red-600 font-black' : (room.booking_color ? 'text-inherit' : 'text-gray-900'),
-                                isArrivingTomorrow(room) ? 'underline font-black decoration-2' : ''
+                                isArrivingTomorrow(room) ? 'underline decoration-1 underline-offset-[2px]' : ''
                               ]"
                               :style="getRoomNumberStyle(room)">
                               {{ room.room_number }}
@@ -3380,14 +3405,14 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                     <thead>
                       <tr class="bg-slate-50 border-b border-slate-200 select-none whitespace-nowrap text-slate-700 font-semibold" :class="TEXT_THEME.tableHeader">
                         <!-- 1. Checkbox / STT -->
-                        <th class="p-2 border-r border-slate-200 text-center w-[55px]">
+                        <th class="p-2 border-r border-slate-200 text-center w-[55px] align-middle border">
                           <div class="flex items-center justify-center">
                             <input type="checkbox" :checked="allVisibleRoomsSelected" @change="toggleSelectVisibleRooms" class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
                           </div>
                         </th>
 
                         <!-- 2. TTĐK [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[90px]" title="Tình trạng đăng ký (TTĐK)">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[90px] text-center align-middle border" title="Tình trạng đăng ký (TTĐK)">
                           <div class="flex items-center justify-between gap-1 w-full">
                             <span class="truncate" title="Tình trạng đăng ký (TTĐK)">TTĐK</span>
                             <button type="button" @click.stop="toggleColFilter('ttdk')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('ttdk') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc TTĐK">
@@ -3410,7 +3435,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 3. TT Phòng [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[90px]" title="Tình trạng phòng">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[90px] text-center align-middle border" title="Tình trạng phòng">
                           <div class="flex items-center justify-between gap-1 w-full">
                             <span class="truncate" title="Tình trạng phòng">TT Phòng</span>
                             <button type="button" @click.stop="toggleColFilter('roomStatus')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('roomStatus') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc TT Phòng">
@@ -3433,7 +3458,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 4. Tầng [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[70px]" title="Tầng">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[70px] text-center align-middle border" title="Tầng">
                           <div class="flex items-center justify-between gap-1 w-full">
                             <span class="truncate" title="Tầng">Tầng</span>
                             <button type="button" @click.stop="toggleColFilter('floor')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('floor') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc tầng">
@@ -3456,7 +3481,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 5. Phòng [🔍] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[80px]" title="Số phòng">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[80px] text-center align-middle border" title="Số phòng">
                           <div class="flex items-center justify-between gap-1 w-full">
                             <span class="truncate" title="Số phòng">Phòng</span>
                             <button type="button" @click.stop="toggleColFilter('roomNumber')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('roomNumber') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Tìm số phòng">
@@ -3476,9 +3501,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 6. Loại phòng [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[100px]" title="Loại phòng">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[100px] text-center align-middle border" title="Loại phòng">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate" title="Loại phòng">Loại phòng</span>
+                            <span class="truncate" title="Loại phòng">Loại Phòng</span>
                             <button type="button" @click.stop="toggleColFilter('roomType')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('roomType') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc loại phòng">
                               <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 10 10"><path d="M0 1h10L6 5.5v3.5l-2-1V5.5L0 1z"/></svg>
                             </button>
@@ -3486,7 +3511,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                           <!-- Popover -->
                           <div v-if="activeColFilter === 'roomType'" class="col-filter-popover absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200 rounded shadow-xl p-2.5 min-w-[160px] text-xs font-normal normal-case text-slate-800 text-left" @click.stop>
                             <div class="space-y-1 mb-2 max-h-48 overflow-y-auto pr-1">
-                              <div v-if="dynamicRoomTypeOptions.length === 0" class="text-slate-400 text-[11px] py-1">Không có loại phòng</div>
+                              <div v-if="dynamicRoomTypeOptions.length === 0" class="text-slate-400 text-[11px] py-1">Không Có Loại Phòng</div>
                               <label v-for="opt in dynamicRoomTypeOptions" :key="opt.value" class="flex items-center gap-2 py-1 px-1.5 hover:bg-slate-50 rounded cursor-pointer select-none text-slate-700">
                                 <input type="checkbox" :value="opt.value" v-model="tempCheckboxFilters.roomType" class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
                                 <span class="truncate">{{ opt.label }}</span>
@@ -3500,9 +3525,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 7. Dạng phòng [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[100px]" title="Dạng phòng">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[100px] text-center align-middle border" title="Dạng phòng">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate" title="Dạng phòng">Dạng phòng</span>
+                            <span class="truncate" title="Dạng phòng">Dạng Phòng</span>
                             <button type="button" @click.stop="toggleColFilter('roomShape')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('roomShape') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc dạng phòng">
                               <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 10 10"><path d="M0 1h10L6 5.5v3.5l-2-1V5.5L0 1z"/></svg>
                             </button>
@@ -3510,7 +3535,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                           <!-- Popover -->
                           <div v-if="activeColFilter === 'roomShape'" class="col-filter-popover absolute top-full mt-1 left-0 z-50 bg-white border border-slate-200 rounded shadow-xl p-2.5 min-w-[150px] text-xs font-normal normal-case text-slate-800 text-left" @click.stop>
                             <div class="space-y-1 mb-2 max-h-48 overflow-y-auto pr-1">
-                              <div v-if="dynamicRoomShapeOptions.length === 0" class="text-slate-400 text-[11px] py-1">Không có dạng phòng</div>
+                              <div v-if="dynamicRoomShapeOptions.length === 0" class="text-slate-400 text-[11px] py-1">Không Có Dạng Phòng</div>
                               <label v-for="opt in dynamicRoomShapeOptions" :key="opt.value" class="flex items-center gap-2 py-1 px-1.5 hover:bg-slate-50 rounded cursor-pointer select-none text-slate-700">
                                 <input type="checkbox" :value="opt.value" v-model="tempCheckboxFilters.roomShape" class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
                                 <span class="truncate">{{ opt.label }}</span>
@@ -3524,9 +3549,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 8. Tên khách [🔍] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[180px]" title="Tên khách">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[180px] text-center align-middle border" title="Tên khách">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate" title="Tên khách">Tên khách</span>
+                            <span class="truncate" title="Tên khách">Tên Khách</span>
                             <button type="button" @click.stop="toggleColFilter('guestName')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('guestName') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Tìm tên khách">
                               <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                             </button>
@@ -3544,7 +3569,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 9. Mã ĐK [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[90px]" title="Mã đăng ký (Mã ĐK)">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[90px] text-center align-middle border" title="Mã đăng ký (Mã ĐK)">
                           <div class="flex items-center justify-between gap-1 w-full">
                             <span class="truncate" title="Mã đăng ký (Mã ĐK)">Mã ĐK</span>
                             <button type="button" @click.stop="toggleColFilter('regId')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('regId') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc mã đăng ký">
@@ -3564,9 +3589,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 10. Tên đăng ký [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[220px]" title="Tên đăng ký">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[220px] text-center align-middle border" title="Tên đăng ký">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate" title="Tên đăng ký">Tên đăng ký</span>
+                            <span class="truncate" title="Tên đăng ký">Tên Đăng Ký</span>
                             <button type="button" @click.stop="toggleColFilter('regName')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('regName') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc tên đăng ký">
                               <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 10 10"><path d="M0 1h10L6 5.5v3.5l-2-1V5.5L0 1z"/></svg>
                             </button>
@@ -3584,9 +3609,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 11. Ngày đến -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[100px]" title="Ngày đến">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[100px] text-center align-middle border" title="Ngày đến">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate" title="Ngày đến">Ngày đến</span>
+                            <span class="truncate" title="Ngày đến">Ngày Đến</span>
                             <button type="button" @click.stop="toggleColFilter('arrivalDate')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('arrivalDate') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc ngày đến">
                               <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                             </button>
@@ -3604,9 +3629,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 12. Ngày đi -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[100px]" title="Ngày đi">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[100px] text-center align-middle border" title="Ngày đi">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate" title="Ngày đi">Ngày đi</span>
+                            <span class="truncate" title="Ngày đi">Ngày Đi</span>
                             <button type="button" @click.stop="toggleColFilter('departureDate')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('departureDate') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc ngày đi">
                               <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                             </button>
@@ -3624,9 +3649,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 13. Công ty [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[200px]" title="Công ty / Đại lý">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[200px] text-center align-middle border" title="Công ty / Đại lý">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate" title="Công ty / Đại lý">Công ty</span>
+                            <span class="truncate" title="Công ty / Đại lý">Công Ty</span>
                             <button type="button" @click.stop="toggleColFilter('company')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('company') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc công ty">
                               <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 10 10"><path d="M0 1h10L6 5.5v3.5l-2-1V5.5L0 1z"/></svg>
                             </button>
@@ -3634,7 +3659,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                           <!-- Popover (aligned right) -->
                           <div v-if="activeColFilter === 'company'" class="col-filter-popover absolute top-full mt-1 right-0 z-50 bg-white border border-slate-200 rounded shadow-xl p-2.5 min-w-[220px] max-w-[300px] text-xs font-normal normal-case text-slate-800 text-left" @click.stop>
                             <div class="space-y-1 mb-2 max-h-48 overflow-y-auto pr-1">
-                              <div v-if="dynamicCompanyOptions.length === 0" class="text-slate-400 text-[11px] py-1">Không có dữ liệu công ty</div>
+                              <div v-if="dynamicCompanyOptions.length === 0" class="text-slate-400 text-[11px] py-1">Không Có Dữ Liệu Công Ty</div>
                               <label v-for="opt in dynamicCompanyOptions" :key="opt.value" class="flex items-center gap-2 py-1 px-1.5 hover:bg-slate-50 rounded cursor-pointer select-none text-slate-700">
                                 <input type="checkbox" :value="opt.value" v-model="tempCheckboxFilters.company" class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
                                 <span class="truncate" :title="opt.label">{{ opt.label }}</span>
@@ -3648,9 +3673,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 14. Thêm giường [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[90px]" title="Thêm giường (Extra bed)">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[90px] text-center align-middle border" title="Thêm giường (Extra bed)">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate" title="Thêm giường (Extra bed)">Thêm giường</span>
+                            <span class="truncate" title="Thêm giường (Extra bed)">Thêm Giường</span>
                             <button type="button" @click.stop="toggleColFilter('extraBed')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('extraBed') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc thêm giường">
                               <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 10 10"><path d="M0 1h10L6 5.5v3.5l-2-1V5.5L0 1z"/></svg>
                             </button>
@@ -3671,9 +3696,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 15. Yêu cầu ĐB [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[95px]" title="Yêu cầu đặc biệt (YCĐB)">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[95px] text-center align-middle border" title="Yêu cầu đặc biệt (YCĐB)">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate" title="Yêu cầu đặc biệt (YCĐB)">Yêu cầu ĐB</span>
+                            <span class="truncate" title="Yêu cầu đặc biệt (YCĐB)">Yêu Cầu ĐB</span>
                             <button type="button" @click.stop="toggleColFilter('specialRequests')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('specialRequests') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc yêu cầu đặc biệt">
                               <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 10 10"><path d="M0 1h10L6 5.5v3.5l-2-1V5.5L0 1z"/></svg>
                             </button>
@@ -3694,9 +3719,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 16. Nhận phòng trễ [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[110px]" title="Nhận phòng trễ (Late check-in)">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[110px] text-center align-middle border" title="Nhận phòng trễ (Late check-in)">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate" title="Nhận phòng trễ (Late check-in)">Nhận phòng trễ</span>
+                            <span class="truncate" title="Nhận phòng trễ (Late check-in)">Nhận Phòng Trễ</span>
                             <button type="button" @click.stop="toggleColFilter('lateCheckin')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('lateCheckin') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc nhận phòng trễ">
                               <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 10 10"><path d="M0 1h10L6 5.5v3.5l-2-1V5.5L0 1z"/></svg>
                             </button>
@@ -3717,9 +3742,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 17. Chuyển phòng kế hoạch [▾] -->
-                        <th class="p-2 relative col-filter-container w-[130px]" title="Chuyển phòng kế hoạch">
+                        <th class="p-2 relative col-filter-container w-[130px] text-center align-middle border-r border-slate-200 border" title="Chuyển phòng kế hoạch">
                           <div class="flex items-center justify-between gap-1 w-full">
-                            <span class="truncate" title="Chuyển phòng kế hoạch">Chuyển phòng kế hoạch</span>
+                            <span class="truncate" title="Chuyển phòng kế hoạch">Chuyển Phòng Kế Hoạch</span>
                             <button type="button" @click.stop="toggleColFilter('planMove')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('planMove') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc chuyển phòng">
                               <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 10 10"><path d="M0 1h10L6 5.5v3.5l-2-1V5.5L0 1z"/></svg>
                             </button>
@@ -3743,7 +3768,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
                     <tbody>
                       <tr v-if="displayedTableRooms.length === 0">
-                        <td colspan="17" class="text-center py-10 text-slate-400 text-xs">
+                        <td colspan="17" class="text-center py-10 text-slate-400 text-xs border-slate-200">
                           Không có phòng nào khớp với điều kiện lọc
                         </td>
                       </tr>
@@ -3758,7 +3783,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         @contextmenu.prevent="handleContextMenu($event, room)"
                       >
                         <!-- 1. STT + Checkbox -->
-                        <td class="p-2 border-r border-slate-200 text-center select-none" @click.stop>
+                        <td class="p-2 border-slate-200 text-center select-none" @click.stop>
                           <div class="flex items-center justify-center gap-1.5">
                             <input type="checkbox" :checked="selectedRoomIds.includes(room.id)" @change="toggleRoomSelection(room)" class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" aria-label="Chọn phòng" />
                             <span class="text-[11px] text-slate-600 font-medium">{{ idx + 1 }}</span>
@@ -3766,7 +3791,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </td>
 
                         <!-- 2. TTĐK (Arrival / Departure dots) -->
-                        <td class="p-2 border-r border-slate-200 text-center">
+                        <td class="p-2 border-slate-200 text-center">
                           <div class="flex items-center justify-center gap-1">
                             <span v-if="hasArrivalToday(room)" class="w-2.5 h-2.5 rounded-full block bg-emerald-500 shadow-xs" title="Phòng đến (Xanh lá)"></span>
                             <span v-if="hasDepartureToday(room)" class="w-2.5 h-2.5 rounded-full block bg-red-500 shadow-xs" title="Phòng đi (Đỏ)"></span>
@@ -3775,7 +3800,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </td>
 
                         <!-- 3. TT Phòng -->
-                        <td class="p-2 border-r border-slate-200 text-center">
+                        <td class="p-2 border-slate-200 text-center">
                           <div class="flex items-center justify-center">
                             <RoomIcon v-if="getRoomStatusIconName(room)" :name="getRoomStatusIconName(room)" :monochrome="false" :class="getRoomStatusIconClass(room)" class="w-5 h-5 mx-auto" />
                             <span v-else class="text-slate-400">-</span>
@@ -3783,16 +3808,16 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </td>
 
                         <!-- 4. Tầng -->
-                        <td class="p-2 border-r border-slate-200 text-center text-[11px] font-medium">
+                        <td class="p-2 border-slate-200 text-center text-[11px] font-medium">
                           {{ room.floor }}
                         </td>
 
                         <!-- 5. Phòng -->
-                        <td class="p-2 border-r border-slate-200 text-center font-bold text-[13px]">
+                        <td class="p-2 border-slate-200 text-center font-bold text-[13px]">
                           <span
                             :class="[
                               isRoomNumberRed(room) ? 'text-red-600 font-black' : '',
-                              isArrivingTomorrow(room) ? 'underline font-black decoration-2' : ''
+                              isArrivingTomorrow(room) ? 'underline decoration-1 underline-offset-[2px]' : ''
                             ]"
                             :style="getRoomNumberStyle(room)"
                             class="inline-flex items-center justify-center gap-1">
@@ -3810,62 +3835,62 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </td>
 
                         <!-- 6. Loại phòng -->
-                        <td class="p-2 border-r border-slate-200 text-center font-medium">
+                        <td class="p-2 border-slate-200 text-center font-medium">
                           {{ room.room_type || room.room_class?.code || '-' }}
                         </td>
 
                         <!-- 7. Dạng phòng -->
-                        <td class="p-2 border-r border-slate-200 text-center text-[11px]">
+                        <td class="p-2 border-slate-200 text-center text-[11px]">
                           {{ getRoomTypeShape(room) || '-' }}
                         </td>
 
                         <!-- 8. Tên khách -->
-                        <td class="p-2 border-r border-slate-200 truncate font-medium" :title="getMockGuestName(room)">
+                        <td class="p-2 border-slate-200 truncate font-medium" :title="getMockGuestName(room)">
                           {{ getMockGuestName(room) || '-' }}
                         </td>
 
                         <!-- 9. Mã ĐK -->
-                        <td class="p-2 border-r border-slate-200 text-center text-[11px]">
+                        <td class="p-2 border-slate-200 text-center text-[11px]">
                           {{ getMockRegId(room) || '-' }}
                         </td>
 
                         <!-- 10. Tên đăng ký -->
-                        <td class="p-2 border-r border-slate-200 truncate text-[11px]" :title="getMockRegName(room)">
+                        <td class="p-2 border-slate-200 truncate text-[11px]" :title="getMockRegName(room)">
                           {{ getMockRegName(room) || '-' }}
                         </td>
 
                         <!-- 11. Ngày đến -->
-                        <td class="p-2 border-r border-slate-200 text-center text-[11px]">
+                        <td class="p-2 border-slate-200 text-center text-[11px]">
                           {{ formatDateShort(room.arrival_date || room.actual_arrival_date || room.check_in) || '-' }}
                         </td>
 
                         <!-- 12. Ngày đi -->
-                        <td class="p-2 border-r border-slate-200 text-center text-[11px]">
+                        <td class="p-2 border-slate-200 text-center text-[11px]">
                           {{ formatDateShort(room.departure_date || room.actual_departure_date || room.check_out) || '-' }}
                         </td>
 
                         <!-- 13. Công ty -->
-                        <td class="p-2 border-r border-slate-200 truncate text-[11px]" :title="getMockCompany(room)">
+                        <td class="p-2 border-slate-200 truncate text-[11px]" :title="getMockCompany(room)">
                           {{ getMockCompany(room) || '-' }}
                         </td>
 
                         <!-- 14. Thêm giường -->
-                        <td class="p-2 border-r border-slate-200 text-center">
+                        <td class="p-2 border-slate-200 text-center">
                           {{ room.extra_bed_qty || '-' }}
                         </td>
 
                         <!-- 15. Yêu cầu ĐB -->
-                        <td class="p-2 border-r border-slate-200 text-center truncate" :title="getListSpecialRequests(room)">
+                        <td class="p-2 border-slate-200 text-center truncate" :title="getListSpecialRequests(room)">
                           {{ getListSpecialRequests(room) || '-' }}
                         </td>
 
                         <!-- 16. Nhận phòng trễ -->
-                        <td class="p-2 border-r border-slate-200 text-center">
+                        <td class="p-2 border-slate-200 text-center">
                           {{ getListLateCheckin(room) }}
                         </td>
 
                         <!-- 17. Chuyển phòng kế hoạch -->
-                        <td class="p-2 text-center">
+                        <td class="p-2 text-center border-slate-200">
                           <span v-if="room.plan_move || room.is_plan_move" class="text-amber-600 font-medium">Có</span>
                           <span v-else class="text-slate-400">-</span>
                         </td>
@@ -3905,9 +3930,13 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                   <!-- Ngày filter -->
                   <div class="flex flex-col gap-1.5">
                     <span :class="TEXT_THEME.sidebarLabel">{{ t('roomMap.date') }}</span>
-                    <input type="date" v-model="rawDate"
-                      class="border border-slate-200 rounded-lg p-2.5 focus:outline-none focus:ring-2 focus:ring-[#97d5ff] bg-white"
-                      :class="TEXT_THEME.sidebarLabel" />
+                    <SingleDatePicker
+                      v-model="rawDate"
+                      :start-date="systemDate || rawDate"
+                      placeholder="dd/mm/yyyy"
+                      four-digit-year
+                      input-class="h-9 bg-white border-slate-200"
+                    />
                   </div>
 
                   <!-- Tầng filter -->
@@ -4535,13 +4564,21 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
       <div v-if="showStatsModal"
         class="fixed inset-0 z-[99999] flex items-center justify-center bg-black/55 backdrop-blur-[2px] p-4 select-none">
         <div
-          class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden border border-slate-200 flex flex-col max-h-[90vh] animate-[fadeIn_0.2s_ease-out]">
+          class="bg-white rounded-xl shadow-2xl w-full max-w-4xl overflow-hidden border border-slate-200 flex flex-col max-h-[90vh] animate-[fadeIn_0.2s_ease-out]">
           <!-- Header -->
-          <div class="bg-blue-600 text-white px-5 py-3 flex items-center justify-between">
-            <h3 class="text-sm font-extrabold tracking-wide uppercase">Thống kê</h3>
-            <button @click="showStatsModal = false"
-              class="text-white/80 hover:text-white bg-transparent border-none text-lg font-black cursor-pointer leading-none">
-              ✕
+          <div 
+            class="px-5 py-3 flex items-center justify-between text-white rounded-t-xl"
+            :style="{ background: 'var(--pms-custom-theme, #006bdb)', color: 'var(--pms-custom-theme-text, #ffffff)' }"
+          >
+            <h3 class="text-xs font-semibold tracking-wide uppercase text-white">Thống kê</h3>
+            <button
+              @click="showStatsModal = false"
+              class="w-6 h-6 rounded-md bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors border-none cursor-pointer text-white"
+              title="Đóng (Esc)"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
             </button>
           </div>
 
@@ -4554,20 +4591,20 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 <div class="flex items-center justify-between">
                   <span class="font-semibold">Tổng phòng</span>
                   <span
-                    class="px-2 py-0.5 bg-slate-100 border border-slate-200 rounded font-bold text-slate-800 text-right min-w-[50px] inline-block tabular-nums">{{
+                    class="px-2 py-0.5 bg-slate-100 border border-slate-200 rounded font-bold text-slate-800 text-center min-w-[50px] inline-block tabular-nums">{{
                       roomMapStatistics.totalRooms }}</span>
                 </div>
                 <div class="flex items-center justify-between">
                   <span class="font-semibold text-amber-700">OOO</span>
                   <span
-                    class="px-2 py-0.5 bg-amber-50 border border-amber-200 rounded font-bold text-amber-800 text-right min-w-[50px] inline-block tabular-nums">{{
+                    class="px-2 py-0.5 bg-amber-50 border border-amber-200 rounded font-bold text-amber-800 text-center min-w-[50px] inline-block tabular-nums">{{
                       roomMapStatistics.ooo
                     }}</span>
                 </div>
                 <div class="flex items-center justify-between">
                   <span class="font-semibold text-emerald-700">OOS</span>
                   <span
-                    class="px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded font-bold text-emerald-800 text-right min-w-[50px] inline-block tabular-nums">{{
+                    class="px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded font-bold text-emerald-800 text-center min-w-[50px] inline-block tabular-nums">{{
                       roomMapStatistics.oos
                     }}</span>
                 </div>
@@ -4575,7 +4612,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                   class="flex items-center justify-between pt-1 border-t border-dashed border-slate-200 font-bold text-slate-900">
                   <span>Tổng phòng có thể bán</span>
                   <span
-                    class="px-2 py-0.5 bg-blue-50 border border-blue-200 rounded text-blue-700 text-right min-w-[50px] inline-block tabular-nums">{{
+                    class="px-2 py-0.5 bg-blue-50 border border-blue-200 rounded text-blue-700 text-center min-w-[50px] inline-block tabular-nums">{{
                       roomMapStatistics.saleableRooms
                     }}</span>
                 </div>
@@ -4588,26 +4625,26 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
               <table class="w-full text-xs border-collapse">
                 <thead>
                   <tr class="text-slate-500 font-bold border-b border-slate-100">
-                    <th class="pb-1.5 text-left font-semibold">Trạng thái</th>
-                    <th class="pb-1.5 text-right w-16 font-bold text-[11px] text-red-500">Occ</th>
-                    <th class="pb-1.5 text-right w-16 font-bold text-[11px] text-emerald-500">Vac</th>
+                    <th class="pb-1.5 text-center font-semibold align-middle border-r border-slate-200 border">Trạng Thái</th>
+                    <th class="pb-1.5 text-center w-16 font-semibold text-xs text-red-500 align-middle border-r border-slate-200 border">Occ</th>
+                    <th class="pb-1.5 text-center w-16 font-semibold text-xs text-emerald-500 align-middle border-r border-slate-200 border">Vac</th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100 text-slate-700">
                   <tr class="h-8">
-                    <td class="font-semibold">Phòng sẵn sàng</td>
-                    <td class="text-right font-bold tabular-nums">{{ roomMapStatistics.occupiedReady }}</td>
-                    <td class="text-right font-bold tabular-nums">{{ roomMapStatistics.vacantReady }}</td>
+                    <td class="font-semibold border-slate-200">Phòng sẵn sàng</td>
+                    <td class="text-center font-bold tabular-nums border-slate-200">{{ roomMapStatistics.occupiedReady }}</td>
+                    <td class="text-center font-bold tabular-nums border-slate-200">{{ roomMapStatistics.vacantReady }}</td>
                   </tr>
                   <tr class="h-8">
-                    <td class="font-semibold">Phòng sạch</td>
-                    <td class="text-right font-bold tabular-nums">{{ roomMapStatistics.occupiedClean }}</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.vacantClean }}</td>
+                    <td class="font-semibold border-slate-200">Phòng sạch</td>
+                    <td class="text-center font-bold tabular-nums border-slate-200">{{ roomMapStatistics.occupiedClean }}</td>
+                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.vacantClean }}</td>
                   </tr>
                   <tr class="h-8">
-                    <td class="font-semibold">Phòng dơ</td>
-                    <td class="text-right font-bold text-red-600 tabular-nums">{{ roomMapStatistics.occupiedDirty }}</td>
-                    <td class="text-right font-bold text-red-600 tabular-nums">{{ roomMapStatistics.vacantDirty }}</td>
+                    <td class="font-semibold border-slate-200">Phòng dơ</td>
+                    <td class="text-center font-bold text-red-600 tabular-nums border-slate-200">{{ roomMapStatistics.occupiedDirty }}</td>
+                    <td class="text-center font-bold text-red-600 tabular-nums border-slate-200">{{ roomMapStatistics.vacantDirty }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -4620,61 +4657,61 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
               <table class="w-full text-xs border-collapse">
                 <thead>
                   <tr class="text-slate-500 font-bold border-b border-slate-100">
-                    <th class="pb-1.5 text-left font-semibold">Trạng thái</th>
-                    <th class="pb-1.5 text-right w-16 font-bold text-[11px]">Room</th>
-                    <th class="pb-1.5 text-right w-16 font-bold text-[11px]">Pax</th>
+                    <th class="pb-1.5 text-center font-semibold align-middle border-r border-slate-200 border">Trạng Thái</th>
+                    <th class="pb-1.5 text-center w-16 font-semibold text-xs align-middle border-r border-slate-200 border">Room</th>
+                    <th class="pb-1.5 text-center w-16 font-semibold text-xs align-middle border-r border-slate-200 border">Pax</th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100 text-slate-700">
                   <tr class="h-7.5">
-                    <td class="font-semibold">Phòng chưa trả</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.pendingCheckoutRooms }}</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.pendingCheckoutPax }}</td>
+                    <td class="font-semibold border-slate-200">Phòng chưa trả</td>
+                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.pendingCheckoutRooms }}</td>
+                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.pendingCheckoutPax }}</td>
                   </tr>
                   <tr class="h-7.5">
-                    <td class="font-semibold">Phòng đã trả</td>
-                    <td class="text-right font-bold text-red-500 tabular-nums">{{ roomMapStatistics.checkedOutRooms }}</td>
-                    <td class="text-right font-bold text-red-500 tabular-nums">-</td>
+                    <td class="font-semibold border-slate-200">Phòng đã trả</td>
+                    <td class="text-center font-bold text-red-500 tabular-nums border-slate-200">{{ roomMapStatistics.checkedOutRooms }}</td>
+                    <td class="text-center font-bold text-red-500 tabular-nums border-slate-200">-</td>
                   </tr>
                   <tr class="h-7.5">
-                    <td class="font-semibold">Phòng đến</td>
-                    <td class="text-right font-bold text-emerald-600 tabular-nums">{{ roomMapStatistics.arrivalsRooms }}</td>
-                    <td class="text-right font-bold text-emerald-600 tabular-nums">{{ roomMapStatistics.arrivalsPax }}</td>
+                    <td class="font-semibold border-slate-200">Phòng đến</td>
+                    <td class="text-center font-bold text-emerald-600 tabular-nums border-slate-200">{{ roomMapStatistics.arrivalsRooms }}</td>
+                    <td class="text-center font-bold text-emerald-600 tabular-nums border-slate-200">{{ roomMapStatistics.arrivalsPax }}</td>
                   </tr>
                   <tr class="h-7.5">
-                    <td class="font-semibold">Phòng đến đã gán phòng</td>
-                    <td class="text-right font-bold text-emerald-600 tabular-nums">{{ roomMapStatistics.assignedArrivalRooms }}</td>
-                    <td class="text-right font-bold text-emerald-600 tabular-nums">{{ roomMapStatistics.assignedArrivalPax }}</td>
+                    <td class="font-semibold border-slate-200">Phòng đến đã gán phòng</td>
+                    <td class="text-center font-bold text-emerald-600 tabular-nums border-slate-200">{{ roomMapStatistics.assignedArrivalRooms }}</td>
+                    <td class="text-center font-bold text-emerald-600 tabular-nums border-slate-200">{{ roomMapStatistics.assignedArrivalPax }}</td>
                   </tr>
                   <tr class="h-7.5">
-                    <td class="font-semibold">Phòng đã đến</td>
-                    <td class="text-right font-bold text-slate-800 tabular-nums">{{ roomMapStatistics.checkedInRooms }}</td>
-                    <td class="text-right font-bold text-slate-800 tabular-nums">{{ roomMapStatistics.checkedInPax }}</td>
+                    <td class="font-semibold border-slate-200">Phòng đã đến</td>
+                    <td class="text-center font-bold text-slate-800 tabular-nums border-slate-200">{{ roomMapStatistics.checkedInRooms }}</td>
+                    <td class="text-center font-bold text-slate-800 tabular-nums border-slate-200">{{ roomMapStatistics.checkedInPax }}</td>
                   </tr>
                   <tr class="h-7.5">
-                    <td class="font-semibold text-sky-700">Phòng đang ở</td>
-                    <td class="text-right font-bold text-sky-700 tabular-nums">{{ roomMapStatistics.occupiedRooms }}</td>
-                    <td class="text-right font-bold text-sky-700 tabular-nums">{{ roomMapStatistics.occupiedPax }}</td>
+                    <td class="font-semibold text-sky-700 border-slate-200">Phòng đang ở</td>
+                    <td class="text-center font-bold text-sky-700 tabular-nums border-slate-200">{{ roomMapStatistics.occupiedRooms }}</td>
+                    <td class="text-center font-bold text-sky-700 tabular-nums border-slate-200">{{ roomMapStatistics.occupiedPax }}</td>
                   </tr>
                   <tr class="h-7.5">
-                    <td class="font-semibold">Trả phòng sớm</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.earlyCheckoutRooms }}</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">-</td>
+                    <td class="font-semibold border-slate-200">Trả phòng sớm</td>
+                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.earlyCheckoutRooms }}</td>
+                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">-</td>
                   </tr>
                   <tr class="h-7.5">
-                    <td class="font-semibold">Phòng ở theo giờ</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.hourlyRooms }}</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">-</td>
+                    <td class="font-semibold border-slate-200">Phòng ở theo giờ</td>
+                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.hourlyRooms }}</td>
+                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">-</td>
                   </tr>
                   <tr class="h-7.5">
-                    <td class="font-semibold">Đặt phòng trong ngày</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.sameDayBookings }}</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.arrivalsPax }}</td>
+                    <td class="font-semibold border-slate-200">Đặt phòng trong ngày</td>
+                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.sameDayBookings }}</td>
+                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.arrivalsPax }}</td>
                   </tr>
                   <tr class="h-7.5">
-                    <td class="font-semibold">Khách vãng lai</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.walkInRooms }}</td>
-                    <td class="text-right font-bold text-slate-400 tabular-nums">-</td>
+                    <td class="font-semibold border-slate-200">Khách vãng lai</td>
+                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.walkInRooms }}</td>
+                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">-</td>
                   </tr>
                 </tbody>
               </table>
@@ -4689,60 +4726,60 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 <table class="w-full text-xs border-collapse">
                   <thead>
                     <tr class="text-slate-500 font-bold border-b border-slate-100">
-                      <th class="pb-1.5 text-left font-semibold">Dự báo</th>
-                      <th class="pb-1.5 text-right w-14 font-bold text-[11px]">Room</th>
-                      <th class="pb-1.5 text-right w-14 font-bold text-[11px]">Pax</th>
-                      <th class="pb-1.5 text-right w-16 font-bold text-[11px]">%</th>
+                      <th class="pb-1.5 text-center font-semibold align-middle border-r border-slate-200 border">Dự Báo</th>
+                      <th class="pb-1.5 text-center w-14 font-semibold text-xs align-middle border-r border-slate-200 border">Room</th>
+                      <th class="pb-1.5 text-center w-14 font-semibold text-xs align-middle border-r border-slate-200 border">Pax</th>
+                      <th class="pb-1.5 text-center w-16 font-semibold text-xs align-middle border-r border-slate-200 border">%</th>
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-slate-100 text-slate-700">
                     <tr class="h-7">
-                      <td class="font-semibold">Khách lẻ</td>
-                      <td class="text-right font-bold tabular-nums">{{ roomMapStatistics.retailRooms }}</td>
-                      <td class="text-right font-bold tabular-nums">{{ roomMapStatistics.retailPax }}</td>
-                      <td class="text-right font-bold text-slate-400">-</td>
+                      <td class="font-semibold border-slate-200">Khách lẻ</td>
+                      <td class="text-center font-bold tabular-nums border-slate-200">{{ roomMapStatistics.retailRooms }}</td>
+                      <td class="text-center font-bold tabular-nums border-slate-200">{{ roomMapStatistics.retailPax }}</td>
+                      <td class="text-center font-bold text-slate-400 border-slate-200">-</td>
                     </tr>
                     <tr class="h-7">
-                      <td class="font-semibold">Khách đoàn</td>
-                      <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.groupRooms }}</td>
-                      <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.groupPax }}</td>
-                      <td class="text-right font-bold text-slate-400">-</td>
+                      <td class="font-semibold border-slate-200">Khách đoàn</td>
+                      <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.groupRooms }}</td>
+                      <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.groupPax }}</td>
+                      <td class="text-center font-bold text-slate-400 border-slate-200">-</td>
                     </tr>
                     <tr class="h-7">
-                      <td class="font-semibold">Phòng ở (ko b/g COMP.HU)</td>
-                      <td class="text-right font-bold tabular-nums">{{ roomMapStatistics.chargeableRooms }}</td>
-                      <td class="text-right font-bold tabular-nums">{{ roomMapStatistics.chargeablePax }}</td>
-                      <td class="text-right font-bold text-sky-600 tabular-nums">{{ roomMapStatistics.occupancyRate }}%</td>
+                      <td class="font-semibold border-slate-200">Phòng ở (ko b/g COMP.HU)</td>
+                      <td class="text-center font-bold tabular-nums border-slate-200">{{ roomMapStatistics.chargeableRooms }}</td>
+                      <td class="text-center font-bold tabular-nums border-slate-200">{{ roomMapStatistics.chargeablePax }}</td>
+                      <td class="text-center font-bold text-sky-600 tabular-nums border-slate-200">{{ roomMapStatistics.occupancyRate }}%</td>
                     </tr>
                     <tr class="h-7">
-                      <td class="font-semibold">Phòng COMP</td>
-                      <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.compRooms }}</td>
-                      <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.compPax }}</td>
-                      <td class="text-right font-bold text-slate-400">-</td>
+                      <td class="font-semibold border-slate-200">Phòng COMP</td>
+                      <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.compRooms }}</td>
+                      <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.compPax }}</td>
+                      <td class="text-center font-bold text-slate-400 border-slate-200">-</td>
                     </tr>
                     <tr class="h-7">
-                      <td class="font-semibold">Phòng ở (ko b/g HU)</td>
-                      <td class="text-right font-bold tabular-nums">{{ roomMapStatistics.chargeableRooms + roomMapStatistics.compRooms }}</td>
-                      <td class="text-right font-bold tabular-nums">{{ roomMapStatistics.chargeablePax + roomMapStatistics.compPax }}</td>
-                      <td class="text-right font-bold text-sky-600 tabular-nums">{{ roomMapStatistics.occupancyRate }}%</td>
+                      <td class="font-semibold border-slate-200">Phòng ở (ko b/g HU)</td>
+                      <td class="text-center font-bold tabular-nums border-slate-200">{{ roomMapStatistics.chargeableRooms + roomMapStatistics.compRooms }}</td>
+                      <td class="text-center font-bold tabular-nums border-slate-200">{{ roomMapStatistics.chargeablePax + roomMapStatistics.compPax }}</td>
+                      <td class="text-center font-bold text-sky-600 tabular-nums border-slate-200">{{ roomMapStatistics.occupancyRate }}%</td>
                     </tr>
                     <tr class="h-7">
-                      <td class="font-semibold">Phòng nội bộ</td>
-                      <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.internalRooms }}</td>
-                      <td class="text-right font-bold text-slate-400 tabular-nums">{{ roomMapStatistics.internalPax }}</td>
-                      <td class="text-right font-bold text-slate-400">-</td>
+                      <td class="font-semibold border-slate-200">Phòng nội bộ</td>
+                      <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.internalRooms }}</td>
+                      <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.internalPax }}</td>
+                      <td class="text-center font-bold text-slate-400 border-slate-200">-</td>
                     </tr>
                     <tr class="h-7">
-                      <td class="font-semibold text-blue-700">Phòng ở</td>
-                      <td class="text-right font-bold text-blue-700 tabular-nums">{{ roomMapStatistics.endOfDayRooms }}</td>
-                      <td class="text-right font-bold text-blue-700 tabular-nums">{{ roomMapStatistics.endOfDayPax }}</td>
-                      <td class="text-right font-bold text-blue-700 tabular-nums">{{ roomMapStatistics.occupancyRate }}%</td>
+                      <td class="font-semibold text-blue-700 border-slate-200">Phòng ở</td>
+                      <td class="text-center font-bold text-blue-700 tabular-nums border-slate-200">{{ roomMapStatistics.endOfDayRooms }}</td>
+                      <td class="text-center font-bold text-blue-700 tabular-nums border-slate-200">{{ roomMapStatistics.endOfDayPax }}</td>
+                      <td class="text-center font-bold text-blue-700 tabular-nums border-slate-200">{{ roomMapStatistics.occupancyRate }}%</td>
                     </tr>
                     <tr class="h-7">
-                      <td class="font-semibold text-red-500">Phòng trống</td>
-                      <td class="text-right font-bold text-red-500 tabular-nums">{{ roomMapStatistics.vacantRooms }}</td>
-                      <td class="text-right font-bold text-slate-400 tabular-nums">-</td>
-                      <td class="text-right font-bold text-slate-400">-</td>
+                      <td class="font-semibold text-red-500 border-slate-200">Phòng trống</td>
+                      <td class="text-center font-bold text-red-500 tabular-nums border-slate-200">{{ roomMapStatistics.vacantRooms }}</td>
+                      <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">-</td>
+                      <td class="text-center font-bold text-slate-400 border-slate-200">-</td>
                     </tr>
                   </tbody>
                 </table>
@@ -4754,15 +4791,15 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 <h5 class="font-bold text-slate-900 mb-1 select-none">Dự báo</h5>
                 <div class="flex items-center justify-between">
                   <span class="font-semibold">Doanh thu</span>
-                  <span class="font-bold text-emerald-600">{{ formatVnd(roomMapStatistics.projectedRevenue) }}</span>
+                  <span class="w-[120px] text-center font-bold text-emerald-600">{{ formatVnd(roomMapStatistics.projectedRevenue) }}</span>
                 </div>
                 <div class="flex items-center justify-between">
                   <span class="font-semibold">Giá phòng trung bình (ko b/g HU)</span>
-                  <span class="font-bold text-slate-800">{{ formatVnd(roomMapStatistics.averageRate) }}</span>
+                  <span class="w-[120px] text-center font-bold text-slate-800">{{ formatVnd(roomMapStatistics.averageRate) }}</span>
                 </div>
                 <div class="flex items-center justify-between">
                   <span class="font-semibold">DT bình quân/ Tổng phòng có thể bán</span>
-                  <span class="font-bold text-slate-800">{{ formatVnd(roomMapStatistics.revenuePerSaleableRoom) }}</span>
+                  <span class="w-[120px] text-center font-bold text-slate-800">{{ formatVnd(roomMapStatistics.revenuePerSaleableRoom) }}</span>
                 </div>
               </div>
             </div>
@@ -4931,33 +4968,66 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
     <!-- Room Lock Modal -->
     <Teleport to="body">
       <div v-if="showRoomLockModal" class="fixed inset-0 z-[1000000] flex items-center justify-center bg-slate-900/40 p-4" @click.self="showRoomLockModal = false">
-        <div class="w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl" :style="{ transform: `translate(${roomLockModalPos.x}px, ${roomLockModalPos.y}px)` }">
-          <div class="flex cursor-move select-none items-center justify-between px-5 py-3 text-white" @mousedown="startRoomLockDrag" :style="{ background: 'var(--pms-custom-theme, #85c2ea)' }">
-            <h3 class="text-sm font-black uppercase">Thêm khóa {{ roomLockForm.lockType }}</h3>
-            <button type="button" class="text-xl" @click="showRoomLockModal = false">×</button>
+        <div class="w-full max-w-2xl overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl animate-modal-slide" :style="{ transform: `translate(${roomLockModalPos.x}px, ${roomLockModalPos.y}px)` }">
+          <div class="flex cursor-move select-none items-center justify-between px-4 py-2.5 text-white rounded-t-xl" @mousedown="startRoomLockDrag" :style="{ background: 'var(--pms-custom-theme, #006bdb)', color: 'var(--pms-custom-theme-text, #ffffff)' }">
+            <h3 class="text-xs font-semibold uppercase tracking-wide">Thêm khóa {{ roomLockForm.lockType }}</h3>
+            <button
+              type="button"
+              class="w-6 h-6 rounded-md bg-white/20 hover:bg-white/30 flex items-center justify-center transition-colors border-none cursor-pointer text-white"
+              title="Đóng (Esc)"
+              @click="showRoomLockModal = false"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
           </div>
           <div class="grid grid-cols-1 gap-5 p-5 md:grid-cols-2">
             <div class="space-y-4">
-              <label class="block text-[11px] font-bold uppercase text-slate-500">Bắt đầu
-                <input v-model="roomLockForm.startDate" type="date" disabled class="mt-1 w-full cursor-not-allowed rounded border border-slate-200 bg-slate-100 px-3 py-2 text-sm text-slate-500" />
-              </label>
-              <label class="block text-[11px] font-bold uppercase text-slate-500">Kết thúc *
-                <div class="relative mt-1">
-                  <input ref="lockEndDateInput" v-model="roomLockForm.endDate" type="date" :min="roomLockForm.startDate" @click="openLockEndDatePicker" class="w-full cursor-pointer rounded border border-slate-300 bg-white px-3 py-2 pr-10 text-sm text-slate-700 appearance-auto [&::-webkit-calendar-picker-indicator]:opacity-0" />
-                  <svg @click="openLockEndDatePicker" class="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 cursor-pointer text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-                </div>
-              </label>
-              <label class="block text-[11px] font-bold uppercase text-slate-500">Phòng
-                <input :value="roomLockForm.room?.room_number || ''" disabled class="mt-1 w-full cursor-not-allowed rounded border border-slate-200 bg-slate-100 px-3 py-2 text-sm text-slate-500" />
+              <div>
+                <span class="block text-xs font-semibold text-[#000000D9] mb-1">Bắt đầu</span>
+                <SingleDatePicker
+                  v-model="roomLockForm.startDate"
+                  disabled
+                  four-digit-year
+                  placeholder="dd/mm/yyyy"
+                  input-class="!h-8 !bg-slate-100"
+                  text-input-class="!font-normal !text-slate-500"
+                />
+              </div>
+              <div>
+                <span class="block text-xs font-semibold text-[#000000D9] mb-1">Kết thúc <span class="text-rose-500">*</span></span>
+                <SingleDatePicker
+                  v-model="roomLockForm.endDate"
+                  :min-date="roomLockForm.startDate"
+                  :start-date="roomLockForm.startDate || systemDate"
+                  four-digit-year
+                  placeholder="dd/mm/yyyy"
+                  input-class="!h-8 !border-[#F1DD8A] !bg-[#FFF8DB]"
+                  text-input-class="!font-semibold !text-[#000000D9]"
+                />
+              </div>
+              <label class="block text-xs font-semibold text-[#000000D9]">Phòng
+                <input :value="roomLockForm.room?.room_number || ''" disabled class="mt-1 w-full h-8 cursor-not-allowed rounded-lg border border-slate-200 bg-slate-100 px-3 text-xs font-normal text-slate-500" />
               </label>
             </div>
-            <label class="block text-[11px] font-bold uppercase text-slate-500">Ghi chú *
-              <textarea v-model="roomLockForm.reason" rows="6" required placeholder="Nhập ghi chú hoặc lý do bảo trì..." class="mt-1 w-full resize-none rounded border px-3 py-2 text-sm"></textarea>
+            <label class="block text-xs font-semibold text-[#000000D9]">Ghi chú <span class="text-rose-500">*</span>
+              <textarea v-model="roomLockForm.reason" rows="6" required placeholder="Nhập ghi chú hoặc lý do bảo trì..." class="mt-1 w-full resize-none rounded-lg border border-[#F1DD8A] bg-[#FFF8DB] px-3 py-2 text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF] focus:outline-none focus:ring-1 focus:ring-amber-400"></textarea>
             </label>
           </div>
-          <div class="flex justify-end gap-2 border-t bg-slate-50 px-5 py-3">
-            <button type="button" class="rounded border px-4 py-2 text-sm" @click="showRoomLockModal = false">Hủy</button>
-            <button type="button" class="rounded bg-blue-600 px-4 py-2 text-sm font-bold text-white" @click="submitRoomLock()">Khóa phòng</button>
+          <div class="flex justify-end gap-2 border-t bg-slate-50 px-5 py-3 rounded-b-xl">
+            <button type="button" class="btn-pms-close h-8 px-4 text-xs font-semibold rounded-lg flex items-center gap-1.5 cursor-pointer" @click="showRoomLockModal = false">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              Đóng
+            </button>
+            <button type="button" class="btn-pms-primary h-8 px-4 text-xs font-semibold rounded-lg flex items-center gap-1.5 cursor-pointer" @click="submitRoomLock()">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+              Khóa phòng
+            </button>
           </div>
         </div>
       </div>
@@ -5070,6 +5140,14 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
   width: 6px;
 }
 
+.scrollbar-thin {
+  scrollbar-width: thin;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 4px;
+}
+
 .scrollbar-thin::-webkit-scrollbar-track {
   background: transparent;
 }
@@ -5081,6 +5159,17 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
   background: #7bc4ff;
+}
+
+/* Popover Cài đặt hiển thị: Trên màn hình lớn (chiều cao >= 650px) hiển thị trọn vẹn không hiện thanh cuộn */
+@media (min-height: 650px) {
+  .settings-popover-panel {
+    max-height: none !important;
+  }
+  .settings-popover-panel .settings-popover-body {
+    overflow-y: visible !important;
+    padding-right: 0 !important;
+  }
 }
 
 .filter-panel-wrapper {

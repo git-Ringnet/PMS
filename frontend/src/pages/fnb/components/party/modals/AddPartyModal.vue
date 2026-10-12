@@ -407,6 +407,14 @@ const isDirty = computed(() => {
 })
 
 const handleSave = () => {
+  if (!String(form.value.partyName || '').trim()) {
+    uiStore.alert('Vui lòng nhập Tên đặt tiệc.')
+    return
+  }
+  if (!form.value.arrivalDate) {
+    uiStore.alert('Vui lòng chọn Ngày đến.')
+    return
+  }
   if (!form.value.saleStaff) {
     uiStore.alert('Vui lòng chọn Nhân viên sale.')
     return
@@ -580,6 +588,7 @@ defineExpose({
                 <label class="block text-[11px] font-semibold text-slate-700 mb-1">Tên đặt tiệc <span class="text-rose-500">*</span></label>
                 <input
                   v-model="form.partyName"
+                  required
                   placeholder=""
                   class="w-full px-3 py-2 border border-amber-300 rounded-lg text-xs focus:outline-none focus:border-sky-500 bg-amber-50"
                 />
@@ -590,6 +599,7 @@ defineExpose({
                   <input
                     type="date"
                     v-model="form.arrivalDate"
+                    required
                     :min="todayDate"
                     :disabled="['completed', 'serving'].includes(form.status)"
                     class="w-full px-3 py-2 border border-amber-300 rounded-lg text-xs focus:outline-none focus:border-sky-500 bg-amber-50 font-semibold"

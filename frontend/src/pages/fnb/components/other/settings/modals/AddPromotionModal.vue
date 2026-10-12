@@ -21,6 +21,7 @@ const props = defineProps({
 const emit = defineEmits(['close', 'save'])
 
 const name = ref('')
+const validationError = ref('')
 const outletId = ref(null) // null = Tất cả
 const companyId = ref(null)
 const customerSourceId = ref(null)
@@ -118,6 +119,11 @@ watch(() => props.show, (newVal) => {
 })
 
 const handleSave = () => {
+    if (!String(name.value || '').trim()) {
+        validationError.value = 'Vui lòng nhập tên chương trình.'
+        return
+    }
+    validationError.value = ''
     let company_id = null;
     let customer_source_id = null;
 
@@ -215,7 +221,8 @@ const calculateNewPrice = (item) => {
             <div class="grid grid-cols-4 gap-4">
                 <div class="col-span-2 lg:col-span-1">
                     <label class="block text-xs font-medium text-slate-700 mb-1">Tên chương trình <span class="text-red-500">*</span></label>
-                    <input v-model="name" type="text" class="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500" />
+                    <input v-model="name" @input="validationError = ''" required type="text" class="w-full px-3 py-2 border border-slate-200 rounded-md text-sm focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500" />
+                    <p v-if="validationError" class="mt-1 text-xs text-red-600">{{ validationError }}</p>
                 </div>
                 
                 <div class="col-span-2 lg:col-span-1">
@@ -325,29 +332,29 @@ const calculateNewPrice = (item) => {
                   <table class="w-full text-xs text-left text-slate-600">
                       <thead class="bg-slate-50 border-b border-slate-200 sticky top-0">
                           <tr>
-                              <th class="px-2 py-2 border-r border-slate-200">Mã</th>
-                              <th class="px-2 py-2 border-r border-slate-200">Tên</th>
-                              <th class="px-2 py-2 border-r border-slate-200 text-right">Đơn giá</th>
-                              <th class="px-2 py-2 border-r border-slate-200 text-right">Giảm giá</th>
-                              <th class="px-2 py-2 border-r border-slate-200 text-right">Đơn giá mới</th>
-                              <th class="px-2 py-2 w-8 text-center"></th>
+                              <th class="px-2 py-2 border-r border-slate-200 text-center align-middle border">Mã</th>
+                              <th class="px-2 py-2 border-r border-slate-200 text-center align-middle border">Tên</th>
+                              <th class="px-2 py-2 border-r border-slate-200 text-center align-middle border">Đơn Giá</th>
+                              <th class="px-2 py-2 border-r border-slate-200 text-center align-middle border">Giảm Giá</th>
+                              <th class="px-2 py-2 border-r border-slate-200 text-center align-middle border">Đơn Giá Mới</th>
+                              <th class="px-2 py-2 w-8 text-center align-middle border-r border-slate-200 border"></th>
                           </tr>
                       </thead>
                       <tbody>
                           <tr v-for="(item, idx) in promotionProducts" :key="item.id || item.fb_product_id" class="border-b border-slate-100 hover:bg-slate-50">
-                              <td class="px-2 py-2 border-r border-slate-100">{{ item.product_code || item.code }}</td>
-                              <td class="px-2 py-2 border-r border-slate-100 truncate max-w-[100px]" :title="item.name">{{ item.name }}</td>
-                              <td class="px-2 py-2 border-r border-slate-100 text-right">{{ getBasePrice(item).toLocaleString() }}</td>
-                              <td class="px-2 py-2 border-r border-slate-100 text-right text-red-500">{{ (getBasePrice(item) - calculateNewPrice(item)).toLocaleString() }}</td>
-                              <td class="px-2 py-2 border-r border-slate-100 text-right font-medium text-[#78C5E7]">{{ calculateNewPrice(item).toLocaleString() }}</td>
-                              <td class="px-2 py-2 text-center">
+                              <td class="px-2 py-2 border-slate-100">{{ item.product_code || item.code }}</td>
+                              <td class="px-2 py-2 border-slate-100 truncate max-w-[100px]" :title="item.name">{{ item.name }}</td>
+                              <td class="px-2 py-2 border-slate-100 text-right">{{ getBasePrice(item).toLocaleString() }}</td>
+                              <td class="px-2 py-2 border-slate-100 text-right text-red-500">{{ (getBasePrice(item) - calculateNewPrice(item)).toLocaleString() }}</td>
+                              <td class="px-2 py-2 border-slate-100 text-right font-medium text-[#78C5E7]">{{ calculateNewPrice(item).toLocaleString() }}</td>
+                              <td class="px-2 py-2 text-center border-slate-200">
                                   <button @click="removeProduct(idx)" class="text-red-500 hover:text-red-700" title="Xóa">
                                       <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                                   </button>
                               </td>
                           </tr>
                           <tr v-if="promotionProducts.length === 0">
-                              <td colspan="5" class="px-2 py-8 text-center text-slate-400">Chưa có sản phẩm nào</td>
+                              <td colspan="5" class="px-2 py-8 text-center text-slate-400 border-slate-200">Chưa có sản phẩm nào</td>
                           </tr>
                       </tbody>
                   </table>

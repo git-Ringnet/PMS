@@ -14,7 +14,7 @@ const route = useRoute()
 const authStore = useAuthStore()
 const uiStore = useUiStore()
 const loading = ref(false)
-const systemDate = ref('')
+const systemDate = ref(authStore.systemDate || localStorage.getItem('pms_system_date') || '')
 const reports = ref([])
 const activeTabId = ref(null)
 const openTabs = ref([])
@@ -95,9 +95,11 @@ const localToday = () => {
 const fetchSystemDate = async () => {
   try {
     const response = await http.get('/system-date')
-    systemDate.value = response.data?.data?.system_date || localToday()
+    const sysDate = response.data?.data?.system_date || localToday()
+    systemDate.value = sysDate
+    authStore.setSystemDate(sysDate)
   } catch {
-    systemDate.value = localToday()
+    systemDate.value = authStore.systemDate || localToday()
   }
 }
 
@@ -603,7 +605,7 @@ onBeforeUnmount(() => {
               </div>
 
               <details v-else-if="parameter.control === 'multi-select'" class="relative mt-1 font-normal">
-                <summary class="flex min-h-9 cursor-pointer list-none items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
+                <summary class="flex min-h-9 cursor-pointer list-none items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600" :class="parameter.required ? 'input-required' : ''">
                   <span class="truncate">{{ multiSelectLabel(activeTab, parameter) }}</span>
                   <span class="ml-2 text-slate-400">▾</span>
                 </summary>
@@ -616,7 +618,7 @@ onBeforeUnmount(() => {
                 </div>
               </details>
 
-              <select v-else-if="parameter.control === 'select'" v-model="activeTab.parameters[parameter.name]" @change="handleReportParameterChange(activeTab, parameter)" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
+              <select v-else-if="parameter.control === 'select'" v-model="activeTab.parameters[parameter.name]" @change="handleReportParameterChange(activeTab, parameter)" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs" :class="parameter.required ? 'input-required' : ''">
                 <option v-if="!hasEmptySelectOption(activeTab, parameter)" value="">-- Chọn --</option>
                 <option v-for="option in activeTab.parameterOptions[parameter.name] || parameter.options || []" :key="option.value ?? option" :value="option.value ?? option">
                   {{ option.label ?? option }}
@@ -628,14 +630,18 @@ onBeforeUnmount(() => {
                 v-model:start-date="activeTab.parameters[parameter.name]"
                 v-model:end-date="activeTab.parameters[parameter.range_end_parameter]"
                 :system-date="systemDate"
+                :required-highlight="parameter.required"
               />
 
               <SingleDatePicker
-                v-else-if="parameter.control === 'date' && usesCustomDatePicker(activeTab)"
+                v-else-if="parameter.control === 'date'"
                 v-model="activeTab.parameters[parameter.name]"
+                :start-date="activeTab.parameters[parameter.name] || systemDate"
+                :input-class="parameter.required ? 'input-required' : ''"
+                placeholder="dd/mm/yyyy"
+                four-digit-year
               />
-              <input v-else-if="parameter.control === 'date'" v-model="activeTab.parameters[parameter.name]" type="date" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-sky-400" />
-              <input v-else-if="parameter.control !== 'checkbox'" v-model="activeTab.parameters[parameter.name]" :type="parameter.control || 'text'" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-sky-400" />
+              <input v-else-if="parameter.control !== 'checkbox'" v-model="activeTab.parameters[parameter.name]" :type="parameter.control || 'text'" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-sky-400" :class="parameter.required ? 'input-required' : ''" />
               </div>
 
               <button :disabled="activeTab.executing || !activeTab.selectedTemplateId" @click="executeTab(activeTab)" class="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border-none bg-sky-600 px-4 py-2.5 text-xs font-black text-white shadow-sm disabled:opacity-50">

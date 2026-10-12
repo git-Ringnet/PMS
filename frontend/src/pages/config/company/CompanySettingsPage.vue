@@ -6,14 +6,14 @@ import CustomerSourceTab from './CustomerSourceTab.vue'
 import BranchTab from './BranchTab.vue'
 import BookerTab from './BookerTab.vue'
 
-const activeTab = ref('CÔNG TY')
+const activeTab = ref('Công Ty')
 
 const tabs = [
-  'CÔNG TY',
-  'THỊ TRƯỜNG',
-  'NGUỒN KHÁCH',
-  'CHI NHÁNH',
-  'Người đặt phòng'
+  'Công Ty',
+  'Thị Trường',
+  'Nguồn Khách',
+  'Chi Nhánh',
+  'Người Đặt Phòng'
 ]
 </script>
 
@@ -36,11 +36,11 @@ const tabs = [
 
     <!-- Tab Content -->
     <div class="flex-1 overflow-hidden flex flex-col">
-      <CompanyTab v-if="activeTab === 'CÔNG TY'" />
-      <MarketTab v-else-if="activeTab === 'THỊ TRƯỜNG'" />
-      <CustomerSourceTab v-else-if="activeTab === 'NGUỒN KHÁCH'" />
-      <BranchTab v-else-if="activeTab === 'CHI NHÁNH'" />
-      <BookerTab v-else-if="activeTab === 'Người đặt phòng'" />
+      <CompanyTab v-if="activeTab === 'Công Ty'" />
+      <MarketTab v-else-if="activeTab === 'Thị Trường'" />
+      <CustomerSourceTab v-else-if="activeTab === 'Nguồn Khách'" />
+      <BranchTab v-else-if="activeTab === 'Chi Nhánh'" />
+      <BookerTab v-else-if="activeTab === 'Người Đặt Phòng'" />
     </div>
   </div>
 </template>
