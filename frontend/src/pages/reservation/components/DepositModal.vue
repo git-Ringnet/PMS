@@ -48,15 +48,27 @@
                           :disabled="isEditing"
                           :class="[
                             !depositForm.bookingRoomId ? 'text-[#A8B0BF]' : 'text-[#000000D9]',
-                            isEditing ? 'opacity-60 cursor-not-allowed bg-slate-100' : 'bg-white'
+                            isEditing ? 'opacity-60 cursor-not-allowed bg-slate-100' : 'bg-white',
+                            !isEditing && depositForm.bookingRoomId ? 'pr-8' : ''
                           ]"
                           class="w-full border border-slate-300 rounded-lg px-3 h-[30px] text-xs font-normal appearance-none focus:outline-none focus:border-blue-500 shadow-sm cursor-pointer"
                         >
-                            <option :value="null" class="text-[#A8B0BF]">– Đặt cọc cho toàn bộ phiếu đăng ký –</option>
+                            <option :value="null" class="text-[#A8B0BF]"></option>
                             <option v-for="r in availableRooms" :key="getBookingRoomId(r)" :value="getBookingRoomId(r)" class="text-[#000000D9]">
                                 {{ formatRoomOptionLabel(r) }}
                             </option>
                         </select>
+                        <button 
+                          v-if="!isEditing && depositForm.bookingRoomId !== null && depositForm.bookingRoomId !== ''" 
+                          type="button" 
+                          @click.stop="depositForm.bookingRoomId = null; handleRoomChange()" 
+                          class="absolute right-7 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0.5 flex items-center justify-center z-10 select-none"
+                          title="Xóa"
+                        >
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
                         <i class="fa-solid fa-chevron-down absolute right-3 top-2.5 text-slate-400 pointer-events-none text-xs"></i>
                     </div>
                 </div>
@@ -65,21 +77,35 @@
             <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
                 <div>
                     <label class="block text-xs text-[#000000D9] font-semibold mb-1">Số tiền <span class="text-rose-500">*</span></label>
-                    <div class="relative">
+                    <div class="relative flex items-center">
                         <input 
                           type="text" 
-                          :value="formatCurrencyInput(depositForm.amount)"
+                          inputmode="numeric"
+                          :value="depositForm.amount === '' ? '' : formatCurrencyInput(depositForm.amount)"
                           required
-                          @input="e => depositForm.amount = cleanCurrencyValue(e.target.value)"
-                          @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
+                          @input="handleDepositAmountInput"
+                          @keypress="e => { if (!/[0-9]/.test(e.key)) e.preventDefault() }"
+                          @focus="e => { if (Number(depositForm.amount || 0) === 0) depositForm.amount = ''; e.target.select() }"
+                          @blur="e => { if (depositForm.amount === '' || depositForm.amount === null) depositForm.amount = 0 }"
                           :disabled="isEditing"
-                          :class="{ 'opacity-60 cursor-not-allowed !bg-slate-100 !border-slate-300': isEditing }"
+                          placeholder="0"
+                          :class="[
+                            { 'opacity-60 cursor-not-allowed !bg-slate-100 !border-slate-300': isEditing },
+                            !isEditing && Number(depositForm.amount || 0) > 0 ? 'pr-8' : ''
+                          ]"
                           class="w-full border border-[#F1DD8A] rounded-lg px-3 h-[30px] text-xs font-semibold bg-[#FFF8DB] text-[#000000D9] focus:outline-none focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308] shadow-sm"
                         >
-                        <div class="absolute right-1 top-0.5 flex flex-col" v-if="!isEditing">
-                            <button type="button" @click="depositForm.amount++" class="text-slate-400 hover:text-blue-500 text-[10px] leading-none px-1 border-none bg-transparent cursor-pointer"><i class="fa-solid fa-chevron-up"></i></button>
-                            <button type="button" @click="depositForm.amount = Math.max(0, depositForm.amount - 1)" class="text-slate-400 hover:text-blue-500 text-[10px] leading-none px-1 border-none bg-transparent cursor-pointer"><i class="fa-solid fa-chevron-down"></i></button>
-                        </div>
+                        <button 
+                          v-if="!isEditing && Number(depositForm.amount || 0) > 0" 
+                          type="button" 
+                          @click.stop="depositForm.amount = 0" 
+                          class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0.5 flex items-center justify-center z-10 select-none"
+                          title="Xóa"
+                        >
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
                     </div>
                 </div>
 
@@ -90,12 +116,26 @@
                           v-model="depositForm.paymentMethodId"
                           required
                           @change="handlePaymentMethodChange"
-                          :class="!depositForm.paymentMethodId ? 'text-[#A8B0BF]' : 'text-[#000000D9]'"
+                          :class="[
+                            !depositForm.paymentMethodId ? 'text-[#A8B0BF]' : 'text-[#000000D9]',
+                            !isEditing && depositForm.paymentMethodId ? 'pr-8' : ''
+                          ]"
                           class="w-full border border-[#F1DD8A] rounded-lg px-3 h-full text-xs font-normal bg-[#FFF8DB] appearance-none focus:outline-none focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308] shadow-sm cursor-pointer"
                         >
                             <option :value="null" disabled class="text-[#A8B0BF] font-normal bg-slate-100">Phương thức đặt cọc</option>
                             <option v-for="pm in filteredPaymentMethods" :key="pm.id" :value="pm.code || pm.id" class="text-[#000000D9]">{{ pm.name }}</option>
                         </select>
+                        <button 
+                          v-if="!isEditing && depositForm.paymentMethodId !== null && depositForm.paymentMethodId !== ''" 
+                          type="button" 
+                          @click.stop="depositForm.paymentMethodId = null; handlePaymentMethodChange()" 
+                          class="absolute right-7 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0.5 flex items-center justify-center z-10 select-none"
+                          title="Xóa"
+                        >
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
                         <i class="fa-solid fa-chevron-down absolute right-3 top-2.5 text-slate-400 pointer-events-none text-xs"></i>
                     </div>
                 </div>
@@ -108,15 +148,27 @@
                           :disabled="isEditing"
                           :class="[
                             !depositForm.bankAccountId ? 'text-[#A8B0BF]' : 'text-[#000000D9]',
-                            isEditing ? 'opacity-60 cursor-not-allowed bg-slate-100' : 'bg-white'
+                            isEditing ? 'opacity-60 cursor-not-allowed bg-slate-100' : 'bg-white',
+                            !isEditing && depositForm.bankAccountId ? 'pr-8' : ''
                           ]"
                           class="w-full border border-slate-300 rounded-lg px-3 h-[30px] text-xs font-normal appearance-none focus:outline-none focus:border-blue-500 shadow-sm cursor-pointer"
                         >
-                            <option :value="null" class="text-[#A8B0BF]">– Không chọn tài khoản –</option>
+                            <option :value="null" class="text-[#A8B0BF]"></option>
                             <option v-for="account in activeBankAccounts" :key="account.id" :value="account.id" class="text-[#000000D9]">
                               {{ account.code }} - {{ account.bank_account_number }} - {{ account.bank_name }}
                             </option>
                         </select>
+                        <button 
+                          v-if="!isEditing && depositForm.bankAccountId !== null && depositForm.bankAccountId !== ''" 
+                          type="button" 
+                          @click.stop="depositForm.bankAccountId = null" 
+                          class="absolute right-7 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0.5 flex items-center justify-center z-10 select-none"
+                          title="Xóa"
+                        >
+                          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
                         <i class="fa-solid fa-chevron-down absolute right-3 top-2.5 text-slate-400 pointer-events-none text-xs"></i>
                     </div>
                 </div>
@@ -138,11 +190,24 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                     <label class="block text-xs text-[#000000D9] font-semibold mb-1">Mô tả <span class="text-rose-500">*</span></label>
-                    <textarea 
-                      v-model="depositForm.note"
-                      placeholder="Nhập mô tả..." 
-                      class="w-full border border-[#F1DD8A] rounded-lg p-2 text-xs font-normal bg-[#FFF8DB] text-[#000000D9] placeholder-[#A8B0BF] focus:outline-none focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308] shadow-sm h-[56px] resize-none"
-                    ></textarea>
+                    <div class="relative">
+                      <textarea 
+                        v-model="depositForm.note"
+                        placeholder="Nhập mô tả..." 
+                        class="w-full border border-[#F1DD8A] rounded-lg p-2 pr-8 text-xs font-normal bg-[#FFF8DB] text-[#000000D9] placeholder-[#A8B0BF] focus:outline-none focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308] shadow-sm h-[56px] resize-none"
+                      ></textarea>
+                      <button 
+                        v-if="depositForm.note" 
+                        type="button" 
+                        @click.stop="depositForm.note = ''" 
+                        class="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0.5 flex items-center justify-center z-10 select-none"
+                        title="Xóa"
+                      >
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
                 </div>
                 <div>
                     <label class="block text-xs text-[#000000D9] font-semibold mb-1">Lưu hình ảnh (Chứng từ / Biên lai)</label>
@@ -1853,6 +1918,11 @@ async function confirmTransfer() {
   } catch (err) {
     uiStore.showToast(err.response?.data?.message || 'Lỗi khi chuyển cọc!', 'error')
   }
+}
+
+function handleDepositAmountInput(event) {
+  const digits = event.target.value.replace(/[^0-9]/g, '')
+  depositForm.value.amount = digits === '' ? '' : Number(digits)
 }
 
 function formatCurrencyInput(val) {
