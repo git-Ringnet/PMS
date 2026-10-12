@@ -257,13 +257,14 @@ const quickBookingCompanySearch = ref('KHÁCH LẺ')
 const showQuickBookingCompanyDropdown = ref(false)
 const quickBookingForm = ref({
   company: 'KHÁCH LẺ',
+  companyId: null,
   marketId: null,
   customerSourceId: null,
   marketSegment: 'Free Individual Traveler',
   sourceCode: 'Free Individual Traveler',
   bookingName: 'Walkin Guest',
   registrationStatusId: null,
-  rateCode: 'Vui lòng chọn giá phòng',
+  rateCode: '',
   rate: '890000'
 })
 const selectedQuickBookingRateCode = computed(() => {
@@ -280,6 +281,24 @@ const isQuickBookingRateEditable = computed(() => {
 const quickBookingRateLabel = computed(() =>
   isQuickBookingDailyRate.value ? 'Rate (đêm đầu / 1 phòng)' : 'Rate (1 đêm / 1 phòng)'
 )
+const isQuickBookingRateCodeEmpty = computed(() => {
+  return !quickBookingForm.value.rateCode || quickBookingForm.value.rateCode === 'Vui lòng chọn giá phòng'
+})
+
+function clearQuickBookingRateCode() {
+  quickBookingForm.value.rateCode = ''
+  calculateQuickBookingPrice()
+}
+
+function formatQuickBookingRate(val) {
+  if (val === '' || val === null || val === undefined) return ''
+  return Number(val || 0).toLocaleString('en-US')
+}
+
+function handleQuickBookingRateInput(event) {
+  const digits = event.target.value.replace(/[^0-9]/g, '')
+  quickBookingForm.value.rate = digits === '' ? '' : Number(digits)
+}
 
 const quickBookingModalStyle = computed(() => {
   const position = quickBookingModalPosition.value || { x: 0, y: 0 }
@@ -598,7 +617,7 @@ const companyFilterData = computed(() => {
   const list = []
   
   allCompanies.value.forEach(c => {
-    const name = c.company_name || c.name
+    const name = c.name || c.company_name || c.trading_name || c.code
     if (name && !list.includes(name)) {
       list.push(name)
     }
@@ -650,7 +669,7 @@ const allCompanyNames = computed(() => {
   const list = ['KHÁCH LẺ']
   if (allCompanies.value && allCompanies.value.length > 0) {
     allCompanies.value.forEach(c => {
-      const name = c.company_name || c.name || c.company_code
+      const name = c.name || c.company_name || c.trading_name || c.code
       if (name && !list.some(item => item.toLowerCase() === String(name).toLowerCase())) {
         list.push(name)
       }
@@ -682,11 +701,12 @@ function selectQuickBookingCompany(cName) {
   showQuickBookingCompanyDropdown.value = false
 
   const co = allCompanies.value.find(c => {
-    const name = c.company_name || c.name || c.company_code
+    const name = c.name || c.company_name || c.trading_name || c.code
     return name && String(name).toLowerCase() === String(cName).toLowerCase()
   })
 
   if (co) {
+    quickBookingForm.value.companyId = co.id
     if (co.market_id) {
       quickBookingForm.value.marketId = co.market_id
     } else if (co.market?.id) {
@@ -703,7 +723,58 @@ function selectQuickBookingCompany(cName) {
       quickBookingForm.value.rateCode = co.rate_code
       calculateQuickBookingPrice()
     }
+  } else {
+    const walkinCo = allCompanies.value.find(c => {
+      const n = removeVietnameseTones(String(c.name || c.company_name || c.code || '')).toLowerCase()
+      return n.includes('khach le') || n.includes('walk-in') || n.includes('walkin') || n.includes('fit')
+    })
+    quickBookingForm.value.companyId = walkinCo ? walkinCo.id : (allCompanies.value[0]?.id || 1)
   }
+}
+
+function handleQuickBookingCompanyInput() {
+  showQuickBookingCompanyDropdown.value = true
+  quickBookingForm.value.company = quickBookingCompanySearch.value
+  const query = quickBookingCompanySearch.value.trim().toLowerCase()
+  if (!query) {
+    quickBookingForm.value.companyId = null
+    return
+  }
+
+  const co = allCompanies.value.find(c => {
+    const name = c.name || c.company_name || c.trading_name || c.code
+    return name && String(name).toLowerCase() === query
+  })
+
+  if (co) {
+    quickBookingForm.value.companyId = co.id
+    if (co.market_id) quickBookingForm.value.marketId = co.market_id
+    else if (co.market?.id) quickBookingForm.value.marketId = co.market.id
+    if (co.customer_source_id) quickBookingForm.value.customerSourceId = co.customer_source_id
+    else if (co.customer_source?.id) quickBookingForm.value.customerSourceId = co.customer_source.id
+    if (co.rate_code) {
+      quickBookingForm.value.rateCode = co.rate_code
+      calculateQuickBookingPrice()
+    }
+  } else {
+    const queryNoTone = removeVietnameseTones(query)
+    if (queryNoTone === 'khach le' || queryNoTone === 'walkin' || queryNoTone === 'fit') {
+      const walkinCo = allCompanies.value.find(c => {
+        const n = removeVietnameseTones(String(c.name || c.company_name || c.code || '')).toLowerCase()
+        return n.includes('khach le') || n.includes('walk-in') || n.includes('walkin') || n.includes('fit')
+      })
+      quickBookingForm.value.companyId = walkinCo ? walkinCo.id : (allCompanies.value[0]?.id || 1)
+    } else {
+      quickBookingForm.value.companyId = null
+    }
+  }
+}
+
+function clearQuickBookingCompany() {
+  quickBookingCompanySearch.value = ''
+  quickBookingForm.value.company = ''
+  quickBookingForm.value.companyId = null
+  showQuickBookingCompanyDropdown.value = false
 }
 
 watch(showRoomTypePopover, (isOpen) => {
@@ -887,6 +958,20 @@ const legends = [
   { name: 'Guaranteed', class: '' },
   { name: 'Waiting', class: '' },
   { name: 'Allotment', class: '' }
+]
+
+const roomStatusLegends = [
+  { name: 'OOO', label: 'OOO', class: 'bg-[repeating-linear-gradient(-45deg,#3b82f6,#3b82f6_5px,#60a5fa_5px,#60a5fa_10px)] text-black border-blue-400' },
+  { name: 'OOS', label: 'OOS', class: 'bg-[repeating-linear-gradient(-45deg,#94a3b8,#94a3b8_5px,#cbd5e1_5px,#cbd5e1_10px)] text-black border-slate-400' },
+  { name: 'InHouse', label: 'InHouse', class: '' },
+  { name: 'Reservation', label: 'Reservation', class: '' },
+  { name: 'Late Checkout', label: 'Late Checkout', class: '' }
+]
+
+const registrationStatusLegends = [
+  { name: 'Guaranteed', label: 'Guaranteed' },
+  { name: 'Waiting', label: 'Waiting' },
+  { name: 'Allotment', label: 'Allotment' }
 ]
 
 // Generate columns for the timeline based on startDate -> endDate range
@@ -1514,41 +1599,25 @@ async function loadBookings() {
           if (!roomVal) return
           const roomAmounts = calculateRoomPlanRoomAmounts(br, b, systemDate.value)
           const typeClass = br.room_class?.code || br.room_type || 'DLXD'
-          const registrationStatus = b.registration_status || {}
-          const registrationStatusName = registrationStatus.name || ''
-          const normalizedRegistrationStatus = registrationStatusName.toLowerCase()
+          let registrationStatus = b.registration_status || null
+          if (!registrationStatus && b.registration_status_id != null) {
+            registrationStatus = (registrationStatuses.value || []).find(s => 
+              s.booking_status_id === b.registration_status_id || s.id === b.registration_status_id
+            ) || null
+          }
+          const registrationStatusName = registrationStatus?.name || (b.registration_status_id != null ? String(b.registration_status_id) : '')
+          const registrationStatusColor = registrationStatus?.color || registrationStatus?.booking_status_color || getLegendLineColor(registrationStatusName) || ''
 
-          // Map status values to matching UI classes
+          // Map status values to matching UI classes (Tình trạng phòng: Reservation, InHouse, CheckedOut)
           let type = 'Reservation'
-          if (br.status === 1) {
+          if (Number(br.status) === 1) {
             type = 'InHouse'
-          } else if (br.status === 2) {
+          } else if (Number(br.status) === 2) {
             type = 'CheckedOut'
-          } else if (br.status === 0) {
+          } else if (Number(br.status) === 0) {
             type = 'Reservation'
           } else {
-            const regStatus = b.registration_status?.name || ''
-            if (regStatus.toLowerCase().includes('guaranteed') || regStatus.toLowerCase().includes('đảm bảo')) {
-              type = 'Reservation'
-            } else if (regStatus.toLowerCase().includes('allotment')) {
-              type = 'Allotment'
-            } else if (regStatus.toLowerCase().includes('late') || regStatus.toLowerCase().includes('trễ')) {
-              type = 'Late Checkout'
-            } else {
-              type = 'Reservation'
-            }
-          }
-
-          if (Number(br.status) === 0) {
-            if (normalizedRegistrationStatus.includes('waiting') || normalizedRegistrationStatus.includes('chờ')) {
-              type = 'Waiting'
-            } else if (normalizedRegistrationStatus.includes('guaranteed') || normalizedRegistrationStatus.includes('đảm bảo')) {
-              type = 'Guaranteed'
-            } else if (normalizedRegistrationStatus.includes('allotment')) {
-              type = 'Allotment'
-            } else if (normalizedRegistrationStatus.includes('late') || normalizedRegistrationStatus.includes('trễ')) {
-              type = 'Late Checkout'
-            }
+            type = 'Reservation'
           }
 
           let guestName = b.contact_name || b.booking_name || 'Guest'
@@ -1558,7 +1627,7 @@ async function loadBookings() {
 
           const priceVal = br.rate ? Number(br.rate) : 0
           const priceStr = priceVal > 0 ? priceVal.toLocaleString() : '0'
-          const companyName = b.company?.company_name || 'Khách lẻ'
+          const companyName = b.company?.name || b.company?.company_name || b.company?.trading_name || 'Khách lẻ'
           const label = `${b.booking_code} - ${b.booking_name} - ${companyName} - ${priceStr}đ`
 
           const arrivalStr = br.arrival_date ? toLocalDateStr(br.arrival_date) : (b.arrival_date ? toLocalDateStr(b.arrival_date) : '')
@@ -1585,14 +1654,14 @@ async function loadBookings() {
             typeClass,
             code: b.booking_code,
             name: b.booking_name,
-            company: b.company?.company_name || 'Khách lẻ',
+            company: b.company?.name || b.company?.company_name || b.company?.trading_name || 'Khách lẻ',
             guestName,
             guest_details: guestDetails,
             booking_color: b.color || br.color || '',
             note: b.note || br.note || '',
-            registrationStatusId: registrationStatus.booking_status_id ?? b.registration_status_id ?? null,
+            registrationStatusId: registrationStatus?.booking_status_id ?? b.registration_status_id ?? null,
             registrationStatusName,
-            registrationStatusColor: registrationStatus.color || registrationStatus.booking_status_color || '',
+            registrationStatusColor,
             isAvailability: registrationStatus.is_availability === undefined
               ? true
               : Boolean(registrationStatus.is_availability),
@@ -1662,7 +1731,7 @@ function toggleCompanyFilterDropdown(event) {
 }
 
 function handleWindowClick(event) {
-  const container = document.querySelector('.quick-booking-company-search-container')
+  const container = document.querySelector('#quick-booking-company-container')
   if (container && !container.contains(event.target)) {
     showQuickBookingCompanyDropdown.value = false
   }
@@ -3008,16 +3077,25 @@ async function loadDropdownsAndPrices() {
     registrationStatuses.value = initRes?.data?.data?.registration_statuses || []
 
     // If company is selected, auto-set default market & source code
-    if (quickBookingCompanySearch.value && allCompanies.value.length > 0) {
+    if (allCompanies.value.length > 0) {
+      const searchTarget = quickBookingCompanySearch.value || quickBookingForm.value.company || 'KHÁCH LẺ'
       const co = allCompanies.value.find(c => {
-        const name = c.company_name || c.name || c.company_code
-        return name && String(name).toLowerCase() === String(quickBookingCompanySearch.value).toLowerCase()
+        const name = c.name || c.company_name || c.trading_name || c.code
+        return name && String(name).toLowerCase() === String(searchTarget).toLowerCase()
       })
       if (co) {
+        quickBookingForm.value.companyId = co.id
         if (co.market_id) quickBookingForm.value.marketId = co.market_id
         else if (co.market?.id) quickBookingForm.value.marketId = co.market.id
         if (co.customer_source_id) quickBookingForm.value.customerSourceId = co.customer_source_id
         else if (co.customer_source?.id) quickBookingForm.value.customerSourceId = co.customer_source.id
+        if (co.rate_code) quickBookingForm.value.rateCode = co.rate_code
+      } else {
+        const walkinCo = allCompanies.value.find(c => {
+          const n = removeVietnameseTones(String(c.name || c.company_name || c.code || '')).toLowerCase()
+          return n.includes('khach le') || n.includes('walk-in') || n.includes('walkin') || n.includes('fit')
+        })
+        quickBookingForm.value.companyId = walkinCo ? walkinCo.id : (allCompanies.value[0]?.id || 1)
       }
     }
     // Fallback if not set
@@ -3092,11 +3170,12 @@ async function triggerMenuAction(actionName) {
     quickBookingCompanySearch.value = 'KHÁCH LẺ'
     quickBookingForm.value = {
       company: 'KHÁCH LẺ',
+      companyId: null,
       marketSegment: 'Free Individual Traveler',
       sourceCode: 'Free Individual Traveler',
       bookingName: 'Walkin Guest',
       registrationStatusId: null,
-      rateCode: 'Vui lòng chọn giá phòng',
+      rateCode: '',
       rate: '0'
     }
     await loadDropdownsAndPrices()
@@ -3390,19 +3469,6 @@ function handleBookingPointerDown(bk, event) {
   if (isHousekeepingModule.value) return
   if (event.button !== 0) return
   if (event.target.closest('[data-room-plan-resize-handle], [data-room-plan-split-handle]')) return
-
-  if (bk.type === 'InHouse') {
-    uiStore.showToast('Phòng đang In-house không được phép kéo chuyển phòng trên Room Plan.', 'warning')
-    return
-  }
-  if (bk.type === 'CheckedOut') {
-    uiStore.showToast('Phòng đã Check-out không được phép kéo chuyển phòng trên Room Plan.', 'warning')
-    return
-  }
-  if (bk.isDoNotMove) {
-    uiStore.showToast('Phòng đang bị khóa di chuyển (Do Not Move). Không thể kéo thả.', 'warning')
-    return
-  }
   if (splittingBooking.value) return
 
   bookingPointerPending = {
@@ -3461,8 +3527,26 @@ function handleBookingPointerMove(event) {
     const deltaY = event.clientY - pending.startY
     if (Math.hypot(deltaX, deltaY) < 5) return
 
+    const bk = pending.booking
     bookingPointerPending = null
-    startBookingPointerDrag(pending.booking, event, pending.element)
+
+    if (bk.type === 'InHouse') {
+      uiStore.showToast('Phòng đang In-house không được phép kéo chuyển phòng trên Room Plan.', 'warning')
+      stopBookingPointerDrag()
+      return
+    }
+    if (bk.type === 'CheckedOut') {
+      uiStore.showToast('Phòng đã Check-out không được phép kéo chuyển phòng trên Room Plan.', 'warning')
+      stopBookingPointerDrag()
+      return
+    }
+    if (bk.isDoNotMove) {
+      uiStore.showToast('Phòng đang bị khóa di chuyển (Do Not Move). Không thể kéo thả.', 'warning')
+      stopBookingPointerDrag()
+      return
+    }
+
+    startBookingPointerDrag(bk, event, pending.element)
   }
 
   const targetCell = document.elementFromPoint(event.clientX, event.clientY)?.closest?.('[data-room-plan-cell]')
@@ -3916,9 +4000,23 @@ async function saveQuickBooking() {
     emit('loading', true)
 
     // 1. Công ty ID từ database
-    const companyName = quickBookingForm.value.company || 'KHÁCH LẺ'
-    const companyObj = allCompanies.value.find(c => c.company_name?.toLowerCase() === companyName.toLowerCase())
-    const companyId = companyObj ? companyObj.id : 1
+    let companyId = quickBookingForm.value.companyId
+    if (!companyId) {
+      const companyName = quickBookingForm.value.company || quickBookingCompanySearch.value || 'KHÁCH LẺ'
+      const companyObj = allCompanies.value.find(c => {
+        const name = c.name || c.company_name || c.trading_name || c.code
+        return name && String(name).toLowerCase() === String(companyName).trim().toLowerCase()
+      })
+      if (companyObj) {
+        companyId = companyObj.id
+      } else {
+        const walkinCo = allCompanies.value.find(c => {
+          const n = removeVietnameseTones(String(c.name || c.company_name || c.code || '')).toLowerCase()
+          return n.includes('khach le') || n.includes('walk-in') || n.includes('walkin') || n.includes('fit')
+        })
+        companyId = walkinCo ? walkinCo.id : (allCompanies.value[0]?.id || 1)
+      }
+    }
 
     // 2. Xác định ngày đến sớm nhất và ngày đi muộn nhất
     let overallArrival = ranges[0].checkIn
@@ -4415,7 +4513,7 @@ function getRoomStatusIconName(item) {
                   v-model="tempStartDateStr"
                   :start-date="systemDate"
                   input-class="dark:bg-slate-800 dark:text-slate-100 dark:border-slate-700"
-                  placeholder="Chọn ngày bắt đầu"
+                  placeholder="dd/mm/yyyy"
                 />
               </div>
               <div class="flex flex-col gap-1">
@@ -4424,7 +4522,7 @@ function getRoomStatusIconName(item) {
                   v-model="tempEndDateStr"
                   :start-date="systemDate"
                   input-class="dark:bg-slate-800 dark:text-slate-100 dark:border-slate-700"
-                  placeholder="Chọn ngày kết thúc"
+                  placeholder="dd/mm/yyyy"
                 />
               </div>
             </div>
@@ -4517,22 +4615,37 @@ function getRoomStatusIconName(item) {
       <!-- Right side controls (Search & Filter) -->
       <div class="flex items-center gap-2">
         <!-- Dynamic Active Legends Bar -->
-        <div class="flex items-center gap-2 select-none shrink-0 mr-1.5">
+        <div class="flex items-center gap-1.5 select-none shrink-0 mr-1.5">
+          <!-- Room Status Badges (Khối màu bo góc như Ảnh 1) -->
           <div 
-            v-for="leg in visibleLegends" 
+            v-for="leg in roomStatusLegends" 
             :key="leg.name" 
-            class="flex flex-col items-center gap-0.5 select-none" 
+            class="px-2 py-0.5 border rounded text-xs font-normal whitespace-nowrap shadow-2xs leading-tight select-none cursor-pointer" 
             :class="[
-              (isAdmin && legendConfigKeys[leg.name]) ? 'cursor-pointer hover:scale-105 transition-transform duration-150' : ''
+              leg.class,
+              (isAdmin && legendConfigKeys[leg.name]) ? 'hover:scale-105 transition-transform duration-150' : ''
+            ]"
+            :style="getLegendStyle(leg.name)"
+            @click="handleLegendClick(leg.name, $event)"
+          >
+            {{ leg.label || leg.name }}
+          </div>
+
+          <!-- Registration Status Lines (Line màu cho tình trạng đăng ký theo Note 9/10) -->
+          <div 
+            v-for="leg in registrationStatusLegends" 
+            :key="leg.name" 
+            class="flex flex-col items-center gap-0.5 select-none cursor-pointer ml-1" 
+            :class="[
+              (isAdmin && legendConfigKeys[leg.name]) ? 'hover:scale-105 transition-transform duration-150' : ''
             ]"
             @click="handleLegendClick(leg.name, $event)"
           >
             <span class="text-xs font-normal text-[#000000D9] leading-tight select-none">
-              {{ leg.name }}
+              {{ leg.label || leg.name }}
             </span>
             <div 
               class="h-[3px] w-full min-w-[28px] rounded-full shadow-2xs" 
-              :class="leg.class"
               :style="{ backgroundColor: getLegendLineColor(leg.name) }"
             ></div>
           </div>
@@ -4595,14 +4708,14 @@ function getRoomStatusIconName(item) {
               :class="[
                 dragSourceStartIdx !== null && idx >= dragSourceStartIdx && idx < dragSourceEndIdx
                   ? 'bg-[#fff7cc] text-amber-900 border-[#facc15] shadow-[inset_0_-2px_0_#facc15]'
-                  : (isTodayDate(day.fullDate) ? 'bg-[#ff7043] text-white border-[#ff7043]' : (day.isWeekend ? 'bg-[#72b5f7] text-white border-[#72b5f7]' : 'bg-slate-100 text-[#000000D9]'))
+                  : (isTodayDate(day.fullDate) ? 'bg-[#ff7043] text-white border-[#ff7043]' : (day.isWeekend ? 'bg-[#72b5f7] text-[#000000D9] border-[#72b5f7]' : 'bg-slate-100 text-[#000000D9]'))
               ]"
               @dragenter.prevent="handleGlobalDragOver($event)"
               @dragover.prevent="handleGlobalDragOver($event)"
             >
               <div class="flex flex-col items-center justify-center leading-tight py-0.5">
                 <span class="text-xs font-semibold uppercase">{{ day.dow }}</span>
-                <span class="text-xs font-normal" :class="(isTodayDate(day.fullDate) || day.isWeekend) ? 'text-white' : 'text-[#000000D9]'">{{ day.dateStr }}</span>
+                <span class="text-xs font-normal">{{ day.dateStr }}</span>
               </div>
             </th>
           </tr>
@@ -4769,53 +4882,35 @@ function getRoomStatusIconName(item) {
                       <span :class="bk.pastDaysOffset > 0 ? 'whitespace-nowrap' : 'truncate flex-1 min-w-0'">{{ bk.label }}</span>
                     </div>
 
-                    <!-- Bottom Status Indicator: Phòng đến (Xanh lá 🟢) & Phòng đi (Đỏ 🔴) -->
+                    <!-- Bottom Status Indicator: Tình trạng đăng ký (Line màu) & Phòng đi (Vạch đỏ) -->
                     <template v-if="bk.type !== 'OOO' && bk.type !== 'OOS'">
-                      <!-- Đã trả phòng (CheckedOut) -->
-                      <template v-if="bk.type === 'CheckedOut' || bk.status === 2">
-                        <div 
-                          class="absolute bottom-0 left-0 right-0 h-[4px]"
-                          :class="[
-                            isBookingMatched(bk) ? (bk.registrationStatusColor ? '' : 'bg-[#22c55e]') : 'bg-slate-300',
-                            bk.isCheckInVisible ? 'rounded-bl' : 'rounded-bl-none',
-                            bk.isCheckOutVisible ? 'rounded-br' : 'rounded-br-none'
-                          ]"
-                          :style="{
-                            backgroundColor: (isBookingMatched(bk) && bk.registrationStatusColor) ? bk.registrationStatusColor : undefined
-                          }"
-                          :title="`Tình trạng đăng ký: ${bk.registrationStatusName || 'Đã trả phòng'}`"
-                        ></div>
-                      </template>
-                      <!-- Đang lưu trú / Đặt trước: Vạch xanh (Phòng đến), vạch đỏ tại ngày check-out (Phòng đi) -->
-                      <template v-else>
-                        <!-- Vạch màu Tình trạng đăng ký (Guaranteed 🟢, None Guaranteed, ...) -->
-                        <div 
-                          class="absolute bottom-0 left-0 h-[5px]"
-                          :class="[
-                            isBookingMatched(bk) ? (bk.registrationStatusColor ? '' : 'bg-[#22c55e]') : 'bg-slate-300',
-                            bk.isCheckInVisible ? 'rounded-bl' : 'rounded-bl-none'
-                          ]"
-                          :style="{
-                            backgroundColor: (isBookingMatched(bk) && bk.registrationStatusColor) ? bk.registrationStatusColor : undefined,
-                            right: bk.showCheckOutIndicator ? `${(0.5 / bk.span) * 100}%` : '0px'
-                          }"
-                          :title="`Tình trạng đăng ký: ${bk.registrationStatusName || 'Đảm bảo'}`"
-                        ></div>
+                      <!-- 1. Vạch màu Tình trạng đăng ký (Guaranteed, Waiting, Allotment...) - Hiển thị cho cả phòng đang ở, đặt trước và phòng đã Checkout -->
+                      <div 
+                        class="absolute bottom-0 left-0 h-[4px]"
+                        :class="[
+                          bk.isCheckInVisible ? 'rounded-bl' : 'rounded-bl-none',
+                          (!bk.showCheckOutIndicator || bk.type === 'CheckedOut' || bk.status === 2) && bk.isCheckOutVisible ? 'rounded-br' : ''
+                        ]"
+                        :style="{
+                          backgroundColor: (isBookingMatched(bk) && bk.registrationStatusColor) ? bk.registrationStatusColor : (bk.registrationStatusColor || '#4ce410'),
+                          right: (bk.type !== 'CheckedOut' && bk.status !== 2 && bk.showCheckOutIndicator) ? `${(0.5 / bk.span) * 100}%` : '0px'
+                        }"
+                        :title="`Tình trạng đăng ký: ${bk.registrationStatusName || 'Đảm bảo'}`"
+                      ></div>
 
-                        <!-- Vạch đỏ (Phòng đi 🔴) -->
-                        <div 
-                          v-if="bk.showCheckOutIndicator"
-                          class="absolute bottom-0 right-0 h-[5px]"
-                          :class="[
-                            isBookingMatched(bk) ? 'bg-[#ef4444]' : 'bg-slate-300',
-                            bk.isCheckOutVisible ? 'rounded-br' : ''
-                          ]"
-                          :style="{
-                            width: `${(0.5 / bk.span) * 100}%`
-                          }"
-                          title="Trạng thái: Phòng đi"
-                        ></div>
-                      </template>
+                      <!-- 2. Vạch đỏ (Phòng đi 🔴) - Chỉ cho phòng chưa checkout -->
+                      <div 
+                        v-if="bk.type !== 'CheckedOut' && bk.status !== 2 && bk.showCheckOutIndicator"
+                        class="absolute bottom-0 right-0 h-[4px]"
+                        :class="[
+                          isBookingMatched(bk) ? 'bg-[#ef4444]' : 'bg-slate-300',
+                          bk.isCheckOutVisible ? 'rounded-br' : ''
+                        ]"
+                        :style="{
+                          width: `${(0.5 / bk.span) * 100}%`
+                        }"
+                        title="Trạng thái: Phòng đi"
+                      ></div>
                     </template>
 
                     <!-- Split Handle / Control -->
@@ -5179,7 +5274,7 @@ function getRoomStatusIconName(item) {
         <div class="flex-1 p-4 flex flex-col overflow-y-auto gap-4 bg-white text-xs select-none">
           <!-- 1. Lọc Công ty -->
           <div class="flex flex-col gap-2 relative" id="filter-company-dropdown-container">
-            <span class="font-semibold text-[#000000D9] uppercase text-xs tracking-wider">Công ty ({{ tempSelectedCompanies.length }})</span>
+            <span class="font-semibold text-black text-xs" style="font-weight: 600 !important; color: #000000 !important;">Công Ty ({{ tempSelectedCompanies.length }})</span>
             
             <!-- Custom Selector Box -->
             <div 
@@ -5188,7 +5283,7 @@ function getRoomStatusIconName(item) {
             >
               <div class="truncate max-w-[220px]">
                 <span v-if="tempSelectedCompanies.length === 0" class="text-slate-400">Chọn công ty...</span>
-                <span v-else class="text-[#000000D9] font-normal">
+                <span v-else class="text-black font-normal !font-normal" style="font-weight: 400 !important; color: #000000 !important;">
                   {{ tempSelectedCompanies.join(', ') }}
                 </span>
               </div>
@@ -5225,7 +5320,8 @@ function getRoomStatusIconName(item) {
                   v-else
                   v-for="cName in displayCompanies" 
                   :key="cName" 
-                  class="flex items-center gap-2 cursor-pointer hover:bg-slate-100 p-1.5 rounded select-none text-xs text-[#000000D9] font-normal truncate transition-colors"
+                  class="flex items-center gap-2 cursor-pointer hover:bg-slate-100 p-1.5 rounded select-none text-xs text-black font-normal !font-normal truncate transition-colors"
+                  style="font-weight: 400 !important;"
                   :title="cName"
                 >
                   <input 
@@ -5234,7 +5330,7 @@ function getRoomStatusIconName(item) {
                     v-model="tempSelectedCompanies" 
                     class="rounded border-slate-300 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer"
                   />
-                  <span class="truncate">{{ cName }}</span>
+                  <span class="truncate text-black font-normal !font-normal" style="font-weight: 400 !important; color: #000000 !important;">{{ cName }}</span>
                 </label>
               </div>
 
@@ -5247,12 +5343,13 @@ function getRoomStatusIconName(item) {
 
           <!-- 2. Lọc Loại phòng -->
           <div class="flex flex-col gap-2">
-            <span class="font-semibold text-[#000000D9] uppercase text-xs tracking-wider">Loại phòng ({{ tempSelectedRoomTypes.length }})</span>
+            <span class="font-semibold text-black text-xs" style="font-weight: 600 !important; color: #000000 !important;">Loại Phòng ({{ tempSelectedRoomTypes.length }})</span>
             <div class="border border-slate-200 rounded-md p-1.5 bg-slate-50/50 max-h-[220px] overflow-y-auto flex flex-col gap-1 shadow-inner">
               <label 
                 v-for="t in roomTypes" 
                 :key="t.code" 
-                class="flex items-center gap-2 cursor-pointer hover:bg-slate-100/80 p-1 rounded select-none text-xs text-[#000000D9] font-normal truncate"
+                class="flex items-center gap-2 cursor-pointer hover:bg-slate-100/80 p-1 rounded select-none text-xs text-black font-normal !font-normal truncate"
+                style="font-weight: 400 !important;"
                 :title="t.name"
               >
                 <input 
@@ -5261,7 +5358,7 @@ function getRoomStatusIconName(item) {
                   v-model="tempSelectedRoomTypes" 
                   class="rounded border-slate-300 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer"
                 />
-                <span class="truncate">{{ t.name }}</span>
+                <span class="truncate text-black font-normal !font-normal" style="font-weight: 400 !important; color: #000000 !important;">{{ t.name }}</span>
               </label>
             </div>
           </div>
@@ -5432,15 +5529,27 @@ function getRoomStatusIconName(item) {
           <!-- Searchable Company Dropdown -->
           <div class="flex flex-col gap-1.5 relative" id="quick-booking-company-container">
             <label class="font-semibold text-[#000000D9] text-left w-full block">Company:</label>
-            <div class="relative">
+            <div class="relative flex items-center">
               <input 
                 type="text" 
                 v-model="quickBookingCompanySearch" 
                 @focus="showQuickBookingCompanyDropdown = true" 
-                @input="showQuickBookingCompanyDropdown = true" 
+                @input="handleQuickBookingCompanyInput" 
                 placeholder="Tìm kiếm công ty..." 
-                class="w-full border border-slate-200 rounded-lg px-3 py-2 text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500 font-normal cursor-pointer pr-8"
+                class="w-full border border-slate-200 rounded-lg px-3 py-2 text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500 font-normal cursor-pointer"
+                :class="quickBookingCompanySearch ? 'pr-14' : 'pr-8'"
               />
+              <button 
+                v-if="quickBookingCompanySearch" 
+                type="button" 
+                @click.stop="clearQuickBookingCompany" 
+                class="absolute right-7 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0.5 flex items-center justify-center z-10 select-none"
+                title="Xóa"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
               <span class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
@@ -5505,67 +5614,112 @@ function getRoomStatusIconName(item) {
           <!-- Booking name -->
           <div class="flex flex-col gap-1.5">
             <label class="font-semibold text-[#000000D9] text-left w-full block">Booking name <span class="text-red-500">*</span></label>
-            <input type="text" v-model="quickBookingForm.bookingName" class="w-full border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg px-3 py-2 text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-amber-400 font-normal" />
+            <div class="relative flex items-center">
+              <input 
+                type="text" 
+                v-model="quickBookingForm.bookingName" 
+                placeholder="Nhập tên đăng ký..."
+                class="w-full border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg px-3 py-2 pr-8 text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-amber-400 font-normal" 
+              />
+              <button 
+                v-if="quickBookingForm.bookingName" 
+                type="button" 
+                @click.stop="quickBookingForm.bookingName = ''" 
+                class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0.5 flex items-center justify-center z-10 select-none"
+                title="Xóa"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
 
           <!-- Registration status -->
           <div class="flex flex-col gap-1.5">
             <label class="font-semibold text-[#000000D9] text-left w-full block">Tình trạng đăng ký <span class="text-red-500">*</span></label>
-            <select 
-              v-model="quickBookingForm.registrationStatusId" 
-              class="w-full border border-[#F1DD8A] rounded-lg bg-[#FFF8DB] px-3 py-2 font-normal cursor-pointer focus:outline-none focus:ring-1 focus:ring-amber-400"
-              :class="quickBookingForm.registrationStatusId === null ? 'text-[#A8B0BF]' : 'text-[#000000D9]'"
-            >
-              <option :value="null" disabled class="text-[#A8B0BF]">Vui lòng chọn tình trạng đăng ký</option>
-              <option v-for="status in registrationStatuses.filter(s => !s.is_hidden && s.booking_status_id != null)" :key="status.id" :value="status.booking_status_id" class="text-[#000000D9]">
-                {{ status.name }}
-              </option>
-            </select>
+            <div class="relative flex items-center">
+              <select 
+                v-model="quickBookingForm.registrationStatusId" 
+                class="w-full border border-[#F1DD8A] rounded-lg bg-[#FFF8DB] px-3 py-2 font-normal cursor-pointer focus:outline-none focus:ring-1 focus:ring-amber-400"
+                :class="quickBookingForm.registrationStatusId === null ? 'text-[#A8B0BF] pr-8' : 'text-[#000000D9] pr-8'"
+              >
+                <option :value="null" disabled class="text-[#A8B0BF]">Vui lòng chọn tình trạng đăng ký</option>
+                <option v-for="status in registrationStatuses.filter(s => !s.is_hidden && s.booking_status_id != null)" :key="status.id" :value="status.booking_status_id" class="text-[#000000D9]">
+                  {{ status.name }}
+                </option>
+              </select>
+              <button 
+                v-if="quickBookingForm.registrationStatusId !== null" 
+                type="button" 
+                @click.stop="quickBookingForm.registrationStatusId = null" 
+                class="absolute right-7 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0.5 flex items-center justify-center z-10 select-none"
+                title="Xóa"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
 
           <!-- Rate Code -->
           <div class="flex flex-col gap-1.5">
             <label class="font-semibold text-[#000000D9] text-left w-full block">Rate Code:</label>
-            <select 
-              v-model="quickBookingForm.rateCode" 
-              @change="calculateQuickBookingPrice" 
-              class="w-full border border-slate-200 rounded-lg bg-white px-3 py-2 font-normal cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500"
-              :class="(quickBookingForm.rateCode === 'Vui lòng chọn giá phòng' || !quickBookingForm.rateCode) ? 'text-[#A8B0BF]' : 'text-[#000000D9]'"
-            >
-              <option value="Vui lòng chọn giá phòng" class="text-[#A8B0BF]">Vui lòng chọn giá phòng</option>
-              <option v-for="rc in rateCodes" :key="rc.Ma" :value="rc.Ma" class="text-[#000000D9]">
-                {{ rc.Ma }} - {{ rc.Description || 'Không có mô tả' }}
-              </option>
-            </select>
+            <div class="relative flex items-center">
+              <select 
+                v-model="quickBookingForm.rateCode" 
+                @change="calculateQuickBookingPrice" 
+                class="w-full border border-slate-200 rounded-lg bg-white px-3 py-2 font-normal cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500"
+                :class="isQuickBookingRateCodeEmpty ? 'text-[#A8B0BF] pr-8' : 'text-[#000000D9] pr-8'"
+                :style="{ color: isQuickBookingRateCodeEmpty ? '#A8B0BF' : '#000000D9' }"
+              >
+                <option value="" class="text-[#A8B0BF]" :style="{ color: '#A8B0BF' }">Vui lòng chọn giá phòng</option>
+                <option v-for="rc in rateCodes" :key="rc.Ma" :value="rc.Ma" class="text-[#000000D9]" :style="{ color: '#000000D9' }">
+                  {{ rc.Ma }} - {{ rc.Description || 'Không có mô tả' }}
+                </option>
+              </select>
+              <button 
+                v-if="!isQuickBookingRateCodeEmpty" 
+                type="button" 
+                @click.stop="clearQuickBookingRateCode" 
+                class="absolute right-7 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0.5 flex items-center justify-center z-10 select-none"
+                title="Xóa"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
 
           <!-- Rate -->
           <div class="flex flex-col gap-1.5">
             <label class="font-semibold text-[#000000D9] text-left w-full block">{{ quickBookingRateLabel }}:</label>
-            <div class="relative flex items-center border border-slate-200 rounded-lg overflow-hidden bg-white shadow-xs">
-              <input type="number" v-model="quickBookingForm.rate" :disabled="!isQuickBookingRateEditable" class="w-full border-none px-3 py-2 text-[#000000D9] focus:outline-none focus:ring-0 font-normal disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed" />
-              <div class="absolute right-2 flex flex-col gap-0.5 z-10">
-                <button 
-                  type="button" 
-                  :disabled="!isQuickBookingRateEditable"
-                  @click="quickBookingForm.rate = Number(quickBookingForm.rate || 0) + 50000"
-                  class="p-0.5 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer flex items-center justify-center h-3 w-4.5"
-                >
-                  <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" />
-                  </svg>
-                </button>
-                <button 
-                  type="button" 
-                  :disabled="!isQuickBookingRateEditable"
-                  @click="quickBookingForm.rate = Math.max(0, Number(quickBookingForm.rate || 0) - 50000)"
-                  class="p-0.5 hover:bg-slate-100 rounded text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer flex items-center justify-center h-3 w-4.5"
-                >
-                  <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-                  </svg>
-                </button>
-              </div>
+            <div class="relative flex items-center">
+              <input 
+                type="text" 
+                inputmode="numeric"
+                :value="formatQuickBookingRate(quickBookingForm.rate)" 
+                @input="handleQuickBookingRateInput"
+                @focus="e => { if (Number(quickBookingForm.rate || 0) === 0) quickBookingForm.rate = ''; e.target.select() }"
+                @blur="e => { if (quickBookingForm.rate === '' || quickBookingForm.rate === null) quickBookingForm.rate = 0 }"
+                :disabled="!isQuickBookingRateEditable" 
+                placeholder="0"
+                class="w-full border border-slate-200 rounded-lg bg-white px-3 py-2 text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500 font-normal disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed" 
+                :class="isQuickBookingRateEditable && Number(quickBookingForm.rate || 0) > 0 ? 'pr-8' : ''"
+              />
+              <button 
+                v-if="isQuickBookingRateEditable && Number(quickBookingForm.rate || 0) > 0" 
+                type="button" 
+                @click.stop="quickBookingForm.rate = 0" 
+                class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0.5 flex items-center justify-center z-10 select-none"
+                title="Xóa"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
           </div>
         </div>
@@ -5601,7 +5755,25 @@ function getRoomStatusIconName(item) {
         <!-- Form Body -->
         <div class="p-5 flex flex-col gap-2.5 text-xs text-left">
           <label class="font-semibold text-[#000000D9] text-xs text-left w-full block">Note <span class="text-red-500">*</span></label>
-          <input type="text" v-model="lockRoomForm.note" class="w-full border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg px-3 py-2 text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-amber-400 font-normal text-xs" placeholder="Nhập ghi chú khóa phòng..." />
+          <div class="relative flex items-center">
+            <input 
+              type="text" 
+              v-model="lockRoomForm.note" 
+              class="w-full border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg px-3 py-2 pr-8 text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-amber-400 font-normal text-xs" 
+              placeholder="Nhập ghi chú khóa phòng..." 
+            />
+            <button 
+              v-if="lockRoomForm.note" 
+              type="button" 
+              @click.stop="lockRoomForm.note = ''" 
+              class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0.5 flex items-center justify-center z-10 select-none"
+              title="Xóa"
+            >
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         <!-- Footer Actions -->
