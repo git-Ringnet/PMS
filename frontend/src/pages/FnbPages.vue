@@ -1,11 +1,55 @@
 <script setup>
 import { useRouter } from "vue-router";
-import { ref, onMounted, onUnmounted } from "vue";
+import { ref, onMounted, onUnmounted, computed } from "vue";
 import { fetchOutlets } from "@/services/outlet-service";
+import defaultBg from "@/assets/hotel-bg.png";
+import http from "@/services/http";
+import PortalWallpaperModal from "@/components/PortalWallpaperModal.vue";
+import { usePermission } from "@/composables/usePermission";
 
 const router = useRouter();
+const { can, isSuperAdmin } = usePermission();
 const isLoaded = ref(false);
 const activeOutlets = ref([]);
+
+const wallpaperUrl = ref(null);
+const wallpaperPosition = ref('center center');
+const wallpaperFit = ref('cover');
+const wallpaperOverlay = ref(15);
+const isWallpaperModalOpen = ref(false);
+
+const canChangeWallpaper = computed(() => {
+  return isSuperAdmin.value || can('system.setting');
+});
+
+const currentBgSrc = computed(() => {
+  return wallpaperUrl.value || defaultBg;
+});
+
+async function loadWallpaper() {
+  try {
+    const res = await http.get('/portal-wallpaper');
+    if (res.data?.success) {
+      wallpaperUrl.value = res.data.wallpaper_url || null;
+      wallpaperPosition.value = res.data.wallpaper_position || 'center center';
+      wallpaperFit.value = res.data.wallpaper_fit || 'cover';
+      wallpaperOverlay.value = typeof res.data.wallpaper_overlay === 'number' ? res.data.wallpaper_overlay : 15;
+    }
+  } catch (err) {
+    console.error('Không thể tải cấu hình hình nền:', err);
+  }
+}
+
+function handleWallpaperSaved(data) {
+  if (typeof data === 'object' && data !== null) {
+    wallpaperUrl.value = data.wallpaper_url || null;
+    wallpaperPosition.value = data.wallpaper_position || 'center center';
+    wallpaperFit.value = data.wallpaper_fit || 'cover';
+    wallpaperOverlay.value = typeof data.wallpaper_overlay === 'number' ? data.wallpaper_overlay : 15;
+  } else {
+    wallpaperUrl.value = data;
+  }
+}
 
 const loadActiveOutlets = async () => {
   try {
@@ -67,6 +111,7 @@ function navigateTo(route) {
 }
 
 onMounted(async () => {
+  loadWallpaper();
   updateMenuItems();
   await loadActiveOutlets();
   window.addEventListener('outlet-updated', loadActiveOutlets);
@@ -84,9 +129,20 @@ onUnmounted(() => {
   <div class="relative w-full h-[calc(100vh-3rem)] overflow-hidden">
     <!-- Background Image -->
     <div class="absolute inset-0">
-      <img src="@/assets/hotel-bg.png" alt="Hotel Background" class="w-full h-full object-cover" />
-      <!-- Gradient Overlay -->
-      <div class="absolute inset-0 bg-gradient-to-b from-black/40 via-black/10 to-black/50"></div>
+      <img
+        :src="currentBgSrc"
+        alt="Hotel Background"
+        class="w-full h-full transition-all duration-700"
+        :style="{
+          objectPosition: wallpaperPosition,
+          objectFit: wallpaperFit
+        }"
+      />
+      <!-- Configurable dark overlay for crisp and clear background -->
+      <div
+        class="absolute inset-0 bg-slate-950 transition-opacity duration-300 pointer-events-none"
+        :style="{ opacity: wallpaperOverlay / 100 }"
+      ></div>
     </div>
 
     <!-- Center Content - Welcome -->
@@ -172,6 +228,10 @@ onUnmounted(() => {
 
       <!-- FAB Button -->
       <button
+        v-if="canChangeWallpaper"
+        type="button"
+        @click="isWallpaperModalOpen = true"
+        title="Đổi hình nền Desktop"
         class="w-10 h-10 rounded-full bg-gradient-to-br from-primary-500 to-primary-700 text-white flex items-center justify-center shadow-lg hover:shadow-xl hover:scale-110 transition-all duration-300 cursor-pointer border-none">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
@@ -179,5 +239,16 @@ onUnmounted(() => {
         </svg>
       </button>
     </div>
+
+    <!-- Portal Wallpaper Modal -->
+    <PortalWallpaperModal
+      :is-open="isWallpaperModalOpen"
+      :current-wallpaper="wallpaperUrl"
+      :current-position="wallpaperPosition"
+      :current-fit="wallpaperFit"
+      :current-overlay="wallpaperOverlay"
+      @close="isWallpaperModalOpen = false"
+      @saved="handleWallpaperSaved"
+    />
   </div>
 </template>

@@ -19,6 +19,21 @@
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
 
+## [2026-10-13] - Đồng bộ hình nền tùy chỉnh Desktop / Portal vào màn hình làm việc bên trong PMS & F&B
+### Module: Portal / PMS Dashboard / F&B Dashboard ([PmsPages.vue](file:///d:/PMS/frontend/src/pages/PmsPages.vue), [FnbPages.vue](file:///d:/PMS/frontend/src/pages/FnbPages.vue))
+
+- **1. Hiện tượng**:
+  - Người dùng cấu hình đổi hình nền ở trang chủ Portal (`HomePage.vue` - route `/`) thành công, nhưng khi vào màn hình làm việc bên trong của PMS (`PmsPages.vue` - route `/pms`) và F&B (`FnbPages.vue` - route `/fnb`) thì hình nền vẫn là ảnh mẫu tĩnh cũ Vinpearl (`hotel-bg.png`).
+- **2. Nguyên nhân**:
+  - Màn hình Portal ngoài và màn hình điều hướng bên trong là các component riêng biệt. Trong `PmsPages.vue` và `FnbPages.vue`, thẻ `<img>` đang hardcode ảnh tĩnh và overlay cố định, chưa gọi API `/portal-wallpaper` và nút FAB bút chì ở góc dưới phải chưa gán sự kiện mở modal.
+- **3. Xử lý**:
+  - Cập nhật [PmsPages.vue](file:///d:/PMS/frontend/src/pages/PmsPages.vue) và [FnbPages.vue](file:///d:/PMS/frontend/src/pages/FnbPages.vue):
+    - Tích hợp gọi API `/portal-wallpaper` trong `onMounted` để đồng bộ `wallpaperUrl`, `wallpaperPosition`, `wallpaperFit`, `wallpaperOverlay`.
+    - Thẻ ảnh nền chuyển sang binding động với `objectPosition`, `objectFit`, và lớp phủ `bg-slate-950` theo độ mờ cấu hình.
+    - Gán sự kiện click vào nút FAB tròn cây bút chì góc dưới phải để mở `PortalWallpaperModal` giúp quản trị viên có thể đổi hoặc tinh chỉnh hình nền trực tiếp từ bên trong.
+- **4. Kiểm thử & Đóng gói**:
+  - Frontend: `npm run build` thành công 100%.
+
 ## [2026-10-13] - Nâng cấp tính năng Cài đặt hình nền Portal: Tùy chỉnh vị trí hiển thị (Position) và Kiểu hiển thị (Fit)
 ### Module: Portal / Trang chủ / Cấu hình hệ thống ([PortalWallpaperModal.vue](file:///d:/PMS/frontend/src/components/PortalWallpaperModal.vue), [HomePage.vue](file:///d:/PMS/frontend/src/pages/HomePage.vue), [PortalWallpaperController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/PortalWallpaperController.php), [PortalWallpaperTest.php](file:///d:/PMS/backend/tests/Feature/PortalWallpaperTest.php))
 
