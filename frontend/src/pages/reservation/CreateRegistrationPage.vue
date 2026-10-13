@@ -1231,14 +1231,28 @@ async function handleInlineServiceQtyChange(room, svc, newQty) {
   }
 
   // Đồng bộ Extra Bed (EB)
-  if (svc.service_code === 'EB') {
-    room.extraBedQty = newQty
+  const isEb = svc.service_code === 'EB'
+    || svc.service_code === 'EXTRA_BED'
+    || svc.service_code === getHotelServiceCode('EB')
+    || /extra\s*bed|giường\s*phụ|thêm\s*giường/i.test(svc.service_name || '')
+  if (isEb) {
     if (!room.dailyExtraBeds) room.dailyExtraBeds = []
     const existing = room.dailyExtraBeds.find(d => cleanDateStr(d.dateStr || d.date) === cleanDate)
     if (existing) {
       existing.quantity = newQty
       existing.total = newQty * (existing.rate || 0)
+    } else {
+      room.dailyExtraBeds.push({
+        dateStr: cleanDate,
+        date: cleanDate,
+        quantity: newQty,
+        rate: (svc.rate !== undefined && svc.rate !== null && svc.rate !== '') ? Number(svc.rate) : ((room.extraBedPrice !== undefined && room.extraBedPrice !== null && room.extraBedPrice !== '') ? Number(room.extraBedPrice) : 300000),
+        total: newQty * ((svc.rate !== undefined && svc.rate !== null && svc.rate !== '') ? Number(svc.rate) : 300000),
+        isRoom: svc.is_room !== 0
+      })
     }
+    const activeDeb = room.dailyExtraBeds.filter(d => Number(d.quantity) > 0)
+    room.extraBedQty = activeDeb.length > 0 ? Math.max(...activeDeb.map(d => Number(d.quantity) || 0)) : 0
   }
 
   room.total = calculateRoomTotal(room)
@@ -1435,7 +1449,12 @@ async function handleInlineServiceDelete(room, svc) {
 
   const cleanDate = cleanDateStr(svc.service_date)
 
-  if (svc.service_code === 'EB') {
+  const isEb = svc.service_code === 'EB'
+    || svc.service_code === 'EXTRA_BED'
+    || svc.service_code === getHotelServiceCode('EB')
+    || /extra\s*bed|giường\s*phụ|thêm\s*giường/i.test(svc.service_name || '')
+
+  if (isEb) {
     // 1. Cập nhật dailyExtraBeds: đặt quantity = 0 cho ngày này
     if (!room.dailyExtraBeds) room.dailyExtraBeds = []
     const existingDeb = room.dailyExtraBeds.find(d => cleanDateStr(d.dateStr || d.date) === cleanDate)
@@ -1454,7 +1473,8 @@ async function handleInlineServiceDelete(room, svc) {
     }
 
     // 2. Cập nhật room.services: loại bỏ dòng dịch vụ EB của ngày này khỏi bảng hiển thị
-    room.services = (room.services || []).filter(s => !(s.service_code === 'EB' && cleanDateStr(s.service_date) === cleanDate))
+    const isThisEbSvc = s => (s.service_code === 'EB' || s.service_code === 'EXTRA_BED' || s.service_code === getHotelServiceCode('EB') || /extra\s*bed|giường\s*phụ|thêm\s*giường/i.test(s.service_name || ''))
+    room.services = (room.services || []).filter(s => !(isThisEbSvc(s) && cleanDateStr(s.service_date) === cleanDate))
 
     // 3. Tính lại extraBedQty & extraBedPrice của phòng
     const activeDeb = room.dailyExtraBeds.filter(d => Number(d.quantity) > 0)
@@ -3136,7 +3156,13 @@ function bookingToTab(b) {
     registrationStatusId: b.registration_status_id,
     checkIn: parseApiDate(b.arrival_date),
     checkOut: parseApiDate(b.departure_date),
-    nights: b.num_of_days,
+    nights: (b.num_of_days !== undefined && b.num_of_days !== null)
+      ? Number(b.num_of_days)
+      : (() => {
+          if (!b.arrival_date || !b.departure_date) return 0
+          const diff = Math.round((new Date(b.departure_date) - new Date(b.arrival_date)) / 86400000)
+          return diff >= 0 ? diff : 0
+        })(),
     deposit: totalDeposit,
     company: b.company?.name || '—',
     companyId: b.company_id,
@@ -6437,8 +6463,36 @@ function handleQuickUpdateSaved(payload) {
         }
         if (payload.extra_bed_qty !== undefined) r.extraBedQty = payload.extra_bed_qty
         if (payload.extra_bed_rate !== undefined) r.extraBedPrice = payload.extra_bed_rate
+
+        // Cập nhật lại số đêm của phòng
+        if (r.checkIn && r.checkOut) {
+          const dIn = new Date(parseDateVi(r.checkIn))
+          const dOut = new Date(parseDateVi(r.checkOut))
+          if (!isNaN(dIn) && !isNaN(dOut)) {
+            const diff = Math.round((dOut - dIn) / 86400000)
+            r.nights = diff >= 0 ? diff : 0
+          }
+        }
       }
     })
+
+    // Đồng bộ lại ngày đến/ngày đi và số đêm của tab booking tổng
+    if (activeTab.value && activeTab.value.rooms && activeTab.value.rooms.length > 0) {
+      const allCheckIns = activeTab.value.rooms.map(r => parseDateVi(r.checkIn)).filter(Boolean).sort()
+      const allCheckOuts = activeTab.value.rooms.map(r => parseDateVi(r.checkOut)).filter(Boolean).sort()
+      if (allCheckIns.length > 0 && allCheckOuts.length > 0) {
+        const minIn = allCheckIns[0]
+        const maxOut = allCheckOuts[allCheckOuts.length - 1]
+        activeTab.value.checkIn = minIn
+        activeTab.value.checkOut = maxOut
+        const dMin = new Date(minIn)
+        const dMax = new Date(maxOut)
+        if (!isNaN(dMin) && !isNaN(dMax)) {
+          const diff = Math.round((dMax - dMin) / 86400000)
+          activeTab.value.nights = diff >= 0 ? diff : 0
+        }
+      }
+    }
   }
   selectedRows.value = []
   notifyRoomUpdates()

@@ -120,6 +120,11 @@ class BookingRoomLifecycleService
                 continue;
             }
 
+            // Nếu ngày này đã có cấu hình số lượng (kể cả quantity = 0), bảo toàn số lượng đã cấu hình
+            $qty = ($row && $row->quantity !== null)
+                ? (float) $row->quantity
+                : (int) ($room->extra_bed_qty ?? 0);
+
             $rate = ($row && $row->rate !== null)
                 ? (float) $row->rate
                 : (float) ($room->extra_bed_rate ?? 0);
@@ -132,7 +137,7 @@ class BookingRoomLifecycleService
                 ],
                 [
                     'service_name' => BookingRoomService::catalogName(BookingRoomService::CODE_EXTRA_BED, 'Extra Bed'),
-                    'quantity' => (int) $room->extra_bed_qty,
+                    'quantity' => $qty,
                     'rate' => $rate,
                     'department' => 'FO',
                     'is_room' => $row?->is_room ?? 1,

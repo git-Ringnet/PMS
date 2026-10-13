@@ -19,6 +19,37 @@
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
 
+## [2026-10-13] - Sửa lỗi Xóa/Cập nhật Extra Bed về 0 (Dòng 368) và Cập nhật ngày đi không cập nhật số đêm Booking (Dòng 369)
+### Module: Đặt phòng ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [BookingRoomServiceController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomServiceController.php), [BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [BookingRoomLifecycleService.php](file:///d:/PMS/backend/app/Services/BookingRoomLifecycleService.php))
+
+- **1. Dòng 368 - Cho phép xóa 1 ngày Extra Bed & Cập nhật số lượng về 0 trong Database**:
+  - *Hiện tượng*:
+    - Xóa EB 1 ngày trong subtable chi tiết phòng (dấu `+` xổ ra) báo lỗi *"Không thể xóa dịch vụ khỏi hệ thống!"*.
+    - Tại modal *Chi tiết thêm giường* (`ExtraBedModal`): Chỉnh số lượng về 0, UI hiển thị 0 nhưng bảng `booking_room_services` trong DB không update về 0 (vẫn còn `quantity = 1`).
+  - *Nguyên nhân*:
+    - Ở subtable, hàm `handleInlineServiceDelete` so sánh cứng `svc.service_code === 'EB'`, nếu mã là catalog code khác hoặc `EXTRA_BED` thì trôi xuống `deleteBookingRoomServicesBulk` và bị backend chặn lỗi.
+    - Ở backend, khi nhận `quantity <= 0` cho EB, trước đây backend gọi `delete()` (soft delete) hoặc `forceDelete()`, sau đó các hàm lifecycle/sync tự động chạy lại và phục hồi record với `quantity = (int) $room->extra_bed_qty` (là 1), khiến `booking_room_services` không bao giờ giữ được số lượng 0.
+  - *Xử lý*:
+    - [BookingRoomServiceController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomServiceController.php): Khi nhận `quantity <= 0` cho Extra Bed, cập nhật record trong `booking_room_services` thành `quantity = 0, total_amount = 0` (giữ record với sl = 0) thay vì xóa.
+    - [BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php) & [BookingRoomLifecycleService.php](file:///d:/PMS/backend/app/Services/BookingRoomLifecycleService.php): Bảo toàn `$existing->quantity` khi đã có cấu hình (kể cả khi `quantity = 0`), khi `extra_bed_qty <= 0` cập nhật record chưa post về `quantity = 0, total_amount = 0` thay vì `forceDelete()`.
+    - [BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php): `upsertExtraBedServices` cập nhật `quantity = 0` vào `booking_room_services`.
+    - [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue): `handleInlineServiceDelete` và `handleInlineServiceQtyChange` nhận diện mọi biến thể mã/tên Extra Bed, cập nhật `quantity = 0, total_amount = 0`, tính lại `extraBedQty` phòng và đồng bộ API.
+
+- **2. Dòng 369 - Cập nhật ngày đi cập nhật đúng số đêm của Booking**:
+  - *Hiện tượng*: Tạo booking 31/8 - 5/9 (5 đêm). Tích chọn phòng -> Bấm *Cập nhật* -> Cập nhật ngày đi thành 6/9. Bảng `bookings` trong DB và header vẫn hiển thị 5 đêm thay vì 6 đêm.
+  - *Nguyên nhân*: Backend `syncBookingHeaderDates` trong `BookingRoomController.php` chỉ cập nhật `arrival_date` và `departure_date` mà bỏ quên trường `num_of_days`. Frontend `handleQuickUpdateSaved` chưa tính lại số đêm sau khi modal cập nhật nhanh lưu thành công.
+  - *Xử lý*:
+    - [BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php): `syncBookingHeaderDates` tính và cập nhật `num_of_days = departure_date - arrival_date` (hoặc 0 nếu day use) vào bảng `bookings`.
+    - [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue):
+      - `handleQuickUpdateSaved`: Tự động tính lại `r.nights` cho các phòng được chọn và `activeTab.nights` cho booking tổng ngay sau khi lưu.
+      - `bookingToTab`: Bổ sung fallback tự động tính `nights` từ khoảng cách giữa `arrival_date` và `departure_date` nếu `num_of_days` null hoặc chưa cập nhật.
+
+- **3. Kiểm thử & Đóng gói**:
+  - Backend: Pass toàn bộ 187/187 tests (`php artisan test --filter=Booking`).
+  - Frontend: `npm run build` thành công 100%.
+
+
+
 ## [2026-10-13] - Đồng bộ hình nền tùy chỉnh Desktop / Portal vào màn hình làm việc bên trong PMS & F&B
 ### Module: Portal / PMS Dashboard / F&B Dashboard ([PmsPages.vue](file:///d:/PMS/frontend/src/pages/PmsPages.vue), [FnbPages.vue](file:///d:/PMS/frontend/src/pages/FnbPages.vue))
 

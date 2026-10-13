@@ -1387,11 +1387,15 @@ class BookingRoomController extends Controller
         $departureDate = $room->departure_date->toDateString();
 
         if ($room->extra_bed_qty <= 0) {
-            // Chỉ xóa các dịch vụ EB chưa được post
+            // Khi extra_bed_qty <= 0: Cập nhật các dịch vụ EB chưa được post về quantity = 0 thay vì xóa
             $room->services()
                 ->where('service_code', BookingRoomService::CODE_EXTRA_BED)
                 ->where('is_posted', 0)
-                ->forceDelete();
+                ->update([
+                    'quantity'     => 0,
+                    'total_amount' => 0,
+                    'updated_by'   => Auth::user()?->username ?? 'system',
+                ]);
             return;
         }
 
@@ -1426,6 +1430,11 @@ class BookingRoomController extends Controller
                 continue;
             }
 
+            // Nếu ngày này đã có cấu hình số lượng (kể cả quantity = 0), bảo toàn số lượng đã cấu hình
+            $qty = ($existing && $existing->quantity !== null)
+                ? (float) $existing->quantity
+                : (int) ($room->extra_bed_qty ?? 0);
+
             $rate = ($existing && $existing->rate !== null)
                 ? (float) $existing->rate
                 : (float) ($room->extra_bed_rate ?? 0);
@@ -1438,7 +1447,7 @@ class BookingRoomController extends Controller
                 ],
                 [
                     'service_name' => BookingRoomService::catalogName(BookingRoomService::CODE_EXTRA_BED, 'Extra Bed'),
-                    'quantity'     => $room->extra_bed_qty,
+                    'quantity'     => $qty,
                     'rate'         => $rate,
                     'department'   => 'FO',
                     'is_room'      => $existing?->is_room ?? 1,
@@ -1468,9 +1477,16 @@ class BookingRoomController extends Controller
 
         if (!$minArrival || !$maxDepart) return;
 
+        $arrivalStr = \Carbon\Carbon::parse($minArrival)->toDateString();
+        $departStr  = \Carbon\Carbon::parse($maxDepart)->toDateString();
+        $nights     = (bool) $booking->is_day_use
+            ? 0
+            : max(0, (int) \Carbon\Carbon::parse($arrivalStr)->diffInDays(\Carbon\Carbon::parse($departStr)));
+
         $booking->update([
-            'arrival_date'   => $minArrival,
-            'departure_date' => $maxDepart,
+            'arrival_date'   => $arrivalStr,
+            'departure_date' => $departStr,
+            'num_of_days'    => $nights,
         ]);
     }
 

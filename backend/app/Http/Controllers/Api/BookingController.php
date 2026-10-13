@@ -3340,9 +3340,24 @@ class BookingController extends Controller
             }
 
             if ($qty <= 0) {
-                if ($existing && $existing->is_posted == 0) {
-                    $existing->delete();
-                }
+                // Đối với Extra Bed: lưu quantity = 0 vào booking_room_services khi được chỉnh về 0
+                \App\Models\BookingRoomService::withTrashed()->updateOrCreate(
+                    [
+                        'booking_room_id' => $room->id,
+                        'service_code'    => \App\Models\BookingRoomService::CODE_EXTRA_BED,
+                        'service_date'    => $dateStr,
+                    ],
+                    [
+                        'service_name' => \App\Models\BookingRoomService::catalogName(\App\Models\BookingRoomService::CODE_EXTRA_BED, 'Extra Bed'),
+                        'quantity'     => 0,
+                        'rate'         => $rate,
+                        'department'   => 'FO',
+                        'is_room'      => $isRoom ? 1 : 0,
+                        'is_posted'    => 0,
+                        'deleted_at'   => null,
+                        'created_by'   => Auth::user()?->username ?? 'system',
+                    ]
+                );
                 continue;
             }
 

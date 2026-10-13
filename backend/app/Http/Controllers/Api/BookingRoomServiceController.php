@@ -219,27 +219,58 @@ class BookingRoomServiceController extends Controller
             ], 422);
         }
 
-        // Nếu số lượng <= 0 → Xóa dịch vụ của ngày này nếu có
+        // Nếu số lượng <= 0:
         if (isset($request->quantity) && (float)$request->quantity <= 0) {
-            BookingRoomService::where('booking_room_id', $roomId)
-                ->where('service_code', $request->service_code)
-                ->where('service_date', $request->service_date)
-                ->where('is_posted', 0)
-                ->delete();
+            $isEb = $request->service_code === BookingRoomService::CODE_EXTRA_BED 
+                || $request->service_code === 'EB'
+                || strcasecmp((string)$request->service_code, BookingRoomService::catalogCode(BookingRoomService::CODE_EXTRA_BED)) === 0;
 
-            if ($request->service_code === BookingRoomService::CODE_EXTRA_BED) {
+            if ($isEb) {
+                // Đối với Extra Bed: Cập nhật quantity = 0, total_amount = 0 vào booking_room_services (giữ record với sl = 0)
+                BookingRoomService::withTrashed()->updateOrCreate(
+                    [
+                        'booking_room_id' => $roomId,
+                        'service_code'    => BookingRoomService::CODE_EXTRA_BED,
+                        'service_date'    => $request->service_date,
+                    ],
+                    [
+                        'service_name' => BookingRoomService::catalogName(BookingRoomService::CODE_EXTRA_BED, 'Extra Bed'),
+                        'quantity'     => 0,
+                        'rate'         => $request->rate ?? 0,
+                        'total_amount' => 0,
+                        'department'   => 'FO',
+                        'is_room'      => $request->has('is_room') ? (int) $request->boolean('is_room') : 1,
+                        'folio'        => $request->folio ?? 1,
+                        'is_posted'    => 0,
+                        'deleted_at'   => null,
+                        'created_by'   => Auth::user()?->username ?? 'system',
+                    ]
+                );
+
                 $remainingEB = BookingRoomService::where('booking_room_id', $roomId)
                     ->where('service_code', BookingRoomService::CODE_EXTRA_BED)
+                    ->where('quantity', '>', 0)
                     ->get();
 
                 if ($remainingEB->isEmpty()) {
                     $room->update(['extra_bed_qty' => 0, 'extra_bed_rate' => 0]);
                 } else {
-                    $maxQty = $remainingEB->max('quantity');
+                    $maxQty = $remainingEB->max('quantity') ?? 0;
                     $latestRate = $remainingEB->firstWhere('rate', '>', 0)?->rate ?? 0;
                     $room->update(['extra_bed_qty' => $maxQty, 'extra_bed_rate' => $latestRate]);
                 }
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Đã cập nhật số lượng Extra Bed về 0 cho ngày này.',
+                ]);
             }
+
+            BookingRoomService::where('booking_room_id', $roomId)
+                ->where('service_code', $request->service_code)
+                ->where('service_date', $request->service_date)
+                ->where('is_posted', 0)
+                ->delete();
 
             return response()->json([
                 'success' => true,
