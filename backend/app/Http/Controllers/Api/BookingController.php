@@ -556,21 +556,25 @@ class BookingController extends Controller
 
         // Kiểm tra is_availability = 0 → trả cảnh báo cho UI hiển thị popup
         $isAvailabilityWarning = false;
+        $isWaitingStatus = false;
         if (!empty($validated['registration_status_id'])) {
             $regStatus = RegistrationStatus::where('booking_status_id', (int) $validated['registration_status_id'])->first();
             if ($regStatus && !$regStatus->is_availability) {
                 $isAvailabilityWarning = true;
+                $isWaitingStatus = true;
             }
         }
 
         try {
-            $booking = \Illuminate\Support\Facades\DB::transaction(function () use ($validated, $request) {
+            $booking = \Illuminate\Support\Facades\DB::transaction(function () use ($validated, $request, $isWaitingStatus) {
                 // 1. Validate room allocations trước khi tạo booking
                 if ($request->has('room_allocations') && is_array($request->room_allocations)) {
                     $this->validateRoomAllocations(
                         $request->room_allocations,
                         $validated['arrival_date'],
-                        $validated['departure_date']
+                        $validated['departure_date'],
+                        null,
+                        $isWaitingStatus
                     );
                 }
 
@@ -946,7 +950,13 @@ class BookingController extends Controller
 
                 $arrivalDate = Carbon::parse($booking->arrival_date)->toDateString();
                 $departureDate = Carbon::parse($booking->departure_date)->toDateString();
-                $this->validateRoomAllocations($allocations, $arrivalDate, $departureDate, $booking->id);
+                $regId = $validated['registration_status_id'] ?? $booking->registration_status_id;
+                $isWaiting = false;
+                if ($regId) {
+                    $reg = RegistrationStatus::where('booking_status_id', (int) $regId)->first();
+                    $isWaiting = $reg && !$reg->is_availability;
+                }
+                $this->validateRoomAllocations($allocations, $arrivalDate, $departureDate, $booking->id, $isWaiting);
 
                 foreach ($allocations as $allocation) {
                     $quantity = (int) $allocation['quantity'];
@@ -1242,11 +1252,19 @@ class BookingController extends Controller
                             ])->values()->all(),
                         ])->values()->all();
 
+                    $regId = $validated['registration_status_id'] ?? $booking->registration_status_id;
+                    $isWaiting = false;
+                    if ($regId) {
+                        $reg = RegistrationStatus::where('booking_status_id', (int) $regId)->first();
+                        $isWaiting = $reg && !$reg->is_availability;
+                    }
+
                     $this->validateRoomAllocations(
                         $syncAllocations,
                         $validated['arrival_date'] ?? $booking->arrival_date,
                         $validated['departure_date'] ?? $booking->departure_date,
                         $booking->id,
+                        $isWaiting,
                     );
                 }
 
@@ -1324,11 +1342,19 @@ class BookingController extends Controller
                         // Thực hiện validation dựa trên payload mới
                         $bArrDate = $booking->arrival_date ? Carbon::parse($booking->arrival_date)->toDateString() : now()->toDateString();
                         $bDepDate = $booking->departure_date ? Carbon::parse($booking->departure_date)->toDateString() : now()->toDateString();
+                        $regId = $validated['registration_status_id'] ?? $booking->registration_status_id;
+                        $isWaiting = false;
+                        if ($regId) {
+                            $reg = RegistrationStatus::where('booking_status_id', (int) $regId)->first();
+                            $isWaiting = $reg && !$reg->is_availability;
+                        }
+
                         $this->validateRoomAllocations(
                             $roomAllocations,
                             $validated['arrival_date'] ?? $bArrDate,
                             $validated['departure_date'] ?? $bDepDate,
-                            $booking->id
+                            $booking->id,
+                            $isWaiting
                         );
                     } catch (\Exception $e) {
                         // Restore lại toàn bộ nếu validate lỗi để không mất dữ liệu của người dùng
@@ -2944,7 +2970,7 @@ class BookingController extends Controller
     /**
      * Validate room allocations against availability, OOO/OOS locks, and occupancy.
      */
-    private function validateRoomAllocations(array $roomAllocations, string $arrivalDate, string $departureDate, $excludeBookingId = null)
+    private function validateRoomAllocations(array $roomAllocations, string $arrivalDate, string $departureDate, $excludeBookingId = null, bool $isWaitingBooking = false)
     {
         $roomAllocations = $this->normalizeRoomAllocations($roomAllocations, $excludeBookingId);
         $avService = app(RoomAvailabilityService::class);
@@ -3158,7 +3184,7 @@ class BookingController extends Controller
             }
             $effectiveAvailability = $availability + $ownActiveCount;
 
-            $canOver = $allowOver && $allowInputOver;
+            $canOver = ($allowOver && $allowInputOver) || $isWaitingBooking;
 
             if ($effectiveAvailability < $newDemand && !$canOver) {
                 $roomClass = \App\Models\RoomClass::find($period['room_class_id']);
@@ -3284,7 +3310,7 @@ class BookingController extends Controller
         foreach ($stayDates as $dateStr) {
             $existing = $existingServices->get($dateStr);
             if ($existing && $existing->is_posted == 1) {
-                if ($existing->rate > 0 && $latestEBRate === null) {
+                if ($existing->rate !== null && $latestEBRate === null) {
                     $latestEBRate = (float)$existing->rate;
                     $latestEBQty  = (int)$existing->quantity;
                 }
@@ -3308,7 +3334,7 @@ class BookingController extends Controller
                 $isRoom = true;
             }
 
-            if ($qty > 0 && $rate > 0 && $latestEBRate === null) {
+            if ($qty > 0 && $rate !== null && $latestEBRate === null) {
                 $latestEBRate = $rate;
                 $latestEBQty  = $qty;
             }
@@ -3340,7 +3366,7 @@ class BookingController extends Controller
         }
 
         // Cập nhật lại extra_bed_rate của booking_room nếu có đơn giá mới
-        if ($latestEBRate !== null && $latestEBRate != $room->extra_bed_rate) {
+        if ($latestEBRate !== null && (float)$latestEBRate != (float)$room->extra_bed_rate) {
             $room->update([
                 'extra_bed_rate' => $latestEBRate,
                 'extra_bed_qty'  => $latestEBQty ?? $room->extra_bed_qty

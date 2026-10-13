@@ -120,7 +120,7 @@ class BookingRoomLifecycleService
                 continue;
             }
 
-            $rate = ($row && $row->rate !== null && (float) $row->rate > 0)
+            $rate = ($row && $row->rate !== null)
                 ? (float) $row->rate
                 : (float) ($room->extra_bed_rate ?? 0);
 

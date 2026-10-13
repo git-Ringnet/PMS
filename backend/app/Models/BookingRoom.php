@@ -141,7 +141,7 @@ class BookingRoom extends Model
                     $diff = $arr->diffInDays($dep);
                     $model->ActutalNumOfDays = $model->is_day_use
                         ? 0
-                        : (((int)$model->status === self::STATUS_MOVED) ? $diff : ($diff > 0 ? $diff : 1));
+                        : (((int)$model->status === self::STATUS_MOVED) ? $diff : max(0, $diff));
                 }
             }
 

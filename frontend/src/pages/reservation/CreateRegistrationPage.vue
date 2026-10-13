@@ -154,6 +154,12 @@ const allowInputOverAV = computed(() => {
   const val = hotelSettings.value?.AllowInputOverAV ?? hotelSettings.value?.allow_input_over_av
   return String(val ?? '0') === '1'
 })
+const isWaitingBooking = computed(() => {
+  const regId = modalForm.value?.registrationStatusId
+  if (!regId) return false
+  const st = registrationStatuses.value.find(rs => Number(rs.booking_status_id) === Number(regId) || Number(rs.id) === Number(regId))
+  return st ? (st.is_availability === false || Number(st.is_availability) === 0) : false
+})
 const currenciesList = ref([])
 const activeCurrency = computed(() => {
   return currenciesList.value.find(c => c.is_main) || { code: 'VND', decimals_to_round: 0 }
@@ -998,7 +1004,8 @@ function handleServiceRateChange(room, svc, newRate) {
     
     // Khởi tạo trước giá mặc định cho tất cả các ngày lưu trú nếu chưa có
     const checkIn = room.checkIn
-    const nights = Number(room.nights) || 1
+    const isSameDay = !!checkIn && !!room.checkOut && (cleanDateStr(checkIn) === cleanDateStr(room.checkOut))
+    const nights = isSameDay ? (room.hourly ? 1 : 0) : (Number(room.nights) || 1)
     if (checkIn) {
       for (let i = 0; i < nights; i++) {
         const parts = checkIn.split('-')
@@ -1021,6 +1028,8 @@ function handleServiceRateChange(room, svc, newRate) {
     }
 
     room.dailyRoomPrices[cleanDate] = newRate
+    room.price = newRate
+    room.basePrice = newRate
   }
 
   if (svc.svc_ref) {
@@ -1113,7 +1122,8 @@ async function handleInlineServiceRateChange(room, svc, newRate) {
     if (!room.dailyRoomPrices) room.dailyRoomPrices = {}
     
     const checkIn = room.checkIn
-    const nights = Number(room.nights) || 1
+    const isSameDay = !!checkIn && !!room.checkOut && (cleanDateStr(checkIn) === cleanDateStr(room.checkOut))
+    const nights = isSameDay ? (room.hourly ? 1 : 0) : (Number(room.nights) || 1)
     if (checkIn) {
       for (let i = 0; i < nights; i++) {
         const parts = checkIn.split('-')
@@ -1134,6 +1144,17 @@ async function handleInlineServiceRateChange(room, svc, newRate) {
       }
     }
     room.dailyRoomPrices[cleanDate] = newRate
+    room.price = newRate
+    room.basePrice = newRate
+
+    const tab = activeTab.value
+    if (tab && tab.roomAllocations) {
+      const alloc = tab.roomAllocations.find(a => a.roomClassId === room.roomClassId)
+      if (alloc) {
+        alloc.price = newRate
+        alloc.basePrice = newRate
+      }
+    }
   }
 
   // Đồng bộ Extra Bed (EB)
@@ -1144,6 +1165,15 @@ async function handleInlineServiceRateChange(room, svc, newRate) {
     if (existing) {
       existing.rate = newRate
       existing.total = (existing.quantity || 1) * newRate
+    } else {
+      room.dailyExtraBeds.push({
+        dateStr: cleanDate,
+        date: cleanDate,
+        quantity: svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1,
+        rate: newRate,
+        total: (svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1) * newRate,
+        isRoom: svc.is_room !== false
+      })
     }
   }
 
@@ -1281,7 +1311,8 @@ function handleInlineExtraBedQtyChange(room) {
 
   // 1. Cập nhật local dailyExtraBeds
   const checkIn = room.checkIn
-  const nights = Number(room.nights) || 1
+  const isSameDay = !!checkIn && !!room.checkOut && (cleanDateStr(checkIn) === cleanDateStr(room.checkOut))
+  const nights = isSameDay ? (room.hourly ? 1 : 0) : (Number(room.nights) || 1)
   const dailyRates = []
   if (checkIn) {
     for (let i = 0; i < nights; i++) {
@@ -1333,7 +1364,8 @@ function handleInlineExtraBedRateChange(room) {
 
   // 1. Cập nhật local dailyExtraBeds
   const checkIn = room.checkIn
-  const nights = Number(room.nights) || 1
+  const isSameDay = !!checkIn && !!room.checkOut && (cleanDateStr(checkIn) === cleanDateStr(room.checkOut))
+  const nights = isSameDay ? (room.hourly ? 1 : 0) : (Number(room.nights) || 1)
   const dailyRates = []
   if (checkIn) {
     for (let i = 0; i < nights; i++) {
@@ -1403,6 +1435,66 @@ async function handleInlineServiceDelete(room, svc) {
 
   const cleanDate = cleanDateStr(svc.service_date)
 
+  if (svc.service_code === 'EB') {
+    // 1. Cập nhật dailyExtraBeds: đặt quantity = 0 cho ngày này
+    if (!room.dailyExtraBeds) room.dailyExtraBeds = []
+    const existingDeb = room.dailyExtraBeds.find(d => cleanDateStr(d.dateStr || d.date) === cleanDate)
+    if (existingDeb) {
+      existingDeb.quantity = 0
+      existingDeb.total = 0
+    } else {
+      room.dailyExtraBeds.push({
+        dateStr: cleanDate,
+        date: cleanDate,
+        quantity: 0,
+        rate: (svc.rate !== undefined && svc.rate !== null && svc.rate !== '') ? Number(svc.rate) : ((room.extraBedPrice !== undefined && room.extraBedPrice !== null && room.extraBedPrice !== '') ? Number(room.extraBedPrice) : 300000),
+        total: 0,
+        isRoom: svc.is_room !== 0
+      })
+    }
+
+    // 2. Cập nhật room.services: loại bỏ dòng dịch vụ EB của ngày này khỏi bảng hiển thị
+    room.services = (room.services || []).filter(s => !(s.service_code === 'EB' && cleanDateStr(s.service_date) === cleanDate))
+
+    // 3. Tính lại extraBedQty & extraBedPrice của phòng
+    const activeDeb = room.dailyExtraBeds.filter(d => Number(d.quantity) > 0)
+    if (activeDeb.length === 0) {
+      room.extraBedQty = 0
+      room.extraBedPrice = 0
+    } else {
+      room.extraBedQty = Math.max(...activeDeb.map(d => Number(d.quantity) || 0))
+      room.extraBedPrice = (activeDeb[0]?.rate !== undefined && activeDeb[0]?.rate !== null && activeDeb[0]?.rate !== '') ? Number(activeDeb[0].rate) : ((room.extraBedPrice !== undefined && room.extraBedPrice !== null && room.extraBedPrice !== '') ? Number(room.extraBedPrice) : 300000)
+    }
+
+    room.total = calculateRoomTotal(room)
+
+    // 4. Nếu là phòng đã lưu trong DB (có bookingRoomId), đồng bộ qua API để cập nhật EB về 0
+    if (activeTab.value?.dbId && room.bookingRoomId && !String(room.bookingRoomId).startsWith('temp-')) {
+      try {
+        await http.put(`/bookings/${activeTab.value.dbId}/rooms/${room.bookingRoomId}`, {
+          extra_bed_qty: room.extraBedQty,
+          extra_bed_rate: room.extraBedPrice
+        })
+
+        await http.post(`/booking-rooms/${room.bookingRoomId}/services`, {
+          service_code: getHotelServiceCode('EB'),
+          service_name: getHotelServiceName('EB', 'Extra Bed'),
+          service_date: cleanDate,
+          quantity: 0,
+          rate: Number(svc.rate) || 0,
+          is_room: svc.is_room !== 0 ? 1 : 0
+        })
+
+        notifyRoomUpdates(activeTab.value?.dbId)
+      } catch (err) {
+        console.error('Lỗi khi đồng bộ xóa Extra Bed:', err)
+      }
+    }
+
+    uiStore.showToast(`Đã xóa Extra Bed ngày ${formatDateVi(svc.service_date)}.`, 'success')
+    return
+  }
+
   if (room.bookingRoomId && !String(room.bookingRoomId).startsWith('temp-') && svc.id && !String(svc.id).startsWith('room-charge-')) {
     try {
       const res = await deleteBookingRoomServicesBulk(room.bookingRoomId, {
@@ -1411,20 +1503,6 @@ async function handleInlineServiceDelete(room, svc) {
       if (res.data?.success) {
         uiStore.showToast('Xóa dịch vụ thành công!', 'success')
         room.services = (room.services || []).filter(s => s.id !== svc.id)
-        
-        if (svc.service_code === 'EB') {
-          const remainingEB = room.services.filter(s => s.service_code === 'EB')
-          if (remainingEB.length === 0) {
-            room.extraBedQty = 0
-            room.extraBedPrice = 0
-            room.dailyExtraBeds = []
-          } else {
-            room.extraBedQty = Math.max(...remainingEB.map(s => s.quantity || 0))
-            room.extraBedPrice = remainingEB[0]?.rate || 0
-            room.dailyExtraBeds = (room.dailyExtraBeds || []).filter(d => cleanDateStr(d.dateStr || d.date) !== cleanDate)
-          }
-        }
-        
         room.total = calculateRoomTotal(room)
         notifyRoomUpdates(activeTab.value?.dbId)
       }
@@ -1434,20 +1512,6 @@ async function handleInlineServiceDelete(room, svc) {
     }
   } else {
     room.services = (room.services || []).filter(s => s.id !== svc.id && !(s.service_code === svc.service_code && cleanDateStr(s.service_date) === cleanDate))
-    
-    if (svc.service_code === 'EB') {
-      const remainingEB = room.services.filter(s => s.service_code === 'EB')
-      if (remainingEB.length === 0) {
-        room.extraBedQty = 0
-        room.extraBedPrice = 0
-        room.dailyExtraBeds = []
-      } else {
-        room.extraBedQty = Math.max(...remainingEB.map(s => s.quantity || 0))
-        room.extraBedPrice = remainingEB[0]?.rate || 0
-        room.dailyExtraBeds = (room.dailyExtraBeds || []).filter(d => cleanDateStr(d.dateStr || d.date) !== cleanDate)
-      }
-    }
-    
     room.total = calculateRoomTotal(room)
     uiStore.showToast('Đã xóa dịch vụ tạm thời.', 'info')
   }
@@ -1476,8 +1540,12 @@ function getRoomDisplayServices(room) {
   // - Đối với đêm quá khứ (< systemDate): Bắt buộc lấy theo hóa đơn service_bills hợp lệ. Nếu đã xóa bill -> không tự bù tiền, tiền = 0.
   // - Đối với đêm hôm nay/tương lai (>= systemDate): Nếu đã có bill thì lấy theo bill; nếu chưa có thì lấy theo giá kế hoạch booking.
   const checkIn = room.checkIn
+  const isSameDay = !!checkIn && !!room.checkOut && (cleanDateStr(checkIn) === cleanDateStr(room.checkOut))
+  const isDayUse = !!room.hourly && isSameDay
   const rawNightCount = Number(room.nights)
-  const nights = Number.isFinite(rawNightCount) ? Math.max(0, rawNightCount) : 1
+  const nights = isSameDay
+    ? (isDayUse ? 1 : 0)
+    : (Number.isFinite(rawNightCount) ? Math.max(0, rawNightCount) : 1)
 
   if (checkIn) {
     for (let i = 0; i < nights; i++) {
@@ -1687,7 +1755,7 @@ function getRoomDisplayServices(room) {
         // Hôm nay & Tương lai: Lấy theo dự kiến đã cài trong BK
         const daily = (room.dailyExtraBeds || []).find(d => cleanDateStr(d.dateStr || d.date) === dStr)
         const ebSvc = (room.services || []).find(s => s.service_code === 'EB' && cleanDateStr(s.service_date) === dStr)
-        const defaultEbPrice = Number(room.extraBedPrice) || 300000
+        const defaultEbPrice = (room.extraBedPrice !== undefined && room.extraBedPrice !== null && room.extraBedPrice !== '') ? Number(room.extraBedPrice) : 300000
         if (daily) {
           list.push({
             id: `daily-eb-${room.id}-${dStr}`,
@@ -1695,7 +1763,7 @@ function getRoomDisplayServices(room) {
             service_name: 'Giường phụ (Extra Bed)',
             service_code: 'EB',
             quantity: Number(daily.quantity) || 0,
-            rate: Number(daily.rate) || defaultEbPrice,
+            rate: (daily.rate !== undefined && daily.rate !== null && daily.rate !== '') ? Number(daily.rate) : defaultEbPrice,
             is_room: daily.isRoom !== false,
             svc_ref: daily
           })
@@ -1706,7 +1774,7 @@ function getRoomDisplayServices(room) {
             service_name: ebSvc.service_name || 'Giường phụ (Extra Bed)',
             service_code: 'EB',
             quantity: Number(ebSvc.quantity) || 0,
-            rate: Number(ebSvc.rate) || defaultEbPrice,
+            rate: (ebSvc.rate !== undefined && ebSvc.rate !== null && ebSvc.rate !== '') ? Number(ebSvc.rate) : defaultEbPrice,
             is_room: ebSvc.is_room !== 0,
             svc_ref: ebSvc
           })
@@ -2289,7 +2357,7 @@ function syncRoomsToAllocations(tab) {
       discountUnit: r.discountUnit || alloc.discountUnit || 'percent',
       arrivalDate: r.checkIn || tab.checkIn,
       departureDate: r.checkOut || tab.checkOut,
-      nights: Number(r.nights) || 1,
+      nights: (Number.isFinite(Number(r.nights)) && Number(r.nights) >= 0) ? Number(r.nights) : 1,
       dailyRoomPrices: r.dailyRoomPrices || null,
       dailyExtraBeds: (r.dailyExtraBeds || []).map(d => ({
         ...d,
@@ -2782,7 +2850,7 @@ function bookingToTab(b) {
       })
 
       const ebServicesList = servicesList.filter(s => s.service_code === 'EB')
-      const defaultEbRate = Number(br.extra_bed_rate) || 300000
+      const defaultEbRate = (br.extra_bed_rate !== undefined && br.extra_bed_rate !== null && br.extra_bed_rate !== '') ? Number(br.extra_bed_rate) : 300000
       let dailyExtraBeds = []
       if (ebServicesList.length > 0) {
         const ebMap = {}
@@ -2801,7 +2869,7 @@ function bookingToTab(b) {
             const dStr = `${c.getFullYear()}-${String(c.getMonth() + 1).padStart(2, '0')}-${String(c.getDate()).padStart(2, '0')}`
             const s = ebMap[dStr]
             const q = s ? (Number(s.quantity) || 0) : 0
-            const r = s ? (Number(s.rate) || 0) : defaultEbRate
+            const r = (s && s.rate !== undefined && s.rate !== null && s.rate !== '') ? Number(s.rate) : defaultEbRate
             dailyExtraBeds.push({
               dateStr: dStr,
               date: dStr,
@@ -2816,7 +2884,7 @@ function bookingToTab(b) {
           dailyExtraBeds = ebServicesList.map(s => {
             const dStr = parseApiDate(s.service_date)
             const q = Number(s.quantity) || 0
-            const r = Number(s.rate) || 0
+            const r = (s.rate !== undefined && s.rate !== null && s.rate !== '') ? Number(s.rate) : defaultEbRate
             return {
               dateStr: dStr,
               date: dStr,
@@ -2869,7 +2937,7 @@ function bookingToTab(b) {
         babies: babiesCount,
         children: childrenCount,
         breakfast: br.breakfast !== undefined ? !!br.breakfast : true,
-        extraBedPrice: Number(br.extra_bed_rate) || (dailyExtraBeds.length ? (dailyExtraBeds.find(d => d.rate > 0)?.rate || 0) : 0),
+        extraBedPrice: (br.extra_bed_rate !== undefined && br.extra_bed_rate !== null && br.extra_bed_rate !== '') ? Number(br.extra_bed_rate) : (dailyExtraBeds.length ? (dailyExtraBeds.find(d => d.rate !== undefined)?.rate ?? 0) : 0),
         extraBedQty: Number(br.extra_bed_qty) || (dailyExtraBeds.length ? Math.max(...dailyExtraBeds.map(d => d.quantity || 0)) : 0),
         hourly: !!br.is_day_use && (parseApiDate(br.arrival_date || b.arrival_date) === parseApiDate(br.departure_date || b.departure_date)),
         arrivalTime: br.arrival_time || '14:00',
@@ -3602,7 +3670,8 @@ async function handleRoomRateCodeChange(room, selectedValue = room?.rateCode) {
     )
     if (existingDailyPrices || hasRoomChargeServices) {
       const dailyPrices = {}
-      const nights = Math.max(Number(room.nights) || 0, 1)
+      const isSameDay = !!room.checkIn && !!room.checkOut && (cleanDateStr(room.checkIn) === cleanDateStr(room.checkOut))
+      const nights = isSameDay ? (room.hourly ? 1 : 0) : Math.max(Number(room.nights) || 0, 1)
       const arrival = new Date(`${room.checkIn}T00:00:00`)
       if (!Number.isNaN(arrival.getTime())) {
         for (let offset = 0; offset < nights; offset++) {
@@ -3691,7 +3760,8 @@ function toggleRoomDiscountPopover(room) {
 function syncRoomPriceToDailyCharges(room, newRate) {
   if (!room) return
   const checkIn = room.checkIn
-  const nights = Math.max(Number(room.nights) || 0, 1)
+  const isSameDay = !!checkIn && !!room.checkOut && (cleanDateStr(checkIn) === cleanDateStr(room.checkOut))
+  const nights = isSameDay ? (room.hourly ? 1 : 0) : Math.max(Number(room.nights) || 0, 1)
 
   if (!room.dailyRoomPrices) room.dailyRoomPrices = {}
 
@@ -4399,7 +4469,7 @@ async function updateRoomAvailability() {
 
 
         alloc.availableRooms = minAv
-        if (!allowInputOverAV.value) {
+        if (!allowInputOverAV.value && !isWaitingBooking.value) {
           if (minAv <= 0 && (Number(alloc.quantity) || 0) > 0) {
             alloc.quantity = 0
             updateAllocatedRooms(alloc)
@@ -4473,12 +4543,12 @@ function updateAllocatedRooms(row) {
 }
 
 function isQuantityDisabled(row) {
-  if (allowInputOverAV.value) return false
+  if (isWaitingBooking.value || allowInputOverAV.value) return false
   return (Number(row.availableRooms) || 0) <= 0
 }
 
 function handleQuantityInput(row) {
-  if (!allowInputOverAV.value) {
+  if (!isWaitingBooking.value && !allowInputOverAV.value) {
     const avail = Number(row.availableRooms) || 0
     if (avail <= 0) {
       row.quantity = 0
@@ -4495,7 +4565,7 @@ function handleIncreaseQuantity(row) {
   if (isQuantityDisabled(row)) return
   const current = Number(row.quantity) || 0
   const avail = Number(row.availableRooms) || 0
-  if (!allowInputOverAV.value && current >= avail) {
+  if (!isWaitingBooking.value && !allowInputOverAV.value && current >= avail) {
     uiStore.showToast(`Số lượng phòng không được vượt quá số phòng trống (${avail})!`, 'error')
     return
   }
@@ -4513,6 +4583,8 @@ function handleDecreaseQuantity(row) {
 }
 
 function validateRoomQuantity(alloc) {
+  if (isWaitingBooking.value) return
+
   if (!allowInputOverAV.value) {
     const avail = Number(alloc.availableRooms) || 0
     if (avail <= 0 && (Number(alloc.quantity) || 0) > 0) {
@@ -4746,7 +4818,7 @@ async function handleRowDateChange(row) {
         exclude_booking_room_id: undefined
       })
       row.availableRooms = res.data?.av !== undefined ? Number(res.data.av) : 0
-      if (!allowInputOverAV.value) {
+      if (!allowInputOverAV.value && !isWaitingBooking.value) {
         if (row.availableRooms <= 0 && (Number(row.quantity) || 0) > 0) {
           row.quantity = 0
           updateAllocatedRooms(row)
@@ -4780,16 +4852,14 @@ async function handleRowDateChangeInline(room) {
         room.hourly = false
       }
       
-      // Nếu check-out bằng check-in nhưng chưa bật hourly -> tự động bật hourly (chỉ khi checkIn >= sysDate)
-      if (room.checkOut === room.checkIn && !room.hourly) {
-        if (!sysDate || !room.checkIn || room.checkIn >= sysDate) {
-          room.hourly = true
-        }
+      // Nếu check-out khác check-in thì tắt hourly
+      if (room.checkOut !== room.checkIn) {
+        room.hourly = false
       }
       
       const diffTime = new Date(room.checkOut).getTime() - new Date(room.checkIn).getTime()
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-      room.nights = Math.max(room.hourly ? 0 : 1, diffDays >= 0 ? diffDays : 0)
+      room.nights = diffDays >= 0 ? diffDays : 0
       applyRateCodeDailyPricesToRoom(room)
       room.total = calculateRoomTotal(room)
 
@@ -4866,7 +4936,8 @@ async function handleHourlyToggle(room) {
     room.checkOut = room.checkIn
     room.nights = 0
   } else {
-    if (room.checkOut === room.checkIn) {
+    const isLateCheckinOrSameDay = !!(room.bookingRoomId && (room.serviceBills?.length || room.no_show_day))
+    if (room.checkOut === room.checkIn && !isLateCheckinOrSameDay) {
       const ci = new Date(room.checkIn)
       if (!isNaN(ci)) {
         const co = new Date(ci)
@@ -4874,6 +4945,8 @@ async function handleHourlyToggle(room) {
         room.checkOut = co.toISOString().split('T')[0]
         room.nights = 1
       }
+    } else {
+      room.nights = 0
     }
   }
   room.total = calculateRoomTotal(room)
@@ -5176,7 +5249,7 @@ async function handleSaveNewBooking() {
       module:                 currentBookingModule.value,
       created_module:         currentBookingModule.value,
     }
-    if (!allowInputOverAV.value) {
+    if (!allowInputOverAV.value && !isWaitingBooking.value) {
       const overAlloc = (roomAddDraft.value || []).find(r => {
         const qty = Number(r.quantity) || 0
         const av = Number(r.availableRooms) || 0
@@ -6431,7 +6504,7 @@ async function handleExtraBedSaved({ quantity, rate, totalExtraBedPrice, dailyRa
       } else {
         if (existingIdx !== -1) {
           room.services[existingIdx].quantity = 0
-          room.services[existingIdx].rate = Number(d.rate) || Number(room.extraBedPrice) || 300000
+          room.services[existingIdx].rate = (d.rate !== undefined && d.rate !== null && d.rate !== '') ? Number(d.rate) : ((room.extraBedPrice !== undefined && room.extraBedPrice !== null && room.extraBedPrice !== '') ? Number(room.extraBedPrice) : 300000)
           room.services[existingIdx].is_room = d.isRoom ? 1 : 0
         } else {
           room.services.push({
@@ -6440,7 +6513,7 @@ async function handleExtraBedSaved({ quantity, rate, totalExtraBedPrice, dailyRa
             service_name: 'Giường phụ (Extra Bed)',
             service_date: dDate,
             quantity: 0,
-            rate: Number(d.rate) || Number(room.extraBedPrice) || 300000,
+            rate: (d.rate !== undefined && d.rate !== null && d.rate !== '') ? Number(d.rate) : ((room.extraBedPrice !== undefined && room.extraBedPrice !== null && room.extraBedPrice !== '') ? Number(room.extraBedPrice) : 300000),
             is_room: d.isRoom ? 1 : 0
           })
         }
@@ -7647,6 +7720,7 @@ defineExpose({
                                       type="text"
                                       :value="formatCurrencyInput(svc.rate)"
                                       @input="e => handleServiceRateChange(room, svc, cleanCurrencyValue(e.target.value))"
+                                      @blur="e => { e.target.value = formatCurrencyInput(svc.rate) }"
                                       @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
                                       class="w-full text-right font-bold text-slate-800 bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 shadow-2xs"
                                     />
@@ -8331,6 +8405,7 @@ defineExpose({
                                             type="text"
                                             :value="formatCurrencyInput(svc.rate)"
                                             @change="e => handleInlineServiceRateChange(room, svc, cleanCurrencyValue(e.target.value))"
+                                            @blur="e => { e.target.value = formatCurrencyInput(svc.rate) }"
                                             @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
                                             class="w-full text-right font-bold text-slate-800 bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 shadow-2xs"
                                           />

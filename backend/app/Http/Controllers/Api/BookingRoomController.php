@@ -1426,7 +1426,7 @@ class BookingRoomController extends Controller
                 continue;
             }
 
-            $rate = ($existing && $existing->rate !== null && (float) $existing->rate > 0)
+            $rate = ($existing && $existing->rate !== null)
                 ? (float) $existing->rate
                 : (float) ($room->extra_bed_rate ?? 0);
 

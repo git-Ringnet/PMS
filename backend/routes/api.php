@@ -167,6 +167,9 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     Route::delete('departments/{department}/services/{hotelService}', [\App\Http\Controllers\Api\DepartmentController::class, 'detachService']);
     Route::apiResource('shifts', \App\Http\Controllers\Api\ShiftController::class);
     Route::apiResource('hotel-configs', \App\Http\Controllers\Api\HotelConfigController::class);
+    Route::get('portal-wallpaper', [\App\Http\Controllers\Api\PortalWallpaperController::class, 'getWallpaper']);
+    Route::post('portal-wallpaper', [\App\Http\Controllers\Api\PortalWallpaperController::class, 'updateWallpaper'])->middleware('permission:system.setting');
+    Route::delete('portal-wallpaper', [\App\Http\Controllers\Api\PortalWallpaperController::class, 'resetWallpaper'])->middleware('permission:system.setting');
     Route::post('templates/{id}/duplicate', [\App\Http\Controllers\Api\TemplateController::class, 'duplicate']);
     Route::post('templates/{id}/make-default', [\App\Http\Controllers\Api\TemplateController::class, 'makeDefault']);
     Route::post('templates/{id}/remove-default', [\App\Http\Controllers\Api\TemplateController::class, 'removeDefault']);

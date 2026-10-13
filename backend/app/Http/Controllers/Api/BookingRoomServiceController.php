@@ -418,8 +418,19 @@ class BookingRoomServiceController extends Controller
                 ->where('service_code', BookingRoomService::CODE_EXTRA_BED)
                 ->get();
             $maxQty = $remainingEB->max('quantity') ?? 0;
-            $latestRate = $remainingEB->firstWhere('rate', '>', 0)?->rate ?? 0;
+            $latestRate = $request->has('rate') && $request->rate !== null && $request->rate !== ''
+                ? (float) $request->rate
+                : ($remainingEB->firstWhere('rate', '>', 0)?->rate ?? 0);
             $room->update(['extra_bed_qty' => $maxQty, 'extra_bed_rate' => $latestRate]);
+        }
+
+        if ($request->service_code === 'RM' || $request->service_code === 'ROOM_CHARGE') {
+            if ($request->has('rate') && $request->rate !== null && $request->rate !== '') {
+                $room->update([
+                    'rate' => (float) $request->rate,
+                    'base_price' => (float) $request->rate,
+                ]);
+            }
         }
 
         try {

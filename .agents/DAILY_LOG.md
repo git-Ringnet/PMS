@@ -19,6 +19,116 @@
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
 
+## [2026-10-13] - Nâng cấp tính năng Cài đặt hình nền Portal: Tùy chỉnh vị trí hiển thị (Position) và Kiểu hiển thị (Fit)
+### Module: Portal / Trang chủ / Cấu hình hệ thống ([PortalWallpaperModal.vue](file:///d:/PMS/frontend/src/components/PortalWallpaperModal.vue), [HomePage.vue](file:///d:/PMS/frontend/src/pages/HomePage.vue), [PortalWallpaperController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/PortalWallpaperController.php), [PortalWallpaperTest.php](file:///d:/PMS/backend/tests/Feature/PortalWallpaperTest.php))
+
+- **1. Hiện tượng & Nhu cầu**:
+  - Khi tải lên ảnh chụp dọc hoặc ảnh chân dung (như ảnh có khuôn mặt người), mặc định trình duyệt canh giữa (`center center`) dẫn đến bị cắt mất khuôn mặt, chỉ hiển thị phần miệng/cằm.
+  - Người dùng phản ánh ảnh bị mờ: Do ảnh gốc có độ phân giải thấp (473x499 px) bị phóng to toàn màn hình, kèm theo 2 lớp phủ tối đen mặc định (`bg-slate-950/45` + gradient) và hiệu ứng `scale-105` làm ảnh bị tối và mờ sương.
+- **2. Xử lý**:
+  - **Backend**:
+    - [PortalWallpaperController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/PortalWallpaperController.php): Bổ sung hỗ trợ lưu và lấy `Portal_WallpaperPosition` (mặc định `'center center'`), `Portal_WallpaperFit` (mặc định `'cover'`), và `Portal_WallpaperOverlay` (mặc định `15%`). Khi chỉ điều chỉnh vị trí/độ tối mà không đổi file ảnh, hệ thống bảo toàn URL ảnh cũ và cập nhật cấu hình mới.
+    - [PortalWallpaperTest.php](file:///d:/PMS/backend/tests/Feature/PortalWallpaperTest.php): Bổ sung kiểm thử position, fit và overlay (5/5 tests pass).
+  - **Frontend**:
+    - [PortalWallpaperModal.vue](file:///d:/PMS/frontend/src/components/PortalWallpaperModal.vue):
+      - Bổ sung bộ công cụ căn chỉnh vị trí hiển thị: Nút chọn nhanh `Đỉnh (Mặt)` (15%), `Giữa` (50%), `Đáy` (85%) cùng thanh trượt dọc 0% - 100%.
+      - Bổ sung điều khiển độ tối lớp phủ (Overlay Opacity Slider): Cho phép chỉnh từ 0% (Sáng trong nguyên bản 100%) đến 80% (Tối), kèm nút preset 0%, 15%, 40%.
+      - Hiển thị kích thước ảnh thực tế (Width × Height px) và gắn badge cảnh báo nếu độ phân giải thấp (< 1280px) hoặc đạt chuẩn nét (>= 1280px).
+      - Tùy chọn kiểu hiển thị `Phủ kín (Cover)` hoặc `Toàn vẹn (Contain)`.
+      - Khung xem trước (Live Preview) phản hồi ngay lập tức theo thời gian thực khi kéo thanh trượt hoặc bấm nút preset.
+    - [HomePage.vue](file:///d:/PMS/frontend/src/pages/HomePage.vue): Bỏ `scale-105`, thay 2 lớp phủ tối cố định bằng lớp phủ linh hoạt theo cấu hình `wallpaperOverlay`. Khi chỉnh về 0%, ảnh nền giữ nguyên 100% màu sắc và độ nét gốc.
+- **3. Kiểm thử & Đóng gói**:
+  - Backend: `5/5` tests pass ([PortalWallpaperTest.php](file:///d:/PMS/backend/tests/Feature/PortalWallpaperTest.php)).
+  - Frontend: `87/87` tests pass (`node --test tests/*.test.js`).
+  - Đóng gói: `npm run build` thành công 100%.
+
+## [2026-10-13] - Sửa lỗi chặn lưu Booking Chờ xếp phòng (Waiting) khi AV = 0 (Dòng 364)
+### Module: Đặt phòng ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))
+
+- **1. Hiện tượng**:
+  - Khi cấu hình `AllowOverRoomTypeRoomKind = 0` và `AllowInputOverAV = 0`, người dùng tạo booking với Tình trạng đăng ký là `Waiting` và nhập số lượng phòng lớn hơn số phòng trống (AV = 0), khi bấm "Lưu Booking" thì bị toast lỗi: `Loại phòng Suite không đủ phòng trống (Trống: 0)!`.
+- **2. Nguyên nhân**:
+  - Trong `CreateRegistrationPage.vue` tại các hàm `handleSaveNewBooking` (dòng 5252), `loadAvailabilityForDates` (dòng 4472), `handleAllocationChange` (dòng 4821), hệ thống kiểm tra chặn cứng `if (!allowInputOverAV.value)` mà chưa miễn trừ cho booking Waiting (`!isWaitingBooking.value`). Do đó Frontend tự chặn trước khi request kịp gửi xuống Backend.
+- **3. Xử lý**:
+  - Bổ sung điều kiện `&& !isWaitingBooking.value` vào cả 3 vị trí trên. Khi là booking Waiting (hoặc bất kỳ trạng thái nào có `is_availability = 0`), hệ thống cho phép người dùng nhập số lượng và lưu booking bình thường ngay cả khi AV = 0 và cấu hình chặn overbooking đang bật.
+- **4. Kiểm thử & Đóng gói**:
+  - Frontend: `87/87` unit tests passed (`node --test tests/*.test.js`).
+  - Backend: `35/35` feature tests passed (`BookingBusinessRulesTest`, `AllowInputOverAVTest`).
+  - Build: `npm run build` thành công 100%.
+
+## [2026-10-13] - Sửa lỗi nhập đơn giá 0đ (hoặc chỉnh sửa giá) cho Tiền phòng và Giường phụ (Extra Bed) bị reset về giá cũ khi click ra ngoài
+### Module: Đặt phòng ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [BookingRoomServiceController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomServiceController.php), [BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [extrabed-and-url-sync.test.js](file:///d:/PMS/frontend/tests/extrabed-and-url-sync.test.js))
+
+- **1. Hiện tượng**:
+  - Khi chỉnh sửa đơn giá Giường phụ (Extra Bed) hoặc đơn giá Tiền phòng (RM) về `0` (hoặc giá bất kỳ) trong subtable bảng chi tiết ngày ở màn hình Tạo đăng ký (`CreateRegistrationPage.vue`), sau khi click chuột ra ngoài (blur), giá tự động nhảy ngược về giá cũ (Extra Bed nhảy về 300,000đ, cột GIÁ phòng cha vẫn giữ 540,000đ).
+- **2. Nguyên nhân**:
+  - Frontend: Sử dụng toán tử `Number(rate) || defaultEbPrice` hoặc `|| 300000`. Do trong JavaScript `0 || 300000` cho kết quả `300000`, giá trị `0` bị coi là falsy và ép gán về giá mặc định 300,000đ. Khi sửa subtable ngày tiền phòng, `room.dailyRoomPrices` nhận giá mới nhưng `room.price` và `room.basePrice` của dòng phòng cha chưa được gán đồng bộ.
+  - Backend: Trong `BookingRoomServiceController.php` và `BookingController.php`, logic kiểm tra `$latestRate` sử dụng `$request->rate > 0` hoặc `firstWhere('rate', '>', 0)`, làm cho giá `0` bị bỏ qua và tái sử dụng giá cũ từ booking phòng.
+- **3. Xử lý**:
+  - `BookingRoomServiceController.php`: Kiểm tra `$request->has('rate') && $request->rate !== null && $request->rate !== ''` để chấp nhận đơn giá `0`, cập nhật đồng bộ `rate` và `base_price` của `BookingRoom` khi chỉnh sửa dịch vụ `RM`.
+  - `BookingController.php`: Cập nhật điều kiện `$rate !== null` khi upsert dịch vụ Extra Bed để không bỏ qua đơn giá 0.
+  - `CreateRegistrationPage.vue`:
+    - Thay toàn bộ các phép so sánh fallback từ `Number(rate) || 300000` sang kiểm tra chặt chẽ `rate !== undefined && rate !== null && rate !== ''` trong `getRoomDisplayServices`, `bookingToTab`, `handleInlineServiceDelete`, `handleExtraBedSaved`.
+    - Trong `handleInlineServiceRateChange` và `handleServiceRateChange`: Tự động cập nhật đồng bộ `room.price = newRate` và `room.basePrice = newRate` của dòng phòng cha, đồng bộ sang `tab.roomAllocations`.
+    - Bổ sung `@blur="e => { e.target.value = formatCurrencyInput(svc.rate) }"` cho ô nhập đơn giá cả 2 chế độ hiển thị để format lại số khi mất focus.
+- **4. Kiểm thử & Đóng gói**:
+  - Bổ sung unit test trong [extrabed-and-url-sync.test.js](file:///d:/PMS/frontend/tests/extrabed-and-url-sync.test.js) -> Pass toàn bộ 87/87 tests frontend.
+  - Backend tests: Pass toàn bộ 36 feature tests liên quan.
+  - `npm run build`: Hoàn thành 100% không có lỗi.
+
+## [2026-10-13] - Hoàn thành xử lý 4 yêu cầu Dòng 364, 365, 366, 367 (Sheet THEO DÕI VẤN ĐỀ CẦN ĐIỀU CHỈNH)
+### Module: Đặt phòng / Sơ đồ phòng / Cấu hình hệ thống ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [BookingRoomLifecycleService.php](file:///d:/PMS/backend/app/Services/BookingRoomLifecycleService.php), [BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [RoomPlanBookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomPlanBookingRoomController.php), [BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [PortalWallpaperController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/PortalWallpaperController.php), [PortalWallpaperModal.vue](file:///d:/PMS/frontend/src/components/PortalWallpaperModal.vue), [HomePage.vue](file:///d:/PMS/frontend/src/pages/HomePage.vue))
+
+- **1. Dòng 366 (Chữ đỏ) - Sơ đồ phòng / Sơ đồ buồng kéo dài ngày ở giữ nguyên giá phòng & Extra Bed 0đ**:
+  - *Hiện tượng*: Khi kéo dài ngày ở trên Sơ đồ phòng / Sơ đồ buồng, phòng hoặc Extra Bed có giá thỏa thuận 0đ bị reset về giá mặc định (300,000đ).
+  - *Nguyên nhân*: Logic kiểm tra `$row->rate !== null && (float) $row->rate > 0` bỏ qua giá trị `0`, dẫn đến hệ thống tưởng phòng chưa có giá và áp giá mặc định. Đồng thời khi resize phòng trên Room Plan, `synchronizeRoomCharges` không được kích hoạt để đồng bộ bảng chi tiết dịch vụ phòng.
+  - *Xử lý*:
+    - Sửa điều kiện thành `$row && $row->rate !== null` trong [BookingRoomLifecycleService.php](file:///d:/PMS/backend/app/Services/BookingRoomLifecycleService.php) (dòng 123) và [BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php) (dòng 1429).
+    - Truyền `$datesChanged` vào tham số thứ 4 của `BookingRoomLifecycleService::synchronize(...)` trong [RoomPlanBookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/RoomPlanBookingRoomController.php) (dòng 172).
+  - *Kiểm thử*: Bổ sung test `test_extending_stay_preserves_zero_rate_for_room_and_extra_bed()` trong [RoomPlanBookingRoomDateTest.php](file:///d:/PMS/backend/tests/Feature/RoomPlanBookingRoomDateTest.php) -> 9/9 tests pass.
+
+- **2. Dòng 367 - Xóa 1 ngày Extra Bed trong bảng phụ CreateRegistrationPage.vue**:
+  - *Hiện tượng*: Trong subtable chi tiết dịch vụ ngày, bấm nút Xóa dòng Extra Bed của 1 ngày hiển thị thông báo lỗi "Không thể xóa dịch vụ khỏi hệ thống!".
+  - *Nguyên nhân*: Dòng Extra Bed cục bộ có ID tạm dạng `local-eb-...` bị gửi vào API `deleteBookingRoomServicesBulk`, gây lỗi 422.
+  - *Xử lý*:
+    - Trong hàm `handleInlineServiceDelete` ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue)): Nếu xóa dòng `EB`, tìm ngày tương ứng trong `room.dailyExtraBeds` và đặt `quantity = 0`, cập nhật lại `room.extraBedQty`, `room.extraBedPrice`, `room.total`, đồng thời đồng bộ API `POST /booking-rooms/{id}/services` với `quantity: 0` để backend soft-delete.
+  - *Kiểm thử*: Viết unit test trong [extrabed-and-url-sync.test.js](file:///d:/PMS/frontend/tests/extrabed-and-url-sync.test.js) -> 86/86 frontend tests pass.
+
+- **3. Dòng 364 - Tạo booking tình trạng Chờ xếp phòng (Waiting) khi phòng trống AV = 0**:
+  - *Hiện tượng*: Khi cấu hình khách sạn chặn overbooking (`AllowOverRoomTypeRoomKind = 0`), hệ thống chặn luôn việc tạo booking ở trạng thái Chờ xếp phòng khi AV = 0.
+  - *Xử lý*:
+    - Backend ([BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php)): Bổ sung cờ `$isWaitingBooking` (dựa trên `RegistrationStatus::where('booking_status_id', ...)->value('is_availability') == 0`). Cho phép vượt AV nếu là booking Waiting: `$canOver = ($allowOver && $allowInputOver) || $isWaitingBooking;`.
+    - Frontend ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue)): Bổ sung computed `isWaitingBooking`, bỏ vô hiệu hóa và bỏ chặn số lượng khi phòng ở trạng thái Chờ xếp phòng (`isWaitingBooking === true`).
+  - *Kiểm thử*: Bổ sung test `test_waiting_booking_can_be_created_when_av_is_zero()` trong [BookingBusinessRulesTest.php](file:///d:/PMS/backend/tests/Feature/Booking/BookingBusinessRulesTest.php) -> 27/27 tests pass; [AllowInputOverAVTest.php](file:///d:/PMS/backend/tests/Feature/AllowInputOverAVTest.php) -> 8/8 tests pass.
+
+- **4. Dòng 365 - Chức năng tùy biến hình nền Desktop/Portal**:
+  - *Hiện tượng*: Khách muốn tùy chọn thay đổi hình nền Desktop/Portal cá nhân hóa cho khách sạn.
+  - *Xử lý*:
+    - Backend: Tạo mới [PortalWallpaperController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/PortalWallpaperController.php) hỗ trợ lấy hình nền, upload ảnh mới (lưu vào `/uploads/wallpaper` hoặc nhập URL), khôi phục hình nền mặc định. Đăng ký các route `/api/settings/wallpaper` với quyền `system.setting`.
+    - Backend test: Tạo [PortalWallpaperTest.php](file:///d:/PMS/backend/tests/Feature/PortalWallpaperTest.php) -> 5/5 tests pass.
+    - Frontend Modal: Tạo [PortalWallpaperModal.vue](file:///d:/PMS/frontend/src/pages/home/components/PortalWallpaperModal.vue) theo FE Design System (Roboto, text 12px, nền vàng `#FFF8DB` cho trường bắt buộc, nút `.btn-pms-primary`, `.btn-pms-secondary`, bo góc `rounded-xl`, phím tắt `Esc`).
+    - Frontend Home: Tích hợp vào [HomePage.vue](file:///d:/PMS/frontend/src/pages/home/HomePage.vue), hiển thị nút "Đổi hình nền" cho SuperAdmin hoặc tài khoản có quyền `can('system.setting')`.
+  - *Đóng gói*: `npm run build` thành công 100%.
+
+## [2026-10-13] - Sửa lỗi tính tiền phòng booking khi late check-in dời ngày đến = ngày đi (Booking 6779 Link Hotel)
+### Module: Đặt phòng - Sales ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [BookingRoom.php](file:///d:/PMS/backend/app/Models/BookingRoom.php), [late-checkin-same-day-charges.test.js](file:///d:/PMS/frontend/tests/late-checkin-same-day-charges.test.js))
+
+- **Yêu cầu nghiệp vụ (Chuẩn Booking 6779 Link Hotel & Sheet Theo dõi vấn đề cần điều chỉnh)**:
+  - Phòng ở 1 đêm (in ngày 1, out ngày 2), thực hiện noshow 1 đêm / late check-in ở chức năng "Sang ngày" (Night Audit) dời ngày đến sang hôm sau (`arrival_date == departure_date == ngày 2`, số đêm còn lại = 0).
+  - Khi mở booking:
+    - Nếu `Ở theo giờ` (`room.hourly`) là **tắt** (`false`): Không hiển thị đêm tiền phòng ngày 2, chỉ hiển thị hóa đơn phạt noshow đêm ngày 1 đã post từ Night Audit (`01/09/2026 | Dịch vụ phòng nghỉ - Phòng 806 | 540,000`). Tổng tiền phòng = 540,000đ.
+    - Nếu `Ở theo giờ` (`room.hourly`) là **bật** (`true`): Hiển thị tiền phòng ngày 2 cho khách ở theo giờ (`02/09/2026 | Dịch vụ phòng nghỉ | 540,000`) cùng bill noshow ngày 1. Tổng tiền phòng = 1,080,000đ.
+- **Triển khai kỹ thuật**:
+  - *Frontend ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))*:
+    - Hàm `getRoomDisplayServices(room)`: Phân biệt trường hợp cùng ngày (`checkIn === checkOut`). Nếu không bật `hourly` thì `nights = 0`, không sinh dòng tiền phòng dự kiến cho ngày 2; nếu bật `hourly` thì `nights = 1`.
+    - Các hàm `syncRoomPriceToDailyCharges`, `applyRoomRateCode`, `handleInlineExtraBedQtyChange`, `handleInlineExtraBedRateChange`, `handleRowServiceRateChangeInline`, `handleRowServiceBlurInline`: Không ép `nights = 1` khi `checkIn === checkOut` và `hourly = false`.
+    - Hàm `handleRowDateChangeInline`: Bỏ việc tự động ép `room.hourly = true` khi `checkOut === checkIn`; gán `room.nights = diffDays >= 0 ? diffDays : 0`.
+    - Hàm `handleHourlyToggle`: Đối với phòng late check-in / đã có bill noshow, khi tắt `Ở theo giờ` thì giữ nguyên `checkOut = checkIn` và `nights = 0`, không tự động nhảy ngày đi sang ngày hôm sau.
+    - Hàm `syncRoomsToAllocations`: Giữ nguyên `nights = 0` không ép `|| 1`.
+  - *Backend ([BookingRoom.php](file:///d:/PMS/backend/app/Models/BookingRoom.php))*:
+    - Dòng 144: Sửa `($diff > 0 ? $diff : 1)` thành `max(0, $diff)` để phòng late check-in có ngày đến = ngày đi lưu đúng số đêm thực tế `ActutalNumOfDays = 0` và `NumOfDays = 0` trong CSDL.
+  - *Kiểm thử tự động*: Viết mới bộ test [late-checkin-same-day-charges.test.js](file:///d:/PMS/frontend/tests/late-checkin-same-day-charges.test.js), toàn bộ 85/85 unit tests frontend và các test backend (`NightAuditTest`, `BookingBusinessRulesTest`) pass 100%.
+
 ## [2026-10-12] - Triển khai hoàn thiện 3 tính năng in ấn tại màn hình Tạo đăng ký (Dòng 346, 347, 348)
 ### Module: Đặt phòng - Sales ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [BookingPrintPreviewModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/BookingPrintPreviewModal.vue), [PrintServiceSelectModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/PrintServiceSelectModal.vue), [BookingPrintController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingPrintController.php))
 

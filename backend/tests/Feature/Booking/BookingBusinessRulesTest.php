@@ -216,6 +216,72 @@ class BookingBusinessRulesTest extends TestCase
     }
 
     /**
+     * Dòng 364: Booking trạng thái Waiting (is_availability = 0) được phép tạo ngay cả khi hết phòng (AV = 0)
+     */
+    public function test_waiting_booking_can_be_created_when_av_is_zero(): void
+    {
+        // 1. Tạo booking chiếm hết 2 phòng STD
+        $payloadA = [
+            'booking_name' => 'Booking Full AV',
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-08',
+            'num_of_days' => 1,
+            'registration_status_id' => $this->regStatus->booking_status_id,
+            'company_id' => 1,
+            'market_id' => 1,
+            'customer_source_id' => 1,
+            'room_allocations' => [
+                [
+                    'roomClassId' => $this->roomClass->id,
+                    'quantity' => 2,
+                    'price' => 1000000,
+                    'rooms' => [
+                        ['roomNumber' => '101', 'guestName' => 'Guest 1'],
+                        ['roomNumber' => '102', 'guestName' => 'Guest 2']
+                    ]
+                ]
+            ]
+        ];
+        $this->postJson('/api/bookings', $payloadA)->assertSuccessful();
+
+        // 2. Tạo registration status Waiting (is_availability = 0)
+        $waitingStatus = RegistrationStatus::create([
+            'name' => 'Waiting / Chờ chốt',
+            'booking_status_id' => 99,
+            'is_availability' => false,
+        ]);
+
+        // 3. Tạo booking trạng thái Waiting -> Cho phép thành công ngay cả khi AV = 0 và AllowOverRoomTypeRoomKind = 0
+        $payloadWaiting = [
+            'booking_name' => 'Booking Waiting Sales',
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-08',
+            'num_of_days' => 1,
+            'registration_status_id' => $waitingStatus->booking_status_id,
+            'company_id' => 1,
+            'market_id' => 1,
+            'customer_source_id' => 1,
+            'room_allocations' => [
+                [
+                    'roomClassId' => $this->roomClass->id,
+                    'quantity' => 1,
+                    'price' => 1000000,
+                    'rooms' => [
+                        ['roomNumber' => null, 'guestName' => 'Guest Waiting']
+                    ]
+                ]
+            ]
+        ];
+
+        $responseWaiting = $this->postJson('/api/bookings', $payloadWaiting);
+        $responseWaiting->assertSuccessful();
+        $this->assertDatabaseHas('bookings', [
+            'booking_name' => 'Booking Waiting Sales',
+            'registration_status_id' => $waitingStatus->booking_status_id,
+        ]);
+    }
+
+    /**
      * TC-02: Dayuse overlap check loophole.
      * Overlapping dayuse bookings (on the same day) can double-book the same room.
      */

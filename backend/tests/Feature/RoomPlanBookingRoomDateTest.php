@@ -231,6 +231,66 @@ class RoomPlanBookingRoomDateTest extends TestCase
         $this->assertSame('2026-09-10', $booking->fresh()->departure_date->toDateString());
     }
 
+    public function test_extending_stay_preserves_zero_rate_for_room_and_extra_bed(): void
+    {
+        $this->app->forgetInstance(BookingRoomLifecycleService::class);
+        $booking = $this->makeBooking();
+        $room = $this->makeRoom($booking, '2026-09-08', '2026-09-10');
+        $room->update([
+            'rate' => 0,
+            'extra_bed_qty' => 1,
+            'extra_bed_rate' => 300000,
+        ]);
+
+        // Pre-create room charge and EB for 2026-09-08 and 2026-09-09 with 0đ rate
+        \App\Models\BookingRoomService::create([
+            'booking_room_id' => $room->id,
+            'service_code' => \App\Models\BookingRoomService::catalogCode(\App\Models\BookingRoomService::CODE_ROOM),
+            'service_name' => 'Dịch vụ phòng nghỉ',
+            'service_date' => '2026-09-08',
+            'quantity' => 1,
+            'rate' => 0,
+            'department' => 'FO',
+            'is_room' => 1,
+            'is_posted' => 0,
+        ]);
+        \App\Models\BookingRoomService::create([
+            'booking_room_id' => $room->id,
+            'service_code' => \App\Models\BookingRoomService::CODE_EXTRA_BED,
+            'service_name' => 'Extra Bed',
+            'service_date' => '2026-09-08',
+            'quantity' => 1,
+            'rate' => 0,
+            'department' => 'FO',
+            'is_room' => 1,
+            'is_posted' => 0,
+        ]);
+
+        $this->useAvailability([5]);
+
+        // Extend stay from 2026-09-10 to 2026-09-11
+        $response = $this->putJson($this->roomPlanUrl($booking, $room), [
+            'arrival_date' => '2026-09-08',
+            'departure_date' => '2026-09-11',
+        ]);
+        $response->assertOk();
+
+        // Check 2026-09-08 room charge and EB still have 0đ
+        $eb08 = \App\Models\BookingRoomService::where('booking_room_id', $room->id)
+            ->where('service_code', \App\Models\BookingRoomService::CODE_EXTRA_BED)
+            ->whereDate('service_date', '2026-09-08')
+            ->first();
+        $this->assertNotNull($eb08);
+        $this->assertEquals(0, (float) $eb08->rate);
+
+        $rm08 = \App\Models\BookingRoomService::where('booking_room_id', $room->id)
+            ->where('service_code', \App\Models\BookingRoomService::catalogCode(\App\Models\BookingRoomService::CODE_ROOM))
+            ->whereDate('service_date', '2026-09-08')
+            ->first();
+        $this->assertNotNull($rm08);
+        $this->assertEquals(0, (float) $rm08->rate);
+    }
+
     private function useAvailability(array $values, bool $roomOccupied = false): void
     {
         $availability = Mockery::mock(RoomAvailabilityService::class);
