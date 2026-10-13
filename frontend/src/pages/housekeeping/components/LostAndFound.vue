@@ -1,15 +1,13 @@
 <script setup>
-import { computed, defineComponent, h, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   Camera,
-  CalendarDays,
   ChevronLeft,
   ChevronRight,
   FileText,
   Pencil,
   Plus,
-  RotateCcw,
   Save,
   Trash2,
   X,
@@ -18,6 +16,7 @@ import http from '@/services/http'
 import { fetchSystemDate } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
+import SingleDatePicker from '@/components/SingleDatePicker.vue'
 
 const API_URL = '/lost-and-found'
 const PAGE_SIZE = 10
@@ -64,45 +63,8 @@ const form = reactive(emptyForm())
 const formatDate = (value) => {
   if (!value) return ''
   const [year, month, day] = String(value).slice(0, 10).split('-')
-  return year && month && day ? `${day}/${month}/${year.slice(-2)}` : value
+  return year && month && day ? `${day}/${month}/${year}` : value
 }
-
-const DateField = defineComponent({
-  name: 'DateField',
-  props: {
-    modelValue: { type: String, default: '' },
-  },
-  emits: ['update:modelValue'],
-  setup(props, { emit }) {
-    const nativeInput = ref(null)
-    const openPicker = () => {
-      if (typeof nativeInput.value?.showPicker === 'function') nativeInput.value.showPicker()
-      else nativeInput.value?.click()
-    }
-
-    return () => h('div', { class: 'date-field' }, [
-      h('input', {
-        class: 'date-display',
-        type: 'text',
-        value: formatDate(props.modelValue),
-        placeholder: 'dd/mm/yy',
-        readonly: true,
-        onClick: openPicker,
-      }),
-      h('button', { class: 'date-trigger', type: 'button', title: 'Chọn ngày', onClick: openPicker }, [
-        h(CalendarDays, { size: 15 }),
-      ]),
-      h('input', {
-        ref: nativeInput,
-        class: 'native-date-picker',
-        type: 'date',
-        value: props.modelValue,
-        tabindex: -1,
-        onInput: (event) => emit('update:modelValue', event.target.value),
-      }),
-    ])
-  },
-})
 
 const normalizeImages = (value) => {
   if (Array.isArray(value)) return value.filter(Boolean)
@@ -216,6 +178,67 @@ const closeModal = async (force = false) => {
   showModal.value = false
 }
 
+const modalPos = ref({ x: 0, y: 0 })
+
+function createDragHandler(posRef) {
+  let dragStart = { x: 0, y: 0 }
+  let isDragging = false
+  let rafId = null
+
+  function onMouseMove(e) {
+    if (!isDragging) return
+    if (rafId) return
+    rafId = requestAnimationFrame(() => {
+      posRef.value.x = e.clientX - dragStart.x
+      posRef.value.y = e.clientY - dragStart.y
+      rafId = null
+    })
+  }
+
+  function onMouseUp() {
+    isDragging = false
+    if (rafId) {
+      cancelAnimationFrame(rafId)
+      rafId = null
+    }
+    document.removeEventListener('mousemove', onMouseMove)
+    document.removeEventListener('mouseup', onMouseUp)
+  }
+
+  return function startDrag(e) {
+    const ignoreTags = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A', 'LABEL', 'SVG', 'PATH']
+    if (ignoreTags.includes(e.target.tagName) || e.target.closest('button, input, select, textarea, a, label')) return
+    
+    isDragging = true
+    dragStart.x = e.clientX - posRef.value.x
+    dragStart.y = e.clientY - posRef.value.y
+    
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  }
+}
+
+const startDragModal = createDragHandler(modalPos)
+
+function handleKeyDown(event) {
+  if (event.key === 'Escape' && showModal.value) {
+    closeModal()
+  }
+}
+
+watch(showModal, (visible) => {
+  window.removeEventListener('keydown', handleKeyDown)
+  if (visible) {
+    window.addEventListener('keydown', handleKeyDown)
+  } else {
+    modalPos.value = { x: 0, y: 0 }
+  }
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleKeyDown)
+})
+
 const setStatus = (status) => {
   form.status = status
 }
@@ -303,77 +326,125 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="lost-found-page">
+  <div class="lost-found-page h-full flex flex-col overflow-hidden bg-[#f0f2f5] font-['Roboto',sans-serif] text-xs">
     <LoadingOverlay :show="isLoading || isDeleting" />
 
-    <main class="content">
-      <div class="filter-bar">
-        <label for="lost-found-status">Tình trạng</label>
-        <select id="lost-found-status" v-model="statusFilter">
-          <option value="">Tất cả</option>
-          <option value="lost">Lost</option>
-          <option value="found">Found</option>
-        </select>
-        <span class="filter-sep"></span>
-        <label for="lost-found-from">Từ ngày</label>
-        <DateField id="lost-found-from" v-model="dateFrom" @update:model-value="onDateFromChange" />
-        <label for="lost-found-to">Đến ngày</label>
-        <DateField id="lost-found-to" v-model="dateTo" />
-        <span class="filter-sep"></span>
-        <input v-model="searchQuery" data-hk-search class="filter-search" type="search" placeholder="Tên khách, mặt hàng, địa điểm...">
-        <button class="btn btn-ghost btn-sm" type="button" @click="resetFilters">
-          <RotateCcw :size="13" /> Đặt lại
-        </button>
-        <button class="btn btn-primary add-button" type="button" @click="openCreateModal">
-          <Plus :size="14" /> Thêm phiếu
+    <main class="content flex-1 min-h-0 overflow-hidden flex flex-col gap-2.5 p-3.5">
+      <!-- Toolbar -->
+      <div class="filter-bar flex items-center gap-2.5 flex-wrap p-2.5 bg-white border border-slate-200 rounded-lg shadow-xs shrink-0">
+        <div class="flex items-center gap-1.5">
+          <label for="lost-found-status" class="text-xs font-semibold text-[#000000D9] whitespace-nowrap">Tình trạng</label>
+          <select id="lost-found-status" v-model="statusFilter" class="h-8 px-2.5 text-xs text-[#000000D9] bg-white border border-slate-300 rounded-lg outline-none focus:border-blue-500 cursor-pointer">
+            <option value="">Tất cả</option>
+            <option value="lost">Lost</option>
+            <option value="found">Found</option>
+          </select>
+        </div>
+        
+        <span class="w-[1px] h-5 bg-slate-200 mx-1"></span>
+
+        <div class="flex items-center gap-1.5">
+          <label class="text-xs font-semibold text-[#000000D9] whitespace-nowrap">Từ ngày</label>
+          <SingleDatePicker 
+            v-model="dateFrom" 
+            placeholder="dd/mm/yyyy" 
+            four-digit-year 
+            input-class="h-8 w-[135px]"
+            @update:model-value="onDateFromChange"
+          />
+        </div>
+
+        <div class="flex items-center gap-1.5">
+          <label class="text-xs font-semibold text-[#000000D9] whitespace-nowrap">Đến ngày</label>
+          <SingleDatePicker 
+            v-model="dateTo" 
+            placeholder="dd/mm/yyyy" 
+            four-digit-year 
+            input-class="h-8 w-[135px]"
+          />
+        </div>
+
+        <span class="w-[1px] h-5 bg-slate-200 mx-1"></span>
+
+        <!-- Search with fast clear (x) -->
+        <div class="relative flex-1 min-w-[220px]">
+          <input 
+            v-model="searchQuery" 
+            type="text" 
+            placeholder="Tên khách, mặt hàng, địa điểm..."
+            class="w-full h-8 pl-3 pr-8 text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF] bg-white border border-slate-300 rounded-lg outline-none focus:border-blue-500 shadow-xs"
+          />
+          <button 
+            v-if="searchQuery" 
+            type="button" 
+            title="Xóa tìm kiếm" 
+            @click="searchQuery = ''"
+            class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 cursor-pointer border-none bg-transparent p-0.5"
+          >
+            <X class="h-3.5 w-3.5" />
+          </button>
+        </div>
+
+        <button class="btn-pms-primary h-8 px-4 text-xs flex items-center gap-1.5 cursor-pointer shrink-0" type="button" @click="openCreateModal">
+          <Plus :size="14" />
+          <span>Thêm phiếu</span>
         </button>
       </div>
 
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th class="center index-column">#</th>
-              <th>Tình trạng</th>
-              <th>Thông tin khách</th>
-              <th>Mặt hàng</th>
-              <th>Ngày báo cáo</th>
-              <th>Ngày tìm thấy</th>
-              <th>Người tìm thấy</th>
-              <th>Khu vực</th>
-              <th>Kho</th>
-              <th>Ngày nhận</th>
-              <th>Người giao</th>
-              <th>Người nhận</th>
-              <th>User tạo</th>
-              <th class="center action-column">Thao tác</th>
+      <!-- Table Wrap -->
+      <div class="table-wrap flex-1 min-h-0 overflow-auto bg-white border border-slate-200 rounded-lg shadow-xs">
+        <table class="w-full min-w-[1280px] border-collapse text-xs">
+          <thead class="sticky top-0 z-10">
+            <tr class="bg-slate-100 text-xs text-[#000000D9]">
+              <th class="py-2.5 px-3 text-center align-middle font-semibold border border-slate-200 w-12">STT</th>
+              <th class="py-2.5 px-3 text-center align-middle font-semibold border border-slate-200">Tình Trạng</th>
+              <th class="py-2.5 px-3 text-center align-middle font-semibold border border-slate-200">Thông Tin Khách</th>
+              <th class="py-2.5 px-3 text-center align-middle font-semibold border border-slate-200">Mặt Hàng</th>
+              <th class="py-2.5 px-3 text-center align-middle font-semibold border border-slate-200">Ngày Báo Cáo</th>
+              <th class="py-2.5 px-3 text-center align-middle font-semibold border border-slate-200">Ngày Tìm Thấy</th>
+              <th class="py-2.5 px-3 text-center align-middle font-semibold border border-slate-200">Người Tìm Thấy</th>
+              <th class="py-2.5 px-3 text-center align-middle font-semibold border border-slate-200">Khu Vực</th>
+              <th class="py-2.5 px-3 text-center align-middle font-semibold border border-slate-200">Kho Lưu Trữ</th>
+              <th class="py-2.5 px-3 text-center align-middle font-semibold border border-slate-200">Ngày Nhận</th>
+              <th class="py-2.5 px-3 text-center align-middle font-semibold border border-slate-200">Người Giao</th>
+              <th class="py-2.5 px-3 text-center align-middle font-semibold border border-slate-200">Người Nhận</th>
+              <th class="py-2.5 px-3 text-center align-middle font-semibold border border-slate-200">Người Tạo</th>
+              <th class="py-2.5 px-3 text-center align-middle font-semibold border border-slate-200 w-24">Thao Tác</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody class="divide-y divide-slate-100">
             <tr v-if="isLoading">
-              <td class="empty-cell" colspan="14">Đang tải dữ liệu...</td>
+              <td class="empty-cell py-10 text-center text-slate-400 text-xs" colspan="14">Đang tải dữ liệu...</td>
             </tr>
             <tr v-else-if="!paginatedItems.length">
-              <td class="empty-cell" colspan="14">Không có dữ liệu</td>
+              <td class="empty-cell py-10 text-center text-slate-400 text-xs" colspan="14">Không có dữ liệu</td>
             </tr>
-            <tr v-for="(item, index) in paginatedItems" v-else :key="item.id">
-              <td class="center">{{ (currentPage - 1) * PAGE_SIZE + index + 1 }}</td>
-              <td><span class="badge" :class="`badge-${item.status}`">{{ item.status === 'found' ? 'Found' : 'Lost' }}</span></td>
-              <td>{{ item.guest_info || '' }}</td>
-              <td>{{ item.item_found }}</td>
-              <td>{{ formatDate(item.date_reported) }}</td>
-              <td>{{ formatDate(item.date_found) }}</td>
-              <td>{{ item.who_found || '' }}</td>
-              <td>{{ item.where_found || '' }}</td>
-              <td>{{ item.storage_location || '' }}</td>
-              <td>{{ formatDate(item.date_handling) }}</td>
-              <td>{{ item.delieved_handling || '' }}</td>
-              <td>{{ item.received_handling || '' }}</td>
-              <td>{{ item.created_by || '' }}</td>
-              <td class="center">
-                <div class="action-buttons">
-                  <button class="btn btn-edit btn-icon" type="button" title="Sửa" @click="openEditModal(item)"><Pencil :size="13" /></button>
-                  <button class="btn btn-danger btn-icon" type="button" title="Xóa" @click="deleteItem(item)"><Trash2 :size="13" /></button>
+            <tr v-for="(item, index) in paginatedItems" v-else :key="item.id" class="hover:bg-blue-50/50 transition-colors border-b border-slate-100">
+              <td class="py-2 px-3 text-center align-middle text-slate-500 font-normal">{{ (currentPage - 1) * PAGE_SIZE + index + 1 }}</td>
+              <td class="py-2 px-3 text-center align-middle">
+                <span class="inline-flex px-2 py-0.5 rounded text-xs font-semibold" :class="item.status === 'found' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'">
+                  {{ item.status === 'found' ? 'Found' : 'Lost' }}
+                </span>
+              </td>
+              <td class="py-2 px-3 align-middle text-[#000000D9] font-normal">{{ item.guest_info || '—' }}</td>
+              <td class="py-2 px-3 align-middle text-[#000000D9] font-semibold">{{ item.item_found }}</td>
+              <td class="py-2 px-3 text-center align-middle text-[#000000D9] font-normal">{{ formatDate(item.date_reported) }}</td>
+              <td class="py-2 px-3 text-center align-middle text-[#000000D9] font-normal">{{ formatDate(item.date_found) }}</td>
+              <td class="py-2 px-3 align-middle text-[#000000D9] font-normal">{{ item.who_found || '—' }}</td>
+              <td class="py-2 px-3 align-middle text-[#000000D9] font-normal">{{ item.where_found || '—' }}</td>
+              <td class="py-2 px-3 align-middle text-[#000000D9] font-normal">{{ item.storage_location || '—' }}</td>
+              <td class="py-2 px-3 text-center align-middle text-[#000000D9] font-normal">{{ formatDate(item.date_handling) }}</td>
+              <td class="py-2 px-3 align-middle text-[#000000D9] font-normal">{{ item.delieved_handling || '—' }}</td>
+              <td class="py-2 px-3 align-middle text-[#000000D9] font-normal">{{ item.received_handling || '—' }}</td>
+              <td class="py-2 px-3 align-middle text-[#000000D9] font-normal">{{ item.created_by || '—' }}</td>
+              <td class="py-2 px-3 text-center align-middle">
+                <div class="flex items-center justify-center gap-1.5">
+                  <button class="w-7 h-7 rounded text-blue-600 hover:bg-blue-100 flex items-center justify-center transition-colors cursor-pointer border-none bg-transparent" type="button" title="Sửa" @click="openEditModal(item)">
+                    <Pencil :size="14" />
+                  </button>
+                  <button class="w-7 h-7 rounded text-rose-500 hover:bg-rose-100 flex items-center justify-center transition-colors cursor-pointer border-none bg-transparent" type="button" title="Xóa" @click="deleteItem(item)">
+                    <Trash2 :size="14" />
+                  </button>
                 </div>
               </td>
             </tr>
@@ -381,220 +452,421 @@ onMounted(async () => {
         </table>
       </div>
 
-      <footer class="pager-row">
+      <!-- Pagination Footer -->
+      <footer class="pager-row flex items-center justify-between text-xs text-slate-600 shrink-0 px-1 py-1">
         <span>Hiển thị {{ paginatedItems.length }} / {{ filteredItems.length }} phiếu</span>
-        <div class="pager">
-          <button type="button" title="Trang trước" :disabled="currentPage === 1" @click="currentPage--"><ChevronLeft :size="14" /></button>
-          <button v-for="page in totalPages" :key="page" type="button" :class="{ active: currentPage === page }" @click="currentPage = page">{{ page }}</button>
-          <button type="button" title="Trang sau" :disabled="currentPage === totalPages" @click="currentPage++"><ChevronRight :size="14" /></button>
+        <div class="pager flex items-center gap-1">
+          <button type="button" title="Trang trước" :disabled="currentPage === 1" @click="currentPage--" class="min-w-7 h-7 px-1.5 flex items-center justify-center rounded border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer text-xs">
+            <ChevronLeft :size="14" />
+          </button>
+          <button v-for="page in totalPages" :key="page" type="button" :class="currentPage === page ? 'btn-pms-primary text-white font-semibold' : 'bg-white border-slate-300 hover:bg-slate-50 text-[#000000D9]'" @click="currentPage = page" class="min-w-7 h-7 px-2 flex items-center justify-center rounded border text-xs cursor-pointer">
+            {{ page }}
+          </button>
+          <button type="button" title="Trang sau" :disabled="currentPage === totalPages" @click="currentPage++" class="min-w-7 h-7 px-1.5 flex items-center justify-center rounded border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer text-xs">
+            <ChevronRight :size="14" />
+          </button>
         </div>
       </footer>
     </main>
 
+    <!-- Modal Thêm / Chỉnh Sửa Phiếu Lost & Found -->
     <Teleport to="body">
-      <div v-if="showModal" class="modal-overlay" @click.self="closeModal()">
-        <section class="modal-box" role="dialog" aria-modal="true" aria-labelledby="lost-found-modal-title">
+      <div v-if="showModal" class="modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 md:p-4" @click.self="closeModal()">
+        <section 
+          class="modal-box bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-300 text-xs font-['Roboto',sans-serif]" 
+          role="dialog" 
+          aria-modal="true" 
+          aria-labelledby="lost-found-modal-title"
+          :style="{ transform: 'translate(' + modalPos.x + 'px, ' + modalPos.y + 'px)' }"
+        >
           <LoadingOverlay :show="isSaving" />
 
-          <header class="modal-header">
-            <FileText :size="15" />
-            <strong id="lost-found-modal-title">{{ isEditing ? 'Chỉnh sửa phiếu' : 'Thêm phiếu Lost & Found' }}</strong>
-            <button type="button" title="Đóng" @click="closeModal()"><X :size="18" /></button>
+          <!-- Modal Header with theme color (Draggable) -->
+          <header 
+            class="modal-header px-4 py-2.5 flex items-center justify-between font-semibold shrink-0 shadow-xs cursor-move select-none" 
+            :style="{ background: 'var(--pms-custom-theme, #006bdb)' }"
+            @mousedown="startDragModal"
+          >
+            <div class="flex items-center gap-2 text-white">
+              <FileText :size="16" />
+              <strong id="lost-found-modal-title" class="text-sm font-semibold text-white">
+                {{ isEditing ? 'Chỉnh Sửa Phiếu Lost & Found' : 'Thêm Phiếu Lost & Found' }}
+              </strong>
+            </div>
+            <button 
+              type="button" 
+              title="Đóng" 
+              @click="closeModal()" 
+              @mousedown.stop
+              class="text-white hover:bg-white/20 p-1 rounded transition-colors cursor-pointer border-none bg-transparent"
+            >
+              <X :size="18" />
+            </button>
           </header>
 
-          <div class="modal-body">
-            <div class="status-picker">
-              <button type="button" :class="{ 'selected-lost': form.status === 'lost' }" @click="setStatus('lost')"><span></span>Lost (thất lạc)</button>
-              <button type="button" :class="{ 'selected-found': form.status === 'found' }" @click="setStatus('found')"><span></span>Found (tìm thấy)</button>
+          <!-- Modal Body -->
+          <div class="modal-body flex-1 overflow-y-auto p-4 flex flex-col gap-3.5 bg-white">
+            <!-- Status Picker -->
+            <div class="status-picker flex gap-2.5">
+              <button 
+                type="button" 
+                :class="form.status === 'lost' ? 'border-rose-500 bg-rose-50 text-rose-600 font-bold' : 'border-slate-300 bg-white text-slate-600 font-semibold'" 
+                @click="setStatus('lost')" 
+                class="flex items-center gap-2 px-4 py-1.5 rounded-lg border text-xs cursor-pointer select-none transition-colors"
+              >
+                <span class="w-2.5 h-2.5 rounded-full" :class="form.status === 'lost' ? 'bg-rose-500' : 'bg-slate-300'"></span>
+                Lost (thất lạc)
+              </button>
+              <button 
+                type="button" 
+                :class="form.status === 'found' ? 'border-emerald-500 bg-emerald-50 text-emerald-600 font-bold' : 'border-slate-300 bg-white text-slate-600 font-semibold'" 
+                @click="setStatus('found')" 
+                class="flex items-center gap-2 px-4 py-1.5 rounded-lg border text-xs cursor-pointer select-none transition-colors"
+              >
+                <span class="w-2.5 h-2.5 rounded-full" :class="form.status === 'found' ? 'bg-emerald-500' : 'bg-slate-300'"></span>
+                Found (tìm thấy)
+              </button>
             </div>
 
-            <section class="form-section">
-              <h4>Thông tin chung</h4>
-              <div class="row-two">
-                <label>Ngày báo cáo *<em></em><DateField v-model="form.date_reported" /></label>
-                <label>Thông tin khách<input v-model="form.guest_info" type="text" placeholder="Tên, số phòng, điện thoại..."></label>
-              </div>
-              <label>Mặt hàng *<em></em><input v-model="form.item_found" type="text" placeholder="VD: iPhone 15, Ví da nâu..."></label>
-              <div class="row-two">
-                <label>Ngày tìm thấy<DateField v-model="form.date_found" /></label>
-                <label>Người tìm thấy<input v-model="form.who_found" type="text"></label>
-              </div>
-              <label>Người nhận quản lý<input v-model="form.received" type="text"></label>
-              <label>Địa điểm tìm thấy<input v-model="form.where_found" type="text"></label>
-              <div class="row-two">
-                <label>Kho lưu trữ<input v-model="form.storage_location" type="text"></label>
-                <label>Ghi chú<input v-model="form.remarks" type="text" placeholder="Mô tả thêm, đặc điểm nhận dạng..."></label>
-              </div>
-            </section>
-
-            <section class="form-section">
-              <h4>Thông tin giao nhận</h4>
-              <div class="row-two">
-                <label>Ngày nhận<DateField v-model="form.date_handling" /></label>
-                <label>Phương thức xử lý<input v-model="form.method_handling" type="text"></label>
-              </div>
-              <div class="row-two">
-                <label>Người giao<input v-model="form.delieved_handling" type="text" placeholder="Người bàn giao đồ vật..."></label>
-                <label>Người nhận<input v-model="form.received_handling" type="text"></label>
-              </div>
-            </section>
-
-            <section class="form-section image-section">
-              <h4>Hình ảnh đồ vật</h4>
-              <div class="image-zone">
-                <div v-for="(image, index) in images" :key="`${index}-${image.slice(-16)}`" class="image-wrap">
-                  <img :src="image" alt="Hình ảnh đồ vật" @click="lightboxImage = image">
-                  <button type="button" title="Xóa ảnh" @click="removeImage(index)"><X :size="11" /></button>
+            <!-- Group 1: Thông tin chung -->
+            <section class="form-section flex flex-col gap-2.5">
+              <h4 class="text-xs font-bold text-[#000000D9] pb-1 border-b border-slate-200 uppercase tracking-wide">
+                Thông tin chung
+              </h4>
+              
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                <!-- Ngày báo cáo (Bắt buộc - nền vàng viền vàng) -->
+                <div class="flex flex-col gap-1">
+                  <label class="text-xs font-semibold text-[#000000D9]">Ngày báo cáo <span class="text-red-500">*</span></label>
+                  <SingleDatePicker 
+                    v-model="form.date_reported" 
+                    placeholder="dd/mm/yyyy" 
+                    four-digit-year 
+                    input-class="input-required h-8 w-full"
+                  />
                 </div>
-                <button class="image-add" type="button" @click="fileInput?.click()"><Camera :size="17" /><span>Thêm ảnh</span></button>
+
+                <!-- Thông tin khách -->
+                <div class="flex flex-col gap-1">
+                  <label class="text-xs font-semibold text-[#000000D9]">Thông tin khách</label>
+                  <div class="relative">
+                    <input 
+                      v-model="form.guest_info" 
+                      type="text" 
+                      placeholder="Tên, số phòng, điện thoại..."
+                      class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2.5 pr-8 text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF] outline-none focus:border-blue-500 shadow-xs"
+                    />
+                    <button 
+                      v-if="form.guest_info" 
+                      type="button" 
+                      title="Xóa" 
+                      @click="form.guest_info = ''"
+                      class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 cursor-pointer border-none bg-transparent p-0.5"
+                    >
+                      <X class="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Mặt hàng (Bắt buộc - nền vàng viền vàng) -->
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-semibold text-[#000000D9]">Mặt hàng <span class="text-red-500">*</span></label>
+                <div class="relative">
+                  <input 
+                    v-model="form.item_found" 
+                    type="text" 
+                    placeholder="VD: iPhone 15, Ví da nâu..."
+                    class="input-required h-8 w-full rounded-lg px-2.5 pr-8 text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF] outline-none focus:border-amber-500 shadow-xs"
+                  />
+                  <button 
+                    v-if="form.item_found" 
+                    type="button" 
+                    title="Xóa" 
+                    @click="form.item_found = ''"
+                    class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 cursor-pointer border-none bg-transparent p-0.5"
+                  >
+                    <X class="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                <!-- Ngày tìm thấy -->
+                <div class="flex flex-col gap-1">
+                  <label class="text-xs font-semibold text-[#000000D9]">Ngày tìm thấy</label>
+                  <SingleDatePicker 
+                    v-model="form.date_found" 
+                    placeholder="dd/mm/yyyy" 
+                    four-digit-year 
+                    input-class="h-8 w-full"
+                  />
+                </div>
+
+                <!-- Người tìm thấy -->
+                <div class="flex flex-col gap-1">
+                  <label class="text-xs font-semibold text-[#000000D9]">Người tìm thấy</label>
+                  <div class="relative">
+                    <input 
+                      v-model="form.who_found" 
+                      type="text" 
+                      placeholder="Tên nhân viên tìm thấy..."
+                      class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2.5 pr-8 text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF] outline-none focus:border-blue-500 shadow-xs"
+                    />
+                    <button 
+                      v-if="form.who_found" 
+                      type="button" 
+                      title="Xóa" 
+                      @click="form.who_found = ''"
+                      class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 cursor-pointer border-none bg-transparent p-0.5"
+                    >
+                      <X class="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Người nhận quản lý -->
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-semibold text-[#000000D9]">Người nhận quản lý</label>
+                <div class="relative">
+                  <input 
+                    v-model="form.received" 
+                    type="text" 
+                    placeholder="Nhân viên tiếp nhận..."
+                    class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2.5 pr-8 text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF] outline-none focus:border-blue-500 shadow-xs"
+                  />
+                  <button 
+                    v-if="form.received" 
+                    type="button" 
+                    title="Xóa" 
+                    @click="form.received = ''"
+                    class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 cursor-pointer border-none bg-transparent p-0.5"
+                  >
+                    <X class="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              <!-- Địa điểm tìm thấy -->
+              <div class="flex flex-col gap-1">
+                <label class="text-xs font-semibold text-[#000000D9]">Địa điểm tìm thấy</label>
+                <div class="relative">
+                  <input 
+                    v-model="form.where_found" 
+                    type="text" 
+                    placeholder="Phòng, sảnh, nhà hàng..."
+                    class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2.5 pr-8 text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF] outline-none focus:border-blue-500 shadow-xs"
+                  />
+                  <button 
+                    v-if="form.where_found" 
+                    type="button" 
+                    title="Xóa" 
+                    @click="form.where_found = ''"
+                    class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 cursor-pointer border-none bg-transparent p-0.5"
+                  >
+                    <X class="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                <!-- Kho lưu trữ -->
+                <div class="flex flex-col gap-1">
+                  <label class="text-xs font-semibold text-[#000000D9]">Kho lưu trữ</label>
+                  <div class="relative">
+                    <input 
+                      v-model="form.storage_location" 
+                      type="text" 
+                      placeholder="Tủ đồ, kho buồng phòng..."
+                      class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2.5 pr-8 text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF] outline-none focus:border-blue-500 shadow-xs"
+                    />
+                    <button 
+                      v-if="form.storage_location" 
+                      type="button" 
+                      title="Xóa" 
+                      @click="form.storage_location = ''"
+                      class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 cursor-pointer border-none bg-transparent p-0.5"
+                    >
+                      <X class="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Ghi chú -->
+                <div class="flex flex-col gap-1">
+                  <label class="text-xs font-semibold text-[#000000D9]">Ghi chú</label>
+                  <div class="relative">
+                    <input 
+                      v-model="form.remarks" 
+                      type="text" 
+                      placeholder="Mô tả thêm, đặc điểm nhận dạng..."
+                      class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2.5 pr-8 text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF] outline-none focus:border-blue-500 shadow-xs"
+                    />
+                    <button 
+                      v-if="form.remarks" 
+                      type="button" 
+                      title="Xóa" 
+                      @click="form.remarks = ''"
+                      class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 cursor-pointer border-none bg-transparent p-0.5"
+                    >
+                      <X class="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- Group 2: Thông tin giao nhận -->
+            <section class="form-section flex flex-col gap-2.5">
+              <h4 class="text-xs font-bold text-[#000000D9] pb-1 border-b border-slate-200 uppercase tracking-wide">
+                Thông tin giao nhận
+              </h4>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                <!-- Ngày nhận -->
+                <div class="flex flex-col gap-1">
+                  <label class="text-xs font-semibold text-[#000000D9]">Ngày nhận</label>
+                  <SingleDatePicker 
+                    v-model="form.date_handling" 
+                    placeholder="dd/mm/yyyy" 
+                    four-digit-year 
+                    input-class="h-8 w-full"
+                  />
+                </div>
+
+                <!-- Phương thức xử lý -->
+                <div class="flex flex-col gap-1">
+                  <label class="text-xs font-semibold text-[#000000D9]">Phương thức xử lý</label>
+                  <div class="relative">
+                    <input 
+                      v-model="form.method_handling" 
+                      type="text" 
+                      placeholder="Đã trả khách, tiêu hủy, chuyển tiếp..."
+                      class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2.5 pr-8 text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF] outline-none focus:border-blue-500 shadow-xs"
+                    />
+                    <button 
+                      v-if="form.method_handling" 
+                      type="button" 
+                      title="Xóa" 
+                      @click="form.method_handling = ''"
+                      class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 cursor-pointer border-none bg-transparent p-0.5"
+                    >
+                      <X class="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                <!-- Người giao -->
+                <div class="flex flex-col gap-1">
+                  <label class="text-xs font-semibold text-[#000000D9]">Người giao</label>
+                  <div class="relative">
+                    <input 
+                      v-model="form.delieved_handling" 
+                      type="text" 
+                      placeholder="Người bàn giao đồ vật..."
+                      class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2.5 pr-8 text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF] outline-none focus:border-blue-500 shadow-xs"
+                    />
+                    <button 
+                      v-if="form.delieved_handling" 
+                      type="button" 
+                      title="Xóa" 
+                      @click="form.delieved_handling = ''"
+                      class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 cursor-pointer border-none bg-transparent p-0.5"
+                    >
+                      <X class="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Người nhận -->
+                <div class="flex flex-col gap-1">
+                  <label class="text-xs font-semibold text-[#000000D9]">Người nhận</label>
+                  <div class="relative">
+                    <input 
+                      v-model="form.received_handling" 
+                      type="text" 
+                      placeholder="Người nhận lại đồ..."
+                      class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2.5 pr-8 text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF] outline-none focus:border-blue-500 shadow-xs"
+                    />
+                    <button 
+                      v-if="form.received_handling" 
+                      type="button" 
+                      title="Xóa" 
+                      @click="form.received_handling = ''"
+                      class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 cursor-pointer border-none bg-transparent p-0.5"
+                    >
+                      <X class="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- Group 3: Hình ảnh đồ vật -->
+            <section class="form-section flex flex-col gap-2">
+              <h4 class="text-xs font-bold text-[#000000D9] pb-1 border-b border-slate-200 uppercase tracking-wide">
+                Hình ảnh đồ vật
+              </h4>
+
+              <div class="image-zone min-h-[78px] flex flex-wrap items-center gap-2 p-2.5 border-1.5 border-dashed border-slate-300 rounded-lg bg-slate-50/50">
+                <div v-for="(image, index) in images" :key="`${index}-${image.slice(-16)}`" class="image-wrap relative">
+                  <img :src="image" alt="Hình ảnh đồ vật" class="w-16 h-16 object-cover border border-slate-200 rounded cursor-zoom-in shadow-xs" @click="lightboxImage = image">
+                  <button type="button" title="Xóa ảnh" @click="removeImage(index)" class="absolute -top-1.5 -right-1.5 w-4.5 h-4.5 flex items-center justify-center bg-rose-500 text-white rounded-full border-none cursor-pointer hover:bg-rose-600 transition-colors">
+                    <X :size="10" />
+                  </button>
+                </div>
+                <button class="image-add w-16 h-16 flex flex-col items-center justify-center gap-1 bg-white border border-dashed border-slate-300 rounded hover:border-blue-500 hover:text-blue-600 text-slate-400 text-xs cursor-pointer transition-colors" type="button" @click="fileInput?.click()">
+                  <Camera :size="16" />
+                  <span class="text-xs font-normal">Thêm ảnh</span>
+                </button>
                 <input ref="fileInput" hidden type="file" accept="image/*" multiple @change="handleImages">
               </div>
             </section>
           </div>
 
-          <footer class="modal-footer">
-            <button class="btn btn-cancel" type="button" @click="closeModal()">Hủy</button>
-            <button class="btn btn-primary" type="button" :disabled="isSaving" @click="saveItem">
-              <Save v-if="isEditing" :size="14" /><Plus v-else :size="14" />
-              {{ isSaving ? 'Đang lưu...' : isEditing ? 'Lưu' : 'Thêm' }}
+          <!-- Modal Footer -->
+          <footer class="modal-footer flex items-center justify-end gap-2 p-3 bg-slate-50 border-t border-slate-200 shrink-0">
+            <button class="btn-pms-close h-8 px-4 text-xs flex items-center gap-1.5 cursor-pointer" type="button" @click="closeModal()">
+              <X :size="14" />
+              <span>Hủy</span>
+            </button>
+            <button class="btn-pms-primary h-8 px-4 text-xs flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50" type="button" :disabled="isSaving" @click="saveItem">
+              <span v-if="isSaving" class="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+              <template v-else>
+                <Save v-if="isEditing" :size="14" />
+                <Plus v-else :size="14" />
+              </template>
+              <span>{{ isSaving ? 'Đang lưu...' : isEditing ? 'Lưu' : 'Thêm' }}</span>
             </button>
           </footer>
         </section>
       </div>
 
-      <div v-if="lightboxImage" class="lightbox" @click="lightboxImage = ''">
-        <img :src="lightboxImage" alt="Xem hình ảnh đồ vật">
+      <!-- Lightbox preview -->
+      <div v-if="lightboxImage" class="lightbox fixed inset-0 z-[2000] flex items-center justify-center bg-black/80 cursor-zoom-out p-4" @click="lightboxImage = ''">
+        <img :src="lightboxImage" alt="Xem hình ảnh đồ vật" class="max-w-[90vw] max-h-[90vh] rounded shadow-2xl">
       </div>
     </Teleport>
   </div>
 </template>
 
 <style scoped>
-.lost-found-page {
-  --lf-bg: #f0f2f5;
-  --lf-white: #fff;
-  --lf-border: #dde2ea;
-  --lf-border-strong: #c8d0dc;
-  --lf-accent: #2f6fed;
-  --lf-text: #1a2638;
-  --lf-text-secondary: #536b8a;
-  --lf-text-muted: #8fa3be;
-  --lf-red: #e53935;
-  --lf-green: #16a34a;
-  height: 100%;
-  position: relative;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  background: var(--lf-bg);
-  color: var(--lf-text);
-  font: 13px/1.5 "Segoe UI", sans-serif;
+/* Scoped custom scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
 }
-
-button, input, select { font-family: inherit; }
-.content { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; }
-.filter-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 9px 12px; background: white; border: 1px solid var(--lf-border); border-radius: 6px; box-shadow: 0 1px 4px rgb(0 0 0 / 8%); }
-.filter-bar label { font-size: 11px; white-space: nowrap; }
-.filter-bar select, .filter-bar input { height: 30px; border: 1px solid var(--lf-border-strong); border-radius: 6px; background: white; color: var(--lf-text); font-size: 12.5px; outline: none; }
-.filter-bar select { width: 110px; padding: 0 8px; }
-.filter-bar input:focus, .filter-bar select:focus { border-color: var(--lf-accent); }
-.filter-bar .date-field { width: 112px; }
-.filter-search { flex: 1; min-width: 160px; padding: 0 10px; }
-.filter-sep { width: 1px; height: 20px; margin: 0 2px; background: var(--lf-border); }
-.btn { min-height: 30px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 6px 14px; border: 0; border-radius: 6px; font-size: 12px; font-weight: 600; line-height: 1; cursor: pointer; white-space: nowrap; }
-.btn:hover { opacity: .85; }
-.btn:disabled { cursor: wait; opacity: .6; }
-.btn-primary { background: var(--lf-accent); color: white; }
-.btn-primary:hover { background: #1d4ed8; color: white; opacity: 1; }
-.btn-ghost { background: transparent; color: var(--lf-text-secondary); border: 1px solid var(--lf-border-strong); }
-.btn-ghost:hover { background: #f0f4fa; opacity: 1; }
-.btn-danger { background: var(--lf-red); color: white; }
-.btn-cancel { background: #dc2626; color: white; border: 1px solid #dc2626; }
-.btn-cancel:hover { background: #b91c1c; border-color: #b91c1c; color: white; opacity: 1; }
-.btn-edit { background: #eff6ff; color: #1d4ed8; border: 1px solid #93c5fd; }
-.btn-edit:hover { background: #dbeafe; border-color: #3b82f6; color: #1e40af; opacity: 1; }
-.btn-sm { min-height: 26px; padding: 4px 10px; font-size: 11px; }
-.btn-icon { width: 28px; min-height: 26px; padding: 5px; }
-.add-button { height: 34px; }
-.table-wrap { flex: 1; min-height: 0; overflow: auto; background: white; border: 1px solid var(--lf-border); border-radius: 6px; box-shadow: 0 1px 4px rgb(0 0 0 / 8%); }
-table { width: 100%; min-width: 1280px; border-collapse: collapse; }
-thead { position: sticky; top: 0; z-index: 2; }
-th { padding: 8px 10px; background: #f5f7fb; border-bottom: 2px solid var(--lf-border-strong); color: var(--lf-text); font-size: 11px; font-weight: 600; text-align: left; white-space: nowrap; }
-td { padding: 7px 10px; border-bottom: 1px solid var(--lf-border); color: var(--lf-text); font-size: 12.5px; vertical-align: middle; white-space: nowrap; }
-tbody tr:hover td { background: #f5f8ff; }
-.center { text-align: center; }
-.index-column { width: 34px; }
-.action-column { width: 70px; }
-.empty-cell { padding: 40px; color: var(--lf-text-muted); text-align: center; }
-.badge { display: inline-flex; padding: 2px 9px; border-radius: 12px; font-size: 11px; font-weight: 600; line-height: 1.6; }
-.badge-lost { background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; }
-.badge-found { background: #f0fdf4; color: #16a34a; border: 1px solid #86efac; }
-.action-buttons { display: flex; justify-content: center; gap: 4px; }
-.pager-row { display: flex; align-items: center; flex-shrink: 0; color: var(--lf-text-secondary); font-size: 12px; }
-.pager { margin-left: auto; display: flex; align-items: center; gap: 5px; }
-.pager button { min-width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; padding: 0 6px; background: white; border: 1px solid var(--lf-border-strong); border-radius: 3px; color: var(--lf-text-secondary); font-size: 11px; cursor: pointer; }
-.pager button:hover:not(:disabled) { background: #f0f4fa; }
-.pager button.active { background: var(--lf-accent); border-color: var(--lf-accent); color: white; }
-.pager button:disabled { cursor: default; opacity: .4; }
-
-.modal-overlay { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; background: rgb(20 30 50 / 40%); }
-.modal-box { --lf-accent: #2f6fed; --lf-text-secondary: #536b8a; --lf-border-strong: #c8d0dc; position: relative; width: 800px; max-width: 97vw; max-height: 93vh; display: flex; flex-direction: column; overflow: hidden; background: white; border-radius: 10px; box-shadow: 0 6px 28px rgb(0 0 0 / 18%); color: #1a2638; font: 13px/1.5 "Segoe UI", sans-serif; }
-.modal-header { display: flex; align-items: center; gap: 8px; flex-shrink: 0; padding: 11px 16px; background: #1e2d4a; color: #7a9bbf; }
-.modal-header strong { flex: 1; color: white; font-size: 13.5px; }
-.modal-header button { display: flex; padding: 2px 7px; background: transparent; border: 0; border-radius: 4px; color: #7a9bbf; cursor: pointer; }
-.modal-header button:hover { background: rgb(255 255 255 / 15%); color: white; }
-.modal-body { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 16px 18px; background: white; }
-.status-picker { display: flex; gap: 10px; }
-.status-picker button { display: flex; align-items: center; gap: 7px; padding: 7px 16px; background: white; border: 1.5px solid #c8d0dc; border-radius: 6px; color: #536b8a; font-size: 12.5px; font-weight: 600; cursor: pointer; }
-.status-picker button > span { width: 9px; height: 9px; background: #c8d0dc; border-radius: 50%; }
-.status-picker .selected-lost { background: #fff5f5; border-color: #e53935; color: #e53935; }
-.status-picker .selected-lost > span { background: #e53935; }
-.status-picker .selected-found { background: #f0fdf4; border-color: #16a34a; color: #16a34a; }
-.status-picker .selected-found > span { background: #16a34a; }
-.form-section { display: flex; flex-direction: column; gap: 10px; }
-.form-section h4 { margin: 0; padding-bottom: 5px; border-bottom: 1.5px solid #dde2ea; font-size: 11px; text-transform: uppercase; letter-spacing: 0; }
-.form-section label { display: flex; flex-direction: column; gap: 3px; color: #1a2638; font-size: 11.5px; font-weight: 600; }
-.form-section em { color: #e53935; font-style: normal; }
-.form-section input { width: 100%; height: 34px; padding: 0 10px; background: white; border: 1px solid #c8d0dc; border-radius: 6px; color: #1a2638; font-size: 12.5px; outline: none; }
-.form-section input:focus { border-color: #2f6fed; box-shadow: 0 0 0 3px rgb(47 111 237 / 10%); }
-.date-field { position: relative; width: 100%; }
-.date-field :deep(.date-display) { width: 100%; height: 34px; padding: 0 36px 0 10px; background: white; border: 1px solid #c8d0dc; border-radius: 6px; color: #1a2638; font-size: 12.5px; outline: none; cursor: pointer; }
-.filter-bar .date-field :deep(.date-display) { height: 30px; }
-.date-field :deep(.date-display:focus) { border-color: #2f6fed; box-shadow: 0 0 0 3px rgb(47 111 237 / 10%); }
-.date-field :deep(.date-trigger) { position: absolute; top: 50%; right: 4px; width: 28px; height: 26px; display: flex; align-items: center; justify-content: center; padding: 0; transform: translateY(-50%); background: transparent; border: 0; border-radius: 4px; color: #536b8a; cursor: pointer; }
-.date-field :deep(.date-trigger:hover) { background: #f0f4fa; color: #2f6fed; }
-.date-field :deep(.native-date-picker) { position: absolute; right: 0; bottom: 0; width: 1px !important; height: 1px !important; padding: 0 !important; border: 0 !important; opacity: 0; pointer-events: none; }
-.row-two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.image-section { gap: 8px; }
-.image-zone { min-height: 78px; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; padding: 10px; border: 1.5px dashed #c8d0dc; border-radius: 6px; }
-.image-wrap { position: relative; }
-.image-wrap img { width: 62px; height: 62px; object-fit: cover; border: 1px solid #dde2ea; border-radius: 4px; cursor: zoom-in; }
-.image-wrap button { position: absolute; top: -5px; right: -5px; width: 17px; height: 17px; display: flex; align-items: center; justify-content: center; padding: 0; background: #e53935; border: 0; border-radius: 50%; color: white; cursor: pointer; }
-.image-add { width: 62px; height: 62px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; background: white; border: 1px dashed #c8d0dc; border-radius: 4px; color: #8fa3be; font-size: 10px; cursor: pointer; }
-.image-add:hover { border-color: #2f6fed; color: #2f6fed; }
-.modal-footer { display: flex; justify-content: flex-end; gap: 8px; flex-shrink: 0; padding: 11px 18px; background: white; border-top: 1px solid #dde2ea; }
-.lightbox { position: fixed; inset: 0; z-index: 2000; display: flex; align-items: center; justify-content: center; background: rgb(0 0 0 / 82%); cursor: zoom-out; }
-.lightbox img { max-width: 90vw; max-height: 90vh; border-radius: 4px; }
-
-:global(html.dark .lost-found-page input),
-:global(html.dark .lost-found-page select),
-:global(html.dark .modal-box input) {
-  background-color: white !important;
-  border-color: #c8d0dc !important;
-  color: #1a2638 !important;
-  color-scheme: light;
+::-webkit-scrollbar-track {
+  background: transparent;
 }
-:global(html.dark .lost-found-page input::placeholder),
-:global(html.dark .modal-box input::placeholder) {
-  color: #8fa3be !important;
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
 }
-
-@media (max-width: 720px) {
-  .content { padding: 10px; }
-  .filter-sep { display: none; }
-  .filter-search { min-width: 100%; }
-  .row-two { grid-template-columns: 1fr; }
-  .modal-box { max-height: 96vh; }
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 </style>
