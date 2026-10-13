@@ -1,5 +1,53 @@
 # Project Memory — PMS
 
+- 2026-10-13: Phân hệ Tồn kho: Chuẩn hóa viết hoa chữ đầu của từng chữ (Title Case) cho Tabs kho, Nhãn điều khiển và Tiêu đề các Form/Modal ([InventoryTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/housekeeping/components/InventoryTab.vue)):
+  - Tabs kho: Chuyển toàn bộ tên kho sang Title Case với helper `toTitleCase(wh.name)` (e.g. `Kho Amenity`, `Kho Giặt Ủi`, `Kho Hàng Đền Bù`, `Kho Minibar`), loại bỏ hoàn toàn class `uppercase`.
+  - Switch Cảnh Báo Tồn: Chuyển nhãn sang Title Case `Cảnh Báo Tồn`.
+  - Filter Chips: Chuẩn hóa Title Case `Phát Sinh:`, `Tất Cả Sản Phẩm`, `Có Phát Sinh`, `Không Phát Sinh`.
+  - Tiêu đề Form/Modal: Loại bỏ toàn bộ CSS class `uppercase` trên các thẻ header `h3`, `span`, `h4` để hiển thị Title Case: `Thêm Kho Mới`, `Cập Nhật Kho`, `Kiểm Kê Tồn Kho Định Kỳ`, `Chọn Sản Phẩm`, `Chuyển Kho`, `Thống Kê Kho Tháng mm/yyyy`, `Thống Kê Phiếu Kiểm Kê`.
+  - Các badges/nhãn con: Chuẩn hóa Title Case `Outlet (Để Lấy Bill)`, `Chọn Nhiều`, `Kho Nguồn`, `Kho Đích`, `-- Chọn Kho Đích --`, `Số Lượng`, `Tổng SP`, `Khớp`, `Chênh Lệch`, `Danh Sách Hàng Chênh Lệch`, `Tổng Nhập`, `Tổng Xuất`, `Tổng Chuyển`, `Sản Phẩm Tồn Thấp (< 50)`, `Hoạt Động Nhiều Nhất`.
+  - Đồng bộ font-size chuẩn FE Design System: Chuyển các cỡ chữ `text-[10px]` và `text-[11px]` sang `text-xs` (12px).
+  - 0 ảnh hưởng logic backend và các màn hình khác; `npm run build` thành công 100%, 0 lỗi.
+
+- 2026-10-13: Phân hệ Tồn kho: Chuẩn hóa FE Design System & Xử lý FIX FE Dòng 69, 70, 71, 72 (InventoryTab.vue, InventoryCheckController.php):
+  - Dòng 69 (Màn hình chung): Định dạng tháng `mm/yyyy`; nút Lấy Bill dùng icon Lucide `Receipt` rõ nét; ô tìm kiếm có nút xóa nhanh `(x)`; danh sách sản phẩm gom nhóm theo Danh mục (`category_name`) có dòng tiêu đề phân cách; tiêu đề cột bảng viết hoa chữ cái đầu mỗi từ (Title Case: `Sản Phẩm`, `Tồn Đầu Kỳ`, `SL Nhập`, `SL Xuất`, `SL Chuyển`, `Tồn Cuối`), căn giữa, đủ viền 4 cạnh `border border-slate-200`; font Roboto 12px (`text-xs`), màu `#000000D9`, toolbar đồng bộ cao 32px (`h-8`); switch "CẢNH BÁO TỒN" đồng bộ với switch Kế hoạch phòng (RoomPlanPage) với track `w-8 h-4.5 bg-slate-200`, `peer-checked:bg-blue-500`, nhãn `text-xs text-[#000000D9] font-normal uppercase`, `gap-1.5 select-none`.
+  - Dòng 70 (Chuyển kho - Modal): Header theme hệ thống `var(--pms-custom-theme, #006bdb)` chữ trắng; ô *Kho đích* và *Số lượng* áp dụng nền vàng `#FFF8DB` viền `#F1DD8A` (.input-required); nút Chuyển Kho dùng `.btn-pms-primary` với icon `ArrowRightLeft` (h-8), nút Đóng `.btn-pms-close`; ngày dùng `SingleDatePicker` định dạng `dd/mm/yyyy`; hỗ trợ phím `Esc` và kéo thả modal.
+  - Dòng 71 (Thống kê - Modal): Header theme hệ thống `var(--pms-custom-theme, #006bdb)` chữ trắng; nút Đồng ý chuẩn `.btn-pms-primary` (h-8); tiêu đề cột bảng Title Case (`Sản Phẩm`, `Sổ Sách`, `Thực Tế`, `Chênh Lệch` và `Sản Phẩm`, `Tồn Cuối`), căn giữa, viền đầy đủ; hỗ trợ phím `Esc`.
+  - Dòng 72 (Kiểm kê tồn kho định kỳ & Chọn sản phẩm - Modals): Header theme hệ thống `var(--pms-custom-theme, #006bdb)` chữ trắng; tháng hiển thị `mm/yyyy`; người kiểm kê khóa cứng theo user đăng nhập; ô Ghi chú có nút xóa nhanh `(x)`; trang bị stepper `[-] [input] [+]` cho *Tồn Đầu Kỳ* và *Thực Tế*; bảng kiểm kê và chọn SP có tiêu đề Title Case, căn giữa, viền đầy đủ; nút chức năng chuẩn `.btn-pms-primary` (Thêm, Lưu), `.btn-pms-danger` (Xóa), `.btn-pms-close` (Đóng); hỗ trợ phím `Esc` và draggable.
+  - 0 ảnh hưởng đến logic và các màn hình khác; `php artisan test --filter=Inventory` passed 100%, `npm run build` thành công 100%, 0 lỗi.
+
+- 2026-10-13: Quản lý đồ thất lạc: Chuẩn hóa FE Design System & Xử lý FIX FE Dòng 67, 68 (LostAndFound.vue):
+  - Dòng 67 (Màn hình chung): Đổi font Segoe UI sang Roboto 12px (`text-xs`), màu chữ đen `#000000D9`, triệt tiêu toàn bộ cỡ chữ < 12px; tiêu đề các cột bảng chuyển sang viết hoa chữ cái đầu mỗi từ (Title Case) căn giữa và có 4 viền `border border-slate-200`; bộ chọn ngày tích hợp `SingleDatePicker` chuẩn `dd/mm/yyyy` hỗ trợ gõ tay; ô tìm kiếm bổ sung nút xóa nhanh `(x)`; xóa bỏ nút "Đặt lại"; nút "Thêm phiếu" dùng class `.btn-pms-primary` chiều cao 32px (`h-8`).
+  - Dòng 68 (Thêm phiếu lost & found): Header modal đồng bộ màu theme hệ thống `var(--pms-custom-theme, #006bdb)`, hỗ trợ kéo thả di chuyển modal (draggable 60fps) và phím `Esc`; in đậm 3 tiêu đề nhóm (Thông tin chung, Thông tin giao nhận, Hình ảnh đồ vật); ô Ngày báo cáo và Mặt hàng áp dụng nền vàng `#FFF8DB` viền `#F1DD8A` (.input-required); cả 3 ô ngày dùng `SingleDatePicker` gõ tay `dd/mm/yyyy`; bổ sung nút xóa nhanh `(x)` cho tất cả 10 ô nhập text; nút footer dùng chuẩn `.btn-pms-primary` và `.btn-pms-close`.
+  - 0 ảnh hưởng đến backend và các màn hình khác; `npm run build` thành công 100% (6.48s), 0 lỗi.
+
+- 2026-10-13: Thêm dịch vụ buồng phòng: Chuẩn hóa FE Design System & Xử lý FIX FE Dòng 65 (PostBillHousekeepingTab.vue):
+  - Typography: Đồng bộ font Roboto, kích thước chữ 12px (text-xs), màu chữ `#000000D9`.
+  - Sắp xếp sản phẩm theo ABC tiếng Việt trong từng danh mục ở cả load data và search filter.
+  - Ô Phòng/Khách là trường bắt buộc (nền vàng #FFF8DB, viền vàng #F1DD8A, label * đỏ); dropdown menu hiển thị tên booking chữ đen #000000D9, số phòng và tên khách không in đậm, chỉ in đậm dòng khách chính (isPrimary); bổ sung nút xóa nhanh (x) cho ô Phòng/Khách và ô tìm kiếm trong dropdown.
+  - Bộ chọn ngày SingleDatePicker chuẩn dd/mm/yyyy với icon lịch, ràng buộc ngày bill nằm trong giai đoạn ở của khách (từ arrival_date đến departure_date).
+  - Thanh outlet: bỏ line gạch chân màu tại outlet đang đứng, tên outlet in đậm Semi-bold màu đen #000000D9, outlet active có màu #2563EB.
+  - Màu nền nhóm sản phẩm, nút thêm món (+) và nút Gửi về phòng chuyển sang màu theme hệ thống var(--pms-custom-theme, #006bdb) / .btn-pms-primary.
+  - Icon xóa món to rõ ràng (20px, text-rose-500 hover:text-rose-700 hover:bg-rose-100).
+  - Bảng giỏ hàng: cân đối phân bố grid cột (grid-cols-[36px_minmax(160px,1.5fr)_90px_86px_96px_95px_100px_44px]).
+  - Stepper tăng giảm: Trang bị nút [-] [input] [+] cho Số lượng (SL), Tăng giá, Chiết khấu và % Giảm.
+  - 0 ảnh hưởng đến logic và backend; npm run build thành công 100%, 0 lỗi.
+
+- 2026-10-13: In phân công phòng: Fix 4 lỗi phản hồi từ ảnh test & Chuẩn hóa 100% font 12px (PrintTasksTab.vue):
+  - Ảnh 1 (Ngày khuất & Nút ca): Mở rộng wrapper date picker lên 142px (panel trái lên 300px), date text 01/08/2026 cùng nút x và icon lịch không còn bị che khuất; tăng kích thước nút ca lên 38px x 38px, font-size chuẩn 12px đậm (font-bold, line-height: 1.1), nổi bật và rõ nét. Toàn bộ font-size giao diện (nút ca, chip lọc, avatar, badge số lượng, danh sách phòng, modal) đã được chuẩn hóa đồng nhất 100% ở 12px (text-xs), triệt tiêu hoàn toàn font-size < 12px theo đúng quy chuẩn FE Design System.
+  - Ảnh 2 (Icon trạng thái DB cho nút vệ sinh): Tích hợp component RoomIcon.vue hiển thị icon theo đúng database room_statuses.icon cho các nút lọc Vệ sinh (clean cho Phòng sạch, dirty cho Phòng bẩn, checkout cho Phòng lau dọn, available cho Phòng sẵn sàng).
+  - Ảnh 3 (Tràn text nút chọn nhiều NV): Cải tiến label dropdownButtonLabel thành "Đã chọn X nhân viên" khi chọn > 2 nhân viên kèm badge số lượng và tooltip title hiển thị đầy đủ danh sách tên; thiết lập white-space: nowrap; overflow: hidden; text-overflow: ellipsis; triệt tiêu lỗi rớt dòng/tràn viền button.
+  - Form/Modal không di chuyển được (Draggable Modals): Tích hợp createDragHandler (60fps với requestAnimationFrame) cho Modal Quản lý nhân viên và Modal Chỉnh sửa nhóm; hỗ trợ kéo thả form bằng chuột trên header (.modal-head có cursor move, user-select: none).
+  - 0 tác động đến các file dùng chung và logic backend. npm run build thành công 100%, 0 lỗi.
+
+- 2026-10-13: In phân công phòng: Chuẩn hóa UI/UX theo FE Design System & Xử lý FIX FE Dòng 60-64 (PrintTasksTab.vue):
+- Dòng 60 (Giao diện chung): Chuẩn hóa font Roboto toàn bộ giao diện, cỡ chữ 12px, màu chữ `#000000D9`, header modal (Quản lý NV, Sửa nhóm) đổi theo màu theme hệ thống `var(--pms-custom-theme, #006bdb)` với chữ trắng và nút đóng nền kính mờ; bo góc modal `rounded-xl` (12px), card/hộp nhóm `rounded-lg` (8px); hỗ trợ phím tắt `Esc` đóng nhanh modal và panel lọc; chuẩn hóa các nút chức năng `.btn-pms-primary`, `.btn-pms-secondary`, `.btn-pms-close`.
+  - Dòng 61 (Thứ tự ca & Bộ chọn ngày): Sắp xếp cố định thứ tự ca chuẩn hóa Ca sáng -> Ca chiều -> Ca tối (`sortedShifts`); nút ca thu nhỏ chiều cao chuẩn 32px (`h-8`); tích hợp component `SingleDatePicker.vue` hiển thị chuẩn `dd/mm/yyyy`, hỗ trợ gõ tay 8 số tự động sinh dấu gạch chéo `/`, nút xóa nhanh `x` tách biệt, popover lịch tiếng Việt.
+  - Dòng 62 (Tìm kiếm nhanh & Phễu lọc): Ô tìm kiếm phòng bổ sung nút xóa nhanh `(x)`; phễu lọc Vệ sinh tinh gọn 5 lựa chọn (Tất cả, Phòng sạch, Phòng bẩn, Phòng lau dọn, Phòng sẵn sàng); phễu lọc Đặt phòng loại bỏ Late check-out thừa, giữ 4 lựa chọn (Tất cả, Check - in, Check - out, Stay - over).
+  - Dòng 63 (Sửa lỗi Checkbox chọn phòng): Khắc phục xung đột event bubbling giữa `.room-item` và `<input type="checkbox">`; tách biệt handler `@click.stop` + `@change="handleRoomCheckboxChange"` trên input và `handleRoomItemClick` trên hàng phòng, triệt tiêu lỗi double-toggle click checkbox không ăn.
+  - Dòng 64 (Quản lý nhân viên): Ô nhập tên nhân viên mới bổ sung nút xóa nhanh `(x)`; danh sách nhân viên bổ sung ô tìm kiếm kèm nút xóa nhanh `(x)` và computed `filteredStaffInModal`.
+  - 0 ảnh hưởng đến các màn hình khác và logic backend. `npm run build` thành công 100% (10.00s), 0 lỗi.
+
 - 2026-10-12: Cập nhật Booking: Nút xóa (x) clear ô nhập liệu & Bỏ ghi chú Lưu ý, Bỏ gợi ý ô Giá ([QuickUpdateModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/QuickUpdateModal.vue)):
   - Bổ sung nút xóa nhanh `x` (clear button) khi ô có giá trị cho toàn bộ các ô nhập liệu: Giờ đến (`form.arrival_time`), Giờ đi (`form.departure_time`), Giá (`form.rate`), Người lớn (`form.adults`), Trẻ em (`form.children_qty`), Thêm giường (`form.extra_bed_qty`), Giá thêm giường (`form.extra_bed_rate`). Ngày nhận/trả phòng dùng `SingleDatePicker` đã có sẵn nút `x` chuẩn.
   - Tách biệt hoàn toàn nút xóa `x` và icon đồng hồ trong flex container riêng (`space-x-1`), ẩn indicator native của browser (`::-webkit-calendar-picker-indicator: none`) để triệt tiêu hiện tượng icon đồng hồ và nút `x` bị chèn đè lên nhau. Bấm nút `x` để clear giờ về rỗng, bấm icon đồng hồ để mở popup chọn giờ (`input.showPicker()`).

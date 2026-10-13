@@ -7,8 +7,159 @@
 ## 📌 Hướng dẫn ghi log
 
 - **Ngày ghi**: `YYYY-MM-DD`
-
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
+
+## [2026-10-13] - Chuẩn Hóa Viết Hoa Chữ Đầu (Title Case) Cho Tồn Kho & Tiêu Đề Các Form (InventoryTab.vue)
+### Module: Buồng phòng / Tồn kho (Housekeeping / InventoryTab.vue)
+- **Mục tiêu**: Chuẩn hóa viết hoa chữ cái đầu mỗi từ (Title Case) cho tab kho, tiêu đề form/modal và nhãn điều khiển:
+  - **Tabs kho**: Chuyển đổi tên kho sang Title Case với helper `toTitleCase(wh.name)` (e.g. `Kho Amenity`, `Kho Giặt Ủi`, `Kho Hàng Đền Bù`, `Kho Minibar`), loại bỏ hoàn toàn class `uppercase`.
+  - **Switch Cảnh Báo Tồn**: Đồng bộ nhãn Title Case `Cảnh Báo Tồn` thay vì `CẢNH BÁO TỒN`.
+  - **Filter Chips**: Chuẩn hóa Title Case `Phát Sinh:`, `Tất Cả Sản Phẩm`, `Có Phát Sinh`, `Không Phát Sinh`.
+  - **Tiêu đề các modal/form**: Loại bỏ toàn bộ class `uppercase` trên header để hiển thị chuẩn Title Case:
+    - `Thêm Kho Mới`
+    - `Cập Nhật Kho`
+    - `Kiểm Kê Tồn Kho Định Kỳ`
+    - `Chọn Sản Phẩm`
+    - `Chuyển Kho`
+    - Header & badges Thống Kê: `Thống Kê Kho Tháng mm/yyyy`, `Thống Kê Phiếu Kiểm Kê`, `Tổng SP`, `Khớp`, `Chênh Lệch`, `Danh Sách Hàng Chênh Lệch`, `Tổng Nhập`, `Tổng Xuất`, `Tổng Chuyển`, `Sản Phẩm Tồn Thấp (< 50)`, `Hoạt Động Nhiều Nhất`.
+  - **Labels & Options trong các modal**: Chuẩn hóa Title Case: `Outlet (Để Lấy Bill)`, `Chọn Nhiều`, `Kho Nguồn`, `Kho Đích`, `-- Chọn Kho Đích --`, `Số Lượng`.
+  - **Font size**: Đảm bảo không có cỡ chữ < 12px theo FE Design System (chuyển các `text-[10px]`, `text-[11px]` sang `text-xs`).
+- **Kiểm thử**: `npm run build` thành công, 0 cảnh báo/lỗi cú pháp.
+
+## [2026-10-13] - Phân Hệ Tồn Kho: Chuẩn Hóa FE Design System & Xử Lý FIX FE Dòng 69, 70, 71, 72 (InventoryTab.vue)
+### Module: Buồng phòng / Tồn kho (Housekeeping / InventoryTab.vue & InventoryCheckController.php)
+- **Mục tiêu**: Xử lý toàn diện các yêu cầu từ Dòng 69 đến Dòng 72 trong Sheet `FIX FE`:
+  - **Màn hình chung (Dòng 69)**:
+    - Định dạng tháng/năm chuẩn `mm/yyyy`, tích hợp overlay month-picker native.
+    - Icon nút "Lấy Bill" dùng Lucide `Receipt` màu sắc tương phản rõ ràng, kích thước đồng nhất.
+    - Ô tìm kiếm trang bị nút xóa nhanh `(x)` khi có nội dung.
+    - Danh sách sản phẩm được nhóm tự động theo Danh mục sản phẩm (`category_name`) với dòng tiêu đề danh mục in đậm phân cách.
+    - Tiêu đề các cột bảng viết hoa chữ cái đầu mỗi từ (Title Case): `Sản Phẩm`, `Tồn Đầu Kỳ`, `SL Nhập`, `SL Xuất`, `SL Chuyển`, `Tồn Cuối`, tất cả căn giữa (`text-center align-middle`), có đủ viền 4 cạnh `border border-slate-200`.
+    - Đồng bộ font Roboto, kích thước 12px (`text-xs`), màu chữ đen `#000000D9`, chiều cao toolbar và controls chuẩn 32px (`h-8`).
+    - Đồng bộ switch "CẢNH BÁO TỒN" theo chuẩn switch ở Kế hoạch phòng (RoomPlanPage): track `w-8 h-4.5 bg-slate-200`, `peer-checked:bg-blue-500`, nhãn `text-xs text-[#000000D9] font-normal uppercase`, `gap-1.5 select-none`.
+  - **Chuyển kho (Dòng 70 - Modal)**:
+    - Header modal đồng bộ màu theme hệ thống `var(--pms-custom-theme, #006bdb)` chữ trắng, hỗ trợ kéo thả form (draggable) và phím tắt `Esc`.
+    - Trường bắt buộc: Ô *Kho đích* và *Số lượng* áp dụng nền vàng nhạt `#FFF8DB` và viền `#F1DD8A` (`.input-required`).
+    - Nút chức năng: *Chuyển Kho* dùng `.btn-pms-primary` với icon `ArrowRightLeft` (h-8), nút *Đóng* dùng `.btn-pms-close` (h-8).
+    - Ô ngày dùng `SingleDatePicker` định dạng `dd/mm/yyyy`.
+  - **Thống kê (Dòng 71 - Modal)**:
+    - Header modal đồng bộ màu theme hệ thống `var(--pms-custom-theme, #006bdb)` chữ trắng, hỗ trợ phím tắt `Esc`.
+    - Nút *Đồng ý* chuẩn `.btn-pms-primary` (`h-8 px-5 text-xs`).
+    - Tiêu đề cột các bảng thống kê viết hoa chữ cái đầu mỗi từ (Title Case): `Sản Phẩm`, `Sổ Sách`, `Thực Tế`, `Chênh Lệch` và `Sản Phẩm`, `Tồn Cuối`, căn giữa, có viền `border border-slate-200`.
+  - **Kiểm kê tồn kho định kỳ & Chọn sản phẩm (Dòng 72 - Modals)**:
+    - Header modal kiểm kê và modal chọn sản phẩm đồng bộ màu theme hệ thống `var(--pms-custom-theme, #006bdb)` chữ trắng, hỗ trợ draggable và phím `Esc`.
+    - Tháng hiển thị chuẩn `mm/yyyy`; ô *Người kiểm kê* khóa cứng hiển thị tên tài khoản đang đăng nhập.
+    - Chiều cao toolbar và các controls chuẩn hóa 32px (`h-8`).
+    - Ô *Ghi chú* trang bị nút xóa nhanh `(x)`.
+    - Trang bị bộ điều chỉnh tăng/giảm số lượng (stepper `[-] [input] [+]`) cho cột *Tồn Đầu Kỳ* (`well_balance`) và *Thực Tế* (`stoke_take`).
+    - Tiêu đề bảng kiểm kê và chọn SP viết hoa chữ cái đầu mỗi từ (Title Case), căn giữa, viền đầy đủ.
+    - Nút chức năng dùng chuẩn `.btn-pms-primary` (Thêm, Lưu), `.btn-pms-danger` (Xóa), `.btn-pms-close` (Đóng).
+- **Phạm vi tác động**:
+  - Backend: [InventoryCheckController.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Http/Controllers/Api/InventoryCheckController.php) bổ sung `category_id` và `category_name` trong dữ liệu trả về của items kiểm kê.
+  - Frontend: [InventoryTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/housekeeping/components/InventoryTab.vue).
+  - 0 ảnh hưởng tiêu cực đến các màn hình khác hoặc logic tồn kho.
+- **Kiểm thử**:
+  - `php artisan test --filter=Inventory`: 1 test passed (6 assertions).
+  - `npm run build`: Thành công 100%, 0 lỗi.
+
+## [2026-10-13] - Quản Lý Đồ Thất Lạc: Chuẩn Hóa FE Design System & Xử Lý FIX FE Dòng 67, 68 (LostAndFound.vue)
+### Module: Buồng phòng / Quản lý đồ thất lạc (Lost & Found / LostAndFound.vue)
+- **Mục tiêu**: Xử lý toàn diện yêu cầu Dòng 67 (Màn hình chung) và Dòng 68 (Thêm phiếu lost & found) trong Sheet FIX FE:
+  - **Màn hình chung (Dòng 67)**:
+    - Chuyển toàn bộ font từ Segoe UI sang Roboto (`font-['Roboto',sans-serif]`), cỡ chữ nội dung thống nhất 12px (`text-xs`), màu chữ đen chuẩn `#000000D9`, triệt tiêu hoàn toàn cỡ chữ < 12px.
+    - Tiêu đề các cột bảng chuyển sang viết hoa chữ cái đầu mỗi từ (Title Case): `STT`, `Tình Trạng`, `Thông Tin Khách`, `Mặt Hàng`, `Ngày Báo Cáo`, `Ngày Tìm Thấy`, `Người Tìm Thấy`, `Khu Vực`, `Kho Lưu Trữ`, `Ngày Nhận`, `Người Giao`, `Người Nhận`, `Người Tạo`, `Thao Tác`. Tất cả ô tiêu đề `<th>` căn giữa ngang và dọc (`text-center align-middle`), có đủ 4 viền `border border-slate-200`.
+    - Ô Từ ngày / Đến ngày tích hợp `SingleDatePicker`, hỗ trợ gõ tay định dạng `dd/mm/yyyy`, tự động sinh `/`, ràng buộc 8 số `ddmmyyyy`, rào tháng 01–12, có nút xóa nhanh `x`.
+    - Ô tìm kiếm bổ sung nút xóa nhanh `(x)` khi có giá trị.
+    - Xóa bỏ nút "Đặt lại" khỏi thanh công cụ.
+    - Nút "Thêm phiếu" chuẩn `.btn-pms-primary` chiều cao 32px (`h-8`).
+  - **Thêm phiếu lost & found (Dòng 68 - Modal)**:
+    - Header modal đồng bộ màu theme hệ thống `var(--pms-custom-theme, #006bdb)`, hỗ trợ kéo thả form (draggable với `requestAnimationFrame` 60fps trên `.modal-header`), hỗ trợ phím `Esc` để đóng form nhanh (tự động reset tọa độ về `{x: 0, y: 0}`).
+    - In đậm nổi bật 3 tiêu đề nhóm: `Thông tin chung`, `Thông tin giao nhận`, `Hình ảnh đồ vật`.
+    - Ô *Ngày báo cáo* (và *Mặt hàng*) là trường bắt buộc: áp dụng nền vàng `#FFF8DB`, viền `#F1DD8A`, focus `#eab308` (`.input-required`).
+    - Cả 3 ô ngày (*Ngày báo cáo*, *Ngày tìm thấy*, *Ngày nhận*) dùng `SingleDatePicker`, cho phép gõ tay và format `dd/mm/yyyy`.
+    - Bổ sung nút xóa nhanh `(x)` cho tất cả 10 ô nhập text khi đã có giá trị.
+    - Nút footer dùng chuẩn `.btn-pms-primary` (Lưu/Thêm) và `.btn-pms-close` (Hủy/Đóng).
+- **Phạm vi tác động**: Duy nhất file [LostAndFound.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/housekeeping/components/LostAndFound.vue). Không ảnh hưởng đến bất kỳ màn hình nào khác.
+- **Kiểm thử**: `npm run build` thành công 100% (6.48s), 0 lỗi.
+
+## [2026-10-13] - Thêm Dịch Vụ Buồng Phòng: Chuẩn Hóa FE Design System & Xử Lý FIX FE Dòng 65 (PostBillHousekeepingTab.vue)
+### Module: Buồng phòng & Lễ tân / Thêm dịch vụ buồng phòng (PostBillHousekeepingTab.vue)
+- **Mục tiêu**: Thực hiện chính xác toàn bộ 11 yêu cầu tại Dòng 65 Sheet FIX FE:
+  - Đồng bộ font Roboto, kích thước chữ 12px (`text-xs`), màu chữ đen chuẩn `#000000D9`.
+  - Sắp xếp thứ tự sản phẩm theo ABC tiếng Việt trong từng danh mục.
+  - Ô Phòng/Khách là ô bắt buộc: nền vàng nhạt `#FFF8DB`, viền vàng `#F1DD8A`, nhãn `*` đỏ; dropdown hiển thị chữ tên booking màu đen `#000000D9`, số phòng và tên khách không in đậm, chỉ in đậm dòng khách chính (`isPrimary`).
+  - Bổ sung nút xóa nhanh `(x)` khi có giá trị cho ô Phòng/Khách, ô Tìm sản phẩm và ô tìm kiếm trong dropdown.
+  - Tích hợp `SingleDatePicker` có icon lịch vừa nhập tay `dd/mm/yyyy` vừa chọn trên lịch, ràng buộc ngày bill trong giai đoạn ở của khách (`arrival_date` đến `departure_date`).
+  - Thanh outlet: bỏ line gạch chân màu tại outlet đang đứng, tên outlet in đậm Semi-bold màu đen `#000000D9`, outlet active có màu `#2563EB`.
+  - Màu nền nhóm sản phẩm, nút thêm món (`+`) và nút `Gửi về phòng` chuyển sang màu theme hệ thống `var(--pms-custom-theme, #006bdb)` / `.btn-pms-primary`.
+  - Icon xóa món to và rõ ràng hơn (20px, đỏ sắc nét `text-rose-500 hover:text-rose-700 hover:bg-rose-100`).
+  - Cân chỉnh bảng giỏ hàng: cân đối phân bố cột grid tránh cột Sản phẩm quá rộng và cột số liệu bị ép sát.
+  - Thêm bộ điều chỉnh tăng/giảm (stepper `[-] [input] [+]`) cho Số lượng (SL), Tăng giá, Chiết khấu, % Giảm.
+- **Phạm vi tác động**:
+  - Chỉ chỉnh sửa file [PostBillHousekeepingTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/housekeeping/components/PostBillHousekeepingTab.vue).
+  - 0 ảnh hưởng tiêu cực đến backend hay các màn hình khác; bảo toàn 100% props, emits và API payload.
+- **Kiểm thử**:
+  - `npm run build` thành công 100% (6.61s), 0 lỗi.
+
+## [2026-10-13] - In Phân Công Phòng: Fix 4 Lỗi Feedback (Ngày Khuất, Cỡ Chữ Ca, Icon Database Cho Phễu Lọc, Tràn Text Chọn NV, Kéo Thả Modal)
+### Module: Buồng phòng / In phân công phòng (Housekeeping / PrintTasksTab.vue)
+- **Mục tiêu**:
+  - Fix lỗi ô ngày tháng bị khuất số cuối (`01/08/2026`).
+  - Tăng cỡ chữ và độ rõ nét cho các nút ca (Ca sáng, Ca chiều, Ca tối).
+  - Lấy icon trạng thái từ database (bảng `room_statuses.icon` qua `RoomIcon.vue`) hiển thị trên các nút phễu lọc Vệ sinh.
+  - Sửa lỗi tràn dọc/xuống dòng chữ khi chọn nhiều nhân viên làm phòng tại dropdown phân công.
+  - Hỗ trợ di chuyển (kéo thả - draggable) cho các form/modal (Quản lý NV, Sửa nhóm) theo thanh header.
+- **Chi tiết triển khai**:
+  - **Ô ngày & Nút ca (Ảnh 1)**:
+    - Mở rộng wrapper date picker từ 125px lên 142px, tăng panel trái lên 300px, đảm bảo `dd/mm/yyyy` cùng nút `x` và icon lịch không bị khuất.
+    - Tăng kích thước nút ca lên 38px x 38px, cỡ chữ chuẩn hóa đồng nhất 12px đậm (`font-bold`, `line-height: 1.1`), hiển thị rõ ràng, nổi bật. Toàn bộ font-size trong tab (nút ca, chip lọc, avatar, badge số lượng, danh sách phòng, modal) đã được đối soát và chuẩn hóa 100% ở 12px (`text-xs`), triệt tiêu hoàn toàn các cỡ chữ < 12px theo đúng quy chuẩn FE Design System.
+  - **Icon trạng thái vệ sinh từ DB (Ảnh 2)**:
+    - Tích hợp `RoomIcon.vue` vào các chip lọc Vệ sinh (`clean` cho Phòng sạch, `dirty` cho Phòng bẩn, `checkout` cho Phòng lau dọn, `available` cho Phòng sẵn sàng), đồng bộ với cột `icon` trong bảng `room_statuses` của database.
+    - Căn chỉnh icon và nhãn bằng flexbox cân đối.
+  - **Dropdown chọn nhiều nhân viên (Ảnh 3)**:
+    - Sửa computed nhãn: khi chọn > 2 nhân viên hiển thị `Đã chọn X nhân viên` kèm badge số lượng và tooltip hiển thị toàn bộ danh sách tên, chống ngắt dòng (`white-space: nowrap; overflow: hidden; text-overflow: ellipsis;`).
+  - **Kéo thả modal (Draggable Modals)**:
+    - Thêm logic kéo thả `createDragHandler` mượt mà (60fps với `requestAnimationFrame`) cho cả Modal Quản lý nhân viên và Modal Chỉnh sửa nhóm.
+    - Gắn `@mousedown` trên `.modal-head` với cursor di chuyển (`cursor-move select-none`), tự động reset tọa độ về `{x: 0, y: 0}` khi đóng modal.
+- **Phạm vi tác động**:
+  - Chỉ chỉnh sửa file [PrintTasksTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/housekeeping/components/PrintTasksTab.vue).
+  - 0 ảnh hưởng đến các màn hình khác hoặc backend.
+- **Kiểm thử**:
+  - `npm run build` thành công 100%, 0 lỗi.
+
+## [2026-10-13] - In Phân Công Phòng: Chuẩn Hóa UI/UX Theo FE Design System & Xử Lý FIX FE Dòng 60-64 (PrintTasksTab.vue)
+### Module: Buồng phòng / In phân công phòng (Housekeeping / PrintTasksTab)
+- **Mục tiêu**:
+  - Khắc phục triệt để các lỗi và bất cập giao diện theo file yêu cầu `DANH SÁCH BẢNG TRONG HỆ THỐNG.xlsx` - Sheet `FIX FE` (Dòng 60 -> Dòng 64).
+  - Chuẩn hóa toàn bộ màn hình theo quy chuẩn FE Design System ([README.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/frontend_design_system/README.md)).
+  - Đảm bảo 0 ảnh hưởng đến các màn hình khác và giữ nguyên 100% logic nghiệp vụ/API backend.
+- **Chi tiết triển khai**:
+  - **Dòng 60 - Giao diện chung & FE Design System**:
+    - Đồng bộ font Roboto toàn bộ giao diện (`font-family: 'Roboto', system-ui, -apple-system, sans-serif`), cỡ chữ chuẩn `12px`, màu chữ `#000000D9`.
+    - Chuẩn hóa header của các modal (Quản lý NV, Sửa nhóm) đồng bộ theo màu theme hệ thống `var(--pms-custom-theme, #006bdb)` với chữ trắng và nút đóng nền kính mờ.
+    - Bo góc modal chuẩn `rounded-xl` (12px), card/hộp nhóm `rounded-lg` (8px).
+    - Bổ sung phím tắt `Esc` để đóng nhanh các modal (Quản lý nhân viên, Sửa nhóm) và panel lọc, kèm cleanup `removeEventListener` đầy đủ khi unmounted.
+    - Chuẩn hóa các nút chức năng: Phân công (`.btn-pms-primary`), Quản lý NV & In lịch (`.btn-pms-secondary`), nút Đóng trong footer modal (`.btn-pms-close` nền xanh chữ trắng icon X).
+  - **Dòng 61 - Thứ tự ca & Bộ chọn ngày chuẩn**:
+    - Thứ tự ca làm việc sắp xếp cố định chuẩn hóa: **Ca sáng** -> **Ca chiều** -> **Ca tối** (thông qua computed `sortedShifts`).
+    - Nút ca thu nhỏ chiều cao chuẩn 32px (`h-8`), đồng bộ với toolbar.
+    - Tích hợp component [SingleDatePicker.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/components/SingleDatePicker.vue) cho ô chọn ngày: hiển thị chuẩn `dd/mm/yyyy`, hỗ trợ gõ tay 8 số tự động sinh dấu gạch chéo `/`, nút xóa nhanh `x` tách biệt, popover lịch tiếng Việt.
+  - **Dòng 62 - Tìm kiếm nhanh & Phễu lọc tinh gọn**:
+    - Ô tìm kiếm phòng: Bổ sung nút xóa nhanh `(x)` khi có nội dung để xóa nhanh chuỗi tìm kiếm.
+    - Phễu lọc Vệ sinh: Tinh gọn chỉ giữ 5 lựa chọn theo yêu cầu nghiệp vụ: `Tất cả`, `Phòng sạch`, `Phòng bẩn`, `Phòng lau dọn`, `Phòng sẵn sàng`.
+    - Phễu lọc Đặt phòng: Loại bỏ lựa chọn Late check-out thừa, chỉ giữ 4 lựa chọn: `Tất cả`, `Check - in`, `Check - out`, `Stay - over`.
+  - **Dòng 63 - Sửa lỗi Checkbox chọn phòng**:
+    - Khắc phục xung đột event bubbling giữa `.room-item` (`@click`) và `<input type="checkbox">` (`@change`).
+    - Tách biệt handler: input checkbox sử dụng `@click.stop` và `@change="handleRoomCheckboxChange"`, còn dòng phòng sử dụng `handleRoomItemClick` (bỏ qua khi target là input), triệt tiêu hoàn toàn lỗi double-toggle (click vào checkbox không ăn).
+  - **Dòng 64 - Quản lý nhân viên**:
+    - Ô nhập tên nhân viên mới: Bổ sung nút xóa nhanh `(x)`.
+    - Danh sách nhân viên: Bổ sung thanh tìm kiếm nhân viên kèm nút xóa nhanh `(x)` và computed `filteredStaffInModal`.
+  - **Phạm vi tác động**:
+    - Chỉ chỉnh sửa duy nhất file [PrintTasksTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/housekeeping/components/PrintTasksTab.vue).
+    - 0 ảnh hưởng đến các màn hình khác hoặc các file dùng chung.
+- **Kiểm thử**:
+  - `npm run build` thành công 100% (10.00s), 0 lỗi.
+
 
 ## [2026-10-12] - Cập Nhật Booking: Nút Xóa (x) Clear Ô Nhập Liệu & Bỏ Ghi Chú Lưu Ý, Bỏ Gợi Ý Ô Giá (QuickUpdateModal.vue)
 ### Module: Đặt phòng / Phiếu đăng ký (Reservation / QuickUpdateModal)
