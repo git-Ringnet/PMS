@@ -775,11 +775,11 @@ watch(visibleColumns, (newVal) => {
 const showColumnSelector = ref(false)
 
 const columns = ref([
-  { key: 'type', label: 'Loại Phòng', visible: true, width: 'w-[125px]' },
-  { key: 'shape', label: 'Dạng Phòng', visible: true, width: 'w-[75px]', center: true },
+  { key: 'type', label: 'Loại Phòng', visible: true, width: 'w-[160px]' },
+  { key: 'shape', label: 'Dạng Phòng', visible: true, width: 'w-[105px]', center: true },
   { key: 'roomNumber', label: 'Số Phòng', visible: true, width: 'auto', center: true },
-  { key: 'checkIn', label: 'Ngày Đến', visible: true, width: 'w-[100px]', center: true },
-  { key: 'checkOut', label: 'Ngày Đi', visible: true, width: 'w-[100px]', center: true },
+  { key: 'checkIn', label: 'Ngày Đến', visible: true, width: 'w-[110px]', center: true },
+  { key: 'checkOut', label: 'Ngày Đi', visible: true, width: 'w-[110px]', center: true },
   { key: 'nights', label: 'Đêm', visible: true, width: 'w-[60px]', center: true },
   { key: 'price', label: 'Giá', visible: true, width: 'w-[95px]', right: true },
   { key: 'rateCode', label: 'Mã Giá Phòng', visible: true, width: 'auto' },
@@ -2031,16 +2031,27 @@ function handleSortRoomColumn(colKey) {
 function sortRoomList(rooms) {
   if (!roomSortField.value) {
     return rooms.sort((a, b) => {
-      const idA = String(a.bookingRoomId || '')
-      const idB = String(b.bookingRoomId || '')
+      const idA = String(a.bookingRoomId || a.id || '')
+      const idB = String(b.bookingRoomId || b.id || '')
       return idA.localeCompare(idB, undefined, { numeric: true, sensitivity: 'base' })
     })
   }
   const field = roomSortField.value
   const factor = roomSortOrder.value === 'asc' ? 1 : -1
   return rooms.sort((a, b) => {
-    let valA = a[field] || ''
-    let valB = b[field] || ''
+    let valA = a[field] ?? ''
+    let valB = b[field] ?? ''
+    if (field === 'roomNumber') {
+      if (!valA && valB) return 1
+      if (valA && !valB) return -1
+      if (!valA && !valB) return 0
+      return factor * String(valA).localeCompare(String(valB), undefined, { numeric: true, sensitivity: 'base' })
+    }
+    if (field === 'checkIn' || field === 'checkOut') {
+      const dateA = String(valA).split('T')[0]
+      const dateB = String(valB).split('T')[0]
+      return factor * dateA.localeCompare(dateB)
+    }
     return factor * String(valA).localeCompare(String(valB), undefined, { numeric: true, sensitivity: 'base' })
   })
 }
@@ -2078,8 +2089,32 @@ const groupedRooms = computed(() => {
     }
   })
 
-  // Sort groups by room class order ascending
-  groupsList.sort((a, b) => a.order - b.order || a.typeName.localeCompare(b.typeName))
+  if (roomSortField.value) {
+    const factor = roomSortOrder.value === 'asc' ? 1 : -1
+    groupsList.sort((a, b) => {
+      const roomA = a.rooms[0]
+      const roomB = b.rooms[0]
+      if (!roomA && !roomB) return 0
+      if (!roomA) return 1
+      if (!roomB) return -1
+      let valA = roomA[roomSortField.value] ?? ''
+      let valB = roomB[roomSortField.value] ?? ''
+      if (roomSortField.value === 'roomNumber') {
+        if (!valA && valB) return 1
+        if (valA && !valB) return -1
+        if (!valA && !valB) return 0
+        return factor * String(valA).localeCompare(String(valB), undefined, { numeric: true, sensitivity: 'base' })
+      }
+      if (roomSortField.value === 'checkIn' || roomSortField.value === 'checkOut') {
+        const dateA = String(valA).split('T')[0]
+        const dateB = String(valB).split('T')[0]
+        return factor * dateA.localeCompare(dateB)
+      }
+      return factor * String(valA).localeCompare(String(valB), undefined, { numeric: true, sensitivity: 'base' })
+    })
+  } else {
+    groupsList.sort((a, b) => a.order - b.order || a.typeName.localeCompare(b.typeName))
+  }
   return groupsList
 })
 
@@ -2125,8 +2160,33 @@ const groupedRoomsNested = computed(() => {
       }
     })
 
-    // Sort type groups by room class order ascending
-    typeGroupsList.sort((a, b) => a.order - b.order || a.typeName.localeCompare(b.typeName))
+    // Sort type groups
+    if (roomSortField.value) {
+      const factor = roomSortOrder.value === 'asc' ? 1 : -1
+      typeGroupsList.sort((a, b) => {
+        const roomA = a.rooms[0]
+        const roomB = b.rooms[0]
+        if (!roomA && !roomB) return 0
+        if (!roomA) return 1
+        if (!roomB) return -1
+        let valA = roomA[roomSortField.value] ?? ''
+        let valB = roomB[roomSortField.value] ?? ''
+        if (roomSortField.value === 'roomNumber') {
+          if (!valA && valB) return 1
+          if (valA && !valB) return -1
+          if (!valA && !valB) return 0
+          return factor * String(valA).localeCompare(String(valB), undefined, { numeric: true, sensitivity: 'base' })
+        }
+        if (roomSortField.value === 'checkIn' || roomSortField.value === 'checkOut') {
+          const dateA = String(valA).split('T')[0]
+          const dateB = String(valB).split('T')[0]
+          return factor * dateA.localeCompare(dateB)
+        }
+        return factor * String(valA).localeCompare(String(valB), undefined, { numeric: true, sensitivity: 'base' })
+      })
+    } else {
+      typeGroupsList.sort((a, b) => a.order - b.order || a.typeName.localeCompare(b.typeName))
+    }
 
     return {
       statusOrder: statusGroup.statusOrder,
@@ -6641,12 +6701,13 @@ defineExpose({
 
       <div class="topbar-divider"></div>
 
-      <div ref="globalSearchBtnRef" class="global-search-btn" title="Tìm kiếm toàn hệ thống">
+      <div ref="globalSearchBtnRef" class="global-search-btn bg-white h-8" title="Tìm kiếm toàn hệ thống">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
         <input
           v-model="globalSearchQuery"
           type="text"
           placeholder="Tìm kiếm toàn hệ thống"
+          class="bg-white text-xs"
           @focus="openGlobalSearch"
           @input="openGlobalSearch"
           @click.stop
@@ -6730,7 +6791,7 @@ defineExpose({
       >
         <div>
           <span class="label">Tên đăng ký:</span>
-          <b class="font-black text-slate-800">{{ activeTab.bookingName || 'Trống' }}</b>
+          <b class="font-semibold text-[#000000D9]">{{ activeTab.bookingName || 'Trống' }}</b>
         </div>
         <div><span class="label">Trạng thái:</span><span class="status-pill select-none">{{ activeTabStatusName || 'Trống' }}</span></div>
         <div class="flex items-center gap-1.5">
@@ -6741,7 +6802,9 @@ defineExpose({
                 v-model="activeTab.checkIn"
                 :disabled="!isSyncRoomDateEnabled"
                 @change="handleMainCheckInChange"
-                input-class="!py-0.5 !px-2 !text-xs !h-[26px] !rounded !border-slate-300 font-semibold text-slate-800"
+                placeholder="dd/mm/yyyy"
+                four-digit-year
+                input-class="!py-0.5 !px-2 !text-xs !h-[26px] !rounded !border-slate-300 font-normal text-[#000000D9]"
               />
               <div 
                 v-if="!isSyncRoomDateEnabled" 
@@ -6756,7 +6819,9 @@ defineExpose({
                 v-model="activeTab.checkOut"
                 :disabled="!isSyncRoomDateEnabled"
                 @change="handleMainDateChange"
-                input-class="!py-0.5 !px-2 !text-xs !h-[26px] !rounded !border-slate-300 font-semibold text-slate-800"
+                placeholder="dd/mm/yyyy"
+                four-digit-year
+                input-class="!py-0.5 !px-2 !text-xs !h-[26px] !rounded !border-slate-300 font-normal text-[#000000D9]"
               />
               <div 
                 v-if="!isSyncRoomDateEnabled" 
@@ -6766,7 +6831,7 @@ defineExpose({
               ></div>
             </div>
           </div>
-          <b v-else class="font-black text-slate-800">{{ formatDateVi(activeTab.checkIn) }} ~ {{ formatDateVi(activeTab.checkOut) }}</b>
+          <b v-else class="font-normal text-[#000000D9]">{{ formatDateVi(activeTab.checkIn) }} – {{ formatDateVi(activeTab.checkOut) }}</b>
         </div>
         <div class="flex items-center gap-1">
           <span class="label">Số đêm:</span>
@@ -6778,7 +6843,7 @@ defineExpose({
               :disabled="!isSyncRoomDateEnabled"
               :class="[!isSyncRoomDateEnabled ? 'bg-slate-100 text-slate-500 cursor-not-allowed border-slate-200' : 'bg-white text-slate-800 border-slate-300 hover:border-sky-400 focus:border-sky-500']"
               min="0" 
-              class="border rounded px-2 py-0.5 text-xs font-semibold focus:outline-none w-14 text-center h-[26px] shadow-2xs transition-colors" 
+              class="border rounded px-2 py-0.5 text-xs font-normal text-[#000000D9] focus:outline-none w-14 text-center h-[26px] shadow-2xs transition-colors" 
             />
             <div 
               v-if="!isSyncRoomDateEnabled" 
@@ -6787,11 +6852,11 @@ defineExpose({
               title="Cấu hình SyncRoomDateByBookingDate = 0: Không cho phép chỉnh sửa số đêm trực tiếp tại đây"
             ></div>
           </div>
-          <b v-else class="font-black text-slate-800">{{ activeTab.nights || 0 }}</b>
+          <b v-else class="font-normal text-[#000000D9]">{{ activeTab.nights || 0 }}</b>
         </div>
-        <div><span class="label">Đặt cọc:</span><b class="font-black text-slate-800">{{ (activeTab.deposit || 0).toLocaleString('en-US') }}</b></div>
-        <div><span class="label">Công ty:</span><b class="font-black text-[#0f7d8c]">{{ activeTab.company || '---' }}</b></div>
-        <div><span class="label">Xác nhận:</span><b class="font-bold text-slate-500">{{ formatDateVi(activeTab.confirmDate) || '---' }}</b></div>
+        <div><span class="label">Đặt cọc:</span><b class="font-normal text-[#000000D9]">{{ (activeTab.deposit || 0).toLocaleString('en-US') }}</b></div>
+        <div><span class="label">Công ty:</span><b class="font-semibold text-[#000000D9]">{{ activeTab.company || '---' }}</b></div>
+        <div><span class="label">Xác nhận:</span><b class="font-normal text-[#000000D9]">{{ formatDateVi(activeTab.confirmDate) || '---' }}</b></div>
         
         <div class="flex items-center gap-2" style="margin-left:auto;">
           <button class="chip-plain primary font-black" style="border-radius: 20px; padding: 7px 16px; background: var(--teal) !important; color: #fff !important;" @click.stop="triggerAction('Hóa đơn')">Hoá đơn</button>
@@ -6826,11 +6891,9 @@ defineExpose({
                     </div>
                   </div>
                 </th>
-                <th class="p-2 border-r border-slate-200 text-center w-[40px] align-middle border">STT</th>
+                <th class="p-2 border-r border-slate-200 text-center w-[40px] align-middle border text-xs font-semibold text-[#000000D9]">STT</th>
                 <th v-for="col in columns.filter(c => c.visible)" 
                     :key="col.key"
-                    draggable="true"
-                    @dragstart="handleDragStart(col.key)"
                     @dragover.prevent
                     @drop="handleDrop(col.key)"
                     @click="handleSortRoomColumn(col.key)"
@@ -6839,19 +6902,31 @@ defineExpose({
                       col.width, 
                       col.center ? 'text-center' : '', 
                       col.right ? 'text-center' : '',
-                      ['checkIn', 'checkOut', 'roomNumber'].includes(col.key) ? 'cursor-pointer' : 'cursor-move'
+                      ['checkIn', 'checkOut', 'roomNumber'].includes(col.key) ? 'cursor-pointer' : ''
                     ]"
                 >
                   <div class="flex items-center justify-center gap-0.5 w-full relative">
-                    <span class="text-xs font-semibold text-slate-700 tracking-wider text-center leading-tight whitespace-normal break-words">{{ col.label }}</span>
-                    <span v-if="['checkIn', 'checkOut', 'roomNumber'].includes(col.key)" class="inline-flex items-center ml-0.5">
-                      <i v-if="roomSortField === col.key" :class="roomSortOrder === 'asc' ? 'fa-solid fa-arrow-up-short-wide text-blue-600' : 'fa-solid fa-arrow-down-wide-short text-blue-600'" class="text-[10px]"></i>
-                      <i v-else class="fa-solid fa-sort text-slate-300 text-[9px] group-hover/hdr:text-slate-500"></i>
+                    <span class="text-xs font-semibold text-[#000000D9] tracking-wider text-center leading-tight whitespace-normal break-words">{{ col.label }}</span>
+                    <span v-if="['checkIn', 'checkOut', 'roomNumber'].includes(col.key)" class="inline-flex items-center ml-0.5" title="Sắp xếp tăng/giảm">
+                      <svg v-if="roomSortField === col.key && roomSortOrder === 'asc'" class="w-3.5 h-3.5 text-blue-600 shrink-0 font-bold" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7" />
+                      </svg>
+                      <svg v-else-if="roomSortField === col.key && roomSortOrder === 'desc'" class="w-3.5 h-3.5 text-blue-600 shrink-0 font-bold" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
+                      </svg>
+                      <svg v-else class="w-3 h-3 text-slate-400 group-hover/hdr:text-slate-600 transition-colors shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
+                      </svg>
                     </span>
-                    <span class="text-slate-300 text-[8px] font-black cursor-grab select-none shrink-0 opacity-40 group-hover/hdr:opacity-100 transition-opacity ml-0.5">⋮</span>
+                    <span 
+                      draggable="true" 
+                      @dragstart.stop="handleDragStart(col.key)" 
+                      class="text-slate-300 text-[8px] font-black cursor-grab select-none shrink-0 opacity-40 group-hover/hdr:opacity-100 transition-opacity ml-0.5"
+                      title="Kéo để đổi vị trí cột"
+                    >⋮</span>
                   </div>
                 </th>
-                <th class="p-2 text-center w-[120px] bg-slate-100 text-slate-700 font-extrabold sticky-shadow-left z-20 align-middle border-r border-slate-200 border">Tổng Cộng</th>
+                <th class="p-2 text-center w-[120px] bg-slate-100 text-[#000000D9] font-semibold sticky-shadow-left z-20 align-middle border-r border-slate-200 border text-xs">Tổng Cộng</th>
               </tr>
             </thead>
             <tbody class="font-semibold text-gray-900 select-text">
@@ -6931,25 +7006,25 @@ defineExpose({
                             v-model="room.roomClassId" 
                             @focus="room._oldClassId = room.roomClassId"
                             @change="handleRoomClassChange(room, room._oldClassId)"
-                            class="bg-white border border-slate-300 rounded px-1 py-0.5 text-[11px] w-full font-semibold focus:outline-none cursor-pointer"
+                            class="bg-white border border-slate-300 rounded px-1 py-0.5 text-xs w-full font-normal focus:outline-none cursor-pointer"
                           >
                             <option v-for="rc in roomClasses" :key="rc.id" :value="rc.id">{{ rc.name }}</option>
                           </select>
-                          <span v-else class="text-gray-900 font-semibold truncate block w-full" :title="room.type">{{ room.type }}</span>
+                          <span v-else class="text-[#000000D9] font-normal truncate block w-full text-xs" :title="room.type">{{ room.type }}</span>
                         </template>
                         <template v-else-if="col.key === 'shape'">
                           <select 
                             v-if="isEditing" 
                             :value="getRoomFormId(room)" 
                             @change="handleRoomFormChange(room, $event.target.value)" 
-                            class="bg-white border border-slate-300 rounded px-1 py-0.5 text-[11px] w-full font-semibold focus:outline-none cursor-pointer text-center"
+                            class="bg-white border border-slate-300 rounded px-1 py-0.5 text-xs w-full font-normal focus:outline-none cursor-pointer text-center"
                           >
                             <option v-for="rf in getAvailableFormsForRoom(room)" :key="rf.id" :value="rf.id">{{ rf.name }}</option>
                           </select>
-                          <span v-else class="text-gray-900 font-semibold">{{ room.shape }}</span>
+                          <span v-else class="text-[#000000D9] font-normal text-xs">{{ room.shape }}</span>
                         </template>
                         <template v-else-if="col.key === 'roomNumber'">
-                          <div v-if="room.isDoNotMove" class="flex items-center justify-center gap-1.5 text-[11px] font-bold text-gray-700 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 max-w-[95px] mx-auto select-none" title="Khóa chuyển phòng (Do Not Move)">
+                          <div v-if="room.isDoNotMove" class="flex items-center justify-center gap-1.5 text-xs font-normal text-[#000000D9] bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 max-w-[95px] mx-auto select-none" title="Khóa chuyển phòng (Do Not Move)">
                             <span>{{ room.roomNumber || '-' }}</span>
                             <svg class="w-3 h-3 text-red-500 fill-current" viewBox="0 0 24 24">
                               <rect x="3" y="11" width="18" height="11" rx="2" ry="2" fill="none" stroke="currentColor" stroke-width="2.5"></rect>
@@ -6960,7 +7035,7 @@ defineExpose({
                             v-else-if="isEditing" 
                             v-model="room.roomNumber" 
                             @focus="loadVacantRoomsForRoom(room)"
-                            class="bg-white border border-slate-300 rounded px-1 py-0.5 text-[11px] w-full font-semibold focus:outline-none text-center cursor-pointer"
+                            class="bg-white border border-slate-300 rounded px-1 py-0.5 text-xs w-full font-normal focus:outline-none text-center cursor-pointer"
                           >
                             <option value="">Chọn phòng</option>
                             <option v-if="room.roomNumber" :value="room.roomNumber">{{ room.roomNumber }}</option>
@@ -6972,28 +7047,36 @@ defineExpose({
                               {{ vRoom.room_number }}
                             </option>
                           </select>
-                          <span v-else>{{ room.roomNumber || '-' }}</span>
+                          <span v-else class="text-[#000000D9] font-normal text-xs">{{ room.roomNumber || '-' }}</span>
                         </template>
                         <template v-else-if="col.key === 'checkIn'">
-                          <input 
-                            v-if="isEditing" 
-                            type="date" 
-                            v-model="room.checkIn" 
-                            @change="handleRowDateChangeInline(room)"
-                            @click="$event.target.showPicker && $event.target.showPicker()"
-                            class="date-span-input border border-slate-300 rounded px-1 py-0.5 text-xs font-semibold text-slate-800 bg-white shadow-sm text-center focus:outline-none inline-block mx-auto" 
-                          />
+                          <div v-if="isEditing" class="w-[102px] mx-auto" @click.stop>
+                            <SingleDatePicker
+                              v-model="room.checkIn"
+                              :min-date="activeTab?.checkIn || ''"
+                              :max-date="activeTab?.checkOut || ''"
+                              :start-date="room.checkIn || activeTab?.checkIn || systemDate"
+                              @change="handleRowDateChangeInline(room)"
+                              placeholder="dd/mm/yyyy"
+                              four-digit-year
+                              input-class="!h-[24px] !px-1 !text-xs !rounded !border-slate-300 font-normal text-[#000000D9] bg-white text-center"
+                            />
+                          </div>
                           <span v-else class="text-[#000000D9] font-normal text-xs">{{ formatDateVi(room.checkIn) }}</span>
                         </template>
                         <template v-else-if="col.key === 'checkOut'">
-                          <input 
-                            v-if="isEditing" 
-                            type="date" 
-                            v-model="room.checkOut" 
-                            @change="handleRowDateChangeInline(room)"
-                            @click="$event.target.showPicker && $event.target.showPicker()"
-                            class="date-span-input border border-slate-300 rounded px-1 py-0.5 text-xs font-semibold text-slate-800 bg-white shadow-sm text-center focus:outline-none inline-block mx-auto" 
-                          />
+                          <div v-if="isEditing" class="w-[102px] mx-auto" @click.stop>
+                            <SingleDatePicker
+                              v-model="room.checkOut"
+                              :min-date="room.checkIn || activeTab?.checkIn || ''"
+                              :max-date="activeTab?.checkOut || ''"
+                              :start-date="room.checkOut || activeTab?.checkOut || systemDate"
+                              @change="handleRowDateChangeInline(room)"
+                              placeholder="dd/mm/yyyy"
+                              four-digit-year
+                              input-class="!h-[24px] !px-1 !text-xs !rounded !border-slate-300 font-normal text-[#000000D9] bg-white text-center"
+                            />
+                          </div>
                           <span v-else class="text-[#000000D9] font-normal text-xs">{{ formatDateVi(room.checkOut) }}</span>
                         </template>
                         <template v-else-if="col.key === 'nights'">
@@ -7004,9 +7087,9 @@ defineExpose({
                             min="1"
                             @input="handleRowNightsChangeInline(room)"
                             @click.stop
-                            class="border border-slate-300 rounded px-1 py-0.5 text-[11px] w-[50px] font-semibold focus:outline-none text-center bg-white mx-auto block" 
+                            class="border border-slate-300 rounded px-1 py-0.5 text-xs w-[50px] font-normal focus:outline-none text-center bg-white mx-auto block" 
                           />
-                          <span v-else class="text-gray-900 font-semibold">{{ room.nights }}</span>
+                          <span v-else class="text-[#000000D9] font-normal text-xs">{{ room.nights }}</span>
                         </template>
                         <template v-else-if="col.key === 'price'">
                           <input 
@@ -7015,11 +7098,11 @@ defineExpose({
                             :value="formatCurrencyInput(room.price)" 
                             :disabled="isRoomPriceDisabled(room)"
                             @input="e => handleRoomPriceChange(room, e.target.value)"
-                            @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
-                            class="border rounded px-1.5 py-0.5 text-xs w-full font-semibold focus:outline-none text-right" 
-                            :class="isRoomPriceDisabled(room) ? 'bg-slate-100 cursor-not-allowed text-slate-400 border-slate-200' : 'bg-white border-slate-300 text-slate-900'"
+                            @focus="e => e.target.select()"
+                            class="border rounded px-1.5 py-0.5 text-xs w-full font-normal focus:outline-none text-right" 
+                            :class="isRoomPriceDisabled(room) ? 'bg-slate-100 cursor-not-allowed text-slate-400 border-slate-200' : 'bg-white border-slate-300 text-[#000000D9]'"
                           />
-                          <span v-else>{{ formatCurrencyInput(room.price) }}</span>
+                          <span v-else class="text-[#000000D9] font-normal text-xs">{{ formatCurrencyInput(room.price) }}</span>
                         </template>
                         <template v-else-if="col.key === 'rateCode'">
                           <select 
@@ -7085,8 +7168,8 @@ defineExpose({
                                     type="text"
                                     :value="room.discountUnit === 'percent' ? room.discountValue : formatCurrencyInput(room.discountValue)"
                                     @input="e => { room.discountValue = room.discountUnit === 'percent' ? Number(e.target.value.replace(/[^\d]/g, '')) || 0 : cleanCurrencyValue(e.target.value); calculateRoomAdjustedPrice(room) }"
-                                    @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
-                                    class="w-full text-right px-1.5 focus:outline-none text-[11px] bg-transparent border-none outline-none font-bold text-slate-800"
+                                    @focus="e => e.target.select()"
+                                    class="w-full text-right px-1.5 focus:outline-none text-xs bg-transparent border-none outline-none font-normal text-[#000000D9]"
                                   />
                                 </div>
                                 <label class="relative inline-flex items-center cursor-pointer select-none">
@@ -7120,9 +7203,9 @@ defineExpose({
                             v-if="isEditing" 
                             type="text" 
                             v-model="room.guestName" 
-                            class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs w-full font-semibold focus:outline-none" 
+                            class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs w-full font-normal text-[#000000D9] focus:outline-none" 
                           />
-                          <span v-else class="text-gray-900 font-semibold">{{ room.guestName }}</span>
+                          <span v-else class="text-[#000000D9] font-normal text-xs">{{ room.guestName }}</span>
                         </template>
                         <template v-else-if="col.key === 'adults'">
                           <div v-if="isEditing" class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[26px] bg-white shadow-sm flex items-center" @click.stop>
@@ -7219,15 +7302,15 @@ defineExpose({
                               type="text" 
                               :value="formatCurrencyInput(room.extraBedPrice)"
                               @input="e => { room.extraBedPrice = cleanCurrencyValue(e.target.value); handleInlineExtraBedRateChange(room) }"
-                              @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
-                              class="w-full h-full text-right pr-4 pl-1 text-[11px] font-semibold text-slate-800 bg-transparent border-none outline-none focus:outline-none"
+                              @focus="e => e.target.select()"
+                              class="w-full h-full text-right pr-4 pl-1 text-xs font-normal text-[#000000D9] bg-transparent border-none outline-none focus:outline-none"
                             />
                             <div class="flex flex-col text-slate-800 absolute right-1 top-0 bottom-0 justify-center items-center w-3 select-none">
                               <button @click.prevent="stepExtraBedPrice(room, 50000)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0" title="+50,000"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
                               <button @click.prevent="stepExtraBedPrice(room, -50000)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0" title="-50,000"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
                             </div>
                           </div>
-                          <span v-else class="text-gray-900 font-semibold" :title="`Tổng thêm giường: ${formatCurrencyInput(getRoomExtraBedTotal(room))}`">{{ getRoomExtraBedQty(room) > 0 ? formatCurrencyInput(room.extraBedPrice) : '' }}</span>
+                          <span v-else class="text-[#000000D9] font-normal text-xs" :title="`Tổng thêm giường: ${formatCurrencyInput(getRoomExtraBedTotal(room))}`">{{ getRoomExtraBedQty(room) > 0 ? formatCurrencyInput(room.extraBedPrice) : '' }}</span>
                         </template>
                         <template v-else-if="col.key === 'hourly'">
                           <label class="relative inline-flex items-center scale-75" :class="isHourlyDisabled(room) ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'">
@@ -7340,7 +7423,7 @@ defineExpose({
                         <td class="p-0 border-b border-slate-200 bg-slate-50/10"></td>
                         <td :colspan="columns.filter(c => c.visible).length + 1" class="p-3 border-b border-slate-200 bg-slate-50/20 text-left pl-6 border-r">
                           <div class="max-w-[850px] border border-slate-200 rounded shadow-xs overflow-visible bg-white my-1" @click.stop>
-                            <table class="w-full text-left border-collapse text-[11px] table-fixed">
+                            <table class="w-full text-left border-collapse text-xs table-fixed">
                               <colgroup>
                                 <col style="width: 100px;" />
                                 <col style="width: 200px;" />
@@ -7352,7 +7435,7 @@ defineExpose({
                                 <col style="width: 80px;" />
                               </colgroup>
                               <thead>
-                                <tr class="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 select-none">
+                                <tr class="bg-slate-100 text-[#000000D9] font-semibold text-xs border-b border-slate-200 select-none">
                                   <th class="p-2 border-r border-slate-200 text-center align-middle border">Ngày</th>
                                   <th class="p-2 border-r border-slate-200 text-center align-middle border">Dịch Vụ</th>
                                   <th class="p-2 border-r border-slate-200 text-center align-middle border">Mã Giá Phòng</th>
@@ -7367,10 +7450,10 @@ defineExpose({
                                 <tr 
                                   v-for="svc in getRoomDisplayServices(room)" 
                                   :key="svc.id" 
-                                  class="border-b border-slate-100 hover:bg-slate-50/80 text-slate-600 font-semibold"
+                                  class="border-b border-slate-100 hover:bg-slate-50/80 text-[#000000D9] font-normal text-xs"
                                 >
                                   <td class="p-2 border-slate-100">{{ formatDateVi(svc.service_date) }}</td>
-                                  <td class="p-2 border-slate-100 text-slate-800 font-bold">{{ svc.service_name }}</td>
+                                  <td class="p-2 border-slate-100 text-[#000000D9] font-normal">{{ svc.service_name }}</td>
                                   <td class="p-2 border-slate-100 text-slate-400 italic">—</td>
                                   <td class="p-2 border-slate-100 text-center relative">
                                     <template v-if="isRoomChargeService(svc) && !isChildBreakfastService(svc)">
@@ -7430,8 +7513,8 @@ defineExpose({
                                                 disc.discountValue = disc.discountUnit === 'percent' ? Number(e.target.value.replace(/[^\d]/g, '')) || 0 : cleanCurrencyValue(e.target.value); 
                                                 calculateNightAdjustedPrice(room, svc) 
                                               }"
-                                              @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
-                                              class="w-full text-right px-1.5 focus:outline-none text-[11px] bg-transparent border-none outline-none font-bold text-slate-800"
+                                              @focus="e => e.target.select()"
+                                              class="w-full text-right px-1.5 focus:outline-none text-xs bg-transparent border-none outline-none font-normal text-[#000000D9]"
                                             />
                                           </div>
                                           <label class="relative inline-flex items-center cursor-pointer select-none">
@@ -7471,21 +7554,21 @@ defineExpose({
                                     </template>
                                     <span v-else class="text-slate-400 italic">—</span>
                                   </td>
-                                  <td class="p-2 border-slate-100 text-center text-slate-700">{{ svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1 }}</td>
+                                  <td class="p-2 border-slate-100 text-center text-[#000000D9] font-normal text-xs">{{ svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1 }}</td>
                                   <td class="p-2 border-slate-100 text-right">
                                     <input 
                                       v-if="isEditing && isServiceDisplayEditable(svc)"
                                       type="text"
                                       :value="formatCurrencyInput(svc.rate)"
                                       @input="e => handleServiceRateChange(room, svc, cleanCurrencyValue(e.target.value))"
-                                      @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
-                                      class="w-full text-right font-bold text-slate-800 bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 shadow-2xs"
+                                      @focus="e => e.target.select()"
+                                      class="w-full text-right font-normal text-[#000000D9] bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 shadow-2xs"
                                     />
-                                    <span v-else class="font-bold text-slate-800">
+                                    <span v-else class="font-normal text-[#000000D9] text-xs">
                                       {{ (Number(svc.rate) || 0).toLocaleString('en-US') }}
                                     </span>
                                   </td>
-                                  <td class="p-2 border-r border-slate-100 text-right text-sky-700 font-bold">{{ (Number(svc.quantity !== undefined && svc.quantity !== null ? svc.quantity : 1) * Number(svc.rate || 0)).toLocaleString('en-US') }}</td>
+                                  <td class="p-2 border-slate-100 text-right text-[#000000D9] font-normal text-xs">{{ (Number(svc.quantity !== undefined && svc.quantity !== null ? svc.quantity : 1) * Number(svc.rate || 0)).toLocaleString('en-US') }}</td>
                                   <td class="p-2 text-center border-slate-200">
                                     <span
                                       class="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase select-none"
@@ -7606,25 +7689,25 @@ defineExpose({
                                     v-model="room.roomClassId" 
                                     @focus="room._oldClassId = room.roomClassId" 
                                     @change="handleRoomClassChange(room, room._oldClassId)" 
-                                    class="bg-white border border-slate-300 rounded px-1 py-0.5 text-[11px] w-full font-semibold focus:outline-none cursor-pointer"
+                                    class="bg-white border border-slate-300 rounded px-1 py-0.5 text-xs w-full font-normal text-[#000000D9] focus:outline-none cursor-pointer"
                                   >
                                     <option v-for="rc in roomClasses" :key="rc.id" :value="rc.id">{{ rc.name }}</option>
                                   </select>
-                                  <span v-else class="text-gray-900 font-semibold truncate block w-full" :title="room.type">{{ room.type }}</span>
+                                  <span v-else class="text-[#000000D9] font-normal text-xs truncate block w-full" :title="room.type">{{ room.type }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'shape'">
                                   <select 
                                     v-if="isEditing" 
                                     :value="getRoomFormId(room)" 
                                     @change="handleRoomFormChange(room, $event.target.value)" 
-                                    class="bg-white border border-slate-300 rounded px-1 py-0.5 text-[11px] w-full font-semibold focus:outline-none cursor-pointer text-center"
+                                    class="bg-white border border-slate-300 rounded px-1 py-0.5 text-xs w-full font-normal text-[#000000D9] focus:outline-none cursor-pointer text-center"
                                   >
                                     <option v-for="rf in getAvailableFormsForRoom(room)" :key="rf.id" :value="rf.id">{{ rf.name }}</option>
                                   </select>
-                                  <span v-else class="text-gray-900 font-semibold">{{ room.shape }}</span>
+                                  <span v-else class="text-[#000000D9] font-normal text-xs">{{ room.shape }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'roomNumber'">
-                                  <div v-if="room.isDoNotMove" class="flex items-center justify-center gap-1.5 text-[11px] font-bold text-gray-700 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 max-w-[95px] mx-auto select-none" title="Khóa chuyển phòng (Do Not Move)">
+                                  <div v-if="room.isDoNotMove" class="flex items-center justify-center gap-1.5 text-xs font-normal text-[#000000D9] bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 max-w-[95px] mx-auto select-none" title="Khóa chuyển phòng (Do Not Move)">
                                     <span>{{ room.roomNumber || '-' }}</span>
                                     <svg class="w-3 h-3 text-red-500 fill-current" viewBox="0 0 24 24">
                                       <rect x="3" y="11" width="18" height="11" rx="2" ry="2" fill="none" stroke="currentColor" stroke-width="2.5"></rect>
@@ -7635,7 +7718,7 @@ defineExpose({
                                     v-else-if="isEditing" 
                                     v-model="room.roomNumber" 
                                     @focus="loadVacantRoomsForRoom(room)"
-                                    class="bg-white border border-slate-300 rounded px-1 py-0.5 text-[11px] w-full font-semibold focus:outline-none text-center cursor-pointer"
+                                    class="bg-white border border-slate-300 rounded px-1 py-0.5 text-xs w-full font-normal focus:outline-none text-center cursor-pointer"
                                   >
                                     <option value="">Chọn phòng</option>
                                     <option v-if="room.roomNumber" :value="room.roomNumber">{{ room.roomNumber }}</option>
@@ -7647,32 +7730,36 @@ defineExpose({
                                       {{ vRoom.room_number }}
                                     </option>
                                   </select>
-                                  <span v-else>{{ room.roomNumber || '-' }}</span>
+                                  <span v-else class="text-[#000000D9] font-normal text-xs">{{ room.roomNumber || '-' }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'checkIn'">
-                                  <input 
-                                    v-if="isEditing" 
-                                    type="date" 
-                                    v-model="room.checkIn" 
-                                    :min="activeTab?.checkIn || ''"
-                                    :max="activeTab?.checkOut || ''"
-                                    @change="handleRowDateChangeInline(room)"
-                                    @click="$event.target.showPicker && $event.target.showPicker()"
-                                    class="date-span-input border border-sky-200 rounded px-1 py-0.5 text-xs font-semibold text-sky-900 bg-sky-50 shadow-sm text-center focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400 inline-block mx-auto cursor-pointer" 
-                                  />
+                                  <div v-if="isEditing" class="w-[102px] mx-auto" @click.stop>
+                                    <SingleDatePicker
+                                      v-model="room.checkIn"
+                                      :min-date="activeTab?.checkIn || ''"
+                                      :max-date="activeTab?.checkOut || ''"
+                                      :start-date="room.checkIn || activeTab?.checkIn || systemDate"
+                                      @change="handleRowDateChangeInline(room)"
+                                      placeholder="dd/mm/yyyy"
+                                      four-digit-year
+                                      input-class="!h-[24px] !px-1 !text-xs !rounded !border-slate-300 font-normal text-[#000000D9] bg-white text-center"
+                                    />
+                                  </div>
                                   <span v-else class="text-[#000000D9] font-normal text-xs">{{ formatDateVi(room.checkIn) }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'checkOut'">
-                                  <input 
-                                    v-if="isEditing" 
-                                    type="date" 
-                                    v-model="room.checkOut" 
-                                    :min="activeTab?.checkIn || ''"
-                                    :max="activeTab?.checkOut || ''"
-                                    @change="handleRowDateChangeInline(room)"
-                                    @click="$event.target.showPicker && $event.target.showPicker()"
-                                    class="date-span-input border border-sky-200 rounded px-1 py-0.5 text-xs font-semibold text-sky-900 bg-sky-50 shadow-sm text-center focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400 inline-block mx-auto cursor-pointer" 
-                                  />
+                                  <div v-if="isEditing" class="w-[102px] mx-auto" @click.stop>
+                                    <SingleDatePicker
+                                      v-model="room.checkOut"
+                                      :min-date="room.checkIn || activeTab?.checkIn || ''"
+                                      :max-date="activeTab?.checkOut || ''"
+                                      :start-date="room.checkOut || activeTab?.checkOut || systemDate"
+                                      @change="handleRowDateChangeInline(room)"
+                                      placeholder="dd/mm/yyyy"
+                                      four-digit-year
+                                      input-class="!h-[24px] !px-1 !text-xs !rounded !border-slate-300 font-normal text-[#000000D9] bg-white text-center"
+                                    />
+                                  </div>
                                   <span v-else class="text-[#000000D9] font-normal text-xs">{{ formatDateVi(room.checkOut) }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'nights'">
@@ -7683,9 +7770,9 @@ defineExpose({
                                     min="1"
                                     @input="handleRowNightsChangeInline(room)"
                                     @click.stop
-                                    class="border border-slate-300 rounded px-1 py-0.5 text-[11px] w-[50px] font-semibold focus:outline-none text-center bg-white mx-auto block" 
+                                    class="border border-slate-300 rounded px-1 py-0.5 text-xs w-[50px] font-normal focus:outline-none text-center bg-white mx-auto block" 
                                   />
-                                  <span v-else class="text-gray-900 font-semibold">{{ room.nights }}</span>
+                                  <span v-else class="text-[#000000D9] font-normal text-xs">{{ room.nights }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'price'">
                                   <input 
@@ -7694,11 +7781,11 @@ defineExpose({
                                     :value="formatCurrencyInput(room.price)" 
                                     :disabled="isRoomPriceDisabled(room)"
                                     @input="e => handleRoomPriceChange(room, e.target.value)"
-                                    @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
-                                    class="border rounded px-1.5 py-0.5 text-xs w-full font-semibold focus:outline-none text-right" 
-                                    :class="isRoomPriceDisabled(room) ? 'bg-slate-100 cursor-not-allowed text-slate-400 border-slate-200' : 'bg-white border-slate-300 text-slate-900'"
+                                    @focus="e => e.target.select()"
+                                    class="border rounded px-1.5 py-0.5 text-xs w-full font-normal focus:outline-none text-right" 
+                                    :class="isRoomPriceDisabled(room) ? 'bg-slate-100 cursor-not-allowed text-slate-400 border-slate-200' : 'bg-white border-slate-300 text-[#000000D9]'"
                                   />
-                                  <span v-else>{{ formatCurrencyInput(room.price) }}</span>
+                                  <span v-else class="text-[#000000D9] font-normal text-xs">{{ formatCurrencyInput(room.price) }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'rateCode'">
                                   <select 
@@ -7764,8 +7851,8 @@ defineExpose({
                                             type="text"
                                             :value="room.discountUnit === 'percent' ? room.discountValue : formatCurrencyInput(room.discountValue)"
                                             @input="e => { room.discountValue = room.discountUnit === 'percent' ? Number(e.target.value.replace(/[^\d]/g, '')) || 0 : cleanCurrencyValue(e.target.value); calculateRoomAdjustedPrice(room) }"
-                                            @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
-                                            class="w-full text-right px-1.5 focus:outline-none text-[11px] bg-transparent border-none outline-none font-bold text-slate-800"
+                                            @focus="e => e.target.select()"
+                                            class="w-full text-right px-1.5 focus:outline-none text-xs bg-transparent border-none outline-none font-normal text-[#000000D9]"
                                           />
                                         </div>
                                         <label class="relative inline-flex items-center cursor-pointer select-none">
@@ -7799,9 +7886,9 @@ defineExpose({
                                     v-if="isEditing" 
                                     type="text" 
                                     v-model="room.guestName" 
-                                    class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs w-full font-semibold focus:outline-none" 
+                                    class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs w-full font-normal text-[#000000D9] focus:outline-none" 
                                   />
-                                  <span v-else class="text-gray-900 font-semibold">{{ room.guestName }}</span>
+                                  <span v-else class="text-[#000000D9] font-normal text-xs">{{ room.guestName }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'adults'">
                                   <div v-if="isEditing" class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[26px] bg-white shadow-sm flex items-center" @click.stop>
@@ -7898,15 +7985,15 @@ defineExpose({
                                       type="text" 
                                       :value="formatCurrencyInput(room.extraBedPrice)"
                                       @input="e => { room.extraBedPrice = cleanCurrencyValue(e.target.value); handleInlineExtraBedRateChange(room) }"
-                                      @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
-                                      class="w-full h-full text-right pr-4 pl-1 text-[11px] font-semibold text-slate-800 bg-transparent border-none outline-none focus:outline-none"
+                                      @focus="e => e.target.select()"
+                                      class="w-full h-full text-right pr-4 pl-1 text-xs font-normal text-[#000000D9] bg-transparent border-none outline-none focus:outline-none"
                                     />
                                     <div class="flex flex-col text-slate-800 absolute right-1 top-0 bottom-0 justify-center items-center w-3 select-none">
                                       <button @click.prevent="stepExtraBedPrice(room, 50000)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0" title="+50,000"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
                                       <button @click.prevent="stepExtraBedPrice(room, -50000)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0" title="-50,000"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
                                     </div>
                                   </div>
-                                  <span v-else class="text-gray-900 font-semibold" :title="`Tổng thêm giường: ${formatCurrencyInput(getRoomExtraBedTotal(room))}`">{{ getRoomExtraBedQty(room) > 0 ? formatCurrencyInput(room.extraBedPrice) : '' }}</span>
+                                  <span v-else class="text-[#000000D9] font-normal text-xs" :title="`Tổng thêm giường: ${formatCurrencyInput(getRoomExtraBedTotal(room))}`">{{ getRoomExtraBedQty(room) > 0 ? formatCurrencyInput(room.extraBedPrice) : '' }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'hourly'">
                                   <label class="relative inline-flex items-center scale-75" :class="isHourlyDisabled(room) ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'">
@@ -8019,7 +8106,7 @@ defineExpose({
                               <td class="p-0 border-b border-slate-200 bg-slate-50/10"></td>
                               <td :colspan="columns.filter(c => c.visible).length + 1" class="p-3 border-b border-slate-200 bg-slate-50/20 text-left pl-6">
                                 <div class="max-w-[850px] border border-slate-200 rounded shadow-xs overflow-visible bg-white my-1" @click.stop>
-                                  <table class="w-full text-left border-collapse text-[11px] table-fixed">
+                                  <table class="w-full text-left border-collapse text-xs table-fixed">
                                      <colgroup>
                                        <col style="width: 95px;" />
                                        <col style="width: 180px;" />
@@ -8029,7 +8116,7 @@ defineExpose({
                                        <col style="width: 110px;" />
                                      </colgroup>
                                      <thead>
-                                       <tr class="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                                       <tr class="bg-slate-100 text-[#000000D9] font-semibold text-xs border-b border-slate-200">
                                          <th class="p-2 border-r border-slate-200 text-center align-middle border">Ngày</th>
                                          <th class="p-2 border-r border-slate-200 text-center align-middle border">Dịch Vụ</th>
                                          <th class="p-2 border-r border-slate-200 text-center align-middle border">Tăng/Giảm Giá</th>
@@ -8042,10 +8129,10 @@ defineExpose({
                                       <tr 
                                         v-for="svc in getRoomDisplayServices(room)" 
                                         :key="svc.id" 
-                                        class="border-b border-slate-100 hover:bg-slate-50/80 text-slate-600 font-semibold group"
+                                        class="border-b border-slate-100 hover:bg-slate-50/80 text-[#000000D9] font-normal text-xs group"
                                       >
                                         <td class="p-2 border-slate-100">{{ formatDateVi(svc.service_date) }}</td>
-                                        <td class="p-2 border-slate-100 text-slate-800 font-bold">{{ svc.service_name }}</td>
+                                        <td class="p-2 border-slate-100 text-[#000000D9] font-normal">{{ svc.service_name }}</td>
                                          <td class="p-2 border-slate-100 text-center relative">
                                            <template v-if="isRoomChargeService(svc) && !isChildBreakfastService(svc)">
                                              <div 
@@ -8104,8 +8191,8 @@ defineExpose({
                                                        disc.discountValue = disc.discountUnit === 'percent' ? Number(e.target.value.replace(/[^\d]/g, '')) || 0 : cleanCurrencyValue(e.target.value); 
                                                        calculateNightAdjustedPrice(room, svc) 
                                                      }"
-                                                     @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
-                                                     class="w-full text-right px-1.5 focus:outline-none text-[11px] bg-transparent border-none outline-none font-bold text-slate-800"
+                                                     @focus="e => e.target.select()"
+                                                     class="w-full text-right px-1.5 focus:outline-none text-xs bg-transparent border-none outline-none font-normal text-[#000000D9]"
                                                    />
                                                  </div>
                                                  <label class="relative inline-flex items-center cursor-pointer select-none">
@@ -8145,16 +8232,16 @@ defineExpose({
                                            </template>
                                            <span v-else class="text-slate-400 italic">—</span>
                                          </td>
-                                        <td class="p-2 border-slate-100 text-center text-slate-700">
+                                        <td class="p-2 border-slate-100 text-center text-[#000000D9] font-normal text-xs">
                                           <input 
                                             v-if="isServiceDisplayEditable(svc) && !isRoomChargeService(svc) && !isChildBreakfastService(svc)"
                                             type="number"
                                             :value="svc.quantity !== undefined && svc.quantity !== null ? parseFloat(svc.quantity) : 1"
                                             min="0"
                                             @change="e => handleInlineServiceQtyChange(room, svc, Number(e.target.value) || 0)"
-                                            class="w-14 text-center font-bold text-slate-800 bg-white border border-slate-300 rounded px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 shadow-2xs"
+                                            class="w-14 text-center font-normal text-[#000000D9] bg-white border border-slate-300 rounded px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 shadow-2xs"
                                           />
-                                          <span v-else>{{ svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1 }}</span>
+                                          <span v-else class="text-[#000000D9] font-normal text-xs">{{ svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1 }}</span>
                                         </td>
                                         <td class="p-2 border-slate-100 text-right">
                                           <input 
@@ -8162,14 +8249,14 @@ defineExpose({
                                             type="text"
                                             :value="formatCurrencyInput(svc.rate)"
                                             @change="e => handleInlineServiceRateChange(room, svc, cleanCurrencyValue(e.target.value))"
-                                            @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
-                                            class="w-full text-right font-bold text-slate-800 bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 shadow-2xs"
+                                            @focus="e => e.target.select()"
+                                            class="w-full text-right font-normal text-[#000000D9] bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 shadow-2xs"
                                           />
-                                          <span v-else class="font-bold text-slate-800">
+                                          <span v-else class="font-normal text-[#000000D9] text-xs">
                                             {{ (Number(svc.rate) || 0).toLocaleString('en-US') }}
                                           </span>
                                         </td>
-                                        <td class="p-2 text-right text-sky-700 font-bold border-slate-200">
+                                        <td class="p-2 text-right text-[#000000D9] font-normal text-xs border-slate-200">
                                           <div class="flex items-center justify-end space-x-2">
                                             <span>{{ (Number(svc.quantity !== undefined && svc.quantity !== null ? svc.quantity : 1) * Number(svc.rate || 0)).toLocaleString('en-US') }}</span>
                                             <button 
@@ -8259,6 +8346,7 @@ defineExpose({
         <!-- ACTION DOCK (Redesigned Sidebar Dock) -->
         <aside class="dock shrink-0" id="dock" :class="{ 'opacity-50 pointer-events-none': isEditing }">
           <div class="dock-head"><span class="dot"></span>Chức năng</div>
+          <div class="dock-body">
 
           <div class="dock-group">
             <div class="dock-group-label">Cập nhật đăng ký</div>
@@ -8397,8 +8485,7 @@ defineExpose({
               <span class="lbl">In hoá đơn tạm</span>
             </div>
           </div>
-
-
+          </div>
         </aside>
       </div>
 
@@ -8512,7 +8599,7 @@ defineExpose({
             <div class="flex flex-wrap items-end gap-2.5">
               <!-- Mã booking (Read-only Badge) -->
               <div class="flex flex-col">
-                <span class="text-[11px] text-slate-500 font-bold mb-1">Mã booking</span>
+                <span class="text-xs font-semibold text-[#000000D9] mb-1">Mã booking</span>
                 <div class="h-[34px] px-3 bg-slate-100 border border-slate-200 rounded-lg flex items-center font-bold text-xs text-slate-700 tracking-wide select-all cursor-default shadow-2xs" title="Mã booking hệ thống">
                   <span class="w-1.5 h-1.5 rounded-full bg-slate-400 mr-1.5"></span>
                   {{ modalForm.bookingCode || ((hotelSettings?.prefix_booking_id || 'GAL') + ' (Tự động)') }}
@@ -8521,7 +8608,7 @@ defineExpose({
 
               <!-- Tên đăng ký (Editable) -->
               <div class="flex flex-col flex-1 min-w-[200px]">
-                <span class="text-[11px] text-slate-600 font-bold mb-1">Tên đăng ký <span class="text-red-500">*</span></span>
+                <span class="text-xs font-semibold text-[#000000D9] mb-1">Tên đăng ký <span class="text-red-500">*</span></span>
                 <div class="relative flex items-center">
                   <i class="fa-solid fa-pen text-slate-400 text-xs absolute left-3 pointer-events-none"></i>
                   <input 
@@ -8536,7 +8623,7 @@ defineExpose({
 
               <!-- Mã tham chiếu -->
               <div class="flex flex-col w-[120px]">
-                <span class="text-[11px] text-slate-500 font-bold mb-1">Mã tham chiếu</span>
+                <span class="text-xs font-semibold text-[#000000D9] mb-1">Mã tham chiếu</span>
                 <input 
                   type="text" 
                   v-model="modalForm.externalBookingCode" 
@@ -8547,7 +8634,7 @@ defineExpose({
 
               <!-- Ngày lưu trú -->
               <div class="flex flex-col shrink-0 w-[314px]">
-                <span class="text-[11px] text-slate-500 font-bold mb-1">Ngày lưu trú</span>
+                <span class="text-xs font-semibold text-[#000000D9] mb-1">Ngày lưu trú</span>
                 <div class="flex items-center space-x-1">
                   <div class="w-[148px]">
                     <SingleDatePicker
@@ -8579,7 +8666,7 @@ defineExpose({
 
               <!-- Số đêm (Read-only Calculated field) -->
               <div class="flex flex-col w-[85px]">
-                <span class="text-[11px] text-slate-500 font-bold mb-1">Số đêm</span>
+                <span class="text-xs font-semibold text-[#000000D9] mb-1">Số đêm</span>
                 <div class="font-bold text-xs text-slate-800 border border-slate-200 rounded-lg h-[34px] flex items-center justify-between px-2 bg-slate-100 shadow-2xs relative select-none cursor-default" title="Tự động tính từ ngày lưu trú">
                   <span class="text-xs font-bold text-slate-700 pl-0.5">{{ Number(modalForm.nights) >= 0 ? modalForm.nights : 0 }} đêm</span>
                   <div class="flex flex-col select-none">
@@ -8591,7 +8678,7 @@ defineExpose({
 
               <!-- Tình trạng đăng ký -->
               <div class="flex flex-col min-w-[150px]">
-                <span class="text-[11px] text-slate-600 font-bold mb-1">Tình trạng đăng ký <span class="text-red-500">*</span></span>
+                <span class="text-xs font-semibold text-[#000000D9] mb-1">Tình trạng đăng ký <span class="text-red-500">*</span></span>
                 <div class="relative w-full flex items-center group">
                   <select 
                     v-model="modalForm.registrationStatusId"
@@ -8621,7 +8708,7 @@ defineExpose({
 
               <!-- Ngày xác nhận -->
               <div class="flex flex-col shrink-0 w-[187px]">
-                <span class="text-[11px] text-slate-500 font-bold mb-1">Ngày xác nhận</span>
+                <span class="text-xs font-semibold text-[#000000D9] mb-1">Ngày xác nhận</span>
                 <div class="flex items-center space-x-1">
                   <div class="flex-1">
                     <SingleDatePicker

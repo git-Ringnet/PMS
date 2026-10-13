@@ -3313,9 +3313,10 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                             class="font-bold leading-tight text-center w-full flex items-center justify-center gap-1"
                             :style="{ fontSize: Math.max(10, settings.textSizes.roomNumber * cardScale) + 'px' }">
                             <span
+                              class="inline-block"
                               :class="[
                                 isRoomNumberRed(room) ? 'text-red-600 font-black' : (room.booking_color ? 'text-inherit' : 'text-gray-900'),
-                                isArrivingTomorrow(room) ? 'underline decoration-1 underline-offset-[2px]' : ''
+                                isArrivingTomorrow(room) ? 'border-b border-black pb-[1px]' : ''
                               ]"
                               :style="getRoomNumberStyle(room)">
                               {{ room.room_number }}
@@ -3323,9 +3324,8 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                           </div>
 
                           <!-- Room Type (e.g. SUPT) -->
-                          <div class="font-bold uppercase text-center w-full mt-0.5 leading-none"
-                            :style="{ fontSize: Math.max(8, settings.textSizes.roomType * cardScale) + 'px' }"
-                            :class="room.booking_color ? 'text-inherit opacity-80' : 'text-gray-500'">
+                          <div class="font-bold uppercase text-center w-full mt-0.5 leading-none text-black"
+                            :style="{ fontSize: Math.max(8, settings.textSizes.roomType * cardScale) + 'px' }">
                             {{ room.room_type || room.room_class?.code }}
                           </div>
 
@@ -3816,12 +3816,13 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         <td class="p-2 border-slate-200 text-center font-bold text-[13px]">
                           <span
                             :class="[
-                              isRoomNumberRed(room) ? 'text-red-600 font-black' : '',
-                              isArrivingTomorrow(room) ? 'underline decoration-1 underline-offset-[2px]' : ''
+                              isRoomNumberRed(room) ? 'text-red-600 font-black' : ''
                             ]"
                             :style="getRoomNumberStyle(room)"
                             class="inline-flex items-center justify-center gap-1">
-                            {{ room.room_number }}
+                            <span :class="isArrivingTomorrow(room) ? 'border-b border-black pb-[1px]' : ''">
+                              {{ room.room_number }}
+                            </span>
                             <span v-if="getConnectingRoomNumber(room)" class="inline-flex items-center text-slate-700 ml-0.5" :title="`Phòng thông nhau với: ${getConnectingRoomNumber(room)}`">
                               <RoomIcon name="connecting-door" class="w-3.5 h-3.5" />
                             </span>
@@ -3835,7 +3836,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </td>
 
                         <!-- 6. Loại phòng -->
-                        <td class="p-2 border-slate-200 text-center font-medium">
+                        <td class="p-2 border-slate-200 text-center font-medium text-black">
                           {{ room.room_type || room.room_class?.code || '-' }}
                         </td>
 
@@ -4586,33 +4587,33 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
           <div class="p-6 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-5 bg-slate-50 flex-1">
             <!-- 1. Tổng quan Card -->
             <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
-              <h4 class="text-slate-900 font-extrabold text-xs mb-3 pb-1.5 border-b border-slate-100">Tổng quan</h4>
-              <div class="flex flex-col gap-2.5 text-xs text-slate-700">
+              <h4 class="text-sm font-semibold text-[#000000D9] mb-3 pb-1.5 border-b border-slate-100">Tổng quan</h4>
+              <div class="flex flex-col gap-2.5 text-xs text-[#000000D9]">
                 <div class="flex items-center justify-between">
-                  <span class="font-semibold">Tổng phòng</span>
+                  <span class="font-normal text-[#000000D9]">Tổng phòng</span>
                   <span
-                    class="px-2 py-0.5 bg-slate-100 border border-slate-200 rounded font-bold text-slate-800 text-center min-w-[50px] inline-block tabular-nums">{{
+                    class="px-2 py-0.5 bg-slate-100 border border-slate-200 rounded font-normal text-[#000000D9] text-center min-w-[50px] inline-block tabular-nums">{{
                       roomMapStatistics.totalRooms }}</span>
                 </div>
                 <div class="flex items-center justify-between">
-                  <span class="font-semibold text-amber-700">OOO</span>
+                  <span class="font-normal text-amber-700">OOO</span>
                   <span
-                    class="px-2 py-0.5 bg-amber-50 border border-amber-200 rounded font-bold text-amber-800 text-center min-w-[50px] inline-block tabular-nums">{{
+                    class="px-2 py-0.5 bg-amber-50 border border-amber-200 rounded font-normal text-amber-800 text-center min-w-[50px] inline-block tabular-nums">{{
                       roomMapStatistics.ooo
                     }}</span>
                 </div>
                 <div class="flex items-center justify-between">
-                  <span class="font-semibold text-emerald-700">OOS</span>
+                  <span class="font-normal text-emerald-700">OOS</span>
                   <span
-                    class="px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded font-bold text-emerald-800 text-center min-w-[50px] inline-block tabular-nums">{{
+                    class="px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded font-normal text-emerald-800 text-center min-w-[50px] inline-block tabular-nums">{{
                       roomMapStatistics.oos
                     }}</span>
                 </div>
                 <div
-                  class="flex items-center justify-between pt-1 border-t border-dashed border-slate-200 font-bold text-slate-900">
+                  class="flex items-center justify-between pt-1 border-t border-dashed border-slate-200 font-semibold text-[#000000D9]">
                   <span>Tổng phòng có thể bán</span>
                   <span
-                    class="px-2 py-0.5 bg-blue-50 border border-blue-200 rounded text-blue-700 text-center min-w-[50px] inline-block tabular-nums">{{
+                    class="px-2 py-0.5 bg-blue-50 border border-blue-200 rounded text-blue-700 font-normal text-center min-w-[50px] inline-block tabular-nums">{{
                       roomMapStatistics.saleableRooms
                     }}</span>
                 </div>
@@ -4621,30 +4622,30 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
             <!-- 2. Buồng phòng Card -->
             <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
-              <h4 class="text-slate-900 font-extrabold text-xs mb-3 pb-1.5 border-b border-slate-100">Buồng phòng</h4>
+              <h4 class="text-sm font-semibold text-[#000000D9] mb-3 pb-1.5 border-b border-slate-100">Buồng phòng</h4>
               <table class="w-full text-xs border-collapse">
                 <thead>
-                  <tr class="text-slate-500 font-bold border-b border-slate-100">
+                  <tr class="text-[#000000D9] font-semibold border-b border-slate-100">
                     <th class="pb-1.5 text-center font-semibold align-middle border-r border-slate-200 border">Trạng Thái</th>
                     <th class="pb-1.5 text-center w-16 font-semibold text-xs text-red-500 align-middle border-r border-slate-200 border">Occ</th>
                     <th class="pb-1.5 text-center w-16 font-semibold text-xs text-emerald-500 align-middle border-r border-slate-200 border">Vac</th>
                   </tr>
                 </thead>
-                <tbody class="divide-y divide-slate-100 text-slate-700">
+                <tbody class="divide-y divide-slate-100 text-[#000000D9]">
                   <tr class="h-8">
-                    <td class="font-semibold border-slate-200">Phòng sẵn sàng</td>
-                    <td class="text-center font-bold tabular-nums border-slate-200">{{ roomMapStatistics.occupiedReady }}</td>
-                    <td class="text-center font-bold tabular-nums border-slate-200">{{ roomMapStatistics.vacantReady }}</td>
+                    <td class="font-normal text-[#000000D9] border-slate-200">Phòng sẵn sàng</td>
+                    <td class="text-center font-normal tabular-nums border-slate-200">{{ roomMapStatistics.occupiedReady }}</td>
+                    <td class="text-center font-normal tabular-nums border-slate-200">{{ roomMapStatistics.vacantReady }}</td>
                   </tr>
                   <tr class="h-8">
-                    <td class="font-semibold border-slate-200">Phòng sạch</td>
-                    <td class="text-center font-bold tabular-nums border-slate-200">{{ roomMapStatistics.occupiedClean }}</td>
-                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.vacantClean }}</td>
+                    <td class="font-normal text-[#000000D9] border-slate-200">Phòng sạch</td>
+                    <td class="text-center font-normal tabular-nums border-slate-200">{{ roomMapStatistics.occupiedClean }}</td>
+                    <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.vacantClean }}</td>
                   </tr>
                   <tr class="h-8">
-                    <td class="font-semibold border-slate-200">Phòng dơ</td>
-                    <td class="text-center font-bold text-red-600 tabular-nums border-slate-200">{{ roomMapStatistics.occupiedDirty }}</td>
-                    <td class="text-center font-bold text-red-600 tabular-nums border-slate-200">{{ roomMapStatistics.vacantDirty }}</td>
+                    <td class="font-normal text-[#000000D9] border-slate-200">Phòng dơ</td>
+                    <td class="text-center font-normal text-red-600 tabular-nums border-slate-200">{{ roomMapStatistics.occupiedDirty }}</td>
+                    <td class="text-center font-normal text-red-600 tabular-nums border-slate-200">{{ roomMapStatistics.vacantDirty }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -4652,66 +4653,65 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
             <!-- 3. Trạng thái phòng Card -->
             <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-xs md:col-span-1">
-              <h4 class="text-slate-900 font-extrabold text-xs mb-3 pb-1.5 border-b border-slate-100">Trạng thái phòng
-              </h4>
+              <h4 class="text-sm font-semibold text-[#000000D9] mb-3 pb-1.5 border-b border-slate-100">Trạng thái phòng</h4>
               <table class="w-full text-xs border-collapse">
                 <thead>
-                  <tr class="text-slate-500 font-bold border-b border-slate-100">
+                  <tr class="text-[#000000D9] font-semibold border-b border-slate-100">
                     <th class="pb-1.5 text-center font-semibold align-middle border-r border-slate-200 border">Trạng Thái</th>
                     <th class="pb-1.5 text-center w-16 font-semibold text-xs align-middle border-r border-slate-200 border">Room</th>
                     <th class="pb-1.5 text-center w-16 font-semibold text-xs align-middle border-r border-slate-200 border">Pax</th>
                   </tr>
                 </thead>
-                <tbody class="divide-y divide-slate-100 text-slate-700">
+                <tbody class="divide-y divide-slate-100 text-[#000000D9]">
                   <tr class="h-7.5">
-                    <td class="font-semibold border-slate-200">Phòng chưa trả</td>
-                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.pendingCheckoutRooms }}</td>
-                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.pendingCheckoutPax }}</td>
+                    <td class="font-normal text-[#000000D9] border-slate-200">Phòng chưa trả</td>
+                    <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.pendingCheckoutRooms }}</td>
+                    <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.pendingCheckoutPax }}</td>
                   </tr>
                   <tr class="h-7.5">
-                    <td class="font-semibold border-slate-200">Phòng đã trả</td>
-                    <td class="text-center font-bold text-red-500 tabular-nums border-slate-200">{{ roomMapStatistics.checkedOutRooms }}</td>
-                    <td class="text-center font-bold text-red-500 tabular-nums border-slate-200">-</td>
+                    <td class="font-normal text-[#000000D9] border-slate-200">Phòng đã trả</td>
+                    <td class="text-center font-normal text-red-500 tabular-nums border-slate-200">{{ roomMapStatistics.checkedOutRooms }}</td>
+                    <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">-</td>
                   </tr>
                   <tr class="h-7.5">
-                    <td class="font-semibold border-slate-200">Phòng đến</td>
-                    <td class="text-center font-bold text-emerald-600 tabular-nums border-slate-200">{{ roomMapStatistics.arrivalsRooms }}</td>
-                    <td class="text-center font-bold text-emerald-600 tabular-nums border-slate-200">{{ roomMapStatistics.arrivalsPax }}</td>
+                    <td class="font-normal text-[#000000D9] border-slate-200">Phòng đến</td>
+                    <td class="text-center font-normal text-emerald-600 tabular-nums border-slate-200">{{ roomMapStatistics.arrivalsRooms }}</td>
+                    <td class="text-center font-normal text-emerald-600 tabular-nums border-slate-200">{{ roomMapStatistics.arrivalsPax }}</td>
                   </tr>
                   <tr class="h-7.5">
-                    <td class="font-semibold border-slate-200">Phòng đến đã gán phòng</td>
-                    <td class="text-center font-bold text-emerald-600 tabular-nums border-slate-200">{{ roomMapStatistics.assignedArrivalRooms }}</td>
-                    <td class="text-center font-bold text-emerald-600 tabular-nums border-slate-200">{{ roomMapStatistics.assignedArrivalPax }}</td>
+                    <td class="font-normal text-[#000000D9] border-slate-200">Phòng đến đã gán phòng</td>
+                    <td class="text-center font-normal text-emerald-600 tabular-nums border-slate-200">{{ roomMapStatistics.assignedArrivalRooms }}</td>
+                    <td class="text-center font-normal text-emerald-600 tabular-nums border-slate-200">{{ roomMapStatistics.assignedArrivalPax }}</td>
                   </tr>
                   <tr class="h-7.5">
-                    <td class="font-semibold border-slate-200">Phòng đã đến</td>
-                    <td class="text-center font-bold text-slate-800 tabular-nums border-slate-200">{{ roomMapStatistics.checkedInRooms }}</td>
-                    <td class="text-center font-bold text-slate-800 tabular-nums border-slate-200">{{ roomMapStatistics.checkedInPax }}</td>
+                    <td class="font-normal text-[#000000D9] border-slate-200">Phòng đã đến</td>
+                    <td class="text-center font-normal text-[#000000D9] tabular-nums border-slate-200">{{ roomMapStatistics.checkedInRooms }}</td>
+                    <td class="text-center font-normal text-[#000000D9] tabular-nums border-slate-200">{{ roomMapStatistics.checkedInPax }}</td>
                   </tr>
                   <tr class="h-7.5">
-                    <td class="font-semibold text-sky-700 border-slate-200">Phòng đang ở</td>
-                    <td class="text-center font-bold text-sky-700 tabular-nums border-slate-200">{{ roomMapStatistics.occupiedRooms }}</td>
-                    <td class="text-center font-bold text-sky-700 tabular-nums border-slate-200">{{ roomMapStatistics.occupiedPax }}</td>
+                    <td class="font-normal text-sky-700 border-slate-200">Phòng đang ở</td>
+                    <td class="text-center font-normal text-sky-700 tabular-nums border-slate-200">{{ roomMapStatistics.occupiedRooms }}</td>
+                    <td class="text-center font-normal text-sky-700 tabular-nums border-slate-200">{{ roomMapStatistics.occupiedPax }}</td>
                   </tr>
                   <tr class="h-7.5">
-                    <td class="font-semibold border-slate-200">Trả phòng sớm</td>
-                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.earlyCheckoutRooms }}</td>
-                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">-</td>
+                    <td class="font-normal text-[#000000D9] border-slate-200">Trả phòng sớm</td>
+                    <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.earlyCheckoutRooms }}</td>
+                    <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">-</td>
                   </tr>
                   <tr class="h-7.5">
-                    <td class="font-semibold border-slate-200">Phòng ở theo giờ</td>
-                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.hourlyRooms }}</td>
-                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">-</td>
+                    <td class="font-normal text-[#000000D9] border-slate-200">Phòng ở theo giờ</td>
+                    <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.hourlyRooms }}</td>
+                    <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">-</td>
                   </tr>
                   <tr class="h-7.5">
-                    <td class="font-semibold border-slate-200">Đặt phòng trong ngày</td>
-                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.sameDayBookings }}</td>
-                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.arrivalsPax }}</td>
+                    <td class="font-normal text-[#000000D9] border-slate-200">Đặt phòng trong ngày</td>
+                    <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.sameDayBookings }}</td>
+                    <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.arrivalsPax }}</td>
                   </tr>
                   <tr class="h-7.5">
-                    <td class="font-semibold border-slate-200">Khách vãng lai</td>
-                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.walkInRooms }}</td>
-                    <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">-</td>
+                    <td class="font-normal text-[#000000D9] border-slate-200">Khách vãng lai</td>
+                    <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.walkInRooms }}</td>
+                    <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">-</td>
                   </tr>
                 </tbody>
               </table>
@@ -4721,65 +4721,64 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
             <div
               class="bg-white rounded-xl border border-slate-200 p-4 shadow-xs md:col-span-1 flex flex-col justify-between">
               <div>
-                <h4 class="text-slate-900 font-extrabold text-xs mb-3 pb-1.5 border-b border-slate-100">Dự báo cuối ngày
-                </h4>
+                <h4 class="text-sm font-semibold text-[#000000D9] mb-3 pb-1.5 border-b border-slate-100">Dự báo cuối ngày</h4>
                 <table class="w-full text-xs border-collapse">
                   <thead>
-                    <tr class="text-slate-500 font-bold border-b border-slate-100">
+                    <tr class="text-[#000000D9] font-semibold border-b border-slate-100">
                       <th class="pb-1.5 text-center font-semibold align-middle border-r border-slate-200 border">Dự Báo</th>
                       <th class="pb-1.5 text-center w-14 font-semibold text-xs align-middle border-r border-slate-200 border">Room</th>
                       <th class="pb-1.5 text-center w-14 font-semibold text-xs align-middle border-r border-slate-200 border">Pax</th>
                       <th class="pb-1.5 text-center w-16 font-semibold text-xs align-middle border-r border-slate-200 border">%</th>
                     </tr>
                   </thead>
-                  <tbody class="divide-y divide-slate-100 text-slate-700">
+                  <tbody class="divide-y divide-slate-100 text-[#000000D9]">
                     <tr class="h-7">
-                      <td class="font-semibold border-slate-200">Khách lẻ</td>
-                      <td class="text-center font-bold tabular-nums border-slate-200">{{ roomMapStatistics.retailRooms }}</td>
-                      <td class="text-center font-bold tabular-nums border-slate-200">{{ roomMapStatistics.retailPax }}</td>
-                      <td class="text-center font-bold text-slate-400 border-slate-200">-</td>
+                      <td class="font-normal text-[#000000D9] border-slate-200">Khách lẻ</td>
+                      <td class="text-center font-normal tabular-nums border-slate-200">{{ roomMapStatistics.retailRooms }}</td>
+                      <td class="text-center font-normal tabular-nums border-slate-200">{{ roomMapStatistics.retailPax }}</td>
+                      <td class="text-center font-normal text-slate-400 border-slate-200">-</td>
                     </tr>
                     <tr class="h-7">
-                      <td class="font-semibold border-slate-200">Khách đoàn</td>
-                      <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.groupRooms }}</td>
-                      <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.groupPax }}</td>
-                      <td class="text-center font-bold text-slate-400 border-slate-200">-</td>
+                      <td class="font-normal text-[#000000D9] border-slate-200">Khách đoàn</td>
+                      <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.groupRooms }}</td>
+                      <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.groupPax }}</td>
+                      <td class="text-center font-normal text-slate-400 border-slate-200">-</td>
                     </tr>
                     <tr class="h-7">
-                      <td class="font-semibold border-slate-200">Phòng ở (ko b/g COMP.HU)</td>
-                      <td class="text-center font-bold tabular-nums border-slate-200">{{ roomMapStatistics.chargeableRooms }}</td>
-                      <td class="text-center font-bold tabular-nums border-slate-200">{{ roomMapStatistics.chargeablePax }}</td>
-                      <td class="text-center font-bold text-sky-600 tabular-nums border-slate-200">{{ roomMapStatistics.occupancyRate }}%</td>
+                      <td class="font-normal text-[#000000D9] border-slate-200">Phòng ở (ko b/g COMP.HU)</td>
+                      <td class="text-center font-normal tabular-nums border-slate-200">{{ roomMapStatistics.chargeableRooms }}</td>
+                      <td class="text-center font-normal tabular-nums border-slate-200">{{ roomMapStatistics.chargeablePax }}</td>
+                      <td class="text-center font-normal text-sky-600 tabular-nums border-slate-200">{{ roomMapStatistics.occupancyRate }}%</td>
                     </tr>
                     <tr class="h-7">
-                      <td class="font-semibold border-slate-200">Phòng COMP</td>
-                      <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.compRooms }}</td>
-                      <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.compPax }}</td>
-                      <td class="text-center font-bold text-slate-400 border-slate-200">-</td>
+                      <td class="font-normal text-[#000000D9] border-slate-200">Phòng COMP</td>
+                      <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.compRooms }}</td>
+                      <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.compPax }}</td>
+                      <td class="text-center font-normal text-slate-400 border-slate-200">-</td>
                     </tr>
                     <tr class="h-7">
-                      <td class="font-semibold border-slate-200">Phòng ở (ko b/g HU)</td>
-                      <td class="text-center font-bold tabular-nums border-slate-200">{{ roomMapStatistics.chargeableRooms + roomMapStatistics.compRooms }}</td>
-                      <td class="text-center font-bold tabular-nums border-slate-200">{{ roomMapStatistics.chargeablePax + roomMapStatistics.compPax }}</td>
-                      <td class="text-center font-bold text-sky-600 tabular-nums border-slate-200">{{ roomMapStatistics.occupancyRate }}%</td>
+                      <td class="font-normal text-[#000000D9] border-slate-200">Phòng ở (ko b/g HU)</td>
+                      <td class="text-center font-normal tabular-nums border-slate-200">{{ roomMapStatistics.chargeableRooms + roomMapStatistics.compRooms }}</td>
+                      <td class="text-center font-normal tabular-nums border-slate-200">{{ roomMapStatistics.chargeablePax + roomMapStatistics.compPax }}</td>
+                      <td class="text-center font-normal text-sky-600 tabular-nums border-slate-200">{{ roomMapStatistics.occupancyRate }}%</td>
                     </tr>
                     <tr class="h-7">
-                      <td class="font-semibold border-slate-200">Phòng nội bộ</td>
-                      <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.internalRooms }}</td>
-                      <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.internalPax }}</td>
-                      <td class="text-center font-bold text-slate-400 border-slate-200">-</td>
+                      <td class="font-normal text-[#000000D9] border-slate-200">Phòng nội bộ</td>
+                      <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.internalRooms }}</td>
+                      <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.internalPax }}</td>
+                      <td class="text-center font-normal text-slate-400 border-slate-200">-</td>
                     </tr>
                     <tr class="h-7">
-                      <td class="font-semibold text-blue-700 border-slate-200">Phòng ở</td>
-                      <td class="text-center font-bold text-blue-700 tabular-nums border-slate-200">{{ roomMapStatistics.endOfDayRooms }}</td>
-                      <td class="text-center font-bold text-blue-700 tabular-nums border-slate-200">{{ roomMapStatistics.endOfDayPax }}</td>
-                      <td class="text-center font-bold text-blue-700 tabular-nums border-slate-200">{{ roomMapStatistics.occupancyRate }}%</td>
+                      <td class="font-normal text-blue-700 border-slate-200">Phòng ở</td>
+                      <td class="text-center font-normal text-blue-700 tabular-nums border-slate-200">{{ roomMapStatistics.endOfDayRooms }}</td>
+                      <td class="text-center font-normal text-blue-700 tabular-nums border-slate-200">{{ roomMapStatistics.endOfDayPax }}</td>
+                      <td class="text-center font-normal text-blue-700 tabular-nums border-slate-200">{{ roomMapStatistics.occupancyRate }}%</td>
                     </tr>
                     <tr class="h-7">
-                      <td class="font-semibold text-red-500 border-slate-200">Phòng trống</td>
-                      <td class="text-center font-bold text-red-500 tabular-nums border-slate-200">{{ roomMapStatistics.vacantRooms }}</td>
-                      <td class="text-center font-bold text-slate-400 tabular-nums border-slate-200">-</td>
-                      <td class="text-center font-bold text-slate-400 border-slate-200">-</td>
+                      <td class="font-normal text-red-500 border-slate-200">Phòng trống</td>
+                      <td class="text-center font-normal text-red-500 tabular-nums border-slate-200">{{ roomMapStatistics.vacantRooms }}</td>
+                      <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">-</td>
+                      <td class="text-center font-normal text-slate-400 border-slate-200">-</td>
                     </tr>
                   </tbody>
                 </table>
@@ -4787,19 +4786,19 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
               <!-- Forecast Sub-section -->
               <div
-                class="mt-4 pt-3.5 border-t border-slate-200 text-xs text-slate-700 flex flex-col gap-2 bg-slate-50 p-3 rounded-lg border">
-                <h5 class="font-bold text-slate-900 mb-1 select-none">Dự báo</h5>
+                class="mt-4 pt-3.5 border-t border-slate-200 text-xs text-[#000000D9] flex flex-col gap-2 bg-slate-50 p-3 rounded-lg border">
+                <h5 class="text-[13px] font-semibold text-[#000000D9] mb-1.5 select-none">Dự báo</h5>
                 <div class="flex items-center justify-between">
-                  <span class="font-semibold">Doanh thu</span>
-                  <span class="w-[120px] text-center font-bold text-emerald-600">{{ formatVnd(roomMapStatistics.projectedRevenue) }}</span>
+                  <span class="font-normal text-[#000000D9]">Doanh thu</span>
+                  <span class="w-[120px] text-center font-normal text-emerald-600">{{ formatVnd(roomMapStatistics.projectedRevenue) }}</span>
                 </div>
                 <div class="flex items-center justify-between">
-                  <span class="font-semibold">Giá phòng trung bình (ko b/g HU)</span>
-                  <span class="w-[120px] text-center font-bold text-slate-800">{{ formatVnd(roomMapStatistics.averageRate) }}</span>
+                  <span class="font-normal text-[#000000D9]">Giá phòng trung bình (ko b/g HU)</span>
+                  <span class="w-[120px] text-center font-normal text-[#000000D9]">{{ formatVnd(roomMapStatistics.averageRate) }}</span>
                 </div>
                 <div class="flex items-center justify-between">
-                  <span class="font-semibold">DT bình quân/ Tổng phòng có thể bán</span>
-                  <span class="w-[120px] text-center font-bold text-slate-800">{{ formatVnd(roomMapStatistics.revenuePerSaleableRoom) }}</span>
+                  <span class="font-normal text-[#000000D9]">DT bình quân/ Tổng phòng có thể bán</span>
+                  <span class="w-[120px] text-center font-normal text-[#000000D9]">{{ formatVnd(roomMapStatistics.revenuePerSaleableRoom) }}</span>
                 </div>
               </div>
             </div>

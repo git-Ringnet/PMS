@@ -59,25 +59,6 @@
           </span>
         </div>
 
-        <!-- Warn if Checked-In rooms limit edits -->
-        <div 
-          v-if="hasCheckedInRoom" 
-          class="bg-amber-50 border border-amber-200 text-amber-850 p-2.5 rounded-lg flex items-start gap-2"
-        >
-          <i class="fa-solid fa-circle-info text-amber-500 mt-0.5 shrink-0"></i>
-          <div>
-            <strong>Lưu ý:</strong> Danh sách chọn chứa phòng đang lưu trú (Inhouse). Theo quy định:
-            <ul class="list-disc pl-4 mt-1 space-y-0.5">
-              <li>Không được chỉnh sửa ngày đến và giờ đến.</li>
-              <li v-if="allowSaleInhouseRateDeparture">
-                Cấu hình <span class="font-mono font-bold">AllowReserUpdateRate_DeptDateRoomInhouse = 1</span>: Cho phép điều chỉnh Ngày đi, Giờ đi và Giá phòng.
-              </li>
-              <li v-else class="text-red-700 font-semibold">
-                Cấu hình <span class="font-mono font-bold">AllowReserUpdateRate_DeptDateRoomInhouse = 0</span>: Không được phép điều chỉnh Ngày đi, Giờ đi và Giá phòng.
-              </li>
-            </ul>
-          </div>
-        </div>
 
         <!-- Form fields layout -->
         <div class="grid grid-cols-2 gap-4">
@@ -98,13 +79,48 @@
           <!-- Arrival Time -->
           <div>
             <label class="block text-slate-600 mb-1 font-bold">Giờ đến</label>
-            <div class="relative flex items-center">
+            <div 
+              class="w-full flex items-center justify-between px-2.5 h-9 border rounded-lg text-xs bg-white transition-colors border-slate-300 shadow-2xs"
+              :class="[
+                isArrivalDisabled 
+                  ? 'bg-slate-100 opacity-60 cursor-not-allowed' 
+                  : 'hover:border-sky-400 focus-within:border-sky-500 focus-within:ring-1 focus-within:ring-sky-500 cursor-pointer'
+              ]"
+              @click="arrivalTimeInputRef?.focus()"
+            >
               <input 
+                ref="arrivalTimeInputRef"
                 type="time" 
                 v-model="form.arrival_time" 
                 :disabled="isArrivalDisabled"
-                class="w-full border rounded-lg h-9 px-3 text-xs focus:outline-none transition-colors border-slate-300 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed text-center font-semibold cursor-pointer"
+                class="time-clean-input flex-1 min-w-0 bg-transparent border-none outline-none text-xs font-semibold text-gray-900 p-0 cursor-pointer disabled:cursor-not-allowed disabled:text-slate-400"
               />
+              <div class="flex items-center shrink-0 ml-1 space-x-1">
+                <button 
+                  v-if="!isArrivalDisabled && form.arrival_time" 
+                  type="button" 
+                  @click.stop="form.arrival_time = ''" 
+                  class="p-0.5 text-slate-400 hover:text-slate-600 shrink-0 bg-transparent border-none cursor-pointer flex items-center justify-center transition-colors select-none"
+                  title="Xóa giờ đến"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+                <button 
+                  type="button" 
+                  :disabled="isArrivalDisabled"
+                  @click.stop="openArrivalTimePicker" 
+                  class="p-0.5 text-slate-400 hover:text-sky-600 shrink-0 bg-transparent border-none cursor-pointer flex items-center justify-center transition-colors select-none"
+                  :class="isArrivalDisabled ? 'cursor-not-allowed' : ''"
+                  title="Chọn giờ đến"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="10" />
+                    <polyline points="12 6 12 12 16 14" />
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -125,27 +141,75 @@
           <!-- Departure Time -->
           <div>
             <label class="block text-slate-600 mb-1 font-bold">Giờ đi</label>
-            <div class="relative flex items-center">
+            <div 
+              class="w-full flex items-center justify-between px-2.5 h-9 border rounded-lg text-xs bg-white transition-colors border-slate-300 shadow-2xs"
+              :class="[
+                isDepartureDisabled 
+                  ? 'bg-slate-100 opacity-60 cursor-not-allowed' 
+                  : 'hover:border-sky-400 focus-within:border-sky-500 focus-within:ring-1 focus-within:ring-sky-500 cursor-pointer'
+              ]"
+              @click="departureTimeInputRef?.focus()"
+            >
               <input 
+                ref="departureTimeInputRef"
                 type="time" 
                 v-model="form.departure_time" 
                 :disabled="isDepartureDisabled"
-                class="w-full border rounded-lg h-9 px-3 text-xs focus:outline-none transition-colors border-slate-300 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed text-center font-semibold cursor-pointer"
+                class="time-clean-input flex-1 min-w-0 bg-transparent border-none outline-none text-xs font-semibold text-gray-900 p-0 cursor-pointer disabled:cursor-not-allowed disabled:text-slate-400"
               />
+              <div class="flex items-center shrink-0 ml-1 space-x-1">
+                <button 
+                  v-if="!isDepartureDisabled && form.departure_time" 
+                  type="button" 
+                  @click.stop="form.departure_time = ''" 
+                  class="p-0.5 text-slate-400 hover:text-slate-600 shrink-0 bg-transparent border-none cursor-pointer flex items-center justify-center transition-colors select-none"
+                  title="Xóa giờ đi"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+                <button 
+                  type="button" 
+                  :disabled="isDepartureDisabled"
+                  @click.stop="openDepartureTimePicker" 
+                  class="p-0.5 text-slate-400 hover:text-sky-600 shrink-0 bg-transparent border-none cursor-pointer flex items-center justify-center transition-colors select-none"
+                  :class="isDepartureDisabled ? 'cursor-not-allowed' : ''"
+                  title="Chọn giờ đi"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="10" />
+                    <polyline points="12 6 12 12 16 14" />
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
 
           <!-- Rate -->
           <div>
             <label class="block text-slate-600 mb-1 font-semibold text-xs">Giá</label>
-            <input 
-              type="text" 
-              placeholder="Để trống nếu không đổi"
-              :disabled="isRateDisabled"
-              :value="formatCurrencyInput(form.rate)"
-              @input="e => form.rate = cleanCurrencyValue(e.target.value)"
-              class="w-full border rounded-lg h-9 px-3 text-xs focus:outline-none transition-colors border-slate-300 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed text-right font-medium text-slate-800"
-            />
+            <div class="relative flex items-center">
+              <input 
+                type="text" 
+                :disabled="isRateDisabled"
+                :value="formatCurrencyInput(form.rate)"
+                @input="e => form.rate = cleanCurrencyValue(e.target.value)"
+                :class="[!isRateDisabled && form.rate !== '' && form.rate !== null && form.rate !== undefined ? 'pr-8' : '']"
+                class="w-full border rounded-lg h-9 px-3 text-xs focus:outline-none transition-colors border-slate-300 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed text-right font-medium text-slate-800"
+              />
+              <button 
+                v-if="!isRateDisabled && form.rate !== '' && form.rate !== null && form.rate !== undefined" 
+                type="button" 
+                @click.stop="form.rate = ''" 
+                class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0.5 flex items-center justify-center z-10 select-none"
+                title="Xóa giá"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
 
           <!-- Occupants (Adults / Children) -->
@@ -153,23 +217,51 @@
             <div class="grid grid-cols-2 gap-2">
               <div>
                 <label class="block text-slate-600 mb-1 font-semibold text-xs">Người lớn</label>
-                <input 
-                  type="number" 
-                  v-model.number="form.adults"
-                  min="1"
-                  :disabled="isOccupantsDisabled"
-                  class="w-full border rounded-lg h-9 px-3 text-xs focus:outline-none transition-colors border-slate-300 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed text-center"
-                />
+                <div class="relative flex items-center">
+                  <input 
+                    type="number" 
+                    v-model.number="form.adults"
+                    min="1"
+                    :disabled="isOccupantsDisabled"
+                    :class="[!isOccupantsDisabled && form.adults !== '' && form.adults !== null ? 'pr-7' : '']"
+                    class="w-full border rounded-lg h-9 px-3 text-xs focus:outline-none transition-colors border-slate-300 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                  <button 
+                    v-if="!isOccupantsDisabled && form.adults !== '' && form.adults !== null" 
+                    type="button" 
+                    @click.stop="form.adults = ''" 
+                    class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0.5 flex items-center justify-center z-10 select-none"
+                    title="Xóa người lớn"
+                  >
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
               </div>
               <div>
                 <label class="block text-slate-600 mb-1 font-semibold text-xs">Trẻ em</label>
-                <input 
-                  type="number" 
-                  v-model.number="form.children_qty"
-                  min="0"
-                  :disabled="isOccupantsDisabled"
-                  class="w-full border rounded-lg h-9 px-3 text-xs focus:outline-none transition-colors border-slate-300 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed text-center"
-                />
+                <div class="relative flex items-center">
+                  <input 
+                    type="number" 
+                    v-model.number="form.children_qty"
+                    min="0"
+                    :disabled="isOccupantsDisabled"
+                    :class="[!isOccupantsDisabled && form.children_qty !== '' && form.children_qty !== null ? 'pr-7' : '']"
+                    class="w-full border rounded-lg h-9 px-3 text-xs focus:outline-none transition-colors border-slate-300 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                  <button 
+                    v-if="!isOccupantsDisabled && form.children_qty !== '' && form.children_qty !== null" 
+                    type="button" 
+                    @click.stop="form.children_qty = ''" 
+                    class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0.5 flex items-center justify-center z-10 select-none"
+                    title="Xóa trẻ em"
+                  >
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -177,25 +269,53 @@
           <!-- Extra Bed Qty -->
           <div>
             <label class="block text-slate-600 mb-1 font-semibold text-xs">Thêm giường</label>
-            <input 
-              type="number" 
-              v-model.number="form.extra_bed_qty"
-              min="0"
-              :disabled="isExtraBedDisabled"
-              class="w-full border rounded-lg h-9 px-3 text-xs focus:outline-none transition-colors border-slate-300 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed text-center"
-            />
+            <div class="relative flex items-center">
+              <input 
+                type="number" 
+                v-model.number="form.extra_bed_qty"
+                min="0"
+                :disabled="isExtraBedDisabled"
+                :class="[!isExtraBedDisabled && form.extra_bed_qty !== '' && form.extra_bed_qty !== null ? 'pr-7' : '']"
+                class="w-full border rounded-lg h-9 px-3 text-xs focus:outline-none transition-colors border-slate-300 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+              />
+              <button 
+                v-if="!isExtraBedDisabled && form.extra_bed_qty !== '' && form.extra_bed_qty !== null" 
+                type="button" 
+                @click.stop="form.extra_bed_qty = ''" 
+                class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0.5 flex items-center justify-center z-10 select-none"
+                title="Xóa số lượng thêm giường"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
 
           <!-- Extra Bed Price -->
           <div>
             <label class="block text-slate-600 mb-1 font-semibold text-xs">Giá thêm giường</label>
-            <input 
-              type="text" 
-              :value="formatCurrencyInput(form.extra_bed_rate)"
-              @input="e => form.extra_bed_rate = cleanCurrencyValue(e.target.value)"
-              :disabled="isExtraBedDisabled"
-              class="w-full border rounded-lg h-9 px-3 text-xs focus:outline-none transition-colors border-slate-300 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed text-right font-medium text-slate-800"
-            />
+            <div class="relative flex items-center">
+              <input 
+                type="text" 
+                :value="formatCurrencyInput(form.extra_bed_rate)"
+                @input="e => form.extra_bed_rate = cleanCurrencyValue(e.target.value)"
+                :disabled="isExtraBedDisabled"
+                :class="[!isExtraBedDisabled && form.extra_bed_rate !== '' && form.extra_bed_rate !== null && form.extra_bed_rate !== undefined ? 'pr-8' : '']"
+                class="w-full border rounded-lg h-9 px-3 text-xs focus:outline-none transition-colors border-slate-300 focus:border-sky-500 focus:ring-1 focus:ring-sky-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed text-right font-medium text-slate-800"
+              />
+              <button 
+                v-if="!isExtraBedDisabled && form.extra_bed_rate !== '' && form.extra_bed_rate !== null && form.extra_bed_rate !== undefined" 
+                type="button" 
+                @click.stop="form.extra_bed_rate = ''" 
+                class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0.5 flex items-center justify-center z-10 select-none"
+                title="Xóa giá thêm giường"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -243,6 +363,27 @@ const topbarThemeBg = computed(() => {
 
 // ==================== STATE DECLARATIONS ====================
 const isSaving = ref(false)
+const arrivalTimeInputRef = ref(null)
+const departureTimeInputRef = ref(null)
+
+function openArrivalTimePicker() {
+  if (isArrivalDisabled.value) return
+  try {
+    arrivalTimeInputRef.value?.showPicker()
+  } catch (e) {
+    arrivalTimeInputRef.value?.focus()
+  }
+}
+
+function openDepartureTimePicker() {
+  if (isDepartureDisabled.value) return
+  try {
+    departureTimeInputRef.value?.showPicker()
+  } catch (e) {
+    departureTimeInputRef.value?.focus()
+  }
+}
+
 const form = ref({
   arrival_date: '',
   arrival_time: '',
@@ -503,3 +644,10 @@ async function submitSave() {
   }
 }
 </script>
+
+<style scoped>
+.time-clean-input::-webkit-calendar-picker-indicator {
+  display: none !important;
+  -webkit-appearance: none;
+}
+</style>

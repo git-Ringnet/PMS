@@ -279,7 +279,7 @@ class BookingController extends Controller
             });
         }
 
-        // Filter theo tên đăng ký hoặc ID (mã BK)
+        // Filter theo tên đăng ký hoặc ID (mã BK) - tìm kiếm tương đối
         if ($request->search) {
             $search = trim((string) $request->search);
             $query->where(function ($q) use ($search) {
@@ -287,16 +287,28 @@ class BookingController extends Controller
 
                 $q->where('booking_name', 'like', $like)
                     ->orWhere('contact_name', 'like', $like)
+                    ->orWhere('contact_phone', 'like', $like)
                     ->orWhere('external_booking_code', 'like', $like)
-                    ->orWhereHas('company', function ($companyQuery) use ($like) {
-                        $companyQuery->where('name', 'like', $like)
-                            ->orWhere('code', 'like', $like);
+                    ->orWhere('id', 'like', $like)
+                    ->orWhereHas('company', function ($companyQuery) use ($like, $search) {
+                        $companyQuery->where('name', 'like', $like);
+                        if (!ctype_digit($search) || strlen($search) >= 2) {
+                            $companyQuery->orWhere('code', 'like', $like);
+                        }
                     });
 
-                // booking_code lÃ  accessor (vÃ­ dá»¥ GAL4), nÃªn tra pháº§n sá»‘ vÃ o id.
+                // booking_code là accessor (ví dụ GAL4), tra phần số vào id theo giá trị tương đối (LIKE)
                 $cleanId = preg_replace('/[^0-9]/', '', $search);
                 if ($cleanId !== '') {
-                    $q->orWhere('id', $cleanId);
+                    $q->orWhere('id', 'like', '%' . $cleanId . '%');
+                }
+
+                // Nếu chuỗi tìm kiếm khớp tiền tố mã booking (ví dụ GAL, gal)
+                $setting = \App\Models\HotelSetting::first();
+                $prefix = strtoupper($setting?->prefix_booking_id ?? 'GAL');
+                $searchUpper = strtoupper($search);
+                if ($searchUpper === $prefix || (strlen($searchUpper) >= 2 && stripos($prefix, $searchUpper) === 0)) {
+                    $q->orWhereNotNull('id');
                 }
             });
         }

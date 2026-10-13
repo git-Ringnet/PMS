@@ -10,7 +10,200 @@
 
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 
-- **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
+## [2026-10-12] - Cập Nhật Booking: Nút Xóa (x) Clear Ô Nhập Liệu & Bỏ Ghi Chú Lưu Ý, Bỏ Gợi Ý Ô Giá (QuickUpdateModal.vue)
+### Module: Đặt phòng / Phiếu đăng ký (Reservation / QuickUpdateModal)
+- **Mục tiêu**:
+  - Bổ sung nút xóa nhanh `x` (clear button) cho tất cả các ô nhập liệu trong modal Cập nhật (`QuickUpdateModal.vue`) khi ô có dữ liệu.
+  - Bỏ phần ghi chú "Lưu ý" (cảnh báo phòng Inhouse) trong modal Cập nhật.
+  - Bỏ gợi ý (placeholder "Để trống nếu không đổi") trong ô Giá của modal Cập nhật.
+- **Chi tiết triển khai**:
+  - **Bổ sung nút xóa `x` cho tất cả các ô nhập liệu ([QuickUpdateModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/QuickUpdateModal.vue))**:
+    - Ô `Giờ đến` (`form.arrival_time`) & `Giờ đi` (`form.departure_time`): Tách biệt hoàn toàn nút xóa `x` và icon đồng hồ trong flex container (`space-x-1`), ẩn `::-webkit-calendar-picker-indicator` native của trình duyệt để triệt tiêu hiện tượng icon đồng hồ và nút `x` bị chèn đè lên nhau. Bấm nút `x` để clear giờ về rỗng, bấm icon đồng hồ để mở popup chọn giờ thông qua `input.showPicker()`.
+    - Ô `Giá` (`form.rate`): Nút `x` ở `right-2.5`, padding `pr-8` khi có giá trị, click clear về `''`.
+    - Ô `Người lớn` (`form.adults`) & `Trẻ em` (`form.children_qty`): Ẩn spinner up/down mặc định của browser (`[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`), nút `x` ở `right-2`, padding `pr-7` khi có giá trị, click clear về `''`.
+    - Ô `Thêm giường` (`form.extra_bed_qty`): Ẩn spinner up/down, nút `x` ở `right-2.5`, padding `pr-7`, click clear về `''`.
+    - Ô `Giá thêm giường` (`form.extra_bed_rate`): Nút `x` ở `right-2.5`, padding `pr-8`, click clear về `''`.
+    - Ô `Ngày nhận phòng` & `Ngày trả phòng`: Dùng `SingleDatePicker.vue` đã tích hợp sẵn nút `x` xóa ngày chuẩn hệ thống.
+    - Nút `x` dùng icon SVG chéo (`M6 18L18 6M6 6l12 12`), màu `text-slate-400 hover:text-slate-600`, chỉ hiển thị khi ô có dữ liệu và không bị disabled.
+  - **Loại bỏ khối cảnh báo "Lưu ý" ([QuickUpdateModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/QuickUpdateModal.vue))**:
+    - Xóa bỏ hoàn toàn khối `div` `hasCheckedInRoom` chứa ghi chú "Lưu ý: Danh sách chọn chứa phòng đang lưu trú (Inhouse)..." giúp giao diện gọn gàng, tinh tế.
+  - **Loại bỏ gợi ý ô Giá ([QuickUpdateModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/QuickUpdateModal.vue))**:
+    - Bỏ thuộc tính `placeholder="Để trống nếu không đổi"` tại ô input Giá (`form.rate`), đồng bộ phong cách với các ô số khác trong modal.
+  - **An toàn hệ thống**: Component chỉ phục vụ modal Cập nhật của `CreateRegistrationPage.vue`, 0 ảnh hưởng các màn hình và logic khác.
+- **Kiểm thử**:
+  - `npm run build` thành công 100% (5.35s), 0 lỗi.
+
+
+## [2026-10-12] - Tối Ưu Danh Mục Chức Năng: Sticky Header, Ẩn Scrollbar Khi Thu Gọn & Co Giãn Bằng Dòng Tổng Tiền (CreateRegistrationPage.vue & CreateRegistrationPage.css)
+### Module: Đặt phòng / Phiếu đăng ký (Reservation / CreateRegistrationPage)
+- **Mục tiêu**:
+  - Khắc phục hiện tượng menu danh mục chức năng (Action Dock - sidebar "CHỨC NĂNG" bên phải) bị thu nhỏ / cụt lửng phía trên.
+  - Kéo giãn chiều cao dock xuống dưới chạm đáy ngang bằng với dòng tổng tiền của booking (`.page-footer`).
+  - Khắc phục lỗi khi thu nhỏ cửa sổ trình duyệt: tiêu đề "CHỨC NĂNG" bị cuộn biến mất và thanh cuộn xám đè chiếm diện tích, làm icon bị lệch / co rúm lại.
+- **Chi tiết triển khai**:
+  - **Cố định Header "CHỨC NĂNG" ([CreateRegistrationPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))**:
+    - Bổ sung container `<div class="dock-body">` bọc toàn bộ các nhóm chức năng bên dưới.
+    - Cố định tiêu đề `.dock-head` trên cùng (`flex-shrink: 0`), không bao giờ bị cuộn trôi mất dù cuộn danh sách chức năng bên dưới.
+  - **Giãn dock chạm đáy & Xử lý scrollbar tinh tế ([CreateRegistrationPage.css](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/CreateRegistrationPage.css))**:
+    - `.dock`: Chuyển sang `align-self: stretch`, `min-height: 0`, `display: flex; flex-direction: column; overflow: hidden`.
+    - Cập nhật lề `margin: 14px 16px 14px 0`:
+      - Top margin `14px`: Khớp chuẩn mép trên bảng phòng (`.table-wrap` `margin-top: 14px`).
+      - Bottom margin `14px`: Chạm đáy ngang bằng chuẩn với dòng tổng tiền booking (`.page-footer` `margin-bottom: 14px`).
+    - Bỏ giới hạn cứng `max-height: calc(100vh - 165px)` và bo góc đồng bộ `border-radius: 8px` chuẩn card FE Design System.
+    - **Thanh cuộn thông minh**:
+      - Khi thu nhỏ (collapsed, width 52px): Ẩn hoàn toàn scrollbar (`scrollbar-width: none`), icon luôn căn giữa 100%, không bị thanh cuộn chèn ép hay làm méo dock.
+      - Khi hover mở rộng (expanded): Hiển thị thanh cuộn mỏng 4px mờ màu theme (`rgba(255, 255, 255, 0.25)`), triệt tiêu hoàn toàn thanh cuộn xám native của trình duyệt.
+    - **Tối ưu Compact Spacing khi chiều cao cửa sổ nhỏ**:
+      - Màn hình <= 820px: Giảm padding group, đặt `dock-item` height 30px.
+      - Màn hình <= 720px: Giảm padding group, đặt `dock-item` height 28px.
+      - Font chữ giữ nguyên 12px chuẩn FE Design System, không bị biến dạng.
+    - Chỉ chỉnh sửa trong phạm vi CreateRegistrationPage, 0 ảnh hưởng các màn hình khác.
+- **Kiểm thử**:
+  - `npm run build` thành công 100% (5.67s), 0 lỗi.
+
+## [2026-10-12] - Ô Tìm Kiếm Nền Trắng, Tìm Kiếm Tương Đối & Chi Tiết Phòng (CreateRegistrationPage.vue & BookingController.php)
+### Module: Đặt phòng / Phiếu đăng ký (Reservation / CreateRegistrationPage) & Booking API
+- **Mục tiêu**: Hoàn thành toàn diện các yêu cầu nghiệp vụ và giao diện cho phần tìm kiếm và chi tiết phòng:
+  - Nền cho ô tìm kiếm toàn hệ thống chuyển sang nền trắng `#ffffff`, hiển thị kết quả theo giá trị tương đối (`LIKE '%...%'`).
+  - Đảm bảo triển khai an toàn, bảo toàn 100% logic và giao diện các màn hình/tính năng khác.
+  - Bổ sung mũi tên sắp xếp tăng/giảm theo Ngày đến, Ngày đi và Số phòng (sắp xếp in-memory, không lưu cố định theo user).
+  - Mở rộng 2 cột thông tin `Loại phòng` (190px) và `Dạng phòng` (130px).
+  - Bảng dịch vụ chi tiết từng đêm: đổi font style và cỡ chữ chuẩn FE Design System (Roboto 12px `text-xs`, tiêu đề cột `font-semibold text-[#000000D9]`, dữ liệu ô `font-normal text-[#000000D9]`).
+  - Fix các dòng giá 0 đồng khi click vào không bị xóa trắng mà giữ nguyên giá trị `0` đồng thời bôi đen để nhập đè.
+  - Cột Ngày đến, Ngày đi hiển thị định dạng `dd/mm/yyyy` và mở cho phép gõ tay bằng `SingleDatePicker`.
+  - Điều chỉnh màu chữ các tiêu đề trên phần thông tin của đăng ký (summary bar) về `#000000D9` semi-bold (600).
+- **Chi tiết triển khai**:
+  - **Ô tìm kiếm nền trắng & Chuẩn FE Design System**:
+    - Ô tìm kiếm toàn hệ thống trên header ([CreateRegistrationPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue) & [CreateRegistrationPage.css](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/CreateRegistrationPage.css)): Đặt nền trắng tinh `#ffffff` (`bg-white` / `background: #ffffff !important`), chiều cao chuẩn `h-8` (32px), bo góc `rounded-full` (20px), viền `#cbd5e1`, placeholder `#A8B0BF`, màu chữ `#000000D9`.
+    - Popup kết quả tìm kiếm ([SystemSearchModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/SystemSearchModal.vue)): Thêm debounce 250ms chống spam gọi API khi gõ; giữ bảng kết quả tinh gọn với Tên đăng ký & Công ty/Người liên hệ (đã bỏ badge các phòng theo phản hồi người dùng).
+  - **Hiển thị kết quả theo giá trị tương đối ([BookingController.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Http/Controllers/Api/BookingController.php))**:
+    - Tại hàm `index`, nâng cấp tìm kiếm tương đối khi có `$request->search`:
+      - Tìm kiếm mã ĐK theo giá trị tương đối (`id LIKE '%...%'`).
+      - Tìm kiếm theo tiền tố mã booking (ví dụ: `GAL`, `gal`).
+      - Tìm kiếm theo SĐT người liên hệ (`contact_phone`).
+      - Tìm kiếm theo tên đăng ký (`booking_name`), tên liên hệ (`contact_name`), mã tham chiếu (`external_booking_code`), công ty (`company.name`, `company.code`).
+      - Không tìm kiếm theo bảng phòng (`bookingRooms`) và khách (`guests`) để kết quả trả về khớp chính xác với thông tin hiển thị trên bảng, tránh trường hợp tìm `5` bị ra `GAL1` do có phòng `105`.
+      - Chặn không cho số đơn lẻ (`1`, `2`...) khớp nhầm với mã công ty zero-padded (`CTY0001`).
+    - Bảo toàn 100% logic khi không có `$request->search`, không ảnh hưởng tới bất kỳ màn hình hay API nào khác.
+  - **Sắp xếp in-memory**:
+    - Header bảng `th` cột `checkIn`, `checkOut` và `roomNumber` gắn icon mũi tên sắp xếp tăng / giảm trực quan; hỗ trợ toggle sort asc/desc/none.
+    - Sắp xếp số phòng theo alphanumeric tự nhiên (`localeCompare({ numeric: true })`), sắp xếp ngày đến/đi theo chuỗi ngày ISO.
+  - **Độ rộng cột**:
+    - Nâng width `type` lên `w-[190px]`, `shape` lên `w-[130px]`, `checkIn`/`checkOut` lên `w-[110px]`.
+  - **SingleDatePicker cho cột ngày trong bảng**:
+    - Thay thế `<input type="date">` bằng `SingleDatePicker` ở cả 2 nhánh MODE A & MODE B, hỗ trợ nhập tay `dd/mm/yyyy`, tự động nhảy `/`, chặn tháng > 12.
+  - **Giữ nguyên giá trị 0 đồng khi focus**:
+    - Thay `@focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"` thành `@focus="e.target.select()"` tại tất cả các ô nhập giá (`price`, `extraBedPrice`, `discountValue`, `service rate`).
+  - **Đồng bộ Typography & Màu chữ**:
+    - Thanh thông tin đăng ký (`summary-bar`): các nhãn chuyển sang `#000000D9` `font-semibold` (600), giá trị `#000000D9`.
+    - Bảng dịch vụ từng đêm (cả MODE A & MODE B): thead `text-xs font-semibold text-[#000000D9]`, ô dữ liệu `text-xs font-normal text-[#000000D9]`.
+- **Kiểm thử**:
+  - `npm run build` thành công 100% (6.90s), 0 lỗi.
+  - Kiểm thử trực tiếp API `BookingController::index` với các truy vấn tương đối: số phòng (`109`), chuỗi số trong mã (`1`), tiền tố mã (`GAL`), tên booking (`Walkin`), truy vấn bình thường không truyền search (bảo toàn nguyên vẹn 100% dữ liệu).
+
+## [2026-10-12] - Danh sách phòng đến/đi/ở (CheckInPage.vue) & Modal Công suất (RoomMapPage.vue) - Dòng 22 Note 12/10
+### Module: Đặt phòng / CheckInPage & Sơ đồ phòng / Thống kê Công suất
+- **Mục tiêu**: Thực hiện chính xác yêu cầu tại Dòng 22 Sheet FIX FE (Bổ sung ngày 12/10):
+  - Danh sách phòng đến/đi/ở: Đưa màu chữ thông tin đăng ký và phòng về màu đen `#000000D9`, thông tin đăng ký chuyển từ Bold sang Semi bold (`font-semibold`), áp dụng đồng bộ cho cả 3 tab Đến (`arrivals`), Đi (`departures`), Ở (`occupied`).
+  - Tab Công suất (Modal Thống kê Công suất): Đổi font style và size chữ theo FE Design System, các tiêu đề khu vực tăng size lên `text-sm font-semibold text-[#000000D9]` (14px) để nổi bật hơn, toàn bộ nội dung dữ liệu bên trong chuyển về không in đậm (`font-normal text-[#000000D9]`).
+- **Chi tiết triển khai**:
+  - **Danh sách phòng đến/đi/ở ([CheckInPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/CheckInPage.vue))**:
+    - Dòng thông tin đăng ký cha (Parent booking row): Chuyển class `font-bold` sang `font-semibold` (Semi bold 600), toàn bộ các cột thông tin (mã đặt phòng, tên khách, ngày đến/đi, số phòng, trạng thái, công ty, nguồn, thanh toán) chuyển về màu đen chuẩn `#000000D9`.
+    - Dòng thông tin phòng con (Child room rows): Số phòng chuyển từ `font-bold text-sky-600` về `font-normal text-[#000000D9]`; các thông tin phụ (tên khách phụ, ngày giờ, yêu cầu đặc biệt, ghi chú) chuyển về `font-normal text-[#000000D9]`.
+    - Áp dụng trên cả 2 bảng dữ liệu (`chuaDenBookings` và `daDenBookings`), đảm bảo đồng bộ 100% cho cả 3 chế độ Đến (`arrivals`), Đi (`departures`), Ở (`occupied`).
+  - **Modal Thống kê Công suất ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue))**:
+    - Tiêu đề các khối/khu vực (`Tổng quan`, `Buồng phòng`, `Trạng thái phòng`, `Dự báo cuối ngày`, `Dự báo`): Nâng từ `text-xs font-extrabold` lên `text-sm font-semibold text-[#000000D9]` (14px, Semi bold 600) tạo phân cấp trực quan rõ rệt so với nội dung.
+    - Dữ liệu chi tiết: Loại bỏ toàn bộ `font-bold` / `font-semibold` ở các ô dữ liệu trong bảng (Số phòng, Pax, Tỷ lệ Occ, Vacant, Tiền phòng/dịch vụ) và các chỉ số thống kê, đưa về chuẩn `font-normal text-[#000000D9]` (Regular 400).
+- **Kiểm thử**:
+  - `npm run build` thành công 100% (7.01s), 0 lỗi.
+
+## [2026-10-12] - Sơ đồ phòng (RoomMapPage.vue) - Dòng 21 Note 12/10: Nét gạch chân phòng đến ngày mai & Tên loại phòng màu đen
+### Module: Đặt phòng / Sơ đồ phòng (Reservation / Room Map) ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
+
+- **Mục tiêu**: Thực hiện chính xác yêu cầu tại Dòng 21 Sheet FIX FE (Bổ sung ngày 12/10):
+  - Đổi màu nét gạch chân phòng có ngày đến ngày mai về màu đen (`#000000`).
+  - Đổi màu chữ tên loại phòng (`DLXT`, `SUPT`,...) trên card phòng về màu đen (`#000000`).
+  - Khắc phục triệt để hiện tượng nét gạch chân bị dày khi xem ở chế độ thu phóng 90% hoặc 75%.
+- **Chi tiết triển khai**:
+  - **Tên loại phòng (Room Type)**:
+    - Loại bỏ class `text-gray-500` và `opacity-80` trước đó.
+    - Chuyển hẳn sang `text-black` (`#000000`) trên card sơ đồ phòng và chế độ xem bảng, hiển thị chữ đen sắc nét 100%.
+  - **Nét gạch chân phòng đến ngày mai (Underline)**:
+    - Thay thế cơ chế font typographic `underline decoration-1 underline-offset-[2px]` sang mô hình box border `border-b border-black pb-[1px]` trên thẻ `inline-block` số phòng.
+    - Khắc phục hiện tượng khử răng cưa (subpixel antialiasing) của Skia/Chromium khi thu nhỏ trình duyệt ở tỷ lệ 90% và 75% làm nét gạch font bị nhòe sang 2 pixel vật lý, đảm bảo đường line luôn là nét hairline 1px siêu mỏng, sắc sảo ở mọi mức zoom (100%, 90%, 80%, 75%).
+    - Cố định màu viền `border-black` đảm bảo nét gạch chân luôn là màu đen thuần (`#000000`), không bị đổi màu theo số phòng đỏ (`isRoomNumberRed`) hoặc màu phòng.
+    - Áp dụng đồng bộ cho cả chế độ xem Thẻ (Card View) và Bảng (Table View) trong `RoomMapPage.vue`.
+- **Kiểm thử**:
+  - `npm run build` thành công 100% (4.97s), không phát sinh cảnh báo hay lỗi.
+
+## [2026-10-12] - Chuẩn hóa FE Kế Hoạch Phòng (RoomPlanPage.vue) - Dòng 15 Note 9/10: Tình trạng phòng & Line màu đăng ký
+### Module: Đặt phòng / Kế hoạch phòng (Reservation / Room Plan) ([RoomPlanPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomPlanPage.vue))
+
+- **Mục tiêu**: Triển khai chính xác các yêu cầu Note ngày 9/10 và hình ảnh tham chiếu trong Dòng 15 Sheet FIX FE:
+  - Tình trạng đăng ký (Guaranteed, Waiting, Allotment): đổi thành dạng line màu, tình trạng phòng giữ như cũ.
+  - Tình trạng phòng trên thanh chú thích: chuyển về dạng khối badge (pill box) như Ảnh 1.
+  - Ngày của Thứ 7 & Chủ Nhật trên header: chuyển màu đen (`#000000D9`).
+  - Ô giai đoạn ngày xem: hỗ trợ nhập theo định dạng `dd/mm/yyyy`.
+- **Chi tiết triển khai**:
+  - **Tách biệt Thanh chú thích Legend (Mục 1 & Ảnh 1)**:
+    - Nhóm tình trạng phòng (`OOO`, `OOS`, `InHouse`, `Reservation`, `Late Checkout`): Chuyển về dạng khối badge bo góc (pill box) như Ảnh 1 (`px-2 py-0.5 border rounded text-xs select-none`) với màu nền đặc trưng tương ứng (`getLegendStyle`) và chữ đen. Hiển thị đầy đủ nhãn chữ `Late Checkout` (không viết tắt `Late Checko...`).
+    - Nhóm tình trạng đăng ký (`Guaranteed`, `Waiting`, `Allotment`): Hiển thị dạng line màu (`h-[3px] rounded-full`) với mã màu lấy từ định nghĩa `registration_statuses` (`getLegendLineColor`).
+  - **Màu nền thanh Booking & Line màu đăng ký (Note 9/10)**:
+    - Nền thanh booking giữ nguyên màu nền đặc trưng của trạng thái phòng (`Reservation`, `InHouse`, `CheckedOut`, `OOO`, `OOS`). Trạng thái đặt phòng (`status === 0`) giữ nguyên màu `Reservation`, không bị đổi màu nền theo Guaranteed/Waiting/Allotment.
+    - Tình trạng đăng ký thể hiện bằng line viền màu đồng nhất `h-[4px]` ở cạnh đáy thanh booking.
+    - Cơ chế fallback tra cứu mã màu từ danh mục `registrationStatuses.value` khi booking chưa có sẵn mã màu trực tiếp.
+    - Đối với các phòng đã trả phòng (`CheckedOut` / `status === 2`): Vẫn hiển thị đầy đủ line màu tình trạng đăng ký ở đáy thanh.
+  - **Chữ ngày Thứ 7 & Chủ Nhật trên Header (Note 9/10)**:
+    - Sửa màu chữ cả thứ (`day.dow`) và số ngày (`day.dateStr`) của ngày cuối tuần (`day.isWeekend`) sang màu đen `#000000D9` đồng nhất như các ngày khác, loại bỏ hoàn toàn việc gán `text-white` cho `dateStr`. Duy nhất ngày hiện tại (`isTodayDate`) giữ nền cam chữ trắng `text-white`.
+  - **Chuẩn hóa các ô trong Modal Booking (Quick Booking) & Khóa phòng**:
+    - Chuyển màu chữ gợi ý "Vui lòng chọn giá phòng" về màu xám nhạt `#A8B0BF` theo đúng quy ước FE Design System, sử dụng `value=""` và inline `:style="{ color: isQuickBookingRateCodeEmpty ? '#A8B0BF' : '#000000D9' }"`.
+    - Bổ sung nút xóa nhanh `(x)` cho các ô trong form Tạo Đặt phòng nhanh (Quick Booking):
+      - `Company`: Nút `(x)` xóa nội dung tìm kiếm và reset companyId về null.
+      - `Booking name`: Nút `(x)` xóa nhanh tên đăng ký khi có dữ liệu.
+      - `Tình trạng đăng ký`: Nút `(x)` tại `right-7` khi đã chọn tình trạng, click để đưa về trạng thái rỗng (`null`).
+      - `Rate Code`: Nút `(x)` tại `right-7` khi đã chọn mã giá phòng, click để đưa về rỗng và tự tính lại giá chuẩn.
+      - `Rate (Giá phòng)`: Chuẩn hóa toàn diện sang kiểu tiền tệ (`type="text" inputmode="numeric"`): định dạng dấu phẩy phân cách hàng nghìn (`100,000`), tự động làm sạch ký tự lạ, loại bỏ triệt để nút mũi tên spinner up/down chevrons, hỗ trợ tự xóa 0 khi focus và nút xóa nhanh `(x)` tại `right-2.5` khi giá trị > 0.
+      - `Market Segment` & `Source Code`: Lược bỏ nút `(x)` theo yêu cầu để giữ giao diện chuẩn select gọn gàng.
+    - Bổ sung nút xóa nhanh `(x)` cho ô `Note` trong modal Khóa phòng (Lock Room).
+  - **Chuẩn hóa ngăn Bộ lọc (Filter side drawer)**:
+    - Tiêu đề `Công Ty` và `Loại Phòng`: Chuyển màu chữ đen (`#000000`), in đậm Semi bold (`font-semibold` / 600) theo Title Case.
+    - Tên các loại phòng trong danh sách chọn: Chuyển màu chữ đen (`#000000`), không in đậm (`font-normal` / 400), ngăn chặn ghi đè từ CSS toàn cục của thẻ `label`.
+  - **Chuẩn hóa Modal Đặt cọc ([DepositModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/DepositModal.vue))**:
+    - Bỏ nội dung gợi ý của ô `Phòng (Đặt cọc riêng cho phòng)` và `Tài khoản ngân hàng`: option mặc định để trống rỗng, không hiển thị chữ gợi ý dài dòng.
+    - Chuẩn hóa ô `Số tiền *` chỉ cho nhập số: chặn phím ký tự không phải số (`@keypress`), hàm `handleDepositAmountInput` làm sạch chuỗi số, loại bỏ 2 nút mũi tên spinner tăng giảm, định dạng tiền tệ có dấu phẩy phân cách (`400,000`), tự động xóa 0 khi focus và trả về 0 khi blur nếu để trống.
+    - Bổ sung nút xóa nhanh `(x)` khi ô đã có giá trị:
+      - `Phòng (Đặt cọc riêng cho phòng)`: nút `(x)` tại `right-7`, click reset về `null` và cập nhật lại mô tả tự động.
+      - `Số tiền`: nút `(x)` tại `right-2.5`, click đưa về `0`.
+      - `Phương thức đặt cọc`: nút `(x)` tại `right-7`, click reset về `null`.
+      - `Tài khoản ngân hàng`: nút `(x)` tại `right-7`, click reset về `null`.
+      - `Mô tả`: nút `(x)` tại `right-2.5 top-2`, click xóa nội dung ghi chú.
+  - **Sửa lỗi chọn & lưu Công ty (Company) khi tạo Booking nhanh**:
+    - **Nguyên nhân gốc**: Model `Company` trong backend trả về thuộc tính `name` (không có `company_name`). Trong `saveQuickBooking()`, hàm tìm kiếm trước đó chỉ kiểm tra `c.company_name?.toLowerCase()` dẫn tới `companyObj` luôn trả về `undefined` và fallback mặc định `companyId = 1` bất kể người dùng chọn công ty nào. Đồng thời `quickBookingForm` chưa lưu `companyId` khi chọn từ dropdown. Khi load lại booking, `b.company?.company_name` cũng bị `undefined` và fallback thành 'Khách lẻ'.
+    - **Xử lý**:
+      - Bổ sung `companyId` vào state `quickBookingForm`.
+      - Khi chọn công ty (`selectQuickBookingCompany`), gán `quickBookingForm.companyId = co.id` với cơ chế tìm kiếm ưu tiên `c.name || c.company_name || c.trading_name || c.code`.
+      - Bổ sung hàm `@input="handleQuickBookingCompanyInput"` đồng bộ `company` và `companyId` khi người dùng tự gõ phím.
+      - Trong `saveQuickBooking()`, ưu tiên lấy `quickBookingForm.companyId`, fallback tìm kiếm đầy đủ theo `name/company_name/trading_name/code` hoặc fallback về ID Khách lẻ.
+      - Sửa ánh xạ hiển thị booking trên Room Plan: `b.company?.name || b.company?.company_name || b.company?.trading_name || 'Khách lẻ'`.
+      - Sửa selector đóng dropdown khi click outside trỏ đúng `#quick-booking-company-container`.
+- **Kiểm thử**:
+  - `npm run build` biên dịch thành công 100% (5.68s), 0 lỗi.
+  - Backend feature tests (`BookingCompanySyncTest`, `BookingTest`) pass 100%.
+
+
+## [2026-10-12] - Chuẩn hóa Modal Chi tiết phòng trống (AvailabilityDetailModal.vue) - Bỏ nút Đóng footer & Đồng bộ FE Design System
+### Module: Đặt phòng / Phòng trống (Reservation / Available Rooms) ([AvailabilityDetailModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/AvailabilityDetailModal.vue))
+
+- **Mục tiêu**: Chuẩn hóa UI/UX modal Chi tiết phòng trống theo FE Design System (`README.md`, `style.css`), lược bỏ nút Đóng ở footer theo quy tắc tinh giản (Mục 6.4), hỗ trợ phím tắt `Esc` (Mục 6.5), chuẩn hóa màu chữ `#000000D9`, font Roboto 12px (`text-xs`), căn chỉnh tiêu đề cột bảng (`<th>` có 4 viền `border border-slate-200`) và định dạng số tiền dấu phẩy `,` (`en-US`), bảo toàn 100% logic và không ảnh hưởng bất kỳ màn hình nào khác.
+- **Chi tiết triển khai**:
+  - **Lược bỏ nút Đóng ở footer (Mục 6.4)**: Xóa hoàn toàn cụm `<footer>` chứa nút `.btn-pms-close` ở cuối modal; nâng chiều cao container từ `h-[calc(78vh-7rem)]` lên `flex-1 h-[calc(78vh-2.5rem)] min-h-0` giải phóng không gian dọc cho bảng dữ liệu, chân modal bo tròn `rounded-b-xl`.
+  - **Hỗ trợ phím tắt Esc & Nút đóng header (Mục 6.5)**: Đăng ký lắng nghe phím `Escape` tự động đóng modal nhanh (`emit('close')`), kèm cleanup dọn dẹp listener an toàn khi đóng modal và khi component unmount; nút `✕` trên header có title `Đóng (Esc)` và hiệu ứng hover mượt mà.
+  - **Đồng bộ Typography & Màu chữ (Mục 2)**: Thay thế toàn bộ `text-[12px]` bằng `text-xs` (12px), loại bỏ `text-[10px]` ở icon mở rộng nhóm booking, đổi màu chữ từ `text-gray-900` sang chuẩn `#000000D9` (`text-[#000000D9]`), tiêu đề `font-semibold`, dữ liệu hàng `font-normal`.
+  - **Định dạng số tiền & Số lượng (Mục 6.6)**: Chuyển `formatAmount` sang định dạng dấu phẩy phân cách hàng nghìn `Number(value).toLocaleString('en-US')` (`100,000`), căn phải `text-right tabular-nums`; các cột số lượng và số phòng căn giữa `tabular-nums text-center`.
+  - **Viền và Căn giữa tiêu đề bảng (Mục 5.1 & Table Header Rules)**: Toàn bộ tiêu đề cột `<th>` căn giữa ngang dọc `text-center align-middle` với 4 viền `border border-slate-200`; ô dữ liệu `<td>` chỉ có viền dưới `border-b border-slate-200`.
+- **Kiểm thử**:
+  - `npm run build` biên dịch thành công 100% (10.39s), không phát sinh bất kỳ lỗi nào.
+  - Không thay đổi backend, API, CSDL hay component cha `AvailableRoomsPage.vue`.
 
 ## [2026-10-12] - Giải quyết xung đột Merge & Đồng bộ giao diện Bảng Tìm kiếm hóa đơn (SearchInvoiceTab.vue)
 
