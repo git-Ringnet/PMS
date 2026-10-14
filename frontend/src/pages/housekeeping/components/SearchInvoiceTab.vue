@@ -4,38 +4,45 @@
     
     <!-- Filters Grid Panel -->
     <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 mb-4 flex flex-col gap-3 shrink-0">
-      <div class="flex flex-wrap items-end gap-4">
+      <div class="flex flex-wrap items-end gap-3">
         <!-- Left side: Date Range -->
         <div class="flex flex-col gap-1.5 relative w-[240px]" ref="datePickerWrapper">
-          <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Thời gian</label>
+          <label class="text-xs font-semibold text-[#000000D9]">Thời gian</label>
           <div class="relative flex items-center cursor-pointer" @click="openDatePicker">
             <input 
               type="text" 
               readonly
               :value="`${formatDate(fromDate)} ~ ${formatDate(toDate)}`"
-              class="w-full border border-slate-300 rounded-lg px-2.5 py-1.5 text-[12px] text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] cursor-pointer transition-all shadow-sm font-medium"
+              class="w-full h-8 border border-slate-300 rounded-lg pl-2.5 pr-8 text-xs text-[#000000D9] bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 cursor-pointer transition-all shadow-sm font-normal"
             />
-            <Calendar class="w-4 h-4 text-[var(--hk-primary-dark)] absolute right-3 pointer-events-none" />
+            <button 
+              type="button" 
+              @click.stop="openDatePicker"
+              class="absolute right-2 text-slate-400 hover:text-blue-600 transition-colors p-0.5 cursor-pointer"
+              title="Chọn khoảng ngày"
+            >
+              <Calendar class="w-4 h-4" />
+            </button>
           </div>
 
           <!-- Date Picker Popover -->
           <Transition name="hk-dropdown">
             <div 
               v-if="showDatePicker"
-              class="absolute top-[calc(100%+4px)] left-0 w-[350px] bg-white border border-slate-250 rounded-xl shadow-xl z-50 p-4"
+              class="absolute top-[calc(100%+4px)] left-0 w-[350px] bg-white border border-slate-200 rounded-xl shadow-xl z-50 p-4"
             >
               <div class="flex flex-col gap-4">
                 <div>
-                  <label class="text-[11px] font-bold text-slate-800 mb-1.5 block">Phạm vi ngày</label>
+                  <label class="text-xs font-semibold text-[#000000D9] mb-1.5 block">Phạm vi ngày</label>
                   
                   <!-- Custom Select Dropdown -->
                   <div class="relative" ref="dropdownWrapper">
                     <div 
                       @click="showDropdown = !showDropdown"
-                      class="border border-slate-300 rounded-lg px-3 py-2 text-[12px] text-slate-700 cursor-pointer flex justify-between items-center hover:border-[var(--hk-primary)] transition-colors bg-white font-medium shadow-sm"
+                      class="h-8 border border-slate-300 rounded-lg px-3 text-xs text-[#000000D9] cursor-pointer flex justify-between items-center hover:border-blue-500 transition-colors bg-white font-normal shadow-sm"
                     >
                       <span>{{ getTempSelectedLabel() }}</span>
-                      <ChevronDown class="w-4 h-4 text-slate-505" />
+                      <ChevronDown class="w-4 h-4 text-slate-400" />
                     </div>
                     
                     <!-- Dropdown List -->
@@ -49,8 +56,8 @@
                             v-for="opt in dateRangeOptions" 
                             :key="opt.value"
                             @click.stop="selectDateRange(opt.value)"
-                            class="px-4 py-2 text-[12px] text-slate-700 hover:bg-sky-55 hover:text-[var(--hk-primary-dark)] cursor-pointer transition-colors"
-                            :class="{'bg-sky-50 text-[var(--hk-primary-dark)] font-bold': tempDateRangeType === opt.value}"
+                            class="px-4 py-2 text-xs text-[#000000D9] hover:bg-sky-50 hover:text-blue-600 cursor-pointer transition-colors"
+                            :class="{'bg-sky-50 text-blue-600 font-semibold': tempDateRangeType === opt.value}"
                           >
                             {{ opt.label }}
                           </li>
@@ -85,7 +92,7 @@
                 <div class="border-t border-slate-100 pt-3 flex justify-end">
                   <button 
                     @click="applyDateRange"
-                    class="btn-primary px-4 py-1.5 rounded-lg flex items-center gap-1.5 text-xs font-bold shadow-sm cursor-pointer"
+                    class="btn-pms-primary h-8 px-4 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
                   >
                     <CheckCircle2 class="w-4 h-4" />
                     Áp dụng
@@ -97,77 +104,140 @@
         </div>
 
         <!-- Mã ĐK filter -->
-        <div class="flex flex-col gap-1.5 w-[110px]">
-          <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Mã ĐK</label>
-          <input 
-            type="text" 
-            data-hk-search
-            v-model="filterState.regCode"
-            placeholder="Mã ĐK..."
-            class="border border-slate-300 rounded-lg px-2.5 py-1.5 text-[12px] text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] transition-all shadow-sm"
-          />
+        <div class="flex flex-col gap-1.5 w-[110px] relative">
+          <label class="text-xs font-semibold text-[#000000D9]">Mã ĐK</label>
+          <div class="relative flex items-center">
+            <input 
+              type="text" 
+              data-hk-search
+              v-model="filterState.regCode"
+              placeholder="Mã ĐK..."
+              class="w-full h-8 border border-slate-300 rounded-lg pl-2.5 pr-7 text-xs text-[#000000D9] placeholder:text-[#A8B0BF] bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm font-normal"
+            />
+            <button 
+              v-if="filterState.regCode" 
+              type="button" 
+              @click="filterState.regCode = ''"
+              class="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+              title="Xóa nhanh"
+            >
+              <X class="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
 
-        <!-- Phòng Autocomplete/Select filter -->
-        <div class="flex flex-col gap-1.5 w-[110px]">
-          <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Phòng</label>
-          <select 
-            v-model="filterState.room"
-            class="border border-slate-300 rounded-lg px-2.5 py-1.5 text-[12px] text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] transition-all shadow-sm cursor-pointer"
-          >
-            <option value="">Tất cả</option>
-            <option v-for="r in filterOptions.rooms" :key="r" :value="r">Phòng {{ r }}</option>
-          </select>
+        <!-- Phòng filter -->
+        <div class="flex flex-col gap-1.5 w-[115px] relative">
+          <label class="text-xs font-semibold text-[#000000D9]">Phòng</label>
+          <div class="relative flex items-center">
+            <select 
+              v-model="filterState.room"
+              class="w-full h-8 border border-slate-300 rounded-lg pl-2.5 pr-7 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm cursor-pointer font-normal appearance-none"
+              :class="filterState.room ? 'text-[#000000D9]' : 'text-[#A8B0BF]'"
+            >
+              <option value="" disabled hidden>Tất cả</option>
+              <option v-for="r in filterOptions.rooms" :key="r" :value="r" class="text-[#000000D9]">Phòng {{ r }}</option>
+            </select>
+            <ChevronDown v-if="!filterState.room" class="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" />
+            <button 
+              v-else 
+              type="button" 
+              @click="filterState.room = ''"
+              class="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+              title="Xóa nhanh"
+            >
+              <X class="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
 
         <!-- Bộ phận filter -->
-        <div class="flex flex-col gap-1.5 w-[120px]">
-          <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Bộ phận</label>
-          <select 
-            v-model="filterState.dept"
-            class="border border-slate-300 rounded-lg px-2.5 py-1.5 text-[12px] text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] transition-all shadow-sm cursor-pointer"
-          >
-            <option value="all">Tất cả</option>
-            <option v-for="dept in filterOptions.departments" :key="dept" :value="dept">{{ dept }}</option>
-          </select>
+        <div class="flex flex-col gap-1.5 w-[120px] relative">
+          <label class="text-xs font-semibold text-[#000000D9]">Bộ phận</label>
+          <div class="relative flex items-center">
+            <select 
+              v-model="filterState.dept"
+              class="w-full h-8 border border-slate-300 rounded-lg pl-2.5 pr-7 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm cursor-pointer font-normal appearance-none"
+              :class="filterState.dept ? 'text-[#000000D9]' : 'text-[#A8B0BF]'"
+            >
+              <option value="" disabled hidden>Tất cả</option>
+              <option v-for="dept in filterOptions.departments" :key="dept" :value="dept" class="text-[#000000D9]">{{ dept }}</option>
+            </select>
+            <ChevronDown v-if="!filterState.dept" class="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" />
+            <button 
+              v-else 
+              type="button" 
+              @click="filterState.dept = ''"
+              class="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+              title="Xóa nhanh"
+            >
+              <X class="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
 
         <!-- Người dùng filter -->
-        <div class="flex flex-col gap-1.5 w-[130px]">
-          <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Người dùng</label>
-          <select 
-            v-model="filterState.user"
-            class="border border-slate-300 rounded-lg px-2.5 py-1.5 text-[12px] text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] transition-all shadow-sm cursor-pointer"
-          >
-            <option value="all">Tất cả</option>
-            <option v-for="user in filterOptions.users" :key="user" :value="user">{{ user }}</option>
-          </select>
+        <div class="flex flex-col gap-1.5 w-[130px] relative">
+          <label class="text-xs font-semibold text-[#000000D9]">Người dùng</label>
+          <div class="relative flex items-center">
+            <select 
+              v-model="filterState.user"
+              class="w-full h-8 border border-slate-300 rounded-lg pl-2.5 pr-7 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm cursor-pointer font-normal appearance-none"
+              :class="filterState.user ? 'text-[#000000D9]' : 'text-[#A8B0BF]'"
+            >
+              <option value="" disabled hidden>Tất cả</option>
+              <option v-for="user in filterOptions.users" :key="user" :value="user" class="text-[#000000D9]">{{ user }}</option>
+            </select>
+            <ChevronDown v-if="!filterState.user" class="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" />
+            <button 
+              v-else 
+              type="button" 
+              @click="filterState.user = ''"
+              class="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+              title="Xóa nhanh"
+            >
+              <X class="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
 
-        <!-- Outlet filter -->
-        <div class="flex flex-col gap-1.5 w-[110px]">
-          <label class="text-[11px] font-bold text-slate-500 uppercase tracking-wide">Outlet</label>
-          <select 
-            v-model="filterState.zone"
-            class="border border-slate-300 rounded-lg px-2.5 py-1.5 text-[12px] text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] transition-all shadow-sm cursor-pointer"
-          >
-            <option value="all">Tất cả</option>
-            <option v-for="outlet in filterOptions.outlets" :key="outlet" :value="outlet">{{ outlet }}</option>
-          </select>
+        <!-- Outlet / Khu vực filter -->
+        <div class="flex flex-col gap-1.5 w-[115px] relative">
+          <label class="text-xs font-semibold text-[#000000D9]">Khu vực</label>
+          <div class="relative flex items-center">
+            <select 
+              v-model="filterState.zone"
+              class="w-full h-8 border border-slate-300 rounded-lg pl-2.5 pr-7 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm cursor-pointer font-normal appearance-none"
+              :class="filterState.zone ? 'text-[#000000D9]' : 'text-[#A8B0BF]'"
+            >
+              <option value="" disabled hidden>Tất cả</option>
+              <option v-for="outlet in filterOptions.outlets" :key="outlet" :value="outlet" class="text-[#000000D9]">{{ outlet }}</option>
+            </select>
+            <ChevronDown v-if="!filterState.zone" class="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" />
+            <button 
+              v-else 
+              type="button" 
+              @click="filterState.zone = ''"
+              class="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+              title="Xóa nhanh"
+            >
+              <X class="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
 
         <!-- Right Side buttons -->
         <div class="flex items-center gap-2">
-          <button @click="triggerSearch" class="btn-primary px-4 py-1.5 rounded-lg text-xs font-bold shadow-sm cursor-pointer h-[32px] flex items-center justify-center min-w-[70px]">
+          <button @click="triggerSearch" class="btn-pms-primary h-8 px-4 text-xs font-semibold shadow-sm cursor-pointer flex items-center justify-center min-w-[70px]">
             <span v-if="isSearching" class="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin mr-1"></span>
             <span>Xem</span>
           </button>
           <button 
             v-if="canPostHousekeepingBill"
             @click="openAddModal"
-            class="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1.5 rounded-lg flex items-center transition-all text-xs font-bold shadow-sm gap-1.5 h-[32px] cursor-pointer"
+            class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 h-8 rounded-lg flex items-center transition-all text-xs font-semibold shadow-sm gap-1.5 cursor-pointer"
           >
-            <Plus class="w-3.5 h-3.5" stroke-width="3" />
+            <Plus class="w-3.5 h-3.5" stroke-width="2.5" />
             Thêm
           </button>
         </div>
@@ -175,7 +245,7 @@
 
       <!-- Trạng thái Chip buttons row -->
       <div class="flex items-center gap-2 border-t border-slate-100 pt-2.5 text-xs">
-        <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wide mr-1">Trạng thái:</span>
+        <span class="text-xs font-semibold text-[#000000D9] mr-1">Trạng thái:</span>
         <button 
           v-for="st in [
             { label: 'Tất cả', value: 'all' },
@@ -185,10 +255,10 @@
           ]"
           :key="st.value"
           @click="filterState.status = st.value"
-          class="px-2.5 py-1 rounded-full text-xs transition-all duration-200 cursor-pointer border"
+          class="px-3 py-1 rounded-full text-xs transition-all duration-200 cursor-pointer border"
           :class="filterState.status === st.value
-            ? 'bg-[var(--hk-primary-light)] text-sky-850 border-[var(--hk-primary)] font-bold shadow-sm'
-            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'"
+            ? 'bg-blue-50 text-blue-700 border-blue-500 font-semibold shadow-sm'
+            : 'bg-white text-[#000000D9] border-slate-200 hover:bg-slate-50'"
         >
           {{ st.label }}
         </button>
@@ -199,22 +269,22 @@
     <div class="flex-1 bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden flex flex-col relative z-0">
       <div class="overflow-auto flex-1 hk-scroll">
         <table class="w-full text-left border-collapse whitespace-nowrap min-w-max text-xs">
-          <thead class="bg-slate-100/90 text-slate-650 text-[11px] font-bold border-b border-slate-200 sticky top-0 uppercase tracking-wider z-10">
+          <thead class="bg-slate-100/90 text-[#000000D9] text-xs font-semibold border-b border-slate-200 sticky top-0 z-10">
             <tr>
-              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">STT</th>
-              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Ngày - Giờ</th>
-              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Phòng</th>
-              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Dịch Vụ</th>
-              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border min-w-[220px]">Mô Tả Sản Phẩm</th>
-              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Giá</th>
-              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Miễn Phí</th>
-              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Mã TT</th>
-              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Mã HĐ Tay</th>
-              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Bộ Phận</th>
-              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">User</th>
-              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Outlet</th>
-              <th class="py-3 px-4 border-r border-slate-200 text-center align-middle border">Đã Xóa</th>
-              <th class="py-3 px-4 text-center align-middle border-r border-slate-200 border">Thao Tác</th>
+              <th class="py-2.5 px-3 border border-slate-200 text-center align-middle font-semibold">STT</th>
+              <th class="py-2.5 px-3 border border-slate-200 text-center align-middle font-semibold">Ngày - Giờ</th>
+              <th class="py-2.5 px-3 border border-slate-200 text-center align-middle font-semibold">Phòng</th>
+              <th class="py-2.5 px-3 border border-slate-200 text-center align-middle font-semibold">Dịch Vụ</th>
+              <th class="py-2.5 px-3 border border-slate-200 text-center align-middle font-semibold min-w-[220px]">Mô Tả Sản Phẩm</th>
+              <th class="py-2.5 px-3 border border-slate-200 text-center align-middle font-semibold">Giá</th>
+              <th class="py-2.5 px-3 border border-slate-200 text-center align-middle font-semibold">Miễn Phí</th>
+              <th class="py-2.5 px-3 border border-slate-200 text-center align-middle font-semibold">Mã TT</th>
+              <th class="py-2.5 px-3 border border-slate-200 text-center align-middle font-semibold">Ghi Chú</th>
+              <th class="py-2.5 px-3 border border-slate-200 text-center align-middle font-semibold">Bộ Phận</th>
+              <th class="py-2.5 px-3 border border-slate-200 text-center align-middle font-semibold">Người Dùng</th>
+              <th class="py-2.5 px-3 border border-slate-200 text-center align-middle font-semibold">Khu Vực</th>
+              <th class="py-2.5 px-3 border border-slate-200 text-center align-middle font-semibold">Đã Xóa</th>
+              <th class="py-2.5 px-3 border border-slate-200 text-center align-middle font-semibold">Thao Tác</th>
             </tr>
           </thead>
 
@@ -273,76 +343,78 @@
               class="transition-colors cursor-pointer"
               :class="inv.isDeleted 
                 ? 'invoice-deleted italic text-red-600 bg-red-50/50 hover:bg-red-50/80 font-normal' 
-                : 'text-slate-700 hover:bg-slate-50/80 font-medium'"
+                : 'text-[#000000D9] hover:bg-slate-50/80 font-normal'"
               @click="openInvoiceDetail(inv)"
             >
               <!-- 1. STT -->
-              <td class="py-2.5 px-4 text-center font-bold border-slate-100" :class="inv.isDeleted ? 'text-red-600' : 'text-slate-500'">{{ index + 1 }}</td>
+              <td class="py-2.5 px-3 text-center border-b border-slate-100 font-normal" :class="inv.isDeleted ? 'text-red-600' : 'text-[#000000D9]'">{{ index + 1 }}</td>
               
               <!-- 2. Ngày - Giờ -->
-              <td class="py-2.5 px-4 text-center border-slate-100">{{ inv.time || '—' }}</td>
+              <td class="py-2.5 px-3 text-center border-b border-slate-100 font-normal">{{ inv.time || '—' }}</td>
               
               <!-- 3. Phòng -->
-              <td class="py-2.5 px-4 font-bold text-center border-slate-100" :class="!inv.isDeleted ? 'text-sky-750' : 'text-red-600'">
+              <td class="py-2.5 px-3 text-center border-b border-slate-100 font-normal" :class="!inv.isDeleted ? 'text-blue-600' : 'text-red-600'">
                 {{ inv.room ? 'Phòng ' + inv.room : '—' }}
               </td>
               
               <!-- 4. Dịch vụ -->
-              <td class="py-2.5 px-4 text-center font-semibold border-slate-100">
+              <td class="py-2.5 px-3 text-center border-b border-slate-100 font-normal">
                 {{ inv.service || inv.zone || inv.dept || '—' }}
               </td>
 
               <!-- 5. Mô tả sản phẩm (danh sách tên + số lượng x{sl}) -->
-              <td class="py-2.5 px-4 border-slate-100 text-left whitespace-normal">
+              <td class="py-2.5 px-3 border-b border-slate-100 text-left whitespace-normal">
                 <div v-if="inv.products && inv.products.length" class="flex flex-col gap-1">
                   <div 
                     v-for="(p, pIdx) in inv.products" 
                     :key="pIdx"
-                    class="text-[12px] leading-snug flex items-center justify-between gap-2"
+                    class="text-xs leading-snug flex items-center justify-between gap-2 font-normal"
                   >
                     <span>{{ p.name }}</span>
-                    <span class="font-bold text-[11px] shrink-0" :class="inv.isDeleted ? 'text-red-400' : 'text-slate-400'">×{{ p.quantity }}</span>
+                    <span class="text-xs shrink-0 font-normal" :class="inv.isDeleted ? 'text-red-400' : 'text-slate-500'">×{{ p.quantity }}</span>
                   </div>
                 </div>
-                <span v-else class="text-slate-400">—</span>
+                <span v-else class="text-[#A8B0BF]">—</span>
               </td>
 
-              <!-- 6. Tổng tiền -->
-              <td class="py-2.5 px-4 text-right border-slate-100 font-bold" :class="inv.isDeleted ? 'text-red-600' : 'text-slate-800'">
+              <!-- 6. Giá -->
+              <td class="py-2.5 px-3 text-right border-b border-slate-100 font-normal" :class="inv.isDeleted ? 'text-red-600' : 'text-[#000000D9]'">
                 {{ formatCurrency(inv.price) }}
               </td>
 
               <!-- 7. Miễn phí (checkbox) -->
-              <td class="py-2.5 px-4 text-center border-slate-100">
+              <td class="py-2.5 px-3 text-center border-b border-slate-100">
                 <input 
                   type="checkbox" 
                   :checked="inv.isFree" 
                   disabled 
-                  class="w-4 h-4 rounded border-slate-300 text-sky-600 pointer-events-none accent-sky-600 align-middle"
+                  class="w-4 h-4 rounded border-slate-300 text-blue-600 pointer-events-none accent-blue-600 align-middle"
                 />
               </td>
 
               <!-- 8. Mã TT -->
-              <td class="py-2.5 px-4 text-center border-slate-100 font-mono text-xs">{{ inv.payCode || '—' }}</td>
+              <td class="py-2.5 px-3 text-center border-b border-slate-100 font-normal text-xs">{{ inv.payCode || '—' }}</td>
 
-              <!-- 9. Mã HĐ tay -->
-              <td class="py-2.5 px-4 text-center border-slate-100 font-mono text-xs">{{ inv.manualCode || '—' }}</td>
+              <!-- 9. Ghi Chú (thay thế Mã HĐ Tay) -->
+              <td class="py-2.5 px-3 text-center border-b border-slate-100 text-xs font-normal max-w-[160px] truncate" :title="inv.note">
+                {{ inv.note || '—' }}
+              </td>
 
               <!-- 10. Bộ phận -->
-              <td class="py-2.5 px-4 text-center border-slate-100">
-                <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold" :class="getDeptClass(inv.dept)">
+              <td class="py-2.5 px-3 text-center border-b border-slate-100">
+                <span class="px-2 py-0.5 rounded-full text-xs font-medium" :class="getDeptClass(inv.dept)">
                   {{ inv.dept || 'HK' }}
                 </span>
               </td>
 
-              <!-- 11. User -->
-              <td class="py-2.5 px-4 text-center border-slate-100">{{ inv.user || '—' }}</td>
+              <!-- 11. Người dùng -->
+              <td class="py-2.5 px-3 text-center border-b border-slate-100 font-normal">{{ inv.user || '—' }}</td>
 
-              <!-- 12. Outlet -->
-              <td class="py-2.5 px-4 font-semibold text-slate-600 text-center border-slate-100">{{ inv.zone || '—' }}</td>
+              <!-- 12. Khu vực -->
+              <td class="py-2.5 px-3 text-center border-b border-slate-100 font-normal">{{ inv.zone || '—' }}</td>
 
               <!-- 13. Đã xóa (checkbox) -->
-              <td class="py-2.5 px-4 text-center border-slate-100">
+              <td class="py-2.5 px-3 text-center border-b border-slate-100">
                 <input 
                   type="checkbox" 
                   :checked="inv.isDeleted" 
@@ -352,13 +424,13 @@
               </td>
 
               <!-- 14. Thao tác (In / Xóa) -->
-              <td class="py-2 px-4 text-center border-slate-100" @click.stop>
+              <td class="py-2 px-3 text-center border-b border-slate-100" @click.stop>
                 <div class="flex items-center justify-center gap-1.5">
                   <button 
                     type="button"
                     @click.stop="printInvoice(inv)"
                     title="In hóa đơn"
-                    class="p-1.5 rounded-lg bg-sky-50 text-sky-600 hover:bg-sky-100 hover:text-sky-700 transition-colors border border-sky-200 cursor-pointer flex items-center justify-center shadow-xs"
+                    class="p-1.5 rounded-md bg-white text-slate-700 hover:bg-slate-50 border border-slate-300 transition-colors cursor-pointer flex items-center justify-center shadow-xs"
                   >
                     <Printer class="w-3.5 h-3.5" />
                   </button>
@@ -367,7 +439,7 @@
                     v-if="inv.canCancel && !inv.isDeleted"
                     @click.stop="openCancelModal(inv)"
                     title="Hủy hóa đơn"
-                    class="p-1.5 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 transition-colors border border-rose-200 cursor-pointer flex items-center justify-center shadow-xs"
+                    class="p-1.5 rounded-md bg-red-50 text-red-600 hover:bg-red-100 transition-colors border border-red-200 cursor-pointer flex items-center justify-center shadow-xs"
                   >
                     <Trash2 class="w-3.5 h-3.5" />
                   </button>
@@ -384,18 +456,20 @@
       <div 
         v-if="showAddModal && canPostHousekeepingBill"
         class="fixed inset-0 z-[100] flex justify-center items-center bg-slate-900/50 backdrop-blur-sm"
+        @click.self="showAddModal = false"
       >
         <div class="bg-white rounded-xl shadow-2xl flex flex-col w-[95vw] h-[95vh] max-w-[1400px] overflow-hidden border border-slate-200 transform transition-all">
-          <!-- Modal Header -->
-          <div class="px-5 py-3 flex justify-between items-center shrink-0 text-slate-800" style="background: var(--hk-gradient, linear-gradient(135deg, #97D5FF, #6BC1F5))">
-            <h3 class="text-[15px] font-black uppercase tracking-wider text-slate-800">Thêm hóa đơn dịch vụ BP</h3>
-            <div class="flex items-center gap-3">
-              <button class="text-slate-800 hover:bg-black/10 p-1.5 rounded-full transition-colors cursor-pointer border-none bg-transparent">
-                <HelpCircle class="w-4 h-4" />
-              </button>
+          <!-- Modal Header with Theme Color -->
+          <div 
+            class="px-5 py-3 flex justify-between items-center shrink-0 text-white" 
+            :style="{ background: 'var(--pms-custom-theme, #006bdb)' }"
+          >
+            <h3 class="text-sm font-semibold tracking-wide text-white">Thêm Hóa Đơn Dịch Vụ Buồng Phòng</h3>
+            <div class="flex items-center gap-2">
               <button 
                 @click="showAddModal = false"
-                class="text-slate-800 hover:bg-black/10 p-1.5 rounded-full transition-colors cursor-pointer border-none bg-transparent"
+                class="text-white hover:bg-white/10 p-1.5 rounded-full transition-colors cursor-pointer border-none bg-transparent"
+                title="Đóng (Esc)"
               >
                 <X class="w-5 h-5" />
               </button>
@@ -412,45 +486,85 @@
 
     <!-- Drawer Chi Tiết Hóa Đơn -->
     <Transition name="hk-drawer">
-      <div v-if="detailTarget" class="fixed inset-0 z-[110] bg-slate-900/25" @click.self="closeInvoiceDetail">
+      <div v-if="detailTarget" class="fixed inset-0 z-[110] bg-slate-900/25 backdrop-blur-xs" @click.self="closeInvoiceDetail">
         <div class="fixed right-0 top-0 flex h-full w-full max-w-[560px] flex-col overflow-hidden bg-white shadow-2xl">
-          <div class="flex items-center justify-between border-b border-slate-200 px-5 py-3">
-            <h3 class="text-sm font-black text-slate-800">Hóa đơn</h3>
-            <button type="button" class="rounded-full p-1.5 text-slate-500 hover:bg-slate-100" @click="closeInvoiceDetail"><X class="h-5 w-5" /></button>
+          <!-- Header with Theme Color -->
+          <div 
+            class="flex items-center justify-between px-5 py-3 text-white" 
+            :style="{ background: 'var(--pms-custom-theme, #006bdb)' }"
+          >
+            <h3 class="text-sm font-semibold text-white tracking-wide">Chi Tiết Hóa Đơn</h3>
+            <button 
+              type="button" 
+              class="rounded-full p-1.5 text-white hover:bg-white/10 transition-colors cursor-pointer border-none bg-transparent" 
+              @click="closeInvoiceDetail"
+              title="Đóng (Esc)"
+            >
+              <X class="h-4 w-4" />
+            </button>
           </div>
+          
           <div class="flex-1 overflow-auto p-5">
             <div class="grid grid-cols-1 gap-3 text-xs sm:grid-cols-3">
-              <div><span class="font-bold text-slate-500">Mã hóa đơn:</span> {{ detailTarget.id }}</div>
-              <div><span class="font-bold text-slate-500">Phòng:</span> {{ detailTarget.room || '—' }}</div>
-              <div><span class="font-bold text-slate-500">Mã ĐK:</span> {{ detailTarget.regCode || '—' }}</div>
-              <div><span class="font-bold text-slate-500">Tên khách:</span> {{ detailTarget.guestName || '—' }}</div>
-              <div><span class="font-bold text-slate-500">Ngày giờ:</span> {{ detailTarget.time || '—' }}</div>
-              <div><span class="font-bold text-slate-500">Bộ phận:</span> {{ detailTarget.dept || '—' }}</div>
-              <div class="sm:col-span-2"><span class="font-bold text-slate-500">Ghi chú:</span> {{ detailTarget.note || '—' }}</div>
-              <div><span class="font-bold text-slate-500">Miễn phí:</span> {{ detailTarget.isFree ? 'Có' : 'Không' }}</div>
+              <div><span class="font-semibold text-[#000000D9]">Mã hóa đơn:</span> <span class="font-normal text-[#000000D9]">#{{ detailTarget.id }}</span></div>
+              <div><span class="font-semibold text-[#000000D9]">Phòng:</span> <span class="font-normal text-[#000000D9]">{{ detailTarget.room || '—' }}</span></div>
+              <div><span class="font-semibold text-[#000000D9]">Mã ĐK:</span> <span class="font-normal text-[#000000D9]">{{ detailTarget.regCode || '—' }}</span></div>
+              <div><span class="font-semibold text-[#000000D9]">Tên khách:</span> <span class="font-normal text-[#000000D9]">{{ detailTarget.guestName || '—' }}</span></div>
+              <div><span class="font-semibold text-[#000000D9]">Ngày giờ:</span> <span class="font-normal text-[#000000D9]">{{ detailTarget.time || '—' }}</span></div>
+              <div><span class="font-semibold text-[#000000D9]">Bộ phận:</span> <span class="font-normal text-[#000000D9]">{{ detailTarget.dept || '—' }}</span></div>
+              <div class="sm:col-span-2"><span class="font-semibold text-[#000000D9]">Ghi chú:</span> <span class="font-normal text-[#000000D9]">{{ detailTarget.note || '—' }}</span></div>
+              <div><span class="font-semibold text-[#000000D9]">Miễn phí:</span> <span class="font-normal text-[#000000D9]">{{ detailTarget.isFree ? 'Có' : 'Không' }}</span></div>
             </div>
+            
             <div class="mt-5 overflow-hidden rounded-lg border border-slate-200">
               <table class="w-full border-collapse text-xs">
-                <thead class="bg-slate-100 text-slate-700">
-                  <tr><th class="border-r border-slate-200 px-3 py-2 text-center align-middle border">STT</th><th class="border-r border-slate-200 px-3 py-2 text-center align-middle border">Sản Phẩm</th><th class="border-r border-slate-200 px-3 py-2 text-center align-middle border">Số Lượng</th><th class="border-r border-slate-200 px-3 py-2 text-center align-middle border">Đơn Giá</th><th class="px-3 py-2 text-center align-middle border-r border-slate-200 border">Số Tiền</th></tr>
-                </thead>
-                <tbody>
-                  <tr v-for="(item, index) in detailTarget.products" :key="`${detailTarget.id}-${index}`" class="border-t border-slate-200">
-                    <td class="border-slate-200 px-3 py-2">{{ index + 1 }}</td>
-                    <td class="border-slate-200 px-3 py-2">{{ item.name || '—' }}</td>
-                    <td class="border-slate-200 px-3 py-2 text-right">{{ item.quantity || 0 }}</td>
-                    <td class="border-slate-200 px-3 py-2 text-right">{{ formatCurrency(item.rate || 0) }}</td>
-                    <td class="px-3 py-2 text-right border-slate-200">{{ formatCurrency(item.amount || 0) }}</td>
+                <thead class="bg-slate-100 text-[#000000D9]">
+                  <tr>
+                    <th class="border border-slate-200 px-3 py-2 text-center align-middle font-semibold">STT</th>
+                    <th class="border border-slate-200 px-3 py-2 text-center align-middle font-semibold">Sản Phẩm</th>
+                    <th class="border border-slate-200 px-3 py-2 text-center align-middle font-semibold">Số Lượng</th>
+                    <th class="border border-slate-200 px-3 py-2 text-center align-middle font-semibold">Đơn Giá</th>
+                    <th class="border border-slate-200 px-3 py-2 text-center align-middle font-semibold">Số Tiền</th>
                   </tr>
-                  <tr v-if="!detailTarget.products.length" class="border-t border-slate-200"><td colspan="5" class="px-3 py-6 text-center text-slate-400 border-slate-200">Không có chi tiết sản phẩm</td></tr>
-                  <tr class="border-t border-slate-200 font-bold"><td colspan="4" class="px-3 py-2 text-left border-slate-200">Tổng tiền</td><td class="px-3 py-2 text-right border-slate-200">{{ formatCurrency(detailTarget.price) }}</td></tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100 font-normal text-[#000000D9]">
+                  <tr v-for="(item, index) in detailTarget.products" :key="`${detailTarget.id}-${index}`">
+                    <td class="px-3 py-2 text-center border-b border-slate-100">{{ index + 1 }}</td>
+                    <td class="px-3 py-2 border-b border-slate-100">{{ item.name || '—' }}</td>
+                    <td class="px-3 py-2 text-right border-b border-slate-100">{{ item.quantity || 0 }}</td>
+                    <td class="px-3 py-2 text-right border-b border-slate-100">{{ formatCurrency(item.rate || 0) }}</td>
+                    <td class="px-3 py-2 text-right border-b border-slate-100">{{ formatCurrency(item.amount || 0) }}</td>
+                  </tr>
+                  <tr v-if="!detailTarget.products.length">
+                    <td colspan="5" class="px-3 py-6 text-center text-[#A8B0BF] border-b border-slate-100">Không có chi tiết sản phẩm</td>
+                  </tr>
+                  <tr class="border-t border-slate-200 font-semibold bg-slate-50">
+                    <td colspan="4" class="px-3 py-2 text-left text-[#000000D9]">Tổng tiền</td>
+                    <td class="px-3 py-2 text-right text-blue-600">{{ formatCurrency(detailTarget.price) }}</td>
+                  </tr>
                 </tbody>
               </table>
             </div>
           </div>
-          <div class="flex items-center gap-2 border-t border-slate-200 p-4">
-            <button type="button" class="rounded-lg bg-sky-400 px-4 py-2 text-xs font-bold text-white hover:bg-sky-500" @click="printInvoice(detailTarget)">In</button>
-            <button v-if="detailTarget.canCancel && !detailTarget.isDeleted && canCancelHousekeepingBill" type="button" class="rounded-lg bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-700" @click="openCancelModal(detailTarget)">Hủy hóa đơn</button>
+          
+          <div class="flex items-center justify-end gap-2 border-t border-slate-200 p-4">
+            <button 
+              type="button" 
+              class="btn-pms-primary h-8 px-4 text-xs font-semibold" 
+              @click="printInvoice(detailTarget)"
+            >
+              <Printer class="w-3.5 h-3.5" />
+              <span>In</span>
+            </button>
+            <button 
+              v-if="detailTarget.canCancel && !detailTarget.isDeleted && canCancelHousekeepingBill" 
+              type="button" 
+              class="btn-pms-danger h-8 px-4 text-xs font-semibold" 
+              @click="openCancelModal(detailTarget)"
+            >
+              <Trash2 class="w-3.5 h-3.5" />
+              <span>Hủy hóa đơn</span>
+            </button>
           </div>
         </div>
       </div>
@@ -458,15 +572,73 @@
 
     <!-- Modal Xác Nhận Hủy/Xóa Hóa Đơn -->
     <Transition name="hk-modal">
-      <div v-if="cancelTarget && canCancelHousekeepingBill" class="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-        <div class="w-full max-w-md rounded-xl bg-white shadow-2xl border border-slate-200 p-5">
-          <h3 class="text-sm font-black text-slate-800">Xác nhận xóa hóa đơn</h3>
-          <p class="mt-2 text-xs text-slate-600">Hóa đơn #{{ cancelTarget.id }} sẽ được ghi nhận bằng dòng âm audit.</p>
-          <label class="mt-4 block text-[11px] font-bold text-slate-600">Lý do xóa</label>
-          <input v-model="cancelReason" type="text" maxlength="255" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-sky-200" placeholder="Nhập lý do" />
-          <div class="mt-4 flex justify-end gap-2">
-            <button type="button" class="rounded-lg bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700 cursor-pointer" @click="closeCancelModal">Đóng</button>
-            <button type="button" class="rounded-lg bg-rose-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-50 cursor-pointer" :disabled="isCancelling || !cancelReason.trim()" @click="cancelInvoice">{{ isCancelling ? 'Đang xử lý...' : 'Xác nhận xóa' }}</button>
+      <div 
+        v-if="cancelTarget && canCancelHousekeepingBill" 
+        class="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4" 
+        @click.self="closeCancelModal"
+      >
+        <div class="w-full max-w-md rounded-xl bg-white shadow-2xl border border-slate-200 overflow-hidden">
+          <!-- Header with Theme Color -->
+          <div 
+            class="flex items-center justify-between px-5 py-3 text-white" 
+            :style="{ background: 'var(--pms-custom-theme, #006bdb)' }"
+          >
+            <h3 class="text-sm font-semibold text-white tracking-wide">Xác Nhận Xóa Hóa Đơn</h3>
+            <button 
+              type="button" 
+              class="rounded-full p-1.5 text-white hover:bg-white/10 transition-colors cursor-pointer border-none bg-transparent" 
+              @click="closeCancelModal"
+              title="Đóng (Esc)"
+            >
+              <X class="h-4 w-4" />
+            </button>
+          </div>
+
+          <!-- Body -->
+          <div class="p-5 flex flex-col gap-3">
+            <label class="text-xs font-semibold text-[#000000D9]">
+              Lý do xóa <span class="text-red-500">*</span>
+            </label>
+            <div class="relative flex items-center">
+              <input 
+                v-model="cancelReason" 
+                type="text" 
+                maxlength="255" 
+                autofocus
+                class="w-full h-8 rounded-lg border px-3 pr-7 text-xs text-[#000000D9] placeholder:text-[#A8B0BF] bg-[#FFF8DB] border-[#F1DD8A] focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500" 
+                placeholder="Nhập lý do xóa hóa đơn..." 
+              />
+              <button 
+                v-if="cancelReason" 
+                type="button" 
+                @click="cancelReason = ''"
+                class="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                title="Xóa nhanh"
+              >
+                <X class="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          <!-- Footer -->
+          <div class="flex justify-end gap-2 border-t border-slate-100 p-4">
+            <button 
+              type="button" 
+              class="btn-pms-close h-8 px-4 text-xs font-semibold cursor-pointer" 
+              @click="closeCancelModal"
+            >
+              <X class="w-3.5 h-3.5" />
+              <span>Đóng</span>
+            </button>
+            <button 
+              type="button" 
+              class="btn-pms-danger h-8 px-4 text-xs font-semibold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed" 
+              :disabled="isCancelling || !cancelReason.trim()" 
+              @click="cancelInvoice"
+            >
+              <Trash2 class="w-3.5 h-3.5" />
+              <span>{{ isCancelling ? 'Đang xử lý...' : 'Xác nhận xóa' }}</span>
+            </button>
           </div>
         </div>
       </div>
@@ -519,9 +691,9 @@ const filterState = ref({
   regCode: '',
   room: '',
   status: 'all', // 'all', 'paid', 'unpaid', 'deleted'
-  dept: 'all',   // 'all', 'Minibar', 'Giặt ủi', 'Hàng đền bù'
-  user: 'all',   // 'all', 'Nguyễn Văn A', 'Trần Thị B', 'Lê Văn C'
-  zone: 'all'    // 'all', 'Khu A', 'Khu B', 'Khu C'
+  dept: '',      // '' = tất cả
+  user: '',      // '' = tất cả
+  zone: ''       // '' = tất cả
 })
 
 const hasLoadedData = ref(false)
@@ -535,9 +707,9 @@ const triggerSearch = async () => {
       date_to: toDate.value,
       booking_code: filterState.value.regCode || undefined,
       room_no: filterState.value.room || undefined,
-      department: filterState.value.dept === 'all' ? undefined : filterState.value.dept,
-      username: filterState.value.user === 'all' ? undefined : filterState.value.user,
-      outlet: filterState.value.zone === 'all' ? undefined : filterState.value.zone,
+      department: filterState.value.dept || undefined,
+      username: filterState.value.user || undefined,
+      outlet: filterState.value.zone || undefined,
       status: filterState.value.status
     } })
     invoicesList.value = (data.data || []).map(item => ({
@@ -766,27 +938,26 @@ const filteredInvoices = computed(() => {
     if (filterState.value.room && inv.room !== filterState.value.room) return false
 
     // 4. Dept filter
-    if (filterState.value.dept !== 'all' && inv.dept !== filterState.value.dept) return false
+    if (filterState.value.dept && inv.dept !== filterState.value.dept) return false
 
     // 5. User filter
-    if (filterState.value.user !== 'all' && inv.user !== filterState.value.user) return false
+    if (filterState.value.user && inv.user !== filterState.value.user) return false
 
     // 6. Zone filter
-    if (filterState.value.zone !== 'all' && inv.zone !== filterState.value.zone) return false
+    if (filterState.value.zone && inv.zone !== filterState.value.zone) return false
 
     // 7. Status filter
-    if (filterState.value.status !== 'all') {
-      if (filterState.value.status === 'deleted') {
-        return inv.isDeleted
-      }
-      if (inv.isDeleted) return false // hide deleted if filtering by paid/unpaid
-      
-      if (filterState.value.status === 'paid') {
-        return inv.payCode !== ''
-      }
-      if (filterState.value.status === 'unpaid') {
-        return inv.payCode === ''
-      }
+    if (filterState.value.status === 'deleted') {
+      return inv.isDeleted
+    }
+    // All other statuses ('all', 'paid', 'unpaid') hide deleted bills
+    if (inv.isDeleted) return false
+
+    if (filterState.value.status === 'paid') {
+      return inv.payCode !== ''
+    }
+    if (filterState.value.status === 'unpaid') {
+      return inv.payCode === ''
     }
 
     return true
@@ -794,9 +965,9 @@ const filteredInvoices = computed(() => {
 })
 
 const getDeptClass = (dept) => {
-  if (dept === 'Minibar') return 'bg-amber-100 text-amber-800 border border-amber-205'
-  if (dept === 'Giặt ủi') return 'bg-blue-100 text-blue-800 border border-blue-205'
-  return 'bg-rose-100 text-rose-800 border border-rose-205'
+  if (dept === 'Minibar') return 'bg-amber-100 text-amber-800 border border-amber-200'
+  if (dept === 'Giặt ủi') return 'bg-blue-100 text-blue-800 border border-blue-200'
+  return 'bg-rose-100 text-rose-800 border border-rose-200'
 }
 
 const formatCurrency = (value) => {
@@ -941,12 +1112,28 @@ const printInvoice = (invoice) => {
   }, 350)
 }
 
+const handleKeyDown = (e) => {
+  if (e.key === 'Escape') {
+    if (cancelTarget.value) {
+      closeCancelModal()
+    } else if (detailTarget.value) {
+      closeInvoiceDetail()
+    } else if (showDatePicker.value) {
+      showDatePicker.value = false
+    } else if (showAddModal.value) {
+      showAddModal.value = false
+    }
+  }
+}
+
 onMounted(() => {
   document.addEventListener('click', closeClickOutside)
+  document.addEventListener('keydown', handleKeyDown)
 })
 
 onUnmounted(() => {
   document.removeEventListener('click', closeClickOutside)
+  document.removeEventListener('keydown', handleKeyDown)
 })
 </script>
 

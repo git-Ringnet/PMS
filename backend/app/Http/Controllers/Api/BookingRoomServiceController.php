@@ -1869,6 +1869,8 @@ class BookingRoomServiceController extends Controller
         } elseif ($status === 'unpaid') {
             $query->where('BillEdit', 0)->whereIn('BillServiceId', ServiceBill::query()
                 ->where(fn ($payment) => $payment->whereNull('PaymentId')->orWhere('PaymentId', ''))->pluck('Ma'));
+        } else {
+            $query->where('BillEdit', 0);
         }
 
         $bills = $query->orderByDesc('Date')->orderByDesc('Ma')->get();
