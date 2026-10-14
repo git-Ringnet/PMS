@@ -1,16 +1,62 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onBeforeUnmount, ref } from 'vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
+import { useAuthStore } from '@/stores/auth-store'
 import { Eye, Printer, X } from '@lucide/vue'
 
 const uiStore = useUiStore()
+const authStore = useAuthStore()
 const loading = ref(false)
 const slots = ref([])
 const templates = ref([])
 const activeGroup = ref('')
 const previewHtml = ref('')
 const previewTitle = ref('')
+
+const topbarThemeBg = computed(() => authStore.themeColor || authStore.settings?.topbar_color || 'var(--pms-custom-theme, #006bdb)')
+
+// ==================== DRAGGABLE MODAL POSITION ====================
+const modalPos = ref({ x: 0, y: 0 })
+const isDraggingModal = ref(false)
+let dragStart = { x: 0, y: 0 }
+let rafId = null
+
+function startDragModal(e) {
+  const ignoreTags = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A', 'LABEL', 'IFRAME']
+  if (ignoreTags.includes(e.target.tagName) || e.target.closest('button, input, select, textarea, a, label, iframe')) return
+  isDraggingModal.value = true
+  dragStart.x = e.clientX - modalPos.value.x
+  dragStart.y = e.clientY - modalPos.value.y
+  document.addEventListener('mousemove', dragModal)
+  document.addEventListener('mouseup', stopDragModal)
+}
+
+function dragModal(e) {
+  if (!isDraggingModal.value) return
+  if (rafId) return
+  rafId = requestAnimationFrame(() => {
+    modalPos.value.x = e.clientX - dragStart.x
+    modalPos.value.y = e.clientY - dragStart.y
+    rafId = null
+  })
+}
+
+function stopDragModal() {
+  isDraggingModal.value = false
+  if (rafId) {
+    cancelAnimationFrame(rafId)
+    rafId = null
+  }
+  document.removeEventListener('mousemove', dragModal)
+  document.removeEventListener('mouseup', stopDragModal)
+}
+
+const handleKeyDown = (e) => {
+  if (e.key === 'Escape' && previewHtml.value) {
+    previewHtml.value = ''
+  }
+}
 
 const groups = computed(() => [...new Set(slots.value.map(slot => slot.group))])
 const filteredSlots = computed(() => slots.value.filter(slot => slot.group === activeGroup.value))
@@ -40,11 +86,16 @@ const assignTemplate = async (slot) => {
     })
     const index = slots.value.findIndex(item => item.id === slot.id)
     if (index >= 0) slots.value[index] = response.data.data
-    uiStore.showToast(`Đã chọn thiết kế cho “${slot.name}”`, 'success')
+    uiStore.showToast(slot.template_id ? `Đã chọn thiết kế cho “${slot.name}”` : `Đã bỏ chọn thiết kế cho “${slot.name}”`, 'success')
   } catch (error) {
     await load()
     uiStore.showToast(error.response?.data?.errors?.template_id?.[0] || error.response?.data?.message || 'Không thể chọn thiết kế', 'error')
   }
+}
+
+const clearTemplate = async (slot) => {
+  slot.template_id = null
+  await assignTemplate(slot)
 }
 
 const preview = async (slot) => {
@@ -57,6 +108,7 @@ const preview = async (slot) => {
     const response = await http.post(`/print-template-slots/${slot.code}/render`, {})
     previewHtml.value = response.data.html
     previewTitle.value = `${slot.name} — ${response.data.template.name}`
+    modalPos.value = { x: 0, y: 0 }
   } catch (error) {
     uiStore.showToast(error.response?.data?.message || 'Không thể xem thử mẫu in', 'error')
   } finally {
@@ -64,7 +116,15 @@ const preview = async (slot) => {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  window.addEventListener('keydown', handleKeyDown)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleKeyDown)
+  stopDragModal()
+})
 </script>
 
 <template>
@@ -73,58 +133,91 @@ onMounted(load)
       <div class="h-7 w-7 animate-spin rounded-full border-2 border-slate-200 border-t-sky-600"></div>
     </div>
 
-    <aside class="w-64 shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-4">
-      <h3 class="border-b border-slate-200 px-2 pb-3 text-[11px] font-black uppercase tracking-widest text-slate-400">Nhóm chức năng in</h3>
-      <button v-for="group in groups" :key="group" @click="activeGroup = group"
-        class="mt-1 w-full rounded-lg border-none px-3 py-2 text-left text-xs font-bold"
-        :class="activeGroup === group ? 'bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-100' : 'bg-transparent text-slate-600 hover:bg-white'">
-        {{ group }}
-      </button>
+    <!-- Aside Group List -->
+    <aside class="w-56 shrink-0 rounded-xl border border-slate-200 bg-slate-50 p-3.5">
+      <h3 class="border-b border-slate-200 px-2 pb-2.5 text-xs font-semibold uppercase tracking-wider text-[#000000D9]">Nhóm Chức Năng In</h3>
+      <div class="mt-2 flex flex-col gap-1">
+        <button v-for="group in groups" :key="group" @click="activeGroup = group"
+          class="w-full rounded-lg border-none px-3 py-2 text-left text-xs font-medium transition-colors cursor-pointer"
+          :class="activeGroup === group ? 'bg-sky-50 text-sky-700 font-semibold ring-1 ring-inset ring-sky-200' : 'bg-transparent text-slate-600 hover:bg-white'">
+          {{ group }}
+        </button>
+      </div>
     </aside>
 
-    <main class="min-w-0 flex-1">
-      <div class="mb-4 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
-        <div class="flex items-start gap-2">
-          <Printer class="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
-          <div>
-            <h3 class="text-xs font-black text-blue-800">CẤU HÌNH MẪU IN NGHIỆP VỤ</h3>
-            <p class="mt-1 text-[11px] font-semibold leading-relaxed text-blue-600">Mỗi dòng là một chức năng in có sẵn trong PMS. Chọn thiết kế khách sạn muốn sử dụng; đây không phải báo cáo có bộ lọc.</p>
-          </div>
-        </div>
+    <!-- Main Content -->
+    <main class="min-w-0 flex-1 flex flex-col gap-3">
+      <!-- Area Header Banner: Bỏ text ghi chú dài, đổi màu chữ tiêu đề khu vực -->
+      <div class="rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-2.5 flex items-center gap-2.5">
+        <Printer class="h-4 w-4 shrink-0 text-sky-600" />
+        <h3 class="text-xs font-semibold uppercase tracking-wide text-[#000000D9]">Cấu Hình Mẫu In Nghiệp Vụ</h3>
       </div>
 
-      <div class="overflow-hidden rounded-xl border border-slate-200 bg-white">
-        <table class="w-full border-collapse text-left">
-          <thead class="border-b border-slate-200 bg-slate-50 text-[10px] font-black uppercase text-slate-500">
-            <tr><th class="p-3">Chức năng in</th><th class="p-3">Thiết kế đang sử dụng</th><th class="w-28 p-3 text-center">Kiểm tra</th></tr>
+      <!-- Table -->
+      <div class="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-2xs">
+        <table class="w-full border-collapse text-left text-xs">
+          <thead>
+            <tr class="bg-slate-50 text-[#000000D9] font-semibold text-xs">
+              <th class="p-2.5 text-center align-middle border border-slate-200 min-w-[200px]">Chức Năng In</th>
+              <th class="p-2.5 text-center align-middle border border-slate-200 min-w-[280px]">Thiết Kế Đang Sử Dụng</th>
+              <th class="p-2.5 text-center align-middle border border-slate-200 w-28">Kiểm Tra</th>
+            </tr>
           </thead>
           <tbody>
-            <tr v-for="slot in filteredSlots" :key="slot.id" class="border-b border-slate-100 last:border-0">
-              <td class="p-3">
-                <b class="block text-xs text-slate-800">{{ slot.name }}</b>
-                <code class="mt-1 block text-[9px] text-slate-400">{{ slot.code }}</code>
+            <tr v-for="slot in filteredSlots" :key="slot.id" class="border-b border-slate-100 hover:bg-slate-50/55 text-[#000000D9]">
+              <td class="p-2.5">
+                <span class="block font-semibold text-slate-800">{{ slot.name }}</span>
+                <code class="mt-0.5 block text-[11px] font-normal text-slate-400 font-mono">{{ slot.code }}</code>
               </td>
-              <td class="p-3">
-                <select v-model="slot.template_id" @change="assignTemplate(slot)" class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700">
-                  <option :value="null">-- Chưa chọn thiết kế --</option>
-                  <option v-for="template in templatesFor(slot)" :key="template.id" :value="template.id">{{ template.name }} · v{{ template.version }}</option>
-                </select>
-                <p v-if="!templatesFor(slot).length" class="mt-1 text-[10px] text-amber-600">Chưa có thiết kế trong nhóm này. Hãy tạo tại Thư viện thiết kế.</p>
+              <td class="p-2.5">
+                <div class="relative flex items-center">
+                  <select v-model="slot.template_id" @change="assignTemplate(slot)"
+                    class="w-full rounded-lg border border-slate-200 bg-white px-3 py-1.5 pr-8 text-xs font-normal focus:outline-none focus:border-sky-500"
+                    :class="!slot.template_id ? 'text-[#A8B0BF]' : 'text-[#000000D9]'">
+                    <option :value="null" disabled hidden>-- Chưa chọn thiết kế --</option>
+                    <option v-for="template in templatesFor(slot)" :key="template.id" :value="template.id" class="text-[#000000D9]">
+                      {{ template.name }} · v{{ template.version }}
+                    </option>
+                  </select>
+                  <button v-if="slot.template_id" type="button" @click.stop="clearTemplate(slot)"
+                    class="absolute right-7 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0 text-xs"
+                    title="Xóa lựa chọn">✕</button>
+                </div>
+                <p v-if="!templatesFor(slot).length" class="mt-1 text-[11px] font-normal text-amber-600">
+                  Chưa có thiết kế trong nhóm này. Hãy tạo tại Thư viện thiết kế.
+                </p>
               </td>
-              <td class="p-3 text-center">
-                <button :disabled="!slot.template_id" @click="preview(slot)" class="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-bold text-slate-600 disabled:opacity-40"><Eye class="h-3.5 w-3.5" /> Xem thử</button>
+              <td class="p-2.5 text-center">
+                <button :disabled="!slot.template_id" @click="preview(slot)" class="btn-pms-secondary !h-7 !px-2.5 !text-xs disabled:opacity-40">
+                  <Eye class="h-3.5 w-3.5" />
+                  <span>Xem Thử</span>
+                </button>
               </td>
             </tr>
-            <tr v-if="!filteredSlots.length"><td colspan="3" class="p-8 text-center text-xs italic text-slate-400">Nhóm này chưa có vị trí mẫu in.</td></tr>
+            <tr v-if="!filteredSlots.length">
+              <td colspan="3" class="p-8 text-center text-xs italic text-slate-400">Nhóm này chưa có vị trí mẫu in.</td>
+            </tr>
           </tbody>
         </table>
       </div>
     </main>
 
-    <div v-if="previewHtml" class="fixed inset-0 z-60 flex items-center justify-center bg-slate-900/60 p-5">
-      <div class="flex h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-        <header class="flex items-center justify-between border-b border-slate-200 px-4 py-3"><b class="text-sm text-slate-800">{{ previewTitle }}</b><button @click="previewHtml = ''" class="rounded-lg border-none bg-slate-100 p-2 text-slate-500"><X class="h-4 w-4" /></button></header>
-        <div class="flex-1 overflow-auto bg-slate-200 p-5"><iframe :srcdoc="previewHtml" class="mx-auto block min-h-[1050px] w-full max-w-[900px] border-0 bg-white shadow-xl"></iframe></div>
+    <!-- Preview Modal -->
+    <div v-if="previewHtml" class="fixed inset-0 z-60 flex items-center justify-center bg-black/55 backdrop-blur-xs p-4 select-none">
+      <div class="flex h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-200"
+        :style="{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }">
+        <!-- Modal Header (Draggable, Title Case, Theme Sync) -->
+        <header class="flex items-center justify-between px-5 py-3 text-white cursor-move select-none rounded-t-xl bg-[#006bdb]"
+          @mousedown="startDragModal"
+          :style="{ background: topbarThemeBg || 'var(--pms-custom-theme, #006bdb)', color: 'var(--pms-custom-theme-text, #ffffff)' }">
+          <span class="text-xs font-semibold tracking-wide text-white">{{ previewTitle }}</span>
+          <button @mousedown.stop @click="previewHtml = ''" class="text-white/80 hover:text-white bg-transparent border-none cursor-pointer text-base font-bold p-1">
+            <X class="h-4 w-4" />
+          </button>
+        </header>
+        <div class="flex-1 overflow-auto bg-slate-100 p-5">
+          <iframe :srcdoc="previewHtml" class="mx-auto block min-h-[1050px] w-full max-w-[900px] border-0 bg-white shadow-xl rounded-lg"></iframe>
+        </div>
       </div>
     </div>
   </div>

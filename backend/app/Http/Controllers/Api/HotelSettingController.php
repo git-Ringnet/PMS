@@ -174,9 +174,14 @@ class HotelSettingController extends Controller
                 @unlink(public_path($setting->logo_url));
             }
 
+            $uploadDir = public_path('uploads/hotel');
+            if (!file_exists($uploadDir)) {
+                mkdir($uploadDir, 0755, true);
+            }
+
             $file = $request->file('logo');
             $filename = 'logo_' . time() . '_' . $file->getClientOriginalName();
-            $file->move(public_path('uploads/hotel'), $filename);
+            $file->move($uploadDir, $filename);
             
             $setting->logo_url = 'uploads/hotel/' . $filename;
             $setting->save();
@@ -222,9 +227,14 @@ class HotelSettingController extends Controller
                 @unlink(public_path($setting->qr_code_url));
             }
 
+            $uploadDir = public_path('uploads/hotel');
+            if (!file_exists($uploadDir)) {
+                mkdir($uploadDir, 0755, true);
+            }
+
             $file = $request->file('qr_code');
             $filename = 'qr_' . time() . '_' . $file->getClientOriginalName();
-            $file->move(public_path('uploads/hotel'), $filename);
+            $file->move($uploadDir, $filename);
             
             $setting->qr_code_url = 'uploads/hotel/' . $filename;
             $setting->save();
