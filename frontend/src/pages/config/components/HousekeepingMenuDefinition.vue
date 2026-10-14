@@ -19,23 +19,113 @@ const editing = ref(null)
 const draggedIndex = ref(null)
 const dragOverIndex = ref(null)
 const updatingFlags = ref(new Set())
-const form = reactive({ code: '', name: '', service_code: '', is_active: true, show_in_add_service: true, default_service_charge_percent: 0, default_tax_percent: 0, default_special_tax_percent: 0, order_index: 0 })
+const form = reactive({
+  code: '',
+  name: '',
+  service_code: '',
+  is_active: true,
+  show_in_add_service: true,
+  default_service_charge_percent: 0,
+  default_tax_percent: 0,
+  default_special_tax_percent: 0,
+  order_index: 0,
+  image: null,
+  imageFile: null,
+  image_url: null,
+  remove_image: false
+})
 
-const reset = () => Object.assign(form, { code: '', name: '', service_code: '', is_active: true, show_in_add_service: true, default_service_charge_percent: 0, default_tax_percent: 0, default_special_tax_percent: 0, order_index: outlets.value.length + 1 })
+const reset = () => {
+  Object.assign(form, {
+    code: '',
+    name: '',
+    service_code: '',
+    is_active: true,
+    show_in_add_service: true,
+    default_service_charge_percent: 0,
+    default_tax_percent: 0,
+    default_special_tax_percent: 0,
+    order_index: outlets.value.length + 1,
+    image: null,
+    imageFile: null,
+    image_url: null,
+    remove_image: false
+  })
+}
+
+const onImageSelected = (event) => {
+  const file = event.target.files?.[0]
+  if (file) {
+    form.imageFile = file
+    form.image_url = URL.createObjectURL(file)
+    form.remove_image = false
+  }
+}
+
+const removeImage = () => {
+  form.image = null
+  form.imageFile = null
+  form.image_url = null
+  form.remove_image = true
+}
+
 const load = async () => {
   loading.value = true
   try { outlets.value = (await fetchHousekeepingOutlets()).data || [] }
   catch (e) { uiStore.showToast(e.response?.data?.message || 'Không tải được cấu hình menu HK', 'error') }
   finally { loading.value = false }
 }
-const edit = (item) => { editing.value = item.id; Object.assign(form, item) }
+
+const normalizeImageUrl = (url) => {
+  if (!url) return null
+  const clean = String(url).trim()
+  if (clean.startsWith('/storage/')) return clean
+  if (clean.startsWith('storage/')) return '/' + clean
+  const match = clean.match(/\/storage\/.+$/i)
+  if (match) return match[0]
+  if (!clean.startsWith('http') && !clean.startsWith('/')) {
+    return '/storage/' + clean
+  }
+  return clean
+}
+
+const edit = (item) => {
+  editing.value = item.id
+  Object.assign(form, item)
+  form.imageFile = null
+  form.remove_image = false
+  form.image_url = normalizeImageUrl(item.image_url || item.image)
+}
+
 const save = async () => {
   if (!form.code || !form.name) return uiStore.showToast('Vui lòng nhập mã và tên outlet', 'warning')
   try {
-    if (editing.value) await updateHousekeepingOutlet(editing.value, { ...form })
-    else await createHousekeepingOutlet({ ...form })
-    uiStore.showToast('Đã lưu cấu hình outlet HK', 'success'); editing.value = null; reset(); await load()
-  } catch (e) { uiStore.showToast(e.response?.data?.message || 'Không lưu được cấu hình', 'error') }
+    const fd = new FormData()
+    fd.append('code', form.code)
+    fd.append('name', form.name)
+    fd.append('service_code', form.service_code || '')
+    fd.append('is_active', form.is_active ? 1 : 0)
+    fd.append('show_in_add_service', form.show_in_add_service ? 1 : 0)
+    fd.append('default_service_charge_percent', form.default_service_charge_percent || 0)
+    fd.append('default_tax_percent', form.default_tax_percent || 0)
+    fd.append('default_special_tax_percent', form.default_special_tax_percent || 0)
+    fd.append('order_index', form.order_index || 0)
+    if (form.imageFile) {
+      fd.append('image', form.imageFile)
+    } else if (form.remove_image) {
+      fd.append('remove_image', '1')
+    }
+
+    if (editing.value) await updateHousekeepingOutlet(editing.value, fd)
+    else await createHousekeepingOutlet(fd)
+
+    uiStore.showToast('Đã lưu cấu hình outlet HK', 'success')
+    editing.value = null
+    reset()
+    await load()
+  } catch (e) {
+    uiStore.showToast(e.response?.data?.message || 'Không lưu được cấu hình', 'error')
+  }
 }
 const forceRemove = async (item) => {
   const ok = await uiStore.confirm({ title: 'Xóa vĩnh viễn outlet HK', message: `Xóa vĩnh viễn ${item.name}? Thao tác này không thể hoàn tác.` })
@@ -123,10 +213,16 @@ onMounted(() => { reset(); load() })
       <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-5 min-h-0 overflow-auto">
       <div class="border border-slate-200 rounded-xl overflow-auto bg-white">
         <table class="w-full text-xs border-collapse">
-          <thead class="bg-slate-50 text-slate-500 font-bold"><tr><th class="p-3 text-left">Thứ tự</th><th class="p-3 text-left">Mã</th><th class="p-3 text-left">Tên outlet</th><th class="p-3 text-left">Mã dịch vụ</th><th class="p-3 text-center">Phí phục vụ (%)</th><th class="p-3 text-center">Thuế (%)</th><th class="p-3 text-center">Thuế ĐB (%)</th><th class="p-3 text-left">Trạng thái</th><th class="p-3 text-center">Hiện khi thêm DV</th><th class="p-3 text-right">Thao tác</th></tr></thead>
+          <thead class="bg-slate-50 text-slate-500 font-bold"><tr><th class="p-3 text-left">Thứ tự</th><th class="p-3 text-center">Ảnh</th><th class="p-3 text-left">Mã</th><th class="p-3 text-left">Tên outlet</th><th class="p-3 text-left">Mã dịch vụ</th><th class="p-3 text-center">Phí phục vụ (%)</th><th class="p-3 text-center">Thuế (%)</th><th class="p-3 text-center">Thuế ĐB (%)</th><th class="p-3 text-left">Trạng thái</th><th class="p-3 text-center">Hiện khi thêm DV</th><th class="p-3 text-right">Thao tác</th></tr></thead>
           <tbody>
             <tr v-for="(item, index) in outlets" :key="item.id" draggable="true" @dblclick="edit(item)" @dragstart="startDrag(index)" @dragover.prevent="setDragOver(index)" @dragleave="dragOverIndex = null" @drop="dropOutlet(index)" class="border-t border-slate-100 hover:bg-slate-50 cursor-move relative" :class="[draggedIndex === index ? 'opacity-50' : '', dragOverIndex === index ? 'border-t-2 border-t-sky-500' : '']">
               <td class="p-3 whitespace-nowrap"><span class="inline-flex items-center gap-2 font-bold text-slate-600"><GripVertical class="w-4 h-4 text-slate-400" />{{ index + 1 }}</span></td>
+              <td class="p-3 text-center">
+                <div class="w-8 h-8 rounded-lg bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center mx-auto">
+                  <img v-if="item.image_url || item.image" :src="normalizeImageUrl(item.image_url || item.image)" class="w-full h-full object-cover" />
+                  <span v-else class="text-[10px] text-slate-400 font-bold">{{ item.code }}</span>
+                </div>
+              </td>
               <td class="p-3 font-bold">{{ item.code }}</td><td class="p-3 font-bold">{{ item.name }}</td><td class="p-3">{{ item.service_code || '-' }}</td>
               <td class="p-3 text-center">{{ item.default_service_charge_percent || 0 }}</td>
               <td class="p-3 text-center">{{ item.default_tax_percent || 0 }}</td>
@@ -143,13 +239,34 @@ onMounted(() => { reset(); load() })
               </td>
               <td class="p-3 text-right whitespace-nowrap"><button @click="edit(item)" title="Sửa outlet" class="inline-flex p-1.5 text-sky-600 hover:bg-sky-50 hover:scale-110 rounded transition-all duration-150"><Pencil class="w-4 h-4" /></button><button @click="forceRemove(item)" title="Xóa vĩnh viễn" class="inline-flex p-1.5 text-red-500 hover:bg-red-50 hover:scale-110 rounded transition-all duration-150"><Trash2 class="w-4 h-4" /></button></td>
             </tr>
-            <tr v-if="!loading && !outlets.length"><td colspan="10" class="p-8 text-center text-slate-400">Chưa có outlet HK.</td></tr>
+            <tr v-if="!loading && !outlets.length"><td colspan="11" class="p-8 text-center text-slate-400">Chưa có outlet HK.</td></tr>
           </tbody>
         </table>
       </div>
 
       <div class="border border-slate-200 rounded-xl p-4 bg-slate-50 flex flex-col gap-3 h-fit">
         <h3 class="text-sm font-black text-slate-700">{{ editing ? 'Sửa outlet HK' : 'Thêm outlet HK' }}</h3>
+        
+        <!-- Outlet Image Upload -->
+        <div class="flex flex-col gap-1.5 bg-white p-3 rounded-lg border border-slate-200">
+          <label class="text-xs font-bold text-slate-700">Hình ảnh đại diện Outlet</label>
+          <div class="flex items-center gap-3">
+            <div class="w-14 h-14 rounded-xl border border-slate-200 bg-slate-50 overflow-hidden flex items-center justify-center shrink-0 shadow-2xs">
+              <img v-if="form.image_url" :src="form.image_url" class="w-full h-full object-cover" />
+              <span v-else class="text-[11px] text-slate-400 font-bold">Chưa có</span>
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label class="px-2.5 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-50 text-slate-700 text-xs font-bold cursor-pointer text-center shadow-2xs transition-colors">
+                <span>{{ form.image_url ? 'Đổi ảnh' : 'Chọn ảnh' }}</span>
+                <input type="file" accept="image/*" class="hidden" @change="onImageSelected" />
+              </label>
+              <button v-if="form.image_url" type="button" @click="removeImage" class="text-xs text-rose-500 hover:text-rose-700 font-semibold cursor-pointer border-none bg-transparent text-left">
+                Xóa ảnh
+              </button>
+            </div>
+          </div>
+        </div>
+
         <input v-model="form.name" placeholder="Tên outlet" class="p-2 rounded border border-slate-200 text-xs" />
         <input v-model="form.code" placeholder="Mã outlet" class="p-2 rounded border border-slate-200 text-xs" />
         <input v-model="form.service_code" placeholder="Mã dịch vụ" class="p-2 rounded border border-slate-200 text-xs" />
