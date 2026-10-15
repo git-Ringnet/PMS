@@ -42,7 +42,7 @@ const hotelTabs = [
 </script>
 
 <template>
-  <div class="flex flex-col gap-4 h-full overflow-hidden">
+  <div class="flex flex-col gap-2.5 flex-1 min-h-0 overflow-hidden">
     <!-- Sub Navigation Tabs Bar -->
     <div class="border-b border-slate-200 shrink-0">
       <div class="flex flex-wrap gap-1">
@@ -55,9 +55,7 @@ const hotelTabs = [
     </div>
 
     <!-- Detail Card Content -->
-    <div class="flex-1 overflow-y-auto min-h-[400px] relative" :class="activeHotelTab === 'THÔNG TIN KHÁCH SẠN'
-      ? ''
-      : 'bg-white rounded-xl shadow-xs border border-slate-200 p-6'">
+    <div class="flex-1 overflow-y-auto min-h-0 relative">
 
       <!-- Render component based on selected tab -->
       <HotelInfoTab v-if="activeHotelTab === 'THÔNG TIN KHÁCH SẠN'" />

@@ -170,7 +170,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="flex flex-col gap-4 py-2 relative">
+  <div class="flex flex-col gap-2 py-0 relative">
     <!-- Loading State -->
     <div v-if="loading" class="flex items-center justify-center absolute inset-0 bg-white/70 z-30 min-h-[400px]">
       <div class="loader">
@@ -194,14 +194,14 @@ onMounted(() => {
     </div>
 
     <!-- Grid Content -->
-    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-3">
       <!-- Col 1: Basic settings -->
-      <div class="lg:col-span-5 bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col gap-3">
+      <div class="lg:col-span-5 bg-white border border-slate-200 rounded-xl p-3 shadow-xs flex flex-col gap-1.5">
         <div class="grid grid-cols-12 items-center gap-2 text-xs font-semibold text-[#000000D9]">
           <span class="col-span-2">Mã Khách Sạn <span class="text-red-500">*</span></span>
           <div class="relative flex items-center col-span-3">
             <input type="text" v-model="hotelForm.division"
-              class="w-full border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg p-2 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308]" />
+              class="w-full border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg px-2.5 py-1.5 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308]" />
             <button v-if="hotelForm.division" type="button" @click="hotelForm.division = ''"
               class="absolute right-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0 text-xs"
               title="Xóa">✕</button>
@@ -209,7 +209,7 @@ onMounted(() => {
           <span class="col-span-3 text-right pr-2">Tên Khách Sạn / KNM <span class="text-red-500">*</span></span>
           <div class="relative flex items-center col-span-4">
             <input type="text" v-model="hotelForm.hotel_name"
-              class="w-full border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg p-2 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308]" />
+              class="w-full border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg px-2.5 py-1.5 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308]" />
             <button v-if="hotelForm.hotel_name" type="button" @click="hotelForm.hotel_name = ''"
               class="absolute right-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0 text-xs"
               title="Xóa">✕</button>
@@ -220,7 +220,7 @@ onMounted(() => {
           <span>Địa Chỉ <span class="text-red-500">*</span></span>
           <div class="relative flex col-span-2">
             <textarea v-model="hotelForm.address" rows="2"
-              class="w-full border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg p-2 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308] resize-none"></textarea>
+              class="w-full border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg px-2.5 py-1 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308] resize-none h-11"></textarea>
             <button v-if="hotelForm.address" type="button" @click="hotelForm.address = ''"
               class="absolute right-2 top-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0 text-xs"
               title="Xóa">✕</button>
@@ -231,7 +231,7 @@ onMounted(() => {
           <span>Mã Số Thuế</span>
           <div class="relative flex items-center col-span-2">
             <input type="text" v-model="hotelForm.tax_code"
-              class="w-full border border-slate-200 bg-white rounded-lg p-2 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500" />
+              class="w-full border border-slate-200 bg-white rounded-lg px-2.5 py-1.5 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500" />
             <button v-if="hotelForm.tax_code" type="button" @click="hotelForm.tax_code = ''"
               class="absolute right-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0 text-xs"
               title="Xóa">✕</button>
@@ -242,7 +242,7 @@ onMounted(() => {
           <span>Số Điện Thoại <span class="text-red-500">*</span></span>
           <div class="relative flex items-center col-span-2">
             <input type="text" v-model="hotelForm.phone"
-              class="w-full border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg p-2 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308]" />
+              class="w-full border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg px-2.5 py-1.5 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308]" />
             <button v-if="hotelForm.phone" type="button" @click="hotelForm.phone = ''"
               class="absolute right-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0 text-xs"
               title="Xóa">✕</button>
@@ -253,7 +253,7 @@ onMounted(() => {
           <span>Số Fax</span>
           <div class="relative flex items-center col-span-2">
             <input type="text" v-model="hotelForm.fax"
-              class="w-full border border-slate-200 bg-white rounded-lg p-2 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500" />
+              class="w-full border border-slate-200 bg-white rounded-lg px-2.5 py-1.5 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500" />
             <button v-if="hotelForm.fax" type="button" @click="hotelForm.fax = ''"
               class="absolute right-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0 text-xs"
               title="Xóa">✕</button>
@@ -264,7 +264,7 @@ onMounted(() => {
           <span>Email</span>
           <div class="relative flex items-center col-span-2">
             <input type="email" v-model="hotelForm.email"
-              class="w-full border border-slate-200 bg-white rounded-lg p-2 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500" />
+              class="w-full border border-slate-200 bg-white rounded-lg px-2.5 py-1.5 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500" />
             <button v-if="hotelForm.email" type="button" @click="hotelForm.email = ''"
               class="absolute right-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0 text-xs"
               title="Xóa">✕</button>
@@ -275,7 +275,7 @@ onMounted(() => {
           <span>Facebook</span>
           <div class="relative flex items-center col-span-2">
             <input type="text" v-model="hotelForm.facebook"
-              class="w-full border border-slate-200 bg-white rounded-lg p-2 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500" />
+              class="w-full border border-slate-200 bg-white rounded-lg px-2.5 py-1.5 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500" />
             <button v-if="hotelForm.facebook" type="button" @click="hotelForm.facebook = ''"
               class="absolute right-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0 text-xs"
               title="Xóa">✕</button>
@@ -286,7 +286,7 @@ onMounted(() => {
           <span>Kênh Quản Lý</span>
           <div class="relative flex items-center col-span-2">
             <input type="text" v-model="hotelForm.channel_manager"
-              class="w-full border border-slate-200 bg-white rounded-lg p-2 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500" />
+              class="w-full border border-slate-200 bg-white rounded-lg px-2.5 py-1.5 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500" />
             <button v-if="hotelForm.channel_manager" type="button" @click="hotelForm.channel_manager = ''"
               class="absolute right-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0 text-xs"
               title="Xóa">✕</button>
@@ -296,7 +296,7 @@ onMounted(() => {
         <div class="grid grid-cols-3 items-center gap-2 text-xs font-semibold text-[#000000D9]">
           <span>Tiền Tệ</span>
           <select v-model="hotelForm.currency"
-            class="col-span-2 border border-slate-200 rounded-lg p-2 font-normal bg-white text-xs text-[#000000D9] focus:outline-none focus:border-sky-500">
+            class="col-span-2 border border-slate-200 rounded-lg px-2.5 py-1.5 font-normal bg-white text-xs text-[#000000D9] focus:outline-none focus:border-sky-500">
             <option value="VND">🇻🇳 VND</option>
             <option value="USD">🇺🇸 USD</option>
           </select>
@@ -304,12 +304,12 @@ onMounted(() => {
       </div>
 
       <!-- Col 2: Bank details and prices -->
-      <div class="lg:col-span-4 bg-white border border-slate-200 rounded-xl p-5 shadow-xs flex flex-col gap-3">
+      <div class="lg:col-span-4 bg-white border border-slate-200 rounded-xl p-3 shadow-xs flex flex-col gap-1.5">
         <div class="grid grid-cols-3 items-center gap-2 text-xs font-semibold text-[#000000D9]">
           <span>Tên Ngân Hàng</span>
           <div class="relative flex items-center col-span-2">
             <input type="text" v-model="hotelForm.bank"
-              class="w-full border border-slate-200 bg-white rounded-lg p-2 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500" />
+              class="w-full border border-slate-200 bg-white rounded-lg px-2.5 py-1.5 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500" />
             <button v-if="hotelForm.bank" type="button" @click="hotelForm.bank = ''"
               class="absolute right-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0 text-xs"
               title="Xóa">✕</button>
@@ -320,7 +320,7 @@ onMounted(() => {
           <span>Tên Tài Khoản</span>
           <div class="relative flex items-center col-span-2">
             <input type="text" v-model="hotelForm.account_name"
-              class="w-full border border-slate-200 bg-white rounded-lg p-2 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500" />
+              class="w-full border border-slate-200 bg-white rounded-lg px-2.5 py-1.5 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500" />
             <button v-if="hotelForm.account_name" type="button" @click="hotelForm.account_name = ''"
               class="absolute right-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0 text-xs"
               title="Xóa">✕</button>
@@ -331,7 +331,7 @@ onMounted(() => {
           <span>Số Tài Khoản</span>
           <div class="relative flex items-center col-span-2">
             <input type="text" v-model="hotelForm.account"
-              class="w-full border border-slate-200 bg-white rounded-lg p-2 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500" />
+              class="w-full border border-slate-200 bg-white rounded-lg px-2.5 py-1.5 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500" />
             <button v-if="hotelForm.account" type="button" @click="hotelForm.account = ''"
               class="absolute right-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0 text-xs"
               title="Xóa">✕</button>
@@ -343,7 +343,7 @@ onMounted(() => {
           <div class="relative flex items-center col-span-2">
             <input type="text" :value="formatInputNumber(hotelForm.breakfast_adult_rate)"
               @input="e => { hotelForm.breakfast_adult_rate = parseInputNumber(e.target.value); e.target.value = formatInputNumber(hotelForm.breakfast_adult_rate); }"
-              class="w-full border border-slate-200 bg-white rounded-lg p-2 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500" />
+              class="w-full border border-slate-200 bg-white rounded-lg px-2.5 py-1.5 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500" />
             <button v-if="hotelForm.breakfast_adult_rate" type="button" @click="hotelForm.breakfast_adult_rate = 0"
               class="absolute right-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0 text-xs"
               title="Xóa">✕</button>
@@ -355,7 +355,7 @@ onMounted(() => {
           <div class="relative flex items-center col-span-2">
             <input type="text" :value="formatInputNumber(hotelForm.breakfast_child_rate)"
               @input="e => { hotelForm.breakfast_child_rate = parseInputNumber(e.target.value); e.target.value = formatInputNumber(hotelForm.breakfast_child_rate); }"
-              class="w-full border border-slate-200 bg-white rounded-lg p-2 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500" />
+              class="w-full border border-slate-200 bg-white rounded-lg px-2.5 py-1.5 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500" />
             <button v-if="hotelForm.breakfast_child_rate" type="button" @click="hotelForm.breakfast_child_rate = 0"
               class="absolute right-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0 text-xs"
               title="Xóa">✕</button>
@@ -367,7 +367,7 @@ onMounted(() => {
           <div class="relative flex items-center col-span-2">
             <input type="text" :value="formatInputNumber(hotelForm.extra_bed_rate)"
               @input="e => { hotelForm.extra_bed_rate = parseInputNumber(e.target.value); e.target.value = formatInputNumber(hotelForm.extra_bed_rate); }"
-              class="w-full border border-slate-200 bg-white rounded-lg p-2 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500" />
+              class="w-full border border-slate-200 bg-white rounded-lg px-2.5 py-1.5 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500" />
             <button v-if="hotelForm.extra_bed_rate" type="button" @click="hotelForm.extra_bed_rate = 0"
               class="absolute right-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0 text-xs"
               title="Xóa">✕</button>
@@ -378,7 +378,7 @@ onMounted(() => {
           <span>Số Phòng <span class="text-red-500">*</span></span>
           <div class="relative flex items-center col-span-2">
             <input type="number" v-model="hotelForm.room_number"
-              class="w-full border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg p-2 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308]" />
+              class="w-full border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg px-2.5 py-1.5 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308]" />
             <button v-if="hotelForm.room_number" type="button" @click="hotelForm.room_number = 0"
               class="absolute right-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0 text-xs"
               title="Xóa">✕</button>
@@ -389,7 +389,7 @@ onMounted(() => {
           <span>Web Khách Sạn</span>
           <div class="relative flex items-center col-span-2">
             <input type="text" v-model="hotelForm.website"
-              class="w-full border border-slate-200 bg-white rounded-lg p-2 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500" />
+              class="w-full border border-slate-200 bg-white rounded-lg px-2.5 py-1.5 pr-6 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500" />
             <button v-if="hotelForm.website" type="button" @click="hotelForm.website = ''"
               class="absolute right-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0 text-xs"
               title="Xóa">✕</button>
@@ -400,7 +400,7 @@ onMounted(() => {
           <span>Tiền Tố Mã Đăng Ký</span>
           <div class="relative flex items-center col-span-2">
             <input type="text" v-model="hotelForm.prefix_booking_id"
-              class="w-full border border-slate-200 bg-white rounded-lg p-2 pr-6 text-xs font-normal uppercase text-[#000000D9] focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500" />
+              class="w-full border border-slate-200 bg-white rounded-lg px-2.5 py-1.5 pr-6 text-xs font-normal uppercase text-[#000000D9] focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500" />
             <button v-if="hotelForm.prefix_booking_id" type="button" @click="hotelForm.prefix_booking_id = ''"
               class="absolute right-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0 text-xs"
               title="Xóa">✕</button>
@@ -412,26 +412,26 @@ onMounted(() => {
       <div class="lg:col-span-3 flex flex-col items-center">
         <!-- Logo Box (Card style) -->
         <div class="w-full bg-white rounded-xl border border-slate-200 shadow-xs flex flex-col overflow-hidden">
-          <div class="p-3 bg-slate-50 border-b border-slate-200 text-center font-semibold text-[#000000D9] text-xs">
+          <div class="py-1.5 px-3 bg-slate-50 border-b border-slate-200 text-center font-semibold text-[#000000D9] text-xs">
             Hình Ảnh & Logo
           </div>
-          <div class="p-5 flex flex-col items-center justify-center gap-4">
+          <div class="p-2.5 flex flex-col items-center justify-center gap-2">
             <!-- Logo Image -->
             <div v-if="hotelForm.logo_url"
-              class="w-24 h-24 rounded-full overflow-hidden shadow-inner border border-slate-200">
+              class="w-16 h-16 rounded-full overflow-hidden shadow-inner border border-slate-200">
               <img :src="getImageUrl(hotelForm.logo_url)" alt="Logo" class="w-full h-full object-cover" />
             </div>
             <div v-else
-              class="w-24 h-24 rounded-full bg-sky-50 flex items-center justify-center text-sky-500 shadow-inner">
-              <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              class="w-16 h-16 rounded-full bg-sky-50 flex items-center justify-center text-sky-500 shadow-inner">
+              <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
                   d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
               </svg>
             </div>
             <!-- Action buttons -->
-            <div class="flex items-center gap-3 text-slate-400">
+            <div class="flex items-center gap-2 text-slate-400">
               <label
-                class="px-2.5 py-1 text-xs font-semibold text-slate-700 hover:text-sky-600 bg-slate-100 hover:bg-slate-200 rounded-md border border-slate-200 cursor-pointer flex items-center gap-1.5 transition-colors">
+                class="px-2 py-1 text-xs font-semibold text-slate-700 hover:text-sky-600 bg-slate-100 hover:bg-slate-200 rounded-md border border-slate-200 cursor-pointer flex items-center gap-1.5 transition-colors">
                 <input type="file" ref="logoInput" @change="onLogoSelected" class="hidden" accept="image/*" />
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round"
@@ -440,7 +440,7 @@ onMounted(() => {
                 <span>Tải Ảnh</span>
               </label>
               <a v-if="hotelForm.logo_url" :href="getImageUrl(hotelForm.logo_url)" target="_blank"
-                class="p-1.5 text-slate-500 hover:text-slate-800 bg-slate-100 rounded-md border border-slate-200 cursor-pointer flex items-center justify-center transition-colors"
+                class="p-1 text-slate-500 hover:text-slate-800 bg-slate-100 rounded-md border border-slate-200 cursor-pointer flex items-center justify-center transition-colors"
                 title="Xem Ảnh Gốc">
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -449,7 +449,7 @@ onMounted(() => {
                 </svg>
               </a>
               <button v-if="hotelForm.logo_url" @click="removeLogo"
-                class="p-1.5 text-rose-500 hover:text-rose-700 bg-rose-50 rounded-md border border-rose-200 cursor-pointer flex items-center justify-center transition-colors"
+                class="p-1 text-rose-500 hover:text-rose-700 bg-rose-50 rounded-md border border-rose-200 cursor-pointer flex items-center justify-center transition-colors"
                 title="Xóa Logo">
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round"
@@ -461,11 +461,11 @@ onMounted(() => {
         </div>
 
         <!-- QR Box (Enlarged) -->
-        <div class="flex flex-col items-center p-2 mt-4 gap-2">
+        <div class="flex flex-col items-center p-1 mt-1 gap-1">
           <span class="text-xs font-semibold text-[#000000D9]">Mã QR Cấu Hình</span>
           <div
-            class="w-40 h-40 rounded-xl overflow-hidden border border-slate-200 bg-white p-2.5 shadow-2xs flex items-center justify-center">
-            <qrcode-vue :value="qrCodeValue" :size="140" level="M" />
+            class="w-32 h-32 rounded-xl overflow-hidden border border-slate-200 bg-white p-1.5 shadow-2xs flex items-center justify-center">
+            <qrcode-vue :value="qrCodeValue" :size="112" level="M" />
           </div>
         </div>
       </div>

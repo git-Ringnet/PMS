@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { fetchBreakfastList, fetchHotelSettings } from '@/services/breakfast-service'
 import { fetchBusinessInfo } from '@/services/company-service'
@@ -43,6 +43,12 @@ const isPrintModalOpen = ref(false)
 const isPreviewOpen = ref(false)
 const couponsToPrint = ref([])
 
+// Column search popover state
+const activeSearchCol = ref(null)
+function toggleSearchCol(col) {
+  activeSearchCol.value = activeSearchCol.value === col ? null : col
+}
+
 // Date Picker refs
 const fromDatePickerRef = ref(null)
 const toDatePickerRef = ref(null)
@@ -85,7 +91,14 @@ function openToDatePicker() {
   }
 }
 
+function handleDocumentClick(e) {
+  if (!e.target.closest('th')) {
+    activeSearchCol.value = null
+  }
+}
+
 onMounted(async () => {
+  window.addEventListener('click', handleDocumentClick)
   syncRoomFilterFromRoute()
   await initDates()
   await loadSettings()
@@ -94,6 +107,10 @@ onMounted(async () => {
   if (route.query.data && selectedRooms.value.length > 0) {
     handleConfirmPrint({ mode: 'all', fromDate: fromDate.value, toDate: toDate.value })
   }
+})
+
+onUnmounted(() => {
+  window.removeEventListener('click', handleDocumentClick)
 })
 
 watch(() => route.query.roomNumber, async () => {
@@ -387,7 +404,124 @@ function handleConfirmPrint({ mode, fromDate: rFrom, toDate: rTo }) {
   }
 
   couponsToPrint.value = coupons
-  isPreviewOpen.value = true
+  printCouponsDirectly(coupons)
+}
+
+function printCouponsDirectly(coupons) {
+  if (!coupons || coupons.length === 0) {
+    if (uiStore.showToast) uiStore.showToast('Không có phiếu ăn sáng nào để in', 'warning')
+    return
+  }
+
+  let savedConfig = null
+  try {
+    const raw = localStorage.getItem('pms_breakfast_coupon_template_config')
+    if (raw) savedConfig = JSON.parse(raw)
+  } catch (e) {}
+
+  const cfg = savedConfig || {
+    columns: 3,
+    minHeight: 220,
+    fontSize: 'normal',
+    roomFontSize: 'large',
+    borderWidth: 2,
+    borderStyle: 'solid',
+    couponGap: 8,
+    showLogo: true,
+    showHotelName: true,
+    customHotelName: '',
+    titleLine1: 'PHIẾU ĂN SÁNG',
+    titleLine2: 'BREAKFAST COUPON',
+    showBookingInfo: true,
+    showGuestName: false,
+    showRoomNumber: true,
+    showDate: true,
+    roomLabel: 'Phòng / Room:',
+    dateLabel: 'Ngày / Date:',
+    showFooterNote: true,
+    footerNote: '• Áp dụng cho khách lưu trú tại khách sạn / Applied to guest in-house only\n• Mỗi khách hàng sử dụng 01 phiếu trong 01 ngày / One coupon per guest per day\n• Chúc quý khách ngon miệng / Enjoy your meal'
+  }
+
+  const hName = cfg.customHotelName?.trim() || hotelSettings.value.hotel_name || ''
+  const hLogo = (cfg.showLogo && hotelSettings.value.logo_url) ? hotelSettings.value.logo_url : ''
+  const footerLines = cfg.showFooterNote && cfg.footerNote ? cfg.footerNote.split('\n').filter(l => l.trim()) : []
+
+  let iframe = document.getElementById('breakfast-direct-print-frame')
+  if (!iframe) {
+    iframe = document.createElement('iframe')
+    iframe.id = 'breakfast-direct-print-frame'
+    iframe.style.position = 'fixed'
+    iframe.style.right = '0'
+    iframe.style.bottom = '0'
+    iframe.style.width = '0'
+    iframe.style.height = '0'
+    iframe.style.border = '0'
+    document.body.appendChild(iframe)
+  }
+
+  const couponCardsHtml = coupons.map(c => `
+    <div class="coupon-card" style="min-height:${cfg.minHeight}px; border:${cfg.borderWidth}px ${cfg.borderStyle} #000; padding:10px; display:flex; flex-direction:column; justify-content:space-between; background:#fff; page-break-inside:avoid; break-inside:avoid; box-sizing:border-box;">
+      <div style="display:flex; align-items:center; justify-content:space-between; border-bottom:2px solid #000; padding-bottom:6px; gap:8px;">
+        <div style="min-width:70px; max-width:110px;">
+          ${hLogo ? `<img src="${hLogo}" style="height:32px; max-width:100px; object-fit:contain;" />` : (cfg.showHotelName ? `<span style="font-weight:900; font-size:11px; text-transform:uppercase;">${hName}</span>` : '')}
+        </div>
+        <div style="text-align:right; flex:1;">
+          ${cfg.titleLine1 ? `<div style="font-weight:900; text-transform:uppercase; font-size:13px; line-height:1.2;">${cfg.titleLine1}</div>` : ''}
+          ${cfg.titleLine2 ? `<div style="font-weight:800; text-transform:uppercase; font-size:10px; color:#555; margin-top:2px;">${cfg.titleLine2}</div>` : ''}
+        </div>
+      </div>
+      <div style="padding:10px 0; text-align:center; flex:1; display:flex; flex-direction:column; justify-content:center; gap:6px;">
+        ${cfg.showBookingInfo ? `<div style="font-size:11px; font-weight:600; color:#333; border-bottom:1px dotted #888; padding-bottom:3px;">${c.booking_info}</div>` : ''}
+        ${cfg.showGuestName && c.guest_name ? `<div style="font-size:11px; font-weight:700; color:#444;">Khách: ${c.guest_name}</div>` : ''}
+        ${cfg.showRoomNumber ? `<div><span style="font-size:10px; color:#666; text-transform:uppercase; margin-right:4px;">${cfg.roomLabel}</span><span style="font-weight:900; font-size:${cfg.roomFontSize === 'xlarge' ? '24px' : (cfg.roomFontSize === 'normal' ? '17px' : '20px')}; letter-spacing:1px;">${c.room_number}</span></div>` : ''}
+        ${cfg.showDate ? `<div style="border-bottom:1px dotted #888; padding-bottom:4px;"><span style="font-size:10px; color:#666; text-transform:uppercase; margin-right:4px;">${cfg.dateLabel}</span><span style="font-weight:900; font-size:13px;">${formatDateDisplay(c.date)}</span></div>` : ''}
+      </div>
+      ${footerLines.length > 0 ? `
+        <div style="font-size:8.5px; color:#555; font-style:italic; border-top:1px solid #ccc; padding-top:4px; line-height:1.3;">
+          ${footerLines.map(l => `<div>${l}</div>`).join('')}
+        </div>
+      ` : ''}
+    </div>
+  `).join('')
+
+  const printHtml = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8"/>
+      <title>In Phiếu Ăn Sáng</title>
+      <style>
+        @page { size: auto; margin: 8mm; }
+        * { box-sizing: border-box; }
+        body { font-family: Roboto, -apple-system, sans-serif; margin: 0; padding: 0; background: #fff; }
+        .coupon-grid {
+          display: grid;
+          grid-template-columns: repeat(${cfg.columns}, minmax(0, 1fr));
+          gap: ${cfg.couponGap}px;
+          width: 100%;
+        }
+        @media print {
+          .coupon-card { page-break-inside: avoid; break-inside: avoid; margin-bottom: 6px; }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="coupon-grid">
+        ${couponCardsHtml}
+      </div>
+    </body>
+    </html>
+  `
+
+  const doc = iframe.contentWindow.document
+  doc.open()
+  doc.write(printHtml)
+  doc.close()
+
+  setTimeout(() => {
+    iframe.contentWindow.focus()
+    iframe.contentWindow.print()
+  }, 350)
 }
 </script>
 
@@ -503,10 +637,10 @@ function handleConfirmPrint({ mode, fromDate: rFrom, toDate: rTo }) {
     <div class="flex-1 overflow-auto bg-white select-none">
       <table class="w-full border-collapse text-left text-xs">
         <thead class="sticky top-0 z-20 bg-slate-100 border-b border-slate-200 shadow-2xs">
-          <!-- Header Row with Column Titles and Search Inputs -->
-          <tr class="text-slate-700 h-9 font-bold divide-x divide-slate-200">
+          <!-- Header Row with Column Titles and Search Popovers -->
+          <tr class="text-slate-700 h-9 font-semibold divide-x divide-slate-200">
             <!-- Checkbox Column -->
-            <th class="w-10 px-2 text-center">
+            <th class="w-10 px-2 text-center align-middle border border-slate-200">
               <input 
                 type="checkbox" 
                 :checked="isAllSelected" 
@@ -515,108 +649,175 @@ function handleConfirmPrint({ mode, fromDate: rFrom, toDate: rTo }) {
               />
             </th>
 
-            <!-- Mã đăng ký -->
-            <th class="p-1.5 min-w-[220px]">
-              <div class="flex items-center gap-1.5">
-                <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <input 
-                  type="text" 
-                  v-model="searchFilters.bookingCode" 
-                  placeholder="Mã đăng ký"
-                  class="w-full bg-transparent border-none outline-none font-bold text-slate-700 placeholder-slate-700"
-                />
+            <!-- Mã Đăng Ký -->
+            <th class="p-2 text-center align-middle font-semibold text-slate-800 border border-slate-200 min-w-[130px] relative">
+              <div class="flex items-center justify-center gap-1.5">
+                <span>Mã Đăng Ký</span>
+                <button 
+                  type="button" 
+                  @click.stop="toggleSearchCol('bookingCode')" 
+                  class="p-0.5 rounded transition-colors cursor-pointer"
+                  :class="searchFilters.bookingCode ? 'text-sky-600 bg-sky-100' : 'text-slate-400 hover:text-slate-600'"
+                  title="Tìm Mã Đăng Ký"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                </button>
+              </div>
+              <div v-if="activeSearchCol === 'bookingCode'" class="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-30 bg-white border border-slate-300 rounded-lg shadow-lg p-1.5 w-48 text-left">
+                <div class="flex items-center gap-1">
+                  <input 
+                    v-model="searchFilters.bookingCode" 
+                    placeholder="Tìm mã đăng ký..." 
+                    class="w-full text-xs px-2 py-1 border border-slate-200 rounded focus:border-sky-500 outline-none font-normal"
+                    autofocus
+                  />
+                  <button v-if="searchFilters.bookingCode" @click="searchFilters.bookingCode = ''" class="text-slate-400 hover:text-slate-600 px-1 text-xs">✕</button>
+                </div>
               </div>
             </th>
 
-            <!-- Tên đăng ký -->
-            <th class="p-1.5 min-w-[180px]">
-              <div class="flex items-center gap-1.5">
-                <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <input 
-                  type="text" 
-                  v-model="searchFilters.bookingName" 
-                  placeholder="Tên đăng ký"
-                  class="w-full bg-transparent border-none outline-none font-bold text-slate-700 placeholder-slate-700"
-                />
+            <!-- Tên Đăng Ký -->
+            <th class="p-2 text-center align-middle font-semibold text-slate-800 border border-slate-200 min-w-[150px] relative">
+              <div class="flex items-center justify-center gap-1.5">
+                <span>Tên Đăng Ký</span>
+                <button 
+                  type="button" 
+                  @click.stop="toggleSearchCol('bookingName')" 
+                  class="p-0.5 rounded transition-colors cursor-pointer"
+                  :class="searchFilters.bookingName ? 'text-sky-600 bg-sky-100' : 'text-slate-400 hover:text-slate-600'"
+                  title="Tìm Tên Đăng Ký"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                </button>
+              </div>
+              <div v-if="activeSearchCol === 'bookingName'" class="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-30 bg-white border border-slate-300 rounded-lg shadow-lg p-1.5 w-48 text-left">
+                <div class="flex items-center gap-1">
+                  <input 
+                    v-model="searchFilters.bookingName" 
+                    placeholder="Tìm tên đăng ký..." 
+                    class="w-full text-xs px-2 py-1 border border-slate-200 rounded focus:border-sky-500 outline-none font-normal"
+                    autofocus
+                  />
+                  <button v-if="searchFilters.bookingName" @click="searchFilters.bookingName = ''" class="text-slate-400 hover:text-slate-600 px-1 text-xs">✕</button>
+                </div>
               </div>
             </th>
 
-            <!-- Phòng -->
-            <th class="p-1.5 min-w-[90px]">
-              <div class="flex items-center gap-1.5">
-                <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <input 
-                  type="text" 
-                  v-model="searchFilters.roomNumber" 
-                  placeholder="Phòng"
-                  class="w-full bg-transparent border-none outline-none font-bold text-slate-700 placeholder-slate-700"
-                />
+            <!-- Số Phòng -->
+            <th class="p-2 text-center align-middle font-semibold text-slate-800 border border-slate-200 min-w-[90px] relative">
+              <div class="flex items-center justify-center gap-1.5">
+                <span>Số Phòng</span>
+                <button 
+                  type="button" 
+                  @click.stop="toggleSearchCol('roomNumber')" 
+                  class="p-0.5 rounded transition-colors cursor-pointer"
+                  :class="searchFilters.roomNumber ? 'text-sky-600 bg-sky-100' : 'text-slate-400 hover:text-slate-600'"
+                  title="Tìm Số Phòng"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                </button>
+              </div>
+              <div v-if="activeSearchCol === 'roomNumber'" class="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-30 bg-white border border-slate-300 rounded-lg shadow-lg p-1.5 w-40 text-left">
+                <div class="flex items-center gap-1">
+                  <input 
+                    v-model="searchFilters.roomNumber" 
+                    placeholder="Tìm số phòng..." 
+                    class="w-full text-xs px-2 py-1 border border-slate-200 rounded focus:border-sky-500 outline-none font-normal"
+                    autofocus
+                  />
+                  <button v-if="searchFilters.roomNumber" @click="searchFilters.roomNumber = ''" class="text-slate-400 hover:text-slate-600 px-1 text-xs">✕</button>
+                </div>
               </div>
             </th>
 
-            <!-- Ngày đến -->
-            <th class="p-1.5 min-w-[110px]">
-              <div class="flex items-center gap-1.5">
-                <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <input 
-                  type="text" 
-                  v-model="searchFilters.arrivalDate" 
-                  placeholder="Ngày đến"
-                  class="w-full bg-transparent border-none outline-none font-bold text-slate-700 placeholder-slate-700"
-                />
+            <!-- Ngày Đến -->
+            <th class="p-2 text-center align-middle font-semibold text-slate-800 border border-slate-200 min-w-[100px] relative">
+              <div class="flex items-center justify-center gap-1.5">
+                <span>Ngày Đến</span>
+                <button 
+                  type="button" 
+                  @click.stop="toggleSearchCol('arrivalDate')" 
+                  class="p-0.5 rounded transition-colors cursor-pointer"
+                  :class="searchFilters.arrivalDate ? 'text-sky-600 bg-sky-100' : 'text-slate-400 hover:text-slate-600'"
+                  title="Tìm Ngày Đến"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                </button>
+              </div>
+              <div v-if="activeSearchCol === 'arrivalDate'" class="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-30 bg-white border border-slate-300 rounded-lg shadow-lg p-1.5 w-40 text-left">
+                <div class="flex items-center gap-1">
+                  <input 
+                    v-model="searchFilters.arrivalDate" 
+                    placeholder="Tìm ngày đến..." 
+                    class="w-full text-xs px-2 py-1 border border-slate-200 rounded focus:border-sky-500 outline-none font-normal"
+                    autofocus
+                  />
+                  <button v-if="searchFilters.arrivalDate" @click="searchFilters.arrivalDate = ''" class="text-slate-400 hover:text-slate-600 px-1 text-xs">✕</button>
+                </div>
               </div>
             </th>
 
             <!-- Ngày Đi -->
-            <th class="p-1.5 min-w-[110px]">
-              <div class="flex items-center gap-1.5">
-                <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <input 
-                  type="text" 
-                  v-model="searchFilters.departureDate" 
-                  placeholder="Ngày Đi"
-                  class="w-full bg-transparent border-none outline-none font-bold text-slate-700 placeholder-slate-700"
-                />
+            <th class="p-2 text-center align-middle font-semibold text-slate-800 border border-slate-200 min-w-[100px] relative">
+              <div class="flex items-center justify-center gap-1.5">
+                <span>Ngày Đi</span>
+                <button 
+                  type="button" 
+                  @click.stop="toggleSearchCol('departureDate')" 
+                  class="p-0.5 rounded transition-colors cursor-pointer"
+                  :class="searchFilters.departureDate ? 'text-sky-600 bg-sky-100' : 'text-slate-400 hover:text-slate-600'"
+                  title="Tìm Ngày Đi"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                </button>
+              </div>
+              <div v-if="activeSearchCol === 'departureDate'" class="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-30 bg-white border border-slate-300 rounded-lg shadow-lg p-1.5 w-40 text-left">
+                <div class="flex items-center gap-1">
+                  <input 
+                    v-model="searchFilters.departureDate" 
+                    placeholder="Tìm ngày đi..." 
+                    class="w-full text-xs px-2 py-1 border border-slate-200 rounded focus:border-sky-500 outline-none font-normal"
+                    autofocus
+                  />
+                  <button v-if="searchFilters.departureDate" @click="searchFilters.departureDate = ''" class="text-slate-400 hover:text-slate-600 px-1 text-xs">✕</button>
+                </div>
               </div>
             </th>
 
             <!-- Tên Khách -->
-            <th class="p-1.5 min-w-[160px]">
-              <div class="flex items-center gap-1.5">
-                <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <input 
-                  type="text" 
-                  v-model="searchFilters.guestName" 
-                  placeholder="Tên Khách"
-                  class="w-full bg-transparent border-none outline-none font-bold text-slate-700 placeholder-slate-700"
-                />
+            <th class="p-2 text-center align-middle font-semibold text-slate-800 border border-slate-200 min-w-[150px] relative">
+              <div class="flex items-center justify-center gap-1.5">
+                <span>Tên Khách</span>
+                <button 
+                  type="button" 
+                  @click.stop="toggleSearchCol('guestName')" 
+                  class="p-0.5 rounded transition-colors cursor-pointer"
+                  :class="searchFilters.guestName ? 'text-sky-600 bg-sky-100' : 'text-slate-400 hover:text-slate-600'"
+                  title="Tìm Tên Khách"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                </button>
+              </div>
+              <div v-if="activeSearchCol === 'guestName'" class="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-30 bg-white border border-slate-300 rounded-lg shadow-lg p-1.5 w-48 text-left">
+                <div class="flex items-center gap-1">
+                  <input 
+                    v-model="searchFilters.guestName" 
+                    placeholder="Tìm tên khách..." 
+                    class="w-full text-xs px-2 py-1 border border-slate-200 rounded focus:border-sky-500 outline-none font-normal"
+                    autofocus
+                  />
+                  <button v-if="searchFilters.guestName" @click="searchFilters.guestName = ''" class="text-slate-400 hover:text-slate-600 px-1 text-xs">✕</button>
+                </div>
               </div>
             </th>
 
-            <!-- Q (search generic) -->
-            <th class="w-10 px-2 text-center font-bold text-slate-500">
-              Q
-            </th>
-
             <!-- Người Lớn -->
-            <th class="p-2 min-w-[90px] text-center font-bold text-slate-700">
+            <th class="p-2 min-w-[85px] text-center align-middle font-semibold text-slate-800 border border-slate-200">
               Người Lớn
             </th>
 
             <!-- Trẻ Em Ăn Sáng -->
-            <th class="p-2 min-w-[110px] text-center font-bold text-slate-700">
+            <th class="p-2 min-w-[110px] text-center align-middle font-semibold text-slate-800 border border-slate-200">
               Trẻ Em Ăn Sáng
             </th>
           </tr>
@@ -625,7 +826,7 @@ function handleConfirmPrint({ mode, fromDate: rFrom, toDate: rTo }) {
         <tbody class="divide-y divide-slate-100 text-slate-700">
           <!-- Loading State -->
           <tr v-if="isLoading">
-            <td colspan="10" class="text-center py-16 text-slate-400">
+            <td colspan="9" class="text-center py-16 text-slate-400">
               <div class="flex items-center justify-center gap-2">
                 <svg class="w-5 h-5 animate-spin text-sky-500" fill="none" viewBox="0 0 24 24">
                   <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -638,7 +839,7 @@ function handleConfirmPrint({ mode, fromDate: rFrom, toDate: rTo }) {
 
           <!-- Empty State -->
           <tr v-else-if="filteredList.length === 0">
-            <td colspan="10" class="text-center py-16 text-slate-400">
+            <td colspan="9" class="text-center py-16 text-slate-400">
               Không có dữ liệu phòng ăn sáng trong khoảng thời gian đã chọn.
             </td>
           </tr>
@@ -648,7 +849,7 @@ function handleConfirmPrint({ mode, fromDate: rFrom, toDate: rTo }) {
             <template v-for="(dGroup, dKey) in groupedData" :key="dKey">
               <!-- LEVEL 1: DATE ROW -->
               <tr class="bg-white border-b border-slate-200/80 hover:bg-slate-50 font-bold text-slate-800 transition-colors">
-                <td class="p-1.5 pl-2" colspan="10">
+                <td class="p-1.5 pl-2" colspan="9">
                   <div class="flex items-center gap-2">
                     <!-- Collapse / Expand Button (Cyan square) -->
                     <button
@@ -761,10 +962,6 @@ function handleConfirmPrint({ mode, fromDate: rFrom, toDate: rTo }) {
                       <!-- Tên Khách -->
                       <td class="px-2.5 py-1.5 text-slate-700">
                         {{ room.guest_name }}
-                      </td>
-
-                      <!-- Q (Generic spacer) -->
-                      <td class="px-1 py-1.5 text-center text-slate-300">
                       </td>
 
                       <!-- Người Lớn -->

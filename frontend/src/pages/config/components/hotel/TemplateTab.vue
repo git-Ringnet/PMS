@@ -21,23 +21,17 @@ const modalPos = ref({ x: 0, y: 0 })
 const isDraggingModal = ref(false)
 let dragStart = { x: 0, y: 0 }
 let rafId = null
+let latestX = 0
+let latestY = 0
 
-function startDragModal(e) {
-  const ignoreTags = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A', 'LABEL', 'IFRAME']
-  if (ignoreTags.includes(e.target.tagName) || e.target.closest('button, input, select, textarea, a, label, iframe')) return
-  isDraggingModal.value = true
-  dragStart.x = e.clientX - modalPos.value.x
-  dragStart.y = e.clientY - modalPos.value.y
-  document.addEventListener('mousemove', dragModal)
-  document.addEventListener('mouseup', stopDragModal)
-}
-
-function dragModal(e) {
+function dragModal(moveEvent) {
   if (!isDraggingModal.value) return
+  latestX = moveEvent.clientX
+  latestY = moveEvent.clientY
   if (rafId) return
   rafId = requestAnimationFrame(() => {
-    modalPos.value.x = e.clientX - dragStart.x
-    modalPos.value.y = e.clientY - dragStart.y
+    modalPos.value.x = latestX - dragStart.x
+    modalPos.value.y = latestY - dragStart.y
     rafId = null
   })
 }
@@ -50,6 +44,21 @@ function stopDragModal() {
   }
   document.removeEventListener('mousemove', dragModal)
   document.removeEventListener('mouseup', stopDragModal)
+}
+
+function startDragModal(e) {
+  const ignoreTags = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A', 'LABEL', 'IFRAME']
+  if (ignoreTags.includes(e.target.tagName) || e.target.closest('button, input, select, textarea, a, label, iframe')) return
+  
+  e.preventDefault()
+  isDraggingModal.value = true
+  dragStart.x = e.clientX - modalPos.value.x
+  dragStart.y = e.clientY - modalPos.value.y
+  latestX = e.clientX
+  latestY = e.clientY
+
+  document.addEventListener('mousemove', dragModal)
+  document.addEventListener('mouseup', stopDragModal)
 }
 
 const handleKeyDown = (e) => {
@@ -204,7 +213,7 @@ onBeforeUnmount(() => {
 
     <!-- Preview Modal -->
     <div v-if="previewHtml" class="fixed inset-0 z-60 flex items-center justify-center bg-black/55 backdrop-blur-xs p-4 select-none">
-      <div class="flex h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-200"
+      <div class="flex h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl border border-slate-200"
         :style="{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }">
         <!-- Modal Header (Draggable, Title Case, Theme Sync) -->
         <header class="flex items-center justify-between px-5 py-3 text-white cursor-move select-none rounded-t-xl bg-[#006bdb]"

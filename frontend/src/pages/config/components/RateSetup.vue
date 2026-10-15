@@ -1,11 +1,68 @@
 <script setup>
-import { ref, reactive, watch, computed, onMounted, nextTick } from 'vue'
+import { ref, reactive, watch, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
+import { useAuthStore } from '@/stores/auth-store'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
 import { normalizeRateMatrix } from '@/utils/rate-matrix'
 
 const uiStore = useUiStore()
+const authStore = useAuthStore()
+
+const topbarThemeBg = computed(() => authStore.themeColor || authStore.settings?.topbar_color || 'var(--pms-custom-theme, #006bdb)')
+
+// ==================== DRAGGABLE MODAL POSITION ====================
+const modalPos = ref({ x: 0, y: 0 })
+const isDraggingModal = ref(false)
+let dragStart = { x: 0, y: 0 }
+let rafId = null
+
+let latestX = 0
+let latestY = 0
+
+function dragModal(moveEvent) {
+  if (!isDraggingModal.value) return
+  latestX = moveEvent.clientX
+  latestY = moveEvent.clientY
+  if (rafId) return
+  rafId = requestAnimationFrame(() => {
+    modalPos.value.x = latestX - dragStart.x
+    modalPos.value.y = latestY - dragStart.y
+    rafId = null
+  })
+}
+
+function stopDragModal() {
+  isDraggingModal.value = false
+  if (rafId) {
+    cancelAnimationFrame(rafId)
+    rafId = null
+  }
+  document.removeEventListener('mousemove', dragModal)
+  document.removeEventListener('mouseup', stopDragModal)
+}
+
+function startDragModal(e) {
+  const ignoreTags = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A', 'LABEL']
+  if (ignoreTags.includes(e.target.tagName) || e.target.closest('button, input, select, textarea, a, label')) return
+  
+  e.preventDefault()
+  isDraggingModal.value = true
+  dragStart.x = e.clientX - modalPos.value.x
+  dragStart.y = e.clientY - modalPos.value.y
+  latestX = e.clientX
+  latestY = e.clientY
+
+  document.addEventListener('mousemove', dragModal)
+  document.addEventListener('mouseup', stopDragModal)
+}
+
+const handleKeyDown = (e) => {
+  if (e.key === 'Escape') {
+    if (showRatePlanModal.value) closeRatePlanModal()
+    else if (showCurrencyModal.value) showCurrencyModal.value = false
+  }
+}
 
 const props = defineProps({
   initialTab: {
@@ -86,8 +143,14 @@ const fetchSystemDate = async () => {
 }
 
 onMounted(async () => {
+  window.addEventListener('keydown', handleKeyDown)
   await Promise.all([fetchRoomData(), fetchSystemDate()])
   await fetchRateCodes()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleKeyDown)
+  stopDragModal()
 })
 
 // Selected Rate Code Form Fields
@@ -261,6 +324,7 @@ const openRatePlanModal = async () => {
   if (roomTypes.value.length === 0) {
     await fetchRoomData()
   }
+  modalPos.value = { x: 0, y: 0 }
   showRatePlanModal.value = true;
   const plans = selectedRateCode.value.rate_plans || [];
   modalRatePlans.value = JSON.parse(JSON.stringify(plans.filter(p => p.Code !== 'DEFAULT')));
@@ -403,27 +467,64 @@ const saveModalPlan = async () => {
   }
 }
 
-const deleteModalPlan = async () => {
-  if (!modalFormState.Code) return;
-  const confirmed = await uiStore.confirm({ message: `Bạn có chắc muốn xóa loại giá ${modalFormState.Code}?` });
-  if (!confirmed) return;
+const deletePlanItem = async (plan) => {
+  const code = plan?.Code || modalFormState.Code
+  if (!code) return
+  if (code.toUpperCase() === 'DEFAULT') {
+    uiStore.showToast('Không thể xóa loại giá mặc định (DEFAULT)!', 'warning')
+    return
+  }
+
+  // 1. Kiểm tra xem loại giá có đang được áp dụng trong bảng giá theo ngày của mã giá hiện tại
+  const currentMappings = selectedRateCode.value?.daily_mappings || dailyMappingsList.value || []
+  if (currentMappings.some(m => m.Code === code)) {
+    uiStore.showToast(`Loại giá "${code}" đang được áp dụng trong bảng giá theo ngày. Không thể xóa!`, 'error')
+    return
+  }
+
+  // 2. Kiểm tra các mã giá khác xem có mã giá nào đang gán loại giá này vào giá theo ngày không
+  const isUsedElsewhere = rateCodes.value.some(rc => {
+    const rcMappings = rc.daily_mappings || []
+    return rcMappings.some(m => m.Code === code)
+  })
+  if (isUsedElsewhere) {
+    uiStore.showToast(`Loại giá "${code}" đang được sử dụng ở mã giá phòng khác. Không thể xóa!`, 'error')
+    return
+  }
+
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận xóa',
+    message: `Bạn có chắc chắn muốn xóa loại giá ${code}?`,
+    confirmText: 'Xóa',
+    cancelText: 'Hủy'
+  })
+  if (!confirmed) return
+
   try {
-    const res = await http.delete(`/room-rate-codes/${selectedRateCode.value.Ma}/plans/${modalFormState.Code}`);
+    const res = await http.delete(`/room-rate-codes/${selectedRateCode.value.Ma}/plans/${code}`)
     if (res.status === 200) {
-      uiStore.showToast('Xóa thành công!', 'success');
-      resetModalForm();
-      await fetchRateCodes();
-      const updatedCode = rateCodes.value.find(r => r.Ma === selectedRateCode.value.Ma);
+      uiStore.showToast('Xóa loại giá thành công!', 'success')
+      if (modalFormState.Code === code) {
+        resetModalForm()
+      }
+      await fetchRateCodes()
+      const updatedCode = rateCodes.value.find(r => r.Ma === selectedRateCode.value.Ma)
       if (updatedCode) {
-        selectedRateCode.value.rate_plans = updatedCode.rate_plans;
-        loadRateMatrixFromPlans(selectedRateCode.value.Ma, updatedCode.rate_plans);
-        const plans = updatedCode.rate_plans || [];
-        modalRatePlans.value = JSON.parse(JSON.stringify(plans.filter(p => p.Code !== 'DEFAULT')));
+        selectedRateCode.value.rate_plans = updatedCode.rate_plans
+        loadRateMatrixFromPlans(selectedRateCode.value.Ma, updatedCode.rate_plans)
+        const plans = updatedCode.rate_plans || []
+        modalRatePlans.value = JSON.parse(JSON.stringify(plans.filter(p => p.Code !== 'DEFAULT')))
       }
     }
   } catch (e) {
-    console.error(e);
+    console.error(e)
+    uiStore.showToast(e.response?.data?.message || 'Không thể xóa loại giá này', 'error')
   }
+}
+
+const deleteModalPlan = async () => {
+  if (!modalFormState.Code) return
+  await deletePlanItem({ Code: modalFormState.Code })
 }
 
 const loadRateMatrixFromPlans = (rateCodeMa, plans) => {
@@ -973,52 +1074,50 @@ const selectPackage = (pkg) => {
 </script>
 
 <template>
-  <div class="flex-1 flex flex-col gap-4 text-gray-900 font-semibold min-h-0 overflow-y-auto">
+  <div class="flex-1 flex flex-col gap-2.5 text-slate-800 font-roboto min-h-0 overflow-hidden">
     <!-- Sub Navigation Tabs Bar -->
     <div class="border-b border-slate-200 shrink-0">
       <div class="flex flex-wrap gap-1">
         <button v-for="tab in rateTabs" :key="tab" @click="activeRateTab = tab"
-          class="px-4 py-2 text-sm font-bold border-none bg-transparent cursor-pointer relative pb-3 transition-colors"
-          :class="activeRateTab === tab ? 'text-sky-600 border-b-2 border-sky-500' : 'text-gray-900/60 hover:text-gray-900 font-semibold'">
+          class="px-3 py-1.5 text-xs font-semibold border-none bg-transparent cursor-pointer relative pb-2 transition-colors"
+          :class="activeRateTab === tab ? 'text-[#006bdb] border-b-2 border-[#006bdb] font-bold' : 'text-[#000000D9]/70 hover:text-[#000000D9]'">
           {{ tab }}
         </button>
       </div>
     </div>
 
     <!-- MAIN VIEW WRAPPER -->
-    <div class="flex-1 min-h-0 flex flex-col gap-4">
+    <div class="flex-1 min-h-0 flex flex-col gap-2.5">
 
       <!-- ================= TAB 1: MÃ GIÁ PHÒNG ================= -->
-      <div v-if="activeRateTab === 'Mã giá phòng'" class="flex-1 flex flex-col gap-4 min-h-0">
+      <div v-if="activeRateTab === 'Mã giá phòng'" class="flex-1 flex flex-col gap-2.5 min-h-0">
 
         <!-- Top Half: Table on left (40%), form on right (60%) -->
-        <div class="flex flex-col lg:flex-row gap-4 h-[350px] shrink-0 min-h-0">
+        <div class="flex flex-col lg:flex-row gap-2.5 min-h-[190px] max-h-[250px] shrink-0">
 
           <!-- Left Table (40%) -->
           <div
-            class="w-full lg:w-[42%] bg-white border border-slate-200 rounded-xl p-4 flex flex-col min-h-0 shadow-xs">
-            <div class="overflow-y-auto flex-1">
-              <table class="w-full text-xs text-left border-collapse border border-slate-200">
+            class="w-full lg:w-[42%] bg-white border border-slate-200 rounded-lg p-3 flex flex-col min-h-0 shadow-2xs">
+            <div class="overflow-y-auto flex-1 border border-slate-200 rounded-lg">
+              <table class="w-full text-xs text-left border-collapse font-roboto">
                 <thead>
-                  <tr class="bg-slate-50 border-b border-slate-200 text-gray-900 font-bold uppercase sticky top-0 z-10">
-                    <th class="p-2 border border-slate-200 w-16">Mã</th>
-                    <th class="p-2 border border-slate-200">Mô tả</th>
-                    <th class="p-2 border border-slate-200 w-16 text-center">Tiền tệ</th>
-                    <th class="p-2 border border-slate-200 w-24 text-center">Từ ngày</th>
-                    <th class="p-2 border border-slate-200 w-24 text-center">Đến ngày</th>
+                  <tr class="bg-slate-50 text-slate-700 font-semibold text-xs sticky top-0 z-10">
+                    <th class="p-2 text-center align-middle border border-slate-200 w-16">Mã</th>
+                    <th class="p-2 text-center align-middle border border-slate-200">Mô Tả</th>
+                    <th class="p-2 text-center align-middle border border-slate-200 w-16">Tiền Tệ</th>
+                    <th class="p-2 text-center align-middle border border-slate-200 w-24">Từ Ngày</th>
+                    <th class="p-2 text-center align-middle border border-slate-200 w-24">Đến Ngày</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="rc in rateCodes" :key="rc.Ma" @click="selectRateCode(rc)"
-                    class="border-b border-slate-100 hover:bg-sky-100 cursor-pointer transition-colors"
-                    :class="selectedRateCode?.Ma === rc.Ma ? 'bg-sky-50/40 font-bold text-sky-700' : 'text-gray-900 font-semibold'">
-                    <td class="p-2 border border-slate-100 font-bold">{{ rc.Ma }}</td>
-                    <td class="p-2 border border-slate-100">{{ rc.Description }}</td>
-                    <td class="p-2 border border-slate-100 text-center">{{ rc.Currency }}</td>
-                    <td class="p-2 border border-slate-100 text-center text-gray-900 font-semibold">{{ formatDateVN(rc.BeginDate) }}
-                    </td>
-                    <td class="p-2 border border-slate-100 text-center text-gray-900 font-semibold">{{ formatDateVN(rc.EndDate) }}
-                    </td>
+                    class="border-b border-slate-100 hover:bg-slate-50/70 cursor-pointer transition-colors"
+                    :class="selectedRateCode?.Ma === rc.Ma ? 'bg-sky-50/60 font-semibold text-sky-800' : 'text-slate-700'">
+                    <td class="p-2 border-r border-slate-100 font-semibold text-[#000000D9]">{{ rc.Ma }}</td>
+                    <td class="p-2 border-r border-slate-100 text-slate-700">{{ rc.Description }}</td>
+                    <td class="p-2 border-r border-slate-100 text-center font-medium">{{ rc.Currency }}</td>
+                    <td class="p-2 border-r border-slate-100 text-center text-slate-600">{{ formatDateVN(rc.BeginDate) }}</td>
+                    <td class="p-2 border-r border-slate-100 text-center text-slate-600">{{ formatDateVN(rc.EndDate) }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -1027,64 +1126,87 @@ const selectPackage = (pkg) => {
 
           <!-- Right Form (58%) -->
           <div
-            class="w-full lg:w-[58%] bg-white border border-slate-200 rounded-xl p-4 flex flex-col min-h-0 shadow-xs justify-between">
+            class="w-full lg:w-[58%] bg-white border border-slate-200 rounded-lg p-3 flex flex-col min-h-0 shadow-2xs justify-between">
             <!-- Form Action Buttons Header -->
-            <div class="flex items-center justify-between pb-3 border-b border-slate-100 shrink-0">
-              <span class="text-xs font-bold text-gray-900 uppercase tracking-wide">Chi tiết thiết lập giá</span>
+            <div class="flex items-center justify-between pb-2.5 border-b border-slate-100 shrink-0">
+              <span class="text-xs font-semibold text-[#000000D9] uppercase tracking-wide">Chi Tiết Thiết Lập Giá</span>
               <div class="flex items-center gap-1.5">
                 <!-- Add Button -->
                 <button @click="handleAdd"
-                  class="px-3 py-1.5 bg-[#8dcbf4] hover:bg-[#78bce8] text-white rounded-lg text-xs font-bold border-none cursor-pointer flex items-center gap-1 shadow-sm">
-                  <span class="text-sm">+</span> Thêm
+                  class="btn-pms-primary h-8 px-3 text-xs flex items-center gap-1.5 cursor-pointer shadow-xs">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                  Thêm
                 </button>
                 <!-- Save Button -->
                 <button @click="handleSave"
-                  class="px-3 py-1.5 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-xs font-bold border-none cursor-pointer flex items-center gap-1 shadow-sm">
-                  {{ isEditing ? 'Cập nhật' : 'Lưu' }}
+                  class="btn-pms-primary h-8 px-3 text-xs flex items-center gap-1.5 cursor-pointer shadow-xs">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                  </svg>
+                  {{ isEditing ? 'Cập Nhật' : 'Lưu' }}
                 </button>
                 <!-- Delete Button -->
                 <button @click="handleDelete"
-                  class="px-3 py-1.5 btn-delete rounded-lg text-xs font-bold cursor-pointer flex items-center gap-1 shadow-sm">
+                  class="btn-pms-danger h-8 px-3 text-xs flex items-center gap-1.5 cursor-pointer shadow-xs">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round"
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
                   Xóa
                 </button>
               </div>
             </div>
 
             <!-- Form Content Fields stacked in rows matching mockup -->
-            <div class="flex flex-col gap-3 py-3 overflow-y-auto flex-1">
+            <div class="flex flex-col gap-2.5 py-2.5 overflow-y-auto flex-1 text-xs">
               <!-- Row 1: Mã (1/3) & Mô tả (2/3) -->
-              <div class="flex gap-4">
+              <div class="flex gap-3">
                 <div class="w-1/3">
-                  <label class="block text-xs font-bold text-gray-900 mb-1">Mã</label>
-                  <input type="text" v-model="rateFormState.Ma"
-                    class="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-sky-400 font-semibold text-gray-900" />
+                  <label class="block text-xs font-semibold text-[#000000D9] mb-1">
+                    Mã <span v-if="!isEditing" class="text-red-500">*</span>
+                  </label>
+                  <div class="relative flex items-center">
+                    <input type="text" v-model="rateFormState.Ma" :disabled="isEditing" placeholder="Mã giá phòng..."
+                      class="w-full px-2.5 py-1.5 rounded-lg text-xs font-normal focus:outline-none transition-colors"
+                      :class="isEditing ? 'bg-slate-100 border border-slate-200 text-slate-500 cursor-not-allowed' : 'bg-[#FFF8DB] border border-[#F1DD8A] focus:border-amber-400 text-gray-900 pr-7'" />
+                    <button v-if="rateFormState.Ma && !isEditing" @click="rateFormState.Ma = ''"
+                      class="absolute right-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer text-xs"
+                      title="Xóa nhanh">✕</button>
+                  </div>
                 </div>
                 <div class="w-2/3">
-                  <label class="block text-xs font-bold text-gray-900 mb-1">Mô tả</label>
-                  <input type="text" v-model="rateFormState.Description"
-                    class="w-full px-3 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-sky-400 font-semibold text-gray-900" />
+                  <label class="block text-xs font-semibold text-[#000000D9] mb-1">Mô Tả</label>
+                  <div class="relative flex items-center">
+                    <input type="text" v-model="rateFormState.Description" placeholder="Mô tả giá phòng..."
+                      class="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-sky-400 font-normal text-gray-900 pr-7" />
+                    <button v-if="rateFormState.Description" @click="rateFormState.Description = ''"
+                      class="absolute right-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer text-xs"
+                      title="Xóa nhanh">✕</button>
+                  </div>
                 </div>
               </div>
 
               <!-- Row 2: Từ ngày - đến ngày (45%) & Tiền tệ (20%) & Ăn sáng checkbox (35%) -->
-              <div class="flex gap-4 items-end">
+              <div class="flex gap-3 items-end">
                 <div class="w-[45%] flex gap-2">
                   <div class="w-1/2">
-                    <label class="block text-xs font-bold text-gray-900 mb-1">Từ ngày</label>
+                    <label class="block text-xs font-semibold text-[#000000D9] mb-1">Từ Ngày</label>
                     <SingleDatePicker v-model="rateFormState.BeginDate" placeholder="dd/mm/yyyy" />
                   </div>
                   <div class="w-1/2">
-                    <label class="block text-xs font-bold text-gray-900 mb-1">Đến ngày</label>
+                    <label class="block text-xs font-semibold text-[#000000D9] mb-1">Đến Ngày</label>
                     <SingleDatePicker v-model="rateFormState.EndDate" :min-date="rateFormState.BeginDate" placeholder="dd/mm/yyyy" />
                   </div>
                 </div>
 
                 <div class="w-[25%]">
-                  <label class="block text-xs font-bold text-gray-900 mb-1">Tiền tệ</label>
+                  <label class="block text-xs font-semibold text-[#000000D9] mb-1">Tiền Tệ</label>
                   <button type="button" @click="showCurrencyModal = true"
-                    class="w-full flex items-center gap-2 px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold bg-white hover:border-sky-300 transition-colors cursor-pointer text-left">
-                    <span class="text-base">{{ selectedCurrencyObj.flag }}</span>
-                    <span class="font-bold text-gray-900">{{ rateFormState.Currency }}</span>
+                    class="w-full flex items-center gap-1.5 px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-normal bg-white hover:border-sky-300 transition-colors cursor-pointer text-left">
+                    <span class="text-sm">{{ selectedCurrencyObj.flag }}</span>
+                    <span class="font-semibold text-gray-900">{{ rateFormState.Currency }}</span>
                     <svg class="w-3.5 h-3.5 text-slate-400 ml-auto" fill="none" stroke="currentColor" stroke-width="2"
                       viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
@@ -1092,97 +1214,97 @@ const selectPackage = (pkg) => {
                   </button>
                 </div>
 
-                <div class="w-[30%] pb-2 pl-2">
+                <div class="w-[30%] pb-1.5 pl-1">
                   <label
-                    class="inline-flex items-center gap-1.5 text-xs text-gray-900 font-semibold cursor-pointer select-none">
+                    class="inline-flex items-center gap-1.5 text-xs text-slate-700 font-semibold cursor-pointer select-none">
                     <input type="checkbox" v-model="rateFormState.IncludeBF"
-                      class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
-                    Ăn sáng
+                      class="rounded border-slate-300 text-sky-500 focus:ring-sky-400 cursor-pointer" />
+                    Ăn Sáng
                   </label>
                 </div>
               </div>
 
               <!-- Row 3: Remaining Checkboxes Grouped Inline -->
-              <div class="flex flex-wrap gap-x-5 gap-y-2 items-center pt-2 border-t border-slate-100">
+              <div class="flex flex-wrap gap-x-4 gap-y-1.5 items-center pt-2 border-t border-slate-100">
                 <label
-                  class="inline-flex items-center gap-1.5 text-xs text-gray-900 font-semibold cursor-pointer select-none">
+                  class="inline-flex items-center gap-1.5 text-xs text-slate-700 font-semibold cursor-pointer select-none">
                   <input type="checkbox" v-model="rateFormState.IsDaily"
-                    class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
-                  Giá theo ngày
+                    class="rounded border-slate-300 text-sky-500 focus:ring-sky-400 cursor-pointer" />
+                  Giá Theo Ngày
                 </label>
                 <label
-                  class="inline-flex items-center gap-1.5 text-xs text-gray-900 font-semibold cursor-pointer select-none">
+                  class="inline-flex items-center gap-1.5 text-xs text-slate-700 font-semibold cursor-pointer select-none">
                   <input type="checkbox" v-model="rateFormState.Disable"
-                    class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
-                  Không sử dụng
+                    class="rounded border-slate-300 text-sky-500 focus:ring-sky-400 cursor-pointer" />
+                  Không Sử Dụng
                 </label>
                 <label
-                  class="inline-flex items-center gap-1.5 text-xs text-gray-900 font-semibold cursor-pointer select-none">
+                  class="inline-flex items-center gap-1.5 text-xs text-slate-700 font-semibold cursor-pointer select-none">
                   <input type="checkbox" v-model="rateFormState.AllowChangeRate"
-                    class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
-                  Cho phép nhập giá
+                    class="rounded border-slate-300 text-sky-500 focus:ring-sky-400 cursor-pointer" />
+                  Cho Phép Nhập Giá
                 </label>
                 <label
-                  class="inline-flex items-center gap-1.5 text-xs text-gray-900 font-semibold cursor-pointer select-none">
+                  class="inline-flex items-center gap-1.5 text-xs text-slate-700 font-semibold cursor-pointer select-none">
                   <input type="checkbox" v-model="rateFormState.IsChannelManager"
-                    class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
-                  Đẩy lên Channel Manager
+                    class="rounded border-slate-300 text-sky-500 focus:ring-sky-400 cursor-pointer" />
+                  Đẩy Lên Channel Manager
                 </label>
               </div>
 
               <!-- Row 4: Daily-only fields: Ngày áp dụng + Weekday checkboxes + Loại giá -->
-              <div v-if="rateFormState.IsDaily" class="flex flex-col gap-3 pt-2 border-t border-slate-200">
-                <div class="flex gap-4 items-end flex-wrap">
+              <div v-if="rateFormState.IsDaily" class="flex flex-col gap-2 pt-2 border-t border-slate-200">
+                <div class="flex gap-3 items-end flex-wrap">
                   <div class="flex items-center gap-2">
-                    <label class="text-xs font-bold text-gray-900 whitespace-nowrap">Ngày áp dụng</label>
-                    <div class="w-36">
+                    <label class="text-xs font-semibold text-[#000000D9] whitespace-nowrap">Ngày Áp Dụng</label>
+                    <div class="w-32">
                       <SingleDatePicker v-model="batchFromDate" :min-date="selectedBatchPlan?.BeginDate || getTodayString()" :max-date="selectedBatchPlan?.EndDate" placeholder="dd/mm/yyyy" />
                     </div>
                     <span class="text-xs text-slate-400">~</span>
-                    <div class="w-36">
+                    <div class="w-32">
                       <SingleDatePicker v-model="batchToDate" :min-date="batchFromDate || selectedBatchPlan?.BeginDate || getTodayString()" :max-date="selectedBatchPlan?.EndDate" placeholder="dd/mm/yyyy" />
                     </div>
                   </div>
                 </div>
-                <div class="flex items-center gap-3 flex-wrap">
+                <div class="flex items-center gap-2.5 flex-wrap">
                   <label
-                    class="inline-flex items-center gap-1 text-xs font-semibold text-gray-900 cursor-pointer"><input
-                      type="checkbox" v-model="batchDaysOfWeek[1]" class="rounded text-sky-500" />T2</label>
+                    class="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 cursor-pointer"><input
+                      type="checkbox" v-model="batchDaysOfWeek[1]" class="rounded text-sky-500 cursor-pointer" />T2</label>
                   <label
-                    class="inline-flex items-center gap-1 text-xs font-semibold text-gray-900 cursor-pointer"><input
-                      type="checkbox" v-model="batchDaysOfWeek[2]" class="rounded text-sky-500" />T3</label>
+                    class="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 cursor-pointer"><input
+                      type="checkbox" v-model="batchDaysOfWeek[2]" class="rounded text-sky-500 cursor-pointer" />T3</label>
                   <label
-                    class="inline-flex items-center gap-1 text-xs font-semibold text-gray-900 cursor-pointer"><input
-                      type="checkbox" v-model="batchDaysOfWeek[3]" class="rounded text-sky-500" />T4</label>
+                    class="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 cursor-pointer"><input
+                      type="checkbox" v-model="batchDaysOfWeek[3]" class="rounded text-sky-500 cursor-pointer" />T4</label>
                   <label
-                    class="inline-flex items-center gap-1 text-xs font-semibold text-gray-900 cursor-pointer"><input
-                      type="checkbox" v-model="batchDaysOfWeek[4]" class="rounded text-sky-500" />T5</label>
+                    class="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 cursor-pointer"><input
+                      type="checkbox" v-model="batchDaysOfWeek[4]" class="rounded text-sky-500 cursor-pointer" />T5</label>
                   <label
-                    class="inline-flex items-center gap-1 text-xs font-semibold text-gray-900 cursor-pointer"><input
-                      type="checkbox" v-model="batchDaysOfWeek[5]" class="rounded text-sky-500" />T6</label>
+                    class="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 cursor-pointer"><input
+                      type="checkbox" v-model="batchDaysOfWeek[5]" class="rounded text-sky-500 cursor-pointer" />T6</label>
                   <label
-                    class="inline-flex items-center gap-1 text-xs font-semibold text-gray-900 cursor-pointer"><input
-                      type="checkbox" v-model="batchDaysOfWeek[6]" class="rounded text-sky-500" />T7</label>
+                    class="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 cursor-pointer"><input
+                      type="checkbox" v-model="batchDaysOfWeek[6]" class="rounded text-sky-500 cursor-pointer" />T7</label>
                   <label
-                    class="inline-flex items-center gap-1 text-xs font-semibold text-gray-900 cursor-pointer"><input
-                      type="checkbox" v-model="batchDaysOfWeek[0]" class="rounded text-sky-500" />CN</label>
+                    class="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 cursor-pointer"><input
+                      type="checkbox" v-model="batchDaysOfWeek[0]" class="rounded text-sky-500 cursor-pointer" />CN</label>
 
-                  <div class="flex items-center gap-2 border-l border-slate-300 pl-3 ml-2">
-                    <span class="text-xs font-bold text-gray-900">Loại giá</span>
+                  <div class="flex items-center gap-1.5 border-l border-slate-300 pl-2.5 ml-1">
+                    <span class="text-xs font-semibold text-[#000000D9]">Loại Giá</span>
                     <select v-model="batchRateType"
-                      class="border border-slate-200 px-2 py-1.5 rounded text-xs focus:outline-sky-400 w-28 bg-white font-bold text-gray-900">
+                      class="border border-slate-200 px-2 py-1 rounded text-xs focus:outline-sky-400 w-28 bg-white font-semibold text-slate-700">
                       <option v-if="availableRatePlans.length === 0" value="" disabled>Trống</option>
                       <option v-for="plan in availableRatePlans" :key="plan.Code" :value="plan.Code">{{ plan.Code }}
                       </option>
                     </select>
                     <button @click="openRatePlanModal"
-                      class="bg-sky-400 hover:bg-sky-500 text-white w-6 h-6 rounded-full flex items-center justify-center font-bold text-sm"
-                      title="Quản lý các loại giá">+</button>
+                      class="bg-sky-500 hover:bg-sky-600 text-white w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shadow-xs transition-colors cursor-pointer"
+                      title="Quản lý các loại giá">...</button>
                   </div>
 
                   <button @click="applyBatchUpdate" :disabled="isSavingDailyMappings"
-                    class="ml-auto px-4 py-1.5 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-xs font-bold border-none cursor-pointer shadow-sm disabled:opacity-50 disabled:cursor-not-allowed">
-                    Áp dụng
+                    class="ml-auto btn-pms-primary h-8 px-3 text-xs flex items-center gap-1 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed">
+                    Áp Dụng
                   </button>
                 </div>
               </div>
@@ -1192,7 +1314,7 @@ const selectPackage = (pkg) => {
 
         <!-- Bottom Room rate matrix values with full table grid lines -->
         <div v-if="!rateFormState.IsDaily"
-          class="h-[520px] shrink-0 bg-white border border-slate-200 rounded-xl p-4 flex flex-col shadow-xs">
+          class="flex-1 min-h-[160px] bg-white border border-slate-200 rounded-xl p-3 flex flex-col shadow-xs overflow-hidden">
           <div class="flex-1 overflow-auto">
             <table class="w-full text-xs text-left border-collapse min-w-[800px] border border-slate-200">
               <thead>
@@ -1225,7 +1347,7 @@ const selectPackage = (pkg) => {
           </div>
         </div>
 
-        <div v-else class="h-[520px] shrink-0 bg-white border border-slate-200 rounded-xl p-0 flex flex-col shadow-xs">
+        <div v-else class="flex-1 min-h-[160px] bg-white border border-slate-200 rounded-xl p-0 flex flex-col shadow-xs overflow-hidden">
           <!-- Lưới giá theo ngày (Daily Grid) - giống hệ thống cũ -->
           <div class="flex-1 overflow-auto">
             <table class="text-xs text-left border-collapse min-w-[1200px] border border-slate-200">
@@ -1498,13 +1620,16 @@ const selectPackage = (pkg) => {
         <div class="absolute inset-0 bg-black/40" @click="closeRatePlanModal"></div>
         <!-- Modal -->
         <div
-          class="relative bg-white rounded-2xl shadow-2xl w-full max-w-6xl h-full max-h-[90vh] flex flex-col overflow-hidden">
+          class="relative bg-white rounded-xl shadow-2xl w-full max-w-6xl h-full max-h-[90vh] flex flex-col overflow-hidden"
+          :style="{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }">
           <!-- Header -->
-          <div class="flex items-center justify-between px-5 py-3.5 bg-sky-400 text-white shrink-0">
-            <span class="text-xl font-bold text-white">Quản lý Các Loại Giá</span>
+          <div class="flex items-center justify-between px-5 py-2.5 text-white shrink-0 cursor-move select-none"
+            :style="{ background: topbarThemeBg }"
+            @mousedown="startDragModal">
+            <span class="text-xs font-semibold tracking-wide text-white">Quản Lý Các Loại Giá</span>
             <button @click="closeRatePlanModal"
               class="w-7 h-7 flex items-center justify-center rounded-full hover:bg-white/20 transition-colors cursor-pointer bg-transparent border-none text-white">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
@@ -1517,25 +1642,34 @@ const selectPackage = (pkg) => {
               <table class="w-full text-xs text-left border-collapse border border-slate-200 bg-white shadow-sm">
                 <thead class="bg-slate-100/80 sticky top-0">
                   <tr>
-                    <th class="p-2 border border-slate-200 text-gray-900 font-bold">Mã</th>
-                    <th class="p-2 border border-slate-200 text-gray-900 font-bold">Mô tả</th>
-                    <th class="p-2 border border-slate-200 text-gray-900 font-bold text-center">Từ ngày</th>
-                    <th class="p-2 border border-slate-200 text-gray-900 font-bold text-center">Đến ngày</th>
+                    <th class="p-2 border border-slate-200 text-gray-900 font-semibold text-center align-middle">Mã Loại Giá</th>
+                    <th class="p-2 border border-slate-200 text-gray-900 font-semibold text-center align-middle">Mô Tả</th>
+                    <th class="p-2 border border-slate-200 text-gray-900 font-semibold text-center align-middle">Từ Ngày</th>
+                    <th class="p-2 border border-slate-200 text-gray-900 font-semibold text-center align-middle">Đến Ngày</th>
+                    <th class="p-2 border border-slate-200 text-gray-900 font-semibold text-center align-middle w-16">Hành Động</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="plan in modalRatePlans" :key="plan.Code" @click="selectModalPlan(plan)"
-                    class="cursor-pointer hover:bg-sky-50 transition-colors"
+                    class="cursor-pointer hover:bg-sky-50 transition-colors text-xs"
                     :class="{ 'bg-sky-100': modalFormState.Code === plan.Code }">
-                    <td class="p-2 border border-slate-200 font-bold text-gray-900">{{ plan.Code }}</td>
-                    <td class="p-2 border border-slate-200 text-gray-900 font-semibold">{{ plan.Description }}</td>
-                    <td class="p-2 border border-slate-200 text-center text-gray-900 font-semibold">{{
+                    <td class="p-2 border border-slate-200 font-semibold text-gray-900">{{ plan.Code }}</td>
+                    <td class="p-2 border border-slate-200 text-gray-900">{{ plan.Description }}</td>
+                    <td class="p-2 border border-slate-200 text-center text-gray-900">{{
                       formatDateVN(plan.BeginDate) }}</td>
-                    <td class="p-2 border border-slate-200 text-center text-gray-900 font-semibold">{{
+                    <td class="p-2 border border-slate-200 text-center text-gray-900">{{
                       formatDateVN(plan.EndDate) }}</td>
+                    <td class="p-2 border border-slate-200 text-center" @click.stop>
+                      <button @click="deletePlanItem(plan)" title="Xóa loại giá"
+                        class="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded transition-colors inline-flex items-center justify-center">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </td>
                   </tr>
                   <tr v-if="modalRatePlans.length === 0">
-                    <td colspan="4" class="p-6 text-center text-gray-900 font-semibold text-sm">Chưa có loại giá nào
+                    <td colspan="5" class="p-6 text-center text-gray-500 font-medium text-xs">Chưa có loại giá nào
                     </td>
                   </tr>
                 </tbody>
@@ -1544,35 +1678,49 @@ const selectPackage = (pkg) => {
 
             <!-- Right: Form -->
             <div class="w-1/2 p-5 flex flex-col">
-              <div class="flex justify-end gap-2 mb-6">
-                <button @click="resetModalForm"
-                  class="px-4 py-1.5 rounded-md text-xs font-bold border border-slate-200 hover:bg-slate-50 text-gray-900 transition-colors cursor-pointer">Thêm
-                  Mới</button>
-                <button @click="saveModalPlan"
-                  class="px-5 py-1.5 bg-sky-400 hover:bg-sky-500 text-white rounded-md text-xs font-bold border-none transition-colors cursor-pointer shadow-sm">
-                  {{ isModalEditing ? 'Cập nhật' : 'Lưu' }}
+              <div class="flex justify-end gap-2 mb-4">
+                <button @click="resetModalForm" type="button"
+                  class="btn-pms-secondary h-8 px-3 text-xs flex items-center gap-1.5 font-medium cursor-pointer">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                  </svg>
+                  <span>Tạo Mới</span>
                 </button>
-                <button v-if="isModalEditing" @click="deleteModalPlan"
-                  class="px-5 py-1.5 bg-slate-400 hover:bg-slate-500 text-white rounded-md text-xs font-bold border-none transition-colors cursor-pointer shadow-sm">
-                  Xóa
+                <button @click="saveModalPlan" type="button"
+                  class="btn-pms-primary h-8 px-4 text-xs flex items-center gap-1.5 font-medium cursor-pointer">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                  </svg>
+                  <span>Lưu</span>
                 </button>
               </div>
 
               <div class="grid grid-cols-2 gap-4">
-                <div class="flex flex-col gap-1.5">
-                  <label class="text-xs font-bold text-gray-900">Mã</label>
-                  <input type="text" v-model="modalFormState.Code" :disabled="isModalEditing"
-                    class="border border-slate-200 rounded p-1.5 text-xs focus:outline-sky-400 disabled:bg-slate-100 font-semibold text-gray-900" />
+                <div class="flex flex-col gap-1">
+                  <label class="text-xs font-semibold text-gray-900">Mã Loại Giá <span class="text-red-500">*</span></label>
+                  <div class="relative">
+                    <input type="text" v-model="modalFormState.Code" :disabled="isModalEditing"
+                      class="w-full border rounded px-2.5 py-1.5 text-xs focus:outline-none transition-colors disabled:bg-slate-100 disabled:border-slate-200 disabled:text-gray-500 text-gray-900 font-medium"
+                      :class="isModalEditing ? '' : 'bg-[#FFF8DB] border-[#F1DD8A] focus:border-amber-500'"
+                      placeholder="Nhập mã loại giá" />
+                    <button v-if="modalFormState.Code && !isModalEditing" @click="modalFormState.Code = ''" type="button"
+                      class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs">✕</button>
+                  </div>
                 </div>
-                <div class="flex flex-col gap-1.5">
-                  <label class="text-xs font-bold text-gray-900">Mô tả</label>
-                  <input type="text" v-model="modalFormState.Description"
-                    class="border border-slate-200 rounded p-1.5 text-xs focus:outline-sky-400 font-semibold text-gray-900" />
+                <div class="flex flex-col gap-1">
+                  <label class="text-xs font-semibold text-gray-900">Mô Tả</label>
+                  <div class="relative">
+                    <input type="text" v-model="modalFormState.Description"
+                      class="w-full border border-slate-200 rounded px-2.5 py-1.5 text-xs focus:outline-sky-400 text-gray-900 font-medium"
+                      placeholder="Mô tả loại giá" />
+                    <button v-if="modalFormState.Description" @click="modalFormState.Description = ''" type="button"
+                      class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs">✕</button>
+                  </div>
                 </div>
               </div>
 
-              <div class="flex flex-col gap-1.5 mt-4">
-                <label class="text-xs font-bold text-gray-900">Từ ngày - đến ngày</label>
+              <div class="flex flex-col gap-1 mt-3">
+                <label class="text-xs font-semibold text-gray-900">Thời Gian Áp Dụng (Từ Ngày - Đến Ngày)</label>
                 <div class="flex items-center gap-2">
                   <div class="w-full">
                     <SingleDatePicker v-model="modalFormState.BeginDate" placeholder="dd/mm/yyyy" />
@@ -1591,33 +1739,33 @@ const selectPackage = (pkg) => {
             <div v-if="!modalFormState.Code"
               class="absolute inset-0 z-20 bg-white/60 backdrop-blur-[2px] flex items-center justify-center pointer-events-none">
               <span
-                class="bg-slate-800 text-white px-4 py-2 rounded-lg font-semibold text-sm shadow-xl pointer-events-auto">Vui
+                class="bg-slate-800 text-white px-4 py-2 rounded-lg font-semibold text-xs shadow-xl pointer-events-auto">Vui
                 lòng nhập Mã loại giá để tiếp tục</span>
             </div>
             <div class="flex-1 p-4 overflow-auto">
               <table class="w-full text-xs text-left border-collapse min-w-[800px] border border-slate-200">
                 <thead>
                   <tr
-                    class="bg-slate-100 border-b border-slate-200 text-gray-900 font-bold sticky top-0 z-10 text-center">
-                    <th class="p-2 border border-slate-200 bg-slate-100 text-left w-36">Loại phòng</th>
-                    <th class="p-2 border border-slate-200 bg-slate-100 text-left w-48">Mô tả</th>
-                    <th v-for="occ in occupanciesList" :key="occ" class="p-2 border border-slate-200 w-32">{{ occ }}</th>
+                    class="bg-slate-100 border-b border-slate-200 text-gray-900 font-semibold sticky top-0 z-10 text-center">
+                    <th class="p-2 border border-slate-200 bg-slate-100 text-center align-middle w-36">Loại Phòng</th>
+                    <th class="p-2 border border-slate-200 bg-slate-100 text-center align-middle w-48">Mô Tả</th>
+                    <th v-for="occ in occupanciesList" :key="occ" class="p-2 border border-slate-200 text-center align-middle w-32">{{ occ }}</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="rt in roomTypes" :key="rt.code" class="hover:bg-slate-50/50">
-                    <td class="p-2 font-bold text-gray-900 border border-slate-200 bg-slate-50">{{ rt.code }}</td>
-                    <td class="p-2 text-gray-900 font-semibold border border-slate-200">{{ rt.description }}</td>
+                    <td class="p-2 font-semibold text-gray-900 border border-slate-200 bg-slate-50 text-center">{{ rt.code }}</td>
+                    <td class="p-2 text-gray-900 border border-slate-200">{{ rt.description }}</td>
 
                     <td v-for="occ in occupanciesList" :key="rt.code + '-' + occ" class="p-1 border border-slate-200">
                       <input type="text" :disabled="!modalFormState.Code"
                         :value="formatCurrencyInput(modalRateMatrix[getModalMatrixKey(rt.code, occ)], selectedRateCode?.Currency)"
                         @input="e => modalRateMatrix[getModalMatrixKey(rt.code, occ)] = cleanCurrencyValue(e.target.value, selectedRateCode?.Currency)"
-                        class="w-full px-2 py-1.5 border border-slate-100 hover:border-slate-300 focus:border-sky-300 rounded text-center text-xs focus:outline-none font-semibold text-gray-900 transition-colors disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed" />
+                        class="w-full px-2 py-1.5 border border-slate-100 hover:border-slate-300 focus:border-sky-300 rounded text-center text-xs focus:outline-none font-medium text-gray-900 transition-colors disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed" />
                     </td>
                   </tr>
                   <tr v-if="roomTypes.length === 0">
-                    <td :colspan="2 + occupanciesList.length" class="p-8 text-center text-gray-500 font-semibold text-sm">
+                    <td :colspan="2 + occupanciesList.length" class="p-8 text-center text-gray-500 font-medium text-xs">
                       Đang tải danh sách loại phòng...
                     </td>
                   </tr>
@@ -1635,13 +1783,16 @@ const selectPackage = (pkg) => {
         <!-- Backdrop -->
         <div class="absolute inset-0 bg-black/40" @click="showCurrencyModal = false; currencySearch = ''"></div>
         <!-- Modal -->
-        <div class="relative bg-white rounded-2xl shadow-2xl w-[520px] max-h-[80vh] flex flex-col overflow-hidden">
+        <div class="relative bg-white rounded-xl shadow-2xl w-[520px] max-h-[80vh] flex flex-col overflow-hidden"
+          :style="{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }">
           <!-- Header -->
-          <div class="flex items-center justify-between px-5 py-3.5 bg-sky-500 text-white shrink-0">
-            <span class="text-xl font-bold text-white">Chọn tiền tệ</span>
+          <div class="flex items-center justify-between px-5 py-2.5 text-white shrink-0 select-none cursor-move"
+            :style="{ background: topbarThemeBg }"
+            @mousedown="startDragModal">
+            <span class="text-xs font-semibold tracking-wide text-white">Chọn Tiền Tệ</span>
             <button @click="showCurrencyModal = false; currencySearch = ''"
               class="w-7 h-7 flex items-center justify-center rounded-full hover:bg-white/20 transition-colors cursor-pointer bg-transparent border-none text-white">
-              <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>
