@@ -8,8 +8,144 @@
 
 - **Ngày ghi**: `YYYY-MM-DD`
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
+## [2026-10-15] - Rà Soát & Đồng Bộ Chuẩn Font Chữ & Cỡ Chữ FE Design System
+### Module: Khai báo lưu trú, In phiếu ăn sáng, Chức năng hệ thống, Lịch sử thao tác
+- **Mục tiêu & Kết quả**:
+  - **Rà soát font chữ**: Toàn bộ hệ thống thống nhất font **Roboto** (`'Roboto', system-ui, -apple-system, sans-serif`).
+  - **Rà soát cỡ chữ**: Đồng nhất cỡ chữ **12px (`text-xs`)**, không còn phần tử UI nào vi phạm cỡ chữ `< 12px` hoặc cỡ chữ lẻ (`12.5px`, `11.5px`, `11px`, `10px`, `9px`).
+  - [ResidenceDeclarationPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/ResidenceDeclarationPage.vue): Chuẩn hóa `.split-main` (12px font-weight 600), `.dp-item` (12px font-weight 400), `.cell-ghichuchuyen` (12px); nút xóa nhanh `x` không còn viền/hình tròn xám.
+  - [ActivityLogTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/system/components/ActivityLogTab.vue): Chuẩn hóa toàn bộ nhãn bộ lọc, chip lọc nhanh, badge hành động, text user-agent, nút Chi tiết, modal chi tiết thay đổi dữ liệu và pre diff về `text-xs` (12px) `font-semibold`/`font-normal`.
+  - [BreakfastPrintModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/BreakfastPrintModal.vue): Khai báo `font-sans` (kế thừa Roboto), nhãn `Từ ngày:`, `Đến ngày:`, nội dung input và các tùy chọn đều chuẩn `text-xs` (12px).
+- **Kiểm thử**:
+  - `npm run build`: hoàn thành 100% không lỗi trong 4.79s.
 
-## [2026-10-14] - Khắc Phục Lỗi Đồng Bộ Màu Header Các Form/Modal Theo Theme Hệ Thống
+## [2026-10-15] - Hoàn Thiện & Chuẩn Hóa FE Design System Theo Sheet FIX FE (Dòng 86 - 90)
+### Module: Khai báo lưu trú, In phiếu ăn sáng, Chức năng hệ thống, Thông báo hệ thống, Lịch sử thao tác
+- **Mục tiêu & Kết quả**:
+  - **Dòng 86 (Khai báo lưu trú - [ResidenceDeclarationPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/ResidenceDeclarationPage.vue))**:
+    - Khôi phục đường kẻ viền dưới cho cột `Người lớn` trong bảng lưu trú (`table.residence-grid td`).
+    - Nền ô nhập ngày và ô tìm kiếm bộ lọc chuyển sang màu trắng `#ffffff` chuẩn UX (không còn màu xám mờ như disable).
+    - Hỗ trợ gõ tay ngày tháng năm `dd/mm/yyyy` (tự động điền dấu `/`, giới hạn tháng 01-12, gõ đủ 8 chữ số mới load dữ liệu).
+    - Bổ sung nút xóa nhanh `x` tách biệt cạnh icon lịch/tìm kiếm trong popup lọc; chuẩn hóa nút xóa nhanh `x` trong ô tìm kiếm toolbar với nền trong suốt, loại bỏ hoàn toàn viền xám và hình tròn xám bao quanh nút để đồng bộ với toàn hệ thống.
+    - Chuẩn hóa nút *Xuất ra file* khi disable sang nền `#cbd5e1`, chữ `#475569` rõ nét.
+    - Chuẩn hóa toàn bộ `<th>`: căn giữa ngang/dọc, Title Case (`Địa Chỉ`, `Hộ Chiếu`, `Tạm Trú Đến`, `Ngày Hết Hạn`, `Người Lớn`, `Ghi Chú Chuyển Phòng`), có viền đầy đủ `border: 1px solid var(--border)`.
+  - **Dòng 87 (In phiếu ăn sáng - [BreakfastPrintModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/BreakfastPrintModal.vue), [BreakfastPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/BreakfastPage.vue))**:
+    - Xóa bỏ cột thừa `Q` khỏi bảng danh sách; cập nhật lại `colspan`.
+    - Bổ sung icon kính lúp nhỏ kèm popover tìm kiếm nhanh trên tiêu đề từng cột (`Mã Đăng Ký`, `Tên Đăng Ký`, `Số Phòng`, `Ngày Đến`, `Ngày Đi`, `Tên Khách`).
+    - Bỏ các dòng ghi chú dài dòng thừa trong modal in; đổi nhãn thành `Từ ngày:`, `Đến ngày:`; hỗ trợ gõ tay ngày `dd/mm/yyyy`; nút in `.btn-pms-primary`; hỗ trợ phím `Esc` đóng modal nhanh.
+    - Tích hợp in ngầm qua iframe và `window.print()` trực tiếp, không nhảy sang modal tùy chỉnh mẫu rườm rà.
+  - **Dòng 88 (Chức năng hệ thống - [MainLayout.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/layouts/MainLayout.vue))**:
+    - Loại bỏ nút chuyển đổi Dark Mode (Moon/Sun) trên Topbar theo yêu cầu.
+    - Phân quyền cụm nút đổi màu nền Topbar chỉ hiển thị cho Admin (`v-if="authStore.isAdmin"`).
+    - Bổ sung mục "Đổi mật khẩu" vào menu dropdown user profile.
+    - Tích hợp modal Đổi Mật Khẩu chuẩn FE Design System: nền header đồng bộ màu theme, 3 trường bắt buộc nền vàng nhạt `#FFF8DB` viền `#F1DD8A` có dấu `*` đỏ, nút Lưu `.btn-pms-primary`, hỗ trợ phím `Esc` đóng nhanh.
+  - **Dòng 89 (Thông báo hệ thống - [ui-store.js](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/stores/ui-store.js))**:
+    - Tăng thời gian hiển thị mặc định của Toast Notification từ 3000ms lên 4500ms giúp người dùng đọc trọn vẹn thông điệp.
+  - **Dòng 90 (Lịch sử thao tác - [ActivityLogResource.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Http/Resources/ActivityLogResource.php), [ActivityLogTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/system/components/ActivityLogTab.vue))**:
+    - Backend: Cập nhật `resolveRoomNumber()` để đối với `BookingRoom` luôn ưu tiên giữ nguyên mã phòng thuê dạng `G...` (ví dụ `G0000001`), không ghi đè bằng số phòng vật lý.
+    - Frontend: Chuẩn hóa toàn bộ `<th>` theo Title Case, căn giữa ngang dọc, có viền đầy đủ; bổ sung icon kính lúp nhỏ kèm popover tìm kiếm nhanh tại 3 cột `Mã Đăng Ký`, `Mã Phòng`, `Mô Tả`.
+- **Kiểm thử & Xác thực**:
+  - `npm run build`: hoàn thành thành công trong 5.15s (0 lỗi).
+  - PHP tests: `php artisan test --filter=ActivityLog` vượt qua 100% (5 tests, 24 assertions).
+  - Browser Subagent: Đã chạy kiểm tra trực quan giao diện Topbar, modal đổi mật khẩu, bảng ăn sáng, và bảng lịch sử thao tác.
+
+## [2026-10-15] - Cấu Hình Hệ Thống: Khắc Phục Điều Hướng Nút Back Về Trang PMS Trước Đó
+### Module: Cấu hình / ConfigPage.vue
+- **Mục tiêu & Kết quả**:
+  - **Khắc phục lỗi nút Back `< CẤU HÌNH HỆ THỐNG` không quay về trang trước đó**:
+    - Nguyên nhân: Trước đó hàm `handleBack()` khi ở `currentView === 'menu'` hardcode `router.push('/')` (dẫn ra trang Portal Provista `HomePage.vue` thay vì quay lại trang PMS người dùng vừa đứng), đồng thời mỗi lần đổi subview trong ConfigPage lại gọi `router.push({ query })` làm phình lịch sử trình duyệt.
+    - Xử lý tại [ConfigPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/ConfigPage.vue):
+      1. Tự động bắt và ghi nhớ trang nguồn trước khi vào Cấu hình qua `window.history.state?.back` và đồng bộ vào `sessionStorage.setItem('pms_config_entry_route', ...)`.
+      2. Chuyển subview trong ConfigPage sang `router.replace({ query })` để không làm ô nhiễm lịch sử duyệt web.
+      3. Khi nhấn nút Back `< CẤU HÌNH HỆ THỐNG`: Điều hướng người dùng quay lại chính xác trang PMS trước đó (`/frontdesk`, `/reservation`, `/housekeeping`, `/reports`, `/pms`), nếu không có lịch sử thì fallback an toàn về `/pms` (Trang chủ phân hệ PMS), không bao giờ bị đá văng ra ngoài trang Portal (`/`).
+- **Kiểm thử**:
+  - `npm run build`: hoàn thành thành công trong 6.08s với 0 lỗi.
+  - Browser subagent: Đã kiểm chứng luồng chuyển đổi giữa Lễ tân, Buồng phòng và Cấu hình hệ thống; nút Back điều hướng quay lại đúng trang PMS trước đó.
+
+## [2026-10-15] - Cấu Hình Hệ Thống: Khắc Phục Cuộn Bảng Phòng, Cuộn Database Backup & Thu Gọn Form Outlet HK
+### Module: Cấu hình / Định nghĩa phòng, Sao lưu & Khôi phục DB, Định nghĩa buồng phòng (RoomTab.vue, DatabaseBackupTab.vue, HousekeepingMenuDefinition.vue)
+- **Mục tiêu & Kết quả**:
+  - **Ảnh 1 - Tab Phòng ([RoomTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/components/room/RoomTab.vue))**:
+    - Khắc phục lỗi không cuộn được khi mở rộng (expand) các nhóm phòng (`Superior Double`, `Superior Twin`,...).
+    - Nguyên nhân: Container gốc thiếu `flex-1 flex flex-col min-h-0 h-full`, bảng thiếu `overflow-auto flex-1 min-h-0`.
+    - Xử lý: Đổi root div sang flex container, bảng bọc trong `overflow-auto rounded-xl bg-white shadow-2xs flex-1 min-h-0`, tiêu đề cột `thead` áp dụng `sticky top-0 bg-slate-50 z-10 shadow-3xs`, phân trang cố định ở đáy với `shrink-0`. Cuộn bảng mượt mà, độc lập.
+  - **Ảnh 2 - Sao Lưu & Khôi Phục Database ([DatabaseBackupTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/components/DatabaseBackupTab.vue))**:
+    - Khắc phục việc bị mất thanh cuộn dọc khiến bảng `TỔNG QUAN CƠ SỞ DỮ LIỆU HỆ THỐNG & CÁC CHI NHÁNH` và các nút bấm bên dưới bị che khuất.
+    - Xử lý: Bọc toàn bộ nội dung trong container `flex-1 min-h-0 overflow-y-auto h-full p-2`, bổ sung padding dưới đáy `pb-8`. Trang xuất hiện thanh cuộn dọc mượt mà, cho phép xem trọn vẹn 100% tất cả các bảng và nút thao tác.
+  - **Ảnh 3 - Định Nghĩa Buồng Phòng ([HousekeepingMenuDefinition.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/components/HousekeepingMenuDefinition.vue))**:
+    - Thu nhỏ gọn gàng form "THÊM OUTLET HK" ở cột bên phải để triệt tiêu hoàn toàn thanh cuộn dọc (scrollbar).
+    - Xử lý: Giảm padding card từ `p-4` xuống `p-3`, giảm khoảng cách từ `gap-3` xuống `gap-2`, khung ảnh đại diện thu gọn sang dạng ngang `w-10 h-10` padding `p-2`, các ô nhập liệu giảm chiều cao padding `py-1`, tinh chỉnh gap thuế phí và checkbox. Khung ngoài `grid` đổi sang `overflow-hidden`, bảng bên trái có `overflow-auto` riêng. Toàn bộ form hiển thị vừa khít trong 1 màn hình laptop, không còn scrollbar.
+- **Kiểm thử**:
+  - `npm run build`: hoàn thành thành công trong 5.36s với 0 lỗi.
+  - Browser subagent: Đã chụp màn hình và xác nhận trực tiếp cả 3 view (`media_1792062427235.png`, `media_1792062450601.png`, `media_1792062471356.png`).
+
+## [2026-10-15] - Cấu Hình Hệ Thống: Điều Chỉnh Tiêu Đề Tab & Khắc Phục Dứt Điểm Scrollbar Theo Dòng 78 FIX FE
+### Module: Cấu hình / Toàn bộ phân hệ (ConfigPage.vue, HotelDefinition.vue, HotelInfoTab.vue, RoomDefinition.vue, RoomClassTab.vue, SystemDefinition.vue, RateSetup.vue, HousekeepingMenuDefinition.vue)
+- **Mục tiêu & Kết quả**: Khắc phục dứt điểm yêu cầu tại Dòng 78 Sheet `FIX FE` (*"phần tiêu đề thông tin các tab trong các phân hệ đang khá rộng, điều chỉnh lại cho hợp lý hơn với một số màn hình để không cần Scrollbar"*):
+  - **Thu gọn thanh tiêu đề tab (Tab Bar)**:
+    - Đồng bộ kích thước thanh tab bar ở tất cả các phân hệ (`HotelDefinition`, `RoomDefinition`, `SystemDefinition`, `RateSetup`, `HousekeepingMenuDefinition`): Giảm padding các nút tab từ `px-4 py-2 pb-2.5` xuống `px-3 py-1.5 pb-2 text-xs font-semibold`, khoảng cách gap thu gọn từ `gap-3` xuống `gap-1` và `gap-2.5`.
+  - **Loại bỏ các lớp Card lồng nhau (Nested Cards)**:
+    - Khung bao ngoài [ConfigPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/ConfigPage.vue): Giảm outer padding từ `p-6` xuống `p-3 sm:p-4`, giảm gap header back button từ `gap-4` xuống `gap-2`, đổi outer container sang `overflow-hidden` kèm `flex-1 min-h-0`.
+    - Loại bỏ hoàn toàn lớp card trắng lồng bên trong (`nested card p-6/p-5`) ở [HotelDefinition.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/components/HotelDefinition.vue), [RoomDefinition.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/components/RoomDefinition.vue), [SystemDefinition.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/components/SystemDefinition.vue), thay thế bằng container flexbox chuẩn `flex-1 min-h-0`.
+  - **Khắc phục dứt điểm thanh cuộn dọc (Scrollbar) trên màn hình Laptop 14-inch (viewport 1350x673 / 1366x768)**:
+    - [RateSetup.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/components/RateSetup.vue) (Tab Mã giá phòng): Thay thế chiều cao cố định `h-[520px] shrink-0` ở bảng giá phòng dưới đáy bằng `flex-1 min-h-[160px] overflow-hidden` với bảng cuộn nội bộ; nửa trên form thu gọn từ `min-h-[300px]` xuống `min-h-[190px] max-h-[250px]`. Outer card không còn bị scrollbar.
+    - [HotelInfoTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/components/hotel/HotelInfoTab.vue) (Tab Thông tin khách sạn): Tinh chỉnh padding ô nhập từ `p-2` sang `px-2.5 py-1.5`, giảm khoảng cách dòng từ `gap-2` xuống `gap-1.5`, card padding `p-3`, thu gọn khung logo từ 80px xuống 64px, mã QR từ 144px xuống 112px; toàn bộ 18 trường thông tin khách sạn hiển thị vừa khít trong màn hình mà không cần cuộn dọc.
+    - [SystemDefinition.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/components/SystemDefinition.vue) & [RoomClassTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/components/room/RoomClassTab.vue): Đổi padding dòng bảng sang `px-2.5 py-1.5`, thanh tiêu đề `thead` sticky, phân trang ghim cố định ở đáy mà không bị che khuất hay sinh scrollbar ngoài card.
+- **Kiểm thử**:
+  - `npm run build`: hoàn thành thành công trong 5.17s với 0 lỗi.
+  - Browser Subagent: Đã chụp màn hình kiểm chứng trực quan trên độ phân giải laptop chuẩn (1350x673) ở tất cả 4 phân hệ (`hotel_final_check`, `system_final_check`, `room_tab_perfect`, `rate_final_check`), xác nhận 100% không còn thanh cuộn ngoài trên toàn bộ các view.
+
+## [2026-10-15] - Cấu Hình Hệ Thống: Chuẩn Hóa FE Design System & Hoàn Thiện FIX FE Dòng 79 - 84
+### Module: Cấu hình / Định nghĩa phòng, Định nghĩa hệ thống, Thiết lập giá, Định nghĩa buồng phòng, Mẫu & Báo cáo, Sao lưu & Khôi phục DB (RoomDefinition.vue, RoomClassTab.vue, RoomFormTab.vue, RoomTab.vue, StandardRateTab.vue, SystemDefinition.vue, RateSetup.vue, HousekeepingMenuDefinition.vue, DesignTemplateTab.vue, DatabaseBackupTab.vue)
+- **Mục tiêu & Kết quả**: Triển khai toàn diện toàn bộ các yêu cầu từ Dòng 79 đến Dòng 84 trong Sheet `FIX FE` & Khắc phục triệt để lỗi kéo thả di chuyển modal form:
+  - **Khắc phục lỗi kéo thả (Draggable) & Hook trước khi unmount (beforeUnmount hook) trên toàn bộ Form/Modal cấu hình**:
+    - Nguyên nhân 1: Class CSS animation `animate-in fade-in zoom-in-95 duration-200` với keyframe `transform: scale(1)` có `animation-fill-mode: forwards` đã chiếm quyền ưu tiên tầng CSS cascade cao hơn inline style `:style="{ transform: translate(...) }"`, khiến trình duyệt khóa cứng giá trị `transform` và không cho dịch chuyển modal. Đồng thời thiếu `e.preventDefault()` trên sự kiện `mousedown` dẫn đến trình duyệt kích hoạt cử chỉ bôi đen/kéo thả văn bản mặc định làm đứt quãng sự kiện `mousemove`.
+    - Nguyên nhân 2 (Lỗi Uncaught ReferenceError: stopDragModal is not defined trong beforeUnmount): Khi refactor startDragModal, hàm `stopDragModal` ban đầu bị inlined vào scope cục bộ của sự kiện, trong khi `onBeforeUnmount` của các component (BranchTab, HotelConfigTab, HotelServiceTab,...) vẫn gọi `stopDragModal()`. Khi người dùng chuyển tab, Vue gọi `beforeUnmount` gặp lỗi ReferenceError khiến toàn bộ tiến trình render và cập nhật component con bị gãy (`Cannot read properties of null`).
+    - Xử lý: Định nghĩa chuẩn hóa `dragModal` và `stopDragModal` trực tiếp ở component scope của toàn bộ 14 component con cấu hình, đảm bảo `onBeforeUnmount` luôn gọi dọn dẹp an toàn (`document.removeEventListener` và `cancelAnimationFrame`).
+    - Đã test và kiểm chứng trực tiếp bằng browser subagent: chuyển qua lại toàn bộ tab con của Khách sạn (Thông tin khách sạn, Dịch vụ khách sạn, Ca làm việc, Cấu hình, Chi nhánh, Mẫu in, Bộ phận dịch vụ), mở modal, kéo thả và đóng modal bằng Escape thành công 100%, console sạch 0 cảnh báo/lỗi.
+  - **Dòng 79 (Định nghĩa phòng - RoomDefinition.vue, RoomClassTab.vue, RoomFormTab.vue, StandardRateTab.vue, RoomTab.vue)**:
+    - Đồng bộ tab bar phân hệ với vạch chỉ thị theme `#006bdb`.
+    - Chuẩn hóa toàn bộ tiêu đề cột bảng sang Title Case viết hoa chữ cái đầu mỗi từ, căn giữa ngang/dọc (`text-center align-middle`), đủ 4 viền `border border-slate-200`.
+    - Đồng bộ icon thùng rác đỏ SVG chuẩn trên tất cả các tab (RoomClassTab, RoomFormTab, StandardRateTab, RoomTab), loại bỏ nút xóa xanh ở RoomTab.
+    - Toàn bộ modal Thêm/Sửa: Header đồng bộ màu theme hệ thống `topbarThemeBg`, hỗ trợ kéo thả modal (Draggable), hỗ trợ phím `Esc` để đóng nhanh.
+    - Các trường bắt buộc nhập đều áp dụng nền vàng nhạt `#FFF8DB` và viền `#F1DD8A`, nhãn có dấu `*` đỏ.
+    - Trang bị nút xóa nhanh `(x)` khi ô đã có giá trị để đưa về trạng thái trống.
+    - Footer modal lược bỏ nút Đóng, chỉ giữ nút Lưu chuẩn `.btn-pms-primary`.
+  - **Dòng 80 (Định nghĩa hệ thống - SystemDefinition.vue)**:
+    - Loại bỏ tab `Mẫu` trùng lặp khỏi danh sách tab phân hệ (vì chức năng quản lý mẫu in/thiết kế đã nằm tại `Mẫu & Báo cáo` và `Mẫu In` của Khách sạn).
+    - Chuẩn hóa 4 tab còn lại (`HÌNH THỨC THANH TOÁN`, `TIỀN TỆ`, `ĐƠN VỊ TÍNH`, `TÌNH TRẠNG ĐĂNG KÝ`) và tab con `CẤU HÌNH HOUSEKEEPING`.
+    - Tiêu đề cột các bảng chuyển sang Title Case và căn giữa (`text-center align-middle`).
+    - Tất cả modal Thêm/Sửa: Header màu theme, draggable, phím `Esc`, các trường bắt buộc nền vàng viền vàng có `*` đỏ, nút xóa nhanh `(x)`, footer chỉ giữ nút Lưu `.btn-pms-primary` (bỏ nút Đóng).
+  - **Dòng 81 (Thiết lập giá - RateSetup.vue)**:
+    - Bảng danh sách và chi tiết mã giá: Tiêu đề cột Title Case căn giữa.
+    - Tab Mã Giá Phòng: Khi click chọn mã giá có sẵn, trường `Mã` bị vô hiệu hóa (`:disabled="isEditing"`, nền xám) không cho chỉnh sửa; khi tạo mới thì trường `Mã` mở cho nhập với nền vàng `#FFF8DB` và dấu `*` đỏ.
+    - Bộ chọn ngày Từ ngày - Đến ngày tích hợp `SingleDatePicker` định dạng `dd/mm/yyyy` hỗ trợ gõ tay.
+    - Bổ sung nút xóa nhanh `(x)` cho tất cả các ô nhập liệu.
+    - Nút Thêm áp dụng class chuẩn `.btn-pms-primary` với màu sắc đồng bộ, tối ưu khoảng đệm màn hình để vừa vặn không bị thanh cuộn thừa.
+    - Modal Quản Lý Các Loại Giá: Tiêu đề cột căn giữa; Từ ngày - Đến ngày chuẩn `dd/mm/yyyy`; nút Thêm Mới chuyển thành nút Lưu `.btn-pms-primary`; bổ sung cột Thao Tác với icon thùng rác xóa loại giá kèm ràng buộc an toàn (chặn xóa nếu loại giá đang được gán trong `daily_mappings` của mã giá hiện tại hoặc bất kỳ mã giá phòng nào khác trong hệ thống).
+  - **Dòng 82 (Định nghĩa buồng phòng - HousekeepingMenuDefinition.vue)**:
+    - Tiêu đề cột bảng outlet căn giữa và chuyển sang Title Case.
+    - Nút `+ Thêm Outlet` đổi sang class chuẩn `.btn-pms-primary` nổi bật, không còn bị mờ nhạt như disabled.
+    - Form Sửa outlet HK: Bổ sung nhãn `<label>` rõ ràng cho từng trường; các trường bắt buộc (`Tên Outlet`, `Mã Outlet`) áp dụng nền vàng `#FFF8DB` viền `#F1DD8A` có dấu `*` đỏ; bổ sung nút xóa nhanh `(x)`. Khi sửa outlet có sẵn thì trường `Mã Outlet` bị vô hiệu hóa (`disabled`, nền xám) không cho sửa.
+    - Trường `Mã Dịch Vụ`: Chuyển từ ô nhập text sang `<select>` lấy dữ liệu tự động từ API danh mục dịch vụ (`/hotel-services`).
+    - Đổi thứ tự nhóm Thuế phí trên cả form và bảng: Phí phục vụ (mặc định 5%) $\rightarrow$ Thuế ĐB (mặc định 0%) $\rightarrow$ Thuế (mặc định 8%).
+    - Nút Lưu Cấu Hình đổi sang `.btn-pms-primary`.
+  - **Dòng 83 (Mẫu & Báo cáo - DesignTemplateTab.vue)**:
+    - Tiêu đề bảng chuyển sang Title Case viết hoa chữ cái đầu mỗi từ (`Tên Thiết Kế`, `Phiên Bản`, `Nguồn Dữ Liệu Thiết Kế`, `Sử Dụng Tại`, `Thao Tác`), căn giữa ngang/dọc, đủ viền `border border-slate-200`.
+    - Form tạo nhanh biểu mẫu: Bổ sung nhãn rõ ràng, nền vàng `#FFF8DB` viền `#F1DD8A` cho trường bắt buộc, nút xóa nhanh `(x)`, nút Tạo Mẫu `.btn-pms-primary`.
+    - Tích hợp `uiStore.confirm` chuẩn PMS cho thao tác xóa thiết kế (thay cho `window.confirm`).
+  - **Dòng 84 (Sao lưu & Khôi phục DB - DatabaseBackupTab.vue)**:
+    - Thay thế card nền đen/tối `bg-slate-900` bằng card nền sáng sang trọng `bg-white border border-slate-200 rounded-xl shadow-2xs` với độ tương phản cao, chữ màu `#000000D9`, triệt tiêu dứt điểm lỗi trùng màu nền không nhìn thấy chữ ở phần chọn phạm vi.
+    - Dropdown chọn phạm vi: Nền sáng chữ đậm, rõ ràng.
+    - Nút Xuất database chuẩn `.btn-pms-primary`, nút Khôi phục chuẩn `.btn-pms-danger`.
+    - Bảng tổng quan database: Tiêu đề cột Title Case căn giữa, đủ viền `border border-slate-200`.
+    - Modal xác nhận khôi phục: Tích hợp Draggable, phím `Esc`, bo góc `rounded-xl`, nút Hủy `.btn-pms-secondary`, nút Đồng Ý Khôi Phục `.btn-pms-danger`.
+- **Phạm vi tác động**:
+  - Toàn bộ thay đổi chỉ nằm trong các component con của `frontend/src/pages/config/components/`.
+  - Tuyệt đối không thay đổi schema database, không đổi endpoint API hay ảnh hưởng đến các phân hệ khác (Lễ tân, Buồng phòng, Nhà hàng, Thu ngân).
+- **Kiểm thử**: `npm run build` hoàn thành 100% (5.28s, 0 lỗi), `php artisan route:list` 484 route API hoạt động chuẩn xác.
+
+
 ### Module: Cấu hình khách sạn & Hệ thống (HotelServiceTab.vue, WorkShiftTab.vue, HotelConfigTab.vue, BranchTab.vue, ServiceDepartmentTab.vue, TemplateTab.vue, SynthesisReportTab.vue)
 - **Vấn đề phát hiện**: Header các modal form bị trắng xóa (chữ trắng trên nền trắng) do thuộc tính CSS `backgroundColor` từ chối nhận chuỗi gradient (linear-gradient) từ theme hệ thống, dẫn đến header thành trong suốt và chìm vào nền trắng của modal.
 - **Giải pháp**:
