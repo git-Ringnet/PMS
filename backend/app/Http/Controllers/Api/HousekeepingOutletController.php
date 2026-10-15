@@ -9,6 +9,7 @@ use App\Models\Product;
 use App\Models\ProductCategory;
 use App\Models\ServiceBill;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 
 class HousekeepingOutletController extends Controller
 {
@@ -29,7 +30,12 @@ class HousekeepingOutletController extends Controller
             'default_tax_percent' => 'nullable|numeric|min:0|max:100',
             'default_special_tax_percent' => 'nullable|numeric|min:0|max:100',
             'order_index' => 'nullable|integer|min:0',
+            'image' => 'nullable|file|image|max:5120',
         ]);
+
+        if ($request->hasFile('image')) {
+            $data['image'] = $request->file('image')->store('outlets', 'public');
+        }
 
         return response()->json(HousekeepingOutlet::create($data), 201);
     }
@@ -51,7 +57,20 @@ class HousekeepingOutletController extends Controller
             'default_tax_percent' => 'nullable|numeric|min:0|max:100',
             'default_special_tax_percent' => 'nullable|numeric|min:0|max:100',
             'order_index' => 'nullable|integer|min:0',
+            'image' => 'nullable|file|image|max:5120',
         ]);
+
+        if ($request->hasFile('image')) {
+            if ($housekeepingOutlet->image) {
+                Storage::disk('public')->delete($housekeepingOutlet->image);
+            }
+            $data['image'] = $request->file('image')->store('outlets', 'public');
+        } elseif ($request->input('remove_image') == '1') {
+            if ($housekeepingOutlet->image) {
+                Storage::disk('public')->delete($housekeepingOutlet->image);
+            }
+            $data['image'] = null;
+        }
 
         $housekeepingOutlet->update($data);
         return response()->json($housekeepingOutlet->fresh());

@@ -8510,10 +8510,10 @@ defineExpose({
     <Teleport to="body">
       <div 
         v-if="isModalOpen && !isCheckoutMetadataEdit"
-        class="fixed inset-0 bg-black/20 z-[9999] flex items-center justify-center p-4 animate-in"
+        class="fixed inset-0 bg-black/20 z-[9999] flex items-center justify-center p-2 sm:p-4 animate-in"
       >
         <div 
-          class="bg-white rounded-xl shadow-2xl w-full max-w-[1400px] overflow-hidden border border-gray-300 flex flex-col max-h-[90vh]"
+          class="bg-white rounded-xl shadow-2xl w-[98vw] max-w-[1760px] overflow-hidden border border-gray-300 flex flex-col max-h-[92vh]"
           :style="{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }"
         >
           
@@ -9215,7 +9215,7 @@ defineExpose({
             </div>
 
             <!-- Tab 3: Lấy phòng -->
-            <div v-else-if="modalSubTab === 'rooms'" class="bg-white rounded-xl border border-slate-200 p-4 shadow-sm flex flex-col gap-4 relative animate-in">
+            <div v-else-if="modalSubTab === 'rooms'" class="bg-white rounded-xl border border-slate-200 p-3 shadow-sm flex flex-col gap-3 relative animate-in">
             
               
               <!-- Column Selector Icon at Top Right -->
@@ -9300,24 +9300,24 @@ defineExpose({
               </div>
 
               <!-- Grid rooms table allocations -->
-              <div class="w-full px-4 pb-4 overflow-x-auto">
-                <table class="min-w-[1420px] w-full border-collapse text-left text-xs table-auto">
+              <div class="w-full px-1 pb-2 overflow-x-auto">
+                <table class="min-w-[1240px] w-full border-collapse text-left text-xs table-auto">
                   <thead class="bg-slate-50 text-slate-500 font-semibold border-y border-slate-200">
                     <tr>
-                      <th v-if="visibleColumns.roomType" class="py-2 px-2 text-center w-[6%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Loại/Dạng</th>
-                      <th v-if="visibleColumns.dates" class="py-2 px-2 text-center min-w-[310px] w-[22%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Ngày Đến ~ Ngày Đi</th>
-                      <th v-if="visibleColumns.occupancy" class="py-2 px-1 text-center w-[5%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Chiếm Dụng</th>
-                      <th v-if="visibleColumns.availability" class="py-2 px-1 text-center w-[5%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Trống</th>
-                      <th v-if="visibleColumns.quantity" class="py-2 px-1 text-center w-[7%] font-semibold text-[11px] bg-slate-100/50 align-middle border-r border-slate-200 border">Số Lượng</th>
-                      <th v-if="visibleColumns.price" class="py-2 px-1 text-center w-[10%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Giá Phòng</th>
-                      <th v-if="visibleColumns.rateCode" class="py-2 px-2 text-center w-[13%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Mã Giá Phòng</th>
-                      <th v-if="visibleColumns.discount" class="py-2 px-2 text-center w-[10%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Tăng/Giảm</th>
-                      <th v-if="visibleColumns.upgrade" class="py-2 px-2 text-center w-[11%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Nâng Hạng</th>
-                      <th v-if="visibleColumns.adults" class="py-2 px-1 text-center w-[5%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Người Lớn</th>
-                      <th v-if="visibleColumns.babies" class="py-2 px-1 text-center w-[5%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Em Bé</th>
-                      <th v-if="visibleColumns.children" class="py-2 px-1 text-center w-[5%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Trẻ Em</th>
-                      <th v-if="visibleColumns.childBreakfastRate" class="py-2 px-1 text-center w-[11%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Giá Ăn Sáng Trẻ Em</th>
-                      <th v-if="visibleColumns.breakfast" class="py-2 px-1 text-center w-[4%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Ăn Sáng</th>
+                      <th v-if="visibleColumns.roomType" class="py-2 px-2 text-center w-[5%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Loại/Dạng</th>
+                      <th v-if="visibleColumns.dates" class="py-2 px-2 text-center min-w-[300px] w-[21%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Ngày Đến ~ Ngày Đi</th>
+                      <th v-if="visibleColumns.occupancy" class="py-2 px-1 text-center w-[4%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Chiếm Dụng</th>
+                      <th v-if="visibleColumns.availability" class="py-2 px-1 text-center w-[4%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Trống</th>
+                      <th v-if="visibleColumns.quantity" class="py-2 px-1 text-center w-[5%] font-semibold text-[11px] bg-slate-100/50 align-middle border-r border-slate-200 border">Số Lượng</th>
+                      <th v-if="visibleColumns.price" class="py-2 px-1 text-center w-[9%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Giá Phòng</th>
+                      <th v-if="visibleColumns.rateCode" class="py-2 px-2 text-center w-[11%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Mã Giá Phòng</th>
+                      <th v-if="visibleColumns.discount" class="py-2 px-2 text-center w-[9%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Tăng/Giảm</th>
+                      <th v-if="visibleColumns.upgrade" class="py-2 px-2 text-center w-[8%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Nâng Hạng</th>
+                      <th v-if="visibleColumns.adults" class="py-2 px-1 text-center w-[4%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Người Lớn</th>
+                      <th v-if="visibleColumns.babies" class="py-2 px-1 text-center w-[4%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Em Bé</th>
+                      <th v-if="visibleColumns.children" class="py-2 px-1 text-center w-[4%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Trẻ Em</th>
+                      <th v-if="visibleColumns.childBreakfastRate" class="py-2 px-1 text-center w-[9%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Giá Ăn Sáng Trẻ Em</th>
+                      <th v-if="visibleColumns.breakfast" class="py-2 px-1 text-center w-[3%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Ăn Sáng</th>
                     </tr>
                   </thead>
                   

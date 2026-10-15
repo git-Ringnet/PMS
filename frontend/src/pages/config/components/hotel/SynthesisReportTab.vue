@@ -1,11 +1,57 @@
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount, computed } from 'vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
+import { useAuthStore } from '@/stores/auth-store'
 
 const uiStore = useUiStore()
+const authStore = useAuthStore()
 const loading = ref(false)
 const hotelServices = ref([])
+
+const topbarThemeBg = computed(() => authStore.themeColor || authStore.settings?.topbar_color || 'var(--pms-custom-theme, #006bdb)')
+
+// ==================== DRAGGABLE MODAL POSITION ====================
+const modalPos = ref({ x: 0, y: 0 })
+const isDraggingModal = ref(false)
+let dragStart = { x: 0, y: 0 }
+let rafId = null
+
+function startDragModal(e) {
+  const ignoreTags = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A', 'LABEL']
+  if (ignoreTags.includes(e.target.tagName) || e.target.closest('button, input, select, textarea, a, label')) return
+  isDraggingModal.value = true
+  dragStart.x = e.clientX - modalPos.value.x
+  dragStart.y = e.clientY - modalPos.value.y
+  document.addEventListener('mousemove', dragModal)
+  document.addEventListener('mouseup', stopDragModal)
+}
+
+function dragModal(e) {
+  if (!isDraggingModal.value) return
+  if (rafId) return
+  rafId = requestAnimationFrame(() => {
+    modalPos.value.x = e.clientX - dragStart.x
+    modalPos.value.y = e.clientY - dragStart.y
+    rafId = null
+  })
+}
+
+function stopDragModal() {
+  isDraggingModal.value = false
+  if (rafId) {
+    cancelAnimationFrame(rafId)
+    rafId = null
+  }
+  document.removeEventListener('mousemove', dragModal)
+  document.removeEventListener('mouseup', stopDragModal)
+}
+
+const handleKeyDown = (e) => {
+  if (e.key === 'Escape' && isReportConfigModalOpen.value) {
+    isReportConfigModalOpen.value = false
+  }
+}
 
 const departments = [
   'Restaurant/Nhà Hàng',
@@ -32,6 +78,7 @@ const reportConfigFormState = reactive({
 })
 
 const openAddReportConfigModal = () => {
+  modalPos.value = { x: 0, y: 0 }
   isEditReportConfigMode.value = false
   Object.assign(reportConfigFormState, {
     id: null,
@@ -44,6 +91,7 @@ const openAddReportConfigModal = () => {
 }
 
 const openEditReportConfigModal = (report) => {
+  modalPos.value = { x: 0, y: 0 }
   isEditReportConfigMode.value = true
   Object.assign(reportConfigFormState, {
     id: report.id,
@@ -245,6 +293,12 @@ const fetchHotelServices = async () => {
 
 onMounted(() => {
   fetchHotelServices()
+  window.addEventListener('keydown', handleKeyDown)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleKeyDown)
+  stopDragModal()
 })
 </script>
 
@@ -511,14 +565,17 @@ onMounted(() => {
 
     <!-- OVERLAY MODAL: ADD / EDIT SYNTHESIS REPORT -->
     <div v-if="isReportConfigModalOpen"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-xs select-none">
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-xs select-none p-4">
       <div
-        class="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
-        <!-- Modal Header -->
-        <div class="bg-[#8dcbf4] px-6 py-4 flex items-center justify-between text-white">
-          <h2 class="text-base font-black uppercase tracking-wider">{{ isEditReportConfigMode ? 'Sửa báo cáo' : 'Thêm báo cáo mới' }}</h2>
-          <button @click="isReportConfigModalOpen = false"
-            class="text-white/80 hover:text-white bg-transparent border-none cursor-pointer text-lg font-black">
+        class="bg-white rounded-xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200"
+        :style="{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }">
+        <!-- Modal Header (Draggable, Title Case, Theme Sync) -->
+        <div class="px-5 py-3 flex items-center justify-between text-white cursor-move select-none rounded-t-xl bg-[#006bdb]"
+          @mousedown="startDragModal"
+          :style="{ background: topbarThemeBg || 'var(--pms-custom-theme, #006bdb)', color: 'var(--pms-custom-theme-text, #ffffff)' }">
+          <h2 class="text-xs font-semibold tracking-wide text-white">{{ isEditReportConfigMode ? 'Sửa Báo Cáo' : 'Thêm Báo Cáo Mới' }}</h2>
+          <button @mousedown.stop @click="isReportConfigModalOpen = false"
+            class="text-white/80 hover:text-white bg-transparent border-none cursor-pointer text-base font-bold p-1">
             ✕
           </button>
         </div>

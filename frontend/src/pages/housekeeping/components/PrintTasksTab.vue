@@ -11,6 +11,8 @@ import {
 
 import { useUiStore } from '@/stores/ui-store'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
+import SingleDatePicker from '@/components/SingleDatePicker.vue'
+import RoomIcon from '@/components/RoomIcon.vue'
 import { fetchSystemDate } from '@/services/booking-service'
 import echo from '@/services/echo'
 
@@ -47,16 +49,17 @@ const pad = n => String(n).padStart(2, '0')
 const workDate = ref(`${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`)
 const selectedShiftId = ref(null)
 
-const dateInputRef = ref(null)
-function triggerDatePicker() {
-  if (dateInputRef.value) {
-    if (typeof dateInputRef.value.showPicker === 'function') {
-      dateInputRef.value.showPicker()
-    } else {
-      dateInputRef.value.click()
-    }
+// Thứ tự ca chuẩn hóa: Ca sáng -> Ca chiều -> Ca tối
+const sortedShifts = computed(() => {
+  const getShiftOrder = (shift) => {
+    const name = String(shift.name || '').trim().toLowerCase()
+    if (name === '1' || name === 'sáng' || name === 'morning') return 1
+    if (name === '2' || name === 'chiều' || name === 'afternoon') return 2
+    if (name === '0' || name === 'tối' || name === 'night') return 3
+    return 4
   }
-}
+  return [...(hkStore.shifts || [])].sort((a, b) => getShiftOrder(a) - getShiftOrder(b))
+})
 
 function getShiftName(shift) {
   const name = String(shift.name).trim().toLowerCase()
@@ -81,6 +84,22 @@ const filterBook = ref('all')
 const activeFloors = ref(new Set())
 const showFilterPanel = ref(false)
 
+// Phễu lọc chuẩn theo FIX FE Row 62
+const hkFilterOptions = [
+  { key: 'all', label: 'Tất cả', icon: null },
+  { key: 'clean', label: 'Phòng sạch', icon: 'clean', iconClass: 'text-emerald-500' },
+  { key: 'dirty', label: 'Phòng bẩn', icon: 'dirty', iconClass: 'text-amber-600' },
+  { key: 'cleaning', label: 'Phòng lau dọn', icon: 'checkout', iconClass: 'text-cyan-600' },
+  { key: 'ready', label: 'Phòng sẵn sàng', icon: 'available', iconClass: 'text-emerald-600' },
+]
+
+const bookingFilterOptions = [
+  { key: 'all', label: 'Tất cả' },
+  { key: 'reserved', label: 'Check - in' },
+  { key: 'checkout', label: 'Check - out' },
+  { key: 'occupied', label: 'Stay - over' },
+]
+
 // ── Chọn phòng ───────────────────────────────────────────────
 const selectedRoomIds = ref(new Set())
 const selectedStaffIds = ref(new Set())
@@ -88,25 +107,87 @@ const showStaffDropdown = ref(false)
 const staffDropdownRef = ref(null)
 
 const dropdownButtonLabel = computed(() => {
-  if (selectedStaffIds.value.size === 0) return '-- Chọn nhân viên làm phòng --'
+  const count = selectedStaffIds.value.size
+  if (count === 0) return '-- Chọn nhân viên làm phòng --'
   const names = hkStore.availableStaff
     .filter(s => selectedStaffIds.value.has(s.id))
     .map(s => s.name)
-  return names.join(', ')
+  if (count === 1) return names[0] || '1 nhân viên'
+  if (count <= 2 && names.join(', ').length <= 22) {
+    return names.join(', ')
+  }
+  return `Đã chọn ${count} nhân viên`
+})
+
+const selectedStaffSummaryTitle = computed(() => {
+  if (selectedStaffIds.value.size === 0) return ''
+  return hkStore.availableStaff
+    .filter(s => selectedStaffIds.value.has(s.id))
+    .map(s => s.name)
+    .join(', ')
 })
 
 // ── Drag & drop ──────────────────────────────────────────────
 let dragRoomId = null
 let dragFromGroupId = null
 
+// ── Kéo thả (Draggable) Modals ──────────────────────────────
+const staffModalPos = ref({ x: 0, y: 0 })
+const editGroupModalPos = ref({ x: 0, y: 0 })
+
+function createDragHandler(posRef) {
+  let dragStart = { x: 0, y: 0 }
+  let isDragging = false
+  let rafId = null
+
+  function onMouseMove(e) {
+    if (!isDragging) return
+    if (rafId) return
+    rafId = requestAnimationFrame(() => {
+      posRef.value.x = e.clientX - dragStart.x
+      posRef.value.y = e.clientY - dragStart.y
+      rafId = null
+    })
+  }
+
+  function onMouseUp() {
+    isDragging = false
+    if (rafId) {
+      cancelAnimationFrame(rafId)
+      rafId = null
+    }
+    document.removeEventListener('mousemove', onMouseMove)
+    document.removeEventListener('mouseup', onMouseUp)
+  }
+
+  return function startDrag(e) {
+    const ignoreTags = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A', 'LABEL', 'SVG', 'PATH']
+    if (ignoreTags.includes(e.target.tagName) || e.target.closest('button, input, select, textarea, a, label')) return
+    
+    isDragging = true
+    dragStart.x = e.clientX - posRef.value.x
+    dragStart.y = e.clientY - posRef.value.y
+    
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  }
+}
+
+const startDragStaffModal = createDragHandler(staffModalPos)
+const startDragEditGroupModal = createDragHandler(editGroupModalPos)
+
 // ── Modal quản lý NV ─────────────────────────────────────────
 const showStaffModal = ref(false)
 const staffTab = ref('active') // active | hidden
 const newStaffName = ref('')
+const staffSearchQ = ref('')
 
 // ── Modal chỉnh sửa nhóm ─────────────────────────────────────
 const showEditGroupModal = ref(false)
 const editingGroupId = ref(null)
+
+watch(showStaffModal, (v) => { if (!v) staffModalPos.value = { x: 0, y: 0 } })
+watch(showEditGroupModal, (v) => { if (!v) editGroupModalPos.value = { x: 0, y: 0 } })
 
 
 
@@ -152,7 +233,22 @@ const floors = computed(() => [...new Set(allRooms.value.map(r => r.floor))].sor
 const filteredRooms = computed(() => {
   const q = searchQ.value.trim().toLowerCase()
   return allRooms.value.filter(r => {
-    if (filterHk.value !== 'all' && r.room_status_code !== filterHk.value) return false
+    if (filterHk.value !== 'all') {
+      const code = String(r.room_status_code || '').toLowerCase()
+      if (filterHk.value === 'clean') {
+        const isClean = code === 'vacant_clean' || code === 'occupied_clean' || code === 'clean'
+        if (!isClean) return false
+      } else if (filterHk.value === 'dirty') {
+        const isDirty = code === 'vacant_dirty' || code === 'occupied_dirty' || code === 'dirty'
+        if (!isDirty) return false
+      } else if (filterHk.value === 'cleaning') {
+        const isCleaning = code === 'housekeeping' || code === 'turndown' || code === 'cleaning'
+        if (!isCleaning) return false
+      } else if (filterHk.value === 'ready') {
+        const isReady = code === 'vacant_ready' || code === 'occupied_ready' || code === 'ready'
+        if (!isReady) return false
+      }
+    }
     if (filterBook.value !== 'all' && r.displayBookingStatus !== filterBook.value) return false
     if (activeFloors.value.size > 0 && !activeFloors.value.has(r.floor)) return false
     if (q && !String(r.room_number).toLowerCase().includes(q) && !r.room_type.toLowerCase().includes(q)) return false
@@ -186,11 +282,39 @@ const editingGroupAvailableStaff = computed(() => {
   return hkStore.staff.filter(s => !usedInOtherGroups.has(s.id) && !currentStaffIds.has(s.id))
 })
 
+const filteredStaffInModal = computed(() => {
+  const list = staffTab.value === 'hidden'
+    ? hkStore.staffAll.filter(x => x.is_hidden)
+    : hkStore.staff
+  const q = staffSearchQ.value.trim().toLowerCase()
+  if (!q) return list
+  return list.filter(s => s.name && s.name.toLowerCase().includes(q))
+})
+
+// ── Xử lý phím tắt ESC cho các Modal ────────────────────────
+function handleGlobalKeydown(e) {
+  if (e.key === 'Escape' || e.key === 'Esc') {
+    if (showStaffModal.value) {
+      showStaffModal.value = false
+      return
+    }
+    if (showEditGroupModal.value) {
+      showEditGroupModal.value = false
+      return
+    }
+    if (showFilterPanel.value) {
+      showFilterPanel.value = false
+      return
+    }
+  }
+}
+
 // ─────────────────────────────────────────────────────────────
 // Load
 // ─────────────────────────────────────────────────────────────
 onMounted(async () => {
   document.addEventListener('click', onDocClick)
+  window.addEventListener('keydown', handleGlobalKeydown)
   
   // Tải ngày hệ thống của khách sạn trước
   try {
@@ -214,8 +338,8 @@ onMounted(async () => {
     hkStore.loadStaff(),
     hkStore.loadHkConfig(),
   ])
-  if (hkStore.shifts.length > 0) {
-    selectedShiftId.value = hkStore.shifts[0].id
+  if (sortedShifts.value.length > 0) {
+    selectedShiftId.value = sortedShifts.value[0].id
     // Load assignment ngay sau khi có cả ngày + ca
     await hkStore.loadAssignment(workDate.value, selectedShiftId.value)
   }
@@ -251,13 +375,14 @@ onMounted(async () => {
 
 onUnmounted(() => {
   document.removeEventListener('click', onDocClick)
+  window.removeEventListener('keydown', handleGlobalKeydown)
   if (echo) {
     echo.channel('pms-channel').stopListening('.room.status.updated')
     echo.channel('pms-channel').stopListening('.reservation.updated')
   }
 })
 
-watch(() => hkStore.shifts, (newShifts) => {
+watch(sortedShifts, (newShifts) => {
   if (newShifts && newShifts.length > 0 && !selectedShiftId.value) {
     selectedShiftId.value = newShifts[0].id
   }
@@ -286,6 +411,24 @@ function clearFloors() { activeFloors.value = new Set() }
 function toggleRoom(id) {
   const s = new Set(selectedRoomIds.value)
   if (s.has(id)) s.delete(id); else s.add(id)
+  selectedRoomIds.value = s
+}
+
+function handleRoomItemClick(id, event) {
+  if (event?.target && event.target.tagName === 'INPUT') {
+    return
+  }
+  toggleRoom(id)
+}
+
+function handleRoomCheckboxChange(id, event) {
+  const checked = event.target.checked
+  const s = new Set(selectedRoomIds.value)
+  if (checked) {
+    s.add(id)
+  } else {
+    s.delete(id)
+  }
   selectedRoomIds.value = s
 }
 
@@ -858,13 +1001,17 @@ function printByRoom() {
       <!-- Header: Ngày + Ca -->
       <div class="left-header">
         <div class="date-shift-row">
-          <div class="date-input-wrap" @click="triggerDatePicker">
-            <CalendarDays :size="13" class="calendar-icon" />
-            <input ref="dateInputRef" type="date" v-model="workDate" class="date-input" @change="hkStore.loadAssignment(workDate, selectedShiftId)" />
+          <div class="date-picker-wrap">
+            <SingleDatePicker
+              v-model="workDate"
+              class="w-[142px] shrink-0"
+              input-class="!h-8 !px-2 !text-xs font-roboto"
+              @change="hkStore.loadAssignment(workDate, selectedShiftId)"
+            />
           </div>
           <div class="shift-tabs">
             <button
-              v-for="shift in hkStore.shifts"
+              v-for="shift in sortedShifts"
               :key="shift.id"
               class="shift-tab"
               :class="{ active: selectedShiftId === shift.id }"
@@ -872,7 +1019,7 @@ function printByRoom() {
               :title="`${getShiftName(shift)} (${shift.start_time} - ${shift.end_time})`"
             >
               <span>Ca</span>
-              <span>{{ getShiftShortName(shift) }}</span>
+              <span class="shift-name-text">{{ getShiftShortName(shift) }}</span>
             </button>
           </div>
         </div>
@@ -882,30 +1029,47 @@ function printByRoom() {
           <div class="search-wrap">
             <Search :size="13" class="search-icon" />
             <input v-model="searchQ" type="text" placeholder="Tìm số phòng, loại phòng..." class="search-input" />
+            <button v-if="searchQ" type="button" class="btn-clear-quick" @click="searchQ = ''" title="Xóa tìm kiếm">
+              <X :size="12" />
+            </button>
           </div>
           <div class="filter-wrap" ref="filterWrapRef">
             <button class="filter-btn" :class="{ active: filterHk !== 'all' || filterBook !== 'all' }" @click.stop="showFilterPanel = !showFilterPanel">
               <Filter :size="13" />
-              <span v-if="filterHk !== 'all' || filterBook !== 'all'" class="filter-badge">●</span>
+              <span v-if="filterHk !== 'all' || filterBook !== 'all'" class="filter-badge"></span>
             </button>
             <div v-if="showFilterPanel" class="filter-panel">
               <div class="fp-section">
                 <div class="fp-label">Vệ sinh</div>
                 <div class="fp-chips">
-                  <button class="fc-chip" :class="{ on: filterHk === 'all' }" @click="filterHk = 'all'">Tất cả</button>
-                  <button v-for="[k, v] in Object.entries(hkStore.activeSymbols.hk)" :key="k"
-                    class="fc-chip" :class="{ on: filterHk === k }"
-                    @click="filterHk = k">{{ v.code }}</button>
+                  <button
+                    v-for="opt in hkFilterOptions"
+                    :key="opt.key"
+                    class="fc-chip"
+                    :class="{ on: filterHk === opt.key }"
+                    @click="filterHk = opt.key"
+                  >
+                    <RoomIcon
+                      v-if="opt.icon"
+                      :name="opt.icon"
+                      class="w-3.5 h-3.5 shrink-0 inline-block"
+                      :class="filterHk === opt.key ? 'text-white' : opt.iconClass"
+                    />
+                    <span>{{ opt.label }}</span>
+                  </button>
                 </div>
               </div>
               <div class="fp-divider"></div>
               <div class="fp-section">
                 <div class="fp-label">Đặt phòng</div>
                 <div class="fp-chips">
-                  <button class="fc-chip" :class="{ on: filterBook === 'all' }" @click="filterBook = 'all'">Tất cả</button>
-                  <button v-for="[k, v] in Object.entries(hkStore.activeSymbols.booking).filter(([, v]) => v.code)" :key="k"
-                    class="fc-chip" :class="{ on: filterBook === k }"
-                    @click="filterBook = k">{{ v.code }}</button>
+                  <button
+                    v-for="opt in bookingFilterOptions"
+                    :key="opt.key"
+                    class="fc-chip"
+                    :class="{ on: filterBook === opt.key }"
+                    @click="filterBook = opt.key"
+                  >{{ opt.label }}</button>
                 </div>
               </div>
             </div>
@@ -951,9 +1115,15 @@ function printByRoom() {
             :class="{ selected: selectedRoomIds.has(room.id), assigned: !!hkStore.roomGroupMap[room.id] }"
             :draggable="!hkStore.saving"
             @dragstart="!hkStore.saving && onDragStartFromList($event, room.id)"
-            @click="toggleRoom(room.id)"
+            @click="handleRoomItemClick(room.id, $event)"
           >
-            <input type="checkbox" :checked="selectedRoomIds.has(room.id)" @change.stop="toggleRoom(room.id)" class="room-cb" />
+            <input
+              type="checkbox"
+              :checked="selectedRoomIds.has(room.id)"
+              @click.stop
+              @change="handleRoomCheckboxChange(room.id, $event)"
+              class="room-cb"
+            />
             <span class="room-num">{{ room.room_number }}</span>
             <span class="room-code">
               <template v-for="(sym, sIdx) in getRoomSymbols(room.room_status_code, room.displayBookingStatus, hkStore.activeSymbols)" :key="sIdx">
@@ -1048,15 +1218,16 @@ function printByRoom() {
         <span class="badge-rooms">{{ selectedRoomIds.size }} phòng đã chọn</span>
       </div>
       <div v-else class="assign-info">
-        <span style="font-size: 11px; color: #94a3b8;">Chọn phòng ở bên trái để phân công</span>
+        <span style="font-size: 12px; color: #94a3b8;">Chọn phòng ở bên trái để phân công</span>
       </div>
 
       <div class="assign-actions-right" style="display: flex; align-items: center; gap: 12px; flex: 1; justify-content: flex-end; min-width: 0;">
         <!-- Staff picker (multi-select dropdown) -->
         <div class="staff-dropdown-container" ref="staffDropdownRef">
-          <button class="btn-staff-dropdown" @click="showStaffDropdown = !showStaffDropdown">
-            <span>{{ dropdownButtonLabel }}</span>
-            <ChevronDown :size="14" class="caret-icon" :class="{ open: showStaffDropdown }" />
+          <button class="btn-staff-dropdown" @click="showStaffDropdown = !showStaffDropdown" :title="selectedStaffSummaryTitle">
+            <span class="truncate flex-1 text-left select-none">{{ dropdownButtonLabel }}</span>
+            <span v-if="selectedStaffIds.size > 1" class="staff-count-badge">{{ selectedStaffIds.size }}</span>
+            <ChevronDown :size="14" class="caret-icon shrink-0" :class="{ open: showStaffDropdown }" />
           </button>
           
           <Transition name="fade-slide">
@@ -1087,19 +1258,19 @@ function printByRoom() {
         </div>
 
         <div class="bar-actions" style="flex-shrink: 0;">
-          <button class="btn-assign" :disabled="!canAssign || hkStore.saving" @click="doAssign">
+          <button class="btn-pms-primary" :disabled="!canAssign || hkStore.saving" @click="doAssign">
             <Loader2 v-if="hkStore.saving" :size="14" class="spin" />
             <Plus v-else :size="14" />
-            Phân công
+            <span>Phân công</span>
           </button>
-          <button class="btn-manage-staff" @click="showStaffModal = true">
+          <button class="btn-pms-secondary" @click="showStaffModal = true">
             <UserCog :size="14" />
-            Quản lý NV
+            <span>Quản lý NV</span>
           </button>
           <div class="print-split">
-            <button class="btn-print" @click="doPrint">
+            <button class="btn-pms-secondary !rounded-r-none !border-r-0" @click="doPrint">
               <Printer :size="14" />
-              In lịch
+              <span>In lịch</span>
             </button>
             <div class="print-mode-wrap">
               <select v-model="printMode" class="print-mode-select">
@@ -1116,10 +1287,13 @@ function printByRoom() {
     <Teleport to="body">
       <Transition name="modal-fade">
         <div v-if="showStaffModal" class="modal-overlay" @click.self="showStaffModal = false">
-          <div class="modal">
-            <div class="modal-head">
-              <h3>👤 Quản lý nhân viên Housekeeping</h3>
-              <button class="modal-close" @click="showStaffModal = false"><X :size="16" /></button>
+          <div
+            class="modal"
+            :style="{ transform: `translate(${staffModalPos.x}px, ${staffModalPos.y}px)` }"
+          >
+            <div class="modal-head cursor-move select-none" @mousedown="startDragStaffModal">
+              <h3>Quản lý nhân viên Housekeeping</h3>
+              <button class="modal-close" @click="showStaffModal = false" title="Đóng (Esc)"><X :size="16" /></button>
             </div>
             <div class="modal-tabs">
               <button :class="{ 'mtab-on': staffTab === 'active' }" @click="staffTab = 'active'">
@@ -1132,13 +1306,55 @@ function printByRoom() {
             <div class="modal-body">
               <!-- Add staff -->
               <div v-if="staffTab === 'active'" class="add-staff-row">
-                <input v-model="newStaffName" type="text" placeholder="Nhập tên nhân viên mới..."
-                  @keydown.enter="submitAddStaff" class="add-staff-input" />
-                <button class="btn-add-staff" @click="submitAddStaff">+ Thêm</button>
+                <div class="add-staff-input-wrap">
+                  <input
+                    v-model="newStaffName"
+                    type="text"
+                    placeholder="Nhập tên nhân viên mới..."
+                    @keydown.enter="submitAddStaff"
+                    class="add-staff-input"
+                  />
+                  <button
+                    v-if="newStaffName"
+                    type="button"
+                    class="btn-clear-quick"
+                    @click="newStaffName = ''"
+                    title="Xóa nhanh"
+                  >
+                    <X :size="12" />
+                  </button>
+                </div>
+                <button class="btn-pms-primary" @click="submitAddStaff">
+                  <Plus :size="14" />
+                  <span>Thêm</span>
+                </button>
               </div>
+
+              <!-- Staff search -->
+              <div class="staff-search-row">
+                <div class="staff-search-wrap">
+                  <Search :size="13" class="search-icon" />
+                  <input
+                    v-model="staffSearchQ"
+                    type="text"
+                    placeholder="Tìm kiếm nhân viên..."
+                    class="staff-search-input"
+                  />
+                  <button
+                    v-if="staffSearchQ"
+                    type="button"
+                    class="btn-clear-quick"
+                    @click="staffSearchQ = ''"
+                    title="Xóa nhanh"
+                  >
+                    <X :size="12" />
+                  </button>
+                </div>
+              </div>
+
               <!-- Staff list -->
               <div class="staff-master-list">
-                <div v-for="s in (staffTab === 'hidden' ? hkStore.staffAll.filter(x => x.is_hidden) : hkStore.staff)" :key="s.id" class="sml-item">
+                <div v-for="s in filteredStaffInModal" :key="s.id" class="sml-item">
                   <span class="sml-avatar" :style="{ background: GROUP_COLORS[s.id % GROUP_COLORS.length], filter: s.is_hidden ? 'grayscale(1)' : '' }">{{ getInitials(s.name) }}</span>
                   <span class="sml-name">{{ s.name }}</span>
                   <button class="btn-sml-action" @click="doHideStaff(s.id, !s.is_hidden)">
@@ -1148,13 +1364,16 @@ function printByRoom() {
                     <X :size="12" />
                   </button>
                 </div>
-                <div v-if="(staffTab === 'hidden' ? hkStore.staffAll.filter(x => x.is_hidden) : hkStore.staff).length === 0" class="empty-msg">
-                  {{ staffTab === 'hidden' ? 'Không có nhân viên ẩn' : 'Chưa có nhân viên' }}
+                <div v-if="filteredStaffInModal.length === 0" class="empty-msg">
+                  {{ staffTab === 'hidden' ? 'Không có nhân viên ẩn phù hợp' : 'Không tìm thấy nhân viên' }}
                 </div>
               </div>
             </div>
             <div class="modal-foot">
-              <button class="btn-assign" @click="showStaffModal = false">Xong</button>
+              <button class="btn-pms-close" @click="showStaffModal = false">
+                <X :size="14" />
+                <span>Đóng</span>
+              </button>
             </div>
           </div>
         </div>
@@ -1165,10 +1384,16 @@ function printByRoom() {
     <Teleport to="body">
       <Transition name="modal-fade">
         <div v-if="showEditGroupModal && editingGroup" class="modal-overlay" @click.self="showEditGroupModal = false">
-          <div class="modal" style="max-width:420px">
-            <div class="modal-head">
-              <h3>✏️ Chỉnh sửa nhân viên nhóm</h3>
-              <button class="modal-close" @click="showEditGroupModal = false"><X :size="16" /></button>
+          <div
+            class="modal"
+            :style="{
+              transform: `translate(${editGroupModalPos.x}px, ${editGroupModalPos.y}px)`,
+              maxWidth: '420px'
+            }"
+          >
+            <div class="modal-head cursor-move select-none" @mousedown="startDragEditGroupModal">
+              <h3>Chỉnh sửa nhân viên nhóm</h3>
+              <button class="modal-close" @click="showEditGroupModal = false" title="Đóng (Esc)"><X :size="16" /></button>
             </div>
             <div class="modal-body">
               <div class="eg-section-label">Nhân viên hiện tại:</div>
@@ -1189,7 +1414,10 @@ function printByRoom() {
               </div>
             </div>
             <div class="modal-foot">
-              <button class="btn-assign" @click="showEditGroupModal = false">Xong</button>
+              <button class="btn-pms-close" @click="showEditGroupModal = false">
+                <X :size="14" />
+                <span>Đóng</span>
+              </button>
             </div>
           </div>
         </div>
@@ -1210,7 +1438,9 @@ function printByRoom() {
   height: 100%;
   overflow: hidden;
   background: #f8fafc;
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: 'Roboto', system-ui, -apple-system, sans-serif;
+  font-size: 12px;
+  color: #000000D9;
 }
 .app-body-wrap {
   display: flex;
@@ -1220,8 +1450,8 @@ function printByRoom() {
 
 /* ── Left panel ──────────────────────────────────────────── */
 .left-panel {
-  width: 290px;
-  min-width: 260px;
+  width: 300px;
+  min-width: 280px;
   display: flex;
   flex-direction: column;
   border-right: 1px solid #e2e8f0;
@@ -1237,40 +1467,11 @@ function printByRoom() {
   gap: 6px;
   margin-bottom: 8px;
 }
-.date-input-wrap {
-  position: relative;
-  display: flex;
-  align-items: center;
-  border: 1px solid #cbd5e1;
-  border-radius: 6px;
-  background: #fff;
-  padding: 0 8px;
-  height: 38px;
-  width: 125px;
-  cursor: pointer;
-  box-sizing: border-box;
-}
-.date-input-wrap:focus-within {
-  border-color: #94a3b8;
-}
-.calendar-icon {
-  color: #64748b;
-  margin-right: 4px;
+.date-picker-wrap {
+  width: 142px;
   flex-shrink: 0;
 }
-.date-input-wrap .date-input {
-  border: none;
-  padding: 0;
-  height: 100%;
-  width: 100%;
-  font-size: 11px;
-  font-weight: 500;
-  color: #334155;
-  background: transparent;
-  outline: none;
-  cursor: pointer;
-}
-.shift-tabs { display: flex; gap: 5px; align-items: center; }
+.shift-tabs { display: flex; gap: 4px; align-items: center; }
 .shift-tab {
   display: inline-flex;
   flex-direction: column;
@@ -1279,8 +1480,8 @@ function printByRoom() {
   width: 38px;
   height: 38px;
   border-radius: 50%;
-  font-size: 9.5px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 700;
   line-height: 1.1;
   border: 1px solid #cbd5e1;
   cursor: pointer;
@@ -1289,42 +1490,130 @@ function printByRoom() {
   transition: all .15s;
 }
 .shift-tab.active {
-  background: #2b617a;
-  border-color: #2b617a;
+  background: var(--pms-custom-theme, #006bdb);
+  border-color: var(--pms-custom-theme, #006bdb);
   color: #fff;
+  font-weight: 700;
+}
+.shift-name-text {
   font-weight: 700;
 }
 
 .search-row { display: flex; gap: 6px; margin-bottom: 6px; }
-.search-wrap { flex: 1; display: flex; align-items: center; gap: 4px; border: 1px solid #e2e8f0; border-radius: 6px; padding: 4px 8px; }
+.search-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 0 8px;
+  height: 32px;
+  background: #fff;
+}
 .search-icon { color: #94a3b8; flex-shrink: 0; }
-.search-input { border: none; outline: none; font-size: 12px; width: 100%; color: #1e293b; background: transparent; }
+.search-input {
+  border: none;
+  outline: none;
+  font-size: 12px;
+  font-family: 'Roboto', sans-serif;
+  width: 100%;
+  color: #000000D9;
+  background: transparent;
+  padding: 0;
+}
+.btn-clear-quick {
+  background: none;
+  border: none;
+  padding: 2px;
+  color: #94a3b8;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+.btn-clear-quick:hover {
+  color: #ef4444;
+}
+
 .filter-wrap { position: relative; }
-.filter-btn { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border: 1px solid #e2e8f0; border-radius: 6px; cursor: pointer; background: #f8fafc; color: #64748b; position: relative; }
+.filter-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  cursor: pointer;
+  background: #f8fafc;
+  color: #64748b;
+  position: relative;
+}
 .filter-btn.active { background: #eff6ff; border-color: #93c5fd; color: #3b82f6; }
-.filter-badge { position: absolute; top: 2px; right: 2px; color: #3b82f6; font-size: 8px; }
-.filter-panel { position: absolute; top: 38px; right: 0; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; min-width: 220px; z-index: 100; box-shadow: 0 4px 16px rgba(0,0,0,.08); }
+.filter-badge { position: absolute; top: 4px; right: 4px; width: 6px; height: 6px; border-radius: 50%; background: #3b82f6; }
+.filter-panel {
+  position: absolute;
+  top: 38px;
+  right: 0;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px;
+  min-width: 220px;
+  z-index: 100;
+  box-shadow: 0 4px 16px rgba(0,0,0,.08);
+}
 .fp-section { margin-bottom: 6px; }
-.fp-label { font-size: 10px; font-weight: 600; color: #94a3b8; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .5px; }
+.fp-label { font-size: 12px; font-weight: 600; color: #64748b; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .5px; }
 .fp-chips { display: flex; flex-wrap: wrap; gap: 4px; }
-.fc-chip { font-size: 10px; padding: 2px 7px; border: 1px solid #e2e8f0; border-radius: 10px; cursor: pointer; background: #f8fafc; color: #64748b; }
-.fc-chip.on { background: #0ea5e9; border-color: #0ea5e9; color: #fff; }
+.fc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  padding: 3px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  cursor: pointer;
+  background: #f8fafc;
+  color: #475569;
+  transition: all 0.15s;
+}
+.fc-chip.on {
+  background: var(--pms-custom-theme, #006bdb);
+  border-color: var(--pms-custom-theme, #006bdb);
+  color: #fff;
+  font-weight: 500;
+}
 .fp-divider { border-top: 1px solid #f1f5f9; margin: 6px 0; }
 
 .floor-row { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 0; }
-.fc { font-size: 10px; padding: 2px 7px; border: 1px solid #e2e8f0; border-radius: 10px; cursor: pointer; background: #f8fafc; color: #64748b; }
+.fc {
+  font-size: 12px;
+  padding: 2px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  cursor: pointer;
+  background: #f8fafc;
+  color: #64748b;
+  transition: all 0.15s;
+}
 .fc.all-on { background: #1e293b; color: #fff; border-color: #1e293b; }
-.fc.on { background: #0ea5e9; color: #fff; border-color: #0ea5e9; }
+.fc.on { background: var(--pms-custom-theme, #006bdb); color: #fff; border-color: var(--pms-custom-theme, #006bdb); }
 
 .select-all-row { padding: 4px 0 8px; border-top: 1px solid #f1f5f9; }
 .check-label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; cursor: pointer; }
-.sel-count { font-weight: 600; color: #0ea5e9; }
+.sel-count { font-weight: 600; color: var(--pms-custom-theme, #006bdb); }
 
 /* Room list */
 .room-list-scroll { flex: 1; overflow-y: auto; padding: 0 8px 8px; }
-.floor-label { font-size: 10px; font-weight: 700; color: #94a3b8; letter-spacing: .5px; padding: 6px 4px 3px; display: flex; align-items: center; gap: 5px; }
-.floor-cb { accent-color: #0ea5e9; cursor: pointer; }
-.room-cb { accent-color: #0ea5e9; cursor: pointer; flex-shrink: 0; }
+.floor-label { font-size: 12px; font-weight: 700; color: #64748b; letter-spacing: .5px; padding: 6px 4px 3px; display: flex; align-items: center; gap: 5px; }
+.floor-cb { accent-color: var(--pms-custom-theme, #006bdb); cursor: pointer; }
+.room-cb { accent-color: var(--pms-custom-theme, #006bdb); cursor: pointer; flex-shrink: 0; }
 .room-item {
   display: flex; align-items: center; gap: 6px; padding: 5px 6px;
   border-radius: 6px; cursor: pointer; margin-bottom: 2px;
@@ -1333,10 +1622,10 @@ function printByRoom() {
 .room-item:hover { background: #f0f9ff; border-color: #bae6fd; }
 .room-item.selected { background: #e0f2fe; border-color: #7dd3fc; }
 .room-item.assigned { opacity: .7; }
-.room-num { font-size: 12px; font-weight: 700; color: #1e293b; min-width: 34px; }
-.room-code { font-size: 10px; font-weight: 700; min-width: 48px; }
-.room-type { font-size: 10px; color: #94a3b8; flex: 1; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.assigned-dot { font-size: 11px; color: #10b981; flex-shrink: 0; }
+.room-num { font-size: 12px; font-weight: 700; color: #000000D9; min-width: 34px; }
+.room-code { font-size: 12px; font-weight: 700; min-width: 48px; }
+.room-type { font-size: 12px; color: #64748b; flex: 1; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.assigned-dot { font-size: 12px; color: #10b981; flex-shrink: 0; }
 .list-loading, .empty-msg { padding: 20px; text-align: center; font-size: 12px; color: #94a3b8; display: flex; align-items: center; justify-content: center; gap: 8px; }
 
 /* ── Right panel ─────────────────────────────────────────── */
@@ -1356,7 +1645,7 @@ function printByRoom() {
   flex-wrap: wrap;
 }
 .assign-info { display: flex; align-items: center; gap: 8px; }
-.badge-rooms { background: #eff6ff; border: 1px solid #bfdbfe; color: #3b82f6; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; }
+.badge-rooms { background: #eff6ff; border: 1px solid #bfdbfe; color: #006bdb; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 10px; }
 
 /* Staff dropdown selection */
 .staff-dropdown-container {
@@ -1367,22 +1656,40 @@ function printByRoom() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  width: 240px;
+  gap: 8px;
+  width: 250px;
+  max-width: 280px;
   height: 32px;
-  padding: 0 12px;
+  padding: 0 10px;
   border: 1px solid #cbd5e1;
   border-radius: 6px;
   background: #fff;
-  color: #64748b;
+  color: #475569;
   font-size: 12px;
   cursor: pointer;
   outline: none;
+  white-space: nowrap;
+  overflow: hidden;
   transition: all .15s;
 }
 .btn-staff-dropdown:hover {
   border-color: #94a3b8;
-  color: #334155;
+  color: #000000D9;
+}
+.staff-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  background: var(--pms-custom-theme, #006bdb);
+  color: #fff;
+  flex-shrink: 0;
 }
 .btn-staff-dropdown .caret-icon {
   transition: transform .15s;
@@ -1424,60 +1731,62 @@ function printByRoom() {
   background: #eff6ff;
 }
 .dropdown-staff-cb {
-  accent-color: #3b82f6;
+  accent-color: var(--pms-custom-theme, #006bdb);
   cursor: pointer;
   width: 14px;
   height: 14px;
 }
 .dropdown-staff-avatar {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 9px;
+  font-size: 12px;
   font-weight: 700;
   color: #fff;
   flex-shrink: 0;
 }
 .dropdown-staff-name {
   font-size: 12px;
-  color: #334155;
+  color: #000000D9;
 }
 .no-staff-dropdown-msg {
   padding: 12px 8px;
   text-align: center;
-  font-size: 11px;
+  font-size: 12px;
   color: #94a3b8;
   font-style: italic;
 }
 
-.bar-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
-.btn-assign {
-  display: flex; align-items: center; gap: 5px;
-  background: #0ea5e9; color: #fff; border: none; border-radius: 7px;
-  padding: 6px 14px; font-size: 12px; font-weight: 600; cursor: pointer;
-  transition: background .15s;
+.bar-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+
+.print-split {
+  display: flex;
+  align-items: center;
+  height: 32px;
 }
-.btn-assign:disabled { background: #cbd5e1; cursor: not-allowed; }
-.btn-assign:not(:disabled):hover { background: #0284c7; }
-.btn-manage-staff {
-  display: flex; align-items: center; gap: 5px;
-  background: #64748b; color: #fff; border: none; border-radius: 7px;
-  padding: 6px 12px; font-size: 12px; cursor: pointer;
-  transition: background .15s;
+.print-mode-wrap {
+  height: 32px;
 }
-.btn-manage-staff:hover { background: #475569; }
-.print-split { display: flex; border-radius: 7px; overflow: hidden; border: 1px solid #0f766e; }
-.btn-print {
-  display: flex; align-items: center; gap: 5px;
-  background: #0f766e; color: #fff; border: none;
-  padding: 6px 12px; font-size: 12px; cursor: pointer;
-  transition: background .15s;
+.print-mode-select {
+  height: 32px;
+  border: 1px solid #cbd5e1;
+  border-left: none;
+  border-radius: 0 6px 6px 0;
+  background: #fff;
+  color: #334155;
+  font-size: 12px;
+  padding: 0 8px;
+  cursor: pointer;
+  outline: none;
+  font-family: 'Roboto', sans-serif;
+  transition: border-color 0.15s;
 }
-.btn-print:hover { background: #0d6960; }
-.print-mode-select { border: none; background: #f0fdfa; color: #0f766e; font-size: 11px; padding: 0 6px; cursor: pointer; outline: none; }
+.print-mode-select:focus {
+  border-color: #94a3b8;
+}
 
 /* Groups scroll */
 .groups-scroll {
@@ -1491,14 +1800,14 @@ function printByRoom() {
 }
 .empty-assign { display: flex; flex-direction: column; align-items: center; justify-content: center; grid-column: 1 / -1; height: 100%; color: #94a3b8; text-align: center; gap: 8px; padding-top: 60px; }
 .empty-icon { color: #cbd5e1; }
-.empty-assign p { font-size: 13px; }
-.empty-assign small { font-size: 11px; color: #cbd5e1; }
+.empty-assign p { font-size: 12px; font-weight: 600; }
+.empty-assign small { font-size: 12px; color: #cbd5e1; }
 
 /* Group box */
 .group-box {
   background: #fff;
-  border-radius: 10px;
-  border: 1.5px solid #e2e8f0;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
   border-left: 4px solid var(--gcolor);
   display: flex;
   flex-direction: column;
@@ -1520,14 +1829,14 @@ function printByRoom() {
   gap: 2px;
 }
 .gn-name {
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
-  color: #1e293b;
+  color: #000000D9;
   line-height: 1.2;
 }
 .gn-sub {
-  font-size: 11px;
-  color: #94a3b8;
+  font-size: 12px;
+  color: #64748b;
   margin-top: 2px;
 }
 .group-actions {
@@ -1539,7 +1848,7 @@ function printByRoom() {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 10px;
+  font-size: 12px;
   color: #64748b;
   cursor: pointer;
   white-space: nowrap;
@@ -1591,9 +1900,9 @@ function printByRoom() {
 .group-room-row:last-of-type { border-bottom: none; }
 
 .gr-num-bold {
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 700;
-  color: #0f172a;
+  color: #000000D9;
   min-width: 40px;
 }
 .gr-info-block {
@@ -1604,11 +1913,11 @@ function printByRoom() {
   gap: 2px;
 }
 .gr-status-line {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
 }
 .gr-class-line {
-  font-size: 10px;
+  font-size: 12px;
   color: #64748b;
 }
 .btn-rm-room {
@@ -1628,42 +1937,148 @@ function printByRoom() {
   background: #fff1f2;
   color: #ef4444;
 }
-.drop-hint { text-align: center; font-size: 10px; color: #cbd5e1; padding: 6px; font-style: italic; }
+.drop-hint { text-align: center; font-size: 12px; color: #cbd5e1; padding: 6px; font-style: italic; }
 
 /* ── Modals ──────────────────────────────────────────────── */
 .modal-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 1000;
   display: flex; align-items: center; justify-content: center;
 }
-.modal { background: #fff; border-radius: 12px; width: 480px; max-width: 95vw; max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px rgba(0,0,0,.2); }
-.modal-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid #f1f5f9; }
-.modal-head h3 { font-size: 14px; font-weight: 700; color: #1e293b; margin: 0; }
-.modal-close { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 6px; border: none; cursor: pointer; background: #f1f5f9; color: #64748b; }
-.modal-close:hover { background: #fef2f2; color: #ef4444; }
+.modal {
+  background: #fff;
+  border-radius: 12px;
+  width: 480px;
+  max-width: 95vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0,0,0,.2);
+  overflow: hidden;
+  font-family: 'Roboto', sans-serif;
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--pms-custom-theme, #006bdb);
+  color: #ffffff;
+  cursor: move;
+  user-select: none;
+}
+.modal-head h3 {
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffffff;
+  margin: 0;
+}
+.modal-close {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  transition: all 0.15s;
+}
+.modal-close:hover {
+  background: rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+}
 .modal-tabs { display: flex; border-bottom: 1px solid #f1f5f9; }
-.modal-tabs button { flex: 1; padding: 8px; font-size: 12px; border: none; cursor: pointer; background: none; color: #64748b; }
-.modal-tabs button.mtab-on { color: #0ea5e9; font-weight: 700; border-bottom: 2px solid #0ea5e9; }
+.modal-tabs button {
+  flex: 1;
+  padding: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  background: none;
+  color: #64748b;
+  transition: all 0.15s;
+}
+.modal-tabs button.mtab-on {
+  color: var(--pms-custom-theme, #006bdb);
+  font-weight: 600;
+  border-bottom: 2px solid var(--pms-custom-theme, #006bdb);
+}
 .modal-body { flex: 1; overflow-y: auto; padding: 14px 16px; }
 .modal-foot { padding: 10px 16px; border-top: 1px solid #f1f5f9; display: flex; justify-content: flex-end; gap: 8px; }
 
-.add-staff-row { display: flex; gap: 8px; margin-bottom: 12px; }
-.add-staff-input { flex: 1; font-size: 12px; border: 1px solid #e2e8f0; border-radius: 7px; padding: 6px 10px; outline: none; }
-.add-staff-input:focus { border-color: #93c5fd; }
-.btn-add-staff { background: #0ea5e9; color: #fff; border: none; border-radius: 7px; padding: 6px 14px; font-size: 12px; cursor: pointer; }
+.add-staff-row { display: flex; gap: 8px; margin-bottom: 10px; }
+.add-staff-input-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 0 8px;
+  background: #fff;
+  height: 32px;
+}
+.add-staff-input-wrap:focus-within {
+  border-color: var(--pms-custom-theme, #006bdb);
+}
+.add-staff-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  font-size: 12px;
+  font-family: 'Roboto', sans-serif;
+  color: #000000D9;
+  background: transparent;
+  padding: 0;
+}
+
+.staff-search-row {
+  margin-bottom: 12px;
+}
+.staff-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 0 8px;
+  background: #fff;
+  height: 32px;
+}
+.staff-search-wrap:focus-within {
+  border-color: var(--pms-custom-theme, #006bdb);
+}
+.staff-search-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  font-size: 12px;
+  font-family: 'Roboto', sans-serif;
+  color: #000000D9;
+  background: transparent;
+  padding: 0;
+}
+
 .staff-master-list { display: flex; flex-direction: column; gap: 5px; }
 .sml-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid #f1f5f9; border-radius: 7px; }
-.sml-avatar { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; color: #fff; flex-shrink: 0; }
-.sml-name { flex: 1; font-size: 12px; color: #1e293b; }
-.btn-sml-action { font-size: 10px; padding: 2px 8px; border: 1px solid #e2e8f0; border-radius: 6px; cursor: pointer; background: #f8fafc; color: #64748b; }
+.sml-avatar { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #fff; flex-shrink: 0; }
+.sml-name { flex: 1; font-size: 12px; color: #000000D9; }
+.btn-sml-action { font-size: 12px; padding: 3px 8px; border: 1px solid #e2e8f0; border-radius: 6px; cursor: pointer; background: #f8fafc; color: #475569; }
+.btn-sml-action:hover { background: #f1f5f9; }
 .btn-sml-del { width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; border: 1px solid #fca5a5; border-radius: 5px; cursor: pointer; background: #fff; color: #ef4444; }
+.btn-sml-del:hover { background: #fee2e2; }
 
 /* Edit group modal */
-.eg-section-label { font-size: 10px; color: #94a3b8; font-weight: 600; text-transform: uppercase; margin-bottom: 6px; }
+.eg-section-label { font-size: 12px; color: #64748b; font-weight: 600; text-transform: uppercase; margin-bottom: 6px; }
 .eg-list { display: flex; flex-direction: column; gap: 5px; }
 .eg-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid #e2e8f0; border-radius: 7px; }
-.eg-name { flex: 1; font-size: 12px; color: #1e293b; }
-.btn-eg-rm { font-size: 11px; padding: 2px 8px; border: 1px solid #fca5a5; border-radius: 5px; cursor: pointer; background: #fff; color: #ef4444; }
-.btn-eg-add { font-size: 11px; padding: 2px 8px; border: none; border-radius: 5px; cursor: pointer; background: #0ea5e9; color: #fff; }
+.eg-name { flex: 1; font-size: 12px; color: #000000D9; }
+.btn-eg-rm { font-size: 12px; padding: 2px 8px; border: 1px solid #fca5a5; border-radius: 5px; cursor: pointer; background: #fff; color: #ef4444; }
+.btn-eg-rm:hover { background: #fee2e2; }
+.btn-eg-add { font-size: 12px; padding: 2px 8px; border: none; border-radius: 5px; cursor: pointer; background: var(--pms-custom-theme, #006bdb); color: #fff; }
+.btn-eg-add:hover { opacity: 0.9; }
 
 /* Transition animations */
 .modal-fade-enter-active, .modal-fade-leave-active {

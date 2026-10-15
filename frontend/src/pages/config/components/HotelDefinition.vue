@@ -47,8 +47,8 @@ const hotelTabs = [
     <div class="border-b border-slate-200 shrink-0">
       <div class="flex flex-wrap gap-1">
         <button v-for="tab in hotelTabs" :key="tab" @click="activeHotelTab = tab"
-          class="px-4 py-2 text-sm font-bold border-none bg-transparent cursor-pointer relative pb-3 transition-colors"
-          :class="activeHotelTab === tab ? 'text-sky-600 border-b-2 border-sky-500' : 'text-slate-500 hover:text-slate-800'">
+          class="px-3 py-1.5 text-xs font-semibold border-none bg-transparent cursor-pointer relative pb-2 transition-colors"
+          :class="activeHotelTab === tab ? 'text-[#006bdb] border-b-2 border-[#006bdb] font-bold' : 'text-[#000000D9]/70 hover:text-[#000000D9]'">
           {{ tab }}
         </button>
       </div>

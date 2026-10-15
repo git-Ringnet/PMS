@@ -5,42 +5,42 @@
     <!-- Top Control Card -->
     <div class="bg-white rounded-xl shadow-sm border border-slate-200 mb-4 shrink-0 overflow-hidden">
       <!-- Tabs Section -->
-      <div class="px-5 py-3 border-b border-slate-100 flex items-center justify-between bg-white">
-        <div class="flex items-center gap-8 pt-2">
+      <div class="px-5 py-2.5 border-b border-slate-100 flex items-center justify-between bg-white">
+        <div class="flex items-center gap-6 pt-1">
           <div 
-            v-for="tab in tabs" 
-            :key="tab"
-            @click="activeTab = tab"
-            class="group flex items-center gap-1.5 cursor-pointer"
+            v-for="outlet in housekeepingOutlets" 
+            :key="outlet.code"
+            @click="activeTab = outlet.code"
+            class="group flex items-center gap-1.5 cursor-pointer select-none"
           >
             <h2 
-              class="text-[13px] font-black tracking-wide uppercase pb-2 transition-colors relative" 
-              :class="activeTab === tab ? 'text-[var(--hk-primary-dark)]' : 'text-slate-500 hover:text-slate-700'"
+              class="text-xs font-semibold tracking-wide uppercase pb-2 transition-colors relative" 
+              :class="activeTab === outlet.code ? 'text-[#006bdb] font-bold' : 'text-[#000000D9] hover:text-[#006bdb]'"
             >
-              {{ tab }}
-              <div v-if="activeTab === tab" class="absolute bottom-0 left-0 w-full h-0.5 bg-[var(--hk-primary-dark)] rounded-t-full"></div>
+              {{ outlet.name }}
+              <div v-if="activeTab === outlet.code" class="absolute bottom-0 left-0 w-full h-0.5 bg-[#006bdb] rounded-t-full"></div>
             </h2>
           </div>
         </div>
 
         <div class="flex items-center gap-2">
           <input type="file" ref="fileInput" @change="handleFileUpload" accept=".xlsx, .xls, .csv" class="hidden" />
-          <button @click="$refs.fileInput.click()" class="bg-white hover:bg-slate-50 border border-slate-300 text-slate-750 px-3.5 py-1.5 rounded-lg transition-all text-xs font-bold flex items-center gap-1.5 shadow-sm cursor-pointer h-[32px]">
-            <Upload class="w-4 h-4 text-emerald-550" />
+          <button @click="$refs.fileInput.click()" class="btn-pms-secondary h-8">
+            <Upload class="w-3.5 h-3.5 text-emerald-600" />
             Nhập Excel
           </button>
-          <button @click="exportExcel" class="bg-white hover:bg-slate-50 border border-slate-300 text-slate-750 px-3.5 py-1.5 rounded-lg transition-all text-xs font-bold flex items-center gap-1.5 shadow-sm cursor-pointer h-[32px]">
-            <Download class="w-4 h-4 text-sky-550" />
+          <button @click="exportExcel" class="btn-pms-secondary h-8">
+            <Download class="w-3.5 h-3.5 text-sky-600" />
             Xuất Excel
           </button>
         </div>
       </div>
 
       <!-- Toolbar Section -->
-      <div class="px-5 py-4 bg-slate-50/50 flex flex-wrap items-center justify-between gap-3 text-xs">
+      <div class="px-5 py-3 bg-slate-50/70 flex flex-wrap items-center justify-between gap-3 text-xs">
         <div class="flex flex-wrap items-center gap-3">
-          <button @click="createGroup" class="btn-primary px-4 py-1.5 rounded-lg flex items-center gap-1.5 text-[12px] font-bold shadow-sm cursor-pointer h-[32px]">
-            <PlusCircle class="w-4 h-4" stroke-width="2.5" />
+          <button @click="createGroup" class="btn-pms-primary h-8">
+            <PlusCircle class="w-3.5 h-3.5" />
             Tạo nhóm
           </button>
 
@@ -50,67 +50,141 @@
               v-model="filterState.search" 
               type="text" 
               placeholder="Tìm sản phẩm..."
-              data-hk-search
-              class="border border-slate-300 rounded-lg px-2.5 py-1.5 text-[12px] text-slate-705 bg-white focus:outline-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] outline-none transition-all shadow-sm w-44" 
+              class="h-8 border border-slate-300 rounded-lg pl-3 pr-7 text-xs text-[#000000D9] bg-white focus:outline-none focus:ring-1 focus:ring-[#006bdb] focus:border-[#006bdb] placeholder:text-[#A8B0BF] shadow-xs w-44" 
             />
+            <button 
+              v-if="filterState.search" 
+              type="button" 
+              @click="filterState.search = ''" 
+              class="absolute right-2 text-slate-400 hover:text-slate-600"
+              title="Xóa tìm kiếm"
+            >
+              <X class="w-3.5 h-3.5" />
+            </button>
           </div>
 
-          <!-- Status filter -->
+          <!-- Status filter (appearance-none with ChevronDown & X toggle) -->
           <div class="flex items-center gap-1.5">
-            <span class="font-semibold text-slate-500">Trạng thái:</span>
-            <select v-model="filterState.status" class="border border-slate-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[var(--hk-primary)] bg-white cursor-pointer font-semibold text-slate-700 shadow-sm">
-              <option value="all">Tất cả</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
+            <span class="font-medium text-slate-600">Trạng thái:</span>
+            <div class="relative flex items-center">
+              <select 
+                v-model="filterState.status" 
+                :class="[
+                  'h-8 border border-slate-300 rounded-lg pl-2.5 pr-7 text-xs bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-[#006bdb] shadow-xs appearance-none',
+                  filterState.status ? 'text-[#000000D9] font-medium' : 'text-[#A8B0BF]'
+                ]"
+              >
+                <option value="" disabled hidden>Tất cả</option>
+                <option value="active" class="text-[#000000D9]">Active</option>
+                <option value="inactive" class="text-[#000000D9]">Inactive</option>
+              </select>
+              <ChevronDown v-if="!filterState.status" class="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" />
+              <button 
+                v-else 
+                type="button" 
+                @click="filterState.status = ''" 
+                class="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                title="Xóa bộ lọc"
+              >
+                <X class="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
 
-          <!-- Price range -->
-          <div class="flex items-center gap-1">
-            <span>Giá từ:</span>
-            <input type="number" placeholder="Min" v-model.number="filterState.priceMin" class="w-16 border border-slate-300 rounded p-1 focus:outline-none focus:ring-1 focus:ring-[var(--hk-primary)] bg-white text-slate-750" />
-            <span>đến</span>
-            <input type="number" placeholder="Max" v-model.number="filterState.priceMax" class="w-16 border border-slate-300 rounded p-1 focus:outline-none focus:ring-1 focus:ring-[var(--hk-primary)] bg-white text-slate-750" />
-          </div>
-
-          <!-- Inventory tracking -->
+          <!-- Price range (Formatted with comma ',' and quick clear 'x') -->
           <div class="flex items-center gap-1.5">
-            <span class="font-semibold text-slate-500">Tồn kho:</span>
-            <select v-model="filterState.trackStock" class="border border-slate-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[var(--hk-primary)] bg-white cursor-pointer font-semibold text-slate-700 shadow-sm">
-              <option value="all">Tất cả</option>
-              <option value="tracked">Có theo dõi</option>
-              <option value="untracked">Không theo dõi</option>
-            </select>
+            <span class="font-medium text-slate-600">Giá từ:</span>
+            <div class="relative flex items-center">
+              <input 
+                type="text" 
+                placeholder="Min" 
+                v-model="displayPriceMin" 
+                class="w-24 h-8 border border-slate-300 rounded-lg pl-2.5 pr-6 text-xs focus:outline-none focus:ring-1 focus:ring-[#006bdb] bg-white text-[#000000D9] placeholder:text-[#A8B0BF] shadow-xs" 
+              />
+              <button 
+                v-if="filterState.priceMin !== null && filterState.priceMin !== ''" 
+                type="button" 
+                @click="filterState.priceMin = null" 
+                class="absolute right-1.5 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                title="Xóa giá min"
+              >
+                <X class="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <span class="font-medium text-slate-600">đến</span>
+            <div class="relative flex items-center">
+              <input 
+                type="text" 
+                placeholder="Max" 
+                v-model="displayPriceMax" 
+                class="w-24 h-8 border border-slate-300 rounded-lg pl-2.5 pr-6 text-xs focus:outline-none focus:ring-1 focus:ring-[#006bdb] bg-white text-[#000000D9] placeholder:text-[#A8B0BF] shadow-xs" 
+              />
+              <button 
+                v-if="filterState.priceMax !== null && filterState.priceMax !== ''" 
+                type="button" 
+                @click="filterState.priceMax = null" 
+                class="absolute right-1.5 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                title="Xóa giá max"
+              >
+                <X class="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          <!-- Inventory tracking (appearance-none with ChevronDown & X toggle) -->
+          <div class="flex items-center gap-1.5">
+            <span class="font-medium text-slate-600">Tồn kho:</span>
+            <div class="relative flex items-center">
+              <select 
+                v-model="filterState.trackStock" 
+                :class="[
+                  'h-8 border border-slate-300 rounded-lg pl-2.5 pr-7 text-xs bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-[#006bdb] shadow-xs appearance-none',
+                  filterState.trackStock ? 'text-[#000000D9] font-medium' : 'text-[#A8B0BF]'
+                ]"
+              >
+                <option value="" disabled hidden>Tất cả</option>
+                <option value="tracked" class="text-[#000000D9]">Có theo dõi</option>
+                <option value="untracked" class="text-[#000000D9]">Không theo dõi</option>
+              </select>
+              <ChevronDown v-if="!filterState.trackStock" class="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" />
+              <button 
+                v-else 
+                type="button" 
+                @click="filterState.trackStock = ''" 
+                class="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                title="Xóa bộ lọc"
+              >
+                <X class="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
 
           <!-- Sort dropdown -->
           <div class="flex items-center gap-1.5">
-            <span class="font-semibold text-slate-500">Sắp xếp:</span>
-            <select v-model="filterState.sortBy" class="border border-slate-300 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-[var(--hk-primary)] bg-white cursor-pointer font-semibold text-slate-700 shadow-sm">
-              <option value="name_asc">Tên A-Z</option>
-              <option value="name_desc">Tên Z-A</option>
-              <option value="price_asc">Giá tăng dần</option>
-              <option value="price_desc">Giá giảm dần</option>
-            </select>
+            <span class="font-medium text-slate-600">Sắp xếp:</span>
+            <div class="relative flex items-center">
+              <select v-model="filterState.sortBy" class="h-8 border border-slate-300 rounded-lg pl-2.5 pr-7 text-xs focus:outline-none focus:ring-1 focus:ring-[#006bdb] bg-white cursor-pointer text-[#000000D9] shadow-xs appearance-none">
+                <option value="name_asc">Tên A-Z</option>
+                <option value="name_desc">Tên Z-A</option>
+                <option value="price_asc">Giá tăng dần</option>
+                <option value="price_desc">Giá giảm dần</option>
+              </select>
+              <ChevronDown class="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" />
+            </div>
           </div>
         </div>
 
         <div class="flex items-center gap-2">
-          <button @click="enableTooltip = !enableTooltip" :class="enableTooltip ? 'bg-sky-50 text-sky-600 border-sky-300' : 'bg-white text-slate-500 hover:bg-slate-50 border-slate-300'" class="border px-3.5 py-1.5 rounded-lg transition-all text-xs font-bold flex items-center gap-1.5 shadow-sm cursor-pointer h-[32px]">
-            <Eye v-if="enableTooltip" class="w-4 h-4" />
-            <EyeOff v-else class="w-4 h-4" />
-          
-          </button>
-          <button @click="toggleActiveSelected" class="bg-white hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-250 border border-slate-300 text-slate-700 px-3.5 py-1.5 rounded-lg transition-all text-xs font-bold flex items-center gap-1.5 shadow-sm cursor-pointer h-[32px]">
-            <Power class="w-4 h-4" />
+          <button @click="toggleActiveSelected" class="btn-pms-secondary h-8">
+            <Power class="w-3.5 h-3.5" />
             Bật / Tắt
           </button>
-          <button @click="deleteSelected" class="bg-white hover:bg-rose-50 hover:text-rose-600 hover:border-rose-250 border border-slate-300 text-slate-700 px-3.5 py-1.5 rounded-lg transition-all text-xs font-bold flex items-center gap-1.5 shadow-sm cursor-pointer h-[32px]">
-            <Trash2 class="w-4 h-4" />
+          <button @click="deleteSelected" class="btn-pms-danger h-8">
+            <Trash2 class="w-3.5 h-3.5" />
             Xóa
           </button>
-          <button class="bg-white hover:bg-slate-50 border border-slate-300 text-slate-750 px-3.5 py-1.5 rounded-lg transition-all text-xs font-bold flex items-center gap-1.5 shadow-sm cursor-pointer h-[32px]">
-            <Printer class="w-4 h-4 text-slate-550" />
+          <button class="btn-pms-secondary h-8">
+            <Printer class="w-3.5 h-3.5 text-slate-500" />
             In
           </button>
         </div>
@@ -121,12 +195,12 @@
     <div class="flex-1 overflow-y-auto flex flex-col gap-4 pb-10 hk-scroll">
       
       <!-- Group Card -->
-      <div v-for="group in filteredGroups" :key="group.id" class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col shrink-0">
+      <div v-for="group in filteredGroups" :key="group.id" class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-col shrink-0">
         
         <!-- Group Header -->
-        <div class="flex items-center gap-3 mb-5 border-b border-slate-100 pb-3">
+        <div class="flex items-center gap-3 mb-4 border-b border-slate-100 pb-2.5">
           <input type="checkbox" :checked="group.checked" @change="toggleGroupCheck(group.id, $event.target.checked, group.products)" class="w-4 h-4 rounded border-slate-300 text-sky-500 focus:ring-sky-500 cursor-pointer" />
-          <span class="text-[12px] font-black text-slate-500 uppercase tracking-wider">Nhóm sản phẩm:</span>
+          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Nhóm sản phẩm:</span>
           
           <!-- Inline Edit Group Name -->
           <input 
@@ -134,13 +208,13 @@
             :value="group.name"
             @blur="updateGroupName(group.id, $event.target.value)"
             @keyup.enter="updateGroupName(group.id, $event.target.value)"
-            class="border border-sky-400 rounded-lg px-3 py-1.5 text-[14px] font-bold text-slate-800 outline-none w-[200px] shadow-sm focus:ring-2 focus:ring-sky-100 transition-all bg-white"
+            class="border border-sky-400 rounded-lg px-2.5 py-1 text-xs font-semibold text-[#000000D9] outline-none w-[200px] shadow-xs focus:ring-1 focus:ring-sky-200 transition-all bg-white"
             v-focus
           />
           <span 
             v-else 
             @dblclick="setEditing(group.id)"
-            class="text-[14px] font-black text-[var(--hk-primary-dark)] cursor-pointer hover:bg-slate-50 px-2 py-1 rounded-lg select-none transition-colors uppercase tracking-wider"
+            class="text-xs font-bold text-[#006bdb] cursor-pointer hover:bg-slate-50 px-2 py-1 rounded-lg select-none transition-colors uppercase tracking-wider"
             title="Nhấp đúp để sửa"
           >
             {{ group.name }}
@@ -149,75 +223,84 @@
           <button @click="deleteGroup(group.id)" class="text-rose-400 hover:text-rose-600 transition-colors ml-auto p-1.5 hover:bg-rose-50 rounded-lg cursor-pointer" title="Xóa nhóm">
             <Trash2 class="w-4 h-4" />
           </button>
-          <button @click="toggleExpanded(group.id)" class="text-slate-400 hover:text-[var(--hk-primary-dark)] transition-colors p-1.5 hover:bg-slate-50 rounded-lg cursor-pointer">
-            <ChevronUp v-if="group.expanded" class="w-5 h-5" />
-            <ChevronDown v-else class="w-5 h-5" />
+          <button @click="toggleExpanded(group.id)" class="text-slate-400 hover:text-[#006bdb] transition-colors p-1.5 hover:bg-slate-50 rounded-lg cursor-pointer">
+            <ChevronUp v-if="group.expanded" class="w-4 h-4" />
+            <ChevronDown v-else class="w-4 h-4" />
           </button>
         </div>
 
         <!-- Group Content (Products) -->
         <Transition name="hk-expand">
-          <div v-show="group.expanded" class="flex flex-wrap gap-5 pl-2">
+          <div v-show="group.expanded" class="flex flex-wrap gap-3.5 pl-1">
             
             <!-- Create Product Card -->
             <div 
               @click="openCreateProduct(group.id)"
-              class="w-[130px] h-[155px] border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center gap-2 cursor-pointer hover:bg-sky-50 hover:border-sky-300 transition-all bg-slate-50/50 shrink-0 group"
+              class="w-[110px] h-[125px] border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center gap-1.5 cursor-pointer hover:bg-sky-50 hover:border-sky-300 transition-all bg-slate-50/50 shrink-0 group"
             >
-              <div class="w-10 h-10 bg-white rounded-full shadow-sm flex items-center justify-center text-sky-400 transition-all border border-slate-100 animate-pulse-subtle group-hover:brightness-95">
-                <Plus class="w-5 h-5 text-[var(--hk-primary-dark)]" stroke-width="3" />
+              <div class="w-8 h-8 bg-white rounded-full shadow-xs flex items-center justify-center text-sky-500 transition-all border border-slate-100 animate-pulse-subtle group-hover:brightness-95">
+                <Plus class="w-4 h-4 text-[#006bdb]" stroke-width="2.5" />
               </div>
-              <span class="text-[12px] text-sky-700 font-bold">Tạo sản phẩm</span>
+              <span class="text-xs text-sky-700 font-semibold">Tạo sản phẩm</span>
             </div>
 
             <!-- Product Cards -->
             <template v-if="isLoading">
-              <div v-for="i in 3" :key="'skeleton-'+i" class="w-[130px] h-[155px] flex flex-col shrink-0 animate-pulse">
-                <div class="w-[130px] h-[130px] border border-slate-200 bg-slate-200/50 rounded-xl flex items-center justify-center shadow-sm">
-                  <div class="w-10 h-10 rounded-full bg-slate-300/60"></div>
+              <div v-for="i in 3" :key="'skeleton-'+i" class="w-[110px] h-[130px] flex flex-col shrink-0 animate-pulse">
+                <div class="w-[110px] h-[95px] border border-slate-200 bg-slate-200/50 rounded-xl flex items-center justify-center shadow-xs">
+                  <div class="w-8 h-8 rounded-full bg-slate-300/60"></div>
                 </div>
-                <div class="h-3 bg-slate-200 rounded w-16 mx-auto mt-2.5"></div>
+                <div class="h-2.5 bg-slate-200 rounded w-14 mx-auto mt-2"></div>
               </div>
             </template>
             <template v-else>
-              <div v-for="product in group.products" :key="product.id" class="flex flex-col w-[130px] shrink-0 group relative" @dblclick="editProduct(product)" @mouseenter="showTooltip(product, group.name, $event)" @mouseleave="hideTooltip">
-                
-                <!-- Card Image Area -->
+              <div 
+                v-for="product in group.products" 
+                :key="product.id" 
+                class="flex flex-col w-[110px] shrink-0 group relative select-none" 
+                @dblclick="editProduct(product)"
+              >
+                <!-- Card Image Area (w-[110px] h-[95px]) -->
                 <div :class="[
-                  'w-[130px] h-[130px] border rounded-xl relative flex flex-col items-center justify-center overflow-hidden shadow-sm transition-all hk-card-lift cursor-pointer hover:border-sky-300',
+                  'w-[110px] h-[95px] border rounded-xl relative flex flex-col items-center justify-center overflow-hidden shadow-xs transition-all hk-card-lift cursor-pointer hover:border-sky-300',
                   product.isActive ? 'bg-white border-slate-200' : 'bg-slate-50 border-slate-300 grayscale opacity-75'
                 ]">
                   <!-- Checkbox -->
                   <input 
                     type="checkbox" 
                     v-model="product.checked"
-                    class="absolute top-2.5 right-2.5 w-4 h-4 rounded border-slate-350 text-sky-500 focus:ring-sky-500 cursor-pointer z-10"
+                    class="absolute top-2 right-2 w-3.5 h-3.5 rounded border-slate-300 text-sky-500 focus:ring-sky-500 cursor-pointer z-10"
                   />
                   
-                  <!-- Image Placeholder -->
-                  <div class="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center mb-6 group-hover:bg-sky-50 transition-colors overflow-hidden">
-                    <img v-if="product.imageUrl" :src="product.imageUrl" class="w-full h-full object-cover" />
-                    <ImageOff v-else class="w-6 h-6 text-slate-300 group-hover:text-[var(--hk-primary-dark)]" stroke-width="2" />
+                  <!-- Product Image / Outlet Fallback Image -->
+                  <div class="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center mb-5 group-hover:bg-sky-50 transition-colors overflow-hidden">
+                    <img 
+                      v-if="getProductImage(product)" 
+                      :src="getProductImage(product)" 
+                      class="w-full h-full object-cover" 
+                      @error="$event.target.style.display = 'none'"
+                    />
+                    <ImageOff v-else class="w-5 h-5 text-slate-300 group-hover:text-[#006bdb]" stroke-width="2" />
                   </div>
 
-                  <!-- Price Bar (Full width gradient) -->
-                  <div class="absolute bottom-0 left-0 right-0 text-slate-800 text-[12px] py-1.5 text-center font-bold" style="background: var(--hk-gradient, linear-gradient(135deg, #97D5FF, #6BC1F5))">
-                    {{ product.price }} VNĐ
+                  <!-- Price Bar (Formatted with commas ',') -->
+                  <div class="absolute bottom-0 left-0 right-0 text-slate-800 text-xs py-0.5 text-center font-bold" style="background: linear-gradient(135deg, #c7e8ff, #97d5ff)">
+                    {{ formatNumber(product.priceNum) }} VNĐ
                   </div>
                 </div>
                 
-                <!-- Product Name (Full text, wrapped) -->
-                <div class="text-[12px] text-slate-707 font-bold text-center px-1 mt-2 break-words leading-tight flex flex-col gap-0.5">
-                  <span>{{ product.name }}</span>
-                  <span v-if="!product.isActive" class="text-[9px] bg-slate-100 text-slate-500 px-1 py-0.5 rounded border border-slate-200 self-center">Inactive</span>
+                <!-- Product Name -->
+                <div class="text-xs text-[#000000D9] font-medium text-center px-0.5 mt-1.5 break-words leading-tight flex flex-col gap-0.5">
+                  <span class="line-clamp-2" :title="product.name">{{ product.name }}</span>
+                  <span v-if="!product.isActive" class="text-xs bg-slate-100 text-slate-500 px-1 py-0.5 rounded border border-slate-200 self-center leading-none">Inactive</span>
                 </div>
               </div>
             </template>
 
             <!-- "No Data" Placeholder if group is empty -->
-            <div v-if="group.products.length === 0" class="flex flex-col items-center justify-center w-[150px] h-[155px] opacity-60">
-              <Inbox class="w-10 h-10 text-slate-300 mb-2" stroke-width="1.5" />
-              <span class="text-[12px] text-slate-400 font-medium">Chưa có sản phẩm</span>
+            <div v-if="group.products.length === 0" class="flex flex-col items-center justify-center w-[130px] h-[125px] opacity-60">
+              <Inbox class="w-8 h-8 text-slate-300 mb-1" stroke-width="1.5" />
+              <span class="text-xs text-slate-400 font-normal">Chưa có sản phẩm</span>
             </div>
 
           </div>
@@ -225,178 +308,406 @@
       </div>
     </div>
 
-    <!-- PRODUCT MODAL -->
+    <!-- PRODUCT MODAL (Draggable & Theme Synchronized) -->
     <Transition name="hk-modal">
-      <div v-if="showProductModal" class="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm">
-        <div class="bg-white w-[800px] rounded-xl shadow-2xl flex flex-col overflow-hidden font-sans transform transition-all border border-slate-200">
-          
-          <!-- Modal Header -->
-          <div class="px-5 py-3 flex justify-between items-center shrink-0 shadow-sm text-slate-850" style="background: var(--hk-gradient, linear-gradient(135deg, #97D5FF, #6BC1F5))">
-            <h2 class="text-[15px] font-bold uppercase tracking-wider text-slate-800">Thêm Sản Phẩm Mới</h2>
-            <button @click="showProductModal = false" class="text-slate-800 hover:bg-black/10 p-1.5 rounded-full transition-colors cursor-pointer border-none bg-transparent">
+      <div v-if="showProductModal" class="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
+        <div 
+          class="relative bg-white w-[820px] rounded-xl shadow-2xl flex flex-col overflow-hidden font-sans border border-slate-200"
+          :style="{ transform: 'translate(' + productModalPos.x + 'px, ' + productModalPos.y + 'px)' }"
+        >
+          <!-- Modal Header (Draggable, Title Case, Theme Synchronized) -->
+          <div 
+            class="px-5 py-3 flex justify-between items-center shrink-0 shadow-sm text-white cursor-move select-none rounded-t-xl" 
+            @mousedown="startDragProductModal"
+            :style="{ background: topbarThemeBg, color: 'var(--pms-custom-theme-text, #ffffff)' }"
+          >
+            <h2 class="text-xs font-semibold tracking-wide text-white">
+              {{ newProduct.id ? 'Cập Nhật Sản Phẩm' : 'Thêm Sản Phẩm Mới' }}
+            </h2>
+            <button 
+              type="button"
+              @click="showProductModal = false" 
+              class="text-white hover:bg-white/20 p-1 rounded-full transition-colors cursor-pointer border-none bg-transparent"
+              title="Đóng (Esc)"
+            >
               <X class="w-4 h-4" />
             </button>
           </div>
 
           <!-- Modal Body -->
-          <div class="p-5 grid grid-cols-12 gap-6 text-[13px] text-slate-707 max-h-[80vh] overflow-y-auto bg-slate-50 flex-1 hk-scroll">
+          <div class="p-5 grid grid-cols-12 gap-5 text-xs text-[#000000D9] max-h-[82vh] overflow-y-auto bg-slate-50 flex-1 hk-scroll">
             
             <!-- Left Column (Image & Status) -->
-            <div class="col-span-4 flex flex-col gap-4">
+            <div class="col-span-4 flex flex-col gap-3.5">
               <!-- Image Upload -->
-              <div class="flex flex-col gap-1.5">
-                <label class="font-bold text-slate-700 text-[12px]">Hình ảnh sản phẩm</label>
-                <div class="dashed-upload rounded-xl bg-white flex flex-col items-center justify-center gap-2 h-[150px] cursor-pointer group shadow-sm relative overflow-hidden">
+              <div class="flex flex-col gap-1">
+                <label class="font-semibold text-xs text-[#000000D9]">Hình Ảnh Sản Phẩm</label>
+                <div class="dashed-upload rounded-xl bg-white flex flex-col items-center justify-center gap-2 h-[145px] cursor-pointer group shadow-xs relative overflow-hidden">
                   <input type="file" @change="handleImageUpload" accept="image/*" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" />
                   <img v-if="newProduct.imageUrl" :src="newProduct.imageUrl" class="absolute inset-0 w-full h-full object-cover" />
                   <div v-else class="flex flex-col items-center w-full">
-                    <div class="w-10 h-10 bg-slate-50 rounded-full shadow-sm flex items-center justify-center text-sky-500 group-hover:scale-110 transition-transform border border-slate-100 group-hover:bg-white mb-2">
-                      <Plus class="w-5 h-5 text-[var(--hk-primary-dark)]" stroke-width="2.5" />
+                    <div class="w-9 h-9 bg-slate-50 rounded-full shadow-xs flex items-center justify-center text-sky-500 group-hover:scale-105 transition-transform border border-slate-100 group-hover:bg-white mb-1.5">
+                      <Plus class="w-4 h-4 text-[#006bdb]" stroke-width="2.5" />
                     </div>
                     <div class="text-center px-2">
-                      <p class="text-[var(--hk-primary-dark)] font-bold text-[12px]">Tải ảnh sản phẩm lên</p>
-                      <p class="text-[11px] text-slate-405 mt-0.5">Nhấp chuột hoặc kéo thả</p>
+                      <p class="text-[#006bdb] font-semibold text-xs">Tải Ảnh Sản Phẩm Lên</p>
+                      <p class="text-xs text-slate-400 mt-0.5">Nhấp Chuột Hoặc Kéo Thả</p>
                     </div>
                   </div>
                 </div>
               </div>
 
               <!-- Status Toggles -->
-              <div class="flex flex-col gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-                <label class="flex items-center gap-2.5 cursor-pointer">
+              <div class="flex flex-col gap-2.5 bg-white p-3.5 rounded-lg border border-slate-200 shadow-xs">
+                <label class="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" v-model="newProduct.isActive" class="w-4 h-4 rounded border-slate-300 text-sky-500 focus:ring-sky-500 cursor-pointer" />
-                  <span class="font-bold text-slate-700 text-[12px]">Đang sử dụng (Active)</span>
+                  <span class="font-semibold text-xs text-[#000000D9]">Đang Sử Dụng (Active)</span>
                 </label>
 
-                <label class="flex items-center gap-2.5 cursor-pointer">
+                <label class="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" v-model="newProduct.openKey" class="w-4 h-4 rounded border-slate-300 text-sky-500 focus:ring-sky-500 cursor-pointer" />
-                  <span class="font-bold text-slate-700 text-[12px]">Mở bán (OpenKey)</span>
+                  <span class="font-semibold text-xs text-[#000000D9]">Mở Bán (OpenKey)</span>
                 </label>
                 
-                <label class="flex items-center gap-2.5 cursor-pointer">
+                <label class="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" v-model="newProduct.flexiblePrice" class="w-4 h-4 rounded border-slate-300 text-sky-500 focus:ring-sky-500 cursor-pointer" />
-                  <span class="font-bold text-slate-700 text-[12px]">Giá bán linh động</span>
+                  <span class="font-semibold text-xs text-[#000000D9]">Giá Bán Linh Động</span>
                 </label>
               </div>
             </div>
 
             <!-- Right Column (Details & Pricing) -->
-            <div class="col-span-8 flex flex-col gap-5">
+            <div class="col-span-8 flex flex-col gap-4">
               
               <!-- Basic Info Section -->
-              <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm grid grid-cols-2 gap-4">
-                <div class="flex flex-col gap-1.5">
-                  <label class="font-bold text-slate-700 text-[12px]">Mã sản phẩm</label>
-                  <input type="text" :value="newProduct.product_code || 'SP - AUTO'" disabled class="border border-slate-200 rounded-lg bg-slate-100 px-3 py-2 text-slate-500 cursor-not-allowed font-mono text-[12px] outline-none" />
+              <div class="bg-white p-3.5 rounded-lg border border-slate-200 shadow-xs grid grid-cols-2 gap-3.5">
+                <!-- Mã sản phẩm (Real code / next code, never SP - AUTO) -->
+                <div class="flex flex-col gap-1">
+                  <label class="font-semibold text-xs text-[#000000D9]">Mã Sản Phẩm</label>
+                  <input 
+                    type="text" 
+                    :value="newProduct.product_code" 
+                    disabled 
+                    placeholder="Mã tự sinh..." 
+                    class="w-full h-8 border border-slate-200 rounded-lg bg-slate-100 px-2.5 text-slate-600 cursor-not-allowed font-mono text-xs outline-none" 
+                  />
                 </div>
                 
-                <div class="flex flex-col gap-1.5">
-                  <label class="font-bold text-slate-700 text-[12px]">Tên sản phẩm <span class="text-rose-500">*</span></label>
-                  <input type="text" required v-model="newProduct.name" placeholder="Nhập tên sản phẩm..." class="border border-slate-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] transition-all font-semibold text-[13px] bg-white shadow-sm" />
-                </div>
-
-                <div class="flex flex-col gap-1.5">
-                  <label class="font-bold text-slate-700 text-[12px]">Nhóm sản phẩm</label>
-                  <input v-if="!newProduct.id" type="text" :value="selectedProductGroupName" disabled class="w-full border border-slate-200 rounded-lg bg-slate-100 px-3 py-2 text-slate-600 cursor-not-allowed text-[13px] shadow-sm font-medium" />
-                  <div v-else class="relative">
-                    <select v-model="newProduct.groupId" class="w-full border border-slate-300 rounded-lg bg-white px-3 py-2 outline-none appearance-none cursor-pointer focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] transition-all text-[13px] shadow-sm font-medium">
-                      <option v-for="g in groups" :key="g.id" :value="g.id">{{ g.name }}</option>
-                    </select>
-                    <ChevronDown class="w-4 h-4 absolute right-3 top-2.5 text-slate-400 pointer-events-none" />
+                <!-- Tên sản phẩm (Required yellow #FFF8DB / #F1DD8A with clear button) -->
+                <div class="flex flex-col gap-1">
+                  <label class="font-semibold text-xs text-[#000000D9]">Tên Sản Phẩm <span class="text-rose-500">*</span></label>
+                  <div class="relative flex items-center">
+                    <input 
+                      type="text" 
+                      required 
+                      v-model="newProduct.name" 
+                      placeholder="Nhập tên sản phẩm..." 
+                      class="w-full h-8 border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg pl-2.5 pr-7 text-xs text-[#000000D9] font-normal outline-none focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308] transition-all shadow-xs" 
+                    />
+                    <button 
+                      v-if="newProduct.name" 
+                      type="button" 
+                      @click="newProduct.name = ''" 
+                      class="absolute right-2 text-slate-400 hover:text-slate-600"
+                      title="Xóa tên"
+                    >
+                      <X class="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
 
-                <div class="flex flex-col gap-1.5">
-                  <label class="font-bold text-slate-700 text-[12px]">Đơn vị tính</label>
-                  <div class="relative">
-                    <select v-model="newProduct.currency" class="w-full border border-slate-300 rounded-lg bg-white px-3 py-2 outline-none appearance-none cursor-pointer focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] transition-all text-[13px] shadow-sm font-medium">
-                      <option v-for="unit in units" :key="unit.id" :value="unit.code">{{ unit.name }}</option>
-                    </select>
-                    <ChevronDown class="w-4 h-4 absolute right-3 top-2.5 text-slate-400 pointer-events-none" />
-                  </div>
+                <!-- Nhóm sản phẩm (Searchable combobox, Required yellow) -->
+                <div class="flex flex-col gap-1">
+                  <label class="font-semibold text-xs text-[#000000D9]">Nhóm Sản Phẩm <span class="text-rose-500">*</span></label>
+                  <SearchableSelect
+                    v-model="newProduct.groupId"
+                    :options="groupSelectOptions"
+                    placeholder="Chọn nhóm sản phẩm..."
+                    search-placeholder="Tìm kiếm nhóm..."
+                    required
+                    @change="onGroupChanged"
+                  />
+                </div>
+
+                <!-- Đơn vị tính (Searchable combobox, Required yellow) -->
+                <div class="flex flex-col gap-1">
+                  <label class="font-semibold text-xs text-[#000000D9]">Đơn Vị Tính <span class="text-rose-500">*</span></label>
+                  <SearchableSelect
+                    v-model="newProduct.currency"
+                    :options="unitSelectOptions"
+                    placeholder="Chọn đơn vị tính..."
+                    search-placeholder="Tìm đơn vị..."
+                    required
+                  />
                 </div>
                 
-                <div class="flex flex-col gap-1.5" :class="{'col-span-2': !newProduct.trackStock}">
-                  <label class="font-bold text-slate-700 text-[12px]">Quản lý tồn kho</label>
-                  <div class="relative">
-                    <select v-model="newProduct.trackStock" class="w-full border border-slate-300 rounded-lg bg-white px-3 py-2 outline-none appearance-none cursor-pointer focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] transition-all text-[13px] shadow-sm font-medium">
+                <!-- Quản lý tồn kho -->
+                <div class="flex flex-col gap-1" :class="{'col-span-2': !newProduct.trackStock}">
+                  <label class="font-semibold text-xs text-[#000000D9]">Quản Lý Tồn Kho</label>
+                  <div class="relative flex items-center">
+                    <select v-model="newProduct.trackStock" class="w-full h-8 border border-slate-300 rounded-lg pl-2.5 pr-7 text-xs text-[#000000D9] outline-none cursor-pointer focus:ring-1 focus:ring-[#006bdb] focus:border-[#006bdb] shadow-xs appearance-none bg-white">
                       <option :value="false">Không theo dõi</option>
                       <option :value="true">Có theo dõi (Trừ kho tự động)</option>
                     </select>
-                    <ChevronDown class="w-4 h-4 absolute right-3 top-2.5 text-slate-400 pointer-events-none" />
+                    <ChevronDown class="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" />
                   </div>
                 </div>
 
-                <div v-if="newProduct.trackStock" class="flex flex-col gap-1.5">
-                  <label class="font-bold text-slate-700 text-[12px]">Chọn kho</label>
-                  <div class="relative">
-                    <select v-model="newProduct.inventory_id" class="w-full border border-slate-300 rounded-lg bg-white px-3 py-2 outline-none appearance-none cursor-pointer focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] transition-all text-[13px] shadow-sm font-medium">
-                      <option v-for="inv in inventories" :key="inv.id" :value="inv.id">{{ inv.name }}</option>
-                    </select>
-                    <ChevronDown class="w-4 h-4 absolute right-3 top-2.5 text-slate-400 pointer-events-none" />
-                  </div>
+                <!-- Chọn kho (Searchable combobox) -->
+                <div v-if="newProduct.trackStock" class="flex flex-col gap-1">
+                  <label class="font-semibold text-xs text-[#000000D9]">Chọn Kho</label>
+                  <SearchableSelect
+                    v-model="newProduct.inventory_id"
+                    :options="inventorySelectOptions"
+                    placeholder="Chọn kho lưu trữ..."
+                    search-placeholder="Tìm kiếm kho..."
+                  />
                 </div>
               </div>
 
-              <!-- Pricing Section (highlighted box) -->
-              <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-3">
-                <h3 class="font-bold text-slate-800 border-b border-slate-100 pb-2 mb-1 text-[13px] uppercase tracking-wide">Thiết lập Giá & Thuế</h3>
-                <div class="grid grid-cols-2 gap-x-5 gap-y-4">
+              <!-- Pricing Section (Title Case, comma-separated numbers, clear buttons) -->
+              <div class="bg-white p-3.5 rounded-lg border border-slate-200 shadow-xs flex flex-col gap-2.5">
+                <h3 class="font-semibold text-[#000000D9] border-b border-slate-100 pb-1.5 text-xs tracking-wide">Thiết Lập Giá & Thuế</h3>
+                <div class="grid grid-cols-2 gap-x-4 gap-y-3">
                   
-                  <div class="flex flex-col gap-1.5">
-                    <label class="font-bold text-slate-700 text-[12px]">Giá gốc chưa thuế (VNĐ)</label>
-                    <input type="text" v-model="displayBasePrice" placeholder="0" class="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] font-medium text-[13px] shadow-sm" />
+                  <!-- Giá gốc chưa thuế (VNĐ) -->
+                  <div class="flex flex-col gap-1">
+                    <label class="font-semibold text-xs text-slate-700">Giá Gốc Chưa Thuế (VNĐ)</label>
+                    <div class="relative flex items-center">
+                      <input 
+                        type="text" 
+                        v-model="displayBasePrice" 
+                        placeholder="0" 
+                        class="w-full h-8 border border-slate-300 rounded-lg pl-2.5 pr-7 text-xs text-[#000000D9] outline-none focus:ring-1 focus:ring-[#006bdb] focus:border-[#006bdb] shadow-xs" 
+                      />
+                      <button 
+                        v-if="newProduct.original_amount" 
+                        type="button" 
+                        @click="clearBasePrice" 
+                        class="absolute right-2 text-slate-400 hover:text-slate-600"
+                        title="Xóa giá gốc"
+                      >
+                        <X class="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
 
-                  <div class="flex flex-col gap-1.5">
-                    <label class="font-bold text-sky-700 text-[12px]">Giá bán cuối cùng (VNĐ)</label>
-                    <input type="text" v-model="displayFinalPrice" placeholder="0" class="w-full border border-sky-300 rounded-lg bg-sky-50 px-3 py-2 outline-none focus:ring-2 focus:ring-sky-100 focus:border-sky-400 font-bold text-sky-700 text-[14px] shadow-sm" />
+                  <!-- Giá bán cuối cùng (VNĐ) -->
+                  <div class="flex flex-col gap-1">
+                    <label class="font-semibold text-xs text-[#006bdb]">Giá Bán Cuối Cùng (VNĐ)</label>
+                    <div class="relative flex items-center">
+                      <input 
+                        type="text" 
+                        v-model="displayFinalPrice" 
+                        placeholder="0" 
+                        class="w-full h-8 border border-sky-300 rounded-lg bg-sky-50 pl-2.5 pr-7 text-xs text-[#006bdb] font-bold outline-none focus:ring-1 focus:ring-[#006bdb] focus:border-[#006bdb] shadow-xs" 
+                      />
+                      <button 
+                        v-if="newProduct.price" 
+                        type="button" 
+                        @click="clearFinalPrice" 
+                        class="absolute right-2 text-slate-400 hover:text-slate-600"
+                        title="Xóa giá bán"
+                      >
+                        <X class="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
 
-                  <div class="flex flex-col gap-1.5">
-                    <label class="font-bold text-slate-700 flex justify-between text-[12px]">
-                      <span>Phí phục vụ (%)</span>
-                      <span v-if="scAmount > 0" class="text-sky-600 font-semibold">(+ {{ new Intl.NumberFormat('vi-VN').format(scAmount) }}đ)</span>
-                    </label>
-                    <input type="number" v-model="newProduct.service_charge_percent" @input="recalculateFromBase" class="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-sky-100 focus:border-sky-400 text-[13px] shadow-sm bg-white" />
+                  <!-- Phí phục vụ (%) -->
+                  <div class="flex flex-col gap-1">
+                    <label class="font-semibold text-xs text-[#000000D9]">Phí Phục Vụ (%)</label>
+                    <div class="flex items-center gap-1.5">
+                      <div class="inline-flex items-center border border-slate-300 rounded-lg bg-white shadow-xs h-8 overflow-hidden focus-within:ring-1 focus-within:ring-[#006bdb] focus-within:border-[#006bdb]">
+                        <div class="relative flex items-center w-16">
+                          <input 
+                            type="number" 
+                            v-model.number="newProduct.service_charge_percent" 
+                            @input="onTaxPercentInput" 
+                            placeholder="0"
+                            min="0"
+                            max="100"
+                            class="w-full h-full text-center text-xs text-[#000000D9] outline-none bg-transparent font-medium pl-1.5 pr-4 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" 
+                          />
+                          <button 
+                            v-if="newProduct.service_charge_percent" 
+                            type="button" 
+                            @click="clearServiceCharge" 
+                            class="absolute right-0.5 text-slate-300 hover:text-slate-600 p-0.5 cursor-pointer"
+                            title="Xóa"
+                          >
+                            <X class="w-3 h-3" />
+                          </button>
+                        </div>
+
+                        <!-- Nút Lên/Xuống xếp dọc -->
+                        <div class="flex flex-col w-5 h-full border-l border-slate-200 divide-y divide-slate-200">
+                          <button 
+                            type="button" 
+                            @click="adjustServiceCharge(1)" 
+                            class="flex-1 flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-[#006bdb] active:bg-slate-200 transition-colors cursor-pointer border-none bg-transparent p-0"
+                            title="Tăng 1%"
+                          >
+                            <ChevronUp class="w-3 h-3" />
+                          </button>
+                          <button 
+                            type="button" 
+                            @click="adjustServiceCharge(-1)" 
+                            :disabled="!newProduct.service_charge_percent || newProduct.service_charge_percent <= 0"
+                            class="flex-1 flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-[#006bdb] active:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer border-none bg-transparent p-0"
+                            title="Giảm 1%"
+                          >
+                            <ChevronDown class="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <span v-if="scAmount > 0" class="text-xs text-sky-600 font-semibold whitespace-nowrap">
+                        (+ {{ formatNumber(scAmount) }}đ)
+                      </span>
+                    </div>
                   </div>
 
-                  <div class="flex flex-col gap-1.5">
-                    <label class="font-bold text-slate-700 flex justify-between text-[12px]">
-                      <span>Thuế VAT (%)</span>
-                      <span v-if="vatAmount > 0" class="text-sky-600 font-semibold">(+ {{ new Intl.NumberFormat('vi-VN').format(vatAmount) }}đ)</span>
-                    </label>
-                    <input type="number" v-model="newProduct.tax_percent" @input="recalculateFromBase" class="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-sky-100 focus:border-sky-400 text-[13px] shadow-sm bg-white" />
+                  <!-- Thuế đặc biệt (%) -->
+                  <div class="flex flex-col gap-1">
+                    <label class="font-semibold text-xs text-[#000000D9]">Thuế Đặc Biệt (%)</label>
+                    <div class="flex items-center gap-1.5">
+                      <div class="inline-flex items-center border border-slate-300 rounded-lg bg-white shadow-xs h-8 overflow-hidden focus-within:ring-1 focus-within:ring-[#006bdb] focus-within:border-[#006bdb]">
+                        <div class="relative flex items-center w-16">
+                          <input 
+                            type="number" 
+                            v-model.number="newProduct.special_tax_percent" 
+                            @input="onTaxPercentInput" 
+                            placeholder="0"
+                            min="0"
+                            max="100"
+                            class="w-full h-full text-center text-xs text-[#000000D9] outline-none bg-transparent font-medium pl-1.5 pr-4 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" 
+                          />
+                          <button 
+                            v-if="newProduct.special_tax_percent" 
+                            type="button" 
+                            @click="clearSpecialTaxPercent" 
+                            class="absolute right-0.5 text-slate-300 hover:text-slate-600 p-0.5 cursor-pointer"
+                            title="Xóa"
+                          >
+                            <X class="w-3 h-3" />
+                          </button>
+                        </div>
+
+                        <!-- Nút Lên/Xuống xếp dọc -->
+                        <div class="flex flex-col w-5 h-full border-l border-slate-200 divide-y divide-slate-200">
+                          <button 
+                            type="button" 
+                            @click="adjustSpecialTax(1)" 
+                            class="flex-1 flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-[#006bdb] active:bg-slate-200 transition-colors cursor-pointer border-none bg-transparent p-0"
+                            title="Tăng 1%"
+                          >
+                            <ChevronUp class="w-3 h-3" />
+                          </button>
+                          <button 
+                            type="button" 
+                            @click="adjustSpecialTax(-1)" 
+                            :disabled="!newProduct.special_tax_percent || newProduct.special_tax_percent <= 0"
+                            class="flex-1 flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-[#006bdb] active:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer border-none bg-transparent p-0"
+                            title="Giảm 1%"
+                          >
+                            <ChevronDown class="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <span v-if="specialAmount > 0" class="text-xs text-sky-600 font-semibold whitespace-nowrap">
+                        (+ {{ formatNumber(specialAmount) }}đ)
+                      </span>
+                    </div>
                   </div>
 
-                  <div class="flex flex-col gap-1.5 col-span-2">
-                    <label class="font-bold text-slate-700 flex justify-between text-[12px]">
-                      <span>Thuế đặc biệt (%)</span>
-                      <span v-if="specialAmount > 0" class="text-sky-600 font-semibold">(+ {{ new Intl.NumberFormat('vi-VN').format(specialAmount) }}đ)</span>
-                    </label>
-                    <input type="number" v-model="newProduct.special_tax_percent" @input="recalculateFromBase" class="w-full border border-slate-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-sky-100 focus:border-sky-400 text-[13px] shadow-sm bg-white" />
+                  <!-- Thuế VAT (%) -->
+                  <div class="flex flex-col gap-1 col-span-2">
+                    <label class="font-semibold text-xs text-[#000000D9]">Thuế VAT (%)</label>
+                    <div class="flex items-center gap-1.5">
+                      <div class="inline-flex items-center border border-slate-300 rounded-lg bg-white shadow-xs h-8 overflow-hidden focus-within:ring-1 focus-within:ring-[#006bdb] focus-within:border-[#006bdb]">
+                        <div class="relative flex items-center w-16">
+                          <input 
+                            type="number" 
+                            v-model.number="newProduct.tax_percent" 
+                            @input="onTaxPercentInput" 
+                            placeholder="0"
+                            min="0"
+                            max="100"
+                            class="w-full h-full text-center text-xs text-[#000000D9] outline-none bg-transparent font-medium pl-1.5 pr-4 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" 
+                          />
+                          <button 
+                            v-if="newProduct.tax_percent" 
+                            type="button" 
+                            @click="clearTaxPercent" 
+                            class="absolute right-0.5 text-slate-300 hover:text-slate-600 p-0.5 cursor-pointer"
+                            title="Xóa"
+                          >
+                            <X class="w-3 h-3" />
+                          </button>
+                        </div>
+
+                        <!-- Nút Lên/Xuống xếp dọc -->
+                        <div class="flex flex-col w-5 h-full border-l border-slate-200 divide-y divide-slate-200">
+                          <button 
+                            type="button" 
+                            @click="adjustTaxPercent(1)" 
+                            class="flex-1 flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-[#006bdb] active:bg-slate-200 transition-colors cursor-pointer border-none bg-transparent p-0"
+                            title="Tăng 1%"
+                          >
+                            <ChevronUp class="w-3 h-3" />
+                          </button>
+                          <button 
+                            type="button" 
+                            @click="adjustTaxPercent(-1)" 
+                            :disabled="!newProduct.tax_percent || newProduct.tax_percent <= 0"
+                            class="flex-1 flex items-center justify-center text-slate-500 hover:bg-slate-100 hover:text-[#006bdb] active:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors cursor-pointer border-none bg-transparent p-0"
+                            title="Giảm 1%"
+                          >
+                            <ChevronDown class="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <span v-if="vatAmount > 0" class="text-xs text-sky-600 font-semibold whitespace-nowrap">
+                        (+ {{ formatNumber(vatAmount) }}đ)
+                      </span>
+                    </div>
                   </div>
 
                 </div>
               </div>
 
-              <!-- Description -->
-              <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-1.5">
-                <label class="font-bold text-slate-700 text-[12px]">Mô tả thêm</label>
-                <textarea v-model="newProduct.note" placeholder="Nhập ghi chú hoặc mô tả về sản phẩm..." class="border border-slate-300 rounded-lg px-3 py-2 outline-none h-[60px] resize-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] transition-all text-[13px] bg-white shadow-sm"></textarea>
+              <!-- Description with quick clear (x) -->
+              <div class="bg-white p-3.5 rounded-lg border border-slate-200 shadow-xs flex flex-col gap-1">
+                <div class="flex items-center justify-between">
+                  <label class="font-semibold text-xs text-[#000000D9]">Mô Tả Thêm</label>
+                  <button 
+                    v-if="newProduct.note" 
+                    type="button" 
+                    @click="newProduct.note = ''" 
+                    class="text-xs text-slate-400 hover:text-slate-600 flex items-center gap-0.5"
+                  >
+                    <X class="w-3 h-3" />
+                    <span>Xóa</span>
+                  </button>
+                </div>
+                <textarea 
+                  v-model="newProduct.note" 
+                  placeholder="Nhập mô tả chi tiết sản phẩm, thành phần, quy cách phục vụ..." 
+                  class="border border-slate-300 rounded-lg p-2.5 outline-none h-[64px] resize-none focus:ring-1 focus:ring-[#006bdb] focus:border-[#006bdb] transition-all text-xs text-[#000000D9] bg-white shadow-xs placeholder:text-[#A8B0BF]"
+                ></textarea>
               </div>
 
             </div>
           </div>
 
-          <!-- Modal Footer -->
-          <div class="bg-white border-t border-slate-200 p-4 px-5 flex justify-end gap-3 shrink-0">
-            <button @click="showProductModal = false" class="px-5 py-2 rounded-lg font-bold text-slate-600 bg-slate-100 border border-transparent hover:bg-slate-200 transition-colors shadow-sm text-[13px] cursor-pointer">
-              Hủy bỏ
-            </button>
-            <button @click="saveProduct" class="btn-primary px-5 py-2 rounded-lg font-bold transition-colors shadow-sm flex items-center gap-2 text-[13px] cursor-pointer">
-              <Save class="w-4 h-4" stroke-width="2.5" />
-              Lưu Sản Phẩm
+          <!-- Modal Footer (Standard Buttons) -->
+          <div class="bg-white border-t border-slate-200 p-3 px-5 flex justify-end gap-2.5 shrink-0">
+            <button @click="saveProduct" class="btn-pms-primary h-8 px-4 rounded-lg text-xs font-semibold cursor-pointer flex items-center gap-1.5">
+              <Save class="w-3.5 h-3.5" />
+              <span>Lưu Sản Phẩm</span>
             </button>
           </div>
 
@@ -404,79 +715,82 @@
       </div>
     </Transition>
 
-    <!-- GROUP MODAL -->
+    <!-- GROUP MODAL (Draggable & Theme Synchronized) -->
     <Transition name="hk-modal">
-      <div v-if="showGroupModal" class="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-sm">
-        <div class="bg-white w-[400px] rounded-xl shadow-2xl flex flex-col overflow-hidden font-sans transform transition-all border border-slate-200">
-          <div class="px-5 py-3 flex justify-between items-center shrink-0 shadow-sm text-slate-850" style="background: var(--hk-gradient, linear-gradient(135deg, #97D5FF, #6BC1F5))">
-            <h2 class="text-[15px] font-bold uppercase tracking-wider text-slate-800">Thêm Nhóm Sản Phẩm Mới</h2>
-            <button @click="showGroupModal = false" class="text-slate-800 hover:bg-black/10 p-1.5 rounded-full transition-colors cursor-pointer border-none bg-transparent">
+      <div v-if="showGroupModal" class="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
+        <div 
+          class="relative bg-white w-[420px] rounded-xl shadow-2xl flex flex-col overflow-hidden font-sans border border-slate-200"
+          :style="{ transform: 'translate(' + groupModalPos.x + 'px, ' + groupModalPos.y + 'px)' }"
+        >
+          <!-- Header (Draggable, Title Case, Theme Synchronized) -->
+          <div 
+            class="px-5 py-3 flex justify-between items-center shrink-0 shadow-sm text-white cursor-move select-none rounded-t-xl" 
+            @mousedown="startDragGroupModal"
+            :style="{ background: topbarThemeBg, color: 'var(--pms-custom-theme-text, #ffffff)' }"
+          >
+            <h2 class="text-xs font-semibold tracking-wide text-white">Thêm Nhóm Sản Phẩm Mới</h2>
+            <button 
+              type="button"
+              @click="showGroupModal = false" 
+              class="text-white hover:bg-white/20 p-1 rounded-full transition-colors cursor-pointer border-none bg-transparent"
+              title="Đóng (Esc)"
+            >
               <X class="w-4 h-4" />
             </button>
           </div>
-          <div class="p-5 flex flex-col gap-4 bg-slate-50">
-            <div class="flex flex-col gap-1.5 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
-              <label class="font-bold text-slate-700 text-[12px]">Tên nhóm <span class="text-rose-500">*</span></label>
-              <input v-model="newGroupName" type="text" placeholder="Nhập tên nhóm..." @keyup.enter="saveGroup" class="border border-slate-300 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-[var(--hk-primary-light)] focus:border-[var(--hk-primary)] transition-all font-semibold text-[13px] bg-white shadow-sm" v-focus />
+          <div class="p-5 flex flex-col gap-3.5 bg-slate-50">
+            <div class="flex flex-col gap-1 bg-white p-4 rounded-lg border border-slate-200 shadow-xs">
+              <label class="font-semibold text-xs text-[#000000D9]">Tên nhóm <span class="text-rose-500">*</span></label>
+              <div class="relative flex items-center">
+                <input 
+                  v-model="newGroupName" 
+                  type="text" 
+                  placeholder="Nhập tên nhóm..." 
+                  @keyup.enter="saveGroup" 
+                  class="w-full h-8 border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg pl-2.5 pr-7 text-xs text-[#000000D9] outline-none focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308] transition-all shadow-xs" 
+                  v-focus 
+                />
+                <button 
+                  v-if="newGroupName" 
+                  type="button" 
+                  @click="newGroupName = ''" 
+                  class="absolute right-2 text-slate-400 hover:text-slate-600"
+                  title="Xóa tên nhóm"
+                >
+                  <X class="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
           </div>
-          <div class="bg-white border-t border-slate-200 p-4 px-5 flex justify-end gap-3 shrink-0">
-            <button @click="showGroupModal = false" class="px-4 py-2 rounded-lg font-bold text-slate-600 bg-slate-100 border border-transparent hover:bg-slate-200 transition-colors shadow-sm text-[13px] cursor-pointer">
-              Hủy bỏ
-            </button>
-            <button @click="saveGroup" class="btn-primary px-4 py-2 rounded-lg font-bold transition-colors shadow-sm flex items-center gap-2 text-[13px] cursor-pointer">
-              <Save class="w-4 h-4" stroke-width="2.5" />
-              Lưu Nhóm
+          <div class="bg-white border-t border-slate-200 p-3 px-5 flex justify-end gap-2.5 shrink-0">
+            <button @click="saveGroup" class="btn-pms-primary h-8 px-4 rounded-lg text-xs font-semibold cursor-pointer flex items-center gap-1.5">
+              <Save class="w-3.5 h-3.5" />
+              <span>Lưu Nhóm</span>
             </button>
           </div>
         </div>
       </div>
     </Transition>
-
-    <!-- Teleported Tooltip -->
-    <Teleport to="body">
-      <Transition name="fade">
-        <div v-if="hoveredProduct" :style="{ left: tooltipX + 'px', top: tooltipY + 'px' }" class="fixed -translate-x-1/2 -translate-y-full w-fit min-w-[160px] bg-slate-800 text-white text-[11px] p-2.5 rounded-lg z-[9999] pointer-events-none shadow-xl border border-slate-700">
-          <div class="flex flex-col gap-1.5 whitespace-nowrap">
-            <div class="font-bold border-b border-slate-600 pb-1 mb-1 text-[12px] text-sky-300">{{ hoveredProduct.name }}</div>
-            <div class="flex justify-between gap-4">
-              <span class="text-slate-400">Mã SP:</span>
-              <span class="font-bold text-slate-200">{{ hoveredProduct.product_code || 'Chưa có' }}</span>
-            </div>
-            <div class="flex justify-between gap-4">
-              <span class="text-slate-400">Giá gốc:</span>
-              <span class="font-bold">{{ hoveredProduct.priceNum ? new Intl.NumberFormat('vi-VN').format(hoveredProduct.priceNum) : '0' }}đ</span>
-            </div>
-            <div class="flex justify-between gap-4">
-              <span class="text-slate-400">Nhóm:</span>
-              <span>{{ hoveredGroupName }}</span>
-            </div>
-            <div class="flex justify-between gap-4">
-              <span class="text-slate-400">Tồn kho:</span>
-              <span :class="hoveredProduct.trackStock ? 'text-green-400 font-bold' : ''">{{ hoveredProduct.trackStock ? 'Có theo dõi' : 'Không' }}</span>
-            </div>
-            <div class="flex flex-col gap-0.5 mt-1 border-t border-slate-600 pt-1" v-if="hoveredProduct.note">
-              <span class="text-slate-400">Mô tả:</span>
-              <span class="whitespace-normal leading-relaxed text-slate-200" style="max-width: 250px;">{{ hoveredProduct.note }}</span>
-            </div>
-          </div>
-          <div class="absolute -bottom-1 left-1/2 -translate-x-1/2 border-l-4 border-r-4 border-t-4 border-transparent border-t-slate-800"></div>
-        </div>
-      </Transition>
-    </Teleport>
 
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
-import { Trash2, Printer, FileSpreadsheet, Download, Upload, PlusCircle, ChevronUp, ChevronDown, ImageOff, Inbox, X, Check, Plus, Eye, EyeOff, Save, Power } from '@lucide/vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { Trash2, Printer, Download, Upload, PlusCircle, ChevronUp, ChevronDown, ImageOff, Inbox, X, Save, Power, Plus, Minus } from '@lucide/vue'
 import http from '@/services/http'
 import { fetchHousekeepingOutlets } from '@/services/housekeeping-outlet-service'
 import { useUiStore } from '@/stores/ui-store'
+import { useAuthStore } from '@/stores/auth-store'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
+import SearchableSelect from './SearchableSelect.vue'
 
 const uiStore = useUiStore()
+const authStore = useAuthStore()
+
+const topbarThemeBg = computed(() => {
+  return authStore.settings?.topbar_color || authStore.themeColor || 'var(--pms-custom-theme, #006bdb)'
+})
 
 const tabs = ref([])
 const activeTab = ref('')
@@ -485,14 +799,61 @@ const showProductModal = ref(false)
 const showGroupModal = ref(false)
 const newGroupName = ref('')
 
-const tooltipX = ref(0)
-const tooltipY = ref(0)
-const hoveredProduct = ref(null)
-const hoveredGroupName = ref('')
-const enableTooltip = ref(true)
-
 const fileInput = ref(null)
 
+// ─── Drag Handling for Modals ─────────────────────────────────────────────
+const productModalPos = ref({ x: 0, y: 0 })
+const groupModalPos = ref({ x: 0, y: 0 })
+
+function createDragHandler(posRef) {
+  let dragStart = { x: 0, y: 0 }
+  let isDragging = false
+  let rafId = null
+
+  function onMouseMove(e) {
+    if (!isDragging) return
+    if (rafId) return
+    rafId = requestAnimationFrame(() => {
+      posRef.value.x = e.clientX - dragStart.x
+      posRef.value.y = e.clientY - dragStart.y
+      rafId = null
+    })
+  }
+
+  function onMouseUp() {
+    isDragging = false
+    if (rafId) {
+      cancelAnimationFrame(rafId)
+      rafId = null
+    }
+    document.removeEventListener('mousemove', onMouseMove)
+    document.removeEventListener('mouseup', onMouseUp)
+  }
+
+  return function startDrag(e) {
+    const ignoreTags = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A', 'LABEL', 'SVG', 'PATH']
+    if (ignoreTags.includes(e.target.tagName) || e.target.closest('button, input, select, textarea, a, label')) return
+    
+    isDragging = true
+    dragStart.x = e.clientX - posRef.value.x
+    dragStart.y = e.clientY - posRef.value.y
+    
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  }
+}
+
+const startDragProductModal = createDragHandler(productModalPos)
+const startDragGroupModal = createDragHandler(groupModalPos)
+
+watch(showProductModal, (visible) => {
+  if (!visible) productModalPos.value = { x: 0, y: 0 }
+})
+watch(showGroupModal, (visible) => {
+  if (!visible) groupModalPos.value = { x: 0, y: 0 }
+})
+
+// ─── Export / Import ─────────────────────────────────────────────
 const exportExcel = async () => {
   try {
     const res = await http.get('/products/export', { responseType: 'blob' })
@@ -534,25 +895,12 @@ const handleFileUpload = async (event) => {
   }
 }
 
-const showTooltip = (product, groupName, event) => {
-  if (!enableTooltip.value) return
-  hoveredProduct.value = product
-  hoveredGroupName.value = groupName
-  const rect = event.currentTarget.getBoundingClientRect()
-  tooltipX.value = rect.left + rect.width / 2
-  tooltipY.value = rect.top - 8 // spacing above the card
-}
-
-const hideTooltip = () => {
-  hoveredProduct.value = null
-}
-
 const filterState = ref({
   search: '',
-  status: 'all',
+  status: '',
   priceMin: null,
   priceMax: null,
-  trackStock: 'all',
+  trackStock: '',
   sortBy: 'name_asc'
 })
 
@@ -560,6 +908,29 @@ const isLoading = ref(true)
 const groups = ref([])
 const units = ref([])
 const inventories = ref([])
+
+const groupSelectOptions = computed(() => {
+  return groups.value.map(g => ({
+    value: g.id,
+    label: g.name
+  }))
+})
+
+const unitSelectOptions = computed(() => {
+  return units.value.map(u => ({
+    value: u.code,
+    label: u.name,
+    sublabel: u.code !== u.name ? u.code : undefined
+  }))
+})
+
+const inventorySelectOptions = computed(() => {
+  return inventories.value.map(inv => ({
+    value: inv.id,
+    label: inv.name,
+    sublabel: inv.code ? `Mã: ${inv.code}` : undefined
+  }))
+})
 
 const fetchUnitsAndInventories = async () => {
   try {
@@ -574,6 +945,19 @@ const fetchUnitsAndInventories = async () => {
   }
 }
 
+const normalizeImageUrl = (url) => {
+  if (!url) return null
+  const clean = String(url).trim()
+  if (clean.startsWith('/storage/')) return clean
+  if (clean.startsWith('storage/')) return '/' + clean
+  const match = clean.match(/\/storage\/.+$/i)
+  if (match) return match[0]
+  if (!clean.startsWith('http') && !clean.startsWith('/')) {
+    return '/storage/' + clean
+  }
+  return clean
+}
+
 const fetchGroupsAndProducts = async () => {
   isLoading.value = true
   try {
@@ -583,17 +967,20 @@ const fetchGroupsAndProducts = async () => {
       http.get('/products')
     ])
 
-    housekeepingOutlets.value = (resOutlets.data || []).filter(outlet => outlet.is_active)
+    housekeepingOutlets.value = (resOutlets.data || []).filter(outlet => outlet.is_active).map(o => ({
+      ...o,
+      image_url: normalizeImageUrl(o.image_url || o.image)
+    }))
     tabs.value = housekeepingOutlets.value.map(outlet => outlet.code)
     if (!tabs.value.includes(activeTab.value)) activeTab.value = tabs.value[0] || ''
     const categories = Array.isArray(resCategories.data) ? resCategories.data : (resCategories.data?.data || [])
     const products = Array.isArray(resProducts.data) ? resProducts.data : (resProducts.data?.data || [])
     const resolveOutletName = (value) => {
       const normalized = String(value || '').toLowerCase()
-    const outlet = housekeepingOutlets.value.find(item =>
+      const outlet = housekeepingOutlets.value.find(item =>
         String(item.code).toLowerCase() === normalized ||
         String(item.name).toLowerCase() === normalized
-    )
+      )
       return outlet?.code || value
     }
     
@@ -611,23 +998,20 @@ const fetchGroupsAndProducts = async () => {
         let taxPercent = Number(p.tax_percent) || 0;
         let spcTaxPercent = Number(p.special_tax_percent) || 0;
         const svcAmount = Math.round(basePrice * svcPercent / 100)
-        const afterServiceCharge = basePrice + svcAmount
-        const specialTaxAmount = Math.round(afterServiceCharge * spcTaxPercent / 100)
-        const afterSpecialTax = afterServiceCharge + specialTaxAmount
-        const taxAmount = Math.round(afterSpecialTax * taxPercent / 100)
-        const finalPrice = hasStoredBasePrice ? Number(p.price) || 0 : afterSpecialTax + taxAmount
+        const specialTaxAmount = Math.round(basePrice * spcTaxPercent / 100)
+        const taxAmount = Math.round(basePrice * taxPercent / 100)
+        const finalPrice = hasStoredBasePrice ? Number(p.price) || 0 : basePrice + svcAmount + specialTaxAmount + taxAmount
 
         return {
           ...p,
           basePriceNum: basePrice,
           priceNum: finalPrice,
-          price: new Intl.NumberFormat('vi-VN').format(finalPrice),
-        checked: false,
-        isActive: !!p.is_active,
-        trackStock: !!p.track_stock,
-        flexiblePrice: !!p.flexible_price,
-        tab: resolveOutletName(cat.outlet),
-        imageUrl: p.image ? `http://localhost:8000/storage/${p.image}` : null
+          checked: false,
+          isActive: !!p.is_active,
+          trackStock: !!p.track_stock,
+          flexiblePrice: !!p.flexible_price,
+          tab: resolveOutletName(cat.outlet),
+          imageUrl: p.image ? normalizeImageUrl(p.image) : null
         }
       })
     }))
@@ -640,10 +1024,13 @@ const fetchGroupsAndProducts = async () => {
   }
 }
 
-onMounted(() => {
-  fetchUnitsAndInventories()
-  fetchGroupsAndProducts()
-})
+const getProductImage = (product) => {
+  if (product.imageUrl) return normalizeImageUrl(product.imageUrl)
+  const outlet = housekeepingOutlets.value.find(o => String(o.code).toLowerCase() === String(product.tab || activeTab.value).toLowerCase())
+  if (outlet?.image_url) return normalizeImageUrl(outlet.image_url)
+  if (outlet?.image) return normalizeImageUrl(outlet.image)
+  return null
+}
 
 const filteredGroups = computed(() => {
   return groups.value.map(group => {
@@ -694,6 +1081,7 @@ const filteredGroups = computed(() => {
 })
 
 const newProduct = ref({
+  id: null,
   name: '',
   price: 0,
   original_amount: 0,
@@ -711,23 +1099,27 @@ const newProduct = ref({
   special_tax_percent: 0,
   special_tax_amount: 0,
   note: '',
-  imageFile: null
+  imageFile: null,
+  imageUrl: null,
+  product_code: ''
 })
 
 const calculatePriceBreakdown = (baseAmount) => {
   const base = Math.round(Number(baseAmount) || 0)
-  const serviceCharge = Math.round(base * (Number(newProduct.value.service_charge_percent) || 0) / 100)
-  const afterServiceCharge = base + serviceCharge
-  const specialTax = Math.round(afterServiceCharge * (Number(newProduct.value.special_tax_percent) || 0) / 100)
-  const afterSpecialTax = afterServiceCharge + specialTax
-  const tax = Math.round(afterSpecialTax * (Number(newProduct.value.tax_percent) || 0) / 100)
+  const svcPercent = Number(newProduct.value.service_charge_percent) || 0
+  const spcPercent = Number(newProduct.value.special_tax_percent) || 0
+  const taxPercent = Number(newProduct.value.tax_percent) || 0
+
+  const serviceCharge = Math.round(base * svcPercent / 100)
+  const specialTax = Math.round(base * spcPercent / 100)
+  const tax = Math.round(base * taxPercent / 100)
 
   return {
     base,
     serviceCharge,
     specialTax,
     tax,
-    finalPrice: afterSpecialTax + tax
+    finalPrice: base + serviceCharge + specialTax + tax
   }
 }
 
@@ -743,46 +1135,152 @@ const recalculateFromBase = () => {
   applyPriceBreakdown(calculatePriceBreakdown(newProduct.value.original_amount))
 }
 
+const recalculateFromFinal = () => {
+  const total = Number(newProduct.value.price) || 0
+  const totalPercent = (Number(newProduct.value.service_charge_percent) || 0)
+    + (Number(newProduct.value.special_tax_percent) || 0)
+    + (Number(newProduct.value.tax_percent) || 0)
+  const multiplier = 1 + totalPercent / 100
+  const base = multiplier > 0 ? Math.round(total / multiplier) : 0
+
+  newProduct.value.price = total
+  applyPriceBreakdown(calculatePriceBreakdown(base), true)
+}
+
+const formatNumber = (val) => {
+  if (val === null || val === undefined || val === '') return ''
+  const num = Number(val)
+  if (isNaN(num)) return ''
+  return num.toLocaleString('en-US')
+}
+
 const displayBasePrice = computed({
   get() {
-    return newProduct.value.original_amount ? new Intl.NumberFormat('vi-VN').format(newProduct.value.original_amount) : ''
+    return newProduct.value.original_amount ? formatNumber(newProduct.value.original_amount) : ''
   },
   set(val) {
-    const num = val.replace(/\D/g, '')
+    const num = String(val).replace(/,/g, '').replace(/\D/g, '')
     newProduct.value.original_amount = num ? parseInt(num, 10) : 0
     recalculateFromBase()
   }
 })
 
-const scAmount = computed(() => {
-    return Number(newProduct.value.service_charge_amount) || 0
-})
-const vatAmount = computed(() => {
-    return Number(newProduct.value.tax_amount) || 0
-})
-const specialAmount = computed(() => {
-    return Number(newProduct.value.special_tax_amount) || 0
-})
-
 const displayFinalPrice = computed({
   get() {
-    return newProduct.value.price ? new Intl.NumberFormat('vi-VN').format(newProduct.value.price) : ''
+    return newProduct.value.price ? formatNumber(newProduct.value.price) : ''
   },
   set(val) {
-    const total = Number(String(val).replace(/\D/g, '')) || 0
-    const multiplier = (1 + (Number(newProduct.value.service_charge_percent) || 0) / 100)
-      * (1 + (Number(newProduct.value.special_tax_percent) || 0) / 100)
-      * (1 + (Number(newProduct.value.tax_percent) || 0) / 100)
-    const base = multiplier > 0 ? Math.round(total / multiplier) : 0
-
+    const total = Number(String(val).replace(/,/g, '').replace(/\D/g, '')) || 0
     newProduct.value.price = total
-    applyPriceBreakdown(calculatePriceBreakdown(base), true)
+    recalculateFromFinal()
   }
 })
 
-const selectedProductGroupName = computed(() => {
-  return groups.value.find(group => String(group.id) === String(newProduct.value.groupId))?.name || ''
+const displayPriceMin = computed({
+  get() {
+    return filterState.value.priceMin !== null && filterState.value.priceMin !== ''
+      ? formatNumber(filterState.value.priceMin)
+      : ''
+  },
+  set(val) {
+    const raw = String(val).replace(/,/g, '').replace(/\D/g, '')
+    filterState.value.priceMin = raw ? parseInt(raw, 10) : null
+  }
 })
+
+const displayPriceMax = computed({
+  get() {
+    return filterState.value.priceMax !== null && filterState.value.priceMax !== ''
+      ? formatNumber(filterState.value.priceMax)
+      : ''
+  },
+  set(val) {
+    const raw = String(val).replace(/,/g, '').replace(/\D/g, '')
+    filterState.value.priceMax = raw ? parseInt(raw, 10) : null
+  }
+})
+
+const clearBasePrice = () => {
+  newProduct.value.original_amount = 0
+  recalculateFromBase()
+}
+
+const clearFinalPrice = () => {
+  newProduct.value.price = 0
+  recalculateFromFinal()
+}
+
+const onTaxPercentInput = () => {
+  if (Number(newProduct.value.price) > 0) {
+    recalculateFromFinal()
+  } else if (Number(newProduct.value.original_amount) > 0) {
+    recalculateFromBase()
+  } else {
+    recalculateFromFinal()
+  }
+}
+
+const adjustServiceCharge = (delta) => {
+  const current = Number(newProduct.value.service_charge_percent) || 0
+  newProduct.value.service_charge_percent = Math.max(0, Math.min(100, Math.round((current + delta) * 100) / 100))
+  onTaxPercentInput()
+}
+
+const adjustSpecialTax = (delta) => {
+  const current = Number(newProduct.value.special_tax_percent) || 0
+  newProduct.value.special_tax_percent = Math.max(0, Math.min(100, Math.round((current + delta) * 100) / 100))
+  onTaxPercentInput()
+}
+
+const adjustTaxPercent = (delta) => {
+  const current = Number(newProduct.value.tax_percent) || 0
+  newProduct.value.tax_percent = Math.max(0, Math.min(100, Math.round((current + delta) * 100) / 100))
+  onTaxPercentInput()
+}
+
+const clearServiceCharge = () => {
+  newProduct.value.service_charge_percent = 0
+  onTaxPercentInput()
+}
+
+const clearTaxPercent = () => {
+  newProduct.value.tax_percent = 0
+  onTaxPercentInput()
+}
+
+const clearSpecialTaxPercent = () => {
+  newProduct.value.special_tax_percent = 0
+  onTaxPercentInput()
+}
+
+const scAmount = computed(() => {
+  return Number(newProduct.value.service_charge_amount) || 0
+})
+const vatAmount = computed(() => {
+  return Number(newProduct.value.tax_amount) || 0
+})
+const specialAmount = computed(() => {
+  return Number(newProduct.value.special_tax_amount) || 0
+})
+
+const fetchNextProductCode = async (categoryId, outlet) => {
+  try {
+    const res = await http.get('/products/next-code', {
+      params: { product_category_id: categoryId, outlet: outlet }
+    })
+    if (res.data?.code) {
+      newProduct.value.product_code = res.data.code
+    }
+  } catch (error) {
+    console.error('Failed to get next code:', error)
+  }
+}
+
+const onGroupChanged = async (groupId) => {
+  if (!newProduct.value.id && groupId) {
+    await fetchNextProductCode(groupId, activeTab.value)
+  }
+}
 
 const activeOutletTaxDefaults = () => {
   const outlet = housekeepingOutlets.value.find(item => String(item.code) === String(activeTab.value))
@@ -794,15 +1292,16 @@ const activeOutletTaxDefaults = () => {
   }
 }
 
-const openCreateProduct = (groupId) => {
+const openCreateProduct = async (groupId) => {
   const taxDefaults = activeOutletTaxDefaults()
+  const defaultGroupId = groupId || (groups.value.length > 0 ? groups.value[0].id : null)
   newProduct.value = {
     id: null,
     name: '',
     price: 0,
     original_amount: 0,
     currency: units.value.length > 0 ? units.value[0].code : '',
-    groupId: groupId,
+    groupId: defaultGroupId,
     isActive: true,
     openKey: true,
     trackStock: false,
@@ -820,6 +1319,9 @@ const openCreateProduct = (groupId) => {
     product_code: ''
   }
   showProductModal.value = true
+  if (defaultGroupId) {
+    await fetchNextProductCode(defaultGroupId, activeTab.value)
+  }
 }
 
 const editProduct = (product) => {
@@ -863,6 +1365,10 @@ const saveProduct = async () => {
     uiStore.showToast('Vui lòng chọn Nhóm sản phẩm.', 'warning')
     return
   }
+  if (!newProduct.value.currency) {
+    uiStore.showToast('Vui lòng chọn Đơn vị tính.', 'warning')
+    return
+  }
   
   const formData = new FormData()
   formData.append('product_category_id', newProduct.value.groupId)
@@ -884,23 +1390,23 @@ const saveProduct = async () => {
   formData.append('note', newProduct.value.note || '')
 
   if (newProduct.value.imageFile) {
-      formData.append('image', newProduct.value.imageFile)
+    formData.append('image', newProduct.value.imageFile)
   }
 
   try {
     if (newProduct.value.id) {
       formData.append('_method', 'PUT')
       await http.post('/products/' + newProduct.value.id, formData, {
-          headers: {
-              'Content-Type': 'multipart/form-data'
-          }
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
       })
       uiStore.showToast('Cập nhật sản phẩm thành công', 'success')
     } else {
       await http.post('/products', formData, {
-          headers: {
-              'Content-Type': 'multipart/form-data'
-          }
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
       })
       uiStore.showToast('Đã thêm sản phẩm thành công', 'success')
     }
@@ -923,16 +1429,16 @@ const saveGroup = async () => {
     return
   }
   try {
-      await http.post('/product-categories', {
-          name: newGroupName.value.trim(),
-          outlet: activeTab.value
-      })
-      showGroupModal.value = false
-      uiStore.showToast('Đã tạo nhóm sản phẩm thành công!', 'success')
-      fetchGroupsAndProducts()
+    await http.post('/product-categories', {
+      name: newGroupName.value.trim(),
+      outlet: activeTab.value
+    })
+    showGroupModal.value = false
+    uiStore.showToast('Đã tạo nhóm sản phẩm thành công!', 'success')
+    fetchGroupsAndProducts()
   } catch (e) {
-      console.error(e)
-      uiStore.showToast('Lỗi khi tạo nhóm', 'error')
+    console.error(e)
+    uiStore.showToast('Lỗi khi tạo nhóm', 'error')
   }
 }
 
@@ -959,98 +1465,118 @@ const setEditing = (id) => {
 }
 
 const updateGroupName = async (id, newName) => {
-    const g = groups.value.find(g => g.id === id)
-    if (!g) return
-    g.isEditing = false
-    try {
-        await http.put(`/product-categories/${g.id}`, {
-            name: newName,
-            outlet: g.outlet || activeTab.value
-        })
-        g.name = newName
-    } catch (e) {
-        console.error(e)
-    }
+  const g = groups.value.find(g => g.id === id)
+  if (!g) return
+  g.isEditing = false
+  try {
+    await http.put(`/product-categories/${g.id}`, {
+      name: newName,
+      outlet: g.outlet || activeTab.value
+    })
+    g.name = newName
+  } catch (e) {
+    console.error(e)
+  }
 }
 
 const deleteGroup = async (id) => {
-    const isConfirmed = await uiStore.confirm({
-        title: 'Xóa Nhóm Sản Phẩm',
-        message: 'Bạn có chắc chắn muốn xóa nhóm này? Các sản phẩm trong nhóm cũng sẽ bị ảnh hưởng.',
-        confirmText: 'Xóa',
-        cancelText: 'Hủy'
-    })
-    if (!isConfirmed) return
-    try {
-        await http.delete(`/product-categories/${id}`)
-        fetchGroupsAndProducts()
-        uiStore.showToast('Xóa nhóm thành công', 'success')
-    } catch (e) {
-        uiStore.showToast('Lỗi xóa nhóm', 'error')
-    }
+  const isConfirmed = await uiStore.confirm({
+    title: 'Xóa Nhóm Sản Phẩm',
+    message: 'Bạn có chắc chắn muốn xóa nhóm này? Các sản phẩm trong nhóm cũng sẽ bị ảnh hưởng.',
+    confirmText: 'Xóa',
+    cancelText: 'Hủy'
+  })
+  if (!isConfirmed) return
+  try {
+    await http.delete(`/product-categories/${id}`)
+    fetchGroupsAndProducts()
+    uiStore.showToast('Xóa nhóm thành công', 'success')
+  } catch (e) {
+    uiStore.showToast('Lỗi xóa nhóm', 'error')
+  }
 }
 
 const deleteSelected = async () => {
-    const idsToDelete = []
-    groups.value.forEach(group => {
-        group.products.filter(p => p.checked).forEach(p => idsToDelete.push(p.id))
-    })
-    
-    if (idsToDelete.length === 0) return
-    
-    const isConfirmed = await uiStore.confirm({
-        title: 'Xóa Sản Phẩm',
-        message: `Bạn có chắc chắn muốn xóa ${idsToDelete.length} sản phẩm đã chọn?`,
-        confirmText: 'Xóa',
-        cancelText: 'Hủy'
-    })
-    
-    if (!isConfirmed) return
+  const idsToDelete = []
+  groups.value.forEach(group => {
+    group.products.filter(p => p.checked).forEach(p => idsToDelete.push(p.id))
+  })
+  
+  if (idsToDelete.length === 0) return
+  
+  const isConfirmed = await uiStore.confirm({
+    title: 'Xóa Sản Phẩm',
+    message: `Bạn có chắc chắn muốn xóa ${idsToDelete.length} sản phẩm đã chọn?`,
+    confirmText: 'Xóa',
+    cancelText: 'Hủy'
+  })
+  
+  if (!isConfirmed) return
 
-    try {
-        for (const id of idsToDelete) {
-            await http.delete(`/products/${id}`)
-        }
-        fetchGroupsAndProducts()
-        uiStore.showToast('Xóa thành công', 'success')
-    } catch (e) {
-        console.error(e)
-        uiStore.showToast('Lỗi xóa sản phẩm', 'error')
+  try {
+    for (const id of idsToDelete) {
+      await http.delete(`/products/${id}`)
     }
+    fetchGroupsAndProducts()
+    uiStore.showToast('Xóa thành công', 'success')
+  } catch (e) {
+    console.error(e)
+    uiStore.showToast('Lỗi xóa sản phẩm', 'error')
+  }
 }
 
 const toggleActiveSelected = async () => {
-    const idsToToggle = []
-    groups.value.forEach(group => {
-        group.products.filter(p => p.checked).forEach(p => idsToToggle.push(p.id))
-    })
-    
-    if (idsToToggle.length === 0) {
-        uiStore.showToast('Vui lòng chọn sản phẩm để thao tác', 'warning')
-        return
-    }
+  const idsToToggle = []
+  groups.value.forEach(group => {
+    group.products.filter(p => p.checked).forEach(p => idsToToggle.push(p.id))
+  })
+  
+  if (idsToToggle.length === 0) {
+    uiStore.showToast('Vui lòng chọn sản phẩm để thao tác', 'warning')
+    return
+  }
 
-    try {
-        await http.post('/products/bulk-toggle-active', { ids: idsToToggle })
-        fetchGroupsAndProducts()
-        uiStore.showToast('Cập nhật trạng thái thành công', 'success')
-    } catch (e) {
-        console.error(e)
-        uiStore.showToast('Lỗi cập nhật trạng thái', 'error')
-    }
+  try {
+    await http.post('/products/bulk-toggle-active', { ids: idsToToggle })
+    fetchGroupsAndProducts()
+    uiStore.showToast('Cập nhật trạng thái thành công', 'success')
+  } catch (e) {
+    console.error(e)
+    uiStore.showToast('Lỗi cập nhật trạng thái', 'error')
+  }
 }
 
 const handleImageUpload = (event) => {
-    const file = event.target.files[0]
-    if (file) {
-        newProduct.value.imageFile = file
-        newProduct.value.imageUrl = URL.createObjectURL(file)
+  const file = event.target.files[0]
+  if (file) {
+    newProduct.value.imageFile = file
+    newProduct.value.imageUrl = URL.createObjectURL(file)
+  }
+}
+
+const handleKeyDown = (e) => {
+  if (e.key === 'Escape') {
+    if (showProductModal.value) {
+      showProductModal.value = false
+    } else if (showGroupModal.value) {
+      showGroupModal.value = false
     }
+  }
 }
 
 const vFocus = {
   mounted: (el) => el.focus()
 }
+
+onMounted(() => {
+  window.addEventListener('keydown', handleKeyDown)
+  fetchUnitsAndInventories()
+  fetchGroupsAndProducts()
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeyDown)
+})
 </script>
 
 <style scoped>
@@ -1059,12 +1585,12 @@ const vFocus = {
   transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.25s ease;
 }
 .hk-card-lift:hover {
-  transform: translateY(-4px) scale(1.03);
-  box-shadow: 0 10px 25px -5px rgba(151, 213, 255, 0.35);
-  border-color: var(--hk-primary);
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: 0 8px 20px -4px rgba(151, 213, 255, 0.35);
+  border-color: #006bdb;
 }
 .hk-card-lift:active {
-  transform: translateY(-2px) scale(0.98);
+  transform: translateY(-1px) scale(0.99);
 }
 
 /* Image Upload drag & drop dash hover animation */
@@ -1073,8 +1599,8 @@ const vFocus = {
   transition: all 0.25s ease;
 }
 .dashed-upload:hover {
-  border-color: var(--hk-primary-dark);
-  background-color: var(--hk-primary-bg);
+  border-color: #006bdb;
+  background-color: #f0f8ff;
 }
 
 /* Pulse animation on "+" card button */
@@ -1083,25 +1609,12 @@ const vFocus = {
 }
 @keyframes pulseSubtle {
   0%, 100% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 rgba(151, 213, 255, 0.4); }
-  50% { transform: scale(1.06); opacity: 0.95; box-shadow: 0 0 0 6px rgba(151, 213, 255, 0); }
-}
-
-/* Primary actions styling */
-.btn-primary {
-  background: var(--hk-gradient, linear-gradient(135deg, #97D5FF, #6BC1F5));
-  color: #0f172a;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  border: none;
-}
-.btn-primary:hover {
-  transform: translateY(-1px) scale(1.02);
-  box-shadow: 0 4px 12px rgba(151, 213, 255, 0.4);
-  filter: brightness(1.03);
+  50% { transform: scale(1.05); opacity: 0.95; box-shadow: 0 0 0 5px rgba(151, 213, 255, 0); }
 }
 
 /* hk-modal transitions */
 .hk-modal-enter-active {
-  animation: hkModalIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: hkModalIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .hk-modal-leave-active {
   animation: hkModalOut 0.2s ease-in forwards;
@@ -1119,7 +1632,7 @@ const vFocus = {
 .hk-expand-enter-active, .hk-expand-leave-active {
   transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease;
   overflow: hidden;
-  max-height: 500px;
+  max-height: 800px;
 }
 .hk-expand-enter-from, .hk-expand-leave-to {
   max-height: 0;
