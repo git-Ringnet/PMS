@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { fetchActivityLogs, fetchActivityLogStats } from '@/services/activity-log-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
@@ -66,6 +66,24 @@ const filterAction = ref('')
 const filterComponent = ref('')
 const filterSearch = ref('')
 
+// Header column search popovers
+const activeSearchCol = ref(null)
+const toggleSearchCol = (col) => {
+  activeSearchCol.value = activeSearchCol.value === col ? null : col
+}
+
+const handleTableKeydown = (e) => {
+  if (e.key === 'Escape' && activeSearchCol.value) {
+    activeSearchCol.value = null
+  }
+}
+
+const handleTableClickOutside = (e) => {
+  if (activeSearchCol.value && !e.target.closest('th')) {
+    activeSearchCol.value = null
+  }
+}
+
 // Active filter states used for queries
 const queryParams = ref({
   date_from: '',
@@ -90,6 +108,8 @@ const selectedLog = ref(null)
 let searchTimeout = null
 
 onMounted(async () => {
+  window.addEventListener('keydown', handleTableKeydown)
+  window.addEventListener('click', handleTableClickOutside)
   try {
     const res = await http.get('/system-date')
     if (res.data?.data?.system_date) {
@@ -100,6 +120,11 @@ onMounted(async () => {
   }
   loadStats()
   handleSearch()
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleTableKeydown)
+  window.removeEventListener('click', handleTableClickOutside)
 })
 
 // Set quick date preset
@@ -280,7 +305,7 @@ const getActionLabel = (action) => {
 
 // Action label styling
 const getActionClass = (action) => {
-  const base = 'px-2 py-0.5 rounded-full text-[10px] font-bold inline-block text-center border whitespace-nowrap '
+  const base = 'px-2 py-0.5 rounded-full text-xs font-semibold inline-block text-center border whitespace-nowrap '
   const map = {
     'Add': 'bg-emerald-50 text-emerald-700 border-emerald-300',
     'Modify': 'bg-blue-50 text-blue-700 border-blue-300',
@@ -490,7 +515,7 @@ const handleExport = async () => {
     
     <!-- Quick Filter Chips Bar -->
     <div class="flex items-center gap-2 mb-3 flex-wrap shrink-0">
-      <span class="text-[11px] font-bold text-slate-500 uppercase tracking-wider mr-1">Lọc nhanh thời gian:</span>
+      <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider mr-1">Lọc nhanh thời gian:</span>
       <button 
         v-for="chip in quickFilters" 
         :key="chip.value"
@@ -510,7 +535,7 @@ const handleExport = async () => {
       <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2.5">
         <!-- Date From -->
         <div class="flex flex-col gap-1">
-          <label class="font-bold text-slate-600 text-[11px]">Từ ngày</label>
+          <label class="font-semibold text-slate-700 text-xs">Từ ngày</label>
           <input 
             v-model="filterDateFrom" 
             type="date" 
@@ -521,7 +546,7 @@ const handleExport = async () => {
 
         <!-- Date To -->
         <div class="flex flex-col gap-1">
-          <label class="font-bold text-slate-600 text-[11px]">Đến ngày</label>
+          <label class="font-semibold text-slate-700 text-xs">Đến ngày</label>
           <input 
             v-model="filterDateTo" 
             type="date" 
@@ -532,7 +557,7 @@ const handleExport = async () => {
 
         <!-- Registration Code -->
         <div class="flex flex-col gap-1">
-          <label class="font-bold text-slate-600 text-[11px]">Mã đăng ký</label>
+          <label class="font-semibold text-slate-700 text-xs">Mã đăng ký</label>
           <input 
             v-model="filterRegCode" 
             type="text" 
@@ -545,7 +570,7 @@ const handleExport = async () => {
 
         <!-- Room Code -->
         <div class="flex flex-col gap-1">
-          <label class="font-bold text-slate-600 text-[11px]">Mã phòng</label>
+          <label class="font-semibold text-slate-700 text-xs">Mã phòng</label>
           <input 
             v-model="filterRoomCode" 
             type="text" 
@@ -558,7 +583,7 @@ const handleExport = async () => {
 
         <!-- Action Selection Dropdown -->
         <div class="flex flex-col gap-1">
-          <label class="font-bold text-slate-600 text-[11px]">Hành động</label>
+          <label class="font-semibold text-slate-700 text-xs">Hành động</label>
           <select 
             v-model="filterAction"
             @change="handleSearch"
@@ -586,7 +611,7 @@ const handleExport = async () => {
 
         <!-- User Selection Dropdown -->
         <div class="flex flex-col gap-1">
-          <label class="font-bold text-slate-600 text-[11px]">Người dùng</label>
+          <label class="font-semibold text-slate-700 text-xs">Người dùng</label>
           <select 
             v-model="filterUserId"
             @change="handleSearch"
@@ -601,7 +626,7 @@ const handleExport = async () => {
 
         <!-- Screen (Component) Selection Dropdown -->
         <div class="flex flex-col gap-1">
-          <label class="font-bold text-slate-600 text-[11px]">Phân hệ / Màn hình</label>
+          <label class="font-semibold text-slate-700 text-xs">Phân hệ / Màn hình</label>
           <select 
             v-model="filterComponent"
             @change="handleSearch"
@@ -616,7 +641,7 @@ const handleExport = async () => {
 
         <!-- Global Search -->
         <div class="flex flex-col gap-1">
-          <label class="font-bold text-slate-600 text-[11px]">Tìm kiếm chung</label>
+          <label class="font-semibold text-slate-700 text-xs">Tìm kiếm chung</label>
           <input 
             v-model="filterSearch" 
             type="text" 
@@ -630,7 +655,7 @@ const handleExport = async () => {
 
       <!-- Action buttons -->
       <div class="flex items-center justify-between gap-2 mt-3 pt-2.5 border-t border-slate-100">
-        <div class="text-[11px] text-slate-500 font-bold flex items-center gap-1.5">
+        <div class="text-xs text-slate-600 font-semibold flex items-center gap-1.5">
           <span>📊 Tổng cộng: <strong class="text-sky-600">{{ totalItems }}</strong> thao tác</span>
         </div>
         <div class="flex items-center gap-2">
@@ -669,24 +694,109 @@ const handleExport = async () => {
 
       <table class="w-full text-left border-collapse text-xs">
         <thead>
-          <tr class="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold select-none h-10 sticky top-0 z-20 shadow-2xs">
-            <th @click="toggleSort('id')" class="p-2 border-r border-slate-200 w-14 cursor-pointer hover:bg-slate-200 text-center uppercase whitespace-nowrap">
-              ID <span v-if="queryParams.sort_by === 'id'" class="text-[9px] text-sky-600">{{ queryParams.sort_dir === 'asc' ? '▲' : '▼' }}</span>
+          <tr class="bg-slate-100 border-b border-slate-200 text-slate-800 font-semibold select-none h-10 sticky top-0 z-20 shadow-2xs">
+            <th @click="toggleSort('id')" class="p-2 border border-slate-200 w-14 cursor-pointer hover:bg-slate-200 text-center align-middle whitespace-nowrap">
+              ID <span v-if="queryParams.sort_by === 'id'" class="text-xs text-sky-600">{{ queryParams.sort_dir === 'asc' ? '▲' : '▼' }}</span>
             </th>
-            <th @click="toggleSort('created_at')" class="p-2 border-r border-slate-200 w-20 cursor-pointer hover:bg-slate-200 text-center uppercase whitespace-nowrap">
-              Thời gian <span v-if="queryParams.sort_by === 'created_at'" class="text-[9px] text-sky-600">{{ queryParams.sort_dir === 'asc' ? '▲' : '▼' }}</span>
+            <th @click="toggleSort('created_at')" class="p-2 border border-slate-200 w-24 cursor-pointer hover:bg-slate-200 text-center align-middle whitespace-nowrap">
+              Thời Gian <span v-if="queryParams.sort_by === 'created_at'" class="text-xs text-sky-600">{{ queryParams.sort_dir === 'asc' ? '▲' : '▼' }}</span>
             </th>
-            <th class="p-2 border-r border-slate-200 w-44 uppercase whitespace-nowrap">Trình duyệt</th>
-            <th class="p-2 border-r border-slate-200 w-28 uppercase text-center whitespace-nowrap">Màn hình</th>
-            <th class="p-2 border-r border-slate-200 w-28 uppercase text-center whitespace-nowrap">Người dùng</th>
-            <th class="p-2 border-r border-slate-200 w-24 uppercase text-center whitespace-nowrap">Ngày</th>
-            <th @click="toggleSort('action')" class="p-2 border-r border-slate-200 w-24 cursor-pointer hover:bg-slate-200 uppercase text-center whitespace-nowrap">
-              Hành động <span v-if="queryParams.sort_by === 'action'" class="text-[9px] text-sky-600">{{ queryParams.sort_dir === 'asc' ? '▲' : '▼' }}</span>
+            <th class="p-2 border border-slate-200 w-44 text-center align-middle whitespace-nowrap">Trình Duyệt</th>
+            <th class="p-2 border border-slate-200 w-28 text-center align-middle whitespace-nowrap">Màn Hình</th>
+            <th class="p-2 border border-slate-200 w-28 text-center align-middle whitespace-nowrap">Người Dùng</th>
+            <th class="p-2 border border-slate-200 w-24 text-center align-middle whitespace-nowrap">Ngày Thao Tác</th>
+            <th @click="toggleSort('action')" class="p-2 border border-slate-200 w-24 cursor-pointer hover:bg-slate-200 text-center align-middle whitespace-nowrap">
+              Hành Động <span v-if="queryParams.sort_by === 'action'" class="text-xs text-sky-600">{{ queryParams.sort_dir === 'asc' ? '▲' : '▼' }}</span>
             </th>
-            <th class="p-2 border-r border-slate-200 w-24 uppercase text-center whitespace-nowrap">Mã đăng ký</th>
-            <th class="p-2 border-r border-slate-200 w-32 uppercase text-center whitespace-nowrap">Mã phòng</th>
-            <th class="p-2 border-r border-slate-200 uppercase min-w-[360px]">Mô tả</th>
-            <th class="p-2 text-center w-20 uppercase whitespace-nowrap">Chi tiết</th>
+
+            <!-- Cột Mã Đăng Ký kèm icon tìm kiếm -->
+            <th class="p-2 border border-slate-200 w-32 text-center align-middle whitespace-nowrap relative">
+              <div class="flex items-center justify-center gap-1.5">
+                <span>Mã Đăng Ký</span>
+                <button 
+                  type="button" 
+                  @click.stop="toggleSearchCol('regCode')" 
+                  class="p-0.5 rounded transition-colors cursor-pointer"
+                  :class="filterRegCode ? 'text-sky-600 bg-sky-100' : 'text-slate-400 hover:text-slate-600'"
+                  title="Tìm Mã Đăng Ký"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                </button>
+              </div>
+              <div v-if="activeSearchCol === 'regCode'" class="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-30 bg-white border border-slate-300 rounded-lg shadow-lg p-1.5 w-44 text-left">
+                <div class="flex items-center gap-1">
+                  <input 
+                    v-model="filterRegCode" 
+                    placeholder="Tìm mã ĐK..." 
+                    @input="onDebouncedSearch"
+                    @keyup.enter="handleSearch"
+                    class="w-full text-xs px-2 py-1 border border-slate-200 rounded focus:border-sky-500 outline-none font-normal"
+                    autofocus
+                  />
+                  <button v-if="filterRegCode" @click="filterRegCode = ''; handleSearch()" class="text-slate-400 hover:text-slate-600 px-1 text-xs">✕</button>
+                </div>
+              </div>
+            </th>
+
+            <!-- Cột Mã Phòng kèm icon tìm kiếm -->
+            <th class="p-2 border border-slate-200 w-32 text-center align-middle whitespace-nowrap relative">
+              <div class="flex items-center justify-center gap-1.5">
+                <span>Mã Phòng</span>
+                <button 
+                  type="button" 
+                  @click.stop="toggleSearchCol('roomCode')" 
+                  class="p-0.5 rounded transition-colors cursor-pointer"
+                  :class="filterRoomCode ? 'text-sky-600 bg-sky-100' : 'text-slate-400 hover:text-slate-600'"
+                  title="Tìm Mã Phòng"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                </button>
+              </div>
+              <div v-if="activeSearchCol === 'roomCode'" class="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-30 bg-white border border-slate-300 rounded-lg shadow-lg p-1.5 w-44 text-left">
+                <div class="flex items-center gap-1">
+                  <input 
+                    v-model="filterRoomCode" 
+                    placeholder="Tìm mã phòng..." 
+                    @input="onDebouncedSearch"
+                    @keyup.enter="handleSearch"
+                    class="w-full text-xs px-2 py-1 border border-slate-200 rounded focus:border-sky-500 outline-none font-normal"
+                    autofocus
+                  />
+                  <button v-if="filterRoomCode" @click="filterRoomCode = ''; handleSearch()" class="text-slate-400 hover:text-slate-600 px-1 text-xs">✕</button>
+                </div>
+              </div>
+            </th>
+
+            <!-- Cột Mô Tả kèm icon tìm kiếm -->
+            <th class="p-2 border border-slate-200 min-w-[360px] text-center align-middle relative">
+              <div class="flex items-center justify-center gap-1.5">
+                <span>Mô Tả</span>
+                <button 
+                  type="button" 
+                  @click.stop="toggleSearchCol('description')" 
+                  class="p-0.5 rounded transition-colors cursor-pointer"
+                  :class="filterSearch ? 'text-sky-600 bg-sky-100' : 'text-slate-400 hover:text-slate-600'"
+                  title="Tìm Mô Tả"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+                </button>
+              </div>
+              <div v-if="activeSearchCol === 'description'" class="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-30 bg-white border border-slate-300 rounded-lg shadow-lg p-1.5 w-64 text-left">
+                <div class="flex items-center gap-1">
+                  <input 
+                    v-model="filterSearch" 
+                    placeholder="Tìm nội dung mô tả..." 
+                    @input="onDebouncedSearch"
+                    @keyup.enter="handleSearch"
+                    class="w-full text-xs px-2 py-1 border border-slate-200 rounded focus:border-sky-500 outline-none font-normal"
+                    autofocus
+                  />
+                  <button v-if="filterSearch" @click="filterSearch = ''; handleSearch()" class="text-slate-400 hover:text-slate-600 px-1 text-xs">✕</button>
+                </div>
+              </div>
+            </th>
+
+            <th class="p-2 border border-slate-200 text-center align-middle w-20 whitespace-nowrap">Chi Tiết</th>
           </tr>
         </thead>
         <tbody>
@@ -699,7 +809,7 @@ const handleExport = async () => {
             <td class="p-2.5 border-r border-slate-200 text-slate-700 font-medium text-center whitespace-nowrap font-mono">
               {{ log.created_time || formatTimeOnly(log.created_at) }}
             </td>
-            <td class="p-2.5 border-r border-slate-200 text-slate-500 font-normal text-[11px] break-words max-w-[200px]" :title="log.user_agent">
+            <td class="p-2.5 border-r border-slate-200 text-slate-500 font-normal text-xs break-words max-w-[200px]" :title="log.user_agent">
               <span class="line-clamp-3 select-all hover:line-clamp-none transition-all font-mono leading-tight">{{ log.user_agent || '-' }}</span>
             </td>
             <td class="p-2.5 border-r border-slate-200 text-slate-800 font-semibold text-center whitespace-nowrap">
@@ -728,7 +838,7 @@ const handleExport = async () => {
                 v-if="log.old_values || log.new_values"
                 @click="viewDetails(log)"
                 :style="{ background: themeBg }"
-                class="px-2.5 py-1 text-white rounded-md text-[10px] font-bold border-none cursor-pointer transition-all shadow-2xs hover:brightness-110"
+                class="px-2.5 py-1 text-white rounded-md text-xs font-semibold border-none cursor-pointer transition-all shadow-2xs hover:brightness-110"
               >
                 Chi tiết
               </button>
@@ -848,7 +958,7 @@ const handleExport = async () => {
         <!-- Modal Header -->
         <div :style="{ background: themeBg }" class="px-5 py-3.5 flex items-center justify-between text-white shrink-0 shadow-xs">
           <div class="flex items-center gap-2.5">
-            <span class="px-2.5 py-0.5 bg-white/20 text-white rounded-md text-[11px] font-black uppercase">Log #{{ selectedLog?.id }}</span>
+            <span class="px-2.5 py-0.5 bg-white/20 text-white rounded-md text-xs font-semibold uppercase">Log #{{ selectedLog?.id }}</span>
             <h2 class="text-sm font-bold tracking-wide">Chi Tiết Thay Đổi Dữ Liệu</h2>
           </div>
           <button @click="isModalOpen = false" class="text-white/80 hover:text-white bg-transparent border-none cursor-pointer text-xl font-bold leading-none">✕</button>
@@ -857,28 +967,28 @@ const handleExport = async () => {
         <!-- Modal Info Bar -->
         <div class="bg-slate-50 border-b border-slate-200 p-4 grid grid-cols-2 sm:grid-cols-6 gap-3 text-xs font-medium text-slate-700 shrink-0">
           <div>
-            <span class="text-slate-400 block text-[10px] uppercase font-bold">Thời gian</span>
+            <span class="text-slate-400 block text-xs uppercase font-semibold">Thời gian</span>
             <strong>{{ formatDateTime(selectedLog?.created_at) }}</strong>
           </div>
           <div>
-            <span class="text-slate-400 block text-[10px] uppercase font-bold">Người thực hiện</span>
+            <span class="text-slate-400 block text-xs uppercase font-semibold">Người thực hiện</span>
             <strong>{{ selectedLog?.user_name }}</strong>
-            <div class="text-[10px] text-slate-400 font-normal">Mã NV: {{ selectedLog?.employee_code || 'N/A' }}</div>
+            <div class="text-xs text-slate-500 font-normal">Mã NV: {{ selectedLog?.employee_code || 'N/A' }}</div>
           </div>
           <div>
-            <span class="text-slate-400 block text-[10px] uppercase font-bold">Hành động</span>
+            <span class="text-slate-400 block text-xs uppercase font-semibold">Hành động</span>
             <span :class="getActionClass(selectedLog?.action)">{{ getActionLabel(selectedLog?.action) }}</span>
           </div>
           <div>
-            <span class="text-slate-400 block text-[10px] uppercase font-bold">Màn hình</span>
+            <span class="text-slate-400 block text-xs uppercase font-semibold">Màn hình</span>
             <strong>{{ selectedLog?.component || selectedLog?.module_label || selectedLog?.module }}</strong>
           </div>
           <div>
-            <span class="text-slate-400 block text-[10px] uppercase font-bold">Mã đăng ký</span>
+            <span class="text-slate-400 block text-xs uppercase font-semibold">Mã đăng ký</span>
             <strong class="font-mono text-indigo-700">{{ selectedLog?.booking_code || '-' }}</strong>
           </div>
           <div>
-            <span class="text-slate-400 block text-[10px] uppercase font-bold">Mã phòng</span>
+            <span class="text-slate-400 block text-xs uppercase font-semibold">Mã phòng</span>
             <strong class="font-mono text-emerald-700">{{ selectedLog?.room_number || '-' }}</strong>
           </div>
         </div>
@@ -898,7 +1008,7 @@ const handleExport = async () => {
               <div class="bg-rose-50 border-b border-rose-200 px-3.5 py-2 font-bold text-rose-800 flex items-center gap-1.5">
                 <span>◀ Dữ liệu trước khi sửa (Old Values)</span>
               </div>
-              <pre class="p-3 bg-slate-900 text-rose-300 font-mono text-[11px] overflow-auto flex-1 max-h-[300px] leading-relaxed rounded-b-xl">{{ formatDiffValue(selectedLog?.old_values) }}</pre>
+              <pre class="p-3 bg-slate-900 text-rose-300 font-mono text-xs overflow-auto flex-1 max-h-[300px] leading-relaxed rounded-b-xl">{{ formatDiffValue(selectedLog?.old_values) }}</pre>
             </div>
 
             <!-- New values -->
@@ -906,7 +1016,7 @@ const handleExport = async () => {
               <div class="bg-emerald-50 border-b border-emerald-200 px-3.5 py-2 font-bold text-emerald-800 flex items-center gap-1.5">
                 <span>▶ Dữ liệu sau khi sửa (New Values)</span>
               </div>
-              <pre class="p-3 bg-slate-900 text-emerald-300 font-mono text-[11px] overflow-auto flex-1 max-h-[300px] leading-relaxed rounded-b-xl">{{ formatDiffValue(selectedLog?.new_values) }}</pre>
+              <pre class="p-3 bg-slate-900 text-emerald-300 font-mono text-xs overflow-auto flex-1 max-h-[300px] leading-relaxed rounded-b-xl">{{ formatDiffValue(selectedLog?.new_values) }}</pre>
             </div>
           </div>
         </div>
