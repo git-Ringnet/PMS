@@ -6607,13 +6607,16 @@ function handleQuickUpdateSaved(payload) {
       }
     })
 
-    // Đồng bộ lại ngày đến/ngày đi và số đêm của tab booking tổng
+    // Giai đoạn đăng ký giữ nguyên khi phòng vẫn nằm trong giai đoạn; chỉ mở
+    // rộng khi phòng ra ngoài. Số đêm luôn tính lại theo giai đoạn cuối cùng.
     if (activeTab.value && activeTab.value.rooms && activeTab.value.rooms.length > 0) {
       const allCheckIns = activeTab.value.rooms.map(r => parseDateVi(r.checkIn)).filter(Boolean).sort()
       const allCheckOuts = activeTab.value.rooms.map(r => parseDateVi(r.checkOut)).filter(Boolean).sort()
       if (allCheckIns.length > 0 && allCheckOuts.length > 0) {
-        const minIn = allCheckIns[0]
-        const maxOut = allCheckOuts[allCheckOuts.length - 1]
+        const headerIn = parseDateVi(activeTab.value.checkIn)
+        const headerOut = parseDateVi(activeTab.value.checkOut)
+        const minIn = headerIn && headerIn < allCheckIns[0] ? headerIn : allCheckIns[0]
+        const maxOut = headerOut && headerOut > allCheckOuts[allCheckOuts.length - 1] ? headerOut : allCheckOuts[allCheckOuts.length - 1]
         activeTab.value.checkIn = minIn
         activeTab.value.checkOut = maxOut
         const dMin = new Date(minIn)

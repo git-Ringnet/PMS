@@ -18,6 +18,27 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-10-15] - Cập nhật nhanh nhiều phòng: Cho phép ngày đi cùng ngày đến & chỉ mở rộng giai đoạn booking (Dòng 393)
+### Module: Đặt phòng ([BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [QuickUpdateModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/QuickUpdateModal.vue))
+
+- **1. Yêu cầu & Nghiệp vụ (Dòng 393 Sheet THEO DÕI VẤN ĐỀ CẦN ĐIỀU CHỈNH / Đặt phòng)**:
+  - Cho phép ngày đi = ngày đến khi dùng popup "Cập nhật nhanh nhiều phòng" (phòng cùng ngày, 0 đêm).
+  - Chặn ngày đi < ngày đến (trả về lỗi 422).
+  - Giai đoạn đăng ký (ngày đến/ngày đi ở header booking tổng) giữ nguyên khi các phòng vẫn nằm trong giai đoạn, chỉ mở rộng khi phòng dời ra ngoài; số đêm tính lại chính xác theo giai đoạn cuối cùng.
+- **2. Xử lý**:
+  - *Backend ([BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php))*:
+    - Cho phép `departure_date == arrival_date` trong `bulkUpdate`, chỉ chặn `departure_date < arrival_date` với HTTP 422.
+    - Với phòng cùng ngày không bật day-use: không trừ AV (`$takesAv = $newArrival !== $newDeparture || (bool) $room->is_day_use`).
+    - Thay thế `syncBookingHeaderDates` bằng `expandBookingHeaderDates`: chỉ mở rộng ngày đến (min) và ngày đi (max) nếu phòng dời ra ngoài biên; tính lại `num_of_days`.
+  - *Frontend ([QuickUpdateModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/QuickUpdateModal.vue), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))*:
+    - Cập nhật `minDepartureDate`: cho phép chọn ngày đi = ngày đến, bỏ logic tự động cộng dồn +1 ngày.
+    - Trong `handleQuickUpdateSaved`: header booking chỉ mở rộng giai đoạn nếu phòng dời ra ngoài khoảng ngày bao trùm hiện tại.
+- **3. Kiểm thử trực tiếp UI & DB thật (100% PASS)**:
+  - **Case 1 (Cùng ngày trên modal)**: Popup cho phép chọn Ngày đi = Ngày đến (05/09/2026 = 05/09/2026), lưu thành công.
+  - **Case 2 (Hiển thị lưới & Header)**: Phòng cập nhật số đêm = 0; Header booking giữ nguyên giai đoạn bao trùm `05/09 ~ 07/09`, không bị co hẹp.
+  - **Case 3 (Mở rộng Header)**: Dời ngày đi phòng ra 12/09/2026 -> Header tự động mở rộng thành `05/09 ~ 12/09` và tính lại số đêm.
+  - **Case 4 (Chặn ngày đi < ngày đến)**: Nhập ngày đi < ngày đến -> bị chặn với status 422 và thông báo lỗi rõ ràng.
+
 ## [2026-10-15] - Sửa lỗi không thể tải lên logo khách sạn trong Định nghĩa khách sạn (Dòng 388)
 ### Module: Cấu hình hệ thống ([HotelSettingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/HotelSettingController.php), [HotelInfoTab.vue](file:///d:/PMS/frontend/src/pages/config/components/hotel/HotelInfoTab.vue))
 

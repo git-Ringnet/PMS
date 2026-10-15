@@ -594,16 +594,26 @@ class BookingRoomController extends Controller
             $newArrival = $isInhouse ? $room->arrival_date->toDateString() : ($request->arrival_date ?? $room->arrival_date->toDateString());
             $newDeparture = $request->departure_date ?? $room->departure_date->toDateString();
 
-            $isDayUse = (bool) $room->is_day_use || (bool) $booking->is_day_use;
-            if ($newDeparture < $newArrival || ($newDeparture === $newArrival && !$isDayUse)) {
+            // Dòng 393: chỉ chặn ngày đi < ngày đến. Ngày đi = ngày đến được
+            // phép; phòng cùng ngày chỉ là day use khi đã bật "Ở theo giờ".
+            if ($newDeparture < $newArrival) {
                 return response()->json([
                     'success' => false,
-                    'message' => "Ngày đi ({$newDeparture}) phải lớn hơn hoặc bằng ngày đến ({$newArrival}) của phòng; phòng ở theo giờ mới được phép cùng ngày."
+                    'message' => "Ngày đi ({$newDeparture}) không được nhỏ hơn ngày đến ({$newArrival}) của phòng."
+                ], 422);
+            }
+            if ($isInhouse && $request->filled('departure_date') && $newDeparture < $sysDateStr) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Ngày đi ({$newDeparture}) của phòng đang ở không được nhỏ hơn ngày hệ thống ({$sysDateStr})."
                 ], 422);
             }
 
+            // A same-day room without day-use does not take AV.
+            $takesAv = $newArrival !== $newDeparture || (bool) $room->is_day_use;
+
             // Check Availability (AV)
-            if ((!$isInhouse && $request->filled('arrival_date')) || $request->filled('departure_date')) {
+            if ($takesAv && ((!$isInhouse && $request->filled('arrival_date')) || $request->filled('departure_date'))) {
                 $av = $this->avService->getAvailability($room->room_class_id, $newArrival, $newDeparture, $room->id);
                 if ($av < 0) {
                     if (!$allowOver) {
@@ -647,6 +657,10 @@ class BookingRoomController extends Controller
                     if ($canEditInhouseRateDeparture) {
                         if ($request->filled('departure_date')) {
                             $data['departure_date'] = $request->departure_date;
+                            // Day-use only lives on a same-day stay.
+                            if ($request->departure_date !== $room->arrival_date->toDateString()) {
+                                $data['is_day_use'] = false;
+                            }
                         }
                         if ($request->filled('departure_time')) {
                             $data['departure_time'] = $request->departure_time;
@@ -679,6 +693,14 @@ class BookingRoomController extends Controller
                         'updated_by'     => Auth::user()?->username ?? 'system',
                     ], fn($v) => !is_null($v));
 
+                    // Day-use only lives on a same-day stay; a same-day room
+                    // keeps its current switch (the user turns it on in the grid).
+                    $nextArrival = $data['arrival_date'] ?? $room->arrival_date->toDateString();
+                    $nextDeparture = $data['departure_date'] ?? $room->departure_date->toDateString();
+                    if ($nextArrival !== $nextDeparture) {
+                        $data['is_day_use'] = false;
+                    }
+
                     $room->update($data);
 
                     // Đồng bộ số lượng children & babies cho phòng reservation:
@@ -702,8 +724,8 @@ class BookingRoomController extends Controller
                 $updated[] = $room->id;
             }
 
-            // Sync overall booking header dates
-            $this->syncBookingHeaderDates($booking);
+            // Dòng 393: giai đoạn đăng ký chỉ mở rộng khi phòng ra ngoài.
+            $this->expandBookingHeaderDates($booking);
 
             DB::commit();
         } catch (\Exception $e) {
@@ -1533,6 +1555,39 @@ class BookingRoomController extends Controller
     /**
      * Đồng bộ ngày header booking khớp chính xác với min arrival và max departure của các phòng active.
      */
+    /**
+     * Quick update (row 393): keep the booking period while every room stays
+     * inside it; widen it only when a room goes outside. The night count is
+     * always recalculated from the resulting period.
+     */
+    private function expandBookingHeaderDates(Booking $booking): void
+    {
+        $booking->refresh();
+        $minArrival = $booking->bookingRooms()->active()->min('arrival_date');
+        $maxDepart = $booking->bookingRooms()->active()->max('departure_date');
+        if (!$minArrival || !$maxDepart) {
+            return;
+        }
+
+        $roomArrival = \Carbon\Carbon::parse($minArrival)->toDateString();
+        $roomDeparture = \Carbon\Carbon::parse($maxDepart)->toDateString();
+        $headerArrival = $booking->arrival_date ? \Carbon\Carbon::parse($booking->arrival_date)->toDateString() : $roomArrival;
+        $headerDeparture = $booking->departure_date ? \Carbon\Carbon::parse($booking->departure_date)->toDateString() : $roomDeparture;
+
+        $arrivalStr = min($headerArrival, $roomArrival);
+        $departStr = max($headerDeparture, $roomDeparture);
+        $nights = $arrivalStr === $departStr
+            ? 0
+            : (int) \Carbon\Carbon::parse($arrivalStr)->diffInDays(\Carbon\Carbon::parse($departStr));
+
+        $booking->update([
+            'arrival_date'   => $arrivalStr,
+            'departure_date' => $departStr,
+            'num_of_days'    => $nights,
+            'is_day_use'     => $arrivalStr === $departStr && (bool) $booking->is_day_use,
+        ]);
+    }
+
     private function syncBookingHeaderDates(Booking $booking): void
     {
         $minArrival  = $booking->bookingRooms()->active()->min('arrival_date');
