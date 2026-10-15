@@ -234,6 +234,75 @@ const isDropdownOpen = ref(false)
 const dropdownRef = ref(null)
 const isDark = ref(false)
 
+// Change Password State & Logic
+const isChangePasswordOpen = ref(false)
+const changePasswordLoading = ref(false)
+const changePasswordForm = ref({
+  current_password: '',
+  new_password: '',
+  new_password_confirmation: ''
+})
+const changePasswordError = ref('')
+
+const openChangePasswordModal = () => {
+  isDropdownOpen.value = false
+  changePasswordForm.value = {
+    current_password: '',
+    new_password: '',
+    new_password_confirmation: ''
+  }
+  changePasswordError.value = ''
+  isChangePasswordOpen.value = true
+}
+
+const closeChangePasswordModal = () => {
+  isChangePasswordOpen.value = false
+  changePasswordForm.value = {
+    current_password: '',
+    new_password: '',
+    new_password_confirmation: ''
+  }
+  changePasswordError.value = ''
+}
+
+const handleGlobalKeydown = (e) => {
+  if (e.key === 'Escape' && isChangePasswordOpen.value) {
+    closeChangePasswordModal()
+  }
+}
+
+const submitChangePassword = async () => {
+  if (!changePasswordForm.value.current_password || !changePasswordForm.value.new_password || !changePasswordForm.value.new_password_confirmation) {
+    uiStore.showToast('Vui lòng nhập đầy đủ các trường bắt buộc', 'error')
+    return
+  }
+  if (changePasswordForm.value.new_password.length < 6) {
+    changePasswordError.value = 'Mật khẩu mới phải có ít nhất 6 ký tự'
+    return
+  }
+  if (changePasswordForm.value.new_password !== changePasswordForm.value.new_password_confirmation) {
+    changePasswordError.value = 'Mật khẩu xác nhận không khớp'
+    return
+  }
+
+  changePasswordLoading.value = true
+  changePasswordError.value = ''
+  try {
+    const res = await http.post('/me/change-password', changePasswordForm.value)
+    if (res.data?.success) {
+      uiStore.showToast(res.data.message || 'Đổi mật khẩu thành công', 'success')
+      closeChangePasswordModal()
+    } else {
+      changePasswordError.value = res.data?.message || 'Đổi mật khẩu thất bại'
+    }
+  } catch (err) {
+    console.error('Lỗi khi đổi mật khẩu:', err)
+    changePasswordError.value = err.response?.data?.message || 'Có lỗi xảy ra khi đổi mật khẩu'
+  } finally {
+    changePasswordLoading.value = false
+  }
+}
+
 // Branch selector state
 const selectedBranch = ref(null)
 const branchesList = ref([])
@@ -354,6 +423,7 @@ let timeInterval = null
 
 onMounted(() => {
   window.addEventListener('click', closeDropdown)
+  window.addEventListener('keydown', handleGlobalKeydown)
   
   // Thiết lập thuộc tính lang của HTML document
   document.documentElement.setAttribute('lang', currentLang.value)
@@ -418,6 +488,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('click', closeDropdown)
+  window.removeEventListener('keydown', handleGlobalKeydown)
   window.removeEventListener('outlet-updated', loadActiveOutlets)
   if (timeInterval) {
     clearInterval(timeInterval)
@@ -1005,26 +1076,8 @@ function handleHeaderBookingSelected(booking) {
           </svg>
         </button>
 
-        <!-- Dark Mode Toggle Button -->
-        <button 
-          @click="toggleDarkMode" 
-          class="p-0.5 rounded bg-transparent border-none cursor-pointer transition-all duration-300 transform active:scale-95 flex items-center justify-center shrink-0"
-          :class="isHeaderBgDark ? 'text-white hover:bg-white/15' : 'text-gray-900 dark:text-white hover:bg-black/10'"
-          :title="t('header.toggleDark')"
-        >
-          <!-- Moon Icon (for Light Mode) -->
-          <svg v-if="!isDark" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-          </svg>
-          <!-- Sun Icon (for Dark Mode) -->
-          <svg v-else class="w-3.5 h-3.5 text-yellow-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707M14 12a2 2 0 11-4 0 2 2 0 014 0z" />
-          </svg>
-        </button>
-
-
-        <!-- Color Palette Button (Topbar Custom Background Color Popover) -->
-        <div class="relative shrink-0 flex items-center" ref="colorPickerRef">
+        <!-- Color Palette Button (Topbar Custom Background Color Popover - Admin Only) -->
+        <div v-if="authStore.isAdmin" class="relative shrink-0 flex items-center" ref="colorPickerRef">
           <button 
             @click="isColorPickerOpen = !isColorPickerOpen" 
             class="p-0.5 rounded bg-transparent border-none cursor-pointer transition-all duration-300 transform active:scale-95 flex items-center justify-center shrink-0"
@@ -1279,6 +1332,17 @@ function handleHeaderBookingSelected(booking) {
               <span>{{ t('header.portalHome') }}</span>
             </button>
 
+            <button 
+              @click="openChangePasswordModal"
+              class="w-full text-left px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors border-none bg-transparent cursor-pointer flex items-center gap-1.5"
+            >
+              <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+              <span>Đổi mật khẩu</span>
+            </button>
+
             <div class="border-t border-slate-100 my-1"></div>
 
             <button 
@@ -1421,5 +1485,113 @@ function handleHeaderBookingSelected(booking) {
       <ActivityLogTab v-if="route.query.tab === 'history'" />
       <slot v-else />
     </main>
+
+    <!-- Modal Đổi Mật Khẩu -->
+    <div 
+      v-if="isChangePasswordOpen" 
+      class="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-xs p-4"
+      @click.self="closeChangePasswordModal"
+    >
+      <div class="bg-white rounded-xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden text-xs font-sans animate-in fade-in zoom-in-95 duration-150">
+        <!-- Modal Header -->
+        <div 
+          class="flex items-center justify-between px-4 py-2.5 text-white select-none transition-colors duration-200"
+          :style="{ background: headerBgColor }"
+        >
+          <div class="flex items-center gap-2 font-semibold text-sm">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+            <span>Đổi Mật Khẩu</span>
+          </div>
+          <button 
+            type="button" 
+            @click="closeChangePasswordModal" 
+            class="text-white/80 hover:text-white hover:bg-white/20 rounded p-1 transition-colors cursor-pointer border-none bg-transparent flex items-center justify-center"
+            title="Đóng (Esc)"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Modal Body -->
+        <form @submit.prevent="submitChangePassword" class="p-4 space-y-3">
+          <div v-if="changePasswordError" class="p-2.5 bg-red-50 border border-red-200 text-red-700 rounded-lg text-xs font-medium">
+            {{ changePasswordError }}
+          </div>
+
+          <div>
+            <label class="block font-semibold text-slate-800 mb-1">
+              Mật khẩu hiện tại <span class="text-red-500 font-bold">*</span>
+            </label>
+            <input 
+              v-model="changePasswordForm.current_password" 
+              type="password" 
+              required
+              placeholder="Nhập mật khẩu hiện tại"
+              class="w-full px-3 py-1.5 text-xs rounded-lg border outline-none font-normal transition-colors"
+              style="background-color: #FFF8DB; border-color: #F1DD8A;"
+            />
+          </div>
+
+          <div>
+            <label class="block font-semibold text-slate-800 mb-1">
+              Mật khẩu mới <span class="text-red-500 font-bold">*</span>
+            </label>
+            <input 
+              v-model="changePasswordForm.new_password" 
+              type="password" 
+              required
+              minlength="6"
+              placeholder="Nhập mật khẩu mới (tối thiểu 6 ký tự)"
+              class="w-full px-3 py-1.5 text-xs rounded-lg border outline-none font-normal transition-colors"
+              style="background-color: #FFF8DB; border-color: #F1DD8A;"
+            />
+          </div>
+
+          <div>
+            <label class="block font-semibold text-slate-800 mb-1">
+              Xác nhận mật khẩu mới <span class="text-red-500 font-bold">*</span>
+            </label>
+            <input 
+              v-model="changePasswordForm.new_password_confirmation" 
+              type="password" 
+              required
+              placeholder="Nhập lại mật khẩu mới"
+              class="w-full px-3 py-1.5 text-xs rounded-lg border outline-none font-normal transition-colors"
+              style="background-color: #FFF8DB; border-color: #F1DD8A;"
+            />
+          </div>
+
+          <!-- Footer Buttons -->
+          <div class="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+            <button 
+              type="button" 
+              @click="closeChangePasswordModal"
+              class="btn-pms-close flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg cursor-pointer transition-colors"
+            >
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              <span>Đóng</span>
+            </button>
+            <button 
+              type="submit" 
+              :disabled="changePasswordLoading"
+              class="btn-pms-primary flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold rounded-lg cursor-pointer transition-colors"
+            >
+              <svg v-if="!changePasswordLoading" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+              <div v-else class="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              <span>{{ changePasswordLoading ? 'Đang lưu...' : 'Lưu' }}</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   </div>
 </template>
