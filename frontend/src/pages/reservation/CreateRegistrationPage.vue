@@ -19,6 +19,12 @@ import {
   isMoveHistoryBillReference,
   mergeMoveHistoryBillReferences,
 } from '@/utils/booking-room-move-history'
+import {
+  childBreakfastServiceDates,
+  isChildBreakfastCode,
+  isServiceDateInStay,
+  normalizeChildBreakfastConfig,
+} from '@/utils/booking-room-services'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import TimePicker24h from '@/components/TimePicker24h.vue'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
@@ -33,6 +39,7 @@ import ChildBreakfastModal from './components/ChildBreakfastModal.vue'
 import SpecialRequestsModal from './components/SpecialRequestsModal.vue'
 import GuestInfoModal from './components/GuestInfoModal.vue'
 import CancelReasonModal from './components/CancelReasonModal.vue'
+import RestoreCancelledRoomsModal from './components/RestoreCancelledRoomsModal.vue'
 import ChargeNoshowModal from './components/ChargeNoshowModal.vue'
 import QuickUpdateModal from './components/QuickUpdateModal.vue'
 import BookingNotificationsModal from './components/BookingNotificationsModal.vue'
@@ -82,6 +89,9 @@ import {
   lockRoomMove,
   unlockRoomMove,
   restoreBooking,
+  fetchCancelledBookingRooms,
+  fetchBookingChildren,
+  updateChildBreakfastDetail,
   revertBookingNoshow,
   revertRoomNoshow,
   chargeRoomNoshow,
@@ -183,6 +193,12 @@ const hotelServicesList = ref([])
 const getHotelService = (code) => hotelServicesList.value.find(service => String(service.code).toUpperCase() === String(code).toUpperCase())
 const getHotelServiceCode = (code) => getHotelService(code)?.code || code
 const getHotelServiceName = (code, fallback = '') => getHotelService(code)?.name || fallback
+// Booking_BFChildSetServiceId: detail mode = booking_child_breakfast_details is
+// the projected source; service mode = booking_room_services takes priority.
+const childBreakfastConfig = ref({ service_code: 'BD', service_name: '', detail_mode: true })
+const childBreakfastCode = computed(() => normalizeChildBreakfastConfig(childBreakfastConfig.value).serviceCode)
+const childBreakfastServiceName = () => childBreakfastConfig.value?.service_name
+  || getHotelServiceName(childBreakfastCode.value, 'Phụ thu ăn sáng trẻ em')
 const selectedServiceFilter = ref('all')
 const diagnosticErrors = ref([])
 const bookingCapabilities = ref({})
@@ -988,6 +1004,7 @@ function isServiceRateEditable(serviceDate) {
 }
 
 function isServiceDisplayEditable(service) {
+  if (service?.is_child_breakfast && service?.from_bill) return false
   return !isMoveHistoryBillReference(service) && isServiceRateEditable(service?.service_date)
 }
 
@@ -1091,8 +1108,33 @@ function handleServiceRateChange(room, svc, newRate) {
   }
 }
 
+// Sửa giá/xóa dòng phụ thu ăn sáng trẻ theo đêm: chỉ cập nhật chi tiết ăn sáng của trẻ, ngày đó.
+async function saveChildBreakfastDetailRow(room, svc, payload, successMessage) {
+  const detail = svc.svc_ref
+  const previous = detail ? { ...detail } : null
+  if (detail) Object.assign(detail, payload)
+  room.total = calculateRoomTotal(room)
+  try {
+    const res = await updateChildBreakfastDetail(svc.child_id, svc.child_breakfast_detail_id, payload)
+    if (detail && res.data?.data) Object.assign(detail, res.data.data)
+    room.total = calculateRoomTotal(room)
+    uiStore.showToast(successMessage, 'success')
+    notifyRoomUpdates(activeTab.value?.dbId)
+  } catch (err) {
+    console.error(err)
+    if (detail && previous) Object.assign(detail, previous)
+    room.total = calculateRoomTotal(room)
+    uiStore.showToast(err.response?.data?.message || 'Không thể cập nhật phụ thu ăn sáng trẻ em!', 'error')
+  }
+}
+
 async function handleInlineServiceRateChange(room, svc, newRate) {
   if (isMoveHistoryBillReference(svc)) return
+  if (isChildBreakfastDetailRow(svc)) {
+    svc.rate = newRate
+    await saveChildBreakfastDetailRow(room, svc, { amount: newRate }, 'Cập nhật giá phụ thu ăn sáng trẻ em thành công!')
+    return
+  }
   const cleanDate = cleanDateStr(svc.service_date)
   const isRoomCharge = svc.service_code === 'ROOM_CHARGE' || svc.service_code === 'RM'
 
@@ -1295,11 +1337,18 @@ function isRoomChargeService(svc) {
 }
 
 function isChildBreakfastService(svc) {
+  if (svc?.is_child_breakfast) return true
   const serviceName = String(svc?.service_name || '').toLowerCase()
   const note = String(svc?.note || '').toLowerCase()
   return svc?.service_code === 'BD'
+    || isChildBreakfastCode(svc?.service_code, childBreakfastConfig.value)
     || serviceName.startsWith('phụ thu ăn sáng trẻ em')
     || note.startsWith('phụ thu ăn sáng trẻ em')
+}
+
+// Dòng phụ thu ăn sáng trẻ lấy từ booking_child_breakfast_details (chế độ detail).
+function isChildBreakfastDetailRow(svc) {
+  return !!svc?.is_child_breakfast && !!svc?.child_breakfast_detail_id
 }
 
 function getChildBreakfastDisplayName(svc) {
@@ -1446,6 +1495,12 @@ async function handleInlineServiceDelete(room, svc) {
     message: `Bạn có chắc chắn muốn xóa dịch vụ "${svc.service_name}" vào ngày ${formatDateVi(svc.service_date)}?`
   })
   if (!confirmed) return
+
+  if (isChildBreakfastDetailRow(svc)) {
+    // Bỏ phụ thu ngày này trong chi tiết ăn sáng trẻ (không có dòng booking_room_services để xóa).
+    await saveChildBreakfastDetailRow(room, svc, { is_extra_charge: false }, `Đã bỏ phụ thu ăn sáng trẻ em ngày ${formatDateVi(svc.service_date)}.`)
+    return
+  }
 
   const cleanDate = cleanDateStr(svc.service_date)
 
@@ -1599,7 +1654,7 @@ function getRoomDisplayServices(room) {
           list.push({
             id: `service-bill-${bId}`,
             service_date: dStr,
-            service_name: sb.DescriptionServive || getHotelServiceName(sb.ServiceId || 'RM', 'Dịch vụ phòng nghỉ'),
+            service_name: getHotelServiceName(sb.ServiceId || 'RM', sb.DescriptionServive || 'Dịch vụ phòng nghỉ'),
             service_code: sb.ServiceId || 'RM',
             quantity: qty,
             rate: qty > 0 ? amt / qty : amt,
@@ -1626,7 +1681,7 @@ function getRoomDisplayServices(room) {
           list.push({
             id: dbCharge.id,
             service_date: dStr,
-            service_name: dbCharge.service_name || getHotelServiceName('RM', 'Dịch vụ phòng nghỉ'),
+            service_name: getHotelServiceName(dbCharge.service_code || 'RM', dbCharge.service_name || 'Dịch vụ phòng nghỉ'),
             service_code: dbCharge.service_code || 'RM',
             quantity: dbCharge.quantity || 1,
             rate: customRate,
@@ -1660,7 +1715,7 @@ function getRoomDisplayServices(room) {
         list.push({
           id: `service-bill-${bId}`,
           service_date: todayStr,
-          service_name: sb.DescriptionServive || getHotelServiceName(sb.ServiceId || 'RM', 'Dịch vụ phòng nghỉ'),
+          service_name: getHotelServiceName(sb.ServiceId || 'RM', sb.DescriptionServive || 'Dịch vụ phòng nghỉ'),
           service_code: sb.ServiceId || 'RM',
           quantity: qty,
           rate: qty > 0 ? amt / qty : amt,
@@ -1698,7 +1753,7 @@ function getRoomDisplayServices(room) {
         list.push({
           id: `service-bill-${bId}`,
           service_date: bDate,
-          service_name: sb.DescriptionServive || getHotelServiceName(sb.ServiceId || 'RM', 'Dịch vụ phòng nghỉ'),
+          service_name: getHotelServiceName(sb.ServiceId || 'RM', sb.DescriptionServive || 'Dịch vụ phòng nghỉ'),
           service_code: sb.ServiceId || 'RM',
           quantity: qty,
           rate: qty > 0 ? amt / qty : amt,
@@ -1762,7 +1817,7 @@ function getRoomDisplayServices(room) {
           list.push({
             id: `service-bill-eb-${bId}`,
             service_date: dStr,
-            service_name: ebBill.DescriptionServive || 'Giường phụ (Extra Bed)',
+            service_name: getHotelServiceName('EB', ebBill.DescriptionServive || 'Giường phụ (Extra Bed)'),
             service_code: 'EB',
             quantity: qty,
             rate: qty > 0 ? amt / qty : amt,
@@ -1780,7 +1835,7 @@ function getRoomDisplayServices(room) {
           list.push({
             id: `daily-eb-${room.id}-${dStr}`,
             service_date: dStr,
-            service_name: 'Giường phụ (Extra Bed)',
+            service_name: getHotelServiceName('EB', 'Giường phụ (Extra Bed)'),
             service_code: 'EB',
             quantity: Number(daily.quantity) || 0,
             rate: (daily.rate !== undefined && daily.rate !== null && daily.rate !== '') ? Number(daily.rate) : defaultEbPrice,
@@ -1791,7 +1846,7 @@ function getRoomDisplayServices(room) {
           list.push({
             id: ebSvc.id,
             service_date: dStr,
-            service_name: ebSvc.service_name || 'Giường phụ (Extra Bed)',
+            service_name: getHotelServiceName('EB', ebSvc.service_name || 'Giường phụ (Extra Bed)'),
             service_code: 'EB',
             quantity: Number(ebSvc.quantity) || 0,
             rate: (ebSvc.rate !== undefined && ebSvc.rate !== null && ebSvc.rate !== '') ? Number(ebSvc.rate) : defaultEbPrice,
@@ -1802,7 +1857,7 @@ function getRoomDisplayServices(room) {
           list.push({
             id: `daily-eb-${room.id}-${dStr}`,
             service_date: dStr,
-            service_name: 'Giường phụ (Extra Bed)',
+            service_name: getHotelServiceName('EB', 'Giường phụ (Extra Bed)'),
             service_code: 'EB',
             quantity: 0,
             rate: defaultEbPrice,
@@ -1812,7 +1867,7 @@ function getRoomDisplayServices(room) {
           list.push({
             id: `room-eb-${room.id}-${dStr}`,
             service_date: dStr,
-            service_name: 'Giường phụ (Extra Bed)',
+            service_name: getHotelServiceName('EB', 'Giường phụ (Extra Bed)'),
             service_code: 'EB',
             quantity: Number(room.extraBedQty),
             rate: defaultEbPrice,
@@ -1823,28 +1878,43 @@ function getRoomDisplayServices(room) {
     }
   }
 
-  // 3. Phụ thu ăn sáng trẻ em (BD) theo chuẩn fun_052:
-  // - Trẻ em có cấu hình phụ thu ăn sáng trong childRecords:
-  //   + Ngày quá khứ (< sysDate): Chỉ lấy từ service_bills (SP3000) có mã BD hoặc mô tả ăn sáng trẻ em.
-  //   + Ngày hiện tại/tương lai (>= sysDate): Lấy theo dự kiến từ booking_child_breakfast_details.
+  // 3. Phụ thu ăn sáng trẻ em theo Booking_BFChildSetServiceId:
+  // - Chế độ detail: lấy dự kiến từ booking_child_breakfast_details (kể cả khi phòng chưa check-in).
+  // - Chế độ service: ngày nào có dòng booking_room_services cùng mã thì ưu tiên dòng đó (mục 4).
+  // - Ngày quá khứ: chỉ lấy theo service_bills có mã phụ thu ăn sáng trẻ của chính trẻ.
+  const bfCode = childBreakfastCode.value
+  const bfName = childBreakfastServiceName()
+  const isStayDayUse = isDayUse
+  const servicePriorityDates = childBreakfastServiceDates(room.services, childBreakfastConfig.value)
+  const isChildBreakfastBill = sb =>
+    String(sb.ServiceId || '').toUpperCase() === String(bfCode).toUpperCase()
+    || String(sb.ServiceId || '').toUpperCase() === 'BD'
+    || String(sb.DescriptionServive || '').toLowerCase().includes('ăn sáng trẻ em')
   const childList = room.childRecords || []
+  // Ngày có phụ thu ăn sáng trẻ trong chi tiết ăn sáng (chế độ detail sở hữu các ngày này).
+  const detailChargeDates = new Set()
   if (childList && Array.isArray(childList)) {
     childList.forEach(child => {
       const details = child.breakfast_details || child.breakfastDetails || []
       details.forEach(d => {
         const amt = Number(d.amount) || 0
         const dStr = parseApiDate(d.service_date || '')
-        if (!d.breakfast || (!d.is_extra_charge && d.is_free) || amt <= 0 || !dStr) return
+        if (!d.breakfast || !d.is_extra_charge || d.is_free || amt <= 0 || !dStr) return
+        if (servicePriorityDates.has(dStr)) return
+        detailChargeDates.add(dStr)
 
         const isPastNight = sysDate ? (dStr < sysDate) : false
         let bfBill = null
         if (isPastNight) {
-          bfBill = (room.serviceBills || []).find(sb => 
-            (String(sb.ServiceId || '').toUpperCase() === 'BD' || String(sb.DescriptionServive || '').toLowerCase().includes('ăn sáng trẻ em')) &&
+          const candidates = (room.serviceBills || []).filter(sb =>
+            isChildBreakfastBill(sb) &&
             getBillRecordDateStr(sb) === dStr &&
             Number(sb.Edit) !== 1 && ![3, 4].includes(Number(sb.Status)) &&
             !handledBillIds.has(String(sb.Ma || sb.id))
           )
+          bfBill = candidates.find(sb => String(sb.CustomerId1 || '') === String(child.id)) || candidates[0] || null
+        } else if (!isServiceDateInStay(dStr, room.checkIn, room.checkOut, isStayDayUse)) {
+          return
         }
 
         if (bfBill) {
@@ -1855,23 +1925,28 @@ function getRoomDisplayServices(room) {
           list.push({
             id: `child-bf-bill-${bId}`,
             service_date: dStr,
-            service_name: bfBill.DescriptionServive || `Phụ thu ăn sáng trẻ em - ${child.full_name || 'Child'}`,
-            service_code: 'BD',
+            service_name: getHotelServiceName(bfBill.ServiceId || bfCode, bfName),
+            service_code: bfBill.ServiceId || bfCode,
             quantity: qty,
             rate: qty > 0 ? bAmt / qty : bAmt,
             is_room: true,
+            is_child_breakfast: true,
             from_bill: true,
             bill_ref: bfBill
           })
-        } else {
+        } else if (!isPastNight) {
           list.push({
             id: `child-bf-${d.id}`,
             service_date: dStr,
-            service_name: `Phụ thu ăn sáng trẻ em - ${child.full_name || 'Child'}`,
-            service_code: 'BD',
+            service_name: bfName,
+            service_code: bfCode,
             quantity: 1,
             rate: amt,
             is_room: d.is_room !== false && d.is_room !== 0,
+            is_child_breakfast: true,
+            child_breakfast_detail_id: d.id,
+            child_id: d.booking_child_id || child.id,
+            child_name: child.full_name || '',
             svc_ref: d
           })
         }
@@ -1879,25 +1954,38 @@ function getRoomDisplayServices(room) {
     })
   }
 
-  // 4. Các dịch vụ bổ sung tự động theo BK (khác RM, EB, BD) theo chuẩn fun_052:
+  // 4. Các dịch vụ bổ sung tự động theo BK (khác RM, EB) theo chuẩn fun_052:
   // - Chỉ duyệt qua các dịch vụ đã được setup trong BK (room.services).
   // - Ngày quá khứ (< sysDate): Chỉ lấy từ hóa đơn service_bills (SP3000) có mã dịch vụ khớp với mã dịch vụ đã setup trong BK (INNER JOIN SP2102).
-  // - Ngày hiện tại/tương lai (>= sysDate): Lấy theo dự kiến từ room.services.
+  // - Ngày hiện tại/tương lai (>= sysDate): Lấy theo dự kiến từ room.services, chỉ trong giai đoạn ở
+  //   [ngày đến, ngày đi). Dòng ngoài giai đoạn vẫn giữ trong DB để gia hạn lại (SP2102).
+  // - Chế độ detail: mã phụ thu ăn sáng trẻ chỉ hiển thị theo chi tiết ăn sáng (mục 3).
   // - TUYỆT ĐỐI KHÔNG LẤY các dịch vụ tự post tay tại hóa đơn (minibar, giặt là,...) không có trong setup BK.
-  const setupServices = (room.services || []).filter(svc => 
-    !['RM', 'ROOM_CHARGE', 'ER', 'EB', 'BD'].includes(String(svc.service_code || '').toUpperCase())
-  )
+  const isDetailBreakfastMode = normalizeChildBreakfastConfig(childBreakfastConfig.value).detailMode
+  const setupServices = (room.services || []).filter(svc => {
+    const code = String(svc.service_code || '').toUpperCase()
+    if (['RM', 'ROOM_CHARGE', 'ER', 'EB'].includes(code)) return false
+    // Chế độ detail: dòng phụ thu cũ trong booking_room_services chỉ còn hiện ở ngày
+    // không có chi tiết ăn sáng (khớp với bill sẽ post), ngày có chi tiết thì bỏ qua.
+    if (isChildBreakfastCode(code, childBreakfastConfig.value) || code === 'BD') {
+      return !isDetailBreakfastMode || !detailChargeDates.has(parseApiDate(svc.service_date || ''))
+    }
+    return true
+  })
 
   if (setupServices.length > 0) {
     setupServices.forEach(svc => {
       const dStr = parseApiDate(svc.service_date || '')
       if (!dStr) return
       const isPastNight = sysDate ? (dStr < sysDate) : false
+      const isPostedSetup = Number(svc.is_posted) === 1 || !!svc.service_bill_id
+      const serviceName = getHotelServiceName(svc.service_code, getChildBreakfastDisplayName(svc))
+      const isBreakfastSetup = isChildBreakfastCode(svc.service_code, childBreakfastConfig.value)
 
       if (isPastNight) {
         // Quá khứ: Chỉ lấy khi có hóa đơn trong service_bills (SP3000) khớp mã dịch vụ
-        const matchingBill = (room.serviceBills || []).find(sb => 
-          (String(sb.ServiceId || '').toUpperCase() === String(svc.service_code || '').toUpperCase() || 
+        const matchingBill = (room.serviceBills || []).find(sb =>
+          (String(sb.ServiceId || '').toUpperCase() === String(svc.service_code || '').toUpperCase() ||
            (svc.service_bill_id && String(sb.Ma || sb.id) === String(svc.service_bill_id))) &&
           getBillRecordDateStr(sb) === dStr &&
           Number(sb.Edit) !== 1 && ![3, 4].includes(Number(sb.Status)) &&
@@ -1911,45 +1999,49 @@ function getRoomDisplayServices(room) {
           list.push({
             id: `service-bill-${bId}`,
             service_date: dStr,
-            service_name: matchingBill.DescriptionServive || getChildBreakfastDisplayName(svc),
+            service_name: getHotelServiceName(matchingBill.ServiceId || svc.service_code, serviceName),
             service_code: svc.service_code,
             quantity: qty,
             rate: qty > 0 ? amt / qty : amt,
             is_room: svc.is_room !== 0,
+            is_child_breakfast: isBreakfastSetup,
             from_bill: true,
             bill_ref: matchingBill
           })
         }
       } else {
-        // Hôm nay & Tương lai: Lấy theo dự kiến đã setup trong BK
+        // Hôm nay & Tương lai: Lấy theo dự kiến đã setup trong BK (trong giai đoạn ở)
+        if (!isPostedSetup && !isServiceDateInStay(dStr, room.checkIn, room.checkOut, isStayDayUse)) return
         list.push({
           id: svc.id,
           service_date: dStr,
-          service_name: getChildBreakfastDisplayName(svc),
+          service_name: serviceName,
           service_code: svc.service_code,
-          quantity: svc.quantity || 1,
+          quantity: svc.quantity ?? 1,
           rate: svc.rate || 0,
           is_room: svc.is_room !== 0,
+          is_child_breakfast: isBreakfastSetup,
           svc_ref: svc
         })
       }
     })
   }
 
-  // SẮP XẾP THEO NGÀY (ASC). Cùng ngày: ROOM_CHARGE/RM/ER -> EB -> BD -> Dịch vụ khác
+  // SẮP XẾP THEO NGÀY (ASC). Cùng ngày: ROOM_CHARGE/RM/ER -> EB -> Ăn sáng trẻ -> Dịch vụ khác
   list.sort((a, b) => {
     const dateA = a.service_date || ''
     const dateB = b.service_date || ''
     if (dateA !== dateB) {
       return dateA.localeCompare(dateB)
     }
-    const orderPriority = (code) => {
+    const orderPriority = (row) => {
+      const code = row.service_code
       if (code === 'ROOM_CHARGE' || code === 'RM' || code === 'ER') return 1
       if (code === 'EB') return 2
-      if (code === 'BD') return 3
+      if (row.is_child_breakfast || code === 'BD') return 3
       return 4
     }
-    return orderPriority(a.service_code) - orderPriority(b.service_code)
+    return orderPriority(a) - orderPriority(b)
   })
 
   return list
@@ -2565,6 +2657,7 @@ async function loadDropdowns() {
     roomRateCodes.value        = data.room_rate_codes || []
     currenciesList.value       = data.currencies || []
     hotelServicesList.value    = data.hotel_services || []
+    if (data.child_breakfast) childBreakfastConfig.value = data.child_breakfast
     bookingCapabilities.value = data.booking_capabilities || {}
     hotelSettings.value        = data.hotel_settings || {}
 
@@ -6070,9 +6163,22 @@ async function triggerAction(actionName) {
     openRegistrationCardPrint(isPrintPrice.value)
   } else if (actionName === 'In hoá đơn tạm') {
     isInvoiceSubListOpen.value = !isInvoiceSubListOpen.value
+  } else if (actionName === 'Khôi phục phòng hủy') {
+    const tab = activeTab.value
+    if (!tab || !tab.dbId) {
+      uiStore.showToast('Vui lòng chọn đăng ký đã lưu!', 'warning')
+      return
+    }
+    isRestoreRoomsModalOpen.value = true
   } else if (actionName === 'Khôi phục BK') {
     const tab = activeTab.value
     if (!tab || !tab.dbId) return
+
+    // Section 9: booking đã hủy có phòng → chọn phòng cần khôi phục.
+    if (isCancelledBooking.value && (tab.rooms || []).length > 0) {
+      isRestoreRoomsModalOpen.value = true
+      return
+    }
 
     const confirmMsg = isCancelledBooking.value
       ? 'Bạn có chắc chắn muốn khôi phục booking này về hoạt động?'
@@ -6284,11 +6390,46 @@ async function handleChargeNoshowSaved() {
   await loadBookings()
 }
 
+// Tải lại đúng một booking (kể cả đã hủy) vào tab đang mở.
+async function reloadBookingTab(bookingId) {
+  if (!bookingId) return
+  try {
+    const res = await fetchBooking(bookingId)
+    const booking = res.data?.data || res.data
+    if (booking && (booking.id || booking.booking_code)) {
+      removeClosedTabId(booking.id)
+      replaceBookingTab(booking)
+      ;(activeTab.value?.rooms || []).forEach(room => {
+        if (room.rateCode && room.rateCode !== 'Vui lòng chọn giá phòng') {
+          applyRateCodeDailyPricesToRoom(room)
+        }
+      })
+      selectedRows.value = []
+      return
+    }
+  } catch (err) {
+    console.error('Không tải lại được booking:', err)
+  }
+  await loadBookings()
+}
+
 // ==================== HỦY ĐĂNG KÝ / HỦY PHÒNG REASON MODAL ====================
 const isCancelReasonModalOpen = ref(false)
 const cancelModalTitle = ref('Xác nhận hủy đặt phòng')
 const cancelModalSubTitle = ref('')
 const cancelPendingTarget = ref(null)
+const isCancellingRooms = ref(false)
+
+// ==================== KHÔI PHỤC PHÒNG ĐÃ HỦY (Section 9) ====================
+const isRestoreRoomsModalOpen = ref(false)
+
+async function handleCancelledRoomsRestored() {
+  const tab = activeTab.value
+  if (!tab?.dbId) return
+  removeClosedTabId(tab.dbId)
+  await reloadBookingTab(tab.dbId)
+  notifyRoomUpdates(tab.dbId)
+}
 
 async function handleConfirmCancelReason(payload) {
   const target = cancelPendingTarget.value
@@ -6307,13 +6448,8 @@ async function handleConfirmCancelReason(payload) {
         current_module: currentBookingModule.value
       })
       if (res.data?.success) {
-        const idx = tabs.value.findIndex(t => t.id === activeTabId.value)
-        if (idx !== -1) tabs.value.splice(idx, 1)
-        if (tabs.value.length > 0) activeTabId.value = tabs.value[tabs.value.length - 1].id
-        else {
-          tabs.value = []
-          activeTabId.value = null
-        }
+        // Giữ lại màn hình của chính booking vừa hủy (trạng thái Đã hủy).
+        await reloadBookingTab(tab.dbId)
         uiStore.showToast('Đã hủy và xóa đăng ký thành công!', 'success')
         notifyRoomUpdates(tab.dbId)
       } else {
@@ -6324,15 +6460,20 @@ async function handleConfirmCancelReason(payload) {
       uiStore.showToast(err.response?.data?.message || 'Không thể xóa đăng ký!', 'error')
     }
   } else if (target.type === 'rooms') {
+    if (isCancellingRooms.value) return
+    isCancellingRooms.value = true
+    cancelPendingTarget.value = null
     const { tab, rooms } = target
     let successCount = 0
     let failCount = 0
     let failMessages = []
+    const seenRoomIds = new Set()
 
     uiStore.showToast('Đang tiến hành hủy phòng...', 'info')
     try {
       for (const r of rooms) {
-        if (!r.bookingRoomId) continue
+        if (!r.bookingRoomId || seenRoomIds.has(String(r.bookingRoomId))) continue
+        seenRoomIds.add(String(r.bookingRoomId))
         try {
           const res = await cancelBookingRoom(tab.dbId, r.bookingRoomId, {
             cancel_reason_id: payload.cancel_reason_id,
@@ -6364,6 +6505,8 @@ async function handleConfirmCancelReason(payload) {
     } catch (err) {
       console.error(err)
       uiStore.showToast('Có lỗi xảy ra khi hủy phòng!', 'error')
+    } finally {
+      isCancellingRooms.value = false
     }
   }
 }
@@ -6656,12 +6799,19 @@ function openServicesModal(room) {
 async function handleServicesSaved() {
   expandedRooms.value = [] // Force re-fetch on next expand
   if (isEditing.value || isModalOpen.value) {
-    const roomId = servicesModalRoom.value?.bookingRoomId
-    if (roomId && servicesModalRoom.value) {
+    const tab = activeTab.value
+    for (const room of servicesTargetRooms.value) {
+      const roomId = room?.bookingRoomId
+      if (!roomId) continue
       try {
         const res = await fetchBookingRoomServices(roomId)
-        servicesModalRoom.value.services = res.data?.data || []
-        servicesModalRoom.value.total = calculateRoomTotal(servicesModalRoom.value)
+        room.services = res.data?.data || []
+        // Phụ thu ăn sáng trẻ (chế độ detail) nằm ở chi tiết ăn sáng của trẻ.
+        if (tab?.dbId) {
+          const childRes = await fetchBookingChildren(tab.dbId, { booking_room_id: roomId })
+          room.childRecords = childRes.data?.data || room.childRecords
+        }
+        room.total = calculateRoomTotal(room)
       } catch (err) {
         console.error('Lỗi khi tải lại dịch vụ phòng:', err)
       }
@@ -7773,7 +7923,8 @@ defineExpose({
                                       v-if="isEditing && isServiceDisplayEditable(svc)"
                                       type="text"
                                       :value="formatCurrencyInput(svc.rate)"
-                                      @input="e => handleServiceRateChange(room, svc, cleanCurrencyValue(e.target.value))"
+                                      @input="e => { if (!isChildBreakfastDetailRow(svc)) handleServiceRateChange(room, svc, cleanCurrencyValue(e.target.value)) }"
+                                      @change="e => { if (isChildBreakfastDetailRow(svc)) handleInlineServiceRateChange(room, svc, cleanCurrencyValue(e.target.value)) }"
                                       @blur="e => { e.target.value = formatCurrencyInput(svc.rate) }"
                                       @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
                                       class="w-full text-right font-bold text-slate-800 bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500 shadow-2xs"
@@ -8602,6 +8753,15 @@ defineExpose({
 
           <div v-if="hasNoshowRoomSelected" class="dock-group">
             <div class="dock-group-label">Khôi phục phòng</div>
+            <div class="dock-item" @click="triggerAction('Khôi phục phòng hủy')">
+              <span class="di">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17">
+                  <path d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8"/>
+                  <path d="M3 3v5h5"/>
+                </svg>
+              </span>
+              <span class="lbl">Khôi phục phòng hủy</span>
+            </div>
             <div class="dock-item" @click="triggerAction('Khôi phục phòng noshow')">
               <span class="di">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17">
@@ -9929,6 +10089,7 @@ defineExpose({
         :targetRooms="servicesTargetRooms" 
         :hotelServicesList="hotelServicesList" 
         :systemDate="systemDate"
+        :child-breakfast-config="childBreakfastConfig"
         @saved="handleServicesSaved" 
       />
     </Teleport>
@@ -10025,6 +10186,13 @@ defineExpose({
         :title="cancelModalTitle"
         :subTitle="cancelModalSubTitle"
         @confirm="handleConfirmCancelReason"
+      />
+      <RestoreCancelledRoomsModal
+        v-model:show="isRestoreRoomsModalOpen"
+        :booking-id="activeTab?.dbId"
+        :booking-code="activeTab?.bookingCode || activeTab?.id"
+        :booking-name="activeTab?.bookingName"
+        @restored="handleCancelledRoomsRestored"
       />
     </Teleport>
 

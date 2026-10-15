@@ -770,6 +770,11 @@ class NightAuditController extends Controller
                         $postedBillsCount++;
                     }
 
+                    // Phụ thu ăn sáng trẻ em (chi tiết ăn sáng) về cùng tiền phòng khi sang ngày.
+                    // Chạy trước để dòng phụ thu cũ cùng ngày (nếu có) không bị post trùng.
+                    $postedBillsCount += count(app(\App\Services\ChildBreakfastService::class)
+                        ->postForDate($targetRoom, $systemDate, $username));
+
                     $autoServices = BookingRoomService::where('booking_room_id', $targetRoom->id)
                         ->whereDate('service_date', $systemDate->toDateString())
                         ->where('is_posted', 0)

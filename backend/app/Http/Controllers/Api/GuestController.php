@@ -1133,7 +1133,9 @@ class GuestController extends Controller
 
         $this->validateStayDates($request, $room);
 
-        DB::transaction(function () use ($request, $room, $roomData, $stayFieldsChanged, $pricingFieldsChanged) {
+        $datesChanged = $arrivalChanged || $departureChanged || $request->has('is_day_use');
+
+        DB::transaction(function () use ($request, $room, $roomData, $stayFieldsChanged, $pricingFieldsChanged, $datesChanged) {
             if ($roomData) $room->update($roomData);
             if ($stayFieldsChanged) {
                 app(BookingRoomStayChargeService::class)->synchronize(
@@ -1147,6 +1149,12 @@ class GuestController extends Controller
             if ($request->has('extra_bed_qty') || $request->has('extra_bed_rate')) {
                 $this->syncExtraBedServices($room->fresh());
             }
+            if ($datesChanged) {
+                // Child breakfast keeps its price/surcharge setup; only the
+                // service dates follow the new stay.
+                app(\App\Services\BookingRoomLifecycleService::class)
+                    ->synchronize($room->fresh(), false, true, false);
+            }
         });
     }
 
@@ -1157,10 +1165,15 @@ class GuestController extends Controller
         if (!$arrivalDate || !$departureDate) return;
 
         if ((int)$room->extra_bed_qty <= 0) {
+            // Giữ dòng EB với số lượng 0 (đồng bộ với chi tiết thêm giường).
             $room->services()
                 ->where('service_code', BookingRoomService::CODE_EXTRA_BED)
                 ->where('is_posted', 0)
-                ->forceDelete();
+                ->update([
+                    'quantity' => 0,
+                    'total_amount' => 0,
+                    'updated_by' => Auth::user()?->username ?? 'system',
+                ]);
             return;
         }
 
@@ -1996,43 +2009,10 @@ class GuestController extends Controller
             return;
         }
 
-        $isBaby  = $child->age_group === 'baby';
-        $current = Carbon::parse($room->arrival_date);
-        $end     = Carbon::parse($room->departure_date);
-
-        // Đọc tham số hệ thống Booking_AutoExtraChargeBFChild từ hotel_configs
-        $autoExtraChargeVal = \App\Models\HotelConfig::where('name', 'Booking_AutoExtraChargeBFChild')
-            ->value('value');
-        $autoExtraCharge = (int) $autoExtraChargeVal === 1;
-
-        // Xác định amount:
-        //  - autoExtraCharge = true  → giá từ hotel_settings.breakfast_child_rate (màn hình công ty)
-        //  - autoExtraCharge = false → giá từ HotelConfig['BreakfastRateChild']
-        $setting = \App\Models\HotelSetting::first();
-        if ($autoExtraCharge) {
-            $amount = (float) ($setting?->breakfast_child_rate ?? 0);
-        } else {
-            $bfRateChild = \App\Models\HotelConfig::where('name', 'BreakfastRateChild')->value('value');
-            $amount = (float) ($bfRateChild ?? $setting?->breakfast_child_rate ?? 0);
-        }
-
-        while ($current->lt($end)) {
-            $detail = \App\Models\BookingChildBreakfastDetail::firstOrCreate(
-                [
-                    'booking_child_id' => $child->id,
-                    'service_date'     => $current->toDateString(),
-                ],
-                [
-                    'breakfast'       => true,
-                    'is_free'         => $isBaby,           // Em bé: miễn phí
-                    'is_extra_charge' => !$isBaby && $autoExtraCharge,
-                    'is_room'         => !$autoExtraCharge, // Nếu extra charge thì không phân bổ vào phòng
-                    'amount'          => $isBaby ? 0 : $amount,
-                ]
-            );
-            
-            $current = $current->addDay();
-        }
+        // Trẻ đã có chi tiết: giữ giá, phụ phí, miễn phí, FIT/GIT của trẻ và chỉ
+        // dời ngày theo giai đoạn ở. Trẻ mới: tạo theo tham số mặc định.
+        $childBreakfast = app(\App\Services\ChildBreakfastService::class);
+        $childBreakfast->syncChildToStay($child, $childBreakfast->stayDatesForRoom($room));
     }
 
 }

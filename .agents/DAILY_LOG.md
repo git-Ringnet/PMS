@@ -19,6 +19,26 @@
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
 
+## [2026-10-14] - Booking 4: sửa 11 section theo "các lỗi liên quan tới booking 4.docx"
+### Module: Đặt phòng / Lễ tân. Plan: [PLAN_FIX_LOI_BOOKING_4.md](file:///d:/PMS/PLAN_FIX_LOI_BOOKING_4.md), test tay: [docs/booking-4/TEST_TRUC_TIEP.md](file:///d:/PMS/docs/booking-4/TEST_TRUC_TIEP.md)
+
+- **S1 EB**: giữ dòng EB SL 0 (không xóa cứng) cả ở API dịch vụ và Room Map (`GuestController::syncExtraBedServices`).
+- **S2**: xác nhận fix Dòng 369, thêm test hồi quy.
+- **S3 ăn sáng trẻ**: service mới [ChildBreakfastService.php](file:///d:/PMS/backend/app/Services/ChildBreakfastService.php). Chế độ detail khi `Booking_BFChildSetServiceId` = mã dịch vụ "Breakfast Child/Ăn Sáng Trẻ Em": DV tự động mã này chỉ cập nhật `booking_child_breakfast_details`; ngược lại ghi `booking_room_services` và ưu tiên hiển thị. Đổi giai đoạn (Sửa/Lưu Booking, Cập nhật nhanh, Room Plan, Room Map) giữ giá + cờ phụ phí, chỉ dời ngày. Sửa giá/xóa dòng ăn sáng trẻ theo đêm cập nhật đúng chi tiết của trẻ.
+- **S4**: hủy BK xong tải lại chính booking đó (`reloadBookingTab`).
+- **S5**: không xóa DV bổ sung ngoài giai đoạn (chỉ RM/EB dự kiến), chi tiết tiền chỉ hiện/tính DV trong [đến, đi).
+- **S6/S11**: mô tả dòng chi tiết tiền lấy theo `hotel_services.name`.
+- **S7**: API hủy phòng idempotent (khóa dòng, phòng đã hủy trả success), không còn 404 thô; FE chặn gửi trùng.
+- **S8**: hủy BK đặt giai đoạn BK = min/max phòng; khôi phục xét ngày từng phòng và tính lại giai đoạn + số đêm.
+- **S9**: `GET /bookings/{id}/cancelled-rooms`, `restore` nhận `room_ids` (1 phòng lỗi → không khôi phục phòng nào), modal [RestoreCancelledRoomsModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/RestoreCancelledRoomsModal.vue) + dock "Khôi phục phòng hủy"; khôi phục phòng cho BK đang ở không đổi trạng thái BK.
+- **S10**: `RoomAvailabilityService::hasBlockingLock` (khóa bắt đầu ngày đi không chặn đêm trước), áp dụng tạo BK, phòng trống, tự gán, khôi phục.
+- **S11**: `GET /bookings/{id}` load `children.breakfastDetails`; post trước tiền phòng và Sang ngày post bill phụ phí ăn sáng trẻ (`CustomerId1` = mã trẻ, không trùng).
+- **Test**: `BookingFourSectionsTest` 19/19 pass; Frontend tests 94/94 pass; build pass.
+- **Tài liệu kiểm thử**: Đã viết lại hoàn toàn [docs/booking-4/TEST_TRUC_TIEP.md](file:///d:/PMS/docs/booking-4/TEST_TRUC_TIEP.md) theo hướng kiểm thử trực quan 100% trên giao diện người dùng (chuột và bàn phím), kèm bảng Checklist nhanh 10-15 phút, loại bỏ các câu lệnh SQL phức tạp giúp người dùng/tester dễ thao tác và đối chiếu kết quả thực tế.
+- **Rà lại S3 (cùng ngày)**: (1) lưu Thông tin khách (`generateBreakfastDetails`) tạo ngày thiếu theo giá mặc định → nay giữ giá/phụ phí/FIT-GIT của trẻ (gốc lỗi ảnh 3); (2) sửa giá dòng ăn sáng trẻ ở chế độ Sửa trước chỉ đổi tạm → nay lưu thẳng chi tiết; (3) modal Dịch vụ bổ sung chế độ detail: hiện lại phụ thu đang có, bỏ chọn ngày/dịch vụ → tắt phụ phí, bỏ qua phòng không có trẻ, tải lại chi tiết sau khi lưu; (4) dòng BD cũ trong `booking_room_services`: ngày có chi tiết thì xóa dòng cũ chưa post và post theo chi tiết, ngày không có chi tiết vẫn post dòng cũ. Test S3 thêm 3 case; booking backend 217/217, frontend 94/94, build pass.
+- **Rà lại S8 (15/10)**: tái hiện đúng kịch bản Word bằng API. Ngày hệ thống ≤ ngày đến phòng đầu: đúng. Ngày hệ thống đã qua ngày đến phòng đầu: "Chọn tất cả" bị chặn toàn bộ (phòng quá hạn không được khôi phục) → không phòng nào được khôi phục. Sửa: `cancelled-rooms` trả `restorable`/`not_restorable_reason`, modal khóa phòng quá hạn, "Chọn tất cả" chỉ chọn phòng khôi phục được, không còn phòng nào thì có nút "Khôi phục thông tin đăng ký"; lỗi trả `ineligible_room_ids` + tên phòng dễ đọc. Thêm 2 test end-to-end S8.
+
+
 ## [2026-10-13] - Sửa lỗi Xóa/Cập nhật Extra Bed về 0 (Dòng 368) và Cập nhật ngày đi không cập nhật số đêm Booking (Dòng 369)
 ### Module: Đặt phòng ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [BookingRoomServiceController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomServiceController.php), [BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [BookingRoomLifecycleService.php](file:///d:/PMS/backend/app/Services/BookingRoomLifecycleService.php))
 

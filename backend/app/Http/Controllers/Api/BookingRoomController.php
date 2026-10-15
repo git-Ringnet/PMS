@@ -1058,16 +1058,42 @@ class BookingRoomController extends Controller
     // =========================================
     public function cancel(Request $request, $bookingId, $roomId)
     {
-        $bookingRoom = BookingRoom::where('booking_id', $bookingId)
+        $bookingRoom = BookingRoom::withTrashed()
+            ->where('booking_id', $bookingId)
             ->with(['guests', 'children'])
-            ->findOrFail($roomId);
+            ->find($roomId);
+
+        if (!$bookingRoom) {
+            return response()->json([
+                'success' => false,
+                'code'    => 'room_not_in_booking',
+                'message' => "Phòng {$roomId} không thuộc đăng ký này hoặc đã bị xóa. Vui lòng tải lại đăng ký.",
+            ], 404);
+        }
+
+        // Phòng đã được hủy (bấm lặp/ yêu cầu gửi trùng): coi như đã hoàn tất.
+        if ((int) $bookingRoom->status === BookingRoom::STATUS_CANCELLED) {
+            return response()->json([
+                'success'           => true,
+                'already_cancelled' => true,
+                'message'           => 'Phòng đã được hủy trước đó.',
+            ]);
+        }
+
+        if ($bookingRoom->trashed()) {
+            return response()->json([
+                'success' => false,
+                'code'    => 'room_deleted',
+                'message' => 'Phòng ' . ($bookingRoom->room_number ?: $roomId) . ' đang được cập nhật hoặc đã bị xóa khỏi đăng ký. Vui lòng tải lại đăng ký.',
+            ], 409);
+        }
 
         if ($bookingRoom->isVirtual()) {
             return response()->json(['success' => false, 'code' => 'virtual_room', 'message' => 'Không thể hủy folio phòng ảo bằng thao tác hủy lưu trú.'], 422);
         }
 
-        if (in_array($bookingRoom->status, [BookingRoom::STATUS_CANCELLED, BookingRoom::STATUS_CHECKED_OUT])) {
-            return response()->json(['success' => false, 'message' => 'Phòng đã hủy hoặc đã checkout.'], 422);
+        if (in_array((int) $bookingRoom->status, [BookingRoom::STATUS_CHECKED_OUT, BookingRoom::STATUS_MOVED], true)) {
+            return response()->json(['success' => false, 'message' => 'Phòng đã checkout hoặc đã chuyển, không thể hủy.'], 422);
         }
         if ($bookingRoom->status === BookingRoom::STATUS_CHECKED_IN) {
             return response()->json(['success' => false, 'message' => 'Không thể hủy phòng đang check-in. Vui lòng checkout trước.'], 422);
@@ -1110,6 +1136,17 @@ class BookingRoomController extends Controller
 
         DB::beginTransaction();
         try {
+            // Hai yêu cầu hủy cùng lúc: chỉ yêu cầu đầu tiên ghi dữ liệu và log.
+            $lockedStatus = BookingRoom::whereKey($bookingRoom->id)->lockForUpdate()->value('status');
+            if ((int) $lockedStatus === BookingRoom::STATUS_CANCELLED) {
+                DB::commit();
+                return response()->json([
+                    'success'           => true,
+                    'already_cancelled' => true,
+                    'message'           => 'Phòng đã được hủy trước đó.',
+                ]);
+            }
+
             // Cascade: hủy guests gắn với phòng này
             $guestIds = $bookingRoom->guests()->pluck('guest_id');
             $bookingRoom->guests()->update(['status' => 3]);
@@ -1332,13 +1369,7 @@ class BookingRoomController extends Controller
             $assignedRoom = null;
             foreach ($candidates as $room) {
                 // Kiểm tra không bị OOO/OOS
-                $isLocked = \App\Models\RoomLock::where('room_number', $room->room_number)
-                    ->where('is_active', 1)
-                    ->where('start_date', '<', $departureDate)
-                    ->where('end_date', '>', $arrivalDate)
-                    ->exists();
-
-                if ($isLocked) continue;
+                if ($this->avService->hasBlockingLock($room->room_number, $arrivalDate, $departureDate)) continue;
 
                 // Kiểm tra không bị trùng booking khác
                 $isOccupied = $this->avService->isRoomNumberOccupied(
@@ -1651,6 +1682,7 @@ class BookingRoomController extends Controller
                 \App\Models\BookingRoomChild::whereIn('booking_child_id', $removeIds)->delete();
                 \App\Models\BookingChild::whereIn('id', $removeIds)->delete();
             }
+            app(\App\Services\ChildBreakfastService::class)->removeProjectedRowsWithoutChildren($room);
         }
 
         $col = $ageGroup === 'child' ? 'children_qty' : 'babies';

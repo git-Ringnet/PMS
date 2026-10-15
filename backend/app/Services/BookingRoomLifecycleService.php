@@ -2,8 +2,6 @@
 
 namespace App\Services;
 
-use App\Models\BookingChild;
-use App\Models\BookingChildBreakfastDetail;
 use App\Models\BookingRoom;
 use App\Models\BookingRoomService;
 use Carbon\Carbon;
@@ -150,76 +148,13 @@ class BookingRoomLifecycleService
     }
 
     /**
-     * Rebuild child-breakfast details for the new [arrival, departure) period.
-     * Values already entered by staff are retained as the template for newly
-     * created nights; a missing/zero non-free amount falls back to the current
-     * configured child breakfast rate.
+     * Move child-breakfast setup to the new [arrival, departure) period while
+     * keeping the entered price and surcharge/free/FIT-GIT flags.
      *
      * @param list<string> $stayDates
      */
     private function synchronizeChildBreakfast(BookingRoom $room, array $stayDates): void
     {
-        $children = BookingChild::where('booking_room_id', $room->id)->get();
-        foreach ($children as $child) {
-            $details = $child->breakfastDetails()->get();
-            $byDate = $details->keyBy(fn (BookingChildBreakfastDetail $detail) => Carbon::parse($detail->service_date)->toDateString());
-            $template = $details->first();
-
-            // Remove the detail rows before deleting legacy projected BD
-            // rows. BookingRoomService's delete hook can otherwise rewrite a
-            // matching detail's amount to the default rate before it becomes
-            // the template for the new stay period.
-            $child->breakfastDetails()->delete();
-            $this->removeProjectedBreakfastServices($room, $child);
-
-            foreach ($stayDates as $date) {
-                $source = $byDate->get($date) ?: $template;
-                $isBaby = $child->age_group === 'baby';
-                $isFree = $source ? (bool) $source->is_free : $isBaby;
-                $isExtra = $source ? (bool) $source->is_extra_charge : (!$isBaby && $this->autoExtraCharge());
-                $amount = $source ? (float) $source->amount : $this->defaultChildBreakfastRate();
-
-                if ($isBaby || $isFree) {
-                    $amount = 0.0;
-                } elseif ($amount <= 0) {
-                    $amount = $this->defaultChildBreakfastRate();
-                }
-
-                BookingChildBreakfastDetail::create([
-                    'booking_child_id' => $child->id,
-                    'service_date' => $date,
-                    'breakfast' => $source ? (bool) $source->breakfast : true,
-                    'is_free' => $isFree,
-                    'is_extra_charge' => $isExtra,
-                    'is_room' => $source ? (bool) $source->is_room : !$isExtra,
-                    'amount' => $amount,
-                ]);
-            }
-        }
-    }
-
-    private function removeProjectedBreakfastServices(BookingRoom $room, BookingChild $child): void
-    {
-        $serviceCode = \App\Models\HotelConfig::where('name', 'Booking_BFChildSetServiceId')->value('value') ?: BookingRoomService::CODE_BF_CHILD;
-        $prefix = 'Phụ thu ăn sáng trẻ em: ' . $child->full_name;
-
-        BookingRoomService::where('booking_room_id', $room->id)
-            ->where('service_code', $serviceCode)
-            ->where('note', $prefix)
-            ->where('is_posted', 0)
-            ->delete();
-    }
-
-    private function autoExtraCharge(): bool
-    {
-        return (int) (\App\Models\HotelConfig::where('name', 'Booking_AutoExtraChargeBFChild')->value('value') ?? 0) === 1;
-    }
-
-    private function defaultChildBreakfastRate(): float
-    {
-        $configRate = \App\Models\HotelConfig::where('name', 'BreakfastRateChild')->value('value');
-        $settingRate = \App\Models\HotelSetting::first()?->breakfast_child_rate;
-
-        return (float) ($configRate ?? $settingRate ?? 0);
+        app(ChildBreakfastService::class)->syncToStay($room, $stayDates);
     }
 }

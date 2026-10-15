@@ -432,6 +432,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     // #19 — Nhân bản booking
     Route::post('bookings/{id}/copy', [\App\Http\Controllers\Api\BookingController::class, 'copy'])->middleware('permission:fo.booking.create');
     // #22 — Khôi phục booking đã hủy
+    Route::get('bookings/{id}/cancelled-rooms', [\App\Http\Controllers\Api\BookingController::class, 'cancelledRooms']);
     Route::post('bookings/{id}/restore', [\App\Http\Controllers\Api\BookingController::class, 'restore'])->middleware('permission:fo.booking.edit');
     // Khôi phục booking noshow
     Route::post('bookings/{id}/revert-noshow', [\App\Http\Controllers\Api\BookingController::class, 'revertNoshow'])->middleware('permission:fo.booking.edit');

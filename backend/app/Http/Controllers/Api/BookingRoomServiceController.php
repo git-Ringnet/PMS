@@ -219,33 +219,73 @@ class BookingRoomServiceController extends Controller
             ], 422);
         }
 
+        // Booking_BFChildSetServiceId trùng mã dịch vụ "Breakfast Child": phụ
+        // thu ăn sáng trẻ chỉ lưu ở booking_child_breakfast_details.
+        $childBreakfast = app(\App\Services\ChildBreakfastService::class);
+        if ($childBreakfast->isDetailMode() && $childBreakfast->isChildBreakfastCode($request->service_code)) {
+            $updated = DB::transaction(fn () => $childBreakfast->applyServiceRate(
+                $room,
+                Carbon::parse($request->service_date)->toDateString(),
+                (float) ($request->rate ?? 0),
+                (float) ($request->quantity ?? 1),
+                $request->has('is_room') ? $request->boolean('is_room') : null,
+            ));
+
+            if ($updated === 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Phòng chưa có trẻ em để áp dụng phụ thu ăn sáng trẻ em.',
+                ], 422);
+            }
+
+            return response()->json([
+                'success' => true,
+                'child_breakfast' => true,
+                'message' => 'Đã cập nhật phụ thu ăn sáng trẻ em vào chi tiết ăn sáng.',
+            ]);
+        }
+
         // Nếu số lượng <= 0:
         if (isset($request->quantity) && (float)$request->quantity <= 0) {
-            $isEb = $request->service_code === BookingRoomService::CODE_EXTRA_BED 
+            $isEb = $request->service_code === BookingRoomService::CODE_EXTRA_BED
                 || $request->service_code === 'EB'
                 || strcasecmp((string)$request->service_code, BookingRoomService::catalogCode(BookingRoomService::CODE_EXTRA_BED)) === 0;
 
             if ($isEb) {
                 // Đối với Extra Bed: Cập nhật quantity = 0, total_amount = 0 vào booking_room_services (giữ record với sl = 0)
-                BookingRoomService::withTrashed()->updateOrCreate(
-                    [
+                $ebDate = Carbon::parse($request->service_date)->toDateString();
+                $ebValues = [
+                    'service_name' => BookingRoomService::catalogName(BookingRoomService::CODE_EXTRA_BED, 'Extra Bed'),
+                    'quantity'     => 0,
+                    'rate'         => $request->rate ?? 0,
+                    'total_amount' => 0,
+                    'department'   => 'FO',
+                    'is_room'      => $request->has('is_room') ? (int) $request->boolean('is_room') : 1,
+                    'folio'        => $request->folio ?? 1,
+                    'is_posted'    => 0,
+                    'deleted_at'   => null,
+                    'created_by'   => Auth::user()?->username ?? 'system',
+                ];
+                $ebRow = BookingRoomService::withTrashed()
+                    ->where('booking_room_id', $roomId)
+                    ->where('service_code', BookingRoomService::CODE_EXTRA_BED)
+                    ->whereDate('service_date', $ebDate)
+                    ->first();
+                if ($ebRow && (int) $ebRow->is_posted === 1) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Extra Bed ngày ' . $ebDate . ' đã được post, không thể cập nhật số lượng.',
+                    ], 422);
+                }
+                if ($ebRow) {
+                    $ebRow->fill($ebValues)->save();
+                } else {
+                    BookingRoomService::create([
                         'booking_room_id' => $roomId,
                         'service_code'    => BookingRoomService::CODE_EXTRA_BED,
-                        'service_date'    => $request->service_date,
-                    ],
-                    [
-                        'service_name' => BookingRoomService::catalogName(BookingRoomService::CODE_EXTRA_BED, 'Extra Bed'),
-                        'quantity'     => 0,
-                        'rate'         => $request->rate ?? 0,
-                        'total_amount' => 0,
-                        'department'   => 'FO',
-                        'is_room'      => $request->has('is_room') ? (int) $request->boolean('is_room') : 1,
-                        'folio'        => $request->folio ?? 1,
-                        'is_posted'    => 0,
-                        'deleted_at'   => null,
-                        'created_by'   => Auth::user()?->username ?? 'system',
-                    ]
-                );
+                        'service_date'    => $ebDate,
+                    ] + $ebValues);
+                }
 
                 $remainingEB = BookingRoomService::where('booking_room_id', $roomId)
                     ->where('service_code', BookingRoomService::CODE_EXTRA_BED)
@@ -2883,6 +2923,11 @@ class BookingRoomServiceController extends Controller
      */
     private function postPendingSetupServicesForDate(BookingRoom $room, Carbon $serviceDate, string $user): array
     {
+        // Phụ thu ăn sáng trẻ em lưu ở chi tiết ăn sáng được post cùng tiền phòng.
+        // Chạy trước để dòng phụ thu cũ cùng ngày (nếu có) không bị post trùng.
+        $childBreakfastBillIds = app(\App\Services\ChildBreakfastService::class)
+            ->postForDate($room, $serviceDate, $user);
+
         $services = BookingRoomService::where('booking_room_id', $room->id)
             ->whereDate('service_date', $serviceDate->toDateString())
             ->where('service_code', '!=', BookingRoomService::CODE_ROOM)
@@ -2892,7 +2937,7 @@ class BookingRoomServiceController extends Controller
             ->get();
 
         if ($services->isEmpty()) {
-            return [];
+            return $childBreakfastBillIds;
         }
 
         $booking = $room->booking;
@@ -2900,7 +2945,7 @@ class BookingRoomServiceController extends Controller
             ?: $room->guests()->with('guest')->first();
         $guestId = $primaryGuest?->guest_id;
         $guestName = $primaryGuest?->guest?->full_name ?: ($booking?->booking_name ?: 'Khách lẻ');
-        $createdBillIds = [];
+        $createdBillIds = $childBreakfastBillIds;
 
         foreach ($services as $service) {
             $foService = HotelService::where('code', $service->service_code)->first();
