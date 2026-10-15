@@ -52,6 +52,12 @@ class BookingRoomStayChargeService
             return;
         }
 
+        // A day-use room (arrival = departure, is_day_use) is charged once on
+        // its arrival date; a same-day room without day-use has no charge.
+        if ($room->is_day_use && $departure->equalTo($arrival)) {
+            $departure = $arrival->copy()->addDay();
+        }
+
         $stayDates = $this->stayDates($arrival, $departure);
         $this->removeStaleUnpostedRoomCharges($room, $roomServiceCodes, $stayDates);
 

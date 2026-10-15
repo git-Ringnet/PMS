@@ -4236,6 +4236,7 @@ onUnmounted(() => {
       :systemDate="systemDate"
       :isNoPost="isSelectedPostBlocked"
       :roomChargeNoPost="isRoomChargeNoPostBlocked"
+      :isDayUse="Boolean(selectedRoomItem?.rawRoom?.is_day_use ?? selectedRoomItem?.is_day_use ?? selectedBooking?.is_day_use)"
       @close="showAddServiceModal = false; roomAdjustment = null" 
       @success="handleServiceAdded"
     />

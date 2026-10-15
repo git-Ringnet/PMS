@@ -63,6 +63,10 @@ class BookingRoomLifecycleService
 
         $arrival = Carbon::parse($room->arrival_date)->startOfDay();
         $departure = Carbon::parse($room->departure_date)->startOfDay();
+        // Day-use rooms keep their date-bound rows on the arrival date.
+        if ($room->is_day_use && $departure->equalTo($arrival)) {
+            $departure = $arrival->copy()->addDay();
+        }
         $dates = [];
 
         for ($date = $arrival->copy(); $date->lt($departure); $date->addDay()) {

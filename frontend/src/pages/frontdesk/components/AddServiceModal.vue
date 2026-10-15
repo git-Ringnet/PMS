@@ -21,6 +21,7 @@ const props = defineProps({
   systemDate:    { type: String, default: '' },
   isNoPost:      { type: Boolean, default: false },
   roomChargeNoPost: { type: Boolean, default: false },
+  isDayUse:         { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['close', 'success'])
@@ -112,9 +113,17 @@ const bookingMaxDate = computed(() => {
   return undefined
 })
 
+const isDayUseStay = computed(() => {
+  return Boolean(props.isDayUse) || (Boolean(bookingMinDate.value) && bookingMinDate.value === bookingMaxDate.value)
+})
+
 // Room-night posting is limited through the last occupied night, not checkout day.
 const roomMaxDate = computed(() => {
   if (!bookingMaxDate.value) return undefined
+
+  if (isDayUseStay.value) {
+    return bookingMaxDate.value
+  }
 
   const departure = new Date(`${bookingMaxDate.value}T00:00:00.000Z`)
   if (Number.isNaN(departure.getTime())) return undefined

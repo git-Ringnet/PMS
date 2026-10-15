@@ -19,6 +19,29 @@
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
 
+## [2026-10-15] - Kiểm thử tính năng "Ở theo giờ" (Day use) & Phòng đi cùng ngày (TC1 - TC8 & Regression D)
+### Module: Đặt phòng / Lễ tân ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [BookingRoomStayChargeService.php](file:///d:/PMS/backend/app/Services/BookingRoomStayChargeService.php), [NightAuditController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php))
+
+- **1. Kiểm thử trực tiếp UI (TC1 - TC7)**:
+  - **TC1 (Bật day use có tiền)**: PASS. Chọn `05/09 - 07/09` bật "Ở theo giờ" -> ngày đi tự thành `05/09`, số đêm = 0, ô ngày đi/đêm bị mờ khoá, bảng chi tiết dịch vụ có 1 dòng RM đơn giá bằng giá phòng (540,000đ), cột tổng hiển thị 540,000đ. Lưu và F5 trạng thái và dòng tiền được giữ nguyên ([tc1_success.png](file:///d:/PMS/test_results/tc1_success.png)).
+  - **TC2 (Đổi ngày đến khi bật day use)**: PASS. Đổi từ `05/09` sang `06/09` -> ngày đi tự nhảy `06/09`, dòng tiền RM tự động dời sang `06/09` ([tc2_success.png](file:///d:/PMS/test_results/tc2_success.png)).
+  - **TC3 (Tắt day use giữ ngày đi)**: PASS. Tắt day use -> ngày đi giữ nguyên `06/09`, số đêm = 0, ô ngày đi/đêm mở lại, chi tiết dịch vụ trống (tổng = 0). Đổi ngày đi thành `08/09` -> số đêm = 2, công tắc vẫn tắt, có 2 dòng tiền phòng `06/09` và `07/09` ([tc3_success.png](file:///d:/PMS/test_results/tc3_success.png)).
+  - **TC4 (Phòng cùng ngày không bật day use)**: PASS. Ngày đến = ngày đi `05/09`, công tắc tắt -> số đêm = 0, không có dòng tiền, lưu F5 thành công, AV không bị trừ ([tc4_success.png](file:///d:/PMS/test_results/tc4_success.png)).
+  - **TC5 (Booking có phòng bật và phòng tắt 05/09-05/09)**: PASS. Phòng 1 bật day use có tiền 540,000đ, Phòng 2 tắt day use tiền 0đ. Lưu F5: Phòng 1 giữ bật, Phòng 2 giữ tắt (lỗi cũ bị bật lại đã fix). AV ngày 05/09 chỉ giảm đúng 1 phòng ([tc5_success.png](file:///d:/PMS/test_results/tc5_success.png)).
+  - **TC6 (Day use có trừ AV)**: PASS. Bật day use lưu -> AV giảm 1. Tắt day use lưu -> AV tăng lại 1 ([tc6_success.png](file:///d:/PMS/test_results/tc6_success.png)).
+  - **TC7 (Chặn bật day use ngày quá khứ)**: PASS. Ngày đến < ngày hệ thống (`31/08/2026` < `01/09/2026`) -> công tắc disabled (`cursor-not-allowed opacity-50`), không thể bật ([tc7_success.png](file:///d:/PMS/test_results/tc7_success.png)).
+- **2. Kiểm thử chạy tiền day use (TC8) & Đã xử lý hoàn tất**:
+  - **Sang ngày (Night Audit)**: PASS.
+    - Với `IsRoomNightRoomDayUse = 1`: Bill RM tạo thành công (Amount = giá phòng), bảng `room_night_bills` có `is_room_night = 1`.
+    - Với `IsRoomNightRoomDayUse = 0`: Bill RM tạo thành công, bảng `room_night_bills` có `is_room_night = 0` (chỉ doanh thu, không tính công suất).
+  - **Post tay (Nút post tiền phòng ở Folio)**: ĐÃ FIX VÀ PASS 100%.
+    - Đã cập nhật [BookingRoomServiceController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomServiceController.php#L2460): bổ sung điều kiện day use (`stayEnd` và `roomLastOccupiedNight` giữ nguyên ngày đến khi `arrival == departure` thay vì trừ 1 ngày).
+    - Đã cập nhật [AddServiceModal.vue](file:///d:/PMS/frontend/src/pages/frontdesk/components/AddServiceModal.vue) và [CheckoutPage.vue](file:///d:/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue): truyền và xử lý `isDayUse` để `roomMaxDate` không bị lùi ngày. Post tay qua API và giao diện hoạt động hoàn hảo.
+- **3. Kiểm tra hồi quy (Checklist D)**:
+  - Phòng qua đêm bình thường (2-3 đêm): PASS, số đêm, tiền từng đêm và AV trừ đúng các đêm lưu trú.
+  - Popup Booking mới ngày đến = ngày đi: PASS, mặc định gửi `is_day_use: 1`.
+  - Phòng late check-in cùng ngày (đã check-in): PASS, `is_room_night = 1` (tính 1 đêm).
+
 ## [2026-10-15] - Cập nhật giờ check-in thực tế vào bảng booking_rooms, booking_room_guests và booking_room_children (Dòng 257)
 ### Module: Đặt phòng / Lễ tân ([BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [BookingRoomControllerSectionFixesTest.php](file:///d:/PMS/backend/tests/Feature/Booking/BookingRoomControllerSectionFixesTest.php))
 

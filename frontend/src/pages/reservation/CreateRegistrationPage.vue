@@ -5004,12 +5004,8 @@ async function handleRowNightsChangeInline(room) {
     if (!isNaN(ci)) {
       const requestedNights = Number(room.nights)
       if (requestedNights === 0) {
-        if (isHourlyDisabled(room)) {
-          room.nights = 1
-          uiStore.showToast('Không thể chọn ở theo giờ khi ngày đến nhỏ hơn ngày hệ thống.', 'warning')
-          return
-        }
-        room.hourly = true
+        // 0 đêm = ngày đi bằng ngày đến. Không tự bật ở theo giờ: phòng
+        // cùng ngày không bật day use thì không trừ AV và không có tiền.
         room.checkOut = room.checkIn
       } else {
         room.hourly = false
@@ -5055,18 +5051,10 @@ async function handleHourlyToggle(room) {
     room.checkOut = room.checkIn
     room.nights = 0
   } else {
-    const isLateCheckinOrSameDay = !!(room.bookingRoomId && (room.serviceBills?.length || room.no_show_day))
-    if (room.checkOut === room.checkIn && !isLateCheckinOrSameDay) {
-      const ci = new Date(room.checkIn)
-      if (!isNaN(ci)) {
-        const co = new Date(ci)
-        co.setDate(ci.getDate() + 1)
-        room.checkOut = co.toISOString().split('T')[0]
-        room.nights = 1
-      }
-    } else {
-      room.nights = 0
-    }
+    // Tắt ở theo giờ: giữ nguyên ngày đi đang chọn và mở lại ô ngày đi để
+    // người dùng tự đổi. Ngày đến = ngày đi lúc này là phòng 0 đêm, không tiền.
+    const diffDays = Math.round((new Date(room.checkOut).getTime() - new Date(room.checkIn).getTime()) / 86400000)
+    room.nights = Number.isFinite(diffDays) && diffDays > 0 ? diffDays : 0
   }
   room.total = calculateRoomTotal(room)
 
@@ -7436,6 +7424,8 @@ defineExpose({
                             v-if="isEditing" 
                             type="date" 
                             v-model="room.checkOut" 
+                            :disabled="!!room.hourly"
+                            :title="room.hourly ? 'Phòng đang bật ở theo giờ: ngày đi luôn bằng ngày đến' : ''"
                             @change="handleRowDateChangeInline(room)"
                             @click="$event.target.showPicker && $event.target.showPicker()"
                             class="date-span-input border border-slate-300 rounded px-1 py-0.5 text-xs font-semibold text-slate-800 bg-white shadow-sm text-center focus:outline-none inline-block mx-auto" 
@@ -7447,7 +7437,8 @@ defineExpose({
                             v-if="isEditing" 
                             type="number" 
                             v-model.number="room.nights" 
-                            min="1"
+                            min="0"
+                            :disabled="!!room.hourly"
                             @input="handleRowNightsChangeInline(room)"
                             @click.stop
                             class="border border-slate-300 rounded px-1 py-0.5 text-[11px] w-[50px] font-semibold focus:outline-none text-center bg-white mx-auto block" 
@@ -8117,6 +8108,8 @@ defineExpose({
                                     v-model="room.checkOut" 
                                     :min="activeTab?.checkIn || ''"
                                     :max="activeTab?.checkOut || ''"
+                                    :disabled="!!room.hourly"
+                                    :title="room.hourly ? 'Phòng đang bật ở theo giờ: ngày đi luôn bằng ngày đến' : ''"
                                     @change="handleRowDateChangeInline(room)"
                                     @click="$event.target.showPicker && $event.target.showPicker()"
                                     class="date-span-input border border-sky-200 rounded px-1 py-0.5 text-xs font-semibold text-sky-900 bg-sky-50 shadow-sm text-center focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-400 inline-block mx-auto cursor-pointer" 
@@ -8128,7 +8121,8 @@ defineExpose({
                                     v-if="isEditing" 
                                     type="number" 
                                     v-model.number="room.nights" 
-                                    min="1"
+                                    min="0"
+                                    :disabled="!!room.hourly"
                                     @input="handleRowNightsChangeInline(room)"
                                     @click.stop
                                     class="border border-slate-300 rounded px-1 py-0.5 text-[11px] w-[50px] font-semibold focus:outline-none text-center bg-white mx-auto block" 

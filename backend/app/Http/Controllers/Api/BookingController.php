@@ -631,20 +631,20 @@ class BookingController extends Controller
 
                             $roomArrival = $parseDate($roomArrival);
                             $roomDeparture = $parseDate($roomDeparture);
+
+                            // A same-day room is day-use only when the room (or,
+                            // without a room flag, the booking) asks for it. A
+                            // same-day room without day-use is allowed: it does
+                            // not take AV and carries no room charge.
+                            $isRoomDayUse = ($roomArrival === $roomDeparture)
+                                && $this->detailDayUseFlag($detail, (bool) ($validated['is_day_use'] ?? false));
                             $detail = $this->applyConfiguredRateCodePricing(
                                 $detail,
                                 $alloc,
                                 $roomArrival,
-                                $roomDeparture
+                                $roomDeparture,
+                                $isRoomDayUse
                             );
-
-                            // A newly created same-day room is an explicit
-                            // day-use stay. Keep this separate from late
-                            // check-in, which updates an existing room row.
-                            $isRoomDayUse = ($roomArrival === $roomDeparture)
-                                && ((bool) ($validated['is_day_use'] ?? false)
-                                    || (bool) ($detail['is_day_use'] ?? $detail['hourly'] ?? false)
-                                    || true);
                             $roomRate = (float) ($detail['price'] ?? $alloc['price'] ?? 0);
 
                             $bRoom = \App\Models\BookingRoom::create([
@@ -1301,8 +1301,14 @@ class BookingController extends Controller
                 $booking->bookingRooms()
                     ->where('status', \App\Models\BookingRoom::STATUS_BOOKED)
                     ->get()
-                    ->each(function (\App\Models\BookingRoom $room) use ($booking, $dayUseChanged) {
-                        $roomDayUse = ($room->arrival_date->toDateString() === $room->departure_date->toDateString()) && (bool) $booking->is_day_use;
+                    ->each(function (\App\Models\BookingRoom $room) use ($booking, $dayUseChanged, $request) {
+                        // room_allocations carry the per-room day-use switch and
+                        // are applied below; the header flag only decides when
+                        // the request has no room detail.
+                        $sameDay = $room->arrival_date->toDateString() === $room->departure_date->toDateString();
+                        $roomDayUse = $sameDay && ($request->has('room_allocations') && is_array($request->room_allocations)
+                            ? (bool) $room->is_day_use
+                            : (bool) $booking->is_day_use);
                         $room->update(['is_day_use' => $roomDayUse]);
                         app(\App\Services\BookingRoomLifecycleService::class)
                             ->synchronize($room->fresh(), false, $dayUseChanged, false);
@@ -1469,25 +1475,21 @@ class BookingController extends Controller
                                 }
                             }
 
+                            // The room's own "Ở theo giờ" switch is authoritative.
+                            // A same-day room with the switch off stays a
+                            // non day-use room (no AV, no room charge).
+                            $isRoomDayUse = $roomArrival === $roomDeparture
+                                && $this->detailDayUseFlag(
+                                    $detail,
+                                    $bRoom ? (bool) $bRoom->is_day_use : (bool) $booking->is_day_use
+                                );
                             $detail = $this->applyConfiguredRateCodePricing(
                                 $detail,
                                 $alloc,
                                 $roomArrival,
-                                $roomDeparture
+                                $roomDeparture,
+                                $isRoomDayUse
                             );
-
-                            $detailDayUse = (bool) ($detail['is_day_use'] ?? $detail['hourly'] ?? false);
-                            if ($roomArrival !== $roomDeparture) {
-                                $isRoomDayUse = false;
-                            } else {
-                                $isRoomDayUse = $detailDayUse || (bool) $booking->is_day_use;
-                                // Same-day drafts are day-use when first created;
-                                // do not infer this for an existing row because a
-                                // late check-in may also end up on one date.
-                                if (!$bRoom && $roomArrival === $roomDeparture) {
-                                    $isRoomDayUse = true;
-                                }
-                            }
                             $roomRate = (float) ($detail['price'] ?? $alloc['price'] ?? ($bRoom?->rate ?? 0));
 
                             $roomData = [
@@ -1543,16 +1545,18 @@ class BookingController extends Controller
                                 \App\Models\BookingRoomService::CODE_EXTRA_BED,
                                 \App\Models\BookingRoomService::catalogCode(\App\Models\BookingRoomService::CODE_EXTRA_BED),
                             ])->unique()->values()->all();
-                            if (!$bRoom->is_day_use) {
-                                \App\Models\BookingRoomService::where('booking_room_id', $bRoom->id)
-                                    ->whereIn('service_code', $stayBoundServiceCodes)
-                                    ->where('is_posted', 0)
-                                    ->where(function ($query) use ($bRoom) {
-                                        $query->where('service_date', '>=', $bRoom->departure_date->toDateString())
-                                            ->orWhere('service_date', '<', $bRoom->arrival_date->toDateString());
-                                    })
-                                    ->delete();
-                            }
+                            // Day-use keeps its single charge on the arrival date.
+                            $stayEnd = $bRoom->is_day_use
+                                ? $bRoom->arrival_date->copy()->addDay()->toDateString()
+                                : $bRoom->departure_date->toDateString();
+                            \App\Models\BookingRoomService::where('booking_room_id', $bRoom->id)
+                                ->whereIn('service_code', $stayBoundServiceCodes)
+                                ->where('is_posted', 0)
+                                ->where(function ($query) use ($bRoom, $stayEnd) {
+                                    $query->where('service_date', '>=', $stayEnd)
+                                        ->orWhere('service_date', '<', $bRoom->arrival_date->toDateString());
+                                })
+                                ->delete();
 
                             if ($roomStayChanged) {
                                 // Keep child-breakfast price and surcharge flags,
@@ -3700,11 +3704,27 @@ class BookingController extends Controller
     /**
      * Resolve an existing Rate Code from persisted setup instead of trusting prices sent by the browser.
      */
+    /**
+     * Per-room "Ở theo giờ" switch sent by the registration screen. When the
+     * client did not send it, fall back to the caller's default.
+     */
+    private function detailDayUseFlag(array $detail, bool $default): bool
+    {
+        foreach (['is_day_use', 'hourly'] as $key) {
+            if (array_key_exists($key, $detail) && $detail[$key] !== null) {
+                return filter_var($detail[$key], FILTER_VALIDATE_BOOLEAN);
+            }
+        }
+
+        return $default;
+    }
+
     private function applyConfiguredRateCodePricing(
         array $detail,
         array $allocation,
         ?string $arrivalDate,
-        ?string $departureDate
+        ?string $departureDate,
+        bool $isDayUse = false
     ): array {
         $rateCodeValue = array_key_exists('rateCode', $detail)
             ? $detail['rateCode']
@@ -3753,6 +3773,10 @@ class BookingController extends Controller
         $arrival = Carbon::parse($arrivalDate)->startOfDay();
         $departure = Carbon::parse($departureDate)->startOfDay();
         $dailyPrices = [];
+        // A day-use room is charged once, on its arrival date.
+        if ($isDayUse && $departure->equalTo($arrival)) {
+            $departure = $arrival->copy()->addDay();
+        }
 
         for ($date = $arrival->copy(); $date->lt($departure); $date->addDay()) {
             $dailyPrices[$date->toDateString()] = $this->resolvePersistedRateCodePrice(

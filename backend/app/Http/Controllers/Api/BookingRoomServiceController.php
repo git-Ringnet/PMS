@@ -2457,7 +2457,11 @@ class BookingRoomServiceController extends Controller
         }
 
         $stayStart = Carbon::parse($room?->arrival_date ?: $booking->arrival_date)->startOfDay();
-        $stayEnd = Carbon::parse($room?->departure_date ?: $booking->departure_date)->startOfDay()->subDay();
+        $rawDeparture = Carbon::parse($room?->departure_date ?: $booking->departure_date)->startOfDay();
+        $isDayUseRoom = (bool) ($room?->is_day_use || $booking?->is_day_use);
+        $stayEnd = ($isDayUseRoom && $rawDeparture->equalTo($stayStart))
+            ? $stayStart->copy()
+            : $rawDeparture->copy()->subDay();
         if ($stayEnd->lt($stayStart)
             || $dateFrom->copy()->startOfDay()->lt($stayStart)
             || $dateTo->copy()->startOfDay()->gt($stayEnd)) {
@@ -2526,7 +2530,10 @@ class BookingRoomServiceController extends Controller
                 $current = $dateFrom->copy()->startOfDay();
                 $roomArrival = Carbon::parse($targetRoom->arrival_date)->startOfDay();
                 $roomDeparture = Carbon::parse($targetRoom->departure_date ?: $booking?->departure_date)->startOfDay();
-                $roomLastOccupiedNight = $roomDeparture->copy()->subDay();
+                $isTargetDayUse = (bool) ($targetRoom->is_day_use || $booking?->is_day_use);
+                $roomLastOccupiedNight = ($isTargetDayUse && $roomDeparture->equalTo($roomArrival))
+                    ? $roomArrival->copy()
+                    : $roomDeparture->copy()->subDay();
                 if ($isBookingPost && $current->lt($roomArrival)) {
                     $current = $roomArrival->copy();
                 }
