@@ -169,6 +169,101 @@ class BookingRoomControllerSectionFixesTest extends TestCase
         $this->assertDatabaseHas('bookings', ['id' => $booking->id, 'status' => Booking::STATUS_RESERVATION]);
     }
 
+    public function test_checkin_and_undo_checkin_updates_actual_arrival_time_and_audit_fields_in_booking_rooms_and_guests(): void
+    {
+        $room = Room::create([
+            'room_number' => '201',
+            'room_form_id' => $this->roomForm->id,
+            'room_class_id' => $this->roomClass->id,
+            'floor' => '2',
+            'room_status_code' => 'vacant_ready',
+        ]);
+
+        $booking = $this->makeBooking();
+        $bookingRoom = BookingRoom::create([
+            'booking_id' => $booking->id,
+            'room_number' => '201',
+            'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-08',
+            'arrival_time' => null,
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $guest = \App\Models\Guest::create([
+            'full_name' => 'Nguyen Van A',
+            'guest_status' => \App\Models\Guest::STATUS_ACTIVE,
+        ]);
+
+        $roomGuest = \App\Models\BookingRoomGuest::create([
+            'booking_room_id' => $bookingRoom->id,
+            'guest_id' => $guest->id,
+            'is_primary' => true,
+            'status' => BookingRoom::STATUS_BOOKED,
+            'actual_arrival_date' => '2026-08-07',
+            'actual_arrival_time' => null,
+            'checkin_by' => null,
+        ]);
+
+        $child = \App\Models\BookingChild::create([
+            'booking_id' => $booking->id,
+            'booking_room_id' => $bookingRoom->id,
+            'full_name' => 'Nguyen Be B',
+            'child_status' => \App\Models\BookingRoomGuest::STATUS_ACTIVE,
+        ]);
+
+        $childAssignment = \App\Models\BookingRoomChild::where('booking_child_id', $child->id)
+            ->where('booking_room_id', $bookingRoom->id)
+            ->first();
+
+        // Check-in
+        $this->patchJson("/api/bookings/{$booking->id}/rooms/{$bookingRoom->id}/check-in", [
+            'arrival_time' => '14:35:00',
+        ])->assertSuccessful();
+
+        // 1. Kiểm tra bảng booking_rooms
+        $freshRoom = $bookingRoom->fresh();
+        $this->assertSame(BookingRoom::STATUS_CHECKED_IN, (int) $freshRoom->status);
+        $this->assertSame('14:35:00', $freshRoom->arrival_time);
+        $this->assertSame('2026-08-07', $freshRoom->actual_arrival_date->toDateString());
+        $this->assertSame($this->user->username, $freshRoom->check_in_user);
+
+        // 2. Kiểm tra bảng booking_room_guests
+        $freshGuest = $roomGuest->fresh();
+        $this->assertSame(\App\Models\BookingRoomGuest::STATUS_CHECKED_IN, (int) $freshGuest->status);
+        $this->assertSame('14:35:00', $freshGuest->actual_arrival_time);
+        $this->assertSame('2026-08-07', $freshGuest->actual_arrival_date->toDateString());
+        $this->assertSame($this->user->username, $freshGuest->checkin_by);
+
+        // 3. Kiểm tra bảng booking_room_children & booking_children
+        $freshChildAssignment = $childAssignment->fresh();
+        $this->assertSame(\App\Models\BookingRoomGuest::STATUS_CHECKED_IN, (int) $freshChildAssignment->status);
+        $this->assertSame('14:35:00', $freshChildAssignment->actual_arrival_time);
+        $this->assertSame('2026-08-07', $freshChildAssignment->actual_arrival_date->toDateString());
+        $this->assertSame($this->user->username, $freshChildAssignment->checkin_by);
+        $this->assertSame(\App\Models\BookingRoomGuest::STATUS_CHECKED_IN, (int) $child->fresh()->child_status);
+
+        // 4. Undo check-in
+        $this->postJson("/api/bookings/{$booking->id}/rooms/{$bookingRoom->id}/undo-checkin", [
+            'room_status_code' => 'vacant_ready',
+        ])->assertSuccessful();
+
+        $freshRoomAfterUndo = $bookingRoom->fresh();
+        $this->assertSame(BookingRoom::STATUS_BOOKED, (int) $freshRoomAfterUndo->status);
+        $this->assertNull($freshRoomAfterUndo->check_in_user);
+
+        $freshGuestAfterUndo = $roomGuest->fresh();
+        $this->assertSame(BookingRoom::STATUS_BOOKED, (int) $freshGuestAfterUndo->status);
+        $this->assertNull($freshGuestAfterUndo->actual_arrival_time);
+        $this->assertNull($freshGuestAfterUndo->checkin_by);
+
+        $freshChildAfterUndo = $childAssignment->fresh();
+        $this->assertSame(\App\Models\BookingRoomGuest::STATUS_ACTIVE, (int) $freshChildAfterUndo->status);
+        $this->assertNull($freshChildAfterUndo->actual_arrival_time);
+        $this->assertNull($freshChildAfterUndo->checkin_by);
+        $this->assertSame(\App\Models\BookingRoomGuest::STATUS_ACTIVE, (int) $child->fresh()->child_status);
+    }
+
     private function makeBooking(array $attributes = []): Booking
     {
         return Booking::create(array_merge([

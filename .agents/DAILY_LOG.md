@@ -19,6 +19,29 @@
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
 
+## [2026-10-15] - Cập nhật giờ check-in thực tế vào bảng booking_rooms, booking_room_guests và booking_room_children (Dòng 257)
+### Module: Đặt phòng / Lễ tân ([BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [BookingRoomControllerSectionFixesTest.php](file:///d:/PMS/backend/tests/Feature/Booking/BookingRoomControllerSectionFixesTest.php))
+
+- **1. Hiện tượng & Vấn đề (Dòng 257 Sheet THEO DÕI VẤN ĐỀ CẦN ĐIỀU CHỈNH / Checklist Lễ tân R190)**:
+  - Khi thực hiện check-in (giao phòng) từ bất kỳ màn hình nào (Sơ đồ phòng, Kế hoạch phòng, Danh sách Check-in, Màn hình Tạo đăng ký, Tìm kiếm tổng hợp, Nhận phòng nhanh), bảng `booking_rooms` và bảng `booking_room_guests` không cập nhật lại giờ check-in thực tế.
+  - Bảng `booking_rooms` chỉ cập nhật `status = 1`, `check_in_user` và `actual_arrival_date`, bỏ qua cột `arrival_time` (vẫn giữ giờ dự kiến ban đầu hoặc null).
+  - Bảng `booking_room_guests` chỉ cập nhật `status = 1`, hoàn toàn bỏ qua cột `actual_arrival_time` (vẫn null), `actual_arrival_date` và `checkin_by`.
+  - Bảng `booking_room_children` và `booking_children` chưa đồng bộ `status = 1` và thông tin kiểm toán lưu trú khi check-in phòng.
+- **2. Xử lý**:
+  - Tại hàm `checkIn()` ([BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php)):
+    - Lấy giờ check-in thực tế: `$checkInTime = $request->input('arrival_time') ?: ($request->input('check_in_time') ?: now()->format('H:i:s'))`.
+    - Bổ sung cập nhật `arrival_time => $checkInTime` vào bảng `booking_rooms`.
+    - Bổ sung cập nhật `actual_arrival_time => $checkInTime`, `actual_arrival_date => $checkInDate`, `checkin_by => $currentUser` vào bảng `booking_room_guests`.
+    - Đồng bộ `actual_arrival_time => $checkInTime`, `actual_arrival_date => $checkInDate`, `checkin_by => $currentUser`, `status => 1` cho `booking_room_children` và `child_status => 1` cho `booking_children`.
+  - Tại hàm `undoCheckIn()` ([BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php)):
+    - Reset `check_in_user = null` trong `booking_rooms`.
+    - Reset `actual_arrival_time = null`, `checkin_by = null` trong `booking_room_guests` và `booking_room_children`.
+    - Reset `child_status = 0` trong `booking_children`.
+- **3. Kiểm thử**:
+  - Viết mới test `test_checkin_and_undo_checkin_updates_actual_arrival_time_and_audit_fields_in_booking_rooms_and_guests` trong [BookingRoomControllerSectionFixesTest.php](file:///d:/PMS/backend/tests/Feature/Booking/BookingRoomControllerSectionFixesTest.php).
+  - Backend: Pass 121/121 tests `Feature/Booking`.
+  - Frontend: Pass 94/94 tests `tests/*.test.js`.
+
 ## [2026-10-14] - Booking 4: sửa 11 section theo "các lỗi liên quan tới booking 4.docx"
 ### Module: Đặt phòng / Lễ tân. Plan: [PLAN_FIX_LOI_BOOKING_4.md](file:///d:/PMS/PLAN_FIX_LOI_BOOKING_4.md), test tay: [docs/booking-4/TEST_TRUC_TIEP.md](file:///d:/PMS/docs/booking-4/TEST_TRUC_TIEP.md)
 

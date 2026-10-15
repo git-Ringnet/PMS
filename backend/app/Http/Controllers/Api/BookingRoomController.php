@@ -848,13 +848,19 @@ class BookingRoomController extends Controller
             }
         }
 
+        $currentUser = Auth::user()?->username ?? 'system';
+        $checkInTime = $request->input('arrival_time')
+            ?: ($request->input('check_in_time') ?: now()->format('H:i:s'));
+        $checkInDate = $systemDate->toDateString();
+
         DB::beginTransaction();
         try {
             $bookingRoom->update([
                 'status'              => BookingRoom::STATUS_CHECKED_IN,
-                'check_in_user'       => Auth::user()?->username ?? 'system',
-                'actual_arrival_date' => $bookingRoom->actual_arrival_date ?? $bookingRoom->arrival_date,
-                'updated_by'          => Auth::user()?->username ?? 'system',
+                'check_in_user'       => $currentUser,
+                'actual_arrival_date' => $bookingRoom->actual_arrival_date ?? $checkInDate,
+                'arrival_time'        => $checkInTime,
+                'updated_by'          => $currentUser,
             ]);
 
             if ($bookingRoom->room_number) {
@@ -875,11 +881,25 @@ class BookingRoomController extends Controller
                 }
             }
 
-            // Đồng bộ status cho khách sang CHECKED_IN
+            // Đồng bộ status và thông tin lưu trú thực tế cho khách sang CHECKED_IN
             $bookingRoom->guests()->update([
-                'status' => BookingRoom::STATUS_CHECKED_IN
+                'status'              => BookingRoom::STATUS_CHECKED_IN,
+                'actual_arrival_date' => $bookingRoom->actual_arrival_date ?? $checkInDate,
+                'actual_arrival_time' => $checkInTime,
+                'checkin_by'          => $currentUser,
             ]);
             app(\App\Services\GuestStatusSyncService::class)->syncForGuestIds($bookingRoom->guests()->pluck('guest_id'));
+
+            // Đồng bộ cho trẻ em trong phòng nếu có
+            $bookingRoom->childAssignments()->update([
+                'status'              => BookingRoomGuest::STATUS_CHECKED_IN,
+                'actual_arrival_date' => $bookingRoom->actual_arrival_date ?? $checkInDate,
+                'actual_arrival_time' => $checkInTime,
+                'checkin_by'          => $currentUser,
+            ]);
+            $bookingRoom->children()->update([
+                'child_status' => BookingRoomGuest::STATUS_CHECKED_IN,
+            ]);
 
             // Chỉ cần một phòng in-house là booking đã bắt đầu lưu trú.
             // Service đọc lại status trong transaction để cả check-in từng
@@ -984,8 +1004,9 @@ class BookingRoomController extends Controller
         DB::beginTransaction();
         try {
             $bookingRoom->update([
-                'status'     => BookingRoom::STATUS_BOOKED,
-                'updated_by' => Auth::user()?->username ?? 'system',
+                'status'        => BookingRoom::STATUS_BOOKED,
+                'check_in_user' => null,
+                'updated_by'    => Auth::user()?->username ?? 'system',
             ]);
 
             if ($bookingRoom->room_number) {
@@ -996,9 +1017,20 @@ class BookingRoomController extends Controller
 
             // Đồng bộ status cho khách về BOOKED
             $bookingRoom->guests()->update([
-                'status' => BookingRoom::STATUS_BOOKED
+                'status'              => BookingRoom::STATUS_BOOKED,
+                'actual_arrival_time' => null,
+                'checkin_by'          => null,
             ]);
             app(\App\Services\GuestStatusSyncService::class)->syncForGuestIds($bookingRoom->guests()->pluck('guest_id'));
+
+            $bookingRoom->childAssignments()->update([
+                'status'              => BookingRoomGuest::STATUS_ACTIVE,
+                'actual_arrival_time' => null,
+                'checkin_by'          => null,
+            ]);
+            $bookingRoom->children()->update([
+                'child_status' => BookingRoomGuest::STATUS_ACTIVE,
+            ]);
 
             // Có phòng in-house khác thì vẫn giữ header = 1; nếu đây là
             // phòng in-house cuối cùng, giữ quy tắc cũ quay về reservation.
