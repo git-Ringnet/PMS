@@ -52,9 +52,10 @@ const getImageUrl = (path) => {
   if (path.startsWith('http://') || path.startsWith('https://')) {
     return path
   }
+  const cleanPath = path.startsWith('/') ? path.slice(1) : path
   const isDev = import.meta.env.DEV
   const backendUrl = import.meta.env.VITE_PROXY_TARGET || 'http://localhost:8000'
-  return isDev ? `${backendUrl}/${path}` : `/${path}`
+  return isDev ? `${backendUrl}/${cleanPath}` : `/${cleanPath}`
 }
 
 const logoInput = ref(null)
@@ -68,18 +69,16 @@ const onLogoSelected = async (event) => {
 
   loading.value = true
   try {
-    const res = await http.post('/hotel-settings/logo', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
-    })
-    if (res.data && res.data.data) {
-      hotelForm.logo_url = res.data.data.logo_url
+    const res = await http.post('/hotel-settings/logo', formData)
+    const logoUrl = res.data?.data?.logo_url ?? res.data?.logo_url
+    if (logoUrl !== undefined) {
+      hotelForm.logo_url = logoUrl
       uiStore.showToast('Tải lên logo thành công!', 'success')
     }
   } catch (err) {
     console.error('Lỗi khi tải lên logo:', err)
-    uiStore.showToast('Không thể tải lên logo', 'error')
+    const errorMsg = err?.response?.data?.message || err?.response?.data?.errors?.logo?.[0] || 'Không thể tải lên logo'
+    uiStore.showToast(errorMsg, 'error')
   } finally {
     loading.value = false
     if (logoInput.value) logoInput.value.value = ''

@@ -18,6 +18,25 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-10-15] - Sửa lỗi không thể tải lên logo khách sạn trong Định nghĩa khách sạn (Dòng 388)
+### Module: Cấu hình hệ thống ([HotelSettingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/HotelSettingController.php), [HotelInfoTab.vue](file:///d:/PMS/frontend/src/pages/config/components/hotel/HotelInfoTab.vue))
+
+- **1. Hiện tượng & Vấn đề (Dòng 388 Sheet THEO DÕI VẤN ĐỀ CẦN ĐIỀU CHỈNH / Cấu hình - Định nghĩa khách sạn)**:
+  - Khi người dùng chọn ảnh logo để tải lên, hệ thống hiển thị thông báo lỗi "Không thể tải lên logo".
+  - Nguyên nhân:
+    - Backend: Luật validation `required|image|max:2048` chặn các file ảnh SVG (Laravel rule `image` không nhận SVG) và file dung lượng > 2MB. Thư mục `public/uploads/hotel` chưa được tạo tự động nếu chưa tồn tại. Tên file lưu nguyên bản `getClientOriginalName()` dễ bị lỗi ký tự tiếng Việt / khoảng trắng.
+    - Frontend: Truyền thủ công header `'Content-Type': 'multipart/form-data'` làm mất boundary phân tách multipart của Axios, hàm `getImageUrl` xử lý đường dẫn chưa triệt để các dấu gạch chéo đầu, và hiển thị thông báo lỗi chung chung che giấu thông báo cụ thể từ backend.
+- **2. Xử lý**:
+  - *Backend ([HotelSettingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/HotelSettingController.php))*:
+    - Mở rộng validation cho cả `uploadLogo` và `uploadQrCode`: `'required|file|mimes:jpeg,png,jpg,gif,svg,webp|max:10240'` (hỗ trợ tối đa 10MB và đầy đủ các định dạng ảnh phổ biến gồm cả SVG, WEBP).
+    - Tự động tạo thư mục `public/uploads/hotel` bằng `File::makeDirectory()` nếu chưa tồn tại.
+    - Chuẩn hóa tên file an toàn: `logo_{timestamp}_{uniqid}.{ext}` và `qr_{timestamp}_{uniqid}.{ext}`.
+  - *Frontend ([HotelInfoTab.vue](file:///d:/PMS/frontend/src/pages/config/components/hotel/HotelInfoTab.vue))*:
+    - Bỏ khai báo thủ công header `Content-Type` để Axios tự động gán đúng boundary multipart.
+    - Xử lý linh hoạt cả hai định dạng response `res.data?.data?.logo_url` và `res.data?.logo_url`.
+    - Trích xuất thông báo lỗi chi tiết từ backend hiển thị lên toast thay vì chỉ báo một lỗi cố định.
+    - Chuẩn hóa `cleanPath` trong `getImageUrl` để tránh double slashes.
+  - *Kiểm thử*: Kiểm tra 94/94 test frontend pass, 120/120 test backend pass, `npm run build` thành công.
 
 ## [2026-10-15] - Kiểm thử tính năng "Ở theo giờ" (Day use) & Phòng đi cùng ngày (TC1 - TC8 & Regression D)
 ### Module: Đặt phòng / Lễ tân ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [BookingRoomStayChargeService.php](file:///d:/PMS/backend/app/Services/BookingRoomStayChargeService.php), [NightAuditController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/NightAuditController.php))
