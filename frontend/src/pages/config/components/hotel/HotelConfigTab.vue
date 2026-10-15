@@ -20,23 +20,17 @@ const modalPos = ref({ x: 0, y: 0 })
 const isDraggingModal = ref(false)
 let dragStart = { x: 0, y: 0 }
 let rafId = null
+let latestX = 0
+let latestY = 0
 
-function startDragModal(e) {
-  const ignoreTags = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A', 'LABEL']
-  if (ignoreTags.includes(e.target.tagName) || e.target.closest('button, input, select, textarea, a, label')) return
-  isDraggingModal.value = true
-  dragStart.x = e.clientX - modalPos.value.x
-  dragStart.y = e.clientY - modalPos.value.y
-  document.addEventListener('mousemove', dragModal)
-  document.addEventListener('mouseup', stopDragModal)
-}
-
-function dragModal(e) {
+function dragModal(moveEvent) {
   if (!isDraggingModal.value) return
+  latestX = moveEvent.clientX
+  latestY = moveEvent.clientY
   if (rafId) return
   rafId = requestAnimationFrame(() => {
-    modalPos.value.x = e.clientX - dragStart.x
-    modalPos.value.y = e.clientY - dragStart.y
+    modalPos.value.x = latestX - dragStart.x
+    modalPos.value.y = latestY - dragStart.y
     rafId = null
   })
 }
@@ -49,6 +43,21 @@ function stopDragModal() {
   }
   document.removeEventListener('mousemove', dragModal)
   document.removeEventListener('mouseup', stopDragModal)
+}
+
+function startDragModal(e) {
+  const ignoreTags = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A', 'LABEL']
+  if (ignoreTags.includes(e.target.tagName) || e.target.closest('button, input, select, textarea, a, label')) return
+  
+  e.preventDefault()
+  isDraggingModal.value = true
+  dragStart.x = e.clientX - modalPos.value.x
+  dragStart.y = e.clientY - modalPos.value.y
+  latestX = e.clientX
+  latestY = e.clientY
+
+  document.addEventListener('mousemove', dragModal)
+  document.addEventListener('mouseup', stopDragModal)
 }
 
 // Standard hotel roles/positions to ensure all common roles are available in dropdown
@@ -458,7 +467,7 @@ onBeforeUnmount(() => {
     <div v-if="isConfigModalOpen"
       class="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-xs select-none p-4">
       <div
-        class="bg-white rounded-xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200"
+        class="bg-white rounded-xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-200"
         :style="{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }">
         <!-- Modal Header (Draggable, Title Case, Theme Sync) -->
         <div class="px-5 py-3 flex items-center justify-between text-white cursor-move select-none rounded-t-xl bg-[#006bdb]"

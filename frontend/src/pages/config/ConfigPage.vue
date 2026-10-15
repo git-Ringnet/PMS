@@ -15,12 +15,22 @@ const route = useRoute()
 // View state: 'menu', 'hotel', 'room', 'system', 'rate', 'database-backup'
 const currentView = ref(route.query.view || 'menu')
 
+// Ghi nhớ trang trước đó khi vào Cấu hình hệ thống
+const entryBackRoute = ref('')
+const initialHistoryBack = window.history.state?.back
+if (initialHistoryBack && !initialHistoryBack.startsWith('/config') && initialHistoryBack !== '/' && initialHistoryBack !== '/login') {
+  entryBackRoute.value = initialHistoryBack
+  sessionStorage.setItem('pms_config_entry_route', initialHistoryBack)
+} else {
+  entryBackRoute.value = sessionStorage.getItem('pms_config_entry_route') || ''
+}
+
 // Update currentView when query changes
 watch(() => route.query.view, (newVal) => {
   currentView.value = newVal || 'menu'
 })
 
-// Update query when currentView changes
+// Update query when currentView changes (dùng replace để không làm phình browser history)
 watch(currentView, (newVal) => {
   if (route.query.view !== newVal) {
     const query = { ...route.query }
@@ -31,7 +41,7 @@ watch(currentView, (newVal) => {
       query.view = newVal
       delete query.tab // reset tab when changing view
     }
-    router.push({ query })
+    router.replace({ query })
   }
 })
 
@@ -49,7 +59,12 @@ function updateActiveTab(newTab) {
 
 function handleBack() {
   if (currentView.value === 'menu') {
-    router.push('/')
+    const target = entryBackRoute.value || sessionStorage.getItem('pms_config_entry_route')
+    if (target && !target.startsWith('/config') && target !== '/' && target !== '/login') {
+      router.push(target)
+    } else {
+      router.push('/pms')
+    }
   } else {
     currentView.value = 'menu'
   }
@@ -58,11 +73,11 @@ function handleBack() {
 
 <template>
   <div class="h-full flex flex-col">
-    <div class="flex-1 bg-slate-50 p-6 flex flex-col gap-4 min-h-0 text-slate-800">
+    <div class="flex-1 bg-slate-50 p-3 sm:p-4 flex flex-col gap-2.5 min-h-0 text-slate-800">
     
     <!-- Header: Dynamic Back Arrow & View Title -->
     <div class="flex items-center justify-between shrink-0">
-      <div class="flex items-center gap-4">
+      <div class="flex items-center gap-2">
         <button 
           @click="handleBack"
           class="flex items-center gap-2 text-slate-600 hover:text-slate-900 font-black bg-transparent border-none cursor-pointer text-base"
@@ -189,8 +204,8 @@ function handleBack() {
     <!-- VIEW 2: DỊCH VỤ / TÁC VỤ CHI TIẾT -->
     <template v-else>
       <div 
-        class="flex-1 flex flex-col min-h-0 overflow-y-auto"
-        :class="currentView === 'database-backup' ? 'p-1' : 'bg-white rounded-xl shadow-xs border border-slate-200 p-6'"
+        class="flex-1 flex flex-col min-h-0 overflow-hidden"
+        :class="currentView === 'database-backup' ? 'p-1' : 'bg-white rounded-xl shadow-xs border border-slate-200 p-3 sm:p-4'"
       >
         <HotelDefinition 
           v-if="currentView === 'hotel'" 
