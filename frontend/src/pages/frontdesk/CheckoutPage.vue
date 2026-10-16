@@ -4239,7 +4239,7 @@ onUnmounted(() => {
       :bookingId="selectedBooking ? selectedBooking.bookingId : ''"
       :arrivalDate="selectedRoomItem?.rawRoom?.arrival_date || selectedBooking?.arrivalDate || ''"
       :departureDate="selectedRoomItem?.rawRoom?.departure_date || selectedBooking?.departureDate || ''"
-      :isDayUse="Boolean(selectedRoomItem?.rawRoom?.is_day_use || selectedBooking?.rawBooking?.is_day_use || selectedBooking?.is_day_use || (selectedRoomItem?.rawRoom?.arrival_date && selectedRoomItem?.rawRoom?.departure_date && String(selectedRoomItem.rawRoom.arrival_date).slice(0, 10) === String(selectedRoomItem.rawRoom.departure_date).slice(0, 10)))"
+      :isDayUse="Boolean(selectedRoomItem?.rawRoom?.is_day_use || selectedRoomItem?.is_day_use || selectedBooking?.rawBooking?.is_day_use || selectedBooking?.is_day_use || (selectedRoomItem?.rawRoom?.arrival_date && selectedRoomItem?.rawRoom?.departure_date && String(selectedRoomItem.rawRoom.arrival_date).slice(0, 10) === String(selectedRoomItem.rawRoom.departure_date).slice(0, 10)))"
       :roomRate="Number(selectedRoomItem ? (selectedRoomItem.rate ?? selectedRoomItem.roomRate ?? selectedRoomItem.rawRoom?.rate ?? selectedRoomItem.rawRoom?.room_rate ?? 0) : (selectedBooking?.roomItems?.[0]?.rate ?? selectedBooking?.roomItems?.[0]?.roomRate ?? selectedBooking?.roomItems?.[0]?.rawRoom?.rate ?? selectedBooking?.roomItems?.[0]?.rawRoom?.room_rate ?? 0))"
       :roomAdjustment="roomAdjustment"
       :systemDate="systemDate"

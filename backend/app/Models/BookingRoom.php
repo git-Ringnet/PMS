@@ -141,7 +141,7 @@ class BookingRoom extends Model
                     $diff = $arr->diffInDays($dep);
                     $model->ActutalNumOfDays = $model->is_day_use
                         ? 0
-                        : (((int)$model->status === self::STATUS_MOVED) ? $diff : ($diff > 0 ? $diff : 1));
+                        : (((int)$model->status === self::STATUS_MOVED) ? $diff : max(0, $diff));
                 }
             }
 
@@ -257,7 +257,11 @@ class BookingRoom extends Model
                 } elseif ((int)$model->status === self::STATUS_MOVED) {
                     $model->ActutalNumOfDays = $diff;
                 } elseif ($model->ActutalNumOfDays === null || $model->isDirty('arrival_date') || $model->isDirty('departure_date') || $model->isDirty('is_day_use')) {
-                    $model->ActutalNumOfDays = $diff > 0 ? $diff : 1;
+                    // A same-day reservation without day-use has zero nights
+                    // (no AV, no room charge). Late check-in keeps one night.
+                    $model->ActutalNumOfDays = $diff > 0
+                        ? $diff
+                        : ((int) $model->status === self::STATUS_BOOKED ? 0 : 1);
                 }
             }
 

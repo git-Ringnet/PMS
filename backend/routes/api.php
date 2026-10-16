@@ -167,6 +167,9 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     Route::delete('departments/{department}/services/{hotelService}', [\App\Http\Controllers\Api\DepartmentController::class, 'detachService']);
     Route::apiResource('shifts', \App\Http\Controllers\Api\ShiftController::class);
     Route::apiResource('hotel-configs', \App\Http\Controllers\Api\HotelConfigController::class);
+    Route::get('portal-wallpaper', [\App\Http\Controllers\Api\PortalWallpaperController::class, 'getWallpaper']);
+    Route::post('portal-wallpaper', [\App\Http\Controllers\Api\PortalWallpaperController::class, 'updateWallpaper'])->middleware('permission:system.setting');
+    Route::delete('portal-wallpaper', [\App\Http\Controllers\Api\PortalWallpaperController::class, 'resetWallpaper'])->middleware('permission:system.setting');
     Route::post('templates/{id}/duplicate', [\App\Http\Controllers\Api\TemplateController::class, 'duplicate']);
     Route::post('templates/{id}/make-default', [\App\Http\Controllers\Api\TemplateController::class, 'makeDefault']);
     Route::post('templates/{id}/remove-default', [\App\Http\Controllers\Api\TemplateController::class, 'removeDefault']);
@@ -425,10 +428,12 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     Route::put('bookings/{booking}', [\App\Http\Controllers\Api\BookingController::class, 'update'])->middleware('permission:fo.booking.edit');
     Route::delete('bookings/{booking}', [\App\Http\Controllers\Api\BookingController::class, 'destroy'])->middleware('permission:fo.booking.cancel');
     Route::patch('bookings/{bookingId}/no-post', [\App\Http\Controllers\Api\BookingNoPostController::class, 'updateBooking'])->middleware(['permission:fo.booking.edit', \App\Http\Middleware\RequireFrontDeskInvoiceMutation::class]);
+    Route::get('bookings/{id}/print-data', [\App\Http\Controllers\Api\BookingPrintController::class, 'getPrintData']);
 
     // #19 — Nhân bản booking
     Route::post('bookings/{id}/copy', [\App\Http\Controllers\Api\BookingController::class, 'copy'])->middleware('permission:fo.booking.create');
     // #22 — Khôi phục booking đã hủy
+    Route::get('bookings/{id}/cancelled-rooms', [\App\Http\Controllers\Api\BookingController::class, 'cancelledRooms']);
     Route::post('bookings/{id}/restore', [\App\Http\Controllers\Api\BookingController::class, 'restore'])->middleware('permission:fo.booking.edit');
     // Khôi phục booking noshow
     Route::post('bookings/{id}/revert-noshow', [\App\Http\Controllers\Api\BookingController::class, 'revertNoshow'])->middleware('permission:fo.booking.edit');

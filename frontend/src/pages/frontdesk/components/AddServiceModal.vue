@@ -22,6 +22,7 @@ const props = defineProps({
   systemDate:    { type: String, default: '' },
   isNoPost:      { type: Boolean, default: false },
   roomChargeNoPost: { type: Boolean, default: false },
+  isDayUse:         { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['close', 'success'])

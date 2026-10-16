@@ -220,27 +220,98 @@ class BookingRoomServiceController extends Controller
             ], 422);
         }
 
-        // Nếu số lượng <= 0 → Xóa dịch vụ của ngày này nếu có
-        if (isset($request->quantity) && (float)$request->quantity <= 0) {
-            BookingRoomService::where('booking_room_id', $roomId)
-                ->where('service_code', $request->service_code)
-                ->where('service_date', $request->service_date)
-                ->where('is_posted', 0)
-                ->delete();
+        // Booking_BFChildSetServiceId trùng mã dịch vụ "Breakfast Child": phụ
+        // thu ăn sáng trẻ chỉ lưu ở booking_child_breakfast_details.
+        $childBreakfast = app(\App\Services\ChildBreakfastService::class);
+        if ($childBreakfast->isDetailMode() && $childBreakfast->isChildBreakfastCode($request->service_code)) {
+            $updated = DB::transaction(fn () => $childBreakfast->applyServiceRate(
+                $room,
+                Carbon::parse($request->service_date)->toDateString(),
+                (float) ($request->rate ?? 0),
+                (float) ($request->quantity ?? 1),
+                $request->has('is_room') ? $request->boolean('is_room') : null,
+            ));
 
-            if ($request->service_code === BookingRoomService::CODE_EXTRA_BED) {
+            if ($updated === 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Phòng chưa có trẻ em để áp dụng phụ thu ăn sáng trẻ em.',
+                ], 422);
+            }
+
+            return response()->json([
+                'success' => true,
+                'child_breakfast' => true,
+                'message' => 'Đã cập nhật phụ thu ăn sáng trẻ em vào chi tiết ăn sáng.',
+            ]);
+        }
+
+        // Nếu số lượng <= 0:
+        if (isset($request->quantity) && (float)$request->quantity <= 0) {
+            $isEb = $request->service_code === BookingRoomService::CODE_EXTRA_BED
+                || $request->service_code === 'EB'
+                || strcasecmp((string)$request->service_code, BookingRoomService::catalogCode(BookingRoomService::CODE_EXTRA_BED)) === 0;
+
+            if ($isEb) {
+                // Đối với Extra Bed: Cập nhật quantity = 0, total_amount = 0 vào booking_room_services (giữ record với sl = 0)
+                $ebDate = Carbon::parse($request->service_date)->toDateString();
+                $ebValues = [
+                    'service_name' => BookingRoomService::catalogName(BookingRoomService::CODE_EXTRA_BED, 'Extra Bed'),
+                    'quantity'     => 0,
+                    'rate'         => $request->rate ?? 0,
+                    'total_amount' => 0,
+                    'department'   => 'FO',
+                    'is_room'      => $request->has('is_room') ? (int) $request->boolean('is_room') : 1,
+                    'folio'        => $request->folio ?? 1,
+                    'is_posted'    => 0,
+                    'deleted_at'   => null,
+                    'created_by'   => Auth::user()?->username ?? 'system',
+                ];
+                $ebRow = BookingRoomService::withTrashed()
+                    ->where('booking_room_id', $roomId)
+                    ->where('service_code', BookingRoomService::CODE_EXTRA_BED)
+                    ->whereDate('service_date', $ebDate)
+                    ->first();
+                if ($ebRow && (int) $ebRow->is_posted === 1) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Extra Bed ngày ' . $ebDate . ' đã được post, không thể cập nhật số lượng.',
+                    ], 422);
+                }
+                if ($ebRow) {
+                    $ebRow->fill($ebValues)->save();
+                } else {
+                    BookingRoomService::create([
+                        'booking_room_id' => $roomId,
+                        'service_code'    => BookingRoomService::CODE_EXTRA_BED,
+                        'service_date'    => $ebDate,
+                    ] + $ebValues);
+                }
+
                 $remainingEB = BookingRoomService::where('booking_room_id', $roomId)
                     ->where('service_code', BookingRoomService::CODE_EXTRA_BED)
+                    ->where('quantity', '>', 0)
                     ->get();
 
                 if ($remainingEB->isEmpty()) {
                     $room->update(['extra_bed_qty' => 0, 'extra_bed_rate' => 0]);
                 } else {
-                    $maxQty = $remainingEB->max('quantity');
+                    $maxQty = $remainingEB->max('quantity') ?? 0;
                     $latestRate = $remainingEB->firstWhere('rate', '>', 0)?->rate ?? 0;
                     $room->update(['extra_bed_qty' => $maxQty, 'extra_bed_rate' => $latestRate]);
                 }
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Đã cập nhật số lượng Extra Bed về 0 cho ngày này.',
+                ]);
             }
+
+            BookingRoomService::where('booking_room_id', $roomId)
+                ->where('service_code', $request->service_code)
+                ->where('service_date', $request->service_date)
+                ->where('is_posted', 0)
+                ->delete();
 
             return response()->json([
                 'success' => true,
@@ -420,8 +491,19 @@ class BookingRoomServiceController extends Controller
                 ->where('service_code', BookingRoomService::CODE_EXTRA_BED)
                 ->get();
             $maxQty = $remainingEB->max('quantity') ?? 0;
-            $latestRate = $remainingEB->firstWhere('rate', '>', 0)?->rate ?? 0;
+            $latestRate = $request->has('rate') && $request->rate !== null && $request->rate !== ''
+                ? (float) $request->rate
+                : ($remainingEB->firstWhere('rate', '>', 0)?->rate ?? 0);
             $room->update(['extra_bed_qty' => $maxQty, 'extra_bed_rate' => $latestRate]);
+        }
+
+        if ($request->service_code === 'RM' || $request->service_code === 'ROOM_CHARGE') {
+            if ($request->has('rate') && $request->rate !== null && $request->rate !== '') {
+                $room->update([
+                    'rate' => (float) $request->rate,
+                    'base_price' => (float) $request->rate,
+                ]);
+            }
         }
 
         try {
@@ -2312,9 +2394,12 @@ class BookingRoomServiceController extends Controller
             return response()->json(['success' => false, 'message' => 'Không tìm thấy phòng hoặc booking tương ứng.'], 404);
         }
 
+        // Phòng day use = có bật "Ở theo giờ" (phòng hoặc booking) VÀ ngày đến
+        // = ngày đi: được post tiền phòng đúng ngày đó. Phòng cùng ngày không bật
+        // day use thì không có tiền phòng (Dòng 391/253).
         $isDayUseStay = function (?BookingRoom $targetRoom, ?Booking $targetBooking = null): bool {
-            if ($targetRoom?->is_day_use || $targetBooking?->is_day_use) {
-                return true;
+            if (!($targetRoom?->is_day_use || $targetBooking?->is_day_use)) {
+                return false;
             }
             $arr = $targetRoom?->arrival_date ?: $targetBooking?->arrival_date;
             $dep = $targetRoom?->departure_date ?: $targetBooking?->departure_date;
@@ -2336,7 +2421,7 @@ class BookingRoomServiceController extends Controller
             !$isDayUseStay($targetRoom, $booking)
             && $targetRoom->arrival_date
             && $targetRoom->departure_date
-            && $targetRoom->departure_date->lessThan($targetRoom->arrival_date)
+            && $targetRoom->departure_date->lessThanOrEqualTo($targetRoom->arrival_date)
         )->values();
         if ($roomsToPost->isEmpty()) {
             $virtualOnly = $booking?->is_service_only || ($booking && $booking->bookingRooms->contains(fn (BookingRoom $targetRoom) => $targetRoom->isVirtual()));
@@ -2396,9 +2481,10 @@ class BookingRoomServiceController extends Controller
 
         $isDayUse = $isDayUseStay($room, $booking);
         $stayStart = Carbon::parse($room?->arrival_date ?: $booking->arrival_date)->startOfDay();
+        $rawDeparture = Carbon::parse($room?->departure_date ?: $booking->departure_date)->startOfDay();
         $stayEnd = $isDayUse
-            ? Carbon::parse($room?->departure_date ?: $booking->departure_date)->startOfDay()
-            : Carbon::parse($room?->departure_date ?: $booking->departure_date)->startOfDay()->subDay();
+            ? $stayStart->copy()
+            : $rawDeparture->copy()->subDay();
         if ($stayEnd->lt($stayStart)
             || $dateFrom->copy()->startOfDay()->lt($stayStart)
             || $dateTo->copy()->startOfDay()->gt($stayEnd)) {
@@ -2469,7 +2555,7 @@ class BookingRoomServiceController extends Controller
                 $roomDeparture = Carbon::parse($targetRoom->departure_date ?: $booking?->departure_date)->startOfDay();
                 $isTargetRoomDayUse = $isDayUseStay($targetRoom, $booking);
                 $roomLastOccupiedNight = $isTargetRoomDayUse
-                    ? $roomDeparture->copy()
+                    ? $roomArrival->copy()
                     : $roomDeparture->copy()->subDay();
                 if ($isBookingPost && $current->lt($roomArrival)) {
                     $current = $roomArrival->copy();
@@ -2869,6 +2955,11 @@ class BookingRoomServiceController extends Controller
      */
     private function postPendingSetupServicesForDate(BookingRoom $room, Carbon $serviceDate, string $user): array
     {
+        // Phụ thu ăn sáng trẻ em lưu ở chi tiết ăn sáng được post cùng tiền phòng.
+        // Chạy trước để dòng phụ thu cũ cùng ngày (nếu có) không bị post trùng.
+        $childBreakfastBillIds = app(\App\Services\ChildBreakfastService::class)
+            ->postForDate($room, $serviceDate, $user);
+
         $services = BookingRoomService::where('booking_room_id', $room->id)
             ->whereDate('service_date', $serviceDate->toDateString())
             ->where('service_code', '!=', BookingRoomService::CODE_ROOM)
@@ -2878,7 +2969,7 @@ class BookingRoomServiceController extends Controller
             ->get();
 
         if ($services->isEmpty()) {
-            return [];
+            return $childBreakfastBillIds;
         }
 
         $booking = $room->booking;
@@ -2886,7 +2977,7 @@ class BookingRoomServiceController extends Controller
             ?: $room->guests()->with('guest')->first();
         $guestId = $primaryGuest?->guest_id;
         $guestName = $primaryGuest?->guest?->full_name ?: ($booking?->booking_name ?: 'Khách lẻ');
-        $createdBillIds = [];
+        $createdBillIds = $childBreakfastBillIds;
 
         foreach ($services as $service) {
             $foService = HotelService::where('code', $service->service_code)->first();

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\HotelSettingResource;
 use App\Models\HotelSetting;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\File;
 
 class HotelSettingController extends Controller
 {
@@ -160,7 +161,12 @@ class HotelSettingController extends Controller
     public function uploadLogo(Request $request)
     {
         $request->validate([
-            'logo' => 'required|image|max:2048',
+            'logo' => 'required|file|mimes:jpeg,png,jpg,gif,svg,webp|max:10240',
+        ], [
+            'logo.required' => 'Vui lòng chọn file logo để tải lên.',
+            'logo.file'     => 'File logo tải lên không hợp lệ.',
+            'logo.mimes'    => 'Định dạng logo phải là: jpeg, png, jpg, gif, svg, webp.',
+            'logo.max'      => 'Kích thước file logo không được vượt quá 10MB.',
         ]);
 
         $setting = HotelSetting::first();
@@ -169,18 +175,20 @@ class HotelSettingController extends Controller
         }
 
         if ($request->hasFile('logo')) {
+            $uploadDir = public_path('uploads/hotel');
+            if (!File::isDirectory($uploadDir)) {
+                File::makeDirectory($uploadDir, 0755, true, true);
+            }
+
             // Remove old file
             if ($setting->logo_url && file_exists(public_path($setting->logo_url))) {
                 @unlink(public_path($setting->logo_url));
             }
 
-            $uploadDir = public_path('uploads/hotel');
-            if (!file_exists($uploadDir)) {
-                mkdir($uploadDir, 0755, true);
-            }
-
             $file = $request->file('logo');
-            $filename = 'logo_' . time() . '_' . $file->getClientOriginalName();
+            // Tên file an toàn (không dùng tên gốc có dấu/khoảng trắng) - Dòng 388.
+            $extension = $file->getClientOriginalExtension() ?: 'png';
+            $filename = 'logo_' . time() . '_' . uniqid() . '.' . strtolower($extension);
             $file->move($uploadDir, $filename);
             
             $setting->logo_url = 'uploads/hotel/' . $filename;
@@ -213,7 +221,12 @@ class HotelSettingController extends Controller
     public function uploadQrCode(Request $request)
     {
         $request->validate([
-            'qr_code' => 'required|image|max:2048',
+            'qr_code' => 'required|file|mimes:jpeg,png,jpg,gif,svg,webp|max:10240',
+        ], [
+            'qr_code.required' => 'Vui lòng chọn file mã QR để tải lên.',
+            'qr_code.file'     => 'File mã QR tải lên không hợp lệ.',
+            'qr_code.mimes'    => 'Định dạng mã QR phải là: jpeg, png, jpg, gif, svg, webp.',
+            'qr_code.max'      => 'Kích thước file không được vượt quá 10MB.',
         ]);
 
         $setting = HotelSetting::first();
@@ -222,18 +235,20 @@ class HotelSettingController extends Controller
         }
 
         if ($request->hasFile('qr_code')) {
+            $uploadDir = public_path('uploads/hotel');
+            if (!File::isDirectory($uploadDir)) {
+                File::makeDirectory($uploadDir, 0755, true, true);
+            }
+
             // Remove old file
             if ($setting->qr_code_url && file_exists(public_path($setting->qr_code_url))) {
                 @unlink(public_path($setting->qr_code_url));
             }
 
-            $uploadDir = public_path('uploads/hotel');
-            if (!file_exists($uploadDir)) {
-                mkdir($uploadDir, 0755, true);
-            }
-
             $file = $request->file('qr_code');
-            $filename = 'qr_' . time() . '_' . $file->getClientOriginalName();
+            // Tên file an toàn (không dùng tên gốc có dấu/khoảng trắng) - Dòng 388.
+            $extension = $file->getClientOriginalExtension() ?: 'png';
+            $filename = 'qr_' . time() . '_' . uniqid() . '.' . strtolower($extension);
             $file->move($uploadDir, $filename);
             
             $setting->qr_code_url = 'uploads/hotel/' . $filename;

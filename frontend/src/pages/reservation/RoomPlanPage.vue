@@ -16,6 +16,7 @@ import { calculateRoomPlanBookingAmounts, calculateRoomPlanRoomAmounts } from '@
 import { resolveRateCodePrice } from '@/utils/rate-code-pricing.js'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
 import { getRoomPlanDateRange, setRoomPlanDateRange } from './room-plan-view-state.js'
+import { roomPlanStayRange, markRoomPlanConflicts } from '@/utils/room-plan-conflicts.js'
 
 const uiStore = useUiStore()
 const roomStore = useRoomStore()
@@ -2479,7 +2480,15 @@ const processedBookings = computed(() => {
       checkOutFull,
       isCheckInVisible,
       isCheckOutVisible,
-      showCheckOutIndicator
+      showCheckOutIndicator,
+      // Dòng 395: giai đoạn giữ phòng để phát hiện trùng số phòng.
+      _range: roomPlanStayRange({
+        start: checkInDateStr,
+        end: checkOutDateStr,
+        isLock: isLockItem,
+        isDayUse: Boolean(bk.isDayUse),
+        lockEndedEarly: isLockEndedEarly
+      })
     }
 
     if (!map[bk.room]) {
@@ -2487,6 +2496,10 @@ const processedBookings = computed(() => {
     }
     map[bk.room].push(item)
   })
+
+  // Dòng 395: các thanh trùng giai đoạn trên cùng số phòng được đánh dấu và
+  // xếp thành nhiều làn để không che nhau.
+  Object.values(map).forEach(markRoomPlanConflicts)
 
   return map
 })
@@ -2720,6 +2733,17 @@ function getBookingClass(type) {
   if (type === 'OOO') return 'bg-[repeating-linear-gradient(-45deg,#3b82f6,#3b82f6_5px,#60a5fa_5px,#60a5fa_10px)] text-black border-blue-400'
   if (type === 'OOS') return 'bg-[repeating-linear-gradient(-45deg,#94a3b8,#94a3b8_5px,#cbd5e1_5px,#cbd5e1_10px)] text-black border-slate-400'
   return 'bg-[#1e293b] text-black border-slate-700'
+}
+
+// Dòng 395: thanh trùng phòng chia đôi (hoặc nhiều làn) chiều cao ô.
+function conflictBarStyle(bk) {
+  const laneCount = Math.max(1, Number(bk.conflictLaneCount) || 1)
+  const laneHeight = 33 / laneCount
+  return {
+    top: `${2 + (Number(bk.conflictLane) || 0) * laneHeight}px`,
+    height: `${Math.max(8, laneHeight - 1)}px`,
+    zIndex: 15
+  }
 }
 
 function getBookingStyle(type, registrationColor = '') {
@@ -4866,7 +4890,8 @@ function getRoomStatusIconName(item) {
                       draggedBooking?.bookingRoomId === bk.bookingRoomId ? 'opacity-0' : '',
                       isHousekeepingModule ? 'cursor-default' : 'cursor-pointer',
                       bk.isCheckInVisible ? 'pl-1 rounded-l border-l' : 'pl-0 rounded-l-none border-l-0',
-                      bk.isCheckOutVisible ? 'pr-1.5 rounded-r border-r' : 'pr-0 rounded-r-none border-r-0'
+                      bk.isCheckOutVisible ? 'pr-1.5 rounded-r border-r' : 'pr-0 rounded-r-none border-r-0',
+                      bk.hasConflict ? 'ring-2 ring-inset ring-red-500' : ''
                     ]"
                     :style="{
                       left: !bk.isCheckInVisible 
@@ -4877,9 +4902,15 @@ function getRoomStatusIconName(item) {
                         : (isBookingSegmented(bk) ? `calc(${bk.span * 100}% - 6px)` : `calc(${bk.span * 100}% - 1px)`),
                       borderLeftStyle: !bk.isCheckInVisible ? 'none' : undefined,
                       borderRightStyle: !bk.isCheckOutVisible ? 'none' : undefined,
-                      ...(isBookingMatched(bk) ? getBookingStyle(bk.type, bk.registrationStatusColor) : {})
+                      ...(isBookingMatched(bk) ? getBookingStyle(bk.type, bk.registrationStatusColor) : {}),
+                      ...(bk.hasConflict ? conflictBarStyle(bk) : {})
                     }"
                   >
+                    <!-- Dòng 395: cảnh báo trùng số phòng -->
+                    <i
+                      v-if="bk.hasConflict"
+                      class="fa-solid fa-triangle-exclamation text-red-600 text-[10px] absolute right-1 top-0.5 z-20 pointer-events-none"
+                    ></i>
                     <!-- Left resize handle -->
                     <div 
                       v-if="!isHousekeepingModule && bk.code !== 'LOCK' && bk.isCheckInVisible"
@@ -5068,6 +5099,14 @@ function getRoomStatusIconName(item) {
         top: `${tooltipY}px`
       }"
     >
+      <!-- Dòng 395: cảnh báo trùng số phòng -->
+      <div
+        v-if="hoveredBooking.hasConflict"
+        class="mb-2 px-2 py-1.5 rounded-md bg-red-50 border border-red-200 text-red-700 font-semibold flex items-start gap-1.5"
+      >
+        <i class="fa-solid fa-triangle-exclamation mt-0.5"></i>
+        <span>Trùng phòng với: {{ hoveredBooking.conflictWith.join(', ') }}</span>
+      </div>
       <!-- Mode 1: OOO / OOS Locks -->
       <template v-if="hoveredBooking.code === 'LOCK' || hoveredBooking.type === 'OOO' || hoveredBooking.type === 'OOS'">
         <div class="flex items-center justify-between font-bold text-xs pb-2 border-b border-slate-100 mb-2">

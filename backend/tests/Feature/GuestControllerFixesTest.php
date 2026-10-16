@@ -348,4 +348,37 @@ class GuestControllerFixesTest extends TestCase
             'is_posted' => $posted ? 1 : 0,
         ]);
     }
+
+    /**
+     * Row 397: "Thông tin phòng" price edit only updates booking_rooms.rate
+     * and base_price; it never inserts or rewrites nightly room charges.
+     */
+    public function test_room_info_price_edit_does_not_touch_booking_room_services(): void
+    {
+        $booking = $this->makeBooking();
+        $room = $this->makeRoom($booking, 'G-GUEST-397', BookingRoom::STATUS_BOOKED, [
+            'arrival_date' => '2026-08-09',
+            'departure_date' => '2026-08-12',
+            'rate' => 500000,
+        ]);
+        $guest = Guest::create(['full_name' => 'Rate guest']);
+        BookingRoomGuest::create([
+            'booking_room_id' => $room->id,
+            'guest_id' => $guest->id,
+            'is_primary' => true,
+            'status' => BookingRoomGuest::STATUS_ACTIVE,
+        ]);
+        $customNight = $this->makeRoomService($room, '2026-08-10', 450000, false);
+
+        $this->putJson("/api/booking-rooms/{$room->id}/guests/{$guest->id}", [
+            'full_name' => 'Rate guest',
+            'rate' => 800000,
+        ])->assertSuccessful();
+
+        $fresh = $room->fresh();
+        $this->assertEquals(800000.0, (float) $fresh->rate);
+        $this->assertEquals(800000.0, (float) $fresh->base_price);
+        $this->assertSame(1, BookingRoomService::where('booking_room_id', $room->id)->count());
+        $this->assertSame(450000.0, (float) $customNight->fresh()->rate);
+    }
 }

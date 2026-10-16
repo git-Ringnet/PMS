@@ -187,6 +187,37 @@ class RoomAvailabilityService
         string|null $arrivalTime = null,
         string|null $departureTime = null
     ): bool {
+        if ($this->findRoomNumberConflict(
+            $roomNumber,
+            $arrivalDate,
+            $departureDate,
+            $excludeBookingRoomId,
+            $excludeBookingId,
+            $arrivalTime,
+            $departureTime
+        )) {
+            return true;
+        }
+
+        return $this->hasBlockingLock($roomNumber, $arrivalDate, $departureDate);
+    }
+
+    /**
+     * Stay row of another booking (or another row) that already holds the
+     * physical room in the requested period, or null when the room is free.
+     *
+     * @param list<string|int> $excludeBookingRoomIds extra rows to ignore
+     */
+    public function findRoomNumberConflict(
+        string $roomNumber,
+        string $arrivalDate,
+        string $departureDate,
+        string|int|null $excludeBookingRoomId = null,
+        string|int|null $excludeBookingId = null,
+        string|null $arrivalTime = null,
+        string|null $departureTime = null,
+        array $excludeBookingRoomIds = []
+    ): ?BookingRoom {
         $query = BookingRoom::where('room_number', $roomNumber)
             ->stayOnly()
             ->whereIn('status', [
@@ -207,6 +238,9 @@ class RoomAvailabilityService
 
         if ($excludeBookingRoomId) {
             $query->where('id', '!=', $excludeBookingRoomId);
+        }
+        if ($excludeBookingRoomIds) {
+            $query->whereNotIn('id', $excludeBookingRoomIds);
         }
 
         $queryEnd = $arrivalDate === $departureDate
@@ -241,16 +275,41 @@ class RoomAvailabilityService
             });
         });
 
-        if ($query->exists()) {
-            return true;
-        }
+        return $query->with('booking')->orderBy('arrival_date')->first();
+    }
 
-        // Check if room has an active room lock (OOO / OOS) overlapping arrivalDate ~ departureDate
-        return \App\Models\RoomLock::where('room_number', $roomNumber)
-            ->where('is_active', 1)
-            ->where('start_date', '<=', $departureDate . ' 23:59:59')
-            ->where('end_date', '>=', $arrivalDate . ' 00:00:00')
-            ->exists();
+    /**
+     * Active OOO/OOS lock that blocks a stay in [arrival, departure).
+     *
+     * A lock starting on the departure date does not block the last night
+     * (the guest leaves that day). A lock ending on the arrival date before
+     * FrmOOO_DefineLockByTime is released in time for the new arrival.
+     */
+    public function hasBlockingLock(string $roomNumber, string $arrivalDate, string $departureDate): bool
+    {
+        $arrival = Carbon::parse($arrivalDate)->toDateString();
+        $departure = Carbon::parse($departureDate)->toDateString();
+        $stayEnd = $arrival === $departure
+            ? Carbon::parse($arrival)->addDay()->toDateString()
+            : $departure;
+        $defineLockTime = \App\Models\HotelConfig::where('name', 'FrmOOO_DefineLockByTime')->value('value') ?: '12:00';
+
+        return RoomLock::where('room_number', $roomNumber)
+            ->where('is_active', RoomLock::STATUS_ACTIVE)
+            ->where('start_date', '<', $stayEnd . ' 00:00:00')
+            ->where('end_date', '>', $arrival . ' 00:00:00')
+            ->get(['start_date', 'end_date'])
+            ->contains(function (RoomLock $lock) use ($arrival, $defineLockTime): bool {
+                $lockEnd = Carbon::parse($lock->end_date);
+                $lockStart = Carbon::parse($lock->start_date);
+                if ($lockEnd->toDateString() === $arrival
+                    && $lockStart->toDateString() !== $arrival
+                    && $lockEnd->format('H:i') < $defineLockTime) {
+                    return false;
+                }
+
+                return true;
+            });
     }
 
     /**
