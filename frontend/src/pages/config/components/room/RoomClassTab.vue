@@ -463,12 +463,12 @@ const toggleRoomClassActive = async (rc) => {
 
     <!-- OVERLAY MODAL: ADD / EDIT ROOM CLASS -->
     <div v-if="isRoomClassModalOpen"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-xs select-none p-4">
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-xs select-none p-2 sm:p-4">
       <div
-        class="bg-white rounded-xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-200"
+        class="bg-white rounded-xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-200 max-h-[calc(100vh-1rem)] sm:max-h-[calc(100vh-2rem)] flex flex-col"
         :style="{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }">
         <!-- Modal Header -->
-        <div class="px-5 py-3 flex items-center justify-between text-white cursor-move select-none rounded-t-xl bg-[#006bdb]"
+        <div class="px-5 py-2.5 flex items-center justify-between text-white cursor-move select-none rounded-t-xl bg-[#006bdb] shrink-0"
           @mousedown="startDragModal"
           :style="{ background: topbarThemeBg || 'var(--pms-custom-theme, #006bdb)', color: 'var(--pms-custom-theme-text, #ffffff)' }">
           <h2 class="text-xs font-semibold tracking-wide text-white">
@@ -481,12 +481,12 @@ const toggleRoomClassActive = async (rc) => {
         </div>
 
         <!-- Modal Body Form -->
-        <div class="p-5 flex flex-col gap-4 overflow-y-auto max-h-[75vh] text-xs font-semibold text-[#000000D9]">
+        <div class="p-4 sm:p-4.5 flex flex-col gap-2.5 overflow-y-auto max-h-[88vh] text-xs font-semibold text-[#000000D9]">
           <div class="flex flex-col gap-1">
             <label>Tên Loại Phòng <span class="text-red-500">*</span></label>
             <div class="relative">
               <input type="text" v-model="roomClassFormState.name" placeholder="Nhập tên loại phòng..."
-                class="w-full border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg p-2 pr-7 text-xs font-normal text-[#000000D9] placeholder:text-[#A8B0BF] focus:outline-none focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308]" />
+                class="w-full border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg px-2.5 py-1.5 pr-7 text-xs font-normal text-[#000000D9] placeholder:text-[#A8B0BF] focus:outline-none focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308]" />
               <button v-if="roomClassFormState.name" @click="roomClassFormState.name = ''"
                 class="absolute right-2 top-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0 text-xs">✕</button>
             </div>
@@ -496,13 +496,13 @@ const toggleRoomClassActive = async (rc) => {
             <label>Tên Viết Tắt <span class="text-red-500">*</span></label>
             <div class="relative">
               <input type="text" v-model="roomClassFormState.code" placeholder="Nhập tên viết tắt..."
-                class="w-full border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg p-2 pr-7 text-xs font-normal text-[#000000D9] placeholder:text-[#A8B0BF] focus:outline-none focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308]" />
+                class="w-full border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg px-2.5 py-1.5 pr-7 text-xs font-normal text-[#000000D9] placeholder:text-[#A8B0BF] focus:outline-none focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308]" />
               <button v-if="roomClassFormState.code" @click="roomClassFormState.code = ''"
                 class="absolute right-2 top-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0 text-xs">✕</button>
             </div>
           </div>
 
-          <div class="flex items-center justify-between py-1 select-none">
+          <div class="flex items-center justify-between py-0.5 select-none">
             <span>Có Sử Dụng</span>
             <label class="relative inline-flex items-center cursor-pointer">
               <input type="checkbox" v-model="roomClassFormState.is_active" class="sr-only peer" />
@@ -515,7 +515,7 @@ const toggleRoomClassActive = async (rc) => {
           <div class="flex flex-col gap-1">
             <label>Nhóm Loại Phòng</label>
             <select v-model="roomClassFormState.room_class_group_id"
-              class="border border-slate-200 rounded-lg p-2 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500">
+              class="border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500">
               <option value="" disabled>Chọn nhóm loại phòng</option>
               <option v-for="g in roomClassGroups" :key="g.id" :value="g.id">{{ g.name }}</option>
             </select>
@@ -526,7 +526,7 @@ const toggleRoomClassActive = async (rc) => {
             <div class="flex gap-2 items-center">
               <div class="relative flex-1">
                 <input type="text" v-model="roomClassFormState.color" placeholder="#ffffff"
-                  class="w-full border border-slate-200 rounded-lg p-2 pr-7 font-mono text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500 bg-white" />
+                  class="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 pr-7 font-mono text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500 bg-white" />
                 <button v-if="roomClassFormState.color" @click="roomClassFormState.color = ''"
                   class="absolute right-2 top-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0 text-xs">✕</button>
               </div>
@@ -539,7 +539,7 @@ const toggleRoomClassActive = async (rc) => {
             <label>Ghi Chú</label>
             <div class="relative">
               <textarea v-model="roomClassFormState.notes" rows="2" placeholder="Nhập ghi chú..."
-                class="w-full border border-slate-200 rounded-lg p-2 pr-7 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500 resize-none bg-white"></textarea>
+                class="w-full border border-slate-200 rounded-lg px-2.5 py-1.5 pr-7 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500 resize-none bg-white"></textarea>
               <button v-if="roomClassFormState.notes" @click="roomClassFormState.notes = ''"
                 class="absolute right-2 top-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0 text-xs">✕</button>
             </div>
@@ -551,14 +551,13 @@ const toggleRoomClassActive = async (rc) => {
 
           <!-- Upload area -->
           <div @click="triggerRoomClassImageUpload"
-            class="border-2 border-dashed border-slate-200 rounded-lg p-4 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 transition-colors"
-            style="min-height: 100px;">
+            class="border-2 border-dashed border-slate-200 rounded-lg p-2.5 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 transition-colors min-h-[64px]">
             <div v-if="!roomClassFormState.imagePreview"
               class="flex flex-col items-center justify-center text-slate-400 gap-1">
               <span class="text-xs font-semibold">+ Tải ảnh đại diện</span>
             </div>
             <div v-else class="relative w-full h-full flex items-center justify-center">
-              <img :src="roomClassFormState.imagePreview" class="max-h-24 rounded object-contain" />
+              <img :src="roomClassFormState.imagePreview" class="max-h-20 rounded object-contain" />
               <button type="button" @click.stop="removeRoomClassImage"
                 class="absolute -top-2 -right-2 bg-red-500 text-white w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shadow hover:bg-red-600 cursor-pointer border-none">
                 ✕
@@ -568,7 +567,7 @@ const toggleRoomClassActive = async (rc) => {
         </div>
 
         <!-- Modal Footer: Bỏ nút Đóng, chỉ giữ nút Lưu -->
-        <div class="bg-slate-50 px-5 py-3 flex items-center justify-end border-t border-slate-200">
+        <div class="bg-slate-50 px-5 py-2.5 flex items-center justify-end border-t border-slate-200 shrink-0">
           <button @click="saveRoomClass" class="btn-pms-primary">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round"

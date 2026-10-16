@@ -260,6 +260,12 @@ function copyDateToClipboard() {
   }
 }
 
+function clearSelectedDate() {
+  selectedDate.value = ''
+  isoDate.value = ''
+  rowsData.value = []
+}
+
 function handleSort(key) {
   if (sortKey.value === key) {
     sortDir.value *= -1
@@ -1158,6 +1164,9 @@ onUnmounted(() => {
             placeholder="dd/mm/yyyy" 
             maxlength="10"
           />
+          <button v-if="selectedDate" type="button" class="date-clear-btn" @click.stop="clearSelectedDate" title="Xóa nhanh ngày">
+            ✕
+          </button>
           <button type="button" class="date-calendar-btn" @click="openDatePicker" title="Chọn ngày từ lịch">
             <svg class="date-icon" width="13" height="13" viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M3 10h18M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
           </button>
@@ -1572,6 +1581,21 @@ onUnmounted(() => {
   font-family: Roboto, sans-serif;
   width: 82px;
   padding: 0;
+}
+.date-clear-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0 2px;
+  display: flex;
+  align-items: center;
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1;
+  transition: color .15s;
+}
+.date-clear-btn:hover {
+  color: var(--danger);
 }
 .date-calendar-btn {
   background: transparent;
@@ -2081,12 +2105,16 @@ th.sort-desc .sort-icons .down {
   color: var(--blue);
 }
 
-table.residence-grid td:not(.col-checkbox) {
+table.residence-grid td {
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
   color: var(--text);
   white-space: nowrap;
   font-size: 12px;
+}
+table.residence-grid td.col-checkbox {
+  padding-left: 14px;
+  padding-right: 0;
 }
 table.residence-grid tbody tr:last-child td {
   border-bottom: none;

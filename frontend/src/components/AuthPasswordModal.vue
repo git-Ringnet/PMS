@@ -91,13 +91,12 @@ onUnmounted(() => {
 
         <!-- Brand Logo & Header -->
         <div class="flex flex-col items-center justify-center mb-4 text-center">
-          <div class="w-12 h-12 flex items-center justify-center">
-            <svg viewBox="0 0 100 100" class="w-11 h-11 drop-shadow-sm" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M50 14 L82 46 L68 60 L50 42 L32 60 L18 46 Z" fill="#38BDF8" />
-              <path d="M50 86 L18 54 L32 40 L50 58 L68 40 L82 54 Z" fill="#0284C7" />
-            </svg>
-          </div>
-          <span class="text-[11px] font-black tracking-widest text-[#0284c7] mt-1 uppercase">PROVILEN</span>
+          <img
+            src="/HKT_LOGO.png"
+            alt="PROVISTA"
+            class="w-14 h-14 object-contain rounded-xl shadow-xs mb-1"
+          />
+          <span class="text-xs font-bold tracking-widest text-[#0284c7] uppercase">PROVISTA</span>
         </div>
 
         <!-- Title -->
