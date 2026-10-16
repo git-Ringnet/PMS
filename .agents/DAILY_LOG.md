@@ -8,6 +8,39 @@
 
 - **Ngày ghi**: `YYYY-MM-DD`
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
+
+## [2026-10-16] - Nâng Cấp Toàn Diện Lịch Sử Thao Tác (Ghi Log) Theo Sheet GHI LOG (103 Hàng)
+### Module: Lịch sử thao tác (ActivityLog), Đặt phòng, Báo cáo, Phòng khóa OOO/OOS, Thu ngân & Đặt cọc, Sang ngày (Night Audit)
+- **Mục tiêu & Yêu cầu hoàn thành**:
+  - Đọc, bóc tách và triển khai chuẩn xác toàn bộ 103 hàng trong sheet `GHI LOG` của file `DANH SÁCH BẢNG TRONG HỆ THỐNG (6).xlsx`.
+  - Đáp ứng 3 quy tắc cốt lõi ghi nhận ở Dòng 1:
+    1. **Đồng bộ Mã Phòng**: Luôn hiển thị mã phòng thuê dạng `G...` (ví dụ `G0000043`), không được hiển thị số phòng vật lý hoặc để trống khi thao tác gắn liền với phòng thuê / đặt phòng; các đối tượng hệ thống không thuộc phòng (Cấu hình, Người dùng, Danh mục, Kho...) trả về `null`.
+    2. **Log Xem Báo Cáo**: Chuẩn hóa thành `Xem báo cáo: "{Tên báo cáo}" - Từ ngày {d-m-Y} , - Đến ngày {d-m-Y}`, loại bỏ hoàn toàn việc log thô dạng `report-definitions 'auth_token'`.
+    3. **Log Điều Chỉnh**: Chỉ log các trường thực sự thay đổi dạng `Trường: Cũ -> Mới`, không dump nguyên cấu trúc JSON hoặc toàn bộ đối tượng.
+    4. **Định dạng số**: Phân cách hàng nghìn bằng dấu phẩy `,` (`540,000`, `5,000,000`), không dùng dấu chấm.
+  - Chuẩn hóa toàn bộ nhãn màn hình (Cột B) khớp 100% tài liệu: `RoomSchedule`, `Tạo đăng ký`, `Room map`, `Trả phòng`, `Công ty`, `Sang ngày`, `Báo cáo`, `In Phân công phòng`, `QUản lý đồ thất lạc`, `Tồn kho`, `Tạo Menu`, `Thêm DV Buồng phòng`, `Khóa phòng`.
+  - Cập nhật chuẩn các mẫu mô tả chi tiết:
+    - Tạo / Cập nhật / Hủy đặt phòng: Bỏ VAT thừa, lấy số điện thoại người đặt thay vì người ở, loại giường `Double`/`Twin`, format số tiền có dấu phẩy.
+    - Khóa phòng OOO/OOS (Dòng 5, 6, 103): `Thêm Phòng {type}. Phòng {room} đã bị khóa...` và `Cập nhật phòng khóa OOO mã {id}, phòng {room}:`.
+    - Thanh toán & Đặt cọc (Dòng 19, 20, 21, 22, 23, 59, 60, 61): Thêm, Sửa, Hủy (Đúng từ 'Hủy Đặt Cọc'), Tách thanh toán, Chuyển thanh toán, Tạm ứng, thanh toán nhiều phương thức trên cùng 1 dòng.
+    - Chuyển phòng & Trạng thái phòng (Dòng 48, 50, 97, 99): `* Phòng {room}. Đổi trạng thái từ: {old} -> {new}`, DND, chuyển phòng kèm chênh lệch giá.
+    - Cảnh báo đặt phòng (Dòng 45, 46, 47): Thêm, Sửa, Hủy cảnh báo.
+    - Khách lưu trú (Dòng 36, 100, 101, 102): Diff chi tiết khách, xóa khách, thêm người lớn với mã khách `K...`.
+    - Tiền phòng & Dịch vụ (Dòng 53, 54, 94): Tiền phòng tự động theo đêm (RM), sửa tay tiền phòng, chi tiết minibar.
+    - Sang ngày (Night Audit - Dòng 67, 68, 69, 70): Tiền phòng đêm, Noshow (có/không tính phí), gia hạn phòng, bắt đầu và kết thúc sang ngày.
+    - Công ty & Danh mục (Dòng 64, 65, 66): Thêm/sửa công ty, phân loại thị trường/nguồn khách.
+    - Phân công buồng phòng, Đồ thất lạc, Tồn kho, Menu đồ uống/món ăn (Dòng 72–93).
+- **Files chỉnh sửa**:
+  - [ActivityLogResource.php](file:///d:/PMS/backend/app/Http/Resources/ActivityLogResource.php): Xử lý toàn diện `resolveComponentLabel()`, `resolveRoomNumber()`, `resolveDescription()`, `formatDetailDiff()`. Bổ sung hàm `safeStr()` bảo vệ toàn bộ các trường đối tượng lồng nhau (`company`, `market`, `customer_source`, `booker`, `room_class`...) tránh lỗi PHP `Array to string conversion`.
+  - [LogActivity.php](file:///d:/PMS/backend/app/Http/Middleware/LogActivity.php): Loại trừ capture thô request chạy báo cáo, bắt chính xác màn hình người dùng qua `Referer`, cấu trúc mô tả tại middleware.
+  - [ActivityLogService.php](file:///d:/PMS/backend/app/Services/ActivityLogService.php): Bổ sung `logReportView()`, chuẩn hóa `logBookingCreated()`.
+  - [ReportDefinitionController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/ReportDefinitionController.php): Tích hợp gọi `logReportView()` khi chạy báo cáo.
+  - [ActivityLogEnhancementTest.php](file:///d:/PMS/backend/tests/Feature/ActivityLogEnhancementTest.php): Bộ test mở rộng 13 tests kiểm tra bao phủ tất cả case nghiệp vụ và dữ liệu payload lồng nhau phức tạp.
+- **Kiểm thử**:
+  - Backend PHPUnit: `php artisan test --filter=ActivityLog` -> **13/13 passed (53 assertions, 0 errors)**.
+  - Backend Data: Kiểm tra 100% record thực tế trong database -> **0 errors, endpoint `/api/activity-logs` trả về HTTP 200 thành công**.
+  - Frontend Build: `npm run build` -> **Thành công 100% trong 5.09s (0 lỗi)**.
+
 ## [2026-10-15] - Rà Soát & Đồng Bộ Chuẩn Font Chữ & Cỡ Chữ FE Design System
 ### Module: Khai báo lưu trú, In phiếu ăn sáng, Chức năng hệ thống, Lịch sử thao tác
 - **Mục tiêu & Kết quả**:

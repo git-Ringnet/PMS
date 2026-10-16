@@ -49,7 +49,7 @@ class ActivityLogEnhancementTest extends TestCase
     }
 
     /**
-     * Test Booking create log resolves booking_code and displays rich description.
+     * Test Booking create log resolves booking_code, component 'Tạo đăng ký', and displays rich description without VAT.
      */
     public function test_booking_create_log_resolution()
     {
@@ -78,9 +78,10 @@ class ActivityLogEnhancementTest extends TestCase
 
         $this->assertEquals('GAL7', $resource['booking_code']);
         $this->assertNull($resource['room_number']);
-        $this->assertEquals('Booking', $resource['component']);
+        $this->assertEquals('Tạo đăng ký', $resource['component']);
         $this->assertEquals('Add', $resource['action']);
-        $this->assertStringContainsString('Thông Tin Đăng Ký 7', $resource['description']);
+        $this->assertStringContainsString('Thông Tin Đăng Ký GAL7', $resource['description']);
+        $this->assertStringNotContainsString('-VAT :', $resource['description']);
         $this->assertStringContainsString('Khách VIP Nguyễn Văn A', $resource['description']);
     }
 
@@ -115,14 +116,14 @@ class ActivityLogEnhancementTest extends TestCase
         $this->assertEquals('GAL7', $resource['booking_code']);
         $this->assertNull($resource['room_number']);
         $this->assertEquals('Modify', $resource['action']);
-        $this->assertStringContainsString('Cập Nhật Thông Tin Đăng Ký 7', $resource['description']);
+        $this->assertStringContainsString('Cập Nhật Thông Tin Đăng Ký GAL7', $resource['description']);
         $this->assertStringContainsString('Trạng thái : Pending -> Guaranteed', $resource['description']);
-        $this->assertStringContainsString('Ngày đi : 12-10-2026 -> 15-10-2026', $resource['description']);
-        $this->assertStringContainsString('Tiền cọc : 0 đ -> 500.000 đ', $resource['description']);
+        $this->assertStringContainsString('Ngày Đi : 12-10-2026 -> 15-10-2026', $resource['description']);
+        $this->assertStringContainsString('Tiền cọc : 0 -> 500,000', $resource['description']);
     }
 
     /**
-     * Test Payment log resolves booking_code and payment amount description.
+     * Test Payment log resolves component 'Trả phòng' and correct description.
      */
     public function test_payment_log_resolution()
     {
@@ -147,8 +148,226 @@ class ActivityLogEnhancementTest extends TestCase
 
         $this->assertEquals('GAL7', $resource['booking_code']);
         $this->assertNull($resource['room_number']);
-        $this->assertEquals('Thu ngân & Thanh toán', $resource['component']);
-        $this->assertStringContainsString('Xóa khoản thanh toán của Đăng ký GAL7: Số tiền: 500.000 đ', $resource['description']);
+        $this->assertEquals('Trả phòng', $resource['component']);
+        $this->assertStringContainsString('Correct Đặt Cọc Cho Đăng Ký: GAL7', $resource['description']);
+        $this->assertStringContainsString('Số tiền: 500,000', $resource['description']);
+    }
+
+    /**
+     * Test RoomSchedule component and Room G code resolution (Rule 1 & Hàng 3-13).
+     */
+    public function test_room_schedule_and_room_code_resolution()
+    {
+        $log = new ActivityLog([
+            'id' => 9995,
+            'action' => 'create',
+            'module' => 'reservation',
+            'component' => 'RoomSchedule',
+            'target_type' => 'BookingRoom',
+            'target_id' => 'G0000043',
+            'target_label' => 'GAL20',
+            'new_values' => [
+                'id' => 'G0000043',
+                'booking_id' => 20,
+                'room_number' => '605',
+                'price' => 540000,
+                'room_class' => 'Superior Double',
+            ],
+            'description' => '* Phòng thuê : # Thêm mới : Mã: G0000043 - Giá: 540,000 - Loại: Superior Double - Dạng: Double - Phòng: 605',
+        ]);
+
+        $resource = (new ActivityLogResource($log))->resolve();
+
+        $this->assertEquals('GAL20', $resource['booking_code']);
+        $this->assertEquals('G0000043', $resource['room_number']);
+        $this->assertEquals('RoomSchedule', $resource['component']);
+    }
+
+    /**
+     * Test Report View resolution (Rule 2 & Hàng 71).
+     */
+    public function test_report_view_resolution()
+    {
+        $log = new ActivityLog([
+            'id' => 9996,
+            'action' => 'View',
+            'module' => 'reports',
+            'component' => 'report-definitions',
+            'target_type' => 'ReportDefinition',
+            'target_id' => '1',
+            'target_label' => 'Báo cáo hủy đăng ký',
+            'new_values' => [
+                'parameters' => [
+                    'from_date' => '2026-09-04',
+                    'to_date' => '2026-09-04',
+                ],
+            ],
+            'description' => 'Thêm mới report-definitions \'auth_token\'',
+        ]);
+
+        $resource = (new ActivityLogResource($log))->resolve();
+
+        $this->assertEquals('Báo cáo', $resource['component']);
+        $this->assertEquals('Xem báo cáo: "Báo cáo hủy đăng ký"  - Từ ngày 04-09-2026 , - Đến ngày 04-09-2026', $resource['description']);
+    }
+
+    /**
+     * Test RoomLock resolution (Hàng 5, 6, 103).
+     */
+    public function test_room_lock_resolution()
+    {
+        $logAdd = new ActivityLog([
+            'id' => 9997,
+            'action' => 'Add',
+            'module' => 'reservation',
+            'component' => 'RoomSchedule',
+            'target_type' => 'RoomLock',
+            'target_id' => '601',
+            'target_label' => '601',
+            'new_values' => [
+                'room_number' => '601',
+                'lock_type' => 'OOO',
+                'from_date' => '2026-09-03',
+                'to_date' => '2026-09-03',
+                'reason' => 'thay tivi',
+            ],
+            'description' => 'Khóa phòng 601',
+        ]);
+
+        $resAdd = (new ActivityLogResource($logAdd))->resolve();
+        $this->assertEquals('RoomSchedule', $resAdd['component']);
+        $this->assertEquals('601', $resAdd['room_number']);
+        $this->assertEquals('Thêm Phòng OOO. Phòng 601 đã bị khóa từ 03-09-2026 đến 03-09-2026 - Lý do: thay tivi', $resAdd['description']);
+
+        $logModify = new ActivityLog([
+            'id' => 9998,
+            'action' => 'Modify',
+            'module' => 'reservation',
+            'component' => 'Khóa phòng',
+            'target_type' => 'RoomLock',
+            'target_id' => '894',
+            'target_label' => '602',
+            'old_values' => [
+                'to_date' => '2026-08-20',
+                'description' => 'khóa',
+            ],
+            'new_values' => [
+                'to_date' => '2026-08-21',
+                'description' => 'khóa s',
+                'lock_type' => 'OOO',
+                'room_number' => '602',
+            ],
+            'description' => 'Cập nhật hàng loạt phòng khóa 103',
+        ]);
+
+        $resMod = (new ActivityLogResource($logModify))->resolve();
+        $this->assertEquals('Khóa phòng', $resMod['component']);
+        $this->assertStringContainsString('Cập nhật phòng khóa OOO mã 894, phòng 602:', $resMod['description']);
+    }
+
+    /**
+     * Test Payment and Deposit resolution (Hàng 19, 22, 23).
+     */
+    public function test_payment_and_deposit_resolution()
+    {
+        $logDeposit = new ActivityLog([
+            'id' => 9999,
+            'action' => 'Add',
+            'module' => 'reservation',
+            'component' => 'Tạo đăng ký',
+            'target_type' => 'Payment',
+            'target_id' => '1',
+            'target_label' => 'GAL22',
+            'new_values' => [
+                'booking_id' => 22,
+                'payment_method' => 'BT',
+                'amount' => 5000000,
+                'description' => 'Deposit (Bank transfer)',
+            ],
+            'description' => '* Thanh toán cho Đăng ký GAL22: Số tiền: 0 đ',
+        ]);
+
+        $resDep = (new ActivityLogResource($logDeposit))->resolve();
+        $this->assertEquals('Tạo đăng ký', $resDep['component']);
+        $this->assertEquals('GAL22', $resDep['booking_code']);
+        $this->assertEquals('* Thêm Đặt Cọc Cho Đăng Ký: GAL22 - Tên Booking: Test ghi log - PaymentMethod: BT - Số Tiền: 5,000,000 - Mô tả: Deposit (Bank transfer)', $resDep['description']);
+    }
+
+    /**
+     * Test Alert / BookingNotification resolution (Hàng 45, 46, 47).
+     */
+    public function test_booking_alert_resolution()
+    {
+        $logAlert = new ActivityLog([
+            'id' => 10000,
+            'action' => 'create',
+            'module' => 'reservation',
+            'component' => 'Tạo đăng ký',
+            'target_type' => 'BookingNotification',
+            'target_id' => '1',
+            'target_label' => 'GAL27',
+            'new_values' => [
+                'booking_id' => 27,
+                'message' => 'Khách Khó',
+                'department' => 'FO',
+                'starts_on' => '2026-09-08',
+                'ends_on' => '2026-09-17',
+            ],
+            'description' => '* Thêm mới Quản lý Đặt phòng BookingNotification',
+        ]);
+
+        $resAlert = (new ActivityLogResource($logAlert))->resolve();
+        $this->assertEquals('Tạo đăng ký', $resAlert['component']);
+        $this->assertEquals('GAL27', $resAlert['booking_code']);
+        $this->assertStringContainsString('* Tạo Alert cho mã đăng ký GAL27', $resAlert['description']);
+        $this->assertStringContainsString('Nội dung cảnh báo: Khách Khó', $resAlert['description']);
+    }
+
+    /**
+     * Test Room Status resolution (Hàng 48, 97).
+     */
+    public function test_room_status_resolution()
+    {
+        $logStatus = new ActivityLog([
+            'id' => 10001,
+            'action' => 'Modify',
+            'module' => 'frontdesk',
+            'component' => 'Room map',
+            'target_type' => 'Room',
+            'target_id' => '101',
+            'target_label' => '101',
+            'old_values' => ['status_name' => 'Phòng chưa dọn'],
+            'new_values' => ['status_name' => 'Phòng sẵn sàng', 'room_number' => '101'],
+            'description' => '* Cập nhật trạng thái buồng phòng (101)',
+        ]);
+
+        $resStatus = (new ActivityLogResource($logStatus))->resolve();
+        $this->assertEquals('Room map', $resStatus['component']);
+        $this->assertEquals('* Phòng 101. Đổi trạng thái từ: Phòng chưa dọn -> Phòng sẵn sàng', $resStatus['description']);
+    }
+
+    /**
+     * Test Checkout resolution (Hàng 62).
+     */
+    public function test_checkout_resolution()
+    {
+        $logCheckout = new ActivityLog([
+            'id' => 10002,
+            'action' => 'CheckOut',
+            'module' => 'frontdesk',
+            'component' => 'Trả phòng',
+            'target_type' => 'BookingRoom',
+            'target_id' => 'G0000028',
+            'target_label' => 'GAL16',
+            'new_values' => ['room_number' => '405'],
+            'description' => '* Check out cho phòng 405',
+        ]);
+
+        $resCheckout = (new ActivityLogResource($logCheckout))->resolve();
+        $this->assertEquals('Trả phòng', $resCheckout['component']);
+        $this->assertEquals('GAL16', $resCheckout['booking_code']);
+        $this->assertEquals('G0000028', $resCheckout['room_number']);
+        $this->assertEquals('* Check Out Cho Đăng Ký GAL16 - Phòng: 405 (G0000028)', $resCheckout['description']);
     }
 
     /**
@@ -169,5 +388,48 @@ class ActivityLogEnhancementTest extends TestCase
         ]);
 
         $this->assertTrue($request->attributes->get('_activity_logged'));
+    }
+
+    /**
+     * Test booking creation with complex nested array/object new_values (no Array to string conversion error).
+     */
+    public function test_booking_creation_with_nested_objects_in_new_values()
+    {
+        $log = new ActivityLog([
+            'id' => 9999,
+            'action' => 'Add',
+            'module' => 'reservation',
+            'component' => 'Tạo đăng ký',
+            'target_type' => 'Booking',
+            'target_id' => '1',
+            'target_label' => 'GAL1',
+            'description' => 'Tạo mới Booking GAL1',
+            'new_values' => [
+                'booking_name' => 'ae',
+                'arrival_date' => '2026-08-29T17:00:00.000000Z',
+                'departure_date' => '2026-08-30T17:00:00.000000Z',
+                'company' => ['id' => 3, 'name' => 'Công ty TNHH Saigontourist'],
+                'market' => ['id' => 4, 'name' => 'Đại lý lữ hành (Travel Agent)'],
+                'customer_source' => ['id' => 7, 'name' => 'Traveloka'],
+                'booker' => ['id' => 4, 'name' => 'Phạm Thị D', 'phone' => '0934567890'],
+                'booking_rooms' => [
+                    [
+                        'id' => 'G0000001',
+                        'room_class' => ['name' => 'Superior Double'],
+                        'price' => '540000.00',
+                        'room_number' => '101',
+                        'adults' => 2,
+                        'children' => 0,
+                        'breakfast' => true,
+                    ]
+                ]
+            ],
+        ]);
+
+        $res = (new ActivityLogResource($log))->toArray(Request::create('/api/activity-logs', 'GET'));
+        $this->assertStringContainsString('Công ty TNHH Saigontourist', $res['description']);
+        $this->assertStringContainsString('0934567890', $res['description']);
+        $this->assertStringContainsString('540,000', $res['description']);
+        $this->assertStringContainsString('G0000001', $res['description']);
     }
 }
