@@ -255,18 +255,29 @@ const handlePresetChange = () => {
 const onStartDateChange = (date) => {
   if (date) {
     selectedRangeKey.value = 'custom'
+    // Dòng 93 Sheet FIX FE: Nếu Từ ngày (from) > Đến ngày (to) -> mặc định chỉnh to = from
+    if (localEndDate.value && date > localEndDate.value) {
+      localEndDate.value = new Date(date)
+    }
   }
 }
 
 const onEndDateChange = (date) => {
   if (date) {
     selectedRangeKey.value = 'custom'
+    if (localStartDate.value && date < localStartDate.value) {
+      localStartDate.value = new Date(date)
+    }
   }
 }
 
 // Apply the custom date picker selection
 const applyRange = () => {
   if (localStartDate.value && localEndDate.value) {
+    // Dòng 93 Sheet FIX FE: Đảm bảo nếu from > to thì to = from
+    if (localStartDate.value > localEndDate.value) {
+      localEndDate.value = new Date(localStartDate.value)
+    }
     const startYMD = formatDateYMD(localStartDate.value)
     const endYMD = formatDateYMD(localEndDate.value)
     

@@ -1,5 +1,9 @@
 <script setup>
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted, computed } from 'vue'
+import { useAuthStore } from '@/stores/auth-store'
+
+const authStore = useAuthStore()
+const themeBg = computed(() => authStore.settings?.topbar_color || 'var(--pms-custom-theme, #006bdb)')
 
 const props = defineProps({
   isOpen: {
@@ -132,6 +136,13 @@ function handleNativeToDateChange(e) {
   }
 }
 
+watch(fromDate, (newVal) => {
+  if (newVal && toDate.value && newVal > toDate.value) {
+    toDate.value = newVal
+    toDateDisplay.value = formatDateDisplay(newVal)
+  }
+})
+
 watch(() => props.isOpen, (val) => {
   if (val) {
     printMode.value = 'all'
@@ -175,22 +186,23 @@ function handleConfirm() {
   <div v-if="isOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
     <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150 text-slate-800 font-sans">
       <!-- Header -->
-      <div class="px-5 py-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+      <div 
+        class="px-5 py-3 flex items-center justify-between text-white select-none shrink-0"
+        :style="{ background: themeBg, color: '#ffffff' }"
+      >
         <div class="flex items-center gap-2.5">
-          <span class="w-8 h-8 rounded-lg bg-sky-100 text-sky-600 flex items-center justify-center font-bold">
+          <span class="w-7 h-7 rounded-lg bg-white/20 text-white flex items-center justify-center font-bold">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
             </svg>
           </span>
           <div>
-            <h3 class="text-sm font-semibold text-slate-800">Tùy Chọn In Phiếu Ăn Sáng</h3>
-            <p class="text-xs text-slate-500">Đã chọn: <span class="font-bold text-sky-600">{{ selectedRooms.length }}</span> phòng</p>
+            <h3 class="text-xs font-semibold text-white tracking-wide">Tùy Chọn In Phiếu Ăn Sáng</h3>
+            <p class="text-[11px] text-white/80">Đã chọn: <span class="font-bold text-white">{{ selectedRooms.length }}</span> phòng</p>
           </div>
         </div>
-        <button @click="emit('close')" class="text-slate-400 hover:text-slate-600 p-1.5 rounded-md hover:bg-slate-100 transition-colors cursor-pointer" title="Đóng (Esc)">
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-          </svg>
+        <button @click="emit('close')" class="text-white/80 hover:text-white p-1 rounded transition-colors cursor-pointer border-none bg-transparent" title="Đóng (Esc)">
+          ✕
         </button>
       </div>
 
