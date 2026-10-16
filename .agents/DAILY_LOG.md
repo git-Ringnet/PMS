@@ -403,6 +403,44 @@
   - `npm run build` thành công 100% (10.00s), 0 lỗi.
 
 
+## [2026-10-13] - Tối ưu Nghiệp Vụ Khôi Phục Checkout (Restore Checkout) & Ràng Buộc An Toàn (GuestController.php, CheckoutRestoreTest.php)
+### Module: Thu ngân / Trả phòng / Khôi phục checkout (Frontdesk / Checkout Restore)
+- **Mục tiêu**:
+  - Tách bạch khôi phục checkout Master và khôi phục từng phòng con để đảm bảo an toàn buồng phòng.
+  - Bổ sung các điều kiện chặn khôi phục phòng khi ngày checkout trước ngày hệ thống hoặc phòng đã bị chiếm dụng/đặt trước bởi booking khác.
+- **Chi tiết triển khai**:
+  - **Khôi phục Master ([GuestController.php](file:///c:/xampp/htdocs/PMS/backend/app/Http/Controllers/Api/GuestController.php))**:
+    - `restoreBookingCheckout`: Chỉ mở lại trạng thái Master từ Checked-out (2) sang Check-in (1). Các phòng con giữ nguyên trạng thái checkout để người dùng chủ động khôi phục riêng từng phòng sau khi kiểm tra phòng trống.
+  - **Ràng buộc an toàn khôi phục phòng con ([GuestController.php](file:///c:/xampp/htdocs/PMS/backend/app/Http/Controllers/Api/GuestController.php))**:
+    - `restoreRoomCheckout`: Chặn khôi phục khi ngày checkout trước ngày hệ thống.
+    - Chặn khôi phục nếu phòng đã có booking khác đặt (`status = BookingRoom::STATUS_BOOKED`) trong ngày hệ thống hoặc đã check-in (`STATUS_CHECKED_IN`) hoặc phòng đang bị khóa (`RoomLock`).
+  - **Kiểm thử ([CheckoutRestoreTest.php](file:///c:/xampp/htdocs/PMS/backend/tests/Feature/CheckoutRestoreTest.php))**:
+    - Bổ sung test case kiểm tra chặn khôi phục khi có booking khác đặt phòng, chặn khôi phục khi ngày checkout trước ngày hệ thống, và test khôi phục Master chỉ đổi trạng thái booking.
+    - 6/6 tests Feature pass 100%.
+
+## [2026-10-13] - Sửa lỗi Thêm Dịch Vụ & Tiền Phòng cho Phòng Day Use (In-Out Trong Ngày) (AddServiceModal.vue, CheckoutPage.vue, BookingRoomServiceController.php)
+### Module: Thu ngân / Trả phòng / Thêm dịch vụ (Frontdesk / Checkout / Add Service)
+- **Mục tiêu**:
+  - Khắc phục triệt để lỗi khi mở modal "Thêm dịch vụ" đối với phòng lưu trú Day Use (in-out cùng ngày):
+    - Mục dịch vụ: hiển thị sai ngày (lùi 1 ngày do lệch múi giờ UTC), không cho chọn ngày và báo lỗi "Ngày dịch vụ phải nằm trong thời gian lưu trú, từ ngày đến đến ngày đi".
+    - Mục tiền phòng: hiển thị sai ngày (lùi 2 ngày do logic trừ 1 ngày của phòng qua đêm), báo lỗi "Booking không có đêm lưu trú hợp lệ để post tiền phòng".
+  - Hiển thị đúng ô ngày theo ngày lưu trú của phòng Day Use và cho phép post bill/tiền phòng bình thường.
+- **Chi tiết triển khai**:
+  - **Chuẩn hóa parse ngày địa phương & nhận diện Day Use ([AddServiceModal.vue](file:///c:/xampp/htdocs/PMS/frontend/src/pages/frontdesk/components/AddServiceModal.vue))**:
+    - Bổ sung hàm `parseDateOnly` chuyển đổi chuỗi timestamp ISO UTC (`2026-08-30T17:00:00.000000Z`) về đúng ngày địa phương (`2026-08-31`), triệt tiêu hiện tượng lệch lùi 1 ngày.
+    - Bổ sung `isDayUseStay`: Nhận diện phòng Day Use qua prop `isDayUse` hoặc khi `bookingMinDate === bookingMaxDate`.
+    - Đối với phòng Day Use, `roomMaxDate` được giữ nguyên là chính ngày ở (không bị trừ 1 ngày như phòng ở qua đêm).
+    - Cập nhật thông báo và điều kiện hợp lệ khi post tiền phòng Day Use.
+  - **Truyền cờ Day Use từ màn hình Trả phòng ([CheckoutPage.vue](file:///c:/xampp/htdocs/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue))**:
+    - Truyền prop `:isDayUse` cho `AddServiceModal` dựa trên `is_day_use` của phòng/booking hoặc so khớp `arrival_date === departure_date`.
+  - **Xử lý Backend Post Room Charge Day Use ([BookingRoomServiceController.php](file:///c:/xampp/htdocs/PMS/backend/app/Http/Controllers/Api/BookingRoomServiceController.php))**:
+    - Không loại bỏ phòng có `departure_date == arrival_date` khi lọc danh sách phòng post tiền phòng (`$roomsToPost`).
+    - Trong `postRoomCharge`, kiểm tra `$isDayUse`: `$stayEnd` và `$roomLastOccupiedNight` được giữ nguyên là ngày ở (không bị trừ 1 ngày), cho phép post tiền phòng thành công.
+    - Cập nhật `roomNightFlag` nhận diện thêm điều kiện `arrival_date == departure_date`.
+  - **Kiểm thử**:
+    - Frontend: `npm run build` thành công 100% (3.68s); 82/82 frontend unit tests PASSED.
+    - Backend: Feature test `test_day_use_room_allows_posting_room_charge_on_same_day` và `test_day_use_room_allows_posting_fo_service_on_same_day` pass 100%.
+
 ## [2026-10-12] - Cập Nhật Booking: Nút Xóa (x) Clear Ô Nhập Liệu & Bỏ Ghi Chú Lưu Ý, Bỏ Gợi Ý Ô Giá (QuickUpdateModal.vue)
 ### Module: Đặt phòng / Phiếu đăng ký (Reservation / QuickUpdateModal)
 - **Mục tiêu**:

@@ -655,9 +655,10 @@ class BookingBusinessRulesTest extends TestCase
     }
 
     /**
-     * TC-08: Restore master checkout is blocked when one of the child rooms is occupied.
+     * TC-08: Restore master checkout only reopens the booking header, so an occupied child room does not block it
+     * and the child rooms stay checked out.
      */
-    public function test_restore_master_checkout_blocked_when_child_room_is_occupied(): void
+    public function test_restore_master_checkout_only_reopens_booking_when_child_room_is_occupied(): void
     {
         // 1. Create a Master Booking with 2 rooms (101, 102) that is Checked Out.
         $booking = $this->createBooking([
@@ -702,11 +703,12 @@ class BookingBusinessRulesTest extends TestCase
             'status' => BookingRoom::STATUS_CHECKED_IN,
         ]);
 
-        // 3. Attempting to restore checkout for the master booking fails with 422 because room 102 is occupied.
+        // 3. Restoring the master only reopens the booking; child rooms are not re-checked-in.
         $response = $this->postJson("/api/bookings/{$booking->id}/restore-checkout");
-        $response->assertStatus(422);
-        $response->assertJsonPath('success', false);
-        $this->assertStringContainsString('không thể khôi phục checkout', $response->json('message'));
+        $response->assertSuccessful();
+        $this->assertDatabaseHas('bookings', ['id' => $booking->id, 'status' => Booking::STATUS_CHECKIN]);
+        $this->assertDatabaseHas('booking_rooms', ['id' => $bRoom1->id, 'status' => BookingRoom::STATUS_CHECKED_OUT]);
+        $this->assertDatabaseHas('booking_rooms', ['id' => $bRoom2->id, 'status' => BookingRoom::STATUS_CHECKED_OUT]);
     }
 
     /**

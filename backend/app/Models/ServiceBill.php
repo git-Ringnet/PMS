@@ -71,4 +71,34 @@ class ServiceBill extends Model
     {
         return $this->belongsTo(SalesInvoice::class, 'InvoiceId', 'id');
     }
+
+    /**
+     * Bỏ qua bill RM "bổ sung tiền phòng" khi cần tìm bill tiền phòng chuẩn của một ngày.
+     */
+    public function scopeExcludeSupplementalRoomCharge($query)
+    {
+        return $query->whereNotExists(fn ($sub) => self::supplementalRoomChargeConstraint($sub));
+    }
+
+    public function scopeOnlySupplementalRoomCharge($query)
+    {
+        return $query->whereExists(fn ($sub) => self::supplementalRoomChargeConstraint($sub));
+    }
+
+    /**
+     * Bill bổ sung tiền phòng: room_night_bills.is_room_night = 0 trên phòng không phải Day Use.
+     * Tiền phòng Day Use cũng có thể is_room_night = 0 (IsRoomNightRoomDayUse = 0) nên phải loại trừ.
+     */
+    private static function supplementalRoomChargeConstraint($sub): void
+    {
+        $sub->selectRaw('1')
+            ->from('room_night_bills')
+            ->join('booking_rooms', 'booking_rooms.id', '=', 'service_bills.RentalRoomId1')
+            ->join('bookings', 'bookings.id', '=', 'booking_rooms.booking_id')
+            ->whereColumn('room_night_bills.bill_id', 'service_bills.Ma')
+            ->where('room_night_bills.is_room_night', 0)
+            ->where(fn ($q) => $q->whereNull('booking_rooms.is_day_use')->orWhere('booking_rooms.is_day_use', 0))
+            ->where(fn ($q) => $q->whereNull('bookings.is_day_use')->orWhere('bookings.is_day_use', 0))
+            ->whereRaw('DATE(booking_rooms.arrival_date) <> DATE(booking_rooms.departure_date)');
+    }
 }

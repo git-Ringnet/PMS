@@ -533,6 +533,17 @@ class GuestController extends Controller
                     return response()->json(['success' => false, 'message' => 'Phòng đã được booking khác check-in, không thể khôi phục checkout.'], 422);
                 }
 
+                // Booking khác đã gán phòng này và lưu trú qua ngày hệ thống cũng xem là đang chiếm dụng.
+                $hasOccupyingReservation = BookingRoom::where('room_number', $room->room_number)
+                    ->where('id', '!=', $room->id)
+                    ->where('status', BookingRoom::STATUS_BOOKED)
+                    ->whereDate('arrival_date', '<=', $systemDate->toDateString())
+                    ->whereDate('departure_date', '>=', $systemDate->toDateString())
+                    ->exists();
+                if ($hasOccupyingReservation) {
+                    return response()->json(['success' => false, 'message' => 'Phòng đã được booking khác đặt trong ngày hệ thống, không thể khôi phục checkout.'], 422);
+                }
+
                 $hasActiveLock = RoomLock::where('room_number', $room->room_number)
                     ->where('is_active', RoomLock::STATUS_ACTIVE)
                     ->where('start_date', '<=', $systemDate->copy()->endOfDay())
@@ -595,55 +606,9 @@ class GuestController extends Controller
                 return response()->json(['success' => false, 'message' => 'Chỉ có thể khôi phục Master đã checkout.'], 422);
             }
 
-            $systemDate = app(\App\Services\RoomAvailabilityService::class)->getSystemDate()->startOfDay();
-
-            $bookingRooms = $booking->bookingRooms()->where('status', BookingRoom::STATUS_CHECKED_OUT)->get();
-            foreach ($bookingRooms as $room) {
-                if ($room->room_number) {
-                    $hasInhouseBooking = BookingRoom::where('room_number', $room->room_number)
-                        ->where('id', '!=', $room->id)
-                        ->where('status', BookingRoom::STATUS_CHECKED_IN)
-                        ->exists();
-                    if ($hasInhouseBooking) {
-                        return response()->json(['success' => false, 'message' => "Phòng {$room->room_number} đã được booking khác check-in, không thể khôi phục checkout."], 422);
-                    }
-
-                    $hasActiveLock = RoomLock::where('room_number', $room->room_number)
-                        ->where('is_active', RoomLock::STATUS_ACTIVE)
-                        ->where('start_date', '<=', $systemDate->copy()->endOfDay())
-                        ->where('end_date', '>=', $systemDate->copy()->startOfDay())
-                        ->exists();
-                    if ($hasActiveLock) {
-                        return response()->json(['success' => false, 'message' => "Phòng {$room->room_number} đang bị khóa, không thể khôi phục checkout."], 422);
-                    }
-                }
-
-                $room->guests()->where('status', BookingRoomGuest::STATUS_CHECKED_OUT)->update([
-                    'status' => BookingRoomGuest::STATUS_CHECKED_IN,
-                    'actual_checkout_date' => null,
-                    'actual_checkout_time' => null,
-                    'checkout_by' => null,
-                ]);
-
-                $room->children()->where('child_status', BookingRoomGuest::STATUS_CHECKED_OUT)->update([
-                    'child_status' => BookingRoomGuest::STATUS_CHECKED_IN
-                ]);
-
-                $room->update([
-                    'status' => BookingRoom::STATUS_CHECKED_IN,
-                    'departure_date' => $room->planned_departure_date ?: $room->departure_date,
-                    'ActutalNumOfDays' => $room->NumOfDays ?: $room->ActutalNumOfDays,
-                    'CheckoutDate' => $room->planned_departure_date ?: $room->departure_date,
-                    'CheckoutTime' => '12:00:00',
-                    'check_out_user' => null,
-                ]);
-
-                if ($room->room) {
-                    $room->room->update(['status' => 'occupied']);
-                }
-            }
-
-            app(BookingStatusSyncService::class)->sync($booking, Booking::STATUS_CHECKIN);
+            // Chỉ mở lại trạng thái Master (2 -> 1). Phòng con giữ nguyên trạng thái checkout
+            // và phải khôi phục riêng từng phòng theo điều kiện ngày hệ thống/phòng trống.
+            $booking->update(['status' => Booking::STATUS_CHECKIN]);
             return response()->json(['success' => true, 'message' => 'Khôi phục checkout Master thành công.']);
         });
     }
@@ -927,6 +892,7 @@ class GuestController extends Controller
         $chargedDates = \App\Models\ServiceBill::where('RegisterId1', $room->booking_id)
             ->where('RentalRoomId1', $room->id)
             ->where('ServiceId', 'RM')
+            ->excludeSupplementalRoomCharge()
             ->where('Edit', 0)
             ->whereIn(DB::raw('DATE(Date)'), $requiredDates->all())
             ->pluck('Date')
