@@ -723,36 +723,80 @@ const defaultColumns = {
   breakfast: true, // Ăn sáng
 }
 
-const visibleColumns = ref({ ...defaultColumns })
-
-// Khởi tạo từ authStore nếu đã có sẵn
-if (authStore.settings?.visible_columns?.create_registration) {
-  visibleColumns.value = { ...defaultColumns, ...authStore.settings.visible_columns.create_registration }
+const ROOMS_COLUMN_META = {
+  roomType: { key: 'roomType', label: 'Loại/Dạng', minWidth: '70px', align: 'center', thClass: 'w-[5%]' },
+  dates: { key: 'dates', label: 'Ngày Đến ~ Ngày Đi', minWidth: '290px', align: 'center', thClass: 'min-w-[290px] w-[20%]' },
+  occupancy: { key: 'occupancy', label: 'Chiếm Dụng', minWidth: '55px', align: 'center', thClass: 'w-[4%]' },
+  availability: { key: 'availability', label: 'Trống', minWidth: '50px', align: 'center', thClass: 'w-[4%]' },
+  quantity: { key: 'quantity', label: 'Số Lượng', minWidth: '55px', align: 'center', thClass: 'w-[5%] bg-slate-100/50' },
+  price: { key: 'price', label: 'Giá Phòng', minWidth: '100px', align: 'center', thClass: 'w-[9%]' },
+  rateCode: { key: 'rateCode', label: 'Mã Giá Phòng', minWidth: '130px', align: 'center', thClass: 'w-[11%]' },
+  discount: { key: 'discount', label: 'Tăng/Giảm', minWidth: '95px', align: 'center', thClass: 'w-[8%]' },
+  upgrade: { key: 'upgrade', label: 'Nâng Hạng', minWidth: '90px', align: 'center', thClass: 'w-[8%]' },
+  adults: { key: 'adults', label: 'Người Lớn', minWidth: '50px', align: 'center', thClass: 'w-[4%]' },
+  babies: { key: 'babies', label: 'Em Bé', minWidth: '50px', align: 'center', thClass: 'w-[4%]' },
+  children: { key: 'children', label: 'Trẻ Em', minWidth: '50px', align: 'center', thClass: 'w-[4%]' },
+  childBreakfastRate: { key: 'childBreakfastRate', label: 'Giá Ăn Sáng Trẻ Em', minWidth: '110px', align: 'center', thClass: 'w-[9%]' },
+  breakfast: { key: 'breakfast', label: 'Ăn Sáng', minWidth: '45px', align: 'center', thClass: 'w-[3%]' }
 }
+
+const defaultRoomsColumnOrder = [
+  'roomType',
+  'dates',
+  'occupancy',
+  'availability',
+  'quantity',
+  'price',
+  'rateCode',
+  'discount',
+  'upgrade',
+  'adults',
+  'babies',
+  'children',
+  'childBreakfastRate',
+  'breakfast'
+]
+
+const visibleColumns = ref({ ...defaultColumns })
+const roomsColumnOrder = ref([...defaultRoomsColumnOrder])
+
+// Khởi tạo thứ tự và hiển thị cột từ authStore hoặc localStorage
+const getSavedColumnOrder = () => {
+  const uid = authStore.user?.id || 'default'
+  const saved = authStore.settings?.column_order?.create_registration_rooms
+    || JSON.parse(localStorage.getItem(`pms_col_order_rooms_${uid}`) || 'null')
+  if (Array.isArray(saved) && saved.length > 0) {
+    const valid = saved.filter(k => defaultRoomsColumnOrder.includes(k))
+    const missing = defaultRoomsColumnOrder.filter(k => !valid.includes(k))
+    return [...valid, ...missing]
+  }
+  return [...defaultRoomsColumnOrder]
+}
+
+const getSavedVisibleColumns = () => {
+  const uid = authStore.user?.id || 'default'
+  const saved = authStore.settings?.visible_columns?.create_registration
+    || JSON.parse(localStorage.getItem(`pms_vis_cols_rooms_${uid}`) || 'null')
+  if (saved && typeof saved === 'object') {
+    return { ...defaultColumns, ...saved }
+  }
+  return { ...defaultColumns }
+}
+
+visibleColumns.value = getSavedVisibleColumns()
+roomsColumnOrder.value = getSavedColumnOrder()
 
 let saveColumnsTimer = null
 let isSyncingFromStore = false
 let isSavingToStore = false
 
-// Đồng bộ từ store khi dữ liệu user settings được tải lần đầu từ API /me (nếu chưa có khi mount)
-watch(() => authStore.settings?.visible_columns?.create_registration, (newVal) => {
-  if (isSavingToStore) return
-  if (!newVal) return
-
-  const keys = Object.keys(defaultColumns)
-  const isDifferent = keys.some(k => newVal[k] !== undefined && newVal[k] !== visibleColumns.value[k])
-  if (isDifferent) {
-    isSyncingFromStore = true
-    visibleColumns.value = { ...defaultColumns, ...newVal }
-    nextTick(() => {
-      isSyncingFromStore = false
-    })
-  }
-}, { deep: true })
-
-// Lưu thiết lập khi người dùng chủ động tích chọn cột (debounce 500ms để tránh gửi request liên tục và race condition)
-watch(visibleColumns, (newVal) => {
-  if (isSyncingFromStore) return
+// Hàm lưu đồng bộ cả thứ tự và hiển thị cột vào backend và localStorage
+function saveRoomsColumnSettings() {
+  const uid = authStore.user?.id || 'default'
+  try {
+    localStorage.setItem(`pms_col_order_rooms_${uid}`, JSON.stringify(roomsColumnOrder.value))
+    localStorage.setItem(`pms_vis_cols_rooms_${uid}`, JSON.stringify(visibleColumns.value))
+  } catch (_) {}
 
   if (saveColumnsTimer) clearTimeout(saveColumnsTimer)
   saveColumnsTimer = setTimeout(async () => {
@@ -760,7 +804,10 @@ watch(visibleColumns, (newVal) => {
       isSavingToStore = true
       await authStore.updateUserSettings({
         visible_columns: {
-          create_registration: JSON.parse(JSON.stringify(newVal))
+          create_registration: JSON.parse(JSON.stringify(visibleColumns.value))
+        },
+        column_order: {
+          create_registration_rooms: JSON.parse(JSON.stringify(roomsColumnOrder.value))
         }
       })
     } catch (e) {
@@ -771,6 +818,53 @@ watch(visibleColumns, (newVal) => {
       })
     }
   }, 500)
+}
+
+function moveRoomsColumn(index, direction) {
+  const targetIndex = index + direction
+  if (targetIndex < 0 || targetIndex >= roomsColumnOrder.value.length) return
+  const item = roomsColumnOrder.value[index]
+  roomsColumnOrder.value.splice(index, 1)
+  roomsColumnOrder.value.splice(targetIndex, 0, item)
+  saveRoomsColumnSettings()
+}
+
+function resetRoomsColumns() {
+  roomsColumnOrder.value = [...defaultRoomsColumnOrder]
+  visibleColumns.value = { ...defaultColumns }
+  saveRoomsColumnSettings()
+}
+
+// Đồng bộ từ store khi dữ liệu user settings được tải lần đầu từ API /me (nếu chưa có khi mount)
+watch(() => [authStore.settings?.visible_columns?.create_registration, authStore.settings?.column_order?.create_registration_rooms], ([newCols, newOrder]) => {
+  if (isSavingToStore) return
+
+  if (newCols) {
+    const keys = Object.keys(defaultColumns)
+    const isDifferent = keys.some(k => newCols[k] !== undefined && newCols[k] !== visibleColumns.value[k])
+    if (isDifferent) {
+      isSyncingFromStore = true
+      visibleColumns.value = { ...defaultColumns, ...newCols }
+      nextTick(() => {
+        isSyncingFromStore = false
+      })
+    }
+  }
+
+  if (Array.isArray(newOrder) && newOrder.length > 0) {
+    const valid = newOrder.filter(k => defaultRoomsColumnOrder.includes(k))
+    const missing = defaultRoomsColumnOrder.filter(k => !valid.includes(k))
+    const fullOrder = [...valid, ...missing]
+    if (JSON.stringify(fullOrder) !== JSON.stringify(roomsColumnOrder.value)) {
+      roomsColumnOrder.value = fullOrder
+    }
+  }
+}, { deep: true })
+
+// Lưu thiết lập khi người dùng chủ động tích chọn cột
+watch(visibleColumns, () => {
+  if (isSyncingFromStore) return
+  saveRoomsColumnSettings()
 }, { deep: true })
 const showColumnSelector = ref(false)
 
@@ -8510,10 +8604,11 @@ defineExpose({
     <Teleport to="body">
       <div 
         v-if="isModalOpen && !isCheckoutMetadataEdit"
-        class="fixed inset-0 bg-black/20 z-[9999] flex items-center justify-center p-2 sm:p-4 animate-in"
+        class="fixed inset-0 bg-black/20 z-[9999] flex items-center justify-center p-1 sm:p-3 animate-in"
       >
         <div 
-          class="bg-white rounded-xl shadow-2xl w-[98vw] max-w-[1760px] overflow-hidden border border-gray-300 flex flex-col max-h-[92vh]"
+          class="bg-white rounded-xl shadow-2xl overflow-hidden border border-gray-300 flex flex-col max-h-[94vh] transition-all duration-200"
+          :class="modalSubTab === 'rooms' ? 'w-[99vw] max-w-[1900px]' : 'w-[98vw] max-w-[1760px]'"
           :style="{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }"
         >
           
@@ -9234,337 +9329,339 @@ defineExpose({
                   </svg>
                 </button>
 
-                <!-- Column Toggle Dropdown -->
-                <div v-if="showColumnSelector" id="column-selector-container" class="absolute right-0 top-10 bg-white border border-slate-200 rounded-lg shadow-xl p-3 pb-3.5 w-60 flex flex-col gap-1.5 z-30 select-none animate-in">
-                  <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-100 pb-1.5 mb-0.5">Cột hiển thị</div>
+                <!-- Column Toggle Dropdown with Reorder & Visibility -->
+                <div v-if="showColumnSelector" id="column-selector-container" class="absolute right-0 top-10 bg-white border border-slate-200 rounded-lg shadow-xl p-3 pb-3.5 w-72 flex flex-col gap-1.5 z-30 select-none animate-in text-xs">
+                  <div class="flex items-center justify-between border-b border-slate-100 pb-1.5 mb-0.5">
+                    <span class="font-semibold text-slate-500 uppercase tracking-wider text-[11px]">Cột hiển thị & Thứ tự</span>
+                    <button type="button" @click="resetRoomsColumns" class="text-[11px] text-sky-600 hover:text-sky-700 font-semibold cursor-pointer border-none bg-transparent" title="Khôi phục thứ tự và hiển thị mặc định">
+                      Mặc định
+                    </button>
+                  </div>
                   
                   <div class="flex flex-col gap-0.5 overflow-y-auto max-h-72 text-xs font-normal text-[#000000D9] pr-1">
-                    <label class="flex items-center gap-2 cursor-pointer hover:bg-slate-50 py-1.5 px-2 rounded transition-colors">
-                      <input type="checkbox" v-model="visibleColumns.roomType" class="rounded text-sky-500 focus:ring-sky-500 w-3.5 h-3.5" />
-                      <span class="text-xs text-[#000000D9]">Loại/Dạng</span>
-                    </label>
-                    <label class="flex items-center gap-2 cursor-pointer hover:bg-slate-50 py-1.5 px-2 rounded transition-colors">
-                      <input type="checkbox" v-model="visibleColumns.dates" class="rounded text-sky-500 focus:ring-sky-500 w-3.5 h-3.5" />
-                      <span class="text-xs text-[#000000D9]">Ngày đến -> Ngày đi</span>
-                    </label>
-                    <label class="flex items-center gap-2 cursor-pointer hover:bg-slate-50 py-1.5 px-2 rounded transition-colors">
-                      <input type="checkbox" v-model="visibleColumns.occupancy" class="rounded text-sky-500 focus:ring-sky-500 w-3.5 h-3.5" />
-                      <span class="text-xs text-[#000000D9]">Chiếm dụng</span>
-                    </label>
-                    <label class="flex items-center gap-2 cursor-pointer hover:bg-slate-50 py-1.5 px-2 rounded transition-colors">
-                      <input type="checkbox" v-model="visibleColumns.availability" class="rounded text-sky-500 focus:ring-sky-500 w-3.5 h-3.5" />
-                      <span class="text-xs text-[#000000D9]">Phòng trống</span>
-                    </label>
-                    <label class="flex items-center gap-2 cursor-pointer hover:bg-slate-50 py-1.5 px-2 rounded transition-colors">
-                      <input type="checkbox" v-model="visibleColumns.quantity" class="rounded text-sky-500 focus:ring-sky-500 w-3.5 h-3.5" />
-                      <span class="text-xs text-[#000000D9]">Số lượng</span>
-                    </label>
-                    <label class="flex items-center gap-2 cursor-pointer hover:bg-slate-50 py-1.5 px-2 rounded transition-colors">
-                      <input type="checkbox" v-model="visibleColumns.price" class="rounded text-sky-500 focus:ring-sky-500 w-3.5 h-3.5" />
-                      <span class="text-xs text-[#000000D9]">Giá phòng</span>
-                    </label>
-                    <label class="flex items-center gap-2 cursor-pointer hover:bg-slate-50 py-1.5 px-2 rounded transition-colors">
-                      <input type="checkbox" v-model="visibleColumns.rateCode" class="rounded text-sky-500 focus:ring-sky-500 w-3.5 h-3.5" />
-                      <span class="text-xs text-[#000000D9]">Mã giá phòng/Gói</span>
-                    </label>
-                    <label class="flex items-center gap-2 cursor-pointer hover:bg-slate-50 py-1.5 px-2 rounded transition-colors">
-                      <input type="checkbox" v-model="visibleColumns.discount" class="rounded text-sky-500 focus:ring-sky-500 w-3.5 h-3.5" />
-                      <span class="text-xs text-[#000000D9]">Tăng/Giảm giá</span>
-                    </label>
-                    <label class="flex items-center gap-2 cursor-pointer hover:bg-slate-50 py-1.5 px-2 rounded transition-colors">
-                      <input type="checkbox" v-model="visibleColumns.upgrade" class="rounded text-sky-500 focus:ring-sky-500 w-3.5 h-3.5" />
-                      <span class="text-xs text-[#000000D9]">Nâng hạng phòng</span>
-                    </label>
-                    <label class="flex items-center gap-2 cursor-pointer hover:bg-slate-50 py-1.5 px-2 rounded transition-colors">
-                      <input type="checkbox" v-model="visibleColumns.adults" class="rounded text-sky-500 focus:ring-sky-500 w-3.5 h-3.5" />
-                      <span class="text-xs text-[#000000D9]">Người lớn</span>
-                    </label>
-                    <label class="flex items-center gap-2 cursor-pointer hover:bg-slate-50 py-1.5 px-2 rounded transition-colors">
-                      <input type="checkbox" v-model="visibleColumns.babies" class="rounded text-sky-500 focus:ring-sky-500 w-3.5 h-3.5" />
-                      <span class="text-xs text-[#000000D9]">Em bé</span>
-                    </label>
-                    <label class="flex items-center gap-2 cursor-pointer hover:bg-slate-50 py-1.5 px-2 rounded transition-colors">
-                      <input type="checkbox" v-model="visibleColumns.children" class="rounded text-sky-500 focus:ring-sky-500 w-3.5 h-3.5" />
-                      <span class="text-xs text-[#000000D9]">Trẻ em</span>
-                    </label>
-                    <label class="flex items-center gap-2 cursor-pointer hover:bg-slate-50 py-1.5 px-2 rounded transition-colors">
-                      <input type="checkbox" v-model="visibleColumns.childBreakfastRate" class="rounded text-sky-500 focus:ring-sky-500 w-3.5 h-3.5" />
-                      <span class="text-xs text-[#000000D9]">Giá ăn sáng TE</span>
-                    </label>
-                    <label class="flex items-center gap-2 cursor-pointer hover:bg-slate-50 py-1.5 px-2 rounded transition-colors">
-                      <input type="checkbox" v-model="visibleColumns.breakfast" class="rounded text-sky-500 focus:ring-sky-500 w-3.5 h-3.5" />
-                      <span class="text-xs text-[#000000D9]">Ăn sáng</span>
-                    </label>
+                    <div 
+                      v-for="(colKey, index) in roomsColumnOrder" 
+                      :key="colKey"
+                      class="flex items-center justify-between hover:bg-slate-50 py-1 px-1.5 rounded transition-colors group"
+                    >
+                      <label class="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
+                        <input 
+                          type="checkbox" 
+                          v-model="visibleColumns[colKey]" 
+                          @change="saveRoomsColumnSettings"
+                          class="rounded text-sky-500 focus:ring-sky-500 w-3.5 h-3.5 shrink-0" 
+                        />
+                        <span class="text-xs text-[#000000D9] truncate" :class="visibleColumns[colKey] ? 'font-medium' : 'text-slate-400 line-through'">
+                          {{ ROOMS_COLUMN_META[colKey]?.label || colKey }}
+                        </span>
+                      </label>
+
+                      <div class="flex items-center gap-0.5 shrink-0 ml-1">
+                        <button
+                          type="button"
+                          @click.stop="moveRoomsColumn(index, -1)"
+                          :disabled="index === 0"
+                          class="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 disabled:opacity-20 disabled:cursor-not-allowed border-none bg-transparent cursor-pointer transition-colors"
+                          title="Di chuyển lên trước"
+                        >
+                          <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                            <polyline points="18 15 12 9 6 15" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          @click.stop="moveRoomsColumn(index, 1)"
+                          :disabled="index === roomsColumnOrder.length - 1"
+                          class="w-5 h-5 flex items-center justify-center rounded text-slate-400 hover:text-slate-700 hover:bg-slate-200/70 disabled:opacity-20 disabled:cursor-not-allowed border-none bg-transparent cursor-pointer transition-colors"
+                          title="Di chuyển xuống sau"
+                        >
+                          <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                            <polyline points="6 9 12 15 18 9" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
 
               <!-- Grid rooms table allocations -->
-              <div class="w-full px-1 pb-2 overflow-x-auto">
-                <table class="min-w-[1240px] w-full border-collapse text-left text-xs table-auto">
+              <div class="w-full px-0 pb-2 overflow-x-auto">
+                <table class="w-full min-w-full border-collapse text-left text-xs table-auto">
                   <thead class="bg-slate-50 text-slate-500 font-semibold border-y border-slate-200">
                     <tr>
-                      <th v-if="visibleColumns.roomType" class="py-2 px-2 text-center w-[5%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Loại/Dạng</th>
-                      <th v-if="visibleColumns.dates" class="py-2 px-2 text-center min-w-[300px] w-[21%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Ngày Đến ~ Ngày Đi</th>
-                      <th v-if="visibleColumns.occupancy" class="py-2 px-1 text-center w-[4%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Chiếm Dụng</th>
-                      <th v-if="visibleColumns.availability" class="py-2 px-1 text-center w-[4%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Trống</th>
-                      <th v-if="visibleColumns.quantity" class="py-2 px-1 text-center w-[5%] font-semibold text-[11px] bg-slate-100/50 align-middle border-r border-slate-200 border">Số Lượng</th>
-                      <th v-if="visibleColumns.price" class="py-2 px-1 text-center w-[9%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Giá Phòng</th>
-                      <th v-if="visibleColumns.rateCode" class="py-2 px-2 text-center w-[11%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Mã Giá Phòng</th>
-                      <th v-if="visibleColumns.discount" class="py-2 px-2 text-center w-[9%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Tăng/Giảm</th>
-                      <th v-if="visibleColumns.upgrade" class="py-2 px-2 text-center w-[8%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Nâng Hạng</th>
-                      <th v-if="visibleColumns.adults" class="py-2 px-1 text-center w-[4%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Người Lớn</th>
-                      <th v-if="visibleColumns.babies" class="py-2 px-1 text-center w-[4%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Em Bé</th>
-                      <th v-if="visibleColumns.children" class="py-2 px-1 text-center w-[4%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Trẻ Em</th>
-                      <th v-if="visibleColumns.childBreakfastRate" class="py-2 px-1 text-center w-[9%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Giá Ăn Sáng Trẻ Em</th>
-                      <th v-if="visibleColumns.breakfast" class="py-2 px-1 text-center w-[3%] font-semibold text-[11px] align-middle border-r border-slate-200 border">Ăn Sáng</th>
+                      <template v-for="colKey in roomsColumnOrder" :key="colKey">
+                        <th 
+                          v-if="visibleColumns[colKey]" 
+                          class="py-2 px-1 text-center font-semibold text-[11px] align-middle border-r border-slate-200 border"
+                          :class="[
+                            ROOMS_COLUMN_META[colKey]?.thClass || '',
+                            colKey === 'roomType' ? 'sticky left-0 z-20 bg-slate-50 shadow-[1px_0_0_0_#e2e8f0]' : ''
+                          ]"
+                        >
+                          {{ ROOMS_COLUMN_META[colKey]?.label }}
+                        </th>
+                      </template>
                     </tr>
                   </thead>
                   
                   <tbody class="text-[11px] text-slate-700 font-medium select-none">
-                    <tr v-for="(row, idx) in roomAddDraft" :key="row.roomClassId" class="border-b border-slate-200 hover:bg-slate-50/50 transition-colors">
-                      
-                      <!-- Loại/Dạng -->
-                      <td v-if="visibleColumns.roomType" class="py-2 px-2 font-bold text-slate-900 border-slate-200">{{ row.roomClassCode }}</td>
-                      
-                      <!-- Ngày đến ~ Ngày đi -->
-                      <td v-if="visibleColumns.dates" class="py-2 px-2 border-slate-200">
-                        <div class="flex items-center justify-center space-x-1 whitespace-nowrap">
-                          <div class="w-[144px]">
-                            <SingleDatePicker
-                              v-model="row.arrivalDate"
-                              :min-date="systemDate"
-                              :start-date="systemDate || row.arrivalDate"
-                              @change="handleRowDateChange(row)"
-                              placeholder="dd/mm/yyyy"
-                              four-digit-year
-                              input-class="!h-[30px] !px-1.5"
-                              text-input-class="!text-xs !font-bold"
-                            />
-                          </div>
-                          <span class="text-slate-400 font-bold text-xs">~</span>
-                          <div class="w-[144px]">
-                            <SingleDatePicker
-                              v-model="row.departureDate"
-                              :min-date="row.arrivalDate"
-                              :start-date="row.arrivalDate || systemDate"
-                              @change="handleRowDateChange(row)"
-                              placeholder="dd/mm/yyyy"
-                              four-digit-year
-                              input-class="!h-[30px] !px-1.5"
-                              text-input-class="!text-xs !font-bold"
-                            />
-                          </div>
-                        </div>
-                      </td>
-                      
-                      <!-- Chiếm dụng -->
-                      <td v-if="visibleColumns.occupancy" class="py-2 px-1 text-center font-semibold text-slate-600 border-slate-200">{{ getOccupancyCount(row) }}</td>
-                      
-                      <!-- Phòng trống -->
-                      <td v-if="visibleColumns.availability" class="py-2 px-1 text-center font-bold border-slate-200" :class="row.availableRooms <= 0 ? 'text-rose-600' : 'text-slate-800'">
-                        {{ row.availableRooms }}
-                      </td>
-                      
-                      <!-- Số lượng -->
-                      <td v-if="visibleColumns.quantity" class="py-2 px-1 bg-slate-50/30 border-slate-200">
-                        <div class="relative w-full min-w-[40px] max-w-[60px] mx-auto border border-slate-300 rounded-md h-[30px] shadow-sm flex items-center" :class="isQuantityDisabled(row) ? 'bg-slate-100 cursor-not-allowed text-slate-400' : 'bg-white text-slate-800'">
-                          <input type="number" v-model.number="row.quantity" min="0" :disabled="isQuantityDisabled(row)" @input="handleQuantityInput(row)" @focus="$event.target.select()" class="w-full text-center focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none" :class="isQuantityDisabled(row) ? 'cursor-not-allowed text-slate-400' : 'pr-4 text-slate-800'">
-                          <div v-if="!isQuantityDisabled(row)" class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
-                            <button @click.prevent="handleIncreaseQuantity(row)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
-                            <button @click.prevent="handleDecreaseQuantity(row)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
-                          </div>
-                        </div>
-                      </td>
-
-                      <!-- Giá phòng -->
-                      <td v-if="visibleColumns.price" class="py-2 px-1 border-slate-200">
-                        <div class="relative w-full min-w-[70px] mx-auto border border-slate-300 rounded-md h-[30px] shadow-sm flex items-center" :class="isPriceDisabled(row) ? 'bg-slate-100 cursor-not-allowed' : 'bg-white'">
-                          <input type="text" :value="formatCurrencyInput(row.price)" :disabled="isPriceDisabled(row)" @input="e => { row.price = cleanCurrencyValue(e.target.value); row.basePrice = row.price; syncAllocationToRooms(row) }" @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }" class="w-full text-right pl-2 pr-5 focus:outline-none text-[11px] bg-transparent border-none outline-none font-bold" :class="isPriceDisabled(row) ? 'text-slate-400 cursor-not-allowed' : 'text-slate-800'">
-                          <div v-if="!isPriceDisabled(row)" class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
-                            <button @click.prevent="row.price = (Number(row.price) || 0) + 50000; row.basePrice = row.price; syncAllocationToRooms(row)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
-                            <button @click.prevent="row.price >= 50000 ? (row.price = (Number(row.price) || 0) - 50000, row.basePrice = row.price, syncAllocationToRooms(row)) : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
-                          </div>
-                        </div>
-                      </td>
-
-                      <!-- Mã giá phòng -->
-                      <td v-if="visibleColumns.rateCode" class="py-2 px-2 border-slate-200">
-                        <select 
-                          v-model="row.rateCode" 
-                          @change="handleRateCodeChange(row, $event.target.value)"
-                          class="w-full border border-slate-300 rounded-md h-[30px] px-2 text-slate-700 focus:outline-none shadow-sm bg-white text-[11px]"
+                    <tr 
+                      v-for="(row, idx) in roomAddDraft" 
+                      :key="row.roomClassId" 
+                      class="border-b border-slate-200 transition-colors"
+                      :class="Number(row.quantity) > 0 ? 'bg-sky-50/80 hover:bg-sky-100/70' : 'hover:bg-slate-50/50'"
+                    >
+                      <template v-for="colKey in roomsColumnOrder" :key="colKey">
+                        <!-- Loại/Dạng -->
+                        <td 
+                          v-if="colKey === 'roomType' && visibleColumns.roomType" 
+                          class="py-2 px-2 font-bold border-slate-200 sticky left-0 z-10 transition-colors shadow-[1px_0_0_0_#e2e8f0]"
+                          :class="Number(row.quantity) > 0 ? 'bg-sky-50 text-sky-950 font-black' : 'bg-white text-slate-900'"
                         >
-                          <option value="">— Chọn giá phòng —</option>
-                          <option v-for="rc in activeRoomRateCodes" :key="rc.id" :value="rc.Ma">{{ rc.Ma }}</option>
-                        </select>
-                      </td>
-
-                      <!-- Tăng/Giảm -->
-                      <td v-if="visibleColumns.discount" class="py-2 px-2 relative border-slate-200">
-                        <div 
-                          @click.stop="toggleDiscountPopover(row)"
-                          class="w-full border border-slate-300 rounded-md h-[30px] px-2 text-slate-700 shadow-sm text-[11px] flex items-center justify-between cursor-pointer bg-white"
-                        >
-                          <span class="font-bold" :class="row.discountValue ? 'text-sky-600' : 'text-slate-500'">{{ getDiscountLabel(row) }}</span>
-                          <i class="fa-solid fa-calculator text-slate-400 text-[10px]"></i>
-                        </div>
+                          {{ row.roomClassCode }}
+                        </td>
                         
-                        <!-- Popover UI -->
-                        <div 
-                          v-if="activeDiscountRowId === row.roomClassId" 
-                          @click.stop
-                          class="absolute left-1/2 -translate-x-1/2 z-[9999] bg-white border border-slate-200 rounded-lg p-2.5 shadow-xl flex flex-col gap-2 w-[185px] pointer-events-auto"
-                          :class="idx < 2 ? 'top-full mt-1.5' : 'bottom-full mb-1.5'"
-                        >
-                          <!-- Toggle Tăng/Giảm -->
-                          <div class="flex items-center gap-1.5 select-none">
-                            <button 
-                              type="button"
-                              @click.stop="row.discountType = 'up'; calculateAdjustedPrice(row)"
-                              class="flex-1 py-1 rounded text-[10px] font-extrabold cursor-pointer border transition-colors flex items-center justify-center gap-1"
-                              :style="{ minHeight: '26px' }"
-                              :class="row.discountType === 'up' ? 'bg-sky-100 text-sky-700 border-sky-300' : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100'"
-                            >
-                              <i class="fa-solid fa-angles-up text-emerald-500"></i>
-                              <span>Tăng</span>
-                            </button>
-                            <button 
-                              type="button"
-                              @click.stop="row.discountType = 'down'; calculateAdjustedPrice(row)"
-                              class="flex-1 py-1 rounded text-[10px] font-extrabold cursor-pointer border transition-colors flex items-center justify-center gap-1"
-                              :style="{ minHeight: '26px' }"
-                              :class="row.discountType === 'down' ? 'bg-sky-100 text-sky-700 border-sky-300' : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100'"
-                            >
-                              <i class="fa-solid fa-angles-down text-rose-500"></i>
-                              <span>Giảm</span>
-                            </button>
+                        <!-- Ngày đến ~ Ngày đi -->
+                        <td v-else-if="colKey === 'dates' && visibleColumns.dates" class="py-2 px-2 border-slate-200">
+                          <div class="flex items-center justify-center space-x-1 whitespace-nowrap">
+                            <div class="w-[140px]">
+                              <SingleDatePicker
+                                v-model="row.arrivalDate"
+                                :min-date="systemDate"
+                                :start-date="systemDate || row.arrivalDate"
+                                @change="handleRowDateChange(row)"
+                                placeholder="dd/mm/yyyy"
+                                four-digit-year
+                                input-class="!h-[30px] !px-1.5"
+                                text-input-class="!text-xs !font-bold"
+                              />
+                            </div>
+                            <span class="text-slate-400 font-bold text-xs">~</span>
+                            <div class="w-[140px]">
+                              <SingleDatePicker
+                                v-model="row.departureDate"
+                                :min-date="row.arrivalDate"
+                                :start-date="row.arrivalDate || systemDate"
+                                @change="handleRowDateChange(row)"
+                                placeholder="dd/mm/yyyy"
+                                four-digit-year
+                                input-class="!h-[30px] !px-1.5"
+                                text-input-class="!text-xs !font-bold"
+                              />
+                            </div>
+                          </div>
+                        </td>
+                        
+                        <!-- Chiếm dụng -->
+                        <td v-else-if="colKey === 'occupancy' && visibleColumns.occupancy" class="py-2 px-1 text-center font-semibold text-slate-600 border-slate-200">
+                          {{ getOccupancyCount(row) }}
+                        </td>
+                        
+                        <!-- Phòng trống -->
+                        <td v-else-if="colKey === 'availability' && visibleColumns.availability" class="py-2 px-1 text-center font-bold border-slate-200" :class="row.availableRooms <= 0 ? 'text-rose-600' : 'text-slate-800'">
+                          {{ row.availableRooms }}
+                        </td>
+                        
+                        <!-- Số lượng -->
+                        <td v-else-if="colKey === 'quantity' && visibleColumns.quantity" class="py-2 px-1 border-slate-200" :class="Number(row.quantity) > 0 ? 'bg-sky-100/50' : 'bg-slate-50/30'">
+                          <div class="relative w-full min-w-[40px] max-w-[60px] mx-auto border border-slate-300 rounded-md h-[30px] shadow-sm flex items-center" :class="isQuantityDisabled(row) ? 'bg-slate-100 cursor-not-allowed text-slate-400' : 'bg-white text-slate-800'">
+                            <input type="number" v-model.number="row.quantity" min="0" :disabled="isQuantityDisabled(row)" @input="handleQuantityInput(row)" @focus="$event.target.select()" class="w-full text-center focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none font-bold" :class="isQuantityDisabled(row) ? 'cursor-not-allowed text-slate-400' : 'pr-4 text-slate-800'">
+                            <div v-if="!isQuantityDisabled(row)" class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
+                              <button @click.prevent="handleIncreaseQuantity(row)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
+                              <button @click.prevent="handleDecreaseQuantity(row)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
+                            </div>
+                          </div>
+                        </td>
+
+                        <!-- Giá phòng -->
+                        <td v-else-if="colKey === 'price' && visibleColumns.price" class="py-2 px-1 border-slate-200">
+                          <div class="relative w-full min-w-[70px] mx-auto border border-slate-300 rounded-md h-[30px] shadow-sm flex items-center" :class="isPriceDisabled(row) ? 'bg-slate-100 cursor-not-allowed' : 'bg-white'">
+                            <input type="text" :value="formatCurrencyInput(row.price)" :disabled="isPriceDisabled(row)" @input="e => { row.price = cleanCurrencyValue(e.target.value); row.basePrice = row.price; syncAllocationToRooms(row) }" @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }" class="w-full text-right pl-2 pr-5 focus:outline-none text-[11px] bg-transparent border-none outline-none font-bold" :class="isPriceDisabled(row) ? 'text-slate-400 cursor-not-allowed' : 'text-slate-800'">
+                            <div v-if="!isPriceDisabled(row)" class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
+                              <button @click.prevent="row.price = (Number(row.price) || 0) + 50000; row.basePrice = row.price; syncAllocationToRooms(row)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
+                              <button @click.prevent="row.price >= 50000 ? (row.price = (Number(row.price) || 0) - 50000, row.basePrice = row.price, syncAllocationToRooms(row)) : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
+                            </div>
+                          </div>
+                        </td>
+
+                        <!-- Mã giá phòng -->
+                        <td v-else-if="colKey === 'rateCode' && visibleColumns.rateCode" class="py-2 px-2 border-slate-200">
+                          <select 
+                            v-model="row.rateCode" 
+                            @change="handleRateCodeChange(row, $event.target.value)"
+                            class="w-full border border-slate-300 rounded-md h-[30px] px-2 text-slate-700 focus:outline-none shadow-sm bg-white text-[11px]"
+                          >
+                            <option value="">— Chọn giá phòng —</option>
+                            <option v-for="rc in activeRoomRateCodes" :key="rc.id" :value="rc.Ma">{{ rc.Ma }}</option>
+                          </select>
+                        </td>
+
+                        <!-- Tăng/Giảm -->
+                        <td v-else-if="colKey === 'discount' && visibleColumns.discount" class="py-2 px-2 relative border-slate-200">
+                          <div 
+                            @click.stop="toggleDiscountPopover(row)"
+                            class="w-full border border-slate-300 rounded-md h-[30px] px-2 text-slate-700 shadow-sm text-[11px] flex items-center justify-between cursor-pointer bg-white"
+                          >
+                            <span class="font-bold" :class="row.discountValue ? 'text-sky-600' : 'text-slate-500'">{{ getDiscountLabel(row) }}</span>
+                            <i class="fa-solid fa-calculator text-slate-400 text-[10px]"></i>
                           </div>
                           
-                          <!-- Input and unit toggle -->
-                          <div class="flex items-center gap-1.5">
-                            <!-- Input -->
-                            <div class="relative flex-1 border border-slate-300 rounded bg-white shadow-sm flex items-center h-[26px]">
-                              <input 
-                                type="text"
-                                :value="row.discountUnit === 'percent' ? row.discountValue : formatCurrencyInput(row.discountValue)"
-                                @input="e => { row.discountValue = row.discountUnit === 'percent' ? Number(e.target.value.replace(/[^\d]/g, '')) || 0 : cleanCurrencyValue(e.target.value); calculateAdjustedPrice(row) }"
-                                @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
-                                class="w-full text-right px-1.5 focus:outline-none text-[11px] bg-transparent border-none outline-none font-bold text-slate-800"
-                              />
+                          <!-- Popover UI -->
+                          <div 
+                            v-if="activeDiscountRowId === row.roomClassId" 
+                            @click.stop
+                            class="absolute left-1/2 -translate-x-1/2 z-[9999] bg-white border border-slate-200 rounded-lg p-2.5 shadow-xl flex flex-col gap-2 w-[185px] pointer-events-auto"
+                            :class="idx < 2 ? 'top-full mt-1.5' : 'bottom-full mb-1.5'"
+                          >
+                            <!-- Toggle Tăng/Giảm -->
+                            <div class="flex items-center gap-1.5 select-none">
+                              <button 
+                                type="button"
+                                @click.stop="row.discountType = 'up'; calculateAdjustedPrice(row)"
+                                class="flex-1 py-1 rounded text-[10px] font-extrabold cursor-pointer border transition-colors flex items-center justify-center gap-1"
+                                :style="{ minHeight: '26px' }"
+                                :class="row.discountType === 'up' ? 'bg-sky-100 text-sky-700 border-sky-300' : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100'"
+                              >
+                                <i class="fa-solid fa-angles-up text-emerald-500"></i>
+                                <span>Tăng</span>
+                              </button>
+                              <button 
+                                type="button"
+                                @click.stop="row.discountType = 'down'; calculateAdjustedPrice(row)"
+                                class="flex-1 py-1 rounded text-[10px] font-extrabold cursor-pointer border transition-colors flex items-center justify-center gap-1"
+                                :style="{ minHeight: '26px' }"
+                                :class="row.discountType === 'down' ? 'bg-sky-100 text-sky-700 border-sky-300' : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100'"
+                              >
+                                <i class="fa-solid fa-angles-down text-rose-500"></i>
+                                <span>Giảm</span>
+                              </button>
                             </div>
                             
-                            <!-- Toggle switch unit -->
-                            <label class="relative inline-flex items-center cursor-pointer select-none">
-                              <input 
-                                type="checkbox" 
-                                :checked="row.discountUnit === 'percent'" 
-                                @change="e => { row.discountUnit = e.target.checked ? 'percent' : 'amount'; calculateAdjustedPrice(row) }"
-                                class="sr-only peer"
-                              />
-                              <div class="w-11 h-[20px] bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-[20px] after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-[16px] after:w-[16px] after:transition-all peer-checked:bg-sky-500"></div>
-                              <span 
-                                class="absolute text-[8px] font-black pointer-events-none select-none transition-all"
-                                :class="row.discountUnit === 'percent' ? 'left-[6px] text-white' : 'right-[7px] text-slate-500'"
-                              >
-                                {{ row.discountUnit === 'percent' ? '%' : 'đ' }}
-                              </span>
-                            </label>
-                          </div>
-                          
-                          <!-- Price summary preview -->
-                          <div class="text-[10px] text-slate-500 border-t border-slate-100 pt-1.5 mt-0.5 flex flex-col gap-0.5 select-none">
-                            <div class="flex justify-between">
-                              <span>Giá gốc:</span>
-                              <span class="font-bold text-slate-700">{{ formatCurrencyInput(row.basePrice || 0) }}</span>
+                            <!-- Input and unit toggle -->
+                            <div class="flex items-center gap-1.5">
+                              <div class="relative flex-1 border border-slate-300 rounded bg-white shadow-sm flex items-center h-[26px]">
+                                <input 
+                                  type="text"
+                                  :value="row.discountUnit === 'percent' ? row.discountValue : formatCurrencyInput(row.discountValue)"
+                                  @input="e => { row.discountValue = row.discountUnit === 'percent' ? Number(e.target.value.replace(/[^\d]/g, '')) || 0 : cleanCurrencyValue(e.target.value); calculateAdjustedPrice(row) }"
+                                  @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
+                                  class="w-full text-right px-1.5 focus:outline-none text-[11px] bg-transparent border-none outline-none font-bold text-slate-800"
+                                />
+                              </div>
+                              
+                              <label class="relative inline-flex items-center cursor-pointer select-none">
+                                <input 
+                                  type="checkbox" 
+                                  :checked="row.discountUnit === 'percent'" 
+                                  @change="e => { row.discountUnit = e.target.checked ? 'percent' : 'amount'; calculateAdjustedPrice(row) }"
+                                  class="sr-only peer"
+                                />
+                                <div class="w-11 h-[20px] bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-[20px] after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-[16px] after:w-[16px] after:transition-all peer-checked:bg-sky-500"></div>
+                                <span 
+                                  class="absolute text-[8px] font-black pointer-events-none select-none transition-all"
+                                  :class="row.discountUnit === 'percent' ? 'left-[6px] text-white' : 'right-[7px] text-slate-500'"
+                                >
+                                  {{ row.discountUnit === 'percent' ? '%' : 'đ' }}
+                                </span>
+                              </label>
                             </div>
-                            <div class="flex justify-between">
-                              <span>Giá mới:</span>
-                              <span class="font-bold text-sky-600">{{ formatCurrencyInput(row.price || 0) }}</span>
+                            
+                            <!-- Price summary preview -->
+                            <div class="text-[10px] text-slate-500 border-t border-slate-100 pt-1.5 mt-0.5 flex flex-col gap-0.5 select-none">
+                              <div class="flex justify-between">
+                                <span>Giá gốc:</span>
+                                <span class="font-bold text-slate-700">{{ formatCurrencyInput(row.basePrice || 0) }}</span>
+                              </div>
+                              <div class="flex justify-between">
+                                <span>Giá mới:</span>
+                                <span class="font-bold text-sky-600">{{ formatCurrencyInput(row.price || 0) }}</span>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      </td>
+                        </td>
 
-                      <!-- Nâng hạng -->
-                      <td v-if="visibleColumns.upgrade" class="py-2 px-2 border-slate-200">
-                        <div class="relative">
-                          <select v-model="row.upgradeClassId" @change="syncAllocationToRooms(row)" class="w-full border border-slate-300 rounded-md h-[30px] pl-2 pr-5 appearance-none focus:outline-none text-slate-700 bg-white shadow-sm cursor-pointer text-[11px]">
-                            <option :value="null">Gốc</option>
-                            <option v-for="rc in roomClasses" :key="rc.id" :value="rc.id">{{ rc.code }}</option>
-                          </select>
-                          <i class="fa-solid fa-chevron-down absolute right-2.5 top-2.5 text-slate-400 text-[10px] pointer-events-none"></i>
-                        </div>
-                      </td>
-
-                      <!-- Người lớn -->
-                      <td v-if="visibleColumns.adults" class="py-2 px-1 border-slate-200">
-                        <div class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
-                          <input type="number" v-model.number="row.adults" min="1" @input="syncAllocationToRooms(row)" @focus="$event.target.select()" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
-                          <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
-                            <button @click.prevent="row.adults++; syncAllocationToRooms(row)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
-                            <button @click.prevent="row.adults > 1 ? (row.adults--, syncAllocationToRooms(row)) : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
+                        <!-- Nâng hạng -->
+                        <td v-else-if="colKey === 'upgrade' && visibleColumns.upgrade" class="py-2 px-2 border-slate-200">
+                          <div class="relative">
+                            <select v-model="row.upgradeClassId" @change="syncAllocationToRooms(row)" class="w-full border border-slate-300 rounded-md h-[30px] pl-2 pr-5 appearance-none focus:outline-none text-slate-700 bg-white shadow-sm cursor-pointer text-[11px]">
+                              <option :value="null">Gốc</option>
+                              <option v-for="rc in roomClasses" :key="rc.id" :value="rc.id">{{ rc.code }}</option>
+                            </select>
+                            <i class="fa-solid fa-chevron-down absolute right-2.5 top-2.5 text-slate-400 text-[10px] pointer-events-none"></i>
                           </div>
-                        </div>
-                      </td>
+                        </td>
 
-                      <!-- Em bé -->
-                      <td v-if="visibleColumns.babies" class="py-2 px-1 border-slate-200">
-                        <div class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
-                          <input type="number" v-model.number="row.babies" min="0" @input="syncAllocationToRooms(row)" @focus="$event.target.select()" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
-                          <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
-                            <button @click.prevent="row.babies++; syncAllocationToRooms(row)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
-                            <button @click.prevent="row.babies > 0 ? (row.babies--, syncAllocationToRooms(row)) : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
+                        <!-- Người lớn -->
+                        <td v-else-if="colKey === 'adults' && visibleColumns.adults" class="py-2 px-1 border-slate-200">
+                          <div class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
+                            <input type="number" v-model.number="row.adults" min="1" @input="syncAllocationToRooms(row)" @focus="$event.target.select()" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none font-bold">
+                            <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
+                              <button @click.prevent="row.adults++; syncAllocationToRooms(row)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
+                              <button @click.prevent="row.adults > 1 ? (row.adults--, syncAllocationToRooms(row)) : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
+                            </div>
                           </div>
-                        </div>
-                      </td>
+                        </td>
 
-                      <!-- Trẻ em -->
-                      <td v-if="visibleColumns.children" class="py-2 px-1 border-slate-200">
-                        <div class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
-                          <input type="number" v-model.number="row.children" min="0" @input="syncAllocationToRooms(row)" @focus="$event.target.select()" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none">
-                          <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
-                            <button @click.prevent="row.children++; syncAllocationToRooms(row)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
-                            <button @click.prevent="row.children > 0 ? (row.children--, syncAllocationToRooms(row)) : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
+                        <!-- Em bé -->
+                        <td v-else-if="colKey === 'babies' && visibleColumns.babies" class="py-2 px-1 border-slate-200">
+                          <div class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
+                            <input type="number" v-model.number="row.babies" min="0" @input="syncAllocationToRooms(row)" @focus="$event.target.select()" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none font-bold">
+                            <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
+                              <button @click.prevent="row.babies++; syncAllocationToRooms(row)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
+                              <button @click.prevent="row.babies > 0 ? (row.babies--, syncAllocationToRooms(row)) : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
+                            </div>
                           </div>
-                        </div>
-                      </td>
+                        </td>
 
-                      <!-- Giá ăn sáng trẻ em -->
-                      <td v-if="visibleColumns.childBreakfastRate" class="py-2 px-1 border-slate-200">
-                        <div class="relative w-full min-w-[90px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
-                          <input type="text" :value="formatCurrencyInput(row.childBreakfastRate)" @input="e => { row.childBreakfastRate = cleanCurrencyValue(e.target.value); syncAllocationToRooms(row) }" @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }" class="w-full text-right pl-2 pr-5 focus:outline-none text-[11px] bg-transparent border-none outline-none font-bold text-slate-800">
-                          <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
-                            <button @click.prevent="row.childBreakfastRate = (Number(row.childBreakfastRate) || 0) + 5000; syncAllocationToRooms(row)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
-                            <button @click.prevent="row.childBreakfastRate >= 5000 ? (row.childBreakfastRate = (Number(row.childBreakfastRate) || 0) - 5000, syncAllocationToRooms(row)) : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
+                        <!-- Trẻ em -->
+                        <td v-else-if="colKey === 'children' && visibleColumns.children" class="py-2 px-1 border-slate-200">
+                          <div class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
+                            <input type="number" v-model.number="row.children" min="0" @input="syncAllocationToRooms(row)" @focus="$event.target.select()" class="w-full text-center pr-4 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none font-bold">
+                            <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
+                              <button @click.prevent="row.children++; syncAllocationToRooms(row)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
+                              <button @click.prevent="row.children > 0 ? (row.children--, syncAllocationToRooms(row)) : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
+                            </div>
                           </div>
-                        </div>
-                      </td>
+                        </td>
 
-                      <!-- Ăn sáng -->
-                      <td v-if="visibleColumns.breakfast" class="py-2 px-1 text-center border-slate-200">
-                        <input type="checkbox" v-model="row.breakfastIncluded" @change="syncAllocationToRooms(row)" class="w-4 h-4 accent-blue-500 cursor-pointer rounded border-slate-300">
-                      </td>
+                        <!-- Giá ăn sáng trẻ em -->
+                        <td v-else-if="colKey === 'childBreakfastRate' && visibleColumns.childBreakfastRate" class="py-2 px-1 border-slate-200">
+                          <div class="relative w-full min-w-[90px] mx-auto border border-slate-300 rounded-md h-[30px] bg-white shadow-sm flex items-center">
+                            <input type="text" :value="formatCurrencyInput(row.childBreakfastRate)" @input="e => { row.childBreakfastRate = cleanCurrencyValue(e.target.value); syncAllocationToRooms(row) }" @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }" class="w-full text-right pl-2 pr-5 focus:outline-none text-[11px] bg-transparent border-none outline-none font-bold text-slate-800">
+                            <div class="flex flex-col text-slate-800 absolute right-1.5 top-0 bottom-0 justify-center items-center w-3 select-none">
+                              <button @click.prevent="row.childBreakfastRate = (Number(row.childBreakfastRate) || 0) + 5000; syncAllocationToRooms(row)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
+                              <button @click.prevent="row.childBreakfastRate >= 5000 ? (row.childBreakfastRate = (Number(row.childBreakfastRate) || 0) - 5000, syncAllocationToRooms(row)) : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
+                            </div>
+                          </div>
+                        </td>
 
+                        <!-- Ăn sáng -->
+                        <td v-else-if="colKey === 'breakfast' && visibleColumns.breakfast" class="py-2 px-1 text-center border-slate-200">
+                          <input type="checkbox" v-model="row.breakfastIncluded" @change="syncAllocationToRooms(row)" class="w-4 h-4 accent-blue-500 cursor-pointer rounded border-slate-300">
+                        </td>
+                      </template>
                     </tr>
                   </tbody>
                   
                   <tfoot class="bg-white font-bold text-slate-900 border-t border-slate-300 text-[11px]">
                     <tr>
-                      <td v-if="visibleColumns.roomType" class="py-2.5 px-2 text-left text-slate-800 border-slate-200">Tổng</td>
-                      <td v-if="visibleColumns.dates" class="py-2.5 px-2 border-slate-200"></td>
-                      <td v-if="visibleColumns.occupancy" class="py-2.5 px-1 text-center border-slate-200"></td>
-                      <td v-if="visibleColumns.availability" class="py-2.5 px-1 text-center text-[11px] font-semibold border-slate-200">{{ allocationsSummary.availableRooms }}</td>
-                      <td v-if="visibleColumns.quantity" class="py-2.5 px-1 text-center text-[11px] font-semibold text-sky-600 bg-slate-100/30 border-slate-200">{{ allocationsSummary.quantity }}</td>
-                      <td v-if="visibleColumns.price" class="py-2.5 px-1 border-slate-200"></td>
-                      <td v-if="visibleColumns.rateCode" class="py-2.5 px-2 border-slate-200"></td>
-                      <td v-if="visibleColumns.discount" class="py-2.5 px-2 border-slate-200"></td>
-                      <td v-if="visibleColumns.upgrade" class="py-2.5 px-2 border-slate-200"></td>
-                      <td v-if="visibleColumns.adults" class="py-2.5 px-1 text-center text-[11px] font-semibold text-slate-800 border-slate-200">{{ allocationsSummary.adults }}</td>
-                      <td v-if="visibleColumns.babies" class="py-2.5 px-1 text-center text-[11px] font-semibold text-slate-800 border-slate-200">{{ allocationsSummary.babies }}</td>
-                      <td v-if="visibleColumns.children" class="py-2.5 px-1 text-center text-[11px] font-semibold text-slate-800 border-slate-200">{{ allocationsSummary.children }}</td>
-                      <td v-if="visibleColumns.childBreakfastRate" class="py-2.5 px-1 border-slate-200"></td>
-                      <td v-if="visibleColumns.breakfast" class="py-2.5 px-1 border-slate-200"></td>
+                      <template v-for="colKey in roomsColumnOrder" :key="colKey">
+                        <td v-if="colKey === 'roomType' && visibleColumns.roomType" class="py-2.5 px-2 text-left text-slate-800 border-slate-200 sticky left-0 bg-white z-10 shadow-[1px_0_0_0_#e2e8f0]">Tổng</td>
+                        <td v-else-if="colKey === 'dates' && visibleColumns.dates" class="py-2.5 px-2 border-slate-200"></td>
+                        <td v-else-if="colKey === 'occupancy' && visibleColumns.occupancy" class="py-2.5 px-1 text-center border-slate-200"></td>
+                        <td v-else-if="colKey === 'availability' && visibleColumns.availability" class="py-2.5 px-1 text-center text-[11px] font-semibold border-slate-200">{{ allocationsSummary.availableRooms }}</td>
+                        <td v-else-if="colKey === 'quantity' && visibleColumns.quantity" class="py-2.5 px-1 text-center text-[11px] font-semibold text-sky-600 bg-slate-100/30 border-slate-200">{{ allocationsSummary.quantity }}</td>
+                        <td v-else-if="colKey === 'price' && visibleColumns.price" class="py-2.5 px-1 border-slate-200"></td>
+                        <td v-else-if="colKey === 'rateCode' && visibleColumns.rateCode" class="py-2.5 px-2 border-slate-200"></td>
+                        <td v-else-if="colKey === 'discount' && visibleColumns.discount" class="py-2.5 px-2 border-slate-200"></td>
+                        <td v-else-if="colKey === 'upgrade' && visibleColumns.upgrade" class="py-2.5 px-2 border-slate-200"></td>
+                        <td v-else-if="colKey === 'adults' && visibleColumns.adults" class="py-2.5 px-1 text-center text-[11px] font-semibold text-slate-800 border-slate-200">{{ allocationsSummary.adults }}</td>
+                        <td v-else-if="colKey === 'babies' && visibleColumns.babies" class="py-2.5 px-1 text-center text-[11px] font-semibold text-slate-800 border-slate-200">{{ allocationsSummary.babies }}</td>
+                        <td v-else-if="colKey === 'children' && visibleColumns.children" class="py-2.5 px-1 text-center text-[11px] font-semibold text-slate-800 border-slate-200">{{ allocationsSummary.children }}</td>
+                        <td v-else-if="colKey === 'childBreakfastRate' && visibleColumns.childBreakfastRate" class="py-2.5 px-1 border-slate-200"></td>
+                        <td v-else-if="colKey === 'breakfast' && visibleColumns.breakfast" class="py-2.5 px-1 border-slate-200"></td>
+                      </template>
                     </tr>
                   </tfoot>
                 </table>
