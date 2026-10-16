@@ -47,9 +47,11 @@ onMounted(() => {
         >
           <!-- Logo container -->
           <div class="flex-1 flex items-center justify-center">
-            <div class="w-14 h-14 bg-[#0ea5e9] flex items-center justify-center rounded-lg rotate-45 transform-gpu transition-all duration-700 group-hover:rotate-[135deg]">
-              <div class="w-7 h-7 bg-white -rotate-45 transform-gpu transition-all duration-700 group-hover:-rotate-[135deg]"></div>
-            </div>
+            <img 
+              src="/HKT_LOGO.png" 
+              alt="PROVISTA PMS" 
+              class="w-14 h-14 sm:w-16 sm:h-16 object-contain transform-gpu transition-transform duration-500 group-hover:scale-110 drop-shadow-sm"
+            />
           </div>
           <!-- App label inside square -->
           <span class="text-[#0ea5e9] font-black text-xs sm:text-[13px] tracking-wider mt-1">PMS</span>
@@ -74,9 +76,11 @@ onMounted(() => {
         >
           <!-- Logo container -->
           <div class="flex-1 flex items-center justify-center">
-            <div class="w-14 h-14 bg-[#0ea5e9] flex items-center justify-center rounded-lg rotate-45 transform-gpu transition-all duration-700 group-hover:rotate-[135deg]">
-              <div class="w-7 h-7 bg-white -rotate-45 transform-gpu transition-all duration-700 group-hover:-rotate-[135deg]"></div>
-            </div>
+            <img 
+              src="/HKT_LOGO.png" 
+              alt="PROVISTA F&B" 
+              class="w-14 h-14 sm:w-16 sm:h-16 object-contain transform-gpu transition-transform duration-500 group-hover:scale-110 drop-shadow-sm"
+            />
           </div>
           <!-- App label inside square -->
           <span class="text-[#0ea5e9] font-black text-xs sm:text-[13px] tracking-wider mt-1">POS</span>
