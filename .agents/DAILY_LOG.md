@@ -18,6 +18,27 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-10-16] - Ràng buộc giai đoạn đăng ký (Dòng 394) & Xử lý trùng số phòng (Dòng 395)
+### Module: Đặt phòng ([BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [RoomAvailabilityService.php](file:///d:/PMS/backend/app/Services/RoomAvailabilityService.php), [RoomPlanPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomPlanPage.vue), [room-plan-conflicts.js](file:///d:/PMS/frontend/src/utils/room-plan-conflicts.js))
+
+- **1. Dòng 394: Giai đoạn đăng ký phải bao trọn giai đoạn phòng**:
+  - *Hiện tượng & Nguyên nhân*: Khi dời ngày đăng ký tổng, backend chỉ kiểm tra phòng trạng thái Đăng ký (`STATUS_BOOKED`), bỏ qua phòng Đang ở (`STATUS_CHECKED_IN`) và Đã trả (`STATUS_CHECKED_OUT`), dẫn đến ngày đăng ký bị co lại/lệch ra ngoài khoảng lưu trú thực tế của khách.
+  - *Xử lý*:
+    - Trong [BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php): Kiểm tra cả 3 trạng thái phòng (`Đăng ký`, `Đang ở`, `Đã trả`). Vi phạm chặn ngay lập tức, trả lời 422: `"Ngày đến hoặc ngày đi của đăng ký không khớp với giai đoạn chi tiết của phòng. Vui lòng kiểm tra thông tin."`.
+    - Hỗ trợ tham số `SyncRoomDateByBookingDate = 1`: Cho phép phòng trạng thái Đăng ký tự dời theo booking; riêng phòng Đang ở và Đã trả luôn bị chặn nếu nằm ngoài.
+    - Thêm bước hậu kiểm (`post-check`) cuối transaction sau khi áp dụng mọi cập nhật để rollback nếu ngày không hợp lệ.
+- **2. Dòng 395: Trùng số phòng & Hiển thị trên Kế hoạch phòng**:
+  - *Cập nhật nhanh nhiều phòng ([BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [RoomAvailabilityService.php](file:///d:/PMS/backend/app/Services/RoomAvailabilityService.php))*:
+    - Gọi hàm kiểm tra trùng phòng thực tế theo ngày đến/đi: Chặn trùng với booking khác kèm mã đăng ký gây trùng (`ROOM_NUMBER_CONFLICT`), chặn trùng với các phòng được chọn cùng lúc trong cùng thao tác cập nhật, chặn trùng phòng đang bị khóa OOO/OOS. Cho phép lưu bình thường khi hai đăng ký liền kề (back-to-back: out = in).
+  - *Giao diện Kế hoạch phòng ([RoomPlanPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomPlanPage.vue), [room-plan-conflicts.js](file:///d:/PMS/frontend/src/utils/room-plan-conflicts.js))*:
+    - Thuật toán `detectRoomPlanConflicts`: Phát hiện các đoạn trùng lặp thời gian trên cùng số phòng, chia làn độ cao (mỗi thanh 50% chiều cao hàng khi có 2 trùng nhau) để không bị đè che mất thanh trước.
+    - Hiển thị viền đỏ cảnh báo (`ring-red-500`), icon tam giác cảnh báo (`fa-triangle-exclamation`).
+    - Hover hiển thị tooltip chi tiết: `"Trùng phòng với: {Mã booking}"`.
+- **3. Kiểm thử tự động & UI/DB thực tế**:
+  - Test tự động backend: 40/40 test trong [BookingBusinessRulesTest.php](file:///d:/PMS/backend/tests/Feature/Booking/BookingBusinessRulesTest.php) PASS 100% (bao gồm phục hồi test dòng 391, 393 và 8 test mới cho 394, 395).
+  - Test tự động frontend: 102/102 test PASS (`room-plan-conflicts.test.js` PASS 8/8), build Vite thành công.
+  - Test E2E trên UI & DB thật: Đạt 100% tất cả các kịch bản: chặn dời ngày đăng ký khi có phòng đang ở ngoài biên, cho phép mở rộng ngày đăng ký, popup chặn trùng số phòng (báo rõ mã GAL), chặn trùng khóa OOO, cho phép back-to-back, kế hoạch phòng chia đôi chiều cao và hover hiện tooltip.
+
 ## [2026-10-15] - Cập nhật nhanh nhiều phòng: Cho phép ngày đi cùng ngày đến & chỉ mở rộng giai đoạn booking (Dòng 393)
 ### Module: Đặt phòng ([BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [QuickUpdateModal.vue](file:///d:/PMS/frontend/src/pages/reservation/components/QuickUpdateModal.vue))
 

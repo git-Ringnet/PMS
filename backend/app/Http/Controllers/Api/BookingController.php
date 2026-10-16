@@ -1216,22 +1216,23 @@ class BookingController extends Controller
         // keep its reservation-room dates untouched.
         $canSyncRoomDates = $syncRoomDates && $newArrival >= $sysDateStr;
 
-        // Chặn nếu cập nhật ngày booking làm ngày phòng nằm ngoài giai đoạn đăng ký mới (chỉ kiểm tra DB khi request KHÔNG gửi room_allocations)
+        // Dòng 394: giai đoạn của mọi phòng lưu trú (đăng ký, đang ở, đã trả)
+        // phải nằm trong giai đoạn đăng ký. Phòng đăng ký được đồng bộ theo
+        // SyncRoomDateByBookingDate thì sẽ đi theo đăng ký nên bỏ qua.
+        // Chỉ kiểm tra DB khi request KHÔNG gửi room_allocations; khi có
+        // room_allocations, kiểm tra lại ở cuối transaction.
         if (!($request->has('room_allocations') && is_array($request->room_allocations))) {
-            $rooms = $booking->bookingRooms()->where('status', \App\Models\BookingRoom::STATUS_BOOKED)->get();
+            $rooms = $booking->bookingRooms()->whereIn('status', self::PERIOD_BOUND_ROOM_STATUSES)->get();
             foreach ($rooms as $room) {
-                $roomArrival = Carbon::parse($room->arrival_date)->toDateString();
-                $roomDeparture = Carbon::parse($room->departure_date)->toDateString();
-
-                $isBooked = $room->status === \App\Models\BookingRoom::STATUS_BOOKED;
-                if ($isBooked && $canSyncRoomDates) {
+                $isBooked = (int) $room->status === \App\Models\BookingRoom::STATUS_BOOKED;
+                if ($isBooked && $canSyncRoomDates && $bookingDatesChanged) {
                     continue;
                 }
 
-                if ($roomArrival < $newArrival || $roomDeparture > $newDeparture) {
+                if ($this->roomOutsideBookingPeriod($room, $newArrival, $newDeparture)) {
                     return response()->json([
                         'success' => false,
-                        'message' => "Ngày của phòng phải nằm trong giai đoạn của đăng ký ({$newArrival} đến {$newDeparture}). Không thể cập nhật thông tin.",
+                        'message' => self::BOOKING_PERIOD_MISMATCH_MESSAGE,
                     ], 422);
                 }
             }
@@ -1763,6 +1764,21 @@ class BookingController extends Controller
 
                 if ($companyChanged) {
                     $this->cascadeBookingCompanyUpdate($booking, $booking->company_id);
+                }
+
+                // Dòng 394: kiểm tra trạng thái cuối cùng (sau đồng bộ ngày và
+                // room_allocations). Lỗi sẽ rollback toàn bộ, không lưu gì.
+                if ($bookingDatesChanged || ($request->has('room_allocations') && is_array($request->room_allocations))) {
+                    $booking->refresh();
+                    $finalArrival = Carbon::parse($booking->arrival_date)->toDateString();
+                    $finalDeparture = Carbon::parse($booking->departure_date)->toDateString();
+                    $outside = $booking->bookingRooms()
+                        ->whereIn('status', self::PERIOD_BOUND_ROOM_STATUSES)
+                        ->get()
+                        ->contains(fn ($room) => $this->roomOutsideBookingPeriod($room, $finalArrival, $finalDeparture));
+                    if ($outside) {
+                        throw new \Exception(self::BOOKING_PERIOD_MISMATCH_MESSAGE);
+                    }
                 }
             });
         } catch (\Exception $e) {
@@ -3704,6 +3720,25 @@ class BookingController extends Controller
     /**
      * Resolve an existing Rate Code from persisted setup instead of trusting prices sent by the browser.
      */
+    /** Stay rows whose period must stay inside the booking period (row 394). */
+    private const PERIOD_BOUND_ROOM_STATUSES = [
+        BookingRoom::STATUS_BOOKED,
+        BookingRoom::STATUS_CHECKED_IN,
+        BookingRoom::STATUS_CHECKED_OUT,
+    ];
+
+    private const BOOKING_PERIOD_MISMATCH_MESSAGE = 'Ngày đến hoặc ngày đi của đăng ký không khớp với giai đoạn chi tiết của phòng. Vui lòng kiểm tra thông tin.';
+
+    private function roomOutsideBookingPeriod(BookingRoom $room, string $bookingArrival, string $bookingDeparture): bool
+    {
+        if (!$room->arrival_date || !$room->departure_date) {
+            return false;
+        }
+
+        return Carbon::parse($room->arrival_date)->toDateString() < $bookingArrival
+            || Carbon::parse($room->departure_date)->toDateString() > $bookingDeparture;
+    }
+
     /**
      * Per-room "Ở theo giờ" switch sent by the registration screen. When the
      * client did not send it, fall back to the caller's default.

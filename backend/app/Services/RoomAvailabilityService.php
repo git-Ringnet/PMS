@@ -187,6 +187,37 @@ class RoomAvailabilityService
         string|null $arrivalTime = null,
         string|null $departureTime = null
     ): bool {
+        if ($this->findRoomNumberConflict(
+            $roomNumber,
+            $arrivalDate,
+            $departureDate,
+            $excludeBookingRoomId,
+            $excludeBookingId,
+            $arrivalTime,
+            $departureTime
+        )) {
+            return true;
+        }
+
+        return $this->hasBlockingLock($roomNumber, $arrivalDate, $departureDate);
+    }
+
+    /**
+     * Stay row of another booking (or another row) that already holds the
+     * physical room in the requested period, or null when the room is free.
+     *
+     * @param list<string|int> $excludeBookingRoomIds extra rows to ignore
+     */
+    public function findRoomNumberConflict(
+        string $roomNumber,
+        string $arrivalDate,
+        string $departureDate,
+        string|int|null $excludeBookingRoomId = null,
+        string|int|null $excludeBookingId = null,
+        string|null $arrivalTime = null,
+        string|null $departureTime = null,
+        array $excludeBookingRoomIds = []
+    ): ?BookingRoom {
         $query = BookingRoom::where('room_number', $roomNumber)
             ->stayOnly()
             ->whereIn('status', [
@@ -207,6 +238,9 @@ class RoomAvailabilityService
 
         if ($excludeBookingRoomId) {
             $query->where('id', '!=', $excludeBookingRoomId);
+        }
+        if ($excludeBookingRoomIds) {
+            $query->whereNotIn('id', $excludeBookingRoomIds);
         }
 
         $queryEnd = $arrivalDate === $departureDate
@@ -241,11 +275,7 @@ class RoomAvailabilityService
             });
         });
 
-        if ($query->exists()) {
-            return true;
-        }
-
-        return $this->hasBlockingLock($roomNumber, $arrivalDate, $departureDate);
+        return $query->with('booking')->orderBy('arrival_date')->first();
     }
 
     /**

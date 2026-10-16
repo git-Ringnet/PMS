@@ -887,11 +887,12 @@ class BookingBusinessRulesTest extends TestCase
             'status' => BookingRoom::STATUS_CHECKED_IN, // Checked In
         ]);
 
-        // 2. Update booking arrival_date to 2026-08-22
+        // 2. Widen booking departure to 2026-08-26. Row 394: the in-house room
+        // (21-25) must stay inside the booking period, so only widen here.
         $response = $this->putJson("/api/bookings/{$booking->id}", [
             'booking_name' => 'Updated Booking Name',
-            'arrival_date' => '2026-08-22',
-            'departure_date' => '2026-08-25',
+            'arrival_date' => '2026-08-21',
+            'departure_date' => '2026-08-26',
             'registration_status_id' => $this->regStatus->booking_status_id,
             'company_id' => 1,
             'market_id' => 1,
@@ -904,14 +905,15 @@ class BookingBusinessRulesTest extends TestCase
         $bRoom1->refresh();
         $bRoom2->refresh();
 
-        // Booking arrival date updated to 22
-        $this->assertEquals('2026-08-22', $booking->arrival_date->toDateString());
+        // Booking departure date updated to 26
+        $this->assertEquals('2026-08-26', $booking->departure_date->toDateString());
 
-        // Room 1 (Reservation) arrival date synchronized to 22
-        $this->assertEquals('2026-08-22', $bRoom1->arrival_date->toDateString());
+        // Room 1 (Reservation) departure date synchronized to 26
+        $this->assertEquals('2026-08-26', $bRoom1->departure_date->toDateString());
 
-        // Room 2 (Checked In) arrival date MUST remain 21
+        // Room 2 (Checked In) dates MUST remain 21-25
         $this->assertEquals('2026-08-21', $bRoom2->arrival_date->toDateString());
+        $this->assertEquals('2026-08-25', $bRoom2->departure_date->toDateString());
     }
 
     /**
@@ -951,13 +953,14 @@ class BookingBusinessRulesTest extends TestCase
         ]);
 
         $response->assertStatus(422);
-        $this->assertStringContainsString('Ngày của phòng phải nằm trong giai đoạn của đăng ký', $response->json('message'));
+        $this->assertStringContainsString('Ngày đến hoặc ngày đi của đăng ký không khớp với giai đoạn chi tiết của phòng', $response->json('message'));
     }
 
     /**
-     * TC-13: Updating booking dates succeeds when a room is Checked-In, preserving its dates.
+     * TC-13 (row 394): a Checked-In room is never synced, so moving the booking
+     * arrival past it leaves the room outside the period and is rejected.
      */
-    public function test_booking_update_succeeds_and_checked_in_room_dates_are_preserved(): void
+    public function test_booking_update_blocked_when_checked_in_room_falls_outside(): void
     {
         // Set SyncRoomDateByBookingDate = 1
         HotelConfig::updateOrCreate(['name' => 'SyncRoomDateByBookingDate'], ['value' => '1']);
@@ -978,9 +981,10 @@ class BookingBusinessRulesTest extends TestCase
         ]);
 
         // Attempt updating booking arrival_date to 22.
-        // The room is Checked-In so it is not synced and stays on 21. The update succeeds.
+        // The room is Checked-In so it is not synced and would stay on 21,
+        // outside the new period. Row 394: the update is rejected.
         $response = $this->putJson("/api/bookings/{$booking->id}", [
-            'booking_name' => 'Succeeds Update Checked In',
+            'booking_name' => 'Blocked Update Checked In',
             'arrival_date' => '2026-08-22',
             'departure_date' => '2026-08-25',
             'registration_status_id' => $this->regStatus->booking_status_id,
@@ -989,10 +993,11 @@ class BookingBusinessRulesTest extends TestCase
             'customer_source_id' => 1,
         ]);
 
-        $response->assertSuccessful();
+        $response->assertStatus(422);
         $bRoom->refresh();
-        // Room (Checked In) arrival date MUST remain 21
+        // Room (Checked In) arrival date MUST remain 21, booking unchanged
         $this->assertEquals('2026-08-21', $bRoom->arrival_date->toDateString());
+        $this->assertEquals('2026-08-21', $booking->fresh()->arrival_date->toDateString());
     }
 
     public function test_booking_update_can_clear_one_room_rate_code_without_affecting_sibling_room(): void
@@ -1713,9 +1718,11 @@ class BookingBusinessRulesTest extends TestCase
         $this->assertEquals(1, $room1->extra_bed_qty);
         $this->assertEquals(200000, $room1->extra_bed_rate);
 
-        // 4. Verify booking header dates synchronized exactly
-        $this->assertEquals('2026-08-22', $booking->arrival_date->toDateString());
+        // 4. Row 393: the booking period only widens. Arrival 21/08 stays
+        // (rooms are still inside it); departure widens to the rooms' 26/08.
+        $this->assertEquals('2026-08-21', $booking->arrival_date->toDateString());
         $this->assertEquals('2026-08-26', $booking->departure_date->toDateString());
+        $this->assertEquals(5, (int) $booking->num_of_days);
 
         // 5. Test Inhouse restrictions: set room1 status to CHECKED_IN
         $room1->update(['status' => BookingRoom::STATUS_CHECKED_IN]);
@@ -1790,5 +1797,372 @@ class BookingBusinessRulesTest extends TestCase
         $room->refresh();
         $this->assertSame(0, (int) $room->ActutalNumOfDays);
         $this->assertSame(0, (int) $room->NumOfDays);
+    }
+
+    private function headerPayload(Booking $booking, string $arrival, string $departure): array
+    {
+        return [
+            'booking_name' => $booking->booking_name ?: 'Header edit',
+            'arrival_date' => $arrival,
+            'departure_date' => $departure,
+            'num_of_days' => (int) \Carbon\Carbon::parse($arrival)->diffInDays(\Carbon\Carbon::parse($departure)),
+            'registration_status_id' => $this->regStatus->booking_status_id,
+            'company_id' => 1,
+            'market_id' => 1,
+            'customer_source_id' => 1,
+        ];
+    }
+
+    /**
+     * Row 394 (screenshot GAL9): an in-house room 02/09-06/09 must block
+     * moving the booking period to 09/09-10/09 from "Thông tin đăng ký".
+     */
+    public function test_booking_period_cannot_leave_inhouse_room_outside(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'SyncRoomDateByBookingDate'], ['value' => '1']);
+        $booking = $this->createBooking(['arrival_date' => '2026-08-07', 'departure_date' => '2026-08-11', 'num_of_days' => 4]);
+        BookingRoom::create([
+            'id' => 'G-394-IN', 'booking_id' => $booking->id, 'room_number' => '101',
+            'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-07', 'departure_date' => '2026-08-11',
+            'status' => BookingRoom::STATUS_CHECKED_IN,
+        ]);
+
+        $this->putJson("/api/bookings/{$booking->id}", $this->headerPayload($booking, '2026-08-14', '2026-08-15'))
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Ngày đến hoặc ngày đi của đăng ký không khớp với giai đoạn chi tiết của phòng. Vui lòng kiểm tra thông tin.');
+
+        $booking->refresh();
+        $this->assertSame('2026-08-07', $booking->arrival_date->toDateString());
+        $this->assertSame('2026-08-11', $booking->departure_date->toDateString());
+    }
+
+    /**
+     * Row 394: shrinking the period so a checked-out room falls outside is
+     * rejected as well; widening it is allowed.
+     */
+    public function test_booking_period_checks_checked_out_rooms_and_allows_widening(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'SyncRoomDateByBookingDate'], ['value' => '0']);
+        $booking = $this->createBooking(['arrival_date' => '2026-08-07', 'departure_date' => '2026-08-10', 'num_of_days' => 3]);
+        BookingRoom::create([
+            'id' => 'G-394-OUT', 'booking_id' => $booking->id, 'room_number' => '101',
+            'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-07', 'departure_date' => '2026-08-08',
+            'status' => BookingRoom::STATUS_CHECKED_OUT,
+        ]);
+
+        $this->putJson("/api/bookings/{$booking->id}", $this->headerPayload($booking, '2026-08-08', '2026-08-10'))
+            ->assertStatus(422);
+
+        $this->putJson("/api/bookings/{$booking->id}", $this->headerPayload($booking, '2026-08-07', '2026-08-12'))
+            ->assertSuccessful();
+        $this->assertSame('2026-08-12', $booking->fresh()->departure_date->toDateString());
+    }
+
+    /**
+     * Row 394 + SyncRoomDateByBookingDate = 1: reservation rooms follow the
+     * new period, so the edit is valid.
+     */
+    public function test_booking_period_with_sync_moves_reservation_rooms(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'SyncRoomDateByBookingDate'], ['value' => '1']);
+        $booking = $this->createBooking(['arrival_date' => '2026-08-08', 'departure_date' => '2026-08-10', 'num_of_days' => 2]);
+        BookingRoom::create([
+            'id' => 'G-394-SYNC', 'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-08', 'departure_date' => '2026-08-10',
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $this->putJson("/api/bookings/{$booking->id}", $this->headerPayload($booking, '2026-08-12', '2026-08-14'))
+            ->assertSuccessful();
+        $room = BookingRoom::where('booking_id', $booking->id)->firstOrFail();
+        $this->assertSame('2026-08-12', $room->arrival_date->toDateString());
+        $this->assertSame('2026-08-14', $room->departure_date->toDateString());
+    }
+
+    /**
+     * Row 394 + SyncRoomDateByBookingDate = 0: a reservation room left
+     * outside the new period blocks the save.
+     */
+    public function test_booking_period_without_sync_rejects_reservation_room_outside(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'SyncRoomDateByBookingDate'], ['value' => '0']);
+        $booking = $this->createBooking(['arrival_date' => '2026-08-08', 'departure_date' => '2026-08-10', 'num_of_days' => 2]);
+        BookingRoom::create([
+            'id' => 'G-394-NOSYNC', 'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-08', 'departure_date' => '2026-08-10',
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $this->putJson("/api/bookings/{$booking->id}", $this->headerPayload($booking, '2026-08-12', '2026-08-14'))
+            ->assertStatus(422);
+        $this->assertSame('2026-08-08', $booking->fresh()->arrival_date->toDateString());
+    }
+
+    private function roomOnBooking(string $id, Booking $booking, string $arrival, string $departure, string $roomNumber = '101'): BookingRoom
+    {
+        return BookingRoom::create([
+            'id' => $id, 'booking_id' => $booking->id, 'room_number' => $roomNumber,
+            'room_class_id' => $this->roomClass->id,
+            'arrival_date' => $arrival, 'departure_date' => $departure,
+            'rate' => 500000, 'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+    }
+
+    /**
+     * Row 395 (screenshot GAL33/GAL32): extending the departure over another
+     * booking holding the same room number is rejected.
+     */
+    public function test_quick_update_departure_cannot_overlap_same_room_number(): void
+    {
+        $bk1 = $this->createBooking(['arrival_date' => '2026-08-07', 'departure_date' => '2026-08-12']);
+        $bk2 = $this->createBooking(['arrival_date' => '2026-08-08', 'departure_date' => '2026-08-10']);
+        $room1 = $this->roomOnBooking('G-395-A', $bk1, '2026-08-07', '2026-08-08');
+        $this->roomOnBooking('G-395-B', $bk2, '2026-08-08', '2026-08-10');
+
+        $this->postJson("/api/bookings/{$bk1->id}/rooms/bulk-update", [
+            'room_ids' => [$room1->id], 'departure_date' => '2026-08-10',
+        ])->assertStatus(422)->assertJsonPath('code', 'ROOM_NUMBER_CONFLICT');
+
+        $this->assertSame('2026-08-08', $room1->fresh()->departure_date->toDateString());
+    }
+
+    /**
+     * Row 395: same check for the arrival date.
+     */
+    public function test_quick_update_arrival_cannot_overlap_same_room_number(): void
+    {
+        $bk1 = $this->createBooking(['arrival_date' => '2026-08-07', 'departure_date' => '2026-08-12']);
+        $bk2 = $this->createBooking(['arrival_date' => '2026-08-07', 'departure_date' => '2026-08-09']);
+        $this->roomOnBooking('G-395-C', $bk2, '2026-08-07', '2026-08-09');
+        $room1 = $this->roomOnBooking('G-395-D', $bk1, '2026-08-09', '2026-08-12');
+
+        $this->postJson("/api/bookings/{$bk1->id}/rooms/bulk-update", [
+            'room_ids' => [$room1->id], 'arrival_date' => '2026-08-08',
+        ])->assertStatus(422)->assertJsonPath('code', 'ROOM_NUMBER_CONFLICT');
+
+        $this->assertSame('2026-08-09', $room1->fresh()->arrival_date->toDateString());
+    }
+
+    /**
+     * Row 395: back-to-back stays stay valid, and a period inside an OOO
+     * lock is rejected.
+     */
+    public function test_quick_update_allows_back_to_back_and_rejects_lock(): void
+    {
+        $bk1 = $this->createBooking(['arrival_date' => '2026-08-07', 'departure_date' => '2026-08-15']);
+        $bk2 = $this->createBooking(['arrival_date' => '2026-08-10', 'departure_date' => '2026-08-11']);
+        $room1 = $this->roomOnBooking('G-395-E', $bk1, '2026-08-07', '2026-08-08');
+        $this->roomOnBooking('G-395-F', $bk2, '2026-08-10', '2026-08-11');
+
+        $this->postJson("/api/bookings/{$bk1->id}/rooms/bulk-update", [
+            'room_ids' => [$room1->id], 'departure_date' => '2026-08-10',
+        ])->assertSuccessful();
+
+        \App\Models\RoomLock::create([
+            'room_number' => '101', 'start_date' => '2026-08-12 00:00:00', 'end_date' => '2026-08-13 18:00:00',
+            'lock_type' => 'OOO', 'is_active' => 1, 'reason' => 'Bảo trì',
+        ]);
+        $this->postJson("/api/bookings/{$bk1->id}/rooms/bulk-update", [
+            'room_ids' => [$room1->id], 'arrival_date' => '2026-08-11', 'departure_date' => '2026-08-14',
+        ])->assertStatus(422)->assertJsonPath('code', 'ROOM_NUMBER_CONFLICT');
+    }
+
+    /**
+     * Row 395: two selected rooms with the same room number cannot be moved
+     * onto the same nights together.
+     */
+    public function test_quick_update_rejects_overlap_between_selected_rooms(): void
+    {
+        $booking = $this->createBooking(['arrival_date' => '2026-08-07', 'departure_date' => '2026-08-12']);
+        $a = $this->roomOnBooking('G-395-G', $booking, '2026-08-07', '2026-08-08');
+        $b = $this->roomOnBooking('G-395-H', $booking, '2026-08-08', '2026-08-09');
+
+        $this->postJson("/api/bookings/{$booking->id}/rooms/bulk-update", [
+            'room_ids' => [$a->id, $b->id], 'arrival_date' => '2026-08-10', 'departure_date' => '2026-08-11',
+        ])->assertStatus(422)->assertJsonPath('code', 'ROOM_NUMBER_CONFLICT');
+    }
+
+    /**
+     * Row 391: a same-day room may be created without day-use. Only the room
+     * with "Ở theo giờ" on is day-use; the other one has zero nights.
+     */
+    public function test_same_day_room_without_day_use_can_be_created(): void
+    {
+        $this->postJson('/api/bookings', [
+            'booking_name' => 'Day use mix',
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-07',
+            'num_of_days' => 0,
+            'is_day_use' => 1,
+            'registration_status_id' => $this->regStatus->booking_status_id,
+            'company_id' => 1,
+            'market_id' => 1,
+            'customer_source_id' => 1,
+            'room_allocations' => [[
+                'roomClassId' => $this->roomClass->id,
+                'quantity' => 2,
+                'price' => 500000,
+                'rooms' => [
+                    ['roomNumber' => '101', 'arrivalDate' => '2026-08-07', 'departureDate' => '2026-08-07', 'hourly' => true, 'is_day_use' => true],
+                    ['roomNumber' => '102', 'arrivalDate' => '2026-08-07', 'departureDate' => '2026-08-07', 'hourly' => false, 'is_day_use' => false],
+                ],
+            ]],
+        ])->assertSuccessful();
+
+        $dayUse = BookingRoom::where('room_number', '101')->firstOrFail();
+        $sameDay = BookingRoom::where('room_number', '102')->firstOrFail();
+        $this->assertTrue((bool) $dayUse->is_day_use);
+        $this->assertFalse((bool) $sameDay->is_day_use);
+        $this->assertSame(0, (int) $sameDay->ActutalNumOfDays);
+
+        $booked = app(\App\Services\RoomAvailabilityService::class)
+            ->getBookedCount($this->roomClass->id, '2026-08-07', '2026-08-07');
+        $this->assertSame(1, (int) $booked);
+    }
+
+    /**
+     * Row 391: turning "Ở theo giờ" off on one room must not be overridden by
+     * the booking-level day-use flag of a same-day header.
+     */
+    public function test_update_keeps_per_room_day_use_switch(): void
+    {
+        $booking = $this->createBooking([
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-07',
+            'num_of_days' => 0,
+            'is_day_use' => true,
+        ]);
+        $ids = [];
+        foreach (['G-DU-A' => '101', 'G-DU-B' => '102'] as $id => $roomNumber) {
+            $ids[$roomNumber] = BookingRoom::create([
+                'id' => $id,
+                'booking_id' => $booking->id,
+                'room_number' => $roomNumber,
+                'room_class_id' => $this->roomClass->id,
+                'arrival_date' => '2026-08-07',
+                'departure_date' => '2026-08-07',
+                'is_day_use' => true,
+                'rate' => 500000,
+                'status' => BookingRoom::STATUS_BOOKED,
+            ])->id;
+        }
+
+        $this->putJson("/api/bookings/{$booking->id}", [
+            'booking_name' => $booking->booking_name,
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-07',
+            'num_of_days' => 0,
+            'is_day_use' => 1,
+            'registration_status_id' => $this->regStatus->booking_status_id,
+            'company_id' => 1,
+            'market_id' => 1,
+            'customer_source_id' => 1,
+            'room_allocations' => [[
+                'roomClassId' => $this->roomClass->id,
+                'quantity' => 2,
+                'price' => 500000,
+                'rooms' => [
+                    ['bookingRoomId' => $ids['101'], 'roomNumber' => '101', 'arrivalDate' => '2026-08-07', 'departureDate' => '2026-08-07', 'hourly' => true, 'is_day_use' => true, 'price' => 500000],
+                    ['bookingRoomId' => $ids['102'], 'roomNumber' => '102', 'arrivalDate' => '2026-08-07', 'departureDate' => '2026-08-07', 'hourly' => false, 'is_day_use' => false, 'price' => 500000],
+                ],
+            ]],
+        ])->assertSuccessful();
+
+        $this->assertTrue((bool) BookingRoom::find($ids['101'])->is_day_use);
+        $this->assertFalse((bool) BookingRoom::find($ids['102'])->is_day_use);
+    }
+
+    /**
+     * Row 391: a day-use room is charged once, on its arrival date.
+     */
+    public function test_day_use_room_gets_projected_room_charge_on_arrival(): void
+    {
+        $booking = $this->createBooking([
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-07',
+            'is_day_use' => true,
+        ]);
+        $room = BookingRoom::create([
+            'id' => 'G-DU-RM',
+            'booking_id' => $booking->id,
+            'room_number' => '101',
+            'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-07',
+            'is_day_use' => true,
+            'rate' => 500000,
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        app(\App\Services\BookingRoomStayChargeService::class)->synchronize($room->fresh(), 500000.0);
+
+        $charges = \App\Models\BookingRoomService::where('booking_room_id', $room->id)->get();
+        $this->assertCount(1, $charges);
+        $this->assertSame('2026-08-07', \Carbon\Carbon::parse($charges->first()->service_date)->toDateString());
+        $this->assertEquals(500000, (float) $charges->first()->rate);
+
+        // Same-day room without day-use has no room charge.
+        $room->update(['is_day_use' => false]);
+        app(\App\Services\BookingRoomStayChargeService::class)->synchronize($room->fresh(), 500000.0);
+        $this->assertSame(0, \App\Models\BookingRoomService::where('booking_room_id', $room->id)->count());
+    }
+
+    /**
+     * Row 393: quick update allows departure = arrival (same-day room without
+     * day-use, zero nights) and only rejects departure < arrival.
+     */
+    public function test_quick_update_allows_same_day_and_rejects_departure_before_arrival(): void
+    {
+        $booking = $this->createBooking(['arrival_date' => '2026-08-07', 'departure_date' => '2026-08-09', 'num_of_days' => 2]);
+        $room = BookingRoom::create([
+            'id' => 'G-QU-1', 'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-07', 'departure_date' => '2026-08-09', 'rate' => 500000,
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $this->postJson("/api/bookings/{$booking->id}/rooms/bulk-update", [
+            'room_ids' => [$room->id], 'arrival_date' => '2026-08-08', 'departure_date' => '2026-08-08',
+        ])->assertSuccessful()->assertJson(['success' => true]);
+
+        $room->refresh();
+        $this->assertSame('2026-08-08', $room->departure_date->toDateString());
+        $this->assertFalse((bool) $room->is_day_use);
+        $this->assertSame(0, (int) $room->ActutalNumOfDays);
+
+        $this->postJson("/api/bookings/{$booking->id}/rooms/bulk-update", [
+            'room_ids' => [$room->id], 'departure_date' => '2026-08-07',
+        ])->assertStatus(422);
+    }
+
+    /**
+     * Row 393: the booking period stays as is while rooms remain inside it and
+     * is widened (with nights recalculated) when a room goes outside.
+     */
+    public function test_quick_update_only_widens_booking_period(): void
+    {
+        $booking = $this->createBooking(['arrival_date' => '2026-08-08', 'departure_date' => '2026-08-17', 'num_of_days' => 9]);
+        $room = BookingRoom::create([
+            'id' => 'G-QU-2', 'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-08', 'departure_date' => '2026-08-17', 'rate' => 500000,
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $this->postJson("/api/bookings/{$booking->id}/rooms/bulk-update", [
+            'room_ids' => [$room->id], 'arrival_date' => '2026-08-09', 'departure_date' => '2026-08-16',
+        ])->assertSuccessful();
+        $booking->refresh();
+        $this->assertSame('2026-08-08', $booking->arrival_date->toDateString());
+        $this->assertSame('2026-08-17', $booking->departure_date->toDateString());
+        $this->assertSame(9, (int) $booking->num_of_days);
+
+        $this->postJson("/api/bookings/{$booking->id}/rooms/bulk-update", [
+            'room_ids' => [$room->id], 'arrival_date' => '2026-08-07',
+        ])->assertSuccessful();
+        $booking->refresh();
+        $this->assertSame('2026-08-07', $booking->arrival_date->toDateString());
+        $this->assertSame('2026-08-17', $booking->departure_date->toDateString());
+        $this->assertSame(10, (int) $booking->num_of_days);
     }
 }

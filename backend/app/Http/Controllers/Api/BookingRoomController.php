@@ -570,6 +570,29 @@ class BookingRoomController extends Controller
         $sysDateStr = $this->avService->getSystemDate()->toDateString();
         $allowOver = $this->allowOverAV();
 
+        // Rows updated together are checked against each other with their
+        // new dates, not against their old dates in the database.
+        $requestedRoomIds = $rooms->pluck('id')->map(fn ($id) => (string) $id)->all();
+        $plannedPeriods = [];
+        foreach ($rooms as $plannedRoom) {
+            if (in_array($plannedRoom->status, [BookingRoom::STATUS_CANCELLED, BookingRoom::STATUS_CHECKED_OUT, BookingRoom::STATUS_MOVED])
+                || !filled($plannedRoom->room_number)) {
+                continue;
+            }
+            $plannedArrival = (int) $plannedRoom->status === BookingRoom::STATUS_CHECKED_IN
+                ? $plannedRoom->arrival_date->toDateString()
+                : ($request->arrival_date ?? $plannedRoom->arrival_date->toDateString());
+            $plannedDeparture = $request->departure_date ?? $plannedRoom->departure_date->toDateString();
+            if ($plannedArrival === $plannedDeparture && !$plannedRoom->is_day_use) {
+                continue; // same-day room without day-use does not hold the room
+            }
+            $plannedPeriods[(string) $plannedRoom->id] = [
+                'room_number' => (string) $plannedRoom->room_number,
+                'arrival'     => $plannedArrival,
+                'departure'   => $plannedDeparture,
+            ];
+        }
+
         // 1. Validate dates and AV for all rooms first to avoid partial updates
         foreach ($rooms as $room) {
             if (in_array($room->status, [BookingRoom::STATUS_CANCELLED, BookingRoom::STATUS_CHECKED_OUT, BookingRoom::STATUS_MOVED])) {
@@ -628,6 +651,27 @@ class BookingRoomController extends Controller
                             'message' => "Cập nhật ngày sẽ dẫn đến âm phòng trống loại {$room->roomClass->name}. Bạn có muốn tiếp tục?"
                         ], 200);
                     }
+                }
+            }
+
+            // Dòng 395: số phòng đã gán không được trùng giai đoạn với đăng ký
+            // khác (hoặc lượt ở khác) và không được rơi vào giai đoạn khóa phòng.
+            $datesChanged = $newArrival !== $room->arrival_date->toDateString()
+                || $newDeparture !== $room->departure_date->toDateString();
+            if ($datesChanged && filled($room->room_number) && $takesAv) {
+                $conflictMessage = $this->roomNumberConflictMessage(
+                    $room,
+                    $newArrival,
+                    $newDeparture,
+                    $requestedRoomIds,
+                    $plannedPeriods
+                );
+                if ($conflictMessage) {
+                    return response()->json([
+                        'success' => false,
+                        'code'    => 'ROOM_NUMBER_CONFLICT',
+                        'message' => $conflictMessage,
+                    ], 422);
                 }
             }
         }
@@ -1555,6 +1599,71 @@ class BookingRoomController extends Controller
     /**
      * Đồng bộ ngày header booking khớp chính xác với min arrival và max departure của các phòng active.
      */
+    /**
+     * Row 395: why the room number cannot take the new period, or null.
+     * Checks other stay rows (any booking), the other rows of this request
+     * with their new dates, and active OOO/OOS locks.
+     *
+     * @param list<string> $requestedRoomIds
+     * @param array<string, array{room_number: string, arrival: string, departure: string}> $plannedPeriods
+     */
+    private function roomNumberConflictMessage(
+        BookingRoom $room,
+        string $arrival,
+        string $departure,
+        array $requestedRoomIds,
+        array $plannedPeriods
+    ): ?string {
+        $roomNumber = (string) $room->room_number;
+        $period = $this->formatPeriodVi($arrival, $departure);
+
+        $conflict = $this->avService->findRoomNumberConflict(
+            $roomNumber,
+            $arrival,
+            $departure,
+            $room->id,
+            null,
+            null,
+            null,
+            $requestedRoomIds
+        );
+        if ($conflict) {
+            $code = $conflict->booking?->booking_code ?: ('#' . $conflict->booking_id);
+            $other = $this->formatPeriodVi(
+                $conflict->arrival_date->toDateString(),
+                $conflict->departure_date->toDateString()
+            );
+
+            return "Số phòng {$roomNumber} bị trùng giai đoạn với đăng ký {$code} ({$other}). Không thể cập nhật giai đoạn {$period}.";
+        }
+
+        $stayEnd = fn (string $in, string $out) => $in === $out
+            ? \Carbon\Carbon::parse($in)->addDay()->toDateString()
+            : $out;
+        foreach ($plannedPeriods as $otherId => $other) {
+            if ($otherId === (string) $room->id || $other['room_number'] !== $roomNumber) {
+                continue;
+            }
+            if ($arrival < $stayEnd($other['arrival'], $other['departure'])
+                && $other['arrival'] < $stayEnd($arrival, $departure)) {
+                return "Số phòng {$roomNumber} được chọn cho nhiều phòng cập nhật cùng lúc và bị trùng giai đoạn {$period}. Vui lòng kiểm tra thông tin.";
+            }
+        }
+
+        if ($this->avService->hasBlockingLock($roomNumber, $arrival, $departure)) {
+            return "Số phòng {$roomNumber} đang bị khóa (OOO/OOS) trong giai đoạn {$period}. Không thể cập nhật.";
+        }
+
+        return null;
+    }
+
+    private function formatPeriodVi(string $arrival, string $departure): string
+    {
+        $fmt = fn (string $date) => \Carbon\Carbon::parse($date)->format('d/m/Y');
+
+        return $fmt($arrival) . ' - ' . $fmt($departure);
+    }
+
     /**
      * Quick update (row 393): keep the booking period while every room stays
      * inside it; widen it only when a room goes outside. The night count is
