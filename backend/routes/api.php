@@ -304,6 +304,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     Route::post('/hk-config/reset', [\App\Http\Controllers\Api\HkConfigController::class, 'reset']);
 
 
+    Route::get('/products/next-code', [\App\Http\Controllers\Api\ProductController::class, 'nextCode']);
     Route::post('/products/bulk-toggle-active', [\App\Http\Controllers\Api\ProductController::class, 'bulkToggleActive']);
     Route::get('/products/export', [\App\Http\Controllers\Api\ProductController::class, 'exportExcel']);
     Route::post('/products/import', [\App\Http\Controllers\Api\ProductController::class, 'importExcel']);

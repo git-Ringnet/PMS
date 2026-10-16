@@ -99,9 +99,13 @@ const duplicateTemplate = async (id) => {
 
 // Delete template
 const deleteTemplate = async (template) => {
-  if (!confirm(`Bạn có chắc muốn xóa mẫu biểu "${template.name}"?`)) {
-    return
-  }
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận xóa',
+    message: `Bạn có chắc muốn xóa mẫu biểu "${template.name}"?`,
+    confirmText: 'Xóa',
+    cancelText: 'Hủy'
+  })
+  if (!confirmed) return
   
   try {
     const res = await http.delete(`/templates/${template.id}`)
@@ -127,24 +131,36 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="mb-5 shrink-0 rounded-xl border border-slate-200 bg-white p-2">
+  <div class="mb-4 shrink-0 rounded-xl border border-slate-200 bg-white p-2 font-roboto text-xs">
     <div class="grid grid-cols-3 gap-2">
-      <button @click="activeWorkspace = 'library'" class="flex items-center gap-3 rounded-lg border px-4 py-3 text-left"
-        :class="activeWorkspace === 'library' ? 'border-sky-200 bg-sky-50 text-sky-700' : 'border-transparent bg-white text-slate-500 hover:bg-slate-50'">
-        <LayoutTemplate class="h-5 w-5" /><span><b class="block text-xs uppercase">1. Thư viện thiết kế</b><small class="mt-0.5 block text-[10px] font-semibold opacity-70">Tạo và sửa bố cục đầu ra</small></span>
+      <button @click="activeWorkspace = 'library'" class="flex items-center gap-3 rounded-lg border px-4 py-2.5 text-left transition-colors cursor-pointer"
+        :class="activeWorkspace === 'library' ? 'border-sky-300 bg-sky-50 text-sky-800' : 'border-transparent bg-white text-slate-600 hover:bg-slate-50'">
+        <LayoutTemplate class="h-4 w-4" />
+        <div>
+          <b class="block text-xs font-semibold uppercase">1. Thư Viện Thiết Kế</b>
+          <span class="mt-0.5 block text-[11px] font-normal text-slate-500">Tạo và sửa bố cục đầu ra</span>
+        </div>
       </button>
-      <button @click="activeWorkspace = 'print-slots'" class="flex items-center gap-3 rounded-lg border px-4 py-3 text-left"
-        :class="activeWorkspace === 'print-slots' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-transparent bg-white text-slate-500 hover:bg-slate-50'">
-        <Printer class="h-5 w-5" /><span><b class="block text-xs uppercase">2. Cấu hình mẫu in</b><small class="mt-0.5 block text-[10px] font-semibold opacity-70">Chọn phiếu ăn sáng, hóa đơn...</small></span>
+      <button @click="activeWorkspace = 'print-slots'" class="flex items-center gap-3 rounded-lg border px-4 py-2.5 text-left transition-colors cursor-pointer"
+        :class="activeWorkspace === 'print-slots' ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-transparent bg-white text-slate-600 hover:bg-slate-50'">
+        <Printer class="h-4 w-4" />
+        <div>
+          <b class="block text-xs font-semibold uppercase">2. Cấu Hình Mẫu In</b>
+          <span class="mt-0.5 block text-[11px] font-normal text-slate-500">Chọn phiếu ăn sáng, hóa đơn...</span>
+        </div>
       </button>
-      <button @click="activeWorkspace = 'reports'" class="flex items-center gap-3 rounded-lg border px-4 py-3 text-left"
-        :class="activeWorkspace === 'reports' ? 'border-violet-200 bg-violet-50 text-violet-700' : 'border-transparent bg-white text-slate-500 hover:bg-slate-50'">
-        <ListFilter class="h-5 w-5" /><span><b class="block text-xs uppercase">3. Danh mục báo cáo</b><small class="mt-0.5 block text-[10px] font-semibold opacity-70">Store, tham số, menu và mẫu báo cáo</small></span>
+      <button @click="activeWorkspace = 'reports'" class="flex items-center gap-3 rounded-lg border px-4 py-2.5 text-left transition-colors cursor-pointer"
+        :class="activeWorkspace === 'reports' ? 'border-violet-300 bg-violet-50 text-violet-800' : 'border-transparent bg-white text-slate-600 hover:bg-slate-50'">
+        <ListFilter class="h-4 w-4" />
+        <div>
+          <b class="block text-xs font-semibold uppercase">3. Danh Mục Báo Cáo</b>
+          <span class="mt-0.5 block text-[11px] font-normal text-slate-500">Store, tham số, menu và mẫu báo cáo</span>
+        </div>
       </button>
     </div>
   </div>
 
-  <div v-if="activeWorkspace === 'library'" class="flex gap-6 items-stretch relative h-full">
+  <div v-if="activeWorkspace === 'library'" class="flex gap-4 items-stretch relative h-full font-roboto text-xs">
     <!-- Loading State -->
     <div v-if="loading" class="flex items-center justify-center absolute inset-0 bg-white/70 z-30 min-h-[300px]">
       <div class="loader">
@@ -155,97 +171,111 @@ onMounted(() => {
     </div>
 
     <!-- Left panel: Group list -->
-    <div class="w-1/4 bg-slate-50 rounded-xl p-4 border border-slate-200/80 flex flex-col gap-1.5 shrink-0">
-      <span class="text-xs font-black text-slate-400 uppercase tracking-widest px-2 pb-2 block border-b border-slate-200">Nhóm Mẫu</span>
-      <button v-for="grp in templateGroups" :key="grp" @click="activeTemplateGroup = grp"
-        class="w-full text-left px-3 py-2 rounded-lg font-bold text-xs border-none bg-transparent cursor-pointer transition-colors"
-        :class="activeTemplateGroup === grp ? 'bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-100' : 'text-slate-600 hover:bg-slate-100'">
-        {{ grp }}
-      </button>
+    <div class="w-1/4 bg-white rounded-xl p-3 border border-slate-200 flex flex-col gap-1 shrink-0 shadow-2xs">
+      <span class="text-xs font-semibold text-gray-900 uppercase tracking-wide px-2 pb-2 block border-b border-slate-100">Nhóm Mẫu</span>
+      <div class="overflow-y-auto flex-1 flex flex-col gap-0.5 mt-1">
+        <button v-for="grp in templateGroups" :key="grp" @click="activeTemplateGroup = grp"
+          class="w-full text-left px-3 py-2 rounded-lg font-medium text-xs border-none bg-transparent cursor-pointer transition-colors"
+          :class="activeTemplateGroup === grp ? 'bg-sky-50 text-sky-800 font-semibold ring-1 ring-inset ring-sky-200' : 'text-slate-700 hover:bg-slate-50'">
+          {{ grp }}
+        </button>
+      </div>
     </div>
 
     <!-- Right panel: Template report list -->
-    <div class="flex-1 flex flex-col gap-4">
-      <div class="flex justify-between items-center pb-2 border-b border-slate-100">
-        <span class="text-xs font-black text-slate-700 uppercase tracking-wider">
-          Thiết kế mẫu cho nhóm: {{ activeTemplateGroup }}
+    <div class="flex-1 flex flex-col gap-3 min-h-0">
+      <div class="flex justify-between items-center pb-2 border-b border-slate-200 shrink-0">
+        <span class="text-xs font-semibold text-gray-900 uppercase tracking-wide">
+          Thiết Kế Mẫu Cho Nhóm: {{ activeTemplateGroup }}
         </span>
         
         <!-- Data source and template actions -->
         <div class="flex items-center gap-2">
           <button @click="isDataSourceManagerOpen = true"
-            class="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-extrabold rounded-lg flex items-center gap-1 cursor-pointer transition-colors border border-emerald-200 uppercase">
-            <Database class="w-4 h-4" /> Nguồn dữ liệu Store
+            class="btn-pms-secondary h-8 px-3 text-xs flex items-center gap-1.5 font-medium cursor-pointer shadow-xs">
+            <Database class="w-3.5 h-3.5" />
+            <span>Nguồn Dữ Liệu Store</span>
           </button>
           <button @click="showCreateForm = !showCreateForm"
-            class="px-3 py-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-extrabold rounded-lg flex items-center gap-1 cursor-pointer transition-colors shadow-2xs border-none uppercase">
-            <Plus class="w-4 h-4" /> {{ showCreateForm ? 'ĐÓNG FORM' : 'TẠO MẪU MỚI' }}
+            class="btn-pms-primary h-8 px-3 text-xs flex items-center gap-1.5 font-medium cursor-pointer shadow-xs">
+            <Plus class="w-3.5 h-3.5" />
+            <span>{{ showCreateForm ? 'Đóng Form' : 'Tạo Mẫu Mới' }}</span>
           </button>
         </div>
       </div>
 
       <!-- Quick Create Form -->
-      <div v-if="showCreateForm" class="p-4 border border-sky-100 rounded-xl bg-sky-50/30 flex gap-3 items-end shadow-2xs">
+      <div v-if="showCreateForm" class="p-3 border border-sky-200 rounded-xl bg-sky-50/40 flex gap-3 items-end shadow-2xs shrink-0">
         <div class="flex-1 flex flex-col gap-1">
-          <span class="text-[10px] font-bold text-sky-700 uppercase">Tên biểu mẫu mới:</span>
-          <input type="text" v-model="newTemplateName" placeholder="Ví dụ: Booking Confirmation Starlet..." 
-            class="border border-slate-200 bg-white rounded-lg px-3 py-1.5 text-xs w-full focus:outline-sky-500 font-bold" />
+          <label class="text-xs font-semibold text-gray-900">Tên Biểu Mẫu Mới <span class="text-red-500">*</span></label>
+          <div class="relative">
+            <input type="text" v-model="newTemplateName" placeholder="Ví dụ: Booking Confirmation Starlet..." 
+              class="border bg-[#FFF8DB] border-[#F1DD8A] focus:border-amber-500 rounded px-2.5 py-1.5 text-xs w-full font-medium text-gray-900 focus:outline-none transition-colors" />
+            <button v-if="newTemplateName" @click="newTemplateName = ''" type="button"
+              class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs">✕</button>
+          </div>
         </div>
         <button @click="createTemplate" 
-          class="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white text-xs font-extrabold rounded-lg cursor-pointer transition-colors border-none uppercase">
-          TẠO MẪU
+          class="btn-pms-primary h-8 px-4 text-xs flex items-center gap-1.5 font-medium cursor-pointer shadow-xs">
+          <Plus class="w-3.5 h-3.5" />
+          <span>Tạo Mẫu</span>
         </button>
       </div>
 
-      <div class="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-2xs">
-        <table class="w-full text-sm text-left border-collapse">
+      <div class="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-2xs flex-1">
+        <table class="w-full text-xs text-left border-collapse">
           <thead>
-            <tr class="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-xs">
-              <th class="p-3 w-1/4">Tên thiết kế</th>
-              <th class="p-3 w-12 text-center">Version</th>
-              <th class="p-3 w-1/4">Nguồn dữ liệu thiết kế</th>
-              <th class="p-3 w-36 text-center">Sử dụng tại</th>
-              <th class="p-3 text-right">Thao tác</th>
+            <tr class="bg-slate-50 text-gray-900 font-semibold sticky top-0 z-10">
+              <th class="p-2.5 text-center align-middle border border-slate-200 w-1/4">Tên Thiết Kế</th>
+              <th class="p-2.5 text-center align-middle border border-slate-200 w-20">Phiên Bản</th>
+              <th class="p-2.5 text-center align-middle border border-slate-200 w-1/4">Nguồn Dữ Liệu Thiết Kế</th>
+              <th class="p-2.5 text-center align-middle border border-slate-200 w-36">Sử Dụng Tại</th>
+              <th class="p-2.5 text-center align-middle border border-slate-200 w-32">Thao Tác</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="t in templates.filter(item => item.group === activeTemplateGroup)" :key="t.id"
-              class="border-b border-slate-100 hover:bg-slate-50/55">
-              <td class="p-3">
-                <p class="font-bold text-slate-800">{{ t.name }}</p>
-                <p class="text-[10px] text-slate-400 font-mono mt-0.5" v-if="t.page_size">
+              class="border-b border-slate-100 hover:bg-slate-50/70 text-gray-900">
+              <td class="p-2.5 border-r border-slate-100">
+                <p class="font-semibold text-[#000000D9]">{{ t.name }}</p>
+                <p class="text-[10px] text-slate-500 font-mono mt-0.5" v-if="t.page_size">
                   Khổ: {{ t.page_size }} ({{ t.page_orientation === 'portrait' ? 'Dọc' : 'Ngang' }})
                 </p>
               </td>
               
-              <td class="p-3 text-center">
-                <span class="px-2 py-0.5 rounded bg-slate-100 text-slate-500 text-[10px] font-bold font-mono">
+              <td class="p-2.5 border-r border-slate-100 text-center">
+                <span class="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px] font-semibold font-mono">
                   v{{ t.version }}
                 </span>
               </td>
               
-              <td class="p-3">
-                <span v-if="t.report_data_source" class="rounded bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700">{{ t.report_data_source.name }}</span>
-                <span v-else class="text-[10px] italic text-slate-400">Không có Store — nhận dữ liệu từ chức năng in</span>
+              <td class="p-2.5 border-r border-slate-100">
+                <span v-if="t.report_data_source" class="rounded bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 border border-emerald-200">
+                  {{ t.report_data_source.name }}
+                </span>
+                <span v-else class="text-[11px] italic text-slate-400">Không có Store — nhận dữ liệu từ chức năng in</span>
               </td>
               
-              <td class="p-3 text-center">
-                <span class="text-[10px] font-semibold leading-relaxed text-slate-400">Chọn tại<br><b class="text-slate-600">Mẫu in / Báo cáo</b></span>
+              <td class="p-2.5 border-r border-slate-100 text-center">
+                <span class="text-[11px] font-normal leading-relaxed text-slate-500">Chọn tại<br><b class="font-semibold text-slate-800">Mẫu in / Báo cáo</b></span>
               </td>
 
               <!-- Action buttons: Edit, Duplicate, Delete -->
-              <td class="p-3 text-right">
-                <div class="flex gap-1.5 justify-end">
+              <td class="p-2.5 text-center whitespace-nowrap">
+                <div class="flex gap-1.5 justify-center items-center">
                   <button @click="openVisualEditor(t.id)" 
-                    class="px-2.5 py-1.5 bg-sky-100 hover:bg-sky-200 text-sky-700 font-extrabold rounded-lg text-[10px] cursor-pointer transition-colors uppercase inline-flex items-center gap-1.5 border-none shadow-3xs">
-                    <Edit3 class="w-3.5 h-3.5" /> Sửa thiết kế
+                    class="btn-pms-primary h-7 px-2 text-[11px] flex items-center gap-1 font-medium cursor-pointer shadow-3xs"
+                    title="Sửa thiết kế">
+                    <Edit3 class="w-3 h-3" />
+                    <span>Sửa</span>
                   </button>
                   <button @click="duplicateTemplate(t.id)" 
-                    class="p-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-500 cursor-pointer" title="Sao chép nhân bản">
+                    class="p-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded text-slate-600 hover:text-slate-900 cursor-pointer transition-colors"
+                    title="Sao chép nhân bản">
                     <Copy class="w-3.5 h-3.5" />
                   </button>
                   <button @click="deleteTemplate(t)" 
-                    class="p-1.5 bg-slate-50 hover:bg-red-50 border border-slate-200 hover:border-red-200 rounded-lg text-slate-400 hover:text-red-600 cursor-pointer"
+                    class="p-1.5 bg-slate-50 hover:bg-rose-50 border border-slate-200 hover:border-rose-200 rounded text-rose-500 hover:text-rose-700 cursor-pointer transition-colors"
                     title="Xóa mẫu">
                     <Trash2 class="w-3.5 h-3.5" />
                   </button>
@@ -253,7 +283,7 @@ onMounted(() => {
               </td>
             </tr>
             <tr v-if="templates.filter(item => item.group === activeTemplateGroup).length === 0">
-              <td colspan="5" class="p-6 text-center text-slate-400 italic">Chưa có mẫu nào thuộc nhóm này. Hãy bấm tạo mẫu mới ở trên.</td>
+              <td colspan="5" class="p-6 text-center text-gray-500 font-medium">Chưa có mẫu nào thuộc nhóm này. Hãy bấm tạo mẫu mới ở trên.</td>
             </tr>
           </tbody>
         </table>

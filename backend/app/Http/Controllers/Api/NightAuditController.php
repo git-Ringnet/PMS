@@ -85,6 +85,7 @@ class NightAuditController extends Controller
             $bills = ServiceBill::query()
                 ->where('DepartmentId', 'FO')
                 ->where('ServiceId', 'RM')
+                ->excludeSupplementalRoomCharge()
                 ->whereDate('Date', '>=', $fromDate->toDateString())
                 ->whereDate('Date', '<=', $toDate->toDateString())
                 ->lockForUpdate()

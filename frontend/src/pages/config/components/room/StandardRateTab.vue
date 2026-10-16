@@ -2,10 +2,65 @@
 import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
+import { useAuthStore } from '@/stores/auth-store'
 
 const uiStore = useUiStore()
+const authStore = useAuthStore()
 const loading = ref(false)
 const isLoaded = ref(false)
+
+const topbarThemeBg = computed(() => authStore.themeColor || authStore.settings?.topbar_color || 'var(--pms-custom-theme, #006bdb)')
+
+// ==================== DRAGGABLE MODAL POSITION ====================
+const modalPos = ref({ x: 0, y: 0 })
+const isDraggingModal = ref(false)
+let dragStart = { x: 0, y: 0 }
+let rafId = null
+let latestX = 0
+let latestY = 0
+
+function dragModal(moveEvent) {
+  if (!isDraggingModal.value) return
+  latestX = moveEvent.clientX
+  latestY = moveEvent.clientY
+  if (rafId) return
+  rafId = requestAnimationFrame(() => {
+    modalPos.value.x = latestX - dragStart.x
+    modalPos.value.y = latestY - dragStart.y
+    rafId = null
+  })
+}
+
+function stopDragModal() {
+  isDraggingModal.value = false
+  if (rafId) {
+    cancelAnimationFrame(rafId)
+    rafId = null
+  }
+  document.removeEventListener('mousemove', dragModal)
+  document.removeEventListener('mouseup', stopDragModal)
+}
+
+function startDragModal(e) {
+  const ignoreTags = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A', 'LABEL']
+  if (ignoreTags.includes(e.target.tagName) || e.target.closest('button, input, select, textarea, a, label')) return
+  
+  e.preventDefault()
+  isDraggingModal.value = true
+  dragStart.x = e.clientX - modalPos.value.x
+  dragStart.y = e.clientY - modalPos.value.y
+  latestX = e.clientX
+  latestY = e.clientY
+
+  document.addEventListener('mousemove', dragModal)
+  document.addEventListener('mouseup', stopDragModal)
+}
+
+const handleKeyDown = (e) => {
+  if (e.key === 'Escape' && isStandardRateModalOpen.value) {
+    isStandardRateModalOpen.value = false
+  }
+}
 
 const standardRates = ref([])
 const roomClasses = ref([])
@@ -36,11 +91,11 @@ const isRateColumnSelectorOpen = ref(false)
 const rateConfigRecord = ref(null)
 
 const rateColumns = ref([
-  { id: 'room_class', label: 'Loại phòng', visible: true },
-  { id: 'room_form', label: 'Dạng phòng', visible: true },
-  { id: 'room_price', label: 'Giá phòng', visible: true },
-  { id: 'extra_bed_price', label: 'Giá thêm giường', visible: true },
-  { id: 'action', label: 'Hành động', visible: true },
+  { id: 'room_class', label: 'Loại Phòng', visible: true },
+  { id: 'room_form', label: 'Dạng Phòng', visible: true },
+  { id: 'room_price', label: 'Giá Phòng', visible: true },
+  { id: 'extra_bed_price', label: 'Giá Thêm Giường', visible: true },
+  { id: 'action', label: 'Hành Động', visible: true },
 ])
 
 const isRateColumnVisible = (columnId) => {
@@ -57,6 +112,7 @@ const closeAllPopovers = (e) => {
 let bc = null
 
 onMounted(async () => {
+  window.addEventListener('keydown', handleKeyDown)
   fetchRoomClasses()
   fetchRoomForms()
   fetchStandardRates()
@@ -69,7 +125,9 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleKeyDown)
   document.removeEventListener('click', closeAllPopovers)
+  stopDragModal()
   if (bc) {
     bc.close()
   }
@@ -150,7 +208,7 @@ const saveConfig = async () => {
   }
 }
 
-watch(rateColumns, (newCols) => {
+watch(rateColumns, () => {
   if (isLoaded.value) {
     saveConfig()
   }
@@ -183,6 +241,7 @@ const getErrorMessage = (err, defaultMsg = 'Có lỗi xảy ra') => {
 const openAddStandardRateModal = () => {
   isEditStandardRateMode.value = false
   currentStandardRateId.value = null
+  modalPos.value = { x: 0, y: 0 }
   Object.assign(standardRateFormState, {
     room_class_id: roomClasses.value.filter(item => item.is_active)[0]?.id || roomClasses.value[0]?.id || '',
     room_form_id: roomForms.value[0]?.id || '',
@@ -195,6 +254,7 @@ const openAddStandardRateModal = () => {
 const openEditStandardRateModal = (rate) => {
   isEditStandardRateMode.value = true
   currentStandardRateId.value = rate.id
+  modalPos.value = { x: 0, y: 0 }
   Object.assign(standardRateFormState, {
     room_class_id: rate.room_class_id,
     room_form_id: rate.room_form_id,
@@ -273,14 +333,18 @@ const formatCurrency = (val) => {
       </div>
     </div>
 
+    <!-- Toolbar -->
     <div class="flex justify-between items-center mb-4">
-      <h3 class="text-sm font-black text-slate-600 uppercase">Danh sách Giá phòng chuẩn</h3>
+      <h3 class="text-xs font-semibold text-[#000000D9] uppercase tracking-wide">Danh Sách Giá Phòng Chuẩn</h3>
       <div class="flex items-center gap-2 relative popover-container">
-        <button @click="openAddStandardRateModal"
-          class="px-3 py-1.5 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded text-sm font-bold border-none cursor-pointer">+
-          Thêm</button>
+        <button @click="openAddStandardRateModal" class="btn-pms-primary h-8 px-3 text-xs flex items-center gap-1.5 cursor-pointer">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+          Thêm Giá Phòng Chuẩn
+        </button>
         <button @click.stop="isRateColumnSelectorOpen = !isRateColumnSelectorOpen"
-          class="p-1.5 bg-white border border-slate-200 text-slate-500 hover:text-slate-700 hover:bg-slate-50 rounded cursor-pointer flex items-center justify-center transition-colors shadow-xs"
+          class="h-8 w-8 bg-white border border-slate-200 text-slate-500 hover:text-slate-700 hover:bg-slate-50 rounded-lg cursor-pointer flex items-center justify-center transition-colors shadow-xs"
           title="Ẩn/hiện cột">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round"
@@ -301,34 +365,35 @@ const formatCurrency = (val) => {
       </div>
     </div>
 
+    <!-- Table -->
     <div class="overflow-x-auto border border-slate-200 rounded-lg shadow-sm">
-      <table class="w-full text-sm text-left border-collapse">
+      <table class="w-full text-xs text-left border-collapse font-roboto">
         <thead>
-          <tr class="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-xs">
-            <th v-if="isRateColumnVisible('room_class')" class="p-3">Loại phòng</th>
-            <th v-if="isRateColumnVisible('room_form')" class="p-3">Dạng phòng</th>
-            <th v-if="isRateColumnVisible('room_price')" class="p-3">Giá phòng</th>
-            <th v-if="isRateColumnVisible('extra_bed_price')" class="p-3">Giá thêm giường</th>
-            <th v-if="isRateColumnVisible('action')" class="p-3 text-right">Hành động</th>
+          <tr class="bg-slate-50 text-slate-700 font-semibold text-xs">
+            <th v-if="isRateColumnVisible('room_class')" class="p-2.5 text-center align-middle border border-slate-200">Loại Phòng</th>
+            <th v-if="isRateColumnVisible('room_form')" class="p-2.5 text-center align-middle border border-slate-200">Dạng Phòng</th>
+            <th v-if="isRateColumnVisible('room_price')" class="p-2.5 text-center align-middle border border-slate-200">Giá Phòng</th>
+            <th v-if="isRateColumnVisible('extra_bed_price')" class="p-2.5 text-center align-middle border border-slate-200">Giá Thêm Giường</th>
+            <th v-if="isRateColumnVisible('action')" class="p-2.5 text-center align-middle border border-slate-200 w-24">Hành Động</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="rate in paginatedStandardRates" :key="rate.id" @click="openEditStandardRateModal(rate)"
-            class="border-b border-slate-100 hover:bg-slate-50/55 cursor-pointer">
-            <td v-if="isRateColumnVisible('room_class')" class="p-3 font-bold text-slate-800">{{
+            class="border-b border-slate-100 hover:bg-slate-50/70 cursor-pointer transition-colors">
+            <td v-if="isRateColumnVisible('room_class')" class="p-2.5 font-semibold text-[#000000D9]">{{
               rate.room_class?.name }}</td>
-            <td v-if="isRateColumnVisible('room_form')" class="p-3 font-bold text-slate-600">{{ rate.room_form?.name
-              }}</td>
-            <td v-if="isRateColumnVisible('room_price')" class="p-3 font-extrabold text-sky-700">{{
+            <td v-if="isRateColumnVisible('room_form')" class="p-2.5 text-slate-700">{{ rate.room_form?.name }}</td>
+            <td v-if="isRateColumnVisible('room_price')" class="p-2.5 font-semibold text-sky-700">{{
               formatCurrency(rate.room_price) }}</td>
-            <td v-if="isRateColumnVisible('extra_bed_price')" class="p-3 font-bold text-amber-600">{{
+            <td v-if="isRateColumnVisible('extra_bed_price')" class="p-2.5 text-amber-700">{{
               formatCurrency(rate.extra_bed_price) }}</td>
-            <td v-if="isRateColumnVisible('action')" class="p-3 text-right">
-              <button @click.stop="deleteStandardRate(rate.id)"
-                class="p-1 hover:bg-red-50 rounded text-red-500 bg-transparent border-none cursor-pointer">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+            <td v-if="isRateColumnVisible('action')" class="p-2.5 text-center" @click.stop>
+              <button @click="deleteStandardRate(rate.id)"
+                class="p-1 hover:bg-red-50 rounded text-red-500 bg-transparent border-none cursor-pointer transition-colors"
+                title="Xóa giá phòng chuẩn">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round"
-                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7" />
+                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                 </svg>
               </button>
             </td>
@@ -348,7 +413,7 @@ const formatCurrency = (val) => {
       </button>
 
       <button v-for="p in totalRatePages" :key="p" @click="ratePage = p"
-        class="w-8 h-8 flex items-center justify-center border rounded font-semibold cursor-pointer text-sm"
+        class="w-8 h-8 flex items-center justify-center border rounded font-semibold cursor-pointer text-xs"
         :class="ratePage === p ? 'border-sky-500 text-sky-600 font-bold bg-sky-50/20' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'">
         {{ p }}
       </button>
@@ -360,76 +425,93 @@ const formatCurrency = (val) => {
 
       <select v-model="ratePageSize" @change="ratePage = 1"
         class="border border-slate-200 rounded p-1.5 bg-white text-slate-600 font-semibold text-xs cursor-pointer focus:outline-sky-400">
-        <option :value="10">10 / page</option>
-        <option :value="25">25 / page</option>
-        <option :value="50">50 / page</option>
-        <option :value="100">100 / page</option>
+        <option :value="10">10 / trang</option>
+        <option :value="25">25 / trang</option>
+        <option :value="50">50 / trang</option>
+        <option :value="100">100 / trang</option>
       </select>
     </div>
 
     <!-- OVERLAY MODAL: ADD / EDIT STANDARD RATE -->
     <div v-if="isStandardRateModalOpen"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-xs select-none">
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs select-none">
       <div
-        class="bg-white rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+        class="bg-white rounded-xl w-full max-w-lg shadow-2xl overflow-hidden border border-slate-200 font-roboto"
+        :style="{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }">
         <!-- Modal Header -->
-        <div class="bg-[#8dcbf4] px-6 py-4 flex items-center justify-between text-white">
-          <h2 class="text-base font-black uppercase tracking-wider text-white">
-            {{ isEditStandardRateMode ? 'Cập nhật giá phòng chuẩn' : 'Thêm giá phòng chuẩn' }}
+        <div class="px-5 py-3 flex items-center justify-between text-white cursor-move select-none"
+          :style="{ background: topbarThemeBg }"
+          @mousedown="startDragModal">
+          <h2 class="text-xs font-semibold tracking-wide text-white">
+            {{ isEditStandardRateMode ? 'Cập Nhật Giá Phòng Chuẩn' : 'Thêm Giá Phòng Chuẩn' }}
           </h2>
           <button @click="isStandardRateModalOpen = false"
-            class="text-white hover:text-white/80 bg-transparent border-none cursor-pointer text-lg font-black">
+            class="text-white hover:text-white/80 bg-transparent border-none cursor-pointer text-base font-bold p-1 leading-none"
+            title="Đóng (Esc)">
             ✕
           </button>
         </div>
 
         <!-- Modal Body Form -->
-        <div class="p-6 flex flex-col gap-6 text-sm text-slate-700 font-bold">
-          <div class="grid grid-cols-2 gap-4">
-            <div class="flex flex-col gap-1.5">
-              <span class="font-bold text-slate-600 text-xs uppercase">Loại phòng*</span>
+        <div class="p-5 flex flex-col gap-4 text-xs text-slate-700 font-normal">
+          <div class="grid grid-cols-2 gap-3.5">
+            <div class="flex flex-col gap-1">
+              <label class="font-semibold text-xs text-[#000000D9]">
+                Loại Phòng <span class="text-red-500">*</span>
+              </label>
               <select v-model="standardRateFormState.room_class_id"
-                class="border border-slate-200 rounded-lg p-2.5 bg-white font-semibold focus:outline-sky-400 text-sm">
-                <option value="" disabled>Chọn loại phòng</option>
+                class="rounded-lg p-2 font-normal focus:outline-none focus:border-amber-400 text-xs bg-[#FFF8DB] border border-[#F1DD8A]">
+                <option value="" disabled>-- Chọn loại phòng --</option>
                 <option
                   v-for="c in roomClasses.filter(item => item.is_active || item.id === standardRateFormState.room_class_id)"
                   :key="c.id" :value="c.id">{{ c.name }}</option>
               </select>
             </div>
 
-            <div class="flex flex-col gap-1.5">
-              <span class="font-bold text-slate-600 text-xs uppercase">Dạng phòng*</span>
+            <div class="flex flex-col gap-1">
+              <label class="font-semibold text-xs text-[#000000D9]">
+                Dạng Phòng <span class="text-red-500">*</span>
+              </label>
               <select v-model="standardRateFormState.room_form_id"
-                class="border border-slate-200 rounded-lg p-2.5 bg-white font-semibold focus:outline-sky-400 text-sm">
-                <option value="" disabled>Chọn dạng phòng</option>
+                class="rounded-lg p-2 font-normal focus:outline-none focus:border-amber-400 text-xs bg-[#FFF8DB] border border-[#F1DD8A]">
+                <option value="" disabled>-- Chọn dạng phòng --</option>
                 <option v-for="f in roomForms" :key="f.id" :value="f.id">{{ f.name }}</option>
               </select>
             </div>
           </div>
 
-          <div class="grid grid-cols-2 gap-4">
-            <div class="flex flex-col gap-1.5">
-              <span class="font-bold text-slate-600 text-xs uppercase">Giá phòng</span>
-              <input type="number" v-model="standardRateFormState.room_price" min="0" placeholder="0"
-                class="border border-slate-200 rounded-lg p-2.5 font-semibold focus:outline-sky-400 focus:bg-white text-sm" />
+          <div class="grid grid-cols-2 gap-3.5">
+            <div class="flex flex-col gap-1">
+              <label class="font-semibold text-xs text-[#000000D9]">Giá Phòng</label>
+              <div class="relative flex items-center">
+                <input type="number" v-model="standardRateFormState.room_price" min="0" placeholder="0"
+                  class="border border-slate-200 rounded-lg p-2 pr-7 font-normal focus:outline-sky-400 focus:bg-white text-xs w-full" />
+                <button v-if="standardRateFormState.room_price" @click="standardRateFormState.room_price = 0"
+                  class="absolute right-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer text-xs"
+                  title="Xóa nhanh">✕</button>
+              </div>
             </div>
 
-            <div class="flex flex-col gap-1.5">
-              <span class="font-bold text-slate-600 text-xs uppercase">Giá thêm giường</span>
-              <input type="number" v-model="standardRateFormState.extra_bed_price" min="0" placeholder="0"
-                class="border border-slate-200 rounded-lg p-2.5 font-semibold focus:outline-sky-400 focus:bg-white text-sm" />
+            <div class="flex flex-col gap-1">
+              <label class="font-semibold text-xs text-[#000000D9]">Giá Thêm Giường</label>
+              <div class="relative flex items-center">
+                <input type="number" v-model="standardRateFormState.extra_bed_price" min="0" placeholder="0"
+                  class="border border-slate-200 rounded-lg p-2 pr-7 font-normal focus:outline-sky-400 focus:bg-white text-xs w-full" />
+                <button v-if="standardRateFormState.extra_bed_price" @click="standardRateFormState.extra_bed_price = 0"
+                  class="absolute right-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer text-xs"
+                  title="Xóa nhanh">✕</button>
+              </div>
             </div>
           </div>
         </div>
 
         <!-- Modal Footer -->
-        <div class="bg-slate-50 px-6 py-4 flex items-center justify-end gap-3 border-t border-slate-100">
-          <button @click="isStandardRateModalOpen = false"
-            class="px-5 py-2 bg-slate-200 hover:bg-slate-350 text-slate-600 rounded-lg font-bold text-sm border-none cursor-pointer flex items-center gap-1.5 transition-colors">
-            Đóng
-          </button>
+        <div class="bg-slate-50 px-5 py-3 flex items-center justify-end gap-2 border-t border-slate-100">
           <button @click="saveStandardRate"
-            class="px-5 py-2 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-lg font-bold text-sm border-none cursor-pointer flex items-center gap-1.5 transition-colors shadow-xs">
+            class="btn-pms-primary h-8 px-4 text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+            </svg>
             Lưu
           </button>
         </div>

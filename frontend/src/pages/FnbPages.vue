@@ -151,17 +151,21 @@ onUnmounted(() => {
         ? 'opacity-100 translate-y-0 scale-100'
         : 'opacity-0 translate-y-8 scale-95'
         ">
-        <!-- Quick Module Cards (Desktop hover) -->
-        <div class="flex gap-4 mt-8">
-          <button v-for="(item, index) in menuItems" :key="item.route" @click="navigateTo(item.route)"
-            class="group relative w-36 h-32 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl flex flex-col items-center justify-center gap-3 cursor-pointer transition-all duration-500 hover:bg-white/20 hover:scale-105 hover:border-white/40 hover:shadow-2xl"
-            :style="{ transitionDelay: `${index * 100 + 500}ms` }" :class="isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'
-              ">
-            <!-- Icon -->
+        <!-- Quick Module Cards (Enlarged & Prominent Design) -->
+        <div class="flex flex-wrap items-center justify-center gap-6 max-w-6xl px-4 mt-6">
+          <button
+            v-for="(item, index) in menuItems"
+            :key="item.route"
+            @click="navigateTo(item.route)"
+            class="group relative w-48 sm:w-52 h-48 sm:h-52 bg-white/95 backdrop-blur-md border border-white/80 rounded-2xl flex flex-col items-center justify-between p-5 cursor-pointer shadow-xl transition-all duration-300 hover:shadow-2xl hover:scale-105 hover:border-sky-300 active:scale-95 text-slate-800"
+            :style="{ transitionDelay: `${index * 100 + 400}ms` }"
+            :class="isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'"
+          >
+            <!-- Icon container -->
             <div
-              class="w-12 h-12 rounded-xl bg-white/15 flex items-center justify-center group-hover:bg-white/25 transition-all duration-300 group-hover:scale-110">
-              
-              <svg v-if="item.icon === 'restaurant'" class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              class="w-16 h-16 rounded-2xl bg-sky-50 text-[#006bdb] flex items-center justify-center group-hover:bg-[#006bdb] group-hover:text-white transition-all duration-300 group-hover:scale-110 shadow-sm shrink-0"
+            >
+              <svg v-if="item.icon === 'restaurant'" class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M3 21h18" />
                 <path d="M3 7V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2" />
                 <path d="M5 21V7" />
@@ -169,9 +173,9 @@ onUnmounted(() => {
                 <path d="M9 21v-6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v6" />
               </svg>
               
-              <svg v-else-if="item.icon === 'party'" class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <svg v-else-if="item.icon === 'party'" class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M20 21v-8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8" />
-                <path d="M4 16s.5-1 2-1 2.5 2 4 2 2.5-2 4-2 2.5 2 4 2 2 1 2 1" />
+                <path d="M4 16s.5-1 2-1 2.5 2 4 2 2.5-2 4-2 2.5 2 4 2 2.5-2 4-2 2.5 2 4 2 2 1 2 1" />
                 <path d="M2 21h20" />
                 <path d="M7 8v2" />
                 <path d="M12 8v2" />
@@ -181,26 +185,29 @@ onUnmounted(() => {
                 <path d="M17 4h.01" />
               </svg>
               
-              <svg v-else-if="item.icon === 'search'" class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              <svg v-else-if="item.icon === 'search'" class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
               
-              <svg v-else-if="item.icon === 'chart'" class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              <svg v-else-if="item.icon === 'chart'" class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75" d="M9 19v-6a2 2 0 0 0-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
               </svg>
               
-              <svg v-else-if="item.icon === 'other'" class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <svg v-else-if="item.icon === 'other'" class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="1.5" />
                 <circle cx="19" cy="12" r="1.5" />
                 <circle cx="5" cy="12" r="1.5" />
               </svg>
-
             </div>
-            <span class="text-white text-xs font-semibold tracking-wide">{{ item.name }}</span>
 
-            <!-- Hover description tooltip -->
-            <div class="absolute -bottom-10 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap">
-              <span class="text-[10px] text-white/70 bg-black/40 backdrop-blur-sm px-2 py-1 rounded-md">{{ item.description }}</span>
+            <!-- Title & Subtitle Info -->
+            <div class="flex flex-col items-center gap-1 text-center w-full mt-2">
+              <span class="text-[#000000D9] text-sm sm:text-base font-bold tracking-tight group-hover:text-[#006bdb] transition-colors">
+                {{ item.name }}
+              </span>
+              <span class="text-xs text-slate-500 font-normal leading-relaxed line-clamp-2 px-1">
+                {{ item.description }}
+              </span>
             </div>
           </button>
         </div>
@@ -213,7 +220,7 @@ onUnmounted(() => {
       :class="isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
         ">
       <!-- Phone -->
-      <div class="flex items-center gap-2 text-white/60 text-xs bg-black/20 backdrop-blur-sm rounded-full px-3 py-1.5">
+      <div class="flex items-center gap-2 text-white/90 text-xs font-semibold bg-black/30 backdrop-blur-sm rounded-full px-3.5 py-1.5 border border-white/10">
         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
             d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
@@ -222,7 +229,7 @@ onUnmounted(() => {
       </div>
 
       <!-- Version -->
-      <div class="text-white/40 text-[10px] flex items-center gap-2">
+      <div class="text-white/70 text-xs font-semibold flex items-center gap-2">
         <span>Version 4.0.8</span>
       </div>
 

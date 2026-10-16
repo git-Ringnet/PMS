@@ -287,7 +287,7 @@ class ActivityLogResource extends JsonResource
 
         // 3. Nếu là BookingRoom
         if ($this->target_type === 'BookingRoom') {
-            // Ưu tiên target_id nếu dạng G... (ví dụ G0013083, G0021633,G0021634)
+            // Luôn ưu tiên mã phòng thuê dạng G... (ví dụ G0013083, G0021633,G0021634)
             if (!empty($this->target_id) && preg_match('/^G\d+/i', (string) $this->target_id)) {
                 return (string) $this->target_id;
             }
@@ -297,9 +297,21 @@ class ActivityLogResource extends JsonResource
             if (!empty($this->old_values['id']) && preg_match('/^G\d+/i', (string) $this->old_values['id'])) {
                 return (string) $this->old_values['id'];
             }
+            // Tìm mã G trong request_url hoặc description trước khi lấy số phòng
+            if (!empty($this->request_url) && preg_match('#/(?:rooms|booking-rooms)/(G\d+)#i', $this->request_url, $m)) {
+                return $m[1];
+            }
+            if (!empty($this->description) && preg_match('/Mã:\s*(G\d+)/i', $this->description, $m)) {
+                return $m[1];
+            }
+            if (!empty($this->target_label) && preg_match('/^G\d+/i', (string) $this->target_label)) {
+                return (string) $this->target_label;
+            }
+            if (!empty($this->target_id)) {
+                return (string) $this->target_id;
+            }
             $r = $this->new_values['room_number'] ?? $this->old_values['room_number'] ?? null;
             if ($r) return (string) $r;
-            if (!empty($this->target_id)) return (string) $this->target_id;
         }
 
         // 4. Nếu là Room hoặc RoomLock

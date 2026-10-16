@@ -32,6 +32,12 @@ class HotelServiceResource extends JsonResource
             'department_id' => $this->department_id,
             'department' => $this->department?->code,
             'department_name' => $this->department?->name,
+            'department_ids' => $this->whenLoaded('departments', fn () => $this->departments->pluck('id')->values()),
+            'departments' => $this->whenLoaded('departments', fn () => $this->departments->map(fn ($department) => [
+                'id' => $department->id,
+                'code' => $department->code,
+                'name' => $department->name,
+            ])->values()),
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,
         ];

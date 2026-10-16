@@ -506,8 +506,12 @@ async function executeGlobalSearch() {
   }
 }
 
+let searchDebounceTimer = null
 watch(globalSearchQuery, () => {
-  executeGlobalSearch()
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
+  searchDebounceTimer = setTimeout(() => {
+    executeGlobalSearch()
+  }, 250)
 })
 
 function close() {

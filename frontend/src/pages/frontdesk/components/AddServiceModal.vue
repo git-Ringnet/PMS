@@ -15,6 +15,7 @@ const props = defineProps({
   bookingInfo:   { type: String, default: '' },
   arrivalDate:   { type: String, default: '' },
   departureDate: { type: String, default: '' },
+  isDayUse:      { type: Boolean, default: false },
   // Giá phòng hiện tại (từ booking_rooms.rate hoặc booking_room_services RM)
   roomRate:      { type: Number, default: 0 },
   roomAdjustment: { type: Object, default: null },
@@ -93,6 +94,22 @@ function resetModalPosition() {
   modalPosition.value = { x: 0, y: 0 }
 }
 
+function parseDateOnly(dateStr) {
+  if (!dateStr) return ''
+  const s = String(dateStr).trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+  if (s.includes('T') || s.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(s)) {
+    const d = new Date(s)
+    if (!isNaN(d.getTime())) {
+      const year = d.getFullYear()
+      const month = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      return `${year}-${month}-${day}`
+    }
+  }
+  return s.substring(0, 10)
+}
+
 // Ngày mặc định = YYYY-MM-DD
 function todayYmd() {
   const d = new Date()
@@ -104,20 +121,22 @@ function todayYmd() {
 
 // Giới hạn ngày từ booking (min = arrival_date, max = departure_date)
 const bookingMinDate = computed(() => {
-  if (props.arrivalDate) return String(props.arrivalDate).slice(0, 10)
+  if (props.arrivalDate) return parseDateOnly(props.arrivalDate)
   return undefined
 })
 
 const bookingMaxDate = computed(() => {
-  if (props.departureDate) return String(props.departureDate).slice(0, 10)
+  if (props.departureDate) return parseDateOnly(props.departureDate)
   return undefined
 })
 
 const isDayUseStay = computed(() => {
-  return Boolean(props.isDayUse) || (Boolean(bookingMinDate.value) && bookingMinDate.value === bookingMaxDate.value)
+  if (props.isDayUse) return true
+  return Boolean(bookingMinDate.value && bookingMaxDate.value && bookingMinDate.value === bookingMaxDate.value)
 })
 
 // Room-night posting is limited through the last occupied night, not checkout day.
+// Với phòng Day Use (in-out cùng ngày), ngày post tiền phòng chính là ngày ở.
 const roomMaxDate = computed(() => {
   if (!bookingMaxDate.value) return undefined
 
@@ -136,6 +155,7 @@ function clampDateToBounds(date, minDate, maxDate) {
   let boundedDate = date
   if (minDate && boundedDate < minDate) boundedDate = minDate
   if (maxDate && boundedDate > maxDate) boundedDate = maxDate
+  if (minDate && maxDate && minDate > maxDate) boundedDate = minDate
   return boundedDate
 }
 
@@ -379,8 +399,9 @@ function handleKeyDown(event) {
 watch(() => props.show, (v) => {
   if (v) {
     resetModalPosition()
+    const sysDateParsed = parseDateOnly(props.systemDate) || todayYmd()
     const initialDate = clampDateToBounds(
-      props.systemDate || todayYmd(),
+      sysDateParsed,
       bookingMinDate.value,
       bookingMaxDate.value,
     )
@@ -404,7 +425,7 @@ watch(() => props.show, (v) => {
     if (props.roomAdjustment) {
       const adjustment = props.roomAdjustment
       const date = clampDateToBounds(
-        String(adjustment.serviceDate || initialRoomDate).slice(0, 10),
+        parseDateOnly(adjustment.serviceDate || initialRoomDate),
         bookingMinDate.value,
         roomMaxDate.value,
       )
@@ -474,7 +495,9 @@ async function handleSubmit() {
       }
       if (!isDateWithinBounds(roomFrom.value, bookingMinDate.value, roomMaxDate.value)
         || !isDateWithinBounds(roomTo.value, bookingMinDate.value, roomMaxDate.value)) {
-        errorMsg.value = 'Ngày tiền phòng phải nằm từ ngày đến đến đêm cuối trước ngày đi.'
+        errorMsg.value = isDayUseStay.value
+          ? 'Ngày tiền phòng phải nằm trong ngày lưu trú của phòng trong ngày (Day use).'
+          : 'Ngày tiền phòng phải nằm từ ngày đến đến đêm cuối trước ngày đi.'
         isSubmitting.value = false
         return
       }

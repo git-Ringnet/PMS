@@ -16,7 +16,60 @@ class ProductController extends Controller
     public function index()
     {
         $products = Product::with(['category'])->get();
+        // Ensure all products have real product_code if missing
+        foreach ($products as $p) {
+            if (empty($p->product_code)) {
+                $outletName = $p->category->outlet ?? '';
+                $prefix = 'SP';
+                if ($outletName) {
+                    $outlet = \App\Models\HousekeepingOutlet::where('code', $outletName)->orWhere('name', $outletName)->first();
+                    if ($outlet) {
+                        $prefix = $outlet->code;
+                    } elseif (mb_stripos($outletName, 'minibar') !== false) {
+                        $prefix = 'MB';
+                    } elseif (mb_stripos($outletName, 'giặt') !== false || mb_stripos($outletName, 'laundry') !== false) {
+                        $prefix = 'LA';
+                    } elseif (mb_stripos($outletName, 'đền bù') !== false) {
+                        $prefix = 'BR';
+                    } elseif (mb_stripos($outletName, 'amenity') !== false) {
+                        $prefix = 'AM';
+                    }
+                }
+                $p->product_code = $prefix . '-' . str_pad($p->id, 3, '0', STR_PAD_LEFT);
+                $p->saveQuietly();
+            }
+        }
         return response()->json($products);
+    }
+
+    public function nextCode(Request $request)
+    {
+        $categoryId = $request->query('product_category_id');
+        $category = $categoryId ? \App\Models\ProductCategory::find($categoryId) : null;
+        $outletName = $category->outlet ?? $request->query('outlet', '');
+
+        $prefix = 'SP';
+        if ($outletName) {
+            $outlet = \App\Models\HousekeepingOutlet::where('code', $outletName)
+                ->orWhere('name', $outletName)
+                ->first();
+            if ($outlet) {
+                $prefix = $outlet->code;
+            } elseif (mb_stripos($outletName, 'minibar') !== false) {
+                $prefix = 'MB';
+            } elseif (mb_stripos($outletName, 'giặt') !== false || mb_stripos($outletName, 'laundry') !== false) {
+                $prefix = 'LA';
+            } elseif (mb_stripos($outletName, 'đền bù') !== false) {
+                $prefix = 'BR';
+            } elseif (mb_stripos($outletName, 'amenity') !== false) {
+                $prefix = 'AM';
+            }
+        }
+
+        $nextId = (Product::max('id') ?? 0) + 1;
+        $code = $prefix . '-' . str_pad($nextId, 3, '0', STR_PAD_LEFT);
+
+        return response()->json(['code' => $code]);
     }
 
     public function store(Request $request)
@@ -56,16 +109,29 @@ class ProductController extends Controller
 
         $product = Product::create($validated);
 
-        // Auto generation of product code if belongs to default categories
-        $outlet = $product->category->outlet ?? '';
-        $prefix = '';
-        if ($outlet === 'Minibar') $prefix = 'MB';
-        elseif ($outlet === 'Giặt ủi') $prefix = 'LA';
-        elseif ($outlet === 'Hàng đền bù') $prefix = 'BK';
-        elseif ($outlet === 'Amenity') $prefix = 'AM';
+        // Auto generation of product code if not provided
+        if (empty($validated['product_code'])) {
+            $category = $product->category;
+            $outletName = $category->outlet ?? '';
+            $prefix = 'SP';
+            if ($outletName) {
+                $outlet = \App\Models\HousekeepingOutlet::where('code', $outletName)
+                    ->orWhere('name', $outletName)
+                    ->first();
+                if ($outlet) {
+                    $prefix = $outlet->code;
+                } elseif (mb_stripos($outletName, 'minibar') !== false) {
+                    $prefix = 'MB';
+                } elseif (mb_stripos($outletName, 'giặt') !== false || mb_stripos($outletName, 'laundry') !== false) {
+                    $prefix = 'LA';
+                } elseif (mb_stripos($outletName, 'đền bù') !== false) {
+                    $prefix = 'BR';
+                } elseif (mb_stripos($outletName, 'amenity') !== false) {
+                    $prefix = 'AM';
+                }
+            }
 
-        if ($prefix) {
-            $product->update(['product_code' => $prefix . '-' . $product->id]);
+            $product->update(['product_code' => $prefix . '-' . str_pad($product->id, 3, '0', STR_PAD_LEFT)]);
         }
 
         return response()->json($product, 201);

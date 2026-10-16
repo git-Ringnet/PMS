@@ -190,6 +190,51 @@ function handleDateInputChange(e) {
   }
 }
 
+function handleDateManualInput(e) {
+  let val = e.target.value.replace(/\D/g, '')
+  if (val.length > 8) val = val.slice(0, 8)
+
+  let formatted = ''
+  if (val.length <= 2) {
+    formatted = val
+    if (val.length === 2) formatted += '/'
+  } else if (val.length <= 4) {
+    const day = val.slice(0, 2)
+    let month = val.slice(2)
+    if (month.length === 1 && parseInt(month, 10) > 1) {
+      formatted = `${day}/0${month}/`
+    } else {
+      formatted = `${day}/${month}`
+      if (month.length === 2) {
+        if (parseInt(month, 10) > 12) month = '12'
+        if (parseInt(month, 10) === 0) month = '01'
+        formatted = `${day}/${month}/`
+      }
+    }
+  } else {
+    const day = val.slice(0, 2)
+    let month = val.slice(2, 4)
+    if (parseInt(month, 10) > 12) month = '12'
+    if (parseInt(month, 10) === 0) month = '01'
+    const year = val.slice(4, 8)
+    formatted = `${day}/${month}/${year}`
+  }
+
+  selectedDate.value = formatted
+
+  const rawDigits = formatted.replace(/\D/g, '')
+  if (rawDigits.length === 8) {
+    const parts = formatted.split('/')
+    if (parts.length === 3 && parts[2].length === 4) {
+      const d = parts[0]
+      const m = parts[1]
+      const y = parts[2]
+      isoDate.value = `${y}-${m}-${d}`
+      loadBookingData()
+    }
+  }
+}
+
 function openDatePicker() {
   if (datePickerInputRef.value) {
     try {
@@ -1104,9 +1149,18 @@ onUnmounted(() => {
     <div class="toolbar">
       <!-- Date Selector with Calendar & Copy Button -->
       <div class="date-field">
-        <div class="date-display-box" @click="openDatePicker" title="Click để chọn ngày">
-          <span class="date-text">{{ selectedDate }}</span>
-          <svg class="date-icon" width="13" height="13" viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M3 10h18M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        <div class="date-display-box" title="Nhập hoặc chọn ngày">
+          <input 
+            type="text" 
+            class="date-input-text" 
+            :value="selectedDate" 
+            @input="handleDateManualInput" 
+            placeholder="dd/mm/yyyy" 
+            maxlength="10"
+          />
+          <button type="button" class="date-calendar-btn" @click="openDatePicker" title="Chọn ngày từ lịch">
+            <svg class="date-icon" width="13" height="13" viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M3 10h18M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+          </button>
         </div>
         <button class="icon-btn copy-btn" @click.stop="copyDateToClipboard" title="Sao chép ngày">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><rect x="8" y="8" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.7"/></svg>
@@ -1209,8 +1263,8 @@ onUnmounted(() => {
       <div class="search-wrap" :class="{ 'has-val': searchTerm.length > 0 }">
         <svg class="s-icon" width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
         <input type="text" v-model="searchTerm" placeholder="Tìm mã, phòng, tên, quốc tịch…" />
-        <button class="search-clear" @click="searchTerm = ''">
-          <svg width="9" height="9" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+        <button class="search-clear" @click="searchTerm = ''" title="Xóa nhanh">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
         </button>
       </div>
 
@@ -1231,7 +1285,10 @@ onUnmounted(() => {
 
           <div class="dp-search-box">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" class="dp-search-icon"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="1.8"/><path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
-            <input type="text" v-model="filterSearchTerm" placeholder="" class="dp-search-input" />
+            <input type="text" v-model="filterSearchTerm" placeholder="Tìm bộ lọc..." class="dp-search-input" />
+            <button v-if="filterSearchTerm" class="search-clear-mini" @click="filterSearchTerm = ''" title="Xóa tìm kiếm">
+              <svg width="8" height="8" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+            </button>
           </div>
 
           <div class="dp-list filter-items-list">
@@ -1367,15 +1424,15 @@ onUnmounted(() => {
                 </div>
               </th>
               <th class="col-quoctich">Quốc Tịch</th>
-              <th class="col-diachi">Địa chỉ</th>
+              <th class="col-diachi">Địa Chỉ</th>
               <th class="col-sogiayto">Số Giấy Tờ</th>
-              <th class="col-hochieu">Hộ chiếu</th>
-              <th class="col-tamtruden">Tạm trú đến</th>
-              <th class="col-ngayhethan">Ngày hết hạn</th>
+              <th class="col-hochieu">Hộ Chiếu</th>
+              <th class="col-tamtruden">Tạm Trú Đến</th>
+              <th class="col-ngayhethan">Ngày Hết Hạn</th>
               <th class="col-ngaynhapcanh">Ngày Nhập Cảnh</th>
               <th class="col-cuakhau">Cửa Khẩu</th>
-              <th class="col-nlon">N.Lớn</th>
-              <th class="col-ghichuchuyen">Ghi chú chuyển phòng</th>
+              <th class="col-nlon">Người Lớn</th>
+              <th class="col-ghichuchuyen">Ghi Chú Chuyển Phòng</th>
             </tr>
           </thead>
 
@@ -1460,9 +1517,9 @@ onUnmounted(() => {
   width: 100%;
   max-width: 100%;
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-family: 'Roboto', system-ui, -apple-system, sans-serif;
   color: var(--text);
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.5;
   background: var(--bg);
   min-height: 100%;
@@ -1492,21 +1549,44 @@ onUnmounted(() => {
 .date-display-box {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 5.5px 10px;
-  background: var(--surface-alt);
+  gap: 6px;
+  padding: 4px 8px;
+  background: #ffffff;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   cursor: pointer;
   user-select: none;
   transition: .15s;
 }
-.date-display-box:hover {
+.date-display-box:hover,
+.date-display-box:focus-within {
   border-color: var(--blue);
-  background: #fff;
+}
+.date-input-text {
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  font-family: Roboto, sans-serif;
+  width: 82px;
+  padding: 0;
+}
+.date-calendar-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  color: var(--text-muted);
+}
+.date-calendar-btn:hover {
+  color: var(--blue);
 }
 .date-text {
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text);
   font-family: inherit;
@@ -1555,8 +1635,8 @@ onUnmounted(() => {
   gap: 6px;
   padding: 6.5px 13px;
   border-radius: var(--radius-sm);
-  font-size: 12.5px;
-  font-weight: 650;
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
   transition: .15s;
   border: 1px solid transparent;
@@ -1582,10 +1662,11 @@ onUnmounted(() => {
 .split-btn.disabled,
 .split-main:disabled,
 .split-caret:disabled {
-  opacity: 0.5;
+  opacity: 1 !important;
   cursor: not-allowed !important;
-  background: var(--border-strong) !important;
-  border-color: var(--border-strong) !important;
+  background: #cbd5e1 !important;
+  color: #475569 !important;
+  border-color: #94a3b8 !important;
   pointer-events: none !important;
 }
 
@@ -1596,8 +1677,8 @@ onUnmounted(() => {
   padding: 6.5px 12px;
   background: var(--blue);
   color: #fff;
-  font-size: 12.5px;
-  font-weight: 650;
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
   border: none;
   border-right: 1px solid rgba(255, 255, 255, 0.25);
@@ -1681,7 +1762,7 @@ onUnmounted(() => {
   min-width: 0;
 }
 .export-item-name {
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text);
 }
@@ -1703,42 +1784,42 @@ onUnmounted(() => {
 .search-wrap input {
   width: 100%;
   padding: 6.5px 28px 6.5px 30px;
-  font-size: 12.5px;
+  font-size: 12px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
-  background: var(--surface-alt);
+  background: #ffffff;
   color: var(--text);
   outline: none;
   transition: .15s;
 }
 .search-wrap input::placeholder {
-  color: var(--text-faint);
+  color: #A8B0BF;
 }
 .search-wrap input:focus {
   border-color: var(--blue);
-  background: #fff;
+  background: #ffffff;
   box-shadow: 0 0 0 3px var(--blue-soft);
 }
 .search-clear {
   position: absolute;
-  right: 5px;
+  right: 8px;
   top: 50%;
   transform: translateY(-50%);
-  width: 17px;
-  height: 17px;
+  width: 18px;
+  height: 18px;
   border: none;
-  background: var(--border-strong);
-  border-radius: 50%;
-  color: var(--text-muted);
+  background: transparent;
+  color: #94a3b8;
   cursor: pointer;
   display: none;
   align-items: center;
   justify-content: center;
-  transition: .12s;
+  transition: color .15s;
+  padding: 0;
 }
 .search-clear:hover {
-  background: var(--blue);
-  color: #fff;
+  background: transparent;
+  color: #475569;
 }
 .search-wrap.has-val .search-clear {
   display: flex;
@@ -1762,7 +1843,7 @@ onUnmounted(() => {
   border-radius: var(--radius-sm);
   background: var(--surface);
   cursor: pointer;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-muted);
   transition: .15s;
@@ -1779,7 +1860,7 @@ onUnmounted(() => {
 .filter-btn .fbadge {
   background: var(--blue);
   color: #fff;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 700;
   min-width: 17px;
   height: 17px;
@@ -1869,8 +1950,8 @@ onUnmounted(() => {
   padding: 7px 10px;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: 12.5px;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 400;
   color: var(--text);
   transition: .1s;
 }
@@ -1955,18 +2036,20 @@ table.residence-grid thead th {
   top: 0;
   z-index: 5;
   background: var(--surface-alt);
-  text-align: left;
-  font-size: 11.5px;
+  text-align: center;
+  vertical-align: middle;
+  font-size: 12px;
   font-weight: 700;
   color: #000;
   letter-spacing: .01em;
-  padding: 10px 13px;
-  border-bottom: 2px solid var(--border);
+  padding: 8px 10px;
+  border: 1px solid var(--border);
   white-space: nowrap;
 }
 table.residence-grid th .th-inner {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 5px;
 }
 table.residence-grid th.sortable {
@@ -1998,12 +2081,12 @@ th.sort-desc .sort-icons .down {
   color: var(--blue);
 }
 
-table.residence-grid td:not(.col-checkbox):not(.col-nlon) {
-  padding: 9.5px 13px;
+table.residence-grid td:not(.col-checkbox) {
+  padding: 8px 12px;
   border-bottom: 1px solid var(--border);
   color: var(--text);
   white-space: nowrap;
-  font-size: 12.5px;
+  font-size: 12px;
 }
 table.residence-grid tbody tr:last-child td {
   border-bottom: none;
@@ -2126,7 +2209,7 @@ table.residence-grid.hide-ghichuchuyen .col-ghichuchuyen {
 
 .cell-ghichuchuyen {
   color: #c0392b;
-  font-size: 11.5px;
+  font-size: 12px;
   font-style: italic;
   white-space: normal;
 }
@@ -2188,6 +2271,27 @@ table.residence-grid.hide-ghichuchuyen .col-ghichuchuyen {
   color: #888;
   pointer-events: none;
 }
+.search-clear-mini {
+  position: absolute;
+  right: 22px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: color .15s;
+}
+.search-clear-mini:hover {
+  background: transparent;
+  color: #475569;
+}
 .filter-items-list {
   max-height: 220px;
   overflow-y: auto;
@@ -2232,7 +2336,7 @@ table.residence-grid.hide-ghichuchuyen .col-ghichuchuyen {
   padding: 56px 20px;
   text-align: center;
   color: var(--text-faint);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 /* Footer Statistics Bar */
@@ -2258,7 +2362,7 @@ table.residence-grid.hide-ghichuchuyen .col-ghichuchuyen {
 .footer-stat strong {
   color: var(--navy);
   font-weight: 700;
-  font-size: 13px;
+  font-size: 12px;
   margin-left: 2px;
 }
 .footer-sep {

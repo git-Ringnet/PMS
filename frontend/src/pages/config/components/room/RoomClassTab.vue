@@ -2,9 +2,64 @@
 import { ref, reactive, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
+import { useAuthStore } from '@/stores/auth-store'
 
 const uiStore = useUiStore()
+const authStore = useAuthStore()
 const loading = ref(false)
+
+const topbarThemeBg = computed(() => authStore.themeColor || authStore.settings?.topbar_color || 'var(--pms-custom-theme, #006bdb)')
+
+// ==================== DRAGGABLE MODAL POSITION ====================
+const modalPos = ref({ x: 0, y: 0 })
+const isDraggingModal = ref(false)
+let dragStart = { x: 0, y: 0 }
+let rafId = null
+let latestX = 0
+let latestY = 0
+
+function dragModal(moveEvent) {
+  if (!isDraggingModal.value) return
+  latestX = moveEvent.clientX
+  latestY = moveEvent.clientY
+  if (rafId) return
+  rafId = requestAnimationFrame(() => {
+    modalPos.value.x = latestX - dragStart.x
+    modalPos.value.y = latestY - dragStart.y
+    rafId = null
+  })
+}
+
+function stopDragModal() {
+  isDraggingModal.value = false
+  if (rafId) {
+    cancelAnimationFrame(rafId)
+    rafId = null
+  }
+  document.removeEventListener('mousemove', dragModal)
+  document.removeEventListener('mouseup', stopDragModal)
+}
+
+function startDragModal(e) {
+  const ignoreTags = ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A', 'LABEL']
+  if (ignoreTags.includes(e.target.tagName) || e.target.closest('button, input, select, textarea, a, label')) return
+  
+  e.preventDefault()
+  isDraggingModal.value = true
+  dragStart.x = e.clientX - modalPos.value.x
+  dragStart.y = e.clientY - modalPos.value.y
+  latestX = e.clientX
+  latestY = e.clientY
+
+  document.addEventListener('mousemove', dragModal)
+  document.addEventListener('mouseup', stopDragModal)
+}
+
+const handleKeyDown = (e) => {
+  if (e.key === 'Escape' && isRoomClassModalOpen.value) {
+    isRoomClassModalOpen.value = false
+  }
+}
 
 const roomClasses = ref([])
 const roomClassGroups = ref([])
@@ -57,9 +112,12 @@ onMounted(async () => {
   if (typeof BroadcastChannel !== 'undefined') {
     bc = new BroadcastChannel('pms-room-updates')
   }
+  window.addEventListener('keydown', handleKeyDown)
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleKeyDown)
+  stopDragModal()
   if (bc) {
     bc.close()
   }
@@ -87,6 +145,7 @@ const fetchRoomClasses = async () => {
 }
 
 const openAddRoomClassModal = () => {
+  modalPos.value = { x: 0, y: 0 }
   isEditRoomClassMode.value = false
   currentRoomClassId.value = null
   Object.assign(roomClassFormState, {
@@ -106,6 +165,7 @@ const openAddRoomClassModal = () => {
 }
 
 const openEditRoomClassModal = (rc) => {
+  modalPos.value = { x: 0, y: 0 }
   isEditRoomClassMode.value = true
   currentRoomClassId.value = rc.id
   Object.assign(roomClassFormState, {
@@ -289,7 +349,7 @@ const toggleRoomClassActive = async (rc) => {
 </script>
 
 <template>
-  <div class="overflow-x-auto relative">
+  <div class="flex-1 flex flex-col min-h-0 relative h-full">
     <!-- Loading State -->
     <div v-if="loading" class="flex items-center justify-center absolute inset-0 bg-white/70 z-30 min-h-[300px]">
       <div class="loader">
@@ -299,162 +359,190 @@ const toggleRoomClassActive = async (rc) => {
       </div>
     </div>
 
-    <div class="flex justify-between items-center mb-4">
-      <h3 class="text-sm font-black text-slate-600 uppercase">Danh sách Tên loại phòng</h3>
-      <div class="flex items-center gap-3">
-        <!-- Search Input -->
-        <div class="relative flex items-center border border-slate-200 rounded-lg bg-white px-3 py-1.5 shadow-3xs focus-within:border-sky-400 focus-within:ring-1 focus-within:ring-sky-400 transition-colors w-[240px]">
-          <svg class="w-4 h-4 text-slate-400 mr-2 shrink-0" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+    <!-- Toolbar -->
+    <div class="flex justify-between items-center mb-2 flex-wrap gap-2 shrink-0">
+      <div class="flex items-center gap-2">
+        <button @click="openAddRoomClassModal" class="btn-pms-primary">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4" />
           </svg>
-          <input v-model="classSearchQuery" type="text" placeholder="Tìm tên, mã loại phòng..."
-            class="border-none outline-none text-xs font-semibold text-slate-700 placeholder-slate-400 w-full bg-transparent p-0" />
-          <button v-if="classSearchQuery" @click="classSearchQuery = ''"
-            class="text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer font-black text-xs shrink-0 ml-1.5">
-            ✕
-          </button>
-        </div>
-        <button @click="openAddRoomClassModal"
-          class="px-3 py-1.5 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded text-sm font-bold border-none cursor-pointer">
-          + Thêm loại
+          <span>Thêm Loại Phòng</span>
         </button>
       </div>
+      <div class="relative max-w-xs w-full">
+        <input type="text" v-model="classSearchQuery" placeholder="Tìm tên, mã loại phòng..."
+          class="w-full border border-slate-200 rounded-lg pl-9 pr-8 h-8 text-xs font-normal text-[#000000D9] placeholder:text-[#A8B0BF] focus:outline-none focus:border-sky-500 focus:bg-white" />
+        <svg class="w-4 h-4 text-slate-400 absolute left-2.5 top-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+        <button v-if="classSearchQuery" @click="classSearchQuery = ''"
+          class="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0 text-xs">✕</button>
+      </div>
     </div>
-    <table class="w-full text-sm text-left border-collapse">
-      <thead>
-        <tr class="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-xs">
-          <th class="p-3">Tên loại phòng</th>
-          <th class="p-3">Tên viết tắt</th>
-          <th class="p-3">Màu sắc</th>
-          <th class="p-3">Có sử dụng</th>
-          <th class="p-3">Nhóm loại phòng</th>
-          <th class="p-3 text-right">Hành động</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="rc in paginatedRoomClasses" :key="rc.id" @click="openEditRoomClassModal(rc)"
-          class="border-b border-slate-100 hover:bg-slate-50/55 cursor-pointer">
-          <td class="p-3 font-bold text-slate-800">{{ rc.name }}</td>
-          <td class="p-3 font-semibold text-slate-500">{{ rc.code }}</td>
-          <td class="p-3">
-            <div class="flex items-center gap-2">
-              <span class="w-4 h-4 rounded-full border border-slate-200 block shadow-xs"
-                :style="{ backgroundColor: rc.color }"></span>
-              <span class="font-mono text-slate-400">{{ rc.color }}</span>
-            </div>
-          </td>
-          <td class="p-3">
-            <label @click.stop class="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox" :checked="rc.is_active" @change="toggleRoomClassActive(rc)"
-                class="sr-only peer" />
-              <div
-                class="w-8 h-4.5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-blue-500">
+
+    <!-- Table -->
+    <div class="overflow-auto border border-slate-200 rounded-xl bg-white shadow-2xs flex-1 min-h-0">
+      <table class="w-full text-xs text-left border-collapse">
+        <thead class="sticky top-0 bg-slate-50 z-10">
+          <tr class="bg-slate-50 text-[#000000D9] font-semibold text-xs">
+            <th class="px-2.5 py-1.5 text-center align-middle border border-slate-200 min-w-[180px]">Tên Loại Phòng</th>
+            <th class="px-2.5 py-1.5 text-center align-middle border border-slate-200 w-28">Tên Viết Tắt</th>
+            <th class="px-2.5 py-1.5 text-center align-middle border border-slate-200 w-28">Màu Sắc</th>
+            <th class="px-2.5 py-1.5 text-center align-middle border border-slate-200 w-28">Có Sử Dụng</th>
+            <th class="px-2.5 py-1.5 text-center align-middle border border-slate-200 min-w-[160px]">Nhóm Loại Phòng</th>
+            <th class="px-2.5 py-1.5 text-center align-middle border border-slate-200 w-24">Hành Động</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="rc in paginatedRoomClasses" :key="rc.id" @click="openEditRoomClassModal(rc)"
+            class="border-b border-slate-100 hover:bg-slate-50/55 cursor-pointer text-[#000000D9]">
+            <td class="px-2.5 py-1.5 font-semibold text-slate-800">{{ rc.name }}</td>
+            <td class="px-2.5 py-1.5 font-normal text-slate-600 text-center">{{ rc.code }}</td>
+            <td class="px-2.5 py-1.5 text-center">
+              <div class="flex items-center justify-center gap-2">
+                <span class="w-4 h-4 rounded-full border border-slate-200 block shadow-2xs"
+                  :style="{ backgroundColor: rc.color }"></span>
+                <span class="font-mono text-slate-500 text-xs">{{ rc.color }}</span>
               </div>
-            </label>
-          </td>
-          <td class="p-3 text-slate-500 font-semibold uppercase text-xs">{{ rc.group }}</td>
-          <td class="p-3 text-right">
-            <button @click.stop="deleteRoomClass(rc.id)"
-              class="p-1 hover:bg-red-50 rounded text-red-500 bg-transparent border-none cursor-pointer">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round"
-                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7" />
-              </svg>
-            </button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+            </td>
+            <td class="px-2.5 py-1.5 text-center">
+              <label @click.stop class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" :checked="rc.is_active" @change="toggleRoomClassActive(rc)"
+                  class="sr-only peer" />
+                <div
+                  class="w-8 h-4.5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-blue-500">
+                </div>
+              </label>
+            </td>
+            <td class="px-2.5 py-1.5 text-slate-600 font-normal">{{ rc.group || '-' }}</td>
+            <td class="px-2.5 py-1.5 text-center">
+              <button @click.stop="deleteRoomClass(rc.id)"
+                class="p-1 hover:bg-red-50 rounded text-red-500 bg-transparent border-none cursor-pointer transition-colors"
+                title="Xóa loại phòng">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round"
+                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-4v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
+            </td>
+          </tr>
+          <tr v-if="paginatedRoomClasses.length === 0">
+            <td colspan="6" class="p-6 text-center text-slate-400 italic">Không tìm thấy loại phòng nào.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
     <!-- Pagination controls -->
-    <div class="flex items-center justify-end gap-2 mt-4 select-none">
+    <div class="flex items-center justify-end gap-2 mt-2 select-none shrink-0">
       <button @click="classPage = Math.max(1, classPage - 1)" :disabled="classPage === 1"
-        class="w-8 h-8 flex items-center justify-center border border-slate-200 bg-white rounded text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer font-bold">
+        class="w-8 h-8 flex items-center justify-center border border-slate-200 bg-white rounded text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer font-bold text-xs">
         &lt;
       </button>
 
       <button v-for="p in totalClassPages" :key="p" @click="classPage = p"
-        class="w-8 h-8 flex items-center justify-center border rounded font-semibold cursor-pointer text-sm"
+        class="w-8 h-8 flex items-center justify-center border rounded font-semibold cursor-pointer text-xs"
         :class="classPage === p ? 'border-sky-500 text-sky-600 font-bold bg-sky-50/20' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'">
         {{ p }}
       </button>
 
       <button @click="classPage = Math.min(totalClassPages, classPage + 1)"
         :disabled="classPage === totalClassPages"
-        class="w-8 h-8 flex items-center justify-center border border-slate-200 bg-white rounded text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer font-bold">
+        class="w-8 h-8 flex items-center justify-center border border-slate-200 bg-white rounded text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer font-bold text-xs">
         &gt;
       </button>
 
       <select v-model="classPageSize" @change="classPage = 1"
         class="border border-slate-200 rounded p-1.5 bg-white text-slate-600 font-semibold text-xs cursor-pointer focus:outline-sky-400">
-        <option :value="10">10 / page</option>
-        <option :value="25">25 / page</option>
-        <option :value="50">50 / page</option>
-        <option :value="100">100 / page</option>
+        <option :value="10">10 / trang</option>
+        <option :value="25">25 / trang</option>
+        <option :value="50">50 / trang</option>
+        <option :value="100">100 / trang</option>
       </select>
     </div>
 
-    <!-- OVERLAY MODAL: ADD ROOM CLASS -->
+    <!-- OVERLAY MODAL: ADD / EDIT ROOM CLASS -->
     <div v-if="isRoomClassModalOpen"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-xs select-none">
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-xs select-none p-4">
       <div
-        class="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+        class="bg-white rounded-xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-200"
+        :style="{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }">
         <!-- Modal Header -->
-        <div class="bg-[#8dcbf4] px-6 py-4 flex items-center justify-between text-white">
-          <h2 class="text-base font-black uppercase tracking-wider text-white">{{ isEditRoomClassMode ? 'Chỉnh sửa loại phòng' : 'Thêm loại phòng' }}</h2>
-          <button @click="isRoomClassModalOpen = false"
-            class="text-white hover:text-white/80 bg-transparent border-none cursor-pointer text-lg font-black">
+        <div class="px-5 py-3 flex items-center justify-between text-white cursor-move select-none rounded-t-xl bg-[#006bdb]"
+          @mousedown="startDragModal"
+          :style="{ background: topbarThemeBg || 'var(--pms-custom-theme, #006bdb)', color: 'var(--pms-custom-theme-text, #ffffff)' }">
+          <h2 class="text-xs font-semibold tracking-wide text-white">
+            {{ isEditRoomClassMode ? 'Chỉnh Sửa Loại Phòng' : 'Thêm Loại Phòng' }}
+          </h2>
+          <button @mousedown.stop @click="isRoomClassModalOpen = false"
+            class="text-white/80 hover:text-white bg-transparent border-none cursor-pointer text-base font-bold p-1">
             ✕
           </button>
         </div>
 
         <!-- Modal Body Form -->
-        <div class="p-6 flex flex-col gap-4 overflow-y-auto max-h-[75vh] text-sm text-slate-700 font-bold">
-          <div class="flex flex-col gap-1.5">
-            <span class="font-bold text-slate-600 uppercase text-xs">TÊN LOẠI PHÒNG*</span>
-            <input type="text" v-model="roomClassFormState.name" placeholder="Nhập tên loại phòng..."
-              class="border border-slate-200 rounded-lg p-2.5 font-semibold focus:outline-sky-400 focus:bg-white text-sm" />
+        <div class="p-5 flex flex-col gap-4 overflow-y-auto max-h-[75vh] text-xs font-semibold text-[#000000D9]">
+          <div class="flex flex-col gap-1">
+            <label>Tên Loại Phòng <span class="text-red-500">*</span></label>
+            <div class="relative">
+              <input type="text" v-model="roomClassFormState.name" placeholder="Nhập tên loại phòng..."
+                class="w-full border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg p-2 pr-7 text-xs font-normal text-[#000000D9] placeholder:text-[#A8B0BF] focus:outline-none focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308]" />
+              <button v-if="roomClassFormState.name" @click="roomClassFormState.name = ''"
+                class="absolute right-2 top-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0 text-xs">✕</button>
+            </div>
           </div>
 
-          <div class="flex flex-col gap-1.5">
-            <span class="font-bold text-slate-600 uppercase text-xs">Tên viết tắt*</span>
-            <input type="text" v-model="roomClassFormState.code" placeholder="Nhập tên viết tắt..."
-              class="border border-slate-200 rounded-lg p-2.5 font-semibold focus:outline-sky-400 focus:bg-white text-sm" />
+          <div class="flex flex-col gap-1">
+            <label>Tên Viết Tắt <span class="text-red-500">*</span></label>
+            <div class="relative">
+              <input type="text" v-model="roomClassFormState.code" placeholder="Nhập tên viết tắt..."
+                class="w-full border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg p-2 pr-7 text-xs font-normal text-[#000000D9] placeholder:text-[#A8B0BF] focus:outline-none focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308]" />
+              <button v-if="roomClassFormState.code" @click="roomClassFormState.code = ''"
+                class="absolute right-2 top-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0 text-xs">✕</button>
+            </div>
           </div>
 
-          <div class="flex items-center gap-4 py-1.5 select-none">
-            <span class="font-bold text-slate-600 uppercase text-xs">Có sử dụng</span>
+          <div class="flex items-center justify-between py-1 select-none">
+            <span>Có Sử Dụng</span>
             <label class="relative inline-flex items-center cursor-pointer">
               <input type="checkbox" v-model="roomClassFormState.is_active" class="sr-only peer" />
               <div
-                class="w-10 h-5.5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4.5 after:w-4.5 after:transition-all peer-checked:bg-sky-400">
+                class="w-8 h-4.5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-blue-500">
               </div>
             </label>
           </div>
 
-          <div class="flex flex-col gap-1.5">
-            <span class="font-bold text-slate-600 uppercase text-xs">Nhóm loại phòng</span>
+          <div class="flex flex-col gap-1">
+            <label>Nhóm Loại Phòng</label>
             <select v-model="roomClassFormState.room_class_group_id"
-              class="border border-slate-200 rounded-lg p-2.5 bg-white font-semibold focus:outline-sky-400 text-sm">
+              class="border border-slate-200 rounded-lg p-2 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500">
               <option value="" disabled>Chọn nhóm loại phòng</option>
               <option v-for="g in roomClassGroups" :key="g.id" :value="g.id">{{ g.name }}</option>
             </select>
           </div>
 
-          <div class="flex flex-col gap-1.5">
-            <span class="font-bold text-slate-600 uppercase text-xs">Màu sắc</span>
+          <div class="flex flex-col gap-1">
+            <label>Màu Sắc</label>
             <div class="flex gap-2 items-center">
-              <input type="text" v-model="roomClassFormState.color" placeholder="#ffffff"
-                class="flex-1 border border-slate-200 rounded-lg p-2.5 font-mono focus:outline-sky-400 focus:bg-white text-sm" />
+              <div class="relative flex-1">
+                <input type="text" v-model="roomClassFormState.color" placeholder="#ffffff"
+                  class="w-full border border-slate-200 rounded-lg p-2 pr-7 font-mono text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500 bg-white" />
+                <button v-if="roomClassFormState.color" @click="roomClassFormState.color = ''"
+                  class="absolute right-2 top-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0 text-xs">✕</button>
+              </div>
               <input type="color" v-model="roomClassFormState.color"
-                class="w-10 h-10 p-0 border-none cursor-pointer rounded bg-transparent" />
+                class="w-8 h-8 p-0 border border-slate-200 cursor-pointer rounded bg-transparent" />
             </div>
           </div>
 
-          <div class="flex flex-col gap-1.5">
-            <span class="font-bold text-slate-600 uppercase text-xs">Ghi chú</span>
-            <textarea v-model="roomClassFormState.notes" rows="2" placeholder="Nhập ghi chú..."
-              class="border border-slate-200 rounded-lg p-2.5 focus:outline-sky-400 resize-none font-semibold text-sm"></textarea>
+          <div class="flex flex-col gap-1">
+            <label>Ghi Chú</label>
+            <div class="relative">
+              <textarea v-model="roomClassFormState.notes" rows="2" placeholder="Nhập ghi chú..."
+                class="w-full border border-slate-200 rounded-lg p-2 pr-7 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-sky-500 resize-none bg-white"></textarea>
+              <button v-if="roomClassFormState.notes" @click="roomClassFormState.notes = ''"
+                class="absolute right-2 top-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0 text-xs">✕</button>
+            </div>
           </div>
 
           <!-- Hidden input for file upload -->
@@ -463,31 +551,32 @@ const toggleRoomClassActive = async (rc) => {
 
           <!-- Upload area -->
           <div @click="triggerRoomClassImageUpload"
-            class="border-2 border-dashed border-slate-300 rounded-lg p-6 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 transition-colors"
-            style="min-height: 120px;">
+            class="border-2 border-dashed border-slate-200 rounded-lg p-4 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 transition-colors"
+            style="min-height: 100px;">
             <div v-if="!roomClassFormState.imagePreview"
-              class="flex flex-col items-center justify-center text-slate-400 gap-1.5">
-              <span class="text-xl font-bold">+ Upload</span>
+              class="flex flex-col items-center justify-center text-slate-400 gap-1">
+              <span class="text-xs font-semibold">+ Tải ảnh đại diện</span>
             </div>
             <div v-else class="relative w-full h-full flex items-center justify-center">
-              <img :src="roomClassFormState.imagePreview" class="max-h-28 rounded object-contain" />
+              <img :src="roomClassFormState.imagePreview" class="max-h-24 rounded object-contain" />
               <button type="button" @click.stop="removeRoomClassImage"
-                class="absolute -top-2 -right-2 bg-red-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shadow hover:bg-red-600 cursor-pointer border-none">
+                class="absolute -top-2 -right-2 bg-red-500 text-white w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shadow hover:bg-red-600 cursor-pointer border-none">
                 ✕
               </button>
             </div>
           </div>
         </div>
 
-        <!-- Modal Footer -->
-        <div class="bg-slate-50 px-6 py-4 flex items-center justify-end gap-3 border-t border-slate-100">
-          <button @click="isRoomClassModalOpen = false"
-            class="px-5 py-2 bg-slate-200 hover:bg-slate-350 text-slate-600 rounded-lg font-bold text-sm border-none cursor-pointer flex items-center gap-1.5 transition-colors">
-            Đóng
-          </button>
-          <button @click="saveRoomClass"
-            class="px-5 py-2 bg-[#8dcbf4] hover:bg-[#70b2db] text-white rounded-lg font-bold text-sm border-none cursor-pointer flex items-center gap-1.5 transition-colors shadow-xs">
-            Lưu
+        <!-- Modal Footer: Bỏ nút Đóng, chỉ giữ nút Lưu -->
+        <div class="bg-slate-50 px-5 py-3 flex items-center justify-end border-t border-slate-200">
+          <button @click="saveRoomClass" class="btn-pms-primary">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z" />
+              <polyline points="17 21 17 13 7 13 7 21" />
+              <polyline points="7 3 7 8 15 8" />
+            </svg>
+            <span>Lưu</span>
           </button>
         </div>
       </div>

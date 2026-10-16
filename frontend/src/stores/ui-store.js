@@ -30,7 +30,7 @@ export const useUiStore = defineStore('ui', () => {
    * @param {'success' | 'error' | 'warning' | 'info'} type - Type of toast
    * @param {number} duration - Auto dismiss timeout in ms
    */
-  function showToast(message, type = 'success', duration = 3000) {
+  function showToast(message, type = 'success', duration = 4500) {
     const id = Date.now() + Math.random().toString(36).substring(2, 9)
     toasts.value.push({ id, message, type })
     setTimeout(() => {

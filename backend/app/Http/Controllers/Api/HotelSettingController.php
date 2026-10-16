@@ -186,6 +186,7 @@ class HotelSettingController extends Controller
             }
 
             $file = $request->file('logo');
+            // Tên file an toàn (không dùng tên gốc có dấu/khoảng trắng) - Dòng 388.
             $extension = $file->getClientOriginalExtension() ?: 'png';
             $filename = 'logo_' . time() . '_' . uniqid() . '.' . strtolower($extension);
             $file->move($uploadDir, $filename);
@@ -245,6 +246,7 @@ class HotelSettingController extends Controller
             }
 
             $file = $request->file('qr_code');
+            // Tên file an toàn (không dùng tên gốc có dấu/khoảng trắng) - Dòng 388.
             $extension = $file->getClientOriginalExtension() ?: 'png';
             $filename = 'qr_' . time() . '_' . uniqid() . '.' . strtolower($extension);
             $file->move($uploadDir, $filename);

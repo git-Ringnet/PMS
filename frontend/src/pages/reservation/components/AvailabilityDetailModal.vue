@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 const props = defineProps({
   show: { type: Boolean, default: false },
@@ -82,7 +82,7 @@ const formatDate = (value) => {
 
 const formatAmount = (value) => {
   if (value === null || value === undefined || value === '') return ''
-  return Number(value).toLocaleString('vi-VN')
+  return Number(value).toLocaleString('en-US')
 }
 
 function beginDrag(event) {
@@ -116,138 +116,165 @@ function resetPosition() {
   position.value = { x: 0, y: 0 }
 }
 
-onMounted(() => resetPosition())
-onUnmounted(() => endDrag())
+function handleKeyDown(event) {
+  if (event.key === 'Escape') {
+    emit('close')
+  }
+}
+
+watch(
+  () => props.show,
+  (isOpen) => {
+    if (isOpen) {
+      resetPosition()
+      window.addEventListener('keydown', handleKeyDown)
+    } else {
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  },
+  { immediate: true }
+)
+
+onMounted(() => {
+  resetPosition()
+  if (props.show) {
+    window.addEventListener('keydown', handleKeyDown)
+  }
+})
+
+onUnmounted(() => {
+  endDrag()
+  window.removeEventListener('keydown', handleKeyDown)
+})
 </script>
 
 <template>
   <Teleport to="body">
     <div v-if="show" class="fixed inset-0 z-[100] bg-slate-950/55 flex items-center justify-center p-3">
       <section
-        class="w-[min(1700px,98vw)] h-[78vh] max-h-[78vh] overflow-hidden rounded-xl bg-white shadow-2xl border border-slate-300 font-sans"
+        class="w-[min(1700px,98vw)] h-[78vh] max-h-[78vh] overflow-hidden rounded-xl bg-white shadow-2xl border border-slate-300 font-sans flex flex-col"
         :style="{ transform: `translate(${position.x}px, ${position.y}px)` }"
       >
         <header
-          class="h-10 flex items-center justify-between px-4 cursor-move select-none rounded-t-xl"
+          class="h-10 shrink-0 flex items-center justify-between px-4 cursor-move select-none rounded-t-xl"
           style="background: var(--pms-custom-theme, #006bdb); color: var(--pms-custom-theme-text, #ffffff)"
           @pointerdown="beginDrag"
         >
-          <div class="text-sm font-semibold">
+          <div class="text-xs font-semibold tracking-wide">
             {{ metricLabel }} — {{ roomClassLabel || 'Tất cả loại phòng' }} — {{ formatDate(date) }}
           </div>
-          <button type="button" class="text-2xl leading-none px-1 hover:text-white" @click="emit('close')">×</button>
+          <button
+            type="button"
+            class="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-white/20 transition-colors text-white text-xl leading-none"
+            title="Đóng (Esc)"
+            @click="emit('close')"
+          >
+            ×
+          </button>
         </header>
 
-        <div v-if="loading" class="h-72 flex items-center justify-center text-xs text-slate-500">Đang tải dữ liệu...</div>
-        <div v-else-if="error" class="h-72 flex items-center justify-center text-xs text-red-600">{{ error }}</div>
-        <div v-else class="p-2 h-[calc(78vh-7rem)] overflow-hidden text-[12px]">
+        <div v-if="loading" class="flex-1 flex items-center justify-center text-xs text-slate-500">Đang tải dữ liệu...</div>
+        <div v-else-if="error" class="flex-1 flex items-center justify-center text-xs text-red-600">{{ error }}</div>
+        <div v-else class="flex-1 min-h-0 p-2 overflow-hidden text-xs rounded-b-xl bg-white">
           <div class="grid grid-cols-[190px_minmax(760px,1fr)] gap-2 min-w-[980px] h-full">
-            <aside class="border border-slate-300 rounded-sm overflow-y-auto self-start h-full">
-              <div class="sticky top-0 z-20 px-3 py-1 bg-slate-100 text-[12px] font-semibold text-amber-600 border-b border-slate-300">Phòng trống</div>
-              <div v-if="!groupedAvailableRooms.length" class="p-3 text-[12px] text-slate-500">Không có phòng trống</div>
-              <div v-for="group in groupedAvailableRooms" :key="group.key" class="grid grid-cols-[55px_1fr] text-[12px]">
+            <aside class="border border-slate-200 rounded-lg overflow-y-auto self-start h-full">
+              <div class="sticky top-0 z-20 px-3 py-1.5 bg-slate-100 text-xs font-semibold text-amber-600 border-b border-slate-200">Phòng trống</div>
+              <div v-if="!groupedAvailableRooms.length" class="p-3 text-xs text-[#A8B0BF]">Không có phòng trống</div>
+              <div v-for="group in groupedAvailableRooms" :key="group.key" class="grid grid-cols-[55px_1fr] text-xs">
                 <span
                   v-for="(room, index) in group.rooms"
                   :key="room.room_number"
-                  class="px-2 py-1 text-center font-semibold border-t border-slate-300 text-gray-900"
+                  class="px-2 py-1 text-center font-normal border-t border-slate-200 text-[#000000D9]"
                   :style="{ gridColumn: '1', gridRow: String(index + 1) }"
                 >{{ room.room_number }}</span>
                 <span
-                  class="px-2 py-1 border-l border-t border-slate-300 flex items-center justify-center text-center font-bold text-gray-900"
+                  class="px-2 py-1 border-l border-t border-slate-200 flex items-center justify-center text-center font-semibold text-[#000000D9]"
                   :style="{ gridColumn: '2', gridRow: `1 / span ${group.rooms.length}` }"
                 >{{ group.name }}</span>
               </div>
             </aside>
 
-            <div class="border border-slate-300 rounded-sm overflow-auto h-full">
-              <table class="w-full table-fixed border-collapse text-[12px]">
+            <div class="border border-slate-200 rounded-lg overflow-auto h-full">
+              <table class="w-full table-fixed border-collapse text-xs">
                 <colgroup>
                   <col class="w-[64px]" /><col class="w-[112px]" /><col class="w-[76px]" />
                   <col class="w-[140px]" /><col class="w-[96px]" /><col class="w-[76px]" />
                   <col class="w-[76px]" /><col class="w-[70px]" /><col class="w-[74px]" />
                   <col class="w-[56px]" /><col class="w-[56px]" /><col class="w-[280px]" />
                 </colgroup>
-                <thead class="bg-slate-100 sticky top-0 z-20 text-gray-900 font-semibold">
+                <thead class="bg-slate-100 sticky top-0 z-20 text-[#000000D9] font-semibold">
                   <tr>
-                    <th class="p-1 border-r border-b border-slate-300 text-center align-middle border">Trạng Thái</th>
-                    <th class="p-1 border-r border-b border-slate-300 text-center align-middle border">Công Ty</th>
-                    <th class="p-1 border-r border-b border-slate-300 text-center align-middle border">Mã ĐK</th>
-                    <th class="p-1 border-r border-b border-slate-300 text-center align-middle border">Tên ĐK</th>
-                    <th class="p-1 border-r border-b border-slate-300 text-center align-middle border">Trạng Thái ĐK</th>
-                    <th class="p-1 border-r border-b border-slate-300 text-center align-middle border">Ngày Đến</th>
-                    <th class="p-1 border-r border-b border-slate-300 text-center align-middle border">Ngày Đi</th>
-                    <th class="p-1 border-r border-b border-slate-300 text-center align-middle border">Loại Phòng</th>
-                    <th class="p-1 border-r border-b border-slate-300 text-center align-middle border">Giá</th>
-                    <th class="p-1 border-r border-b border-slate-300 text-center align-middle border">Phòng</th>
-                    <th class="p-1 border-r border-b border-slate-300 text-center align-middle border">SL Khách</th>
-                    <th class="w-[280px] p-1 border-b border-slate-300 text-center align-middle border-r border">Ghi Chú</th>
+                    <th class="p-1 border border-slate-200 text-center align-middle font-semibold text-xs">Trạng Thái</th>
+                    <th class="p-1 border border-slate-200 text-center align-middle font-semibold text-xs">Công Ty</th>
+                    <th class="p-1 border border-slate-200 text-center align-middle font-semibold text-xs">Mã ĐK</th>
+                    <th class="p-1 border border-slate-200 text-center align-middle font-semibold text-xs">Tên ĐK</th>
+                    <th class="p-1 border border-slate-200 text-center align-middle font-semibold text-xs">Trạng Thái ĐK</th>
+                    <th class="p-1 border border-slate-200 text-center align-middle font-semibold text-xs">Ngày Đến</th>
+                    <th class="p-1 border border-slate-200 text-center align-middle font-semibold text-xs">Ngày Đi</th>
+                    <th class="p-1 border border-slate-200 text-center align-middle font-semibold text-xs">Loại Phòng</th>
+                    <th class="p-1 border border-slate-200 text-center align-middle font-semibold text-xs">Giá</th>
+                    <th class="p-1 border border-slate-200 text-center align-middle font-semibold text-xs">Phòng</th>
+                    <th class="p-1 border border-slate-200 text-center align-middle font-semibold text-xs">SL Khách</th>
+                    <th class="w-[280px] p-1 border border-slate-200 text-center align-middle font-semibold text-xs">Ghi Chú</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-if="!groupedBookingRooms.length">
-                    <td colspan="12" class="p-6 text-center text-slate-500 border-slate-200">Không có dữ liệu</td>
+                    <td colspan="12" class="p-6 text-center text-[#A8B0BF] border-b border-slate-200">Không có dữ liệu</td>
                   </tr>
                   <template v-for="group in groupedBookingRooms" :key="group.key">
-                    <tr class="bg-slate-100 text-slate-800">
-                      <td colspan="12" class="p-1 border-b border-slate-300">
-                        <button type="button" class="inline-flex items-center gap-1 text-left font-bold" @click="toggleBooking(group.key)">
+                    <tr class="bg-slate-50 text-[#000000D9]">
+                      <td colspan="12" class="p-1 border-b border-slate-200">
+                        <button type="button" class="inline-flex items-center gap-1.5 text-left font-semibold text-xs" @click="toggleBooking(group.key)">
                           <span
-                            class="inline-flex items-center justify-center w-3 h-3 text-[10px] leading-none"
+                            class="inline-flex items-center justify-center w-3.5 h-3.5 text-xs leading-none rounded-[2px]"
                             style="background: var(--pms-custom-theme, #006bdb); color: var(--pms-custom-theme-text, #ffffff)"
                           >{{ isBookingCollapsed(group.key) ? '+' : '−' }}</span>
-                          Mã ĐK: {{ group.bookingCode }}
+                          <span>Mã ĐK: {{ group.bookingCode }}</span>
                         </button>
                       </td>
                     </tr>
                     <template v-if="!isBookingCollapsed(group.key)">
-                    <tr v-for="(row, rowIndex) in group.rooms" :key="`${row.booking_id}-${row.room_number}-${row.arrival_date}`" class="hover:bg-sky-50 text-gray-900" @dblclick="openBooking(row)">
-                      <td class="p-1 pl-3 border-b border-slate-300">{{ row.room_status }}</td>
-                      <td class="p-1 border-b border-slate-300">{{ row.company || '' }}</td>
-                      <td class="p-1 border-b border-slate-300 whitespace-nowrap">{{ row.booking_code || row.booking_id }}</td>
-                      <td class="p-1 border-b border-slate-300">{{ row.booking_name || '' }}</td>
-                      <td class="p-1 border-b border-slate-300">{{ row.registration_status || '' }}</td>
-                      <td class="p-1 border-b border-slate-300 whitespace-nowrap">{{ formatDate(row.arrival_date) }}</td>
-                      <td class="p-1 border-b border-slate-300 whitespace-nowrap">{{ formatDate(row.departure_date) }}</td>
-                      <td class="p-1 border-b border-slate-300">{{ row.room_class_code || '' }}</td>
-                      <td class="p-1 border-b border-slate-300 text-right whitespace-nowrap">{{ formatAmount(row.rate) }}</td>
-                      <td class="p-1 border-b border-slate-300">{{ row.room_number || '' }}</td>
-                      <td class="p-1 border-b border-slate-300 text-center">{{ row.guest_count }}</td>
-                      <td v-if="rowIndex === 0" :rowspan="group.rooms.length" class="w-[280px] p-1 border-b border-slate-300 break-words whitespace-pre-wrap align-top">{{ group.bookingNote }}</td>
+                    <tr
+                      v-for="(row, rowIndex) in group.rooms"
+                      :key="`${row.booking_id}-${row.room_number}-${row.arrival_date}`"
+                      class="hover:bg-sky-50 text-[#000000D9] transition-colors"
+                      @dblclick="openBooking(row)"
+                    >
+                      <td class="p-1 pl-3 border-b border-slate-200 font-normal">{{ row.room_status }}</td>
+                      <td class="p-1 border-b border-slate-200 font-normal">{{ row.company || '' }}</td>
+                      <td class="p-1 border-b border-slate-200 font-normal whitespace-nowrap">{{ row.booking_code || row.booking_id }}</td>
+                      <td class="p-1 border-b border-slate-200 font-normal">{{ row.booking_name || '' }}</td>
+                      <td class="p-1 border-b border-slate-200 font-normal">{{ row.registration_status || '' }}</td>
+                      <td class="p-1 border-b border-slate-200 font-normal whitespace-nowrap">{{ formatDate(row.arrival_date) }}</td>
+                      <td class="p-1 border-b border-slate-200 font-normal whitespace-nowrap">{{ formatDate(row.departure_date) }}</td>
+                      <td class="p-1 border-b border-slate-200 font-normal">{{ row.room_class_code || '' }}</td>
+                      <td class="p-1 border-b border-slate-200 font-normal text-right whitespace-nowrap tabular-nums">{{ formatAmount(row.rate) }}</td>
+                      <td class="p-1 border-b border-slate-200 font-normal text-center">{{ row.room_number || '' }}</td>
+                      <td class="p-1 border-b border-slate-200 font-normal text-center tabular-nums">{{ row.guest_count }}</td>
+                      <td v-if="rowIndex === 0" :rowspan="group.rooms.length" class="w-[280px] p-1 border-b border-slate-200 break-words whitespace-pre-wrap align-top font-normal">{{ group.bookingNote }}</td>
                     </tr>
-                    <tr class="bg-white font-semibold text-gray-900">
-                      <td colspan="9" class="p-1 border-b border-slate-300 text-left pl-3">TỔNG</td>
-                      <td class="p-1 border-b border-slate-300 text-center">{{ group.rooms.length }}</td>
-                      <td class="p-1 border-b border-slate-300 text-center">{{ group.rooms.reduce((sum, row) => sum + Number(row.guest_count || 0), 0) }}</td>
-                      <td class="p-1 border-b border-slate-300"></td>
+                    <tr class="bg-white font-semibold text-[#000000D9]">
+                      <td colspan="9" class="p-1 border-b border-slate-200 text-left pl-3">TỔNG</td>
+                      <td class="p-1 border-b border-slate-200 text-center tabular-nums">{{ group.rooms.length }}</td>
+                      <td class="p-1 border-b border-slate-200 text-center tabular-nums">{{ group.rooms.reduce((sum, row) => sum + Number(row.guest_count || 0), 0) }}</td>
+                      <td class="p-1 border-b border-slate-200"></td>
                     </tr>
                     </template>
                   </template>
                 </tbody>
                 <tfoot class="sticky bottom-0 z-20">
-                  <tr class="bg-slate-200 font-bold text-gray-900">
-                    <td colspan="9" class="p-1 border-t border-slate-300 text-right">TỔNG</td>
-                    <td class="p-1 border-t border-slate-300 text-center">{{ detail?.totals?.booking_rooms || 0 }}</td>
-                    <td class="p-1 border-t border-slate-300 text-center">{{ groupedBookingRooms.reduce((sum, group) => sum + group.rooms.reduce((groupSum, row) => groupSum + Number(row.guest_count || 0), 0), 0) }}</td>
-                    <td class="p-1 border-t border-slate-300"></td>
+                  <tr class="bg-slate-100 font-semibold text-[#000000D9]">
+                    <td colspan="9" class="p-1 border-t border-b border-slate-300 text-right pr-2">TỔNG</td>
+                    <td class="p-1 border-t border-b border-slate-300 text-center tabular-nums">{{ detail?.totals?.booking_rooms || 0 }}</td>
+                    <td class="p-1 border-t border-b border-slate-300 text-center tabular-nums">{{ groupedBookingRooms.reduce((sum, group) => sum + group.rooms.reduce((groupSum, row) => groupSum + Number(row.guest_count || 0), 0), 0) }}</td>
+                    <td class="p-1 border-t border-b border-slate-300"></td>
                   </tr>
                 </tfoot>
               </table>
             </div>
           </div>
         </div>
-
-        <footer class="flex justify-end gap-2 px-3 py-2 bg-white border-t border-slate-300 rounded-b-xl">
-          <button
-            type="button"
-            class="btn-pms-close flex items-center gap-1.5"
-            @click="emit('close')"
-          >
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-            <span>Đóng</span>
-          </button>
-        </footer>
       </section>
     </div>
   </Teleport>

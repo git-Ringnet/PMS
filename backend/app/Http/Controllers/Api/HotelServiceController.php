@@ -14,7 +14,7 @@ class HotelServiceController extends Controller
      */
     public function index()
     {
-        $services = HotelService::with('department')->get();
+        $services = HotelService::with(['department', 'departments'])->get();
         return response()->json([
             'success' => true,
             'data' => HotelServiceResource::collection($services)
@@ -40,12 +40,20 @@ class HotelServiceController extends Controller
             'unit' => 'nullable|string|max:50',
             'price' => 'nullable|numeric|min:0',
             'is_active' => 'nullable|boolean',
-            'department_id' => 'required|integer|exists:departments,id',
+            // department_id remains the primary department for legacy reports/data.
+            // department_ids is the full list used to decide where a service can be posted.
+            'department_id' => 'nullable|integer|exists:departments,id',
+            'department_ids' => 'required|array|min:1',
+            'department_ids.*' => 'integer|distinct|exists:departments,id',
         ]);
 
+        $departmentIds = $validated['department_ids'];
+        $validated['department_id'] = $validated['department_id'] ?? $departmentIds[0];
+        unset($validated['department_ids']);
+
         $service = HotelService::create($validated);
-        $service->departments()->syncWithoutDetaching([$validated['department_id']]);
-        $service->load('department');
+        $service->departments()->sync($departmentIds);
+        $service->load(['department', 'departments']);
 
         return response()->json([
             'success' => true,
@@ -58,7 +66,7 @@ class HotelServiceController extends Controller
      */
     public function show($id)
     {
-        $service = HotelService::find($id);
+        $service = HotelService::with(['department', 'departments'])->find($id);
         if (!$service) {
             return response()->json(['message' => 'Service not found'], 404);
         }
@@ -92,12 +100,18 @@ class HotelServiceController extends Controller
             'unit' => 'nullable|string|max:50',
             'price' => 'nullable|numeric|min:0',
             'is_active' => 'nullable|boolean',
-            'department_id' => 'required|integer|exists:departments,id',
+            'department_id' => 'nullable|integer|exists:departments,id',
+            'department_ids' => 'required|array|min:1',
+            'department_ids.*' => 'integer|distinct|exists:departments,id',
         ]);
 
+        $departmentIds = $validated['department_ids'];
+        $validated['department_id'] = $validated['department_id'] ?? $departmentIds[0];
+        unset($validated['department_ids']);
+
         $service->update($validated);
-        $service->departments()->syncWithoutDetaching([$validated['department_id']]);
-        $service->load('department');
+        $service->departments()->sync($departmentIds);
+        $service->load(['department', 'departments']);
 
         return response()->json([
             'success' => true,
