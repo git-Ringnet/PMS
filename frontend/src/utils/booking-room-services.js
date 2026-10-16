@@ -68,3 +68,21 @@ export function hotelServiceDisplayName(code, hotelServices, fallback = '') {
   const service = (hotelServices || []).find(item => String(item.code || '').trim().toUpperCase() === target)
   return service?.name || fallback || code || ''
 }
+
+/**
+ * Row 397: a price edited on the room row only changes the room rate. Nightly
+ * prices are kept only for nights that already have a saved room-charge row
+ * (booking_room_services); every other night follows the room rate, so the
+ * save does not insert nightly rows.
+ */
+export function keepSavedDailyRoomPrices(dailyRoomPrices, services) {
+  if (!dailyRoomPrices) return null
+  const savedDates = new Set((services || [])
+    .filter(service => service?.id && ['RM', 'ROOM_CHARGE'].includes(String(service.service_code || '').toUpperCase()))
+    .map(service => dateOnly(service.service_date)))
+  const kept = {}
+  Object.keys(dailyRoomPrices).forEach(date => {
+    if (savedDates.has(dateOnly(date))) kept[date] = dailyRoomPrices[date]
+  })
+  return Object.keys(kept).length ? kept : null
+}

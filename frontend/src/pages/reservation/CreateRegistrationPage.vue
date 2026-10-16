@@ -23,6 +23,7 @@ import {
   childBreakfastServiceDates,
   isChildBreakfastCode,
   isServiceDateInStay,
+  keepSavedDailyRoomPrices,
   normalizeChildBreakfastConfig,
 } from '@/utils/booking-room-services'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
@@ -2471,6 +2472,8 @@ function syncRoomsToAllocations(tab) {
       departureDate: r.checkOut || tab.checkOut,
       nights: (Number.isFinite(Number(r.nights)) && Number(r.nights) >= 0) ? Number(r.nights) : 1,
       dailyRoomPrices: r.dailyRoomPrices || null,
+      // Dòng 397: giá sửa tay ở dòng phòng được giữ, không tính lại theo mã giá.
+      manualRateOverride: !!r._manualRate,
       dailyExtraBeds: (r.dailyExtraBeds || []).map(d => ({
         ...d,
         dateStr: parseApiDate(d.dateStr || d.date || ''),
@@ -3608,7 +3611,7 @@ function syncAllocationToRooms(row, { forceRate = false } = {}) {
         r.price = Number(row.price) || 0
         r.basePrice = Number(row.basePrice ?? row.price) || 0
         r.rateCode = row.rateCode || 'Vui lòng chọn giá phòng'
-        syncRoomPriceToDailyCharges(r, r.price)
+        applyRoomRowPrice(r)
       }
       r.adults = Number(row.adults) || 2
       r.babies = Number(row.babies) || 0
@@ -3750,9 +3753,11 @@ async function handleRoomRateCodeChange(room, selectedValue = room?.rateCode) {
           room.basePrice = price
           room.total = calculateRoomTotal(room)
           room._preserveAgreedRate = false
+    room._manualRate = false
         }
       } else {
         room._preserveAgreedRate = false
+        room._manualRate = false
       }
 
       // Sync back to allocation row
@@ -3782,6 +3787,7 @@ async function handleRoomRateCodeChange(room, selectedValue = room?.rateCode) {
     room.basePrice = defaultPrice
     room.breakfast = getDefaultBreakfastSetting()
     room._preserveAgreedRate = false
+    room._manualRate = false
 
     const existingDailyPrices = room.dailyRoomPrices && Object.keys(room.dailyRoomPrices).length > 0
     const hasRoomChargeServices = Array.isArray(room.services) && room.services.some(service =>
@@ -3876,56 +3882,12 @@ function toggleRoomDiscountPopover(room) {
   }
 }
 
-function syncRoomPriceToDailyCharges(room, newRate) {
+// Dòng 397: sửa giá ở dòng phòng chỉ đổi rate/base_price của phòng, không
+// ghi giá từng ngày (dailyRoomPrices -> booking_room_services). Đêm đã có giá
+// theo ngày lưu trong DB giữ nguyên; các đêm còn lại hiển thị theo giá phòng.
+function applyRoomRowPrice(room) {
   if (!room) return
-  const checkIn = room.checkIn
-  const isSameDay = !!checkIn && !!room.checkOut && (cleanDateStr(checkIn) === cleanDateStr(room.checkOut))
-  const nights = isSameDay ? (room.hourly ? 1 : 0) : Math.max(Number(room.nights) || 0, 1)
-
-  if (!room.dailyRoomPrices) room.dailyRoomPrices = {}
-
-  if (checkIn) {
-    for (let i = 0; i < nights; i++) {
-      const parts = checkIn.split('-')
-      let curr = new Date()
-      if (parts.length === 3) {
-        curr = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))
-      } else {
-        curr = new Date(checkIn)
-      }
-      curr.setDate(curr.getDate() + i)
-      const yyyy = curr.getFullYear()
-      const mm = String(curr.getMonth() + 1).padStart(2, '0')
-      const dd = String(curr.getDate()).padStart(2, '0')
-      const dStr = `${yyyy}-${mm}-${dd}`
-
-      const existingCharge = (room.services || []).find(s => 
-        (s.service_code === 'RM' || s.service_code === 'ROOM_CHARGE') && cleanDateStr(s.service_date) === dStr
-      )
-      if (!existingCharge?.is_posted && isServiceRateEditable(dStr)) {
-        room.dailyRoomPrices[dStr] = newRate
-        if (room.dailyRoomDiscounts?.[dStr] && !room.dailyRoomDiscounts[dStr].discountValue) {
-          room.dailyRoomDiscounts[dStr].baseRate = newRate
-        }
-      }
-    }
-  }
-
-  if (Array.isArray(room.services)) {
-    room.services.forEach(svc => {
-      const isRoomCharge = svc.service_code === 'RM' || svc.service_code === 'ROOM_CHARGE'
-      const svcDate = cleanDateStr(svc.service_date)
-      if (isRoomCharge && !svc.is_posted && isServiceRateEditable(svcDate)) {
-        svc.rate = newRate
-        svc.total = newRate * Number(svc.quantity || 1)
-        if (svc.svc_ref) {
-          svc.svc_ref.rate = newRate
-          svc.svc_ref.total = newRate * Number(svc.svc_ref.quantity || 1)
-        }
-      }
-    })
-  }
-
+  room.dailyRoomPrices = keepSavedDailyRoomPrices(room.dailyRoomPrices, room.services)
   room.total = calculateRoomTotal(room)
 }
 
@@ -3933,7 +3895,8 @@ function handleRoomPriceChange(room, newPrice) {
   const priceVal = cleanCurrencyValue(newPrice)
   room.price = priceVal
   room.basePrice = priceVal
-  syncRoomPriceToDailyCharges(room, priceVal)
+  room._manualRate = true
+  applyRoomRowPrice(room)
 }
 
 function calculateRoomAdjustedPrice(room) {
@@ -3963,7 +3926,8 @@ function calculateRoomAdjustedPrice(room) {
   }
   
   room.price = adjusted
-  syncRoomPriceToDailyCharges(room, adjusted)
+  room._manualRate = true
+  applyRoomRowPrice(room)
   
   // Sync back to allocation row
   const parentObj = (modalForm.value && isModalOpen.value) ? modalForm.value : activeTab.value

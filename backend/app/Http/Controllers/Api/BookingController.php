@@ -3783,8 +3783,9 @@ class BookingController extends Controller
 
         // Rate Code cố định chỉ dùng giá nhập tay khi cấu hình cho phép đổi giá.
         // Rate Code theo ngày luôn phải giữ bảng giá theo ngày đã khai báo.
+        // Dòng 397: cờ có thể gửi theo từng phòng (giá sửa ở dòng phòng).
         if (!$configuredRateCode->IsDaily
-            && !empty($allocation['manualRateOverride'])
+            && (!empty($detail['manualRateOverride']) || !empty($allocation['manualRateOverride']))
             && $configuredRateCode->AllowChangeRate
         ) {
             $detail['rateCode'] = $rateCode;

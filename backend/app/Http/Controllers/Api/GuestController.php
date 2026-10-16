@@ -1120,30 +1120,30 @@ class GuestController extends Controller
             && Carbon::parse($request->input('arrival_date'))->toDateString() !== ($room->arrival_date ? Carbon::parse($room->arrival_date)->toDateString() : null);
         $departureChanged = $request->filled('departure_date')
             && Carbon::parse($request->input('departure_date'))->toDateString() !== ($room->departure_date ? Carbon::parse($room->departure_date)->toDateString() : null);
-        $rateChanged = $request->has('rate')
-            && $request->input('rate') !== null
-            && (float) $request->input('rate') !== (float) ($room->rate ?? 0);
         $incomingRateCode = $request->has('rate_code') && filled($request->input('rate_code'))
             ? trim((string) $request->input('rate_code'))
             : null;
         $storedRateCode = filled($room->rate_code) ? trim((string) $room->rate_code) : null;
         $rateCodeChanged = $request->has('rate_code') && $incomingRateCode !== $storedRateCode;
-        $pricingFieldsChanged = $rateChanged || $rateCodeChanged;
-        $stayFieldsChanged = $arrivalChanged || $departureChanged || $pricingFieldsChanged;
+        // Dòng 397: sửa giá phòng chỉ cập nhật rate/base_price ở booking_rooms,
+        // không ghi giá từng ngày vào booking_room_services. Đồng bộ tiền phòng
+        // theo ngày chỉ khi đổi ngày ở hoặc đổi mã giá.
+        $stayFieldsChanged = $arrivalChanged || $departureChanged || $rateCodeChanged;
 
         $this->validateStayDates($request, $room);
 
         $datesChanged = $arrivalChanged || $departureChanged || $request->has('is_day_use');
 
-        DB::transaction(function () use ($request, $room, $roomData, $stayFieldsChanged, $pricingFieldsChanged, $datesChanged) {
+        DB::transaction(function () use ($request, $room, $roomData, $stayFieldsChanged, $rateCodeChanged, $datesChanged) {
             if ($roomData) $room->update($roomData);
             if ($stayFieldsChanged) {
+                // Đêm đã có giá theo ngày giữ nguyên; chỉ đổi mã giá mới tính lại.
                 app(BookingRoomStayChargeService::class)->synchronize(
                     $room->fresh(),
                     $request->has('rate') && $request->input('rate') !== null
                         ? (float) $request->input('rate')
                         : null,
-                    $pricingFieldsChanged
+                    $rateCodeChanged
                 );
             }
             if ($request->has('extra_bed_qty') || $request->has('extra_bed_rate')) {

@@ -18,6 +18,24 @@
 
 - **Nội dung hoàn thành**: Chi tiết logic, API, UI, DB migration/seeder đã xử lý + link file.
 
+## [2026-10-16] - Sửa giá ở dòng phòng & thông tin phòng không ghi vào booking_room_services (Dòng 397)
+### Module: Đặt phòng ([BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [GuestController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/GuestController.php), [CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [booking-room-services.js](file:///d:/PMS/frontend/src/utils/booking-room-services.js))
+
+- **1. Hiện tượng & Vấn đề (Dòng 397 Sheet THEO DÕI VẤN ĐỀ CẦN ĐIỀU CHỈNH / Đăng ký - Thông tin phòng)**:
+  - Khi người dùng chỉnh sửa giá phòng tại dòng phòng (màn hình Đăng ký) hoặc chỉnh giá trong popup Thông tin phòng (Room Map), hệ thống tự động insert/đồng bộ giá các ngày vào bảng `booking_room_services` (mã `RM`).
+  - Yêu cầu spec: Chỉ cập nhật lại cột `rate` và `base_price` ở bảng `booking_rooms`, không cập nhật/insert giá các ngày vào bảng `booking_room_services`.
+- **2. Xử lý**:
+  - *Frontend ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue), [booking-room-services.js](file:///d:/PMS/frontend/src/utils/booking-room-services.js))*:
+    - Hàm `applyRoomRowPrice`: Khi người dùng sửa giá ở dòng phòng, chỉ cập nhật `price`, `basePrice` và đặt `_manualRate = true`.
+    - Gọi `keepSavedDailyRoomPrices`: Chỉ giữ lại các ngày đã có bản ghi dịch vụ tiền phòng lưu trước đó trong CSDL; các đêm bình thường không tạo `dailyRoomPrices`, tránh gửi mảng giá ngày lên backend làm insert dòng `RM`.
+  - *Backend ([BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [GuestController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/GuestController.php))*:
+    - Trong [BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php): `applyConfiguredRateCodePricing` nhận cờ `manualRateOverride` theo từng phòng, bảo toàn giá sửa tay của phòng mà không tự sinh mảng `dailyRoomPrices`.
+    - Trong [GuestController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/GuestController.php): Bỏ việc coi `rateChanged` là trigger đồng bộ lại `BookingRoomStayChargeService::synchronize`. Chỉ cập nhật `rate`, `base_price` trên bảng `booking_rooms`, chỉ đồng bộ tiền phòng theo ngày khi đổi ngày lưu trú hoặc đổi mã giá.
+- **3. Kiểm thử**:
+  - Backend: [BookingBusinessRulesTest.php](file:///d:/PMS/backend/tests/Feature/Booking/BookingBusinessRulesTest.php) (`test_grid_row_price_edit_only_updates_room_rate`) và [GuestControllerFixesTest.php](file:///d:/PMS/backend/tests/Feature/GuestControllerFixesTest.php) (`test_room_info_price_edit_does_not_touch_booking_room_services`) PASS 100%.
+  - Frontend: [row-397-room-row-price.test.js](file:///d:/PMS/frontend/tests/row-397-room-row-price.test.js) & toàn bộ 106 test FE PASS 100%.
+  - E2E trên UI & DB thật: Sửa giá phòng ở dòng phòng và trong Thông tin phòng cập nhật chính xác `rate` và `base_price`, `booking_room_services` có 0 dòng RM.
+
 ## [2026-10-16] - Ràng buộc giai đoạn đăng ký (Dòng 394) & Xử lý trùng số phòng (Dòng 395)
 ### Module: Đặt phòng ([BookingController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingController.php), [BookingRoomController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/BookingRoomController.php), [RoomAvailabilityService.php](file:///d:/PMS/backend/app/Services/RoomAvailabilityService.php), [RoomPlanPage.vue](file:///d:/PMS/frontend/src/pages/reservation/RoomPlanPage.vue), [room-plan-conflicts.js](file:///d:/PMS/frontend/src/utils/room-plan-conflicts.js))
 

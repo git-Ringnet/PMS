@@ -2165,4 +2165,50 @@ class BookingBusinessRulesTest extends TestCase
         $this->assertSame('2026-08-17', $booking->departure_date->toDateString());
         $this->assertSame(10, (int) $booking->num_of_days);
     }
+
+    /**
+     * Row 397: price edited on the registration grid row only updates rate and
+     * base_price; no nightly booking_room_services rows are created.
+     */
+    public function test_grid_row_price_edit_only_updates_room_rate(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'SyncRoomDateByBookingDate'], ['value' => '0']);
+        $booking = $this->createBooking(['arrival_date' => '2026-08-07', 'departure_date' => '2026-08-10', 'num_of_days' => 3]);
+        $room = BookingRoom::create([
+            'id' => 'G-397', 'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-07', 'departure_date' => '2026-08-10',
+            'rate' => 500000, 'base_price' => 500000, 'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $this->putJson("/api/bookings/{$booking->id}", [
+            'booking_name' => $booking->booking_name,
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-10',
+            'num_of_days' => 3,
+            'registration_status_id' => $this->regStatus->booking_status_id,
+            'company_id' => 1,
+            'market_id' => 1,
+            'customer_source_id' => 1,
+            'room_allocations' => [[
+                'roomClassId' => $this->roomClass->id,
+                'quantity' => 1,
+                'price' => 650000,
+                'rooms' => [[
+                    'bookingRoomId' => $room->id,
+                    'arrivalDate' => '2026-08-07',
+                    'departureDate' => '2026-08-10',
+                    'price' => 650000,
+                    'basePrice' => 650000,
+                    'dailyRoomPrices' => null,
+                    'manualRateOverride' => true,
+                ]],
+            ]],
+        ])->assertSuccessful();
+
+        $fresh = $room->fresh();
+        $this->assertEquals(650000.0, (float) $fresh->rate);
+        $this->assertEquals(650000.0, (float) $fresh->base_price);
+        $this->assertSame(0, \App\Models\BookingRoomService::where('booking_room_id', $room->id)
+            ->whereIn('service_code', ['RM', 'ROOM_CHARGE'])->count());
+    }
 }
