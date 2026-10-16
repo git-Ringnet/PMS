@@ -8,6 +8,200 @@
 
 - **Ngày ghi**: `YYYY-MM-DD`
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
+## [2026-10-16] - Hoàn Thành Dòng 57 Sheet FIX FE: Tách Icon Đáy Chống Dính Tên Khách & Chuyển Icon DND/Priority Lên Góc Phải Trên ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
+### Module: Đặt phòng / Sơ đồ phòng ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
+- **Mục tiêu & Kết quả (Dòng 57 FIX FE)**:
+  - **Chuyển 2 icon DND và Phòng ưu tiên lên góc phải trên**:
+    + Tách riêng logic `getTopRightSpecialIcon(room)` cho 2 trạng thái: Không làm phiền (`dnd`) và Phòng ưu tiên (`vacant_priority` / `reserved` / `is_priority`).
+    + Hiển thị nổi bật ở góc trên bên phải card (`absolute top-2 right-2 z-10 flex items-center gap-1`):
+      * DND: Badge tròn trắng viền đỏ, icon màu đỏ rực rỡ (`text-red-600 bg-white border border-red-200 shadow-xs`).
+      * Phòng ưu tiên: Badge tròn trắng viền hổ phách, icon màu vàng cam nổi bật (`text-amber-600 bg-white border border-amber-300 shadow-xs`).
+    + Loại bỏ hoàn toàn DND và Phòng ưu tiên khỏi cụm góc dưới phải trong `getRoomStatusIconName(room)` để giải phóng không gian góc dưới.
+    + Kết nối trực tiếp thông số kích thước với thanh cài đặt Nhóm 5 (`settings.iconSizes.group5`) qua `getTopRightSpecialIconSize()`: kích thước 2 icon tự động co giãn ngay lập tức khi người dùng thay đổi kích thước mà không bị đơ/không phản hồi.
+    + Căn cùng hàng chấm đỏ và chấm xanh: Tách độc lập container chấm đỏ (`hasDepartureToday`) đặt cố định ở `top-2.5` ngang hàng chuẩn xác 100% với chấm xanh (`hasArrivalToday` ở `top-2.5 left-2.5`), căn lùi sang trái `right: (getTopRightSpecialIconSize() + 12) + 'px'` khi có icon DND/Priority, loại bỏ triệt để hiện tượng chấm đỏ bị kéo lệch xuống dưới do flexbox căn giữa với badge lớn.
+  - **Khắc phục icon dưới đáy đè dính tên khách khi thu hẹp chiều cao ô phòng**:
+    + Nâng trọng tâm `Room Content` khi card hẹp (`settings.roomHeight < 75` -> `top-[33%]`, `settings.roomHeight < 90` -> `top-[36%]`, card chuẩn -> `top-[42%]`).
+    + Tạo khoảng đệm an toàn tối thiểu 8px – 12px giữa dòng Tên khách và hàng icon dưới đáy card.
+    + Thêm giới hạn `max-w-[calc(100%-20px)] mx-auto px-2` cho dòng Tên khách, tự động ngắt `truncate` ở giữa, chống tràn sang hai góc đáy nơi icon số khách và icon trạng thái đang nằm.
+    + Cố định kích thước tối thiểu sắc nét cho icon đáy (`Math.max(10, ...)`) tránh bị teo nhỏ mất nét khi zoom bao quát toàn màn hình.
+- **Kiểm thử**: Đã chạy `npm run build` thành công 100% không phát sinh lỗi (không mở trình duyệt kiểm thử theo quy định).
+
+## [2026-10-16] - Sửa Lỗi Icon Tình Trạng Phòng Bị Lệch Ra Ngoài Khối Sơ Đồ Phòng ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
+### Module: Đặt phòng / Sơ đồ phòng ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
+- **Mục tiêu & Kết quả**:
+  - **Khắc phục icon tình trạng phòng bị out khỏi khối**: Thay thế công thức tính `right`/`bottom` trừ kích thước icon cũ (khiến icon bị đẩy sát biên hoặc có tọa độ âm khi scale, lọt ra ngoài đường viền bo cong của card) bằng tọa độ an toàn chuẩn xác `right: Math.max(7, Math.round(9 * cardScale)) + 'px'`, `bottom: Math.max(5, Math.round(7 * cardScale)) + 'px'`.
+  - **Đảm bảo nằm gọn trong khối**: Icon tình trạng phòng (sạch/sparkles, bẩn/dirty, checkout, OOO, OOS,...) luôn nằm trọn vẹn 100% bên trong góc dưới phải của ô card phòng, giữ khoảng cách viền đẹp mắt ở mọi mức thu phóng màn hình.
+- **Kiểm thử**: Đã chạy `npm run build` thành công 100% không phát sinh lỗi (không mở trình duyệt kiểm thử theo quy định).
+
+## [2026-10-16] - Tối Ưu Khoảng Cách Loại Phòng Trên Ô Sơ Đồ Phòng ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
+### Module: Đặt phòng / Sơ đồ phòng ([RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
+- **Mục tiêu & Kết quả**:
+  - **Tách khoảng cách loại phòng**: Nâng margin-top của nhãn Loại phòng (`DLXD`,...) từ `mt-0.5` (2px) lên `mt-1.5` (6px) đối với card thường và từ `mt-0` lên `mt-1` (4px) đối với card thu nhỏ (`settings.roomHeight < 80`).
+  - **Khắc phục dính gạch chân**: Loại bỏ hoàn toàn tình trạng chữ loại phòng bị dính sát vào đường gạch chân số phòng khi phòng có khách dự kiến đến ngày mai (`isArrivingTomorrow`), tạo khoảng cách đều đặn, cân đối trực quan giữa số phòng - gạch chân - mã loại phòng - tên khách.
+- **Kiểm thử**: Đã chạy `npm run build` thành công 100% không phát sinh lỗi (không mở trình duyệt kiểm thử theo quy định).
+
+## [2026-10-16] - Chuẩn Hóa Font, Style, Cỡ Chữ (12px) & Màu Chữ Đen Thanh Sub-Navigation Tất Cả Phân Hệ ([MainLayout.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/layouts/MainLayout.vue))
+### Module: Toàn cục / Thanh Sub-navigation ([MainLayout.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/layouts/MainLayout.vue))
+- **Mục tiêu & Kết quả**:
+  - **Tăng kích thước chữ chuẩn 12px**: Nâng kích thước chữ các tab sub-navigation từ `text-[11px] xl:text-[12px]` lên cố định `text-xs` (12px) theo đúng quy ước FE Design System (nghiêm cấm cỡ chữ < 12px).
+  - **Font Roboto & Font-weight semi-bold**: Áp dụng font chuẩn hệ thống Roboto (`font-sans`), định dạng chữ `font-semibold` sắc nét, rõ ràng.
+  - **Chuyển màu chữ về màu đen tuyền**: Tab trạng thái inactive đổi từ `text-gray-900/70` mờ sang `text-black` rõ nét trên nền trắng (`hover:bg-slate-100 hover:text-black`), loại bỏ viền mờ `border-transparent`.
+  - **Tab Active nổi bật**: Tab đang chọn giữ phong cách pill nổi bật với nền màu theme hệ thống (`headerBgColor`), chữ trắng tương phản (`text-white`) kèm hiệu ứng đổ bóng nhẹ `shadow-xs`.
+  - **Phạm vi áp dụng đồng bộ**: Áp dụng cho tất cả phân hệ sử dụng thanh sub-navigation (Đặt phòng `/reservation`, Lễ tân `/frontdesk`, Buồng phòng `/housekeeping`, Báo cáo `/reports`).
+- **Kiểm thử**: Đã chạy `npm run build` thành công 100% không phát sinh lỗi.
+
+## [2026-10-16] - Bổ Sung Background Sóng Chấm, Hotline & Chuẩn Hóa Icon Mắt ([LoginPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/LoginPage.vue))
+### Module: Toàn cục / Trang đăng nhập ([LoginPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/LoginPage.vue))
+- **Mục tiêu & Kết quả**:
+  - **Chuẩn hóa Icon mắt mật khẩu**: Thay thế icon SVG vẽ tay bằng bộ icon chuẩn `Eye` và `EyeOff` từ `@lucide/vue`, khắc phục triệt để tình trạng icon mắt gạch chéo hiển thị không đúng chuẩn.
+  - **Tính năng ấn giữ hiển thị mật khẩu**: Hỗ trợ đầy đủ các sự kiện `mousedown`/`mouseup`, `touchstart`/`touchend`, `mouseleave`, `touchcancel` để hiển thị mật khẩu khi ấn giữ và tự động ẩn khi nhả ra.
+  - **Background sóng chấm**: Bổ sung ảnh nền sóng chấm uốn lượn SVG chính thức (`/login-bg-map.svg` trích xuất từ hệ thống HKT PMS cũ `https://hotel.hktsolution.vn/pms/login`) phủ toàn màn hình trên nền `#f0f4f9` với sóng xanh bên trái và sóng vàng kim bên phải.
+  - **Hotline & Số điện thoại**: Bổ sung cụm hotline góc trái dưới với icon điện thoại cyan (`/phone-icon.svg`) và số hotline `02 586 566 966` đậm nét chuẩn xác theo bản gốc.
+  - **Version hệ thống**: Bổ sung nhãn `Version 6.0.8` ở góc phải dưới.
+  - **Kích thước form**: Giữ form gọn gàng `max-w-[360px]`, bo góc `rounded-2xl`, nổi khối trắng trên nền sáng.
+  - **Logo & Typography**: Logo chính thức [HKT_LOGO.png](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/public/HKT_LOGO.png), nhãn Title Case font Roboto chuẩn FE Design System.
+- **Kiểm thử**: Đã chạy `npm run build` thành công 100% không phát sinh lỗi (kiểm tra nội bộ không mở web theo chỉ dẫn của người dùng).
+
+## [2026-10-16] - Đồng Bộ Thiết Kế Trang Chủ F&B Giống Trang Chủ PMS ([FnbPages.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/FnbPages.vue))
+### Module: Portal / Phân hệ F&B ([FnbPages.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/FnbPages.vue))
+- **Mục tiêu & Kết quả**:
+  - **Lớp phủ nền (Backdrop Blur & Darkened Gradient)**: Đồng bộ lớp phủ tối `bg-gradient-to-b from-slate-950/75 via-slate-900/60 to-slate-950/80` và làm mờ nhẹ ảnh nền (`backdrop-blur-[2px]`).
+  - **Thẻ Card & Hiệu ứng Hover**: Chuẩn hóa card glassmorphism kích thước `w-36 sm:w-38 h-32 sm:h-34 bg-white/15 backdrop-blur-xl border-white/30`, icon container `w-12 h-12 rounded-xl bg-white/20`, icon SVG `w-6 h-6 text-white drop-shadow-sm`, hiệu ứng hover `duration-200 ease-out` phản hồi tức thì không độ trễ.
+  - **Typography & Tooltip**: Chuẩn hóa chữ thường Title Case (chuyển `PARTY` thành `Party`), font Roboto không in đậm, cỡ chữ `text-xs sm:text-[13px]`, bóng đổ `drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]` sắc nét, tooltip mô tả nổi phía dưới khi hover.
+- **Kiểm thử**: `npm run build` thành công 100% không phát sinh lỗi.
+
+## [2026-10-16] - Đồng Bộ Màu Hệ Thống & Thay Logo Topbar ([MainLayout.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/layouts/MainLayout.vue))
+### Module: Toàn cục / Thanh Topbar Header ([MainLayout.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/layouts/MainLayout.vue))
+- **Mục tiêu & Kết quả**:
+  - **Đồng bộ màu Theme hệ thống**: Bỏ rào điều kiện ép `bg-white` khi ở trang `/pms` / `/fnb`, áp dụng trực tiếp `headerBgColor` (`authStore.settings?.topbar_color || '#006bdb'`).
+  - **Tự động tương phản màu chữ/icon**: Bỏ điều kiện ép `false` trong `isHeaderBgDark`, tự động chuyển màu chữ PMS, icon tìm kiếm, bảng màu, chi nhánh, ca làm việc, ngày giờ sang màu trắng tương phản cao khi nền tối.
+  - **Cập nhật Logo Topbar**: Thay thế khối CSS kim cương xoay góc trái bằng ảnh logo chính thức [HKT_LOGO.png](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/public/HKT_LOGO.png) (`/HKT_LOGO.png`, kích thước `w-7 h-7 object-contain drop-shadow-sm`).
+- **Kiểm thử**: `npm run build` thành công 100% không phát sinh lỗi.
+
+## [2026-10-16] - Tối Ưu Độ Tương Phản & Kiểu Chữ Phân Hệ PMS ([PmsPages.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/PmsPages.vue))
+### Module: Portal / Phân hệ PMS ([PmsPages.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/PmsPages.vue))
+- **Mục tiêu & Kết quả**:
+  - **Tối ưu nền & lớp phủ (Hướng 3)**: Bổ sung lớp phủ tối trầm `bg-gradient-to-b from-slate-950/75 via-slate-900/60 to-slate-950/80` kèm hiệu ứng mờ nhẹ `backdrop-blur-[2px]`, triệt tiêu hoàn toàn tình trạng bị lóa từ các cửa sổ và tòa nhà trắng của ảnh nền phía sau.
+  - **Kích thước & Kiểu chữ**: Thu gọn kích thước card vừa vặn thanh lịch (`w-36 sm:w-38 h-32 sm:h-34`), icon `w-6 h-6` trong khung `w-12 h-12`, cỡ chữ `text-xs sm:text-[13px]`, bỏ in đậm `font-bold`, chuẩn hóa Title Case (Đặt Phòng, Lễ Tân, Buồng Phòng, Báo Cáo Quản Lý, Cấu Hình Hệ Thống) kèm bóng chữ nhẹ `drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)]` sắc nét.
+  - **Tối ưu tốc độ Hover (Xóa độ trễ trỏ chuột)**: Tách `transitionDelay` của hiệu ứng vào trang ra khỏi `<button>` sang thẻ `<div>` bao ngoài, đổi thời gian transition của nút sang `duration-200 ease-out` phản hồi tức thì ngay khi rê chuột.
+- **Kiểm thử**: `npm run build` thành công 100% không phát sinh lỗi.
+
+## [2026-10-16] - Cập Nhật Logo Phân Hệ Portal Trang Chủ (PROVISTA PMS & PROVISTA F&B)
+### Module: Trang chủ / Portal Selection ([HomePage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/HomePage.vue))
+- **Mục tiêu & Kết quả**:
+  - **Thay thế biểu tượng giả lập CSS**: Thay thế khối hình học xoay 45 độ bằng logo chính thức [HKT_LOGO.png](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/public/HKT_LOGO.png) (`/HKT_LOGO.png`) cho 2 khối đầu tiên:
+    - Khối 1: **PROVISTA PMS** (điều hướng sang `/pms`).
+    - Khối 2: **PROVISTA F&B** (điều hướng sang `/fnb`).
+  - **Hiệu ứng & Thẩm mỹ**: Kích thước `w-14 h-14 sm:w-16 sm:h-16`, căn giữa, hiệu ứng phóng nhẹ khi hover (`group-hover:scale-110`), đổ bóng nhẹ `drop-shadow-sm`, bảo đảm đồng bộ hoàn hảo với khối thứ 3 (PROVISTA SYSTEM).
+- **Kiểm thử**: `npm run build` thành công không phát sinh lỗi.
+
+## [2026-10-16] - Hoàn Thành Sửa Tên Phần Mềm & Cập Nhật Logo Màn Hình Xác Thực Xóa/Sửa (Dòng 92 Sheet FIX FE)
+### Module: Toàn cục / Modal xác thực mật khẩu xóa/sửa ([AuthPasswordModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/components/AuthPasswordModal.vue))
+- **Mục tiêu & Kết quả**:
+  - **Sửa tên phần mềm**: Thay thế tên sai `PROVILEN` thành `PROVISTA` theo chuẩn nhận diện thương hiệu hệ thống.
+  - **Cập nhật Logo**: Thay thế khối SVG placeholder bằng logo chính thức [HKT_LOGO.png](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/public/HKT_LOGO.png) (`/HKT_LOGO.png`), thiết kế bo góc `rounded-xl` bóng nhẹ.
+  - **Đồng bộ Typography**: Căn chỉnh nhãn `PROVISTA` sang cỡ 12px `font-bold` (`text-xs`) đồng nhất theo FE Design System.
+- **Kiểm thử**: `npm run build` thành công 100% không phát sinh lỗi.
+
+## [2026-10-16] - Hoàn Thành Chuẩn Hóa Màn Hình Tìm Kiếm Chung (Dòng 91 Sheet FIX FE)
+### Module: Lễ tân / Tìm kiếm chung (GeneralSearchPage.vue, GeneralSearchProjectionService.php, GeneralSearchController.php)
+- **Mục tiêu & Kết quả**:
+  - **Đồng bộ Font, Style và Size chữ theo FE Design System**:
+    - Thống nhất font **Roboto** toàn trang, cỡ chữ nội dung dữ liệu đồng nhất **12px (`text-xs`)**, màu `#000000D9`, `font-normal` (400).
+    - Tiêu đề cột `<th>`: Viết hoa chữ cái đầu (Title Case), căn giữa ngang và dọc (`text-center align-middle`), `font-semibold` (600), màu `#000000D9`, có viền đầy đủ `border border-slate-200` ở cả 3 Tab (**Đăng Ký**, **Phòng**, **Khách**) và Subtable phòng con mở rộng.
+    - Thanh công cụ & Toolbar: Nút bấm chuẩn chiều cao 32px (`h-8`), font chữ 12px `font-semibold`.
+  - **Màu tình trạng đăng ký (Khởi tạo) lấy theo cấu hình hệ thống**:
+    - Backend: [GeneralSearchProjectionService.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Services/GeneralSearchProjectionService.php) trả về `registration_status_color` và `registration_status_id`; [GeneralSearchController.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Http/Controllers/Api/GeneralSearchController.php) bổ sung cột `color` trong danh sách `registration_statuses` của options API.
+    - Frontend: [GeneralSearchPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/GeneralSearchPage.vue) áp dụng hàm `getRegistrationStatusStyle(row)` hiển thị màu nền chính xác theo cấu hình DB (Guaranteed `#4ce410`, None Guaranteed `#c7d9e0`, Allotment `#f77940`, Waiting `#f74b40`, Cancelled `#f74043`,...), tự động tính toán màu chữ tương phản cao (trắng hoặc đen), chấm dứt việc ép cứng màu xanh lá cho tất cả dòng.
+  - **Màu trạng thái đăng ký thực tế (Tab Đăng Ký & Tab Phòng)**:
+    - **Đặt phòng (status 0)**: Đổi sang **Xanh lá** (`#16a34a`).
+    - **Đang ở (status 1)**: Đổi sang **Xanh dương** (`#0284c7`).
+    - Áp dụng đồng bộ cho cột Thực Tế (`operation_status`) ở Tab Đăng Ký và Tình Trạng Phòng (`room_status`) ở Tab Phòng.
+  - **Tách biệt màu sắc giữa Đã Hủy và No Show**:
+    - **Đã Hủy (status 3)**: Giữ màu **Đỏ** (`#dc2626`).
+    - **No Show (status 4)**: Đổi sang **Cam / Hổ phách** (`#d97706`), không còn trùng màu đỏ với Đã Hủy.
+    - **Đã trả phòng (status 2)**: Giữ màu **Xám** (`#64748b`).
+  - **Nội dung Ghi chú hỗ trợ xuống dòng giống trong Đăng ký**:
+    - Bổ sung `whitespace-pre-line` và cập nhật CSS `.note-cell { white-space: pre-line !important; }`.
+    - Giữ nguyên toàn bộ định dạng xuống dòng của người dùng tại Cột Ghi Chú (Tab Đăng Ký), Khung ghi chú Master Booking banner (Tab Phòng) và Ghi Chú phòng con (Tab Phòng).
+  - **Định dạng hiển thị Ngày tháng đồng bộ `dd/mm/yyyy`**:
+    - Xây dựng hàm `formatDateDisplay(val)` chuẩn hóa ngày tháng luôn xuất ra `DD/MM/YYYY` (đủ 2 chữ số ngày, 2 chữ số tháng, 4 chữ số năm).
+    - Áp dụng cho toàn bộ các cột ngày trên cả 3 tab: `arrival_date`, `departure_date`, `booking_date`, `dob`, `visa_expiry_date`, `entry_date`.
+- **Kiểm thử & Khắc phục lỗi phát sinh**:
+  - `npm run build`: hoàn thành 100% không lỗi (5.34s).
+  - Khắc phục lỗi `ReferenceError: currentSort is not defined` tại [GeneralSearchPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/GeneralSearchPage.vue) (khôi phục khai báo `const currentSort = computed(() => sorts.value[tab.value])`).
+  - Khắc phục lỗi `ReferenceError: Cannot access 'autoScale' before initialization` tại [RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue) (đưa khai báo `autoScale`, `manualScale`, `scaleFactor`, `calculateScale` lên trước hàm `applyRoomMapSettings` và watcher `immediate`).
+  - API Verification: Test script xác nhận `registration_statuses` có mã màu và booking projection trả về `registration_status_color` chính xác.
+
+## [2026-10-16] - Hoàn Thành Nghiệp Vụ Dòng 93 & 94 Sheet FIX FE
+### Module 1: Đặt phòng / Modal Đăng ký - Tab Lấy phòng (Dòng 94 Sheet FIX FE)
+- **Tập tin**: [CreateRegistrationPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue)
+- **Mục tiêu & Kết quả**:
+  - **Mở rộng chiều ngang modal trên màn hình lớn**:
+    - Khi ở Tab Lấy phòng (`modalSubTab === 'rooms'`), modal tự động nhận class `w-[99vw] max-w-[1900px]` (thay vì cố định 1760px), giảm padding outer thành `p-1 sm:p-3` để tận dụng tối đa chiều rộng màn hình, xem trọn vẹn toàn bộ các cột mà không cần kéo ngang.
+  - **Căn sát mép & Ghim cố định (sticky) cột Loại phòng**:
+    - Bỏ khoảng đệm `px-1` thừa ở wrapper bảng, bảng chuyển sang `w-full min-w-full`.
+    - Cột `Loại/Dạng` được thiết lập `sticky left-0 z-10` (tiêu đề z-20) kèm viền bóng phân tách `shadow-[1px_0_0_0_#e2e8f0]` để khi màn hình nhỏ bị cuộn ngang, tên loại phòng vẫn luôn ghim cố định ở mép trái.
+  - **Bổ sung sắp xếp thứ tự các cột ở dấu ba gạch và lưu theo user**:
+    - Menu dấu ba gạch bổ sung nút mũi tên $\uparrow$ / $\downarrow$ cho phép di chuyển vị trí từng cột linh hoạt, kèm nút "Mặc định" để khôi phục cấu hình gốc.
+    - Cấu trúc `thead`, `tbody`, `tfoot` render động dựa trên mảng thứ tự cột `roomsColumnOrder`.
+    - Lưu trữ đồng bộ: Lưu cài đặt hiển thị và thứ tự cột vào backend qua `authStore.updateUserSettings` (`visible_columns.create_registration`, `column_order.create_registration_rooms`) và lưu cache `localStorage` theo `user_id`.
+  - **Đổi màu nền nhạt cho cả dòng khi ô số lượng khác 0**:
+    - Gắn class `bg-sky-50/80 hover:bg-sky-100/70 font-medium` cho thẻ `<tr>` khi `Number(row.quantity) > 0`, giúp người dùng nhận diện ngay tức thì loại phòng đang được chọn lấy phòng.
+
+### Module 2: Thống Nhất Logic Ngày Tìm Kiếm Trong Toàn Bộ Hệ Thống (Dòng 93 Sheet FIX FE)
+- **Tập tin**:
+  - [DateRangePicker.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/components/DateRangePicker.vue) (Dùng chung cho hầu hết các trang)
+  - [ReportDateRangePicker.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/components/ReportDateRangePicker.vue) (Dùng cho tất cả trang Báo cáo)
+  - [GeneralSearchPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/GeneralSearchPage.vue) (Tìm kiếm chung)
+  - [SystemSearchModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/SystemSearchModal.vue) (Tìm kiếm nhanh F3/topbar)
+  - [BreakfastPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/BreakfastPage.vue) (Ăn sáng)
+  - [BreakfastPrintModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/BreakfastPrintModal.vue) (Modal in phiếu ăn sáng)
+  - [SearchInvoiceTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/housekeeping/components/SearchInvoiceTab.vue) (Tìm kiếm hóa đơn buồng phòng)
+  - [OperationHistoryTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/housekeeping/components/OperationHistoryTab.vue) (Lịch sử thao tác buồng phòng)
+  - [ActivityLogTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/system/components/ActivityLogTab.vue) (Lịch sử thao tác hệ thống)
+- **Mục tiêu & Kết quả**:
+  - Khi người dùng chọn hoặc nhập ngày `from > to`, hệ thống tự động điều chỉnh ngay lập tức `to = from`.
+  - Đảm bảo tính nhất quán trên 100% màn hình, không bị lỗi ngược khoảng ngày khi tìm kiếm hoặc lọc dữ liệu.
+- **Kiểm thử**:
+  - `npm run build`: hoàn thành 100% không lỗi (4.69s).
+  - PHP Unit tests: `php artisan test --filter=NightAudit` passed 100% (11 tests, 67 assertions).
+
+## [2026-10-16] - Tối Ưu Sơ Đồ Phòng Theo Yêu Cầu Mới Dòng 95 Sheet FIX FE
+### Module: Đặt phòng / Sơ đồ phòng (RoomMapPage.vue)
+- **Mục tiêu & Kết quả**:
+  - **Dấu gạch chân số phòng**:
+    - Chỉnh sửa tại cả dạng lưới (Grid view) và dạng danh sách (List view) của [RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue).
+    - Thay thế `border-b border-black pb-[1px]` thành `border-b-[1.5px] border-black pb-0 leading-[0.9]`, đưa đường gạch chân nâng lên sát với cạnh dưới của ký tự số phòng.
+  - **Hạ trọng tâm icon và chống đè lên tên khách khi thu nhỏ ô phòng**:
+    - Đưa cụm icon góc dưới trái (SL khách, birthday, honeymoon, extra bed) từ `bottom: 4px` xuống `bottom: 1.5px`, `left: 5px`, `gap: 0.5`.
+    - Điều chỉnh kích thước icon co giãn linh hoạt hơn (`Math.max(8.5, ...)`) thay vì ép cứng `11px`.
+    - Nâng nhẹ khối nội dung trung tâm (số phòng, loại phòng, tên khách) lên `top-[38%]` (thay vì `top-[44%]`) khi chiều cao phòng nhỏ (`roomHeight < 80px` hoặc `cardScale < 0.85`), triệt tiêu hoàn toàn hiện tượng icon đè lên tên khách khi xem bao quát các tầng.
+  - **Khắc phục mất kích thước & zoom cài sẵn của user sau khi sang ngày**:
+    - Loại bỏ đoạn code migration hardcode `settings.value.roomWidth = 200` gây ghi đè kích thước đã lưu của người dùng.
+    - Cập nhật hàm `saveSettings()`, `toggleAutoScale()` và `adjustManualScale()` để lưu và đồng bộ toàn diện cả `roomWidth`, `roomHeight`, `autoScale`, `scale` (manualScale), `iconSizes`, `textSizes` vào `user_settings` backend và cache cục bộ theo `user_id`.
+    - Bổ sung `loadPersistedSettings()` khi mount trang để khôi phục chính xác 100% kích thước và mức zoom của user, không bị reset sau khi sang ngày thành công hay đăng nhập lại.
+- **Kiểm thử**:
+  - `npm run build`: hoàn thành 100% không lỗi (7.26s).
+  - PHP Unit tests: `php artisan test --filter=NightAudit` passed 100% (11 tests, 67 assertions).
+
+## [2026-10-16] - Tối Ưu Chiều Cao Modal Định Nghĩa Phòng Tránh Scrollbar Màn Hình Laptop
+### Module: Cấu hình / Định nghĩa phòng (Loại phòng & Phòng)
+- **Mục tiêu & Kết quả**:
+  - Khắc phục triệt để thanh cuộn dọc (scrollbar) trên màn hình laptop đối với 2 form modal:
+    1. **Form Thêm / Sửa Loại Phòng** ([RoomClassTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/components/room/RoomClassTab.vue)):
+       - Tăng chiều cao tối đa container lên `max-h-[calc(100vh-1rem)] sm:max-h-[calc(100vh-2rem)]`, body form lên `max-h-[88vh]`.
+       - Tinh chỉnh padding `p-4 sm:p-4.5`, khoảng cách các trường `gap-2.5`, padding ô nhập liệu `px-2.5 py-1.5`.
+       - Thu gọn vùng upload đại diện `min-h-[64px]`.
+       - Lược bỏ nút Đóng ở footer (chỉ giữ nút Lưu theo chuẩn khi header đã có nút x và phím Esc).
+    2. **Form Thêm / Sửa Phòng** ([RoomTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/components/room/RoomTab.vue)):
+       - Thêm `max-h-[calc(100vh-1rem)] sm:max-h-[calc(100vh-2rem)] flex flex-col` vào wrapper modal.
+       - Tăng giới hạn chiều cao body form từ `max-h-[75vh]` lên `max-h-[88vh]`, thêm padding bao quanh overlay `p-2 sm:p-4`.
+       - Tinh chỉnh khoảng cách: padding body `p-4 sm:p-4.5`, khoảng cách các nhóm `gap-2.5`, khoảng cách trong nhóm `gap-2`, padding ô nhập liệu `px-2.5 py-1.5`.
+       - Chuẩn hóa nút Lưu `.btn-pms-primary` với icon check trắng và chiều cao chuẩn.
+- **Kiểm thử**:
+  - `npm run build`: hoàn thành 100% không lỗi (build thành công trong 7.61s).
+
 ## [2026-10-15] - Rà Soát & Đồng Bộ Chuẩn Font Chữ & Cỡ Chữ FE Design System
 ### Module: Khai báo lưu trú, In phiếu ăn sáng, Chức năng hệ thống, Lịch sử thao tác
 - **Mục tiêu & Kết quả**:
