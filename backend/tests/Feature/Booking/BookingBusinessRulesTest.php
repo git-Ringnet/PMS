@@ -2213,4 +2213,87 @@ class BookingBusinessRulesTest extends TestCase
         $this->assertSame(0, \App\Models\BookingRoomService::where('booking_room_id', $room->id)
             ->whereIn('service_code', ['RM', 'ROOM_CHARGE'])->count());
     }
+
+    /**
+     * EB (khách báo): phòng không đặt thêm giường thì lưu đăng ký không được
+     * sinh dòng EB số lượng 0; dòng EB đã có thì vẫn được đưa về 0 (task 368).
+     */
+    public function test_saving_grid_does_not_create_zero_extra_bed_rows(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'SyncRoomDateByBookingDate'], ['value' => '0']);
+        $booking = $this->createBooking(['arrival_date' => '2026-08-07', 'departure_date' => '2026-08-09', 'num_of_days' => 2]);
+        $plain = BookingRoom::create([
+            'id' => 'G-EB-NONE', 'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-07', 'departure_date' => '2026-08-09',
+            'rate' => 500000, 'extra_bed_qty' => 0, 'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+        $withEb = BookingRoom::create([
+            'id' => 'G-EB-SET', 'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-07', 'departure_date' => '2026-08-09',
+            'rate' => 500000, 'extra_bed_qty' => 0, 'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $room = fn (BookingRoom $r, int $ebQty) => [
+            'bookingRoomId' => $r->id, 'arrivalDate' => '2026-08-07', 'departureDate' => '2026-08-09',
+            'price' => 500000, 'extraBedQty' => $ebQty, 'extraBedPrice' => $ebQty ? 300000 : 0,
+            'dailyExtraBeds' => [
+                ['dateStr' => '2026-08-07', 'quantity' => $ebQty, 'rate' => $ebQty ? 300000 : 0],
+                ['dateStr' => '2026-08-08', 'quantity' => 0, 'rate' => 0],
+            ],
+        ];
+        $save = fn (int $ebQtyForSecondRoom) => $this->putJson("/api/bookings/{$booking->id}", [
+            'booking_name' => $booking->booking_name, 'arrival_date' => '2026-08-07', 'departure_date' => '2026-08-09',
+            'num_of_days' => 2, 'registration_status_id' => $this->regStatus->booking_status_id,
+            'company_id' => 1, 'market_id' => 1, 'customer_source_id' => 1,
+            'room_allocations' => [[
+                'roomClassId' => $this->roomClass->id, 'quantity' => 2, 'price' => 500000,
+                'rooms' => [$room($plain, 0), $room($withEb, $ebQtyForSecondRoom)],
+            ]],
+        ])->assertSuccessful();
+        $ebRows = fn (BookingRoom $r) => \App\Models\BookingRoomService::where('booking_room_id', $r->id)->where('service_code', 'EB');
+
+        // 1. Phòng có EB đêm 07 = 1: chỉ có dòng EB của đêm đó; phòng không có EB thì không có dòng nào.
+        $save(1);
+        $this->assertSame(0, $ebRows($plain)->count());
+        $this->assertSame(1, $ebRows($withEb)->count());
+
+        // 2. Chỉnh EB về 0: dòng EB của phòng đó được giữ với số lượng 0 (task 368);
+        // phòng không đặt EB vẫn không có dòng nào.
+        $save(0);
+        $this->assertSame(0, $ebRows($plain)->count());
+        $this->assertGreaterThan(0, $ebRows($withEb)->count());
+        $this->assertSame(0.0, (float) $ebRows($withEb)->sum('quantity'));
+    }
+
+    /**
+     * Sửa giá tiền phòng của MỘT đêm (chi tiết dịch vụ) chỉ lưu dòng RM của
+     * đêm đó; booking_rooms.rate/base_price giữ nguyên để các đêm khác không
+     * nhảy theo.
+     */
+    public function test_single_night_rate_edit_keeps_room_rate(): void
+    {
+        $booking = $this->createBooking(['arrival_date' => '2026-08-07', 'departure_date' => '2026-08-09', 'num_of_days' => 2]);
+        $room = BookingRoom::create([
+            'id' => 'G-NIGHT-RATE', 'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-07', 'departure_date' => '2026-08-09',
+            'rate' => 900000, 'base_price' => 900000, 'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $this->postJson("/api/booking-rooms/{$room->id}/services", [
+            'booking_room_id' => $room->id,
+            'service_code' => 'RM',
+            'service_name' => 'Dịch vụ phòng nghỉ',
+            'service_date' => '2026-08-08',
+            'quantity' => 1,
+            'rate' => 700000,
+            'is_room' => 1,
+        ])->assertSuccessful();
+
+        $fresh = $room->fresh();
+        $this->assertEquals(900000.0, (float) $fresh->rate);
+        $this->assertEquals(900000.0, (float) $fresh->base_price);
+        $rows = \App\Models\BookingRoomService::where('booking_room_id', $room->id)->where('service_code', 'RM')->get();
+        $this->assertCount(1, $rows);
+        $this->assertEquals(700000.0, (float) $rows->first()->rate);
+    }
 }

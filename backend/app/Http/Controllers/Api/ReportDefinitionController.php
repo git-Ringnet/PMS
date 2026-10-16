@@ -108,6 +108,16 @@ class ReportDefinitionController extends Controller
             $template = $this->resolveTemplate($reportDefinition, $validated['template_id'] ?? null);
             $data = $this->prepareReportData($reportDefinition, $validated['parameters'] ?? [], $request);
 
+            // Ghi log xem báo cáo chuẩn Row 1 & Row 71
+            $params = $validated['parameters'] ?? [];
+            $from = !empty($params['from_date']) 
+                ? \Carbon\Carbon::parse($params['from_date'])->format('d-m-Y') 
+                : (!empty($params['date']) ? \Carbon\Carbon::parse($params['date'])->format('d-m-Y') : now()->format('d-m-Y'));
+            $to = !empty($params['to_date']) 
+                ? \Carbon\Carbon::parse($params['to_date'])->format('d-m-Y') 
+                : $from;
+            \App\Services\ActivityLogService::logReportView($reportDefinition, $from, $to, $request);
+
             return response()->json([
                 'success' => true,
                 'data' => $data,

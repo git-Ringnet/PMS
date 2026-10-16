@@ -497,14 +497,9 @@ class BookingRoomServiceController extends Controller
             $room->update(['extra_bed_qty' => $maxQty, 'extra_bed_rate' => $latestRate]);
         }
 
-        if ($request->service_code === 'RM' || $request->service_code === 'ROOM_CHARGE') {
-            if ($request->has('rate') && $request->rate !== null && $request->rate !== '') {
-                $room->update([
-                    'rate' => (float) $request->rate,
-                    'base_price' => (float) $request->rate,
-                ]);
-            }
-        }
+        // Sửa giá tiền phòng của MỘT đêm chỉ lưu dòng RM của đêm đó. Không đổi
+        // booking_rooms.rate/base_price, nếu không các đêm khác (chưa có dòng RM
+        // riêng, hiển thị theo giá phòng) sẽ nhảy theo giá vừa sửa.
 
         try {
             \App\Services\ActivityLogService::logServiceAction(

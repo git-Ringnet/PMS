@@ -432,7 +432,15 @@ function handleInputClick() {
   box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.08) !important;
   border: 1px solid #e2e8f0 !important;
   font-family: inherit !important;
-  z-index: 999999 !important;
+  /* Lịch được teleport ra body: phải nằm trên mọi modal (có modal dùng
+     z-[1000000] như Khóa phòng, z-[9999999]), nếu không sẽ bị nền mờ che. */
+  z-index: 2147483000 !important;
+}
+
+/* Khi teleport, thư viện bọc menu trong .dp--menu-wrapper (z-index 99999).
+   Lớp bọc này tạo stacking context riêng nên phải nâng chính nó lên. */
+.dp--menu-wrapper {
+  z-index: 2147483000 !important;
 }
 
 .dp__theme_light {

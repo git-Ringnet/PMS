@@ -1019,35 +1019,9 @@ function handleServiceRateChange(room, svc, newRate) {
 
   if (isRoomCharge) {
     if (!room.dailyRoomPrices) room.dailyRoomPrices = {}
-    
-    // Khởi tạo trước giá mặc định cho tất cả các ngày lưu trú nếu chưa có
-    const checkIn = room.checkIn
-    const isSameDay = !!checkIn && !!room.checkOut && (cleanDateStr(checkIn) === cleanDateStr(room.checkOut))
-    const nights = isSameDay ? (room.hourly ? 1 : 0) : (Number(room.nights) || 1)
-    if (checkIn) {
-      for (let i = 0; i < nights; i++) {
-        const parts = checkIn.split('-')
-        let curr = new Date()
-        if (parts.length === 3) {
-          curr = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))
-        } else {
-          curr = new Date(checkIn)
-        }
-        curr.setDate(curr.getDate() + i)
-        const yyyy = curr.getFullYear()
-        const mm = String(curr.getMonth() + 1).padStart(2, '0')
-        const dd = String(curr.getDate()).padStart(2, '0')
-        const dStr = `${yyyy}-${mm}-${dd}`
-        
-        if (room.dailyRoomPrices[dStr] === undefined) {
-          room.dailyRoomPrices[dStr] = Number(room.price) || 0
-        }
-      }
-    }
-
+    // Sửa giá MỘT đêm chỉ đổi giá của đêm đó. Không điền giá cho các đêm khác
+    // và không đổi giá phòng (booking_rooms.rate) để các đêm khác giữ nguyên.
     room.dailyRoomPrices[cleanDate] = newRate
-    room.price = newRate
-    room.basePrice = newRate
   }
 
   if (svc.svc_ref) {
@@ -1163,41 +1137,10 @@ async function handleInlineServiceRateChange(room, svc, newRate) {
 
   if (isRoomCharge) {
     if (!room.dailyRoomPrices) room.dailyRoomPrices = {}
-    
-    const checkIn = room.checkIn
-    const isSameDay = !!checkIn && !!room.checkOut && (cleanDateStr(checkIn) === cleanDateStr(room.checkOut))
-    const nights = isSameDay ? (room.hourly ? 1 : 0) : (Number(room.nights) || 1)
-    if (checkIn) {
-      for (let i = 0; i < nights; i++) {
-        const parts = checkIn.split('-')
-        let curr = new Date()
-        if (parts.length === 3) {
-          curr = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]))
-        } else {
-          curr = new Date(checkIn)
-        }
-        curr.setDate(curr.getDate() + i)
-        const yyyy = curr.getFullYear()
-        const mm = String(curr.getMonth() + 1).padStart(2, '0')
-        const dd = String(curr.getDate()).padStart(2, '0')
-        const dStr = `${yyyy}-${mm}-${dd}`
-        if (room.dailyRoomPrices[dStr] === undefined) {
-          room.dailyRoomPrices[dStr] = Number(room.price) || 0
-        }
-      }
-    }
+    // Sửa giá MỘT đêm chỉ đổi giá của đêm đó. Không điền giá cho các đêm khác
+    // và không đổi giá phòng (booking_rooms.rate) để các đêm khác giữ nguyên.
     room.dailyRoomPrices[cleanDate] = newRate
-    room.price = newRate
-    room.basePrice = newRate
 
-    const tab = activeTab.value
-    if (tab && tab.roomAllocations) {
-      const alloc = tab.roomAllocations.find(a => a.roomClassId === room.roomClassId)
-      if (alloc) {
-        alloc.price = newRate
-        alloc.basePrice = newRate
-      }
-    }
   }
 
   // Đồng bộ Extra Bed (EB)
@@ -1832,7 +1775,8 @@ function getRoomDisplayServices(room) {
         const daily = (room.dailyExtraBeds || []).find(d => cleanDateStr(d.dateStr || d.date) === dStr)
         const ebSvc = (room.services || []).find(s => s.service_code === 'EB' && cleanDateStr(s.service_date) === dStr)
         const defaultEbPrice = (room.extraBedPrice !== undefined && room.extraBedPrice !== null && room.extraBedPrice !== '') ? Number(room.extraBedPrice) : 300000
-        if (daily) {
+        // Đêm không đặt thêm giường (số lượng 0) thì không hiện dòng EB trong chi tiết.
+        if (daily && (Number(daily.quantity) || 0) > 0) {
           list.push({
             id: `daily-eb-${room.id}-${dStr}`,
             service_date: dStr,
@@ -1843,7 +1787,7 @@ function getRoomDisplayServices(room) {
             is_room: daily.isRoom !== false,
             svc_ref: daily
           })
-        } else if (ebSvc) {
+        } else if (!daily && ebSvc && (Number(ebSvc.quantity) || 0) > 0) {
           list.push({
             id: ebSvc.id,
             service_date: dStr,
@@ -1854,17 +1798,7 @@ function getRoomDisplayServices(room) {
             is_room: ebSvc.is_room !== 0,
             svc_ref: ebSvc
           })
-        } else if (hasDailyEbConfig) {
-          list.push({
-            id: `daily-eb-${room.id}-${dStr}`,
-            service_date: dStr,
-            service_name: getHotelServiceName('EB', 'Giường phụ (Extra Bed)'),
-            service_code: 'EB',
-            quantity: 0,
-            rate: defaultEbPrice,
-            is_room: true
-          })
-        } else if (Number(room.extraBedQty) > 0) {
+        } else if (!hasDailyEbConfig && Number(room.extraBedQty) > 0) {
           list.push({
             id: `room-eb-${room.id}-${dStr}`,
             service_date: dStr,
@@ -5568,6 +5502,27 @@ function validateRoomsDuplication(rooms) {
   return null
 }
 
+// Định dạng dấu phẩy ngăn cách hàng nghìn ngay khi gõ, giữ vị trí con trỏ
+// theo số chữ số đứng trước nó.
+function formatCurrencyLive(e) {
+  const el = e?.target
+  if (!el) return
+  const caret = el.selectionStart ?? el.value.length
+  const digitsBefore = el.value.slice(0, caret).replace(/[^\d]/g, '').length
+  // Ô đang trống (người dùng xoá hết) thì để trống, không tự hiện "0".
+  if (!/\d/.test(el.value)) return
+  const formatted = formatCurrencyInput(cleanCurrencyValue(el.value))
+  if (formatted === el.value) return
+  el.value = formatted
+  let pos = 0
+  let seen = 0
+  while (pos < formatted.length && seen < digitsBefore) {
+    if (/\d/.test(formatted[pos])) seen++
+    pos++
+  }
+  try { el.setSelectionRange(pos, pos) } catch (err) { /* input không hỗ trợ selection */ }
+}
+
 function formatCurrencyInput(val) {
   if (val === null || val === undefined || val === '') return '';
   let str = String(val).replace(/[^\d.-]/g, '');
@@ -7963,7 +7918,7 @@ defineExpose({
                                       v-if="isEditing && isServiceDisplayEditable(svc)"
                                       type="text"
                                       :value="formatCurrencyInput(svc.rate)"
-                                      @input="e => { if (!isChildBreakfastDetailRow(svc)) handleServiceRateChange(room, svc, cleanCurrencyValue(e.target.value)) }"
+                                      @input="e => { formatCurrencyLive(e); if (!isChildBreakfastDetailRow(svc)) handleServiceRateChange(room, svc, cleanCurrencyValue(e.target.value)) }"
                                       @change="e => { if (isChildBreakfastDetailRow(svc)) handleInlineServiceRateChange(room, svc, cleanCurrencyValue(e.target.value)) }"
                                       @blur="e => { e.target.value = formatCurrencyInput(svc.rate) }"
                                       @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"
@@ -8655,6 +8610,7 @@ defineExpose({
                                             v-if="isServiceDisplayEditable(svc)"
                                             type="text"
                                             :value="formatCurrencyInput(svc.rate)"
+                                            @input="formatCurrencyLive"
                                             @change="e => handleInlineServiceRateChange(room, svc, cleanCurrencyValue(e.target.value))"
                                             @blur="e => { e.target.value = formatCurrencyInput(svc.rate) }"
                                             @focus="e => { if (cleanCurrencyValue(e.target.value) === 0) e.target.value = ''; e.target.select() }"

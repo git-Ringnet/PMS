@@ -3557,6 +3557,11 @@ class BookingController extends Controller
             }
 
             if ($qty <= 0) {
+                // Đêm không đặt thêm giường và chưa có dòng EB: không tạo dòng
+                // EB số lượng 0 (khách không set EB thì không hiện trong chi tiết).
+                if (!$existing) {
+                    continue;
+                }
                 // Đối với Extra Bed: lưu quantity = 0 vào booking_room_services khi được chỉnh về 0
                 \App\Models\BookingRoomService::withTrashed()->updateOrCreate(
                     [
