@@ -51,8 +51,10 @@ class AppServiceProvider extends ServiceProvider
                 return;
             }
 
-            // Bỏ qua ActivityLog để tránh lặp vô hạn
-            if ($model instanceof \App\Models\ActivityLog) {
+            // Bỏ qua ActivityLog và PersonalAccessToken để tránh lặp vô hạn và log rác kỹ thuật
+            if ($model instanceof \App\Models\ActivityLog ||
+                $model instanceof \App\Models\PersonalAccessToken ||
+                $model instanceof \Laravel\Sanctum\PersonalAccessToken) {
                 return;
             }
 
@@ -186,8 +188,12 @@ class AppServiceProvider extends ServiceProvider
                 $targetLabel = $model->config_key ?? $model->description;
             } elseif ($model instanceof \App\Models\Room || $model instanceof \App\Models\RoomLock) {
                 $targetLabel = $model->room_number;
+            } elseif ($model instanceof \App\Models\BookingRoomService) {
+                $targetLabel = $model->service_name ?? $model->description ?? ('Dịch vụ #' . $model->id);
+            } elseif ($model instanceof \App\Models\ResidenceDeclaration) {
+                $targetLabel = $model->full_name ?? $model->document_number ?? ('Khai báo #' . $model->id);
             } else {
-                foreach (['name', 'title', 'code', 'booking_name', 'config_key', 'username', 'label', 'display_name', 'room_code', 'registration_code'] as $field) {
+                foreach (['name', 'title', 'code', 'booking_name', 'full_name', 'service_name', 'party_name', 'product_name', 'promo_code', 'config_key', 'username', 'label', 'display_name', 'room_code', 'registration_code', 'item_found', 'log_no', 'month', 'check_code', 'transfer_code', 'warehouse_name', 'document_number'] as $field) {
                     if (isset($model->{$field})) {
                         $targetLabel = $model->{$field};
                         break;

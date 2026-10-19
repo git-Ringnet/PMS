@@ -432,4 +432,268 @@ class ActivityLogEnhancementTest extends TestCase
         $this->assertStringContainsString('540,000', $res['description']);
         $this->assertStringContainsString('G0000001', $res['description']);
     }
+
+    /**
+     * Test Row 20 & 21: Tách cọc & Chuyển cọc.
+     */
+    public function test_deposit_split_and_transfer_logging()
+    {
+        // Row 20: Tách cọc
+        $splitLog = new ActivityLog([
+            'id' => 10001,
+            'action' => 'Modify',
+            'module' => 'frontdesk',
+            'component' => 'payments',
+            'target_type' => 'Payment',
+            'target_id' => '12',
+            'request_url' => 'http://localhost/api/payments/12/split',
+            'new_values' => [
+                'total_amount_before_split' => 5000000,
+                'amount' => 2500000,
+                'folio_id' => 1,
+            ],
+            'description' => 'Tách cọc',
+        ]);
+        $splitRes = (new ActivityLogResource($splitLog))->resolve();
+        $this->assertEquals('* Deposit (Bank transfer) số tiền: 5,000,000, tách làm hai, số tiền 1: 2,500,000, folio 1, số tiền 2: 2,500,000, folio 1', $splitRes['description']);
+
+        // Row 21: Chuyển cọc
+        $transferLog = new ActivityLog([
+            'id' => 10002,
+            'action' => 'Modify',
+            'module' => 'frontdesk',
+            'component' => 'payments',
+            'target_type' => 'Payment',
+            'target_id' => '15',
+            'request_url' => 'http://localhost/api/payments/15/transfer',
+            'old_values' => ['booking_id' => 22],
+            'new_values' => ['amount' => 2500000, 'target_booking_id' => 20],
+            'description' => '[TRANSFER IN BK_22=>BK_20] Deposit (Bank transfer)',
+        ]);
+        $transferRes = (new ActivityLogResource($transferLog))->resolve();
+        $this->assertEquals('Chuyển đặt cọc (2.Deposit (Bank transfer) - 2,500,000) từ mã đăng ký: 22 đến mã đăng ký: 20', $transferRes['description']);
+    }
+
+    /**
+     * Test Row 63: No Post tại cấp Booking và BookingRoom.
+     */
+    public function test_no_post_logging_at_booking_and_room_level()
+    {
+        // Booking level: Bật No Post, mã phòng null
+        $bLog = new ActivityLog([
+            'id' => 10003,
+            'action' => 'Modify',
+            'module' => 'reservation',
+            'component' => 'Checkout',
+            'target_type' => 'Booking',
+            'target_id' => '27',
+            'target_label' => 'GAL27',
+            'old_values' => ['no_post' => false],
+            'new_values' => ['no_post' => true],
+            'description' => 'Cập nhật Booking',
+        ]);
+        $bRes = (new ActivityLogResource($bLog))->resolve();
+        $this->assertNull($bRes['room_number']);
+        $this->assertEquals('* Bật trạng thái No Post cho Mã đăng ký GAL27', $bRes['description']);
+
+        // Room level: Bật No Post cho phòng 405
+        $rLog = new ActivityLog([
+            'id' => 10004,
+            'action' => 'Modify',
+            'module' => 'reservation',
+            'component' => 'Checkout',
+            'target_type' => 'BookingRoom',
+            'target_id' => 'G0000028',
+            'old_values' => ['no_post' => false, 'room_number' => '405', 'booking_id' => 27],
+            'new_values' => ['no_post' => true, 'room_number' => '405', 'booking_id' => 27],
+            'description' => 'Cập nhật phòng',
+        ]);
+        $rRes = (new ActivityLogResource($rLog))->resolve();
+        $this->assertEquals('* Bật trạng thái No Post cho Mã đăng ký GAL27, phòng: 405', $rRes['description']);
+    }
+
+    /**
+     * Test Row 48 & 97: Room status change and DND.
+     */
+    public function test_room_status_and_dnd_logging()
+    {
+        // DND enabled
+        $dndLog = new ActivityLog([
+            'id' => 10005,
+            'action' => 'Modify',
+            'module' => 'frontdesk',
+            'component' => 'RoomMapPage',
+            'target_type' => 'Room',
+            'target_id' => '702',
+            'old_values' => ['room_number' => '702', 'room_status_code' => 'vacant_ready'],
+            'new_values' => ['room_number' => '702', 'room_status_code' => 'dnd'],
+            'description' => 'Cập nhật phòng',
+        ]);
+        $dndRes = (new ActivityLogResource($dndLog))->resolve();
+        $this->assertEquals('* Phòng 702. Bật trạng thái Do Not Disturb (Không làm phiền)', $dndRes['description']);
+
+        // Housekeeping status change
+        $stLog = new ActivityLog([
+            'id' => 10006,
+            'action' => 'Modify',
+            'module' => 'frontdesk',
+            'component' => 'RoomMapPage',
+            'target_type' => 'Room',
+            'target_id' => '101',
+            'old_values' => ['room_number' => '101', 'room_status_code' => 'vacant_dirty'],
+            'new_values' => ['room_number' => '101', 'room_status_code' => 'vacant_ready'],
+            'description' => 'Cập nhật phòng',
+        ]);
+        $stRes = (new ActivityLogResource($stLog))->resolve();
+        $this->assertEquals('* Phòng 101. Đổi trạng thái từ: Phòng chưa dọn -> Phòng sẵn sàng', $stRes['description']);
+    }
+
+    /**
+     * Test Row 34 & 98: Auto assign rooms and Undo check-in.
+     */
+    public function test_undo_checkin_and_auto_assign_logging()
+    {
+        // Row 98: Undo check-in
+        $undoLog = new ActivityLog([
+            'id' => 10007,
+            'action' => 'Modify',
+            'module' => 'reservation',
+            'component' => 'RoomMapPage',
+            'target_type' => 'BookingRoom',
+            'target_id' => 'G0000063',
+            'request_url' => 'http://localhost/api/bookings/6787/rooms/G0000063/undo-checkin',
+            'old_values' => ['status' => 1, 'room_number' => '406', 'booking_id' => 6787],
+            'new_values' => ['status' => 0, 'room_number' => '406', 'booking_id' => 6787],
+            'description' => 'Cập nhật phòng',
+        ]);
+        $undoRes = (new ActivityLogResource($undoLog))->resolve();
+        $this->assertEquals("Cancel checkin cho Mã Đăng Ký: GAL6787\n- Phòng: 406\n- tình trạng phòng: Phòng sạch", $undoRes['description']);
+
+        // Row 34: Auto assign
+        $assignLog = new ActivityLog([
+            'id' => 10008,
+            'action' => 'Modify',
+            'module' => 'reservation',
+            'component' => 'Tạo đăng ký',
+            'target_type' => 'BookingRoom',
+            'target_id' => 'G0000048',
+            'request_url' => 'http://localhost/api/bookings/22/rooms/G0000048/auto-assign',
+            'new_values' => ['room_number' => '109'],
+            'description' => 'Cập nhật phòng',
+        ]);
+        $assignRes = (new ActivityLogResource($assignLog))->resolve();
+        $this->assertEquals('* Tự động assigned rooms: - Mã phòng: G0000048 -> 109', $assignRes['description']);
+    }
+
+    /**
+     * Test BookingRoomService resolves booking_code, room_number, and rich detail description.
+     */
+    public function test_booking_room_service_resolution_and_detail_description()
+    {
+        $log = new ActivityLog([
+            'id' => 10009,
+            'action' => 'Add',
+            'module' => 'housekeeping',
+            'component' => 'ServicesModal',
+            'target_type' => 'BookingRoomService',
+            'target_id' => 'G0000001',
+            'target_label' => 'GAL1',
+            'description' => '* Thêm mới Phòng Đặt BookingRoomService',
+            'new_values' => [
+                'booking_id' => 1,
+                'booking_room_id' => 'G0000001',
+                'service_name' => 'Bia Heineken',
+                'room_number' => '101',
+                'quantity' => 2,
+                'price' => 35000,
+                'total_amount' => 70000,
+            ],
+        ]);
+
+        $res = (new ActivityLogResource($log))->resolve();
+        $this->assertEquals('GAL1', $res['booking_code']);
+        $this->assertEquals('G0000001', $res['room_number']);
+        $this->assertEquals('Thêm DV Buồng phòng', $res['component']);
+        $this->assertStringContainsString('Bia Heineken', $res['description']);
+        $this->assertStringContainsString('35,000 đ', $res['description']);
+        $this->assertStringContainsString('70,000 đ', $res['description']);
+    }
+
+    /**
+     * Test rich creation details and Vietnamese diff labels for generic models (F&B / Inventory / Config).
+     */
+    public function test_rich_creation_and_vietnamese_diff_for_generic_models()
+    {
+        // Add FB Product
+        $addLog = new ActivityLog([
+            'id' => 10010,
+            'action' => 'Add',
+            'module' => 'fnb',
+            'component' => 'Món ăn & Đồ uống F&B',
+            'target_type' => 'FbProduct',
+            'target_id' => '15',
+            'target_label' => 'Cà phê muối',
+            'description' => "* Thêm mới Món ăn & Đồ uống F&B 'Cà phê muối'",
+            'new_values' => [
+                'code' => 'CF-MUOI',
+                'name' => 'Cà phê muối',
+                'price' => 35000,
+                'unit' => 'Ly',
+                'is_active' => true,
+            ],
+        ]);
+
+        $addRes = (new ActivityLogResource($addLog))->resolve();
+        $this->assertStringContainsString('Mã: CF-MUOI', $addRes['description']);
+        $this->assertStringContainsString('Tên: Cà phê muối', $addRes['description']);
+        $this->assertStringContainsString('Đơn giá: 35,000', $addRes['description']);
+        $this->assertStringContainsString('Kích hoạt: Có', $addRes['description']);
+
+        // Modify FB Product
+        $modLog = new ActivityLog([
+            'id' => 10011,
+            'action' => 'Modify',
+            'module' => 'fnb',
+            'component' => 'Món ăn & Đồ uống F&B',
+            'target_type' => 'FbProduct',
+            'target_id' => '15',
+            'target_label' => 'Cà phê muối',
+            'description' => "* Cập nhật Món ăn & Đồ uống F&B 'Cà phê muối'",
+            'old_values' => ['price' => 35000, 'is_active' => true],
+            'new_values' => ['price' => 40000, 'is_active' => false],
+        ]);
+
+        $modRes = (new ActivityLogResource($modLog))->resolve();
+        $this->assertStringContainsString('Đơn giá: 35,000 ➜ 40,000', $modRes['description']);
+        $this->assertStringContainsString('Kích hoạt: Có ➜ Không', $modRes['description']);
+    }
+
+    /**
+     * Test route and component mapping for residence-declarations.
+     */
+    public function test_residence_declarations_component_mapping()
+    {
+        $log = new ActivityLog([
+            'id' => 10012,
+            'action' => 'Add',
+            'module' => 'frontdesk',
+            'component' => 'residence-declarations',
+            'target_type' => 'ResidenceDeclaration',
+            'target_id' => '5',
+            'target_label' => 'John Doe',
+            'description' => "* Thêm mới Khai báo tạm trú 'John Doe'",
+            'new_values' => [
+                'full_name' => 'John Doe',
+                'passport_no' => 'B1234567',
+                'nationality' => 'USA',
+            ],
+        ]);
+
+        $res = (new ActivityLogResource($log))->resolve();
+        $this->assertEquals('Khai báo tạm trú', $res['component']);
+        $this->assertEquals('Lễ tân', $res['module_label']);
+        $this->assertStringContainsString('Số hộ chiếu: B1234567', $res['description']);
+    }
 }
+
+

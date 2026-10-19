@@ -249,7 +249,7 @@ class ActivityLogService
                 $rArr = $br->arrival_date ? \Carbon\Carbon::parse($br->arrival_date)->format('d-m-Y') : $arr;
                 $rDep = $br->departure_date ? \Carbon\Carbon::parse($br->departure_date)->format('d-m-Y') : $dep;
                 $price = (float)($br->price ?? $br->rate ?? 540000);
-                $priceStr = number_format($price > 0 ? $price : 540000, 0, ',', '.');
+                $priceStr = number_format($price > 0 ? $price : 540000, 0, '.', ',');
                 $cls = $br->roomClass?->name ?? 'Superior Double';
                 $form = preg_match('/(Double|Twin|Triple|Single|King|Queen)/i', ($br->room_form ?: '') . ' ' . $cls, $m) ? ucfirst(strtolower($m[1])) : ($br->room_form ?: 'Double');
                 $pNum = $br->room_number ?: 'Chưa gán';
@@ -441,7 +441,7 @@ class ActivityLogService
     public static function logRoomUpgrade($bookingCode, $roomNumber, $oldClass, $newClass, $oldPrice = 0, $newPrice = 0, ?Request $request = null): ActivityLog
     {
         $priceDiff = $newPrice - $oldPrice;
-        $diffStr = $priceDiff != 0 ? " (Chênh lệch: " . number_format($priceDiff, 0, ',', '.') . " đ)" : "";
+        $diffStr = $priceDiff != 0 ? " (Chênh lệch: " . number_format($priceDiff, 0, '.', ',') . " đ)" : "";
         $desc = "Nâng hạng phòng: {$roomNumber} - Hạng cũ: {$oldClass} -> Hạng mới: {$newClass}{$diffStr}";
 
         return self::logBusiness([
@@ -452,6 +452,13 @@ class ActivityLogService
             'target_type' => 'BookingRoom',
             'target_id' => (string) $roomNumber,
             'target_label' => $bookingCode,
+            'new_values' => [
+                'booking_code' => $bookingCode,
+                'room_number' => (string) $roomNumber,
+                'old_class' => $oldClass,
+                'new_class' => $newClass,
+                'price_diff' => $priceDiff,
+            ],
         ], $request);
     }
 
@@ -522,8 +529,8 @@ class ActivityLogService
      */
     public static function logServiceAction(string $actionType, $roomNumber, $bookingCode, $serviceName, $qty = 1, $price = 0, ?Request $request = null): ActivityLog
     {
-        $priceStr = number_format($price, 0, ',', '.') . ' đ';
-        $totalStr = number_format($price * $qty, 0, ',', '.') . ' đ';
+        $priceStr = number_format($price, 0, '.', ',') . ' đ';
+        $totalStr = number_format($price * $qty, 0, '.', ',') . ' đ';
 
         if ($actionType === 'create' || $actionType === 'add') {
             $desc = "* Thêm dịch vụ phòng {$roomNumber} (ĐK {$bookingCode}): {$serviceName} (SL: {$qty}, Đơn giá: {$priceStr}, Thành tiền: {$totalStr})";
@@ -544,6 +551,14 @@ class ActivityLogService
             'target_type' => 'BookingRoomService',
             'target_id' => (string) $roomNumber,
             'target_label' => (string) $bookingCode,
+            'new_values' => [
+                'room_number' => (string) $roomNumber,
+                'booking_code' => (string) $bookingCode,
+                'service_name' => $serviceName,
+                'quantity' => $qty,
+                'price' => $price,
+                'total_amount' => $price * $qty,
+            ],
         ], $request);
     }
 
@@ -552,7 +567,7 @@ class ActivityLogService
      */
     public static function logPaymentAction(string $type, $bookingCode, $roomNumber, $amount, $method = 'Tiền mặt', ?string $note = null, ?Request $request = null): ActivityLog
     {
-        $amountStr = number_format($amount, 0, ',', '.') . ' đ';
+        $amountStr = number_format($amount, 0, '.', ',') . ' đ';
         $noteStr = $note ? ", Diễn giải: {$note}" : "";
         $roomStr = $roomNumber ? " (Phòng {$roomNumber})" : "";
 
@@ -578,6 +593,13 @@ class ActivityLogService
             'target_type' => 'Payment',
             'target_id' => (string) ($roomNumber ?: $bookingCode),
             'target_label' => (string) $bookingCode,
+            'new_values' => [
+                'booking_code' => (string) $bookingCode,
+                'room_number' => (string) $roomNumber,
+                'amount' => $amount,
+                'payment_method' => $method,
+                'note' => $note,
+            ],
         ], $request);
     }
 
