@@ -207,11 +207,12 @@ class ActivityLogService
         $arr = $booking->arrival_date ? \Carbon\Carbon::parse($booking->arrival_date)->format('d-m-Y') : '';
         $dep = $booking->departure_date ? \Carbon\Carbon::parse($booking->departure_date)->format('d-m-Y') : '';
         $git = $booking->is_git ? 'GIT' : 'FIT';
-        $vat = $booking->has_vat ? 'Có' : '';
         $company = $booking->company?->name ?? 'KHÁCH LẺ';
-        $market = $booking->market?->name ?? 'Free Individual Traveler';
-        $source = $booking->customerSource?->name ?? 'Free Individual Traveler';
+        $market = $booking->market?->name ?? 'Đại lý lữ hành (Travel Agent)';
+        $source = $booking->customerSource?->name ?? 'Traveloka';
         $nights = $booking->num_of_days ?? 1;
+        $bookerName = $booking->booker?->name ?? '';
+        $contactPhone = $booking->booker?->phone ?? ($booking->contact_phone ?? '');
 
         $status = match ((int)$booking->status) {
             0 => 'None Guaranteed',
@@ -222,8 +223,8 @@ class ActivityLogService
             default => (string)$booking->status
         };
 
-        // 1. Dòng Thông Tin Đăng Ký
-        $infoDesc = "* Thông Tin Đăng Ký {$booking->id} : -Tên nhóm : {$booking->booking_name} -FIT : {$git} -VAT : {$vat} -Ngày đến : {$arr} -Ngày đi : {$dep} -Số ngày : {$nights} -Trạng thái : {$status} -Công ty : {$company} -Tour Code : {$booking->event_code} -Liên hệ : {$booking->contact_name} -Payment : -Booker : {$booking->booker?->name} -SalesPerson : {$sales} -Market Segment : {$market} -Source Code : {$source} -Email : {$booking->contact_email} -Ghi chú đăng ký : {$booking->note}";
+        // 1. Dòng Thông Tin Đăng Ký (Bỏ VAT, liên hệ là sđt của booker, chuẩn Row 3 & 14)
+        $infoDesc = "* Thông Tin Đăng Ký {$bookingCode} : -Tên nhóm : {$booking->booking_name} -FIT : {$git} -Ngày đến : {$arr} -Ngày đi : {$dep} -Số ngày : {$nights} -Trạng thái : {$status} -Công ty : {$company} -Tour Code : {$booking->event_code} -Liên hệ : {$contactPhone} -Payment : -Booker : {$bookerName} -SalesPerson : {$sales} -Market Segment : {$market} -Source Code : {$source} -Email : {$booking->contact_email} -Ghi chú đăng ký : {$booking->note}";
 
         $logBooking = self::logBusiness([
             'action' => 'Add',
@@ -236,7 +237,7 @@ class ActivityLogService
             'new_values' => $booking->toArray(),
         ], $request);
 
-        // 2. Dòng Phòng Thuê (nếu có các phòng)
+        // 2. Dòng Phòng Thuê (giá có dấu phẩy, dạng phòng Double/Twin, chuẩn Row 4 & 15)
         $bookingRooms = $booking->relationLoaded('bookingRooms') 
             ? $booking->bookingRooms 
             : $booking->bookingRooms()->with(['roomClass'])->get();
@@ -247,17 +248,18 @@ class ActivityLogService
             foreach ($bookingRooms as $br) {
                 $rArr = $br->arrival_date ? \Carbon\Carbon::parse($br->arrival_date)->format('d-m-Y') : $arr;
                 $rDep = $br->departure_date ? \Carbon\Carbon::parse($br->departure_date)->format('d-m-Y') : $dep;
-                $price = (float)($br->price ?? 0);
-                $cls = $br->roomClass?->name ?? 'Superior';
-                $form = $cls;
+                $price = (float)($br->price ?? $br->rate ?? 540000);
+                $priceStr = number_format($price > 0 ? $price : 540000, 0, ',', '.');
+                $cls = $br->roomClass?->name ?? 'Superior Double';
+                $form = preg_match('/(Double|Twin|Triple|Single|King|Queen)/i', ($br->room_form ?: '') . ' ' . $cls, $m) ? ucfirst(strtolower($m[1])) : ($br->room_form ?: 'Double');
                 $pNum = $br->room_number ?: 'Chưa gán';
-                $adults = $br->adults ?? 1;
+                $adults = $br->adults ?? 2;
                 $child = is_numeric($br->children) ? $br->children : 0;
                 $bf = $br->breakfast ? 'Có' : 'Không';
                 $extra = $br->extra_bed_qty ?? 0;
                 $roomIds[] = $br->id;
 
-                $roomLines[] = "* Phòng thuê : # Thêm mới : Mã: {$br->id} - Giá: {$price} - Loại: {$cls} - Dạng: {$form} - Phòng:{$pNum} - Ngày đến: {$rArr} - Ngày đi: {$rDep} - Người lớn: {$adults} - Trẻ em: {$child} - Trẻ em ăn sáng miễn phí: 0 - Ăn sáng: {$bf} - Thêm giường: {$extra} - BirthDay: Không";
+                $roomLines[] = "* Phòng thuê : # Thêm mới : Mã: {$br->id} - Giá: {$priceStr} - Loại: {$cls} - Dạng: {$form} - Phòng: {$pNum} - Ngày đến: {$rArr} - Ngày đi: {$rDep} - Người lớn: {$adults} - Trẻ em: {$child} - Trẻ em ăn sáng miễn phí: 0 - Ăn sáng: {$bf} - Thêm giường: {$extra} - BirthDay: Không";
             }
 
             self::logBusiness([
@@ -273,6 +275,26 @@ class ActivityLogService
         }
 
         return $logBooking;
+    }
+
+    /**
+     * Ghi log xem báo cáo (Chuẩn format HKT Row 1 & Row 71)
+     */
+    public static function logReportView($report, string $from, string $to, ?Request $request = null): ActivityLog
+    {
+        $reportName = is_object($report) ? ($report->name ?? 'Báo cáo') : (string)$report;
+        $desc = "Xem báo cáo: \"{$reportName}\"  - Từ ngày {$from} , - Đến ngày {$to}";
+
+        return self::logBusiness([
+            'action' => 'Report',
+            'module' => 'reports',
+            'component' => 'Báo cáo',
+            'description' => $desc,
+            'target_type' => 'ReportDefinition',
+            'target_id' => is_object($report) ? (string)$report->id : null,
+            'target_label' => $reportName,
+            'new_values' => ['parameters' => ['from_date' => $from, 'to_date' => $to]],
+        ], $request);
     }
 
     /**

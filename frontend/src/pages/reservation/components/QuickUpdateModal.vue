@@ -429,28 +429,14 @@ const isDepartureDisabled = computed(() => hasCheckedInRoom.value && !canEditInh
 const isRateDisabled = computed(() => hasCheckedInRoom.value && !canEditInhouseRateDeparture.value)
 
 const minArrivalDate = computed(() => systemDateNormalized.value)
-const minDepartureDate = computed(() => {
-  if (form.value.arrival_date) {
-    const parts = form.value.arrival_date.split('-')
-    if (parts.length === 3) {
-      const y = parseInt(parts[0], 10)
-      const m = parseInt(parts[1], 10) - 1
-      const d = parseInt(parts[2], 10)
-      const dateObj = new Date(y, m, d + 1)
-      
-      const year = dateObj.getFullYear()
-      const month = String(dateObj.getMonth() + 1).padStart(2, '0')
-      const day = String(dateObj.getDate()).padStart(2, '0')
-      return `${year}-${month}-${day}`
-    }
-  }
-  return systemDateNormalized.value
-})
+// Ngày đi chỉ không được nhỏ hơn ngày đến. Ngày đi = ngày đến được phép
+// (phòng cùng ngày; muốn day use thì tự bật "Ở theo giờ" ở lưới).
+const minDepartureDate = computed(() => form.value.arrival_date || systemDateNormalized.value)
 
 // ==================== WATCHERS ====================
 watch(() => form.value.arrival_date, (newArrival) => {
   if (newArrival && form.value.departure_date) {
-    if (form.value.departure_date <= newArrival) {
+    if (form.value.departure_date < newArrival) {
       const parts = newArrival.split('-')
       if (parts.length === 3) {
         const y = parseInt(parts[0], 10)

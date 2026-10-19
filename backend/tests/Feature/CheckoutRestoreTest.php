@@ -148,11 +148,39 @@ class CheckoutRestoreTest extends TestCase
             ->assertJsonPath('success', false);
     }
 
-    public function test_restore_master_checkout_restores_child_rooms(): void
+    public function test_restore_master_checkout_only_reopens_booking_status(): void
     {
         $this->postJson("/api/bookings/{$this->booking->id}/restore-checkout")->assertSuccessful();
 
         $this->assertDatabaseHas('bookings', ['id' => $this->booking->id, 'status' => Booking::STATUS_CHECKIN]);
-        $this->assertDatabaseHas('booking_rooms', ['id' => $this->bookingRoom->id, 'status' => BookingRoom::STATUS_CHECKED_IN]);
+        $this->assertDatabaseHas('booking_rooms', ['id' => $this->bookingRoom->id, 'status' => BookingRoom::STATUS_CHECKED_OUT]);
+        $this->assertDatabaseHas('booking_room_guests', ['booking_room_id' => $this->bookingRoom->id, 'guest_id' => $this->lastGuest->id, 'status' => BookingRoomGuest::STATUS_CHECKED_OUT]);
+    }
+
+    public function test_restore_room_checkout_is_blocked_when_checkout_date_is_before_system_date(): void
+    {
+        SystemDateRoll::create(['system_date' => '2026-08-06', 'actual_date' => '2026-08-06', 'shift' => '1', 'username' => 'checkout_restore_user']);
+
+        $this->postJson("/api/booking-rooms/{$this->bookingRoom->id}/restore-checkout")
+            ->assertStatus(422)
+            ->assertJsonPath('success', false);
+        $this->assertDatabaseHas('booking_rooms', ['id' => $this->bookingRoom->id, 'status' => BookingRoom::STATUS_CHECKED_OUT]);
+    }
+
+    public function test_restore_room_checkout_is_blocked_when_another_booking_reserves_the_room_today(): void
+    {
+        $other = Booking::create([
+            'booking_name' => 'Next guest', 'booking_date' => '2026-08-04',
+            'arrival_date' => '2026-08-04', 'departure_date' => '2026-08-06',
+            'status' => Booking::STATUS_RESERVATION, 'created_by' => 'checkout_restore_user',
+        ]);
+        BookingRoom::create([
+            'booking_id' => $other->id, 'room_number' => '101', 'room_class_id' => $this->bookingRoom->room_class_id,
+            'arrival_date' => '2026-08-04', 'departure_date' => '2026-08-06', 'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $this->postJson("/api/booking-rooms/{$this->bookingRoom->id}/restore-checkout")
+            ->assertStatus(422)
+            ->assertJsonPath('success', false);
     }
 }

@@ -820,7 +820,7 @@ table.footer-table td:last-child {
   transition: max-height 0.2s ease;
 }
 .sub-list.open {
-  max-height: 120px;
+  max-height: 220px;
 }
 .sub-item {
   display: flex;

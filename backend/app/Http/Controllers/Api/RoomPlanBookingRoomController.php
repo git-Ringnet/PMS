@@ -169,7 +169,7 @@ class RoomPlanBookingRoomController extends Controller
                     $updatedRoom,
                     false,
                     $datesChanged,
-                    false,
+                    $datesChanged,
                 );
 
                 // Recalculate the booking header from every active room so a

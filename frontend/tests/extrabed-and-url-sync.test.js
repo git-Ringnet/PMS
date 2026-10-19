@@ -39,26 +39,28 @@ function getRoomDisplayServices(room, sysDate = '2026-10-09') {
     if (!isPastNight) {
       const daily = (room.dailyExtraBeds || []).find(d => cleanDateStr(d.dateStr || d.date) === dStr)
       const ebSvc = (room.services || []).find(s => s.service_code === 'EB' && cleanDateStr(s.service_date) === dStr)
-      const defaultEbPrice = Number(room.extraBedPrice) || 300000
+      const defaultEbPrice = (room.extraBedPrice !== undefined && room.extraBedPrice !== null && room.extraBedPrice !== '') ? Number(room.extraBedPrice) : 300000
       if (daily) {
+        const rate = (daily.rate !== undefined && daily.rate !== null && daily.rate !== '') ? Number(daily.rate) : defaultEbPrice
         list.push({
           id: `daily-eb-${room.id}-${dStr}`,
           service_date: dStr,
           service_name: 'Giường phụ (Extra Bed)',
           service_code: 'EB',
           quantity: Number(daily.quantity) || 0,
-          rate: Number(daily.rate) || defaultEbPrice,
-          total: (Number(daily.quantity) || 0) * (Number(daily.rate) || defaultEbPrice),
+          rate: rate,
+          total: (Number(daily.quantity) || 0) * rate,
         })
       } else if (ebSvc) {
+        const rate = (ebSvc.rate !== undefined && ebSvc.rate !== null && ebSvc.rate !== '') ? Number(ebSvc.rate) : defaultEbPrice
         list.push({
           id: ebSvc.id,
           service_date: dStr,
           service_name: ebSvc.service_name || 'Giường phụ (Extra Bed)',
           service_code: 'EB',
           quantity: Number(ebSvc.quantity) || 0,
-          rate: Number(ebSvc.rate) || defaultEbPrice,
-          total: (Number(ebSvc.quantity) || 0) * (Number(ebSvc.rate) || defaultEbPrice),
+          rate: rate,
+          total: (Number(ebSvc.quantity) || 0) * rate,
         })
       } else if (hasDailyEbConfig) {
         list.push({
@@ -277,5 +279,69 @@ test('Modal Extra Bed: ngày 30/08 và 31/08 không kê giường (SL 0), ngày 
   // Tổng tiền trong modal
   const computedTotalSum = dailyRates.reduce((sum, d) => sum + d.total, 0)
   assert.equal(computedTotalSum, 600000, 'Tổng tiền trong modal phải là 600,000 VND (chỉ tính 2 đêm 01/09 và 02/09)')
+})
+
+test('Dòng 367: Xóa Extra Bed 1 ngày trong subtable -> đặt số lượng ngày đó về 0 và tính lại tổng tiền phòng', () => {
+  const room = {
+    id: 1,
+    extraBedQty: 1,
+    extraBedPrice: 300000,
+    dailyExtraBeds: [
+      { dateStr: '2026-08-31', quantity: 1, rate: 300000, total: 300000 },
+      { dateStr: '2026-09-01', quantity: 1, rate: 300000, total: 300000 }
+    ],
+    services: [
+      { id: 101, service_code: 'EB', service_name: 'Extra Bed', service_date: '2026-08-31', quantity: 1, rate: 300000 },
+      { id: 102, service_code: 'EB', service_name: 'Extra Bed', service_date: '2026-09-01', quantity: 1, rate: 300000 }
+    ]
+  }
+
+  // Giả lập logic inline delete EB cho ngày 2026-08-31
+  const svcToDelete = room.services[0]
+  const cleanDate = '2026-08-31'
+
+  // 1. Cập nhật dailyExtraBeds
+  const existingDeb = room.dailyExtraBeds.find(d => d.dateStr === cleanDate)
+  if (existingDeb) {
+    existingDeb.quantity = 0
+    existingDeb.total = 0
+  }
+
+  // 2. Lọc bỏ khỏi services
+  room.services = room.services.filter(s => !(s.service_code === 'EB' && s.service_date === cleanDate))
+
+  // 3. Tính lại extraBedQty
+  const activeDeb = room.dailyExtraBeds.filter(d => Number(d.quantity) > 0)
+  room.extraBedQty = activeDeb.length > 0 ? Math.max(...activeDeb.map(d => d.quantity)) : 0
+
+  assert.equal(existingDeb.quantity, 0, 'SL EB ngày 31/08 phải về 0')
+  assert.equal(room.services.length, 1, 'Chỉ còn 1 dòng dịch vụ EB ngày 01/09')
+  assert.equal(room.services[0].service_date, '2026-09-01')
+  assert.equal(room.extraBedQty, 1, 'extraBedQty phòng vẫn là 1 do ngày 01/09 còn 1 EB')
+})
+
+test('Bảo toàn đơn giá 0 khi người dùng nhập 0đ cho Extra Bed hoặc Tiền phòng', () => {
+  const room = {
+    id: 102,
+    arrivalDate: '2026-10-09',
+    departureDate: '2026-10-11',
+    extraBedQty: 1,
+    extraBedPrice: 0, // Đơn giá cấu hình phòng là 0
+    dailyExtraBeds: [
+      { dateStr: '2026-10-09', quantity: 1, rate: 0 },
+      { dateStr: '2026-10-10', quantity: 1, rate: 0 }
+    ],
+    services: [
+      { id: 901, service_code: 'EB', service_date: '2026-10-09', quantity: 1, rate: 0, total_amount: 0 },
+      { id: 902, service_code: 'EB', service_date: '2026-10-10', quantity: 1, rate: 0, total_amount: 0 }
+    ]
+  }
+
+  const services = getRoomDisplayServices(room, '2026-10-09')
+  assert.equal(services.length, 2)
+  assert.equal(services[0].rate, 0, 'Đơn giá ngày 09 phải giữ nguyên 0đ, không bị gán fallback 300,000đ')
+  assert.equal(services[0].total, 0, 'Thành tiền ngày 09 phải là 0đ')
+  assert.equal(services[1].rate, 0, 'Đơn giá ngày 10 phải giữ nguyên 0đ')
+  assert.equal(services[1].total, 0, 'Thành tiền ngày 10 phải là 0đ')
 })
 

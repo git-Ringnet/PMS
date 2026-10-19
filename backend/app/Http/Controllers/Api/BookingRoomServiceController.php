@@ -220,27 +220,98 @@ class BookingRoomServiceController extends Controller
             ], 422);
         }
 
-        // Nếu số lượng <= 0 → Xóa dịch vụ của ngày này nếu có
-        if (isset($request->quantity) && (float)$request->quantity <= 0) {
-            BookingRoomService::where('booking_room_id', $roomId)
-                ->where('service_code', $request->service_code)
-                ->where('service_date', $request->service_date)
-                ->where('is_posted', 0)
-                ->delete();
+        // Booking_BFChildSetServiceId trùng mã dịch vụ "Breakfast Child": phụ
+        // thu ăn sáng trẻ chỉ lưu ở booking_child_breakfast_details.
+        $childBreakfast = app(\App\Services\ChildBreakfastService::class);
+        if ($childBreakfast->isDetailMode() && $childBreakfast->isChildBreakfastCode($request->service_code)) {
+            $updated = DB::transaction(fn () => $childBreakfast->applyServiceRate(
+                $room,
+                Carbon::parse($request->service_date)->toDateString(),
+                (float) ($request->rate ?? 0),
+                (float) ($request->quantity ?? 1),
+                $request->has('is_room') ? $request->boolean('is_room') : null,
+            ));
 
-            if ($request->service_code === BookingRoomService::CODE_EXTRA_BED) {
+            if ($updated === 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Phòng chưa có trẻ em để áp dụng phụ thu ăn sáng trẻ em.',
+                ], 422);
+            }
+
+            return response()->json([
+                'success' => true,
+                'child_breakfast' => true,
+                'message' => 'Đã cập nhật phụ thu ăn sáng trẻ em vào chi tiết ăn sáng.',
+            ]);
+        }
+
+        // Nếu số lượng <= 0:
+        if (isset($request->quantity) && (float)$request->quantity <= 0) {
+            $isEb = $request->service_code === BookingRoomService::CODE_EXTRA_BED
+                || $request->service_code === 'EB'
+                || strcasecmp((string)$request->service_code, BookingRoomService::catalogCode(BookingRoomService::CODE_EXTRA_BED)) === 0;
+
+            if ($isEb) {
+                // Đối với Extra Bed: Cập nhật quantity = 0, total_amount = 0 vào booking_room_services (giữ record với sl = 0)
+                $ebDate = Carbon::parse($request->service_date)->toDateString();
+                $ebValues = [
+                    'service_name' => BookingRoomService::catalogName(BookingRoomService::CODE_EXTRA_BED, 'Extra Bed'),
+                    'quantity'     => 0,
+                    'rate'         => $request->rate ?? 0,
+                    'total_amount' => 0,
+                    'department'   => 'FO',
+                    'is_room'      => $request->has('is_room') ? (int) $request->boolean('is_room') : 1,
+                    'folio'        => $request->folio ?? 1,
+                    'is_posted'    => 0,
+                    'deleted_at'   => null,
+                    'created_by'   => Auth::user()?->username ?? 'system',
+                ];
+                $ebRow = BookingRoomService::withTrashed()
+                    ->where('booking_room_id', $roomId)
+                    ->where('service_code', BookingRoomService::CODE_EXTRA_BED)
+                    ->whereDate('service_date', $ebDate)
+                    ->first();
+                if ($ebRow && (int) $ebRow->is_posted === 1) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Extra Bed ngày ' . $ebDate . ' đã được post, không thể cập nhật số lượng.',
+                    ], 422);
+                }
+                if ($ebRow) {
+                    $ebRow->fill($ebValues)->save();
+                } else {
+                    BookingRoomService::create([
+                        'booking_room_id' => $roomId,
+                        'service_code'    => BookingRoomService::CODE_EXTRA_BED,
+                        'service_date'    => $ebDate,
+                    ] + $ebValues);
+                }
+
                 $remainingEB = BookingRoomService::where('booking_room_id', $roomId)
                     ->where('service_code', BookingRoomService::CODE_EXTRA_BED)
+                    ->where('quantity', '>', 0)
                     ->get();
 
                 if ($remainingEB->isEmpty()) {
                     $room->update(['extra_bed_qty' => 0, 'extra_bed_rate' => 0]);
                 } else {
-                    $maxQty = $remainingEB->max('quantity');
+                    $maxQty = $remainingEB->max('quantity') ?? 0;
                     $latestRate = $remainingEB->firstWhere('rate', '>', 0)?->rate ?? 0;
                     $room->update(['extra_bed_qty' => $maxQty, 'extra_bed_rate' => $latestRate]);
                 }
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Đã cập nhật số lượng Extra Bed về 0 cho ngày này.',
+                ]);
             }
+
+            BookingRoomService::where('booking_room_id', $roomId)
+                ->where('service_code', $request->service_code)
+                ->where('service_date', $request->service_date)
+                ->where('is_posted', 0)
+                ->delete();
 
             return response()->json([
                 'success' => true,
@@ -262,6 +333,7 @@ class BookingRoomServiceController extends Controller
                       ->orWhere('RentalRoomId2', $room->id);
                 })
                 ->where('ServiceId', 'RM')
+                ->excludeSupplementalRoomCharge()
                 ->whereDate('Date', $svcDateStr)
                 ->where('Edit', 0)
                 ->whereIn('Status', [1, 2])
@@ -419,9 +491,15 @@ class BookingRoomServiceController extends Controller
                 ->where('service_code', BookingRoomService::CODE_EXTRA_BED)
                 ->get();
             $maxQty = $remainingEB->max('quantity') ?? 0;
-            $latestRate = $remainingEB->firstWhere('rate', '>', 0)?->rate ?? 0;
+            $latestRate = $request->has('rate') && $request->rate !== null && $request->rate !== ''
+                ? (float) $request->rate
+                : ($remainingEB->firstWhere('rate', '>', 0)?->rate ?? 0);
             $room->update(['extra_bed_qty' => $maxQty, 'extra_bed_rate' => $latestRate]);
         }
+
+        // Sửa giá tiền phòng của MỘT đêm chỉ lưu dòng RM của đêm đó. Không đổi
+        // booking_rooms.rate/base_price, nếu không các đêm khác (chưa có dòng RM
+        // riêng, hiển thị theo giá phòng) sẽ nhảy theo giá vừa sửa.
 
         try {
             \App\Services\ActivityLogService::logServiceAction(
@@ -2224,7 +2302,7 @@ class BookingRoomServiceController extends Controller
         if ($date->lt($arrivalDate) || $date->gte($departureDate) || $date->gt($systemDate)) {
             return response()->json(['success' => false, 'message' => 'Ngày điều chỉnh phải trong thời gian ở và không được sau ngày hệ thống.', 'data' => ['arrival_date' => $arrivalDate->toDateString(), 'departure_date' => $departureDate->toDateString(), 'system_date' => $systemDate->toDateString()]], 422);
         }
-        $original = ServiceBill::where('RegisterId1', $booking->id)->where('RentalRoomId1', $room->id)->where('ServiceId', 'RM')->whereDate('Date', $date)->where('Edit', 0)->latest('Ma')->first();
+        $original = ServiceBill::where('RegisterId1', $booking->id)->where('RentalRoomId1', $room->id)->where('ServiceId', 'RM')->excludeSupplementalRoomCharge()->whereDate('Date', $date)->where('Edit', 0)->latest('Ma')->first();
         if ($original && ($original->PaymentId !== null || $original->VatId !== null)) return response()->json(['success' => false, 'message' => 'Chỉ điều chỉnh bill tiền phòng chưa thanh toán và chưa xuất VAT.'], 422);
 
         $result = DB::transaction(function () use ($booking, $room, $date, $original, $data) {
@@ -2311,6 +2389,21 @@ class BookingRoomServiceController extends Controller
             return response()->json(['success' => false, 'message' => 'Không tìm thấy phòng hoặc booking tương ứng.'], 404);
         }
 
+        // Phòng day use = có bật "Ở theo giờ" (phòng hoặc booking) VÀ ngày đến
+        // = ngày đi: được post tiền phòng đúng ngày đó. Phòng cùng ngày không bật
+        // day use thì không có tiền phòng (Dòng 391/253).
+        $isDayUseStay = function (?BookingRoom $targetRoom, ?Booking $targetBooking = null): bool {
+            if (!($targetRoom?->is_day_use || $targetBooking?->is_day_use)) {
+                return false;
+            }
+            $arr = $targetRoom?->arrival_date ?: $targetBooking?->arrival_date;
+            $dep = $targetRoom?->departure_date ?: $targetBooking?->departure_date;
+            if ($arr && $dep) {
+                return Carbon::parse($arr)->startOfDay()->equalTo(Carbon::parse($dep)->startOfDay());
+            }
+            return false;
+        };
+
         $isBookingPost = !$room && (bool) $booking;
         $roomsToPost = $room ? collect([$room]) : ($booking ? $booking->bookingRooms : collect());
         if ($room && $room->isVirtual()) {
@@ -2320,7 +2413,7 @@ class BookingRoomServiceController extends Controller
             $roomsToPost = $roomsToPost->reject(fn (BookingRoom $targetRoom) => $targetRoom->isVirtual())->values();
         }
         $roomsToPost = $roomsToPost->reject(fn (BookingRoom $targetRoom): bool =>
-            !$targetRoom->is_day_use
+            !$isDayUseStay($targetRoom, $booking)
             && $targetRoom->arrival_date
             && $targetRoom->departure_date
             && $targetRoom->departure_date->lessThanOrEqualTo($targetRoom->arrival_date)
@@ -2381,14 +2474,20 @@ class BookingRoomServiceController extends Controller
                 ->values();
         }
 
+        $isDayUse = $isDayUseStay($room, $booking);
         $stayStart = Carbon::parse($room?->arrival_date ?: $booking->arrival_date)->startOfDay();
-        $stayEnd = Carbon::parse($room?->departure_date ?: $booking->departure_date)->startOfDay()->subDay();
+        $rawDeparture = Carbon::parse($room?->departure_date ?: $booking->departure_date)->startOfDay();
+        $stayEnd = $isDayUse
+            ? $stayStart->copy()
+            : $rawDeparture->copy()->subDay();
         if ($stayEnd->lt($stayStart)
             || $dateFrom->copy()->startOfDay()->lt($stayStart)
             || $dateTo->copy()->startOfDay()->gt($stayEnd)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Ngày tiền phòng phải nằm từ ngày đến đến đêm cuối trước ngày đi.',
+                'message' => $isDayUse
+                    ? 'Ngày tiền phòng phải nằm trong ngày lưu trú của phòng trong ngày (Day use).'
+                    : 'Ngày tiền phòng phải nằm từ ngày đến đến đêm cuối trước ngày đi.',
             ], 422);
         }
 
@@ -2415,10 +2514,8 @@ class BookingRoomServiceController extends Controller
         $chargePercent = (float) ($request->charge_percent ?? 100);
         $user     = Auth::user()?->username ?? 'system';
         $roomService = HotelService::where('code', 'RM')->first();
-        $surchargeService = HotelService::where('code', BookingRoomService::catalogCode('ER'))->first();
         $breakfastService = HotelService::where('code', 'BF')->first();
         $roomTaxProfile = HotelService::taxProfile($roomService);
-        $surchargeTaxProfile = HotelService::taxProfile($surchargeService);
         $breakfastTaxProfile = HotelService::taxProfile($breakfastService);
 
         $setting = HotelSetting::first();
@@ -2429,10 +2526,10 @@ class BookingRoomServiceController extends Controller
         DB::transaction(function () use (
             $roomsToPost, $booking, $setting, $isBookingPost,
             $dateFrom, $dateTo, $folio, $currency, $mode,
-            $request, $selectedGuest, $user, $roomService, $surchargeService, $breakfastService,
-            $roomTaxProfile, $surchargeTaxProfile, $breakfastTaxProfile,
+            $request, $selectedGuest, $user, $roomService, $breakfastService,
+            $roomTaxProfile, $breakfastTaxProfile,
             $chargePercent, &$createdBills,
-            &$postedRooms, &$skippedRooms
+            &$postedRooms, &$skippedRooms, $isDayUseStay
         ) {
             foreach ($roomsToPost as $targetRoom) {
                 $roomLabel = $targetRoom->room_number ?: 'Phòng ' . $targetRoom->id;
@@ -2451,7 +2548,10 @@ class BookingRoomServiceController extends Controller
                 $current = $dateFrom->copy()->startOfDay();
                 $roomArrival = Carbon::parse($targetRoom->arrival_date)->startOfDay();
                 $roomDeparture = Carbon::parse($targetRoom->departure_date ?: $booking?->departure_date)->startOfDay();
-                $roomLastOccupiedNight = $roomDeparture->copy()->subDay();
+                $isTargetRoomDayUse = $isDayUseStay($targetRoom, $booking);
+                $roomLastOccupiedNight = $isTargetRoomDayUse
+                    ? $roomArrival->copy()
+                    : $roomDeparture->copy()->subDay();
                 if ($isBookingPost && $current->lt($roomArrival)) {
                     $current = $roomArrival->copy();
                 }
@@ -2512,13 +2612,13 @@ class BookingRoomServiceController extends Controller
                         $breakfastAmount = round($breakfastRate * max(1, (int)$targetRoom->adults) * $chargePercent / 100, 2);
                     }
 
-                    $isSurcharge = $mode === 'surcharge';
-                    $serviceCode = $isSurcharge ? BookingRoomService::catalogCode('ER') : 'RM';
-                    $serviceName = $isSurcharge ? BookingRoomService::catalogName('ER', 'Phụ thu tiền phòng') : BookingRoomService::catalogName('RM', 'Dịch vụ phòng nghỉ');
-                    $descriptionService = $isSurcharge ? $surchargeService : $roomService;
-                    $serviceTaxProfile = $isSurcharge ? $surchargeTaxProfile : $roomTaxProfile;
-                    $targetDesc = $descriptionService
-                        ? $descriptionService->billDescription($targetRoom->room_number ?: $targetRoom->id, 'FO')
+                    // Bổ sung tiền phòng (surcharge) vẫn là tiền phòng RM, chỉ khác is_room_night = 0
+                    // và không tách ăn sáng; không dùng mã ER (phụ thu).
+                    $serviceCode = 'RM';
+                    $serviceName = BookingRoomService::catalogName('RM', 'Dịch vụ phòng nghỉ');
+                    $serviceTaxProfile = $roomTaxProfile;
+                    $targetDesc = $roomService
+                        ? $roomService->billDescription($targetRoom->room_number ?: $targetRoom->id, 'FO')
                         : trim($serviceName . ' - Phòng ' . ($targetRoom->room_number ?: $targetRoom->id));
                     $breakfastDesc = $breakfastService
                         ? $breakfastService->billDescription($targetRoom->room_number ?: $targetRoom->id, 'FO')
@@ -2534,6 +2634,7 @@ class BookingRoomServiceController extends Controller
                             ->whereDate('Date', $current->toDateString())
                             ->where('Status', 1)
                             ->where('Edit', 0)
+                            ->when($isRoomNight, fn ($q) => $q->excludeSupplementalRoomCharge())
                             ->first();
                         $hasMovedRoomNight = !$existingBill
                             && app(\App\Services\BookingRoomMoveService::class)
@@ -2555,6 +2656,7 @@ class BookingRoomServiceController extends Controller
                             ->whereDate('Date', $current->toDateString())
                             ->where('Status', 1)
                             ->where('Edit', 0)
+                            ->when($isRoomNight, fn ($q) => $q->excludeSupplementalRoomCharge())
                             ->first();
                         if (!$existingBill && app(\App\Services\BookingRoomMoveService::class)
                             ->hasPostedRoomNight($targetRoom, $current, (bool) $isRoomNight)) {
@@ -2848,6 +2950,11 @@ class BookingRoomServiceController extends Controller
      */
     private function postPendingSetupServicesForDate(BookingRoom $room, Carbon $serviceDate, string $user): array
     {
+        // Phụ thu ăn sáng trẻ em lưu ở chi tiết ăn sáng được post cùng tiền phòng.
+        // Chạy trước để dòng phụ thu cũ cùng ngày (nếu có) không bị post trùng.
+        $childBreakfastBillIds = app(\App\Services\ChildBreakfastService::class)
+            ->postForDate($room, $serviceDate, $user);
+
         $services = BookingRoomService::where('booking_room_id', $room->id)
             ->whereDate('service_date', $serviceDate->toDateString())
             ->where('service_code', '!=', BookingRoomService::CODE_ROOM)
@@ -2857,7 +2964,7 @@ class BookingRoomServiceController extends Controller
             ->get();
 
         if ($services->isEmpty()) {
-            return [];
+            return $childBreakfastBillIds;
         }
 
         $booking = $room->booking;
@@ -2865,7 +2972,7 @@ class BookingRoomServiceController extends Controller
             ?: $room->guests()->with('guest')->first();
         $guestId = $primaryGuest?->guest_id;
         $guestName = $primaryGuest?->guest?->full_name ?: ($booking?->booking_name ?: 'Khách lẻ');
-        $createdBillIds = [];
+        $createdBillIds = $childBreakfastBillIds;
 
         foreach ($services as $service) {
             $foService = HotelService::where('code', $service->service_code)->first();
@@ -3191,7 +3298,9 @@ class BookingRoomServiceController extends Controller
     private function roomNightFlag(?BookingRoom $room, ?Booking $booking = null): int
     {
         $isDayUse = (bool) ($room?->is_day_use ?? false)
-            || (bool) ($booking?->is_day_use ?? false);
+            || (bool) ($booking?->is_day_use ?? false)
+            || ($room && $room->arrival_date && $room->departure_date && Carbon::parse($room->arrival_date)->startOfDay()->equalTo(Carbon::parse($room->departure_date)->startOfDay()))
+            || ($booking && $booking->arrival_date && $booking->departure_date && Carbon::parse($booking->arrival_date)->startOfDay()->equalTo(Carbon::parse($booking->departure_date)->startOfDay()));
         if (!$isDayUse) {
             return 1;
         }

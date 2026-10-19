@@ -533,6 +533,17 @@ class GuestController extends Controller
                     return response()->json(['success' => false, 'message' => 'Phòng đã được booking khác check-in, không thể khôi phục checkout.'], 422);
                 }
 
+                // Booking khác đã gán phòng này và lưu trú qua ngày hệ thống cũng xem là đang chiếm dụng.
+                $hasOccupyingReservation = BookingRoom::where('room_number', $room->room_number)
+                    ->where('id', '!=', $room->id)
+                    ->where('status', BookingRoom::STATUS_BOOKED)
+                    ->whereDate('arrival_date', '<=', $systemDate->toDateString())
+                    ->whereDate('departure_date', '>=', $systemDate->toDateString())
+                    ->exists();
+                if ($hasOccupyingReservation) {
+                    return response()->json(['success' => false, 'message' => 'Phòng đã được booking khác đặt trong ngày hệ thống, không thể khôi phục checkout.'], 422);
+                }
+
                 $hasActiveLock = RoomLock::where('room_number', $room->room_number)
                     ->where('is_active', RoomLock::STATUS_ACTIVE)
                     ->where('start_date', '<=', $systemDate->copy()->endOfDay())
@@ -595,55 +606,9 @@ class GuestController extends Controller
                 return response()->json(['success' => false, 'message' => 'Chỉ có thể khôi phục Master đã checkout.'], 422);
             }
 
-            $systemDate = app(\App\Services\RoomAvailabilityService::class)->getSystemDate()->startOfDay();
-
-            $bookingRooms = $booking->bookingRooms()->where('status', BookingRoom::STATUS_CHECKED_OUT)->get();
-            foreach ($bookingRooms as $room) {
-                if ($room->room_number) {
-                    $hasInhouseBooking = BookingRoom::where('room_number', $room->room_number)
-                        ->where('id', '!=', $room->id)
-                        ->where('status', BookingRoom::STATUS_CHECKED_IN)
-                        ->exists();
-                    if ($hasInhouseBooking) {
-                        return response()->json(['success' => false, 'message' => "Phòng {$room->room_number} đã được booking khác check-in, không thể khôi phục checkout."], 422);
-                    }
-
-                    $hasActiveLock = RoomLock::where('room_number', $room->room_number)
-                        ->where('is_active', RoomLock::STATUS_ACTIVE)
-                        ->where('start_date', '<=', $systemDate->copy()->endOfDay())
-                        ->where('end_date', '>=', $systemDate->copy()->startOfDay())
-                        ->exists();
-                    if ($hasActiveLock) {
-                        return response()->json(['success' => false, 'message' => "Phòng {$room->room_number} đang bị khóa, không thể khôi phục checkout."], 422);
-                    }
-                }
-
-                $room->guests()->where('status', BookingRoomGuest::STATUS_CHECKED_OUT)->update([
-                    'status' => BookingRoomGuest::STATUS_CHECKED_IN,
-                    'actual_checkout_date' => null,
-                    'actual_checkout_time' => null,
-                    'checkout_by' => null,
-                ]);
-
-                $room->children()->where('child_status', BookingRoomGuest::STATUS_CHECKED_OUT)->update([
-                    'child_status' => BookingRoomGuest::STATUS_CHECKED_IN
-                ]);
-
-                $room->update([
-                    'status' => BookingRoom::STATUS_CHECKED_IN,
-                    'departure_date' => $room->planned_departure_date ?: $room->departure_date,
-                    'ActutalNumOfDays' => $room->NumOfDays ?: $room->ActutalNumOfDays,
-                    'CheckoutDate' => $room->planned_departure_date ?: $room->departure_date,
-                    'CheckoutTime' => '12:00:00',
-                    'check_out_user' => null,
-                ]);
-
-                if ($room->room) {
-                    $room->room->update(['status' => 'occupied']);
-                }
-            }
-
-            app(BookingStatusSyncService::class)->sync($booking, Booking::STATUS_CHECKIN);
+            // Chỉ mở lại trạng thái Master (2 -> 1). Phòng con giữ nguyên trạng thái checkout
+            // và phải khôi phục riêng từng phòng theo điều kiện ngày hệ thống/phòng trống.
+            $booking->update(['status' => Booking::STATUS_CHECKIN]);
             return response()->json(['success' => true, 'message' => 'Khôi phục checkout Master thành công.']);
         });
     }
@@ -927,6 +892,7 @@ class GuestController extends Controller
         $chargedDates = \App\Models\ServiceBill::where('RegisterId1', $room->booking_id)
             ->where('RentalRoomId1', $room->id)
             ->where('ServiceId', 'RM')
+            ->excludeSupplementalRoomCharge()
             ->where('Edit', 0)
             ->whereIn(DB::raw('DATE(Date)'), $requiredDates->all())
             ->pluck('Date')
@@ -1120,32 +1086,40 @@ class GuestController extends Controller
             && Carbon::parse($request->input('arrival_date'))->toDateString() !== ($room->arrival_date ? Carbon::parse($room->arrival_date)->toDateString() : null);
         $departureChanged = $request->filled('departure_date')
             && Carbon::parse($request->input('departure_date'))->toDateString() !== ($room->departure_date ? Carbon::parse($room->departure_date)->toDateString() : null);
-        $rateChanged = $request->has('rate')
-            && $request->input('rate') !== null
-            && (float) $request->input('rate') !== (float) ($room->rate ?? 0);
         $incomingRateCode = $request->has('rate_code') && filled($request->input('rate_code'))
             ? trim((string) $request->input('rate_code'))
             : null;
         $storedRateCode = filled($room->rate_code) ? trim((string) $room->rate_code) : null;
         $rateCodeChanged = $request->has('rate_code') && $incomingRateCode !== $storedRateCode;
-        $pricingFieldsChanged = $rateChanged || $rateCodeChanged;
-        $stayFieldsChanged = $arrivalChanged || $departureChanged || $pricingFieldsChanged;
+        // Dòng 397: sửa giá phòng chỉ cập nhật rate/base_price ở booking_rooms,
+        // không ghi giá từng ngày vào booking_room_services. Đồng bộ tiền phòng
+        // theo ngày chỉ khi đổi ngày ở hoặc đổi mã giá.
+        $stayFieldsChanged = $arrivalChanged || $departureChanged || $rateCodeChanged;
 
         $this->validateStayDates($request, $room);
 
-        DB::transaction(function () use ($request, $room, $roomData, $stayFieldsChanged, $pricingFieldsChanged) {
+        $datesChanged = $arrivalChanged || $departureChanged || $request->has('is_day_use');
+
+        DB::transaction(function () use ($request, $room, $roomData, $stayFieldsChanged, $rateCodeChanged, $datesChanged) {
             if ($roomData) $room->update($roomData);
             if ($stayFieldsChanged) {
+                // Đêm đã có giá theo ngày giữ nguyên; chỉ đổi mã giá mới tính lại.
                 app(BookingRoomStayChargeService::class)->synchronize(
                     $room->fresh(),
                     $request->has('rate') && $request->input('rate') !== null
                         ? (float) $request->input('rate')
                         : null,
-                    $pricingFieldsChanged
+                    $rateCodeChanged
                 );
             }
             if ($request->has('extra_bed_qty') || $request->has('extra_bed_rate')) {
                 $this->syncExtraBedServices($room->fresh());
+            }
+            if ($datesChanged) {
+                // Child breakfast keeps its price/surcharge setup; only the
+                // service dates follow the new stay.
+                app(\App\Services\BookingRoomLifecycleService::class)
+                    ->synchronize($room->fresh(), false, true, false);
             }
         });
     }
@@ -1157,10 +1131,15 @@ class GuestController extends Controller
         if (!$arrivalDate || !$departureDate) return;
 
         if ((int)$room->extra_bed_qty <= 0) {
+            // Giữ dòng EB với số lượng 0 (đồng bộ với chi tiết thêm giường).
             $room->services()
                 ->where('service_code', BookingRoomService::CODE_EXTRA_BED)
                 ->where('is_posted', 0)
-                ->forceDelete();
+                ->update([
+                    'quantity' => 0,
+                    'total_amount' => 0,
+                    'updated_by' => Auth::user()?->username ?? 'system',
+                ]);
             return;
         }
 
@@ -1996,43 +1975,10 @@ class GuestController extends Controller
             return;
         }
 
-        $isBaby  = $child->age_group === 'baby';
-        $current = Carbon::parse($room->arrival_date);
-        $end     = Carbon::parse($room->departure_date);
-
-        // Đọc tham số hệ thống Booking_AutoExtraChargeBFChild từ hotel_configs
-        $autoExtraChargeVal = \App\Models\HotelConfig::where('name', 'Booking_AutoExtraChargeBFChild')
-            ->value('value');
-        $autoExtraCharge = (int) $autoExtraChargeVal === 1;
-
-        // Xác định amount:
-        //  - autoExtraCharge = true  → giá từ hotel_settings.breakfast_child_rate (màn hình công ty)
-        //  - autoExtraCharge = false → giá từ HotelConfig['BreakfastRateChild']
-        $setting = \App\Models\HotelSetting::first();
-        if ($autoExtraCharge) {
-            $amount = (float) ($setting?->breakfast_child_rate ?? 0);
-        } else {
-            $bfRateChild = \App\Models\HotelConfig::where('name', 'BreakfastRateChild')->value('value');
-            $amount = (float) ($bfRateChild ?? $setting?->breakfast_child_rate ?? 0);
-        }
-
-        while ($current->lt($end)) {
-            $detail = \App\Models\BookingChildBreakfastDetail::firstOrCreate(
-                [
-                    'booking_child_id' => $child->id,
-                    'service_date'     => $current->toDateString(),
-                ],
-                [
-                    'breakfast'       => true,
-                    'is_free'         => $isBaby,           // Em bé: miễn phí
-                    'is_extra_charge' => !$isBaby && $autoExtraCharge,
-                    'is_room'         => !$autoExtraCharge, // Nếu extra charge thì không phân bổ vào phòng
-                    'amount'          => $isBaby ? 0 : $amount,
-                ]
-            );
-            
-            $current = $current->addDay();
-        }
+        // Trẻ đã có chi tiết: giữ giá, phụ phí, miễn phí, FIT/GIT của trẻ và chỉ
+        // dời ngày theo giai đoạn ở. Trẻ mới: tạo theo tham số mặc định.
+        $childBreakfast = app(\App\Services\ChildBreakfastService::class);
+        $childBreakfast->syncChildToStay($child, $childBreakfast->stayDatesForRoom($room));
     }
 
 }

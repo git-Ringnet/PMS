@@ -248,13 +248,15 @@ import {
 } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
+import { isChildBreakfastCode, normalizeChildBreakfastConfig } from '@/utils/booking-room-services'
 
 const props = defineProps({
   show: Boolean,
   room: Object,
   targetRooms: { type: Array, default: () => [] },
   hotelServicesList: Array,
-  systemDate: String
+  systemDate: String,
+  childBreakfastConfig: { type: Object, default: () => ({ service_code: 'BD', detail_mode: true }) }
 })
 
 const emit = defineEmits(['update:show', 'saved'])
@@ -305,6 +307,26 @@ function stopDragModal() {
   document.removeEventListener('mouseup', stopDragModal)
 }
 
+// Chế độ detail (Booking_BFChildSetServiceId = mã "Breakfast Child"): phụ thu ăn sáng
+// trẻ chỉ lưu ở booking_child_breakfast_details, backend nhận mã này để cập nhật chi tiết.
+const isDetailBreakfastMode = computed(() => normalizeChildBreakfastConfig(props.childBreakfastConfig).detailMode)
+const isBreakfastCode = code => isDetailBreakfastMode.value && isChildBreakfastCode(code, props.childBreakfastConfig)
+const isSystemServiceCode = code => ['EB', 'RM', 'BD', 'ROOM_CHARGE'].includes(code) || isBreakfastCode(code)
+const initialBreakfastSelected = ref(false)
+
+function chargeableChildren(room) {
+  return (room?.childRecords || []).filter(child => child.age_group !== 'baby' && Number(child.child_status) !== 3)
+}
+
+// Ngày (>= ngày hệ thống) đang có phụ thu ăn sáng trẻ trong chi tiết ăn sáng của phòng.
+function breakfastChargeDetails(room) {
+  const today = formatLocalYYYYMMDD(props.systemDate)
+  return chargeableChildren(room)
+    .flatMap(child => child.breakfast_details || child.breakfastDetails || [])
+    .filter(detail => detail.breakfast && detail.is_extra_charge && !detail.is_free && Number(detail.amount) > 0)
+    .filter(detail => formatLocalYYYYMMDD(detail.service_date) >= today)
+}
+
 const servicesModalSearch = ref('')
 const selectedServiceCodes = ref([])
 const checkedDates = ref([])
@@ -353,7 +375,7 @@ watch(() => props.show, async (newVal) => {
         const codes = []
         existing.forEach(svc => {
           // Bỏ qua các dịch vụ hệ thống (giường phụ, tiền phòng, ăn sáng trẻ em)
-          if (['EB', 'RM', 'BD', 'ROOM_CHARGE'].includes(svc.service_code)) return
+          if (isSystemServiceCode(svc.service_code)) return
 
           if (!codes.includes(svc.service_code)) {
             codes.push(svc.service_code)
@@ -367,10 +389,27 @@ watch(() => props.show, async (newVal) => {
           }
         })
         
+        // Chế độ detail: phụ thu ăn sáng trẻ hiện lại theo chi tiết ăn sáng của phòng.
+        const breakfastDetails = isDetailBreakfastMode.value ? breakfastChargeDetails(props.room) : []
+        initialBreakfastSelected.value = breakfastDetails.length > 0
+        if (breakfastDetails.length > 0) {
+          const code = normalizeChildBreakfastConfig(props.childBreakfastConfig).serviceCode
+          const first = breakfastDetails[0]
+          codes.push(code)
+          items.push({
+            service_code: code,
+            service_name: getServiceNameFromCode(code),
+            quantity: 1,
+            rate: Number(first.amount) || 0,
+            is_room: first.is_room !== false && first.is_room !== 0
+          })
+        }
+
         selectedServiceCodes.value = codes
         serviceItems.value = items
       } else {
         serviceItems.value = []
+        initialBreakfastSelected.value = false
       }
     } catch (err) {
       console.error(err)
@@ -509,7 +548,7 @@ async function saveServices() {
         const toDeleteIds = []
         existing.forEach(svc => {
           // Bỏ qua các dịch vụ hệ thống (giường phụ, tiền phòng, ăn sáng trẻ em)
-          if (['EB', 'RM', 'BD', 'ROOM_CHARGE'].includes(svc.service_code)) return
+          if (isSystemServiceCode(svc.service_code)) return
 
           const isCodeSelected = selectedServiceCodes.value.includes(svc.service_code)
           const svcDateShort = formatLocalYYYYMMDD(svc.service_date)
@@ -534,9 +573,31 @@ async function saveServices() {
         }))
 
         // 4. Create or update services
+        const roomDates = getStayDates(room.checkIn, room.checkOut)
+        const today = formatLocalYYYYMMDD(props.systemDate)
+        const hasChildren = chargeableChildren(room).length > 0
+        const breakfastCode = normalizeChildBreakfastConfig(props.childBreakfastConfig).serviceCode
+        const breakfastItem = serviceItems.value.find(item => isBreakfastCode(item.service_code))
+
+        // Chế độ detail: ngày bỏ chọn (hoặc bỏ chọn cả dịch vụ) → tắt phụ phí ăn sáng trẻ ngày đó.
+        if (isDetailBreakfastMode.value && hasChildren) {
+          const chargedDates = new Set(breakfastChargeDetails(room).map(detail => formatLocalYYYYMMDD(detail.service_date)))
+          const keepDates = breakfastItem ? checkedDates.value : []
+          for (const d of chargedDates) {
+            if (d < today || !roomDates.includes(d) || keepDates.includes(d)) continue
+            await createBookingRoomService(roomId, {
+              service_code: breakfastCode,
+              service_date: d,
+              quantity: 0,
+              rate: 0
+            })
+          }
+        }
+
         for (const item of serviceItems.value) {
+          // Phòng không có trẻ em thì không áp dụng phụ thu ăn sáng trẻ (chế độ detail).
+          if (isBreakfastCode(item.service_code) && !hasChildren) continue
           // Determine dates for this room specifically
-          const roomDates = getStayDates(room.checkIn, room.checkOut)
           const datesToCreate = checkedDates.value.filter(d => roomDates.includes(d))
 
           for (const d of datesToCreate) {

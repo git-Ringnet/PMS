@@ -119,6 +119,10 @@ class NightAuditSnapshotService
 
         $billIds = $bills->pluck('Ma');
         $roomNightBills = RoomNightBill::whereIn('bill_id', $billIds)->get()->keyBy('bill_id');
+        $supplementalBillIds = ServiceBill::whereIn('Ma', $billIds)
+            ->onlySupplementalRoomCharge()
+            ->pluck('Ma')
+            ->flip();
 
         $groups = [];
         $totalHotelRevenue = 0.0;
@@ -173,7 +177,8 @@ class NightAuditSnapshotService
                 $groups[$groupKey]['total_revenue'] += $amount;
                 $totalHotelRevenue += $amount;
 
-                if ($rnb) {
+                // Bill bổ sung tiền phòng chỉ cộng doanh thu, không tính khách/FOC/HU.
+                if ($rnb && !$supplementalBillIds->has($bill->Ma)) {
                     if ($rnb->is_room_night) {
                         $groups[$groupKey]['room_nights']++;
                     }

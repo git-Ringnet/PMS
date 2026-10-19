@@ -841,13 +841,7 @@ class RoomController extends Controller
         $vacantRooms = [];
         foreach ($rooms as $room) {
             // 1. Kiểm tra OOO/OOS lock
-            $isLocked = \App\Models\RoomLock::where('room_number', $room->room_number)
-                ->where('is_active', 1)
-                ->where('start_date', '<', $departureDate)
-                ->where('end_date', '>', $arrivalDate)
-                ->exists();
-
-            if ($isLocked) continue;
+            if ($avService->hasBlockingLock($room->room_number, $arrivalDate, $departureDate)) continue;
 
             // 2. Kiểm tra có bị booking khác chiếm dụng không
             $isOccupied = $avService->isRoomNumberOccupied(
