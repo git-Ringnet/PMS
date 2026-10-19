@@ -48,6 +48,8 @@ class GeneralSearchProjectionService
             'nights' => $booking->num_of_days, 'original_room_types' => $createdRoomTypes, 'actual_room_types' => $actualRoomTypes,
             'total_amount' => $this->bookingServiceTotal($booking, $rooms), 'deposit_amount' => $this->bookingDeposit($booking),
             'registration_status' => $booking->registrationStatus?->vietnamese ?: $booking->registrationStatus?->name,
+            'registration_status_color' => $booking->registrationStatus?->color,
+            'registration_status_id' => $booking->registration_status_id,
             'operation_status' => $booking->status, 'note' => $booking->note, 'booking_date' => $booking->booking_date?->toDateString(),
             'sales_person' => $booking->sales_person, 'created_by' => $booking->creator?->name ?: $booking->created_by,
             'contact_phone' => $booking->contact_phone, 'rooms' => $roomRows,

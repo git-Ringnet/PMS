@@ -132,9 +132,6 @@ function updateCustomGradient() {
 
 // Compute if header bg is dark to set high-contrast white text
 const isHeaderBgDark = computed(() => {
-  if (['/pms', '/fnb', '/', '/login'].includes(route.path)) {
-    return false
-  }
   const bg = headerBgColor.value
   if (!bg) return false
   if (bg.includes('linear-gradient')) {
@@ -979,21 +976,23 @@ function handleHeaderBookingSelected(booking) {
   </transition>
 
   <div class="flex flex-col h-screen w-full max-w-full overflow-hidden bg-white">
-    <!-- Top Header Bar (Light Theme) -->
+    <!-- Top Header Bar -->
     <header 
-      class="flex items-center justify-between gap-1.5 2xl:gap-3 h-11 lg:h-12 compact-low-h-header border-b border-slate-200 px-2.5 2xl:px-4 shrink-0 z-50 transition-all duration-200 w-full max-w-full"
-      :class="!['/pms', '/fnb', '/', '/login'].includes(route.path) ? '' : 'bg-white'"
-      :style="{ background: !['/pms', '/fnb', '/', '/login'].includes(route.path) ? headerBgColor : '' }"
+      class="flex items-center justify-between gap-1.5 2xl:gap-3 h-11 lg:h-12 compact-low-h-header border-b px-2.5 2xl:px-4 shrink-0 z-50 transition-all duration-200 w-full max-w-full"
+      :class="isHeaderBgDark ? 'border-white/10' : 'border-slate-200'"
+      :style="{ background: headerBgColor }"
     >
       <!-- Logo (Left) -->
       <div class="flex items-center justify-start shrink-0">
         <button
           @click="goHome"
-          class="flex items-center gap-1.5 hover:opacity-80 transition-opacity cursor-pointer bg-transparent border-none p-0"
+          class="flex items-center gap-2 hover:opacity-85 transition-opacity cursor-pointer bg-transparent border-none p-0"
         >
-          <div class="w-7 h-7 bg-[#0ea5e9] flex items-center justify-center rounded-sm rotate-45 transform-gpu overflow-hidden shadow-sm">
-            <div class="w-3.5 h-3.5 bg-white -rotate-45 transform-gpu"></div>
-          </div>
+          <img 
+            src="/HKT_LOGO.png" 
+            alt="PROVISTA PMS" 
+            class="w-7 h-7 object-contain drop-shadow-sm rounded-sm"
+          />
           <span 
             class="text-base font-bold tracking-wider transition-colors duration-200"
             :class="isHeaderBgDark ? 'text-white' : 'text-gray-900 dark:text-white'"
@@ -1449,11 +1448,11 @@ function handleHeaderBookingSelected(booking) {
         v-for="item in subMenuItems"
         :key="item.name"
         @click="handleSubMenuClick(item)"
-        class="flex items-center gap-1 px-2.5 py-0.5 xl:py-1 xl:px-3 text-[11px] xl:text-[12px] rounded-full transition-all duration-200 cursor-pointer border whitespace-nowrap relative font-semibold"
+        class="flex items-center gap-1.5 px-3 py-1 text-xs rounded-full transition-all duration-200 cursor-pointer border whitespace-nowrap relative font-semibold font-sans"
         :class="item.active
-          ? 'bg-[#bdecfe] text-gray-900 border-[#7dd3fc] dark:bg-sky-950 dark:text-sky-200 dark:border-sky-800'
-          : 'bg-transparent text-gray-900/70 border-transparent hover:bg-slate-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-[#121212] dark:hover:text-white'"
-        :style="item.active && headerBgColor !== '#006bdb' ? { background: headerBgColor, color: isHeaderBgDark ? '#ffffff' : '#003d66', borderColor: 'transparent' } : {}"
+          ? 'bg-[#006bdb] text-white border-transparent shadow-xs'
+          : 'bg-transparent text-black border-transparent hover:bg-slate-100 hover:text-black dark:text-white dark:hover:bg-[#121212]'"
+        :style="item.active ? { background: headerBgColor, color: isHeaderBgDark ? '#ffffff' : '#ffffff', borderColor: 'transparent' } : {}"
       >
         <!-- Icons inline SVG for each type -->
         <svg v-if="item.icon === 'pie-chart'" class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">

@@ -164,26 +164,87 @@ const settings = ref({
   roomHeight: 110
 })
 
+const getRoomMapStorageKey = () => {
+  const uid = authStore.user?.id || 'default'
+  return `pms_room_map_custom_settings_${uid}`
+}
+
+// Auto scale / zoom layout state
+const autoScale = ref(true)
+const manualScale = ref(1.0)
+const scaleFactor = ref(1.0)
+
+function calculateScale() {
+  if (autoScale.value) {
+    const width = typeof window !== 'undefined' ? window.innerWidth : 1440
+    if (width < 1440) {
+      scaleFactor.value = Math.max(0.78, width / 1440)
+    } else {
+      scaleFactor.value = 1.0
+    }
+  } else {
+    scaleFactor.value = manualScale.value
+  }
+}
+
+function applyRoomMapSettings(source) {
+  if (!source) return
+  if (source.iconSizes) {
+    settings.value.iconSizes = {
+      group1: parseInt(source.iconSizes?.group1 ?? 20),
+      group2: parseInt(source.iconSizes?.group2 ?? 20),
+      group3: parseInt(source.iconSizes?.group3 ?? 10),
+      group4: parseInt(source.iconSizes?.group4 ?? 16),
+      group5: parseInt(source.iconSizes?.group5 ?? 20),
+    }
+  }
+  if (source.textSizes) {
+    settings.value.textSizes = {
+      roomNumber: parseInt(source.textSizes?.roomNumber ?? 18),
+      roomType: parseInt(source.textSizes?.roomType ?? 10),
+      guestName: parseInt(source.textSizes?.guestName ?? 11),
+    }
+  }
+  if (source.exactPosition !== undefined) {
+    settings.value.exactPosition = source.exactPosition === true || source.exactPosition === 'true'
+  }
+  if (source.floorOrientation) {
+    settings.value.floorOrientation = source.floorOrientation
+  }
+  if (source.roomWidth !== undefined) {
+    settings.value.roomWidth = parseInt(source.roomWidth)
+  }
+  if (source.roomHeight !== undefined) {
+    settings.value.roomHeight = parseInt(source.roomHeight)
+  }
+  if (source.autoScale !== undefined) {
+    autoScale.value = source.autoScale !== false && source.autoScale !== 'false'
+  }
+  if (source.scale !== undefined) {
+    manualScale.value = parseFloat(source.scale ?? 1.0)
+  }
+  calculateScale()
+}
+
+function loadPersistedSettings() {
+  let localSaved = null
+  try {
+    const raw = localStorage.getItem(getRoomMapStorageKey())
+    if (raw) localSaved = JSON.parse(raw)
+  } catch (_) {}
+
+  const source = authStore.settings?.room_map || localSaved
+  if (source) {
+    applyRoomMapSettings(source)
+  }
+}
+
 watch(() => authStore.settings?.room_map, (newRoomMapSettings) => {
   if (newRoomMapSettings) {
-    settings.value = {
-      iconSizes: {
-        group1: parseInt(newRoomMapSettings.iconSizes?.group1 ?? 20),
-        group2: parseInt(newRoomMapSettings.iconSizes?.group2 ?? 20),
-        group3: parseInt(newRoomMapSettings.iconSizes?.group3 ?? 10),
-        group4: parseInt(newRoomMapSettings.iconSizes?.group4 ?? 16),
-        group5: parseInt(newRoomMapSettings.iconSizes?.group5 ?? 20),
-      },
-      textSizes: {
-        roomNumber: parseInt(newRoomMapSettings.textSizes?.roomNumber ?? 18),
-        roomType: parseInt(newRoomMapSettings.textSizes?.roomType ?? 10),
-        guestName: parseInt(newRoomMapSettings.textSizes?.guestName ?? 11),
-      },
-      exactPosition: newRoomMapSettings.exactPosition === true || newRoomMapSettings.exactPosition === 'true',
-      floorOrientation: newRoomMapSettings.floorOrientation || 'Ngang',
-      roomWidth: parseInt(newRoomMapSettings.roomWidth ?? 200),
-      roomHeight: parseInt(newRoomMapSettings.roomHeight ?? 110)
-    }
+    applyRoomMapSettings(newRoomMapSettings)
+    try {
+      localStorage.setItem(getRoomMapStorageKey(), JSON.stringify(newRoomMapSettings))
+    } catch (_) {}
   }
 }, { immediate: true, deep: true })
 
@@ -194,25 +255,33 @@ const cardScale = computed(() => {
 })
 
 function saveSettings() {
+  const payload = {
+    iconSizes: {
+      group1: settings.value.iconSizes.group1,
+      group2: settings.value.iconSizes.group2,
+      group3: settings.value.iconSizes.group3,
+      group4: settings.value.iconSizes.group4,
+      group5: settings.value.iconSizes.group5,
+    },
+    textSizes: {
+      roomNumber: settings.value.textSizes.roomNumber,
+      roomType: settings.value.textSizes.roomType,
+      guestName: settings.value.textSizes.guestName,
+    },
+    exactPosition: settings.value.exactPosition,
+    floorOrientation: settings.value.floorOrientation,
+    roomWidth: settings.value.roomWidth,
+    roomHeight: settings.value.roomHeight,
+    autoScale: autoScale.value,
+    scale: manualScale.value
+  }
+
+  try {
+    localStorage.setItem(getRoomMapStorageKey(), JSON.stringify(payload))
+  } catch (_) {}
+
   authStore.updateUserSettings({
-    room_map: {
-      iconSizes: {
-        group1: settings.value.iconSizes.group1,
-        group2: settings.value.iconSizes.group2,
-        group3: settings.value.iconSizes.group3,
-        group4: settings.value.iconSizes.group4,
-        group5: settings.value.iconSizes.group5,
-      },
-      textSizes: {
-        roomNumber: settings.value.textSizes.roomNumber,
-        roomType: settings.value.textSizes.roomType,
-        guestName: settings.value.textSizes.guestName,
-      },
-      exactPosition: settings.value.exactPosition,
-      floorOrientation: settings.value.floorOrientation,
-      roomWidth: settings.value.roomWidth,
-      roomHeight: settings.value.roomHeight
-    }
+    room_map: payload
   })
   showSettings.value = false
   uiStore.showToast('Cài đặt hiển thị đã được lưu thành công!', 'success')
@@ -287,42 +356,20 @@ watch(moduleContext, () => {
   isGridMode.value = true
 }, { immediate: true })
 
-// Auto scale / zoom layout state
-const autoScale = ref(true)
-const manualScale = ref(1.0)
-const scaleFactor = ref(1.0)
-
-watch(() => authStore.settings?.room_map, (newRoomMapSettings) => {
-  if (newRoomMapSettings) {
-    if (newRoomMapSettings.autoScale !== undefined) {
-      autoScale.value = newRoomMapSettings.autoScale !== false && newRoomMapSettings.autoScale !== 'false'
-    }
-    if (newRoomMapSettings.scale !== undefined) {
-      manualScale.value = parseFloat(newRoomMapSettings.scale ?? 1.0)
-    }
-    calculateScale()
-  }
-}, { immediate: true, deep: true })
-
-function calculateScale() {
-  if (autoScale.value) {
-    const width = window.innerWidth
-    if (width < 1440) {
-      scaleFactor.value = Math.max(0.78, width / 1440)
-    } else {
-      scaleFactor.value = 1.0
-    }
-  } else {
-    scaleFactor.value = manualScale.value
-  }
-}
-
 function toggleAutoScale() {
   autoScale.value = !autoScale.value
+  const payload = {
+    ...(authStore.settings?.room_map || {}),
+    autoScale: autoScale.value,
+    scale: manualScale.value,
+    roomWidth: settings.value.roomWidth,
+    roomHeight: settings.value.roomHeight
+  }
+  try {
+    localStorage.setItem(getRoomMapStorageKey(), JSON.stringify(payload))
+  } catch (_) {}
   authStore.updateUserSettings({
-    room_map: {
-      autoScale: autoScale.value
-    }
+    room_map: payload
   })
   calculateScale()
 }
@@ -335,10 +382,19 @@ function adjustManualScale(direction) {
   } else {
     manualScale.value = 1.0
   }
+  autoScale.value = false
+  const payload = {
+    ...(authStore.settings?.room_map || {}),
+    autoScale: false,
+    scale: manualScale.value,
+    roomWidth: settings.value.roomWidth,
+    roomHeight: settings.value.roomHeight
+  }
+  try {
+    localStorage.setItem(getRoomMapStorageKey(), JSON.stringify(payload))
+  } catch (_) {}
   authStore.updateUserSettings({
-    room_map: {
-      scale: manualScale.value
-    }
+    room_map: payload
   })
   calculateScale()
 }
@@ -1034,7 +1090,7 @@ const displayedTableRooms = computed(() => {
   // 4. TT Phòng
   if (filters.roomStatus && filters.roomStatus.length > 0) {
     list = list.filter(r => {
-      const icon = getRoomStatusIconName(r)
+      const icon = getRoomStatusIconName(r, false)
       const code = r.room_status_code
       return filters.roomStatus.some(val => {
         if (val === 'clean') return icon === 'clean' || code === 'vacant_clean' || code === 'occupied_clean'
@@ -1042,8 +1098,8 @@ const displayedTableRooms = computed(() => {
         if (val === 'ooo') return icon === 'ooo' || code === 'ooo' || code === 'occupied_ooo'
         if (val === 'oos') return icon === 'oos' || code === 'oos'
         if (val === 'checkout') return icon === 'checkout' || r.booking_status === 'checkout'
-        if (val === 'priority') return icon === 'priority' || r.is_priority
-        if (val === 'dnd') return icon === 'dnd' || r.is_dnd
+        if (val === 'priority') return icon === 'priority' || r.is_priority || code === 'vacant_priority'
+        if (val === 'dnd') return icon === 'dnd' || r.is_dnd || code === 'dnd'
         return icon === val || code === val
       })
     })
@@ -1348,12 +1404,44 @@ function shouldShowSparkles(room) {
 }
 
 
-function getRoomStatusIconName(room) {
+// Dòng 57 FIX FE: Hai icon Không làm phiền (DND) và Phòng ưu tiên (Priority) chuyển lên góc phải của phòng và làm nổi bật
+function getTopRightSpecialIcon(room) {
+  if (!room) return null
+  const code = room.room_status_code
+  if (code === 'dnd' || room.status === 'dnd' || room.is_dnd) return 'dnd'
+  if (code === 'vacant_priority' || room.status === 'reserved' || room.is_priority) return 'priority'
+  return null
+}
+
+function getTopRightSpecialIconClass(iconName) {
+  if (iconName === 'dnd') {
+    return 'text-red-600 bg-white border border-red-200 shadow-xs'
+  }
+  if (iconName === 'priority') {
+    return 'text-amber-600 bg-white border border-amber-300 shadow-xs'
+  }
+  return 'text-slate-700 bg-white'
+}
+
+function getTopRightSpecialIconTitle(iconName) {
+  if (iconName === 'dnd') return 'Phòng không làm phiền (DND)'
+  if (iconName === 'priority') return 'Phòng ưu tiên'
+  return ''
+}
+
+function getTopRightSpecialIconSize() {
+  const base = Number(settings.value?.iconSizes?.group5 ?? 20)
+  return Math.max(12, Math.round(base * cardScale.value))
+}
+
+function getRoomStatusIconName(room, forCardBottom = true) {
   if (!room) return null
 
   // Dùng room_status_code từ API (nguồn duy nhất, không đoán mò)
   const code = room.room_status_code
   if (code && Object.prototype.hasOwnProperty.call(ROOM_STATUS_ICON_MAP, code)) {
+    // Dòng 57: Hai icon dnd và priority đã chuyển lên góc trên bên phải của card
+    if (forCardBottom && (code === 'dnd' || code === 'vacant_priority')) return null
     return ROOM_STATUS_ICON_MAP[code]   // null = không hiển thị icon
   }
 
@@ -1362,21 +1450,23 @@ function getRoomStatusIconName(room) {
   if (room.lock_type === 'OOO') return 'ooo'
   if (room.status === 'dirty') return 'dirty'
   if (room.status === 'checkout') return 'checkout'
-  if (room.status === 'reserved') return 'priority'
-  if (room.status === 'dnd') return 'dnd'
+  if (room.status === 'reserved') return forCardBottom ? null : 'priority'
+  if (room.status === 'dnd') return forCardBottom ? null : 'dnd'
   if (room.status === 'maintenance') return 'housekeeping-service'
 
   return null
 }
 
-function getRoomStatusIconClass(room) {
-  const iconName = getRoomStatusIconName(room)
+function getRoomStatusIconClass(room, forCardBottom = true) {
+  const iconName = getRoomStatusIconName(room, forCardBottom)
   if (iconName === 'ooo') return 'text-[#d97706]'
   if (iconName === 'oos') return 'text-[#059669]'
   if (iconName === 'dirty') return 'text-[#d97706]'
   if (iconName === 'clean') return 'text-slate-700'
-  if (iconName === 'priority') return 'text-slate-600'
-  if (iconName === 'dnd') return 'text-sky-500'
+  if (iconName === 'checkout') return 'text-[#059669]'
+  if (iconName === 'housekeeping-service') return 'text-[#2563eb]'
+  if (iconName === 'dnd') return 'text-red-600'
+  if (iconName === 'priority') return 'text-amber-600'
   return 'text-slate-600'
 }
 
@@ -1391,12 +1481,12 @@ function getStatusIconSize(room) {
     size = settings.value.iconSizes.group2
   } else if (room.status === ROOM_STATUSES.AVAILABLE) {
     size = settings.value.iconSizes.group2
-  } else if (room.status === ROOM_STATUSES.RESERVED) {
+  } else if (room.status === ROOM_STATUSES.RESERVED || room.room_status_code === 'vacant_priority' || room.room_status_code === 'dnd' || room.is_priority || room.is_dnd) {
     size = settings.value.iconSizes.group5
   } else if (room.status === ROOM_STATUSES.OCCUPIED) {
     size = settings.value.iconSizes.group2
   }
-  return Math.round(size * cardScale.value)
+  return Math.max(12, Math.round(size * cardScale.value))
 }
 
 function isLightColor(color) {
@@ -2242,12 +2332,8 @@ onMounted(async () => {
     console.error('Lỗi khi tải cấu hình khách sạn:', err)
   }
 
-  // Migration to set default roomWidth to 200px for existing local storage sessions
-  if (localStorage.getItem('pms_room_width_migrated_200') !== 'true') {
-    settings.value.roomWidth = 200
-    localStorage.setItem('pms_room_width', '200')
-    localStorage.setItem('pms_room_width_migrated_200', 'true')
-  }
+  // Khôi phục kích thước và tỉ lệ hiển thị sơ đồ phòng đã cài sẵn của user
+  loadPersistedSettings()
 
   // Room Plan tự tải dữ liệu cần thiết; tránh gọi trùng /rooms và /rooms/stats từ component cha.
   if (currentTab.value !== 'room-plan') {
@@ -3281,10 +3367,29 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                             :style="{ width: Math.max(8, (settings.iconSizes?.group3 ?? 10) * cardScale) + 'px', height: Math.max(8, (settings.iconSizes?.group3 ?? 10) * cardScale) + 'px' }"></span>
                         </div>
 
-                        <!-- Status Indicator Dot (Top Right - Check-out Today) -->
-                        <div v-if="hasDepartureToday(room)" class="absolute top-2.5 right-2.5 z-10" title="Phòng đi">
+                        <!-- Status Indicator Dot (Top Right - Check-out Today: cùng hàng ngang với chấm xanh) -->
+                        <div v-if="hasDepartureToday(room)"
+                          class="absolute top-2.5 z-10 pointer-events-none transition-all"
+                          :style="{
+                            right: getTopRightSpecialIcon(room)
+                              ? (getTopRightSpecialIconSize() + 12) + 'px'
+                              : '10px'
+                          }"
+                          title="Phòng đi">
                           <span class="rounded-full block border border-white/20 shadow-sm bg-red-500 relative"
                             :style="{ width: Math.max(8, (settings.iconSizes?.group3 ?? 10) * cardScale) + 'px', height: Math.max(8, (settings.iconSizes?.group3 ?? 10) * cardScale) + 'px' }"></span>
+                        </div>
+
+                        <!-- Special Icon (DND / Priority nổi bật góc trên bên phải) -->
+                        <div v-if="getTopRightSpecialIcon(room)"
+                          class="absolute top-2 right-2 z-10 flex items-center justify-center rounded-full p-0.5 transition-transform shrink-0 pointer-events-none"
+                          :class="getTopRightSpecialIconClass(getTopRightSpecialIcon(room))"
+                          :title="getTopRightSpecialIconTitle(getTopRightSpecialIcon(room))"
+                          :style="{
+                            width: getTopRightSpecialIconSize() + 'px',
+                            height: getTopRightSpecialIconSize() + 'px'
+                          }">
+                          <RoomIcon :name="getTopRightSpecialIcon(room)" :monochrome="false" class="w-full h-full" />
                         </div>
 
                         <!-- Connecting Door Bridge (Icon cánh cửa giữa 2 phòng thông nhau) -->
@@ -3307,7 +3412,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </div>
 
                         <!-- Room Content (Centered, shifted slightly up to leave safe space for bottom icons) -->
-                        <div class="absolute inset-x-1.5 top-[44%] flex max-h-[calc(100%-10px)] -translate-y-1/2 flex-col items-center justify-center overflow-hidden text-center pointer-events-none">
+                        <div class="absolute inset-x-1 flex flex-col items-center justify-center overflow-hidden text-center pointer-events-none -translate-y-1/2"
+                          :class="settings.roomHeight < 75 ? 'top-[33%]' : (settings.roomHeight < 90 || cardScale < 0.85 ? 'top-[36%]' : 'top-[42%]')"
+                          :style="{ maxHeight: (settings.roomHeight < 80 ? 'calc(100% - 16px)' : 'calc(100% - 10px)') }">
                           <!-- Room Number -->
                           <div
                             class="font-bold leading-tight text-center w-full flex items-center justify-center gap-1"
@@ -3316,7 +3423,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                               class="inline-block"
                               :class="[
                                 isRoomNumberRed(room) ? 'text-red-600 font-black' : (room.booking_color ? 'text-inherit' : 'text-gray-900'),
-                                isArrivingTomorrow(room) ? 'border-b border-black pb-[1px]' : ''
+                                isArrivingTomorrow(room) ? 'border-b-[1.5px] border-black pb-0 leading-[0.9]' : ''
                               ]"
                               :style="getRoomNumberStyle(room)">
                               {{ room.room_number }}
@@ -3324,7 +3431,8 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                           </div>
 
                           <!-- Room Type (e.g. SUPT) -->
-                          <div class="font-bold uppercase text-center w-full mt-0.5 leading-none text-black"
+                          <div class="font-bold uppercase text-center w-full leading-none text-black"
+                            :class="settings.roomHeight < 80 ? 'mt-1' : 'mt-1.5'"
                             :style="{ fontSize: Math.max(8, settings.textSizes.roomType * cardScale) + 'px' }">
                             {{ room.room_type || room.room_class?.code }}
                           </div>
@@ -3332,11 +3440,11 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                           <!-- Guest Name (if occupied or reserved) -->
                           <div
                             v-if="room.booking_status === 'occupied' || room.booking_status === 'reserved' || room.booking_status === 'checkout'"
-                            class="font-bold leading-tight text-center w-full truncate max-w-full px-1"
+                            class="font-bold leading-tight text-center truncate px-2 max-w-[calc(100%-20px)] mx-auto"
                             :style="{ fontSize: Math.max(7.5, (settings.textSizes.guestName - 0.5) * cardScale) + 'px' }"
                             :class="[
                               room.booking_color ? 'text-inherit' : 'text-gray-900',
-                              settings.roomHeight < 70 ? 'mt-0' : 'mt-0.5'
+                              settings.roomHeight < 75 ? 'mt-0' : 'mt-0.5'
                             ]">
                             {{ getMockGuestName(room) }}
                           </div>
@@ -3344,33 +3452,34 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
                         <!-- Bottom row: Icons (Absolute Positioned to allow overflow boundaries) -->
                         <!-- Bottom Left Corner: Guest Count, Birthday, Honeymoon, Extra Bed (All in single row) -->
-                        <div class="absolute flex items-center gap-1 pointer-events-none overflow-visible shrink-0 z-10"
+                        <div class="absolute flex items-center gap-0.5 pointer-events-none overflow-visible shrink-0 z-10"
                           :style="{
-                            left: '7px',
-                            bottom: '4px'
+                            left: '5px',
+                            bottom: (settings.roomHeight < 75 ? '1px' : '2px')
                           }" :class="room.booking_color ? 'text-inherit opacity-85' : 'text-slate-500'">
                           <template v-if="getGuestCount(room) > 0">
-                            <span class="flex items-center gap-0.5 font-bold text-[10px] leading-none shrink-0"
+                            <span class="flex items-center gap-0.5 font-bold leading-none shrink-0"
+                              :style="{ fontSize: Math.max(9, 10 * cardScale) + 'px' }"
                               :class="room.booking_color ? 'text-inherit' : 'text-gray-900'">
                               <RoomIcon :name="getGuestCount(room) > 2 ? 'more-than-2-guests' : 'walkin'"
                                 :class="room.booking_color ? 'text-inherit' : 'text-gray-600'"
-                                :style="{ width: Math.max(11, settings.iconSizes.group4 * cardScale) + 'px', height: Math.max(11, settings.iconSizes.group4 * cardScale) + 'px' }" />
+                                :style="{ width: Math.max(10, settings.iconSizes.group4 * cardScale) + 'px', height: Math.max(10, settings.iconSizes.group4 * cardScale) + 'px' }" />
                               {{ getGuestCount(room) }}
                             </span>
                           </template>
                           <RoomIcon v-if="shouldShowBirthday(room)" name="birthday" class="text-pink-500 shrink-0"
-                            :style="{ width: Math.max(11, (settings.iconSizes.group1 || 16) * cardScale * 0.9) + 'px', height: Math.max(11, (settings.iconSizes.group1 || 16) * cardScale * 0.9) + 'px' }" />
+                            :style="{ width: Math.max(10, (settings.iconSizes.group1 || 16) * cardScale * 0.9) + 'px', height: Math.max(10, (settings.iconSizes.group1 || 16) * cardScale * 0.9) + 'px' }" />
                           <RoomIcon v-if="shouldShowHoneymoon(room)" name="honeymoon" class="text-red-500 shrink-0"
-                            :style="{ width: Math.max(11, (settings.iconSizes.group1 || 16) * cardScale * 0.9) + 'px', height: Math.max(11, (settings.iconSizes.group1 || 16) * cardScale * 0.9) + 'px' }" />
+                            :style="{ width: Math.max(10, (settings.iconSizes.group1 || 16) * cardScale * 0.9) + 'px', height: Math.max(10, (settings.iconSizes.group1 || 16) * cardScale * 0.9) + 'px' }" />
                           <RoomIcon v-if="hasExtraBed(room)" name="extra-bed" class="text-slate-600 shrink-0"
-                            :style="{ width: Math.max(11, (settings.iconSizes.group1 || 16) * cardScale * 0.9) + 'px', height: Math.max(11, (settings.iconSizes.group1 || 16) * cardScale * 0.9) + 'px' }" />
+                            :style="{ width: Math.max(10, (settings.iconSizes.group1 || 16) * cardScale * 0.9) + 'px', height: Math.max(10, (settings.iconSizes.group1 || 16) * cardScale * 0.9) + 'px' }" />
                         </div>
 
                         <!-- Bottom Right Corner: Status Icon -->
                         <div v-if="getRoomStatusIconName(room)"
-                          class="absolute pointer-events-none overflow-visible shrink-0" :style="{
-                            right: (10 - (getStatusIconSize(room) - 20 * cardScale)) + 'px',
-                            bottom: (6 - (getStatusIconSize(room) - 20 * cardScale)) + 'px'
+                          class="absolute pointer-events-none overflow-visible shrink-0 flex items-center justify-center z-10" :style="{
+                            right: Math.max(7, Math.round(9 * cardScale)) + 'px',
+                            bottom: Math.max(5, Math.round(7 * cardScale)) + 'px'
                           }">
                           <RoomIcon :name="getRoomStatusIconName(room)" :monochrome="false"
                             :class="getRoomStatusIconClass(room)"
@@ -3802,7 +3911,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         <!-- 3. TT Phòng -->
                         <td class="p-2 border-slate-200 text-center">
                           <div class="flex items-center justify-center">
-                            <RoomIcon v-if="getRoomStatusIconName(room)" :name="getRoomStatusIconName(room)" :monochrome="false" :class="getRoomStatusIconClass(room)" class="w-5 h-5 mx-auto" />
+                            <RoomIcon v-if="getRoomStatusIconName(room, false)" :name="getRoomStatusIconName(room, false)" :monochrome="false" :class="getRoomStatusIconClass(room, false)" class="w-5 h-5 mx-auto" />
                             <span v-else class="text-slate-400">-</span>
                           </div>
                         </td>
@@ -3820,7 +3929,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                             ]"
                             :style="getRoomNumberStyle(room)"
                             class="inline-flex items-center justify-center gap-1">
-                            <span :class="isArrivingTomorrow(room) ? 'border-b border-black pb-[1px]' : ''">
+                            <span :class="isArrivingTomorrow(room) ? 'border-b-[1.5px] border-black pb-0 leading-[0.9]' : ''">
                               {{ room.room_number }}
                             </span>
                             <span v-if="getConnectingRoomNumber(room)" class="inline-flex items-center text-slate-700 ml-0.5" :title="`Phòng thông nhau với: ${getConnectingRoomNumber(room)}`">

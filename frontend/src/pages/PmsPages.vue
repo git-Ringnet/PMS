@@ -51,31 +51,31 @@ function handleWallpaperSaved(data) {
 
 const menuItems = [
   {
-    name: "Đặt phòng",
+    name: "Đặt Phòng",
     route: "/reservation",
     icon: "calendar",
     description: "Quản lý đặt phòng & sơ đồ phòng",
   },
   {
-    name: "Lễ tân",
+    name: "Lễ Tân",
     route: "/frontdesk",
     icon: "concierge",
     description: "Check-in, check-out & tiếp khách",
   },
   {
-    name: "Buồng phòng",
+    name: "Buồng Phòng",
     route: "/housekeeping",
     icon: "bed",
     description: "Quản lý dọn phòng & buồng phòng",
   },
   {
-    name: "Báo cáo quản lý",
+    name: "Báo Cáo Quản Lý",
     route: "/reports",
     icon: "chart",
     description: "Thống kê & báo cáo hoạt động",
   },
   {
-    name: "Cấu hình hệ thống",
+    name: "Cấu Hình Hệ Thống",
     route: "/config",
     icon: "settings",
     description: "Thiết lập & cấu hình hệ thống",
@@ -107,8 +107,11 @@ onMounted(() => {
           objectFit: wallpaperFit
         }"
       />
+      <!-- Dark Blur & Gradient Overlay -->
+      <div class="absolute inset-0 bg-gradient-to-b from-slate-950/75 via-slate-900/60 to-slate-950/80 backdrop-blur-[2px] pointer-events-none"></div>
       <!-- Configurable dark overlay for crisp and clear background -->
       <div
+        v-if="wallpaperOverlay > 0"
         class="absolute inset-0 bg-slate-950 transition-opacity duration-300 pointer-events-none"
         :style="{ opacity: wallpaperOverlay / 100 }"
       ></div>
@@ -121,53 +124,61 @@ onMounted(() => {
         : 'opacity-0 translate-y-8 scale-95'
         ">
         <!-- Quick Module Cards (Desktop hover) -->
-        <div class="flex gap-4 mt-8">
-          <button v-for="(item, index) in menuItems" :key="item.route" @click="navigateTo(item.route)"
-            class="group relative w-36 h-32 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl flex flex-col items-center justify-center gap-3 cursor-pointer transition-all duration-500 hover:bg-white/20 hover:scale-105 hover:border-white/40 hover:shadow-2xl"
-            :style="{ transitionDelay: `${index * 100 + 500}ms` }" :class="isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'
-              ">
-            <!-- Icon -->
-            <div
-              class="w-12 h-12 rounded-xl bg-white/15 flex items-center justify-center group-hover:bg-white/25 transition-all duration-300 group-hover:scale-110">
-              <svg v-if="item.icon === 'calendar'" class="w-6 h-6 text-white" fill="none" stroke="currentColor"
-                viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                  d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              <svg v-else-if="item.icon === 'concierge'" class="w-6 h-6 text-white" fill="none" stroke="currentColor"
-                viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                  d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
-              </svg>
-              <svg v-else-if="item.icon === 'bed'" class="w-6 h-6 text-white" fill="none" stroke="currentColor"
-                viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                  d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-              </svg>
-              <svg v-else-if="item.icon === 'chart'" class="w-6 h-6 text-white" fill="none" stroke="currentColor"
-                viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                  d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
-              <svg v-else-if="item.icon === 'settings'" class="w-6 h-6 text-white" fill="none" stroke="currentColor"
-                viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.573-1.066z" />
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-            </div>
-            <span class="text-white text-xs font-semibold tracking-wide">{{
-              item.name
-              }}</span>
+        <div class="flex flex-wrap items-center justify-center gap-3.5 sm:gap-4 mt-8 px-4">
+          <div
+            v-for="(item, index) in menuItems"
+            :key="item.route"
+            class="transition-all duration-700"
+            :style="{ transitionDelay: `${index * 100 + 400}ms` }"
+            :class="isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'"
+          >
+            <button
+              @click="navigateTo(item.route)"
+              class="group relative w-36 sm:w-38 h-32 sm:h-34 bg-white/15 backdrop-blur-xl border border-white/30 rounded-2xl flex flex-col items-center justify-center gap-2.5 cursor-pointer shadow-xl transition-all duration-200 ease-out hover:bg-white/25 hover:border-white/50 hover:shadow-2xl hover:scale-105 hover:-translate-y-1.5 active:scale-95"
+            >
+              <!-- Icon -->
+              <div
+                class="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center group-hover:bg-white/30 transition-all duration-200 ease-out group-hover:scale-110 shadow-inner">
+                <svg v-if="item.icon === 'calendar'" class="w-6 h-6 text-white drop-shadow-sm" fill="none" stroke="currentColor"
+                  viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
+                    d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <svg v-else-if="item.icon === 'concierge'" class="w-6 h-6 text-white drop-shadow-sm" fill="none" stroke="currentColor"
+                  viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
+                    d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
+                </svg>
+                <svg v-else-if="item.icon === 'bed'" class="w-6 h-6 text-white drop-shadow-sm" fill="none" stroke="currentColor"
+                  viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
+                    d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                </svg>
+                <svg v-else-if="item.icon === 'chart'" class="w-6 h-6 text-white drop-shadow-sm" fill="none" stroke="currentColor"
+                  viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
+                    d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                <svg v-else-if="item.icon === 'settings'" class="w-6 h-6 text-white drop-shadow-sm" fill="none" stroke="currentColor"
+                  viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
+                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.573-1.066z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.75"
+                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </div>
+              <span class="text-white text-xs sm:text-[13px] tracking-wide drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)] leading-tight text-center px-1 transition-transform duration-200 ease-out group-hover:scale-[1.02]">{{
+                item.name
+                }}</span>
 
-            <!-- Hover description tooltip -->
-            <div
-              class="absolute -bottom-10 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 whitespace-nowrap">
-              <span class="text-[10px] text-white/70 bg-black/40 backdrop-blur-sm px-2 py-1 rounded-md">{{
-                item.description }}</span>
-            </div>
-          </button>
+              <!-- Hover description tooltip -->
+              <div
+                class="absolute -bottom-10 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap pointer-events-none">
+                <span class="text-xs text-white/95 bg-black/70 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 shadow-lg font-medium">{{
+                  item.description }}</span>
+              </div>
+            </button>
+          </div>
         </div>
       </div>
     </div>

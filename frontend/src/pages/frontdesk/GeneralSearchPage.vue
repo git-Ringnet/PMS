@@ -271,7 +271,61 @@ const tabItems = [
 ]
 
 const currentSort = computed(() => sorts.value[tab.value])
-const date = value => value ? new Intl.DateTimeFormat('vi-VN').format(new Date(`${value}T00:00:00`)) : '—'
+
+function formatDateDisplay(val) {
+  if (!val) return '—'
+  const str = String(val).trim()
+  if (!str) return '—'
+  const datePart = str.split('T')[0].split(' ')[0]
+  const parts = datePart.split('-')
+  if (parts.length === 3 && parts[0].length === 4) {
+    return `${parts[2].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[0]}`
+  }
+  if (str.includes('/')) return str
+  try {
+    const d = new Date(str)
+    if (!isNaN(d.getTime())) {
+      const day = String(d.getDate()).padStart(2, '0')
+      const month = String(d.getMonth() + 1).padStart(2, '0')
+      const year = d.getFullYear()
+      return `${day}/${month}/${year}`
+    }
+  } catch (_) {}
+  return str
+}
+const date = formatDateDisplay
+
+function getRegistrationStatusStyle(row) {
+  let color = row.registration_status_color
+  if (!color && row.registration_status_id) {
+    const found = (options.value.registration_statuses || []).find(
+      st => String(st.booking_status_id) === String(row.registration_status_id) || String(st.id) === String(row.registration_status_id)
+    )
+    if (found?.color) color = found.color
+  }
+  if (!color && row.registration_status) {
+    const found = (options.value.registration_statuses || []).find(
+      st => String(st.name).toLowerCase() === String(row.registration_status).toLowerCase()
+    )
+    if (found?.color) color = found.color
+  }
+  if (!color) {
+    return { backgroundColor: '#10b981', color: '#ffffff' }
+  }
+  let textColor = '#ffffff'
+  const hex = color.replace('#', '')
+  if (hex.length === 6) {
+    const r = parseInt(hex.substring(0, 2), 16)
+    const g = parseInt(hex.substring(2, 4), 16)
+    const b = parseInt(hex.substring(4, 6), 16)
+    const yiq = ((r * 299) + (g * 587) + (b * 114)) / 1000
+    textColor = yiq >= 150 ? '#0f172a' : '#ffffff'
+  }
+  return {
+    backgroundColor: color,
+    color: textColor
+  }
+}
 const money = value => new Intl.NumberFormat('vi-VN').format(Number(value || 0))
 const statusText = value => statusOptions.find(item => item.value === String(value))?.label || '—'
 const sortIcon = column => currentSort.value.by !== column ? '↕' : currentSort.value.dir === 'asc' ? '↑' : '↓'
@@ -428,6 +482,18 @@ async function initDefaultDates() {
     }
   } catch (_) {}
 }
+
+// Dòng 93 Sheet FIX FE: Khi chọn ngày xem từ ngày (from) > đến ngày (to) -> mặc định chỉnh to = from
+watch(() => filters.value.from_date, (newFrom) => {
+  if (newFrom && filters.value.to_date && newFrom > filters.value.to_date) {
+    filters.value.to_date = newFrom
+  }
+})
+watch(() => filters.value.to_date, (newTo) => {
+  if (newTo && filters.value.from_date && newTo < filters.value.from_date) {
+    filters.value.from_date = newTo
+  }
+})
 
 // Helper lấy options theo optionsKey
 function getSelectOptions(key) {
@@ -1702,13 +1768,13 @@ onMounted(async () => {
                 <td v-else-if="col.key === 'total_amount'" class="number font-medium border-slate-200">{{ money(row.total_amount) }}</td>
                 <td v-else-if="col.key === 'deposit_amount'" class="number border-slate-200">{{ money(row.deposit_amount) }}</td>
                 <td v-else-if="col.key === 'registration_status'" class="border-slate-200">
-                  <span class="status-pill status-guaranteed">{{ row.registration_status || 'Guaranteed' }}</span>
+                  <span class="status-pill" :style="getRegistrationStatusStyle(row)">{{ row.registration_status || 'Guaranteed' }}</span>
                 </td>
                 <td v-else-if="col.key === 'operation_status'" class="border-slate-200">
                   <span class="status-pill" :class="`status-${row.operation_status}`">{{ statusText(row.operation_status) }}</span>
                 </td>
                 <td v-else-if="col.key === 'contact_phone'" class="border-slate-200">{{ row.contact_phone || '—' }}</td>
-                <td v-else-if="col.key === 'note'" class="note-cell border-slate-200">{{ row.note || '—' }}</td>
+                <td v-else-if="col.key === 'note'" class="note-cell whitespace-pre-line border-slate-200">{{ row.note || '—' }}</td>
                 <td v-else-if="col.key === 'booking_date'" class="border-slate-200">{{ date(row.booking_date) }}</td>
                 <td v-else-if="col.key === 'sales_person'" class="wrap-cell border-slate-200">{{ row.sales_person || '—' }}</td>
                 <td v-else-if="col.key === 'created_by'" class="wrap-cell border-slate-200">{{ row.created_by || '—' }}</td>
@@ -1807,7 +1873,7 @@ onMounted(async () => {
                   <span class="banner-dates">· {{ date(group.arrival_date) }} ~ {{ date(group.departure_date) }}</span>
                   <span class="banner-night">· Room Night: {{ group.nights }}</span>
                 </div>
-                <div class="banner-note">Ghi chú: {{ group.note || '—' }}</div>
+                <div class="banner-note whitespace-pre-line">Ghi chú: {{ group.note || '—' }}</div>
               </td>
               <td colspan="3" class="master-banner-right border-slate-200">
                 <div class="banner-money">Tiền dịch vụ: <strong>{{ money(group.service_total) }}</strong></div>
@@ -1845,7 +1911,7 @@ onMounted(async () => {
                   <td v-else-if="col.key === 'extra_bed_rate'" class="number border-slate-200">{{ money(room.extra_bed_rate) }}</td>
                   <td v-else-if="col.key === 'adults'" class="border-slate-200">{{ room.adults }}</td>
                   <td v-else-if="col.key === 'children'" class="border-slate-200">{{ room.children }}</td>
-                  <td v-else-if="col.key === 'note'" class="note-cell border-slate-200">{{ room.note || '—' }}</td>
+                  <td v-else-if="col.key === 'note'" class="note-cell whitespace-pre-line border-slate-200">{{ room.note || '—' }}</td>
                   <td v-else-if="col.key === 'service_total'" class="number font-medium border-slate-200">{{ money(room.service_total) }}</td>
                   <td v-else-if="col.key === 'paid_total'" class="number border-slate-200">{{ money(room.paid_total) }}</td>
                   <td v-else-if="col.key === 'checkin_time'" class="border-slate-200">{{ room.checkin_time || '—' }}</td>
@@ -2045,8 +2111,9 @@ onMounted(async () => {
   flex-direction: column;
   height: 100%;
   background: #f4f5f7;
-  color: #1f2430;
-  font-size: 13px;
+  color: #000000D9;
+  font-family: 'Roboto', system-ui, -apple-system, sans-serif;
+  font-size: 12px;
   overflow: hidden;
   padding: 12px 16px;
   box-sizing: border-box;
@@ -2066,14 +2133,14 @@ onMounted(async () => {
   gap: 22px;
 }
 .tab-btn {
-  padding: 8px 4px;
-  font-size: 14px;
+  padding: 6px 4px;
+  font-size: 12px;
   color: #8b909c;
   cursor: pointer;
   border: 0;
   background: transparent;
   border-bottom: 2px solid transparent;
-  font-weight: 500;
+  font-weight: 600;
   transition: color 0.15s;
 }
 .tab-btn.active {
@@ -2089,13 +2156,14 @@ onMounted(async () => {
 
 /* BUTTONS */
 .btn-custom {
-  height: 34px;
+  height: 32px;
   border-radius: 6px;
   border: 1px solid #c9ced8;
   background: #fff;
-  color: #1f2430;
-  font-size: 13px;
-  padding: 0 14px;
+  color: #000000D9;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0 12px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -2641,23 +2709,24 @@ onMounted(async () => {
   position: sticky;
   top: 0;
   z-index: 2;
-  background: #f7f8fa;
-  text-align: left;
-  font-size: 11.5px;
-  color: #5b6270;
-  font-weight: 700;
-  padding: 10px 10px;
-  border-bottom: 1px solid #e3e6ec;
-  border-right: 1px solid #f0f2f5;
+  background: #f8fafc;
+  text-align: center;
+  vertical-align: middle;
+  font-size: 12px;
+  color: #000000D9;
+  font-weight: 600;
+  padding: 8px 8px;
+  border: 1px solid #cbd5e1;
   white-space: nowrap;
 }
 .data-table tbody td {
-  padding: 9px 10px;
-  border-bottom: 1px solid #e3e6ec;
-  border-right: 1px solid #f4f5f7;
-  vertical-align: top;
-  font-size: 12.5px;
-  color: #1f2430;
+  padding: 8px 10px;
+  border-bottom: 1px solid #e2e8f0;
+  border-right: 1px solid #f1f5f9;
+  vertical-align: middle;
+  font-size: 12px;
+  color: #000000D9;
+  font-weight: 400;
   white-space: nowrap;
 }
 .data-table tbody tr:hover:not(.subtable-row):not(.master-banner-row) {
@@ -2702,13 +2771,15 @@ onMounted(async () => {
   line-height: 1.35;
 }
 .note-cell {
-  white-space: normal !important;
+  white-space: pre-line !important;
   word-break: break-word !important;
   overflow-wrap: anywhere !important;
   min-width: 160px;
-  max-width: 300px;
-  color: #5b6270;
+  max-width: 320px;
+  color: #000000D9;
   line-height: 1.4;
+  font-size: 12px;
+  font-weight: 400;
 }
 .expand-btn {
   display: inline-flex;
@@ -2720,34 +2791,44 @@ onMounted(async () => {
   background: #1f6fd6;
   color: #fff;
   border-radius: 3px;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: bold;
   line-height: 1;
   cursor: pointer;
 }
 .status-pill {
   display: inline-block;
-  background: #7cc242;
-  color: #fff;
   font-weight: 600;
   border-radius: 4px;
   padding: 2px 8px;
-  font-size: 11px;
+  font-size: 12px;
+  line-height: 1.3;
+  text-align: center;
+  white-space: nowrap;
 }
 .status-guaranteed {
-  background: #22c55e;
+  background: #16a34a;
+  color: #fff;
 }
 .status-0 {
-  background: #3b82f6;
+  background: #16a34a; /* Xanh lá - Đặt phòng */
+  color: #fff;
 }
 .status-1 {
-  background: #10b981;
+  background: #0284c7; /* Xanh dương - Đang ở */
+  color: #fff;
 }
 .status-2 {
-  background: #64748b;
+  background: #64748b; /* Xám - Đã trả phòng */
+  color: #fff;
 }
-.status-3, .status-4 {
-  background: #ef4444;
+.status-3 {
+  background: #dc2626; /* Đỏ - Đã hủy */
+  color: #fff;
+}
+.status-4 {
+  background: #d97706; /* Cam / Hổ phách - No Show */
+  color: #fff;
 }
 
 /* ------------------------------------------------------------- */
@@ -2778,18 +2859,19 @@ onMounted(async () => {
 .compact-subtable thead th {
   position: static;
   background: #f1f5f9;
-  color: #1e293b;
-  font-size: 11.5px;
-  font-weight: 700;
+  color: #000000D9;
+  font-size: 12px;
+  font-weight: 600;
   padding: 7px 10px;
-  border-bottom: 1px solid #cbd5e1;
-  border-right: 1px solid #e2e8f0;
+  border: 1px solid #cbd5e1;
   white-space: nowrap;
+  text-align: center;
+  vertical-align: middle;
 }
 .compact-subtable tbody td {
   padding: 7px 10px;
   font-size: 12px;
-  color: #1e293b;
+  color: #000000D9;
   border-bottom: 1px solid #e2e8f0;
   border-right: 1px solid #f1f5f9;
   white-space: nowrap;
@@ -2801,7 +2883,7 @@ onMounted(async () => {
   background: #f8fafc;
   border-top: 1px solid #cbd5e1;
   font-weight: 700;
-  color: #0f172a;
+  color: #000000D9;
 }
 .text-left {
   text-align: left;

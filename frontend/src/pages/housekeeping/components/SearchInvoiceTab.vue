@@ -884,7 +884,16 @@ const selectDateRange = (value) => {
   tempToDate.value = end.toISOString().split('T')[0]
 }
 
+watch(tempFromDate, (newVal) => {
+  if (newVal && tempToDate.value && newVal > tempToDate.value) {
+    tempToDate.value = newVal
+  }
+})
+
 const applyDateRange = () => {
+  if (tempFromDate.value && tempToDate.value && tempFromDate.value > tempToDate.value) {
+    tempToDate.value = tempFromDate.value
+  }
   fromDate.value = tempFromDate.value
   toDate.value = tempToDate.value
   dateRangeType.value = tempDateRangeType.value

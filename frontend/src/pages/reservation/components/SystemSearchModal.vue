@@ -416,8 +416,19 @@ function parseInputDate(displayStr) {
 
 function onDisplayFromDateBlur() {
   searchFromDate.value = parseInputDate(displayFromDate.value)
+  if (searchFromDate.value && searchToDate.value && searchFromDate.value > searchToDate.value) {
+    searchToDate.value = searchFromDate.value
+    displayToDate.value = displayFromDate.value
+  }
   executeGlobalSearch()
 }
+
+watch(searchFromDate, (newVal) => {
+  if (newVal && searchToDate.value && newVal > searchToDate.value) {
+    searchToDate.value = newVal
+    displayToDate.value = formatDateDisplay(newVal)
+  }
+})
 
 function onDisplayToDateBlur() {
   searchToDate.value = parseInputDate(displayToDate.value)

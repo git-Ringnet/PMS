@@ -182,8 +182,17 @@ const loadLogs = async () => {
   }
 }
 
+watch(filterDateFrom, (newVal) => {
+  if (newVal && filterDateTo.value && newVal > filterDateTo.value) {
+    filterDateTo.value = newVal
+  }
+})
+
 // Handle apply filters
 const handleSearch = () => {
+  if (filterDateFrom.value && filterDateTo.value && filterDateFrom.value > filterDateTo.value) {
+    filterDateTo.value = filterDateFrom.value
+  }
   queryParams.value.date_from = filterDateFrom.value
   queryParams.value.date_to = filterDateTo.value
   queryParams.value.registration_code = filterRegCode.value
