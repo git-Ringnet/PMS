@@ -2,54 +2,29 @@
 import { useRouter } from "vue-router";
 import { ref, onMounted, onUnmounted, computed } from "vue";
 import { fetchOutlets } from "@/services/outlet-service";
-import defaultBg from "@/assets/hotel-bg.png";
-import http from "@/services/http";
 import PortalWallpaperModal from "@/components/PortalWallpaperModal.vue";
 import { usePermission } from "@/composables/usePermission";
+import { usePortalWallpaper } from "@/composables/usePortalWallpaper";
 
 const router = useRouter();
 const { can, isSuperAdmin } = usePermission();
 const isLoaded = ref(false);
 const activeOutlets = ref([]);
 
-const wallpaperUrl = ref(null);
-const wallpaperPosition = ref('center center');
-const wallpaperFit = ref('cover');
-const wallpaperOverlay = ref(15);
-const isWallpaperModalOpen = ref(false);
+const {
+  wallpaperUrl,
+  wallpaperPosition,
+  wallpaperFit,
+  wallpaperOverlay,
+  isWallpaperModalOpen,
+  currentBgSrc,
+  loadWallpaper,
+  handleWallpaperSaved,
+} = usePortalWallpaper();
 
 const canChangeWallpaper = computed(() => {
   return isSuperAdmin.value || can('system.setting');
 });
-
-const currentBgSrc = computed(() => {
-  return wallpaperUrl.value || defaultBg;
-});
-
-async function loadWallpaper() {
-  try {
-    const res = await http.get('/portal-wallpaper');
-    if (res.data?.success) {
-      wallpaperUrl.value = res.data.wallpaper_url || null;
-      wallpaperPosition.value = res.data.wallpaper_position || 'center center';
-      wallpaperFit.value = res.data.wallpaper_fit || 'cover';
-      wallpaperOverlay.value = typeof res.data.wallpaper_overlay === 'number' ? res.data.wallpaper_overlay : 15;
-    }
-  } catch (err) {
-    console.error('Không thể tải cấu hình hình nền:', err);
-  }
-}
-
-function handleWallpaperSaved(data) {
-  if (typeof data === 'object' && data !== null) {
-    wallpaperUrl.value = data.wallpaper_url || null;
-    wallpaperPosition.value = data.wallpaper_position || 'center center';
-    wallpaperFit.value = data.wallpaper_fit || 'cover';
-    wallpaperOverlay.value = typeof data.wallpaper_overlay === 'number' ? data.wallpaper_overlay : 15;
-  } else {
-    wallpaperUrl.value = data;
-  }
-}
 
 const loadActiveOutlets = async () => {
   try {
