@@ -123,7 +123,7 @@ const deletePayment = async (id) => {
     paymentMethods.value = paymentMethods.value.filter(x => x.id !== id)
   } catch (err) {
     console.error(err)
-    uiStore.showToast('Lỗi khi xóa hình thức thanh toán', 'error')
+    uiStore.showToast(err.response?.data?.message || 'Lỗi khi xóa hình thức thanh toán', 'error')
   } finally {
     loading.value = false
   }

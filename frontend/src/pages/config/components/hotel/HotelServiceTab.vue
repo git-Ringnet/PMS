@@ -199,7 +199,7 @@ const deleteService = async (serviceId) => {
     fetchHotelServices()
   } catch (err) {
     console.error(err)
-    uiStore.showToast('Không thể xóa dịch vụ này', 'error')
+    uiStore.showToast(err.response?.data?.message || 'Không thể xóa dịch vụ này', 'error')
   } finally {
     loading.value = false
   }
@@ -387,9 +387,9 @@ onBeforeUnmount(() => {
               <div class="flex flex-col gap-1">
                 <label>Mã <span class="text-red-500">*</span></label>
                 <div class="relative">
-                  <input type="text" v-model="serviceFormState.code" placeholder="BC"
+                  <input type="text" v-model="serviceFormState.code" placeholder="BC" :disabled="isEditMode"
                     class="w-full border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg p-2 pr-7 text-xs font-normal text-[#000000D9] focus:outline-none focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308]" />
-                  <button v-if="serviceFormState.code" @click="serviceFormState.code = ''"
+                  <button v-if="serviceFormState.code && !isEditMode" @click="serviceFormState.code = ''"
                     class="absolute right-2 top-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0 text-xs">✕</button>
                 </div>
               </div>

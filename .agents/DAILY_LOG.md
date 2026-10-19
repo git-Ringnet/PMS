@@ -6169,3 +6169,14 @@
 - S12 serialize cả tạo lock/unlock, role canonical/owner fallback với quyền nền; test tạo lại, role allow/deny, owner và retry audit đạt. Hai mặc định là lựa chọn agent, chưa phải quyết định người dùng xác nhận.
 - S09 characterization4/4 pass35assertions, giữ copy production; DOCX không embedded/external sheet, cần source dòng25.
 - Regression cuối D:\PMS backend130/130 pass773assertions; frontend31/31pass, buildpass. 12 section đã có triển khai theo phạm vi hiện tại, chưa nghiệm thu UAT13/13; không DB vận hành/commit/push.
+
+## [2026-10-19] - Cấu hình hệ thống dòng 413, 419–429
+
+- Thêm ConfigurationReferenceGuard chặn sửa định danh/xóa danh mục đã có tham chiếu, gồm booking, bill, payment và lịch sử hủy/xóa mềm; khóa mã dịch vụ sau tạo và mã giá đã dùng.
+- Giá chuẩn sắp ID, chặn trùng room_class_id; migration 2026_10_19_140000 thêm unique, dừng báo ID khi dữ liệu cũ trùng và không tự xóa/gộp.
+- Bỏ min 6 ký tự ở quản lý nhân viên/API/UI; giữ hash, bỏ trống khi cập nhật và hỗ trợ mật khẩu 0. Không đổi AuthController.
+- Sửa thông báo lỗi API trên các màn cấu hình/menu, lời xác nhận xóa loại/dạng phòng và bố cục menu HK ở khung nhỏ.
+- Kiểm chứng trước dọn: backend 34/34 (161 assertions), frontend 106/106, build và PHP lint đạt. UAT trình duyệt các ca chính 413, 419–428; MySQL kiểm tra bảo toàn 15/15 đạt; dữ liệu UAT đã dọn và đối chiếu 20 nhóm bảng còn 0.
+- Dòng 429: API mật khẩu ngắn đạt; chưa xác nhận lưu mật khẩu ngắn trực tiếp trên UI do bước nhập/lưu credential bàn giao người dùng. Chưa test concurrency MySQL.
+- Theo yêu cầu người dùng, xóa test tạm SystemConfigurationIntegrityTest.php và toàn bộ tài liệu/ảnh/JSON UAT trong docs/system-configuration-fixes; giữ code và migration để commit. Không xóa test hồi quy có sẵn.
+- Người dùng sẽ tự chạy migrate:fresh --seed sau; không chạy migration/seed hoặc push trong lượt dọn và commit này.

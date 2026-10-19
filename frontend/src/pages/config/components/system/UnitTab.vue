@@ -104,7 +104,7 @@ const deleteUnit = async (id) => {
     unitsOfMeasure.value = unitsOfMeasure.value.filter(x => x.id !== id)
   } catch (err) {
     console.error(err)
-    uiStore.showToast('Lỗi khi xóa đơn vị tính', 'error')
+    uiStore.showToast(err.response?.data?.message || 'Lỗi khi xóa đơn vị tính', 'error')
   } finally {
     loading.value = false
   }

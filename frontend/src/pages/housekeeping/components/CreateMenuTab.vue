@@ -1482,7 +1482,7 @@ const updateGroupName = async (id, newName) => {
 const deleteGroup = async (id) => {
   const isConfirmed = await uiStore.confirm({
     title: 'Xóa Nhóm Sản Phẩm',
-    message: 'Bạn có chắc chắn muốn xóa nhóm này? Các sản phẩm trong nhóm cũng sẽ bị ảnh hưởng.',
+    message: 'Bạn có chắc chắn muốn xóa nhóm này? Chỉ có thể xóa khi nhóm chưa có sản phẩm hoặc dữ liệu liên quan.',
     confirmText: 'Xóa',
     cancelText: 'Hủy'
   })
@@ -1492,7 +1492,7 @@ const deleteGroup = async (id) => {
     fetchGroupsAndProducts()
     uiStore.showToast('Xóa nhóm thành công', 'success')
   } catch (e) {
-    uiStore.showToast('Lỗi xóa nhóm', 'error')
+    uiStore.showToast(e.response?.data?.message || 'Lỗi xóa nhóm', 'error')
   }
 }
 
@@ -1521,7 +1521,7 @@ const deleteSelected = async () => {
     uiStore.showToast('Xóa thành công', 'success')
   } catch (e) {
     console.error(e)
-    uiStore.showToast('Lỗi xóa sản phẩm', 'error')
+    uiStore.showToast(e.response?.data?.message || 'Lỗi xóa sản phẩm', 'error')
   }
 }
 

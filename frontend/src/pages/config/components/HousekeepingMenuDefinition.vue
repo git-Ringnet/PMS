@@ -246,9 +246,9 @@ onMounted(() => { reset(); load(); fetchHotelServices() })
         </button>
       </div>
 
-      <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_360px] gap-3 flex-1 min-h-0 overflow-hidden">
+      <div class="flex flex-col xl:grid xl:grid-cols-[minmax(0,1fr)_360px] gap-3 flex-1 min-h-0 overflow-y-auto xl:overflow-hidden">
         <!-- Outlets Table -->
-        <div class="border border-slate-200 rounded-xl overflow-auto bg-white shadow-2xs h-full">
+        <div class="border border-slate-200 rounded-xl overflow-auto bg-white shadow-2xs h-64 shrink-0 xl:h-full">
           <table class="w-full text-xs border-collapse">
             <thead class="bg-slate-50 text-gray-900 font-semibold sticky top-0 z-10">
               <tr>

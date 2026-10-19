@@ -335,7 +335,7 @@ const deletePayment = async (id) => {
     paymentMethods.value = paymentMethods.value.filter(x => x.id !== id)
   } catch (err) {
     console.error(err)
-    uiStore.showToast('Lỗi khi xóa hình thức thanh toán', 'error')
+    uiStore.showToast(err.response?.data?.message || 'Lỗi khi xóa hình thức thanh toán', 'error')
   }
 }
 const togglePaymentFlag = async (item, field) => {
@@ -538,7 +538,7 @@ const deleteUnit = async (id) => {
     unitsOfMeasure.value = unitsOfMeasure.value.filter(x => x.id !== id)
   } catch (err) {
     console.error(err)
-    uiStore.showToast('Lỗi khi xóa đơn vị tính', 'error')
+    uiStore.showToast(err.response?.data?.message || 'Lỗi khi xóa đơn vị tính', 'error')
   }
 }
 const toggleUnitFlag = async (item, field) => {
@@ -636,7 +636,7 @@ const deleteStatus = async (id) => {
     registrationStatuses.value = registrationStatuses.value.filter(x => x.id !== id)
   } catch (err) {
     console.error(err)
-    uiStore.showToast('Lỗi khi xóa tình trạng đăng ký', 'error')
+    uiStore.showToast(err.response?.data?.message || 'Lỗi khi xóa tình trạng đăng ký', 'error')
   }
 }
 const toggleStatusFlag = async (item, field) => {
