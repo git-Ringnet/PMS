@@ -84,14 +84,21 @@ class BookingRoomLifecycleService
      */
     private function synchronizeExtraBed(BookingRoom $room, array $stayDates): void
     {
-        $query = BookingRoomService::withTrashed()
+        // So khớp theo ngày đã chuẩn hóa (không phụ thuộc kiểu cột date/datetime)
+        // và ưu tiên dòng chưa xóa, để không sinh dòng EB trùng ngày.
+        $rows = BookingRoomService::withTrashed()
             ->where('booking_room_id', $room->id)
-            ->where('service_code', BookingRoomService::CODE_EXTRA_BED);
-        $existing = $query->get()->keyBy(fn (BookingRoomService $service) => Carbon::parse($service->service_date)->toDateString());
+            ->where('service_code', BookingRoomService::CODE_EXTRA_BED)
+            ->orderBy('id')
+            ->get();
+        $dateOf = fn (BookingRoomService $service) => Carbon::parse($service->service_date)->toDateString();
+        $existing = $rows->groupBy($dateOf)
+            ->map(fn ($sameDate) => $sameDate->first(fn (BookingRoomService $service) => !$service->trashed()) ?? $sameDate->first());
 
-        $query->where('is_posted', 0)
-            ->when($stayDates, fn ($builder) => $builder->whereNotIn('service_date', $stayDates))
-            ->delete();
+        $rows->filter(fn (BookingRoomService $service) => (int) $service->is_posted === 0
+                && !$service->trashed()
+                && (!$stayDates || !in_array($dateOf($service), $stayDates, true)))
+            ->each(fn (BookingRoomService $service) => $service->delete());
 
         if ((int) ($room->extra_bed_qty ?? 0) <= 0 || !$stayDates) {
             if (!$stayDates) {
@@ -131,23 +138,26 @@ class BookingRoomLifecycleService
                 ? (float) $row->rate
                 : (float) ($room->extra_bed_rate ?? 0);
 
-            BookingRoomService::withTrashed()->updateOrCreate(
-                [
-                    'booking_room_id' => $room->id,
-                    'service_code' => BookingRoomService::CODE_EXTRA_BED,
-                    'service_date' => $date,
-                ],
-                [
-                    'service_name' => BookingRoomService::catalogName(BookingRoomService::CODE_EXTRA_BED, 'Extra Bed'),
-                    'quantity' => $qty,
-                    'rate' => $rate,
-                    'department' => 'FO',
-                    'is_room' => $row?->is_room ?? 1,
-                    'is_posted' => 0,
-                    'deleted_at' => null,
-                    'created_by' => Auth::user()?->username ?? 'system',
-                ],
-            );
+            $values = [
+                'service_name' => BookingRoomService::catalogName(BookingRoomService::CODE_EXTRA_BED, 'Extra Bed'),
+                'quantity' => $qty,
+                'rate' => $rate,
+                'department' => 'FO',
+                'is_room' => $row?->is_room ?? 1,
+                'is_posted' => 0,
+                'deleted_at' => null,
+                'created_by' => Auth::user()?->username ?? 'system',
+            ];
+            if ($row) {
+                $row->fill($values)->save();
+                continue;
+            }
+
+            BookingRoomService::create([
+                'booking_room_id' => $room->id,
+                'service_code' => BookingRoomService::CODE_EXTRA_BED,
+                'service_date' => $date,
+            ] + $values);
         }
     }
 

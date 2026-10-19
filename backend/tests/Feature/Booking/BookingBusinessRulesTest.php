@@ -1554,7 +1554,11 @@ class BookingBusinessRulesTest extends TestCase
         $this->assertSame(['2026-08-24', '2026-08-25', '2026-08-26', '2026-08-27'],
             $child->fresh()->breakfastDetails()->orderBy('service_date')->pluck('service_date')->map(fn ($date) => $date->toDateString())->all());
         $this->assertSame(90000.0, (float) $child->fresh()->breakfastDetails()->first()->amount);
-        $this->assertDatabaseCount('booking_room_services', 0);
+        // Phụ thu ăn sáng trẻ chỉ nằm ở chi tiết ăn sáng; dòng RM là tiền phòng
+        // theo đêm của giai đoạn ở mới (dòng 366).
+        $this->assertSame(0, BookingRoomService::where('booking_room_id', $room->id)
+            ->where('service_code', '!=', BookingRoomService::CODE_ROOM)
+            ->count());
     }
 
     public function test_inline_service_update_bypasses_service_check_and_syncs_extra_bed(): void
@@ -2295,5 +2299,206 @@ class BookingBusinessRulesTest extends TestCase
         $rows = \App\Models\BookingRoomService::where('booking_room_id', $room->id)->where('service_code', 'RM')->get();
         $this->assertCount(1, $rows);
         $this->assertEquals(700000.0, (float) $rows->first()->rate);
+    }
+
+    /**
+     * Dòng 366: phòng 08/08-12/08 có giá theo đêm đã chỉnh tay (đêm cuối 0đ,
+     * EB đêm đầu và đêm cuối 0đ). Giá EB mặc định của phòng là 300.000.
+     */
+    private function roomWithManualNightlyRates(Booking $booking, string $id): BookingRoom
+    {
+        $room = BookingRoom::create([
+            'id' => $id, 'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-08', 'departure_date' => '2026-08-12',
+            'rate' => 600000, 'base_price' => 600000,
+            'extra_bed_qty' => 1, 'extra_bed_rate' => 300000,
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+        $nights = [
+            '2026-08-08' => [600000, 0],
+            '2026-08-09' => [600000, 300000],
+            '2026-08-10' => [600000, 300000],
+            '2026-08-11' => [0, 0],
+        ];
+        foreach ($nights as $date => [$roomRate, $ebRate]) {
+            BookingRoomService::create(['booking_room_id' => $room->id, 'service_code' => 'RM', 'service_name' => 'Dịch vụ phòng nghỉ', 'service_date' => $date, 'quantity' => 1, 'rate' => $roomRate, 'is_room' => 1, 'is_posted' => 0]);
+            BookingRoomService::create(['booking_room_id' => $room->id, 'service_code' => 'EB', 'service_name' => 'Extra Bed', 'service_date' => $date, 'quantity' => 1, 'rate' => $ebRate, 'is_room' => 1, 'is_posted' => 0]);
+        }
+
+        return $room;
+    }
+
+    /** @return array<string, float> ngày => đơn giá của mã dịch vụ */
+    private function nightlyRates(BookingRoom $room, string $code): array
+    {
+        return BookingRoomService::where('booking_room_id', $room->id)
+            ->where('service_code', $code)
+            ->orderBy('service_date')
+            ->get()
+            ->mapWithKeys(fn (BookingRoomService $service) => [$service->service_date->toDateString() => (float) $service->rate])
+            ->all();
+    }
+
+    private function bookingEditPayload(Booking $booking, BookingRoom $room, string $departure): array
+    {
+        $services = BookingRoomService::where('booking_room_id', $room->id)->get();
+
+        return $this->headerPayload($booking, '2026-08-08', $departure) + [
+            'room_allocations' => [[
+                'roomClassId' => $this->roomClass->id,
+                'quantity' => 1,
+                'price' => 600000,
+                'rooms' => [[
+                    'bookingRoomId' => $room->id,
+                    'roomClassId' => $this->roomClass->id,
+                    'guestName' => 'Guest 366',
+                    'price' => 600000,
+                    'extraBedQty' => 1,
+                    'extraBedPrice' => 300000,
+                    'arrivalDate' => '2026-08-08',
+                    'departureDate' => $departure,
+                    'dailyRoomPrices' => $services->where('service_code', 'RM')
+                        ->mapWithKeys(fn ($s) => [$s->service_date->toDateString() => (float) $s->rate])->all(),
+                    'dailyExtraBeds' => $services->where('service_code', 'EB')->map(fn ($s) => [
+                        'dateStr' => $s->service_date->toDateString(),
+                        'quantity' => (float) $s->quantity,
+                        'rate' => (float) $s->rate,
+                        'isRoom' => true,
+                    ])->values()->all(),
+                ]],
+            ]],
+        ];
+    }
+
+    public function test_room_info_extension_keeps_manual_nightly_rates_and_updates_booking_nights(): void
+    {
+        $booking = $this->createBooking(['arrival_date' => '2026-08-08', 'departure_date' => '2026-08-12', 'num_of_days' => 4]);
+        $room = $this->roomWithManualNightlyRates($booking, 'G-366-INFO');
+        $guest = Guest::create(['full_name' => 'Guest 366', 'guest_status' => Guest::STATUS_ACTIVE]);
+        BookingRoomGuest::create(['booking_room_id' => $room->id, 'guest_id' => $guest->id, 'is_primary' => true]);
+
+        // Màn hình Thông tin phòng luôn gửi kèm giá phòng và SL/giá EB của phòng.
+        $this->putJson("/api/booking-rooms/{$room->id}/guests/{$guest->id}", [
+            'full_name' => 'Guest 366',
+            'arrival_date' => '2026-08-08',
+            'departure_date' => '2026-08-14',
+            'rate' => 600000,
+            'rate_code' => null,
+            'extra_bed_qty' => 1,
+            'extra_bed_rate' => 300000,
+            'breakfast' => true,
+            'is_day_use' => false,
+        ])->assertSuccessful();
+
+        $this->assertSame([
+            '2026-08-08' => 600000.0, '2026-08-09' => 600000.0, '2026-08-10' => 600000.0,
+            '2026-08-11' => 0.0, '2026-08-12' => 600000.0, '2026-08-13' => 600000.0,
+        ], $this->nightlyRates($room, 'RM'));
+        $this->assertSame([
+            '2026-08-08' => 0.0, '2026-08-09' => 300000.0, '2026-08-10' => 300000.0,
+            '2026-08-11' => 0.0, '2026-08-12' => 300000.0, '2026-08-13' => 300000.0,
+        ], $this->nightlyRates($room, 'EB'));
+
+        $booking->refresh();
+        $this->assertSame('2026-08-14', $booking->departure_date->toDateString());
+        $this->assertSame(6, (int) $booking->num_of_days);
+    }
+
+    public function test_booking_edit_extension_charges_new_nights_and_keeps_default_extra_bed_rate(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'SyncRoomDateByBookingDate'], ['value' => '1']);
+        $booking = $this->createBooking(['arrival_date' => '2026-08-08', 'departure_date' => '2026-08-12', 'num_of_days' => 4]);
+        $room = $this->roomWithManualNightlyRates($booking, 'G-366-EDIT');
+
+        $payload = $this->bookingEditPayload($booking, $room, '2026-08-14');
+        // Màn hình có thể gửi số đêm cũ; backend phải tự tính lại.
+        $payload['num_of_days'] = 4;
+        $this->putJson("/api/bookings/{$booking->id}", $payload)->assertSuccessful();
+
+        $this->assertSame([
+            '2026-08-08' => 600000.0, '2026-08-09' => 600000.0, '2026-08-10' => 600000.0,
+            '2026-08-11' => 0.0, '2026-08-12' => 600000.0, '2026-08-13' => 600000.0,
+        ], $this->nightlyRates($room, 'RM'));
+        $this->assertSame([
+            '2026-08-08' => 0.0, '2026-08-09' => 300000.0, '2026-08-10' => 300000.0,
+            '2026-08-11' => 0.0, '2026-08-12' => 300000.0, '2026-08-13' => 300000.0,
+        ], $this->nightlyRates($room, 'EB'));
+        $this->assertSame(300000.0, (float) $room->fresh()->extra_bed_rate);
+        $this->assertSame(6, (int) $booking->fresh()->num_of_days);
+    }
+
+    public function test_booking_edit_saves_room_dates_when_header_sync_is_disabled(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'SyncRoomDateByBookingDate'], ['value' => '0']);
+        $booking = $this->createBooking(['arrival_date' => '2026-08-08', 'departure_date' => '2026-08-12', 'num_of_days' => 4]);
+        $room = $this->roomWithManualNightlyRates($booking, 'G-366-NOSYNC');
+
+        $this->putJson("/api/bookings/{$booking->id}", $this->bookingEditPayload($booking, $room, '2026-08-14'))
+            ->assertSuccessful();
+        $this->assertSame('2026-08-14', $room->fresh()->departure_date->toDateString());
+
+        $this->putJson("/api/bookings/{$booking->id}", array_merge(
+            $this->bookingEditPayload($booking, $room->fresh(), '2026-08-13'),
+            ['departure_date' => '2026-08-14'],
+        ))->assertSuccessful();
+        $this->assertSame('2026-08-13', $room->fresh()->departure_date->toDateString());
+        $this->assertSame('2026-08-14', $booking->fresh()->departure_date->toDateString());
+    }
+
+    public function test_extension_does_not_copy_zeroed_child_surcharge_to_new_nights(): void
+    {
+        $booking = $this->createBooking(['arrival_date' => '2026-08-08', 'departure_date' => '2026-08-14', 'num_of_days' => 6]);
+        $room = BookingRoom::create([
+            'id' => 'G-366-KID', 'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-08', 'departure_date' => '2026-08-11',
+            'rate' => 600000, 'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+        $child = BookingChild::create([
+            'id' => 'BC-366-KID', 'booking_id' => $booking->id, 'booking_room_id' => $room->id,
+            'full_name' => 'Kid 366', 'age_group' => 'child',
+        ]);
+        // Đêm đầu đã chỉnh tay phụ thu về 0đ, các đêm sau 90.000.
+        foreach (['2026-08-08' => 0, '2026-08-09' => 90000, '2026-08-10' => 90000] as $date => $amount) {
+            BookingChildBreakfastDetail::create([
+                'booking_child_id' => $child->id, 'service_date' => $date,
+                'breakfast' => true, 'is_free' => false, 'is_extra_charge' => true, 'is_room' => false,
+                'amount' => $amount,
+            ]);
+        }
+
+        $this->putJson("/api/bookings/{$booking->id}/rooms/{$room->id}", [
+            'departure_date' => '2026-08-13',
+        ])->assertSuccessful();
+
+        $amounts = $child->fresh()->breakfastDetails()->orderBy('service_date')->get()
+            ->mapWithKeys(fn ($detail) => [$detail->service_date->toDateString() => (float) $detail->amount])
+            ->all();
+        $this->assertSame([
+            '2026-08-08' => 0.0, '2026-08-09' => 90000.0, '2026-08-10' => 90000.0,
+            '2026-08-11' => 90000.0, '2026-08-12' => 90000.0,
+        ], $amounts);
+    }
+
+    public function test_single_night_extra_bed_rate_edit_keeps_room_default_rate(): void
+    {
+        $booking = $this->createBooking(['arrival_date' => '2026-08-08', 'departure_date' => '2026-08-12', 'num_of_days' => 4]);
+        $room = $this->roomWithManualNightlyRates($booking, 'G-366-EB');
+        $department = \App\Models\Department::firstOrCreate(['code' => 'FO'], ['name' => 'Reception/ Lê Tân']);
+        \App\Models\HotelService::create([
+            'code' => 'EB', 'name' => 'Extra Bed', 'is_active' => true,
+            'price' => 300000, 'department_id' => $department->id,
+        ]);
+
+        $this->postJson("/api/booking-rooms/{$room->id}/services", [
+            'service_code' => 'EB',
+            'service_name' => 'Extra Bed',
+            'service_date' => '2026-08-10',
+            'quantity' => 1,
+            'rate' => 0,
+            'is_room' => 1,
+        ])->assertSuccessful();
+
+        $this->assertSame(0.0, $this->nightlyRates($room, 'EB')['2026-08-10']);
+        $this->assertSame(300000.0, (float) $room->fresh()->extra_bed_rate);
     }
 }

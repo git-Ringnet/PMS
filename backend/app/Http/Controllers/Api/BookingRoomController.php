@@ -452,7 +452,7 @@ class BookingRoomController extends Controller
             $bookingRoom->fresh(),
             false,
             $stayPeriodChanged,
-            false,
+            $stayPeriodChanged,
         );
 
         // Sync header booking nếu ngày phòng vượt ra ngoài header
