@@ -109,6 +109,7 @@ class HotelServiceController extends Controller
         $validated['department_id'] = $validated['department_id'] ?? $departmentIds[0];
         unset($validated['department_ids']);
 
+        app(\App\Services\ConfigurationReferenceGuard::class)->assertIdentityUnchanged($service, $validated, ['code'], true);
         $service->update($validated);
         $service->departments()->sync($departmentIds);
         $service->load(['department', 'departments']);
@@ -129,6 +130,7 @@ class HotelServiceController extends Controller
             return response()->json(['message' => 'Service not found'], 404);
         }
 
+        app(\App\Services\ConfigurationReferenceGuard::class)->assertUnused($service);
         $service->delete();
 
         return response()->json([

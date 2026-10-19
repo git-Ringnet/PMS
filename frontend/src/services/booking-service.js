@@ -165,6 +165,8 @@ export const uploadGuestAvatar = (guestId, formData) => http.post(`/guests/${gue
 export const fetchCancelReasons = () => http.get('/cancel-reasons')
 export const fetchNationalities = (params = {}) => http.get('/nationalities', { params })
 export const fetchGuestDefinitions = () => http.get('/guest-definitions')
+export const fetchResidenceDeclarations = (params = {}) => http.get('/residence-declarations', { params })
+export const markResidenceDeclarations = (guests) => http.post('/residence-declarations', { guests })
 export const searchGuests = (q) => http.get('/guests/search', { params: { q } })
 export const syncGeoData = (data) => http.post('/geo/sync', data)
 

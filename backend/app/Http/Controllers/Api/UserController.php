@@ -54,7 +54,7 @@ class UserController extends Controller
             'name' => 'required|string|max:255',
             'username' => ['nullable', 'string', 'max:255', Rule::unique($system.'.users', 'username')],
             'email' => ['required', 'string', 'email', 'max:255', Rule::unique($system.'.users', 'email')],
-            'password' => 'nullable|string|min:6',
+            'password' => 'nullable|string',
             'department_code' => 'nullable|string|max:100',
             'department' => 'nullable|string|max:255',
             'job_title_code' => 'nullable|string|max:100',
@@ -80,8 +80,8 @@ class UserController extends Controller
             return User::create([
                 ...$validated,
                 'employee_code' => $prefix.str_pad((string) $nextNumber, 4, '0', STR_PAD_LEFT),
-                'username' => $validated['username'] ?: $validated['email'],
-                'password' => Hash::make($validated['password'] ?: $validated['email']),
+                'username' => ($validated['username'] ?? null) ?: $validated['email'],
+                'password' => Hash::make($validated['password'] ?? $validated['email']),
                 'must_change_password' => false,
                 'is_active_user' => $validated['is_active_user'] ?? true,
             ]);
@@ -110,7 +110,7 @@ class UserController extends Controller
             'name' => 'required|string|max:255',
             'username' => ['nullable', 'string', 'max:255', Rule::unique($system.'.users', 'username')->ignore($id)],
             'email' => ['required', 'string', 'email', 'max:255', Rule::unique($system.'.users', 'email')->ignore($id)],
-            'password' => 'nullable|string|min:6',
+            'password' => 'nullable|string',
             'department_code' => 'nullable|string|max:100',
             'department' => 'nullable|string|max:255',
             'job_title_code' => 'nullable|string|max:100',
@@ -122,8 +122,8 @@ class UserController extends Controller
             'is_active_user' => 'nullable|boolean',
         ], $this->validationMessages());
 
-        $validated['username'] = $validated['username'] ?: $validated['email'];
-        if (!empty($validated['password'])) {
+        $validated['username'] = ($validated['username'] ?? null) ?: $validated['email'];
+        if (isset($validated['password']) && $validated['password'] !== '') {
             $validated['password'] = Hash::make($validated['password']);
         } else {
             unset($validated['password']);
@@ -223,7 +223,6 @@ class UserController extends Controller
             'username.unique' => 'Tên đăng nhập đã được sử dụng.',
             'email.required' => 'Email không được để trống.',
             'email.unique' => 'Email đã được sử dụng.',
-            'password.min' => 'Mật khẩu phải chứa ít nhất 6 ký tự.',
         ];
     }
 }

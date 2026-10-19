@@ -73,6 +73,7 @@ class PaymentMethodController extends Controller
             'is_inactive' => 'nullable|boolean',
         ]);
 
+        app(\App\Services\ConfigurationReferenceGuard::class)->assertIdentityUnchanged($method, $validated, ['code']);
         $method->update($validated);
 
         return response()->json([
@@ -88,6 +89,7 @@ class PaymentMethodController extends Controller
             return response()->json(['message' => 'Payment method not found'], 404);
         }
 
+        app(\App\Services\ConfigurationReferenceGuard::class)->assertUnused($method);
         $method->delete();
 
         return response()->json([

@@ -531,6 +531,7 @@ class RoomController extends Controller
             'orders' => 'nullable|integer|unique:rooms,orders,' . $room->id,
         ]);
 
+        app(\App\Services\ConfigurationReferenceGuard::class)->assertIdentityUnchanged($room, $validated, ['room_number']);
         $room->update($validated);
         $room->load(['roomForm', 'roomClass']);
 
@@ -550,6 +551,7 @@ class RoomController extends Controller
             return response()->json(['message' => 'Room not found'], 404);
         }
 
+        app(\App\Services\ConfigurationReferenceGuard::class)->assertUnused($room);
         $room->delete();
 
         return response()->json([

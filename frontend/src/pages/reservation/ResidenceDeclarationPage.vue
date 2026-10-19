@@ -1,12 +1,25 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { fetchBookings, fetchSystemDate, fetchNationalities } from '@/services/booking-service'
+import {
+  fetchBookings,
+  fetchSystemDate,
+  fetchNationalities,
+  fetchGuestDefinitions,
+  fetchHotelSettings,
+  fetchResidenceDeclarations,
+  markResidenceDeclarations
+} from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
+import SingleDatePicker from '@/components/SingleDatePicker.vue'
 
 const uiStore = useUiStore()
 
 const nationalityMap = ref({})
 const foreignNationalityMap = ref({})
+// Mẫu khách Việt Nam: "nationality_id - nationality_name_en"
+const vnNationalityMap = ref({})
+const idTypeMap = ref({})
+const residenceTypeMap = ref({})
 
 async function loadNationalities() {
   try {
@@ -15,29 +28,30 @@ async function loadNationalities() {
       const list = res.data.data || []
       const natMap = {}
       const forMap = {}
-      
-      list.forEach(item => {
-        const c2 = item.asm_code ? String(item.asm_code).trim().toUpperCase() : null
-        const c3 = item.nationality_id ? String(item.nationality_id).trim().toUpperCase() : null
+      const vnMap = {}
+
+      // Map theo asm_code trước, nationality_id sau để mã chính (nationality_id) luôn được ưu tiên
+      // khi asm_code của nước này trùng nationality_id của nước khác
+      const mapByField = (field) => list.forEach(item => {
+        const key = item[field] ? String(item[field]).trim().toUpperCase() : null
+        if (!key) return
         const nameVi = item.asm_name || ''
         const nameEn = item.asm_description || item.nationality_name_en || ''
         const displayName = item.nationality_name || (nameEn && nameVi
           ? `${nameEn} ( ${nameVi} )`
           : nameVi || nameEn)
         const code3 = item.nationality_id || item.asm_code || '—'
-        const labelFor = `${code3} - ${nameEn}`
-        
-        if (c2) {
-          natMap[c2] = displayName
-          forMap[c2] = labelFor
-        }
-        if (c3) {
-          natMap[c3] = displayName
-          forMap[c3] = labelFor
-        }
+
+        natMap[key] = displayName
+        forMap[key] = `${code3} - ${nameEn}`
+        vnMap[key] = `${code3} - ${item.nationality_name_en || nameEn}`
       })
+      mapByField('asm_code')
+      mapByField('nationality_id')
+
       nationalityMap.value = natMap
       foreignNationalityMap.value = forMap
+      vnNationalityMap.value = vnMap
     }
   } catch (err) {
     console.error('Lỗi tải danh mục quốc tịch:', err)
@@ -48,6 +62,113 @@ function getNationalityName(code) {
   if (!code) return 'Việt Nam ( Việt Nam )'
   const cleanCode = String(code).trim().toUpperCase()
   return nationalityMap.value[cleanCode] || code
+}
+
+function getVnTemplateNationality(code) {
+  const cleanCode = String(code || 'VNM').trim().toUpperCase()
+  return vnNationalityMap.value[cleanCode] || 'VNM - Vietnam'
+}
+
+// Danh mục loại giấy tờ & thường trú/tạm trú (dùng khi xuất Excel khai báo lưu trú)
+async function loadGuestDefinitions() {
+  try {
+    const res = await fetchGuestDefinitions()
+    const data = res?.data?.data || {}
+
+    const idMap = {}
+    ;(data.id_types || []).forEach(it => {
+      // guests.id_type lưu code (CCCD, GPLX) hoặc tên (Hộ chiếu, Khác) tùy loại
+      ;[it.code, it.name].forEach(k => {
+        if (k) idMap[String(k).trim().toUpperCase()] = it
+      })
+    })
+    idTypeMap.value = idMap
+
+    const rtMap = {}
+    ;(data.residence_types || []).forEach(rt => {
+      ;[rt.id, rt.code].forEach(k => {
+        if (k !== null && k !== undefined && k !== '') rtMap[String(k).trim()] = rt
+      })
+    })
+    residenceTypeMap.value = rtMap
+  } catch (err) {
+    console.error('Lỗi tải danh mục định nghĩa khách:', err)
+  }
+}
+
+function getResidenceType(value) {
+  if (value === null || value === undefined || value === '') return null
+  return residenceTypeMap.value[String(value).trim()] || null
+}
+
+function getPoliceIdType(row) {
+  const it = row.idType ? idTypeMap.value[String(row.idType).trim().toUpperCase()] : null
+  if (it?.name_according_police) return it.name_according_police
+  return row.hoChieu ? '4 - Hộ chiếu' : '1 - Thẻ CCCD'
+}
+
+// Thông số Immigration_ExportExelChangeToRegistered & danh sách khách đã khai báo (SP8007)
+const isDeclarationTrackingEnabled = ref(false)
+const showDeclaredGuests = ref(false)
+const declaredKeys = ref(new Set())
+
+function getDeclarationKey(kind, guestId, bookingRoomId) {
+  return `${kind}|${guestId}|${bookingRoomId}`
+}
+
+function isRowDeclared(row) {
+  if (!row.guestId || !row.bookingRoomId) return false
+  return declaredKeys.value.has(getDeclarationKey(row.guestKind, row.guestId, row.bookingRoomId))
+}
+
+async function loadHotelSettings() {
+  try {
+    const res = await fetchHotelSettings()
+    const settings = res?.data?.data || res?.data || {}
+    isDeclarationTrackingEnabled.value = String(settings.Immigration_ExportExelChangeToRegistered ?? '0') === '1'
+  } catch (err) {
+    console.error('Lỗi khi tải cấu hình khách sạn:', err)
+  }
+}
+
+async function loadDeclarations(rows) {
+  if (!isDeclarationTrackingEnabled.value) return
+  const bookingRoomIds = [...new Set(rows.map(r => r.bookingRoomId).filter(Boolean).map(String))]
+  if (bookingRoomIds.length === 0) {
+    declaredKeys.value = new Set()
+    return
+  }
+  try {
+    const res = await fetchResidenceDeclarations({ booking_room_ids: bookingRoomIds })
+    const list = res?.data?.data || []
+    declaredKeys.value = new Set(list.map(d => getDeclarationKey(d.guest_kind, d.guest_id, d.booking_room_id)))
+  } catch (err) {
+    console.error('Lỗi tải danh sách khách đã khai báo lưu trú:', err)
+  }
+}
+
+async function markRowsDeclared(rows) {
+  const guests = rows
+    .filter(r => r.guestId && r.bookingRoomId)
+    .map(r => ({
+      guest_id: String(r.guestId),
+      guest_kind: r.guestKind,
+      booking_id: r.bookingId || null,
+      booking_room_id: String(r.bookingRoomId)
+    }))
+  if (guests.length === 0) return
+
+  try {
+    await markResidenceDeclarations(guests)
+    const next = new Set(declaredKeys.value)
+    guests.forEach(g => next.add(getDeclarationKey(g.guest_kind, g.guest_id, g.booking_room_id)))
+    declaredKeys.value = next
+    selectedRows.value = []
+    checkAll.value = false
+  } catch (err) {
+    console.error('Lỗi lưu danh sách khách đã khai báo lưu trú:', err)
+    uiStore.showToast('Không thể chuyển khách sang danh sách đã khai báo lưu trú.', 'error')
+  }
 }
 
 function getSeparateIdNumber(idNumber, passportNumber) {
@@ -63,7 +184,6 @@ function cellTitle(value) {
 // State
 const selectedDate = ref('24/07/2026')
 const isoDate = ref('2026-07-24')
-const datePickerInputRef = ref(null)
 
 const searchTerm = ref('')
 const sortKey = ref(null)
@@ -180,75 +300,6 @@ function parseDate(str) {
 }
 
 
-function handleDateInputChange(e) {
-  const val = e.target.value
-  if (val) {
-    isoDate.value = val
-    const [y, m, d] = val.split('-')
-    selectedDate.value = `${d}/${m}/${y}`
-    loadBookingData()
-  }
-}
-
-function handleDateManualInput(e) {
-  let val = e.target.value.replace(/\D/g, '')
-  if (val.length > 8) val = val.slice(0, 8)
-
-  let formatted = ''
-  if (val.length <= 2) {
-    formatted = val
-    if (val.length === 2) formatted += '/'
-  } else if (val.length <= 4) {
-    const day = val.slice(0, 2)
-    let month = val.slice(2)
-    if (month.length === 1 && parseInt(month, 10) > 1) {
-      formatted = `${day}/0${month}/`
-    } else {
-      formatted = `${day}/${month}`
-      if (month.length === 2) {
-        if (parseInt(month, 10) > 12) month = '12'
-        if (parseInt(month, 10) === 0) month = '01'
-        formatted = `${day}/${month}/`
-      }
-    }
-  } else {
-    const day = val.slice(0, 2)
-    let month = val.slice(2, 4)
-    if (parseInt(month, 10) > 12) month = '12'
-    if (parseInt(month, 10) === 0) month = '01'
-    const year = val.slice(4, 8)
-    formatted = `${day}/${month}/${year}`
-  }
-
-  selectedDate.value = formatted
-
-  const rawDigits = formatted.replace(/\D/g, '')
-  if (rawDigits.length === 8) {
-    const parts = formatted.split('/')
-    if (parts.length === 3 && parts[2].length === 4) {
-      const d = parts[0]
-      const m = parts[1]
-      const y = parts[2]
-      isoDate.value = `${y}-${m}-${d}`
-      loadBookingData()
-    }
-  }
-}
-
-function openDatePicker() {
-  if (datePickerInputRef.value) {
-    try {
-      if (typeof datePickerInputRef.value.showPicker === 'function') {
-        datePickerInputRef.value.showPicker()
-      } else {
-        datePickerInputRef.value.click()
-      }
-    } catch (err) {
-      datePickerInputRef.value.click()
-    }
-  }
-}
-
 function copyDateToClipboard() {
   if (selectedDate.value) {
     navigator.clipboard.writeText(selectedDate.value)
@@ -258,12 +309,6 @@ function copyDateToClipboard() {
       alert(`Đã sao chép: ${selectedDate.value}`)
     }
   }
-}
-
-function clearSelectedDate() {
-  selectedDate.value = ''
-  isoDate.value = ''
-  rowsData.value = []
 }
 
 function handleSort(key) {
@@ -340,6 +385,11 @@ const filteredRows = computed(() => {
     return false
   })
 
+  // 1b. Ẩn khách đã khai báo lưu trú khi tắt switch "Khách đã đăng ký" (bật switch: hiện tất cả)
+  if (isDeclarationTrackingEnabled.value && !showDeclaredGuests.value) {
+    list = list.filter(r => !isRowDeclared(r))
+  }
+
   // 2. Lọc Trẻ em
   if (filters.value.children) {
     list = list.filter(r => !r.nLon)
@@ -414,8 +464,7 @@ function exportToExcel(rows) {
     'STT', 'HỌ TÊN', 'NGÀY SINH', 'GIỚI TÍNH', 'LOẠI KHÁCH', 'SỐ GIẤY TỜ', 'LOẠI GIẤY TỜ', 'QUỐC TỊCH',
     'ĐỊA CHỈ', 'PHƯỜNG/XÃ', 'QUẬN/HUYỆN', 'TP/TỈNH', 'KHÁCH SẠN', 'MÃ CHECKIN', 'SỐ PHÒNG', 'ĐƠN GIÁ',
     'NGÀY ĐẾN', 'NGÀY ĐI', 'NGÀY NHẬP CẢNH', 'MỤC ĐÍCH NHẬP CẢNH', 'CỬA KHẨU NHẬP CẢNH', 'TẠM TRÚ ĐẾN NGÀY',
-    'NGHỀ NGHIỆP', 'GHI CHÚ', 'SỐ ĐIỆN THOẠI', 'NƠI LÀM VIỆC', 'LÝ DO LƯU TRÚ', 'THƯỜNG TRÚ', 'DÂN TỘC',
-    'GHI CHÚ CHUYỂN PHÒNG'
+    'NGHỀ NGHIỆP', 'GHI CHÚ', 'SỐ ĐIỆN THOẠI', 'NƠI LÀM VIỆC', 'LÝ DO LƯU TRÚ', 'THƯỜNG TRÚ', 'DÂN TỘC'
   ]
 
   let html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">`
@@ -436,6 +485,8 @@ function exportToExcel(rows) {
     const isVnText = r.isVn ? 'Việt Nam' : 'Quốc tế'
     const genderDisplay = r.gioiTinh ? String(r.gioiTinh).replace(/^[A-Za-z0-9\s]*-\s*/, '') : ''
     const checkinId = r.ma ? String(r.ma).replace(/^[A-Za-z]+/, '') : String(r.bookingId || '')
+    const nationalityName = r.nationalityCode ? getNationalityName(r.nationalityCode) : (r.quocTich || '')
+    const residenceTypeName = getResidenceType(r.residenceType)?.name || ''
     html += `<tr>`
     html += `<td style="text-align: center; border: 0.5pt solid #000000;">${idx + 1}</td>`
     html += `<td style="border: 0.5pt solid #000000;">${r.ten || ''}</td>`
@@ -444,7 +495,7 @@ function exportToExcel(rows) {
     html += `<td style="border: 0.5pt solid #000000;">${isVnText}</td>`
     html += `<td style="border: 0.5pt solid #000000; mso-number-format:'\\@';">${r.soGiayTo || ''}</td>`
     html += `<td style="border: 0.5pt solid #000000;">${r.loaiGiayTo || ''}</td>`
-    html += `<td style="border: 0.5pt solid #000000;">${r.quocTich || ''}</td>`
+    html += `<td style="border: 0.5pt solid #000000;">${nationalityName}</td>`
     html += `<td style="border: 0.5pt solid #000000;">${r.diaChi || ''}</td>`
     html += `<td style="border: 0.5pt solid #000000;">${r.phuongXa || ''}</td>`
     html += `<td style="border: 0.5pt solid #000000;">${r.quanHuyen || ''}</td>`
@@ -464,10 +515,9 @@ function exportToExcel(rows) {
     html += `<td style="border: 0.5pt solid #000000; mso-number-format:'\\@';">${r.soDienThoai || ''}</td>`
     html += `<td style="border: 0.5pt solid #000000;">${r.noiLamViec || ''}</td>`
     html += `<td style="border: 0.5pt solid #000000;">${r.lyDoLuuTru || ''}</td>`
-    html += `<td style="border: 0.5pt solid #000000;">${r.thuongTru || ''}</td>`
+    html += `<td style="border: 0.5pt solid #000000;">${residenceTypeName}</td>`
     html += `<td style="border: 0.5pt solid #000000;">${r.danToc || ''}</td>`
-    html += `<td style="border: 0.5pt solid #000000;">${r.transferNote || ''}</td>`
-    html += `</tr>`
+html += `</tr>`
   })
 
   html += `</tbody></table></body></html>`
@@ -710,10 +760,11 @@ function exportToExcelVn(rows) {
     table { border-collapse: collapse; }
     th { font-weight: bold; background-color: #8ea9db; border: 0.5pt solid #000000; text-align: left; padding: 4px 6px; }
     td { border: 0.5pt solid #000000; padding: 4px 6px; }
+    br { mso-data-placement: same-cell; }
   </style></head>`
   html += `<body><table style="border-collapse: collapse;">`
   html += `<thead>`
-  
+
   // Row 1: Single Merged Header Row for Title & Subtitle (Centered in 1 single Excel row)
   html += `<tr><td colspan="19" align="center" style="text-align: center; border: none; padding: 6px 0; vertical-align: middle;"><span style="font-size: 13pt; font-weight: bold; font-family: 'Times New Roman', serif;">DANH SÁCH THÔNG BÁO LƯU TRÚ CHO CÔNG DÂN VIỆT NAM</span><br/><span style="font-size: 10pt; font-style: italic; color: #ff0000; font-family: 'Times New Roman', serif;">(*Vui lòng không xóa dữ liệu mẫu; hãy thêm thông tin từ dòng tiếp theo)</span></td></tr>`
   
@@ -787,20 +838,21 @@ function exportToExcelVn(rows) {
       genderText = (genderText === 'Nữ' || genderText === 'F') ? 'F - Nữ' : 'M - Nam'
     }
 
-    const docTypeVal = r.loaiGiayTo === 'Hộ chiếu' ? '2 - Hộ chiếu' : '1 - Thẻ CCCD'
+    const docTypeVal = getPoliceIdType(r)
     const addressDetail = r.diaChi !== '_' ? r.diaChi : ''
+    const currentResidence = getResidenceType(r.residenceType)?.name_new_form || ''
 
     html += `<tr>`
     html += `<td style="text-align: center; border: 0.5pt solid #000000;">${idx + 1}</td>`
     html += `<td style="border: 0.5pt solid #000000;">${r.ten || ''}</td>`
     html += `<td style="border: 0.5pt solid #000000; mso-number-format:'\\@';">${r.ngaySinh || ''}</td>`
     html += `<td style="border: 0.5pt solid #000000;">${genderText}</td>`
-    html += `<td style="border: 0.5pt solid #000000;">VNM - Viet Nam</td>`
+    html += `<td style="border: 0.5pt solid #000000;">${getVnTemplateNationality(r.nationalityCode)}</td>`
     html += `<td style="border: 0.5pt solid #000000;">${docTypeVal}</td>`
     html += `<td style="border: 0.5pt solid #000000;"></td>`
     html += `<td style="border: 0.5pt solid #000000; mso-number-format:'\\@';">${r.soGiayTo || ''}</td>`
     html += `<td style="border: 0.5pt solid #000000; mso-number-format:'\\@';">${r.soDienThoai || ''}</td>`
-    html += `<td style="border: 0.5pt solid #000000;"></td>`
+    html += `<td style="border: 0.5pt solid #000000;">${currentResidence}</td>`
     html += `<td style="border: 0.5pt solid #000000;">${r.tpTinh || ''}</td>`
     html += `<td style="border: 0.5pt solid #000000;">${r.phuongXa || ''}</td>`
     html += `<td style="border: 0.5pt solid #000000;">${addressDetail}</td>`
@@ -826,7 +878,7 @@ function exportToExcelVn(rows) {
   URL.revokeObjectURL(url)
 }
 
-function handleExport(type) {
+async function handleExport(type) {
   if (selectedRows.value.length === 0) return
   
   // Find selected rows within rowsData
@@ -844,6 +896,11 @@ function handleExport(type) {
   } else if (tStr.includes('excel') || type === 'Excel') {
     exportToExcel(selectedItems)
     uiStore.showToast(`Đã xuất thành công ${selectedItems.length} khách hàng sang file Excel.`, 'success')
+    // Thông số Immigration_ExportExelChangeToRegistered = 1: chuyển khách đã xuất sang DS đã khai báo
+    if (isDeclarationTrackingEnabled.value) {
+      isExportOpen.value = false
+      await markRowsDeclared(selectedItems)
+    }
   } else if (type === 'XML') {
     exportToXml(selectedItems)
     uiStore.showToast(`Đã xuất thành công ${selectedItems.length} khách hàng sang XML.`, 'success')
@@ -963,6 +1020,12 @@ async function loadBookingData() {
                   mapped.push({
                     id: seq++,
                     bookingId: b.id,
+                    bookingRoomId: br.id,
+                    guestId: c.id,
+                    guestKind: 'guest',
+                    nationalityCode: c.nationality_code || 'VNM',
+                    idType: c.id_type || '',
+                    residenceType: c.residence_type || '',
                     ma: String(ma),
                     phong: String(phong),
                     ten: c.full_name || c.name || 'Guest',
@@ -1012,9 +1075,15 @@ async function loadBookingData() {
               mapped.push({
                 id: seq++,
                 bookingId: b.id,
+                bookingRoomId: br.id,
+                guestId: null,
+                guestKind: 'guest',
+                nationalityCode: 'VNM',
+                idType: '',
+                residenceType: '',
                 ma: String(ma),
                 phong: String(phong),
-                ten: b.contact_name || b.guest_name || 'Guest',
+                ten: b.contact_name|| b.guest_name || 'Guest',
                 gioiTinh: 'M - Nam',
                 ngaySinh: '',
                 ngayDen: formatDateDisplay(ngayDen),
@@ -1079,9 +1148,15 @@ async function loadBookingData() {
               mapped.push({
                 id: seq++,
                 bookingId: b.id,
+                bookingRoomId: br.id,
+                guestId: ch.id,
+                guestKind: 'child',
+                nationalityCode: ch.nationality_code || 'VNM',
+                idType: ch.id_type || '',
+                residenceType: ch.residence_type || '',
                 ma: String(ma),
                 phong: String(phong),
-                ten: ch.full_name || 'Trẻ em',
+                ten: ch.full_name|| 'Trẻ em',
                 gioiTinh: childGenderText,
                 ngaySinh: ch.dob ? formatDateDisplay(ch.dob) : '',
                 ngayDen: formatDateDisplay(ngayDen),
@@ -1125,6 +1200,8 @@ async function loadBookingData() {
         }
       })
 
+      // Tải DS đã khai báo trước khi hiển thị để khách đã khai báo không bị hiện thoáng qua
+      await loadDeclarations(mapped)
       rowsData.value = mapped
     }
   } catch (err) {
@@ -1133,14 +1210,22 @@ async function loadBookingData() {
   }
 }
 
-watch(isoDate, () => {
+// isoDate (yyyy-mm-dd) do SingleDatePicker cập nhật; selectedDate (dd/mm/yyyy) dùng để lọc & sao chép
+watch(isoDate, (val) => {
+  if (!val) {
+    selectedDate.value = ''
+    rowsData.value = []
+    return
+  }
+  const [y, m, d] = val.split('-')
+  selectedDate.value = `${d}/${m}/${y}`
   loadBookingData()
 })
 
-onMounted(() => {
+onMounted(async () => {
   document.addEventListener('click', closeDropdowns)
-  loadNationalities()
-  initSystemDate()
+  await Promise.all([loadNationalities(), loadGuestDefinitions(), loadHotelSettings()])
+  await initSystemDate()
   loadBookingData()
 })
 
@@ -1155,32 +1240,13 @@ onUnmounted(() => {
     <div class="toolbar">
       <!-- Date Selector with Calendar & Copy Button -->
       <div class="date-field">
-        <div class="date-display-box" title="Nhập hoặc chọn ngày">
-          <input 
-            type="text" 
-            class="date-input-text" 
-            :value="selectedDate" 
-            @input="handleDateManualInput" 
-            placeholder="dd/mm/yyyy" 
-            maxlength="10"
-          />
-          <button v-if="selectedDate" type="button" class="date-clear-btn" @click.stop="clearSelectedDate" title="Xóa nhanh ngày">
-            ✕
-          </button>
-          <button type="button" class="date-calendar-btn" @click="openDatePicker" title="Chọn ngày từ lịch">
-            <svg class="date-icon" width="13" height="13" viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M3 10h18M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
-          </button>
+        <!-- Lịch mở theo ngày hệ thống (authStore.systemDate), không theo ngày máy tính -->
+        <div class="date-picker-box" title="Nhập hoặc chọn ngày">
+          <SingleDatePicker v-model="isoDate" placeholder="dd/mm/yyyy" four-digit-year input-class="!py-1" />
         </div>
         <button class="icon-btn copy-btn" @click.stop="copyDateToClipboard" title="Sao chép ngày">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><rect x="8" y="8" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.7"/></svg>
         </button>
-        <input 
-          type="date" 
-          ref="datePickerInputRef" 
-          :value="isoDate" 
-          @change="handleDateInputChange" 
-          class="hidden-native-date-input" 
-        />
       </div>
 
       <div class="tb-sep"></div>
@@ -1278,6 +1344,20 @@ onUnmounted(() => {
       </div>
 
       <div class="spacer"></div>
+
+      <!-- Switch Khách đã đăng ký (Immigration_ExportExelChangeToRegistered = 1) -->
+      <label
+        v-if="isDeclarationTrackingEnabled"
+        class="declared-switch"
+        :class="{ active: showDeclaredGuests }"
+        title="Bật: hiển thị cả khách đã khai báo lưu trú; Tắt: ẩn khách đã khai báo"
+      >
+        <span class="declared-switch-label">Khách đã đăng ký</span>
+        <span class="sw">
+          <input type="checkbox" v-model="showDeclaredGuests" />
+          <span class="sw-track"></span>
+        </span>
+      </label>
 
       <!-- Filter Dropdown Anchor (Matching Image 1) -->
       <div class="dropdown-anchor">
@@ -1555,68 +1635,14 @@ onUnmounted(() => {
   gap: 4px;
   position: relative;
 }
-.date-display-box {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  background: #ffffff;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  user-select: none;
-  transition: .15s;
-}
-.date-display-box:hover,
-.date-display-box:focus-within {
-  border-color: var(--blue);
-}
-.date-input-text {
-  border: none;
-  outline: none;
-  background: transparent;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text);
-  font-family: Roboto, sans-serif;
-  width: 82px;
-  padding: 0;
-}
-.date-clear-btn {
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  padding: 0 2px;
-  display: flex;
-  align-items: center;
-  color: var(--text-faint);
-  font-size: 11px;
-  line-height: 1;
-  transition: color .15s;
-}
-.date-clear-btn:hover {
-  color: var(--danger);
-}
-.date-calendar-btn {
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  color: var(--text-muted);
-}
-.date-calendar-btn:hover {
-  color: var(--blue);
+.date-picker-box {
+  width: 140px;
 }
 .date-text {
   font-size: 12px;
   font-weight: 600;
   color: var(--text);
   font-family: inherit;
-}
-.date-icon {
-  color: var(--text-muted);
 }
 .copy-btn {
   width: 28px;
@@ -1636,15 +1662,6 @@ onUnmounted(() => {
   color: var(--blue);
   background: var(--blue-soft);
 }
-.hidden-native-date-input {
-  position: absolute;
-  opacity: 0;
-  width: 0;
-  height: 0;
-  pointer-events: none;
-  visibility: hidden;
-}
-
 .tb-sep {
   width: 1px;
   height: 22px;
@@ -2145,6 +2162,28 @@ table.residence-grid tbody tr:hover td {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Switch Khách đã đăng ký */
+.declared-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 6px 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 99px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: .2s;
+}
+.declared-switch.active {
+  border-color: var(--blue);
+}
+.declared-switch-label {
+  font-size: 12px;
+  font-weight: 600;
 }
 
 /* Toggle Switch */

@@ -187,6 +187,7 @@ class ProductController extends Controller
 
     public function destroy(Product $product)
     {
+        app(\App\Services\ConfigurationReferenceGuard::class)->assertUnused($product);
         if ($product->image) {
             Storage::disk('public')->delete($product->image);
         }

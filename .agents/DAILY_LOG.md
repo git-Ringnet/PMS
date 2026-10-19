@@ -9,6 +9,34 @@
 - **Ngày ghi**: `YYYY-MM-DD`
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 
+## [2026-10-19] - Hoàn Thiện Rà Soát & Bổ Sung Toàn Diện Lịch Sử Thao Tác (Ghi Log) Toàn Hệ Thống
+### Module: Lịch sử thao tác (ActivityLog), Đặt phòng, Lễ tân, Thu ngân, Buồng phòng, F&B, Kho & Tồn kho, Cấu hình & Báo cáo
+- **Mục tiêu & Yêu cầu hoàn thành theo phản hồi khách hàng**:
+  - **Mã đăng ký (`booking_code`)**: Không còn bị rỗng (`-`) đối với tất cả các thao tác liên quan đến booking hoặc entity con (Dịch vụ buồng phòng, khách lưu trú, thanh toán, đặt cọc, folio, yêu cầu đặc biệt, khai báo tạm trú...). Tự động truy vết đa tầng qua `booking_id`, `booking_room_id` (kèm cache in-memory `BookingRoom` và `Booking`), route params, URL query và payload.
+  - **Mã phòng (`room_number`)**: Đồng bộ ưu tiên mã phòng thuê dạng `G...` (ví dụ `G0000001`, `G0000043`) đúng chuẩn vận hành; fallback số phòng vật lý hoặc mã phòng trong payload; trả về `null` cho các đối tượng cấu hình/hệ thống không thuộc phòng để tránh gán nhầm.
+  - **Mô tả chi tiết thao tác cụ thể & rõ ràng**:
+    - Khi Thêm mới (`Add` / `create`): Hiển thị chi tiết từng trường dữ liệu nhập vào (`Mã`, `Tên`, `Đơn giá: xxx,xxx đ`, `Số lượng`, `Thành tiền: xxx,xxx đ`, `SĐT`, `Kích hoạt: Có/Không`...) thay vì chỉ ghi một dòng chung chung.
+    - Khi Điều chỉnh (`Modify` / `update`): Liệt kê chính xác từng trường thay đổi (`• Tên trường: giá trị cũ ➜ giá trị mới`), dịch sang tiếng Việt hơn 65 nhãn trường thường gặp, định dạng số tiền/số lượng phân cách hàng nghìn bằng dấu phẩy `,` (`100,000`, `35,000`).
+    - Dịch vụ buồng phòng (`BookingRoomService` / Minibar / Giặt là): Format chuẩn `* Thêm dịch vụ phòng {pNum} (ĐK {bCode}): {tên DV} (SL: {qty}, Đơn giá: {price} đ, Thành tiền: {total} đ)`.
+    - Thanh toán & Đặt cọc: Format chuẩn nghiệp vụ theo đúng 103 hàng file Excel (`Tách cọc`, `Chuyển cọc`, `Tạm ứng`, `Thanh toán đa phương thức`).
+    - Buồng phòng & Trạng thái: `No Post`, `Do Not Disturb (DND)`, `Đổi trạng thái phòng`, `Hủy nhận phòng (Cancel check-in)`, `Tự động gán phòng`.
+  - **Loại bỏ bản ghi rác & Nhiễu log**:
+    - Lọc bỏ `PersonalAccessToken` (Sanctum) khỏi Eloquent listener để triệt tiêu hoàn toàn các dòng log giả mạo `residence-declarations 'auth_token'` khi gọi API.
+    - Dọn dẹp các bản ghi rác `PersonalAccessToken` tồn tại trong bảng `activity_logs`.
+  - **Độ phủ Module & Màn hình**:
+    - Bổ sung 32 tiền tố Route API trong `$routeMap` ([LogActivity.php](file:///d:/PMS/backend/app/Http/Middleware/LogActivity.php)) và `$componentMap` ([ActivityLogResource.php](file:///d:/PMS/backend/app/Http/Resources/ActivityLogResource.php)), phủ sóng 100% các phân hệ (Lễ tân, Đặt phòng, Thu ngân, Buồng phòng, F&B, Kho, Quản lý Nhân sự, Phân quyền, Báo cáo, Cài đặt).
+    - Không tạo mới bảng database, không sửa migration database, giữ nguyên cấu trúc schema hiện hữu.
+- **Files chỉnh sửa**:
+  - [LogActivity.php](file:///d:/PMS/backend/app/Http/Middleware/LogActivity.php)
+  - [ActivityLogResource.php](file:///d:/PMS/backend/app/Http/Resources/ActivityLogResource.php)
+  - [AppServiceProvider.php](file:///d:/PMS/backend/app/Providers/AppServiceProvider.php)
+  - [ActivityLogService.php](file:///d:/PMS/backend/app/Services/ActivityLogService.php)
+  - [ActivityLogEnhancementTest.php](file:///d:/PMS/backend/tests/Feature/ActivityLogEnhancementTest.php)
+- **Kiểm thử**:
+  - PHPUnit: `php artisan test --filter=ActivityLog` -> **20/20 passed (77 assertions, 0 errors)**.
+  - Endpoint thực tế: `GET /api/activity-logs` -> **HTTP 200, 30 records parsed chuẩn xác**.
+  - Frontend Build: `npm run build` -> **Thành công 100% (0 errors)**.
+
 ## [2026-10-16] - Nâng Cấp Toàn Diện Lịch Sử Thao Tác (Ghi Log) Theo Sheet GHI LOG (103 Hàng)
 ### Module: Lịch sử thao tác (ActivityLog), Đặt phòng, Báo cáo, Phòng khóa OOO/OOS, Thu ngân & Đặt cọc, Sang ngày (Night Audit)
 - **Mục tiêu & Yêu cầu hoàn thành**:
@@ -6141,3 +6169,14 @@
 - S12 serialize cả tạo lock/unlock, role canonical/owner fallback với quyền nền; test tạo lại, role allow/deny, owner và retry audit đạt. Hai mặc định là lựa chọn agent, chưa phải quyết định người dùng xác nhận.
 - S09 characterization4/4 pass35assertions, giữ copy production; DOCX không embedded/external sheet, cần source dòng25.
 - Regression cuối D:\PMS backend130/130 pass773assertions; frontend31/31pass, buildpass. 12 section đã có triển khai theo phạm vi hiện tại, chưa nghiệm thu UAT13/13; không DB vận hành/commit/push.
+
+## [2026-10-19] - Cấu hình hệ thống dòng 413, 419–429
+
+- Thêm ConfigurationReferenceGuard chặn sửa định danh/xóa danh mục đã có tham chiếu, gồm booking, bill, payment và lịch sử hủy/xóa mềm; khóa mã dịch vụ sau tạo và mã giá đã dùng.
+- Giá chuẩn sắp ID, chặn trùng room_class_id; migration 2026_10_19_140000 thêm unique, dừng báo ID khi dữ liệu cũ trùng và không tự xóa/gộp.
+- Bỏ min 6 ký tự ở quản lý nhân viên/API/UI; giữ hash, bỏ trống khi cập nhật và hỗ trợ mật khẩu 0. Không đổi AuthController.
+- Sửa thông báo lỗi API trên các màn cấu hình/menu, lời xác nhận xóa loại/dạng phòng và bố cục menu HK ở khung nhỏ.
+- Kiểm chứng trước dọn: backend 34/34 (161 assertions), frontend 106/106, build và PHP lint đạt. UAT trình duyệt các ca chính 413, 419–428; MySQL kiểm tra bảo toàn 15/15 đạt; dữ liệu UAT đã dọn và đối chiếu 20 nhóm bảng còn 0.
+- Dòng 429: API mật khẩu ngắn đạt; chưa xác nhận lưu mật khẩu ngắn trực tiếp trên UI do bước nhập/lưu credential bàn giao người dùng. Chưa test concurrency MySQL.
+- Theo yêu cầu người dùng, xóa test tạm SystemConfigurationIntegrityTest.php và toàn bộ tài liệu/ảnh/JSON UAT trong docs/system-configuration-fixes; giữ code và migration để commit. Không xóa test hồi quy có sẵn.
+- Người dùng sẽ tự chạy migrate:fresh --seed sau; không chạy migration/seed hoặc push trong lượt dọn và commit này.

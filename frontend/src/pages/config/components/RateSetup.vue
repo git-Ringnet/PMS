@@ -1001,6 +1001,7 @@ const handleSave = async () => {
     }
   } catch (e) {
     console.error(e)
+    uiStore.showToast(e.response?.data?.message || 'Không thể lưu mã giá phòng.', 'error');
     return false;
   }
 }
@@ -1017,7 +1018,10 @@ const handleDelete = async () => {
       selectedRateCode.value = null;
       fetchRateCodes();
     }
-  } catch (e) { console.error(e) }
+  } catch (e) {
+    console.error(e)
+    uiStore.showToast(e.response?.data?.message || 'Không thể xóa mã giá phòng.', 'error');
+  }
 }
 
 // Room Types Matrix list

@@ -33,6 +33,7 @@ class ProductCategoryController extends Controller
             'outlet' => 'nullable|string|max:50',
         ]);
 
+        app(\App\Services\ConfigurationReferenceGuard::class)->assertIdentityUnchanged($productCategory, $validated, ['outlet']);
         $productCategory->update($validated);
 
         return response()->json($productCategory);
@@ -40,6 +41,7 @@ class ProductCategoryController extends Controller
 
     public function destroy(ProductCategory $productCategory)
     {
+        app(\App\Services\ConfigurationReferenceGuard::class)->assertUnused($productCategory);
         $productCategory->delete();
         return response()->json(['message' => 'Deleted successfully']);
     }

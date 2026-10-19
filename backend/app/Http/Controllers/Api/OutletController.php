@@ -106,6 +106,7 @@ class OutletController extends Controller
             'vat_config_id' => 'nullable|integer',
         ]);
 
+        app(\App\Services\ConfigurationReferenceGuard::class)->assertIdentityUnchanged($outlet, $validated, ['code']);
         $outlet->update($validated);
 
         ActivityLogService::logUpdate(
@@ -126,7 +127,8 @@ class OutletController extends Controller
     public function destroy(Request $request, $id)
     {
         $outlet = Outlet::findOrFail($id);
-        
+        app(\App\Services\ConfigurationReferenceGuard::class)->assertUnused($outlet);
+
         $reason = $request->input('reason', '');
         ActivityLogService::logDelete(
             $request,

@@ -297,7 +297,9 @@ class BookingRoomServiceController extends Controller
                     $room->update(['extra_bed_qty' => 0, 'extra_bed_rate' => 0]);
                 } else {
                     $maxQty = $remainingEB->max('quantity') ?? 0;
-                    $latestRate = $remainingEB->firstWhere('rate', '>', 0)?->rate ?? 0;
+                    $latestRate = (float) ($room->extra_bed_rate ?? 0) > 0
+                        ? (float) $room->extra_bed_rate
+                        : ($remainingEB->firstWhere('rate', '>', 0)?->rate ?? 0);
                     $room->update(['extra_bed_qty' => $maxQty, 'extra_bed_rate' => $latestRate]);
                 }
 
@@ -491,9 +493,13 @@ class BookingRoomServiceController extends Controller
                 ->where('service_code', BookingRoomService::CODE_EXTRA_BED)
                 ->get();
             $maxQty = $remainingEB->max('quantity') ?? 0;
-            $latestRate = $request->has('rate') && $request->rate !== null && $request->rate !== ''
-                ? (float) $request->rate
-                : ($remainingEB->firstWhere('rate', '>', 0)?->rate ?? 0);
+            // Dòng 366: sửa giá EB của MỘT đêm (kể cả 0đ) không đổi giá EB mặc
+            // định của phòng, vì giá đó dùng cho các đêm gia hạn sau này.
+            $latestRate = (float) ($room->extra_bed_rate ?? 0) > 0
+                ? (float) $room->extra_bed_rate
+                : ((float) $request->rate > 0
+                    ? (float) $request->rate
+                    : ($remainingEB->firstWhere('rate', '>', 0)?->rate ?? 0));
             $room->update(['extra_bed_qty' => $maxQty, 'extra_bed_rate' => $latestRate]);
         }
 
@@ -571,7 +577,9 @@ class BookingRoomServiceController extends Controller
                 $room->update(['extra_bed_qty' => 0, 'extra_bed_rate' => 0]);
             } else {
                 $maxQty = $remainingEB->max('quantity') ?? 0;
-                $latestRate = $remainingEB->firstWhere('rate', '>', 0)?->rate ?? 0;
+                $latestRate = (float) ($room->extra_bed_rate ?? 0) > 0
+                    ? (float) $room->extra_bed_rate
+                    : ($remainingEB->firstWhere('rate', '>', 0)?->rate ?? 0);
                 $room->update(['extra_bed_qty' => $maxQty, 'extra_bed_rate' => $latestRate]);
             }
         }
