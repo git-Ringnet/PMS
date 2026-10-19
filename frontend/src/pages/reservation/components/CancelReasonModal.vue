@@ -15,7 +15,7 @@
         :style="{ background: 'var(--pms-custom-theme, #006bdb)', color: 'var(--pms-custom-theme-text, #ffffff)' }"
         @mousedown="startDragModal"
       >
-        <div class="flex items-center space-x-2 font-bold text-xs uppercase tracking-wider">
+        <div class="flex items-center space-x-2 font-bold text-xs tracking-wider">
           <span>{{ title || 'Bạn có chắc chắn muốn xóa phòng này?' }}</span>
         </div>
         <button 

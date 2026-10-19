@@ -20,9 +20,9 @@
         }"
         @mousedown="startDragModal"
       >
-        <div class="flex items-center space-x-2 font-bold text-xs uppercase tracking-wider text-white">
+        <div class="flex items-center space-x-2 font-bold text-xs tracking-wider text-white">
           <i class="fa-solid fa-pen-to-square"></i>
-          <span>Cập nhật</span>
+          <span>Cập Nhật Nhanh Phòng</span>
         </div>
         <div class="flex items-center space-x-2">
           <button 

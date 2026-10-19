@@ -14,9 +14,9 @@
         :style="{ background: topbarThemeBg, color: 'var(--pms-custom-theme-text, #ffffff)' }"
         @mousedown="startDragModal"
       >
-        <div class="flex items-center space-x-2 font-semibold text-xs uppercase tracking-wider">
+        <div class="flex items-center space-x-2 font-semibold text-xs tracking-wider">
           <i class="fa-solid fa-star text-amber-300"></i>
-          <span>Yêu cầu đặc biệt - PHÒNG {{ room?.roomNumber || 'CHƯA GÁN' }}</span>
+          <span>Yêu Cầu Đặc Biệt - Phòng {{ room?.roomNumber || 'Chưa Gán' }}</span>
         </div>
         <button class="hover:opacity-80 p-1 rounded cursor-pointer border-none bg-transparent text-white" @click="close" title="Đóng">
           <i class="fa-solid fa-xmark text-sm"></i>
@@ -160,7 +160,7 @@
           class="text-white flex justify-between items-center px-4 py-2.5 shrink-0 rounded-t-xl"
           :style="{ background: topbarThemeBg, color: 'var(--pms-custom-theme-text, #ffffff)' }"
         >
-          <span class="font-bold text-xs uppercase tracking-wider">Thêm yêu cầu đặc biệt</span>
+          <span class="font-bold text-xs tracking-wider">Thêm Yêu Cầu Đặc Biệt</span>
           <button class="hover:text-white bg-transparent border-none cursor-pointer flex items-center bg-transparent" @click="cancelCreate">
             <i class="fa-solid fa-xmark text-white text-lg"></i>
           </button>

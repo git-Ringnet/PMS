@@ -14,10 +14,10 @@
         :style="{ background: topbarThemeBg, color: 'var(--pms-custom-theme-text, #ffffff)' }"
         @mousedown="startDragModal"
       >
-        <div class="flex items-center space-x-2 font-semibold text-xs uppercase tracking-wider">
+        <div class="flex items-center space-x-2 font-semibold text-xs tracking-wider">
           <i class="fa-solid fa-trash-can"></i>
-          <span v-if="allRooms.length <= 1">Xóa dịch vụ bổ sung - PHÒNG {{ room?.roomNumber || 'CHƯA GÁN' }}</span>
-          <span v-else>Xóa dịch vụ bổ sung - {{ allRooms.length }} PHÒNG ĐÃ CHỌN</span>
+          <span v-if="allRooms.length <= 1">Xóa Dịch Vụ Bổ Sung - Phòng {{ room?.roomNumber || 'Chưa Gán' }}</span>
+          <span v-else>Xóa Dịch Vụ Bổ Sung - {{ allRooms.length }} Phòng Đã Chọn</span>
         </div>
         <button class="hover:opacity-80 p-1 rounded cursor-pointer border-none bg-transparent text-white" @click="close" title="Đóng">
           <i class="fa-solid fa-xmark text-sm"></i>
