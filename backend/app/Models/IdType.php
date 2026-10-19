@@ -12,6 +12,7 @@ class IdType extends Model
     protected $fillable = [
         'code',
         'name',
+        'name_according_police',
         'order_index',
         'is_active',
     ];

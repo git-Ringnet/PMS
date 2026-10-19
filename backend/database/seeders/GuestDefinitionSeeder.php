@@ -166,10 +166,10 @@ class GuestDefinitionSeeder extends Seeder
 
         // 5. Loại giấy tờ (id_types)
         $idTypes = [
-            ['code' => 'CCCD', 'name' => 'Căn cước công dân', 'order_index' => 1, 'is_active' => true],
-            ['code' => 'Passport', 'name' => 'Hộ chiếu', 'order_index' => 2, 'is_active' => true],
-            ['code' => 'GPLX', 'name' => 'Giấy phép lái xe', 'order_index' => 3, 'is_active' => true],
-            ['code' => 'Other', 'name' => 'Khác', 'order_index' => 4, 'is_active' => true],
+            ['code' => 'CCCD', 'name' => 'Căn cước công dân', 'name_according_police' => '1 - Thẻ CCCD', 'order_index' => 1, 'is_active' => true],
+            ['code' => 'Passport', 'name' => 'Hộ chiếu', 'name_according_police' => '4 - Hộ chiếu', 'order_index' => 2, 'is_active' => true],
+            ['code' => 'GPLX', 'name' => 'Giấy phép lái xe', 'name_according_police' => '3 - Giấy phép lái xe', 'order_index' => 3, 'is_active' => true],
+            ['code' => 'Other', 'name' => 'Khác', 'name_according_police' => '9 - Giấy Tờ Khác', 'order_index' => 4, 'is_active' => true],
         ];
         foreach ($idTypes as $item) {
             IdType::updateOrCreate(['code' => $item['code']], $item);

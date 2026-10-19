@@ -212,6 +212,9 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     Route::get('entry-purposes', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'entryPurposes']);
     Route::get('guest-types', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'guestTypes']);
     Route::get('id-types', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'idTypes']);
+    // Khai báo lưu trú - danh sách khách đã khai báo (SP8007)
+    Route::get('residence-declarations', [\App\Http\Controllers\Api\ResidenceDeclarationController::class, 'index']);
+    Route::post('residence-declarations', [\App\Http\Controllers\Api\ResidenceDeclarationController::class, 'store']);
     Route::get('provinces', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'provinces']);
     Route::get('districts', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'districts']);
     Route::get('wards', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'wards']);
