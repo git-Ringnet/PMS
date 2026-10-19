@@ -555,12 +555,12 @@ const menuItems = computed(() => {
         name: t('menu.checkIn'), 
         route: '/frontdesk',
         dropdown: [
-          { name: 'SƠ ĐỒ PHÒNG', tab: 'room-map' },
-          { name: 'NHẬN PHÒNG NHANH', tab: 'room-map', action: 'quick-checkin' },
-          { name: 'TẠO ĐĂNG KÝ', tab: 'create-res', action: 'new' },
-          { name: 'ĐẶT CỌC', tab: 'create-res', modal: 'deposit' },
-          { name: 'TẠO THẺ KHÓA PHÒNG', tab: 'create-res', modal: 'keycard' },
-          { name: 'IN PHIẾU ĂN SÁNG', tab: 'print-breakfast' },
+          { name: 'Sơ Đồ Phòng', tab: 'room-map' },
+          { name: 'Nhận Phòng Nhanh', tab: 'room-map', action: 'quick-checkin' },
+          { name: 'Tạo Đăng Ký', tab: 'create-res', action: 'new' },
+          { name: 'Đặt Cọc', tab: 'create-res', modal: 'deposit' },
+          { name: 'Tạo Thẻ Khóa Phòng', tab: 'create-res', modal: 'keycard' },
+          { name: 'In Phiếu Ăn Sáng', tab: 'print-breakfast' },
         ]
       },
       { name: t('menu.checkVacancy'), route: '/frontdesk?tab=available' },
@@ -568,7 +568,7 @@ const menuItems = computed(() => {
         name: t('menu.invoiceManage'),
         route: '/frontdesk?tab=checkout',
         dropdown: [
-          { name: t('menu.invoicePayment') || 'Thanh toán', tab: 'checkout' },
+          { name: t('menu.invoicePayment') || 'Thanh Toán', tab: 'checkout' },
           { name: t('menu.invoiceVat') || 'VAT', route: '#' }
         ]
       },
@@ -583,11 +583,11 @@ const menuItems = computed(() => {
         name: t('menu.dayClose'),
         route: '/frontdesk?tab=day-close',
         dropdown: [
-          { name: 'SANG NGÀY', tab: 'day-close' },
-          { name: 'TÁCH DỊCH VỤ NGÀY CŨ', tab: 'split-old-services' }
+          { name: 'Sang Ngày', tab: 'day-close' },
+          { name: 'Tách Dịch Vụ Ngày Cũ', tab: 'split-old-services' }
         ]
       },
-      { name: 'LỊCH SỬ THAO TÁC', route: '/frontdesk?tab=history' },
+      { name: t('submenu.actionHistory'), route: '/frontdesk?tab=history' },
       { name: t('menu.reports'), route: '/reports', reportSlot: true },
       { name: t('menu.channelManager'), route: '/config' },
     ], 'frontdesk')
@@ -629,46 +629,46 @@ const menuItems = computed(() => {
     }
 
     fnbItems.push(
-      { name: 'PARTY', route: '/fnb/party' },
-      { name: 'Tìm kiếm đơn hàng', route: '/fnb/search' },
+      { name: 'Party', route: '/fnb/party' },
+      { name: 'Tìm Kiếm Đơn Hàng', route: '/fnb/search' },
       { 
-        name: 'Báo cáo', 
+        name: 'Báo Cáo', 
         route: '/fnb/report',
         dropdown: [
-          { name: 'XÁC NHẬN KHÁCH ĂN SÁNG', route: '/fnb/report', tab: 'breakfast' },
-          { name: 'BÁO CÁO QUẢN LÝ', route: '/fnb/report', tab: 'management' },
-          { name: 'BÁO CÁO DOANH THU THEO HOÁ ĐƠN', route: '/fnb/report', tab: 'invoice' },
+          { name: 'Xác Nhận Khách Ăn Sáng', route: '/fnb/report', tab: 'breakfast' },
+          { name: 'Báo Cáo Quản Lý', route: '/fnb/report', tab: 'management' },
+          { name: 'Báo Cáo Doanh Thu Theo Hóa Đơn', route: '/fnb/report', tab: 'invoice' },
           { 
-            name: 'BÁO CÁO DOANH THU SẢN PHẨM', 
+            name: 'Báo Cáo Doanh Thu Sản Phẩm', 
             route: '/fnb/report',
             children: [
-              { name: 'BÁO CÁO DOANH THU SẢN PHẨM', route: '/fnb/report', tab: 'product' },
-              { name: 'BÁO CÁO DOANH THU SẢN PHẨM THEO NGÀY', route: '/fnb/report', tab: 'product-by-day' },
-              { name: 'BÁO CÁO DOANH THU HÀNG BÁN THEO SẢN PHẨM', route: '/fnb/report', tab: 'product-by-item' }
+              { name: 'Báo Cáo Doanh Thu Sản Phẩm', route: '/fnb/report', tab: 'product' },
+              { name: 'Báo Cáo Doanh Thu Sản Phẩm Theo Ngày', route: '/fnb/report', tab: 'product-by-day' },
+              { name: 'Báo Cáo Doanh Thu Hàng Bán Theo Sản Phẩm', route: '/fnb/report', tab: 'product-by-item' }
             ]
           },
-          { name: 'BÁO CÁO THU NGÂN FB', route: '/fnb/report', tab: 'cashier' },
-          { name: 'BÁO CÁO KHÁCH ĐẾN', route: '/fnb/report', tab: 'guest-arrival' },
-          { name: 'BÁO CÁO KHÁCH ĐI', route: '/fnb/report', tab: 'guest-departure' },
-          { name: 'BÁO CÁO KHÁCH Ở', route: '/fnb/report', tab: 'guest-staying' },
-          { name: 'BÁO CÁO CHI TIẾT ĐƠN FB', route: '/fnb/report', tab: 'order-detail' },
-          { name: 'BÁO CÁO TỔNG DOANH THU', route: '/fnb/report', tab: 'total-revenue' },
-          { name: 'BÁO CÁO DOANH THU CHI TIẾT', route: '/fnb/report', tab: 'revenue-detail' },
-          { name: 'BÁO CÁO DỰ KIẾN KHÁCH ĂN SÁNG', route: '/fnb/report', tab: 'breakfast-forecast' },
-          { name: 'BÁO CÁO KHÁCH ĂN SÁNG', route: '/fnb/report', tab: 'breakfast-report' },
-          { name: 'BÁO CÁO HOÁ ĐƠN THANH TOÁN VỀ PHÒNG', route: '/fnb/report', tab: 'room-charge-invoice' },
-          { name: 'BÁO CÁO LOẠI HOÁ ĐƠN', route: '/fnb/report', tab: 'invoice-type' },
-          { name: 'BÁO CÁO DỰ ĐOÁN BÁN PHÒNG', route: '/fnb/report', tab: 'room-sales-forecast' }
+          { name: 'Báo Cáo Thu Ngân FB', route: '/fnb/report', tab: 'cashier' },
+          { name: 'Báo Cáo Khách Đến', route: '/fnb/report', tab: 'guest-arrival' },
+          { name: 'Báo Cáo Khách Đi', route: '/fnb/report', tab: 'guest-departure' },
+          { name: 'Báo Cáo Khách Ở', route: '/fnb/report', tab: 'guest-staying' },
+          { name: 'Báo Cáo Chi Tiết Đơn FB', route: '/fnb/report', tab: 'order-detail' },
+          { name: 'Báo Cáo Tổng Doanh Thu', route: '/fnb/report', tab: 'total-revenue' },
+          { name: 'Báo Cáo Doanh Thu Chi Tiết', route: '/fnb/report', tab: 'revenue-detail' },
+          { name: 'Báo Cáo Dự Kiến Khách Ăn Sáng', route: '/fnb/report', tab: 'breakfast-forecast' },
+          { name: 'Báo Cáo Khách Ăn Sáng', route: '/fnb/report', tab: 'breakfast-report' },
+          { name: 'Báo Cáo Hóa Đơn Thanh Toán Về Phòng', route: '/fnb/report', tab: 'room-charge-invoice' },
+          { name: 'Báo Cáo Loại Hóa Đơn', route: '/fnb/report', tab: 'invoice-type' },
+          { name: 'Báo Cáo Dự Đoán Bán Phòng', route: '/fnb/report', tab: 'room-sales-forecast' }
         ]
       },
       {
         name: 'Khác',
         route: '/fnb/other',
         dropdown: [
-          { name: 'GHI LOG', tab: 'log' },
-          { name: 'KHO', tab: 'inventory' },
-          { name: 'IN VAT', tab: 'vat' },
-          { name: 'CÀI ĐẶT', tab: 'settings' }
+          { name: 'Ghi Log', tab: 'log' },
+          { name: 'Kho', tab: 'inventory' },
+          { name: 'In VAT', tab: 'vat' },
+          { name: 'Cài Đặt', tab: 'settings' }
         ]
       }
     )
@@ -700,13 +700,6 @@ const menuItems = computed(() => {
       name: t('menu.reports'),
       route: '/reservation?tab=reports',
       reportSlot: true
-    },
-    {
-      name: t('menu.channelManager'),
-      route: '/reservation?tab=channel-manager',
-      dropdown: [
-        { name: t('menu.channelManagerRegReport'), tab: 'channel-manager' }
-      ]
     }
   ], 'reservation')
 })
@@ -978,52 +971,59 @@ function handleHeaderBookingSelected(booking) {
   <div class="flex flex-col h-screen w-full max-w-full overflow-hidden bg-white">
     <!-- Top Header Bar -->
     <header 
-      class="flex items-center justify-between gap-1.5 2xl:gap-3 h-11 lg:h-12 compact-low-h-header border-b px-2.5 2xl:px-4 shrink-0 z-50 transition-all duration-200 w-full max-w-full"
+      class="relative flex items-center justify-between gap-1 xl:gap-2 h-10 lg:h-10.5 compact-low-h-header border-b px-2 xl:px-3 shrink-0 z-50 transition-all duration-200 w-full max-w-full overflow-visible"
       :class="isHeaderBgDark ? 'border-white/10' : 'border-slate-200'"
       :style="{ background: headerBgColor }"
     >
       <!-- Logo (Left) -->
-      <div class="flex items-center justify-start shrink-0">
+      <div class="flex items-center justify-start shrink-0 mr-1">
         <button
           @click="goHome"
-          class="flex items-center gap-2 hover:opacity-85 transition-opacity cursor-pointer bg-transparent border-none p-0"
+          class="flex items-center gap-1.5 hover:opacity-85 transition-opacity cursor-pointer bg-transparent border-none p-0"
         >
           <img 
             src="/HKT_LOGO.png" 
             alt="PROVISTA PMS" 
-            class="w-7 h-7 object-contain drop-shadow-sm rounded-sm"
+            class="w-6 h-6 object-contain drop-shadow-sm rounded-sm"
           />
           <span 
-            class="text-base font-bold tracking-wider transition-colors duration-200"
+            class="text-sm font-bold tracking-wider transition-colors duration-200"
             :class="isHeaderBgDark ? 'text-white' : 'text-gray-900 dark:text-white'"
           >PMS</span>
         </button>
       </div>
 
       <!-- Main Navigation (Center) -->
-      <nav v-if="!['/pms', '/fnb', '/', '/login'].includes(route.path)" class="flex items-center gap-0.5 2xl:gap-1 shrink-0 py-0.5">
+      <nav 
+        v-if="!['/pms', '/fnb', '/', '/login'].includes(route.path)" 
+        class="flex items-center justify-start lg:justify-center gap-0.5 xl:gap-1 flex-1 min-w-0 py-0.5 mx-1"
+      >
         <div
-          v-for="item in menuItems"
+          v-for="(item, index) in menuItems"
           :key="item.route"
-          class="relative group py-1.5"
+          class="relative group py-1 shrink-0"
         >
           <button
             @click="navigateTo(item.route)"
-            class="px-1.5 2xl:px-2.5 py-1 text-[11.5px] 2xl:text-[13px] font-bold transition-colors cursor-pointer border-none whitespace-nowrap bg-transparent tracking-tight 2xl:tracking-normal"
+            class="px-1.5 xl:px-2 py-0.5 text-xs font-normal transition-colors cursor-pointer border-none whitespace-nowrap bg-transparent tracking-normal"
             :class="isActive(item.route)
-              ? (isHeaderBgDark ? 'text-white border-b-2 border-white' : 'text-gray-900 border-b-2 border-gray-900/80 dark:text-white dark:border-white')
-              : (isHeaderBgDark ? 'text-white/80 hover:text-white' : 'text-gray-900/75 hover:text-gray-900 dark:text-white/70 dark:hover:text-white')"
+              ? (isHeaderBgDark ? 'text-white font-medium border-b-2 border-white' : 'text-gray-900 font-medium border-b-2 border-gray-900/80 dark:text-white dark:border-white')
+              : (isHeaderBgDark ? 'text-white/80 hover:text-white font-normal' : 'text-gray-900/75 hover:text-gray-900 dark:text-white/70 dark:hover:text-white font-normal')"
           >
-            {{ item.name.toUpperCase() }}
+            {{ item.name }}
           </button>
           
           <!-- Dropdown Menu -->
           <div
             v-if="item.dropdown"
-            class="absolute left-1/2 -translate-x-1/2 mt-1 min-w-[175px] w-max max-w-[240px] bg-white border border-slate-200/90 rounded-lg shadow-xl p-1 z-[100] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-150 transform translate-y-1 group-hover:translate-y-0 text-slate-800"
+            class="absolute mt-1 min-w-[175px] w-max max-w-[240px] bg-white border border-slate-200/90 rounded-lg shadow-xl p-1 z-[100] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-150 transform translate-y-1 group-hover:translate-y-0 text-slate-800 before:absolute before:-top-2.5 before:left-0 before:right-0 before:h-2.5 before:content-['']"
+            :class="index === 0 ? 'left-0' : 'left-1/2 -translate-x-1/2'"
           >
             <!-- Tip decoration arrow -->
-            <div class="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-white border-t border-l border-slate-200 rotate-45"></div>
+            <div 
+              class="absolute -top-1 w-2 h-2 bg-white border-t border-l border-slate-200 rotate-45"
+              :class="index === 0 ? 'left-4' : 'left-1/2 -translate-x-1/2'"
+            ></div>
             
             <div
               v-for="sub in item.dropdown"
@@ -1032,7 +1032,7 @@ function handleHeaderBookingSelected(booking) {
             >
               <button
                 @click="!sub.children && handleDropdownClick(sub)"
-                class="w-full text-left px-4 py-2.5 text-xs font-black text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition-colors border-none bg-transparent cursor-pointer flex items-center justify-between relative z-10"
+                class="w-full text-left px-3 py-1.5 text-xs font-normal text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition-colors border-none bg-transparent cursor-pointer flex items-center justify-between relative z-10"
               >
                 <span>{{ sub.name }}</span>
                 <svg v-if="sub.hasChevron || sub.children" class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
@@ -1049,7 +1049,7 @@ function handleHeaderBookingSelected(booking) {
                   v-for="child in sub.children"
                   :key="child.name"
                   @click="handleDropdownClick(child)"
-                  class="w-full text-left px-4 py-2.5 text-xs font-black text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition-colors border-none bg-transparent cursor-pointer flex items-center justify-between relative z-10"
+                  class="w-full text-left px-3 py-1.5 text-xs font-normal text-slate-700 hover:bg-sky-50 hover:text-sky-700 transition-colors border-none bg-transparent cursor-pointer flex items-center justify-between relative z-10"
                 >
                   <span>{{ child.name }}</span>
                 </button>
@@ -1060,7 +1060,7 @@ function handleHeaderBookingSelected(booking) {
       </nav>
 
       <!-- Right Side: User Info / Date / Time (Right) -->
-      <div class="flex items-center justify-end gap-1 2xl:gap-1.5 text-xs whitespace-nowrap shrink-0">
+      <div class="flex items-center justify-end gap-1 xl:gap-1.5 text-xs whitespace-nowrap shrink-0 flex-none ml-auto">
         <!-- Search icon button -->
         <button
           v-if="!route.path.startsWith('/housekeeping')"
@@ -1257,13 +1257,13 @@ function handleHeaderBookingSelected(booking) {
         <div class="relative shrink-0" ref="branchDropdownRef">
           <div 
             @click="isBranchDropdownOpen = !isBranchDropdownOpen" 
-            class="flex items-center gap-0.5 px-2 py-0.5 rounded cursor-pointer font-bold shrink-0 whitespace-nowrap select-none transition-colors duration-200"
+            class="flex items-center gap-0.5 px-1.5 py-0.5 rounded cursor-pointer font-normal shrink-0 whitespace-nowrap select-none transition-colors duration-200"
             :class="isHeaderBgDark ? 'text-white hover:bg-white/15' : 'text-gray-900 dark:text-white hover:bg-black/5 dark:hover:bg-white/10'"
           >
             <svg class="w-3 h-3 transition-colors" :class="isHeaderBgDark ? 'text-white' : 'text-gray-900 dark:text-white'" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
             </svg>
-            <span class="text-[11.5px] leading-none">{{ selectedBranch?.code || 'HKT 1' }}</span>
+            <span class="text-xs leading-none">{{ selectedBranch?.code || 'HKT 1' }}</span>
             <svg class="w-2.5 h-2.5 transition-transform duration-200" :class="[isBranchDropdownOpen ? 'rotate-180' : '', isHeaderBgDark ? 'text-white/70' : 'text-gray-900/60 dark:text-white/60']" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
             </svg>
@@ -1278,8 +1278,8 @@ function handleHeaderBookingSelected(booking) {
               v-for="branch in branchesList" 
               :key="branch.id"
               @click="handleSelectBranch(branch)"
-              class="px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-[#121212] cursor-pointer flex items-center justify-between transition-colors font-semibold"
-              :class="selectedBranch?.id === branch.id ? 'text-[#0ea5e9] bg-slate-50/50 dark:bg-[#121212]/50 font-bold' : ''"
+              class="px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-[#121212] cursor-pointer flex items-center justify-between transition-colors font-normal"
+              :class="selectedBranch?.id === branch.id ? 'text-[#0ea5e9] bg-slate-50/50 dark:bg-[#121212]/50 font-medium' : ''"
             >
               <span>{{ branch.name }} ({{ branch.code }})</span>
               <svg v-if="selectedBranch?.id === branch.id" class="w-3.5 h-3.5 text-[#0ea5e9]" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
@@ -1293,7 +1293,7 @@ function handleHeaderBookingSelected(booking) {
         <div class="relative shrink-0" ref="dropdownRef">
           <div 
             @click="isDropdownOpen = !isDropdownOpen" 
-            class="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11.5px] font-bold cursor-pointer transition-all select-none whitespace-nowrap"
+            class="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-normal cursor-pointer transition-all select-none whitespace-nowrap max-w-[130px] xl:max-w-[160px]"
             :class="isHeaderBgDark ? 'text-white bg-white/15 hover:bg-white/25' : 'text-gray-900 dark:text-white bg-white/25 hover:bg-white/40'"
           >
             <img 
@@ -1305,7 +1305,7 @@ function handleHeaderBookingSelected(booking) {
             <svg v-else class="w-3 h-3 shrink-0" :class="isHeaderBgDark ? 'text-white' : 'text-gray-900 dark:text-white'" fill="currentColor" viewBox="0 0 24 24">
               <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
             </svg>
-            <span class="leading-none">{{ currentUser?.name || t('header.guest') }}</span>
+            <span class="leading-none truncate max-w-[70px] xl:max-w-[100px]">{{ currentUser?.name || t('header.guest') }}</span>
             <svg class="w-2.5 h-2.5 transition-transform duration-200 shrink-0" :class="[isDropdownOpen ? 'rotate-180' : '', isHeaderBgDark ? 'text-white/70' : 'text-gray-900/60 dark:text-white/60']" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
             </svg>
@@ -1317,13 +1317,13 @@ function handleHeaderBookingSelected(booking) {
             class="absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-lg py-1.5 z-[100]"
           >
             <div class="px-4 py-2 border-b border-slate-100 mb-1.5">
-              <p class="text-xs font-bold text-slate-800 truncate">{{ currentUser?.name || t('header.notLoggedIn') }}</p>
+              <p class="text-xs font-medium text-slate-800 truncate">{{ currentUser?.name || t('header.notLoggedIn') }}</p>
               <p class="text-[10px] text-slate-500 truncate mt-0.5">{{ currentUser?.email || currentUser?.zalo_id || 'guest@pms.com' }}</p>
             </div>
 
             <button 
               @click="router.push('/'); isDropdownOpen = false"
-              class="w-full text-left px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors border-none bg-transparent cursor-pointer flex items-center gap-1.5"
+              class="w-full text-left px-4 py-2 text-xs font-normal text-slate-700 hover:bg-slate-50 transition-colors border-none bg-transparent cursor-pointer flex items-center gap-1.5"
             >
               <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
@@ -1333,7 +1333,7 @@ function handleHeaderBookingSelected(booking) {
 
             <button 
               @click="openChangePasswordModal"
-              class="w-full text-left px-4 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors border-none bg-transparent cursor-pointer flex items-center gap-1.5"
+              class="w-full text-left px-4 py-2 text-xs font-normal text-slate-700 hover:bg-slate-50 transition-colors border-none bg-transparent cursor-pointer flex items-center gap-1.5"
             >
               <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
@@ -1346,7 +1346,7 @@ function handleHeaderBookingSelected(booking) {
 
             <button 
               @click="handleLogout"
-              class="w-full text-left px-4 py-2 text-xs font-bold text-red-600 hover:bg-red-50 hover:text-red-700 transition-colors border-none bg-transparent cursor-pointer flex items-center gap-1.5"
+              class="w-full text-left px-4 py-2 text-xs font-normal text-red-600 hover:bg-red-50 hover:text-red-700 transition-colors border-none bg-transparent cursor-pointer flex items-center gap-1.5"
             >
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -1358,10 +1358,11 @@ function handleHeaderBookingSelected(booking) {
 
         <!-- Shift & Date Time in Header (Mockup style) -->
         <div 
-          class="flex items-center gap-1 font-bold text-[10.5px] 2xl:text-[11px] whitespace-nowrap px-0.5 shrink-0 transition-colors duration-200"
+          class="flex items-center gap-1 font-normal text-[11px] 2xl:text-xs whitespace-nowrap px-1 shrink-0 transition-colors duration-200"
           :class="isHeaderBgDark ? 'text-white' : 'text-gray-900 dark:text-white'"
         >
           <span>{{ t('header.shift') }}: {{ activeShiftName }}</span>
+          <span class="opacity-40">|</span>
           <span>{{ formattedTimeVi }}</span>
         </div>
 
@@ -1442,16 +1443,16 @@ function handleHeaderBookingSelected(booking) {
     <!-- Sub Navigation (Light Theme Tabs) -->
     <div
       v-if="subMenuItems.length > 0"
-      class="flex items-center gap-1 xl:gap-1.5 h-10 xl:h-11 compact-low-h-subnav bg-white border-b border-slate-200 px-2 xl:px-4 shrink-0 overflow-x-auto scrollbar-thin dark:bg-[#000000] dark:border-[#1c1c1c]"
+      class="flex items-center gap-1 xl:gap-1.5 h-8.5 xl:h-9 compact-low-h-subnav bg-white border-b border-slate-200 px-2 xl:px-4 shrink-0 overflow-x-auto scrollbar-thin dark:bg-[#000000] dark:border-[#1c1c1c]"
     >
       <button
         v-for="item in subMenuItems"
         :key="item.name"
         @click="handleSubMenuClick(item)"
-        class="flex items-center gap-1.5 px-3 py-1 text-xs rounded-full transition-all duration-200 cursor-pointer border whitespace-nowrap relative font-semibold font-sans"
+        class="flex items-center gap-1.5 px-2.5 py-0.5 text-xs rounded-full transition-all duration-200 cursor-pointer border whitespace-nowrap relative font-sans"
         :class="item.active
-          ? 'bg-[#006bdb] text-white border-transparent shadow-xs'
-          : 'bg-transparent text-black border-transparent hover:bg-slate-100 hover:text-black dark:text-white dark:hover:bg-[#121212]'"
+          ? 'bg-[#006bdb] text-white font-medium border-transparent shadow-xs'
+          : 'bg-transparent text-black font-normal border-transparent hover:bg-slate-100 hover:text-black dark:text-white dark:hover:bg-[#121212]'"
         :style="item.active ? { background: headerBgColor, color: isHeaderBgDark ? '#ffffff' : '#ffffff', borderColor: 'transparent' } : {}"
       >
         <!-- Icons inline SVG for each type -->
