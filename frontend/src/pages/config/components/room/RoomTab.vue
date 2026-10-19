@@ -720,18 +720,18 @@ const toggleRoomInternal = async (room) => {
 
     <!-- OVERLAY MODAL: ADD / EDIT ROOM -->
     <div v-if="isRoomModalOpen"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs select-none">
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/55 backdrop-blur-xs select-none p-2 sm:p-4">
       <div
-        class="bg-white rounded-xl w-full max-w-lg shadow-2xl overflow-hidden border border-slate-200 font-roboto"
+        class="bg-white rounded-xl w-full max-w-lg shadow-2xl overflow-hidden border border-slate-200 font-roboto max-h-[calc(100vh-1rem)] sm:max-h-[calc(100vh-2rem)] flex flex-col"
         :style="{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }">
         <!-- Modal Header -->
-        <div class="px-5 py-3 flex items-center justify-between text-white cursor-move select-none"
-          :style="{ background: topbarThemeBg }"
+        <div class="px-5 py-2.5 flex items-center justify-between text-white cursor-move select-none shrink-0"
+          :style="{ background: topbarThemeBg || 'var(--pms-custom-theme, #006bdb)' }"
           @mousedown="startDragModal">
           <h2 class="text-xs font-semibold tracking-wide text-white">
             {{ isEditMode ? 'Chỉnh Sửa Phòng' : 'Thêm Phòng' }}
           </h2>
-          <button @click="isRoomModalOpen = false"
+          <button @mousedown.stop @click="isRoomModalOpen = false"
             class="text-white hover:text-white/80 bg-transparent border-none cursor-pointer text-base font-bold p-1 leading-none"
             title="Đóng (Esc)">
             ✕
@@ -739,20 +739,20 @@ const toggleRoomInternal = async (room) => {
         </div>
 
         <!-- Modal Body Form -->
-        <div class="p-5 flex flex-col gap-4 overflow-y-auto max-h-[75vh] text-xs text-slate-700 font-normal">
+        <div class="p-4 sm:p-4.5 flex flex-col gap-2.5 overflow-y-auto max-h-[88vh] text-xs text-slate-700 font-normal">
           <!-- Section 1: Room Info -->
-          <div class="flex flex-col gap-3">
+          <div class="flex flex-col gap-2">
             <h3 class="text-xs font-semibold text-[#000000D9] border-b border-slate-200 pb-1 uppercase tracking-wide">
               Thông Tin Phòng
             </h3>
-            <div class="grid grid-cols-2 gap-3.5">
+            <div class="grid grid-cols-2 gap-2.5">
               <div class="flex flex-col gap-1">
                 <label class="font-semibold text-xs text-[#000000D9]">
                   Số Phòng <span class="text-red-500">*</span>
                 </label>
                 <div class="relative flex items-center">
                   <input type="text" v-model="roomFormState.room_number" placeholder="Nhập số phòng..."
-                    class="rounded-lg p-2 pr-7 font-normal focus:outline-none focus:border-amber-400 text-xs w-full bg-[#FFF8DB] border border-[#F1DD8A]" />
+                    class="rounded-lg px-2.5 py-1.5 pr-7 font-normal focus:outline-none focus:border-amber-400 text-xs w-full bg-[#FFF8DB] border border-[#F1DD8A]" />
                   <button v-if="roomFormState.room_number" @click="roomFormState.room_number = ''"
                     class="absolute right-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer text-xs"
                     title="Xóa nhanh">✕</button>
@@ -761,23 +761,23 @@ const toggleRoomInternal = async (room) => {
               <div class="flex flex-col gap-1">
                 <label class="font-semibold text-xs text-[#000000D9]">Dạng Phòng</label>
                 <select v-model="roomFormState.room_form_id"
-                  class="border border-slate-200 rounded-lg p-2 bg-white font-normal focus:outline-sky-400 text-xs">
+                  class="border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white font-normal focus:outline-sky-400 text-xs">
                   <option v-for="f in roomForms" :key="f.id" :value="f.id">{{ f.name }}</option>
                 </select>
               </div>
             </div>
-            <div class="grid grid-cols-2 gap-3.5">
+            <div class="grid grid-cols-2 gap-2.5">
               <div class="flex flex-col gap-1">
                 <label class="font-semibold text-xs text-[#000000D9]">Loại Phòng</label>
                 <select v-model="roomFormState.room_class_id"
-                  class="border border-slate-200 rounded-lg p-2 bg-white font-normal focus:outline-sky-400 text-xs">
+                  class="border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white font-normal focus:outline-sky-400 text-xs">
                   <option v-for="c in roomClasses" :key="c.id" :value="c.id">{{ c.name }}</option>
                 </select>
               </div>
               <div class="flex flex-col gap-1">
                 <label class="font-semibold text-xs text-[#000000D9]">Phòng Thông Nhau</label>
                 <select v-model="roomFormState.connecting_room"
-                  class="border border-slate-200 rounded-lg p-2 bg-white font-normal focus:outline-sky-400 text-xs">
+                  class="border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white font-normal focus:outline-sky-400 text-xs">
                   <option value="">-- Không có --</option>
                   <option v-for="rm in availableConnectingRooms" :key="rm.id" :value="rm.room_number">
                     Phòng {{ rm.room_number }} ({{ rm.room_class?.name || rm.room_class?.code || 'P' }})
@@ -788,18 +788,18 @@ const toggleRoomInternal = async (room) => {
           </div>
 
           <!-- Section 2: Floor/Grid Info -->
-          <div class="flex flex-col gap-3">
+          <div class="flex flex-col gap-2">
             <h3 class="text-xs font-semibold text-[#000000D9] border-b border-slate-200 pb-1 uppercase tracking-wide">
               Thông Tin Vị Trí & Tầng
             </h3>
-            <div class="grid grid-cols-2 gap-3.5">
+            <div class="grid grid-cols-2 gap-2.5">
               <div class="flex flex-col gap-1">
                 <label class="font-semibold text-xs text-[#000000D9]">
                   Tầng <span class="text-red-500">*</span>
                 </label>
                 <div class="relative flex items-center">
                   <input type="text" v-model="roomFormState.floor" placeholder="Nhập tầng..."
-                    class="rounded-lg p-2 pr-7 font-normal focus:outline-none focus:border-amber-400 text-xs w-full bg-[#FFF8DB] border border-[#F1DD8A]" />
+                    class="rounded-lg px-2.5 py-1.5 pr-7 font-normal focus:outline-none focus:border-amber-400 text-xs w-full bg-[#FFF8DB] border border-[#F1DD8A]" />
                   <button v-if="roomFormState.floor" @click="roomFormState.floor = ''"
                     class="absolute right-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer text-xs"
                     title="Xóa nhanh">✕</button>
@@ -808,14 +808,14 @@ const toggleRoomInternal = async (room) => {
               <div class="flex flex-col gap-1">
                 <label class="font-semibold text-xs text-[#000000D9]">Số Khách Tối Đa</label>
                 <input type="number" v-model="roomFormState.max_guests" min="1"
-                  class="border border-slate-200 rounded-lg p-2 font-normal focus:outline-sky-400 text-xs" />
+                  class="border border-slate-200 rounded-lg px-2.5 py-1.5 font-normal focus:outline-sky-400 text-xs" />
               </div>
             </div>
-            <div class="grid grid-cols-2 gap-3.5">
+            <div class="grid grid-cols-2 gap-2.5">
               <div class="flex flex-col gap-1">
                 <label class="font-semibold text-xs text-[#000000D9]">Khu Vực</label>
                 <select v-model="roomFormState.area"
-                  class="border border-slate-200 rounded-lg p-2 bg-white font-normal focus:outline-sky-400 text-xs">
+                  class="border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white font-normal focus:outline-sky-400 text-xs">
                   <option value="Khu A">Khu vực A</option>
                   <option value="Khu B">Khu vực B</option>
                   <option value="Khu C">Khu vực C</option>
@@ -824,29 +824,29 @@ const toggleRoomInternal = async (room) => {
               <div class="flex flex-col gap-1">
                 <label class="font-semibold text-xs text-[#000000D9]">Giới Hạn Thêm Giường</label>
                 <input type="number" v-model="roomFormState.extra_beds_limit" min="0"
-                  class="border border-slate-200 rounded-lg p-2 font-normal focus:outline-sky-400 text-xs" />
+                  class="border border-slate-200 rounded-lg px-2.5 py-1.5 font-normal focus:outline-sky-400 text-xs" />
               </div>
             </div>
-            <div class="grid grid-cols-2 gap-3.5">
+            <div class="grid grid-cols-2 gap-2.5">
               <div class="flex flex-col gap-1">
                 <label class="font-semibold text-xs text-[#000000D9]">Hàng (Grid Row)</label>
                 <input type="number" v-model="roomFormState.grid_row"
-                  class="border border-slate-200 rounded-lg p-2 font-mono text-slate-700 focus:outline-sky-400 text-xs" />
+                  class="border border-slate-200 rounded-lg px-2.5 py-1.5 font-mono text-slate-700 focus:outline-sky-400 text-xs" />
               </div>
               <div class="flex flex-col gap-1">
                 <label class="font-semibold text-xs text-[#000000D9]">Cột (Grid Column)</label>
                 <input type="number" v-model="roomFormState.grid_column"
-                  class="border border-slate-200 rounded-lg p-2 font-mono text-slate-700 focus:outline-sky-400 text-xs" />
+                  class="border border-slate-200 rounded-lg px-2.5 py-1.5 font-mono text-slate-700 focus:outline-sky-400 text-xs" />
               </div>
             </div>
           </div>
 
           <!-- Section 3: Others -->
-          <div class="flex flex-col gap-3">
+          <div class="flex flex-col gap-2">
             <h3 class="text-xs font-semibold text-[#000000D9] border-b border-slate-200 pb-1 uppercase tracking-wide">
               Khác
             </h3>
-            <div class="flex items-center justify-between select-none py-1">
+            <div class="flex items-center justify-between select-none py-0.5">
               <span class="font-semibold text-xs text-[#000000D9]">Phòng Nội Bộ</span>
               <label class="relative inline-flex items-center cursor-pointer">
                 <input type="checkbox" v-model="roomFormState.is_internal" class="sr-only peer">
@@ -859,7 +859,7 @@ const toggleRoomInternal = async (room) => {
               <label class="font-semibold text-xs text-[#000000D9]">Ghi Chú</label>
               <div class="relative flex items-center">
                 <textarea v-model="roomFormState.notes" rows="2" placeholder="Ghi chú về phòng..."
-                  class="border border-slate-200 rounded-lg p-2 pr-7 focus:outline-sky-400 resize-none font-normal text-xs w-full"></textarea>
+                  class="border border-slate-200 rounded-lg px-2.5 py-1.5 pr-7 focus:outline-sky-400 resize-none font-normal text-xs w-full"></textarea>
                 <button v-if="roomFormState.notes" @click="roomFormState.notes = ''"
                   class="absolute right-2 top-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer text-xs"
                   title="Xóa nhanh">✕</button>
@@ -869,13 +869,13 @@ const toggleRoomInternal = async (room) => {
         </div>
 
         <!-- Modal Footer -->
-        <div class="bg-slate-50 px-5 py-3 flex items-center justify-end gap-2 border-t border-slate-100">
+        <div class="bg-slate-50 px-5 py-2.5 flex items-center justify-end gap-2 border-t border-slate-100 shrink-0">
           <button @click="saveRoom"
-            class="btn-pms-primary h-8 px-4 text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs">
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+            class="btn-pms-primary">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
             </svg>
-            Lưu Phòng
+            <span>Lưu Phòng</span>
           </button>
         </div>
       </div>

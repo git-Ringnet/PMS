@@ -118,6 +118,12 @@ watch(() => route.query.roomNumber, async () => {
   if (fromDate.value) await loadData()
 })
 
+watch(fromDate, (newVal) => {
+  if (newVal && toDate.value && newVal > toDate.value) {
+    toDate.value = newVal
+  }
+})
+
 async function initDates() {
   const routeFromDate = getRouteDate('fromDate')
   const routeToDate = getRouteDate('toDate')

@@ -138,8 +138,18 @@ const chooseCalendarDay = (day) => {
   if (!day || !calendarTarget.value) return
   const [year, month] = calendarMonth.value.split('-').map(Number)
   const value = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
-  if (calendarTarget.value === 'start') draftStart.value = value
-  else draftEnd.value = value
+  if (calendarTarget.value === 'start') {
+    draftStart.value = value
+    // Dòng 93 Sheet FIX FE: Nếu Từ ngày (from) > Đến ngày (to) -> mặc định chỉnh to = from
+    if (draftEnd.value && draftStart.value > draftEnd.value) {
+      draftEnd.value = draftStart.value
+    }
+  } else {
+    draftEnd.value = value
+    if (draftStart.value && draftEnd.value < draftStart.value) {
+      draftStart.value = draftEnd.value
+    }
+  }
   markCustomDate()
   calendarTarget.value = null
 }
@@ -153,10 +163,9 @@ const isCalendarDaySelected = (day) => {
 
 const apply = () => {
   if (!draftStart.value || !draftEnd.value) return
+  // Dòng 93 Sheet FIX FE: Nếu Từ ngày > Đến ngày -> to = from
   if (draftStart.value > draftEnd.value) {
-    const start = draftStart.value
-    draftStart.value = draftEnd.value
-    draftEnd.value = start
+    draftEnd.value = draftStart.value
   }
   emit('update:startDate', draftStart.value)
   emit('update:endDate', draftEnd.value)
