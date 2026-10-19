@@ -14,9 +14,9 @@
         :style="{ background: topbarThemeBg, color: 'var(--pms-custom-theme-text, #ffffff)' }"
         @mousedown="startDragModal"
       >
-        <div class="flex items-center space-x-2 font-semibold text-xs uppercase tracking-wider">
+        <div class="flex items-center space-x-2 font-semibold text-xs tracking-wider">
           <i class="fa-solid fa-mug-saucer"></i>
-          <span>Chi tiết ăn sáng - PHÒNG {{ room?.roomNumber || 'CHƯA GÁN' }} ({{ room?.type }})</span>
+          <span>Chi Tiết Ăn Sáng - Phòng {{ room?.roomNumber || 'Chưa Gán' }} ({{ room?.type }})</span>
         </div>
         <div class="flex items-center space-x-2">
           <!-- Help Icon -->
@@ -42,20 +42,20 @@
         <div v-else class="border border-slate-200 rounded-lg overflow-hidden">
           <table class="w-full border-collapse text-left text-xs">
             <thead>
-              <tr class="bg-slate-100 border-b border-slate-200 text-slate-600 font-bold h-10">
-                <th class="p-3 w-[250px] text-center align-middle border-r border-slate-200 border">Ngày</th>
-                <th class="p-3 w-[160px] text-center align-middle border-r border-slate-200 border">Thành Tiền</th>
-                <th class="p-3 w-[110px] text-center align-middle border-r border-slate-200 border">Ăn Sáng</th>
-                <th class="p-3 w-[110px] text-center align-middle border-r border-slate-200 border">Miễn Phí</th>
-                <th class="p-3 w-[110px] text-center align-middle border-r border-slate-200 border">Phụ Phí</th>
-                <th class="p-3 w-[130px] text-center align-middle border-r border-slate-200 border">FIT/GIT</th>
+              <tr class="bg-slate-100 border-b border-slate-200 text-[#000000D9] font-semibold h-10">
+                <th class="p-3 w-[250px] text-center align-middle border border-slate-200 font-semibold text-xs text-[#000000D9]">Ngày</th>
+                <th class="p-3 w-[160px] text-center align-middle border border-slate-200 font-semibold text-xs text-[#000000D9]">Thành Tiền</th>
+                <th class="p-3 w-[110px] text-center align-middle border border-slate-200 font-semibold text-xs text-[#000000D9]">Ăn Sáng</th>
+                <th class="p-3 w-[110px] text-center align-middle border border-slate-200 font-semibold text-xs text-[#000000D9]">Miễn Phí</th>
+                <th class="p-3 w-[110px] text-center align-middle border border-slate-200 font-semibold text-xs text-[#000000D9]">Phụ Phí</th>
+                <th class="p-3 w-[130px] text-center align-middle border border-slate-200 font-semibold text-xs text-[#000000D9]">FIT/GIT</th>
               </tr>
             </thead>
             <tbody>
               <!-- EMBE (BABY) SECTION -->
               <template v-if="babies.length > 0">
                 <!-- Group Header -->
-                <tr class="bg-slate-50 border-b border-slate-200 text-slate-700 font-bold h-9">
+                <tr class="bg-slate-50 border-b border-slate-200 text-[#000000D9] font-semibold h-9">
                   <td colspan="6" class="p-3 pr-4 border-slate-200">
                     <div class="flex items-center justify-between">
                       <div class="flex items-center cursor-pointer" @click="isBabyGroupExpanded = !isBabyGroupExpanded">
@@ -63,9 +63,9 @@
                           class="fa-solid mr-2 text-sky-600"
                           :class="isBabyGroupExpanded ? 'fa-square-minus' : 'fa-square-plus'"
                         ></i>
-                        <span>Em bé</span>
+                        <span class="text-xs font-semibold text-[#000000D9]">Em bé</span>
                       </div>
-                      <span class="text-[10px] text-slate-400 font-normal">({{ babies.length }} bé)</span>
+                      <span class="text-xs text-slate-500 font-normal">({{ babies.length }} bé)</span>
                     </div>
                   </td>
                 </tr>
@@ -74,7 +74,7 @@
                 <template v-if="isBabyGroupExpanded" v-for="child in babies" :key="child.id">
                   <!-- Parent Row -->
                   <tr class="border-b border-slate-200 h-12 hover:bg-slate-50/50">
-                    <td class="p-3 pl-6 font-semibold text-slate-700 border-slate-200">
+                    <td class="p-3 pl-6 font-semibold text-xs text-[#000000D9] border-slate-200">
                       <div class="flex items-center cursor-pointer" @click="toggleExpand(child.id)">
                         <i 
                           class="fa-solid mr-2 text-blue-500"
@@ -90,10 +90,10 @@
                           type="text" 
                           :value="formatCurrency(child.amount)"
                           @input="e => onParentFieldChange(child, 'amount', cleanCurrency(e.target.value))"
-                          class="w-28 text-right border border-slate-300 rounded-md py-1 px-2 focus:outline-none focus:ring-1 focus:ring-sky-500 font-semibold text-slate-800 text-xs"
+                          class="w-28 text-right border border-slate-300 rounded-md py-1 px-2 focus:outline-none focus:ring-1 focus:ring-sky-500 font-normal text-[#000000D9] text-xs"
                           placeholder="0"
                         />
-                        <span class="ml-1.5 text-[10px] text-slate-400 font-bold">đ</span>
+                        <span class="ml-1.5 text-xs text-slate-500 font-normal">đ</span>
                       </div>
                     </td>
                     <!-- Parent Breakfast Toggle -->
@@ -138,14 +138,14 @@
                     <td class="p-3 text-center flex justify-center items-center h-12 border-slate-200">
                       <div 
                         @click="onParentFieldChange(child, 'is_room', !child.is_room)"
-                        class="w-14 h-5 rounded-full cursor-pointer relative transition-colors duration-200 flex items-center justify-between px-2 text-[9px] font-black text-white select-none shadow-inner"
+                        class="w-14 h-5 rounded-full cursor-pointer relative transition-colors duration-200 flex items-center justify-between px-2 text-[10px] font-bold text-white select-none shadow-inner"
                         :class="child.is_room ? 'bg-sky-500' : 'bg-slate-400'"
                       >
                         <span class="z-10" :class="child.is_room ? 'text-white' : 'text-slate-300/40'">FIT</span>
                         <span class="z-10" :class="!child.is_room ? 'text-white' : 'text-slate-300/40'">GIT</span>
                         <div 
                           class="absolute w-3.5 h-3.5 bg-white rounded-full transition-transform duration-200 shadow-md top-[3px] left-[3px]" 
-                          :style="{ transform: child.is_room ? 'translateX(30px)' : 'translateX(0)' }"
+                          :style="{ transform: child.is_room ? 'translateX(0)' : 'translateX(30px)' }"
                         ></div>
                       </div>
                     </td>
@@ -153,8 +153,8 @@
 
                   <!-- Child Date Rows (Expanded) -->
                   <template v-if="isExpanded(child.id)" v-for="d in child.breakfast_details" :key="d.id">
-                    <tr class="bg-slate-50/30 border-b border-slate-100 h-10 text-[11px]">
-                      <td class="p-2 pl-12 font-mono text-slate-500 border-slate-200">
+                    <tr class="bg-slate-50/30 border-b border-slate-100 h-10 text-xs">
+                      <td class="p-2 pl-12 text-[#000000D9] font-normal border-slate-200">
                         <i class="fa-regular fa-calendar-days mr-1.5 text-slate-400"></i>
                         {{ formatDateVi(d.service_date) }}
                       </td>
@@ -165,10 +165,10 @@
                             type="text" 
                             :value="formatCurrency(d.amount)"
                             @input="e => onDetailFieldChange(child, d, 'amount', cleanCurrency(e.target.value))"
-                            class="w-24 text-right border border-slate-200 rounded-md py-0.5 px-1.5 focus:outline-none focus:ring-1 focus:ring-sky-400 text-[11px] text-slate-600 font-semibold"
+                            class="w-24 text-right border border-slate-200 rounded-md py-0.5 px-1.5 focus:outline-none focus:ring-1 focus:ring-sky-400 text-xs text-[#000000D9] font-normal"
                             placeholder="0"
                           />
-                          <span class="ml-1 text-[9px] text-slate-400">đ</span>
+                          <span class="ml-1 text-xs text-slate-500 font-normal">đ</span>
                         </div>
                       </td>
                       <!-- Breakfast -->
@@ -213,14 +213,14 @@
                       <td class="p-2 text-center flex justify-center items-center h-10 border-slate-200">
                         <div 
                           @click="d.is_room = !d.is_room"
-                          class="w-12 h-4.5 rounded-full cursor-pointer relative transition-colors duration-200 flex items-center justify-between px-2 text-[8px] font-black text-white select-none shadow-inner"
+                          class="w-12 h-4.5 rounded-full cursor-pointer relative transition-colors duration-200 flex items-center justify-between px-2 text-[10px] font-bold text-white select-none shadow-inner"
                           :class="d.is_room ? 'bg-sky-400' : 'bg-slate-350'"
                         >
                           <span class="z-10" :class="d.is_room ? 'text-white' : 'text-slate-300/40'">FIT</span>
                           <span class="z-10" :class="!d.is_room ? 'text-white' : 'text-slate-300/40'">GIT</span>
                           <div 
                             class="absolute w-3 h-3 bg-white rounded-full transition-transform duration-200 shadow-md top-[3px] left-[3px]" 
-                            :style="{ transform: d.is_room ? 'translateX(26px)' : 'translateX(0)' }"
+                            :style="{ transform: d.is_room ? 'translateX(0)' : 'translateX(26px)' }"
                           ></div>
                         </div>
                       </td>
@@ -232,7 +232,7 @@
               <!-- TRE EM (CHILD) SECTION -->
               <template v-if="childrenList.length > 0">
                 <!-- Group Header -->
-                <tr class="bg-slate-50 border-b border-slate-200 text-slate-700 font-bold h-9">
+                <tr class="bg-slate-50 border-b border-slate-200 text-[#000000D9] font-semibold h-9">
                   <td colspan="6" class="p-3 pr-4 border-slate-200">
                     <div class="flex items-center justify-between">
                       <div class="flex items-center cursor-pointer" @click="isChildGroupExpanded = !isChildGroupExpanded">
@@ -240,9 +240,9 @@
                           class="fa-solid mr-2 text-sky-600"
                           :class="isChildGroupExpanded ? 'fa-square-minus' : 'fa-square-plus'"
                         ></i>
-                        <span>Trẻ em</span>
+                        <span class="text-xs font-semibold text-[#000000D9]">Trẻ em</span>
                       </div>
-                      <span class="text-[10px] text-slate-400 font-normal">({{ childrenList.length }} trẻ)</span>
+                      <span class="text-xs text-slate-500 font-normal">({{ childrenList.length }} trẻ)</span>
                     </div>
                   </td>
                 </tr>
@@ -251,7 +251,7 @@
                 <template v-if="isChildGroupExpanded" v-for="child in childrenList" :key="child.id">
                   <!-- Parent Row -->
                   <tr class="border-b border-slate-200 h-12 hover:bg-slate-50/50">
-                    <td class="p-3 pl-6 font-semibold text-slate-700 border-slate-200">
+                    <td class="p-3 pl-6 font-semibold text-xs text-[#000000D9] border-slate-200">
                       <div class="flex items-center cursor-pointer" @click="toggleExpand(child.id)">
                         <i 
                           class="fa-solid mr-2 text-blue-500"
@@ -267,10 +267,10 @@
                           type="text" 
                           :value="formatCurrency(child.amount)"
                           @input="e => onParentFieldChange(child, 'amount', cleanCurrency(e.target.value))"
-                          class="w-28 text-right border border-slate-300 rounded-md py-1 px-2 focus:outline-none focus:ring-1 focus:ring-sky-500 font-semibold text-slate-800 text-xs"
+                          class="w-28 text-right border border-slate-300 rounded-md py-1 px-2 focus:outline-none focus:ring-1 focus:ring-sky-500 font-normal text-[#000000D9] text-xs"
                           placeholder="0"
                         />
-                        <span class="ml-1.5 text-[10px] text-slate-400 font-bold">đ</span>
+                        <span class="ml-1.5 text-xs text-slate-500 font-normal">đ</span>
                       </div>
                     </td>
                     <!-- Parent Breakfast Toggle -->
@@ -313,14 +313,14 @@
                     <td class="p-3 text-center flex justify-center items-center h-12 border-slate-200">
                       <div 
                         @click="onParentFieldChange(child, 'is_room', !child.is_room)"
-                        class="w-14 h-5 rounded-full cursor-pointer relative transition-colors duration-200 flex items-center justify-between px-2 text-[9px] font-black text-white select-none shadow-inner"
+                        class="w-14 h-5 rounded-full cursor-pointer relative transition-colors duration-200 flex items-center justify-between px-2 text-[10px] font-bold text-white select-none shadow-inner"
                         :class="child.is_room ? 'bg-sky-500' : 'bg-slate-400'"
                       >
                         <span class="z-10" :class="child.is_room ? 'text-white' : 'text-slate-300/40'">FIT</span>
                         <span class="z-10" :class="!child.is_room ? 'text-white' : 'text-slate-300/40'">GIT</span>
                         <div 
                           class="absolute w-3.5 h-3.5 bg-white rounded-full transition-transform duration-200 shadow-md top-[3px] left-[3px]" 
-                          :style="{ transform: child.is_room ? 'translateX(30px)' : 'translateX(0)' }"
+                          :style="{ transform: child.is_room ? 'translateX(0)' : 'translateX(30px)' }"
                         ></div>
                       </div>
                     </td>
@@ -328,8 +328,8 @@
 
                   <!-- Child Date Rows (Expanded) -->
                   <template v-if="isExpanded(child.id)" v-for="d in child.breakfast_details" :key="d.id">
-                    <tr class="bg-slate-50/30 border-b border-slate-100 h-10 text-[11px]">
-                      <td class="p-2 pl-12 font-mono text-slate-500 border-slate-200">
+                    <tr class="bg-slate-50/30 border-b border-slate-100 h-10 text-xs">
+                      <td class="p-2 pl-12 text-[#000000D9] font-normal border-slate-200">
                         <i class="fa-regular fa-calendar-days mr-1.5 text-slate-400"></i>
                         {{ formatDateVi(d.service_date) }}
                       </td>
@@ -340,10 +340,10 @@
                             type="text" 
                             :value="formatCurrency(d.amount)"
                             @input="e => onDetailFieldChange(child, d, 'amount', cleanCurrency(e.target.value))"
-                            class="w-24 text-right border border-slate-200 rounded-md py-0.5 px-1.5 focus:outline-none focus:ring-1 focus:ring-sky-400 text-[11px] text-slate-600 font-semibold"
+                            class="w-24 text-right border border-slate-200 rounded-md py-0.5 px-1.5 focus:outline-none focus:ring-1 focus:ring-sky-400 text-xs text-[#000000D9] font-normal"
                             placeholder="0"
                           />
-                          <span class="ml-1 text-[9px] text-slate-400">đ</span>
+                          <span class="ml-1 text-xs text-slate-500 font-normal">đ</span>
                         </div>
                       </td>
                       <!-- Breakfast -->
@@ -386,14 +386,14 @@
                       <td class="p-2 text-center flex justify-center items-center h-10 border-slate-200">
                         <div 
                           @click="d.is_room = !d.is_room"
-                          class="w-12 h-4.5 rounded-full cursor-pointer relative transition-colors duration-200 flex items-center justify-between px-2 text-[8px] font-black text-white select-none shadow-inner"
+                          class="w-12 h-4.5 rounded-full cursor-pointer relative transition-colors duration-200 flex items-center justify-between px-2 text-[10px] font-bold text-white select-none shadow-inner"
                           :class="d.is_room ? 'bg-sky-400' : 'bg-slate-350'"
                         >
                           <span class="z-10" :class="d.is_room ? 'text-white' : 'text-slate-300/40'">FIT</span>
                           <span class="z-10" :class="!d.is_room ? 'text-white' : 'text-slate-300/40'">GIT</span>
                           <div 
                             class="absolute w-3 h-3 bg-white rounded-full transition-transform duration-200 shadow-md top-[3px] left-[3px]" 
-                            :style="{ transform: d.is_room ? 'translateX(26px)' : 'translateX(0)' }"
+                            :style="{ transform: d.is_room ? 'translateX(0)' : 'translateX(26px)' }"
                           ></div>
                         </div>
                       </td>
@@ -406,8 +406,8 @@
         </div>
 
         <!-- Note Text -->
-        <div class="bg-slate-50 rounded-lg p-4 text-[11px] text-slate-600 space-y-1.5 border border-slate-200">
-          <p class="font-extrabold text-slate-800 flex items-center">
+        <div class="bg-slate-50 rounded-lg p-4 text-xs text-slate-600 space-y-1.5 border border-slate-200">
+          <p class="font-semibold text-[#000000D9] flex items-center">
             <i class="fa-solid fa-circle-info text-sky-600 mr-1.5 text-xs"></i>
             Khi trẻ em có ăn sáng - "Phụ phí" ăn sáng được tính như sau:
           </p>
@@ -438,21 +438,13 @@
           <i class="fa-solid fa-rotate-left"></i>
           <span>Quay lại</span>
         </button>
-        <button
-          type="button"
-          @click="close"
-          class="btn-pms-close"
-        >
-          <i class="fa-solid fa-xmark"></i>
-          <span>Đóng</span>
-        </button>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, onMounted, onBeforeUnmount } from 'vue'
 import { fetchBookingChildren, updateChildBreakfastDetail } from '@/services/booking-service'
 import { fetchHotelSettings } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
@@ -679,20 +671,33 @@ function formatDateVi(dateStr) {
   const parts = str.split(/[-\/]/)
   if (parts.length === 3) {
     if (parts[0].length === 4) {
-      const yy = parts[0].slice(-2)
-      return `${parts[2].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${yy}`
+      return `${parts[2].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[0]}`
     } else if (parts[2].length === 4) {
-      const yy = parts[2].slice(-2)
-      return `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${yy}`
-    } else if (parts[2].length === 2) {
       return `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[2]}`
+    } else if (parts[2].length === 2) {
+      const yyyy = '20' + parts[2]
+      return `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${yyyy}`
     }
   }
   const d = new Date(str)
   if (isNaN(d)) return str
-  const yy = String(d.getFullYear()).slice(-2)
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${yy}`
+  const yyyy = String(d.getFullYear())
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${yyyy}`
 }
+
+function handleKeyDown(e) {
+  if (e.key === 'Escape' && props.show) {
+    close()
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', handleKeyDown)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleKeyDown)
+})
 
 function close() {
   emit('update:show', false)

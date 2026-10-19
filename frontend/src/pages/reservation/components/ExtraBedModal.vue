@@ -14,9 +14,9 @@
         :style="{ background: topbarThemeBg, color: 'var(--pms-custom-theme-text, #ffffff)' }"
         @mousedown="startDragModal"
       >
-        <div class="flex items-center space-x-2 font-semibold text-xs uppercase tracking-wider">
+        <div class="flex items-center space-x-2 font-semibold text-xs tracking-wider">
           <i class="fa-solid fa-bed"></i>
-          <span>Chi tiết thêm giường - PHÒNG {{ room?.roomNumber || room?.type || room?.shape || 'CHƯA GÁN' }}</span>
+          <span>Chi Tiết Thêm Giường - Phòng {{ room?.roomNumber || room?.type || room?.shape || 'Chưa Gán' }}</span>
         </div>
         <button class="hover:opacity-80 p-1 rounded cursor-pointer border-none bg-transparent text-white" @click="close" title="Đóng">
           <i class="fa-solid fa-xmark text-sm"></i>
@@ -29,18 +29,18 @@
         <div class="border border-slate-200 rounded-lg overflow-hidden shadow-2xs">
           <table class="w-full text-left text-xs border-collapse">
             <thead>
-              <tr class="bg-slate-50/80 border-b border-slate-200 text-slate-600 font-extrabold h-10 text-center">
-                <th class="p-2.5 text-center pl-4 w-28 align-middle border-r border-slate-200 border">Ngày</th>
-                <th class="p-2.5 text-center w-28 align-middle border-r border-slate-200 border">Số Lượng</th>
-                <th class="p-2.5 text-center w-36 align-middle border-r border-slate-200 border">Thành Tiền</th>
-                <th class="p-2.5 text-center pr-4 w-32 align-middle border-r border-slate-200 border">Tổng Tiền</th>
-                <th class="p-2.5 text-center w-28 align-middle border-r border-slate-200 border">FIT/GIT</th>
+              <tr class="bg-slate-100 border-b border-slate-200 text-[#000000D9] font-semibold h-10 text-center">
+                <th class="p-2.5 text-center w-28 align-middle border border-slate-200 font-semibold text-xs text-[#000000D9]">Ngày</th>
+                <th class="p-2.5 text-center w-28 align-middle border border-slate-200 font-semibold text-xs text-[#000000D9]">Số Lượng</th>
+                <th class="p-2.5 text-center w-36 align-middle border border-slate-200 font-semibold text-xs text-[#000000D9]">Thành Tiền</th>
+                <th class="p-2.5 text-center w-32 align-middle border border-slate-200 font-semibold text-xs text-[#000000D9]">Tổng Tiền</th>
+                <th class="p-2.5 text-center w-28 align-middle border border-slate-200 font-semibold text-xs text-[#000000D9]">FIT/GIT</th>
               </tr>
             </thead>
             <tbody>
               <!-- HÀNG TOTAL (TỔNG CHUNG) -->
-              <tr class="bg-white font-bold border-b border-slate-200 h-12 text-slate-800">
-                <td class="p-2.5 text-left pl-4 font-bold text-sky-600 border-slate-200">Total</td>
+              <tr class="bg-white border-b border-slate-200 h-12 text-[#000000D9]">
+                <td class="p-2.5 text-left pl-4 font-semibold text-sky-600 border-slate-200">Total</td>
                 
                 <!-- SỐ LƯỢNG (VỚI MŨI TÊN TĂNG GIẢM LÊN XUỐNG) -->
                 <td class="p-2.5 text-center border-slate-200">
@@ -58,8 +58,8 @@
                       :disabled="isAllPastOrLocked"
                       min="0"
                       max="10"
-                      class="w-20 h-8 text-center font-bold border rounded-md focus:outline-none pr-5 text-xs shadow-2xs"
-                      :class="isAllPastOrLocked ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed' : 'bg-white border-slate-300 text-slate-800 focus:ring-1 focus:ring-sky-500'"
+                      class="w-20 h-8 text-center font-normal border rounded-md focus:outline-none pr-5 text-xs shadow-2xs"
+                      :class="isAllPastOrLocked ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed' : 'bg-white border-slate-300 text-[#000000D9] focus:ring-1 focus:ring-sky-500'"
                     />
                     <div class="absolute right-1.5 flex flex-col justify-center gap-0.5 select-none" :class="{ 'opacity-30 pointer-events-none': isAllPastOrLocked }">
                       <button type="button" @click="totalQuantity = Math.min(10, (totalQuantity || 0) + 1); handleTotalQuantityChange()" class="hover:text-sky-600 text-slate-400 cursor-pointer p-0 text-[8px] leading-none border-none bg-transparent">
@@ -86,8 +86,8 @@
                       :value="formatCurrencyInput(totalRate)"
                       @input="e => { totalRate = cleanCurrencyValue(e.target.value); handleTotalRateChange(); }"
                       :disabled="isAllPastOrLocked"
-                      class="w-full h-8 text-right font-bold border rounded-md px-2 pr-5 focus:outline-none text-xs shadow-2xs"
-                      :class="isAllPastOrLocked ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed' : 'bg-white border-slate-300 text-slate-800 focus:ring-1 focus:ring-sky-500'"
+                      class="w-full h-8 text-right font-normal border rounded-md px-2 pr-5 focus:outline-none text-xs shadow-2xs"
+                      :class="isAllPastOrLocked ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed' : 'bg-white border-slate-300 text-[#000000D9] focus:ring-1 focus:ring-sky-500'"
                     />
                     <div class="absolute right-1.5 flex flex-col justify-center gap-0.5 select-none" :class="{ 'opacity-30 pointer-events-none': isAllPastOrLocked }">
                       <button type="button" @click="totalRate = (totalRate || 0) + 50000; handleTotalRateChange()" class="hover:text-sky-600 text-slate-400 cursor-pointer p-0 text-[8px] leading-none border-none bg-transparent">
@@ -101,7 +101,7 @@
                 </td>
 
                 <!-- TỔNG TIỀN -->
-                <td class="p-2.5 text-right font-extrabold text-slate-800 pr-4 border-slate-200">
+                <td class="p-2.5 text-right font-semibold text-[#000000D9] pr-4 border-slate-200">
                   {{ formatCurrencyInput(computedTotalSum) }}
                 </td>
 
@@ -122,8 +122,8 @@
                         class="sr-only peer"
                       />
                       <div class="w-8 h-4 bg-slate-300 rounded-full peer peer-checked:bg-sky-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 shadow-2xs"></div>
-                      <span class="text-[10px] font-extrabold uppercase min-w-[42px] text-left" :class="totalIsRoom ? 'text-sky-600' : 'text-slate-500'">
-                        {{ totalIsRoom ? 'Phòng' : 'Master' }}
+                      <span class="text-xs font-semibold uppercase min-w-[32px] text-left" :class="totalIsRoom ? 'text-sky-600' : 'text-slate-500'">
+                        {{ totalIsRoom ? 'FIT' : 'GIT' }}
                       </span>
                     </label>
                   </div>
@@ -139,12 +139,12 @@
                   :class="(night.isLocked || night.isPast) ? 'bg-slate-50/80 opacity-60' : 'bg-white'"
                 >
                   <!-- NGÀY -->
-                  <td class="p-2.5 text-left pl-4 font-semibold text-slate-700 border-slate-200">
+                  <td class="p-2.5 text-left pl-4 font-normal text-[#000000D9] border-slate-200">
                     <span>{{ night.displayDate }}</span>
-                    <span v-if="night.isLocked && !night.isPast" class="ml-1.5 text-[9px] text-slate-600 bg-slate-100 border border-slate-300 px-1 py-0.2 rounded font-bold">
+                    <span v-if="night.isLocked && !night.isPast" class="ml-1.5 text-[9px] text-slate-600 bg-slate-100 border border-slate-300 px-1 py-0.2 rounded font-semibold">
                       Đã chốt
                     </span>
-                    <span v-else-if="night.isPast" class="ml-1.5 text-[9px] text-amber-600 bg-amber-50 border border-amber-200 px-1 py-0.2 rounded font-bold">
+                    <span v-else-if="night.isPast" class="ml-1.5 text-[9px] text-amber-600 bg-amber-50 border border-amber-200 px-1 py-0.2 rounded font-semibold">
                       Quá khứ
                     </span>
                   </td>
@@ -165,8 +165,8 @@
                         :disabled="night.isLocked || night.isPast"
                         min="0"
                         max="10"
-                        class="w-20 h-8 text-center font-bold border rounded-md focus:outline-none pr-5 text-xs shadow-2xs"
-                        :class="(night.isLocked || night.isPast) ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed' : 'bg-white border-slate-300 text-slate-800 focus:ring-1 focus:ring-sky-500'"
+                        class="w-20 h-8 text-center font-normal border rounded-md focus:outline-none pr-5 text-xs shadow-2xs"
+                        :class="(night.isLocked || night.isPast) ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed' : 'bg-white border-slate-300 text-[#000000D9] focus:ring-1 focus:ring-sky-500'"
                       />
                       <div v-if="!night.isLocked && !night.isPast" class="absolute right-1.5 flex flex-col justify-center gap-0.5 select-none">
                         <button type="button" @click="night.quantity = Math.min(10, (night.quantity || 0) + 1); updateNightTotal(night)" class="hover:text-sky-600 text-slate-400 cursor-pointer p-0 text-[8px] leading-none border-none bg-transparent">
@@ -193,8 +193,8 @@
                         :value="formatCurrencyInput(night.rate)"
                         @input="e => { night.rate = cleanCurrencyValue(e.target.value); updateNightTotal(night); }"
                         :disabled="night.isLocked || night.isPast"
-                        class="w-full h-8 text-right font-bold border rounded-md px-2 pr-5 focus:outline-none text-xs shadow-2xs"
-                        :class="(night.isLocked || night.isPast) ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed' : 'bg-white border-slate-300 text-slate-800 focus:ring-1 focus:ring-sky-500'"
+                        class="w-full h-8 text-right font-normal border rounded-md px-2 pr-5 focus:outline-none text-xs shadow-2xs"
+                        :class="(night.isLocked || night.isPast) ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed' : 'bg-white border-slate-300 text-[#000000D9] focus:ring-1 focus:ring-sky-500'"
                       />
                       <div v-if="!night.isLocked && !night.isPast" class="absolute right-1.5 flex flex-col justify-center gap-0.5 select-none">
                         <button type="button" @click="night.rate = (night.rate || 0) + 50000; updateNightTotal(night)" class="hover:text-sky-600 text-slate-400 cursor-pointer p-0 text-[8px] leading-none border-none bg-transparent">
@@ -208,7 +208,7 @@
                   </td>
 
                   <!-- TỔNG TIỀN TỪNG ĐÊM -->
-                  <td class="p-2.5 text-right font-bold pr-4 border-slate-200" :class="(night.isLocked || night.isPast) ? 'text-slate-400' : 'text-slate-800'">
+                  <td class="p-2.5 text-right font-normal pr-4 border-slate-200" :class="(night.isLocked || night.isPast) ? 'text-slate-400' : 'text-[#000000D9]'">
                     {{ formatCurrencyInput(night.total) }}
                   </td>
 
@@ -228,8 +228,8 @@
                           class="sr-only peer"
                         />
                         <div class="w-8 h-4 bg-slate-300 rounded-full peer peer-checked:bg-sky-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 shadow-2xs"></div>
-                        <span class="text-[10px] font-extrabold uppercase min-w-[42px] text-left" :class="night.isRoom ? 'text-sky-600' : 'text-slate-500'">
-                          {{ night.isRoom ? 'Phòng' : 'Master' }}
+                        <span class="text-xs font-semibold uppercase min-w-[32px] text-left" :class="night.isRoom ? 'text-sky-600' : 'text-slate-500'">
+                          {{ night.isRoom ? 'FIT' : 'GIT' }}
                         </span>
                       </label>
                     </div>
@@ -237,7 +237,7 @@
                 </tr>
               </template>
               <tr v-else>
-                <td colspan="5" class="p-6 text-center text-slate-400 font-medium italic border-slate-200">
+                <td colspan="5" class="p-6 text-center text-slate-400 font-normal italic border-slate-200">
                   Không tìm thấy danh sách đêm lưu trú.
                 </td>
               </tr>
@@ -248,14 +248,6 @@
 
       <!-- MODAL FOOTER -->
       <div class="bg-slate-50 border-t border-slate-100 px-5 py-3 flex items-center justify-end space-x-2 shrink-0 rounded-b-xl">
-        <button 
-          type="button"
-          @click="close" 
-          class="btn-pms-close"
-        >
-          <i class="fa-solid fa-rotate-left"></i>
-          <span>Quay lại</span>
-        </button>
         <button 
           type="button"
           @click="save" 
@@ -315,7 +307,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useAuthStore } from '@/stores/auth-store'
 
 const authStore = useAuthStore()
@@ -622,6 +614,24 @@ function updateNightTotal(night) {
 function close() {
   emit('update:show', false)
 }
+
+function handleKeydown(e) {
+  if (e.key === 'Escape' && props.show) {
+    if (constraintModal.value?.show) {
+      constraintModal.value.show = false
+    } else {
+      close()
+    }
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', handleKeydown)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleKeydown)
+})
 
 function save() {
   const activeNights = dailyRates.value.filter(d => (Number(d.quantity) || 0) > 0)

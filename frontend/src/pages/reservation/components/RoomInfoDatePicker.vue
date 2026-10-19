@@ -15,8 +15,9 @@ const props = defineProps({
   modelValue: { type: String, default: '' },
   minDate: { type: [String, Date], default: null },
   maxDate: { type: [String, Date], default: null },
-  placeholder: { type: String, default: 'dd/mm/yy' },
+  placeholder: { type: String, default: 'dd/mm/yyyy' },
   disabled: { type: Boolean, default: false },
+  required: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['update:modelValue', 'change'])
@@ -97,7 +98,7 @@ function openCalendar() {
 <template>
   <div
     class="room-info-date-picker"
-    :class="disabled ? 'is-disabled' : ''"
+    :class="[disabled ? 'is-disabled' : '', required ? 'is-required' : '']"
   >
     <input
       :value="textInput"
@@ -133,7 +134,7 @@ function openCalendar() {
         :disabled="disabled"
         :teleport="true"
         auto-apply
-        format="dd/MM/yy"
+        format="dd/MM/yyyy"
         menu-class-name="room-info-datepicker-menu"
       >
         <template #trigger>
@@ -172,6 +173,14 @@ function openCalendar() {
 .room-info-date-picker:focus-within {
   border-color: #2563eb;
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+}
+.room-info-date-picker.is-required {
+  background: #FFF8DB !important;
+  border-color: #F1DD8A !important;
+}
+.room-info-date-picker.is-required:focus-within {
+  border-color: #eab308 !important;
+  box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.2) !important;
 }
 .room-info-date-picker.is-disabled {
   background: #f1f5f9;

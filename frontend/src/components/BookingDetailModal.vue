@@ -883,7 +883,7 @@ watch(() => props.room, (newRoom) => {
       occupants_str: `${adults.value.length} / ${children.value.length} / ${babies.value.length}`,
       breakfast: newRoom.breakfast !== false,
       hourly: isHourlyRoom,
-      notes: newRoom.booking_note || '',
+      notes: newRoom.note || newRoom.room_note || '',
     }
 
     pricingInfo.value = {
@@ -1254,7 +1254,6 @@ async function handleSave() {
 
   const missingRequiredFields = []
   if (!String(formGuest.value.name || '').trim()) missingRequiredFields.push('Họ tên')
-  if (!String(formGuest.value.id_number || '').trim()) missingRequiredFields.push('Số giấy tờ')
   if (!stayInfo.value.departure_date) missingRequiredFields.push('Ngày đi')
   if (String(pricingInfo.value.rate ?? '').trim() === '') missingRequiredFields.push('Giá phòng')
   if (missingRequiredFields.length) {
@@ -1289,6 +1288,7 @@ async function handleSave() {
       rate_code: validRateCode,
       extra_bed_qty: Number(pricingInfo.value.extra_bed_qty || 0),
       extra_bed_rate: parseNumber(pricingInfo.value.extra_bed_price),
+      room_note: stayInfo.value.notes,
     }
 
     if (draftGuest.value) {
@@ -1403,6 +1403,7 @@ async function handleSave() {
       props.room.breakfast = roomFields.breakfast
       props.room.extra_bed_qty = roomFields.extra_bed_qty
       props.room.extra_bed_rate = roomFields.extra_bed_rate
+      props.room.note = roomFields.room_note
     }
     pricingInfo.value.rate = formatNumber(roomFields.rate)
     pricingInfo.value.extra_bed_price = formatNumber(roomFields.extra_bed_rate)
@@ -1604,7 +1605,7 @@ function parseNumber(val) {
             <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
             </svg>
-            <span>THÔNG TIN ĐẶT PHÒNG</span>
+            <span>THÔNG TIN PHÒNG</span>
             <span class="badge-room">Mã: {{ room.booking_code || room.booking_id || '' }} &nbsp;·&nbsp; Phòng {{ room.room_number || '' }} — {{ room.room_type_name || room.room_type || '' }}</span>
           </div>
 
@@ -1772,7 +1773,7 @@ function parseNumber(val) {
                       <label>Danh xưng</label>
                       <div class="clearable-control select-control title-control">
                         <select v-model="formGuest.title" :disabled="!isEditingMode">
-                          <option value="">Danh xưng</option>
+                          <option value="" disabled hidden>Danh xưng</option>
                           <option v-for="t in titlesList" :key="t" :value="t">{{ t }}</option>
                         </select>
                         <button v-if="isEditingMode && formGuest.title" type="button" class="field-clear-btn" title="Xóa danh xưng" aria-label="Xóa danh xưng" @click="clearGuestField('title')">&times;</button>
@@ -1855,7 +1856,7 @@ function parseNumber(val) {
                       <RoomInfoDatePicker
                         v-model="formGuest.dob"
                         :disabled="!isEditingMode"
-                        placeholder="dd/mm/yy"
+                        placeholder="dd/mm/yyyy"
                       />
                     </div>
                   </div>
@@ -1899,7 +1900,7 @@ function parseNumber(val) {
                   <label>Loại giấy tờ</label>
                   <div class="clearable-control select-control">
                     <select v-model="formGuest.id_type" :disabled="!isEditingMode">
-                      <option value="">Loại giấy tờ</option>
+                      <option value="" disabled hidden>Loại giấy tờ</option>
                       <option value="CCCD">CCCD</option>
                       <option value="Passport - Hộ chiếu">Passport - Hộ chiếu</option>
                       <option value="CMND">CMND</option>
@@ -1910,12 +1911,11 @@ function parseNumber(val) {
                   </div>
                 </div>
                 <div class="f relative suggestion-container">
-                  <label>Số giấy tờ <span class="req">*</span></label>
+                  <label>Số giấy tờ</label>
                   <div class="clearable-control">
                     <input
                       type="text"
                       v-model="formGuest.id_number"
-                      required
                       @input="onIdNumberInput($event.target.value)"
                       @focus="onIdNumberFocus"
                       :disabled="!isEditingMode"
@@ -1942,14 +1942,14 @@ function parseNumber(val) {
                   <RoomInfoDatePicker
                     v-model="formGuest.id_issue_date"
                     :disabled="!isEditingMode || stayInfo.hourly"
-                    placeholder="dd/mm/yy"
+                    placeholder="dd/mm/yyyy"
                   />
                 </div>
                 <div class="f">
                   <label>Thường trú / Tạm trú</label>
                   <div class="clearable-control select-control">
                     <select v-model="formGuest.residence_type" :disabled="!isEditingMode">
-                      <option value="">Thường trú / Tạm trú</option>
+                      <option value="" disabled hidden>Thường trú / Tạm trú</option>
                       <option
                         v-for="rt in residenceTypesList"
                         :key="rt.id"
@@ -1980,13 +1980,14 @@ function parseNumber(val) {
                 THÔNG TIN LƯU TRÚ
               </div>
               <div class="g stay-grid">
-                <!-- NGÀY ĐẾN: ALWAYS DISABLED / XÁM -->
+                <!-- NGÀY ĐẾN: ALWAYS DISABLED / XÁM NHƯNG ĐỒNG BỘ NỀN VÀNG BẮT BUỘC -->
                 <div class="f">
                   <label>Ngày đến <span class="req">*</span></label>
                   <RoomInfoDatePicker
                     v-model="stayInfo.arrival_date"
                     disabled
-                    placeholder="dd/mm/yy"
+                    required
+                    placeholder="dd/mm/yyyy"
                   />
                 </div>
                 <!-- GIỜ ĐẾN (24H FORMAT HH:mm): ALWAYS DISABLED / XÁM -->
@@ -2001,7 +2002,8 @@ function parseNumber(val) {
                     v-model="stayInfo.departure_date"
                     :min-date="stayInfo.arrival_date"
                     :disabled="!isEditingMode"
-                    placeholder="dd/mm/yy"
+                    required
+                    placeholder="dd/mm/yyyy"
                   />
                 </div>
                 <!-- GIỜ ĐỊ (CUSTOM 24H PICKER COMPONENT: 00 -> 23 HOURS) -->
@@ -2073,7 +2075,7 @@ function parseNumber(val) {
                   <label>Rate code</label>
                   <div class="clearable-control select-control">
                     <select v-model="pricingInfo.rate_code" :disabled="!isEditingMode" @change="onRateCodeChange($event.target.value)" class="w-full">
-                      <option value="">-- Chọn Mã Giá / Mặc định --</option>
+                      <option value="" disabled hidden>-- Chọn Mã Giá / Mặc định --</option>
                       <option v-for="rc in rateCodes" :key="rc.id || rc.code || rc.Ma" :value="rc.code || rc.Ma">
                         {{ rc.code || rc.Ma }}{{ (rc.name || rc.Ten) ? ' - ' + (rc.name || rc.Ten) : '' }}
                       </option>
@@ -2094,7 +2096,7 @@ function parseNumber(val) {
                   <label>Khuyến mãi / Tăng giảm</label>
                   <div class="clearable-control select-control">
                     <select v-model="pricingInfo.discount_type" :disabled="!isEditingMode">
-                      <option value="">Khuyến mãi / Tăng giảm</option>
+                      <option value="" disabled hidden>Khuyến mãi / Tăng giảm</option>
                       <option>Tăng/Giảm giá</option><option>Giảm 10%</option><option>Early Bird</option>
                     </select>
                     <button v-if="isEditingMode && pricingInfo.discount_type" type="button" class="field-clear-btn" title="Xóa khuyến mãi / tăng giảm" aria-label="Xóa khuyến mãi / tăng giảm" @click="clearPricingField('discount_type')">&times;</button>
@@ -2251,8 +2253,8 @@ function parseNumber(val) {
   border-radius: 12px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
   width: 100%;
-  max-width: min(96vw, 1400px);
-  max-height: min(94vh, 900px);
+  max-width: min(96vw, 1320px);
+  max-height: min(94vh, 760px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2263,7 +2265,7 @@ function parseNumber(val) {
 /* HEADER */
 .card-header {
   color: #fff;
-  padding: 10px 18px;
+  padding: 8px 16px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -2377,7 +2379,7 @@ function parseNumber(val) {
 
 /* BODY & MAIN GRID */
 .card-body {
-  padding: 14px 18px 16px;
+  padding: 10px 14px 12px;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -2385,7 +2387,7 @@ function parseNumber(val) {
 
 .main-grid {
   display: grid;
-  grid-template-columns: 240px 1.2fr 1fr;
+  grid-template-columns: 220px 1.25fr 1fr;
   grid-template-rows: auto auto auto;
   border: 1.5px solid #cbd5e1;
   border-radius: 10px;
@@ -2418,31 +2420,31 @@ input.always-gray:disabled {
   grid-column: 1;
   grid-row: 1 / 4;
   border-right: 1.5px solid #cbd5e1;
-  padding: 14px 15px;
+  padding: 10px 12px;
   background: #fff;
 }
 .cell-personal {
   grid-column: 2 / 4;
   grid-row: 1;
   border-bottom: 1.5px solid #cbd5e1;
-  padding: 14px 18px;
+  padding: 10px 14px;
 }
 .cell-docs {
   grid-column: 2 / 4;
   grid-row: 2;
   border-bottom: 1.5px solid #cbd5e1;
-  padding: 14px 18px;
+  padding: 10px 14px;
 }
 .cell-stay {
   grid-column: 2;
   grid-row: 3;
   border-right: 1.5px solid #cbd5e1;
-  padding: 14px 18px;
+  padding: 10px 14px;
 }
 .cell-price {
   grid-column: 3;
   grid-row: 3;
-  padding: 14px 18px;
+  padding: 10px 14px;
 }
 
 /* SECTION LABEL */
@@ -2450,13 +2452,13 @@ input.always-gray:disabled {
   font-size: 12px;
   font-weight: 600;
   color: #000000d9;
-  letter-spacing: 0.6px;
+  letter-spacing: 0.5px;
   text-transform: uppercase;
   display: flex;
   align-items: center;
   gap: 6px;
-  padding-bottom: 8px;
-  margin-bottom: 12px;
+  padding-bottom: 6px;
+  margin-bottom: 8px;
   border-bottom: 1.5px solid #e2e8f0;
 }
 
@@ -2531,18 +2533,18 @@ input.always-gray:disabled {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 6px;
   min-width: 0;
 }
 .personal-grid {
   display: grid;
-  grid-template-columns: 135px minmax(0, 1.5fr) minmax(0, 1.6fr) 145px;
-  gap: 9px 12px;
+  grid-template-columns: 130px minmax(0, 1.5fr) minmax(0, 1.6fr) 140px;
+  gap: 6px 10px;
 }
 .personal-grid-2 {
   display: grid;
   grid-template-columns: 1.5fr 1.2fr 110px;
-  gap: 9px 12px;
+  gap: 6px 10px;
 }
 
 /* CUSTOM 24H TIME PICKER STYLING */
@@ -2613,32 +2615,32 @@ input.always-gray:disabled {
 .tp-item.active { background: #2563eb; color: #fff; }
 
 /* GRID HELPERS */
-.g { display: grid; gap: 9px 12px; }
-.docs-grid { grid-template-columns: 1.2fr 1.2fr 140px 1fr; gap: 9px 12px; }
-.stay-grid { grid-template-columns: 1.2fr 80px 1.2fr 80px 65px; gap: 9px 10px; margin-bottom: 10px; }
-.price-grid-1 { grid-template-columns: 120px 120px minmax(130px, 1fr) auto; gap: 9px 10px; margin-bottom: 10px; align-items: end; }
-.price-grid-2 { grid-template-columns: 120px 115px auto 1fr; gap: 9px 10px; align-items: end; }
+.g { display: grid; gap: 6px 10px; }
+.docs-grid { grid-template-columns: 1.2fr 1.2fr 140px 1fr; gap: 6px 10px; }
+.stay-grid { grid-template-columns: 1.2fr 80px 1.2fr 80px 65px; gap: 6px 8px; margin-bottom: 8px; }
+.price-grid-1 { grid-template-columns: 120px 120px minmax(130px, 1fr) auto; gap: 6px 8px; margin-bottom: 8px; align-items: end; }
+.price-grid-2 { grid-template-columns: 120px 115px auto 1fr; gap: 6px 8px; align-items: end; }
 .btn-wrapper { display: flex; align-items: flex-end; }
 
 /* SIDEBAR GUESTS */
-.g-group { margin-bottom: 12px; }
+.g-group { margin-bottom: 8px; }
 .g-group-label {
   font-size: 12px;
   font-weight: 600;
   color: #000000d9;
-  letter-spacing: 0.8px;
+  letter-spacing: 0.6px;
   text-transform: uppercase;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 .g-item {
   display: flex;
   align-items: center;
-  gap: 7px;
-  padding: 6px 10px;
+  gap: 6px;
+  padding: 5px 8px;
   border-radius: 6px;
   cursor: pointer;
   border: 1.5px solid transparent;
-  margin-bottom: 3px;
+  margin-bottom: 2px;
   transition: background 0.12s;
 }
 .g-item:hover { background: #f0f4ff; }
@@ -2655,18 +2657,18 @@ input.always-gray:disabled {
   color: #2563eb;
   font-size: 12px;
   font-weight: 600;
-  padding: 6px;
+  padding: 4px 6px;
   cursor: pointer;
-  margin-top: 4px;
+  margin-top: 3px;
   transition: background 0.12s;
 }
 .btn-add:hover { background: #eff6ff; }
 
 /* AVATAR */
-.avatar-block { display: flex; gap: 14px; align-items: flex-start; }
+.avatar-block { display: flex; gap: 10px; align-items: flex-start; }
 .avatar-col { display: flex; flex-direction: column; align-items: center; }
 .id-avatar {
-  width: 86px; height: 86px;
+  width: 72px; height: 72px;
   border-radius: 8px;
   background: #f1f5f9;
   border: 1.5px solid #cbd5e1;
@@ -2674,14 +2676,14 @@ input.always-gray:disabled {
   flex-shrink: 0;
 }
 .id-avatar svg { color: #94a3b8; }
-.avatar-btns { display: flex; gap: 5px; margin-top: 6px; }
+.avatar-btns { display: flex; gap: 4px; margin-top: 4px; }
 .btn-xs {
   font-size: 12px;
   font-weight: 600;
   border: 1px solid #cbd5e1;
   background: #fff;
   border-radius: 5px;
-  padding: 4px 10px;
+  padding: 3px 8px;
   cursor: pointer;
   color: #334155;
   display: flex; align-items: center; gap: 4px;
@@ -2711,9 +2713,9 @@ input.always-gray:disabled {
 .btn-act:hover { background: #1d4ed8 !important; }
 
 /* CHECKBOX & STAY ROW */
-.stay-row-2 { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.stay-row-2 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .occupant-box { display: flex; gap: 8px; align-items: center; }
-.checkbox-row { display: flex; gap: 14px; align-items: center; padding-top: 16px; }
+.checkbox-row { display: flex; gap: 12px; align-items: center; padding-top: 8px; }
 .cb {
   display: flex; align-items: center; gap: 6px;
   font-size: 12px; font-weight: 400; color: #000000d9; cursor: pointer;
