@@ -17,6 +17,7 @@ import { resolveRateCodePrice } from '@/utils/rate-code-pricing.js'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
 import { getRoomPlanDateRange, setRoomPlanDateRange } from './room-plan-view-state.js'
 import { roomPlanStayRange, markRoomPlanConflicts } from '@/utils/room-plan-conflicts.js'
+import { resolveRoomPlanDayUseLayout } from '@/utils/room-plan-day-use-layout.js'
 
 const uiStore = useUiStore()
 const roomStore = useRoomStore()
@@ -2350,7 +2351,8 @@ const processedBookings = computed(() => {
     
     const checkInDateStr = formatDateStr(checkInDate)
     const checkOutDateStr = formatDateStr(checkOutDate)
-    const isDayUse = Boolean(bk.isDayUse || checkInDateStr === checkOutDateStr)
+    const isPersistedDayUse = Boolean(bk.isDayUse) && checkInDateStr === checkOutDateStr
+    const isDayUse = Boolean(isPersistedDayUse || checkInDateStr === checkOutDateStr)
     const isLockItem = bk.code === 'LOCK' || bk.type === 'OOO' || bk.type === 'OOS'
 
     // Check if there is overlap with visible grid range
@@ -2432,8 +2434,18 @@ const processedBookings = computed(() => {
     } else {
       baseSpan = isLockEndedEarly ? (endIdx - startIdx) : (endIdx - startIdx + 1)
     }
-    const span = Math.max(1, baseSpan)
-    const showCheckOutIndicator = !showNights.value && isCheckOutVisible
+    let span = Math.max(1, baseSpan)
+    const dayUseLayout = resolveRoomPlanDayUseLayout({
+      isDayUse: isPersistedDayUse,
+      showNights: showNights.value,
+      arrivalTime: bk.arrival_time,
+      departureTime: bk.departure_time,
+    })
+    if (dayUseLayout) {
+      leftRatio = dayUseLayout.leftRatio
+      span = dayUseLayout.widthRatio
+    }
+    const showCheckOutIndicator = !showNights.value && isCheckOutVisible && !isPersistedDayUse
 
     // Calculate past days offset for text shift (Phương án 1: Trượt tự nhiên theo timeline quá khứ)
     const checkInMid = new Date(checkInDate)
@@ -2481,6 +2493,8 @@ const processedBookings = computed(() => {
       isCheckInVisible,
       isCheckOutVisible,
       showCheckOutIndicator,
+      isDayUseLayout: Boolean(dayUseLayout),
+      dayUseLayoutFallback: Boolean(dayUseLayout?.isFallback),
       // Dòng 395: giai đoạn giữ phòng để phát hiện trùng số phòng.
       _range: roomPlanStayRange({
         start: checkInDateStr,
@@ -4894,10 +4908,14 @@ function getRoomStatusIconName(item) {
                       bk.hasConflict ? 'ring-2 ring-inset ring-red-500' : ''
                     ]"
                     :style="{
-                      left: !bk.isCheckInVisible 
+                      left: bk.isDayUseLayout
+                        ? `${bk.leftRatio * 100}%`
+                        : !bk.isCheckInVisible
                         ? '0%' 
                         : (isBookingSegmented(bk) ? `calc(${bk.leftRatio * 100}% + 2px)` : `${bk.leftRatio * 100}%`),
-                      width: !bk.isCheckInVisible
+                      width: bk.isDayUseLayout
+                        ? `calc(${bk.span * 100}% - 1px)`
+                        : !bk.isCheckInVisible
                         ? (isBookingSegmented(bk) ? `calc(${bk.span * 100}% - 4px)` : `calc(${bk.span * 100}% - 1px)`)
                         : (isBookingSegmented(bk) ? `calc(${bk.span * 100}% - 6px)` : `calc(${bk.span * 100}% - 1px)`),
                       borderLeftStyle: !bk.isCheckInVisible ? 'none' : undefined,
