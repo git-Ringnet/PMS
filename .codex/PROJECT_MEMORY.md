@@ -1,5 +1,7 @@
 # Project Memory — PMS
 
+- 2026-10-20: Dòng 346 màn Hóa đơn đã được gia cố cơ chế giữ Booking/phòng/khách khi tải lại trang. Trạng thái `sessionStorage` nay lưu thêm phạm vi `current/old/virtual`, user và chi nhánh; route query vẫn ưu tiên cao nhất, không khôi phục chéo user/chi nhánh, xóa trạng thái nếu Booking không còn truy cập được và fallback về Master nếu phòng cũ không còn trong Booking. Không đổi API, database, Folio, thanh toán hoặc logic Checkout. Test riêng dòng 346 và hồi quy dòng 310 đạt 9/9; frontend production build đạt.
+
 - 2026-10-20: Hoàn tất triệt để các hạng mục Dòng 36 - 39 Sheet FIX FE ([ChildBreakfastModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/ChildBreakfastModal.vue), [ExtraBedModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/ExtraBedModal.vue), [BookingDetailModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/components/BookingDetailModal.vue), [RoomInfoDatePicker.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/RoomInfoDatePicker.vue)):
   - Dòng 36 - Chi tiết ăn sáng ([ChildBreakfastModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/ChildBreakfastModal.vue)): Chuẩn hóa switch FIT/GIT sang toggle switch peer-checked đồng bộ chuẩn [ExtraBedModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/ExtraBedModal.vue); bỏ nút "Quay lại" ở footer, chỉ giữ nút "Lưu" `.btn-pms-primary`.
   - Dòng 37 - Chi tiết thêm giường ([ExtraBedModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/ExtraBedModal.vue)): Đã xác minh 100% đạt chuẩn toàn bộ yêu cầu FE Design System.
@@ -765,6 +767,7 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 ## Recent Changes
 
+- 2026-10-20: Dòng 346 — tách helper `checkout-selection-storage.js`, giữ đúng Booking Master/phòng/khách và scope Hóa đơn sau reload; chặn phục hồi nhầm khi đổi user/chi nhánh và bổ sung 6 test hồi quy chuyên biệt.
 - 2026-10-09: Áp dụng quy ước tiêu đề bảng (căn giữa ngang/dọc, Title Case) cho 470 `<th>` trong 30 file Vue thuộc các màn hình đã sửa từ đầu tuần; chuẩn hóa cả nhãn header động của Tìm Kiếm Chung, Tạo Đăng Ký, Thông Tin Khách và Sơ Đồ Phòng.
 - 2026-10-09: Áp dụng viền đủ bốn cạnh cho hàng tiêu đề (`th`) của 67 bảng trong 30 file Vue thuộc các màn hình đã sửa từ đầu tuần; ô dữ liệu (`td`) không có line dọc.
 - 2026-10-09: Kế hoạch Phòng là ngoại lệ của bảng dữ liệu: thêm line dọc giữa từng cột ngày ở lưới timeline và dòng OCC/AV/OOO; thanh booking nhiều ngày giữ liền mạch. Không đổi logic booking hay công suất.
@@ -940,6 +943,7 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 ## Known Risks
 
+- 2026-10-20: Dòng 346 đã qua unit test và production build nhưng chưa UAT trực tiếp thao tác F5/chuyển tab trên browser với dữ liệu thật. Bộ frontend test chung còn 1 lỗi ngoài phạm vi tại `room-info-date-utils.test.js` do hàm ngày hiện tại vẫn chấp nhận chuỗi 6 số `180926`; không phát sinh từ thay đổi Hóa đơn.
 - 2026-10-08: Thanh toán trước đã qua production build và diff-check phạm vi sửa; chưa UAT pixel trực tiếp trên browser để xác nhận vị trí nút `x`, icon lịch/time và dropdown ở mọi độ rộng màn hình.
 - 2026-10-08: Tập hợp dịch vụ đã qua feature tests với bill không mirror nhưng chưa UAT trực tiếp Booking trong ảnh; cần tải lại Checkout để xác nhận dữ liệu branch hiện tại đáp ứng owner/trạng thái hợp lệ.
 - 2026-10-08: Định dạng `dd/mm/yyyy` Checkout đã qua build/static review nhưng chưa UAT thao tác nhập đủ 8 số và chọn lịch trên browser với các độ rộng modal khác nhau.
