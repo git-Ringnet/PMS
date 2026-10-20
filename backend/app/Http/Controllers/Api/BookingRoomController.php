@@ -1561,6 +1561,10 @@ class BookingRoomController extends Controller
             return;
         }
 
+        // Dòng 368: đêm EB mới theo cờ phòng/master của các đêm EB đã có. Tính
+        // trước khi bước 2 xóa các đêm ngoài giai đoạn ở mới.
+        $defaultIsRoom = BookingRoomService::defaultExtraBedIsRoom($room->id);
+
         // 1. Lấy danh sách dịch vụ EB hiện tại
         $existingServices = $room->services()
             ->where('service_code', BookingRoomService::CODE_EXTRA_BED)
@@ -1614,7 +1618,7 @@ class BookingRoomController extends Controller
                     'quantity'     => $qty,
                     'rate'         => $rate,
                     'department'   => 'FO',
-                    'is_room'      => $existing?->is_room ?? 1,
+                    'is_room'      => $existing?->is_room ?? $defaultIsRoom,
                     'is_posted'    => 0,
                     'deleted_at'   => null,
                     'created_by'   => Auth::user()?->username ?? 'system',

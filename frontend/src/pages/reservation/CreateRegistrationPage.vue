@@ -1598,8 +1598,8 @@ async function handleInlineServiceDelete(room, svc) {
           service_name: getHotelServiceName('EB', 'Extra Bed'),
           service_date: cleanDate,
           quantity: 0,
-          rate: Number(svc.rate) || 0,
-          is_room: svc.is_room !== 0 ? 1 : 0
+          rate: Number(svc.rate) || 0
+          // Dòng 368: không gửi is_room, server giữ nguyên cờ phòng/master của ngày này.
         })
 
         notifyRoomUpdates(activeTab.value?.dbId)

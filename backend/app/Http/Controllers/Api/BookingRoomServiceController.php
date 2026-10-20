@@ -255,23 +255,30 @@ class BookingRoomServiceController extends Controller
             if ($isEb) {
                 // Đối với Extra Bed: Cập nhật quantity = 0, total_amount = 0 vào booking_room_services (giữ record với sl = 0)
                 $ebDate = Carbon::parse($request->service_date)->toDateString();
+                $ebRow = BookingRoomService::withTrashed()
+                    ->where('booking_room_id', $roomId)
+                    ->where('service_code', BookingRoomService::CODE_EXTRA_BED)
+                    ->whereDate('service_date', $ebDate)
+                    ->first();
+                // Dòng 368: xóa/đưa EB một ngày về 0 chỉ đổi số lượng; không đổi
+                // cờ phòng/master của ngày đó. Ngày chưa có dòng thì theo các ngày khác.
+                $ebIsRoom = $ebRow
+                    ? (int) $ebRow->is_room
+                    : ($request->has('is_room')
+                        ? (int) $request->boolean('is_room')
+                        : BookingRoomService::defaultExtraBedIsRoom($roomId));
                 $ebValues = [
                     'service_name' => BookingRoomService::catalogName(BookingRoomService::CODE_EXTRA_BED, 'Extra Bed'),
                     'quantity'     => 0,
                     'rate'         => $request->rate ?? 0,
                     'total_amount' => 0,
                     'department'   => 'FO',
-                    'is_room'      => $request->has('is_room') ? (int) $request->boolean('is_room') : 1,
+                    'is_room'      => $ebIsRoom,
                     'folio'        => $request->folio ?? 1,
                     'is_posted'    => 0,
                     'deleted_at'   => null,
                     'created_by'   => Auth::user()?->username ?? 'system',
                 ];
-                $ebRow = BookingRoomService::withTrashed()
-                    ->where('booking_room_id', $roomId)
-                    ->where('service_code', BookingRoomService::CODE_EXTRA_BED)
-                    ->whereDate('service_date', $ebDate)
-                    ->first();
                 if ($ebRow && (int) $ebRow->is_posted === 1) {
                     return response()->json([
                         'success' => false,
@@ -467,6 +474,18 @@ class BookingRoomServiceController extends Controller
             }
         }
 
+        // Dòng 368: không gửi is_room thì EB giữ cờ của dòng đã có, ngày mới theo các ngày khác.
+        $isRoomValue = $request->has('is_room') ? (int) $request->boolean('is_room') : 1;
+        if (!$request->has('is_room')
+            && ($request->service_code === BookingRoomService::CODE_EXTRA_BED || $request->service_code === 'EB')) {
+            $sameDayEb = BookingRoomService::withTrashed()
+                ->where('booking_room_id', $roomId)
+                ->where('service_code', $request->service_code)
+                ->whereDate('service_date', Carbon::parse($request->service_date)->toDateString())
+                ->first();
+            $isRoomValue = $sameDayEb ? (int) $sameDayEb->is_room : BookingRoomService::defaultExtraBedIsRoom($roomId);
+        }
+
         // Nếu trùng ngày + service_code → update giá, không cộng dồn
         $service = BookingRoomService::withTrashed()->updateOrCreate(
             [
@@ -480,7 +499,7 @@ class BookingRoomServiceController extends Controller
                 'quantity'     => $request->quantity ?? 1,
                 'rate'         => $request->rate ?? 0,
                 'department'  => 'FO',
-                'is_room'      => $request->has('is_room') ? (int) $request->boolean('is_room') : 1,
+                'is_room'      => $isRoomValue,
                 'folio'        => $request->folio ?? 1,
                 'is_posted'    => 0,
                 'deleted_at'   => null,
