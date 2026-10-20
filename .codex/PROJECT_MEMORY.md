@@ -1,5 +1,7 @@
 # Project Memory — PMS
 
+- 2026-10-20: Dòng 322 Kế hoạch phòng đã tách layout Day Use khỏi booking qua đêm. `Xem đêm` hiển thị Day Use ở nửa sau của đúng ô ngày; `Xem ngày` lấy vị trí từ `arrival_time` và độ rộng từ khoảng `arrival_time`–`departure_time`, fallback nửa ô khi giờ thiếu/không hợp lệ. Không đổi API, database, OCC/AV, kiểm tra trùng phòng hoặc thao tác booking. Test Room Plan liên quan đạt 22/22 và frontend production build đạt.
+
 - 2026-10-20: Dòng 346 màn Hóa đơn đã được gia cố cơ chế giữ Booking/phòng/khách khi tải lại trang. Trạng thái `sessionStorage` nay lưu thêm phạm vi `current/old/virtual`, user và chi nhánh; route query vẫn ưu tiên cao nhất, không khôi phục chéo user/chi nhánh, xóa trạng thái nếu Booking không còn truy cập được và fallback về Master nếu phòng cũ không còn trong Booking. Không đổi API, database, Folio, thanh toán hoặc logic Checkout. Test riêng dòng 346 và hồi quy dòng 310 đạt 9/9; frontend production build đạt.
 
 - 2026-10-20: Hoàn tất triệt để các hạng mục Dòng 36 - 39 Sheet FIX FE ([ChildBreakfastModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/ChildBreakfastModal.vue), [ExtraBedModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/ExtraBedModal.vue), [BookingDetailModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/components/BookingDetailModal.vue), [RoomInfoDatePicker.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/RoomInfoDatePicker.vue)):
@@ -767,6 +769,7 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 ## Recent Changes
 
+- 2026-10-20: Dòng 322 — thêm helper `room-plan-day-use-layout.js`; thanh Day Use dùng nửa ô ở `Xem đêm`, dùng tỷ lệ giờ trong ngày ở `Xem ngày`, và tiếp tục dùng conflict lane hiện có khi một phòng có nhiều lượt trong ngày.
 - 2026-10-20: Dòng 346 — tách helper `checkout-selection-storage.js`, giữ đúng Booking Master/phòng/khách và scope Hóa đơn sau reload; chặn phục hồi nhầm khi đổi user/chi nhánh và bổ sung 6 test hồi quy chuyên biệt.
 - 2026-10-09: Áp dụng quy ước tiêu đề bảng (căn giữa ngang/dọc, Title Case) cho 470 `<th>` trong 30 file Vue thuộc các màn hình đã sửa từ đầu tuần; chuẩn hóa cả nhãn header động của Tìm Kiếm Chung, Tạo Đăng Ký, Thông Tin Khách và Sơ Đồ Phòng.
 - 2026-10-09: Áp dụng viền đủ bốn cạnh cho hàng tiêu đề (`th`) của 67 bảng trong 30 file Vue thuộc các màn hình đã sửa từ đầu tuần; ô dữ liệu (`td`) không có line dọc.
@@ -943,6 +946,7 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 ## Known Risks
 
+- 2026-10-20: Dòng 322 đã qua 22 test và production build nhưng chưa UAT browser với dữ liệu Day Use thật hoặc đối chiếu pixel với link Hotel trong workbook. Dữ liệu thiếu giờ hoặc giờ đi không sau giờ đến chủ động dùng fallback nửa sau ô, không ghi sửa dữ liệu.
 - 2026-10-20: Dòng 346 đã qua unit test và production build nhưng chưa UAT trực tiếp thao tác F5/chuyển tab trên browser với dữ liệu thật. Bộ frontend test chung còn 1 lỗi ngoài phạm vi tại `room-info-date-utils.test.js` do hàm ngày hiện tại vẫn chấp nhận chuỗi 6 số `180926`; không phát sinh từ thay đổi Hóa đơn.
 - 2026-10-08: Thanh toán trước đã qua production build và diff-check phạm vi sửa; chưa UAT pixel trực tiếp trên browser để xác nhận vị trí nút `x`, icon lịch/time và dropdown ở mọi độ rộng màn hình.
 - 2026-10-08: Tập hợp dịch vụ đã qua feature tests với bill không mirror nhưng chưa UAT trực tiếp Booking trong ảnh; cần tải lại Checkout để xác nhận dữ liệu branch hiện tại đáp ứng owner/trạng thái hợp lệ.
