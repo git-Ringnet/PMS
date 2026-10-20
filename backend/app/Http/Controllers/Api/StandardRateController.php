@@ -16,7 +16,7 @@ class StandardRateController extends Controller
     {
         $rates = StandardRate::whereHas('roomClass', function($q) {
             $q->where('is_active', true);
-        })->with(['roomClass', 'roomForm'])->get();
+        })->with(['roomClass', 'roomForm'])->orderBy('id')->get();
         return StandardRateResource::collection($rates);
     }
 
@@ -33,12 +33,11 @@ class StandardRateController extends Controller
         ]);
 
         $exists = StandardRate::where('room_class_id', $validated['room_class_id'])
-            ->where('room_form_id', $validated['room_form_id'])
             ->exists();
 
         if ($exists) {
             return response()->json([
-                'message' => 'Giá phòng chuẩn cho loại phòng và dạng phòng này đã tồn tại!'
+                'message' => 'Giá phòng chuẩn cho loại phòng này đã tồn tại!'
             ], 422);
         }
 
@@ -63,13 +62,12 @@ class StandardRateController extends Controller
         ]);
 
         $exists = StandardRate::where('room_class_id', $validated['room_class_id'])
-            ->where('room_form_id', $validated['room_form_id'])
             ->where('id', '!=', $rate->id)
             ->exists();
 
         if ($exists) {
             return response()->json([
-                'message' => 'Giá phòng chuẩn cho loại phòng và dạng phòng này đã tồn tại!'
+                'message' => 'Giá phòng chuẩn cho loại phòng này đã tồn tại!'
             ], 422);
         }
 

@@ -154,7 +154,7 @@ const deleteRate = async (ma) => {
     roomRateCodes.value = roomRateCodes.value.filter(x => x.Ma !== ma)
   } catch (err) {
     console.error(err)
-    uiStore.showToast('Lỗi khi xóa mã giá phòng', 'error')
+    uiStore.showToast(err.response?.data?.message || 'Lỗi khi xóa mã giá phòng', 'error')
   } finally {
     loading.value = false
   }
@@ -171,7 +171,7 @@ const toggleRateFlag = async (item, field) => {
     uiStore.showToast('Cập nhật trạng thái thành công!', 'success')
   } catch (err) {
     console.error(err)
-    uiStore.showToast('Lỗi cập nhật trạng thái', 'error')
+    uiStore.showToast(err.response?.data?.message || 'Lỗi cập nhật trạng thái', 'error')
   }
 }
 

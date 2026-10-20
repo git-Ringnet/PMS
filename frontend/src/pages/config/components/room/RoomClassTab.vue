@@ -302,7 +302,7 @@ const saveRoomClass = async () => {
 const deleteRoomClass = async (id) => {
   const confirmed = await uiStore.confirm({
     title: 'Xác nhận xóa',
-    message: 'Bạn có chắc chắn muốn xóa loại phòng này? Tất cả các phòng thuộc loại phòng này cũng sẽ bị xóa.',
+    message: 'Bạn có chắc chắn muốn xóa loại phòng này? Chỉ có thể xóa khi loại phòng chưa được sử dụng.',
     confirmText: 'Xóa',
     cancelText: 'Hủy'
   })

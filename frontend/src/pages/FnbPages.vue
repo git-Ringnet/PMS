@@ -7,7 +7,7 @@ import { usePermission } from "@/composables/usePermission";
 import { usePortalWallpaper } from "@/composables/usePortalWallpaper";
 
 const router = useRouter();
-const { can, isSuperAdmin } = usePermission();
+const { can, canAny, isSuperAdmin, isAdmin } = usePermission();
 const isLoaded = ref(false);
 const activeOutlets = ref([]);
 
@@ -23,7 +23,7 @@ const {
 } = usePortalWallpaper();
 
 const canChangeWallpaper = computed(() => {
-  return isSuperAdmin.value || can('system.setting');
+  return isSuperAdmin.value || isAdmin.value || canAny(['system.setting', 'config.hotel.edit']);
 });
 
 const loadActiveOutlets = async () => {

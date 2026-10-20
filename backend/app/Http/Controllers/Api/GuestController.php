@@ -1103,8 +1103,14 @@ class GuestController extends Controller
         $this->validateStayDates($request, $room);
 
         $datesChanged = $arrivalChanged || $departureChanged || $request->has('is_day_use');
+        // Dòng 366: màn hình luôn gửi kèm SL/giá EB của phòng. Chỉ ghi đè EB
+        // các đêm khi giá trị thực sự đổi; đổi ngày thì giữ giá từng đêm.
+        $extraBedChanged = (array_key_exists('extra_bed_qty', $roomData)
+                && (int) $roomData['extra_bed_qty'] !== (int) ($room->extra_bed_qty ?? 0))
+            || (array_key_exists('extra_bed_rate', $roomData)
+                && (float) $roomData['extra_bed_rate'] !== (float) ($room->extra_bed_rate ?? 0));
 
-        DB::transaction(function () use ($request, $room, $roomData, $stayFieldsChanged, $rateCodeChanged, $datesChanged) {
+        DB::transaction(function () use ($request, $room, $roomData, $stayFieldsChanged, $rateCodeChanged, $datesChanged, $extraBedChanged) {
             if ($roomData) $room->update($roomData);
             if ($stayFieldsChanged) {
                 // Đêm đã có giá theo ngày giữ nguyên; chỉ đổi mã giá mới tính lại.
@@ -1116,7 +1122,7 @@ class GuestController extends Controller
                     $rateCodeChanged
                 );
             }
-            if ($request->has('extra_bed_qty') || $request->has('extra_bed_rate')) {
+            if ($extraBedChanged) {
                 $this->syncExtraBedServices($room->fresh());
             }
             if ($datesChanged) {
@@ -1124,8 +1130,40 @@ class GuestController extends Controller
                 // service dates follow the new stay.
                 app(\App\Services\BookingRoomLifecycleService::class)
                     ->synchronize($room->fresh(), false, true, false);
+                $this->syncBookingHeaderDates($room->fresh());
             }
         });
+    }
+
+    /**
+     * Dòng 366: ngày đến/đi và số đêm của đăng ký đi theo các phòng còn hiệu
+     * lực sau khi chỉnh ngày phòng ở màn hình thông tin phòng.
+     */
+    private function syncBookingHeaderDates(BookingRoom $room): void
+    {
+        $booking = $room->booking;
+        if (!$booking) {
+            return;
+        }
+
+        $activeRooms = $booking->bookingRooms()->active();
+        $minArrival = (clone $activeRooms)->min('arrival_date');
+        $maxDeparture = (clone $activeRooms)->max('departure_date');
+        if (!$minArrival || !$maxDeparture) {
+            return;
+        }
+
+        $arrival = Carbon::parse($minArrival)->toDateString();
+        $departure = Carbon::parse($maxDeparture)->toDateString();
+        $nights = (bool) $booking->is_day_use
+            ? 0
+            : max(0, (int) Carbon::parse($arrival)->diffInDays(Carbon::parse($departure)));
+
+        $booking->update([
+            'arrival_date' => $arrival,
+            'departure_date' => $departure,
+            'num_of_days' => $nights,
+        ]);
     }
 
     private function syncExtraBedServices(BookingRoom $room): void

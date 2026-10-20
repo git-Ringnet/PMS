@@ -1193,9 +1193,11 @@ class BookingController extends Controller
             $effectiveDayUse = false;
         }
         $validated['is_day_use'] = $effectiveDayUse;
-        if ($effectiveDayUse) {
-            $validated['num_of_days'] = 0;
-        }
+        // Dòng 366: số đêm luôn tính từ ngày đến/ngày đi, không tin số đêm
+        // cũ mà màn hình gửi lên sau khi gia hạn.
+        $validated['num_of_days'] = $effectiveDayUse
+            ? 0
+            : Carbon::parse($bArr)->diffInDays(Carbon::parse($bDep));
 
         // Lấy ngày hệ thống
         $systemDate = SystemDateRoll::latest('id')->first();
@@ -1302,7 +1304,7 @@ class BookingController extends Controller
                         }
                         $roomToSync->update($syncData);
                         app(\App\Services\BookingRoomLifecycleService::class)
-                            ->synchronize($roomToSync->fresh(), false, true, false);
+                            ->synchronize($roomToSync->fresh(), false, true, true);
                     }
                 }
 
@@ -1467,9 +1469,12 @@ class BookingController extends Controller
                                 // For reservation rooms (STATUS_BOOKED), the
                                 // header edit owns child dates only when the
                                 // legacy synchronization flag is enabled.
+                                // Dòng 366: ngày phòng sửa trực tiếp trên màn hình
+                                // booking luôn được lưu; cấu hình chỉ quyết định
+                                // việc đổi ngày đăng ký có kéo theo ngày phòng.
                                 if (!$syncRoomDates && $bRoom) {
-                                    $roomArrival = Carbon::parse($bRoom->arrival_date)->toDateString();
-                                    $roomDeparture = Carbon::parse($bRoom->departure_date)->toDateString();
+                                    $roomArrival = $roomArrival ?? Carbon::parse($bRoom->arrival_date)->toDateString();
+                                    $roomDeparture = $roomDeparture ?? Carbon::parse($bRoom->departure_date)->toDateString();
                                 } elseif ($syncRoomDates && $bookingDatesChanged && $canSyncRoomDates) {
                                     $roomArrival = $parseDate($validated['arrival_date'] ?? $booking->arrival_date);
                                     $roomDeparture = $parseDate($validated['departure_date'] ?? $booking->departure_date);
@@ -1574,8 +1579,9 @@ class BookingController extends Controller
                             if ($roomStayChanged) {
                                 // Keep child-breakfast price and surcharge flags,
                                 // moving only their service dates to the new stay.
+                                // Đêm gia hạn mới phải có tiền phòng; đêm cũ giữ giá.
                                 app(\App\Services\BookingRoomLifecycleService::class)
-                                    ->synchronize($bRoom->fresh(), false, true, false);
+                                    ->synchronize($bRoom->fresh(), false, true, true);
                             }
 
                             // Cập nhật hoặc thêm khách chính (guestName)
@@ -3515,11 +3521,32 @@ class BookingController extends Controller
             $current = $current->addDay();
         }
 
-        $room->services()
+        // So sánh theo ngày đã chuẩn hóa (không phụ thuộc kiểu cột date/datetime)
+        // để không xóa nhầm EB của các đêm vẫn thuộc giai đoạn ở.
+        $existingServices
+            ->filter(fn ($service, $dateStr) => !in_array($dateStr, $stayDates, true) && (int) $service->is_posted === 0)
+            ->each(fn ($service) => $service->forceDelete());
+
+        // Ghi vào đúng dòng EB của đêm (kể cả dòng đã xóa mềm) thay vì
+        // updateOrCreate theo chuỗi ngày, để không sinh dòng EB trùng ngày.
+        $trashedByDate = \App\Models\BookingRoomService::onlyTrashed()
+            ->where('booking_room_id', $room->id)
             ->where('service_code', \App\Models\BookingRoomService::CODE_EXTRA_BED)
-            ->whereNotIn('service_date', $stayDates)
-            ->where('is_posted', 0)
-            ->forceDelete();
+            ->orderBy('id')
+            ->get()
+            ->keyBy(fn ($item) => Carbon::parse($item->service_date)->toDateString());
+        $saveExtraBed = function (string $dateStr, array $values) use ($room, $existingServices, $trashedByDate): void {
+            $row = $existingServices->get($dateStr) ?? $trashedByDate->get($dateStr);
+            if ($row) {
+                $row->fill($values)->save();
+                return;
+            }
+            \App\Models\BookingRoomService::create([
+                'booking_room_id' => $room->id,
+                'service_code'    => \App\Models\BookingRoomService::CODE_EXTRA_BED,
+                'service_date'    => $dateStr,
+            ] + $values);
+        };
 
         $latestEBRate = null;
         $latestEBQty  = null;
@@ -3539,10 +3566,14 @@ class BookingController extends Controller
                 $qty  = (int)($debInfo['quantity'] ?? 0);
                 $rate = (float)($debInfo['rate'] ?? 0);
                 $isRoom = !empty($debInfo['isRoom']) || (!isset($debInfo['isRoom']) && ($debInfo['is_room'] ?? 1) != 0);
+            } elseif ($hasExplicitDailyEB && $existing) {
+                // Dòng 366: đêm đã có EB nhưng màn hình chưa gửi chi tiết
+                // (vd. vừa gia hạn) thì giữ nguyên số lượng/giá đã cấu hình.
+                continue;
             } elseif ($hasExplicitDailyEB) {
-                // Đã có dữ liệu chi tiết hàng ngày mà ngày này không có trong map -> qty = 0
-                $qty  = 0;
-                $rate = 0;
+                // Đêm gia hạn mới: lấy số lượng/giá EB mặc định của phòng.
+                $qty  = (int)$room->extra_bed_qty;
+                $rate = (float)$room->extra_bed_rate;
                 $isRoom = true;
             } else {
                 // Chưa từng có dữ liệu chi tiết -> dùng phẳng từ phòng
@@ -3551,7 +3582,7 @@ class BookingController extends Controller
                 $isRoom = true;
             }
 
-            if ($qty > 0 && $rate !== null && $latestEBRate === null) {
+            if ($qty > 0 && $rate > 0 && $latestEBRate === null) {
                 $latestEBRate = $rate;
                 $latestEBQty  = $qty;
             }
@@ -3563,51 +3594,42 @@ class BookingController extends Controller
                     continue;
                 }
                 // Đối với Extra Bed: lưu quantity = 0 vào booking_room_services khi được chỉnh về 0
-                \App\Models\BookingRoomService::withTrashed()->updateOrCreate(
-                    [
-                        'booking_room_id' => $room->id,
-                        'service_code'    => \App\Models\BookingRoomService::CODE_EXTRA_BED,
-                        'service_date'    => $dateStr,
-                    ],
-                    [
-                        'service_name' => \App\Models\BookingRoomService::catalogName(\App\Models\BookingRoomService::CODE_EXTRA_BED, 'Extra Bed'),
-                        'quantity'     => 0,
-                        'rate'         => $rate,
-                        'department'   => 'FO',
-                        'is_room'      => $isRoom ? 1 : 0,
-                        'is_posted'    => 0,
-                        'deleted_at'   => null,
-                        'created_by'   => Auth::user()?->username ?? 'system',
-                    ]
-                );
-                continue;
-            }
-
-            \App\Models\BookingRoomService::withTrashed()->updateOrCreate(
-                [
-                    'booking_room_id' => $room->id,
-                    'service_code'    => \App\Models\BookingRoomService::CODE_EXTRA_BED,
-                    'service_date'    => $dateStr,
-                ],
-                [
+                $saveExtraBed($dateStr, [
                     'service_name' => \App\Models\BookingRoomService::catalogName(\App\Models\BookingRoomService::CODE_EXTRA_BED, 'Extra Bed'),
-                    'quantity'     => $qty,
+                    'quantity'     => 0,
                     'rate'         => $rate,
                     'department'   => 'FO',
                     'is_room'      => $isRoom ? 1 : 0,
                     'is_posted'    => 0,
                     'deleted_at'   => null,
                     'created_by'   => Auth::user()?->username ?? 'system',
-                ]
-            );
+                ]);
+                continue;
+            }
+
+            $saveExtraBed($dateStr, [
+                'service_name' => \App\Models\BookingRoomService::catalogName(\App\Models\BookingRoomService::CODE_EXTRA_BED, 'Extra Bed'),
+                'quantity'     => $qty,
+                'rate'         => $rate,
+                'department'   => 'FO',
+                'is_room'      => $isRoom ? 1 : 0,
+                'is_posted'    => 0,
+                'deleted_at'   => null,
+                'created_by'   => Auth::user()?->username ?? 'system',
+            ]);
         }
 
-        // Cập nhật lại extra_bed_rate của booking_room nếu có đơn giá mới
-        if ($latestEBRate !== null && (float)$latestEBRate != (float)$room->extra_bed_rate) {
-            $room->update([
-                'extra_bed_rate' => $latestEBRate,
-                'extra_bed_qty'  => $latestEBQty ?? $room->extra_bed_qty
-            ]);
+        // Giá EB của phòng là giá mặc định cho đêm mới; giá sửa riêng một đêm
+        // (kể cả 0đ) không được ghi đè lên nó. Chỉ bổ sung khi phòng chưa có.
+        $roomEBUpdate = [];
+        if ($latestEBRate !== null && (float)$room->extra_bed_rate <= 0) {
+            $roomEBUpdate['extra_bed_rate'] = $latestEBRate;
+        }
+        if ($latestEBQty !== null && (int)$room->extra_bed_qty <= 0) {
+            $roomEBUpdate['extra_bed_qty'] = $latestEBQty;
+        }
+        if ($roomEBUpdate) {
+            $room->update($roomEBUpdate);
         }
     }
 

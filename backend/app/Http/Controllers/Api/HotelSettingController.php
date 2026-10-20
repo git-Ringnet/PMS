@@ -40,6 +40,7 @@ class HotelSettingController extends Controller
             'IsCopyAllBooking',
             'RoleUserUpdateCheckoutBooking',
             'RoleUserOpenDoNotMove',
+            'Immigration_ExportExelChangeToRegistered',
         ])->get()->pluck('value', 'name');
 
         $data['ColorDefaultBookingRoomMap'] = $configs->get('ColorDefaultBookingRoomMap', '#97D5FF');
@@ -59,6 +60,7 @@ class HotelSettingController extends Controller
         $data['IsCopyAllBooking'] = $configs->get('IsCopyAllBooking', '1');
         $data['RoleUserUpdateCheckoutBooking'] = $configs->get('RoleUserUpdateCheckoutBooking', '');
         $data['RoleUserOpenDoNotMove'] = $configs->get('RoleUserOpenDoNotMove', '');
+        $data['Immigration_ExportExelChangeToRegistered'] = $configs->get('Immigration_ExportExelChangeToRegistered', '0');
         
         $bfConfig = \App\Models\HotelConfig::where('name', 'DefaultBreakfast')->first();
         $data['DefaultBreakfast'] = $bfConfig ? intval($bfConfig->value) : 1;

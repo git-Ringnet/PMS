@@ -1142,7 +1142,8 @@ function handleServiceRateChange(room, svc, newRate) {
   }
 
   if (svc.service_code === 'EB') {
-    room.extraBedPrice = newRate
+    // Sửa giá EB MỘT đêm chỉ đổi đêm đó; giá EB của phòng là giá mặc định
+    // cho các đêm gia hạn nên không bị ghi đè (dòng 366).
     if (!room.dailyExtraBeds) room.dailyExtraBeds = []
     const existing = room.dailyExtraBeds.find(d => cleanDateStr(d.dateStr || d.date) === cleanDate)
     const currentQty = svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1
@@ -1237,9 +1238,8 @@ async function handleInlineServiceRateChange(room, svc, newRate) {
 
   }
 
-  // Đồng bộ Extra Bed (EB)
+  // Đồng bộ Extra Bed (EB): chỉ đêm được sửa, không đổi giá EB của phòng
   if (svc.service_code === 'EB') {
-    room.extraBedPrice = newRate
     if (!room.dailyExtraBeds) room.dailyExtraBeds = []
     const existing = room.dailyExtraBeds.find(d => cleanDateStr(d.dateStr || d.date) === cleanDate)
     if (existing) {

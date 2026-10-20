@@ -64,6 +64,7 @@ class RoomFormController extends Controller
             ], 422);
         }
 
+        app(\App\Services\ConfigurationReferenceGuard::class)->assertUnused($form);
         $form->delete();
 
         return response()->json(['message' => 'Xóa dạng phòng thành công!']);

@@ -450,7 +450,7 @@ const deleteRoom = async (roomId) => {
     }
   } catch (err) {
     console.error(err)
-    uiStore.showToast('Không thể xóa phòng này', 'error')
+    uiStore.showToast(err.response?.data?.message || 'Không thể xóa phòng này', 'error')
   } finally {
     loading.value = false
   }

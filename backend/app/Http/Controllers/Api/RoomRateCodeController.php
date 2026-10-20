@@ -52,6 +52,8 @@ class RoomRateCodeController extends Controller
     public function update(Request $request, $ma)
     {
         $rateCode = RoomRateCode::findOrFail($ma);
+        app(\App\Services\ConfigurationReferenceGuard::class)->assertUnused($rateCode);
+        app(\App\Services\ConfigurationReferenceGuard::class)->assertIdentityUnchanged($rateCode, $request->all(), ['Ma'], true);
         $rateCode->update($request->all());
 
         return response()->json(['message' => 'Updated successfully', 'data' => $rateCode]);
@@ -60,6 +62,7 @@ class RoomRateCodeController extends Controller
     public function destroy($ma)
     {
         $rateCode = RoomRateCode::findOrFail($ma);
+        app(\App\Services\ConfigurationReferenceGuard::class)->assertUnused($rateCode);
         $rateCode->delete();
 
         return response()->json(['message' => 'Deleted successfully']);
@@ -68,6 +71,7 @@ class RoomRateCodeController extends Controller
     // Custom method to save Rate Plans (Matrix Grid)
     public function saveRatePlan(Request $request, $ma)
     {
+        app(\App\Services\ConfigurationReferenceGuard::class)->assertUnused(RoomRateCode::findOrFail($ma));
         $request->validate([
             'Code' => 'required|string',
             'Description' => 'nullable|string',
@@ -93,6 +97,7 @@ class RoomRateCodeController extends Controller
 
     public function deleteRatePlan($ma, $code)
     {
+        app(\App\Services\ConfigurationReferenceGuard::class)->assertUnused(RoomRateCode::findOrFail($ma));
         $plan = RoomRatePlan::where('RateCode', $ma)->where('Code', $code)->firstOrFail();
         $plan->delete();
         
@@ -128,6 +133,7 @@ class RoomRateCodeController extends Controller
 
         $savedMappings = DB::transaction(function () use ($ma, $mode, $mappings, $deleteDates) {
             $rateCode = RoomRateCode::where('Ma', $ma)->lockForUpdate()->firstOrFail();
+            app(\App\Services\ConfigurationReferenceGuard::class)->assertUnused($rateCode);
             $availablePlanCodes = RoomRatePlan::where('RateCode', $ma)->pluck('Code');
             $unknownPlanCodes = $mappings->pluck('Code')->unique()->diff($availablePlanCodes)->values();
 

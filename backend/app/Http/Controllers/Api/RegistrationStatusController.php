@@ -106,6 +106,7 @@ class RegistrationStatusController extends Controller
         $validated['cut_off_day'] = $effectiveCutoff;
         unset($validated['confirmation_days']);
 
+        app(\App\Services\ConfigurationReferenceGuard::class)->assertIdentityUnchanged($status, $validated, ['booking_status_id']);
         $status->update($validated);
 
         return response()->json([
@@ -121,6 +122,7 @@ class RegistrationStatusController extends Controller
             return response()->json(['message' => 'Registration status not found'], 404);
         }
 
+        app(\App\Services\ConfigurationReferenceGuard::class)->assertUnused($status);
         $status->delete();
 
         return response()->json([

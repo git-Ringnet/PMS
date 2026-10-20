@@ -192,7 +192,7 @@ const saveRoomForm = async () => {
 const deleteRoomForm = async (id) => {
   const confirmed = await uiStore.confirm({
     title: 'Xác nhận xóa',
-    message: 'Bạn có chắc chắn muốn xóa dạng phòng này? Tất cả các phòng thuộc dạng này cũng sẽ bị xóa.',
+    message: 'Bạn có chắc chắn muốn xóa dạng phòng này? Chỉ có thể xóa khi dạng phòng chưa được sử dụng.',
     confirmText: 'Xóa',
     cancelText: 'Hủy'
   })

@@ -61,6 +61,7 @@ class UnitOfMeasureController extends Controller
             'is_inactive' => 'nullable|boolean',
         ]);
 
+        app(\App\Services\ConfigurationReferenceGuard::class)->assertIdentityUnchanged($unit, $validated, ['code', 'name', 'symbol']);
         $unit->update($validated);
 
         return response()->json([
@@ -76,6 +77,7 @@ class UnitOfMeasureController extends Controller
             return response()->json(['message' => 'Unit of measure not found'], 404);
         }
 
+        app(\App\Services\ConfigurationReferenceGuard::class)->assertUnused($unit);
         $unit->delete();
 
         return response()->json([

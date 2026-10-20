@@ -142,7 +142,10 @@ class ChildBreakfastService
     {
         $details = $child->breakfastDetails()->orderBy('service_date')->get();
         $byDate = $details->keyBy(fn (BookingChildBreakfastDetail $detail) => Carbon::parse($detail->service_date)->toDateString());
-        $template = $details->first(fn (BookingChildBreakfastDetail $detail) => (bool) $detail->is_extra_charge)
+        // Dòng 366: đêm gia hạn lấy phụ thu của một đêm có giá (> 0), không lấy
+        // đêm đã chỉnh tay về 0đ làm mẫu cho cả các đêm mới.
+        $template = $details->last(fn (BookingChildBreakfastDetail $detail) => (bool) $detail->is_extra_charge && (float) $detail->amount > 0)
+            ?? $details->first(fn (BookingChildBreakfastDetail $detail) => (bool) $detail->is_extra_charge)
             ?? $details->first();
         $isBaby = $child->age_group === 'baby';
         // Nights before the PMS date are history (posted or skipped); keep them.

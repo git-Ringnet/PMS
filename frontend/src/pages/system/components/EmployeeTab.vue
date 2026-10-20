@@ -556,10 +556,6 @@ const saveItem = async () => {
     uiStore.showToast('Vui lòng nhập email nhân viên', 'warning')
     return
   }
-  if (form.value.password && form.value.password.length < 6) {
-    uiStore.showToast('Mật khẩu phải từ 6 ký tự trở lên', 'warning')
-    return
-  }
 
   if (!hasValidPermissionSelection()) {
     activeModalTab.value = 'permission'

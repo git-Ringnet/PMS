@@ -60,6 +60,7 @@ class HousekeepingOutletController extends Controller
             'image' => 'nullable|file|image|max:5120',
         ]);
 
+        app(\App\Services\ConfigurationReferenceGuard::class)->assertIdentityUnchanged($housekeepingOutlet, $data, ['code', 'name']);
         if ($request->hasFile('image')) {
             if ($housekeepingOutlet->image) {
                 Storage::disk('public')->delete($housekeepingOutlet->image);
@@ -84,6 +85,7 @@ class HousekeepingOutletController extends Controller
 
     public function forceDestroy(HousekeepingOutlet $housekeepingOutlet)
     {
+        app(\App\Services\ConfigurationReferenceGuard::class)->assertUnused($housekeepingOutlet);
         $values = array_values(array_unique(array_filter([
             $housekeepingOutlet->code,
             $housekeepingOutlet->name,

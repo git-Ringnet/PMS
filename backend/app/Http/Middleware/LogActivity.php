@@ -16,29 +16,69 @@ class LogActivity
         // Auth
         'login' => ['auth', 'Đăng nhập'],
         'logout' => ['auth', 'Đăng xuất'],
+        'me' => ['auth', 'Tài khoản cá nhân'],
 
         // Reservation & Frontdesk
         'bookings' => ['reservation', 'Quản lý Đặt phòng'],
         'booking-rooms' => ['reservation', 'Phòng Đặt'],
+        'booking-children' => ['reservation', 'Tạo đăng ký'],
         'room-allocations' => ['reservation', 'Phân bổ phòng'],
+        'special-requests' => ['reservation', 'Yêu cầu đặc biệt'],
         'rooms' => ['frontdesk', 'Sơ đồ phòng'],
         'room-locks' => ['reservation', 'Khóa phòng'],
         'guests' => ['reservation', 'Thông tin Khách lưu trú'],
         'payments' => ['frontdesk', 'Thu ngân & Thanh toán'],
+        'booking-room-services' => ['frontdesk', 'Trả phòng'],
+        'service-bills' => ['frontdesk', 'Trả phòng'],
+        'folio' => ['frontdesk', 'Trả phòng'],
+        'split-folio' => ['frontdesk', 'Trả phòng'],
+        'quick-transfer' => ['frontdesk', 'Trả phòng'],
+        'quick-transfer-candidates' => ['frontdesk', 'Trả phòng'],
+        'residence-declarations' => ['frontdesk', 'Khai báo tạm trú'],
+        'night-audit' => ['frontdesk', 'Sang ngày'],
+        'system-date' => ['frontdesk', 'Sang ngày'],
+        'shift-work' => ['frontdesk', 'Bàn giao ca'],
+
+        // Housekeeping & Inventory
         'hk' => ['housekeeping', 'Buồng phòng'],
         'housekeeping' => ['housekeeping', 'Buồng phòng'],
+        'hk-config' => ['housekeeping', 'In Phân công phòng'],
+        'lost-and-found' => ['housekeeping', 'QUản lý đồ thất lạc'],
+        'inventories' => ['housekeeping', 'Kho bãi'],
+        'inventory' => ['housekeeping', 'Tồn kho'],
+        'warehouses' => ['housekeeping', 'Kho hàng'],
+        'products' => ['housekeeping', 'Sản phẩm & Minibar'],
+        'product-categories' => ['housekeeping', 'Nhóm sản phẩm'],
+
+        // Food & Beverage (F&B)
+        'fb-locations' => ['fnb', 'Khu vực F&B'],
+        'fb-parties' => ['fnb', 'Tiệc F&B'],
+        'fb-printers' => ['fnb', 'Máy in F&B'],
+        'fb-product-categories' => ['fnb', 'Nhóm món F&B'],
+        'fb-products' => ['fnb', 'Món ăn & Đồ uống F&B'],
+        'fb-promotions' => ['fnb', 'Khuyến mãi F&B'],
+        'fb-tables' => ['fnb', 'Bàn F&B'],
+        'fnb' => ['fnb', 'Bán hàng F&B'],
 
         // System Administration
         'users' => ['system', 'Quản lý Nhân viên'],
         'roles' => ['system', 'Phân quyền Vai trò'],
         'system-branches' => ['system', 'Quản lý Chi nhánh'],
         'info-business' => ['system', 'Thông tin Doanh nghiệp'],
+        'departments' => ['system', 'Phòng ban'],
+        'organization' => ['system', 'Cơ cấu Tổ chức'],
+        'permission-screens' => ['system', 'Phân quyền'],
+        'portal-wallpaper' => ['system', 'Hình nền Hệ thống'],
+        'user-settings' => ['system', 'Cài đặt Người dùng'],
+        'system' => ['system', 'Hệ thống'],
 
         // Config - Hotel
         'hotel-settings' => ['config', 'Cài đặt Khách sạn'],
         'hotel-services' => ['config', 'Dịch vụ Khách sạn'],
         'hotel-configs' => ['config', 'Cấu hình Khách sạn'],
         'shifts' => ['config', 'Quản lý Ca làm việc'],
+        'outlets' => ['config', 'Điểm bán hàng (Outlets)'],
+        'geo' => ['config', 'Địa giới hành chính'],
 
         // Config - Room
         'room-classes' => ['config', 'Hạng phòng'],
@@ -49,6 +89,7 @@ class LogActivity
 
         // Config - Templates
         'templates' => ['config', 'Mẫu in & Chứng từ'],
+        'print-template-slots' => ['config', 'Mẫu in & Chứng từ'],
 
         // Config - Company & Partners
         'companies' => ['config', 'Công ty đối tác'],
@@ -64,10 +105,11 @@ class LogActivity
         'units-of-measure' => ['config', 'Đơn vị tính'],
         'registration-statuses' => ['config', 'Trạng thái Đăng ký'],
         'bank-accounts' => ['config', 'Tài khoản ngân hàng'],
-        'products' => ['housekeeping', 'Sản phẩm & Minibar'],
-        'product-categories' => ['housekeeping', 'Nhóm sản phẩm'],
-        'inventories' => ['housekeeping', 'Kho bãi'],
-        'warehouses' => ['housekeeping', 'Kho hàng'],
+
+        // Reports
+        'report-definitions' => ['reports', 'Báo cáo'],
+        'report-data-sources' => ['reports', 'Nguồn dữ liệu Báo cáo'],
+        'report-procedure-samples' => ['reports', 'Mẫu Báo cáo'],
     ];
 
     /**
@@ -122,6 +164,64 @@ class LogActivity
         'phone' => 'SĐT',
         'email' => 'Email',
         'code' => 'Mã',
+        // Bổ sung đầy đủ cho các phân hệ:
+        'quantity' => 'Số lượng',
+        'unit_price' => 'Đơn giá',
+        'subtotal' => 'Thành tiền',
+        'discount' => 'Giảm giá',
+        'discount_type' => 'Loại giảm giá',
+        'discount_value' => 'Mức giảm giá',
+        'tax_code' => 'Mã số thuế',
+        'address' => 'Địa chỉ',
+        'gender' => 'Giới tính',
+        'birthday' => 'Ngày sinh',
+        'nationality' => 'Quốc tịch',
+        'passport_no' => 'Số hộ chiếu',
+        'id_card' => 'Số CCCD',
+        'id_number' => 'Số giấy tờ',
+        'document_number' => 'Số giấy tờ',
+        'document_type' => 'Loại giấy tờ',
+        'service_name' => 'Tên dịch vụ',
+        'service_code' => 'Mã dịch vụ',
+        'folio_id' => 'Mã Folio',
+        'folio_no' => 'Số Folio',
+        'table_number' => 'Số bàn',
+        'capacity' => 'Sức chứa',
+        'location_id' => 'Khu vực',
+        'warehouse_id' => 'Kho',
+        'warehouse_name' => 'Tên kho',
+        'unit_id' => 'Đơn vị tính',
+        'unit' => 'Đơn vị tính',
+        'category_id' => 'Danh mục',
+        'item_code' => 'Mã hàng',
+        'stock_quantity' => 'Số lượng tồn',
+        'min_quantity' => 'Tồn tối thiểu',
+        'max_quantity' => 'Tồn tối đa',
+        'party_name' => 'Tên tiệc',
+        'party_date' => 'Ngày tổ chức',
+        'guest_count' => 'Số khách',
+        'promo_code' => 'Mã khuyến mãi',
+        'discount_percent' => 'Phần trăm giảm',
+        'start_date' => 'Ngày bắt đầu',
+        'end_date' => 'Ngày kết thúc',
+        'from_date' => 'Từ ngày',
+        'to_date' => 'Đến ngày',
+        'is_active' => 'Kích hoạt',
+        'role_id' => 'Vai trò',
+        'department_id' => 'Phòng ban',
+        'branch_id' => 'Chi nhánh',
+        'username' => 'Tên đăng nhập',
+        'full_name' => 'Họ và tên',
+        'employee_code' => 'Mã nhân viên',
+        'room_form_id' => 'Hình thức phòng',
+        'room_class_group_id' => 'Nhóm hạng phòng',
+        'standard_rate' => 'Giá tiêu chuẩn',
+        'max_adults' => 'Người lớn tối đa',
+        'max_children' => 'Trẻ em tối đa',
+        'lock_type' => 'Loại khóa',
+        'reason' => 'Lý do',
+        'is_do_not_move' => 'Không di chuyển',
+        'no_post' => 'Chặn ghi nợ (No Post)',
     ];
 
     /**
@@ -467,7 +567,7 @@ class LogActivity
 
             if ($action === 'create' || $action === 'Add') {
                 $price = (float) ($newValues['price'] ?? $newValues['rate'] ?? 540000);
-                $priceStr = number_format($price > 0 ? $price : 540000, 0, ',', '.');
+                $priceStr = number_format($price > 0 ? $price : 540000, 0, '.', ',');
                 $pNum = $newValues['room_number'] ?? 'Chưa gán';
                 $adults = $newValues['adults'] ?? 2;
                 $child = $newValues['children'] ?? 0;
@@ -533,7 +633,7 @@ class LogActivity
             $bookingId = $newValues['booking_id'] ?? $oldValues['booking_id'] ?? '';
             $bookingCode = $bookingId ? ('GAL' . $bookingId) : 'GAL22';
             $amount = (float) ($newValues['amount'] ?? $oldValues['amount'] ?? 5000000);
-            $amountStr = number_format($amount > 0 ? $amount : 5000000, 0, ',', '.');
+            $amountStr = number_format($amount > 0 ? $amount : 5000000, 0, '.', ',');
             $method = $newValues['payment_method'] ?? 'BT';
             $note = $newValues['description'] ?? $newValues['note'] ?? 'Deposit (Bank transfer)';
 
@@ -597,22 +697,57 @@ class LogActivity
 
         // 7. CÁC ĐỐI TƯỢNG KHÁC (USER, COMPANY, ROOM CLASS, ETC.)
         $actionName = match ($action) {
-            'create' => 'Thêm mới',
-            'update' => 'Cập nhật',
-            'delete' => 'Xóa',
+            'create', 'Add' => 'Thêm mới',
+            'update', 'Modify' => 'Cập nhật',
+            'delete', 'Cancel' => 'Xóa',
             default => $action,
         };
 
         $objName = $targetLabel ? "'{$targetLabel}'" : ($targetType ?: $component);
 
-        if ($action === 'update' && !empty($oldValues) && !empty($newValues)) {
+        if (($action === 'create' || $action === 'Add') && !empty($newValues)) {
+            $createdLines = $this->formatCreationDetails($newValues);
+            if (!empty($createdLines)) {
+                return "* {$actionName} {$component} {$objName} :\n" . implode("\n", $createdLines);
+            }
+        }
+
+        if (($action === 'update' || $action === 'Modify') && !empty($oldValues) && !empty($newValues)) {
             $diffLines = $this->formatDiffLines($oldValues, $newValues);
             if (!empty($diffLines)) {
                 return "* {$actionName} {$component} {$objName} :\n" . implode("\n", $diffLines);
             }
         }
 
+        if ($action === 'delete' || $action === 'Cancel') {
+            $reason = $newValues['reason'] ?? $oldValues['reason'] ?? null;
+            $reasonStr = $reason ? " - Lý do: {$reason}" : "";
+            return "* Xóa {$component} {$objName}{$reasonStr}";
+        }
+
         return "* {$actionName} {$component} {$objName}";
+    }
+
+    /**
+     * Format thông số chi tiết khi tạo mới (Add) để phục vụ tra cứu vận hành và tái hiện bug.
+     */
+    protected function formatCreationDetails(array $newValues): array
+    {
+        $lines = [];
+        $skipKeys = ['updated_at', 'created_at', 'id', 'deleted_at', 'remember_token', 'password', 'branch_id', 'created_by_user_id', 'updated_by_user_id', 'created_by', 'updated_by'];
+
+        foreach ($newValues as $key => $val) {
+            if (in_array($key, $skipKeys)) continue;
+            if ($val === null || $val === '') continue;
+
+            $label = $this->fieldLabels[$key] ?? $key;
+            $formatted = $this->formatDisplayValue($key, $val);
+            if ($formatted !== '' && $formatted !== '(trống)') {
+                $lines[] = "• {$label}: {$formatted}";
+            }
+        }
+
+        return $lines;
     }
 
     /**
@@ -661,11 +796,15 @@ class LogActivity
         }
 
         // Format tiền tệ nếu là số tiền
-        if (in_array($key, ['total_amount', 'deposit_amount', 'price', 'rate', 'base_price', 'amount', 'extra_bed_rate']) && is_numeric($val)) {
-            return number_format((float) $val, 0, ',', '.') . ' đ';
+        if (in_array($key, ['total_amount', 'deposit_amount', 'price', 'rate', 'base_price', 'amount', 'extra_bed_rate', 'subtotal', 'unit_price']) && is_numeric($val)) {
+            return number_format((float) $val, 0, '.', ',');
         }
 
         if (is_array($val)) {
+            if (isset($val['name']) && is_scalar($val['name'])) return (string) $val['name'];
+            if (isset($val['code']) && is_scalar($val['code'])) return (string) $val['code'];
+            if (isset($val['title']) && is_scalar($val['title'])) return (string) $val['title'];
+            if (isset($val['id']) && is_scalar($val['id'])) return '#' . $val['id'];
             return json_encode($val, JSON_UNESCAPED_UNICODE);
         }
 

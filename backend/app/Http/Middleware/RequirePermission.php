@@ -30,6 +30,11 @@ class RequirePermission
             return $next($request);
         }
 
+        // Admin bypass nếu danh sách yêu cầu quyền có 'admin'
+        if (in_array('admin', $permissions) && method_exists($user, 'isAdmin') && $user->isAdmin()) {
+            return $next($request);
+        }
+
         // Lấy branch_id từ request (đã được EnsureBranchAccess set)
         $branchId = $request->attributes->get('_branch_id');
 

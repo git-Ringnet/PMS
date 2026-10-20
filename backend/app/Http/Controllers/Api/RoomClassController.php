@@ -139,6 +139,7 @@ class RoomClassController extends Controller
             ], 422);
         }
 
+        app(\App\Services\ConfigurationReferenceGuard::class)->assertUnused($roomClass);
         if ($roomClass->image_path) {
             \Illuminate\Support\Facades\Storage::disk('public')->delete($roomClass->image_path);
         }
