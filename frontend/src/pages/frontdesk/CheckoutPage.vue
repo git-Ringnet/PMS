@@ -1640,9 +1640,10 @@ const invoiceItems = computed(() => {
         const linked = selectedServiceGroup.value?.items?.find(item => Number(item.serviceBillDetailNo) === Number(detail.Ma))
         if (linked?.quantity !== undefined && linked?.quantity !== null) return Number(linked.quantity)
         if (detail.Quantity !== undefined && detail.Quantity !== null && detail.Quantity !== '') return Number(detail.Quantity)
+        // OriginalRate là đơn giá chưa thuế phí nên số lượng = tiền chưa thuế / đơn giá.
         const rate = Number(detail.OriginalRate ?? detail.Amount)
-        const total = Number(detail.Amount) || 0
-        return rate ? total / rate : 1
+        const net = Number(detail.OriginalAmount ?? detail.DetailBillOriginalAmount ?? detail.Amount) || 0
+        return rate ? Math.round((net / rate) * 100) / 100 : 1
       })(),
       amount: detail.OriginalRate ?? detail.Amount,
       totalAmount: detail.Amount

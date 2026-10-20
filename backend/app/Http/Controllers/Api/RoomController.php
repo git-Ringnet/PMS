@@ -213,6 +213,11 @@ class RoomController extends Controller
                 $room->booking_color = $br->booking?->color ?? '';
                 $room->arrival_date = $br->arrival_date ? $br->arrival_date->toDateString() : '';
                 $room->departure_date = $br->departure_date ? $br->departure_date->toDateString() : '';
+                // Dòng 398: giờ đến/giờ đi thật của phòng (đã check-in thì là giờ check-in thực tế).
+                $room->arrival_time = $br->arrival_time;
+                $room->departure_time = (int) $br->status === \App\Models\BookingRoom::STATUS_CHECKED_OUT
+                    ? ($br->CheckoutTime ?: $br->departure_time)
+                    : $br->departure_time;
                 $room->nights = $br->arrival_date && $br->departure_date ? $br->arrival_date->diffInDays($br->departure_date) : 1;
                 // Room Map dùng số khách/trẻ đang thực sự còn ở phòng.
                 $activeAdultCount = $activeGuests->count();
@@ -312,6 +317,8 @@ class RoomController extends Controller
                     $room->rate = $room->tomorrow_booking['rate'];
                     $room->booking_id = $room->tomorrow_booking['booking_id'];
                     $room->booking_room_id = $room->tomorrow_booking['booking_room_id'];
+                    $room->arrival_time = $brTomorrow->arrival_time;
+                    $room->departure_time = $brTomorrow->departure_time;
                     $room->extra_bed_qty = (int) ($brTomorrow->extra_bed_qty ?? 0);
                     $room->extra_bed_rate = (float) ($brTomorrow->extra_bed_rate ?? 0);
                 }

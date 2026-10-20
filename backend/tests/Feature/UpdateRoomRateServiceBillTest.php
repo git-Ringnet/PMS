@@ -133,7 +133,11 @@ class UpdateRoomRateServiceBillTest extends TestCase
         ]);
     }
 
-    public function test_updating_room_charge_rate_updates_service_bill_and_details(): void
+    /**
+     * Row 351: the invoice bill that was already run keeps its price; the new
+     * price is only stored in booking_room_services.
+     */
+    public function test_updating_room_charge_rate_keeps_service_bill_and_stores_plan_row(): void
     {
         $today = Carbon::today()->toDateString();
 
@@ -148,33 +152,34 @@ class UpdateRoomRateServiceBillTest extends TestCase
         ]);
 
         $response->assertStatus(200);
-        $response->assertJson([
-            'success' => true,
-            'service_bill' => [
-                'Ma' => $this->serviceBill->Ma,
-                'Amount' => '500000.00',
-            ],
-        ]);
+        $response->assertJson(['success' => true]);
+        $this->assertArrayNotHasKey('service_bill', $response->json());
 
         $this->serviceBill->refresh();
-        $this->assertEquals(500000, (float) $this->serviceBill->Amount);
+        $this->assertEquals(540000, (float) $this->serviceBill->Amount);
 
         $detail = ServiceBillDetail::where('BillServiceId', $this->serviceBill->Ma)->where('Ma', 1)->first();
         $this->assertNotNull($detail);
-        $this->assertEquals(500000, (float) $detail->Amount);
+        $this->assertEquals(540000, (float) $detail->Amount);
 
         $rnb = RoomNightBill::where('bill_id', $this->serviceBill->Ma)->first();
         $this->assertNotNull($rnb);
-        $this->assertEquals(500000, (float) $rnb->rate);
+        $this->assertEquals(540000, (float) $rnb->rate);
 
-        $svc = BookingRoomService::where('booking_room_id', $this->bookingRoom->id)
+        // Nothing gets linked to (or re-posted onto) the bill that was already run ...
+        $this->assertSame(0, BookingRoomService::where('booking_room_id', $this->bookingRoom->id)
             ->where('service_code', 'RM')
-            ->whereDate('service_date', $today)
-            ->first();
-        $this->assertNotNull($svc);
-        $this->assertEquals(500000, (float) $svc->rate);
-        $this->assertEquals($this->serviceBill->Ma, $svc->service_bill_id);
-        $this->assertEquals(1, $svc->is_posted);
+            ->where(fn ($q) => $q->where('service_bill_id', $this->serviceBill->Ma)->orWhere('is_posted', 1))
+            ->count());
+
+        // ... and the new price waits in an unposted planning row.
+        $plan = BookingRoomService::where('booking_room_id', $this->bookingRoom->id)
+            ->where('service_code', 'RM')
+            ->whereNull('service_bill_id')
+            ->where('is_posted', 0)
+            ->get();
+        $this->assertCount(1, $plan);
+        $this->assertEquals(500000, (float) $plan->first()->rate);
     }
 
     public function test_cannot_update_room_charge_if_service_bill_already_paid(): void

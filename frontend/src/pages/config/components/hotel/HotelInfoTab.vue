@@ -60,16 +60,43 @@ const getImageUrl = (path) => {
 
 const logoInput = ref(null)
 
+const LOGO_MAX_BYTES = 10 * 1024 * 1024
+const LOGO_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/svg+xml', 'image/webp']
+
+// Dòng 388: mỗi nguyên nhân thất bại hiện đúng thông báo, không chỉ "Không thể tải lên logo".
+const logoUploadError = (err) => {
+  const data = err?.response?.data
+  if (data?.errors?.logo?.[0]) return data.errors.logo[0]
+  if (data?.message) return data.message
+  const status = err?.response?.status
+  if (status === 413) return 'File quá lớn so với giới hạn của máy chủ. Vui lòng chọn ảnh nhỏ hơn hoặc liên hệ quản trị viên.'
+  if (err?.code === 'ECONNABORTED') return 'Tải lên logo quá thời gian chờ. Vui lòng thử lại hoặc chọn ảnh nhỏ hơn.'
+  if (!err?.response) return 'Không kết nối được máy chủ để tải lên logo.'
+  return `Không thể tải lên logo (lỗi ${status})`
+}
+
 const onLogoSelected = async (event) => {
   const file = event.target.files[0]
   if (!file) return
+
+  const resetInput = () => { if (logoInput.value) logoInput.value.value = '' }
+  if (file.type && !LOGO_TYPES.includes(file.type)) {
+    uiStore.showToast('Định dạng logo phải là: jpeg, png, jpg, gif, svg, webp.', 'error')
+    resetInput()
+    return
+  }
+  if (file.size > LOGO_MAX_BYTES) {
+    uiStore.showToast('Kích thước file logo không được vượt quá 10MB.', 'error')
+    resetInput()
+    return
+  }
 
   const formData = new FormData()
   formData.append('logo', file)
 
   loading.value = true
   try {
-    const res = await http.post('/hotel-settings/logo', formData)
+    const res = await http.post('/hotel-settings/logo', formData, { timeout: 120000 })
     const logoUrl = res.data?.data?.logo_url ?? res.data?.logo_url
     if (logoUrl !== undefined) {
       hotelForm.logo_url = logoUrl
@@ -77,8 +104,7 @@ const onLogoSelected = async (event) => {
     }
   } catch (err) {
     console.error('Lỗi khi tải lên logo:', err)
-    const errorMsg = err?.response?.data?.message || err?.response?.data?.errors?.logo?.[0] || 'Không thể tải lên logo'
-    uiStore.showToast(errorMsg, 'error')
+    uiStore.showToast(logoUploadError(err), 'error')
   } finally {
     loading.value = false
     if (logoInput.value) logoInput.value.value = ''
