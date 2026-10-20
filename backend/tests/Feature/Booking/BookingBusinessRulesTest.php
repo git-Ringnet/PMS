@@ -3106,6 +3106,267 @@ class BookingBusinessRulesTest extends TestCase
     }
 
     /**
+     * @return array{0: Booking, 1: BookingRoom}
+     */
+    private function inhouseRoomWithPrepostedRoomCharge(bool $masterRoomRate, ?callable $setup = null, array $roomAttributes = []): array
+    {
+        $department = \App\Models\Department::firstOrCreate(['code' => 'FO'], ['name' => 'Front Office']);
+        HotelService::updateOrCreate(['code' => 'RM'], [
+            'name' => 'Dịch vụ phòng nghỉ', 'price' => 0, 'is_active' => true, 'department_id' => $department->id,
+        ]);
+        $booking = $this->createBooking([
+            'arrival_date' => '2026-08-07', 'departure_date' => '2026-08-10', 'num_of_days' => 3,
+            'status' => Booking::STATUS_CHECKIN, 'is_master_room_rate' => $masterRoomRate,
+        ]);
+        if ($setup) {
+            $setup();
+        }
+        $room = BookingRoom::create([
+            'id' => 'G-351-' . ($masterRoomRate ? 'M' : 'R'), 'booking_id' => $booking->id,
+            'room_class_id' => $this->roomClass->id, 'room_number' => '101',
+            'arrival_date' => '2026-08-07', 'departure_date' => '2026-08-10', 'rate' => 540000,
+            'status' => BookingRoom::STATUS_CHECKED_IN,
+        ] + $roomAttributes);
+
+        // "Chạy trước tiền phòng" at the invoice screen for tonight.
+        $this->postJson('/api/booking-room-services/post-room-charge', [
+            'booking_room_id' => $room->id, 'date_from' => '2026-08-07', 'date_to' => '2026-08-07', 'mode' => 'auto',
+        ])->assertSuccessful();
+
+        return [$booking, $room];
+    }
+
+    private function editRoomPriceFromRegistration(BookingRoom $room, string $date, float $rate)
+    {
+        return $this->postJson("/api/booking-rooms/{$room->id}/services", [
+            'service_code' => 'RM', 'service_date' => $date, 'quantity' => 1, 'rate' => $rate, 'is_room' => 1,
+        ]);
+    }
+
+    /** Rows the invoice screen lists: posted or linked to a bill. */
+    private function invoiceVisibleRmRows(BookingRoom $room)
+    {
+        return BookingRoomService::where('booking_room_id', $room->id)->where('service_code', 'RM')
+            ->where(fn ($q) => $q->where('is_posted', 1)->orWhereNotNull('service_bill_id'))->get();
+    }
+
+    /**
+     * Row 351 (bill at Master): adjusting the price of a night whose bill was
+     * already run leaves the bill alone and does not bring the room row back, so
+     * the invoice screen shows one room charge, not two.
+     */
+    public function test_row351_price_edit_after_master_bill_keeps_bill_and_adds_no_second_line(): void
+    {
+        [, $room] = $this->inhouseRoomWithPrepostedRoomCharge(true);
+        $bill = \App\Models\ServiceBill::where('RentalRoomId1', $room->id)->where('ServiceId', 'RM')->firstOrFail();
+        $this->assertSame(540000.0, (float) $bill->Amount);
+        $this->assertCount(0, $this->invoiceVisibleRmRows($room), 'master bill renders from service_bills only');
+
+        $this->editRoomPriceFromRegistration($room, '2026-08-07', 350000)->assertSuccessful();
+
+        $bill->refresh();
+        $this->assertSame(540000.0, (float) $bill->Amount, 'bill keeps the price it was run with');
+        $this->assertSame(1, \App\Models\ServiceBill::where('RentalRoomId1', $room->id)->where('ServiceId', 'RM')->count());
+        $this->assertSame(
+            540000.0,
+            (float) \App\Models\ServiceBillDetail::where('BillServiceId', $bill->Ma)->where('Ma', 1)->value('Amount')
+        );
+        $this->assertSame(540000.0, (float) \App\Models\RoomNightBill::where('bill_id', $bill->Ma)->value('rate'));
+        $this->assertCount(0, $this->invoiceVisibleRmRows($room), 'no second room-charge line on the invoice screen');
+        $this->assertSame(0, BookingRoomService::where('booking_room_id', $room->id)->where('service_bill_id', $bill->Ma)->count());
+
+        // The new price is kept in booking_room_services for a later re-run.
+        $plan = BookingRoomService::where('booking_room_id', $room->id)->where('service_code', 'RM')
+            ->where('is_posted', 0)->whereNull('service_bill_id')->get();
+        $this->assertCount(1, $plan);
+        $this->assertSame(350000.0, (float) $plan->first()->rate);
+    }
+
+    /**
+     * Row 351 (bill on the room): same rule, and the posted row of that night
+     * keeps the price the bill was run with.
+     */
+    public function test_row351_price_edit_after_room_bill_leaves_posted_row_and_bill_untouched(): void
+    {
+        [, $room] = $this->inhouseRoomWithPrepostedRoomCharge(false);
+        $bill = \App\Models\ServiceBill::where('RentalRoomId1', $room->id)->where('ServiceId', 'RM')->firstOrFail();
+        $posted = $this->invoiceVisibleRmRows($room);
+        $this->assertCount(1, $posted);
+
+        $this->editRoomPriceFromRegistration($room, '2026-08-07', 350000)->assertSuccessful();
+
+        $this->assertSame(540000.0, (float) $bill->fresh()->Amount);
+        $visible = $this->invoiceVisibleRmRows($room);
+        $this->assertCount(1, $visible);
+        $this->assertSame(540000.0, (float) $visible->first()->rate);
+        $this->assertSame((int) $bill->Ma, (int) $visible->first()->service_bill_id);
+
+        // Editing again updates the same planned row instead of adding another.
+        $this->editRoomPriceFromRegistration($room, '2026-08-07', 300000)->assertSuccessful();
+        $plan = BookingRoomService::where('booking_room_id', $room->id)->where('service_code', 'RM')
+            ->where('is_posted', 0)->whereNull('service_bill_id')->get();
+        $this->assertCount(1, $plan);
+        $this->assertSame(300000.0, (float) $plan->first()->rate);
+        $this->assertSame(540000.0, (float) $bill->fresh()->Amount);
+    }
+
+    /**
+     * Row 351: a night with no bill yet is unaffected: the price edit still goes
+     * to booking_room_services and creates no bill.
+     */
+    public function test_row351_price_edit_on_night_without_bill_only_updates_booking_room_services(): void
+    {
+        [, $room] = $this->inhouseRoomWithPrepostedRoomCharge(true);
+        $billCount = \App\Models\ServiceBill::where('RentalRoomId1', $room->id)->where('ServiceId', 'RM')->count();
+
+        $this->editRoomPriceFromRegistration($room, '2026-08-08', 350000)->assertSuccessful();
+
+        $this->assertSame($billCount, \App\Models\ServiceBill::where('RentalRoomId1', $room->id)->where('ServiceId', 'RM')->count());
+        $row = BookingRoomService::where('booking_room_id', $room->id)->where('service_code', 'RM')
+            ->where('rate', 350000)->firstOrFail();
+        $this->assertSame(0, (int) $row->is_posted);
+    }
+
+    /**
+     * Row 371 (pre-post): "post room charge" in auto mode charges the 0 VND
+     * night that was set up in booking_room_services, not the room rate.
+     */
+    public function test_row371_post_room_charge_auto_honours_zero_rate_night(): void
+    {
+        $department = \App\Models\Department::firstOrCreate(['code' => 'FO'], ['name' => 'Front Office']);
+        HotelService::updateOrCreate(['code' => 'RM'], [
+            'name' => 'Dịch vụ phòng nghỉ', 'price' => 0, 'is_active' => true, 'department_id' => $department->id,
+        ]);
+        $booking = $this->createBooking([
+            'arrival_date' => '2026-08-07', 'departure_date' => '2026-08-10', 'num_of_days' => 3,
+            'status' => Booking::STATUS_CHECKIN,
+        ]);
+        $room = BookingRoom::create([
+            'id' => 'G-371-PP', 'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'room_number' => '101', 'arrival_date' => '2026-08-07', 'departure_date' => '2026-08-10',
+            'rate' => 540000, 'status' => BookingRoom::STATUS_CHECKED_IN,
+        ]);
+        // Plain Y-m-d like the MySQL date column (SQLite would keep a time part).
+        DB::table('booking_room_services')->insert([
+            'booking_room_id' => $room->id, 'service_code' => 'RM', 'service_name' => 'Dịch vụ phòng nghỉ',
+            'service_date' => '2026-08-07', 'quantity' => 1, 'rate' => 0, 'total_amount' => 0,
+            'is_room' => 1, 'is_posted' => 0, 'folio' => 1, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $this->postJson('/api/booking-room-services/post-room-charge', [
+            'booking_room_id' => $room->id, 'date_from' => '2026-08-07', 'date_to' => '2026-08-07', 'mode' => 'auto',
+        ])->assertSuccessful();
+
+        $this->assertSame(0.0, (float) \App\Models\ServiceBill::where('RentalRoomId1', $room->id)->where('ServiceId', 'RM')->value('Amount'));
+    }
+
+    private function storedDetailQuantity(int $billId, int $ma): float
+    {
+        // ServiceBillDetail has no primary key, so fresh()/find() cannot be used.
+        return (float) DB::table('service_bill_details')->where('BillServiceId', $billId)->where('Ma', $ma)->value('Quantity');
+    }
+
+    private function billWithDetailsQuantityFixture(): \App\Models\ServiceBill
+    {
+        return \App\Models\ServiceBill::create([
+            'Date' => '2026-08-07', 'OpenTime' => '12:00', 'Guest' => 'Qty Guest', 'DepartmentId' => 'FO',
+            'ServiceId' => 'RM', 'DescriptionServive' => 'Dịch vụ phòng nghỉ', 'Quantity' => 1, 'Amount' => 540000,
+            'Status' => 1, 'Edit' => 0, 'Folio' => 1, 'Username' => 'test_user', 'CreatedUser' => 'test_user',
+            'CreatedDate' => now(),
+        ]);
+    }
+
+    /**
+     * Invoice detail quantity: OriginalRate is the price before service charge
+     * and tax, so a missing quantity is derived from the net amount (1), not
+     * from the gross amount (1.13 with 5% service charge + 8% VAT).
+     */
+    public function test_bill_detail_quantity_is_derived_from_net_amount(): void
+    {
+        $bill = $this->billWithDetailsQuantityFixture();
+        $make = function (int $ma, float $amount, float $qty) use ($bill) {
+            $bd = \App\Services\TaxBreakdownService::breakdown($amount, 5, 0, 8, $qty);
+
+            \App\Models\ServiceBillDetail::create([
+                'BillServiceId' => $bill->Ma, 'Ma' => $ma, 'DepartmentId' => 'FO', 'ServiceId' => 'RM',
+                'DescriptionServive' => 'detail ' . $ma, 'OriginalRate' => $bd['original_rate'],
+                'Amount' => $amount, 'OriginalAmount' => $bd['net_total'], 'DetailBillOriginalAmount' => $bd['net_total'],
+            ]);
+
+            return $this->storedDetailQuantity($bill->Ma, $ma);
+        };
+
+        $this->assertEquals(1.0, $make(1, 540000, 1), 'one night');
+        $this->assertEquals(2.0, $make(2, 360000, 2), 'two adults');
+        $this->assertEquals(1.0, $make(3, -360000, 1), 'negative deduction line');
+
+        \App\Models\ServiceBillDetail::create([
+            'BillServiceId' => $bill->Ma, 'Ma' => 4, 'DepartmentId' => 'FO', 'ServiceId' => 'BF',
+            'DescriptionServive' => 'explicit', 'OriginalRate' => 100000, 'Quantity' => 3, 'Amount' => 300000,
+            'OriginalAmount' => 300000,
+        ]);
+        $this->assertEquals(3.0, $this->storedDetailQuantity($bill->Ma, 4), 'an explicit quantity is kept');
+    }
+
+    /**
+     * Invoice detail quantity through the real "post room charge" flow with
+     * service charge, VAT and breakfast: every line shows SL x Giá = net amount.
+     */
+    public function test_post_room_charge_bill_details_show_sensible_quantities(): void
+    {
+        [, $room] = $this->inhouseRoomWithPrepostedRoomCharge(true, function () {
+            HotelService::where('code', 'RM')->update(['service_charge' => 5, 'special_tax' => 0, 'tax' => 8]);
+            HotelService::updateOrCreate(['code' => 'BF'], [
+                'name' => 'Tiền ăn sáng người lớn', 'price' => 0, 'is_active' => true, 'service_charge' => 5, 'tax' => 8,
+                'department_id' => \App\Models\Department::where('code', 'FO')->value('id'),
+            ]);
+            HotelSetting::query()->update(['breakfast_adult_rate' => 180000]);
+        }, ['breakfast' => true, 'adults' => 2]);
+
+        $bill = \App\Models\ServiceBill::where('RentalRoomId1', $room->id)->where('ServiceId', 'RM')->firstOrFail();
+        $details = \App\Models\ServiceBillDetail::where('BillServiceId', $bill->Ma)->orderBy('Ma')->get();
+        $this->assertCount(3, $details, 'room, breakfast and deduction lines');
+
+        foreach ($details as $detail) {
+            $qty = (float) $detail->Quantity;
+            $this->assertEqualsWithDelta(
+                (float) $detail->OriginalAmount,
+                $qty * (float) $detail->OriginalRate,
+                0.05,
+                "line {$detail->Ma}: SL x Giá equals the net amount"
+            );
+            $this->assertEqualsWithDelta(round($qty), $qty, 0.001, "line {$detail->Ma}: whole quantity, not 1.13");
+        }
+        $this->assertEquals(1.0, (float) $details->firstWhere('Ma', 1)->Quantity);
+    }
+
+    /**
+     * The data fix repairs RM/BF lines stored with the old gross/net quantity
+     * and leaves other lines alone.
+     */
+    public function test_migration_repairs_wrongly_derived_detail_quantities(): void
+    {
+        $bill = $this->billWithDetailsQuantityFixture();
+        $insert = fn (int $ma, string $service, float $rate, float $net, float $amount, float $qty) => DB::table('service_bill_details')->insert([
+            'BillServiceId' => $bill->Ma, 'Ma' => $ma, 'DepartmentId' => 'FO', 'ServiceId' => $service,
+            'DescriptionServive' => "line {$ma}", 'OriginalRate' => $rate, 'OriginalAmount' => $net,
+            'Amount' => $amount, 'Quantity' => $qty,
+        ]);
+        $insert(1, 'RM', 476190.48, 476190.48, 540000, 1.13);   // wrong: gross / net
+        $insert(2, 'BF', 158730.16, 317460.32, 360000, 2.27);   // wrong, 2 adults
+        $insert(3, 'RM', 476190.48, 476190.48, 540000, 1.00);   // already right
+        $insert(4, 'MB', 90000, 81000, 90000, 1.11);            // other service: untouched
+
+        (include base_path('database/migrations/2026_10_20_160000_fix_service_bill_detail_quantity_from_net_amount.php'))->up();
+
+        $qty = fn (int $ma) => (float) DB::table('service_bill_details')->where('BillServiceId', $bill->Ma)->where('Ma', $ma)->value('Quantity');
+        $this->assertEquals(1.0, $qty(1));
+        $this->assertEquals(2.0, $qty(2));
+        $this->assertEquals(1.0, $qty(3));
+        $this->assertEquals(1.11, $qty(4));
+    }
+
+    /**
      * Row 397: price edited on the registration grid row only updates rate and
      * base_price; no nightly booking_room_services rows are created.
      */

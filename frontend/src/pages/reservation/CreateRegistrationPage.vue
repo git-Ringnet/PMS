@@ -1222,17 +1222,8 @@ async function handleInlineServiceRateChange(room, svc, newRate) {
     svc.bill_ref.Amount = newRate * (svc.bill_ref.Quantity || 1)
     svc.bill_ref.rate = newRate
   }
-  if (room.serviceBills && Array.isArray(room.serviceBills)) {
-    const matchedBill = room.serviceBills.find(sb => {
-      const sbDate = getBillRecordDateStr(sb)
-      return (sb.Ma && svc.bill_ref && String(sb.Ma) === String(svc.bill_ref.Ma)) ||
-             (sbDate === cleanDate && isRoomCharge && isRoomChargeBillRecord(sb))
-    })
-    if (matchedBill) {
-      matchedBill.Amount = newRate * (matchedBill.Quantity || 1)
-      matchedBill.rate = newRate
-    }
-  }
+  // Dòng 351: bill đã chạy ở màn hình hóa đơn không đổi theo giá chỉnh ở đây;
+  // giá mới chỉ lưu vào booking_room_services.
 
   if (isRoomCharge) {
     if (!room.dailyRoomPrices) room.dailyRoomPrices = {}
@@ -1688,18 +1679,31 @@ function getRoomDisplayServices(room) {
 
       if (matchingBills.length > 0) {
         // Có hóa đơn từ service_bills (quá khứ hoặc đã post trước) -> LẤY 100% THEO HÓA ĐƠN
+        // Dòng 351: giá chỉnh sau khi bill đã chạy chỉ lưu ở booking_room_services (dòng
+        // chưa post). Hiện giá đó ở ô đơn giá, kèm số tiền bill đã chạy để không bị
+        // tưởng là mất sau khi tải lại trang.
+        const pendingPlan = isPastNight ? null : (room.services || []).find(svc =>
+          isRoomChargeService(svc)
+          && cleanDateStr(svc.service_date) === dStr
+          && Number(svc.is_posted) !== 1
+          && !svc.service_bill_id
+        )
         matchingBills.forEach((sb, bIdx) => {
           const bId = String(sb.Ma || sb.id || `bill-${dStr}-${bIdx}`)
           handledBillIds.add(bId)
           const qty = Number(sb.Quantity) || 1
           const amt = Number(sb.Amount) || 0
+          const billedRate = qty > 0 ? amt / qty : amt
+          const hasPending = !!pendingPlan && matchingBills.length === 1
           list.push({
             id: `service-bill-${bId}`,
             service_date: dStr,
             service_name: getHotelServiceName(sb.ServiceId || 'RM', sb.DescriptionServive || 'Dịch vụ phòng nghỉ'),
             service_code: sb.ServiceId || 'RM',
             quantity: qty,
-            rate: qty > 0 ? amt / qty : amt,
+            rate: hasPending ? (Number(pendingPlan.rate) || 0) : billedRate,
+            billed_rate: billedRate,
+            pending_rate: hasPending ? (Number(pendingPlan.rate) || 0) : null,
             is_room: true,
             from_bill: true,
             from_move_history: !!sb.from_move_history,
@@ -8080,7 +8084,7 @@ defineExpose({
                                       {{ (Number(svc.rate) || 0).toLocaleString('en-US') }}
                                     </span>
                                   </td>
-                                  <td class="p-2 border-slate-100 text-right text-[#000000D9] font-normal text-xs">{{ (Number(svc.quantity !== undefined && svc.quantity !== null ? svc.quantity : 1) * Number(svc.rate || 0)).toLocaleString('en-US') }}</td>
+                                  <td class="p-2 border-slate-100 text-right text-[#000000D9] font-normal text-xs">{{ (Number(svc.quantity !== undefined && svc.quantity !== null ? svc.quantity : 1) * Number(svc.rate || 0)).toLocaleString('en-US') }}<div v-if="svc.pending_rate != null && Number(svc.pending_rate) !== Number(svc.billed_rate)" class="text-[10px] leading-tight text-amber-600" title="Giá mới chỉ áp dụng khi xóa bill ở màn hình hóa đơn và post lại tiền phòng">Bill đã chạy: {{ (Number(svc.quantity !== undefined && svc.quantity !== null ? svc.quantity : 1) * Number(svc.billed_rate || 0)).toLocaleString('en-US') }}</div></td>
                                   <td class="p-2 text-center border-slate-200">
                                     <span
                                       class="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase select-none"
