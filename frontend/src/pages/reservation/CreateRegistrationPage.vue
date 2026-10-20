@@ -44,6 +44,9 @@ import RestoreCancelledRoomsModal from './components/RestoreCancelledRoomsModal.
 import ChargeNoshowModal from './components/ChargeNoshowModal.vue'
 import QuickUpdateModal from './components/QuickUpdateModal.vue'
 import { bookingPeriodAfterQuickUpdate, isRegistrationReadonly } from '@/utils/booking-quick-update.js'
+import { createVacantRoomsLoader, vacantRoomsKey } from '@/utils/vacant-rooms-cache.js'
+import echo from '@/services/echo'
+import { isFromOtherTab } from '@/utils/broadcast-origin.js'
 import BookingNotificationsModal from './components/BookingNotificationsModal.vue'
 import BookingPrintPreviewModal from './components/BookingPrintPreviewModal.vue'
 import PrintServiceSelectModal from './components/PrintServiceSelectModal.vue'
@@ -2591,6 +2594,8 @@ onMounted(async () => {
   window.addEventListener('hotel-config-updated', handleHotelConfigUpdated)
   const bc = getPmsBroadcastChannel()
   if (bc) bc.addEventListener('message', handleBookingUpdatedBroadcast)
+  // Dòng 400: máy khác gán số phòng thì danh sách phòng trống cũng phải tải lại.
+  if (echo) echo.channel('pms-channel').listen('.reservation.updated', invalidateVacantRooms)
   try {
     isLoading.value = true
     await Promise.all([loadDropdowns(), loadBookings()])
@@ -2677,6 +2682,8 @@ onBeforeUnmount(() => {
   activeBookingNotificationsTimers.forEach(clearTimeout)
   document.removeEventListener('click', handleGlobalClick)
   window.removeEventListener('booking-updated', handleBookingUpdatedEvent)
+  if (echo) echo.channel('pms-channel').stopListening('.reservation.updated', invalidateVacantRooms)
+  clearTimeout(vacantRoomsRefreshTimer)
   window.removeEventListener('deposit-updated', loadBookings)
   window.removeEventListener('hotel-config-updated', handleHotelConfigUpdated)
   if (pmsBc) {
@@ -2807,6 +2814,33 @@ function externalBookingId(value) {
   return String(value)
 }
 
+// Dòng 400: tab đang sửa BK mà tab khác vừa lưu chính BK đó thì dữ liệu đang
+// sửa đã cũ (vd dòng hiện "Chọn phòng" nhưng thực tế đã gán 307). Không tự ghi
+// đè thay đổi chưa lưu, nhưng hỏi người dùng có tải lại không.
+let isStaleEditPromptOpen = false
+async function promptReloadIfEditingBookingChanged(bookingId) {
+  const tab = activeTab.value
+  const targetId = externalBookingId(bookingId)
+  if (!isEditing.value || !tab?.dbId || !targetId || isStaleEditPromptOpen) return
+  if (externalBookingId(tab.dbId) !== targetId && String(tab.bookingCode || '') !== targetId) return
+
+  isStaleEditPromptOpen = true
+  try {
+    const confirmed = await uiStore.confirm({
+      title: 'Đăng ký đã thay đổi',
+      message: `Đăng ký "${tab.bookingName || tab.bookingCode || ''}" vừa được cập nhật ở tab khác. Tải lại dữ liệu mới nhất? Các thay đổi chưa lưu ở tab này sẽ bị bỏ.`,
+      confirmText: 'Tải lại',
+      cancelText: 'Tiếp tục sửa'
+    })
+    if (!confirmed || !isEditing.value || activeTab.value !== tab) return
+    isEditing.value = false
+    restoreTabFromBackup(tab)
+    await refreshMatchingBooking(tab.dbId)
+  } finally {
+    isStaleEditPromptOpen = false
+  }
+}
+
 async function refreshMatchingBooking(bookingId = null) {
   // A background update must never replace a form containing local edits or drafts.
   if (isEditing.value || (isModalOpen.value && isModalFormDirty.value)) return
@@ -2885,6 +2919,7 @@ async function refreshMatchingBooking(bookingId = null) {
 }
 
 function handleBookingUpdatedEvent(event) {
+  invalidateVacantRooms()
   return refreshMatchingBooking(event?.detail?.bookingId)
 }
 
@@ -2911,6 +2946,7 @@ function handleBookingUpdatedBroadcast(event) {
     loadDropdowns().catch(console.error)
     return
   }
+  invalidateVacantRooms()
   let bookingId = null
   if (typeof data === 'string') {
     bookingId = null
@@ -2919,6 +2955,9 @@ function handleBookingUpdatedBroadcast(event) {
       bookingId = data.bookingId
     }
   }
+  // Chỉ hỏi khi BK được lưu ở tab khác; modal trong chính tab này cũng gửi tin
+  // lên kênh này nhưng đó là thay đổi của người đang sửa.
+  if (isFromOtherTab(data)) promptReloadIfEditingBookingChanged(bookingId)
   return refreshMatchingBooking(bookingId)
 }
 
@@ -3149,6 +3188,8 @@ function bookingToTab(b) {
         hourly: !!br.is_day_use && (parseApiDate(br.arrival_date || b.arrival_date) === parseApiDate(br.departure_date || b.departure_date)),
         arrivalTime: br.arrival_time || '14:00',
         hoursOut: br.departure_time || '12:00',
+        // Dòng 398: phòng đã checkout hiển thị giờ checkout thực tế (chỉ để xem).
+        checkoutTime: Number(br.status) === 2 ? (br.CheckoutTime || null) : null,
         isPreassigned: !!physicalRoom.room_number,
         initialRoomClass: rc.code || '',
         transferredFrom: (() => {
@@ -5541,6 +5582,26 @@ function formatDateVi(dateStr) {
 }
 
 const vacantRoomsMap = ref({})
+const vacantRoomsLoader = createVacantRoomsLoader(vacantRoomsMap, async (params) => {
+  const res = await fetchVacantRooms(params)
+  return res.data?.data || res.data || []
+})
+
+// Gộp các sự kiện cập nhật dồn dập thành một lần tải lại.
+let vacantRoomsRefreshTimer = null
+function invalidateVacantRooms() {
+  clearTimeout(vacantRoomsRefreshTimer)
+  vacantRoomsRefreshTimer = setTimeout(() => vacantRoomsLoader.refresh(), 300)
+}
+
+function getVacantRoomsKey(room) {
+  return vacantRoomsKey({
+    roomClassId: room.roomClassId,
+    checkIn: parseDateVi(room.checkIn),
+    checkOut: parseDateVi(room.checkOut),
+    bookingRoomId: room.bookingRoomId,
+  })
+}
 
 async function loadVacantRoomsForRoom(room) {
   const roomClassId = room.roomClassId
@@ -5548,27 +5609,22 @@ async function loadVacantRoomsForRoom(room) {
   const co = parseDateVi(room.checkOut)
   if (!roomClassId || !ci || !co) return
 
-  const cacheKey = `${roomClassId}_${ci}_${co}`
-  if (vacantRoomsMap.value[cacheKey]) return
-
+  // Dòng 400: luôn tải lại khi mở danh sách để không hiện số phòng vừa được
+  // BK khác gán; danh sách cũ vẫn hiển thị trong lúc chờ.
   try {
-    const res = await fetchVacantRooms({
+    await vacantRoomsLoader.load(getVacantRoomsKey(room), {
       room_class_id: roomClassId,
       arrival_date: ci,
       departure_date: co,
       exclude_booking_room_id: room.bookingRoomId || undefined
     })
-    vacantRoomsMap.value[cacheKey] = res.data?.data || res.data || []
   } catch (err) {
     console.error('Không thể tải danh sách phòng trống:', err)
   }
 }
 
 function getVacantRoomsList(room) {
-  const ci = parseDateVi(room.checkIn)
-  const co = parseDateVi(room.checkOut)
-  const cacheKey = `${room.roomClassId}_${ci}_${co}`
-  const list = vacantRoomsMap.value[cacheKey] || []
+  const list = vacantRoomsMap.value[getVacantRoomsKey(room)] || []
   
   const parentObj = (isModalOpen.value && modalForm.value) ? modalForm.value : activeTab.value
   const assignedRoomNumbers = (parentObj?.rooms || [])
@@ -7797,7 +7853,7 @@ defineExpose({
                             default-time="12:00"
                             :disabled="!isEditing" 
                           />
-                          <span v-else class="text-xs font-normal text-[#000000D9]">{{ formatTimeHHmm(room.hoursOut) || '12:00' }}</span>
+                          <span v-else class="text-xs font-normal text-[#000000D9]">{{ formatTimeHHmm(room.checkoutTime || room.hoursOut) || '12:00' }}</span>
                         </template>
                         <template v-else-if="col.key === 'isPreassigned'">
                           <input 
@@ -8484,7 +8540,7 @@ defineExpose({
                                     default-time="12:00"
                                     :disabled="!isEditing" 
                                   />
-                                  <span v-else class="text-xs font-normal text-[#000000D9]">{{ formatTimeHHmm(room.hoursOut) || '12:00' }}</span>
+                                  <span v-else class="text-xs font-normal text-[#000000D9]">{{ formatTimeHHmm(room.checkoutTime || room.hoursOut) || '12:00' }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'isPreassigned'">
                                   <input 

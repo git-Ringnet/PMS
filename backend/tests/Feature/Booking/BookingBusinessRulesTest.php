@@ -2452,6 +2452,292 @@ class BookingBusinessRulesTest extends TestCase
         $this->assertSame('Cancelled BK', $booking->fresh()->booking_name);
     }
 
+    private function storeBookingWithRooms(string $name, int $roomClassId, array $roomNumbers, string $arrival = '2026-08-07', string $departure = '2026-08-08')
+    {
+        return $this->postJson('/api/bookings', [
+            'booking_name' => $name,
+            'arrival_date' => $arrival,
+            'departure_date' => $departure,
+            'num_of_days' => 1,
+            'registration_status_id' => $this->regStatus->booking_status_id,
+            'company_id' => 1,
+            'market_id' => 1,
+            'customer_source_id' => 1,
+            'room_allocations' => [[
+                'roomClassId' => $roomClassId,
+                'quantity' => count($roomNumbers),
+                'price' => 1000000,
+                'rooms' => array_map(fn ($number) => ['roomNumber' => $number, 'guestName' => $name], $roomNumbers),
+            ]],
+        ]);
+    }
+
+    private function createDeluxeClass(array $roomNumbers): RoomClass
+    {
+        $deluxe = RoomClass::create(['code' => 'DLX', 'name' => 'Deluxe Class', 'is_active' => true]);
+        foreach ($roomNumbers as $number) {
+            Room::create([
+                'room_number' => $number, 'room_class_id' => $deluxe->id,
+                'room_form_id' => $this->roomForm->id, 'floor' => 2, 'status' => 'available',
+            ]);
+        }
+
+        return $deluxe;
+    }
+
+    /**
+     * Row 398: a new overnight room gets the default 14:00 / 12:00 times;
+     * explicit times are kept and same-day rooms are left for the user.
+     */
+    public function test_row398_new_room_gets_default_arrival_and_departure_times(): void
+    {
+        $booking = $this->createBooking(['arrival_date' => '2026-08-07', 'departure_date' => '2026-08-09']);
+        $make = fn (array $attrs) => BookingRoom::create(array_merge([
+            'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-07', 'departure_date' => '2026-08-09', 'rate' => 500000,
+            'status' => BookingRoom::STATUS_BOOKED,
+        ], $attrs))->fresh();
+
+        $default = $make([]);
+        $this->assertSame('14:00:00', substr((string) $default->arrival_time, 0, 8));
+        $this->assertSame('12:00:00', substr((string) $default->departure_time, 0, 8));
+
+        $explicit = $make(['arrival_time' => '09:30:00', 'departure_time' => '10:00:00']);
+        $this->assertSame('09:30:00', substr((string) $explicit->arrival_time, 0, 8));
+        $this->assertSame('10:00:00', substr((string) $explicit->departure_time, 0, 8));
+
+        $dayUse = $make(['departure_date' => '2026-08-07', 'is_day_use' => true]);
+        $this->assertNull($dayUse->arrival_time);
+        $this->assertNull($dayUse->departure_time);
+    }
+
+    /**
+     * Row 398: rooms created through the booking API also get 14:00 / 12:00.
+     */
+    public function test_row398_booking_api_rooms_get_default_times(): void
+    {
+        $response = $this->storeBookingWithRooms('Default Times', $this->roomClass->id, [null]);
+        $response->assertSuccessful();
+
+        $room = BookingRoom::where('booking_id', $response->json('data.id'))->firstOrFail();
+        $this->assertSame('14:00:00', substr((string) $room->arrival_time, 0, 8));
+        $this->assertSame('12:00:00', substr((string) $room->departure_time, 0, 8));
+    }
+
+    /**
+     * Row 398: checking in without a time (what the UI sends) replaces the
+     * planned 14:00 with the actual check-in time in booking_rooms and
+     * booking_room_guests.
+     */
+    public function test_row398_check_in_saves_actual_time_over_default(): void
+    {
+        $booking = $this->createBooking(['arrival_date' => '2026-08-07', 'departure_date' => '2026-08-08']);
+        $room = BookingRoom::create([
+            'booking_id' => $booking->id, 'room_number' => '101', 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-07', 'departure_date' => '2026-08-08', 'rate' => 500000,
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+        $guest = Guest::create(['full_name' => 'Check In Guest', 'guest_status' => Guest::STATUS_ACTIVE]);
+        $pivot = BookingRoomGuest::create([
+            'booking_room_id' => $room->id, 'guest_id' => $guest->id, 'is_primary' => true,
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+        $this->assertSame('14:00:00', substr((string) $room->fresh()->arrival_time, 0, 8));
+
+        \Carbon\Carbon::setTestNow('2026-10-20 09:15:00');
+        try {
+            $this->patchJson("/api/bookings/{$booking->id}/rooms/{$room->id}/check-in")->assertSuccessful();
+        } finally {
+            \Carbon\Carbon::setTestNow();
+        }
+
+        $room->refresh();
+        $this->assertSame(BookingRoom::STATUS_CHECKED_IN, (int) $room->status);
+        $this->assertSame('09:15:00', substr((string) $room->arrival_time, 0, 8));
+        $this->assertSame('09:15:00', substr((string) $pivot->fresh()->actual_arrival_time, 0, 8));
+    }
+
+    /**
+     * Row 398: Room Map sends the room's real arrival/departure time so the
+     * guest info popup does not fall back to 12:00 / 12:00.
+     */
+    public function test_row398_room_map_returns_room_times(): void
+    {
+        $response = $this->storeBookingWithRooms('Room Map Times', $this->roomClass->id, ['101']);
+        $response->assertSuccessful();
+        BookingRoom::where('booking_id', $response->json('data.id'))
+            ->update([
+                // In-house since yesterday (SQLite compares the stored datetime as text).
+                'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-09',
+                'status' => BookingRoom::STATUS_CHECKED_IN,
+                'arrival_time' => '10:20:00', 'departure_time' => '11:00:00',
+            ]);
+
+        $rooms = collect($this->getJson('/api/rooms?date=2026-08-07')->assertSuccessful()->json('data'));
+        $room101 = $rooms->firstWhere('room_number', '101');
+        $this->assertSame('10:20:00', substr((string) $room101['arrival_time'], 0, 8));
+        $this->assertSame('11:00:00', substr((string) $room101['departure_time'], 0, 8));
+    }
+
+    /**
+     * Row 399: with AllowOverRoomTypeRoomKind = 0, upgrading into a room class
+     * with AV = 0 is rejected (it used to pass and push AV to -1).
+     */
+    public function test_row399_upgrade_is_blocked_when_target_class_is_full(): void
+    {
+        $deluxe = $this->createDeluxeClass(['201']);
+        $this->storeBookingWithRooms('Deluxe Owner', $deluxe->id, ['201'])->assertSuccessful();
+        $response = $this->storeBookingWithRooms('Upgrade Me', $this->roomClass->id, [null]);
+        $response->assertSuccessful();
+        $room = BookingRoom::where('booking_id', $response->json('data.id'))->firstOrFail();
+
+        $this->patchJson("/api/bookings/{$room->booking_id}/rooms/{$room->id}/upgrade", [
+            'room_class_id' => $deluxe->id,
+        ])->assertStatus(422)->assertJsonPath('av', -1);
+
+        $this->assertSame($this->roomClass->id, (int) $room->fresh()->room_class_id);
+    }
+
+    /**
+     * Row 399: upgrading several rooms one after another stops once the
+     * target class has no room left.
+     */
+    public function test_row399_sequential_upgrades_stop_at_last_free_room(): void
+    {
+        $deluxe = $this->createDeluxeClass(['201']);
+        $response = $this->storeBookingWithRooms('Upgrade Two', $this->roomClass->id, [null, null]);
+        $response->assertSuccessful();
+        [$first, $second] = BookingRoom::where('booking_id', $response->json('data.id'))->orderBy('id')->get()->all();
+
+        $this->patchJson("/api/bookings/{$first->booking_id}/rooms/{$first->id}/upgrade", [
+            'room_class_id' => $deluxe->id,
+        ])->assertSuccessful()->assertJsonPath('warning', null);
+        $this->patchJson("/api/bookings/{$second->booking_id}/rooms/{$second->id}/upgrade", [
+            'room_class_id' => $deluxe->id,
+        ])->assertStatus(422);
+
+        $this->assertSame($deluxe->id, (int) $first->fresh()->room_class_id);
+        $this->assertSame($this->roomClass->id, (int) $second->fresh()->room_class_id);
+    }
+
+    /**
+     * Row 399: with AllowOverRoomTypeRoomKind = 1 the upgrade is saved with a
+     * negative-AV warning.
+     */
+    public function test_row399_upgrade_allowed_with_warning_when_over_av_is_allowed(): void
+    {
+        HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->update(['value' => '1']);
+        $deluxe = $this->createDeluxeClass(['201']);
+        $this->storeBookingWithRooms('Deluxe Owner', $deluxe->id, ['201'])->assertSuccessful();
+        $response = $this->storeBookingWithRooms('Upgrade Me', $this->roomClass->id, [null]);
+        $room = BookingRoom::where('booking_id', $response->json('data.id'))->firstOrFail();
+
+        $res = $this->patchJson("/api/bookings/{$room->booking_id}/rooms/{$room->id}/upgrade", [
+            'room_class_id' => $deluxe->id,
+        ])->assertSuccessful();
+
+        $this->assertStringContainsString('AV âm (-1)', (string) $res->json('warning'));
+        $this->assertSame($deluxe->id, (int) $room->fresh()->room_class_id);
+    }
+
+    /**
+     * Row 400: saving a booking whose room numbers were already taken by
+     * another booking lists every conflicting room, not only the first.
+     */
+    public function test_row400_save_reports_every_room_number_taken_by_other_booking(): void
+    {
+        foreach (['103', '104'] as $number) {
+            Room::create([
+                'room_number' => $number, 'room_class_id' => $this->roomClass->id,
+                'room_form_id' => $this->roomForm->id, 'floor' => 1, 'status' => 'available',
+            ]);
+        }
+        $owner = $this->storeBookingWithRooms('Booking B', $this->roomClass->id, ['101', '102']);
+        $owner->assertSuccessful();
+        $ownerCode = Booking::find($owner->json('data.id'))->booking_code;
+
+        $response = $this->storeBookingWithRooms('Booking A', $this->roomClass->id, ['101', '102']);
+
+        $response->assertStatus(422);
+        $message = (string) $response->json('message');
+        $this->assertStringContainsString("101 ({$ownerCode})", $message);
+        $this->assertStringContainsString("102 ({$ownerCode})", $message);
+    }
+
+    /**
+     * Row 400 (task example): booking A has 2 unassigned rooms, booking B then
+     * takes 101/102. Editing A to assign 101/102 is rejected and the message
+     * names both rooms; A keeps its rooms unassigned.
+     */
+    public function test_row400_editing_booking_reports_every_room_taken_by_other_booking(): void
+    {
+        foreach (['103', '104'] as $number) {
+            Room::create([
+                'room_number' => $number, 'room_class_id' => $this->roomClass->id,
+                'room_form_id' => $this->roomForm->id, 'floor' => 1, 'status' => 'available',
+            ]);
+        }
+        $bookingA = $this->storeBookingWithRooms('Booking A', $this->roomClass->id, [null, null]);
+        $bookingA->assertSuccessful();
+        $bookingB = $this->storeBookingWithRooms('Booking B', $this->roomClass->id, ['101', '102']);
+        $bookingB->assertSuccessful();
+        $codeB = Booking::find($bookingB->json('data.id'))->booking_code;
+
+        $aId = $bookingA->json('data.id');
+        $aRooms = BookingRoom::where('booking_id', $aId)->orderBy('id')->get();
+        $response = $this->putJson("/api/bookings/{$aId}", [
+            'booking_name' => 'Booking A',
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-08',
+            'num_of_days' => 1,
+            'registration_status_id' => $this->regStatus->booking_status_id,
+            'company_id' => 1,
+            'market_id' => 1,
+            'customer_source_id' => 1,
+            'room_allocations' => [[
+                'roomClassId' => $this->roomClass->id,
+                'quantity' => 2,
+                'price' => 1000000,
+                'rooms' => [
+                    ['bookingRoomId' => $aRooms[0]->id, 'roomNumber' => '101', 'arrivalDate' => '2026-08-07', 'departureDate' => '2026-08-08'],
+                    ['bookingRoomId' => $aRooms[1]->id, 'roomNumber' => '102', 'arrivalDate' => '2026-08-07', 'departureDate' => '2026-08-08'],
+                ],
+            ]],
+        ]);
+
+        $response->assertStatus(422);
+        $message = (string) $response->json('message');
+        $this->assertStringContainsString("101 ({$codeB})", $message);
+        $this->assertStringContainsString("102 ({$codeB})", $message);
+        $this->assertSame([null, null], BookingRoom::where('booking_id', $aId)->orderBy('id')->pluck('room_number')->all());
+    }
+
+    /**
+     * Row 400: the vacant room list for booking A no longer offers room
+     * numbers that booking B has taken.
+     */
+    public function test_row400_vacant_list_hides_rooms_taken_by_other_booking(): void
+    {
+        foreach (['103', '104'] as $number) {
+            Room::create([
+                'room_number' => $number, 'room_class_id' => $this->roomClass->id,
+                'room_form_id' => $this->roomForm->id, 'floor' => 1, 'status' => 'available',
+            ]);
+        }
+        $bookingA = $this->storeBookingWithRooms('Booking A', $this->roomClass->id, [null]);
+        $aRoom = BookingRoom::where('booking_id', $bookingA->json('data.id'))->firstOrFail();
+        $this->storeBookingWithRooms('Booking B', $this->roomClass->id, ['101', '102'])->assertSuccessful();
+
+        $vacant = $this->getJson('/api/rooms/vacant?' . http_build_query([
+            'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-08',
+            'exclude_booking_room_id' => $aRoom->id,
+        ]))->assertSuccessful()->json('data');
+
+        $this->assertSame(['103', '104'], collect($vacant)->pluck('room_number')->sort()->values()->all());
+    }
+
     /**
      * Row 397: price edited on the registration grid row only updates rate and
      * base_price; no nightly booking_room_services rows are created.

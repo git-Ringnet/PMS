@@ -1322,36 +1322,54 @@ class BookingRoomController extends Controller
             'rate'          => 'nullable|numeric|min:0',
         ]);
 
-        $newClassId = $request->room_class_id;
-        $av = $this->avService->getAvailability(
-            $newClassId,
-            $bookingRoom->arrival_date->toDateString(),
-            $bookingRoom->departure_date->toDateString(),
-            $roomId
-        );
+        $newClassId = (int) $request->room_class_id;
+        $allowOver = $this->allowOverAV();
 
-        if ($av < 0 && !$this->allowOverAV()) {
+        // Dòng 399: AV của loại phòng mới chưa tính phòng đang nâng hạng, nên
+        // phòng này cần AV >= 1. Khóa loại phòng mới để các lượt nâng hạng
+        // đồng thời không cùng lấy một phòng trống cuối cùng.
+        $result = DB::transaction(function () use ($bookingRoom, $newClassId, $request, $roomId, $allowOver) {
+            \App\Models\RoomClass::whereKey($newClassId)->lockForUpdate()->first();
+
+            $avAfter = null;
+            if ((int) $bookingRoom->room_class_id !== $newClassId) {
+                $avAfter = $this->avService->getAvailability(
+                    $newClassId,
+                    $bookingRoom->arrival_date->toDateString(),
+                    $bookingRoom->departure_date->toDateString(),
+                    $roomId
+                ) - 1;
+
+                if ($avAfter < 0 && !$allowOver) {
+                    return ['error' => $avAfter];
+                }
+            }
+
+            $data = [
+                'room_class_id' => $newClassId,
+                'room_number'   => null, // Reset số phòng vật lý khi đổi loại phòng
+                'updated_by'    => Auth::user()?->username ?? 'system',
+            ];
+            if ($request->filled('rate')) {
+                $data['rate'] = $request->rate;
+            }
+
+            // original_room_class_id giữ nguyên — không bao giờ ghi đè
+            $bookingRoom->update($data);
+
+            return ['av' => $avAfter];
+        });
+
+        if (array_key_exists('error', $result)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Không đủ phòng trống cho loại phòng mới. (AV = ' . $av . ')',
-                'av'      => $av,
+                'message' => 'Không đủ phòng trống cho loại phòng mới. Hệ thống không cho phép âm phòng (AV sau khi nâng hạng = ' . $result['error'] . ').',
+                'av'      => $result['error'],
             ], 422);
         }
 
-        $data = [
-            'room_class_id' => $newClassId,
-            'room_number'   => null, // Reset số phòng vật lý khi đổi loại phòng
-            'updated_by'    => Auth::user()?->username ?? 'system',
-        ];
-        if ($request->filled('rate')) {
-            $data['rate'] = $request->rate;
-        }
-
-        // original_room_class_id giữ nguyên — không bao giờ ghi đè
-        $bookingRoom->update($data);
-
-        $warning = ($av <= 0 && $this->allowOverAV())
-            ? 'Cảnh báo: AV âm (' . $av . '). Vẫn lưu theo cấu hình hệ thống.'
+        $warning = ($result['av'] !== null && $result['av'] < 0)
+            ? 'Cảnh báo: AV âm (' . $result['av'] . '). Vẫn lưu theo cấu hình hệ thống.'
             : null;
 
         return response()->json([

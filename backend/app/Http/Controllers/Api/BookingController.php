@@ -3210,6 +3210,7 @@ class BookingController extends Controller
         $payloadAssignments = [];
         $newDemandByPeriod = [];
         $periods = [];
+        $occupiedRoomNumbers = [];
 
         $parseDate = function ($date) {
             if (!$date) return null;
@@ -3365,7 +3366,8 @@ class BookingController extends Controller
                         throw new \Exception('Số phòng ' . $roomNumber . ' đang bị khóa OOO/OOS trong giai đoạn này.');
                     }
 
-                    $isOccupied = $avService->isRoomNumberOccupied(
+                    // Dòng 400: gom mọi số phòng đã bị BK khác gán để báo một lần.
+                    $conflict = $avService->findRoomNumberConflict(
                         $roomNumber,
                         $roomArrival,
                         $roomDeparture,
@@ -3374,11 +3376,16 @@ class BookingController extends Controller
                         $detail['arrivalTime'] ?? null,
                         $detail['hoursOut'] ?? null
                     );
-                    if ($isOccupied) {
-                        throw new \Exception('Số phòng ' . $roomNumber . ' đã được gán cho lượt đăng ký khác trong giai đoạn này.');
+                    if ($conflict) {
+                        $code = $conflict->booking?->booking_code ?: ('#' . $conflict->booking_id);
+                        $occupiedRoomNumbers[$roomNumber] = $roomNumber . ' (' . $code . ')';
                     }
                 }
             }
+        }
+
+        if ($occupiedRoomNumbers) {
+            throw new \Exception('Số phòng ' . implode(', ', $occupiedRoomNumbers) . ' đã được gán cho lượt đăng ký khác trong giai đoạn này.');
         }
 
         // Availability is checked only for new demand. Existing reservation
