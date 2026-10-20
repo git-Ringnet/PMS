@@ -11,6 +11,7 @@ use App\Models\BookingRoomGuest;
 use App\Models\BookingRoomService;
 use App\Models\Guest;
 use App\Models\HotelConfig;
+use App\Models\HotelService;
 use App\Models\HotelSetting;
 use App\Models\Permission;
 use App\Models\RegistrationStatus;
@@ -2143,8 +2144,9 @@ class BookingBusinessRulesTest extends TestCase
     }
 
     /**
-     * Row 393: the booking period stays as is while rooms remain inside it and
+     * Row 393: the booking arrival stays as is while rooms remain inside it and
      * is widened (with nights recalculated) when a room goes outside.
+     * Row 432: an edited departure makes the booking departure follow the rooms.
      */
     public function test_quick_update_only_widens_booking_period(): void
     {
@@ -2160,8 +2162,12 @@ class BookingBusinessRulesTest extends TestCase
         ])->assertSuccessful();
         $booking->refresh();
         $this->assertSame('2026-08-08', $booking->arrival_date->toDateString());
-        $this->assertSame('2026-08-17', $booking->departure_date->toDateString());
-        $this->assertSame(9, (int) $booking->num_of_days);
+        $this->assertSame('2026-08-16', $booking->departure_date->toDateString());
+        $this->assertSame(8, (int) $booking->num_of_days);
+
+        $this->postJson("/api/bookings/{$booking->id}/rooms/bulk-update", [
+            'room_ids' => [$room->id], 'departure_date' => '2026-08-17',
+        ])->assertSuccessful();
 
         $this->postJson("/api/bookings/{$booking->id}/rooms/bulk-update", [
             'room_ids' => [$room->id], 'arrival_date' => '2026-08-07',
@@ -2170,6 +2176,933 @@ class BookingBusinessRulesTest extends TestCase
         $this->assertSame('2026-08-07', $booking->arrival_date->toDateString());
         $this->assertSame('2026-08-17', $booking->departure_date->toDateString());
         $this->assertSame(10, (int) $booking->num_of_days);
+    }
+
+    /**
+     * Row 432: shortening a room's departure pulls the booking departure back
+     * to the latest departure of the rooms shown on it; cancelled rows are
+     * ignored and other rooms keep the booking open.
+     */
+    public function test_quick_update_departure_shrinks_booking_to_latest_shown_room(): void
+    {
+        $booking = $this->createBooking(['arrival_date' => '2026-08-08', 'departure_date' => '2026-08-17', 'num_of_days' => 9]);
+        $make = fn (string $id, string $out, int $status) => BookingRoom::create([
+            'id' => $id, 'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-08', 'departure_date' => $out, 'rate' => 500000,
+            'status' => $status,
+        ]);
+        $a = $make('G-432-A', '2026-08-17', BookingRoom::STATUS_BOOKED);
+        $b = $make('G-432-B', '2026-08-14', BookingRoom::STATUS_BOOKED);
+        $make('G-432-C', '2026-08-20', BookingRoom::STATUS_CANCELLED);
+
+        $this->postJson("/api/bookings/{$booking->id}/rooms/bulk-update", [
+            'room_ids' => [$a->id], 'departure_date' => '2026-08-12',
+        ])->assertSuccessful();
+        $booking->refresh();
+        $this->assertSame('2026-08-14', $booking->departure_date->toDateString());
+        $this->assertSame(6, (int) $booking->num_of_days);
+
+        $this->postJson("/api/bookings/{$booking->id}/rooms/bulk-update", [
+            'room_ids' => [$b->id], 'departure_date' => '2026-08-10',
+        ])->assertSuccessful();
+        $booking->refresh();
+        $this->assertSame('2026-08-12', $booking->departure_date->toDateString());
+        $this->assertSame(4, (int) $booking->num_of_days);
+    }
+
+    /**
+     * Row 431: quick update of extra bed qty/rate overwrites the nightly EB
+     * rows in booking_room_services, not only booking_rooms.
+     */
+    public function test_quick_update_extra_bed_overwrites_nightly_services(): void
+    {
+        $booking = $this->createBooking(['arrival_date' => '2026-08-08', 'departure_date' => '2026-08-10', 'num_of_days' => 2]);
+        $room = BookingRoom::create([
+            'id' => 'G-431', 'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-08', 'departure_date' => '2026-08-10', 'rate' => 500000,
+            'extra_bed_qty' => 1, 'extra_bed_rate' => 100000,
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+        foreach (['2026-08-08', '2026-08-09'] as $date) {
+            BookingRoomService::create([
+                'booking_room_id' => $room->id, 'service_code' => BookingRoomService::CODE_EXTRA_BED,
+                'service_name' => 'Extra Bed', 'service_date' => $date,
+                'quantity' => 1, 'rate' => 100000, 'is_room' => 1, 'is_posted' => 0,
+            ]);
+        }
+
+        $this->postJson("/api/bookings/{$booking->id}/rooms/bulk-update", [
+            'room_ids' => [$room->id], 'extra_bed_qty' => 2, 'extra_bed_rate' => 250000,
+        ])->assertSuccessful();
+
+        $services = BookingRoomService::where('booking_room_id', $room->id)
+            ->where('service_code', BookingRoomService::CODE_EXTRA_BED)
+            ->orderBy('service_date')->get();
+        $this->assertCount(2, $services);
+        foreach ($services as $service) {
+            $this->assertEquals(2, (float) $service->quantity);
+            $this->assertEquals(250000, (float) $service->rate);
+        }
+
+        // Only the submitted field is overwritten.
+        $this->postJson("/api/bookings/{$booking->id}/rooms/bulk-update", [
+            'room_ids' => [$room->id], 'extra_bed_rate' => 300000,
+        ])->assertSuccessful();
+        $service = BookingRoomService::where('booking_room_id', $room->id)
+            ->where('service_code', BookingRoomService::CODE_EXTRA_BED)->first();
+        $this->assertEquals(2, (float) $service->quantity);
+        $this->assertEquals(300000, (float) $service->rate);
+    }
+
+    /**
+     * Row 432 (task example): 1 room 01 -> 10, quick update departure to 08,
+     * the booking departure becomes 08 too.
+     */
+    public function test_row432_single_room_departure_pulls_booking_departure(): void
+    {
+        $booking = $this->createBooking(['arrival_date' => '2026-08-08', 'departure_date' => '2026-08-17', 'num_of_days' => 9]);
+        $room = BookingRoom::create([
+            'id' => 'G-432-S', 'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-08', 'departure_date' => '2026-08-17', 'rate' => 500000,
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $this->postJson("/api/bookings/{$booking->id}/rooms/bulk-update", [
+            'room_ids' => [$room->id], 'departure_date' => '2026-08-15',
+        ])->assertSuccessful();
+
+        $booking->refresh();
+        $this->assertSame('2026-08-08', $booking->arrival_date->toDateString());
+        $this->assertSame('2026-08-15', $booking->departure_date->toDateString());
+        $this->assertSame(7, (int) $booking->num_of_days);
+    }
+
+    /**
+     * Row 432: only a departure edit shrinks the booking; an arrival-only edit
+     * keeps the row 393 behaviour (period stays as is).
+     */
+    public function test_row432_arrival_only_update_keeps_booking_departure(): void
+    {
+        $booking = $this->createBooking(['arrival_date' => '2026-08-08', 'departure_date' => '2026-08-17', 'num_of_days' => 9]);
+        $room = BookingRoom::create([
+            'id' => 'G-432-X', 'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-08', 'departure_date' => '2026-08-12', 'rate' => 500000,
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $this->postJson("/api/bookings/{$booking->id}/rooms/bulk-update", [
+            'room_ids' => [$room->id], 'arrival_date' => '2026-08-09',
+        ])->assertSuccessful();
+
+        $booking->refresh();
+        $this->assertSame('2026-08-08', $booking->arrival_date->toDateString());
+        $this->assertSame('2026-08-17', $booking->departure_date->toDateString());
+        $this->assertSame(9, (int) $booking->num_of_days);
+    }
+
+    /**
+     * Row 432: checked-out / no-show rows are still shown on the booking, so
+     * they keep the booking departure; only status 3 rows are ignored.
+     */
+    public function test_row432_non_cancelled_history_rows_still_count(): void
+    {
+        $booking = $this->createBooking(['arrival_date' => '2026-08-08', 'departure_date' => '2026-08-17', 'num_of_days' => 9]);
+        $make = fn (string $id, string $out, int $status) => BookingRoom::create([
+            'id' => $id, 'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-08', 'departure_date' => $out, 'rate' => 500000,
+            'status' => $status,
+        ]);
+        $a = $make('G-432-H1', '2026-08-17', BookingRoom::STATUS_BOOKED);
+        $make('G-432-H2', '2026-08-13', BookingRoom::STATUS_NOSHOW);
+
+        $this->postJson("/api/bookings/{$booking->id}/rooms/bulk-update", [
+            'room_ids' => [$a->id], 'departure_date' => '2026-08-11',
+        ])->assertSuccessful();
+
+        $this->assertSame('2026-08-13', $booking->fresh()->departure_date->toDateString());
+    }
+
+    /**
+     * Row 431: several selected rooms all get their nightly EB rows updated.
+     */
+    public function test_row431_extra_bed_update_applies_to_every_selected_room(): void
+    {
+        $booking = $this->createBooking(['arrival_date' => '2026-08-08', 'departure_date' => '2026-08-10', 'num_of_days' => 2]);
+        $ids = [];
+        foreach (['G-431-A', 'G-431-B'] as $id) {
+            $id = $ids[] = BookingRoom::create([
+                'id' => $id, 'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+                'arrival_date' => '2026-08-08', 'departure_date' => '2026-08-10', 'rate' => 500000,
+                'extra_bed_qty' => 1, 'extra_bed_rate' => 100000,
+                'status' => BookingRoom::STATUS_BOOKED,
+            ])->id;
+            foreach (['2026-08-08', '2026-08-09'] as $date) {
+                BookingRoomService::create([
+                    'booking_room_id' => $id, 'service_code' => BookingRoomService::CODE_EXTRA_BED,
+                    'service_name' => 'Extra Bed', 'service_date' => $date,
+                    'quantity' => 1, 'rate' => 100000, 'is_room' => 1, 'is_posted' => 0,
+                ]);
+            }
+        }
+
+        $this->postJson("/api/bookings/{$booking->id}/rooms/bulk-update", [
+            'room_ids' => $ids, 'extra_bed_qty' => 3, 'extra_bed_rate' => 150000,
+        ])->assertSuccessful();
+
+        $services = BookingRoomService::whereIn('booking_room_id', $ids)
+            ->where('service_code', BookingRoomService::CODE_EXTRA_BED)->get();
+        $this->assertCount(4, $services);
+        foreach ($services as $service) {
+            $this->assertEquals(3, (float) $service->quantity);
+            $this->assertEquals(150000, (float) $service->rate);
+        }
+        $this->assertEquals(3, BookingRoom::find($ids[0])->extra_bed_qty);
+        $this->assertEquals(150000, (float) BookingRoom::find($ids[1])->extra_bed_rate);
+    }
+
+    /**
+     * Row 431: posted nights and nights before the system date keep their
+     * values; only open nights from the system date on are overwritten.
+     */
+    public function test_row431_extra_bed_update_keeps_posted_and_past_nights(): void
+    {
+        $booking = $this->createBooking(['arrival_date' => '2026-08-06', 'departure_date' => '2026-08-10', 'num_of_days' => 4]);
+        $room = BookingRoom::create([
+            'id' => 'G-431-P', 'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-10', 'rate' => 500000,
+            'extra_bed_qty' => 1, 'extra_bed_rate' => 100000,
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+        $nights = [
+            '2026-08-06' => 0, // before system date 2026-08-07
+            '2026-08-07' => 1, // posted
+            '2026-08-08' => 0,
+            '2026-08-09' => 0,
+        ];
+        foreach ($nights as $date => $posted) {
+            BookingRoomService::create([
+                'booking_room_id' => $room->id, 'service_code' => BookingRoomService::CODE_EXTRA_BED,
+                'service_name' => 'Extra Bed', 'service_date' => $date,
+                'quantity' => 1, 'rate' => 100000, 'is_room' => 1, 'is_posted' => $posted,
+            ]);
+        }
+
+        $this->postJson("/api/bookings/{$booking->id}/rooms/bulk-update", [
+            'room_ids' => [$room->id], 'extra_bed_qty' => 2, 'extra_bed_rate' => 250000,
+        ])->assertSuccessful();
+
+        $byDate = BookingRoomService::where('booking_room_id', $room->id)
+            ->where('service_code', BookingRoomService::CODE_EXTRA_BED)->get()
+            ->keyBy(fn ($s) => $s->service_date->toDateString());
+        $this->assertEquals([1, 100000], [(float) $byDate['2026-08-06']->quantity, (float) $byDate['2026-08-06']->rate]);
+        $this->assertEquals([1, 100000], [(float) $byDate['2026-08-07']->quantity, (float) $byDate['2026-08-07']->rate]);
+        $this->assertEquals([2, 250000], [(float) $byDate['2026-08-08']->quantity, (float) $byDate['2026-08-08']->rate]);
+        $this->assertEquals([2, 250000], [(float) $byDate['2026-08-09']->quantity, (float) $byDate['2026-08-09']->rate]);
+    }
+
+    /**
+     * Row 431: a room without EB rows gets one row per night when extra beds
+     * are added via quick update.
+     */
+    public function test_row431_extra_bed_update_creates_missing_nights(): void
+    {
+        $booking = $this->createBooking(['arrival_date' => '2026-08-08', 'departure_date' => '2026-08-11', 'num_of_days' => 3]);
+        $room = BookingRoom::create([
+            'id' => 'G-431-N', 'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-08', 'departure_date' => '2026-08-11', 'rate' => 500000,
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $this->postJson("/api/bookings/{$booking->id}/rooms/bulk-update", [
+            'room_ids' => [$room->id], 'extra_bed_qty' => 1, 'extra_bed_rate' => 200000,
+        ])->assertSuccessful();
+
+        $services = BookingRoomService::where('booking_room_id', $room->id)
+            ->where('service_code', BookingRoomService::CODE_EXTRA_BED)->orderBy('service_date')->get();
+        $this->assertSame(['2026-08-08', '2026-08-09', '2026-08-10'],
+            $services->map(fn ($s) => $s->service_date->toDateString())->all());
+        foreach ($services as $service) {
+            $this->assertEquals(1, (float) $service->quantity);
+            $this->assertEquals(200000, (float) $service->rate);
+        }
+    }
+
+    /**
+     * Row 433: a cancelled (status 3) booking can still be opened to view its
+     * registration info, but editing it is rejected.
+     */
+    public function test_row433_cancelled_booking_is_viewable_but_not_editable(): void
+    {
+        $booking = $this->createBooking([
+            'booking_name' => 'Cancelled BK',
+            'arrival_date' => '2026-08-08', 'departure_date' => '2026-08-10',
+            'status' => Booking::STATUS_DELETED,
+        ]);
+        BookingRoom::create([
+            'id' => 'G-433', 'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-08', 'departure_date' => '2026-08-10', 'rate' => 500000,
+            'status' => BookingRoom::STATUS_CANCELLED,
+        ]);
+
+        $this->getJson("/api/bookings/{$booking->id}")
+            ->assertOk()
+            ->assertJsonPath('data.booking_name', 'Cancelled BK');
+
+        $this->putJson("/api/bookings/{$booking->id}", ['booking_name' => 'Changed'])
+            ->assertStatus(422);
+        $this->assertSame('Cancelled BK', $booking->fresh()->booking_name);
+    }
+
+    private function storeBookingWithRooms(string $name, int $roomClassId, array $roomNumbers, string $arrival = '2026-08-07', string $departure = '2026-08-08')
+    {
+        return $this->postJson('/api/bookings', [
+            'booking_name' => $name,
+            'arrival_date' => $arrival,
+            'departure_date' => $departure,
+            'num_of_days' => 1,
+            'registration_status_id' => $this->regStatus->booking_status_id,
+            'company_id' => 1,
+            'market_id' => 1,
+            'customer_source_id' => 1,
+            'room_allocations' => [[
+                'roomClassId' => $roomClassId,
+                'quantity' => count($roomNumbers),
+                'price' => 1000000,
+                'rooms' => array_map(fn ($number) => ['roomNumber' => $number, 'guestName' => $name], $roomNumbers),
+            ]],
+        ]);
+    }
+
+    private function createDeluxeClass(array $roomNumbers): RoomClass
+    {
+        $deluxe = RoomClass::create(['code' => 'DLX', 'name' => 'Deluxe Class', 'is_active' => true]);
+        foreach ($roomNumbers as $number) {
+            Room::create([
+                'room_number' => $number, 'room_class_id' => $deluxe->id,
+                'room_form_id' => $this->roomForm->id, 'floor' => 2, 'status' => 'available',
+            ]);
+        }
+
+        return $deluxe;
+    }
+
+    /**
+     * Row 398: a new overnight room gets the default 14:00 / 12:00 times;
+     * explicit times are kept and same-day rooms are left for the user.
+     */
+    public function test_row398_new_room_gets_default_arrival_and_departure_times(): void
+    {
+        $booking = $this->createBooking(['arrival_date' => '2026-08-07', 'departure_date' => '2026-08-09']);
+        $make = fn (array $attrs) => BookingRoom::create(array_merge([
+            'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-07', 'departure_date' => '2026-08-09', 'rate' => 500000,
+            'status' => BookingRoom::STATUS_BOOKED,
+        ], $attrs))->fresh();
+
+        $default = $make([]);
+        $this->assertSame('14:00:00', substr((string) $default->arrival_time, 0, 8));
+        $this->assertSame('12:00:00', substr((string) $default->departure_time, 0, 8));
+
+        $explicit = $make(['arrival_time' => '09:30:00', 'departure_time' => '10:00:00']);
+        $this->assertSame('09:30:00', substr((string) $explicit->arrival_time, 0, 8));
+        $this->assertSame('10:00:00', substr((string) $explicit->departure_time, 0, 8));
+
+        $dayUse = $make(['departure_date' => '2026-08-07', 'is_day_use' => true]);
+        $this->assertNull($dayUse->arrival_time);
+        $this->assertNull($dayUse->departure_time);
+    }
+
+    /**
+     * Row 398: rooms created through the booking API also get 14:00 / 12:00.
+     */
+    public function test_row398_booking_api_rooms_get_default_times(): void
+    {
+        $response = $this->storeBookingWithRooms('Default Times', $this->roomClass->id, [null]);
+        $response->assertSuccessful();
+
+        $room = BookingRoom::where('booking_id', $response->json('data.id'))->firstOrFail();
+        $this->assertSame('14:00:00', substr((string) $room->arrival_time, 0, 8));
+        $this->assertSame('12:00:00', substr((string) $room->departure_time, 0, 8));
+    }
+
+    /**
+     * Row 398: checking in without a time (what the UI sends) replaces the
+     * planned 14:00 with the actual check-in time in booking_rooms and
+     * booking_room_guests.
+     */
+    public function test_row398_check_in_saves_actual_time_over_default(): void
+    {
+        $booking = $this->createBooking(['arrival_date' => '2026-08-07', 'departure_date' => '2026-08-08']);
+        $room = BookingRoom::create([
+            'booking_id' => $booking->id, 'room_number' => '101', 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-07', 'departure_date' => '2026-08-08', 'rate' => 500000,
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+        $guest = Guest::create(['full_name' => 'Check In Guest', 'guest_status' => Guest::STATUS_ACTIVE]);
+        $pivot = BookingRoomGuest::create([
+            'booking_room_id' => $room->id, 'guest_id' => $guest->id, 'is_primary' => true,
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+        $this->assertSame('14:00:00', substr((string) $room->fresh()->arrival_time, 0, 8));
+
+        \Carbon\Carbon::setTestNow('2026-10-20 09:15:00');
+        try {
+            $this->patchJson("/api/bookings/{$booking->id}/rooms/{$room->id}/check-in")->assertSuccessful();
+        } finally {
+            \Carbon\Carbon::setTestNow();
+        }
+
+        $room->refresh();
+        $this->assertSame(BookingRoom::STATUS_CHECKED_IN, (int) $room->status);
+        $this->assertSame('09:15:00', substr((string) $room->arrival_time, 0, 8));
+        $this->assertSame('09:15:00', substr((string) $pivot->fresh()->actual_arrival_time, 0, 8));
+    }
+
+    /**
+     * Row 398: Room Map sends the room's real arrival/departure time so the
+     * guest info popup does not fall back to 12:00 / 12:00.
+     */
+    public function test_row398_room_map_returns_room_times(): void
+    {
+        $response = $this->storeBookingWithRooms('Room Map Times', $this->roomClass->id, ['101']);
+        $response->assertSuccessful();
+        BookingRoom::where('booking_id', $response->json('data.id'))
+            ->update([
+                // In-house since yesterday (SQLite compares the stored datetime as text).
+                'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-09',
+                'status' => BookingRoom::STATUS_CHECKED_IN,
+                'arrival_time' => '10:20:00', 'departure_time' => '11:00:00',
+            ]);
+
+        $rooms = collect($this->getJson('/api/rooms?date=2026-08-07')->assertSuccessful()->json('data'));
+        $room101 = $rooms->firstWhere('room_number', '101');
+        $this->assertSame('10:20:00', substr((string) $room101['arrival_time'], 0, 8));
+        $this->assertSame('11:00:00', substr((string) $room101['departure_time'], 0, 8));
+    }
+
+    /**
+     * Row 399: with AllowOverRoomTypeRoomKind = 0, upgrading into a room class
+     * with AV = 0 is rejected (it used to pass and push AV to -1).
+     */
+    public function test_row399_upgrade_is_blocked_when_target_class_is_full(): void
+    {
+        $deluxe = $this->createDeluxeClass(['201']);
+        $this->storeBookingWithRooms('Deluxe Owner', $deluxe->id, ['201'])->assertSuccessful();
+        $response = $this->storeBookingWithRooms('Upgrade Me', $this->roomClass->id, [null]);
+        $response->assertSuccessful();
+        $room = BookingRoom::where('booking_id', $response->json('data.id'))->firstOrFail();
+
+        $this->patchJson("/api/bookings/{$room->booking_id}/rooms/{$room->id}/upgrade", [
+            'room_class_id' => $deluxe->id,
+        ])->assertStatus(422)->assertJsonPath('av', -1);
+
+        $this->assertSame($this->roomClass->id, (int) $room->fresh()->room_class_id);
+    }
+
+    /**
+     * Row 399: upgrading several rooms one after another stops once the
+     * target class has no room left.
+     */
+    public function test_row399_sequential_upgrades_stop_at_last_free_room(): void
+    {
+        $deluxe = $this->createDeluxeClass(['201']);
+        $response = $this->storeBookingWithRooms('Upgrade Two', $this->roomClass->id, [null, null]);
+        $response->assertSuccessful();
+        [$first, $second] = BookingRoom::where('booking_id', $response->json('data.id'))->orderBy('id')->get()->all();
+
+        $this->patchJson("/api/bookings/{$first->booking_id}/rooms/{$first->id}/upgrade", [
+            'room_class_id' => $deluxe->id,
+        ])->assertSuccessful()->assertJsonPath('warning', null);
+        $this->patchJson("/api/bookings/{$second->booking_id}/rooms/{$second->id}/upgrade", [
+            'room_class_id' => $deluxe->id,
+        ])->assertStatus(422);
+
+        $this->assertSame($deluxe->id, (int) $first->fresh()->room_class_id);
+        $this->assertSame($this->roomClass->id, (int) $second->fresh()->room_class_id);
+    }
+
+    /**
+     * Row 399: with AllowOverRoomTypeRoomKind = 1 the upgrade is saved with a
+     * negative-AV warning.
+     */
+    public function test_row399_upgrade_allowed_with_warning_when_over_av_is_allowed(): void
+    {
+        HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->update(['value' => '1']);
+        $deluxe = $this->createDeluxeClass(['201']);
+        $this->storeBookingWithRooms('Deluxe Owner', $deluxe->id, ['201'])->assertSuccessful();
+        $response = $this->storeBookingWithRooms('Upgrade Me', $this->roomClass->id, [null]);
+        $room = BookingRoom::where('booking_id', $response->json('data.id'))->firstOrFail();
+
+        $res = $this->patchJson("/api/bookings/{$room->booking_id}/rooms/{$room->id}/upgrade", [
+            'room_class_id' => $deluxe->id,
+        ])->assertSuccessful();
+
+        $this->assertStringContainsString('AV âm (-1)', (string) $res->json('warning'));
+        $this->assertSame($deluxe->id, (int) $room->fresh()->room_class_id);
+    }
+
+    /**
+     * Row 400: saving a booking whose room numbers were already taken by
+     * another booking lists every conflicting room, not only the first.
+     */
+    public function test_row400_save_reports_every_room_number_taken_by_other_booking(): void
+    {
+        foreach (['103', '104'] as $number) {
+            Room::create([
+                'room_number' => $number, 'room_class_id' => $this->roomClass->id,
+                'room_form_id' => $this->roomForm->id, 'floor' => 1, 'status' => 'available',
+            ]);
+        }
+        $owner = $this->storeBookingWithRooms('Booking B', $this->roomClass->id, ['101', '102']);
+        $owner->assertSuccessful();
+        $ownerCode = Booking::find($owner->json('data.id'))->booking_code;
+
+        $response = $this->storeBookingWithRooms('Booking A', $this->roomClass->id, ['101', '102']);
+
+        $response->assertStatus(422);
+        $message = (string) $response->json('message');
+        $this->assertStringContainsString("101 ({$ownerCode})", $message);
+        $this->assertStringContainsString("102 ({$ownerCode})", $message);
+    }
+
+    /**
+     * Row 400 (task example): booking A has 2 unassigned rooms, booking B then
+     * takes 101/102. Editing A to assign 101/102 is rejected and the message
+     * names both rooms; A keeps its rooms unassigned.
+     */
+    public function test_row400_editing_booking_reports_every_room_taken_by_other_booking(): void
+    {
+        foreach (['103', '104'] as $number) {
+            Room::create([
+                'room_number' => $number, 'room_class_id' => $this->roomClass->id,
+                'room_form_id' => $this->roomForm->id, 'floor' => 1, 'status' => 'available',
+            ]);
+        }
+        $bookingA = $this->storeBookingWithRooms('Booking A', $this->roomClass->id, [null, null]);
+        $bookingA->assertSuccessful();
+        $bookingB = $this->storeBookingWithRooms('Booking B', $this->roomClass->id, ['101', '102']);
+        $bookingB->assertSuccessful();
+        $codeB = Booking::find($bookingB->json('data.id'))->booking_code;
+
+        $aId = $bookingA->json('data.id');
+        $aRooms = BookingRoom::where('booking_id', $aId)->orderBy('id')->get();
+        $response = $this->putJson("/api/bookings/{$aId}", [
+            'booking_name' => 'Booking A',
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-08',
+            'num_of_days' => 1,
+            'registration_status_id' => $this->regStatus->booking_status_id,
+            'company_id' => 1,
+            'market_id' => 1,
+            'customer_source_id' => 1,
+            'room_allocations' => [[
+                'roomClassId' => $this->roomClass->id,
+                'quantity' => 2,
+                'price' => 1000000,
+                'rooms' => [
+                    ['bookingRoomId' => $aRooms[0]->id, 'roomNumber' => '101', 'arrivalDate' => '2026-08-07', 'departureDate' => '2026-08-08'],
+                    ['bookingRoomId' => $aRooms[1]->id, 'roomNumber' => '102', 'arrivalDate' => '2026-08-07', 'departureDate' => '2026-08-08'],
+                ],
+            ]],
+        ]);
+
+        $response->assertStatus(422);
+        $message = (string) $response->json('message');
+        $this->assertStringContainsString("101 ({$codeB})", $message);
+        $this->assertStringContainsString("102 ({$codeB})", $message);
+        $this->assertSame([null, null], BookingRoom::where('booking_id', $aId)->orderBy('id')->pluck('room_number')->all());
+    }
+
+    /**
+     * Row 400: the vacant room list for booking A no longer offers room
+     * numbers that booking B has taken.
+     */
+    public function test_row400_vacant_list_hides_rooms_taken_by_other_booking(): void
+    {
+        foreach (['103', '104'] as $number) {
+            Room::create([
+                'room_number' => $number, 'room_class_id' => $this->roomClass->id,
+                'room_form_id' => $this->roomForm->id, 'floor' => 1, 'status' => 'available',
+            ]);
+        }
+        $bookingA = $this->storeBookingWithRooms('Booking A', $this->roomClass->id, [null]);
+        $aRoom = BookingRoom::where('booking_id', $bookingA->json('data.id'))->firstOrFail();
+        $this->storeBookingWithRooms('Booking B', $this->roomClass->id, ['101', '102'])->assertSuccessful();
+
+        $vacant = $this->getJson('/api/rooms/vacant?' . http_build_query([
+            'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-08',
+            'exclude_booking_room_id' => $aRoom->id,
+        ]))->assertSuccessful()->json('data');
+
+        $this->assertSame(['103', '104'], collect($vacant)->pluck('room_number')->sort()->values()->all());
+    }
+
+    /**
+     * Row 369 (task example): room 31/08 -> 05/09 (5 nights), quick update the
+     * departure to 06/09. Every place that stores the night count follows:
+     * bookings.num_of_days, the room's night columns, GET booking and Room Map.
+     */
+    public function test_row369_quick_update_departure_updates_every_night_count(): void
+    {
+        $created = $this->postJson('/api/bookings', [
+            'booking_name' => 'Row 369',
+            'arrival_date' => '2026-08-31',
+            'departure_date' => '2026-09-05',
+            'num_of_days' => 5,
+            'registration_status_id' => $this->regStatus->booking_status_id,
+            'company_id' => 1, 'market_id' => 1, 'customer_source_id' => 1,
+            'room_allocations' => [[
+                'roomClassId' => $this->roomClass->id, 'quantity' => 1, 'price' => 540000,
+                'rooms' => [['roomNumber' => '101', 'guestName' => 'Guest']],
+            ]],
+        ])->assertSuccessful();
+        $bookingId = $created->json('data.id');
+        $room = BookingRoom::where('booking_id', $bookingId)->firstOrFail();
+        $this->assertSame(5, (int) Booking::find($bookingId)->num_of_days);
+
+        $this->postJson("/api/bookings/{$bookingId}/rooms/bulk-update", [
+            'room_ids' => [$room->id], 'departure_date' => '2026-09-06',
+        ])->assertSuccessful();
+
+        $booking = Booking::find($bookingId);
+        $this->assertSame('2026-09-06', $booking->departure_date->toDateString());
+        $this->assertSame(6, (int) $booking->num_of_days);
+
+        $room->refresh();
+        $this->assertSame('2026-09-06', $room->departure_date->toDateString());
+        $this->assertSame(6, (int) $room->ActutalNumOfDays);
+        $this->assertSame(6, (int) $room->NumOfDays);
+
+        $this->getJson("/api/bookings/{$bookingId}")->assertOk()->assertJsonPath('data.num_of_days', 6);
+    }
+
+    /**
+     * Row 369 (Room Map -> room info): changing the departure in the guest info
+     * popup also brings the booking night count and the room Room Map shows
+     * back in line.
+     */
+    public function test_row369_room_info_departure_edit_updates_every_night_count(): void
+    {
+        $created = $this->postJson('/api/bookings', [
+            'booking_name' => 'Row 369 Room Map',
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-12',
+            'num_of_days' => 5,
+            'registration_status_id' => $this->regStatus->booking_status_id,
+            'company_id' => 1, 'market_id' => 1, 'customer_source_id' => 1,
+            'room_allocations' => [[
+                'roomClassId' => $this->roomClass->id, 'quantity' => 1, 'price' => 540000,
+                'rooms' => [['roomNumber' => '101', 'guestName' => 'Guest']],
+            ]],
+        ])->assertSuccessful();
+        $bookingId = $created->json('data.id');
+        $room = BookingRoom::where('booking_id', $bookingId)->firstOrFail();
+        $guestId = BookingRoomGuest::where('booking_room_id', $room->id)->value('guest_id');
+        $this->assertNotNull($guestId);
+
+        $this->putJson("/api/booking-rooms/{$room->id}/guests/{$guestId}", [
+            'departure_date' => '2026-08-13',
+            'arrival_date' => '2026-08-07',
+            'is_day_use' => false,
+        ])->assertSuccessful();
+
+        $booking = Booking::find($bookingId);
+        $this->assertSame('2026-08-13', $booking->departure_date->toDateString());
+        $this->assertSame(6, (int) $booking->num_of_days, 'bookings.num_of_days');
+        $this->assertSame(6, (int) $room->fresh()->ActutalNumOfDays, 'booking_rooms.ActutalNumOfDays');
+
+        $roomMap = collect($this->getJson('/api/rooms?date=2026-08-08')->assertSuccessful()->json('data'))
+            ->firstWhere('room_number', '101');
+        $this->assertSame(6, (int) $roomMap['nights'], 'room map nights');
+        $this->assertSame('2026-08-13', $roomMap['departure_date']);
+
+        // The same edit on an in-house room (what Room Map mostly shows).
+        $room->update(['status' => BookingRoom::STATUS_CHECKED_IN]);
+        Booking::whereKey($bookingId)->update(['status' => Booking::STATUS_CHECKIN]);
+        $this->putJson("/api/booking-rooms/{$room->id}/guests/{$guestId}", [
+            'departure_date' => '2026-08-14',
+            'arrival_date' => '2026-08-07',
+            'is_day_use' => false,
+        ])->assertSuccessful();
+        $this->assertSame(7, (int) Booking::find($bookingId)->num_of_days, 'in-house bookings.num_of_days');
+        $this->assertSame('2026-08-14', Booking::find($bookingId)->departure_date->toDateString());
+    }
+
+    /**
+     * @param array<string, int> $nightFlags service_date => is_room
+     */
+    private function roomWithExtraBedNights(array $nightFlags, string $departure): BookingRoom
+    {
+        $department = \App\Models\Department::firstOrCreate(['code' => 'FO'], ['name' => 'Front Office']);
+        HotelService::updateOrCreate(['code' => 'EB'], ['name' => 'Extra Bed', 'price' => 300000, 'is_active' => true, 'department_id' => $department->id]);
+        $booking = $this->createBooking(['arrival_date' => '2026-08-08', 'departure_date' => $departure]);
+        $room = BookingRoom::create([
+            'id' => 'G-368-' . substr(md5(json_encode($nightFlags)), 0, 4), 'booking_id' => $booking->id,
+            'room_class_id' => $this->roomClass->id, 'room_number' => '101',
+            'arrival_date' => '2026-08-08', 'departure_date' => $departure, 'rate' => 500000,
+            'extra_bed_qty' => 1, 'extra_bed_rate' => 300000, 'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+        foreach ($nightFlags as $date => $isRoom) {
+            BookingRoomService::create([
+                'booking_room_id' => $room->id, 'service_code' => 'EB', 'service_name' => 'Extra Bed',
+                'service_date' => $date, 'quantity' => 1, 'rate' => 300000, 'total_amount' => 300000,
+                'is_room' => $isRoom, 'is_posted' => 0, 'folio' => 1,
+            ]);
+        }
+
+        return $room;
+    }
+
+    private function ebRowsByDate(BookingRoom $room): array
+    {
+        return BookingRoomService::where('booking_room_id', $room->id)->where('service_code', 'EB')->get()
+            ->mapWithKeys(fn ($row) => [$row->service_date->toDateString() => $row])->all();
+    }
+
+    /**
+     * Row 368: removing one extra-bed night (quantity 0) leaves that night's
+     * room/master flag alone, whatever the screen sends.
+     */
+    public function test_row368_deleting_extra_bed_night_keeps_master_flag(): void
+    {
+        $room = $this->roomWithExtraBedNights(['2026-08-08' => 0, '2026-08-09' => 0, '2026-08-10' => 0], '2026-08-11');
+
+        foreach ([null, 1] as $sentIsRoom) {
+            $payload = ['service_code' => 'EB', 'service_date' => '2026-08-09', 'quantity' => 0, 'rate' => 300000];
+            if ($sentIsRoom !== null) {
+                $payload['is_room'] = $sentIsRoom;
+            }
+            $this->postJson("/api/booking-rooms/{$room->id}/services", $payload)->assertSuccessful();
+
+            $rows = $this->ebRowsByDate($room);
+            $this->assertEquals(0, (float) $rows['2026-08-09']->quantity);
+            $this->assertSame(0, (int) $rows['2026-08-09']->is_room, 'deleted night keeps master flag');
+            $this->assertSame(0, (int) $rows['2026-08-08']->is_room);
+            $this->assertSame(0, (int) $rows['2026-08-10']->is_room);
+        }
+    }
+
+    /**
+     * Row 368: a room-folio night stays room-folio when it is set to 0.
+     */
+    public function test_row368_deleting_room_folio_extra_bed_night_stays_room(): void
+    {
+        $room = $this->roomWithExtraBedNights(['2026-08-08' => 1, '2026-08-09' => 1], '2026-08-10');
+
+        $this->postJson("/api/booking-rooms/{$room->id}/services", [
+            'service_code' => 'EB', 'service_date' => '2026-08-09', 'quantity' => 0, 'rate' => 300000,
+        ])->assertSuccessful();
+
+        $this->assertSame(1, (int) $this->ebRowsByDate($room)['2026-08-09']->is_room);
+    }
+
+    /**
+     * Row 368: when every previous extra-bed night is on master, extending
+     * the stay creates the new nights on master too.
+     */
+    public function test_row368_extension_follows_master_when_all_previous_nights_are_master(): void
+    {
+        $room = $this->roomWithExtraBedNights(['2026-08-08' => 0, '2026-08-09' => 0], '2026-08-10');
+
+        $this->postJson("/api/bookings/{$room->booking_id}/rooms/bulk-update", [
+            'room_ids' => [$room->id], 'departure_date' => '2026-08-12',
+        ])->assertSuccessful();
+
+        $rows = $this->ebRowsByDate($room);
+        $this->assertCount(4, $rows);
+        foreach (['2026-08-08', '2026-08-09', '2026-08-10', '2026-08-11'] as $date) {
+            $this->assertSame(0, (int) $rows[$date]->is_room, "night {$date} is on master");
+        }
+    }
+
+    /**
+     * Row 368: if any previous night is a room night, new nights stay room
+     * nights as before.
+     */
+    public function test_row368_extension_stays_room_when_any_previous_night_is_room(): void
+    {
+        $room = $this->roomWithExtraBedNights(['2026-08-08' => 0, '2026-08-09' => 1], '2026-08-10');
+
+        $this->postJson("/api/bookings/{$room->booking_id}/rooms/bulk-update", [
+            'room_ids' => [$room->id], 'departure_date' => '2026-08-12',
+        ])->assertSuccessful();
+
+        $rows = $this->ebRowsByDate($room);
+        $this->assertSame(1, (int) $rows['2026-08-10']->is_room);
+        $this->assertSame(1, (int) $rows['2026-08-11']->is_room);
+        $this->assertSame(0, (int) $rows['2026-08-08']->is_room);
+    }
+
+    /**
+     * A booking created through the API (so it has a real guest) whose extra-bed
+     * nights are all on master (is_room = 0).
+     *
+     * @return array{0: int, 1: BookingRoom, 2: string}
+     */
+    private function masterExtraBedBookingViaApi(string $arrival = '2026-08-08', string $departure = '2026-08-10'): array
+    {
+        $created = $this->postJson('/api/bookings', [
+            'booking_name' => 'Row 368 API',
+            'arrival_date' => $arrival,
+            'departure_date' => $departure,
+            'num_of_days' => 2,
+            'registration_status_id' => $this->regStatus->booking_status_id,
+            'company_id' => 1, 'market_id' => 1, 'customer_source_id' => 1,
+            'room_allocations' => [[
+                'roomClassId' => $this->roomClass->id, 'quantity' => 1, 'price' => 500000,
+                'rooms' => [['roomNumber' => '101', 'guestName' => 'Guest']],
+            ]],
+        ])->assertSuccessful();
+        $bookingId = $created->json('data.id');
+        $room = BookingRoom::where('booking_id', $bookingId)->firstOrFail();
+        $room->update(['extra_bed_qty' => 1, 'extra_bed_rate' => 300000]);
+        foreach ([$arrival, \Carbon\Carbon::parse($arrival)->addDay()->toDateString()] as $date) {
+            BookingRoomService::create([
+                'booking_room_id' => $room->id, 'service_code' => 'EB', 'service_name' => 'Extra Bed',
+                'service_date' => $date, 'quantity' => 1, 'rate' => 300000, 'total_amount' => 300000,
+                'is_room' => 0, 'is_posted' => 0, 'folio' => 1,
+            ]);
+        }
+        $guestId = (string) BookingRoomGuest::where('booking_room_id', $room->id)->value('guest_id');
+
+        return [(int) $bookingId, $room, $guestId];
+    }
+
+    private function assertNightsOnMaster(BookingRoom $room, array $dates): void
+    {
+        $rows = $this->ebRowsByDate($room);
+        foreach ($dates as $date) {
+            $this->assertArrayHasKey($date, $rows, "EB row for {$date} exists");
+            $this->assertSame(0, (int) $rows[$date]->is_room, "night {$date} is on master");
+        }
+    }
+
+    /**
+     * Row 368, Room Map -> room info: extending the departure there creates
+     * the new extra-bed nights on master.
+     */
+    public function test_row368_room_info_extension_follows_master(): void
+    {
+        [, $room, $guestId] = $this->masterExtraBedBookingViaApi();
+
+        $this->putJson("/api/booking-rooms/{$room->id}/guests/{$guestId}", [
+            'arrival_date' => '2026-08-08', 'departure_date' => '2026-08-12', 'is_day_use' => false,
+        ])->assertSuccessful();
+
+        $this->assertNightsOnMaster($room, ['2026-08-08', '2026-08-09', '2026-08-10', '2026-08-11']);
+    }
+
+    /**
+     * Row 368, Room Map -> room info: the same when the extra-bed quantity is
+     * changed in the same save (the screen always sends both).
+     */
+    public function test_row368_room_info_extension_with_extra_bed_change_follows_master(): void
+    {
+        [, $room, $guestId] = $this->masterExtraBedBookingViaApi();
+
+        $this->putJson("/api/booking-rooms/{$room->id}/guests/{$guestId}", [
+            'arrival_date' => '2026-08-08', 'departure_date' => '2026-08-12', 'is_day_use' => false,
+            'extra_bed_qty' => 2, 'extra_bed_rate' => 300000,
+        ])->assertSuccessful();
+
+        $rows = $this->ebRowsByDate($room);
+        $this->assertCount(4, $rows);
+        $this->assertNightsOnMaster($room, ['2026-08-08', '2026-08-09', '2026-08-10', '2026-08-11']);
+        $this->assertEquals(2, (float) $rows['2026-08-10']->quantity, 'new nights use the new extra-bed quantity');
+    }
+
+    /**
+     * Row 368, edit room (PUT booking room): extending the departure there
+     * creates the new extra-bed nights on master.
+     */
+    public function test_row368_room_update_extension_follows_master(): void
+    {
+        [$bookingId, $room] = $this->masterExtraBedBookingViaApi();
+        // A room stays inside its booking period, so the period is widened first.
+        Booking::whereKey($bookingId)->update(['departure_date' => '2026-08-12', 'num_of_days' => 4]);
+
+        $this->putJson("/api/bookings/{$bookingId}/rooms/{$room->id}", [
+            'departure_date' => '2026-08-12',
+        ])->assertSuccessful();
+
+        $this->assertNightsOnMaster($room, ['2026-08-08', '2026-08-09', '2026-08-10', '2026-08-11']);
+    }
+
+    /**
+     * Row 368, edit room: shortening then extending again still follows master,
+     * and the deleted night comes back on master.
+     */
+    public function test_row368_room_update_shorten_then_extend_follows_master(): void
+    {
+        [$bookingId, $room] = $this->masterExtraBedBookingViaApi();
+        Booking::whereKey($bookingId)->update(['departure_date' => '2026-08-11', 'num_of_days' => 3]);
+
+        $this->putJson("/api/bookings/{$bookingId}/rooms/{$room->id}", ['departure_date' => '2026-08-09'])->assertSuccessful();
+        // Shortening pulls the booking period in; widen it again before extending.
+        Booking::whereKey($bookingId)->update(['departure_date' => '2026-08-11', 'num_of_days' => 3]);
+        $this->putJson("/api/bookings/{$bookingId}/rooms/{$room->id}", ['departure_date' => '2026-08-11'])->assertSuccessful();
+
+        $this->assertNightsOnMaster($room, ['2026-08-08', '2026-08-09', '2026-08-10']);
+    }
+
+    /**
+     * Row 368, edit booking (PUT booking): extending a room's stay creates the
+     * new extra-bed nights on master when the earlier nights are master.
+     */
+    public function test_row368_booking_update_extension_follows_master(): void
+    {
+        [$bookingId, $room] = $this->masterExtraBedBookingViaApi();
+        $booking = Booking::find($bookingId);
+
+        $this->putJson("/api/bookings/{$bookingId}", [
+            'booking_name' => $booking->booking_name,
+            'arrival_date' => '2026-08-08',
+            'departure_date' => '2026-08-12',
+            'num_of_days' => 4,
+            'registration_status_id' => $this->regStatus->booking_status_id,
+            'company_id' => 1, 'market_id' => 1, 'customer_source_id' => 1,
+            'room_allocations' => [[
+                'roomClassId' => $this->roomClass->id, 'quantity' => 1, 'price' => 500000,
+                'rooms' => [[
+                    'bookingRoomId' => $room->id, 'roomNumber' => '101',
+                    'arrivalDate' => '2026-08-08', 'departureDate' => '2026-08-12',
+                    'extraBedQty' => 1, 'extraBedPrice' => 300000,
+                    'dailyExtraBeds' => [
+                        ['dateStr' => '2026-08-08', 'quantity' => 1, 'rate' => 300000, 'isRoom' => false],
+                        ['dateStr' => '2026-08-09', 'quantity' => 1, 'rate' => 300000, 'isRoom' => false],
+                    ],
+                ]],
+            ]],
+        ])->assertSuccessful();
+
+        $newRoom = BookingRoom::where('booking_id', $bookingId)->whereNull('deleted_at')->orderByDesc('created_at')->firstOrFail();
+        $this->assertNightsOnMaster($newRoom, ['2026-08-08', '2026-08-09', '2026-08-10', '2026-08-11']);
+    }
+
+    /**
+     * Row 368: the quick-update screen sends quantity 0 for a deleted night
+     * together with a stale is_room = 1; the night still keeps its master flag
+     * and the other nights are untouched.
+     */
+    public function test_row368_delete_with_stale_room_flag_only_changes_quantity(): void
+    {
+        [, $room] = $this->masterExtraBedBookingViaApi();
+        HotelService::updateOrCreate(['code' => 'EB'], [
+            'name' => 'Extra Bed', 'price' => 300000, 'is_active' => true,
+            'department_id' => \App\Models\Department::firstOrCreate(['code' => 'FO'], ['name' => 'Front Office'])->id,
+        ]);
+
+        $this->postJson("/api/booking-rooms/{$room->id}/services", [
+            'service_code' => 'EB', 'service_date' => '2026-08-08', 'quantity' => 0, 'rate' => 300000, 'is_room' => 1,
+        ])->assertSuccessful();
+
+        $rows = $this->ebRowsByDate($room);
+        $this->assertEquals(0, (float) $rows['2026-08-08']->quantity);
+        $this->assertSame(0, (int) $rows['2026-08-08']->is_room);
+        $this->assertEquals(1, (float) $rows['2026-08-09']->quantity);
+        $this->assertSame(0, (int) $rows['2026-08-09']->is_room);
     }
 
     /**

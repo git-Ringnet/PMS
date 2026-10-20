@@ -83,6 +83,20 @@ class BookingRoomService extends Model
         return (string) (\App\Models\HotelService::where('code', $code)->value('code') ?: $code);
     }
 
+    /**
+     * Dòng 368: đêm EB mới (gia hạn/điều chỉnh ngày) mặc định theo các đêm EB đã có
+     * của phòng: nếu tất cả đã chuyển về Master (is_room = 0) thì đêm mới cũng về Master.
+     */
+    public static function defaultExtraBedIsRoom(string|int $bookingRoomId): int
+    {
+        $flags = static::query()
+            ->where('booking_room_id', $bookingRoomId)
+            ->where('service_code', self::CODE_EXTRA_BED)
+            ->pluck('is_room');
+
+        return ($flags->isNotEmpty() && $flags->every(fn ($flag) => (int) $flag === 0)) ? 0 : 1;
+    }
+
     public static function catalogName(string $code, string $fallback = ''): string
     {
         return (string) (\App\Models\HotelService::where('code', $code)->value('name') ?: $fallback);

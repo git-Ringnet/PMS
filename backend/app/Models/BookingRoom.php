@@ -80,6 +80,15 @@ class BookingRoom extends Model
             $model->created_by = $model->created_by ?: $currentUser;
             $model->updated_by = $model->updated_by ?: $currentUser;
 
+            // Dòng 398: phòng mới có giờ đến/giờ đi mặc định 14:00/12:00.
+            // Phòng trong ngày/ở theo giờ do người dùng tự nhập nên không gán mặc định.
+            $isOvernight = !empty($model->arrival_date) && !empty($model->departure_date)
+                && \Carbon\Carbon::parse($model->arrival_date)->toDateString() !== \Carbon\Carbon::parse($model->departure_date)->toDateString();
+            if (!$model->is_day_use && $isOvernight) {
+                $model->arrival_time = $model->arrival_time ?: self::DEFAULT_ARRIVAL_TIME;
+                $model->departure_time = $model->departure_time ?: self::DEFAULT_DEPARTURE_TIME;
+            }
+
             // Format original_room_class_id to "room_class_id-room_form_id"
             if (!empty($model->original_room_class_id)) {
                 if (strpos((string)$model->original_room_class_id, '-') === false) {
@@ -347,6 +356,9 @@ class BookingRoom extends Model
     const STATUS_CANCELLED  = 3; // Đã hủy
     const STATUS_NOSHOW     = 4; // Noshow
     const STATUS_MOVED      = 100; // Đã chuyển/gộp sang phòng khác
+
+    const DEFAULT_ARRIVAL_TIME   = '14:00:00';
+    const DEFAULT_DEPARTURE_TIME = '12:00:00';
 
     // =========================================
     // RELATIONSHIPS
