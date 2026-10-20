@@ -43,6 +43,7 @@ import CancelReasonModal from './components/CancelReasonModal.vue'
 import RestoreCancelledRoomsModal from './components/RestoreCancelledRoomsModal.vue'
 import ChargeNoshowModal from './components/ChargeNoshowModal.vue'
 import QuickUpdateModal from './components/QuickUpdateModal.vue'
+import { bookingPeriodAfterQuickUpdate, isRegistrationReadonly } from '@/utils/booking-quick-update.js'
 import BookingNotificationsModal from './components/BookingNotificationsModal.vue'
 import BookingPrintPreviewModal from './components/BookingPrintPreviewModal.vue'
 import PrintServiceSelectModal from './components/PrintServiceSelectModal.vue'
@@ -2133,6 +2134,8 @@ function handleDrop(targetKey) {
 // ==================== COMPUTEDS ====================
 const activeTab = computed(() => tabs.value.find(t => t.id === activeTabId.value))
 const isCheckoutMetadataEdit = computed(() => isEditModal.value && Number(activeTab.value?.status) === 2)
+// Dòng 433: đăng ký đã hủy vẫn xem được thông tin nhưng không cho chỉnh sửa.
+const isModalReadonly = computed(() => isEditModal.value && isRegistrationReadonly(activeTab.value?.status))
 
 const isCancelledBooking = computed(() => {
   const tab = activeTab.value
@@ -4397,20 +4400,17 @@ async function openEditModal() {
   const tab = activeTab.value
   if (!tab) return
   const isCheckedOut = Number(tab.status) === 2
-  if (Number(tab.status) === 3) {
-    uiStore.showToast('Không thể chỉnh sửa đăng ký đã xóa.', 'error')
-    return
-  }
+  const isCancelled = isRegistrationReadonly(tab.status)
   if (isCheckedOut && !bookingCapabilities.value.can_update_checkout_booking) {
     uiStore.showToast('Bạn không có quyền chỉnh sửa thông tin đăng ký đã checkout.', 'error')
     return
   }
-  if (!isCheckedOut) await refreshRoomRateCodes()
+  if (!isCheckedOut && !isCancelled) await refreshRoomRateCodes()
   modalPos.value = { x: 0, y: 0 }
   isEditModal.value = true
   isColorChanged.value = false
   fillModalForm(tab)
-  if (!isCheckedOut) {
+  if (!isCheckedOut && !isCancelled) {
     roomAddDraft.value = initRoomAddDraft(tab.checkIn, tab.checkOut)
     await updateRoomAvailability()
   } else {
@@ -5300,6 +5300,7 @@ function copyConfirmDate() {
 }
 
 async function handleSaveNewBooking() {
+  if (isModalReadonly.value) return
   if (!modalForm.value.bookingName.trim()) { uiStore.showToast('Vui lòng nhập tên đăng ký!', 'warning'); return }
   if (!modalForm.value.checkIn || !modalForm.value.checkOut) { uiStore.showToast('Vui lòng chọn ngày đến và ngày đi!', 'warning'); return }
   if (!modalForm.value.registrationStatusId) { uiStore.showToast('Vui lòng chọn Tình trạng đăng ký!', 'warning'); return }
@@ -6682,22 +6683,23 @@ function handleQuickUpdateSaved(payload) {
 
     // Giai đoạn đăng ký giữ nguyên khi phòng vẫn nằm trong giai đoạn; chỉ mở
     // rộng khi phòng ra ngoài. Số đêm luôn tính lại theo giai đoạn cuối cùng.
+    // Dòng 432: cập nhật ngày đi thì ngày đi BK = ngày đi lớn nhất của các
+    // phòng trên BK (không xét tình trạng 3).
     if (activeTab.value && activeTab.value.rooms && activeTab.value.rooms.length > 0) {
-      const allCheckIns = activeTab.value.rooms.map(r => parseDateVi(r.checkIn)).filter(Boolean).sort()
-      const allCheckOuts = activeTab.value.rooms.map(r => parseDateVi(r.checkOut)).filter(Boolean).sort()
-      if (allCheckIns.length > 0 && allCheckOuts.length > 0) {
-        const headerIn = parseDateVi(activeTab.value.checkIn)
-        const headerOut = parseDateVi(activeTab.value.checkOut)
-        const minIn = headerIn && headerIn < allCheckIns[0] ? headerIn : allCheckIns[0]
-        const maxOut = headerOut && headerOut > allCheckOuts[allCheckOuts.length - 1] ? headerOut : allCheckOuts[allCheckOuts.length - 1]
-        activeTab.value.checkIn = minIn
-        activeTab.value.checkOut = maxOut
-        const dMin = new Date(minIn)
-        const dMax = new Date(maxOut)
-        if (!isNaN(dMin) && !isNaN(dMax)) {
-          const diff = Math.round((dMax - dMin) / 86400000)
-          activeTab.value.nights = diff >= 0 ? diff : 0
-        }
+      const period = bookingPeriodAfterQuickUpdate({
+        headerIn: parseDateVi(activeTab.value.checkIn),
+        headerOut: parseDateVi(activeTab.value.checkOut),
+        rooms: activeTab.value.rooms.map(r => ({
+          checkIn: parseDateVi(r.checkIn),
+          checkOut: parseDateVi(r.checkOut),
+          status: r.bookingRoomStatus,
+        })),
+        departureEdited: payload.departure_date !== undefined,
+      })
+      if (period) {
+        activeTab.value.checkIn = period.checkIn
+        activeTab.value.checkOut = period.checkOut
+        if (period.nights !== null) activeTab.value.nights = period.nights
       }
     }
   }
@@ -9002,9 +9004,10 @@ defineExpose({
             <div class="flex items-center space-x-2 font-semibold text-sm">
                 <i class="fa-solid fa-file-lines" :class="isTopBarThemeDark ? 'text-blue-200' : 'text-slate-800'"></i>
                 <span>{{ isEditModal ? 'THÔNG TIN ĐĂNG KÝ' : 'TẠO ĐĂNG KÝ' }}</span>
+                <span v-if="isModalReadonly" class="ml-1 px-2 py-0.5 rounded-full bg-red-500/90 text-white text-[10px] font-bold">ĐÃ HỦY · CHỈ XEM</span>
             </div>
             <div class="flex items-center space-x-3">
-                <div class="relative">
+                <div v-if="!isModalReadonly" class="relative">
                     <button 
                       type="button"
                       @click.stop="isColorPickerOpen = !isColorPickerOpen"
@@ -9070,7 +9073,7 @@ defineExpose({
           </div>
 
           <!-- SECOND ACTION STRIP (GENERAL DETAILS) -->
-          <div class="px-4 py-2.5 border-b border-slate-200 bg-slate-50/80 shrink-0">
+          <div class="px-4 py-2.5 border-b border-slate-200 bg-slate-50/80 shrink-0" :inert="isModalReadonly || null">
             <div class="flex flex-wrap items-end gap-2.5">
               <!-- Mã booking (Read-only Badge) -->
               <div class="flex flex-col">
@@ -9236,6 +9239,8 @@ defineExpose({
 
           <!-- MODAL CONTENT SCROLL -->
           <div class="flex-1 p-3.5 overflow-y-auto flex flex-col gap-3 bg-slate-50/60">
+            <!-- Dòng 433: BK đã hủy chỉ xem; khóa toàn bộ input nhưng vẫn cuộn được -->
+            <div class="contents" :inert="isModalReadonly || null">
             
             <!-- Tab 1: Thông tin chung (Bento 2-Column Grid Layout) -->
             <div v-if="modalSubTab === 'info'" class="grid grid-cols-1 lg:grid-cols-12 gap-3 w-full">
@@ -10047,6 +10052,7 @@ defineExpose({
                 </table>
               </div>
             </div>
+            </div>
 
           </div>
 
@@ -10076,9 +10082,10 @@ defineExpose({
                     :disabled="isSavingModal"
                     class="px-4 py-1.5 border border-slate-300 text-slate-700 font-bold rounded-xl hover:bg-slate-50 transition text-xs cursor-pointer bg-white disabled:opacity-50 disabled:cursor-not-allowed shadow-2xs"
                   >
-                      Hủy bỏ
+                      {{ isModalReadonly ? 'Đóng' : 'Hủy bỏ' }}
                   </button>
                   <button 
+                    v-if="!isModalReadonly"
                     @click="handleSaveNewBooking"
                     :disabled="isSavingModal || (!!modalForm.dbId && !isModalFormDirty)"
                     class="px-4 py-1.5 font-bold rounded-xl transition flex items-center space-x-1.5 text-xs border-none"
