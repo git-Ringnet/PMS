@@ -41,100 +41,124 @@ class PortalWallpaperController extends Controller
             'wallpaper_overlay' => 'nullable|integer|min:0|max:100',
         ]);
 
-        $wallpaperUrl = null;
+        try {
+            $wallpaperUrl = null;
 
-        if ($request->hasFile('wallpaper')) {
-            $file = $request->file('wallpaper');
-            $uploadDir = public_path('uploads/wallpaper');
-            if (!File::isDirectory($uploadDir)) {
-                File::makeDirectory($uploadDir, 0755, true, true);
+            if ($request->hasFile('wallpaper')) {
+                $file = $request->file('wallpaper');
+                $uploadDir = public_path('uploads/wallpaper');
+                if (!File::isDirectory($uploadDir)) {
+                    File::makeDirectory($uploadDir, 0755, true, true);
+                }
+
+                // Remove old uploaded file if exists
+                $oldUrl = HotelConfig::where('name', self::CONFIG_KEY)->value('value');
+                if ($oldUrl && str_starts_with($oldUrl, '/uploads/wallpaper/') && file_exists(public_path(ltrim($oldUrl, '/')))) {
+                    @unlink(public_path(ltrim($oldUrl, '/')));
+                }
+
+                $ext = strtolower($file->getClientOriginalExtension() ?: $file->guessExtension() ?: 'jpg');
+                $filename = 'wallpaper_' . time() . '_' . uniqid() . '.' . $ext;
+                $file->move($uploadDir, $filename);
+                $wallpaperUrl = '/uploads/wallpaper/' . $filename;
+            } elseif ($request->filled('wallpaper_url')) {
+                $wallpaperUrl = $request->input('wallpaper_url');
+            } else {
+                $wallpaperUrl = HotelConfig::where('name', self::CONFIG_KEY)->value('value');
             }
 
-            // Remove old uploaded file if exists
+            if ($wallpaperUrl) {
+                HotelConfig::updateOrCreate(
+                    ['name' => self::CONFIG_KEY],
+                    [
+                        'value' => $wallpaperUrl,
+                        'description' => 'Hình nền Portal / HomePage',
+                        'is_visible' => true,
+                    ]
+                );
+            }
+
+            $position = $request->input('wallpaper_position', 'center center');
+            HotelConfig::updateOrCreate(
+                ['name' => self::POSITION_KEY],
+                [
+                    'value' => $position,
+                    'description' => 'Vị trí hiển thị hình nền Portal',
+                    'is_visible' => true,
+                ]
+            );
+
+            $fit = $request->input('wallpaper_fit', 'cover');
+            HotelConfig::updateOrCreate(
+                ['name' => self::FIT_KEY],
+                [
+                    'value' => $fit,
+                    'description' => 'Kiểu hiển thị hình nền Portal (cover / contain)',
+                    'is_visible' => true,
+                ]
+            );
+
+            $overlay = $request->has('wallpaper_overlay') ? (int) $request->input('wallpaper_overlay') : 20;
+            HotelConfig::updateOrCreate(
+                ['name' => self::OVERLAY_KEY],
+                [
+                    'value' => (string) $overlay,
+                    'description' => 'Độ tối lớp phủ hình nền Portal (0 - 100%)',
+                    'is_visible' => true,
+                ]
+            );
+
+            return response()->json([
+                'success' => true,
+                'wallpaper_url' => $wallpaperUrl,
+                'wallpaper_position' => $position,
+                'wallpaper_fit' => $fit,
+                'wallpaper_overlay' => $overlay,
+                'message' => 'Cập nhật hình nền thành công!',
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Lỗi khi cập nhật hình nền portal:', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Lỗi khi lưu hình nền: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function resetWallpaper()
+    {
+        try {
             $oldUrl = HotelConfig::where('name', self::CONFIG_KEY)->value('value');
             if ($oldUrl && str_starts_with($oldUrl, '/uploads/wallpaper/') && file_exists(public_path(ltrim($oldUrl, '/')))) {
                 @unlink(public_path(ltrim($oldUrl, '/')));
             }
 
-            $filename = 'wallpaper_' . time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
-            $file->move($uploadDir, $filename);
-            $wallpaperUrl = '/uploads/wallpaper/' . $filename;
-        } elseif ($request->filled('wallpaper_url')) {
-            $wallpaperUrl = $request->input('wallpaper_url');
-        } else {
-            $wallpaperUrl = HotelConfig::where('name', self::CONFIG_KEY)->value('value');
+            HotelConfig::where('name', self::CONFIG_KEY)->delete();
+            HotelConfig::where('name', self::POSITION_KEY)->delete();
+            HotelConfig::where('name', self::FIT_KEY)->delete();
+            HotelConfig::where('name', self::OVERLAY_KEY)->delete();
+
+            return response()->json([
+                'success' => true,
+                'wallpaper_url' => null,
+                'wallpaper_position' => 'center center',
+                'wallpaper_fit' => 'cover',
+                'wallpaper_overlay' => 20,
+                'message' => 'Đã khôi phục hình nền mặc định.',
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Lỗi khi khôi phục hình nền portal:', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Lỗi khi khôi phục hình nền: ' . $e->getMessage(),
+            ], 500);
         }
-
-        if ($wallpaperUrl) {
-            HotelConfig::updateOrCreate(
-                ['name' => self::CONFIG_KEY],
-                [
-                    'value' => $wallpaperUrl,
-                    'description' => 'Hình nền Portal / HomePage',
-                    'is_visible' => true,
-                ]
-            );
-        }
-
-        $position = $request->input('wallpaper_position', 'center center');
-        HotelConfig::updateOrCreate(
-            ['name' => self::POSITION_KEY],
-            [
-                'value' => $position,
-                'description' => 'Vị trí hiển thị hình nền Portal',
-                'is_visible' => true,
-            ]
-        );
-
-        $fit = $request->input('wallpaper_fit', 'cover');
-        HotelConfig::updateOrCreate(
-            ['name' => self::FIT_KEY],
-            [
-                'value' => $fit,
-                'description' => 'Kiểu hiển thị hình nền Portal (cover / contain)',
-                'is_visible' => true,
-            ]
-        );
-
-        $overlay = $request->has('wallpaper_overlay') ? (int) $request->input('wallpaper_overlay') : 20;
-        HotelConfig::updateOrCreate(
-            ['name' => self::OVERLAY_KEY],
-            [
-                'value' => (string) $overlay,
-                'description' => 'Độ tối lớp phủ hình nền Portal (0 - 100%)',
-                'is_visible' => true,
-            ]
-        );
-
-        return response()->json([
-            'success' => true,
-            'wallpaper_url' => $wallpaperUrl,
-            'wallpaper_position' => $position,
-            'wallpaper_fit' => $fit,
-            'wallpaper_overlay' => $overlay,
-            'message' => 'Cập nhật hình nền thành công!',
-        ]);
-    }
-
-    public function resetWallpaper()
-    {
-        $oldUrl = HotelConfig::where('name', self::CONFIG_KEY)->value('value');
-        if ($oldUrl && str_starts_with($oldUrl, '/uploads/wallpaper/') && file_exists(public_path(ltrim($oldUrl, '/')))) {
-            @unlink(public_path(ltrim($oldUrl, '/')));
-        }
-
-        HotelConfig::where('name', self::CONFIG_KEY)->delete();
-        HotelConfig::where('name', self::POSITION_KEY)->delete();
-        HotelConfig::where('name', self::FIT_KEY)->delete();
-        HotelConfig::where('name', self::OVERLAY_KEY)->delete();
-
-        return response()->json([
-            'success' => true,
-            'wallpaper_url' => null,
-            'wallpaper_position' => 'center center',
-            'wallpaper_fit' => 'cover',
-            'wallpaper_overlay' => 20,
-            'message' => 'Đã khôi phục hình nền mặc định.',
-        ]);
     }
 }

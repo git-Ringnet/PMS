@@ -8,7 +8,7 @@ import PortalWallpaperModal from "@/components/PortalWallpaperModal.vue";
 import { usePermission } from "@/composables/usePermission";
 
 const router = useRouter();
-const { can, isSuperAdmin } = usePermission();
+const { can, canAny, isSuperAdmin, isAdmin } = usePermission();
 const isLoaded = ref(false);
 const activeOutlets = ref([]);
 
@@ -19,7 +19,7 @@ const wallpaperOverlay = ref(15);
 const isWallpaperModalOpen = ref(false);
 
 const canChangeWallpaper = computed(() => {
-  return isSuperAdmin.value || can('system.setting');
+  return isSuperAdmin.value || isAdmin.value || canAny(['system.setting', 'config.hotel.edit']);
 });
 
 const currentBgSrc = computed(() => {

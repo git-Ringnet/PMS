@@ -245,4 +245,23 @@ class User extends Authenticatable
                 ->where('assigned_role.code', 'super_admin')
                 ->exists();
     }
+
+    public function isAdmin(): bool
+    {
+        if ($this->isSuperAdmin()) {
+            return true;
+        }
+
+        return $this->roles()->whereIn('code', ['super_admin', 'branch_admin', 'admin'])->exists()
+            || $this->userBranchPositions()
+                ->join('position_branch_roles as pbr', function ($join) {
+                    $join->on('pbr.position_id', '=', 'user_branch_positions.position_id')
+                        ->on('pbr.system_branch_id', '=', 'user_branch_positions.system_branch_id')
+                        ->on('pbr.application_code', '=', 'user_branch_positions.application_code');
+                })
+                ->join('roles as assigned_role', 'assigned_role.id', '=', 'pbr.role_id')
+                ->where('pbr.is_active', true)
+                ->whereIn('assigned_role.code', ['super_admin', 'branch_admin', 'admin'])
+                ->exists();
+    }
 }

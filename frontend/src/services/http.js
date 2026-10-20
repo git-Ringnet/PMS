@@ -35,6 +35,11 @@ http.interceptors.request.use(
     // Nếu data là FormData, xóa Content-Type để trình duyệt / Axios tự tạo header multipart kèm boundary chuẩn
     if (config.data instanceof FormData) {
       delete config.headers['Content-Type']
+      delete config.headers['content-type']
+      if (typeof config.headers.delete === 'function') {
+        config.headers.delete('Content-Type')
+        config.headers.delete('content-type')
+      }
     }
 
     return config
