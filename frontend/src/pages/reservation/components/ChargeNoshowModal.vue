@@ -13,9 +13,9 @@
         :style="{ background: topbarThemeBg, color: 'var(--pms-custom-theme-text, #ffffff)' }"
         @mousedown="startDragModal"
       >
-        <div class="flex items-center space-x-2 font-semibold text-xs uppercase tracking-wider">
+        <div class="flex items-center space-x-2 font-semibold text-xs tracking-wider">
           <i class="fa-solid fa-ban"></i>
-          <span>CHARGE NOSHOW</span>
+          <span>Charge No-Show</span>
         </div>
         <button 
           class="hover:opacity-80 p-1 rounded cursor-pointer border-none bg-transparent text-white" 

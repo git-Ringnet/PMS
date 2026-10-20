@@ -13,91 +13,115 @@
         :style="{ background: topbarThemeBg }"
         @mousedown="startDragModal"
       >
-        <div class="flex items-center space-x-2 font-bold text-xs uppercase tracking-wider text-white">
-          <i class="fa-solid fa-arrow-up text-white"></i>
-          <span>Nâng hạng phòng</span>
+        <div class="flex items-center space-x-2 font-semibold text-xs tracking-wider text-white">
+          <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+          </svg>
+          <span>Nâng Hạng Phòng</span>
         </div>
-        <button class="hover:bg-white/10 p-1 rounded-md cursor-pointer border-none bg-transparent text-white" @click="close">
-          <i class="fa-solid fa-xmark text-sm"></i>
+        <button class="hover:bg-white/10 p-1.5 rounded-lg cursor-pointer border-none bg-transparent text-white transition-colors flex items-center justify-center" @click="close" title="Đóng (Esc)">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
         </button>
       </div>
 
       <!-- BODY -->
       <div class="p-5 space-y-4 flex-1 overflow-y-auto">
         <!-- PHÒNG ĐÃ CHỌN -->
-        <div class="text-[10px] font-semibold text-slate-400 tracking-wider uppercase">PHÒNG ĐÃ CHỌN ({{ targetRooms.length }})</div>
+        <div class="text-xs font-semibold text-[#000000D9] tracking-wider uppercase">Phòng Đã Chọn ({{ targetRooms.length }})</div>
         <div class="border border-slate-200 rounded-lg overflow-hidden shadow-xs">
           <table class="w-full text-left text-xs border-collapse">
             <thead>
-              <tr class="bg-slate-50 border-b border-slate-200 text-slate-700 font-semibold h-8">
-                <th class="p-2.5 text-center align-middle border-r border-slate-200 border">Phòng</th>
-                <th class="p-2.5 text-center align-middle border-r border-slate-200 border">Hạng Hiện Tại</th>
-                <th class="p-2.5 text-center align-middle border-r border-slate-200 border">Khách</th>
+              <tr class="bg-slate-50 border-b border-slate-200 text-[#000000D9] font-semibold h-8 select-none">
+                <th class="p-2.5 text-center align-middle border border-slate-200">Phòng</th>
+                <th class="p-2.5 text-center align-middle border border-slate-200">Hạng Hiện Tại</th>
+                <th class="p-2.5 text-center align-middle border border-slate-200">Khách</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="r in targetRooms" :key="r.id" class="border-b border-slate-100 hover:bg-slate-50/30 h-9 font-normal text-slate-700">
-                <td class="p-2.5 font-bold text-sky-600 border-slate-200">{{ r.roomNumber || 'Chưa gán' }}</td>
+              <tr v-for="r in targetRooms" :key="r.id" class="border-b border-slate-100 hover:bg-slate-50/30 h-9 font-normal text-[#000000D9]">
+                <td class="p-2.5 text-center font-normal text-[#000000D9] border-slate-200">{{ r.roomNumber || 'Chưa gán' }}</td>
                 <td class="p-2.5 border-slate-200">{{ r.type || r.shape || '-' }}</td>
-                <td class="p-2.5 text-slate-500 border-slate-200">{{ r.guestName || '-' }}</td>
+                <td class="p-2.5 text-[#000000D9] border-slate-200">{{ r.guestName || '-' }}</td>
               </tr>
             </tbody>
           </table>
         </div>
 
         <!-- CHỌN HẠNG MỚI (GRID LAYOUT) -->
-        <div class="grid grid-cols-2 gap-4 text-xs text-slate-700">
+        <div class="grid grid-cols-2 gap-4 text-xs text-[#000000D9]">
           <!-- Loại phòng -->
           <div>
-            <label class="block text-slate-700 mb-1.5 font-semibold">Loại phòng <span class="text-red-500">*</span></label>
+            <label class="block text-[#000000D9] mb-1.5 font-semibold text-xs">Loại Phòng <span class="text-red-500">*</span></label>
             <select 
               v-model="upgradeTargetClassId" 
               @change="handleClassChange"
-              class="w-full border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg h-9 px-3 text-xs font-normal text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 cursor-pointer"
+              class="w-full border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg h-9 px-3 text-xs font-normal focus:outline-none focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308] cursor-pointer"
+              :class="!upgradeTargetClassId ? 'text-[#A8B0BF]' : 'text-[#000000D9]'"
             >
-              <option :value="null" disabled>— Chọn loại phòng —</option>
-              <option v-for="rc in roomClasses" :key="rc.id" :value="rc.id">{{ rc.name }}</option>
+              <option :value="null" disabled hidden>Chọn loại phòng</option>
+              <option v-for="rc in roomClasses" :key="rc.id" :value="rc.id" class="text-[#000000D9]">{{ rc.name }}</option>
             </select>
           </div>
 
           <!-- Dạng phòng -->
           <div>
-            <label class="block text-slate-700 mb-1.5 font-semibold">Dạng phòng <span class="text-red-500">*</span></label>
+            <label class="block text-[#000000D9] mb-1.5 font-semibold text-xs">Dạng Phòng <span class="text-red-500">*</span></label>
             <select 
               v-model="upgradeTargetFormId" 
               @change="handleFormChange"
-              class="w-full border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg h-9 px-3 text-xs font-normal text-slate-800 focus:outline-none focus:ring-1 focus:ring-amber-500 focus:border-amber-500 cursor-pointer"
+              class="w-full border border-[#F1DD8A] bg-[#FFF8DB] rounded-lg h-9 px-3 text-xs font-normal focus:outline-none focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308] cursor-pointer"
+              :class="!upgradeTargetFormId ? 'text-[#A8B0BF]' : 'text-[#000000D9]'"
             >
-              <option :value="null" disabled>— Chọn dạng phòng —</option>
-              <option v-for="rf in availableForms" :key="rf.id" :value="rf.id">{{ rf.name }}</option>
+              <option :value="null" disabled hidden>Chọn dạng phòng</option>
+              <option v-for="rf in availableForms" :key="rf.id" :value="rf.id" class="text-[#000000D9]">{{ rf.name }}</option>
             </select>
           </div>
 
           <!-- Mã giá phòng -->
           <div>
-            <label class="block text-slate-700 mb-1.5 font-semibold">Mã giá phòng</label>
-            <select 
-              v-model="upgradeTargetRateCode" 
-              @change="handleRateCodeChange"
-              :disabled="!upgradeChangePrice"
-              class="w-full border rounded-lg h-9 px-3 text-xs font-normal focus:outline-none transition-colors border-slate-200"
-              :class="!upgradeChangePrice ? 'bg-[#f1f1f1] text-[#a8b0bf] cursor-not-allowed' : 'bg-white text-slate-800 focus:ring-1 focus:ring-sky-500 cursor-pointer'"
-            >
-              <option value="">Chọn mã giá phòng</option>
-              <option v-for="rc in roomRateCodes" :key="rc.id" :value="rc.Ma">{{ rc.Ma }}</option>
-            </select>
+            <label class="block text-[#000000D9] mb-1.5 font-semibold text-xs">Mã Giá Phòng</label>
+            <div class="relative flex items-center">
+              <select 
+                v-model="upgradeTargetRateCode" 
+                @change="handleRateCodeChange"
+                :disabled="!upgradeChangePrice"
+                class="w-full border rounded-lg h-9 px-3 text-xs font-normal focus:outline-none transition-colors border-slate-200"
+                :class="[
+                  !upgradeChangePrice ? 'bg-[#f1f1f1] text-[#a8b0bf] cursor-not-allowed' : 'bg-white focus:ring-1 focus:ring-sky-500 cursor-pointer',
+                  upgradeChangePrice && upgradeTargetRateCode ? 'pr-9 text-[#000000D9]' : '',
+                  !upgradeTargetRateCode ? 'text-[#A8B0BF]' : 'text-[#000000D9]'
+                ]"
+              >
+                <option value="" disabled hidden>Chọn mã giá phòng</option>
+                <option v-for="rc in roomRateCodes" :key="rc.id" :value="rc.Ma" class="text-[#000000D9]">{{ rc.Ma }}</option>
+              </select>
+              <button 
+                v-if="upgradeChangePrice && upgradeTargetRateCode"
+                type="button"
+                @click.stop="clearRateCode"
+                class="absolute right-7 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 bg-transparent border-none cursor-pointer p-0.5 flex items-center justify-center z-10 select-none"
+                title="Xóa mã giá"
+              >
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
 
           <!-- Giá phòng -->
           <div>
-            <label class="block text-slate-700 mb-1.5 font-semibold">Giá phòng</label>
+            <label class="block text-[#000000D9] mb-1.5 font-semibold text-xs">Giá Phòng</label>
             <input 
               type="text" 
               :value="formatCurrencyInput(upgradeTargetPrice)"
               @input="e => upgradeTargetPrice = cleanCurrencyValue(e.target.value)"
               :disabled="!upgradeChangePrice"
-              class="w-full border rounded-lg h-9 px-3 text-xs font-normal focus:outline-none transition-colors border-slate-200 text-right font-medium"
-              :class="!upgradeChangePrice ? 'bg-[#f1f1f1] text-[#a8b0bf] cursor-not-allowed' : 'bg-white text-slate-800 focus:ring-1 focus:ring-sky-500'"
+              placeholder="0"
+              class="w-full border rounded-lg h-9 px-3 text-xs font-normal focus:outline-none transition-colors border-slate-200 text-right"
+              :class="!upgradeChangePrice ? 'bg-[#f1f1f1] text-[#a8b0bf] cursor-not-allowed' : 'bg-white text-[#000000D9] focus:ring-1 focus:ring-sky-500'"
             />
           </div>
 
@@ -110,18 +134,22 @@
               @change="handleToggleChangePrice"
               class="rounded border-slate-300 text-sky-600 focus:ring-sky-500 w-3.5 h-3.5 cursor-pointer"
             />
-            <label for="upgradeChangePrice" class="text-xs font-semibold text-slate-700 cursor-pointer">Thay đổi giá</label>
+            <label for="upgradeChangePrice" class="text-xs font-semibold text-[#000000D9] cursor-pointer">Thay đổi giá</label>
           </div>
         </div>
       </div>
 
       <!-- FOOTER -->
-      <div class="bg-slate-50 border-t border-slate-100 px-4 py-3 shrink-0 flex justify-end items-center space-x-2 rounded-b-xl">
+      <div class="bg-slate-50 border-t border-slate-100 px-4 py-3 shrink-0 flex justify-end items-center rounded-b-xl">
         <button 
           @click="confirmUpgrade" 
           class="btn-pms-primary"
         >
-          <i class="fa-solid fa-floppy-disk"></i>
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
+            <polyline points="17 21 17 13 7 13 7 21"/>
+            <polyline points="7 3 7 8 15 8"/>
+          </svg>
           <span>Lưu</span>
         </button>
       </div>
@@ -130,7 +158,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { upgradeRoom } from '@/services/booking-service'
 import { useAuthStore } from '@/stores/auth-store'
 import { useUiStore } from '@/stores/ui-store'
@@ -295,6 +323,11 @@ function handleRateCodeChange() {
   updateUpgradePrice()
 }
 
+function clearRateCode() {
+  upgradeTargetRateCode.value = ''
+  updateUpgradePrice()
+}
+
 function handleToggleChangePrice() {
   if (!upgradeChangePrice.value) {
     upgradeTargetRateCode.value = ''
@@ -302,8 +335,15 @@ function handleToggleChangePrice() {
   updateUpgradePrice()
 }
 
+function handleKeydown(e) {
+  if (e.key === 'Escape' && props.show) {
+    close()
+  }
+}
+
 watch(() => props.show, (newVal) => {
   if (newVal) {
+    window.addEventListener('keydown', handleKeydown)
     modalPos.value = { x: 0, y: 0 }
     const targetRoom = props.targetRooms?.[0]
     if (targetRoom) {
@@ -326,7 +366,14 @@ watch(() => props.show, (newVal) => {
     }
     upgradeTargetRateCode.value = ''
     upgradeChangePrice.value = false
+  } else {
+    window.removeEventListener('keydown', handleKeydown)
   }
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleKeydown)
+  if (isDraggingModal.value) stopDragModal()
 })
 
 function close() {

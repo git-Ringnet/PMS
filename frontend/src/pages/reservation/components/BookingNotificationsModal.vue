@@ -10,9 +10,9 @@
         :style="{ background: topbarThemeBg, color: 'var(--pms-custom-theme-text, #ffffff)' }"
         @mousedown="startDragModal"
       >
-        <div class="flex items-center space-x-2 font-semibold text-xs uppercase tracking-wider">
+        <div class="flex items-center space-x-2 font-semibold text-xs tracking-wider">
           <i class="fa-solid fa-bell"></i>
-          <span>Thông báo booking</span>
+          <span>Thông Báo Booking</span>
         </div>
         <button 
           class="hover:opacity-80 p-1 rounded cursor-pointer border-none bg-transparent text-white" 

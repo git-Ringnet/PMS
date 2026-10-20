@@ -4994,7 +4994,11 @@ function getRoomStatusIconName(item) {
                     <!-- Split Buttons Overlay -->
                     <div 
                       v-if="!isHousekeepingModule && splittingBooking?.bookingRoomId === bk.bookingRoomId && bk.type !== 'OOO' && bk.type !== 'OOS' && bk.code !== 'LOCK'"
-                      class="absolute bottom-[-22px] left-0 flex gap-1 z-50 select-none bg-white border border-slate-200 shadow-lg rounded p-0.5"
+                      class="absolute bottom-[-24px] flex gap-1 z-50 select-none bg-white border border-slate-200 shadow-lg rounded p-0.5 whitespace-nowrap"
+                      :style="{
+                        left: `${((splitIndex - bk.startIndex) / bk.span) * 100}%`,
+                        transform: 'translateX(-50%)'
+                      }"
                     >
                       <button 
                         @click.stop="cancelSplit" 
@@ -5336,10 +5340,10 @@ function getRoomStatusIconName(item) {
 
     <!-- Filter side drawer -->
     <transition name="slide">
-      <div v-if="showFilterDrawer" class="fixed right-4 top-20 bottom-4 w-[320px] bg-white shadow-2xl rounded-2xl border border-slate-200 flex flex-col z-[100] overflow-hidden">
+      <div v-if="showFilterDrawer" class="fixed right-4 top-20 bottom-4 w-[380px] max-w-[95vw] bg-white shadow-2xl rounded-xl border border-slate-200 flex flex-col z-[100] overflow-hidden">
         <!-- Header -->
-        <div class="h-[50px] bg-slate-100 flex items-center justify-between px-4 select-none shrink-0 border-b border-slate-200">
-          <span class="font-extrabold text-slate-800 text-[14px]">Bộ lọc</span>
+        <div class="h-[44px] bg-slate-100 flex items-center justify-between px-4 select-none shrink-0 border-b border-slate-200">
+          <span class="font-semibold text-[#000000D9] text-xs uppercase tracking-wide">Bộ Lọc</span>
           <button @click="showFilterDrawer = false" class="text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer flex items-center justify-center p-1 rounded-full hover:bg-slate-200 transition-colors">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -5350,17 +5354,17 @@ function getRoomStatusIconName(item) {
         <!-- Content Body -->
         <div class="flex-1 p-4 flex flex-col overflow-y-auto gap-4 bg-white text-xs select-none">
           <!-- 1. Lọc Công ty -->
-          <div class="flex flex-col gap-2 relative" id="filter-company-dropdown-container">
-            <span class="font-semibold text-black text-xs" style="font-weight: 600 !important; color: #000000 !important;">Công Ty ({{ tempSelectedCompanies.length }})</span>
+          <div class="flex flex-col gap-2 relative shrink-0" id="filter-company-dropdown-container">
+            <span class="font-semibold text-[#000000D9] text-xs">Công Ty ({{ tempSelectedCompanies.length }})</span>
             
             <!-- Custom Selector Box -->
             <div 
               @click="toggleCompanyFilterDropdown"
               class="w-full border border-slate-200 rounded-lg px-3 py-2 text-[#000000D9] bg-white hover:border-slate-300 focus:outline-none focus:ring-1 focus:ring-blue-500 font-normal cursor-pointer flex items-center justify-between text-xs min-h-[32px] shadow-2xs"
             >
-              <div class="truncate max-w-[220px]">
+              <div class="truncate max-w-[280px]">
                 <span v-if="tempSelectedCompanies.length === 0" class="text-slate-400">Chọn công ty...</span>
-                <span v-else class="text-black font-normal !font-normal" style="font-weight: 400 !important; color: #000000 !important;">
+                <span v-else class="text-[#000000D9] font-normal text-xs">
                   {{ tempSelectedCompanies.join(', ') }}
                 </span>
               </div>
@@ -5374,7 +5378,7 @@ function getRoomStatusIconName(item) {
             <!-- Floating Searchable List Popover -->
             <div 
               v-if="showCompanyFilterDropdown" 
-              class="absolute left-0 right-0 top-[calc(100%+4px)] z-50 bg-white border border-slate-200 rounded-lg shadow-xl flex flex-col gap-2 p-2 max-h-[220px] overflow-hidden"
+              class="absolute left-0 right-0 top-[calc(100%+4px)] z-50 bg-white border border-slate-200 rounded-lg shadow-xl flex flex-col gap-2 p-2 max-h-[340px] overflow-hidden"
             >
               <!-- Search box inside dropdown -->
               <div class="relative flex items-center border border-slate-200 rounded bg-slate-50 px-2 py-1 h-[28px] shrink-0">
@@ -5397,17 +5401,16 @@ function getRoomStatusIconName(item) {
                   v-else
                   v-for="cName in displayCompanies" 
                   :key="cName" 
-                  class="flex items-center gap-2 cursor-pointer hover:bg-slate-100 p-1.5 rounded select-none text-xs text-black font-normal !font-normal truncate transition-colors"
-                  style="font-weight: 400 !important;"
+                  class="flex items-start gap-2.5 cursor-pointer hover:bg-slate-100 py-2 px-2.5 rounded select-none text-xs text-[#000000D9] font-normal transition-colors"
                   :title="cName"
                 >
                   <input 
                     type="checkbox" 
                     :value="cName" 
                     v-model="tempSelectedCompanies" 
-                    class="rounded border-slate-300 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer"
+                    class="rounded border-slate-300 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer shrink-0 mt-0.5"
                   />
-                  <span class="truncate text-black font-normal !font-normal" style="font-weight: 400 !important; color: #000000 !important;">{{ cName }}</span>
+                  <span class="text-[#000000D9] font-normal text-xs leading-normal break-words">{{ cName }}</span>
                 </label>
               </div>
 
@@ -5419,23 +5422,22 @@ function getRoomStatusIconName(item) {
           </div>
 
           <!-- 2. Lọc Loại phòng -->
-          <div class="flex flex-col gap-2">
-            <span class="font-semibold text-black text-xs" style="font-weight: 600 !important; color: #000000 !important;">Loại Phòng ({{ tempSelectedRoomTypes.length }})</span>
-            <div class="border border-slate-200 rounded-md p-1.5 bg-slate-50/50 max-h-[220px] overflow-y-auto flex flex-col gap-1 shadow-inner">
+          <div class="flex-1 flex flex-col gap-2 min-h-0">
+            <span class="font-semibold text-[#000000D9] text-xs">Loại Phòng ({{ tempSelectedRoomTypes.length }})</span>
+            <div class="border border-slate-200 rounded-md p-1.5 bg-slate-50/50 flex-1 min-h-[300px] max-h-[520px] overflow-y-auto flex flex-col gap-1 shadow-inner">
               <label 
                 v-for="t in roomTypes" 
                 :key="t.code" 
-                class="flex items-center gap-2 cursor-pointer hover:bg-slate-100/80 p-1 rounded select-none text-xs text-black font-normal !font-normal truncate"
-                style="font-weight: 400 !important;"
+                class="flex items-center gap-2 cursor-pointer hover:bg-slate-100/80 py-1.5 px-2 rounded select-none text-xs text-[#000000D9] font-normal"
                 :title="t.name"
               >
                 <input 
                   type="checkbox" 
                   :value="t.code" 
                   v-model="tempSelectedRoomTypes" 
-                  class="rounded border-slate-300 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer"
+                  class="rounded border-slate-300 text-blue-500 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer shrink-0"
                 />
-                <span class="truncate text-black font-normal !font-normal" style="font-weight: 400 !important; color: #000000 !important;">{{ t.name }}</span>
+                <span class="text-[#000000D9] font-normal text-xs leading-normal break-words">{{ t.name }}</span>
               </label>
             </div>
           </div>

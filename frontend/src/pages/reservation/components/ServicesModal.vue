@@ -9,17 +9,17 @@
     >
       <!-- MODAL HEADER -->
       <div 
-        class="text-white flex justify-between items-center px-4 py-2.5 shrink-0 select-none cursor-move rounded-t-xl"
-        :style="{ background: topbarThemeBg }"
+        class="text-white flex justify-between items-center px-4 py-2.5 shrink-0 select-none cursor-move rounded-t-xl bg-[#006bdb]"
+        :style="{ background: topbarThemeBg || 'var(--pms-custom-theme, #006bdb)', color: 'var(--pms-custom-theme-text, #ffffff)' }"
         @mousedown="startDragModal"
       >
-        <div class="flex items-center space-x-2 font-bold text-xs uppercase tracking-wider text-white">
+        <div class="flex items-center space-x-2 font-semibold text-xs text-white tracking-wide">
           <i class="fa-solid fa-bell-concierge text-white text-sm"></i>
           <span v-if="targetRooms.length <= 1">
-            DỊCH VỤ BỔ SUNG - PHÒNG {{ room?.roomNumber || '(Chưa xếp phòng)' }} ({{ room?.type }})
+            Dịch Vụ Bổ Sung - Phòng {{ room?.roomNumber || '(Chưa xếp phòng)' }} ({{ room?.type }})
           </span>
           <span v-else>
-            DỊCH VỤ BỔ SUNG - {{ targetRooms.length }} PHÒNG ĐÃ CHỌN
+            Dịch Vụ Bổ Sung - {{ targetRooms.length }} Phòng Đã Chọn
             <span class="ml-2 text-xs text-white/80 font-normal normal-case">
               ({{ targetRooms.map(r => r.roomNumber || 'Chưa xếp').join(', ') }})
             </span>
@@ -41,17 +41,26 @@
       <div class="flex flex-1 overflow-hidden min-h-[450px]">
         <!-- LEFT PANEL: Dịch vụ -->
         <div class="w-1/4 border-r border-slate-200 flex flex-col p-3 bg-slate-50/50">
-          <div class="text-xs font-semibold text-[#000000D9] uppercase tracking-wider mb-2">Dịch vụ</div>
+          <div class="text-xs font-semibold text-[#000000D9] tracking-wider mb-2">Dịch Vụ</div>
           
           <!-- Search box -->
-          <div class="relative mb-3 shrink-0">
+          <div class="relative mb-3 shrink-0 flex items-center">
             <input 
               type="text" 
               v-model="servicesModalSearch" 
               placeholder="Tìm kiếm theo tên dịch vụ..." 
-              class="w-full h-8 pl-8 pr-3 bg-white border border-slate-300 rounded text-xs text-[#000000D9] placeholder-[#A8B0BF] focus:outline-none focus:border-blue-500"
+              class="w-full h-8 pl-8 pr-7 bg-white border border-slate-300 rounded text-xs text-[#000000D9] placeholder-[#A8B0BF] focus:outline-none focus:border-blue-500"
             />
-            <i class="fa-solid fa-magnifying-glass absolute left-2.5 top-2.5 text-slate-400 text-xs"></i>
+            <i class="fa-solid fa-magnifying-glass absolute left-2.5 top-2.5 text-slate-400 text-xs pointer-events-none"></i>
+            <button 
+              v-if="servicesModalSearch"
+              type="button"
+              @click="servicesModalSearch = ''"
+              class="absolute right-2 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent flex items-center justify-center"
+              title="Xóa tìm kiếm"
+            >
+              <i class="fa-solid fa-xmark text-xs"></i>
+            </button>
           </div>
 
           <!-- Services list -->
@@ -74,7 +83,7 @@
 
         <!-- MIDDLE PANEL: Ngày -->
         <div class="w-[15%] border-r border-slate-200 flex flex-col p-3 bg-slate-50/50">
-          <div class="text-xs font-semibold text-[#000000D9] uppercase tracking-wider mb-2">Ngày</div>
+          <div class="text-xs font-semibold text-[#000000D9] tracking-wider mb-2">Ngày</div>
           
           <!-- Select All dates checkbox -->
           <label class="flex items-center gap-2 p-1.5 border-b border-slate-200 font-semibold cursor-pointer text-xs text-[#000000D9] mb-2 shrink-0">
@@ -99,19 +108,18 @@
               <input 
                 type="checkbox" 
                 :value="d" 
-                v-model="checkedDates"
+                v-model="checkedDates" 
                 :disabled="d < props.systemDate"
                 class="cursor-pointer accent-blue-600 rounded"
               />
               <span class="font-normal">{{ formatDateShort(d) }}</span>
-              <span v-if="d < props.systemDate" class="ml-auto text-[10px] font-semibold text-rose-500 bg-rose-50 px-1 py-0.5 rounded border border-rose-200">Quá khứ</span>
             </label>
           </div>
         </div>
 
         <!-- RIGHT PANEL: Dịch vụ chọn -->
         <div class="w-[60%] flex flex-col p-3 bg-white">
-          <div class="text-xs font-semibold text-[#000000D9] uppercase tracking-wider mb-2 shrink-0">Chi tiết dịch vụ bổ sung</div>
+          <div class="text-xs font-semibold text-[#000000D9] tracking-wider mb-2 shrink-0">Chi Tiết Dịch Vụ Bổ Sung</div>
 
           <!-- Multi-room note -->
           <div v-if="targetRooms.length > 1" class="mb-2 px-2.5 py-1.5 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700 font-medium shrink-0">
@@ -124,11 +132,11 @@
             <table class="w-full border-collapse text-left text-xs">
               <thead>
                 <tr class="bg-slate-50 border-b border-slate-200 text-[#000000D9] font-semibold h-8">
-                  <th class="p-2 pl-3 text-center align-middle border-r border-slate-200 border">Dịch Vụ</th>
-                  <th class="p-2 text-center w-24 align-middle border-r border-slate-200 border">Số Lượng</th>
-                  <th class="p-2 text-center w-36 align-middle border-r border-slate-200 border">Đơn Giá (VND)</th>
-                  <th class="p-2 text-center w-36 align-middle border-r border-slate-200 border">Thành Tiền</th>
-                  <th class="p-2 text-center w-36 align-middle border-r border-slate-200 border">Phòng / Master</th>
+                  <th class="p-2 pl-3 text-center align-middle border border-slate-200 font-semibold text-xs text-[#000000D9]">Dịch Vụ</th>
+                  <th class="p-2 text-center w-24 align-middle border border-slate-200 font-semibold text-xs text-[#000000D9]">Số Lượng</th>
+                  <th class="p-2 text-center w-36 align-middle border border-slate-200 font-semibold text-xs text-[#000000D9]">Đơn Giá (VND)</th>
+                  <th class="p-2 text-center w-36 align-middle border border-slate-200 font-semibold text-xs text-[#000000D9]">Thành Tiền</th>
+                  <th class="p-2 text-center w-36 align-middle border border-slate-200 font-semibold text-xs text-[#000000D9]">Phòng / Master</th>
                 </tr>
               </thead>
               <tbody>
@@ -165,7 +173,7 @@
                     <div class="flex items-center justify-center space-x-1.5 select-none">
                       <span 
                         class="text-xs transition-colors cursor-pointer" 
-                        :class="item.is_room ? 'font-semibold text-blue-600' : 'text-slate-400 font-normal'"
+                        :class="item.is_room ? 'font-semibold text-blue-600' : 'text-slate-500 font-normal'"
                         @click="item.is_room = true"
                         title="Tính vào phòng"
                       >
@@ -188,7 +196,7 @@
                       </div>
                       <span 
                         class="text-xs transition-colors cursor-pointer" 
-                        :class="!item.is_room ? 'font-semibold text-blue-600' : 'text-slate-400 font-normal'"
+                        :class="!item.is_room ? 'font-semibold text-blue-600' : 'text-slate-500 font-normal'"
                         @click="item.is_room = false"
                         title="Tính vào Master"
                       >
@@ -219,14 +227,6 @@
         <div class="flex items-center space-x-2">
           <button 
             type="button" 
-            @click="close" 
-            class="btn-pms-close h-8 text-xs px-3"
-          >
-            <i class="fa-solid fa-xmark"></i>
-            <span>Đóng</span>
-          </button>
-          <button 
-            type="button" 
             @click="saveServices" 
             class="btn-pms-primary h-8 text-xs px-4"
           >
@@ -240,7 +240,7 @@
 </template>
 
 <script setup>
-import { ref, watch, computed } from 'vue'
+import { ref, watch, computed, onMounted, onBeforeUnmount } from 'vue'
 import {
   fetchBookingRoomServices,
   createBookingRoomService,
@@ -464,14 +464,34 @@ function parseDateVi(dateStr) {
 
 function formatDateShort(dateStr) {
   if (!dateStr) return ''
-  const parts = dateStr.split('-')
+  const parts = dateStr.split(/[-\/]/)
   if (parts.length === 3) {
-    const d = String(parts[2]).padStart(2, '0')
-    const m = String(parts[1]).padStart(2, '0')
-    return `${d}/${m}`
+    if (parts[0].length === 4) {
+      const d = String(parts[2]).padStart(2, '0')
+      const m = String(parts[1]).padStart(2, '0')
+      return `${d}/${m}`
+    } else {
+      const d = String(parts[0]).padStart(2, '0')
+      const m = String(parts[1]).padStart(2, '0')
+      return `${d}/${m}`
+    }
   }
   return dateStr
 }
+
+function handleKeyDown(e) {
+  if (props.show && e.key === 'Escape') {
+    close()
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', handleKeyDown)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleKeyDown)
+})
 
 function getServiceNameFromCode(code) {
   const svc = props.hotelServicesList?.find(s => s.code === code)

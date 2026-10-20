@@ -974,6 +974,7 @@ class GuestController extends Controller
             'extra_bed_qty'     => 'nullable|integer|min:0',
             'extra_bed_rate'    => 'nullable|numeric|min:0',
             'breakfast'         => 'nullable|boolean',
+            'room_note'         => 'nullable|string',
         ]);
 
         $room = BookingRoom::find($roomId);
@@ -1076,6 +1077,9 @@ class GuestController extends Controller
                     $roomData['departure_date'] = $room->arrival_date->toDateString();
                 }
             }
+        }
+        if ($request->has('room_note')) {
+            $roomData['note'] = $request->input('room_note');
         }
 
         // BookingDetailModal sends the current rate and rate code together
@@ -1591,6 +1595,7 @@ class GuestController extends Controller
             'extra_bed_qty'     => 'nullable|integer|min:0',
             'extra_bed_rate'    => 'nullable|numeric|min:0',
             'breakfast'         => 'nullable|boolean',
+            'room_note'         => 'nullable|string',
         ]);
 
         $room = $child->booking_room_id

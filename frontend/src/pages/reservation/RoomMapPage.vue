@@ -3422,8 +3422,8 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                             <span
                               class="inline-block"
                               :class="[
-                                isRoomNumberRed(room) ? 'text-red-600 font-black' : (room.booking_color ? 'text-inherit' : 'text-gray-900'),
-                                isArrivingTomorrow(room) ? 'border-b-[1.5px] border-black pb-0 leading-[0.9]' : ''
+                                isRoomNumberRed(room) ? 'text-red-600 font-black' : (room.booking_color ? 'text-inherit' : 'text-[#000000D9]'),
+                                isArrivingTomorrow(room) ? 'border-b border-[#000000D9] pb-0 leading-[0.88]' : ''
                               ]"
                               :style="getRoomNumberStyle(room)">
                               {{ room.room_number }}
@@ -3431,7 +3431,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                           </div>
 
                           <!-- Room Type (e.g. SUPT) -->
-                          <div class="font-bold uppercase text-center w-full leading-none text-black"
+                          <div class="font-bold uppercase text-center w-full leading-none text-[#000000D9]"
                             :class="settings.roomHeight < 80 ? 'mt-1' : 'mt-1.5'"
                             :style="{ fontSize: Math.max(8, settings.textSizes.roomType * cardScale) + 'px' }">
                             {{ room.room_type || room.room_class?.code }}
@@ -3929,7 +3929,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                             ]"
                             :style="getRoomNumberStyle(room)"
                             class="inline-flex items-center justify-center gap-1">
-                            <span :class="isArrivingTomorrow(room) ? 'border-b-[1.5px] border-black pb-0 leading-[0.9]' : ''">
+                            <span :class="isArrivingTomorrow(room) ? 'border-b border-[#000000D9] pb-0 leading-[0.88] inline-block' : ''">
                               {{ room.room_number }}
                             </span>
                             <span v-if="getConnectingRoomNumber(room)" class="inline-flex items-center text-slate-700 ml-0.5" :title="`Phòng thông nhau với: ${getConnectingRoomNumber(room)}`">
@@ -3945,7 +3945,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </td>
 
                         <!-- 6. Loại phòng -->
-                        <td class="p-2 border-slate-200 text-center font-medium text-black">
+                        <td class="p-2 border-slate-200 text-center font-normal text-[#000000D9]">
                           {{ room.room_type || room.room_class?.code || '-' }}
                         </td>
 
@@ -4696,7 +4696,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
           <div class="p-6 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-5 bg-slate-50 flex-1">
             <!-- 1. Tổng quan Card -->
             <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
-              <h4 class="text-sm font-semibold text-[#000000D9] mb-3 pb-1.5 border-b border-slate-100">Tổng quan</h4>
+              <h4 class="text-sm font-semibold text-[#000000D9] mb-3 pb-1.5 border-b border-slate-100 uppercase tracking-wide">Tổng quan</h4>
               <div class="flex flex-col gap-2.5 text-xs text-[#000000D9]">
                 <div class="flex items-center justify-between">
                   <span class="font-normal text-[#000000D9]">Tổng phòng</span>
@@ -4731,7 +4731,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
             <!-- 2. Buồng phòng Card -->
             <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-xs">
-              <h4 class="text-sm font-semibold text-[#000000D9] mb-3 pb-1.5 border-b border-slate-100">Buồng phòng</h4>
+              <h4 class="text-sm font-semibold text-[#000000D9] mb-3 pb-1.5 border-b border-slate-100 uppercase tracking-wide">Buồng phòng</h4>
               <table class="w-full text-xs border-collapse">
                 <thead>
                   <tr class="text-[#000000D9] font-semibold border-b border-slate-100">
@@ -4749,7 +4749,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                   <tr class="h-8">
                     <td class="font-normal text-[#000000D9] border-slate-200">Phòng sạch</td>
                     <td class="text-center font-normal tabular-nums border-slate-200">{{ roomMapStatistics.occupiedClean }}</td>
-                    <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.vacantClean }}</td>
+                    <td class="text-center font-normal text-[#000000D9] tabular-nums border-slate-200">{{ roomMapStatistics.vacantClean }}</td>
                   </tr>
                   <tr class="h-8">
                     <td class="font-normal text-[#000000D9] border-slate-200">Phòng dơ</td>
@@ -4762,7 +4762,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
             <!-- 3. Trạng thái phòng Card -->
             <div class="bg-white rounded-xl border border-slate-200 p-4 shadow-xs md:col-span-1">
-              <h4 class="text-sm font-semibold text-[#000000D9] mb-3 pb-1.5 border-b border-slate-100">Trạng thái phòng</h4>
+              <h4 class="text-sm font-semibold text-[#000000D9] mb-3 pb-1.5 border-b border-slate-100 uppercase tracking-wide">Trạng thái phòng</h4>
               <table class="w-full text-xs border-collapse">
                 <thead>
                   <tr class="text-[#000000D9] font-semibold border-b border-slate-100">
@@ -4774,8 +4774,8 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 <tbody class="divide-y divide-slate-100 text-[#000000D9]">
                   <tr class="h-7.5">
                     <td class="font-normal text-[#000000D9] border-slate-200">Phòng chưa trả</td>
-                    <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.pendingCheckoutRooms }}</td>
-                    <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.pendingCheckoutPax }}</td>
+                    <td class="text-center font-normal text-[#000000D9] tabular-nums border-slate-200">{{ roomMapStatistics.pendingCheckoutRooms }}</td>
+                    <td class="text-center font-normal text-[#000000D9] tabular-nums border-slate-200">{{ roomMapStatistics.pendingCheckoutPax }}</td>
                   </tr>
                   <tr class="h-7.5">
                     <td class="font-normal text-[#000000D9] border-slate-200">Phòng đã trả</td>
@@ -4804,22 +4804,22 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                   </tr>
                   <tr class="h-7.5">
                     <td class="font-normal text-[#000000D9] border-slate-200">Trả phòng sớm</td>
-                    <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.earlyCheckoutRooms }}</td>
+                    <td class="text-center font-normal text-[#000000D9] tabular-nums border-slate-200">{{ roomMapStatistics.earlyCheckoutRooms }}</td>
                     <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">-</td>
                   </tr>
                   <tr class="h-7.5">
                     <td class="font-normal text-[#000000D9] border-slate-200">Phòng ở theo giờ</td>
-                    <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.hourlyRooms }}</td>
+                    <td class="text-center font-normal text-[#000000D9] tabular-nums border-slate-200">{{ roomMapStatistics.hourlyRooms }}</td>
                     <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">-</td>
                   </tr>
                   <tr class="h-7.5">
                     <td class="font-normal text-[#000000D9] border-slate-200">Đặt phòng trong ngày</td>
-                    <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.sameDayBookings }}</td>
-                    <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.arrivalsPax }}</td>
+                    <td class="text-center font-normal text-[#000000D9] tabular-nums border-slate-200">{{ roomMapStatistics.sameDayBookings }}</td>
+                    <td class="text-center font-normal text-[#000000D9] tabular-nums border-slate-200">{{ roomMapStatistics.arrivalsPax }}</td>
                   </tr>
                   <tr class="h-7.5">
                     <td class="font-normal text-[#000000D9] border-slate-200">Khách vãng lai</td>
-                    <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.walkInRooms }}</td>
+                    <td class="text-center font-normal text-[#000000D9] tabular-nums border-slate-200">{{ roomMapStatistics.walkInRooms }}</td>
                     <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">-</td>
                   </tr>
                 </tbody>
@@ -4830,7 +4830,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
             <div
               class="bg-white rounded-xl border border-slate-200 p-4 shadow-xs md:col-span-1 flex flex-col justify-between">
               <div>
-                <h4 class="text-sm font-semibold text-[#000000D9] mb-3 pb-1.5 border-b border-slate-100">Dự báo cuối ngày</h4>
+                <h4 class="text-sm font-semibold text-[#000000D9] mb-3 pb-1.5 border-b border-slate-100 uppercase tracking-wide">Dự báo cuối ngày</h4>
                 <table class="w-full text-xs border-collapse">
                   <thead>
                     <tr class="text-[#000000D9] font-semibold border-b border-slate-100">
@@ -4849,8 +4849,8 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                     </tr>
                     <tr class="h-7">
                       <td class="font-normal text-[#000000D9] border-slate-200">Khách đoàn</td>
-                      <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.groupRooms }}</td>
-                      <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">{{ roomMapStatistics.groupPax }}</td>
+                      <td class="text-center font-normal text-[#000000D9] tabular-nums border-slate-200">{{ roomMapStatistics.groupRooms }}</td>
+                      <td class="text-center font-normal text-[#000000D9] tabular-nums border-slate-200">{{ roomMapStatistics.groupPax }}</td>
                       <td class="text-center font-normal text-slate-400 border-slate-200">-</td>
                     </tr>
                     <tr class="h-7">

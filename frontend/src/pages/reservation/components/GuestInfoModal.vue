@@ -5,16 +5,16 @@
       <div class="fixed inset-0 bg-black/45 backdrop-blur-[1px]" @click="$emit('close')"></div>
 
       <!-- Modal -->
-      <div class="modal relative z-10 w-[98vw] max-w-[1550px] max-h-[92vh] flex flex-col font-sans text-xs my-auto bg-white rounded-xl overflow-hidden shadow-2xl border border-slate-300"
+      <div class="modal relative z-10 w-[98vw] max-w-[1700px] max-h-[92vh] flex flex-col font-sans text-xs my-auto bg-white rounded-xl overflow-hidden shadow-2xl border border-slate-300"
         :style="{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }">
         
         <!-- ==================== HEADER ==================== -->
         <div class="flex items-center justify-between px-4 py-2.5 text-white rounded-t-xl select-none cursor-move"
           :style="{ background: topbarThemeBg }"
           @mousedown="startDragModal">
-          <div class="flex items-center gap-2 font-bold text-xs tracking-wider uppercase text-white">
+          <div class="flex items-center gap-2 font-bold text-xs tracking-wider text-white">
             <i class="fa-solid fa-users text-white text-sm"></i>
-            <span>THÔNG TIN KHÁCH TRONG PHÒNG</span>
+            <span>Thông Tin Khách Trong Phòng</span>
           </div>
 
           <div class="flex items-center gap-1.5">
@@ -108,13 +108,13 @@
                   STT
                 </th>
                 <th v-for="col in visibleColumns" :key="col.key"
-                  class="py-2.5 px-3 border-r border-slate-200 text-center font-semibold whitespace-nowrap bg-slate-100 align-middle border"
+                  class="py-2 px-2 border-r border-slate-200 text-center font-semibold bg-slate-100 align-middle border"
                   :class="isLastFrozenCol(col.key) ? 'border-r-2 border-slate-300 shadow-[3px_0_5px_-2px_rgba(0,0,0,0.15)]' : ''"
                   :style="[
                     col.width ? `width:${col.width}; min-width:${col.width}` : '',
                     getColumnStickyStyle(col.key, true)
                   ]">
-                  {{ col.label }}
+                  <span class="block whitespace-normal break-words leading-tight">{{ col.label }}</span>
                 </th>
               </tr>
             </thead>
@@ -182,8 +182,12 @@
                       </td>
 
                       <td v-for="col in visibleColumns" :key="col.key"
-                        class="py-1.5 px-2 border-slate-200 whitespace-nowrap text-slate-700 group-hover:bg-blue-50/80"
-                        :class="[ idx % 2 === 0 ? 'bg-white' : 'bg-[#fcfdfe]', isLastFrozenCol(col.key) ? 'shadow-[3px_0_5px_-2px_rgba(0,0,0,0.15)]' : '' ]"
+                        class="py-1.5 px-2 border-slate-200 text-slate-700 group-hover:bg-blue-50/80 align-middle"
+                        :class="[
+                          idx % 2 === 0 ? 'bg-white' : 'bg-[#fcfdfe]',
+                          isLastFrozenCol(col.key) ? 'shadow-[3px_0_5px_-2px_rgba(0,0,0,0.15)]' : '',
+                          isEditing ? 'whitespace-nowrap' : 'whitespace-normal'
+                        ]"
                         :style="[
                           col.width ? `width:${col.width}; min-width:${col.width}` : '',
                           getColumnStickyStyle(col.key, false)
@@ -195,12 +199,12 @@
                           <!-- Title dropdown (lọc theo người lớn: is_adult = 1) -->
                           <template v-else-if="col.key === 'title'">
                             <div class="relative flex items-center w-full">
-                              <select v-model="guest.title" @change="handleTitleChange(guest)" class="table-input" :class="guest.title ? 'pr-5' : ''">
+                              <select v-model="guest.title" @change="handleTitleChange(guest)" class="table-input" :class="guest.title ? 'has-clear' : ''">
                                 <option value="">-- Chọn --</option>
                                 <option v-for="t in adultTitlesList" :key="t" :value="t">{{ t }}</option>
                                 <option v-if="guest.title && !adultTitlesList.includes(guest.title)" :value="guest.title">{{ guest.title }}</option>
                               </select>
-                              <button v-if="guest.title" type="button" @click.stop="guest.title = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent" title="Xóa nhanh">
+                              <button v-if="guest.title" type="button" @click.stop="guest.title = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent z-10 flex items-center justify-center w-4 h-4" title="Xóa nhanh">
                                 <i class="fa-solid fa-xmark text-[10px]"></i>
                               </button>
                             </div>
@@ -209,12 +213,12 @@
                           <!-- Nationality dropdown (mã quốc tịch - nationality_name) -->
                           <template v-else-if="col.key === 'nationality_code'">
                             <div class="relative flex items-center w-full">
-                              <select v-model="guest.nationality_code" class="table-input" :class="guest.nationality_code ? 'pr-5' : ''">
+                              <select v-model="guest.nationality_code" class="table-input" :class="guest.nationality_code ? 'has-clear' : ''">
                                 <option value="">-- Chọn --</option>
                                 <option v-for="n in nationalitiesList" :key="n.code" :value="n.code">{{ n.label }}</option>
                                 <option v-if="guest.nationality_code && !nationalitiesList.some(n => n.code === guest.nationality_code)" :value="guest.nationality_code">{{ getNationalityLabel(guest.nationality_code) }}</option>
                               </select>
-                              <button v-if="guest.nationality_code" type="button" @click.stop="guest.nationality_code = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent" title="Xóa nhanh">
+                              <button v-if="guest.nationality_code" type="button" @click.stop="guest.nationality_code = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent z-10 flex items-center justify-center w-4 h-4" title="Xóa nhanh">
                                 <i class="fa-solid fa-xmark text-[10px]"></i>
                               </button>
                             </div>
@@ -223,12 +227,12 @@
                           <!-- ID type dropdown -->
                           <template v-else-if="col.key === 'id_type'">
                             <div class="relative flex items-center w-full">
-                              <select v-model="guest.id_type" class="table-input" :class="guest.id_type ? 'pr-5' : ''">
+                              <select v-model="guest.id_type" class="table-input" :class="guest.id_type ? 'has-clear' : ''">
                                 <option value="">-- Chọn --</option>
                                 <option v-for="it in idTypesList" :key="it.id" :value="getIdTypeValue(it)">{{ it.name }}</option>
                                 <option v-if="guest.id_type && !idTypesList.some(it => getIdTypeValue(it) === guest.id_type || it.name === guest.id_type)" :value="guest.id_type">{{ guest.id_type }}</option>
                               </select>
-                              <button v-if="guest.id_type" type="button" @click.stop="guest.id_type = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent" title="Xóa nhanh">
+                              <button v-if="guest.id_type" type="button" @click.stop="guest.id_type = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent z-10 flex items-center justify-center w-4 h-4" title="Xóa nhanh">
                                 <i class="fa-solid fa-xmark text-[10px]"></i>
                               </button>
                             </div>
@@ -237,12 +241,12 @@
                           <!-- Residence type dropdown -->
                           <template v-else-if="col.key === 'residence_type'">
                             <div class="relative flex items-center w-full">
-                              <select v-model="guest.residence_type" class="table-input" :class="guest.residence_type ? 'pr-5' : ''">
+                              <select v-model="guest.residence_type" class="table-input" :class="guest.residence_type ? 'has-clear' : ''">
                                 <option value="">-- Chọn --</option>
                                 <option v-for="rt in residenceTypesList" :key="rt.id" :value="String(rt.id)">{{ rt.name_new_form || rt.name }}</option>
                                 <option v-if="guest.residence_type && !residenceTypesList.some(rt => String(rt.id) === String(guest.residence_type))" :value="guest.residence_type">{{ guest.residence_type }}</option>
                               </select>
-                              <button v-if="guest.residence_type" type="button" @click.stop="guest.residence_type = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent" title="Xóa nhanh">
+                              <button v-if="guest.residence_type" type="button" @click.stop="guest.residence_type = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent z-10 flex items-center justify-center w-4 h-4" title="Xóa nhanh">
                                 <i class="fa-solid fa-xmark text-[10px]"></i>
                               </button>
                             </div>
@@ -251,12 +255,12 @@
                           <!-- Guest type dropdown -->
                           <template v-else-if="col.key === 'guest_type'">
                             <div class="relative flex items-center w-full">
-                              <select v-model="guest.guest_type" class="table-input" :class="guest.guest_type ? 'pr-5' : ''">
+                              <select v-model="guest.guest_type" class="table-input" :class="guest.guest_type ? 'has-clear' : ''">
                                 <option value="">-- Chọn --</option>
                                 <option v-for="gt in guestTypesList" :key="gt.id" :value="String(gt.id)">{{ gt.name }}</option>
                                 <option v-if="guest.guest_type && !guestTypesList.some(gt => String(gt.id) === String(guest.guest_type))" :value="guest.guest_type">{{ guest.guest_type }}</option>
                               </select>
-                              <button v-if="guest.guest_type" type="button" @click.stop="guest.guest_type = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent" title="Xóa nhanh">
+                              <button v-if="guest.guest_type" type="button" @click.stop="guest.guest_type = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent z-10 flex items-center justify-center w-4 h-4" title="Xóa nhanh">
                                 <i class="fa-solid fa-xmark text-[10px]"></i>
                               </button>
                             </div>
@@ -265,12 +269,12 @@
                           <!-- Entry purpose dropdown -->
                           <template v-else-if="col.key === 'entry_purpose'">
                             <div class="relative flex items-center w-full">
-                              <select v-model="guest.entry_purpose" class="table-input" :class="guest.entry_purpose ? 'pr-5' : ''">
+                              <select v-model="guest.entry_purpose" class="table-input" :class="guest.entry_purpose ? 'has-clear' : ''">
                                 <option value="">-- Chọn --</option>
                                 <option v-for="ep in entryPurposesList" :key="ep.id" :value="String(ep.id)">{{ ep.name }}</option>
                                 <option v-if="guest.entry_purpose && !entryPurposesList.some(ep => String(ep.id) === String(guest.entry_purpose))" :value="guest.entry_purpose">{{ guest.entry_purpose }}</option>
                               </select>
-                              <button v-if="guest.entry_purpose" type="button" @click.stop="guest.entry_purpose = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent" title="Xóa nhanh">
+                              <button v-if="guest.entry_purpose" type="button" @click.stop="guest.entry_purpose = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent z-10 flex items-center justify-center w-4 h-4" title="Xóa nhanh">
                                 <i class="fa-solid fa-xmark text-[10px]"></i>
                               </button>
                             </div>
@@ -279,12 +283,12 @@
                           <!-- Border gate dropdown -->
                           <template v-else-if="col.key === 'border_gate'">
                             <div class="relative flex items-center w-full">
-                              <select v-model="guest.border_gate" class="table-input" :class="guest.border_gate ? 'pr-5' : ''">
+                              <select v-model="guest.border_gate" class="table-input" :class="guest.border_gate ? 'has-clear' : ''">
                                 <option value="">-- Chọn --</option>
                                 <option v-for="bg in borderGatesList" :key="bg.id" :value="bg.code">{{ bg.name }}</option>
                                 <option v-if="guest.border_gate && !borderGatesList.some(bg => bg.code === guest.border_gate)" :value="guest.border_gate">{{ guest.border_gate }}</option>
                               </select>
-                              <button v-if="guest.border_gate" type="button" @click.stop="guest.border_gate = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent" title="Xóa nhanh">
+                              <button v-if="guest.border_gate" type="button" @click.stop="guest.border_gate = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent z-10 flex items-center justify-center w-4 h-4" title="Xóa nhanh">
                                 <i class="fa-solid fa-xmark text-[10px]"></i>
                               </button>
                             </div>
@@ -293,11 +297,11 @@
                           <!-- Province dropdown -->
                           <template v-else-if="col.key === 'province'">
                             <div class="relative flex items-center w-full">
-                              <select v-model="guest.province" @change="handleProvinceChange(`g-${guest.id}`, guest, guest.province)" class="table-input select-geo" :class="guest.province ? 'pr-5' : ''">
+                              <select v-model="guest.province" @change="handleProvinceChange(`g-${guest.id}`, guest, guest.province)" class="table-input select-geo" :class="guest.province ? 'has-clear' : ''">
                                 <option value="">-- Chọn --</option>
                                 <option v-for="p in provincesList" :key="p.code" :value="p.name">{{ p.name }}</option>
                               </select>
-                              <button v-if="guest.province" type="button" @click.stop="guest.province = ''; handleProvinceChange(`g-${guest.id}`, guest, '')" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent" title="Xóa nhanh">
+                              <button v-if="guest.province" type="button" @click.stop="guest.province = ''; handleProvinceChange(`g-${guest.id}`, guest, '')" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent z-10 flex items-center justify-center w-4 h-4" title="Xóa nhanh">
                                 <i class="fa-solid fa-xmark text-[10px]"></i>
                               </button>
                             </div>
@@ -306,11 +310,11 @@
                           <!-- District dropdown -->
                           <template v-else-if="col.key === 'district'">
                             <div class="relative flex items-center w-full">
-                              <select v-model="guest.district" @change="handleDistrictChange(`g-${guest.id}`, guest, guest.district)" class="table-input select-geo" :disabled="!guest.province" :class="guest.district ? 'pr-5' : ''">
+                              <select v-model="guest.district" @change="handleDistrictChange(`g-${guest.id}`, guest, guest.district)" class="table-input select-geo" :disabled="!guest.province" :class="guest.district ? 'has-clear' : ''">
                                 <option value="">-- Chọn --</option>
                                 <option v-for="d in (districtsForLine[`g-${guest.id}`] || [])" :key="d.code" :value="d.name">{{ d.name }}</option>
                               </select>
-                              <button v-if="guest.district" type="button" @click.stop="guest.district = ''; handleDistrictChange(`g-${guest.id}`, guest, '')" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent" title="Xóa nhanh">
+                              <button v-if="guest.district" type="button" @click.stop="guest.district = ''; handleDistrictChange(`g-${guest.id}`, guest, '')" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent z-10 flex items-center justify-center w-4 h-4" title="Xóa nhanh">
                                 <i class="fa-solid fa-xmark text-[10px]"></i>
                               </button>
                             </div>
@@ -319,11 +323,11 @@
                           <!-- Ward dropdown -->
                           <template v-else-if="col.key === 'ward'">
                             <div class="relative flex items-center w-full">
-                              <select v-model="guest.ward" class="table-input select-geo" :disabled="!guest.district" :class="guest.ward ? 'pr-5' : ''">
+                              <select v-model="guest.ward" class="table-input select-geo" :disabled="!guest.district" :class="guest.ward ? 'has-clear' : ''">
                                 <option value="">-- Chọn --</option>
                                 <option v-for="w in (wardsForLine[`g-${guest.id}`] || [])" :key="w.code" :value="w.name">{{ w.name }}</option>
                               </select>
-                              <button v-if="guest.ward" type="button" @click.stop="guest.ward = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent" title="Xóa nhanh">
+                              <button v-if="guest.ward" type="button" @click.stop="guest.ward = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent z-10 flex items-center justify-center w-4 h-4" title="Xóa nhanh">
                                 <i class="fa-solid fa-xmark text-[10px]"></i>
                               </button>
                             </div>
@@ -331,21 +335,21 @@
 
                           <!-- Date Fields -->
                           <template v-else-if="['dob', 'id_issue_date', 'passport_expiry', 'temp_residence_to', 'entry_date', 'visa_expiry_date'].includes(col.key)">
-                            <div class="date-cell-container relative flex items-center w-full min-w-[105px] border border-slate-300 rounded bg-white h-[25px] hover:border-blue-400 focus-within:border-blue-500">
+                            <div class="date-cell-container relative flex items-center w-full min-w-[130px] border border-slate-300 rounded bg-white h-[25px] hover:border-blue-400 focus-within:border-blue-500">
                               <input 
-                                :value="formatDateDisplayYY(guest[col.key])"
-                                @input="handleDateCellInput(guest, col.key, $event.target.value)"
-                                @blur="handleDateCellBlur(guest, col.key, $event.target.value)"
+                                :value="getDateCellValue(guest, col.key)"
+                                @keydown="handleDateCellKeydown"
+                                @input="handleDateCellInput(guest, col.key, $event)"
+                                @blur="handleDateCellBlur(guest, col.key, $event)"
                                 @keydown.enter.prevent="$event.target.blur()"
-                                @click="openDateCellPicker($event)"
                                 type="text" 
-                                placeholder="dd/mm/yy" 
-                                class="w-full h-full border-none outline-none px-1.5 text-xs font-normal text-[#000000D9] placeholder:text-[#A8B0BF] bg-transparent cursor-pointer"
+                                placeholder="dd/mm/yyyy" 
+                                class="w-full h-full border-none outline-none px-1.5 text-xs font-normal text-[#000000D9] placeholder:text-[#A8B0BF] bg-transparent cursor-text"
                               />
                               <button 
-                                v-if="guest[col.key]" 
+                                v-if="guest[col.key] || getDateCellBuffer(guest, col.key)" 
                                 type="button" 
-                                @click.stop="guest[col.key] = ''"
+                                @click.stop="clearDateCell(guest, col.key)"
                                 class="shrink-0 px-1 py-0.5 text-slate-400 hover:text-red-500 cursor-pointer border-none bg-transparent flex items-center justify-center transition-colors z-20"
                                 title="Xóa nhanh"
                               >
@@ -370,20 +374,42 @@
                             </div>
                           </template>
 
+                          <!-- Address & Note multiline textarea (cho xuống dòng khi dài) -->
+                          <template v-else-if="col.key === 'address' || col.key === 'note'">
+                            <div class="relative flex items-center w-full">
+                              <textarea
+                                v-model="guest[col.key]"
+                                rows="2"
+                                class="table-input table-textarea resize-none py-1 leading-snug break-words whitespace-normal text-xs"
+                                :class="guest[col.key] ? 'has-clear' : ''"
+                                :placeholder="col.key === 'address' ? 'Địa chỉ...' : 'Ghi chú...'"
+                              ></textarea>
+                              <button
+                                v-if="guest[col.key]"
+                                type="button"
+                                @click.stop="guest[col.key] = ''"
+                                class="absolute top-1.5 right-1.5 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent z-10 flex items-center justify-center w-4 h-4"
+                                title="Xóa nhanh"
+                              >
+                                <i class="fa-solid fa-xmark text-[10px]"></i>
+                              </button>
+                            </div>
+                          </template>
+
                           <!-- Text fields -->
                           <template v-else>
                             <div class="relative flex items-center w-full">
-                              <input v-model="guest[col.key]" type="text" class="table-input" :class="guest[col.key] ? 'pr-5' : ''" />
-                              <button v-if="guest[col.key]" type="button" @click.stop="guest[col.key] = ''" class="absolute right-1 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent" title="Xóa nhanh">
+                              <input v-model="guest[col.key]" type="text" class="table-input" :class="guest[col.key] ? 'has-clear' : ''" />
+                              <button v-if="guest[col.key]" type="button" @click.stop="guest[col.key] = ''" class="absolute right-1.5 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent z-10 flex items-center justify-center w-4 h-4" title="Xóa nhanh">
                                 <i class="fa-solid fa-xmark text-[10px]"></i>
                               </button>
                             </div>
                           </template>
                         </template>
 
-                        <!-- Khi chỉ xem -->
+                        <!-- Khi chỉ xem: Tự động xuống dòng khi dữ liệu dài -->
                         <template v-else>
-                          <div class="truncate-cell text-[12px]" :style="col.width ? `max-width:${col.width}` : ''" :title="getDisplayTitle(guest, col)">
+                          <div class="cell-wrap text-[12px]" :style="col.width ? `max-width:${col.width}` : ''" :title="getDisplayTitle(guest, col)">
                             <template v-if="col.key === 'room_number'">{{ roomGroup.room_number || '—' }}</template>
                             <template v-else-if="col.key === 'nationality_code'">{{ getNationalityLabel(guest.nationality_code) }}</template>
                             <template v-else-if="['dob', 'id_issue_date', 'passport_expiry', 'temp_residence_to', 'entry_date', 'visa_expiry_date'].includes(col.key)">
@@ -420,8 +446,12 @@
                       </td>
 
                       <td v-for="col in visibleColumns" :key="col.key"
-                        class="py-1.5 px-2 border-slate-200 whitespace-nowrap text-slate-700 group-hover:bg-blue-50/80"
-                        :class="[ (roomGroup.guests.length + cidx) % 2 === 0 ? 'bg-white' : 'bg-[#fcfdfe]', isLastFrozenCol(col.key) ? 'shadow-[3px_0_5px_-2px_rgba(0,0,0,0.15)]' : '' ]"
+                        class="py-1.5 px-2 border-slate-200 text-slate-700 group-hover:bg-blue-50/80 align-middle"
+                        :class="[
+                          (roomGroup.guests.length + cidx) % 2 === 0 ? 'bg-white' : 'bg-[#fcfdfe]',
+                          isLastFrozenCol(col.key) ? 'shadow-[3px_0_5px_-2px_rgba(0,0,0,0.15)]' : '',
+                          isEditing ? 'whitespace-nowrap' : 'whitespace-normal'
+                        ]"
                         :style="[
                           col.width ? `width:${col.width}; min-width:${col.width}` : '',
                           getColumnStickyStyle(col.key, false)
@@ -433,12 +463,12 @@
                           <!-- Title dropdown (lọc theo trẻ em: is_adult = 0) -->
                           <template v-else-if="col.key === 'title'">
                             <div class="relative flex items-center w-full">
-                              <select v-model="child.title" @change="handleTitleChange(child)" class="table-input" :class="child.title ? 'pr-5' : ''">
+                              <select v-model="child.title" @change="handleTitleChange(child)" class="table-input" :class="child.title ? 'has-clear' : ''">
                                 <option value="">-- Chọn --</option>
                                 <option v-for="t in childTitlesList" :key="t" :value="t">{{ t }}</option>
                                 <option v-if="child.title && !childTitlesList.includes(child.title)" :value="child.title">{{ child.title }}</option>
                               </select>
-                              <button v-if="child.title" type="button" @click.stop="child.title = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent" title="Xóa nhanh">
+                              <button v-if="child.title" type="button" @click.stop="child.title = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent z-10 flex items-center justify-center w-4 h-4" title="Xóa nhanh">
                                 <i class="fa-solid fa-xmark text-[10px]"></i>
                               </button>
                             </div>
@@ -447,12 +477,12 @@
                           <!-- Nationality dropdown (mã quốc tịch - nationality_name) -->
                           <template v-else-if="col.key === 'nationality_code'">
                             <div class="relative flex items-center w-full">
-                              <select v-model="child.nationality_code" class="table-input" :class="child.nationality_code ? 'pr-5' : ''">
+                              <select v-model="child.nationality_code" class="table-input" :class="child.nationality_code ? 'has-clear' : ''">
                                 <option value="">-- Chọn --</option>
                                 <option v-for="n in nationalitiesList" :key="n.code" :value="n.code">{{ n.label }}</option>
                                 <option v-if="child.nationality_code && !nationalitiesList.some(n => n.code === child.nationality_code)" :value="child.nationality_code">{{ getNationalityLabel(child.nationality_code) }}</option>
                               </select>
-                              <button v-if="child.nationality_code" type="button" @click.stop="child.nationality_code = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent" title="Xóa nhanh">
+                              <button v-if="child.nationality_code" type="button" @click.stop="child.nationality_code = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent z-10 flex items-center justify-center w-4 h-4" title="Xóa nhanh">
                                 <i class="fa-solid fa-xmark text-[10px]"></i>
                               </button>
                             </div>
@@ -461,12 +491,12 @@
                           <!-- ID type dropdown -->
                           <template v-else-if="col.key === 'id_type'">
                             <div class="relative flex items-center w-full">
-                              <select v-model="child.id_type" class="table-input" :class="child.id_type ? 'pr-5' : ''">
+                              <select v-model="child.id_type" class="table-input" :class="child.id_type ? 'has-clear' : ''">
                                 <option value="">-- Chọn --</option>
                                 <option v-for="it in idTypesList" :key="it.id" :value="getIdTypeValue(it)">{{ it.name }}</option>
                                 <option v-if="child.id_type && !idTypesList.some(it => getIdTypeValue(it) === child.id_type || it.name === child.id_type)" :value="child.id_type">{{ child.id_type }}</option>
                               </select>
-                              <button v-if="child.id_type" type="button" @click.stop="child.id_type = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent" title="Xóa nhanh">
+                              <button v-if="child.id_type" type="button" @click.stop="child.id_type = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent z-10 flex items-center justify-center w-4 h-4" title="Xóa nhanh">
                                 <i class="fa-solid fa-xmark text-[10px]"></i>
                               </button>
                             </div>
@@ -475,12 +505,12 @@
                           <!-- Residence type dropdown -->
                           <template v-else-if="col.key === 'residence_type'">
                             <div class="relative flex items-center w-full">
-                              <select v-model="child.residence_type" class="table-input" :class="child.residence_type ? 'pr-5' : ''">
+                              <select v-model="child.residence_type" class="table-input" :class="child.residence_type ? 'has-clear' : ''">
                                 <option value="">-- Chọn --</option>
                                 <option v-for="rt in residenceTypesList" :key="rt.id" :value="String(rt.id)">{{ rt.name_new_form || rt.name }}</option>
                                 <option v-if="child.residence_type && !residenceTypesList.some(rt => String(rt.id) === String(child.residence_type))" :value="child.residence_type">{{ child.residence_type }}</option>
                               </select>
-                              <button v-if="child.residence_type" type="button" @click.stop="child.residence_type = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent" title="Xóa nhanh">
+                              <button v-if="child.residence_type" type="button" @click.stop="child.residence_type = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent z-10 flex items-center justify-center w-4 h-4" title="Xóa nhanh">
                                 <i class="fa-solid fa-xmark text-[10px]"></i>
                               </button>
                             </div>
@@ -489,12 +519,12 @@
                           <!-- Guest type dropdown -->
                           <template v-else-if="col.key === 'guest_type'">
                             <div class="relative flex items-center w-full">
-                              <select v-model="child.guest_type" class="table-input" :class="child.guest_type ? 'pr-5' : ''">
+                              <select v-model="child.guest_type" class="table-input" :class="child.guest_type ? 'has-clear' : ''">
                                 <option value="">-- Chọn --</option>
                                 <option v-for="gt in guestTypesList" :key="gt.id" :value="String(gt.id)">{{ gt.name }}</option>
                                 <option v-if="child.guest_type && !guestTypesList.some(gt => String(gt.id) === String(child.guest_type))" :value="child.guest_type">{{ child.guest_type }}</option>
                               </select>
-                              <button v-if="child.guest_type" type="button" @click.stop="child.guest_type = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent" title="Xóa nhanh">
+                              <button v-if="child.guest_type" type="button" @click.stop="child.guest_type = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent z-10 flex items-center justify-center w-4 h-4" title="Xóa nhanh">
                                 <i class="fa-solid fa-xmark text-[10px]"></i>
                               </button>
                             </div>
@@ -503,12 +533,12 @@
                           <!-- Entry purpose dropdown -->
                           <template v-else-if="col.key === 'entry_purpose'">
                             <div class="relative flex items-center w-full">
-                              <select v-model="child.entry_purpose" class="table-input" :class="child.entry_purpose ? 'pr-5' : ''">
+                              <select v-model="child.entry_purpose" class="table-input" :class="child.entry_purpose ? 'has-clear' : ''">
                                 <option value="">-- Chọn --</option>
                                 <option v-for="ep in entryPurposesList" :key="ep.id" :value="String(ep.id)">{{ ep.name }}</option>
                                 <option v-if="child.entry_purpose && !entryPurposesList.some(ep => String(ep.id) === String(child.entry_purpose))" :value="child.entry_purpose">{{ child.entry_purpose }}</option>
                               </select>
-                              <button v-if="child.entry_purpose" type="button" @click.stop="child.entry_purpose = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent" title="Xóa nhanh">
+                              <button v-if="child.entry_purpose" type="button" @click.stop="child.entry_purpose = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent z-10 flex items-center justify-center w-4 h-4" title="Xóa nhanh">
                                 <i class="fa-solid fa-xmark text-[10px]"></i>
                               </button>
                             </div>
@@ -517,12 +547,12 @@
                           <!-- Border gate dropdown -->
                           <template v-else-if="col.key === 'border_gate'">
                             <div class="relative flex items-center w-full">
-                              <select v-model="child.border_gate" class="table-input" :class="child.border_gate ? 'pr-5' : ''">
+                              <select v-model="child.border_gate" class="table-input" :class="child.border_gate ? 'has-clear' : ''">
                                 <option value="">-- Chọn --</option>
                                 <option v-for="bg in borderGatesList" :key="bg.id" :value="bg.code">{{ bg.name }}</option>
                                 <option v-if="child.border_gate && !borderGatesList.some(bg => bg.code === child.border_gate)" :value="child.border_gate">{{ child.border_gate }}</option>
                               </select>
-                              <button v-if="child.border_gate" type="button" @click.stop="child.border_gate = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent" title="Xóa nhanh">
+                              <button v-if="child.border_gate" type="button" @click.stop="child.border_gate = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent z-10 flex items-center justify-center w-4 h-4" title="Xóa nhanh">
                                 <i class="fa-solid fa-xmark text-[10px]"></i>
                               </button>
                             </div>
@@ -531,11 +561,11 @@
                           <!-- Province dropdown -->
                           <template v-else-if="col.key === 'province'">
                             <div class="relative flex items-center w-full">
-                              <select v-model="child.province" @change="handleProvinceChange(`c-${child.id}`, child, child.province)" class="table-input select-geo" :class="child.province ? 'pr-5' : ''">
+                              <select v-model="child.province" @change="handleProvinceChange(`c-${child.id}`, child, child.province)" class="table-input select-geo" :class="child.province ? 'has-clear' : ''">
                                 <option value="">-- Chọn --</option>
                                 <option v-for="p in provincesList" :key="p.code" :value="p.name">{{ p.name }}</option>
                               </select>
-                              <button v-if="child.province" type="button" @click.stop="child.province = ''; handleProvinceChange(`c-${child.id}`, child, '')" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent" title="Xóa nhanh">
+                              <button v-if="child.province" type="button" @click.stop="child.province = ''; handleProvinceChange(`c-${child.id}`, child, '')" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent z-10 flex items-center justify-center w-4 h-4" title="Xóa nhanh">
                                 <i class="fa-solid fa-xmark text-[10px]"></i>
                               </button>
                             </div>
@@ -544,11 +574,11 @@
                           <!-- District dropdown -->
                           <template v-else-if="col.key === 'district'">
                             <div class="relative flex items-center w-full">
-                              <select v-model="child.district" @change="handleDistrictChange(`c-${child.id}`, child, child.district)" class="table-input select-geo" :disabled="!child.province" :class="child.district ? 'pr-5' : ''">
+                              <select v-model="child.district" @change="handleDistrictChange(`c-${child.id}`, child, child.district)" class="table-input select-geo" :disabled="!child.province" :class="child.district ? 'has-clear' : ''">
                                 <option value="">-- Chọn --</option>
                                 <option v-for="d in (districtsForLine[`c-${child.id}`] || [])" :key="d.code" :value="d.name">{{ d.name }}</option>
                               </select>
-                              <button v-if="child.district" type="button" @click.stop="child.district = ''; handleDistrictChange(`c-${child.id}`, child, '')" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent" title="Xóa nhanh">
+                              <button v-if="child.district" type="button" @click.stop="child.district = ''; handleDistrictChange(`c-${child.id}`, child, '')" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent z-10 flex items-center justify-center w-4 h-4" title="Xóa nhanh">
                                 <i class="fa-solid fa-xmark text-[10px]"></i>
                               </button>
                             </div>
@@ -557,11 +587,11 @@
                           <!-- Ward dropdown -->
                           <template v-else-if="col.key === 'ward'">
                             <div class="relative flex items-center w-full">
-                              <select v-model="child.ward" class="table-input select-geo" :disabled="!child.district" :class="child.ward ? 'pr-5' : ''">
+                              <select v-model="child.ward" class="table-input select-geo" :disabled="!child.district" :class="child.ward ? 'has-clear' : ''">
                                 <option value="">-- Chọn --</option>
                                 <option v-for="w in (wardsForLine[`c-${child.id}`] || [])" :key="w.code" :value="w.name">{{ w.name }}</option>
                               </select>
-                              <button v-if="child.ward" type="button" @click.stop="child.ward = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent" title="Xóa nhanh">
+                              <button v-if="child.ward" type="button" @click.stop="child.ward = ''" class="absolute right-4 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent z-10 flex items-center justify-center w-4 h-4" title="Xóa nhanh">
                                 <i class="fa-solid fa-xmark text-[10px]"></i>
                               </button>
                             </div>
@@ -569,21 +599,21 @@
 
                           <!-- Date Fields -->
                           <template v-else-if="['dob', 'id_issue_date', 'passport_expiry', 'temp_residence_to', 'entry_date', 'visa_expiry_date'].includes(col.key)">
-                            <div class="date-cell-container relative flex items-center w-full min-w-[105px] border border-slate-300 rounded bg-white h-[25px] hover:border-blue-400 focus-within:border-blue-500">
+                            <div class="date-cell-container relative flex items-center w-full min-w-[130px] border border-slate-300 rounded bg-white h-[25px] hover:border-blue-400 focus-within:border-blue-500">
                               <input 
-                                :value="formatDateDisplayYY(child[col.key])"
-                                @input="handleDateCellInput(child, col.key, $event.target.value)"
-                                @blur="handleDateCellBlur(child, col.key, $event.target.value)"
+                                :value="getDateCellValue(child, col.key)"
+                                @keydown="handleDateCellKeydown"
+                                @input="handleDateCellInput(child, col.key, $event)"
+                                @blur="handleDateCellBlur(child, col.key, $event)"
                                 @keydown.enter.prevent="$event.target.blur()"
-                                @click="openDateCellPicker($event)"
                                 type="text" 
-                                placeholder="dd/mm/yy" 
-                                class="w-full h-full border-none outline-none px-1.5 text-xs font-normal text-[#000000D9] placeholder:text-[#A8B0BF] bg-transparent cursor-pointer"
+                                placeholder="dd/mm/yyyy" 
+                                class="w-full h-full border-none outline-none px-1.5 text-xs font-normal text-[#000000D9] placeholder:text-[#A8B0BF] bg-transparent cursor-text"
                               />
                               <button 
-                                v-if="child[col.key]" 
+                                v-if="child[col.key] || getDateCellBuffer(child, col.key)" 
                                 type="button" 
-                                @click.stop="child[col.key] = ''"
+                                @click.stop="clearDateCell(child, col.key)"
                                 class="shrink-0 px-1 py-0.5 text-slate-400 hover:text-red-500 cursor-pointer border-none bg-transparent flex items-center justify-center transition-colors z-20"
                                 title="Xóa nhanh"
                               >
@@ -608,20 +638,42 @@
                             </div>
                           </template>
 
+                          <!-- Address & Note multiline textarea (cho xuống dòng khi dài) -->
+                          <template v-else-if="col.key === 'address' || col.key === 'note'">
+                            <div class="relative flex items-center w-full">
+                              <textarea
+                                v-model="child[col.key]"
+                                rows="2"
+                                class="table-input table-textarea resize-none py-1 leading-snug break-words whitespace-normal text-xs"
+                                :class="child[col.key] ? 'has-clear' : ''"
+                                :placeholder="col.key === 'address' ? 'Địa chỉ...' : 'Ghi chú...'"
+                              ></textarea>
+                              <button
+                                v-if="child[col.key]"
+                                type="button"
+                                @click.stop="child[col.key] = ''"
+                                class="absolute top-1.5 right-1.5 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent z-10 flex items-center justify-center w-4 h-4"
+                                title="Xóa nhanh"
+                              >
+                                <i class="fa-solid fa-xmark text-[10px]"></i>
+                              </button>
+                            </div>
+                          </template>
+
                           <!-- Text fields -->
                           <template v-else>
                             <div class="relative flex items-center w-full">
-                              <input v-model="child[col.key]" type="text" class="table-input" :class="child[col.key] ? 'pr-5' : ''" />
-                              <button v-if="child[col.key]" type="button" @click.stop="child[col.key] = ''" class="absolute right-1 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent" title="Xóa nhanh">
+                              <input v-model="child[col.key]" type="text" class="table-input" :class="child[col.key] ? 'has-clear' : ''" />
+                              <button v-if="child[col.key]" type="button" @click.stop="child[col.key] = ''" class="absolute right-1.5 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent z-10 flex items-center justify-center w-4 h-4" title="Xóa nhanh">
                                 <i class="fa-solid fa-xmark text-[10px]"></i>
                               </button>
                             </div>
                           </template>
                         </template>
 
-                        <!-- Khi chỉ xem -->
+                        <!-- Khi chỉ xem: Tự động xuống dòng khi dữ liệu dài -->
                         <template v-else>
-                          <div class="truncate-cell text-[12px]" :style="col.width ? `max-width:${col.width}` : ''" :title="getDisplayTitle(child, col)">
+                          <div class="cell-wrap text-[12px]" :style="col.width ? `max-width:${col.width}` : ''" :title="getDisplayTitle(child, col)">
                             <template v-if="col.key === 'room_number'">{{ roomGroup.room_number || '—' }}</template>
                             <template v-else-if="col.key === 'nationality_code'">{{ getNationalityLabel(child.nationality_code) }}</template>
                             <template v-else-if="['dob', 'id_issue_date', 'passport_expiry', 'temp_residence_to', 'entry_date', 'visa_expiry_date'].includes(col.key)">
@@ -855,30 +907,56 @@ const groupedByStatus = computed(() => {
 })
 
 // ==================== COLUMNS CONFIG & STICKY ====================
+const MIN_COLUMN_WIDTHS = {
+  room_number: 80,
+  title: 95,
+  full_name: 195,
+  dob: 150,
+  nationality_code: 205,
+  id_type: 200,
+  id_number: 160,
+  passport_expiry: 150,
+  province: 225,
+  district: 195,
+  ward: 205,
+  phone: 150,
+  email: 220,
+  address: 280,
+  guest_type: 135,
+  visa_no: 125,
+  residence_type: 160,
+  temp_residence_to: 150,
+  entry_date: 150,
+  visa_expiry_date: 150,
+  entry_purpose: 160,
+  border_gate: 175,
+  note: 170,
+}
+
 const DEFAULT_COLUMNS = [
-  { key: 'room_number',      label: 'Số Phòng',           visible: true,  width: '70px',  fixed: true },
-  { key: 'title',            label: 'Danh Xưng',          visible: true,  width: '75px',  fixed: true },
-  { key: 'full_name',        label: 'Họ Và Tên',          visible: true,  width: '150px', fixed: true },
-  { key: 'dob',              label: 'Ngày Sinh',          visible: true,  width: '90px' },
-  { key: 'nationality_code', label: 'Quốc Tịch',          visible: true,  width: '180px' },
-  { key: 'id_type',          label: 'Loại Giấy Tờ',      visible: true,  width: '100px' },
-  { key: 'id_number',        label: 'Số Giấy Tờ',        visible: true,  width: '110px' },
-  { key: 'passport_expiry',  label: 'Ngày Hết Hạn',      visible: true,  width: '95px' },
-  { key: 'province',         label: 'Tỉnh Thành',         visible: true,  width: '110px' },
-  { key: 'district',         label: 'Quận/ Huyện',       visible: true,  width: '100px' },
-  { key: 'ward',             label: 'Phường/ Xã',        visible: true,  width: '100px' },
-  { key: 'phone',            label: 'Điện Thoại',         visible: true,  width: '100px' },
-  { key: 'email',            label: 'Email',               visible: true,  width: '140px' },
-  { key: 'address',          label: 'Địa Chỉ',            visible: true,  width: '260px' },
-  { key: 'guest_type',       label: 'Loại Khách',         visible: true,  width: '80px' },
-  { key: 'visa_no',          label: 'Số Visa',             visible: true,  width: '90px' },
-  { key: 'residence_type',   label: 'Thường Trú/Tạm Trú', visible: true,  width: '120px' },
-  { key: 'temp_residence_to',label: 'Tạm Trú Đến',       visible: true,  width: '95px' },
-  { key: 'entry_date',       label: 'Ngày Nhập Cảnh',    visible: true,  width: '100px' },
-  { key: 'visa_expiry_date', label: 'Ngày Hết Hạn Visa', visible: true,  width: '100px' },
-  { key: 'entry_purpose',    label: 'Mục Đích Nhập Cảnh', visible: true,  width: '130px' },
-  { key: 'border_gate',      label: 'Cửa Khẩu',          visible: true,  width: '100px' },
-  { key: 'note',             label: 'Ghi Chú',            visible: true,  width: '140px' },
+  { key: 'room_number',      label: 'Số Phòng',           visible: true,  width: '80px',  fixed: true },
+  { key: 'title',            label: 'Danh Xưng',          visible: true,  width: '95px',  fixed: true },
+  { key: 'full_name',        label: 'Họ Và Tên',          visible: true,  width: '195px', fixed: true },
+  { key: 'dob',              label: 'Ngày Sinh',          visible: true,  width: '150px' },
+  { key: 'nationality_code', label: 'Quốc Tịch',          visible: true,  width: '205px' },
+  { key: 'id_type',          label: 'Loại Giấy Tờ',      visible: true,  width: '200px' },
+  { key: 'id_number',        label: 'Số Giấy Tờ',        visible: true,  width: '160px' },
+  { key: 'passport_expiry',  label: 'Ngày Hết Hạn',      visible: true,  width: '150px' },
+  { key: 'province',         label: 'Tỉnh Thành',         visible: true,  width: '225px' },
+  { key: 'district',         label: 'Quận/ Huyện',       visible: true,  width: '195px' },
+  { key: 'ward',             label: 'Phường/ Xã',        visible: true,  width: '205px' },
+  { key: 'phone',            label: 'Điện Thoại',         visible: true,  width: '150px' },
+  { key: 'email',            label: 'Email',               visible: true,  width: '220px' },
+  { key: 'address',          label: 'Địa Chỉ',            visible: true,  width: '280px' },
+  { key: 'guest_type',       label: 'Loại Khách',         visible: true,  width: '135px' },
+  { key: 'visa_no',          label: 'Số Visa',             visible: true,  width: '125px' },
+  { key: 'residence_type',   label: 'Thường Trú/Tạm Trú', visible: true,  width: '160px' },
+  { key: 'temp_residence_to',label: 'Tạm Trú Đến',       visible: true,  width: '150px' },
+  { key: 'entry_date',       label: 'Ngày Nhập Cảnh',    visible: true,  width: '150px' },
+  { key: 'visa_expiry_date', label: 'Ngày Hết Hạn Visa', visible: true,  width: '150px' },
+  { key: 'entry_purpose',    label: 'Mục Đích Nhập Cảnh', visible: true,  width: '160px' },
+  { key: 'border_gate',      label: 'Cửa Khẩu',          visible: true,  width: '175px' },
+  { key: 'note',             label: 'Ghi Chú',            visible: true,  width: '170px' },
 ]
 
 const allColumns = ref(JSON.parse(JSON.stringify(DEFAULT_COLUMNS)))
@@ -902,7 +980,7 @@ function getColumnStickyStyle(colKey, isHeader = false) {
   for (const c of visible) {
     if (c.key === colKey) break
     if (isFrozenCol(c.key)) {
-      left += parseInt(c.width || '70')
+      left += parseInt(c.width || '80')
     }
   }
 
@@ -916,7 +994,7 @@ function getColumnStickyStyle(colKey, isHeader = false) {
 // User column persistence
 const userStorageKey = computed(() => {
   const userId = authStore.user?.id || 'default'
-  return `pms_guest_info_columns_${userId}`
+  return `pms_guest_info_columns_v4_${userId}`
 })
 
 function loadSavedColumnSettings() {
@@ -941,7 +1019,12 @@ function loadSavedColumnSettings() {
     for (const s of savedFrozen) {
       const def = frozenCols.find(c => c.key === s.key)
       if (def) {
-        merged.push({ ...def, visible: s.visible !== false, width: s.width || def.width })
+        let colWidth = s.width || def.width
+        const minW = MIN_COLUMN_WIDTHS[s.key] || parseInt(def.width, 10)
+        if (!colWidth || parseInt(colWidth, 10) < minW) {
+          colWidth = `${minW}px`
+        }
+        merged.push({ ...def, visible: s.visible !== false, width: colWidth })
       }
     }
     for (const def of frozenCols) {
@@ -955,7 +1038,12 @@ function loadSavedColumnSettings() {
     for (const s of savedNonFrozen) {
       const def = nonFrozenCols.find(c => c.key === s.key)
       if (def) {
-        merged.push({ ...def, visible: s.visible !== false, width: s.width || def.width })
+        let colWidth = s.width || def.width
+        const minW = MIN_COLUMN_WIDTHS[s.key] || parseInt(def.width, 10)
+        if (!colWidth || parseInt(colWidth, 10) < minW) {
+          colWidth = `${minW}px`
+        }
+        merged.push({ ...def, visible: s.visible !== false, width: colWidth })
       }
     }
     for (const def of nonFrozenCols) {
@@ -1141,20 +1229,22 @@ function formatDateDisplayYY(isoDate) {
   const parts = str.split(/[-\/]/)
   if (parts.length === 3) {
     if (parts[0].length === 4) {
-      // YYYY-MM-DD
-      const yy = parts[0].slice(-2)
+      // YYYY-MM-DD -> DD/MM/YYYY
+      const yyyy = parts[0]
       const mm = parts[1].padStart(2, '0')
       const dd = parts[2].padStart(2, '0')
-      return `${dd}/${mm}/${yy}`
+      return `${dd}/${mm}/${yyyy}`
     } else if (parts[2].length === 4) {
       // DD/MM/YYYY
-      const yy = parts[2].slice(-2)
+      const yyyy = parts[2]
       const mm = parts[1].padStart(2, '0')
       const dd = parts[0].padStart(2, '0')
-      return `${dd}/${mm}/${yy}`
+      return `${dd}/${mm}/${yyyy}`
     } else if (parts[2].length === 2) {
-      // DD/MM/YY
-      return `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[2]}`
+      // DD/MM/YY -> DD/MM/YYYY
+      const yy = parseInt(parts[2], 10)
+      const yyyy = yy >= 50 ? 1900 + yy : 2000 + yy
+      return `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${yyyy}`
     }
   }
   return str
@@ -1166,36 +1256,13 @@ function parseDateInputToIso(val) {
   if (!trimmed) return ''
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed
 
-  // 6 digits: DDMMYY
-  if (/^\d{6}$/.test(trimmed)) {
-    const d = parseInt(trimmed.substring(0, 2), 10)
-    const m = parseInt(trimmed.substring(2, 4), 10)
-    const y = parseInt(trimmed.substring(4, 6), 10)
-    if (d >= 1 && d <= 31 && m >= 1 && m <= 12) {
-      const fullY = y >= 50 ? 1900 + y : 2000 + y
-      return `${fullY}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-    }
-  }
-
-  // 8 digits: DDMMYYYY
+  // 8 digits: DDMMYYYY (bắt buộc đủ 8 số mới tự chuyển đổi)
   if (/^\d{8}$/.test(trimmed)) {
     const d = parseInt(trimmed.substring(0, 2), 10)
     const m = parseInt(trimmed.substring(2, 4), 10)
     const y = parseInt(trimmed.substring(4, 8), 10)
     if (d >= 1 && d <= 31 && m >= 1 && m <= 12) {
       return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-    }
-  }
-
-  // DD/MM/YY
-  const match2 = trimmed.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2})$/)
-  if (match2) {
-    const d = parseInt(match2[1], 10)
-    const m = parseInt(match2[2], 10)
-    const y = parseInt(match2[3], 10)
-    if (d >= 1 && d <= 31 && m >= 1 && m <= 12) {
-      const fullY = y >= 50 ? 1900 + y : 2000 + y
-      return `${fullY}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
     }
   }
 
@@ -1213,23 +1280,158 @@ function parseDateInputToIso(val) {
   return null
 }
 
-function handleDateCellInput(targetObj, key, rawVal) {
-  const parsed = parseDateInputToIso(rawVal)
-  if (parsed) {
-    targetObj[key] = parsed
+const dateInputBuffers = ref({})
+let isDateDeletingKey = false
+
+function getDateBufferKey(targetObj, colKey) {
+  if (!targetObj._tempRowId) {
+    targetObj._tempRowId = 'row_' + Math.random().toString(36).substring(2, 9)
+  }
+  return `${targetObj._tempRowId}_${colKey}`
+}
+
+function getDateCellBuffer(targetObj, colKey) {
+  const k = getDateBufferKey(targetObj, colKey)
+  return dateInputBuffers.value[k]
+}
+
+function getDateCellValue(targetObj, colKey) {
+  const k = getDateBufferKey(targetObj, colKey)
+  if (dateInputBuffers.value[k] !== undefined) {
+    return dateInputBuffers.value[k]
+  }
+  return formatDateDisplayYY(targetObj[colKey])
+}
+
+function clearDateCell(targetObj, colKey) {
+  targetObj[colKey] = ''
+  const k = getDateBufferKey(targetObj, colKey)
+  delete dateInputBuffers.value[k]
+}
+
+function handleDateCellKeydown(e) {
+  if (e.key === 'Backspace' || e.key === 'Delete') {
+    isDateDeletingKey = true
+  } else {
+    isDateDeletingKey = false
   }
 }
 
-function handleDateCellBlur(targetObj, key, rawVal) {
-  if (!rawVal || !rawVal.trim()) {
-    targetObj[key] = ''
+function maskDateInput(val, isDeleting = false) {
+  if (!val) return ''
+  let str = String(val)
+
+  if (isDeleting) {
+    const digits = str.replace(/\D/g, '').slice(0, 8)
+    if (digits.length <= 2) return digits
+    if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`
+    return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`
+  }
+
+  // Handle single digit followed by slash for day e.g. '5/' -> '05/'
+  if (/^\d\//.test(str)) {
+    str = '0' + str
+  }
+
+  let digits = str.replace(/\D/g, '')
+  let dayPart = ''
+  if (digits.length >= 2) {
+    let dayNum = parseInt(digits.slice(0, 2), 10)
+    if (dayNum > 31) dayNum = 31
+    if (dayNum === 0) dayNum = 1
+    dayPart = String(dayNum).padStart(2, '0')
+  } else if (digits.length === 1) {
+    return digits
+  } else {
+    return ''
+  }
+
+  let rest = digits.slice(2)
+  let monthPart = ''
+  let yearPart = ''
+  const maxYear = 4
+
+  if (rest.length > 0) {
+    const firstMonthChar = rest[0]
+    // Nếu số đầu ở phần tháng lớn hơn 1 (2..9) thì tự chuyển thành 0X/ và chuyển sang nhập năm
+    if (firstMonthChar >= '2' && firstMonthChar <= '9') {
+      monthPart = '0' + firstMonthChar
+      yearPart = rest.slice(1).slice(0, maxYear)
+    } else if (firstMonthChar === '0') {
+      if (rest.length === 1) {
+        return `${dayPart}/0`
+      } else {
+        let secondMonthChar = rest[1]
+        if (secondMonthChar === '0') secondMonthChar = '1'
+        monthPart = '0' + secondMonthChar
+        yearPart = rest.slice(2).slice(0, maxYear)
+      }
+    } else if (firstMonthChar === '1') {
+      if (rest.length === 1) {
+        return `${dayPart}/1`
+      } else {
+        let monthNum = parseInt(rest.slice(0, 2), 10)
+        // Rào lại ở tháng chỉ nhập được 12 tháng thôi (nếu > 12 thì giữ 12)
+        if (monthNum > 12) monthNum = 12
+        monthPart = String(monthNum).padStart(2, '0')
+        yearPart = rest.slice(2).slice(0, maxYear)
+      }
+    }
+  } else {
+    return `${dayPart}/`
+  }
+
+  if (monthPart) {
+    if (yearPart) {
+      return `${dayPart}/${monthPart}/${yearPart}`
+    } else {
+      return `${dayPart}/${monthPart}/`
+    }
+  }
+
+  return `${dayPart}/`
+}
+
+function handleDateCellInput(targetObj, colKey, event) {
+  const isDeleting = (event?.inputType && event.inputType.startsWith('delete')) || isDateDeletingKey
+  isDateDeletingKey = false
+
+  const raw = event?.target?.value || ''
+  const masked = maskDateInput(raw, isDeleting)
+  const k = getDateBufferKey(targetObj, colKey)
+  dateInputBuffers.value[k] = masked
+  if (event?.target) {
+    event.target.value = masked
+  }
+
+  const digits = masked.replace(/\D/g, '')
+  if (digits.length === 8) {
+    const parsed = parseDateInputToIso(masked)
+    if (parsed) {
+      targetObj[colKey] = parsed
+    }
+  }
+}
+
+function handleDateCellBlur(targetObj, colKey, event) {
+  const k = getDateBufferKey(targetObj, colKey)
+  const raw = event?.target?.value || ''
+  if (!raw.trim()) {
+    targetObj[colKey] = ''
+    delete dateInputBuffers.value[k]
     return
   }
-  const parsed = parseDateInputToIso(rawVal)
+  const parsed = parseDateInputToIso(raw)
   if (parsed) {
-    targetObj[key] = parsed
-  } else if (!targetObj[key]) {
-    targetObj[key] = ''
+    targetObj[colKey] = parsed
+    delete dateInputBuffers.value[k]
+  } else {
+    delete dateInputBuffers.value[k]
+    if (!targetObj[colKey]) {
+      if (event?.target) event.target.value = ''
+    } else {
+      if (event?.target) event.target.value = formatDateDisplayYY(targetObj[colKey])
+    }
   }
 }
 
@@ -1249,8 +1451,10 @@ function openDateCellPicker(event) {
   }
 }
 
-function handleNativeDateChange(targetObj, key, val) {
-  targetObj[key] = val || ''
+function handleNativeDateChange(targetObj, colKey, val) {
+  targetObj[colKey] = val || ''
+  const k = getDateBufferKey(targetObj, colKey)
+  delete dateInputBuffers.value[k]
 }
 
 function formatDate(d) {
@@ -1437,6 +1641,7 @@ function fixDateFields(row) {
 // Inline edit actions
 async function startEditing() {
   loading.value = true
+  dateInputBuffers.value = {}
   try {
     await loadProvinces()
     editData.value = JSON.parse(JSON.stringify(guestData.value))
@@ -1464,6 +1669,7 @@ async function startEditing() {
 function cancelEditing() {
   isEditing.value = false
   editData.value = []
+  dateInputBuffers.value = {}
 }
 
 async function saveChanges() {
@@ -1483,6 +1689,7 @@ async function saveChanges() {
       uiStore.showToast('Cập nhật thông tin khách thành công!', 'success')
       guestData.value = JSON.parse(JSON.stringify(editData.value))
       isEditing.value = false
+      dateInputBuffers.value = {}
       emit('saved')
       notifyBroadcast()
     } else {
@@ -1777,7 +1984,7 @@ onMounted(() => {
   width: 100%;
   border: 1px solid #cbd5e1;
   border-radius: 4px;
-  padding: 2px 5px;
+  padding: 2px 6px;
   font-size: 12px;
   background-color: #ffffff;
   color: #1e293b;
@@ -1790,14 +1997,41 @@ onMounted(() => {
   border-color: #2F6FED;
   box-shadow: 0 0 0 2px rgba(47, 111, 237, 0.15);
 }
+.table-input.has-clear {
+  padding-right: 22px !important;
+}
+select.table-input {
+  padding-right: 20px;
+  cursor: pointer;
+}
+select.table-input.has-clear {
+  padding-right: 36px !important;
+}
 .select-geo {
-  max-width: 130px;
-  text-overflow: ellipsis;
+  width: 100%;
+}
+.table-textarea {
+  min-height: 38px;
+  height: 38px;
+  line-height: 1.35;
+  padding: 3px 6px;
+  overflow-y: auto;
+}
+.table-textarea.has-clear {
+  padding-right: 22px !important;
+}
+.cell-wrap {
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+  display: block;
 }
 .truncate-cell {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
   display: block;
 }
 </style>
