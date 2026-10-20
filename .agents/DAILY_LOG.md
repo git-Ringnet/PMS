@@ -8,6 +8,22 @@
 
 - **Ngày ghi**: `YYYY-MM-DD`
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
+## [2026-10-20] - Hoàn Tất Triệt Để Các Hạng Mục Dòng 36 - 39 Sheet FIX FE
+### Module: Đăng ký / Chi Tiết Ăn Sáng ([ChildBreakfastModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/ChildBreakfastModal.vue)), Thông Tin Phòng ([BookingDetailModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/components/BookingDetailModal.vue), [RoomInfoDatePicker.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/RoomInfoDatePicker.vue))
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **1. Dòng 36 - Chi tiết ăn sáng ([ChildBreakfastModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/ChildBreakfastModal.vue))**:
+    + Chuẩn hóa switch FIT/GIT: Thay thế toàn bộ custom switch pill sang dạng peer toggle switch đồng bộ 100% với [ExtraBedModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/ExtraBedModal.vue) (`w-8 h-4 bg-slate-300 rounded-full peer peer-checked:bg-sky-500 after:... translate-x-4` cùng chữ `FIT` màu xanh trời / `GIT` màu xám) áp dụng cho cả hàng cha lẫn từng ngày chi tiết.
+    + Lược bỏ nút "Quay lại" ở footer theo đúng quy ước FE Design System (modal đã có nút `x` ở header và hỗ trợ phím `Esc`), chỉ giữ duy nhất nút "Lưu" `.btn-pms-primary`.
+  - **2. Dòng 37 - Chi tiết thêm giường ([ExtraBedModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/ExtraBedModal.vue))**:
+    + Đã xác minh 100% đạt chuẩn: Font Roboto 12px, table header có border đầy đủ, switch GIT/FIT chuẩn peer-checked, chỉ có nút "Lưu" ở footer.
+  - **3. Dòng 38 & Dòng 39 - Thông tin phòng ([BookingDetailModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/components/BookingDetailModal.vue) & [RoomInfoDatePicker.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/RoomInfoDatePicker.vue))**:
+    + Khắc phục triệt để lỗi "nửa vàng nửa trắng" ở các ô ngày tháng bắt buộc (`RoomInfoDatePicker`): Input bên trong component được đặt `background: transparent !important`, `border: none !important`, không còn bị rule `.f input` hay `.main-grid.readonly-mode input:disabled` của modal cha đè màu xám/trắng lên viền và nền vàng `#FFF8DB` / `#F1DD8A`.
+    + Tối ưu hiển thị cho laptop 14 inch zoom 80%: Điều chỉnh `.card` `max-height: min(96vh, 880px)` và tinh chỉnh media query `@media (max-height: 860px)` (chiều cao input 28px, avatar 60x60px, padding 6px 10px), đảm bảo toàn bộ modal hiển thị vừa vặn không tràn màn hình.
+    + Xác minh CCCD/Số giấy tờ không bắt buộc, ô ngày tháng tuân thủ nhập 8 số `ddmmyyyy` tự động chuyển đổi `dd/mm/yyyy`, thanh tiêu đề đồng bộ màu theme hệ thống, các ô nhập đều có nút xóa nhanh `(x)`.
+- **Kiểm thử & Đảm bảo an toàn**:
+  - Frontend: `npm run build` -> **Thành công 100% trong 12.10s (0 lỗi)**.
+  - Backend: `php artisan test --filter=Guest` -> **52/52 tests PASSED (0 lỗi, 463 assertions)**.
+  - Hoàn toàn độc lập, không ảnh hưởng bất kỳ màn hình hoặc tính năng dùng chung nào khác.
 
 ## [2026-10-19] - Đồng Bộ Switch GIT/FIT Chuẩn Chi Tiết Thêm Giường & Viết Hoa Chữ Đầu Các Tiêu Đề Form
 ### Module: Đăng Ký / Màn hình tạo đăng ký & các Modal liên quan

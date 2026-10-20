@@ -2254,7 +2254,7 @@ function parseNumber(val) {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
   width: 100%;
   max-width: min(96vw, 1320px);
-  max-height: min(94vh, 760px);
+  max-height: min(96vh, 880px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2387,7 +2387,7 @@ function parseNumber(val) {
 
 .main-grid {
   display: grid;
-  grid-template-columns: 220px 1.25fr 1fr;
+  grid-template-columns: 210px 1.35fr 1.15fr;
   grid-template-rows: auto auto auto;
   border: 1.5px solid #cbd5e1;
   border-radius: 10px;
@@ -2499,15 +2499,15 @@ input.always-gray:disabled {
   min-width: 0;
 }
 .clearable-control > input,
-.clearable-control > select { padding-right: 30px; }
-.clearable-control.select-control > select { padding-right: 48px; }
+.clearable-control > select { padding-right: 22px; }
+.clearable-control.select-control > select { padding-right: 32px; }
 .field-clear-btn {
   position: absolute;
   z-index: 2;
   top: 50%;
-  right: 7px;
-  width: 20px;
-  height: 20px;
+  right: 5px;
+  width: 16px;
+  height: 16px;
   padding: 0;
   transform: translateY(-50%);
   display: inline-flex;
@@ -2516,13 +2516,13 @@ input.always-gray:disabled {
   border: 0;
   background: transparent;
   color: #94a3b8;
-  font-size: 16px;
+  font-size: 15px;
   line-height: 1;
   cursor: pointer;
 }
-.select-control .field-clear-btn { right: 25px; }
-.title-control > select { padding-right: 42px; }
-.title-control .field-clear-btn { right: 23px; }
+.select-control .field-clear-btn { right: 17px; }
+.title-control > select { padding-right: 28px; }
+.title-control .field-clear-btn { right: 16px; }
 .field-clear-btn:hover { color: #ef4444; }
 
 .span-2 { grid-column: span 2; }
@@ -2538,12 +2538,12 @@ input.always-gray:disabled {
 }
 .personal-grid {
   display: grid;
-  grid-template-columns: 130px minmax(0, 1.5fr) minmax(0, 1.6fr) 140px;
+  grid-template-columns: 110px minmax(0, 1.4fr) minmax(0, 1.4fr) 145px;
   gap: 6px 10px;
 }
 .personal-grid-2 {
   display: grid;
-  grid-template-columns: 1.5fr 1.2fr 110px;
+  grid-template-columns: 1.4fr 1.2fr 110px;
   gap: 6px 10px;
 }
 
@@ -2616,10 +2616,10 @@ input.always-gray:disabled {
 
 /* GRID HELPERS */
 .g { display: grid; gap: 6px 10px; }
-.docs-grid { grid-template-columns: 1.2fr 1.2fr 140px 1fr; gap: 6px 10px; }
-.stay-grid { grid-template-columns: 1.2fr 80px 1.2fr 80px 65px; gap: 6px 8px; margin-bottom: 8px; }
-.price-grid-1 { grid-template-columns: 120px 120px minmax(130px, 1fr) auto; gap: 6px 8px; margin-bottom: 8px; align-items: end; }
-.price-grid-2 { grid-template-columns: 120px 115px auto 1fr; gap: 6px 8px; align-items: end; }
+.docs-grid { grid-template-columns: 1.15fr 1.15fr 145px 1.25fr; gap: 6px 10px; }
+.stay-grid { grid-template-columns: minmax(136px, 1.4fr) 72px minmax(136px, 1.4fr) 72px 55px; gap: 6px 8px; margin-bottom: 8px; }
+.price-grid-1 { grid-template-columns: minmax(110px, 1.1fr) minmax(140px, 1.3fr) minmax(130px, 1.2fr) auto; gap: 6px 8px; margin-bottom: 8px; align-items: end; }
+.price-grid-2 { grid-template-columns: minmax(110px, 1fr) minmax(120px, 1.2fr) auto 1fr; gap: 6px 8px; align-items: end; }
 .btn-wrapper { display: flex; align-items: flex-end; }
 
 /* SIDEBAR GUESTS */
@@ -2891,40 +2891,68 @@ input.always-gray:disabled {
   margin-bottom: 12px;
 }
 
-/* Responsive compact adjustments for laptops (h <= 820px) */
-@media (max-height: 820px) {
+/* ROOM INFO DATE PICKER TRANSPARENCY OVERRIDES (CHỐNG NỬA VÀNG NỬA TRẮNG) */
+.room-info-date-picker input,
+.room-info-date-picker input:disabled,
+.main-grid.readonly-mode .room-info-date-picker input,
+.main-grid.readonly-mode .room-info-date-picker input:disabled {
+  background: transparent !important;
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* Responsive compact adjustments for laptops (h <= 860px) */
+@media (max-height: 860px) {
   .card-header {
-    padding: 8px 14px;
+    padding: 6px 14px;
   }
   .card-body {
-    padding: 10px 14px 14px;
+    padding: 8px 12px 10px;
   }
   .cell-guests, .cell-personal, .cell-docs, .cell-stay, .cell-price {
-    padding: 8px 12px !important;
+    padding: 6px 10px !important;
   }
   .f input, .f select {
-    height: 30px !important;
+    height: 28px !important;
     padding: 2px 6px !important;
     font-size: 12px !important;
   }
+  .f .room-info-date-picker {
+    height: 28px !important;
+  }
   .clearable-control > input,
-  .clearable-control > select { padding-right: 30px !important; }
-  .clearable-control.select-control > select { padding-right: 48px !important; }
+  .clearable-control > select { padding-right: 20px !important; }
+  .clearable-control.select-control > select { padding-right: 28px !important; }
   .sec-label {
-    padding-bottom: 4px !important;
-    margin-bottom: 8px !important;
+    padding-bottom: 3px !important;
+    margin-bottom: 6px !important;
     font-size: 12px !important;
   }
+  .id-avatar {
+    width: 60px !important;
+    height: 60px !important;
+  }
+  .btn-act {
+    height: 28px !important;
+  }
+  .stay-grid {
+    grid-template-columns: minmax(130px, 1.4fr) 68px minmax(130px, 1.4fr) 68px 50px !important;
+    margin-bottom: 4px !important;
+  }
+  .price-grid-1 {
+    margin-bottom: 4px !important;
+  }
   .draft-alert-banner {
-    padding: 5px 10px;
+    padding: 4px 8px;
     font-size: 12px;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
   }
 }
 
 @media (max-width: 1080px) {
   .main-grid {
-    grid-template-columns: 200px 1.2fr 1fr;
+    grid-template-columns: 200px 1.3fr 1.1fr;
   }
 }
 </style>

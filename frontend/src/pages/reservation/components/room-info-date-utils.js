@@ -39,6 +39,11 @@ export function maskDateInput(value, isDeleting = false) {
     str = '0' + str
   }
 
+  // Handle single digit followed by slash for month e.g. '05/5/' -> '05/05/'
+  if (/^(\d{2}\/)(\d)\//.test(str)) {
+    str = str.replace(/^(\d{2}\/)(\d)\//, '$10$2/')
+  }
+
   let digits = str.replace(/\D/g, '')
   let dayPart = ''
   if (digits.length >= 2) {
@@ -99,17 +104,79 @@ export function maskDateInput(value, isDeleting = false) {
 }
 
 export function parseDmyInput(value) {
-  const digits = String(value || '').replace(/\D/g, '')
-  if (digits.length !== 8) return null
+  if (!value) return null
+  const str = String(value).trim()
 
-  const day = Number(digits.slice(0, 2))
-  const month = Number(digits.slice(2, 4))
-  const year = Number(digits.slice(4))
-  const date = new Date(year, month - 1, day)
-
-  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
-    return null
+  // 1. Check DD/MM/YYYY or D/M/YYYY or DD-MM-YYYY
+  const slashMatch = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})$/)
+  if (slashMatch) {
+    const day = Number(slashMatch[1])
+    const month = Number(slashMatch[2])
+    const year = Number(slashMatch[3])
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const date = new Date(year, month - 1, day)
+      if (date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day) {
+        return toYmd(date)
+      }
+    }
   }
 
-  return toYmd(date)
+  // 2. Check DD/MM/YY or D/M/YY (2-digit year)
+  const twoDigitYearMatch = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2})$/)
+  if (twoDigitYearMatch) {
+    const day = Number(twoDigitYearMatch[1])
+    const month = Number(twoDigitYearMatch[2])
+    const yy = Number(twoDigitYearMatch[3])
+    const year = yy >= 50 ? 1900 + yy : 2000 + yy
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const date = new Date(year, month - 1, day)
+      if (date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day) {
+        return toYmd(date)
+      }
+    }
+  }
+
+  // 3. Check 8 digits DDMMYYYY
+  const digits = str.replace(/\D/g, '')
+  if (digits.length === 8) {
+    const day = Number(digits.slice(0, 2))
+    const month = Number(digits.slice(2, 4))
+    const year = Number(digits.slice(4))
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const date = new Date(year, month - 1, day)
+      if (date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day) {
+        return toYmd(date)
+      }
+    }
+  }
+
+  // 4. Check 6 digits DDMMYY (e.g. 181226)
+  if (digits.length === 6) {
+    const day = Number(digits.slice(0, 2))
+    const month = Number(digits.slice(2, 4))
+    const yy = Number(digits.slice(4))
+    const year = yy >= 50 ? 1900 + yy : 2000 + yy
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const date = new Date(year, month - 1, day)
+      if (date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day) {
+        return toYmd(date)
+      }
+    }
+  }
+
+  // 5. Check ISO YYYY-MM-DD
+  const isoMatch = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/)
+  if (isoMatch) {
+    const year = Number(isoMatch[1])
+    const month = Number(isoMatch[2])
+    const day = Number(isoMatch[3])
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      const date = new Date(year, month - 1, day)
+      if (date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day) {
+        return toYmd(date)
+      }
+    }
+  }
+
+  return null
 }

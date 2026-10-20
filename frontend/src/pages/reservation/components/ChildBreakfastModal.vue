@@ -135,19 +135,19 @@
                       </label>
                     </td>
                     <!-- Parent FIT/GIT Toggle -->
-                    <td class="p-3 text-center flex justify-center items-center h-12 border-slate-200">
-                      <div 
-                        @click="onParentFieldChange(child, 'is_room', !child.is_room)"
-                        class="w-14 h-5 rounded-full cursor-pointer relative transition-colors duration-200 flex items-center justify-between px-2 text-[10px] font-bold text-white select-none shadow-inner"
-                        :class="child.is_room ? 'bg-sky-500' : 'bg-slate-400'"
-                      >
-                        <span class="z-10" :class="child.is_room ? 'text-white' : 'text-slate-300/40'">FIT</span>
-                        <span class="z-10" :class="!child.is_room ? 'text-white' : 'text-slate-300/40'">GIT</span>
-                        <div 
-                          class="absolute w-3.5 h-3.5 bg-white rounded-full transition-transform duration-200 shadow-md top-[3px] left-[3px]" 
-                          :style="{ transform: child.is_room ? 'translateX(0)' : 'translateX(30px)' }"
-                        ></div>
-                      </div>
+                    <td class="p-3 text-center border-slate-200">
+                      <label class="relative inline-flex items-center cursor-pointer select-none gap-1.5 justify-center">
+                        <input 
+                          type="checkbox" 
+                          :checked="child.is_room"
+                          @change="e => onParentFieldChange(child, 'is_room', e.target.checked)"
+                          class="sr-only peer"
+                        />
+                        <div class="w-8 h-4 bg-slate-300 rounded-full peer peer-checked:bg-sky-500 relative after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 shadow-2xs"></div>
+                        <span class="text-xs font-semibold uppercase min-w-[32px] text-left" :class="child.is_room ? 'text-sky-600' : 'text-slate-500'">
+                          {{ child.is_room ? 'FIT' : 'GIT' }}
+                        </span>
+                      </label>
                     </td>
                   </tr>
 
@@ -210,19 +210,19 @@
                         </label>
                       </td>
                       <!-- FIT/GIT -->
-                      <td class="p-2 text-center flex justify-center items-center h-10 border-slate-200">
-                        <div 
-                          @click="d.is_room = !d.is_room"
-                          class="w-12 h-4.5 rounded-full cursor-pointer relative transition-colors duration-200 flex items-center justify-between px-2 text-[10px] font-bold text-white select-none shadow-inner"
-                          :class="d.is_room ? 'bg-sky-400' : 'bg-slate-350'"
-                        >
-                          <span class="z-10" :class="d.is_room ? 'text-white' : 'text-slate-300/40'">FIT</span>
-                          <span class="z-10" :class="!d.is_room ? 'text-white' : 'text-slate-300/40'">GIT</span>
-                          <div 
-                            class="absolute w-3 h-3 bg-white rounded-full transition-transform duration-200 shadow-md top-[3px] left-[3px]" 
-                            :style="{ transform: d.is_room ? 'translateX(0)' : 'translateX(26px)' }"
-                          ></div>
-                        </div>
+                      <td class="p-2 text-center border-slate-200">
+                        <label class="relative inline-flex items-center cursor-pointer select-none gap-1.5 justify-center">
+                          <input 
+                            type="checkbox" 
+                            :checked="d.is_room"
+                            @change="e => onDetailFieldChange(child, d, 'is_room', e.target.checked)"
+                            class="sr-only peer"
+                          />
+                          <div class="w-8 h-4 bg-slate-300 rounded-full peer peer-checked:bg-sky-500 relative after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 shadow-2xs"></div>
+                          <span class="text-xs font-semibold uppercase min-w-[32px] text-left" :class="d.is_room ? 'text-sky-600' : 'text-slate-500'">
+                            {{ d.is_room ? 'FIT' : 'GIT' }}
+                          </span>
+                        </label>
                       </td>
                     </tr>
                   </template>
@@ -310,19 +310,19 @@
                       </label>
                     </td>
                     <!-- Parent FIT/GIT Toggle -->
-                    <td class="p-3 text-center flex justify-center items-center h-12 border-slate-200">
-                      <div 
-                        @click="onParentFieldChange(child, 'is_room', !child.is_room)"
-                        class="w-14 h-5 rounded-full cursor-pointer relative transition-colors duration-200 flex items-center justify-between px-2 text-[10px] font-bold text-white select-none shadow-inner"
-                        :class="child.is_room ? 'bg-sky-500' : 'bg-slate-400'"
-                      >
-                        <span class="z-10" :class="child.is_room ? 'text-white' : 'text-slate-300/40'">FIT</span>
-                        <span class="z-10" :class="!child.is_room ? 'text-white' : 'text-slate-300/40'">GIT</span>
-                        <div 
-                          class="absolute w-3.5 h-3.5 bg-white rounded-full transition-transform duration-200 shadow-md top-[3px] left-[3px]" 
-                          :style="{ transform: child.is_room ? 'translateX(0)' : 'translateX(30px)' }"
-                        ></div>
-                      </div>
+                    <td class="p-3 text-center border-slate-200">
+                      <label class="relative inline-flex items-center cursor-pointer select-none gap-1.5 justify-center">
+                        <input 
+                          type="checkbox" 
+                          :checked="child.is_room"
+                          @change="e => onParentFieldChange(child, 'is_room', e.target.checked)"
+                          class="sr-only peer"
+                        />
+                        <div class="w-8 h-4 bg-slate-300 rounded-full peer peer-checked:bg-sky-500 relative after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 shadow-2xs"></div>
+                        <span class="text-xs font-semibold uppercase min-w-[32px] text-left" :class="child.is_room ? 'text-sky-600' : 'text-slate-500'">
+                          {{ child.is_room ? 'FIT' : 'GIT' }}
+                        </span>
+                      </label>
                     </td>
                   </tr>
 
@@ -383,19 +383,19 @@
                         </label>
                       </td>
                       <!-- FIT/GIT -->
-                      <td class="p-2 text-center flex justify-center items-center h-10 border-slate-200">
-                        <div 
-                          @click="d.is_room = !d.is_room"
-                          class="w-12 h-4.5 rounded-full cursor-pointer relative transition-colors duration-200 flex items-center justify-between px-2 text-[10px] font-bold text-white select-none shadow-inner"
-                          :class="d.is_room ? 'bg-sky-400' : 'bg-slate-350'"
-                        >
-                          <span class="z-10" :class="d.is_room ? 'text-white' : 'text-slate-300/40'">FIT</span>
-                          <span class="z-10" :class="!d.is_room ? 'text-white' : 'text-slate-300/40'">GIT</span>
-                          <div 
-                            class="absolute w-3 h-3 bg-white rounded-full transition-transform duration-200 shadow-md top-[3px] left-[3px]" 
-                            :style="{ transform: d.is_room ? 'translateX(0)' : 'translateX(26px)' }"
-                          ></div>
-                        </div>
+                      <td class="p-2 text-center border-slate-200">
+                        <label class="relative inline-flex items-center cursor-pointer select-none gap-1.5 justify-center">
+                          <input 
+                            type="checkbox" 
+                            :checked="d.is_room"
+                            @change="e => onDetailFieldChange(child, d, 'is_room', e.target.checked)"
+                            class="sr-only peer"
+                          />
+                          <div class="w-8 h-4 bg-slate-300 rounded-full peer peer-checked:bg-sky-500 relative after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 shadow-2xs"></div>
+                          <span class="text-xs font-semibold uppercase min-w-[32px] text-left" :class="d.is_room ? 'text-sky-600' : 'text-slate-500'">
+                            {{ d.is_room ? 'FIT' : 'GIT' }}
+                          </span>
+                        </label>
                       </td>
                     </tr>
                   </template>
@@ -428,15 +428,6 @@
         >
           <i class="fa-solid fa-floppy-disk"></i>
           <span>Lưu</span>
-        </button>
-        <button
-          type="button"
-          @click="revert"
-          class="btn-pms-secondary"
-          :disabled="isLoading || localChildren.length === 0"
-        >
-          <i class="fa-solid fa-rotate-left"></i>
-          <span>Quay lại</span>
         </button>
       </div>
     </div>
