@@ -1114,8 +1114,13 @@ class NightAuditController extends Controller
             ->whereDate('service_date', $date->toDateString())
             ->first();
 
-        if ($rmService && (float)$rmService->rate > 0) {
-            $rate = (float)$rmService->rate;
+        // Dòng 371: giá RM đã setup cho đêm này (booking_room_services) được ưu tiên,
+        // kể cả đêm tặng 0đ. 0đ chỉ được coi là "chưa có giá" khi giá phòng chung cũng 0.
+        $hasExplicitNightRate = false;
+        if ($rmService && $rmService->rate !== null
+            && ((float) $rmService->rate > 0 || (float) $room->rate > 0)) {
+            $rate = (float) $rmService->rate;
+            $hasExplicitNightRate = true;
         } elseif ((float)$room->rate > 0) {
             $rate = (float)$room->rate;
         } elseif ((float)$room->base_price > 0) {
@@ -1123,7 +1128,7 @@ class NightAuditController extends Controller
         }
 
         // Tra cứu giá từ rate code
-        if ($rate <= 0 && !empty($room->rate_code)) {
+        if (!$hasExplicitNightRate && $rate <= 0 && !empty($room->rate_code)) {
             $plan = \App\Models\RoomRatePlan::where('RateCode', $room->rate_code)->first();
             if ($plan && is_array($plan->Period)) {
                 foreach ($plan->Period as $row) {
@@ -1136,7 +1141,7 @@ class NightAuditController extends Controller
         }
 
         // Tra cứu giá chuẩn
-        if ($rate <= 0 && !empty($room->room_class_id)) {
+        if (!$hasExplicitNightRate && $rate <= 0 && !empty($room->room_class_id)) {
             $stdRate = \App\Models\StandardRate::where('room_class_id', $room->room_class_id)->value('room_price');
             if ($stdRate && (float)$stdRate > 0) {
                 $rate = (float)$stdRate;
