@@ -9,6 +9,38 @@
 - **Ngày ghi**: `YYYY-MM-DD`
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 
+## [2026-10-20] - Khắc Phục Lỗi Upload Hình Nền Portal & Phân Quyền Quản Trị Viên (Admin)
+### Module: Cấu hình Hệ thống (Portal Wallpaper), Xác thực & Phân quyền (Auth & RBAC), Hạ tầng API
+- **Mục tiêu & Yêu cầu hoàn thành**:
+  - Khắc phục lỗi `Server Error` (mã 500) khi tải ảnh lên từ máy:
+    - Bỏ header `Content-Type: multipart/form-data` ép tay trong [PortalWallpaperModal.vue](file:///d:/PMS/frontend/src/components/PortalWallpaperModal.vue) để Axios và trình duyệt tự động sinh `boundary` chuẩn.
+    - Cải tiến [http.js](file:///d:/PMS/frontend/src/services/http.js) tự động xóa `Content-Type` khi dữ liệu là `FormData` trên cả plain object và `AxiosHeaders`.
+    - Bọc try/catch, log chi tiết và xử lý an toàn phần mở rộng file trong [PortalWallpaperController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/PortalWallpaperController.php).
+  - Triệt tiêu lỗi 500 do thiếu web route `login` khi chưa xác thực hoặc token hết hạn:
+    - Đặt tên `->name('login')` cho route login trong [api.php](file:///d:/PMS/backend/routes/api.php).
+    - Cấu hình `$middleware->redirectGuestsTo()` trong [bootstrap/app.php](file:///d:/PMS/backend/bootstrap/app.php) trả về 401 JSON cho toàn bộ API requests.
+  - Phân quyền chỉ tài khoản Quản trị viên (Admin) mới có quyền đổi hình nền:
+    - Bổ sung phương thức `isAdmin()` trong [User.php](file:///d:/PMS/backend/app/Models/User.php) nhận diện `super_admin` và `branch_admin`.
+    - Cập nhật [RequirePermission.php](file:///d:/PMS/backend/app/Http/Middleware/RequirePermission.php) hỗ trợ kiểm tra vai trò `admin`.
+    - Cập nhật route middleware `/api/portal-wallpaper` thành `permission:admin,system.setting,config.hotel.edit`.
+    - Đồng bộ hiển thị nút và kiểm tra quyền đổi hình nền trên 3 màn hình ([HomePage.vue](file:///d:/PMS/frontend/src/pages/HomePage.vue), [PmsPages.vue](file:///d:/PMS/frontend/src/pages/PmsPages.vue), [FnbPages.vue](file:///d:/PMS/frontend/src/pages/FnbPages.vue)) và chặn thao tác trong [PortalWallpaperModal.vue](file:///d:/PMS/frontend/src/components/PortalWallpaperModal.vue) nếu không phải Admin.
+- **Files chỉnh sửa**:
+  - [PortalWallpaperController.php](file:///d:/PMS/backend/app/Http/Controllers/Api/PortalWallpaperController.php)
+  - [RequirePermission.php](file:///d:/PMS/backend/app/Http/Middleware/RequirePermission.php)
+  - [User.php](file:///d:/PMS/backend/app/Models/User.php)
+  - [bootstrap/app.php](file:///d:/PMS/backend/bootstrap/app.php)
+  - [api.php](file:///d:/PMS/backend/routes/api.php)
+  - [PortalWallpaperTest.php](file:///d:/PMS/backend/tests/Feature/PortalWallpaperTest.php)
+  - [PortalWallpaperModal.vue](file:///d:/PMS/frontend/src/components/PortalWallpaperModal.vue)
+  - [HomePage.vue](file:///d:/PMS/frontend/src/pages/HomePage.vue)
+  - [PmsPages.vue](file:///d:/PMS/frontend/src/pages/PmsPages.vue)
+  - [FnbPages.vue](file:///d:/PMS/frontend/src/pages/FnbPages.vue)
+  - [http.js](file:///d:/PMS/frontend/src/services/http.js)
+- **Kiểm thử**:
+  - Backend: `php artisan test --filter=PortalWallpaperTest` -> **7/7 passed (36 assertions, 0 errors)**.
+  - Backend RBAC: `php artisan test --filter=OrganizationRbacTest` -> **15/15 passed (43 assertions, 0 errors)**.
+  - Frontend: `npm run build` -> **Thành công 100% trong 4.42s (0 errors)**.
+
 ## [2026-10-19] - Hoàn Thiện Rà Soát & Bổ Sung Toàn Diện Lịch Sử Thao Tác (Ghi Log) Toàn Hệ Thống
 ### Module: Lịch sử thao tác (ActivityLog), Đặt phòng, Lễ tân, Thu ngân, Buồng phòng, F&B, Kho & Tồn kho, Cấu hình & Báo cáo
 - **Mục tiêu & Yêu cầu hoàn thành theo phản hồi khách hàng**:

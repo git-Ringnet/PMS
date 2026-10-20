@@ -7,7 +7,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\NightAuditController;
 
 // Public routes (không cần đăng nhập)
-Route::post('/login', [AuthController::class, 'login']);
+Route::post('/login', [AuthController::class, 'login'])->name('login');
 // GET hotel-settings public để App.vue đọc is_night_audit_running trước khi login
 Route::get('/hotel-settings', [\App\Http\Controllers\Api\HotelSettingController::class, 'show']);
 // GET night-audit/check-status public để mọi client/tab/màn hình login đều kiểm tra được trạng thái tiến trình
@@ -168,8 +168,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     Route::apiResource('shifts', \App\Http\Controllers\Api\ShiftController::class);
     Route::apiResource('hotel-configs', \App\Http\Controllers\Api\HotelConfigController::class);
     Route::get('portal-wallpaper', [\App\Http\Controllers\Api\PortalWallpaperController::class, 'getWallpaper']);
-    Route::post('portal-wallpaper', [\App\Http\Controllers\Api\PortalWallpaperController::class, 'updateWallpaper'])->middleware('permission:system.setting');
-    Route::delete('portal-wallpaper', [\App\Http\Controllers\Api\PortalWallpaperController::class, 'resetWallpaper'])->middleware('permission:system.setting');
+    Route::post('portal-wallpaper', [\App\Http\Controllers\Api\PortalWallpaperController::class, 'updateWallpaper'])->middleware('permission:admin,system.setting,config.hotel.edit');
+    Route::delete('portal-wallpaper', [\App\Http\Controllers\Api\PortalWallpaperController::class, 'resetWallpaper'])->middleware('permission:admin,system.setting,config.hotel.edit');
     Route::post('templates/{id}/duplicate', [\App\Http\Controllers\Api\TemplateController::class, 'duplicate']);
     Route::post('templates/{id}/make-default', [\App\Http\Controllers\Api\TemplateController::class, 'makeDefault']);
     Route::post('templates/{id}/remove-default', [\App\Http\Controllers\Api\TemplateController::class, 'removeDefault']);

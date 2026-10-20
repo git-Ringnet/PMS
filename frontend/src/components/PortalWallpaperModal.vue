@@ -1,8 +1,14 @@
 <script setup>
 import { ref, watch, onMounted, onUnmounted, computed } from 'vue'
 import { useUiStore } from '@/stores/ui-store'
+import { usePermission } from '@/composables/usePermission'
 import http from '@/services/http'
 import defaultBg from '@/assets/hotel-bg.png'
+
+const { canAny, isSuperAdmin, isAdmin } = usePermission()
+const canModifyWallpaper = computed(() => {
+  return isSuperAdmin.value || isAdmin.value || canAny(['system.setting', 'config.hotel.edit'])
+})
 
 const props = defineProps({
   show: {
@@ -136,6 +142,11 @@ function setOverlayPreset(pct) {
 }
 
 async function handleResetDefault() {
+  if (!canModifyWallpaper.value) {
+    uiStore.showToast('Chỉ tài khoản Quản trị viên (Admin) mới có quyền đổi hình nền.', 'error')
+    return
+  }
+
   const confirmed = await uiStore.confirm({
     title: 'Khôi phục hình nền mặc định',
     message: 'Bạn có chắc chắn muốn xóa hình nền tùy chỉnh và trở về hình nền mặc định?',
@@ -159,13 +170,21 @@ async function handleResetDefault() {
     }
   } catch (err) {
     console.error('Lỗi khi khôi phục hình nền:', err)
-    uiStore.showToast(err.response?.data?.message || 'Không thể khôi phục hình nền mặc định.', 'error')
+    const msg = err.response?.status === 403
+      ? (err.response?.data?.message || 'Chỉ tài khoản Quản trị viên (Admin) mới có quyền đổi hình nền.')
+      : (err.response?.data?.message || 'Không thể khôi phục hình nền mặc định.')
+    uiStore.showToast(msg, 'error')
   } finally {
     isSubmitting.value = false
   }
 }
 
 async function handleSave() {
+  if (!canModifyWallpaper.value) {
+    uiStore.showToast('Chỉ tài khoản Quản trị viên (Admin) mới có quyền đổi hình nền.', 'error')
+    return
+  }
+
   isSubmitting.value = true
   try {
     let res
@@ -175,9 +194,7 @@ async function handleSave() {
       formData.append('wallpaper_position', appliedPosition.value)
       formData.append('wallpaper_fit', wallpaperFit.value)
       formData.append('wallpaper_overlay', overlayPercent.value)
-      res = await http.post('/portal-wallpaper', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      })
+      res = await http.post('/portal-wallpaper', formData)
     } else if (inputUrl.value.trim()) {
       res = await http.post('/portal-wallpaper', {
         wallpaper_url: inputUrl.value.trim(),
@@ -209,7 +226,10 @@ async function handleSave() {
     }
   } catch (err) {
     console.error('Lỗi khi lưu hình nền:', err)
-    uiStore.showToast(err.response?.data?.message || 'Không thể cập nhật hình nền.', 'error')
+    const msg = err.response?.status === 403
+      ? (err.response?.data?.message || 'Chỉ tài khoản Quản trị viên (Admin) mới có quyền đổi hình nền.')
+      : (err.response?.data?.message || 'Không thể cập nhật hình nền.')
+    uiStore.showToast(msg, 'error')
   } finally {
     isSubmitting.value = false
   }

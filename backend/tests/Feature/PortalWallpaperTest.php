@@ -158,4 +158,36 @@ class PortalWallpaperTest extends TestCase
             'name' => 'Portal_WallpaperOverlay',
         ]);
     }
+
+    public function test_unauthenticated_request_returns_401_json(): void
+    {
+        $response = $this->postJson('/api/portal-wallpaper', [
+            'wallpaper_position' => 'center center',
+        ]);
+        $response->assertStatus(401)
+            ->assertJsonPath('success', false);
+    }
+
+    public function test_branch_admin_user_can_update_wallpaper(): void
+    {
+        $branchAdmin = User::factory()->create(['username' => 'branch_admin_user']);
+        $branchAdminRole = Role::firstOrCreate(
+            ['code' => 'branch_admin'],
+            ['name' => 'Branch Admin', 'level' => 2, 'department_scope' => 'ALL', 'is_active' => true]
+        );
+        $branchAdmin->roles()->syncWithoutDetaching([$branchAdminRole->id]);
+
+        $this->actingAs($branchAdmin);
+        $response = $this->postJson('/api/portal-wallpaper', [
+            'wallpaper_url' => 'https://example.com/branch-admin-bg.jpg',
+            'wallpaper_position' => '50% 50%',
+            'wallpaper_fit' => 'cover',
+            'wallpaper_overlay' => 25,
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('wallpaper_url', 'https://example.com/branch-admin-bg.jpg');
+    }
 }
+
