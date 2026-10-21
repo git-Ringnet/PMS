@@ -2087,7 +2087,8 @@ class BookingRoomServiceController extends Controller
             'date_to'         => 'required|date|after_or_equal:date_from',
             'service_code'    => 'required|string|max:30',
             'quantity'        => 'required|numeric|min:0.01',
-            'rate'            => 'required|numeric|min:0',
+            // Cho phép đơn giá âm để post bill cấn trừ (một số KS không dùng xóa bill).
+            'rate'            => 'required|numeric',
             'folio'           => 'nullable|integer|between:1,3',
             'description'     => 'nullable|string|max:400',
             'currency'        => 'nullable|string|max:3',
@@ -2372,7 +2373,8 @@ class BookingRoomServiceController extends Controller
             'date_from'       => 'required|date',
             'date_to'         => 'required|date|after_or_equal:date_from',
             'mode'            => 'required|in:auto,update,surcharge',
-            'rate'            => 'nullable|numeric|min:0',
+            // Tự nhập tiền phòng được phép 0đ hoặc âm (cấn trừ tiền phòng).
+            'rate'            => 'nullable|required_if:mode,update,surcharge|numeric',
             'charge_percent'  => 'nullable|numeric|min:0|max:100',
             'folio'           => 'nullable|integer|between:1,3',
             'description'     => 'nullable|string|max:400',
