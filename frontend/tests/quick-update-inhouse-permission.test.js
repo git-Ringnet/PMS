@@ -71,3 +71,15 @@ test('Section 10: SingleDatePicker startDate parses systemDate correctly to focu
   assert.equal(parseStartDate(null), null)
   assert.equal(parseStartDate(''), null)
 })
+
+test('Dòng 335: Lễ tân (FO) không bị ràng buộc bởi AllowReserUpdateRate_DeptDateRoomInhouse = 0', () => {
+  const result = computeQuickUpdatePermissions({
+    currentModule: 'FO',
+    allowSaleInhouseRateDeparture: false,
+    targetRooms: [{ id: 105, status: 1, roomNumber: '105' }]
+  })
+
+  assert.equal(result.canEditInhouseRateDeparture, true)
+  assert.equal(result.isDepartureDisabled, false, 'Lễ tân vẫn sửa được ngày đi dù thông số = 0')
+  assert.equal(result.isRateDisabled, false, 'Lễ tân vẫn sửa được giá dù thông số = 0')
+})
