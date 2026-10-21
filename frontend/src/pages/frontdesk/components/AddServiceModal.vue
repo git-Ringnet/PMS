@@ -202,6 +202,7 @@ const selectedService    = ref(null)
 const serviceQuery       = ref('')
 const showServiceDropdown = ref(false)
 const serviceComboRef    = ref(null)
+const serviceInputRef    = ref(null)
 const quantity           = ref(1)
 const unitPrice          = ref(0)
 const unitPriceDisplay   = ref('')
@@ -237,13 +238,17 @@ const foServices      = ref([])
 const loadingServices = ref(false)
 const filteredFoServices = computed(() => {
   const query = serviceQuery.value.trim().toLowerCase()
-  return query ? foServices.value.filter(service => String(service.name || '').toLowerCase().includes(query)) : foServices.value
+  if (!query || (selectedService.value && query === String(selectedService.value.name || '').toLowerCase().trim())) {
+    return foServices.value
+  }
+  return foServices.value.filter(service => String(service.name || '').toLowerCase().includes(query))
 })
 
 function selectService(service) {
   selectedService.value = service
   serviceQuery.value = service?.name || ''
   showServiceDropdown.value = false
+  serviceInputRef.value?.blur()
 }
 
 function clearService() {
@@ -286,11 +291,10 @@ watch(selectedService, (svc) => {
   description.value = svc.name
   if (svc.price && Number(svc.price) > 0) {
     setUnitPrice(Number(svc.price))
-    isPriceLocked.value = true
   } else {
     setUnitPrice(0)
-    isPriceLocked.value = false
   }
+  isPriceLocked.value = false
 })
 
 // Tổng tiền Tab 1
@@ -538,7 +542,7 @@ function handleClose() {
   <div v-if="show" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
     <!-- Modal Dialog đủ rộng để hiển thị ngày dd/mm/yyyy cùng nút x và lịch -->
     <div ref="modalRef"
-      class="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col text-xs border border-gray-100"
+      class="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col text-xs border border-slate-200"
       :style="{ transform: `translate(${modalPosition.x}px, ${modalPosition.y}px)`, transition: isDraggingModal ? 'none' : '' }">
 
       <div class="text-white px-5 py-3 flex items-center justify-between cursor-move select-none touch-none"
@@ -548,7 +552,7 @@ function handleClose() {
           <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
-          <span class="font-semibold text-xs">Thêm dịch vụ</span>
+          <span class="font-semibold text-xs">Thêm Dịch Vụ</span>
         </div>
         <button @pointerdown.stop @click="handleClose" class="text-gray-300 hover:text-white transition-colors p-1">
           <X class="w-4 h-4" />
@@ -621,7 +625,7 @@ function handleClose() {
                 Dịch vụ <span class="text-red-500">*</span>
               </label>
               <div ref="serviceComboRef" class="relative">
-                <input v-model="serviceQuery" type="text" required :placeholder="loadingServices ? 'Đang tải danh sách...' : 'Chọn dịch vụ'" @focus="showServiceDropdown = true" @input="handleServiceInput" class="h-8 w-full rounded-lg border border-[#F1DD8A] bg-[#FFF8DB] pl-3 pr-9 text-xs font-normal text-[#000000D9] outline-none placeholder:text-[#A8B0BF] focus:border-amber-500" />
+                <input ref="serviceInputRef" v-model="serviceQuery" type="text" required :placeholder="loadingServices ? 'Đang tải danh sách...' : 'Chọn dịch vụ'" @click="showServiceDropdown = true" @focus="showServiceDropdown = true" @input="handleServiceInput" class="h-8 w-full rounded-lg border border-[#F1DD8A] bg-[#FFF8DB] pl-3 pr-9 text-xs font-normal text-[#000000D9] outline-none placeholder:text-[#A8B0BF] focus:border-amber-500" />
                 <button v-if="serviceQuery || selectedService" @click="clearService" type="button"
                   class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 font-bold p-0.5 focus:outline-none"
                   title="Bỏ chọn dịch vụ">
@@ -664,10 +668,10 @@ function handleClose() {
               </label>
               <div class="relative">
               <input :value="unitPriceDisplay" @input="onUnitPriceInput" type="text" required
-                :disabled="!selectedService || isPriceLocked"
+                :disabled="!selectedService"
                 :class="['w-full border rounded-lg px-3.5 py-2.5 text-xs font-normal focus:outline-none focus:ring-1 focus:ring-blue-500',
-                  (!selectedService || isPriceLocked) ? 'bg-[#f8fafc] text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-[#FFF8DB] border-[#F1DD8A] text-[#000000D9]']" />
-              <button v-if="selectedService && !isPriceLocked && unitPriceDisplay" type="button" title="Xóa đơn giá" @click="setUnitPrice('')" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500"><X class="h-3.5 w-3.5" /></button>
+                  !selectedService ? 'bg-[#f8fafc] text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-[#FFF8DB] border-[#F1DD8A] text-[#000000D9]']" />
+              <button v-if="selectedService && unitPriceDisplay" type="button" title="Xóa đơn giá" @click="setUnitPrice('')" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500"><X class="h-3.5 w-3.5" /></button>
               </div>
             </div>
             <div>
@@ -709,9 +713,10 @@ function handleClose() {
               </div>
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-700 mb-1.5">Tiền phòng tự động</label>
+              <label :class="roomUpdateMode ? 'text-slate-400' : 'text-[#000000D9]'" class="block text-xs font-medium mb-1.5">Tiền phòng tự động</label>
               <input :value="roomAutoText" readonly disabled
-                class="w-full border border-[#E5E7EB] rounded-lg px-3.5 py-2.5 text-xs bg-[#F8FAFC] text-[#000000D9] font-normal cursor-not-allowed shadow-xs" />
+                :class="roomUpdateMode ? 'bg-slate-100 text-slate-400 border-slate-200' : 'bg-[#F8FAFC] text-[#000000D9] border-[#E5E7EB]'"
+                class="w-full border rounded-lg px-3.5 py-2.5 text-xs font-normal cursor-not-allowed shadow-xs" />
             </div>
           </div>
 

@@ -9,9 +9,9 @@
           <label class="text-xs font-semibold text-[#000000D9]">Phòng / Khách <span class="text-red-500">*</span></label>
           <div 
             @click="canSelectRoom && (isDropdownOpen = !isDropdownOpen)"
-            class="flex items-center justify-between rounded-lg px-3 h-8 text-xs shadow-xs transition-colors select-none border border-[#F1DD8A] bg-[#FFF8DB] hover:border-amber-500"
+            class="flex items-center justify-between rounded-lg px-3 h-8 text-xs shadow-xs transition-colors select-none"
             :class="[
-              canSelectRoom ? 'cursor-pointer' : 'cursor-not-allowed opacity-80 bg-amber-50'
+              canSelectRoom ? 'border border-[#F1DD8A] bg-[#FFF8DB] hover:border-amber-500 cursor-pointer' : 'border border-slate-200 bg-[#F8FAFC] cursor-not-allowed text-[#000000D9]'
             ]"
           >
             <div v-if="selectedOption" class="flex items-center gap-1.5 truncate">
@@ -27,7 +27,7 @@
             </div>
             <div class="ml-2 flex shrink-0 items-center gap-1">
               <button v-if="selectedOption && canSelectRoom" type="button" title="Xóa phòng/khách" @click.stop="clearSelectedOption" class="text-slate-400 hover:text-red-500"><X class="h-3.5 w-3.5" /></button>
-              <span class="text-xs text-slate-400">▼</span>
+              <span v-if="canSelectRoom" class="text-xs text-slate-400">▼</span>
             </div>
           </div>
 
@@ -272,9 +272,9 @@
               <template v-for="grpKey in tabKeys" :key="grpKey">
                 <template v-if="groupedCart[grpKey] && groupedCart[grpKey].length > 0">
                   <!-- Group Header -->
-                  <div class="group-header px-2 py-1 text-xs font-semibold uppercase tracking-wider text-slate-500 bg-slate-100 border-b border-slate-200 flex items-center gap-1.5">
+                  <div class="group-header px-2 py-1 text-xs font-semibold uppercase tracking-wider text-[#000000D9] bg-slate-100 border-b border-slate-200 flex items-center gap-1.5">
                     <span class="group-dot w-2 h-2 rounded-full" :style="{ background: GROUP_COLORS[grpKey] || '#64748b' }"></span>
-                    <span>{{ GROUP_LABELS[grpKey] }}</span>
+                    <span class="text-[#000000D9] font-semibold">{{ GROUP_LABELS[grpKey] }}</span>
                   </div>
 
                   <!-- Group Rows -->
@@ -435,8 +435,7 @@ const isNoPostEnabled = value => value === true || value === 1 || ['1', 'true', 
 const bookingGroups = ref([])
 const roomGuestOptions = ref([])
 const selectedOption = ref(null)
-const isFoModal = computed(() => props.isModal && String(props.postingSource || '').toUpperCase() === 'FO')
-const canSelectRoom = computed(() => !props.isModal || isFoModal.value)
+const canSelectRoom = computed(() => !props.isModal)
 const isPostBlocked = computed(() => Boolean(selectedOption.value?.bookingNoPost || selectedOption.value?.roomNoPost))
 const postBlockMessage = computed(() => selectedOption.value?.bookingNoPost
   ? 'Booking đang bật No Post — không thể thêm hoặc gửi dịch vụ.'
@@ -531,6 +530,17 @@ const clearSelectedOption = () => {
   selectOption(null)
   roomSearchQuery.value = ''
   isDropdownOpen.value = true
+}
+
+const parseLocalDateYMD = (dateVal) => {
+  if (!dateVal) return ''
+  if (typeof dateVal === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateVal)) return dateVal
+  const d = new Date(dateVal)
+  if (isNaN(d.getTime())) return String(dateVal).slice(0, 10)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 const selectedStayMinDate = computed(() => selectedOption.value?.arrivalDate || null)
@@ -642,8 +652,8 @@ const loadBookingRooms = async () => {
                   isPrimary: g.isPrimary,
                   bookingNoPost: isNoPostEnabled(b.no_post),
                   roomNoPost: isNoPostEnabled(r.no_post),
-                  arrivalDate: String(r.arrival_date || b.arrival_date || '').slice(0, 10),
-                  departureDate: String(r.departure_date || b.departure_date || '').slice(0, 10),
+                  arrivalDate: parseLocalDateYMD(r.arrival_date || b.arrival_date),
+                  departureDate: parseLocalDateYMD(r.departure_date || b.departure_date),
                   label: `${code} · ${roomNoDisplay} · ${g.name}`
                 }
                 allOptions.push(opt)
@@ -663,8 +673,8 @@ const loadBookingRooms = async () => {
                 isPrimary: true,
                 bookingNoPost: isNoPostEnabled(b.no_post),
                 roomNoPost: isNoPostEnabled(r.no_post),
-                arrivalDate: String(r.arrival_date || b.arrival_date || '').slice(0, 10),
-                departureDate: String(r.departure_date || b.departure_date || '').slice(0, 10),
+                arrivalDate: parseLocalDateYMD(r.arrival_date || b.arrival_date),
+                departureDate: parseLocalDateYMD(r.departure_date || b.departure_date),
                 label: `${code} · ${roomNoDisplay} · ${fallbackGuest}`
               }
               allOptions.push(opt)

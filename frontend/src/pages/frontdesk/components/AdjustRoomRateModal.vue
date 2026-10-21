@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { X, XCircle, Save, Calendar } from '@lucide/vue'
 import { adjustRoomRate } from '@/services/booking-service'
 
@@ -10,6 +10,62 @@ const dateFrom = ref('')
 const dateTo = ref('')
 const rate = ref(0)
 const rateDisplay = ref('')
+
+const modalRef = ref(null)
+const modalPosition = ref({ x: 0, y: 0 })
+const isDraggingModal = ref(false)
+const dragStart = ref({ x: 0, y: 0, left: 0, top: 0 })
+
+function clampModalPosition(x, y) {
+  const modal = modalRef.value
+  if (!modal) return { x, y }
+
+  const margin = 16
+  const width = modal.offsetWidth
+  const height = modal.offsetHeight
+  const baseLeft = (window.innerWidth - width) / 2
+  const baseTop = (window.innerHeight - height) / 2
+  const minX = margin - baseLeft
+  const maxX = window.innerWidth - margin - width - baseLeft
+  const minY = margin - baseTop
+  const maxY = window.innerHeight - margin - height - baseTop
+
+  return {
+    x: minX <= maxX ? Math.min(Math.max(x, minX), maxX) : 0,
+    y: minY <= maxY ? Math.min(Math.max(y, minY), maxY) : 0,
+  }
+}
+
+function beginModalDrag(event) {
+  if (event.button !== 0 || event.target.closest('button, input, select, textarea')) return
+  isDraggingModal.value = true
+  dragStart.value = {
+    x: event.clientX,
+    y: event.clientY,
+    left: modalPosition.value.x,
+    top: modalPosition.value.y,
+  }
+  window.addEventListener('mousemove', onModalDrag)
+  window.addEventListener('mouseup', stopModalDrag)
+}
+
+function onModalDrag(event) {
+  if (!isDraggingModal.value) return
+  const rawX = dragStart.value.left + (event.clientX - dragStart.value.x)
+  const rawY = dragStart.value.top + (event.clientY - dragStart.value.y)
+  modalPosition.value = clampModalPosition(rawX, rawY)
+}
+
+function stopModalDrag() {
+  if (!isDraggingModal.value) return
+  isDraggingModal.value = false
+  window.removeEventListener('mousemove', onModalDrag)
+  window.removeEventListener('mouseup', stopModalDrag)
+}
+
+function handleKeyDown(event) {
+  if (event.key === 'Escape' && props.show) emit('close')
+}
 
 function formatInputCurrency(val) {
   if (val === null || val === undefined || val === '') return ''
@@ -205,7 +261,14 @@ function initializeStayDates(room) {
 }
 
 watch(() => props.show, visible => {
-  if (!visible) return
+  if (!visible) {
+    stopModalDrag()
+    window.removeEventListener('keydown', handleKeyDown)
+    return
+  }
+  modalPosition.value = { x: 0, y: 0 }
+  window.removeEventListener('keydown', handleKeyDown)
+  window.addEventListener('keydown', handleKeyDown)
   const room = rooms.value[0]
   roomId.value = String(room?.roomId || room?.id || '')
   initializeStayDates(room)
@@ -217,6 +280,11 @@ watch(() => props.show, visible => {
   isNight.value = false
   selectedNightDates.value = []
   error.value = ''
+})
+
+onBeforeUnmount(() => {
+  stopModalDrag()
+  window.removeEventListener('keydown', handleKeyDown)
 })
 
 watch([() => props.show, () => props.systemDate, selectedRoom], ([visible, systemDate, room]) => {
@@ -268,14 +336,19 @@ async function submit() {
 </script>
 
 <template>
-  <div v-if="show" class="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4">
-    <div class="w-[720px] max-w-[calc(100vw-32px)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
+  <div v-if="show" class="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4 font-sans select-none">
+    <div
+      ref="modalRef"
+      class="w-[720px] max-w-[calc(100vw-32px)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl"
+      :style="{ transform: `translate3d(${modalPosition.x}px, ${modalPosition.y}px, 0)` }"
+    >
       <!-- Header Bar -->
       <div
-        class="flex h-[36px] items-center justify-between px-4"
-        style="background-color: #0788eb !important; color: #ffffff !important;"
+        class="flex h-[36px] items-center justify-between px-4 text-white cursor-move select-none"
+        :style="{ background: 'var(--pms-custom-theme, #006bdb)' }"
+        @mousedown="beginModalDrag"
       >
-        <span class="text-[13px] font-bold tracking-wide">Điều chỉnh tiền phòng</span>
+        <span class="text-[13px] font-bold tracking-wide">Điều Chỉnh Tiền Phòng</span>
         <button
           @click="emit('close')"
           class="flex items-center justify-center text-white/90 hover:opacity-80 transition cursor-pointer text-lg font-bold leading-none"
@@ -415,20 +488,18 @@ async function submit() {
         <button
           type="button"
           @click="emit('close')"
-          style="background-color: #0788eb !important; color: #ffffff !important;"
-          class="flex h-[32px] min-w-[80px] items-center justify-center gap-1.5 rounded-[6px] px-3.5 text-[12px] font-semibold text-white shadow-sm hover:opacity-90 active:scale-95 transition cursor-pointer"
+          class="btn-pms-close"
         >
-          <XCircle class="h-4 w-4 stroke-[2] text-white" />
+          <XCircle class="h-4 w-4 stroke-[2]" />
           <span>Đóng</span>
         </button>
         <button
           type="button"
           :disabled="saving"
           @click="submit"
-          style="background-color: #0788eb !important; color: #ffffff !important;"
-          class="flex h-[32px] min-w-[76px] items-center justify-center gap-1.5 rounded-[6px] px-3.5 text-[12px] font-semibold text-white shadow-sm hover:opacity-90 active:scale-95 transition disabled:opacity-50 cursor-pointer"
+          class="btn-pms-primary"
         >
-          <Save class="h-4 w-4 stroke-[2] text-white" />
+          <Save class="h-4 w-4 stroke-[2]" />
           <span>{{ saving ? 'Đang lưu...' : 'Lưu' }}</span>
         </button>
       </div>

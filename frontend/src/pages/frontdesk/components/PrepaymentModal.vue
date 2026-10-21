@@ -297,7 +297,10 @@ watch(() => props.show, (visible) => {
     fetchWorkShifts()
     document.addEventListener('keydown', handleEscape)
     const rawRId = props.selectedRoomId
-    selectedTargetRoomId.value = (rawRId !== null && rawRId !== undefined && rawRId !== '' && rawRId !== 'null') ? rawRId : null
+    const defaultRoomId = (rawRId !== null && rawRId !== undefined && rawRId !== '' && rawRId !== 'null')
+      ? rawRId
+      : (props.roomOptions?.[0]?.roomId || props.roomOptions?.[0]?.id || null)
+    selectedTargetRoomId.value = defaultRoomId
     if (paymentMethods.value.length === 0) {
       fetchPaymentMethods()
     } else if (!paymentMethodId.value && paymentMethods.value[0]) {
@@ -398,25 +401,97 @@ const handleSubmit = async () => {
   }
 }
 
+const modalRef = ref(null)
+const modalPosition = ref({ x: 0, y: 0 })
+const isDraggingModal = ref(false)
+const dragStart = ref({ x: 0, y: 0, left: 0, top: 0 })
+
+function clampModalPosition(x, y) {
+  const modal = modalRef.value
+  if (!modal) return { x, y }
+
+  const margin = 16
+  const width = modal.offsetWidth
+  const height = modal.offsetHeight
+  const baseLeft = (window.innerWidth - width) / 2
+  const baseTop = (window.innerHeight - height) / 2
+  const minX = margin - baseLeft
+  const maxX = window.innerWidth - margin - width - baseLeft
+  const minY = margin - baseTop
+  const maxY = window.innerHeight - margin - height - baseTop
+
+  return {
+    x: minX <= maxX ? Math.min(Math.max(x, minX), maxX) : 0,
+    y: minY <= maxY ? Math.min(Math.max(y, minY), maxY) : 0,
+  }
+}
+
+function beginModalDrag(event) {
+  if (event.button !== 0) return
+  isDraggingModal.value = true
+  dragStart.value = {
+    x: event.clientX,
+    y: event.clientY,
+    left: modalPosition.value.x,
+    top: modalPosition.value.y,
+  }
+  window.addEventListener('pointermove', moveModal)
+  window.addEventListener('pointerup', endModalDrag)
+}
+
+function moveModal(event) {
+  if (!isDraggingModal.value) return
+  modalPosition.value = clampModalPosition(
+    dragStart.value.left + event.clientX - dragStart.value.x,
+    dragStart.value.top + event.clientY - dragStart.value.y,
+  )
+}
+
+function endModalDrag() {
+  isDraggingModal.value = false
+  window.removeEventListener('pointermove', moveModal)
+  window.removeEventListener('pointerup', endModalDrag)
+}
+
+function resetModalPosition() {
+  endModalDrag()
+  modalPosition.value = { x: 0, y: 0 }
+}
+
 const handleClose = () => {
   emit('close')
 }
+
+watch(() => props.show, (val) => {
+  if (val) resetModalPosition()
+})
 
 onMounted(() => {
   fetchPaymentMethods()
 })
 
-onBeforeUnmount(() => document.removeEventListener('keydown', handleEscape))
+onBeforeUnmount(() => {
+  endModalDrag()
+  document.removeEventListener('keydown', handleEscape)
+})
 </script>
 
 <template>
   <div v-if="show" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-2 md:p-4 animate-fadeIn select-none font-sans">
-    <div class="bg-white rounded-xl shadow-2xl w-full max-w-5xl overflow-hidden border border-sky-400 flex flex-col text-xs">
+    <div
+      ref="modalRef"
+      class="bg-white rounded-xl shadow-2xl w-full max-w-5xl overflow-hidden border border-slate-200 flex flex-col text-xs"
+      :style="{ transform: `translate(${modalPosition.x}px, ${modalPosition.y}px)`, transition: isDraggingModal ? 'none' : '' }"
+    >
       
       <!-- Header (Màu xanh dương mạ #0088ff chuẩn Ảnh 2) -->
-      <div class="text-white px-4 py-2.5 flex items-center justify-between font-semibold shrink-0 shadow-xs" style="background: var(--pms-custom-theme, #006bdb)">
-        <span class="text-xs font-semibold tracking-wide">Thanh toán trước</span>
-        <button @click="handleClose" class="hover:bg-white/20 p-1 rounded transition-colors text-white cursor-pointer" title="Đóng">
+      <div
+        class="text-white px-4 py-2.5 flex items-center justify-between font-semibold shrink-0 shadow-xs cursor-move select-none touch-none"
+        style="background: var(--pms-custom-theme, #006bdb)"
+        @pointerdown="beginModalDrag"
+      >
+        <span class="text-xs font-semibold tracking-wide">Thanh Toán Trước</span>
+        <button @pointerdown.stop @click="handleClose" class="hover:bg-white/20 p-1 rounded transition-colors text-white cursor-pointer" title="Đóng">
           <X class="w-4 h-4" />
         </button>
       </div>
@@ -459,10 +534,10 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleEscape))
                 </div>
               </div>
 
-              <!-- Ô Chọn Tài khoản ngân hàng (Nền vàng #ffffcc) -->
+              <!-- Ô Chọn Tài khoản ngân hàng -->
               <div v-if="isBankTransfer" class="col-span-6">
                 <label class="block font-semibold text-gray-700 mb-1 text-xs">Tài khoản ngân hàng</label>
-                <select v-model="selectedBankAccount" class="w-full px-2 py-1.5 bg-[#ffffcc] border border-gray-300 rounded text-gray-900 font-medium focus:outline-none text-xs truncate" title="Tài khoản ngân hàng">
+                <select v-model="selectedBankAccount" class="w-full px-2 py-1.5 bg-white border border-gray-300 rounded text-gray-900 font-normal focus:outline-none text-xs truncate" title="Tài khoản ngân hàng">
                   <option value="">-- Không chọn --</option>
                   <option v-for="b in bankAccountOptions" :key="b.id" :value="b.id">
                     {{ b.display }}
@@ -497,19 +572,18 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleEscape))
                 <label class="block font-semibold text-gray-700 mb-1 text-xs">Phòng</label>
                 <div class="relative">
                 <select v-model="selectedTargetRoomId" class="h-8 w-full appearance-none rounded border border-gray-300 bg-white py-1.5 pl-2.5 pr-12 text-xs font-normal text-[#000000D9] focus:outline-none">
-                  <option :value="null">Master Header</option>
                   <option v-for="r in roomOptions" :key="r.roomId || r.id" :value="r.roomId || r.id">
                     Phòng {{ r.roomNumber || r.room_number || r.id }}
                   </option>
                 </select>
-                <button v-if="selectedTargetRoomId !== ''" type="button" class="absolute right-7 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-red-500" title="Xóa phòng" @click="selectedTargetRoomId = ''"><X class="h-3.5 w-3.5" /></button>
+                <button v-if="selectedTargetRoomId !== '' && selectedTargetRoomId !== null" type="button" class="absolute right-7 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-red-500" title="Xóa phòng" @click="selectedTargetRoomId = null"><X class="h-3.5 w-3.5" /></button>
                 <ChevronDown class="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
                 </div>
               </div>
             </div>
 
             <!-- Hàng Ca làm việc, Giờ, Ngày, Tiền tệ (Được phân bổ hợp lý, hiển thị trọn vẹn thông tin) -->
-            <div class="grid grid-cols-[85px_155px_1fr_85px] gap-2 items-start">
+            <div class="grid grid-cols-[80px_140px_165px_85px] gap-2 items-start">
               <!-- Ca làm việc (85px) -->
               <div class="min-w-0">
                 <label class="block font-semibold text-[#000000D9] mb-1 text-xs">Ca <span class="text-red-500">*</span></label>
@@ -570,7 +644,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleEscape))
       </div>
 
       <div class="border-t border-gray-200 bg-white px-4 py-3">
-        <div class="mb-2 text-xs font-bold uppercase tracking-wide text-slate-700">Danh sách thanh toán trước</div>
+        <div class="mb-2 text-xs font-bold uppercase tracking-wide text-slate-700">Danh Sách Thanh Toán Trước</div>
         <div class="max-h-36 overflow-auto rounded border border-slate-200">
           <table class="w-full text-left text-xs">
             <thead class="sticky top-0 bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
