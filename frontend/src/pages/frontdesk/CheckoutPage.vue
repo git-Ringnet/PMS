@@ -338,6 +338,20 @@ const showSplitDepositModal = ref(false)
 const roomAdjustment = ref(null)
 const housekeepingAdjustment = ref(null)
 
+// Đứng tại phòng: hiển thị đúng giai đoạn ở và hạng của phòng; đứng tại Master: ngày của booking, Phòng/Hạng để trống.
+const registrationStayLabel = computed(() => {
+  if (!selectedBooking.value) return '--'
+  const rawRoom = selectedRoomItem.value?.rawRoom
+  const arrival = rawRoom ? rawRoom.arrival_date : selectedBooking.value.arrivalDate
+  const departure = rawRoom ? rawRoom.departure_date : selectedBooking.value.departureDate
+  return `${formatDate(arrival)} - ${formatDate(departure)}`
+})
+const registrationRoomLabel = computed(() => {
+  if (!selectedRoomItem.value) return ''
+  const roomClass = selectedRoomItem.value.rawRoom?.room_class
+  return [roomNumber.value || selectedRoomItem.value.roomNumber, roomClass?.code || roomClass?.name].filter(Boolean).join(' - ')
+})
+
 const checkoutGuests = computed(() => selectedRoomItem.value?.allGuests?.filter(g => g?.id) || [])
 const isRestoreCheckout = computed(() => {
   if (selectedRoomItem.value) return Number(selectedRoomItem.value.rawRoom?.status ?? selectedRoomItem.value.status) === 2
@@ -2774,6 +2788,14 @@ const totalServiceAmount = computed(() => {
   return visibleServices.value.reduce((acc, s) => acc + (s.totalAmount || (s.amount * s.quantity)), 0)
 })
 
+// Giải trừ CN chỉ áp dụng cho thanh toán công nợ AC: so tổng payment_debt_settlements với số tiền dòng thanh toán.
+const debtSettlementLabel = (pmCode, payment) => {
+  if (pmCode !== 'AC') return ''
+  const settled = Number(payment.settled_amount) || 0
+  if (settled <= 0) return ''
+  return Math.round((Number(payment.amount) - settled) * 100) <= 0 ? 'Đã thu' : 'Còn thiếu'
+}
+
 const paymentsList = computed(() => {
   if (!selectedBooking.value) return []
 
@@ -2819,7 +2841,7 @@ const paymentsList = computed(() => {
         editFlag: Number(p.edit_flag),
         isDeleted: p.deleted_at ? 'Có' : '',
         vatNo: p.vat_no || '',
-        accounting: p.accounting || 'Đã thu',
+        accounting: debtSettlementLabel(pmCode, p),
          userName: p.user?.name || p.user?.username || p.user_name || p.created_by || p.username || 'Admin',
         rawPayment: p
       })
@@ -2840,7 +2862,7 @@ const paymentsList = computed(() => {
       editFlag: 0,
       isDeleted: '',
       vatNo: '',
-      accounting: 'Đã thu',
+      accounting: '',
       userName: 'Admin'
     })
   }
@@ -3167,13 +3189,18 @@ const selectBookingFromSearch = (b, r = null, specificGuest = null) => {
   showSearchDropdown.value = false
 }
 
+// Viewing the registration is navigation only, so it stays allowed in the read-only Sale invoice.
 const openRegistrationFromCheckout = () => {
-  if (denySaleInvoiceMutation()) return
   if (!selectedBooking.value?.code) {
     uiStore.showToast('Vui lòng chọn đăng ký trước.', 'warning')
     return
   }
-  router.push({ path: '/frontdesk', query: { tab: 'create-res', bookingCode: selectedBooking.value.code } })
+  const isSaleContext = String(route.path || '').startsWith('/reservation')
+    || String(route.query.module || '').toLowerCase() === 'sale'
+  router.push({
+    path: isSaleContext ? '/reservation' : '/frontdesk',
+    query: { tab: 'create-res', bookingCode: selectedBooking.value.code }
+  })
 }
 
 const syncCheckoutFilterFromRoute = () => {
@@ -3882,8 +3909,8 @@ onUnmounted(() => {
           <div class="grid grid-cols-2 gap-x-3 gap-y-1 px-2 py-1 text-xs leading-tight">
             <div class="col-span-2"><label class="block text-slate-400">Tên đăng ký</label><span class="font-semibold text-slate-700 truncate block">{{ selectedBooking ? `${selectedBooking.code}-${selectedBooking.name}` : '--' }}</span></div>
             <div><label class="block text-slate-400">Tên khách</label><span class="font-semibold text-slate-700 truncate block">{{ selectedGuest || '--' }}</span></div>
-            <div><label class="block text-slate-400">Ngày đến ~ Ngày đi</label><span class="font-semibold text-slate-700">{{ selectedBooking ? `${formatDate(selectedBooking.arrivalDate)} - ${formatDate(selectedBooking.departureDate)}` : '--' }}</span></div>
-            <div><label class="block text-slate-400">Phòng / Hạng</label><span class="font-semibold text-slate-700">{{ roomNumber || '--' }} - {{ selectedRoomItem?.roomType || selectedRoomItem?.roomName || 'SUPT' }}</span></div>
+            <div><label class="block text-slate-400">Ngày đến ~ Ngày đi</label><span class="font-semibold text-slate-700">{{ registrationStayLabel }}</span></div>
+            <div><label class="block text-slate-400">Phòng / Hạng</label><span class="font-semibold text-slate-700">{{ registrationRoomLabel }}</span></div>
             <div><label class="block text-slate-400">Trạng thái</label><span class="font-semibold text-emerald-600">In-House</span></div>
             <div class="col-span-2"><label class="block text-slate-400"><i class="fa-regular fa-note-sticky"></i> Ghi chú:</label><textarea :value="noteText" readonly class="w-full h-7 px-1 py-0.5 bg-white border border-slate-300 rounded text-xs resize-none"></textarea></div>
           </div>

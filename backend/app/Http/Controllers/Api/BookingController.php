@@ -174,6 +174,12 @@ class BookingController extends Controller
             $relations[] = 'masterServiceBills.usernameOperator:id,username,name';
             $relations[] = 'masterServiceBills.user:id,name,username';
             $relations[] = 'masterServiceBills.hotelService:id,code,name';
+            // Tổng giải trừ của từng dòng thanh toán để Hóa đơn hiển thị cột Giải trừ CN (công nợ AC).
+            $relations['payments'] = fn ($paymentQuery) => $paymentQuery->withSum([
+                'debtSettlements as settled_amount' => fn ($settlementQuery) => $settlementQuery
+                    ->where('edit_flag', 0)
+                    ->whereNull('deleted_at'),
+            ], 'amount');
             $relations[] = 'payments.paymentMethod';
             $relations[] = 'payments.user';
             $relations[] = 'payments.bankAccount';
