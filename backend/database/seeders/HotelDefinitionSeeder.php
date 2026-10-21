@@ -435,6 +435,8 @@ class HotelDefinitionSeeder extends Seeder
             ['name' => 'RoleUserUpdateCheckoutBooking', 'value' => '', 'description' => 'Danh sách mã role được sửa metadata booking đã checkout; cần có quyền fo.booking.edit. Để trống sẽ từ chối.', 'is_visible' => true],
             // Section 12 - Phân quyền mở khóa Do Not Move
             ['name' => 'RoleUserOpenDoNotMove', 'value' => '', 'description' => 'Danh sách mã role chính xác được phép mở khóa Do Not Move; cần có quyền fo.booking.edit. Để trống sẽ từ chối role được cấu hình.', 'is_visible' => true],
+            // Đồng bộ chuỗi công ty / thị trường / nguồn khách
+            ['name' => 'SyncCompanyAllBranch', 'value' => '0', 'description' => 'Đồng bộ công ty, thị trường, nguồn khách cho tất cả chi nhánh trong chuỗi (0: Không, mỗi chi nhánh lưu riêng; 1: Thêm/sửa/xóa ở một chi nhánh thì các chi nhánh khác tự cập nhật theo, không đồng bộ người bán).', 'is_visible' => true],
             // Alert sinh nhật / special request
             ['name' => 'AllowShowAlertListView', 'value' => '1', 'description' => 'Tự động hiện popup danh sách sinh nhật / special request khi vào module (1: Có, 0: Không - chỉ xem ở icon lịch góc phải).', 'is_visible' => true],
         ];

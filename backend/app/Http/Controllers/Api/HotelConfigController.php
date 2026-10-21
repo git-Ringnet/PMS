@@ -80,9 +80,15 @@ class HotelConfigController extends Controller
 
         $config->update($validated);
 
+        // Đồng bộ chuỗi: thông số này dùng chung cho mọi chi nhánh
+        $syncWarnings = $config->name === \App\Services\ChainCatalogSyncService::CONFIG_NAME
+            ? app(\App\Services\ChainCatalogSyncService::class)->propagateSetting($config->value)
+            : [];
+
         return response()->json([
             'success' => true,
-            'data' => new HotelConfigResource($config)
+            'data' => new HotelConfigResource($config),
+            'sync_warnings' => $syncWarnings,
         ]);
     }
 
