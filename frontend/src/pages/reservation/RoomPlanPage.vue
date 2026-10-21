@@ -18,6 +18,9 @@ import SingleDatePicker from '@/components/SingleDatePicker.vue'
 import { getRoomPlanDateRange, setRoomPlanDateRange } from './room-plan-view-state.js'
 import { roomPlanStayRange, markRoomPlanConflicts } from '@/utils/room-plan-conflicts.js'
 import { resolveRoomPlanDayUseLayout } from '@/utils/room-plan-day-use-layout.js'
+import { isRoomPlanVirtualRoomVisible } from '@/utils/room-plan-virtual-room-visibility.js'
+import { buildRoomPlanSelectionRectangle, getRoomPlanSelectionGroupBounds, replaceRoomPlanSelectionGroup } from '@/utils/room-plan-selection.js'
+import { resolveRoomPlanQuickBookingUnitPrice } from '@/utils/room-plan-quick-booking-pricing.js'
 
 const uiStore = useUiStore()
 const roomStore = useRoomStore()
@@ -257,6 +260,7 @@ const allCustomerSources = ref([])
 const registrationStatuses = ref([])
 const quickBookingCompanySearch = ref('KHÁCH LẺ')
 const showQuickBookingCompanyDropdown = ref(false)
+const quickBookingUseConfiguredPricePerRoom = ref(false)
 const quickBookingForm = ref({
   company: 'KHÁCH LẺ',
   companyId: null,
@@ -299,7 +303,12 @@ function formatQuickBookingRate(val) {
 
 function handleQuickBookingRateInput(event) {
   const digits = event.target.value.replace(/[^0-9]/g, '')
+  quickBookingUseConfiguredPricePerRoom.value = false
   quickBookingForm.value.rate = digits === '' ? '' : Number(digits)
+}
+
+function clearQuickBookingManualRate() {
+  calculateQuickBookingPrice()
 }
 
 const quickBookingModalStyle = computed(() => {
@@ -464,7 +473,9 @@ const isDragSelecting = ref(false)
 const dragSelectionStart = ref(null) // { roomIdx, dayIdx, roomNo }
 const initialSelectedCells = ref([])
 const selectionDragMoved = ref(false)
+const selectionDragBlockedMessage = ref('')
 let selectionGroupCounter = 0
+const selectionResizeState = ref(null)
 
 // Resize state
 const resizeState = ref(null)
@@ -1203,6 +1214,11 @@ const dbRooms = computed(() => {
     }
   })
 
+  // Dòng 340: chỉ ẩn dòng phòng chưa gán trên lưới; dữ liệu booking và thống kê OCC/AV giữ nguyên.
+  if (!isRoomPlanVirtualRoomVisible(hotelSettings.value?.ShowVirtualRoom)) {
+    list = list.filter(room => !room.isVirtual)
+  }
+
   // Filter by selected room type
   if (selectedRoomTypes.value && selectedRoomTypes.value.length > 0) {
     list = list.filter(r => selectedRoomTypes.value.includes(r.type))
@@ -1685,6 +1701,7 @@ async function loadBookings() {
             arrival_time: arrivalTime,
             departure_time: departureTime,
             room_type_name: br.room_class?.name || br.room_type || typeClass,
+            roomClassId: br.room_class_id ?? br.room_class?.id ?? null,
             status: Number(br.status),
             type,
             typeClass,
@@ -1939,6 +1956,7 @@ onBeforeUnmount(() => {
   stopQuickBookingDrag()
   stopLockRoomDrag()
   stopBookingPointerDrag()
+  stopSelectionResize()
   window.removeEventListener('keydown', handleKeyDown)
   if (roomPlanScrollContainer.value && !isRestoringPlanScroll) {
     sessionStorage.setItem(ROOM_PLAN_SCROLL_TOP_KEY, String(roomPlanScrollContainer.value.scrollTop))
@@ -2054,7 +2072,9 @@ function isCellOccupied(roomNo, date) {
   const roomBookings = processedBookings.value[rKey] || processedBookings.value[roomNo] || []
   if (!roomBookings || roomBookings.length === 0) return false
 
-  const targetDateStr = formatDateStr(date)
+  const targetDateStr = typeof date === 'string'
+    ? date.substring(0, 10)
+    : formatDateStr(date)
 
   return roomBookings.some(bk => {
     const checkInDateStr = formatDateStr(parseDateTime(bk.checkIn))
@@ -2107,6 +2127,124 @@ function isSelectionGroupTop(roomNo, date) {
   return (previous.selectionGroup ?? previous.date) !== (current.selectionGroup ?? current.date)
 }
 
+function selectionGroupId(cell) {
+  return cell?.selectionGroup
+}
+
+function roomPlanDayKeys() {
+  return days.value.map(day => formatDateStr(day.fullDate))
+}
+
+function selectionGroupBounds(selectionGroup) {
+  if (selectionGroup === undefined || selectionGroup === null) return null
+  return getRoomPlanSelectionGroupBounds(selectedCells.value, selectionGroup, roomPlanDayKeys())
+}
+
+function isMultiRoomSelectionGroup(roomNo, date) {
+  const dateStr = formatDateStr(date)
+  const cell = selectedCells.value.find(item => item.room === roomNo && item.date === dateStr)
+  const bounds = selectionGroupBounds(selectionGroupId(cell))
+  return Boolean(bounds && bounds.roomNumbers.length > 1)
+}
+
+function isSelectionResizeEdge(roomNo, date, edge) {
+  const dateStr = formatDateStr(date)
+  const cell = selectedCells.value.find(item => item.room === roomNo && item.date === dateStr)
+  const bounds = selectionGroupBounds(selectionGroupId(cell))
+  if (!bounds || bounds.roomNumbers.length < 2) return false
+
+  const dayIndex = roomPlanDayKeys().indexOf(dateStr)
+  return edge === 'start'
+    ? dayIndex === bounds.startDayIndex
+    : dayIndex === bounds.endDayIndex
+}
+
+function getRoomPlanCellAtPoint(event) {
+  const target = document.elementFromPoint(event.clientX, event.clientY)
+  const cell = target?.closest?.('[data-room-plan-cell]')
+  if (!cell) return null
+
+  const dayIndex = Number(cell.dataset.dayIndex)
+  return Number.isInteger(dayIndex) ? { dayIndex } : null
+}
+
+function startSelectionResize(roomItem, dayItem, edge, event) {
+  if (event.button !== 0 || isHousekeepingModule.value) return
+
+  const dateStr = formatDateStr(dayItem.fullDate)
+  const cell = selectedCells.value.find(item => item.room === roomItem.room && item.date === dateStr)
+  const selectionGroup = selectionGroupId(cell)
+  const bounds = selectionGroupBounds(selectionGroup)
+  if (!bounds || bounds.roomNumbers.length < 2) return
+
+  const roomIndexes = bounds.roomNumbers
+    .map(roomNumber => dbRooms.value.findIndex(room => room.room === roomNumber))
+    .filter(roomIndex => roomIndex >= 0)
+  if (roomIndexes.length !== bounds.roomNumbers.length) return
+
+  event.preventDefault()
+  event.stopPropagation()
+  selectionResizeState.value = {
+    edge,
+    selectionGroup,
+    startRoomIndex: Math.min(...roomIndexes),
+    endRoomIndex: Math.max(...roomIndexes),
+    originalStartDayIndex: bounds.startDayIndex,
+    originalEndDayIndex: bounds.endDayIndex,
+    initialSelectedCells: [...selectedCells.value],
+    blockedMessage: '',
+  }
+  window.addEventListener('mousemove', handleSelectionResizeMouseMove)
+  window.addEventListener('mouseup', stopSelectionResize)
+}
+
+function handleSelectionResizeMouseMove(event) {
+  const state = selectionResizeState.value
+  const pointerCell = getRoomPlanCellAtPoint(event)
+  if (!state || !pointerCell) return
+
+  const startDayIndex = state.edge === 'start' ? pointerCell.dayIndex : state.originalStartDayIndex
+  const endDayIndex = state.edge === 'end' ? pointerCell.dayIndex : state.originalEndDayIndex
+  if (startDayIndex > endDayIndex) return
+
+  const rectangle = buildRoomPlanSelectionRectangle({
+    rooms: dbRooms.value,
+    dayKeys: roomPlanDayKeys(),
+    startRoomIndex: state.startRoomIndex,
+    endRoomIndex: state.endRoomIndex,
+    startDayIndex,
+    endDayIndex,
+    selectionGroup: state.selectionGroup,
+    isSelectable: (room, date) => {
+      if (isCellOccupied(room.room, date)) return false
+      return !state.initialSelectedCells.some(cell => (
+        cell.selectionGroup !== state.selectionGroup
+        && cell.room === room.room
+        && cell.date === date
+      ))
+    },
+  })
+  if (!rectangle.valid) {
+    state.blockedMessage = 'Không thể đổi giai đoạn cùng lúc vì có phòng không trống, đang khóa hoặc đã được chọn ở vùng khác.'
+    return
+  }
+
+  state.blockedMessage = ''
+  selectedCells.value = replaceRoomPlanSelectionGroup(
+    state.initialSelectedCells,
+    state.selectionGroup,
+    rectangle.cells,
+  )
+}
+
+function stopSelectionResize() {
+  const blockedMessage = selectionResizeState.value?.blockedMessage
+  selectionResizeState.value = null
+  window.removeEventListener('mousemove', handleSelectionResizeMouseMove)
+  window.removeEventListener('mouseup', stopSelectionResize)
+  if (blockedMessage) uiStore.showToast(blockedMessage, 'warning')
+}
+
 function isBookingSegmented(bk) {
   const roomBookings = processedBookings.value[bk.room] || []
   return roomBookings.some(other => (
@@ -2124,6 +2262,7 @@ function handleCellMouseDown(roomItem, dayItem, dayIdx, roomIdx, event) {
   event.preventDefault()
   isDragSelecting.value = true
   selectionDragMoved.value = false
+  selectionDragBlockedMessage.value = ''
   const startDate = formatDateStr(dayItem.fullDate)
   const existingCell = selectedCells.value.find(c => c.room === roomItem.room && c.date === startDate)
   dragSelectionStart.value = {
@@ -2142,14 +2281,18 @@ function handleCellMouseDown(roomItem, dayItem, dayIdx, roomIdx, event) {
 
 function handleCellMouseEnter(roomItem, dayItem, dayIdx, roomIdx, event) {
   if (!isDragSelecting.value || !dragSelectionStart.value) return
-  if (roomItem.isVirtual) return
+  if (roomItem.isVirtual) {
+    selectionDragBlockedMessage.value = 'Không thể chọn nhiều phòng vì vùng chọn có phòng ảo.'
+    return
+  }
   if (!event.ctrlKey && !event.metaKey) return
-  if (roomItem.room !== dragSelectionStart.value.roomNo) return
-  if (dayIdx === dragSelectionStart.value.dayIdx) return
+  if (roomIdx === dragSelectionStart.value.roomIdx && dayIdx === dragSelectionStart.value.dayIdx) return
 
-  selectionDragMoved.value = true
-
-  updateDragSelection(roomIdx, dayIdx)
+  const updated = updateDragSelection(roomIdx, dayIdx)
+  selectionDragMoved.value = selectionDragMoved.value || updated
+  selectionDragBlockedMessage.value = updated
+    ? ''
+    : 'Không thể chọn nhiều phòng vì vùng chọn có phòng không trống hoặc đang khóa.'
 }
 
 function updateDragSelection(currentRoomIdx, currentDayIdx) {
@@ -2164,30 +2307,25 @@ function updateDragSelection(currentRoomIdx, currentDayIdx) {
     ? initialSelectedCells.value.filter(c => c.selectionGroup !== start.previousGroupId)
     : initialSelectedCells.value.filter(c => !(c.room === start.roomNo && c.date === formatDateStr(days.value[start.dayIdx]?.fullDate)))
   const newSelection = baseSelection.filter(c => c.selectionGroup !== start.groupId)
+  const rectangle = buildRoomPlanSelectionRectangle({
+    rooms: dbRooms.value,
+    dayKeys: roomPlanDayKeys(),
+    startRoomIndex: start.roomIdx,
+    endRoomIndex: currentRoomIdx,
+    startDayIndex: minDayIdx,
+    endDayIndex: maxDayIdx,
+    selectionGroup: start.groupId,
+    isSelectable: (room, date) => !isCellOccupied(room.room, date),
+  })
+  if (!rectangle.valid) return false
 
-  const roomObj = dbRooms.value[start.roomIdx]
-  if (!roomObj || roomObj.isVirtual) return
-  const roomNo = roomObj.room
-
-  for (let dIdx = minDayIdx; dIdx <= maxDayIdx; dIdx++) {
-    const dayObj = days.value[dIdx]
-    if (!dayObj) continue
-
-    if (isCellOccupied(roomNo, dayObj.fullDate)) continue
-
-    const dateStr = formatDateStr(dayObj.fullDate)
-    const exists = newSelection.some(c => c.room === roomNo && c.date === dateStr)
-    if (!exists) {
-      newSelection.push({
-        room: roomNo,
-        date: dateStr,
-        dayIdx: dIdx,
-        selectionGroup: start.groupId
-      })
+  rectangle.cells.forEach(cell => {
+    if (!newSelection.some(item => item.room === cell.room && item.date === cell.date)) {
+      newSelection.push(cell)
     }
-  }
-
+  })
   selectedCells.value = newSelection
+  return true
 }
 
 function handleGlobalCellMouseUp() {
@@ -2195,6 +2333,10 @@ function handleGlobalCellMouseUp() {
     isDragSelecting.value = false
     dragSelectionStart.value = null
     initialSelectedCells.value = []
+    if (selectionDragBlockedMessage.value) {
+      uiStore.showToast(selectionDragBlockedMessage.value, 'warning')
+    }
+    selectionDragBlockedMessage.value = ''
   }
   window.removeEventListener('mouseup', handleGlobalCellMouseUp)
 }
@@ -3222,7 +3364,10 @@ function getRoomUnitPrice(roomNo, rateCodeMa, stayDate = null) {
 
 function calculateQuickBookingPrice() {
   const ranges = selectedRoomsRanges.value
-  if (!ranges || ranges.length === 0) return 0
+  if (!ranges || ranges.length === 0) {
+    quickBookingUseConfiguredPricePerRoom.value = false
+    return 0
+  }
 
   // Rate trên form tạo nhanh là đơn giá cho 1 đêm / 1 phòng, không phải tổng tiền booking.
   // Nếu các phòng được chọn có giá chuẩn khác nhau, để 0 để người dùng chủ động nhập giá chung.
@@ -3230,6 +3375,7 @@ function calculateQuickBookingPrice() {
   const [firstRate] = unitRates
   const hasDifferentRates = unitRates.some(rate => Number(rate) !== Number(firstRate))
 
+  quickBookingUseConfiguredPricePerRoom.value = hasDifferentRates
   quickBookingForm.value.rate = hasDifferentRates ? 0 : (firstRate || 0)
   return quickBookingForm.value.rate
 }
@@ -3894,6 +4040,13 @@ async function handleDrop(targetRoom, targetDay, event) {
   const targetRoomNumber = targetRoom.isVirtual ? null : targetRoom.room
   const targetRoomClass = targetRoom.type
   const originalRoomClass = bk.typeClass
+  const originalRoomClassId = Number(bk.roomClassId)
+  const targetRoomClassId = Number(targetRoom.classId)
+  const hasStableRoomClassIds = Number.isInteger(originalRoomClassId) && originalRoomClassId > 0
+    && Number.isInteger(targetRoomClassId) && targetRoomClassId > 0
+  const isDifferentRoomClass = hasStableRoomClassIds
+    ? originalRoomClassId !== targetRoomClassId
+    : originalRoomClass !== targetRoomClass
 
   // Keep original check-in and check-out dates (only change room)
   const originalCheckIn = parseDateTime(bk.checkIn)
@@ -3948,11 +4101,35 @@ async function handleDrop(targetRoom, targetDay, event) {
         arrival_date: arrivalStr,
         departure_date: departureStr
       }
-      if (differentClass && targetRoom.classId) {
-        payload.room_class_id = targetRoom.classId
+      if (differentClass && targetRoomClassId > 0) {
+        payload.room_class_id = targetRoomClassId
       }
 
-      const res = await updateBookingRoom(bk.bookingId, bk.bookingRoomId, payload)
+      let res
+      try {
+        res = await updateBookingRoom(bk.bookingId, bk.bookingRoomId, payload)
+      } catch (requestError) {
+        const errorData = requestError.response?.data
+        if (errorData?.code !== 'overbooking_confirmation_required') {
+          throw requestError
+        }
+
+        const confirmed = await uiStore.confirm({
+          title: 'Cảnh báo overbooking',
+          message: errorData.message || 'Loại phòng đích đã hết phòng trống. Bạn có muốn tiếp tục?',
+          confirmText: 'Tiếp tục',
+          cancelText: 'Hủy'
+        })
+        if (!confirmed) {
+          revertPreviewMove()
+          return
+        }
+
+        res = await updateBookingRoom(bk.bookingId, bk.bookingRoomId, {
+          ...payload,
+          confirm_overbooking: true
+        })
+      }
 
       if (res && res.data && res.data.success) {
         if (res.data.warning) {
@@ -3975,7 +4152,7 @@ async function handleDrop(targetRoom, targetDay, event) {
     }
   }
 
-  if (originalRoomClass !== targetRoomClass) {
+  if (isDifferentRoomClass) {
     uiStore.confirm({
       title: 'Xác nhận chuyển phòng khác loại',
       message: `Chuyển phòng ${previousRoom} sang ${targetRoomNumber} (${originalRoomClass} → ${targetRoomClass}). Bạn có muốn xác nhận thay đổi này?`,
@@ -4120,9 +4297,14 @@ async function saveQuickBooking() {
       const canOverrideFixedRate = selectedQuickBookingRateCode.value
         && !selectedQuickBookingRateCode.value.IsDaily
         && Boolean(selectedQuickBookingRateCode.value.AllowChangeRate)
-      const unitPrice = selectedRateCode && !canOverrideFixedRate
-        ? getRoomUnitPrice(range.room, selectedRateCode, range.checkIn)
-        : Number(quickBookingForm.value.rate || 0)
+      const configuredRoomPrice = getRoomUnitPrice(range.room, selectedRateCode, range.checkIn)
+      const unitPrice = resolveRoomPlanQuickBookingUnitPrice({
+        configuredRoomPrice,
+        rateCode: selectedRateCode,
+        canOverrideRateCode: canOverrideFixedRate,
+        formRate: quickBookingForm.value.rate,
+        useConfiguredPricePerRoom: quickBookingUseConfiguredPricePerRoom.value,
+      })
 
       const groupKey = `${roomClassId}_${range.checkIn}_${range.checkOut}`
 
@@ -4144,7 +4326,7 @@ async function saveQuickBooking() {
       allocationsMap[groupKey].quantity += 1
       allocationsMap[groupKey].rooms.push({
         roomNumber: range.room,
-        guestName: quickBookingForm.value.bookingName || 'Walkin Guest',
+        guestName: 'Guest 1',
         arrivalDate: range.checkIn,
         departureDate: range.checkOut,
         nights: range.nights || 1,
@@ -4884,6 +5066,22 @@ function getRoomStatusIconName(item) {
                 @dragover.prevent="handleGlobalDragOver"
                 @drop="handleDrop(item, day, $event)"
               >
+                <div
+                  v-if="isSelectionResizeEdge(item.room, day.fullDate, 'start') && isMultiRoomSelectionGroup(item.room, day.fullDate)"
+                  data-room-plan-selection-resize-handle
+                  class="absolute inset-y-0 left-0 z-30 w-2 cursor-w-resize select-none bg-blue-500/25 hover:bg-blue-500/45"
+                  title="Kéo để đổi ngày đến cho các phòng đang chọn"
+                  @mousedown.stop="startSelectionResize(item, day, 'start', $event)"
+                  @click.stop
+                ></div>
+                <div
+                  v-if="isSelectionResizeEdge(item.room, day.fullDate, 'end') && isMultiRoomSelectionGroup(item.room, day.fullDate)"
+                  data-room-plan-selection-resize-handle
+                  class="absolute inset-y-0 right-0 z-30 w-2 cursor-e-resize select-none bg-blue-500/25 hover:bg-blue-500/45"
+                  title="Kéo để đổi ngày đi cho các phòng đang chọn"
+                  @mousedown.stop="startSelectionResize(item, day, 'end', $event)"
+                  @click.stop
+                ></div>
                 <!-- Render bookings starting at this cell -->
                 <template v-if="processedBookings[item.room]">
                   <div
@@ -4914,7 +5112,7 @@ function getRoomStatusIconName(item) {
                         ? '0%' 
                         : (isBookingSegmented(bk) ? `calc(${bk.leftRatio * 100}% + 2px)` : `${bk.leftRatio * 100}%`),
                       width: bk.isDayUseLayout
-                        ? `calc(${bk.span * 100}% - 1px)`
+                        ? `${bk.span * 100}%`
                         : !bk.isCheckInVisible
                         ? (isBookingSegmented(bk) ? `calc(${bk.span * 100}% - 4px)` : `calc(${bk.span * 100}% - 1px)`)
                         : (isBookingSegmented(bk) ? `calc(${bk.span * 100}% - 6px)` : `calc(${bk.span * 100}% - 1px)`),
@@ -5809,7 +6007,7 @@ function getRoomStatusIconName(item) {
               <button 
                 v-if="isQuickBookingRateEditable && Number(quickBookingForm.rate || 0) > 0" 
                 type="button" 
-                @click.stop="quickBookingForm.rate = 0" 
+                @click.stop="clearQuickBookingManualRate"
                 class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0.5 flex items-center justify-center z-10 select-none"
                 title="Xóa"
               >
