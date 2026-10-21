@@ -1970,6 +1970,11 @@ class BookingController extends Controller
             // 2. Cascade: Hủy và ghi log cho từng phòng trong booking (SP8052)
             $allRooms = $booking->bookingRooms;
             foreach ($allRooms as $bRoom) {
+                // Phòng đã hủy từ lần trước đã có log riêng, không ghi lại lần nữa
+                if ((int) $bRoom->status === BookingRoom::STATUS_CANCELLED) {
+                    continue;
+                }
+
                 $guestIds = $bRoom->guests()->pluck('guest_id');
                 $bRoom->guests()->update(['status' => 3]);
                 app(\App\Services\GuestStatusSyncService::class)->syncForGuestIds($guestIds);
