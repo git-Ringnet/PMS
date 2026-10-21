@@ -11,7 +11,8 @@ import {
   updatePendingNote,
   fetchShuttle,
   fetchNoshow,
-  fetchBirthdays
+  fetchBirthdays,
+  exportArrivalsDepartures
 } from '@/services/shift-work-service'
 import {
   maskDateInput,
@@ -376,6 +377,26 @@ async function initDates() {
   syncDateTexts()
 }
 
+async function handleExportExcel() {
+  const isDepartures = activeTab.value === 'departures'
+  try {
+    const res = await exportArrivalsDepartures({
+      type: isDepartures ? 'departures' : 'arrivals',
+      date: searchDate.value,
+      status: isDepartures ? departuresStatus.value : arrivalsStatus.value,
+      search: searchTerm.value
+    })
+    const url = window.URL.createObjectURL(new Blob([res.data]))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${isDepartures ? 'phong_di' : 'phong_den'}_${searchDate.value || 'ngay'}.xlsx`
+    link.click()
+    window.URL.revokeObjectURL(url)
+  } catch (error) {
+    console.error('Lỗi xuất Excel danh sách phòng:', error)
+  }
+}
+
 async function loadTabData() {
   isLoading.value = true
   try {
@@ -464,14 +485,26 @@ const departuresTotalRooms = computed(() => {
 
 // Noshow Filter
 const filteredNoshowData = computed(() => {
-  if (noshowFilter.value === 'all') return noshowData.value
   if (noshowFilter.value === 'charged') {
-    return noshowData.value.filter(item => (item.totalAmount || 0) > 0)
+    return noshowData.value.filter(item => item.isCharged)
   }
   if (noshowFilter.value === 'foc') {
-    return noshowData.value.filter(item => (item.totalAmount || 0) === 0)
+    return noshowData.value.filter(item => !item.isCharged)
   }
   return noshowData.value
+})
+
+// Nhóm: noshow by stage (late check-in) và phòng không đến (noshow)
+const noshowGroups = computed(() => {
+  const groups = [
+    { key: 'late_checkin', title: 'Noshow by stage (Late check-in)', items: [] },
+    { key: 'noshow', title: 'Phòng không đến (Noshow)', items: [] }
+  ]
+  filteredNoshowData.value.forEach(item => {
+    const group = groups.find(g => g.key === item.type) || groups[1]
+    group.items.push(item)
+  })
+  return groups.filter(g => g.items.length > 0)
 })
 
 // Shuttle Groups
@@ -890,6 +923,14 @@ function formatMoney(num) {
 
       <!-- Quick Search Box (Live Search with Clear X Button) -->
       <div class="flex items-center ml-auto">
+        <button
+          v-if="['arrivals', 'departures'].includes(activeTab)"
+          @click="handleExportExcel"
+          type="button"
+          class="mr-2 h-8 px-3 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors cursor-pointer"
+        >
+          Xuất Excel
+        </button>
         <div class="relative flex items-center">
           <input
             v-model="searchTerm"
@@ -936,6 +977,7 @@ function formatMoney(num) {
             <thead>
               <tr class="bg-slate-100 border-b border-slate-200 text-slate-800 font-semibold select-none h-9 text-xs">
                 <th class="py-2 px-2 text-center w-[110px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Mã Đăng Ký <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
+                <th class="py-2 px-2 text-center w-[100px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Giá Phòng</th>
                 <th class="py-2 px-2 text-center w-[220px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Tên Đăng Ký <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
                 <th class="py-2 px-2 text-center w-[130px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Tình Trạng Đăng Ký</th>
                 <th class="py-2 px-2 text-center w-[130px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Loại Phòng</th>
@@ -945,7 +987,6 @@ function formatMoney(num) {
                 <th class="py-2 px-2 text-center w-[75px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Đêm Phòng</th>
                 <th class="py-2 px-2 text-center w-[65px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Người Lớn</th>
                 <th class="py-2 px-2 text-center w-[65px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Trẻ Em</th>
-                <th class="py-2 px-2 text-center w-[100px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Giá Phòng</th>
                 <th class="py-2 px-2 text-center w-[90px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Mã Giá Phòng</th>
                 <th class="py-2 px-2 text-center w-[110px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Tổng Phòng</th>
                 <th class="py-2 px-2 text-center w-[180px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Yêu Cầu ĐB</th>
@@ -1019,6 +1060,9 @@ function formatMoney(num) {
                   >
                     {{ booking.id }}
                   </td>
+                  <td class="py-1.5 px-2 text-right text-slate-800 border-slate-200">
+                    {{ formatMoney(room.price) }}
+                  </td>
                   <td class="py-1.5 px-2.5 text-slate-800 break-words whitespace-normal leading-tight border-slate-200">
                     {{ booking.bookingName }}
                   </td>
@@ -1046,9 +1090,6 @@ function formatMoney(num) {
                   <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200" :class="{ 'text-sky-600': room.children > 0 }">
                     {{ room.children }}
                   </td>
-                  <td class="py-1.5 px-2 text-right text-slate-800 border-slate-200">
-                    {{ formatMoney(room.price) }}
-                  </td>
                   <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200">
                     {{ room.rateCode }}
                   </td>
@@ -1075,6 +1116,7 @@ function formatMoney(num) {
             <thead>
               <tr class="bg-slate-100 border-b border-slate-200 text-slate-800 font-semibold select-none h-9 text-xs">
                 <th class="py-2 px-2 text-center w-[110px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Mã Đăng Ký <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
+                <th class="py-2 px-2 text-center w-[100px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Giá Phòng</th>
                 <th class="py-2 px-2 text-center w-[220px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Tên Đăng Ký <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
                 <th class="py-2 px-2 text-center w-[130px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Tình Trạng Đăng Ký</th>
                 <th class="py-2 px-2 text-center w-[130px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Loại Phòng</th>
@@ -1084,7 +1126,6 @@ function formatMoney(num) {
                 <th class="py-2 px-2 text-center w-[75px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Đêm Phòng</th>
                 <th class="py-2 px-2 text-center w-[65px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Người Lớn</th>
                 <th class="py-2 px-2 text-center w-[65px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Trẻ Em</th>
-                <th class="py-2 px-2 text-center w-[100px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Giá Phòng</th>
                 <th class="py-2 px-2 text-center w-[90px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Mã Giá Phòng</th>
                 <th class="py-2 px-2 text-center w-[105px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Tổng DV</th>
                 <th class="py-2 px-2 text-center w-[105px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Tổng TT</th>
@@ -1101,7 +1142,7 @@ function formatMoney(num) {
               <template v-for="booking in departuresData" :key="booking.id">
                 <!-- Group Header Banner Row (Layout theo Dòng 49) -->
                 <tr class="border-b border-t border-slate-200 bg-[#edf5fc]">
-                  <td colspan="16" class="py-2 px-3 border-slate-200">
+                  <td colspan="12" class="py-2 px-3 border-slate-200">
                     <div class="flex items-start justify-between gap-4 text-xs">
                       <!-- Left Info String -->
                       <div class="flex items-start gap-2 min-w-0 flex-1">
@@ -1135,14 +1176,16 @@ function formatMoney(num) {
                           </div>
                         </div>
                       </div>
-
-                      <!-- Right Financials -->
-                      <div class="flex items-center gap-5 shrink-0 text-xs font-semibold text-slate-800 whitespace-nowrap pt-0.5">
-                        <span>Tổng DV : {{ formatMoney(booking.totalServices) }}</span>
-                        <span>Tổng TT : {{ formatMoney(booking.totalPayment) }}</span>
-                      </div>
                     </div>
                   </td>
+                  <!-- Tổng DV / Tổng TT nằm ngay dưới cột Tổng DV, Tổng TT để không phải kéo ngang -->
+                  <td class="py-2 px-2 text-right align-top text-xs font-semibold text-slate-800 border-slate-200">
+                    {{ formatMoney(booking.totalServices) }}
+                  </td>
+                  <td class="py-2 px-2 text-right align-top text-xs font-semibold text-emerald-700 border-slate-200">
+                    {{ formatMoney(booking.totalPayment) }}
+                  </td>
+                  <td colspan="2" class="border-slate-200"></td>
                 </tr>
 
                 <!-- Child Room Rows -->
@@ -1158,6 +1201,9 @@ function formatMoney(num) {
                     title="Nhấp đúp để mở Tạo đăng ký"
                   >
                     {{ booking.id }}
+                  </td>
+                  <td class="py-1.5 px-2 text-right text-slate-800 border-slate-200">
+                    {{ formatMoney(room.price) }}
                   </td>
                   <td class="py-1.5 px-2.5 text-slate-800 break-words whitespace-normal leading-tight border-slate-200">
                     {{ booking.bookingName }}
@@ -1185,9 +1231,6 @@ function formatMoney(num) {
                   </td>
                   <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200" :class="{ 'text-sky-600': room.children > 0 }">
                     {{ room.children }}
-                  </td>
-                  <td class="py-1.5 px-2 text-right text-slate-800 border-slate-200">
-                    {{ formatMoney(room.price) }}
                   </td>
                   <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200">
                     {{ room.rateCode }}
@@ -1478,9 +1521,13 @@ function formatMoney(num) {
                   Không có dữ liệu phòng không đến.
                 </td>
               </tr>
+              <template v-for="group in noshowGroups" :key="group.key">
+                <tr class="bg-sky-50 border-b border-slate-200 h-8 text-xs font-semibold text-slate-800">
+                  <td colspan="14" class="p-2">{{ group.title }} ({{ group.items.length }})</td>
+                </tr>
               <tr
-                v-for="(item, nIdx) in filteredNoshowData"
-                :key="item.id + '-' + nIdx"
+                v-for="(item, nIdx) in group.items"
+                :key="item.type + item.id + '-' + nIdx"
                 class="group border-b border-slate-200 h-8 hover:bg-[#bdecfe]/30 transition-colors text-xs font-normal"
               >
                 <td class="p-2 border-slate-200 text-center text-slate-600">
@@ -1533,6 +1580,7 @@ function formatMoney(num) {
                   {{ item.company }}
                 </td>
               </tr>
+              </template>
             </tbody>
           </table>
         </div>

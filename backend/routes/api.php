@@ -601,6 +601,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     Route::prefix('shift-work')->group(function () {
         Route::get('/arrivals', [\App\Http\Controllers\Api\ShiftWorkController::class, 'arrivals']);
         Route::get('/departures', [\App\Http\Controllers\Api\ShiftWorkController::class, 'departures']);
+        Route::get('/export', [\App\Http\Controllers\Api\ShiftWorkController::class, 'export']);
         Route::get('/pending', [\App\Http\Controllers\Api\ShiftWorkController::class, 'pending']);
         Route::put('/pending/{bookingId}/note', [\App\Http\Controllers\Api\ShiftWorkController::class, 'updatePendingNote']);
         Route::get('/shuttle', [\App\Http\Controllers\Api\ShiftWorkController::class, 'shuttle']);
