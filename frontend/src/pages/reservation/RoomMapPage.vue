@@ -1413,16 +1413,6 @@ function getTopRightSpecialIcon(room) {
   return null
 }
 
-function getTopRightSpecialIconClass(iconName) {
-  if (iconName === 'dnd') {
-    return 'text-red-600 bg-white border border-red-200 shadow-xs'
-  }
-  if (iconName === 'priority') {
-    return 'text-amber-600 bg-white border border-amber-300 shadow-xs'
-  }
-  return 'text-slate-700 bg-white'
-}
-
 function getTopRightSpecialIconTitle(iconName) {
   if (iconName === 'dnd') return 'Phòng không làm phiền (DND)'
   if (iconName === 'priority') return 'Phòng ưu tiên'
@@ -3380,10 +3370,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                             :style="{ width: Math.max(8, (settings.iconSizes?.group3 ?? 10) * cardScale) + 'px', height: Math.max(8, (settings.iconSizes?.group3 ?? 10) * cardScale) + 'px' }"></span>
                         </div>
 
-                        <!-- Special Icon (DND / Priority nổi bật góc trên bên phải) -->
+                        <!-- Special Icon: dùng nguyên icon chung từ Trợ giúp hệ thống, không bọc badge riêng -->
                         <div v-if="getTopRightSpecialIcon(room)"
-                          class="absolute top-2 right-2 z-10 flex items-center justify-center rounded-full p-0.5 transition-transform shrink-0 pointer-events-none"
-                          :class="getTopRightSpecialIconClass(getTopRightSpecialIcon(room))"
+                          class="absolute top-2 right-2 z-10 flex items-center justify-center text-slate-600 transition-transform shrink-0 pointer-events-none"
                           :title="getTopRightSpecialIconTitle(getTopRightSpecialIcon(room))"
                           :style="{
                             width: getTopRightSpecialIconSize() + 'px',
