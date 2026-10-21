@@ -598,6 +598,14 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     // =====================================================================
     // DANH SÁCH CÔNG VIỆC (Shift Work / Frontdesk Work)
     // =====================================================================
+    // Alert sinh nhật / special request và nội dung cập nhật hệ thống (icon lịch, icon chuông)
+    Route::get('/alerts', [\App\Http\Controllers\Api\AlertListController::class, 'index']);
+    Route::put('/alerts/status', [\App\Http\Controllers\Api\AlertListController::class, 'updateStatus']);
+    Route::get('/system-updates', [\App\Http\Controllers\Api\SystemUpdateController::class, 'index']);
+    Route::post('/system-updates/read', [\App\Http\Controllers\Api\SystemUpdateController::class, 'markRead']);
+    Route::post('/system-updates', [\App\Http\Controllers\Api\SystemUpdateController::class, 'store']);
+    Route::delete('/system-updates/{id}', [\App\Http\Controllers\Api\SystemUpdateController::class, 'destroy']);
+
     Route::prefix('shift-work')->group(function () {
         Route::get('/arrivals', [\App\Http\Controllers\Api\ShiftWorkController::class, 'arrivals']);
         Route::get('/departures', [\App\Http\Controllers\Api\ShiftWorkController::class, 'departures']);
