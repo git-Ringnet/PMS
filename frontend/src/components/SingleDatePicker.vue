@@ -94,13 +94,17 @@ const parsedMinDate = computed(() => {
   return null
 })
 
-// Parse maxDate prop to Date object
+// Parse maxDate prop to Date object (inclusive of entire day)
 const parsedMaxDate = computed(() => {
   if (!props.maxDate) return null
-  if (props.maxDate instanceof Date) return props.maxDate
+  if (props.maxDate instanceof Date) {
+    const d = new Date(props.maxDate)
+    d.setHours(23, 59, 59, 999)
+    return d
+  }
   const parts = String(props.maxDate).split('-')
   if (parts.length === 3) {
-    return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10))
+    return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), 23, 59, 59, 999)
   }
   return null
 })

@@ -33,6 +33,38 @@ function rangesOverlap(a, b) {
   return a.start < b.end && b.start < a.end
 }
 
+function timeToMinutes(value) {
+  const match = String(value || '').trim().match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/)
+  if (!match) return null
+
+  const hours = Number(match[1])
+  const minutes = Number(match[2])
+  if (hours < 0 || hours > 24 || minutes < 0 || minutes > 59) return null
+  if (hours === 24) return minutes === 0 ? 1440 : null
+
+  return hours * 60 + minutes
+}
+
+function dayUseTimesOverlap(a, b) {
+  if (!a.isDayUse || !b.isDayUse) return true
+
+  const aArrival = timeToMinutes(a.arrival_time ?? a.arrivalTime)
+  const aDeparture = timeToMinutes(a.departure_time ?? a.departureTime)
+  const bArrival = timeToMinutes(b.arrival_time ?? b.arrivalTime)
+  const bDeparture = timeToMinutes(b.departure_time ?? b.departureTime)
+
+  // Thiếu/sai giờ phải giữ cảnh báo hiện hữu, không coi là khoảng trống an toàn.
+  if (aArrival === null || aDeparture === null || bArrival === null || bDeparture === null) return true
+  if (aDeparture <= aArrival || bDeparture <= bArrival) return true
+
+  return aArrival < bDeparture && bArrival < aDeparture
+}
+
+function itemsOverlap(a, b) {
+  if (!rangesOverlap(a._range, b._range)) return false
+  return dayUseTimesOverlap(a, b)
+}
+
 function conflictLabel(item) {
   if (item.code === 'LOCK' || item.type === 'OOO' || item.type === 'OOS') {
     return `Khóa phòng ${item.type || ''}`.trim()
@@ -65,7 +97,7 @@ export function markRoomPlanConflicts(items) {
       const b = list[j]
       // Two render entries of the same stay row are not a conflict.
       if (a.bookingRoomId && a.bookingRoomId === b.bookingRoomId) continue
-      if (rangesOverlap(a._range, b._range)) {
+      if (itemsOverlap(a, b)) {
         neighbours.get(a).push(b)
         neighbours.get(b).push(a)
       }
@@ -90,22 +122,23 @@ export function markRoomPlanConflicts(items) {
       }
     }
 
-    // Greedy lane assignment by arrival date.
-    group.sort((a, b) => a._range.start.localeCompare(b._range.start) || String(a.bookingRoomId || '').localeCompare(String(b.bookingRoomId || '')))
-    const laneEnds = []
+    // Xếp làn theo chính khoảng thời gian thực tế để Day Use liền giờ dùng lại
+    // cùng một làn, còn các khoảng giao nhau vẫn không che nhau.
+    group.sort((a, b) => a._range.start.localeCompare(b._range.start) || String(a.arrival_time ?? a.arrivalTime ?? '').localeCompare(String(b.arrival_time ?? b.arrivalTime ?? '')) || String(a.bookingRoomId || '').localeCompare(String(b.bookingRoomId || '')))
+    const lanes = []
     for (const bar of group) {
-      let lane = laneEnds.findIndex(end => end <= bar._range.start)
+      let lane = lanes.findIndex(laneItems => laneItems.every(item => !itemsOverlap(item, bar)))
       if (lane === -1) {
-        lane = laneEnds.length
-        laneEnds.push(bar._range.end)
+        lane = lanes.length
+        lanes.push([bar])
       } else {
-        laneEnds[lane] = bar._range.end
+        lanes[lane].push(bar)
       }
       bar.conflictLane = lane
     }
     for (const bar of group) {
       bar.hasConflict = true
-      bar.conflictLaneCount = laneEnds.length
+      bar.conflictLaneCount = lanes.length
       bar.conflictWith = neighbours.get(bar).map(conflictLabel)
     }
   }

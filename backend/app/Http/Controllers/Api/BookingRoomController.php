@@ -286,6 +286,7 @@ class BookingRoomController extends Controller
                 'reason'          => 'nullable|string|max:500',
                 'guest_name'      => 'nullable|string|max:100',
                 'room_number'     => 'nullable|string',
+                'confirm_overbooking' => 'nullable|boolean',
                 'breakfast'       => 'nullable|boolean',
                 'is_day_use'      => 'nullable|boolean',
             ]);
@@ -305,6 +306,7 @@ class BookingRoomController extends Controller
                 'extra_bed_rate'  => 'nullable|numeric|min:0',
                 'note'            => 'nullable|string',
                 'room_number'     => 'nullable|string',
+                'confirm_overbooking' => 'nullable|boolean',
                 'breakfast'       => 'nullable|boolean',
                 'is_day_use'      => 'nullable|boolean',
             ]);
@@ -314,6 +316,44 @@ class BookingRoomController extends Controller
         $arrivalDate  = $validated['arrival_date'] ?? $bookingRoom->arrival_date->toDateString();
         $departureDate = $validated['departure_date'] ?? $bookingRoom->departure_date->toDateString();
         $roomClassId  = $validated['room_class_id'] ?? $bookingRoom->room_class_id;
+        $confirmOverbooking = (bool) ($validated['confirm_overbooking'] ?? false);
+        unset($validated['confirm_overbooking']);
+
+        $roomNumberChanged = array_key_exists('room_number', $validated)
+            && (string) $validated['room_number'] !== (string) $bookingRoom->room_number;
+        $targetPhysicalRoom = null;
+
+        if ($roomNumberChanged && filled($validated['room_number'])) {
+            $targetPhysicalRoom = Room::query()
+                ->physical()
+                ->where('room_number', $validated['room_number'])
+                ->first();
+
+            if (!$targetPhysicalRoom) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Chỉ được chuyển sang phòng vật lý đang tồn tại.',
+                ], 422);
+            }
+
+            if (!$isInhouse) {
+                if (
+                    array_key_exists('room_class_id', $validated)
+                    && (int) $validated['room_class_id'] !== (int) $targetPhysicalRoom->room_class_id
+                ) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Loại phòng gửi lên không khớp với phòng đích.',
+                    ], 422);
+                }
+
+                // Phòng vật lý là nguồn xác thực loại phòng khi kéo thả.
+                $validated['room_class_id'] = (int) $targetPhysicalRoom->room_class_id;
+                $roomClassId = (int) $targetPhysicalRoom->room_class_id;
+            }
+        }
+
+        $roomClassChanged = (int) $roomClassId !== (int) $bookingRoom->room_class_id;
 
         $parentArrival = $bookingRoom->booking->arrival_date->toDateString();
         $parentDeparture = $bookingRoom->booking->departure_date->toDateString();
@@ -345,15 +385,36 @@ class BookingRoomController extends Controller
             ], 422);
         }
 
-        // Validate AV nếu thay đổi ngày hoặc loại phòng
-        if (isset($validated['arrival_date']) || isset($validated['departure_date']) || isset($validated['room_class_id'])) {
-            $av = $this->avService->getAvailability($roomClassId, $arrivalDate, $departureDate, $roomId);
-            if ($av < 0 && !$this->allowOverAV()) {
+        // Validate AV nếu thay đổi ngày hoặc loại phòng. Khi chuyển khác loại,
+        // booking nguồn không thuộc loại đích nên phải trừ thêm một phòng dự kiến.
+        $wouldCauseOverbooking = false;
+        $projectedAv = null;
+        if (isset($validated['arrival_date']) || isset($validated['departure_date']) || $roomClassChanged) {
+            $requiresAdditionalTargetSlot = !$isInhouse && $roomClassChanged;
+            $av = $this->avService->getAvailability(
+                $roomClassId,
+                $arrivalDate,
+                $departureDate,
+                $requiresAdditionalTargetSlot ? null : $roomId
+            );
+            $projectedAv = $requiresAdditionalTargetSlot ? $av - 1 : $av;
+            $wouldCauseOverbooking = $projectedAv < 0;
+
+            if ($wouldCauseOverbooking && !$this->allowOverAV()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Không đủ phòng trống sau khi cập nhật. (AV = ' . $av . ')',
-                    'av'      => $av,
+                    'message' => 'Không đủ phòng trống sau khi cập nhật. (AV = ' . $projectedAv . ')',
+                    'av'      => $projectedAv,
                 ], 422);
+            }
+
+            if ($wouldCauseOverbooking && $requiresAdditionalTargetSlot && !$confirmOverbooking) {
+                return response()->json([
+                    'success' => false,
+                    'code' => 'overbooking_confirmation_required',
+                    'message' => 'Chuyển sang loại phòng đích sẽ làm âm phòng trống (AV = ' . $projectedAv . '). Bạn có muốn tiếp tục?',
+                    'av' => $projectedAv,
+                ], 409);
             }
         }
 
@@ -362,8 +423,6 @@ class BookingRoomController extends Controller
         if (!empty($targetRoomNumber)) {
             $datesChanged = (isset($validated['arrival_date']) && $validated['arrival_date'] !== $bookingRoom->arrival_date->toDateString())
                 || (isset($validated['departure_date']) && $validated['departure_date'] !== $bookingRoom->departure_date->toDateString());
-            $roomNumberChanged = (isset($validated['room_number']) && $validated['room_number'] !== $bookingRoom->room_number);
-
             if ($datesChanged || $roomNumberChanged) {
                 if ($this->avService->isRoomNumberOccupied($targetRoomNumber, $arrivalDate, $departureDate, $roomId, $bookingId)) {
                     return response()->json([
@@ -460,8 +519,8 @@ class BookingRoomController extends Controller
 
         $bookingRoom->load(['roomClass', 'room']);
 
-        $warning = (isset($av) && $av < 0 && $this->allowOverAV())
-            ? 'Cảnh báo: Số phòng trống của loại phòng đã bị âm (AV = ' . $av . '). Vẫn ghi nhận lưu theo cấu hình hệ thống.'
+        $warning = ($wouldCauseOverbooking && $this->allowOverAV())
+            ? 'Cảnh báo: Số phòng trống của loại phòng đã bị âm (AV = ' . $projectedAv . '). Vẫn ghi nhận lưu theo cấu hình hệ thống.'
             : null;
 
         try {

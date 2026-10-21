@@ -116,3 +116,49 @@ test('calculates full room charge across entire stay even when arrival date is b
   })
 })
 
+test('row 442 keeps a zero-quantity daily extra bed at zero instead of charging its rate', () => {
+  const room = {
+    id: 'G0000012',
+    arrival_date: '2026-08-30',
+    departure_date: '2026-08-31',
+    rate: 650000,
+    extra_bed_qty: 1,
+    extra_bed_rate: 300000,
+    services: [
+      {
+        service_code: 'EB',
+        service_date: '2026-08-30',
+        quantity: 0,
+        rate: 300000,
+        total_amount: 0,
+        is_posted: 0,
+      },
+    ],
+  }
+
+  assert.deepEqual(calculateRoomPlanRoomAmounts(room, booking, '2026-08-30'), {
+    roomCharge: 650000,
+    serviceCharge: 0,
+  })
+})
+
+test('row 442 sums only daily extra-bed quantities greater than zero', () => {
+  const room = {
+    id: 'G0000012',
+    arrival_date: '2026-08-30',
+    departure_date: '2026-09-01',
+    rate: 650000,
+    extra_bed_qty: 1,
+    extra_bed_rate: 300000,
+    services: [
+      { service_code: 'EB', service_date: '2026-08-30', quantity: 1, rate: 300000, is_posted: 0 },
+      { service_code: 'EB', service_date: '2026-08-31', quantity: 0, rate: 300000, is_posted: 0 },
+    ],
+  }
+
+  assert.deepEqual(calculateRoomPlanRoomAmounts(room, booking, '2026-08-30'), {
+    roomCharge: 1300000,
+    serviceCharge: 300000,
+  })
+})
+

@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import { X, Calendar, RotateCcw, Filter } from '@lucide/vue'
 
 const props = defineProps({
@@ -22,9 +22,81 @@ const serviceFolio = ref('')
 const deptChecked = ref(false)
 const department = ref('')
 
+const modalRef = ref(null)
+const modalPosition = ref({ x: 0, y: 0 })
+const isDraggingModal = ref(false)
+const dragStart = ref({ x: 0, y: 0, left: 0, top: 0 })
+
+function clampModalPosition(x, y) {
+  const modal = modalRef.value
+  if (!modal) return { x, y }
+
+  const margin = 16
+  const width = modal.offsetWidth
+  const height = modal.offsetHeight
+  const baseLeft = (window.innerWidth - width) / 2
+  const baseTop = (window.innerHeight - height) / 2
+  const minX = margin - baseLeft
+  const maxX = window.innerWidth - margin - width - baseLeft
+  const minY = margin - baseTop
+  const maxY = window.innerHeight - margin - height - baseTop
+
+  return {
+    x: minX <= maxX ? Math.min(Math.max(x, minX), maxX) : 0,
+    y: minY <= maxY ? Math.min(Math.max(y, minY), maxY) : 0,
+  }
+}
+
+function beginModalDrag(event) {
+  if (event.button !== 0 || event.target.closest('button, input, select, textarea')) return
+  isDraggingModal.value = true
+  dragStart.value = {
+    x: event.clientX,
+    y: event.clientY,
+    left: modalPosition.value.x,
+    top: modalPosition.value.y,
+  }
+  window.addEventListener('mousemove', onModalDrag)
+  window.addEventListener('mouseup', stopModalDrag)
+}
+
+function onModalDrag(event) {
+  if (!isDraggingModal.value) return
+  const rawX = dragStart.value.left + (event.clientX - dragStart.value.x)
+  const rawY = dragStart.value.top + (event.clientY - dragStart.value.y)
+  modalPosition.value = clampModalPosition(rawX, rawY)
+}
+
+function stopModalDrag() {
+  if (!isDraggingModal.value) return
+  isDraggingModal.value = false
+  window.removeEventListener('mousemove', onModalDrag)
+  window.removeEventListener('mouseup', stopModalDrag)
+}
+
 const handleClose = () => {
   emit('close')
 }
+
+function handleKeyDown(event) {
+  if (event.key === 'Escape' && props.show) handleClose()
+}
+
+watch(() => props.show, visible => {
+  if (visible) {
+    modalPosition.value = { x: 0, y: 0 }
+    window.removeEventListener('keydown', handleKeyDown)
+    window.addEventListener('keydown', handleKeyDown)
+  } else {
+    stopModalDrag()
+    window.removeEventListener('keydown', handleKeyDown)
+  }
+})
+
+onBeforeUnmount(() => {
+  stopModalDrag()
+  window.removeEventListener('keydown', handleKeyDown)
+})
 
 const reset = () => {
   startDate.value = ''
@@ -52,13 +124,21 @@ const applyFilter = () => {
 </script>
 
 <template>
-  <div v-if="show" class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-    <div class="bg-white rounded-lg shadow-2xl w-full max-w-xl overflow-hidden border border-gray-300 flex flex-col text-xs">
+  <div v-if="show" class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 font-sans select-none">
+    <div
+      ref="modalRef"
+      class="bg-white rounded-xl shadow-2xl w-full max-w-xl overflow-hidden border border-gray-300 flex flex-col text-xs"
+      :style="{ transform: `translate3d(${modalPosition.x}px, ${modalPosition.y}px, 0)` }"
+    >
       
       <!-- Header -->
-      <div class="bg-[#7dd3fc] text-white px-3 py-2 flex items-center justify-between font-semibold">
-        <span class="text-sm font-bold">Lọc dịch vụ</span>
-        <button @click="handleClose" class="hover:text-gray-100"><X class="w-4 h-4" /></button>
+      <div
+        class="text-white px-4 py-2.5 flex items-center justify-between font-semibold cursor-move select-none"
+        :style="{ background: 'var(--pms-custom-theme, #006bdb)' }"
+        @mousedown="beginModalDrag"
+      >
+        <span class="text-xs font-semibold tracking-wide">Lọc Dịch Vụ</span>
+        <button @click="handleClose" class="rounded p-0.5 text-white transition hover:bg-white/20 active:scale-90 cursor-pointer"><X class="w-4 h-4" /></button>
       </div>
 
       <!-- Body Content -->
@@ -199,7 +279,7 @@ const applyFilter = () => {
       <div class="border-t border-gray-300 p-3 flex justify-end items-center gap-2 bg-gray-50">
         <button 
           @click="handleClose"
-          class="bg-[#38bdf8] hover:bg-sky-500 text-white px-4 py-1.5 rounded flex items-center gap-1.5 font-bold shadow-xs transition-colors"
+          class="btn-pms-close"
         >
           <X class="w-4 h-4" />
           <span>Đóng</span>
@@ -207,18 +287,18 @@ const applyFilter = () => {
 
         <button 
           @click="reset"
-          class="bg-[#38bdf8] hover:bg-sky-500 text-white px-4 py-1.5 rounded flex items-center gap-1.5 font-bold shadow-xs transition-colors"
+          class="btn-pms-secondary"
         >
           <RotateCcw class="w-4 h-4" />
-          <span>Khôi phục</span>
+          <span>Khôi Phục</span>
         </button>
 
         <button 
           @click="applyFilter"
-          class="bg-[#38bdf8] hover:bg-sky-500 text-white px-4 py-1.5 rounded flex items-center gap-1.5 font-bold shadow-xs transition-colors"
+          class="btn-pms-primary"
         >
           <Filter class="w-4 h-4" />
-          <span>Filter</span>
+          <span>Lọc</span>
         </button>
       </div>
 

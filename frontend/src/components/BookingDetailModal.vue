@@ -1773,7 +1773,7 @@ function parseNumber(val) {
                     <div class="f">
                       <label>Danh xưng</label>
                       <div class="clearable-control select-control title-control">
-                        <select v-model="formGuest.title" :disabled="!isEditingMode">
+                        <select v-model="formGuest.title" :disabled="!isEditingMode" :class="{ 'is-empty': !formGuest.title }">
                           <option value="" disabled hidden>Danh xưng</option>
                           <option v-for="t in titlesList" :key="t" :value="t">{{ t }}</option>
                         </select>
@@ -1900,7 +1900,7 @@ function parseNumber(val) {
                 <div class="f">
                   <label>Loại giấy tờ</label>
                   <div class="clearable-control select-control">
-                    <select v-model="formGuest.id_type" :disabled="!isEditingMode">
+                    <select v-model="formGuest.id_type" :disabled="!isEditingMode" :class="{ 'is-empty': !formGuest.id_type }">
                       <option value="" disabled hidden>Loại giấy tờ</option>
                       <option value="CCCD">CCCD</option>
                       <option value="Passport - Hộ chiếu">Passport - Hộ chiếu</option>
@@ -1949,7 +1949,7 @@ function parseNumber(val) {
                 <div class="f">
                   <label>Thường trú / Tạm trú</label>
                   <div class="clearable-control select-control">
-                    <select v-model="formGuest.residence_type" :disabled="!isEditingMode">
+                    <select v-model="formGuest.residence_type" :disabled="!isEditingMode" :class="{ 'is-empty': !formGuest.residence_type }">
                       <option value="" disabled hidden>Thường trú / Tạm trú</option>
                       <option
                         v-for="rt in residenceTypesList"
@@ -2075,7 +2075,7 @@ function parseNumber(val) {
                 <div class="f">
                   <label>Rate code</label>
                   <div class="clearable-control select-control">
-                    <select v-model="pricingInfo.rate_code" :disabled="!isEditingMode" @change="onRateCodeChange($event.target.value)" class="w-full">
+                    <select v-model="pricingInfo.rate_code" :disabled="!isEditingMode" @change="onRateCodeChange($event.target.value)" class="w-full" :class="{ 'is-empty': !pricingInfo.rate_code }">
                       <option value="" disabled hidden>-- Chọn Mã Giá / Mặc định --</option>
                       <option v-for="rc in rateCodes" :key="rc.id || rc.code || rc.Ma" :value="rc.code || rc.Ma">
                         {{ rc.code || rc.Ma }}{{ (rc.name || rc.Ten) ? ' - ' + (rc.name || rc.Ten) : '' }}
@@ -2096,7 +2096,7 @@ function parseNumber(val) {
                 <div class="f">
                   <label>Khuyến mãi / Tăng giảm</label>
                   <div class="clearable-control select-control">
-                    <select v-model="pricingInfo.discount_type" :disabled="!isEditingMode">
+                    <select v-model="pricingInfo.discount_type" :disabled="!isEditingMode" :class="{ 'is-empty': !pricingInfo.discount_type }">
                       <option value="" disabled hidden>Khuyến mãi / Tăng giảm</option>
                       <option>Tăng/Giảm giá</option><option>Giảm 10%</option><option>Early Bird</option>
                     </select>
@@ -2193,7 +2193,7 @@ function parseNumber(val) {
                   </div>
                 </div>
 
-                <div class="btn-wrapper">
+                <div class="btn-wrapper price-btn-col">
                   <!-- ALWAYS ENABLED SUB-FEATURE BUTTON -->
                   <button class="btn-act" @click="showExtraBedModal = true">
                     <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -2201,7 +2201,6 @@ function parseNumber(val) {
                     </svg>Chi tiết thêm giường
                   </button>
                 </div>
-                <div></div>
               </div>
             </div>
 
@@ -2254,8 +2253,8 @@ function parseNumber(val) {
   border-radius: 12px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.22);
   width: 100%;
-  max-width: min(96vw, 1320px);
-  max-height: min(96vh, 880px);
+  max-width: min(97vw, 1400px);
+  max-height: min(96vh, 900px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2388,7 +2387,7 @@ function parseNumber(val) {
 
 .main-grid {
   display: grid;
-  grid-template-columns: 210px 1.35fr 1.15fr;
+  grid-template-columns: 200px 1fr 1.3fr;
   grid-template-rows: auto auto auto;
   border: 1.5px solid #cbd5e1;
   border-radius: 10px;
@@ -2423,29 +2422,34 @@ input.always-gray:disabled {
   border-right: 1.5px solid #cbd5e1;
   padding: 10px 12px;
   background: #fff;
+  min-width: 0;
 }
 .cell-personal {
   grid-column: 2 / 4;
   grid-row: 1;
   border-bottom: 1.5px solid #cbd5e1;
   padding: 10px 14px;
+  min-width: 0;
 }
 .cell-docs {
   grid-column: 2 / 4;
   grid-row: 2;
   border-bottom: 1.5px solid #cbd5e1;
   padding: 10px 14px;
+  min-width: 0;
 }
 .cell-stay {
   grid-column: 2;
   grid-row: 3;
   border-right: 1.5px solid #cbd5e1;
-  padding: 10px 14px;
+  padding: 10px 12px;
+  min-width: 0;
 }
 .cell-price {
   grid-column: 3;
   grid-row: 3;
-  padding: 10px 14px;
+  padding: 10px 12px;
+  min-width: 0;
 }
 
 /* SECTION LABEL */
@@ -2491,8 +2495,26 @@ input.always-gray:disabled {
   transition: border-color 0.15s, background-color 0.15s;
 }
 .f input::placeholder { color: #a8b0bf; font-weight: 400; }
-.f select:has(option[value=""]:checked) { color: #a8b0bf; font-weight: 400; }
+.f select:has(option[value=""]:checked),
+.f select.is-empty { color: #a8b0bf; font-weight: 400; }
 .f input:focus:not(:disabled), .f select:focus:not(:disabled) { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,0.1); }
+
+/* REQUIRED FIELDS: Pale yellow background #FFF8DB, border #F1DD8A, focus #eab308 */
+.f input:required:not(:disabled),
+.f input.is-required:not(:disabled),
+.f select:required:not(:disabled),
+.f select.is-required:not(:disabled) {
+  background: #FFF8DB !important;
+  background-color: #FFF8DB !important;
+  border-color: #F1DD8A !important;
+}
+.f input:required:not(:disabled):focus,
+.f input.is-required:not(:disabled):focus,
+.f select:required:not(:disabled):focus,
+.f select.is-required:not(:disabled):focus {
+  border-color: #eab308 !important;
+  box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.2) !important;
+}
 
 .clearable-control {
   position: relative;
@@ -2616,12 +2638,13 @@ input.always-gray:disabled {
 .tp-item.active { background: #2563eb; color: #fff; }
 
 /* GRID HELPERS */
-.g { display: grid; gap: 6px 10px; }
-.docs-grid { grid-template-columns: 1.15fr 1.15fr 145px 1.25fr; gap: 6px 10px; }
-.stay-grid { grid-template-columns: minmax(136px, 1.4fr) 72px minmax(136px, 1.4fr) 72px 55px; gap: 6px 8px; margin-bottom: 8px; }
-.price-grid-1 { grid-template-columns: minmax(110px, 1.1fr) minmax(140px, 1.3fr) minmax(130px, 1.2fr) auto; gap: 6px 8px; margin-bottom: 8px; align-items: end; }
-.price-grid-2 { grid-template-columns: minmax(110px, 1fr) minmax(120px, 1.2fr) auto 1fr; gap: 6px 8px; align-items: end; }
+.g { display: grid; gap: 6px 8px; min-width: 0; }
+.docs-grid { grid-template-columns: 1.15fr 1.15fr 145px 1.25fr; gap: 6px 10px; min-width: 0; }
+.stay-grid { grid-template-columns: minmax(105px, 1.2fr) 58px minmax(105px, 1.2fr) 58px 45px; gap: 6px 8px; margin-bottom: 8px; min-width: 0; }
+.price-grid-1 { grid-template-columns: minmax(80px, 1fr) minmax(80px, 1fr) minmax(95px, 1.15fr) auto; gap: 6px 8px; margin-bottom: 8px; align-items: end; min-width: 0; }
+.price-grid-2 { grid-template-columns: minmax(80px, 1fr) minmax(80px, 1fr) minmax(95px, 1.15fr) auto; gap: 6px 8px; align-items: end; min-width: 0; }
 .btn-wrapper { display: flex; align-items: flex-end; }
+.price-btn-col { grid-column: 4; justify-self: end; }
 
 /* SIDEBAR GUESTS */
 .g-group { margin-bottom: 8px; }
@@ -2701,11 +2724,11 @@ input.always-gray:disabled {
   border-radius: 6px;
   font-size: 12px;
   font-weight: 600;
-  padding: 0 14px;
+  padding: 0 10px;
   cursor: pointer !important;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   white-space: nowrap;
   flex-shrink: 0;
   opacity: 1 !important;
@@ -2936,12 +2959,14 @@ input.always-gray:disabled {
   }
   .btn-act {
     height: 28px !important;
+    padding: 0 8px !important;
   }
   .stay-grid {
-    grid-template-columns: minmax(130px, 1.4fr) 68px minmax(130px, 1.4fr) 68px 50px !important;
+    grid-template-columns: minmax(95px, 1.2fr) 54px minmax(95px, 1.2fr) 54px 42px !important;
     margin-bottom: 4px !important;
   }
-  .price-grid-1 {
+  .price-grid-1, .price-grid-2 {
+    grid-template-columns: minmax(75px, 1fr) minmax(75px, 1fr) minmax(85px, 1.15fr) auto !important;
     margin-bottom: 4px !important;
   }
   .draft-alert-banner {
@@ -2951,9 +2976,17 @@ input.always-gray:disabled {
   }
 }
 
-@media (max-width: 1080px) {
+@media (max-width: 1120px) {
   .main-grid {
-    grid-template-columns: 200px 1.3fr 1.1fr;
+    grid-template-columns: 190px 1fr 1.25fr;
+  }
+  .stay-grid {
+    grid-template-columns: minmax(95px, 1.2fr) 54px minmax(95px, 1.2fr) 54px 42px !important;
+    gap: 4px 6px !important;
+  }
+  .price-grid-1, .price-grid-2 {
+    grid-template-columns: minmax(70px, 1fr) minmax(70px, 1fr) minmax(80px, 1.1fr) auto !important;
+    gap: 4px 6px !important;
   }
 }
 </style>

@@ -693,8 +693,14 @@ const filterContainerRef = ref(null)
 
 function formatDate(dateStr) {
   if (!dateStr) return '--/--/----'
+  const text = String(dateStr).trim()
+  const ymd = text.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (ymd) return `${ymd[3]}/${ymd[2]}/${ymd[1]}`
+  const dmy = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+  if (dmy) return `${String(dmy[1]).padStart(2, '0')}/${String(dmy[2]).padStart(2, '0')}/${dmy[3]}`
+
   const d = new Date(dateStr)
-  if (isNaN(d.getTime())) return dateStr
+  if (isNaN(d.getTime())) return text
   const day = String(d.getDate()).padStart(2, '0')
   const month = String(d.getMonth() + 1).padStart(2, '0')
   const year = d.getFullYear()
@@ -705,9 +711,13 @@ function formatTime(value) {
   if (!value) return ''
   const text = String(value).trim()
   const directTime = text.match(/^(\d{1,2}):(\d{2})/)
+  if (directTime) return `${String(directTime[1]).padStart(2, '0')}:${directTime[2]}`
+
+  const sixDigitTime = text.match(/^(\d{2})(\d{2})(?:\d{2})?$/)
+  if (sixDigitTime) return `${sixDigitTime[1]}:${sixDigitTime[2]}`
+
   const dateTime = text.match(/[T\s](\d{1,2}):(\d{2})/)
-  const match = directTime || dateTime
-  if (match) return `${String(match[1]).padStart(2, '0')}:${match[2]}`
+  if (dateTime) return `${String(dateTime[1]).padStart(2, '0')}:${dateTime[2]}`
 
   const date = new Date(value)
   if (isNaN(date.getTime())) return ''
@@ -2079,13 +2089,20 @@ const transferDestinations = computed(() => allBookingsList.value.filter(isTrans
       ? room.allGuests
       : [{ id: room.primaryGuestId || null, name: room.guestName }]
 
-    return guests.map(g => {
+    return guests.map((g, idx) => {
       const gId = g.id || room.primaryGuestId || null
+      const isPrimary = Boolean(
+        g.isPrimary ||
+        g.is_primary ||
+        (room.primaryGuestId && String(gId) === String(room.primaryGuestId)) ||
+        (!room.primaryGuestId && idx === 0)
+      )
       return {
         key: `room-${room.roomId}-guest-${gId || 'primary'}`,
         bookingId: booking.bookingId,
         roomId: room.roomId,
         guestId: gId,
+        isPrimary,
         kind: 'room',
         bookingCode: booking.code,
         bookingName: booking.name,
@@ -3684,13 +3701,13 @@ onUnmounted(() => {
               <div 
                 v-for="b in filteredSearchBookings" 
                 :key="b.id"
-                class="py-1 text-xs"
+                class="border-b border-gray-100 last:border-b-0 py-0.5 text-xs"
               >
                 <!-- Line 1: BKK:  <mã booking>    <tên đoàn / tên booking> -->
-                <div class="grid min-w-0 cursor-pointer grid-cols-[50px_75px_minmax(0,1fr)] items-center gap-x-3 px-3 py-1.5 transition-colors hover:bg-slate-200" @click="selectBookingFromSearch(b)">
+                <div class="grid min-w-0 cursor-pointer grid-cols-[50px_75px_minmax(0,1fr)] items-center gap-x-3 px-3 py-1.5 bg-slate-50 font-bold transition-colors hover:bg-sky-100/70" @click="selectBookingFromSearch(b)">
                   <span class="font-bold text-gray-900">BKK:</span>
-                  <span class="font-bold text-gray-900">{{ b.code }}</span>
-                  <span class="min-w-0 truncate font-bold text-gray-800" :title="b.name">{{ b.name }}</span>
+                  <span class="font-bold text-blue-700">{{ b.code }}</span>
+                  <span class="min-w-0 truncate font-semibold text-gray-800" :title="b.name">{{ b.name }}</span>
                 </div>
                 <!-- Sublines for each room in booking (Khớp chính xác Ảnh 1) -->
                 <template v-for="r in b.roomItems" :key="r.id">
@@ -3699,21 +3716,21 @@ onUnmounted(() => {
                       v-for="(guest, gIdx) in r.allGuests"
                       :key="gIdx"
                       @click.stop="selectBookingFromSearch(b, r, guest)"
-                      class="grid min-w-0 cursor-pointer grid-cols-[50px_75px_minmax(0,1fr)] items-center gap-x-3 px-3 py-1.5 text-gray-700 transition-colors hover:bg-slate-200"
+                      class="grid min-w-0 cursor-pointer grid-cols-[50px_75px_minmax(0,1fr)] items-center gap-x-3 py-1.5 pl-7 pr-3 text-gray-700 transition-colors hover:bg-sky-50"
                     >
-                      <span aria-hidden="true"></span>
-                      <span class="text-gray-800 shrink-0">{{ r.roomNumber }}</span>
-                      <span class="min-w-0 truncate text-gray-800" :title="guest.name">{{ guest.name }}</span>
+                      <span aria-hidden="true" class="text-right text-slate-300">↳</span>
+                      <span class="text-slate-900 font-semibold shrink-0">{{ r.roomNumber }}</span>
+                      <span class="min-w-0 truncate text-gray-800 font-normal" :title="guest.name">{{ guest.name }}</span>
                     </div>
                   </template>
                   <template v-else>
                     <div 
                       @click.stop="selectBookingFromSearch(b, r)"
-                      class="grid min-w-0 cursor-pointer grid-cols-[50px_75px_minmax(0,1fr)] items-center gap-x-3 px-3 py-1.5 text-gray-700 transition-colors hover:bg-slate-200"
+                      class="grid min-w-0 cursor-pointer grid-cols-[50px_75px_minmax(0,1fr)] items-center gap-x-3 py-1.5 pl-7 pr-3 text-gray-700 transition-colors hover:bg-sky-50"
                     >
-                      <span aria-hidden="true"></span>
-                      <span class="text-gray-800 shrink-0">{{ r.roomNumber }}</span>
-                      <span class="min-w-0 truncate text-gray-800" :title="r.guestName">{{ r.guestName }}</span>
+                      <span aria-hidden="true" class="text-right text-slate-300">↳</span>
+                      <span class="text-slate-900 font-semibold shrink-0">{{ r.roomNumber }}</span>
+                      <span class="min-w-0 truncate text-gray-800 font-normal" :title="r.guestName">{{ r.guestName }}</span>
                     </div>
                   </template>
                 </template>
@@ -3797,7 +3814,7 @@ onUnmounted(() => {
       <div class="checkout-left-pane col-start-1 row-start-2 flex min-h-0 flex-col gap-0 border-r border-slate-300">
 
         <!-- TOP LEFT: Bảng Danh sách Đăng ký (7 cols) -->
-        <div class="checkout-bookings-panel flex-[1.65] bg-white rounded-none border-0 border-b border-slate-300 flex flex-col min-h-0 shadow-none">
+        <div class="checkout-bookings-panel flex-1 bg-white rounded-none border-0 border-b border-slate-300 flex flex-col min-h-0 shadow-none">
           <!-- Table Danh sách Phòng / Khách (Khớp chính xác Ảnh 2) -->
           <div class="flex-1 overflow-auto">
             <table class="w-full min-w-0 table-fixed border-collapse text-left text-xs">
@@ -3808,10 +3825,10 @@ onUnmounted(() => {
                 <col class="w-[92px]" />
                 <col class="w-[92px]" />
               </colgroup>
-              <thead class="bg-[#f0f2ea] sticky top-0 border-b border-gray-300 text-gray-700 font-semibold">
+              <thead class="bg-[#f0f2ea] sticky top-0 border-b border-gray-300 text-[#000000D9] font-semibold">
                 <tr>
                   <th class="p-1 w-[25px] text-center align-middle border-r border-slate-200 border"></th>
-                  <th class="p-1 text-center align-middle border-r border-slate-200 border">ĐK/Phòng</th>
+                  <th class="p-1 text-center align-middle border-r border-slate-200 border">ĐK / Phòng</th>
                   <th class="p-1 text-center align-middle border-r border-slate-200 border">Tên Khách</th>
                   <th class="p-1 text-center align-middle border-r border-slate-200 border">Tổng DV</th>
                   <th class="p-1 text-center align-middle border-r border-slate-200 border">Đã TT</th>
@@ -3825,7 +3842,9 @@ onUnmounted(() => {
                     @dragleave="draggedOverRoom = null"
                     @drop.prevent.stop="draggedServiceGroup ? handleRoomDrop(b, null) : handleServiceDragEnd()"
                     :class="[
-                      selectedBooking && selectedBooking.id === b.id && !selectedRoomItem ? 'checkout-selected-row bg-[#2563EB] border-l-[3px] border-[#1D4ED8]' : b.isCheckedOut ? 'bg-[#ffd4d4] border-l-[3px] border-rose-400' : 'bg-white border-l-[3px] border-transparent',
+                      selectedBooking && selectedBooking.id === b.id && !selectedRoomItem
+                        ? 'checkout-selected-row bg-sky-100 border-l-4 border-blue-600 text-[#000000D9]'
+                        : (b.isCheckedOut ? 'bg-[#fee2e2] hover:bg-[#fed7d7] border-l-4 border-rose-400 text-[#000000D9]' : 'bg-white hover:bg-slate-100/70 border-l-4 border-transparent text-[#000000D9]'),
                       draggedOverRoom === roomDropKey(b, null) ? 'ring-2 ring-inset ring-sky-500 bg-sky-50' : '',
                       'cursor-pointer transition-colors'
                     ]"
@@ -3840,7 +3859,7 @@ onUnmounted(() => {
                       </div>
                     </td>
                     <td class="min-w-0 p-1 font-bold text-slate-900 border-slate-200">
-                      <span class="block w-full min-w-0 truncate" :title="b.name">{{ b.name }}</span>
+                      <span class="block w-full min-w-0 truncate" :title="b.rawBooking?.note ? `${b.name} (${b.rawBooking.note})` : b.name">{{ b.name }}</span>
                     </td>
                     <td class="p-1 text-right tabular-nums text-slate-900 border-slate-200">{{ formatSummaryMoney(b.totalService) }}</td>
                     <td class="p-1 text-right tabular-nums text-slate-900 border-slate-200">{{ formatMoney(b.paidAmount) }}</td>
@@ -3856,7 +3875,9 @@ onUnmounted(() => {
                         @dragleave="draggedOverRoom = null"
                         @drop.prevent="handleRoomDrop(b, r, guest)"
                         :class="[
-                          selectedRoomItem && selectedRoomItem.id === r.id && String(selectedGuestId) === String(guest.id) ? 'checkout-selected-row bg-[#2563EB] border-l-[3px] border-[#1D4ED8]' : r.isCheckedOut ? 'bg-[#ffd4d4] hover:bg-[#ffc6c6]' : 'hover:bg-slate-50',
+                          selectedRoomItem && selectedRoomItem.id === r.id && String(selectedGuestId) === String(guest.id)
+                            ? 'checkout-selected-row bg-sky-100 border-l-4 border-blue-600 text-[#000000D9]'
+                            : (r.isCheckedOut ? 'bg-[#fee2e2] hover:bg-[#fed7d7] border-l-4 border-rose-300 text-[#000000D9]' : 'hover:bg-slate-100/70 border-l-4 border-transparent text-[#000000D9]'),
                           draggedOverRoom === roomDropKey(b, r, guest) ? 'ring-2 ring-inset ring-sky-500 bg-sky-50' : '',
                           'cursor-pointer transition-colors text-slate-900'
                         ]"
@@ -3877,7 +3898,9 @@ onUnmounted(() => {
                         @dragleave="draggedOverRoom = null"
                         @drop.prevent="handleRoomDrop(b, r)"
                         :class="[
-                          selectedRoomItem && selectedRoomItem.id === r.id ? 'checkout-selected-row bg-[#2563EB] border-l-[3px] border-[#1D4ED8]' : r.isCheckedOut ? 'bg-[#ffd4d4] hover:bg-[#ffc6c6]' : 'hover:bg-slate-50',
+                          selectedRoomItem && selectedRoomItem.id === r.id
+                            ? 'checkout-selected-row bg-sky-100 border-l-4 border-blue-600 text-[#000000D9]'
+                            : (r.isCheckedOut ? 'bg-[#fee2e2] hover:bg-[#fed7d7] border-l-4 border-rose-300 text-[#000000D9]' : 'hover:bg-slate-100/70 border-l-4 border-transparent text-[#000000D9]'),
                           draggedOverRoom === roomDropKey(b, r) ? 'ring-2 ring-inset ring-sky-500 bg-sky-50' : '',
                           'cursor-pointer transition-colors text-slate-900'
                         ]"
@@ -3899,7 +3922,7 @@ onUnmounted(() => {
         </div>
 
         <!-- BOOKING INFORMATION + FOLIO (reference layout) -->
-        <div class="checkout-info-panel bg-white rounded-none border-0 flex flex-col min-h-0 shadow-none overflow-y-auto">
+        <div class="checkout-info-panel bg-white rounded-none border-0 flex flex-col shrink-0 shadow-none overflow-hidden">
           <div class="checkout-info-heading flex items-center justify-between border-b border-slate-300 px-2 py-1">
             <span class="checkout-info-title"><i class="fa-solid fa-bed"></i> Thông Tin Đăng Ký</span>
             <label class="flex items-center gap-1 text-xs font-semibold text-red-600">
@@ -3907,15 +3930,15 @@ onUnmounted(() => {
               No post
             </label>
           </div>
-          <div class="grid grid-cols-2 gap-x-3 gap-y-1 px-2 py-1 text-xs leading-tight">
-            <div class="col-span-2"><label class="block text-slate-400">Tên đăng ký</label><span class="font-semibold text-slate-700 truncate block">{{ selectedBooking ? `${selectedBooking.code}-${selectedBooking.name}` : '--' }}</span></div>
-            <div><label class="block text-slate-400">Tên khách</label><span class="font-semibold text-slate-700 truncate block">{{ selectedGuest || '--' }}</span></div>
-            <div><label class="block text-slate-400">Ngày đến ~ Ngày đi</label><span class="font-semibold text-slate-700">{{ registrationStayLabel }}</span></div>
-            <div><label class="block text-slate-400">Phòng / Hạng</label><span class="font-semibold text-slate-700">{{ registrationRoomLabel }}</span></div>
-            <div><label class="block text-slate-400">Trạng thái</label><span class="font-semibold text-emerald-600">In-House</span></div>
-            <div class="col-span-2"><label class="block text-slate-400"><i class="fa-regular fa-note-sticky"></i> Ghi chú:</label><textarea :value="noteText" readonly class="w-full h-7 px-1 py-0.5 bg-white border border-slate-300 rounded text-xs resize-none"></textarea></div>
+          <div class="grid grid-cols-2 gap-x-3 gap-y-1.5 px-2.5 py-1.5 text-xs leading-normal">
+            <div class="col-span-2"><label class="block text-slate-500 font-semibold text-xs">Tên đăng ký</label><span class="font-semibold text-[#000000D9] truncate block" :title="selectedBooking ? `${selectedBooking.code}-${selectedBooking.name}` : ''">{{ selectedBooking ? `${selectedBooking.code}-${selectedBooking.name}` : '--' }}</span></div>
+            <div><label class="block text-slate-500 font-semibold text-xs">Tên khách</label><span class="font-semibold text-[#000000D9] truncate block" :title="selectedGuest">{{ selectedGuest || '--' }}</span></div>
+            <div><label class="block text-slate-500 font-semibold text-xs">Ngày đến ~ Ngày đi</label><span class="font-semibold text-[#000000D9]">{{ registrationStayLabel }}</span></div>
+            <div><label class="block text-slate-500 font-semibold text-xs">Phòng / Hạng</label><span class="font-semibold text-[#000000D9]">{{ registrationRoomLabel || '--' }}</span></div>
+            <div><label class="block text-slate-500 font-semibold text-xs">Trạng thái</label><span class="font-semibold text-emerald-600">In-House</span></div>
+            <div class="col-span-2"><label class="block text-slate-500 font-semibold text-xs"><i class="fa-regular fa-note-sticky"></i> Ghi chú:</label><textarea :value="noteText" :title="noteText" readonly class="w-full min-h-[32px] max-h-[50px] px-2 py-1 bg-white border border-slate-300 rounded text-xs resize-none text-[#000000D9] focus:outline-none"></textarea></div>
           </div>
-          <div class="checkout-folio-section border-t border-slate-300 mb-auto px-2 py-1">
+          <div class="checkout-folio-section border-t border-slate-300 px-2 py-1">
             <div class="checkout-folio-title"><i class="fa-solid fa-wallet"></i> Folio</div>
             <div class="grid grid-cols-2 gap-1">
               <button @click="activeFolioTab = 'A'" :class="[String(activeFolioTab) === 'A' ? 'active border-slate-600 bg-slate-300' : 'border-slate-300 bg-white', 'checkout-folio-card border rounded px-1.5 py-0.5 text-left']"><div class="font-semibold text-xs">Folio A</div><div class="text-right text-[15px] leading-none font-bold text-red-500">{{ formatSummaryMoney(folioTotal('A')) }}</div></button>
@@ -3934,7 +3957,7 @@ onUnmounted(() => {
         <div class="checkout-services-panel flex-[1.7] bg-white rounded-none border-0 border-b border-slate-300 flex flex-col min-h-0 shadow-none overflow-hidden">
           <div class="checkout-service-title flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700">
             <i class="fa-solid fa-list-check text-slate-900 text-[12px]"></i>
-            <span class="text-slate-900">Dịch vụ</span>
+            <span class="text-slate-900">Dịch Vụ</span>
           </div>
           <!-- Table Container -->
           <div class="flex-1 overflow-auto relative">
@@ -3974,7 +3997,7 @@ onUnmounted(() => {
                   @dragend="handleServiceDragEnd"
                   :class="[
                     'border-b border-gray-200 transition-colors',
-                    group.paymentCode ? 'bg-[#fde8e8] text-rose-950 font-medium hover:bg-rose-100' : 'hover:bg-sky-50 text-gray-800 cursor-pointer',
+                    group.paymentCode ? 'bg-[#fee2e2] text-[#000000D9] font-normal hover:bg-rose-100' : 'hover:bg-slate-100/70 text-[#000000D9] cursor-pointer',
                     canTransferServiceGroup(group) ? 'cursor-grab active:cursor-grabbing' : ''
                   ]"
                   :title="canTransferServiceGroup(group) ? 'Kéo sang Folio khác' : 'Xem chi tiết hóa đơn'"
@@ -4035,7 +4058,7 @@ onUnmounted(() => {
                 @change="toggleAllServiceSelection($event.target.checked)"
                 class="rounded border-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
               />
-              <span class="uppercase text-xs font-semibold text-[#000000D9] tracking-wide">Tổng dịch vụ:</span>
+              <span class="uppercase text-xs font-semibold text-[#000000D9] tracking-wide">Tổng Dịch Vụ:</span>
             </div>
             <span class="tabular-nums pr-2 text-[#155DFC] font-semibold text-sm">{{ formatSummaryMoney(totalServiceAmount) }}</span>
           </div>
@@ -4074,7 +4097,7 @@ onUnmounted(() => {
                   @dragend="handleServiceDragEnd"
                   :class="[
                     'border-b border-gray-200 transition-colors',
-                    p.paymentCode ? 'bg-[#fde8e8] text-rose-950 font-medium hover:bg-rose-100' : 'hover:bg-gray-50 text-gray-800',
+                    p.paymentCode ? 'bg-[#fee2e2] text-[#000000D9] font-normal hover:bg-rose-100' : 'hover:bg-slate-100/70 text-[#000000D9]',
                     canTransferPayment(p) ? 'cursor-grab active:cursor-grabbing' : ''
                   ]"
                   :title="canTransferPayment(p) ? 'Kéo sang Folio khác' : 'Cọc đã dùng để thanh toán không thể chuyển Folio'"
@@ -4130,7 +4153,7 @@ onUnmounted(() => {
                 @change="toggleAllPaymentSelection($event.target.checked)"
                 class="rounded border-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
               />
-              <span class="uppercase text-xs font-semibold text-[#000000D9] tracking-wide">Tổng thanh toán:</span>
+              <span class="uppercase text-xs font-semibold text-[#000000D9] tracking-wide">Tổng Thanh Toán:</span>
             </div>
             <span class="tabular-nums pr-2 text-[#155DFC] font-semibold text-sm">{{ formatMoney(totalPaymentAmount) }}</span>
           </div>
@@ -4157,7 +4180,7 @@ onUnmounted(() => {
           <aside v-if="selectedServiceGroup" class="absolute right-0 top-0 h-full w-full max-w-[650px] bg-white shadow-2xl flex flex-col">
             <header class="flex items-center justify-between px-5 py-4 border-b border-gray-200">
               <div>
-                <h2 class="text-base font-semibold text-gray-900">Hóa đơn</h2>
+                <h2 class="text-base font-semibold text-gray-900">Hóa Đơn</h2>
                 <p class="mt-1 text-xs text-gray-500">{{ selectedServiceGroup.name }} · {{ selectedServiceGroup.dateTime }}</p>
               </div>
               <button @click="closeServiceInvoice" class="w-8 h-8 rounded hover:bg-gray-100 text-xl text-gray-500" aria-label="Đóng">×</button>
@@ -4211,8 +4234,8 @@ onUnmounted(() => {
 
     <!-- Tạm nối API trả phòng cho frontend mới -->
     <div v-if="showCheckoutModal" class="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4">
-      <div class="w-full max-w-md rounded-xl bg-white shadow-2xl">
-        <div class="flex items-center justify-between rounded-t-xl bg-sky-300 px-4 py-3 text-white"><span class="font-semibold">Xác nhận</span><button @click="showCheckoutModal = false" class="text-xl">×</button></div>
+      <div class="w-full max-w-md rounded-xl bg-white shadow-2xl overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 text-white" :style="{ background: 'var(--pms-custom-theme, #006bdb)' }"><span class="font-semibold">Xác Nhận</span><button @click="showCheckoutModal = false" class="text-xl">×</button></div>
         <div class="space-y-2 p-5">
           <template v-if="isRestoreCheckout">
             <p class="py-3 text-center text-sm text-slate-700">Bạn có chắc chắn khôi phục checkout {{ selectedRoomItem ? `phòng ${selectedRoomItem.roomNumber || ''}` : 'Master' }} không?</p>
@@ -4254,7 +4277,7 @@ onUnmounted(() => {
 
     <div v-if="showEarlyChargeModal" class="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
       <div class="w-full max-w-sm overflow-hidden rounded-xl bg-white shadow-2xl">
-        <div class="flex items-center justify-between bg-sky-300 px-4 py-3 text-sm font-semibold text-white"><span>Xác nhận</span><button @click="showEarlyChargeModal = false" class="text-2xl leading-none">×</button></div>
+        <div class="flex items-center justify-between px-4 py-3 text-sm font-semibold text-white" :style="{ background: 'var(--pms-custom-theme, #006bdb)' }"><span>Xác Nhận</span><button @click="showEarlyChargeModal = false" class="text-2xl leading-none">×</button></div>
         <div class="space-y-4 p-5 text-xs text-slate-700">
           <div><p class="mb-2 font-semibold">Chọn ngày</p><label v-for="date in earlyChargeDateOptions" :key="date" class="mb-1 flex items-center gap-2"><input v-model="earlyChargeDates" :value="date" type="checkbox" class="h-4 w-4 accent-sky-500" />{{ date.split('-').reverse().join('-') }}</label></div>
           <label class="flex items-center gap-4"><span>% Charge</span><input v-model.number="earlyChargePercent" type="number" min="0" max="100" step="1" class="w-32 rounded border border-slate-300 px-2 py-1.5 text-right" /></label>
@@ -4465,23 +4488,21 @@ onUnmounted(() => {
 .checkout-actions .checkout-action-menu { padding-top: 0.5rem; }
 .checkout-actions .checkout-action-menu > div { border-color: #334155; }
 .checkout-actions .checkout-action-menu > div:last-child { margin-top: 0; }
-.checkout-bookings-panel table thead th,
 .checkout-services-panel table thead th,
 .checkout-payments-panel table thead th { background: #f8fafc; color: #64748b; }
 @media (max-height: 768px) {
   .checkout-shell { --checkout-bottom-height: 275px; }
 }
 .checkout-bookings-heading { height: 24px; flex: 0 0 24px; }
-.checkout-info-panel { font-size: 12px; }
+.checkout-info-panel { font-size: 12px; flex: 0 0 auto; }
 .checkout-info-heading { height: 24px; flex: 0 0 24px; }
-.checkout-folio-section { flex: 0 0 88px; }
+.checkout-folio-section { flex: 0 0 auto; }
 .checkout-folio-card { height: 36px; }
 .checkout-header > div:first-child { max-width: 430px; }
 .checkout-header select { background: #2563eb; color: #fff; border-color: #2563eb; font-weight: 700; min-width: 108px; }
 .checkout-header select option { background: #fff; color: #0f172a; }
 .checkout-left-pane { width: 100%; }
 .checkout-bookings-panel { flex: 1 1 auto; min-height: 0; }
-.checkout-info-panel { flex: 0 0 285px; }
 .checkout-billing-pane { flex: 1 1 auto; }
 .checkout-services-panel { flex: 1 1 auto; }
 .checkout-payments-panel { flex: 0 0 285px; }
@@ -4534,9 +4555,9 @@ onUnmounted(() => {
 .checkout-service-title svg,
 .checkout-service-title i { color: #0f172a; }
 /* Booking list: exact 5-column layout from the reference HTML. */
-.checkout-bookings-heading { height: 29px; flex: 0 0 29px; padding: 6px 10px !important; background: #f8fafc; color: #64748b; font-size: 12px; font-weight: 700; text-transform: uppercase; }
+.checkout-bookings-heading { height: 29px; flex: 0 0 29px; padding: 6px 10px !important; background: #f8fafc; color: #000000D9; font-size: 12px; font-weight: 600; text-transform: none; }
 .checkout-bookings-panel table { table-layout: fixed !important; width: 100%; border-collapse: collapse; }
-.checkout-bookings-panel table th { padding: 6px 6px; background: #f8fafc; color: #64748b; font-size: 12px; font-weight: 700; text-transform: uppercase; white-space: nowrap; }
+.checkout-bookings-panel table th { padding: 6px 6px; background: #f8fafc; color: #000000D9 !important; font-size: 12px; font-weight: 600; text-transform: none; white-space: nowrap; }
 .checkout-bookings-panel table td { padding: 6px 6px; font-size: 12px; border-bottom: 1px solid #cbd5e1; white-space: nowrap; overflow: hidden; }
 .checkout-bookings-panel table td:nth-child(3),
 .checkout-bookings-panel table td:nth-child(3) > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -4583,15 +4604,15 @@ onUnmounted(() => {
 .checkout-payments-panel tbody td:nth-child(7) span { background: transparent !important; color: inherit !important; border-radius: 0 !important; }
 .checkout-actions [data-action="add-deposit"] span { font-size: 0; }
 .checkout-actions [data-action="add-deposit"] span::after { content: 'Thanh Toán Trước'; font-size: 12px; }
-.checkout-info-heading { height: auto; min-height: 24px; padding: 4px 8px !important; border-bottom: 0 !important; color: #64748b; }
+.checkout-info-heading { height: auto; min-height: 24px; padding: 4px 8px !important; border-bottom: 0 !important; color: #000000D9; }
 .checkout-info-title,
-.checkout-folio-title { display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; }
+.checkout-folio-title { display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: #000000D9; text-transform: none; }
 .checkout-info-title i,
-.checkout-folio-title i { color: #64748b; }
-.checkout-info-panel > div:nth-child(2) { padding: 4px 8px !important; gap: 2px 4px; }
+.checkout-folio-title i { color: #000000D9; }
+.checkout-info-panel > div:nth-child(2) { padding: 5px 8px !important; gap: 3px 6px; }
 .checkout-info-panel > div:nth-child(2) label { font-size: 12px; color: #64748b; display: block; }
 .checkout-info-panel > div:nth-child(2) span { font-size: 12px; font-weight: 600; color: #0f172a; }
-.checkout-info-panel > div:nth-child(2) textarea { height: 28px; padding: 2px 6px; font-size: 12px; border: 1px solid #cbd5e1; border-radius: 4px; }
+.checkout-info-panel > div:nth-child(2) textarea { min-height: 32px; height: 36px; padding: 3px 6px; font-size: 12px; border: 1px solid #cbd5e1; border-radius: 4px; }
 .checkout-info-panel > div:nth-child(2) label i { margin-right: 3px; }
 .checkout-folio-section { padding: 4px 8px !important; background: #f8fafc; border-top: 1px solid #cbd5e1; }
 .checkout-folio-title { margin-bottom: 2px; }
@@ -4651,9 +4672,13 @@ onUnmounted(() => {
 .checkout-filter-date-wrap input[type="date"]::-webkit-calendar-picker-indicator { opacity: 0 !important; width: 0 !important; margin: 0 !important; padding: 0 !important; }
 .checkout-filter-date-wrap input[type="date"] { appearance: none; -webkit-appearance: none; }
 .checkout-filter-date-wrap i.fa-copy { cursor: pointer; }
-.checkout-filter-date-wrap i.fa-copy:hover { color: #2563eb !important; }
+.checkout-selected-row {
+  background-color: #e0f2fe !important;
+}
 .checkout-selected-row,
-.checkout-selected-row * { color: #fff !important; }
+.checkout-selected-row * {
+  color: #000000D9 !important;
+}
 .checkout-shell,
 .checkout-shell input,
 .checkout-shell select,

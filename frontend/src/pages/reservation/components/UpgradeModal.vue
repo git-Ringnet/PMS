@@ -42,8 +42,8 @@
             <tbody>
               <tr v-for="r in targetRooms" :key="r.id" class="border-b border-slate-100 hover:bg-slate-50/30 h-9 font-normal text-[#000000D9]">
                 <td class="p-2.5 text-center font-normal text-[#000000D9] border-slate-200">{{ r.roomNumber || 'Chưa gán' }}</td>
-                <td class="p-2.5 border-slate-200">{{ r.type || r.shape || '-' }}</td>
-                <td class="p-2.5 text-[#000000D9] border-slate-200">{{ r.guestName || '-' }}</td>
+                <td class="p-2.5 text-[#000000D9] font-normal border-slate-200">{{ r.type || r.shape || '-' }}</td>
+                <td class="p-2.5 text-[#000000D9] font-normal border-slate-200">{{ r.guestName || '-' }}</td>
               </tr>
             </tbody>
           </table>
@@ -94,8 +94,8 @@
                   !upgradeTargetRateCode ? 'text-[#A8B0BF]' : 'text-[#000000D9]'
                 ]"
               >
-                <option value="" disabled hidden>Chọn mã giá phòng</option>
-                <option v-for="rc in roomRateCodes" :key="rc.id" :value="rc.Ma" class="text-[#000000D9]">{{ rc.Ma }}</option>
+                <option value="" disabled hidden>Chọn mã giá</option>
+                <option v-for="rc in activeRoomRateCodes" :key="rc.id" :value="rc.Ma" class="text-[#000000D9]">{{ rc.Ma }}</option>
               </select>
               <button 
                 v-if="upgradeChangePrice && upgradeTargetRateCode"
@@ -247,6 +247,10 @@ const availableForms = computed(() => {
   const formIds = siblingClasses.map(c => c.room_form_id).filter(id => id !== undefined && id !== null)
   const list = (props.roomForms || []).filter(f => formIds.includes(f.id))
   return list.length > 0 ? list : (props.roomForms || [])
+})
+
+const activeRoomRateCodes = computed(() => {
+  return (props.roomRateCodes || []).filter(rc => !rc.Disable)
 })
 
 function getRateCodePrice(rateCodeMa, classId) {

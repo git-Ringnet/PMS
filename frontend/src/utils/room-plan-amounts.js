@@ -5,9 +5,17 @@ const codeOf = service => String(
 ).toUpperCase()
 
 const amountOf = service => {
-  const quantity = Number(service.quantity ?? service.Quantity ?? 1) || 1
+  const rawQuantity = service.quantity ?? service.Quantity
+  const quantity = rawQuantity === null || rawQuantity === undefined || rawQuantity === ''
+    ? 1
+    : (Number(rawQuantity) || 0)
   const rate = Number(service.rate ?? service.price ?? service.Amount ?? service.amount ?? 0) || 0
-  return Number(service.total_amount ?? service.totalAmount ?? '') || (rate * quantity)
+  const rawTotalAmount = service.total_amount ?? service.totalAmount
+  if (rawTotalAmount !== null && rawTotalAmount !== undefined && rawTotalAmount !== '') {
+    const totalAmount = Number(rawTotalAmount)
+    if (Number.isFinite(totalAmount)) return totalAmount
+  }
+  return rate * quantity
 }
 
 const isRoomCharge = service => ['RM', 'ROOM_CHARGE'].includes(codeOf(service))
@@ -71,10 +79,11 @@ export function calculateRoomPlanRoomAmounts(room, booking, systemDate) {
   const unpostedExtraBed = unpostedServices
     .filter(service => codeOf(service) === 'EB')
     .reduce((sum, service) => sum + amountOf(service), 0)
+  const hasDailyExtraBedSetup = unpostedServices.some(service => codeOf(service) === 'EB')
 
   const hasExtraBedBill = historicalBills.some(bill => String(bill.ServiceId || '').toUpperCase() === 'EB')
 
-  const extraBedAmount = (unpostedExtraBed > 0 || hasExtraBedBill)
+  const extraBedAmount = (hasDailyExtraBedSetup || hasExtraBedBill)
     ? unpostedExtraBed
     : (Number(room.extra_bed_qty) || 0) * (Number(room.extra_bed_rate) || 0) * fullNights
 

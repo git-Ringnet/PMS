@@ -1,5 +1,56 @@
 # Project Memory — PMS
 
+- 2026-10-21: Dòng 269 Tìm kiếm chung giữ đúng module khi mở Đăng ký. Dữ liệu Phòng/Khách có thêm khóa Booking cha; `Thao tác → Đăng Ký` và double-click mã BK mở cùng Booking tại đúng Lễ tân hoặc Đặt phòng. Không đổi schema, import, Room Plan, Checkout hay logic Booking. `GeneralSearchProjectionServiceTest` đạt 2/2; frontend build đạt. Rủi ro còn lại: cần UAT với dữ liệu thực tế ở cả ba tab.
+
+- 2026-10-21: Chuẩn hóa Dòng 50 Sheet FIX FE - Chuyển Cọc / Tách Cọc thuộc phân hệ Thu ngân / Hóa đơn ([CheckoutPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue), [TransferPaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/TransferPaymentModal.vue), [TransferServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/TransferServiceModal.vue), [SplitDepositModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/SplitDepositModal.vue)):
+  - Chuyển Cọc: Bổ sung nhãn `(Khách chính)` màu xanh dương (`text-sky-500`) cạnh tên khách chính trong dropdown "Đến khách" của `TransferPaymentModal` và `TransferServiceModal`. Thêm nút xóa nhanh `(x)` trên ô tìm kiếm khách đích. Bảng hiển thị cọc có `<th>` căn giữa ngang và dọc với đầy đủ viền `border-slate-200`. Loại bỏ nút "Đóng" ở footer modal theo FE Design System, hỗ trợ phím `Esc` và kéo thả an toàn trong màn hình.
+  - Tách Cọc: Chuyển nền form sang `bg-[#f8fafc]`. Chuẩn hóa ô "Số tiền" và "Folio" với trường bắt buộc (nền `#FFF8DB`, viền `#F1DD8A`, nhãn `*` đỏ, focus amber-500). Định dạng số tiền có dấu phẩy phân cách hàng nghìn (`200,000`), có nút `(x)` xóa nhanh. Loại trừ Folio nguồn khỏi dropdown chọn Folio đích. Loại bỏ nút "Đóng" ở footer, giữ nút "Tách" `.btn-pms-primary`.
+  - Bảo toàn tuyệt đối (Zero Side Effects): Không thay đổi API backend, logic nghiệp vụ khác hoặc các màn hình/phân hệ khác.
+  - Kiểm thử: `npm run build` thành công 100% (6.56s, 0 lỗi); `php artisan test --filter=CheckoutBusinessRulesTest` đạt 14/14 tests.
+
+  - Panel 1 (Bảng danh sách đăng ký): Bỏ ép `text-transform: uppercase`, chuyển màu chữ từ `#64748b` sang `#000000D9`, font Roboto 12px, semi-bold (600). Tiêu đề hiển thị chuẩn Title Case: `ĐK / Phòng`, `Tên Khách`, `Tổng DV`, `Đã TT`.
+  - Panel 2 (Thông tin đăng ký & Folio): Bỏ ép `text-transform: uppercase`, chuyển màu chữ và icon từ `#64748b` sang `#000000D9`, font Roboto 12px, semi-bold (600). Tiêu đề hiển thị chuẩn Title Case: `Thông Tin Đăng Ký`, `Folio`.
+  - Khung Thông Tin Đăng Ký: Loại bỏ thanh cuộn dọc (scrollbar), chuyển sang `flex: 0 0 auto; overflow-hidden` co giãn tự nhiên không bị tràn.
+  - Kiểm thử: `npm run build` thành công 100% (7.78s, 0 lỗi); browser subagent chụp ảnh thực tế xác thực màu chữ, font chữ và Title Case đúng 100% theo quy ước.
+
+- 2026-10-21: Hoàn tất tinh chỉnh toàn diện UI/UX và cơ chế kéo thả giới hạn màn hình (Clamped Dragging) cho tất cả form/modal thuộc màn Checkout:
+  - Khung thông tin đăng ký ([CheckoutPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue)): Nâng chiều cao `min-height: 300px; flex: 0 0 300px;`, textarea ghi chú `36px` hiển thị đầy đủ, không bị cụt.
+  - Droplist dịch vụ ([AddServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/AddServiceModal.vue)): Cho phép bấm vào ô nhập khi đã chọn dịch vụ để mở bung dropdown danh sách toàn bộ sản phẩm.
+  - Dịch vụ buồng phòng ([PostBillHousekeepingTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/housekeeping/components/PostBillHousekeepingTab.vue), [SingleDatePicker.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/components/SingleDatePicker.vue)): Tên outlet giỏ hàng màu đen `#000000D9`, xử lý lệch ngày UTC bằng `parseLocalDateYMD` và set `maxDate` đến `23:59:59` giải quyết lỗi không chọn được ngày 30.
+  - Kéo thả giới hạn màn hình (Clamped Dragging): Đưa cơ chế kéo thả với biên an toàn 16px vào 14 modal của Checkout (`AddServiceModal`, `AddHousekeepingServiceModal`, `QuickTransferBillModal`, `PrepaymentModal`, `PaymentModal`, `TransferServiceModal`, `SplitServiceModal`, `CancelServiceModal`, `AdjustRoomRateModal`, `FilterServiceModal`, `TransferPaymentModal`, `SplitDepositModal`, `DeletePaymentModal`, `DebtSettlementModal`), đảm bảo không thể kéo lọt khỏi màn hình.
+  - Bảng chuyển dịch vụ ([TransferServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/TransferServiceModal.vue)): Chuẩn hóa font Roboto 12px `#000000D9`, bỏ màu xanh lá ở cột tiền.
+  - Modal thanh toán trước ([PrepaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/PrepaymentModal.vue)): Thu nhỏ ô ngày tháng với layout grid 140px/165px.
+  - Modal thanh toán ([PaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/PaymentModal.vue)): Thu nhỏ panel trên trái (5 cols), tách rời nút X và icon dropdown arrow không bị đè lên nhau.
+  - Viết hoa đầu mỗi chữ (Title Case) và theme color: Đồng bộ toàn bộ 14 tiêu đề modal, popup và bảng chi tiết hóa đơn theo đúng quy chuẩn FE Design System.
+  - Kiểm thử: `npm run build` thành công 100% (5.43s, 0 lỗi).
+
+- 2026-10-21: Dòng 443 Kế hoạch phòng chặn kéo phòng sang loại đích đã hết AV khi `AllowOverRoomTypeRoomKind = 0`; khi bằng `1` bắt buộc xác nhận overbooking trước khi lưu. Backend lấy loại phòng từ phòng vật lý đích và tính AV dự kiến sau chuyển; không đổi schema, import, Day Use, OOO/OOS, Do Not Move hoặc luồng phòng cùng loại. `AllowInputOverAVTest` đạt 11/11, frontend build đạt.
+
+- 2026-10-21: Sơ đồ phòng dùng nguyên icon `RoomIcon` chung của Trợ giúp cho Phòng ưu tiên và Phòng không làm phiền trên thẻ phòng; bỏ badge/màu riêng, không đổi trạng thái phòng, API hoặc thao tác.
+
+- 2026-10-21: Hoàn tất rà soát và đồng bộ triệt để Dòng 40 đến Dòng 48 Sheet FIX FE module Thu ngân / Hóa đơn ([CheckoutPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue) và 8 modal con):
+  - Màn hình Hóa đơn ([CheckoutPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue)): Bỏ class làm trắng chữ `.checkout-selected-row * { color: #fff !important; }`. Dòng được chọn có nền `bg-sky-100` (`#e0f2fe`), viền trái `border-l-4 border-blue-600`, chữ giữ nguyên màu đen `#000000D9`. Dòng hover `hover:bg-slate-100/70` không làm mất active của dòng đang chọn. Hóa đơn đã thanh toán / phòng đã checkout có nền hồng nhạt `#fee2e2` chữ đen `#000000D9`. Sửa lỗi dính chuỗi ngày giờ (`02/09/2026222222` -> `02/09/2026 22:22`). Mở rộng khung thông tin đăng ký và textarea ghi chú để không bị tràn chữ. Dropdown tìm kiếm phân tách rõ ràng master booking và phòng con.
+  - Thêm dịch vụ ([AddServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/AddServiceModal.vue)): Viền `border-slate-200`. Ô Đơn giá disable nền xám khi chưa chọn dịch vụ, chuyển nền vàng nhạt `#FFF8DB` viền `#F1DD8A` khi đã chọn dịch vụ. Tab Tiền phòng: Khi bật `Cập nhật tiền phòng` thì nhãn và ô `Tiền phòng tự động` đổi xám (`text-slate-400`, `bg-slate-100`), khi tắt thì về bình thường. Tự động blur sau khi click chọn sản phẩm.
+  - Thêm DV Buồng phòng ([AddHousekeepingServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/AddHousekeepingServiceModal.vue) & [PostBillHousekeepingTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/housekeeping/components/PostBillHousekeepingTab.vue)): Bỏ tag tên khách và phòng trên header modal. Khi mở từ modal Hóa đơn (`isModal === true`), khóa ô `Phòng / Khách` (read-only, nền xám `#F8FAFC`, không cho đổi phòng); khi ở tab Buồng phòng (`isModal === false`), vẫn cho đổi phòng bình thường (0% ảnh hưởng Housekeeping).
+  - Tách DV ([SplitServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/SplitServiceModal.vue)), Chuyển DV ([TransferServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/TransferServiceModal.vue)), Tập hợp DV ([QuickTransferBillModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/QuickTransferBillModal.vue)), Xóa DV ([CancelServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/CancelServiceModal.vue)): Chuẩn hóa viền modal `border-slate-200`, header đồng bộ theme hệ thống, bảng `<th>` căn giữa ngang dọc có viền đầy đủ `border border-slate-200`, font Roboto 12px `#000000D9`, nút chuẩn `.btn-pms-danger`.
+  - Đặt cọc / Thanh toán trước ([PrepaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/PrepaymentModal.vue)): Viền `border-slate-200`, footer chỉ giữ duy nhất nút Lưu `.btn-pms-primary`. Ô Phòng bỏ lựa chọn `Master Header` theo Note 12/10, chỉ hiển thị các phòng thực tế, mặc định phòng đầu tiên. Ô Tài khoản ngân hàng nền trắng `bg-white`.
+  - Thanh toán ([PaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/PaymentModal.vue)): Viền `border-slate-200`, footer chỉ có nút Lưu `.btn-pms-primary`. Ô Tài khoản ngân hàng nền trắng. Bảng thanh toán đã thêm: dữ liệu chi tiết font thường `font-normal text-[#000000D9]`. Icon thùng rác đổi sang màu đỏ `text-red-500 hover:text-red-700`.
+  - Kiểm thử: `npm run build` thành công 100% trong 4.70s; browser subagent xác thực giao diện hoạt động chính xác.
+
+- 2026-10-21: Dòng 340 Kế hoạch phòng thêm `ShowVirtualRoom` (mặc định `1` để giữ hành vi cũ). Giá trị `0` chỉ ẩn dòng phòng chưa gán số phòng trên lưới; Booking, Waiting List, Room Map, OCC/AV/OOO, API và dữ liệu không đổi. Key legacy tương ứng chưa xác minh, đã ghi database mapping.
+
+- 2026-10-21: Dòng 322 Kế hoạch phòng hiển thị Day Use theo tỷ lệ chính xác 24 giờ trong một ô ở cả `Xem ngày` và `Xem đêm`: `left = arrival_time / 24h`, `width = (departure_time - arrival_time) / 24h`, hỗ trợ `24:00` là mép phải ô. Day Use khác giờ cùng phòng/ngày không bị cảnh báo trùng; chỉ giao giờ thực tế mới chia line/cảnh báo. Không đổi booking qua đêm, API, database, OCC/AV, import hoặc thao tác Room Plan khác.
+
+- 2026-10-21: Khắc phục triệt để lỗi tràn khung cột phải (GIÁ PHÒNG & YÊU CẦU) trong modal Thông Tin Phòng ([BookingDetailModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/components/BookingDetailModal.vue)):
+  - Điều chỉnh tỉ lệ `.main-grid`: `200px 1fr 1.3fr` (tăng diện tích cho Cột 3 Giá phòng, cân đối với Cột 2 Lưu trú).
+  - Bổ sung `min-width: 0;` cho `.cell-stay`, `.cell-price` và các grid helper (`.g`, `.stay-grid`, `.price-grid-1`, `.price-grid-2`), cho phép các track CSS Grid co giãn linh hoạt mà không bị đẩy tràn ra ngoài.
+  - Tối ưu track layout `.stay-grid` (`minmax(105px, 1.2fr) 58px minmax(105px, 1.2fr) 58px 45px; gap: 6px 8px;`), `.price-grid-1` & `.price-grid-2` (`minmax(80px, 1fr) minmax(80px, 1fr) minmax(95px, 1.15fr) auto; gap: 6px 8px;`).
+  - Căn phải thẳng hàng 2 nút hành động xanh ("Yêu cầu đặc biệt" và "Chi tiết thêm giường") bằng class `.price-btn-col` (`grid-column: 4; justify-self: end;`) và loại bỏ thẻ `div` rỗng.
+  - Mở rộng `max-width` của `.card` lên `min(97vw, 1400px)` và bổ sung media query `@media (max-width: 1120px)`.
+  - Kiểm thử: `npm run build` thành công 100% trong 5.12s; browser subagent xác thực 100% controls nằm gọn gàng bên trong khung.
+
+- 2026-10-20: Dòng 322 Kế hoạch phòng đã tách layout Day Use khỏi booking qua đêm. `Xem đêm` hiển thị Day Use ở nửa sau của đúng ô ngày; `Xem ngày` lấy vị trí từ `arrival_time` và độ rộng từ khoảng `arrival_time`–`departure_time`, fallback nửa ô khi giờ thiếu/không hợp lệ. Không đổi API, database, OCC/AV, kiểm tra trùng phòng hoặc thao tác booking. Test Room Plan liên quan đạt 22/22 và frontend production build đạt.
+
 - 2026-10-20: Dòng 346 màn Hóa đơn đã được gia cố cơ chế giữ Booking/phòng/khách khi tải lại trang. Trạng thái `sessionStorage` nay lưu thêm phạm vi `current/old/virtual`, user và chi nhánh; route query vẫn ưu tiên cao nhất, không khôi phục chéo user/chi nhánh, xóa trạng thái nếu Booking không còn truy cập được và fallback về Master nếu phòng cũ không còn trong Booking. Không đổi API, database, Folio, thanh toán hoặc logic Checkout. Test riêng dòng 346 và hồi quy dòng 310 đạt 9/9; frontend production build đạt.
 
 - 2026-10-20: Hoàn tất triệt để các hạng mục Dòng 36 - 39 Sheet FIX FE ([ChildBreakfastModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/ChildBreakfastModal.vue), [ExtraBedModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/ExtraBedModal.vue), [BookingDetailModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/components/BookingDetailModal.vue), [RoomInfoDatePicker.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/RoomInfoDatePicker.vue)):
@@ -50,6 +101,21 @@
     + Điểm nhấn trường bắt buộc: `Họ và tên`, `Quốc tịch`, `Số giấy tờ` mang nền vàng nhạt `#FFF8DB`, viền `#F1DD8A`, focus `#eab308`.
     + Ngày tháng định dạng 4 chữ số: Bảng chỉnh sửa inline [GuestInfoModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/GuestInfoModal.vue) nâng cấp placeholder từ `dd/mm/yy` sang `dd/mm/yyyy`, `formatDateDisplayYY` chuyển sang hiển thị đầy đủ 4 chữ số năm `dd/mm/yyyy`; `parseDateInputToIso` loại bỏ tự động chuyển đổi khi mới nhập 6 chữ số, bắt buộc đủ 8 chữ số (`ddmmyyyy`) mới tự động chuyển đổi sang ngày hợp lệ.
   - Cam kết 0 ảnh hưởng màn hình khác và 0 ảnh hưởng logic backend/nghiệp vụ. `npm run build` thành công 100% (8.57s, 0 lỗi).
+
+- 2026-10-21: Rà soát & Hoàn thiện triệt để Dòng 39 Sheet FIX FE - Thông Tin Phòng ([BookingDetailModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/components/BookingDetailModal.vue), [RoomInfoDatePicker.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/RoomInfoDatePicker.vue), [room-info-date-utils.js](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/room-info-date-utils.js)):
+  - Đồng bộ màu nền vàng nhạt `#FFF8DB` và viền `#F1DD8A` (focus `#eab308`) cho cả 4 trường bắt buộc khi ở chế độ Sửa: `Họ tên`, `Ngày đến`, `Ngày đi`, `Giá phòng`. Khắc phục triệt để lỗi "nửa vàng nửa trắng" ở Ngày đến và Ngày đi (container phủ vàng, input bên trong trong suốt).
+  - Tên khách không ép uppercase, gõ tự nhiên theo phím/Caps Lock; ô Ghi chú có `placeholder=""` và lưu vào `room_note` của phòng.
+  - Nút xóa nhanh `(x)` hoạt động trên tất cả các trường (text, select dropdown, datepicker) khi ở chế độ Sửa, đưa ô về rỗng và hiển thị placeholder.
+  - Các select dropdown có option gợi ý `disabled hidden` và class `.is-empty` đảm bảo màu chữ xám `#A8B0BF` trên mọi trình duyệt khi rỗng.
+  - Ngày tháng hiển thị chuẩn `dd/mm/yyyy`; tự động chèn `/` sau 2 số ngày và 2 số tháng, rào tháng tối đa 12, gõ 2-9 tự thành `0X/`. Loại bỏ nhánh 6 chữ số, bắt buộc đủ 8 chữ số (`ddmmyyyy`) mới tự động chuyển đổi sang ngày hợp lệ.
+  - Cam kết 0 ảnh hưởng màn hình khác, modal con và logic backend. `npm run build` thành công 100% (4.73s, 0 lỗi).
+
+- 2026-10-21: Rà soát & Hoàn thiện chuẩn Dòng 31 Sheet FIX FE - Nâng Hạng Phòng ([UpgradeModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/UpgradeModal.vue)):
+  - Nút Đóng: Đã xóa nút Đóng ở footer, chỉ giữ nút Lưu `.btn-pms-primary`; header có nút `[x]` đóng nhanh (`title="Đóng (Esc)"`); phím tắt `Esc` đóng modal kèm cleanup listener trong `onBeforeUnmount`.
+  - Typography & Style: Font Roboto, 12px `text-xs`; tiêu đề `Nâng Hạng Phòng` semi-bold text-xs chữ trắng; header theo theme `topbarThemeBg`; bảng phòng đã chọn có header căn giữa ngang dọc, có đủ 4 viền `border border-slate-200`, ô dữ liệu `<td>` font thường `text-[#000000D9] font-normal` không có viền dọc.
+  - Trường bắt buộc: `Loại Phòng` và `Dạng Phòng` có `*` đỏ, nền `#FFF8DB` viền `#F1DD8A` focus `#eab308`.
+  - Note ngày 9/10: Gợi ý `<option value="" disabled hidden>Chọn mã giá</option>` xám `#A8B0BF` khi chưa có giá trị, bị ẩn khỏi droplist; danh sách chỉ hiển thị mã giá hoạt động `activeRoomRateCodes` (`!rc.Disable`); nút xóa nhanh `(x)` tại `right-7` trước mũi tên dropdown select; bấm `(x)` đưa ô về rỗng và tự động tính lại giá phòng theo giá chuẩn loại phòng đích.
+  - Cam kết 0 ảnh hưởng màn hình khác và 0 ảnh hưởng logic backend/nghiệp vụ. `npm run build` thành công 100% (4.88s, 0 lỗi).
 
 - 2026-10-19: Triển khai hoàn tất Dòng 31 Sheet FIX FE - Nâng Hạng Phòng ([UpgradeModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/UpgradeModal.vue)):
   - Xóa nút Đóng ở footer: Footer chỉ giữ duy nhất nút Lưu `.btn-pms-primary` (icon đĩa mềm chuẩn), modal có nút đóng `x` trên header và hỗ trợ phím tắt `Esc` (`Escape`) đóng nhanh kèm dọn dẹp listener `onBeforeUnmount`.
@@ -767,6 +833,11 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 ## Recent Changes
 
+- 2026-10-21: Dòng 442 Room Plan: giữ `quantity = 0` và `total_amount = 0` của dịch vụ theo ngày là số 0 thay vì fallback thành 1/đơn giá; khi có EB theo ngày, tổng dùng đúng các dòng EB đó và không fallback sang cấu hình EB cấp phòng. GAL5/G0000012 với EB 0 × 300.000 nay có Tiền DV 0đ. Test Room Plan đạt 7/7; frontend build đạt. Không đổi API, database, Booking, Hóa đơn, post bill hoặc import.
+
+- 2026-10-21: Dòng 443 Room Plan: frontend gửi/so sánh `roomClassId` ổn định; API update xác thực `room_number` là phòng vật lý, đồng bộ loại phòng từ đích và tính AV dự kiến cho lần chuyển khác loại. Cấu hình không over chặn 422 không ghi dữ liệu; cấu hình cho over yêu cầu xác nhận 409 rồi mới lưu. `php artisan test --filter=AllowInputOverAVTest` đạt 11/11 (27 assertions); `npm run build` đạt.
+
+- 2026-10-20: Dòng 322 — thêm helper `room-plan-day-use-layout.js`; thanh Day Use dùng nửa ô ở `Xem đêm`, dùng tỷ lệ giờ trong ngày ở `Xem ngày`, và tiếp tục dùng conflict lane hiện có khi một phòng có nhiều lượt trong ngày.
 - 2026-10-20: Dòng 346 — tách helper `checkout-selection-storage.js`, giữ đúng Booking Master/phòng/khách và scope Hóa đơn sau reload; chặn phục hồi nhầm khi đổi user/chi nhánh và bổ sung 6 test hồi quy chuyên biệt.
 - 2026-10-09: Áp dụng quy ước tiêu đề bảng (căn giữa ngang/dọc, Title Case) cho 470 `<th>` trong 30 file Vue thuộc các màn hình đã sửa từ đầu tuần; chuẩn hóa cả nhãn header động của Tìm Kiếm Chung, Tạo Đăng Ký, Thông Tin Khách và Sơ Đồ Phòng.
 - 2026-10-09: Áp dụng viền đủ bốn cạnh cho hàng tiêu đề (`th`) của 67 bảng trong 30 file Vue thuộc các màn hình đã sửa từ đầu tuần; ô dữ liệu (`td`) không có line dọc.
@@ -943,6 +1014,11 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 ## Known Risks
 
+- 2026-10-21: Dòng 442 đã qua dữ liệu GAL5 và unit test/build; chưa UAT tooltip Room Plan trực tiếp trên browser sau khi tải lại trang.
+
+- 2026-10-21: Dòng 443 đã qua test API và production build, chưa UAT trực tiếp thao tác kéo sang loại phòng hết AV trên browser với cấu hình `AllowOverRoomTypeRoomKind` bằng cả `0` và `1`.
+
+- 2026-10-20: Dòng 322 đã qua 22 test và production build nhưng chưa UAT browser với dữ liệu Day Use thật hoặc đối chiếu pixel với link Hotel trong workbook. Dữ liệu thiếu giờ hoặc giờ đi không sau giờ đến chủ động dùng fallback nửa sau ô, không ghi sửa dữ liệu.
 - 2026-10-20: Dòng 346 đã qua unit test và production build nhưng chưa UAT trực tiếp thao tác F5/chuyển tab trên browser với dữ liệu thật. Bộ frontend test chung còn 1 lỗi ngoài phạm vi tại `room-info-date-utils.test.js` do hàm ngày hiện tại vẫn chấp nhận chuỗi 6 số `180926`; không phát sinh từ thay đổi Hóa đơn.
 - 2026-10-08: Thanh toán trước đã qua production build và diff-check phạm vi sửa; chưa UAT pixel trực tiếp trên browser để xác nhận vị trí nút `x`, icon lịch/time và dropdown ở mọi độ rộng màn hình.
 - 2026-10-08: Tập hợp dịch vụ đã qua feature tests với bill không mirror nhưng chưa UAT trực tiếp Booking trong ảnh; cần tải lại Checkout để xác nhận dữ liệu branch hiện tại đáp ứng owner/trạng thái hợp lệ.
@@ -1556,6 +1632,10 @@ Reference schema: [`old_database_struct/db_schema/ProVistaDTXHotel/tables/SP3000
 
 
 ## 6. Current Status
+
+- 2026-10-21: Dòng 442 Kế hoạch phòng đã sửa phép cộng EB số lượng 0. Dữ liệu EB vẫn giữ nguyên; tổng Tiền DV/Booking/tooltip đọc đúng dữ liệu theo ngày. Chưa UAT trực tiếp trên browser.
+
+- 2026-10-21: Dòng 443 Kế hoạch phòng đã triển khai kiểm tra AV dự kiến khi kéo sang loại phòng khác. Cấu hình không over chặn tuyệt đối; cấu hình cho over chỉ lưu sau xác nhận. Chưa UAT browser với dữ liệu thật.
 
 - 2026-09-10: Hoàn thiện phạm vi tách biệt cho mẫu tham chiếu LA/BR/MB và công nợ: LA dùng `groups` hiện hành, CSS giữ định dạng sau khi Designer biên dịch lại; bộ lọc HK mặc định Mã/ASC theo ảnh; thêm adapter dataset chỉ xác thực hình dạng; công nợ giữ chi tiết giải trừ theo tham số hiển thị. Chưa đăng ký report/API hoặc chạy migration vì còn thiếu contract query đã xác minh.
 
