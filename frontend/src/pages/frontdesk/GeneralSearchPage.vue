@@ -742,14 +742,26 @@ function handleActionRegister() {
     uiStore.showToast('Chỉ có thể mở đăng ký khi chọn đúng 1 dòng.', 'warning')
     return
   }
-  const first = selected[0]
-  const bookingCode = first.booking_code || (tab.value === 'booking' ? first.id : first.booking_id)
+  openBookingFromSearch(selected[0], tab.value)
+}
+
+function getBookingReference(row, sourceTab = tab.value) {
+  const bookingCode = String(row?.booking_code ?? '').trim()
+  if (bookingCode) return bookingCode
+
+  const bookingId = row?.booking_id ?? (sourceTab === 'booking' ? row?.id : null)
+  return bookingId === null || bookingId === undefined || bookingId === '' ? '' : String(bookingId)
+}
+
+function openBookingFromSearch(row, sourceTab = tab.value) {
+  const bookingCode = getBookingReference(row, sourceTab)
   if (!bookingCode) {
     uiStore.showToast('Không tìm thấy thông tin mã đăng ký.', 'warning')
     return
   }
+
   const targetPath = route.path.startsWith('/frontdesk') ? '/frontdesk' : '/reservation'
-  router.push({ path: targetPath, query: { tab: 'create-res', bookingCode: bookingCode } })
+  router.push({ path: targetPath, query: { tab: 'create-res', bookingCode } })
 }
 
 function handleActionInvoice() {
@@ -1755,7 +1767,17 @@ onMounted(async () => {
 
               <!-- Dynamic columns according to active reordered columns -->
               <template v-for="col in visibleCols" :key="col.key">
-                <td v-if="col.key === 'booking_code'" class="mono border-slate-200">{{ row.booking_code }}</td>
+                <td v-if="col.key === 'booking_code'" class="mono border-slate-200">
+                  <button
+                    type="button"
+                    class="booking-code-link"
+                    title="Nhấp đúp để mở Đăng ký"
+                    @dblclick.stop="openBookingFromSearch(row, 'booking')"
+                    @keydown.enter.prevent="openBookingFromSearch(row, 'booking')"
+                  >
+                    {{ row.booking_code }}
+                  </button>
+                </td>
                 <td v-else-if="col.key === 'reference_code'" class="border-slate-200">{{ row.reference_code || '—' }}</td>
                 <td v-else-if="col.key === 'booking_name'" class="name-cell font-medium border-slate-200">{{ row.booking_name }}</td>
                 <td v-else-if="col.key === 'company'" class="wrap-cell border-slate-200">{{ row.company || 'KHÁCH LẺ' }}</td>
@@ -1869,7 +1891,19 @@ onMounted(async () => {
               </td>
               <td :colspan="Math.max(1, visibleCols.length - 2)" class="master-banner-left border-slate-200">
                 <div class="banner-title">
-                  <strong>Booking {{ group.booking_code }}: {{ group.booking_name }}</strong>
+                  <strong>
+                    Booking
+                    <button
+                      type="button"
+                      class="booking-code-link"
+                      title="Nhấp đúp để mở Đăng ký"
+                      @dblclick.stop="openBookingFromSearch(group, 'room')"
+                      @keydown.enter.prevent="openBookingFromSearch(group, 'room')"
+                    >
+                      {{ group.booking_code }}
+                    </button>:
+                    {{ group.booking_name }}
+                  </strong>
                   <span class="banner-dates">· {{ date(group.arrival_date) }} ~ {{ date(group.departure_date) }}</span>
                   <span class="banner-night">· Room Night: {{ group.nights }}</span>
                 </div>
@@ -1958,7 +1992,17 @@ onMounted(async () => {
             <!-- Dynamic guest columns according to active reordered columns -->
             <template v-for="col in visibleCols" :key="col.key">
               <td v-if="col.key === 'guest_name'" class="name-cell font-medium border-slate-200">{{ row.guest_name }}</td>
-              <td v-else-if="col.key === 'booking_code'" class="mono border-slate-200">{{ row.booking_code }}</td>
+               <td v-else-if="col.key === 'booking_code'" class="mono border-slate-200">
+                 <button
+                   type="button"
+                   class="booking-code-link"
+                   title="Nhấp đúp để mở Đăng ký"
+                   @dblclick.stop="openBookingFromSearch(row, 'guest')"
+                   @keydown.enter.prevent="openBookingFromSearch(row, 'guest')"
+                 >
+                   {{ row.booking_code }}
+                 </button>
+               </td>
               <td v-else-if="col.key === 'room_number'" class="border-slate-200">{{ row.room_number || '—' }}</td>
               <td v-else-if="col.key === 'arrival_date'" class="border-slate-200">{{ date(row.arrival_date) }}</td>
               <td v-else-if="col.key === 'departure_date'" class="border-slate-200">{{ date(row.departure_date) }}</td>
@@ -2742,6 +2786,22 @@ onMounted(async () => {
 .mono {
   color: #0c4ea0;
   font-weight: 700;
+}
+.booking-code-link {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+.booking-code-link:hover,
+.booking-code-link:focus-visible {
+  color: #006bdb;
+  outline: none;
+  text-decoration: underline;
 }
 .number {
   text-align: right;
