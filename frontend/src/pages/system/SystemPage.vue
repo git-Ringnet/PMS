@@ -9,12 +9,13 @@ import ActivityLogTab from './components/ActivityLogTab.vue'
 import OrgStructureTab from './components/OrgStructureTab.vue'
 import RoleManageTab from './components/RoleManageTab.vue'
 import BankAccountTab from './components/BankAccountTab.vue'
+import SecurityTab from './components/SecurityTab.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
 const currentUser = computed(() => authStore.user)
 
-const activeTab = ref('company') // 'company', 'branch', 'org_structure', 'roles', 'employee', 'activity_log', 'bank_accounts'
+const activeTab = ref('company') // 'company', 'branch', 'org_structure', 'roles', 'employee', 'activity_log', 'bank_accounts', 'security'
 const isDropdownOpen = ref(false)
 
 // Collapsible states for sidebar groups
@@ -234,6 +235,18 @@ onMounted(() => {
               >
                 - Tài khoản ngân hàng
               </button>
+
+              <!-- Bảo mật nâng cao (chỉ quản trị hệ thống) -->
+              <button
+                v-if="authStore.isSuperAdmin"
+                @click="selectTab('security')"
+                class="w-full text-left px-4 py-2 border-none bg-transparent cursor-pointer transition-colors text-xs font-semibold"
+                :class="activeTab === 'security'
+                  ? 'bg-sky-100 text-sky-700 font-bold border-l-2 border-sky-500'
+                  : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900'"
+              >
+                - Bảo mật nâng cao
+              </button>
             </div>
           </div>
 
@@ -304,6 +317,7 @@ onMounted(() => {
           <EmployeeTab v-else-if="activeTab === 'employee'" />
           <ActivityLogTab v-else-if="activeTab === 'activity_log'" />
           <BankAccountTab v-else-if="activeTab === 'bank_accounts'" />
+          <SecurityTab v-else-if="activeTab === 'security' && authStore.isSuperAdmin" />
         </transition>
       </main>
     </div>
