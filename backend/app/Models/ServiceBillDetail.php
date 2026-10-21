@@ -36,8 +36,14 @@ class ServiceBillDetail extends Model
     {
         static::creating(function (self $detail) {
             if ($detail->Quantity === null || $detail->Quantity === '') {
+                // OriginalRate là đơn giá CHƯA thuế phí, nên số lượng = tiền chưa
+                // thuế / đơn giá. Chia Amount (đã gồm thuế phí) cho OriginalRate
+                // ra số lượng sai kiểu 1.13.
                 $rate = (float) $detail->OriginalRate;
-                $detail->Quantity = $rate != 0 ? (float) $detail->Amount / $rate : 1;
+                $net = $detail->OriginalAmount ?? $detail->DetailBillOriginalAmount;
+                $detail->Quantity = ($rate != 0 && $net !== null && $net !== '')
+                    ? round((float) $net / $rate, 2)
+                    : 1;
             }
         });
     }

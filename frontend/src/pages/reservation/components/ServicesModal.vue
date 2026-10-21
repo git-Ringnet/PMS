@@ -73,7 +73,7 @@
               <input 
                 type="checkbox" 
                 :checked="selectedServiceCodes.includes(svc.code)"
-                @change="e => handleServiceCheckboxChange(svc, e.target.checked)"
+                @change="e => handleServiceCheckboxChange(svc, e.target.checked, e.target)"
                 class="cursor-pointer accent-blue-600 rounded"
               />
               <span class="font-normal text-[#000000D9] select-none leading-snug">{{ svc.name }}</span>
@@ -132,11 +132,11 @@
             <table class="w-full border-collapse text-left text-xs">
               <thead>
                 <tr class="bg-slate-50 border-b border-slate-200 text-[#000000D9] font-semibold h-8">
-                  <th class="p-2 pl-3 text-center align-middle border border-slate-200 font-semibold text-xs text-[#000000D9]">Dịch Vụ</th>
-                  <th class="p-2 text-center w-24 align-middle border border-slate-200 font-semibold text-xs text-[#000000D9]">Số Lượng</th>
-                  <th class="p-2 text-center w-36 align-middle border border-slate-200 font-semibold text-xs text-[#000000D9]">Đơn Giá (VND)</th>
-                  <th class="p-2 text-center w-36 align-middle border border-slate-200 font-semibold text-xs text-[#000000D9]">Thành Tiền</th>
-                  <th class="p-2 text-center w-36 align-middle border border-slate-200 font-semibold text-xs text-[#000000D9]">Phòng / Master</th>
+                  <th class="p-2 pl-3 text-center align-middle border border-slate-200 font-semibold text-xs text-[#000000D9] min-w-[210px]">Dịch Vụ</th>
+                  <th class="p-2 text-center w-20 align-middle border border-slate-200 font-semibold text-xs text-[#000000D9]">Số Lượng</th>
+                  <th class="p-2 text-center w-32 align-middle border border-slate-200 font-semibold text-xs text-[#000000D9]">Đơn Giá (VND)</th>
+                  <th class="p-2 text-center w-24 align-middle border border-slate-200 font-semibold text-xs text-[#000000D9]">Thành Tiền</th>
+                  <th class="p-2 text-center w-32 align-middle border border-slate-200 font-semibold text-xs text-[#000000D9]">Phòng / Master</th>
                 </tr>
               </thead>
               <tbody>
@@ -145,25 +145,37 @@
                   :key="item.service_code"
                   class="border-b border-slate-100 hover:bg-slate-50/50 h-10 align-middle"
                 >
-                  <td class="p-2 pl-3 font-semibold text-[#000000D9] border-slate-200">
+                  <td class="p-2 pl-3 font-semibold text-[#000000D9] border-slate-200 min-w-[210px]">
                     {{ item.service_name }}
                   </td>
                   <td class="p-2 text-center border-slate-200">
-                    <input 
-                      type="number" 
-                      v-model.number="item.quantity" 
-                      min="0.01" 
-                      step="1"
-                      class="w-16 border border-slate-300 rounded px-1.5 py-0.5 text-center font-normal text-xs text-[#000000D9] focus:outline-none focus:border-blue-500"
-                    />
+                    <div class="relative inline-block w-[72px] align-middle">
+                      <input 
+                        type="number" 
+                        v-model.number="item.quantity" 
+                        min="0.01" 
+                        step="1"
+                        class="no-native-spin w-full border border-slate-300 rounded pl-1.5 pr-5 py-0.5 text-center font-normal text-xs text-[#000000D9] focus:outline-none focus:border-blue-500"
+                      />
+                      <div class="stepper-arrows">
+                        <button type="button" tabindex="-1" title="Tăng 1" @click="changeQuantity(item, 1)"><i class="fa-solid fa-chevron-up"></i></button>
+                        <button type="button" tabindex="-1" title="Giảm 1" :disabled="Number(item.quantity) <= 1" @click="changeQuantity(item, -1)"><i class="fa-solid fa-chevron-down"></i></button>
+                      </div>
+                    </div>
                   </td>
                   <td class="p-2 text-right border-slate-200">
-                    <input 
-                      type="text" 
-                      :value="formatCurrencyInput(item.rate)" 
-                      @input="e => item.rate = cleanCurrencyValue(e.target.value)"
-                      class="w-28 border border-slate-300 rounded px-2 py-0.5 text-right font-normal text-xs text-[#000000D9] focus:outline-none focus:border-blue-500"
-                    />
+                    <div class="relative inline-block w-28 align-middle">
+                      <input 
+                        type="text" 
+                        :value="formatCurrencyInput(item.rate)" 
+                        @input="e => item.rate = cleanCurrencyValue(e.target.value)"
+                        class="w-full border border-slate-300 rounded pl-2 pr-5 py-0.5 text-right font-normal text-xs text-[#000000D9] focus:outline-none focus:border-blue-500"
+                      />
+                      <div class="stepper-arrows">
+                        <button type="button" tabindex="-1" :title="'Tăng ' + formatCurrencyInput(PRICE_STEP)" @click="changeRate(item, 1)"><i class="fa-solid fa-chevron-up"></i></button>
+                        <button type="button" tabindex="-1" :title="'Giảm ' + formatCurrencyInput(PRICE_STEP)" :disabled="!(Number(item.rate) > 0)" @click="changeRate(item, -1)"><i class="fa-solid fa-chevron-down"></i></button>
+                      </div>
+                    </div>
                   </td>
                   <td class="p-2 text-right font-semibold text-blue-700 border-slate-200">
                     {{ formatCurrencyInput(item.quantity * item.rate) }}
@@ -248,7 +260,7 @@ import {
 } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
-import { isChildBreakfastCode, normalizeChildBreakfastConfig } from '@/utils/booking-room-services'
+import { isAddableHotelService, isChildBreakfastCode, normalizeChildBreakfastConfig } from '@/utils/booking-room-services'
 
 const props = defineProps({
   show: Boolean,
@@ -332,10 +344,12 @@ const selectedServiceCodes = ref([])
 const checkedDates = ref([])
 const serviceItems = ref([])
 
+// Dòng 343: dịch vụ không tick "Hiển thị khi post bill" không hiện ở đây (trừ RM).
 const filteredHotelServices = computed(() => {
-  if (!servicesModalSearch.value) return props.hotelServicesList || []
+  const addable = (props.hotelServicesList || []).filter(isAddableHotelService)
+  if (!servicesModalSearch.value) return addable
   const q = servicesModalSearch.value.toLowerCase()
-  return (props.hotelServicesList || []).filter(s => 
+  return addable.filter(s => 
     s.name.toLowerCase().includes(q) || 
     s.code.toLowerCase().includes(q)
   )
@@ -498,7 +512,21 @@ function getServiceNameFromCode(code) {
   return svc ? svc.name : code
 }
 
-function handleServiceCheckboxChange(svc, checked) {
+// Dòng 343: phụ thu ăn sáng trẻ em chỉ áp dụng cho phòng có trẻ em (lưu theo chi tiết
+// ăn sáng của từng trẻ). Phòng chưa có trẻ thì không cho chọn, tránh tưởng đã lưu.
+const targetRoomsForService = computed(() =>
+  props.targetRooms?.length > 0 ? props.targetRooms : (props.room ? [props.room] : [])
+)
+const anyTargetRoomHasChildren = computed(() =>
+  targetRoomsForService.value.some(room => chargeableChildren(room).length > 0)
+)
+
+function handleServiceCheckboxChange(svc, checked, checkboxEl = null) {
+  if (checked && isBreakfastCode(svc.code) && !anyTargetRoomHasChildren.value) {
+    if (checkboxEl) checkboxEl.checked = false
+    uiStore.showToast('Phòng chưa có trẻ em nên không áp dụng được phụ thu ăn sáng trẻ em. Vui lòng thêm trẻ em vào phòng trước.', 'warning')
+    return
+  }
   if (checked) {
     if (!selectedServiceCodes.value.includes(svc.code)) {
       selectedServiceCodes.value.push(svc.code)
@@ -552,6 +580,7 @@ async function saveServices() {
     uiStore.showToast('Đang tiến hành lưu dịch vụ bổ sung...', 'info')
     let hasError = false
     let lastErrorMsg = ''
+    const skippedBreakfastRooms = []
 
     for (const room of rooms) {
       const roomId = room.bookingRoomId
@@ -616,7 +645,10 @@ async function saveServices() {
 
         for (const item of serviceItems.value) {
           // Phòng không có trẻ em thì không áp dụng phụ thu ăn sáng trẻ (chế độ detail).
-          if (isBreakfastCode(item.service_code) && !hasChildren) continue
+          if (isBreakfastCode(item.service_code) && !hasChildren) {
+            skippedBreakfastRooms.push(room.roomNumber || roomId)
+            continue
+          }
           // Determine dates for this room specifically
           const datesToCreate = checkedDates.value.filter(d => roomDates.includes(d))
 
@@ -663,10 +695,26 @@ async function saveServices() {
     } else {
       uiStore.showToast(`Lưu dịch vụ bổ sung thành công cho ${rooms.length} phòng!`, 'success')
     }
+    if (skippedBreakfastRooms.length > 0) {
+      uiStore.showToast(`Phụ thu ăn sáng trẻ em chưa được áp dụng cho phòng ${[...new Set(skippedBreakfastRooms)].join(', ')} vì phòng chưa có trẻ em.`, 'warning')
+    }
 
     close()
     emit('saved')
   })
+}
+
+// Nút tăng/giảm ở chi tiết dịch vụ bổ sung: số lượng ±1, đơn giá ±PRICE_STEP.
+const PRICE_STEP = 50000
+
+function changeQuantity(item, direction) {
+  const current = Number(item.quantity) || 0
+  item.quantity = Math.max(1, current + direction)
+}
+
+function changeRate(item, direction) {
+  const current = Number(item.rate) || 0
+  item.rate = Math.max(0, current + direction * PRICE_STEP)
 }
 
 function formatCurrencyInput(val) {
@@ -686,3 +734,49 @@ function cleanCurrencyValue(val) {
   return Number(cleanStr) || 0;
 }
 </script>
+
+<style scoped>
+.no-native-spin::-webkit-outer-spin-button,
+.no-native-spin::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.no-native-spin {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.stepper-arrows {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  bottom: 1px;
+  width: 16px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid #e2e8f0;
+}
+.stepper-arrows button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #64748b;
+  font-size: 7px;
+  line-height: 1;
+  cursor: pointer;
+}
+.stepper-arrows button + button {
+  border-top: 1px solid #e2e8f0;
+}
+.stepper-arrows button:hover:not(:disabled) {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+.stepper-arrows button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+</style>

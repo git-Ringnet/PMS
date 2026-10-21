@@ -1195,6 +1195,11 @@ class GuestController extends Controller
             ->get()
             ->keyBy(fn($item) => $item->service_date ? $item->service_date->toDateString() : '');
 
+        // Dòng 368: đêm EB mới theo cờ phòng/master của các đêm EB đã có, tính
+        // trước khi xóa các đêm ngoài giai đoạn ở mới.
+        $defaultIsRoom = ($existingServices->isNotEmpty()
+            && $existingServices->every(fn ($service) => (int) $service->is_room === 0)) ? 0 : 1;
+
         $current = Carbon::parse($arrivalDate);
         $end     = Carbon::parse($departureDate);
         $stayDates = [];
@@ -1226,7 +1231,7 @@ class GuestController extends Controller
                     'quantity'     => $room->extra_bed_qty,
                     'rate'         => $room->extra_bed_rate,
                     'department'   => 'FO',
-                    'is_room'      => $existing?->is_room ?? 1,
+                    'is_room'      => $existing?->is_room ?? $defaultIsRoom,
                     'is_posted'    => 0,
                     'deleted_at'   => null,
                     'created_by'   => Auth::user()?->username ?? 'system',

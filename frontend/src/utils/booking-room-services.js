@@ -17,6 +17,17 @@ export function isServiceDateInStay(serviceDate, checkIn, checkOut, isDayUse = f
   return date >= arrival && date < departure
 }
 
+/**
+ * Row 343: the "add extra service" picker only offers services ticked
+ * "Hiển thị khi post bill" (is_active). RM - room charge is always offered.
+ * Names of services already on a room are still resolved from the full list.
+ */
+export function isAddableHotelService(service) {
+  if (!service) return false
+  if (String(service.code || '').trim().toUpperCase() === 'RM') return true
+  return service.is_active !== false && service.is_active !== 0 && service.is_active !== '0'
+}
+
 export function normalizeChildBreakfastConfig(config) {
   const code = String(config?.service_code || 'BD').trim() || 'BD'
   return {

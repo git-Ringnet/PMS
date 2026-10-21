@@ -3,6 +3,7 @@ import test from 'node:test'
 import {
   childBreakfastServiceDates,
   hotelServiceDisplayName,
+  isAddableHotelService,
   isChildBreakfastCode,
   isServiceDateInStay,
   normalizeChildBreakfastConfig,
@@ -59,4 +60,17 @@ test('S9: cancelled rooms are sorted by the latest cancellation by default', () 
   ]
   assert.deepEqual(sortCancelledRooms(rows).map(row => row.id), ['D', 'B', 'A', 'C'])
   assert.deepEqual(sortCancelledRooms(rows, 'room_number', 'asc').map(row => row.id), ['A', 'B', 'D', 'C'])
+})
+
+test('343: add-service picker hides services not ticked to show when posting a bill, except RM', () => {
+  const list = [
+    { code: 'MB', name: 'Minibar', is_active: true },
+    { code: 'LA', name: 'Laundry', is_active: false },
+    { code: 'KC', name: 'Key card', is_active: 0 },
+    { code: 'PS', name: 'Pickup', is_active: '0' },
+    { code: 'EB', name: 'Extra bed' },
+    { code: 'rm', name: 'Tiền phòng', is_active: false },
+  ]
+  assert.deepEqual(list.filter(isAddableHotelService).map(s => s.code), ['MB', 'EB', 'rm'])
+  assert.equal(isAddableHotelService(null), false)
 })

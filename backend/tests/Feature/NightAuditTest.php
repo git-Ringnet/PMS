@@ -385,6 +385,63 @@ class NightAuditTest extends TestCase
         $this->assertEquals('occupied_dirty', Room::where('room_number', '103')->first()->room_status_code);
     }
 
+    /**
+     * Row 371: the nightly RM rate set up in booking_room_services is what the
+     * night audit charges, including a 0 VND night, not the room rate.
+     */
+    public function test_run_night_audit_charges_rate_set_in_room_services_including_zero(): void
+    {
+        $sysDateStr = Carbon::parse(SystemDateRoll::latest('id')->first()->system_date)->toDateString();
+        $nextDateStr = Carbon::parse($sysDateStr)->addDay()->toDateString();
+        $departure = Carbon::parse($sysDateStr)->addDays(3)->toDateString();
+
+        $makeRoom = function (string $id, string $number, float $roomRate, ?float $nightRate) use ($sysDateStr, $departure) {
+            Room::updateOrCreate(['room_number' => $number], [
+                'room_class_id' => 1, 'room_form_id' => 1, 'floor' => '1', 'room_status_code' => 'occupied_ready',
+            ]);
+            $booking = Booking::create([
+                'booking_name' => 'Row 371 ' . $id, 'arrival_date' => $sysDateStr, 'departure_date' => $departure,
+                'num_of_days' => 3, 'booking_date' => $sysDateStr, 'created_by' => 'admin', 'registration_status_id' => 1,
+            ]);
+            $room = BookingRoom::create([
+                'id' => $id, 'booking_id' => $booking->id, 'room_class_id' => 1, 'room_number' => $number,
+                'arrival_date' => $sysDateStr, 'departure_date' => $departure,
+                'status' => BookingRoom::STATUS_CHECKED_IN, 'rate' => $roomRate,
+            ]);
+            if ($nightRate !== null) {
+                BookingRoomService::create([
+                    'booking_room_id' => $room->id, 'service_code' => 'RM', 'service_name' => 'Dịch vụ phòng nghỉ',
+                    'service_date' => $sysDateStr, 'quantity' => 1, 'rate' => $nightRate,
+                    'folio' => 1, 'is_room' => 1, 'is_posted' => 0,
+                ]);
+            }
+
+            return $room;
+        };
+
+        $freeNight = $makeRoom('G3710001', '111', 540000, 0);       // first night set to 0
+        $discounted = $makeRoom('G3710002', '112', 540000, 300000); // night set below the room rate
+        $plain = $makeRoom('G3710003', '113', 540000, null);        // no nightly row: room rate
+        $unset = $makeRoom('G3710004', '114', 0, 0);                // no price on room or night: old fallback chain
+
+        $this->actingAs($this->user)->postJson('/api/night-audit/run', [
+            'occupied_to_dirty' => true, 'empty_to_inspect' => true,
+        ])->assertSuccessful();
+
+        $amount = fn (BookingRoom $room) => (float) ServiceBill::where('RentalRoomId1', $room->id)
+            ->where('ServiceId', 'RM')->whereDate('Date', $sysDateStr)->value('Amount');
+
+        $this->assertSame(0.0, $amount($freeNight));
+        $this->assertSame(300000.0, $amount($discounted));
+        $this->assertSame(540000.0, $amount($plain));
+        // 0 on both room and night still means "no price": standard rate of the class.
+        $standardRate = (float) \App\Models\StandardRate::where('room_class_id', 1)->value('room_price');
+        $this->assertGreaterThan(0, $standardRate);
+        $this->assertSame($standardRate, $amount($unset));
+        $this->assertSame(1, ServiceBill::where('RentalRoomId1', $freeNight->id)->where('ServiceId', 'RM')->count());
+        $this->assertSame($nextDateStr, Carbon::parse(SystemDateRoll::latest('id')->first()->system_date)->toDateString());
+    }
+
     public function test_split_old_services_recalculates_breakfast_details_and_skips_vat_bill()
     {
         $systemDate = Carbon::parse(SystemDateRoll::latest('id')->value('system_date'))->startOfDay();

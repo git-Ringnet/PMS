@@ -717,6 +717,10 @@ class BookingRoomServiceFolioTest extends TestCase
         $this->assertSame(1, ServiceBill::where('ServiceId', 'RM')->count());
     }
 
+    /**
+     * Row 351: adjusting the price of a night whose bill already exists never
+     * creates a second bill and leaves the existing bill's amount alone.
+     */
     public function test_supplementary_room_charge_uses_existing_bill_update_path_without_creating_a_duplicate(): void
     {
         $user = $this->createFolioUser();
@@ -746,13 +750,15 @@ class BookingRoomServiceFolioTest extends TestCase
                 'service_date' => $date, 'quantity' => 1, 'rate' => 550000, 'is_room' => 1,
             ])
             ->assertSuccessful()
-            ->assertJsonStructure(['service_bill']);
+            ->assertJsonMissing(['service_bill']);
 
         $roomBills = ServiceBill::where('ServiceId', 'RM')->whereDate('Date', $date)->get(['Ma', 'Amount', 'Status', 'Edit']);
         $this->assertSame(1, $roomBills->count(), 'after RM update: ' . $roomBills->toJson());
-        $this->assertDatabaseHas('service_bills', ['Ma' => $bill->Ma, 'Amount' => 550000]);
+        $this->assertDatabaseHas('service_bills', ['Ma' => $bill->Ma, 'Amount' => 500000]);
         $this->assertSame(1, BookingRoomService::where('booking_room_id', $room->id)
-            ->where('service_code', 'RM')->whereDate('service_date', $date)->count());
+            ->where('service_code', 'RM')->whereDate('service_date', $date)->where('is_posted', 1)->count());
+        $this->assertSame(550000.0, (float) BookingRoomService::where('booking_room_id', $room->id)
+            ->where('service_code', 'RM')->whereDate('service_date', $date)->where('is_posted', 0)->value('rate'));
     }
 
     public function test_front_desk_git_service_is_owned_by_master_while_preserving_source_room(): void
