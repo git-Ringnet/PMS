@@ -13,9 +13,9 @@
         class="flex justify-between items-center px-4 py-3 shrink-0 select-none rounded-t-xl"
         :style="{ background: 'var(--pms-custom-theme, #006bdb)', color: 'var(--pms-custom-theme-text, #ffffff)' }"
       >
-        <div class="flex items-center gap-2 font-semibold text-xs uppercase tracking-wider">
+        <div class="flex items-center gap-2 font-semibold text-xs tracking-wider">
           <i class="fa-solid fa-rotate-left"></i>
-          <span>Khôi phục phòng đã hủy</span>
+          <span>Khôi Phục Phòng Đã Hủy</span>
         </div>
         <button
           class="hover:bg-white/20 p-1 rounded-md cursor-pointer border-none transition flex items-center justify-center"

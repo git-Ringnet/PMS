@@ -9,10 +9,10 @@
         :style="{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }">
         
         <!-- Header -->
-        <div class="m-head select-none cursor-move" :style="{ background: topbarThemeBg, color: 'var(--pms-custom-theme-text, #ffffff)' }" @mousedown="startDragModal">
+        <div class="m-head select-none cursor-move bg-[#006bdb] text-white rounded-t-xl" :style="{ background: topbarThemeBg || 'var(--pms-custom-theme, #006bdb)', color: 'var(--pms-custom-theme-text, #ffffff)' }" @mousedown="startDragModal">
           <div class="flex items-center gap-2">
             <i class="fa-solid fa-id-card text-[#B9CDF8]"></i>
-            <h1 id="ttl">Thông tin khách</h1>
+            <h1 id="ttl">Thông Tin Khách</h1>
             <span class="chip b ml-2">{{ guestType === 'adult' ? 'Người lớn' : 'Trẻ em' }}</span>
           </div>
 
@@ -117,28 +117,43 @@
           <div class="main">
             <!-- SECTION 1: Cá nhân -->
             <section class="sec">
-              <h3>Thông tin cá nhân <span class="req">*</span></h3>
+              <h3>Thông Tin Cá Nhân <span class="req">*</span></h3>
               <div class="g c12">
                 <div class="f s2">
                   <label>Danh xưng</label>
-                  <select v-model="form.title" @change="handleTitleChange">
-                    <option value="">Chọn</option>
-                    <option v-for="t in titles" :key="t" :value="t">{{ t }}</option>
-                  </select>
+                  <div class="relative flex items-center w-full">
+                    <select v-model="form.title" @change="handleTitleChange" :class="{ '!pr-7': form.title }">
+                      <option value="">Chọn</option>
+                      <option v-for="t in titles" :key="t" :value="t">{{ t }}</option>
+                    </select>
+                    <button v-if="form.title" type="button" @click.stop="form.title = ''" class="absolute right-6 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent flex items-center justify-center z-10" title="Xóa nhanh">
+                      <i class="fa-solid fa-xmark text-xs"></i>
+                    </button>
+                  </div>
                 </div>
 
                 <div class="f s6">
                   <label>Họ và tên <span class="req">*</span></label>
-                  <input v-model="form.full_name" type="text" required placeholder="HỌ VÀ TÊN" style="text-transform:uppercase" />
+                  <div class="relative flex items-center w-full">
+                    <input v-model="form.full_name" type="text" required placeholder="HỌ VÀ TÊN" style="text-transform:uppercase" class="input-required" :class="{ '!pr-7': form.full_name }" />
+                    <button v-if="form.full_name" type="button" @click.stop="form.full_name = ''" class="absolute right-2 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent flex items-center justify-center z-10" title="Xóa nhanh">
+                      <i class="fa-solid fa-xmark text-xs"></i>
+                    </button>
+                  </div>
                 </div>
 
                 <div class="f s4">
                   <label>Loại khách</label>
-                  <select v-model="form.guest_type">
-                    <option value=""></option>
-                    <option v-for="gt in guestTypes" :key="gt.id" :value="String(gt.id)">{{ gt.name }}</option>
-                    <option v-if="form.guest_type && !guestTypes.some(gt => String(gt.id) === String(form.guest_type))" :value="form.guest_type">{{ form.guest_type }}</option>
-                  </select>
+                  <div class="relative flex items-center w-full">
+                    <select v-model="form.guest_type" :class="{ '!pr-7': form.guest_type }">
+                      <option value=""></option>
+                      <option v-for="gt in guestTypes" :key="gt.id" :value="String(gt.id)">{{ gt.name }}</option>
+                      <option v-if="form.guest_type && !guestTypes.some(gt => String(gt.id) === String(form.guest_type))" :value="form.guest_type">{{ form.guest_type }}</option>
+                    </select>
+                    <button v-if="form.guest_type" type="button" @click.stop="form.guest_type = ''" class="absolute right-6 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent flex items-center justify-center z-10" title="Xóa nhanh">
+                      <i class="fa-solid fa-xmark text-xs"></i>
+                    </button>
+                  </div>
                 </div>
 
                 <div class="f s4">
@@ -153,30 +168,45 @@
 
                 <div class="f s8">
                   <label>Quốc tịch <span class="req">*</span></label>
-                  <select v-model="form.nationality_code" required>
-                    <option value="">Chọn quốc tịch</option>
-                    <option v-for="n in nationalities" :key="n.code" :value="n.code">{{ n.label }}</option>
-                  </select>
+                  <div class="relative flex items-center w-full">
+                    <select v-model="form.nationality_code" required class="input-required" :class="{ '!pr-7': form.nationality_code }">
+                      <option value="">Chọn quốc tịch</option>
+                      <option v-for="n in nationalities" :key="n.code" :value="n.code">{{ n.label }}</option>
+                    </select>
+                    <button v-if="form.nationality_code" type="button" @click.stop="form.nationality_code = ''" class="absolute right-6 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent flex items-center justify-center z-10" title="Xóa nhanh">
+                      <i class="fa-solid fa-xmark text-xs"></i>
+                    </button>
+                  </div>
                 </div>
               </div>
             </section>
 
             <!-- SECTION 2: Giấy tờ tùy thân -->
             <section class="sec">
-              <h3>Giấy tờ tùy thân <span class="req">*</span></h3>
+              <h3>Giấy Tờ Tùy Thân <span class="req">*</span></h3>
               <div class="g c12">
                 <div class="f s3">
                   <label>Loại giấy tờ</label>
-                  <select v-model="form.id_type">
-                    <option value="">Loại giấy tờ</option>
-                    <option v-for="it in idTypes" :key="it.id" :value="getIdTypeValue(it)">{{ it.name }}</option>
-                    <option v-if="form.id_type && !idTypes.some(it => getIdTypeValue(it) === form.id_type || it.name === form.id_type)" :value="form.id_type">{{ form.id_type }}</option>
-                  </select>
+                  <div class="relative flex items-center w-full">
+                    <select v-model="form.id_type" :class="{ '!pr-7': form.id_type }">
+                      <option value="" disabled hidden>Chọn loại giấy tờ</option>
+                      <option v-for="it in idTypes" :key="it.id" :value="getIdTypeValue(it)">{{ it.name }}</option>
+                      <option v-if="form.id_type && !idTypes.some(it => getIdTypeValue(it) === form.id_type || it.name === form.id_type)" :value="form.id_type">{{ form.id_type }}</option>
+                    </select>
+                    <button v-if="form.id_type" type="button" @click.stop="form.id_type = ''" class="absolute right-6 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent flex items-center justify-center z-10" title="Xóa nhanh">
+                      <i class="fa-solid fa-xmark text-xs"></i>
+                    </button>
+                  </div>
                 </div>
 
                 <div class="f s3">
                   <label>Số giấy tờ <span class="req">*</span></label>
-                  <input v-model="form.id_number" type="text" required placeholder="Số CCCD / Passport" />
+                  <div class="relative flex items-center w-full">
+                    <input v-model="form.id_number" type="text" required placeholder="Số CCCD / Passport" class="input-required" :class="{ '!pr-7': form.id_number }" />
+                    <button v-if="form.id_number" type="button" @click.stop="form.id_number = ''" class="absolute right-2 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent flex items-center justify-center z-10" title="Xóa nhanh">
+                      <i class="fa-solid fa-xmark text-xs"></i>
+                    </button>
+                  </div>
                 </div>
 
                 <div class="f s3">
@@ -214,29 +244,44 @@
 
                 <div class="f s3 vf">
                   <label>Cửa khẩu</label>
-                  <select v-model="form.border_gate">
-                    <option value="">Chọn cửa khẩu</option>
-                    <option v-for="bg in borderGates" :key="bg.id" :value="bg.code">{{ bg.name }}</option>
-                    <option v-if="form.border_gate && !borderGates.some(bg => bg.code === form.border_gate)" :value="form.border_gate">{{ form.border_gate }}</option>
-                  </select>
+                  <div class="relative flex items-center w-full">
+                    <select v-model="form.border_gate" :class="{ '!pr-7': form.border_gate }">
+                      <option value="">Chọn cửa khẩu</option>
+                      <option v-for="bg in borderGates" :key="bg.id" :value="bg.code">{{ bg.name }}</option>
+                      <option v-if="form.border_gate && !borderGates.some(bg => bg.code === form.border_gate)" :value="form.border_gate">{{ form.border_gate }}</option>
+                    </select>
+                    <button v-if="form.border_gate" type="button" @click.stop="form.border_gate = ''" class="absolute right-6 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent flex items-center justify-center z-10" title="Xóa nhanh">
+                      <i class="fa-solid fa-xmark text-xs"></i>
+                    </button>
+                  </div>
                 </div>
 
                 <div class="f s3 vf">
                   <label>Mục đích nhập cảnh</label>
-                  <select v-model="form.entry_purpose">
-                    <option value=""></option>
-                    <option v-for="ep in entryPurposes" :key="ep.id" :value="String(ep.id)">{{ ep.name }}</option>
-                    <option v-if="form.entry_purpose && !entryPurposes.some(ep => String(ep.id) === String(form.entry_purpose))" :value="form.entry_purpose">{{ form.entry_purpose }}</option>
-                  </select>
+                  <div class="relative flex items-center w-full">
+                    <select v-model="form.entry_purpose" :class="{ '!pr-7': form.entry_purpose }">
+                      <option value=""></option>
+                      <option v-for="ep in entryPurposes" :key="ep.id" :value="String(ep.id)">{{ ep.name }}</option>
+                      <option v-if="form.entry_purpose && !entryPurposes.some(ep => String(ep.id) === String(form.entry_purpose))" :value="form.entry_purpose">{{ form.entry_purpose }}</option>
+                    </select>
+                    <button v-if="form.entry_purpose" type="button" @click.stop="form.entry_purpose = ''" class="absolute right-6 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent flex items-center justify-center z-10" title="Xóa nhanh">
+                      <i class="fa-solid fa-xmark text-xs"></i>
+                    </button>
+                  </div>
                 </div>
 
                 <div class="f s3">
                   <label>Hình thức cư trú</label>
-                  <select v-model="form.residence_type">
-                    <option value=""></option>
-                    <option v-for="rt in residenceTypes" :key="rt.id" :value="String(rt.id)">{{ rt.name_new_form || rt.name }}</option>
-                    <option v-if="form.residence_type && !residenceTypes.some(rt => String(rt.id) === String(form.residence_type))" :value="form.residence_type">{{ form.residence_type }}</option>
-                  </select>
+                  <div class="relative flex items-center w-full">
+                    <select v-model="form.residence_type" :class="{ '!pr-7': form.residence_type }">
+                      <option value=""></option>
+                      <option v-for="rt in residenceTypes" :key="rt.id" :value="String(rt.id)">{{ rt.name_new_form || rt.name }}</option>
+                      <option v-if="form.residence_type && !residenceTypes.some(rt => String(rt.id) === String(form.residence_type))" :value="form.residence_type">{{ form.residence_type }}</option>
+                    </select>
+                    <button v-if="form.residence_type" type="button" @click.stop="form.residence_type = ''" class="absolute right-6 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent flex items-center justify-center z-10" title="Xóa nhanh">
+                      <i class="fa-solid fa-xmark text-xs"></i>
+                    </button>
+                  </div>
                 </div>
 
                 <div class="f s3">
@@ -251,65 +296,96 @@
 
                 <div class="f s3 vf">
                   <label>Số Visa</label>
-                  <input v-model="form.visa_no" type="text" placeholder="" />
+                  <div class="relative flex items-center w-full">
+                    <input v-model="form.visa_no" type="text" placeholder="" :class="{ '!pr-7': form.visa_no }" />
+                    <button v-if="form.visa_no" type="button" @click.stop="form.visa_no = ''" class="absolute right-2 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent flex items-center justify-center z-10" title="Xóa nhanh">
+                      <i class="fa-solid fa-xmark text-xs"></i>
+                    </button>
+                  </div>
                 </div>
               </div>
             </section>
 
             <!-- SECTION 3: Liên hệ & địa chỉ -->
             <section class="sec">
-              <h3>Liên hệ &amp; địa chỉ</h3>
+              <h3>Liên Hệ &amp; Địa Chỉ</h3>
               <div class="g c12">
                 <div class="f s4">
                   <label>Điện thoại</label>
-                  <div class="wi">
-                    <input v-model="form.phone" type="tel" placeholder="" />
+                  <div class="wi relative flex items-center w-full">
+                    <input v-model="form.phone" type="tel" placeholder="" :class="{ '!pr-7': form.phone }" />
                     <svg viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>
+                    <button v-if="form.phone" type="button" @click.stop="form.phone = ''" class="absolute right-2 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent flex items-center justify-center z-10" title="Xóa nhanh">
+                      <i class="fa-solid fa-xmark text-xs"></i>
+                    </button>
                   </div>
                 </div>
 
                 <div class="f s8">
                   <label>Email</label>
-                  <div class="wi">
-                    <input v-model="form.email" type="email" placeholder="" />
+                  <div class="wi relative flex items-center w-full">
+                    <input v-model="form.email" type="email" placeholder="" :class="{ '!pr-7': form.email }" />
                     <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>
+                    <button v-if="form.email" type="button" @click.stop="form.email = ''" class="absolute right-2 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent flex items-center justify-center z-10" title="Xóa nhanh">
+                      <i class="fa-solid fa-xmark text-xs"></i>
+                    </button>
                   </div>
                 </div>
 
                 <div class="f s12">
                   <label>Địa chỉ</label>
-                  <input v-model="form.address" type="text" placeholder="" />
+                  <div class="relative flex items-center w-full">
+                    <input v-model="form.address" type="text" placeholder="" :class="{ '!pr-7': form.address }" />
+                    <button v-if="form.address" type="button" @click.stop="form.address = ''" class="absolute right-2 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent flex items-center justify-center z-10" title="Xóa nhanh">
+                      <i class="fa-solid fa-xmark text-xs"></i>
+                    </button>
+                  </div>
                 </div>
 
                 <div class="f s4">
                   <label>Tỉnh / Thành phố</label>
-                  <select v-model="form.province" @change="onProvinceChange(form.province)">
-                    <option value=""></option>
-                    <option v-for="p in provincesList" :key="p.code" :value="p.name">{{ p.name }}</option>
-                  </select>
+                  <div class="relative flex items-center w-full">
+                    <select v-model="form.province" @change="onProvinceChange(form.province)" :class="{ '!pr-7': form.province }">
+                      <option value=""></option>
+                      <option v-for="p in provincesList" :key="p.code" :value="p.name">{{ p.name }}</option>
+                    </select>
+                    <button v-if="form.province" type="button" @click.stop="onProvinceChange('')" class="absolute right-6 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent flex items-center justify-center z-10" title="Xóa nhanh">
+                      <i class="fa-solid fa-xmark text-xs"></i>
+                    </button>
+                  </div>
                 </div>
 
                 <div class="f s4">
                   <label>Quận / Huyện</label>
-                  <select v-model="form.district" @change="onDistrictChange(form.district)" :disabled="!form.province">
-                    <option value=""></option>
-                    <option v-for="d in currentDistricts" :key="d.code" :value="d.name">{{ d.name }}</option>
-                  </select>
+                  <div class="relative flex items-center w-full">
+                    <select v-model="form.district" @change="onDistrictChange(form.district)" :disabled="!form.province" :class="{ '!pr-7': form.district }">
+                      <option value=""></option>
+                      <option v-for="d in currentDistricts" :key="d.code" :value="d.name">{{ d.name }}</option>
+                    </select>
+                    <button v-if="form.district" type="button" @click.stop="onDistrictChange('')" class="absolute right-6 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent flex items-center justify-center z-10" title="Xóa nhanh">
+                      <i class="fa-solid fa-xmark text-xs"></i>
+                    </button>
+                  </div>
                 </div>
 
                 <div class="f s4">
                   <label>Phường / Xã</label>
-                  <select v-model="form.ward" :disabled="!form.district">
-                    <option value=""></option>
-                    <option v-for="w in currentWards" :key="w.code" :value="w.name">{{ w.name }}</option>
-                  </select>
+                  <div class="relative flex items-center w-full">
+                    <select v-model="form.ward" :disabled="!form.district" :class="{ '!pr-7': form.ward }">
+                      <option value=""></option>
+                      <option v-for="w in currentWards" :key="w.code" :value="w.name">{{ w.name }}</option>
+                    </select>
+                    <button v-if="form.ward" type="button" @click.stop="form.ward = ''" class="absolute right-6 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent flex items-center justify-center z-10" title="Xóa nhanh">
+                      <i class="fa-solid fa-xmark text-xs"></i>
+                    </button>
+                  </div>
                 </div>
               </div>
             </section>
 
             <!-- SECTION 4: Ghi chú -->
             <section class="sec">
-              <h3>Ghi chú</h3>
+              <h3>Ghi Chú</h3>
               <div class="f">
                 <textarea v-model="form.note" placeholder=""></textarea>
               </div>
@@ -929,8 +1005,8 @@ async function handleSave() {
   gap: 12px;
 }
 .m-head h1 {
-  font-size: 14px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 600;
   letter-spacing: 0.3px;
   text-transform: uppercase;
 }
@@ -1290,6 +1366,20 @@ async function handleSave() {
   appearance: none;
   padding-right: 24px;
   background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%236B7686' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 8px center;
+}
+.f input.input-required,
+.f select.input-required,
+.f input[required],
+.f select[required] {
+  background-color: #FFF8DB !important;
+  border-color: #F1DD8A !important;
+}
+.f input.input-required:focus,
+.f select.input-required:focus,
+.f input[required]:focus,
+.f select[required]:focus {
+  border-color: #eab308 !important;
+  box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.25) !important;
 }
 .f .wi {
   position: relative;

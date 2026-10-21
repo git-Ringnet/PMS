@@ -1363,6 +1363,98 @@ async function handleInlineServiceQtyChange(room, svc, newQty) {
   }
 }
 
+async function handleServiceIsRoomToggle(room, svc, isChecked) {
+  if (isMoveHistoryBillReference(svc)) return
+  if (isInlineEditLocked.value && room.bookingRoomId) {
+    uiStore.showToast('Booking đang ở hoặc có phòng đã ở/đã trả/chuyển/hủy, không được phép chỉnh sửa.', 'warning')
+    return
+  }
+
+  const isRoomVal = isChecked ? 1 : 0
+  svc.is_room = isRoomVal
+
+  // 1. Cập nhật đối tượng tham chiếu svc_ref nếu có
+  if (svc.svc_ref) {
+    svc.svc_ref.is_room = isRoomVal
+    if (svc.svc_ref.isRoom !== undefined) {
+      svc.svc_ref.isRoom = isChecked
+    }
+  }
+
+  // 2. Dòng phụ thu ăn sáng trẻ em
+  if (isChildBreakfastDetailRow(svc)) {
+    await saveChildBreakfastDetailRow(room, svc, { is_room: isRoomVal }, 'Cập nhật trạng thái GIT/FIT thành công!')
+    return
+  }
+
+  const cleanDate = cleanDateStr(svc.service_date)
+  const isEb = svc.service_code === 'EB'
+    || svc.service_code === 'EXTRA_BED'
+    || svc.service_code === getHotelServiceCode('EB')
+    || /extra\s*bed|giường\s*phụ|thêm\s*giường/i.test(svc.service_name || '')
+
+  // 3. Đồng bộ Extra Bed (EB)
+  if (isEb) {
+    if (!room.dailyExtraBeds) room.dailyExtraBeds = []
+    const existing = room.dailyExtraBeds.find(d => cleanDateStr(d.dateStr || d.date) === cleanDate)
+    if (existing) {
+      existing.isRoom = isChecked
+      existing.is_room = isRoomVal
+    } else {
+      room.dailyExtraBeds.push({
+        dateStr: cleanDate,
+        date: cleanDate,
+        quantity: svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1,
+        rate: svc.rate || 0,
+        total: (svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1) * (svc.rate || 0),
+        isRoom: isChecked,
+        is_room: isRoomVal
+      })
+    }
+  }
+
+  // 4. Cập nhật trong room.services
+  if (room.services && Array.isArray(room.services)) {
+    const targetInServices = room.services.find(s => 
+      (svc.id && s.id === svc.id) ||
+      (cleanDateStr(s.service_date) === cleanDate && s.service_code === svc.service_code)
+    )
+    if (targetInServices) {
+      targetInServices.is_room = isRoomVal
+    }
+  }
+
+  // 5. Nếu phòng đã lưu trong DB, gọi API cập nhật ngay
+  const isRoomCharge = isRoomChargeService(svc)
+  if (room.bookingRoomId && !String(room.bookingRoomId).startsWith('temp-')) {
+    try {
+      const payload = {
+        booking_room_id: room.bookingRoomId,
+        service_code: isRoomCharge ? 'RM' : svc.service_code,
+        service_name: svc.service_name,
+        guest_id: svc.guest_id || null,
+        service_date: cleanDate,
+        quantity: svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1,
+        rate: svc.rate || 0,
+        is_room: isRoomVal
+      }
+      const res = await createBookingRoomService(room.bookingRoomId, payload)
+      if (res.data?.success) {
+        uiStore.showToast('Cập nhật trạng thái GIT/FIT thành công!', 'success')
+        const freshRes = await fetchBookingRoomServices(room.bookingRoomId)
+        room.services = (freshRes.data?.data || []).map(s => ({
+          ...s,
+          service_date: cleanDateStr(s.service_date)
+        }))
+        notifyRoomUpdates(activeTab.value?.dbId)
+      }
+    } catch (err) {
+      console.error('Lỗi lưu GIT/FIT dịch vụ phòng:', err)
+      uiStore.showToast('Không thể cập nhật trạng thái GIT/FIT vào hệ thống!', 'error')
+    }
+  }
+}
+
 function isRoomChargeService(svc) {
   if (!svc) return false
   const code = String(svc.service_code || svc.ServiceId || '').toUpperCase()
@@ -7251,7 +7343,7 @@ defineExpose({
             v-if="showTableColumnSelector" 
             class="absolute right-0 mt-1.5 w-60 bg-white border border-slate-200 rounded-lg shadow-xl z-50 py-1.5 max-h-80 overflow-y-auto"
           >
-            <div class="text-[11px] font-bold text-slate-500 mb-1 px-3 border-b pb-1 select-none">ẨN/HIỆN CỘT BẢNG</div>
+            <div class="text-[11px] font-bold text-slate-500 mb-1 px-3 border-b pb-1 select-none">Ẩn/Hiện Cột Bảng</div>
             <div 
               v-for="col in columns" 
               :key="col.key" 
@@ -8086,10 +8178,21 @@ defineExpose({
                                   </td>
                                   <td class="p-2 border-slate-100 text-right text-[#000000D9] font-normal text-xs">{{ (Number(svc.quantity !== undefined && svc.quantity !== null ? svc.quantity : 1) * Number(svc.rate || 0)).toLocaleString('en-US') }}<div v-if="svc.pending_rate != null && Number(svc.pending_rate) !== Number(svc.billed_rate)" class="text-[10px] leading-tight text-amber-600" title="Giá mới chỉ áp dụng khi xóa bill ở màn hình hóa đơn và post lại tiền phòng">Bill đã chạy: {{ (Number(svc.quantity !== undefined && svc.quantity !== null ? svc.quantity : 1) * Number(svc.billed_rate || 0)).toLocaleString('en-US') }}</div></td>
                                   <td class="p-2 text-center border-slate-200">
-                                    <span
-                                      class="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase select-none"
-                                      :class="Number(svc.is_room) === 1 ? 'bg-sky-100 text-sky-700' : 'bg-amber-100 text-amber-700'"
-                                    >{{ Number(svc.is_room) === 1 ? 'FIT' : 'GIT' }}</span>
+                                    <div class="relative inline-flex items-center justify-center">
+                                      <label class="relative inline-flex items-center cursor-pointer select-none gap-1.5 justify-center" :class="{ 'opacity-40 pointer-events-none': !isServiceDisplayEditable(svc) || (isInlineEditLocked && room.bookingRoomId) }" title="Bật/Tắt Gửi HĐ về Master (GIT) hoặc Phòng (FIT)">
+                                        <input
+                                          type="checkbox"
+                                          :checked="Number(svc.is_room) === 1 || svc.is_room === true"
+                                          @change="e => handleServiceIsRoomToggle(room, svc, e.target.checked)"
+                                          :disabled="!isServiceDisplayEditable(svc) || (isInlineEditLocked && !!room.bookingRoomId)"
+                                          class="sr-only peer"
+                                        />
+                                        <div class="w-8 h-4 bg-slate-300 rounded-full peer peer-checked:bg-sky-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 shadow-2xs"></div>
+                                        <span class="text-xs font-semibold uppercase min-w-[32px] text-left" :class="(Number(svc.is_room) === 1 || svc.is_room === true) ? 'text-sky-600' : 'text-slate-500'">
+                                          {{ (Number(svc.is_room) === 1 || svc.is_room === true) ? 'FIT' : 'GIT' }}
+                                        </span>
+                                      </label>
+                                    </div>
                                   </td>
                                 </tr>
                               </tbody>
@@ -8632,6 +8735,7 @@ defineExpose({
                                        <col style="width: 70px;" />
                                        <col style="width: 105px;" />
                                        <col style="width: 110px;" />
+                                       <col style="width: 80px;" />
                                      </colgroup>
                                      <thead>
                                        <tr class="bg-slate-100 text-[#000000D9] font-semibold text-xs border-b border-slate-200">
@@ -8640,7 +8744,8 @@ defineExpose({
                                          <th class="p-2 border-r border-slate-200 text-center align-middle border">Tăng/Giảm Giá</th>
                                          <th class="p-2 border-r border-slate-200 text-center align-middle border">Số Lượng</th>
                                          <th class="p-2 border-r border-slate-200 text-center align-middle border">Đơn Giá</th>
-                                         <th class="p-2 text-center align-middle border-r border-slate-200 border">Thành Tiền</th>
+                                         <th class="p-2 border-r border-slate-200 text-center align-middle border">Thành Tiền</th>
+                                         <th class="p-2 text-center align-middle border-r border-slate-200 border">GIT/FIT</th>
                                        </tr>
                                      </thead>
                                     <tbody>
@@ -8788,6 +8893,23 @@ defineExpose({
                                               <i class="fa-solid fa-trash-can text-xs"></i>
                                             </button>
                                             <div v-else class="w-3 shrink-0"></div>
+                                          </div>
+                                        </td>
+                                        <td class="p-2 text-center border-slate-200">
+                                          <div class="relative inline-flex items-center justify-center">
+                                            <label class="relative inline-flex items-center cursor-pointer select-none gap-1.5 justify-center" :class="{ 'opacity-40 pointer-events-none': !isServiceDisplayEditable(svc) || (isInlineEditLocked && room.bookingRoomId) }" title="Bật/Tắt Gửi HĐ về Master (GIT) hoặc Phòng (FIT)">
+                                              <input
+                                                type="checkbox"
+                                                :checked="Number(svc.is_room) === 1 || svc.is_room === true"
+                                                @change="e => handleServiceIsRoomToggle(room, svc, e.target.checked)"
+                                                :disabled="!isServiceDisplayEditable(svc) || (isInlineEditLocked && !!room.bookingRoomId)"
+                                                class="sr-only peer"
+                                              />
+                                              <div class="w-8 h-4 bg-slate-300 rounded-full peer peer-checked:bg-sky-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 shadow-2xs"></div>
+                                              <span class="text-xs font-semibold uppercase min-w-[32px] text-left" :class="(Number(svc.is_room) === 1 || svc.is_room === true) ? 'text-sky-600' : 'text-slate-500'">
+                                                {{ (Number(svc.is_room) === 1 || svc.is_room === true) ? 'FIT' : 'GIT' }}
+                                              </span>
+                                            </label>
                                           </div>
                                         </td>
                                       </tr>
@@ -9115,11 +9237,13 @@ defineExpose({
 
                 <div class="flex items-center space-x-1.5">
                     <span class="text-xs font-medium" :class="isTopBarThemeDark ? 'text-gray-300' : 'text-slate-800'">Tiền phòng gửi Master</span>
-                    <div class="relative inline-block w-8 h-4 align-middle select-none transition duration-200 ease-in">
+                    <label class="relative inline-flex items-center cursor-pointer select-none gap-1.5 justify-center" title="Bật/Tắt Gửi HĐ về Master hoặc Phòng">
                         <input type="checkbox" v-model="modalForm.isMasterRoomRate" id="master-room-rate-toggle" class="sr-only peer"/>
-                        <label for="master-room-rate-toggle" class="block overflow-hidden h-4 rounded-full bg-gray-400 peer-checked:bg-blue-500 cursor-pointer transition-colors duration-200"></label>
-                        <span class="absolute block w-3 h-3 rounded-full bg-white top-0.5 left-0.5 peer-checked:translate-x-4 transition-transform duration-200 pointer-events-none"></span>
-                    </div>
+                        <div class="w-8 h-4 bg-slate-300 rounded-full peer peer-checked:bg-sky-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 shadow-2xs"></div>
+                        <span class="text-xs font-semibold uppercase min-w-[32px] text-left" :class="modalForm.isMasterRoomRate ? (isTopBarThemeDark ? 'text-sky-300 font-bold' : 'text-sky-600 font-bold') : (isTopBarThemeDark ? 'text-slate-300' : 'text-slate-500')">
+                            {{ modalForm.isMasterRoomRate ? 'GIT' : 'FIT' }}
+                        </span>
+                    </label>
                 </div>
                 <div class="flex items-center space-x-2" :class="isTopBarThemeDark ? 'text-gray-300' : 'text-slate-800'">
                     <button class="flex items-center space-x-1 text-xs px-2 py-0.5 rounded-md transition font-medium shadow-sm cursor-pointer border-none" :class="isTopBarThemeDark ? 'bg-white/10 hover:bg-white/20 text-gray-200 hover:text-white' : 'bg-black/10 hover:bg-black/20 text-slate-900'">
@@ -9275,7 +9399,7 @@ defineExpose({
                 :class="modalSubTab !== 'info' ? 'text-gray-500 hover:text-gray-700 border-transparent' : ''"
               >
                   <i class="fa-solid fa-address-card"></i>
-                  <span>Thông tin chung</span>
+                  <span>Thông Tin Chung</span>
               </button>
               <button 
                 @click="modalSubTab = 'shuttle'"
@@ -9284,7 +9408,7 @@ defineExpose({
                 :class="modalSubTab !== 'shuttle' ? 'text-gray-500 hover:text-gray-700 border-transparent' : ''"
               >
                   <i class="fa-solid fa-van-shuttle"></i>
-                  <span>Thông tin đưa đón</span>
+                  <span>Thông Tin Đưa Đón</span>
               </button>
               <button 
                 @click="modalSubTab = 'rooms'"
@@ -9293,7 +9417,7 @@ defineExpose({
                 :class="modalSubTab !== 'rooms' ? 'text-gray-500 hover:text-gray-700 border-transparent' : ''"
               >
                   <i class="fa-solid fa-bed"></i>
-                  <span>Lấy phòng</span>
+                  <span>Lấy Phòng</span>
               </button>
           </div>
 
@@ -9313,7 +9437,7 @@ defineExpose({
                   <div class="flex items-center justify-between pb-2 mb-2.5 border-b border-slate-100">
                     <div class="flex items-center gap-2">
                       <div class="w-1.5 h-3.5 rounded-full transition-all duration-300" :style="{ background: topbarThemeBg }"></div>
-                      <h3 class="font-bold text-slate-800 text-xs uppercase tracking-wider">Thông tin Công ty & Kênh bán</h3>
+                      <h3 class="font-bold text-slate-800 text-xs tracking-wider">Thông Tin Công Ty & Kênh Bán</h3>
                     </div>
                   </div>
 
@@ -9478,7 +9602,7 @@ defineExpose({
                   <div class="flex items-center justify-between pb-2 mb-2.5 border-b border-slate-100">
                     <div class="flex items-center gap-2">
                       <div class="w-1.5 h-3.5 rounded-full transition-all duration-300" :style="{ background: topbarThemeBg }"></div>
-                      <h3 class="font-bold text-slate-800 text-xs uppercase tracking-wider">Thông tin Người liên hệ</h3>
+                      <h3 class="font-bold text-slate-800 text-xs tracking-wider">Thông Tin Người Liên Hệ</h3>
                     </div>
                   </div>
 
@@ -9560,7 +9684,7 @@ defineExpose({
                   <div class="flex justify-between items-center pb-2 mb-2.5 border-b border-slate-100">
                     <div class="flex items-center gap-2">
                       <div class="w-1.5 h-3.5 rounded-full transition-all duration-300" :style="{ background: topbarThemeBg }"></div>
-                      <h3 class="font-bold text-slate-800 text-xs uppercase tracking-wider">ĐẶT CỌC</h3>
+                      <h3 class="font-bold text-slate-800 text-xs tracking-wider">Đặt Cọc</h3>
                     </div>
                     <button 
                       @click="openDepositModal" 
@@ -9576,7 +9700,7 @@ defineExpose({
                   <!-- Tổng và từng dòng cọc theo cùng định nghĩa active DPR -->
                   <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center justify-between shadow-2xs">
                     <div class="flex flex-col">
-                      <span class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Tổng tiền đặt cọc</span>
+                      <span class="text-[11px] font-semibold text-slate-500 tracking-wider">Tổng Tiền Đặt Cọc</span>
                       <div class="text-base font-semibold text-[#000000D9] tracking-tight mt-0.5">
                         {{ formatCurrencyInput(activeDepositTotal) }} <span class="text-xs font-normal text-slate-500">{{ activeCurrency.code || 'VND' }}</span>
                       </div>
@@ -9587,8 +9711,8 @@ defineExpose({
                   </div>
 
                   <div v-if="activeDepositRows.length > 0" class="mt-2 max-h-[130px] overflow-y-auto border border-slate-200 rounded-lg">
-                    <div class="px-2 py-1.5 bg-slate-100 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                      Chi tiết đặt cọc
+                    <div class="px-2 py-1.5 bg-slate-100 text-[10px] font-semibold tracking-wider text-slate-500">
+                      Chi Tiết Đặt Cọc
                     </div>
                     <div
                       v-for="deposit in activeDepositRows"
@@ -9613,7 +9737,7 @@ defineExpose({
                   <div class="flex items-center justify-between pb-2 mb-2.5 border-b border-slate-100">
                     <div class="flex items-center gap-2">
                       <div class="w-1.5 h-3.5 rounded-full transition-all duration-300" :style="{ background: topbarThemeBg }"></div>
-                      <h3 class="font-bold text-slate-800 text-xs uppercase tracking-wider">Ghi chú Booking</h3>
+                      <h3 class="font-bold text-slate-800 text-xs tracking-wider">Ghi Chú Booking</h3>
                     </div>
                   </div>
                   <textarea 
@@ -9777,7 +9901,7 @@ defineExpose({
                 <!-- Column Toggle Dropdown with Reorder & Visibility -->
                 <div v-if="showColumnSelector" id="column-selector-container" class="absolute right-0 top-10 bg-white border border-slate-200 rounded-lg shadow-xl p-3 pb-3.5 w-72 flex flex-col gap-1.5 z-30 select-none animate-in text-xs">
                   <div class="flex items-center justify-between border-b border-slate-100 pb-1.5 mb-0.5">
-                    <span class="font-semibold text-slate-500 uppercase tracking-wider text-[11px]">Cột hiển thị & Thứ tự</span>
+                    <span class="font-semibold text-slate-500 tracking-wider text-[11px]">Cột Hiển Thị & Thứ Tự</span>
                     <button type="button" @click="resetRoomsColumns" class="text-[11px] text-sky-600 hover:text-sky-700 font-semibold cursor-pointer border-none bg-transparent" title="Khôi phục thứ tự và hiển thị mặc định">
                       Mặc định
                     </button>
@@ -10168,9 +10292,9 @@ defineExpose({
     <Teleport to="body">
       <div v-if="isModalOpen && isCheckoutMetadataEdit" class="fixed inset-0 z-[10000] flex items-center justify-center bg-black/30 p-4" @click.self="closeModal">
         <section class="w-full max-w-2xl overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
-          <header class="flex items-center justify-between bg-slate-800 px-5 py-3 text-white">
+          <header class="flex items-center justify-between px-5 py-3 text-white rounded-t-xl" :style="{ background: topbarThemeBg }">
             <div>
-              <h2 class="text-sm font-bold">Thông tin đăng ký đã checkout</h2>
+              <h2 class="text-sm font-bold">Thông Tin Đăng Ký Đã Checkout</h2>
               <p class="mt-0.5 text-[11px] text-slate-300">Chỉ tên, nguồn khách, người đặt và ghi chú được chỉnh sửa.</p>
             </div>
             <button type="button" @click="closeModal" class="border-0 bg-transparent text-white hover:text-slate-200" aria-label="Đóng">✕</button>

@@ -19,7 +19,7 @@
                 <div class="p-1.5 rounded-lg" :class="isTopBarThemeDark ? 'bg-white/10 text-blue-200' : 'bg-black/10 text-slate-800'">
                     <i class="fa-solid fa-file-invoice-dollar text-xs"></i>
                 </div>
-                <span class="font-bold text-xs tracking-wide uppercase">{{ depositForm.id ? 'Sửa đặt cọc' : 'Thêm đặt cọc' }}</span>
+                <span class="font-bold text-xs tracking-wide">{{ depositForm.id ? 'Sửa Đặt Cọc' : 'Thêm Đặt Cọc' }}</span>
             </div>
             <button @click="close" class="transition p-1.5 rounded-lg cursor-pointer border-none bg-transparent" :class="isTopBarThemeDark ? 'text-slate-300 hover:text-white hover:bg-white/10' : 'text-slate-700 hover:text-black hover:bg-black/10'">
                 <i class="fa-solid fa-xmark text-sm"></i>
@@ -81,24 +81,24 @@
                         <input 
                           type="text" 
                           inputmode="numeric"
-                          :value="depositForm.amount === '' ? '' : formatCurrencyInput(depositForm.amount)"
+                          :value="depositForm.amount === '' || depositForm.amount === null ? '' : formatCurrencyInput(depositForm.amount)"
                           required
                           @input="handleDepositAmountInput"
                           @keypress="e => { if (!/[0-9]/.test(e.key)) e.preventDefault() }"
                           @focus="e => { if (Number(depositForm.amount || 0) === 0) depositForm.amount = ''; e.target.select() }"
-                          @blur="e => { if (depositForm.amount === '' || depositForm.amount === null) depositForm.amount = 0 }"
+                          @blur="e => { if (depositForm.amount === '' || depositForm.amount === null) depositForm.amount = '' }"
                           :disabled="isEditing"
                           placeholder="0"
                           :class="[
                             { 'opacity-60 cursor-not-allowed !bg-slate-100 !border-slate-300': isEditing },
-                            !isEditing && Number(depositForm.amount || 0) > 0 ? 'pr-8' : ''
+                            !isEditing && depositForm.amount !== '' && depositForm.amount !== null && Number(depositForm.amount || 0) > 0 ? 'pr-8' : ''
                           ]"
-                          class="w-full border border-[#F1DD8A] rounded-lg px-3 h-[30px] text-xs font-semibold bg-[#FFF8DB] text-[#000000D9] focus:outline-none focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308] shadow-sm"
+                          class="w-full border border-[#F1DD8A] rounded-lg px-3 h-[30px] text-xs font-normal bg-[#FFF8DB] text-[#000000D9] placeholder-[#A8B0BF] focus:outline-none focus:border-[#eab308] focus:ring-1 focus:ring-[#eab308] shadow-sm"
                         >
                         <button 
-                          v-if="!isEditing && Number(depositForm.amount || 0) > 0" 
+                          v-if="!isEditing && depositForm.amount !== '' && depositForm.amount !== null && Number(depositForm.amount || 0) > 0" 
                           type="button" 
-                          @click.stop="depositForm.amount = 0" 
+                          @click.stop="depositForm.amount = ''" 
                           class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0.5 flex items-center justify-center z-10 select-none"
                           title="Xóa"
                         >
@@ -235,8 +235,8 @@
         <div class="bg-slate-50 p-4 border-t border-slate-200 flex-1 flex flex-col overflow-y-auto">
             
             <div class="flex justify-between items-end mb-1.5 shrink-0">
-                <h3 class="font-semibold text-[#000000D9] text-xs uppercase tracking-wider flex items-center">
-                    Danh sách đặt cọc <span v-if="selectedRoomNumber" class="text-blue-600 font-bold ml-1.5 normal-case">(Phòng {{ selectedRoomNumber }})</span> <span class="text-rose-500 ml-1">*</span>
+                <h3 class="font-semibold text-[#000000D9] text-xs tracking-wider flex items-center">
+                    Danh Sách Đặt Cọc <span v-if="selectedRoomNumber" class="text-blue-600 font-bold ml-1.5 normal-case">(Phòng {{ selectedRoomNumber }})</span> <span class="text-rose-500 ml-1">*</span>
                 </h3>
                 
                 <div class="flex items-center space-x-3">
@@ -610,23 +610,21 @@
                             </div>
                         </div>
 
-                        <!-- Search status detail indicator -->
-                        <div class="flex justify-end pr-1 min-h-[16px]">
-                            <span 
-                              v-if="destBookingName" 
-                              class="text-[11px] font-bold"
-                              :class="transferDestBooking ? 'text-green-600' : 'text-rose-500'"
-                            >
-                                {{ destBookingName }}
-                            </span>
-                        </div>
                     </div>
                     <div class="bg-slate-50 px-5 py-3 border-t border-slate-200 flex justify-end gap-2 rounded-b-xl">
-                        <button type="button" @click="isTransferOpen = false" class="px-4 py-1.5 bg-[#e2e8f0] hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition text-xs cursor-pointer border-none">
-                            Hủy
+                        <button type="button" @click="isTransferOpen = false" class="btn-pms-close">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                            <span>Hủy</span>
                         </button>
-                        <button type="button" @click="confirmTransfer" class="px-4 py-1.5 bg-[#3b82f6] hover:bg-[#2563eb] text-white font-bold rounded-lg transition text-xs shadow-md flex items-center cursor-pointer border-none" :disabled="!transferDestBooking">
-                            <i class="fa-solid fa-check mr-1.5"></i> Xác nhận
+                        <button type="button" @click="confirmTransfer" class="btn-pms-primary" :disabled="!transferDestBooking">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                              <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
+                              <polyline points="17 21 17 13 7 13 7 21"/>
+                              <polyline points="7 3 7 8 15 8"/>
+                            </svg>
+                            <span>Xác nhận</span>
                         </button>
                     </div>
                 </div>
@@ -1205,7 +1203,7 @@ const visibleDeposits = computed(() => {
 const depositForm = ref({
   id: null,
   bookingRoomId: null,
-  amount: 0,
+  amount: '',
   paymentMethodId: null,
   bankAccountId: null,
   date: systemDate.value,
@@ -1303,7 +1301,7 @@ function resetForm() {
   depositForm.value = {
     id: null,
     bookingRoomId: null,
-    amount: 0,
+    amount: '',
     paymentMethodId: defaultPmId,
     bankAccountId: null,
     date: systemDate.value,
@@ -1921,8 +1919,20 @@ async function confirmTransfer() {
 }
 
 function handleDepositAmountInput(event) {
-  const digits = event.target.value.replace(/[^0-9]/g, '')
+  const el = event.target
+  const caret = el.selectionStart ?? el.value.length
+  const digitsBefore = el.value.slice(0, caret).replace(/[^\d]/g, '').length
+  const digits = el.value.replace(/[^0-9]/g, '')
   depositForm.value.amount = digits === '' ? '' : Number(digits)
+  const formatted = digits === '' ? '' : formatCurrencyInput(Number(digits))
+  el.value = formatted
+  let pos = 0
+  let seen = 0
+  while (pos < formatted.length && seen < digitsBefore) {
+    if (/\d/.test(formatted[pos])) seen++
+    pos++
+  }
+  try { el.setSelectionRange(pos, pos) } catch (err) {}
 }
 
 function formatCurrencyInput(val) {

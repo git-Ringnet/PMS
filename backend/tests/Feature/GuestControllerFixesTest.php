@@ -381,4 +381,27 @@ class GuestControllerFixesTest extends TestCase
         $this->assertSame(1, BookingRoomService::where('booking_room_id', $room->id)->count());
         $this->assertSame(450000.0, (float) $customNight->fresh()->rate);
     }
+
+    public function test_room_info_update_saves_room_note_without_touching_booking_note(): void
+    {
+        $booking = $this->makeBooking(['note' => 'Original booking note']);
+        $room = $this->makeRoom($booking, 'G-GUEST-NOTE', BookingRoom::STATUS_BOOKED, [
+            'note' => 'Old room note',
+        ]);
+        $guest = Guest::create(['full_name' => 'Note guest']);
+        BookingRoomGuest::create([
+            'booking_room_id' => $room->id,
+            'guest_id' => $guest->id,
+            'is_primary' => true,
+            'status' => BookingRoomGuest::STATUS_ACTIVE,
+        ]);
+
+        $this->putJson("/api/booking-rooms/{$room->id}/guests/{$guest->id}", [
+            'full_name' => 'Note guest',
+            'room_note' => 'Updated room note for room 101',
+        ])->assertSuccessful();
+
+        $this->assertSame('Updated room note for room 101', $room->fresh()->note);
+        $this->assertSame('Original booking note', $booking->fresh()->note);
+    }
 }

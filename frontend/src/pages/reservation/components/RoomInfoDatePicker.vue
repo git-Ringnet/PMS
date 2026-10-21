@@ -15,8 +15,9 @@ const props = defineProps({
   modelValue: { type: String, default: '' },
   minDate: { type: [String, Date], default: null },
   maxDate: { type: [String, Date], default: null },
-  placeholder: { type: String, default: 'dd/mm/yy' },
+  placeholder: { type: String, default: 'dd/mm/yyyy' },
   disabled: { type: Boolean, default: false },
+  required: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['update:modelValue', 'change'])
@@ -47,10 +48,24 @@ const dateValue = computed({
 const parsedMinDate = computed(() => parseYmd(props.minDate))
 const parsedMaxDate = computed(() => parseYmd(props.maxDate))
 
+let isDeletingKey = false
+
+function handleKeydown(e) {
+  if (e.key === 'Backspace' || e.key === 'Delete') {
+    isDeletingKey = true
+  } else {
+    isDeletingKey = false
+  }
+}
+
 function handleInput(event) {
   if (props.disabled) return
-  textInput.value = maskDateInput(event.target.value)
-  if (textInput.value.replace(/\D/g, '').length === 8) {
+  const isDeleting = (event && event.inputType && event.inputType.startsWith('delete')) || isDeletingKey
+  isDeletingKey = false
+
+  textInput.value = maskDateInput(event.target.value, isDeleting)
+  const digits = textInput.value.replace(/\D/g, '')
+  if (digits.length === 8) {
     const parsed = parseDmyInput(textInput.value)
     if (parsed) {
       emit('update:modelValue', parsed)
@@ -97,15 +112,15 @@ function openCalendar() {
 <template>
   <div
     class="room-info-date-picker"
-    :class="disabled ? 'is-disabled' : ''"
+    :class="[disabled ? 'is-disabled' : '', required ? 'is-required' : '']"
   >
     <input
       :value="textInput"
       type="text"
       :disabled="disabled"
       :placeholder="placeholder"
-      inputmode="numeric"
       autocomplete="off"
+      @keydown="handleKeydown"
       @input="handleInput"
       @focus="handleFocus"
       @blur="handleBlur"
@@ -133,7 +148,7 @@ function openCalendar() {
         :disabled="disabled"
         :teleport="true"
         auto-apply
-        format="dd/MM/yy"
+        format="dd/MM/yyyy"
         menu-class-name="room-info-datepicker-menu"
       >
         <template #trigger>
@@ -145,7 +160,7 @@ function openCalendar() {
             aria-label="Chọn từ lịch"
             @click.stop="openCalendar"
           >
-            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
               <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
               <line x1="16" y1="2" x2="16" y2="6" />
               <line x1="8" y1="2" x2="8" y2="6" />
@@ -173,23 +188,43 @@ function openCalendar() {
   border-color: #2563eb;
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
 }
-.room-info-date-picker.is-disabled {
+.room-info-date-picker.is-required {
+  background: #FFF8DB !important;
+  background-color: #FFF8DB !important;
+  border-color: #F1DD8A !important;
+}
+.room-info-date-picker.is-required:focus-within {
+  border-color: #eab308 !important;
+  box-shadow: 0 0 0 2px rgba(234, 179, 8, 0.2) !important;
+}
+.room-info-date-picker.is-disabled:not(.is-required) {
   background: #f1f5f9;
   border-color: #cbd5e1;
   opacity: 0.75;
 }
-.room-info-date-picker input {
+.room-info-date-picker.is-disabled.is-required {
+  background: #FFF8DB !important;
+  background-color: #FFF8DB !important;
+  border-color: #F1DD8A !important;
+}
+.room-info-date-picker input,
+.room-info-date-picker input:disabled,
+.room-info-date-picker.is-required input,
+.room-info-date-picker.is-required input:disabled {
   flex: 1;
   min-width: 0;
   height: 100%;
-  border: 0;
-  outline: 0;
-  padding: 0 8px;
-  background: transparent;
+  border: 0 !important;
+  border-color: transparent !important;
+  outline: 0 !important;
+  padding: 0 4px 0 6px !important;
+  background: transparent !important;
+  background-color: transparent !important;
   color: #000000d9;
   font-family: inherit;
   font-size: 12px;
   font-weight: 400;
+  box-shadow: none !important;
 }
 .room-info-date-picker input::placeholder {
   color: #a8b0bf;
@@ -203,11 +238,12 @@ function openCalendar() {
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  padding-right: 4px;
+  padding-right: 3px;
+  gap: 1px;
 }
 .date-action {
-  width: 22px;
-  height: 22px;
+  width: 19px;
+  height: 19px;
   display: inline-flex;
   align-items: center;
   justify-content: center;

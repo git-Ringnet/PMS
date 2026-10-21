@@ -28,6 +28,7 @@ import { fetchBookings, transferBookingRoomServicesFolio, splitBookingRoomServic
 import http from '@/services/http'
 import { isCheckedOutRecord } from '@/utils/checkout-status'
 import { billBelongsToCurrentRoom, isMasterBillRecord, isMasterOwnedBill, serviceBillCurrentGuestId } from '@/utils/service-bill-ownership'
+import { clearCheckoutSelection, loadCheckoutSelection, saveCheckoutSelection } from '@/utils/checkout-selection-storage'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import AdjustRoomRateModal from './components/AdjustRoomRateModal.vue'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
@@ -626,32 +627,24 @@ const clearCheckoutPanels = () => {
   clearCheckoutSessionStorage()
 }
 
-const CHECKOUT_LAST_BOOKING_KEY = 'pms_checkout_last_booking_id'
-const CHECKOUT_LAST_ROOM_KEY = 'pms_checkout_last_room_id'
-const CHECKOUT_LAST_GUEST_KEY = 'pms_checkout_last_guest_id'
-
-function saveCheckoutSessionStorage(bookingId, roomId = null, guestId = null) {
-  if (bookingId) {
-    sessionStorage.setItem(CHECKOUT_LAST_BOOKING_KEY, String(bookingId))
-  } else {
-    sessionStorage.removeItem(CHECKOUT_LAST_BOOKING_KEY)
-  }
-  if (roomId) {
-    sessionStorage.setItem(CHECKOUT_LAST_ROOM_KEY, String(roomId))
-  } else {
-    sessionStorage.removeItem(CHECKOUT_LAST_ROOM_KEY)
-  }
-  if (guestId) {
-    sessionStorage.setItem(CHECKOUT_LAST_GUEST_KEY, String(guestId))
-  } else {
-    sessionStorage.removeItem(CHECKOUT_LAST_GUEST_KEY)
+function checkoutSelectionContext() {
+  return {
+    branchId: authStore.activeBranch?.id || localStorage.getItem('selected_branch_id') || '',
+    userId: authStore.user?.id || '',
   }
 }
 
+function saveCheckoutSessionStorage(bookingId, roomId = null, guestId = null) {
+  saveCheckoutSelection(sessionStorage, {
+    bookingId,
+    roomId,
+    guestId,
+    registerScope: appliedCheckoutFilter.value.register,
+  }, checkoutSelectionContext())
+}
+
 function clearCheckoutSessionStorage() {
-  sessionStorage.removeItem(CHECKOUT_LAST_BOOKING_KEY)
-  sessionStorage.removeItem(CHECKOUT_LAST_ROOM_KEY)
-  sessionStorage.removeItem(CHECKOUT_LAST_GUEST_KEY)
+  clearCheckoutSelection(sessionStorage)
 }
 
 const addServiceBookingInfo = computed(() => {
@@ -3252,8 +3245,9 @@ const selectCheckoutBookingFromRoute = async () => {
 }
 
 const restoreCheckoutBookingFromSession = async () => {
-  const savedBookingId = sessionStorage.getItem(CHECKOUT_LAST_BOOKING_KEY)
-  if (!savedBookingId) return
+  const savedSelection = loadCheckoutSelection(sessionStorage, checkoutSelectionContext())
+  if (!savedSelection) return
+  const { bookingId: savedBookingId, roomId: savedRoomId, guestId: savedGuestId } = savedSelection
   let booking = allBookingsList.value.find(item => (
     String(item.bookingId) === savedBookingId || String(item.id) === savedBookingId || String(item.code) === savedBookingId || String(item.id) === `B${savedBookingId}`
   ))
@@ -3286,8 +3280,6 @@ const restoreCheckoutBookingFromSession = async () => {
   }
 
   if (booking) {
-    const savedRoomId = sessionStorage.getItem(CHECKOUT_LAST_ROOM_KEY)
-    const savedGuestId = sessionStorage.getItem(CHECKOUT_LAST_GUEST_KEY)
     const room = savedRoomId
       ? booking.roomItems.find(item => (
           String(item.roomId) === savedRoomId || 
@@ -3302,7 +3294,19 @@ const restoreCheckoutBookingFromSession = async () => {
       ? (room.allGuests || []).find(g => String(g?.id) === String(savedGuestId))
       : null
     selectBookingFromSearch(booking, room, guest)
+  } else {
+    clearCheckoutSessionStorage()
   }
+}
+
+const restoreCheckoutRegisterScopeFromSession = () => {
+  const routeBookingKey = String(route.query.bookingCode || route.query.booking_code || route.query.booking_id || route.query.edit_id || '').trim()
+  if (routeBookingKey) return
+  if (String(route.query.register || '').trim()) return
+  const savedSelection = loadCheckoutSelection(sessionStorage, checkoutSelectionContext())
+  if (!savedSelection || !['old', 'current', 'virtual'].includes(savedSelection.registerScope)) return
+  registerFilter.value = savedSelection.registerScope
+  appliedCheckoutFilter.value.register = savedSelection.registerScope
 }
 
 const handleClickOutside = (e) => {
@@ -3320,6 +3324,7 @@ onMounted(async () => {
   await loadCheckoutRolePermissions()
   await loadServiceBillAdjustmentPermission()
   syncCheckoutFilterFromRoute()
+  restoreCheckoutRegisterScopeFromSession()
   await loadCheckoutBookings()
   const routeBookingKey = String(route.query.bookingCode || route.query.booking_code || route.query.booking_id || route.query.edit_id || '').trim()
   if (routeBookingKey) {
