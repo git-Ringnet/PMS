@@ -8,7 +8,7 @@ const closeTo = (actual, expected) => {
   assert.ok(Math.abs(actual - expected) < 0.000001, `Expected ${actual} to equal ${expected}`)
 }
 
-test('Dòng 322: Xem đêm hiển thị Day Use ở nửa sau của đúng ô ngày', () => {
+test('Dòng 322: Xem đêm hiển thị Day Use đúng tỷ lệ 24 giờ trong ô ngày', () => {
   const layout = resolveRoomPlanDayUseLayout({
     isDayUse: true,
     showNights: true,
@@ -16,7 +16,36 @@ test('Dòng 322: Xem đêm hiển thị Day Use ở nửa sau của đúng ô ng
     departureTime: '12:00',
   })
 
-  assert.deepEqual(layout, { leftRatio: 0.5, widthRatio: 0.5, isFallback: false })
+  closeTo(layout.leftRatio, 8 / 24)
+  closeTo(layout.widthRatio, 4 / 24)
+  assert.equal(layout.isFallback, false)
+})
+
+test('Dòng 322: 00:00-06:00 chiếm đúng một phần tư ô ở cả hai chế độ xem', () => {
+  for (const showNights of [false, true]) {
+    const layout = resolveRoomPlanDayUseLayout({
+      isDayUse: true,
+      showNights,
+      arrivalTime: '00:00',
+      departureTime: '06:00',
+    })
+
+    closeTo(layout.leftRatio, 0)
+    closeTo(layout.widthRatio, 6 / 24)
+  }
+})
+
+test('Dòng 322: 01:00-02:00 nằm đúng khoảng một giờ trong ô', () => {
+  const layout = resolveRoomPlanDayUseLayout({
+    isDayUse: true,
+    showNights: true,
+    arrivalTime: '01:00',
+    departureTime: '02:00',
+  })
+
+  closeTo(layout.leftRatio, 1 / 24)
+  closeTo(layout.widthRatio, 1 / 24)
+  closeTo(layout.leftRatio + layout.widthRatio, 2 / 24)
 })
 
 test('Dòng 322: Xem ngày 08:00-12:00 chiếm đúng 4 giờ trong ô ngày', () => {
@@ -42,16 +71,16 @@ test('Dòng 322: Xem ngày 14:00-20:00 chiếm đúng 6 giờ trong ô ngày', (
   closeTo(layout.widthRatio, 6 / 24)
 })
 
-test('Dòng 322: khoảng giờ gần trọn ngày không vượt khỏi ô', () => {
+test('Dòng 322: 23:00-24:00 nằm đúng giờ cuối cùng của ô', () => {
   const layout = resolveRoomPlanDayUseLayout({
     isDayUse: true,
-    arrivalTime: '00:00',
-    departureTime: '23:59',
+    arrivalTime: '23:00',
+    departureTime: '24:00',
   })
 
-  assert.equal(layout.leftRatio, 0)
-  assert.ok(layout.widthRatio < 1)
-  assert.ok(layout.leftRatio + layout.widthRatio <= 1)
+  closeTo(layout.leftRatio, 23 / 24)
+  closeTo(layout.widthRatio, 1 / 24)
+  closeTo(layout.leftRatio + layout.widthRatio, 1)
 })
 
 test('Dòng 322: giờ thiếu hoặc giờ đi không sau giờ đến dùng fallback nửa ô', () => {
@@ -73,22 +102,29 @@ test('Dòng 322: booking không bật Day Use không nhận layout mới', () =>
   }), null)
 })
 
-test('Dòng 322: nhiều lượt Day Use cùng phòng vẫn được chia thành nhiều line', () => {
+test('Dòng 322: nhiều lượt Day Use khác giờ cùng phòng không bị coi là trùng', () => {
   const first = {
     bookingRoomId: 1,
     code: 'GAL322-1',
+    isDayUse: true,
+    arrival_time: '08:00',
+    departure_time: '12:00',
     _range: roomPlanStayRange({ start: '2026-09-30', end: '2026-09-30', isDayUse: true }),
   }
   const second = {
     bookingRoomId: 2,
     code: 'GAL322-2',
+    isDayUse: true,
+    arrival_time: '14:00',
+    departure_time: '18:00',
     _range: roomPlanStayRange({ start: '2026-09-30', end: '2026-09-30', isDayUse: true }),
   }
 
   markRoomPlanConflicts([first, second])
 
-  assert.equal(first.conflictLaneCount, 2)
-  assert.equal(second.conflictLaneCount, 2)
-  assert.notEqual(first.conflictLane, second.conflictLane)
+  assert.equal(first.hasConflict, false)
+  assert.equal(second.hasConflict, false)
+  assert.equal(first.conflictLaneCount, 1)
+  assert.equal(second.conflictLaneCount, 1)
 })
 
