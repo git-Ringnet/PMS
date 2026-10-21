@@ -150,21 +150,7 @@ export function parseDmyInput(value) {
     }
   }
 
-  // 4. Check 6 digits DDMMYY (e.g. 181226)
-  if (digits.length === 6) {
-    const day = Number(digits.slice(0, 2))
-    const month = Number(digits.slice(2, 4))
-    const yy = Number(digits.slice(4))
-    const year = yy >= 50 ? 1900 + yy : 2000 + yy
-    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
-      const date = new Date(year, month - 1, day)
-      if (date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day) {
-        return toYmd(date)
-      }
-    }
-  }
-
-  // 5. Check ISO YYYY-MM-DD
+  // 4. Check ISO YYYY-MM-DD
   const isoMatch = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/)
   if (isoMatch) {
     const year = Number(isoMatch[1])
