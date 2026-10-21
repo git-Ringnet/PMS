@@ -81,6 +81,8 @@ class RoomResource extends JsonResource
             'booking_color' => $this->booking_color,
             'arrival_date' => $this->arrival_date,
             'departure_date' => $this->departure_date,
+            'arrival_time' => $this->arrival_time ?? null,
+            'departure_time' => $this->departure_time ?? null,
             'nights' => $this->nights,
             'adults' => $this->adults,
             'children' => $this->children,

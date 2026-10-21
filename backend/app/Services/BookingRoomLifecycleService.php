@@ -95,6 +95,13 @@ class BookingRoomLifecycleService
         $existing = $rows->groupBy($dateOf)
             ->map(fn ($sameDate) => $sameDate->first(fn (BookingRoomService $service) => !$service->trashed()) ?? $sameDate->first());
 
+        // Dòng 368: đêm EB mới theo cờ phòng/master của các đêm EB đã có, tính
+        // trước khi xóa các đêm ngoài giai đoạn ở mới.
+        $liveRows = $rows->filter(fn (BookingRoomService $service) => !$service->trashed());
+        $defaultIsRoom = ($liveRows->isNotEmpty() && $liveRows->every(fn (BookingRoomService $service) => (int) $service->is_room === 0))
+            ? 0
+            : 1;
+
         $rows->filter(fn (BookingRoomService $service) => (int) $service->is_posted === 0
                 && !$service->trashed()
                 && (!$stayDates || !in_array($dateOf($service), $stayDates, true)))
@@ -143,7 +150,7 @@ class BookingRoomLifecycleService
                 'quantity' => $qty,
                 'rate' => $rate,
                 'department' => 'FO',
-                'is_room' => $row?->is_room ?? 1,
+                'is_room' => $row?->is_room ?? $defaultIsRoom,
                 'is_posted' => 0,
                 'deleted_at' => null,
                 'created_by' => Auth::user()?->username ?? 'system',

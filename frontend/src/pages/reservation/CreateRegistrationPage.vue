@@ -43,6 +43,10 @@ import CancelReasonModal from './components/CancelReasonModal.vue'
 import RestoreCancelledRoomsModal from './components/RestoreCancelledRoomsModal.vue'
 import ChargeNoshowModal from './components/ChargeNoshowModal.vue'
 import QuickUpdateModal from './components/QuickUpdateModal.vue'
+import { bookingPeriodAfterQuickUpdate, isRegistrationReadonly } from '@/utils/booking-quick-update.js'
+import { createVacantRoomsLoader, vacantRoomsKey } from '@/utils/vacant-rooms-cache.js'
+import echo from '@/services/echo'
+import { isFromOtherTab } from '@/utils/broadcast-origin.js'
 import BookingNotificationsModal from './components/BookingNotificationsModal.vue'
 import BookingPrintPreviewModal from './components/BookingPrintPreviewModal.vue'
 import PrintServiceSelectModal from './components/PrintServiceSelectModal.vue'
@@ -1218,17 +1222,8 @@ async function handleInlineServiceRateChange(room, svc, newRate) {
     svc.bill_ref.Amount = newRate * (svc.bill_ref.Quantity || 1)
     svc.bill_ref.rate = newRate
   }
-  if (room.serviceBills && Array.isArray(room.serviceBills)) {
-    const matchedBill = room.serviceBills.find(sb => {
-      const sbDate = getBillRecordDateStr(sb)
-      return (sb.Ma && svc.bill_ref && String(sb.Ma) === String(svc.bill_ref.Ma)) ||
-             (sbDate === cleanDate && isRoomCharge && isRoomChargeBillRecord(sb))
-    })
-    if (matchedBill) {
-      matchedBill.Amount = newRate * (matchedBill.Quantity || 1)
-      matchedBill.rate = newRate
-    }
-  }
+  // Dòng 351: bill đã chạy ở màn hình hóa đơn không đổi theo giá chỉnh ở đây;
+  // giá mới chỉ lưu vào booking_room_services.
 
   if (isRoomCharge) {
     if (!room.dailyRoomPrices) room.dailyRoomPrices = {}
@@ -1686,8 +1681,8 @@ async function handleInlineServiceDelete(room, svc) {
           service_name: getHotelServiceName('EB', 'Extra Bed'),
           service_date: cleanDate,
           quantity: 0,
-          rate: Number(svc.rate) || 0,
-          is_room: svc.is_room !== 0 ? 1 : 0
+          rate: Number(svc.rate) || 0
+          // Dòng 368: không gửi is_room, server giữ nguyên cờ phòng/master của ngày này.
         })
 
         notifyRoomUpdates(activeTab.value?.dbId)
@@ -1776,18 +1771,31 @@ function getRoomDisplayServices(room) {
 
       if (matchingBills.length > 0) {
         // Có hóa đơn từ service_bills (quá khứ hoặc đã post trước) -> LẤY 100% THEO HÓA ĐƠN
+        // Dòng 351: giá chỉnh sau khi bill đã chạy chỉ lưu ở booking_room_services (dòng
+        // chưa post). Hiện giá đó ở ô đơn giá, kèm số tiền bill đã chạy để không bị
+        // tưởng là mất sau khi tải lại trang.
+        const pendingPlan = isPastNight ? null : (room.services || []).find(svc =>
+          isRoomChargeService(svc)
+          && cleanDateStr(svc.service_date) === dStr
+          && Number(svc.is_posted) !== 1
+          && !svc.service_bill_id
+        )
         matchingBills.forEach((sb, bIdx) => {
           const bId = String(sb.Ma || sb.id || `bill-${dStr}-${bIdx}`)
           handledBillIds.add(bId)
           const qty = Number(sb.Quantity) || 1
           const amt = Number(sb.Amount) || 0
+          const billedRate = qty > 0 ? amt / qty : amt
+          const hasPending = !!pendingPlan && matchingBills.length === 1
           list.push({
             id: `service-bill-${bId}`,
             service_date: dStr,
             service_name: getHotelServiceName(sb.ServiceId || 'RM', sb.DescriptionServive || 'Dịch vụ phòng nghỉ'),
             service_code: sb.ServiceId || 'RM',
             quantity: qty,
-            rate: qty > 0 ? amt / qty : amt,
+            rate: hasPending ? (Number(pendingPlan.rate) || 0) : billedRate,
+            billed_rate: billedRate,
+            pending_rate: hasPending ? (Number(pendingPlan.rate) || 0) : null,
             is_room: true,
             from_bill: true,
             from_move_history: !!sb.from_move_history,
@@ -2225,6 +2233,8 @@ function handleDrop(targetKey) {
 // ==================== COMPUTEDS ====================
 const activeTab = computed(() => tabs.value.find(t => t.id === activeTabId.value))
 const isCheckoutMetadataEdit = computed(() => isEditModal.value && Number(activeTab.value?.status) === 2)
+// Dòng 433: đăng ký đã hủy vẫn xem được thông tin nhưng không cho chỉnh sửa.
+const isModalReadonly = computed(() => isEditModal.value && isRegistrationReadonly(activeTab.value?.status))
 
 const isCancelledBooking = computed(() => {
   const tab = activeTab.value
@@ -2680,6 +2690,8 @@ onMounted(async () => {
   window.addEventListener('hotel-config-updated', handleHotelConfigUpdated)
   const bc = getPmsBroadcastChannel()
   if (bc) bc.addEventListener('message', handleBookingUpdatedBroadcast)
+  // Dòng 400: máy khác gán số phòng thì danh sách phòng trống cũng phải tải lại.
+  if (echo) echo.channel('pms-channel').listen('.reservation.updated', invalidateVacantRooms)
   try {
     isLoading.value = true
     await Promise.all([loadDropdowns(), loadBookings()])
@@ -2766,6 +2778,8 @@ onBeforeUnmount(() => {
   activeBookingNotificationsTimers.forEach(clearTimeout)
   document.removeEventListener('click', handleGlobalClick)
   window.removeEventListener('booking-updated', handleBookingUpdatedEvent)
+  if (echo) echo.channel('pms-channel').stopListening('.reservation.updated', invalidateVacantRooms)
+  clearTimeout(vacantRoomsRefreshTimer)
   window.removeEventListener('deposit-updated', loadBookings)
   window.removeEventListener('hotel-config-updated', handleHotelConfigUpdated)
   if (pmsBc) {
@@ -2896,6 +2910,33 @@ function externalBookingId(value) {
   return String(value)
 }
 
+// Dòng 400: tab đang sửa BK mà tab khác vừa lưu chính BK đó thì dữ liệu đang
+// sửa đã cũ (vd dòng hiện "Chọn phòng" nhưng thực tế đã gán 307). Không tự ghi
+// đè thay đổi chưa lưu, nhưng hỏi người dùng có tải lại không.
+let isStaleEditPromptOpen = false
+async function promptReloadIfEditingBookingChanged(bookingId) {
+  const tab = activeTab.value
+  const targetId = externalBookingId(bookingId)
+  if (!isEditing.value || !tab?.dbId || !targetId || isStaleEditPromptOpen) return
+  if (externalBookingId(tab.dbId) !== targetId && String(tab.bookingCode || '') !== targetId) return
+
+  isStaleEditPromptOpen = true
+  try {
+    const confirmed = await uiStore.confirm({
+      title: 'Đăng ký đã thay đổi',
+      message: `Đăng ký "${tab.bookingName || tab.bookingCode || ''}" vừa được cập nhật ở tab khác. Tải lại dữ liệu mới nhất? Các thay đổi chưa lưu ở tab này sẽ bị bỏ.`,
+      confirmText: 'Tải lại',
+      cancelText: 'Tiếp tục sửa'
+    })
+    if (!confirmed || !isEditing.value || activeTab.value !== tab) return
+    isEditing.value = false
+    restoreTabFromBackup(tab)
+    await refreshMatchingBooking(tab.dbId)
+  } finally {
+    isStaleEditPromptOpen = false
+  }
+}
+
 async function refreshMatchingBooking(bookingId = null) {
   // A background update must never replace a form containing local edits or drafts.
   if (isEditing.value || (isModalOpen.value && isModalFormDirty.value)) return
@@ -2974,6 +3015,7 @@ async function refreshMatchingBooking(bookingId = null) {
 }
 
 function handleBookingUpdatedEvent(event) {
+  invalidateVacantRooms()
   return refreshMatchingBooking(event?.detail?.bookingId)
 }
 
@@ -3000,6 +3042,7 @@ function handleBookingUpdatedBroadcast(event) {
     loadDropdowns().catch(console.error)
     return
   }
+  invalidateVacantRooms()
   let bookingId = null
   if (typeof data === 'string') {
     bookingId = null
@@ -3008,6 +3051,9 @@ function handleBookingUpdatedBroadcast(event) {
       bookingId = data.bookingId
     }
   }
+  // Chỉ hỏi khi BK được lưu ở tab khác; modal trong chính tab này cũng gửi tin
+  // lên kênh này nhưng đó là thay đổi của người đang sửa.
+  if (isFromOtherTab(data)) promptReloadIfEditingBookingChanged(bookingId)
   return refreshMatchingBooking(bookingId)
 }
 
@@ -3238,6 +3284,8 @@ function bookingToTab(b) {
         hourly: !!br.is_day_use && (parseApiDate(br.arrival_date || b.arrival_date) === parseApiDate(br.departure_date || b.departure_date)),
         arrivalTime: br.arrival_time || '14:00',
         hoursOut: br.departure_time || '12:00',
+        // Dòng 398: phòng đã checkout hiển thị giờ checkout thực tế (chỉ để xem).
+        checkoutTime: Number(br.status) === 2 ? (br.CheckoutTime || null) : null,
         isPreassigned: !!physicalRoom.room_number,
         initialRoomClass: rc.code || '',
         transferredFrom: (() => {
@@ -4489,20 +4537,17 @@ async function openEditModal() {
   const tab = activeTab.value
   if (!tab) return
   const isCheckedOut = Number(tab.status) === 2
-  if (Number(tab.status) === 3) {
-    uiStore.showToast('Không thể chỉnh sửa đăng ký đã xóa.', 'error')
-    return
-  }
+  const isCancelled = isRegistrationReadonly(tab.status)
   if (isCheckedOut && !bookingCapabilities.value.can_update_checkout_booking) {
     uiStore.showToast('Bạn không có quyền chỉnh sửa thông tin đăng ký đã checkout.', 'error')
     return
   }
-  if (!isCheckedOut) await refreshRoomRateCodes()
+  if (!isCheckedOut && !isCancelled) await refreshRoomRateCodes()
   modalPos.value = { x: 0, y: 0 }
   isEditModal.value = true
   isColorChanged.value = false
   fillModalForm(tab)
-  if (!isCheckedOut) {
+  if (!isCheckedOut && !isCancelled) {
     roomAddDraft.value = initRoomAddDraft(tab.checkIn, tab.checkOut)
     await updateRoomAvailability()
   } else {
@@ -5392,6 +5437,7 @@ function copyConfirmDate() {
 }
 
 async function handleSaveNewBooking() {
+  if (isModalReadonly.value) return
   if (!modalForm.value.bookingName.trim()) { uiStore.showToast('Vui lòng nhập tên đăng ký!', 'warning'); return }
   if (!modalForm.value.checkIn || !modalForm.value.checkOut) { uiStore.showToast('Vui lòng chọn ngày đến và ngày đi!', 'warning'); return }
   if (!modalForm.value.registrationStatusId) { uiStore.showToast('Vui lòng chọn Tình trạng đăng ký!', 'warning'); return }
@@ -5632,6 +5678,26 @@ function formatDateVi(dateStr) {
 }
 
 const vacantRoomsMap = ref({})
+const vacantRoomsLoader = createVacantRoomsLoader(vacantRoomsMap, async (params) => {
+  const res = await fetchVacantRooms(params)
+  return res.data?.data || res.data || []
+})
+
+// Gộp các sự kiện cập nhật dồn dập thành một lần tải lại.
+let vacantRoomsRefreshTimer = null
+function invalidateVacantRooms() {
+  clearTimeout(vacantRoomsRefreshTimer)
+  vacantRoomsRefreshTimer = setTimeout(() => vacantRoomsLoader.refresh(), 300)
+}
+
+function getVacantRoomsKey(room) {
+  return vacantRoomsKey({
+    roomClassId: room.roomClassId,
+    checkIn: parseDateVi(room.checkIn),
+    checkOut: parseDateVi(room.checkOut),
+    bookingRoomId: room.bookingRoomId,
+  })
+}
 
 async function loadVacantRoomsForRoom(room) {
   const roomClassId = room.roomClassId
@@ -5639,27 +5705,22 @@ async function loadVacantRoomsForRoom(room) {
   const co = parseDateVi(room.checkOut)
   if (!roomClassId || !ci || !co) return
 
-  const cacheKey = `${roomClassId}_${ci}_${co}`
-  if (vacantRoomsMap.value[cacheKey]) return
-
+  // Dòng 400: luôn tải lại khi mở danh sách để không hiện số phòng vừa được
+  // BK khác gán; danh sách cũ vẫn hiển thị trong lúc chờ.
   try {
-    const res = await fetchVacantRooms({
+    await vacantRoomsLoader.load(getVacantRoomsKey(room), {
       room_class_id: roomClassId,
       arrival_date: ci,
       departure_date: co,
       exclude_booking_room_id: room.bookingRoomId || undefined
     })
-    vacantRoomsMap.value[cacheKey] = res.data?.data || res.data || []
   } catch (err) {
     console.error('Không thể tải danh sách phòng trống:', err)
   }
 }
 
 function getVacantRoomsList(room) {
-  const ci = parseDateVi(room.checkIn)
-  const co = parseDateVi(room.checkOut)
-  const cacheKey = `${room.roomClassId}_${ci}_${co}`
-  const list = vacantRoomsMap.value[cacheKey] || []
+  const list = vacantRoomsMap.value[getVacantRoomsKey(room)] || []
   
   const parentObj = (isModalOpen.value && modalForm.value) ? modalForm.value : activeTab.value
   const assignedRoomNumbers = (parentObj?.rooms || [])
@@ -6774,22 +6835,23 @@ function handleQuickUpdateSaved(payload) {
 
     // Giai đoạn đăng ký giữ nguyên khi phòng vẫn nằm trong giai đoạn; chỉ mở
     // rộng khi phòng ra ngoài. Số đêm luôn tính lại theo giai đoạn cuối cùng.
+    // Dòng 432: cập nhật ngày đi thì ngày đi BK = ngày đi lớn nhất của các
+    // phòng trên BK (không xét tình trạng 3).
     if (activeTab.value && activeTab.value.rooms && activeTab.value.rooms.length > 0) {
-      const allCheckIns = activeTab.value.rooms.map(r => parseDateVi(r.checkIn)).filter(Boolean).sort()
-      const allCheckOuts = activeTab.value.rooms.map(r => parseDateVi(r.checkOut)).filter(Boolean).sort()
-      if (allCheckIns.length > 0 && allCheckOuts.length > 0) {
-        const headerIn = parseDateVi(activeTab.value.checkIn)
-        const headerOut = parseDateVi(activeTab.value.checkOut)
-        const minIn = headerIn && headerIn < allCheckIns[0] ? headerIn : allCheckIns[0]
-        const maxOut = headerOut && headerOut > allCheckOuts[allCheckOuts.length - 1] ? headerOut : allCheckOuts[allCheckOuts.length - 1]
-        activeTab.value.checkIn = minIn
-        activeTab.value.checkOut = maxOut
-        const dMin = new Date(minIn)
-        const dMax = new Date(maxOut)
-        if (!isNaN(dMin) && !isNaN(dMax)) {
-          const diff = Math.round((dMax - dMin) / 86400000)
-          activeTab.value.nights = diff >= 0 ? diff : 0
-        }
+      const period = bookingPeriodAfterQuickUpdate({
+        headerIn: parseDateVi(activeTab.value.checkIn),
+        headerOut: parseDateVi(activeTab.value.checkOut),
+        rooms: activeTab.value.rooms.map(r => ({
+          checkIn: parseDateVi(r.checkIn),
+          checkOut: parseDateVi(r.checkOut),
+          status: r.bookingRoomStatus,
+        })),
+        departureEdited: payload.departure_date !== undefined,
+      })
+      if (period) {
+        activeTab.value.checkIn = period.checkIn
+        activeTab.value.checkOut = period.checkOut
+        if (period.nights !== null) activeTab.value.nights = period.nights
       }
     }
   }
@@ -7887,7 +7949,7 @@ defineExpose({
                             default-time="12:00"
                             :disabled="!isEditing" 
                           />
-                          <span v-else class="text-xs font-normal text-[#000000D9]">{{ formatTimeHHmm(room.hoursOut) || '12:00' }}</span>
+                          <span v-else class="text-xs font-normal text-[#000000D9]">{{ formatTimeHHmm(room.checkoutTime || room.hoursOut) || '12:00' }}</span>
                         </template>
                         <template v-else-if="col.key === 'isPreassigned'">
                           <input 
@@ -8114,7 +8176,7 @@ defineExpose({
                                       {{ (Number(svc.rate) || 0).toLocaleString('en-US') }}
                                     </span>
                                   </td>
-                                  <td class="p-2 border-slate-100 text-right text-[#000000D9] font-normal text-xs">{{ (Number(svc.quantity !== undefined && svc.quantity !== null ? svc.quantity : 1) * Number(svc.rate || 0)).toLocaleString('en-US') }}</td>
+                                  <td class="p-2 border-slate-100 text-right text-[#000000D9] font-normal text-xs">{{ (Number(svc.quantity !== undefined && svc.quantity !== null ? svc.quantity : 1) * Number(svc.rate || 0)).toLocaleString('en-US') }}<div v-if="svc.pending_rate != null && Number(svc.pending_rate) !== Number(svc.billed_rate)" class="text-[10px] leading-tight text-amber-600" title="Giá mới chỉ áp dụng khi xóa bill ở màn hình hóa đơn và post lại tiền phòng">Bill đã chạy: {{ (Number(svc.quantity !== undefined && svc.quantity !== null ? svc.quantity : 1) * Number(svc.billed_rate || 0)).toLocaleString('en-US') }}</div></td>
                                   <td class="p-2 text-center border-slate-200">
                                     <div class="relative inline-flex items-center justify-center">
                                       <label class="relative inline-flex items-center cursor-pointer select-none gap-1.5 justify-center" :class="{ 'opacity-40 pointer-events-none': !isServiceDisplayEditable(svc) || (isInlineEditLocked && room.bookingRoomId) }" title="Bật/Tắt Gửi HĐ về Master (GIT) hoặc Phòng (FIT)">
@@ -8585,7 +8647,7 @@ defineExpose({
                                     default-time="12:00"
                                     :disabled="!isEditing" 
                                   />
-                                  <span v-else class="text-xs font-normal text-[#000000D9]">{{ formatTimeHHmm(room.hoursOut) || '12:00' }}</span>
+                                  <span v-else class="text-xs font-normal text-[#000000D9]">{{ formatTimeHHmm(room.checkoutTime || room.hoursOut) || '12:00' }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'isPreassigned'">
                                   <input 
@@ -9123,10 +9185,11 @@ defineExpose({
           >
             <div class="flex items-center space-x-2 font-semibold text-sm">
                 <i class="fa-solid fa-file-lines" :class="isTopBarThemeDark ? 'text-blue-200' : 'text-slate-800'"></i>
-                <span>{{ isEditModal ? 'Thông Tin Đăng Ký' : 'Tạo Đăng Ký' }}</span>
+                <span>{{ isEditModal ? 'THÔNG TIN ĐĂNG KÝ' : 'TẠO ĐĂNG KÝ' }}</span>
+                <span v-if="isModalReadonly" class="ml-1 px-2 py-0.5 rounded-full bg-red-500/90 text-white text-[10px] font-bold">ĐÃ HỦY · CHỈ XEM</span>
             </div>
             <div class="flex items-center space-x-3">
-                <div class="relative">
+                <div v-if="!isModalReadonly" class="relative">
                     <button 
                       type="button"
                       @click.stop="isColorPickerOpen = !isColorPickerOpen"
@@ -9194,7 +9257,7 @@ defineExpose({
           </div>
 
           <!-- SECOND ACTION STRIP (GENERAL DETAILS) -->
-          <div class="px-4 py-2.5 border-b border-slate-200 bg-slate-50/80 shrink-0">
+          <div class="px-4 py-2.5 border-b border-slate-200 bg-slate-50/80 shrink-0" :inert="isModalReadonly || null">
             <div class="flex flex-wrap items-end gap-2.5">
               <!-- Mã booking (Read-only Badge) -->
               <div class="flex flex-col">
@@ -9360,6 +9423,8 @@ defineExpose({
 
           <!-- MODAL CONTENT SCROLL -->
           <div class="flex-1 p-3.5 overflow-y-auto flex flex-col gap-3 bg-slate-50/60">
+            <!-- Dòng 433: BK đã hủy chỉ xem; khóa toàn bộ input nhưng vẫn cuộn được -->
+            <div class="contents" :inert="isModalReadonly || null">
             
             <!-- Tab 1: Thông tin chung (Bento 2-Column Grid Layout) -->
             <div v-if="modalSubTab === 'info'" class="grid grid-cols-1 lg:grid-cols-12 gap-3 w-full">
@@ -10171,6 +10236,7 @@ defineExpose({
                 </table>
               </div>
             </div>
+            </div>
 
           </div>
 
@@ -10200,9 +10266,10 @@ defineExpose({
                     :disabled="isSavingModal"
                     class="px-4 py-1.5 border border-slate-300 text-slate-700 font-bold rounded-xl hover:bg-slate-50 transition text-xs cursor-pointer bg-white disabled:opacity-50 disabled:cursor-not-allowed shadow-2xs"
                   >
-                      Hủy bỏ
+                      {{ isModalReadonly ? 'Đóng' : 'Hủy bỏ' }}
                   </button>
                   <button 
+                    v-if="!isModalReadonly"
                     @click="handleSaveNewBooking"
                     :disabled="isSavingModal || (!!modalForm.dbId && !isModalFormDirty)"
                     class="px-4 py-1.5 font-bold rounded-xl transition flex items-center space-x-1.5 text-xs border-none"
@@ -10348,7 +10415,7 @@ defineExpose({
         :bookingId="activeTab?.dbId"
         :targetRooms="activeTab?.rooms ? activeTab.rooms.filter(r => selectedRows.includes(r.id) && r.status !== 2 && r.status !== 3 && r.status !== 'Checked Out' && r.status !== 'Cancelled') : []"
         :system-date="systemDate"
-        :current-module="'SALE'"
+        :current-module="currentBookingModule"
         :allow-sale-inhouse-rate-departure="String(hotelSettings?.AllowReserUpdateRate_DeptDateRoomInhouse ?? '0') === '1'"
         @saved="handleQuickUpdateSaved"
       />

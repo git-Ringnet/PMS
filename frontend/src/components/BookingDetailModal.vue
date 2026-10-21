@@ -876,9 +876,10 @@ watch(() => props.room, (newRoom) => {
     const isHourlyRoom = !!(newRoom.is_day_use || newRoom.is_hourly || newRoom.hourly)
     stayInfo.value = {
       arrival_date: formatDateForInput(newRoom.arrival_date) || '',
-      arrival_time: formatTime24h(newRoom.check_in_time) || '14:00',
+      // Dòng 398: giờ đến/giờ đi thật của phòng; thiếu dữ liệu mới dùng 14:00/12:00.
+      arrival_time: formatTime24h(newRoom.arrival_time ?? newRoom.check_in_time) || '14:00',
       departure_date: formatDateForInput(newRoom.departure_date) || '',
-      departure_time: formatTime24h(newRoom.check_out_time) || '12:00',
+      departure_time: formatTime24h(newRoom.departure_time ?? newRoom.check_out_time) || '12:00',
       nights: isHourlyRoom ? 0 : (newRoom.nights || newRoom.ActutalNumOfDays || 1),
       occupants_str: `${adults.value.length} / ${children.value.length} / ${babies.value.length}`,
       breakfast: newRoom.breakfast !== false,
@@ -1563,7 +1564,7 @@ function formatDateForInput(d) {
 
 // 24H Format Helper (HH:mm)
 function formatTime24h(t) {
-  if (!t) return '12:00'
+  if (!t) return ''
   const parts = String(t).split(':')
   if (parts.length >= 2) {
     const hh = parts[0].padStart(2, '0')

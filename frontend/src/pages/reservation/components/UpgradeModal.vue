@@ -428,8 +428,10 @@ async function confirmUpgrade() {
     let failMessages = []
 
     try {
-      await Promise.all(targetList.map(async (r) => {
-        if (!r.bookingRoomId) return
+      // Dòng 399: nâng hạng lần lượt từng phòng để mỗi phòng được kiểm tra AV
+      // sau khi phòng trước đã chiếm chỗ.
+      for (const r of targetList) {
+        if (!r.bookingRoomId) continue
         try {
           const data = { room_class_id: classId }
           if (upgradeChangePrice.value) {
@@ -465,7 +467,7 @@ async function confirmUpgrade() {
           failCount++
           failMessages.push(err.response?.data?.message || `Phòng ${r.roomNumber || r.id} thất bại.`)
         }
-      }))
+      }
 
       if (successCount > 0) {
         emit('upgraded', { successCount, failCount, failMessages })

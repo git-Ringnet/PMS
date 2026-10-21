@@ -44,6 +44,10 @@ return [
         'user_branch_positions',
         'branch_role_permissions',
         'user_warehouse_permissions',
+        'security_settings',
+        'security_allowed_ips',
+        'security_time_windows',
+        'security_exempt_users',
     ],
 
     'system_migrations' => [
@@ -58,6 +62,7 @@ return [
         '2026_08_21_120001_restore_system_user_foreign_keys.php',
         '2026_09_05_100000_expand_organization_rbac.php',
         '2026_09_05_110000_patch_organization_rbac_refinements.php',
+        '2026_10_21_200000_create_security_settings_tables.php',
     ],
 
     'system_seeders' => [

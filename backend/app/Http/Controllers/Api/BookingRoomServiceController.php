@@ -255,23 +255,30 @@ class BookingRoomServiceController extends Controller
             if ($isEb) {
                 // Đối với Extra Bed: Cập nhật quantity = 0, total_amount = 0 vào booking_room_services (giữ record với sl = 0)
                 $ebDate = Carbon::parse($request->service_date)->toDateString();
+                $ebRow = BookingRoomService::withTrashed()
+                    ->where('booking_room_id', $roomId)
+                    ->where('service_code', BookingRoomService::CODE_EXTRA_BED)
+                    ->whereDate('service_date', $ebDate)
+                    ->first();
+                // Dòng 368: xóa/đưa EB một ngày về 0 chỉ đổi số lượng; không đổi
+                // cờ phòng/master của ngày đó. Ngày chưa có dòng thì theo các ngày khác.
+                $ebIsRoom = $ebRow
+                    ? (int) $ebRow->is_room
+                    : ($request->has('is_room')
+                        ? (int) $request->boolean('is_room')
+                        : BookingRoomService::defaultExtraBedIsRoom($roomId));
                 $ebValues = [
                     'service_name' => BookingRoomService::catalogName(BookingRoomService::CODE_EXTRA_BED, 'Extra Bed'),
                     'quantity'     => 0,
                     'rate'         => $request->rate ?? 0,
                     'total_amount' => 0,
                     'department'   => 'FO',
-                    'is_room'      => $request->has('is_room') ? (int) $request->boolean('is_room') : 1,
+                    'is_room'      => $ebIsRoom,
                     'folio'        => $request->folio ?? 1,
                     'is_posted'    => 0,
                     'deleted_at'   => null,
                     'created_by'   => Auth::user()?->username ?? 'system',
                 ];
-                $ebRow = BookingRoomService::withTrashed()
-                    ->where('booking_room_id', $roomId)
-                    ->where('service_code', BookingRoomService::CODE_EXTRA_BED)
-                    ->whereDate('service_date', $ebDate)
-                    ->first();
                 if ($ebRow && (int) $ebRow->is_posted === 1) {
                     return response()->json([
                         'success' => false,
@@ -362,80 +369,37 @@ class BookingRoomServiceController extends Controller
                     ], 422);
                 }
 
+                // Dòng 351: ngày đã chạy bill tiền phòng ở màn hình hóa đơn thì chỉnh
+                // giá ở màn hình đăng ký chỉ lưu vào booking_room_services (dòng kế
+                // hoạch chưa post). Không sửa bill/chi tiết bill/room_night_bills và
+                // không đụng dòng đã post hay đã xóa của bill đó. Muốn chạy lại giá
+                // mới thì người dùng xóa bill rồi post lại tiền phòng.
                 $service = DB::transaction(function () use ($room, $request, $existingBill, $svcDateStr, $rate, $quantity, $totalAmount) {
-                    $user = Auth::user()?->username ?? 'system';
-
-                    // 1. Cập nhật ServiceBill (SP3000)
-                    $existingBill->update([
-                        'Quantity' => $quantity,
-                        'Amount'   => $totalAmount,
-                    ]);
-
-                    // 2. Cập nhật ServiceBillDetail (SP3001)
-                    $details = ServiceBillDetail::where('BillServiceId', $existingBill->Ma)->get();
-                    $roomService = HotelService::where('code', 'RM')->first();
-                    $roomTaxProfile = HotelService::taxProfile($roomService);
-
-                    $bfDetail = $details->firstWhere('ServiceId', 'BF');
-                    if ($bfDetail) {
-                        $rmBreakdown = TaxBreakdownService::breakdown($totalAmount, $roomTaxProfile['service_charge'], $roomTaxProfile['special_tax'], $roomTaxProfile['tax']);
-                        ServiceBillDetail::where('BillServiceId', $existingBill->Ma)
-                            ->where('Ma', 1)
-                            ->update([
-                                'OriginalRate'             => $rmBreakdown['original_rate'],
-                                'ServiceChargeAmount'      => $rmBreakdown['service_charge_amount'],
-                                'SpecialTaxAmount'         => $rmBreakdown['special_tax_amount'],
-                                'TaxAmount'                => $rmBreakdown['tax_amount'],
-                                'Amount'                   => $totalAmount,
-                                'DetailBillOriginalAmount' => $rmBreakdown['net_total'],
-                                'OriginalAmount'           => $rmBreakdown['net_total'],
-                            ]);
-                    } else {
-                        $singleBreakdown = TaxBreakdownService::breakdown($totalAmount, $roomTaxProfile['service_charge'], $roomTaxProfile['special_tax'], $roomTaxProfile['tax']);
-                        ServiceBillDetail::where('BillServiceId', $existingBill->Ma)
-                            ->where(function ($q) {
-                                $q->where('ServiceId', 'RM')->orWhere('Ma', 1);
-                            })
-                            ->update([
-                                'OriginalRate'             => $singleBreakdown['original_rate'],
-                                'ServiceChargeAmount'      => $singleBreakdown['service_charge_amount'],
-                                'SpecialTaxAmount'         => $singleBreakdown['special_tax_amount'],
-                                'TaxAmount'                => $singleBreakdown['tax_amount'],
-                                'Amount'                   => $totalAmount,
-                                'DetailBillOriginalAmount' => $singleBreakdown['net_total'],
-                                'OriginalAmount'           => $singleBreakdown['net_total'],
-                            ]);
-                    }
-
-                    // 3. Cập nhật RoomNightBill (SP3004) nếu có
-                    RoomNightBill::where('bill_id', $existingBill->Ma)->update([
-                        'rate' => $rate,
-                    ]);
-
-                    // 4. Cập nhật BookingRoomService
-                    $service = BookingRoomService::withTrashed()
+                    $plan = BookingRoomService::withTrashed()
                         ->where('booking_room_id', $room->id)
                         ->where('service_code', 'RM')
                         ->whereDate('service_date', $svcDateStr)
+                        ->where('is_posted', 0)
+                        ->whereNull('service_bill_id')
+                        ->orderBy('id')
                         ->first();
                     $values = [
-                        'service_name' => $request->service_name ?: ($existingBill->DescriptionServive ?: BookingRoomService::catalogName(BookingRoomService::CODE_ROOM, 'Dịch vụ phòng nghỉ')),
+                        'service_name' => $request->service_name ?: BookingRoomService::catalogName(BookingRoomService::CODE_ROOM, 'Dịch vụ phòng nghỉ'),
                         'guest_id' => $request->guest_id,
                         'quantity' => $quantity,
                         'rate' => $rate,
                         'total_amount' => $totalAmount,
                         'department' => 'FO',
-                        'service_bill_id' => $existingBill->Ma,
-                        'service_bill_detail_no' => 1,
                         'is_room' => 1,
                         'folio' => $existingBill->Folio ?? 1,
-                        'is_posted' => 1,
+                        'is_posted' => 0,
                         'deleted_at' => null,
-                        'created_by' => $user,
+                        'created_by' => Auth::user()?->username ?? 'system',
                     ];
-                    if ($service) {
-                        $service->fill($values)->save();
-                        return $service;
+                    if ($plan) {
+                        $plan->fill($values)->save();
+
+                        return $plan;
                     }
 
                     return BookingRoomService::create([
@@ -459,12 +423,23 @@ class BookingRoomServiceController extends Controller
                 } catch (\Throwable $e) {}
 
                 return response()->json([
-                    'success'      => true,
-                    'data'         => $service,
-                    'service_bill' => $existingBill->fresh(),
-                    'message'      => 'Đã thêm/cập nhật dịch vụ thành công.',
+                    'success' => true,
+                    'data'    => $service,
+                    'message' => 'Đã cập nhật đơn giá. Bill tiền phòng đã chạy không đổi; muốn áp dụng giá mới hãy xóa bill và post lại tiền phòng.',
                 ], 200);
             }
+        }
+
+        // Dòng 368: không gửi is_room thì EB giữ cờ của dòng đã có, ngày mới theo các ngày khác.
+        $isRoomValue = $request->has('is_room') ? (int) $request->boolean('is_room') : 1;
+        if (!$request->has('is_room')
+            && ($request->service_code === BookingRoomService::CODE_EXTRA_BED || $request->service_code === 'EB')) {
+            $sameDayEb = BookingRoomService::withTrashed()
+                ->where('booking_room_id', $roomId)
+                ->where('service_code', $request->service_code)
+                ->whereDate('service_date', Carbon::parse($request->service_date)->toDateString())
+                ->first();
+            $isRoomValue = $sameDayEb ? (int) $sameDayEb->is_room : BookingRoomService::defaultExtraBedIsRoom($roomId);
         }
 
         // Nếu trùng ngày + service_code → update giá, không cộng dồn
@@ -480,7 +455,7 @@ class BookingRoomServiceController extends Controller
                 'quantity'     => $request->quantity ?? 1,
                 'rate'         => $request->rate ?? 0,
                 'department'  => 'FO',
-                'is_room'      => $request->has('is_room') ? (int) $request->boolean('is_room') : 1,
+                'is_room'      => $isRoomValue,
                 'folio'        => $request->folio ?? 1,
                 'is_posted'    => 0,
                 'deleted_at'   => null,
@@ -2087,7 +2062,8 @@ class BookingRoomServiceController extends Controller
             'date_to'         => 'required|date|after_or_equal:date_from',
             'service_code'    => 'required|string|max:30',
             'quantity'        => 'required|numeric|min:0.01',
-            'rate'            => 'required|numeric|min:0',
+            // Cho phép đơn giá âm để post bill cấn trừ (một số KS không dùng xóa bill).
+            'rate'            => 'required|numeric',
             'folio'           => 'nullable|integer|between:1,3',
             'description'     => 'nullable|string|max:400',
             'currency'        => 'nullable|string|max:3',
@@ -2372,7 +2348,8 @@ class BookingRoomServiceController extends Controller
             'date_from'       => 'required|date',
             'date_to'         => 'required|date|after_or_equal:date_from',
             'mode'            => 'required|in:auto,update,surcharge',
-            'rate'            => 'nullable|numeric|min:0',
+            // Tự nhập tiền phòng được phép 0đ hoặc âm (cấn trừ tiền phòng).
+            'rate'            => 'nullable|required_if:mode,update,surcharge|numeric',
             'charge_percent'  => 'nullable|numeric|min:0|max:100',
             'folio'           => 'nullable|integer|between:1,3',
             'description'     => 'nullable|string|max:400',
@@ -2574,8 +2551,13 @@ class BookingRoomServiceController extends Controller
                             ->first();
 
                         $rate = 0;
-                        if ($rmService && (float)$rmService->rate > 0) {
-                            $rate = (float)$rmService->rate;
+                        // Dòng 371: giá RM đã setup cho đêm này được ưu tiên kể cả 0đ;
+                        // 0đ chỉ là "chưa có giá" khi giá phòng chung cũng 0.
+                        $hasExplicitNightRate = false;
+                        if ($rmService && $rmService->rate !== null
+                            && ((float) $rmService->rate > 0 || (float) $targetRoom->rate > 0)) {
+                            $rate = (float) $rmService->rate;
+                            $hasExplicitNightRate = true;
                         } elseif ((float)$targetRoom->rate > 0) {
                             $rate = (float)$targetRoom->rate;
                         } elseif ((float)$targetRoom->base_price > 0) {
@@ -2583,7 +2565,7 @@ class BookingRoomServiceController extends Controller
                         }
 
                         // Tra cứu theo mã giá phòng (rate_code) và loại phòng (room_class_id) nếu giá bằng 0
-                        if ($rate <= 0 && !empty($targetRoom->rate_code)) {
+                        if (!$hasExplicitNightRate && $rate <= 0 && !empty($targetRoom->rate_code)) {
                             $plan = \App\Models\RoomRatePlan::where('RateCode', $targetRoom->rate_code)->first();
                             if ($plan && is_array($plan->Period)) {
                                 foreach ($plan->Period as $row) {
@@ -2596,7 +2578,7 @@ class BookingRoomServiceController extends Controller
                         }
 
                         // Tra cứu theo giá chuẩn (StandardRate) của loại phòng nếu vẫn bằng 0
-                        if ($rate <= 0 && !empty($targetRoom->room_class_id)) {
+                        if (!$hasExplicitNightRate && $rate <= 0 && !empty($targetRoom->room_class_id)) {
                             $stdRate = \App\Models\StandardRate::where('room_class_id', $targetRoom->room_class_id)->value('room_price');
                             if ($stdRate && (float)$stdRate > 0) {
                                 $rate = (float)$stdRate;

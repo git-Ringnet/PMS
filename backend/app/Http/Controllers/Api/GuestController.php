@@ -533,20 +533,25 @@ class GuestController extends Controller
                     return response()->json(['success' => false, 'message' => 'Phòng đã được booking khác check-in, không thể khôi phục checkout.'], 422);
                 }
 
-                // Booking khác đã gán phòng này và lưu trú qua ngày hệ thống cũng xem là đang chiếm dụng.
+                // Khôi phục trả lại ngày đi dự kiến (checkout sớm), nên phải xét chiếm dụng
+                // trong toàn bộ khoảng lưu trú được mở lại, tối thiểu là ngày hệ thống.
+                $restoredDeparture = Carbon::parse($room->planned_departure_date ?: $room->departure_date)->startOfDay();
+                $occupancyEnd = $restoredDeparture->gt($systemDate) ? $restoredDeparture : $systemDate->copy()->addDay();
+
+                // Booking khác đã gán phòng này trong khoảng lưu trú được mở lại cũng xem là đang chiếm dụng.
                 $hasOccupyingReservation = BookingRoom::where('room_number', $room->room_number)
                     ->where('id', '!=', $room->id)
                     ->where('status', BookingRoom::STATUS_BOOKED)
-                    ->whereDate('arrival_date', '<=', $systemDate->toDateString())
+                    ->whereDate('arrival_date', '<', $occupancyEnd->toDateString())
                     ->whereDate('departure_date', '>=', $systemDate->toDateString())
                     ->exists();
                 if ($hasOccupyingReservation) {
-                    return response()->json(['success' => false, 'message' => 'Phòng đã được booking khác đặt trong ngày hệ thống, không thể khôi phục checkout.'], 422);
+                    return response()->json(['success' => false, 'message' => 'Phòng đã được booking khác đặt trong thời gian lưu trú còn lại, không thể khôi phục checkout.'], 422);
                 }
 
                 $hasActiveLock = RoomLock::where('room_number', $room->room_number)
                     ->where('is_active', RoomLock::STATUS_ACTIVE)
-                    ->where('start_date', '<=', $systemDate->copy()->endOfDay())
+                    ->where('start_date', '<', $occupancyEnd->copy()->startOfDay())
                     ->where('end_date', '>=', $systemDate->copy()->startOfDay())
                     ->exists();
                 if ($hasActiveLock) {
@@ -1190,6 +1195,11 @@ class GuestController extends Controller
             ->get()
             ->keyBy(fn($item) => $item->service_date ? $item->service_date->toDateString() : '');
 
+        // Dòng 368: đêm EB mới theo cờ phòng/master của các đêm EB đã có, tính
+        // trước khi xóa các đêm ngoài giai đoạn ở mới.
+        $defaultIsRoom = ($existingServices->isNotEmpty()
+            && $existingServices->every(fn ($service) => (int) $service->is_room === 0)) ? 0 : 1;
+
         $current = Carbon::parse($arrivalDate);
         $end     = Carbon::parse($departureDate);
         $stayDates = [];
@@ -1221,7 +1231,7 @@ class GuestController extends Controller
                     'quantity'     => $room->extra_bed_qty,
                     'rate'         => $room->extra_bed_rate,
                     'department'   => 'FO',
-                    'is_room'      => $existing?->is_room ?? 1,
+                    'is_room'      => $existing?->is_room ?? $defaultIsRoom,
                     'is_posted'    => 0,
                     'deleted_at'   => null,
                     'created_by'   => Auth::user()?->username ?? 'system',

@@ -8,6 +8,8 @@ import { t, currentLang } from '@/utils/i18n'
 import { fetchOutlets } from '@/services/outlet-service'
 import ActivityLogTab from '@/pages/system/components/ActivityLogTab.vue'
 import SystemSearchModal from '@/pages/reservation/components/SystemSearchModal.vue'
+import HeaderAlertList from '@/components/HeaderAlertList.vue'
+import HeaderSystemUpdates from '@/components/HeaderSystemUpdates.vue'
 import { useUiStore } from '@/stores/ui-store'
 
 const route = useRoute()
@@ -1074,6 +1076,10 @@ function handleHeaderBookingSelected(booking) {
             <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
         </button>
+
+        <!-- Alert sinh nhật / special request (icon lịch) và nội dung cập nhật hệ thống (icon chuông) -->
+        <HeaderAlertList :is-dark="isHeaderBgDark" />
+        <HeaderSystemUpdates :is-dark="isHeaderBgDark" />
 
         <!-- Color Palette Button (Topbar Custom Background Color Popover - Admin Only) -->
         <div v-if="authStore.isAdmin" class="relative shrink-0 flex items-center" ref="colorPickerRef">

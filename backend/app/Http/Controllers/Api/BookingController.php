@@ -174,6 +174,12 @@ class BookingController extends Controller
             $relations[] = 'masterServiceBills.usernameOperator:id,username,name';
             $relations[] = 'masterServiceBills.user:id,name,username';
             $relations[] = 'masterServiceBills.hotelService:id,code,name';
+            // Tổng giải trừ của từng dòng thanh toán để Hóa đơn hiển thị cột Giải trừ CN (công nợ AC).
+            $relations['payments'] = fn ($paymentQuery) => $paymentQuery->withSum([
+                'debtSettlements as settled_amount' => fn ($settlementQuery) => $settlementQuery
+                    ->where('edit_flag', 0)
+                    ->whereNull('deleted_at'),
+            ], 'amount');
             $relations[] = 'payments.paymentMethod';
             $relations[] = 'payments.user';
             $relations[] = 'payments.bankAccount';
@@ -1964,6 +1970,11 @@ class BookingController extends Controller
             // 2. Cascade: Hủy và ghi log cho từng phòng trong booking (SP8052)
             $allRooms = $booking->bookingRooms;
             foreach ($allRooms as $bRoom) {
+                // Phòng đã hủy từ lần trước đã có log riêng, không ghi lại lần nữa
+                if ((int) $bRoom->status === BookingRoom::STATUS_CANCELLED) {
+                    continue;
+                }
+
                 $guestIds = $bRoom->guests()->pluck('guest_id');
                 $bRoom->guests()->update(['status' => 3]);
                 app(\App\Services\GuestStatusSyncService::class)->syncForGuestIds($guestIds);
@@ -3210,6 +3221,7 @@ class BookingController extends Controller
         $payloadAssignments = [];
         $newDemandByPeriod = [];
         $periods = [];
+        $occupiedRoomNumbers = [];
 
         $parseDate = function ($date) {
             if (!$date) return null;
@@ -3365,7 +3377,8 @@ class BookingController extends Controller
                         throw new \Exception('Số phòng ' . $roomNumber . ' đang bị khóa OOO/OOS trong giai đoạn này.');
                     }
 
-                    $isOccupied = $avService->isRoomNumberOccupied(
+                    // Dòng 400: gom mọi số phòng đã bị BK khác gán để báo một lần.
+                    $conflict = $avService->findRoomNumberConflict(
                         $roomNumber,
                         $roomArrival,
                         $roomDeparture,
@@ -3374,11 +3387,16 @@ class BookingController extends Controller
                         $detail['arrivalTime'] ?? null,
                         $detail['hoursOut'] ?? null
                     );
-                    if ($isOccupied) {
-                        throw new \Exception('Số phòng ' . $roomNumber . ' đã được gán cho lượt đăng ký khác trong giai đoạn này.');
+                    if ($conflict) {
+                        $code = $conflict->booking?->booking_code ?: ('#' . $conflict->booking_id);
+                        $occupiedRoomNumbers[$roomNumber] = $roomNumber . ' (' . $code . ')';
                     }
                 }
             }
+        }
+
+        if ($occupiedRoomNumbers) {
+            throw new \Exception('Số phòng ' . implode(', ', $occupiedRoomNumbers) . ' đã được gán cho lượt đăng ký khác trong giai đoạn này.');
         }
 
         // Availability is checked only for new demand. Existing reservation
@@ -3513,6 +3531,10 @@ class BookingController extends Controller
                 return Carbon::parse($item->service_date)->toDateString();
             });
 
+        // Dòng 368: đêm EB mới (gia hạn/điều chỉnh) theo cờ phòng/master của các đêm EB đã có.
+        $defaultIsRoom = !($existingServices->isNotEmpty()
+            && $existingServices->every(fn ($service) => (int) $service->is_room === 0));
+
         $current = Carbon::parse($arrivalDate);
         $end     = Carbon::parse($departureDate);
         $stayDates = [];
@@ -3565,7 +3587,7 @@ class BookingController extends Controller
             if ($debInfo) {
                 $qty  = (int)($debInfo['quantity'] ?? 0);
                 $rate = (float)($debInfo['rate'] ?? 0);
-                $isRoom = !empty($debInfo['isRoom']) || (!isset($debInfo['isRoom']) && ($debInfo['is_room'] ?? 1) != 0);
+                $isRoom = !empty($debInfo['isRoom']) || (!isset($debInfo['isRoom']) && ($debInfo['is_room'] ?? ($defaultIsRoom ? 1 : 0)) != 0);
             } elseif ($hasExplicitDailyEB && $existing) {
                 // Dòng 366: đêm đã có EB nhưng màn hình chưa gửi chi tiết
                 // (vd. vừa gia hạn) thì giữ nguyên số lượng/giá đã cấu hình.
@@ -3574,12 +3596,12 @@ class BookingController extends Controller
                 // Đêm gia hạn mới: lấy số lượng/giá EB mặc định của phòng.
                 $qty  = (int)$room->extra_bed_qty;
                 $rate = (float)$room->extra_bed_rate;
-                $isRoom = true;
+                $isRoom = $defaultIsRoom;
             } else {
                 // Chưa từng có dữ liệu chi tiết -> dùng phẳng từ phòng
                 $qty  = (int)$room->extra_bed_qty;
                 $rate = (float)$room->extra_bed_rate;
-                $isRoom = true;
+                $isRoom = $defaultIsRoom;
             }
 
             if ($qty > 0 && $rate > 0 && $latestEBRate === null) {
@@ -3599,7 +3621,8 @@ class BookingController extends Controller
                     'quantity'     => 0,
                     'rate'         => $rate,
                     'department'   => 'FO',
-                    'is_room'      => $isRoom ? 1 : 0,
+                    // Dòng 368: đưa EB một đêm về 0 không đổi cờ phòng/master của đêm đó.
+                    'is_room'      => (int) $existing->is_room,
                     'is_posted'    => 0,
                     'deleted_at'   => null,
                     'created_by'   => Auth::user()?->username ?? 'system',

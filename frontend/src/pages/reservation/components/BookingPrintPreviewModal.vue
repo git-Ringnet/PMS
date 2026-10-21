@@ -244,6 +244,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
           <div v-if="currentType === 'confirmation_vn'" class="template-confirmation-vn">
             <!-- Header Logo & Tiêu đề -->
             <table class="w-full border-none border-collapse mb-3">
+              <tbody>
               <tr>
                 <td class="w-[30%] align-top p-0 border-none">
                   <img
@@ -260,6 +261,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                   </div>
                 </td>
               </tr>
+              </tbody>
             </table>
 
             <!-- Thông tin liên hệ & Mã đặt phòng (Chuẩn theo 2 cột Excel) -->
@@ -651,6 +653,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
           <div v-else-if="currentType === 'registration_card'" class="template-registration-card">
             <!-- Header section với Logo & hotline -->
             <table class="w-full border-none border-collapse mb-2">
+              <tbody>
               <tr>
                 <td class="w-1/2 align-middle p-0 border-none">
                   <img
@@ -668,6 +671,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                   </div>
                 </td>
               </tr>
+              </tbody>
             </table>
 
             <div class="text-center my-3">
@@ -847,6 +851,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
           <div v-else-if="currentType === 'proforma_invoice'" class="template-proforma-invoice">
             <!-- Header khách sạn & Thông tin in ấn -->
             <table class="w-full border-none border-collapse mb-1">
+              <tbody>
               <tr>
                 <td class="w-1/2 align-top p-0 border-none">
                   <div class="text-base font-black text-slate-900 uppercase">{{ hotel.name }}</div>
@@ -858,6 +863,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                   <div>{{ booking.confirmed_by }} | {{ printTimeStr }}</div>
                 </td>
               </tr>
+              </tbody>
             </table>
 
             <!-- Tiêu đề BẢNG KÊ DỊCH VỤ / INVOICE -->

@@ -7,6 +7,7 @@ use App\Http\Resources\HotelSettingResource;
 use App\Models\HotelSetting;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
 
 class HotelSettingController extends Controller
 {
@@ -42,6 +43,7 @@ class HotelSettingController extends Controller
             'RoleUserUpdateCheckoutBooking',
             'RoleUserOpenDoNotMove',
             'Immigration_ExportExelChangeToRegistered',
+            'AllowShowAlertListView',
         ])->get()->pluck('value', 'name');
 
         $data['ColorDefaultBookingRoomMap'] = $configs->get('ColorDefaultBookingRoomMap', '#97D5FF');
@@ -63,6 +65,7 @@ class HotelSettingController extends Controller
         $data['RoleUserUpdateCheckoutBooking'] = $configs->get('RoleUserUpdateCheckoutBooking', '');
         $data['RoleUserOpenDoNotMove'] = $configs->get('RoleUserOpenDoNotMove', '');
         $data['Immigration_ExportExelChangeToRegistered'] = $configs->get('Immigration_ExportExelChangeToRegistered', '0');
+        $data['AllowShowAlertListView'] = $configs->get('AllowShowAlertListView', '1');
         
         $bfConfig = \App\Models\HotelConfig::where('name', 'DefaultBreakfast')->first();
         $data['DefaultBreakfast'] = $bfConfig ? intval($bfConfig->value) : 1;
@@ -169,6 +172,7 @@ class HotelSettingController extends Controller
         ], [
             'logo.required' => 'Vui lòng chọn file logo để tải lên.',
             'logo.file'     => 'File logo tải lên không hợp lệ.',
+            'logo.uploaded' => 'Máy chủ không nhận được file logo. File có thể vượt giới hạn upload của máy chủ (PHP upload_max_filesize / post_max_size), vui lòng chọn ảnh nhỏ hơn hoặc liên hệ quản trị viên.',
             'logo.mimes'    => 'Định dạng logo phải là: jpeg, png, jpg, gif, svg, webp.',
             'logo.max'      => 'Kích thước file logo không được vượt quá 10MB.',
         ]);
@@ -180,21 +184,33 @@ class HotelSettingController extends Controller
 
         if ($request->hasFile('logo')) {
             $uploadDir = public_path('uploads/hotel');
-            if (!File::isDirectory($uploadDir)) {
-                File::makeDirectory($uploadDir, 0755, true, true);
+            try {
+                if (!File::isDirectory($uploadDir)) {
+                    File::makeDirectory($uploadDir, 0755, true, true);
+                }
+                if (!is_writable($uploadDir)) {
+                    throw new \RuntimeException('Thư mục không có quyền ghi: ' . $uploadDir);
+                }
+
+                $file = $request->file('logo');
+                // Tên file an toàn (không dùng tên gốc có dấu/khoảng trắng) - Dòng 388.
+                $extension = $file->getClientOriginalExtension() ?: 'png';
+                $filename = 'logo_' . time() . '_' . uniqid() . '.' . strtolower($extension);
+                $file->move($uploadDir, $filename);
+            } catch (\Throwable $e) {
+                // Dòng 388: báo rõ lý do thay vì lỗi 500 chung chung.
+                Log::error('Hotel logo upload failed: ' . $e->getMessage());
+
+                return response()->json([
+                    'message' => 'Không thể lưu logo lên máy chủ. Vui lòng kiểm tra quyền ghi của thư mục public/uploads/hotel.',
+                ], 500);
             }
 
-            // Remove old file
+            // Chỉ xóa file cũ sau khi file mới đã lưu thành công.
             if ($setting->logo_url && file_exists(public_path($setting->logo_url))) {
                 @unlink(public_path($setting->logo_url));
             }
 
-            $file = $request->file('logo');
-            // Tên file an toàn (không dùng tên gốc có dấu/khoảng trắng) - Dòng 388.
-            $extension = $file->getClientOriginalExtension() ?: 'png';
-            $filename = 'logo_' . time() . '_' . uniqid() . '.' . strtolower($extension);
-            $file->move($uploadDir, $filename);
-            
             $setting->logo_url = 'uploads/hotel/' . $filename;
             $setting->save();
         }

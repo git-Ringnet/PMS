@@ -183,4 +183,51 @@ class CheckoutRestoreTest extends TestCase
             ->assertStatus(422)
             ->assertJsonPath('success', false);
     }
+
+    public function test_restore_early_checkout_is_blocked_when_another_booking_reserves_the_remaining_stay(): void
+    {
+        $this->bookingRoom->forceFill(['departure_date' => '2026-08-04', 'planned_departure_date' => '2026-08-08'])->saveQuietly();
+        $other = Booking::create([
+            'booking_name' => 'Future guest', 'booking_date' => '2026-08-04',
+            'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-07',
+            'status' => Booking::STATUS_RESERVATION, 'created_by' => 'checkout_restore_user',
+        ]);
+        BookingRoom::create([
+            'booking_id' => $other->id, 'room_number' => '101', 'room_class_id' => $this->bookingRoom->room_class_id,
+            'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-07', 'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $this->postJson("/api/booking-rooms/{$this->bookingRoom->id}/restore-checkout")
+            ->assertStatus(422)
+            ->assertJsonPath('success', false);
+        $this->assertDatabaseHas('booking_rooms', ['id' => $this->bookingRoom->id, 'status' => BookingRoom::STATUS_CHECKED_OUT]);
+    }
+
+    public function test_restore_early_checkout_is_blocked_when_the_room_is_locked_during_the_remaining_stay(): void
+    {
+        $this->bookingRoom->forceFill(['departure_date' => '2026-08-04', 'planned_departure_date' => '2026-08-08'])->saveQuietly();
+        RoomLock::create([
+            'room_number' => '101', 'start_date' => '2026-08-06 00:00:00', 'end_date' => '2026-08-06 23:59:59',
+            'lock_type' => 'OOO', 'is_active' => RoomLock::STATUS_ACTIVE,
+        ]);
+
+        $this->postJson("/api/booking-rooms/{$this->bookingRoom->id}/restore-checkout")
+            ->assertStatus(422)
+            ->assertJsonPath('success', false);
+    }
+
+    public function test_restore_checkout_ignores_a_reservation_arriving_on_the_planned_departure_date(): void
+    {
+        $other = Booking::create([
+            'booking_name' => 'Next stay', 'booking_date' => '2026-08-04',
+            'arrival_date' => '2026-08-05', 'departure_date' => '2026-08-06',
+            'status' => Booking::STATUS_RESERVATION, 'created_by' => 'checkout_restore_user',
+        ]);
+        BookingRoom::create([
+            'booking_id' => $other->id, 'room_number' => '101', 'room_class_id' => $this->bookingRoom->room_class_id,
+            'arrival_date' => '2026-08-05', 'departure_date' => '2026-08-06', 'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $this->postJson("/api/booking-rooms/{$this->bookingRoom->id}/restore-checkout")->assertSuccessful();
+    }
 }

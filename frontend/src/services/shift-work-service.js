@@ -42,3 +42,9 @@ export const fetchNoshow = (params) => http.get('/shift-work/noshow', { params }
  * @param {Object} params - { from_date, to_date, search }
  */
 export const fetchBirthdays = (params) => http.get('/shift-work/birthdays', { params })
+
+/**
+ * Xuất Excel danh sách phòng đến / phòng đi
+ * @param {Object} params - { type: 'arrivals' | 'departures', date, status, search }
+ */
+export const exportArrivalsDepartures = (params) => http.get('/shift-work/export', { params, responseType: 'blob' })

@@ -168,9 +168,11 @@ function isDateWithinBounds(date, minDate, maxDate) {
 // ─────────────────────────────────────────────
 // Format Helpers
 // ─────────────────────────────────────────────
+// Giữ dấu "-" ở đầu để nhập được số âm (bill cấn trừ).
 function formatInputCurrency(val) {
   if (val === null || val === undefined || val === '') return ''
-  const str = String(val)
+  const str = String(val).trim()
+  const sign = str.startsWith('-') ? '-' : ''
   const clean = str.replace(/,/g, '')
   const parts = clean.split('.')
   let intPart = parts[0].replace(/[^\d]/g, '')
@@ -179,9 +181,9 @@ function formatInputCurrency(val) {
   }
   if (parts.length > 1) {
     const decPart = parts.slice(1).join('').replace(/[^\d]/g, '')
-    return `${intPart}.${decPart}`
+    return `${sign}${intPart}.${decPart}`
   }
-  return intPart
+  return `${sign}${intPart}`
 }
 
 function parseInputCurrency(val) {
@@ -230,7 +232,7 @@ function onUnitPriceInput(e) {
 
 function setUnitPrice(val) {
   unitPrice.value = Number(val) || 0
-  unitPriceDisplay.value = unitPrice.value > 0 ? formatInputCurrency(unitPrice.value) : (val === 0 ? '0' : '')
+  unitPriceDisplay.value = unitPrice.value !== 0 ? formatInputCurrency(unitPrice.value) : (val === 0 ? '0' : '')
 }
 
 // Danh sách dịch vụ FO
@@ -337,7 +339,7 @@ function onCustomRoomRateInput(e) {
 
 function setCustomRoomRate(val) {
   customRoomRate.value = Number(val) || 0
-  customRoomRateDisplay.value = customRoomRate.value > 0 ? formatInputCurrency(customRoomRate.value) : (val === 0 ? '0' : '')
+  customRoomRateDisplay.value = customRoomRate.value !== 0 ? formatInputCurrency(customRoomRate.value) : (val === 0 ? '0' : '')
 }
 
 // Toggle 1: Tự nhập tiền phòng
@@ -505,7 +507,8 @@ async function handleSubmit() {
         isSubmitting.value = false
         return
       }
-      if ((roomUpdateMode.value || roomSurcharge.value) && (!customRoomRate.value || customRoomRate.value < 0)) {
+      // 0đ và số âm là hợp lệ; chỉ chặn khi ô giá phòng bị bỏ trống.
+      if ((roomUpdateMode.value || roomSurcharge.value) && customRoomRateDisplay.value.trim() === '') {
         errorMsg.value = 'Vui lòng nhập giá phòng.'
         isSubmitting.value = false
         return

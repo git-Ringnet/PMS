@@ -619,6 +619,58 @@ class BookingRoomServiceFolioTest extends TestCase
         $this->assertSame([$surchargeBill->Ma], ServiceBill::where('RentalRoomId1', $room->id)->onlySupplementalRoomCharge()->pluck('Ma')->all());
     }
 
+    public function test_front_desk_service_bill_accepts_a_negative_offset_rate(): void
+    {
+        $user = $this->createFolioUser();
+        $booking = Booking::create([
+            'booking_name' => 'GAL1', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-07',
+            'num_of_days' => 1, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
+        ]);
+        $room = $this->makeRoom($booking, 'GAL1-107');
+        $guest = Guest::create(['full_name' => 'Khach can tru']);
+        BookingRoomGuest::create(['booking_room_id' => $room->id, 'guest_id' => $guest->id, 'is_primary' => true, 'status' => BookingRoomGuest::STATUS_CHECKED_IN]);
+        $department = Department::firstOrCreate(['code' => 'FO'], ['name' => 'Reception/ Lê Tân']);
+        $service = HotelService::create(['code' => 'OT', 'name' => 'Other/Dịch Vụ Khác', 'price' => 0, 'department_id' => $department->id]);
+        $department->hotelServices()->attach($service->id, ['description' => 'Other/Dịch Vụ Khác']);
+
+        $this->actingAs($user)
+            ->postJson('/api/booking-room-services/post-fo-service-bill', [
+                'booking_room_id' => $room->id, 'guest_id' => $guest->id, 'date_from' => '2026-08-06',
+                'date_to' => '2026-08-06', 'service_code' => 'OT', 'quantity' => 1, 'rate' => -50000,
+                'folio' => 1, 'currency' => 'VND',
+            ])
+            ->assertSuccessful();
+
+        $bill = ServiceBill::where('RentalRoomId1', $room->id)->where('ServiceId', 'OT')->sole();
+        $this->assertEquals(-50000, $bill->Amount);
+    }
+
+    public function test_custom_room_charge_accepts_zero_and_negative_rates_but_requires_a_rate(): void
+    {
+        $user = $this->createFolioUser();
+        $booking = Booking::create([
+            'booking_name' => 'GAL1', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-07',
+            'num_of_days' => 1, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
+        ]);
+        $booking->update(['is_master_room_rate' => false]);
+        $room = $this->makeRoom($booking, 'GAL1-108');
+        $guest = Guest::create(['full_name' => 'Khach tien phong']);
+        BookingRoomGuest::create(['booking_room_id' => $room->id, 'guest_id' => $guest->id, 'is_primary' => true, 'status' => BookingRoomGuest::STATUS_CHECKED_IN]);
+        $department = Department::firstOrCreate(['code' => 'FO'], ['name' => 'Reception/ Lê Tân']);
+        HotelService::create(['code' => 'RM', 'name' => 'Dịch vụ phòng nghỉ', 'department_id' => $department->id]);
+        $payload = [
+            'booking_room_id' => $room->id, 'guest_id' => $guest->id, 'date_from' => '2026-08-06',
+            'date_to' => '2026-08-06', 'mode' => 'surcharge', 'folio' => 1, 'currency' => 'VND',
+        ];
+
+        $this->actingAs($user)->postJson('/api/booking-room-services/post-room-charge', $payload + ['rate' => 0])->assertSuccessful();
+        $this->actingAs($user)->postJson('/api/booking-room-services/post-room-charge', $payload + ['rate' => -100000])->assertSuccessful();
+        $this->actingAs($user)->postJson('/api/booking-room-services/post-room-charge', $payload)->assertStatus(422);
+
+        $amounts = ServiceBill::where('RentalRoomId1', $room->id)->where('ServiceId', 'RM')->orderBy('Ma')->pluck('Amount')->map(fn ($amount) => (float) $amount)->all();
+        $this->assertSame([0.0, -100000.0], $amounts);
+    }
+
     public function test_room_charge_update_preserves_existing_room_owner_after_flag_is_enabled(): void
     {
         $user = $this->createFolioUser();
@@ -665,6 +717,10 @@ class BookingRoomServiceFolioTest extends TestCase
         $this->assertSame(1, ServiceBill::where('ServiceId', 'RM')->count());
     }
 
+    /**
+     * Row 351: adjusting the price of a night whose bill already exists never
+     * creates a second bill and leaves the existing bill's amount alone.
+     */
     public function test_supplementary_room_charge_uses_existing_bill_update_path_without_creating_a_duplicate(): void
     {
         $user = $this->createFolioUser();
@@ -694,13 +750,15 @@ class BookingRoomServiceFolioTest extends TestCase
                 'service_date' => $date, 'quantity' => 1, 'rate' => 550000, 'is_room' => 1,
             ])
             ->assertSuccessful()
-            ->assertJsonStructure(['service_bill']);
+            ->assertJsonMissing(['service_bill']);
 
         $roomBills = ServiceBill::where('ServiceId', 'RM')->whereDate('Date', $date)->get(['Ma', 'Amount', 'Status', 'Edit']);
         $this->assertSame(1, $roomBills->count(), 'after RM update: ' . $roomBills->toJson());
-        $this->assertDatabaseHas('service_bills', ['Ma' => $bill->Ma, 'Amount' => 550000]);
+        $this->assertDatabaseHas('service_bills', ['Ma' => $bill->Ma, 'Amount' => 500000]);
         $this->assertSame(1, BookingRoomService::where('booking_room_id', $room->id)
-            ->where('service_code', 'RM')->whereDate('service_date', $date)->count());
+            ->where('service_code', 'RM')->whereDate('service_date', $date)->where('is_posted', 1)->count());
+        $this->assertSame(550000.0, (float) BookingRoomService::where('booking_room_id', $room->id)
+            ->where('service_code', 'RM')->whereDate('service_date', $date)->where('is_posted', 0)->value('rate'));
     }
 
     public function test_front_desk_git_service_is_owned_by_master_while_preserving_source_room(): void
