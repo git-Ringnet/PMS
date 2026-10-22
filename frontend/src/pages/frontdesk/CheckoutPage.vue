@@ -3962,7 +3962,7 @@ onUnmounted(() => {
           <!-- Table Container -->
           <div class="flex-1 overflow-auto relative">
             <table class="w-full border-collapse text-left whitespace-nowrap text-xs">
-              <thead class="bg-[#f0f2ea] sticky top-0 border-b border-gray-300 text-gray-700 font-semibold">
+              <thead class="bg-[#f0f2ea] sticky top-0 border-b border-gray-300 text-[#000000D9] font-semibold">
                 <tr>
                   <th class="px-2 py-1.5 w-8 text-center align-middle border-r border-slate-200 border">
                     <input
@@ -4073,7 +4073,7 @@ onUnmounted(() => {
           <!-- Table Container -->
           <div class="flex-1 overflow-auto relative">
             <table class="checkout-payment-table w-full border-collapse text-left whitespace-nowrap text-xs">
-              <thead class="bg-[#f0f2ea] sticky top-0 border-b border-gray-300 text-gray-700 font-semibold">
+              <thead class="bg-[#f0f2ea] sticky top-0 border-b border-gray-300 text-[#000000D9] font-semibold">
                 <tr>
                   <th class="px-2 py-1.5 w-8 text-center align-middle border-r border-slate-200 border"><input type="checkbox" :checked="areAllPaymentsSelected" :disabled="paymentSelectionIds.length === 0" @change="toggleAllPaymentSelection($event.target.checked)" class="rounded border-gray-300 disabled:cursor-not-allowed disabled:opacity-50" /></th>
                   <th class="px-2.5 py-1.5 text-center align-middle border-r border-slate-200 border">Ngày/Giờ</th>
@@ -4198,7 +4198,7 @@ onUnmounted(() => {
 
             <div class="flex-1 overflow-auto p-5">
               <table class="w-full border-collapse text-xs">
-                <thead class="bg-gray-50 text-gray-600">
+                <thead class="bg-gray-50 text-[#000000D9] font-semibold">
                   <tr>
                     <th class="border border-gray-200 px-3 py-2 text-center w-12 align-middle">STT</th>
                     <th class="border border-gray-200 px-3 py-2 text-center align-middle">Sản Phẩm</th>

@@ -802,7 +802,7 @@ onBeforeUnmount(() => {
         <!-- Bottom Table Section (Danh sách khoản thanh toán được thêm - Khớp chính xác Ảnh 3) -->
         <div class="border border-gray-300 rounded-lg overflow-x-auto min-h-[140px] max-h-[220px] relative bg-white">
           <table class="w-full border-collapse text-left whitespace-nowrap text-xs">
-            <thead class="bg-[#f0f2ea] sticky top-0 border-b border-gray-300 text-gray-700 font-semibold">
+            <thead class="bg-[#f0f2ea] sticky top-0 border-b border-gray-300 text-[#000000D9] font-semibold">
               <tr>
                 <th class="px-2.5 py-1.5 border-r border-gray-300 text-center min-w-[160px] align-middle border">Mô Tả</th>
                 <th class="px-2.5 py-1.5 border-r border-gray-300 text-center min-w-[120px] align-middle border">Phương Thức Thanh Toán</th>

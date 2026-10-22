@@ -141,10 +141,10 @@
                   <!-- NGÀY -->
                   <td class="p-2.5 text-left pl-4 font-normal text-[#000000D9] border-slate-200">
                     <span>{{ night.displayDate }}</span>
-                    <span v-if="night.isLocked && !night.isPast" class="ml-1.5 text-[9px] text-slate-600 bg-slate-100 border border-slate-300 px-1 py-0.2 rounded font-semibold">
+                    <span v-if="night.isLocked && !night.isPast" class="ml-1.5 text-xs text-slate-600 bg-slate-100 border border-slate-300 px-1 py-0.5 rounded font-semibold">
                       Đã chốt
                     </span>
-                    <span v-else-if="night.isPast" class="ml-1.5 text-[9px] text-amber-600 bg-amber-50 border border-amber-200 px-1 py-0.2 rounded font-semibold">
+                    <span v-else-if="night.isPast" class="ml-1.5 text-xs text-amber-600 bg-amber-50 border border-amber-200 px-1 py-0.5 rounded font-semibold">
                       Quá khứ
                     </span>
                   </td>
