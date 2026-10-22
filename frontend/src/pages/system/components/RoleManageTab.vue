@@ -30,6 +30,12 @@ const screens = computed(() => Object.values(groups.value).flat().reduce((result
 }, {}))
 const screenRows = computed(() => Object.values(screens.value))
 const selectedCount = computed(() => Object.values(groups.value).flat().filter(item => item.granted).length)
+// Dòng 328: phân hệ REPORT gồm quyền xem từng báo cáo trong Danh mục báo cáo
+const MODULE_LABELS = { REPORT: 'REPORT - Xem báo cáo (theo Danh mục báo cáo)' }
+const moduleAllViewGranted = (module) => (groups.value[module] || []).every(item => item.granted)
+function toggleModuleView(module, checked) {
+  (groups.value[module] || []).filter(item => (item.action || 'view') === 'view').forEach(item => { item.granted = checked })
+}
 
 async function loadBase() {
   loading.value = true
@@ -229,8 +235,12 @@ async function saveScreen() {
               -
             </span>
             <span class="font-bold text-slate-800 text-xs uppercase tracking-wide">
-              {{ module }}
+              {{ MODULE_LABELS[module] || module }}
             </span>
+            <label v-if="module === 'REPORT'" class="ml-auto flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 cursor-pointer">
+              <input type="checkbox" class="w-3.5 h-3.5 accent-sky-500" :checked="moduleAllViewGranted(module)" @change="toggleModuleView(module, $event.target.checked)" />
+              Cho xem tất cả báo cáo
+            </label>
           </div>
 
           <!-- Screen Rows with Columns matching image3.png: Màn hình | View | Add | Delete | Edit -->

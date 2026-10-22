@@ -200,6 +200,12 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     Route::post('report-definitions/{reportDefinition}/execute', [\App\Http\Controllers\Api\ReportDefinitionController::class, 'execute']);
     Route::post('report-definitions/{reportDefinition}/render', [\App\Http\Controllers\Api\ReportDefinitionController::class, 'render']);
     Route::post('report-definitions/{reportDefinition}/exports', [\App\Http\Controllers\Api\ReportDefinitionController::class, 'export']);
+    // Dòng 327, 328: cấu hình menu báo cáo theo module và quyền xem từng báo cáo
+    Route::get('report-menu/navigation', [\App\Http\Controllers\Api\ReportMenuController::class, 'navigation']);
+    Route::get('report-menu', [\App\Http\Controllers\Api\ReportMenuController::class, 'index'])->middleware('permission:admin,system.setting,config.hotel.edit');
+    Route::put('report-menu/{location}', [\App\Http\Controllers\Api\ReportMenuController::class, 'update'])->middleware('permission:admin,system.setting,config.hotel.edit');
+    Route::get('report-definitions/{reportDefinition}/role-access', [\App\Http\Controllers\Api\ReportMenuController::class, 'roleAccess'])->middleware('permission:system.user.view');
+    Route::put('report-definitions/{reportDefinition}/role-access', [\App\Http\Controllers\Api\ReportMenuController::class, 'updateRoleAccess'])->middleware('permission:system.user.manage');
     Route::apiResource('report-definitions', \App\Http\Controllers\Api\ReportDefinitionController::class)
         ->parameters(['report-definitions' => 'reportDefinition']);
 
