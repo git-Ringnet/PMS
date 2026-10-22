@@ -226,7 +226,7 @@ const fetchPaymentMethods = async () => {
     const res = await http.get('/payment-methods')
     const list = res.data?.data || res.data || []
     paymentMethods.value = list.filter(m => !inGroupExcluded(m))
-    if (paymentMethods.value.length > 0 && !paymentMethodId.value) {
+    if (paymentMethods.value.length > 0 && (!paymentMethodId.value || !paymentMethods.value.some(m => String(m.id || m.code) === String(paymentMethodId.value)))) {
       paymentMethodId.value = paymentMethods.value[0].id || paymentMethods.value[0].code
     }
     await fetchBankAccounts()
@@ -281,7 +281,7 @@ const fetchWorkShifts = async () => {
 
 function inGroupExcluded(m) {
   const grp = Number(m.payment_group)
-  return grp === 4 || grp === 5 || m.is_free === 1 || m.is_free === true
+  return grp === 4 || grp === 5 || m.is_free === 1 || m.is_free === true || m.is_inactive === 1 || m.is_inactive === true
 }
 
 watch(() => props.show, (visible) => {

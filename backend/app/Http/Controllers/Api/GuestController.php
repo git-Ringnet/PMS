@@ -508,6 +508,10 @@ class GuestController extends Controller
      */
     public function restoreRoomCheckout($roomId)
     {
+        if ($denied = $this->denyReCheckout()) {
+            return $denied;
+        }
+
         return DB::transaction(function () use ($roomId) {
             $room = BookingRoom::with(['booking', 'guests', 'children', 'room'])->lockForUpdate()->findOrFail($roomId);
             $systemDate = app(\App\Services\RoomAvailabilityService::class)->getSystemDate()->startOfDay();
@@ -602,6 +606,10 @@ class GuestController extends Controller
     /** Khôi phục checkout Master: chỉ mở lại trạng thái booking, không khôi phục phòng con. */
     public function restoreBookingCheckout($bookingId)
     {
+        if ($denied = $this->denyReCheckout()) {
+            return $denied;
+        }
+
         return DB::transaction(function () use ($bookingId) {
             $booking = Booking::findOrFail($bookingId);
             if ($booking->is_service_only) {
@@ -616,6 +624,21 @@ class GuestController extends Controller
             $booking->update(['status' => Booking::STATUS_CHECKIN]);
             return response()->json(['success' => true, 'message' => 'Khôi phục checkout Master thành công.']);
         });
+    }
+
+    /** Re checkout Master/phòng chỉ dành cho role cấu hình trong RoleUserReCheckout (để trống sẽ từ chối). */
+    private function denyReCheckout(): ?\Illuminate\Http\JsonResponse
+    {
+        $allowed = app(\App\Services\CheckoutRoleConfigService::class)->canReCheckout(
+            Auth::user(),
+            request()->attributes->get('_branch_id')
+        );
+
+        return $allowed ? null : response()->json([
+            'success' => false,
+            'code' => 'recheckout_denied',
+            'message' => 'Tài khoản không có quyền khôi phục checkout (RoleUserReCheckout).',
+        ], 403);
     }
 
     private function checkoutScope(BookingRoom $room, $guestIds, bool $wrap = true, bool $fullRoom = false)

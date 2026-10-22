@@ -141,6 +141,10 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     Route::put('/rooms/{id}/housekeeping-flags', [\App\Http\Controllers\Api\RoomController::class, 'updateHousekeepingFlags']);
     Route::post('/rooms/{room_number}/service-folio', [\App\Http\Controllers\Api\RoomController::class, 'ensureVirtualServiceFolio'])
         ->middleware('permission:fo.service.add,fo.service.edit');
+    // Folio phòng ảo (không có booking): danh sách cho Hóa đơn và thanh toán theo phòng.
+    Route::get('/virtual-room-folios', [\App\Http\Controllers\Api\VirtualRoomFolioController::class, 'index']);
+    Route::post('/virtual-room-folios/{roomId}/settle-payment', [\App\Http\Controllers\Api\PaymentController::class, 'settleVirtualRoomPayment'])
+        ->middleware('permission:fo.payment.create');
     Route::apiResource('rooms', \App\Http\Controllers\Api\RoomController::class);
 
     // Room locks management
@@ -183,6 +187,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     Route::apiResource('templates', \App\Http\Controllers\Api\TemplateController::class);
 
     // Operational print slots (Breakfast Ticket, Invoice, Registration Card...).
+    Route::post('print-template-slots/payment-receipt', [\App\Http\Controllers\Api\PrintTemplateSlotController::class, 'paymentReceipt']);
     Route::post('print-template-slots/{printTemplateSlot}/render', [\App\Http\Controllers\Api\PrintTemplateSlotController::class, 'render']);
     Route::get('print-template-slots', [\App\Http\Controllers\Api\PrintTemplateSlotController::class, 'index']);
     Route::put('print-template-slots/{printTemplateSlot}', [\App\Http\Controllers\Api\PrintTemplateSlotController::class, 'update']);

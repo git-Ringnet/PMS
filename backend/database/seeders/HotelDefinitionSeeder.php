@@ -439,6 +439,10 @@ class HotelDefinitionSeeder extends Seeder
             // Alert sinh nhật / special request
             ['name' => 'AllowShowAlertListView', 'value' => '1', 'description' => 'Tự động hiện popup danh sách sinh nhật / special request khi vào module (1: Có, 0: Không - chỉ xem ở icon lịch góc phải).', 'is_visible' => true],
             ['name' => 'CompanyDefault', 'value' => '', 'description' => 'ID công ty mặc định khi tạo Booking nhanh và Nhận phòng nhanh', 'is_visible' => true],
+            // Hóa đơn - In hóa đơn tự động sau thanh toán
+            ['name' => 'DisablePrintBillAfterPayment', 'value' => '0', 'description' => 'Tự động in hóa đơn (phiếu thu) sau khi thanh toán thành công tại Hóa đơn. 0: không in, 1: tự động in.', 'is_visible' => true],
+            // Hóa đơn - Phân quyền re checkout (khôi phục checkout)
+            ['name' => 'RoleUserReCheckout', 'value' => 'super_admin,branch_admin,fo_manager', 'description' => 'Danh sách mã role được khôi phục checkout (re checkout) Master booking và phòng đã checkout, phân cách bằng dấu phẩy. Để trống sẽ từ chối.', 'is_visible' => true],
         ];
 
         foreach ($configs as $cfg) {

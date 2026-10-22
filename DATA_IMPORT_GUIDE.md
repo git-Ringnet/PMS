@@ -104,3 +104,41 @@ Cơ sở dữ liệu SQL Server cũ thường xuất ngày tháng dạng `YYYY-M
   1. Đọc dữ liệu từ file CSV chứa bảng `SP1340`.
   2. Gán các thuộc tính giá cũ, giá ăn sáng, giá extra bed tương ứng vào các cột `price`, `breakfast_price`, `extra_bed_price`.
   3. Map cột `RateType` cũ (nếu có) sang cột `rate_type` mới (mặc định `'FIT'` hoặc `'GIT'`).
+
+### 3. Bill dịch vụ (`service_bills`) — ⚠️ BẮT BUỘC chạy bước chuẩn hóa sau khi import
+* **Bảng mới ở MySQL**: `service_bills` (và `service_bill_details`).
+* **Khác biệt quy ước lưu giữa hai hệ thống**:
+
+  | Loại bill | Phần mềm cũ | Hệ thống mới |
+  |---|---|---|
+  | Bill post tại **phòng** | `RegisterID1,2 = NULL`, chỉ có `RentalRoomId1,2` | `RegisterId1/RegisterID2` = mã booking **và** `RentalRoomId1,2` |
+  | Bill post tại **Master (booking)** | `RegisterID1,2` = mã booking, không có phòng, `CustomerID2 = NULL` | Giống phần mềm cũ |
+  | Bill **phòng ảo** | `RegisterID1,2 = NULL` | Giống phần mềm cũ (phòng ảo không có booking) |
+
+* **Vì sao phải chuẩn hóa**: hệ thống mới lọc bill theo booking qua `RegisterId1/RegisterID2` (màn hình Hóa đơn, thanh toán, kiểm tra công nợ khi trả phòng, sang ngày, báo cáo doanh thu theo booking/công ty). Nếu import nguyên trạng, bill phòng của dữ liệu cũ sẽ **không hiện ở Hóa đơn, không thanh toán được, trả phòng bỏ sót công nợ, sang ngày có thể post trùng tiền phòng, báo cáo thiếu số liệu**.
+* **Luồng xử lý bắt buộc**:
+  1. Import `booking_rooms` (phòng thuê) **trước** — giữ đúng `id` phòng mà bill cũ tham chiếu ở `RentalRoomId1,2`.
+  2. Import `service_bills` / `service_bill_details` **giữ nguyên** `RegisterID1,2 = NULL` như dữ liệu cũ (không tự đoán mã booking trong lúc import).
+  3. Chạy lệnh chuẩn hóa để điền mã booking theo phòng:
+     ```bash
+     # Chạy thử: chỉ báo số dòng sẽ được điền, không ghi dữ liệu
+     php artisan services:backfill-legacy-register-ids
+
+     # Ghi dữ liệu
+     php artisan services:backfill-legacy-register-ids --apply
+     ```
+     * Bill phòng có `RegisterID = NULL` → điền `RegisterId1/RegisterID2` = `booking_rooms.booking_id` của `RentalRoomId1/RentalRoomId2`.
+     * Bill phòng ảo (phòng có `booking_id = NULL`) → **giữ nguyên NULL**.
+     * Bill Master (đã có `RegisterID`) → **không bị thay đổi**.
+     * Lệnh chỉ cập nhật các dòng còn `NULL` nên có thể chạy lại nhiều lần an toàn.
+  4. Kiểm tra lại: chạy lệnh ở chế độ chạy thử lần nữa, kết quả phải là `0 dòng` **và không có cảnh báo** `Có N bill trỏ tới phòng không tồn tại trong booking_rooms`. Nếu có cảnh báo, lệnh liệt kê mã bill (`Ma`) bị lỗi — nghĩa là phòng thuê của các bill đó chưa được import ở bước 1, cần import bổ sung rồi chạy lại bước 3.
+
+### 4. Phòng ảo (folio dịch vụ cho khách không lưu trú)
+* **Nhận diện ở dữ liệu cũ**: các phòng có số phòng bắt đầu bằng `0` (tham khảo store `sp_133`, bảng phòng thuê lấy các phòng `like '0%'`).
+* **Cách import vào hệ thống mới**:
+  1. Phòng trong danh mục `rooms`: số phòng bắt đầu bằng `0` **và** bật cờ `is_internal = 1`.
+  2. Dòng phòng thuê → `booking_rooms` với **`booking_id = NULL`** (KHÔNG tạo booking cho phòng ảo — tránh nhảy số BK). Vẫn có `arrival_date`, `departure_date` để xa (hệ thống mới dùng `2099-12-31`), `status = 0`.
+  3. Tạo 1 dòng `guests` mang tên phòng (vd: `PHÒNG ẢO 001`) và liên kết `booking_room_guests` (`is_primary = 1`).
+  4. Bill của phòng ảo: `RegisterID1,2 = NULL`, `RentalRoomId1,2` = id dòng `booking_rooms` của phòng ảo.
+  5. Thanh toán của phòng ảo: `payments.booking_id = NULL`, `payments.booking_room_id` = id dòng `booking_rooms` của phòng ảo.
+* **Lưu ý**: mỗi phòng ảo chỉ nên có **1 folio đang mở** (`booking_rooms.status` 0 hoặc 1). Hệ thống sẽ từ chối tự tạo folio nếu phát hiện nhiều dòng đang mở cho cùng một phòng ảo.

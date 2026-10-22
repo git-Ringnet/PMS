@@ -41,6 +41,7 @@ class CheckoutRestoreTest extends TestCase
             $role->permissions()->syncWithoutDetaching([$permission->id]);
         }
         $user->roles()->attach($role->id);
+        \App\Models\HotelConfig::updateOrCreate(['name' => 'RoleUserReCheckout'], ['value' => 'checkout_restore_test']);
         $this->actingAs($user);
         DB::table('booking_statuses')->insert([
             ['id' => 0, 'name' => 'Reservation'],
@@ -182,6 +183,28 @@ class CheckoutRestoreTest extends TestCase
         $this->postJson("/api/booking-rooms/{$this->bookingRoom->id}/restore-checkout")
             ->assertStatus(422)
             ->assertJsonPath('success', false);
+    }
+
+    public function test_restore_checkout_requires_a_role_listed_in_role_user_recheckout(): void
+    {
+        // Đã khai báo role nhưng user không thuộc role đó → bị từ chối.
+        \App\Models\HotelConfig::where('name', 'RoleUserReCheckout')->update(['value' => 'some_other_role']);
+
+        $this->postJson("/api/booking-rooms/{$this->bookingRoom->id}/restore-checkout")
+            ->assertForbidden()->assertJsonPath('code', 'recheckout_denied');
+        $this->postJson("/api/bookings/{$this->booking->id}/restore-checkout")
+            ->assertForbidden()->assertJsonPath('code', 'recheckout_denied');
+
+        $this->assertDatabaseHas('booking_rooms', ['id' => $this->bookingRoom->id, 'status' => BookingRoom::STATUS_CHECKED_OUT]);
+        $this->assertDatabaseHas('bookings', ['id' => $this->booking->id, 'status' => Booking::STATUS_CHECKOUT]);
+    }
+
+    public function test_restore_checkout_is_denied_when_role_user_recheckout_is_blank(): void
+    {
+        \App\Models\HotelConfig::where('name', 'RoleUserReCheckout')->update(['value' => '']);
+
+        $this->postJson("/api/bookings/{$this->booking->id}/restore-checkout")
+            ->assertForbidden()->assertJsonPath('code', 'recheckout_denied');
     }
 
     public function test_restore_early_checkout_is_blocked_when_another_booking_reserves_the_remaining_stay(): void
