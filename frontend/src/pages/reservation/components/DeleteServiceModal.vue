@@ -30,17 +30,17 @@
           v-for="r in allRooms"
           :key="r.bookingRoomId"
           @click="selectRoomTab(r)"
-          class="px-3 py-1.5 text-[11px] font-semibold border-r border-slate-200 whitespace-nowrap transition"
+          class="px-3 py-1.5 text-xs font-semibold border-r border-slate-200 whitespace-nowrap transition"
           :class="activeRoomTab?.bookingRoomId === r.bookingRoomId
             ? 'bg-white text-sky-700 border-b-2 border-b-sky-500'
             : 'text-slate-500 hover:bg-slate-100'"
         >
           Phòng {{ r.roomNumber || r.bookingRoomId }}
-          <span class="ml-1 text-[10px] text-slate-400">({{ roomServicesMap[r.bookingRoomId]?.length || 0 }})</span>
+          <span class="ml-1 text-xs text-slate-400">({{ roomServicesMap[r.bookingRoomId]?.length || 0 }})</span>
         </button>
         <button
           @click="activeRoomTab = null"
-          class="px-3 py-1.5 text-[11px] font-semibold whitespace-nowrap transition"
+          class="px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition"
           :class="activeRoomTab === null
             ? 'bg-white text-sky-700 border-b-2 border-b-sky-500'
             : 'text-slate-500 hover:bg-slate-100'"
@@ -85,7 +85,7 @@
           <!-- Grouped by room then service_code -->
           <template v-for="roomGroup in groupedByRoom" :key="roomGroup.roomId">
             <!-- Room header (only when viewing all) -->
-            <div v-if="allRooms.length > 1 && activeRoomTab === null" class="text-[10px] font-bold text-sky-700 uppercase mb-1 mt-3 px-1 tracking-wider">
+            <div v-if="allRooms.length > 1 && activeRoomTab === null" class="text-xs font-bold text-sky-700 uppercase mb-1 mt-3 px-1 tracking-wider">
               Phòng {{ roomGroup.roomNumber }}
             </div>
 
@@ -101,8 +101,8 @@
                   class="w-3.5 h-3.5"
                 />
                 <span class="text-xs font-bold text-slate-800">{{ group.name }}</span>
-                <span class="text-[9px] text-slate-400 font-mono ml-1">{{ group.code }}</span>
-                <span class="ml-auto text-[10px] text-slate-500 font-semibold">{{ group.items.length }} ngày</span>
+                <span class="text-xs text-slate-400 ml-1">{{ group.code }}</span>
+                <span class="ml-auto text-xs text-slate-500 font-semibold">{{ group.items.length }} ngày</span>
               </label>
 
               <!-- Group items -->
@@ -120,12 +120,12 @@
                     :disabled="!isServiceDeletable(svc)"
                     class="w-3.5 h-3.5"
                   />
-                  <span class="text-[11px] text-slate-600 font-mono flex-1">{{ formatDate(svc.service_date) }}</span>
-                  <span class="text-[11px] text-slate-700 font-semibold">x{{ parseFloat(svc.quantity) }}</span>
-                  <span class="text-[11px] text-sky-700 font-bold ml-2">{{ Number(svc.rate).toLocaleString('en-US') }} VND</span>
-                  <span class="text-[10px] text-slate-400 ml-2">({{ Number(svc.quantity * svc.rate).toLocaleString('en-US') }})</span>
-                  <span v-if="svc.is_posted === 1" class="ml-2 text-[9px] font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">Đã post</span>
-                  <span v-else-if="!isServiceDeletable(svc)" class="ml-2 text-[9px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">Quá khứ</span>
+                  <span class="text-xs text-slate-600 flex-1">{{ formatDate(svc.service_date) }}</span>
+                  <span class="text-xs text-slate-700 font-semibold">x{{ parseFloat(svc.quantity) }}</span>
+                  <span class="text-xs text-sky-700 font-bold ml-2">{{ Number(svc.rate).toLocaleString('en-US') }} VND</span>
+                  <span class="text-xs text-slate-400 ml-2">({{ Number(svc.quantity * svc.rate).toLocaleString('en-US') }})</span>
+                  <span v-if="svc.is_posted === 1" class="ml-2 text-xs font-bold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">Đã post</span>
+                  <span v-else-if="!isServiceDeletable(svc)" class="ml-2 text-xs font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">Quá khứ</span>
                 </label>
               </div>
             </div>

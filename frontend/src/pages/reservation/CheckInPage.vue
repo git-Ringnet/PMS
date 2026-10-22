@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { fetchBookings, checkInRoom, undoCheckInRoom, cancelBookingRoom, fetchSystemDate } from '@/services/booking-service'
+import { fetchBookings, checkInRoomWithConfirmations, undoCheckInRoom, cancelBookingRoom, fetchSystemDate } from '@/services/booking-service'
 import { ROOM_STATUS_ICON_MAP, roomService } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useRoomStore } from '@/stores/room-store'
@@ -384,25 +384,12 @@ const handleCheckIn = async () => {
 
   for (const item of selectedRoomsToProcess) {
     try {
-      // Lần gọi đầu: chưa có confirmed
-      const res = await checkInRoom(item.bookingId, item.roomId)
-      if (res.data?.needs_confirmation) {
-        // Backend yêu cầu xác nhận thêm (phòng đang dirty, AllowCheckinVacantClean=1)
-        const dirtyConfirmed = await uiStore.confirm({
-          title: 'Phòng đang chờ kiểm tra',
-          message: res.data.message || `Phòng ${item.roomNumber} đang ở trạng thái chờ kiểm tra. Bạn có muốn tiếp tục nhận phòng không? Tình trạng phòng sẽ được giữ nguyên.`,
-          confirmText: 'Tiếp tục nhận phòng',
-          cancelText: 'Hủy'
-        })
-        if (!dirtyConfirmed) continue
-        // Gửi lại với confirmed=true
-        const res2 = await checkInRoom(item.bookingId, item.roomId, { confirmed: true })
-        if (res2.data && res2.data.success !== false && !res2.data.needs_confirmation) {
-          successCount++
-        } else {
-          addCheckinError(item, res2.data?.message)
-        }
-      } else if (res.data && res.data.success !== false) {
+      const res = await checkInRoomWithConfirmations(item.bookingId, item.roomId, {
+        roomNumber: item.roomNumber,
+        confirm: options => uiStore.confirm(options),
+      })
+      if (!res) continue
+      if (res?.data && res.data.success !== false && !res.data.needs_confirmation) {
         successCount++
       } else {
         addCheckinError(item, res.data?.message)

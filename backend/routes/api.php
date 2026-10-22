@@ -136,7 +136,9 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     Route::get('/rooms/vacant', [\App\Http\Controllers\Api\RoomController::class, 'vacant']);
     Route::get('/rooms/stats', [\App\Http\Controllers\Api\RoomController::class, 'stats']);
     Route::post('/rooms/bulk-status', [\App\Http\Controllers\Api\RoomController::class, 'bulkUpdateStatus']);
+    Route::post('/rooms/bulk-housekeeping-flags', [\App\Http\Controllers\Api\RoomController::class, 'bulkUpdateHousekeepingFlags']);
     Route::put('/rooms/{id}/status', [\App\Http\Controllers\Api\RoomController::class, 'updateStatus']);
+    Route::put('/rooms/{id}/housekeeping-flags', [\App\Http\Controllers\Api\RoomController::class, 'updateHousekeepingFlags']);
     Route::post('/rooms/{room_number}/service-folio', [\App\Http\Controllers\Api\RoomController::class, 'ensureVirtualServiceFolio'])
         ->middleware('permission:fo.service.add,fo.service.edit');
     // Folio phòng ảo (không có booking): danh sách cho Hóa đơn và thanh toán theo phòng.

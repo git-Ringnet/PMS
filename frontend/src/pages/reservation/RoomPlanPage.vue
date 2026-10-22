@@ -5,7 +5,7 @@ import { ROOM_STATUSES, roomService } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useRoomStore } from '@/stores/room-store'
 import RoomIcon from '@/components/RoomIcon.vue'
-import { fetchBookings, fetchBookingInitDropdowns, checkInRoom, unassignRoom, fetchRoomRateCodes, cancelBookingRoom, fetchSystemDate, fetchUserSettings, updateUserSettings, fetchHotelSettings, updateBookingRoom, splitBookingRoom, createBooking, lockRoomMove, unlockRoomMove, checkAvailability } from '@/services/booking-service'
+import { fetchBookings, fetchBookingInitDropdowns, checkInRoomWithConfirmations, unassignRoom, fetchRoomRateCodes, cancelBookingRoom, fetchSystemDate, fetchUserSettings, updateUserSettings, fetchHotelSettings, updateBookingRoom, splitBookingRoom, createBooking, lockRoomMove, unlockRoomMove, checkAvailability } from '@/services/booking-service'
 import { fetchCompanies, fetchMarkets, fetchCustomerSources } from '@/services/company-service'
 import { updateRoomPlanBookingRoomStay } from '@/services/room-plan-service'
 import CancelReasonModal from './components/CancelReasonModal.vue'
@@ -258,11 +258,12 @@ const standardRates = ref([])
 const allMarkets = ref([])
 const allCustomerSources = ref([])
 const registrationStatuses = ref([])
-const quickBookingCompanySearch = ref('KHÁCH LẺ')
+const quickBookingCompanySearch = ref('')
 const showQuickBookingCompanyDropdown = ref(false)
+const quickBookingDefaultCompanyId = ref(null)
 const quickBookingUseConfiguredPricePerRoom = ref(false)
 const quickBookingForm = ref({
-  company: 'KHÁCH LẺ',
+  company: '',
   companyId: null,
   marketId: null,
   customerSourceId: null,
@@ -713,7 +714,7 @@ const companyFilterData = computed(() => {
 const displayCompanies = computed(() => companyFilterData.value.items)
 
 const allCompanyNames = computed(() => {
-  const list = ['KHÁCH LẺ']
+  const list = []
   if (allCompanies.value && allCompanies.value.length > 0) {
     allCompanies.value.forEach(c => {
       const name = c.name || c.company_name || c.trading_name || c.code
@@ -735,7 +736,7 @@ const allCompanyNames = computed(() => {
 const filteredQuickBookingCompanies = computed(() => {
   const query = removeVietnameseTones(quickBookingCompanySearch.value.toLowerCase().trim())
   
-  if (!query || query === 'khach le') {
+  if (!query) {
     return allCompanyNames.value
   }
   
@@ -743,8 +744,6 @@ const filteredQuickBookingCompanies = computed(() => {
 })
 
 function selectQuickBookingCompany(cName) {
-  quickBookingForm.value.company = cName
-  quickBookingCompanySearch.value = cName
   showQuickBookingCompanyDropdown.value = false
 
   const co = allCompanies.value.find(c => {
@@ -753,30 +752,39 @@ function selectQuickBookingCompany(cName) {
   })
 
   if (co) {
-    quickBookingForm.value.companyId = co.id
-    if (co.market_id) {
-      quickBookingForm.value.marketId = co.market_id
-    } else if (co.market?.id) {
-      quickBookingForm.value.marketId = co.market.id
-    }
-
-    if (co.customer_source_id) {
-      quickBookingForm.value.customerSourceId = co.customer_source_id
-    } else if (co.customer_source?.id) {
-      quickBookingForm.value.customerSourceId = co.customer_source.id
-    }
-
-    if (co.rate_code) {
-      quickBookingForm.value.rateCode = co.rate_code
-      calculateQuickBookingPrice()
-    }
+    applyQuickBookingCompany(co)
   } else {
-    const walkinCo = allCompanies.value.find(c => {
-      const n = removeVietnameseTones(String(c.name || c.company_name || c.code || '')).toLowerCase()
-      return n.includes('khach le') || n.includes('walk-in') || n.includes('walkin') || n.includes('fit')
-    })
-    quickBookingForm.value.companyId = walkinCo ? walkinCo.id : (allCompanies.value[0]?.id || 1)
+    quickBookingForm.value.company = cName
+    quickBookingCompanySearch.value = cName
+    quickBookingForm.value.companyId = null
   }
+}
+
+function applyQuickBookingCompany(company) {
+  const companyName = company.name || company.company_name || company.trading_name || company.code || ''
+  quickBookingForm.value.company = companyName
+  quickBookingCompanySearch.value = companyName
+  quickBookingForm.value.companyId = company.id
+
+  if (company.market_id) quickBookingForm.value.marketId = company.market_id
+  else if (company.market?.id) quickBookingForm.value.marketId = company.market.id
+
+  if (company.customer_source_id) quickBookingForm.value.customerSourceId = company.customer_source_id
+  else if (company.customer_source?.id) quickBookingForm.value.customerSourceId = company.customer_source.id
+
+  if (company.rate_code) {
+    quickBookingForm.value.rateCode = company.rate_code
+    calculateQuickBookingPrice()
+  }
+}
+
+function getConfiguredQuickBookingCompany() {
+  const companyId = Number(quickBookingDefaultCompanyId.value)
+  if (!Number.isInteger(companyId) || companyId < 1) return null
+
+  return allCompanies.value.find(company =>
+    Number(company.id) === companyId && company.is_active === true
+  ) || null
 }
 
 function handleQuickBookingCompanyInput() {
@@ -794,26 +802,9 @@ function handleQuickBookingCompanyInput() {
   })
 
   if (co) {
-    quickBookingForm.value.companyId = co.id
-    if (co.market_id) quickBookingForm.value.marketId = co.market_id
-    else if (co.market?.id) quickBookingForm.value.marketId = co.market.id
-    if (co.customer_source_id) quickBookingForm.value.customerSourceId = co.customer_source_id
-    else if (co.customer_source?.id) quickBookingForm.value.customerSourceId = co.customer_source.id
-    if (co.rate_code) {
-      quickBookingForm.value.rateCode = co.rate_code
-      calculateQuickBookingPrice()
-    }
+    applyQuickBookingCompany(co)
   } else {
-    const queryNoTone = removeVietnameseTones(query)
-    if (queryNoTone === 'khach le' || queryNoTone === 'walkin' || queryNoTone === 'fit') {
-      const walkinCo = allCompanies.value.find(c => {
-        const n = removeVietnameseTones(String(c.name || c.company_name || c.code || '')).toLowerCase()
-        return n.includes('khach le') || n.includes('walk-in') || n.includes('walkin') || n.includes('fit')
-      })
-      quickBookingForm.value.companyId = walkinCo ? walkinCo.id : (allCompanies.value[0]?.id || 1)
-    } else {
-      quickBookingForm.value.companyId = null
-    }
+    quickBookingForm.value.companyId = null
   }
 }
 
@@ -3293,28 +3284,15 @@ async function loadDropdownsAndPrices() {
     if (mktRes?.data) allMarkets.value = mktRes.data.data || mktRes.data || []
     if (srcRes?.data) allCustomerSources.value = srcRes.data.data || srcRes.data || []
     registrationStatuses.value = initRes?.data?.data?.registration_statuses || []
+    quickBookingDefaultCompanyId.value = initRes?.data?.data?.hotel_settings?.CompanyDefault ?? null
 
-    // If company is selected, auto-set default market & source code
-    if (allCompanies.value.length > 0) {
-      const searchTarget = quickBookingCompanySearch.value || quickBookingForm.value.company || 'KHÁCH LẺ'
-      const co = allCompanies.value.find(c => {
-        const name = c.name || c.company_name || c.trading_name || c.code
-        return name && String(name).toLowerCase() === String(searchTarget).toLowerCase()
-      })
-      if (co) {
-        quickBookingForm.value.companyId = co.id
-        if (co.market_id) quickBookingForm.value.marketId = co.market_id
-        else if (co.market?.id) quickBookingForm.value.marketId = co.market.id
-        if (co.customer_source_id) quickBookingForm.value.customerSourceId = co.customer_source_id
-        else if (co.customer_source?.id) quickBookingForm.value.customerSourceId = co.customer_source.id
-        if (co.rate_code) quickBookingForm.value.rateCode = co.rate_code
-      } else {
-        const walkinCo = allCompanies.value.find(c => {
-          const n = removeVietnameseTones(String(c.name || c.company_name || c.code || '')).toLowerCase()
-          return n.includes('khach le') || n.includes('walk-in') || n.includes('walkin') || n.includes('fit')
-        })
-        quickBookingForm.value.companyId = walkinCo ? walkinCo.id : (allCompanies.value[0]?.id || 1)
-      }
+    const configuredCompany = getConfiguredQuickBookingCompany()
+    if (configuredCompany) {
+      applyQuickBookingCompany(configuredCompany)
+    } else {
+      quickBookingForm.value.companyId = null
+      quickBookingForm.value.company = ''
+      quickBookingCompanySearch.value = ''
     }
     // Fallback if not set
     if (!quickBookingForm.value.marketId && allMarkets.value.length > 0) {
@@ -3389,10 +3367,12 @@ async function triggerMenuAction(actionName) {
   
   if (actionName === 'Tạo') {
     showQuickBookingModal.value = true
-    quickBookingCompanySearch.value = 'KHÁCH LẺ'
+    quickBookingCompanySearch.value = ''
     quickBookingForm.value = {
-      company: 'KHÁCH LẺ',
+      company: '',
       companyId: null,
+      marketId: null,
+      customerSourceId: null,
       marketSegment: 'Free Individual Traveler',
       sourceCode: 'Free Individual Traveler',
       bookingName: 'Walkin Guest',
@@ -3554,32 +3534,13 @@ async function triggerMenuAction(actionName) {
         try {
           loadingBookings.value = true
           emit('loading', true)
-          const res = await checkInRoom(booking.bookingId, booking.bookingRoomId)
-          if (res.data?.needs_confirmation) {
-            const dirtyConfirmed = await uiStore.confirm({
-              title: 'Phòng đang chờ kiểm tra',
-              message: res.data.message || `Phòng ${booking.room} đang ở trạng thái chờ kiểm tra. Bạn có muốn tiếp tục nhận phòng không? Tình trạng phòng sẽ được giữ nguyên.`,
-              confirmText: 'Tiếp tục nhận phòng',
-              cancelText: 'Hủy'
-            })
-            if (!dirtyConfirmed) {
-              loadingBookings.value = false
-              emit('loading', false)
-              return
-            }
-            const res2 = await checkInRoom(booking.bookingId, booking.bookingRoomId, { confirmed: true })
-            if (res2 && res2.data && res2.data.success !== false && !res2.data.needs_confirmation) {
-              uiStore.showToast(`Giao phòng ${booking.room} thành công!`, 'success')
-              await roomStore.fetchRooms()
-              await loadBookings()
-              notifyRoomUpdates()
-            } else {
-              uiStore.showToast(res2?.data?.message || 'Giao phòng thất bại.', 'error')
-            }
-            return
-          }
+          const res = await checkInRoomWithConfirmations(booking.bookingId, booking.bookingRoomId, {
+            roomNumber: booking.room,
+            confirm: options => uiStore.confirm(options),
+          })
+          if (!res) return
 
-          if (res && res.data && res.data.success !== false) {
+          if (res && res.data && res.data.success !== false && !res.data.needs_confirmation) {
             uiStore.showToast(`Giao phòng ${booking.room} thành công!`, 'success')
             await roomStore.fetchRooms()
             await loadBookings()
@@ -4252,23 +4213,19 @@ async function saveQuickBooking() {
     loadingBookings.value = true
     emit('loading', true)
 
-    // 1. Công ty ID từ database
-    let companyId = quickBookingForm.value.companyId
-    if (!companyId) {
-      const companyName = quickBookingForm.value.company || quickBookingCompanySearch.value || 'KHÁCH LẺ'
-      const companyObj = allCompanies.value.find(c => {
-        const name = c.name || c.company_name || c.trading_name || c.code
-        return name && String(name).toLowerCase() === String(companyName).trim().toLowerCase()
-      })
-      if (companyObj) {
-        companyId = companyObj.id
-      } else {
-        const walkinCo = allCompanies.value.find(c => {
-          const n = removeVietnameseTones(String(c.name || c.company_name || c.code || '')).toLowerCase()
-          return n.includes('khach le') || n.includes('walk-in') || n.includes('walkin') || n.includes('fit')
-        })
-        companyId = walkinCo ? walkinCo.id : (allCompanies.value[0]?.id || 1)
-      }
+    const configuredCompany = getConfiguredQuickBookingCompany()
+    if (!configuredCompany) {
+      uiStore.showToast('Vui lòng cấu hình CompanyDefault là công ty đang hoạt động trước khi tạo Booking nhanh.', 'error')
+      return
+    }
+
+    const companyId = quickBookingForm.value.companyId
+    const selectedCompany = allCompanies.value.find(company =>
+      Number(company.id) === Number(companyId) && company.is_active === true
+    )
+    if (!selectedCompany) {
+      uiStore.showToast('Vui lòng chọn công ty đang hoạt động.', 'error')
+      return
     }
 
     // 2. Xác định ngày đến sớm nhất và ngày đi muộn nhất

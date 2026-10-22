@@ -208,7 +208,7 @@ onBeforeUnmount(() => {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="item in selectedDestination?.payments || []" :key="item.id" class="border-t border-gray-200 bg-sky-100 font-normal text-xs text-[#000000D9]"><td class="p-2">{{ item.dateTime }}</td><td>{{ item.department }}</td><td class="text-left">{{ item.description }}</td><td>{{ item.paymentMethod }}</td><td class="text-right font-mono">{{ money(item.amount) }}</td><td>{{ item.unit }}</td><td>{{ item.folio }}</td><td>{{ item.paymentCode }}</td><td>{{ item.userName }}</td></tr>
+              <tr v-for="item in selectedDestination?.payments || []" :key="item.id" class="border-t border-gray-200 bg-sky-100 font-normal text-xs text-[#000000D9]"><td class="p-2">{{ item.dateTime }}</td><td>{{ item.department }}</td><td class="text-left">{{ item.description }}</td><td>{{ item.paymentMethod }}</td><td class="text-right tabular-nums">{{ money(item.amount) }}</td><td>{{ item.unit }}</td><td>{{ item.folio }}</td><td>{{ item.paymentCode }}</td><td>{{ item.userName }}</td></tr>
               <tr v-if="!selectedDestination || !selectedDestination.payments?.length"><td colspan="9" class="h-40 text-gray-400"><Inbox class="mx-auto mb-1 h-9 w-9" />No data</td></tr>
             </tbody>
           </table>

@@ -54,16 +54,16 @@
         <!-- Dropdown Cài đặt ẩn / hiện / sắp xếp cột -->
         <div v-if="showColSettings" class="absolute top-11 right-4 z-50 bg-white border border-slate-200 rounded-lg shadow-2xl p-3 w-80 text-slate-800">
           <div class="flex items-center justify-between border-b border-slate-100 pb-2 mb-2">
-            <div class="text-[12px] font-bold text-slate-700">Cài đặt hiển thị & thứ tự cột</div>
-            <button @click="resetColumnSettings" type="button" class="text-[11px] text-blue-600 hover:text-blue-800 hover:underline border-none bg-transparent cursor-pointer">
+            <div class="text-xs font-bold text-slate-700">Cài đặt hiển thị & thứ tự cột</div>
+            <button @click="resetColumnSettings" type="button" class="text-xs text-blue-600 hover:text-blue-800 hover:underline border-none bg-transparent cursor-pointer">
               <i class="fa-solid fa-rotate-left mr-1"></i>Mặc định
             </button>
           </div>
-          <p class="text-[11px] text-slate-500 mb-2">Tùy chỉnh bật/tắt và bấm mũi tên để sắp xếp thứ tự cột theo tài khoản của bạn.</p>
+          <p class="text-xs text-slate-500 mb-2">Tùy chỉnh bật/tắt và bấm mũi tên để sắp xếp thứ tự cột theo tài khoản của bạn.</p>
           
           <div class="flex flex-col gap-1 max-h-80 overflow-y-auto pr-1">
             <div v-for="(col, idx) in allColumns" :key="col.key"
-              class="flex items-center justify-between text-[11.5px] py-1 px-1.5 rounded hover:bg-slate-50 border border-transparent hover:border-slate-200 transition-colors">
+              class="flex items-center justify-between text-xs py-1 px-1.5 rounded hover:bg-slate-50 border border-transparent hover:border-slate-200 transition-colors">
               <label class="flex items-center gap-2 cursor-pointer flex-1 select-none">
                 <input type="checkbox" v-model="col.visible" @change="saveColumnSettings"
                   :disabled="col.key === 'full_name'"
@@ -71,16 +71,16 @@
                 <span :class="{ 'font-bold text-slate-900': isFrozenCol(col.key), 'text-slate-600': !isFrozenCol(col.key) }">
                   {{ col.label }}
                 </span>
-                <span v-if="isFrozenCol(col.key)" class="text-[9.5px] px-1 py-0.2 rounded bg-blue-50 text-blue-600 border border-blue-200">Ghim</span>
+                <span v-if="isFrozenCol(col.key)" class="text-xs px-1 py-0.5 rounded bg-blue-50 text-blue-600 border border-blue-200">Ghim</span>
               </label>
               <div class="flex items-center gap-0.5">
                 <button type="button" @click="moveColumn(idx, -1)" :disabled="idx === 0 || (isFrozenCol(col.key) && idx === 0) || (!isFrozenCol(col.key) && isFrozenCol(allColumns[idx - 1]?.key))"
-                  class="w-5 h-5 flex items-center justify-center rounded text-slate-500 hover:text-slate-800 hover:bg-slate-200 disabled:opacity-20 border-none bg-transparent cursor-pointer text-[10px]"
+                  class="w-5 h-5 flex items-center justify-center rounded text-slate-500 hover:text-slate-800 hover:bg-slate-200 disabled:opacity-20 border-none bg-transparent cursor-pointer text-xs"
                   title="Di chuyển lên">
                   ▲
                 </button>
                 <button type="button" @click="moveColumn(idx, 1)" :disabled="idx === allColumns.length - 1 || (isFrozenCol(col.key) && !isFrozenCol(allColumns[idx + 1]?.key))"
-                  class="w-5 h-5 flex items-center justify-center rounded text-slate-500 hover:text-slate-800 hover:bg-slate-200 disabled:opacity-20 border-none bg-transparent cursor-pointer text-[10px]"
+                  class="w-5 h-5 flex items-center justify-center rounded text-slate-500 hover:text-slate-800 hover:bg-slate-200 disabled:opacity-20 border-none bg-transparent cursor-pointer text-xs"
                   title="Di chuyển xuống">
                   ▼
                 </button>
@@ -137,7 +137,7 @@
                           ({{ sg.totalRooms }} phòng · {{ sg.totalGuests }} khách)
                         </span>
                       </div>
-                      <div class="text-[11px] font-normal text-slate-500 cursor-pointer" @click="toggleStatusGroup(sg.id)">
+                      <div class="text-xs font-normal text-slate-500 cursor-pointer" @click="toggleStatusGroup(sg.id)">
                         {{ expandedStatusGroups[sg.id] ? 'Nhấp để thu gọn' : 'Nhấp để mở rộng' }}
                       </div>
                     </div>
@@ -765,14 +765,14 @@
               @keydown.enter="handleScanSubmit"
               type="text"
               placeholder="Nhấp vào đây và quét mã CCCD..."
-              class="w-full border border-slate-300 rounded-md px-3 py-2 text-xs focus:outline-none focus:border-[#2F6FED] focus:ring-2 focus:ring-[#2F6FED]/20 bg-slate-50/60 font-mono"
+              class="w-full border border-slate-300 rounded-md px-3 py-2 text-xs focus:outline-none focus:border-[#2F6FED] focus:ring-2 focus:ring-[#2F6FED]/20 bg-slate-50/60"
             />
           </div>
 
           <!-- Target Guest Selection -->
           <div class="bg-slate-50 border border-slate-200 p-2.5 rounded-lg flex flex-col gap-2">
             <div>
-              <label class="block text-[11px] font-bold text-slate-600 mb-1 uppercase tracking-wider">Điền thông tin vào khách hàng:</label>
+              <label class="block text-xs font-bold text-slate-600 mb-1 uppercase tracking-wider">Điền thông tin vào khách hàng:</label>
               <select v-model="targetScanGuestKey" class="w-full border border-slate-300 rounded px-2.5 py-1.5 text-xs bg-white text-slate-700 focus:outline-none focus:border-[#2F6FED]">
                 <option v-for="opt in getScanTargetOptions()" :key="opt.key" :value="opt.key">
                   {{ opt.label }}
@@ -788,7 +788,7 @@
               
               <div class="flex items-center gap-1.5">
                 <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
-                <span class="text-[11px] text-emerald-600 font-semibold">ASM Scanner đang chạy</span>
+                <span class="text-xs text-emerald-600 font-semibold">ASM Scanner đang chạy</span>
               </div>
             </div>
           </div>

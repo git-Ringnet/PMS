@@ -83,7 +83,7 @@ import {
   checkAvailability,
   fetchVacantRooms,
   autoAssignRoom,
-  checkInRoom,
+  checkInRoomWithConfirmations,
   upgradeRoom,
   unassignRoom,
   cancelBookingRoom,
@@ -6036,10 +6036,15 @@ async function triggerAction(actionName) {
           for (const r of targetList) {
             if (!r.bookingRoomId) continue
             try {
-              const res = await checkInRoom(tab.dbId, r.bookingRoomId)
-              if (res.data?.success) {
+              const res = await checkInRoomWithConfirmations(tab.dbId, r.bookingRoomId, {
+                roomNumber: r.roomNumber || r.roomCode,
+                confirm: options => uiStore.confirm(options),
+              })
+              if (res?.data?.success && !res.data.needs_confirmation) {
                 successCount++
                 r.roomStatus = 'Bẩn'
+              } else if (!res) {
+                continue
               } else {
                 failCount++
                 let rawMsg = res.data?.message || 'Không thể thực hiện nhận phòng.'
