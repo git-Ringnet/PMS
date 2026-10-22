@@ -396,7 +396,7 @@ class ShiftWorkController extends Controller
 
         $isDeparture = $type === 'departures';
         $headings = [
-            'Mã đăng ký', 'Giá phòng', 'Tên đăng ký', 'Tình trạng đăng ký', 'Loại phòng', 'Phòng',
+            'Mã đăng ký', 'Phòng', 'Giá phòng', 'Tên đăng ký', 'Tình trạng đăng ký', 'Loại phòng',
             'Ngày đến', 'Ngày đi', 'Đêm phòng', 'Người lớn', 'Trẻ em', 'Mã giá phòng',
             $isDeparture ? 'Tổng DV' : 'Tổng phòng',
         ];
@@ -415,7 +415,7 @@ class ShiftWorkController extends Controller
         foreach ($payload['data'] ?? [] as $booking) {
             foreach ($booking['rooms'] as $room) {
                 $line = [
-                    $booking['id'], $room['price'], $booking['bookingName'], $room['status'], $room['roomType'], $room['roomNumber'],
+                    $booking['id'], $room['roomNumber'], $room['price'], $booking['bookingName'], $room['status'], $room['roomType'],
                     $room['arrivalDate'], $room['departureDate'], $room['nights'], $room['adults'], $room['children'], $room['rateCode'],
                     $isDeparture ? $room['totalServices'] : $room['roomTotal'],
                 ];
