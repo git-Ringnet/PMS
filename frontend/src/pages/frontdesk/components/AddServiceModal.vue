@@ -14,6 +14,8 @@ const props = defineProps({
   bookingId:     { type: [String, Number], default: '' },
   bookingInfo:   { type: String, default: '' },
   arrivalDate:   { type: String, default: '' },
+  // Ngày đến ban đầu (trước late check-in) để cho post lại các đêm cũ.
+  originalArrivalDate: { type: String, default: '' },
   departureDate: { type: String, default: '' },
   isDayUse:      { type: Boolean, default: false },
   // Giá phòng hiện tại (từ booking_rooms.rate hoặc booking_room_services RM)
@@ -119,10 +121,12 @@ function todayYmd() {
   return `${year}-${month}-${day}`
 }
 
-// Giới hạn ngày từ booking (min = arrival_date, max = departure_date)
+// Giới hạn ngày theo giai đoạn ở (min = ngày đến ban đầu, max = ngày đi), được post trước cho tương lai.
+const stayArrivalDate = computed(() => props.arrivalDate ? parseDateOnly(props.arrivalDate) : undefined)
 const bookingMinDate = computed(() => {
-  if (props.arrivalDate) return parseDateOnly(props.arrivalDate)
-  return undefined
+  const original = props.originalArrivalDate ? parseDateOnly(props.originalArrivalDate) : undefined
+  if (original && stayArrivalDate.value) return original < stayArrivalDate.value ? original : stayArrivalDate.value
+  return original || stayArrivalDate.value
 })
 
 const bookingMaxDate = computed(() => {
@@ -132,8 +136,12 @@ const bookingMaxDate = computed(() => {
 
 const isDayUseStay = computed(() => {
   if (props.isDayUse) return true
-  return Boolean(bookingMinDate.value && bookingMaxDate.value && bookingMinDate.value === bookingMaxDate.value)
+  return Boolean(stayArrivalDate.value && bookingMaxDate.value && stayArrivalDate.value === bookingMaxDate.value)
 })
+
+// Ngày hệ thống luôn được post (bổ sung dịch vụ/tiền phòng ngoài giai đoạn ở); tiền phòng chỉ áp dụng cho phòng lẻ.
+const systemDay = computed(() => parseDateOnly(props.systemDate) || todayYmd())
+const isSystemDateRange = (from, to) => from === systemDay.value && to === systemDay.value
 
 // Room-night posting is limited through the last occupied night, not checkout day.
 // Với phòng Day Use (in-out cùng ngày), ngày post tiền phòng chính là ngày ở.
@@ -401,13 +409,12 @@ function handleKeyDown(event) {
 watch(() => props.show, (v) => {
   if (v) {
     resetModalPosition()
-    const sysDateParsed = parseDateOnly(props.systemDate) || todayYmd()
-    const initialDate = clampDateToBounds(
-      sysDateParsed,
-      bookingMinDate.value,
-      bookingMaxDate.value,
-    )
-    const initialRoomDate = clampDateToBounds(initialDate, bookingMinDate.value, roomMaxDate.value)
+    // Mặc định = ngày hệ thống; chỉ dời lên ngày đến khi booking chưa tới (ngày hệ thống trước giai đoạn ở).
+    const sysDateParsed = systemDay.value
+    const initialDate = bookingMinDate.value && sysDateParsed < bookingMinDate.value ? bookingMinDate.value : sysDateParsed
+    const initialRoomDate = props.bookingRoomId
+      ? initialDate
+      : clampDateToBounds(initialDate, bookingMinDate.value, roomMaxDate.value)
     errorMsg.value = ''
     activeTab.value = 'service'
     serviceFrom.value = initialDate
@@ -468,8 +475,9 @@ async function handleSubmit() {
     if (activeTab.value === 'service') {
       if (!selectedService.value) { errorMsg.value = 'Vui lòng chọn dịch vụ.'; isSubmitting.value = false; return }
       if (!quantity.value || quantity.value <= 0) { errorMsg.value = 'Số lượng phải > 0.'; isSubmitting.value = false; return }
-      if (!isDateWithinBounds(serviceFrom.value, bookingMinDate.value, bookingMaxDate.value)
-        || !isDateWithinBounds(serviceTo.value, bookingMinDate.value, bookingMaxDate.value)) {
+      if (!isSystemDateRange(serviceFrom.value, serviceTo.value)
+        && (!isDateWithinBounds(serviceFrom.value, bookingMinDate.value, bookingMaxDate.value)
+          || !isDateWithinBounds(serviceTo.value, bookingMinDate.value, bookingMaxDate.value))) {
         errorMsg.value = 'Ngày dịch vụ phải nằm trong thời gian lưu trú, từ ngày đến đến ngày đi.'
         isSubmitting.value = false
         return
@@ -490,13 +498,15 @@ async function handleSubmit() {
       })
       result = response?.data ?? null
     } else {
-      if (bookingMinDate.value && roomMaxDate.value && bookingMinDate.value > roomMaxDate.value) {
+      const roomSystemDatePost = Boolean(props.bookingRoomId) && isSystemDateRange(roomFrom.value, roomTo.value)
+      if (!roomSystemDatePost && bookingMinDate.value && roomMaxDate.value && bookingMinDate.value > roomMaxDate.value) {
         errorMsg.value = 'Booking không có đêm lưu trú hợp lệ để post tiền phòng.'
         isSubmitting.value = false
         return
       }
-      if (!isDateWithinBounds(roomFrom.value, bookingMinDate.value, roomMaxDate.value)
-        || !isDateWithinBounds(roomTo.value, bookingMinDate.value, roomMaxDate.value)) {
+      if (!roomSystemDatePost
+        && (!isDateWithinBounds(roomFrom.value, bookingMinDate.value, roomMaxDate.value)
+          || !isDateWithinBounds(roomTo.value, bookingMinDate.value, roomMaxDate.value))) {
         errorMsg.value = isDayUseStay.value
           ? 'Ngày tiền phòng phải nằm trong ngày lưu trú của phòng trong ngày (Day use).'
           : 'Ngày tiền phòng phải nằm từ ngày đến đến đêm cuối trước ngày đi.'

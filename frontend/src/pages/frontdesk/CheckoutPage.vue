@@ -278,7 +278,6 @@ const checkoutError = ref('')
 const checkoutUnpaidRooms = ref([])
 const earlyCheckoutData = ref(null)
 const checkoutPreview = ref(null)
-const masterDebtConfirmed = ref(false)
 const showEarlyChargeModal = ref(false)
 const earlyChargeDateOptions = ref([])
 const earlyChargeDates = ref([])
@@ -338,6 +337,15 @@ const showSplitDepositModal = ref(false)
 const roomAdjustment = ref(null)
 const housekeepingAdjustment = ref(null)
 
+// Phòng late check-in: ngày đến ban đầu là ngày late check-in sớm nhất (ngày đến bị dời sau đó).
+const selectedRoomOriginalArrivalDate = computed(() => {
+  // Giữ nguyên chuỗi datetime; AddServiceModal tự đổi về ngày theo múi giờ.
+  const lateDates = (selectedRoomItem.value?.rawRoom?.late_checkins || [])
+    .map(item => item.late_checkin_date)
+    .filter(Boolean)
+    .sort((a, b) => new Date(a) - new Date(b))
+  return lateDates[0] ? String(lateDates[0]) : ''
+})
 // Đứng tại phòng: hiển thị đúng giai đoạn ở và hạng của phòng; đứng tại Master: ngày của booking, Phòng/Hạng để trống.
 const registrationStayLabel = computed(() => {
   if (!selectedBooking.value) return '--'
@@ -377,7 +385,6 @@ const openCheckoutModal = () => {
   checkoutUnpaidRooms.value = []
   earlyCheckoutData.value = null
   checkoutPreview.value = null
-  masterDebtConfirmed.value = false
   if (isRestoreCheckout.value) {
     showCheckoutModal.value = true
     return
@@ -394,6 +401,29 @@ const openCheckoutModal = () => {
     ? checkoutGuestOptions(checkedRooms[0].room).map(guest => guest.id)
     : (selectedRoomItem.value ? checkoutGuestOptions(selectedRoomItem.value).map(guest => guest.id) : [])
   showCheckoutModal.value = true
+  // Nhiều phòng: kiểm tra điều kiện ngay khi mở màn hình xác nhận, bấm Checkout là trả phòng luôn.
+  if (checkedRooms.length > 1) loadCheckoutPreview(checkedRooms)
+}
+const loadCheckoutPreview = async (checkedRooms) => {
+  isServiceOperationLoading.value = true
+  try {
+    const response = await previewCheckoutRooms(selectedBooking.value.bookingId, checkedRooms.map(({ room }) => room.roomId || room.id))
+    checkoutPreview.value = response.data?.data || null
+    const failed = (checkoutPreview.value?.rooms || []).filter(room => !room.eligible)
+    checkoutError.value = failed.length ? `${failed.length} phòng chưa đủ điều kiện checkout, chỉ các phòng hợp lệ được trả phòng.` : ''
+  } catch (err) {
+    checkoutPreview.value = null
+    checkoutError.value = err?.response?.data?.message || 'Không kiểm tra được điều kiện checkout.'
+  } finally { isServiceOperationLoading.value = false }
+}
+// Sau khi trả phòng vẫn giữ Master đang xem, chỉ bỏ các lựa chọn checkout.
+const resetCheckoutSelection = () => {
+  allBookingsList.value.forEach(booking => {
+    ;(booking.roomItems || []).forEach(room => { room.checked = false })
+  })
+  checkoutGuestSelections.value = {}
+  checkoutGuestIds.value = []
+  checkoutPreview.value = null
 }
 const submitCheckout = async () => {
   if (denySaleInvoiceMutation()) return
@@ -419,19 +449,16 @@ const submitCheckout = async () => {
       if (!checkoutPreview.value) {
         const response = await previewCheckoutRooms(selectedBooking.value.bookingId, checkedRooms.map(({ room }) => room.roomId || room.id))
         checkoutPreview.value = response.data?.data || null
-        const failed = (checkoutPreview.value?.rooms || []).filter(room => !room.eligible)
-        checkoutError.value = checkoutPreview.value?.master_unpaid
-          ? 'Master còn công nợ nhóm. Xác nhận để tiếp tục.'
-          : (failed.length ? `${failed.length} phòng chưa đủ điều kiện checkout.` : 'Đã kiểm tra điều kiện. Bấm Trả phòng để tiếp tục.')
-        return
       }
-      if (checkoutPreview.value.master_unpaid && !masterDebtConfirmed.value) {
-        checkoutError.value = 'Cần xác nhận tiếp tục khi Master còn công nợ nhóm.'
-        return
-      }
+      // Checkout phòng không checkout Master, nên công nợ Master chỉ là thông tin, không chặn trả phòng.
       const successfulRooms = []
       const failedRooms = []
       const eligibleRoomIds = new Set((checkoutPreview.value.rooms || []).filter(room => room.eligible).map(room => String(room.room_id)))
+      if (eligibleRoomIds.size === 0) {
+        const reasons = (checkoutPreview.value.rooms || []).map(room => `Phòng ${room.room_number || room.room_id}: ${room.message || 'Không đủ điều kiện checkout'}`)
+        checkoutError.value = `Không có phòng nào đủ điều kiện checkout. ${reasons.join('; ')}`
+        return
+      }
       for (const { room } of checkedRooms.filter(({ room }) => eligibleRoomIds.has(String(room.roomId || room.id)))) {
         try {
           const guestIds = (checkoutGuestSelections.value[room.id] || []).filter(guestId => activeCheckoutGuests(room).some(guest => String(guest.id) === String(guestId)))
@@ -457,8 +484,10 @@ const submitCheckout = async () => {
       else if (childIds.length === 0) throw new Error('Phải chọn tối thiểu một khách.')
     } else await checkoutBooking(selectedBooking.value.bookingId)
     showCheckoutModal.value = false
+    // Checkout phòng: giữ Master đang xem (phòng đã out rời bộ lọc thì quay về dòng Master).
+    // Checkout Master: booking rời bộ lọc hiện tại nên refresh tự xóa panel.
+    resetCheckoutSelection()
     await refreshCheckoutData()
-    clearCheckoutPanels()
     uiStore.showToast('Checkout thành công.', 'success')
   } catch (err) {
     console.error('Checkout API error:', { status: err?.response?.status, code: err?.response?.data?.code })
@@ -779,6 +808,13 @@ const openAdjustRoomRateModal = async () => {
   showAdjustRoomRateModal.value = true
 }
 
+// Master chờ checkout: booking còn Đang ở (status=1) nhưng các phòng lưu trú đều đã checkout.
+const isPendingMasterCheckout = booking => {
+  if (Number(booking?.status) !== 1) return false
+  const stayRooms = (booking.booking_rooms || []).filter(room => ![3, 100].includes(Number(room.status)))
+  return stayRooms.length > 0 && stayRooms.every(room => isCheckedOutRecord(room))
+}
+
 const loadCheckoutBookings = async () => {
   isLoading.value = true
   try {
@@ -799,7 +835,10 @@ const loadCheckoutBookings = async () => {
     params.with_billing = true
     if (activeFilter.register !== 'virtual') params.stay_only = true
 
-    const res = await fetchBookings(params)
+    // Phòng ảo không có booking: lấy folio phòng ảo theo cấu trúc giống booking để dùng lại cách hiển thị.
+    const res = activeFilter.register === 'virtual'
+      ? await http.get('/virtual-room-folios')
+      : await fetchBookings(params)
     const list = res.data?.data || res.data || []
 
     const formatted = []
@@ -1055,8 +1094,10 @@ const loadCheckoutBookings = async () => {
       if (!includeBooking) return
 
       formatted.push({
-        id: `B${b.id}`,
+        // Folio phòng ảo không có booking: khóa theo phòng, bookingId = null.
+        id: b.virtual_folio ? `VF-${b.virtual_room_id}` : `B${b.id}`,
         bookingId: b.id,
+        virtualRoomId: b.virtual_folio ? b.virtual_room_id : null,
         code: code,
         name: mainGuestName, // Tên nhóm / Tên booking
         // Master Header đại diện cho Folio Master: Tổng dịch vụ = masterServiceTotal
@@ -1066,6 +1107,7 @@ const loadCheckoutBookings = async () => {
         departureDate: b.departure_date || '',
         isVirtual: bookingIsVirtual,
         isCheckedOut: bookingIsCheckedOut,
+        isPendingMasterCheckout: isPendingMasterCheckout(b),
         note: b.note || '',
         checked: false,
         roomItems: roomItems,
@@ -1144,6 +1186,8 @@ const loadCheckoutBookings = async () => {
 }
 
 const refreshCheckoutData = async () => {
+  // So khớp theo khóa dòng (B<id> hoặc VF-<phòng> của folio phòng ảo không có booking).
+  const currentEntryKey = selectedBooking.value ? selectedBooking.value.id : null
   const currentBookingId = selectedBooking.value ? selectedBooking.value.bookingId : null
   const currentRoomId = selectedRoomItem.value ? selectedRoomItem.value.roomId : null
   const currentGuestId = selectedGuestId.value
@@ -1151,11 +1195,11 @@ const refreshCheckoutData = async () => {
 
   await loadCheckoutBookings()
 
-  if (currentBookingId) {
-    const freshB = allBookingsList.value.find(b => b.bookingId === currentBookingId)
+  if (currentEntryKey) {
+    const freshB = allBookingsList.value.find(b => b.id === currentEntryKey)
     if (freshB) {
       // Cập nhật lại trong displayedBookingsList nếu nó đang chứa booking này
-      const displayedIdx = displayedBookingsList.value.findIndex(b => b.bookingId === currentBookingId)
+      const displayedIdx = displayedBookingsList.value.findIndex(b => b.id === currentEntryKey)
       if (displayedIdx !== -1) {
         displayedBookingsList.value[displayedIdx] = freshB
       } else {
@@ -1746,6 +1790,56 @@ const canSplitSelectedServices = computed(() => {
   return billIds.length === selectedServiceItems.value.length && new Set(billIds).size === 1
 })
 const selectedPaymentItems = computed(() => paymentsList.value.filter(payment => selectedPaymentIds.value.includes(Number(payment.id))))
+
+// In qua iframe ẩn để không bị chặn popup, kể cả khi tự in sau thanh toán (không còn thao tác bấm của user).
+const printHtmlDocument = (html) => {
+  const frame = document.createElement('iframe')
+  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;'
+  document.body.appendChild(frame)
+  const frameWindow = frame.contentWindow
+  // Gán onload trước khi close để chờ logo/ảnh tải xong rồi mới mở hộp thoại in.
+  frameWindow.onload = () => {
+    frameWindow.focus()
+    frameWindow.print()
+    setTimeout(() => frame.remove(), 1000)
+  }
+  frameWindow.document.open()
+  frameWindow.document.write(html)
+  frameWindow.document.close()
+}
+
+const printReceiptForPayments = async (paymentIds) => {
+  try {
+    const response = await http.post('/print-template-slots/payment-receipt', { payment_ids: paymentIds })
+    printHtmlDocument(response.data.html)
+  } catch (error) {
+    const errors = error?.response?.data?.errors
+    uiStore.showToast((errors && Object.values(errors).flat()[0]) || error?.response?.data?.message || 'Không thể in phiếu thu.', 'error')
+  }
+}
+
+// In Bill = phiếu thu (biên nhận thu tiền) theo mẫu gán cho vị trí PAYMENT_RECEIPT.
+// In các dòng thanh toán đang chọn; chưa chọn thì in toàn bộ thanh toán của folio đang xem.
+const printPaymentReceipt = async () => {
+  showInvoiceMenu.value = false
+  const payments = selectedPaymentItems.value.length ? selectedPaymentItems.value : visiblePaymentsList.value
+  const paymentIds = payments.map(payment => Number(payment.id)).filter(Number.isInteger)
+  if (paymentIds.length === 0) {
+    uiStore.showToast('Chưa có dòng thanh toán để in phiếu thu.', 'warning')
+    return
+  }
+  await printReceiptForPayments(paymentIds)
+}
+
+// DisablePrintBillAfterPayment: 1 = tự động in phiếu thu sau khi thanh toán thành công, 0 = không in.
+const shouldAutoPrintAfterPayment = async () => {
+  try {
+    const response = await http.get('/hotel-configs', { params: { name: 'DisablePrintBillAfterPayment' } })
+    return String(response.data?.data?.[0]?.value ?? '').trim() === '1'
+  } catch (error) {
+    return false
+  }
+}
 const selectedDeletePaymentGroup = computed(() => {
   const selected = selectedPaymentItems.value[0]
   if (!selected) return []
@@ -2665,7 +2759,12 @@ const handleRoomDrop = async (booking, room, guest = null) => {
   }
   draggedOverRoom.value = null
 
-  if (!destination.bookingId || (room && !destination.roomId)
+  // Folio phòng ảo không có booking: chỉ nhận thả vào đúng dòng phòng (không có Master).
+  const isVirtualFolioTarget = Boolean(booking?.virtualRoomId)
+  if ((!destination.bookingId && !(isVirtualFolioTarget && destination.roomId))
+    || (room && !destination.roomId)
+    || (!room && isVirtualFolioTarget)
+    || (room && String(destination.roomId) === String(selectedRoomItem.value?.roomId || ''))
     || (!room && !selectedRoomItem.value && String(destination.bookingId) === String(selectedBooking.value?.bookingId))) {
     handleServiceDragEnd()
     return
@@ -2954,15 +3053,22 @@ const openPaymentModal = async () => {
 
 const openPrepaymentModal = () => {
   if (denySaleInvoiceMutation()) return
+  // Thanh toán trước/đặt cọc gắn với booking; folio phòng ảo chỉ post bill và thanh toán trực tiếp.
+  if (selectedBooking.value?.virtualRoomId) {
+    uiStore.showToast('Phòng ảo không dùng thanh toán trước/đặt cọc. Vui lòng post bill rồi thanh toán.', 'warning')
+    return
+  }
   showPrepaymentModal.value = true
 }
 
-const handlePaymentSuccess = async () => {
+const handlePaymentSuccess = async (data) => {
   showPaymentModal.value = false
   await refreshCheckoutData()
   selectedServiceIds.value = []
   selectedPaymentIds.value = []
   uiStore.showToast('Đã thực hiện thanh toán thành công!', 'success')
+  const paymentIds = (data?.payment_ids || []).map(Number).filter(Number.isInteger)
+  if (paymentIds.length && await shouldAutoPrintAfterPayment()) await printReceiptForPayments(paymentIds)
 }
 
 const openDeletePaymentModal = async () => {
@@ -3040,7 +3146,8 @@ const selectPanelGuest = (guest) => {
 }
 
 const selectBookingHeader = (b) => {
-  if (b.requiresFolio && b.roomItems?.[0]) {
+  // Folio phòng ảo không có booking nên không có Master: luôn thao tác trên dòng phòng.
+  if ((b.requiresFolio || b.virtualRoomId) && b.roomItems?.[0]) {
     selectRoomItemRow(b, b.roomItems[0])
     return
   }
@@ -3087,8 +3194,9 @@ const selectRoomItemRow = async (b, r, specificGuest = null) => {
       const createdFolio = response.data?.data
       await loadCheckoutBookings()
 
+      // Folio phòng ảo không có booking: tìm theo phòng vừa khởi tạo.
       const freshBooking = allBookingsList.value.find(booking => (
-        String(booking.bookingId) === String(createdFolio?.booking_id)
+        booking.roomItems?.some(room => String(room.roomId) === String(createdFolio?.booking_room_id))
       ))
       const freshRoom = freshBooking?.roomItems?.find(room => (
         String(room.roomId) === String(createdFolio?.booking_room_id)
@@ -3578,7 +3686,7 @@ onUnmounted(() => {
             >
               <button class="w-full text-left px-2.5 py-1.5 hover:bg-sky-50 text-gray-700">Hiện giá</button>
               <button class="w-full text-left px-2.5 py-1.5 hover:bg-sky-50 text-gray-700">Không hiện giá</button>
-              <button class="w-full text-left px-2.5 py-1.5 hover:bg-sky-50 text-sky-600 font-semibold border-t border-gray-100">In Bill</button>
+              <button @click="printPaymentReceipt" class="w-full text-left px-2.5 py-1.5 hover:bg-sky-50 text-sky-600 font-semibold border-t border-gray-100">In Bill</button>
             </div>
           </div>
 
@@ -3687,10 +3795,10 @@ onUnmounted(() => {
                 class="py-1 text-xs"
               >
                 <!-- Line 1: BKK:  <mã booking>    <tên đoàn / tên booking> -->
-                <div class="grid min-w-0 cursor-pointer grid-cols-[50px_75px_minmax(0,1fr)] items-center gap-x-3 px-3 py-1.5 transition-colors hover:bg-slate-200" @click="selectBookingFromSearch(b)">
-                  <span class="font-bold text-gray-900">BKK:</span>
-                  <span class="font-bold text-gray-900">{{ b.code }}</span>
-                  <span class="min-w-0 truncate font-bold text-gray-800" :title="b.name">{{ b.name }}</span>
+                <div class="grid min-w-0 cursor-pointer grid-cols-[50px_75px_minmax(0,1fr)] items-center gap-x-3 px-3 py-1.5 bg-slate-50 font-bold transition-colors hover:bg-sky-100/70" @click="selectBookingFromSearch(b)">
+                  <span :class="b.isPendingMasterCheckout ? 'w-fit rounded bg-rose-100 px-1 font-bold text-rose-600' : 'font-bold text-gray-900'" :title="b.isPendingMasterCheckout ? 'Master chờ check-out' : ''">BKK:</span>
+                  <span class="font-bold text-blue-700">{{ b.code }}</span>
+                  <span class="min-w-0 truncate font-semibold text-gray-800" :title="b.name">{{ b.name }}</span>
                 </div>
                 <!-- Sublines for each room in booking (Khớp chính xác Ảnh 1) -->
                 <template v-for="r in b.roomItems" :key="r.id">
@@ -3720,6 +3828,10 @@ onUnmounted(() => {
               </div>
               <div v-if="filteredSearchBookings.length === 0" class="p-3 text-center text-gray-400 italic">
                 Không tìm thấy dữ liệu đăng ký nào
+              </div>
+              <div v-if="filteredSearchBookings.some(b => b.isPendingMasterCheckout)" class="sticky bottom-0 flex items-center gap-2 bg-slate-50 px-3 py-1.5 text-[11px] text-slate-500">
+                <span class="rounded bg-rose-100 px-1 font-bold text-rose-600">BKK:</span>
+                <span>Master chờ check-out (các phòng đã check-out, master chưa check-out)</span>
               </div>
             </div>
           </div>                    <div ref="filterContainerRef" class="checkout-register-filter relative">
@@ -3821,11 +3933,14 @@ onUnmounted(() => {
                 <template v-for="b in displayedBookingsList" :key="b.id">
                   <tr
                     @click="selectBookingHeader(b)"
-                    @dragover.prevent="draggedServiceGroup && handleRoomDragOver(b, null)"
+                    @dragover.prevent="(draggedServiceGroup || draggedPayment) && handleRoomDragOver(b, null)"
                     @dragleave="draggedOverRoom = null"
-                    @drop.prevent.stop="draggedServiceGroup ? handleRoomDrop(b, null) : handleServiceDragEnd()"
+                    @drop.prevent.stop="(draggedServiceGroup || draggedPayment) ? handleRoomDrop(b, null) : handleServiceDragEnd()"
                     :class="[
-                      selectedBooking && selectedBooking.id === b.id && !selectedRoomItem ? 'checkout-selected-row bg-[#2563EB] border-l-[3px] border-[#1D4ED8]' : b.isCheckedOut ? 'bg-[#ffd4d4] border-l-[3px] border-rose-400' : 'bg-white border-l-[3px] border-transparent',
+                      selectedBooking && selectedBooking.id === b.id && !selectedRoomItem
+                        ? 'checkout-selected-row bg-sky-100 border-l-4 border-blue-600 text-[#000000D9]'
+                        : (b.isCheckedOut ? 'bg-[#fee2e2] hover:bg-[#fed7d7] border-l-4 border-rose-400 text-[#000000D9]' : 'bg-white hover:bg-slate-100/70 border-l-4 border-transparent text-[#000000D9]'),
+                      b.isPendingMasterCheckout ? 'outline outline-2 -outline-offset-2 outline-rose-400' : '',
                       draggedOverRoom === roomDropKey(b, null) ? 'ring-2 ring-inset ring-sky-500 bg-sky-50' : '',
                       'cursor-pointer transition-colors'
                     ]"
@@ -4220,7 +4335,8 @@ onUnmounted(() => {
           <template v-else-if="selectedCheckoutRooms.length > 1">
             <div v-if="checkoutPreview" class="space-y-1 rounded border border-slate-200 bg-slate-50 p-2 text-xs">
               <p v-for="room in checkoutPreview.rooms" :key="room.room_id" :class="room.eligible ? 'text-emerald-700' : 'text-rose-700'">{{ room.eligible ? '✓' : '✕' }} Phòng {{ room.room_number || room.room_id }}</p>
-              <label v-if="checkoutPreview.master_unpaid" class="mt-2 flex items-center gap-2 rounded border border-amber-200 bg-amber-50 p-2 text-amber-800"><input v-model="masterDebtConfirmed" type="checkbox" class="accent-amber-500" /> Master còn công nợ — vẫn checkout phòng hợp lệ.</label>
+              <p v-for="room in checkoutPreview.rooms.filter(item => !item.eligible && item.message)" :key="`reason-${room.room_id}`" class="pl-4 text-rose-600">Phòng {{ room.room_number || room.room_id }}: {{ room.message }}</p>
+              <p v-if="checkoutPreview.master_unpaid" class="mt-2 rounded border border-amber-200 bg-amber-50 p-2 text-amber-800">Master còn công nợ nhóm — checkout phòng vẫn giữ Master chưa check-out.</p>
             </div>
             <p class="py-2 text-center text-sm text-slate-700">Đã chọn {{ selectedCheckoutRooms.length }} phòng để checkout.</p>
             <div class="max-h-[320px] space-y-1 overflow-y-auto pr-1">
@@ -4248,7 +4364,7 @@ onUnmounted(() => {
             <button @click="openEarlyChargeModal" :disabled="isServiceOperationLoading || earlyChargeNoPost" class="btn-pms-primary">Tiền phòng</button>
           </div>
         </div>
-        <div v-if="!earlyCheckoutData" class="flex justify-end gap-2 border-t px-4 py-3"><button @click="showCheckoutModal = false" class="btn-pms-close">Đóng</button><button @click="submitCheckout" :disabled="isServiceOperationLoading" class="btn-pms-primary">{{ isRestoreCheckout ? 'Khôi phục checkout' : (selectedCheckoutRooms.length > 1 && !checkoutPreview ? 'Kiểm tra điều kiện' : (!selectedRoomItem && selectedCheckoutRooms.length === 0 ? 'Có' : 'Checkout')) }}</button></div>
+        <div v-if="!earlyCheckoutData" class="flex justify-end gap-2 border-t px-4 py-3"><button @click="showCheckoutModal = false" class="btn-pms-close">Đóng</button><button @click="submitCheckout" :disabled="isServiceOperationLoading" class="btn-pms-primary">{{ isRestoreCheckout ? 'Khôi phục checkout' : (!selectedRoomItem && selectedCheckoutRooms.length === 0 ? 'Có' : 'Checkout') }}</button></div>
       </div>
     </div>
 
@@ -4271,6 +4387,7 @@ onUnmounted(() => {
       :guestId="selectedRoomItem ? selectedGuestId : null"
       :bookingId="selectedBooking ? selectedBooking.bookingId : ''"
       :arrivalDate="selectedRoomItem?.rawRoom?.arrival_date || selectedBooking?.arrivalDate || ''"
+      :originalArrivalDate="selectedRoomOriginalArrivalDate"
       :departureDate="selectedRoomItem?.rawRoom?.departure_date || selectedBooking?.departureDate || ''"
       :isDayUse="Boolean(selectedRoomItem?.rawRoom?.is_day_use || selectedRoomItem?.is_day_use || selectedBooking?.rawBooking?.is_day_use || selectedBooking?.is_day_use || (selectedRoomItem?.rawRoom?.arrival_date && selectedRoomItem?.rawRoom?.departure_date && String(selectedRoomItem.rawRoom.arrival_date).slice(0, 10) === String(selectedRoomItem.rawRoom.departure_date).slice(0, 10)))"
       :roomRate="Number(selectedRoomItem ? (selectedRoomItem.rate ?? selectedRoomItem.roomRate ?? selectedRoomItem.rawRoom?.rate ?? selectedRoomItem.rawRoom?.room_rate ?? 0) : (selectedBooking?.roomItems?.[0]?.rate ?? selectedBooking?.roomItems?.[0]?.roomRate ?? selectedBooking?.roomItems?.[0]?.rawRoom?.rate ?? selectedBooking?.roomItems?.[0]?.rawRoom?.room_rate ?? 0))"
@@ -4334,9 +4451,10 @@ onUnmounted(() => {
       @success="handlePrepaymentSuccess"
     />
 
-    <PaymentModal 
-      :show="showPaymentModal" 
+    <PaymentModal
+      :show="showPaymentModal"
       :bookingId="selectedBooking?.bookingId"
+      :virtualRoomId="selectedBooking?.virtualRoomId || null"
       :bookingCode="selectedBooking?.code"
       :bookingName="selectedBooking?.name"
       :companyName="selectedBooking?.rawBooking?.company?.name || 'KHÁCH LẺ'"

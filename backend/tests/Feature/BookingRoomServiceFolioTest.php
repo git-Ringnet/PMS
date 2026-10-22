@@ -276,9 +276,10 @@ class BookingRoomServiceFolioTest extends TestCase
         $firstService = $this->makeService($sourceRoom, $bill->Ma);
         $secondService = $this->makeService($sourceRoom, $bill->Ma);
 
+        // Chọn theo dòng chi tiết (service_ids) vẫn phải chọn đủ mọi dòng của cùng một bill.
         $this->actingAs($user)
             ->patchJson("/api/booking-rooms/{$sourceRoom->id}/services/folio", [
-                'service_bill_ids' => [$bill->Ma], 'service_ids' => [$firstService->id],
+                'service_ids' => [$firstService->id],
                 'target_booking_id' => $targetBooking->id, 'target_room_id' => $targetRoom->id,
             ])
             ->assertStatus(422)
@@ -286,16 +287,46 @@ class BookingRoomServiceFolioTest extends TestCase
 
         $this->assertDatabaseHas('service_bills', ['Ma' => $bill->Ma, 'Edit' => 0, 'Status' => 1]);
 
+        // Chuyển theo bill: server tự lấy toàn bộ chi tiết của bill, bỏ qua id chi tiết client gửi thiếu/cũ.
         $this->actingAs($user)
             ->patchJson("/api/booking-rooms/{$sourceRoom->id}/services/folio", [
-                'service_ids' => [$firstService->id, $secondService->id],
+                'service_bill_ids' => [$bill->Ma], 'service_ids' => [$firstService->id],
                 'target_booking_id' => $targetBooking->id, 'target_room_id' => $targetRoom->id,
             ])
             ->assertSuccessful();
 
         $this->assertSoftDeleted('booking_room_services', ['id' => $firstService->id]);
         $this->assertSoftDeleted('booking_room_services', ['id' => $secondService->id]);
-        $this->assertDatabaseHas('booking_room_services', ['booking_room_id' => $targetRoom->id, 'service_code' => 'MB']);
+        $this->assertSame(2, \App\Models\BookingRoomService::where('booking_room_id', $targetRoom->id)->where('service_code', 'MB')->count());
+    }
+
+    public function test_room_service_transfer_by_bill_ignores_stale_detail_ids_and_can_target_the_master(): void
+    {
+        $user = $this->createFolioUser();
+        $booking = Booking::create([
+            'booking_name' => 'GAL1', 'arrival_date' => now()->toDateString(), 'departure_date' => now()->addDay()->toDateString(),
+            'num_of_days' => 1, 'booking_date' => now()->toDateString(), 'created_by' => $user->username,
+        ]);
+        $room = $this->makeRoom($booking, 'GAL1-STALE');
+        $otherRoom = $this->makeRoom($booking, 'GAL1-OTHER');
+        $bill = $this->makeBill('Minibar');
+        $bill->update([
+            'Date' => now(), 'Amount' => 57500, 'RegisterId1' => $booking->id, 'RentalRoomId1' => $room->id,
+            'RegisterID2' => $booking->id, 'RentalRoomId2' => $room->id, 'Status' => 1, 'Edit' => 0,
+        ]);
+        $service = $this->makeService($room, $bill->Ma);
+        // Dòng chi tiết cũ đã nằm ở phòng khác (dữ liệu client chưa làm mới) từng làm lỗi "Có dịch vụ không thuộc phòng đã chọn".
+        $staleService = $this->makeService($otherRoom, $bill->Ma);
+
+        $this->actingAs($user)
+            ->patchJson("/api/booking-rooms/{$room->id}/services/folio", [
+                'service_bill_ids' => [$bill->Ma], 'service_ids' => [$service->id, $staleService->id],
+                'target_booking_id' => $booking->id, 'target_room_id' => null,
+            ])
+            ->assertSuccessful();
+
+        $this->assertDatabaseHas('service_bills', ['Ma' => $bill->Ma, 'Edit' => 1, 'Status' => 4]);
+        $this->assertDatabaseHas('service_bills', ['RegisterID2' => $booking->id, 'RentalRoomId2' => null, 'Amount' => 57500, 'Edit' => 0]);
     }
 
     public function test_folio_drag_updates_only_the_selected_room_service_and_its_linked_bill(): void
@@ -775,7 +806,7 @@ class BookingRoomServiceFolioTest extends TestCase
             'is_primary' => true, 'status' => BookingRoomGuest::STATUS_CHECKED_IN,
         ]);
         $department = Department::firstOrCreate(['code' => 'FO'], ['name' => 'Reception/ Lê Tân']);
-        HotelService::create(['code' => 'MB', 'name' => 'Minibar', 'unit' => 'Lan', 'price' => 100000, 'department_id' => $department->id]);
+        $department->hotelServices()->attach(HotelService::create(['code' => 'MB', 'name' => 'Minibar', 'unit' => 'Lan', 'price' => 100000, 'department_id' => $department->id])->id);
 
         $this->actingAs($user)
             ->postJson('/api/booking-room-services/post-fo-service-bill', [
@@ -1394,7 +1425,7 @@ class BookingRoomServiceFolioTest extends TestCase
         ]);
         $room = $this->makeRoom($booking, 'GAL1-FO-DEPARTURE');
         $department = Department::firstOrCreate(['code' => 'FO'], ['name' => 'Reception']);
-        HotelService::create(['code' => 'MB', 'name' => 'Minibar', 'price' => 100000, 'department_id' => $department->id]);
+        $department->hotelServices()->attach(HotelService::create(['code' => 'MB', 'name' => 'Minibar', 'price' => 100000, 'department_id' => $department->id])->id);
 
         $this->actingAs($user)
             ->postJson('/api/booking-room-services/post-fo-service-bill', [
@@ -1429,6 +1460,83 @@ class BookingRoomServiceFolioTest extends TestCase
             ->assertJsonPath('message', 'Ngày tiền phòng phải nằm từ ngày đến đến đêm cuối trước ngày đi.');
 
         $this->assertDatabaseCount('service_bills', 0);
+    }
+
+    public function test_late_checkin_room_charge_can_post_from_the_original_arrival_date(): void
+    {
+        $user = $this->createFolioUser();
+        SystemDateRoll::create(['system_date' => '2026-08-07', 'actual_date' => now(), 'shift' => '1', 'username' => $user->username]);
+        $booking = Booking::create([
+            'booking_name' => 'Late checkin', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-09',
+            'num_of_days' => 3, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
+        ]);
+        $room = $this->makeRoom($booking, 'GAL1-LATE');
+        // Late check-in không charge: ngày đến dời từ 06/08 sang 07/08.
+        $room->forceFill(['arrival_date' => '2026-08-07', 'departure_date' => '2026-08-09'])->saveQuietly();
+        \App\Models\LateCheckin::create([
+            'booking_room_id' => $room->id, 'late_checkin_date' => '2026-08-06', 'actual_arrival_date' => '2026-08-07',
+            'late_checkin_time' => '23:00', 'reason' => 'NightAudit No Show One Day + No Charge', 'status' => 1,
+            'username' => $user->username, 'shift' => '1',
+        ]);
+        $payload = ['booking_room_id' => $room->id, 'mode' => 'surcharge', 'rate' => 500000, 'folio' => 1];
+
+        $this->actingAs($user)->postJson('/api/booking-room-services/post-room-charge', $payload + ['date_from' => '2026-08-06', 'date_to' => '2026-08-06'])
+            ->assertSuccessful();
+        // Được post trước cho tương lai đến đêm cuối trước ngày đi, không quá ngày đi.
+        $this->actingAs($user)->postJson('/api/booking-room-services/post-room-charge', $payload + ['date_from' => '2026-08-08', 'date_to' => '2026-08-08'])
+            ->assertSuccessful();
+        $this->actingAs($user)->postJson('/api/booking-room-services/post-room-charge', $payload + ['date_from' => '2026-08-09', 'date_to' => '2026-08-09'])
+            ->assertUnprocessable();
+
+        $this->assertEqualsCanonicalizing(['2026-08-06', '2026-08-08'], ServiceBill::where('RentalRoomId1', $room->id)
+            ->pluck('Date')->map(fn ($date) => substr((string) $date, 0, 10))->all());
+    }
+
+    public function test_room_charge_and_service_can_post_on_the_system_date_outside_the_stay(): void
+    {
+        $user = $this->createFolioUser();
+        SystemDateRoll::create(['system_date' => '2026-08-10', 'actual_date' => now(), 'shift' => '1', 'username' => $user->username]);
+        $booking = Booking::create([
+            'booking_name' => 'Post bu', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-08',
+            'num_of_days' => 2, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
+        ]);
+        $room = $this->makeRoom($booking, 'GAL1-SYSDATE');
+        $room->forceFill(['departure_date' => '2026-08-08'])->saveQuietly();
+        $department = Department::firstOrCreate(['code' => 'FO'], ['name' => 'Reception']);
+        $department->hotelServices()->attach(HotelService::create(['code' => 'MB', 'name' => 'Minibar', 'price' => 100000, 'department_id' => $department->id])->id);
+
+        $roomPayload = ['booking_room_id' => $room->id, 'mode' => 'surcharge', 'rate' => 300000, 'folio' => 1];
+        $this->actingAs($user)->postJson('/api/booking-room-services/post-room-charge', $roomPayload + ['date_from' => '2026-08-10', 'date_to' => '2026-08-10'])
+            ->assertSuccessful();
+        $this->actingAs($user)->postJson('/api/booking-room-services/post-room-charge', $roomPayload + ['date_from' => '2026-08-09', 'date_to' => '2026-08-09'])
+            ->assertUnprocessable();
+
+        $servicePayload = ['booking_room_id' => $room->id, 'service_code' => 'MB', 'quantity' => 1, 'rate' => 100000];
+        $this->actingAs($user)->postJson('/api/booking-room-services/post-fo-service-bill', $servicePayload + ['date_from' => '2026-08-10', 'date_to' => '2026-08-10'])
+            ->assertSuccessful();
+        $this->actingAs($user)->postJson('/api/booking-room-services/post-fo-service-bill', $servicePayload + ['date_from' => '2026-08-09', 'date_to' => '2026-08-09'])
+            ->assertUnprocessable();
+    }
+
+    public function test_fo_service_can_be_posted_ahead_until_the_departure_date(): void
+    {
+        $user = $this->createFolioUser();
+        SystemDateRoll::create(['system_date' => '2026-08-06', 'actual_date' => now(), 'shift' => '1', 'username' => $user->username]);
+        $booking = Booking::create([
+            'booking_name' => 'Post truoc', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-09',
+            'num_of_days' => 3, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
+        ]);
+        $room = $this->makeRoom($booking, 'GAL1-AHEAD');
+        $room->forceFill(['departure_date' => '2026-08-09'])->saveQuietly();
+        $department = Department::firstOrCreate(['code' => 'FO'], ['name' => 'Reception']);
+        $department->hotelServices()->attach(HotelService::create(['code' => 'BF', 'name' => 'Breakfast', 'price' => 100000, 'department_id' => $department->id])->id);
+
+        $this->actingAs($user)->postJson('/api/booking-room-services/post-fo-service-bill', [
+            'booking_room_id' => $room->id, 'service_code' => 'BF', 'quantity' => 1, 'rate' => 100000,
+            'date_from' => '2026-08-07', 'date_to' => '2026-08-09',
+        ])->assertSuccessful();
+
+        $this->assertSame(3, ServiceBill::where('RentalRoomId1', $room->id)->where('ServiceId', 'BF')->count());
     }
 
     public function test_master_room_charge_does_not_post_after_a_room_specific_departure(): void

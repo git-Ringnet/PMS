@@ -304,13 +304,14 @@ class SalesInvoiceSettlementTest extends TestCase
         $this->assertDatabaseCount('sales_invoices', 0);
     }
 
-    public function test_settlement_rejects_a_date_outside_the_booking_stay(): void
+    public function test_settlement_accepts_a_date_after_the_booking_stay(): void
     {
-        $this->booking->update(['arrival_date' => '2026-09-17', 'departure_date' => '2026-09-18']);
-        $this->room->update(['arrival_date' => '2026-09-17', 'departure_date' => '2026-09-18']);
+        // Khách đã checkout (ở 10–12/09) rồi mới thanh toán vào ngày hệ thống 16/09: không ràng theo giai đoạn ở.
+        $this->booking->update(['arrival_date' => '2026-09-10', 'departure_date' => '2026-09-12']);
+        $this->room->update(['arrival_date' => '2026-09-10', 'departure_date' => '2026-09-12']);
         $bill = ServiceBill::create([
             'Guest' => 'Nguyễn Văn Test', 'DepartmentId' => 'FO', 'ServiceId' => 'LA',
-            'Username' => $this->user->username, 'Date' => '2026-09-16', 'OpenTime' => '08:00:00',
+            'Username' => $this->user->username, 'Date' => '2026-09-11', 'OpenTime' => '08:00:00',
             'Amount' => 500000, 'Exchange' => 1, 'Edit' => 0, 'Status' => 1, 'Folio' => '1',
             'RegisterId1' => (string) $this->booking->id, 'RentalRoomId1' => (string) $this->room->id,
             'RegisterID2' => (string) $this->booking->id, 'RentalRoomId2' => (string) $this->room->id,
@@ -321,10 +322,9 @@ class SalesInvoiceSettlementTest extends TestCase
             'payments' => [['payment_method_id' => 'CA', 'amount' => 500000]],
             'service_bill_ids' => [$bill->Ma], 'department_id' => 'FO',
             'date' => '2026-09-16', 'open_time' => '10:00', 'shift_id' => '1',
-        ])->assertUnprocessable()->assertJsonValidationErrors('date');
+        ])->assertSuccessful();
 
-        $this->assertDatabaseCount('payments', 0);
-        $this->assertDatabaseCount('sales_invoices', 0);
+        $this->assertDatabaseHas('payments', ['booking_id' => $this->booking->id, 'amount' => 500000]);
     }
 
     public function test_virtual_folio_settlement_accepts_payment_without_guest_or_stay_date_bounds(): void

@@ -13,6 +13,11 @@ const props = defineProps({
     type: [String, Number],
     default: ''
   },
+  // Folio phòng ảo (không có booking): thanh toán theo phòng.
+  virtualRoomId: {
+    type: String,
+    default: null
+  },
   bookingCode: {
     type: String,
     default: ''
@@ -218,7 +223,7 @@ const fetchPaymentMethods = async () => {
     const res = await http.get('/payment-methods')
     const list = res.data?.data || res.data || []
     paymentMethods.value = list.filter(m => !inGroupExcluded(m))
-    if (paymentMethods.value.length > 0 && !paymentMethodId.value) {
+    if (paymentMethods.value.length > 0 && (!paymentMethodId.value || !paymentMethods.value.some(m => String(m.id || m.code) === String(paymentMethodId.value)))) {
       paymentMethodId.value = paymentMethods.value[0].id || paymentMethods.value[0].code
     }
     await fetchBankAccounts()
@@ -246,7 +251,7 @@ const fetchBankAccounts = async () => {
 
 function inGroupExcluded(m) {
   const grp = Number(m.payment_group)
-  return grp === 5 || m.is_free === 1 || m.is_free === true
+  return grp === 5 || m.is_free === 1 || m.is_free === true || m.is_inactive === 1 || m.is_inactive === true
 }
 
 const workShiftsList = ref([])
@@ -524,7 +529,9 @@ const handleSubmit = async () => {
       ...(isZeroBalanceSettlement.value ? { zero_balance_close: true } : {})
     }
 
-    const res = await settleBookingPayment(props.bookingId, payload)
+    const res = props.virtualRoomId
+      ? await http.post(`/virtual-room-folios/${encodeURIComponent(props.virtualRoomId)}/settle-payment`, payload)
+      : await settleBookingPayment(props.bookingId, payload)
     if (res.data?.success) {
       emit('success', res.data.data)
       emit('close')
@@ -654,7 +661,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleEscape))
               <!-- Ngày -->
               <div class="min-w-0">
                 <label class="block font-semibold text-[#000000D9] mb-0.5 text-xs">Ngày <span class="text-red-500">*</span></label>
-                <SingleDatePicker v-model="draftPaymentDate" :min-date="arrivalDate || undefined" :max-date="systemDate || departureDate || undefined" placeholder="dd/mm/yyyy" four-digit-year input-class="!h-8 !bg-[#FFF8DB] !border-[#F1DD8A] !text-xs !font-normal" @update:model-value="validatePaymentDateInput" />
+                <SingleDatePicker v-model="draftPaymentDate" :max-date="systemDate || undefined" placeholder="dd/mm/yyyy" four-digit-year input-class="!h-8 !bg-[#FFF8DB] !border-[#F1DD8A] !text-xs !font-normal" @update:model-value="validatePaymentDateInput" />
                 <p v-if="paymentDateError" id="payment-date-error-message" role="alert" class="mt-0.5 text-xs leading-4 text-red-600">
                   {{ paymentDateError }}
                 </p>

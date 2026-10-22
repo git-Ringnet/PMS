@@ -22,6 +22,8 @@ class BookingRoom extends Model
     public function scopeStayOnly(Builder $query): Builder
     {
         return $query
+            // Folio phòng ảo không có booking (booking_id NULL) không phải lượt lưu trú.
+            ->whereNotNull('booking_id')
             ->whereDoesntHave('booking', fn (Builder $booking) => $booking->where('is_service_only', true))
             ->where(function (Builder $rooms): void {
                 $rooms->whereNull('room_number')
@@ -37,7 +39,8 @@ class BookingRoom extends Model
     public function scopeVirtual(Builder $query): Builder
     {
         return $query->where(function (Builder $virtual): void {
-            $virtual->where('room_number', 'like', '0%')
+            $virtual->whereNull('booking_id')
+                ->orWhere('room_number', 'like', '0%')
                 ->orWhereHas('room', fn (Builder $room) => $room->where('is_internal', true))
                 ->orWhereHas('booking', fn (Builder $booking) => $booking->where('is_service_only', true));
         });
@@ -45,6 +48,10 @@ class BookingRoom extends Model
 
     public function isVirtual(): bool
     {
+        if ($this->exists && $this->booking_id === null) {
+            return true;
+        }
+
         if (str_starts_with((string) $this->room_number, '0')) {
             return true;
         }

@@ -53,6 +53,7 @@ class BookingBusinessRulesTest extends TestCase
             $role->permissions()->syncWithoutDetaching([$permission->id]);
         }
         $this->user->roles()->attach($role->id);
+        \App\Models\HotelConfig::updateOrCreate(['name' => 'RoleUserReCheckout'], ['value' => 'booking_rules_test']);
         $this->actingAs($this->user);
 
         // Seed booking statuses

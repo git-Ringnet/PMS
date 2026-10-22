@@ -515,10 +515,9 @@ const selectOption = (opt) => {
   if (opt) {
     form.value.roomId = opt.bookingRoomId
     form.value.guestId = opt.guestId
+    // Mặc định giữ ngày hệ thống (luôn được post); chỉ dời lên ngày đến khi phòng chưa tới.
     if (opt.arrivalDate && form.value.date < opt.arrivalDate) {
       form.value.date = opt.arrivalDate
-    } else if (opt.departureDate && form.value.date > opt.departureDate) {
-      form.value.date = opt.departureDate
     }
   } else {
     form.value.roomId = ''
@@ -978,11 +977,12 @@ const sendToRoom = async () => {
     uiStore.showToast('Vui lòng chọn ngày post bill.', 'warning')
     return
   }
-  if (selectedStayMinDate.value && form.value.date < selectedStayMinDate.value) {
+  const isSystemDatePost = Boolean(systemDate.value) && form.value.date === systemDate.value
+  if (!isSystemDatePost && selectedStayMinDate.value && form.value.date < selectedStayMinDate.value) {
     uiStore.showToast(`Ngày post bill không được trước ngày đến (${formatDateDisplay(selectedStayMinDate.value)}) của phòng.`, 'warning')
     return
   }
-  if (selectedStayMaxDate.value && form.value.date > selectedStayMaxDate.value) {
+  if (!isSystemDatePost && selectedStayMaxDate.value && form.value.date > selectedStayMaxDate.value) {
     uiStore.showToast(`Ngày post bill không được sau ngày đi (${formatDateDisplay(selectedStayMaxDate.value)}) của phòng.`, 'warning')
     return
   }

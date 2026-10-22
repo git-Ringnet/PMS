@@ -189,21 +189,28 @@ class VirtualRoomFolioTest extends TestCase
             'is_internal' => true,
         ]);
 
+        $bookingCountBefore = Booking::withTrashed()->count();
         $first = $this->postJson('/api/rooms/0INT-VFT-LAZY/service-folio')
             ->assertSuccessful()
-            ->assertJsonPath('data.created', true);
-        $bookingId = $first->json('data.booking_id');
+            ->assertJsonPath('data.created', true)
+            ->assertJsonPath('data.booking_id', null);
         $bookingRoomId = $first->json('data.booking_room_id');
 
-        $this->assertTrue((bool) Booking::findOrFail($bookingId)->is_service_only);
-        $this->assertSame(BookingRoom::STATUS_BOOKED, (int) BookingRoom::findOrFail($bookingRoomId)->status);
-        $this->assertSame(0.0, (float) BookingRoom::findOrFail($bookingRoomId)->rate);
+        // Phòng ảo không tạo booking (không nhảy số BK): chỉ booking_rooms + guest mang tên phòng.
+        $this->assertSame($bookingCountBefore, Booking::withTrashed()->count());
+        $folio = BookingRoom::findOrFail($bookingRoomId);
+        $this->assertNull($folio->booking_id);
+        $this->assertTrue($folio->isVirtual());
+        $this->assertSame(BookingRoom::STATUS_BOOKED, (int) $folio->status);
+        $this->assertSame(0.0, (float) $folio->rate);
+        $this->assertSame('2099-12-31', $folio->departure_date->toDateString());
+        $this->assertSame('PHÒNG ẢO 0INT-VFT-LAZY', $folio->guests()->with('guest')->first()->guest->full_name);
+        $this->assertSame(0, BookingRoom::stayOnly()->where('id', $bookingRoomId)->count());
 
         $second = $this->postJson('/api/rooms/0INT-VFT-LAZY/service-folio')
             ->assertSuccessful()
             ->assertJsonPath('data.created', false);
 
-        $this->assertSame($bookingId, $second->json('data.booking_id'));
         $this->assertSame($bookingRoomId, $second->json('data.booking_room_id'));
         $this->assertSame(1, BookingRoom::where('room_number', '0INT-VFT-LAZY')->count());
     }
@@ -432,6 +439,114 @@ class VirtualRoomFolioTest extends TestCase
             ->where('RentalRoomId1', $room->id)
             ->where('ServiceId', 'RM')
             ->count());
+    }
+
+    public function test_virtual_folio_without_booking_posts_lists_transfers_and_settles_bills(): void
+    {
+        SystemDateRoll::create(['system_date' => now()->toDateString(), 'actual_date' => now(), 'shift' => '1', 'username' => $this->user->username]);
+        \App\Models\Shift::create(['name' => '1', 'start_time' => '00:00:00', 'end_time' => '23:59:59']);
+        $form = RoomForm::create(['name' => 'Virtual flow form', 'max_adults' => 2]);
+        Room::create(['room_number' => '0VF-FLOW', 'room_form_id' => $form->id, 'room_class_id' => $this->roomClass->id, 'floor' => '0', 'is_internal' => true]);
+        $department = \App\Models\Department::firstOrCreate(['code' => 'FO'], ['name' => 'Reception']);
+        $department->hotelServices()->attach(\App\Models\HotelService::create(['code' => 'MS', 'name' => 'Dịch vụ khác', 'price' => 0, 'department_id' => $department->id])->id);
+
+        $folioId = $this->postJson('/api/rooms/0VF-FLOW/service-folio')->assertSuccessful()->json('data.booking_room_id');
+
+        // Post bill dịch vụ: phòng ảo không có booking nên RegisterID1,2 = NULL, nhận diện bằng RentalRoomId.
+        $this->postJson('/api/booking-room-services/post-fo-service-bill', [
+            'booking_room_id' => $folioId, 'date_from' => now()->toDateString(), 'date_to' => now()->toDateString(),
+            'service_code' => 'MS', 'quantity' => 1, 'rate' => 120000, 'folio' => 1,
+        ])->assertSuccessful();
+        $bill = ServiceBill::where('RentalRoomId1', $folioId)->sole();
+        $this->assertNull($bill->RegisterId1);
+        $this->assertNull($bill->RegisterID2);
+        $this->assertSame($folioId, (string) $bill->RentalRoomId2);
+
+        // Danh sách folio phòng ảo cho màn hình Hóa đơn.
+        $folio = collect($this->getJson('/api/virtual-room-folios')->assertSuccessful()->json('data'))->firstWhere('virtual_room_id', $folioId);
+        $this->assertNull($folio['id']);
+        $this->assertSame('PHÒNG ẢO 0VF-FLOW', $folio['booking_name']);
+        $this->assertCount(1, $folio['service_bills']);
+
+        // Phòng ảo không cho checkout.
+        $guestId = BookingRoom::findOrFail($folioId)->guests()->value('guest_id');
+        $this->postJson("/api/booking-rooms/{$folioId}/checkout", ['guest_ids' => [$guestId]])->assertStatus(422);
+
+        // Thanh toán theo phòng ảo: không cần booking, payment/bill được gắn mã thanh toán.
+        $response = $this->postJson("/api/virtual-room-folios/{$folioId}/settle-payment", [
+            'folio_id' => '1', 'guest_id' => $guestId,
+            'payments' => [['payment_method_id' => 'CA', 'amount' => 120000]],
+            'department_id' => 'FO', 'date' => now()->toDateString(), 'open_time' => '10:00', 'shift_id' => '1',
+        ])->assertSuccessful();
+        $payment = Payment::findOrFail($response->json('data.payment_ids.0'));
+        $this->assertNull($payment->booking_id);
+        $this->assertSame($folioId, (string) $payment->booking_room_id);
+        $this->assertSame((string) $payment->payment_id, (string) $bill->fresh()->PaymentId);
+
+        // Không tạo booking nào cho phòng ảo trong suốt luồng.
+        $this->assertSame(0, Booking::withTrashed()->count());
+    }
+
+    public function test_bill_can_be_transferred_from_a_stay_room_into_a_virtual_folio_and_back(): void
+    {
+        $form = RoomForm::create(['name' => 'Virtual transfer form', 'max_adults' => 2]);
+        Room::create(['room_number' => '0VF-MOVE', 'room_form_id' => $form->id, 'room_class_id' => $this->roomClass->id, 'floor' => '0', 'is_internal' => true]);
+        $folioId = $this->postJson('/api/rooms/0VF-MOVE/service-folio')->assertSuccessful()->json('data.booking_room_id');
+        Room::create(['room_number' => 'VFT305', 'room_form_id' => $form->id, 'room_class_id' => $this->roomClass->id, 'floor' => '3']);
+        $booking = $this->makeBooking();
+        $stayRoom = $this->makeBookingRoom($booking, 'VFT-STAY-MOVE', 'VFT305', BookingRoom::STATUS_CHECKED_IN);
+        $bill = ServiceBill::create([
+            'Guest' => 'Khach', 'DepartmentId' => 'FO', 'ServiceId' => 'MS', 'Username' => $this->user->username, 'OpenTime' => '08:00:00',
+            'Date' => now(), 'Amount' => 80000, 'Exchange' => 1, 'Edit' => 0, 'Status' => 1, 'Folio' => '1',
+            'RegisterId1' => $booking->id, 'RentalRoomId1' => $stayRoom->id, 'RegisterID2' => $booking->id, 'RentalRoomId2' => $stayRoom->id,
+        ]);
+
+        $this->patchJson("/api/booking-rooms/{$stayRoom->id}/services/folio", [
+            'service_bill_ids' => [$bill->Ma], 'target_room_id' => $folioId,
+        ])->assertSuccessful();
+        $moved = ServiceBill::where('RentalRoomId2', $folioId)->where('Edit', 0)->sole();
+        $this->assertNull($moved->RegisterID2);
+
+        $this->patchJson("/api/booking-rooms/{$folioId}/services/folio", [
+            'service_bill_ids' => [$moved->Ma], 'target_booking_id' => $booking->id, 'target_room_id' => $stayRoom->id,
+        ])->assertSuccessful();
+        $this->assertSame(1, ServiceBill::where('RentalRoomId2', $stayRoom->id)->where('Edit', 0)->count());
+    }
+
+    public function test_legacy_room_bills_without_register_ids_are_linked_back_to_their_booking(): void
+    {
+        $form = RoomForm::create(['name' => 'Legacy import form', 'max_adults' => 2]);
+        Room::create(['room_number' => 'VFT401', 'room_form_id' => $form->id, 'room_class_id' => $this->roomClass->id, 'floor' => '4']);
+        Room::create(['room_number' => '0VF-LEGACY', 'room_form_id' => $form->id, 'room_class_id' => $this->roomClass->id, 'floor' => '0', 'is_internal' => true]);
+        $booking = $this->makeBooking();
+        $stayRoom = $this->makeBookingRoom($booking, 'VFT-LEGACY-401', 'VFT401', BookingRoom::STATUS_CHECKED_IN);
+        $virtualFolioId = $this->postJson('/api/rooms/0VF-LEGACY/service-folio')->assertSuccessful()->json('data.booking_room_id');
+        $makeBill = fn (array $links) => ServiceBill::create($links + [
+            'Guest' => 'Legacy', 'DepartmentId' => 'FO', 'ServiceId' => 'MS', 'Username' => 'legacy', 'OpenTime' => '08:00:00',
+            'Date' => now(), 'Amount' => 50000, 'Exchange' => 1, 'Edit' => 0, 'Status' => 1, 'Folio' => '1',
+        ]);
+        // Bill phòng kiểu phần mềm cũ: RegisterID1,2 = NULL, chỉ có RentalRoomId.
+        $legacyRoomBill = $makeBill(['RentalRoomId1' => $stayRoom->id, 'RentalRoomId2' => $stayRoom->id]);
+        $virtualBill = $makeBill(['RentalRoomId1' => $virtualFolioId, 'RentalRoomId2' => $virtualFolioId]);
+        $masterBill = $makeBill(['RegisterId1' => $booking->id, 'RegisterID2' => $booking->id]);
+
+        // Bill trỏ tới phòng chưa được import: không điền được, lệnh phải cảnh báo kèm mã bill.
+        $orphanBill = $makeBill(['RentalRoomId1' => 'G-NOT-IMPORTED', 'RentalRoomId2' => 'G-NOT-IMPORTED']);
+
+        $this->artisan('services:backfill-legacy-register-ids')
+            ->expectsOutputToContain('RegisterId1 1 dòng, RegisterID2 1 dòng')
+            ->expectsOutputToContain('Có 1 bill trỏ tới phòng không tồn tại trong booking_rooms')
+            ->assertSuccessful();
+        $this->assertNull($legacyRoomBill->fresh()->RegisterId1);
+        $this->assertNull($orphanBill->fresh()->RegisterId1);
+
+        $this->artisan('services:backfill-legacy-register-ids', ['--apply' => true])->assertSuccessful();
+        $this->assertSame($booking->id, (int) $legacyRoomBill->fresh()->RegisterId1);
+        $this->assertSame($booking->id, (int) $legacyRoomBill->fresh()->RegisterID2);
+        $this->assertNull($virtualBill->fresh()->RegisterId1);
+        $this->assertNull($virtualBill->fresh()->RegisterID2);
+        $this->assertNull($masterBill->fresh()->RentalRoomId2);
+        $this->assertSame($booking->id, (int) $masterBill->fresh()->RegisterID2);
     }
 
     private function makeBooking(array $attributes = []): Booking

@@ -183,6 +183,8 @@ class BookingController extends Controller
             $relations[] = 'payments.paymentMethod';
             $relations[] = 'payments.user';
             $relations[] = 'payments.bankAccount';
+            // Ngày đến ban đầu của phòng late check-in để Hóa đơn cho post lại các đêm cũ.
+            $relations[] = 'bookingRooms.lateCheckins:id,booking_room_id,late_checkin_date';
         }
 
         $stayOnly = $request->boolean('stay_only');

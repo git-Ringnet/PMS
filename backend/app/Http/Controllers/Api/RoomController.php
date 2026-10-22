@@ -387,8 +387,9 @@ class RoomController extends Controller
                 ->lockForUpdate()
                 ->get();
 
+            // Folio phòng ảo không có booking (booking_id NULL); vẫn nhận dạng folio cũ còn booking ẩn.
             $serviceFolios = $activeRoomRows
-                ->filter(fn ($bookingRoom) => (bool) $bookingRoom->booking?->is_service_only)
+                ->filter(fn ($bookingRoom) => $bookingRoom->booking_id === null || (bool) $bookingRoom->booking?->is_service_only)
                 ->values();
 
             if ($serviceFolios->count() === 1) {
@@ -403,48 +404,14 @@ class RoomController extends Controller
                 ], 409)];
             }
 
-            $systemDate = DB::table('system_date_rolls')->orderByDesc('id')->value('system_date');
-            $arrivalDate = $systemDate
-                ? \Carbon\Carbon::parse($systemDate)->toDateString()
-                : now('Asia/Ho_Chi_Minh')->toDateString();
-            $departureDate = \Carbon\Carbon::parse($arrivalDate)->addDay()->toDateString();
-            $username = $request->user()?->username ?? 'system';
+            // Không tạo booking cho phòng ảo (tránh nhảy số BK): chỉ booking_rooms + guest + booking_room_guests.
+            $bookingRoom = app(\App\Services\VirtualRoomFolioService::class)->createFolio(
+                (string) $room->room_number,
+                $room->room_class_id,
+                $request->user()?->username ?? 'system'
+            );
 
-            $booking = \App\Models\Booking::create([
-                'booking_name' => 'PHÒNG ẢO ' . $room->room_number,
-                'arrival_date' => $arrivalDate,
-                'departure_date' => $departureDate,
-                'num_of_days' => 1,
-                'booking_date' => $arrivalDate,
-                'status' => \App\Models\Booking::STATUS_RESERVATION,
-                'is_service_only' => true,
-                'is_master_room_rate' => false,
-                'created_by' => $username,
-                'updated_by' => $username,
-                'module' => 'FO',
-            ]);
-
-            $bookingRoom = \App\Models\BookingRoom::create([
-                'booking_id' => $booking->id,
-                'room_number' => $room->room_number,
-                'room_class_id' => $room->room_class_id,
-                'arrival_date' => $arrivalDate,
-                'departure_date' => $departureDate,
-                'actual_arrival_date' => $arrivalDate,
-                'planned_departure_date' => $departureDate,
-                'NumOfDays' => 1,
-                'ActutalNumOfDays' => 1,
-                'status' => \App\Models\BookingRoom::STATUS_BOOKED,
-                'rate' => 0,
-                'base_price' => 0,
-                'adults' => 0,
-                'babies' => 0,
-                'children_qty' => 0,
-                'created_by' => $username,
-                'updated_by' => $username,
-            ]);
-
-            return ['booking_room' => $bookingRoom->load('booking'), 'created' => true];
+            return ['booking_room' => $bookingRoom, 'created' => true];
         });
 
         if (isset($result['error'])) {
