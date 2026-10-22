@@ -1,7 +1,8 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
-import { useHkStore, GROUP_COLORS, getRoomDisplayCode } from '@/stores/hk-store'
+import { useHkStore, GROUP_COLORS } from '@/stores/hk-store'
+import { compareRooms, getStatusSymbols as buildStatusSymbols, buildWorksheetSheets, buildSupervisorRooms } from '@/utils/hk-room-status'
 import { useRoomStore } from '@/stores/room-store'
 import {
   CalendarDays, Clock3, Search, Filter, ChevronDown,
@@ -222,13 +223,16 @@ const allRooms = computed(() => {
         room_status_code: r.room_status_code || 'vacant_dirty',
         booking_status: r.booking_status || '',
         displayBookingStatus,
-        displayCode: getRoomDisplayCode(r.room_status_code, displayBookingStatus, hkStore.activeSymbols),
+        isBackToBack: !!r.is_back_to_back,
+        extraBedQty: Number(r.extra_bed_qty || 0),
       }
     })
-    .sort((a, b) => String(a.room_number).localeCompare(String(b.room_number)))
+    .sort(compareRooms)
 })
 
-const floors = computed(() => [...new Set(allRooms.value.map(r => r.floor))].sort((a, b) => a - b))
+const roomById = computed(() => new Map(allRooms.value.map(r => [r.id, r])))
+
+const floors = computed(() => [...new Set(allRooms.value.map(r => r.floor))].sort((a, b) => Number(a) - Number(b)))
 
 const filteredRooms = computed(() => {
   const q = searchQ.value.trim().toLowerCase()
@@ -675,18 +679,25 @@ function getHkCodeBadge(statusCode) {
 function getHkColor(statusCode) {
   return hkStore.activeSymbols.hk[statusCode]?.color || '#94a3b8'
 }
-function getRoomSymbols(roomStatusCode, bookingStatus, customSymbols = null) {
-  if (!customSymbols) return []
-  const hkSym = customSymbols.hk?.[roomStatusCode]
-  const bkSym = customSymbols.booking?.[bookingStatus]
-  const list = []
-  if (bkSym?.code) {
-    list.push({ code: bkSym.code, color: bkSym.color || '#64748b' })
-  }
-  if (hkSym?.code && hkSym.code !== bkSym?.code) {
-    list.push({ code: hkSym.code, color: hkSym.color || '#94a3b8' })
-  }
-  return list
+// Dòng 357: ký hiệu tình trạng phòng (back-to-back: CI, <buồng>, CO; kèm EB khi có giường phụ)
+function getStatusSymbols(roomStatusCode, bookingStatus, liveRoom = null) {
+  return buildStatusSymbols(hkStore.activeSymbols, roomStatusCode, bookingStatus, liveRoom)
+}
+
+function getStatusText(roomStatusCode, bookingStatus, liveRoom = null) {
+  return getStatusSymbols(roomStatusCode, bookingStatus, liveRoom).map(s => s.code).join(', ')
+}
+
+function getGroupRoomSymbols(r) {
+  return getStatusSymbols(r.room_status_snapshot, r.booking_status_snapshot, roomById.value.get(Number(r.room_id)))
+}
+
+/** Phòng của nhóm phân công theo thứ tự tầng. */
+function sortedGroupRooms(group) {
+  return [...group.rooms].sort((a, b) => compareRooms(
+    { floor: roomById.value.get(Number(a.room_id))?.floor, room_number: a.room_number },
+    { floor: roomById.value.get(Number(b.room_id))?.floor, room_number: b.room_number },
+  ))
 }
 function getGroupColor(idx) {
   return GROUP_COLORS[idx % GROUP_COLORS.length]
@@ -700,7 +711,6 @@ function getInitials(name) {
 // ─────────────────────────────────────────────────────────────
 const printMode = ref('group') // 'group' | 'room'
 const selectedGroupsToPrint = ref(new Set())
-const selectedRoomsToPrint = ref(new Set())
 
 function toggleGroupPrint(gid) {
   const s = new Set(selectedGroupsToPrint.value)
@@ -728,29 +738,99 @@ function buildWorksheetLegend() {
   return [...bkItems, ...hkItems]
 }
 
+// Dòng 357: mở bản in ở tab mới để kiểm tra trước, bấm nút In trên thanh công cụ mới in
+function openPrintPreview(title, bodyHtml, extraStyle = '') {
+  const win = window.open('', '_blank')
+  if (!win) {
+    uiStore.showToast('Trình duyệt đang chặn mở tab mới. Vui lòng cho phép pop-up để xem bản in.', 'warning')
+    return
+  }
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title>
+    <style>
+      body { margin:0; background:#e2e8f0; }
+      .print-toolbar { position:sticky; top:0; z-index:10; display:flex; align-items:center; justify-content:space-between; gap:12px;
+        padding:8px 16px; background:#1e293b; color:#fff; font:600 13px -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif; }
+      .print-toolbar button { display:inline-flex; align-items:center; gap:6px; padding:6px 14px; border:none; border-radius:6px;
+        background:#0ea5e9; color:#fff; font:600 13px inherit; cursor:pointer; }
+      .print-toolbar button:hover { background:#0284c7; }
+      .print-sheet { background:#fff; max-width:1100px; margin:12px auto; box-shadow:0 1px 4px rgba(15,23,42,.15); }
+      @media print {
+        .print-toolbar { display:none; }
+        body { background:#fff; }
+        .print-sheet { margin:0; max-width:none; box-shadow:none; }
+      }
+      ${extraStyle}
+    </style></head>
+    <body>
+      <div class="print-toolbar">
+        <span>${title}</span>
+        <button type="button" onclick="window.print()" title="In">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          In
+        </button>
+      </div>
+      <div class="print-sheet">${bodyHtml}</div>
+    </body></html>`)
+  win.document.close()
+  win.focus()
+}
+
+function legendGridHtml(legend) {
+  return legend.map(l => {
+    const parts = l.split(':')
+    const code = parts[0]?.trim() || ''
+    const label = parts[1]?.trim() || ''
+    return `<div style="font-size:9px;line-height:1.4;color:#334155;">
+      <strong style="color:#0f172a;display:inline-block;width:32px;">${code}</strong>: ${label}
+    </div>`
+  }).join('')
+}
+
+/** Phòng của nhóm phân công: tình trạng lấy theo lịch phân công (snapshot), kèm cờ back-to-back / EB hiện tại. */
+function groupRoomForPrint(r) {
+  const live = roomById.value.get(Number(r.room_id))
+  return {
+    room_id: Number(r.room_id),
+    room_number: r.room_number,
+    room_type: r.room_class_name || live?.room_type || '',
+    floor: live?.floor ?? null,
+    status: getStatusText(r.room_status_snapshot, r.booking_status_snapshot, live),
+    isDirty: String(r.room_status_snapshot).includes('dirty'),
+  }
+}
+
+/** Phòng chọn từ danh sách bên trái: tình trạng lấy theo danh sách phòng. */
+function listRoomForPrint(room) {
+  return {
+    room_id: room.id,
+    room_number: room.room_number,
+    room_type: room.room_type,
+    floor: room.floor,
+    status: getStatusText(room.room_status_code, room.displayBookingStatus, room),
+    isDirty: String(room.room_status_code).includes('dirty'),
+  }
+}
+
 function printByGroup() {
-  const groupsToPrint = hkStore.groups.filter(g =>
-    selectedGroupsToPrint.value.size === 0 || selectedGroupsToPrint.value.has(g.id)
-  )
-  if (!groupsToPrint.length) { alert('Chưa có nhóm nào để in'); return }
+  const sheets = buildWorksheetSheets(
+    hkStore.groups, selectedGroupsToPrint.value, selectedRoomIds.value, hkStore.roomGroupMap, roomById.value,
+  ).map(sheet => ({
+    staffNames: sheet.staffNames,
+    rooms: sheet.rooms.map(item => item.source === 'group' ? groupRoomForPrint(item.room) : listRoomForPrint(item.room)),
+  }))
+  if (!sheets.length) { alert('Chưa có phòng nào để in. Chọn phòng ở danh sách bên trái hoặc tích "In lịch" ở nhóm phân công.'); return }
 
   const shift = hkStore.shifts.find(s => s.id == selectedShiftId.value)
   const engShiftName = getEnglishShiftName(shift)
   const dateStr = workDate.value.split('-').reverse().join('/')
-  const legend = buildWorksheetLegend()
+  const legendHtml = legendGridHtml(buildWorksheetLegend())
 
   const COLS = hkStore.activeWorksheetCols
 
-  const pages = groupsToPrint.map(g => {
-    const staffNames = g.staff_list.map(s => s.name).join(' / ')
-    const rows = g.rooms.map((r, i) => {
-      const code = [
-        hkStore.activeSymbols.booking[r.booking_status_snapshot]?.code || '',
-        hkStore.activeSymbols.hk[r.room_status_snapshot]?.code || '',
-      ].filter(Boolean).join(', ')
-
-      const isDirty = String(r.room_status_snapshot).includes('dirty')
-      const roomNumColor = isDirty ? '#b91c1c' : '#0f172a'
+  const pages = sheets.map(sheet => {
+    const sortedRooms = [...sheet.rooms].sort(compareRooms)
+    const rows = sortedRooms.map((r, i) => {
+      const roomNumColor = r.isDirty ? '#b91c1c' : '#0f172a'
 
       const cellHtml = COLS.map(c => {
         if (c.is_fixed) {
@@ -760,9 +840,9 @@ function printByGroup() {
           } else if (lbl === 'PHÒNG') {
             return `<td style="text-align:center;font-weight:800;font-size:12px;color:${roomNumColor};border:1px solid #1e293b;padding:4px;font-family:monospace;width:${c.width || 'auto'};">${r.room_number}</td>`
           } else if (lbl === 'LOẠI') {
-            return `<td style="text-align:center;font-size:9px;border:1px solid #1e293b;padding:4px;color:#334155;width:${c.width || 'auto'};">${r.room_class_name || ''}</td>`
+            return `<td style="text-align:center;font-size:9px;border:1px solid #1e293b;padding:4px;color:#334155;width:${c.width || 'auto'};">${r.room_type || ''}</td>`
           } else if (lbl === 'TÌNH TRẠNG' || lbl === 'TRẠNG THÁI') {
-            return `<td style="text-align:center;font-weight:700;font-size:9.5px;border:1px solid #1e293b;padding:4px;color:#0f172a;width:${c.width || 'auto'};">${code}</td>`
+            return `<td style="text-align:center;font-weight:700;font-size:9.5px;border:1px solid #1e293b;padding:4px;color:#0f172a;width:${c.width || 'auto'};">${r.status}</td>`
           }
         }
         return `<td style="border:1px solid #1e293b;padding:4px;width:${c.width || 'auto'};"></td>`
@@ -825,14 +905,9 @@ function printByGroup() {
       ${hasGroups && row2Cells.length ? `<tr style="background:#f1f5f9;border-bottom:2px solid #1e293b;">${row2Cells.join('')}</tr>` : ''}
     `
 
-    const legendHtml = legend.map(l => {
-      const parts = l.split(':')
-      const code = parts[0]?.trim() || ''
-      const label = parts[1]?.trim() || ''
-      return `<div style="font-size:9px;line-height:1.4;color:#334155;">
-        <strong style="color:#0f172a;display:inline-block;width:32px;">${code}</strong>: ${label}
-      </div>`
-    }).join('')
+    const staffHtml = sheet.staffNames
+      ? `<strong style="font-size:12px;color:#0f172a;">${sheet.staffNames}</strong>`
+      : `<span style="display:inline-block;width:220px;border-bottom:1px solid #475569;">&nbsp;</span>`
 
     return `<div class="page" style="padding:15mm 10mm;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a;">
       <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #0f172a;padding-bottom:8px;margin-bottom:12px;">
@@ -845,10 +920,10 @@ function printByGroup() {
           <div style="margin-top:2px;">SHIFT: <span style="font-weight:700;color:#0284c7;">${engShiftName}</span></div>
         </div>
       </div>
-      
+
       <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:8px 12px;margin-bottom:12px;font-size:11px;display:flex;justify-content:space-between;align-items:center;">
-        <div>HOUSEKEEPING ATTENDANT: <strong style="font-size:12px;color:#0f172a;">${staffNames}</strong></div>
-        <div>TOTAL ROOMS: <strong style="font-size:12px;color:#0f172a;">${g.rooms.length}</strong></div>
+        <div>HOUSEKEEPING ATTENDANT: ${staffHtml}</div>
+        <div>TOTAL ROOMS: <strong style="font-size:12px;color:#0f172a;">${sortedRooms.length}</strong></div>
       </div>
 
       <table style="width:100%;border-collapse:collapse;font-size:9px;border:1px solid #1e293b;">
@@ -867,41 +942,30 @@ function printByGroup() {
     </div>`
   })
 
-  const win = window.open('', '_blank', 'width=1000,height=700')
-  win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Worksheet</title>
-    <style>@media print{.page{page-break-after:always;} body{margin:0}}</style></head>
-    <body>${pages.join('')}</body></html>`)
-  win.document.close()
-  win.focus()
-  setTimeout(() => win.print(), 500)
+  openPrintPreview('Worksheet', pages.join(''), '@media print{.page{page-break-after:always;}}')
 }
 
 function printByRoom() {
-  // In theo danh sách phòng đã chọn — dạng FL/Supervisor Check List
-  const roomIds = selectedRoomsToPrint.value.size > 0
-    ? [...selectedRoomsToPrint.value]
-    : [...selectedRoomIds.value]
-
-  if (!roomIds.length) { alert('Chọn phòng cần in trong danh sách bên trái'); return }
+  // FL/Supervisor Check List: in từ lịch phân công (nhóm đã tích "In lịch") và/hoặc danh sách phòng bên trái.
+  // Tình trạng lấy theo nơi chọn in: nhóm phân công -> tình trạng lúc phân công; danh sách phòng -> tình trạng hiện tại.
+  const printRooms = buildSupervisorRooms(hkStore.groups, selectedGroupsToPrint.value, selectedRoomIds.value, roomById.value)
+    .map(item => item.source === 'group' ? groupRoomForPrint(item.room) : listRoomForPrint(item.room))
+    .sort(compareRooms)
+  if (!printRooms.length) { alert('Chọn phòng cần in trong danh sách bên trái hoặc tích "In lịch" ở nhóm phân công'); return }
 
   const shift = hkStore.shifts.find(s => s.id == selectedShiftId.value)
   const engShiftName = getEnglishShiftName(shift)
   const dateStr = workDate.value.split('-').reverse().join('/')
-  const legend = buildWorksheetLegend()
+  const legendHtml = legendGridHtml(buildWorksheetLegend())
 
-  const rows = roomIds.map(rid => {
-    const r = allRooms.value.find(x => x.id === rid)
-    if (!r) return ''
-    const code = getRoomDisplayCode(r.room_status_code, r.booking_status, hkStore.activeSymbols)
-    
-    const isDirty = String(r.room_status_code).includes('dirty')
-    const roomNumColor = isDirty ? '#b91c1c' : '#059669'
+  const rows = printRooms.map(r => {
+    const roomNumColor = r.isDirty ? '#b91c1c' : '#059669'
 
-    // Tạo các cell data cho supervisor cols (3 cột đầu là data, còn lại là ô trống)
+    // 3 cột đầu là dữ liệu, các cột còn lại để trống cho supervisor ghi
     const dataCells = [
       `<td style="text-align:center;color:${roomNumColor};font-weight:800;font-size:12px;font-family:monospace;border:1px solid #475569;padding:6px 8px;">${r.room_number}</td>`,
       `<td style="text-align:center;font-size:10px;border:1px solid #475569;padding:6px 8px;color:#334155;">${r.room_type}</td>`,
-      `<td style="text-align:center;font-weight:700;font-size:10px;border:1px solid #475569;padding:6px 8px;color:#0f172a;">${code}</td>`,
+      `<td style="text-align:center;font-weight:700;font-size:10px;border:1px solid #475569;padding:6px 8px;color:#0f172a;">${r.status}</td>`,
       ...hkStore.activeSupervisorCols.slice(3).map((c, i) =>
         i === hkStore.activeSupervisorCols.slice(3).findIndex(x => x.label === 'Attendance')
           ? `<td style="text-align:center;border:1px solid #475569;padding:6px 8px;font-size:11px;color:#64748b;">☐</td>`
@@ -911,24 +975,7 @@ function printByRoom() {
     return `<tr style="height:32px;">${dataCells}</tr>`
   }).join('')
 
-  const legendHtml = legend.map(l => {
-    const parts = l.split(':')
-    const code = parts[0]?.trim() || ''
-    const label = parts[1]?.trim() || ''
-    return `<div style="font-size:9px;line-height:1.4;color:#334155;">
-      <strong style="color:#0f172a;display:inline-block;width:32px;">${code}</strong>: ${label}
-    </div>`
-  }).join('')
-
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>FL/Supervisor Check List</title>
-  <style>
-    body { font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; color:#0f172a; padding:10mm; margin:0; }
-    @media print { body { padding:5mm; } }
-    table { width:100%; border-collapse:collapse; font-size:10px; }
-    th, td { border:1px solid #475569; padding:6px 8px; }
-    th { background:#f1f5f9; font-weight:700; text-transform:uppercase; font-size:9px; letter-spacing:0.5px; }
-  </style></head>
-  <body>
+  const body = `<div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#0f172a;padding:10mm;">
     <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #0f172a;padding-bottom:8px;margin-bottom:15px;">
       <div>
         <h1 style="font-size:18px;font-weight:800;margin:0;text-transform:uppercase;letter-spacing:0.5px;">FL / SUPERVISOR CHECK LIST</h1>
@@ -943,10 +990,10 @@ function printByRoom() {
     <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:10px 15px;margin-bottom:15px;font-size:11px;display:grid;grid-template-columns:2fr 1fr 1fr;gap:20px;">
       <div>SUPERVISOR NAME: <span style="display:inline-block;width:140px;border-bottom:1px solid #475569;margin-left:4px;">&nbsp;</span></div>
       <div>BLOCK: <span style="display:inline-block;width:60px;border-bottom:1px solid #475569;margin-left:4px;">&nbsp;</span></div>
-      <div style="text-align:right;">TOTAL ROOMS: <strong style="font-size:12px;color:#0f172a;">${roomIds.length}</strong></div>
+      <div style="text-align:right;">TOTAL ROOMS: <strong style="font-size:12px;color:#0f172a;">${printRooms.length}</strong></div>
     </div>
 
-    <table>
+    <table class="sup-table">
       <thead>
         <tr>
           ${hkStore.activeSupervisorCols.map(c => `<th style="text-align:center;${c.width ? 'width:' + c.width : ''}">${c.label}</th>`).join('')}
@@ -981,13 +1028,13 @@ function printByRoom() {
     </div>
 
     <div style="margin-top:15px;font-size:9px;color:#64748b;text-align:right;">Printed by: ${new Date().toLocaleString('vi-VN')}</div>
-  </body></html>`
+  </div>`
 
-  const win = window.open('', '_blank', 'width=900,height=700')
-  win.document.write(html)
-  win.document.close()
-  win.focus()
-  setTimeout(() => win.print(), 500)
+  openPrintPreview('FL/Supervisor Check List', body, `
+    .sup-table { width:100%; border-collapse:collapse; font-size:10px; }
+    .sup-table th, .sup-table td { border:1px solid #475569; padding:6px 8px; }
+    .sup-table th { background:#f1f5f9; font-weight:700; text-transform:uppercase; font-size:9px; letter-spacing:0.5px; }
+  `)
 }
 </script>
 
@@ -1100,7 +1147,7 @@ function printByRoom() {
       <!-- Room list -->
       <div class="room-list-scroll">
         <div v-if="hkStore.loading" class="list-loading"><Loader2 :size="18" class="spin" /> Đang tải...</div>
-        <template v-else v-for="floor in Object.keys(roomsByFloor).map(Number).sort()" :key="floor">
+        <template v-else v-for="floor in Object.keys(roomsByFloor).map(Number).sort((a, b) => a - b)" :key="floor">
           <div class="floor-label">
             <input type="checkbox"
               :checked="isFloorAllSelected(floor)"
@@ -1126,9 +1173,9 @@ function printByRoom() {
             />
             <span class="room-num">{{ room.room_number }}</span>
             <span class="room-code">
-              <template v-for="(sym, sIdx) in getRoomSymbols(room.room_status_code, room.displayBookingStatus, hkStore.activeSymbols)" :key="sIdx">
+              <template v-for="(sym, sIdx) in getStatusSymbols(room.room_status_code, room.displayBookingStatus, room)" :key="sIdx">
+                <span v-if="sIdx > 0" style="color: #64748b; margin: 0 1px;">,</span>
                 <span :style="{ color: sym.color }">{{ sym.code }}</span>
-                <span v-if="sIdx < getRoomSymbols(room.room_status_code, room.displayBookingStatus, hkStore.activeSymbols).length - 1" style="color: #64748b; margin: 0 1px;">,</span>
               </template>
             </span>
             <span class="room-type">{{ room.room_type }}</span>
@@ -1187,7 +1234,7 @@ function printByRoom() {
 
           <!-- Room rows -->
           <div
-            v-for="r in group.rooms" :key="r.room_id"
+            v-for="r in sortedGroupRooms(group)" :key="r.room_id"
             class="group-room-row"
             :draggable="!hkStore.saving"
             @dragstart="!hkStore.saving && onDragStartFromGroup($event, r.room_id, group.id)"
@@ -1195,9 +1242,9 @@ function printByRoom() {
             <span class="gr-num-bold">{{ r.room_number }}</span>
             <div class="gr-info-block">
               <div class="gr-status-line">
-                <template v-for="(sym, sIdx) in getRoomSymbols(r.room_status_snapshot, r.booking_status_snapshot, hkStore.activeSymbols)" :key="sIdx">
+                <template v-for="(sym, sIdx) in getGroupRoomSymbols(r)" :key="sIdx">
+                  <span v-if="sIdx > 0" style="color: #64748b; margin: 0 1px;">,</span>
                   <span :style="{ color: sym.color }">{{ sym.code }}</span>
-                  <span v-if="sIdx < getRoomSymbols(r.room_status_snapshot, r.booking_status_snapshot, hkStore.activeSymbols).length - 1" style="color: #64748b; margin: 0 1px;">,</span>
                 </template>
               </div>
               <div class="gr-class-line">{{ r.room_class_name }}</div>
