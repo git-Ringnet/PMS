@@ -130,6 +130,40 @@ class AllowInputOverAVTest extends TestCase
         $res->assertJsonPath('data.ShowVirtualRoom', '0');
     }
 
+    public function test_booking_init_dropdowns_returns_company_default_for_quick_booking(): void
+    {
+        HotelConfig::updateOrCreate(
+            ['name' => 'CompanyDefault'],
+            ['value' => (string) $this->company->id, 'is_visible' => true]
+        );
+
+        $this->getJson('/api/bookings/init-dropdowns')
+            ->assertOk()
+            ->assertJsonPath('data.hotel_settings.CompanyDefault', (string) $this->company->id);
+    }
+
+    public function test_company_default_must_reference_an_active_company(): void
+    {
+        $inactiveCompany = Company::create([
+            'name' => 'Inactive Company Default',
+            'code' => 'INACTIVE-COMPANY-DEFAULT',
+            'is_active' => false,
+        ]);
+        $config = HotelConfig::where('name', 'CompanyDefault')->firstOrFail();
+
+        $this->putJson("/api/hotel-configs/{$config->id}", [
+            'name' => 'CompanyDefault',
+            'value' => (string) $inactiveCompany->id,
+            'description' => $config->description,
+        ])->assertUnprocessable()->assertJsonValidationErrors('value');
+
+        $this->putJson("/api/hotel-configs/{$config->id}", [
+            'name' => 'CompanyDefault',
+            'value' => (string) $this->company->id,
+            'description' => $config->description,
+        ])->assertOk()->assertJsonPath('data.value', (string) $this->company->id);
+    }
+
     public function test_cannot_create_booking_when_allow_input_over_av_is_0_and_av_is_0()
     {
         HotelConfig::updateOrCreate(['name' => 'AllowInputOverAV'], ['value' => '0']);

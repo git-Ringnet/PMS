@@ -859,6 +859,13 @@ class BookingRoomController extends Controller
     // =========================================
     public function checkIn(Request $request, $bookingId, $roomId)
     {
+        $request->validate([
+            'confirmed'                  => 'nullable|boolean',
+            'post_day_use_room_charge'   => 'nullable|boolean',
+            'arrival_time'               => 'nullable|date_format:H:i',
+            'check_in_time'              => 'nullable|date_format:H:i',
+        ]);
+
         $bookingRoom = BookingRoom::where('booking_id', $bookingId)->with('booking')->findOrFail($roomId);
         $booking     = $bookingRoom->booking;
         $systemDate  = $this->avService->getSystemDate();
@@ -930,6 +937,7 @@ class BookingRoomController extends Controller
                                 return response()->json([
                                     'success'            => true,
                                     'needs_confirmation' => true,
+                                    'confirmation_type'  => 'room_status',
                                     'room_status'        => $currentCode,
                                     'message'            => 'Phòng ' . $bookingRoom->room_number . ' đang ở trạng thái ' . $label . '. Bạn có muốn tiếp tục nhận phòng không? Tình trạng phòng sẽ được giữ nguyên.',
                                 ], 200);
@@ -982,11 +990,58 @@ class BookingRoomController extends Controller
             }
         }
 
+        // Dòng 323: phòng Day Use đến và đi trong ngày phải có quyết định
+        // rõ ràng của người dùng trước khi check-in. Không ghi trạng thái hay
+        // phát sinh bill ở response xác nhận này.
+        $isDayUseSameDay = (bool) ($bookingRoom->is_day_use || $booking?->is_day_use)
+            && $bookingRoom->arrival_date
+            && $bookingRoom->departure_date
+            && $bookingRoom->arrival_date->isSameDay($bookingRoom->departure_date);
+        if ($isDayUseSameDay && !$request->has('post_day_use_room_charge')) {
+            return response()->json([
+                'success'            => true,
+                'needs_confirmation' => true,
+                'confirmation_type'  => 'day_use_room_charge',
+                'day_use_room'       => [
+                    'booking_room_id' => $bookingRoom->id,
+                    'room_number'     => $bookingRoom->room_number,
+                    'arrival_date'    => $bookingRoom->arrival_date->toDateString(),
+                    'departure_date'  => $bookingRoom->departure_date->toDateString(),
+                ],
+                'message' => 'Các phòng sau đây đến và đi trong ngày: ' . $bookingRoom->room_number . '. Bạn có muốn thêm tiền phòng vào hóa đơn không?',
+            ]);
+        }
+
+        $postDayUseRoomCharge = $isDayUseSameDay && $request->boolean('post_day_use_room_charge');
+        if ($postDayUseRoomCharge && ($booking->no_post || $bookingRoom->no_post)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Phòng đang ở trạng thái No Post. Chọn Không để chỉ nhận phòng, hoặc tắt No Post trước khi post tiền phòng.',
+            ], 422);
+        }
+
+        if ($postDayUseRoomCharge) {
+            $user = $request->user();
+            $branchId = $request->attributes->get('_branch_id');
+            $canPostRoomCharge = $user && (
+                $user->hasPermission('fo.service.add', $branchId)
+                || $user->hasPermission('fo.service.edit', $branchId)
+            );
+            if (!$canPostRoomCharge) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Bạn không có quyền post tiền phòng. Chọn Không để chỉ nhận phòng.',
+                    'required_permissions' => ['fo.service.add', 'fo.service.edit'],
+                ], 403);
+            }
+        }
+
         $currentUser = Auth::user()?->username ?? 'system';
         $checkInTime = $request->input('arrival_time')
             ?: ($request->input('check_in_time') ?: now()->format('H:i:s'));
         $checkInDate = $systemDate->toDateString();
 
+        $roomChargeResult = null;
         DB::beginTransaction();
         try {
             $bookingRoom->update([
@@ -1040,7 +1095,30 @@ class BookingRoomController extends Controller
             // phòng và check-in một phần dùng cùng một invariant.
             $this->bookingStatusSyncService->sync($booking);
 
+            if ($postDayUseRoomCharge) {
+                // Dùng đúng luồng post RM hiện hữu để giữ giá, thuế, Master
+                // Room Rate, RoomNightBill và chống trùng đồng nhất. Transaction
+                // lồng nhau của Laravel nằm trong transaction check-in này.
+                $roomChargeRequest = Request::create('', 'POST', [
+                    'booking_room_id' => $bookingRoom->id,
+                    'date_from'       => $systemDate->toDateString(),
+                    'date_to'         => $systemDate->toDateString(),
+                    'mode'            => 'auto',
+                    'folio'           => 1,
+                    'currency'        => 'VND',
+                ]);
+                $roomChargeResponse = app(BookingRoomServiceController::class)
+                    ->postRoomCharge($roomChargeRequest);
+                $roomChargeResult = $roomChargeResponse->getData(true);
+                if ($roomChargeResponse->getStatusCode() >= 400 || !($roomChargeResult['success'] ?? false)) {
+                    throw new \DomainException($roomChargeResult['message'] ?? 'Không thể post tiền phòng Day Use.');
+                }
+            }
+
             DB::commit();
+        } catch (\DomainException $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json(['success' => false, 'message' => 'Lỗi: ' . $e->getMessage()], 500);
@@ -1051,10 +1129,16 @@ class BookingRoomController extends Controller
             \App\Services\ActivityLogService::logCheckIn($bCode, $bookingRoom->room_number, $request);
         } catch (\Throwable $e) {}
 
+        $message = 'Giao phòng thành công!';
+        if ($postDayUseRoomCharge) {
+            $message .= ' ' . ($roomChargeResult['message'] ?? 'Đã xử lý tiền phòng Day Use.');
+        }
+
         return response()->json([
             'success' => true,
             'data'    => $bookingRoom->fresh()->load(['roomClass', 'room']),
-            'message' => 'Giao phòng thành công!',
+            'room_charge' => $roomChargeResult,
+            'message' => $message,
         ]);
     }
 

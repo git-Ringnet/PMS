@@ -10,6 +10,12 @@ use Illuminate\Support\Facades\DB;
 
 class RoomController extends Controller
 {
+    private const HOUSEKEEPING_FLAG_COLUMNS = [
+        'is_housekeeping_service',
+        'is_priority_cleaning',
+        'is_do_not_disturb',
+    ];
+
     public function permissions(Request $request)
     {
         return response()->json([
@@ -583,7 +589,7 @@ class RoomController extends Controller
 
         $validCodes = [
             'vacant_ready', 'vacant_dirty', 'vacant_clean',
-            'ooo', 'oos', 'turndown', 'housekeeping', 'dnd', 'vacant_priority',
+            'ooo', 'oos', 'turndown',
             'occupied_ready', 'occupied_dirty', 'occupied_clean', 'occupied_ooo',
         ];
 
@@ -699,7 +705,7 @@ class RoomController extends Controller
 
         $validCodes = [
             'vacant_ready', 'vacant_dirty', 'vacant_clean',
-            'ooo', 'oos', 'turndown', 'housekeeping', 'dnd', 'vacant_priority',
+            'ooo', 'oos', 'turndown',
             'occupied_ready', 'occupied_dirty', 'occupied_clean', 'occupied_ooo',
         ];
 
@@ -793,6 +799,82 @@ class RoomController extends Controller
             'success' => true,
             'updated_count' => $rooms->count(),
         ]);
+    }
+
+    /**
+     * Update the independent Housekeeping indicators without changing room_status_code.
+     */
+    public function updateHousekeepingFlags(Request $request, $id)
+    {
+        if (!app(\App\Services\RoomStatusPermissionService::class)->canChange($request)) {
+            return response()->json(['success' => false, 'message' => 'User không có quyền đổi trạng thái phòng tại module này.'], 403);
+        }
+
+        $room = Room::find($id);
+        if (!$room) {
+            return response()->json(['message' => 'Room not found'], 404);
+        }
+
+        $flags = $this->validatedHousekeepingFlags($request);
+        $room->update($flags);
+        $room->load(['roomForm', 'roomClass']);
+
+        return response()->json([
+            'success' => true,
+            'data' => new RoomResource($room),
+        ]);
+    }
+
+    /**
+     * Update the independent Housekeeping indicators for multiple rooms.
+     */
+    public function bulkUpdateHousekeepingFlags(Request $request)
+    {
+        if (!app(\App\Services\RoomStatusPermissionService::class)->canChange($request)) {
+            return response()->json(['success' => false, 'message' => 'User không có quyền đổi trạng thái phòng tại module này.'], 403);
+        }
+
+        $validated = $request->validate([
+            'room_ids' => 'required|array|min:1',
+            'room_ids.*' => 'integer|distinct|exists:rooms,id',
+        ]);
+        $flags = $this->validatedHousekeepingFlags($request);
+
+        $updatedCount = Room::whereIn('id', $validated['room_ids'])->update($flags);
+
+        return response()->json([
+            'success' => true,
+            'updated_count' => $updatedCount,
+        ]);
+    }
+
+    /**
+     * @return array<string, bool>
+     */
+    private function validatedHousekeepingFlags(Request $request): array
+    {
+        $validated = $request->validate([
+            'housekeeping_flags' => 'required|array|min:1',
+            'housekeeping_flags.is_housekeeping_service' => 'sometimes|boolean',
+            'housekeeping_flags.is_priority_cleaning' => 'sometimes|boolean',
+            'housekeeping_flags.is_do_not_disturb' => 'sometimes|boolean',
+        ]);
+
+        $inputFlags = $validated['housekeeping_flags'];
+        $flags = [];
+        foreach (self::HOUSEKEEPING_FLAG_COLUMNS as $column) {
+            if (array_key_exists($column, $inputFlags)) {
+                $flags[$column] = (bool) $inputFlags[$column];
+            }
+        }
+
+        if ($flags === []) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'housekeeping_flags' => 'Phải cung cấp ít nhất một cờ buồng phòng hợp lệ.',
+            ]);
+        }
+
+        return $flags;
     }
 
     /**

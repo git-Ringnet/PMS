@@ -293,4 +293,47 @@ class RoomStatusPermissionTest extends TestCase
 
         $response->assertStatus(403);
     }
+
+    public function test_housekeeping_flags_do_not_overwrite_the_room_lifecycle_status(): void
+    {
+        $this->room->update(['room_status_code' => 'vacant_dirty']);
+        Sanctum::actingAs($this->adminUser);
+
+        $response = $this->putJson("/api/rooms/{$this->room->id}/housekeeping-flags", [
+            'housekeeping_flags' => [
+                'is_do_not_disturb' => true,
+                'is_priority_cleaning' => true,
+            ],
+            'current_module' => 'frontdesk',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.room_status_code', 'vacant_dirty')
+            ->assertJsonPath('data.is_do_not_disturb', true)
+            ->assertJsonPath('data.is_priority_cleaning', true);
+
+        $this->room->refresh();
+        $this->assertSame('vacant_dirty', $this->room->room_status_code);
+        $this->assertTrue($this->room->is_do_not_disturb);
+        $this->assertTrue($this->room->is_priority_cleaning);
+    }
+
+    public function test_bulk_housekeeping_flags_do_not_change_room_status_codes(): void
+    {
+        $this->room->update(['room_status_code' => 'occupied_dirty']);
+        Sanctum::actingAs($this->adminUser);
+
+        $response = $this->postJson('/api/rooms/bulk-housekeeping-flags', [
+            'room_ids' => [$this->room->id],
+            'housekeeping_flags' => ['is_housekeeping_service' => true],
+            'current_module' => 'frontdesk',
+        ]);
+
+        $response->assertOk()->assertJsonPath('updated_count', 1);
+        $this->assertDatabaseHas('rooms', [
+            'id' => $this->room->id,
+            'room_status_code' => 'occupied_dirty',
+            'is_housekeeping_service' => true,
+        ]);
+    }
 }
