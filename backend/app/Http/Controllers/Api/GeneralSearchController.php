@@ -9,6 +9,7 @@ use App\Models\BookingRoom;
 use App\Models\BookingRoomGuest;
 use App\Models\Booker;
 use App\Models\Company;
+use App\Models\Guest;
 use App\Models\CustomerSource;
 use App\Models\Market;
 use App\Models\RegistrationStatus;
@@ -170,6 +171,93 @@ class GeneralSearchController extends Controller
         ]);
 
         return response()->json(['success' => true, 'data' => $page]);
+    }
+
+    /**
+     * Dòng 355: chi tiết khách và lịch sử lưu trú khi chọn một dòng ở tab Khách.
+     * GET /general-search/guests/{guest}/history
+     */
+    public function guestHistory($guestId)
+    {
+        $guest = Guest::find($guestId);
+        if (!$guest) {
+            return response()->json(['success' => false, 'message' => 'Không tìm thấy khách.'], 404);
+        }
+
+        $statusLabels = [
+            BookingRoom::STATUS_BOOKED => 'Đặt trước',
+            BookingRoom::STATUS_CHECKED_IN => 'Đang ở',
+            BookingRoom::STATUS_CHECKED_OUT => 'Đã trả phòng',
+            BookingRoom::STATUS_CANCELLED => 'Đã hủy',
+            BookingRoom::STATUS_NOSHOW => 'No show',
+            BookingRoom::STATUS_MOVED => 'Đã chuyển phòng',
+        ];
+
+        $stays = BookingRoomGuest::where('guest_id', $guest->id)
+            ->with(['bookingRoom' => fn ($q) => $q->withTrashed(), 'bookingRoom.booking.company', 'bookingRoom.roomClass'])
+            ->get()
+            ->filter(fn (BookingRoomGuest $link) => $link->bookingRoom)
+            ->map(function (BookingRoomGuest $link) use ($statusLabels) {
+                $room = $link->bookingRoom;
+                $booking = $room->booking;
+                $status = (int) $room->status;
+
+                return [
+                    'booking_room_id' => $room->id,
+                    'booking_id' => $booking?->id,
+                    'booking_code' => $booking?->booking_code,
+                    'booking_name' => $booking?->booking_name,
+                    'company' => $booking?->company?->name,
+                    'room_number' => $room->room_number,
+                    'room_class' => $room->roomClass?->name,
+                    'arrival_date' => $room->arrival_date?->toDateString(),
+                    'departure_date' => $room->departure_date?->toDateString(),
+                    'nights' => $room->arrival_date && $room->departure_date ? (int) $room->arrival_date->diffInDays($room->departure_date) : 0,
+                    'rate' => (float) ($room->rate ?? 0),
+                    'rate_code' => $room->rate_code,
+                    'status' => $status,
+                    'status_label' => $statusLabels[$status] ?? (string) $status,
+                    'is_primary' => (bool) $link->is_primary,
+                ];
+            })
+            ->sortByDesc(fn ($stay) => $stay['arrival_date'] . '|' . $stay['booking_room_id'])
+            ->values();
+
+        // Lượt lưu trú thực tế: bỏ phòng đã hủy / noshow / đã chuyển sang phòng khác
+        $counted = $stays->whereIn('status', [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN, BookingRoom::STATUS_CHECKED_OUT]);
+        $stayed = $stays->whereIn('status', [BookingRoom::STATUS_CHECKED_IN, BookingRoom::STATUS_CHECKED_OUT]);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'guest' => [
+                    'id' => $guest->id,
+                    'full_name' => $guest->full_name,
+                    'title' => $guest->title,
+                    'gender' => $guest->gender,
+                    'dob' => $guest->dob?->toDateString(),
+                    'nationality' => $guest->nationality_code,
+                    'id_type' => $guest->id_type,
+                    'id_number' => $guest->id_number,
+                    'passport_number' => $guest->passport_number,
+                    'phone' => $guest->phone,
+                    'email' => $guest->email,
+                    'address' => $guest->address,
+                    'province' => $guest->province,
+                    'guest_type' => $guest->guest_type,
+                    'visa_no' => $guest->visa_no,
+                    'visa_expiry_date' => $guest->visa_expiry_date?->toDateString(),
+                    'note' => $guest->note,
+                    'avatar' => $guest->avatar,
+                ],
+                'summary' => [
+                    'total_bookings' => $counted->pluck('booking_id')->unique()->count(),
+                    'total_nights' => $stayed->sum('nights'),
+                    'last_arrival_date' => $stayed->max('arrival_date'),
+                ],
+                'stays' => $stays,
+            ],
+        ]);
     }
 
     private function bookingRelations(): array

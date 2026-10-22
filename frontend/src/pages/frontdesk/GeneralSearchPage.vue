@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchGeneralSearch, fetchGeneralSearchOptions, fetchGeneralSearchSuggestions, checkInRoom } from '@/services/booking-service'
 import { useAuthStore } from '@/stores/auth-store'
+import { useDraggableModal } from '@/composables/useDraggableModal'
 import { useUiStore } from '@/stores/ui-store'
 import echo from '@/services/echo'
 import http from '@/services/http'
@@ -380,6 +381,82 @@ function toggleSelected(row) {
   selectedIds.value = next
 }
 
+// Dòng 355: chi tiết khách và lịch sử lưu trú khi chọn một dòng ở tab Khách
+const activeGuestRow = ref(null)
+const guestHistory = ref(null)
+const guestHistoryLoading = ref(false)
+const guestHistoryError = ref('')
+let guestHistoryRequestId = 0
+const guestModal = useDraggableModal()
+const guestModalThemeBg = computed(() => auth.settings?.topbar_color || 'var(--pms-custom-theme, #006bdb)')
+
+// Bật / tắt tự mở chi tiết khách khi bấm vào dòng (nhớ theo trình duyệt)
+const GUEST_DETAIL_PREF_KEY = 'pms_general_search_guest_detail'
+const guestDetailEnabled = ref((() => {
+  try {
+    return localStorage.getItem(GUEST_DETAIL_PREF_KEY) !== '0'
+  } catch {
+    return true
+  }
+})())
+watch(guestDetailEnabled, value => {
+  try {
+    localStorage.setItem(GUEST_DETAIL_PREF_KEY, value ? '1' : '0')
+  } catch {
+    // trình duyệt chặn lưu trữ thì chỉ áp dụng trong phiên này
+  }
+  if (!value) closeGuestDetail()
+})
+
+async function openGuestDetail(row) {
+  if (tab.value !== 'guest' || !guestDetailEnabled.value) return
+  if (activeGuestRow.value?.id !== row.id) guestModal.resetPosition()
+  activeGuestRow.value = row
+  guestHistory.value = null
+  guestHistoryError.value = ''
+  if (!row.guest_id) return // trẻ em / em bé chưa có hồ sơ khách riêng
+
+  const requestId = ++guestHistoryRequestId
+  guestHistoryLoading.value = true
+  try {
+    const { data } = await http.get(`/general-search/guests/${encodeURIComponent(row.guest_id)}/history`)
+    if (requestId === guestHistoryRequestId) guestHistory.value = data?.data || null
+  } catch (err) {
+    if (requestId === guestHistoryRequestId) guestHistoryError.value = err.response?.data?.message || 'Không tải được lịch sử lưu trú của khách.'
+  } finally {
+    if (requestId === guestHistoryRequestId) guestHistoryLoading.value = false
+  }
+}
+
+function closeGuestDetail() {
+  guestHistoryRequestId++
+  activeGuestRow.value = null
+  guestHistory.value = null
+  guestHistoryError.value = ''
+  guestHistoryLoading.value = false
+}
+
+const guestDetailFields = computed(() => {
+  const g = guestHistory.value?.guest || {}
+  const row = activeGuestRow.value || {}
+  return [
+    ['Họ và tên', g.full_name || row.guest_name],
+    ['Loại khách', row.guest_type],
+    ['Ngày sinh', date(g.dob || row.dob)],
+    ['Quốc tịch', g.nationality || row.nationality],
+    ['Giấy tờ', [g.id_type || row.id_type, g.id_number || g.passport_number || row.id_number].filter(Boolean).join(' - ')],
+    ['Điện thoại', g.phone || row.phone],
+    ['Email', g.email || row.email],
+    ['Địa chỉ', [g.address || row.address, g.province || row.province].filter(Boolean).join(', ')],
+    ['Visa', [g.visa_no || row.visa_no, date(g.visa_expiry_date || row.visa_expiry_date)].filter(v => v && v !== '—').join(' - hết hạn ')],
+    ['Ghi chú', g.note],
+  ].map(([label, value]) => [label, value && value !== '—' ? value : '—'])
+})
+
+const guestStatusClass = status => ({
+  0: 'st-booked', 1: 'st-inhouse', 2: 'st-checkout', 3: 'st-cancel', 4: 'st-cancel', 100: 'st-moved',
+}[status] || '')
+
 function toggleAllSelected() {
   const selectableRows = tab.value === 'room' ? rows.value.flatMap(group => group.rooms || []) : rows.value
   const keys = selectableRows.map(rowKey)
@@ -410,6 +487,8 @@ async function search(page = 1) {
   try {
     const { data } = await fetchGeneralSearch(searchParams(page))
     rows.value = data.data?.data || []
+    // Khách đang xem chi tiết không còn trong kết quả mới thì đóng khung chi tiết
+    if (activeGuestRow.value && !rows.value.some(r => r.id === activeGuestRow.value.id)) closeGuestDetail()
     meta.value = data.data?.meta || data.data || meta.value
     if (tab.value === 'room') {
       expandedRoomGroups.value = new Set(rows.value.map(group => group.booking_id))
@@ -1054,6 +1133,7 @@ watch(tab, () => {
   expandedBookings.value = new Set()
   expandedRoomGroups.value = new Set()
   selectedIds.value = new Set()
+  closeGuestDetail()
   search(1)
 })
 
@@ -1949,9 +2029,12 @@ onMounted(async () => {
           <tr
             v-for="row in rows"
             :key="row.id"
-            :class="{ selected: isSelected(row) }"
+            class="guest-row-clickable"
+            :class="{ selected: isSelected(row), 'guest-row-active': activeGuestRow?.id === row.id }"
+            title="Bấm để xem chi tiết khách và lịch sử lưu trú"
+            @click="openGuestDetail(row)"
           >
-            <td style="text-align: center;" class="border-slate-200">
+            <td style="text-align: center;" class="border-slate-200" @click.stop>
               <input type="checkbox" :checked="isSelected(row)" @change="toggleSelected(row)">
             </td>
 
@@ -1988,9 +2071,76 @@ onMounted(async () => {
       </table>
     </div>
 
+    <!-- Dòng 355: chi tiết khách và lịch sử lưu trú -->
+    <Teleport to="body">
+    <div v-if="tab === 'guest' && activeGuestRow" class="gdp-overlay" @mousedown.self="closeGuestDetail">
+    <section
+      class="guest-detail-panel"
+      :style="{ transform: `translate(${guestModal.position.value.x}px, ${guestModal.position.value.y}px)` }"
+    >
+      <header class="gdp-head" :style="{ background: guestModalThemeBg }" @mousedown="guestModal.startDrag">
+        <div class="gdp-title">
+          <i class="fa-solid fa-id-card"></i>
+          <span>{{ activeGuestRow.guest_name || 'Khách' }}</span>
+          <small v-if="guestHistory?.guest?.id">Mã khách: {{ guestHistory.guest.id }}</small>
+        </div>
+        <div v-if="guestHistory?.summary" class="gdp-summary">
+          <span><b>{{ guestHistory.summary.total_bookings }}</b> lần đặt phòng</span>
+          <span><b>{{ guestHistory.summary.total_nights }}</b> đêm đã ở</span>
+          <span v-if="guestHistory.summary.last_arrival_date">Lần đến gần nhất: <b>{{ date(guestHistory.summary.last_arrival_date) }}</b></span>
+        </div>
+        <button type="button" class="gdp-close" title="Đóng" @click="closeGuestDetail">×</button>
+      </header>
+
+      <div class="gdp-body">
+        <div class="gdp-info">
+          <div v-for="[label, value] in guestDetailFields" :key="label" class="gdp-field">
+            <span class="gdp-label">{{ label }}</span>
+            <span class="gdp-value">{{ value }}</span>
+          </div>
+        </div>
+
+        <div class="gdp-history">
+          <div class="gdp-history-title">Lịch sử lưu trú</div>
+          <div v-if="guestHistoryLoading" class="gdp-empty">Đang tải lịch sử lưu trú...</div>
+          <div v-else-if="guestHistoryError" class="gdp-empty gdp-error">{{ guestHistoryError }}</div>
+          <div v-else-if="!activeGuestRow.guest_id" class="gdp-empty">Trẻ em / em bé chưa có hồ sơ khách riêng nên chưa có lịch sử lưu trú.</div>
+          <div v-else-if="!guestHistory?.stays?.length" class="gdp-empty">Khách chưa có lượt lưu trú nào.</div>
+          <table v-else class="data-table gdp-table">
+            <thead>
+              <tr>
+                <th>Mã BK</th><th>Tên đăng ký</th><th>Phòng</th><th>Loại phòng</th><th>Ngày đến</th><th>Ngày đi</th>
+                <th>Đêm</th><th class="number">Giá phòng</th><th>Công ty</th><th>Tình trạng</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="stay in guestHistory.stays" :key="stay.booking_room_id">
+                <td class="mono">{{ stay.booking_code }}</td>
+                <td class="wrap-cell">{{ stay.booking_name || '—' }}</td>
+                <td>{{ stay.room_number || '—' }}</td>
+                <td class="wrap-cell">{{ stay.room_class || '—' }}</td>
+                <td>{{ date(stay.arrival_date) }}</td>
+                <td>{{ date(stay.departure_date) }}</td>
+                <td>{{ stay.nights }}</td>
+                <td class="number">{{ money(stay.rate) }}</td>
+                <td class="wrap-cell">{{ stay.company || 'KHÁCH LẺ' }}</td>
+                <td><span class="gdp-status" :class="guestStatusClass(stay.status)">{{ stay.status_label }}</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+    </div>
+    </Teleport>
+
     <!-- PAGER FOOTER -->
     <div class="pager">
       <div class="pager-left">
+        <label v-if="tab === 'guest'" class="gdp-toggle" title="Bấm vào dòng khách để mở chi tiết khách và lịch sử lưu trú">
+          <input v-model="guestDetailEnabled" type="checkbox">
+          <span>Xem chi tiết khi bấm vào khách</span>
+        </label>
         <select v-model.number="perPage" class="per-page-select" @change="handlePerPageChange">
           <option v-for="size in perPageOptions" :key="size" :value="size">{{ size }} / trang</option>
         </select>
@@ -2105,6 +2255,38 @@ onMounted(async () => {
   --page: #f4f5f7;
   --radius: 6px;
 }
+
+/* Dòng 355: chi tiết khách và lịch sử lưu trú */
+.guest-row-clickable { cursor: pointer; }
+.guest-row-active td { background: #e0f2fe !important; }
+.gdp-overlay { position: fixed; inset: 0; z-index: 9000; display: flex; align-items: center; justify-content: center; background: rgba(15, 23, 42, .3); padding: 16px; }
+.guest-detail-panel { width: min(1100px, 96vw); max-height: 86vh; border-radius: 12px; background: #fff; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 50px rgba(15, 23, 42, .3); }
+.gdp-head { display: flex; align-items: center; gap: 16px; padding: 10px 14px; color: #fff; cursor: move; user-select: none; }
+.gdp-title { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; color: #fff; }
+.gdp-title small { font-weight: 500; color: rgba(255, 255, 255, .8); font-size: 11px; }
+.gdp-summary { display: flex; gap: 14px; font-size: 12px; color: rgba(255, 255, 255, .92); margin-left: auto; }
+.gdp-summary b { color: #fff; }
+.gdp-close { border: none; background: transparent; font-size: 22px; line-height: 1; cursor: pointer; color: #fff; border-radius: 4px; padding: 0 6px; }
+.gdp-close:hover { background: rgba(255, 255, 255, .15); }
+.gdp-toggle { display: inline-flex; align-items: center; gap: 6px; margin-right: 12px; font-size: 12px; color: #334155; cursor: pointer; user-select: none; }
+.gdp-toggle input { accent-color: var(--pms-custom-theme, #006bdb); cursor: pointer; }
+.gdp-body { display: grid; grid-template-columns: minmax(240px, 300px) 1fr; gap: 16px; padding: 14px; overflow: auto; }
+.gdp-info { display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+.gdp-field { display: grid; grid-template-columns: 90px 1fr; gap: 6px; }
+.gdp-label { color: #64748b; }
+.gdp-value { color: #0f172a; font-weight: 500; word-break: break-word; }
+.gdp-history { min-width: 0; }
+.gdp-history-title { font-weight: 700; font-size: 12px; color: #0f172a; margin-bottom: 6px; }
+.gdp-empty { font-size: 12px; color: #64748b; padding: 12px 0; }
+.gdp-error { color: #dc2626; }
+.gdp-table { width: 100%; font-size: 12px; }
+.gdp-status { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; background: #f1f5f9; color: #334155; }
+.gdp-status.st-booked { background: #e0f2fe; color: #0369a1; }
+.gdp-status.st-inhouse { background: #dcfce7; color: #15803d; }
+.gdp-status.st-checkout { background: #e2e8f0; color: #475569; }
+.gdp-status.st-cancel { background: #fee2e2; color: #b91c1c; }
+.gdp-status.st-moved { background: #fef3c7; color: #b45309; }
+@media (max-width: 900px) { .gdp-body { grid-template-columns: 1fr; } .gdp-summary { display: none; } }
 
 .general-search-wrapper {
   display: flex;
