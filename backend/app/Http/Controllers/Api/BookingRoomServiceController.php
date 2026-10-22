@@ -1942,7 +1942,8 @@ class BookingRoomServiceController extends Controller
             ->where('Deleted', 0)->orderBy('DetailId')->get()->groupBy('BillId');
         $bookings = \App\Models\Booking::withTrashed()->whereIn('id', $bills->pluck('BookingId')->filter())->get()->keyBy('id');
 
-        $rows = $bills->map(function (HousekeepingServiceBill $bill) use ($serviceBills, $freePaymentIds, $details, $bookings, $validated) {
+        $allowHkCorrectFoBill = $this->allowHkCorrectFoBill();
+        $rows = $bills->map(function (HousekeepingServiceBill $bill) use ($serviceBills, $freePaymentIds, $details, $bookings, $validated, $allowHkCorrectFoBill) {
             $booking = $bookings->get($bill->BookingId);
             $bookingCode = $booking?->booking_code ?? '';
             if (!empty($validated['booking_code']) && !str_contains(strtolower($bookingCode), strtolower($validated['booking_code']))) return null;
@@ -1973,14 +1974,24 @@ class BookingRoomServiceController extends Controller
                 'department' => $bill->Department,
                 'username' => $bill->BillUsername,
                 'is_deleted' => (bool) $bill->BillEdit,
+                // Dòng 341: bill do Lễ tân (FO) post vẫn hiện nút hủy; thông số quyết định có được hủy không
                 'can_cancel' => !$bill->BillEdit
-                    && $bill->Department === 'HK'
+                    && in_array($bill->Department, ['HK', 'FO'], true)
                     && empty($serviceBill?->PaymentId)
                     && empty($serviceBill?->VatNumber),
+                'fo_cancel_blocked' => $bill->Department === 'FO' && !$allowHkCorrectFoBill,
             ];
         })->filter()->values();
 
         return response()->json(['success' => true, 'data' => $rows]);
+    }
+
+    public const FO_BILL_CANCEL_BLOCKED_MESSAGE = 'Hóa đơn được tạo bởi bộ phận lễ tân. Vui lòng liên hệ bộ phận lễ tân để xử lý';
+
+    /** Dòng 341: thông số SearchHouseKeeping_AllowHKCorrectBillFO cho phép Buồng phòng hủy bill do Lễ tân post. */
+    private function allowHkCorrectFoBill(): bool
+    {
+        return trim((string) \App\Models\HotelConfig::where('name', 'SearchHouseKeeping_AllowHKCorrectBillFO')->value('value')) === '1';
     }
 
     /** Hủy bill HK chưa thanh toán bằng các dòng âm audit theo nghiệp vụ SP6000/SP3000. */
@@ -1991,7 +2002,10 @@ class BookingRoomServiceController extends Controller
         DB::transaction(function () use ($billId, $validated) {
             $bill = HousekeepingServiceBill::whereKey($billId)->lockForUpdate()->firstOrFail();
             $serviceBill = ServiceBill::whereKey($bill->BillServiceId)->lockForUpdate()->firstOrFail();
-            if ($bill->Department !== 'HK' || $bill->BillEdit || !empty($serviceBill->PaymentId) || !empty($serviceBill->VatNumber)) {
+            if ($bill->Department === 'FO' && !$this->allowHkCorrectFoBill()) {
+                abort(422, self::FO_BILL_CANCEL_BLOCKED_MESSAGE);
+            }
+            if (!in_array($bill->Department, ['HK', 'FO'], true) || $bill->BillEdit || !empty($serviceBill->PaymentId) || !empty($serviceBill->VatNumber)) {
                 abort(422, 'Chỉ được xóa hóa đơn Buồng phòng chưa thanh toán.');
             }
             if ((int) $serviceBill->Status !== 1 || (int) $serviceBill->Edit === 1) {

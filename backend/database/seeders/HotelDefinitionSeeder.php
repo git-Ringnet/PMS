@@ -435,6 +435,10 @@ class HotelDefinitionSeeder extends Seeder
             ['name' => 'RoleUserUpdateCheckoutBooking', 'value' => '', 'description' => 'Danh sách mã role được sửa metadata booking đã checkout; cần có quyền fo.booking.edit. Để trống sẽ từ chối.', 'is_visible' => true],
             // Section 12 - Phân quyền mở khóa Do Not Move
             ['name' => 'RoleUserOpenDoNotMove', 'value' => '', 'description' => 'Danh sách mã role chính xác được phép mở khóa Do Not Move; cần có quyền fo.booking.edit. Để trống sẽ từ chối role được cấu hình.', 'is_visible' => true],
+            // Tồn kho - định mức cảnh báo tồn
+            ['name' => 'Inventory_LowStockWarningQty', 'value' => '50', 'description' => 'Định mức cảnh báo tồn kho: sản phẩm có tồn cuối nhỏ hơn số này được đánh dấu cảnh báo ở màn Tồn kho (mặc định 50).', 'is_visible' => true],
+            // Tìm kiếm hóa đơn - Buồng phòng
+            ['name' => 'SearchHouseKeeping_AllowHKCorrectBillFO', 'value' => '0', 'description' => 'Cho phép module Buồng phòng xóa (hủy) bill do Lễ tân post (0: Không cho phép, 1: Cho phép).', 'is_visible' => true],
             // Đồng bộ chuỗi công ty / thị trường / nguồn khách
             ['name' => 'SyncCompanyAllBranch', 'value' => '0', 'description' => 'Đồng bộ công ty, thị trường, nguồn khách cho tất cả chi nhánh trong chuỗi (0: Không, mỗi chi nhánh lưu riêng; 1: Thêm/sửa/xóa ở một chi nhánh thì các chi nhánh khác tự cập nhật theo, không đồng bộ người bán).', 'is_visible' => true],
             // Alert sinh nhật / special request

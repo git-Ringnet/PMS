@@ -1,4 +1,5 @@
 <script setup>
+import { storageImageUrl } from '@/utils/storage-url'
 import { onMounted, reactive, ref, computed } from 'vue'
 import { GripVertical, Pencil, Trash2 } from '@lucide/vue'
 import { useUiStore } from '@/stores/ui-store'
@@ -91,18 +92,7 @@ const fetchHotelServices = async () => {
   }
 }
 
-const normalizeImageUrl = (url) => {
-  if (!url) return null
-  const clean = String(url).trim()
-  if (clean.startsWith('/storage/')) return clean
-  if (clean.startsWith('storage/')) return '/' + clean
-  const match = clean.match(/\/storage\/.+$/i)
-  if (match) return match[0]
-  if (!clean.startsWith('http') && !clean.startsWith('/')) {
-    return '/storage/' + clean
-  }
-  return clean
-}
+const normalizeImageUrl = storageImageUrl
 
 const edit = (item) => {
   editing.value = item.id

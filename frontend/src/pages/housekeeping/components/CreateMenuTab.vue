@@ -776,6 +776,7 @@
 </template>
 
 <script setup>
+import { storageImageUrl } from '@/utils/storage-url'
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { Trash2, Printer, Download, Upload, PlusCircle, ChevronUp, ChevronDown, ImageOff, Inbox, X, Save, Power, Plus, Minus } from '@lucide/vue'
 import http from '@/services/http'
@@ -945,18 +946,7 @@ const fetchUnitsAndInventories = async () => {
   }
 }
 
-const normalizeImageUrl = (url) => {
-  if (!url) return null
-  const clean = String(url).trim()
-  if (clean.startsWith('/storage/')) return clean
-  if (clean.startsWith('storage/')) return '/' + clean
-  const match = clean.match(/\/storage\/.+$/i)
-  if (match) return match[0]
-  if (!clean.startsWith('http') && !clean.startsWith('/')) {
-    return '/storage/' + clean
-  }
-  return clean
-}
+const normalizeImageUrl = storageImageUrl
 
 const fetchGroupsAndProducts = async () => {
   isLoading.value = true

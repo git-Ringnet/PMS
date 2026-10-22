@@ -204,7 +204,7 @@
                     :aria-disabled="isPostBlocked"
                   >
                     <div class="product-thumb w-8.5 h-8.5 rounded-md bg-slate-50 border border-slate-200 flex items-center justify-center text-base shrink-0 overflow-hidden">
-                      <img v-if="p.image" :src="p.image" class="w-full h-full object-cover" />
+                      <img v-if="p.image && !brokenImages[p.id]" :src="p.image" class="w-full h-full object-cover" @error="brokenImages[p.id] = true" />
                       <span v-else>{{ p.icon || '📦' }}</span>
                     </div>
                     <div class="product-info flex-1 min-w-0">
@@ -378,6 +378,7 @@
 </template>
 
 <script setup>
+import { storageImageUrl } from '@/utils/storage-url'
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { Minus, Plus, Trash2, X, Save, RotateCcw } from '@lucide/vue'
 import { useUiStore } from '@/stores/ui-store'
@@ -388,6 +389,9 @@ import { fetchHousekeepingOutlets } from '@/services/housekeeping-outlet-service
 // Import LoadingOverlay component của hệ thống
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
+
+// Ảnh sản phẩm lỗi (không tải được) thì hiện biểu tượng thay thế
+const brokenImages = ref({})
 
 const props = defineProps({
   initialRoomId: {
@@ -754,7 +758,8 @@ const loadDbProducts = async () => {
           id: p.id,
           name: p.name,
           price: finalPrice || basePrice,
-          image: p.image ? `http://localhost:8000/storage/${p.image}` : null,
+          // Dòng 354: không gắn cứng localhost, dùng đường dẫn /storage/... chạy được trên server
+          image: storageImageUrl(p.image),
           icon: p.image ? null : '📦',
           product_code: p.product_code,
           service_charge_percent: svcPercent,
