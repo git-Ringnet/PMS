@@ -26,6 +26,7 @@ import {
   CheckCircle2
 } from '@lucide/vue'
 import http from '@/services/http'
+import { postRoomCharge } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
 import { useNightAuditStore } from '@/stores/night-audit-store'
@@ -452,11 +453,11 @@ function processRealBookings(bookings) {
         arrivalDate: formatDateVN(arrDate),
         nights: r.num_of_days || b.num_of_days || calculateNights(arrDate, depDate),
         departureDate: formatDateVN(depDate),
-        breakfast: b.breakfast_included ?? true,
-        adults: r.adults_count || b.adults_count || 1,
-        children: r.children_count || b.children_count || 0,
+        breakfast: Boolean(r.breakfast ?? b.breakfast_included),
+        adults: r.adults ?? r.adults_count ?? 1,
+        children: r.children_qty ?? r.children_count ?? 0,
         rateCode: b.rate_code || '',
-        price: r.price || r.room_rate || b.total_amount || 500000,
+        price: Number(r.rate ?? r.price ?? 0),
         extraBed: r.extra_bed_count || 0,
         extraBedPrice: r.extra_bed_price || 0,
         selected: false
@@ -606,39 +607,52 @@ async function handlePostRoomCharge() {
 
   if (!confirmed) return
 
-  try {
-    isLoading.value = true
-    const sysDateStr = getNormalizedDate(systemDate.value)
-    
-    const postedList = []
-    for (const item of selected) {
-      const parts = item.id.split('-')
-      const bookingRoomId = parts[parts.length - 1]
-      
-      const payload = {
-        booking_room_id: bookingRoomId,
-        date: sysDateStr,
-        amount: item.price || 0,
-        description: `Tiền phòng ngày ${formatDateVN(sysDateStr)} (Post thủ công)`
-      }
-      
-      const res = await http.post('/night-audit/post-room-charge', payload)
-      if (res.data && res.data.success) {
-        postedList.push(item.roomNumber)
-      }
-    }
+  isLoading.value = true
+  const sysDateStr = getNormalizedDate(systemDate.value)
+  const posted = []
+  const skipped = []
+  const failed = []
 
-    if (postedList.length > 0) {
-      uiStore.showToast(`Đã post tiền phòng thành công cho ${postedList.length} phòng: ${postedList.join(', ')}`, 'success')
-      await fetchRealData()
-    } else {
-      uiStore.showToast('Không có phòng nào được post tiền phòng thành công.', 'warning')
+  // Dòng 401: dùng API post tiền phòng chuẩn (tự tính giá đêm, tách ăn sáng, bỏ qua đêm đã post)
+  for (const item of selected) {
+    const parts = item.id.split('-')
+    const bookingRoomId = parts[parts.length - 1]
+    const label = item.roomNumber || bookingRoomId
+
+    try {
+      const res = await postRoomCharge({
+        booking_room_id: bookingRoomId,
+        date_from: sysDateStr,
+        date_to: sysDateStr,
+        mode: 'auto',
+        folio: 1,
+        currency: 'VND',
+        description: `Tiền phòng ngày ${formatDateVN(sysDateStr)} (Chạy trước tiền phòng)`
+      })
+      if (res.data?.posted_rooms?.length) {
+        posted.push(label)
+      } else {
+        skipped.push(label)
+      }
+    } catch (err) {
+      console.error(err)
+      failed.push(`${label}: ${err.response?.data?.message || 'lỗi không xác định'}`)
     }
-  } catch (err) {
-    console.error(err)
-    uiStore.showToast(err.response?.data?.message || 'Có lỗi xảy ra khi post tiền phòng.', 'error')
-  } finally {
-    isLoading.value = false
+  }
+
+  isLoading.value = false
+
+  if (posted.length > 0) {
+    uiStore.showToast(`Đã post tiền phòng ngày ${formatDateVN(sysDateStr)} cho ${posted.length} phòng: ${posted.join(', ')}`, 'success')
+  }
+  if (skipped.length > 0) {
+    uiStore.showToast(`Bỏ qua (đã có tiền phòng ngày ${formatDateVN(sysDateStr)}): ${skipped.join(', ')}`, 'warning')
+  }
+  if (failed.length > 0) {
+    uiStore.showToast(`Không post được: ${failed.join(' | ')}`, 'error', 8000)
+  }
+  if (posted.length > 0) {
+    await fetchRealData()
   }
 }
 
