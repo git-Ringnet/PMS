@@ -8,8 +8,161 @@
 
 - **Ngày ghi**: `YYYY-MM-DD`
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
-## [2026-10-20] - Hoàn Tất Triệt Để Các Hạng Mục Dòng 36 - 39 Sheet FIX FE
-### Module: Đăng ký / Chi Tiết Ăn Sáng ([ChildBreakfastModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/ChildBreakfastModal.vue)), Thông Tin Phòng ([BookingDetailModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/components/BookingDetailModal.vue), [RoomInfoDatePicker.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/RoomInfoDatePicker.vue))
+
+## [2026-10-21] - Hoàn Tất Chuẩn Hóa Dòng 50 Sheet FIX FE - Chuyển Cọc / Tách Cọc (FrontDesk Checkout)
+### Module: Thu ngân / Hóa đơn ([CheckoutPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue), [TransferPaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/TransferPaymentModal.vue), [TransferServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/TransferServiceModal.vue), [SplitDepositModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/SplitDepositModal.vue))
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **1. Chuyển Cọc ([TransferPaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/TransferPaymentModal.vue), [CheckoutPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue))**:
+    + Bổ sung trường `isPrimary` vào danh sách `transferDestinations`, đánh dấu rõ ràng khách chính trong từng phòng.
+    + Thêm nhãn `(Khách chính)` màu xanh dương (`text-sky-500 font-normal text-xs`) bên cạnh tên khách chính trong dropdown "Đến khách", giúp phân biệt chính xác với các khách phụ ở cùng phòng.
+    + **Xử lý hoàn chỉnh nút xóa nhanh (x) & Droplist**: Khi ấn nút `x` xóa điểm đến, danh sách droplist tự động giữ/mở bung lại ngay lập tức hiển thị toàn bộ phòng/khách và focus vào ô nhập, không bị đóng hay cần bấm ra ngoài rồi bấm lại mới xổ dữ liệu.
+    + Bấm trực tiếp vào ô input hoặc bấm icon mũi tên `<ChevronDown>` mở dropdown ngay cả khi ô đang có focus. Đóng dropdown chuẩn xác qua sự kiện `pointerdown` click outside.
+    + Chuẩn hóa tiêu đề bảng dữ liệu cọc: Căn giữa ngang và dọc (`text-center align-middle font-semibold text-[#000000D9]`), đầy đủ viền `border border-slate-200`.
+    + Loại bỏ nút "Đóng" ở footer modal theo quy chuẩn FE Design System (giữ lại nút "Chuyển" `.btn-pms-primary` kèm hỗ trợ phím tắt `Esc` và nút `x` trên header).
+  - **2. Đồng bộ hiển thị khách chính & hành vi droplist ở Chuyển Dịch Vụ ([TransferServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/TransferServiceModal.vue))**:
+    + Thêm nhãn `(Khách chính)` đồng bộ trong dropdown phòng/khách đích.
+    + Đồng bộ hành vi nút xóa nhanh `x`, focus ô nhập, icon toggle dropdown và click outside hoàn toàn không xung đột.
+  - **3. Tách Cọc ([SplitDepositModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/SplitDepositModal.vue))**:
+    + Thay đổi nền form từ xanh nhạt `bg-[#eef6ff]` sang nền xám nhạt trung tính `bg-[#f8fafc]`.
+    + Chuẩn hóa ô nhập "Số tiền": Bắt buộc (`*` đỏ), nền vàng nhạt `#FFF8DB`, viền vàng `#F1DD8A`, focus amber-500, căn phải, định dạng phân cách hàng nghìn bằng dấu phẩy (`200,000`), có nút `(x)` xóa nhanh.
+    + Chuẩn hóa ô chọn "Folio": Bắt buộc (`*` đỏ), nền vàng nhạt `#FFF8DB`, viền vàng `#F1DD8A`, loại trừ Folio nguồn hiện tại khỏi danh sách chọn.
+    + Loại bỏ nút "Đóng" ở footer, giữ nút "Tách" `.btn-pms-primary`, hỗ trợ phím `Esc` và kéo thả giới hạn phạm vi màn hình.
+  - **4. Bảo toàn tính cô lập & tương thích (Zero Side Effects)**:
+    + Không can thiệp API backend hoặc các màn hình/tab khác ngoài phân hệ Checkout.
+- **Kiểm thử**:
+  - Build frontend: `npm run build` -> **Thành công 100% trong 6.56s (0 lỗi)**.
+  - Test backend liên quan: `CheckoutBusinessRulesTest` -> **14/14 passed**.
+
+## [2026-10-21] - Chuẩn Hóa Màu Sắc & Font Chữ Tiêu Đề 2 Panel Trái Màn Checkout (Title Case & #000000D9)
+### Module: Thu ngân / Hóa đơn ([CheckoutPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue))
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **Đồng bộ tiêu đề 2 panel trái theo chuẩn FE Design System**:
+    + Panel 1 (Bảng danh sách đăng ký): Bỏ ép `text-transform: uppercase`, chuyển màu chữ từ `#64748b` sang `#000000D9`, font Roboto 12px, semi-bold (600). Tiêu đề hiển thị chuẩn Title Case: `ĐK / Phòng`, `Tên Khách`, `Tổng DV`, `Đã TT`.
+    + Panel 2 (Thông tin đăng ký & Folio): Bỏ ép `text-transform: uppercase`, chuyển màu chữ và icon từ `#64748b` sang `#000000D9`, font Roboto 12px, semi-bold (600). Tiêu đề hiển thị chuẩn Title Case: `Thông Tin Đăng Ký`, `Folio`.
+  - **Khắc phục lỗi thanh cuộn dọc (scrollbar) ở khung Thông Tin Đăng Ký**:
+    + Chuyển `.checkout-info-panel` từ `flex: 0 0 300px; min-height: 300px; overflow-y-auto` sang `flex: 0 0 auto; overflow-hidden`.
+    + Chuyển `.checkout-folio-section` từ `flex: 0 0 88px;` sang `flex: 0 0 auto;`, bỏ `mb-auto` để các khối thẻ tự động co giãn theo nội dung tự nhiên.
+    + Bảng danh sách đăng ký bên trên (`.checkout-bookings-panel`) giữ `flex: 1 1 auto; min-height: 0; overflow-auto` chiếm trọn không gian còn lại.
+    + Kết quả: Khung Thông Tin Đăng Ký và cụm Folio A, 1, 2, 3 hiển thị đầy đủ, thoáng đẹp, không còn thanh cuộn dọc.
+
+## [2026-10-21] - Hoàn Tất Tinh Chỉnh UI/UX & Kéo Thả Giới Hạn Màn Hình Cho Tất Cả Form/Modal Màn Checkout
+### Module: Thu ngân / Hóa đơn ([CheckoutPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue), [AddServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/AddServiceModal.vue), [AddHousekeepingServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/AddHousekeepingServiceModal.vue), [PostBillHousekeepingTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/housekeeping/components/PostBillHousekeepingTab.vue), [SingleDatePicker.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/components/SingleDatePicker.vue), [PrepaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/PrepaymentModal.vue), [PaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/PaymentModal.vue), [TransferServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/TransferServiceModal.vue), [QuickTransferBillModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/QuickTransferBillModal.vue), [SplitServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/SplitServiceModal.vue), [CancelServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/CancelServiceModal.vue), [AdjustRoomRateModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/AdjustRoomRateModal.vue), [FilterServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/FilterServiceModal.vue), [TransferPaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/TransferPaymentModal.vue), [SplitDepositModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/SplitDepositModal.vue), [DeletePaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/DeletePaymentModal.vue), [DebtSettlementModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/DebtSettlementModal.vue))
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **1. Mở rộng khung thông tin đăng ký ([CheckoutPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue))**:
+    + Nâng chiều cao khung đăng ký lên `flex: 0 0 300px; min-height: 300px;` để hiển thị trọn vẹn toàn bộ các trường và ô ghi chú (`height: 36px; min-height: 32px`).
+  - **2. Droplist dịch vụ ([AddServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/AddServiceModal.vue))**:
+    + Khi đã chọn 1 dịch vụ, bấm/focus vào ô nhập vẫn mở bung danh sách toàn bộ các dịch vụ để chọn lại nhanh chóng.
+  - **3. Dịch vụ buồng phòng ([PostBillHousekeepingTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/housekeeping/components/PostBillHousekeepingTab.vue), [SingleDatePicker.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/components/SingleDatePicker.vue))**:
+    + Các tên outlet trong bảng giỏ hàng chuyển sang màu đen (`text-[#000000D9]`).
+    + Khắc phục lỗi lệch ngày UTC khiến ngày 30 bị disable: Sử dụng hàm lấy ngày địa phương `parseLocalDateYMD` và đặt `maxDate` đến cuối ngày `23:59:59` trong `SingleDatePicker`.
+  - **4. Cơ chế di chuyển modal (Clamped Dragging) trong phạm vi màn hình checkout**:
+    + Áp dụng cơ chế kéo thả giới hạn màn hình (`clampModalPosition` với margin 16px) cho toàn bộ 14 modal thuộc phạm vi Checkout: `AddServiceModal`, `AddHousekeepingServiceModal`, `QuickTransferBillModal`, `PrepaymentModal`, `PaymentModal`, `TransferServiceModal`, `SplitServiceModal`, `CancelServiceModal`, `AdjustRoomRateModal`, `FilterServiceModal`, `TransferPaymentModal`, `SplitDepositModal`, `DeletePaymentModal`, `DebtSettlementModal`.
+  - **5. Chuẩn hóa dữ liệu bảng chuyển dịch vụ ([TransferServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/TransferServiceModal.vue))**:
+    + Toàn bộ dòng dữ liệu dùng font Roboto 12px thường (`text-xs font-normal text-[#000000D9]`), bỏ màu xanh lá ở cột số tiền.
+  - **6. Thu nhỏ ô ngày tháng ([PrepaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/PrepaymentModal.vue))**:
+    + Điều chỉnh grid `grid-cols-[80px_140px_165px_85px]` thu gọn vừa vặn ô ngày tháng.
+  - **7. Tinh chỉnh form thanh toán ([PaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/PaymentModal.vue))**:
+    + Thu nhỏ top-left panel thành 5 cột (`col-span-5`), mở rộng panel bên phải thành 7 cột (`col-span-7`).
+    + Tách biệt nút `X` xóa phương thức (`right-7`) và mũi tên dropdown `<ChevronDown>` (`right-2`) với `appearance-none` và padding `pr-12` chống đè icon.
+  - **8. Đồng bộ viết hoa chữ cái đầu tiêu đề (Title Case) cho tất cả form/modal**:
+    + Tiêu đề tất cả 14 modal và bảng chi tiết đều viết hoa đầu mỗi chữ: "Thêm Dịch Vụ", "Thêm Dịch Vụ Buồng Phòng", "Điều Chỉnh Tiền Phòng", "Tập Hợp Dịch Vụ", "Xóa Dịch Vụ", "Thanh Toán Trước", "Thanh Toán", "Lọc Dịch Vụ", "Chuyển Dịch Vụ", "Chuyển Cọc", "Tách Dịch Vụ", "Tách Cọc", "Xóa Thanh Toán", "Thanh Toán Công Nợ", "Xác Nhận Xóa", "Hóa Đơn", "Xác Nhận".
+- **Kiểm thử**:
+  - Build frontend: `npm run build` -> **Thành công 100% trong 5.43s (0 lỗi)**.
+
+## [2026-10-21] - Hoàn Tất Đồng Bộ & Chuẩn Hóa Triệt Để Dòng 40 Đến 48 Sheet FIX FE - Thu Ngân / Hóa Đơn (FrontDesk Checkout)
+### Module: Thu ngân / Hóa đơn ([CheckoutPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue), [AddServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/AddServiceModal.vue), [AddHousekeepingServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/AddHousekeepingServiceModal.vue), [PostBillHousekeepingTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/housekeeping/components/PostBillHousekeepingTab.vue), [SplitServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/SplitServiceModal.vue), [TransferServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/TransferServiceModal.vue), [QuickTransferBillModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/QuickTransferBillModal.vue), [CancelServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/CancelServiceModal.vue), [PrepaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/PrepaymentModal.vue), [PaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/PaymentModal.vue))
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **1. Dòng 40 - Màn hình Hóa Đơn ([CheckoutPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue))**:
+    + Sửa màu dòng được chọn: Bỏ triệt để CSS `.checkout-selected-row, .checkout-selected-row * { color: #fff !important; }` gây chìm chữ trắng. Dòng được chọn có nền xanh dương nhạt `bg-sky-100` (`#e0f2fe`), viền trái `border-l-4 border-blue-600`, chữ giữ nguyên màu đen `#000000D9`.
+    + Dòng hover: `hover:bg-slate-100/70`, không đổi màu chữ, không đè lên dòng đang active.
+    + Phòng đã checkout / hóa đơn đã thanh toán: Nền hồng nhạt `bg-[#fee2e2] hover:bg-[#fed7d7]`, chữ màu đen `#000000D9`.
+    + Tooltip ghi chú: Hover vào tên booking hiển thị tooltip đầy đủ nội dung ghi chú.
+    + Khung thông tin đăng ký: Mở rộng padding `px-2.5 py-1.5`, textarea ghi chú `min-h-[32px] max-h-[50px]` không bị tràn chữ hoặc che khuất.
+    + Sửa lỗi dính chuỗi ngày giờ (như `02/09/2026222222`): Nâng cấp `formatDate` và `formatTime` hỗ trợ chuẩn chuỗi 6 chữ số `HHmmss` (`222222` -> `22:22`), nối có khoảng cách `02/09/2026 22:22`.
+    + Dropdown tìm kiếm: Phân tách rõ ràng dòng Master booking (nền xám nhẹ `bg-slate-50`, in đậm) và các dòng phòng con (thụt lề có ký hiệu `↳`), hover rõ ràng.
+  - **2. Dòng 41 - Thêm dịch vụ ([AddServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/AddServiceModal.vue))**:
+    + Viền modal: `border-slate-200`, header đồng bộ màu theme hệ thống.
+    + Ô Đơn giá: Khi chưa chọn dịch vụ thì disable nền xám `#F8FAFC`. Khi đã chọn dịch vụ thì đổi sang nền vàng nhạt `#FFF8DB` viền `#F1DD8A` font thường text `#000000D9`.
+    + Tab Tiền phòng: Khi bật toggle `Cập nhật tiền phòng` thì nhãn và ô `Tiền phòng tự động` đổi sang màu xám (`text-slate-400`, `bg-slate-100`), khi tắt thì về lại màu bình thường.
+    + Droplist dịch vụ: Tự động blur sau khi click chọn sản phẩm để người dùng có thể nhấp lại để mở dropdown mà không bị kẹt focus.
+  - **3. Dòng 42 - Thêm DV buồng phòng ([AddHousekeepingServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/AddHousekeepingServiceModal.vue) & [PostBillHousekeepingTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/housekeeping/components/PostBillHousekeepingTab.vue))**:
+    + Viền modal `border-slate-200`, bỏ tag tên khách và phòng trên header modal để tinh gọn.
+    + Khi mở từ modal Hóa đơn (`isModal === true`): Khóa ô `Phòng / Khách` (read-only, nền xám `#F8FAFC`, không cho chọn phòng khác). Khi ở tab Buồng phòng thông thường (`isModal === false`), vẫn cho chọn phòng bình thường (0% ảnh hưởng Housekeeping).
+    + Icon xóa món trong giỏ hàng là thùng rác đỏ `text-rose-500 hover:text-rose-700`.
+  - **4. Dòng 43 - Tách dịch vụ ([SplitServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/SplitServiceModal.vue))**:
+    + Viền modal `border-slate-200`, header đồng bộ theme hệ thống.
+    + Bảng: Header `<th>` căn giữa ngang dọc, đầy đủ 4 viền `border border-slate-200`, font Roboto 12px, chữ `#000000D9`.
+  - **5. Dòng 44 - Chuyển dịch vụ ([TransferServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/TransferServiceModal.vue))**:
+    + Viền modal `border-slate-200`, header đồng bộ theme, lược bỏ icon phụ trợ.
+    + Ô Đến khách: Sau khi click chọn khách đích thì tự động blur để không bị kẹt con trỏ.
+    + Bảng dịch vụ: Tiêu đề cột căn giữa ngang dọc, viền `border border-slate-200`, số tiền phân cách hàng nghìn.
+  - **6. Dòng 45 - Tập hợp dịch vụ ([QuickTransferBillModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/QuickTransferBillModal.vue))**:
+    + Viền modal `border-slate-200`, header đồng bộ theme.
+    + Tiêu đề cột `<th>` căn giữa ngang dọc, đủ viền `border border-slate-200`. Loại bỏ `font-mono`, số tiền dùng font Roboto 12px thường `#000000D9`.
+  - **7. Dòng 46 - Xóa dịch vụ ([CancelServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/CancelServiceModal.vue))**:
+    + Viền modal `border-slate-200`, header đồng bộ theme.
+    + Nút hành động dùng chuẩn `.btn-pms-danger` (icon thùng rác, chữ "Xóa dịch vụ"). Bỏ ghi chú thừa.
+  - **8. Dòng 47 - Thanh toán trước ([PrepaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/PrepaymentModal.vue))**:
+    + Viền modal `border-slate-200`, footer chỉ giữ duy nhất nút Lưu `.btn-pms-primary`.
+    + Ô Phòng: Bỏ lựa chọn `Master Header` theo đúng Note 12/10, chỉ hiển thị các phòng thực tế, mặc định chọn phòng đầu tiên trong danh sách nếu chưa có phòng.
+    + Ô Tài khoản ngân hàng: Chuyển về nền trắng `bg-white` bình thường khi chọn Chuyển khoản (không phải trường bắt buộc).
+    + Các trường bắt buộc (`Số tiền`, `HTTT`, `Ca`, `Giờ`, `Ngày`) có nền `#FFF8DB` viền `#F1DD8A` kèm dấu `*` đỏ.
+  - **9. Dòng 48 - Thanh toán ([PaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/PaymentModal.vue))**:
+    + Viền modal `border-slate-200`, footer chỉ giữ duy nhất nút Lưu `.btn-pms-primary`.
+    + Ô Tài khoản ngân hàng: Nền trắng `bg-white`, font thường `font-normal`.
+    + Bảng thanh toán đã thêm: Dữ liệu dòng chi tiết đổi từ in đậm sang in thường `font-normal text-[#000000D9]`.
+    + Icon thùng rác đổi từ màu xanh biển sang màu đỏ `text-red-500 hover:text-red-700`.
+- **Kiểm thử & Đảm bảo an toàn**:
+  - Frontend build: `npm run build` -> **Thành công 100% trong 4.70s (0 lỗi)**.
+  - Browser verification subagent: Đã kiểm tra trực tiếp trên trình duyệt, các modal mở và đóng trơn tru với phím `Esc`, styling màu sắc, font chữ và các trường đúng quy chuẩn 100%.
+  - Cam kết 0 ảnh hưởng các màn hình khác và bảo toàn 100% logic nghiệp vụ/database.## [2026-10-21] - Hoàn Tất Rà Soát & Chuẩn Hóa Triệt Để Dòng 39 Sheet FIX FE - Thông Tin Phòng
+### Module: Đăng ký / Sơ đồ phòng / Modal Thông Tin Phòng ([BookingDetailModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/components/BookingDetailModal.vue), [RoomInfoDatePicker.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/RoomInfoDatePicker.vue), [room-info-date-utils.js](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/room-info-date-utils.js))
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **1. Đồng bộ Font, Style & Trường bắt buộc chuẩn FE Design System**:
+    + Thanh tiêu đề đồng bộ màu theme hệ thống dynamic (`topbarThemeBg`), bo góc modal `rounded-xl`.
+    + Đồng bộ màu nền vàng nhạt `#FFF8DB` và viền `#F1DD8A` (focus `#eab308`) cho cả 4 trường bắt buộc khi ở chế độ Sửa: `Họ tên`, `Ngày đến`, `Ngày đi`, `Giá phòng`.
+    + Đã loại bỏ hoàn toàn lỗi "nửa vàng nửa trắng" ở Ngày đến và Ngày đi (input trong suốt, container phủ vàng toàn diện).
+  - **2. Tên khách & Ghi chú của phòng**:
+    + Ô Họ tên khách: Nhập liệu tự nhiên theo phím/Caps Lock, không ép uppercase.
+    + Ô Ghi chú: Xóa placeholder mặc định (`placeholder=""`), nạp từ `room.note || room.room_note` và lưu vào `room_note` của phòng, không ảnh hưởng ghi chú booking.
+  - **3. Nút xóa nhanh (x) & Gợi ý droplist ẩn**:
+    + Tất cả các trường có giá trị khi ở chế độ Sửa đều có nút `(x)` đưa về trạng thái rỗng và hiển thị placeholder.
+    + 5 select dropdown (Danh xưng, Loại giấy tờ, Thường trú / Tạm trú, Rate code, Khuyến mãi / Tăng giảm) đều có `<option value="" disabled hidden>Gợi ý</option>` và class `.is-empty` bảo đảm màu chữ xám `#A8B0BF` khi rỗng trên mọi trình duyệt.
+  - **4. Ngày tháng chuẩn `dd/mm/yyyy` & Siết chặt 8 chữ số**:
+    + Hiển thị thống nhất `dd/mm/yyyy`.
+    + Nhập tay: tự động chèn `/` sau 2 số ngày và 2 số tháng, rào tháng tối đa 12, gõ 2-9 tự thành `0X/`.
+    + Loại bỏ nhánh chuyển đổi 6 chữ số trong `room-info-date-utils.js`, bắt buộc nhập đủ 8 chữ số (`ddmmyyyy`) mới tự động chuyển đổi sang ngày hợp lệ.
+  - **5. Khắc phục triệt để lỗi tràn khung cột phải (GIÁ PHÒNG & YÊU CẦU)**:
+    + Điều chỉnh tỉ lệ `.main-grid`: Cột 2 (Lưu trú) từ `1.35fr` -> `1fr`, Cột 3 (Giá phòng) từ `1.15fr` -> `1.3fr`, Cột 1 (Sidebar khách) từ `210px` -> `200px`.
+    + Bổ sung `min-width: 0;` cho `.cell-stay`, `.cell-price` và các grid helper, giải phóng cơ chế shrink cho các track CSS Grid.
+    + Tối ưu `.stay-grid`: `minmax(105px, 1.2fr) 58px minmax(105px, 1.2fr) 58px 45px; gap: 6px 8px;`.
+    + Tối ưu `.price-grid-1` & `.price-grid-2`: `minmax(80px, 1fr) minmax(80px, 1fr) minmax(95px, 1.15fr) auto; gap: 6px 8px;`.
+    + Gán `.price-btn-col` (`grid-column: 4; justify-self: end;`) cho nút "Chi tiết thêm giường", loại bỏ thẻ div rỗng, giúp 2 nút hành động xanh ("Yêu cầu đặc biệt" và "Chi tiết thêm giường") thẳng hàng dọc và căn sát lề phải chuẩn xác bên trong khung.
+    + Mở rộng `max-width` của `.card` lên `min(97vw, 1400px)` và cập nhật responsive media query `@media (max-width: 1120px)`.
+- **Kiểm thử & Đảm bảo an toàn**:
+  - Frontend build: `npm run build` -> **Thành công 100% trong 5.12s (0 lỗi)**.
+  - Browser verification: Modal hiển thị chuẩn đẹp, 100% controls cột phải nằm gọn gàng bên trong viền card.
+  - Cam kết 0 ảnh hưởng màn hình khác, 0 ảnh hưởng modal con và bảo toàn 100% logic nghiệp vụ/database.
+
+## [2026-10-21] - Hoàn Tất Rà Soát & Đồng Bộ Dòng 31 Sheet FIX FE - Nâng Hạng Phòng
+### Module: Đăng ký / Modal Nâng Hạng Phòng ([UpgradeModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/UpgradeModal.vue))
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **1. Xóa nút Đóng ở footer**: Footer chỉ giữ duy nhất nút Lưu chuẩn `.btn-pms-primary` (icon đĩa mềm). Hỗ trợ nút `[x]` ở header cùng phím tắt `Esc` (`Escape`) đóng modal nhanh kèm cleanup trong `onBeforeUnmount`.
+  - **2. Đồng bộ Font & Style chuẩn FE Design System**:
+    + Toàn bộ typography chuyển về font Roboto, nội dung chuẩn 12px (`text-xs`).
+    + Thanh header đồng bộ cùng màu với màu theme hệ thống (`topbarThemeBg`). Bo góc modal chuẩn `rounded-xl` (12px).
+    + Bảng danh sách phòng đã chọn: Header `<th>` căn giữa ngang dọc (`text-center align-middle`), đủ 4 viền `border border-slate-200`, chữ `font-semibold text-[#000000D9]`, viết hoa đầu từ (`Phòng`, `Hạng Hiện Tại`, `Khách`). Ô dữ liệu `<td>` font thường `text-[#000000D9] font-normal`, không có viền dọc.
+    + Trường bắt buộc (`Loại Phòng *`, `Dạng Phòng *`): Nền vàng nhạt `#FFF8DB`, viền `#F1DD8A`, focus ring `#eab308`, nhãn có `*` đỏ, validation chặn khi bỏ trống.
+    + Ô Giá phòng: Căn phải `text-right`, có dấu phẩy phân cách hàng nghìn.
+  - **3. Note ngày 9/10 (Mã giá phòng & Nút xóa nhanh `(x)`)**:
+    + Gợi ý: `<option value="" disabled hidden>Chọn mã giá</option>` với màu xám `#A8B0BF` khi chưa có giá trị, bị ẩn khỏi droplist để người dùng không chọn làm giá trị.
+    + Danh sách select lọc các mã giá đang hoạt động (`activeRoomRateCodes = computed(() => filter(!rc.Disable))`).
+    + Bổ sung nút xóa nhanh `(x)` đặt tại `right-7` tách biệt khỏi mũi tên dropdown select, xuất hiện khi ô đã có giá trị (`upgradeChangePrice && upgradeTargetRateCode`).
+    + Khi bấm `(x)`: Đưa mã giá về rỗng `""` (hiển thị lại gợi ý) và tự động tính lại giá phòng `upgradeTargetPrice` theo giá chuẩn của loại phòng đích.
+- **Kiểm thử & Đảm bảo an toàn**:
+  - Frontend build: `npm run build` -> **Thành công 100% trong 4.88s (0 lỗi)**.
+  - Độc lập 100%, cam kết không ảnh hưởng đến màn hình khác và bảo toàn tuyệt đối logic nghiệp vụ.
+
 - **Mục tiêu & Kết quả hoàn thành**:
   - **1. Dòng 36 - Chi tiết ăn sáng ([ChildBreakfastModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/ChildBreakfastModal.vue))**:
     + Chuẩn hóa switch FIT/GIT: Thay thế toàn bộ custom switch pill sang dạng peer toggle switch đồng bộ 100% với [ExtraBedModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/ExtraBedModal.vue) (`w-8 h-4 bg-slate-300 rounded-full peer peer-checked:bg-sky-500 after:... translate-x-4` cùng chữ `FIT` màu xanh trời / `GIT` màu xám) áp dụng cho cả hàng cha lẫn từng ngày chi tiết.

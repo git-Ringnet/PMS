@@ -13,6 +13,17 @@ const showPassword = ref(false)
 const loading = ref(false)
 const errorMessage = ref('')
 
+// Lý do bị đăng xuất (hết phiên đăng nhập, bị giới hạn IP / thời gian) do http interceptor lưu lại
+try {
+  const notice = sessionStorage.getItem('pms_login_notice')
+  if (notice) {
+    errorMessage.value = notice
+    sessionStorage.removeItem('pms_login_notice')
+  }
+} catch {
+  // sessionStorage không dùng được thì bỏ qua
+}
+
 async function handleLogin() {
   if (!username.value || !password.value) {
     errorMessage.value = 'Vui lòng nhập đầy đủ tên đăng nhập và mật khẩu.'

@@ -14,7 +14,7 @@ Route::get('/hotel-settings', [\App\Http\Controllers\Api\HotelSettingController:
 Route::get('/night-audit/check-status', [NightAuditController::class, 'checkStatus']);
 
 // Protected routes (Sanctum)
-Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::class])->group(function () {
+Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestrictions::class, \App\Http\Middleware\EnsureBranchAccess::class])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/me/change-password', [AuthController::class, 'changePassword']);
@@ -603,9 +603,34 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnsureBranchAccess::clas
     // =====================================================================
     // DANH SÁCH CÔNG VIỆC (Shift Work / Frontdesk Work)
     // =====================================================================
+    // Bảo mật nâng cao (giới hạn IP / thời gian, tự đăng xuất) - chỉ super admin thay đổi
+    Route::prefix('security-settings')->group(function () {
+        $controller = \App\Http\Controllers\Api\SecuritySettingController::class;
+        Route::get('/', [$controller, 'show']);
+        Route::put('/', [$controller, 'update']);
+        Route::get('/my-ip', [$controller, 'myIp']);
+        Route::post('/ips', [$controller, 'storeIp']);
+        Route::put('/ips/{id}', [$controller, 'updateIp']);
+        Route::delete('/ips/{id}', [$controller, 'destroyIp']);
+        Route::post('/time-windows', [$controller, 'storeWindow']);
+        Route::put('/time-windows/{id}', [$controller, 'updateWindow']);
+        Route::delete('/time-windows/{id}', [$controller, 'destroyWindow']);
+        Route::post('/exempt-users', [$controller, 'addExemptUsers']);
+        Route::delete('/exempt-users/{userId}', [$controller, 'removeExemptUser']);
+    });
+
+    // Alert sinh nhật / special request và nội dung cập nhật hệ thống (icon lịch, icon chuông)
+    Route::get('/alerts', [\App\Http\Controllers\Api\AlertListController::class, 'index']);
+    Route::put('/alerts/status', [\App\Http\Controllers\Api\AlertListController::class, 'updateStatus']);
+    Route::get('/system-updates', [\App\Http\Controllers\Api\SystemUpdateController::class, 'index']);
+    Route::post('/system-updates/read', [\App\Http\Controllers\Api\SystemUpdateController::class, 'markRead']);
+    Route::post('/system-updates', [\App\Http\Controllers\Api\SystemUpdateController::class, 'store']);
+    Route::delete('/system-updates/{id}', [\App\Http\Controllers\Api\SystemUpdateController::class, 'destroy']);
+
     Route::prefix('shift-work')->group(function () {
         Route::get('/arrivals', [\App\Http\Controllers\Api\ShiftWorkController::class, 'arrivals']);
         Route::get('/departures', [\App\Http\Controllers\Api\ShiftWorkController::class, 'departures']);
+        Route::get('/export', [\App\Http\Controllers\Api\ShiftWorkController::class, 'export']);
         Route::get('/pending', [\App\Http\Controllers\Api\ShiftWorkController::class, 'pending']);
         Route::put('/pending/{bookingId}/note', [\App\Http\Controllers\Api\ShiftWorkController::class, 'updatePendingNote']);
         Route::get('/shuttle', [\App\Http\Controllers\Api\ShiftWorkController::class, 'shuttle']);

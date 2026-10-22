@@ -417,6 +417,7 @@ class HotelDefinitionSeeder extends Seeder
             ['name' => 'RoomPlan_ColorOOO', 'value' => '#3b82f6', 'description' => 'màu phòng khóa OOO', 'is_visible' => true],
             ['name' => 'RoomPlan_ColorOOS', 'value' => '#94a3b8', 'description' => 'màu phòng khóa OOS', 'is_visible' => true],
             ['name' => 'RoomPlan_AllowChangeArrivalDate', 'value' => '0', 'description' => 'Cho phép kéo thay đổi ngày đến của phòng trên Room Plan (0: không cho, 1: cho phép)', 'is_visible' => true],
+            ['name' => 'ShowVirtualRoom', 'value' => '1', 'description' => 'Kế hoạch phòng: hiển thị phòng chưa gán số phòng (0: ẩn, 1: hiển thị)', 'is_visible' => true],
             ['name' => 'AllowPostBillCheckedOutRoom', 'value' => '0', 'description' => 'Cho phép post bill sau khi phòng đã check-out (0: không cho, 1: cho phép)', 'is_visible' => true],
             ['name' => 'SyncRoomDateByBookingDate', 'value' => '1', 'description' => 'Tự động đồng bộ ngày của phòng theo ngày của booking (0: không đồng bộ, 1: đồng bộ cho phòng chưa check-in)', 'is_visible' => true],
             // Tham số trẻ em - ăn sáng

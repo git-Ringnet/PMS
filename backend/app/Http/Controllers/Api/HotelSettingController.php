@@ -31,6 +31,7 @@ class HotelSettingController extends Controller
             'RoomPlan_ColorOOO',
             'RoomPlan_ColorOOS',
             'RoomPlan_AllowChangeArrivalDate',
+            'ShowVirtualRoom',
             'AllowInputOverAV',
             'AllowOverRoomTypeRoomKind',
             'AllowLockRoomCauseUnassignableRoomBK',
@@ -42,6 +43,7 @@ class HotelSettingController extends Controller
             'RoleUserUpdateCheckoutBooking',
             'RoleUserOpenDoNotMove',
             'Immigration_ExportExelChangeToRegistered',
+            'AllowShowAlertListView',
         ])->get()->pluck('value', 'name');
 
         $data['ColorDefaultBookingRoomMap'] = $configs->get('ColorDefaultBookingRoomMap', '#97D5FF');
@@ -51,6 +53,7 @@ class HotelSettingController extends Controller
         $data['RoomPlan_ColorOOO'] = $configs->get('RoomPlan_ColorOOO', '#3b82f6');
         $data['RoomPlan_ColorOOS'] = $configs->get('RoomPlan_ColorOOS', '#94a3b8');
         $data['RoomPlan_AllowChangeArrivalDate'] = $configs->get('RoomPlan_AllowChangeArrivalDate', '0');
+        $data['ShowVirtualRoom'] = $configs->get('ShowVirtualRoom', '1');
         $data['AllowInputOverAV'] = $configs->get('AllowInputOverAV', '0');
         $data['AllowOverRoomTypeRoomKind'] = $configs->get('AllowOverRoomTypeRoomKind', '0');
         $data['AllowLockRoomCauseUnassignableRoomBK'] = $configs->get('AllowLockRoomCauseUnassignableRoomBK', '0');
@@ -62,6 +65,7 @@ class HotelSettingController extends Controller
         $data['RoleUserUpdateCheckoutBooking'] = $configs->get('RoleUserUpdateCheckoutBooking', '');
         $data['RoleUserOpenDoNotMove'] = $configs->get('RoleUserOpenDoNotMove', '');
         $data['Immigration_ExportExelChangeToRegistered'] = $configs->get('Immigration_ExportExelChangeToRegistered', '0');
+        $data['AllowShowAlertListView'] = $configs->get('AllowShowAlertListView', '1');
         
         $bfConfig = \App\Models\HotelConfig::where('name', 'DefaultBreakfast')->first();
         $data['DefaultBreakfast'] = $bfConfig ? intval($bfConfig->value) : 1;

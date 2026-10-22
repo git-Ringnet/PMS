@@ -10415,7 +10415,7 @@ defineExpose({
         :bookingId="activeTab?.dbId"
         :targetRooms="activeTab?.rooms ? activeTab.rooms.filter(r => selectedRows.includes(r.id) && r.status !== 2 && r.status !== 3 && r.status !== 'Checked Out' && r.status !== 'Cancelled') : []"
         :system-date="systemDate"
-        :current-module="'SALE'"
+        :current-module="currentBookingModule"
         :allow-sale-inhouse-rate-departure="String(hotelSettings?.AllowReserUpdateRate_DeptDateRoomInhouse ?? '0') === '1'"
         @saved="handleQuickUpdateSaved"
       />

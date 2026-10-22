@@ -62,6 +62,12 @@ http.interceptors.response.use(
       if ((status === 401 || status === 419) && !_isRedirectingToLogin) {
         _isRedirectingToLogin = true
 
+        // Bảo mật nâng cao: lưu lý do để trang đăng nhập hiển thị (hết phiên / bị giới hạn IP, thời gian)
+        const code = error.response.data?.code
+        if (['session_expired', 'access_restricted'].includes(code) && error.response.data?.message) {
+          sessionStorage.setItem('pms_login_notice', error.response.data.message)
+        }
+
         // Xóa sạch toàn bộ auth state ở localStorage và sessionStorage
         localStorage.removeItem('pms_token')
         localStorage.removeItem('pms_permissions')

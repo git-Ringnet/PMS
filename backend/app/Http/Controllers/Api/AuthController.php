@@ -54,6 +54,14 @@ class AuthController extends Controller
             ], 403);
         }
 
+        // Bảo mật nâng cao: giới hạn IP / khoảng thời gian đăng nhập
+        $violation = app(\App\Services\AccessRestrictionService::class)->violationMessage($user, (string) $request->ip());
+        if ($violation) {
+            Auth::logout();
+            \App\Services\ActivityLogService::logLogin($request, $user, false);
+            return response()->json(['message' => $violation, 'code' => 'access_restricted'], 403);
+        }
+
         $user->load('setting');
         $token = $user->createToken('auth_token')->plainTextToken;
         \App\Services\ActivityLogService::logLogin($request, $user, true);

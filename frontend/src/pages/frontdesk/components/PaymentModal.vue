@@ -1,6 +1,6 @@
 <script setup>
 import { ref, watch, computed, onMounted, onBeforeUnmount } from 'vue'
-import { X, Plus, Save, Inbox, Trash2 } from '@lucide/vue'
+import { X, Plus, Save, Inbox, Trash2, ChevronDown } from '@lucide/vue'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
 import http from '@/services/http'
 import { settleBookingPayment } from '@/services/booking-service'
@@ -550,26 +550,98 @@ const handleSubmit = async () => {
   }
 }
 
+const modalRef = ref(null)
+const modalPosition = ref({ x: 0, y: 0 })
+const isDraggingModal = ref(false)
+const dragStart = ref({ x: 0, y: 0, left: 0, top: 0 })
+
+function clampModalPosition(x, y) {
+  const modal = modalRef.value
+  if (!modal) return { x, y }
+
+  const margin = 16
+  const width = modal.offsetWidth
+  const height = modal.offsetHeight
+  const baseLeft = (window.innerWidth - width) / 2
+  const baseTop = (window.innerHeight - height) / 2
+  const minX = margin - baseLeft
+  const maxX = window.innerWidth - margin - width - baseLeft
+  const minY = margin - baseTop
+  const maxY = window.innerHeight - margin - height - baseTop
+
+  return {
+    x: minX <= maxX ? Math.min(Math.max(x, minX), maxX) : 0,
+    y: minY <= maxY ? Math.min(Math.max(y, minY), maxY) : 0,
+  }
+}
+
+function beginModalDrag(event) {
+  if (event.button !== 0) return
+  isDraggingModal.value = true
+  dragStart.value = {
+    x: event.clientX,
+    y: event.clientY,
+    left: modalPosition.value.x,
+    top: modalPosition.value.y,
+  }
+  window.addEventListener('pointermove', moveModal)
+  window.addEventListener('pointerup', endModalDrag)
+}
+
+function moveModal(event) {
+  if (!isDraggingModal.value) return
+  modalPosition.value = clampModalPosition(
+    dragStart.value.left + event.clientX - dragStart.value.x,
+    dragStart.value.top + event.clientY - dragStart.value.y,
+  )
+}
+
+function endModalDrag() {
+  isDraggingModal.value = false
+  window.removeEventListener('pointermove', moveModal)
+  window.removeEventListener('pointerup', endModalDrag)
+}
+
+function resetModalPosition() {
+  endModalDrag()
+  modalPosition.value = { x: 0, y: 0 }
+}
+
 const handleClose = () => {
   emit('close')
 }
+
+watch(() => props.show, (val) => {
+  if (val) resetModalPosition()
+})
 
 onMounted(() => {
   fetchPaymentMethods()
 })
 
-onBeforeUnmount(() => document.removeEventListener('keydown', handleEscape))
+onBeforeUnmount(() => {
+  endModalDrag()
+  document.removeEventListener('keydown', handleEscape)
+})
 </script>
 
 <template>
   <div v-if="show" class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-2 md:p-4 animate-fadeIn select-none font-sans">
-    <div class="bg-white rounded-xl shadow-2xl w-full max-w-5xl overflow-hidden border border-sky-400 flex flex-col text-xs modal-responsive-card max-h-[min(94vh,850px)]">
+    <div
+      ref="modalRef"
+      class="bg-white rounded-xl shadow-2xl w-full max-w-5xl overflow-hidden border border-slate-200 flex flex-col text-xs modal-responsive-card max-h-[min(94vh,850px)]"
+      :style="{ transform: `translate(${modalPosition.x}px, ${modalPosition.y}px)`, transition: isDraggingModal ? 'none' : '' }"
+    >
       
       <!-- Header (Màu xanh dương mạ #0088ff) -->
-      <div class="text-white px-4 py-2.5 flex items-center justify-between font-semibold shrink-0 shadow-xs" style="background: var(--pms-custom-theme, #006bdb)">
-        <span class="text-xs font-semibold tracking-wide">Thanh toán</span>
+      <div
+        class="text-white px-4 py-2.5 flex items-center justify-between font-semibold shrink-0 shadow-xs cursor-move select-none touch-none"
+        style="background: var(--pms-custom-theme, #006bdb)"
+        @pointerdown="beginModalDrag"
+      >
+        <span class="text-xs font-semibold tracking-wide">Thanh Toán</span>
         <div class="flex items-center gap-2">
-          <button @click="handleClose" class="hover:bg-white/20 p-1 rounded transition-colors text-white cursor-pointer" title="Đóng">
+          <button @pointerdown.stop @click="handleClose" class="hover:bg-white/20 p-1 rounded transition-colors text-white cursor-pointer" title="Đóng">
             <X class="w-4 h-4" />
           </button>
         </div>
@@ -585,27 +657,28 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleEscape))
         <!-- Top Split Section: Form Trái & Bảng Giá Phải -->
         <div class="grid grid-cols-12 gap-4">
           
-          <!-- LEFT CARD (6 cols) -->
-          <div class="col-span-6 border border-gray-300 rounded-lg p-3 space-y-2.5 bg-white">
+          <!-- LEFT CARD (5 cols - thu nhỏ 1 xíu phần top left panel) -->
+          <div class="col-span-5 border border-gray-300 rounded-lg p-3 space-y-2.5 bg-white">
             <!-- Phương thức thanh toán -->
             <div>
               <label class="block font-bold text-gray-700 mb-1">Phương thức thanh toán <span class="text-red-500">*</span></label>
               <div class="flex gap-1">
                 <div class="relative flex-1 min-w-0">
-                <select v-model="paymentMethodId" class="w-full h-8 pl-2.5 pr-8 bg-[#FFF8DB] border border-[#F1DD8A] rounded font-normal text-[#000000D9] focus:outline-none focus:border-yellow-500 text-xs truncate">
+                  <select v-model="paymentMethodId" class="w-full h-8 appearance-none pl-2.5 pr-12 bg-[#FFF8DB] border border-[#F1DD8A] rounded font-normal text-[#000000D9] focus:outline-none focus:border-yellow-500 text-xs truncate">
                     <option v-for="m in visiblePaymentMethods" :key="m.id || m.code" :value="m.id || m.code" class="bg-white">
-                    {{ m.name }}
-                  </option>
-                </select>
-                <button v-if="paymentMethodId" type="button" class="absolute right-1 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700" title="Xóa phương thức thanh toán" @click="paymentMethodId = ''"><X class="h-3.5 w-3.5" /></button>
+                      {{ m.name }}
+                    </option>
+                  </select>
+                  <button v-if="paymentMethodId" type="button" class="absolute right-7 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-red-500" title="Xóa phương thức thanh toán" @click="paymentMethodId = ''"><X class="h-3.5 w-3.5" /></button>
+                  <ChevronDown class="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
                 </div>
               </div>
             </div>
 
-            <!-- Ô Chọn Tài khoản ngân hàng (Nền vàng #ffffcc) nếu chọn Chuyển khoản -->
+            <!-- Ô Chọn Tài khoản ngân hàng nếu chọn Chuyển khoản -->
             <div v-if="isBankTransfer">
               <label class="block font-bold text-gray-700 mb-1">Tài khoản ngân hàng</label>
-              <select v-model="selectedBankAccount" class="w-full px-2 py-1.5 bg-[#ffffcc] border border-gray-300 rounded text-gray-900 font-medium focus:outline-none text-xs truncate">
+              <select v-model="selectedBankAccount" class="w-full px-2 py-1.5 bg-white border border-gray-300 rounded text-gray-900 font-normal focus:outline-none text-xs truncate">
                 <option value="">-- Không chọn --</option>
                 <option v-for="b in bankAccountOptions" :key="b.id" :value="b.id">
                   {{ b.display }}
@@ -625,8 +698,8 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleEscape))
 
           </div>
 
-          <!-- RIGHT SUMMARY CONTROLS (6 cols) -->
-          <div class="col-span-6 space-y-2 flex flex-col justify-between">
+          <!-- RIGHT SUMMARY CONTROLS (7 cols) -->
+          <div class="col-span-7 space-y-2 flex flex-col justify-between">
             
             <!-- Top Inputs Row: Tiền tệ, Ca, Giờ, Ngày, Bộ phận -->
             <div class="grid gap-2 items-start" style="grid-template-columns: minmax(4rem, 1fr) minmax(3.5rem, .9fr) minmax(7rem, 1.55fr) minmax(7.5rem, 1.5fr) minmax(3.5rem, .9fr)">
@@ -749,14 +822,14 @@ onBeforeUnmount(() => document.removeEventListener('keydown', handleEscape))
             <tbody>
               <tr v-for="(item, idx) in addedPayments" :key="item.id" class="hover:bg-amber-50/50 border-b border-gray-200">
                 <td class="px-2.5 py-1 border-gray-200">
-                  <input type="text" v-model="item.note" class="w-full px-1.5 py-0.5 border border-gray-300 rounded text-xs" />
+                  <input type="text" v-model="item.note" class="w-full px-1.5 py-0.5 border border-gray-300 rounded text-xs text-[#000000D9]" />
                 </td>
-                <td class="px-2.5 py-1.5 border-gray-200 text-center font-bold text-gray-800">{{ item.method_code }}</td>
-                <td class="px-2.5 py-1.5 border-gray-200 text-center text-gray-700">{{ item.bank_account || '--' }}</td>
-                <td class="px-2.5 py-1.5 border-gray-200 text-center font-bold text-gray-800">{{ item.currency }}</td>
-                <td class="px-2.5 py-1.5 border-gray-200 text-center tabular-nums font-bold text-emerald-700">{{ formatMoney(item.amount) }}</td>
+                <td class="px-2.5 py-1.5 border-gray-200 text-center font-normal text-[#000000D9]">{{ item.method_code }}</td>
+                <td class="px-2.5 py-1.5 border-gray-200 text-center text-[#000000D9] font-normal">{{ item.bank_account || '--' }}</td>
+                <td class="px-2.5 py-1.5 border-gray-200 text-center font-normal text-[#000000D9]">{{ item.currency }}</td>
+                <td class="px-2.5 py-1.5 border-gray-200 text-center tabular-nums font-normal text-emerald-700">{{ formatMoney(item.amount) }}</td>
                 <td class="px-2.5 py-1.5 text-center border-slate-200">
-                  <button @click="handleRemovePaymentItem(idx)" :disabled="isZeroBalanceSettlement" class="text-sky-500 hover:text-sky-700 p-1 rounded disabled:cursor-not-allowed disabled:opacity-40" title="Xóa dòng">
+                  <button @click="handleRemovePaymentItem(idx)" :disabled="isZeroBalanceSettlement" class="text-red-500 hover:text-red-700 p-1 rounded disabled:cursor-not-allowed disabled:opacity-40 transition-colors" title="Xóa dòng">
                     <Trash2 class="w-3.5 h-3.5" />
                   </button>
                 </td>

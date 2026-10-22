@@ -35,7 +35,7 @@ class GeneralSearchProjectionService
         $rooms = $booking->bookingRooms;
         $roomsById = $rooms->keyBy('id');
         $visibleRooms = $rooms->filter(fn (BookingRoom $room) => (int) $room->status !== BookingRoom::STATUS_MOVED);
-        $roomRows = $visibleRooms->map(fn (BookingRoom $room) => $this->roomDetail($room, $roomsById))->values();
+        $roomRows = $visibleRooms->map(fn (BookingRoom $room) => $this->roomDetail($room, $roomsById, $booking))->values();
         $createdRoomTypes = $rooms->map(fn (BookingRoom $room) => $room->originalRoomClass?->code ?: $room->roomClass?->code)
             ->filter()->countBy()->map(fn ($count, $code) => sprintf('%s (%d)', $code, $count))->values()->join(', ');
         $actualRoomTypes = $roomRows->pluck('room_class.code')->filter()->countBy()
@@ -59,7 +59,7 @@ class GeneralSearchProjectionService
     public function roomGroupRow(Booking $booking, Collection $rooms): array
     {
         $roomsById = $booking->bookingRooms->keyBy('id');
-        $roomRows = $rooms->map(fn (BookingRoom $room) => $this->roomDetail($room, $roomsById))->values();
+        $roomRows = $rooms->map(fn (BookingRoom $room) => $this->roomDetail($room, $roomsById, $booking))->values();
 
         return [
             'booking_id' => $booking->id, 'booking_code' => $booking->booking_code, 'booking_name' => $booking->booking_name,
@@ -76,7 +76,7 @@ class GeneralSearchProjectionService
         $booking = $room?->booking;
         $guest = $assignment->guest;
         return [
-            'id' => $assignment->id, 'booking_code' => $booking?->booking_code, 'room_number' => $room?->room_number,
+            'id' => $assignment->id, 'booking_id' => $booking?->id, 'booking_code' => $booking?->booking_code, 'room_number' => $room?->room_number,
             'guest_name' => $guest?->full_name, 'arrival_date' => $room?->arrival_date?->toDateString(),
             'departure_date' => $room?->departure_date?->toDateString(), 'nights' => $room?->ActutalNumOfDays,
             'rate' => (float) ($room?->rate ?? 0), 'rate_code' => $room?->rate_code, 'company' => $booking?->company?->name,
@@ -94,7 +94,7 @@ class GeneralSearchProjectionService
         $room = $child->bookingRoom;
         $booking = $child->booking;
         return [
-            'id' => 'child-' . $child->id, 'booking_code' => $booking?->booking_code, 'room_number' => $room?->room_number,
+            'id' => 'child-' . $child->id, 'booking_id' => $booking?->id, 'booking_code' => $booking?->booking_code, 'room_number' => $room?->room_number,
             'guest_name' => $child->full_name, 'arrival_date' => $room?->arrival_date?->toDateString(),
             'departure_date' => $room?->departure_date?->toDateString(), 'nights' => $room?->ActutalNumOfDays,
             'rate' => (float) ($room?->rate ?? 0), 'rate_code' => $room?->rate_code, 'company' => $booking?->company?->name,
@@ -106,12 +106,14 @@ class GeneralSearchProjectionService
         ];
     }
 
-    private function roomDetail(BookingRoom $room, Collection $roomsById): array
+    private function roomDetail(BookingRoom $room, Collection $roomsById, Booking $booking): array
     {
         $finalRoom = $this->finalRoom($room, $roomsById);
         $primaryGuest = $finalRoom->guests->firstWhere('is_primary', true)?->guest ?: $finalRoom->guests->first()?->guest;
         return [
-            'id' => $finalRoom->id, 'source_room_id' => $room->id, 'room_number' => $finalRoom->room_number,
+            'id' => $finalRoom->id, 'source_room_id' => $room->id,
+            'booking_id' => $booking->id, 'booking_code' => $booking->booking_code,
+            'room_number' => $finalRoom->room_number,
             'room_class' => ['code' => $finalRoom->roomClass?->code, 'name' => $finalRoom->roomClass?->name],
             'original_room_class' => ['code' => $room->originalRoomClass?->code, 'name' => $room->originalRoomClass?->name],
             'room_status' => $finalRoom->status, 'guest_name' => $primaryGuest?->full_name,
