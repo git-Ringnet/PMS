@@ -201,30 +201,26 @@ class ActivityLogService
     public static function logBookingCreated($booking, ?Request $request = null): ActivityLog
     {
         $bookingCode = $booking->booking_code ?? $booking->code ?? ('GAL' . $booking->id);
-        $user = $request ? $request->user() : auth()->user();
-        $sales = $booking->sales_person ?: ($user?->employee_code ?: ($user?->name ?: 'admin'));
-        
-        $arr = $booking->arrival_date ? \Carbon\Carbon::parse($booking->arrival_date)->format('d-m-Y') : '';
-        $dep = $booking->departure_date ? \Carbon\Carbon::parse($booking->departure_date)->format('d-m-Y') : '';
-        $git = $booking->is_git ? 'GIT' : 'FIT';
-        $company = $booking->company?->name ?? 'KHÁCH LẺ';
-        $market = $booking->market?->name ?? 'Đại lý lữ hành (Travel Agent)';
-        $source = $booking->customerSource?->name ?? 'Traveloka';
-        $nights = $booking->num_of_days ?? 1;
-        $bookerName = $booking->booker?->name ?? '';
-        $contactPhone = $booking->booker?->phone ?? ($booking->contact_phone ?? '');
+        $booking->loadMissing(['company', 'market', 'customerSource', 'booker', 'registrationStatus']);
 
-        $status = match ((int)$booking->status) {
-            0 => 'None Guaranteed',
-            1 => 'Guaranteed',
-            2 => 'Check In',
-            3 => 'Check Out',
-            4 => 'Cancel',
-            default => (string)$booking->status
-        };
-
-        // 1. Dòng Thông Tin Đăng Ký (Bỏ VAT, liên hệ là sđt của booker, chuẩn Row 3 & 14)
-        $infoDesc = "* Thông Tin Đăng Ký {$bookingCode} : -Tên nhóm : {$booking->booking_name} -FIT : {$git} -Ngày đến : {$arr} -Ngày đi : {$dep} -Số ngày : {$nights} -Trạng thái : {$status} -Công ty : {$company} -Tour Code : {$booking->event_code} -Liên hệ : {$contactPhone} -Payment : -Booker : {$bookerName} -SalesPerson : {$sales} -Market Segment : {$market} -Source Code : {$source} -Email : {$booking->contact_email} -Ghi chú đăng ký : {$booking->note}";
+        // Dòng 325: chỉ ghi dữ liệu thật của đăng ký, trường trống thì bỏ qua (không điền giá trị mẫu)
+        $infoDesc = "* Thông Tin Đăng Ký {$bookingCode} : " . self::joinParts([
+            'Tên nhóm' => $booking->booking_name,
+            'FIT/GIT' => $booking->is_git ? 'GIT' : 'FIT',
+            'Ngày đến' => \App\Support\ActivityLogFormatter::date($booking->arrival_date),
+            'Ngày đi' => \App\Support\ActivityLogFormatter::date($booking->departure_date),
+            'Số đêm' => $booking->num_of_days,
+            'Trạng thái ĐK' => $booking->registrationStatus?->name,
+            'Công ty' => $booking->company?->name ?? 'KHÁCH LẺ',
+            'Tour Code' => $booking->event_code,
+            'Người đặt phòng' => $booking->booker?->name,
+            'SĐT liên hệ' => $booking->booker?->phone ?? $booking->contact_phone,
+            'Người bán' => $booking->sales_person,
+            'Thị trường' => $booking->market?->name,
+            'Nguồn khách' => $booking->customerSource?->name,
+            'Email' => $booking->contact_email,
+            'Ghi chú' => $booking->note,
+        ]);
 
         $logBooking = self::logBusiness([
             'action' => 'Add',
@@ -237,29 +233,28 @@ class ActivityLogService
             'new_values' => $booking->toArray(),
         ], $request);
 
-        // 2. Dòng Phòng Thuê (giá có dấu phẩy, dạng phòng Double/Twin, chuẩn Row 4 & 15)
-        $bookingRooms = $booking->relationLoaded('bookingRooms') 
-            ? $booking->bookingRooms 
+        $bookingRooms = $booking->relationLoaded('bookingRooms')
+            ? $booking->bookingRooms
             : $booking->bookingRooms()->with(['roomClass'])->get();
 
         if ($bookingRooms && $bookingRooms->isNotEmpty()) {
             $roomLines = [];
             $roomIds = [];
             foreach ($bookingRooms as $br) {
-                $rArr = $br->arrival_date ? \Carbon\Carbon::parse($br->arrival_date)->format('d-m-Y') : $arr;
-                $rDep = $br->departure_date ? \Carbon\Carbon::parse($br->departure_date)->format('d-m-Y') : $dep;
-                $price = (float)($br->price ?? $br->rate ?? 540000);
-                $priceStr = number_format($price > 0 ? $price : 540000, 0, '.', ',');
-                $cls = $br->roomClass?->name ?? 'Superior Double';
-                $form = preg_match('/(Double|Twin|Triple|Single|King|Queen)/i', ($br->room_form ?: '') . ' ' . $cls, $m) ? ucfirst(strtolower($m[1])) : ($br->room_form ?: 'Double');
-                $pNum = $br->room_number ?: 'Chưa gán';
-                $adults = $br->adults ?? 2;
-                $child = is_numeric($br->children) ? $br->children : 0;
-                $bf = $br->breakfast ? 'Có' : 'Không';
-                $extra = $br->extra_bed_qty ?? 0;
                 $roomIds[] = $br->id;
-
-                $roomLines[] = "* Phòng thuê : # Thêm mới : Mã: {$br->id} - Giá: {$priceStr} - Loại: {$cls} - Dạng: {$form} - Phòng: {$pNum} - Ngày đến: {$rArr} - Ngày đi: {$rDep} - Người lớn: {$adults} - Trẻ em: {$child} - Trẻ em ăn sáng miễn phí: 0 - Ăn sáng: {$bf} - Thêm giường: {$extra} - BirthDay: Không";
+                $roomRef = $br->room_number ? "P.{$br->room_number} ({$br->id})" : "{$br->id} - chưa gán số phòng";
+                $roomLines[] = "* Phòng thuê : # Thêm mới ({$bookingCode} - {$roomRef}) : " . self::joinParts([
+                    'Loại phòng' => $br->roomClass?->name,
+                    'Dạng' => $br->room_form,
+                    'Giá' => is_numeric($br->rate) ? number_format((float) $br->rate, 0, '.', ',') : null,
+                    'Mã giá' => $br->rate_code,
+                    'Ngày đến' => \App\Support\ActivityLogFormatter::date($br->arrival_date),
+                    'Ngày đi' => \App\Support\ActivityLogFormatter::date($br->departure_date),
+                    'Người lớn' => $br->adults,
+                    'Trẻ em' => $br->children_qty,
+                    'Ăn sáng' => $br->breakfast === null ? null : ($br->breakfast ? 'Có' : 'Không'),
+                    'Thêm giường' => $br->extra_bed_qty,
+                ]);
             }
 
             self::logBusiness([
@@ -270,11 +265,24 @@ class ActivityLogService
                 'target_type' => 'BookingRoom',
                 'target_id' => implode(',', $roomIds),
                 'target_label' => $bookingCode,
-                'new_values' => ['rooms' => $roomIds],
+                'new_values' => ['rooms' => $roomIds, 'booking_id' => $booking->id],
             ], $request);
         }
 
         return $logBooking;
+    }
+
+    /** "-Nhãn : giá trị" cho các phần có giá trị, bỏ qua phần trống. */
+    private static function joinParts(array $parts): string
+    {
+        $text = [];
+        foreach ($parts as $label => $val) {
+            if ($val !== null && is_scalar($val) && trim((string) $val) !== '') {
+                $text[] = "-{$label} : {$val}";
+            }
+        }
+
+        return implode(' ', $text);
     }
 
     /**

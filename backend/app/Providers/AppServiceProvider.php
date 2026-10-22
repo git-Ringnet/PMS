@@ -6,6 +6,17 @@ use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\URL;
 class AppServiceProvider extends ServiceProvider
 {
+    /** Trường ngữ cảnh luôn lưu kèm khi ghi Lịch sử thao tác cho thao tác sửa (dòng 325). */
+    private const ACTIVITY_LOG_CONTEXT_FIELDS = [
+        'BookingRoom' => ['booking_id', 'room_number'],
+        'Payment' => ['booking_id', 'booking_room_id', 'amount', 'payment_method_id'],
+        'BookingRoomService' => ['booking_room_id', 'service_code', 'service_name'],
+        'BookingRoomGuest' => ['booking_room_id', 'guest_id'],
+        'RoomLock' => ['room_number', 'lock_type'],
+        'Room' => ['room_number'],
+        'Company' => ['code', 'name'],
+    ];
+
     /**
      * Register any application services.
      */
@@ -181,11 +192,12 @@ class AppServiceProvider extends ServiceProvider
             if ($model instanceof \App\Models\Booking) {
                 $targetLabel = $model->booking_code ?? ('GAL' . $model->id);
             } elseif ($model instanceof \App\Models\BookingRoom) {
-                $targetLabel = $model->room_number ?: ('Phòng ' . ($model->booking_room_id ?? $model->id));
+                // Dòng 325: nhãn phòng thuê luôn kèm mã đăng ký và số phòng (hoặc mã phòng thuê khi chưa gán số)
+                $targetLabel = 'GAL' . $model->booking_id . ' - ' . ($model->room_number ? 'P.' . $model->room_number : $model->id);
             } elseif ($model instanceof \App\Models\Payment) {
                 $targetLabel = 'GAL' . ($model->booking_id ?? '');
             } elseif ($model instanceof \App\Models\HotelConfig) {
-                $targetLabel = $model->config_key ?? $model->description;
+                $targetLabel = $model->name ?? $model->config_key ?? $model->description;
             } elseif ($model instanceof \App\Models\Room || $model instanceof \App\Models\RoomLock) {
                 $targetLabel = $model->room_number;
             } elseif ($model instanceof \App\Models\BookingRoomService) {
@@ -230,6 +242,15 @@ class AppServiceProvider extends ServiceProvider
                 }
                 if (empty($newValues)) {
                     return;
+                }
+
+                // Dòng 325: thao tác sửa chỉ lưu trường thay đổi nên thiếu mã đăng ký / phòng.
+                // Giữ kèm các trường ngữ cảnh (giống nhau ở cũ và mới nên không hiện thành dòng thay đổi).
+                foreach (self::ACTIVITY_LOG_CONTEXT_FIELDS[$targetType] ?? [] as $contextKey) {
+                    if (!array_key_exists($contextKey, $newValues) && array_key_exists($contextKey, $original)) {
+                        $oldValues[$contextKey] = $original[$contextKey];
+                        $newValues[$contextKey] = $original[$contextKey];
+                    }
                 }
             } elseif ($action === 'deleted') {
                 $oldValues = [];
