@@ -306,6 +306,77 @@ class GuestControllerFixesTest extends TestCase
         ], $attributes));
     }
 
+    private function row214InhouseRoom(): array
+    {
+        foreach (['fo.service.add', 'fo.service.edit', 'fo.service.view'] as $code) {
+            $permission = Permission::firstOrCreate(['code' => $code], ['name' => $code, 'module' => 'FO']);
+            Role::where('code', 'guest_fixes_test')->first()->permissions()->syncWithoutDetaching([$permission->id]);
+        }
+        $department = \App\Models\Department::firstOrCreate(['code' => 'FO'], ['name' => 'Lễ tân']);
+        \App\Models\HotelService::firstOrCreate(['code' => 'EB'], ['name' => 'Extra Bed', 'is_active' => true, 'price' => 200000, 'department_id' => $department->id]);
+        RoomRateCode::firstOrCreate(['Ma' => 'BAR'], ['Description' => 'Bar test rate']);
+
+        $booking = $this->makeBooking();
+        $room = $this->makeRoom($booking, 'G-214', BookingRoom::STATUS_CHECKED_IN, [
+            'arrival_date' => '2026-08-09', 'departure_date' => '2026-08-12', 'rate' => 650000, 'rate_code' => 'BAR',
+            'breakfast' => true, 'extra_bed_qty' => 1, 'extra_bed_rate' => 200000,
+        ]);
+        $guest = Guest::create(['full_name' => 'WALKIN GUEST']);
+        BookingRoomGuest::create(['booking_room_id' => $room->id, 'guest_id' => $guest->id, 'is_primary' => true, 'status' => BookingRoomGuest::STATUS_ACTIVE]);
+        foreach (['2026-08-09', '2026-08-10', '2026-08-11'] as $date) {
+            BookingRoomService::create([
+                'booking_room_id' => $room->id, 'service_code' => 'EB', 'service_name' => 'Extra Bed', 'service_date' => $date,
+                'quantity' => 1, 'rate' => 200000, 'is_room' => 1, 'is_posted' => 0,
+            ]);
+        }
+
+        return [$booking, $room, $guest];
+    }
+
+    /** Dòng 214: Thông tin đặt phòng -> Sửa giá 650k thành 700k, bỏ ăn sáng, xóa rate code -> lưu vào booking_rooms. */
+    public function test_row_214_booking_detail_saves_rate_breakfast_and_clears_rate_code(): void
+    {
+        [, $room, $guest] = $this->row214InhouseRoom();
+
+        $this->putJson("/api/booking-rooms/{$room->id}/guests/{$guest->id}", [
+            'full_name' => 'WALKIN GUEST', 'arrival_date' => '2026-08-09', 'departure_date' => '2026-08-12',
+            'breakfast' => false, 'rate' => 700000, 'rate_code' => null, 'extra_bed_qty' => 1, 'extra_bed_rate' => 200000,
+        ])->assertOk();
+
+        $room->refresh();
+        $this->assertEquals(700000, (float) $room->rate);
+        $this->assertNull($room->rate_code);
+        $this->assertFalse((bool) $room->breakfast);
+
+        // Mở lại từ Sơ đồ phòng: dữ liệu phòng trả cho modal phải có ăn sáng (trước đây thiếu nên luôn hiện có ăn sáng)
+        $mapRoom = new \App\Models\Room(['room_number' => '214']);
+        $mapRoom->rate = (float) $room->rate;
+        $mapRoom->breakfast = (bool) $room->breakfast;
+        $payload = (new \App\Http\Resources\RoomResource($mapRoom))->toArray(request());
+        $this->assertArrayHasKey('breakfast', $payload);
+        $this->assertFalse($payload['breakfast']);
+        $this->assertEquals(700000, (float) $payload['rate']);
+    }
+
+    /** Dòng 214 (note đỏ): Chi tiết thêm giường từng ngày - giá khác nhau / không kê giường phải lưu đúng từng ngày. */
+    public function test_row_214_extra_bed_daily_detail_is_saved_per_day(): void
+    {
+        [$booking, $room] = $this->row214InhouseRoom();
+
+        // Đúng thứ tự modal BookingDetailModal.onExtraBedSaved gọi API
+        $this->putJson("/api/bookings/{$booking->id}/rooms/{$room->id}", ['extra_bed_qty' => 1, 'extra_bed_rate' => 300000])->assertSuccessful();
+        foreach ([['2026-08-09', 1, 300000], ['2026-08-10', 1, 500000], ['2026-08-11', 0, 0]] as [$date, $qty, $rate]) {
+            $this->postJson("/api/booking-rooms/{$room->id}/services", [
+                'service_code' => 'EB', 'service_name' => 'Extra Bed', 'service_date' => $date, 'quantity' => $qty, 'rate' => $rate, 'is_room' => 1,
+            ])->assertSuccessful();
+        }
+
+        $rows = BookingRoomService::where('booking_room_id', $room->id)->where('service_code', 'EB')
+            ->orderBy('service_date')->get()
+            ->map(fn ($s) => $s->service_date->toDateString().':'.(float) $s->quantity.'x'.(float) $s->rate)->all();
+        $this->assertSame(['2026-08-09:1x300000', '2026-08-10:1x500000', '2026-08-11:0x0'], $rows);
+    }
+
     private function makeRoom(Booking $booking, string $id, int $status, array $attributes = []): BookingRoom
     {
         return BookingRoom::create(array_merge([

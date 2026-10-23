@@ -313,7 +313,9 @@ const bookingRoomId = computed(() => props.room.booking_room_id || props.room.id
 const bookingId     = computed(() => props.room.booking_id)
 
 const rateCodes = ref([])
-const systemDate = ref(new Date().toISOString().split('T')[0])
+// Dòng 214: lấy sẵn ngày hệ thống của phiên đăng nhập, không dùng ngày thật. Trước khi API trả về,
+// "Chi tiết thêm giường" từng coi các đêm là quá khứ và bỏ qua không lưu nhưng vẫn báo thành công.
+const systemDate = ref(String(authStore.systemDate || '').slice(0, 10) || new Date().toISOString().split('T')[0])
 
 async function loadSystemDate() {
   try {
@@ -424,6 +426,8 @@ async function onExtraBedSaved(data) {
             extra_bed_rate: data.rate
           })
         }
+        // Dòng 214: ngày nào lưu lỗi phải báo cho người dùng, không báo thành công chung
+        const failedNights = []
         if (data.dailyRates && data.dailyRates.length > 0) {
           for (const d of data.dailyRates) {
             if (d.isLocked || d.isPast) continue
@@ -437,13 +441,18 @@ async function onExtraBedSaved(data) {
                 is_room: d.isRoom ? 1 : 0
               })
             } catch (svcErr) {
-              console.warn('Post EB service note:', svcErr.response?.data?.message || svcErr.message)
+              failedNights.push(`${d.displayDate || d.dateStr}: ${svcErr.response?.data?.message || svcErr.message}`)
             }
           }
         }
         await loadRoomServices()
         pricingInfo.value.extra_bed_qty = data.quantity
         pricingInfo.value.extra_bed_price = formatNumber(data.rate)
+        if (failedNights.length) {
+          uiStore.showToast(`Không lưu được thêm giường ${failedNights.join('; ')}`, 'error', 8000)
+          notifyChanges()
+          return
+        }
         uiStore.showToast('Đã lưu thông tin Thêm giường thành công!', 'success')
         notifyChanges()
       } catch (err) {
@@ -882,7 +891,10 @@ watch(() => props.room, (newRoom) => {
       departure_time: formatTime24h(newRoom.departure_time ?? newRoom.check_out_time) || '12:00',
       nights: isHourlyRoom ? 0 : (newRoom.nights || newRoom.ActutalNumOfDays || 1),
       occupants_str: `${adults.value.length} / ${children.value.length} / ${babies.value.length}`,
-      breakfast: newRoom.breakfast !== false,
+      // Dòng 214: API trả breakfast dạng 0/1; chỉ khi chưa có dữ liệu mới mặc định có ăn sáng
+      breakfast: newRoom.breakfast === undefined || newRoom.breakfast === null || newRoom.breakfast === ''
+        ? true
+        : !['0', 'false'].includes(String(newRoom.breakfast).toLowerCase()),
       hourly: isHourlyRoom,
       notes: newRoom.note || newRoom.room_note || '',
     }

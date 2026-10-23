@@ -6036,8 +6036,20 @@ async function triggerAction(actionName) {
           for (const r of targetList) {
             if (!r.bookingRoomId) continue
             try {
-              const res = await checkInRoom(tab.dbId, r.bookingRoomId)
-              if (res.data?.success) {
+              let res = await checkInRoom(tab.dbId, r.bookingRoomId)
+              // Dòng 211: phòng chờ kiểm tra (AllowCheckinVacantClean = 1) phải xác nhận rồi mới giao phòng
+              if (res.data?.needs_confirmation) {
+                const confirmedRoom = await uiStore.confirm({
+                  title: 'Phòng đang chờ kiểm tra',
+                  message: res.data.message,
+                  confirmText: 'Tiếp tục nhận phòng',
+                  cancelText: 'Bỏ qua phòng này'
+                })
+                res = confirmedRoom
+                  ? await checkInRoom(tab.dbId, r.bookingRoomId, { confirmed: true })
+                  : { data: { success: false, message: 'Đã bỏ qua nhận phòng (phòng đang chờ kiểm tra).' } }
+              }
+              if (res.data?.success && !res.data?.needs_confirmation) {
                 successCount++
                 r.roomStatus = 'Bẩn'
               } else {

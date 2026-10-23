@@ -390,7 +390,7 @@ const handleCheckIn = async () => {
         // Backend yêu cầu xác nhận thêm (phòng đang dirty, AllowCheckinVacantClean=1)
         const dirtyConfirmed = await uiStore.confirm({
           title: 'Phòng đang chờ kiểm tra',
-          message: res.data.message || `Phòng ${item.roomNumber} đang ở trạng thái chờ kiểm tra. Bạn có muốn tiếp tục nhận phòng không? Tình trạng phòng sẽ được giữ nguyên.`,
+          message: res.data.message || `Phòng ${item.roomNumber} đang ở trạng thái chờ kiểm tra. Bạn có muốn tiếp tục nhận phòng không?`,
           confirmText: 'Tiếp tục nhận phòng',
           cancelText: 'Hủy'
         })

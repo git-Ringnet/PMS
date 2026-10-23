@@ -940,8 +940,22 @@ async function handleActionCheckIn() {
   const errors = []
   for (const r of validRooms) {
     try {
-      const res = await checkInRoom(r.booking_id, r.id)
-      if (res.data && res.data.success !== false) {
+      let res = await checkInRoom(r.booking_id, r.id)
+      // Dòng 211: phòng chờ kiểm tra (AllowCheckinVacantClean = 1) phải xác nhận rồi mới nhận phòng
+      if (res.data?.needs_confirmation) {
+        const confirmedRoom = await uiStore.confirm({
+          title: 'Phòng đang chờ kiểm tra',
+          message: res.data.message,
+          confirmText: 'Tiếp tục nhận phòng',
+          cancelText: 'Bỏ qua phòng này'
+        })
+        if (!confirmedRoom) {
+          errors.push(`Phòng ${r.room_number || r.id}: Đã bỏ qua nhận phòng (phòng đang chờ kiểm tra)`)
+          continue
+        }
+        res = await checkInRoom(r.booking_id, r.id, { confirmed: true })
+      }
+      if (res.data && res.data.success !== false && !res.data.needs_confirmation) {
         successCount++
       } else {
         errors.push(`Phòng ${r.room_number || r.id}: ${res.data?.message || 'Không thành công'}`)

@@ -393,7 +393,7 @@ class HotelDefinitionSeeder extends Seeder
             ['name' => 'RoleUserAllowChangeRoomStatusAtReception', 'value' => '', 'description' => 'Danh sach job_title_code/job_title duoc doi trang thai phong tai Le tan, ngan cach bang dau phay.', 'is_visible' => true],
             ['name' => 'RoleUserCancelCheckIn', 'value' => '', 'description' => 'Danh sach job_title_code/job_title duoc huy nhan phong tai Le tan, ngan cach bang dau phay.', 'is_visible' => true],
             ['name' => 'AllowCheckinNoShow', 'value' => '', 'description' => 'AllowCheckinNoShow', 'is_visible' => true],
-            ['name' => 'AllowCheckinVacantClean', 'value' => '0', 'description' => 'Cho phép nhận phòng khi phòng ở trạng thái chờ kiểm tra/dirty (0: không cho phép, 1: cho phép)', 'is_visible' => true],
+            ['name' => 'AllowCheckinVacantClean', 'value' => '0', 'description' => 'Cho phép nhận phòng khi phòng ở trạng thái chờ kiểm tra (0: không cho phép, 1: cho phép). Phòng bẩn chưa dọn luôn không được nhận phòng', 'is_visible' => true],
             ['name' => 'AllowChckcinNoShow', 'value' => '1', 'description' => 'AllowChckcinNoShow', 'is_visible' => false],
             ['name' => 'IsCheckBookingStatusWhenCheckin', 'value' => '0', 'description' => 'Kiểm tra tình trạng đăng ký khi nhận phòng (0: không check, 1: chỉ check-in Guaranteed/Allotment)', 'is_visible' => true],
             ['name' => 'AllowCreateOrUpdateBKCauseUnassignableRoomBK', 'value' => '1', 'description' => 'AllowCreateOrUpdateBKCauseUnassignableRoomBK', 'is_visible' => false],

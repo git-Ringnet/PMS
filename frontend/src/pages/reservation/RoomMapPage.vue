@@ -586,7 +586,7 @@ async function handleQuickCheckIn() {
     if (res.data?.needs_confirmation) {
       const dirtyConfirmed = await uiStore.confirm({
         title: 'Phòng đang chờ kiểm tra',
-        message: res.data.message || `Phòng ${room.room_number} đang ở trạng thái chờ kiểm tra. Bạn có muốn tiếp tục nhận phòng không? Tình trạng phòng sẽ được giữ nguyên.`,
+        message: res.data.message || `Phòng ${room.room_number} đang ở trạng thái chờ kiểm tra. Bạn có muốn tiếp tục nhận phòng không?`,
         confirmText: 'Tiếp tục nhận phòng',
         cancelText: 'Hủy'
       })

@@ -442,26 +442,36 @@ class BookingRoomServiceController extends Controller
             $isRoomValue = $sameDayEb ? (int) $sameDayEb->is_room : BookingRoomService::defaultExtraBedIsRoom($roomId);
         }
 
-        // Nếu trùng ngày + service_code → update giá, không cộng dồn
-        $service = BookingRoomService::withTrashed()->updateOrCreate(
-            [
+        // Nếu trùng ngày + service_code → update giá, không cộng dồn.
+        // Dòng 214: so theo ngày (whereDate) để khớp cả khi service_date lưu kèm giờ.
+        $serviceValues = [
+            'service_name' => $request->service_name,
+            'quantity'     => $request->quantity ?? 1,
+            'rate'         => $request->rate ?? 0,
+            'department'  => 'FO',
+            'is_room'      => $isRoomValue,
+            'folio'        => $request->folio ?? 1,
+            'is_posted'    => 0,
+            'deleted_at'   => null,
+            'created_by'   => Auth::user()?->username ?? 'system',
+        ];
+        $service = BookingRoomService::withTrashed()
+            ->where('booking_room_id', $roomId)
+            ->where('guest_id', $request->guest_id)
+            ->where('service_code', $request->service_code)
+            ->whereDate('service_date', Carbon::parse($request->service_date)->toDateString())
+            ->first();
+        if ($service) {
+            $service->fill($serviceValues)->save();
+        } else {
+            $service = BookingRoomService::create([
                 'booking_room_id' => $roomId,
-                'guest_id'         => $request->guest_id,
+                'guest_id'        => $request->guest_id,
                 'service_code'    => $request->service_code,
                 'service_date'    => $request->service_date,
-            ],
-            [
-                'service_name' => $request->service_name,
-                'quantity'     => $request->quantity ?? 1,
-                'rate'         => $request->rate ?? 0,
-                'department'  => 'FO',
-                'is_room'      => $isRoomValue,
-                'folio'        => $request->folio ?? 1,
-                'is_posted'    => 0,
-                'deleted_at'   => null,
-                'created_by'   => Auth::user()?->username ?? 'system',
-            ]
-        );
+                ...$serviceValues,
+            ]);
+        }
 
         if ($request->service_code === BookingRoomService::CODE_EXTRA_BED || $request->service_code === 'EB') {
             $remainingEB = BookingRoomService::where('booking_room_id', $roomId)

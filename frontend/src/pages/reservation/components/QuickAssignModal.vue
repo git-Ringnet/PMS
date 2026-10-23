@@ -759,7 +759,8 @@ async function handleSave() {
         }
       }
 
-      if (allowVacantClean === '0') {
+      // Dòng 211: phòng bẩn / chờ dọn luôn không được nhận phòng; phòng chờ kiểm tra theo AllowCheckinVacantClean
+      if (allowVacantClean === '0' || statusCode !== 'vacant_clean') {
         uiStore.showToast(`Phòng ${selectedRoomNumber.value} đang ở trạng thái ${label}. Không thể thực hiện nhận phòng.`, 'error')
         isSubmitting.value = false
         return // Dừng ngay lập tức, không tạo booking, không gán phòng
@@ -768,7 +769,7 @@ async function handleSave() {
       // AllowCheckinVacantClean = 1: Yêu cầu người dùng xác nhận trước khi tạo booking và gán phòng
       const confirmed = await uiStore.confirm({
         title: 'Phòng đang chờ kiểm tra',
-        message: `Phòng ${selectedRoomNumber.value} đang ở trạng thái ${label}. Bạn có muốn tiếp tục nhận phòng không? Tình trạng phòng sẽ được giữ nguyên.`,
+        message: `Phòng ${selectedRoomNumber.value} đang ở trạng thái ${label}. Bạn có muốn tiếp tục nhận phòng không?`,
         confirmText: 'Tiếp tục nhận phòng',
         cancelText: 'Hủy'
       })
@@ -885,7 +886,7 @@ async function handleSave() {
           if (checkinRes.data?.needs_confirmation && !confirmedCheckIn) {
             const confirmed = await uiStore.confirm({
               title: 'Phòng đang chờ kiểm tra',
-              message: checkinRes.data.message || `Phòng ${selectedRoomNumber.value} đang ở trạng thái chờ kiểm tra. Bạn có muốn tiếp tục nhận phòng không? Tình trạng phòng sẽ được giữ nguyên.`,
+              message: checkinRes.data.message || `Phòng ${selectedRoomNumber.value} đang ở trạng thái chờ kiểm tra. Bạn có muốn tiếp tục nhận phòng không?`,
               confirmText: 'Tiếp tục nhận phòng',
               cancelText: 'Hủy'
             })

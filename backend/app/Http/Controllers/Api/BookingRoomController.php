@@ -828,7 +828,8 @@ class BookingRoomController extends Controller
         }
 
         // Điều kiện 3: Trạng thái vật lý phòng phải = 'Phòng sẵn sàng' (status = 'available')
-        // Nếu AllowCheckinVacantClean = 1 → cho phép check-in cả khi phòng dirty (chờ kiểm tra)
+        // Dòng 211: AllowCheckinVacantClean = 1 chỉ cho nhận phòng CHỜ KIỂM TRA (vacant_clean, có hỏi xác nhận);
+        // phòng bẩn / chờ dọn (vacant_dirty, turndown) luôn không được nhận phòng.
         $allowVacantClean = HotelConfig::where('name', 'AllowCheckinVacantClean')->value('value');
         if (!empty($bookingRoom->room_number)) {
             $physicalRoom = \App\Models\Room::where('room_number', $bookingRoom->room_number)->first();
@@ -865,14 +866,14 @@ class BookingRoomController extends Controller
                         ];
                         $label = $statusLabels[$currentCode] ?? 'chờ kiểm tra/chưa dọn';
 
-                        if ($allowVacantClean == '1') {
+                        if ($currentCode === 'vacant_clean' && $allowVacantClean == '1') {
                             // Cấu hình cho phép nhưng phải hỏi xác nhận nếu chưa confirmed
                             if (!$request->boolean('confirmed')) {
                                 return response()->json([
                                     'success'            => true,
                                     'needs_confirmation' => true,
                                     'room_status'        => $currentCode,
-                                    'message'            => 'Phòng ' . $bookingRoom->room_number . ' đang ở trạng thái ' . $label . '. Bạn có muốn tiếp tục nhận phòng không? Tình trạng phòng sẽ được giữ nguyên.',
+                                    'message'            => 'Phòng ' . $bookingRoom->room_number . ' đang ở trạng thái ' . $label . '. Bạn có muốn tiếp tục nhận phòng không?',
                                 ], 200);
                             }
                             // confirmed=true: tiếp tục check-in, giữ nguyên trạng thái phòng
