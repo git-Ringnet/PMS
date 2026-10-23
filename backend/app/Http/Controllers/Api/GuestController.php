@@ -454,6 +454,9 @@ class GuestController extends Controller
             return response()->json(['success' => false, 'message' => 'Phải còn ít nhất một người lớn trong phòng để checkout trẻ em.'], 422);
         }
         $child->update(['child_status' => BookingRoomGuest::STATUS_CHECKED_OUT]);
+        // Giảm số trẻ em/em bé đang ở trên booking_rooms theo nhóm tuổi của trẻ vừa checkout.
+        $countColumn = $child->age_group === 'baby' ? 'babies' : 'children_qty';
+        $room->update([$countColumn => max(0, (int) $room->{$countColumn} - 1)]);
         app(BookingStatusSyncService::class)->sync($room->booking_id);
         return response()->json(['success' => true, 'message' => 'Checkout trẻ em thành công.']);
     }
@@ -584,7 +587,14 @@ class GuestController extends Controller
             ]);
             app(\App\Services\GuestStatusSyncService::class)->syncForGuestIds($restoredGuests->pluck('guest_id'));
             $room->children()->where('child_status', BookingRoomGuest::STATUS_CHECKED_OUT)->update(['child_status' => BookingRoomGuest::STATUS_CHECKED_IN]);
+            // Số khách đang ở sau khôi phục: không thấp hơn số khách/trẻ thực sự được mở lại
+            // (trẻ checkout lẻ trước đó đã bị trừ khỏi children_qty/babies).
+            $activeAdults = $room->guests()->whereNotIn('status', [BookingRoomGuest::STATUS_CHECKED_OUT, BookingRoomGuest::STATUS_CANCELLED, 100])->count();
+            $activeChildren = $room->children()->whereIn('child_status', [0, BookingRoomGuest::STATUS_CHECKED_IN])->get(['age_group']);
             $room->update([
+                'adults' => max((int) $room->adults, $activeAdults),
+                'children_qty' => max((int) $room->children_qty, $activeChildren->where('age_group', '!=', 'baby')->count()),
+                'babies' => max((int) $room->babies, $activeChildren->where('age_group', 'baby')->count()),
                 'status' => BookingRoom::STATUS_CHECKED_IN,
                 'departure_date' => $room->planned_departure_date ?: $room->departure_date,
                 'ActutalNumOfDays' => $room->NumOfDays ?: $room->ActutalNumOfDays,
@@ -669,6 +679,8 @@ class GuestController extends Controller
                 // Không gán status = checkout vì Room mutator sẽ đổi nó thành turndown.
                 if ($room->room) $room->room->update(['room_status_code' => 'vacant_dirty']);
             } else {
+                // Checkout lẻ (phòng vẫn còn khách): giảm số người lớn đang ở trên booking_rooms.
+                $room->update(['adults' => max(1, (int) $room->adults - $pivots->count())]);
                 $targetGuestId = $room->guests()->whereNotIn('status', [BookingRoomGuest::STATUS_CHECKED_OUT, BookingRoomGuest::STATUS_CANCELLED])->orderByDesc('is_primary')->orderBy('id')->value('guest_id');
                 if ($targetGuestId) {
                     \App\Models\BookingRoomService::where('booking_room_id', $room->id)->whereIn('guest_id', $pivots->pluck('guest_id'))->update(['guest_id' => $targetGuestId]);
