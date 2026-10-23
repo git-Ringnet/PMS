@@ -97,6 +97,19 @@ class ShiftWorkListTest extends TestCase
         ], $attrs));
     }
 
+    public function test_row_183_arrivals_keeps_zero_nights_for_same_day_moved_room(): void
+    {
+        DB::table('booking_statuses')->insert(['id' => 100, 'name' => 'Moved']);
+        $booking = $this->makeBooking('Same-day moved room');
+        $room = $this->makeRoom($booking, BookingRoom::STATUS_MOVED, [
+            'departure_date' => '2026-09-02', 'ActutalNumOfDays' => 0, 'NumOfDays' => 0,
+        ]);
+        $rows = $this->getJson('/api/shift-work/arrivals?date=2026-09-02&status=all')->assertOk()->json('data');
+        $row = collect($rows)->flatMap(fn ($bookingRow) => $bookingRow['rooms'])->firstWhere('id', $room->id);
+        $this->assertNotNull($row);
+        $this->assertEquals(0, $row['nights']);
+    }
+
     // Dòng 356 + 362
     public function test_noshow_list_zeroes_no_charge_rows_and_includes_late_checkin_group(): void
     {

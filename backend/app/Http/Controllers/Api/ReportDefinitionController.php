@@ -10,6 +10,7 @@ use App\Models\Template;
 use App\Services\Reports\ReportDatasetEnricher;
 use App\Services\Reports\ReportDataExecutorService;
 use App\Services\Reports\ReportExportService;
+use App\Services\Reports\ReportPermissionService;
 use App\Services\RoomAvailabilityService;
 use App\Services\TemplateRendererService;
 use App\Services\TenantDatabaseService;
@@ -30,6 +31,22 @@ class ReportDefinitionController extends Controller
         private readonly RoomAvailabilityService $roomAvailability
     ) {}
 
+    private function permissions(): ReportPermissionService
+    {
+        return app(ReportPermissionService::class);
+    }
+
+    /** Dòng 328: chỉ người có quyền report.<mã>.view tại chi nhánh mới được xem báo cáo. */
+    private function authorizeView(Request $request, ReportDefinition $reportDefinition): void
+    {
+        $this->permissions()->ensurePermissions(collect([$reportDefinition]));
+        abort_unless(
+            $this->permissions()->canView($request->user(), $reportDefinition, $request->attributes->get('_branch_id')),
+            403,
+            'Bạn không có quyền xem báo cáo này.'
+        );
+    }
+
     public function index(Request $request)
     {
         $query = ReportDefinition::with(['reportDataSource', 'templates']);
@@ -39,6 +56,12 @@ class ReportDefinitionController extends Controller
         }
 
         $reports = $query->orderBy('group')->orderBy('sort_order')->orderBy('name')->get();
+
+        // Danh sách để xem báo cáo (menu, trang Báo cáo): chỉ trả báo cáo người dùng được phân quyền xem
+        if ($request->boolean('active_only')) {
+            $this->permissions()->ensurePermissions($reports);
+            $reports = $this->permissions()->visibleReports($request->user(), $reports, $request->attributes->get('_branch_id'));
+        }
 
         return response()->json([
             'success' => true,
@@ -56,6 +79,7 @@ class ReportDefinitionController extends Controller
 
             return $report;
         });
+        $this->permissions()->sync($report);
 
         return response()->json([
             'success' => true,
@@ -63,8 +87,10 @@ class ReportDefinitionController extends Controller
         ], 201);
     }
 
-    public function show(ReportDefinition $reportDefinition)
+    public function show(Request $request, ReportDefinition $reportDefinition)
     {
+        $this->authorizeView($request, $reportDefinition);
+
         return response()->json([
             'success' => true,
             'data' => $this->serialize($reportDefinition->load(['reportDataSource', 'templates'])),
@@ -83,6 +109,7 @@ class ReportDefinitionController extends Controller
                 $validated['default_template_id'] ?? null
             );
         });
+        $this->permissions()->sync($reportDefinition->fresh());
 
         return response()->json([
             'success' => true,
@@ -99,6 +126,8 @@ class ReportDefinitionController extends Controller
 
     public function execute(Request $request, ReportDefinition $reportDefinition)
     {
+        $this->authorizeView($request, $reportDefinition);
+
         $validated = $request->validate([
             'parameters' => 'nullable|array',
             'template_id' => 'nullable|integer|exists:templates,id',
@@ -134,6 +163,8 @@ class ReportDefinitionController extends Controller
 
     public function render(Request $request, ReportDefinition $reportDefinition)
     {
+        $this->authorizeView($request, $reportDefinition);
+
         $validated = $request->validate([
             'template_id' => 'required|integer|exists:templates,id',
             'data' => 'required|array',
@@ -165,6 +196,8 @@ class ReportDefinitionController extends Controller
 
     public function export(Request $request, ReportDefinition $reportDefinition)
     {
+        $this->authorizeView($request, $reportDefinition);
+
         $validated = $request->validate([
             'parameters' => 'nullable|array',
             'template_id' => 'nullable|integer|exists:templates,id',

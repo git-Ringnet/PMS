@@ -11,10 +11,27 @@ use App\Models\User;
 class RoomLockPermissionService
 {
     /**
+     * Mã Rule ngắn trên màn thông số (Admin, FO, FOM...) ứng với mã vai trò trong Phân quyền theo rule.
+     * Ngoài các mã này, giá trị thông số có thể ghi thẳng mã / tên vai trò (vd fo_manager, Trưởng Lễ Tân).
+     */
+    private const ROLE_ALIASES = [
+        'admin' => ['super_admin', 'branch_admin'],
+        'fo' => ['fo_staff'],
+        'fom' => ['fo_manager'],
+        'hk' => ['hk_staff'],
+        'hkm' => ['hk_manager'],
+        'fb' => ['fb_staff'],
+        'fbm' => ['fb_manager'],
+        'mgmt' => ['mgmt'],
+        'sales' => ['sales'],
+        'acc' => ['acc'],
+    ];
+
+    /**
      * Check if user has role permission to unlock room.
      * Returns error string if unauthorized, or null if permitted.
      */
-    public function checkUnlockRolePermission(?User $user, $lock = null): ?string
+    public function checkUnlockRolePermission(?User $user, $lock = null, ?int $branchId = null): ?string
     {
         if (!$user) {
             return 'Vui lòng đăng nhập để thực hiện thao tác mở khóa phòng.';
@@ -44,141 +61,21 @@ class RoomLockPermissionService
             return null; // Không cấu hình => không giới hạn
         }
 
-        $allowedRoles = preg_split('/[,;|]+/', strtolower((string) $allowedRolesStr), -1, PREG_SPLIT_NO_EMPTY);
+        $allowedRoles = array_values(array_filter(array_map(
+            fn ($role) => mb_strtolower(trim($role)),
+            preg_split('/[,;|]+/', (string) $allowedRolesStr, -1, PREG_SPLIT_NO_EMPTY) ?: []
+        )));
         if (empty($allowedRoles)) {
             return null;
         }
 
-        // Thu thập danh sách Roles (tên Rule/vai trò, positions, job_title, department) của user
-        $userRoles = [];
-
-        // Admin username check
-        if (strtolower($user->username ?? '') === 'admin') {
-            $userRoles[] = 'admin';
-            $userRoles[] = 'super_admin';
-        }
-
-        // 1. Positions & linked roles from user_branch_positions (New RBAC Schema)
-        if (method_exists($user, 'userBranchPositions')) {
-            try {
-                $ubpList = $user->userBranchPositions()->with('position')->get();
-                foreach ($ubpList as $ubp) {
-                    if ($ubp->position) {
-                        if (!empty($ubp->position->code)) {
-                            $userRoles[] = strtolower(trim((string)$ubp->position->code));
-                        }
-                        if (!empty($ubp->position->name)) {
-                            $userRoles[] = strtolower(trim((string)$ubp->position->name));
-                        }
-                    }
-
-                    // Role linked via PositionBranchRole
-                    $roleId = PositionBranchRole::where('position_id', $ubp->position_id)
-                        ->where('system_branch_id', $ubp->system_branch_id)
-                        ->where('application_code', $ubp->application_code)
-                        ->where('is_active', true)
-                        ->value('role_id');
-
-                    if ($roleId) {
-                        $linkedRole = Role::find($roleId);
-                        if ($linkedRole) {
-                            if (!empty($linkedRole->code)) {
-                                $userRoles[] = strtolower(trim((string)$linkedRole->code));
-                            }
-                            if (!empty($linkedRole->name)) {
-                                $userRoles[] = strtolower(trim((string)$linkedRole->name));
-                            }
-                        }
-                    }
-                }
-            } catch (\Throwable $e) {
-                // Ignore relation error
-            }
-        }
-
-        // 2. Roles from user_roles pivot (Legacy / Fallback)
-        if (method_exists($user, 'roles')) {
-            try {
-                $rolesList = $user->roles;
-                if ($rolesList) {
-                    foreach ($rolesList as $r) {
-                        if (!empty($r->code)) $userRoles[] = strtolower(trim((string)$r->code));
-                        if (!empty($r->name)) $userRoles[] = strtolower(trim((string)$r->name));
-                    }
-                }
-            } catch (\Throwable $e) {
-                // Ignore relation error
-            }
-        }
-
-        // 3. Chức danh & Bộ phận (job_title_code, job_title, department_code, department)
-        if (!empty($user->job_title_code)) $userRoles[] = strtolower(trim((string)$user->job_title_code));
-        if (!empty($user->job_title)) $userRoles[] = strtolower(trim((string)$user->job_title));
-        if (!empty($user->department_code)) $userRoles[] = strtolower(trim((string)$user->department_code));
-        if (!empty($user->department)) $userRoles[] = strtolower(trim((string)$user->department));
-
-        $userRoles = array_unique(array_filter($userRoles));
-        $allRolesJoined = implode(' ', $userRoles);
+        // Dòng 153: giá trị thông số là tên Rule (vai trò), so khớp chính xác với vai trò của user tại chi nhánh đang dùng.
+        // Không so theo tên user, chức danh, bộ phận và không so khớp một phần (trước đây "FO" khớp cả "fo_manager").
+        $userRoles = $this->userRoleIdentifiers($user, $branchId ?? request()?->attributes->get('_branch_id'));
 
         foreach ($allowedRoles as $allowedRole) {
-            $roleLower = trim(strtolower($allowedRole));
-
-            // So khớp trực tiếp
-            if (in_array($roleLower, $userRoles, true)) {
-                return null;
-            }
-
-            // So khớp từng phần
-            foreach ($userRoles as $uRole) {
-                if ($uRole === $roleLower || str_contains($uRole, $roleLower) || str_contains($roleLower, $uRole)) {
-                    return null;
-                }
-            }
-
-            // Xử lý các nhóm vai trò nghiệp vụ (Aliases / Quy ước PMS):
-            // Admin / Quản trị
-            if ($roleLower === 'admin' && (
-                in_array('administrator', $userRoles, true) ||
-                in_array('super_admin', $userRoles, true) ||
-                in_array('branch_admin', $userRoles, true) ||
-                in_array('mgmt', $userRoles, true) ||
-                str_contains($allRolesJoined, 'quản trị') ||
-                str_contains($allRolesJoined, 'tổng giám đốc') ||
-                str_contains($allRolesJoined, 'quản lý')
-            )) {
-                return null;
-            }
-
-            // FO / FOM / Lễ tân
-            if (in_array($roleLower, ['fo', 'fom'], true) && (
-                in_array('fo', $userRoles, true) ||
-                in_array('fom', $userRoles, true) ||
-                in_array('fo_staff', $userRoles, true) ||
-                in_array('fo_manager', $userRoles, true) ||
-                str_contains($allRolesJoined, 'lễ tân') ||
-                str_contains($allRolesJoined, 'reception')
-            )) {
-                return null;
-            }
-
-            // HK / HKM / Buồng phòng
-            if (in_array($roleLower, ['hk', 'hkm'], true) && (
-                in_array('hk', $userRoles, true) ||
-                in_array('hkm', $userRoles, true) ||
-                in_array('hk_staff', $userRoles, true) ||
-                in_array('hk_manager', $userRoles, true) ||
-                str_contains($allRolesJoined, 'buồng') ||
-                str_contains($allRolesJoined, 'housekeeping')
-            )) {
-                return null;
-            }
-
-            // Sales / Kinh doanh
-            if ($roleLower === 'sales' && (
-                in_array('sales', $userRoles, true) ||
-                str_contains($allRolesJoined, 'kinh doanh') ||
-                str_contains($allRolesJoined, 'sales')
-            )) {
+            $accepted = [$allowedRole, ...(self::ROLE_ALIASES[$allowedRole] ?? [])];
+            if (array_intersect($accepted, $userRoles)) {
                 return null;
             }
         }
@@ -225,5 +122,45 @@ class RoomLockPermissionService
         }
 
         return null;
+    }
+
+    /** Mã và tên các vai trò (Rule) của user tại chi nhánh, chữ thường. */
+    private function userRoleIdentifiers(User $user, ?int $branchId): array
+    {
+        $applicationCode = strtoupper((string) config('database_domains.default_application_code', 'PMS'));
+        $roles = collect();
+
+        if ($user->userBranchPositions()->where('application_code', $applicationCode)->exists()) {
+            $assignments = $user->userBranchPositions()
+                ->where('application_code', $applicationCode)
+                ->when($branchId, fn ($query) => $query->where('system_branch_id', $branchId))
+                ->get();
+            foreach ($assignments as $assignment) {
+                $role = PositionBranchRole::query()
+                    ->where('position_id', $assignment->position_id)
+                    ->where('system_branch_id', $assignment->system_branch_id)
+                    ->where('application_code', $assignment->application_code)
+                    ->where('is_active', true)
+                    ->with('role')
+                    ->first()?->role;
+                if ($role) {
+                    $roles->push($role);
+                }
+            }
+        } else {
+            $roles = $user->roles()
+                ->when($branchId, fn ($query) => $query->where(function ($nested) use ($branchId) {
+                    $nested->whereNull('user_roles.system_branch_id')
+                        ->orWhere('user_roles.system_branch_id', $branchId);
+                }))
+                ->get(['roles.code', 'roles.name']);
+        }
+
+        return $roles->flatMap(fn ($role) => [$role->code, $role->name])
+            ->map(fn ($value) => mb_strtolower(trim((string) $value)))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
     }
 }

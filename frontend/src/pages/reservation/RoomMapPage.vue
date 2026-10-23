@@ -4280,7 +4280,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
               </div>
               <div class="flex flex-col gap-1.5 font-semibold text-neutral-300">
                 <div>Ghi chú: <span class="text-white font-normal">{{ hoverTooltip.room.lock_reason || hoverTooltip.room.active_locks?.[0]?.lock_reason || '-' }}</span></div>
-                <div>Người khóa: <span class="text-white font-normal">{{ hoverTooltip.room.lock_username || hoverTooltip.room.active_locks?.[0]?.lock_username || 'Admin' }}</span></div>
+                <div>Người khóa: <span class="text-white font-normal">{{ hoverTooltip.room.lock_username || hoverTooltip.room.active_locks?.[0]?.lock_username || '-' }}</span></div>
               </div>
             </template>
 

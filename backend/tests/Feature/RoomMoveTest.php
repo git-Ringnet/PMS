@@ -1238,4 +1238,159 @@ class RoomMoveTest extends TestCase
             'guest_id'        => $guest->id,
         ]);
     }
+
+    public function test_row_183_same_day_move_to_available_room_keeps_zero_nights_on_source(): void
+    {
+        $this->assertRow183SameDayMove('available');
+    }
+
+    public function test_row_183_same_day_merge_keeps_zero_nights_on_source(): void
+    {
+        $this->assertRow183SameDayMove('merge');
+    }
+
+    private function assertRow183SameDayMove(string $type): void
+    {
+        $booking = Booking::create([
+            'booking_name' => 'Same-day move', 'booking_date' => '2026-07-14',
+            'arrival_date' => '2026-07-14', 'departure_date' => '2026-07-17',
+            'status' => Booking::STATUS_CHECKIN, 'created_by' => 'admin_test',
+        ]);
+        $source = BookingRoom::create([
+            'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'room_number' => '101', 'arrival_date' => '2026-07-14', 'departure_date' => '2026-07-17',
+            'status' => BookingRoom::STATUS_CHECKED_IN, 'NumOfDays' => 3, 'ActutalNumOfDays' => 3,
+        ]);
+        $guest = Guest::create(['full_name' => 'Same-day guest']);
+        BookingRoomGuest::create([
+            'booking_room_id' => $source->id, 'guest_id' => $guest->id,
+            'is_primary' => true, 'status' => BookingRoom::STATUS_CHECKED_IN,
+        ]);
+        if ($type === 'available') {
+            $this->room102->update(['status' => 'available']);
+        } else {
+            BookingRoom::create([
+                'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+                'room_number' => '102', 'arrival_date' => '2026-07-14', 'departure_date' => '2026-07-17',
+                'status' => BookingRoom::STATUS_CHECKED_IN,
+            ]);
+        }
+        $this->postJson("/api/bookings/{$booking->id}/rooms/{$source->id}/move", [
+            'move_type' => $type, 'target_room_number' => '102', 'reason' => 'Row 183 same-day move',
+            'selected_guest_ids' => [$guest->id], 'confirm_exceed_capacity' => true,
+        ])->assertSuccessful()->assertJsonPath('success', true);
+        $source->refresh();
+        $this->assertSame(100, $source->status);
+        $this->assertSame(0, $source->ActutalNumOfDays);
+        $this->assertSame(0, $source->NumOfDays);
+        $this->assertSame($source->arrival_date->toDateString(), $source->departure_date->toDateString());
+        $target = BookingRoom::where('booking_id', $booking->id)->where('room_number', '102')->firstOrFail();
+        $this->assertSame(3, $target->ActutalNumOfDays);
+        $this->assertSame(3, $target->NumOfDays);
+    }
+
+    /** Dòng 166: dựng phòng nguồn 104 (2 khách) và phòng đích đang ở 112. */
+    private function row166Rooms(): array
+    {
+        $make = fn (string $code, string $dep) => Booking::create([
+            'booking_name' => $code, 'booking_date' => '2026-07-10', 'arrival_date' => '2026-07-10', 'departure_date' => $dep,
+            'created_by' => 'admin_test', 'updated_by' => 'admin_test', 'booking_code' => $code, 'status' => Booking::STATUS_CHECKIN,
+        ]);
+        $sourceBooking = $make('BK-104', '2026-07-17');
+        $targetBooking = $make('BK-112', '2026-07-18');
+        $room = fn ($booking, $number, $dep, $adults) => BookingRoom::create([
+            'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id, 'room_number' => $number,
+            'arrival_date' => '2026-07-10', 'departure_date' => $dep, 'status' => BookingRoom::STATUS_CHECKED_IN, 'adults' => $adults,
+        ]);
+        $source = $room($sourceBooking, '101', '2026-07-17', 2);
+        $target = $room($targetBooking, '102', '2026-07-18', 1);
+        $main = Guest::create(['full_name' => 'Khách chính 104']);
+        $second = Guest::create(['full_name' => 'Khách phụ 104']);
+        $targetMain = Guest::create(['full_name' => 'Khách chính 112']);
+        foreach ([[$source, $main, true], [$source, $second, false], [$target, $targetMain, true]] as [$r, $g, $primary]) {
+            BookingRoomGuest::create(['booking_room_id' => $r->id, 'guest_id' => $g->id, 'is_primary' => $primary, 'status' => BookingRoom::STATUS_CHECKED_IN]);
+        }
+
+        return compact('sourceBooking', 'targetBooking', 'source', 'target', 'main', 'second', 'targetMain');
+    }
+
+    private function row166Bill(array $ctx, string $service, int $amount, ?string $currentRoomId, ?string $currentGuestId, $guest = null): ServiceBill
+    {
+        $guest ??= $ctx['main'];
+
+        return ServiceBill::create([
+            'Date' => '2026-07-14 00:00:00', 'OpenTime' => '10:00', 'Guest' => $guest->full_name, 'DepartmentId' => 'FO',
+            'ServiceId' => $service, 'DescriptionServive' => $service, 'Quantity' => 1, 'Amount' => $amount,
+            'RegisterId1' => $ctx['sourceBooking']->id, 'RentalRoomId1' => $ctx['source']->id, 'CustomerId1' => $guest->id,
+            'RegisterID2' => $ctx['sourceBooking']->id, 'RentalRoomId2' => $currentRoomId, 'CustomerId2' => $currentGuestId,
+            'Status' => 1, 'Edit' => 0, 'Username' => 'admin_test',
+        ]);
+    }
+
+    private function row166Move(array $ctx, array $guestIds): void
+    {
+        $this->postJson("/api/bookings/{$ctx['sourceBooking']->id}/rooms/{$ctx['source']->id}/move", [
+            'move_type' => 'merge', 'target_room_number' => '102', 'reason' => 'Chuyển khách sang phòng đang ở',
+            'selected_guest_ids' => $guestIds, 'confirm_exceed_capacity' => true,
+        ])->assertSuccessful()->assertJsonPath('success', true);
+    }
+
+    /** Dòng 166 trường hợp 1: tiền phòng ở booking/master -> chuyển khách chính chỉ chuyển bill dịch vụ tại phòng. */
+    public function test_row_166_room_charge_on_booking_stays_and_only_room_service_bill_moves(): void
+    {
+        $ctx = $this->row166Rooms();
+        // Tiền phòng 2 đêm đang ở master (RegisterID2 = BK, RentalRoomId2/CustomerId2 = NULL)
+        $rm1 = $this->row166Bill($ctx, 'RM', 500000, null, null);
+        $rm2 = $this->row166Bill($ctx, 'RM', 500000, null, null);
+        // Minibar 69k post tại phòng (RentalRoomId2/CustomerId2 = phòng & khách)
+        $minibar = $this->row166Bill($ctx, 'MB', 69000, $ctx['source']->id, $ctx['main']->id);
+
+        $this->row166Move($ctx, [$ctx['main']->id]);
+
+        foreach ([$rm1, $rm2] as $rm) {
+            $rm->refresh();
+            $this->assertNull($rm->RentalRoomId2, 'Tiền phòng ở booking không được chuyển theo khách');
+            $this->assertNull($rm->CustomerId2);
+            $this->assertEquals($ctx['sourceBooking']->id, $rm->RegisterID2);
+        }
+        $minibar->refresh();
+        $this->assertSame($ctx['target']->id, $minibar->RentalRoomId2);
+        $this->assertSame($ctx['main']->id, $minibar->CustomerId2);
+        $this->assertEquals($ctx['targetBooking']->id, $minibar->RegisterID2, 'RegisterID2 phải theo đăng ký của phòng mới');
+
+        // Khách chính phòng đích giữ nguyên, khách chuyển tới là khách phụ
+        $this->assertDatabaseHas('booking_room_guests', ['booking_room_id' => $ctx['target']->id, 'guest_id' => $ctx['targetMain']->id, 'is_primary' => 1]);
+        $this->assertDatabaseHas('booking_room_guests', ['booking_room_id' => $ctx['target']->id, 'guest_id' => $ctx['main']->id, 'is_primary' => 0]);
+    }
+
+    /** Dòng 166 trường hợp 2: tiền phòng ở phòng -> chuyển khách chính thì mọi bill của phòng theo khách chính. */
+    public function test_row_166_room_charge_on_room_moves_all_room_bills_with_main_guest(): void
+    {
+        $ctx = $this->row166Rooms();
+        $rm = $this->row166Bill($ctx, 'RM', 500000, $ctx['source']->id, $ctx['main']->id);
+        $secondGuestBill = $this->row166Bill($ctx, 'LD', 50000, $ctx['source']->id, $ctx['second']->id, $ctx['second']);
+
+        $this->row166Move($ctx, [$ctx['main']->id]);
+
+        foreach ([$rm, $secondGuestBill] as $bill) {
+            $bill->refresh();
+            $this->assertSame($ctx['target']->id, $bill->RentalRoomId2);
+            $this->assertSame($ctx['main']->id, $bill->CustomerId2);
+            $this->assertEquals($ctx['targetBooking']->id, $bill->RegisterID2);
+        }
+    }
+
+    /** Dòng 166: chuyển khách phụ chỉ chuyển bill của khách đó. */
+    public function test_row_166_moving_secondary_guest_moves_only_their_bills(): void
+    {
+        $ctx = $this->row166Rooms();
+        $mainBill = $this->row166Bill($ctx, 'MB', 69000, $ctx['source']->id, $ctx['main']->id);
+        $secondBill = $this->row166Bill($ctx, 'LD', 50000, $ctx['source']->id, $ctx['second']->id, $ctx['second']);
+
+        $this->row166Move($ctx, [$ctx['second']->id]);
+
+        $this->assertSame($ctx['source']->id, $mainBill->fresh()->RentalRoomId2);
+        $this->assertSame($ctx['target']->id, $secondBill->fresh()->RentalRoomId2);
+        $this->assertEquals($ctx['targetBooking']->id, $secondBill->fresh()->RegisterID2);
+    }
 }

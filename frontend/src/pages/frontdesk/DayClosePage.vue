@@ -367,16 +367,14 @@ function processRealBookings(bookings) {
         const { isCheckedIn, isCheckedOut, isCancelled, isMoved, isBooked } = checkRoomStatus(r, b)
         if (isCancelled || isCheckedOut || isMoved) return
 
-        // Bỏ qua các booking / phòng chưa gán phòng vật lý (chưa lấy phòng)
-        if (!hasAssignedRoom(r)) return
-
         const arrDate = getEffectiveArrivalDate(r, b)
         const depDate = getEffectiveDepartureDate(r, b)
 
-        // Phòng đến: Khách đến vào ngày hệ thống nhưng chưa check-in (tình trạng đặt phòng, không lấy status = 100, và PHẢI ĐÃ GÁN PHÒNG)
+        // Phòng đến: Khách đến vào ngày hệ thống nhưng chưa check-in (tình trạng đặt phòng, không lấy status = 100).
+        // Dòng 259: tính cả phòng chưa gán số phòng
         if (arrDate === sysDateStr && isBooked && !isCheckedIn && !isMoved && Number(r?.status) !== 100) arrCount++
-        // Phòng đi: Khách đang ở và đi vào ngày hệ thống
-        if (depDate === sysDateStr && isCheckedIn && !isMoved && Number(r?.status) !== 100) depCount++
+        // Phòng đi: Khách đang ở (đã gán phòng) và đi vào ngày hệ thống
+        if (hasAssignedRoom(r) && depDate === sysDateStr && isCheckedIn && !isMoved && Number(r?.status) !== 100) depCount++
       })
     }
   })
@@ -407,8 +405,9 @@ function processRealBookings(bookings) {
       const { isCheckedIn, isCheckedOut, isCancelled, isMoved, isBooked } = checkRoomStatus(r, b)
       if (isCancelled || isCheckedOut || isMoved) return
 
-      // Bỏ qua các booking / phòng chưa gán phòng vật lý (chưa lấy phòng)
-      if (!hasAssignedRoom(r)) return
+      // Bỏ qua phòng chưa gán phòng vật lý, riêng tab Phòng đến vẫn lấy (dòng 259)
+      const isAssigned = hasAssignedRoom(r)
+      if (!isAssigned && activeFilterTab.value !== 'arrivals') return
 
       const arrDate = getEffectiveArrivalDate(r, b)
       const depDate = getEffectiveDepartureDate(r, b)
@@ -446,15 +445,15 @@ function processRealBookings(bookings) {
         id: `real-row-${b.id}-${r.id || rIdx}`,
         bookingCode: b.code || b.booking_code || `GAL${b.id}`,
         vat: b.has_vat ?? true,
-        roomNumber: r.room?.room_number || r.room?.code || r.room_number,
+        roomNumber: isAssigned ? (r.room?.room_number || r.room?.code || r.room_number) : 'Chưa gán',
         roomType: r.room_class?.name || r.roomClass?.name || 'Standard',
         guestName: guestName,
         arrivalDate: formatDateVN(arrDate),
         nights: r.num_of_days || b.num_of_days || calculateNights(arrDate, depDate),
         departureDate: formatDateVN(depDate),
-        breakfast: b.breakfast_included ?? true,
-        adults: r.adults_count || b.adults_count || 1,
-        children: r.children_count || b.children_count || 0,
+        breakfast: Boolean(r.breakfast ?? b.breakfast_included),
+        adults: r.adults ?? r.adults_count ?? 1,
+        children: r.children_qty ?? r.children_count ?? 0,
         rateCode: b.rate_code || '',
         // Giá phòng thật lưu ở booking_rooms.rate (trước đây đọc nhầm trường không tồn tại nên luôn hiện 500.000).
         price: Number(r.rate ?? r.price ?? r.room_rate ?? 0),

@@ -137,7 +137,7 @@ class RoomOccupancyStatisticsTest extends TestCase
             'booking_date' => '2026-09-04',
             'arrival_date' => '2026-09-04',
             'departure_date' => '2026-09-04',
-            'num_of_days' => 1,
+            'num_of_days' => 0,
             'is_day_use' => true,
             'status' => Booking::STATUS_CHECKOUT,
             'registration_status_id' => $availableStatus->booking_status_id,
@@ -150,7 +150,8 @@ class RoomOccupancyStatisticsTest extends TestCase
             'arrival_date' => '2026-09-04',
             'departure_date' => '2026-09-04',
             'planned_departure_date' => '2026-09-04',
-            'NumOfDays' => 1,
+            // Day-use has zero nights; one would falsely classify it as an early departure.
+            'NumOfDays' => 0,
             'CheckoutDate' => '2026-09-04',
             'is_day_use' => true,
             'status' => BookingRoom::STATUS_CHECKED_OUT,
@@ -264,5 +265,26 @@ class RoomOccupancyStatisticsTest extends TestCase
             'lock_type' => $lockType,
             'is_active' => RoomLock::STATUS_ACTIVE,
         ]);
+    }
+
+    /** Dòng 288: phòng có khách đang ở mà rooms còn lưu OOO (ghi sai khi sửa lịch khóa) vẫn phải tính là đang ở. */
+    public function test_inhouse_room_with_stale_ooo_status_is_still_counted(): void
+    {
+        $this->actingAs(User::factory()->create());
+        DB::table('booking_statuses')->insert([['id' => 0, 'name' => 'Reservation'], ['id' => 1, 'name' => 'Checked In'], ['id' => 2, 'name' => 'Checked Out']]);
+        \App\Models\SystemDateRoll::create(['system_date' => '2026-09-04', 'actual_date' => now(), 'shift' => '1', 'username' => 'test']);
+        $status = RegistrationStatus::create(['booking_status_id' => 1, 'name' => 'Confirmed', 'is_availability' => true]);
+        $form = RoomForm::create(['name' => 'Double']);
+        $class = RoomClass::create(['code' => 'DLX', 'name' => 'Deluxe', 'is_active' => true]);
+        foreach (['101' => 'ooo', '102' => 'ooo', '103' => 'vacant_ready'] as $number => $code) {
+            Room::create(['room_number' => $number, 'room_form_id' => $form->id, 'room_class_id' => $class->id, 'floor' => 1, 'room_status_code' => $code]);
+        }
+        // 101: có khách đang ở nhưng rooms ghi sai OOO; 102: OOO chỉnh tay, không có khách
+        $this->createBookingRoom('101', $class->id, $status->booking_status_id, BookingRoom::STATUS_CHECKED_IN);
+
+        $this->getJson('/api/rooms/stats?date=2026-09-04')->assertSuccessful()
+            ->assertJsonPath('data.ooo', 1)
+            ->assertJsonPath('data.occupied_current', 1)
+            ->assertJsonPath('data.occupied_projected', 1);
     }
 }

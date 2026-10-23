@@ -211,6 +211,12 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     Route::post('report-definitions/{reportDefinition}/execute', [\App\Http\Controllers\Api\ReportDefinitionController::class, 'execute']);
     Route::post('report-definitions/{reportDefinition}/render', [\App\Http\Controllers\Api\ReportDefinitionController::class, 'render']);
     Route::post('report-definitions/{reportDefinition}/exports', [\App\Http\Controllers\Api\ReportDefinitionController::class, 'export']);
+    // Dòng 327, 328: cấu hình menu báo cáo theo module và quyền xem từng báo cáo
+    Route::get('report-menu/navigation', [\App\Http\Controllers\Api\ReportMenuController::class, 'navigation']);
+    Route::get('report-menu', [\App\Http\Controllers\Api\ReportMenuController::class, 'index'])->middleware('permission:admin,system.setting,config.hotel.edit');
+    Route::put('report-menu/{location}', [\App\Http\Controllers\Api\ReportMenuController::class, 'update'])->middleware('permission:admin,system.setting,config.hotel.edit');
+    Route::get('report-definitions/{reportDefinition}/role-access', [\App\Http\Controllers\Api\ReportMenuController::class, 'roleAccess'])->middleware('permission:system.user.view');
+    Route::put('report-definitions/{reportDefinition}/role-access', [\App\Http\Controllers\Api\ReportMenuController::class, 'updateRoleAccess'])->middleware('permission:system.user.manage');
     Route::apiResource('report-definitions', \App\Http\Controllers\Api\ReportDefinitionController::class)
         ->parameters(['report-definitions' => 'reportDefinition']);
 
@@ -335,6 +341,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     Route::get('/inventory/checks', [\App\Http\Controllers\Api\InventoryCheckController::class, 'index']);
     Route::post('/inventory/checks', [\App\Http\Controllers\Api\InventoryCheckController::class, 'store']);
     Route::post('/inventory/checks/sync-previous-month', [\App\Http\Controllers\Api\InventoryCheckController::class, 'syncPreviousMonth']);
+    Route::post('/inventory/checks/save', [\App\Http\Controllers\Api\InventoryCheckController::class, 'save']);
     Route::delete('/inventory/checks/{id}', [\App\Http\Controllers\Api\InventoryCheckController::class, 'destroy']);
     Route::post('/inventory/checks/{id}/items', [\App\Http\Controllers\Api\InventoryCheckController::class, 'addItems']);
     Route::put('/inventory/checks/{id}/items/{itemId}', [\App\Http\Controllers\Api\InventoryCheckController::class, 'updateItem']);
@@ -428,6 +435,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     Route::get('general-search/options', [\App\Http\Controllers\Api\GeneralSearchController::class, 'options']);
     Route::get('general-search/suggestions', [\App\Http\Controllers\Api\GeneralSearchController::class, 'suggestions']);
     Route::get('general-search', [\App\Http\Controllers\Api\GeneralSearchController::class, 'index']);
+    Route::get('general-search/guests/{guest}/history', [\App\Http\Controllers\Api\GeneralSearchController::class, 'guestHistory']);
     Route::get('bookings/export', [\App\Http\Controllers\Api\BookingController::class, 'export']);
     Route::get('bookings/{booking}/notifications', [\App\Http\Controllers\Api\BookingNotificationController::class, 'index']);
     Route::get('bookings/{booking}/notifications/active', [\App\Http\Controllers\Api\BookingNotificationController::class, 'active']);

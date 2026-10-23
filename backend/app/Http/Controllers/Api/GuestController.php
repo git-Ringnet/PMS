@@ -2008,22 +2008,29 @@ class GuestController extends Controller
         }
 
         if ($request->hasFile('avatar')) {
-            // Remove old file
-            if ($guest->avatar && file_exists(public_path($guest->avatar))) {
+            $file = $request->file('avatar');
+            // Dòng 333: không dùng tên file gốc (tên dài / có dấu làm lỗi lưu file và vượt độ dài cột avatar)
+            $extension = strtolower($file->guessExtension() ?: $file->getClientOriginalExtension() ?: 'jpg');
+            $filename = 'avatar_' . preg_replace('/[^A-Za-z0-9_-]/', '', (string) $guest->id) . '_' . now()->format('YmdHis') . '_' . \Illuminate\Support\Str::random(6) . '.' . $extension;
+
+            $dirPath = public_path('uploads/avatars');
+            if (!is_dir($dirPath) && !@mkdir($dirPath, 0755, true) && !is_dir($dirPath)) {
+                \Log::error("Không tạo được thư mục lưu ảnh khách: {$dirPath}");
+                return response()->json(['success' => false, 'message' => 'Máy chủ chưa cấp quyền tạo thư mục lưu ảnh (public/uploads/avatars). Vui lòng liên hệ quản trị.'], 500);
+            }
+
+            try {
+                $file->move($dirPath, $filename);
+            } catch (\Throwable $e) {
+                \Log::error('Lỗi lưu ảnh khách: ' . $e->getMessage());
+                return response()->json(['success' => false, 'message' => 'Không lưu được ảnh lên máy chủ. Vui lòng kiểm tra quyền ghi thư mục public/uploads/avatars.'], 500);
+            }
+
+            // Xóa ảnh cũ sau khi đã lưu ảnh mới thành công
+            if ($guest->avatar && is_file(public_path($guest->avatar))) {
                 @unlink(public_path($guest->avatar));
             }
 
-            $file = $request->file('avatar');
-            $filename = 'avatar_' . $guest->id . '_' . time() . '_' . $file->getClientOriginalName();
-            
-            // Ensure directory exists
-            $dirPath = public_path('uploads/avatars');
-            if (!file_exists($dirPath)) {
-                mkdir($dirPath, 0755, true);
-            }
-            
-            $file->move($dirPath, $filename);
-            
             $guest->avatar = 'uploads/avatars/' . $filename;
             $guest->save();
         }

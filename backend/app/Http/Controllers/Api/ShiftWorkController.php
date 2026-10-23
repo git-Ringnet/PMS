@@ -53,6 +53,16 @@ class ShiftWorkController extends Controller
     /**
      * Tab 1: Danh sách phòng đến (Arrivals - sp_143 & sp_147).
      */
+    /** Dòng 183: phòng đã chuyển (status 100) chuyển cùng ngày có 0 đêm, không được đổi 0 thành 1. */
+    private function roomNights($room): int
+    {
+        if ((int) $room->status === \App\Models\BookingRoom::STATUS_MOVED && $room->ActutalNumOfDays !== null) {
+            return max(0, (int) $room->ActutalNumOfDays);
+        }
+
+        return (int) ($room->ActutalNumOfDays ?: ($room->actual_num_of_days ?: ($room->num_of_days ?: 1)));
+    }
+
     public function arrivals(Request $request)
     {
         $dateStr = $request->input('date', $this->getSystemDate());
@@ -160,7 +170,7 @@ class ShiftWorkController extends Controller
             }
             $specialRequestStr = implode(', ', $spList);
 
-            $nights = (int) ($room->ActutalNumOfDays ?: ($room->actual_num_of_days ?: ($room->num_of_days ?: 1)));
+            $nights = $this->roomNights($room);
             $rate = (float) ($room->rate ?: 0);
             $roomTotal = (float) ($room->total_rate ?: ($rate * $nights));
 
@@ -320,7 +330,7 @@ class ShiftWorkController extends Controller
             }
             $specialRequestStr = implode(', ', $spList);
 
-            $nights = (int) ($room->ActutalNumOfDays ?: ($room->actual_num_of_days ?: ($room->num_of_days ?: 1)));
+            $nights = $this->roomNights($room);
             $rate = (float) ($room->rate ?: 0);
 
             // Room Type name
@@ -855,7 +865,7 @@ class ShiftWorkController extends Controller
             // Tìm noshow log nếu có
             $log = NoshowLog::where('booking_room_id', $room->id)->latest()->first();
 
-            $nights = (int) ($room->ActutalNumOfDays ?: ($room->actual_num_of_days ?: ($room->num_of_days ?: 1)));
+            $nights = $this->roomNights($room);
             $rate = (float) ($room->rate ?: 0);
             $totalAmount = (float) ($room->total_rate ?: ($rate * $nights));
 

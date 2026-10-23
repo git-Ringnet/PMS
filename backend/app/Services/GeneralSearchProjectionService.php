@@ -76,7 +76,7 @@ class GeneralSearchProjectionService
         $booking = $room?->booking;
         $guest = $assignment->guest;
         return [
-            'id' => $assignment->id, 'booking_id' => $booking?->id, 'booking_code' => $booking?->booking_code, 'room_number' => $room?->room_number,
+            'id' => $assignment->id, 'booking_id' => $booking?->id, 'guest_id' => $guest?->id, 'booking_code' => $booking?->booking_code, 'room_number' => $room?->room_number,
             'guest_name' => $guest?->full_name, 'arrival_date' => $room?->arrival_date?->toDateString(),
             'departure_date' => $room?->departure_date?->toDateString(), 'nights' => $room?->ActutalNumOfDays,
             'rate' => (float) ($room?->rate ?? 0), 'rate_code' => $room?->rate_code, 'company' => $booking?->company?->name,

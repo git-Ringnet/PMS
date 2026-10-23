@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\CustomerSourceResource;
 use App\Models\CustomerSource;
+use App\Services\ChainCatalogSyncService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
 
@@ -33,10 +34,12 @@ class CustomerSourceController extends Controller
         ]);
 
         $source = CustomerSource::create($validated);
+        $syncWarnings = app(ChainCatalogSyncService::class)->catalogCreated('customer_sources', $source->code, $source->name);
 
         return response()->json([
             'success' => true,
             'data' => new CustomerSourceResource($source),
+            'sync_warnings' => $syncWarnings,
         ], 201);
     }
 
@@ -70,11 +73,14 @@ class CustomerSourceController extends Controller
             'name' => 'required|string|max:255',
         ]);
 
+        $originalCode = $source->code;
         $source->update($validated);
+        $syncWarnings = app(ChainCatalogSyncService::class)->catalogUpdated('customer_sources', $originalCode, $source->code, $source->name);
 
         return response()->json([
             'success' => true,
             'data' => new CustomerSourceResource($source),
+            'sync_warnings' => $syncWarnings,
         ]);
     }
 
@@ -94,11 +100,14 @@ class CustomerSourceController extends Controller
             return response()->json(['message' => "Không thể xóa nguồn khách '{$source->name}' vì đang được sử dụng trong {$companyCount} công ty và {$bookingCount} booking. Vui lòng gỡ liên kết trước."], 422);
         }
 
+        $code = $source->code;
         $source->delete();
+        $syncWarnings = app(ChainCatalogSyncService::class)->catalogDeleted('customer_sources', $code);
 
         return response()->json([
             'success' => true,
             'message' => 'Customer source deleted successfully',
+            'sync_warnings' => $syncWarnings,
         ]);
     }
 }
