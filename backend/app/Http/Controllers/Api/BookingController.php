@@ -3222,6 +3222,7 @@ class BookingController extends Controller
         $allowInputOver = \App\Models\HotelConfig::where('name', 'AllowInputOverAV')->first()?->value == '1';
         $payloadAssignments = [];
         $newDemandByPeriod = [];
+        $newTimedDayUseDemands = [];
         $periods = [];
         $occupiedRoomNumbers = [];
 
@@ -3284,6 +3285,16 @@ class BookingController extends Controller
                 $originalRoomDeparture = $isPersistedStay && $bookingRoom->departure_date
                     ? Carbon::parse($bookingRoom->departure_date)->toDateString()
                     : null;
+                $isRoomDayUse = (bool) ($detail['is_day_use'] ?? $detail['hourly'] ?? false)
+                    || (!$isPersistedStay && $roomArrival === $roomDeparture)
+                    || ($isPersistedStay && (bool) $bookingRoom->is_day_use);
+                $roomArrivalTime = $this->normalizeDayUseTime($detail['arrivalTime'] ?? null);
+                $roomDepartureTime = $this->normalizeDayUseTime($detail['hoursOut'] ?? null);
+                $isTimedDayUse = $isRoomDayUse
+                    && $roomArrival === $roomDeparture
+                    && $roomArrivalTime !== null
+                    && $roomDepartureTime !== null
+                    && $roomArrivalTime < $roomDepartureTime;
 
                 // Check the PMS date before booking containment so callers get
                 // the section 7 message for an allocation date in the past.
@@ -3324,7 +3335,17 @@ class BookingController extends Controller
                     && $originalRoomDeparture === $roomDeparture;
 
                 if (!$isPersistedStay || ($bookingRoomStatus === BookingRoom::STATUS_BOOKED && !$sameReservationPeriod)) {
-                    $newDemandByPeriod[$periodKey] = ($newDemandByPeriod[$periodKey] ?? 0) + 1;
+                    if ($isTimedDayUse) {
+                        $newTimedDayUseDemands[] = [
+                            'room_class_id' => (int) $roomClassId,
+                            'arrival' => $roomArrival,
+                            'departure' => $roomDeparture,
+                            'arrival_time' => $roomArrivalTime,
+                            'departure_time' => $roomDepartureTime,
+                        ];
+                    } else {
+                        $newDemandByPeriod[$periodKey] = ($newDemandByPeriod[$periodKey] ?? 0) + 1;
+                    }
                 }
 
                 if (!empty($detail['roomNumber'])) {
@@ -3342,20 +3363,18 @@ class BookingController extends Controller
                         throw new \Exception('Số phòng ' . $roomNumber . ' không thuộc loại phòng đã chọn.');
                     }
 
-                    $isRoomDayUse = (bool) ($detail['is_day_use'] ?? $detail['hourly'] ?? false)
-                        || (!$isPersistedStay && $roomArrival === $roomDeparture)
-                        || ($isPersistedStay && (bool) $bookingRoom->is_day_use);
-
                     // Check duplicate assignment within the same request
-                    // payload. A same-day day-use period overlaps another
-                    // stay on that date even though the normal half-open
-                    // [arrival, departure) comparison would be false.
+                    // payload. Day Use may reuse the same room only when its
+                    // half-open time ranges do not overlap.
                     foreach ($payloadAssignments as $assignment) {
                         $overlap = $roomArrival < $assignment['departure']
                             && $assignment['arrival'] < $roomDeparture;
                         if ($isRoomDayUse && $roomArrival === $roomDeparture) {
                             $overlap = $assignment['is_day_use']
-                                ? $roomArrival === $assignment['arrival']
+                                ? ($roomArrival === $assignment['arrival']
+                                    && (!$isTimedDayUse || !$assignment['is_timed_day_use']
+                                        || ($roomArrivalTime < $assignment['departure_time']
+                                            && $assignment['arrival_time'] < $roomDepartureTime)))
                                 : ($assignment['arrival'] <= $roomArrival && $roomArrival < $assignment['departure']);
                         } elseif ($assignment['is_day_use'] && $assignment['arrival'] === $assignment['departure']) {
                             $overlap = $assignment['arrival'] >= $roomArrival
@@ -3372,6 +3391,9 @@ class BookingController extends Controller
                         'arrival' => $roomArrival,
                         'departure' => $roomDeparture,
                         'is_day_use' => $isRoomDayUse,
+                        'is_timed_day_use' => $isTimedDayUse,
+                        'arrival_time' => $roomArrivalTime,
+                        'departure_time' => $roomDepartureTime,
                     ];
 
                     $isLocked = $avService->hasBlockingLock($roomNumber, $roomArrival, $roomDeparture);
@@ -3386,8 +3408,8 @@ class BookingController extends Controller
                         $roomDeparture,
                         $bookingRoomId,
                         $excludeBookingId,
-                        $detail['arrivalTime'] ?? null,
-                        $detail['hoursOut'] ?? null
+                        $roomArrivalTime,
+                        $roomDepartureTime
                     );
                     if ($conflict) {
                         $code = $conflict->booking?->booking_code ?: ('#' . $conflict->booking_id);
@@ -3434,6 +3456,35 @@ class BookingController extends Controller
                 throw new \Exception(
                     'Không đủ phòng trống cho loại phòng ' . ($roomClass?->name ?? 'không xác định')
                     . '. Số phòng trống hiện tại: ' . $effectiveAvailability
+                );
+            }
+        }
+
+        foreach ($newTimedDayUseDemands as $demand) {
+            $simultaneousDemand = 0;
+            foreach ($newTimedDayUseDemands as $candidate) {
+                if ($candidate['room_class_id'] === $demand['room_class_id']
+                    && $candidate['arrival'] === $demand['arrival']
+                    && $candidate['arrival_time'] < $demand['departure_time']
+                    && $demand['arrival_time'] < $candidate['departure_time']) {
+                    $simultaneousDemand++;
+                }
+            }
+
+            $availability = $avService->getAvailability(
+                $demand['room_class_id'],
+                $demand['arrival'],
+                $demand['departure'],
+                null,
+                $demand['arrival_time'],
+                $demand['departure_time']
+            );
+            $canOver = ($allowOver && $allowInputOver) || $isWaitingBooking;
+            if ($availability < $simultaneousDemand && !$canOver) {
+                $roomClass = \App\Models\RoomClass::find($demand['room_class_id']);
+                throw new \Exception(
+                    'Không đủ phòng trống cho loại phòng ' . ($roomClass?->name ?? 'không xác định')
+                    . ' trong khung giờ Day Use đã chọn. Số phòng trống hiện tại: ' . $availability
                 );
             }
         }
@@ -3816,6 +3867,21 @@ class BookingController extends Controller
         }
 
         return $default;
+    }
+
+    private function normalizeDayUseTime(mixed $value): ?string
+    {
+        if ($value === null || !preg_match('/^(\d{1,2}):(\d{2})(?::\d{2})?$/', trim((string) $value), $matches)) {
+            return null;
+        }
+
+        $hours = (int) $matches[1];
+        $minutes = (int) $matches[2];
+        if ($hours > 23 || $minutes > 59) {
+            return null;
+        }
+
+        return sprintf('%02d:%02d:00', $hours, $minutes);
     }
 
     private function applyConfiguredRateCodePricing(

@@ -30,7 +30,9 @@ class RoomAvailabilityService
         int $roomClassId,
         string $arrivalDate,
         string $departureDate,
-        string|int|null $excludeBookingRoomId = null
+        string|int|null $excludeBookingRoomId = null,
+        string|null $arrivalTime = null,
+        string|null $departureTime = null
     ): int {
         $query = BookingRoom::where('room_class_id', $roomClassId)
             ->stayOnly()
@@ -51,7 +53,47 @@ class RoomAvailabilityService
                   });
             });
 
-        // Comprehensive overlap checking
+        $arrivalTime = $this->normalizeTime($arrivalTime);
+        $departureTime = $this->normalizeTime($departureTime);
+        $isTimedDayUse = $arrivalDate === $departureDate
+            && $arrivalTime !== null
+            && $departureTime !== null
+            && $arrivalTime < $departureTime;
+
+        // A timed Day Use request only consumes rooms used during the same
+        // interval. Overnight stays (and Day Use rows without valid times)
+        // continue to block the full calendar day.
+        if ($isTimedDayUse) {
+            $queryEnd = Carbon::parse($arrivalDate)->addDay()->toDateString();
+            $query->where(function ($q) use ($arrivalDate, $queryEnd, $arrivalTime, $departureTime) {
+                $q->where(function ($overnight) use ($arrivalDate, $queryEnd) {
+                    $overnight->whereColumn('arrival_date', '!=', 'departure_date')
+                        ->where('arrival_date', '<', $queryEnd . ' 00:00:00')
+                        ->where('departure_date', '>', $arrivalDate . ' 00:00:00');
+                })->orWhere(function ($dayUse) use ($arrivalDate, $arrivalTime, $departureTime) {
+                    $dayUse->whereColumn('arrival_date', '=', 'departure_date')
+                        ->where('is_day_use', 1)
+                        ->whereDate('arrival_date', $arrivalDate)
+                        ->where(function ($time) use ($arrivalTime, $departureTime) {
+                            $time->whereNull('arrival_time')
+                                ->orWhereNull('departure_time')
+                                ->orWhere(function ($timed) use ($arrivalTime, $departureTime) {
+                                    $timed->where('arrival_time', '<', $departureTime)
+                                        ->where('departure_time', '>', $arrivalTime);
+                                });
+                        });
+                });
+            });
+
+            if ($excludeBookingRoomId) {
+                $query->where('id', '!=', $excludeBookingRoomId);
+            }
+
+            return $query->count();
+        }
+
+        // Comprehensive date-overlap checking for an overnight or an
+        // un-timed request.
         $query->where(function ($q) use ($arrivalDate, $departureDate) {
             // Case 1: Standard date overlap
             $q->where(function ($sub) use ($arrivalDate, $departureDate) {
@@ -159,11 +201,13 @@ class RoomAvailabilityService
         int $roomClassId,
         string $arrivalDate,
         string $departureDate,
-        string|int|null $excludeBookingRoomId = null
+        string|int|null $excludeBookingRoomId = null,
+        string|null $arrivalTime = null,
+        string|null $departureTime = null
     ): int {
         $total  = $this->getTotalRooms($roomClassId);
         $locked = $this->getLockedCount($roomClassId, $arrivalDate, $departureDate);
-        $booked = $this->getBookedCount($roomClassId, $arrivalDate, $departureDate, $excludeBookingRoomId);
+        $booked = $this->getBookedCount($roomClassId, $arrivalDate, $departureDate, $excludeBookingRoomId, $arrivalTime, $departureTime);
 
         return $total - $locked - $booked;
     }
@@ -243,10 +287,17 @@ class RoomAvailabilityService
             $query->whereNotIn('id', $excludeBookingRoomIds);
         }
 
+        $arrivalTime = $this->normalizeTime($arrivalTime);
+        $departureTime = $this->normalizeTime($departureTime);
+        $isTimedDayUse = $arrivalDate === $departureDate
+            && $arrivalTime !== null
+            && $departureTime !== null
+            && $arrivalTime < $departureTime;
+
         $queryEnd = $arrivalDate === $departureDate
             ? Carbon::parse($arrivalDate)->addDay()->toDateString()
             : $departureDate;
-        $query->where(function ($q) use ($arrivalDate, $departureDate, $queryEnd, $arrivalTime, $departureTime) {
+        $query->where(function ($q) use ($arrivalDate, $departureDate, $queryEnd, $arrivalTime, $departureTime, $isTimedDayUse) {
             // Standard overnight overlap uses the half-open [arrival,
             // departure) interval.
             $q->where(function ($sub) use ($arrivalDate, $queryEnd) {
@@ -259,23 +310,41 @@ class RoomAvailabilityService
             // overnight request colliding with an existing day-use row and a
             // same-day request colliding with an overnight stay (the latter
             // is the case the old implementation missed).
-            $q->orWhere(function ($sub) use ($arrivalDate, $departureDate, $queryEnd, $arrivalTime, $departureTime) {
+            $q->orWhere(function ($sub) use ($arrivalDate, $departureDate, $queryEnd, $arrivalTime, $departureTime, $isTimedDayUse) {
                 $sub->whereColumn('arrival_date', '=', 'departure_date')
                     ->where('is_day_use', 1)
                     ->where('arrival_date', '>=', $arrivalDate . ' 00:00:00')
                     ->where('arrival_date', '<', $queryEnd . ' 00:00:00');
 
-                if ($arrivalDate === $departureDate
-                    && $arrivalTime
-                    && $departureTime
-                    && $arrivalTime < $departureTime) {
-                    $sub->where('arrival_time', '<', $departureTime)
-                        ->where('departure_time', '>', $arrivalTime);
+                if ($isTimedDayUse) {
+                    $sub->where(function ($time) use ($arrivalTime, $departureTime) {
+                        $time->whereNull('arrival_time')
+                            ->orWhereNull('departure_time')
+                            ->orWhere(function ($timed) use ($arrivalTime, $departureTime) {
+                                $timed->where('arrival_time', '<', $departureTime)
+                                    ->where('departure_time', '>', $arrivalTime);
+                            });
+                    });
                 }
             });
         });
 
         return $query->with('booking')->orderBy('arrival_date')->first();
+    }
+
+    private function normalizeTime(?string $value): ?string
+    {
+        if ($value === null || !preg_match('/^(\d{1,2}):(\d{2})(?::\d{2})?$/', trim($value), $matches)) {
+            return null;
+        }
+
+        $hours = (int) $matches[1];
+        $minutes = (int) $matches[2];
+        if ($hours > 23 || $minutes > 59) {
+            return null;
+        }
+
+        return sprintf('%02d:%02d:00', $hours, $minutes);
     }
 
     /**

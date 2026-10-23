@@ -884,11 +884,15 @@ class RoomController extends Controller
             'room_class_id' => 'required|exists:room_classes,id',
             'arrival_date'  => 'required|date',
             'departure_date'=> 'required|date|after_or_equal:arrival_date',
+            'arrival_time'  => ['nullable', 'regex:/^\d{1,2}:\d{2}(?::\d{2})?$/'],
+            'departure_time'=> ['nullable', 'regex:/^\d{1,2}:\d{2}(?::\d{2})?$/'],
         ]);
 
         $roomClassId   = $request->room_class_id;
         $arrivalDate   = $request->arrival_date;
         $departureDate = $request->departure_date;
+        $arrivalTime   = $request->arrival_time;
+        $departureTime = $request->departure_time;
         $excludeId     = $request->exclude_booking_room_id;
 
         $avService = app(\App\Services\RoomAvailabilityService::class);
@@ -903,7 +907,7 @@ class RoomController extends Controller
 
             // 2. Kiểm tra có bị booking khác chiếm dụng không
             $isOccupied = $avService->isRoomNumberOccupied(
-                $room->room_number, $arrivalDate, $departureDate, $excludeId
+                $room->room_number, $arrivalDate, $departureDate, $excludeId, null, $arrivalTime, $departureTime
             );
 
             if (!$isOccupied) {

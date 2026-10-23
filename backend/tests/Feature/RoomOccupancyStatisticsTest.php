@@ -19,6 +19,61 @@ class RoomOccupancyStatisticsTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_unchecked_in_day_use_room_is_a_pending_departure_not_an_inhouse_room(): void
+    {
+        $this->actingAs(User::factory()->create());
+
+        DB::table('booking_statuses')->insert([
+            ['id' => 0, 'name' => 'Reservation'],
+            ['id' => 1, 'name' => 'Checked In'],
+            ['id' => 2, 'name' => 'Checked Out'],
+        ]);
+
+        $registrationStatus = RegistrationStatus::create([
+            'booking_status_id' => 1,
+            'name' => 'Confirmed',
+            'is_availability' => true,
+        ]);
+        $form = RoomForm::create(['name' => 'Double']);
+        $class = RoomClass::create(['code' => 'DLX', 'name' => 'Deluxe', 'is_active' => true]);
+        Room::create([
+            'room_number' => '101',
+            'room_form_id' => $form->id,
+            'room_class_id' => $class->id,
+            'floor' => 1,
+            'room_status_code' => 'vacant_ready',
+        ]);
+
+        $booking = Booking::create([
+            'booking_name' => 'Unchecked-in day use',
+            'booking_date' => '2026-10-13',
+            'arrival_date' => '2026-10-13',
+            'departure_date' => '2026-10-13',
+            'num_of_days' => 1,
+            'is_day_use' => true,
+            'status' => Booking::STATUS_RESERVATION,
+            'registration_status_id' => $registrationStatus->booking_status_id,
+            'created_by' => 'room_stats_test',
+        ]);
+        BookingRoom::create([
+            'booking_id' => $booking->id,
+            'room_number' => '101',
+            'room_class_id' => $class->id,
+            'arrival_date' => '2026-10-13',
+            'departure_date' => '2026-10-13',
+            'is_day_use' => true,
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $this->getJson('/api/rooms/stats?date=2026-10-13')
+            ->assertSuccessful()
+            ->assertJsonPath('data.departures_checked_out', 0)
+            ->assertJsonPath('data.departures_pending', 1)
+            ->assertJsonPath('data.departures_total', 1)
+            ->assertJsonPath('data.occupied_current', 0)
+            ->assertJsonPath('data.occupied_current_pax', 0);
+    }
+
     public function test_all_room_map_statistics_follow_business_rules(): void
     {
         $this->actingAs(User::factory()->create());

@@ -4,8 +4,8 @@
 // counts as "vacant" for that row only. The cache key therefore includes the
 // booking room id; otherwise another booking with the same class/dates would
 // reuse the list and offer a room number that is already taken.
-export function vacantRoomsKey({ roomClassId, checkIn, checkOut, bookingRoomId }) {
-  return `${roomClassId}_${checkIn}_${checkOut}_${bookingRoomId || 'new'}`
+export function vacantRoomsKey({ roomClassId, checkIn, checkOut, arrivalTime, departureTime, bookingRoomId }) {
+  return `${roomClassId}_${checkIn}_${checkOut}_${arrivalTime || 'none'}_${departureTime || 'none'}_${bookingRoomId || 'new'}`
 }
 
 // `store` is a ref-like object ({ value: {} }). A response is written only if
