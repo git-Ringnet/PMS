@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { fetchGeneralSearch, fetchGeneralSearchOptions, fetchGeneralSearchSuggestions, checkInRoom } from '@/services/booking-service'
+import { fetchGeneralSearch, fetchGeneralSearchOptions, fetchGeneralSearchSuggestions, checkInRoomWithConfirmations } from '@/services/booking-service'
 import { useAuthStore } from '@/stores/auth-store'
 import { useUiStore } from '@/stores/ui-store'
 import echo from '@/services/echo'
@@ -873,9 +873,14 @@ async function handleActionCheckIn() {
   const errors = []
   for (const r of validRooms) {
     try {
-      const res = await checkInRoom(r.booking_id, r.id)
-      if (res.data && res.data.success !== false) {
+      const res = await checkInRoomWithConfirmations(r.booking_id, r.id, {
+        roomNumber: r.room_number || r.id,
+        confirm: options => uiStore.confirm(options),
+      })
+      if (res?.data && res.data.success !== false && !res.data.needs_confirmation) {
         successCount++
+      } else if (!res) {
+        continue
       } else {
         errors.push(`Phòng ${r.room_number || r.id}: ${res.data?.message || 'Không thành công'}`)
       }

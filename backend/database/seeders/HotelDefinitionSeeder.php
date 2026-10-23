@@ -438,6 +438,7 @@ class HotelDefinitionSeeder extends Seeder
             ['name' => 'RoleUserOpenDoNotMove', 'value' => '', 'description' => 'Danh sách mã role chính xác được phép mở khóa Do Not Move; cần có quyền fo.booking.edit. Để trống sẽ từ chối role được cấu hình.', 'is_visible' => true],
             // Alert sinh nhật / special request
             ['name' => 'AllowShowAlertListView', 'value' => '1', 'description' => 'Tự động hiện popup danh sách sinh nhật / special request khi vào module (1: Có, 0: Không - chỉ xem ở icon lịch góc phải).', 'is_visible' => true],
+            ['name' => 'CompanyDefault', 'value' => '', 'description' => 'ID công ty mặc định khi tạo Booking nhanh và Nhận phòng nhanh', 'is_visible' => true],
             // Hóa đơn - In hóa đơn tự động sau thanh toán
             ['name' => 'DisablePrintBillAfterPayment', 'value' => '0', 'description' => 'Tự động in hóa đơn (phiếu thu) sau khi thanh toán thành công tại Hóa đơn. 0: không in, 1: tự động in.', 'is_visible' => true],
             // Hóa đơn - Phân quyền re checkout (khôi phục checkout)
@@ -445,6 +446,11 @@ class HotelDefinitionSeeder extends Seeder
         ];
 
         foreach ($configs as $cfg) {
+            if ($cfg['name'] === 'CompanyDefault') {
+                HotelConfig::firstOrCreate(['name' => $cfg['name']], $cfg);
+                continue;
+            }
+
             HotelConfig::updateOrCreate(['name' => $cfg['name']], $cfg);
         }
 

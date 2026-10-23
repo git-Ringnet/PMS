@@ -176,11 +176,11 @@ const loadLookups = async () => {
       fetchBookers(),
       fetchUsers({ per_page: 1000 })
     ])
-    markets.value = (mRes.data.data || []).filter(m => m && m.name)
-    customerSources.value = (csRes.data.data || []).filter(cs => cs && cs.name)
-    branches.value = (bRes.data.data || []).filter(b => b && b.name)
-    bookers.value = (bkRes.data.data || []).filter(bk => bk && bk.name)
-    users.value = (uRes.data.data || []).filter(u => u && u.name && u.is_active_user !== false && u.is_active_user !== 0)
+    markets.value = (mRes.data.data || []).filter(m => m && m.name && m.name.trim() !== '')
+    customerSources.value = (csRes.data.data || []).filter(cs => cs && cs.name && cs.name.trim() !== '')
+    branches.value = (bRes.data.data || []).filter(b => b && b.name && b.name.trim() !== '')
+    bookers.value = (bkRes.data.data || []).filter(bk => bk && bk.name && bk.name.trim() !== '')
+    users.value = (uRes.data.data || []).filter(u => u && u.name && u.name.trim() !== '' && u.is_active_user !== false && u.is_active_user !== 0)
   } catch (err) {
     console.error('Error loading lookups:', err)
   }
@@ -198,10 +198,34 @@ const loadData = async () => {
   }
 }
 
+const getNextCompanyCode = () => {
+  if (!allCompanies.value || allCompanies.value.length === 0) {
+    return 'CTY0001'
+  }
+  let maxNum = 0
+  for (const c of allCompanies.value) {
+    if (!c.code) continue
+    const match = String(c.code).match(/CTY(\d+)/i)
+    if (match) {
+      const num = parseInt(match[1], 10)
+      if (num > maxNum) maxNum = num
+    } else {
+      const digits = String(c.code).replace(/\D/g, '')
+      if (digits) {
+        const num = parseInt(digits, 10)
+        if (num > maxNum) maxNum = num
+      }
+    }
+  }
+  const nextNum = maxNum + 1
+  return `CTY${String(nextNum).padStart(4, '0')}`
+}
+
 const openAddModal = () => {
   isEditMode.value = false
   currentId.value = null
   form.value = emptyForm()
+  form.value.code = getNextCompanyCode()
   resetModalPosition('company')
   isModalOpen.value = true
 }
@@ -214,8 +238,8 @@ const openEditModal = (item) => {
     name: item.name || '',
     trading_name: item.trading_name || '',
     address: item.address || '',
-    tax_code: item.tax_code || '',
-    phone: item.phone || '',
+    tax_code: (item.tax_code && item.tax_code !== 'NULL' && item.tax_code !== 'null') ? item.tax_code : '',
+    phone: (item.phone && item.phone !== 'NULL' && item.phone !== 'null') ? item.phone : '',
     email: item.email || '',
     customer_source_id: item.customer_source_id || '',
     market_id: item.market_id || '',
@@ -437,7 +461,12 @@ const changePerPage = () => {
 // Sorting logic
 const toggleSort = (field) => {
   if (sortField.value === field) {
-    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+    if (sortDir.value === 'asc') {
+      sortDir.value = 'desc'
+    } else {
+      sortField.value = ''
+      sortDir.value = 'asc'
+    }
   } else {
     sortField.value = field
     sortDir.value = 'asc'
@@ -727,20 +756,37 @@ const handleDownloadTemplate = async () => {
     <div class="overflow-auto border border-slate-200 rounded-lg shadow-sm flex-1 max-h-full">
       <table class="w-full text-left border-collapse text-xs min-w-[1400px]">
         <thead>
-          <tr class="bg-slate-100 border-b border-slate-200 text-slate-700 font-bold select-none h-9">
+          <tr class="bg-slate-100 border-b border-slate-200 text-[#000000D9] font-bold select-none h-9">
             <!-- Mã -->
-            <th v-if="isColumnVisible('code')" class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap w-24 cursor-pointer hover:bg-slate-200 select-none transition-colors" @click="toggleSort('code')">
-              <div class="flex items-center justify-center gap-1.5">
+            <th 
+              v-if="isColumnVisible('code')" 
+              @click="toggleSort('code')"
+              class="p-2 border border-slate-200 text-[#000000D9] font-semibold text-xs text-center align-middle whitespace-nowrap w-24 cursor-pointer hover:bg-slate-200/70 select-none transition-colors group"
+              :title="sortField === 'code' ? (sortDir === 'asc' ? 'Đang xếp tăng dần - Nhấp để xếp giảm dần' : 'Đang xếp giảm dần - Nhấp để hủy sắp xếp') : 'Nhấp để sắp xếp theo Mã'"
+            >
+              <div class="inline-flex items-center justify-center gap-1">
                 <span>Mã</span>
-                <span class="flex flex-col text-xs leading-[10px] text-slate-400">
-                  <span :class="{'text-sky-500': sortField === 'code' && sortDir === 'asc'}">▲</span>
-                  <span :class="{'text-sky-500': sortField === 'code' && sortDir === 'desc'}">▼</span>
+                <span
+                  class="inline-flex items-center justify-center shrink-0 transition-colors ml-0.5"
+                  :class="sortField === 'code'
+                    ? 'text-[#006bdb]'
+                    : 'text-slate-400 group-hover:text-slate-600'"
+                >
+                  <svg v-if="sortField !== 'code'" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 4v12m0 0l4-4m-4 4l-4-4" />
+                  </svg>
+                  <svg v-else-if="sortDir === 'asc'" class="w-3.5 h-3.5 stroke-[2.8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m0 0l-5 5m5-5l5 5" />
+                  </svg>
+                  <svg v-else class="w-3.5 h-3.5 stroke-[2.8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14m0 0l-5-5m5 5l5-5" />
+                  </svg>
                 </span>
               </div>
             </th>
 
             <!-- Tên -->
-            <th v-if="isColumnVisible('name')" class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap relative popover-container select-none">
+            <th v-if="isColumnVisible('name')" class="p-2 border border-slate-200 text-[#000000D9] font-semibold text-xs text-center align-middle whitespace-nowrap relative popover-container select-none">
               <div class="flex items-center justify-center gap-1.5">
                 <span>Tên</span>
                 <button 
@@ -754,13 +800,13 @@ const handleDownloadTemplate = async () => {
                 </button>
               </div>
               <!-- Search Popover -->
-              <div v-if="isSearchOpen" class="absolute left-0 top-full mt-1.5 z-30 bg-white border border-slate-200 rounded-lg shadow-lg p-2.5 min-w-[220px] normal-case font-normal text-slate-700">
+              <div v-if="isSearchOpen" class="absolute left-0 top-full mt-1.5 z-30 bg-white border border-slate-200 rounded-lg shadow-lg p-2.5 min-w-[220px] normal-case font-normal text-[#000000D9]">
                 <div class="relative flex items-center">
                   <input 
                     v-model="searchQuery" 
                     type="text" 
                     placeholder="Tìm kiếm tên..." 
-                    class="w-full border border-slate-200 rounded-md p-1.5 pr-6 focus:outline-sky-500 text-xs font-semibold text-slate-700 bg-white" 
+                    class="w-full border border-slate-200 rounded-md p-1.5 pr-6 focus:outline-sky-500 text-xs font-semibold text-[#000000D9] bg-white" 
                     @click.stop
                   />
                   <button 
@@ -775,30 +821,47 @@ const handleDownloadTemplate = async () => {
             </th>
 
             <!-- Tên giao dịch -->
-            <th v-if="isColumnVisible('trading_name')" class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap cursor-pointer hover:bg-slate-200 select-none transition-colors" @click="toggleSort('trading_name')">
-              <div class="flex items-center justify-center gap-1.5">
+            <th 
+              v-if="isColumnVisible('trading_name')" 
+              @click="toggleSort('trading_name')"
+              class="p-2 border border-slate-200 text-[#000000D9] font-semibold text-xs text-center align-middle whitespace-nowrap cursor-pointer hover:bg-slate-200/70 select-none transition-colors group"
+              :title="sortField === 'trading_name' ? (sortDir === 'asc' ? 'Đang xếp tăng dần - Nhấp để xếp giảm dần' : 'Đang xếp giảm dần - Nhấp để hủy sắp xếp') : 'Nhấp để sắp xếp theo Tên Giao Dịch'"
+            >
+              <div class="inline-flex items-center justify-center gap-1">
                 <span>Tên Giao Dịch</span>
-                <span class="flex flex-col text-xs leading-[10px] text-slate-400">
-                  <span :class="{'text-sky-500': sortField === 'trading_name' && sortDir === 'asc'}">▲</span>
-                  <span :class="{'text-sky-500': sortField === 'trading_name' && sortDir === 'desc'}">▼</span>
+                <span
+                  class="inline-flex items-center justify-center shrink-0 transition-colors ml-0.5"
+                  :class="sortField === 'trading_name'
+                    ? 'text-[#006bdb]'
+                    : 'text-slate-400 group-hover:text-slate-600'"
+                >
+                  <svg v-if="sortField !== 'trading_name'" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 4v12m0 0l4-4m-4 4l-4-4" />
+                  </svg>
+                  <svg v-else-if="sortDir === 'asc'" class="w-3.5 h-3.5 stroke-[2.8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m0 0l-5 5m5-5l5 5" />
+                  </svg>
+                  <svg v-else class="w-3.5 h-3.5 stroke-[2.8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14m0 0l-5-5m5 5l5-5" />
+                  </svg>
                 </span>
               </div>
             </th>
 
             <!-- Địa chỉ -->
-            <th v-if="isColumnVisible('address')" class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap">Địa Chỉ</th>
+            <th v-if="isColumnVisible('address')" class="p-2 border border-slate-200 text-[#000000D9] font-semibold text-xs text-center align-middle whitespace-nowrap">Địa Chỉ</th>
 
             <!-- Tax -->
-            <th v-if="isColumnVisible('tax_code')" class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap w-24">Tax</th>
+            <th v-if="isColumnVisible('tax_code')" class="p-2 border border-slate-200 text-[#000000D9] font-semibold text-xs text-center align-middle whitespace-nowrap w-24">Tax</th>
 
             <!-- Số điện thoại -->
-            <th v-if="isColumnVisible('phone')" class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap">Số Điện Thoại</th>
+            <th v-if="isColumnVisible('phone')" class="p-2 border border-slate-200 text-[#000000D9] font-semibold text-xs text-center align-middle whitespace-nowrap">Số Điện Thoại</th>
 
             <!-- Email -->
-            <th v-if="isColumnVisible('email')" class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap">Email</th>
+            <th v-if="isColumnVisible('email')" class="p-2 border border-slate-200 text-[#000000D9] font-semibold text-xs text-center align-middle whitespace-nowrap">Email</th>
 
             <!-- Nguồn khách -->
-            <th v-if="isColumnVisible('customer_source')" class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap relative popover-container select-none">
+            <th v-if="isColumnVisible('customer_source')" class="p-2 border border-slate-200 text-[#000000D9] font-semibold text-xs text-center align-middle whitespace-nowrap relative popover-container select-none">
               <div class="flex items-center justify-center gap-1.5">
                 <span>Nguồn Khách</span>
                 <button 
@@ -812,11 +875,11 @@ const handleDownloadTemplate = async () => {
                 </button>
               </div>
               <!-- Filter Popover -->
-              <div v-if="activeFilterCol === 'source'" class="absolute left-0 top-full mt-1.5 z-30 bg-white border border-slate-200 rounded-lg shadow-lg p-2.5 min-w-[200px] max-h-[250px] overflow-hidden flex flex-col normal-case font-normal text-slate-700">
+              <div v-if="activeFilterCol === 'source'" class="absolute left-0 top-full mt-1.5 z-30 bg-white border border-slate-200 rounded-lg shadow-lg p-2.5 min-w-[200px] max-h-[250px] overflow-hidden flex flex-col normal-case font-normal text-[#000000D9]">
                 <div class="flex-1 overflow-y-auto flex flex-col gap-1 pr-1">
                   <label v-for="s in customerSources" :key="s.id" class="flex items-center gap-2 p-1.5 hover:bg-slate-50 cursor-pointer rounded select-none">
                     <input type="checkbox" :value="s.id" v-model="tempSelectedSources" class="rounded text-sky-500 border-slate-300 focus:ring-sky-400 w-3.5 h-3.5 cursor-pointer" />
-                    <span class="text-xs text-slate-700 font-semibold">{{ s.name }}</span>
+                    <span class="text-xs text-[#000000D9] font-semibold">{{ s.name }}</span>
                   </label>
                   <div v-if="customerSources.length === 0" class="text-slate-400 text-center py-2 text-xs">Không có dữ liệu</div>
                 </div>
@@ -828,7 +891,7 @@ const handleDownloadTemplate = async () => {
             </th>
 
             <!-- Thị trường -->
-            <th v-if="isColumnVisible('market')" class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap relative popover-container select-none">
+            <th v-if="isColumnVisible('market')" class="p-2 border border-slate-200 text-[#000000D9] font-semibold text-xs text-center align-middle whitespace-nowrap relative popover-container select-none">
               <div class="flex items-center justify-center gap-1.5">
                 <span>Thị Trường</span>
                 <button 
@@ -842,11 +905,11 @@ const handleDownloadTemplate = async () => {
                 </button>
               </div>
               <!-- Filter Popover -->
-              <div v-if="activeFilterCol === 'market'" class="absolute left-0 top-full mt-1.5 z-30 bg-white border border-slate-200 rounded-lg shadow-lg p-2.5 min-w-[200px] max-h-[250px] overflow-hidden flex flex-col normal-case font-normal text-slate-700">
+              <div v-if="activeFilterCol === 'market'" class="absolute left-0 top-full mt-1.5 z-30 bg-white border border-slate-200 rounded-lg shadow-lg p-2.5 min-w-[200px] max-h-[250px] overflow-hidden flex flex-col normal-case font-normal text-[#000000D9]">
                 <div class="flex-1 overflow-y-auto flex flex-col gap-1 pr-1">
                   <label v-for="m in markets" :key="m.id" class="flex items-center gap-2 p-1.5 hover:bg-slate-50 cursor-pointer rounded select-none">
                     <input type="checkbox" :value="m.id" v-model="tempSelectedMarkets" class="rounded text-sky-500 border-slate-300 focus:ring-sky-400 w-3.5 h-3.5 cursor-pointer" />
-                    <span class="text-xs text-slate-700 font-semibold">{{ m.name }}</span>
+                    <span class="text-xs text-[#000000D9] font-semibold">{{ m.name }}</span>
                   </label>
                   <div v-if="markets.length === 0" class="text-slate-400 text-center py-2 text-xs">Không có dữ liệu</div>
                 </div>
@@ -858,13 +921,13 @@ const handleDownloadTemplate = async () => {
             </th>
 
             <!-- Công nợ tối đa -->
-            <th v-if="isColumnVisible('max_debt')" class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap">Công Nợ Tối Đa</th>
+            <th v-if="isColumnVisible('max_debt')" class="p-2 border border-slate-200 text-[#000000D9] font-semibold text-xs text-center align-middle whitespace-nowrap">Công Nợ Tối Đa</th>
 
             <!-- Tài khoản ngân hàng -->
-            <th v-if="isColumnVisible('bank_account')" class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap">Tài Khoản Ngân Hàng</th>
+            <th v-if="isColumnVisible('bank_account')" class="p-2 border border-slate-200 text-[#000000D9] font-semibold text-xs text-center align-middle whitespace-nowrap">Tài Khoản Ngân Hàng</th>
 
             <!-- Người đặt phòng -->
-            <th v-if="isColumnVisible('booker')" class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap relative popover-container select-none">
+            <th v-if="isColumnVisible('booker')" class="p-2 border border-slate-200 text-[#000000D9] font-semibold text-xs text-center align-middle whitespace-nowrap relative popover-container select-none">
               <div class="flex items-center justify-center gap-1.5">
                 <span>Người Đặt Phòng</span>
                 <button 
@@ -878,11 +941,11 @@ const handleDownloadTemplate = async () => {
                 </button>
               </div>
               <!-- Filter Popover -->
-              <div v-if="activeFilterCol === 'booker'" class="absolute right-0 top-full mt-1.5 z-30 bg-white border border-slate-200 rounded-lg shadow-lg p-2.5 min-w-[200px] max-h-[250px] overflow-hidden flex flex-col normal-case font-normal text-slate-700">
+              <div v-if="activeFilterCol === 'booker'" class="absolute right-0 top-full mt-1.5 z-30 bg-white border border-slate-200 rounded-lg shadow-lg p-2.5 min-w-[200px] max-h-[250px] overflow-hidden flex flex-col normal-case font-normal text-[#000000D9]">
                 <div class="flex-1 overflow-y-auto flex flex-col gap-1 pr-1">
                   <label v-for="b in bookers" :key="b.id" class="flex items-center gap-2 p-1.5 hover:bg-slate-50 cursor-pointer rounded select-none">
                     <input type="checkbox" :value="b.id" v-model="tempSelectedBookers" class="rounded text-sky-500 border-slate-300 focus:ring-sky-400 w-3.5 h-3.5 cursor-pointer" />
-                    <span class="text-xs text-slate-700 font-semibold">{{ b.name }}</span>
+                    <span class="text-xs text-[#000000D9] font-semibold">{{ b.name }}</span>
                   </label>
                   <div v-if="bookers.length === 0" class="text-slate-400 text-center py-2 text-xs">Không có dữ liệu</div>
                 </div>
@@ -894,10 +957,10 @@ const handleDownloadTemplate = async () => {
             </th>
 
             <!-- Người bán -->
-            <th v-if="isColumnVisible('sales_person')" class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap">Người Bán</th>
+            <th v-if="isColumnVisible('sales_person')" class="p-2 border border-slate-200 text-[#000000D9] font-semibold text-xs text-center align-middle whitespace-nowrap">Người Bán</th>
 
             <!-- Chi nhánh -->
-            <th v-if="isColumnVisible('branch')" class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap relative popover-container select-none">
+            <th v-if="isColumnVisible('branch')" class="p-2 border border-slate-200 text-[#000000D9] font-semibold text-xs text-center align-middle whitespace-nowrap relative popover-container select-none">
               <div class="flex items-center justify-center gap-1.5">
                 <span>Chi Nhánh</span>
                 <button 
@@ -911,11 +974,11 @@ const handleDownloadTemplate = async () => {
                 </button>
               </div>
               <!-- Filter Popover -->
-              <div v-if="activeFilterCol === 'branch'" class="absolute right-0 top-full mt-1.5 z-30 bg-white border border-slate-200 rounded-lg shadow-lg p-2.5 min-w-[200px] max-h-[250px] overflow-hidden flex flex-col normal-case font-normal text-slate-700">
+              <div v-if="activeFilterCol === 'branch'" class="absolute right-0 top-full mt-1.5 z-30 bg-white border border-slate-200 rounded-lg shadow-lg p-2.5 min-w-[200px] max-h-[250px] overflow-hidden flex flex-col normal-case font-normal text-[#000000D9]">
                 <div class="flex-1 overflow-y-auto flex flex-col gap-1 pr-1">
                   <label v-for="b in branches" :key="b.id" class="flex items-center gap-2 p-1.5 hover:bg-slate-50 cursor-pointer rounded select-none">
                     <input type="checkbox" :value="b.id" v-model="tempSelectedBranches" class="rounded text-sky-500 border-slate-300 focus:ring-sky-400 w-3.5 h-3.5 cursor-pointer" />
-                    <span class="text-xs text-slate-700 font-semibold">{{ b.name }}</span>
+                    <span class="text-xs text-[#000000D9] font-semibold">{{ b.name }}</span>
                   </label>
                   <div v-if="branches.length === 0" class="text-slate-400 text-center py-2 text-xs">Không có dữ liệu</div>
                 </div>
@@ -927,7 +990,7 @@ const handleDownloadTemplate = async () => {
             </th>
 
             <!-- Xóa -->
-            <th class="p-2 border border-slate-200 text-slate-700 font-semibold text-xs text-center align-middle whitespace-nowrap text-center w-20">Xóa</th>
+            <th class="p-2 border border-slate-200 text-[#000000D9] font-semibold text-xs text-center align-middle whitespace-nowrap text-center w-20">Xóa</th>
           </tr>
         </thead>
         <tbody>
@@ -937,24 +1000,24 @@ const handleDownloadTemplate = async () => {
             class="border-b border-slate-200 hover:bg-[#bdecfe]/50 cursor-pointer h-9 transition-colors"
             @dblclick="openEditModal(item)"
           >
-            <td v-if="isColumnVisible('code')" class="p-2 text-slate-700 font-semibold whitespace-nowrap">{{ item.code }}</td>
-            <td v-if="isColumnVisible('name')" class="p-2 text-slate-800 font-semibold whitespace-nowrap">{{ item.name }}</td>
-            <td v-if="isColumnVisible('trading_name')" class="p-2 text-slate-600 font-normal whitespace-nowrap">{{ item.trading_name || '' }}</td>
-            <td v-if="isColumnVisible('address')" class="p-2 text-slate-600 font-normal max-w-[200px] truncate" :title="item.address">{{ item.address || '' }}</td>
-            <td v-if="isColumnVisible('tax_code')" class="p-2 text-slate-600 font-normal whitespace-nowrap">{{ item.tax_code || '' }}</td>
-            <td v-if="isColumnVisible('phone')" class="p-2 text-slate-600 font-normal whitespace-nowrap">{{ item.phone || '' }}</td>
-            <td v-if="isColumnVisible('email')" class="p-2 text-slate-600 font-normal whitespace-nowrap text-xs">{{ item.email || '' }}</td>
-            <td v-if="isColumnVisible('customer_source')" class="p-2 text-slate-600 font-normal whitespace-nowrap text-xs">{{ item.customer_source?.name || '' }}</td>
-            <td v-if="isColumnVisible('market')" class="p-2 text-slate-600 font-normal whitespace-nowrap text-xs">{{ item.market?.name || '' }}</td>
-            <td v-if="isColumnVisible('max_debt')" class="p-2 text-slate-600 font-semibold whitespace-nowrap text-right">{{ item.max_debt ? Number(item.max_debt).toLocaleString('en-US') : '' }}</td>
-            <td v-if="isColumnVisible('bank_account')" class="p-2 text-slate-600 font-normal whitespace-nowrap text-xs">{{ item.bank_account || '' }}</td>
-            <td v-if="isColumnVisible('booker')" class="p-2 text-slate-600 font-normal whitespace-nowrap text-xs">{{ item.booker?.name || '' }}</td>
-            <td v-if="isColumnVisible('sales_person')" class="p-2 text-slate-600 font-normal whitespace-nowrap text-xs">{{ item.sales_person?.name || '' }}</td>
-            <td v-if="isColumnVisible('branch')" class="p-2 text-slate-600 font-normal whitespace-nowrap text-xs">{{ item.branch?.name || '' }}</td>
+            <td v-if="isColumnVisible('code')" class="p-2 text-[#000000D9] font-normal whitespace-nowrap">{{ item.code }}</td>
+            <td v-if="isColumnVisible('name')" class="p-2 text-[#000000D9] font-normal whitespace-nowrap">{{ item.name }}</td>
+            <td v-if="isColumnVisible('trading_name')" class="p-2 text-[#000000D9] font-normal whitespace-nowrap">{{ item.trading_name || '' }}</td>
+            <td v-if="isColumnVisible('address')" class="p-2 text-[#000000D9] font-normal max-w-[200px] truncate" :title="item.address">{{ item.address || '' }}</td>
+            <td v-if="isColumnVisible('tax_code')" class="p-2 text-[#000000D9] font-normal whitespace-nowrap">{{ (item.tax_code && item.tax_code !== 'NULL' && item.tax_code !== 'null') ? item.tax_code : '' }}</td>
+            <td v-if="isColumnVisible('phone')" class="p-2 text-[#000000D9] font-normal whitespace-nowrap">{{ (item.phone && item.phone !== 'NULL' && item.phone !== 'null') ? item.phone : '' }}</td>
+            <td v-if="isColumnVisible('email')" class="p-2 text-[#000000D9] font-normal whitespace-nowrap text-xs">{{ item.email || '' }}</td>
+            <td v-if="isColumnVisible('customer_source')" class="p-2 text-[#000000D9] font-normal whitespace-nowrap text-xs">{{ item.customer_source?.name || '' }}</td>
+            <td v-if="isColumnVisible('market')" class="p-2 text-[#000000D9] font-normal whitespace-nowrap text-xs">{{ item.market?.name || '' }}</td>
+            <td v-if="isColumnVisible('max_debt')" class="p-2 text-[#000000D9] font-normal whitespace-nowrap text-right">{{ item.max_debt ? Number(item.max_debt).toLocaleString('en-US') : '' }}</td>
+            <td v-if="isColumnVisible('bank_account')" class="p-2 text-[#000000D9] font-normal whitespace-nowrap text-xs">{{ item.bank_account || '' }}</td>
+            <td v-if="isColumnVisible('booker')" class="p-2 text-[#000000D9] font-normal whitespace-nowrap text-xs">{{ item.booker?.name || '' }}</td>
+            <td v-if="isColumnVisible('sales_person')" class="p-2 text-[#000000D9] font-normal whitespace-nowrap text-xs">{{ item.sales_person?.name || '' }}</td>
+            <td v-if="isColumnVisible('branch')" class="p-2 text-[#000000D9] font-normal whitespace-nowrap text-xs">{{ item.branch?.name || '' }}</td>
             <td class="p-2 text-center">
               <button 
                 @click.stop="handleDelete(item)"
-                class="w-7 h-7 bg-red-600 hover:bg-red-700 text-white rounded cursor-pointer border-none transition-colors inline-flex items-center justify-center shadow-xs"
+                class="btn-pms-danger !w-7 !h-7 !p-0 inline-flex items-center justify-center cursor-pointer shadow-xs"
                 title="Xóa công ty"
               >
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -1014,18 +1077,18 @@ const handleDownloadTemplate = async () => {
       </div>
 
       <!-- Body -->
-      <div class="p-5 flex flex-col gap-4 overflow-y-auto max-h-[75vh] text-xs text-slate-700">
+      <div class="p-5 flex flex-col gap-4 overflow-y-auto max-h-[75vh] text-xs text-[#000000D9]">
         
         <!-- Nhóm Thông tin -->
         <div class="flex flex-col gap-2.5">
           <div class="flex items-center justify-between border-b border-slate-100 pb-1.5">
-            <h3 class="text-xs font-bold text-slate-800">Thông tin</h3>
+            <h3 class="text-xs font-semibold text-[#000000D9]">Thông tin</h3>
             <!-- Toggle Không sử dụng -->
             <div class="flex items-center gap-2 select-none">
-              <span class="text-xs text-slate-600 font-semibold">Không sử dụng</span>
+              <span class="text-xs text-[#000000D9] font-semibold">Không sử dụng</span>
               <label class="relative inline-flex items-center cursor-pointer">
                 <input type="checkbox" :checked="!form.is_active" @change="form.is_active = !$event.target.checked" class="sr-only peer" />
-                <div class="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-500"></div>
+                <div class="w-8 h-4 bg-slate-300 rounded-full peer peer-checked:bg-sky-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 shadow-2xs"></div>
               </label>
             </div>
           </div>
@@ -1036,13 +1099,13 @@ const handleDownloadTemplate = async () => {
               <!-- Mã -->
               <div class="flex flex-col gap-1">
                 <span class="font-semibold text-[#000000D9]">Mã</span>
-                <input :value="isEditMode ? form.code : 'Code'" type="text" readonly class="border border-slate-200 bg-slate-100 rounded-lg h-8 px-2 font-normal text-slate-500 focus:outline-none text-xs" />
+                <input :value="form.code" type="text" readonly class="border border-slate-200 bg-slate-100 rounded-lg h-8 px-2 font-normal text-slate-500 focus:outline-none text-xs" />
               </div>
               <!-- Tên -->
               <div class="flex flex-col gap-1">
                 <span class="font-semibold text-[#000000D9]">Tên<span class="text-red-500">*</span></span>
                 <div class="relative">
-                  <input v-model="form.name" required aria-required="true" type="text" placeholder="Tên" class="input-required w-full h-8 pr-8 rounded-lg px-2 text-xs font-normal" />
+                  <input v-model="form.name" required aria-required="true" type="text" placeholder="Tên" class="input-required w-full h-8 pr-8 rounded-lg px-2 text-xs font-normal placeholder-[#A8B0BF]" />
                   <button v-if="form.name" @click.stop="form.name = ''" type="button" class="input-clear-button" title="Xóa">✕</button>
                 </div>
               </div>
@@ -1050,7 +1113,7 @@ const handleDownloadTemplate = async () => {
               <div class="flex flex-col gap-1">
                 <span class="font-semibold text-[#000000D9]">Tên Giao Dịch<span class="text-red-500">*</span></span>
                 <div class="relative">
-                  <input v-model="form.trading_name" required aria-required="true" type="text" placeholder="Tên giao dịch" class="input-required w-full h-8 pr-8 rounded-lg px-2 text-xs font-normal" />
+                  <input v-model="form.trading_name" required aria-required="true" type="text" placeholder="Tên giao dịch" class="input-required w-full h-8 pr-8 rounded-lg px-2 text-xs font-normal placeholder-[#A8B0BF]" />
                   <button v-if="form.trading_name" @click.stop="form.trading_name = ''" type="button" class="input-clear-button" title="Xóa">✕</button>
                 </div>
               </div>
@@ -1058,7 +1121,7 @@ const handleDownloadTemplate = async () => {
               <div class="flex flex-col gap-1">
                 <span class="font-semibold text-[#000000D9]">Công Nợ Tối Đa</span>
                 <div class="relative">
-                  <input :value="formatMaxDebt(form.max_debt)" @input="setMaxDebt" inputmode="numeric" type="text" placeholder="Công nợ tối đa" class="w-full h-8 border border-slate-200 rounded-lg px-2 pr-8 text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                  <input :value="formatMaxDebt(form.max_debt)" @input="setMaxDebt" inputmode="numeric" type="text" placeholder="Công nợ tối đa" class="w-full h-8 border border-slate-200 rounded-lg px-2 pr-8 text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF] focus:outline-none focus:ring-1 focus:ring-blue-500" />
                   <button v-if="form.max_debt !== '' && form.max_debt !== null" @click.stop="form.max_debt = ''" type="button" class="input-clear-button" title="Xóa">✕</button>
                 </div>
               </div>
@@ -1066,10 +1129,14 @@ const handleDownloadTemplate = async () => {
               <div class="flex flex-col gap-1">
                 <span class="font-semibold text-[#000000D9]">Người Đặt Phòng</span>
                 <div class="flex items-center gap-1">
-                  <select v-model="form.booker_id" class="flex-1 h-8 border border-slate-200 rounded-lg px-2 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500">
-                    <option value="">Chưa chọn</option>
-                    <option v-for="bk in bookers" :key="bk.id" :value="bk.id">{{ bk.name }}</option>
-                  </select>
+                  <div class="relative flex items-center flex-1">
+                    <select v-model="form.booker_id" class="w-full h-8 border border-slate-200 rounded-lg pl-2 pr-7 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer">
+                      <option value=""></option>
+                      <option v-for="bk in bookers" :key="bk.id" :value="bk.id">{{ bk.name }}</option>
+                    </select>
+                    <button v-if="form.booker_id" @click.stop.prevent="form.booker_id = ''" type="button" class="input-clear-button !right-6 text-slate-400 hover:text-slate-600" title="Xóa">✕</button>
+                    <span class="absolute right-2 text-slate-400 pointer-events-none text-[10px]">▼</span>
+                  </div>
                   <button @click="openQuickBookerModal" type="button" title="Thêm nhanh người đặt phòng" class="w-7 h-7 rounded-full bg-white border border-sky-300 hover:bg-sky-50 text-sky-600 flex items-center justify-center font-bold text-base transition-colors select-none cursor-pointer">
                     +
                   </button>
@@ -1078,10 +1145,14 @@ const handleDownloadTemplate = async () => {
               <!-- Người bán -->
               <div class="flex flex-col gap-1">
                 <span class="font-semibold text-[#000000D9]">Người Bán</span>
-                <select v-model="form.sales_person_id" class="w-full h-8 border border-slate-200 rounded-lg px-2 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500">
-                  <option value="">Chưa chọn</option>
-                  <option v-for="u in users" :key="u.id" :value="u.id">{{ u.name }}</option>
-                </select>
+                <div class="relative flex items-center">
+                  <select v-model="form.sales_person_id" class="w-full h-8 border border-slate-200 rounded-lg pl-2 pr-7 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer">
+                    <option value=""></option>
+                    <option v-for="u in users" :key="u.id" :value="u.id">{{ u.name }}</option>
+                  </select>
+                  <button v-if="form.sales_person_id" @click.stop.prevent="form.sales_person_id = ''" type="button" class="input-clear-button !right-6 text-slate-400 hover:text-slate-600" title="Xóa">✕</button>
+                  <span class="absolute right-2 text-slate-400 pointer-events-none text-[10px]">▼</span>
+                </div>
               </div>
             </div>
 
@@ -1096,7 +1167,7 @@ const handleDownloadTemplate = async () => {
                       <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 014 0m-5 8a2 2 0 100-4 2 2 0 000 4zm5.333-2c0-.737-.324-1.4-.84-1.847A3.001 3.001 0 0012 11h.012a3.001 3.001 0 002.828 1.847c-.516.447-.84 1.11-.84 1.847" />
                     </svg>
                   </span>
-                  <input v-model="form.address" type="text" placeholder="Địa chỉ" class="pl-8 pr-8 w-full h-8 border border-slate-200 rounded-lg px-2 text-xs font-normal focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                  <input v-model="form.address" type="text" placeholder="Địa chỉ" class="pl-8 pr-8 w-full h-8 border border-slate-200 rounded-lg px-2 text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF] focus:outline-none focus:ring-1 focus:ring-blue-500" />
                   <button v-if="form.address" @click.stop="form.address = ''" type="button" class="input-clear-button" title="Xóa">✕</button>
                 </div>
               </div>
@@ -1104,7 +1175,7 @@ const handleDownloadTemplate = async () => {
               <div class="flex flex-col gap-1">
                 <span class="font-semibold text-[#000000D9]">Tax</span>
                 <div class="relative flex items-center">
-                  <input v-model="form.tax_code" type="text" placeholder="Tax" class="pr-8 w-full h-8 border border-slate-200 rounded-lg px-2 text-xs font-normal focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                  <input v-model="form.tax_code" type="text" placeholder="Tax" class="pr-8 w-full h-8 border border-slate-200 rounded-lg px-2 text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF] focus:outline-none focus:ring-1 focus:ring-blue-500" />
                   <button v-if="form.tax_code" @click.stop="form.tax_code = ''" type="button" class="input-clear-button" title="Xóa">✕</button>
                   <span v-if="!form.tax_code" class="absolute right-2.5 text-slate-400">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -1122,7 +1193,7 @@ const handleDownloadTemplate = async () => {
                       <path stroke-linecap="round" stroke-linejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.94.725l.548 2.2a1 1 0 01-.321.988l-1.305.98a10.582 10.582 0 004.872 4.872l.98-1.305a1 1 0 01.988-.321l2.2.548a1 1 0 01.725.94V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                     </svg>
                   </span>
-                  <input v-model="form.phone" type="text" placeholder="Số điện thoại" class="pl-8 pr-8 w-full h-8 border border-slate-200 rounded-lg px-2 text-xs font-normal focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                  <input v-model="form.phone" type="text" placeholder="Số điện thoại" class="pl-8 pr-8 w-full h-8 border border-slate-200 rounded-lg px-2 text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF] focus:outline-none focus:ring-1 focus:ring-blue-500" />
                   <button v-if="form.phone" @click.stop="form.phone = ''" type="button" class="input-clear-button" title="Xóa">✕</button>
                 </div>
               </div>
@@ -1135,7 +1206,7 @@ const handleDownloadTemplate = async () => {
                       <path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                     </svg>
                   </span>
-                  <input v-model="form.email" type="email" placeholder="Email" class="pl-8 pr-8 w-full h-8 border border-slate-200 rounded-lg px-2 text-xs font-normal focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                  <input v-model="form.email" type="email" placeholder="Email" class="pl-8 pr-8 w-full h-8 border border-slate-200 rounded-lg px-2 text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF] focus:outline-none focus:ring-1 focus:ring-blue-500" />
                   <button v-if="form.email" @click.stop="form.email = ''" type="button" class="input-clear-button" title="Xóa">✕</button>
                 </div>
               </div>
@@ -1143,7 +1214,7 @@ const handleDownloadTemplate = async () => {
               <div class="flex flex-col gap-1">
                 <span class="font-semibold text-[#000000D9]">Tài Khoản Ngân Hàng</span>
                 <div class="relative">
-                  <input v-model="form.bank_account" type="text" placeholder="Tài khoản ngân hàng" class="w-full h-8 border border-slate-200 rounded-lg px-2 pr-8 text-xs font-normal focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                  <input v-model="form.bank_account" type="text" placeholder="Tài khoản ngân hàng" class="w-full h-8 border border-slate-200 rounded-lg px-2 pr-8 text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF] focus:outline-none focus:ring-1 focus:ring-blue-500" />
                   <button v-if="form.bank_account" @click.stop="form.bank_account = ''" type="button" class="input-clear-button" title="Xóa">✕</button>
                 </div>
               </div>
@@ -1152,7 +1223,7 @@ const handleDownloadTemplate = async () => {
                 <span class="font-semibold text-[#000000D9]">Cho phép thanh toán công nợ</span>
                 <label class="relative inline-flex items-center cursor-pointer">
                   <input type="checkbox" v-model="form.sync_acc" class="sr-only peer" />
-                  <div class="w-9 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-500"></div>
+                  <div class="w-8 h-4 bg-slate-300 rounded-full peer peer-checked:bg-sky-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 shadow-2xs"></div>
                 </label>
               </div>
             </div>
@@ -1164,7 +1235,7 @@ const handleDownloadTemplate = async () => {
 
         <!-- Nhóm Thống kê -->
         <div class="flex flex-col gap-2.5">
-          <h3 class="text-xs font-bold text-slate-800 border-b border-slate-100 pb-1.5">Thống kê</h3>
+          <h3 class="text-xs font-semibold text-[#000000D9] border-b border-slate-100 pb-1.5">Thống kê</h3>
           
           <div class="grid grid-cols-2 gap-x-5 gap-y-2.5">
             <!-- Cột trái -->
@@ -1173,10 +1244,14 @@ const handleDownloadTemplate = async () => {
               <div class="flex flex-col gap-1">
                 <span class="font-semibold text-[#000000D9]">Thị Trường</span>
                 <div class="flex items-center gap-1">
-                  <select v-model="form.market_id" class="flex-1 h-8 border border-slate-200 rounded-lg px-2 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500">
-                    <option value="">Chưa chọn</option>
-                    <option v-for="m in markets" :key="m.id" :value="m.id">{{ m.name }}</option>
-                  </select>
+                  <div class="relative flex items-center flex-1">
+                    <select v-model="form.market_id" class="w-full h-8 border border-slate-200 rounded-lg pl-2 pr-7 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer">
+                      <option value=""></option>
+                      <option v-for="m in markets" :key="m.id" :value="m.id">{{ m.name }}</option>
+                    </select>
+                    <button v-if="form.market_id" @click.stop.prevent="form.market_id = ''" type="button" class="input-clear-button !right-6 text-slate-400 hover:text-slate-600" title="Xóa">✕</button>
+                    <span class="absolute right-2 text-slate-400 pointer-events-none text-[10px]">▼</span>
+                  </div>
                   <button @click="openQuickMarketModal" type="button" title="Thêm nhanh thị trường" class="w-7 h-7 rounded-full bg-white border border-sky-300 hover:bg-sky-50 text-sky-600 flex items-center justify-center font-bold text-base transition-colors select-none cursor-pointer">
                     +
                   </button>
@@ -1186,10 +1261,14 @@ const handleDownloadTemplate = async () => {
               <div class="flex flex-col gap-1">
                 <span class="font-semibold text-[#000000D9]">Nguồn Khách</span>
                 <div class="flex items-center gap-1">
-                  <select v-model="form.customer_source_id" class="flex-1 h-8 border border-slate-200 rounded-lg px-2 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500">
-                    <option value="">Chưa chọn</option>
-                    <option v-for="s in customerSources" :key="s.id" :value="s.id">{{ s.name }}</option>
-                  </select>
+                  <div class="relative flex items-center flex-1">
+                    <select v-model="form.customer_source_id" class="w-full h-8 border border-slate-200 rounded-lg pl-2 pr-7 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer">
+                      <option value=""></option>
+                      <option v-for="s in customerSources" :key="s.id" :value="s.id">{{ s.name }}</option>
+                    </select>
+                    <button v-if="form.customer_source_id" @click.stop.prevent="form.customer_source_id = ''" type="button" class="input-clear-button !right-6 text-slate-400 hover:text-slate-600" title="Xóa">✕</button>
+                    <span class="absolute right-2 text-slate-400 pointer-events-none text-[10px]">▼</span>
+                  </div>
                   <button @click="openQuickCustomerSourceModal" type="button" title="Thêm nhanh nguồn khách" class="w-7 h-7 rounded-full bg-white border border-sky-300 hover:bg-sky-50 text-sky-600 flex items-center justify-center font-bold text-base transition-colors select-none cursor-pointer">
                     +
                   </button>
@@ -1203,10 +1282,14 @@ const handleDownloadTemplate = async () => {
               <div class="flex flex-col gap-1">
                 <span class="font-semibold text-[#000000D9]">Chi Nhánh</span>
                 <div class="flex items-center gap-1">
-                  <select v-model="form.branch_id" class="flex-1 h-8 border border-slate-200 rounded-lg px-2 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500">
-                    <option value="">Chưa chọn</option>
-                    <option v-for="b in branches" :key="b.id" :value="b.id">{{ b.name }}</option>
-                  </select>
+                  <div class="relative flex items-center flex-1">
+                    <select v-model="form.branch_id" class="w-full h-8 border border-slate-200 rounded-lg pl-2 pr-7 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer">
+                      <option value=""></option>
+                      <option v-for="b in branches" :key="b.id" :value="b.id">{{ b.name }}</option>
+                    </select>
+                    <button v-if="form.branch_id" @click.stop.prevent="form.branch_id = ''" type="button" class="input-clear-button !right-6 text-slate-400 hover:text-slate-600" title="Xóa">✕</button>
+                    <span class="absolute right-2 text-slate-400 pointer-events-none text-[10px]">▼</span>
+                  </div>
                   <button @click="openQuickBranchModal" type="button" title="Thêm nhanh chi nhánh" class="w-7 h-7 rounded-full bg-white border border-sky-300 hover:bg-sky-50 text-sky-600 flex items-center justify-center font-bold text-base transition-colors select-none cursor-pointer">
                     +
                   </button>
@@ -1224,6 +1307,7 @@ const handleDownloadTemplate = async () => {
         <button 
           @click="saveItem" 
           class="btn-pms-primary"
+          :style="{ background: 'var(--pms-custom-theme, #006bdb)', borderColor: 'var(--pms-custom-theme, #006bdb)' }"
         >
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
@@ -1255,7 +1339,7 @@ const handleDownloadTemplate = async () => {
         </div>
       </div>
       <div class="bg-slate-50 px-5 py-3 flex items-center justify-end gap-2 border-t border-slate-100">
-        <button @click="saveQuickMarket" class="btn-pms-primary">
+        <button @click="saveQuickMarket" class="btn-pms-primary" :style="{ background: 'var(--pms-custom-theme, #006bdb)', borderColor: 'var(--pms-custom-theme, #006bdb)' }">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
           </svg>
@@ -1286,7 +1370,7 @@ const handleDownloadTemplate = async () => {
         </div>
       </div>
       <div class="bg-slate-50 px-5 py-3 flex items-center justify-end gap-2 border-t border-slate-100">
-        <button @click="saveQuickCustomerSource" class="btn-pms-primary">
+        <button @click="saveQuickCustomerSource" class="btn-pms-primary" :style="{ background: 'var(--pms-custom-theme, #006bdb)', borderColor: 'var(--pms-custom-theme, #006bdb)' }">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
           </svg>
@@ -1309,11 +1393,11 @@ const handleDownloadTemplate = async () => {
       <div class="p-5 flex flex-col gap-3 text-xs">
         <div class="flex flex-col gap-1">
           <label class="font-bold text-slate-600">Tên chi nhánh *</label>
-          <div class="relative"><input v-model="quickBranchForm.name" required type="text" placeholder="Nhập tên chi nhánh..." class="input-required w-full h-8 rounded-lg px-2 pr-8 text-xs font-normal" /><button v-if="quickBranchForm.name" @click.stop="quickBranchForm.name = ''" type="button" class="input-clear-button" title="Xóa">✕</button></div>
+          <div class="relative"><input v-model="quickBranchForm.name" required type="text" placeholder="Nhập tên chi nhánh kinh doanh (VD: Khánh Hòa, TP.HCM...)" class="input-required w-full h-8 rounded-lg px-2 pr-8 text-xs font-normal" /><button v-if="quickBranchForm.name" @click.stop="quickBranchForm.name = ''" type="button" class="input-clear-button" title="Xóa">✕</button></div>
         </div>
       </div>
       <div class="bg-slate-50 px-5 py-3 flex items-center justify-end gap-2 border-t border-slate-100">
-        <button @click="saveQuickBranch" class="btn-pms-primary">
+        <button @click="saveQuickBranch" class="btn-pms-primary" :style="{ background: 'var(--pms-custom-theme, #006bdb)', borderColor: 'var(--pms-custom-theme, #006bdb)' }">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
           </svg>
@@ -1358,7 +1442,7 @@ const handleDownloadTemplate = async () => {
         </div>
       </div>
       <div class="bg-slate-50 px-5 py-3 flex items-center justify-end gap-2 border-t border-slate-100">
-        <button @click="saveQuickBooker" class="btn-pms-primary">
+        <button @click="saveQuickBooker" class="btn-pms-primary" :style="{ background: 'var(--pms-custom-theme, #006bdb)', borderColor: 'var(--pms-custom-theme, #006bdb)' }">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
           </svg>

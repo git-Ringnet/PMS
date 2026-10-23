@@ -9,6 +9,173 @@
 - **Ngày ghi**: `YYYY-MM-DD`
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 
+## [2026-10-22] - Triển Khai Dòng 61 Sheet FIX FE: In Phân Công Phòng (Housekeeping PrintTasksTab)
+### Module: Buồng Phòng / In Phân Công Phòng ([PrintTasksTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/housekeeping/components/PrintTasksTab.vue))
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **1. Khắc phục lỗi thứ tự tầng (Natural Numeric Floor Sorting)**:
+    + Thay thế cơ chế `.sort()` mặc định (sắp xếp dạng chuỗi khiến Tầng 10 đứng sau Tầng 1) bằng computed `sortedFloorNumbers` với logic so sánh số tự nhiên `sort((a, b) => a - b)`.
+    + Đảm bảo danh sách phòng bên cột trái luôn hiển thị tuần tự chính xác: TẦNG 1, TẦNG 2, TẦNG 3... TẦNG 10, TẦNG 11...
+  - **2. Đồng bộ màu sắc & Typography theo chuẩn FE Design System**:
+    + Chuyển màu chữ của Tầng (`.floor-label`) sang `#000000D9`, `font-weight: 600`, `font-size: 12px`.
+    + Chuyển màu chữ tên loại phòng (`.room-type`) sang `#000000D9`, `font-weight: 400`, `font-size: 12px`.
+    + Chuẩn hóa đồng bộ màu chữ `#000000D9` cho các thành phần UI: nhãn bộ lọc (`.fp-label`, `.eg-section-label`), nhãn checkbox/dropdown (`.check-label`, `.btn-staff-dropdown`, `.print-cb-label`), thông tin phòng (`.gn-sub`, `.gr-class-line`), các tab ca (`.shift-tab`) và modal tabs.
+  - **3. Bảo toàn tính cô lập (Zero Side Effects)**:
+    + Can thiệp 100% cục bộ trong [PrintTasksTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/housekeeping/components/PrintTasksTab.vue).
+    + Không tác động backend, Pinia store `hk-store.js`, hay component dùng chung nào khác.
+- **Kiểm thử**:
+  - `npm run build`: Thành công 100% trong 4.95s (0 lỗi).
+  - Browser Automation: Xác nhận trực quan thứ tự TẦNG 1 -> TẦNG 2 và màu chữ chuẩn `#000000D9`.
+
+## [2026-10-22] - Tự Động Hiển Thị Đúng Mã Công Ty Khi Thêm Mới
+### Module: Booking / Cài Đặt / Công Ty ([CompanyTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/company/CompanyTab.vue), [CompanyController.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Http/Controllers/Api/CompanyController.php))
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **1. Tự động sinh và hiển thị đúng mã tiếp theo (Auto-generate Exact Next Code)**:
+    + Loại bỏ hoàn toàn chuỗi text cứng `'Code'` trong modal Thêm Công Ty.
+    + Thêm hàm `getNextCompanyCode()` quét danh sách công ty đã tải về, trích xuất số thứ tự lớn nhất hiện có và sinh chính xác mã tiếp theo theo định dạng chuẩn PMS (ví dụ: đang có `CTY0001` - `CTY0004` -> sinh đúng `CTY0005`).
+    + Gán trực tiếp vào `form.value.code` khi mở modal thêm mới (`openAddModal`) và hiển thị trên ô Mã (`<input :value="form.code" readonly />`).
+  - **2. Đồng bộ với Backend API**:
+    + Bổ sung `'code' => 'nullable|string|max:50|unique:companies,code'` vào validation của `store()` trong [CompanyController.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Http/Controllers/Api/CompanyController.php), cho phép backend tiếp nhận chính xác mã đã sinh hoặc tự sinh đồng bộ theo model boot.
+  - **3. Bảo toàn tính cô lập (Zero Side Effects)**:
+    + Không làm ảnh hưởng bất kỳ màn hình nào khác hay logic import legacy.
+- **Kiểm thử**:
+  - `npm run build`: Thành công 100% trong 4.68s (0 lỗi).
+  - Backend feature tests liên quan chạy ổn định.
+
+## [2026-10-22] - Loại Bỏ Chữ "Chưa Chọn" Tại Các Ô Dropdown Màn Hình Công Ty
+### Module: Booking / Cài Đặt / Công Ty ([CompanyTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/company/CompanyTab.vue))
+- **Mục tiêu & Kết quả hoàn thành**:
+  - Loại bỏ hoàn toàn chữ hiển thị "Chưa chọn" tại lựa chọn rỗng đầu tiên của cả 5 thẻ select dropdown trong modal Thêm / Sửa Công ty:
+    + Người Đặt Phòng (`booker_id`): `<option value=""></option>`
+    + Người Bán (`sales_person_id`): `<option value=""></option>`
+    + Thị Trường (`market_id`): `<option value=""></option>`
+    + Nguồn Khách (`customer_source_id`): `<option value=""></option>`
+    + Chi Nhánh (`branch_id`): `<option value=""></option>`
+  - Khi chưa chọn giá trị, ô dropdown hiển thị trạng thái hoàn toàn trống, gọn gàng và tinh tế; kết hợp nút `✕` xóa nhanh bên cạnh.
+  - Bảo toàn 100% logic binding model `value=""` và không ảnh hưởng API backend hay các màn hình khác (Zero Side Effects).
+- **Kiểm thử**:
+  - `npm run build`: Thành công 100% trong 4.93s (0 lỗi).
+
+## [2026-10-22] - Đồng Bộ Nút Sắp Xếp Bảng Màn Hình Công Ty Giống Màn Hình D.S Công Việc
+### Module: Booking / Cài Đặt / Công Ty ([CompanyTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/company/CompanyTab.vue))
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **1. Thiết kế nút sắp xếp không viền ngoài (Borderless SVG Sort Icons)**:
+    + Thay thế hoàn toàn cặp ký tự tam giác `▲` `▼` cũ bằng icon SVG hai chiều và đơn hướng sắc nét đồng bộ với màn hình D.S Công Việc.
+    + Trạng thái bình thường: Icon hai chiều `ArrowUpDown` thanh mảnh (`w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600`), không viền hộp thừa.
+    + Trạng thái đang sắp xếp: Mũi tên đơn hướng to rõ (`stroke-[2.8] text-[#006bdb]` màu xanh theme PMS: `↑` khi tăng dần, `↓` khi giảm dần).
+    + Áp dụng đồng bộ cho các cột sắp xếp (`Mã` và `Tên Giao Dịch`).
+    + Bổ sung tooltip `:title` thông minh hiển thị rõ trạng thái sắp xếp và hướng dẫn thao tác click.
+  - **2. Triển khai cơ chế sắp xếp 3 trạng thái (Client-side 3-state Cycle)**:
+    + Lần 1: Nhấp để sắp xếp tăng dần (`asc`).
+    + Lần 2: Nhấp để sắp xếp giảm dần (`desc`).
+    + Lần 3: Nhấp để hủy sắp xếp (trả về danh sách ban đầu, `sortField = ''`, `sortDir = 'asc'`).
+  - **3. Bảo toàn tính cô lập (Zero Side Effects)**:
+    + Toàn bộ logic xử lý cục bộ trên Vue reactive computed của [CompanyTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/company/CompanyTab.vue), không ảnh hưởng backend API hay các màn hình khác.
+- **Kiểm thử**:
+  - Build frontend: `npm run build` -> **Thành công 100% trong 5.20s (0 lỗi)**.
+  - Browser Automation: Kiểm tra trực quan 4 trạng thái (mặc định, asc, desc, reset) và xác thực hoạt động mượt mà.
+
+## [2026-10-22] - Hoàn Tất Triển Khai Dòng 58 & 59 Sheet FIX FE - Phân Hệ Công Ty (Company Tab)
+### Module: Booking / Cài Đặt / Công Ty ([CompanyTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/company/CompanyTab.vue))
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **1. Triển khai Dòng 58 (Giao diện tổng danh sách Công ty)**:
+    + **Chuẩn hóa Typography & Theme**: Font Roboto 12px (`text-xs`), tiêu đề/header bảng `semi-bold` (600) màu `#000000D9`, ô dữ liệu `regular` (400) màu `#000000D9`.
+    + **Table Header Alignment & Borders**: Tiêu đề cột (`<th>`) căn giữa ngang và dọc (`text-center align-middle`), viền đầy đủ `border border-slate-200`, viết hoa chữ cái đầu mỗi từ (`Mã`, `Tên`, `Tên Giao Dịch`, `Địa Chỉ`, `Tax`, `Số Điện Thoại`, `Email`, `Nguồn Khách`, `Thị Trường`, `Công Nợ Tối Đa`, `Tài Khoản Ngân Hàng`, `Người Đặt Phòng`, `Người Bán`, `Chi Nhánh`, `Xóa`).
+    + **Ẩn thông tin "Mã giá phòng"**: Loại bỏ cột "Mã giá phòng" khỏi cấu hình hiển thị và bảng dữ liệu.
+    + **Ẩn nút "Đồng bộ"**: Ẩn nút "Đồng bộ" trên toolbar mà vẫn giữ nguyên logic và trường `sync_acc` ("Cho phép thanh toán công nợ") phục vụ thanh toán nợ lễ tân.
+    + **Định dạng số tiền**: Cột "Công nợ tối đa" định dạng dấu phẩy phân cách hàng triệu/tỉ (`100,000,000`).
+    + **Sanitize dữ liệu**: Khử triệt để chuỗi gợi ý hoặc dữ liệu `"NULL"` / `"null"` ở cột Tax và Số điện thoại.
+  - **2. Triển khai Dòng 59 (Modal Thêm / Sửa Công ty)**:
+    + **Theme Modal & Nút Lưu**: Thanh tiêu đề modal và nút Lưu đồng bộ theo màu hệ thống (`var(--pms-custom-theme, #006bdb)`), có icon đĩa mềm, tối ưu bỏ nút Đóng ở footer (hỗ trợ nút `✕` trên header và phím `Esc`).
+    + **Trường bắt buộc**: Ô "Tên" và "Tên Giao Dịch" có nền vàng nhạt `#FFF8DB`, viền vàng `#F1DD8A`, nhãn có `*` đỏ, placeholder `#A8B0BF`.
+    + **Nút xóa nhanh (✕)**:
+      * Bổ sung nút `✕` xóa nhanh xuất hiện khi các ô text input có dữ liệu.
+      * Tích hợp nút `✕` riêng biệt ngay cạnh mũi tên `▼` trên cả 5 dropdown select (`Người Đặt Phòng`, `Người Bán`, `Thị Trường`, `Nguồn Khách`, `Chi Nhánh`) để xóa nhanh về trạng thái Chưa chọn mà không cần mở dropdown.
+    + **Ẩn "Mã giá phòng"**: Ẩn hoàn toàn khỏi modal nhập liệu.
+    + **Nút Switch Toggle**: Đồng bộ chuẩn style (`w-8 h-4 rounded-full`, dot tròn trắng `h-3 w-3`, active `bg-sky-500`) cho 2 switch "Không sử dụng" và "Cho phép thanh toán công nợ".
+    + **Định dạng Công nợ tối đa**: Tự động hiển thị dấu phẩy phân cách khi nhập số tiền.
+    + **Làm rõ Chi nhánh**: Ghi chú rõ ràng là chi nhánh kinh doanh của đối tác.
+    + **Quick Modals**: Đồng bộ màu theme xanh cho các modal thêm nhanh (Thị trường, Nguồn khách, Chi nhánh, Người đặt phòng).
+  - **3. Bảo toàn tính cô lập & không ảnh hưởng logics khác (Zero Side Effects)**:
+    + Toàn bộ thay đổi nằm trong file [CompanyTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/company/CompanyTab.vue).
+    + Không làm gãy logic `sync_acc` tại [CheckoutPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue).
+    + Không sửa backend API, database migrations hay các components dùng chung khác.
+- **Kiểm thử**:
+  - Build frontend: `npm run build` -> **Thành công 100% trong 6.03s (0 lỗi)**.
+  - Browser Automation: Đăng nhập hệ thống, kiểm tra trực quan giao diện bảng, modal Thêm Công Ty, modal Sửa Công Ty, phím tắt `Esc` và chụp ảnh xác thực thành công.
+
+## [2026-10-22] - Nâng Cấp Nút Sắp Xếp 5 Cột Ở Bảng Danh Sách Công Việc (Shift Work)
+### Module: Booking / Sơ Đồ Phòng / Danh Sách Công Việc ([ShiftWorkPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/ShiftWorkPage.vue))
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **1. Thiết kế nút sắp xếp trực quan, không viền ngoài (Borderless Sort Icons)**:
+    + Loại bỏ hoàn toàn viền ngoài khung hộp (`border-none`, bỏ nền trắng và viền xám).
+    + Sử dụng icon sắp xếp trực tiếp đặt cạnh nhãn cột (`gap-1`):
+      * Trạng thái bình thường: Icon `ArrowUpDown` hai chiều rõ nét (`w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600`), độ nét cao, dễ nhận biết.
+      * Trạng thái đang sắp xếp: Icon mũi tên đơn hướng to rõ (`stroke-[2.8] text-[#006bdb]` màu xanh theme PMS: `↑` khi tăng dần, `↓` khi giảm dần).
+    + Điều chỉnh bề rộng các cột (`Mã Đăng Ký` 115px, `Phòng` 80px, `Ngày Đến` 100px, `Ngày Đi` 100px) và giữ `whitespace-nowrap` để tiêu đề cột và icon luôn thẳng hàng trên 1 dòng.
+    + Thêm tooltip `title` chi tiết theo từng trạng thái click.
+  - **2. Triển khai logic sắp xếp 2 chiều thực tế (Client-side Reactive Sorting)**:
+    + Cơ chế 3 trạng thái click luân phiên: Lần 1 tăng dần (`asc`), Lần 2 giảm dần (`desc`), Lần 3 trở về mặc định (`none`).
+    + Triển khai logic sắp xếp chi tiết qua `sortedArrivalsData` và `sortedDeparturesData`:
+      * `Mã Đăng Ký` (`id`): Sắp xếp theo số tự nhiên (numeric sort).
+      * `Phòng` (`room`): Sắp xếp theo số phòng chính đầu tiên và tự động sắp xếp danh sách phòng con (`rooms`) bên trong từng booking.
+      * `Tên Đăng Ký` (`bookingName`): Sắp xếp theo thứ tự bảng chữ cái tiếng Việt với `localeCompare('vi', { sensitivity: 'base' })`.
+      * `Ngày Đến` & `Ngày Đi` (`arrivalDate` / `departureDate`): Phân tích chuỗi ngày `dd/mm/yyyy` thành timestamp thời gian thực để so sánh chuẩn xác theo niên lịch.
+    + Tự động reset trạng thái sắp xếp khi người dùng chuyển đổi giữa các tab.
+  - **3. Bảo toàn tính cô lập & không ảnh hưởng logics khác (Zero Side Effects)**:
+    + Toàn bộ logic xử lý cục bộ trên Vue reactive computed của [ShiftWorkPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/ShiftWorkPage.vue), không sửa đổi API hay ảnh hưởng các màn hình khác.
+- **Kiểm thử**:
+  - Build frontend: `npm run build` -> **Thành công 100% trong 4.72s (0 lỗi)**.
+
+## [2026-10-22] - Hoàn Tất Triển Khai Dòng 51 Sheet FIX FE - Danh Sách Công Việc (Shift Work)
+### Module: Booking / Sơ Đồ Phòng / Danh Sách Công Việc ([ShiftWorkPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/ShiftWorkPage.vue), [ShiftWorkController.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Http/Controllers/Api/ShiftWorkController.php))
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **1. Đổi thứ tự cột (Tab Đến & Tab Đi)**:
+    + Đưa cột `Phòng` ra ngay sau cột `Mã Đăng Ký` ở cả 2 tab `arrivals` (Phòng đến) và `departures` (Phòng đi) trên giao diện bảng và API xuất Excel.
+    + Cột mới: `Mã Đăng Ký` -> `Phòng` -> `Giá Phòng` -> `Tên Đăng Ký` -> `Tình Trạng Đăng Ký` -> `Loại Phòng` -> `Ngày Đến` -> `Ngày Đi` -> `Đêm Phòng` -> `Người Lớn` -> `Trẻ Em` -> `Mã Giá Phòng` -> `Tổng Phòng` / `Tổng DV` -> `Tổng TT` (Đi) -> `Yêu Cầu ĐB` -> `Công Ty`.
+    + Backend API [ShiftWorkController.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Http/Controllers/Api/ShiftWorkController.php) hàm `export()`: Cập nhật thứ tự cột trong `$headings` và `$line` đồng bộ với UI.
+    + Tab Đến: Cụm Đặt cọc & Tổng tiền bỏ khung ngoài (`border/bg`), hiển thị chữ tự nhiên, số tiền có màu nổi bật (`text-amber-700` & `text-emerald-700 tabular-nums font-bold`) và đặt ở giữa thanh booking (`mx-auto`).
+    + Ghi chú booking ở banner row xuống dòng rõ ràng, hiển thị đầy đủ với `whitespace-pre-wrap break-words text-xs mt-0.5 text-[#000000D9]`.
+  - **3. Chuẩn hóa Typography & Màu sắc toàn bộ 6 Tab và Toolbar**:
+    + Header `<th>`: Font Roboto 12px, `font-semibold text-[#000000D9]`, `text-center align-middle`, viền `border border-slate-200`, Title Case.
+    + Cell `<td>`: Font Roboto 12px, `font-normal text-[#000000D9]`, các cột số tiền dùng `tabular-nums`.
+    + Tab header, toolbar: Chuyển các tab không active, các nhãn `Ngày:`, `Từ ngày:`, `Đến ngày:`, `Trạng thái:`, `Loại:`, ô nhập ngày, dropdown select, nút `Hôm nay`/`Ngày mai`, tìm kiếm nhanh từ `text-slate-700`/`text-slate-800` sang `text-[#000000D9]`.
+    + Banner row booking: Chuyển chuỗi thông tin chi tiết đăng ký (`{{ booking.arrivalDate }}~{{ booking.departureDate }} _ Room Night: ...`) từ `text-slate-600` sang `text-[#000000D9]`.
+    + Cột Yêu cầu ĐB: Chuyển từ `text-slate-600` sang `text-[#000000D9]`.
+    + Empty state / No-data: Chuyển sang placeholder chuẩn `text-[#A8B0BF]`.
+    + Sticky Footer: Chuyển nhãn thống kê sang `text-[#000000D9]`.
+    + Tab 6 (Sinh nhật khách): Bỏ triệt để `font-mono` ở cột Số giấy tờ (`item.idNumber`).
+  - **4. Nút Lưu ghi chú Tab Đăng ký chờ xác nhận (Pending)**:
+    + Đổi màu nút Lưu khi cho phép thao tác (`editingNotes[item.id]`) sang màu xanh theme PMS (`bg-[#006bdb] hover:bg-[#0056b3] text-white shadow ring-2 ring-blue-300`) với icon đĩa mềm rõ nét, dễ bấm.
+  - **5. Nút Xuất Excel & Thao tác**:
+    + Chuyển nút Xuất Excel sang chuẩn `.btn-pms-secondary` kèm icon tải xuống.
+    + Xác nhận tính năng Double-Click mở chi tiết Tạo đăng ký (`@dblclick="handleOpenBooking"`) hoạt động mượt mà ở cả 6 tab.
+  - **6. Bảo toàn tính cô lập & không ảnh hưởng logics khác (Zero Side Effects)**:
+    + Chỉ điều chỉnh UI [ShiftWorkPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/ShiftWorkPage.vue) và thứ tự cột file Excel [ShiftWorkController.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Http/Controllers/Api/ShiftWorkController.php), không ảnh hưởng màn hình khác.
+- **Kiểm thử**:
+  - Build frontend: `npm run build` -> **Thành công 100% (0 lỗi)**.
+  - Test backend: `php artisan test --filter=ShiftWork` -> **3/3 passed (20 assertions)**.
+
+## [2026-10-22] - Chuẩn Hóa Cỡ Chữ, Font Chữ & Màu Sắc Theo FE Design System (Dòng 33 - 50 FIX FE)
+### Module: Booking / Reservation & Thu ngân / FrontDesk ([GuestInfoModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/GuestInfoModal.vue), [GuestDetailModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/GuestDetailModal.vue), [DeleteServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/DeleteServiceModal.vue), [ExtraBedModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/ExtraBedModal.vue), [TransferPaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/TransferPaymentModal.vue), [PrepaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/PrepaymentModal.vue), [PaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/PaymentModal.vue), [CheckoutPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue))
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **1. Chuẩn hóa cỡ chữ (Loại bỏ triệt để các font size < 12px)**:
+    + [GuestInfoModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/GuestInfoModal.vue): Chuyển các text `text-[11px]`, `text-[10px]` ở dropdown cài đặt cột, ghi chú thu gọn nhóm phòng và nhãn quét ASM CCCD sang chuẩn `text-xs` (12px).
+    + [GuestDetailModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/GuestDetailModal.vue): Chuyển đơn vị tiền tệ phòng `VND` từ `text-[10px]` sang `text-xs`.
+    + [DeleteServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/DeleteServiceModal.vue): Chuyển các nhãn tab phòng, đếm số lượng, nhóm dịch vụ, giá tiền, badge đã post/quá khứ từ `text-[11px]`, `text-[10px]`, `text-[9px]` sang đồng nhất `text-xs`.
+    + [ExtraBedModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/ExtraBedModal.vue): Chuyển badge "Đã chốt" và "Quá khứ" từ `text-[9px]` sang `text-xs`.
+  - **2. Loại bỏ `font-mono` chưa chuẩn hóa**:
+    + [TransferPaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/TransferPaymentModal.vue): Chuyển cột hiển thị tiền tệ danh sách thanh toán đích từ `font-mono` sang font Roboto mặc định với `tabular-nums`.
+    + [GuestInfoModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/GuestInfoModal.vue): Bỏ `font-mono` ở ô nhập mã CCCD quét ASM.
+    + [DeleteServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/DeleteServiceModal.vue): Bỏ `font-mono` ở mã dịch vụ và ngày tháng.
+  - **3. Đồng bộ màu chữ chuẩn `#000000D9`**:
+    + [PrepaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/PrepaymentModal.vue): Chuyển toàn bộ các nhãn form (Tên đăng ký, HTTT, Tài khoản NH, Số tiền, Phòng, Mô tả) và tiêu đề bảng từ `text-gray-700`/`text-slate-700` sang `text-[#000000D9]`.
+    + [PaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/PaymentModal.vue): Chuyển tiêu đề cột bảng thanh toán (`<thead>`) sang `text-[#000000D9] font-semibold`.
+    + [CheckoutPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue): Chuyển tiêu đề cột bảng dịch vụ, bảng thanh toán và bảng chi tiết sản phẩm Minibar/Giặt là sang `text-[#000000D9] font-semibold`.
+  - **4. Bảo toàn tính cô lập & không ảnh hưởng logic (Zero Side Effects)**:
+    + Chỉ thay đổi các class style CSS, hoàn toàn không sửa đổi cấu trúc HTML, props, emits hay logic xử lý dữ liệu.
+- **Kiểm thử**:
+  - Build frontend: `npm run build` -> **Thành công 100% (0 lỗi, 5.46s)**.
+
 ## [2026-10-21] - Hoàn Tất Chuẩn Hóa Dòng 50 Sheet FIX FE - Chuyển Cọc / Tách Cọc (FrontDesk Checkout)
 ### Module: Thu ngân / Hóa đơn ([CheckoutPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue), [TransferPaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/TransferPaymentModal.vue), [TransferServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/TransferServiceModal.vue), [SplitDepositModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/SplitDepositModal.vue))
 - **Mục tiêu & Kết quả hoàn thành**:

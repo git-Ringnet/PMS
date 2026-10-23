@@ -193,6 +193,22 @@ export const useRoomStore = defineStore('room', () => {
     }
   }
 
+  async function updateRoomHousekeepingFlags(roomId, housekeepingFlags, currentModule = 'frontdesk') {
+    error.value = null
+    try {
+      const response = await roomService.updateRoomHousekeepingFlags(roomId, housekeepingFlags, currentModule)
+      const room = rooms.value.find(r => r.id === roomId)
+      if (room && response?.data) Object.assign(room, response.data)
+      await fetchRooms({ silent: true })
+      await fetchStats()
+      return response
+    } catch (err) {
+      error.value = 'Không thể cập nhật chỉ báo buồng phòng.'
+      console.error('updateRoomHousekeepingFlags error:', err)
+      throw err
+    }
+  }
+
   async function fetchStats(date = null) {
     const requestSequence = ++statsRequestSequence
     try {
@@ -253,6 +269,7 @@ export const useRoomStore = defineStore('room', () => {
     fetchRooms,
     fetchRoomDetail,
     updateRoomStatus,
+    updateRoomHousekeepingFlags,
     fetchStats,
     setFilter,
     resetFilters,

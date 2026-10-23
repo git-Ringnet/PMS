@@ -506,7 +506,7 @@ onBeforeUnmount(() => {
         <div class="grid grid-cols-12 gap-4 items-end">
           <!-- Tên đăng ký (Trái - 7 cols đồng bộ với cột thông tin thanh toán bên dưới) -->
           <div class="col-span-7">
-            <label class="block font-semibold text-gray-700 mb-1 text-xs">Tên đăng ký</label>
+            <label class="block font-semibold text-[#000000D9] mb-1 text-xs">Tên đăng ký</label>
             <select disabled class="w-full px-2.5 py-1.5 bg-gray-100 border border-gray-300 rounded font-medium text-gray-700 focus:outline-none cursor-not-allowed text-xs">
               <option :value="registrationDisplay">{{ registrationDisplay }}</option>
             </select>
@@ -517,7 +517,7 @@ onBeforeUnmount(() => {
             <div class="grid grid-cols-12 gap-2">
               <!-- HTTT -->
               <div :class="isBankTransfer ? 'col-span-6' : 'col-span-12'">
-                <label class="block font-semibold text-gray-700 mb-1 text-xs">Hình thức thanh toán <span class="text-red-500">*</span></label>
+                <label class="block font-semibold text-[#000000D9] mb-1 text-xs">Hình thức thanh toán <span class="text-red-500">*</span></label>
                 <div class="flex gap-1">
                   <div class="relative flex-1 min-w-0">
                   <select v-model="paymentMethodId" class="w-full h-8 appearance-none pl-2 pr-12 bg-[#FFF8DB] border border-[#F1DD8A] rounded text-[#000000D9] font-normal focus:outline-none focus:border-yellow-500 text-xs truncate">
@@ -536,7 +536,7 @@ onBeforeUnmount(() => {
 
               <!-- Ô Chọn Tài khoản ngân hàng -->
               <div v-if="isBankTransfer" class="col-span-6">
-                <label class="block font-semibold text-gray-700 mb-1 text-xs">Tài khoản ngân hàng</label>
+                <label class="block font-semibold text-[#000000D9] mb-1 text-xs">Tài khoản ngân hàng</label>
                 <select v-model="selectedBankAccount" class="w-full px-2 py-1.5 bg-white border border-gray-300 rounded text-gray-900 font-normal focus:outline-none text-xs truncate" title="Tài khoản ngân hàng">
                   <option value="">-- Không chọn --</option>
                   <option v-for="b in bankAccountOptions" :key="b.id" :value="b.id">
@@ -556,7 +556,7 @@ onBeforeUnmount(() => {
             <!-- Hàng Số tiền & Phòng -->
             <div class="grid grid-cols-2 gap-3">
               <div>
-                <label class="block font-semibold text-gray-700 mb-1 text-xs">Số tiền <span class="text-red-500">*</span></label>
+                <label class="block font-semibold text-[#000000D9] mb-1 text-xs">Số tiền <span class="text-red-500">*</span></label>
                 <div class="relative">
                 <input 
                   type="text" 
@@ -569,7 +569,7 @@ onBeforeUnmount(() => {
               </div>
 
               <div>
-                <label class="block font-semibold text-gray-700 mb-1 text-xs">Phòng</label>
+                <label class="block font-semibold text-[#000000D9] mb-1 text-xs">Phòng</label>
                 <div class="relative">
                 <select v-model="selectedTargetRoomId" class="h-8 w-full appearance-none rounded border border-gray-300 bg-white py-1.5 pl-2.5 pr-12 text-xs font-normal text-[#000000D9] focus:outline-none">
                   <option v-for="r in roomOptions" :key="r.roomId || r.id" :value="r.roomId || r.id">
@@ -630,7 +630,7 @@ onBeforeUnmount(() => {
 
           <!-- Cột Phải: Ô Mô tả Textarea (5 cols rộng rãi) -->
           <div class="col-span-5 flex flex-col">
-            <label class="block font-semibold text-gray-700 mb-1 text-xs">Mô tả</label>
+            <label class="block font-semibold text-[#000000D9] mb-1 text-xs">Mô tả</label>
             <div class="relative flex-1">
             <textarea 
               v-model="description" 
@@ -644,10 +644,10 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="border-t border-gray-200 bg-white px-4 py-3">
-        <div class="mb-2 text-xs font-bold uppercase tracking-wide text-slate-700">Danh Sách Thanh Toán Trước</div>
+        <div class="mb-2 text-xs font-bold uppercase tracking-wide text-[#000000D9]">Danh Sách Thanh Toán Trước</div>
         <div class="max-h-36 overflow-auto rounded border border-slate-200">
           <table class="w-full text-left text-xs">
-            <thead class="sticky top-0 bg-slate-100 text-slate-700 font-semibold border-b border-slate-200">
+            <thead class="sticky top-0 bg-slate-100 text-[#000000D9] font-semibold border-b border-slate-200">
               <tr>
                 <th class="px-2.5 py-1.5 text-center align-middle border-r border-slate-200 border">Ngày</th>
                 <th class="px-2.5 py-1.5 text-center align-middle border-r border-slate-200 border">Giờ</th>

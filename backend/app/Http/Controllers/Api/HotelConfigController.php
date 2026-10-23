@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\HotelConfigResource;
+use App\Models\Company;
 use App\Models\HotelConfig;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 
 class HotelConfigController extends Controller
 {
@@ -33,11 +35,7 @@ class HotelConfigController extends Controller
      */
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'name' => 'required|string|max:255|unique:hotel_configs,name',
-            'value' => 'nullable|string|max:255',
-            'description' => 'nullable|string',
-        ]);
+        $validated = $this->validatePayload($request);
 
         $config = HotelConfig::create($validated);
 
@@ -72,11 +70,7 @@ class HotelConfigController extends Controller
             return response()->json(['message' => 'Config not found'], 404);
         }
 
-        $validated = $request->validate([
-            'name' => 'required|string|max:255|unique:hotel_configs,name,' . $config->id,
-            'value' => 'nullable|string|max:255',
-            'description' => 'nullable|string',
-        ]);
+        $validated = $this->validatePayload($request, $config);
 
         // The system reads parameters by name, so renaming one silently disables it.
         app(\App\Services\ConfigurationReferenceGuard::class)->assertIdentityUnchanged($config, $validated, ['name'], true);
@@ -104,5 +98,45 @@ class HotelConfigController extends Controller
             'success' => true,
             'message' => 'Config deleted successfully'
         ]);
+    }
+
+    /**
+     * Validate generic hotel configs and the verified runtime contract of CompanyDefault.
+     */
+    private function validatePayload(Request $request, ?HotelConfig $config = null): array
+    {
+        $nameRule = 'required|string|max:255|unique:hotel_configs,name';
+        if ($config) {
+            $nameRule .= ',' . $config->id;
+        }
+
+        $validator = Validator::make($request->all(), [
+            'name' => $nameRule,
+            'value' => 'nullable|string|max:255',
+            'description' => 'nullable|string',
+        ]);
+
+        $validator->after(function ($validator) use ($request): void {
+            if ($request->input('name') !== 'CompanyDefault') {
+                return;
+            }
+
+            $companyId = trim((string) $request->input('value', ''));
+            if ($companyId === '' || !ctype_digit($companyId) || (int) $companyId < 1) {
+                $validator->errors()->add('value', 'CompanyDefault phải là ID công ty hợp lệ.');
+                return;
+            }
+
+            $isActiveCompany = Company::query()
+                ->whereKey((int) $companyId)
+                ->where('is_active', true)
+                ->exists();
+
+            if (!$isActiveCompany) {
+                $validator->errors()->add('value', 'CompanyDefault phải tham chiếu đến công ty đang hoạt động.');
+            }
+        });
+
+        return $validator->validate();
     }
 }

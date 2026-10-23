@@ -66,6 +66,127 @@ const shuttleData = ref([])
 const noshowData = ref([])
 const birthdaysData = ref([])
 
+// Sorting state for Arrivals & Departures
+const sortKey = ref('') // 'id', 'room', 'bookingName', 'arrivalDate', 'departureDate'
+const sortDir = ref('asc') // 'asc' | 'desc'
+
+function toggleSort(key) {
+  if (sortKey.value === key) {
+    if (sortDir.value === 'asc') {
+      sortDir.value = 'desc'
+    } else {
+      sortKey.value = ''
+      sortDir.value = 'asc'
+    }
+  } else {
+    sortKey.value = key
+    sortDir.value = 'asc'
+  }
+}
+
+function parseDMY(dateStr) {
+  if (!dateStr) return 0
+  const clean = String(dateStr).split(' ')[0]
+  const parts = clean.split('/')
+  if (parts.length === 3) {
+    return new Date(parseInt(parts[2], 10), parseInt(parts[1], 10) - 1, parseInt(parts[0], 10)).getTime() || 0
+  }
+  const isoParts = clean.split('-')
+  if (isoParts.length === 3) {
+    return new Date(clean).getTime() || 0
+  }
+  return 0
+}
+
+function getBookingPrimaryRoom(booking) {
+  if (!booking?.rooms || !booking.rooms.length) return ''
+  return String(booking.rooms[0].roomNumber || '')
+}
+
+const sortedArrivalsData = computed(() => {
+  if (!arrivalsData.value || !arrivalsData.value.length) return []
+  const list = arrivalsData.value.map(bk => {
+    if (sortKey.value === 'room' && bk.rooms && bk.rooms.length > 1) {
+      const sortedRooms = [...bk.rooms].sort((ra, rb) => {
+        const numA = String(ra.roomNumber || '')
+        const numB = String(rb.roomNumber || '')
+        const cmp = numA.localeCompare(numB, undefined, { numeric: true, sensitivity: 'base' })
+        return sortDir.value === 'asc' ? cmp : -cmp
+      })
+      return { ...bk, rooms: sortedRooms }
+    }
+    return bk
+  })
+
+  if (!sortKey.value) return list
+
+  return list.sort((a, b) => {
+    let diff = 0
+    if (sortKey.value === 'id') {
+      const idA = a.bookingId || parseInt(String(a.id || '').replace(/\D/g, ''), 10) || 0
+      const idB = b.bookingId || parseInt(String(b.id || '').replace(/\D/g, ''), 10) || 0
+      if (idA && idB && idA !== idB) {
+        diff = idA - idB
+      } else {
+        diff = String(a.id || '').localeCompare(String(b.id || ''), undefined, { numeric: true })
+      }
+    } else if (sortKey.value === 'room') {
+      const rA = getBookingPrimaryRoom(a)
+      const rB = getBookingPrimaryRoom(b)
+      diff = rA.localeCompare(rB, undefined, { numeric: true, sensitivity: 'base' })
+    } else if (sortKey.value === 'bookingName') {
+      diff = (a.bookingName || '').localeCompare(b.bookingName || '', 'vi', { sensitivity: 'base' })
+    } else if (sortKey.value === 'arrivalDate') {
+      diff = parseDMY(a.arrivalDate) - parseDMY(b.arrivalDate)
+    } else if (sortKey.value === 'departureDate') {
+      diff = parseDMY(a.departureDate) - parseDMY(b.departureDate)
+    }
+    return sortDir.value === 'asc' ? diff : -diff
+  })
+})
+
+const sortedDeparturesData = computed(() => {
+  if (!departuresData.value || !departuresData.value.length) return []
+  const list = departuresData.value.map(bk => {
+    if (sortKey.value === 'room' && bk.rooms && bk.rooms.length > 1) {
+      const sortedRooms = [...bk.rooms].sort((ra, rb) => {
+        const numA = String(ra.roomNumber || '')
+        const numB = String(rb.roomNumber || '')
+        const cmp = numA.localeCompare(numB, undefined, { numeric: true, sensitivity: 'base' })
+        return sortDir.value === 'asc' ? cmp : -cmp
+      })
+      return { ...bk, rooms: sortedRooms }
+    }
+    return bk
+  })
+
+  if (!sortKey.value) return list
+
+  return list.sort((a, b) => {
+    let diff = 0
+    if (sortKey.value === 'id') {
+      const idA = a.bookingId || parseInt(String(a.id || '').replace(/\D/g, ''), 10) || 0
+      const idB = b.bookingId || parseInt(String(b.id || '').replace(/\D/g, ''), 10) || 0
+      if (idA && idB && idA !== idB) {
+        diff = idA - idB
+      } else {
+        diff = String(a.id || '').localeCompare(String(b.id || ''), undefined, { numeric: true })
+      }
+    } else if (sortKey.value === 'room') {
+      const rA = getBookingPrimaryRoom(a)
+      const rB = getBookingPrimaryRoom(b)
+      diff = rA.localeCompare(rB, undefined, { numeric: true, sensitivity: 'base' })
+    } else if (sortKey.value === 'bookingName') {
+      diff = (a.bookingName || '').localeCompare(b.bookingName || '', 'vi', { sensitivity: 'base' })
+    } else if (sortKey.value === 'arrivalDate') {
+      diff = parseDMY(a.arrivalDate) - parseDMY(b.arrivalDate)
+    } else if (sortKey.value === 'departureDate') {
+      diff = parseDMY(a.departureDate) - parseDMY(b.departureDate)
+    }
+    return sortDir.value === 'asc' ? diff : -diff
+  })
+})
+
 // Expand/Collapse state: map of booking ID or group key -> boolean (true if collapsed)
 const collapsedBookings = ref({})
 const collapsedGroups = ref({})
@@ -350,6 +471,8 @@ onMounted(async () => {
 
 watch(activeTab, () => {
   searchTerm.value = ''
+  sortKey.value = ''
+  sortDir.value = 'asc'
   loadTabData()
 })
 
@@ -635,7 +758,7 @@ function formatMoney(num) {
         class="py-3 px-4 text-xs font-bold transition-all relative border-b-2 whitespace-nowrap cursor-pointer"
         :class="activeTab === tab.key
           ? 'border-sky-500 text-sky-600'
-          : 'border-transparent text-slate-700 hover:text-slate-900 hover:border-slate-300'"
+          : 'border-transparent text-[#000000D9] hover:text-black hover:border-slate-300'"
       >
         {{ tab.name }}
       </button>
@@ -645,7 +768,7 @@ function formatMoney(num) {
     <div class="p-3 border-b border-slate-100 flex items-center gap-2 bg-white shrink-0 flex-wrap">
       <!-- Case 1: Single Date Picker for arrivals / departures / shuttle -->
       <div v-if="!isRangeTab" class="flex items-center gap-2 flex-wrap">
-        <span class="text-xs font-semibold text-slate-700">
+        <span class="text-xs font-semibold text-[#000000D9]">
           {{ activeTab === 'arrivals' ? 'Ngày đến:' : (activeTab === 'departures' ? 'Ngày đi:' : 'Ngày:') }}
         </span>
         <div class="flex items-center border border-slate-200 rounded-lg bg-white shadow-sm hover:border-slate-300 transition-colors h-8 px-1.5 gap-1 focus-within:border-sky-500 focus-within:ring-1 focus-within:ring-sky-200">
@@ -656,7 +779,7 @@ function formatMoney(num) {
             @blur="onSearchDateBlur"
             @keyup.enter="onSearchDateEnter"
             placeholder="dd/mm/yyyy"
-            class="w-[95px] text-xs font-normal text-slate-800 bg-transparent border-none outline-none text-center"
+            class="w-[95px] text-xs font-normal text-[#000000D9] bg-transparent border-none outline-none text-center"
           />
           <input
             ref="dateInputRef"
@@ -710,14 +833,14 @@ function formatMoney(num) {
           <button
             @click="setDateToday"
             type="button"
-            class="px-2.5 h-8 text-xs font-normal rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 cursor-pointer transition-colors"
+            class="px-2.5 h-8 text-xs font-normal rounded-lg border border-slate-200 hover:bg-slate-50 text-[#000000D9] cursor-pointer transition-colors"
           >
             Hôm nay
           </button>
           <button
             @click="setDateTomorrow"
             type="button"
-            class="px-2.5 h-8 text-xs font-normal rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 cursor-pointer transition-colors"
+            class="px-2.5 h-8 text-xs font-normal rounded-lg border border-slate-200 hover:bg-slate-50 text-[#000000D9] cursor-pointer transition-colors"
           >
             Ngày mai
           </button>
@@ -725,11 +848,11 @@ function formatMoney(num) {
 
         <!-- Status Filter for Arrivals -->
         <div v-if="activeTab === 'arrivals'" class="flex items-center gap-1.5 ml-2">
-          <span class="text-xs font-semibold text-slate-700">Trạng thái:</span>
+          <span class="text-xs font-semibold text-[#000000D9]">Trạng thái:</span>
           <select
             v-model="arrivalsStatus"
             @change="loadTabData"
-            class="text-xs font-normal border border-slate-200 rounded-lg px-2.5 h-8 bg-white text-slate-800 focus:outline-none focus:border-sky-500 shadow-sm"
+            class="text-xs font-normal border border-slate-200 rounded-lg px-2.5 h-8 bg-white text-[#000000D9] focus:outline-none focus:border-sky-500 shadow-sm"
           >
             <option value="not_checked_in">Chưa nhận phòng</option>
             <option value="checked_in">Đã nhận phòng</option>
@@ -739,11 +862,11 @@ function formatMoney(num) {
 
         <!-- Status Filter for Departures -->
         <div v-if="activeTab === 'departures'" class="flex items-center gap-1.5 ml-2">
-          <span class="text-xs font-semibold text-slate-700">Trạng thái:</span>
+          <span class="text-xs font-semibold text-[#000000D9]">Trạng thái:</span>
           <select
             v-model="departuresStatus"
             @change="loadTabData"
-            class="text-xs font-normal border border-slate-200 rounded-lg px-2.5 h-8 bg-white text-slate-800 focus:outline-none focus:border-sky-500 shadow-sm"
+            class="text-xs font-normal border border-slate-200 rounded-lg px-2.5 h-8 bg-white text-[#000000D9] focus:outline-none focus:border-sky-500 shadow-sm"
           >
             <option value="not_checked_out">Chưa trả</option>
             <option value="checked_out">Đã trả phòng</option>
@@ -753,11 +876,11 @@ function formatMoney(num) {
 
         <!-- Type Filter for Shuttle -->
         <div v-if="activeTab === 'shuttle'" class="flex items-center gap-1.5 ml-2">
-          <span class="text-xs font-semibold text-slate-700">Loại:</span>
+          <span class="text-xs font-semibold text-[#000000D9]">Loại:</span>
           <select
             v-model="shuttleType"
             @change="loadTabData"
-            class="text-xs font-normal border border-slate-200 rounded-lg px-2.5 h-8 bg-white text-slate-800 focus:outline-none focus:border-sky-500 shadow-sm"
+            class="text-xs font-normal border border-slate-200 rounded-lg px-2.5 h-8 bg-white text-[#000000D9] focus:outline-none focus:border-sky-500 shadow-sm"
           >
             <option value="all">Tất cả</option>
             <option value="arrival">Đón sân bay</option>
@@ -768,7 +891,7 @@ function formatMoney(num) {
 
       <!-- Case 2: Date Range Picker for range-based tabs (pending, noshow, birthdays) -->
       <div v-else class="flex items-center gap-1.5 flex-wrap">
-        <span class="text-xs font-semibold text-slate-700">Từ ngày:</span>
+        <span class="text-xs font-semibold text-[#000000D9]">Từ ngày:</span>
         <div class="flex items-center border border-slate-200 rounded-lg bg-white shadow-sm hover:border-slate-300 transition-colors h-8 px-1.5 gap-1 focus-within:border-sky-500 focus-within:ring-1 focus-within:ring-sky-200">
           <input
             type="text"
@@ -777,7 +900,7 @@ function formatMoney(num) {
             @blur="onDateFromBlur"
             @keyup.enter="onDateFromEnter"
             placeholder="dd/mm/yyyy"
-            class="w-[95px] text-xs font-normal text-slate-800 bg-transparent border-none outline-none text-center"
+            class="w-[95px] text-xs font-normal text-[#000000D9] bg-transparent border-none outline-none text-center"
           />
           <input
             ref="dateFromInputRef"
@@ -826,7 +949,7 @@ function formatMoney(num) {
           </button>
         </div>
 
-        <span class="text-xs font-semibold text-slate-500 mx-1">~ Đến ngày:</span>
+        <span class="text-xs font-semibold text-[#000000D9] mx-1">~ Đến ngày:</span>
 
         <!-- Date To Picker -->
         <div class="flex items-center border border-slate-200 rounded-lg bg-white shadow-sm hover:border-slate-300 transition-colors h-8 px-1.5 gap-1 focus-within:border-sky-500 focus-within:ring-1 focus-within:ring-sky-200">
@@ -837,7 +960,7 @@ function formatMoney(num) {
             @blur="onDateToBlur"
             @keyup.enter="onDateToEnter"
             placeholder="dd/mm/yyyy"
-            class="w-[95px] text-xs font-normal text-slate-800 bg-transparent border-none outline-none text-center"
+            class="w-[95px] text-xs font-normal text-[#000000D9] bg-transparent border-none outline-none text-center"
           />
           <input
             ref="dateToInputRef"
@@ -891,21 +1014,21 @@ function formatMoney(num) {
           <button
             @click="setDateToday"
             type="button"
-            class="px-2.5 h-8 text-xs font-normal rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 cursor-pointer transition-colors"
+            class="px-2.5 h-8 text-xs font-normal rounded-lg border border-slate-200 hover:bg-slate-50 text-[#000000D9] cursor-pointer transition-colors"
           >
             Hôm nay
           </button>
           <button
             @click="setDateTomorrow"
             type="button"
-            class="px-2.5 h-8 text-xs font-normal rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 cursor-pointer transition-colors"
+            class="px-2.5 h-8 text-xs font-normal rounded-lg border border-slate-200 hover:bg-slate-50 text-[#000000D9] cursor-pointer transition-colors"
           >
             Ngày mai
           </button>
         </div>
 
         <!-- Noshow Radio Group Filter -->
-        <div v-if="activeTab === 'noshow'" class="flex items-center gap-3 ml-3 border-l border-slate-200 pl-4 text-xs font-semibold text-slate-700">
+        <div v-if="activeTab === 'noshow'" class="flex items-center gap-3 ml-3 border-l border-slate-200 pl-4 text-xs font-semibold text-[#000000D9]">
           <label class="flex items-center gap-1.5 cursor-pointer">
             <input type="radio" value="all" v-model="noshowFilter" class="accent-sky-500" />
             Tất cả
@@ -927,8 +1050,11 @@ function formatMoney(num) {
           v-if="['arrivals', 'departures'].includes(activeTab)"
           @click="handleExportExcel"
           type="button"
-          class="mr-2 h-8 px-3 text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors cursor-pointer"
+          class="btn-pms-secondary mr-2 h-8 px-3 text-xs flex items-center gap-1.5"
         >
+          <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
           Xuất Excel
         </button>
         <div class="relative flex items-center">
@@ -938,7 +1064,7 @@ function formatMoney(num) {
             @keyup.enter="handleSearch"
             type="text"
             placeholder="Tìm mã BK, tên, phòng, cty..."
-            class="pl-8 pr-8 h-8 text-xs font-normal border border-slate-200 rounded-lg w-60 focus:w-72 transition-all focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-200 shadow-sm bg-white text-slate-800 placeholder:text-[#A8B0BF]"
+            class="pl-8 pr-8 h-8 text-xs font-normal border border-slate-200 rounded-lg w-60 focus:w-72 transition-all focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-200 shadow-sm bg-white text-[#000000D9] placeholder:text-[#A8B0BF]"
           />
           <svg class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -966,7 +1092,7 @@ function formatMoney(num) {
       <div v-if="isLoading" class="absolute inset-0 bg-white/60 backdrop-blur-[1px] z-30 flex items-center justify-center">
         <div class="flex flex-col items-center gap-2">
           <div class="w-8 h-8 border-3 border-sky-500 border-t-transparent rounded-full animate-spin"></div>
-          <span class="text-xs font-bold text-slate-600">Đang tải dữ liệu thực tế...</span>
+          <span class="text-xs font-bold text-[#000000D9]">Đang tải dữ liệu thực tế...</span>
         </div>
       </div>
 
@@ -975,15 +1101,135 @@ function formatMoney(num) {
         <div class="bg-white rounded-lg border border-slate-200 shadow-sm overflow-auto flex-1 max-h-full">
           <table class="w-full text-left border-collapse text-xs min-w-[1600px] table-fixed">
             <thead>
-              <tr class="bg-slate-100 border-b border-slate-200 text-slate-800 font-semibold select-none h-9 text-xs">
-                <th class="py-2 px-2 text-center w-[110px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Mã Đăng Ký <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
+              <tr class="bg-slate-100 border-b border-slate-200 text-[#000000D9] font-semibold select-none h-9 text-xs">
+                <th
+                  @click="toggleSort('id')"
+                  class="py-2 px-2 text-center w-[115px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border cursor-pointer select-none hover:bg-slate-200/70 transition-colors group whitespace-nowrap"
+                  :title="sortKey === 'id' ? (sortDir === 'asc' ? 'Đang xếp tăng dần - Nhấp để xếp giảm dần' : 'Đang xếp giảm dần - Nhấp để hủy sắp xếp') : 'Nhấp để sắp xếp theo Mã Đăng Ký'"
+                >
+                  <div class="inline-flex items-center justify-center gap-1">
+                    <span>Mã Đăng Ký</span>
+                    <span
+                      class="inline-flex items-center justify-center shrink-0 transition-colors ml-0.5"
+                      :class="sortKey === 'id'
+                        ? 'text-[#006bdb]'
+                        : 'text-slate-400 group-hover:text-slate-600'"
+                    >
+                      <svg v-if="sortKey !== 'id'" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 4v12m0 0l4-4m-4 4l-4-4" />
+                      </svg>
+                      <svg v-else-if="sortDir === 'asc'" class="w-3.5 h-3.5 stroke-[2.8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m0 0l-5 5m5-5l5 5" />
+                      </svg>
+                      <svg v-else class="w-3.5 h-3.5 stroke-[2.8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14m0 0l-5-5m5 5l5-5" />
+                      </svg>
+                    </span>
+                  </div>
+                </th>
+                <th
+                  @click="toggleSort('room')"
+                  class="py-2 px-2 text-center w-[80px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border cursor-pointer select-none hover:bg-slate-200/70 transition-colors group whitespace-nowrap"
+                  :title="sortKey === 'room' ? (sortDir === 'asc' ? 'Đang xếp tăng dần - Nhấp để xếp giảm dần' : 'Đang xếp giảm dần - Nhấp để hủy sắp xếp') : 'Nhấp để sắp xếp theo Phòng'"
+                >
+                  <div class="inline-flex items-center justify-center gap-1">
+                    <span>Phòng</span>
+                    <span
+                      class="inline-flex items-center justify-center shrink-0 transition-colors ml-0.5"
+                      :class="sortKey === 'room'
+                        ? 'text-[#006bdb]'
+                        : 'text-slate-400 group-hover:text-slate-600'"
+                    >
+                      <svg v-if="sortKey !== 'room'" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 4v12m0 0l4-4m-4 4l-4-4" />
+                      </svg>
+                      <svg v-else-if="sortDir === 'asc'" class="w-3.5 h-3.5 stroke-[2.8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m0 0l-5 5m5-5l5 5" />
+                      </svg>
+                      <svg v-else class="w-3.5 h-3.5 stroke-[2.8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14m0 0l-5-5m5 5l5-5" />
+                      </svg>
+                    </span>
+                  </div>
+                </th>
                 <th class="py-2 px-2 text-center w-[100px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Giá Phòng</th>
-                <th class="py-2 px-2 text-center w-[220px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Tên Đăng Ký <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
+                <th
+                  @click="toggleSort('bookingName')"
+                  class="py-2 px-2 text-center w-[220px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border cursor-pointer select-none hover:bg-slate-200/70 transition-colors group whitespace-nowrap"
+                  :title="sortKey === 'bookingName' ? (sortDir === 'asc' ? 'Đang xếp tăng dần - Nhấp để xếp giảm dần' : 'Đang xếp giảm dần - Nhấp để hủy sắp xếp') : 'Nhấp để sắp xếp theo Tên Đăng Ký'"
+                >
+                  <div class="inline-flex items-center justify-center gap-1">
+                    <span>Tên Đăng Ký</span>
+                    <span
+                      class="inline-flex items-center justify-center shrink-0 transition-colors ml-0.5"
+                      :class="sortKey === 'bookingName'
+                        ? 'text-[#006bdb]'
+                        : 'text-slate-400 group-hover:text-slate-600'"
+                    >
+                      <svg v-if="sortKey !== 'bookingName'" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 4v12m0 0l4-4m-4 4l-4-4" />
+                      </svg>
+                      <svg v-else-if="sortDir === 'asc'" class="w-3.5 h-3.5 stroke-[2.8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m0 0l-5 5m5-5l5 5" />
+                      </svg>
+                      <svg v-else class="w-3.5 h-3.5 stroke-[2.8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14m0 0l-5-5m5 5l5-5" />
+                      </svg>
+                    </span>
+                  </div>
+                </th>
                 <th class="py-2 px-2 text-center w-[130px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Tình Trạng Đăng Ký</th>
                 <th class="py-2 px-2 text-center w-[130px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Loại Phòng</th>
-                <th class="py-2 px-2 text-center w-[75px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Phòng <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
-                <th class="py-2 px-2 text-center w-[95px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Ngày Đến <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
-                <th class="py-2 px-2 text-center w-[95px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Ngày Đi <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
+                <th
+                  @click="toggleSort('arrivalDate')"
+                  class="py-2 px-2 text-center w-[100px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border cursor-pointer select-none hover:bg-slate-200/70 transition-colors group whitespace-nowrap"
+                  :title="sortKey === 'arrivalDate' ? (sortDir === 'asc' ? 'Đang xếp tăng dần - Nhấp để xếp giảm dần' : 'Đang xếp giảm dần - Nhấp để hủy sắp xếp') : 'Nhấp để sắp xếp theo Ngày Đến'"
+                >
+                  <div class="inline-flex items-center justify-center gap-1">
+                    <span>Ngày Đến</span>
+                    <span
+                      class="inline-flex items-center justify-center shrink-0 transition-colors ml-0.5"
+                      :class="sortKey === 'arrivalDate'
+                        ? 'text-[#006bdb]'
+                        : 'text-slate-400 group-hover:text-slate-600'"
+                    >
+                      <svg v-if="sortKey !== 'arrivalDate'" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 4v12m0 0l4-4m-4 4l-4-4" />
+                      </svg>
+                      <svg v-else-if="sortDir === 'asc'" class="w-3.5 h-3.5 stroke-[2.8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m0 0l-5 5m5-5l5 5" />
+                      </svg>
+                      <svg v-else class="w-3.5 h-3.5 stroke-[2.8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14m0 0l-5-5m5 5l5-5" />
+                      </svg>
+                    </span>
+                  </div>
+                </th>
+                <th
+                  @click="toggleSort('departureDate')"
+                  class="py-2 px-2 text-center w-[100px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border cursor-pointer select-none hover:bg-slate-200/70 transition-colors group whitespace-nowrap"
+                  :title="sortKey === 'departureDate' ? (sortDir === 'asc' ? 'Đang xếp tăng dần - Nhấp để xếp giảm dần' : 'Đang xếp giảm dần - Nhấp để hủy sắp xếp') : 'Nhấp để sắp xếp theo Ngày Đi'"
+                >
+                  <div class="inline-flex items-center justify-center gap-1">
+                    <span>Ngày Đi</span>
+                    <span
+                      class="inline-flex items-center justify-center shrink-0 transition-colors ml-0.5"
+                      :class="sortKey === 'departureDate'
+                        ? 'text-[#006bdb]'
+                        : 'text-slate-400 group-hover:text-slate-600'"
+                    >
+                      <svg v-if="sortKey !== 'departureDate'" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 4v12m0 0l4-4m-4 4l-4-4" />
+                      </svg>
+                      <svg v-else-if="sortDir === 'asc'" class="w-3.5 h-3.5 stroke-[2.8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m0 0l-5 5m5-5l5 5" />
+                      </svg>
+                      <svg v-else class="w-3.5 h-3.5 stroke-[2.8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14m0 0l-5-5m5 5l5-5" />
+                      </svg>
+                    </span>
+                  </div>
+                </th>
                 <th class="py-2 px-2 text-center w-[75px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Đêm Phòng</th>
                 <th class="py-2 px-2 text-center w-[65px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Người Lớn</th>
                 <th class="py-2 px-2 text-center w-[65px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Trẻ Em</th>
@@ -994,29 +1240,30 @@ function formatMoney(num) {
               </tr>
             </thead>
             <tbody>
-              <tr v-if="arrivalsData.length === 0 && !isLoading">
-                <td colspan="15" class="p-8 text-center text-slate-400 font-normal border-slate-200">
+              <tr v-if="sortedArrivalsData.length === 0 && !isLoading">
+                <td colspan="15" class="p-8 text-center text-[#A8B0BF] font-normal border-slate-200">
                   Không có danh sách phòng đến trong ngày này.
                 </td>
               </tr>
-              <template v-for="booking in arrivalsData" :key="booking.id">
-                <!-- Group Header Banner Row (Layout theo Dòng 49) -->
+              <template v-for="booking in sortedArrivalsData" :key="booking.id">
+                <!-- Group Header Banner Row (Layout theo Dòng 49 & Dòng 51) -->
                 <tr class="border-b border-t border-slate-200 bg-[#edf5fc]">
                   <td colspan="15" class="py-2 px-3 border-slate-200">
-                    <div class="flex items-start justify-between gap-4 text-xs">
-                      <!-- Left Info String -->
-                      <div class="flex items-start gap-2 min-w-0 flex-1">
-                        <button
-                          @click="toggleCollapse(booking.id)"
-                          type="button"
-                          class="w-4 h-4 mt-0.5 rounded bg-[#c9eeff] hover:bg-[#8ecefa] text-[#0369a1] font-bold flex items-center justify-center select-none cursor-pointer border-none transition-colors shrink-0 text-xs"
-                        >
-                          {{ collapsedBookings[booking.id] ? '+' : '-' }}
-                        </button>
-                        
-                        <div class="flex flex-col gap-0.5 min-w-0 flex-1 text-xs leading-relaxed text-slate-800">
+                    <div class="flex items-start gap-2 text-xs">
+                      <!-- Nút thu gọn / mở rộng +/- -->
+                      <button
+                        @click="toggleCollapse(booking.id)"
+                        type="button"
+                        class="w-4 h-4 mt-0.5 rounded bg-[#c9eeff] hover:bg-[#8ecefa] text-[#0369a1] font-bold flex items-center justify-center select-none cursor-pointer border-none transition-colors shrink-0 text-xs"
+                      >
+                        {{ collapsedBookings[booking.id] ? '+' : '-' }}
+                      </button>
+                      
+                      <div class="flex flex-col gap-1 min-w-0 flex-1 text-xs leading-relaxed text-[#000000D9]">
+                        <!-- Dòng 1: Thông tin booking + Cụm Đặt cọc & Tổng tiền ở giữa (bỏ khung ngoài) -->
+                        <div class="flex items-center justify-between gap-4 flex-wrap">
                           <div class="flex items-baseline flex-wrap gap-x-2 text-xs">
-                            <span class="font-normal text-slate-700">
+                            <span class="font-normal text-[#000000D9]">
                               Booking
                               <span
                                 @dblclick="handleOpenBooking(booking.id, booking.bookingCode)"
@@ -1025,28 +1272,30 @@ function formatMoney(num) {
                               >
                                 {{ booking.id }}
                               </span>:
-                              <strong class="font-semibold text-slate-900 uppercase ml-1">{{ booking.bookingName }}</strong>
+                              <strong class="font-semibold text-[#000000D9] uppercase ml-1">{{ booking.bookingName }}</strong>
                             </span>
-                            <span class="text-slate-600">
+                            <span class="text-[#000000D9]">
                               {{ booking.arrivalDate }}~{{ booking.departureDate }} _ Room Night: {{ booking.roomNight }} _ Phòng: {{ booking.roomsCount }}
                             </span>
                           </div>
-                          <div v-if="booking.notes" class="text-slate-700 font-normal whitespace-pre-wrap break-words text-xs mt-0.5">
-                            <span class="font-semibold text-slate-800">Ghi chú:</span> {{ getCleanNote(booking.notes) }}
+
+                          <!-- Đặt cọc & Tổng tiền: Bỏ khung ngoài, đưa vào giữa thanh booking -->
+                          <div class="flex items-center gap-6 text-xs font-semibold whitespace-nowrap mx-auto text-[#000000D9]">
+                            <span>Đặt cọc: <span class="font-bold text-amber-700 tabular-nums">{{ formatMoney(booking.deposit) }}</span></span>
+                            <span>Tổng tiền: <span class="font-bold text-emerald-700 tabular-nums">{{ formatMoney(booking.totalAmount) }}</span></span>
                           </div>
                         </div>
-                      </div>
 
-                      <!-- Right Financials -->
-                      <div class="flex items-center gap-5 shrink-0 text-xs font-semibold text-slate-800 whitespace-nowrap pt-0.5">
-                        <span>Đặt cọc : {{ formatMoney(booking.deposit) }}</span>
-                        <span>Tổng tiền : {{ formatMoney(booking.totalAmount) }}</span>
+                        <!-- Dòng 2: Ghi chú booking: Xuống dòng rõ ràng, break-words -->
+                        <div v-if="booking.notes" class="text-[#000000D9] font-normal whitespace-pre-wrap break-words text-xs mt-0.5">
+                          <span class="font-semibold text-[#000000D9]">Ghi chú:</span> {{ getCleanNote(booking.notes) }}
+                        </div>
                       </div>
                     </div>
                   </td>
                 </tr>
 
-                <!-- Child Room Rows -->
+                <!-- Child Room Rows: Cột Phòng ở vị trí số 2 ngay sau Mã ĐK -->
                 <tr
                   v-if="!collapsedBookings[booking.id]"
                   v-for="(room, rIdx) in booking.rooms"
@@ -1060,46 +1309,46 @@ function formatMoney(num) {
                   >
                     {{ booking.id }}
                   </td>
-                  <td class="py-1.5 px-2 text-right text-slate-800 border-slate-200">
-                    {{ formatMoney(room.price) }}
-                  </td>
-                  <td class="py-1.5 px-2.5 text-slate-800 break-words whitespace-normal leading-tight border-slate-200">
-                    {{ booking.bookingName }}
-                  </td>
-                  <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200">
-                    {{ room.status }}
-                  </td>
-                  <td class="py-1.5 px-2 text-slate-700 truncate border-slate-200">
-                    {{ room.roomType }}
-                  </td>
-                  <td class="py-1.5 px-2 text-center text-slate-800 border-slate-200">
+                  <td class="py-1.5 px-2 text-center text-[#000000D9] border-slate-200 font-semibold">
                     {{ room.roomNumber }}
                   </td>
-                  <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200">
+                  <td class="py-1.5 px-2 text-right text-[#000000D9] border-slate-200 tabular-nums">
+                    {{ formatMoney(room.price) }}
+                  </td>
+                  <td class="py-1.5 px-2.5 text-[#000000D9] break-words whitespace-normal leading-tight border-slate-200">
+                    {{ booking.bookingName }}
+                  </td>
+                  <td class="py-1.5 px-2 text-center text-[#000000D9] border-slate-200">
+                    {{ room.status }}
+                  </td>
+                  <td class="py-1.5 px-2 text-[#000000D9] truncate border-slate-200">
+                    {{ room.roomType }}
+                  </td>
+                  <td class="py-1.5 px-2 text-center text-[#000000D9] border-slate-200">
                     {{ room.arrivalDate }}
                   </td>
-                  <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200">
+                  <td class="py-1.5 px-2 text-center text-[#000000D9] border-slate-200">
                     {{ room.departureDate }}
                   </td>
-                  <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200">
+                  <td class="py-1.5 px-2 text-center text-[#000000D9] border-slate-200">
                     {{ room.nights }}
                   </td>
-                  <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200">
+                  <td class="py-1.5 px-2 text-center text-[#000000D9] border-slate-200">
                     {{ room.adults }}
                   </td>
-                  <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200" :class="{ 'text-sky-600': room.children > 0 }">
+                  <td class="py-1.5 px-2 text-center text-[#000000D9] border-slate-200" :class="{ 'text-sky-600 font-medium': room.children > 0 }">
                     {{ room.children }}
                   </td>
-                  <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200">
+                  <td class="py-1.5 px-2 text-center text-[#000000D9] border-slate-200">
                     {{ room.rateCode }}
                   </td>
-                  <td class="py-1.5 px-2 text-right text-slate-800 border-slate-200">
+                  <td class="py-1.5 px-2 text-right text-[#000000D9] border-slate-200 tabular-nums">
                     {{ formatMoney(room.roomTotal) }}
                   </td>
-                  <td class="py-1.5 px-2.5 text-slate-600 truncate border-slate-200" :title="room.specialRequest">
+                  <td class="py-1.5 px-2.5 text-[#000000D9] truncate border-slate-200" :title="room.specialRequest">
                     {{ room.specialRequest }}
                   </td>
-                  <td class="py-1.5 px-2.5 text-slate-700 break-words whitespace-normal leading-tight border-slate-200">
+                  <td class="py-1.5 px-2.5 text-[#000000D9] break-words whitespace-normal leading-tight border-slate-200">
                     {{ room.company }}
                   </td>
                 </tr>
@@ -1114,15 +1363,135 @@ function formatMoney(num) {
         <div class="bg-white rounded-lg border border-slate-200 shadow-sm overflow-auto flex-1 max-h-full">
           <table class="w-full text-left border-collapse text-xs min-w-[1600px] table-fixed">
             <thead>
-              <tr class="bg-slate-100 border-b border-slate-200 text-slate-800 font-semibold select-none h-9 text-xs">
-                <th class="py-2 px-2 text-center w-[110px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Mã Đăng Ký <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
+              <tr class="bg-slate-100 border-b border-slate-200 text-[#000000D9] font-semibold select-none h-9 text-xs">
+                <th
+                  @click="toggleSort('id')"
+                  class="py-2 px-2 text-center w-[115px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border cursor-pointer select-none hover:bg-slate-200/70 transition-colors group whitespace-nowrap"
+                  :title="sortKey === 'id' ? (sortDir === 'asc' ? 'Đang xếp tăng dần - Nhấp để xếp giảm dần' : 'Đang xếp giảm dần - Nhấp để hủy sắp xếp') : 'Nhấp để sắp xếp theo Mã Đăng Ký'"
+                >
+                  <div class="inline-flex items-center justify-center gap-1">
+                    <span>Mã Đăng Ký</span>
+                    <span
+                      class="inline-flex items-center justify-center shrink-0 transition-colors ml-0.5"
+                      :class="sortKey === 'id'
+                        ? 'text-[#006bdb]'
+                        : 'text-slate-400 group-hover:text-slate-600'"
+                    >
+                      <svg v-if="sortKey !== 'id'" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 4v12m0 0l4-4m-4 4l-4-4" />
+                      </svg>
+                      <svg v-else-if="sortDir === 'asc'" class="w-3.5 h-3.5 stroke-[2.8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m0 0l-5 5m5-5l5 5" />
+                      </svg>
+                      <svg v-else class="w-3.5 h-3.5 stroke-[2.8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14m0 0l-5-5m5 5l5-5" />
+                      </svg>
+                    </span>
+                  </div>
+                </th>
+                <th
+                  @click="toggleSort('room')"
+                  class="py-2 px-2 text-center w-[80px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border cursor-pointer select-none hover:bg-slate-200/70 transition-colors group whitespace-nowrap"
+                  :title="sortKey === 'room' ? (sortDir === 'asc' ? 'Đang xếp tăng dần - Nhấp để xếp giảm dần' : 'Đang xếp giảm dần - Nhấp để hủy sắp xếp') : 'Nhấp để sắp xếp theo Phòng'"
+                >
+                  <div class="inline-flex items-center justify-center gap-1">
+                    <span>Phòng</span>
+                    <span
+                      class="inline-flex items-center justify-center shrink-0 transition-colors ml-0.5"
+                      :class="sortKey === 'room'
+                        ? 'text-[#006bdb]'
+                        : 'text-slate-400 group-hover:text-slate-600'"
+                    >
+                      <svg v-if="sortKey !== 'room'" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 4v12m0 0l4-4m-4 4l-4-4" />
+                      </svg>
+                      <svg v-else-if="sortDir === 'asc'" class="w-3.5 h-3.5 stroke-[2.8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m0 0l-5 5m5-5l5 5" />
+                      </svg>
+                      <svg v-else class="w-3.5 h-3.5 stroke-[2.8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14m0 0l-5-5m5 5l5-5" />
+                      </svg>
+                    </span>
+                  </div>
+                </th>
                 <th class="py-2 px-2 text-center w-[100px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Giá Phòng</th>
-                <th class="py-2 px-2 text-center w-[220px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Tên Đăng Ký <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
+                <th
+                  @click="toggleSort('bookingName')"
+                  class="py-2 px-2 text-center w-[220px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border cursor-pointer select-none hover:bg-slate-200/70 transition-colors group whitespace-nowrap"
+                  :title="sortKey === 'bookingName' ? (sortDir === 'asc' ? 'Đang xếp tăng dần - Nhấp để xếp giảm dần' : 'Đang xếp giảm dần - Nhấp để hủy sắp xếp') : 'Nhấp để sắp xếp theo Tên Đăng Ký'"
+                >
+                  <div class="inline-flex items-center justify-center gap-1">
+                    <span>Tên Đăng Ký</span>
+                    <span
+                      class="inline-flex items-center justify-center shrink-0 transition-colors ml-0.5"
+                      :class="sortKey === 'bookingName'
+                        ? 'text-[#006bdb]'
+                        : 'text-slate-400 group-hover:text-slate-600'"
+                    >
+                      <svg v-if="sortKey !== 'bookingName'" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 4v12m0 0l4-4m-4 4l-4-4" />
+                      </svg>
+                      <svg v-else-if="sortDir === 'asc'" class="w-3.5 h-3.5 stroke-[2.8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m0 0l-5 5m5-5l5 5" />
+                      </svg>
+                      <svg v-else class="w-3.5 h-3.5 stroke-[2.8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14m0 0l-5-5m5 5l5-5" />
+                      </svg>
+                    </span>
+                  </div>
+                </th>
                 <th class="py-2 px-2 text-center w-[130px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Tình Trạng Đăng Ký</th>
                 <th class="py-2 px-2 text-center w-[130px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Loại Phòng</th>
-                <th class="py-2 px-2 text-center w-[75px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Phòng <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
-                <th class="py-2 px-2 text-center w-[95px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Ngày Đến <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
-                <th class="py-2 px-2 text-center w-[95px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Ngày Đi <span class="text-xs text-slate-400 opacity-60">⇅</span></th>
+                <th
+                  @click="toggleSort('arrivalDate')"
+                  class="py-2 px-2 text-center w-[100px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border cursor-pointer select-none hover:bg-slate-200/70 transition-colors group whitespace-nowrap"
+                  :title="sortKey === 'arrivalDate' ? (sortDir === 'asc' ? 'Đang xếp tăng dần - Nhấp để xếp giảm dần' : 'Đang xếp giảm dần - Nhấp để hủy sắp xếp') : 'Nhấp để sắp xếp theo Ngày Đến'"
+                >
+                  <div class="inline-flex items-center justify-center gap-1">
+                    <span>Ngày Đến</span>
+                    <span
+                      class="inline-flex items-center justify-center shrink-0 transition-colors ml-0.5"
+                      :class="sortKey === 'arrivalDate'
+                        ? 'text-[#006bdb]'
+                        : 'text-slate-400 group-hover:text-slate-600'"
+                    >
+                      <svg v-if="sortKey !== 'arrivalDate'" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 4v12m0 0l4-4m-4 4l-4-4" />
+                      </svg>
+                      <svg v-else-if="sortDir === 'asc'" class="w-3.5 h-3.5 stroke-[2.8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m0 0l-5 5m5-5l5 5" />
+                      </svg>
+                      <svg v-else class="w-3.5 h-3.5 stroke-[2.8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14m0 0l-5-5m5 5l5-5" />
+                      </svg>
+                    </span>
+                  </div>
+                </th>
+                <th
+                  @click="toggleSort('departureDate')"
+                  class="py-2 px-2 text-center w-[100px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border cursor-pointer select-none hover:bg-slate-200/70 transition-colors group whitespace-nowrap"
+                  :title="sortKey === 'departureDate' ? (sortDir === 'asc' ? 'Đang xếp tăng dần - Nhấp để xếp giảm dần' : 'Đang xếp giảm dần - Nhấp để hủy sắp xếp') : 'Nhấp để sắp xếp theo Ngày Đi'"
+                >
+                  <div class="inline-flex items-center justify-center gap-1">
+                    <span>Ngày Đi</span>
+                    <span
+                      class="inline-flex items-center justify-center shrink-0 transition-colors ml-0.5"
+                      :class="sortKey === 'departureDate'
+                        ? 'text-[#006bdb]'
+                        : 'text-slate-400 group-hover:text-slate-600'"
+                    >
+                      <svg v-if="sortKey !== 'departureDate'" class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 4v12m0 0l4-4m-4 4l-4-4" />
+                      </svg>
+                      <svg v-else-if="sortDir === 'asc'" class="w-3.5 h-3.5 stroke-[2.8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m0 0l-5 5m5-5l5 5" />
+                      </svg>
+                      <svg v-else class="w-3.5 h-3.5 stroke-[2.8]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14m0 0l-5-5m5 5l5-5" />
+                      </svg>
+                    </span>
+                  </div>
+                </th>
                 <th class="py-2 px-2 text-center w-[75px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Đêm Phòng</th>
                 <th class="py-2 px-2 text-center w-[65px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Người Lớn</th>
                 <th class="py-2 px-2 text-center w-[65px] sticky top-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Trẻ Em</th>
@@ -1134,13 +1503,13 @@ function formatMoney(num) {
               </tr>
             </thead>
             <tbody>
-              <tr v-if="departuresData.length === 0 && !isLoading">
-                <td colspan="16" class="p-8 text-center text-slate-400 font-normal border-slate-200">
+              <tr v-if="sortedDeparturesData.length === 0 && !isLoading">
+                <td colspan="16" class="p-8 text-center text-[#A8B0BF] font-normal border-slate-200">
                   Không có danh sách phòng đi trong ngày này.
                 </td>
               </tr>
-              <template v-for="booking in departuresData" :key="booking.id">
-                <!-- Group Header Banner Row (Layout theo Dòng 49) -->
+              <template v-for="booking in sortedDeparturesData" :key="booking.id">
+                <!-- Group Header Banner Row (Layout theo Dòng 49 & Dòng 51) -->
                 <tr class="border-b border-t border-slate-200 bg-[#edf5fc]">
                   <td colspan="12" class="py-2 px-3 border-slate-200">
                     <div class="flex items-start justify-between gap-4 text-xs">
@@ -1154,9 +1523,9 @@ function formatMoney(num) {
                           {{ collapsedBookings[booking.id] ? '+' : '-' }}
                         </button>
                         
-                        <div class="flex flex-col gap-0.5 min-w-0 flex-1 text-xs leading-relaxed text-slate-800">
+                        <div class="flex flex-col gap-0.5 min-w-0 flex-1 text-xs leading-relaxed text-[#000000D9]">
                           <div class="flex items-baseline flex-wrap gap-x-2 text-xs">
-                            <span class="font-normal text-slate-700">
+                            <span class="font-normal text-[#000000D9]">
                               Booking
                               <span
                                 @dblclick="handleOpenBooking(booking.id, booking.bookingCode)"
@@ -1165,30 +1534,31 @@ function formatMoney(num) {
                               >
                                 {{ booking.id }}
                               </span>:
-                              <strong class="font-semibold text-slate-900 uppercase ml-1">{{ booking.bookingName }}</strong>
+                              <strong class="font-semibold text-[#000000D9] uppercase ml-1">{{ booking.bookingName }}</strong>
                             </span>
-                            <span class="text-slate-600">
+                            <span class="text-[#000000D9]">
                               {{ booking.arrivalDate }}~{{ booking.departureDate }} _ Room Night: {{ booking.roomNight }} _ Phòng: {{ booking.roomsCount }}
                             </span>
                           </div>
-                          <div v-if="booking.notes" class="text-slate-700 font-normal whitespace-pre-wrap break-words text-xs mt-0.5">
-                            <span class="font-semibold text-slate-800">Ghi chú:</span> {{ getCleanNote(booking.notes) }}
+                          <!-- Ghi chú booking: Xuống dòng rõ ràng, break-words -->
+                          <div v-if="booking.notes" class="text-[#000000D9] font-normal whitespace-pre-wrap break-words text-xs mt-1">
+                            <span class="font-semibold text-[#000000D9]">Ghi chú:</span> {{ getCleanNote(booking.notes) }}
                           </div>
                         </div>
                       </div>
                     </div>
                   </td>
                   <!-- Tổng DV / Tổng TT nằm ngay dưới cột Tổng DV, Tổng TT để không phải kéo ngang -->
-                  <td class="py-2 px-2 text-right align-top text-xs font-semibold text-slate-800 border-slate-200">
+                  <td class="py-2 px-2 text-right align-top text-xs font-semibold text-[#000000D9] border-slate-200 tabular-nums">
                     {{ formatMoney(booking.totalServices) }}
                   </td>
-                  <td class="py-2 px-2 text-right align-top text-xs font-semibold text-emerald-700 border-slate-200">
+                  <td class="py-2 px-2 text-right align-top text-xs font-semibold text-emerald-700 border-slate-200 tabular-nums">
                     {{ formatMoney(booking.totalPayment) }}
                   </td>
                   <td colspan="2" class="border-slate-200"></td>
                 </tr>
 
-                <!-- Child Room Rows -->
+                <!-- Child Room Rows: Cột Phòng ở vị trí số 2 ngay sau Mã ĐK -->
                 <tr
                   v-if="!collapsedBookings[booking.id]"
                   v-for="(room, rIdx) in booking.rooms"
@@ -1202,49 +1572,49 @@ function formatMoney(num) {
                   >
                     {{ booking.id }}
                   </td>
-                  <td class="py-1.5 px-2 text-right text-slate-800 border-slate-200">
-                    {{ formatMoney(room.price) }}
-                  </td>
-                  <td class="py-1.5 px-2.5 text-slate-800 break-words whitespace-normal leading-tight border-slate-200">
-                    {{ booking.bookingName }}
-                  </td>
-                  <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200">
-                    {{ room.status }}
-                  </td>
-                  <td class="py-1.5 px-2 text-slate-700 truncate border-slate-200">
-                    {{ room.roomType }}
-                  </td>
-                  <td class="py-1.5 px-2 text-center text-slate-800 border-slate-200">
+                  <td class="py-1.5 px-2 text-center text-[#000000D9] border-slate-200 font-semibold">
                     {{ room.roomNumber }}
                   </td>
-                  <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200">
+                  <td class="py-1.5 px-2 text-right text-[#000000D9] border-slate-200 tabular-nums">
+                    {{ formatMoney(room.price) }}
+                  </td>
+                  <td class="py-1.5 px-2.5 text-[#000000D9] break-words whitespace-normal leading-tight border-slate-200">
+                    {{ booking.bookingName }}
+                  </td>
+                  <td class="py-1.5 px-2 text-center text-[#000000D9] border-slate-200">
+                    {{ room.status }}
+                  </td>
+                  <td class="py-1.5 px-2 text-[#000000D9] truncate border-slate-200">
+                    {{ room.roomType }}
+                  </td>
+                  <td class="py-1.5 px-2 text-center text-[#000000D9] border-slate-200">
                     {{ room.arrivalDate }}
                   </td>
-                  <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200">
+                  <td class="py-1.5 px-2 text-center text-[#000000D9] border-slate-200">
                     {{ room.departureDate }}
                   </td>
-                  <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200">
+                  <td class="py-1.5 px-2 text-center text-[#000000D9] border-slate-200">
                     {{ room.nights }}
                   </td>
-                  <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200">
+                  <td class="py-1.5 px-2 text-center text-[#000000D9] border-slate-200">
                     {{ room.adults }}
                   </td>
-                  <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200" :class="{ 'text-sky-600': room.children > 0 }">
+                  <td class="py-1.5 px-2 text-center text-[#000000D9] border-slate-200" :class="{ 'text-sky-600 font-medium': room.children > 0 }">
                     {{ room.children }}
                   </td>
-                  <td class="py-1.5 px-2 text-center text-slate-700 border-slate-200">
+                  <td class="py-1.5 px-2 text-center text-[#000000D9] border-slate-200">
                     {{ room.rateCode }}
                   </td>
-                  <td class="py-1.5 px-2 text-right text-slate-800 border-slate-200">
+                  <td class="py-1.5 px-2 text-right text-[#000000D9] border-slate-200 tabular-nums">
                     {{ formatMoney(room.totalServices) }}
                   </td>
-                  <td class="py-1.5 px-2 text-right text-emerald-700 border-slate-200">
+                  <td class="py-1.5 px-2 text-right text-emerald-700 border-slate-200 tabular-nums">
                     {{ formatMoney(room.totalPayment) }}
                   </td>
-                  <td class="py-1.5 px-2.5 text-slate-600 truncate border-slate-200" :title="room.specialRequest">
+                  <td class="py-1.5 px-2.5 text-[#000000D9] truncate border-slate-200" :title="room.specialRequest">
                     {{ room.specialRequest }}
                   </td>
-                  <td class="py-1.5 px-2.5 text-slate-700 break-words whitespace-normal leading-tight border-slate-200">
+                  <td class="py-1.5 px-2.5 text-[#000000D9] break-words whitespace-normal leading-tight border-slate-200">
                     {{ room.company }}
                   </td>
                 </tr>
@@ -1259,7 +1629,7 @@ function formatMoney(num) {
         <div class="bg-white rounded-lg border border-slate-200 shadow-sm overflow-auto flex-1 max-h-full">
           <table class="w-full text-left border-collapse text-xs min-w-[1600px] table-fixed">
             <thead>
-              <tr class="bg-slate-100 border-b border-slate-200 text-slate-800 font-semibold select-none h-9 text-xs">
+              <tr class="bg-slate-100 border-b border-slate-200 text-[#000000D9] font-semibold select-none h-9 text-xs">
                 <th class="p-2 border-r border-slate-200 text-center w-[50px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">STT</th>
                 <th class="p-2 border-r border-slate-200 text-center w-[120px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Mã ĐK</th>
                 <th class="p-2 border-r border-slate-200 text-center w-[200px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Tên Đăng Ký</th>
@@ -1277,7 +1647,7 @@ function formatMoney(num) {
             </thead>
             <tbody>
               <tr v-if="pendingConfirmationData.length === 0 && !isLoading">
-                <td colspan="13" class="p-8 text-center text-slate-400 font-normal border-slate-200">
+                <td colspan="13" class="p-8 text-center text-[#A8B0BF] font-normal border-slate-200">
                   Không có đăng ký nào chờ xác nhận trong giai đoạn này.
                 </td>
               </tr>
@@ -1293,7 +1663,7 @@ function formatMoney(num) {
                       {{ isGroupCollapsed('pending-' + dateGroup) ? '+' : '-' }}
                     </button>
                   </td>
-                  <td colspan="12" class="p-2.5 text-left font-semibold text-slate-800 bg-white group-hover:bg-[#bdecfe]/40 transition-colors border-slate-200">
+                  <td colspan="12" class="p-2.5 text-left font-semibold text-[#000000D9] bg-white group-hover:bg-[#bdecfe]/40 transition-colors border-slate-200">
                     {{ dateGroup }}
                   </td>
                 </tr>
@@ -1305,7 +1675,7 @@ function formatMoney(num) {
                   :key="item.id"
                   class="group border-b border-slate-200 h-8 hover:bg-[#bdecfe]/30 transition-colors text-xs font-normal"
                 >
-                  <td class="p-2 border-slate-200 text-center text-slate-600">
+                  <td class="p-2 border-slate-200 text-center text-[#000000D9]">
                     {{ idx + 1 }}
                   </td>
                   <td
@@ -1315,34 +1685,34 @@ function formatMoney(num) {
                   >
                     {{ item.id }}
                   </td>
-                  <td class="p-2 border-slate-200 text-slate-800 break-words whitespace-normal leading-tight">
+                  <td class="p-2 border-slate-200 text-[#000000D9] break-words whitespace-normal leading-tight">
                     {{ item.bookingName }}
                   </td>
-                  <td class="p-2 border-slate-200 text-center text-slate-600">
+                  <td class="p-2 border-slate-200 text-center text-[#000000D9]">
                     {{ item.status }}
                   </td>
-                  <td class="p-2 border-slate-200 text-slate-600 break-words whitespace-normal leading-tight">
+                  <td class="p-2 border-slate-200 text-[#000000D9] break-words whitespace-normal leading-tight">
                     {{ item.company }}
                   </td>
-                  <td class="p-2 border-slate-200 text-center text-slate-600">
+                  <td class="p-2 border-slate-200 text-center text-[#000000D9]">
                     {{ item.confirmDate }}
                   </td>
-                  <td class="p-2 border-slate-200 text-center text-slate-600">
+                  <td class="p-2 border-slate-200 text-center text-[#000000D9]">
                     {{ item.arrivalDate }}
                   </td>
-                  <td class="p-2 border-slate-200 text-center text-slate-600">
+                  <td class="p-2 border-slate-200 text-center text-[#000000D9]">
                     {{ item.departureDate }}
                   </td>
-                  <td class="p-2 border-slate-200 text-center text-slate-700">
+                  <td class="p-2 border-slate-200 text-center text-[#000000D9]">
                     {{ item.nights }}
                   </td>
-                  <td class="p-2 border-slate-200 text-slate-700 truncate" :title="item.roomTypes">
+                  <td class="p-2 border-slate-200 text-[#000000D9] truncate" :title="item.roomTypes">
                     {{ item.roomTypes }}
                   </td>
-                  <td class="p-2 border-slate-200 text-right text-slate-800">
+                  <td class="p-2 border-slate-200 text-right text-[#000000D9] tabular-nums">
                     {{ formatMoney(item.deposit) }}
                   </td>
-                  <td class="p-2 border-slate-200 text-slate-600 truncate" :title="item.contact">
+                  <td class="p-2 border-slate-200 text-[#000000D9] truncate" :title="item.contact">
                     {{ item.contact }}
                   </td>
                   <td class="p-1 border-slate-200">
@@ -1353,10 +1723,10 @@ function formatMoney(num) {
                         :disabled="!editingNotes[item.id]"
                         placeholder="Ghi chú xác nhận"
                         class="flex-1 min-w-0 border rounded px-2 py-0.5 text-xs transition-all h-7 shadow-sm font-normal"
-                        :class="[editingNotes[item.id] ? 'bg-white border-sky-400 text-slate-800 focus:outline-none focus:ring-1 focus:ring-sky-500' : 'bg-slate-50 border-slate-200 text-slate-600 cursor-not-allowed select-none']"
+                        :class="[editingNotes[item.id] ? 'bg-white border-sky-400 text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-sky-500' : 'bg-slate-50 border-slate-200 text-slate-500 cursor-not-allowed select-none']"
                       />
                       
-                      <!-- Save Button: Sáng rõ nét, nổi bật khi cho thao tác -->
+                      <!-- Save Button: Xanh đồng bộ theme, nổi bật khi cho thao tác -->
                       <button
                         @click="saveNote(item)"
                         :disabled="!editingNotes[item.id]"
@@ -1364,7 +1734,7 @@ function formatMoney(num) {
                         class="w-7 h-7 rounded flex items-center justify-center border-none transition-all shadow-sm shrink-0"
                         :class="[
                           editingNotes[item.id]
-                            ? 'bg-emerald-500 hover:bg-emerald-600 text-white cursor-pointer shadow ring-2 ring-emerald-300'
+                            ? 'bg-[#006bdb] hover:bg-[#0056b3] text-white cursor-pointer shadow ring-2 ring-blue-300'
                             : 'bg-slate-200 text-slate-400 cursor-not-allowed opacity-60'
                         ]"
                         title="Lưu ghi chú"
@@ -1401,7 +1771,7 @@ function formatMoney(num) {
         <div class="bg-white rounded-lg border border-slate-200 shadow-sm overflow-auto flex-1 max-h-full">
           <table class="w-full text-left border-collapse text-xs min-w-[1300px] table-fixed">
             <thead>
-              <tr class="bg-slate-100 border-b border-slate-200 text-slate-800 font-semibold select-none h-9 text-xs">
+              <tr class="bg-slate-100 border-b border-slate-200 text-[#000000D9] font-semibold select-none h-9 text-xs">
                 <th class="p-2 border-r border-slate-200 text-center w-[50px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">STT</th>
                 <th class="p-2 border-r border-slate-200 text-center w-[120px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Mã ĐK</th>
                 <th class="p-2 border-r border-slate-200 text-center w-[180px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Tên Đăng Ký</th>
@@ -1418,7 +1788,7 @@ function formatMoney(num) {
             </thead>
             <tbody>
               <tr v-if="shuttleData.length === 0 && !isLoading">
-                <td colspan="12" class="p-8 text-center text-slate-400 font-normal border-slate-200">
+                <td colspan="12" class="p-8 text-center text-[#A8B0BF] font-normal border-slate-200">
                   Không có thông tin đón tiễn khách trong ngày này.
                 </td>
               </tr>
@@ -1434,7 +1804,7 @@ function formatMoney(num) {
                       {{ isGroupCollapsed('shuttle-' + dateGroup) ? '+' : '-' }}
                     </button>
                   </td>
-                  <td colspan="11" class="p-2 border-slate-200 text-left font-semibold text-slate-800 bg-white group-hover:bg-[#bdecfe]/40 transition-colors">
+                  <td colspan="11" class="p-2 border-slate-200 text-left font-semibold text-[#000000D9] bg-white group-hover:bg-[#bdecfe]/40 transition-colors">
                     {{ dateGroup }}
                   </td>
                 </tr>
@@ -1446,7 +1816,7 @@ function formatMoney(num) {
                   :key="item.id + '-' + sIdx"
                   class="group border-b border-slate-200 h-8 hover:bg-[#bdecfe]/30 transition-colors text-xs font-normal"
                 >
-                  <td class="p-2 border-slate-200 text-center text-slate-600">
+                  <td class="p-2 border-slate-200 text-center text-[#000000D9]">
                     {{ sIdx + 1 }}
                   </td>
                   <td
@@ -1456,34 +1826,34 @@ function formatMoney(num) {
                   >
                     {{ item.id }}
                   </td>
-                  <td class="p-2 border-slate-200 text-slate-800 break-words whitespace-normal leading-tight">
+                  <td class="p-2 border-slate-200 text-[#000000D9] break-words whitespace-normal leading-tight">
                     {{ item.bookingName }}
                   </td>
-                  <td class="p-2 border-slate-200 text-center text-slate-800">
+                  <td class="p-2 border-slate-200 text-center text-[#000000D9] font-medium">
                     {{ item.roomNumber }}
                   </td>
-                  <td class="p-2 border-slate-200 text-slate-700">
+                  <td class="p-2 border-slate-200 text-[#000000D9]">
                     {{ item.guestName }}
                   </td>
                   <td class="p-2 border-slate-200 text-center text-sky-700">
                     {{ item.shuttleType }}
                   </td>
-                  <td class="p-2 border-slate-200 text-center text-slate-700">
+                  <td class="p-2 border-slate-200 text-center text-[#000000D9]">
                     {{ item.flightCode }}
                   </td>
-                  <td class="p-2 border-slate-200 text-center text-slate-700">
+                  <td class="p-2 border-slate-200 text-center text-[#000000D9]">
                     {{ item.flightTime }}
                   </td>
-                  <td class="p-2 border-slate-200 text-center text-slate-700">
+                  <td class="p-2 border-slate-200 text-center text-[#000000D9]">
                     {{ item.pax }}
                   </td>
-                  <td class="p-2 border-slate-200 text-slate-600 truncate">
+                  <td class="p-2 border-slate-200 text-[#000000D9] truncate">
                     {{ item.vehicle }}
                   </td>
-                  <td class="p-2 border-slate-200 text-slate-600 truncate" :title="item.notes">
+                  <td class="p-2 border-slate-200 text-[#000000D9] truncate" :title="item.notes">
                     {{ item.notes }}
                   </td>
-                  <td class="p-2 text-center text-slate-600 border-slate-200">
+                  <td class="p-2 text-center text-[#000000D9] border-slate-200">
                     {{ item.status }}
                   </td>
                 </tr>
@@ -1498,7 +1868,7 @@ function formatMoney(num) {
         <div class="bg-white rounded-lg border border-slate-200 shadow-sm overflow-auto flex-1 max-h-full">
           <table class="w-full text-left border-collapse text-xs min-w-[1500px] table-fixed">
             <thead>
-              <tr class="bg-slate-100 border-b border-slate-200 text-slate-800 font-semibold select-none h-9 text-xs">
+              <tr class="bg-slate-100 border-b border-slate-200 text-[#000000D9] font-semibold select-none h-9 text-xs">
                 <th class="p-2 border-r border-slate-200 text-center w-[50px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">STT</th>
                 <th class="p-2 border-r border-slate-200 text-center w-[80px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Phòng</th>
                 <th class="p-2 border-r border-slate-200 text-center w-[120px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Mã BK</th>
@@ -1517,12 +1887,12 @@ function formatMoney(num) {
             </thead>
             <tbody>
               <tr v-if="filteredNoshowData.length === 0 && !isLoading">
-                <td colspan="14" class="p-8 text-center text-slate-400 font-normal border-slate-200">
+                <td colspan="14" class="p-8 text-center text-[#A8B0BF] font-normal border-slate-200">
                   Không có dữ liệu phòng không đến.
                 </td>
               </tr>
               <template v-for="group in noshowGroups" :key="group.key">
-                <tr class="bg-sky-50 border-b border-slate-200 h-8 text-xs font-semibold text-slate-800">
+                <tr class="bg-sky-50 border-b border-slate-200 h-8 text-xs font-semibold text-[#000000D9]">
                   <td colspan="14" class="p-2">{{ group.title }} ({{ group.items.length }})</td>
                 </tr>
               <tr
@@ -1530,11 +1900,11 @@ function formatMoney(num) {
                 :key="item.type + item.id + '-' + nIdx"
                 class="group border-b border-slate-200 h-8 hover:bg-[#bdecfe]/30 transition-colors text-xs font-normal"
               >
-                <td class="p-2 border-slate-200 text-center text-slate-600">
+                <td class="p-2 border-slate-200 text-center text-[#000000D9]">
                   {{ nIdx + 1 }}
                 </td>
                 <td
-                  class="p-2 border-slate-200 text-center text-slate-800"
+                  class="p-2 border-slate-200 text-center text-[#000000D9] font-medium"
                   :class="[item.roomNumber ? 'bg-[#c9eeff]/60' : 'bg-white']"
                 >
                   {{ item.roomNumber }}
@@ -1546,37 +1916,37 @@ function formatMoney(num) {
                 >
                   {{ item.id }}
                 </td>
-                <td class="p-2 border-slate-200 text-slate-800 break-words whitespace-normal leading-tight">
+                <td class="p-2 border-slate-200 text-[#000000D9] break-words whitespace-normal leading-tight">
                   {{ item.bookingName }}
                 </td>
-                <td class="p-2 border-slate-200 text-slate-700 truncate">
+                <td class="p-2 border-slate-200 text-[#000000D9] truncate">
                   {{ item.roomType }}
                 </td>
-                <td class="p-2 border-slate-200 text-center text-slate-600">
+                <td class="p-2 border-slate-200 text-center text-[#000000D9]">
                   {{ item.arrivalDate }}
                 </td>
-                <td class="p-2 border-slate-200 text-center text-slate-700">
+                <td class="p-2 border-slate-200 text-center text-[#000000D9]">
                   {{ item.nights }}
                 </td>
-                <td class="p-2 border-slate-200 text-center text-slate-600">
+                <td class="p-2 border-slate-200 text-center text-[#000000D9]">
                   {{ item.noshowDate }}
                 </td>
-                <td class="p-2 border-slate-200 text-center text-slate-600">
+                <td class="p-2 border-slate-200 text-center text-[#000000D9]">
                   {{ item.noshowTime }}
                 </td>
-                <td class="p-2 border-slate-200 text-right text-slate-800">
+                <td class="p-2 border-slate-200 text-right text-[#000000D9] tabular-nums">
                   {{ formatMoney(item.totalAmount) }}
                 </td>
-                <td class="p-2 border-slate-200 text-center text-slate-600">
+                <td class="p-2 border-slate-200 text-center text-[#000000D9]">
                   {{ item.username }}
                 </td>
-                <td class="p-2 border-slate-200 text-center text-slate-600">
+                <td class="p-2 border-slate-200 text-center text-[#000000D9]">
                   {{ item.shift }}
                 </td>
-                <td class="p-2 border-slate-200 text-slate-600 truncate" :title="item.reason">
+                <td class="p-2 border-slate-200 text-[#000000D9] truncate" :title="item.reason">
                   {{ item.reason }}
                 </td>
-                <td class="p-2 text-slate-600 truncate border-slate-200">
+                <td class="p-2 text-[#000000D9] truncate border-slate-200">
                   {{ item.company }}
                 </td>
               </tr>
@@ -1591,7 +1961,7 @@ function formatMoney(num) {
         <div class="bg-white rounded-lg border border-slate-200 shadow-sm overflow-auto flex-1 max-h-full">
           <table class="w-full text-left border-collapse text-xs min-w-[1700px] table-fixed">
             <thead>
-              <tr class="bg-slate-100 border-b border-slate-200 text-slate-800 font-semibold select-none h-9 text-xs">
+              <tr class="bg-slate-100 border-b border-slate-200 text-[#000000D9] font-semibold select-none h-9 text-xs">
                 <th class="p-2 border-r border-slate-200 text-center w-[50px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">STT</th>
                 <th class="p-2 border-r border-slate-200 text-center w-[120px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Mã ĐK</th>
                 <th class="p-2 border-r border-slate-200 text-center w-[80px] sticky top-0 bg-slate-100 z-10 shadow-[0_1px_0_0_rgba(226,232,240,1)] align-middle border">Phòng</th>
@@ -1610,7 +1980,7 @@ function formatMoney(num) {
             </thead>
             <tbody>
               <tr v-if="birthdaysData.length === 0 && !isLoading">
-                <td colspan="14" class="p-8 text-center text-slate-400 font-normal border-slate-200">
+                <td colspan="14" class="p-8 text-center text-[#A8B0BF] font-normal border-slate-200">
                   Không có khách sinh nhật trong giai đoạn này.
                 </td>
               </tr>
@@ -1626,7 +1996,7 @@ function formatMoney(num) {
                       {{ isGroupCollapsed('birthdays-' + dateGroup) ? '+' : '-' }}
                     </button>
                   </td>
-                  <td colspan="13" class="p-2 border-slate-200 text-left font-semibold text-slate-800 bg-white group-hover:bg-[#bdecfe]/40 transition-colors">
+                  <td colspan="13" class="p-2 border-slate-200 text-left font-semibold text-[#000000D9] bg-white group-hover:bg-[#bdecfe]/40 transition-colors">
                     {{ dateGroup }}
                   </td>
                 </tr>
@@ -1638,7 +2008,7 @@ function formatMoney(num) {
                   :key="item.bookingCode + '-' + bIdx"
                   class="group border-b border-slate-200 h-8 hover:bg-[#bdecfe]/30 transition-colors text-xs font-normal"
                 >
-                  <td class="p-2 border-slate-200 text-center text-slate-600">
+                  <td class="p-2 border-slate-200 text-center text-[#000000D9]">
                     {{ bIdx + 1 }}
                   </td>
                   <td
@@ -1649,42 +2019,42 @@ function formatMoney(num) {
                     {{ item.bookingCode }}
                   </td>
                   <td
-                    class="p-2 border-slate-200 text-center text-slate-800"
+                    class="p-2 border-slate-200 text-center text-[#000000D9] font-medium"
                     :class="[item.roomNumber ? 'bg-[#c9eeff]/60' : 'bg-white']"
                   >
                     {{ item.roomNumber }}
                   </td>
-                  <td class="p-2 border-slate-200 text-slate-800 break-words whitespace-normal leading-tight">
+                  <td class="p-2 border-slate-200 text-[#000000D9] break-words whitespace-normal leading-tight">
                     {{ item.guestName }}
                   </td>
-                  <td class="p-2 border-slate-200 text-center text-slate-600">
+                  <td class="p-2 border-slate-200 text-center text-[#000000D9]">
                     {{ item.birthday }}
                   </td>
-                  <td class="p-2 border-slate-200 text-center text-slate-700">
+                  <td class="p-2 border-slate-200 text-center text-[#000000D9]">
                     {{ item.age }}
                   </td>
-                  <td class="p-2 border-slate-200 text-center text-slate-600">
+                  <td class="p-2 border-slate-200 text-center text-[#000000D9]">
                     {{ item.idType }}
                   </td>
-                  <td class="p-2 border-slate-200 text-center text-slate-600 font-mono">
+                  <td class="p-2 border-slate-200 text-center text-[#000000D9]">
                     {{ item.idNumber }}
                   </td>
-                  <td class="p-2 border-slate-200 text-center text-slate-600">
+                  <td class="p-2 border-slate-200 text-center text-[#000000D9]">
                     {{ item.nationality }}
                   </td>
-                  <td class="p-2 border-slate-200 text-slate-600 truncate">
+                  <td class="p-2 border-slate-200 text-[#000000D9] truncate">
                     {{ item.phone }}
                   </td>
-                  <td class="p-2 border-slate-200 text-slate-600 truncate">
+                  <td class="p-2 border-slate-200 text-[#000000D9] truncate">
                     {{ item.email }}
                   </td>
-                  <td class="p-2 border-slate-200 text-center text-slate-600">
+                  <td class="p-2 border-slate-200 text-center text-[#000000D9]">
                     {{ item.arrivalDate }}
                   </td>
-                  <td class="p-2 border-slate-200 text-center text-slate-600">
+                  <td class="p-2 border-slate-200 text-center text-[#000000D9]">
                     {{ item.departureDate }}
                   </td>
-                  <td class="p-2 text-slate-600 break-words whitespace-normal leading-tight border-slate-200">
+                  <td class="p-2 text-[#000000D9] break-words whitespace-normal leading-tight border-slate-200">
                     {{ item.company }}
                   </td>
                 </tr>
@@ -1696,14 +2066,14 @@ function formatMoney(num) {
     </div>
 
     <!-- Sticky footer info bar -->
-    <div class="px-4 py-2 border-t border-slate-200 bg-slate-50/50 flex items-center gap-6 shrink-0 text-xs font-semibold text-slate-700 select-none">
+    <div class="px-4 py-2 border-t border-slate-200 bg-slate-50/50 flex items-center gap-6 shrink-0 text-xs font-semibold text-[#000000D9] select-none">
       <div class="flex items-center gap-1.5">
-        <span class="text-slate-500 uppercase tracking-wide text-xs">{{ footerStats.label1 }}</span>
-        <span class="text-slate-800 text-xs font-bold">{{ footerStats.val1 }}</span>
+        <span class="text-[#000000D9] uppercase tracking-wide text-xs">{{ footerStats.label1 }}</span>
+        <span class="text-[#000000D9] text-xs font-bold">{{ footerStats.val1 }}</span>
       </div>
       <div class="flex items-center gap-1.5 border-l border-slate-200 pl-6">
-        <span class="text-slate-500 uppercase tracking-wide text-xs">{{ footerStats.label2 }}</span>
-        <span class="text-slate-800 text-xs font-bold">{{ footerStats.val2 }}</span>
+        <span class="text-[#000000D9] uppercase tracking-wide text-xs">{{ footerStats.label2 }}</span>
+        <span class="text-[#000000D9] text-xs font-bold">{{ footerStats.val2 }}</span>
       </div>
     </div>
   </div>

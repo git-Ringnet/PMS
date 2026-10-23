@@ -1,5 +1,50 @@
 # Project Memory — PMS
 
+- 2026-10-22: Triển khai hoàn tất Dòng 61 Sheet FIX FE - In Phân Công Phòng (Housekeeping PrintTasksTab) ([PrintTasksTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/housekeeping/components/PrintTasksTab.vue)):
+  - Khắc phục lỗi thứ tự tầng: Thay thế `.sort()` mặc định bằng computed `sortedFloorNumbers` với logic so sánh số tự nhiên `sort((a, b) => a - b)`, đảm bảo các tầng sắp xếp tuần tự chuẩn xác: TẦNG 1, TẦNG 2, TẦNG 3... TẦNG 10, TẦNG 11.
+  - Đồng bộ Typography & Màu sắc chuẩn FE Design System: Đổi màu chữ Tầng (`.floor-label`) sang `#000000D9`, `font-weight: 600`; đổi màu chữ Loại phòng (`.room-type`) sang `#000000D9`, `font-weight: 400`; đồng bộ toàn bộ nhãn lọc, nhãn ca trực, dropdown và text phụ sang màu `#000000D9`.
+  - Bảo toàn 100% logic phân công, in ấn, không tác động màn hình khác (Zero Side Effects).
+  - Kiểm thử: `npm run build` thành công 100% trong 4.95s (0 lỗi); kiểm tra trực quan trên trình duyệt xác nhận hiển thị chuẩn xác.
+
+- 2026-10-22: Tự động hiển thị đúng mã công ty tiếp theo khi mở modal Thêm Công Ty ([CompanyTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/company/CompanyTab.vue), [CompanyController.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Http/Controllers/Api/CompanyController.php)):
+  - Loại bỏ hoàn toàn text cứng `'Code'`. Thêm hàm `getNextCompanyCode()` tự động tính toán mã tiếp theo theo chuẩn PMS (ví dụ `CTY0005` khi đã có `CTY0001` - `CTY0004`).
+  - Gán trực tiếp vào form và hiển thị trên input readonly. Backend `store()` bổ sung rule validation cho `code` để tiếp nhận và lưu đồng bộ.
+  - Build frontend đạt 100% trong 4.68s (0 lỗi). Bảo toàn 100% logic khác.
+
+- 2026-10-22: Loại bỏ chữ "Chưa chọn" tại các ô dropdown select trong modal Thêm / Sửa Công ty ([CompanyTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/company/CompanyTab.vue)):
+  - Cả 5 dropdown (Người đặt phòng, Người bán, Thị trường, Nguồn khách, Chi nhánh) chuyển option mặc định sang `<option value=""></option>` (để trống thay vì hiện chữ "Chưa chọn").
+  - Giao diện sạch sẽ, hiển thị trạng thái trống kết hợp nút `✕` xóa nhanh tiện lợi. Build frontend thành công 100% trong 4.93s (0 lỗi). Bảo toàn tuyệt đối logic binding và API.
+
+- 2026-10-22: Đồng bộ nút sắp xếp bảng màn hình Công Ty ([CompanyTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/company/CompanyTab.vue)) giống màn hình D.S Công Việc:
+  - Thiết kế nút sắp xếp không viền ngoài (Borderless SVG Sort Icons): Bỏ cặp ký tự tam giác `▲` `▼` cũ; sử dụng icon SVG hai chiều `ArrowUpDown` thanh mảnh (`w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600`) khi chưa sắp xếp; khi active hiển thị mũi tên đơn hướng to rõ (`stroke-[2.8] text-[#006bdb]` màu xanh theme PMS: `↑` khi tăng dần, `↓` khi giảm dần). Áp dụng cho các cột `Mã` và `Tên Giao Dịch`.
+  - Triển khai cơ chế 3 trạng thái click luân phiên (asc -> desc -> none reset về ban đầu) kèm tooltip `:title` thông minh.
+  - Kiểm thử: `npm run build` thành công 100% (5.20s, 0 lỗi); browser automation xác thực trực quan 4 trạng thái sắp xếp chuẩn xác. Bảo toàn 100% logic khác (Zero Side Effects).
+
+- 2026-10-22: Triển khai hoàn tất Dòng 58 & 59 Sheet FIX FE cho phân hệ Công Ty (Company Tab) ([CompanyTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/company/CompanyTab.vue)):
+  - Dòng 58 (Giao diện tổng danh sách Công ty): Font Roboto 12px, tiêu đề/header bảng `semi-bold` (600) màu `#000000D9`, ô dữ liệu `regular` (400) màu `#000000D9`; `<th>` căn giữa ngang dọc (`text-center align-middle`), viền đầy đủ `border border-slate-200`, Title Case. Ẩn hoàn toàn cột "Mã giá phòng" và nút "Đồng bộ" trên toolbar (vẫn giữ nguyên logic `sync_acc` phục vụ thanh toán nợ lễ tân tại CheckoutPage); cột "Công nợ tối đa" định dạng dấu phẩy phân cách hàng triệu; khử triệt để chuỗi dữ liệu "NULL" / "null" ở cột Tax và Số điện thoại.
+  - Dòng 59 (Modal Thêm / Sửa Công ty): Header modal và nút Lưu đồng bộ màu hệ thống (`var(--pms-custom-theme, #006bdb)`), bỏ nút Đóng ở footer (hỗ trợ nút ✕ trên header và phím `Esc`). Trường bắt buộc có nền vàng `#FFF8DB`, viền `#F1DD8A`, nhãn có `*` đỏ, placeholder `#A8B0BF`. Tích hợp nút ✕ xóa nhanh trên các ô nhập và riêng biệt ngay cạnh mũi tên `▼` trên cả 5 dropdown select (Người đặt phòng, Người bán, Thị trường, Nguồn khách, Chi nhánh). Ẩn hoàn toàn "Mã giá phòng" khỏi modal. Đồng bộ 2 nút switch toggle chuẩn bo tròn active xanh sky. Format Công nợ tối đa có dấu phẩy khi nhập. Ghi chú rõ Chi nhánh là chi nhánh kinh doanh của đối tác.
+  - Bảo toàn 100% logic nghiệp vụ khác và không tác động ngoài [CompanyTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/company/CompanyTab.vue) (Zero Side Effects).
+  - Kiểm thử: `npm run build` thành công 100% (6.03s, 0 lỗi); kiểm tra trực quan trên trình duyệt xác nhận các màn hình, modal thêm/sửa, nút ✕ xóa nhanh, phím `Esc` và dữ liệu chuẩn chỉ.
+
+- 2026-10-22: Nâng cấp nút sắp xếp 5 cột ("Mã Đăng Ký", "Phòng", "Tên Đăng Ký", "Ngày Đến", "Ngày Đi") tại bảng Danh Sách Công Việc ([ShiftWorkPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/ShiftWorkPage.vue)):
+  - Thiết kế nút sắp xếp trực quan, không viền ngoài (Borderless Sort Icons): Bỏ khung viền hộp ngoài, icon `ArrowUpDown` hai chiều rõ nét (`text-slate-400 group-hover:text-slate-600`); khi active hiển thị mũi tên đơn hướng to rõ (`stroke-[2.8] text-[#006bdb]` màu xanh theme PMS: `↑` khi tăng dần, `↓` khi giảm dần). Thêm `whitespace-nowrap` chống rớt dòng tiêu đề và icon.
+  - Triển khai logic sắp xếp 2 chiều thực tế (asc/desc/reset): Sắp xếp mã tự nhiên (`id`), theo số phòng chính và danh sách phòng con (`room`), theo bảng chữ cái tiếng Việt (`bookingName`), theo ngày giờ thực tế (`arrivalDate`, `departureDate`). Áp dụng đồng bộ cho cả 2 tab Phòng đến (Arrivals) và Phòng đi (Departures). Reset khi chuyển tab.
+  - Kiểm thử: `npm run build` thành công 100% (0 lỗi); kiểm tra trực quan trên trình duyệt xác nhận các icon hiển thị rõ ràng, sắc nét, không viền ngoài thừa và tương tác chính xác 100%. Bảo toàn 100% logic khác.
+
+- 2026-10-22: Triển khai hoàn tất Dòng 51 Sheet FIX FE cho phân hệ Danh Sách Công Việc (Shift Work) thuộc Sơ Đồ Phòng ([ShiftWorkPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/ShiftWorkPage.vue), [ShiftWorkController.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Http/Controllers/Api/ShiftWorkController.php)):
+  - Đưa cột `Phòng` ra ngay sau cột `Mã Đăng Ký` ở cả 2 tab `arrivals` (Phòng đến) và `departures` (Phòng đi) trên giao diện bảng và API xuất Excel.
+  - Cụm Đặt cọc & Tổng tiền (Tab Đến) bỏ khung ngoài (`border/bg`), hiển thị chữ tự nhiên, số tiền nổi bật có màu (`text-amber-700` & `text-emerald-700 tabular-nums font-bold`) và đặt ở giữa thanh booking (`mx-auto`).
+  - Ghi chú booking ở banner row xuống dòng rõ ràng, hiển thị đầy đủ với `whitespace-pre-wrap break-words text-xs mt-0.5 text-[#000000D9]`.
+  - Chuẩn hóa Typography & Màu sắc toàn bộ 6 Tab và Toolbar: Header `<th>` (Roboto 12px, font-semibold text-[#000000D9], text-center align-middle, viền border border-slate-200, Title Case); Cell `<td>` (Roboto 12px, font-normal text-[#000000D9], số tiền tabular-nums); Tab header (các tab chưa chọn), toolbar (các nhãn Ngày, Từ ngày, Đến ngày, Trạng thái, Loại, ô nhập ngày, dropdown select, nút Hôm nay/Ngày mai, tìm kiếm nhanh), chuỗi thông tin đăng ký banner row (`{{ booking.arrivalDate }}~{{ booking.departureDate }} _ Room Night: ...`), cột Yêu cầu ĐB, footer đều đã đồng bộ chuẩn `text-[#000000D9]`; Empty state chuyển sang placeholder chuẩn `text-[#A8B0BF]`; Tab 6 Sinh nhật khách bỏ triệt để `font-mono` ở cột Số giấy tờ.
+  - Nút Lưu ghi chú Tab Đăng ký chờ xác nhận (Pending): Đổi màu nút Lưu khi cho phép thao tác sang màu xanh theme PMS (`bg-[#006bdb] hover:bg-[#0056b3] text-white shadow ring-2 ring-blue-300`) với icon đĩa mềm rõ nét, dễ bấm.
+  - Nút Xuất Excel chuyển sang class chuẩn `.btn-pms-secondary` kèm icon tải xuống. Xác nhận Double-Click mở Đăng ký ở cả 6 tab mượt mà.
+  - Bảo toàn 100% logic nghiệp vụ, các màn hình và phân hệ khác (Zero Side Effects).
+  - Kiểm thử: `npm run build` thành công 100% (0 lỗi); `php artisan test --filter=ShiftWork` đạt 3/3 passed (20 assertions).
+
+- 2026-10-22: Chuẩn hóa triệt để Cỡ chữ (>= 12px), Bỏ font-mono và Đồng bộ màu chữ (#000000D9) theo chuẩn FE Design System cho các màn hình/modal từ Dòng 33 đến 50 Sheet FIX FE (`GuestInfoModal.vue`, `GuestDetailModal.vue`, `DeleteServiceModal.vue`, `ExtraBedModal.vue`, `TransferPaymentModal.vue`, `PrepaymentModal.vue`, `PaymentModal.vue`, `CheckoutPage.vue`). Chỉ tinh chỉnh các class CSS hiển thị, bảo toàn 100% logic xử lý, props, emits và không gây tác động ngoài mong muốn (Zero Side Effects). Build frontend đạt 100% (5.46s, 0 lỗi).
+
+- 2026-10-22: Dòng 353 thêm cấu hình runtime `CompanyDefault` theo từng branch. Booking nhanh ở Room Plan và Nhận phòng nhanh/Giao phòng nhanh ở Room Map dùng `companies.id` đang hoạt động từ cấu hình, chặn thao tác khi cấu hình không hợp lệ và bỏ toàn bộ fallback theo `KHÁCH LẺ`, công ty đầu tiên hoặc ID `1`. Không đổi contract `POST /api/bookings`, Tạo đăng ký thường, import legacy, OCC/AV, billing hay thanh toán. Key/value legacy tương ứng `Chưa xác minh`; không suy diễn từ `SP1302.Ma`. Rủi ro còn lại: cần cấu hình CompanyDefault hợp lệ sau khi chạy migration trên từng branch trước khi dùng hai luồng nhanh.
+
 - 2026-10-21: Dòng 269 Tìm kiếm chung giữ đúng module khi mở Đăng ký. Dữ liệu Phòng/Khách có thêm khóa Booking cha; `Thao tác → Đăng Ký` và double-click mã BK mở cùng Booking tại đúng Lễ tân hoặc Đặt phòng. Không đổi schema, import, Room Plan, Checkout hay logic Booking. `GeneralSearchProjectionServiceTest` đạt 2/2; frontend build đạt. Rủi ro còn lại: cần UAT với dữ liệu thực tế ở cả ba tab.
 
 - 2026-10-21: Chuẩn hóa Dòng 50 Sheet FIX FE - Chuyển Cọc / Tách Cọc thuộc phân hệ Thu ngân / Hóa đơn ([CheckoutPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue), [TransferPaymentModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/TransferPaymentModal.vue), [TransferServiceModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/TransferServiceModal.vue), [SplitDepositModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/SplitDepositModal.vue)):
@@ -831,7 +876,13 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 
 
+## Current Status
+
+- 2026-10-22: Dòng 363 đã tách ba chỉ báo buồng phòng khỏi trạng thái vòng đời phòng ở source; cần chạy migration và nghiệm thu Room Map với dữ liệu thực tế trước khi coi là hoàn tất production.
+
 ## Recent Changes
+
+- 2026-10-22: Dòng 363 thêm ba cờ `rooms.is_housekeeping_service`, `is_priority_cleaning`, `is_do_not_disturb`; Room Map/API single và bulk cập nhật cờ riêng, không đổi `room_status_code`. Card/list hiển thị đồng thời trạng thái thực tế và tối đa ba icon cờ tại góc phải trên trước chấm checkout. Mã legacy `housekeeping`/`vacant_priority`/`dnd` chỉ còn tương thích đọc dữ liệu cũ.
 
 - 2026-10-21: Dòng 442 Room Plan: giữ `quantity = 0` và `total_amount = 0` của dịch vụ theo ngày là số 0 thay vì fallback thành 1/đơn giá; khi có EB theo ngày, tổng dùng đúng các dòng EB đó và không fallback sang cấu hình EB cấp phòng. GAL5/G0000012 với EB 0 × 300.000 nay có Tiền DV 0đ. Test Room Plan đạt 7/7; frontend build đạt. Không đổi API, database, Booking, Hóa đơn, post bill hoặc import.
 
@@ -1013,6 +1064,8 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 
 ## Known Risks
+
+- 2026-10-22: Dữ liệu Room cũ đang có `room_status_code` là `housekeeping`, `vacant_priority` hoặc `dnd` không thể tự suy ra trạng thái thực tế trước khi bị ghi đè; migration chỉ backfill cờ và giữ nguyên mã cũ. `SP1000.CleanRequest` và nguồn legacy cho ưu tiên dọn chưa được xác minh cho import production.
 
 - 2026-10-21: Dòng 442 đã qua dữ liệu GAL5 và unit test/build; chưa UAT tooltip Room Plan trực tiếp trên browser sau khi tải lại trang.
 

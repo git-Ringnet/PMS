@@ -199,6 +199,32 @@ export const roomService = {
     return response.data
   },
 
+  /**
+   * Cập nhật các cờ buồng phòng độc lập, không thay đổi room_status_code.
+   */
+  async updateRoomHousekeepingFlags(roomId, housekeepingFlags, currentModule = 'frontdesk') {
+    if (USE_MOCK_ONLY) {
+      const room = getMockRooms().find(r => r.id === parseInt(roomId))
+      if (room) Object.assign(room, housekeepingFlags)
+      return { success: true, data: room }
+    }
+
+    const response = await http.put(`/rooms/${roomId}/housekeeping-flags`, {
+      housekeeping_flags: housekeepingFlags,
+      current_module: currentModule,
+    })
+    return response.data
+  },
+
+  async bulkUpdateRoomHousekeepingFlags(roomIds, housekeepingFlags, currentModule = 'frontdesk') {
+    const response = await http.post('/rooms/bulk-housekeeping-flags', {
+      room_ids: roomIds,
+      housekeeping_flags: housekeepingFlags,
+      current_module: currentModule,
+    })
+    return response.data
+  },
+
   async getRoomStatusPermission(currentModule = 'frontdesk') {
     const response = await http.get('/rooms/permissions', { params: { current_module: currentModule } })
     return response.data
