@@ -160,7 +160,7 @@ onBeforeUnmount(() => {
       </span>
       <button v-for="dept in departments" :key="dept.id" @click="activeDepartmentId = dept.id"
         class="w-full text-left px-3 py-2 rounded-lg font-medium text-xs border-none bg-transparent cursor-pointer transition-colors"
-        :class="activeDepartmentId === dept.id ? 'bg-sky-50 text-sky-700 font-semibold ring-1 ring-inset ring-sky-200' : 'text-slate-600 hover:bg-slate-100'">
+        :class="activeDepartmentId === dept.id ? 'bg-sky-50 text-[#006bdb] font-semibold ring-1 ring-inset ring-sky-200' : 'text-[#000000D9] hover:bg-slate-100'">
         {{ dept.code }} - {{ dept.name }}
       </button>
     </div>
@@ -204,8 +204,8 @@ onBeforeUnmount(() => {
               v-for="s in departmentServices.filter(item => !searchDeptServiceQuery || item.name.toLowerCase().includes(searchDeptServiceQuery.toLowerCase()))"
               :key="s.id" @click="openEditDeptServiceModal(s)"
               class="border-b border-slate-100 hover:bg-slate-50/55 cursor-pointer text-[#000000D9]">
-              <td class="p-2.5 font-semibold text-slate-800">{{ s.name }}</td>
-              <td class="p-2.5 text-slate-600 font-normal leading-relaxed">{{ s.pivot?.description || '-' }}</td>
+              <td class="p-2.5 font-normal text-[#000000D9]">{{ s.name }}</td>
+              <td class="p-2.5 font-normal text-[#000000D9] leading-relaxed">{{ s.pivot?.description || '-' }}</td>
               <td class="p-2.5 text-center">
                 <div class="flex items-center justify-center">
                   <button @click.stop="deleteDeptService(s.id)"
