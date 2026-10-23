@@ -88,6 +88,12 @@ class RoomLockTest extends TestCase
             'is_active_user' => true,
         ]);
 
+        // Dòng 153: quyền mở khóa theo Rule (vai trò), không theo chức danh / bộ phận
+        foreach (['adminUser' => 'branch_admin', 'hkmUser' => 'hk_manager', 'fomUser' => 'fo_manager'] as $property => $code) {
+            $role = \App\Models\Role::firstOrCreate(['code' => $code], ['name' => $code, 'level' => 2, 'is_active' => true]);
+            $this->{$property}->roles()->attach($role->id);
+        }
+
         // 2. Seed room class and form
         $this->supdClass = RoomClass::create([
             'name' => 'Superior Double',
@@ -829,5 +835,211 @@ class RoomLockTest extends TestCase
         // Phải thông báo lỗi AV < 0 chặn cứng trước, không cho phép force
         $this->assertStringContainsString('hết phòng trống (AV < 0)', $res->json('message'));
         $this->assertFalse($res->json('require_confirm') ?? false);
+    }
+
+    private function makeUserWithRole(string $username, string $roleCode, ?int $branchId = null): User
+    {
+        $user = User::create([
+            'name' => $username, 'username' => $username, 'email' => $username.'@pms.com',
+            'job_title' => 'Trưởng Bộ Phận', 'department_code' => 'FO', 'department' => 'BỘ PHẬN LỄ TÂN',
+            'password' => bcrypt('password'), 'is_active_user' => true,
+        ]);
+        $role = \App\Models\Role::firstOrCreate(['code' => $roleCode], ['name' => $roleCode, 'level' => 3, 'is_active' => true]);
+        $user->roles()->attach($role->id, ['system_branch_id' => $branchId]);
+
+        return $user;
+    }
+
+    /** Dòng 153: RoleUserUnlockRoomOOO/OOS là tên Rule, so khớp chính xác. */
+    public function test_row_153_unlock_rule_matches_role_exactly(): void
+    {
+        $service = app(\App\Services\RoomLockPermissionService::class);
+        $foStaff = $this->makeUserWithRole('fo1', 'fo_staff');
+        $noRole = User::create(['name' => 'Lễ tân không vai trò', 'username' => 'fo2', 'email' => 'fo2@pms.com', 'department_code' => 'FO',
+            'department' => 'BỘ PHẬN LỄ TÂN', 'job_title' => 'FOM', 'password' => bcrypt('x'), 'is_active_user' => true]);
+        $lock = ['lock_type' => 'OOO'];
+
+        HotelConfig::updateOrCreate(['name' => 'RoleUserUnlockRoomOOO/OOS'], ['value' => 'FOM']);
+        $this->assertNotNull($service->checkUnlockRolePermission($foStaff, $lock));      // FO staff không phải FOM
+        $this->assertNull($service->checkUnlockRolePermission($this->fomUser, $lock));   // fo_manager = FOM
+        $this->assertNotNull($service->checkUnlockRolePermission($noRole, $lock));       // chức danh / bộ phận không tính
+
+        HotelConfig::updateOrCreate(['name' => 'RoleUserUnlockRoomOOO/OOS'], ['value' => 'FO']);
+        $this->assertNull($service->checkUnlockRolePermission($foStaff, $lock));
+        $this->assertNotNull($service->checkUnlockRolePermission($this->fomUser, $lock)); // FO không bao gồm FOM
+
+        HotelConfig::updateOrCreate(['name' => 'RoleUserUnlockRoomOOO/OOS'], ['value' => 'hk_manager, fo_staff']);
+        $this->assertNull($service->checkUnlockRolePermission($foStaff, $lock));          // ghi thẳng mã vai trò
+        $this->assertNull($service->checkUnlockRolePermission($this->hkmUser, $lock));
+        $this->assertNotNull($service->checkUnlockRolePermission($this->fomUser, $lock));
+    }
+
+    public function test_row_153_unlock_rule_only_counts_roles_of_current_branch(): void
+    {
+        $service = app(\App\Services\RoomLockPermissionService::class);
+        \App\Models\SystemBranch::firstOrCreate(['id' => 1], ['code' => 'HKT1', 'name' => 'Chi nhánh 1', 'is_active' => true]);
+        \App\Models\SystemBranch::firstOrCreate(['id' => 2], ['code' => 'HKT2', 'name' => 'Chi nhánh 2', 'is_active' => true]);
+        $user = $this->makeUserWithRole('fom_branch2', 'fo_manager', 2);
+        HotelConfig::updateOrCreate(['name' => 'RoleUserUnlockRoomOOO/OOS'], ['value' => 'FOM']);
+
+        $this->assertNotNull($service->checkUnlockRolePermission($user, ['lock_type' => 'OOS'], 1));
+        $this->assertNull($service->checkUnlockRolePermission($user, ['lock_type' => 'OOS'], 2));
+    }
+
+    public function test_row_153_unlock_api_blocks_user_without_rule(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'RoleUserUnlockRoomOOO/OOS'], ['value' => 'FOM']);
+        $lock = RoomLock::create(['room_number' => '101', 'start_date' => '2026-06-01 00:00:00', 'end_date' => '2026-06-05 23:59:59',
+            'lock_type' => 'OOO', 'status' => 'Active', 'username' => 'admin', 'is_active' => 1]);
+
+        \Laravel\Sanctum\Sanctum::actingAs($this->makeUserWithRole('fo1', 'fo_staff'));
+        $this->deleteJson("/api/room-locks/{$lock->id}")->assertStatus(403);
+
+        \Laravel\Sanctum\Sanctum::actingAs($this->fomUser);
+        $this->deleteJson("/api/room-locks/{$lock->id}")->assertOk();
+    }
+
+    private function editPayload(string $start, string $end, string $type = 'OOO'): array
+    {
+        return ['start_date' => "{$start} 00:00:00", 'end_date' => "{$end} 23:59:00", 'reason' => 'Bảo trì', 'maintenance_percent' => 0,
+            'lock_type' => $type, 'is_active' => 1];
+    }
+
+    /** Dòng 156: sửa ngày bắt đầu về ngày hệ thống -> khóa có hiệu lực ngay, phòng chuyển OOO/OOS. */
+    public function test_row_156_moving_start_to_system_date_activates_lock_and_room_status(): void
+    {
+        \Laravel\Sanctum\Sanctum::actingAs($this->adminUser);
+        $this->room101->update(['room_status_code' => 'vacant_ready']);
+        $lock = RoomLock::create(['room_number' => '101', 'start_date' => '2026-06-03 00:00:00', 'end_date' => '2026-06-05 23:59:59',
+            'lock_type' => 'OOS', 'status' => 'New', 'username' => 'admin', 'is_active' => 1]);
+
+        // Chỉ sửa ghi chú, chưa tới ngày khóa -> phòng giữ nguyên
+        $this->putJson("/api/room-locks/{$lock->id}", $this->editPayload('2026-06-03', '2026-06-05', 'OOS'))->assertOk();
+        $this->assertSame('vacant_ready', $this->room101->fresh()->room_status_code);
+        $this->assertSame('New', $lock->fresh()->status);
+
+        // Sửa ngày bắt đầu = ngày hệ thống (01/06)
+        $this->putJson("/api/room-locks/{$lock->id}", $this->editPayload('2026-06-01', '2026-06-05', 'OOS'))->assertOk();
+        $this->assertSame('oos', $this->room101->fresh()->room_status_code);
+        $this->assertSame('Active', $lock->fresh()->status);
+    }
+
+    /** Dòng 156: khóa đang hiệu lực chỉ được sửa ngày kết thúc / ghi chú, không sửa ngày bắt đầu. */
+    public function test_row_156_active_lock_allows_end_date_but_not_start_date(): void
+    {
+        \Laravel\Sanctum\Sanctum::actingAs($this->adminUser);
+        $lock = RoomLock::create(['room_number' => '101', 'start_date' => '2026-06-01 00:00:00', 'end_date' => '2026-06-05 23:59:59',
+            'lock_type' => 'OOO', 'status' => 'Active', 'username' => 'admin', 'is_active' => 1]);
+        $this->room101->update(['room_status_code' => 'ooo']);
+
+        $this->putJson("/api/room-locks/{$lock->id}", $this->editPayload('2026-06-01', '2026-06-08'))->assertOk();
+        $this->assertStringStartsWith('2026-06-08', (string) $lock->fresh()->end_date);
+        $this->assertSame('ooo', $this->room101->fresh()->room_status_code);
+
+        $this->putJson("/api/room-locks/{$lock->id}", $this->editPayload('2026-06-02', '2026-06-08'))->assertStatus(422);
+    }
+
+    /** Dòng 288: sửa khóa tương lai của phòng đang có khách không được ghi phòng thành OOO. */
+    public function test_row_288_editing_future_lock_keeps_occupied_room_status(): void
+    {
+        \Laravel\Sanctum\Sanctum::actingAs($this->adminUser);
+        $this->room101->update(['room_status_code' => 'occupied_dirty']);
+        $lock = RoomLock::create(['room_number' => '101', 'start_date' => '2026-06-10 00:00:00', 'end_date' => '2026-06-12 23:59:59',
+            'lock_type' => 'OOO', 'status' => 'New', 'username' => 'admin', 'is_active' => 1]);
+
+        $this->putJson("/api/room-locks/{$lock->id}", $this->editPayload('2026-06-10', '2026-06-13'))->assertOk();
+        $this->assertSame('occupied_dirty', $this->room101->fresh()->room_status_code);
+
+        $this->postJson('/api/room-locks/bulk-update', ['locks' => [[
+            'id' => $lock->id, 'start_date' => '2026-06-11 00:00:00', 'end_date' => '2026-06-13 23:59:00', 'reason' => 'x', 'lock_type' => 'OOO',
+        ]]])->assertOk();
+        $this->assertSame('occupied_dirty', $this->room101->fresh()->room_status_code);
+    }
+
+    private function makeBooking(?string $roomNumber, string $arrival, string $departure, int $status = 0): void
+    {
+        $booking = \App\Models\Booking::create([
+            'booking_name' => 'Khách '.($roomNumber ?? 'chưa gán'), 'status' => \App\Models\Booking::STATUS_RESERVATION,
+            'booking_date' => '2026-06-01', 'arrival_date' => $arrival, 'departure_date' => $departure,
+            'registration_status_id' => 1, 'created_by' => 'admin',
+        ]);
+        \App\Models\BookingRoom::create([
+            'booking_id' => $booking->id, 'room_class_id' => $this->supdClass->id, 'room_number' => $roomNumber,
+            'arrival_date' => $arrival, 'departure_date' => $departure, 'status' => $status,
+        ]);
+    }
+
+    /** Dòng 156: gia hạn khóa (cả khóa đang hiệu lực và khóa tương lai) bị chặn nếu trùng booking đã đặt. */
+    public function test_row_156_extending_lock_is_blocked_by_existing_booking(): void
+    {
+        \Laravel\Sanctum\Sanctum::actingAs($this->adminUser);
+        $this->makeBooking('101', '2026-06-10', '2026-06-13');
+
+        $active = RoomLock::create(['room_number' => '101', 'start_date' => '2026-06-01 00:00:00', 'end_date' => '2026-06-05 23:59:59',
+            'lock_type' => 'OOO', 'status' => 'Active', 'username' => 'admin', 'is_active' => 1]);
+        $res = $this->putJson("/api/room-locks/{$active->id}", $this->editPayload('2026-06-01', '2026-06-11'));
+        $res->assertStatus(422);
+        $this->assertStringContainsString('trùng lịch với booking', $res->json('message'));
+        $this->assertStringStartsWith('2026-06-05', (string) $active->fresh()->end_date);
+    }
+
+    /** Dòng 156: gia hạn khóa làm hết phòng trống theo AllowOverRoomTypeRoomKind. */
+    public function test_row_156_extending_lock_checks_allow_over_room_type(): void
+    {
+        \Laravel\Sanctum\Sanctum::actingAs($this->adminUser);
+        $this->makeBooking(null, '2026-06-10', '2026-06-12'); // hạng SUPD chỉ có 1 phòng (101)
+        $lock = RoomLock::create(['room_number' => '101', 'start_date' => '2026-06-05 00:00:00', 'end_date' => '2026-06-08 23:59:59',
+            'lock_type' => 'OOO', 'status' => 'New', 'username' => 'admin', 'is_active' => 1]);
+
+        HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->update(['value' => '0']);
+        $res = $this->putJson("/api/room-locks/{$lock->id}", $this->editPayload('2026-06-05', '2026-06-11'));
+        $res->assertStatus(422);
+        $this->assertStringContainsString('hết phòng trống (AV < 0)', $res->json('message'));
+
+        HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->update(['value' => '1']);
+        HotelConfig::where('name', 'AllowLockRoomCauseUnassignableRoomBK')->update(['value' => '1']);
+        $this->putJson("/api/room-locks/{$lock->id}", $this->editPayload('2026-06-05', '2026-06-11'))
+            ->assertStatus(422)->assertJsonPath('require_confirm', true);
+        $this->assertStringStartsWith('2026-06-08', (string) $lock->fresh()->end_date);
+    }
+
+    /** Dòng 156: gia hạn khóa làm booking chưa gán số không gán được phòng nguyên giai đoạn (AllowLockRoomCauseUnassignableRoomBK). */
+    public function test_row_156_extending_lock_checks_unassignable_booking(): void
+    {
+        \Laravel\Sanctum\Sanctum::actingAs($this->adminUser);
+        Room::create(['room_number' => '102', 'room_class_id' => $this->supdClass->id, 'room_form_id' => $this->doubleForm->id,
+            'max_guests' => 2, 'floor' => '1', 'status' => 'available']);
+        $this->makeBooking('102', '2026-06-15', '2026-06-17');
+        $this->makeBooking(null, '2026-06-15', '2026-06-20');
+        HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->update(['value' => '1']);
+        $lock = RoomLock::create(['room_number' => '101', 'start_date' => '2026-06-10 00:00:00', 'end_date' => '2026-06-12 23:59:59',
+            'lock_type' => 'OOO', 'status' => 'New', 'username' => 'admin', 'is_active' => 1]);
+
+        HotelConfig::where('name', 'AllowLockRoomCauseUnassignableRoomBK')->update(['value' => '0']);
+        $res = $this->putJson("/api/room-locks/{$lock->id}", $this->editPayload('2026-06-10', '2026-06-18') + ['force' => true]);
+        $res->assertStatus(422);
+        $this->assertStringContainsString('không đủ phòng trống liên tục để gán cho booking', $res->json('message'));
+
+        HotelConfig::where('name', 'AllowLockRoomCauseUnassignableRoomBK')->update(['value' => '1']);
+        $this->putJson("/api/room-locks/{$lock->id}", $this->editPayload('2026-06-10', '2026-06-18'))
+            ->assertStatus(422)->assertJsonPath('require_confirm', true);
+        $this->putJson("/api/room-locks/{$lock->id}", $this->editPayload('2026-06-10', '2026-06-18') + ['force' => true])->assertOk();
+        $this->assertStringStartsWith('2026-06-18', (string) $lock->fresh()->end_date);
+    }
+
+    /** Dòng 288: không cho chuyển tay phòng đang có khách sang OOO/OOS. */
+    public function test_row_288_cannot_set_lock_status_on_occupied_room(): void
+    {
+        \Laravel\Sanctum\Sanctum::actingAs($this->adminUser);
+        $this->makeBooking('101', '2026-05-30', '2026-06-03', \App\Models\BookingRoom::STATUS_CHECKED_IN);
+        $this->room101->update(['room_status_code' => 'occupied_dirty']);
+
+        $res = $this->putJson("/api/rooms/{$this->room101->id}/status", ['room_status_code' => 'ooo']);
+        $res->assertStatus(422);
+        $this->assertStringContainsString('đang có khách ở', $res->json('message'));
+        $this->postJson('/api/rooms/bulk-status', ['room_ids' => [$this->room101->id], 'room_status_code' => 'oos'])->assertStatus(422);
+        $this->assertSame('occupied_dirty', $this->room101->fresh()->room_status_code);
+
+        $this->putJson("/api/rooms/{$this->room101->id}/status", ['room_status_code' => 'occupied_clean'])->assertOk();
     }
 }

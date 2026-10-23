@@ -2312,7 +2312,7 @@ const processedBookings = computed(() => {
           babies: 0,
           extraBed: 0,
           specialRequest: lock.lock_reason || '',
-          lockUsername: lock.lock_username || lock.username || lock.created_by_user?.username || lock.created_by_user?.name || lock.created_by || 'Admin',
+          lockUsername: lock.lock_username || lock.username || lock.created_by_user?.username || lock.created_by_user?.name || lock.created_by || '',
           price: '0',
           label: `${lock.lock_type?.toUpperCase() === 'OOS' ? 'OOS' : 'OOO'} - ${lock.lock_reason || 'Bảo trì'}`,
           isVirtual: false,
@@ -5126,7 +5126,7 @@ function getRoomStatusIconName(item) {
         </div>
         <div class="flex flex-col gap-1.5 text-[#000000D9]">
           <div><span class="font-semibold text-[#000000D9]">Ghi chú:</span> <span class="font-normal text-[#000000D9] whitespace-pre-wrap">{{ hoveredBooking.specialRequest || '-' }}</span></div>
-          <div><span class="font-semibold text-[#000000D9]">Người khóa:</span> <span class="font-normal text-[#000000D9]">{{ hoveredBooking.lockUsername || 'Admin' }}</span></div>
+          <div><span class="font-semibold text-[#000000D9]">Người khóa:</span> <span class="font-normal text-[#000000D9]">{{ hoveredBooking.lockUsername || '-' }}</span></div>
         </div>
       </template>
 
