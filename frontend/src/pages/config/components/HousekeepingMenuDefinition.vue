@@ -226,11 +226,9 @@ onMounted(() => { reset(); load(); fetchHotelServices() })
     <div class="border-b border-slate-200 shrink-0">
       <div class="flex flex-wrap gap-1">
         <button v-for="tab in definitionTabs" :key="tab" @click="activeDefinitionTab = tab"
-          class="px-3 py-1.5 text-xs font-semibold border-none bg-transparent cursor-pointer relative pb-2 transition-colors"
-          :class="activeDefinitionTab === tab ? 'text-sky-700 font-bold' : 'text-slate-500 hover:text-slate-800'">
+          class="px-2.5 py-1.5 text-xs font-semibold border-none bg-transparent cursor-pointer relative pb-1.5 transition-colors font-roboto"
+          :class="activeDefinitionTab === tab ? 'text-[#006bdb] border-b-2 border-[#006bdb] font-bold' : 'text-[#000000D9] hover:text-[#006bdb]'">
           {{ tab }}
-          <div v-if="activeDefinitionTab === tab" class="absolute bottom-0 left-0 right-0 h-0.5 rounded-full"
-            :style="{ background: topbarThemeBg }"></div>
         </button>
       </div>
     </div>
@@ -250,10 +248,10 @@ onMounted(() => { reset(); load(); fetchHotelServices() })
         <!-- Outlets Table -->
         <div class="border border-slate-200 rounded-xl overflow-auto bg-white shadow-2xs h-64 shrink-0 xl:h-full">
           <table class="w-full text-xs border-collapse">
-            <thead class="bg-slate-50 text-gray-900 font-semibold sticky top-0 z-10">
+            <thead class="bg-slate-50 text-[#000000D9] font-semibold sticky top-0 z-10">
               <tr>
                 <th class="p-2 text-center align-middle border border-slate-200 w-14">Thứ Tự</th>
-                <th class="p-2 text-center align-middle border border-slate-200 w-12">Ảnh</th>
+                <th class="p-2 text-center align-middle border border-slate-200 w-20">Ảnh</th>
                 <th class="p-2 text-center align-middle border border-slate-200 w-20">Mã Outlet</th>
                 <th class="p-2 text-center align-middle border border-slate-200">Tên Outlet</th>
                 <th class="p-2 text-center align-middle border border-slate-200 w-24">Mã Dịch Vụ</th>
@@ -272,22 +270,22 @@ onMounted(() => { reset(); load(); fetchHotelServices() })
                 class="border-b border-slate-100 hover:bg-slate-50 cursor-move relative text-gray-900"
                 :class="[draggedIndex === index ? 'opacity-50' : '', dragOverIndex === index ? 'border-t-2 border-t-sky-500' : '']">
                 <td class="p-2 text-center border-r border-slate-100 whitespace-nowrap">
-                  <span class="inline-flex items-center gap-1 font-semibold text-slate-600">
+                  <span class="inline-flex items-center gap-1 font-normal text-[#000000D9]">
                     <GripVertical class="w-3.5 h-3.5 text-slate-400" />{{ index + 1 }}
                   </span>
                 </td>
                 <td class="p-1.5 text-center border-r border-slate-100">
-                  <div class="w-7 h-7 rounded bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center mx-auto">
+                  <div class="w-9 h-9 rounded-lg bg-slate-100 border border-slate-200 overflow-hidden flex items-center justify-center mx-auto shadow-2xs">
                     <img v-if="item.image_url || item.image" :src="normalizeImageUrl(item.image_url || item.image)" class="w-full h-full object-cover" />
-                    <span v-else class="text-[10px] text-slate-400 font-bold">{{ item.code }}</span>
+                    <span v-else class="text-[10px] text-slate-400 font-normal">{{ item.code }}</span>
                   </div>
                 </td>
-                <td class="p-2 border-r border-slate-100 font-semibold text-center text-[#000000D9]">{{ item.code }}</td>
-                <td class="p-2 border-r border-slate-100 font-medium text-slate-800">{{ item.name }}</td>
-                <td class="p-2 border-r border-slate-100 text-center font-medium">{{ item.service_code || '-' }}</td>
-                <td class="p-2 border-r border-slate-100 text-center font-medium">{{ item.default_service_charge_percent ?? 0 }}</td>
-                <td class="p-2 border-r border-slate-100 text-center font-medium">{{ item.default_special_tax_percent ?? 0 }}</td>
-                <td class="p-2 border-r border-slate-100 text-center font-medium">{{ item.default_tax_percent ?? 0 }}</td>
+                <td class="p-2 border-r border-slate-100 font-normal text-center text-[#000000D9]">{{ item.code }}</td>
+                <td class="p-2 border-r border-slate-100 font-normal text-[#000000D9]">{{ item.name }}</td>
+                <td class="p-2 border-r border-slate-100 text-center font-normal text-[#000000D9]">{{ item.service_code || '-' }}</td>
+                <td class="p-2 border-r border-slate-100 text-center font-normal text-[#000000D9]">{{ item.default_service_charge_percent ?? 0 }}</td>
+                <td class="p-2 border-r border-slate-100 text-center font-normal text-[#000000D9]">{{ item.default_special_tax_percent ?? 0 }}</td>
+                <td class="p-2 border-r border-slate-100 text-center font-normal text-[#000000D9]">{{ item.default_tax_percent ?? 0 }}</td>
                 <td class="p-2 border-r border-slate-100 text-center">
                   <button type="button" role="switch" :aria-checked="item.is_active" :disabled="isFlagUpdating(item, 'is_active')"
                     title="Bật/tắt outlet" @click.stop="toggleOutletFlag(item, 'is_active')"
@@ -331,18 +329,18 @@ onMounted(() => { reset(); load(); fetchHotelServices() })
           </h3>
           
           <!-- Outlet Image Upload -->
-          <div class="flex items-center gap-2.5 bg-slate-50/60 p-2 rounded-lg border border-slate-200">
-            <div class="w-10 h-10 rounded-lg border border-slate-200 bg-white overflow-hidden flex items-center justify-center shrink-0 shadow-2xs">
+          <div class="flex items-center gap-3 bg-slate-50/60 p-2.5 rounded-lg border border-slate-200">
+            <div class="w-14 h-14 rounded-lg border border-slate-200 bg-white overflow-hidden flex items-center justify-center shrink-0 shadow-2xs">
               <img v-if="form.image_url" :src="form.image_url" class="w-full h-full object-cover" />
-              <span v-else class="text-[10px] text-gray-400 font-medium">Chưa có</span>
+              <span v-else class="text-[10px] text-gray-400 font-normal">Chưa có</span>
             </div>
-            <div class="flex items-center gap-2">
-              <label class="px-2 py-1 rounded border border-slate-300 hover:bg-white text-gray-700 text-xs font-medium cursor-pointer text-center shadow-2xs transition-colors">
+            <div class="flex flex-col gap-1.5">
+              <label class="px-3 py-1 rounded border border-slate-300 hover:bg-white text-gray-700 text-xs font-normal cursor-pointer text-center shadow-2xs transition-colors">
                 <span>{{ form.image_url ? 'Đổi ảnh' : 'Chọn ảnh' }}</span>
                 <input type="file" accept="image/*" class="hidden" @change="onImageSelected" />
               </label>
               <button v-if="form.image_url" type="button" @click="removeImage"
-                class="text-xs text-rose-500 hover:text-rose-700 font-medium cursor-pointer border-none bg-transparent">
+                class="text-xs text-rose-500 hover:text-rose-700 font-normal cursor-pointer border-none bg-transparent text-left pl-1">
                 Xóa ảnh
               </button>
             </div>
@@ -350,10 +348,10 @@ onMounted(() => { reset(); load(); fetchHotelServices() })
 
           <!-- Tên outlet -->
           <div class="flex flex-col gap-0.5">
-            <label class="text-xs font-semibold text-gray-900">Tên Outlet <span class="text-red-500">*</span></label>
+            <label class="text-xs font-semibold text-[#000000D9]">Tên Outlet <span class="text-rose-500">*</span></label>
             <div class="relative">
               <input v-model="form.name" placeholder="Nhập tên outlet"
-                class="w-full bg-[#FFF8DB] border border-[#F1DD8A] focus:border-amber-500 rounded px-2.5 py-1 text-xs focus:outline-none font-medium text-gray-900 transition-colors" />
+                class="w-full bg-[#FFF8DB] border border-[#F1DD8A] focus:border-[#eab308] rounded px-2.5 py-1 text-xs focus:outline-none font-normal text-[#000000D9] transition-colors" />
               <button v-if="form.name" @click="form.name = ''" type="button"
                 class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs">✕</button>
             </div>
@@ -361,11 +359,11 @@ onMounted(() => { reset(); load(); fetchHotelServices() })
 
           <!-- Mã outlet -->
           <div class="flex flex-col gap-0.5">
-            <label class="text-xs font-semibold text-gray-900">Mã Outlet <span class="text-red-500">*</span></label>
+            <label class="text-xs font-semibold text-[#000000D9]">Mã Outlet <span class="text-rose-500">*</span></label>
             <div class="relative">
               <input v-model="form.code" placeholder="Nhập mã outlet" :disabled="Boolean(editing)"
-                class="w-full border rounded px-2.5 py-1 text-xs focus:outline-none font-medium text-gray-900 transition-colors disabled:bg-slate-100 disabled:border-slate-200 disabled:text-gray-500"
-                :class="editing ? '' : 'bg-[#FFF8DB] border-[#F1DD8A] focus:border-amber-500'" />
+                class="w-full border rounded px-2.5 py-1 text-xs focus:outline-none font-normal text-[#000000D9] transition-colors disabled:bg-slate-100 disabled:border-slate-200 disabled:text-[#000000D9] disabled:cursor-not-allowed"
+                :class="editing ? '' : 'bg-[#FFF8DB] border-[#F1DD8A] focus:border-[#eab308]'" />
               <button v-if="form.code && !editing" @click="form.code = ''" type="button"
                 class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs">✕</button>
             </div>
@@ -373,9 +371,9 @@ onMounted(() => { reset(); load(); fetchHotelServices() })
 
           <!-- Mã dịch vụ -->
           <div class="flex flex-col gap-0.5">
-            <label class="text-xs font-semibold text-gray-900">Mã Dịch Vụ</label>
+            <label class="text-xs font-semibold text-[#000000D9]">Mã Dịch Vụ</label>
             <select v-model="form.service_code"
-              class="w-full border border-slate-200 rounded px-2.5 py-1 text-xs focus:outline-sky-400 bg-white font-medium text-gray-900">
+              class="w-full border border-slate-200 rounded px-2.5 py-1 text-xs focus:outline-sky-400 bg-white font-normal text-[#000000D9]">
               <option value="">-- Chưa gán dịch vụ --</option>
               <option v-for="srv in hotelServices" :key="srv.code" :value="srv.code">
                 {{ srv.code }} - {{ srv.name }}
@@ -385,20 +383,20 @@ onMounted(() => { reset(); load(); fetchHotelServices() })
 
           <!-- Nhóm thuế phí: Phí phục vụ (5) -> Thuế ĐB (0) -> Thuế (8) -->
           <div class="grid grid-cols-3 gap-2">
-            <label class="flex min-w-0 flex-col gap-0.5 text-xs font-semibold text-gray-900">
+            <label class="flex min-w-0 flex-col gap-0.5 text-xs font-semibold text-[#000000D9]">
               <span class="truncate">Phí PV (%)</span>
               <input v-model.number="form.default_service_charge_percent" type="number" min="0" max="100" step="0.01"
-                class="w-full min-w-0 px-2 py-1 rounded border border-slate-200 text-xs font-medium text-gray-900 focus:outline-sky-400 bg-white" />
+                class="w-full min-w-0 px-2 py-1 rounded border border-slate-200 text-xs font-normal text-[#000000D9] focus:outline-sky-400 bg-white" />
             </label>
-            <label class="flex min-w-0 flex-col gap-0.5 text-xs font-semibold text-gray-900">
+            <label class="flex min-w-0 flex-col gap-0.5 text-xs font-semibold text-[#000000D9]">
               <span class="truncate">Thuế ĐB (%)</span>
               <input v-model.number="form.default_special_tax_percent" type="number" min="0" max="100" step="0.01"
-                class="w-full min-w-0 px-2 py-1 rounded border border-slate-200 text-xs font-medium text-gray-900 focus:outline-sky-400 bg-white" />
+                class="w-full min-w-0 px-2 py-1 rounded border border-slate-200 text-xs font-normal text-[#000000D9] focus:outline-sky-400 bg-white" />
             </label>
-            <label class="flex min-w-0 flex-col gap-0.5 text-xs font-semibold text-gray-900">
+            <label class="flex min-w-0 flex-col gap-0.5 text-xs font-semibold text-[#000000D9]">
               <span class="truncate">Thuế (%)</span>
               <input v-model.number="form.default_tax_percent" type="number" min="0" max="100" step="0.01"
-                class="w-full min-w-0 px-2 py-1 rounded border border-slate-200 text-xs font-medium text-gray-900 focus:outline-sky-400 bg-white" />
+                class="w-full min-w-0 px-2 py-1 rounded border border-slate-200 text-xs font-normal text-[#000000D9] focus:outline-sky-400 bg-white" />
             </label>
           </div>
 
