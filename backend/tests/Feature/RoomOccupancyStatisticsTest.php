@@ -137,7 +137,7 @@ class RoomOccupancyStatisticsTest extends TestCase
             'booking_date' => '2026-09-04',
             'arrival_date' => '2026-09-04',
             'departure_date' => '2026-09-04',
-            'num_of_days' => 1,
+            'num_of_days' => 0,
             'is_day_use' => true,
             'status' => Booking::STATUS_CHECKOUT,
             'registration_status_id' => $availableStatus->booking_status_id,
@@ -150,7 +150,8 @@ class RoomOccupancyStatisticsTest extends TestCase
             'arrival_date' => '2026-09-04',
             'departure_date' => '2026-09-04',
             'planned_departure_date' => '2026-09-04',
-            'NumOfDays' => 1,
+            // Day-use has zero nights; one would falsely classify it as an early departure.
+            'NumOfDays' => 0,
             'CheckoutDate' => '2026-09-04',
             'is_day_use' => true,
             'status' => BookingRoom::STATUS_CHECKED_OUT,

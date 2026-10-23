@@ -6473,3 +6473,12 @@
 - Sửa nhánh kèm allocations: chuẩn hóa mảng thật và kiểm tra AV trước ghi ngày phòng, tránh nhận nhầm là kỳ ở không đổi; test AV phát hiện và xác nhận chặn/rollback đúng khi không cho over.
 - Backend BookingBusinessRulesTest + BookingFourSectionsTest 113/113 đạt, 659 assertions (6 ca mới cho 275). Frontend liên quan 17/17 đạt (4 ca mới). Build/PHP lint/diff-check đạt.
 - Docs docs/TESTCASE_DONG_275.md: nguyên nhân, thay đổi, 12 case nghiệm thu, giới hạn test logic/UI. Đã dọn build thử ngoài repo. Không thay DB vận hành/migrate/seed; chưa UAT UI thật. Người dùng cho phép commit riêng phần 275 ngày 23/10/2026, không push. Giữ riêng phần 156 đang chờ.
+
+## [2026-10-23] - Rà soát note khách dòng 153, 211, 214, 259, 288
+
+- Đối chiếu nội dung/ảnh Excel, ưu tiên note đỏ 153 (22/09, 29/09) và 214 (13/10, EB từng ngày); rà code quyền mở khóa, tooltip, check-in, lưu giá/EB, phòng đến chưa gán và thống kê phòng đang ở.
+- Baseline backend 62/63: lỗi test tổng hợp ở early_departures, do fixture Day-use đặt NumOfDays=1 trong khi thực tế model=0. Sửa hai giá trị fixture về 0, giữ toàn bộ assertion và code production; ca tổng hợp đạt cả các assertion phía sau.
+- Bổ sung HTTP 214 GET lại RoomMap và services sau lưu: giá 700.000, bỏ ăn sáng, xóa mã giá; EB từng ngày 300.000, 500.000 và SL 0. Fixture SQLite DATE chuẩn hóa tương ứng MySQL DATE; service UTC đổi timezone ứng dụng trước so sánh.
+- Bổ sung frontend chạy đoạn xử lý thật: 211 ba ca đồng ý/bỏ qua/API từ chối; 214 bốn ca lưu giá riêng và SL 0, báo ngày lỗi, bỏ qua đêm đã post/quá khứ, lỗi header dừng ghi đêm.
+- Kết quả backend 64/64 đạt, 398 assertions; frontend 15/15 đạt; PHP lint và git diff --check đạt. Không sửa production; không chạy DB vận hành/migrate/seed/push/commit. Chưa UAT trình duyệt thật; Waiting ở 259 đối chiếu query, chưa có test riêng.
+- Báo cáo docs/RA_SOAT_DONG_153_211_214_259_288.md ghi nguyên nhân, bằng chứng, giới hạn và checklist nghiệm thu. Giữ các test hồi quy/tài liệu; bảo toàn phần DAILY_LOG có sẵn của công việc khác.

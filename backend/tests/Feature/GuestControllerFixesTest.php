@@ -377,6 +377,47 @@ class GuestControllerFixesTest extends TestCase
         $this->assertSame(['2026-08-09:1x300000', '2026-08-10:1x500000', '2026-08-11:0x0'], $rows);
     }
 
+    public function test_row_214_reopening_room_map_and_services_returns_saved_values(): void
+    {
+        [$booking, $room, $guest] = $this->row214InhouseRoom();
+        $form = \App\Models\RoomForm::create(['name' => 'Audit double']);
+        \App\Models\Room::create([
+            'room_number' => '214', 'room_class_id' => $room->room_class_id,
+            'room_form_id' => $form->id,
+            'floor' => 2, 'room_status_code' => 'occupied_dirty',
+        ]);
+        $room->update(['room_number' => '214']);
+
+        $this->putJson("/api/booking-rooms/{$room->id}/guests/{$guest->id}", [
+            'full_name' => 'WALKIN GUEST', 'rate' => 700000, 'rate_code' => null, 'breakfast' => false,
+        ])->assertSuccessful();
+        // SQLite retains Eloquent's midnight suffix in DATE fields; MySQL DATE stores YYYY-MM-DD.
+        \Illuminate\Support\Facades\DB::table('booking_rooms')->where('id', $room->id)->update([
+            'arrival_date' => '2026-08-09', 'departure_date' => '2026-08-12',
+        ]);
+        $map = $this->getJson('/api/rooms?date=2026-08-09')->assertSuccessful();
+        $saved = collect($map->json('data'))->firstWhere('room_number', '214');
+        $this->assertNotNull($saved);
+        $this->assertEquals(700000, (float) $saved['rate']);
+        $this->assertFalse($saved['breakfast']);
+        $this->assertEmpty($saved['rate_code']);
+
+        $this->putJson("/api/bookings/{$booking->id}/rooms/{$room->id}", [
+            'extra_bed_qty' => 1, 'extra_bed_rate' => 300000,
+        ])->assertSuccessful();
+        foreach ([['2026-08-09', 1, 300000], ['2026-08-10', 1, 500000], ['2026-08-11', 0, 0]] as [$date, $qty, $rate]) {
+            $this->postJson("/api/booking-rooms/{$room->id}/services", [
+                'service_code' => 'EB', 'service_name' => 'Extra Bed', 'service_date' => $date,
+                'quantity' => $qty, 'rate' => $rate, 'is_room' => 1,
+            ])->assertSuccessful();
+        }
+        $services = $this->getJson("/api/booking-rooms/{$room->id}/services")->assertSuccessful();
+        $nights = collect($services->json('data'))->where('service_code', 'EB')
+            ->sortBy('service_date')->map(fn ($s) => \Carbon\Carbon::parse($s['service_date'])
+                ->setTimezone(config('app.timezone'))->toDateString().':'.(float) $s['quantity'].'x'.(float) $s['rate'])->values()->all();
+        $this->assertSame(['2026-08-09:1x300000', '2026-08-10:1x500000', '2026-08-11:0x0'], $nights);
+    }
+
     private function makeRoom(Booking $booking, string $id, int $status, array $attributes = []): BookingRoom
     {
         return BookingRoom::create(array_merge([
