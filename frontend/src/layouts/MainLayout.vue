@@ -972,7 +972,7 @@ function handleHeaderBookingSelected(booking) {
 
   <div class="flex flex-col h-screen w-full max-w-full overflow-hidden bg-white">
     <!-- Top Header Bar -->
-    <header 
+    <header
       class="relative flex items-center justify-between gap-1 xl:gap-2 h-10 lg:h-10.5 compact-low-h-header border-b px-2 xl:px-3 shrink-0 z-50 transition-all duration-200 w-full max-w-full overflow-visible"
       :class="isHeaderBgDark ? 'border-white/10' : 'border-slate-200'"
       :style="{ background: headerBgColor }"

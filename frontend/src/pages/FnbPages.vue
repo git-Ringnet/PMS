@@ -232,12 +232,11 @@ onUnmounted(() => {
 
     <!-- Portal Wallpaper Modal -->
     <PortalWallpaperModal
-      :is-open="isWallpaperModalOpen"
+      v-model:show="isWallpaperModalOpen"
       :current-wallpaper="wallpaperUrl"
       :current-position="wallpaperPosition"
       :current-fit="wallpaperFit"
       :current-overlay="wallpaperOverlay"
-      @close="isWallpaperModalOpen = false"
       @saved="handleWallpaperSaved"
     />
   </div>

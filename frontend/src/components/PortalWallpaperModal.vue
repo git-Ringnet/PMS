@@ -202,16 +202,12 @@ async function handleSave() {
         wallpaper_fit: wallpaperFit.value,
         wallpaper_overlay: overlayPercent.value,
       })
-    } else if (props.currentWallpaper) {
+    } else {
       res = await http.post('/portal-wallpaper', {
         wallpaper_position: appliedPosition.value,
         wallpaper_fit: wallpaperFit.value,
         wallpaper_overlay: overlayPercent.value,
       })
-    } else {
-      uiStore.showToast('Vui lòng chọn ảnh từ máy hoặc nhập đường dẫn URL!', 'error')
-      isSubmitting.value = false
-      return
     }
 
     if (res.data?.success) {

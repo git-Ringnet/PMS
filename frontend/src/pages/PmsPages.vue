@@ -70,9 +70,9 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="relative w-full h-[calc(100vh-3rem)] overflow-hidden">
+  <div class="relative w-full h-full overflow-hidden">
     <!-- Background Image -->
-    <div class="absolute inset-0">
+    <div class="absolute inset-x-0 -top-10 h-[calc(100%+2.5rem)] lg:-top-10.5 lg:h-[calc(100%+2.625rem)]">
       <img
         :src="currentBgSrc"
         alt="Hotel Background"
@@ -82,11 +82,8 @@ onMounted(() => {
           objectFit: wallpaperFit
         }"
       />
-      <!-- Dark Blur & Gradient Overlay -->
-      <div class="absolute inset-0 bg-gradient-to-b from-slate-950/75 via-slate-900/60 to-slate-950/80 backdrop-blur-[2px] pointer-events-none"></div>
       <!-- Configurable dark overlay for crisp and clear background -->
       <div
-        v-if="wallpaperOverlay > 0"
         class="absolute inset-0 bg-slate-950 transition-opacity duration-300 pointer-events-none"
         :style="{ opacity: wallpaperOverlay / 100 }"
       ></div>
@@ -193,12 +190,11 @@ onMounted(() => {
 
     <!-- Portal Wallpaper Modal -->
     <PortalWallpaperModal
-      :is-open="isWallpaperModalOpen"
+      v-model:show="isWallpaperModalOpen"
       :current-wallpaper="wallpaperUrl"
       :current-position="wallpaperPosition"
       :current-fit="wallpaperFit"
       :current-overlay="wallpaperOverlay"
-      @close="isWallpaperModalOpen = false"
       @saved="handleWallpaperSaved"
     />
   </div>
