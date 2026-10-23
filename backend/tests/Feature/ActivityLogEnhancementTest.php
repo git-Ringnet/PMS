@@ -694,6 +694,48 @@ class ActivityLogEnhancementTest extends TestCase
         $this->assertEquals('Lễ tân', $res['module_label']);
         $this->assertStringContainsString('Số hộ chiếu: B1234567', $res['description']);
     }
+
+    /**
+     * Test Row 90: Mã phòng chỉ hiển thị mã G chứ không phải số phòng chi tiết. Số phòng chi tiết nằm ở trong nội dung mô tả.
+     */
+    public function test_row_90_room_code_shows_g_code_only_and_physical_room_in_description()
+    {
+        $log = new ActivityLog([
+            'id' => 10013,
+            'action' => 'Modify',
+            'module' => 'reservation',
+            'component' => 'RoomSchedule',
+            'target_type' => 'BookingRoom',
+            'target_id' => 'G0000088',
+            'target_label' => 'GAL99',
+            'old_values' => ['room_number' => '101'],
+            'new_values' => ['room_number' => '102'],
+            'description' => 'Chuyển phòng từ 101 sang 102 cho mã G0000088',
+        ]);
+
+        $res = (new ActivityLogResource($log))->resolve();
+        $this->assertEquals('G0000088', $res['room_number']);
+        $this->assertStringContainsString('101', $res['description']);
+        $this->assertStringContainsString('102', $res['description']);
+
+        // Trường hợp không có mã G mà chỉ có số phòng vật lý ở BookingRoom: không được đưa số phòng vật lý vào cột mã phòng
+        $logNoG = new ActivityLog([
+            'id' => 10014,
+            'action' => 'Modify',
+            'module' => 'reservation',
+            'component' => 'RoomSchedule',
+            'target_type' => 'BookingRoom',
+            'target_id' => '12345',
+            'target_label' => 'GAL99',
+            'old_values' => ['room_number' => null],
+            'new_values' => ['room_number' => '102'],
+            'description' => 'Gán phòng 102 cho đăng ký GAL99',
+        ]);
+
+        $resNoG = (new ActivityLogResource($logNoG))->resolve();
+        $this->assertNull($resNoG['room_number']);
+        $this->assertStringContainsString('102', $resNoG['description']);
+    }
 }
 
 

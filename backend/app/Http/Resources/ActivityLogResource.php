@@ -444,7 +444,7 @@ class ActivityLogResource extends JsonResource
             }
         }
 
-        // 3. Nếu là BookingRoom
+        // 3. Nếu là BookingRoom (Hàng 90: chỉ hiển thị mã G, số phòng chi tiết nằm trong nội dung mô tả)
         if ($this->target_type === 'BookingRoom') {
             if (!empty($this->target_id) && preg_match('/^G\d+/i', (string) $this->target_id)) {
                 return (string) $this->target_id;
@@ -461,15 +461,7 @@ class ActivityLogResource extends JsonResource
             if (!empty($this->target_label) && preg_match('/^G\d+/i', (string) $this->target_label)) {
                 return (string) $this->target_label;
             }
-            if (!empty($this->new_values['room_number'])) {
-                return (string) $this->new_values['room_number'];
-            }
-            if (!empty($this->old_values['room_number'])) {
-                return (string) $this->old_values['room_number'];
-            }
-            if (!empty($this->target_id)) {
-                return (string) $this->target_id;
-            }
+            return null;
         }
 
         // 4. Nếu là Booking
@@ -479,13 +471,16 @@ class ActivityLogResource extends JsonResource
                 return null;
             }
             if (!empty($this->new_values['rooms']) && is_array($this->new_values['rooms'])) {
-                return implode(', ', $this->new_values['rooms']);
+                $gRooms = array_values(array_filter($this->new_values['rooms'], fn($r) => preg_match('/^G\d+/i', (string)$r)));
+                if (!empty($gRooms)) {
+                    return implode(', ', $gRooms);
+                }
             }
             $bId = $this->target_id ?: ($this->new_values['id'] ?? null);
             if ($bId) {
                 $b = $this->getCachedBooking($bId);
                 if ($b && $b->bookingRooms && $b->bookingRooms->isNotEmpty()) {
-                    $gIds = $b->bookingRooms->pluck('id')->filter()->all();
+                    $gIds = $b->bookingRooms->pluck('id')->filter(fn($id) => preg_match('/^G\d+/i', (string)$id))->all();
                     if (!empty($gIds)) {
                         return implode(', ', $gIds);
                     }
@@ -501,45 +496,35 @@ class ActivityLogResource extends JsonResource
             }
             $brId = $this->new_values['booking_room_id'] ?? $this->old_values['booking_room_id'] ?? null;
             if ($brId) {
-                if (str_starts_with(strtoupper((string)$brId), 'G')) {
+                if (preg_match('/^G\d+/i', (string)$brId)) {
                     return (string) $brId;
                 }
                 $br = $this->getCachedBookingRoom((string)$brId);
-                if ($br?->id) {
+                if ($br?->id && preg_match('/^G\d+/i', (string)$br->id)) {
                     return (string) $br->id;
                 }
             }
-            $pNum = $this->new_values['room_number'] ?? $this->old_values['room_number'] ?? null;
-            if ($pNum) {
-                return (string) $pNum;
-            }
-            if (!empty($this->target_id) && (str_starts_with((string)$this->target_id, 'G') || strlen((string)$this->target_id) >= 3)) {
+            if (!empty($this->target_id) && preg_match('/^G\d+/i', (string)$this->target_id)) {
                 return (string) $this->target_id;
             }
+            return null;
         }
 
         // 6. Payment
         if ($this->target_type === 'Payment') {
             $brId = $this->new_values['booking_room_id'] ?? $this->old_values['booking_room_id'] ?? null;
-            if ($brId && str_starts_with(strtoupper((string)$brId), 'G')) {
+            if ($brId && preg_match('/^G\d+/i', (string)$brId)) {
                 return (string) $brId;
             }
-            if (!empty($this->new_values['room_number'])) {
-                return (string) $this->new_values['room_number'];
-            }
+            return null;
         }
 
-        // 7. Room hoặc RoomLock (nếu không có mã G, fallback số phòng vật lý)
+        // 7. Room hoặc RoomLock (khóa phòng vật lý OOO/OOS)
         if (in_array($this->target_type, ['Room', 'RoomLock'])) {
             return $this->new_values['room_number'] 
                 ?? $this->old_values['room_number'] 
                 ?? (!empty($this->target_id) && (!is_numeric($this->target_id) || strlen((string)$this->target_id) >= 3) ? (string)$this->target_id : null)
                 ?? $this->target_label;
-        }
-
-        // 8. Quét regex từ description nếu có "phòng 102" hoặc "Phòng: 102"
-        if (!empty($this->description) && preg_match('/(?:phòng|Phòng)[:\s]+([0-9]{3,4})/u', $this->description, $m)) {
-            return $m[1];
         }
 
         return null;
