@@ -905,6 +905,80 @@ class RoomLockTest extends TestCase
             'lock_type' => $type, 'is_active' => 1];
     }
 
+    public static function row156EditModes(): array
+    {
+        return [
+            'OOO single' => ['OOO', false],
+            'OOS single' => ['OOS', false],
+            'OOO batch' => ['OOO', true],
+            'OOS batch' => ['OOS', true],
+        ];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('row156EditModes')]
+    public function test_row_156_red_note_activates_room_on_system_date_in_both_edit_modes(string $type, bool $batch): void
+    {
+        \Laravel\Sanctum\Sanctum::actingAs($this->adminUser);
+        \App\Models\SystemDateRoll::query()->update(['system_date' => '2026-09-24 00:00:00']);
+        $this->room101->update(['room_status_code' => 'vacant_ready']);
+        $lock = RoomLock::create([
+            'room_number' => '101', 'start_date' => '2026-09-25 00:00:00', 'end_date' => '2026-09-27 23:59:59',
+            'lock_type' => $type, 'status' => 'New', 'username' => 'admin', 'is_active' => 1,
+        ]);
+        \Illuminate\Support\Facades\Event::fake([\App\Events\RoomStatusUpdated::class]);
+
+        $save = function (array $payload) use ($batch, $lock) {
+            return $batch
+                ? $this->postJson('/api/room-locks/bulk-update', ['locks' => [array_merge($payload, ['lock_id' => $lock->id])]])
+                : $this->putJson("/api/room-locks/{$lock->id}", $payload);
+        };
+        // A note-only edit of tomorrow's lock must leave today's room available.
+        $save($this->editPayload('2026-09-25', '2026-09-27', $type))->assertOk();
+        $this->assertSame('New', $lock->fresh()->status);
+        $this->assertSame('vacant_ready', $this->room101->fresh()->room_status_code);
+        \Illuminate\Support\Facades\Event::assertNotDispatched(\App\Events\RoomStatusUpdated::class);
+
+        $payload = $this->editPayload('2026-09-24', '2026-09-27', $type);
+        $payload['reason'] = 'Note đỏ 24/09';
+        $payload['maintenance_percent'] = 35;
+        $save($payload)->assertOk();
+        $this->assertSame('Active', $lock->fresh()->status);
+        $this->assertSame('2026-09-24', $lock->fresh()->start_date->toDateString());
+        $this->assertSame(strtolower($type), $this->room101->fresh()->room_status_code);
+        $this->assertSame('Note đỏ 24/09', $lock->fresh()->reason);
+        $this->assertSame(35, $lock->fresh()->maintenance_percent);
+        \Illuminate\Support\Facades\Event::assertDispatched(\App\Events\RoomStatusUpdated::class);
+
+        // Once started, changing its start date is forbidden without changing either record.
+        $save($this->editPayload('2026-09-25', '2026-09-27', $type))->assertStatus(422);
+        $this->assertSame('2026-09-24', $lock->fresh()->start_date->toDateString());
+        $this->assertSame('Active', $lock->fresh()->status);
+        $this->assertSame(strtolower($type), $this->room101->fresh()->room_status_code);
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('row156EditModes')]
+    public function test_row_156_red_note_rejects_activation_over_inhouse_booking_without_changing_status(string $type, bool $batch): void
+    {
+        \Laravel\Sanctum\Sanctum::actingAs($this->adminUser);
+        \App\Models\SystemDateRoll::query()->update(['system_date' => '2026-09-24 00:00:00']);
+        $this->makeBooking('101', '2026-09-24', '2026-09-26', \App\Models\BookingRoom::STATUS_CHECKED_IN);
+        $this->room101->update(['room_status_code' => 'occupied_dirty']);
+        $lock = RoomLock::create([
+            'room_number' => '101', 'start_date' => '2026-09-25 00:00:00', 'end_date' => '2026-09-27 23:59:59',
+            'lock_type' => $type, 'status' => 'New', 'username' => 'admin', 'is_active' => 1,
+        ]);
+        $payload = $this->editPayload('2026-09-24', '2026-09-27', $type);
+        $payload['force'] = true;
+        $response = $batch
+            ? $this->postJson('/api/room-locks/bulk-update', ['locks' => [array_merge($payload, ['lock_id' => $lock->id])], 'force' => true])
+            : $this->putJson("/api/room-locks/{$lock->id}", $payload);
+        $response->assertStatus(422);
+        $this->assertStringContainsString('trùng lịch với booking', $response->json('message'));
+        $this->assertSame('2026-09-25', $lock->fresh()->start_date->toDateString());
+        $this->assertSame('New', $lock->fresh()->status);
+        $this->assertSame('occupied_dirty', $this->room101->fresh()->room_status_code);
+    }
+
     /** Dòng 156: sửa ngày bắt đầu về ngày hệ thống -> khóa có hiệu lực ngay, phòng chuyển OOO/OOS. */
     public function test_row_156_moving_start_to_system_date_activates_lock_and_room_status(): void
     {

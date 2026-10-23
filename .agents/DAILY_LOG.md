@@ -6458,6 +6458,13 @@
 - Cập nhật docs/TESTCASE_DONG_166_183.md: nguyên nhân, case bổ sung, phân biệt test logic và nghiệm thu UI. Không chạy dữ liệu vận hành hay xác nhận UAT UI trong lượt này.
 - Người dùng cho phép commit phần bổ sung BookingRoomController/ShiftWorkController cùng test và tài liệu dòng 166/183 ngày 23/10/2026; không push. Giữ nguyên nhật ký công việc khác ngoài commit.
 
+## [2026-10-23] - Rà soát dòng 156, ưu tiên note đỏ 24/09
+
+- Đọc ảnh người dùng, nội dung và ảnh cột G dòng 156. Xác nhận commit b44a1a56 đã đồng bộ trạng thái khóa/phòng theo ngày PMS ở sửa đơn lẻ và hàng loạt; trước đó đơn lẻ ghi cứng ooo, hàng loạt thiếu đồng bộ.
+- Không sửa code production khi các ca note đỏ đạt. Bổ sung 8 ca HTTP OOO/OOS x đơn lẻ/hàng loạt: ngày PMS 24/9, sửa 25/9 về 24/9 -> Active + đúng rooms.room_status_code; note-only tương lai giữ New; có booking đang ở thì chặn dù force và giữ nguyên dữ liệu.
+- RoomLockTest 33/33 đạt, 175 assertions; frontend component logic 3/3 đạt; PHP lint/diff-check đạt. Mở rộng thống kê phòng 34/35: test all_room_map_statistics_follow_business_rules lỗi có sẵn ở code production chưa thay đổi; không sửa ngoài phạm vi.
+- Docs: docs/TESTCASE_DONG_156.md có nguyên nhân, phần đã sửa sẵn, 12 case nghiệm thu và giới hạn bằng chứng. Không UAT trình duyệt/database thật, không migrate/seed vận hành. Người dùng xác nhận giữ test/tài liệu và cho phép commit ngày 23/10/2026; không push.
+
 ## [2026-10-23] - Dòng 275, note đỏ mới 23/10: đồng bộ ngày đi phòng đăng ký
 
 - Ưu tiên ảnh note mới: PMS 31/8, booking 30/8, phòng Inhouse 30/8–1/9, phòng đăng ký mới 31/8–4/9; đổi booking đi 6/9 phải giữ ngày đến phòng mới 31/8 và kéo ngày đi 6/9, không kéo phòng Inhouse.
