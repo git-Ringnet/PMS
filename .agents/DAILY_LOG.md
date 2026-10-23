@@ -6449,3 +6449,11 @@
 - Mở rộng: backend 70/72 (474 assertions), hai lỗi GIT master/departure date cũng lỗi khi chạy controller gốc HEAD; frontend 146/147, một lỗi ddmmyy ở code ngày tháng không sửa. Không sửa ngoài phạm vi.
 - Docs: docs/TESTCASE_DONG_195_196_197_202.md gồm nguyên nhân, cách sửa, giới hạn và 24 case nghiệm thu. Đã dọn harness, build và baseline tạm; giữ test hồi quy và bằng chứng ngoài repo.
 - Không thay DB vận hành/migrate/seed. Người dùng xác nhận Claude đã nghiệm thu đạt và cho phép commit ngày 23/10/2026; không push.
+
+## [2026-10-23] - Rà soát note đỏ dòng 166 và 183
+
+- Đối chiếu ảnh người dùng và Excel; xác nhận commit 2507496f có 3 test riêng 166 (tiền phòng ở Master, tiền phòng ở phòng, chuyển khách phụ). Chạy lại RoomMoveTest ban đầu 19/19 đạt.
+- Bổ sung 2 test HTTP 183 chuyển cùng ngày sang phòng trống/phòng đang ở: cả ActutalNumOfDays và NumOfDays phòng cũ = 0, phòng đích vẫn 3 đêm. Bổ sung test API giao ca giữ 0 đêm cho phòng chuyển.
+- Bổ sung frontend tests số đêm modal/ánh xạ Đăng ký và owner bill sau chuyển. Tổng kiểm tra backend RoomMoveTest + ShiftWorkListTest 25/25 đạt, 159 assertions; frontend nhóm liên quan 12/12 đạt; PHP lint/diff-check đạt.
+- Cập nhật docs/TESTCASE_DONG_166_183.md: nguyên nhân, case bổ sung, phân biệt test logic và nghiệm thu UI. Không chạy dữ liệu vận hành hay xác nhận UAT UI trong lượt này.
+- Người dùng cho phép commit phần bổ sung BookingRoomController/ShiftWorkController cùng test và tài liệu dòng 166/183 ngày 23/10/2026; không push. Giữ nguyên nhật ký công việc khác ngoài commit.

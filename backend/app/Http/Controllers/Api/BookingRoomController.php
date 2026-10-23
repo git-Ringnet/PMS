@@ -2396,6 +2396,7 @@ class BookingRoomController extends Controller
                         $bookingRoom->update([
                             'departure_date'   => $sysDateStr,
                             'ActutalNumOfDays' => $actualDaysStayed,
+                            'NumOfDays'        => $actualDaysStayed, // Dòng 183: phòng cũ chỉ ở $actualDaysStayed đêm (0 nếu chuyển cùng ngày)
                             'status'           => 100, // Status 100 = Chuyển phòng
                             'move_room'        => $newRoom->id,
                             'departure_time'   => $timeStr,
@@ -2752,6 +2753,7 @@ class BookingRoomController extends Controller
                     $bookingRoom->update([
                         'departure_date'   => $sysDateStr,
                         'ActutalNumOfDays' => $actualDaysStayed,
+                        'NumOfDays'        => $actualDaysStayed,
                         'status'           => 100, // Status 100 = Chuyển phòng / Gộp phòng
                         'move_room'        => $targetBookingRoom->id,
                         'departure_time'   => $timeStr,

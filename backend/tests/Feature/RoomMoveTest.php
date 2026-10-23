@@ -1208,6 +1208,56 @@ class RoomMoveTest extends TestCase
         ]);
     }
 
+    public function test_row_183_same_day_move_to_available_room_keeps_zero_nights_on_source(): void
+    {
+        $this->assertRow183SameDayMove('available');
+    }
+
+    public function test_row_183_same_day_merge_keeps_zero_nights_on_source(): void
+    {
+        $this->assertRow183SameDayMove('merge');
+    }
+
+    private function assertRow183SameDayMove(string $type): void
+    {
+        $booking = Booking::create([
+            'booking_name' => 'Same-day move', 'booking_date' => '2026-07-14',
+            'arrival_date' => '2026-07-14', 'departure_date' => '2026-07-17',
+            'status' => Booking::STATUS_CHECKIN, 'created_by' => 'admin_test',
+        ]);
+        $source = BookingRoom::create([
+            'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'room_number' => '101', 'arrival_date' => '2026-07-14', 'departure_date' => '2026-07-17',
+            'status' => BookingRoom::STATUS_CHECKED_IN, 'NumOfDays' => 3, 'ActutalNumOfDays' => 3,
+        ]);
+        $guest = Guest::create(['full_name' => 'Same-day guest']);
+        BookingRoomGuest::create([
+            'booking_room_id' => $source->id, 'guest_id' => $guest->id,
+            'is_primary' => true, 'status' => BookingRoom::STATUS_CHECKED_IN,
+        ]);
+        if ($type === 'available') {
+            $this->room102->update(['status' => 'available']);
+        } else {
+            BookingRoom::create([
+                'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+                'room_number' => '102', 'arrival_date' => '2026-07-14', 'departure_date' => '2026-07-17',
+                'status' => BookingRoom::STATUS_CHECKED_IN,
+            ]);
+        }
+        $this->postJson("/api/bookings/{$booking->id}/rooms/{$source->id}/move", [
+            'move_type' => $type, 'target_room_number' => '102', 'reason' => 'Row 183 same-day move',
+            'selected_guest_ids' => [$guest->id], 'confirm_exceed_capacity' => true,
+        ])->assertSuccessful()->assertJsonPath('success', true);
+        $source->refresh();
+        $this->assertSame(100, $source->status);
+        $this->assertSame(0, $source->ActutalNumOfDays);
+        $this->assertSame(0, $source->NumOfDays);
+        $this->assertSame($source->arrival_date->toDateString(), $source->departure_date->toDateString());
+        $target = BookingRoom::where('booking_id', $booking->id)->where('room_number', '102')->firstOrFail();
+        $this->assertSame(3, $target->ActutalNumOfDays);
+        $this->assertSame(3, $target->NumOfDays);
+    }
+
     /** Dòng 166: dựng phòng nguồn 104 (2 khách) và phòng đích đang ở 112. */
     private function row166Rooms(): array
     {
