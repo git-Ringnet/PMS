@@ -597,6 +597,7 @@ class BookingRoomServiceController extends Controller
                     abort(422, 'Có bill không thuộc Master đang chọn.');
                 }
                 foreach ($bills as $bill) {
+                    $this->ensureFoCanCancelBill($bill);
                     if ($bill->PaymentId !== null || $bill->VatId !== null || (int) $bill->Status !== 1 || (int) $bill->Edit === 1) {
                         abort(422, 'Chỉ được xóa dịch vụ Master chưa thanh toán và chưa xuất hóa đơn VAT.');
                     }
@@ -611,6 +612,7 @@ class BookingRoomServiceController extends Controller
                     $negative->Edit = 1; $negative->Status = 3; $negative->Pack1 = (string) $bill->Ma; $negative->UpdatedDate = now(); $negative->save();
                     $bill->DescriptionServive = $description;
                     $bill->Edit = 1; $bill->Status = 3; $bill->Pack1 = (string) $negative->Ma; $bill->UpdatedDate = now(); $bill->save();
+                    $this->reverseHousekeepingBills($bill, $negative, trim($validated['reason']));
                     ServiceBillDetail::where('BillServiceId', $bill->Ma)->delete();
                 }
             });
@@ -673,6 +675,7 @@ class BookingRoomServiceController extends Controller
             foreach ($billIds as $billId) {
                 $billServices = $selectedServicesByBill->get($billId, collect());
                 $bill = $bills->get($billId) ?: ServiceBill::whereKey($billId)->lockForUpdate()->firstOrFail();
+                $this->ensureFoCanCancelBill($bill);
                 if ($bill->PaymentId !== null || $bill->VatId !== null || (int) $bill->Status !== 1 || (int) $bill->Edit === 1) {
                     abort(422, 'Chỉ được xóa dịch vụ chưa thanh toán và chưa xuất hóa đơn VAT.');
                 }
@@ -707,17 +710,7 @@ class BookingRoomServiceController extends Controller
                 $bill->UpdatedDate = now();
                 $bill->save();
 
-                // Giữ bill buồng phòng để audit; bill/chi tiết đã hủy không được hiển thị tại Checkout.
-                $housekeepingBills = HousekeepingServiceBill::where('BillServiceId', $bill->Ma)
-                    ->lockForUpdate()
-                    ->get();
-                foreach ($housekeepingBills as $housekeepingBill) {
-                    $housekeepingBill->Status = 3;
-                    $housekeepingBill->BillEdit = 1;
-                    $housekeepingBill->save();
-                    HousekeepingServiceBillDetail::where('BillId', $housekeepingBill->Ma)
-                        ->update(['Deleted' => 1]);
-                }
+                $this->reverseHousekeepingBills($bill, $negative, trim($validated['reason']));
 
                 ServiceBillDetail::where('BillServiceId', $bill->Ma)->delete();
                 $allBillServices->each->delete();
@@ -1949,7 +1942,9 @@ class BookingRoomServiceController extends Controller
         $freePaymentIds = Payment::whereIn('payment_id', $serviceBills->pluck('PaymentId')->filter())
             ->where('payment_method_id', 'CL')->pluck('payment_id')->mapWithKeys(fn ($id) => [(string) $id => true]);
         $details = HousekeepingServiceBillDetail::whereIn('BillId', $bills->pluck('Ma'))
-            ->where('Deleted', 0)->orderBy('DetailId')->get()->groupBy('BillId');
+            ->where(function ($query) use ($bills) {
+                $query->where('Deleted', 0)->orWhereIn('BillId', $bills->where('BillEdit', 1)->pluck('Ma'));
+            })->orderBy('DetailId')->get()->groupBy('BillId');
         $bookings = \App\Models\Booking::withTrashed()->whereIn('id', $bills->pluck('BookingId')->filter())->get()->keyBy('id');
 
         $allowHkCorrectFoBill = $this->allowHkCorrectFoBill();
@@ -1988,7 +1983,8 @@ class BookingRoomServiceController extends Controller
                 'can_cancel' => !$bill->BillEdit
                     && in_array($bill->Department, ['HK', 'FO'], true)
                     && empty($serviceBill?->PaymentId)
-                    && empty($serviceBill?->VatNumber),
+                    && empty($serviceBill?->VatId)
+                    && empty($serviceBill?->VATNumber),
                 'fo_cancel_blocked' => $bill->Department === 'FO' && !$allowHkCorrectFoBill,
             ];
         })->filter()->values();
@@ -1997,6 +1993,47 @@ class BookingRoomServiceController extends Controller
     }
 
     public const FO_BILL_CANCEL_BLOCKED_MESSAGE = 'Hóa đơn được tạo bởi bộ phận lễ tân. Vui lòng liên hệ bộ phận lễ tân để xử lý';
+
+    private function ensureFoCanCancelBill(ServiceBill $bill): void
+    {
+        if (strtoupper(trim((string) $bill->DepartmentId)) === 'HK'
+            || HousekeepingServiceBill::where('BillServiceId', $bill->Ma)->where('Department', 'HK')->exists()) {
+            abort(422, 'Vui lòng liên hệ bộ phận HK để xóa bill.');
+        }
+    }
+
+    private function reverseHousekeepingBills(ServiceBill $source, ServiceBill $negative, string $reason): void
+    {
+        foreach (HousekeepingServiceBill::where('BillServiceId', $source->Ma)->lockForUpdate()->get() as $bill) {
+            $negativeBill = $bill->replicate();
+            $negativeBill->BillServiceId = $negative->Ma;
+            foreach (['BillOriginalAmount', 'BillServicesChargeAmount', 'BillSpecialTaxAmount', 'BillTaxAmount', 'BillTotalAmount', 'BillDiscountAmount', 'BillAmount'] as $field) {
+                if ($bill->getAttribute($field) !== null) {
+                    $negativeBill->setAttribute($field, -(float) $bill->getAttribute($field));
+                }
+            }
+            $negativeBill->BillNote = trim(($bill->BillNote ?: '') . ' (Correct : ' . $reason . ')');
+            $negativeBill->BillEdit = 1;
+            $negativeBill->Status = 3;
+            $negativeBill->save();
+
+            $details = HousekeepingServiceBillDetail::where('BillId', $bill->Ma)->lockForUpdate()->get();
+            foreach ($details as $detail) {
+                $negativeDetail = $detail->replicate();
+                $negativeDetail->BillId = $negativeBill->Ma;
+                // Reverse quantity and line amounts; the unit price stays unchanged.
+                foreach (['Quantity', 'DiscountAmount', 'IncreaseAmount', 'TotalAmount'] as $field) {
+                    $negativeDetail->setAttribute($field, -(float) $detail->getAttribute($field));
+                }
+                $negativeDetail->Deleted = 1;
+                $negativeDetail->save();
+            }
+            HousekeepingServiceBillDetail::where('BillId', $bill->Ma)->update(['Deleted' => 1]);
+            $bill->BillEdit = 1;
+            $bill->Status = 3;
+            $bill->save();
+        }
+    }
 
     /** Dòng 341: thông số SearchHouseKeeping_AllowHKCorrectBillFO cho phép Buồng phòng hủy bill do Lễ tân post. */
     private function allowHkCorrectFoBill(): bool
@@ -2015,7 +2052,7 @@ class BookingRoomServiceController extends Controller
             if ($bill->Department === 'FO' && !$this->allowHkCorrectFoBill()) {
                 abort(422, self::FO_BILL_CANCEL_BLOCKED_MESSAGE);
             }
-            if (!in_array($bill->Department, ['HK', 'FO'], true) || $bill->BillEdit || !empty($serviceBill->PaymentId) || !empty($serviceBill->VatNumber)) {
+            if (!in_array($bill->Department, ['HK', 'FO'], true) || $bill->BillEdit || !empty($serviceBill->PaymentId) || !empty($serviceBill->VatId) || !empty($serviceBill->VATNumber)) {
                 abort(422, 'Chỉ được xóa hóa đơn Buồng phòng chưa thanh toán.');
             }
             if ((int) $serviceBill->Status !== 1 || (int) $serviceBill->Edit === 1) {
@@ -2044,27 +2081,7 @@ class BookingRoomServiceController extends Controller
             $serviceBill->UpdatedDate = now();
             $serviceBill->save();
 
-            $negativeBill = $bill->replicate();
-            $negativeBill->BillServiceId = $negativeServiceBill->Ma;
-            $negativeBill->BillOriginalAmount = -abs((float) $bill->BillOriginalAmount);
-            $negativeBill->BillDiscountAmount = -abs((float) $bill->BillDiscountAmount);
-            $negativeBill->BillAmount = -abs((float) $bill->BillAmount);
-            $negativeBill->BillNote = trim(($bill->BillNote ?: '') . ' (Correct : ' . $reason . ')');
-            $negativeBill->BillEdit = 1;
-            $negativeBill->Status = 3;
-            $negativeBill->save();
-
-            $bill->BillEdit = 1;
-            $bill->Status = 3;
-            $bill->save();
-
-            HousekeepingServiceBillDetail::where('BillId', $bill->Ma)->get()->each(function ($detail) use ($negativeBill) {
-                $negativeDetail = $detail->replicate();
-                $negativeDetail->BillId = $negativeBill->Ma;
-                $negativeDetail->Rate = -abs((float) $detail->Rate);
-                $negativeDetail->TotalAmount = -abs((float) $detail->TotalAmount);
-                $negativeDetail->save();
-            });
+            $this->reverseHousekeepingBills($serviceBill, $negativeServiceBill, $reason);
             ServiceBillDetail::where('BillServiceId', $serviceBill->Ma)->delete();
             BookingRoomService::where('service_bill_id', $serviceBill->Ma)->delete();
         });

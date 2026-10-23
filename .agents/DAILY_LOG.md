@@ -6438,3 +6438,14 @@
 - Dòng 429: API mật khẩu ngắn đạt; chưa xác nhận lưu mật khẩu ngắn trực tiếp trên UI do bước nhập/lưu credential bàn giao người dùng. Chưa test concurrency MySQL.
 - Theo yêu cầu người dùng, xóa test tạm SystemConfigurationIntegrityTest.php và toàn bộ tài liệu/ảnh/JSON UAT trong docs/system-configuration-fixes; giữ code và migration để commit. Không xóa test hồi quy có sẵn.
 - Người dùng sẽ tự chạy migrate:fresh --seed sau; không chạy migration/seed hoặc push trong lượt dọn và commit này.
+
+## [2026-10-23] - Dòng 195, 196, 197, 202: giá Menu HK và hủy bill
+
+- Đã đọc note/ảnh bốn dòng và đối chiếu dòng 341; giữ ngoại lệ SearchHouseKeeping_AllowHKCorrectBillFO=1 theo yêu cầu bổ sung của khách.
+- 195: xếp lại ô giá; tính thuế tuần tự như ảnh và TaxBreakdownService; đổi % giữ giá cuối và bù chênh lệch làm tròn. 196: Menu/Thêm dịch vụ FO-HK dùng price là giá cuối, bỏ cộng thuế lần hai.
+- 197: tái hiện TypeError khi tên sản phẩm null trong sort/search; sửa xử lý tên thiếu. Chưa có log/database của sự cố lịch sử để kết luận nguyên nhân duy nhất.
+- 202: FO không hủy bill HK cả ở phòng/Master; hủy hợp lệ sinh đủ bill/chi tiết HK âm, đảo số lượng/tiền/chiết khấu/phụ thu, giữ đơn giá; đánh dấu Deleted, vẫn xem được lịch sử; siết kiểm tra VatId/VATNumber.
+- Hồi quy: frontend HK 6/6; backend HK 12/12 (137 assertions); browser fixture component thật đổi VAT và giá hai màn đạt, 20 lượt chuyển màn không lỗi. Build, PHP lint và diff-check đạt.
+- Mở rộng: backend 70/72 (474 assertions), hai lỗi GIT master/departure date cũng lỗi khi chạy controller gốc HEAD; frontend 146/147, một lỗi ddmmyy ở code ngày tháng không sửa. Không sửa ngoài phạm vi.
+- Docs: docs/TESTCASE_DONG_195_196_197_202.md gồm nguyên nhân, cách sửa, giới hạn và 24 case nghiệm thu. Đã dọn harness, build và baseline tạm; giữ test hồi quy và bằng chứng ngoài repo.
+- Không thay DB vận hành/migrate/seed. Người dùng xác nhận Claude đã nghiệm thu đạt và cho phép commit ngày 23/10/2026; không push.

@@ -748,16 +748,15 @@ const loadDbProducts = async () => {
       catProducts.forEach(p => {
         if (Number(p.open_key) !== 1) return
         if (p.is_active === 0 || p.is_active === false) return
-        let basePrice = Number(p.price) || 0
         let svcPercent = Number(p.service_charge_percent) || 0
         let taxPercent = Number(p.tax_percent) || 0
         let spcTaxPercent = Number(p.special_tax_percent) || 0
-        let finalPrice = basePrice + (basePrice * svcPercent / 100) + (basePrice * taxPercent / 100) + (basePrice * spcTaxPercent / 100)
 
         newDbData[tabKey][cat.name].push({
           id: p.id,
           name: p.name,
-          price: finalPrice || basePrice,
+          // Product.price is the configured selling price, inclusive of taxes/fees.
+          price: Number(p.price) || 0,
           // Dòng 354: không gắn cứng localhost, dùng đường dẫn /storage/... chạy được trên server
           image: storageImageUrl(p.image),
           icon: p.image ? null : '📦',

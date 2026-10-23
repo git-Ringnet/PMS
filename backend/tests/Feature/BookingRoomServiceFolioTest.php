@@ -73,11 +73,13 @@ class BookingRoomServiceFolioTest extends TestCase
         $room = $this->makeRoom($booking, 'GAL1-105');
         $currentOwnerBill = $this->makeBill('Dịch vụ bill owner hiện tại');
         $currentOwnerBill->update([
+            'DepartmentId' => 'FO',
             'Date' => now(), 'Amount' => 200000, 'RegisterId1' => $booking->id, 'RentalRoomId1' => $room->id,
             'RegisterID2' => $booking->id, 'RentalRoomId2' => $room->id, 'Status' => 1, 'Edit' => 0,
         ]);
         $legacyOwnerBill = $this->makeBill('Dịch vụ bill owner legacy');
         $legacyOwnerBill->update([
+            'DepartmentId' => 'FO',
             'Date' => now(), 'Amount' => 100000, 'RegisterId1' => $booking->id, 'RentalRoomId1' => $room->id,
             'RegisterID2' => null, 'RentalRoomId2' => null, 'Status' => 1, 'Edit' => 0,
         ]);
@@ -131,6 +133,7 @@ class BookingRoomServiceFolioTest extends TestCase
         $room = $this->makeRoom($booking, 'GAL1-105');
         $bill = $this->makeBill('Bill nhiều chi tiết');
         $bill->update([
+            'DepartmentId' => 'FO',
             'Date' => now(), 'Amount' => 250000, 'RegisterId1' => $booking->id, 'RentalRoomId1' => $room->id,
             'RegisterID2' => $booking->id, 'RentalRoomId2' => $room->id, 'Status' => 1, 'Edit' => 0,
         ]);
@@ -166,6 +169,7 @@ class BookingRoomServiceFolioTest extends TestCase
         $room = $this->makeRoom($booking, 'GAL1-105');
         $bill = $this->makeBill('Dịch vụ contract cũ');
         $bill->update([
+            'DepartmentId' => 'FO',
             'Date' => now(), 'Amount' => 125000, 'RegisterId1' => $booking->id, 'RentalRoomId1' => $room->id,
             'RegisterID2' => $booking->id, 'RentalRoomId2' => $room->id, 'Status' => 1, 'Edit' => 0,
         ]);

@@ -468,7 +468,7 @@
               <!-- Pricing Section (Title Case, comma-separated numbers, clear buttons) -->
               <div class="bg-white p-3.5 rounded-lg border border-slate-200 shadow-xs flex flex-col gap-2.5">
                 <h3 class="font-semibold text-[#000000D9] border-b border-slate-100 pb-1.5 text-xs tracking-wide">Thiết Lập Giá & Thuế</h3>
-                <div class="grid grid-cols-2 gap-x-4 gap-y-3">
+                <div class="grid grid-cols-1 gap-y-3">
                   
                   <!-- Giá gốc chưa thuế (VNĐ) -->
                   <div class="flex flex-col gap-1">
@@ -486,28 +486,6 @@
                         @click="clearBasePrice" 
                         class="absolute right-2 text-slate-400 hover:text-slate-600"
                         title="Xóa giá gốc"
-                      >
-                        <X class="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  <!-- Giá bán cuối cùng (VNĐ) -->
-                  <div class="flex flex-col gap-1">
-                    <label class="font-semibold text-xs text-[#006bdb]">Giá Bán Cuối Cùng (VNĐ)</label>
-                    <div class="relative flex items-center">
-                      <input 
-                        type="text" 
-                        v-model="displayFinalPrice" 
-                        placeholder="0" 
-                        class="w-full h-8 border border-sky-300 rounded-lg bg-sky-50 pl-2.5 pr-7 text-xs text-[#006bdb] font-bold outline-none focus:ring-1 focus:ring-[#006bdb] focus:border-[#006bdb] shadow-xs" 
-                      />
-                      <button 
-                        v-if="newProduct.price" 
-                        type="button" 
-                        @click="clearFinalPrice" 
-                        class="absolute right-2 text-slate-400 hover:text-slate-600"
-                        title="Xóa giá bán"
                       >
                         <X class="w-3.5 h-3.5" />
                       </button>
@@ -623,7 +601,7 @@
                   </div>
 
                   <!-- Thuế VAT (%) -->
-                  <div class="flex flex-col gap-1 col-span-2">
+                  <div class="flex flex-col gap-1">
                     <label class="font-semibold text-xs text-[#000000D9]">Thuế VAT (%)</label>
                     <div class="flex items-center gap-1.5">
                       <div class="inline-flex items-center border border-slate-300 rounded-lg bg-white shadow-xs h-8 overflow-hidden focus-within:ring-1 focus-within:ring-[#006bdb] focus-within:border-[#006bdb]">
@@ -673,6 +651,28 @@
                       <span v-if="vatAmount > 0" class="text-xs text-sky-600 font-semibold whitespace-nowrap">
                         (+ {{ formatNumber(vatAmount) }}đ)
                       </span>
+                    </div>
+                  </div>
+
+                  <!-- Giá bán cuối cùng (VNĐ) -->
+                  <div class="flex flex-col gap-1">
+                    <label class="font-semibold text-xs text-[#006bdb]">Giá Bán Cuối Cùng (VNĐ)</label>
+                    <div class="relative flex items-center">
+                      <input
+                        type="text"
+                        v-model="displayFinalPrice"
+                        placeholder="0"
+                        class="w-full h-8 border border-sky-300 rounded-lg bg-sky-50 pl-2.5 pr-7 text-xs text-[#006bdb] font-bold outline-none focus:ring-1 focus:ring-[#006bdb] focus:border-[#006bdb] shadow-xs"
+                      />
+                      <button
+                        v-if="newProduct.price"
+                        type="button"
+                        @click="clearFinalPrice"
+                        class="absolute right-2 text-slate-400 hover:text-slate-600"
+                        title="Xóa giá bán"
+                      >
+                        <X class="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
 
@@ -983,14 +983,11 @@ const fetchGroupsAndProducts = async () => {
       outlet: resolveOutletName(cat.outlet),
       products: products.filter(p => p.product_category_id === cat.id).map(p => {
         const hasStoredBasePrice = p.original_amount !== null && p.original_amount !== undefined
-        let basePrice = Number(hasStoredBasePrice ? p.original_amount : p.price) || 0;
-        let svcPercent = Number(p.service_charge_percent) || 0;
-        let taxPercent = Number(p.tax_percent) || 0;
-        let spcTaxPercent = Number(p.special_tax_percent) || 0;
-        const svcAmount = Math.round(basePrice * svcPercent / 100)
-        const specialTaxAmount = Math.round(basePrice * spcTaxPercent / 100)
-        const taxAmount = Math.round(basePrice * taxPercent / 100)
-        const finalPrice = hasStoredBasePrice ? Number(p.price) || 0 : basePrice + svcAmount + specialTaxAmount + taxAmount
+        const finalPrice = Number(p.price) || 0
+        const multiplier = (1 + (Number(p.service_charge_percent) || 0) / 100)
+          * (1 + (Number(p.special_tax_percent) || 0) / 100)
+          * (1 + (Number(p.tax_percent) || 0) / 100)
+        const basePrice = hasStoredBasePrice ? Number(p.original_amount) || 0 : Math.round(finalPrice / multiplier)
 
         return {
           ...p,
@@ -1029,7 +1026,7 @@ const filteredGroups = computed(() => {
       if (p.tab && p.tab !== activeTab.value) return false
       
       // 2. Search check
-      if (filterState.value.search && !p.name.toLowerCase().includes(filterState.value.search.toLowerCase())) return false
+      if (filterState.value.search && !String(p.name ?? '').toLowerCase().includes(filterState.value.search.toLowerCase())) return false
       
       // 3. Status check
       if (filterState.value.status === 'active' && !p.isActive) return false
@@ -1049,10 +1046,10 @@ const filteredGroups = computed(() => {
     // Sort products
     products.sort((a, b) => {
       if (filterState.value.sortBy === 'name_asc') {
-        return a.name.localeCompare(b.name)
+        return String(a.name ?? '').localeCompare(String(b.name ?? ''))
       }
       if (filterState.value.sortBy === 'name_desc') {
-        return b.name.localeCompare(a.name)
+        return String(b.name ?? '').localeCompare(String(a.name ?? ''))
       }
       if (filterState.value.sortBy === 'price_asc') {
         return a.priceNum - b.priceNum
@@ -1094,15 +1091,23 @@ const newProduct = ref({
   product_code: ''
 })
 
-const calculatePriceBreakdown = (baseAmount) => {
-  const base = Math.round(Number(baseAmount) || 0)
+const calculatePriceBreakdown = (baseAmount, finalPrice = null) => {
+  let base = Math.round(Number(baseAmount) || 0)
   const svcPercent = Number(newProduct.value.service_charge_percent) || 0
   const spcPercent = Number(newProduct.value.special_tax_percent) || 0
   const taxPercent = Number(newProduct.value.tax_percent) || 0
 
-  const serviceCharge = Math.round(base * svcPercent / 100)
-  const specialTax = Math.round(base * spcPercent / 100)
-  const tax = Math.round(base * taxPercent / 100)
+  let serviceCharge = Math.round(base * svcPercent / 100)
+  let specialTax = Math.round((base + serviceCharge) * spcPercent / 100)
+  let tax = Math.round((base + serviceCharge + specialTax) * taxPercent / 100)
+
+  // Match the bill tax order and absorb rounding in the last applicable tax/fee.
+  if (finalPrice !== null) {
+    if (taxPercent > 0) tax = finalPrice - base - serviceCharge - specialTax
+    else if (spcPercent > 0) specialTax = finalPrice - base - serviceCharge
+    else if (svcPercent > 0) serviceCharge = finalPrice - base
+    else base = finalPrice
+  }
 
   return {
     base,
@@ -1127,14 +1132,13 @@ const recalculateFromBase = () => {
 
 const recalculateFromFinal = () => {
   const total = Number(newProduct.value.price) || 0
-  const totalPercent = (Number(newProduct.value.service_charge_percent) || 0)
-    + (Number(newProduct.value.special_tax_percent) || 0)
-    + (Number(newProduct.value.tax_percent) || 0)
-  const multiplier = 1 + totalPercent / 100
+  const multiplier = (1 + (Number(newProduct.value.service_charge_percent) || 0) / 100)
+    * (1 + (Number(newProduct.value.special_tax_percent) || 0) / 100)
+    * (1 + (Number(newProduct.value.tax_percent) || 0) / 100)
   const base = multiplier > 0 ? Math.round(total / multiplier) : 0
 
   newProduct.value.price = total
-  applyPriceBreakdown(calculatePriceBreakdown(base), true)
+  applyPriceBreakdown(calculatePriceBreakdown(base, total), true)
 }
 
 const formatNumber = (val) => {
@@ -1342,7 +1346,7 @@ const editProduct = (product) => {
     imageUrl: product.imageUrl || null,
     product_code: product.product_code || ''
   }
-  applyPriceBreakdown(calculatePriceBreakdown(storedBasePrice), true)
+  recalculateFromFinal()
   showProductModal.value = true
 }
 
