@@ -142,14 +142,57 @@ const selectedOption = computed(() => {
   return props.options.find(opt => String(opt.value) === String(props.modelValue))
 })
 
+function removeVietnameseTones(str) {
+  if (!str) return ''
+  return String(str)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase()
+    .trim()
+}
+
 const filteredOptions = computed(() => {
-  if (!searchQuery.value.trim()) return props.options
-  const q = searchQuery.value.toLowerCase().trim()
-  return props.options.filter(opt => {
-    const labelMatch = String(opt.label || '').toLowerCase().includes(q)
-    const sublabelMatch = opt.sublabel ? String(opt.sublabel).toLowerCase().includes(q) : false
-    return labelMatch || sublabelMatch
-  })
+  const query = searchQuery.value.trim()
+  if (!query) return props.options
+
+  const qLower = query.toLowerCase()
+  const qClean = removeVietnameseTones(query)
+
+  const scored = []
+  for (const opt of props.options) {
+    const label = String(opt.label || '')
+    const sublabel = String(opt.sublabel || '')
+    const labelLower = label.toLowerCase()
+    const labelClean = removeVietnameseTones(label)
+    const sublabelLower = sublabel.toLowerCase()
+    const sublabelClean = removeVietnameseTones(sublabel)
+
+    let score = 0
+    if (labelLower === qLower) {
+      score = 100
+    } else if (labelLower.startsWith(qLower)) {
+      score = 80
+    } else if (labelClean.startsWith(qClean)) {
+      score = 70
+    } else if (labelLower.includes(qLower)) {
+      score = 60
+    } else if (labelClean.includes(qClean)) {
+      score = 50
+    } else if (sublabelLower.includes(qLower)) {
+      score = 40
+    } else if (sublabelClean.includes(qClean)) {
+      score = 30
+    }
+
+    if (score > 0) {
+      scored.push({ opt, score })
+    }
+  }
+
+  scored.sort((a, b) => b.score - a.score)
+  return scored.map(item => item.opt)
 })
 
 const toggleDropdown = () => {

@@ -1,12 +1,12 @@
 <template>
-  <div class="flex flex-col h-full bg-slate-50 p-5 font-sans relative overflow-hidden">
+  <div class="flex flex-col h-full bg-slate-50 p-4 font-roboto relative overflow-hidden">
     <LoadingOverlay :show="isLoading" />
     
     <!-- Top Control Card -->
-    <div class="bg-white rounded-xl shadow-sm border border-slate-200 mb-4 shrink-0 overflow-hidden">
+    <div class="bg-white rounded-xl shadow-xs border border-slate-200 mb-3 shrink-0 overflow-hidden">
       <!-- Tabs Section -->
-      <div class="px-5 py-2.5 border-b border-slate-100 flex items-center justify-between bg-white">
-        <div class="flex items-center gap-6 pt-1">
+      <div class="px-4 py-1.5 border-b border-slate-100 flex items-center justify-between bg-white">
+        <div class="flex items-center gap-6 pt-0.5">
           <div 
             v-for="outlet in housekeepingOutlets" 
             :key="outlet.code"
@@ -14,11 +14,10 @@
             class="group flex items-center gap-1.5 cursor-pointer select-none"
           >
             <h2 
-              class="text-xs font-semibold tracking-wide uppercase pb-2 transition-colors relative" 
+              class="text-xs font-semibold tracking-wide transition-colors" 
               :class="activeTab === outlet.code ? 'text-[#006bdb] font-bold' : 'text-[#000000D9] hover:text-[#006bdb]'"
             >
-              {{ outlet.name }}
-              <div v-if="activeTab === outlet.code" class="absolute bottom-0 left-0 w-full h-0.5 bg-[#006bdb] rounded-t-full"></div>
+              {{ toTitleCase(outlet.name || outlet.code) }}
             </h2>
           </div>
         </div>
@@ -37,11 +36,11 @@
       </div>
 
       <!-- Toolbar Section -->
-      <div class="px-5 py-3 bg-slate-50/70 flex flex-wrap items-center justify-between gap-3 text-xs">
+      <div class="px-4 py-2 bg-slate-50/70 flex flex-wrap items-center justify-between gap-3 text-xs">
         <div class="flex flex-wrap items-center gap-3">
           <button @click="createGroup" class="btn-pms-primary h-8">
             <PlusCircle class="w-3.5 h-3.5" />
-            Tạo nhóm
+            Tạo Nhóm
           </button>
 
           <!-- Search product -->
@@ -50,13 +49,13 @@
               v-model="filterState.search" 
               type="text" 
               placeholder="Tìm sản phẩm..."
-              class="h-8 border border-slate-300 rounded-lg pl-3 pr-7 text-xs text-[#000000D9] bg-white focus:outline-none focus:ring-1 focus:ring-[#006bdb] focus:border-[#006bdb] placeholder:text-[#A8B0BF] shadow-xs w-44" 
+              class="h-8 border border-slate-300 rounded-lg pl-3 pr-7 text-xs text-[#000000D9] bg-white focus:outline-none focus:ring-1 focus:ring-[#006bdb] focus:border-[#006bdb] placeholder:text-[#A8B0BF] shadow-xs w-44 font-normal" 
             />
             <button 
               v-if="filterState.search" 
               type="button" 
               @click="filterState.search = ''" 
-              class="absolute right-2 text-slate-400 hover:text-slate-600"
+              class="absolute right-2 text-slate-400 hover:text-slate-600 cursor-pointer border-none bg-transparent"
               title="Xóa tìm kiếm"
             >
               <X class="w-3.5 h-3.5" />
@@ -65,13 +64,13 @@
 
           <!-- Status filter (appearance-none with ChevronDown & X toggle) -->
           <div class="flex items-center gap-1.5">
-            <span class="font-medium text-slate-600">Trạng thái:</span>
+            <span class="font-semibold text-[#000000D9] text-xs">Trạng Thái:</span>
             <div class="relative flex items-center">
               <select 
                 v-model="filterState.status" 
                 :class="[
-                  'h-8 border border-slate-300 rounded-lg pl-2.5 pr-7 text-xs bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-[#006bdb] shadow-xs appearance-none',
-                  filterState.status ? 'text-[#000000D9] font-medium' : 'text-[#A8B0BF]'
+                  'h-8 border border-slate-300 rounded-lg pl-2.5 pr-7 text-xs bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-[#006bdb] shadow-xs appearance-none font-normal',
+                  filterState.status ? 'text-[#000000D9]' : 'text-[#A8B0BF]'
                 ]"
               >
                 <option value="" disabled hidden>Tất cả</option>
@@ -83,7 +82,7 @@
                 v-else 
                 type="button" 
                 @click="filterState.status = ''" 
-                class="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                class="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer border-none bg-transparent"
                 title="Xóa bộ lọc"
               >
                 <X class="w-3.5 h-3.5" />
@@ -93,37 +92,37 @@
 
           <!-- Price range (Formatted with comma ',' and quick clear 'x') -->
           <div class="flex items-center gap-1.5">
-            <span class="font-medium text-slate-600">Giá từ:</span>
+            <span class="font-semibold text-[#000000D9] text-xs">Giá Từ:</span>
             <div class="relative flex items-center">
               <input 
                 type="text" 
                 placeholder="Min" 
                 v-model="displayPriceMin" 
-                class="w-24 h-8 border border-slate-300 rounded-lg pl-2.5 pr-6 text-xs focus:outline-none focus:ring-1 focus:ring-[#006bdb] bg-white text-[#000000D9] placeholder:text-[#A8B0BF] shadow-xs" 
+                class="w-24 h-8 border border-slate-300 rounded-lg pl-2.5 pr-6 text-xs focus:outline-none focus:ring-1 focus:ring-[#006bdb] bg-white text-[#000000D9] font-normal placeholder:text-[#A8B0BF] shadow-xs" 
               />
               <button 
                 v-if="filterState.priceMin !== null && filterState.priceMin !== ''" 
                 type="button" 
                 @click="filterState.priceMin = null" 
-                class="absolute right-1.5 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                class="absolute right-1.5 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer border-none bg-transparent"
                 title="Xóa giá min"
               >
                 <X class="w-3.5 h-3.5" />
               </button>
             </div>
-            <span class="font-medium text-slate-600">đến</span>
+            <span class="font-semibold text-[#000000D9] text-xs">Đến</span>
             <div class="relative flex items-center">
               <input 
                 type="text" 
                 placeholder="Max" 
                 v-model="displayPriceMax" 
-                class="w-24 h-8 border border-slate-300 rounded-lg pl-2.5 pr-6 text-xs focus:outline-none focus:ring-1 focus:ring-[#006bdb] bg-white text-[#000000D9] placeholder:text-[#A8B0BF] shadow-xs" 
+                class="w-24 h-8 border border-slate-300 rounded-lg pl-2.5 pr-6 text-xs focus:outline-none focus:ring-1 focus:ring-[#006bdb] bg-white text-[#000000D9] font-normal placeholder:text-[#A8B0BF] shadow-xs" 
               />
               <button 
                 v-if="filterState.priceMax !== null && filterState.priceMax !== ''" 
                 type="button" 
                 @click="filterState.priceMax = null" 
-                class="absolute right-1.5 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                class="absolute right-1.5 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer border-none bg-transparent"
                 title="Xóa giá max"
               >
                 <X class="w-3.5 h-3.5" />
@@ -133,13 +132,13 @@
 
           <!-- Inventory tracking (appearance-none with ChevronDown & X toggle) -->
           <div class="flex items-center gap-1.5">
-            <span class="font-medium text-slate-600">Tồn kho:</span>
+            <span class="font-semibold text-[#000000D9] text-xs">Tồn Kho:</span>
             <div class="relative flex items-center">
               <select 
                 v-model="filterState.trackStock" 
                 :class="[
-                  'h-8 border border-slate-300 rounded-lg pl-2.5 pr-7 text-xs bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-[#006bdb] shadow-xs appearance-none',
-                  filterState.trackStock ? 'text-[#000000D9] font-medium' : 'text-[#A8B0BF]'
+                  'h-8 border border-slate-300 rounded-lg pl-2.5 pr-7 text-xs bg-white cursor-pointer focus:outline-none focus:ring-1 focus:ring-[#006bdb] shadow-xs appearance-none font-normal',
+                  filterState.trackStock ? 'text-[#000000D9]' : 'text-[#A8B0BF]'
                 ]"
               >
                 <option value="" disabled hidden>Tất cả</option>
@@ -151,7 +150,7 @@
                 v-else 
                 type="button" 
                 @click="filterState.trackStock = ''" 
-                class="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                class="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer border-none bg-transparent"
                 title="Xóa bộ lọc"
               >
                 <X class="w-3.5 h-3.5" />
@@ -161,9 +160,9 @@
 
           <!-- Sort dropdown -->
           <div class="flex items-center gap-1.5">
-            <span class="font-medium text-slate-600">Sắp xếp:</span>
+            <span class="font-semibold text-[#000000D9] text-xs">Sắp Xếp:</span>
             <div class="relative flex items-center">
-              <select v-model="filterState.sortBy" class="h-8 border border-slate-300 rounded-lg pl-2.5 pr-7 text-xs focus:outline-none focus:ring-1 focus:ring-[#006bdb] bg-white cursor-pointer text-[#000000D9] shadow-xs appearance-none">
+              <select v-model="filterState.sortBy" class="h-8 border border-slate-300 rounded-lg pl-2.5 pr-7 text-xs focus:outline-none focus:ring-1 focus:ring-[#006bdb] bg-white cursor-pointer text-[#000000D9] font-normal shadow-xs appearance-none">
                 <option value="name_asc">Tên A-Z</option>
                 <option value="name_desc">Tên Z-A</option>
                 <option value="price_asc">Giá tăng dần</option>
@@ -192,15 +191,15 @@
     </div>
 
     <!-- Main Content Area (Groups) -->
-    <div class="flex-1 overflow-y-auto flex flex-col gap-4 pb-10 hk-scroll">
+    <div class="flex-1 overflow-y-auto flex flex-col gap-3 pb-8 hk-scroll">
       
       <!-- Group Card -->
-      <div v-for="group in filteredGroups" :key="group.id" class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-col shrink-0">
+      <div v-for="group in filteredGroups" :key="group.id" class="bg-white rounded-xl shadow-xs border border-slate-200 p-3 flex flex-col shrink-0">
         
         <!-- Group Header -->
-        <div class="flex items-center gap-3 mb-4 border-b border-slate-100 pb-2.5">
-          <input type="checkbox" :checked="group.checked" @change="toggleGroupCheck(group.id, $event.target.checked, group.products)" class="w-4 h-4 rounded border-slate-300 text-sky-500 focus:ring-sky-500 cursor-pointer" />
-          <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Nhóm sản phẩm:</span>
+        <div class="flex items-center gap-2 mb-2.5 border-b border-slate-100 pb-2">
+          <input type="checkbox" :checked="group.checked" @change="toggleGroupCheck(group.id, $event.target.checked, group.products)" class="w-4 h-4 rounded border-slate-300 text-[var(--pms-custom-theme,#006bdb)] focus:ring-[var(--pms-custom-theme,#006bdb)] cursor-pointer" />
+          <span class="text-xs font-semibold text-[#000000D9]">Nhóm Sản Phẩm:</span>
           
           <!-- Inline Edit Group Name -->
           <input 
@@ -214,10 +213,10 @@
           <span 
             v-else 
             @dblclick="setEditing(group.id)"
-            class="text-xs font-bold text-[#006bdb] cursor-pointer hover:bg-slate-50 px-2 py-1 rounded-lg select-none transition-colors uppercase tracking-wider"
+            class="text-xs font-semibold text-[#006bdb] cursor-pointer hover:bg-slate-50 px-2 py-0.5 rounded-lg select-none transition-colors"
             title="Nhấp đúp để sửa"
           >
-            {{ group.name }}
+            {{ toTitleCase(group.name) }}
           </span>
 
           <button @click="deleteGroup(group.id)" class="text-rose-400 hover:text-rose-600 transition-colors ml-auto p-1.5 hover:bg-rose-50 rounded-lg cursor-pointer" title="Xóa nhóm">
@@ -231,75 +230,75 @@
 
         <!-- Group Content (Products) -->
         <Transition name="hk-expand">
-          <div v-show="group.expanded" class="flex flex-wrap gap-3.5 pl-1">
+          <div v-show="group.expanded" class="flex flex-wrap gap-2.5 pl-0.5">
             
-            <!-- Create Product Card -->
+            <!-- Create Product Card (Compact w-[96px] h-[110px]) -->
             <div 
               @click="openCreateProduct(group.id)"
-              class="w-[110px] h-[125px] border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center gap-1.5 cursor-pointer hover:bg-sky-50 hover:border-sky-300 transition-all bg-slate-50/50 shrink-0 group"
+              class="w-[96px] h-[110px] border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center gap-1 cursor-pointer hover:bg-sky-50 hover:border-sky-300 transition-all bg-slate-50/50 shrink-0 group"
             >
-              <div class="w-8 h-8 bg-white rounded-full shadow-xs flex items-center justify-center text-sky-500 transition-all border border-slate-100 animate-pulse-subtle group-hover:brightness-95">
-                <Plus class="w-4 h-4 text-[#006bdb]" stroke-width="2.5" />
+              <div class="w-7 h-7 bg-white rounded-full shadow-xs flex items-center justify-center text-sky-500 transition-all border border-slate-100 animate-pulse-subtle group-hover:brightness-95">
+                <Plus class="w-3.5 h-3.5 text-[#006bdb]" stroke-width="2.5" />
               </div>
-              <span class="text-xs text-sky-700 font-semibold">Tạo sản phẩm</span>
+              <span class="text-xs text-[#006bdb] font-semibold text-center leading-tight">Tạo Sản Phẩm</span>
             </div>
 
-            <!-- Product Cards -->
+            <!-- Product Cards (Compact w-[96px] h-[110px]) -->
             <template v-if="isLoading">
-              <div v-for="i in 3" :key="'skeleton-'+i" class="w-[110px] h-[130px] flex flex-col shrink-0 animate-pulse">
-                <div class="w-[110px] h-[95px] border border-slate-200 bg-slate-200/50 rounded-xl flex items-center justify-center shadow-xs">
-                  <div class="w-8 h-8 rounded-full bg-slate-300/60"></div>
+              <div v-for="i in 3" :key="'skeleton-'+i" class="w-[96px] h-[110px] flex flex-col shrink-0 animate-pulse">
+                <div class="w-[96px] h-[80px] border border-slate-200 bg-slate-200/50 rounded-xl flex items-center justify-center shadow-xs">
+                  <div class="w-7 h-7 rounded-full bg-slate-300/60"></div>
                 </div>
-                <div class="h-2.5 bg-slate-200 rounded w-14 mx-auto mt-2"></div>
+                <div class="h-2.5 bg-slate-200 rounded w-14 mx-auto mt-1.5"></div>
               </div>
             </template>
             <template v-else>
               <div 
                 v-for="product in group.products" 
                 :key="product.id" 
-                class="flex flex-col w-[110px] shrink-0 group relative select-none" 
+                class="flex flex-col w-[96px] shrink-0 group relative select-none" 
                 @dblclick="editProduct(product)"
               >
-                <!-- Card Image Area (w-[110px] h-[95px]) -->
+                <!-- Card Image Area (w-[96px] h-[80px]) -->
                 <div :class="[
-                  'w-[110px] h-[95px] border rounded-xl relative flex flex-col items-center justify-center overflow-hidden shadow-xs transition-all hk-card-lift cursor-pointer hover:border-sky-300',
+                  'w-[96px] h-[80px] border rounded-xl relative flex flex-col items-center justify-center overflow-hidden shadow-xs transition-all hk-card-lift cursor-pointer hover:border-sky-300',
                   product.isActive ? 'bg-white border-slate-200' : 'bg-slate-50 border-slate-300 grayscale opacity-75'
                 ]">
                   <!-- Checkbox -->
                   <input 
                     type="checkbox" 
                     v-model="product.checked"
-                    class="absolute top-2 right-2 w-3.5 h-3.5 rounded border-slate-300 text-sky-500 focus:ring-sky-500 cursor-pointer z-10"
+                    class="absolute top-1.5 right-1.5 w-3.5 h-3.5 rounded border-slate-300 text-[var(--pms-custom-theme,#006bdb)] focus:ring-[var(--pms-custom-theme,#006bdb)] cursor-pointer z-10"
                   />
                   
                   <!-- Product Image / Outlet Fallback Image -->
-                  <div class="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center mb-5 group-hover:bg-sky-50 transition-colors overflow-hidden">
+                  <div class="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center mb-4 group-hover:bg-sky-50 transition-colors overflow-hidden">
                     <img 
                       v-if="getProductImage(product)" 
                       :src="getProductImage(product)" 
                       class="w-full h-full object-cover" 
                       @error="$event.target.style.display = 'none'"
                     />
-                    <ImageOff v-else class="w-5 h-5 text-slate-300 group-hover:text-[#006bdb]" stroke-width="2" />
+                    <ImageOff v-else class="w-4 h-4 text-slate-300 group-hover:text-[#006bdb]" stroke-width="2" />
                   </div>
 
                   <!-- Price Bar (Formatted with commas ',') -->
-                  <div class="absolute bottom-0 left-0 right-0 text-slate-800 text-xs py-0.5 text-center font-bold" style="background: linear-gradient(135deg, #c7e8ff, #97d5ff)">
-                    {{ formatNumber(product.priceNum) }} VNĐ
+                  <div class="absolute bottom-0 left-0 right-0 text-slate-800 text-[11px] leading-tight py-0.5 text-center font-bold" style="background: linear-gradient(135deg, #c7e8ff, #97d5ff)">
+                    {{ formatNumber(product.priceNum) }}
                   </div>
                 </div>
                 
                 <!-- Product Name -->
-                <div class="text-xs text-[#000000D9] font-medium text-center px-0.5 mt-1.5 break-words leading-tight flex flex-col gap-0.5">
+                <div class="text-xs text-[#000000D9] font-normal text-center px-0.5 mt-1 break-words leading-tight flex flex-col gap-0.5">
                   <span class="line-clamp-2" :title="product.name">{{ product.name }}</span>
-                  <span v-if="!product.isActive" class="text-xs bg-slate-100 text-slate-500 px-1 py-0.5 rounded border border-slate-200 self-center leading-none">Inactive</span>
+                  <span v-if="!product.isActive" class="text-[10px] bg-slate-100 text-slate-500 px-1 py-0.5 rounded border border-slate-200 self-center leading-none">Inactive</span>
                 </div>
               </div>
             </template>
 
             <!-- "No Data" Placeholder if group is empty -->
-            <div v-if="group.products.length === 0" class="flex flex-col items-center justify-center w-[130px] h-[125px] opacity-60">
-              <Inbox class="w-8 h-8 text-slate-300 mb-1" stroke-width="1.5" />
+            <div v-if="group.products.length === 0" class="flex flex-col items-center justify-center w-[110px] h-[110px] opacity-60">
+              <Inbox class="w-7 h-7 text-slate-300 mb-1" stroke-width="1.5" />
               <span class="text-xs text-slate-400 font-normal">Chưa có sản phẩm</span>
             </div>
 
@@ -312,7 +311,7 @@
     <Transition name="hk-modal">
       <div v-if="showProductModal" class="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
         <div 
-          class="relative bg-white w-[820px] rounded-xl shadow-2xl flex flex-col overflow-hidden font-sans border border-slate-200"
+          class="relative bg-white w-[820px] rounded-xl shadow-2xl flex flex-col overflow-hidden font-roboto border border-slate-200"
           :style="{ transform: 'translate(' + productModalPos.x + 'px, ' + productModalPos.y + 'px)' }"
         >
           <!-- Modal Header (Draggable, Title Case, Theme Synchronized) -->
@@ -389,7 +388,7 @@
                     :value="newProduct.product_code" 
                     disabled 
                     placeholder="Mã tự sinh..." 
-                    class="w-full h-8 border border-slate-200 rounded-lg bg-slate-100 px-2.5 text-slate-600 cursor-not-allowed font-mono text-xs outline-none" 
+                    class="w-full h-8 border border-slate-200 rounded-lg bg-slate-100 px-2.5 text-[#000000D9] cursor-not-allowed font-normal text-xs outline-none" 
                   />
                 </div>
                 
@@ -695,7 +694,7 @@
                 </div>
                 <textarea 
                   v-model="newProduct.note" 
-                  placeholder="Nhập mô tả chi tiết sản phẩm, thành phần, quy cách phục vụ..." 
+                  placeholder="Nhập mô tả thêm..." 
                   class="border border-slate-300 rounded-lg p-2.5 outline-none h-[64px] resize-none focus:ring-1 focus:ring-[#006bdb] focus:border-[#006bdb] transition-all text-xs text-[#000000D9] bg-white shadow-xs placeholder:text-[#A8B0BF]"
                 ></textarea>
               </div>
@@ -719,7 +718,7 @@
     <Transition name="hk-modal">
       <div v-if="showGroupModal" class="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
         <div 
-          class="relative bg-white w-[420px] rounded-xl shadow-2xl flex flex-col overflow-hidden font-sans border border-slate-200"
+          class="relative bg-white w-[420px] rounded-xl shadow-2xl flex flex-col overflow-hidden font-roboto border border-slate-200"
           :style="{ transform: 'translate(' + groupModalPos.x + 'px, ' + groupModalPos.y + 'px)' }"
         >
           <!-- Header (Draggable, Title Case, Theme Synchronized) -->
@@ -791,6 +790,15 @@ const authStore = useAuthStore()
 const topbarThemeBg = computed(() => {
   return authStore.settings?.topbar_color || authStore.themeColor || 'var(--pms-custom-theme, #006bdb)'
 })
+
+function toTitleCase(str) {
+  if (!str) return ''
+  return str
+    .toLowerCase()
+    .split(' ')
+    .map(w => w ? w.charAt(0).toUpperCase() + w.slice(1) : '')
+    .join(' ')
+}
 
 const tabs = ref([])
 const activeTab = ref('')
@@ -912,7 +920,7 @@ const inventories = ref([])
 const groupSelectOptions = computed(() => {
   return groups.value.map(g => ({
     value: g.id,
-    label: g.name
+    label: toTitleCase(g.name)
   }))
 })
 

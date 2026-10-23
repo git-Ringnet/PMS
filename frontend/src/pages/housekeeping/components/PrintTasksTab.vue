@@ -84,13 +84,15 @@ const filterBook = ref('all')
 const activeFloors = ref(new Set())
 const showFilterPanel = ref(false)
 
-// Phễu lọc chuẩn theo FIX FE Row 62
+// Phễu lọc chuẩn theo FIX FE Row 62 & Row 63 Note 19/10
 const hkFilterOptions = [
   { key: 'all', label: 'Tất cả', icon: null },
   { key: 'clean', label: 'Phòng sạch', icon: 'clean', iconClass: 'text-emerald-500' },
   { key: 'dirty', label: 'Phòng bẩn', icon: 'dirty', iconClass: 'text-amber-600' },
   { key: 'cleaning', label: 'Phòng lau dọn', icon: 'checkout', iconClass: 'text-cyan-600' },
   { key: 'ready', label: 'Phòng sẵn sàng', icon: 'available', iconClass: 'text-emerald-600' },
+  { key: 'ooo', label: 'Phòng OOO', icon: 'maintenance', iconClass: 'text-rose-500' },
+  { key: 'oos', label: 'Phòng OOS', icon: 'maintenance', iconClass: 'text-amber-500' },
 ]
 
 const bookingFilterOptions = [
@@ -220,6 +222,9 @@ const allRooms = computed(() => {
         floor: r.floor,
         room_type: r.room_class?.name || r.room_type || '',
         room_status_code: r.room_status_code || 'vacant_dirty',
+        lock_type: r.lock_type || '',
+        is_ooo: Boolean(r.is_ooo || r.room_status_code === 'ooo' || r.room_status_code === 'occupied_ooo' || (r.lock_type === 'OOO' && r.room_status_code !== 'housekeeping')),
+        is_oos: Boolean(r.is_oos || r.room_status_code === 'oos' || (r.lock_type === 'OOS' && r.room_status_code !== 'housekeeping')),
         booking_status: r.booking_status || '',
         displayBookingStatus,
         displayCode: getRoomDisplayCode(r.room_status_code, displayBookingStatus, hkStore.activeSymbols),
@@ -247,6 +252,10 @@ const filteredRooms = computed(() => {
       } else if (filterHk.value === 'ready') {
         const isReady = code === 'vacant_ready' || code === 'occupied_ready' || code === 'ready'
         if (!isReady) return false
+      } else if (filterHk.value === 'ooo') {
+        if (!r.is_ooo) return false
+      } else if (filterHk.value === 'oos') {
+        if (!r.is_oos) return false
       }
     }
     if (filterBook.value !== 'all' && r.displayBookingStatus !== filterBook.value) return false
