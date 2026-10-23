@@ -1231,10 +1231,10 @@ class BookingController extends Controller
                 && $validated['arrival_date'] !== Carbon::parse($booking->getOriginal('arrival_date'))->toDateString())
             || (array_key_exists('departure_date', $validated)
                 && $validated['departure_date'] !== Carbon::parse($booking->getOriginal('departure_date'))->toDateString());
-        // Legacy synchronization is only allowed for future/current booking
-        // periods.  A header whose arrival is already before the PMS date must
-        // keep its reservation-room dates untouched.
-        $canSyncRoomDates = $syncRoomDates && $newArrival >= $sysDateStr;
+        // Row 275 (23/10): a past header arrival must not suppress departure
+        // synchronization for reservation rooms added later to an in-house booking.
+        $canSyncArrivalDate = $newArrival >= $sysDateStr;
+        $canSyncRoomDates = $syncRoomDates && ($canSyncArrivalDate || $newDeparture >= $sysDateStr);
 
         // Dòng 394: giai đoạn của mọi phòng lưu trú (đăng ký, đang ở, đã trả)
         // phải nằm trong giai đoạn đăng ký. Phòng đăng ký được đồng bộ theo
@@ -1259,7 +1259,7 @@ class BookingController extends Controller
         }
 
         try {
-            \Illuminate\Support\Facades\DB::transaction(function () use ($booking, $validated, $request, $allowAddingRoomsOnly, $bookingDatesChanged, $canSyncRoomDates, $syncRoomDates) {
+            \Illuminate\Support\Facades\DB::transaction(function () use ($booking, $validated, $request, $allowAddingRoomsOnly, $bookingDatesChanged, $canSyncRoomDates, $canSyncArrivalDate, $syncRoomDates) {
                 // Đồng bộ ngày của phòng theo cấu hình SyncRoomDateByBookingDate
                 if ($canSyncRoomDates
                     && $bookingDatesChanged
@@ -1277,7 +1277,9 @@ class BookingController extends Controller
                             'rooms' => $classRooms->map(fn ($room) => [
                                 'bookingRoomId' => $room->id,
                                 'roomNumber' => $room->room_number,
-                                'arrivalDate' => $validated['arrival_date'] ?? $booking->arrival_date,
+                                'arrivalDate' => $canSyncArrivalDate
+                                    ? ($validated['arrival_date'] ?? $booking->arrival_date)
+                                    : $room->arrival_date,
                                 'departureDate' => $validated['departure_date'] ?? $booking->departure_date,
                             ])->values()->all(),
                         ])->values()->all();
@@ -1298,11 +1300,12 @@ class BookingController extends Controller
                     );
                 }
 
-                if ($canSyncRoomDates && $bookingDatesChanged) {
+                if ($canSyncRoomDates && $bookingDatesChanged
+                    && !($request->has('room_allocations') && is_array($request->room_allocations))) {
                     $roomsToSync = $booking->bookingRooms()->where('status', \App\Models\BookingRoom::STATUS_BOOKED)->get();
                     foreach ($roomsToSync as $roomToSync) {
                         $syncData = [];
-                        if (array_key_exists('arrival_date', $validated)) {
+                        if ($canSyncArrivalDate && array_key_exists('arrival_date', $validated)) {
                             $syncData['arrival_date'] = $validated['arrival_date'];
                         }
                         if (array_key_exists('departure_date', $validated)) {
@@ -1358,9 +1361,12 @@ class BookingController extends Controller
                     // period before the sync can be applied.
                     if ($canSyncRoomDates && $bookingDatesChanged) {
                         foreach ($roomAllocations as &$allocation) {
-                            foreach (($allocation['rooms'] ?? []) as &$allocationRoom) {
+                            $allocation['rooms'] ??= [];
+                            foreach ($allocation['rooms'] as &$allocationRoom) {
                                 if (in_array($allocationRoom['bookingRoomId'] ?? null, $bookedRoomIds, true)) {
-                                    $allocationRoom['arrivalDate'] = $validated['arrival_date'] ?? $booking->arrival_date;
+                                    $allocationRoom['arrivalDate'] = $canSyncArrivalDate
+                                        ? ($validated['arrival_date'] ?? $booking->arrival_date)
+                                        : $existingBookedRooms->firstWhere('id', $allocationRoom['bookingRoomId'])->arrival_date->toDateString();
                                     $allocationRoom['departureDate'] = $validated['departure_date'] ?? $booking->departure_date;
                                 }
                             }
@@ -1482,7 +1488,9 @@ class BookingController extends Controller
                                     $roomArrival = $roomArrival ?? Carbon::parse($bRoom->arrival_date)->toDateString();
                                     $roomDeparture = $roomDeparture ?? Carbon::parse($bRoom->departure_date)->toDateString();
                                 } elseif ($syncRoomDates && $bookingDatesChanged && $canSyncRoomDates) {
-                                    $roomArrival = $parseDate($validated['arrival_date'] ?? $booking->arrival_date);
+                                    $roomArrival = $canSyncArrivalDate
+                                        ? $parseDate($validated['arrival_date'] ?? $booking->arrival_date)
+                                        : ($bRoom ? Carbon::parse($bRoom->arrival_date)->toDateString() : ($roomArrival ?? $parseDate($booking->arrival_date)));
                                     $roomDeparture = $parseDate($validated['departure_date'] ?? $booking->departure_date);
                                 } elseif ($syncRoomDates) {
                                     $roomArrival = $roomArrival

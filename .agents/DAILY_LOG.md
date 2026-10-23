@@ -6457,3 +6457,12 @@
 - Bổ sung frontend tests số đêm modal/ánh xạ Đăng ký và owner bill sau chuyển. Tổng kiểm tra backend RoomMoveTest + ShiftWorkListTest 25/25 đạt, 159 assertions; frontend nhóm liên quan 12/12 đạt; PHP lint/diff-check đạt.
 - Cập nhật docs/TESTCASE_DONG_166_183.md: nguyên nhân, case bổ sung, phân biệt test logic và nghiệm thu UI. Không chạy dữ liệu vận hành hay xác nhận UAT UI trong lượt này.
 - Người dùng cho phép commit phần bổ sung BookingRoomController/ShiftWorkController cùng test và tài liệu dòng 166/183 ngày 23/10/2026; không push. Giữ nguyên nhật ký công việc khác ngoài commit.
+
+## [2026-10-23] - Dòng 275, note đỏ mới 23/10: đồng bộ ngày đi phòng đăng ký
+
+- Ưu tiên ảnh note mới: PMS 31/8, booking 30/8, phòng Inhouse 30/8–1/9, phòng đăng ký mới 31/8–4/9; đổi booking đi 6/9 phải giữ ngày đến phòng mới 31/8 và kéo ngày đi 6/9, không kéo phòng Inhouse.
+- Tái hiện 2 ca HTTP và 2 ca frontend trước sửa đều giữ sai ngày đi 4/9. Nguyên nhân dùng ngày đến booking >= PMS để chặn toàn bộ đồng bộ, cả ngày đi.
+- Người dùng đồng ý sửa hai file dùng chung BookingController/CreateRegistrationPage trong phạm vi đã nêu. Tách điều kiện ngày đến/ngày đi; giữ ngày đến phòng khi booking đến quá khứ, đồng bộ departure cho trạng thái 0; số đêm tính theo kỳ riêng của phòng.
+- Sửa nhánh kèm allocations: chuẩn hóa mảng thật và kiểm tra AV trước ghi ngày phòng, tránh nhận nhầm là kỳ ở không đổi; test AV phát hiện và xác nhận chặn/rollback đúng khi không cho over.
+- Backend BookingBusinessRulesTest + BookingFourSectionsTest 113/113 đạt, 659 assertions (6 ca mới cho 275). Frontend liên quan 17/17 đạt (4 ca mới). Build/PHP lint/diff-check đạt.
+- Docs docs/TESTCASE_DONG_275.md: nguyên nhân, thay đổi, 12 case nghiệm thu, giới hạn test logic/UI. Đã dọn build thử ngoài repo. Không thay DB vận hành/migrate/seed; chưa UAT UI thật. Người dùng cho phép commit riêng phần 275 ngày 23/10/2026, không push. Giữ riêng phần 156 đang chờ.
