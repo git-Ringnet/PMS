@@ -9,6 +9,20 @@
 - **Ngày ghi**: `YYYY-MM-DD`
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 
+## [2026-10-23] - Sửa số lượng TE, EB và đồng bộ kiểu chữ số 0 màn hình Danh sách phòng đến/đi/ở
+### Module: Room Map / Lễ tân ([CheckInPage.vue](file:///c:/xampp/htdocs/PMS/frontend/src/pages/reservation/CheckInPage.vue))
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **Sửa đúng định dạng số lượng Người lớn / Trẻ em / Em bé (NL/TE/EB)**:
+    + Khắc phục sự nhầm lẫn giữa Em bé (EB) và Extra Bed.
+    + Tách biệt chính xác: NL = `adults`, TE = `children_qty` (hoặc số trẻ em `child`), EB = `babies` (hoặc số em bé `baby`). Không còn cộng dồn em bé vào cột trẻ em và lấy giường phụ vào cột em bé.
+    + Cập nhật đồng bộ hàm `getRoomOccupancyCounts`, `getRoomOccupancyText` và `getBookingOccupancyText` tính chuẩn xác theo từng phòng và tổng theo booking.
+  - **Đồng bộ kiểu chữ và style số 0**:
+    + Loại bỏ class `tabular-nums` ở cột `NL/TE/EB` vốn gây biến đổi ký tự số 0 (slashed-zero) khác biệt so với các cột khác.
+    + Đưa về đồng nhất style `font-normal text-[#000000D9]` như các cột Số phòng, Ngày đến, Ngày đi.
+    + Bổ sung tooltip rõ nghĩa `title="Người lớn / Trẻ em / Em bé"` tại tiêu đề cột `NL/TE/EB`.
+- **Kiểm thử**:
+  - `npm run build`: Thành công 100% (0 lỗi).
+
 ## [2026-10-23] - Ẩn nút xuất file Word và PDF ở màn hình Báo cáo
 ### Module: Báo Cáo ([ReportsPage.vue](file:///c:/xampp/htdocs/PMS/frontend/src/pages/reports/ReportsPage.vue))
 - **Mục tiêu & Kết quả hoàn thành**:
@@ -6777,3 +6791,35 @@
 - Kiểm chứng: Chrome headless (A4, 120 dòng) viewer 3 trang khớp bản in 3 trang; in trang đang xem ra đúng 1 trang. PHPUnit Report 196/206 đạt, 7 lỗi có sẵn từ trước (giống baseline); node test 14/14; build đạt; i18n đã sync.
 - Chưa UAT trên trình duyệt thật với dữ liệu thật; chưa commit.
 - Excel header: khối `hotel-information` dạng `<b>Tên</b><br>Địa chỉ` được tách thành từng dòng, giữ căn phải theo CSS (trước đây dồn vào 1 ô cao 16pt nên mất dòng địa chỉ). Thêm test; 50/50 báo cáo vẫn xuất được.
+
+## [2026-10-23] - Room map: icon Extra Bed theo đêm
+
+- RoomController (`GET /api/rooms?date=`): phòng đã có chi tiết EB theo đêm thì `extra_bed_qty` lấy số lượng EB của đúng đêm đang xem (đêm = 0 hoặc ngày đi → không hiện icon); phòng chưa có chi tiết giữ cách cũ (`booking_rooms.extra_bed_qty`).
+- Thêm test `test_room_map_extra_bed_follows_nightly_detail`. Booking 201/202 và nhóm Room 23/24 test đạt; 2 lỗi còn lại có sẵn từ trước, giống baseline.
+
+## [2026-10-23] - Room map: thống kê Buồng phòng
+
+- Sửa bảng "Buồng phòng" (Thống kê room map): tách `room-map-housekeeping-stats.js`. Sẵn sàng/Sạch/Dơ theo `room_status_code` (ready / *_clean / *_dirty); Occ = phòng đang có khách (occupied + chờ trả), Vac = còn lại kể cả phòng đến chưa nhận; loại OOO/OOS. Trước đây "Sẵn sàng" gộp cả phòng sạch chưa kiểm tra, phòng đến bị loại khỏi Vac, Occ sẵn sàng bỏ sót phòng chờ trả.
+- Công suất (RoomOccupancyStatisticsService) đã đúng công thức note 25/09: dự báo phòng ở cuối ngày / (tổng phòng thật − OOO), loại phòng nội bộ/ảo, chỉ booking is_availability = 1; không đổi.
+- node test 2/2, build đạt; chưa UAT trình duyệt.
+
+## [2026-10-23] - Room map: xem tương lai và xuất ảnh (phần frontend)
+
+- RoomMapPage: nút gạt "Tương lai" cạnh thẻ ngày; bật → ngày xem = ngày hệ thống + 1, lịch chỉ cho chọn từ ngày mai (cả bộ lọc ngày bên trái). Chọn ngày tương lai ở bộ lọc cũng tự bật chế độ.
+- Khi xem tương lai khóa thao tác: menu chuột phải (đổi tình trạng, tạo/giao booking nhanh, nhận phòng...), phím tắt 1/2/3/B/G/C/I, nút cập nhật tình trạng hàng loạt. Nhấp đúp vẫn mở booking để xem.
+- Xuất ảnh room map (PNG, toàn bộ lưới kể cả phần cuộn) bằng `html-to-image@1.11.13` (thêm dependency).
+- Theo yêu cầu "làm room map trước": CHƯA sửa RoomController/RoomOccupancyStatisticsService/CheckInPage → ngày tương lai các booking chưa nhận phòng chưa hiện là đang ở/đi, thẻ Đã đi/Đang ở và màn chi tiết chưa tính dự kiến.
+- Build đạt; i18n đã sync; chưa UAT trình duyệt.
+
+## [2026-10-23] - Chuyển phòng: danh sách phòng trống (note 30/09)
+
+- BookingRoomController: danh sách phòng trống (`move-target-rooms`) loại mọi phòng đang In-House (đã check-in, chưa check-out), kể cả khách quá ngày đi không trùng giai đoạn; khi lưu chuyển sang phòng đó trả 422 "Phòng X đang có khách ở chưa check out, không thể chuyển phòng.".
+- Phòng dơ/chờ kiểm tra vẫn hiện kèm tình trạng, khi lưu đã có sẵn chặn (chỉ cho Ready); danh sách đã sắp theo số phòng tăng dần (backend + frontend).
+- Test RoomMoveTest 17/17 (thêm 1 test). Chưa UAT trình duyệt.
+
+## [2026-10-23] - Phòng đến: phòng chuyển (Báo cáo phòng đến + Room map)
+
+- Quy tắc: dòng phòng tạo khi chuyển phòng có arrival_date = ngày chuyển, actual_arrival_date = ngày đến gốc → ngày đến thật = LEAST(arrival_date, actual_arrival_date) (check-in luôn ghi ngày ≥ ngày đến nên chỉ dòng chuyển phòng bị lùi ngày).
+- Migration mới `2026_10_23_120000_fix_arriving_rooms_moved_room_arrivals`: định nghĩa lại `rpt_arriving_rooms` lọc/nhóm/hiển thị theo ngày đến thật, bỏ điều kiện loại mọi phòng nhận chuyển → phòng chuyển trong cùng ngày đến được tính lại, phòng chuyển của khách đến từ ngày trước không tính. Đã thử procedure tạm trên DB local (30 dòng, cú pháp đạt); CHƯA chạy migrate.
+- CheckInPage (danh sách Đã đến của room map): lọc theo ngày đến thật, loại phòng chuyển có ngày đến gốc trước ngày xem. Số "Đã đến" trên room map (RoomOccupancyStatisticsService theo actual_arrival_date) vốn đúng, không đổi.
+- Sửa lại RoomMapPage.vue về LF (script Python trước đó đổi sang CRLF). Build đạt; chưa UAT với dữ liệu chuyển phòng thật.

@@ -2082,6 +2082,25 @@ class BookingRoomController extends Controller
      * GET /bookings/{bookingId}/rooms/{roomId}/move-target-rooms
      * Lấy danh sách phòng trống khả dụng & phòng inhouse cho phép gộp
      */
+    /**
+     * Số phòng vật lý đang có khách In-House (đã check-in, chưa check-out),
+     * không phụ thuộc ngày đi dự kiến.
+     *
+     * @return array<string, int> room_number => index
+     */
+    private function inHouseRoomNumbers(int|string $excludeBookingRoomId): array
+    {
+        return BookingRoom::where('id', '!=', $excludeBookingRoomId)
+            ->stayOnly()
+            ->where('status', BookingRoom::STATUS_CHECKED_IN)
+            ->whereNotNull('room_number')
+            ->where('room_number', '!=', '')
+            ->pluck('room_number')
+            ->unique()
+            ->flip()
+            ->all();
+    }
+
     public function getMoveTargetRooms($bookingId, $roomId)
     {
         $bookingRoom = BookingRoom::where('booking_id', $bookingId)
@@ -2107,6 +2126,7 @@ class BookingRoomController extends Controller
             ->get();
 
         $ratesMap = \App\Models\StandardRate::all()->keyBy('room_class_id');
+        $inHouseRoomNumbers = $this->inHouseRoomNumbers($bookingRoom->id);
 
         $availableRooms = [];
         $statusLabels = [
@@ -2124,6 +2144,10 @@ class BookingRoomController extends Controller
         ];
 
         foreach ($allRooms as $room) {
+            // Note 30/09: phòng đang có khách ở chưa check out (kể cả quá ngày đi) không phải phòng trống.
+            if (isset($inHouseRoomNumbers[$room->room_number])) {
+                continue;
+            }
             $isOccupied = $this->avService->isRoomNumberOccupied(
                 $room->room_number,
                 $effectiveStartDate,
@@ -2373,6 +2397,13 @@ class BookingRoomController extends Controller
             $physicalRoom = \App\Models\Room::where('room_number', $targetRoomNumber)->first();
             if (!$physicalRoom) {
                 return response()->json(['success' => false, 'message' => "Không tìm thấy số phòng {$targetRoomNumber} trong hệ thống."], 422);
+            }
+
+            if (isset($this->inHouseRoomNumbers($bookingRoom->id)[$targetRoomNumber])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Phòng {$targetRoomNumber} đang có khách ở chưa check out, không thể chuyển phòng.",
+                ], 422);
             }
 
             // Kiểm tra trạng thái phòng đích

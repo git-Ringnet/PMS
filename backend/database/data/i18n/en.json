@@ -6456,5 +6456,9 @@
  "Vừa chiều rộng": "Fit width",
  "Xem nhiều trang": "Multiple pages view",
  "Trang kế tiếp": "Next page",
- "Xem từng trang": "Single page view"
+ "Xem từng trang": "Single page view",
+ "Tương lai": "Future",
+ "Xem room map tương lai": "View future room map",
+ "Xuất ảnh room map": "Export room map image",
+ "Không thể xuất ảnh room map.": "Unable to export the room map image."
 }

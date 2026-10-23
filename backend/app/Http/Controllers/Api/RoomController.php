@@ -110,6 +110,12 @@ class RoomController extends Controller
             ])
             ->get();
 
+        $extraBedDetailRoomIds = \App\Models\BookingRoomService::whereIn('booking_room_id', $bookingRoomsToday->pluck('id'))
+            ->where('service_code', \App\Models\BookingRoomService::CODE_EXTRA_BED)
+            ->distinct()
+            ->pluck('booking_room_id')
+            ->flip();
+
         $tomorrowDate = $systemDate->copy()->addDay()->toDateString();
         $bookingRoomsTomorrow = \App\Models\BookingRoom::whereNotNull('room_number')
             ->stayOnly()
@@ -259,7 +265,10 @@ class RoomController extends Controller
                     ->values()
                     ->toArray();
                 $ebQty = (int) ($br->extra_bed_qty ?? 0);
-                if ($br->extra_bed_qty === null && $br->services) {
+                if (isset($extraBedDetailRoomIds[$br->id])) {
+                    // Phòng đã có chi tiết EB theo đêm: chỉ hiện EB khi đêm đang xem có số lượng > 0.
+                    $ebQty = (int) $br->services->max('quantity');
+                } elseif ($br->extra_bed_qty === null && $br->services) {
                     $ebQty = (int) ($br->services->where('service_code', \App\Models\BookingRoomService::CODE_EXTRA_BED)->max('quantity') ?? 0);
                 }
                 $room->extra_bed_qty = $ebQty;

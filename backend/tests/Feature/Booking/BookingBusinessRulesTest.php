@@ -2582,6 +2582,34 @@ class BookingBusinessRulesTest extends TestCase
     }
 
     /**
+     * Room Map: icon EB chỉ hiện vào đêm có số lượng EB trong chi tiết theo đêm
+     * (vào 06, ra 10; đêm 06 = 0, các đêm sau = 1).
+     */
+    public function test_room_map_extra_bed_follows_nightly_detail(): void
+    {
+        $response = $this->storeBookingWithRooms('Room Map EB', $this->roomClass->id, ['101']);
+        $response->assertSuccessful();
+        $room = BookingRoom::where('booking_id', $response->json('data.id'))->firstOrFail();
+        $room->update([
+            'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-10',
+            'status' => BookingRoom::STATUS_CHECKED_IN, 'extra_bed_qty' => 1,
+        ]);
+        foreach (['2026-08-06' => 0, '2026-08-07' => 1, '2026-08-08' => 1, '2026-08-09' => 1] as $date => $quantity) {
+            \App\Models\BookingRoomService::create([
+                'booking_room_id' => $room->id, 'service_code' => 'EB', 'service_name' => 'Extra Bed',
+                'service_date' => $date, 'quantity' => $quantity, 'rate' => 300000,
+                'total_amount' => 300000 * $quantity, 'department' => 'FO', 'is_room' => 1, 'folio' => 1, 'is_posted' => 0,
+            ]);
+        }
+
+        $extraBedOn = fn (string $date) => collect($this->getJson("/api/rooms?date={$date}")->assertSuccessful()->json('data'))
+            ->firstWhere('room_number', '101')['extra_bed_qty'];
+
+        $this->assertSame(0, $extraBedOn('2026-08-06'));
+        $this->assertSame(1, $extraBedOn('2026-08-07'));
+    }
+
+    /**
      * Row 399: with AllowOverRoomTypeRoomKind = 0, upgrading into a room class
      * with AV = 0 is rejected (it used to pass and push AV to -1).
      */

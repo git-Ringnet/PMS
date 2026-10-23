@@ -1,6 +1,6 @@
 {
- "generated_at": "2026-10-23T04:13:42.684Z",
- "count": 5900,
+ "generated_at": "2026-10-23T05:39:14.731Z",
+ "count": 5904,
  "items": [
   {
    "source": "- Bảo mật nâng cao",
@@ -31681,6 +31681,16 @@
    ]
   },
   {
+   "source": "Không thể xuất ảnh room map.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Đặt phòng › RoomMapPage",
+     "route": "/reservation"
+    }
+   ]
+  },
+  {
    "source": "Không thể xuất database:",
    "is_pattern": false,
    "locations": [
@@ -61539,6 +61549,16 @@
    ]
   },
   {
+   "source": "Tương lai",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Đặt phòng › RoomMapPage",
+     "route": "/reservation"
+    }
+   ]
+  },
+  {
    "source": "Tỷ lệ hiển thị",
    "is_pattern": false,
    "locations": [
@@ -65723,6 +65743,16 @@
    ]
   },
   {
+   "source": "Xem room map tương lai",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Đặt phòng › RoomMapPage",
+     "route": "/reservation"
+    }
+   ]
+  },
+  {
    "source": "Xem Tài Khoản Ngân Hàng",
    "is_pattern": false,
    "locations": [
@@ -68006,6 +68036,16 @@
    "locations": [
     {
      "area": "Đặt phòng › CreateRegistrationPage",
+     "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "Xuất ảnh room map",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Đặt phòng › RoomMapPage",
      "route": "/reservation"
     }
    ]
