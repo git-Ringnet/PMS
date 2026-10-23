@@ -203,15 +203,13 @@ class NightAuditController extends Controller
         $todayEnd = Carbon::today()->endOfDay();
         $alreadyRolledToday = SystemDateRoll::whereBetween('actual_date', [$todayStart, $todayEnd])->exists();
 
-        // 1. Phòng cần check in nhưng chưa check in (arrival_date <= system_date và status = 0, loại bỏ phòng chuyển và phòng chưa gán phòng vật lý)
+        // 1. Phòng cần check in nhưng chưa check in (arrival_date <= system_date và status = 0, loại bỏ phòng chuyển).
+        // Dòng 259: gồm cả phòng chưa gán số phòng, trước đây bị bỏ qua nên vẫn sang ngày được khi khách chưa nhận phòng.
         $pendingCheckIns = BookingRoom::with(['booking', 'roomClass'])
             ->stayOnly()
             ->whereDate('arrival_date', '<=', $systemDate)
             ->where('status', BookingRoom::STATUS_BOOKED)
             ->where('status', '!=', BookingRoom::STATUS_MOVED)
-            ->whereNotNull('room_number')
-            ->where('room_number', '!=', '')
-            ->whereRaw("LOWER(TRIM(room_number)) NOT IN ('chưa gán', 'chua gan')")
             ->get();
 
         // 2. Phòng có lịch check out hôm nay/trước đây nhưng vẫn ở trạng thái in-house (departure_date <= system_date và status = 1, loại bỏ phòng chuyển)
@@ -264,7 +262,7 @@ class NightAuditController extends Controller
                     'id' => $r->id,
                     'booking_code' => $r->booking?->code,
                     'booking_name' => $r->booking?->booking_name,
-                    'room_number' => $r->room_number ?? 'Chưa gán',
+                    'room_number' => $r->room_number ?: 'Chưa gán',
                     'room_type' => $r->roomClass?->name,
                     'arrival_date' => $r->arrival_date->toDateString(),
                     'departure_date' => $r->departure_date->toDateString(),
@@ -663,14 +661,12 @@ class NightAuditController extends Controller
                 $notifyStep(1, 'PRE_CHECK', 'Check In/Out Conditions', 6);
                 $snapshotService->markStepRunning($steps['PRE_CHECK']);
 
+                // Dòng 259: phòng đến chưa gán số phòng cũng phải xử lý (nhận phòng / dời ngày đến / noshow) trước khi sang ngày
                 $pendingCheckIns = BookingRoom::with(['booking', 'guests.guest'])
                     ->whereDate('arrival_date', '<=', $systemDate->toDateString())
                     ->stayOnly()
                     ->where('status', BookingRoom::STATUS_BOOKED)
                     ->where('status', '!=', BookingRoom::STATUS_MOVED)
-                    ->whereNotNull('room_number')
-                    ->where('room_number', '!=', '')
-                    ->whereRaw("LOWER(TRIM(room_number)) NOT IN ('chưa gán', 'chua gan')")
                     ->get();
 
                 $pendingCheckOuts = BookingRoom::with(['booking', 'guests.guest'])
@@ -693,7 +689,7 @@ class NightAuditController extends Controller
                         'pending_checkouts_count' => $outCount,
                         'pending_checkins' => $pendingCheckIns->map(fn($r) => [
                             'id' => $r->id,
-                            'room_number' => $r->room_number,
+                            'room_number' => $r->room_number ?: 'Chưa gán',
                             'booking_code' => $r->booking?->code,
                             'guest_name' => $r->guests->first()?->guest?->full_name ?: ($r->booking?->booking_name ?: 'Khách'),
                             'arrival_date' => Carbon::parse($r->arrival_date)->format('d/m/Y'),
