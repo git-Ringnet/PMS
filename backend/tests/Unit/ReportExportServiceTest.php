@@ -177,6 +177,54 @@ HTML;
         $this->assertLessThan(25, $sheet->getRowDimension(1)->getRowHeight());
     }
 
+    public function test_it_keeps_line_breaks_of_block_children_and_pre_wrap_notes(): void
+    {
+        $template = new Template(['name' => 'Mẫu', 'page_size' => 'A4', 'page_orientation' => 'portrait']);
+        $html = <<<'HTML'
+<html><head><style>.note { white-space: pre-wrap; }</style></head><body>
+<table>
+  <tr><td><div class="hotel-information"><div><b>Địa chỉ:</b> 195 Nguyễn Thiện Thuật</div><div><b>Người dùng:</b> Admin</div></div></td></tr>
+  <tr><td class="note">Dòng 1
+Dòng 2</td></tr>
+</table>
+</body></html>
+HTML;
+
+        $sheet = app(ReportSpreadsheetExportService::class)->build($template, $html)->getActiveSheet();
+        $values = array_map(
+            fn ($value) => $value instanceof \PhpOffice\PhpSpreadsheet\RichText\RichText ? $value->getPlainText() : $value,
+            array_filter(array_merge(...$sheet->toArray(null, false, false)), fn ($value) => $value !== null && $value !== '')
+        );
+
+        $this->assertContains("Địa chỉ: 195 Nguyễn Thiện Thuật\nNgười dùng: Admin", $values);
+        $this->assertContains("Dòng 1\nDòng 2", $values);
+    }
+
+    public function test_hotel_information_with_line_breaks_keeps_each_line_and_alignment(): void
+    {
+        $template = new Template(['name' => 'Mẫu', 'page_size' => 'A4', 'page_orientation' => 'portrait']);
+        $html = <<<'HTML'
+<html><head><style>.hotel-information { text-align: right; }</style></head><body>
+<div class="hotel-header"><div class="hotel-logo"></div><div class="hotel-information"><b>Galliot Hotel</b><br>195 Nguyễn Thiện Thuật</div></div>
+<table><tr><td>1</td><td>2</td><td>3</td><td>4</td></tr></table>
+</body></html>
+HTML;
+
+        $sheet = app(ReportSpreadsheetExportService::class)->build($template, $html)->getActiveSheet();
+        $cells = [];
+        foreach ([1, 2] as $row) {
+            foreach ($sheet->getRowIterator($row, $row)->current()->getCellIterator() as $cell) {
+                $value = $cell->getValue();
+                $text = $value instanceof \PhpOffice\PhpSpreadsheet\RichText\RichText ? $value->getPlainText() : (string) $value;
+                if ($text !== '' && $text !== 'Logo') {
+                    $cells[$text] = $cell->getStyle()->getAlignment()->getHorizontal();
+                }
+            }
+        }
+
+        $this->assertSame(['Galliot Hotel' => 'right', '195 Nguyễn Thiện Thuật' => 'right'], $cells);
+    }
+
     private function assertValidOfficeArchive(string $content, string $format): void
     {
         $path = tempnam(sys_get_temp_dir(), 'pms-report-');

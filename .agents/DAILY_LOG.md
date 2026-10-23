@@ -9,6 +9,15 @@
 - **Ngày ghi**: `YYYY-MM-DD`
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 
+## [2026-10-23] - Ẩn nút xuất file Word và PDF ở màn hình Báo cáo
+### Module: Báo Cáo ([ReportsPage.vue](file:///c:/xampp/htdocs/PMS/frontend/src/pages/reports/ReportsPage.vue))
+- **Mục tiêu & Kết quả hoàn thành**:
+  - Ẩn/loại bỏ 2 nút xuất định dạng **Word** (`docx`) và **PDF** (`pdf`) trên thanh công cụ mẫu đầu ra của màn hình Báo cáo.
+  - Giữ lại nút xuất **Excel** (`xlsx`) và nút **In** phục vụ nhu cầu xem/in ấn và xuất số liệu.
+  - Bảo toàn toàn bộ logic xử lý dữ liệu và backend API báo cáo.
+- **Kiểm thử**:
+  - `npm run build`: Thành công 100% (0 lỗi).
+
 ## [2026-10-22] - Triển Khai Dòng 61 Sheet FIX FE: In Phân Công Phòng (Housekeeping PrintTasksTab)
 ### Module: Buồng Phòng / In Phân Công Phòng ([PrintTasksTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/housekeeping/components/PrintTasksTab.vue))
 - **Mục tiêu & Kết quả hoàn thành**:
@@ -6758,3 +6767,13 @@
 - Dòng 429: API mật khẩu ngắn đạt; chưa xác nhận lưu mật khẩu ngắn trực tiếp trên UI do bước nhập/lưu credential bàn giao người dùng. Chưa test concurrency MySQL.
 - Theo yêu cầu người dùng, xóa test tạm SystemConfigurationIntegrityTest.php và toàn bộ tài liệu/ảnh/JSON UAT trong docs/system-configuration-fixes; giữ code và migration để commit. Không xóa test hồi quy có sẵn.
 - Người dùng sẽ tự chạy migrate:fresh --seed sau; không chạy migration/seed hoặc push trong lượt dọn và commit này.
+
+## [2026-10-23] - Báo cáo hệ thống: xuất Excel, viewer phân trang, double-click mã BK
+
+- Excel: code hiện tại đã xuất theo layout HTML (50/50 báo cáo chạy được trên DB local không rơi về bản thô). Ảnh bản xuất cột thô từ phía khách là nhánh legacy fallback → môi trường đó chạy code cũ hoặc gặp lỗi ảnh logo.
+- ReportSpreadsheetExportService: lỗi logo/ảnh không còn làm hỏng cả bản xuất; giữ xuống dòng của div con (thông tin khách sạn) và ô `white-space: pre-wrap` (Ghi chú).
+- ReportDefinitionController: bọc các binding mã BK (`BookingId`, `BookingCode`, `BookingCode1`, `booking_code`, `CodeBooking`, `MaBooking`, `Booking`→BookingId) bằng `span.pms-booking-ref[data-pms-booking]`, chỉ khi binding nằm ở vị trí chữ; không sửa TemplateRendererService dùng chung.
+- Viewer mới `ReportViewer.vue` + `reportPagination.js`: chia trang theo khổ giấy (không cắt ngang dòng, lặp tiêu đề bảng), chuyển trang, xem từng trang/nhiều trang, zoom 50–200%/vừa chiều rộng/vừa trang, in tất cả/in trang đang xem; nhấp đúp mã BK mở `/reservation?tab=create-res&bookingCode=` ở tab mới.
+- Kiểm chứng: Chrome headless (A4, 120 dòng) viewer 3 trang khớp bản in 3 trang; in trang đang xem ra đúng 1 trang. PHPUnit Report 196/206 đạt, 7 lỗi có sẵn từ trước (giống baseline); node test 14/14; build đạt; i18n đã sync.
+- Chưa UAT trên trình duyệt thật với dữ liệu thật; chưa commit.
+- Excel header: khối `hotel-information` dạng `<b>Tên</b><br>Địa chỉ` được tách thành từng dòng, giữ căn phải theo CSS (trước đây dồn vào 1 ô cao 16pt nên mất dòng địa chỉ). Thêm test; 50/50 báo cáo vẫn xuất được.
