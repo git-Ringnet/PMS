@@ -2,10 +2,12 @@
 import { computed, reactive, ref, watch } from 'vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
-import { FilePlus2, Save, Trash2, X } from '@lucide/vue'
+import { FilePlus2, ListTree, Save, ShieldCheck, Trash2, X } from '@lucide/vue'
+import ReportRoleAccessModal from './ReportRoleAccessModal.vue'
 
 const props = defineProps({ isOpen: { type: Boolean, default: false } })
-const emit = defineEmits(['close', 'changed'])
+const emit = defineEmits(['close', 'changed', 'open-menu-config'])
+const roleAccessReport = ref(null)
 const uiStore = useUiStore()
 const loading = ref(false)
 const reports = ref([])
@@ -149,6 +151,7 @@ const save = async () => {
     selectedId.value = response.data.data.id
     await load()
     emit('changed')
+    window.dispatchEvent(new CustomEvent('report-menu-updated'))
     uiStore.showToast('Đã lưu báo cáo và danh sách mẫu đầu ra', 'success')
   } catch (error) {
     const errors = error.response?.data?.errors
@@ -234,7 +237,7 @@ watch(() => props.isOpen, open => { if (open) { blank(); load() } })
             <div class="flex items-center justify-between border-b border-violet-100 px-4 py-3">
               <div>
                 <h4 class="text-[11px] font-black uppercase text-violet-700">Vị trí trên menu hệ thống</h4>
-                <p class="mt-0.5 text-[10px] font-semibold text-slate-400">Thay đổi tại đây sẽ cập nhật menu Báo cáo bên ngoài sau khi tải lại trang.</p>
+                <p class="mt-0.5 text-[10px] font-semibold text-slate-400">Chọn module hiển thị. Báo cáo mới được thêm vào cuối nhóm “{{ form.group }}”; sắp xếp nhóm và thứ tự ở màn Cấu hình menu báo cáo.</p>
               </div>
               <label class="text-xs font-bold text-slate-600"><input v-model="form.show_in_menu" type="checkbox" /> Hiện trên menu</label>
             </div>
@@ -250,19 +253,14 @@ watch(() => props.isOpen, open => { if (open) { blank(); load() } })
                   <input class="mr-1.5" type="checkbox" :checked="form.menu_locations.includes(location.value)" @change="toggleMenuLocation(location.value)" />{{ location.label }}
                 </label>
               </div>
-              <div class="grid grid-cols-3 gap-3">
-                <label class="text-[10px] font-bold uppercase text-slate-500">Vị trí nút Báo cáo
+              <div class="flex flex-wrap items-end gap-3">
+                <label class="w-48 text-[10px] font-bold uppercase text-slate-500">Vị trí nút Báo cáo
                   <input v-model.number="form.menu_top_order" type="number" min="0" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs" />
                   <small class="mt-1 block normal-case text-slate-400">Số nhỏ nằm bên trái trước.</small>
                 </label>
-                <label class="text-[10px] font-bold uppercase text-slate-500">Thứ tự nhóm
-                  <input v-model.number="form.menu_group_order" type="number" min="0" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs" />
-                  <small class="mt-1 block normal-case text-slate-400">Sắp xếp nhóm “{{ form.group }}”.</small>
-                </label>
-                <label class="text-[10px] font-bold uppercase text-slate-500">Thứ tự báo cáo
-                  <input v-model.number="form.menu_item_order" type="number" min="0" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs" />
-                  <small class="mt-1 block normal-case text-slate-400">Sắp xếp trong cùng nhóm.</small>
-                </label>
+                <button type="button" class="mb-5 flex items-center gap-1 rounded-lg border border-violet-200 bg-white px-3 py-2 text-xs font-bold text-violet-700" @click="emit('open-menu-config')">
+                  <ListTree class="h-4 w-4" /> Sắp xếp nhóm / thứ tự báo cáo
+                </button>
               </div>
             </div>
           </section>
@@ -327,6 +325,7 @@ watch(() => props.isOpen, open => { if (open) { blank(); load() } })
           <div class="mt-5 flex items-center justify-between">
             <label class="text-xs font-bold text-slate-600"><input v-model="form.is_active" type="checkbox" /> Cho phép sử dụng báo cáo</label>
             <div class="flex gap-2">
+              <button v-if="selectedId" @click="roleAccessReport = { id: selectedId, name: form.name }" class="flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700"><ShieldCheck class="h-4 w-4" /> Quyền xem</button>
               <button v-if="selectedId" @click="remove" class="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600"><Trash2 class="h-4 w-4" /> Xóa</button>
               <button :disabled="loading" @click="save" class="flex items-center gap-1 rounded-lg border-none bg-sky-600 px-4 py-2 text-xs font-black text-white disabled:opacity-50"><Save class="h-4 w-4" /> Lưu báo cáo</button>
             </div>
@@ -334,5 +333,6 @@ watch(() => props.isOpen, open => { if (open) { blank(); load() } })
         </main>
       </div>
     </div>
+    <ReportRoleAccessModal :report="roleAccessReport" @close="roleAccessReport = null" />
   </div>
 </template>

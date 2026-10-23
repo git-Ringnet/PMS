@@ -57,27 +57,12 @@ class InventoryCheckController extends Controller
             ], 422);
         }
 
-        // 4. Tìm hoặc tạo phiếu kiểm kê cho tháng hiện tại
-        $check = InventoryCheck::withTrashed()
-            ->where('warehouse_id', $validated['warehouse_id'])
-            ->where('month', $validated['month'])
-            ->first();
-
-        if ($check) {
-            if ($check->trashed()) {
-                $check->restore();
-            }
-        } else {
-            $check = InventoryCheck::create([
-                'warehouse_id' => $validated['warehouse_id'],
-                'month'        => $validated['month'],
-                'created_by'   => auth()->id(),
-            ]);
-        }
-
+        // Dòng 372: chỉ trả số liệu tồn cuối tháng trước để điền vào phiếu, chưa lưu.
+        // Người dùng kiểm tra rồi bấm Lưu (POST /inventory/checks/save) mới tạo / cập nhật phiếu.
         $prevItemsMap = $prevCheck ? $prevCheck->items->keyBy('product_id') : collect();
+        $products = Product::with('category')->whereIn('id', $productIds)->get()->keyBy('id');
 
-        $syncedCount = 0;
+        $items = [];
         foreach ($productIds as $pId) {
             $prevItem = $prevItemsMap->get($pId);
             $initialStock = 0;
@@ -86,35 +71,30 @@ class InventoryCheckController extends Controller
             }
 
             $prodLogs = $prevLogs->get($pId, collect());
-            $totalReceive  = (float)$prodLogs->sum('receive');
-            $totalExport   = (float)$prodLogs->sum('export');
-            $totalTransfer = (float)$prodLogs->sum('transfer');
+            // Tồn cuối tháng trước = tồn đầu + nhập - xuất - chuyển
+            $finalBalancePrev = $initialStock + (float) $prodLogs->sum('receive') - (float) $prodLogs->sum('export') - (float) $prodLogs->sum('transfer');
+            $product = $products->get($pId);
 
-            // Tồn cuối tháng trước
-            $finalBalancePrev = $initialStock + $totalReceive - $totalExport - $totalTransfer;
-
-            $checkItem = InventoryCheckItem::firstOrNew([
-                'check_id'   => $check->id,
-                'product_id' => $pId,
-            ]);
-
-            $checkItem->well_balance  = $finalBalancePrev;
-            $checkItem->stoke_take    = $finalBalancePrev;
-            $checkItem->different_qty = 0;
-            $checkItem->final_balance = $finalBalancePrev;
-            if ($prevItem && $prevItem->unit) {
-                $checkItem->unit = $prevItem->unit;
-            }
-            $checkItem->save();
-            $syncedCount++;
+            $items[] = [
+                'product_id'    => $pId,
+                'product_code'  => $product?->product_code ?: $pId,
+                'product_name'  => $product?->name ?? '',
+                'category_name' => $product?->category?->name ?? 'Chưa phân nhóm',
+                'unit'          => $prevItem?->unit ?: ($product?->unit ?: 'Cái'),
+                'well_balance'  => $finalBalancePrev,
+                'stoke_take'    => $finalBalancePrev,
+                'different_qty' => 0,
+            ];
         }
 
-        $check->load(['items.product.category', 'creator']);
+        $negativeCount = collect($items)->where('well_balance', '<', 0)->count();
 
         return response()->json([
-            'success' => true,
-            'message' => "Đã lấy số liệu tồn cuối từ tháng {$prevMonthStr} sang tháng {$validated['month']} cho {$syncedCount} sản phẩm.",
-            'data'    => $this->formatCheck($check),
+            'success'        => true,
+            'message'        => "Đã lấy số liệu tồn cuối tháng {$prevMonthStr} cho " . count($items) . ' sản phẩm. Kiểm tra lại rồi bấm Lưu để tạo phiếu.'
+                . ($negativeCount ? " Có {$negativeCount} sản phẩm tồn đầu âm." : ''),
+            'items'          => $items,
+            'negative_count' => $negativeCount,
         ]);
     }
 
@@ -184,6 +164,92 @@ class InventoryCheckController extends Controller
     }
 
     /**
+     * POST /api/inventory/checks/save
+     * Dòng 372: lưu phiếu kiểm kê một lần (tạo mới hoặc cập nhật) với toàn bộ danh sách sản phẩm.
+     * - Tháng đã phát sinh nhập / xuất / chuyển: không cho chỉnh sửa phiếu.
+     * - Có sản phẩm tồn đầu âm: trả needs_negative_confirm, người dùng đồng ý (confirm_negative=1) mới lưu.
+     */
+    public function save(Request $request)
+    {
+        $validated = $request->validate([
+            'warehouse_id'          => 'required|integer|exists:warehouses,id',
+            'month'                 => 'required|string|size:7',
+            'note'                  => 'nullable|string',
+            'created_by'            => ['nullable', 'integer', Rule::exists('mysql_system.users', 'id')],
+            'confirm_negative'      => 'nullable|boolean',
+            'items'                 => 'present|array',
+            'items.*.product_id'    => 'required|integer|exists:products,id|distinct',
+            'items.*.well_balance'  => 'required|numeric',
+            'items.*.stoke_take'    => 'required|numeric',
+            'items.*.unit'          => 'nullable|string|max:50',
+            'items.*.note'          => 'nullable|string|max:200',
+        ]);
+
+        $check = InventoryCheck::withTrashed()
+            ->where('warehouse_id', $validated['warehouse_id'])
+            ->where('month', $validated['month'])
+            ->first();
+
+        if ($check && !$check->trashed() && $check->hasLogs()) {
+            return response()->json(['success' => false, 'message' => self::LOCKED_MESSAGE], 422);
+        }
+
+        $negative = collect($validated['items'])->filter(fn ($item) => (float) $item['well_balance'] < 0);
+        if ($negative->isNotEmpty() && !($validated['confirm_negative'] ?? false)) {
+            $names = Product::whereIn('id', $negative->pluck('product_id'))->pluck('name');
+            return response()->json([
+                'success'                => false,
+                'needs_negative_confirm' => true,
+                'negative_products'      => $names,
+                'message'                => 'Một số sản phẩm có tồn đầu âm, bạn có muốn tiếp tục?',
+            ]);
+        }
+
+        \Illuminate\Support\Facades\DB::transaction(function () use (&$check, $validated) {
+            if ($check) {
+                if ($check->trashed()) {
+                    $check->restore();
+                }
+                $check->update([
+                    'note'       => $validated['note'] ?? null,
+                    'created_by' => $validated['created_by'] ?? $check->created_by,
+                ]);
+            } else {
+                $check = InventoryCheck::create([
+                    'warehouse_id' => $validated['warehouse_id'],
+                    'month'        => $validated['month'],
+                    'note'         => $validated['note'] ?? null,
+                    'created_by'   => $validated['created_by'] ?? auth()->id(),
+                ]);
+            }
+
+            $productIds = collect($validated['items'])->pluck('product_id')->all();
+            InventoryCheckItem::where('check_id', $check->id)->whereNotIn('product_id', $productIds)->delete();
+
+            foreach ($validated['items'] as $row) {
+                $item = InventoryCheckItem::firstOrNew(['check_id' => $check->id, 'product_id' => $row['product_id']]);
+                $item->well_balance  = $row['well_balance'];
+                $item->stoke_take    = $row['stoke_take'];
+                $item->different_qty = (float) $row['stoke_take'] - (float) $row['well_balance'];
+                $item->final_balance = $row['well_balance'];
+                if (array_key_exists('unit', $row)) {
+                    $item->unit = $row['unit'];
+                }
+                if (array_key_exists('note', $row)) {
+                    $item->note = $row['note'];
+                }
+                $item->save();
+            }
+        });
+
+        $check->load(['items.product.category', 'creator']);
+
+        return response()->json(['success' => true, 'message' => 'Lưu phiếu kiểm kê thành công!', 'data' => $this->formatCheck($check)]);
+    }
+
+    public const LOCKED_MESSAGE = 'Tháng này đã phát sinh dữ liệu nhập/xuất tồn kho, phiếu kiểm kê không được chỉnh sửa.';
+
+    /**
      * POST /api/inventory/checks/{id}/items
      * Thêm sản phẩm vào phiếu kiểm kê (chỉ sản phẩm isInStock=1)
      * Body: { product_ids: [1, 2, 3] }
@@ -191,6 +257,9 @@ class InventoryCheckController extends Controller
     public function addItems(Request $request, $id)
     {
         $check = InventoryCheck::findOrFail($id);
+        if ($check->hasLogs()) {
+            return response()->json(['success' => false, 'message' => self::LOCKED_MESSAGE], 422);
+        }
 
         $validated = $request->validate([
             'product_ids'   => 'required|array|min:1',
@@ -228,6 +297,9 @@ class InventoryCheckController extends Controller
     public function updateItem(Request $request, $id, $itemId)
     {
         $item = InventoryCheckItem::where('check_id', $id)->findOrFail($itemId);
+        if (InventoryCheck::findOrFail($id)->hasLogs()) {
+            return response()->json(['success' => false, 'message' => self::LOCKED_MESSAGE], 422);
+        }
 
         $validated = $request->validate([
             'well_balance' => 'sometimes|numeric|min:0',
@@ -294,6 +366,36 @@ class InventoryCheckController extends Controller
 
     public function productsInStock(Request $request)
     {
+        // Dòng 372: đang kiểm kê kho nào thì chỉ lấy sản phẩm của kho đó, có chọn "Có theo dõi" tồn kho
+        if ($request->filled('warehouse_id')) {
+            $warehouse = Warehouse::findOrFail($request->warehouse_id);
+            $products = Product::with('category')
+                ->where('is_active', true)
+                ->where('track_stock', true)
+                ->where('inventory_id', (string) $warehouse->id)
+                ->orderBy('name')
+                ->get();
+
+            $categories = $products->groupBy(fn ($p) => $p->product_category_id ?: 0)
+                ->map(fn ($items) => [
+                    'id'       => $items->first()->product_category_id ?: 0,
+                    'name'     => $items->first()->category?->name ?? 'Chưa phân nhóm',
+                    'products' => $items->map(fn ($p) => [
+                        'id' => $p->id, 'name' => $p->name, 'price' => $p->price,
+                        'product_code' => $p->product_code ?: $p->id, 'unit' => $p->unit ?: 'Cái',
+                        'category_name' => $p->category?->name ?? 'Chưa phân nhóm',
+                    ])->values()->toArray(),
+                ])
+                ->sortBy('name')
+                ->values()
+                ->toArray();
+
+            return response()->json(['success' => true, 'data' => $categories ? [[
+                'id' => 'warehouse-' . $warehouse->id, 'code' => 'warehouse-' . $warehouse->id,
+                'name' => $warehouse->name, 'group_key' => null, 'categories' => $categories,
+            ]] : []]);
+        }
+
         $hkOutlets = \App\Models\HousekeepingOutlet::where('is_active', true)
             ->orderBy('order_index')
             ->get();
@@ -463,6 +565,7 @@ class InventoryCheckController extends Controller
             'created_by'   => $check->created_by,
             'creator_name' => $check->creator?->name,
             'created_at'   => $check->created_at?->toDateTimeString(),
+            'has_logs'     => $check->hasLogs(),
             'items'        => $items,
         ];
     }

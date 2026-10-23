@@ -44,6 +44,7 @@ class HotelSettingController extends Controller
             'RoleUserOpenDoNotMove',
             'Immigration_ExportExelChangeToRegistered',
             'AllowShowAlertListView',
+            'Inventory_LowStockWarningQty',
         ])->get()->pluck('value', 'name');
 
         $data['ColorDefaultBookingRoomMap'] = $configs->get('ColorDefaultBookingRoomMap', '#97D5FF');
@@ -66,6 +67,7 @@ class HotelSettingController extends Controller
         $data['RoleUserOpenDoNotMove'] = $configs->get('RoleUserOpenDoNotMove', '');
         $data['Immigration_ExportExelChangeToRegistered'] = $configs->get('Immigration_ExportExelChangeToRegistered', '0');
         $data['AllowShowAlertListView'] = $configs->get('AllowShowAlertListView', '1');
+        $data['Inventory_LowStockWarningQty'] = $configs->get('Inventory_LowStockWarningQty', '50');
         
         $bfConfig = \App\Models\HotelConfig::where('name', 'DefaultBreakfast')->first();
         $data['DefaultBreakfast'] = $bfConfig ? intval($bfConfig->value) : 1;

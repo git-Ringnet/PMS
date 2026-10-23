@@ -290,7 +290,10 @@ class ActivityLogEnhancementTest extends TestCase
         $resDep = (new ActivityLogResource($logDeposit))->resolve();
         $this->assertEquals('Tạo đăng ký', $resDep['component']);
         $this->assertEquals('GAL22', $resDep['booking_code']);
-        $this->assertEquals('* Thêm Đặt Cọc Cho Đăng Ký: GAL22 - Tên Booking: Test ghi log - PaymentMethod: BT - Số Tiền: 5,000,000 - Mô tả: Deposit (Bank transfer)', $resDep['description']);
+        // Dòng 325: chỉ hiển thị dữ liệu thật (booking không tồn tại thì tên booking để trống, không dùng tên mẫu)
+        $this->assertStringContainsString('* Thêm Đặt Cọc Cho Đăng Ký: GAL22', $resDep['description']);
+        $this->assertStringContainsString('PaymentMethod: BT - Số Tiền: 5,000,000 - Mô tả: Deposit (Bank transfer)', $resDep['description']);
+        $this->assertStringNotContainsString('Test ghi log', $resDep['description']);
     }
 
     /**
@@ -455,7 +458,7 @@ class ActivityLogEnhancementTest extends TestCase
             'description' => 'Tách cọc',
         ]);
         $splitRes = (new ActivityLogResource($splitLog))->resolve();
-        $this->assertEquals('* Deposit (Bank transfer) số tiền: 5,000,000, tách làm hai, số tiền 1: 2,500,000, folio 1, số tiền 2: 2,500,000, folio 1', $splitRes['description']);
+        $this->assertEquals('* Đặt cọc số tiền: 5,000,000, tách làm hai, số tiền 1: 2,500,000, folio 1, số tiền 2: 2,500,000, folio 1', $splitRes['description']);
 
         // Row 21: Chuyển cọc
         $transferLog = new ActivityLog([
@@ -471,7 +474,7 @@ class ActivityLogEnhancementTest extends TestCase
             'description' => '[TRANSFER IN BK_22=>BK_20] Deposit (Bank transfer)',
         ]);
         $transferRes = (new ActivityLogResource($transferLog))->resolve();
-        $this->assertEquals('Chuyển đặt cọc (2.Deposit (Bank transfer) - 2,500,000) từ mã đăng ký: 22 đến mã đăng ký: 20', $transferRes['description']);
+        $this->assertEquals('Chuyển đặt cọc (Đặt cọc - 2,500,000) từ mã đăng ký: 22 đến mã đăng ký: 20', $transferRes['description']);
     }
 
     /**
@@ -567,7 +570,7 @@ class ActivityLogEnhancementTest extends TestCase
             'description' => 'Cập nhật phòng',
         ]);
         $undoRes = (new ActivityLogResource($undoLog))->resolve();
-        $this->assertEquals("Cancel checkin cho Mã Đăng Ký: GAL6787\n- Phòng: 406\n- tình trạng phòng: Phòng sạch", $undoRes['description']);
+        $this->assertEquals("Cancel checkin cho Mã Đăng Ký: GAL6787\n- Phòng: 406", $undoRes['description']);
 
         // Row 34: Auto assign
         $assignLog = new ActivityLog([
@@ -582,7 +585,7 @@ class ActivityLogEnhancementTest extends TestCase
             'description' => 'Cập nhật phòng',
         ]);
         $assignRes = (new ActivityLogResource($assignLog))->resolve();
-        $this->assertEquals('* Tự động assigned rooms: - Mã phòng: G0000048 -> 109', $assignRes['description']);
+        $this->assertEquals('* Tự động assigned rooms: - Mã phòng: G0000048 -> 109 - Đăng ký: GAL22', $assignRes['description']);
     }
 
     /**

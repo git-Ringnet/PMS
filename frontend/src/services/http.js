@@ -52,7 +52,16 @@ let _isRedirectingToLogin = false
 
 // Response interceptor
 http.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Đồng bộ chuỗi (SyncCompanyAllBranch): báo các chi nhánh không đồng bộ được
+    const syncWarnings = response.data?.sync_warnings
+    if (Array.isArray(syncWarnings) && syncWarnings.length > 0) {
+      import('@/stores/ui-store')
+        .then(({ useUiStore }) => useUiStore().showToast(`Đồng bộ chuỗi chưa hoàn tất: ${syncWarnings.join(' | ')}`, 'warning', 9000))
+        .catch(() => console.warn('Đồng bộ chuỗi:', syncWarnings))
+    }
+    return response
+  },
   (error) => {
     if (error.response) {
       const status = error.response.status

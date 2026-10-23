@@ -42,6 +42,83 @@ class BookingBusinessRulesTest extends TestCase
     protected Room $room102;
     protected RegistrationStatus $regStatus;
 
+    public static function row275PayloadModes(): array
+    {
+        return ['header only' => [false], 'with room allocations' => [true]];
+    }
+
+    public static function row275SyncModes(): array
+    {
+        return ['header sync on' => [false, true], 'allocations sync on' => [true, true],
+            'header sync off' => [false, false], 'allocations sync off' => [true, false]];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('row275SyncModes')]
+    public function test_row275_red_note_syncs_departure_of_new_reserved_room_under_past_booking(bool $withAllocations, bool $sync): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'SyncRoomDateByBookingDate'], ['value' => $sync ? '1' : '0']);
+        SystemDateRoll::query()->update(['system_date' => '2026-08-31']);
+        $booking = $this->createBooking(['arrival_date' => '2026-08-30', 'departure_date' => '2026-09-01', 'num_of_days' => 2, 'status' => Booking::STATUS_CHECKIN]);
+        $inhouse = BookingRoom::create([
+            'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id, 'room_number' => '101',
+            'arrival_date' => '2026-08-30', 'departure_date' => '2026-09-01', 'status' => BookingRoom::STATUS_CHECKED_IN,
+        ]);
+        $this->putJson("/api/bookings/{$booking->id}", $this->headerPayload($booking, '2026-08-30', '2026-09-04'))->assertSuccessful();
+        $this->assertSame('2026-09-01', $inhouse->fresh()->departure_date->toDateString());
+        $reserved = BookingRoom::create([
+            'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id, 'room_number' => '102',
+            'arrival_date' => '2026-08-31', 'departure_date' => '2026-09-04', 'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+        $payload = $this->headerPayload($booking->fresh(), '2026-08-30', '2026-09-06');
+        if ($withAllocations) {
+            $payload['room_allocations'] = [[
+                'roomClassId' => $this->roomClass->id, 'quantity' => 1,
+                'rooms' => [[
+                    'bookingRoomId' => $reserved->id, 'roomNumber' => '102',
+                    'arrivalDate' => '2026-08-31', 'departureDate' => '2026-09-04', 'price' => 500000,
+                ]],
+            ]];
+        }
+        $this->putJson("/api/bookings/{$booking->id}", $payload)->assertSuccessful();
+        $this->assertSame('2026-08-31', $reserved->fresh()->arrival_date->toDateString());
+        $this->assertSame($sync ? '2026-09-06' : '2026-09-04', $reserved->fresh()->departure_date->toDateString());
+        $this->assertSame($sync ? 6 : 4, (int) $reserved->fresh()->ActutalNumOfDays);
+        $this->assertSame('2026-08-30', $inhouse->fresh()->arrival_date->toDateString());
+        $this->assertSame('2026-09-01', $inhouse->fresh()->departure_date->toDateString());
+        $this->assertSame('2026-08-30', $booking->fresh()->arrival_date->toDateString());
+        $this->assertSame('2026-09-06', $booking->fresh()->departure_date->toDateString());
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('row275PayloadModes')]
+    public function test_row275_extension_checks_av_and_rolls_back_booking_and_room_when_over_is_disabled(bool $withAllocations): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'SyncRoomDateByBookingDate'], ['value' => '1']);
+        HotelConfig::updateOrCreate(['name' => 'AllowOverRoomTypeRoomKind'], ['value' => '0']);
+        SystemDateRoll::query()->update(['system_date' => '2026-08-31']);
+        $booking = $this->createBooking(['arrival_date' => '2026-08-30', 'departure_date' => '2026-09-04', 'status' => Booking::STATUS_CHECKIN]);
+        $reserved = BookingRoom::create([
+            'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id, 'room_number' => '102',
+            'arrival_date' => '2026-08-31', 'departure_date' => '2026-09-04', 'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+        $other = $this->createBooking(['arrival_date' => '2026-09-04', 'departure_date' => '2026-09-06',
+            'registration_status_id' => $this->regStatus->booking_status_id]);
+        for ($i = 0; $i < 2; $i++) {
+            BookingRoom::create(['booking_id' => $other->id, 'room_class_id' => $this->roomClass->id,
+                'arrival_date' => '2026-09-04', 'departure_date' => '2026-09-06', 'status' => BookingRoom::STATUS_BOOKED]);
+        }
+        $payload = $this->headerPayload($booking, '2026-08-30', '2026-09-06');
+        if ($withAllocations) {
+            $payload['room_allocations'] = [['roomClassId' => $this->roomClass->id, 'quantity' => 1,
+                'rooms' => [['bookingRoomId' => $reserved->id, 'roomNumber' => '102',
+                    'arrivalDate' => '2026-08-31', 'departureDate' => '2026-09-04', 'price' => 500000]]]];
+        }
+        $this->putJson("/api/bookings/{$booking->id}", $payload)->assertStatus(422);
+        $this->assertSame('2026-09-04', $booking->fresh()->departure_date->toDateString());
+        $this->assertSame('2026-09-04', $reserved->fresh()->departure_date->toDateString());
+        $this->assertSame('2026-08-31', $reserved->fresh()->arrival_date->toDateString());
+        $this->assertNull($reserved->fresh()->deleted_at);
+    }
+
     protected function setUp(): void
     {
         parent::setUp();

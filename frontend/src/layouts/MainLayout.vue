@@ -18,6 +18,8 @@ const route = useRoute()
 const router = useRouter()
 const activeOutlets = ref([])
 const dynamicReports = ref([])
+// Dòng 327: menu Báo cáo theo cấu hình từng module (nhóm, thứ tự), chỉ gồm báo cáo người dùng được xem
+const reportNavigation = ref(null)
 
 const loadActiveOutlets = async () => {
   try {
@@ -29,13 +31,14 @@ const loadActiveOutlets = async () => {
 }
 
 const loadDynamicReports = async () => {
-  try {
-    const response = await http.get('/report-definitions', { params: { active_only: 1 } })
-    dynamicReports.value = response.data.data || []
-  } catch (error) {
-    console.error('Không thể tải menu báo cáo động:', error)
-    dynamicReports.value = []
-  }
+  // Tải cùng lúc rồi mới gán để menu không hiện thứ tự cũ trước khi có cấu hình
+  const [definitions, navigation] = await Promise.allSettled([
+    http.get('/report-definitions', { params: { active_only: 1 } }),
+    http.get('/report-menu/navigation')
+  ])
+  if (definitions.status === 'rejected') console.error('Không thể tải menu báo cáo động:', definitions.reason)
+  reportNavigation.value = navigation.status === 'fulfilled' ? (navigation.value.data.data || null) : null
+  dynamicReports.value = definitions.status === 'fulfilled' ? (definitions.value.data.data || []) : []
 }
 
 const sidebarCollapsed = ref(false)
@@ -485,6 +488,7 @@ onMounted(() => {
   })
   
   window.addEventListener('outlet-updated', loadActiveOutlets)
+  window.addEventListener('report-menu-updated', loadDynamicReports)
   
   // Cập nhật giờ và ca làm việc mỗi giây
   timeInterval = setInterval(() => {
@@ -497,12 +501,30 @@ onUnmounted(() => {
   window.removeEventListener('click', closeDropdown)
   window.removeEventListener('keydown', handleGlobalKeydown)
   window.removeEventListener('outlet-updated', loadActiveOutlets)
+  window.removeEventListener('report-menu-updated', loadDynamicReports)
   if (timeInterval) {
     clearInterval(timeInterval)
   }
 })
 
+const reportRoute = (context, code) => `/${context}?tab=reports&report=${encodeURIComponent(code)}`
+
 const buildDynamicReportMenu = (context = null) => {
+  const configured = context ? reportNavigation.value?.[context] : null
+  if (configured) {
+    const dropdown = (configured.items || []).map(item => item.type === 'group'
+      ? { name: item.name, children: item.children.map(child => ({ name: child.name, route: reportRoute(context, child.code) })) }
+      : { name: item.name, route: reportRoute(context, item.code) })
+
+    return {
+      name: t('menu.reports'),
+      route: `/${context}?tab=reports`,
+      dropdown: dropdown.length ? dropdown : undefined,
+      menuOrder: Number(configured.top_order ?? 20),
+      reportSlot: true
+    }
+  }
+
   const available = dynamicReports.value
     .filter(report => report.show_in_menu !== false)
     .filter(report => !context || (report.menu_locations || ['reservation']).includes(context))

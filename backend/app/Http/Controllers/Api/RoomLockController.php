@@ -872,15 +872,7 @@ class RoomLockController extends Controller
 
         $lock->update($validated);
 
-        if ($lock->is_active == 1) {
-            Room::where('room_number', $lock->room_number)->update(['room_status_code' => 'ooo']);
-        } else {
-            // Check if there are other active locks, otherwise restore status to vacant_ready
-            $hasActive = RoomLock::where('room_number', $lock->room_number)->where('is_active', 1)->exists();
-            if (!$hasActive) {
-                Room::where('room_number', $lock->room_number)->update(['room_status_code' => 'vacant_ready']);
-            }
-        }
+        $this->syncRoomStatusAfterLockEdit($lock);
 
         $lock->load(['room.roomForm', 'room.roomClass']);
 
@@ -1191,6 +1183,7 @@ class RoomLockController extends Controller
                 }
 
                 $lock->update($updateFields);
+                $this->syncRoomStatusAfterLockEdit($lock->fresh());
 
                 \App\Services\ActivityLogService::logUpdate(
                     $request,
@@ -1211,6 +1204,66 @@ class RoomLockController extends Controller
     }
 
     // Helper functions
+
+    /**
+     * Dòng 156, 288: sau khi sửa lịch khóa, trạng thái khóa và tình trạng phòng phải theo ngày hệ thống.
+     * - Ngày bắt đầu <= ngày hệ thống: khóa có hiệu lực (Active), phòng chuyển OOO/OOS theo loại khóa.
+     * - Ngày bắt đầu > ngày hệ thống: khóa chưa hiệu lực (New); nếu phòng đang mang trạng thái khóa mà
+     *   không còn khóa nào đang hiệu lực thì trả lại tình trạng thường (trước đây luôn ghi 'ooo', kể cả phòng đang có khách).
+     */
+    private function syncRoomStatusAfterLockEdit(RoomLock $lock): void
+    {
+        if ((int) $lock->is_active !== 1 || $lock->status === 'Done') {
+            return;
+        }
+
+        $latestRoll = \App\Models\SystemDateRoll::latest('id')->first();
+        $sysDateStr = $latestRoll
+            ? \Carbon\Carbon::parse($latestRoll->system_date)->toDateString()
+            : \Carbon\Carbon::now('Asia/Ho_Chi_Minh')->toDateString();
+        $room = Room::where('room_number', $lock->room_number)->first();
+        if (!$room) {
+            return;
+        }
+
+        $isStarted = \Carbon\Carbon::parse($lock->start_date)->toDateString() <= $sysDateStr;
+        $lock->update(['status' => $isStarted ? 'Active' : 'New']);
+
+        if ($isStarted) {
+            $lockCode = strtoupper((string) $lock->lock_type) === 'OOS' ? 'oos' : 'ooo';
+            if ($room->room_status_code !== $lockCode) {
+                $room->update(['room_status_code' => $lockCode]);
+                event(new \App\Events\RoomStatusUpdated($room->id, $lockCode, 'Phòng khóa bảo trì'));
+            }
+            return;
+        }
+
+        $otherActiveLock = RoomLock::where('room_number', $lock->room_number)
+            ->where('id', '!=', $lock->id)
+            ->where('is_active', 1)
+            ->where('status', '!=', 'Done')
+            ->whereDate('start_date', '<=', $sysDateStr)
+            ->whereDate('end_date', '>=', $sysDateStr)
+            ->first();
+
+        if ($otherActiveLock) {
+            $lockCode = strtoupper((string) $otherActiveLock->lock_type) === 'OOS' ? 'oos' : 'ooo';
+            if ($room->room_status_code !== $lockCode) {
+                $room->update(['room_status_code' => $lockCode]);
+            }
+            return;
+        }
+
+        if (in_array($room->room_status_code, ['ooo', 'oos', 'occupied_ooo'], true)) {
+            $hasInhouse = \App\Models\BookingRoom::where('room_number', $room->room_number)
+                ->stayOnly()
+                ->where('status', \App\Models\BookingRoom::STATUS_CHECKED_IN)
+                ->exists();
+            $restored = $hasInhouse ? 'occupied_dirty' : 'vacant_ready';
+            $room->update(['room_status_code' => $restored]);
+            event(new \App\Events\RoomStatusUpdated($room->id, $restored, 'Khóa phòng chưa tới ngày bắt đầu'));
+        }
+    }
 
     private function resolveUserDisplayName($username)
     {

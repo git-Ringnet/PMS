@@ -699,7 +699,13 @@ const filterState = ref({
 const hasLoadedData = ref(false)
 const isSearching = ref(false)
 
+// Chỉ nhận kết quả của lần tìm mới nhất (tránh kết quả cũ về sau ghi đè danh sách)
+let searchRequestId = 0
+// Người dùng đã tự chọn khoảng ngày thì không đặt lại theo ngày hệ thống tải về muộn
+let userPickedDateRange = false
+
 const triggerSearch = async () => {
+  const requestId = ++searchRequestId
   isSearching.value = true
   try {
     const { data } = await http.get('/housekeeping/service-bills', { params: {
@@ -712,17 +718,20 @@ const triggerSearch = async () => {
       outlet: filterState.value.zone || undefined,
       status: filterState.value.status
     } })
+    if (requestId !== searchRequestId) return
     invoicesList.value = (data.data || []).map(item => ({
       id: item.id, regCode: item.booking_code || '', guestName: item.guest_name || '', room: item.room_no || '', products: item.products || [], note: item.note || '',
       time: item.date ? `${item.date.split('-').reverse().join('-')} ${item.time || ''}` : '',
       isFree: item.is_free, price: item.amount, payCode: item.payment_id || '',
       manualCode: item.manual_invoice_code || '', user: item.username || '',
       service: item.service || item.outlet || item.department || 'Dịch vụ HK',
-      isDeleted: item.is_deleted, canCancel: item.can_cancel === true, dept: item.department || '', zone: item.outlet || ''
+      isDeleted: item.is_deleted, canCancel: item.can_cancel === true, foCancelBlocked: item.fo_cancel_blocked === true, dept: item.department || '', zone: item.outlet || ''
     }))
   } finally {
-    isSearching.value = false
-    hasLoadedData.value = true
+    if (requestId === searchRequestId) {
+      isSearching.value = false
+      hasLoadedData.value = true
+    }
   }
 }
 
@@ -733,6 +742,9 @@ onMounted(async () => {
     if (businessDate) {
       systemDate.value = businessDate
       authStore.setSystemDate(businessDate)
+    }
+    // Người dùng đang chọn ngày (mở bảng chọn) hoặc đã áp dụng khoảng ngày thì giữ nguyên lựa chọn
+    if (businessDate && !userPickedDateRange && !showDatePicker.value) {
       fromDate.value = businessDate
       toDate.value = businessDate
       tempFromDate.value = businessDate
@@ -894,6 +906,7 @@ const applyDateRange = () => {
   if (tempFromDate.value && tempToDate.value && tempFromDate.value > tempToDate.value) {
     tempToDate.value = tempFromDate.value
   }
+  userPickedDateRange = true
   fromDate.value = tempFromDate.value
   toDate.value = tempToDate.value
   dateRangeType.value = tempDateRangeType.value
@@ -990,6 +1003,11 @@ const openAddModal = () => {
 
 const openCancelModal = (invoice) => {
   if (!canCancelHousekeepingBill.value) return
+  // Dòng 341: bill do Lễ tân post, thông số SearchHouseKeeping_AllowHKCorrectBillFO = 0 thì không cho Buồng phòng hủy
+  if (invoice.foCancelBlocked) {
+    uiStore.showToast('Hóa đơn được tạo bởi bộ phận lễ tân. Vui lòng liên hệ bộ phận lễ tân để xử lý', 'warning', 6000)
+    return
+  }
   cancelTarget.value = invoice
   cancelReason.value = ''
 }

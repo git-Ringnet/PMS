@@ -55,6 +55,13 @@ const statsData            = ref({
 })
 const isLoading            = ref(false)
 const isSaving             = ref(false)
+
+// Dòng 372: phiếu kiểm kê chỉnh sửa trên bản nháp, bấm Lưu mới ghi xuống DB
+const checkDraft           = ref([])
+const checkDraftDirty      = ref(false)
+const isCheckLocked        = computed(() => !!currentCheck.value?.has_logs)
+// Định mức cảnh báo tồn theo thông số Inventory_LowStockWarningQty (mặc định 50)
+const lowStockQty          = ref(50)
 const isBillLoading        = ref(false)
 const billDate             = ref('')  // ngày lấy bill, default = systemDate
 
@@ -136,7 +143,7 @@ function handleEscKey(e) {
     if (showAddProductCheckModal.value) {
       showAddProductCheckModal.value = false
     } else if (showCheckModal.value) {
-      showCheckModal.value = false
+      closeCheckModal()
     } else if (showTransferModal.value) {
       showTransferModal.value = false
     } else if (showStatsModal.value) {
@@ -202,6 +209,13 @@ async function loadInitialData() {
     ])
     warehouses.value = warehousesRes.data.data || []
     hkOutlets.value  = outletsRes.data.data || []
+    try {
+      const settingsRes = await http.get('/hotel-settings')
+      const qty = Number(settingsRes.data?.data?.Inventory_LowStockWarningQty)
+      if (Number.isFinite(qty) && qty >= 0) lowStockQty.value = qty
+    } catch (err) {
+      console.error('load Inventory_LowStockWarningQty error', err)
+    }
     users.value      = usersRes.data.data || usersRes.data || []
     if (warehouses.value.length > 0) {
       activeWarehouseId.value = warehouses.value[0].id
@@ -235,9 +249,16 @@ async function loadCheckAndLogs() {
 }
 
 async function loadProductsInStock() {
+  // Dòng 372: chỉ lấy sản phẩm của kho đang kiểm kê, chưa có kho thì không tải danh sách chung
+  if (!activeWarehouseId.value) {
+    productsInStock.value = []
+    return
+  }
   try {
-    const res = await http.get('/inventory/products-in-stock')
+    const res = await http.get('/inventory/products-in-stock', { params: { warehouse_id: activeWarehouseId.value } })
     productsInStock.value = res.data.data || []
+    // Chỉ có một kho thì mở sẵn danh sách nhóm
+    productsInStock.value.forEach(wh => { expandedOutlets.value[wh.id] = true })
   } catch (e) {
     console.error('loadProductsInStock error', e)
   }
@@ -315,24 +336,57 @@ async function deleteWarehouse() {
 }
 
 // ─── Inventory Check ─────────────────────────────────────────────
+function resetCheckDraft() {
+  checkDraft.value = (currentCheck.value?.items || []).map(item => ({ ...item }))
+  checkDraftDirty.value = false
+}
+
+watch(currentCheck, resetCheckDraft, { immediate: true })
+
+async function confirmDiscardDraft() {
+  if (!checkDraftDirty.value) return true
+  return uiStore.confirm({
+    title: 'Chưa lưu phiếu kiểm kê',
+    message: 'Phiếu kiểm kê có thay đổi chưa lưu. Bạn có muốn bỏ các thay đổi này?',
+    confirmText: 'Bỏ thay đổi',
+    cancelText: 'Quay lại',
+  })
+}
+
+async function closeCheckModal() {
+  if (!(await confirmDiscardDraft())) return
+  resetCheckDraft()
+  showCheckModal.value = false
+}
+
 async function openCheckModal() {
-  checkForm.value = { 
-    month: currentMonth.value, 
-    note: currentCheck.value?.note || '', 
-    created_by: currentCheck.value?.created_by || authStore.user?.id || '' 
+  if (!activeWarehouseId.value) {
+    uiStore.showToast('Vui lòng chọn kho cần kiểm kê.', 'warning')
+    return
   }
+  checkForm.value = {
+    month: currentMonth.value,
+    note: currentCheck.value?.note || '',
+    created_by: currentCheck.value?.created_by || authStore.user?.id || ''
+  }
+  resetCheckDraft()
   showCheckModal.value = true // Open modal immediately
   await loadProductsInStock() // Load products in background
 }
 
 async function onCheckMonthChange(newMonth) {
   if (!activeWarehouseId.value || !newMonth) return
+  if (!(await confirmDiscardDraft())) {
+    checkForm.value.month = currentCheck.value?.month || currentMonth.value
+    return
+  }
   isSaving.value = true
   try {
     const res = await http.get('/inventory/checks', {
       params: { warehouse_id: activeWarehouseId.value, month: newMonth }
     })
     currentCheck.value = res.data.data
+    resetCheckDraft()
   } catch (e) {
     console.error('onCheckMonthChange error', e)
   } finally {
@@ -340,20 +394,26 @@ async function onCheckMonthChange(newMonth) {
   }
 }
 
+// Thống kê: lấy tồn cuối tháng trước điền vào phiếu (chưa lưu)
 async function syncPreviousMonth() {
-  if (!activeWarehouseId.value || !checkForm.value.month) return
+  if (!activeWarehouseId.value || !checkForm.value.month || isCheckLocked.value) return
   isSaving.value = true
   try {
     const res = await http.post('/inventory/checks/sync-previous-month', {
       warehouse_id: activeWarehouseId.value,
       month: checkForm.value.month,
     })
-    currentCheck.value = res.data.data
-    // Nếu tháng trong modal trùng với tháng đang xem ngoài bảng thì reload bảng
-    if (checkForm.value.month === currentMonth.value) {
-      await loadCheckAndLogs()
+    const byProduct = new Map(checkDraft.value.map(item => [item.product_id, item]))
+    for (const row of res.data.items || []) {
+      const existing = byProduct.get(row.product_id)
+      if (existing) {
+        Object.assign(existing, { well_balance: row.well_balance, stoke_take: row.stoke_take, different_qty: 0 })
+      } else {
+        checkDraft.value.push({ ...row, id: null, note: '' })
+      }
     }
-    uiStore.showToast(res.data.message, 'success')
+    checkDraftDirty.value = true
+    uiStore.showToast(res.data.message, (res.data.negative_count || 0) > 0 ? 'warning' : 'success')
   } catch (e) {
     uiStore.showToast(e.response?.data?.message || 'Lỗi khi lấy số liệu tháng trước', 'error')
   } finally {
@@ -361,20 +421,45 @@ async function syncPreviousMonth() {
   }
 }
 
-async function createOrLoadCheck() {
+// Lưu phiếu: tạo mới hoặc cập nhật một lần với toàn bộ sản phẩm trong bản nháp
+async function saveCheck(confirmNegative = false) {
+  if (isCheckLocked.value) return
   isSaving.value = true
   try {
-    const res = await http.post('/inventory/checks', {
+    const res = await http.post('/inventory/checks/save', {
       warehouse_id: activeWarehouseId.value,
       month: checkForm.value.month,
       note: checkForm.value.note,
       created_by: checkForm.value.created_by || null,
+      confirm_negative: confirmNegative,
+      items: checkDraft.value.map(item => ({
+        product_id: item.product_id,
+        well_balance: Number(item.well_balance) || 0,
+        stoke_take: Number(item.stoke_take) || 0,
+        unit: item.unit || null,
+        note: item.note || null,
+      })),
     })
+
+    if (res.data.needs_negative_confirm) {
+      isSaving.value = false
+      const names = (res.data.negative_products || []).join(', ')
+      const proceed = await uiStore.confirm({
+        title: 'Tồn đầu kỳ âm',
+        message: `Một số sản phẩm có tồn đầu âm${names ? ` (${names})` : ''}, bạn có muốn tiếp tục?`,
+        confirmText: 'Có',
+        cancelText: 'Không',
+      })
+      if (proceed) await saveCheck(true)
+      return
+    }
+
     currentCheck.value = res.data.data
+    resetCheckDraft()
     if (checkForm.value.month === currentMonth.value) {
       await loadCheckAndLogs()
     }
-    uiStore.showToast('Lưu phiếu kiểm kê thành công!', 'success')
+    uiStore.showToast(res.data.message || 'Lưu phiếu kiểm kê thành công!', 'success')
   } catch (e) {
     console.error(e)
     uiStore.showToast(e.response?.data?.message || 'Lỗi khi lưu phiếu kiểm kê', 'error')
@@ -383,67 +468,47 @@ async function createOrLoadCheck() {
   }
 }
 
-async function addProductsToCheck() {
+// Màn Thêm sản phẩm chỉ thêm vào phiếu (bản nháp), chưa tạo phiếu
+function addProductsToCheck() {
   if (!selectedProductIds.value.length) return
-  isSaving.value = true
-  try {
-    if (!currentCheck.value) await createOrLoadCheck()
-    const res = await http.post(`/inventory/checks/${currentCheck.value.id}/items`, {
-      product_ids: selectedProductIds.value,
+  const existing = new Set(checkDraft.value.map(item => item.product_id))
+  let added = 0
+  for (const productId of selectedProductIds.value) {
+    if (existing.has(productId)) continue
+    const product = allProducts.value.find(p => p.id === productId)
+    if (!product) continue
+    checkDraft.value.push({
+      id: null,
+      product_id: product.id,
+      product_code: product.product_code || product.id,
+      product_name: product.name,
+      category_name: product.category_name || 'Chưa phân nhóm',
+      unit: product.unit || 'Cái',
+      well_balance: 0,
+      stoke_take: 0,
+      different_qty: 0,
+      note: '',
     })
-    currentCheck.value = res.data.data
-    selectedProductIds.value = []
-    showAddProductCheckModal.value = false
-    uiStore.showToast('Thêm sản phẩm thành công!', 'success')
-  } catch (e) {
-    uiStore.showToast(e.response?.data?.message || 'Lỗi khi thêm sản phẩm', 'error')
-  } finally {
-    isSaving.value = false
+    added++
+  }
+  selectedProductIds.value = []
+  showAddProductCheckModal.value = false
+  if (added) {
+    checkDraftDirty.value = true
+    uiStore.showToast(`Đã thêm ${added} sản phẩm vào phiếu. Nhập số lượng kiểm kê rồi bấm Lưu để lưu phiếu.`, 'success')
+  } else {
+    uiStore.showToast('Các sản phẩm đã chọn đều có trong phiếu.', 'warning')
   }
 }
 
-const updateTimeouts = {}
-const pendingFields = {}
+function removeDraftItem(item) {
+  checkDraft.value = checkDraft.value.filter(row => row.product_id !== item.product_id)
+  checkDraftDirty.value = true
+}
 
-async function updateCheckItem(itemId, fields) {
-  if (!currentCheck.value) return
-  
-  // Tích lũy các thay đổi locally
-  pendingFields[itemId] = { ...(pendingFields[itemId] || {}), ...fields }
-  
-  // Cập nhật giá trị UI hiển thị lập tức để không bị lag
-  const idx = currentCheck.value.items.findIndex(i => i.id === itemId)
-  if (idx !== -1) {
-    currentCheck.value.items[idx] = { ...currentCheck.value.items[idx], ...fields }
-  }
-  
-  // Xóa timeout cũ nếu click liên tục
-  if (updateTimeouts[itemId]) {
-    clearTimeout(updateTimeouts[itemId])
-  }
-  
-  // Đặt timeout mới (500ms) để gom các lần click lại và gửi 1 request cuối cùng
-  updateTimeouts[itemId] = setTimeout(async () => {
-    const fieldsToSend = { ...pendingFields[itemId] }
-    delete pendingFields[itemId]
-    delete updateTimeouts[itemId]
-    
-    try {
-      const res = await http.put(
-        `/inventory/checks/${currentCheck.value.id}/items/${itemId}`,
-        fieldsToSend
-      )
-      // Chỉ cập nhật từ backend về nếu user không sửa tiếp trong lúc đang gửi request
-      if (!pendingFields[itemId]) {
-        const currentIdx = currentCheck.value.items.findIndex(i => i.id === itemId)
-        if (currentIdx !== -1) {
-          currentCheck.value.items[currentIdx] = { ...currentCheck.value.items[currentIdx], ...res.data.data }
-        }
-      }
-    } catch (e) {
-      console.error('updateCheckItem error', e)
-    }
-  }, 500)
+function setDraftNote(item, note) {
+  item.note = note
+  checkDraftDirty.value = true
 }
 
 function getInitialStock(item) {
@@ -457,37 +522,39 @@ function getInitialStock(item) {
 function getInitialStockLabel(item) {
   if (!item) return ''
   const val = getInitialStock(item)
-  return val > 0 ? val : (item.well_balance > 0 || item.stoke_take > 0 ? '0' : '')
+  // Dòng 372: tồn đầu âm vẫn hiển thị số lượng (trước đây bị ẩn)
+  if (val !== 0) return val
+  return item.well_balance !== null && item.well_balance !== undefined && item.well_balance !== '' ? '0' : ''
 }
 
 function onStokeTakeInput(item, val) {
+  if (isCheckLocked.value) return
   const stokeTake = parseFloat(val) || 0
   item.stoke_take = stokeTake
-  
+
   const currentWell = parseFloat(item.well_balance) || 0
   if (currentWell === 0) {
     item.well_balance = stokeTake
     item.different_qty = 0
-    updateCheckItem(item.id, { well_balance: stokeTake, stoke_take: stokeTake })
   } else {
     item.different_qty = stokeTake - currentWell
-    updateCheckItem(item.id, { stoke_take: stokeTake })
   }
+  checkDraftDirty.value = true
 }
 
 function onWellBalanceInput(item, val) {
+  if (isCheckLocked.value) return
   const wellBalance = parseFloat(val) || 0
   item.well_balance = wellBalance
-  
+
   const currentStoke = parseFloat(item.stoke_take) || 0
   if (currentStoke === 0) {
     item.stoke_take = wellBalance
     item.different_qty = 0
-    updateCheckItem(item.id, { well_balance: wellBalance, stoke_take: wellBalance })
   } else {
     item.different_qty = currentStoke - wellBalance
-    updateCheckItem(item.id, { well_balance: wellBalance })
   }
+  checkDraftDirty.value = true
 }
 
 function increaseQty(item, field) {
@@ -596,7 +663,7 @@ function openMainStats() {
   const totalExport = items.reduce((sum, i) => sum + (i.totalExport || 0), 0)
   const totalTransfer = items.reduce((sum, i) => sum + (i.totalTransfer || 0), 0)
   
-  const lowStockProducts = items.filter(i => i.finalStock < 50)
+  const lowStockProducts = items.filter(i => i.finalStock < lowStockQty.value)
   const lowStockCount = lowStockProducts.length
   
   const highestActivityProd = [...items].sort((a, b) => {
@@ -774,7 +841,7 @@ const tableItems = computed(() => {
   if (filterState.value.warningOnly) {
     items = items.filter(i => {
       const init = getInitialStock(i)
-      return init > 0 && i.finalStock < 50
+      return init > 0 && i.finalStock < lowStockQty.value
     })
   }
 
@@ -821,8 +888,7 @@ const groupedTableItems = computed(() => {
 })
 
 const modalCheckItems = computed(() => {
-  if (!currentCheck.value?.items) return []
-  return [...currentCheck.value.items].sort((a, b) => {
+  return [...checkDraft.value].sort((a, b) => {
     return (a.product_name || '').localeCompare(b.product_name || '', 'vi', { sensitivity: 'base' })
   })
 })
@@ -1408,10 +1474,13 @@ const otherWarehouses = computed(() =>
         <div class="relative bg-white rounded-xl shadow-2xl w-[1100px] flex flex-col overflow-hidden max-h-[90vh] border border-slate-200" :style="{ transform: 'translate(' + checkModalPos.x + 'px, ' + checkModalPos.y + 'px)' }">
           <LoadingOverlay :show="isSaving" />
           <div class="px-5 py-3 flex items-center justify-between shrink-0 shadow-sm text-white cursor-move select-none rounded-t-xl" @mousedown="startDragCheckModal" style="background: var(--pms-custom-theme, #006bdb)">
-            <h3 class="text-white font-bold text-xs tracking-wide">Kiểm Kê Tồn Kho Định Kỳ</h3>
-            <button @click="showCheckModal = false" class="text-white/80 hover:text-white p-1 rounded-full transition-colors cursor-pointer border-none bg-transparent"><X class="w-4 h-4" /></button>
+            <h3 class="text-white font-bold text-xs tracking-wide">Kiểm Kê Tồn Kho Định Kỳ<span v-if="checkDraftDirty" class="ml-2 font-normal opacity-90">(chưa lưu)</span></h3>
+            <button @click="closeCheckModal" class="text-white/80 hover:text-white p-1 rounded-full transition-colors cursor-pointer border-none bg-transparent"><X class="w-4 h-4" /></button>
           </div>
           <div class="p-5 flex flex-col gap-4 overflow-y-auto bg-slate-50 flex-1 hk-scroll text-xs">
+            <div v-if="isCheckLocked" class="px-3 py-2 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 font-medium">
+              Tháng này đã phát sinh dữ liệu nhập/xuất tồn kho nên phiếu kiểm kê chỉ được xem, không được chỉnh sửa.
+            </div>
             <!-- Header form -->
             <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs grid grid-cols-5 gap-3.5">
               <div class="flex flex-col gap-1.5">
@@ -1439,8 +1508,10 @@ const otherWarehouses = computed(() =>
                 <div class="relative w-full">
                   <input 
                     type="text" 
-                    v-model="checkForm.note" 
-                    placeholder="Nhập ghi chú..." 
+                    v-model="checkForm.note"
+                    :disabled="isCheckLocked"
+                    @input="checkDraftDirty = true"
+                    placeholder="Nhập ghi chú..."  
                     class="w-full text-xs h-8 border border-slate-300 rounded-lg px-2.5 pr-7 outline-none focus:border-[var(--pms-custom-theme,#006bdb)] transition-all shadow-2xs bg-white text-[#000000D9]" 
                   />
                   <button 
@@ -1469,11 +1540,12 @@ const otherWarehouses = computed(() =>
                     <th class="py-2.5 px-2 border-r border-slate-200 text-center w-40 align-middle border">Số Lượng Thực Tế</th>
                     <th class="py-2.5 px-2 border-r border-slate-200 text-center w-28 align-middle border">Số Chênh Lệch</th>
                     <th class="py-2.5 px-4 text-center align-middle border-r border-slate-200 border">Ghi Chú</th>
+                    <th v-if="!isCheckLocked" class="py-2.5 px-2 text-center align-middle border-r border-slate-200 border w-10"></th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100 text-xs text-[#000000D9]">
-                  <tr v-if="!currentCheck || !modalCheckItems.length">
-                    <td colspan="8" class="py-12 text-center text-slate-400 border-slate-200">
+                  <tr v-if="!modalCheckItems.length">
+                    <td colspan="9" class="py-12 text-center text-slate-400 border-slate-200">
                       <div class="flex flex-col items-center gap-2">
                         <span class="text-3xl">📦</span>
                         <p class="font-semibold text-slate-600 text-xs">Chưa có sản phẩm trong phiếu kiểm kê</p>
@@ -1481,8 +1553,8 @@ const otherWarehouses = computed(() =>
                       </div>
                     </td>
                   </tr>
-                  <tr v-else v-for="(item, idx) in modalCheckItems" :key="item.id" class="hover:bg-slate-50 transition-colors">
-                    <td class="py-2 px-3 border-slate-200 text-center text-slate-500 font-mono text-xs">KK-{{ currentCheck.id }}</td>
+                  <tr v-else v-for="(item, idx) in modalCheckItems" :key="item.product_id" class="hover:bg-slate-50 transition-colors">
+                    <td class="py-2 px-3 border-slate-200 text-center text-slate-500 font-mono text-xs">{{ currentCheck?.id ? 'KK-' + currentCheck.id : 'Mới' }}</td>
                     <td class="py-2 px-3 border-slate-200 text-center text-slate-500 font-mono text-xs">{{ item.product_code }}</td>
                     <td class="py-2 px-4 border-slate-200 font-medium text-slate-800 text-xs">{{ item.product_name }}</td>
                     <td class="py-2 px-2 border-slate-200 text-center text-slate-600 text-xs">{{ item.unit || '—' }}</td>
@@ -1490,6 +1562,7 @@ const otherWarehouses = computed(() =>
                       <div class="inline-flex items-center border border-slate-300 rounded overflow-hidden shadow-2xs bg-white mx-auto">
                         <button 
                           type="button" 
+                          :disabled="isCheckLocked"
                           @click="decreaseQty(item, 'well_balance')" 
                           class="w-6 h-6 flex items-center justify-center bg-slate-50 hover:bg-slate-200 text-slate-600 border-r border-slate-300 cursor-pointer select-none transition-colors"
                           title="Giảm 1"
@@ -1500,11 +1573,14 @@ const otherWarehouses = computed(() =>
                           type="number" 
                           min="0"
                           :value="item.well_balance"
+                          :disabled="isCheckLocked"
+                          :class="Number(item.well_balance) < 0 ? 'text-rose-600' : ''"
                           @change="e => onWellBalanceInput(item, e.target.value)"
                           class="w-12 text-center text-xs px-1 py-0.5 outline-none font-medium text-[#000000D9]"
                         />
                         <button 
                           type="button" 
+                          :disabled="isCheckLocked"
                           @click="increaseQty(item, 'well_balance')" 
                           class="w-6 h-6 flex items-center justify-center bg-slate-50 hover:bg-slate-200 text-slate-600 border-l border-slate-300 cursor-pointer select-none transition-colors"
                           title="Tăng 1"
@@ -1517,6 +1593,7 @@ const otherWarehouses = computed(() =>
                       <div class="inline-flex items-center border border-slate-300 rounded overflow-hidden shadow-2xs bg-white mx-auto">
                         <button 
                           type="button" 
+                          :disabled="isCheckLocked"
                           @click="decreaseQty(item, 'stoke_take')" 
                           class="w-6 h-6 flex items-center justify-center bg-slate-50 hover:bg-slate-200 text-slate-600 border-r border-slate-300 cursor-pointer select-none transition-colors"
                           title="Giảm 1"
@@ -1527,11 +1604,13 @@ const otherWarehouses = computed(() =>
                           type="number" 
                           min="0"
                           :value="item.stoke_take"
+                          :disabled="isCheckLocked"
                           @change="e => onStokeTakeInput(item, e.target.value)"
                           class="w-12 text-center text-xs px-1 py-0.5 outline-none font-medium text-[#000000D9]"
                         />
                         <button 
                           type="button" 
+                          :disabled="isCheckLocked"
                           @click="increaseQty(item, 'stoke_take')" 
                           class="w-6 h-6 flex items-center justify-center bg-slate-50 hover:bg-slate-200 text-slate-600 border-l border-slate-300 cursor-pointer select-none transition-colors"
                           title="Tăng 1"
@@ -1550,20 +1629,26 @@ const otherWarehouses = computed(() =>
                         <input 
                           type="text" 
                           :value="item.note"
-                          @change="e => { item.note = e.target.value; updateCheckItem(item.id, { note: e.target.value }) }"
+                          :disabled="isCheckLocked"
+                          @change="e => setDraftNote(item, e.target.value)"
                           placeholder="..." 
                           class="w-full text-xs border border-slate-300 rounded-md px-2 py-1 pr-6 focus:outline-none focus:border-[var(--pms-custom-theme,#006bdb)] transition-all bg-white text-[#000000D9]"
                         />
                         <button 
-                          v-if="item.note"
+                          v-if="item.note && !isCheckLocked"
                           type="button"
-                          @click="{ item.note = ''; updateCheckItem(item.id, { note: '' }) }"
+                          @click="setDraftNote(item, '')"
                           class="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full cursor-pointer border-none bg-transparent"
                           title="Xóa nhanh"
                         >
                           <X class="w-3 h-3" />
                         </button>
                       </div>
+                    </td>
+                    <td v-if="!isCheckLocked" class="py-2 px-2 border-slate-200 text-center">
+                      <button type="button" @click="removeDraftItem(item)" class="text-slate-400 hover:text-rose-600 p-0.5 rounded cursor-pointer border-none bg-transparent" title="Bỏ sản phẩm khỏi phiếu">
+                        <Trash2 class="w-3.5 h-3.5" />
+                      </button>
                     </td>
                   </tr>
                 </tbody>
@@ -1573,22 +1658,22 @@ const otherWarehouses = computed(() =>
  
           <!-- Footer -->
           <div class="px-5 py-3 border-t border-slate-200 bg-white flex items-center justify-end gap-2.5 shrink-0">
-            <button @click="showAddProductCheckModal = true; loadProductsInStock()" class="btn-pms-primary flex items-center gap-1.5 h-8 px-4 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer">
+            <button v-if="!isCheckLocked" @click="showAddProductCheckModal = true; loadProductsInStock()" class="btn-pms-primary flex items-center gap-1.5 h-8 px-4 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer">
               <Plus class="w-4 h-4" stroke-width="2.5" /> Thêm
             </button>
-            <button @click="deleteCheck" v-if="currentCheck" class="btn-pms-danger flex items-center gap-1.5 h-8 px-4 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer">
+            <button @click="deleteCheck" v-if="currentCheck && !isCheckLocked" class="btn-pms-danger flex items-center gap-1.5 h-8 px-4 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer">
               <Trash2 class="w-3.5 h-3.5" /> Xóa
             </button>
-            <button @click="createOrLoadCheck" :disabled="isSaving" class="btn-pms-primary flex items-center gap-1.5 h-8 px-4 disabled:opacity-50 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer">
+            <button v-if="!isCheckLocked" @click="saveCheck()" :disabled="isSaving" class="btn-pms-primary flex items-center gap-1.5 h-8 px-4 disabled:opacity-50 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer">
               <Save class="w-3.5 h-3.5" /> {{ isSaving ? 'Đang lưu...' : 'Lưu' }}
             </button>
             <button @click="exportExcelCheck" v-if="currentCheck" class="btn-pms-secondary flex items-center gap-1.5 h-8 px-4 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer">
               <FileSpreadsheet class="w-3.5 h-3.5" /> Xuất Excel
             </button>
-            <button @click="syncPreviousMonth" :disabled="isSaving" class="btn-pms-secondary flex items-center gap-1.5 h-8 px-4 disabled:opacity-50 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer" title="Lấy danh sách sản phẩm và tồn cuối tháng trước điền vào Tồn đầu kỳ & Thực tế">
+            <button v-if="!isCheckLocked" @click="syncPreviousMonth" :disabled="isSaving" class="btn-pms-secondary flex items-center gap-1.5 h-8 px-4 disabled:opacity-50 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer" title="Lấy danh sách sản phẩm và tồn cuối tháng trước điền vào Tồn đầu kỳ & Thực tế">
               <BarChart2 class="w-3.5 h-3.5" /> {{ isSaving ? 'Đang lấy...' : 'Thống Kê' }}
             </button>
-            <button @click="showCheckModal = false" class="btn-pms-close flex items-center gap-1.5 h-8 px-4 rounded-lg text-xs font-semibold cursor-pointer">
+            <button @click="closeCheckModal" class="btn-pms-close flex items-center gap-1.5 h-8 px-4 rounded-lg text-xs font-semibold cursor-pointer">
               <X class="w-3.5 h-3.5" /> Đóng
             </button>
           </div>
@@ -1617,7 +1702,7 @@ const otherWarehouses = computed(() =>
               </thead>
               <tbody class="divide-y divide-slate-100 text-[#000000D9] text-xs">
                 <tr v-if="productsInStock.length === 0">
-                  <td colspan="2" class="py-8 text-center text-slate-400 text-xs border-slate-200">Không có sản phẩm buồng phòng nào</td>
+                  <td colspan="2" class="py-8 text-center text-slate-400 text-xs border-slate-200">Kho này chưa có sản phẩm nào chọn "Có theo dõi" tồn kho</td>
                 </tr>
                 <template v-else v-for="wh in productsInStock" :key="'wh-'+wh.id">
                   <!-- Outlet Row (e.g. Minibar, Giặt ủi...) -->
@@ -1628,7 +1713,7 @@ const otherWarehouses = computed(() =>
                     <td class="py-2.5 px-4 cursor-pointer border-slate-200" @click="toggleOutlet(wh.id)">
                       <div class="flex items-center gap-2 select-none">
                         <div class="w-5 h-5 bg-[var(--pms-custom-theme,#006bdb)] flex items-center justify-center text-white text-xs leading-none pb-[1.5px] rounded-md shadow-sm font-bold">{{ expandedOutlets[wh.id] ? '-' : '+' }}</div>
-                        <span class="font-bold text-slate-800">{{ toTitleCase(wh.name) }} ({{ wh.code }})</span>
+                        <span class="font-bold text-slate-800">{{ toTitleCase(wh.name) }}<template v-if="wh.code && !String(wh.code).startsWith('warehouse-')"> ({{ wh.code }})</template></span>
                       </div>
                     </td>
                   </tr>
@@ -1668,8 +1753,8 @@ const otherWarehouses = computed(() =>
               <button @click="showAddProductCheckModal = false" class="btn-pms-close flex items-center gap-1.5 h-8 px-4 rounded-lg text-xs font-semibold cursor-pointer">
                 <X class="w-3.5 h-3.5" /> Đóng
               </button>
-              <button @click="addProductsToCheck" :disabled="isSaving || !selectedProductIds.length" class="btn-pms-primary flex items-center gap-1.5 h-8 px-4 disabled:opacity-50 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer">
-                <Plus class="w-4 h-4" stroke-width="2.5" /> Thêm
+              <button @click="addProductsToCheck" :disabled="isSaving || !selectedProductIds.length" class="btn-pms-primary flex items-center gap-1.5 h-8 px-4 disabled:opacity-50 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer" title="Thêm vào phiếu kiểm kê (bấm Lưu ở phiếu để lưu)">
+                <Plus class="w-4 h-4" stroke-width="2.5" /> Thêm vào phiếu
               </button>
             </div>
           </div>
