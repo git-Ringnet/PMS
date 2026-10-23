@@ -8,7 +8,7 @@ import HkConfigTab from './HkConfigTab.vue'
 const props = defineProps({
   initialTab: {
     type: String,
-    default: 'HÌNH THỨC THANH TOÁN'
+    default: 'Hình Thức Thanh Toán'
   }
 })
 
@@ -17,7 +17,7 @@ const emit = defineEmits(['update:activeTab'])
 const uiStore = useUiStore()
 const authStore = useAuthStore()
 const loading = ref(false)
-const activeSystemTab = ref(props.initialTab === 'Mẫu' ? 'HÌNH THỨC THANH TOÁN' : props.initialTab)
+const activeSystemTab = ref(props.initialTab === 'Mẫu' ? 'Hình Thức Thanh Toán' : props.initialTab)
 
 const topbarThemeBg = computed(() => authStore.themeColor || authStore.settings?.topbar_color || 'var(--pms-custom-theme, #006bdb)')
 
@@ -87,12 +87,19 @@ watch(activeSystemTab, (newVal) => {
 })
 
 const systemTabs = [
-  'HÌNH THỨC THANH TOÁN',
-  'TIỀN TỆ',
-  'ĐƠN VỊ TÍNH',
-  'TÌNH TRẠNG ĐĂNG KÝ',
-  'CẤU HÌNH HOUSEKEEPING'
+  'Hình Thức Thanh Toán',
+  'Tiền Tệ',
+  'Đơn Vị Tính',
+  'Tình Trạng Đăng Ký',
+  'Cấu Hình Housekeeping'
 ]
+
+const isTabActive = (tabName) => {
+  if (!activeSystemTab.value) return false
+  const cur = String(activeSystemTab.value).trim().toUpperCase()
+  const target = String(tabName).trim().toUpperCase()
+  return cur === target
+}
 
 // Dropdown lists
 const departments = ['Reception/ Lê Tân', 'Restaurant/Nhà Hàng', 'House Keeping/Buồng Phòng', 'Spa']
@@ -720,8 +727,8 @@ const totalStatusPages = computed(() => Math.ceil(filteredStatuses.value.length 
     <div class="border-b border-slate-200 shrink-0">
       <div class="flex flex-wrap gap-1">
         <button v-for="tab in systemTabs" :key="tab" @click="activeSystemTab = tab"
-          class="px-3 py-1.5 text-xs font-semibold border-none bg-transparent cursor-pointer relative pb-2 transition-colors"
-          :class="activeSystemTab === tab ? 'text-[#006bdb] border-b-2 border-[#006bdb] font-bold' : 'text-[#000000D9]/70 hover:text-[#000000D9]'">
+          class="px-2.5 py-1.5 text-xs font-semibold border-none bg-transparent cursor-pointer relative pb-1.5 transition-colors font-roboto"
+          :class="isTabActive(tab) ? 'text-[#006bdb] border-b-2 border-[#006bdb] font-bold' : 'text-[#000000D9] hover:text-[#006bdb]'">
           {{ tab }}
         </button>
       </div>
@@ -739,7 +746,7 @@ const totalStatusPages = computed(() => Math.ceil(filteredStatuses.value.length 
       </div>
       
       <!-- Tab 1: HÌNH THỨC THANH TOÁN -->
-      <div v-if="activeSystemTab === 'HÌNH THỨC THANH TOÁN'" class="flex flex-col gap-2.5">
+      <div v-if="isTabActive('Hình Thức Thanh Toán')" class="flex flex-col gap-2.5">
         <div class="flex justify-between items-center mb-0.5 flex-wrap gap-2">
           <div class="flex items-center gap-3">
             <button @click="openAddPayment" class="btn-pms-primary h-8 px-3 text-xs flex items-center gap-1.5 cursor-pointer shadow-xs">
@@ -837,7 +844,7 @@ const totalStatusPages = computed(() => Math.ceil(filteredStatuses.value.length 
       </div>
 
       <!-- Tab 2: TIỀN TỆ -->
-      <div v-else-if="activeSystemTab === 'TIỀN TỆ'" class="flex flex-col gap-4">
+      <div v-else-if="isTabActive('Tiền Tệ')" class="flex flex-col gap-4">
         <div class="flex justify-between items-center mb-1 flex-wrap gap-2">
           <button @click="openAddCurrency" class="btn-pms-primary h-8 px-3 text-xs flex items-center gap-1.5 cursor-pointer shadow-xs">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -927,7 +934,7 @@ const totalStatusPages = computed(() => Math.ceil(filteredStatuses.value.length 
       </div>
 
       <!-- Tab 3: ĐƠN VỊ TÍNH -->
-      <div v-else-if="activeSystemTab === 'ĐƠN VỊ TÍNH'" class="flex flex-col gap-4">
+      <div v-else-if="isTabActive('Đơn Vị Tính')" class="flex flex-col gap-4">
         <div class="flex justify-between items-center mb-1 flex-wrap gap-2">
           <button @click="openAddUnit" class="btn-pms-primary h-8 px-3 text-xs flex items-center gap-1.5 cursor-pointer shadow-xs">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -999,7 +1006,7 @@ const totalStatusPages = computed(() => Math.ceil(filteredStatuses.value.length 
       </div>
 
       <!-- Tab 4: TÌNH TRẠNG ĐĂNG KÝ -->
-      <div v-else-if="activeSystemTab === 'TÌNH TRẠNG ĐĂNG KÝ'" class="flex flex-col gap-4">
+      <div v-else-if="isTabActive('Tình Trạng Đăng Ký')" class="flex flex-col gap-4">
         <div class="flex justify-between items-center mb-1 flex-wrap gap-2">
           <button @click="openAddStatus" class="btn-pms-primary h-8 px-3 text-xs flex items-center gap-1.5 cursor-pointer shadow-xs">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1087,7 +1094,7 @@ const totalStatusPages = computed(() => Math.ceil(filteredStatuses.value.length 
       </div>
 
       <!-- Tab 5: CẤU HÌNH HOUSEKEEPING -->
-      <div v-else-if="activeSystemTab === 'CẤU HÌNH HOUSEKEEPING'" class="flex flex-col gap-4">
+      <div v-else-if="isTabActive('Cấu Hình Housekeeping')" class="flex flex-col gap-4">
         <HkConfigTab />
       </div>
 
