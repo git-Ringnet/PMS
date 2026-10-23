@@ -157,7 +157,7 @@ const deleteShift = async (shiftId) => {
     fetchShifts()
   } catch (err) {
     console.error(err)
-    uiStore.showToast('Không thể xóa ca làm việc này', 'error')
+    uiStore.showToast(err.response?.data?.message || 'Không thể xóa ca làm việc này', 'error')
   } finally {
     loading.value = false
   }

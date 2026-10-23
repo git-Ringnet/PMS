@@ -12,6 +12,10 @@ Route::post('/login', [AuthController::class, 'login'])->name('login');
 Route::get('/hotel-settings', [\App\Http\Controllers\Api\HotelSettingController::class, 'show']);
 // GET night-audit/check-status public để mọi client/tab/màn hình login đều kiểm tra được trạng thái tiến trình
 Route::get('/night-audit/check-status', [NightAuditController::class, 'checkStatus']);
+// Danh sách ngôn ngữ và từ điển dịch giao diện (public để màn hình đăng nhập cũng dịch được)
+Route::get('/i18n/languages', [\App\Http\Controllers\Api\TranslationController::class, 'languages']);
+Route::get('/i18n/dictionary/{lang}', [\App\Http\Controllers\Api\TranslationController::class, 'dictionary'])
+    ->where('lang', '[a-zA-Z-]{2,10}');
 
 // Protected routes (Sanctum)
 Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestrictions::class, \App\Http\Middleware\EnsureBranchAccess::class])->group(function () {
@@ -617,6 +621,26 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
         Route::delete('/time-windows/{id}', [$controller, 'destroyWindow']);
         Route::post('/exempt-users', [$controller, 'addExemptUsers']);
         Route::delete('/exempt-users/{userId}', [$controller, 'removeExemptUser']);
+    });
+
+    // Ngôn ngữ & Bản dịch dùng chung toàn hệ thống (Cấu hình hệ thống › Ngôn ngữ)
+    Route::prefix('i18n')->group(function () {
+        $controller = \App\Http\Controllers\Api\TranslationController::class;
+        Route::post('/collect', [$controller, 'collect'])->middleware('permission:system.language.edit');
+        Route::get('/admin/areas', [$controller, 'areas'])->middleware('permission:system.language.view');
+        Route::get('/admin/entries', [$controller, 'entries'])->middleware('permission:system.language.view');
+        Route::get('/admin/lookup', [$controller, 'lookup'])->middleware('permission:system.language.view');
+        Route::get('/admin/export', [$controller, 'export'])->middleware('permission:system.language.view');
+        Route::get('/admin/languages', [$controller, 'allLanguages'])->middleware('permission:system.language.view');
+        Route::post('/admin/entries', [$controller, 'storeEntry'])->middleware('permission:system.language.create');
+        Route::put('/admin/entries', [$controller, 'saveEntries'])->middleware('permission:system.language.edit');
+        Route::delete('/admin/entries/{id}', [$controller, 'destroyEntry'])->middleware('permission:system.language.delete');
+        Route::delete('/admin/entries/{id}/locations', [$controller, 'clearLocations'])->middleware('permission:system.language.edit');
+        Route::post('/admin/sync-defaults', [$controller, 'syncDefaults'])->middleware('permission:system.language.edit');
+        Route::post('/admin/import', [$controller, 'import'])->middleware('permission:system.language.edit');
+        Route::post('/admin/languages', [$controller, 'storeLanguage'])->middleware('permission:system.language.create');
+        Route::put('/admin/languages/{id}', [$controller, 'updateLanguage'])->middleware('permission:system.language.edit');
+        Route::delete('/admin/languages/{id}', [$controller, 'destroyLanguage'])->middleware('permission:system.language.delete');
     });
 
     // Alert sinh nhật / special request và nội dung cập nhật hệ thống (icon lịch, icon chuông)

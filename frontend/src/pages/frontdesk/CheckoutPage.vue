@@ -1804,18 +1804,28 @@ const selectedPaymentItems = computed(() => paymentsList.value.filter(payment =>
 // In qua iframe ẩn để không bị chặn popup, kể cả khi tự in sau thanh toán (không còn thao tác bấm của user).
 const printHtmlDocument = (html) => {
   const frame = document.createElement('iframe')
-  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;'
+  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none;'
   document.body.appendChild(frame)
   const frameWindow = frame.contentWindow
-  // Gán onload trước khi close để chờ logo/ảnh tải xong rồi mới mở hộp thoại in.
-  frameWindow.onload = () => {
+  const frameDocument = frameWindow.document
+  // document.open() xóa mọi handler đã gán trên iframe (kể cả onload), nên ghi nội dung trước
+  // rồi tự chờ logo/ảnh tải xong (tối đa 2 giây) mới mở hộp thoại in.
+  frameDocument.open()
+  frameDocument.write(html)
+  frameDocument.close()
+
+  const pendingImages = Array.from(frameDocument.images || []).filter(image => !image.complete)
+  const imagesReady = Promise.all(pendingImages.map(image => new Promise(resolve => {
+    image.addEventListener('load', resolve, { once: true })
+    image.addEventListener('error', resolve, { once: true })
+  })))
+  const timeout = new Promise(resolve => setTimeout(resolve, 2000))
+
+  Promise.race([imagesReady, timeout]).then(() => {
     frameWindow.focus()
     frameWindow.print()
     setTimeout(() => frame.remove(), 1000)
-  }
-  frameWindow.document.open()
-  frameWindow.document.write(html)
-  frameWindow.document.close()
+  })
 }
 
 const printReceiptForPayments = async (paymentIds) => {
@@ -3693,17 +3703,18 @@ onUnmounted(() => {
                 <Printer class="w-3.5 h-3.5 text-white shrink-0" />
                 <span v-if="!isSidebarCollapsed" class="truncate">In Hóa Đơn Folio</span>
               </div>
-              <ChevronRight v-if="!isSidebarCollapsed" class="w-3 h-3 text-[#94a3b8] shrink-0" />
+              <ChevronRight v-if="!isSidebarCollapsed" :class="['w-3 h-3 text-[#94a3b8] shrink-0 transition-transform', showInvoiceMenu ? 'rotate-90' : '']" />
             </button>
 
-            <!-- Dropdown Sub-menu Floating -->
-            <div 
-              v-if="showInvoiceMenu" 
-              class="absolute left-full top-0 ml-1 w-36 bg-white border border-gray-300 rounded shadow-lg z-50 py-1 text-xs"
+            <!-- Menu con xổ xuống ngay dưới nút: thanh chức năng nằm sát mép phải và có overflow-x-hidden
+                 nên menu mở sang bên cạnh sẽ bị cắt, bấm vào không thấy phản hồi. -->
+            <div
+              v-if="showInvoiceMenu"
+              class="mt-0.5 ml-5 flex flex-col border-l border-[#334155] pl-1 text-xs"
             >
-              <button class="w-full text-left px-2.5 py-1.5 hover:bg-sky-50 text-gray-700">Hiện giá</button>
-              <button class="w-full text-left px-2.5 py-1.5 hover:bg-sky-50 text-gray-700">Không hiện giá</button>
-              <button @click="printPaymentReceipt" class="w-full text-left px-2.5 py-1.5 hover:bg-sky-50 text-sky-600 font-semibold border-t border-gray-100">In Bill</button>
+              <button class="w-full text-left px-2 py-[5px] rounded text-[#94a3b8] hover:bg-[#334155] hover:text-white transition-colors" title="Chưa có chức năng">Hiện giá</button>
+              <button class="w-full text-left px-2 py-[5px] rounded text-[#94a3b8] hover:bg-[#334155] hover:text-white transition-colors" title="Chưa có chức năng">Không hiện giá</button>
+              <button @click="printPaymentReceipt" class="w-full text-left px-2 py-[5px] rounded text-[#cbd5e1] font-semibold hover:bg-[#334155] hover:text-white transition-colors">In Bill</button>
             </div>
           </div>
 

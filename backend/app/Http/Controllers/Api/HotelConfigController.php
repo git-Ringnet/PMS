@@ -78,6 +78,8 @@ class HotelConfigController extends Controller
             'description' => 'nullable|string',
         ]);
 
+        // The system reads parameters by name, so renaming one silently disables it.
+        app(\App\Services\ConfigurationReferenceGuard::class)->assertIdentityUnchanged($config, $validated, ['name'], true);
         $config->update($validated);
 
         return response()->json([

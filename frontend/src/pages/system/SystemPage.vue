@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth-store'
 import CompanyInfoTab from './components/CompanyInfoTab.vue'
 import BranchManageTab from './components/BranchManageTab.vue'
@@ -10,12 +10,14 @@ import OrgStructureTab from './components/OrgStructureTab.vue'
 import RoleManageTab from './components/RoleManageTab.vue'
 import BankAccountTab from './components/BankAccountTab.vue'
 import SecurityTab from './components/SecurityTab.vue'
+import LanguageTab from './components/LanguageTab.vue'
 
+const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const currentUser = computed(() => authStore.user)
 
-const activeTab = ref('company') // 'company', 'branch', 'org_structure', 'roles', 'employee', 'activity_log', 'bank_accounts', 'security'
+const activeTab = ref(route.query.tab === 'language' ? 'language' : 'company') // 'company', 'branch', 'org_structure', 'roles', 'employee', 'activity_log', 'bank_accounts', 'security', 'language'
 const isDropdownOpen = ref(false)
 
 // Collapsible states for sidebar groups
@@ -247,6 +249,18 @@ onMounted(() => {
               >
                 - Bảo mật nâng cao
               </button>
+
+              <!-- Ngôn ngữ & bản dịch dùng chung toàn hệ thống -->
+              <button
+                v-if="authStore.hasPermission('system.language.view')"
+                @click="selectTab('language')"
+                class="w-full text-left px-4 py-2 border-none bg-transparent cursor-pointer transition-colors text-xs font-semibold"
+                :class="activeTab === 'language'
+                  ? 'bg-sky-100 text-sky-700 font-bold border-l-2 border-sky-500'
+                  : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900'"
+              >
+                - Ngôn ngữ
+              </button>
             </div>
           </div>
 
@@ -318,6 +332,7 @@ onMounted(() => {
           <ActivityLogTab v-else-if="activeTab === 'activity_log'" />
           <BankAccountTab v-else-if="activeTab === 'bank_accounts'" />
           <SecurityTab v-else-if="activeTab === 'security' && authStore.isSuperAdmin" />
+          <LanguageTab v-else-if="activeTab === 'language' && authStore.hasPermission('system.language.view')" />
         </transition>
       </main>
     </div>

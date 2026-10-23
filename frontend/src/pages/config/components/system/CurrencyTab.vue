@@ -184,7 +184,7 @@ const deleteCurrency = async (id) => {
     currencies.value = currencies.value.filter(x => x.id !== id)
   } catch (err) {
     console.error(err)
-    uiStore.showToast('Lỗi khi xóa tiền tệ', 'error')
+    uiStore.showToast(err.response?.data?.message || 'Lỗi khi xóa tiền tệ', 'error')
   } finally {
     loading.value = false
   }
@@ -201,7 +201,7 @@ const toggleCurrencyFlag = async (item, field) => {
     uiStore.showToast('Cập nhật trạng thái thành công!', 'success')
   } catch (err) {
     console.error(err)
-    uiStore.showToast('Lỗi cập nhật trạng thái', 'error')
+    uiStore.showToast(err.response?.data?.message || 'Lỗi cập nhật trạng thái', 'error')
   }
 }
 
