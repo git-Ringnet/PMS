@@ -324,53 +324,55 @@ onBeforeUnmount(() => {
         </svg>
         <div class="text-xs font-medium max-h-48 overflow-y-auto break-all whitespace-pre-wrap">{{ errorMsg }}</div>
       </div>
-      <button @click="errorMsg = null" class="text-rose-500 hover:text-rose-800 bg-transparent border-none cursor-pointer shrink-0 ml-2">✕</button>
+      <button @click="errorMsg = null" class="text-rose-500 hover:text-rose-800 bg-transparent border-none cursor-pointer">✕</button>
     </div>
 
     <!-- BANNER: CHỌN PHẠM VI SAO LƯU & KHÔI PHỤC (Light theme, high contrast) -->
-    <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-2xs text-gray-900">
+    <div class="bg-white rounded-xl p-4 border border-slate-200 shadow-2xs text-[#000000D9]">
       <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div class="flex items-start md:items-center gap-3.5">
           <div class="w-10 h-10 rounded-lg bg-sky-50 border border-sky-200 flex items-center justify-center text-sky-600 shrink-0 mt-0.5 md:mt-0">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+            <svg class="w-5 h-5 text-sky-600" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+              <ellipse cx="12" cy="5" rx="9" ry="3" />
+              <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+              <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3" />
             </svg>
           </div>
           <div>
             <div class="flex items-center gap-2">
-              <span class="text-xs font-semibold uppercase tracking-wide text-gray-900">Quản Trị Cơ Sở Dữ Liệu Đa Chi Nhánh</span>
+              <span class="text-xs font-semibold uppercase tracking-wide text-[#000000D9]">Quản Trị Cơ Sở Dữ Liệu Đa Chi Nhánh</span>
               <span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                 Multi-Database Active
               </span>
             </div>
-            <h2 class="text-sm font-semibold text-gray-900 m-0 mt-1">
-              Đang chọn: <span class="text-sky-700 font-bold">{{ selectedBranchObj.name }}</span>
+            <h2 class="text-sm font-semibold text-[#000000D9] m-0 mt-1">
+              Đang chọn: <span class="text-[#006bdb] font-semibold">{{ selectedBranchObj.name }}</span>
             </h2>
-            <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-gray-700 font-medium">
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs text-[#000000D9] font-normal">
               <span class="inline-flex items-center gap-1">
-                <span class="text-gray-500">Mã:</span>
-                <strong class="text-gray-900 font-mono bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">{{ selectedBranchObj.code }}</strong>
+                <span class="text-slate-500">Mã:</span>
+                <span class="text-[#000000D9] font-mono font-normal bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">{{ selectedBranchObj.code }}</span>
               </span>
               <span class="text-slate-300">•</span>
               <span class="inline-flex items-center gap-1">
-                <span class="text-gray-500">Database:</span>
-                <code class="bg-slate-100 px-2 py-0.5 rounded text-sky-700 font-mono border border-slate-200">{{ selectedBranchObj.database }}</code>
+                <span class="text-slate-500">Database:</span>
+                <code class="bg-slate-100 px-2 py-0.5 rounded text-[#006bdb] font-mono font-normal border border-slate-200">{{ selectedBranchObj.database }}</code>
               </span>
               <span class="text-slate-300">•</span>
-              <span>Số bảng: <strong class="text-gray-900 font-semibold">{{ selectedBranchObj.table_count || 0 }} bảng</strong></span>
+              <span>Số bảng: <span class="text-[#000000D9] font-normal">{{ selectedBranchObj.table_count || 0 }} bảng</span></span>
               <span class="text-slate-300">•</span>
-              <span>Dung lượng: <strong class="text-gray-900 font-semibold">{{ selectedBranchObj.size_mb ? selectedBranchObj.size_mb.toFixed(2) : '0.00' }} MB</strong></span>
+              <span>Dung lượng: <span class="text-[#000000D9] font-normal">{{ selectedBranchObj.size_mb ? selectedBranchObj.size_mb.toFixed(2) : '0.00' }} MB</span></span>
             </div>
           </div>
         </div>
 
         <!-- Scope Selector Dropdown -->
         <div class="flex items-center gap-2 bg-slate-50 p-2 rounded-lg border border-slate-200 shrink-0">
-          <label class="text-xs font-semibold text-gray-900 whitespace-nowrap pl-1">Phạm Vi:</label>
+          <label class="text-xs font-semibold text-[#000000D9] whitespace-nowrap pl-1">Phạm Vi:</label>
           <select
             v-model="selectedBranchCode"
             @change="onBranchChange"
-            class="bg-white text-gray-900 text-xs font-medium px-3 py-1.5 rounded border border-slate-200 focus:outline-sky-400 cursor-pointer max-w-[280px]"
+            class="bg-white text-[#000000D9] text-xs font-normal px-3 py-1.5 rounded border border-slate-300 focus:outline-[#006bdb] cursor-pointer max-w-[280px]"
           >
             <optgroup label="🌐 Toàn Bộ Hệ Thống">
               <option value="ALL">ALL - Toàn Bộ Hệ Thống & Tất Cả Chi Nhánh</option>
@@ -400,27 +402,27 @@ onBeforeUnmount(() => {
               </svg>
             </div>
             <div>
-              <h3 class="text-base font-bold text-slate-800 m-0">Sao lưu (Export Database)</h3>
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-[#000000D9] m-0">Sao Lưu (Export Database)</h3>
               <p class="text-xs text-slate-500 m-0 mt-0.5">Xuất dữ liệu <strong>{{ selectedBranchObj.name }}</strong> ra file `.sql`</p>
             </div>
           </div>
 
-          <div class="bg-sky-50/60 border border-sky-100 rounded-xl p-4 text-xs text-slate-700 space-y-2.5 mb-4">
-            <div class="flex items-center justify-between pb-2 border-b border-sky-100 font-medium">
+          <div class="bg-sky-50/60 border border-sky-100 rounded-xl p-4 text-xs text-[#000000D9] space-y-2.5 mb-4 font-normal">
+            <div class="flex items-center justify-between pb-2 border-b border-sky-100 font-normal">
               <span class="text-slate-500">Phạm vi sao lưu:</span>
-              <strong class="text-sky-900">{{ selectedBranchObj.name }}</strong>
+              <span class="text-[#000000D9] font-normal">{{ selectedBranchObj.name }}</span>
             </div>
-            <div class="flex items-center justify-between pb-2 border-b border-sky-100 font-medium">
+            <div class="flex items-center justify-between pb-2 border-b border-sky-100 font-normal">
               <span class="text-slate-500">Database đích:</span>
-              <code class="bg-white px-2 py-0.5 rounded text-sky-700 border border-sky-200 font-mono">{{ selectedBranchObj.database }}</code>
+              <code class="bg-white px-2 py-0.5 rounded text-sky-700 border border-sky-200 font-mono font-normal">{{ selectedBranchObj.database }}</code>
             </div>
-            <div class="flex items-center gap-2 pt-0.5 text-slate-600">
+            <div class="flex items-center gap-2 pt-0.5 text-[#000000D9] font-normal">
               <span class="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
               <span v-if="selectedBranchObj.is_all">Xuất toàn bộ Database hệ thống + TẤT CẢ các chi nhánh trong 1 file SQL</span>
               <span v-else-if="selectedBranchObj.is_system">Xuất các bảng hệ thống chung (users, roles, permissions, branches...)</span>
               <span v-else>Bao gồm cấu trúc bảng, khóa ngoại và toàn bộ dữ liệu nghiệp vụ của chi nhánh</span>
             </div>
-            <div class="flex items-center gap-2 text-slate-600">
+            <div class="flex items-center gap-2 text-[#000000D9] font-normal">
               <span class="w-2 h-2 rounded-full bg-sky-500 shrink-0"></span>
               <span>Tên file tự động: <code>pms_{{ selectedBranchObj.code }}_backup_*.sql</code></span>
             </div>
@@ -453,18 +455,18 @@ onBeforeUnmount(() => {
               </svg>
             </div>
             <div>
-              <h3 class="text-xs font-semibold text-gray-900 uppercase tracking-wide m-0">Khôi Phục (Import Database)</h3>
-              <p class="text-xs text-gray-500 m-0 mt-0.5">Phục hồi dữ liệu vào <strong>{{ selectedBranchObj.name }}</strong></p>
+              <h3 class="text-xs font-semibold text-[#000000D9] uppercase tracking-wide m-0">Khôi Phục (Import Database)</h3>
+              <p class="text-xs text-slate-500 m-0 mt-0.5">Phục hồi dữ liệu vào <span>{{ selectedBranchObj.name }}</span></p>
             </div>
           </div>
 
           <!-- Target Scope Notice -->
           <div class="bg-amber-50/70 border border-amber-200 rounded-lg p-2.5 text-xs mb-3 flex items-center justify-between">
-            <div class="flex items-center gap-2 text-amber-900 font-semibold">
+            <div class="flex items-center gap-2 text-amber-900 font-normal">
               <svg class="w-4 h-4 text-amber-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <span>Đích khôi phục: <strong>{{ selectedBranchObj.name }}</strong> (<code>{{ selectedBranchObj.database }}</code>)</span>
+              <span>Đích khôi phục: <span class="font-normal">{{ selectedBranchObj.name }}</span> (<code>{{ selectedBranchObj.database }}</code>)</span>
             </div>
           </div>
 
@@ -483,7 +485,7 @@ onBeforeUnmount(() => {
               class="hidden"
               @change="handleFileSelect"
             />
-            <div v-if="selectedFile" class="flex items-center justify-center gap-2 text-sky-700 font-semibold text-xs">
+            <div v-if="selectedFile" class="flex items-center justify-center gap-2 text-sky-700 font-normal text-xs">
               <svg class="w-4 h-4 text-sky-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
@@ -501,7 +503,7 @@ onBeforeUnmount(() => {
           <div class="bg-rose-50 border border-rose-200 rounded-lg p-2.5 text-xs text-rose-800 space-y-1">
             <label class="flex items-start gap-2 cursor-pointer">
               <input type="checkbox" v-model="confirmRestore" class="mt-0.5 accent-rose-600" />
-              <span class="font-medium text-rose-900">
+              <span class="font-normal text-rose-900">
                 Tôi xác nhận hiểu rằng toàn bộ dữ liệu của <strong>[{{ selectedBranchObj.name }} - {{ selectedBranchObj.database }}]</strong> sẽ bị GHI ĐÈ hoàn toàn.
               </span>
             </label>
@@ -526,11 +528,11 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- OVERVIEW TABLE: TỔNG QUAN CÁC DATABASE TRONG HỆ THỐNG -->
-    <div class="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
+    <div class="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden font-roboto">
       <div class="p-3 border-b border-slate-200 flex items-center justify-between bg-slate-50/70">
         <div>
-          <h4 class="text-xs font-semibold text-gray-900 uppercase tracking-wide m-0">Tổng Quan Cơ Sở Dữ Liệu Hệ Thống & Các Chi Nhánh</h4>
-          <p class="text-xs text-gray-500 m-0 mt-0.5">Danh sách các database quản trị và database chi nhánh trong hệ thống PMS</p>
+          <h4 class="text-xs font-semibold text-[#000000D9] uppercase tracking-wide m-0">Tổng Quan Cơ Sở Dữ Liệu Hệ Thống & Các Chi Nhánh</h4>
+          <p class="text-xs text-slate-500 m-0 mt-0.5">Danh sách các database quản trị và database chi nhánh trong hệ thống PMS</p>
         </div>
         <button
           @click="fetchDatabaseInfo"
@@ -545,9 +547,9 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="overflow-x-auto">
-        <table class="w-full text-xs text-left border-collapse">
+        <table class="w-full text-xs text-left border-collapse font-roboto">
           <thead>
-            <tr class="bg-slate-50 text-gray-900 font-semibold border-b border-slate-200">
+            <tr class="bg-slate-50 text-[#000000D9] font-semibold border-b border-slate-200">
               <th class="p-2.5 text-center align-middle border border-slate-200 w-20">Mã</th>
               <th class="p-2.5 text-center align-middle border border-slate-200">Tên Cơ Sở Dữ Liệu / Chi Nhánh</th>
               <th class="p-2.5 text-center align-middle border border-slate-200">Tên Database</th>
@@ -561,20 +563,20 @@ onBeforeUnmount(() => {
             <!-- ROW 1: TẤT CẢ (ALL) -->
             <tr
               class="hover:bg-slate-50 transition-colors bg-sky-50/20"
-              :class="{ 'bg-sky-50 font-semibold': selectedBranchCode === 'ALL' }"
+              :class="{ 'bg-sky-50': selectedBranchCode === 'ALL' }"
             >
-              <td class="p-2.5 text-center font-mono font-semibold text-sky-800 border border-slate-200">
+              <td class="p-2.5 text-center font-mono font-normal text-[#000000D9] border border-slate-200">
                 <span class="flex items-center justify-center gap-1.5">
                   <span v-if="selectedBranchCode === 'ALL'" class="w-2 h-2 rounded-full bg-sky-600"></span>
                   <span>ALL</span>
                 </span>
               </td>
-              <td class="p-2.5 text-gray-900 font-semibold border border-slate-200">
+              <td class="p-2.5 text-[#000000D9] font-normal border border-slate-200">
                 🌐 Toàn Bộ Hệ Thống & Tất Cả Chi Nhánh
               </td>
-              <td class="p-2.5 font-mono text-sky-700 border border-slate-200">ALL (Multi-DB)</td>
-              <td class="p-2.5 text-center font-semibold text-gray-900 border border-slate-200">{{ summaryAll.table_count || 0 }}</td>
-              <td class="p-2.5 text-right font-mono font-semibold text-gray-900 border border-slate-200">{{ summaryAll.size_mb ? summaryAll.size_mb.toFixed(2) : '0.00' }} MB</td>
+              <td class="p-2.5 font-mono text-[#006bdb] font-normal border border-slate-200">ALL (Multi-DB)</td>
+              <td class="p-2.5 text-center font-normal text-[#000000D9] border border-slate-200">{{ summaryAll.table_count || 0 }}</td>
+              <td class="p-2.5 text-right font-mono font-normal text-[#000000D9] border border-slate-200">{{ summaryAll.size_mb ? summaryAll.size_mb.toFixed(2) : '0.00' }} MB</td>
               <td class="p-2.5 text-center border border-slate-200">
                 <span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-sky-50 text-sky-700 border border-sky-200">
                   Tổng hợp
@@ -595,20 +597,20 @@ onBeforeUnmount(() => {
             <!-- ROW 2: SYSTEM DB -->
             <tr
               class="hover:bg-slate-50 transition-colors"
-              :class="{ 'bg-sky-50 font-semibold': selectedBranchCode === 'SYSTEM' }"
+              :class="{ 'bg-sky-50': selectedBranchCode === 'SYSTEM' }"
             >
-              <td class="p-2.5 text-center font-mono font-semibold text-gray-900 border border-slate-200">
+              <td class="p-2.5 text-center font-mono font-normal text-[#000000D9] border border-slate-200">
                 <span class="flex items-center justify-center gap-1.5">
                   <span v-if="selectedBranchCode === 'SYSTEM'" class="w-2 h-2 rounded-full bg-sky-600"></span>
                   <span>SYSTEM</span>
                 </span>
               </td>
-              <td class="p-2.5 text-gray-900 font-semibold border border-slate-200">
+              <td class="p-2.5 text-[#000000D9] font-normal border border-slate-200">
                 ⚙️ Database Hệ Thống Chính (Users, Roles, Chi nhánh...)
               </td>
-              <td class="p-2.5 font-mono text-sky-700 border border-slate-200">{{ systemDb.database || 'pms_system' }}</td>
-              <td class="p-2.5 text-center font-semibold text-gray-900 border border-slate-200">{{ systemDb.table_count || 0 }}</td>
-              <td class="p-2.5 text-right font-mono text-gray-900 border border-slate-200">{{ systemDb.size_mb ? systemDb.size_mb.toFixed(2) : '0.00' }} MB</td>
+              <td class="p-2.5 font-mono text-[#006bdb] font-normal border border-slate-200">{{ systemDb.database || 'pms_system' }}</td>
+              <td class="p-2.5 text-center font-normal text-[#000000D9] border border-slate-200">{{ systemDb.table_count || 0 }}</td>
+              <td class="p-2.5 text-right font-mono font-normal text-[#000000D9] border border-slate-200">{{ systemDb.size_mb ? systemDb.size_mb.toFixed(2) : '0.00' }} MB</td>
               <td class="p-2.5 text-center border border-slate-200">
                 <span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                   Hệ thống
@@ -631,18 +633,18 @@ onBeforeUnmount(() => {
               v-for="b in branches"
               :key="b.id"
               class="hover:bg-slate-50 transition-colors"
-              :class="{ 'bg-sky-50 font-semibold': b.code.toUpperCase() === selectedBranchCode.toUpperCase() }"
+              :class="{ 'bg-sky-50': b.code.toUpperCase() === selectedBranchCode.toUpperCase() }"
             >
-              <td class="p-2.5 text-center font-mono font-semibold text-gray-900 border border-slate-200">
+              <td class="p-2.5 text-center font-mono font-normal text-[#000000D9] border border-slate-200">
                 <span class="flex items-center justify-center gap-1.5">
                   <span v-if="b.code.toUpperCase() === selectedBranchCode.toUpperCase()" class="w-2 h-2 rounded-full bg-sky-600"></span>
                   <span>{{ b.code }}</span>
                 </span>
               </td>
-              <td class="p-2.5 text-gray-900 border border-slate-200">🏨 {{ b.name }}</td>
-              <td class="p-2.5 font-mono text-sky-700 border border-slate-200">{{ b.database }}</td>
-              <td class="p-2.5 text-center font-semibold text-gray-900 border border-slate-200">{{ b.table_count || 0 }}</td>
-              <td class="p-2.5 text-right font-mono text-gray-900 border border-slate-200">{{ b.size_mb ? b.size_mb.toFixed(2) : '0.00' }} MB</td>
+              <td class="p-2.5 text-[#000000D9] font-normal border border-slate-200">🏨 {{ b.name }}</td>
+              <td class="p-2.5 font-mono text-[#006bdb] font-normal border border-slate-200">{{ b.database }}</td>
+              <td class="p-2.5 text-center font-normal text-[#000000D9] border border-slate-200">{{ b.table_count || 0 }}</td>
+              <td class="p-2.5 text-right font-mono font-normal text-[#000000D9] border border-slate-200">{{ b.size_mb ? b.size_mb.toFixed(2) : '0.00' }} MB</td>
               <td class="p-2.5 text-center border border-slate-200">
                 <span
                   v-if="b.status === 'ready'"

@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, watch, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
-import { ROOM_STATUSES, roomService } from '@/services/room-service'
+import { ROOM_STATUS_ICON_MAP, roomService } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useRoomStore } from '@/stores/room-store'
 import RoomIcon from '@/components/RoomIcon.vue'
@@ -12,15 +12,17 @@ import CancelReasonModal from './components/CancelReasonModal.vue'
 import { useAuthStore } from '@/stores/auth-store'
 import http from '@/services/http'
 import echo from '@/services/echo'
-import { calculateRoomPlanBookingAmounts, calculateRoomPlanRoomAmounts } from '@/utils/room-plan-amounts.js'
+import { calculateRoomPlanBookingAmounts, calculateRoomPlanPaymentAmounts, calculateRoomPlanRoomAmounts, resolveRoomPlanBookingNote } from '@/utils/room-plan-amounts.js'
+import { resolveRoomPlanStatusIcon } from '@/utils/room-plan-room-status.js'
 import { resolveRateCodePrice } from '@/utils/rate-code-pricing.js'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
 import { getRoomPlanDateRange, setRoomPlanDateRange } from './room-plan-view-state.js'
 import { roomPlanStayRange, markRoomPlanConflicts } from '@/utils/room-plan-conflicts.js'
 import { resolveRoomPlanDayUseLayout } from '@/utils/room-plan-day-use-layout.js'
+import { resolveRoomPlanNights } from '@/utils/room-plan-nights.js'
 import { isRoomPlanVirtualRoomVisible } from '@/utils/room-plan-virtual-room-visibility.js'
 import { buildRoomPlanSelectionRectangle, getRoomPlanSelectionGroupBounds, replaceRoomPlanSelectionGroup } from '@/utils/room-plan-selection.js'
-import { resolveRoomPlanQuickBookingUnitPrice } from '@/utils/room-plan-quick-booking-pricing.js'
+import { resolveRoomPlanQuickBookingRateMode, resolveRoomPlanQuickBookingUnitPrice } from '@/utils/room-plan-quick-booking-pricing.js'
 
 const uiStore = useUiStore()
 const roomStore = useRoomStore()
@@ -262,6 +264,8 @@ const quickBookingCompanySearch = ref('')
 const showQuickBookingCompanyDropdown = ref(false)
 const quickBookingDefaultCompanyId = ref(null)
 const quickBookingUseConfiguredPricePerRoom = ref(false)
+const quickBookingRateSource = ref('standard')
+const quickBookingRateInput = ref('')
 const quickBookingForm = ref({
   company: '',
   companyId: null,
@@ -281,10 +285,7 @@ const selectedQuickBookingRateCode = computed(() => {
 })
 
 const isQuickBookingDailyRate = computed(() => Boolean(selectedQuickBookingRateCode.value?.IsDaily))
-const isQuickBookingRateEditable = computed(() => {
-  const rateCode = selectedQuickBookingRateCode.value
-  return !rateCode || (!rateCode.IsDaily && Boolean(rateCode.AllowChangeRate))
-})
+const isQuickBookingRateEditable = computed(() => !selectedQuickBookingRateCode.value)
 const quickBookingRateLabel = computed(() =>
   isQuickBookingDailyRate.value ? 'Rate (đêm đầu / 1 phòng)' : 'Rate (1 đêm / 1 phòng)'
 )
@@ -299,13 +300,36 @@ function clearQuickBookingRateCode() {
 
 function formatQuickBookingRate(val) {
   if (val === '' || val === null || val === undefined) return ''
-  return Number(val || 0).toLocaleString('en-US')
+  return Number(val || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })
+}
+
+function setQuickBookingRate(value) {
+  quickBookingForm.value.rate = Number(value) || 0
+  quickBookingRateInput.value = formatQuickBookingRate(quickBookingForm.value.rate)
 }
 
 function handleQuickBookingRateInput(event) {
-  const digits = event.target.value.replace(/[^0-9]/g, '')
+  const raw = String(event.target.value || '').replace(/,/g, '').replace(/[^0-9.]/g, '')
+  const [integerPart = '', ...decimalParts] = raw.split('.')
+  const decimalPart = decimalParts.join('').slice(0, 2)
+  const normalized = decimalParts.length > 0 ? `${integerPart}.${decimalPart}` : integerPart
+  quickBookingRateSource.value = 'manual'
   quickBookingUseConfiguredPricePerRoom.value = false
-  quickBookingForm.value.rate = digits === '' ? '' : Number(digits)
+  quickBookingRateInput.value = normalized
+  quickBookingForm.value.rate = normalized === '' || normalized === '.' ? 0 : Number(normalized)
+}
+
+function focusQuickBookingRate(event) {
+  if (Number(quickBookingForm.value.rate || 0) === 0) {
+    quickBookingRateInput.value = ''
+  } else {
+    quickBookingRateInput.value = String(quickBookingForm.value.rate)
+  }
+  event.target.select()
+}
+
+function blurQuickBookingRate() {
+  setQuickBookingRate(quickBookingForm.value.rate)
 }
 
 function clearQuickBookingManualRate() {
@@ -713,34 +737,28 @@ const companyFilterData = computed(() => {
 
 const displayCompanies = computed(() => companyFilterData.value.items)
 
-const allCompanyNames = computed(() => {
-  const list = []
-  if (allCompanies.value && allCompanies.value.length > 0) {
-    allCompanies.value.forEach(c => {
-      const name = c.name || c.company_name || c.trading_name || c.code
-      if (name && !list.some(item => item.toLowerCase() === String(name).toLowerCase())) {
-        list.push(name)
-      }
+const quickBookingCompanyNames = computed(() => {
+  const seen = new Set()
+  return (allCompanies.value || [])
+    .filter(isQuickBookingCompanyActive)
+    .map(company => company.name || company.company_name || company.trading_name || company.code)
+    .filter(Boolean)
+    .filter(name => {
+      const key = String(name).toLocaleLowerCase()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
     })
-  }
-  if (bookings.value) {
-    bookings.value.forEach(b => {
-      if (b.company && !list.some(item => item.toLowerCase() === String(b.company).toLowerCase())) {
-        list.push(b.company)
-      }
-    })
-  }
-  return list
 })
 
 const filteredQuickBookingCompanies = computed(() => {
   const query = removeVietnameseTones(quickBookingCompanySearch.value.toLowerCase().trim())
   
   if (!query) {
-    return allCompanyNames.value
+    return quickBookingCompanyNames.value
   }
   
-  return allCompanyNames.value.filter(cName => removeVietnameseTones(String(cName).toLowerCase()).includes(query))
+  return quickBookingCompanyNames.value.filter(cName => removeVietnameseTones(String(cName).toLowerCase()).includes(query))
 })
 
 function selectQuickBookingCompany(cName) {
@@ -748,15 +766,12 @@ function selectQuickBookingCompany(cName) {
 
   const co = allCompanies.value.find(c => {
     const name = c.name || c.company_name || c.trading_name || c.code
-    return name && String(name).toLowerCase() === String(cName).toLowerCase()
+    return isQuickBookingCompanyActive(c)
+      && name && String(name).toLowerCase() === String(cName).toLowerCase()
   })
 
   if (co) {
     applyQuickBookingCompany(co)
-  } else {
-    quickBookingForm.value.company = cName
-    quickBookingCompanySearch.value = cName
-    quickBookingForm.value.companyId = null
   }
 }
 
@@ -772,8 +787,8 @@ function applyQuickBookingCompany(company) {
   if (company.customer_source_id) quickBookingForm.value.customerSourceId = company.customer_source_id
   else if (company.customer_source?.id) quickBookingForm.value.customerSourceId = company.customer_source.id
 
-  if (company.rate_code) {
-    quickBookingForm.value.rateCode = company.rate_code
+  if (quickBookingRateSource.value !== 'manual') {
+    quickBookingForm.value.rateCode = company.rate_code || ''
     calculateQuickBookingPrice()
   }
 }
@@ -783,8 +798,12 @@ function getConfiguredQuickBookingCompany() {
   if (!Number.isInteger(companyId) || companyId < 1) return null
 
   return allCompanies.value.find(company =>
-    Number(company.id) === companyId && company.is_active === true
+    Number(company.id) === companyId && isQuickBookingCompanyActive(company)
   ) || null
+}
+
+function isQuickBookingCompanyActive(company) {
+  return company?.is_active === true || Number(company?.is_active) === 1
 }
 
 function handleQuickBookingCompanyInput() {
@@ -798,7 +817,8 @@ function handleQuickBookingCompanyInput() {
 
   const co = allCompanies.value.find(c => {
     const name = c.name || c.company_name || c.trading_name || c.code
-    return name && String(name).toLowerCase() === query
+    return isQuickBookingCompanyActive(c)
+      && name && String(name).toLowerCase() === query
   })
 
   if (co) {
@@ -1111,8 +1131,10 @@ const dbRooms = computed(() => {
         floor: r.floor || r.room_number.substring(0, r.room_number.length - 2) || '1',
         shape,
         status: r.status,
+        room_status_code: r.room_status_code,
+        booking_status: r.booking_status,
         is_clean: r.is_clean !== undefined ? r.is_clean : true,
-        lock_type: r.status === 'maintenance' ? r.lock_type : null,
+        lock_type: r.lock_type || null,
         hasBroom: r.status === 'dirty' || !r.is_clean,
         hasSparkles: !!r.is_clean && r.status === 'available' && !r.booking_status,
         isVirtual: false,
@@ -1623,17 +1645,10 @@ async function loadBookings() {
 
         const bookingAmounts = calculateRoomPlanBookingAmounts(b, systemDate.value)
         const bookingTotalAmount = bookingAmounts.roomCharge + bookingAmounts.serviceCharge
-        const activePayments = (b.payments || []).filter(payment => Number(payment.edit_flag) === 0 && !payment.deleted_at)
-        const depositAmount = activePayments
-          .filter(payment => (
-            String(payment.pack2 || '').toUpperCase() === 'DPR'
-            && String(payment.pack4 || '').toUpperCase() !== 'AP'
-            && !payment.payment_id
-            && !payment.paymentId
-            && !String(payment.description || '').trim().toUpperCase().startsWith('[TRANSFER IN')
-          ))
-          .reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0)
-        const bookingBalance = Math.max(0, bookingTotalAmount - depositAmount)
+        const paymentAmounts = calculateRoomPlanPaymentAmounts(b)
+        const depositAmount = paymentAmounts.depositAmount
+        const paidAmount = paymentAmounts.paidAmount
+        const bookingBalance = Math.max(0, bookingTotalAmount - depositAmount - paidAmount)
 
         b.booking_rooms.forEach(br => {
           if (![0, 1, 2].includes(Number(br.status))) return
@@ -1677,6 +1692,7 @@ async function loadBookings() {
           const departureStr = br.departure_date ? toLocalDateStr(br.departure_date) : (b.departure_date ? toLocalDateStr(b.departure_date) : '')
           const arrivalTime = br.arrival_time || '14:00'
           const departureTime = br.departure_time || '12:00'
+          const isDayUse = Boolean(br.is_day_use ?? b.is_day_use)
 
           const guestDetails = (br.guests || []).map(g => g.guest?.full_name || g.full_name).filter(Boolean)
           if (guestDetails.length === 0 && guestName && guestName !== 'Guest') {
@@ -1702,22 +1718,26 @@ async function loadBookings() {
             guestName,
             guest_details: guestDetails,
             booking_color: b.color || br.color || '',
-            note: b.note || br.note || '',
+            note: resolveRoomPlanBookingNote(b, br),
             registrationStatusId: registrationStatus?.booking_status_id ?? b.registration_status_id ?? null,
             registrationStatusName,
             registrationStatusColor,
             isAvailability: registrationStatus.is_availability === undefined
               ? true
               : Boolean(registrationStatus.is_availability),
-            isDayUse: Boolean(br.is_day_use ?? b.is_day_use),
-            nights: Math.round((new Date(departureStr) - new Date(arrivalStr)) / (1000 * 60 * 60 * 24)) || 1,
+            isDayUse,
+            nights: resolveRoomPlanNights({
+              arrivalDate: arrivalStr,
+              departureDate: departureStr,
+              isDayUse,
+            }),
             isDoNotMove: !!br.is_do_not_move,
             checkoutHour: departureTime,
             adults: br.adults || 2,
             children: br.children ? br.children.filter(c => c.age_group === 'child').length : 0,
             babies: br.children ? br.children.filter(c => c.age_group === 'baby').length : 0,
             extraBed: br.extra_bed_qty || 0,
-            specialRequest: b.note || b.special_requests || br.note || '',
+            specialRequest: resolveRoomPlanBookingNote(b, br),
             price: priceStr,
             rawRate: priceVal,
             label,
@@ -1729,6 +1749,7 @@ async function loadBookings() {
             serviceChargeDue: roomAmounts.serviceCharge,
             totalAmount: roomAmounts.roomCharge + roomAmounts.serviceCharge,
             depositAmount,
+            paidAmount,
             bookingTotalAmount,
             bookingBalance
           })
@@ -1797,6 +1818,14 @@ function handleWindowClick(event) {
 
 let bc = null
 let suppressDateRangeReload = false
+
+function refreshRoomPlanRooms({ silent = false } = {}) {
+  const date = toLocalDateStr(systemDate.value)
+  return roomStore.fetchRooms({
+    ...(date ? { date } : {}),
+    ...(silent ? { silent: true } : {}),
+  })
+}
 
 function notifyRoomUpdates() {
   if (!bc) return
@@ -1879,7 +1908,7 @@ onMounted(async () => {
   settingsLoaded.value = true
 
   // 4. Load data
-  roomStore.fetchRooms()
+  refreshRoomPlanRooms()
   loadBookings()
   loadCompanies()
   loadRateCodes()
@@ -1895,7 +1924,7 @@ onMounted(async () => {
     bc = new BroadcastChannel('pms-room-updates')
     bc.onmessage = (event) => {
       if (event.data === 'rooms-updated') {
-        roomStore.fetchRooms()
+        refreshRoomPlanRooms({ silent: true })
         loadBookings()
       } else if (event.data === 'settings-updated') {
         fetchHotelSettings().then(res => {
@@ -1911,11 +1940,11 @@ onMounted(async () => {
   if (echo) {
     echo.channel('pms-channel')
       .listen('.room.status.updated', () => {
-        roomStore.fetchRooms()
+        refreshRoomPlanRooms({ silent: true })
         loadBookings()
       })
       .listen('.reservation.updated', () => {
-        roomStore.fetchRooms()
+        refreshRoomPlanRooms({ silent: true })
         loadBookings()
       })
   }
@@ -3324,20 +3353,16 @@ function getRoomUnitPrice(roomNo, rateCodeMa, stayDate = null) {
     if (rateCodePrice !== null) return Number(rateCodePrice)
   }
 
-  // Không chọn Rate Code: lấy giá phòng chuẩn.
+  // Không chọn Rate Code: chỉ lấy giá phòng chuẩn; giá 0 là hợp lệ.
   if (standardRates.value && standardRates.value.length > 0 && roomClassId) {
     const matchedSr = standardRates.value.find(sr =>
       Number(sr.room_class_id) === Number(roomClassId) &&
       (!roomFormId || Number(sr.room_form_id) === Number(roomFormId))
     )
-    if (matchedSr && Number(matchedSr.room_price) > 0) return Number(matchedSr.room_price)
+    if (matchedSr) return Number(matchedSr.room_price) || 0
   }
 
-  if (roomObj) {
-    if (roomObj.room_class && Number(roomObj.room_class.price) > 0) return Number(roomObj.room_class.price)
-    if (Number(roomObj.price) > 0) return Number(roomObj.price)
-  }
-  return 890000
+  return 0
 }
 
 function calculateQuickBookingPrice() {
@@ -3350,11 +3375,13 @@ function calculateQuickBookingPrice() {
   // Rate trên form tạo nhanh là đơn giá cho 1 đêm / 1 phòng, không phải tổng tiền booking.
   // Nếu các phòng được chọn có giá chuẩn khác nhau, để 0 để người dùng chủ động nhập giá chung.
   const unitRates = ranges.map(range => getRoomUnitPrice(range.room, quickBookingForm.value.rateCode, range.checkIn))
-  const [firstRate] = unitRates
-  const hasDifferentRates = unitRates.some(rate => Number(rate) !== Number(firstRate))
-
-  quickBookingUseConfiguredPricePerRoom.value = hasDifferentRates
-  quickBookingForm.value.rate = hasDifferentRates ? 0 : (firstRate || 0)
+  const rateMode = resolveRoomPlanQuickBookingRateMode({
+    unitRates,
+    rateCode: quickBookingForm.value.rateCode,
+  })
+  quickBookingUseConfiguredPricePerRoom.value = rateMode.useConfiguredPricePerRoom
+  quickBookingRateSource.value = quickBookingForm.value.rateCode ? 'rate-code' : 'standard'
+  setQuickBookingRate(rateMode.formRate)
   return quickBookingForm.value.rate
 }
 
@@ -3368,6 +3395,8 @@ async function triggerMenuAction(actionName) {
   if (actionName === 'Tạo') {
     showQuickBookingModal.value = true
     quickBookingCompanySearch.value = ''
+    quickBookingRateSource.value = 'standard'
+    quickBookingRateInput.value = ''
     quickBookingForm.value = {
       company: '',
       companyId: null,
@@ -3434,7 +3463,7 @@ async function triggerMenuAction(actionName) {
           const res = await roomService.deleteRoomLock(lockId)
           if (res && (res.success || res.data?.success)) {
             uiStore.showToast('Đã mở khóa phòng thành công!', 'success')
-            await roomStore.fetchRooms()
+            await refreshRoomPlanRooms()
             await loadBookings()
             notifyRoomUpdates()
           } else {
@@ -3542,7 +3571,7 @@ async function triggerMenuAction(actionName) {
 
           if (res && res.data && res.data.success !== false && !res.data.needs_confirmation) {
             uiStore.showToast(`Giao phòng ${booking.room} thành công!`, 'success')
-            await roomStore.fetchRooms()
+            await refreshRoomPlanRooms()
             await loadBookings()
             notifyRoomUpdates()
           } else {
@@ -4221,7 +4250,7 @@ async function saveQuickBooking() {
 
     const companyId = quickBookingForm.value.companyId
     const selectedCompany = allCompanies.value.find(company =>
-      Number(company.id) === Number(companyId) && company.is_active === true
+      Number(company.id) === Number(companyId) && isQuickBookingCompanyActive(company)
     )
     if (!selectedCompany) {
       uiStore.showToast('Vui lòng chọn công ty đang hoạt động.', 'error')
@@ -4251,16 +4280,11 @@ async function saveQuickBooking() {
     ranges.forEach(range => {
       const roomObj = roomStore.rooms ? roomStore.rooms.find(r => String(r.room_number) === String(range.room)) : null
       const roomClassId = roomObj ? roomObj.room_class_id : 1
-      const canOverrideFixedRate = selectedQuickBookingRateCode.value
-        && !selectedQuickBookingRateCode.value.IsDaily
-        && Boolean(selectedQuickBookingRateCode.value.AllowChangeRate)
       const configuredRoomPrice = getRoomUnitPrice(range.room, selectedRateCode, range.checkIn)
       const unitPrice = resolveRoomPlanQuickBookingUnitPrice({
         configuredRoomPrice,
         rateCode: selectedRateCode,
-        canOverrideRateCode: canOverrideFixedRate,
         formRate: quickBookingForm.value.rate,
-        useConfiguredPricePerRoom: quickBookingUseConfiguredPricePerRoom.value,
       })
 
       const groupKey = `${roomClassId}_${range.checkIn}_${range.checkOut}`
@@ -4273,8 +4297,7 @@ async function saveQuickBooking() {
           departureDate: range.checkOut,
           price: unitPrice,
           rateCode: selectedRateCode,
-          // Chỉ Rate Code cố định có AllowChangeRate mới được phép ghi đè giá nhập tay.
-          manualRateOverride: Boolean(selectedRateCode && isQuickBookingRateEditable.value),
+          manualRateOverride: false,
           breakfastIncluded: true,
           rooms: []
         }
@@ -4349,7 +4372,7 @@ async function saveQuickBooking() {
     selectedCells.value = []
     hideTooltip()
     
-    await roomStore.fetchRooms()
+    await refreshRoomPlanRooms()
     await loadBookings()
     notifyRoomUpdates()
   } catch (err) {
@@ -4449,7 +4472,7 @@ async function saveLockRoom() {
     showLockRoomModal.value = false
     selectedCells.value = []
 
-    await roomStore.fetchRooms()
+    await refreshRoomPlanRooms()
     await loadBookings()
     notifyRoomUpdates()
     
@@ -4657,41 +4680,8 @@ function isTodayDate(dateVal) {
   return dStr === sysDateVal
 }
 
-function isTodayOrActiveBooking(b) {
-  if (!b || !b.checkIn || !b.checkOut) return false
-  const sysDateStr = systemDate.value ? toLocalDateStr(systemDate.value) : toLocalDateStr(new Date())
-  const inStr = toLocalDateStr(b.checkIn)
-  const outStr = toLocalDateStr(b.checkOut)
-  return sysDateStr >= inStr && sysDateStr < outStr
-}
-
 function getRoomStatusIconName(item) {
-  if (!item) return null
-  // 1. Lock (OOO / OOS) - Only when currently locked today
-  if (item.status === 'maintenance' || item.status === 'ooo' || item.status === 'oos') {
-    return item.lock_type === 'OOS' ? 'oos' : 'ooo'
-  }
-  // 2. Dirty Room / Housekeeping needed -> broom icon
-  if (item.status === 'dirty' || item.status === 'checkout' || item.is_clean === false || item.is_clean === 0) {
-    return 'dirty'
-  }
-  // 3. Occupied (In-house) and clean -> No extra icon
-  if (item.booking_status === 'occupied' || item.status === 'occupied') {
-    return null
-  }
-  // 4. Has reserved booking today -> double-check icon (✓✓)
-  const hasBookingToday = !!item.guest_name || !!item.booking_code || (bookings.value && bookings.value.some(b => String(b.room) === String(item.room) && isTodayOrActiveBooking(b) && b.status !== 'occupied'))
-  if (hasBookingToday) {
-    return 'double-check'
-  }
-  // 5. Sparkles ONLY for clean vacant available room without active booking today
-  if (item.is_clean && (item.status === 'available' || !item.status)) {
-    return 'clean'
-  }
-  if (item.status === 'reserved') {
-    return 'priority'
-  }
-  return null
+  return resolveRoomPlanStatusIcon(item, ROOM_STATUS_ICON_MAP)
 }
 </script>
 
@@ -5121,7 +5111,12 @@ function getRoomStatusIconName(item) {
                       >
                         <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" />
                       </svg>
-                      <span :class="bk.pastDaysOffset > 0 ? 'whitespace-nowrap' : 'truncate flex-1 min-w-0'">{{ bk.label }}</span>
+                      <span :class="bk.pastDaysOffset > 0 ? 'whitespace-nowrap' : 'truncate flex-1 min-w-[4ch]'">{{ bk.label }}</span>
+                      <i
+                        v-if="bk.depositAmount > 0"
+                        class="fa-solid fa-check mr-[-5px] shrink-0 text-[10px] text-emerald-700"
+                        :title="`Đặt cọc: ${formatMoney(bk.depositAmount)} ₫`"
+                      ></i>
                     </div>
 
                     <!-- Bottom Status Indicator: Tình trạng đăng ký (Line màu) & Phòng đi (Vạch đỏ) -->
@@ -5380,6 +5375,10 @@ function getRoomStatusIconName(item) {
             <div class="flex justify-between items-center text-xs">
               <span class="font-semibold text-[#000000D9]">Đã đặt cọc:</span>
               <span class="font-normal text-[#000000D9]">{{ formatMoney(hoveredBooking.depositAmount) }} ₫</span>
+            </div>
+            <div class="flex justify-between items-center text-xs">
+              <span class="font-semibold text-[#000000D9]">Đã thanh toán:</span>
+              <span class="font-normal text-[#000000D9]">{{ formatMoney(hoveredBooking.paidAmount) }} ₫</span>
             </div>
             <div class="flex justify-between items-center pt-1.5 border-t border-slate-100 text-xs">
               <span class="font-semibold text-[#000000D9]">Còn lại:</span>
@@ -5952,17 +5951,17 @@ function getRoomStatusIconName(item) {
               <input 
                 type="text" 
                 inputmode="numeric"
-                :value="formatQuickBookingRate(quickBookingForm.rate)" 
+                :value="quickBookingRateInput"
                 @input="handleQuickBookingRateInput"
-                @focus="e => { if (Number(quickBookingForm.rate || 0) === 0) quickBookingForm.rate = ''; e.target.select() }"
-                @blur="e => { if (quickBookingForm.rate === '' || quickBookingForm.rate === null) quickBookingForm.rate = 0 }"
-                :disabled="!isQuickBookingRateEditable" 
+                @focus="focusQuickBookingRate"
+                @blur="blurQuickBookingRate"
+                :disabled="!isQuickBookingRateEditable"
                 placeholder="0"
-                class="w-full border border-slate-200 rounded-lg bg-white px-3 py-2 text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500 font-normal disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed" 
+                class="w-full border border-slate-200 rounded-lg bg-white px-3 py-2 text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500 font-normal disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
                 :class="isQuickBookingRateEditable && Number(quickBookingForm.rate || 0) > 0 ? 'pr-8' : ''"
               />
               <button 
-                v-if="isQuickBookingRateEditable && Number(quickBookingForm.rate || 0) > 0" 
+                v-if="isQuickBookingRateEditable && Number(quickBookingForm.rate || 0) > 0"
                 type="button" 
                 @click.stop="clearQuickBookingManualRate"
                 class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0.5 flex items-center justify-center z-10 select-none"

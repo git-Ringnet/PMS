@@ -435,14 +435,14 @@ onBeforeUnmount(() => {
             v-for="cfg in hotelConfigs.filter(item => !searchConfigQuery || (item.name && item.name.toLowerCase().includes(searchConfigQuery.toLowerCase())) || (item.description && item.description.toLowerCase().includes(searchConfigQuery.toLowerCase())))"
             :key="cfg.id" @click="openEditConfigModal(cfg)"
             class="border-b border-slate-100 hover:bg-slate-50/55 cursor-pointer text-[#000000D9]">
-            <td class="p-2.5 font-semibold text-slate-800">{{ cfg.name }}</td>
-            <td class="p-2.5 font-normal text-sky-700 font-mono text-center">
+            <td class="p-2.5 font-normal text-[#000000D9]">{{ cfg.name }}</td>
+            <td class="p-2.5 font-normal text-[#000000D9] font-mono text-center">
               <span v-if="cfg.name === 'RegistrationStatusId_BookingCancel'">
                 {{ cfg.value === '0' || !cfg.value ? '0 (Giữ nguyên)' : `${cfg.value} (${getRegistrationStatusName(cfg.value)})` }}
               </span>
               <span v-else>{{ cfg.value || '-' }}</span>
             </td>
-            <td class="p-2.5 text-slate-600 font-normal leading-relaxed">{{ cfg.description || '-' }}</td>
+            <td class="p-2.5 font-normal text-[#000000D9] leading-relaxed">{{ cfg.description || '-' }}</td>
             <td class="p-2.5 text-center">
               <div class="flex items-center justify-center">
                 <button @click.stop="deleteConfig(cfg.id)"

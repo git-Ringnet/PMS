@@ -3,7 +3,9 @@ import assert from 'node:assert/strict'
 
 import {
   calculateRoomPlanBookingAmounts,
+  calculateRoomPlanPaymentAmounts,
   calculateRoomPlanRoomAmounts,
+  resolveRoomPlanBookingNote,
 } from '../src/utils/room-plan-amounts.js'
 
 const booking = {
@@ -116,6 +118,44 @@ test('calculates full room charge across entire stay even when arrival date is b
   })
 })
 
+test('counts a posted day-use room-charge bill once when room and master relations contain the same bill', () => {
+  const dayUseBooking = {
+    arrival_date: '2026-08-30',
+    departure_date: '2026-08-30',
+    num_of_days: 1,
+    is_day_use: true,
+    master_service_bills: [{
+      Ma: 1,
+      ServiceId: 'RM',
+      Amount: 650000,
+      Date: '2026-08-30',
+      Edit: 0,
+      RentalRoomId1: 'G0000004',
+    }],
+  }
+  const room = {
+    id: 'G0000004',
+    arrival_date: '2026-08-30',
+    departure_date: '2026-08-30',
+    is_day_use: true,
+    rate: 650000,
+    services: [],
+    service_bills: [{
+      Ma: 1,
+      ServiceId: 'RM',
+      Amount: 650000,
+      Date: '2026-08-30',
+      Edit: 0,
+      RentalRoomId1: 'G0000004',
+    }],
+  }
+
+  assert.deepEqual(calculateRoomPlanRoomAmounts(room, dayUseBooking, '2026-08-30'), {
+    roomCharge: 650000,
+    serviceCharge: 0,
+  })
+})
+
 test('row 442 keeps a zero-quantity daily extra bed at zero instead of charging its rate', () => {
   const room = {
     id: 'G0000012',
@@ -160,5 +200,26 @@ test('row 442 sums only daily extra-bed quantities greater than zero', () => {
     roomCharge: 1300000,
     serviceCharge: 300000,
   })
+})
+
+test('row 95 deduplicates payments and separates unused deposits from paid amounts', () => {
+  const amounts = calculateRoomPlanPaymentAmounts({
+    payments: [
+      { id: 1, amount: 100, pack2: 'DPR', status: 1, edit_flag: 0 },
+      { id: 1, amount: 100, pack2: 'DPR', status: 1, edit_flag: 0 },
+      { id: 2, amount: 200, pack2: 'DPR', status: 2, payment_id: 'PT2', edit_flag: 0 },
+      { id: 3, amount: 300, pack4: 'AP', status: 2, payment_id: 'PT3', edit_flag: 0 },
+      { id: 4, amount: 400, pack2: 'DPR', status: 1, edit_flag: 0, description: '[TRANSFER IN] BK A' },
+      { id: 5, amount: 500, pack2: 'DPR', status: 3, edit_flag: 0 },
+    ],
+  })
+
+  assert.deepEqual(amounts, { depositAmount: 100, paidAmount: 500 })
+})
+
+test('row 95 prefers booking note and safely resolves special-request arrays', () => {
+  assert.equal(resolveRoomPlanBookingNote({ note: 'Gọi trước khi đến' }, { note: 'Ghi chú phòng' }), 'Gọi trước khi đến')
+  assert.equal(resolveRoomPlanBookingNote({ special_requests: [{ special_request: { name: 'Không hút thuốc' } }] }, { note: 'Ghi chú phòng' }), 'Không hút thuốc')
+  assert.equal(resolveRoomPlanBookingNote({}, { note: 'Ghi chú phòng' }), 'Ghi chú phòng')
 })
 

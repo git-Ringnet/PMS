@@ -45,6 +45,7 @@ import ChargeNoshowModal from './components/ChargeNoshowModal.vue'
 import QuickUpdateModal from './components/QuickUpdateModal.vue'
 import { bookingPeriodAfterQuickUpdate, isRegistrationReadonly } from '@/utils/booking-quick-update.js'
 import { createVacantRoomsLoader, vacantRoomsKey } from '@/utils/vacant-rooms-cache.js'
+import { roomPeriodsOverlap } from '@/utils/day-use-time-overlap.js'
 import echo from '@/services/echo'
 import { isFromOtherTab } from '@/utils/broadcast-origin.js'
 import BookingNotificationsModal from './components/BookingNotificationsModal.vue'
@@ -5625,29 +5626,22 @@ function areRoomPeriodsOverlapping(r1, r2) {
   const d2In = parseDateVi(r2.checkIn)
   const d2Out = parseDateVi(r2.checkOut)
 
-  const start1 = new Date(d1In)
-  const end1 = new Date(d1Out)
-  const start2 = new Date(d2In)
-  const end2 = new Date(d2Out)
-
-  const isHourly1 = d1In === d1Out || !!r1.hourly
-  const isHourly2 = d2In === d2Out || !!r2.hourly
-
-  if (isHourly1 && isHourly2) {
-    return d1In === d2In
-  }
-
-  if (isHourly1) {
-    const t1 = start1.getTime()
-    return t1 >= start2.getTime() && t1 < end2.getTime()
-  }
-
-  if (isHourly2) {
-    const t2 = start2.getTime()
-    return t2 >= start1.getTime() && t2 < end1.getTime()
-  }
-
-  return start1 < end2 && end1 > start2
+  return roomPeriodsOverlap(
+    {
+      arrivalDate: d1In,
+      departureDate: d1Out,
+      isDayUse: d1In === d1Out || !!r1.hourly,
+      arrivalTime: r1.arrivalTime,
+      departureTime: r1.hoursOut,
+    },
+    {
+      arrivalDate: d2In,
+      departureDate: d2Out,
+      isDayUse: d2In === d2Out || !!r2.hourly,
+      arrivalTime: r2.arrivalTime,
+      departureTime: r2.hoursOut,
+    },
+  )
 }
 
 function parseDateVi(dateStr) {
@@ -5695,6 +5689,8 @@ function getVacantRoomsKey(room) {
     roomClassId: room.roomClassId,
     checkIn: parseDateVi(room.checkIn),
     checkOut: parseDateVi(room.checkOut),
+    arrivalTime: room.arrivalTime,
+    departureTime: room.hoursOut,
     bookingRoomId: room.bookingRoomId,
   })
 }
@@ -5712,6 +5708,8 @@ async function loadVacantRoomsForRoom(room) {
       room_class_id: roomClassId,
       arrival_date: ci,
       departure_date: co,
+      arrival_time: room.arrivalTime || undefined,
+      departure_time: room.hoursOut || undefined,
       exclude_booking_room_id: room.bookingRoomId || undefined
     })
   } catch (err) {

@@ -296,8 +296,8 @@ onBeforeUnmount(() => {
             v-for="s in hotelServices.filter(item => !searchServiceQuery || (item.code && item.code.toLowerCase().includes(searchServiceQuery.toLowerCase())) || (item.name && item.name.toLowerCase().includes(searchServiceQuery.toLowerCase())))"
             :key="s.id" @click="openEditServiceModal(s)"
             class="border-b border-slate-100 hover:bg-slate-50/55 cursor-pointer text-[#000000D9]">
-            <td class="p-2.5 font-semibold text-slate-800 text-center">{{ s.code }}</td>
-            <td class="p-2.5 font-normal text-slate-700">{{ s.name }}</td>
+            <td class="p-2.5 font-normal text-[#000000D9] text-center">{{ s.code }}</td>
+            <td class="p-2.5 font-normal text-[#000000D9]">{{ s.name }}</td>
             <td class="p-2.5 text-center">
               <label @click.stop class="relative inline-flex items-center cursor-pointer">
                 <input type="checkbox" :checked="s.is_active" @change="toggleServiceFlag(s, 'is_active')"
@@ -305,9 +305,9 @@ onBeforeUnmount(() => {
                 <div class="w-8 h-4.5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-emerald-500"></div>
               </label>
             </td>
-            <td class="p-2.5 text-center font-normal text-slate-600">{{ s.tax }}</td>
-            <td class="p-2.5 text-center font-normal text-slate-600">{{ s.special_tax }}</td>
-            <td class="p-2.5 text-center font-normal text-slate-600">{{ s.service_charge }}</td>
+            <td class="p-2.5 text-center font-normal text-[#000000D9]">{{ s.tax }}</td>
+            <td class="p-2.5 text-center font-normal text-[#000000D9]">{{ s.special_tax }}</td>
+            <td class="p-2.5 text-center font-normal text-[#000000D9]">{{ s.service_charge }}</td>
             <td class="p-2.5 text-center">
               <label @click.stop class="relative inline-flex items-center cursor-pointer">
                 <input type="checkbox" :checked="s.include_tax" @change="toggleServiceFlag(s, 'include_tax')"
@@ -335,11 +335,11 @@ onBeforeUnmount(() => {
                 </div>
               </label>
             </td>
-            <td class="p-2.5 text-center font-semibold text-slate-700">{{ s.folio }}</td>
-            <td class="p-2.5 text-slate-600 font-normal">{{ s.short_name || '-' }}</td>
-            <td class="p-2.5 text-slate-600 font-normal text-center">{{ s.unit || '-' }}</td>
-            <td class="p-2.5 text-right font-semibold text-sky-700">{{ formatCurrency(s.price) }}</td>
-            <td class="p-2.5 text-slate-500 font-normal text-xs">
+            <td class="p-2.5 text-center font-normal text-[#000000D9]">{{ s.folio }}</td>
+            <td class="p-2.5 text-[#000000D9] font-normal">{{ s.short_name || '-' }}</td>
+            <td class="p-2.5 text-[#000000D9] font-normal text-center">{{ s.unit || '-' }}</td>
+            <td class="p-2.5 text-right font-normal text-[#000000D9]">{{ formatCurrency(s.price) }}</td>
+            <td class="p-2.5 text-[#000000D9] font-normal text-xs">
               {{ s.departments?.length ? s.departments.map(department => department.code).join(', ') : (s.department_name || '-') }}
             </td>
             <td class="p-2.5 text-center">

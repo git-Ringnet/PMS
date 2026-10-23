@@ -207,8 +207,8 @@ function handleConfirm() {
       </div>
 
       <!-- Body -->
-      <div class="p-5 space-y-3.5 text-xs">
-        <p class="text-slate-600 font-semibold">Vui lòng chọn 1 trong 2 hình thức in phiếu ăn sáng:</p>
+      <div class="p-5 space-y-3.5 text-xs font-roboto">
+        <p class="text-[#000000D9] font-semibold">Vui lòng chọn 1 trong 2 hình thức in phiếu ăn sáng:</p>
 
         <!-- Option 1: In All Card -->
         <label 
@@ -223,8 +223,8 @@ function handleConfirm() {
             v-model="printMode" 
             class="mt-0.5 text-sky-600 focus:ring-sky-500"
           />
-          <div class="font-bold text-slate-900 text-xs">
-            1. In tất cả (In All)
+          <div class="font-semibold text-[#000000D9] text-xs">
+            1. In Tất Cả (In All)
           </div>
         </label>
 
@@ -242,23 +242,23 @@ function handleConfirm() {
               v-model="printMode" 
               class="mt-0.5 text-sky-600 focus:ring-sky-500"
             />
-            <div class="font-bold text-slate-900 text-xs">
-              2. In theo giai đoạn ngày
+            <div class="font-semibold text-[#000000D9] text-xs">
+              2. In Theo Giai Đoạn Ngày
             </div>
           </div>
 
           <!-- Date inputs inside Range Option -->
           <div v-if="printMode === 'range'" class="pt-2 pl-7 grid grid-cols-2 gap-3 border-t border-sky-100 animate-in fade-in duration-150">
             <div>
-              <label class="block font-semibold text-slate-700 mb-1 text-xs">Từ ngày:</label>
-              <div class="flex items-center justify-between h-8 px-2 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-800 hover:border-sky-500 shadow-2xs">
+              <label class="block font-semibold text-[#000000D9] mb-1 text-xs">Từ Ngày:</label>
+              <div class="flex items-center justify-between h-8 px-2 bg-white border border-slate-300 rounded-lg text-xs font-normal text-[#000000D9] hover:border-sky-500 shadow-2xs">
                 <input 
                   type="text" 
                   :value="fromDateDisplay" 
                   @input="e => handleDateManualInput(e, 'from')" 
                   placeholder="dd/mm/yyyy" 
                   maxlength="10" 
-                  class="w-24 border-none outline-none font-bold text-xs bg-transparent"
+                  class="w-24 border-none outline-none font-normal text-xs text-[#000000D9] bg-transparent placeholder:text-[#A8B0BF]"
                 />
                 <button type="button" @click="openModalFromDatePicker" class="p-1 text-sky-600 hover:text-sky-800 cursor-pointer" title="Chọn ngày">
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -267,7 +267,7 @@ function handleConfirm() {
                   </svg>
                 </button>
                 <input 
-                  ref="modalFromDateRef"
+                  ref="modalFromDateRef" 
                   :value="fromDate" 
                   @change="handleNativeFromDateChange"
                   type="date" 
@@ -276,15 +276,15 @@ function handleConfirm() {
               </div>
             </div>
             <div>
-              <label class="block font-semibold text-slate-700 mb-1 text-xs">Đến ngày:</label>
-              <div class="flex items-center justify-between h-8 px-2 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-800 hover:border-sky-500 shadow-2xs">
+              <label class="block font-semibold text-[#000000D9] mb-1 text-xs">Đến Ngày:</label>
+              <div class="flex items-center justify-between h-8 px-2 bg-white border border-slate-300 rounded-lg text-xs font-normal text-[#000000D9] hover:border-sky-500 shadow-2xs">
                 <input 
                   type="text" 
                   :value="toDateDisplay" 
                   @input="e => handleDateManualInput(e, 'to')" 
                   placeholder="dd/mm/yyyy" 
                   maxlength="10" 
-                  class="w-24 border-none outline-none font-bold text-xs bg-transparent"
+                  class="w-24 border-none outline-none font-normal text-xs text-[#000000D9] bg-transparent placeholder:text-[#A8B0BF]"
                 />
                 <button type="button" @click="openModalToDatePicker" class="p-1 text-sky-600 hover:text-sky-800 cursor-pointer" title="Chọn ngày">
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -293,7 +293,7 @@ function handleConfirm() {
                   </svg>
                 </button>
                 <input 
-                  ref="modalToDateRef"
+                  ref="modalToDateRef" 
                   :value="toDate" 
                   @change="handleNativeToDateChange"
                   type="date" 

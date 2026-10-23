@@ -17,7 +17,7 @@
             <div v-if="selectedOption" class="flex items-center gap-1.5 truncate">
               <span class="text-[#000000D9] font-semibold shrink-0">{{ selectedOption.code }}</span>
               <span class="text-slate-300">·</span>
-              <span class="font-normal text-[#000000D9] shrink-0">{{ selectedOption.roomNumber }}</span>
+              <span class="text-[#000000D9] shrink-0" :class="selectedOption.isPrimary ? 'font-semibold' : 'font-normal'">{{ selectedOption.roomNumber }}</span>
               <span class="text-slate-300">·</span>
               <span class="text-[#000000D9] truncate" :class="selectedOption.isPrimary ? 'font-semibold' : 'font-normal'">{{ selectedOption.guestName }}</span>
               <span v-if="selectedOption.bookingNoPost || selectedOption.roomNoPost" class="ml-1 shrink-0 rounded bg-rose-100 px-1.5 py-0.5 text-xs font-bold text-rose-700">No Post</span>
@@ -34,7 +34,7 @@
           <!-- Dropdown Menu -->
           <div 
             v-if="isDropdownOpen && canSelectRoom"
-            class="absolute left-0 top-full mt-1 w-full min-w-[340px] max-h-60 bg-white border border-slate-300 rounded shadow-xl z-50 flex flex-col overflow-hidden"
+            class="absolute left-0 top-full mt-1 w-full min-w-[340px] max-h-[420px] bg-white border border-slate-300 rounded shadow-xl z-50 flex flex-col overflow-hidden"
           >
             <!-- Search inside dropdown -->
             <div class="p-1.5 border-b border-slate-100 bg-slate-50 shrink-0 relative">
@@ -49,7 +49,7 @@
             </div>
             
             <!-- Options List Grouped by Booking -->
-            <div class="overflow-y-auto flex-1 max-h-56">
+            <div class="overflow-y-auto flex-1 max-h-[360px]">
               <template v-if="filteredBookingGroups.length > 0">
                 <div 
                   v-for="grp in filteredBookingGroups" 
@@ -68,11 +68,15 @@
                   <div 
                     v-for="opt in grp.items" 
                     :key="opt.key"
-                    @click="selectOption(opt)"
-                    class="flex items-center gap-2 pl-6 pr-3 py-2 text-xs cursor-pointer border-b border-slate-50 last:border-none hover:bg-blue-50/80 transition-colors select-none"
-                    :class="{ 'bg-blue-50': selectedOption?.key === opt.key }"
+                    @click="!(opt.bookingNoPost || opt.roomNoPost) && selectOption(opt)"
+                    class="flex items-center gap-2 pl-6 pr-3 py-2 text-xs border-b border-slate-50 last:border-none transition-colors select-none"
+                    :class="[
+                      selectedOption?.key === opt.key ? 'bg-blue-50' : '',
+                      (opt.bookingNoPost || opt.roomNoPost) ? 'cursor-not-allowed opacity-50 bg-slate-50' : 'cursor-pointer hover:bg-blue-50/80'
+                    ]"
+                    :title="(opt.bookingNoPost || opt.roomNoPost) ? (opt.bookingNoPost ? 'Booking đang bật No Post - không thể chọn' : 'Phòng đang bật No Post - không thể chọn') : ''"
                   >
-                    <span class="font-normal text-[#000000D9] shrink-0">{{ opt.roomNumber }}</span>
+                    <span class="text-[#000000D9] shrink-0" :class="opt.isPrimary ? 'font-semibold' : 'font-normal'">{{ opt.roomNumber }}</span>
                     <span class="text-slate-300">·</span>
                     <span class="text-[#000000D9] truncate" :class="opt.isPrimary ? 'font-semibold' : 'font-normal'">{{ opt.guestName }}</span>
                     <span v-if="opt.bookingNoPost || opt.roomNoPost" class="ml-auto shrink-0 rounded bg-rose-100 px-1.5 py-0.5 text-xs font-bold text-rose-700">No Post</span>
@@ -166,7 +170,7 @@
               v-for="tKey in tabKeys"
               :key="tKey"
               @click="switchTab(tKey)"
-              class="tab flex-1 h-10 px-1 text-xs text-center border-b-2 border-transparent transition-colors cursor-pointer bg-none -mb-[1px] select-none font-semibold"
+              class="tab flex-1 h-10 px-1 text-xs text-center border-none transition-colors cursor-pointer bg-none select-none font-semibold"
               :style="{ color: currentTab === tKey ? '#2563EB' : '#000000D9' }"
             >
               {{ tabLabels[tKey] }}
@@ -237,9 +241,9 @@
         <!-- RIGHT: SELECTED SERVICES TABLE -->
         <div class="col-right flex flex-col overflow-hidden bg-white">
           <!-- Table Header -->
-          <div class="tbl-head grid bg-slate-100 border-b-2 border-slate-200 px-3 h-10 items-center gap-1.5 shrink-0 grid-cols-[36px_minmax(160px,1.5fr)_90px_86px_96px_95px_100px_44px]">
+          <div class="tbl-head grid bg-slate-100 border-b-2 border-slate-200 px-3 h-10 items-center gap-1.5 shrink-0 grid-cols-[36px_minmax(140px,1.2fr)_100px_90px_100px_110px_115px_44px]">
             <div class="th font-semibold text-xs text-[#000000D9] text-center">STT</div>
-            <div class="th font-semibold text-xs text-[#000000D9] text-left pl-2">Sản phẩm</div>
+            <div class="th font-semibold text-xs text-[#000000D9] text-center">Sản Phẩm</div>
             <div class="th font-semibold text-xs text-[#000000D9] text-center">Giá</div>
             <div class="th font-semibold text-xs text-[#000000D9] text-center">SL</div>
             
@@ -251,7 +255,7 @@
                 :class="{ 'text-amber-600': discountMode === 'pt', 'pointer-events-none opacity-40': form.isFree }"
               >
                 <span class="th-main text-xs font-semibold" :class="discountMode === 'pt' ? 'text-amber-600' : 'text-[#000000D9]'">
-                  {{ discountMode === 'pt' ? '% Phụ thu' : '% Giảm' }}
+                  {{ discountMode === 'pt' ? '% Phụ Thu' : '% Giảm' }}
                 </span>
                 <span class="th-hint text-xs text-slate-400 whitespace-nowrap scale-90" :class="{ 'text-amber-600/70': discountMode === 'pt' }">
                   ↔ click đổi
@@ -260,9 +264,9 @@
             </div>
 
             <div class="th font-semibold text-xs text-[#000000D9] text-center">
-              {{ discountMode === 'pt' ? 'Tiền phụ thu' : 'Tiền giảm' }}
+              {{ discountMode === 'pt' ? 'Tiền Phụ Thu' : 'Tiền Giảm' }}
             </div>
-            <div class="th font-semibold text-xs text-[#000000D9] text-center">Thành tiền</div>
+            <div class="th font-semibold text-xs text-[#000000D9] text-center">Thành Tiền</div>
             <div class="th font-semibold text-xs text-[#000000D9] text-center"></div>
           </div>
 
@@ -281,9 +285,9 @@
                   <div 
                     v-for="(item, idx) in groupedCart[grpKey]" 
                     :key="item.product.id"
-                    class="tbl-row grid px-3 gap-1.5 items-center min-h-[44px] border-b border-slate-200 hover:bg-slate-50 transition-colors text-xs grid-cols-[36px_minmax(160px,1.5fr)_90px_86px_96px_95px_100px_44px]"
+                    class="tbl-row grid px-3 gap-1.5 items-center min-h-[44px] border-b border-slate-200 hover:bg-slate-50 transition-colors text-xs grid-cols-[36px_minmax(140px,1.2fr)_100px_90px_100px_110px_115px_44px]"
                   >
-                    <div class="cell-stt text-center text-slate-400 font-normal">{{ getItemIndex(grpKey, idx) }}</div>
+                    <div class="cell-stt text-center text-[#000000D9] font-normal">{{ getItemIndex(grpKey, idx) }}</div>
                     <div class="cell-name text-[#000000D9] font-normal truncate pl-2" :title="item.product.name">{{ item.product.name }}</div>
                     <div class="cell-price text-center text-[#000000D9] font-normal tabular-nums">{{ formatCurrency(item.product.price) }}</div>
                     
@@ -343,7 +347,7 @@
 
               <!-- Total Sum Row -->
               <div class="tbl-total-row flex justify-end items-center gap-2 p-2.5 px-3 border-t-2 border-slate-300 bg-slate-100">
-                <span class="tbl-total-lbl text-xs font-semibold text-[#000000D9]">Thành tiền</span>
+                <span class="tbl-total-lbl text-xs font-semibold text-[#000000D9]">Thành Tiền</span>
                 <span class="tbl-total-val text-xs font-bold text-[#155DFC] min-w-[90px] text-right">{{ formatCurrency(grandTotal) }}</span>
               </div>
             </template>
@@ -864,6 +868,8 @@ const filteredProductSubgroups = computed(() => {
     const sorted = [...matched].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'vi', { sensitivity: 'base' }))
     result.push({ name: subName, items: sorted })
   })
+
+  result.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'vi', { sensitivity: 'base' }))
 
   return result
 })

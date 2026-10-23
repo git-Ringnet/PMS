@@ -1,35 +1,40 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { resolveRoomPlanQuickBookingUnitPrice } from '../src/utils/room-plan-quick-booking-pricing.js'
+import {
+  resolveRoomPlanQuickBookingRateMode,
+  resolveRoomPlanQuickBookingUnitPrice,
+} from '../src/utils/room-plan-quick-booking-pricing.js'
 
-test('Kế hoạch phòng: phòng khác dạng dùng giá chuẩn riêng khi Rate hiển thị 0', () => {
+test('Kế hoạch phòng: nhiều giá chuẩn hiển thị 0 và dùng giá nhập tay chung', () => {
+  assert.deepEqual(resolveRoomPlanQuickBookingRateMode({
+    unitRates: [850000, 1150000],
+    rateCode: '',
+  }), { formRate: 0, useConfiguredPricePerRoom: false })
+
   assert.equal(resolveRoomPlanQuickBookingUnitPrice({
     configuredRoomPrice: 850000,
     formRate: 0,
-    useConfiguredPricePerRoom: true,
-  }), 850000)
-  assert.equal(resolveRoomPlanQuickBookingUnitPrice({
-    configuredRoomPrice: 1150000,
-    formRate: 0,
-    useConfiguredPricePerRoom: true,
-  }), 1150000)
+  }), 0)
+  assert.equal(resolveRoomPlanQuickBookingUnitPrice({ formRate: 720000 }), 720000)
 })
 
-test('Kế hoạch phòng: Rate Code không cho đổi giá vẫn lấy giá từng phòng', () => {
+test('Kế hoạch phòng: Rate Code luôn lấy giá theo từng phòng và khóa giá nhập', () => {
+  assert.deepEqual(resolveRoomPlanQuickBookingRateMode({
+    unitRates: [950000, 1050000],
+    rateCode: 'BAR',
+  }), { formRate: 0, useConfiguredPricePerRoom: true })
+
   assert.equal(resolveRoomPlanQuickBookingUnitPrice({
     configuredRoomPrice: 950000,
     rateCode: 'BAR',
-    canOverrideRateCode: false,
-    formRate: 0,
+    formRate: 720000,
   }), 950000)
 })
 
-test('Kế hoạch phòng: giá người dùng nhập tay vẫn được ưu tiên', () => {
+test('Kế hoạch phòng: giá chuẩn 0 là giá hợp lệ, không fallback giá cứng', () => {
   assert.equal(resolveRoomPlanQuickBookingUnitPrice({
-    configuredRoomPrice: 850000,
-    rateCode: 'CORP',
-    canOverrideRateCode: true,
-    formRate: 720000,
-  }), 720000)
+    configuredRoomPrice: 890000,
+    formRate: 0,
+  }), 0)
 })

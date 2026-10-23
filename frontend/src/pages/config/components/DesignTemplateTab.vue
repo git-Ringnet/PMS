@@ -174,11 +174,11 @@ onMounted(() => {
 
     <!-- Left panel: Group list -->
     <div class="w-1/4 bg-white rounded-xl p-3 border border-slate-200 flex flex-col gap-1 shrink-0 shadow-2xs">
-      <span class="text-xs font-semibold text-gray-900 uppercase tracking-wide px-2 pb-2 block border-b border-slate-100">Nhóm Mẫu</span>
+      <span class="text-xs font-semibold text-[#000000D9] uppercase tracking-wide px-2 pb-2 block border-b border-slate-100">Nhóm Mẫu</span>
       <div class="overflow-y-auto flex-1 flex flex-col gap-0.5 mt-1">
         <button v-for="grp in templateGroups" :key="grp" @click="activeTemplateGroup = grp"
-          class="w-full text-left px-3 py-2 rounded-lg font-medium text-xs border-none bg-transparent cursor-pointer transition-colors"
-          :class="activeTemplateGroup === grp ? 'bg-sky-50 text-sky-800 font-semibold ring-1 ring-inset ring-sky-200' : 'text-slate-700 hover:bg-slate-50'">
+          class="w-full text-left px-3 py-2 rounded-lg text-xs border-none bg-transparent cursor-pointer transition-colors"
+          :class="activeTemplateGroup === grp ? 'bg-sky-50 text-[#006bdb] font-semibold ring-1 ring-inset ring-sky-200' : 'text-[#000000D9] font-normal hover:bg-slate-50'">
           {{ grp }}
         </button>
       </div>
@@ -187,7 +187,7 @@ onMounted(() => {
     <!-- Right panel: Template report list -->
     <div class="flex-1 flex flex-col gap-3 min-h-0">
       <div class="flex justify-between items-center pb-2 border-b border-slate-200 shrink-0">
-        <span class="text-xs font-semibold text-gray-900 uppercase tracking-wide">
+        <span class="text-xs font-semibold text-[#000000D9] uppercase tracking-wide">
           Thiết Kế Mẫu Cho Nhóm: {{ activeTemplateGroup }}
         </span>
         
@@ -209,10 +209,10 @@ onMounted(() => {
       <!-- Quick Create Form -->
       <div v-if="showCreateForm" class="p-3 border border-sky-200 rounded-xl bg-sky-50/40 flex gap-3 items-end shadow-2xs shrink-0">
         <div class="flex-1 flex flex-col gap-1">
-          <label class="text-xs font-semibold text-gray-900">Tên Biểu Mẫu Mới <span class="text-red-500">*</span></label>
+          <label class="text-xs font-semibold text-[#000000D9]">Tên Biểu Mẫu Mới <span class="text-rose-500">*</span></label>
           <div class="relative">
             <input type="text" v-model="newTemplateName" placeholder="Ví dụ: Booking Confirmation Starlet..." 
-              class="border bg-[#FFF8DB] border-[#F1DD8A] focus:border-amber-500 rounded px-2.5 py-1.5 text-xs w-full font-medium text-gray-900 focus:outline-none transition-colors" />
+              class="border bg-[#FFF8DB] border-[#F1DD8A] focus:border-[#eab308] rounded px-2.5 py-1.5 text-xs w-full font-normal text-[#000000D9] focus:outline-none transition-colors" />
             <button v-if="newTemplateName" @click="newTemplateName = ''" type="button"
               class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs">✕</button>
           </div>
@@ -227,7 +227,7 @@ onMounted(() => {
       <div class="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-2xs flex-1">
         <table class="w-full text-xs text-left border-collapse">
           <thead>
-            <tr class="bg-slate-50 text-gray-900 font-semibold sticky top-0 z-10">
+            <tr class="bg-slate-50 text-[#000000D9] font-semibold sticky top-0 z-10">
               <th class="p-2.5 text-center align-middle border border-slate-200 w-1/4">Tên Thiết Kế</th>
               <th class="p-2.5 text-center align-middle border border-slate-200 w-20">Phiên Bản</th>
               <th class="p-2.5 text-center align-middle border border-slate-200 w-1/4">Nguồn Dữ Liệu Thiết Kế</th>
@@ -237,29 +237,29 @@ onMounted(() => {
           </thead>
           <tbody>
             <tr v-for="t in templates.filter(item => item.group === activeTemplateGroup)" :key="t.id"
-              class="border-b border-slate-100 hover:bg-slate-50/70 text-gray-900">
+              class="border-b border-slate-100 hover:bg-slate-50/70 text-[#000000D9]">
               <td class="p-2.5 border-r border-slate-100">
-                <p class="font-semibold text-[#000000D9]">{{ t.name }}</p>
+                <p class="font-normal text-[#000000D9]">{{ t.name }}</p>
                 <p class="text-[10px] text-slate-500 font-mono mt-0.5" v-if="t.page_size">
                   Khổ: {{ t.page_size }} ({{ t.page_orientation === 'portrait' ? 'Dọc' : 'Ngang' }})
                 </p>
               </td>
               
               <td class="p-2.5 border-r border-slate-100 text-center">
-                <span class="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px] font-semibold font-mono">
+                <span class="px-2 py-0.5 rounded bg-slate-100 text-[#000000D9] text-[11px] font-normal font-mono">
                   v{{ t.version }}
                 </span>
               </td>
               
               <td class="p-2.5 border-r border-slate-100">
-                <span v-if="t.report_data_source" class="rounded bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-800 border border-emerald-200">
+                <span v-if="t.report_data_source" class="rounded bg-emerald-50 px-2 py-0.5 text-[11px] font-normal text-emerald-800 border border-emerald-200">
                   {{ t.report_data_source.name }}
                 </span>
                 <span v-else class="text-[11px] italic text-slate-400">Không có Store — nhận dữ liệu từ chức năng in</span>
               </td>
               
               <td class="p-2.5 border-r border-slate-100 text-center">
-                <span class="text-[11px] font-normal leading-relaxed text-slate-500">Chọn tại<br><b class="font-semibold text-slate-800">Mẫu in / Báo cáo</b></span>
+                <span class="text-[11px] font-normal leading-relaxed text-[#000000D9]">Chọn tại<br><b class="font-semibold text-slate-800">Mẫu in / Báo cáo</b></span>
               </td>
 
               <!-- Action buttons: Edit, Duplicate, Delete -->

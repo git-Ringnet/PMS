@@ -1460,6 +1460,84 @@ class BookingBusinessRulesTest extends TestCase
     }
 
     /**
+     * Day Use uses a half-open time range: a later, non-overlapping period
+     * may reuse both the physical room and its room-class capacity.
+     */
+    public function test_non_overlapping_dayuse_times_can_reuse_room_and_availability(): void
+    {
+        $booking = $this->createBooking([
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-07',
+            'registration_status_id' => $this->regStatus->booking_status_id,
+        ]);
+        BookingRoom::create([
+            'id' => 'G0000099',
+            'booking_id' => $booking->id,
+            'room_number' => '101',
+            'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-07',
+            'arrival_time' => '08:00:00',
+            'departure_time' => '12:00:00',
+            'is_day_use' => true,
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $service = app(\App\Services\RoomAvailabilityService::class);
+        $this->assertSame(0, $service->getBookedCount(
+            $this->roomClass->id,
+            '2026-08-07',
+            '2026-08-07',
+            null,
+            '13:00',
+            '16:00',
+        ));
+        $this->assertNull($service->findRoomNumberConflict(
+            '101',
+            '2026-08-07',
+            '2026-08-07',
+            null,
+            null,
+            '13:00',
+            '16:00',
+        ));
+        $vacantAtLaterTime = $this->getJson('/api/rooms/vacant?' . http_build_query([
+            'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-07',
+            'arrival_time' => '13:00',
+            'departure_time' => '16:00',
+        ]))->assertSuccessful()->json('data');
+        $this->assertContains('101', collect($vacantAtLaterTime)->pluck('room_number')->all());
+
+        $this->assertSame(1, $service->getBookedCount(
+            $this->roomClass->id,
+            '2026-08-07',
+            '2026-08-07',
+            null,
+            '11:00',
+            '13:00',
+        ));
+        $this->assertNotNull($service->findRoomNumberConflict(
+            '101',
+            '2026-08-07',
+            '2026-08-07',
+            null,
+            null,
+            '11:00',
+            '13:00',
+        ));
+        $vacantAtOverlappingTime = $this->getJson('/api/rooms/vacant?' . http_build_query([
+            'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-07',
+            'arrival_time' => '11:00',
+            'departure_time' => '13:00',
+        ]))->assertSuccessful()->json('data');
+        $this->assertNotContains('101', collect($vacantAtOverlappingTime)->pluck('room_number')->all());
+    }
+
+    /**
      * TC-15: Adjacent stays in the same booking (in Day 1 out Day 2, and in Day 2 out Day 3) can be assigned the same physical room.
      */
     public function test_adjacent_non_overlapping_room_stays_in_same_booking_can_be_assigned_same_room(): void

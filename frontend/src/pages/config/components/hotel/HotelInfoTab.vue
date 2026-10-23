@@ -47,18 +47,25 @@ const hotelForm = reactive({
   qr_code_url: ''
 })
 
+const localPreviewLogoUrl = ref('')
+
 const getImageUrl = (path) => {
   if (!path) return ''
-  if (path.startsWith('http://') || path.startsWith('https://')) {
+  if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('blob:') || path.startsWith('data:')) {
     return path
   }
   const cleanPath = path.startsWith('/') ? path.slice(1) : path
-  const isDev = import.meta.env.DEV
-  const backendUrl = import.meta.env.VITE_PROXY_TARGET || 'http://localhost:8000'
-  return isDev ? `${backendUrl}/${cleanPath}` : `/${cleanPath}`
+  return `/${cleanPath}`
 }
 
 const logoInput = ref(null)
+
+const triggerLogoUpload = () => {
+  if (logoInput.value) {
+    logoInput.value.value = ''
+    logoInput.value.click()
+  }
+}
 
 const LOGO_MAX_BYTES = 10 * 1024 * 1024
 const LOGO_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/svg+xml', 'image/webp']
@@ -91,6 +98,9 @@ const onLogoSelected = async (event) => {
     return
   }
 
+  // Instant preview
+  localPreviewLogoUrl.value = URL.createObjectURL(file)
+
   const formData = new FormData()
   formData.append('logo', file)
 
@@ -100,9 +110,11 @@ const onLogoSelected = async (event) => {
     const logoUrl = res.data?.data?.logo_url ?? res.data?.logo_url
     if (logoUrl !== undefined) {
       hotelForm.logo_url = logoUrl
+      localPreviewLogoUrl.value = ''
       uiStore.showToast('Tải lên logo thành công!', 'success')
     }
   } catch (err) {
+    localPreviewLogoUrl.value = ''
     console.error('Lỗi khi tải lên logo:', err)
     uiStore.showToast(logoUploadError(err), 'error')
   } finally {
@@ -123,6 +135,7 @@ const removeLogo = async () => {
   loading.value = true
   try {
     const res = await http.delete('/hotel-settings/logo')
+    localPreviewLogoUrl.value = ''
     if (res.data && res.data.data) {
       hotelForm.logo_url = res.data.data.logo_url
       uiStore.showToast('Xóa logo thành công!', 'success')
@@ -442,28 +455,28 @@ onMounted(() => {
           </div>
           <div class="p-2.5 flex flex-col items-center justify-center gap-2">
             <!-- Logo Image -->
-            <div v-if="hotelForm.logo_url"
-              class="w-16 h-16 rounded-full overflow-hidden shadow-inner border border-slate-200">
-              <img :src="getImageUrl(hotelForm.logo_url)" alt="Logo" class="w-full h-full object-cover" />
+            <div v-if="localPreviewLogoUrl || hotelForm.logo_url"
+              class="w-18 h-18 rounded-full overflow-hidden shadow-inner border border-slate-200">
+              <img :src="localPreviewLogoUrl || getImageUrl(hotelForm.logo_url)" alt="Logo" class="w-full h-full object-cover" />
             </div>
             <div v-else
-              class="w-16 h-16 rounded-full bg-sky-50 flex items-center justify-center text-sky-500 shadow-inner">
-              <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              class="w-18 h-18 rounded-full bg-sky-50 flex items-center justify-center text-sky-500 shadow-inner">
+              <svg class="w-9 h-9" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
                   d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
               </svg>
             </div>
             <!-- Action buttons -->
             <div class="flex items-center gap-2 text-slate-400">
-              <label
-                class="px-2 py-1 text-xs font-semibold text-slate-700 hover:text-sky-600 bg-slate-100 hover:bg-slate-200 rounded-md border border-slate-200 cursor-pointer flex items-center gap-1.5 transition-colors">
-                <input type="file" ref="logoInput" @change="onLogoSelected" class="hidden" accept="image/*" />
+              <input type="file" id="hotel-logo-file-input" ref="logoInput" @change="onLogoSelected" class="hidden" accept="image/*" />
+              <button type="button" @click="triggerLogoUpload"
+                class="px-2.5 py-1 text-xs font-semibold text-slate-700 hover:text-sky-600 bg-slate-100 hover:bg-slate-200 rounded-md border border-slate-200 cursor-pointer flex items-center gap-1.5 transition-colors">
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round"
                     d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
                 </svg>
                 <span>Tải Ảnh</span>
-              </label>
+              </button>
               <a v-if="hotelForm.logo_url" :href="getImageUrl(hotelForm.logo_url)" target="_blank"
                 class="p-1 text-slate-500 hover:text-slate-800 bg-slate-100 rounded-md border border-slate-200 cursor-pointer flex items-center justify-center transition-colors"
                 title="Xem Ảnh Gốc">
@@ -473,7 +486,7 @@ onMounted(() => {
                     d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                 </svg>
               </a>
-              <button v-if="hotelForm.logo_url" @click="removeLogo"
+              <button v-if="hotelForm.logo_url" type="button" @click="removeLogo"
                 class="p-1 text-rose-500 hover:text-rose-700 bg-rose-50 rounded-md border border-rose-200 cursor-pointer flex items-center justify-center transition-colors"
                 title="Xóa Logo">
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
@@ -489,8 +502,8 @@ onMounted(() => {
         <div class="flex flex-col items-center p-1 mt-1 gap-1">
           <span class="text-xs font-semibold text-[#000000D9]">Mã QR Cấu Hình</span>
           <div
-            class="w-32 h-32 rounded-xl overflow-hidden border border-slate-200 bg-white p-1.5 shadow-2xs flex items-center justify-center">
-            <qrcode-vue :value="qrCodeValue" :size="112" level="M" />
+            class="w-40 h-40 rounded-xl overflow-hidden border border-slate-200 bg-white p-2 shadow-2xs flex items-center justify-center">
+            <qrcode-vue :value="qrCodeValue" :size="136" level="M" />
           </div>
         </div>
       </div>

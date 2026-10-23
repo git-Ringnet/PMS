@@ -15,6 +15,7 @@ export function parseRoomPlanTimeToMinutes(value) {
 
 export function resolveRoomPlanDayUseLayout({
   isDayUse = false,
+  showNights = false,
   arrivalTime,
   departureTime,
 } = {}) {
@@ -24,14 +25,16 @@ export function resolveRoomPlanDayUseLayout({
   const departureMinutes = parseRoomPlanTimeToMinutes(departureTime)
   if (arrivalMinutes === null || departureMinutes === null || departureMinutes <= arrivalMinutes) {
     return {
-      leftRatio: 0.5,
+      leftRatio: showNights ? 0 : 0.5,
       widthRatio: 0.5,
       isFallback: true,
     }
   }
 
   return {
-    leftRatio: arrivalMinutes / 1440,
+    // Xem đêm dịch booking về nửa đầu của ô ngày, cùng quy tắc với booking
+    // thường. Day Use vẫn giữ chiều rộng theo khoảng giờ thực tế.
+    leftRatio: showNights ? Math.max(0, (arrivalMinutes / 1440) - 0.5) : arrivalMinutes / 1440,
     widthRatio: (departureMinutes - arrivalMinutes) / 1440,
     isFallback: false,
   }

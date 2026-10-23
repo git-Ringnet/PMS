@@ -59,15 +59,17 @@ onMounted(() => {
     </div>
 
     <!-- Admin Wallpaper Button (chỉ hiển thị với SuperAdmin hoặc có quyền system.setting) -->
-    <div v-if="canChangeWallpaper" class="absolute top-4 right-4 z-20">
+    <div v-if="canChangeWallpaper" class="absolute bottom-4 right-4 z-20">
       <button
         type="button"
         @click="isWallpaperModalOpen = true"
-        class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-black/40 hover:bg-black/60 text-white text-xs border border-white/20 backdrop-blur-md transition-all shadow-md cursor-pointer hover:scale-105 active:scale-95 select-none"
+        class="w-10 h-10 rounded-full bg-gradient-to-br from-primary-500 to-primary-700 text-white flex items-center justify-center shadow-lg hover:shadow-xl hover:scale-110 transition-all duration-300 cursor-pointer border-none"
         title="Đổi hình nền Desktop / Portal"
       >
-        <i class="fa-solid fa-image text-xs"></i>
-        <span>Đổi hình nền</span>
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+        </svg>
       </button>
     </div>
 
