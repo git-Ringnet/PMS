@@ -889,7 +889,8 @@ watch(() => props.room, (newRoom) => {
       arrival_time: formatTime24h(newRoom.arrival_time ?? newRoom.check_in_time) || '14:00',
       departure_date: formatDateForInput(newRoom.departure_date) || '',
       departure_time: formatTime24h(newRoom.departure_time ?? newRoom.check_out_time) || '12:00',
-      nights: isHourlyRoom ? 0 : (newRoom.nights || newRoom.ActutalNumOfDays || 1),
+      // Dòng 183: phòng chuyển cùng ngày có 0 đêm, không được đổi 0 thành 1
+      nights: isHourlyRoom ? 0 : firstNightCount(newRoom.nights, newRoom.ActutalNumOfDays, 1),
       occupants_str: `${adults.value.length} / ${children.value.length} / ${babies.value.length}`,
       // Dòng 214: API trả breakfast dạng 0/1; chỉ khi chưa có dữ liệu mới mặc định có ăn sáng
       breakfast: newRoom.breakfast === undefined || newRoom.breakfast === null || newRoom.breakfast === ''
@@ -1547,6 +1548,11 @@ function clearPricingField(field) {
     return
   }
   pricingInfo.value[field] = ''
+}
+
+function firstNightCount(...values) {
+  const found = values.find(v => v !== null && v !== undefined && v !== '' && Number.isFinite(Number(v)))
+  return found === undefined ? 1 : Math.max(0, Number(found))
 }
 
 function formatDateForInput(d) {
