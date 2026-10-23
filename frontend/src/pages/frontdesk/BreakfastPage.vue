@@ -6,7 +6,6 @@ import { fetchBusinessInfo } from '@/services/company-service'
 import { fetchSystemDate } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
 import BreakfastPrintModal from './components/BreakfastPrintModal.vue'
-import BreakfastCouponPreview from './components/BreakfastCouponPreview.vue'
 
 const uiStore = useUiStore()
 const route = useRoute()
@@ -40,7 +39,6 @@ const isAllExpanded = ref(true)
 
 // Modals
 const isPrintModalOpen = ref(false)
-const isPreviewOpen = ref(false)
 const couponsToPrint = ref([])
 
 // Column search popover state
@@ -452,19 +450,6 @@ function printCouponsDirectly(coupons) {
   const hLogo = (cfg.showLogo && hotelSettings.value.logo_url) ? hotelSettings.value.logo_url : ''
   const footerLines = cfg.showFooterNote && cfg.footerNote ? cfg.footerNote.split('\n').filter(l => l.trim()) : []
 
-  let iframe = document.getElementById('breakfast-direct-print-frame')
-  if (!iframe) {
-    iframe = document.createElement('iframe')
-    iframe.id = 'breakfast-direct-print-frame'
-    iframe.style.position = 'fixed'
-    iframe.style.right = '0'
-    iframe.style.bottom = '0'
-    iframe.style.width = '0'
-    iframe.style.height = '0'
-    iframe.style.border = '0'
-    document.body.appendChild(iframe)
-  }
-
   const couponCardsHtml = coupons.map(c => `
     <div class="coupon-card" style="min-height:${cfg.minHeight}px; border:${cfg.borderWidth}px ${cfg.borderStyle} #000; padding:10px; display:flex; flex-direction:column; justify-content:space-between; background:#fff; page-break-inside:avoid; break-inside:avoid; box-sizing:border-box;">
       <div style="display:flex; align-items:center; justify-content:space-between; border-bottom:2px solid #000; padding-bottom:6px; gap:8px;">
@@ -519,15 +504,42 @@ function printCouponsDirectly(coupons) {
     </html>
   `
 
-  const doc = iframe.contentWindow.document
-  doc.open()
-  doc.write(printHtml)
-  doc.close()
-
-  setTimeout(() => {
-    iframe.contentWindow.focus()
-    iframe.contentWindow.print()
-  }, 350)
+  const printWindow = window.open('', '_blank', 'width=1000,height=800')
+  if (printWindow) {
+    printWindow.document.open()
+    printWindow.document.write(printHtml)
+    printWindow.document.close()
+    printWindow.focus()
+    setTimeout(() => {
+      try {
+        printWindow.print()
+      } catch (e) {
+        console.error('Print trigger error:', e)
+      }
+    }, 400)
+  } else {
+    // Fallback nếu trình duyệt chặn popup
+    let iframe = document.getElementById('breakfast-direct-print-frame')
+    if (!iframe) {
+      iframe = document.createElement('iframe')
+      iframe.id = 'breakfast-direct-print-frame'
+      iframe.style.position = 'fixed'
+      iframe.style.right = '0'
+      iframe.style.bottom = '0'
+      iframe.style.width = '0'
+      iframe.style.height = '0'
+      iframe.style.border = '0'
+      document.body.appendChild(iframe)
+    }
+    const doc = iframe.contentWindow.document
+    doc.open()
+    doc.write(printHtml)
+    doc.close()
+    setTimeout(() => {
+      iframe.contentWindow.focus()
+      iframe.contentWindow.print()
+    }, 350)
+  }
 }
 </script>
 
@@ -656,7 +668,7 @@ function printCouponsDirectly(coupons) {
             </th>
 
             <!-- Mã Đăng Ký -->
-            <th class="p-2 text-center align-middle font-semibold text-slate-800 border border-slate-200 min-w-[130px] relative">
+            <th class="p-2 text-center align-middle font-semibold text-[#000000D9] border border-slate-200 min-w-[130px] relative">
               <div class="flex items-center justify-center gap-1.5">
                 <span>Mã Đăng Ký</span>
                 <button 
@@ -674,7 +686,7 @@ function printCouponsDirectly(coupons) {
                   <input 
                     v-model="searchFilters.bookingCode" 
                     placeholder="Tìm mã đăng ký..." 
-                    class="w-full text-xs px-2 py-1 border border-slate-200 rounded focus:border-sky-500 outline-none font-normal"
+                    class="w-full text-xs px-2 py-1 border border-slate-200 rounded focus:border-sky-500 outline-none font-normal text-[#000000D9] placeholder:text-[#A8B0BF]"
                     autofocus
                   />
                   <button v-if="searchFilters.bookingCode" @click="searchFilters.bookingCode = ''" class="text-slate-400 hover:text-slate-600 px-1 text-xs">✕</button>
@@ -683,7 +695,7 @@ function printCouponsDirectly(coupons) {
             </th>
 
             <!-- Tên Đăng Ký -->
-            <th class="p-2 text-center align-middle font-semibold text-slate-800 border border-slate-200 min-w-[150px] relative">
+            <th class="p-2 text-center align-middle font-semibold text-[#000000D9] border border-slate-200 min-w-[150px] relative">
               <div class="flex items-center justify-center gap-1.5">
                 <span>Tên Đăng Ký</span>
                 <button 
@@ -701,7 +713,7 @@ function printCouponsDirectly(coupons) {
                   <input 
                     v-model="searchFilters.bookingName" 
                     placeholder="Tìm tên đăng ký..." 
-                    class="w-full text-xs px-2 py-1 border border-slate-200 rounded focus:border-sky-500 outline-none font-normal"
+                    class="w-full text-xs px-2 py-1 border border-slate-200 rounded focus:border-sky-500 outline-none font-normal text-[#000000D9] placeholder:text-[#A8B0BF]"
                     autofocus
                   />
                   <button v-if="searchFilters.bookingName" @click="searchFilters.bookingName = ''" class="text-slate-400 hover:text-slate-600 px-1 text-xs">✕</button>
@@ -710,7 +722,7 @@ function printCouponsDirectly(coupons) {
             </th>
 
             <!-- Số Phòng -->
-            <th class="p-2 text-center align-middle font-semibold text-slate-800 border border-slate-200 min-w-[90px] relative">
+            <th class="p-2 text-center align-middle font-semibold text-[#000000D9] border border-slate-200 min-w-[90px] relative">
               <div class="flex items-center justify-center gap-1.5">
                 <span>Số Phòng</span>
                 <button 
@@ -728,7 +740,7 @@ function printCouponsDirectly(coupons) {
                   <input 
                     v-model="searchFilters.roomNumber" 
                     placeholder="Tìm số phòng..." 
-                    class="w-full text-xs px-2 py-1 border border-slate-200 rounded focus:border-sky-500 outline-none font-normal"
+                    class="w-full text-xs px-2 py-1 border border-slate-200 rounded focus:border-sky-500 outline-none font-normal text-[#000000D9] placeholder:text-[#A8B0BF]"
                     autofocus
                   />
                   <button v-if="searchFilters.roomNumber" @click="searchFilters.roomNumber = ''" class="text-slate-400 hover:text-slate-600 px-1 text-xs">✕</button>
@@ -737,7 +749,7 @@ function printCouponsDirectly(coupons) {
             </th>
 
             <!-- Ngày Đến -->
-            <th class="p-2 text-center align-middle font-semibold text-slate-800 border border-slate-200 min-w-[100px] relative">
+            <th class="p-2 text-center align-middle font-semibold text-[#000000D9] border border-slate-200 min-w-[100px] relative">
               <div class="flex items-center justify-center gap-1.5">
                 <span>Ngày Đến</span>
                 <button 
@@ -755,7 +767,7 @@ function printCouponsDirectly(coupons) {
                   <input 
                     v-model="searchFilters.arrivalDate" 
                     placeholder="Tìm ngày đến..." 
-                    class="w-full text-xs px-2 py-1 border border-slate-200 rounded focus:border-sky-500 outline-none font-normal"
+                    class="w-full text-xs px-2 py-1 border border-slate-200 rounded focus:border-sky-500 outline-none font-normal text-[#000000D9] placeholder:text-[#A8B0BF]"
                     autofocus
                   />
                   <button v-if="searchFilters.arrivalDate" @click="searchFilters.arrivalDate = ''" class="text-slate-400 hover:text-slate-600 px-1 text-xs">✕</button>
@@ -764,7 +776,7 @@ function printCouponsDirectly(coupons) {
             </th>
 
             <!-- Ngày Đi -->
-            <th class="p-2 text-center align-middle font-semibold text-slate-800 border border-slate-200 min-w-[100px] relative">
+            <th class="p-2 text-center align-middle font-semibold text-[#000000D9] border border-slate-200 min-w-[100px] relative">
               <div class="flex items-center justify-center gap-1.5">
                 <span>Ngày Đi</span>
                 <button 
@@ -782,7 +794,7 @@ function printCouponsDirectly(coupons) {
                   <input 
                     v-model="searchFilters.departureDate" 
                     placeholder="Tìm ngày đi..." 
-                    class="w-full text-xs px-2 py-1 border border-slate-200 rounded focus:border-sky-500 outline-none font-normal"
+                    class="w-full text-xs px-2 py-1 border border-slate-200 rounded focus:border-sky-500 outline-none font-normal text-[#000000D9] placeholder:text-[#A8B0BF]"
                     autofocus
                   />
                   <button v-if="searchFilters.departureDate" @click="searchFilters.departureDate = ''" class="text-slate-400 hover:text-slate-600 px-1 text-xs">✕</button>
@@ -791,7 +803,7 @@ function printCouponsDirectly(coupons) {
             </th>
 
             <!-- Tên Khách -->
-            <th class="p-2 text-center align-middle font-semibold text-slate-800 border border-slate-200 min-w-[150px] relative">
+            <th class="p-2 text-center align-middle font-semibold text-[#000000D9] border border-slate-200 min-w-[150px] relative">
               <div class="flex items-center justify-center gap-1.5">
                 <span>Tên Khách</span>
                 <button 
@@ -809,7 +821,7 @@ function printCouponsDirectly(coupons) {
                   <input 
                     v-model="searchFilters.guestName" 
                     placeholder="Tìm tên khách..." 
-                    class="w-full text-xs px-2 py-1 border border-slate-200 rounded focus:border-sky-500 outline-none font-normal"
+                    class="w-full text-xs px-2 py-1 border border-slate-200 rounded focus:border-sky-500 outline-none font-normal text-[#000000D9] placeholder:text-[#A8B0BF]"
                     autofocus
                   />
                   <button v-if="searchFilters.guestName" @click="searchFilters.guestName = ''" class="text-slate-400 hover:text-slate-600 px-1 text-xs">✕</button>
@@ -818,12 +830,12 @@ function printCouponsDirectly(coupons) {
             </th>
 
             <!-- Người Lớn -->
-            <th class="p-2 min-w-[85px] text-center align-middle font-semibold text-slate-800 border border-slate-200">
+            <th class="p-2 min-w-[85px] text-center align-middle font-semibold text-[#000000D9] border border-slate-200">
               Người Lớn
             </th>
 
             <!-- Trẻ Em Ăn Sáng -->
-            <th class="p-2 min-w-[110px] text-center align-middle font-semibold text-slate-800 border border-slate-200">
+            <th class="p-2 min-w-[110px] text-center align-middle font-semibold text-[#000000D9] border border-slate-200">
               Trẻ Em Ăn Sáng
             </th>
           </tr>
@@ -890,7 +902,7 @@ function printCouponsDirectly(coupons) {
                 <template v-for="(bkGroup, bkKey) in dGroup.bookings" :key="bkKey">
                   <!-- Booking Header Row -->
                   <tr class="bg-white border-b border-slate-200/60 hover:bg-slate-50/80 font-bold text-slate-800 transition-colors">
-                    <td class="p-1.5 pl-6" colspan="10">
+                    <td class="p-1.5 pl-6" colspan="9">
                       <div class="flex items-center gap-2">
                         <!-- Collapse / Expand Button for Booking -->
                         <button
@@ -911,7 +923,7 @@ function printCouponsDirectly(coupons) {
 
                         <!-- Booking Key Label -->
                         <span 
-                          class="font-bold text-slate-800 cursor-pointer text-xs uppercase"
+                          class="font-semibold text-[#000000D9] cursor-pointer text-xs uppercase"
                           @click="toggleGroupCollapse('bk_' + dKey + '_' + bkKey)"
                         >
                           {{ bkGroup.key }}
@@ -941,42 +953,42 @@ function printCouponsDirectly(coupons) {
                       </td>
 
                       <!-- Mã đăng ký -->
-                      <td class="px-2.5 py-1.5 font-medium text-slate-800">
+                      <td class="px-2.5 py-1.5 font-normal text-[#000000D9]">
                         {{ room.booking_code }}
                       </td>
 
                       <!-- Tên đăng ký -->
-                      <td class="px-2.5 py-1.5 text-slate-700">
+                      <td class="px-2.5 py-1.5 font-normal text-[#000000D9]">
                         {{ room.booking_name }}
                       </td>
 
                       <!-- Phòng -->
-                      <td class="px-2.5 py-1.5 font-black text-slate-900">
+                      <td class="px-2.5 py-1.5 font-normal text-[#000000D9]">
                         {{ room.room_number }}
                       </td>
 
                       <!-- Ngày đến -->
-                      <td class="px-2.5 py-1.5 text-slate-600">
+                      <td class="px-2.5 py-1.5 font-normal text-[#000000D9]">
                         {{ formatDateDisplay(room.arrival_date) }}
                       </td>
 
                       <!-- Ngày Đi -->
-                      <td class="px-2.5 py-1.5 text-slate-600">
+                      <td class="px-2.5 py-1.5 font-normal text-[#000000D9]">
                         {{ formatDateDisplay(room.departure_date) }}
                       </td>
 
                       <!-- Tên Khách -->
-                      <td class="px-2.5 py-1.5 text-slate-700">
+                      <td class="px-2.5 py-1.5 font-normal text-[#000000D9]">
                         {{ room.guest_name }}
                       </td>
 
                       <!-- Người Lớn -->
-                      <td class="px-2.5 py-1.5 text-center font-bold text-slate-800">
+                      <td class="px-2.5 py-1.5 text-center font-normal text-[#000000D9]">
                         {{ room.adults }}
                       </td>
 
                       <!-- Trẻ Em Ăn Sáng -->
-                      <td class="px-2.5 py-1.5 text-center font-bold text-slate-800">
+                      <td class="px-2.5 py-1.5 text-center font-normal text-[#000000D9]">
                         {{ room.children_breakfast }}
                       </td>
                     </tr>
@@ -1025,14 +1037,6 @@ function printCouponsDirectly(coupons) {
       :default-to-date="toDate"
       @close="isPrintModalOpen = false"
       @confirm="handleConfirmPrint"
-    />
-
-    <!-- Breakfast Coupon Preview / Print Dialog -->
-    <BreakfastCouponPreview
-      :is-open="isPreviewOpen"
-      :coupons="couponsToPrint"
-      :hotel-settings="hotelSettings"
-      @close="isPreviewOpen = false"
     />
   </div>
 </template>
