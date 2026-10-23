@@ -367,16 +367,14 @@ function processRealBookings(bookings) {
         const { isCheckedIn, isCheckedOut, isCancelled, isMoved, isBooked } = checkRoomStatus(r, b)
         if (isCancelled || isCheckedOut || isMoved) return
 
-        // Bỏ qua các booking / phòng chưa gán phòng vật lý (chưa lấy phòng)
-        if (!hasAssignedRoom(r)) return
-
         const arrDate = getEffectiveArrivalDate(r, b)
         const depDate = getEffectiveDepartureDate(r, b)
 
-        // Phòng đến: Khách đến vào ngày hệ thống nhưng chưa check-in (tình trạng đặt phòng, không lấy status = 100, và PHẢI ĐÃ GÁN PHÒNG)
+        // Phòng đến: Khách đến vào ngày hệ thống nhưng chưa check-in (tình trạng đặt phòng, không lấy status = 100).
+        // Dòng 259: tính cả phòng chưa gán số phòng
         if (arrDate === sysDateStr && isBooked && !isCheckedIn && !isMoved && Number(r?.status) !== 100) arrCount++
-        // Phòng đi: Khách đang ở và đi vào ngày hệ thống
-        if (depDate === sysDateStr && isCheckedIn && !isMoved && Number(r?.status) !== 100) depCount++
+        // Phòng đi: Khách đang ở (đã gán phòng) và đi vào ngày hệ thống
+        if (hasAssignedRoom(r) && depDate === sysDateStr && isCheckedIn && !isMoved && Number(r?.status) !== 100) depCount++
       })
     }
   })
@@ -407,8 +405,9 @@ function processRealBookings(bookings) {
       const { isCheckedIn, isCheckedOut, isCancelled, isMoved, isBooked } = checkRoomStatus(r, b)
       if (isCancelled || isCheckedOut || isMoved) return
 
-      // Bỏ qua các booking / phòng chưa gán phòng vật lý (chưa lấy phòng)
-      if (!hasAssignedRoom(r)) return
+      // Bỏ qua phòng chưa gán phòng vật lý, riêng tab Phòng đến vẫn lấy (dòng 259)
+      const isAssigned = hasAssignedRoom(r)
+      if (!isAssigned && activeFilterTab.value !== 'arrivals') return
 
       const arrDate = getEffectiveArrivalDate(r, b)
       const depDate = getEffectiveDepartureDate(r, b)
@@ -446,17 +445,18 @@ function processRealBookings(bookings) {
         id: `real-row-${b.id}-${r.id || rIdx}`,
         bookingCode: b.code || b.booking_code || `GAL${b.id}`,
         vat: b.has_vat ?? true,
-        roomNumber: r.room?.room_number || r.room?.code || r.room_number,
+        roomNumber: isAssigned ? (r.room?.room_number || r.room?.code || r.room_number) : 'Chưa gán',
         roomType: r.room_class?.name || r.roomClass?.name || 'Standard',
         guestName: guestName,
         arrivalDate: formatDateVN(arrDate),
         nights: r.num_of_days || b.num_of_days || calculateNights(arrDate, depDate),
         departureDate: formatDateVN(depDate),
-        breakfast: b.breakfast_included ?? true,
-        adults: r.adults_count || b.adults_count || 1,
-        children: r.children_count || b.children_count || 0,
+        breakfast: Boolean(r.breakfast ?? b.breakfast_included),
+        adults: r.adults ?? r.adults_count ?? 1,
+        children: r.children_qty ?? r.children_count ?? 0,
         rateCode: b.rate_code || '',
-        price: r.price || r.room_rate || b.total_amount || 500000,
+        // Giá phòng thật lưu ở booking_rooms.rate (trước đây đọc nhầm trường không tồn tại nên luôn hiện 500.000).
+        price: Number(r.rate ?? r.price ?? r.room_rate ?? 0),
         extraBed: r.extra_bed_count || 0,
         extraBedPrice: r.extra_bed_price || 0,
         selected: false
@@ -611,27 +611,48 @@ async function handlePostRoomCharge() {
     const sysDateStr = getNormalizedDate(systemDate.value)
     
     const postedList = []
+    const skippedList = []
+    const failedList = []
     for (const item of selected) {
       const parts = item.id.split('-')
       const bookingRoomId = parts[parts.length - 1]
       
+      // Dùng API post tiền phòng chung (chế độ tự động): giá theo phòng, tự bỏ qua phòng đã có tiền phòng ngày này.
       const payload = {
         booking_room_id: bookingRoomId,
-        date: sysDateStr,
-        amount: item.price || 0,
+        date_from: sysDateStr,
+        date_to: sysDateStr,
+        mode: 'auto',
+        folio: 1,
         description: `Tiền phòng ngày ${formatDateVN(sysDateStr)} (Post thủ công)`
       }
-      
-      const res = await http.post('/night-audit/post-room-charge', payload)
-      if (res.data && res.data.success) {
-        postedList.push(item.roomNumber)
+
+      // Xử lý từng phòng: phòng không hợp lệ (vd. đi trong ngày, không còn đêm tính tiền) không chặn các phòng khác.
+      try {
+        const res = await http.post('/booking-room-services/post-room-charge', payload)
+        // API trả success cả khi bỏ qua phòng đã có tiền phòng ngày này: tách riêng để báo đúng.
+        if ((res.data?.posted_rooms || []).length > 0) {
+          postedList.push(item.roomNumber)
+        } else if ((res.data?.skipped_rooms || []).length > 0) {
+          skippedList.push(item.roomNumber)
+        } else if ((res.data?.skipped_no_post_rooms || []).length > 0) {
+          failedList.push(`${item.roomNumber}: đang bật No Post`)
+        }
+      } catch (roomError) {
+        failedList.push(`${item.roomNumber}: ${roomError.response?.data?.message || 'không post được'}`)
       }
     }
 
     if (postedList.length > 0) {
       uiStore.showToast(`Đã post tiền phòng thành công cho ${postedList.length} phòng: ${postedList.join(', ')}`, 'success')
       await fetchRealData()
-    } else {
+    }
+    if (skippedList.length > 0) {
+      uiStore.showToast(`Bỏ qua ${skippedList.length} phòng đã có tiền phòng ngày này: ${skippedList.join(', ')}`, 'info')
+    }
+    if (failedList.length > 0) {
+      uiStore.showToast(`Không post được ${failedList.length} phòng: ${failedList.join('; ')}`, 'warning')
+    } else if (postedList.length === 0 && skippedList.length === 0) {
       uiStore.showToast('Không có phòng nào được post tiền phòng thành công.', 'warning')
     }
   } catch (err) {

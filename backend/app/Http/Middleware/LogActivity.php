@@ -3,8 +3,10 @@
 namespace App\Http\Middleware;
 
 use App\Models\ActivityLog;
+use App\Support\ActivityLogFormatter as Fmt;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\Response;
 
 class LogActivity
@@ -120,108 +122,6 @@ class LogActivity
         'PUT' => 'update',
         'PATCH' => 'update',
         'DELETE' => 'delete',
-    ];
-
-    /**
-     * Field name to Vietnamese label map for detail comparison diff.
-     */
-    protected array $fieldLabels = [
-        'status' => 'Trạng thái',
-        'registration_status_id' => 'Trạng thái ĐK',
-        'arrival_date' => 'Ngày đến',
-        'departure_date' => 'Ngày đi',
-        'num_of_days' => 'Số đêm',
-        'booking_name' => 'Tên khách/đoàn',
-        'contact_name' => 'Người liên hệ',
-        'contact_phone' => 'SĐT liên hệ',
-        'contact_email' => 'Email',
-        'total_amount' => 'Tổng tiền',
-        'deposit_amount' => 'Tiền cọc',
-        'payment_value' => 'Giá trị thanh toán',
-        'note' => 'Ghi chú',
-        'special_requests' => 'Yêu cầu đặc biệt',
-        'company_id' => 'Công ty',
-        'market_id' => 'Thị trường',
-        'customer_source_id' => 'Nguồn khách',
-        'breakfast_included' => 'Ăn sáng',
-        'breakfast' => 'Ăn sáng',
-        'is_day_use' => 'Trong ngày',
-        'color' => 'Màu hiển thị',
-        'room_number' => 'Số phòng',
-        'price' => 'Đơn giá',
-        'rate' => 'Đơn giá',
-        'base_price' => 'Giá gốc',
-        'extra_bed_qty' => 'Số lượng giường phụ',
-        'extra_bed_rate' => 'Giá giường phụ',
-        'room_class_id' => 'Hạng phòng',
-        'config_key' => 'Tên cấu hình',
-        'config_value' => 'Giá trị',
-        'is_visible' => 'Hiển thị',
-        'description' => 'Mô tả',
-        'amount' => 'Số tiền',
-        'payment_method_id' => 'Phương thức TT',
-        'name' => 'Tên',
-        'phone' => 'SĐT',
-        'email' => 'Email',
-        'code' => 'Mã',
-        // Bổ sung đầy đủ cho các phân hệ:
-        'quantity' => 'Số lượng',
-        'unit_price' => 'Đơn giá',
-        'subtotal' => 'Thành tiền',
-        'discount' => 'Giảm giá',
-        'discount_type' => 'Loại giảm giá',
-        'discount_value' => 'Mức giảm giá',
-        'tax_code' => 'Mã số thuế',
-        'address' => 'Địa chỉ',
-        'gender' => 'Giới tính',
-        'birthday' => 'Ngày sinh',
-        'nationality' => 'Quốc tịch',
-        'passport_no' => 'Số hộ chiếu',
-        'id_card' => 'Số CCCD',
-        'id_number' => 'Số giấy tờ',
-        'document_number' => 'Số giấy tờ',
-        'document_type' => 'Loại giấy tờ',
-        'service_name' => 'Tên dịch vụ',
-        'service_code' => 'Mã dịch vụ',
-        'folio_id' => 'Mã Folio',
-        'folio_no' => 'Số Folio',
-        'table_number' => 'Số bàn',
-        'capacity' => 'Sức chứa',
-        'location_id' => 'Khu vực',
-        'warehouse_id' => 'Kho',
-        'warehouse_name' => 'Tên kho',
-        'unit_id' => 'Đơn vị tính',
-        'unit' => 'Đơn vị tính',
-        'category_id' => 'Danh mục',
-        'item_code' => 'Mã hàng',
-        'stock_quantity' => 'Số lượng tồn',
-        'min_quantity' => 'Tồn tối thiểu',
-        'max_quantity' => 'Tồn tối đa',
-        'party_name' => 'Tên tiệc',
-        'party_date' => 'Ngày tổ chức',
-        'guest_count' => 'Số khách',
-        'promo_code' => 'Mã khuyến mãi',
-        'discount_percent' => 'Phần trăm giảm',
-        'start_date' => 'Ngày bắt đầu',
-        'end_date' => 'Ngày kết thúc',
-        'from_date' => 'Từ ngày',
-        'to_date' => 'Đến ngày',
-        'is_active' => 'Kích hoạt',
-        'role_id' => 'Vai trò',
-        'department_id' => 'Phòng ban',
-        'branch_id' => 'Chi nhánh',
-        'username' => 'Tên đăng nhập',
-        'full_name' => 'Họ và tên',
-        'employee_code' => 'Mã nhân viên',
-        'room_form_id' => 'Hình thức phòng',
-        'room_class_group_id' => 'Nhóm hạng phòng',
-        'standard_rate' => 'Giá tiêu chuẩn',
-        'max_adults' => 'Người lớn tối đa',
-        'max_children' => 'Trẻ em tối đa',
-        'lock_type' => 'Loại khóa',
-        'reason' => 'Lý do',
-        'is_do_not_move' => 'Không di chuyển',
-        'no_post' => 'Chặn ghi nợ (No Post)',
     ];
 
     /**
@@ -483,331 +383,206 @@ class LogActivity
         Response $response
     ): string {
         $statusCode = $response->getStatusCode();
+        $actionText = match ($action) {
+            'create' => 'Thêm mới',
+            'update' => 'Cập nhật',
+            'delete' => 'Xóa',
+            default => $action,
+        };
 
         if ($statusCode >= 400) {
-            $actionText = match ($action) {
-                'create' => 'Thêm mới',
-                'update' => 'Cập nhật',
-                'delete' => 'Xóa',
-                default => $action,
-            };
             return "Thao tác {$actionText} trên {$component} thất bại (HTTP {$statusCode})";
         }
 
-        // 1. NGHIỆP VỤ BOOKING
+        $old = $oldValues ?? [];
+        $new = $newValues ?? [];
+        $value = fn (string $key) => $new[$key] ?? $old[$key] ?? null;
+
+        // 1. ĐĂNG KÝ (BOOKING)
         if ($targetType === 'Booking') {
-            $rawId = $targetId ?: ($targetLabel ? preg_replace('/\D/', '', $targetLabel) : ($request->route('booking') ?: ''));
-            $bookingCode = str_starts_with(strtoupper((string)$rawId), 'GAL') ? strtoupper($rawId) : ('GAL' . $rawId);
+            $bookingCode = 'GAL' . ($targetId ?: preg_replace('/\D/', '', (string) $targetLabel));
 
-            if ($action === 'create' || $action === 'Add') {
-                $name = $newValues['booking_name'] ?? $request->input('booking_name') ?? 'Khách lẻ';
-                $arrDate = !empty($newValues['arrival_date']) 
-                    ? \Carbon\Carbon::parse($newValues['arrival_date'])->format('d-m-Y')
-                    : ($request->input('arrival_date') ? \Carbon\Carbon::parse($request->input('arrival_date'))->format('d-m-Y') : '');
-                $depDate = !empty($newValues['departure_date'])
-                    ? \Carbon\Carbon::parse($newValues['departure_date'])->format('d-m-Y')
-                    : ($request->input('departure_date') ? \Carbon\Carbon::parse($request->input('departure_date'))->format('d-m-Y') : '');
-                $git = (!empty($newValues['is_git']) || $request->input('is_git')) ? 'GIT' : 'FIT';
-                $nights = $newValues['num_of_days'] ?? $request->input('num_of_days', 1);
-
-                return "* Thông Tin Đăng Ký {$bookingCode} : -Tên nhóm : {$name} -FIT : {$git} -Ngày đến : {$arrDate} -Ngày đi : {$depDate} -Số ngày : {$nights} -Trạng thái : Guaranteed -Công ty : KHÁCH LẺ -Tour Code :  -Liên hệ :  -Payment : -Booker :  -SalesPerson : admin -Market Segment : Free Individual Traveler -Source Code : Free Individual Traveler -Email :  -Ghi chú đăng ký : ";
+            if ($action === 'create') {
+                return '* Thông Tin Đăng Ký ' . $bookingCode . ' : ' . $this->joinParts([
+                    'Tên nhóm' => $value('booking_name'),
+                    'FIT/GIT' => !empty($value('is_git')) ? 'GIT' : 'FIT',
+                    'Ngày đến' => Fmt::date($value('arrival_date')),
+                    'Ngày đi' => Fmt::date($value('departure_date')),
+                    'Số đêm' => $value('num_of_days'),
+                    'Trạng thái ĐK' => $this->lookup('registration_status_id', $value('registration_status_id')),
+                    'Công ty' => $this->lookup('company_id', $value('company_id')),
+                    'Thị trường' => $this->lookup('market_id', $value('market_id')),
+                    'Nguồn khách' => $this->lookup('customer_source_id', $value('customer_source_id')),
+                    'Người đặt phòng' => $this->lookup('booker_id', $value('booker_id')),
+                    'Liên hệ' => $value('contact_name'),
+                    'SĐT' => $value('contact_phone'),
+                    'Email' => $value('contact_email'),
+                    'Ghi chú' => $value('note'),
+                ]);
             }
-
-            if (($action === 'update' || $action === 'Modify') && !empty($oldValues) && !empty($newValues)) {
-                $fieldMap = [
-                    'booking_name' => 'Tên nhóm',
-                    'status' => 'Trạng thái',
-                    'registration_status_id' => 'Trạng thái ĐK',
-                    'arrival_date' => 'Ngày Đến',
-                    'departure_date' => 'Ngày Đi',
-                    'num_of_days' => 'Số Ngày',
-                    'contact_name' => 'Người liên hệ',
-                    'contact_phone' => 'Liên hệ',
-                    'contact_email' => 'Email',
-                    'total_amount' => 'Tổng tiền',
-                    'deposit_amount' => 'Tiền cọc',
-                    'note' => 'Ghi chú',
-                    'company_id' => 'Công Ty',
-                    'market_id' => 'Market Segment',
-                    'customer_source_id' => 'Source Code',
-                    'is_git' => 'FIT',
-                    'payment_method_id' => 'Payment',
-                ];
-                $diffLines = [];
-                foreach ($newValues as $k => $v) {
-                    if (in_array($k, ['updated_at', 'created_at', 'id', 'deleted_at'])) continue;
-                    $oldV = $oldValues[$k] ?? null;
-                    if ($oldV != $v) {
-                        $label = $fieldMap[$k] ?? ($this->fieldLabels[$k] ?? $k);
-                        if (str_contains($k, 'date') && $oldV && $v) {
-                            try {
-                                $oldV = \Carbon\Carbon::parse($oldV)->format('d-m-Y');
-                                $v = \Carbon\Carbon::parse($v)->format('d-m-Y');
-                            } catch (\Throwable $e) {}
-                        }
-                        $diffLines[] = "- {$label} : {$oldV} -> {$v}";
-                    }
-                }
-                if (!empty($diffLines)) {
-                    return "* Cập Nhật Thông Tin Đăng Ký {$bookingCode} : " . implode(' ', $diffLines);
-                }
-                return "* Cập Nhật Thông Tin Đăng Ký {$bookingCode}";
+            if ($action === 'update') {
+                $lines = Fmt::diffLines($old, $new);
+                return "* Cập Nhật Thông Tin Đăng Ký {$bookingCode}" . ($lines ? " :\n" . implode("\n", $lines) : '');
             }
-
-            if ($action === 'delete' || $action === 'Cancel') {
-                $name = $oldValues['booking_name'] ?? '';
-                $nameStr = $name ? " - {$name}" : "";
-                return "* Huỷ đăng ký mã {$bookingCode}{$nameStr}";
+            if ($action === 'delete') {
+                $name = $old['booking_name'] ?? '';
+                return "* Huỷ đăng ký mã {$bookingCode}" . ($name ? " - {$name}" : '');
             }
         }
 
-        // 2. NGHIỆP VỤ BOOKING ROOM (PHÒNG ĐẶT)
+        // 2. PHÒNG THUÊ (BOOKING ROOM)
         if ($targetType === 'BookingRoom') {
-            $roomId = $targetId ?: ($newValues['id'] ?? $oldValues['id'] ?? 'phòng');
+            $roomRef = $this->bookingRoomRef($targetId, $value('booking_id'), $value('room_number'));
 
-            if ($action === 'create' || $action === 'Add') {
-                $price = (float) ($newValues['price'] ?? $newValues['rate'] ?? 540000);
-                $priceStr = number_format($price > 0 ? $price : 540000, 0, '.', ',');
-                $pNum = $newValues['room_number'] ?? 'Chưa gán';
-                $adults = $newValues['adults'] ?? 2;
-                $child = $newValues['children'] ?? 0;
-                $bf = !empty($newValues['breakfast']) ? 'Có' : 'Không';
-                $extra = $newValues['extra_bed_qty'] ?? 0;
-                $cls = $newValues['room_class_name'] ?? 'Superior Double';
-                $form = preg_match('/(Double|Twin|Triple|Single|King|Queen)/i', ($newValues['room_form'] ?? '') . ' ' . $cls, $m) ? ucfirst(strtolower($m[1])) : 'Double';
-                $arrDate = !empty($newValues['arrival_date']) ? \Carbon\Carbon::parse($newValues['arrival_date'])->format('d-m-Y') : now()->format('d-m-Y');
-                $depDate = !empty($newValues['departure_date']) ? \Carbon\Carbon::parse($newValues['departure_date'])->format('d-m-Y') : now()->addDays(2)->format('d-m-Y');
-
-                return "* Phòng thuê : # Thêm mới : Mã: {$roomId} - Giá: {$priceStr} - Loại: {$cls} - Dạng: {$form} - Phòng: {$pNum} - Ngày đến: {$arrDate} - Ngày đi: {$depDate} - Người lớn: {$adults} - Trẻ em: {$child} - Trẻ em ăn sáng miễn phí: 0 - Ăn sáng: {$bf} - Thêm giường: {$extra} - BirthDay: Không";
+            if ($action === 'create') {
+                return "* Phòng thuê : # Thêm mới {$roomRef} : " . $this->joinParts([
+                    'Loại phòng' => $this->lookup('room_class_id', $value('room_class_id')),
+                    'Giá' => Fmt::money($value('rate') ?? $value('price')),
+                    'Mã giá' => $value('rate_code'),
+                    'Ngày đến' => Fmt::date($value('arrival_date')),
+                    'Ngày đi' => Fmt::date($value('departure_date')),
+                    'Người lớn' => $value('adults'),
+                    'Trẻ em' => $value('children_qty') ?? $value('children'),
+                    'Ăn sáng' => $value('breakfast') === null ? null : (!empty($value('breakfast')) ? 'Có' : 'Không'),
+                    'Thêm giường' => $value('extra_bed_qty'),
+                ]);
             }
-
-            if (($action === 'update' || $action === 'Modify') && !empty($oldValues) && !empty($newValues)) {
-                $fieldMap = [
-                    'adults' => 'Người Lớn',
-                    'children' => 'Trẻ Em',
-                    'children_qty' => 'Trẻ Em',
-                    'price' => 'Giá',
-                    'rate' => 'Giá',
-                    'room_number' => 'Phòng',
-                    'arrival_date' => 'Ngày đến',
-                    'departure_date' => 'Ngày Checkout',
-                    'breakfast' => 'Ăn Sáng',
-                    'extra_bed_qty' => 'Thêm Giường',
-                    'room_class_id' => 'Loại',
-                    'status' => 'Trạng thái',
-                ];
-                $diffLines = [];
-                foreach ($fieldMap as $k => $label) {
-                    if (array_key_exists($k, $newValues) && array_key_exists($k, $oldValues)) {
-                        $oldV = $oldValues[$k];
-                        $newV = $newValues[$k];
-                        if ($oldV != $newV) {
-                            if (str_contains($k, 'date') && $oldV && $newV) {
-                                try {
-                                    $oldV = \Carbon\Carbon::parse($oldV)->format('d-m-Y');
-                                    $newV = \Carbon\Carbon::parse($newV)->format('d-m-Y');
-                                } catch (\Throwable $e) {}
-                            } elseif (in_array($k, ['price', 'rate'])) {
-                                $oldV = number_format((float)$oldV, 0, ',', '.');
-                                $newV = number_format((float)$newV, 0, ',', '.');
-                            }
-                            $diffLines[] = "- {$label} {$oldV} -> {$newV}";
-                        }
-                    }
-                }
-                if (!empty($diffLines)) {
-                    return "* Cập Nhật Phòng Thuê ({$roomId}) : " . implode(' ', $diffLines);
-                }
-                return "* Cập Nhật Phòng Thuê ({$roomId})";
+            if ($action === 'update') {
+                $lines = Fmt::diffLines($old, $new);
+                return "* Cập Nhật Phòng Thuê {$roomRef}" . ($lines ? " :\n" . implode("\n", $lines) : '');
             }
-
-            if ($action === 'delete' || $action === 'Cancel') {
-                $reason = $newValues['reason'] ?? $oldValues['reason'] ?? 'Better Rate elsewhere';
-                $pNum = $oldValues['room_number'] ?? '703';
-                return "* Huỷ phòng thuê - ({$roomId}) Lý do: {$reason}";
+            if ($action === 'delete') {
+                $reason = $value('reason');
+                return "* Huỷ phòng thuê {$roomRef}" . ($reason ? " - Lý do: {$reason}" : '');
             }
         }
 
-        // 3. NGHIỆP VỤ PAYMENT (THANH TOÁN / ĐẶT CỌC)
+        // 3. THANH TOÁN / ĐẶT CỌC (PAYMENT)
         if ($targetType === 'Payment') {
-            $bookingId = $newValues['booking_id'] ?? $oldValues['booking_id'] ?? '';
-            $bookingCode = $bookingId ? ('GAL' . $bookingId) : 'GAL22';
-            $amount = (float) ($newValues['amount'] ?? $oldValues['amount'] ?? 5000000);
-            $amountStr = number_format($amount > 0 ? $amount : 5000000, 0, '.', ',');
-            $method = $newValues['payment_method'] ?? 'BT';
-            $note = $newValues['description'] ?? $newValues['note'] ?? 'Deposit (Bank transfer)';
-
-            if ($action === 'create' || $action === 'Add') {
-                return "* Thêm Đặt Cọc Cho Đăng Ký: {$bookingCode} - Tên Booking: Test ghi log - PaymentMethod: {$method} - Số Tiền: {$amountStr} - Mô tả: {$note}";
+            $bookingId = $value('booking_id');
+            $ref = $bookingId ? 'GAL' . $bookingId : 'đăng ký (không rõ)';
+            if ($value('booking_room_id')) {
+                $ref .= ' - mã phòng thuê ' . $value('booking_room_id');
             }
+            $parts = [
+                'Tên booking' => $bookingId ? DB::table('bookings')->where('id', $bookingId)->value('booking_name') : null,
+                'Hình thức' => $this->lookup('payment_method_id', $value('payment_method_id')),
+                'Số tiền' => Fmt::money($value('amount')),
+                'Mô tả' => $value('description') ?? $value('note'),
+            ];
 
-            if ($action === 'update' || $action === 'Modify') {
-                return "Sửa Đặt Cọc Cho Đăng Ký: {$bookingCode}  PaymentMethod:BT->CA - Mô tả:1.Deposit (Bank transfer) -> Deposit (Cash)";
+            if ($action === 'create') {
+                return "* Thêm Thanh Toán/Đặt Cọc Cho Đăng Ký {$ref} : " . $this->joinParts($parts);
             }
-
-            if ($action === 'delete' || $action === 'Cancel') {
-                $reason = $newValues['reason'] ?? $oldValues['reason'] ?? 'post sai';
-                return "* Correct Đặt Cọc Cho Đăng Ký: {$bookingCode} - PaymentMethod: Cash - Số tiền: {$amountStr} - Lý Do: {$reason}";
+            if ($action === 'update') {
+                $lines = Fmt::diffLines($old, $new);
+                return "* Sửa Thanh Toán/Đặt Cọc Cho Đăng Ký {$ref}" . ($lines ? " :\n" . implode("\n", $lines) : '');
+            }
+            if ($action === 'delete') {
+                $parts['Lý do'] = $value('reason');
+                return "* Xóa Thanh Toán/Đặt Cọc Cho Đăng Ký {$ref} : " . $this->joinParts($parts);
             }
         }
 
         // 4. CẤU HÌNH KHÁCH SẠN (HOTEL CONFIG / HOTEL SETTING)
         if ($targetType === 'HotelConfig' || $targetType === 'HotelSetting') {
-            $key = $targetLabel ?? $newValues['config_key'] ?? $oldValues['config_key'] ?? 'Cấu hình';
-            $oldVal = $oldValues['config_value'] ?? $oldValues['value'] ?? null;
-            $newVal = $newValues['config_value'] ?? $newValues['value'] ?? null;
+            $key = $targetLabel ?? $value('name') ?? $value('config_key') ?? 'Cấu hình';
+            $oldVal = $old['config_value'] ?? $old['value'] ?? null;
+            $newVal = $new['config_value'] ?? $new['value'] ?? null;
 
-            if ($oldVal !== null && $newVal !== null) {
-                return "* Cập nhật cấu hình khách sạn '{$key}': {$oldVal} ➜ {$newVal}";
+            if ($oldVal !== null || $newVal !== null) {
+                return "* Cập nhật cấu hình khách sạn '{$key}': " . Fmt::value('value', $oldVal) . ' ➜ ' . Fmt::value('value', $newVal);
             }
             return "* Cập nhật cấu hình khách sạn '{$key}'";
         }
 
         // 5. KHÓA PHÒNG (ROOM LOCK)
         if ($targetType === 'RoomLock') {
-            $roomNum = $newValues['room_number'] ?? $oldValues['room_number'] ?? $targetLabel ?? $targetId ?? '601';
-            $type = $newValues['lock_type'] ?? $oldValues['lock_type'] ?? 'OOO';
-            $reason = $newValues['reason'] ?? $oldValues['reason'] ?? 'thay tivi';
+            $roomNum = $value('room_number') ?? $targetLabel ?? $targetId;
+            $type = $value('lock_type') ?? '';
+            $reason = $value('reason');
+            $reasonText = $reason ? " - Lý do: {$reason}" : '';
 
-            if ($action === 'create' || $action === 'Add' || $action === 'Lock') {
-                $start = !empty($newValues['from_date']) ? \Carbon\Carbon::parse($newValues['from_date'])->format('d-m-Y') : now()->format('d-m-Y');
-                $end = !empty($newValues['to_date']) ? \Carbon\Carbon::parse($newValues['to_date'])->format('d-m-Y') : now()->format('d-m-Y');
-                return "Thêm Phòng {$type}. Phòng {$roomNum} đã bị khóa từ {$start} đến {$end} - Lý do: {$reason}";
+            if ($action === 'create') {
+                $from = Fmt::date($value('from_date') ?? $value('start_date'));
+                $to = Fmt::date($value('to_date') ?? $value('end_date'));
+                return trim("Thêm Phòng {$type}") . ". Phòng {$roomNum} bị khóa" . ($from ? " từ {$from}" : '') . ($to ? " đến {$to}" : '') . $reasonText;
             }
-            if ($action === 'update' || $action === 'Modify') {
-                $diffLines = $this->formatDiffLines($oldValues ?: [], $newValues ?: []);
-                return "Cập nhật phòng khóa {$type} mã {$targetId}, phòng {$roomNum}:\n" . implode("\n", $diffLines);
+            if ($action === 'update') {
+                return "Cập nhật phòng khóa {$type} mã {$targetId}, phòng {$roomNum}:\n" . implode("\n", Fmt::diffLines($old, $new));
             }
-            if ($action === 'delete' || $action === 'Unlock' || $action === 'Cancel') {
-                return "Mở khóa phòng {$roomNum}";
+            if ($action === 'delete') {
+                return "Mở khóa phòng {$roomNum}" . ($type ? " ({$type})" : '');
             }
         }
 
         // 6. PHÒNG (ROOM)
         if ($targetType === 'Room') {
-            $roomNum = $newValues['room_number'] ?? $oldValues['room_number'] ?? $targetLabel ?? $targetId;
-            if ($action === 'update' && !empty($oldValues) && !empty($newValues)) {
-                $diffLines = $this->formatDiffLines($oldValues, $newValues);
-                if (!empty($diffLines)) {
-                    return "* Cập nhật phòng {$roomNum} :\n" . implode("\n", $diffLines);
+            $roomNum = $value('room_number') ?? $targetLabel ?? $targetId;
+            if ($action === 'update') {
+                $lines = Fmt::diffLines($old, $new);
+                if ($lines) {
+                    return "* Cập nhật phòng {$roomNum} :\n" . implode("\n", $lines);
                 }
             }
             return "* Cập nhật thông tin phòng {$roomNum}";
         }
 
-        // 7. CÁC ĐỐI TƯỢNG KHÁC (USER, COMPANY, ROOM CLASS, ETC.)
-        $actionName = match ($action) {
-            'create', 'Add' => 'Thêm mới',
-            'update', 'Modify' => 'Cập nhật',
-            'delete', 'Cancel' => 'Xóa',
-            default => $action,
-        };
-
+        // 7. CÁC ĐỐI TƯỢNG KHÁC (USER, COMPANY, ROOM CLASS, ...)
         $objName = $targetLabel ? "'{$targetLabel}'" : ($targetType ?: $component);
 
-        if (($action === 'create' || $action === 'Add') && !empty($newValues)) {
-            $createdLines = $this->formatCreationDetails($newValues);
-            if (!empty($createdLines)) {
-                return "* {$actionName} {$component} {$objName} :\n" . implode("\n", $createdLines);
+        if ($action === 'create') {
+            $lines = Fmt::creationLines($new);
+            if ($lines) {
+                return "* {$actionText} {$component} {$objName} :\n" . implode("\n", $lines);
             }
         }
-
-        if (($action === 'update' || $action === 'Modify') && !empty($oldValues) && !empty($newValues)) {
-            $diffLines = $this->formatDiffLines($oldValues, $newValues);
-            if (!empty($diffLines)) {
-                return "* {$actionName} {$component} {$objName} :\n" . implode("\n", $diffLines);
+        if ($action === 'update') {
+            $lines = Fmt::diffLines($old, $new);
+            if ($lines) {
+                return "* {$actionText} {$component} {$objName} :\n" . implode("\n", $lines);
             }
         }
-
-        if ($action === 'delete' || $action === 'Cancel') {
-            $reason = $newValues['reason'] ?? $oldValues['reason'] ?? null;
-            $reasonStr = $reason ? " - Lý do: {$reason}" : "";
-            return "* Xóa {$component} {$objName}{$reasonStr}";
+        if ($action === 'delete') {
+            $reason = $value('reason');
+            return "* Xóa {$component} {$objName}" . ($reason ? " - Lý do: {$reason}" : '');
         }
 
-        return "* {$actionName} {$component} {$objName}";
+        return "* {$actionText} {$component} {$objName}";
     }
 
-    /**
-     * Format thông số chi tiết khi tạo mới (Add) để phục vụ tra cứu vận hành và tái hiện bug.
-     */
-    protected function formatCreationDetails(array $newValues): array
+    /** "GAL12 - P.301 (G0000005)" hoặc "GAL12 - G0000005" khi chưa gán số phòng. */
+    protected function bookingRoomRef(?string $bookingRoomId, mixed $bookingId, mixed $roomNumber): string
     {
-        $lines = [];
-        $skipKeys = ['updated_at', 'created_at', 'id', 'deleted_at', 'remember_token', 'password', 'branch_id', 'created_by_user_id', 'updated_by_user_id', 'created_by', 'updated_by'];
-
-        foreach ($newValues as $key => $val) {
-            if (in_array($key, $skipKeys)) continue;
-            if ($val === null || $val === '') continue;
-
-            $label = $this->fieldLabels[$key] ?? $key;
-            $formatted = $this->formatDisplayValue($key, $val);
-            if ($formatted !== '' && $formatted !== '(trống)') {
-                $lines[] = "• {$label}: {$formatted}";
-            }
+        $parts = [];
+        if ($bookingId) {
+            $parts[] = 'GAL' . $bookingId;
+        }
+        if ($roomNumber) {
+            $parts[] = 'P.' . $roomNumber . ($bookingRoomId ? " ({$bookingRoomId})" : '');
+        } elseif ($bookingRoomId) {
+            $parts[] = $bookingRoomId;
         }
 
-        return $lines;
+        return $parts ? '(' . implode(' - ', $parts) . ')' : '';
     }
 
-    /**
-     * Chuyển đổi mảng diff thành các dòng liệt kê tiếng Việt thân thiện.
-     */
-    protected function formatDiffLines(array $oldValues, array $newValues): array
+    protected function lookup(string $key, mixed $id): ?string
     {
-        $lines = [];
-        $skipKeys = ['updated_at', 'created_at', 'id', 'deleted_at', 'remember_token', 'password'];
-
-        foreach ($newValues as $key => $newVal) {
-            if (in_array($key, $skipKeys)) continue;
-
-            $oldVal = $oldValues[$key] ?? null;
-            $label = $this->fieldLabels[$key] ?? $key;
-
-            $formattedOld = $this->formatDisplayValue($key, $oldVal);
-            $formattedNew = $this->formatDisplayValue($key, $newVal);
-
-            if ($formattedOld !== $formattedNew) {
-                $lines[] = "• {$label}: {$formattedOld} ➜ {$formattedNew}";
-            }
-        }
-
-        return $lines;
+        return $id === null || $id === '' ? null : Fmt::value($key, $id);
     }
 
-    /**
-     * Format giá trị hiển thị thân thiện (ngày tháng, tiền tệ, boolean).
-     */
-    protected function formatDisplayValue(string $key, mixed $val): string
+    /** "-Nhãn : giá trị" cho các phần có giá trị, bỏ qua phần trống. */
+    protected function joinParts(array $parts): string
     {
-        if ($val === null || $val === '') {
-            return '(trống)';
+        $text = [];
+        foreach ($parts as $label => $val) {
+            if ($val === null || $val === '' || (is_string($val) && trim($val) === '')) {
+                continue;
+            }
+            $text[] = "-{$label} : " . (is_scalar($val) ? $val : Fmt::value($label, $val));
         }
 
-        if (is_bool($val)) {
-            return $val ? 'Có' : 'Không';
-        }
-
-        // Format ngày tháng nếu trường kết thúc bằng date
-        if (str_contains($key, 'date') && is_string($val) && preg_match('/^\d{4}-\d{2}-\d{2}/', $val)) {
-            try {
-                return \Carbon\Carbon::parse($val)->format('d/m/Y');
-            } catch (\Throwable $e) {}
-        }
-
-        // Format tiền tệ nếu là số tiền
-        if (in_array($key, ['total_amount', 'deposit_amount', 'price', 'rate', 'base_price', 'amount', 'extra_bed_rate', 'subtotal', 'unit_price']) && is_numeric($val)) {
-            return number_format((float) $val, 0, '.', ',');
-        }
-
-        if (is_array($val)) {
-            if (isset($val['name']) && is_scalar($val['name'])) return (string) $val['name'];
-            if (isset($val['code']) && is_scalar($val['code'])) return (string) $val['code'];
-            if (isset($val['title']) && is_scalar($val['title'])) return (string) $val['title'];
-            if (isset($val['id']) && is_scalar($val['id'])) return '#' . $val['id'];
-            return json_encode($val, JSON_UNESCAPED_UNICODE);
-        }
-
-        return (string) $val;
+        return implode(' ', $text);
     }
 }

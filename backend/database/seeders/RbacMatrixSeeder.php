@@ -598,6 +598,18 @@ class RbacMatrixSeeder extends Seeder
                     'delete' => ['code' => 'system.setting.delete', 'name' => 'Xóa thông số'],
                 ],
             ],
+            [
+                'module' => 'SYSTEM',
+                'screen_code' => 'system.language',
+                'screen_name' => 'Ngôn ngữ & Bản dịch',
+                'app' => 'PMS',
+                'actions' => [
+                    'view'   => ['code' => 'system.language.view',   'name' => 'Xem bản dịch ngôn ngữ'],
+                    'add'    => ['code' => 'system.language.create', 'name' => 'Thêm ngôn ngữ / dòng dịch'],
+                    'edit'   => ['code' => 'system.language.edit',   'name' => 'Sửa bản dịch ngôn ngữ'],
+                    'delete' => ['code' => 'system.language.delete', 'name' => 'Xóa ngôn ngữ / dòng dịch'],
+                ],
+            ],
         ];
 
         $order = 1;

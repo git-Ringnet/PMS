@@ -181,6 +181,63 @@ class BookingSectionsOneTwoTenTest extends TestCase
         $this->assertStringNotContainsString('AllowCheckinVacantClean', (string) $response->json('message'));
     }
 
+    private function checkInRoomWithStatus(string $roomNumber, string $statusCode, array $payload = [])
+    {
+        \App\Models\Room::updateOrCreate(['room_number' => $roomNumber], [
+            'room_class_id' => $this->roomClass->id, 'room_form_id' => RoomForm::firstOrCreate(['name' => 'Standard'])->id,
+            'floor' => 2, 'room_status_code' => $statusCode,
+        ]);
+        $booking = $this->makeBooking();
+        $room = BookingRoom::create([
+            'booking_id' => $booking->id,
+            'room_number' => $roomNumber,
+            'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-08',
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        return [$booking, $room, $this->patchJson("/api/bookings/{$booking->id}/rooms/{$room->id}/check-in", $payload)];
+    }
+
+    /** Dòng 211: AllowCheckinVacantClean = 1 không cho nhận phòng bẩn / chờ dọn. */
+    public function test_row_211_dirty_room_cannot_be_checked_in_even_when_setting_is_one(): void
+    {
+        \App\Models\HotelConfig::updateOrCreate(['name' => 'AllowCheckinVacantClean'], ['value' => '1']);
+
+        [, , $dirty] = $this->checkInRoomWithStatus('201', 'vacant_dirty');
+        $dirty->assertStatus(422)->assertJsonPath('message', 'Phòng 201 đang ở trạng thái chưa dọn (Vacant Dirty). Không thể thực hiện nhận phòng.');
+
+        [, , $turndown] = $this->checkInRoomWithStatus('202', 'turndown', ['confirmed' => true]);
+        $turndown->assertStatus(422);
+        $this->assertSame('vacant_dirty', \App\Models\Room::where('room_number', '201')->value('room_status_code'));
+    }
+
+    /** Dòng 211: phòng chờ kiểm tra hỏi xác nhận (không còn câu "Tình trạng phòng sẽ được giữ nguyên"), xác nhận thì nhận phòng. */
+    public function test_row_211_vacant_clean_room_needs_confirmation_then_checks_in(): void
+    {
+        \App\Models\HotelConfig::updateOrCreate(['name' => 'AllowCheckinVacantClean'], ['value' => '1']);
+
+        [$booking, $room, $first] = $this->checkInRoomWithStatus('203', 'vacant_clean');
+        $first->assertOk()
+            ->assertJsonPath('needs_confirmation', true)
+            ->assertJsonPath('message', 'Phòng 203 đang ở trạng thái chờ kiểm tra (Vacant Clean). Bạn có muốn tiếp tục nhận phòng không?');
+        $this->assertSame(BookingRoom::STATUS_BOOKED, (int) $room->fresh()->status);
+
+        $this->patchJson("/api/bookings/{$booking->id}/rooms/{$room->id}/check-in", ['confirmed' => true])->assertSuccessful();
+        $this->assertSame(BookingRoom::STATUS_CHECKED_IN, (int) $room->fresh()->status);
+    }
+
+    /** Dòng 211: AllowCheckinVacantClean = 0 không cho nhận phòng chờ kiểm tra. */
+    public function test_row_211_vacant_clean_room_is_blocked_when_setting_is_zero(): void
+    {
+        \App\Models\HotelConfig::updateOrCreate(['name' => 'AllowCheckinVacantClean'], ['value' => '0']);
+
+        [, , $response] = $this->checkInRoomWithStatus('204', 'vacant_clean', ['confirmed' => true]);
+        $response->assertStatus(422)
+            ->assertJsonPath('message', 'Phòng 204 đang ở trạng thái chờ kiểm tra (Vacant Clean). Không thể thực hiện nhận phòng.');
+    }
+
     private function makeBooking(array $attributes = []): Booking
     {
         return Booking::create(array_merge([

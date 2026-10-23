@@ -240,21 +240,57 @@ class ReportSpreadsheetExportService
 
         $information = $this->firstByClass($header, 'hotel-information');
         $lines = $information instanceof DOMElement ? $this->childElements($information, 'div') : [];
+        $lineStyle = static fn (DOMElement $line): array => [];
+        if ($lines === [] && $information instanceof DOMElement) {
+            // `<b>Tên</b><br>Địa chỉ`: mỗi đoạn giữa các <br> là một dòng, dùng style của khối thông tin.
+            $lines = $this->splitByLineBreaks($information);
+            $informationStyle = $this->computedStyleFor($information);
+            $lineStyle = static fn (DOMElement $line): array => $informationStyle;
+        }
         if ($lines === []) {
             $lines = [$header];
         }
-        foreach (array_slice($lines, 0, $height) as $index => $line) {
+        $height = max($height, count($lines));
+        foreach ($lines as $index => $line) {
             $current = $row + $index;
             if ($infoStart < $columnCount) {
                 $sheet->mergeCells("{$infoColumn}{$current}:{$lastColumn}{$current}");
             }
             $cell = "{$infoColumn}{$current}";
             $this->setNodeValue($sheet, $cell, $line);
-            $this->applyStyle($sheet, $cell, array_replace($containerStyle, $this->computedStyleFor($line)));
+            $style = $line->parentNode === null ? $lineStyle($line) : $this->computedStyleFor($line);
+            $this->applyStyle($sheet, $cell, array_replace($containerStyle, $style));
             $sheet->getRowDimension($current)->setRowHeight(16);
+        }
+        if ($logoColumns > 1 && $height > 2) {
+            $sheet->unmergeCells("A{$row}:{$logoEnd}".($row + 1));
+            $sheet->mergeCells("A{$row}:{$logoEnd}".($row + $height - 1));
         }
 
         $row += $height;
+    }
+
+    /** @return array<int, DOMElement> detached elements, one per non-empty line */
+    private function splitByLineBreaks(DOMElement $element): array
+    {
+        $lines = [];
+        $current = $element->ownerDocument->createElement('div');
+        $flush = function () use (&$lines, &$current, $element): void {
+            if ($this->nodeText($current) !== '') {
+                $lines[] = $current;
+            }
+            $current = $element->ownerDocument->createElement('div');
+        };
+        foreach ($element->childNodes as $child) {
+            if ($child instanceof DOMElement && strtolower($child->tagName) === 'br') {
+                $flush();
+                continue;
+            }
+            $current->appendChild($child->cloneNode(true));
+        }
+        $flush();
+
+        return $lines;
     }
 
     private function hotelLogoColumnCount(Worksheet $sheet, DOMElement $header, int $columnCount): int
@@ -283,13 +319,7 @@ class ReportSpreadsheetExportService
             return;
         }
         $path = $this->configuredLogoPath();
-        if ($path !== null) {
-            $drawing = new Drawing();
-            $drawing->setPath($path);
-            $drawing->setHeight(52);
-            $drawing->setCoordinates($cell);
-            $drawing->setWorksheet($sheet);
-
+        if ($path !== null && $this->addDrawing($sheet, $path, $cell, 52)) {
             return;
         }
 
@@ -305,11 +335,28 @@ class ReportSpreadsheetExportService
         }
 
         $height = $this->pixels((string) ($style['height'] ?? $style['max-height'] ?? $style['min-height'] ?? '52px'));
-        $drawing = new Drawing();
-        $drawing->setPath($path);
-        $drawing->setHeight(max(20, $height ?: 52));
-        $drawing->setCoordinates($cell);
-        $drawing->setWorksheet($sheet);
+        $this->addDrawing($sheet, $path, $cell, max(20, $height ?: 52));
+    }
+
+    /**
+     * An unreadable or unsupported logo (svg, webp, ...) must not abort the
+     * whole layout export and drop the user back to the raw-column fallback.
+     */
+    private function addDrawing(Worksheet $sheet, string $path, string $cell, float $height): bool
+    {
+        try {
+            $drawing = new Drawing();
+            $drawing->setPath($path);
+            $drawing->setHeight((int) round($height));
+            $drawing->setCoordinates($cell);
+            $drawing->setWorksheet($sheet);
+
+            return true;
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return false;
+        }
     }
 
     private function firstImage(DOMElement $element): ?DOMElement
@@ -1158,12 +1205,38 @@ class ReportSpreadsheetExportService
 
     private function nodeText(DOMNode $node): string
     {
-        $text = $this->nodeTextRecursive($node);
+        $text = $this->nodeTextRecursive($node, $this->preservesLineBreaks($node));
         $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
         $text = preg_replace('/[ \t]+/', ' ', $text) ?? $text;
         $text = preg_replace('/ *\n */', "\n", $text) ?? $text;
 
         return trim($text);
+    }
+
+    /** Report notes use `white-space: pre-wrap`; keep their typed line breaks. */
+    private function preservesLineBreaks(DOMNode $node): bool
+    {
+        $element = $node instanceof DOMElement ? $node : $node->parentNode;
+        if (! $element instanceof DOMElement) {
+            return false;
+        }
+
+        return in_array(strtolower(trim($this->computedStyleFor($element)['white-space'] ?? '')), ['pre', 'pre-wrap', 'pre-line', 'break-spaces'], true);
+    }
+
+    private function isBlockElement(?DOMNode $node): bool
+    {
+        return $node instanceof DOMElement
+            && in_array(strtolower($node->tagName), ['div', 'p', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'section'], true);
+    }
+
+    private function collapseText(string $text, bool $preserveLineBreaks): string
+    {
+        if (! $preserveLineBreaks) {
+            return preg_replace('/\s+/u', ' ', $text) ?? '';
+        }
+
+        return preg_replace('/[^\S\n]+/u', ' ', str_replace(["\r\n", "\r"], "\n", $text)) ?? '';
     }
 
     private function setNodeValue(Worksheet $sheet, string $cell, DOMNode $node): void
@@ -1175,14 +1248,32 @@ class ReportSpreadsheetExportService
         }
 
         $richText = new RichText();
-        $this->appendRichText($richText, $node);
+        $this->appendRichText($richText, $node, false, false, $this->preservesLineBreaks($node));
+        $this->trimRichText($richText);
         $sheet->setCellValue($cell, $richText);
     }
 
-    private function appendRichText(RichText $richText, DOMNode $node, bool $bold = false, bool $italic = false): void
+    /** Drops whitespace runs left at the edges by template indentation. */
+    private function trimRichText(RichText $richText): void
+    {
+        $elements = $richText->getRichTextElements();
+        while ($elements !== [] && trim($elements[0]->getText()) === '') {
+            array_shift($elements);
+        }
+        while ($elements !== [] && trim($elements[count($elements) - 1]->getText()) === '') {
+            array_pop($elements);
+        }
+        if ($elements !== []) {
+            $elements[0]->setText(ltrim($elements[0]->getText()));
+            $elements[count($elements) - 1]->setText(rtrim($elements[count($elements) - 1]->getText()));
+        }
+        $richText->setRichTextElements($elements);
+    }
+
+    private function appendRichText(RichText $richText, DOMNode $node, bool $bold = false, bool $italic = false, bool $preserveLineBreaks = false): void
     {
         if ($node->nodeType === XML_TEXT_NODE) {
-            $text = preg_replace('/\s+/u', ' ', $node->nodeValue ?? '') ?? '';
+            $text = $this->collapseText($node->nodeValue ?? '', $preserveLineBreaks);
             if ($text !== '') {
                 $run = $richText->createTextRun($text);
                 $run->getFont()->setBold($bold)->setItalic($italic);
@@ -1198,8 +1289,15 @@ class ReportSpreadsheetExportService
         $tag = $node instanceof DOMElement ? strtolower($node->tagName) : '';
         $bold = $bold || in_array($tag, ['b', 'strong'], true);
         $italic = $italic || in_array($tag, ['i', 'em'], true);
+        $previous = null;
         foreach ($node->childNodes as $child) {
-            $this->appendRichText($richText, $child, $bold, $italic);
+            if (($this->isBlockElement($child) || $this->isBlockElement($previous)) && trim($richText->getPlainText()) !== '' && trim($child->textContent) !== '') {
+                $richText->createText("\n");
+            }
+            $this->appendRichText($richText, $child, $bold, $italic, $preserveLineBreaks);
+            if ($child->nodeType !== XML_TEXT_NODE || trim((string) $child->nodeValue) !== '') {
+                $previous = $child;
+            }
         }
     }
 
@@ -1217,10 +1315,10 @@ class ReportSpreadsheetExportService
         return false;
     }
 
-    private function nodeTextRecursive(DOMNode $node): string
+    private function nodeTextRecursive(DOMNode $node, bool $preserveLineBreaks = false): string
     {
         if ($node->nodeType === XML_TEXT_NODE) {
-            return preg_replace('/\s+/u', ' ', $node->nodeValue ?? '') ?? '';
+            return $this->collapseText($node->nodeValue ?? '', $preserveLineBreaks);
         }
         $result = '';
         $previous = null;
@@ -1230,12 +1328,16 @@ class ReportSpreadsheetExportService
                 $previous = $child;
                 continue;
             }
-            $text = $this->nodeTextRecursive($child);
+            $text = $this->nodeTextRecursive($child, $preserveLineBreaks);
             if ($this->needsInlineSpace($previous, $child, $result, $text)) {
                 $result .= ' ';
+            } elseif (($this->isBlockElement($child) || $this->isBlockElement($previous)) && trim($result) !== '' && trim($text) !== '') {
+                $result .= "\n";
             }
             $result .= $text;
-            $previous = $child;
+            if ($child->nodeType !== XML_TEXT_NODE || trim((string) $child->nodeValue) !== '') {
+                $previous = $child;
+            }
         }
 
         return $result;

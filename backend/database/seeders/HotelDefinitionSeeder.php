@@ -393,7 +393,7 @@ class HotelDefinitionSeeder extends Seeder
             ['name' => 'RoleUserAllowChangeRoomStatusAtReception', 'value' => '', 'description' => 'Danh sach job_title_code/job_title duoc doi trang thai phong tai Le tan, ngan cach bang dau phay.', 'is_visible' => true],
             ['name' => 'RoleUserCancelCheckIn', 'value' => '', 'description' => 'Danh sach job_title_code/job_title duoc huy nhan phong tai Le tan, ngan cach bang dau phay.', 'is_visible' => true],
             ['name' => 'AllowCheckinNoShow', 'value' => '', 'description' => 'AllowCheckinNoShow', 'is_visible' => true],
-            ['name' => 'AllowCheckinVacantClean', 'value' => '0', 'description' => 'Cho phép nhận phòng khi phòng ở trạng thái chờ kiểm tra/dirty (0: không cho phép, 1: cho phép)', 'is_visible' => true],
+            ['name' => 'AllowCheckinVacantClean', 'value' => '0', 'description' => 'Cho phép nhận phòng khi phòng ở trạng thái chờ kiểm tra (0: không cho phép, 1: cho phép). Phòng bẩn chưa dọn luôn không được nhận phòng', 'is_visible' => true],
             ['name' => 'AllowChckcinNoShow', 'value' => '1', 'description' => 'AllowChckcinNoShow', 'is_visible' => false],
             ['name' => 'IsCheckBookingStatusWhenCheckin', 'value' => '0', 'description' => 'Kiểm tra tình trạng đăng ký khi nhận phòng (0: không check, 1: chỉ check-in Guaranteed/Allotment)', 'is_visible' => true],
             ['name' => 'AllowCreateOrUpdateBKCauseUnassignableRoomBK', 'value' => '1', 'description' => 'AllowCreateOrUpdateBKCauseUnassignableRoomBK', 'is_visible' => false],
@@ -436,6 +436,12 @@ class HotelDefinitionSeeder extends Seeder
             ['name' => 'RoleUserUpdateCheckoutBooking', 'value' => '', 'description' => 'Danh sách mã role được sửa metadata booking đã checkout; cần có quyền fo.booking.edit. Để trống sẽ từ chối.', 'is_visible' => true],
             // Section 12 - Phân quyền mở khóa Do Not Move
             ['name' => 'RoleUserOpenDoNotMove', 'value' => '', 'description' => 'Danh sách mã role chính xác được phép mở khóa Do Not Move; cần có quyền fo.booking.edit. Để trống sẽ từ chối role được cấu hình.', 'is_visible' => true],
+            // Tồn kho - định mức cảnh báo tồn
+            ['name' => 'Inventory_LowStockWarningQty', 'value' => '50', 'description' => 'Định mức cảnh báo tồn kho: sản phẩm có tồn cuối nhỏ hơn số này được đánh dấu cảnh báo ở màn Tồn kho (mặc định 50).', 'is_visible' => true],
+            // Tìm kiếm hóa đơn - Buồng phòng
+            ['name' => 'SearchHouseKeeping_AllowHKCorrectBillFO', 'value' => '0', 'description' => 'Cho phép module Buồng phòng xóa (hủy) bill do Lễ tân post (0: Không cho phép, 1: Cho phép).', 'is_visible' => true],
+            // Đồng bộ chuỗi công ty / thị trường / nguồn khách
+            ['name' => 'SyncCompanyAllBranch', 'value' => '0', 'description' => 'Đồng bộ công ty, thị trường, nguồn khách cho tất cả chi nhánh trong chuỗi (0: Không, mỗi chi nhánh lưu riêng; 1: Thêm/sửa/xóa ở một chi nhánh thì các chi nhánh khác tự cập nhật theo, không đồng bộ người bán).', 'is_visible' => true],
             // Alert sinh nhật / special request
             ['name' => 'AllowShowAlertListView', 'value' => '1', 'description' => 'Tự động hiện popup danh sách sinh nhật / special request khi vào module (1: Có, 0: Không - chỉ xem ở icon lịch góc phải).', 'is_visible' => true],
             ['name' => 'CompanyDefault', 'value' => '', 'description' => 'ID công ty mặc định khi tạo Booking nhanh và Nhận phòng nhanh', 'is_visible' => true],

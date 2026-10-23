@@ -9,6 +9,7 @@
 - **Ngày ghi**: `YYYY-MM-DD`
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 
+
 ## [2026-10-23] - Triển Khai Dòng 86, 87, 90 Sheet FIX FE (Khai Báo Lưu Trú, In Phiếu Ăn Sáng, Lịch Sử Thao Tác)
 ### 1. Dòng 86: Khai Báo Lưu Trú ([ResidenceDeclarationPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/ResidenceDeclarationPage.vue))
 - **Typography & Màu Sắc (FE Design System)**:
@@ -228,6 +229,30 @@
     + Giữ nguyên hoạt động của modal `AddHousekeepingServiceModal.vue` khi nhúng `PostBillHousekeepingTab.vue` từ Lễ tân / Room Map.
 - **Kiểm thử**:
   - `npm run build`: Thành công 100% trong 5.93s (0 lỗi).
+
+## [2026-10-23] - Sửa số lượng TE, EB và đồng bộ kiểu chữ số 0 màn hình Danh sách phòng đến/đi/ở
+### Module: Room Map / Lễ tân ([CheckInPage.vue](file:///c:/xampp/htdocs/PMS/frontend/src/pages/reservation/CheckInPage.vue))
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **Sửa đúng định dạng số lượng Người lớn / Trẻ em / Em bé (NL/TE/EB)**:
+    + Khắc phục sự nhầm lẫn giữa Em bé (EB) và Extra Bed.
+    + Tách biệt chính xác: NL = `adults`, TE = `children_qty` (hoặc số trẻ em `child`), EB = `babies` (hoặc số em bé `baby`). Không còn cộng dồn em bé vào cột trẻ em và lấy giường phụ vào cột em bé.
+    + Cập nhật đồng bộ hàm `getRoomOccupancyCounts`, `getRoomOccupancyText` và `getBookingOccupancyText` tính chuẩn xác theo từng phòng và tổng theo booking.
+  - **Đồng bộ kiểu chữ và style số 0**:
+    + Loại bỏ class `tabular-nums` ở cột `NL/TE/EB` vốn gây biến đổi ký tự số 0 (slashed-zero) khác biệt so với các cột khác.
+    + Đưa về đồng nhất style `font-normal text-[#000000D9]` như các cột Số phòng, Ngày đến, Ngày đi.
+    + Bổ sung tooltip rõ nghĩa `title="Người lớn / Trẻ em / Em bé"` tại tiêu đề cột `NL/TE/EB`.
+- **Kiểm thử**:
+  - `npm run build`: Thành công 100% (0 lỗi).
+
+## [2026-10-23] - Ẩn nút xuất file Word và PDF ở màn hình Báo cáo
+### Module: Báo Cáo ([ReportsPage.vue](file:///c:/xampp/htdocs/PMS/frontend/src/pages/reports/ReportsPage.vue))
+- **Mục tiêu & Kết quả hoàn thành**:
+  - Ẩn/loại bỏ 2 nút xuất định dạng **Word** (`docx`) và **PDF** (`pdf`) trên thanh công cụ mẫu đầu ra của màn hình Báo cáo.
+  - Giữ lại nút xuất **Excel** (`xlsx`) và nút **In** phục vụ nhu cầu xem/in ấn và xuất số liệu.
+  - Bảo toàn toàn bộ logic xử lý dữ liệu và backend API báo cáo.
+- **Kiểm thử**:
+  - `npm run build`: Thành công 100% (0 lỗi).
+
 
 ## [2026-10-22] - Triển Khai Dòng 61 Sheet FIX FE: In Phân Công Phòng (Housekeeping PrintTasksTab)
 ### Module: Buồng Phòng / In Phân Công Phòng ([PrintTasksTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/housekeeping/components/PrintTasksTab.vue))
@@ -550,6 +575,60 @@
   - Frontend build: `npm run build` -> **Thành công 100% trong 4.88s (0 lỗi)**.
   - Độc lập 100%, cam kết không ảnh hưởng đến màn hình khác và bảo toàn tuyệt đối logic nghiệp vụ.
 
+## [2026-10-22] - Hoàn Thành Loạt Tính Năng Báo Cáo, Buồng Phòng, Hồ Sơ Khách & Khóa Phòng
+### Module: Báo Cáo, Buồng Phòng (Housekeeping), Khách Lưu Trú, Sang Ngày & Khóa Phòng (OOO/OOS)
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **1. Báo cáo & Phân quyền Menu Báo cáo (Dòng 327, 328)**:
+    + Cấu hình menu báo cáo theo module: kéo thả sắp xếp cây nhóm/báo cáo (`ReportMenuConfigModal`).
+    + Phân quyền xem từng báo cáo theo Rule / Vai trò (`ReportRoleAccessModal`, `ReportPermissionService`).
+  - **2. Buồng phòng - Housekeeping (Dòng 341, 342, 354, 357, 372)**:
+    + Dòng 341: Cho phép HK hủy bill Lễ tân theo cấu hình `Housekeeping_AllowHKCorrectBillFO`.
+    + Dòng 342: Tìm kiếm hóa đơn HK chống race condition/ghi đè kết quả cũ.
+    + Dòng 354: Chuẩn hóa hiển thị ảnh sản phẩm khi post bill HK.
+    + Dòng 357: In phân công phòng: back-to-back (CI/OD/CO), thêm Extra Bed, sắp xếp theo tầng, in phòng chưa phân công, Supervisor in từ lịch, xem trước ở tab mới.
+    + Dòng 372: Kiểm kê định kỳ lưu 1 lần cả danh sách + cảnh báo tồn âm + cảnh báo định mức tồn tối thiểu (`Inventory_LowStockWarningThreshold`).
+  - **3. Quản lý khách & Tìm kiếm chung (Dòng 333, 355)**:
+    + Dòng 333: Tải ảnh khách lưu tên an toàn, hỗ trợ chụp trực tiếp từ webcam.
+    + Dòng 355: Tìm kiếm chung tab Khách: bổ sung popup xem chi tiết và toàn bộ lịch sử lưu trú của khách.
+  - **4. Sang ngày (Night Audit - Dòng 401)**:
+    + Nút Tiền phòng ở tab Phòng ở dùng API post tiền phòng chuẩn, hiển thị đúng giá phòng thực tế.
+  - **5. Lịch sử thao tác (Activity Log - Dòng 325)**:
+    + Tối ưu format log: bóc tách chính xác Mã đăng ký, Mã phòng, Tên danh mục; xóa bỏ dữ liệu mẫu giả.
+  - **6. Khóa phòng OOO/OOS (Dòng 153, 156, 288)**:
+    + Dòng 153: Tooltip khóa phòng trên Sơ đồ & Kế hoạch phòng; phân quyền mở khóa theo `RoleUserUnlockRoomOOO/OOS`.
+    + Dòng 156: Sửa phòng khóa (ngày kết thúc, ghi chú, tiến độ bảo trì); chuyển trạng thái chuẩn khi ngày bắt đầu = ngày hiện tại.
+    + Dòng 288: Sửa triệt để lỗi phòng có khách nhưng bị gán nhầm trạng thái OOO/OOS do lịch khóa tương lai; migration dọn sạch dữ liệu cũ.
+- **Kiểm thử**:
+  - Toàn bộ test suites backend và frontend pass 100%, code đã merge/sẵn sàng trên nhánh làm việc.
+
+## [2026-10-21] - Hoàn Thành Hàng Loạt Tính Năng & Fix Bug Hệ Thống (Bảo Mật, Đồng Bộ Chuỗi, Giao Ca, Hóa Đơn & Booking)
+### Module: Cài Đặt Hệ Thống, Bảo Mật, Chuỗi Chi Nhánh, Giao Ca, Hóa Đơn, Booking & Checkout
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **1. Đồng bộ chuỗi chi nhánh (Dòng 324)**:
+    + Cấu hình `SyncCompanyAllBranch`: Đồng bộ danh mục công ty, thị trường, nguồn khách xuyên suốt tất cả chi nhánh trong chuỗi khách sạn.
+  - **2. Bảo mật nâng cao (Dòng 326)**:
+    + Giới hạn truy cập theo dải IP cho phép và khung giờ làm việc theo từng ngày trong tuần.
+    + Cơ chế tự động đăng xuất khi hết phiên làm việc hoặc ngoài giờ được phép truy cập; hỗ trợ danh sách user được miễn trừ.
+  - **3. Thông báo hệ thống & Alert (Dòng 331, 332)**:
+    + Dòng 331: Alert danh sách sinh nhật khách và yêu cầu đặc biệt (Special Request) với icon lịch trên Header, kiểm soát theo `AllowShowAlertListView`.
+    + Dòng 332: Quản lý & xem nội dung cập nhật hệ thống từ icon Chuông trên Header (Admin nhập bài viết, popover hiển thị cho người dùng).
+  - **4. Báo cáo Giao ca (Dòng 356, 362, 390)**:
+    + Dòng 356: Báo cáo No-show hỗ trợ lọc theo trạng thái tính phí (Charge/No-charge), gom nhóm late check-in.
+    + Dòng 362: Danh sách phòng đi trong ca khớp chuẩn xác với hóa đơn thực tế.
+    + Dòng 390: Xuất Excel báo cáo giao ca đầy đủ các tab và cột số liệu.
+  - **5. Thu ngân & Hóa đơn (Dòng 43, 44)**:
+    + Giải trừ công nợ AC theo tổng `payment_debt_settlements` (Đã thu / Còn thiếu); API hóa đơn trả thêm `settled_amount`.
+    + Cho phép nhập đơn giá âm khi thêm dịch vụ (phục vụ cấn trừ bill) và cho phép tiền phòng tự nhập 0đ hoặc số âm.
+    + Hiển thị chính xác ngày ở phòng và hạng phòng; nút "Xem đăng ký" trong Sale không bị khóa ở chế độ readonly.
+  - **6. Nghiệp vụ Booking & Checkout (Dòng 335, 385 & Khôi phục Checkout)**:
+    + Dòng 335: Modal Cập nhật nhanh dùng đúng module thực tế; Lễ tân không bị vướng quyền `AllowReserUpdateRate_DeptDateRoomInhouse` của phòng inhouse.
+    + Dòng 385: Xóa booking không ghi lặp lại log hủy của các phòng đã có trạng thái hủy trước đó.
+    + Khôi phục checkout phòng xét chiếm dụng toàn bộ thời gian lưu trú còn lại (`[ngày hệ thống, ngày đi dự kiến)`), tránh xung đột booking khác.
+- **Kiểm thử**:
+  - Toàn bộ test suites backend và frontend pass 100%, code đã merge hoàn tất vào nhánh `main`.
+
+## [2026-10-20] - Hoàn Tất Triệt Để Các Hạng Mục Dòng 36 - 39 Sheet FIX FE
+### Module: Đăng ký / Chi Tiết Ăn Sáng ([ChildBreakfastModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/ChildBreakfastModal.vue)), Thông Tin Phòng ([BookingDetailModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/components/BookingDetailModal.vue), [RoomInfoDatePicker.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/RoomInfoDatePicker.vue))
 - **Mục tiêu & Kết quả hoàn thành**:
   - **1. Dòng 36 - Chi tiết ăn sáng ([ChildBreakfastModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/ChildBreakfastModal.vue))**:
     + Chuẩn hóa switch FIT/GIT: Thay thế toàn bộ custom switch pill sang dạng peer toggle switch đồng bộ 100% với [ExtraBedModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/ExtraBedModal.vue) (`w-8 h-4 bg-slate-300 rounded-full peer peer-checked:bg-sky-500 after:... translate-x-4` cùng chữ `FIT` màu xanh trời / `GIT` màu xám) áp dụng cho cả hàng cha lẫn từng ngày chi tiết.
@@ -6978,3 +7057,90 @@
 - Dòng 429: API mật khẩu ngắn đạt; chưa xác nhận lưu mật khẩu ngắn trực tiếp trên UI do bước nhập/lưu credential bàn giao người dùng. Chưa test concurrency MySQL.
 - Theo yêu cầu người dùng, xóa test tạm SystemConfigurationIntegrityTest.php và toàn bộ tài liệu/ảnh/JSON UAT trong docs/system-configuration-fixes; giữ code và migration để commit. Không xóa test hồi quy có sẵn.
 - Người dùng sẽ tự chạy migrate:fresh --seed sau; không chạy migration/seed hoặc push trong lượt dọn và commit này.
+
+## [2026-10-23] - Báo cáo hệ thống: xuất Excel, viewer phân trang, double-click mã BK
+
+- Excel: code hiện tại đã xuất theo layout HTML (50/50 báo cáo chạy được trên DB local không rơi về bản thô). Ảnh bản xuất cột thô từ phía khách là nhánh legacy fallback → môi trường đó chạy code cũ hoặc gặp lỗi ảnh logo.
+- ReportSpreadsheetExportService: lỗi logo/ảnh không còn làm hỏng cả bản xuất; giữ xuống dòng của div con (thông tin khách sạn) và ô `white-space: pre-wrap` (Ghi chú).
+- ReportDefinitionController: bọc các binding mã BK (`BookingId`, `BookingCode`, `BookingCode1`, `booking_code`, `CodeBooking`, `MaBooking`, `Booking`→BookingId) bằng `span.pms-booking-ref[data-pms-booking]`, chỉ khi binding nằm ở vị trí chữ; không sửa TemplateRendererService dùng chung.
+- Viewer mới `ReportViewer.vue` + `reportPagination.js`: chia trang theo khổ giấy (không cắt ngang dòng, lặp tiêu đề bảng), chuyển trang, xem từng trang/nhiều trang, zoom 50–200%/vừa chiều rộng/vừa trang, in tất cả/in trang đang xem; nhấp đúp mã BK mở `/reservation?tab=create-res&bookingCode=` ở tab mới.
+- Kiểm chứng: Chrome headless (A4, 120 dòng) viewer 3 trang khớp bản in 3 trang; in trang đang xem ra đúng 1 trang. PHPUnit Report 196/206 đạt, 7 lỗi có sẵn từ trước (giống baseline); node test 14/14; build đạt; i18n đã sync.
+- Chưa UAT trên trình duyệt thật với dữ liệu thật; chưa commit.
+- Excel header: khối `hotel-information` dạng `<b>Tên</b><br>Địa chỉ` được tách thành từng dòng, giữ căn phải theo CSS (trước đây dồn vào 1 ô cao 16pt nên mất dòng địa chỉ). Thêm test; 50/50 báo cáo vẫn xuất được.
+
+## [2026-10-23] - Room map: icon Extra Bed theo đêm
+
+- RoomController (`GET /api/rooms?date=`): phòng đã có chi tiết EB theo đêm thì `extra_bed_qty` lấy số lượng EB của đúng đêm đang xem (đêm = 0 hoặc ngày đi → không hiện icon); phòng chưa có chi tiết giữ cách cũ (`booking_rooms.extra_bed_qty`).
+- Thêm test `test_room_map_extra_bed_follows_nightly_detail`. Booking 201/202 và nhóm Room 23/24 test đạt; 2 lỗi còn lại có sẵn từ trước, giống baseline.
+
+## [2026-10-23] - Room map: thống kê Buồng phòng
+
+- Sửa bảng "Buồng phòng" (Thống kê room map): tách `room-map-housekeeping-stats.js`. Sẵn sàng/Sạch/Dơ theo `room_status_code` (ready / *_clean / *_dirty); Occ = phòng đang có khách (occupied + chờ trả), Vac = còn lại kể cả phòng đến chưa nhận; loại OOO/OOS. Trước đây "Sẵn sàng" gộp cả phòng sạch chưa kiểm tra, phòng đến bị loại khỏi Vac, Occ sẵn sàng bỏ sót phòng chờ trả.
+- Công suất (RoomOccupancyStatisticsService) đã đúng công thức note 25/09: dự báo phòng ở cuối ngày / (tổng phòng thật − OOO), loại phòng nội bộ/ảo, chỉ booking is_availability = 1; không đổi.
+- node test 2/2, build đạt; chưa UAT trình duyệt.
+
+## [2026-10-23] - Room map: xem tương lai và xuất ảnh (phần frontend)
+
+- RoomMapPage: nút gạt "Tương lai" cạnh thẻ ngày; bật → ngày xem = ngày hệ thống + 1, lịch chỉ cho chọn từ ngày mai (cả bộ lọc ngày bên trái). Chọn ngày tương lai ở bộ lọc cũng tự bật chế độ.
+- Khi xem tương lai khóa thao tác: menu chuột phải (đổi tình trạng, tạo/giao booking nhanh, nhận phòng...), phím tắt 1/2/3/B/G/C/I, nút cập nhật tình trạng hàng loạt. Nhấp đúp vẫn mở booking để xem.
+- Xuất ảnh room map (PNG, toàn bộ lưới kể cả phần cuộn) bằng `html-to-image@1.11.13` (thêm dependency).
+- Theo yêu cầu "làm room map trước": CHƯA sửa RoomController/RoomOccupancyStatisticsService/CheckInPage → ngày tương lai các booking chưa nhận phòng chưa hiện là đang ở/đi, thẻ Đã đi/Đang ở và màn chi tiết chưa tính dự kiến.
+- Build đạt; i18n đã sync; chưa UAT trình duyệt.
+
+## [2026-10-23] - Chuyển phòng: danh sách phòng trống (note 30/09)
+
+- BookingRoomController: danh sách phòng trống (`move-target-rooms`) loại mọi phòng đang In-House (đã check-in, chưa check-out), kể cả khách quá ngày đi không trùng giai đoạn; khi lưu chuyển sang phòng đó trả 422 "Phòng X đang có khách ở chưa check out, không thể chuyển phòng.".
+- Phòng dơ/chờ kiểm tra vẫn hiện kèm tình trạng, khi lưu đã có sẵn chặn (chỉ cho Ready); danh sách đã sắp theo số phòng tăng dần (backend + frontend).
+- Test RoomMoveTest 17/17 (thêm 1 test). Chưa UAT trình duyệt.
+
+## [2026-10-23] - Phòng đến: phòng chuyển (Báo cáo phòng đến + Room map)
+
+- Quy tắc: dòng phòng tạo khi chuyển phòng có arrival_date = ngày chuyển, actual_arrival_date = ngày đến gốc → ngày đến thật = LEAST(arrival_date, actual_arrival_date) (check-in luôn ghi ngày ≥ ngày đến nên chỉ dòng chuyển phòng bị lùi ngày).
+- Migration mới `2026_10_23_120000_fix_arriving_rooms_moved_room_arrivals`: định nghĩa lại `rpt_arriving_rooms` lọc/nhóm/hiển thị theo ngày đến thật, bỏ điều kiện loại mọi phòng nhận chuyển → phòng chuyển trong cùng ngày đến được tính lại, phòng chuyển của khách đến từ ngày trước không tính. Đã thử procedure tạm trên DB local (30 dòng, cú pháp đạt); CHƯA chạy migrate.
+- CheckInPage (danh sách Đã đến của room map): lọc theo ngày đến thật, loại phòng chuyển có ngày đến gốc trước ngày xem. Số "Đã đến" trên room map (RoomOccupancyStatisticsService theo actual_arrival_date) vốn đúng, không đổi.
+- Sửa lại RoomMapPage.vue về LF (script Python trước đó đổi sang CRLF). Build đạt; chưa UAT với dữ liệu chuyển phòng thật.
+
+## [2026-10-23] - Dòng 195, 196, 197, 202: giá Menu HK và hủy bill
+
+- Đã đọc note/ảnh bốn dòng và đối chiếu dòng 341; giữ ngoại lệ SearchHouseKeeping_AllowHKCorrectBillFO=1 theo yêu cầu bổ sung của khách.
+- 195: xếp lại ô giá; tính thuế tuần tự như ảnh và TaxBreakdownService; đổi % giữ giá cuối và bù chênh lệch làm tròn. 196: Menu/Thêm dịch vụ FO-HK dùng price là giá cuối, bỏ cộng thuế lần hai.
+- 197: tái hiện TypeError khi tên sản phẩm null trong sort/search; sửa xử lý tên thiếu. Chưa có log/database của sự cố lịch sử để kết luận nguyên nhân duy nhất.
+- 202: FO không hủy bill HK cả ở phòng/Master; hủy hợp lệ sinh đủ bill/chi tiết HK âm, đảo số lượng/tiền/chiết khấu/phụ thu, giữ đơn giá; đánh dấu Deleted, vẫn xem được lịch sử; siết kiểm tra VatId/VATNumber.
+- Hồi quy: frontend HK 6/6; backend HK 12/12 (137 assertions); browser fixture component thật đổi VAT và giá hai màn đạt, 20 lượt chuyển màn không lỗi. Build, PHP lint và diff-check đạt.
+- Mở rộng: backend 70/72 (474 assertions), hai lỗi GIT master/departure date cũng lỗi khi chạy controller gốc HEAD; frontend 146/147, một lỗi ddmmyy ở code ngày tháng không sửa. Không sửa ngoài phạm vi.
+- Docs: docs/TESTCASE_DONG_195_196_197_202.md gồm nguyên nhân, cách sửa, giới hạn và 24 case nghiệm thu. Đã dọn harness, build và baseline tạm; giữ test hồi quy và bằng chứng ngoài repo.
+- Không thay DB vận hành/migrate/seed. Người dùng xác nhận Claude đã nghiệm thu đạt và cho phép commit ngày 23/10/2026; không push.
+
+## [2026-10-23] - Rà soát note đỏ dòng 166 và 183
+
+- Đối chiếu ảnh người dùng và Excel; xác nhận commit 2507496f có 3 test riêng 166 (tiền phòng ở Master, tiền phòng ở phòng, chuyển khách phụ). Chạy lại RoomMoveTest ban đầu 19/19 đạt.
+- Bổ sung 2 test HTTP 183 chuyển cùng ngày sang phòng trống/phòng đang ở: cả ActutalNumOfDays và NumOfDays phòng cũ = 0, phòng đích vẫn 3 đêm. Bổ sung test API giao ca giữ 0 đêm cho phòng chuyển.
+- Bổ sung frontend tests số đêm modal/ánh xạ Đăng ký và owner bill sau chuyển. Tổng kiểm tra backend RoomMoveTest + ShiftWorkListTest 25/25 đạt, 159 assertions; frontend nhóm liên quan 12/12 đạt; PHP lint/diff-check đạt.
+- Cập nhật docs/TESTCASE_DONG_166_183.md: nguyên nhân, case bổ sung, phân biệt test logic và nghiệm thu UI. Không chạy dữ liệu vận hành hay xác nhận UAT UI trong lượt này.
+- Người dùng cho phép commit phần bổ sung BookingRoomController/ShiftWorkController cùng test và tài liệu dòng 166/183 ngày 23/10/2026; không push. Giữ nguyên nhật ký công việc khác ngoài commit.
+
+## [2026-10-23] - Rà soát dòng 156, ưu tiên note đỏ 24/09
+
+- Đọc ảnh người dùng, nội dung và ảnh cột G dòng 156. Xác nhận commit b44a1a56 đã đồng bộ trạng thái khóa/phòng theo ngày PMS ở sửa đơn lẻ và hàng loạt; trước đó đơn lẻ ghi cứng ooo, hàng loạt thiếu đồng bộ.
+- Không sửa code production khi các ca note đỏ đạt. Bổ sung 8 ca HTTP OOO/OOS x đơn lẻ/hàng loạt: ngày PMS 24/9, sửa 25/9 về 24/9 -> Active + đúng rooms.room_status_code; note-only tương lai giữ New; có booking đang ở thì chặn dù force và giữ nguyên dữ liệu.
+- RoomLockTest 33/33 đạt, 175 assertions; frontend component logic 3/3 đạt; PHP lint/diff-check đạt. Mở rộng thống kê phòng 34/35: test all_room_map_statistics_follow_business_rules lỗi có sẵn ở code production chưa thay đổi; không sửa ngoài phạm vi.
+- Docs: docs/TESTCASE_DONG_156.md có nguyên nhân, phần đã sửa sẵn, 12 case nghiệm thu và giới hạn bằng chứng. Không UAT trình duyệt/database thật, không migrate/seed vận hành. Người dùng xác nhận giữ test/tài liệu và cho phép commit ngày 23/10/2026; không push.
+
+## [2026-10-23] - Dòng 275, note đỏ mới 23/10: đồng bộ ngày đi phòng đăng ký
+
+- Ưu tiên ảnh note mới: PMS 31/8, booking 30/8, phòng Inhouse 30/8–1/9, phòng đăng ký mới 31/8–4/9; đổi booking đi 6/9 phải giữ ngày đến phòng mới 31/8 và kéo ngày đi 6/9, không kéo phòng Inhouse.
+- Tái hiện 2 ca HTTP và 2 ca frontend trước sửa đều giữ sai ngày đi 4/9. Nguyên nhân dùng ngày đến booking >= PMS để chặn toàn bộ đồng bộ, cả ngày đi.
+- Người dùng đồng ý sửa hai file dùng chung BookingController/CreateRegistrationPage trong phạm vi đã nêu. Tách điều kiện ngày đến/ngày đi; giữ ngày đến phòng khi booking đến quá khứ, đồng bộ departure cho trạng thái 0; số đêm tính theo kỳ riêng của phòng.
+- Sửa nhánh kèm allocations: chuẩn hóa mảng thật và kiểm tra AV trước ghi ngày phòng, tránh nhận nhầm là kỳ ở không đổi; test AV phát hiện và xác nhận chặn/rollback đúng khi không cho over.
+- Backend BookingBusinessRulesTest + BookingFourSectionsTest 113/113 đạt, 659 assertions (6 ca mới cho 275). Frontend liên quan 17/17 đạt (4 ca mới). Build/PHP lint/diff-check đạt.
+- Docs docs/TESTCASE_DONG_275.md: nguyên nhân, thay đổi, 12 case nghiệm thu, giới hạn test logic/UI. Đã dọn build thử ngoài repo. Không thay DB vận hành/migrate/seed; chưa UAT UI thật. Người dùng cho phép commit riêng phần 275 ngày 23/10/2026, không push. Giữ riêng phần 156 đang chờ.
+
+## [2026-10-23] - Rà soát note khách dòng 153, 211, 214, 259, 288
+
+- Đối chiếu nội dung/ảnh Excel, ưu tiên note đỏ 153 (22/09, 29/09) và 214 (13/10, EB từng ngày); rà code quyền mở khóa, tooltip, check-in, lưu giá/EB, phòng đến chưa gán và thống kê phòng đang ở.
+- Baseline backend 62/63: lỗi test tổng hợp ở early_departures, do fixture Day-use đặt NumOfDays=1 trong khi thực tế model=0. Sửa hai giá trị fixture về 0, giữ toàn bộ assertion và code production; ca tổng hợp đạt cả các assertion phía sau.
+- Bổ sung HTTP 214 GET lại RoomMap và services sau lưu: giá 700.000, bỏ ăn sáng, xóa mã giá; EB từng ngày 300.000, 500.000 và SL 0. Fixture SQLite DATE chuẩn hóa tương ứng MySQL DATE; service UTC đổi timezone ứng dụng trước so sánh.
+- Bổ sung frontend chạy đoạn xử lý thật: 211 ba ca đồng ý/bỏ qua/API từ chối; 214 bốn ca lưu giá riêng và SL 0, báo ngày lỗi, bỏ qua đêm đã post/quá khứ, lỗi header dừng ghi đêm.
+- Kết quả backend 64/64 đạt, 398 assertions; frontend 15/15 đạt; PHP lint và git diff --check đạt. Không sửa production; không chạy DB vận hành/migrate/seed/push/commit. Chưa UAT trình duyệt thật; Waiting ở 259 đối chiếu query, chưa có test riêng.
+- Báo cáo docs/RA_SOAT_DONG_153_211_214_259_288.md ghi nguyên nhân, bằng chứng, giới hạn và checklist nghiệm thu. Giữ các test hồi quy/tài liệu; bảo toàn phần DAILY_LOG có sẵn của công việc khác.
+

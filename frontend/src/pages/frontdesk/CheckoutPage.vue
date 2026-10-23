@@ -381,6 +381,10 @@ const openCheckoutModal = () => {
     uiStore.showToast('Folio phòng ảo chỉ dùng cho dịch vụ, không thể checkout.', 'warning')
     return
   }
+  if (selectedRoomItem.value?.isPartialCheckoutView) {
+    uiStore.showToast('Đây là khách đã checkout của phòng vẫn còn khách ở. Trả phòng cho khách còn lại tại Đăng ký hiện tại.', 'warning')
+    return
+  }
   checkoutError.value = ''
   checkoutUnpaidRooms.value = []
   earlyCheckoutData.value = null
@@ -590,7 +594,8 @@ const virtualFolioLoadingRoomNumbers = ref(new Set())
 
 const selectedCheckoutRooms = computed(() => allBookingsList.value.flatMap(booking => (
   (booking.roomItems || [])
-    .filter(room => room.checked && Number(room.rawRoom?.status ?? room.status) === 1)
+    // Dòng xem khách đã checkout lẻ ở Đăng ký cũ không dùng để trả phòng (khách còn ở trả tại Đăng ký hiện tại).
+    .filter(room => room.checked && !room.isPartialCheckoutView && Number(room.rawRoom?.status ?? room.status) === 1)
     .map(room => ({ booking, room }))
 )))
 const checkoutGuestSelections = ref({})
@@ -723,7 +728,10 @@ const filterContainerRef = ref(null)
 function formatDate(dateStr) {
   if (!dateStr) return '--/--/----'
   const text = String(dateStr).trim()
-  const ymd = text.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  // Ngày dạng UTC (vd. "2026-09-01T17:00:00.000000Z" = 02/09 giờ VN) phải đổi sang giờ địa phương,
+  // cắt chuỗi sẽ lùi 1 ngày khi server chạy múi giờ Asia/Ho_Chi_Minh.
+  const isUtcTimestamp = /^\d{4}-\d{2}-\d{2}T.*(Z|[+-]\d{2}:?\d{2})$/.test(text)
+  const ymd = !isUtcTimestamp && text.match(/^(\d{4})-(\d{2})-(\d{2})/)
   if (ymd) return `${ymd[3]}/${ymd[2]}/${ymd[1]}`
   const dmy = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
   if (dmy) return `${String(dmy[1]).padStart(2, '0')}/${String(dmy[2]).padStart(2, '0')}/${dmy[3]}`
@@ -880,8 +888,11 @@ const loadCheckoutBookings = async () => {
           const hasTransactions = (r.services || []).some(isPostedBookingService) ||
             (b.service_bills || []).some(sb => String(sb.RentalRoomId1) === String(r.id) || String(sb.RentalRoomId2) === String(r.id)) ||
             (b.master_service_bills || []).some(sb => String(sb.RentalRoomId1) === String(r.id) || String(sb.RentalRoomId2) === String(r.id));
+          // Phòng còn khách ở nhưng đã có khách checkout lẻ: Đăng ký cũ hiển thị riêng các khách đã checkout.
+          const isPartialCheckoutView = activeFilter.register === 'old' && Number(r.status) === 1 && !roomIsCheckedOut
+            && (r.guests || []).some(g => Number(g.status) === 2)
           const includeRoom = activeFilter.register === 'old'
-            ? roomIsCheckedOut || isNoshowRoom || Number(r.status) === 3 || (Number(r.status) === 0 && hasTransactions)
+            ? roomIsCheckedOut || isNoshowRoom || Number(r.status) === 3 || (Number(r.status) === 0 && hasTransactions) || isPartialCheckoutView
             : activeFilter.register === 'virtual'
               ? isVirtualRoom && [0, 1].includes(Number(r.status)) && !roomIsCheckedOut
               : Number(r.status) === 1 && !roomIsCheckedOut
@@ -892,6 +903,8 @@ const loadCheckoutBookings = async () => {
           if (r.guests && Array.isArray(r.guests) && r.guests.length > 0) {
             r.guests.forEach(g => {
               if ([3, 100].includes(Number(g.status)) || (Number(g.status) === 2 && activeFilter.register !== 'old')) return
+              // Phòng còn khách ở: khách đang ở thuộc Đăng ký hiện tại, Đăng ký cũ chỉ hiện khách đã checkout.
+              if (isPartialCheckoutView && Number(g.status) !== 2) return
               const gName = g.guest?.full_name || g.full_name || (g.first_name ? `${g.first_name} ${g.last_name || ''}`.trim() : '')
               // Mỗi liên kết khách-phòng phải hiện thành một lựa chọn riêng.
               // Không loại trùng theo tên vì hai khách có thể cùng tên.
@@ -1035,6 +1048,7 @@ const loadCheckoutBookings = async () => {
             roomNumber: displayRoomNo,
             isVirtual: isVirtualRoom,
             isCheckedOut: roomIsCheckedOut,
+            isPartialCheckoutView,
             guestName: roomGuests[0].name,
             allGuests: roomGuests,
             primaryGuestId: primaryGuestId,
@@ -1202,8 +1216,16 @@ const refreshCheckoutData = async () => {
   const currentRoomId = selectedRoomItem.value ? selectedRoomItem.value.roomId : null
   const currentGuestId = selectedGuestId.value
   const currentGuestName = selectedGuest.value
+  const previousDisplayedKeys = displayedBookingsList.value.map(booking => booking.id)
 
   await loadCheckoutBookings()
+
+  // Giữ đúng các dòng đang hiển thị trước khi làm mới (vd. chỉ phòng ảo 001), không bung ra toàn bộ danh sách.
+  if (previousDisplayedKeys.length > 0) {
+    const freshByKey = new Map(allBookingsList.value.map(booking => [booking.id, booking]))
+    const keptBookings = previousDisplayedKeys.map(key => freshByKey.get(key)).filter(Boolean)
+    if (keptBookings.length > 0) displayedBookingsList.value = keptBookings
+  }
 
   if (currentEntryKey) {
     const freshB = allBookingsList.value.find(b => b.id === currentEntryKey)
@@ -1804,18 +1826,28 @@ const selectedPaymentItems = computed(() => paymentsList.value.filter(payment =>
 // In qua iframe ẩn để không bị chặn popup, kể cả khi tự in sau thanh toán (không còn thao tác bấm của user).
 const printHtmlDocument = (html) => {
   const frame = document.createElement('iframe')
-  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;'
+  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none;'
   document.body.appendChild(frame)
   const frameWindow = frame.contentWindow
-  // Gán onload trước khi close để chờ logo/ảnh tải xong rồi mới mở hộp thoại in.
-  frameWindow.onload = () => {
+  const frameDocument = frameWindow.document
+  // document.open() xóa mọi handler đã gán trên iframe (kể cả onload), nên ghi nội dung trước
+  // rồi tự chờ logo/ảnh tải xong (tối đa 2 giây) mới mở hộp thoại in.
+  frameDocument.open()
+  frameDocument.write(html)
+  frameDocument.close()
+
+  const pendingImages = Array.from(frameDocument.images || []).filter(image => !image.complete)
+  const imagesReady = Promise.all(pendingImages.map(image => new Promise(resolve => {
+    image.addEventListener('load', resolve, { once: true })
+    image.addEventListener('error', resolve, { once: true })
+  })))
+  const timeout = new Promise(resolve => setTimeout(resolve, 2000))
+
+  Promise.race([imagesReady, timeout]).then(() => {
     frameWindow.focus()
     frameWindow.print()
     setTimeout(() => frame.remove(), 1000)
-  }
-  frameWindow.document.open()
-  frameWindow.document.write(html)
-  frameWindow.document.close()
+  })
 }
 
 const printReceiptForPayments = async (paymentIds) => {
@@ -3693,17 +3725,18 @@ onUnmounted(() => {
                 <Printer class="w-3.5 h-3.5 text-white shrink-0" />
                 <span v-if="!isSidebarCollapsed" class="truncate">In Hóa Đơn Folio</span>
               </div>
-              <ChevronRight v-if="!isSidebarCollapsed" class="w-3 h-3 text-[#94a3b8] shrink-0" />
+              <ChevronRight v-if="!isSidebarCollapsed" :class="['w-3 h-3 text-[#94a3b8] shrink-0 transition-transform', showInvoiceMenu ? 'rotate-90' : '']" />
             </button>
 
-            <!-- Dropdown Sub-menu Floating -->
-            <div 
-              v-if="showInvoiceMenu" 
-              class="absolute left-full top-0 ml-1 w-36 bg-white border border-gray-300 rounded shadow-lg z-50 py-1 text-xs"
+            <!-- Menu con xổ xuống ngay dưới nút: thanh chức năng nằm sát mép phải và có overflow-x-hidden
+                 nên menu mở sang bên cạnh sẽ bị cắt, bấm vào không thấy phản hồi. -->
+            <div
+              v-if="showInvoiceMenu"
+              class="mt-0.5 ml-5 flex flex-col border-l border-[#334155] pl-1 text-xs"
             >
-              <button class="w-full text-left px-2.5 py-1.5 hover:bg-sky-50 text-gray-700">Hiện giá</button>
-              <button class="w-full text-left px-2.5 py-1.5 hover:bg-sky-50 text-gray-700">Không hiện giá</button>
-              <button @click="printPaymentReceipt" class="w-full text-left px-2.5 py-1.5 hover:bg-sky-50 text-sky-600 font-semibold border-t border-gray-100">In Bill</button>
+              <button class="w-full text-left px-2 py-[5px] rounded text-[#94a3b8] hover:bg-[#334155] hover:text-white transition-colors" title="Chưa có chức năng">Hiện giá</button>
+              <button class="w-full text-left px-2 py-[5px] rounded text-[#94a3b8] hover:bg-[#334155] hover:text-white transition-colors" title="Chưa có chức năng">Không hiện giá</button>
+              <button @click="printPaymentReceipt" class="w-full text-left px-2 py-[5px] rounded text-[#cbd5e1] font-semibold hover:bg-[#334155] hover:text-white transition-colors">In Bill</button>
             </div>
           </div>
 

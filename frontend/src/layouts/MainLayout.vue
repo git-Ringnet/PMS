@@ -5,6 +5,8 @@ import { useAuthStore } from '@/stores/auth-store'
 import { fetchSystemBranches } from '@/services/company-service'
 import http from '@/services/http'
 import { t, currentLang } from '@/utils/i18n'
+import { languages } from '@/utils/i18n-dictionary'
+import { isEditMode as isTranslationMode, toggleEditMode as toggleTranslationMode, setTranslationEditAllowed, registerMenu } from '@/utils/translator'
 import { fetchOutlets } from '@/services/outlet-service'
 import ActivityLogTab from '@/pages/system/components/ActivityLogTab.vue'
 import SystemSearchModal from '@/pages/reservation/components/SystemSearchModal.vue'
@@ -16,6 +18,8 @@ const route = useRoute()
 const router = useRouter()
 const activeOutlets = ref([])
 const dynamicReports = ref([])
+// Dòng 327: menu Báo cáo theo cấu hình từng module (nhóm, thứ tự), chỉ gồm báo cáo người dùng được xem
+const reportNavigation = ref(null)
 
 const loadActiveOutlets = async () => {
   try {
@@ -27,13 +31,14 @@ const loadActiveOutlets = async () => {
 }
 
 const loadDynamicReports = async () => {
-  try {
-    const response = await http.get('/report-definitions', { params: { active_only: 1 } })
-    dynamicReports.value = response.data.data || []
-  } catch (error) {
-    console.error('Không thể tải menu báo cáo động:', error)
-    dynamicReports.value = []
-  }
+  // Tải cùng lúc rồi mới gán để menu không hiện thứ tự cũ trước khi có cấu hình
+  const [definitions, navigation] = await Promise.allSettled([
+    http.get('/report-definitions', { params: { active_only: 1 } }),
+    http.get('/report-menu/navigation')
+  ])
+  if (definitions.status === 'rejected') console.error('Không thể tải menu báo cáo động:', definitions.reason)
+  reportNavigation.value = navigation.status === 'fulfilled' ? (navigation.value.data.data || null) : null
+  dynamicReports.value = definitions.status === 'fulfilled' ? (definitions.value.data.data || []) : []
 }
 
 const sidebarCollapsed = ref(false)
@@ -360,6 +365,12 @@ async function handleSelectBranch(branch) {
   }, 100)
 }
 
+// Chế độ dịch (sửa bản dịch ngay trên màn hình) chỉ dành cho admin có quyền sửa bản dịch
+const canEditTranslations = computed(() => authStore.isAdmin && authStore.hasPermission('system.language.edit'))
+watch(canEditTranslations, allowed => setTranslationEditAllowed(allowed), { immediate: true })
+
+const currentLanguage = computed(() => languages.value.find(l => l.code === currentLang.value) || { code: currentLang.value, name: currentLang.value })
+
 function handleSelectLang(lang) {
   currentLang.value = lang
   localStorage.setItem('pms_lang', lang)
@@ -369,7 +380,7 @@ function handleSelectLang(lang) {
   
   // Hiển thị màn hình chờ chuyển tiếp mượt mà khi đổi ngôn ngữ
   sessionStorage.setItem('switching_branch', 'true')
-  sessionStorage.setItem('switching_to_name', lang === 'vi' ? 'Tiếng Việt' : 'English')
+  sessionStorage.setItem('switching_to_name', languages.value.find(l => l.code === lang)?.name || lang)
   isSwitchingBranch.value = true
   
   setTimeout(() => {
@@ -477,6 +488,7 @@ onMounted(() => {
   })
   
   window.addEventListener('outlet-updated', loadActiveOutlets)
+  window.addEventListener('report-menu-updated', loadDynamicReports)
   
   // Cập nhật giờ và ca làm việc mỗi giây
   timeInterval = setInterval(() => {
@@ -489,12 +501,30 @@ onUnmounted(() => {
   window.removeEventListener('click', closeDropdown)
   window.removeEventListener('keydown', handleGlobalKeydown)
   window.removeEventListener('outlet-updated', loadActiveOutlets)
+  window.removeEventListener('report-menu-updated', loadDynamicReports)
   if (timeInterval) {
     clearInterval(timeInterval)
   }
 })
 
+const reportRoute = (context, code) => `/${context}?tab=reports&report=${encodeURIComponent(code)}`
+
 const buildDynamicReportMenu = (context = null) => {
+  const configured = context ? reportNavigation.value?.[context] : null
+  if (configured) {
+    const dropdown = (configured.items || []).map(item => item.type === 'group'
+      ? { name: item.name, children: item.children.map(child => ({ name: child.name, route: reportRoute(context, child.code) })) }
+      : { name: item.name, route: reportRoute(context, item.code) })
+
+    return {
+      name: t('menu.reports'),
+      route: `/${context}?tab=reports`,
+      dropdown: dropdown.length ? dropdown : undefined,
+      menuOrder: Number(configured.top_order ?? 20),
+      reportSlot: true
+    }
+  }
+
   const available = dynamicReports.value
     .filter(report => report.show_in_menu !== false)
     .filter(report => !context || (report.menu_locations || ['reservation']).includes(context))
@@ -778,6 +808,18 @@ const subMenuItems = computed(() => {
   
   return []
 })
+
+// Ghi nhận cấu trúc menu cho trang Cấu hình hệ thống › Ngôn ngữ (chỉ khi người dùng có quyền sửa bản dịch)
+watch(
+  [menuItems, subMenuItems, canEditTranslations],
+  ([items, subItems, allowed]) => {
+    if (!allowed) return
+    const moduleLabel = String(route.meta?.title || '').split(' - ')[0].trim()
+    registerMenu(items, moduleLabel)
+    registerMenu(subItems.map(item => ({ name: item.name })), `${moduleLabel} › Thanh chức năng`)
+  },
+  { immediate: true }
+)
 
 // Custom date/time string to match: Demo - Ca 2 09/06/2026 2:56 CH (Bound to Asia/Ho_Chi_Minh timezone)
 const formattedTimeVi = computed(() => {
@@ -1372,6 +1414,21 @@ function handleHeaderBookingSelected(booking) {
           <span>{{ formattedTimeVi }}</span>
         </div>
 
+        <!-- Chế độ dịch: bấm vào chữ trên màn hình để sửa bản dịch -->
+        <button
+          v-if="canEditTranslations"
+          @click="toggleTranslationMode()"
+          class="shrink-0 flex items-center justify-center w-6 h-6 rounded-full cursor-pointer border-none transition-colors"
+          :class="isTranslationMode
+            ? 'bg-amber-500 text-white'
+            : (isHeaderBgDark ? 'bg-transparent text-white/80 hover:bg-white/15' : 'bg-transparent text-slate-600 hover:bg-slate-900/10')"
+          :title="isTranslationMode ? 'Tắt chế độ dịch' : 'Bật chế độ dịch (bấm vào chữ để sửa bản dịch)'"
+        >
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+          </svg>
+        </button>
+
         <!-- Language Selector Dropdown -->
         <div class="relative shrink-0 flex items-center" ref="langDropdownRef">
           <button 
@@ -1385,13 +1442,17 @@ function handleHeaderBookingSelected(booking) {
               <path d="M15 4L16.2361 8.23607H20.6762L17.0863 10.8427L18.3224 15.0788L14.7325 12.4722L11.1427 15.0788L12.3788 10.8427L8.78885 8.23607H13.229L15 4Z" fill="#FFFF00"/>
             </svg>
             <!-- UK Flag -->
-            <svg v-else class="w-5 h-3.5 rounded-sm shadow-xs border border-slate-300/10" viewBox="0 0 30 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <svg v-else-if="currentLang === 'en'" class="w-5 h-3.5 rounded-sm shadow-xs border border-slate-300/10" viewBox="0 0 30 20" fill="none" xmlns="http://www.w3.org/2000/svg">
               <rect width="30" height="20" fill="#012169"/>
               <path d="M0 0L30 20M30 0L0 20" stroke="#FFFFFF" stroke-width="3"/>
               <path d="M0 0L30 20M30 0L0 20" stroke="#C8102E" stroke-width="1.5"/>
               <path d="M15 0V20M0 10H30" stroke="#FFFFFF" stroke-width="5"/>
               <path d="M15 0V20M0 10H30" stroke="#C8102E" stroke-width="3"/>
             </svg>
+            <!-- Ngôn ngữ thêm mới trong Cấu hình hệ thống › Ngôn ngữ -->
+            <span v-else class="text-[11px] font-bold leading-none" :class="isHeaderBgDark ? 'text-white' : 'text-slate-700'">
+              {{ currentLanguage.flag || currentLanguage.code.toUpperCase() }}
+            </span>
           </button>
 
           <!-- Dropdown Options -->
@@ -1399,36 +1460,28 @@ function handleHeaderBookingSelected(booking) {
             v-if="isLangDropdownOpen" 
             class="absolute right-0 mt-2 top-full w-36 bg-white border border-slate-200 rounded-xl shadow-lg py-1 z-[100] dark:bg-[#080808] dark:border-[#1c1c1c] overflow-hidden"
           >
-            <!-- Tiếng Việt -->
-            <div 
-              @click="handleSelectLang('vi')"
+            <div
+              v-for="lang in languages"
+              :key="lang.code"
+              @click="handleSelectLang(lang.code)"
               class="px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-[#121212] cursor-pointer flex items-center gap-2 transition-colors font-semibold"
-              :class="currentLang === 'vi' ? 'text-[#0ea5e9] bg-slate-50/50 dark:bg-[#121212]/50 font-bold' : ''"
+              :class="currentLang === lang.code ? 'text-[#0ea5e9] bg-slate-50/50 dark:bg-[#121212]/50 font-bold' : ''"
             >
-              <svg class="w-4 h-2.5 rounded-xs shrink-0 border border-red-700/10" viewBox="0 0 30 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <!-- Việt Nam / Anh dùng cờ SVG có sẵn; ngôn ngữ thêm mới dùng emoji cờ hoặc mã ngôn ngữ -->
+              <svg v-if="lang.code === 'vi'" class="w-4 h-2.5 rounded-xs shrink-0 border border-red-700/10" viewBox="0 0 30 20" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <rect width="30" height="20" fill="#DA251D"/>
                 <path d="M15 4L16.2361 8.23607H20.6762L17.0863 10.8427L18.3224 15.0788L14.7325 12.4722L11.1427 15.0788L12.3788 10.8427L8.78885 8.23607H13.229L15 4Z" fill="#FFFF00"/>
               </svg>
-              <span>Tiếng Việt</span>
-              <svg v-if="currentLang === 'vi'" class="w-3 h-3 text-[#0ea5e9] ml-auto" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-              </svg>
-            </div>
-            <!-- English -->
-            <div 
-              @click="handleSelectLang('en')"
-              class="px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-[#121212] cursor-pointer flex items-center gap-2 transition-colors font-semibold"
-              :class="currentLang === 'en' ? 'text-[#0ea5e9] bg-slate-50/50 dark:bg-[#121212]/50 font-bold' : ''"
-            >
-              <svg class="w-4 h-2.5 rounded-xs shrink-0 border border-slate-300/10" viewBox="0 0 30 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <svg v-else-if="lang.code === 'en'" class="w-4 h-2.5 rounded-xs shrink-0 border border-slate-300/10" viewBox="0 0 30 20" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <rect width="30" height="20" fill="#012169"/>
                 <path d="M0 0L30 20M30 0L0 20" stroke="#FFFFFF" stroke-width="3"/>
                 <path d="M0 0L30 20M30 0L0 20" stroke="#C8102E" stroke-width="1.5"/>
                 <path d="M15 0V20M0 10H30" stroke="#FFFFFF" stroke-width="5"/>
                 <path d="M15 0V20M0 10H30" stroke="#C8102E" stroke-width="3"/>
               </svg>
-              <span>English</span>
-              <svg v-if="currentLang === 'en'" class="w-3 h-3 text-[#0ea5e9] ml-auto" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
+              <span v-else class="w-4 shrink-0 text-center text-[11px] leading-none">{{ lang.flag || lang.code.toUpperCase() }}</span>
+              <span>{{ lang.name }}</span>
+              <svg v-if="currentLang === lang.code" class="w-3 h-3 text-[#0ea5e9] ml-auto" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
               </svg>
             </div>

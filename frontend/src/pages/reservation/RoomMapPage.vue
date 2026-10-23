@@ -1,8 +1,10 @@
 <script setup>
 import { ref, computed, onMounted, watch, onBeforeUnmount, nextTick } from 'vue'
+import { toPng } from 'html-to-image'
 import { useRouter, useRoute } from 'vue-router'
 import { useRoomStore } from '@/stores/room-store'
 import { ROOM_STATUSES, ROOM_STATUS_CODES, ROOM_STATUS_ICON_MAP, roomService } from '@/services/room-service'
+import { housekeepingStatistics, isLockedRoom as isHousekeepingLocked } from '@/pages/reservation/room-map-housekeeping-stats'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
 import { usePermission } from '@/composables/usePermission'
@@ -343,6 +345,17 @@ function handleClickOutsideSettings(event) {
 // Top toggle state: isFuture (false = Hiện tại, true = Tương Lai)
 const isFuture = ref(false)
 const rawDate = ref(authStore.systemDate || localStorage.getItem('pms_system_date') || new Date().toISOString().split('T')[0])
+const roomGridRef = ref(null)
+const exportingImage = ref(false)
+
+const currentSystemDate = () => String(systemDate.value || authStore.systemDate || localStorage.getItem('pms_system_date') || new Date().toISOString()).slice(0, 10)
+const addDaysToIsoDate = (isoDate, days) => {
+  const [year, month, day] = String(isoDate).slice(0, 10).split('-').map(Number)
+  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10)
+}
+const futureMinDate = computed(() => addDaysToIsoDate(currentSystemDate(), 1))
+// Xem tương lai: ngày đang xem sau ngày hệ thống → room map chỉ để xem, khóa mọi thao tác.
+const isFutureView = computed(() => String(rawDate.value || '').slice(0, 10) > currentSystemDate())
 
 // Bottom toggle state: isGridMode (true = Bảng, false = Lưới)
 const isGridMode = ref(true)
@@ -410,10 +423,47 @@ const selectedDate = computed(() => {
 })
 
 watch(isFuture, (newVal) => {
-  if (!newVal) {
-    rawDate.value = systemDate.value || authStore.systemDate || localStorage.getItem('pms_system_date') || new Date().toISOString().split('T')[0]
+  if (newVal) {
+    if (!isFutureView.value) rawDate.value = futureMinDate.value
+    closeContextMenu()
+    selectedRoomIds.value = []
+    return
   }
+  rawDate.value = systemDate.value || authStore.systemDate || localStorage.getItem('pms_system_date') || new Date().toISOString().split('T')[0]
 })
+
+// Chọn ngày tương lai ở bộ lọc cũng bật chế độ tương lai (và ngược lại).
+watch(isFutureView, (future) => {
+  if (isFuture.value !== future) isFuture.value = future
+})
+
+async function exportRoomMapImage() {
+  const node = roomGridRef.value
+  if (!node || exportingImage.value) return
+  exportingImage.value = true
+  closeContextMenu()
+  hoverTooltip.value.show = false
+  try {
+    const width = node.scrollWidth
+    const height = node.scrollHeight
+    const dataUrl = await toPng(node, {
+      width,
+      height,
+      pixelRatio: 2,
+      backgroundColor: '#ffffff',
+      style: { overflow: 'visible', width: `${width}px`, height: `${height}px`, maxHeight: 'none', animation: 'none' },
+    })
+    const anchor = document.createElement('a')
+    anchor.href = dataUrl
+    anchor.download = `room-map_${String(rawDate.value).slice(0, 10)}.png`
+    anchor.click()
+  } catch (error) {
+    console.error('exportRoomMapImage error:', error)
+    uiStore.showToast('Không thể xuất ảnh room map.', 'error')
+  } finally {
+    exportingImage.value = false
+  }
+}
 
 watch(rawDate, async () => {
   if (isInitialLoad.value || currentTab.value === 'room-plan') return
@@ -467,11 +517,7 @@ const occupancyRateStats = computed(() => {
 // Popup dùng cùng kết quả công suất từ API với thẻ Room Map để không lệch công thức nghiệp vụ.
 const roomMapStatistics = computed(() => {
   const rooms = roomStore.rooms || []
-  const isLocked = (room) => ['ooo', 'oos', 'occupied_ooo'].includes(room.room_status_code)
-    || ['OOO', 'OOS'].includes(room.lock_type)
-  const isDirty = (room) => ['vacant_dirty', 'occupied_dirty'].includes(room.room_status_code)
-    || room.status === ROOM_STATUSES.DIRTY
-    || room.is_clean === false
+  const isLocked = isHousekeepingLocked
   const isOccupied = (room) => room.booking_status === 'occupied'
   const isCheckout = (room) => room.booking_status === 'checkout'
   const isArrival = (room) => room.booking_status === 'reserved'
@@ -502,12 +548,7 @@ const roomMapStatistics = computed(() => {
     ooo: apiStat('ooo'),
     oos: apiStat('oos'),
     saleableRooms: apiStat('saleable_rooms', saleable.length),
-    occupiedReady: occupied.filter(room => !isDirty(room)).length,
-    vacantReady: rooms.filter(room => !room.booking_status && !isLocked(room) && !isDirty(room)).length,
-    occupiedClean: occupied.filter(room => room.room_status_code === 'occupied_clean').length,
-    vacantClean: rooms.filter(room => room.room_status_code === 'vacant_clean').length,
-    occupiedDirty: currentStay.filter(isDirty).length,
-    vacantDirty: rooms.filter(room => !room.booking_status && !isLocked(room) && isDirty(room)).length,
+    ...housekeepingStatistics(rooms),
     pendingCheckoutRooms: apiStat('departures_pending', checkout.length),
     pendingCheckoutPax: apiStat('departures_pending_pax', occupiedPax(checkout)),
     checkedOutRooms: Number(roomStore.stats?.departures_checked_out) || 0,
@@ -1731,6 +1772,10 @@ const statusItems = [
 
 function handleContextMenu(event, room) {
   event.preventDefault()
+  if (isFutureView.value) {
+    closeContextMenu()
+    return
+  }
   lastFocusedRoom.value = room
   if (tooltipTimeout) clearTimeout(tooltipTimeout)
   hoverTooltip.value.show = false
@@ -1867,6 +1912,7 @@ function handleRoomMapShortcut(event) {
     return
   }
 
+  if (isFutureView.value) return
   const key = String(event.key || '').toLowerCase()
   if (!['b', 'g', 'c', 'i', '1', '2', '3'].includes(key)) return
 
@@ -2471,10 +2517,27 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
               </div>
               <div class="flex flex-col">
                 <span class="text-[12px] leading-tight" :class="TEXT_THEME.statsValue">{{ selectedDate }}</span>
-                <span class="text-[9.5px] uppercase mt-0.5" :class="TEXT_THEME.statsLabel">{{ t('roomMap.current')
+                <span v-if="isFutureView" class="text-[9.5px] uppercase mt-0.5 text-amber-600 font-semibold">Tương lai</span>
+                <span v-else class="text-[9.5px] uppercase mt-0.5" :class="TEXT_THEME.statsLabel">{{ t('roomMap.current')
                   }}</span>
               </div>
             </button>
+
+            <!-- Xem room map tương lai: mặc định ngày hệ thống + 1, chỉ xem -->
+            <div class="flex items-center gap-2 shrink-0 rounded-lg border bg-white px-2.5 py-1.5 shadow-xs"
+              :class="isFuture ? 'border-amber-300 bg-amber-50/60' : 'border-slate-200/80'">
+              <label class="flex items-center gap-1.5 cursor-pointer select-none text-xs font-semibold text-[#000000D9]">
+                <button type="button" role="switch" :aria-checked="isFuture" title="Xem room map tương lai"
+                  class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border-none cursor-pointer transition-colors"
+                  :class="isFuture ? 'bg-amber-500' : 'bg-slate-300'" @click="isFuture = !isFuture">
+                  <span class="inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform"
+                    :class="isFuture ? 'translate-x-[18px]' : 'translate-x-1'"></span>
+                </button>
+                Tương lai
+              </label>
+              <SingleDatePicker v-if="isFuture" v-model="rawDate" :min-date="futureMinDate" :start-date="rawDate"
+                placeholder="dd/mm/yyyy" four-digit-year input-class="h-7 w-[118px] bg-white border-slate-200" />
+            </div>
 
             <!-- Đã đến card -->
             <button @click="handleMetricClick(ROOM_STATUSES.RESERVED)"
@@ -2605,7 +2668,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
           <!-- View Mode & Zoom switchers -->
           <div class="flex items-center gap-2 xl:gap-2.5 shrink-0">
-            <div v-if="moduleContext !== 'reservation' && !isGridMode" class="bulk-status-container relative flex items-center gap-1">
+            <div v-if="moduleContext !== 'reservation' && !isGridMode && !isFutureView" class="bulk-status-container relative flex items-center gap-1">
               <button
                 type="button"
                 class="flex h-8 w-8 items-center justify-center rounded-lg border text-white shadow-xs transition cursor-pointer"
@@ -2641,6 +2704,21 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 </svg>
               </button>
             </div>
+            <!-- Xuất ảnh sơ đồ phòng đang hiển thị -->
+            <button type="button" @click="exportRoomMapImage" :disabled="!isGridMode || exportingImage"
+              class="h-8 w-8 flex items-center justify-center border rounded-lg cursor-pointer transition-colors bg-white border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Xuất ảnh room map">
+              <svg v-if="exportingImage" class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                <circle class="opacity-25" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3" />
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v3a5 5 0 0 0-5 5H4Z" />
+              </svg>
+              <svg v-else class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="3" y="5" width="18" height="14" rx="2" />
+                <circle cx="8.5" cy="10" r="1.5" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="m21 16-5-5-8 8" />
+              </svg>
+            </button>
+
             <!-- Help / Guide Trigger -->
             <HelpGuidePopover />
 
@@ -3357,7 +3435,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
                 <!-- Room Grid view (Lưới sơ đồ) -->
                 <!-- Room Grid view (Lưới sơ đồ) -->
-                <div v-else-if="isGridMode"
+                <div v-else-if="isGridMode" ref="roomGridRef"
                    class="flex-1 overflow-auto pt-2.5 pr-2.5 pb-4 scrollbar-thin animate-room-grid"
                    :class="settings.floorOrientation === 'Ngang' ? 'flex flex-col gap-1' : 'flex flex-row gap-5 items-start'">
                   <div v-for="(floor, floorIdx) in sortedFloors" :key="floor" :class="[
@@ -4067,6 +4145,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                     <span :class="TEXT_THEME.sidebarLabel">{{ t('roomMap.date') }}</span>
                     <SingleDatePicker
                       v-model="rawDate"
+                      :min-date="isFuture ? futureMinDate : undefined"
                       :start-date="systemDate || rawDate"
                       placeholder="dd/mm/yyyy"
                       four-digit-year
@@ -4201,7 +4280,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
               </div>
               <div class="flex flex-col gap-1.5 font-semibold text-neutral-300">
                 <div>Ghi chú: <span class="text-white font-normal">{{ hoverTooltip.room.lock_reason || hoverTooltip.room.active_locks?.[0]?.lock_reason || '-' }}</span></div>
-                <div>Người khóa: <span class="text-white font-normal">{{ hoverTooltip.room.lock_username || hoverTooltip.room.active_locks?.[0]?.lock_username || 'Admin' }}</span></div>
+                <div>Người khóa: <span class="text-white font-normal">{{ hoverTooltip.room.lock_username || hoverTooltip.room.active_locks?.[0]?.lock_username || '-' }}</span></div>
               </div>
             </template>
 

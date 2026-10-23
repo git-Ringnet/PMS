@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\MarketResource;
 use App\Models\Market;
+use App\Services\ChainCatalogSyncService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
 
@@ -33,10 +34,12 @@ class MarketController extends Controller
         ]);
 
         $market = Market::create($validated);
+        $syncWarnings = app(ChainCatalogSyncService::class)->catalogCreated('markets', $market->code, $market->name);
 
         return response()->json([
             'success' => true,
             'data' => new MarketResource($market),
+            'sync_warnings' => $syncWarnings,
         ], 201);
     }
 
@@ -70,11 +73,14 @@ class MarketController extends Controller
             'name' => 'required|string|max:255',
         ]);
 
+        $originalCode = $market->code;
         $market->update($validated);
+        $syncWarnings = app(ChainCatalogSyncService::class)->catalogUpdated('markets', $originalCode, $market->code, $market->name);
 
         return response()->json([
             'success' => true,
             'data' => new MarketResource($market),
+            'sync_warnings' => $syncWarnings,
         ]);
     }
 
@@ -94,11 +100,14 @@ class MarketController extends Controller
             return response()->json(['message' => "Không thể xóa thị trường '{$market->name}' vì đang được sử dụng trong {$companyCount} công ty và {$bookingCount} booking. Vui lòng gỡ liên kết trước."], 422);
         }
 
+        $code = $market->code;
         $market->delete();
+        $syncWarnings = app(ChainCatalogSyncService::class)->catalogDeleted('markets', $code);
 
         return response()->json([
             'success' => true,
             'message' => 'Market deleted successfully',
+            'sync_warnings' => $syncWarnings,
         ]);
     }
 }

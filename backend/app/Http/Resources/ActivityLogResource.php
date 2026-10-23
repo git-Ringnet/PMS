@@ -6,6 +6,7 @@ use App\Models\Booking;
 use App\Models\BookingRoom;
 use App\Models\Company;
 use App\Models\ReportDefinition;
+use App\Support\ActivityLogFormatter as Fmt;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -16,6 +17,12 @@ class ActivityLogResource extends JsonResource
      */
     protected static array $bookingRoomCache = [];
     protected static array $bookingCache = [];
+
+    public static function flushCache(): void
+    {
+        self::$bookingRoomCache = [];
+        self::$bookingCache = [];
+    }
 
     /**
      * Component translation mapping (Đồng bộ chuẩn 100% với Cột B trong File Excel).
@@ -326,7 +333,7 @@ class ActivityLogResource extends JsonResource
         if ($id <= 0) return null;
         if (!array_key_exists($id, self::$bookingCache)) {
             try {
-                self::$bookingCache[$id] = Booking::with(['bookingRooms.roomClass', 'company', 'market', 'customerSource', 'user', 'booker'])->find($id);
+                self::$bookingCache[$id] = Booking::with(['bookingRooms.roomClass', 'company', 'market', 'customerSource', 'creator', 'booker', 'registrationStatus'])->find($id);
             } catch (\Throwable $e) {
                 self::$bookingCache[$id] = null;
             }
@@ -743,7 +750,7 @@ class ActivityLogResource extends JsonResource
 
         // 0. Cấu hình Khách sạn (HotelConfig / HotelSetting)
         if ($this->target_type === 'HotelConfig' || $this->target_type === 'HotelSetting') {
-            $key = $this->target_label ?? $this->new_values['config_key'] ?? $this->old_values['config_key'] ?? 'Cấu hình';
+            $key = $this->new_values['name'] ?? $this->old_values['name'] ?? $this->configName() ?? $this->target_label ?? $this->new_values['config_key'] ?? $this->old_values['config_key'] ?? 'Cấu hình';
             $oldVals = $this->old_values ?: [];
             $newVals = $this->new_values ?: [];
 
@@ -764,24 +771,31 @@ class ActivityLogResource extends JsonResource
         if ($this->target_type === 'ReportDefinition' || $componentLabel === 'Báo cáo' || str_contains($desc, 'report-definitions')) {
             $reportName = $this->target_label ?? 'Báo cáo';
             $params = $this->new_values['parameters'] ?? $this->old_values['parameters'] ?? [];
-            $from = !empty($params['from_date']) ? \Carbon\Carbon::parse($params['from_date'])->format('d-m-Y') : now()->format('d-m-Y');
-            $to = !empty($params['to_date']) ? \Carbon\Carbon::parse($params['to_date'])->format('d-m-Y') : now()->format('d-m-Y');
+            $from = !empty($params['from_date']) ? \Carbon\Carbon::parse($params['from_date'])->format('d-m-Y') : '';
+            $to = !empty($params['to_date']) ? \Carbon\Carbon::parse($params['to_date'])->format('d-m-Y') : '';
+            if ($from === '' && $to === '') {
+                return "Xem báo cáo: \"{$reportName}\"";
+            }
             return "Xem báo cáo: \"{$reportName}\"  - Từ ngày {$from} , - Đến ngày {$to}";
         }
 
         // 2. Khóa phòng OOO / OOS (Hàng 5, 6, 103)
         if ($this->target_type === 'RoomLock' || $componentLabel === 'Khóa phòng') {
-            $pNum = $roomNumber ?: ($this->target_id ?: '601');
-            $type = $this->safeStr($this->new_values['lock_type'] ?? $this->old_values['lock_type'] ?? 'OOO', 'OOO');
-            $reason = $this->safeStr($this->new_values['reason'] ?? $this->old_values['reason'] ?? 'thay tivi', 'thay tivi');
+            $pNum = $roomNumber ?: ($this->new_values['room_number'] ?? $this->old_values['room_number'] ?? $this->target_id);
+            $type = $this->safeStr($this->new_values['lock_type'] ?? $this->old_values['lock_type'] ?? null);
+            $reason = $this->safeStr($this->new_values['reason'] ?? $this->old_values['reason'] ?? null);
+            $reasonText = $reason !== '' ? " - Lý do: {$reason}" : '';
 
             if ($action === 'Add' || $action === 'Lock') {
-                $from = !empty($this->new_values['from_date']) ? \Carbon\Carbon::parse($this->new_values['from_date'])->format('d-m-Y') : now()->format('d-m-Y');
-                $to = !empty($this->new_values['to_date']) ? \Carbon\Carbon::parse($this->new_values['to_date'])->format('d-m-Y') : now()->format('d-m-Y');
-                return "Thêm Phòng {$type}. Phòng {$pNum} đã bị khóa từ {$from} đến {$to} - Lý do: {$reason}";
+                $fromRaw = $this->new_values['from_date'] ?? $this->new_values['start_date'] ?? null;
+                $toRaw = $this->new_values['to_date'] ?? $this->new_values['end_date'] ?? null;
+                $from = !empty($fromRaw) ? \Carbon\Carbon::parse($fromRaw)->format('d-m-Y') : '';
+                $to = !empty($toRaw) ? \Carbon\Carbon::parse($toRaw)->format('d-m-Y') : '';
+                $period = ($from !== '' ? " từ {$from}" : '') . ($to !== '' ? " đến {$to}" : '');
+                return trim("Thêm Phòng {$type}") . ". Phòng {$pNum} đã bị khóa{$period}{$reasonText}";
             }
             if ($action === 'Modify') {
-                $id = $this->target_id ?: '1';
+                $id = $this->target_id;
                 $diff = $this->formatDiffLines();
                 return "Cập nhật phòng khóa {$type} mã {$id}, phòng {$pNum}:\n" . implode("\n", $diff);
             }
@@ -796,18 +810,19 @@ class ActivityLogResource extends JsonResource
             $b = $this->getCachedBooking($bookingId);
             $bCode = $bookingCode ?: ('GAL' . $bookingId);
 
-            $name = $this->safeStr($b?->booking_name ?? ($this->new_values['booking_name'] ?? 'Khách lẻ'), 'Khách lẻ');
-            $arrRaw = $b?->arrival_date ?? ($this->new_values['arrival_date'] ?? null);
+            $name = $this->safeStr($this->new_values['booking_name'] ?? $b?->booking_name);
+            $arrRaw = $this->new_values['arrival_date'] ?? $b?->arrival_date;
             $arr = !empty($arrRaw) ? \Carbon\Carbon::parse($arrRaw)->format('d-m-Y') : '';
-            $depRaw = $b?->departure_date ?? ($this->new_values['departure_date'] ?? null);
+            $depRaw = $this->new_values['departure_date'] ?? $b?->departure_date;
             $dep = !empty($depRaw) ? \Carbon\Carbon::parse($depRaw)->format('d-m-Y') : '';
             $git = !empty($b?->is_git ?? ($this->new_values['is_git'] ?? null)) ? 'GIT' : 'FIT';
 
-            $company = $this->safeStr($b?->company?->name ?? ($this->new_values['company'] ?? 'KHÁCH LẺ'), 'KHÁCH LẺ');
-            $market = $this->safeStr($b?->market?->name ?? ($this->new_values['market'] ?? 'Đại lý lữ hành (Travel Agent)'), 'Đại lý lữ hành (Travel Agent)');
-            $source = $this->safeStr($b?->customerSource?->name ?? ($this->new_values['customer_source'] ?? 'Traveloka'), 'Traveloka');
-            $sales = $this->safeStr($b?->user?->name ?? ($b?->user?->employee_code ?? ($this->new_values['sales_person'] ?? 'Test User')), 'Test User');
-            $bookerName = $this->safeStr($b?->booker?->name ?? ($this->new_values['booker'] ?? ''), '');
+            $companyName = $this->new_values['company'] ?? $this->lookup('company_id', $this->new_values['company_id'] ?? null) ?? $b?->company?->name;
+            $company = $this->safeStr($companyName ?? (($b || array_key_exists('company_id', $this->new_values ?? [])) ? 'KHÁCH LẺ' : null));
+            $market = $this->safeStr($this->new_values['market'] ?? $this->lookup('market_id', $this->new_values['market_id'] ?? null) ?? $b?->market?->name);
+            $source = $this->safeStr($this->new_values['customer_source'] ?? $this->lookup('customer_source_id', $this->new_values['customer_source_id'] ?? null) ?? $b?->customerSource?->name);
+            $sales = $this->safeStr($b?->sales_person ?? ($this->new_values['sales_person'] ?? ($b?->creator?->name ?? null)));
+            $bookerName = $this->safeStr($this->new_values['booker'] ?? $this->lookup('booker_id', $this->new_values['booker_id'] ?? null) ?? $b?->booker?->name);
 
             $phone = $b?->booker?->phone ?? ($b?->contact_phone ?? null);
             if (!$phone && isset($this->new_values['booker']) && is_array($this->new_values['booker'])) {
@@ -818,30 +833,25 @@ class ActivityLogResource extends JsonResource
             }
             $contactPhone = $this->safeStr($phone, '');
 
-            $nights = $b?->num_of_days ?? ($this->new_values['num_of_days'] ?? 1);
-            if (is_array($nights)) $nights = 1;
+            $nights = $this->safeStr($b?->num_of_days ?? ($this->new_values['num_of_days'] ?? null));
 
-            $statusVal = $b?->status ?? ($this->new_values['status'] ?? 0);
-            if (is_array($statusVal)) $statusVal = 0;
-            $status = match ((int)$statusVal) {
-                0 => 'None Guaranteed',
-                1 => 'Guaranteed',
-                2 => 'Check In',
-                3 => 'Check Out',
-                4 => 'Cancel',
-                default => 'None Guaranteed'
-            };
+            // Trạng thái theo tình trạng đăng ký thật của booking
+            $status = $this->safeStr($b?->registrationStatus?->name
+                ?? ($this->new_values['registration_status'] ?? $this->lookup('registration_status_id', $this->new_values['registration_status_id'] ?? null)));
 
             // Hàng 3: Bỏ phần VAT, Thông tin liên hệ là sđt của booker
-            $info = "* Thông Tin Đăng Ký {$bCode} : -Tên nhóm : {$name} -FIT : {$git} -Ngày đến : {$arr} -Ngày đi : {$dep} -Số ngày : {$nights} -Trạng thái : {$status} -Công ty : {$company} -Tour Code :  -Liên hệ : {$contactPhone} -Payment : -Booker : {$bookerName} -SalesPerson : {$sales} -Market Segment : {$market} -Source Code : {$source} -Email :  -Ghi chú đăng ký : ";
+            $email = $this->safeStr($b?->contact_email ?? ($this->new_values['contact_email'] ?? null));
+            $note = $this->safeStr($b?->note ?? ($this->new_values['note'] ?? null));
+            $tourCode = $this->safeStr($b?->event_code ?? ($this->new_values['event_code'] ?? null));
+            $info = "* Thông Tin Đăng Ký {$bCode} : -Tên nhóm : {$name} -FIT : {$git} -Ngày đến : {$arr} -Ngày đi : {$dep} -Số ngày : {$nights} -Trạng thái : {$status} -Công ty : {$company} -Tour Code : {$tourCode} -Liên hệ : {$contactPhone} -Payment : -Booker : {$bookerName} -SalesPerson : {$sales} -Market Segment : {$market} -Source Code : {$source} -Email : {$email} -Ghi chú đăng ký : {$note}";
 
             // Hàng 4: Giá đúng thực tế có dấu phẩy, dạng phòng chỉ lấy Double / Twin
             $roomLines = [];
             $rooms = [];
-            if ($b && $b->bookingRooms && $b->bookingRooms->isNotEmpty()) {
-                $rooms = $b->bookingRooms;
-            } elseif (!empty($this->new_values['booking_rooms']) && is_array($this->new_values['booking_rooms'])) {
+            if (!empty($this->new_values['booking_rooms']) && is_array($this->new_values['booking_rooms'])) {
                 $rooms = $this->new_values['booking_rooms'];
+            } elseif ($b && $b->bookingRooms && $b->bookingRooms->isNotEmpty()) {
+                $rooms = $b->bookingRooms;
             }
 
             foreach ($rooms as $br) {
@@ -850,22 +860,21 @@ class ActivityLogResource extends JsonResource
                 $depDate = is_array($br) ? ($br['departure_date'] ?? null) : $br->departure_date;
                 $rArr = $arrDate ? \Carbon\Carbon::parse($arrDate)->format('d-m-Y') : $arr;
                 $rDep = $depDate ? \Carbon\Carbon::parse($depDate)->format('d-m-Y') : $dep;
-                $price = is_array($br) ? (float)($br['price'] ?? $br['rate'] ?? 540000) : (float)($br->price ?? $br->rate ?? 540000);
-                $priceStr = number_format($price > 0 ? $price : 540000, 0, '.', ',');
+                $price = is_array($br) ? ($br['rate'] ?? $br['price'] ?? null) : ($br->rate ?? $br->price ?? null);
+                $priceStr = is_numeric($price) ? number_format((float) $price, 0, '.', ',') : '';
 
-                $cls = 'Superior Double';
                 if (is_array($br)) {
-                    $cls = $br['room_class']['name'] ?? $br['room_class_name'] ?? 'Superior Double';
+                    $cls = $br['room_class']['name'] ?? $br['room_class_name'] ?? $this->lookup('room_class_id', $br['room_class_id'] ?? null) ?? '';
                 } else {
-                    $cls = $br->roomClass?->name ?? 'Superior Double';
+                    $cls = $br->roomClass?->name ?? '';
                 }
 
                 $rForm = is_array($br) ? ($br['room_form'] ?? null) : $br->room_form;
                 $form = $this->extractBedForm($cls, $rForm);
                 $pNum = is_array($br) ? ($br['room_number'] ?? 'Chưa gán') : ($br->room_number ?: 'Chưa gán');
                 if (!$pNum) $pNum = 'Chưa gán';
-                $adults = is_array($br) ? ($br['adults'] ?? 2) : ($br->adults ?? 2);
-                $child = is_array($br) ? ($br['children_qty'] ?? $br['children'] ?? 0) : ($br->children ?? 0);
+                $adults = is_array($br) ? ($br['adults'] ?? '') : ($br->adults ?? '');
+                $child = is_array($br) ? ($br['children_qty'] ?? $br['children'] ?? 0) : ($br->children_qty ?? 0);
                 $hasBf = is_array($br) ? (!empty($br['breakfast'])) : (!empty($br->breakfast));
                 $bf = $hasBf ? 'Có' : 'Không';
                 $extra = is_array($br) ? ($br['extra_bed_qty'] ?? 0) : ($br->extra_bed_qty ?? 0);
@@ -902,11 +911,12 @@ class ActivityLogResource extends JsonResource
         if ($this->target_type === 'Booking' && $action === 'Cancel') {
             $bookingId = $this->target_id ?: ($bookingCode ? preg_replace('/\D/', '', $bookingCode) : '0');
             $bCode = $bookingCode ?: ('GAL' . $bookingId);
-            $name = $this->safeStr($this->old_values['booking_name'] ?? 'đăng ký', 'đăng ký');
-            $reason = $this->safeStr($this->new_values['cancel_reason'] ?? $this->old_values['cancel_reason'] ?? 'Khách tìm được chỗ khác', 'Khách tìm được chỗ khác');
-            $line1 = "* Huỷ đăng ký mã {$bCode} - {$name}, Lý do: {$reason}";
+            $name = $this->safeStr($this->old_values['booking_name'] ?? null);
+            $reason = $this->safeStr($this->new_values['cancel_reason'] ?? $this->old_values['cancel_reason'] ?? $this->new_values['reason'] ?? $this->old_values['reason'] ?? null);
+            $reasonText = $reason !== '' ? ", Lý do: {$reason}" : '';
+            $line1 = "* Huỷ đăng ký mã {$bCode}" . ($name !== '' ? " - {$name}" : '') . $reasonText;
             if (!empty($roomNumber)) {
-                $line2 = "* Huỷ phòng thuê ({$roomNumber}). Lý do: {$reason}";
+                $line2 = "* Huỷ phòng thuê ({$roomNumber})" . ($reason !== '' ? ". Lý do: {$reason}" : '');
                 return $line1 . "\n" . $line2;
             }
             return $line1;
@@ -914,23 +924,35 @@ class ActivityLogResource extends JsonResource
 
         // 6. BookingRoom - Cập nhật / Tách / Đổi số phòng (Hàng 8, 9, 10, 11, 12, 13, 27, 34, 35, 63, 98)
         if ($this->target_type === 'BookingRoom') {
-            $roomId = $roomNumber ?: ($this->target_id ?: 'phòng');
+            $roomId = $roomNumber ?: ($this->target_id ?: '');
+            $brModel = $roomId !== '' && !str_contains($roomId, ',') ? $this->getCachedBookingRoom($roomId) : null;
+            // Số phòng vật lý của phòng thuê (mã G... là mã phòng thuê)
+            $physicalRoom = $this->safeStr($this->new_values['room_number'] ?? $this->old_values['room_number'] ?? $brModel?->room_number);
+            $bkCode = $bookingCode ?: (($this->new_values['booking_id'] ?? $this->old_values['booking_id'] ?? $brModel?->booking_id) ? 'GAL' . ($this->new_values['booking_id'] ?? $this->old_values['booking_id'] ?? $brModel?->booking_id) : '');
 
             if ($action === 'Add') {
-                $br = $this->getCachedBookingRoom($roomId);
-                $cls = $this->safeStr($br?->roomClass?->name ?? ($this->new_values['room_class'] ?? 'Superior Double'), 'Superior Double');
-                $form = $this->extractBedForm($cls, $this->safeStr($br?->room_form ?? ($this->new_values['room_form'] ?? 'Double'), 'Double'));
-                $price = (float)($br?->price ?? $br?->rate ?? ($this->new_values['price'] ?? 540000));
-                $priceStr = number_format($price > 0 ? $price : 540000, 0, '.', ',');
-                $pNum = $this->safeStr($br?->room_number ?? ($this->new_values['room_number'] ?? 'Chưa gán'), 'Chưa gán');
-                $adults = is_numeric($br?->adults ?? ($this->new_values['adults'] ?? 2)) ? ($br?->adults ?? ($this->new_values['adults'] ?? 2)) : 2;
-                $child = is_numeric($br?->children ?? ($this->new_values['children'] ?? 0)) ? ($br?->children ?? ($this->new_values['children'] ?? 0)) : 0;
-                $bf = !empty($br?->breakfast ?? ($this->new_values['breakfast'] ?? false)) ? 'Có' : 'Không';
-                $extra = is_numeric($br?->extra_bed_qty ?? ($this->new_values['extra_bed_qty'] ?? 0)) ? ($br?->extra_bed_qty ?? ($this->new_values['extra_bed_qty'] ?? 0)) : 0;
-                $rArr = $br?->arrival_date ? \Carbon\Carbon::parse($br->arrival_date)->format('d-m-Y') : now()->format('d-m-Y');
-                $rDep = $br?->departure_date ? \Carbon\Carbon::parse($br->departure_date)->format('d-m-Y') : now()->addDays(2)->format('d-m-Y');
+                // Nhiều phòng ghi chung một dòng (lúc tạo đăng ký): giữ mô tả đã ghi
+                if (isset($this->new_values['rooms']) || str_contains($roomId, ',')) {
+                    return $desc;
+                }
+                $br = $brModel;
+                $cls = $this->safeStr($this->new_values['room_class'] ?? $this->lookup('room_class_id', $this->new_values['room_class_id'] ?? null) ?? $br?->roomClass?->name);
+                $form = $this->safeStr($this->new_values['room_form'] ?? $br?->room_form);
+                $price = $this->new_values['rate'] ?? $this->new_values['price'] ?? $br?->rate;
+                $priceStr = is_numeric($price) ? number_format((float) $price, 0, '.', ',') : '';
+                $pNum = $physicalRoom !== '' ? $physicalRoom : 'Chưa gán';
+                $adults = $this->safeStr($this->new_values['adults'] ?? $br?->adults);
+                $child = $this->safeStr($this->new_values['children_qty'] ?? $this->new_values['children'] ?? $br?->children_qty);
+                $bfRaw = $this->new_values['breakfast'] ?? $br?->breakfast;
+                $bf = $bfRaw === null ? '' : ($bfRaw ? 'Có' : 'Không');
+                $extra = $this->safeStr($this->new_values['extra_bed_qty'] ?? $br?->extra_bed_qty);
+                $arrRaw = $this->new_values['arrival_date'] ?? $br?->arrival_date;
+                $depRaw = $this->new_values['departure_date'] ?? $br?->departure_date;
+                $rArr = $arrRaw ? \Carbon\Carbon::parse($arrRaw)->format('d-m-Y') : '';
+                $rDep = $depRaw ? \Carbon\Carbon::parse($depRaw)->format('d-m-Y') : '';
+                $bkText = $bkCode !== '' ? " - Đăng ký: {$bkCode}" : '';
 
-                return "* Phòng thuê : # Thêm mới : Mã: {$roomId} - Giá: {$priceStr} - Loại: {$cls} - Dạng: {$form} - Phòng: {$pNum} - Ngày đến: {$rArr} - Ngày đi: {$rDep} - Người lớn: {$adults} - Trẻ em: {$child} - Trẻ em ăn sáng miễn phí: 0 - Ăn sáng: {$bf} - Thêm giường: {$extra} - BirthDay: Không";
+                return "* Phòng thuê : # Thêm mới : Mã: {$roomId}{$bkText} - Giá: {$priceStr} - Loại: {$cls} - Dạng: {$form} - Phòng: {$pNum} - Ngày đến: {$rArr} - Ngày đi: {$rDep} - Người lớn: {$adults} - Trẻ em: {$child} - Ăn sáng: {$bf} - Thêm giường: {$extra}";
             }
 
             if ($action === 'Modify') {
@@ -940,23 +962,22 @@ class ActivityLogResource extends JsonResource
 
                 // Row 98: Hủy nhận phòng (undo check-in)
                 if (str_contains($rawUrl, 'undo-checkin') || str_contains($desc, 'Cancel checkin') || (isset($this->old_values['status']) && (int)$this->old_values['status'] === 1 && isset($this->new_values['status']) && (int)$this->new_values['status'] === 0)) {
-                    $bCode = $bookingCode ?: '6787';
-                    $pNum = $this->safeStr($this->new_values['room_number'] ?? $this->old_values['room_number'] ?? $roomNumber ?? '406', '406');
-                    return "Cancel checkin cho Mã Đăng Ký: {$bCode}\n- Phòng: {$pNum}\n- tình trạng phòng: Phòng sạch";
+                    $pNum = $physicalRoom !== '' ? $physicalRoom : $roomId;
+                    return "Cancel checkin cho Mã Đăng Ký: {$bkCode}\n- Phòng: {$pNum}";
                 }
 
                 // Row 34: Tự động gán phòng (auto-assign)
                 if (str_contains($rawUrl, 'auto-assign') || str_contains($desc, 'Tự động assigned rooms')) {
-                    $pNum = $this->safeStr($this->new_values['room_number'] ?? '109', '109');
-                    return "* Tự động assigned rooms: - Mã phòng: {$roomId} -> {$pNum}";
+                    $pNum = $this->safeStr($this->new_values['room_number'] ?? $brModel?->room_number);
+                    return "* Tự động assigned rooms: - Mã phòng: {$roomId} -> {$pNum}" . ($bkCode !== '' ? " - Đăng ký: {$bkCode}" : '');
                 }
 
                 // Row 63: No Post tại cấp BookingRoom
                 if (isset($this->new_values['no_post']) || isset($this->old_values['no_post'])) {
                     $enabled = !empty($this->new_values['no_post']);
                     $state = $enabled ? 'Bật' : 'Tắt';
-                    $pNum = $this->safeStr($this->new_values['room_number'] ?? $this->old_values['room_number'] ?? $roomNumber ?? '405', '405');
-                    return "* {$state} trạng thái No Post cho Mã đăng ký {$bookingCode}, phòng: {$pNum}";
+                    $pNum = $physicalRoom !== '' ? $physicalRoom : $roomId;
+                    return "* {$state} trạng thái No Post cho Mã đăng ký {$bkCode}, phòng: {$pNum}";
                 }
 
                 // Khóa chuyển phòng Do Not Move (Hàng 11, 12, 41, 42)
@@ -965,76 +986,96 @@ class ActivityLogResource extends JsonResource
                 if ($oldDnm !== null && $newDnm !== null && $oldDnm != $newDnm) {
                     $fromState = $oldDnm ? 'Do Not Move' : 'sẵn sàng';
                     $toState = $newDnm ? 'Do Not Move' : 'sẵn sàng';
-                    return "* Cập nhật phòng thuê: {$roomId} - Đăng Ký: {$bookingCode} từ {$fromState} sang {$toState}";
+                    return "* Cập nhật phòng thuê: {$roomId}" . ($physicalRoom !== '' ? " (phòng {$physicalRoom})" : '') . " - Đăng Ký: {$bkCode} từ {$fromState} sang {$toState}";
                 }
 
                 // Đổi loại / dạng phòng (Hàng 9, 35)
                 $oldClass = $this->old_values['room_class'] ?? $this->old_values['room_class_id'] ?? null;
                 $newClass = $this->new_values['room_class'] ?? $this->new_values['room_class_id'] ?? null;
                 if ($oldClass && $newClass && $oldClass != $newClass) {
-                    $oldRoom = $this->safeStr($this->old_values['room_number'] ?? '705', '705');
-                    $newRoom = $this->safeStr($this->new_values['room_number'] ?? '207', '207');
-                    return "* Cập nhật phòng thuê: điều chỉnh loại dạng phòng cho {$roomId}\nPhòng: {$oldRoom} -> {$newRoom}\nLoại: Superior Double -> Superior Twin\nDạng: Double -> Twin";
+                    $lines = ["* Cập nhật phòng thuê: điều chỉnh loại dạng phòng cho {$roomId}" . ($bkCode !== '' ? " - Đăng ký: {$bkCode}" : '')];
+                    if (array_key_exists('room_number', $this->new_values ?? []) || array_key_exists('room_number', $this->old_values ?? [])) {
+                        $lines[] = 'Phòng: ' . $this->safeStr($this->old_values['room_number'] ?? null, '(trống)') . ' -> ' . $this->safeStr($this->new_values['room_number'] ?? null, '(trống)');
+                    }
+                    $lines[] = 'Loại: ' . $this->classLabel($oldClass) . ' -> ' . $this->classLabel($newClass);
+                    $oldForm = $this->old_values['room_form'] ?? null;
+                    $newForm = $this->new_values['room_form'] ?? null;
+                    if ($oldForm !== null || $newForm !== null) {
+                        $lines[] = 'Dạng: ' . $this->safeStr($oldForm, '(trống)') . ' -> ' . $this->safeStr($newForm, '(trống)');
+                    }
+                    return implode("\n", $lines);
                 }
 
+                // Dòng 325: luôn kèm mã đăng ký và số phòng để tra cứu
+                $ref = $roomId . ($physicalRoom !== '' && $physicalRoom !== $roomId ? " - Phòng {$physicalRoom}" : '') . ($bkCode !== '' ? " - Đăng ký {$bkCode}" : '');
                 $diff = $this->formatHktRoomDiff();
                 if (!empty($diff)) {
-                    return "* Cập Nhật Phòng Thuê ({$roomId}) : " . implode(' ', $diff);
+                    return "* Cập Nhật Phòng Thuê ({$ref}) : " . implode(' ', $diff);
                 }
-                return "* Cập Nhật Phòng Thuê ({$roomId})";
+                return "* Cập Nhật Phòng Thuê ({$ref})";
             }
 
             if ($action === 'Cancel') {
-                $reason = $this->safeStr($this->new_values['reason'] ?? $this->old_values['reason'] ?? 'Better Rate elsewhere', 'Better Rate elsewhere');
-                $pNum = $this->safeStr($this->old_values['room_number'] ?? '703', '703');
-                return "* Hủy phòng thuê: {$pNum} ({$roomId}) - Đăng ký: {$bookingCode} Lý do: {$reason}";
+                $reason = $this->safeStr($this->new_values['reason'] ?? $this->old_values['reason'] ?? null);
+                $pNum = $physicalRoom !== '' ? $physicalRoom : 'Chưa gán';
+                return "* Hủy phòng thuê: {$pNum} ({$roomId}) - Đăng ký: {$bkCode}" . ($reason !== '' ? " Lý do: {$reason}" : '');
             }
         }
 
         // 7. Payment / Đặt cọc (Hàng 19, 20, 21, 22, 23, 59, 60, 61)
         if ($this->target_type === 'Payment') {
-            $codeStr = $bookingCode ?: 'GAL22';
-            $amount = (float) ($this->new_values['amount'] ?? $this->old_values['amount'] ?? 5000000);
-            $amountStr = number_format($amount > 0 ? $amount : 5000000, 0, '.', ',');
-            $method = $this->safeStr($this->new_values['payment_method'] ?? 'BT', 'BT');
-            $note = $this->safeStr($this->new_values['description'] ?? $this->new_values['note'] ?? 'Deposit (Bank transfer)', 'Deposit (Bank transfer)');
+            $codeStr = $bookingCode ?: '(không rõ)';
+            $amountRaw = $this->new_values['amount'] ?? $this->old_values['amount'] ?? null;
+            $amountStr = is_numeric($amountRaw) ? number_format((float) $amountRaw, 0, '.', ',') : '';
+            $method = $this->safeStr($this->new_values['payment_method'] ?? $this->old_values['payment_method']
+                ?? $this->lookup('payment_method_id', $this->new_values['payment_method_id'] ?? $this->old_values['payment_method_id'] ?? null));
+            $note = $this->safeStr($this->new_values['description'] ?? $this->new_values['note'] ?? $this->old_values['description'] ?? $this->old_values['note'] ?? null);
+            $paymentBooking = $bookingCode ? $this->getCachedBooking(preg_replace('/\D/', '', $bookingCode)) : null;
 
             // Row 20: Tách cọc
             if (str_contains($rawUrl, 'split') || str_contains($desc, 'tách làm hai') || isset($this->new_values['total_amount_before_split'])) {
-                $orig = (float) ($this->new_values['total_amount_before_split'] ?? $this->old_values['total_amount_before_split'] ?? 5000000);
-                $origStr = number_format($orig > 0 ? $orig : 5000000, 0, '.', ',');
-                $amt1 = (float) ($this->new_values['amount'] ?? 2500000);
-                $amt1Str = number_format($amt1 > 0 ? $amt1 : 2500000, 0, '.', ',');
-                $amt2 = max(0, $orig - $amt1);
-                $amt2Str = number_format($amt2 > 0 ? $amt2 : 2500000, 0, '.', ',');
-                $folio = $this->new_values['folio_id'] ?? 1;
-                return "* Deposit (Bank transfer) số tiền: {$origStr}, tách làm hai, số tiền 1: {$amt1Str}, folio {$folio}, số tiền 2: {$amt2Str}, folio {$folio}";
+                $origRaw = $this->new_values['total_amount_before_split'] ?? $this->old_values['total_amount_before_split'] ?? null;
+                $amt1Raw = $this->new_values['amount'] ?? null;
+                if (!is_numeric($origRaw) || !is_numeric($amt1Raw)) {
+                    return $desc;
+                }
+                $orig = (float) $origRaw;
+                $amt1 = (float) $amt1Raw;
+                $origStr = number_format($orig, 0, '.', ',');
+                $amt1Str = number_format($amt1, 0, '.', ',');
+                $amt2Str = number_format(max(0, $orig - $amt1), 0, '.', ',');
+                $folio = $this->safeStr($this->new_values['folio_id'] ?? $this->new_values['folio'] ?? null);
+                $folioText = $folio !== '' ? ", folio {$folio}" : '';
+                $label = $note !== '' ? $note : 'Đặt cọc';
+                return "* {$label} số tiền: {$origStr}, tách làm hai, số tiền 1: {$amt1Str}{$folioText}, số tiền 2: {$amt2Str}{$folioText}";
             }
 
             // Row 21: Chuyển cọc
             if (str_contains($rawUrl, 'transfer') || str_contains($desc, 'TRANSFER IN') || str_contains($desc, 'Chuyển đặt cọc')) {
-                $sourceBk = '22';
-                $targetBk = '20';
                 if (preg_match('/BK_(\d+)=>BK_(\d+)/', $desc, $m)) {
-                    $sourceBk = $m[1];
-                    $targetBk = $m[2];
-                } elseif (!empty($this->new_values['target_booking_id'])) {
+                    [$sourceBk, $targetBk] = [$m[1], $m[2]];
+                } elseif (!empty($this->new_values['target_booking_id']) && $bookingCode) {
                     $targetBk = (string) $this->new_values['target_booking_id'];
-                    $sourceBk = $bookingCode ? preg_replace('/\D/', '', $bookingCode) : '22';
+                    $sourceBk = preg_replace('/\D/', '', $bookingCode);
+                } else {
+                    return $desc;
                 }
-                return "Chuyển đặt cọc (2.Deposit (Bank transfer) - {$amountStr}) từ mã đăng ký: {$sourceBk} đến mã đăng ký: {$targetBk}";
+                $label = $note !== '' ? $note : 'Đặt cọc';
+                return "Chuyển đặt cọc ({$label} - {$amountStr}) từ mã đăng ký: {$sourceBk} đến mã đăng ký: {$targetBk}";
             }
 
             if ($action === 'Add' || $this->action === 'Payment') {
-                return "* Thêm Đặt Cọc Cho Đăng Ký: {$codeStr} - Tên Booking: Test ghi log - PaymentMethod: {$method} - Số Tiền: {$amountStr} - Mô tả: {$note}";
+                $bookingName = $this->safeStr($paymentBooking?->booking_name);
+                return "* Thêm Đặt Cọc Cho Đăng Ký: {$codeStr} - Tên Booking: {$bookingName} - PaymentMethod: {$method} - Số Tiền: {$amountStr} - Mô tả: {$note}";
             }
             if ($action === 'Modify') {
-                return "Sửa Đặt Cọc Cho Đăng Ký: {$codeStr}  PaymentMethod:BT->CA - Mô tả:1.Deposit (Bank transfer) -> Deposit (Cash)";
+                $diff = $this->formatDiffLines();
+                return "Sửa Đặt Cọc Cho Đăng Ký: {$codeStr}" . ($diff ? " :\n" . implode("\n", $diff) : '');
             }
             if ($action === 'Cancel') {
-                $reason = $this->safeStr($this->new_values['reason'] ?? $this->old_values['reason'] ?? 'post sai', 'post sai');
+                $reason = $this->safeStr($this->new_values['reason'] ?? $this->old_values['reason'] ?? null);
                 $roomPart = $roomNumber ? " - mã phòng thuê: {$roomNumber}" : "";
-                return "* Correct Đặt Cọc Cho Đăng Ký: {$codeStr}{$roomPart} - PaymentMethod: Cash - Số tiền: {$amountStr} - Lý Do: {$reason}";
+                return "* Correct Đặt Cọc Cho Đăng Ký: {$codeStr}{$roomPart} - PaymentMethod: {$method} - Số tiền: {$amountStr}" . ($reason !== '' ? " - Lý Do: {$reason}" : '');
             }
         }
 
@@ -1045,22 +1086,30 @@ class ActivityLogResource extends JsonResource
 
         // 9. Công ty (Hàng 64, 65)
         if ($this->target_type === 'Company' || $componentLabel === 'Công ty') {
-            $companyCode = $this->safeStr($this->new_values['code'] ?? $this->old_values['code'] ?? ($this->target_id ? 'CTY' . str_pad($this->target_id, 4, '0', STR_PAD_LEFT) : 'CTY0001'), 'CTY0001');
-            $name = $this->safeStr($this->target_label ?? $this->new_values['name'] ?? $this->old_values['name'] ?? 'Công ty', 'Công ty');
+            $companyCode = $this->safeStr($this->new_values['code'] ?? $this->old_values['code'] ?? null);
+            $name = $this->safeStr($this->new_values['name'] ?? $this->old_values['name'] ?? $this->target_label);
 
             if ($action === 'Add') {
-                return "* Thêm Công Ty : ID: {$companyCode} , Công Ty: {$name} , Tên Giao Dịch: {$name} , Địa Chỉ: , Điện Thoại: , Email: , IsTourism: , ArAcount: True , Type: , Rank: , SourceCode: Travel Agent , MarketSegment: Travel Agent , Branch: , Event Code: , Not Use: 0 , ReCredit Limit: 0 , Is Use: 0 , OTA: 0 , Comporate: , PaymentAC: False";
+                $details = $this->formatCreationDetails();
+                return "* Thêm Công Ty : ID: {$companyCode} , Công Ty: {$name}" . ($details ? " :\n" . implode("\n", $details) : '');
             }
             if ($action === 'Modify') {
-                $diff = $this->formatDiffLines();
-                return "* Cập Nhật Công Ty:- ID: {$companyCode} , " . implode(' , ', $diff);
+                $diff = $this->formatDiffLines(['code', 'name']);
+                if (($this->old_values['name'] ?? null) !== ($this->new_values['name'] ?? null) && array_key_exists('name', $this->old_values ?? [])) {
+                    array_unshift($diff, '• Tên: ' . $this->safeStr($this->old_values['name']) . ' ➜ ' . $this->safeStr($this->new_values['name'] ?? null));
+                }
+                return "* Cập Nhật Công Ty:- ID: {$companyCode} - {$name} , " . implode(' , ', $diff);
             }
         }
 
         // 10. Check-out (Hàng 62)
         if ($action === 'CheckOut') {
             if ($roomNumber) {
-                $pNum = $this->safeStr($this->new_values['room_number'] ?? $this->old_values['room_number'] ?? '405', '405');
+                $br = preg_match('/^G\d+$/i', (string) $roomNumber) ? $this->getCachedBookingRoom($roomNumber) : null;
+                $pNum = $this->safeStr($this->new_values['room_number'] ?? $this->old_values['room_number'] ?? $br?->room_number);
+                if ($pNum === '' || $pNum === $roomNumber) {
+                    return "* Check Out Cho Đăng Ký {$bookingCode} - Phòng: {$roomNumber}";
+                }
                 return "* Check Out Cho Đăng Ký {$bookingCode} - Phòng: {$pNum} ({$roomNumber})";
             }
             return "* Check Out Cho Đăng Ký {$bookingCode}.";
@@ -1068,11 +1117,13 @@ class ActivityLogResource extends JsonResource
 
         // 11. Cảnh báo / Alert (Hàng 45, 46, 47)
         if ($this->target_type === 'BookingNotification' || str_contains($desc, 'BookingNotification')) {
-            $codeStr = $bookingCode ?: 'GAL27';
-            $msg = $this->safeStr($this->new_values['message'] ?? $this->new_values['description'] ?? $this->old_values['message'] ?? 'Khách Khó', 'Khách Khó');
-            $dept = $this->safeStr($this->new_values['department'] ?? 'FO', 'FO');
-            $from = !empty($this->new_values['starts_on']) ? \Carbon\Carbon::parse($this->new_values['starts_on'])->format('d-m-Y') : '08-09-2026';
-            $to = !empty($this->new_values['ends_on']) ? \Carbon\Carbon::parse($this->new_values['ends_on'])->format('d-m-Y') : '17-09-2026';
+            $codeStr = $bookingCode ?: '';
+            $msg = $this->safeStr($this->new_values['message'] ?? $this->new_values['description'] ?? $this->old_values['message'] ?? $this->old_values['description'] ?? null);
+            $dept = $this->safeStr($this->new_values['department'] ?? $this->old_values['department'] ?? null);
+            $fromRaw = $this->new_values['starts_on'] ?? $this->old_values['starts_on'] ?? null;
+            $toRaw = $this->new_values['ends_on'] ?? $this->old_values['ends_on'] ?? null;
+            $from = !empty($fromRaw) ? \Carbon\Carbon::parse($fromRaw)->format('d-m-Y') : '';
+            $to = !empty($toRaw) ? \Carbon\Carbon::parse($toRaw)->format('d-m-Y') : '';
 
             if ($action === 'Add' || $action === 'create') {
                 return "* Tạo Alert cho mã đăng ký {$codeStr}\n- Nội dung cảnh báo: {$msg}\n- Department: {$dept}\n- Từ ngày: {$from} - Đến ngày: {$to}";
@@ -1081,15 +1132,15 @@ class ActivityLogResource extends JsonResource
                 return "* Xóa Alert mã đăng ký {$codeStr}\n- Nội dung cảnh báo: {$msg}\n- Department: {$dept}\n- Từ ngày: {$from} - Đến ngày: {$to}";
             }
             if ($action === 'Modify' || $action === 'update') {
-                $oldMsg = $this->safeStr($this->old_values['message'] ?? $this->old_values['description'] ?? 'relationship', 'relationship');
-                $newMsg = $this->safeStr($this->new_values['message'] ?? $this->new_values['description'] ?? 'đoàn quan trọng', 'đoàn quan trọng');
+                $oldMsg = $this->safeStr($this->old_values['message'] ?? $this->old_values['description'] ?? null, '(trống)');
+                $newMsg = $this->safeStr($this->new_values['message'] ?? $this->new_values['description'] ?? null, '(trống)');
                 return "* Sửa Alert mã đăng ký {$codeStr}:\n- Nội dung cảnh báo: {$oldMsg} ➜ {$newMsg}\n- Từ ngày: {$from} - Đến ngày: {$to}";
             }
         }
 
         // 12. Trạng thái buồng phòng & DND (Hàng 48, 97)
         if (str_contains($desc, 'trạng thái buồng phòng') || str_contains($desc, 'Do Not Disturb') || ($this->target_type === 'Room' && ($action === 'Modify' || $action === 'update'))) {
-            $pNum = $this->new_values['room_number'] ?? $this->old_values['room_number'] ?? ($this->target_id ?: '101');
+            $pNum = $this->new_values['room_number'] ?? $this->old_values['room_number'] ?? ($this->target_label ?: $this->target_id);
             $oldCode = $this->old_values['room_status_code'] ?? null;
             $newCode = $this->new_values['room_status_code'] ?? null;
 
@@ -1111,55 +1162,45 @@ class ActivityLogResource extends JsonResource
                 'oos' => 'Phòng khóa (OOS)',
                 'dnd' => 'Do Not Disturb (Không làm phiền)',
             ];
-            $oldStatus = $statusNames[$oldCode] ?? ($this->old_values['status_name'] ?? $this->old_values['status'] ?? 'Phòng chưa dọn');
-            $newStatus = $statusNames[$newCode] ?? ($this->new_values['status_name'] ?? $this->new_values['status'] ?? 'Phòng sẵn sàng');
+            $oldStatus = $statusNames[$oldCode] ?? $this->safeStr($this->old_values['status_name'] ?? $this->old_values['status'] ?? null, '(trống)');
+            $newStatus = $statusNames[$newCode] ?? $this->safeStr($this->new_values['status_name'] ?? $this->new_values['status'] ?? null, '(trống)');
             return "* Phòng {$pNum}. Đổi trạng thái từ: {$oldStatus} -> {$newStatus}";
         }
 
         // 13. Khách lưu trú (Hàng 36, 100, 101, 102)
         if ($this->target_type === 'Guest' || $this->target_type === 'BookingRoomGuest' || str_contains($desc, 'khách lưu trú')) {
-            $gCode = $this->target_label ?? ($this->target_id ? 'K' . str_pad($this->target_id, 9, '0', STR_PAD_LEFT) : 'K000000085');
+            $gCode = $this->target_label ?? ($this->target_id ? 'K' . str_pad($this->target_id, 9, '0', STR_PAD_LEFT) : '');
             if ($action === 'Add' || $action === 'create') {
-                $name = $this->new_values['name'] ?? 'Guest 3';
-                $title = $this->new_values['title'] ?? 'Mr.';
-                $gender = !empty($this->new_values['gender']) ? ($this->new_values['gender'] === 'female' ? 'Nữ' : 'Nam') : 'Nam';
-                return "Thêm người lớn: Mã khách: {$gCode}\n- Danh xưng: {$title} - Họ tên: {$name} - Giới tính: {$gender} - ngày sinh: - Quốc tịch: - Số điện thoại: - Địa chỉ: - Email: -Loại khách: RegularGuest - loại chứng từ: - Id: - Ngày cấp:";
+                $details = $this->formatCreationDetails();
+                return "Thêm khách: Mã khách: {$gCode}" . ($details ? "\n" . implode("\n", $details) : '');
             }
             if ($action === 'Modify' || $action === 'update') {
                 $diff = $this->formatDiffLines();
                 return "* Cập nhật thông tin khách: Mã khách: {$gCode}\n" . implode(' - ', $diff);
             }
             if ($action === 'Cancel' || $action === 'delete') {
-                $name = $this->old_values['name'] ?? $this->target_label ?? 'Nguyễn Văn A';
+                $name = $this->safeStr($this->old_values['full_name'] ?? $this->old_values['name'] ?? $this->target_label);
                 return "Xóa khách: Mã khách: {$gCode} - Tên khách: {$name}";
             }
         }
 
-        // 14. Hóa đơn dịch vụ / Tiền phòng (Hàng 53, 54, 94)
+        // 14. Hóa đơn dịch vụ / Tiền phòng: giữ mô tả ghi lúc thao tác (không dựng lại bằng dữ liệu mẫu)
         if (str_contains($desc, 'ServiceBillDetail') || str_contains($desc, 'RoomNightBill')) {
-            $codeStr = $bookingCode ?: 'GAL27';
-            $pNum = $roomNumber ?: '102';
-            $date = now()->format('d-m-Y');
-            $time = now()->format('H:i');
-
-            if (str_contains($desc, 'RoomNightBill')) {
-                return "* Thêm tiền phòng cho đăng ký {$codeStr} -số phòng:{$pNum} - Từ ngày: {$date} - Đến ngày: {$date} - Giờ: {$time} -Ca:2 -Bộ phận: FO - Mã dịch vụ RM -Mô tả dịch vụ: Dịch vụ phòng nghỉ (Room rate night)";
-            }
-            return "Gửi hoá đơn về mã đăng ký {$codeStr} - Số phòng:{$pNum} - Khách: Lê Ngọc Khánh - Từ ngày: {$date} - Đến ngày: {$date} - Giờ: {$time} - Ca: 2 - Bộ Phận: FO -Mã dịch vụ: KC - Mô tả dịch vụ: Key card / Mất thẻ phòng - Số tiền: 200,000";
+            return $desc;
         }
 
         // 15. Sang ngày / Night Audit (Hàng 67, 68, 69, 70)
         if (str_contains($desc, 'night-audit') || $this->target_type === 'SystemDateRoll' || $componentLabel === 'Sang ngày') {
-            if ($action === 'Add' || $action === 'DayClose') {
-                $time = now()->format('d/m/Y H:i');
-                $user = $this->user_name ?: 'testUser';
-                return "* Sang ngày thành công: Từ ngày {$time} sang ngày {$time} - User: {$user}";
+            if (($action === 'Add' || $action === 'DayClose') && $desc === '') {
+                $oldDate = $this->safeStr($this->old_values['system_date'] ?? null);
+                $newDate = $this->safeStr($this->new_values['system_date'] ?? null);
+                return "* Sang ngày thành công" . ($oldDate !== '' ? ": Từ ngày {$oldDate}" : '') . ($newDate !== '' ? " sang ngày {$newDate}" : '') . ($this->user_name ? " - User: {$this->user_name}" : '');
             }
         }
 
         // 16. Dịch vụ buồng phòng (BookingRoomService / Minibar / Giặt là / Thêm dịch vụ)
         if ($this->target_type === 'BookingRoomService' || str_contains($desc, 'BookingRoomService')) {
-            $codeStr = $bookingCode ?: 'GAL1';
+            $codeStr = $bookingCode ?: '';
             $pNum = $roomNumber ?: ($this->safeStr($this->new_values['room_number'] ?? $this->old_values['room_number'] ?? ''));
             $sName = $this->safeStr($this->new_values['service_name'] ?? (!str_starts_with($this->target_label ?? '', 'GAL') ? $this->target_label : null) ?? $this->new_values['description'] ?? 'Dịch vụ phòng');
             $qty = $this->new_values['quantity'] ?? $this->old_values['quantity'] ?? 1;
@@ -1217,7 +1258,7 @@ class ActivityLogResource extends JsonResource
             if (in_array($key, $skip)) continue;
             if ($val === null || $val === '') continue;
 
-            $label = self::$fieldLabels[$key] ?? $key;
+            $label = self::$fieldLabels[$key] ?? Fmt::label($key);
             $formatted = $this->formatVal($key, $val);
             if ($formatted !== '' && $formatted !== '(trống)') {
                 $lines[] = "• {$label}: {$formatted}";
@@ -1261,7 +1302,7 @@ class ActivityLogResource extends JsonResource
             if (in_array($key, $skip)) continue;
             $oldVal = $old[$key] ?? null;
             if ($oldVal != $newVal) {
-                $label = $fieldMap[$key] ?? (self::$fieldLabels[$key] ?? $key);
+                $label = $fieldMap[$key] ?? (self::$fieldLabels[$key] ?? Fmt::label($key));
                 $oldStr = $this->formatVal($key, $oldVal);
                 $newStr = $this->formatVal($key, $newVal);
                 $lines[] = "- {$label} : {$oldStr} -> {$newStr}";
@@ -1321,18 +1362,18 @@ class ActivityLogResource extends JsonResource
     /**
      * Format các trường diff chung (không dump JSON thô).
      */
-    protected function formatDiffLines(): array
+    protected function formatDiffLines(array $extraSkip = []): array
     {
         $lines = [];
         $old = $this->old_values ?: [];
         $new = $this->new_values ?: [];
-        $skip = ['updated_at', 'created_at', 'id', 'deleted_at', 'remember_token', 'password'];
+        $skip = array_merge(['updated_at', 'created_at', 'id', 'deleted_at', 'remember_token', 'password'], $extraSkip);
 
         foreach ($new as $key => $newVal) {
             if (in_array($key, $skip)) continue;
 
             $oldVal = $old[$key] ?? null;
-            $label = self::$fieldLabels[$key] ?? $key;
+            $label = self::$fieldLabels[$key] ?? Fmt::label($key);
 
             $oldStr = $this->formatVal($key, $oldVal);
             $newStr = $this->formatVal($key, $newVal);
@@ -1352,6 +1393,11 @@ class ActivityLogResource extends JsonResource
     {
         if ($val === null || $val === '') {
             return '(trống)';
+        }
+
+        // Dòng 325: id danh mục (công ty, thị trường, nguồn khách, loại phòng...) hiển thị bằng tên
+        if (is_scalar($val) && !is_bool($val) && ($name = $this->lookup($key, $val)) !== null && !str_starts_with($name, '#')) {
+            return $name;
         }
 
         if (is_bool($val)) {
@@ -1377,6 +1423,38 @@ class ActivityLogResource extends JsonResource
         }
 
         return (string) $val;
+    }
+
+    /** Tên bản ghi danh mục theo id (null nếu trường không phải id danh mục hoặc không có giá trị). */
+    protected function lookup(string $key, mixed $id): ?string
+    {
+        if ($id === null || $id === '' || is_array($id) || !Fmt::isLookupField($key)) {
+            return null;
+        }
+
+        return Fmt::lookupName($key, $id);
+    }
+
+    protected function classLabel(mixed $val): string
+    {
+        if (is_numeric($val)) {
+            return $this->lookup('room_class_id', $val) ?? '#' . $val;
+        }
+
+        return $this->safeStr($val, '(trống)');
+    }
+
+    /** Tên cấu hình theo id khi log cũ chỉ lưu mô tả làm nhãn. */
+    protected function configName(): ?string
+    {
+        if ($this->target_type !== 'HotelConfig' || !is_numeric($this->target_id)) {
+            return null;
+        }
+        try {
+            return \App\Models\HotelConfig::where('id', $this->target_id)->value('name');
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     /**

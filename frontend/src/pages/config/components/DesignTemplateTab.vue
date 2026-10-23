@@ -5,15 +5,17 @@ import { useUiStore } from '@/stores/ui-store'
 import TemplateEditorModal from './hotel/TemplateEditorModal.vue'
 import ReportDataSourceManagerModal from './hotel/ReportDataSourceManagerModal.vue'
 import ReportDefinitionManagerModal from './hotel/ReportDefinitionManagerModal.vue'
+import ReportMenuConfigModal from './hotel/ReportMenuConfigModal.vue'
 import TemplateTab from './hotel/TemplateTab.vue'
 import { 
-  Plus, Copy, Trash2, Edit3, Database, Files, LayoutTemplate, Printer, ListFilter
+  Plus, Copy, Trash2, Edit3, Database, Files, LayoutTemplate, Printer, ListFilter, ListTree
 } from '@lucide/vue'
 
 const uiStore = useUiStore()
 const loading = ref(false)
 const templates = ref([])
 const activeWorkspace = ref('library')
+const isReportMenuConfigOpen = ref(false)
 
 // Active filtering group
 const activeTemplateGroup = ref('Booking Confirmation')
@@ -310,12 +312,21 @@ onMounted(() => {
       <Files class="mx-auto h-12 w-12 text-violet-400" />
       <h2 class="mt-4 text-lg font-black text-slate-800">DANH MỤC BÁO CÁO CÓ THAM SỐ</h2>
       <p class="mt-2 text-sm leading-relaxed text-slate-500">Tại đây cấu hình báo cáo xuất hiện trên menu, Store cần chạy, các ô lọc bên trái và thiết kế dùng để hiển thị kết quả. Đây là báo cáo dữ liệu, không phải phiếu in nghiệp vụ.</p>
-      <button @click="isReportManagerOpen = true" class="mt-5 inline-flex items-center gap-2 rounded-lg border-none bg-violet-600 px-5 py-2.5 text-xs font-black text-white"><ListFilter class="h-4 w-4" /> Mở danh mục báo cáo</button>
+      <div class="mt-5 flex flex-wrap justify-center gap-2">
+        <button @click="isReportManagerOpen = true" class="inline-flex items-center gap-2 rounded-lg border-none bg-violet-600 px-5 py-2.5 text-xs font-black text-white"><ListFilter class="h-4 w-4" /> Mở danh mục báo cáo</button>
+        <button @click="isReportMenuConfigOpen = true" class="inline-flex items-center gap-2 rounded-lg border border-violet-200 bg-white px-5 py-2.5 text-xs font-black text-violet-700"><ListTree class="h-4 w-4" /> Cấu hình menu báo cáo</button>
+      </div>
+      <p class="mt-3 text-[11px] text-slate-400">Cấu hình menu báo cáo: sắp xếp nhóm / báo cáo theo từng module bằng kéo thả và chọn vai trò được xem từng báo cáo.</p>
     </div>
   </div>
 
   <ReportDefinitionManagerModal
     :is-open="isReportManagerOpen"
     @close="isReportManagerOpen = false"
-    @changed="fetchTemplates" />
+    @changed="fetchTemplates"
+    @open-menu-config="isReportMenuConfigOpen = true" />
+
+  <ReportMenuConfigModal
+    :is-open="isReportMenuConfigOpen"
+    @close="isReportMenuConfigOpen = false" />
 </template>

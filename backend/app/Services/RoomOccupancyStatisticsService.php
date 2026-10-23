@@ -22,11 +22,17 @@ class RoomOccupancyStatisticsService
 
         // room_status_code chỉ phản ánh hiện tại; khi xem ngày khác phải dựa vào lịch sử khóa phòng.
         $isSystemDate = $date->isSameDay(app(RoomAvailabilityService::class)->getSystemDate());
+        // Dòng 288: phòng đang có khách check-in thì không thể là phòng khóa, dù room_status_code còn lưu OOO/OOS
+        // (dữ liệu cũ bị ghi sai khi sửa lịch khóa) -> không loại khách của phòng đó khỏi số đang ở / dự kiến cuối ngày.
+        $inhouseRoomNumbers = $isSystemDate
+            ? BookingRoom::query()->stayOnly()->where('status', BookingRoom::STATUS_CHECKED_IN)
+                ->whereIn('room_number', $physicalRoomNumbers)->pluck('room_number')->unique()
+            : collect();
         $currentOooRooms = $isSystemDate
-            ? $physicalRooms->whereIn('room_status_code', ['ooo', 'occupied_ooo'])->pluck('room_number')
+            ? $physicalRooms->whereIn('room_status_code', ['ooo', 'occupied_ooo'])->pluck('room_number')->diff($inhouseRoomNumbers)
             : collect();
         $currentOosRooms = $isSystemDate
-            ? $physicalRooms->where('room_status_code', 'oos')->pluck('room_number')
+            ? $physicalRooms->where('room_status_code', 'oos')->pluck('room_number')->diff($inhouseRoomNumbers)
             : collect();
 
         $oooRoomNumbers = $this->lockedRoomNumbers($physicalRoomNumbers, $date, 'OOO')

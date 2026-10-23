@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\CompanyResource;
 use App\Models\Company;
+use App\Services\ChainCatalogSyncService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
@@ -83,12 +84,20 @@ class CompanyController extends Controller
             'is_active'                => 'nullable|boolean',
         ]);
 
+        // Đồng bộ chuỗi: mã công ty tính trên tất cả chi nhánh để dùng chung một mã
+        $chainSync = app(ChainCatalogSyncService::class);
+        if ($chainSync->enabled()) {
+            $validated['code'] = $chainSync->nextCompanyCode();
+        }
+
         $company = Company::create($validated);
+        $syncWarnings = $chainSync->companyCreated($company);
         $company->load(['customerSource', 'market', 'branch', 'booker', 'salesPerson']);
 
         return response()->json([
             'success' => true,
             'data' => new CompanyResource($company),
+            'sync_warnings' => $syncWarnings,
         ], 201);
     }
 
@@ -136,12 +145,15 @@ class CompanyController extends Controller
             'is_active'                => 'nullable|boolean',
         ]);
 
+        $original = $company->getOriginal();
         $company->update($validated);
+        $syncWarnings = app(ChainCatalogSyncService::class)->companyUpdated($company, $original);
         $company->load(['customerSource', 'market', 'branch', 'booker', 'salesPerson']);
 
         return response()->json([
             'success' => true,
             'data' => new CompanyResource($company),
+            'sync_warnings' => $syncWarnings,
         ]);
     }
 
@@ -168,11 +180,14 @@ class CompanyController extends Controller
             return response()->json(['message' => "Không thể xóa công ty '{$company->name}' vì đang được sử dụng trong {$usedIn}. Vui lòng gỡ liên kết trước."], 422);
         }
 
+        $original = $company->getAttributes();
         $company->delete();
+        $syncWarnings = app(ChainCatalogSyncService::class)->companyDeleted($original);
 
         return response()->json([
             'success' => true,
             'message' => 'Company deleted successfully',
+            'sync_warnings' => $syncWarnings,
         ]);
     }
 

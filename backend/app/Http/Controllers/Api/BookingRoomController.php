@@ -894,7 +894,8 @@ class BookingRoomController extends Controller
         }
 
         // Điều kiện 3: Trạng thái vật lý phòng phải = 'Phòng sẵn sàng' (status = 'available')
-        // Nếu AllowCheckinVacantClean = 1 → cho phép check-in cả khi phòng dirty (chờ kiểm tra)
+        // Dòng 211: AllowCheckinVacantClean = 1 chỉ cho nhận phòng CHỜ KIỂM TRA (vacant_clean, có hỏi xác nhận);
+        // phòng bẩn / chờ dọn (vacant_dirty, turndown) luôn không được nhận phòng.
         $allowVacantClean = HotelConfig::where('name', 'AllowCheckinVacantClean')->value('value');
         if (!empty($bookingRoom->room_number)) {
             $physicalRoom = \App\Models\Room::where('room_number', $bookingRoom->room_number)->first();
@@ -931,7 +932,7 @@ class BookingRoomController extends Controller
                         ];
                         $label = $statusLabels[$currentCode] ?? 'chờ kiểm tra/chưa dọn';
 
-                        if ($allowVacantClean == '1') {
+                        if ($currentCode === 'vacant_clean' && $allowVacantClean == '1') {
                             // Cấu hình cho phép nhưng phải hỏi xác nhận nếu chưa confirmed
                             if (!$request->boolean('confirmed')) {
                                 return response()->json([
@@ -939,7 +940,7 @@ class BookingRoomController extends Controller
                                     'needs_confirmation' => true,
                                     'confirmation_type'  => 'room_status',
                                     'room_status'        => $currentCode,
-                                    'message'            => 'Phòng ' . $bookingRoom->room_number . ' đang ở trạng thái ' . $label . '. Bạn có muốn tiếp tục nhận phòng không? Tình trạng phòng sẽ được giữ nguyên.',
+                                    'message'            => 'Phòng ' . $bookingRoom->room_number . ' đang ở trạng thái ' . $label . '. Bạn có muốn tiếp tục nhận phòng không?',
                                 ], 200);
                             }
                             // confirmed=true: tiếp tục check-in, giữ nguyên trạng thái phòng
@@ -2082,6 +2083,25 @@ class BookingRoomController extends Controller
      * GET /bookings/{bookingId}/rooms/{roomId}/move-target-rooms
      * Lấy danh sách phòng trống khả dụng & phòng inhouse cho phép gộp
      */
+    /**
+     * Số phòng vật lý đang có khách In-House (đã check-in, chưa check-out),
+     * không phụ thuộc ngày đi dự kiến.
+     *
+     * @return array<string, int> room_number => index
+     */
+    private function inHouseRoomNumbers(int|string $excludeBookingRoomId): array
+    {
+        return BookingRoom::where('id', '!=', $excludeBookingRoomId)
+            ->stayOnly()
+            ->where('status', BookingRoom::STATUS_CHECKED_IN)
+            ->whereNotNull('room_number')
+            ->where('room_number', '!=', '')
+            ->pluck('room_number')
+            ->unique()
+            ->flip()
+            ->all();
+    }
+
     public function getMoveTargetRooms($bookingId, $roomId)
     {
         $bookingRoom = BookingRoom::where('booking_id', $bookingId)
@@ -2107,6 +2127,7 @@ class BookingRoomController extends Controller
             ->get();
 
         $ratesMap = \App\Models\StandardRate::all()->keyBy('room_class_id');
+        $inHouseRoomNumbers = $this->inHouseRoomNumbers($bookingRoom->id);
 
         $availableRooms = [];
         $statusLabels = [
@@ -2124,6 +2145,10 @@ class BookingRoomController extends Controller
         ];
 
         foreach ($allRooms as $room) {
+            // Note 30/09: phòng đang có khách ở chưa check out (kể cả quá ngày đi) không phải phòng trống.
+            if (isset($inHouseRoomNumbers[$room->room_number])) {
+                continue;
+            }
             $isOccupied = $this->avService->isRoomNumberOccupied(
                 $room->room_number,
                 $effectiveStartDate,
@@ -2375,6 +2400,13 @@ class BookingRoomController extends Controller
                 return response()->json(['success' => false, 'message' => "Không tìm thấy số phòng {$targetRoomNumber} trong hệ thống."], 422);
             }
 
+            if (isset($this->inHouseRoomNumbers($bookingRoom->id)[$targetRoomNumber])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Phòng {$targetRoomNumber} đang có khách ở chưa check out, không thể chuyển phòng.",
+                ], 422);
+            }
+
             // Kiểm tra trạng thái phòng đích
             $statusCode = $physicalRoom->room_status_code;
             if (in_array($statusCode, ['vacant_dirty', 'turndown', 'occupied_dirty']) || $physicalRoom->clean_status === 'dirty' || $physicalRoom->status === 'dirty') {
@@ -2538,6 +2570,7 @@ class BookingRoomController extends Controller
                         $bookingRoom->update([
                             'departure_date'   => $sysDateStr,
                             'ActutalNumOfDays' => $actualDaysStayed,
+                            'NumOfDays'        => $actualDaysStayed, // Dòng 183: phòng cũ chỉ ở $actualDaysStayed đêm (0 nếu chuyển cùng ngày)
                             'status'           => 100, // Status 100 = Chuyển phòng
                             'move_room'        => $newRoom->id,
                             'departure_time'   => $timeStr,
@@ -2807,21 +2840,26 @@ class BookingRoomController extends Controller
                     $syncMovedChildren($bookingRoom, $targetBookingRoom, $childrenToMove, $sysDateStr, $timeStr, $currentUser);
                 }
 
-                // Chỉ chuyển bill hiện thuộc phòng nguồn và đúng khách được chọn.
-                // Bill gốc của phòng đích không bị cập nhật các cột RentalRoomId2/CustomerId2.
-                $movedServiceBills = \App\Models\ServiceBill::where(function ($query) use ($bookingRoom) {
+                // Dòng 166: chỉ chuyển bill đang nằm ở PHÒNG nguồn (RentalRoomId2 = phòng nguồn).
+                // Bill đang ở master/booking (RentalRoomId2 rỗng, vd tiền phòng post về booking) giữ nguyên.
+                // - Chuyển khách chính: toàn bộ bill đang ở phòng đi theo khách chính.
+                // - Chuyển khách phụ: chỉ bill của khách đó.
+                // Bill gốc của phòng đích không bị cập nhật.
+                $primaryMovedGuestId = $guestsToMove->first(fn ($guestPivot) => (bool) $guestPivot->is_primary)?->guest_id;
+                $moveAllRoomBills = $primaryMovedGuestId !== null || $isAllGuestsMoved;
+                $isBlank = fn ($query, string $column) => $query->where(fn ($blank) => $blank->whereNull($column)->orWhere($column, '')->orWhere($column, '0'));
+                $movedServiceBills = \App\Models\ServiceBill::where(function ($query) use ($bookingRoom, $isBlank) {
                         $query->where('RentalRoomId2', $bookingRoom->id)
-                            ->orWhere(function ($originalOwner) use ($bookingRoom) {
-                                $originalOwner->where('RentalRoomId1', $bookingRoom->id)
-                                    ->where(function ($currentOwner) {
-                                        $currentOwner->whereNull('RentalRoomId2')
-                                            ->orWhere('RentalRoomId2', '')
-                                            ->orWhere('RentalRoomId2', '0');
-                                    });
+                            // Bill cũ chưa từng gán vị trí hiện tại (RegisterID2/RentalRoomId2 đều rỗng) vẫn là bill tại phòng gốc.
+                            // Có RegisterID2 mà không có RentalRoomId2 là bill đang ở master/booking -> không chuyển.
+                            ->orWhere(function ($legacy) use ($bookingRoom, $isBlank) {
+                                $legacy->where('RentalRoomId1', $bookingRoom->id);
+                                $isBlank($legacy, 'RentalRoomId2');
+                                $isBlank($legacy, 'RegisterID2');
                             });
                     })
-                    ->where(function ($query) use ($movedGuestIds) {
-                        $query->whereIn('CustomerId2', $movedGuestIds)
+                    ->when(! $moveAllRoomBills, fn ($query) => $query->where(function ($guestQuery) use ($movedGuestIds) {
+                        $guestQuery->whereIn('CustomerId2', $movedGuestIds)
                             ->orWhere(function ($originalGuest) use ($movedGuestIds) {
                                 $originalGuest->whereIn('CustomerId1', $movedGuestIds)
                                     ->where(function ($currentGuest) {
@@ -2830,15 +2868,17 @@ class BookingRoomController extends Controller
                                             ->orWhere('CustomerId2', '0');
                                     });
                             });
-                    })
+                    }))
                     ->lockForUpdate()
                     ->get();
 
+                $billOwnerFallback = $primaryMovedGuestId ?? ($movedGuestIds[0] ?? null);
                 foreach ($movedServiceBills as $bill) {
                     $currentGuestId = $bill->CustomerId2 ?: $bill->CustomerId1;
                     $bill->update([
+                        'RegisterID2'   => $targetBookingRoom->booking_id,
                         'RentalRoomId2' => $targetBookingRoom->id,
-                        'CustomerId2'   => $currentGuestId,
+                        'CustomerId2'   => in_array($currentGuestId, $movedGuestIds, true) ? $currentGuestId : $billOwnerFallback,
                     ]);
                 }
 
@@ -2887,6 +2927,7 @@ class BookingRoomController extends Controller
                     $bookingRoom->update([
                         'departure_date'   => $sysDateStr,
                         'ActutalNumOfDays' => $actualDaysStayed,
+                        'NumOfDays'        => $actualDaysStayed,
                         'status'           => 100, // Status 100 = Chuyển phòng / Gộp phòng
                         'move_room'        => $targetBookingRoom->id,
                         'departure_time'   => $timeStr,
@@ -2913,8 +2954,10 @@ class BookingRoomController extends Controller
 
                 // --- 5. TRANSFER LINKED RECORDS (Sp2102, Sp2107, Sp3000, Sp3002) TO TARGET INHOUSE ROOM IF ALL MOVED ---
                 if ($isAllGuestsMoved) {
+                    // Dòng 166: tiền phòng của phòng nguồn không chuyển sang phòng đang ở (phòng đích tự có tiền phòng).
                     \App\Models\BookingRoomService::where('booking_room_id', $bookingRoom->id)
                         ->where('service_date', '>=', $sysDateStr)
+                        ->whereNotIn('service_code', [\App\Models\BookingRoomService::CODE_ROOM, 'ROOM_CHARGE'])
                         ->update(['booking_room_id' => $targetBookingRoom->id]);
 
                     \App\Models\BookingRoomSpecialRequest::where('booking_room_id', $bookingRoom->id)

@@ -92,6 +92,8 @@ class RoomResource extends JsonResource
             'babies' => $this->babies,
             'arrival_time' => $this->arrival_time,
             'rate' => $this->rate,
+            // Dòng 214: modal Thông tin đặt phòng đọc ăn sáng của phòng, thiếu trường này thì luôn hiện có ăn sáng
+            'breakfast' => $this->breakfast,
             'rate_code' => $this->rate_code,
             'standard_rate' => (float) ($this->standard_rate ?? 0),
             'booking_note' => $this->booking_note,

@@ -110,6 +110,12 @@ class RoomController extends Controller
             ])
             ->get();
 
+        $extraBedDetailRoomIds = \App\Models\BookingRoomService::whereIn('booking_room_id', $bookingRoomsToday->pluck('id'))
+            ->where('service_code', \App\Models\BookingRoomService::CODE_EXTRA_BED)
+            ->distinct()
+            ->pluck('booking_room_id')
+            ->flip();
+
         $tomorrowDate = $systemDate->copy()->addDay()->toDateString();
         $bookingRoomsTomorrow = \App\Models\BookingRoom::whereNotNull('room_number')
             ->stayOnly()
@@ -259,7 +265,10 @@ class RoomController extends Controller
                     ->values()
                     ->toArray();
                 $ebQty = (int) ($br->extra_bed_qty ?? 0);
-                if ($br->extra_bed_qty === null && $br->services) {
+                if (isset($extraBedDetailRoomIds[$br->id])) {
+                    // Phòng đã có chi tiết EB theo đêm: chỉ hiện EB khi đêm đang xem có số lượng > 0.
+                    $ebQty = (int) $br->services->max('quantity');
+                } elseif ($br->extra_bed_qty === null && $br->services) {
                     $ebQty = (int) ($br->services->where('service_code', \App\Models\BookingRoomService::CODE_EXTRA_BED)->max('quantity') ?? 0);
                 }
                 $room->extra_bed_qty = $ebQty;
@@ -543,6 +552,26 @@ class RoomController extends Controller
     /**
      * Update room status.
      */
+    /**
+     * Dòng 288: phòng đang có khách check-in không được chuyển sang OOO/OOS
+     * (rooms lưu tình trạng khóa trong khi có khách làm sai số phòng đang ở / dự kiến cuối ngày).
+     */
+    private function lockStatusBlockedByInhouseGuest(Room $room, string $newCode): ?string
+    {
+        if (!in_array($newCode, ['ooo', 'oos'], true)) {
+            return null;
+        }
+
+        $hasInhouse = \App\Models\BookingRoom::where('room_number', $room->room_number)
+            ->stayOnly()
+            ->where('status', \App\Models\BookingRoom::STATUS_CHECKED_IN)
+            ->exists();
+
+        return $hasInhouse
+            ? "Phòng {$room->room_number} đang có khách ở, không thể chuyển sang " . strtoupper($newCode) . '.'
+            : null;
+    }
+
     public function updateStatus(Request $request, $id)
     {
         if (!app(\App\Services\RoomStatusPermissionService::class)->canChange($request)) {
@@ -566,6 +595,10 @@ class RoomController extends Controller
 
         $oldCode = $room->getOriginal('room_status_code');
         $newCode = $validated['room_status_code'];
+
+        if ($error = $this->lockStatusBlockedByInhouseGuest($room, $newCode)) {
+            return response()->json(['success' => false, 'message' => $error], 422);
+        }
 
         // Nếu chuyển từ phòng khóa (ooo/oos/occupied_ooo) sang trạng thái thường -> Kiểm tra quyền mở khóa phòng
         $isUnlocking = in_array($oldCode, ['ooo', 'oos', 'occupied_ooo']) && !in_array($newCode, ['ooo', 'oos', 'occupied_ooo']);
@@ -684,6 +717,12 @@ class RoomController extends Controller
 
         $newCode = $validated['room_status_code'];
         $rooms = Room::whereIn('id', $validated['room_ids'])->get();
+
+        foreach ($rooms as $r) {
+            if ($error = $this->lockStatusBlockedByInhouseGuest($r, $newCode)) {
+                return response()->json(['success' => false, 'message' => $error], 422);
+            }
+        }
 
         // Kiểm tra quyền mở khóa phòng nếu có phòng đang khóa chuyển sang trạng thái thường
         if (!in_array($newCode, ['ooo', 'oos', 'occupied_ooo'])) {

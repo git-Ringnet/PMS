@@ -221,8 +221,10 @@ const daDenBookings = computed(() => {
       if (isOccupiedMode.value) {
         return Number(room.status) === 1 && isRoomInhouseOnDate(room, searchDate.value)
       }
-      const roomArrival = normalizeDate(room.arrival_date || room.actual_arrival_date)
-      return Number(room.status) === 1 && roomArrival === normalizeDate(searchDate.value)
+      // Phòng chuyển giữ ngày đến gốc ở actual_arrival_date (sớm hơn arrival_date = ngày chuyển):
+      // khách đã đến từ ngày trước thì không tính là phòng đã đến của ngày chuyển.
+      const arrivalDates = [room.arrival_date, room.actual_arrival_date].map(normalizeDate).filter(Boolean).sort()
+      return Number(room.status) === 1 && arrivalDates[0] === normalizeDate(searchDate.value)
     })
     if (checkedInRooms.length === 0) return null
     return {
@@ -619,21 +621,52 @@ function getRoomGuestName(room, booking) {
   return '-'
 }
 
-// Get occupancy text (NL/TE/EB: Người lớn / Trẻ em / Extra bed)
+// Get occupancy counts (NL/TE/EB: Người lớn / Trẻ em / Em bé)
+function getRoomOccupancyCounts(room) {
+  if (!room) return { adults: 0, children: 0, babies: 0 }
+  const adults = (room.adults !== undefined && room.adults !== null && room.adults !== '')
+    ? Number(room.adults)
+    : (room.guests?.length ? room.guests.length : 1)
+
+  let children = 0
+  if (room.children_qty !== undefined && room.children_qty !== null && room.children_qty !== '') {
+    children = Number(room.children_qty) || 0
+  }
+  if (Array.isArray(room.children) && room.children.length > 0) {
+    const fromArray = room.children.filter(c => c.age_group !== 'baby' && c.child_status !== 100).length
+    children = Math.max(children, fromArray)
+  } else if (children === 0 && room.children !== undefined && room.children !== null && !isNaN(Number(room.children))) {
+    children = Number(room.children) || 0
+  }
+
+  let babies = 0
+  if (room.babies !== undefined && room.babies !== null && room.babies !== '') {
+    babies = Number(room.babies) || 0
+  }
+  if (Array.isArray(room.children) && room.children.length > 0) {
+    const fromArray = room.children.filter(c => c.age_group === 'baby' && c.child_status !== 100).length
+    babies = Math.max(babies, fromArray)
+  }
+
+  return { adults, children, babies }
+}
+
 function getRoomOccupancyText(room) {
   if (!room) return '-'
-  const adults = Number(room.adults) || (room.guests?.length ? room.guests.length : 1)
-  const children = (Number(room.children_qty) || 0) + (Number(room.babies) || 0) || (room.children?.length ? room.children.length : 0)
-  const extraBeds = Number(room.extra_bed_qty) || 0
-  return `${adults}/${children}/${extraBeds}`
+  const { adults, children, babies } = getRoomOccupancyCounts(room)
+  return `${adults}/${children}/${babies}`
 }
 
 function getBookingOccupancyText(booking) {
   if (!booking?.booking_rooms || booking.booking_rooms.length === 0) return '-'
-  const adults = booking.booking_rooms.reduce((sum, r) => sum + (Number(r.adults) || (r.guests?.length ? r.guests.length : 1)), 0)
-  const children = booking.booking_rooms.reduce((sum, r) => sum + ((Number(r.children_qty) || 0) + (Number(r.babies) || 0) || (r.children?.length ? r.children.length : 0)), 0)
-  const extraBeds = booking.booking_rooms.reduce((sum, r) => sum + (Number(r.extra_bed_qty) || 0), 0)
-  return `${adults}/${children}/${extraBeds}`
+  const totals = booking.booking_rooms.reduce((acc, r) => {
+    const counts = getRoomOccupancyCounts(r)
+    acc.adults += counts.adults
+    acc.children += counts.children
+    acc.babies += counts.babies
+    return acc
+  }, { adults: 0, children: 0, babies: 0 })
+  return `${totals.adults}/${totals.children}/${totals.babies}`
 }
 
 // Get special requests text
@@ -953,7 +986,7 @@ watch(() => props.displayMode, async () => {
                 <th class="p-2.5 text-center w-[100px] align-middle border-r border-slate-200 border">Ngày Đến</th>
                 <th class="p-2.5 text-center w-[100px] align-middle border-r border-slate-200 border">Ngày Đi</th>
                 <th class="p-2.5 text-center w-[80px] align-middle border-r border-slate-200 border">Phòng</th>
-                <th class="p-2.5 text-center w-[90px] align-middle border-r border-slate-200 border">NL/TE/EB</th>
+                <th class="p-2.5 text-center w-[90px] align-middle border-r border-slate-200 border" title="Người lớn / Trẻ em / Em bé">NL/TE/EB</th>
                 <th class="p-2.5 w-[160px] text-center align-middle border-r border-slate-200 border">Yêu Cầu ĐB</th>
                 <th v-if="isDepartureMode" class="p-2.5 text-center w-[120px] align-middle border-r border-slate-200 border">Tổng Cộng</th>
                 <th v-if="isDepartureMode" class="p-2.5 text-center w-[120px] align-middle border-r border-slate-200 border">Đã Thanh Toán</th>
@@ -1004,7 +1037,7 @@ watch(() => props.displayMode, async () => {
                   <td class="p-2.5 text-center text-[#000000D9] font-normal border-slate-200">{{ formatDateDisplay(booking.booking_rooms?.[0]?.arrival_date || booking.arrival_date) }}</td>
                   <td class="p-2.5 text-center text-[#000000D9] font-normal border-slate-200">{{ formatDateDisplay(booking.booking_rooms?.[0]?.departure_date || booking.departure_date) }}</td>
                   <td class="p-2.5 text-center font-normal text-[#000000D9] border-slate-200">{{ booking.booking_rooms.length }}</td>
-                  <td class="p-2.5 text-center tabular-nums text-xs font-normal text-[#000000D9] border-slate-200">{{ getBookingOccupancyText(booking) }}</td>
+                  <td class="p-2.5 text-center font-normal text-[#000000D9] border-slate-200">{{ getBookingOccupancyText(booking) }}</td>
                   <td class="p-2.5 text-[#000000D9] font-normal truncate max-w-[160px] border-slate-200" :title="getBookingSpecialRequestsText(booking)">{{ getBookingSpecialRequestsText(booking) }}</td>
                   <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-normal text-[#000000D9] border-slate-200">{{ formatMoney(bookingFinancialSummary(booking).total) }}</td>
                   <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-semibold text-emerald-600 border-slate-200">{{ formatMoney(bookingFinancialSummary(booking).paid) }}</td>
@@ -1049,7 +1082,7 @@ watch(() => props.displayMode, async () => {
                   <td class="p-2.5 text-center text-[#000000D9] font-normal border-slate-200">{{ formatDateDisplay(room.arrival_date) }}</td>
                   <td class="p-2.5 text-center text-[#000000D9] font-normal border-slate-200">{{ formatDateDisplay(room.departure_date) }}</td>
                   <td class="p-2.5 text-center border-slate-200"></td>
-                  <td class="p-2.5 text-center tabular-nums text-xs font-normal text-[#000000D9] border-slate-200">{{ getRoomOccupancyText(room) }}</td>
+                  <td class="p-2.5 text-center font-normal text-[#000000D9] border-slate-200">{{ getRoomOccupancyText(room) }}</td>
                   <td class="p-2.5 text-[#000000D9] font-normal truncate max-w-[160px] border-slate-200" :title="getRoomSpecialRequestsText(room)">{{ getRoomSpecialRequestsText(room) }}</td>
                   <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-normal text-[#000000D9] border-slate-200">{{ formatMoney(roomFinancialSummary(booking, room).total) }}</td>
                   <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-normal text-emerald-600 border-slate-200">{{ formatMoney(roomFinancialSummary(booking, room).paid) }}</td>
@@ -1108,7 +1141,7 @@ watch(() => props.displayMode, async () => {
                 <th class="p-2.5 text-center w-[100px] align-middle border-r border-slate-200 border">Ngày Đến</th>
                 <th class="p-2.5 text-center w-[100px] align-middle border-r border-slate-200 border">Ngày Đi</th>
                 <th class="p-2.5 text-center w-[80px] align-middle border-r border-slate-200 border">Phòng</th>
-                <th class="p-2.5 text-center w-[90px] align-middle border-r border-slate-200 border">NL/TE/EB</th>
+                <th class="p-2.5 text-center w-[90px] align-middle border-r border-slate-200 border" title="Người lớn / Trẻ em / Em bé">NL/TE/EB</th>
                 <th class="p-2.5 w-[160px] text-center align-middle border-r border-slate-200 border">Yêu Cầu ĐB</th>
                 <th v-if="isDepartureMode" class="p-2.5 text-center w-[120px] align-middle border-r border-slate-200 border">Tổng Cộng</th>
                 <th v-if="isDepartureMode" class="p-2.5 text-center w-[120px] align-middle border-r border-slate-200 border">Đã Thanh Toán</th>
@@ -1159,7 +1192,7 @@ watch(() => props.displayMode, async () => {
                   <td class="p-2.5 text-center text-[#000000D9] font-normal border-slate-200">{{ formatDateDisplay(booking.booking_rooms?.[0]?.arrival_date || booking.arrival_date) }}</td>
                   <td class="p-2.5 text-center text-[#000000D9] font-normal border-slate-200">{{ formatDateDisplay(booking.booking_rooms?.[0]?.departure_date || booking.departure_date) }}</td>
                   <td class="p-2.5 text-center font-normal text-[#000000D9] border-slate-200">{{ booking.booking_rooms.length }}</td>
-                  <td class="p-2.5 text-center tabular-nums text-xs font-normal text-[#000000D9] border-slate-200">{{ getBookingOccupancyText(booking) }}</td>
+                  <td class="p-2.5 text-center font-normal text-[#000000D9] border-slate-200">{{ getBookingOccupancyText(booking) }}</td>
                   <td class="p-2.5 text-[#000000D9] font-normal truncate max-w-[160px] border-slate-200" :title="getBookingSpecialRequestsText(booking)">{{ getBookingSpecialRequestsText(booking) }}</td>
                   <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-normal text-[#000000D9] border-slate-200">{{ formatMoney(bookingFinancialSummary(booking).total) }}</td>
                   <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-semibold text-emerald-600 border-slate-200">{{ formatMoney(bookingFinancialSummary(booking).paid) }}</td>
@@ -1204,7 +1237,7 @@ watch(() => props.displayMode, async () => {
                   <td class="p-2.5 text-center text-[#000000D9] font-normal border-slate-200">{{ formatDateDisplay(room.arrival_date) }}</td>
                   <td class="p-2.5 text-center text-[#000000D9] font-normal border-slate-200">{{ formatDateDisplay(room.departure_date) }}</td>
                   <td class="p-2.5 text-center border-slate-200"></td>
-                  <td class="p-2.5 text-center tabular-nums text-xs font-normal text-[#000000D9] border-slate-200">{{ getRoomOccupancyText(room) }}</td>
+                  <td class="p-2.5 text-center font-normal text-[#000000D9] border-slate-200">{{ getRoomOccupancyText(room) }}</td>
                   <td class="p-2.5 text-[#000000D9] font-normal truncate max-w-[160px] border-slate-200" :title="getRoomSpecialRequestsText(room)">{{ getRoomSpecialRequestsText(room) }}</td>
                   <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-normal text-[#000000D9] border-slate-200">{{ formatMoney(roomFinancialSummary(booking, room).total) }}</td>
                   <td v-if="isDepartureMode" class="p-2.5 text-right tabular-nums text-xs font-normal text-emerald-600 border-slate-200">{{ formatMoney(roomFinancialSummary(booking, room).paid) }}</td>

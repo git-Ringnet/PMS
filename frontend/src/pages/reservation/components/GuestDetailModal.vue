@@ -100,7 +100,7 @@
 
               <!-- Action buttons -->
               <div class="acts">
-                <button type="button" @click="triggerPhotoInput" class="btn-pms-secondary h-7 flex items-center justify-center gap-1.5 text-xs font-semibold">
+                <button type="button" @click="openCamera" class="btn-pms-secondary h-7 flex items-center justify-center gap-1.5 text-xs font-semibold">
                   <i class="fa-solid fa-camera text-xs"></i>
                   <span>Chụp</span>
                 </button>
@@ -405,6 +405,33 @@
           </button>
         </div>
 
+      </div>
+    </div>
+  </Teleport>
+
+  <!-- Dòng 333: chụp ảnh khuôn mặt từ webcam -->
+  <Teleport to="body">
+    <div v-if="showCamera" class="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50" @mousedown.self="closeCamera">
+      <div class="bg-white rounded-xl shadow-2xl w-[min(680px,94vw)] overflow-hidden">
+        <div class="flex items-center justify-between px-4 h-10 text-white text-sm font-bold" :style="{ background: topbarThemeBg }">
+          <span><i class="fa-solid fa-camera mr-2"></i>Chụp ảnh khách</span>
+          <button type="button" class="border-none bg-transparent text-white cursor-pointer text-xl leading-none" @click="closeCamera">&times;</button>
+        </div>
+        <div class="p-4 flex flex-col gap-3">
+          <div class="relative bg-slate-900 rounded-lg overflow-hidden aspect-video flex items-center justify-center">
+            <video ref="cameraVideoRef" autoplay playsinline muted class="w-full h-full object-contain" style="transform: scaleX(-1)"></video>
+            <div v-if="cameraStarting" class="absolute inset-0 flex items-center justify-center text-white text-sm">Đang mở webcam...</div>
+            <div v-if="cameraError" class="absolute inset-0 flex items-center justify-center p-6 text-center text-amber-200 text-sm">{{ cameraError }}</div>
+          </div>
+          <p class="text-xs text-slate-500">Đưa khuôn mặt khách vào giữa khung hình, đủ sáng và nhìn thẳng vào camera rồi bấm Chụp.</p>
+          <div class="flex justify-end gap-2">
+            <button type="button" class="btn-pms-secondary h-8 px-4 text-xs" @click="closeCamera">Hủy</button>
+            <button type="button" class="btn-pms-primary h-8 px-4 text-xs flex items-center gap-1.5" :disabled="!cameraReady" @click="capturePhoto">
+              <i class="fa-solid fa-camera text-xs"></i>
+              <span>Chụp</span>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </Teleport>
@@ -759,6 +786,83 @@ async function addPhotos(files) {
   }
 }
 
+// Dòng 333: chụp ảnh khuôn mặt từ webcam, ảnh chụp đi qua cùng luồng tải ảnh như file chọn từ máy
+const showCamera = ref(false)
+const cameraVideoRef = ref(null)
+const cameraStarting = ref(false)
+const cameraReady = ref(false)
+const cameraError = ref('')
+let cameraStream = null
+
+async function openCamera() {
+  showCamera.value = true
+  cameraError.value = ''
+  cameraReady.value = false
+
+  if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+    cameraError.value = 'Trình duyệt chỉ cho dùng webcam khi truy cập phần mềm qua HTTPS (hoặc localhost). Vui lòng dùng nút Tải lên.'
+    return
+  }
+
+  cameraStarting.value = true
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false })
+    if (!showCamera.value) {
+      stopCamera()
+      return
+    }
+    if (cameraVideoRef.value) {
+      cameraVideoRef.value.srcObject = cameraStream
+      await cameraVideoRef.value.play().catch(() => {})
+    }
+    cameraReady.value = true
+  } catch (err) {
+    const name = err?.name || ''
+    cameraError.value = name === 'NotAllowedError' || name === 'SecurityError'
+      ? 'Chưa được cấp quyền dùng webcam. Bấm biểu tượng camera trên thanh địa chỉ để cho phép rồi thử lại.'
+      : name === 'NotFoundError' || name === 'OverconstrainedError'
+        ? 'Không tìm thấy webcam trên máy này.'
+        : name === 'NotReadableError'
+          ? 'Webcam đang được ứng dụng khác sử dụng. Vui lòng tắt ứng dụng đó rồi thử lại.'
+          : 'Không mở được webcam: ' + (err?.message || name || 'lỗi không xác định')
+  } finally {
+    cameraStarting.value = false
+  }
+}
+
+function stopCamera() {
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(track => track.stop())
+    cameraStream = null
+  }
+  if (cameraVideoRef.value) cameraVideoRef.value.srcObject = null
+  cameraReady.value = false
+}
+
+function closeCamera() {
+  stopCamera()
+  showCamera.value = false
+}
+
+function capturePhoto() {
+  const video = cameraVideoRef.value
+  if (!video || !video.videoWidth) return
+
+  const canvas = document.createElement('canvas')
+  canvas.width = video.videoWidth
+  canvas.height = video.videoHeight
+  canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height)
+  canvas.toBlob(blob => {
+    if (!blob) {
+      uiStore.showToast('Không chụp được ảnh từ webcam', 'error')
+      return
+    }
+    const file = new File([blob], `webcam_${Date.now()}.jpg`, { type: 'image/jpeg' })
+    closeCamera()
+    addPhotos([file])
+  }, 'image/jpeg', 0.9)
+}
+
 function removeCurrentPhoto() {
   if (guestPhotos.value.length === 0) return
   guestPhotos.value.splice(curPhotoIdx.value, 1)
@@ -808,6 +912,10 @@ function stopDragModal() {
 }
 
 function handleKeyDown(e) {
+  if (showCamera.value && e.key === 'Escape') {
+    closeCamera()
+    return
+  }
   if (props.show && e.key === 'Escape') {
     emit('close')
   } else if (props.show && e.ctrlKey && e.key.toLowerCase() === 's') {
@@ -817,6 +925,7 @@ function handleKeyDown(e) {
 }
 
 watch(() => props.show, (v) => {
+  if (!v) closeCamera()
   if (v) {
     modalPos.value = { x: 0, y: 0 }
     resetForm()
@@ -839,6 +948,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeyDown)
+  stopCamera()
 })
 
 function formatDate(d) {

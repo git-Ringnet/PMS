@@ -93,6 +93,74 @@ class NightAuditTest extends TestCase
             ->assertJsonPath('data.pending_checkouts_count', 0);
     }
 
+    private function createUnassignedArrival(string $id, string $sysDateStr): BookingRoom
+    {
+        $booking = Booking::create([
+            'booking_name' => 'KHACH CHUA GAN PHONG',
+            'arrival_date' => $sysDateStr,
+            'departure_date' => Carbon::parse($sysDateStr)->addDays(2)->toDateString(),
+            'num_of_days' => 2,
+            'booking_date' => $sysDateStr,
+            'created_by' => 'admin',
+            'registration_status_id' => 1,
+        ]);
+
+        return BookingRoom::create([
+            'id' => $id,
+            'booking_id' => $booking->id,
+            'room_class_id' => 1,
+            'room_number' => null,
+            'arrival_date' => $sysDateStr,
+            'departure_date' => Carbon::parse($sysDateStr)->addDays(2)->toDateString(),
+            'status' => BookingRoom::STATUS_BOOKED,
+            'rate' => 500000,
+        ]);
+    }
+
+    /**
+     * Dòng 259: phòng đến = ngày hệ thống nhưng chưa gán số phòng vẫn phải chặn sang ngày.
+     */
+    public function test_unassigned_arrival_today_blocks_night_audit_until_processed()
+    {
+        $sysDateStr = Carbon::parse(SystemDateRoll::latest('id')->first()->system_date)->toDateString();
+        $room = $this->createUnassignedArrival('G1000259', $sysDateStr);
+
+        $this->actingAs($this->user)->getJson('/api/night-audit/check-status')
+            ->assertSuccessful()
+            ->assertJsonPath('data.pending_checkins_count', 1)
+            ->assertJsonPath('data.pending_checkins.0.id', $room->id)
+            ->assertJsonPath('data.pending_checkins.0.room_number', 'Chưa gán');
+
+        $blocked = $this->actingAs($this->user)->postJson('/api/night-audit/run', ['occupied_to_dirty' => false, 'empty_to_inspect' => false]);
+        $this->assertFalse($blocked->isSuccessful());
+        $this->assertStringContainsString('1 phòng chưa check-in', (string) $blocked->json('message'));
+        $this->assertSame($sysDateStr, Carbon::parse(SystemDateRoll::latest('id')->first()->system_date)->toDateString());
+
+        // Dời ngày đến (Late check-in) cho phòng chưa gán -> sang ngày được
+        $this->actingAs($this->user)->postJson('/api/night-audit/late-check-in', [
+            'booking_room_id' => $room->id, 'charge_option' => 'no_charge', 'reason' => 'Late Check-in',
+        ])->assertSuccessful();
+
+        $this->actingAs($this->user)->getJson('/api/night-audit/check-status')->assertJsonPath('data.pending_checkins_count', 0);
+        $this->actingAs($this->user)->postJson('/api/night-audit/run', ['occupied_to_dirty' => false, 'empty_to_inspect' => false])
+            ->assertSuccessful();
+    }
+
+    /**
+     * Dòng 259: Noshow được phòng đến chưa gán số phòng.
+     */
+    public function test_unassigned_arrival_can_be_marked_no_show()
+    {
+        $sysDateStr = Carbon::parse(SystemDateRoll::latest('id')->first()->system_date)->toDateString();
+        $room = $this->createUnassignedArrival('G1000260', $sysDateStr);
+
+        $this->actingAs($this->user)->postJson('/api/night-audit/no-show', [
+            'booking_room_id' => $room->id, 'charge_option' => 'no_charge',
+        ])->assertSuccessful();
+
+        $this->actingAs($this->user)->getJson('/api/night-audit/check-status')->assertJsonPath('data.pending_checkins_count', 0);
+    }
+
     /**
      * Test phòng đã chuyển (status = 100 / STATUS_MOVED) không bị tính vào pending_checkins và không chặn sang ngày
      */

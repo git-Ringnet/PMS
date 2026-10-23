@@ -356,7 +356,7 @@ const deleteConfig = async (configId) => {
     fetchHotelConfigs()
   } catch (err) {
     console.error(err)
-    uiStore.showToast('Không thể xóa cấu hình này', 'error')
+    uiStore.showToast(err.response?.data?.message || 'Không thể xóa cấu hình này', 'error')
   } finally {
     loading.value = false
   }

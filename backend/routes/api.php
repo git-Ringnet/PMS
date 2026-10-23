@@ -12,6 +12,10 @@ Route::post('/login', [AuthController::class, 'login'])->name('login');
 Route::get('/hotel-settings', [\App\Http\Controllers\Api\HotelSettingController::class, 'show']);
 // GET night-audit/check-status public để mọi client/tab/màn hình login đều kiểm tra được trạng thái tiến trình
 Route::get('/night-audit/check-status', [NightAuditController::class, 'checkStatus']);
+// Danh sách ngôn ngữ và từ điển dịch giao diện (public để màn hình đăng nhập cũng dịch được)
+Route::get('/i18n/languages', [\App\Http\Controllers\Api\TranslationController::class, 'languages']);
+Route::get('/i18n/dictionary/{lang}', [\App\Http\Controllers\Api\TranslationController::class, 'dictionary'])
+    ->where('lang', '[a-zA-Z-]{2,10}');
 
 // Protected routes (Sanctum)
 Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestrictions::class, \App\Http\Middleware\EnsureBranchAccess::class])->group(function () {
@@ -207,6 +211,12 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     Route::post('report-definitions/{reportDefinition}/execute', [\App\Http\Controllers\Api\ReportDefinitionController::class, 'execute']);
     Route::post('report-definitions/{reportDefinition}/render', [\App\Http\Controllers\Api\ReportDefinitionController::class, 'render']);
     Route::post('report-definitions/{reportDefinition}/exports', [\App\Http\Controllers\Api\ReportDefinitionController::class, 'export']);
+    // Dòng 327, 328: cấu hình menu báo cáo theo module và quyền xem từng báo cáo
+    Route::get('report-menu/navigation', [\App\Http\Controllers\Api\ReportMenuController::class, 'navigation']);
+    Route::get('report-menu', [\App\Http\Controllers\Api\ReportMenuController::class, 'index'])->middleware('permission:admin,system.setting,config.hotel.edit');
+    Route::put('report-menu/{location}', [\App\Http\Controllers\Api\ReportMenuController::class, 'update'])->middleware('permission:admin,system.setting,config.hotel.edit');
+    Route::get('report-definitions/{reportDefinition}/role-access', [\App\Http\Controllers\Api\ReportMenuController::class, 'roleAccess'])->middleware('permission:system.user.view');
+    Route::put('report-definitions/{reportDefinition}/role-access', [\App\Http\Controllers\Api\ReportMenuController::class, 'updateRoleAccess'])->middleware('permission:system.user.manage');
     Route::apiResource('report-definitions', \App\Http\Controllers\Api\ReportDefinitionController::class)
         ->parameters(['report-definitions' => 'reportDefinition']);
 
@@ -331,6 +341,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     Route::get('/inventory/checks', [\App\Http\Controllers\Api\InventoryCheckController::class, 'index']);
     Route::post('/inventory/checks', [\App\Http\Controllers\Api\InventoryCheckController::class, 'store']);
     Route::post('/inventory/checks/sync-previous-month', [\App\Http\Controllers\Api\InventoryCheckController::class, 'syncPreviousMonth']);
+    Route::post('/inventory/checks/save', [\App\Http\Controllers\Api\InventoryCheckController::class, 'save']);
     Route::delete('/inventory/checks/{id}', [\App\Http\Controllers\Api\InventoryCheckController::class, 'destroy']);
     Route::post('/inventory/checks/{id}/items', [\App\Http\Controllers\Api\InventoryCheckController::class, 'addItems']);
     Route::put('/inventory/checks/{id}/items/{itemId}', [\App\Http\Controllers\Api\InventoryCheckController::class, 'updateItem']);
@@ -424,6 +435,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     Route::get('general-search/options', [\App\Http\Controllers\Api\GeneralSearchController::class, 'options']);
     Route::get('general-search/suggestions', [\App\Http\Controllers\Api\GeneralSearchController::class, 'suggestions']);
     Route::get('general-search', [\App\Http\Controllers\Api\GeneralSearchController::class, 'index']);
+    Route::get('general-search/guests/{guest}/history', [\App\Http\Controllers\Api\GeneralSearchController::class, 'guestHistory']);
     Route::get('bookings/export', [\App\Http\Controllers\Api\BookingController::class, 'export']);
     Route::get('bookings/{booking}/notifications', [\App\Http\Controllers\Api\BookingNotificationController::class, 'index']);
     Route::get('bookings/{booking}/notifications/active', [\App\Http\Controllers\Api\BookingNotificationController::class, 'active']);
@@ -619,6 +631,26 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
         Route::delete('/time-windows/{id}', [$controller, 'destroyWindow']);
         Route::post('/exempt-users', [$controller, 'addExemptUsers']);
         Route::delete('/exempt-users/{userId}', [$controller, 'removeExemptUser']);
+    });
+
+    // Ngôn ngữ & Bản dịch dùng chung toàn hệ thống (Cấu hình hệ thống › Ngôn ngữ)
+    Route::prefix('i18n')->group(function () {
+        $controller = \App\Http\Controllers\Api\TranslationController::class;
+        Route::post('/collect', [$controller, 'collect'])->middleware('permission:system.language.edit');
+        Route::get('/admin/areas', [$controller, 'areas'])->middleware('permission:system.language.view');
+        Route::get('/admin/entries', [$controller, 'entries'])->middleware('permission:system.language.view');
+        Route::get('/admin/lookup', [$controller, 'lookup'])->middleware('permission:system.language.view');
+        Route::get('/admin/export', [$controller, 'export'])->middleware('permission:system.language.view');
+        Route::get('/admin/languages', [$controller, 'allLanguages'])->middleware('permission:system.language.view');
+        Route::post('/admin/entries', [$controller, 'storeEntry'])->middleware('permission:system.language.create');
+        Route::put('/admin/entries', [$controller, 'saveEntries'])->middleware('permission:system.language.edit');
+        Route::delete('/admin/entries/{id}', [$controller, 'destroyEntry'])->middleware('permission:system.language.delete');
+        Route::delete('/admin/entries/{id}/locations', [$controller, 'clearLocations'])->middleware('permission:system.language.edit');
+        Route::post('/admin/sync-defaults', [$controller, 'syncDefaults'])->middleware('permission:system.language.edit');
+        Route::post('/admin/import', [$controller, 'import'])->middleware('permission:system.language.edit');
+        Route::post('/admin/languages', [$controller, 'storeLanguage'])->middleware('permission:system.language.create');
+        Route::put('/admin/languages/{id}', [$controller, 'updateLanguage'])->middleware('permission:system.language.edit');
+        Route::delete('/admin/languages/{id}', [$controller, 'destroyLanguage'])->middleware('permission:system.language.delete');
     });
 
     // Alert sinh nhật / special request và nội dung cập nhật hệ thống (icon lịch, icon chuông)

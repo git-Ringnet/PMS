@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { dictionaryRevision, lookupExact, registerBuiltinReverse } from './i18n-dictionary'
 
 export const currentLang = ref(localStorage.getItem('pms_lang') || 'vi')
 
@@ -7,6 +8,7 @@ const translations = {
     header: {
       portalHome: 'Trang chủ Portal',
       logout: 'Đăng xuất',
+      logoutTitle: 'Đăng xuất',
       logoutConfirm: 'Bạn có chắc chắn muốn đăng xuất?',
       toggleDark: 'Bật/Tắt Chế độ tối',
       selectLanguage: 'Chọn ngôn ngữ / Select Language',
@@ -268,6 +270,7 @@ const translations = {
       helpDnd: 'Phòng không làm phiền',
       helpHkRequest: 'Yêu cầu dọn phòng',
       helpHkService: 'Dịch vụ dọn phòng',
+      helpInHouse: 'Có người trong phòng',
       helpGuestCheckedInToday: 'Phòng khách đã nhận trong ngày',
       helpGuestArrivingTomorrow: 'Phòng khách đến vào ngày mai'
     }
@@ -276,6 +279,7 @@ const translations = {
     header: {
       portalHome: 'Portal Homepage',
       logout: 'Logout',
+      logoutTitle: 'Log out',
       logoutConfirm: 'Are you sure you want to log out?',
       toggleDark: 'Toggle Dark Mode',
       selectLanguage: 'Select Language',
@@ -532,22 +536,37 @@ const translations = {
       helpDnd: 'Do Not Disturb',
       helpHkRequest: 'Housekeeping Request',
       helpHkService: 'Housekeeping Service',
+      helpInHouse: 'Guest in room',
       helpGuestCheckedInToday: 'Guest checked in today',
       helpGuestArrivingTomorrow: 'Guest arriving tomorrow'
     }
   }
 }
 
-export function t(key, params = {}) {
-  const keys = key.split('.')
-  let result = translations[currentLang.value]
-  for (const k of keys) {
+function resolveKey(dictionary, key) {
+  let result = dictionary
+  for (const k of key.split('.')) {
     if (result && result[k] !== undefined) {
       result = result[k]
     } else {
-      return key
+      return undefined
     }
   }
+  return result
+}
+
+/**
+ * Thứ tự ưu tiên: bản dịch trong Cấu hình hệ thống › Ngôn ngữ (theo chữ gốc tiếng Việt)
+ * → bản dịch có sẵn trong file này → chữ tiếng Việt → key.
+ */
+export function t(key, params = {}) {
+  dictionaryRevision.value // theo dõi để computed dùng t() cập nhật khi từ điển tải xong
+
+  const sourceText = resolveKey(translations.vi, key)
+  let result = typeof sourceText === 'string' ? lookupExact(sourceText) : null
+  if (result == null) result = resolveKey(translations[currentLang.value], key)
+  if (result === undefined) result = sourceText
+  if (result === undefined) return key
 
   if (typeof result === 'string') {
     Object.keys(params).forEach(p => {
@@ -557,3 +576,31 @@ export function t(key, params = {}) {
 
   return result
 }
+
+/**
+ * Các cặp dịch có sẵn trong file này dạng [{ key, source: chữ tiếng Việt, values: { en: ... } }],
+ * dùng để nạp vào Cấu hình hệ thống › Ngôn ngữ làm bản dịch mặc định.
+ */
+export function getBuiltinPairs() {
+  const pairs = []
+  const walk = (node, path) => {
+    for (const [k, v] of Object.entries(node || {})) {
+      const key = path ? `${path}.${k}` : k
+      if (v && typeof v === 'object') {
+        walk(v, key)
+      } else if (typeof v === 'string' && v.trim()) {
+        const values = {}
+        for (const lang of Object.keys(translations)) {
+          if (lang === 'vi') continue
+          const translated = resolveKey(translations[lang], key)
+          if (typeof translated === 'string' && translated.trim()) values[lang] = translated
+        }
+        pairs.push({ key, source: v, values })
+      }
+    }
+  }
+  walk(translations.vi, '')
+  return pairs
+}
+
+registerBuiltinReverse(getBuiltinPairs())

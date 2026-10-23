@@ -4996,25 +4996,26 @@ async function handleMainDateChange() {
     const diff = Math.ceil((co - ci) / 86400000)
     tab.nights = diff >= 0 ? diff : 0
     
-    // Section 16: Chỉ đồng bộ sang phòng con nếu cấu hình bật và ngày đến >= ngày hệ thống
+    // Row 275: preserve past arrival dates, but still sync reserved departures.
     const sysDate = systemDate.value || parseApiDate(new Date())
-    const canSyncToRooms = isSyncRoomDateEnabled.value && (!tab.checkIn || tab.checkIn >= sysDate)
+    const canSyncArrival = !tab.checkIn || tab.checkIn >= sysDate
+    const canSyncToRooms = isSyncRoomDateEnabled.value
 
     if (canSyncToRooms) {
       // Sync dates to allocations & rooms in tab
       if (tab.roomAllocations) {
         tab.roomAllocations.forEach(alloc => {
-          alloc.arrivalDate = tab.checkIn
+          if (canSyncArrival) alloc.arrivalDate = tab.checkIn
           alloc.departureDate = tab.checkOut
-          alloc.nights = tab.nights
+          alloc.nights = Math.max(0, Math.ceil((new Date(alloc.departureDate) - new Date(alloc.arrivalDate)) / 86400000))
         })
       }
       if (tab.rooms) {
         tab.rooms.forEach(r => {
           if (!isEditableAllocationRoom(r) || Number(r.bookingRoomStatus) !== 0) return
-          r.checkIn = tab.checkIn
+          if (canSyncArrival) r.checkIn = tab.checkIn
           r.checkOut = tab.checkOut
-          r.nights = tab.nights
+          r.nights = Math.max(0, Math.ceil((new Date(r.checkOut) - new Date(r.checkIn)) / 86400000))
           r.total = (r.price || 0) * (r.nights || 1)
 
           if (r.dailyRoomPrices) {
@@ -5051,23 +5052,22 @@ async function handleMainNightsChange() {
     co.setDate(ci.getDate() + Number(tab.nights))
     tab.checkOut = co.toISOString().split('T')[0]
     
-    // Section 16: Chỉ đồng bộ sang phòng con nếu cấu hình bật và ngày đến >= ngày hệ thống
-    const sysDate = systemDate.value || parseApiDate(new Date())
-    const canSyncToRooms = isSyncRoomDateEnabled.value && (!tab.checkIn || tab.checkIn >= sysDate)
+    // Row 275: changing header nights changes departure, not room arrival.
+    const canSyncToRooms = isSyncRoomDateEnabled.value
 
     if (canSyncToRooms) {
       // Sync to rooms and allocations in tab
       if (tab.roomAllocations) {
         tab.roomAllocations.forEach(alloc => {
           alloc.departureDate = tab.checkOut
-          alloc.nights = Number(tab.nights)
+          alloc.nights = Math.max(0, Math.ceil((new Date(alloc.departureDate) - new Date(alloc.arrivalDate)) / 86400000))
         })
       }
       if (tab.rooms) {
         tab.rooms.forEach(r => {
           if (!isEditableAllocationRoom(r) || Number(r.bookingRoomStatus) !== 0) return
           r.checkOut = tab.checkOut
-          r.nights = Number(tab.nights)
+          r.nights = Math.max(0, Math.ceil((new Date(r.checkOut) - new Date(r.checkIn)) / 86400000))
           r.total = (r.price || 0) * (r.nights || 1)
 
           if (r.dailyRoomPrices) {
