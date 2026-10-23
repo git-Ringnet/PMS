@@ -8,6 +8,59 @@
 
 - **Ngày ghi**: `YYYY-MM-DD`
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
+
+## [2026-10-22] - Hoàn Thành Loạt Tính Năng Báo Cáo, Buồng Phòng, Hồ Sơ Khách & Khóa Phòng
+### Module: Báo Cáo, Buồng Phòng (Housekeeping), Khách Lưu Trú, Sang Ngày & Khóa Phòng (OOO/OOS)
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **1. Báo cáo & Phân quyền Menu Báo cáo (Dòng 327, 328)**:
+    + Cấu hình menu báo cáo theo module: kéo thả sắp xếp cây nhóm/báo cáo (`ReportMenuConfigModal`).
+    + Phân quyền xem từng báo cáo theo Rule / Vai trò (`ReportRoleAccessModal`, `ReportPermissionService`).
+  - **2. Buồng phòng - Housekeeping (Dòng 341, 342, 354, 357, 372)**:
+    + Dòng 341: Cho phép HK hủy bill Lễ tân theo cấu hình `Housekeeping_AllowHKCorrectBillFO`.
+    + Dòng 342: Tìm kiếm hóa đơn HK chống race condition/ghi đè kết quả cũ.
+    + Dòng 354: Chuẩn hóa hiển thị ảnh sản phẩm khi post bill HK.
+    + Dòng 357: In phân công phòng: back-to-back (CI/OD/CO), thêm Extra Bed, sắp xếp theo tầng, in phòng chưa phân công, Supervisor in từ lịch, xem trước ở tab mới.
+    + Dòng 372: Kiểm kê định kỳ lưu 1 lần cả danh sách + cảnh báo tồn âm + cảnh báo định mức tồn tối thiểu (`Inventory_LowStockWarningThreshold`).
+  - **3. Quản lý khách & Tìm kiếm chung (Dòng 333, 355)**:
+    + Dòng 333: Tải ảnh khách lưu tên an toàn, hỗ trợ chụp trực tiếp từ webcam.
+    + Dòng 355: Tìm kiếm chung tab Khách: bổ sung popup xem chi tiết và toàn bộ lịch sử lưu trú của khách.
+  - **4. Sang ngày (Night Audit - Dòng 401)**:
+    + Nút Tiền phòng ở tab Phòng ở dùng API post tiền phòng chuẩn, hiển thị đúng giá phòng thực tế.
+  - **5. Lịch sử thao tác (Activity Log - Dòng 325)**:
+    + Tối ưu format log: bóc tách chính xác Mã đăng ký, Mã phòng, Tên danh mục; xóa bỏ dữ liệu mẫu giả.
+  - **6. Khóa phòng OOO/OOS (Dòng 153, 156, 288)**:
+    + Dòng 153: Tooltip khóa phòng trên Sơ đồ & Kế hoạch phòng; phân quyền mở khóa theo `RoleUserUnlockRoomOOO/OOS`.
+    + Dòng 156: Sửa phòng khóa (ngày kết thúc, ghi chú, tiến độ bảo trì); chuyển trạng thái chuẩn khi ngày bắt đầu = ngày hiện tại.
+    + Dòng 288: Sửa triệt để lỗi phòng có khách nhưng bị gán nhầm trạng thái OOO/OOS do lịch khóa tương lai; migration dọn sạch dữ liệu cũ.
+- **Kiểm thử**:
+  - Toàn bộ test suites backend và frontend pass 100%, code đã merge/sẵn sàng trên nhánh làm việc.
+
+## [2026-10-21] - Hoàn Thành Hàng Loạt Tính Năng & Fix Bug Hệ Thống (Bảo Mật, Đồng Bộ Chuỗi, Giao Ca, Hóa Đơn & Booking)
+### Module: Cài Đặt Hệ Thống, Bảo Mật, Chuỗi Chi Nhánh, Giao Ca, Hóa Đơn, Booking & Checkout
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **1. Đồng bộ chuỗi chi nhánh (Dòng 324)**:
+    + Cấu hình `SyncCompanyAllBranch`: Đồng bộ danh mục công ty, thị trường, nguồn khách xuyên suốt tất cả chi nhánh trong chuỗi khách sạn.
+  - **2. Bảo mật nâng cao (Dòng 326)**:
+    + Giới hạn truy cập theo dải IP cho phép và khung giờ làm việc theo từng ngày trong tuần.
+    + Cơ chế tự động đăng xuất khi hết phiên làm việc hoặc ngoài giờ được phép truy cập; hỗ trợ danh sách user được miễn trừ.
+  - **3. Thông báo hệ thống & Alert (Dòng 331, 332)**:
+    + Dòng 331: Alert danh sách sinh nhật khách và yêu cầu đặc biệt (Special Request) với icon lịch trên Header, kiểm soát theo `AllowShowAlertListView`.
+    + Dòng 332: Quản lý & xem nội dung cập nhật hệ thống từ icon Chuông trên Header (Admin nhập bài viết, popover hiển thị cho người dùng).
+  - **4. Báo cáo Giao ca (Dòng 356, 362, 390)**:
+    + Dòng 356: Báo cáo No-show hỗ trợ lọc theo trạng thái tính phí (Charge/No-charge), gom nhóm late check-in.
+    + Dòng 362: Danh sách phòng đi trong ca khớp chuẩn xác với hóa đơn thực tế.
+    + Dòng 390: Xuất Excel báo cáo giao ca đầy đủ các tab và cột số liệu.
+  - **5. Thu ngân & Hóa đơn (Dòng 43, 44)**:
+    + Giải trừ công nợ AC theo tổng `payment_debt_settlements` (Đã thu / Còn thiếu); API hóa đơn trả thêm `settled_amount`.
+    + Cho phép nhập đơn giá âm khi thêm dịch vụ (phục vụ cấn trừ bill) và cho phép tiền phòng tự nhập 0đ hoặc số âm.
+    + Hiển thị chính xác ngày ở phòng và hạng phòng; nút "Xem đăng ký" trong Sale không bị khóa ở chế độ readonly.
+  - **6. Nghiệp vụ Booking & Checkout (Dòng 335, 385 & Khôi phục Checkout)**:
+    + Dòng 335: Modal Cập nhật nhanh dùng đúng module thực tế; Lễ tân không bị vướng quyền `AllowReserUpdateRate_DeptDateRoomInhouse` của phòng inhouse.
+    + Dòng 385: Xóa booking không ghi lặp lại log hủy của các phòng đã có trạng thái hủy trước đó.
+    + Khôi phục checkout phòng xét chiếm dụng toàn bộ thời gian lưu trú còn lại (`[ngày hệ thống, ngày đi dự kiến)`), tránh xung đột booking khác.
+- **Kiểm thử**:
+  - Toàn bộ test suites backend và frontend pass 100%, code đã merge hoàn tất vào nhánh `main`.
+
 ## [2026-10-20] - Hoàn Tất Triệt Để Các Hạng Mục Dòng 36 - 39 Sheet FIX FE
 ### Module: Đăng ký / Chi Tiết Ăn Sáng ([ChildBreakfastModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/ChildBreakfastModal.vue)), Thông Tin Phòng ([BookingDetailModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/components/BookingDetailModal.vue), [RoomInfoDatePicker.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/components/RoomInfoDatePicker.vue))
 - **Mục tiêu & Kết quả hoàn thành**:
