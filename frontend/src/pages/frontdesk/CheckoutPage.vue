@@ -365,7 +365,7 @@ const isRestoreCheckout = computed(() => {
   if (selectedRoomItem.value) return Number(selectedRoomItem.value.rawRoom?.status ?? selectedRoomItem.value.status) === 2
   return Number(selectedBooking.value?.rawBooking?.status ?? selectedBooking.value?.status) === 2
 })
-const openCheckoutModal = () => {
+const openCheckoutModal = async () => {
   if (denySaleInvoiceMutation()) return
   const checkedRooms = selectedCheckoutRooms.value
   if (!selectedBooking.value && checkedRooms.length === 0) return
@@ -389,15 +389,61 @@ const openCheckoutModal = () => {
   checkoutUnpaidRooms.value = []
   earlyCheckoutData.value = null
   checkoutPreview.value = null
+
   if (isRestoreCheckout.value) {
     showCheckoutModal.value = true
     return
   }
-  // Checkout Master vẫn mở modal để hiển thị rõ lỗi bill/cọc nếu API từ chối.
-  if (checkedRooms.length === 0 && !selectedRoomItem.value) {
-    showCheckoutModal.value = true
-    return
+
+  // Thu thập danh sách ID phòng cần checkout
+  let targetRoomIds = []
+  if (checkedRooms.length > 0) {
+    targetRoomIds = checkedRooms.map(({ room }) => room.roomId || room.id)
+  } else if (selectedRoomItem.value) {
+    targetRoomIds = [selectedRoomItem.value.roomId || selectedRoomItem.value.id]
+  } else if (selectedBooking.value) {
+    // Master checkout: check all rooms in this booking
+    targetRoomIds = (selectedBooking.value.roomItems || [])
+      .filter(r => !r.isVirtual && !r.isCheckedOut)
+      .map(r => r.roomId || r.id)
   }
+
+  // Kiểm tra trước điều kiện thanh toán
+  if (selectedBooking.value && targetRoomIds.length > 0) {
+    isServiceOperationLoading.value = true
+    try {
+      const response = await previewCheckoutRooms(selectedBooking.value.bookingId, targetRoomIds)
+      checkoutPreview.value = response.data?.data || null
+      const previewRooms = response.data?.data?.rooms || []
+      const unpaidRooms = []
+      previewRooms.forEach(fr => {
+        if (!fr.eligible && ['unpaid_bills', 'unpaid_bill', 'unpaid_debt', 'unpaid_master'].includes(fr.code)) {
+          const matched = (selectedBooking.value.roomItems || []).find(ri => String(ri.roomId || ri.id) === String(fr.room_id))
+          unpaidRooms.push({
+            room_id: fr.room_id,
+            room_number: fr.room_number || matched?.roomNumber || fr.room_id,
+            guest_name: matched?.guestName || 'Guest'
+          })
+        }
+      })
+
+      // Nếu có phòng chưa thanh toán -> mở trực tiếp form Thông Báo (ảnh 4), KHÔNG mở form Xác Nhận (ảnh 3)
+      if (unpaidRooms.length > 0) {
+        checkoutUnpaidRooms.value = unpaidRooms
+        showCheckoutModal.value = true
+        return
+      }
+    } catch (err) {
+      if (Array.isArray(err?.response?.data?.data?.unpaid_rooms) && err.response.data.data.unpaid_rooms.length > 0) {
+        checkoutUnpaidRooms.value = err.response.data.data.unpaid_rooms
+        showCheckoutModal.value = true
+        return
+      }
+    } finally {
+      isServiceOperationLoading.value = false
+    }
+  }
+
   checkoutGuestSelections.value = Object.fromEntries(
     checkedRooms.map(({ room }) => [room.id, activeCheckoutGuests(room).map(guest => guest.id)])
   )
@@ -405,7 +451,6 @@ const openCheckoutModal = () => {
     ? checkoutGuestOptions(checkedRooms[0].room).map(guest => guest.id)
     : (selectedRoomItem.value ? checkoutGuestOptions(selectedRoomItem.value).map(guest => guest.id) : [])
   showCheckoutModal.value = true
-  // Nhiều phòng: kiểm tra điều kiện ngay khi mở màn hình xác nhận, bấm Checkout là trả phòng luôn.
   if (checkedRooms.length > 1) loadCheckoutPreview(checkedRooms)
 }
 const loadCheckoutPreview = async (checkedRooms) => {
@@ -3502,6 +3547,16 @@ const handleClickOutside = (e) => {
   }
 }
 
+const handleCheckoutModalEsc = (e) => {
+  if (e.key === 'Escape') {
+    if (showEarlyChargeModal.value) {
+      showEarlyChargeModal.value = false
+    } else if (showCheckoutModal.value) {
+      showCheckoutModal.value = false
+    }
+  }
+}
+
 onMounted(async () => {
   await loadSystemDate()
   await loadCheckoutInvoiceCapability()
@@ -3518,6 +3573,7 @@ onMounted(async () => {
   }
   document.addEventListener('click', handleClickOutside)
   window.addEventListener('hotel-config-updated', onCheckoutRoleConfigUpdated)
+  window.addEventListener('keydown', handleCheckoutModalEsc)
   // Lắng nghe sự kiện realtime qua Laravel Echo
   if (echo) {
     echo.channel('pms-channel')
@@ -3561,6 +3617,7 @@ const clearSearch = () => {
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
   window.removeEventListener('hotel-config-updated', onCheckoutRoleConfigUpdated)
+  window.removeEventListener('keydown', handleCheckoutModalEsc)
     // Hủy lắng nghe sự kiện realtime qua Laravel Echo
   if (echo) {
     echo.channel('pms-channel').stopListening('.room.status.updated')
@@ -4380,45 +4437,65 @@ onUnmounted(() => {
 
     <!-- Tạm nối API trả phòng cho frontend mới -->
     <div v-if="showCheckoutModal" class="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4">
-      <div class="w-full max-w-md rounded-xl bg-white shadow-2xl overflow-hidden">
-        <div class="flex items-center justify-between px-4 py-3 text-white" :style="{ background: 'var(--pms-custom-theme, #006bdb)' }"><span class="font-semibold">Xác Nhận</span><button @click="showCheckoutModal = false" class="text-xl">×</button></div>
-        <div class="space-y-2 p-5">
-          <template v-if="isRestoreCheckout">
-            <p class="py-3 text-center text-sm text-slate-700">Bạn có chắc chắn khôi phục checkout {{ selectedRoomItem ? `phòng ${selectedRoomItem.roomNumber || ''}` : 'Master' }} không?</p>
-          </template>
-          <template v-else-if="selectedCheckoutRooms.length > 1">
-            <div v-if="checkoutPreview" class="space-y-1 rounded border border-slate-200 bg-slate-50 p-2 text-xs">
-              <p v-for="room in checkoutPreview.rooms" :key="room.room_id" :class="room.eligible ? 'text-emerald-700' : 'text-rose-700'">{{ room.eligible ? '✓' : '✕' }} Phòng {{ room.room_number || room.room_id }}</p>
-              <p v-for="room in checkoutPreview.rooms.filter(item => !item.eligible && item.message)" :key="`reason-${room.room_id}`" class="pl-4 text-rose-600">Phòng {{ room.room_number || room.room_id }}: {{ room.message }}</p>
-              <p v-if="checkoutPreview.master_unpaid" class="mt-2 rounded border border-amber-200 bg-amber-50 p-2 text-amber-800">Master còn công nợ nhóm — checkout phòng vẫn giữ Master chưa check-out.</p>
-            </div>
-            <p class="py-2 text-center text-sm text-slate-700">Đã chọn {{ selectedCheckoutRooms.length }} phòng để checkout.</p>
-            <div class="max-h-[320px] space-y-1 overflow-y-auto pr-1">
-              <div v-for="selection in selectedCheckoutRooms" :key="selection.room.id" class="rounded border px-3 py-2 text-xs text-slate-700">
-                <div class="mb-1 font-semibold">- Phòng {{ selection.room.roomNumber || 'ảo' }}</div>
-                <label v-for="guest in checkoutGuestOptions(selection.room)" :key="`${selection.room.id}-${guest.id}`" class="mb-1 flex items-center justify-between rounded border px-2 py-1.5 last:mb-0">
-                  <span>{{ guest.name }}</span>
-                  <input type="checkbox" :checked="guest.isChild || isCheckoutGuestSelected(selection.room.id, guest.id)" @change="toggleCheckoutGuest(selection.room.id, guest.id, $event.target.checked)" class="h-4 w-4 accent-sky-500" />
-                </label>
-              </div>
-            </div>
-          </template>
-          <template v-else-if="selectedRoomItem">
-            <label v-for="guest in checkoutGuestOptions(selectedRoomItem)" :key="guest.id" class="flex items-center justify-between rounded-lg border px-3 py-2 text-sm"><span>{{ guest.name }}</span><input v-model="checkoutGuestIds" :value="guest.id" type="checkbox" class="h-4 w-4 accent-sky-500" /></label>
-            <p v-if="checkoutGuestOptions(selectedRoomItem).length === 0" class="text-sm text-rose-600">Phòng chưa có khách hợp lệ để checkout.</p>
-          </template>
-          <p v-else class="py-3 text-center text-sm text-slate-700">Bạn có chắc chắn muốn trả phòng không?</p>
-          <p v-if="checkoutError" class="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{{ checkoutError }}</p>
-          <ul v-if="checkoutUnpaidRooms.length" class="max-h-40 space-y-1 overflow-y-auto rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
-            <li v-for="room in checkoutUnpaidRooms" :key="room.room_id">Phòng {{ room.room_number }} - {{ room.guest_name }}</li>
-          </ul>
-          <div v-if="earlyCheckoutData" class="flex justify-end gap-2">
-            <button @click="showCheckoutModal = false" :disabled="isServiceOperationLoading" class="btn-pms-close">Đóng</button>
-            <button @click="checkoutEarlyWithoutCharge" :disabled="isServiceOperationLoading" class="btn-pms-primary">Trả phòng</button>
-            <button @click="openEarlyChargeModal" :disabled="isServiceOperationLoading || earlyChargeNoPost" class="btn-pms-primary">Tiền phòng</button>
-          </div>
+      <div 
+        class="w-full max-w-md rounded-xl bg-white shadow-2xl overflow-hidden border"
+        :style="{ borderColor: checkoutUnpaidRooms.length ? 'var(--pms-custom-theme, #006bdb)' : '#cbd5e1' }"
+      >
+        <div class="flex items-center justify-between px-4 py-3 text-white" :style="{ background: 'var(--pms-custom-theme, #006bdb)' }">
+          <span class="font-semibold text-xs">{{ checkoutUnpaidRooms.length ? 'Thông Báo' : 'Xác Nhận' }}</span>
+          <button @click="showCheckoutModal = false" class="text-xl leading-none cursor-pointer hover:opacity-80" title="Đóng (Esc)">×</button>
         </div>
-        <div v-if="!earlyCheckoutData" class="flex justify-end gap-2 border-t px-4 py-3"><button @click="showCheckoutModal = false" class="btn-pms-close">Đóng</button><button @click="submitCheckout" :disabled="isServiceOperationLoading" class="btn-pms-primary">{{ isRestoreCheckout ? 'Khôi phục checkout' : (!selectedRoomItem && selectedCheckoutRooms.length === 0 ? 'Có' : 'Checkout') }}</button></div>
+        <div class="space-y-2 p-5 text-xs text-[#000000D9]">
+          <!-- Khi còn phòng chưa thanh toán: CHỈ hiển thị nội dung thông báo, không nút Có, không nút Đóng -->
+          <div v-if="checkoutUnpaidRooms.length" class="rounded-lg border p-3.5 space-y-2 text-xs" :style="{ borderColor: 'var(--pms-custom-theme, #006bdb)', background: 'rgba(0, 107, 219, 0.04)' }">
+            <div class="font-semibold text-rose-600 flex items-center gap-1.5">
+              <svg class="w-4 h-4 text-rose-500 shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <span>Còn phòng chưa thanh toán, vui lòng kiểm tra thanh toán:</span>
+            </div>
+            <ul class="max-h-40 space-y-1 overflow-y-auto pl-5 list-disc text-slate-800 font-medium">
+              <li v-for="room in checkoutUnpaidRooms" :key="room.room_id">Phòng {{ room.room_number }} - {{ room.guest_name }}</li>
+            </ul>
+          </div>
+
+          <!-- Khi không có phòng chưa thanh toán: hiển thị form xác nhận bình thường -->
+          <template v-else>
+            <template v-if="isRestoreCheckout">
+              <p class="py-3 text-center text-xs text-slate-700">Bạn có chắc chắn khôi phục checkout {{ selectedRoomItem ? `phòng ${selectedRoomItem.roomNumber || ''}` : 'Master' }} không?</p>
+            </template>
+            <template v-else-if="selectedCheckoutRooms.length > 1">
+              <div v-if="checkoutPreview" class="space-y-1 rounded border border-slate-200 bg-slate-50 p-2 text-xs">
+                <p v-for="room in checkoutPreview.rooms" :key="room.room_id" :class="room.eligible ? 'text-emerald-700' : 'text-rose-700'">{{ room.eligible ? '✓' : '✕' }} Phòng {{ room.room_number || room.room_id }}</p>
+                <p v-for="room in checkoutPreview.rooms.filter(item => !item.eligible && item.message)" :key="`reason-${room.room_id}`" class="pl-4 text-rose-600">Phòng {{ room.room_number || room.room_id }}: {{ room.message }}</p>
+                <p v-if="checkoutPreview.master_unpaid" class="mt-2 rounded border border-amber-200 bg-amber-50 p-2 text-amber-800">Master còn công nợ nhóm — checkout phòng vẫn giữ Master chưa check-out.</p>
+              </div>
+              <p class="py-2 text-center text-xs text-slate-700">Đã chọn {{ selectedCheckoutRooms.length }} phòng để checkout.</p>
+              <div class="max-h-[320px] space-y-1 overflow-y-auto pr-1">
+                <div v-for="selection in selectedCheckoutRooms" :key="selection.room.id" class="rounded border px-3 py-2 text-xs text-slate-700">
+                  <div class="mb-1 font-semibold">- Phòng {{ selection.room.roomNumber || 'ảo' }}</div>
+                  <label v-for="guest in checkoutGuestOptions(selection.room)" :key="`${selection.room.id}-${guest.id}`" class="mb-1 flex items-center justify-between rounded border px-2 py-1.5 last:mb-0">
+                    <span>{{ guest.name }}</span>
+                    <input type="checkbox" :checked="guest.isChild || isCheckoutGuestSelected(selection.room.id, guest.id)" @change="toggleCheckoutGuest(selection.room.id, guest.id, $event.target.checked)" class="h-4 w-4 accent-sky-500" />
+                  </label>
+                </div>
+              </div>
+            </template>
+            <template v-else-if="selectedRoomItem">
+              <label v-for="guest in checkoutGuestOptions(selectedRoomItem)" :key="guest.id" class="flex items-center justify-between rounded-lg border px-3 py-2 text-xs"><span>{{ guest.name }}</span><input v-model="checkoutGuestIds" :value="guest.id" type="checkbox" class="h-4 w-4 accent-sky-500" /></label>
+              <p v-if="checkoutGuestOptions(selectedRoomItem).length === 0" class="text-xs text-rose-600">Phòng chưa có khách hợp lệ để checkout.</p>
+            </template>
+            <p v-else class="py-3 text-center text-xs text-slate-700">Bạn có chắc chắn muốn trả phòng không?</p>
+            <p v-if="checkoutError" class="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{{ checkoutError }}</p>
+
+            <div v-if="earlyCheckoutData" class="flex justify-end gap-2">
+              <button @click="showCheckoutModal = false" :disabled="isServiceOperationLoading" class="btn-pms-close">Đóng</button>
+              <button @click="checkoutEarlyWithoutCharge" :disabled="isServiceOperationLoading" class="btn-pms-primary">Trả phòng</button>
+              <button @click="openEarlyChargeModal" :disabled="isServiceOperationLoading || earlyChargeNoPost" class="btn-pms-primary">Tiền phòng</button>
+            </div>
+          </template>
+        </div>
+        <div v-if="!earlyCheckoutData && !checkoutUnpaidRooms.length" class="flex justify-end gap-2 border-t px-4 py-3">
+          <button @click="submitCheckout" :disabled="isServiceOperationLoading" class="btn-pms-primary">{{ isRestoreCheckout ? 'Khôi phục checkout' : (!selectedRoomItem && selectedCheckoutRooms.length === 0 ? 'Có' : 'Checkout') }}</button>
+        </div>
       </div>
     </div>
 
