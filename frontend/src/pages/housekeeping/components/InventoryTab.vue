@@ -8,6 +8,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { useUiStore } from '@/stores/ui-store'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
+import { findMostActiveProduct } from '@/utils/inventory-activity'
 
 const route = useRoute()
 const authStore = useAuthStore()
@@ -59,7 +60,7 @@ const isSaving             = ref(false)
 // Dòng 372: phiếu kiểm kê chỉnh sửa trên bản nháp, bấm Lưu mới ghi xuống DB
 const checkDraft           = ref([])
 const checkDraftDirty      = ref(false)
-const isCheckLocked        = computed(() => !!currentCheck.value?.has_logs)
+const isCheckLocked        = computed(() => !!modalCheck.value?.has_logs)
 // Định mức cảnh báo tồn theo thông số Inventory_LowStockWarningQty (mặc định 50)
 const lowStockQty          = ref(50)
 const isBillLoading        = ref(false)
@@ -100,21 +101,26 @@ const formattedCheckMonth = computed(() => {
 })
 
 // ─── Inventory Check (Phiếu kiểm kê) ─────────────────────────────
-const currentCheck         = ref(null)    // phiếu kiểm kê tháng hiện tại
+const currentCheck         = ref(null)    // phiếu kiểm kê của tháng đang xem ở màn hình ngoài
+// Dòng 435-437: popup kiểm kê có phiếu riêng theo tháng chọn trong popup, đổi tháng/lưu
+// phiếu tháng khác không được thay dữ liệu màn hình ngoài.
+const modalCheck           = ref(null)
+const modalMonth           = ref('')      // tháng của phiếu đang mở trong popup
 const productsInStock      = ref([])      // sản phẩm isInStock=1 để chọn
 const selectedProductIds   = ref([])      // checkbox chọn SP để thêm vào phiếu
 const checkForm            = ref({ month: '', note: '', created_by: '' })
 const users                = ref([])
 
-watch(currentCheck, (val) => {
-  if (val) {
-    checkForm.value.month = val.month || currentMonth.value
-    checkForm.value.note = val.note || ''
-    checkForm.value.created_by = val.created_by || authStore.user?.id || ''
-  } else {
-    checkForm.value = { month: currentMonth.value, note: '', created_by: authStore.user?.id || '' }
+// Dòng 436: giữ tháng người dùng chọn trong popup kể cả khi tháng đó chưa có phiếu
+// (trước đây phiếu rỗng làm ô tháng nhảy về tháng của màn hình ngoài).
+function fillCheckForm(check, month) {
+  modalMonth.value = month
+  checkForm.value = {
+    month,
+    note: check?.note || '',
+    created_by: check?.created_by || authStore.user?.id || '',
   }
-}, { immediate: true })
+}
 
 // ─── Daily Logs ──────────────────────────────────────────────────
 // logsMap: { product_id: { 'YYYY-MM-DD': { receive, export, transfer } } }
@@ -337,11 +343,11 @@ async function deleteWarehouse() {
 
 // ─── Inventory Check ─────────────────────────────────────────────
 function resetCheckDraft() {
-  checkDraft.value = (currentCheck.value?.items || []).map(item => ({ ...item }))
+  checkDraft.value = (modalCheck.value?.items || []).map(item => ({ ...item }))
   checkDraftDirty.value = false
 }
 
-watch(currentCheck, resetCheckDraft, { immediate: true })
+watch(modalCheck, resetCheckDraft, { immediate: true })
 
 async function confirmDiscardDraft() {
   if (!checkDraftDirty.value) return true
@@ -364,11 +370,8 @@ async function openCheckModal() {
     uiStore.showToast('Vui lòng chọn kho cần kiểm kê.', 'warning')
     return
   }
-  checkForm.value = {
-    month: currentMonth.value,
-    note: currentCheck.value?.note || '',
-    created_by: currentCheck.value?.created_by || authStore.user?.id || ''
-  }
+  modalCheck.value = currentCheck.value
+  fillCheckForm(currentCheck.value, currentMonth.value)
   resetCheckDraft()
   showCheckModal.value = true // Open modal immediately
   await loadProductsInStock() // Load products in background
@@ -377,7 +380,7 @@ async function openCheckModal() {
 async function onCheckMonthChange(newMonth) {
   if (!activeWarehouseId.value || !newMonth) return
   if (!(await confirmDiscardDraft())) {
-    checkForm.value.month = currentCheck.value?.month || currentMonth.value
+    checkForm.value.month = modalMonth.value
     return
   }
   isSaving.value = true
@@ -385,7 +388,8 @@ async function onCheckMonthChange(newMonth) {
     const res = await http.get('/inventory/checks', {
       params: { warehouse_id: activeWarehouseId.value, month: newMonth }
     })
-    currentCheck.value = res.data.data
+    modalCheck.value = res.data.data
+    fillCheckForm(modalCheck.value, newMonth)
     resetCheckDraft()
   } catch (e) {
     console.error('onCheckMonthChange error', e)
@@ -454,8 +458,9 @@ async function saveCheck(confirmNegative = false) {
       return
     }
 
-    currentCheck.value = res.data.data
+    modalCheck.value = res.data.data
     resetCheckDraft()
+    // Dòng 437: chỉ cập nhật màn hình ngoài khi lưu phiếu của đúng tháng đang xem.
     if (checkForm.value.month === currentMonth.value) {
       await loadCheckAndLogs()
     }
@@ -578,16 +583,16 @@ function decreaseQty(item, field) {
 }
 
 async function exportExcelCheck() {
-  if (!currentCheck.value) return
+  if (!modalCheck.value) return
   isSaving.value = true
   try {
-    const res = await http.get(`/inventory/checks/${currentCheck.value.id}/export`, {
+    const res = await http.get(`/inventory/checks/${modalCheck.value.id}/export`, {
       responseType: 'blob'
     })
     const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
     const link = document.createElement('a')
     link.href = window.URL.createObjectURL(blob)
-    link.download = `phieu_kiem_ke_${currentMonth.value}.xlsx`
+    link.download = `phieu_kiem_ke_${checkForm.value.month}.xlsx`
     link.click()
     window.URL.revokeObjectURL(link.href)
     uiStore.showToast('Xuất Excel thành công!', 'success')
@@ -666,15 +671,10 @@ function openMainStats() {
   const lowStockProducts = items.filter(i => i.finalStock < lowStockQty.value)
   const lowStockCount = lowStockProducts.length
   
-  const highestActivityProd = [...items].sort((a, b) => {
-    const actA = (a.totalReceive || 0) + (a.totalExport || 0) + (a.totalTransfer || 0)
-    const actB = (b.totalReceive || 0) + (b.totalExport || 0) + (b.totalTransfer || 0)
-    return actB - actA
-  })[0]
-  
-  const highestActivityName = highestActivityProd ? highestActivityProd.product_name : ''
-  const highestActivityCount = highestActivityProd ? ((highestActivityProd.totalReceive || 0) + (highestActivityProd.totalExport || 0) + (highestActivityProd.totalTransfer || 0)) : 0
-  
+  const mostActive = findMostActiveProduct(items, logsMap.value)
+  const highestActivityName = mostActive.name
+  const highestActivityCount = mostActive.count
+
   statsType.value = 'main'
   statsTitle.value = `Thống Kê Kho Tháng ${formattedMonth.value}`
   statsData.value = {
@@ -693,12 +693,14 @@ function openMainStats() {
 }
 
 async function deleteCheck() {
-  if (!currentCheck.value) return
+  if (!modalCheck.value) return
   const confirmed = await uiStore.confirm({ message: 'Xóa phiếu kiểm kê tháng này?' })
   if (!confirmed) return
   try {
-    await http.delete(`/inventory/checks/${currentCheck.value.id}`)
-    currentCheck.value = null
+    const deletedId = modalCheck.value.id
+    await http.delete(`/inventory/checks/${deletedId}`)
+    modalCheck.value = null
+    if (currentCheck.value?.id === deletedId) currentCheck.value = null
     showCheckModal.value = false
     uiStore.showToast('Xóa phiếu kiểm kê thành công!', 'success')
   } catch (e) {
@@ -1531,7 +1533,7 @@ const otherWarehouses = computed(() =>
               </div>
               <div class="flex flex-col gap-1.5">
                 <label class="text-xs font-semibold text-[#000000D9]">Mã Phiếu</label>
-                <input type="text" :value="currentCheck?.id ? 'KK-' + currentCheck.id : 'Mới'" disabled class="w-full text-xs h-8 border border-slate-200 rounded-lg px-2.5 bg-slate-100 text-slate-500 cursor-not-allowed outline-none font-normal" />
+                <input type="text" :value="modalCheck?.id ? 'KK-' + modalCheck.id : 'Mới'" disabled class="w-full text-xs h-8 border border-slate-200 rounded-lg px-2.5 bg-slate-100 text-slate-500 cursor-not-allowed outline-none font-normal" />
               </div>
               <div class="flex flex-col gap-1.5">
                 <label class="text-xs font-semibold text-[#000000D9]">Kho</label>
@@ -1592,7 +1594,7 @@ const otherWarehouses = computed(() =>
                     </td>
                   </tr>
                   <tr v-else v-for="(item, idx) in modalCheckItems" :key="item.product_id" class="hover:bg-slate-50 transition-colors">
-                    <td class="py-2 px-3 border-slate-200 text-center text-[#000000D9] font-normal text-xs">{{ currentCheck?.id ? 'KK-' + currentCheck.id : 'Mới' }}</td>
+                    <td class="py-2 px-3 border-slate-200 text-center text-[#000000D9] font-normal text-xs">{{ modalCheck?.id ? 'KK-' + modalCheck.id : 'Mới' }}</td>
                     <td class="py-2 px-3 border-slate-200 text-center text-[#000000D9] font-normal text-xs">{{ item.product_code }}</td>
                     <td class="py-2 px-4 border-slate-200 font-normal text-[#000000D9] text-xs">{{ item.product_name }}</td>
                     <td class="py-2 px-2 border-slate-200 text-center text-[#000000D9] font-normal text-xs">{{ item.unit || '—' }}</td>
@@ -1699,13 +1701,13 @@ const otherWarehouses = computed(() =>
             <button v-if="!isCheckLocked" @click="showAddProductCheckModal = true; loadProductsInStock()" class="btn-pms-primary flex items-center gap-1.5 h-8 px-4 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer">
               <Plus class="w-4 h-4" stroke-width="2.5" /> Thêm
             </button>
-            <button @click="deleteCheck" v-if="currentCheck && !isCheckLocked" class="btn-pms-danger flex items-center gap-1.5 h-8 px-4 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer">
+            <button @click="deleteCheck" v-if="modalCheck && !isCheckLocked" class="btn-pms-danger flex items-center gap-1.5 h-8 px-4 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer">
               <Trash2 class="w-3.5 h-3.5" /> Xóa
             </button>
             <button v-if="!isCheckLocked" @click="saveCheck()" :disabled="isSaving" class="btn-pms-primary flex items-center gap-1.5 h-8 px-4 disabled:opacity-50 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer">
               <Save class="w-3.5 h-3.5" /> {{ isSaving ? 'Đang lưu...' : 'Lưu' }}
             </button>
-            <button @click="exportExcelCheck" v-if="currentCheck" class="btn-pms-secondary flex items-center gap-1.5 h-8 px-4 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer">
+            <button @click="exportExcelCheck" v-if="modalCheck" class="btn-pms-secondary flex items-center gap-1.5 h-8 px-4 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer">
               <FileSpreadsheet class="w-3.5 h-3.5" /> Xuất Excel
             </button>
             <button v-if="!isCheckLocked" @click="syncPreviousMonth" :disabled="isSaving" class="btn-pms-secondary flex items-center gap-1.5 h-8 px-4 disabled:opacity-50 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer" title="Lấy danh sách sản phẩm và tồn cuối tháng trước điền vào Tồn đầu kỳ & Thực tế">
