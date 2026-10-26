@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\InventoryCheck;
+use App\Models\InventoryCheckItem;
 use App\Models\InventoryDailyLog;
 use App\Models\InventoryTransfer;
 use App\Models\Warehouse;
@@ -74,6 +76,14 @@ class InventoryTransferController extends Controller
                 'receive',
                 $validated['quantity']
             );
+
+            // 4. Dòng 438: bảng kho chỉ hiện sản phẩm có trong phiếu kiểm kê, nên đưa
+            // sản phẩm nhận chuyển vào phiếu tháng đó của kho đích (tồn đầu = 0).
+            $this->ensureProductInCheck(
+                $validated['transfer_to_warehouse_id'],
+                substr($validated['date'], 0, 7),
+                $validated['product_id']
+            );
         });
 
         return response()->json([
@@ -118,6 +128,21 @@ class InventoryTransferController extends Controller
         $totalTransfer = $logs->sum('transfer');
 
         return max(0, $openBalance + $totalReceive - $totalExport - $totalTransfer);
+    }
+
+    private function ensureProductInCheck(int $warehouseId, string $month, int $productId): void
+    {
+        // Phiếu tháng đã xóa mềm vẫn giữ unique (warehouse_id, month): khôi phục thay vì tạo mới.
+        $check = InventoryCheck::withTrashed()->firstOrCreate(
+            ['warehouse_id' => $warehouseId, 'month' => $month],
+            ['created_by' => auth()->id()]
+        );
+        if ($check->trashed()) $check->restore();
+
+        InventoryCheckItem::firstOrCreate(
+            ['check_id' => $check->id, 'product_id' => $productId],
+            ['well_balance' => 0, 'stoke_take' => 0, 'different_qty' => 0, 'final_balance' => 0]
+        );
     }
 
     private function upsertLog(int $warehouseId, string $date, int $productId, string $field, float $qty): void

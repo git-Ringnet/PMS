@@ -11,6 +11,7 @@ import GuestInfoModal from '@/pages/reservation/components/GuestInfoModal.vue'
 import CopyModal from '@/pages/reservation/components/CopyModal.vue'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
+import { getBookingRoomGroups, getSubtableTotals } from '@/utils/general-search-groups'
 
 const router = useRouter()
 const route = useRoute()
@@ -593,52 +594,6 @@ function getSelectOptions(key) {
 }
 
 // -------------------------------------------------------------
-// SUB-TABLE GROUPING LOGIC (sp_034 logic as shown in Image 3)
-// -------------------------------------------------------------
-function getBookingRoomGroups(rooms) {
-  if (!rooms || !rooms.length) return []
-  const map = new Map()
-  for (const r of rooms) {
-    const rType = r.room_class?.code || r.room_class?.name || '—'
-    const arr = r.arrival_date || ''
-    const dep = r.departure_date || ''
-    const rateCode = r.rate_code || '—'
-    const rateVal = Number(r.rate || 0)
-    const key = `${rType}|${arr}|${dep}|${rateCode}|${rateVal}`
-
-    if (!map.has(key)) {
-      map.set(key, {
-        room_type: rType,
-        room_count: 0,
-        adults: 0,
-        children: 0,
-        arrival_date: arr,
-        departure_date: dep,
-        rate_code: rateCode,
-        rate: rateVal,
-        service_total: 0
-      })
-    }
-    const g = map.get(key)
-    g.room_count += 1
-    g.adults += Number(r.adults || 0)
-    g.children += Number(r.children || 0)
-    g.service_total += Number(r.service_total || 0)
-  }
-  return Array.from(map.values())
-}
-
-function getSubtableTotals(groups) {
-  return groups.reduce((acc, g) => {
-    acc.rooms += g.room_count
-    acc.adults += g.adults
-    acc.children += g.children
-    acc.total += g.service_total
-    return acc
-  }, { rooms: 0, adults: 0, children: 0, total: 0 })
-}
-
-// -------------------------------------------------------------
 // COLUMN MANAGER & DRAGGABLE REORDERING (Image 1)
 // -------------------------------------------------------------
 const DEFAULT_TABLE_COLUMNS = {
@@ -678,6 +633,7 @@ const DEFAULT_TABLE_COLUMNS = {
     { key: 'extra_bed_rate', label: 'Giá TG', visible: true, isNumber: true },
     { key: 'adults', label: 'Người Lớn', visible: true },
     { key: 'children', label: 'Trẻ Em', visible: true },
+    { key: 'babies', label: 'Em Bé', visible: true },
     { key: 'note', label: 'Ghi Chú', visible: true },
     { key: 'service_total', label: 'Tổng Dịch Vụ', visible: true, isNumber: true },
     { key: 'paid_total', label: 'Thanh Toán', visible: true, isNumber: true },
@@ -1749,6 +1705,7 @@ onMounted(async () => {
     <div class="toolbar">
       <div class="toolbar-left">
         Tổng: <strong>{{ meta.total || 0 }}</strong> kết quả
+        <template v-if="tab === 'room'"> · <strong>{{ meta.room_total || 0 }}</strong> phòng</template>
         <span v-if="loading" class="loading-tag">Đang tải dữ liệu…</span>
         <span v-if="errorMessage" class="error-tag">{{ errorMessage }}</span>
       </div>
@@ -1903,6 +1860,7 @@ onMounted(async () => {
                         <th class="text-center align-middle border-r border-slate-200 border" style="width: 70px;">#Phòng</th>
                         <th class="text-center align-middle border-r border-slate-200 border" style="width: 70px;">#N.Lớn</th>
                         <th class="text-center align-middle border-r border-slate-200 border" style="width: 70px;">#T.Em</th>
+                        <th class="text-center align-middle border-r border-slate-200 border" style="width: 70px;">#E.Bé</th>
                         <th class="text-center align-middle border-r border-slate-200 border" style="width: 95px;">Ngày Đến</th>
                         <th class="text-center align-middle border-r border-slate-200 border" style="width: 95px;">Ngày Đi</th>
                         <th class="text-center align-middle border-r border-slate-200 border" style="width: 105px;">Mã Giá Phòng</th>
@@ -1919,6 +1877,7 @@ onMounted(async () => {
                         <td class="text-center border-slate-200">{{ grp.room_count }}</td>
                         <td class="text-center border-slate-200">{{ grp.adults }}</td>
                         <td class="text-center border-slate-200">{{ grp.children }}</td>
+                        <td class="text-center border-slate-200">{{ grp.babies }}</td>
                         <td class="text-center border-slate-200">{{ date(grp.arrival_date) }}</td>
                         <td class="text-center border-slate-200">{{ date(grp.departure_date) }}</td>
                         <td class="text-center border-slate-200">{{ grp.rate_code }}</td>
@@ -1931,6 +1890,7 @@ onMounted(async () => {
                         <td class="text-center font-bold border-slate-200">{{ getSubtableTotals(getBookingRoomGroups(row.rooms)).rooms }}</td>
                         <td class="text-center font-bold border-slate-200">{{ getSubtableTotals(getBookingRoomGroups(row.rooms)).adults }}</td>
                         <td class="text-center font-bold border-slate-200">{{ getSubtableTotals(getBookingRoomGroups(row.rooms)).children }}</td>
+                        <td class="text-center font-bold border-slate-200">{{ getSubtableTotals(getBookingRoomGroups(row.rooms)).babies }}</td>
                         <td class="border-slate-200"></td>
                         <td class="border-slate-200"></td>
                         <td class="border-slate-200"></td>
@@ -2032,6 +1992,7 @@ onMounted(async () => {
                   <td v-else-if="col.key === 'extra_bed_rate'" class="number border-slate-200">{{ money(room.extra_bed_rate) }}</td>
                   <td v-else-if="col.key === 'adults'" class="border-slate-200">{{ room.adults }}</td>
                   <td v-else-if="col.key === 'children'" class="border-slate-200">{{ room.children }}</td>
+                  <td v-else-if="col.key === 'babies'" class="border-slate-200">{{ room.babies }}</td>
                   <td v-else-if="col.key === 'note'" class="note-cell whitespace-pre-line border-slate-200">{{ room.note || '—' }}</td>
                   <td v-else-if="col.key === 'service_total'" class="number font-medium border-slate-200">{{ money(room.service_total) }}</td>
                   <td v-else-if="col.key === 'paid_total'" class="number border-slate-200">{{ money(room.paid_total) }}</td>
