@@ -114,6 +114,7 @@ const currentBookingModule = computed(() => {
 const uiStore = useUiStore()
 import { useAuthStore } from '@/stores/auth-store'
 import { useRoomStore } from '@/stores/room-store'
+import { saveWithOverConfirm } from '@/utils/booking-over-confirm'
 const authStore = useAuthStore()
 const roomStore = useRoomStore()
 
@@ -5562,7 +5563,7 @@ async function handleSaveNewBooking() {
 
     if (isEditModal.value && modalForm.value.dbId) {
       if (hasRoomsToAddNow && isBookingInfoChanged) {
-        const res = await updateBooking(modalForm.value.dbId, payload)
+        const res = await updateBookingWithOverConfirm(modalForm.value.dbId, payload)
         const updated = res.data?.data || res.data
         await addBookingRooms(modalForm.value.dbId, {
           intent: 'add_only',
@@ -5586,7 +5587,7 @@ async function handleSaveNewBooking() {
         resetRoomAddDraft(modalForm.value.checkIn, modalForm.value.checkOut)
         uiStore.showToast(`Thêm ${totalAddQty} phòng mới vào đăng ký thành công!`, 'success')
       } else {
-        const res = await updateBooking(modalForm.value.dbId, payload)
+        const res = await updateBookingWithOverConfirm(modalForm.value.dbId, payload)
         const updated = res.data?.data || res.data
         await loadBookings()
         const idx = tabs.value.findIndex(t => t.dbId === modalForm.value.dbId)
@@ -5605,12 +5606,25 @@ async function handleSaveNewBooking() {
     }
     closeModal()
   } catch (err) {
+    // Dòng 446: chọn "Không" ở cảnh báo over -> đưa tình trạng đăng ký về giá trị đang lưu.
+    if (err.overCancelled) {
+      const savedTab = tabs.value.find(t => t.dbId === modalForm.value.dbId)
+      if (savedTab) modalForm.value.registrationStatusId = savedTab.registrationStatusId
+    }
     const errors = err.response?.data?.errors
     const msg = errors ? Object.values(errors)[0]?.[0] : (err.response?.data?.message || 'Đã xảy ra lỗi!')
-    uiStore.showToast(msg, 'error')
+    uiStore.showToast(msg, err.overCancelled ? 'info' : 'error')
   } finally {
     isSavingModal.value = false
   }
+}
+
+// Dòng 446: đổi tình trạng đăng ký gây over phòng -> hỏi xác nhận rồi lưu lại với force_over.
+function updateBookingWithOverConfirm(bookingId, payload) {
+  return saveWithOverConfirm(
+    extra => updateBooking(bookingId, { ...payload, ...extra }),
+    message => uiStore.confirm({ title: 'Cảnh báo Over phòng', message, confirmText: 'Có', cancelText: 'Không' }),
+  )
 }
 
 async function handleGuestInfoSaved() {
@@ -5928,7 +5942,7 @@ async function triggerAction(actionName) {
             shuttle_info:           tab.shuttleInfo || [],
             room_allocations:       syncRoomsToAllocations(tab),
           }
-          const res = await updateBooking(tab.dbId, payload)
+          const res = await updateBookingWithOverConfirm(tab.dbId, payload)
           await loadBookings()
           notifyRoomUpdates()
           if (tab) delete tab._backup
