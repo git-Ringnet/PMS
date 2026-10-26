@@ -6,14 +6,17 @@ use App\Models\Booking;
 use App\Models\BookingChild;
 use App\Models\BookingRoom;
 use App\Models\BookingRoomGuest;
-use App\Models\BookingRoomService;
 use App\Models\Payment;
-use App\Models\ServiceBill;
 use Illuminate\Support\Collection;
 
 /** Read-only projections used by General Search (Laravel/MySQL, not a legacy SP port). */
 class GeneralSearchProjectionService
 {
+    public function __construct(
+        private readonly BookingDisplayTotalService $bookingTotals,
+        private readonly InvoiceFolioAmountService $invoice,
+    ) {}
+
     /** Equivalent in purpose to legacy func_081: resolve the final room after a room move. */
     public function finalRoom(BookingRoom $room, ?Collection $roomsById = null): BookingRoom
     {
@@ -30,12 +33,22 @@ class GeneralSearchProjectionService
         return $current;
     }
 
+    /**
+     * Dòng 409/410: booking đang hoạt động (0,1,2,4) không hiển thị phòng đã hủy, giống
+     * BookingController::hideCancelledRoomsForActiveBooking. Booking đã hủy giữ phòng để xem lại.
+     */
+    public function activeRooms(Booking $booking, Collection $rooms): Collection
+    {
+        if ((int) $booking->status === Booking::STATUS_DELETED) return $rooms->values();
+        return $rooms->reject(fn (BookingRoom $room) => (int) $room->status === BookingRoom::STATUS_CANCELLED)->values();
+    }
+
     public function bookingRow(Booking $booking): array
     {
-        $rooms = $booking->bookingRooms;
-        $roomsById = $rooms->keyBy('id');
+        $rooms = $this->activeRooms($booking, $booking->bookingRooms);
+        $roomsById = $booking->bookingRooms->keyBy('id');
         $visibleRooms = $rooms->filter(fn (BookingRoom $room) => (int) $room->status !== BookingRoom::STATUS_MOVED);
-        $roomRows = $visibleRooms->map(fn (BookingRoom $room) => $this->roomDetail($room, $roomsById, $booking))->values();
+        $roomRows = $visibleRooms->map(fn (BookingRoom $room) => $this->roomDetail($room, $roomsById, $booking, false))->values();
         $createdRoomTypes = $rooms->map(fn (BookingRoom $room) => $room->originalRoomClass?->code ?: $room->roomClass?->code)
             ->filter()->countBy()->map(fn ($count, $code) => sprintf('%s (%d)', $code, $count))->values()->join(', ');
         $actualRoomTypes = $roomRows->pluck('room_class.code')->filter()->countBy()
@@ -46,7 +59,7 @@ class GeneralSearchProjectionService
             'booking_name' => $booking->booking_name, 'company' => $booking->company?->name, 'market' => $booking->market?->name,
             'arrival_date' => $booking->arrival_date?->toDateString(), 'departure_date' => $booking->departure_date?->toDateString(),
             'nights' => $booking->num_of_days, 'original_room_types' => $createdRoomTypes, 'actual_room_types' => $actualRoomTypes,
-            'total_amount' => $this->bookingServiceTotal($booking, $rooms), 'deposit_amount' => $this->bookingDeposit($booking),
+            'total_amount' => (float) $roomRows->sum('room_total'), 'deposit_amount' => $this->bookingDeposit($booking),
             'registration_status' => $booking->registrationStatus?->vietnamese ?: $booking->registrationStatus?->name,
             'registration_status_color' => $booking->registrationStatus?->color,
             'registration_status_id' => $booking->registration_status_id,
@@ -59,13 +72,20 @@ class GeneralSearchProjectionService
     public function roomGroupRow(Booking $booking, Collection $rooms): array
     {
         $roomsById = $booking->bookingRooms->keyBy('id');
-        $roomRows = $rooms->map(fn (BookingRoom $room) => $this->roomDetail($room, $roomsById, $booking))->values();
+        $roomRows = $rooms->map(fn (BookingRoom $room) => $this->roomDetail($room, $roomsById, $booking, true))->values();
+        $payments = $booking->relationLoaded('payments') ? $booking->payments : null;
+        $folioRooms = $this->activeRooms($booking, $booking->bookingRooms)
+            ->filter(fn (BookingRoom $room) => (int) $room->status !== BookingRoom::STATUS_MOVED);
 
         return [
             'booking_id' => $booking->id, 'booking_code' => $booking->booking_code, 'booking_name' => $booking->booking_name,
             'arrival_date' => $booking->arrival_date?->toDateString(), 'departure_date' => $booking->departure_date?->toDateString(),
             'nights' => $booking->num_of_days, 'note' => $booking->note,
-            'service_total' => $this->bookingServiceTotal($booking, $booking->bookingRooms), 'paid_total' => $this->bookingPaidTotal($booking),
+            // Tổng của booking = Phiếu Tổng + các folio phòng, cùng cách tính với màn hình Hóa đơn.
+            'service_total' => $this->invoice->masterServiceTotal($booking)
+                + (float) $folioRooms->sum(fn (BookingRoom $room) => $this->invoice->roomServiceTotal($room)),
+            'paid_total' => $this->invoice->masterPaidTotal($booking, $payments)
+                + (float) $folioRooms->sum(fn (BookingRoom $room) => $this->invoice->roomPaidTotal($room, $payments)),
             'rooms' => $roomRows,
         ];
     }
@@ -106,9 +126,12 @@ class GeneralSearchProjectionService
         ];
     }
 
-    private function roomDetail(BookingRoom $room, Collection $roomsById, Booking $booking): array
+    private function roomDetail(BookingRoom $room, Collection $roomsById, Booking $booking, bool $invoiceAmounts): array
     {
         $finalRoom = $this->finalRoom($room, $roomsById);
+        $payments = $booking->relationLoaded('payments') ? $booking->payments : null;
+        // Trẻ em/em bé đếm theo booking_children giống màn hình Booking (không dùng children_qty).
+        $children = $room->relationLoaded('children') ? $room->children : null;
         $primaryGuest = $finalRoom->guests->firstWhere('is_primary', true)?->guest ?: $finalRoom->guests->first()?->guest;
         return [
             'id' => $finalRoom->id, 'source_room_id' => $room->id,
@@ -120,61 +143,22 @@ class GeneralSearchProjectionService
             'arrival_date' => $room->arrival_date?->toDateString(), 'departure_date' => $finalRoom->departure_date?->toDateString(),
             'nights' => $room->ActutalNumOfDays, 'rate' => (float) $room->rate, 'rate_code' => $room->rate_code,
             'extra_bed_qty' => $room->extra_bed_qty, 'extra_bed_rate' => (float) $room->extra_bed_rate,
-            'adults' => $room->adults, 'children' => $room->children_qty, 'note' => $room->note,
-            'service_total' => $this->roomServiceTotal($room), 'paid_total' => $this->roomPaidTotal($room),
+            'adults' => $room->adults, 'note' => $room->note,
+            'children' => $children ? $children->where('age_group', 'child')->count() : (int) $room->children_qty,
+            'babies' => $children ? $children->where('age_group', 'baby')->count() : (int) $room->babies,
+            // Tab Đăng ký: tiền như màn hình Booking. Tab Phòng: Tổng DV/Đã TT như màn hình Hóa đơn.
+            'room_total' => $invoiceAmounts ? null : $this->bookingTotals->roomTotal($room),
+            'service_total' => $invoiceAmounts ? $this->invoice->roomServiceTotal($room) : null,
+            'paid_total' => $invoiceAmounts ? $this->invoice->roomPaidTotal($room, $payments) : null,
             'checkin_time' => $finalRoom->arrival_time, 'checkout_time' => $finalRoom->CheckoutTime ?: $finalRoom->departure_time,
             'booking_date' => $room->booking?->booking_date?->toDateString(),
         ];
     }
 
-    private function bookingServiceTotal(Booking $booking, Collection $rooms): float
-    {
-        return (float) $rooms->sum(fn (BookingRoom $room) => $this->roomServiceTotal($room)) + $this->unallocatedBookingBills($booking);
-    }
-
-    private function roomServiceTotal(BookingRoom $room): float
-    {
-        $services = BookingRoomService::where('booking_room_id', $room->id)->get(['service_code', 'total_amount', 'service_bill_id']);
-        $linkedBillIds = $services->pluck('service_bill_id')->filter()->unique();
-        $bills = ServiceBill::query()->where(fn ($q) => $q->where('RentalRoomId1', $room->id)->orWhere('RentalRoomId2', $room->id))
-            ->where('Edit', false)->whereNotIn('Ma', $linkedBillIds)->get(['ServiceId', 'Amount']);
-
-        // RM/EB are generated per night.  Before night audit, there may be no
-        // rows yet, so show the agreed final room rate from booking_rooms.
-        // Once actual room charges exceed that value (for example surcharge),
-        // use the posted amount and never count the same linked bill twice.
-        $roomChargeCodes = [BookingRoomService::CODE_ROOM, BookingRoomService::CODE_EXTRA_BED];
-        $actualRoomCharge = (float) $services->whereIn('service_code', $roomChargeCodes)->sum('total_amount')
-            + (float) $bills->whereIn('ServiceId', $roomChargeCodes)->sum('Amount');
-        $nights = max(1, (int) ($room->ActutalNumOfDays ?: 0));
-        $expectedRoomCharge = ((float) $room->rate + ((int) $room->extra_bed_qty * (float) $room->extra_bed_rate)) * $nights;
-        $otherServices = (float) $services->reject(fn ($service) => in_array($service->service_code, $roomChargeCodes, true))->sum('total_amount')
-            + (float) $bills->reject(fn ($bill) => in_array($bill->ServiceId, $roomChargeCodes, true))->sum('Amount');
-
-        return $otherServices + max($expectedRoomCharge, $actualRoomCharge);
-    }
-
-    private function unallocatedBookingBills(Booking $booking): float
-    {
-        $linkedBillIds = BookingRoomService::query()->whereIn('booking_room_id', $booking->bookingRooms->pluck('id'))
-            ->whereNotNull('service_bill_id')->pluck('service_bill_id');
-        return (float) ServiceBill::query()->where(fn ($q) => $q->where('RegisterId1', $booking->id)->orWhere('RegisterID2', $booking->id))
-            ->whereNull('RentalRoomId1')->whereNull('RentalRoomId2')->where('Edit', false)->whereNotIn('Ma', $linkedBillIds)->sum('Amount');
-    }
-
     private function bookingDeposit(Booking $booking): float
     {
-        return (float) Payment::where('booking_id', $booking->id)->where('pack2', Payment::PACK2_DEPOSIT)
-            ->where('edit_flag', 0)->where('status', '!=', Payment::STATUS_DELETED)->sum('amount');
-    }
-
-    private function bookingPaidTotal(Booking $booking): float
-    {
-        return (float) Payment::where('booking_id', $booking->id)->where('edit_flag', 0)->where('status', Payment::STATUS_PAID)->sum('amount');
-    }
-
-    private function roomPaidTotal(BookingRoom $room): float
-    {
-        return (float) Payment::where('booking_room_id', $room->id)->where('edit_flag', 0)->where('status', Payment::STATUS_PAID)->sum('amount');
+        // Giống "Đặt cọc" trên màn hình Booking (active_deposit_total).
+        $payments = $booking->relationLoaded('payments') ? $booking->payments : Payment::where('booking_id', $booking->id)->get();
+        return (float) $payments->where('pack2', Payment::PACK2_DEPOSIT)->filter(fn (Payment $payment) => (int) $payment->edit_flag === 0)->sum('amount');
     }
 }
