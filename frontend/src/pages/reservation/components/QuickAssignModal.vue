@@ -313,7 +313,7 @@ import { resolveRateCodePrice } from '@/utils/rate-code-pricing.js'
 import { useRoomStore } from '@/stores/room-store'
 import { useAuthStore } from '@/stores/auth-store'
 import http from '@/services/http'
-import { fetchBookingInitDropdowns, createBooking, checkInRoom, syncBookingRoomSpecialRequests, checkAvailability } from '@/services/booking-service'
+import { fetchBookingInitDropdowns, createBooking, checkInRoomWithConfirmations, syncBookingRoomSpecialRequests, checkAvailability } from '@/services/booking-service'
 import SpecialRequestsModal from './SpecialRequestsModal.vue'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
 
@@ -412,6 +412,7 @@ const roomForms = ref([])
 const standardRatesList = ref([])
 const rateCodesList = ref([])
 const companies = ref([])
+const companyDefaultId = ref(null)
 const markets = ref([])
 const customerSources = ref([])
 const registrationStatuses = ref([])
@@ -635,6 +636,7 @@ async function loadDropdowns() {
       roomForms.value = d.room_forms || []
       rateCodesList.value = d.room_rate_codes || []
       companies.value = d.companies || []
+      companyDefaultId.value = d.hotel_settings?.CompanyDefault ?? null
       markets.value = d.markets || []
       customerSources.value = d.customer_sources || []
       registrationStatuses.value = d.registration_statuses || []
@@ -646,6 +648,15 @@ async function loadDropdowns() {
   } catch (err) {
     console.error('Failed to load init dropdowns', err)
   }
+}
+
+function getConfiguredActiveCompany() {
+  const companyId = Number(companyDefaultId.value)
+  if (!Number.isInteger(companyId) || companyId < 1) return null
+
+  return companies.value.find(company =>
+    Number(company.id) === companyId && company.is_active === true
+  ) || null
 }
 
 function initModalValues() {
@@ -781,11 +792,17 @@ async function handleSave() {
       confirmedCheckIn = true
     }
 
-    const defaultCompany = companies.value[0]?.id || 1
+    const defaultCompany = getConfiguredActiveCompany()
     const defaultMarket = markets.value[0]?.id || 1
     const defaultSource = customerSources.value[0]?.id || 1
     const defaultRegStatus = registrationStatuses.value.find(status => !status.is_hidden && status.booking_status_id != null)?.booking_status_id ?? null
     const defaultPaymentMethod = paymentMethods.value[0]?.id || 1
+
+    if (!defaultCompany) {
+      uiStore.showToast('Vui lòng cấu hình CompanyDefault là công ty đang hoạt động trước khi nhận phòng nhanh.', 'error')
+      isSubmitting.value = false
+      return
+    }
 
     if (!defaultRegStatus) {
       uiStore.showToast('Chưa tải được Tình trạng đăng ký hợp lệ.', 'error')
@@ -832,7 +849,7 @@ async function handleSave() {
       departure_date: departureDate.value,
       num_of_days: isDayUse.value ? 0 : nights.value,
       is_day_use: isDayUse.value,
-      company_id: defaultCompany,
+      company_id: defaultCompany.id,
       market_id: defaultMarket,
       customer_source_id: defaultSource,
       registration_status_id: defaultRegStatus,
@@ -882,18 +899,14 @@ async function handleSave() {
         }
 
         try {
-          const checkinRes = await checkInRoom(createdBooking.id, bRoom.id, { confirmed: confirmedCheckIn })
-          if (checkinRes.data?.needs_confirmation && !confirmedCheckIn) {
-            const confirmed = await uiStore.confirm({
-              title: 'Phòng đang chờ kiểm tra',
-              message: checkinRes.data.message || `Phòng ${selectedRoomNumber.value} đang ở trạng thái chờ kiểm tra. Bạn có muốn tiếp tục nhận phòng không?`,
-              confirmText: 'Tiếp tục nhận phòng',
-              cancelText: 'Hủy'
-            })
-            if (confirmed) {
-              await checkInRoom(createdBooking.id, bRoom.id, { confirmed: true })
-            } else {
-              // Người dùng không muốn check-in -> Rollback xóa booking để không gán phòng
+          const checkinRes = await checkInRoomWithConfirmations(createdBooking.id, bRoom.id, {
+            roomNumber: selectedRoomNumber.value,
+            payload: { confirmed: confirmedCheckIn },
+            confirm: options => uiStore.confirm(options),
+          })
+          if (!checkinRes || checkinRes.data?.success === false || checkinRes.data?.needs_confirmation) {
+            if (!checkinRes) {
+              // Người dùng hủy xác nhận nhận phòng -> Rollback booking vừa tạo để không gán phòng.
               try {
                 await http.delete(`/bookings/${createdBooking.id}`)
               } catch (delErr) {
@@ -903,6 +916,7 @@ async function handleSave() {
               isSubmitting.value = false
               return
             }
+            throw new Error(checkinRes.data?.message || 'Không thể nhận phòng.')
           }
         } catch (checkinErr) {
           // Lỗi check-in -> Rollback xóa booking vừa tạo để không gán phòng vào sơ đồ

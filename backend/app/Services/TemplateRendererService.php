@@ -11,6 +11,9 @@ class TemplateRendererService
      */
     public function render(string $html, ?string $css, array $data, array $options = []): string
     {
+        // 0. Dịch nhãn cố định của mẫu theo ngôn ngữ in (trước khi đổ dữ liệu nên dữ liệu thật không bị dịch)
+        $html = $this->translateStaticLabels($html, $options);
+
         $data['aggregate'] = array_replace_recursive(
             is_array($data['aggregate'] ?? null) ? $data['aggregate'] : [],
             $this->buildListAggregates($data)
@@ -46,6 +49,26 @@ class TemplateRendererService
 
         // Return completed HTML document
         return $this->buildFullHtmlDocument($html, $compiledCss, $options);
+    }
+
+    /**
+     * Ngôn ngữ in: options['lang'] > header X-Print-Language > ngôn ngữ giao diện (X-Language).
+     * Lỗi dịch không bao giờ được làm hỏng bản in.
+     */
+    private function translateStaticLabels(string $html, array $options): string
+    {
+        try {
+            $request = request();
+            $lang = $options['lang']
+                ?? $request?->header('X-Print-Language')
+                ?? $request?->header('X-Language');
+
+            return app(TranslationService::class)->translateTemplateHtml($html, $lang ? (string) $lang : null);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Translate template failed: ' . $e->getMessage());
+
+            return $html;
+        }
     }
 
     private function buildListAggregates(array $data): array

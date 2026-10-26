@@ -33,6 +33,9 @@ class Room extends Model
         'connecting_room',
         'is_internal',
         'room_status_code',
+        'is_housekeeping_service',
+        'is_priority_cleaning',
+        'is_do_not_disturb',
         'status',
         'notes',
         'orders',
@@ -60,6 +63,16 @@ class Room extends Model
      */
     public function setStatusAttribute($value): void
     {
+        if ($value === 'dnd') {
+            $this->attributes['is_do_not_disturb'] = true;
+            return;
+        }
+
+        if ($value === 'reserved') {
+            $this->attributes['is_priority_cleaning'] = true;
+            return;
+        }
+
         // Nếu status mới đã tương thích với getStatusAttribute() hiện tại (ví dụ: housekeeping, oos đã tương ứng 'maintenance') thì không ghi đè room_status_code
         if (isset($this->attributes['room_status_code']) && $this->getStatusAttribute() === $value) {
             return;
@@ -69,8 +82,6 @@ class Room extends Model
             'dirty'       => 'vacant_dirty',
             'checkout'    => 'turndown',
             'maintenance' => 'ooo',
-            'dnd'         => 'dnd',
-            'reserved'    => 'vacant_priority',
             'occupied'    => 'occupied_ready',
             default       => 'vacant_ready',
         };
@@ -83,6 +94,9 @@ class Room extends Model
         'grid_row' => 'integer',
         'grid_column' => 'integer',
         'is_internal' => 'boolean',
+        'is_housekeeping_service' => 'boolean',
+        'is_priority_cleaning' => 'boolean',
+        'is_do_not_disturb' => 'boolean',
         'orders' => 'integer',
     ];
 

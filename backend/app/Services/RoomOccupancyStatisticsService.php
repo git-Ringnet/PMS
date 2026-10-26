@@ -112,8 +112,21 @@ class RoomOccupancyStatisticsService
 
         $pendingDepartures = $this->summarize(
             $assignedPhysicalQuery()
-                ->where('status', BookingRoom::STATUS_CHECKED_IN)
-                ->whereDate('departure_date', '<=', $dateString)
+                ->where(function ($query) use ($dateString) {
+                    $query->where(function ($checkedIn) use ($dateString) {
+                        $checkedIn->where('status', BookingRoom::STATUS_CHECKED_IN)
+                            ->whereDate('departure_date', '<=', $dateString);
+                    })->orWhere(function ($dayUseReservation) use ($dateString) {
+                        // Day Use chưa check-in vẫn là phòng đi trong ngày, nhưng không phải phòng đang ở.
+                        $dayUseReservation->where('status', BookingRoom::STATUS_BOOKED)
+                            ->whereDate('arrival_date', $dateString)
+                            ->whereDate('departure_date', $dateString)
+                            ->where(function ($dayUse) {
+                                $dayUse->where('is_day_use', true)
+                                    ->orWhereHas('booking', fn ($booking) => $booking->where('is_day_use', true));
+                            });
+                    });
+                })
         );
         $departuresCheckedOut = $this->summarize(
             $assignedPhysicalQuery()

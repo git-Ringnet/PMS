@@ -1537,22 +1537,22 @@ onUnmounted(() => {
               </td>
               <td class="col-ma cell-ma" :title="cellTitle(r.ma)"><span class="cell-content">{{ r.ma }}</span></td>
               <td class="col-phong cell-phong" :title="cellTitle(r.phong)"><span class="cell-content">{{ r.phong }}</span></td>
-              <td class="col-ten font-bold text-slate-800" :title="cellTitle(r.ten)"><span class="cell-content">{{ r.ten }}</span></td>
-              <td class="col-gioitinh" :title="cellTitle(r.gioiTinh)"><span class="cell-content">{{ r.gioiTinh }}</span></td>
-              <td class="col-ngaysinh" :title="cellTitle(r.ngaySinh)"><span class="cell-content">{{ r.ngaySinh || '' }}</span></td>
-              <td class="col-ngayden" :title="cellTitle(r.ngayDen)"><span class="cell-content">{{ r.ngayDen }}</span></td>
-              <td class="col-ngaydi" :title="cellTitle(r.ngayDi)"><span class="cell-content">{{ r.ngayDi }}</span></td>
-              <td class="col-quoctich" :title="cellTitle(r.quocTich)">
+              <td class="col-ten font-normal text-[#000000D9]" :title="cellTitle(r.ten)"><span class="cell-content">{{ r.ten }}</span></td>
+              <td class="col-gioitinh font-normal text-[#000000D9]" :title="cellTitle(r.gioiTinh)"><span class="cell-content">{{ r.gioiTinh }}</span></td>
+              <td class="col-ngaysinh font-normal text-[#000000D9]" :title="cellTitle(r.ngaySinh)"><span class="cell-content">{{ r.ngaySinh || '' }}</span></td>
+              <td class="col-ngayden font-normal text-[#000000D9]" :title="cellTitle(r.ngayDen)"><span class="cell-content">{{ r.ngayDen }}</span></td>
+              <td class="col-ngaydi font-normal text-[#000000D9]" :title="cellTitle(r.ngayDi)"><span class="cell-content">{{ r.ngayDi }}</span></td>
+              <td class="col-quoctich font-normal text-[#000000D9]" :title="cellTitle(r.quocTich)">
                 <span v-if="r.quocTich" class="cell-country cell-content">{{ r.quocTich }}</span>
               </td>
-              <td class="col-diachi" :title="cellTitle(r.diaChi)"><span class="cell-content">{{ r.diaChi !== '_' ? r.diaChi : '' }}</span></td>
-              <td class="col-sogiayto" :title="cellTitle(r.soGiayToHienThi)"><span class="cell-content">{{ r.soGiayToHienThi }}</span></td>
-              <td class="col-hochieu" :title="cellTitle(r.hoChieu)"><span class="cell-content">{{ r.hoChieu }}</span></td>
-              <td class="col-tamtruden" :title="cellTitle(r.tamTruDenHienThi)"><span class="cell-content">{{ r.tamTruDenHienThi }}</span></td>
-              <td class="col-ngayhethan" :title="cellTitle(r.ngayHetHan)"><span class="cell-content">{{ r.ngayHetHan }}</span></td>
-              <td class="col-ngaynhapcanh" :title="cellTitle(r.ngayNhapCanh)"><span class="cell-content">{{ r.ngayNhapCanh }}</span></td>
-              <td class="col-cuakhau" :title="cellTitle(r.cuaKhau)"><span class="cell-content">{{ r.cuaKhau }}</span></td>
-              <td class="col-nlon">
+              <td class="col-diachi font-normal text-[#000000D9]" :title="cellTitle(r.diaChi)"><span class="cell-content">{{ r.diaChi !== '_' ? r.diaChi : '' }}</span></td>
+              <td class="col-sogiayto font-normal text-[#000000D9]" :title="cellTitle(r.soGiayToHienThi)"><span class="cell-content">{{ r.soGiayToHienThi }}</span></td>
+              <td class="col-hochieu font-normal text-[#000000D9]" :title="cellTitle(r.hoChieu)"><span class="cell-content">{{ r.hoChieu }}</span></td>
+              <td class="col-tamtruden font-normal text-[#000000D9]" :title="cellTitle(r.tamTruDenHienThi)"><span class="cell-content">{{ r.tamTruDenHienThi }}</span></td>
+              <td class="col-ngayhethan font-normal text-[#000000D9]" :title="cellTitle(r.ngayHetHan)"><span class="cell-content">{{ r.ngayHetHan }}</span></td>
+              <td class="col-ngaynhapcanh font-normal text-[#000000D9]" :title="cellTitle(r.ngayNhapCanh)"><span class="cell-content">{{ r.ngayNhapCanh }}</span></td>
+              <td class="col-cuakhau font-normal text-[#000000D9]" :title="cellTitle(r.cuaKhau)"><span class="cell-content">{{ r.cuaKhau }}</span></td>
+              <td class="col-nlon text-center align-middle">
                 <label class="sw">
                   <input type="checkbox" :checked="r.nLon" disabled />
                   <span class="sw-track"></span>
@@ -1705,9 +1705,9 @@ onUnmounted(() => {
 .split-caret:disabled {
   opacity: 1 !important;
   cursor: not-allowed !important;
-  background: #cbd5e1 !important;
-  color: #475569 !important;
-  border-color: #94a3b8 !important;
+  background: #e2e8f0 !important;
+  color: #1e293b !important;
+  border-color: #cbd5e1 !important;
   pointer-events: none !important;
 }
 
@@ -2080,8 +2080,8 @@ table.residence-grid thead th {
   text-align: center;
   vertical-align: middle;
   font-size: 12px;
-  font-weight: 700;
-  color: #000;
+  font-weight: 600;
+  color: #000000D9;
   letter-spacing: .01em;
   padding: 8px 10px;
   border: 1px solid var(--border);
@@ -2125,9 +2125,11 @@ th.sort-desc .sort-icons .down {
 table.residence-grid td {
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
-  color: var(--text);
+  color: #000000D9;
+  font-weight: 400;
   white-space: nowrap;
   font-size: 12px;
+  vertical-align: middle;
 }
 table.residence-grid td.col-checkbox {
   padding-left: 14px;
@@ -2141,12 +2143,12 @@ table.residence-grid tbody tr:hover td {
 }
 
 .cell-ma {
-  color: var(--navy);
-  font-weight: 600;
+  color: #000000D9;
+  font-weight: 400;
 }
 .cell-phong {
-  color: var(--navy);
-  font-weight: 600;
+  color: #000000D9;
+  font-weight: 400;
 }
 .cell-country {
   display: inline-flex;
@@ -2249,8 +2251,8 @@ input[type=checkbox] {
 .col-tamtruden { width: 5.2%; }
 .col-ngayhethan { width: 5.2%; }
 .col-ngaynhapcanh { width: 5.65%; }
-.col-cuakhau { width: 4.8%; }
-.col-nlon { width: 4%; }
+.col-nlon { width: 5%; min-width: 60px; text-align: center; vertical-align: middle; }
+td.col-nlon { text-align: center; vertical-align: middle; border-bottom: 1px solid var(--border) !important; }
 .col-ghichuchuyen { min-width: 220px; width: 11.8%; }
 
 /* Column Hiding (All 17 data columns) */

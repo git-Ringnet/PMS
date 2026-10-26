@@ -8,6 +8,7 @@ import { Database, Download, FileText, LoaderCircle, Play, Printer } from '@luci
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
 import ReportDateRangePicker from '@/components/ReportDateRangePicker.vue'
 import HousekeepingInvoiceFilters from '@/pages/reports/components/HousekeepingInvoiceFilters.vue'
+import ReportViewer from '@/pages/reports/components/ReportViewer.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -54,37 +55,7 @@ const activeTemplate = computed(() => {
   return activeTab.value.report.templates.find(t => t.id === activeTab.value.selectedTemplateId) || null
 })
 
-const reportPreviewZoom = 1.25
-const reportPreviewDimensions = computed(() => {
-  const paperSizes = {
-    A4: [210, 297],
-    A5: [148, 210],
-    Letter: [215.9, 279.4],
-    Legal: [215.9, 355.6]
-  }
-  const [shortSide, longSide] = paperSizes[activeTemplate.value?.page_size] || paperSizes.A4
-  const landscape = activeTemplate.value?.page_orientation === 'landscape'
-  const [width, height] = landscape ? [longSide, shortSide] : [shortSide, longSide]
-  const pixelsPerMillimetre = 96 / 25.4
-
-  return {
-    width: Math.round(width * pixelsPerMillimetre),
-    height: Math.round(height * pixelsPerMillimetre)
-  }
-})
-const reportPreviewContainerStyle = computed(() => ({
-  width: `${reportPreviewDimensions.value.width * reportPreviewZoom}px`,
-  height: `${reportPreviewDimensions.value.height * reportPreviewZoom}px`
-}))
-const reportPreviewFrameStyle = computed(() => ({
-  width: `${reportPreviewDimensions.value.width}px`,
-  height: `${reportPreviewDimensions.value.height}px`,
-  transform: `scale(${reportPreviewZoom})`,
-  transformOrigin: 'top left'
-}))
-const iframeClass = computed(() => {
-  return 'block border-0 bg-white shadow-xl'
-})
+const reportViewer = ref(null)
 
 const localToday = () => {
   const date = new Date()
@@ -370,11 +341,13 @@ const changeTemplateForTab = async (tab) => {
 
 const printReportForTab = (tab) => {
   if (!tab || !tab.renderedHtml) return
-  const iframe = document.querySelector('iframe')
-  if (iframe) {
-    iframe.contentWindow?.focus()
-    iframe.contentWindow?.print()
-  }
+  reportViewer.value?.printAll()
+}
+
+// Nhấp đúp mã BK trong báo cáo: mở màn hình đăng ký của booking ở tab mới để giữ nguyên kết quả báo cáo.
+const openBookingFromReport = (bookingCode) => {
+  const target = router.resolve({ path: '/reservation', query: { tab: 'create-res', bookingCode } })
+  window.open(target.href, '_blank', 'noopener')
 }
 
 const exportReportForTab = async (tab, format) => {
@@ -553,8 +526,6 @@ onBeforeUnmount(() => {
                 </select>
               </label>
               <button :disabled="!activeTab.dataset || activeTab.exporting" @click="exportReportForTab(activeTab, 'xlsx')" class="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 disabled:opacity-40"><Download class="h-4 w-4" /> Excel</button>
-              <button :disabled="!activeTab.dataset || activeTab.exporting" @click="exportReportForTab(activeTab, 'docx')" class="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 disabled:opacity-40"><Download class="h-4 w-4" /> Word</button>
-              <button :disabled="!activeTab.dataset || activeTab.exporting" @click="exportReportForTab(activeTab, 'pdf')" class="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 disabled:opacity-40"><Download class="h-4 w-4" /> PDF</button>
               <button :disabled="!activeTab.renderedHtml" @click="printReportForTab(activeTab)" class="flex items-center gap-1 rounded-lg border-none bg-slate-800 px-3 py-2 text-xs font-bold text-white disabled:opacity-40"><Printer class="h-4 w-4" /> In</button>
             </div>
           </div>
@@ -657,12 +628,12 @@ onBeforeUnmount(() => {
           </aside>
 
           <!-- Report viewer -->
-          <section class="relative flex-1 overflow-auto bg-slate-200 p-6">
-            <div v-if="activeTab.rendering" class="absolute inset-0 z-10 flex items-center justify-center bg-white/60">
+          <section class="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-slate-200">
+            <div v-if="activeTab.rendering" class="absolute inset-0 z-20 flex items-center justify-center bg-white/60">
               <LoaderCircle class="h-7 w-7 animate-spin text-sky-600" />
             </div>
-            
-            <div v-if="!activeTab.renderedHtml" class="flex h-full min-h-96 items-center justify-center">
+
+            <div v-if="!activeTab.renderedHtml" class="flex h-full min-h-96 items-center justify-center p-6">
               <div class="text-center text-slate-400">
                 <FileText class="mx-auto mb-3 h-12 w-12 opacity-30" />
                 <p class="text-sm font-bold">Chọn điều kiện và bấm “Hiển thị báo cáo”</p>
@@ -670,9 +641,13 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <div v-else class="mx-auto" :style="reportPreviewContainerStyle">
-              <iframe ref="reportFrame" :srcdoc="activeTab.renderedHtml" title="Nội dung báo cáo" :class="iframeClass" :style="reportPreviewFrameStyle" />
-            </div>
+            <ReportViewer
+              v-else
+              ref="reportViewer"
+              :html="activeTab.renderedHtml"
+              :template="activeTemplate"
+              @open-booking="openBookingFromReport"
+            />
           </section>
         </div>
       </template>

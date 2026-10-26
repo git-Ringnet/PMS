@@ -65,6 +65,7 @@ class CompanyController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
+            'code' => 'nullable|string|max:50|unique:companies,code',
             'name' => 'required|string|max:255',
             'trading_name' => 'nullable|string|max:255',
             'address' => 'nullable|string',

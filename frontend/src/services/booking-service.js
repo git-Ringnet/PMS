@@ -57,6 +57,47 @@ export const autoAssignRooms = (bookingId) => http.post(`/bookings/${bookingId}/
 export const assignRoom = (bookingId, roomId, data) => http.post(`/bookings/${bookingId}/rooms/${roomId}/assign`, data)
 export const unassignRoom = (bookingId, roomId) => http.patch(`/bookings/${bookingId}/rooms/${roomId}/unassign`)
 export const checkInRoom = (bookingId, roomId, data = {}) => http.patch(`/bookings/${bookingId}/rooms/${roomId}/check-in`, data)
+
+/**
+ * Completes the confirmations returned by the check-in API without allowing a
+ * pending confirmation to be treated as a successful check-in by callers.
+ */
+export const checkInRoomWithConfirmations = async (bookingId, roomId, {
+  roomNumber = '',
+  payload = {},
+  confirm,
+} = {}) => {
+  let requestPayload = { ...payload }
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const response = await checkInRoom(bookingId, roomId, requestPayload)
+    const body = response?.data || {}
+    if (!body.needs_confirmation) return response
+    if (typeof confirm !== 'function') return response
+
+    if (body.confirmation_type === 'day_use_room_charge') {
+      const shouldPostRoomCharge = await confirm({
+        title: 'Tiền phòng Day Use',
+        message: body.message || `Các phòng sau đây đến và đi trong ngày: ${roomNumber}. Bạn có muốn thêm tiền phòng vào hóa đơn không?`,
+        confirmText: 'Có',
+        cancelText: 'Không',
+      })
+      requestPayload = { ...requestPayload, post_day_use_room_charge: shouldPostRoomCharge }
+      continue
+    }
+
+    const roomStatusConfirmed = await confirm({
+      title: 'Phòng đang chờ kiểm tra',
+      message: body.message || `Phòng ${roomNumber} đang ở trạng thái chờ kiểm tra. Bạn có muốn tiếp tục nhận phòng không? Tình trạng phòng sẽ được giữ nguyên.`,
+      confirmText: 'Tiếp tục nhận phòng',
+      cancelText: 'Hủy',
+    })
+    if (!roomStatusConfirmed) return null
+    requestPayload = { ...requestPayload, confirmed: true }
+  }
+
+  return null
+}
 export const undoCheckInRoom = (bookingId, roomId, data = {}) => http.post(`/bookings/${bookingId}/rooms/${roomId}/undo-checkin`, data)
 export const upgradeRoom = (bookingId, roomId, data) => http.patch(`/bookings/${bookingId}/rooms/${roomId}/upgrade`, data)
 export const cancelBookingRoom = (bookingId, roomId, data = {}) => http.delete(`/bookings/${bookingId}/rooms/${roomId}/cancel`, { data })

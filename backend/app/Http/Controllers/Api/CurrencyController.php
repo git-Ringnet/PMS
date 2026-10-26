@@ -80,6 +80,8 @@ class CurrencyController extends Controller
             'image' => 'nullable|image|max:2048',
         ]);
 
+        app(\App\Services\ConfigurationReferenceGuard::class)->assertIdentityUnchanged($currency, $validated, ['code']);
+
         if ($request->hasFile('image')) {
             if ($currency->image_path && file_exists(public_path($currency->image_path))) {
                 @unlink(public_path($currency->image_path));
@@ -112,6 +114,11 @@ class CurrencyController extends Controller
             return response()->json(['message' => 'Currency not found'], 404);
         }
 
+        if ($currency->is_main) {
+            return response()->json(['message' => 'Không thể xóa tiền tệ chính của khách sạn.'], 422);
+        }
+
+        app(\App\Services\ConfigurationReferenceGuard::class)->assertUnused($currency);
         if ($currency->image_path && file_exists(public_path($currency->image_path))) {
             @unlink(public_path($currency->image_path));
         }

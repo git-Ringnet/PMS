@@ -40,7 +40,7 @@
             <div class="flex items-center gap-6">
               <div class="kv text-right">
                 Rate
-                <b>{{ formatMoney(room?.rate) }} <span class="text-[10px] text-[#9FB2D6] font-normal">VND</span></b>
+                <b>{{ formatMoney(room?.rate) }} <span class="text-xs text-[#9FB2D6] font-normal">VND</span></b>
               </div>
               <div class="kv text-right">
                 Arrival

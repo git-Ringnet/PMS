@@ -71,6 +71,7 @@ class ShiftController extends Controller
             'end_time' => 'required|string|max:50',
         ]);
 
+        app(\App\Services\ConfigurationReferenceGuard::class)->assertIdentityUnchanged($shift, $validated, ['name']);
         $shift->update($validated);
 
         return response()->json([
@@ -89,6 +90,7 @@ class ShiftController extends Controller
             return response()->json(['message' => 'Shift not found'], 404);
         }
 
+        app(\App\Services\ConfigurationReferenceGuard::class)->assertUnused($shift);
         $shift->delete();
 
         return response()->json([

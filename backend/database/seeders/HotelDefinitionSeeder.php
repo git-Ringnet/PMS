@@ -417,6 +417,7 @@ class HotelDefinitionSeeder extends Seeder
             ['name' => 'RoomPlan_ColorOOO', 'value' => '#3b82f6', 'description' => 'màu phòng khóa OOO', 'is_visible' => true],
             ['name' => 'RoomPlan_ColorOOS', 'value' => '#94a3b8', 'description' => 'màu phòng khóa OOS', 'is_visible' => true],
             ['name' => 'RoomPlan_AllowChangeArrivalDate', 'value' => '0', 'description' => 'Cho phép kéo thay đổi ngày đến của phòng trên Room Plan (0: không cho, 1: cho phép)', 'is_visible' => true],
+            ['name' => 'ShowVirtualRoom', 'value' => '1', 'description' => 'Kế hoạch phòng: hiển thị phòng chưa gán số phòng (0: ẩn, 1: hiển thị)', 'is_visible' => true],
             ['name' => 'AllowPostBillCheckedOutRoom', 'value' => '0', 'description' => 'Cho phép post bill sau khi phòng đã check-out (0: không cho, 1: cho phép)', 'is_visible' => true],
             ['name' => 'SyncRoomDateByBookingDate', 'value' => '1', 'description' => 'Tự động đồng bộ ngày của phòng theo ngày của booking (0: không đồng bộ, 1: đồng bộ cho phòng chưa check-in)', 'is_visible' => true],
             // Tham số trẻ em - ăn sáng
@@ -443,9 +444,19 @@ class HotelDefinitionSeeder extends Seeder
             ['name' => 'SyncCompanyAllBranch', 'value' => '0', 'description' => 'Đồng bộ công ty, thị trường, nguồn khách cho tất cả chi nhánh trong chuỗi (0: Không, mỗi chi nhánh lưu riêng; 1: Thêm/sửa/xóa ở một chi nhánh thì các chi nhánh khác tự cập nhật theo, không đồng bộ người bán).', 'is_visible' => true],
             // Alert sinh nhật / special request
             ['name' => 'AllowShowAlertListView', 'value' => '1', 'description' => 'Tự động hiện popup danh sách sinh nhật / special request khi vào module (1: Có, 0: Không - chỉ xem ở icon lịch góc phải).', 'is_visible' => true],
+            ['name' => 'CompanyDefault', 'value' => '', 'description' => 'ID công ty mặc định khi tạo Booking nhanh và Nhận phòng nhanh', 'is_visible' => true],
+            // Hóa đơn - In hóa đơn tự động sau thanh toán
+            ['name' => 'DisablePrintBillAfterPayment', 'value' => '0', 'description' => 'Tự động in hóa đơn (phiếu thu) sau khi thanh toán thành công tại Hóa đơn. 0: không in, 1: tự động in.', 'is_visible' => true],
+            // Hóa đơn - Phân quyền re checkout (khôi phục checkout)
+            ['name' => 'RoleUserReCheckout', 'value' => 'super_admin,branch_admin,fo_manager', 'description' => 'Danh sách mã role được khôi phục checkout (re checkout) Master booking và phòng đã checkout, phân cách bằng dấu phẩy. Để trống sẽ từ chối.', 'is_visible' => true],
         ];
 
         foreach ($configs as $cfg) {
+            if ($cfg['name'] === 'CompanyDefault') {
+                HotelConfig::firstOrCreate(['name' => $cfg['name']], $cfg);
+                continue;
+            }
+
             HotelConfig::updateOrCreate(['name' => $cfg['name']], $cfg);
         }
 

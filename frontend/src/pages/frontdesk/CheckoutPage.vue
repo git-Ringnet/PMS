@@ -278,7 +278,6 @@ const checkoutError = ref('')
 const checkoutUnpaidRooms = ref([])
 const earlyCheckoutData = ref(null)
 const checkoutPreview = ref(null)
-const masterDebtConfirmed = ref(false)
 const showEarlyChargeModal = ref(false)
 const earlyChargeDateOptions = ref([])
 const earlyChargeDates = ref([])
@@ -338,6 +337,15 @@ const showSplitDepositModal = ref(false)
 const roomAdjustment = ref(null)
 const housekeepingAdjustment = ref(null)
 
+// Phòng late check-in: ngày đến ban đầu là ngày late check-in sớm nhất (ngày đến bị dời sau đó).
+const selectedRoomOriginalArrivalDate = computed(() => {
+  // Giữ nguyên chuỗi datetime; AddServiceModal tự đổi về ngày theo múi giờ.
+  const lateDates = (selectedRoomItem.value?.rawRoom?.late_checkins || [])
+    .map(item => item.late_checkin_date)
+    .filter(Boolean)
+    .sort((a, b) => new Date(a) - new Date(b))
+  return lateDates[0] ? String(lateDates[0]) : ''
+})
 // Đứng tại phòng: hiển thị đúng giai đoạn ở và hạng của phòng; đứng tại Master: ngày của booking, Phòng/Hạng để trống.
 const registrationStayLabel = computed(() => {
   if (!selectedBooking.value) return '--'
@@ -373,11 +381,14 @@ const openCheckoutModal = () => {
     uiStore.showToast('Folio phòng ảo chỉ dùng cho dịch vụ, không thể checkout.', 'warning')
     return
   }
+  if (selectedRoomItem.value?.isPartialCheckoutView) {
+    uiStore.showToast('Đây là khách đã checkout của phòng vẫn còn khách ở. Trả phòng cho khách còn lại tại Đăng ký hiện tại.', 'warning')
+    return
+  }
   checkoutError.value = ''
   checkoutUnpaidRooms.value = []
   earlyCheckoutData.value = null
   checkoutPreview.value = null
-  masterDebtConfirmed.value = false
   if (isRestoreCheckout.value) {
     showCheckoutModal.value = true
     return
@@ -394,6 +405,29 @@ const openCheckoutModal = () => {
     ? checkoutGuestOptions(checkedRooms[0].room).map(guest => guest.id)
     : (selectedRoomItem.value ? checkoutGuestOptions(selectedRoomItem.value).map(guest => guest.id) : [])
   showCheckoutModal.value = true
+  // Nhiều phòng: kiểm tra điều kiện ngay khi mở màn hình xác nhận, bấm Checkout là trả phòng luôn.
+  if (checkedRooms.length > 1) loadCheckoutPreview(checkedRooms)
+}
+const loadCheckoutPreview = async (checkedRooms) => {
+  isServiceOperationLoading.value = true
+  try {
+    const response = await previewCheckoutRooms(selectedBooking.value.bookingId, checkedRooms.map(({ room }) => room.roomId || room.id))
+    checkoutPreview.value = response.data?.data || null
+    const failed = (checkoutPreview.value?.rooms || []).filter(room => !room.eligible)
+    checkoutError.value = failed.length ? `${failed.length} phòng chưa đủ điều kiện checkout, chỉ các phòng hợp lệ được trả phòng.` : ''
+  } catch (err) {
+    checkoutPreview.value = null
+    checkoutError.value = err?.response?.data?.message || 'Không kiểm tra được điều kiện checkout.'
+  } finally { isServiceOperationLoading.value = false }
+}
+// Sau khi trả phòng vẫn giữ Master đang xem, chỉ bỏ các lựa chọn checkout.
+const resetCheckoutSelection = () => {
+  allBookingsList.value.forEach(booking => {
+    ;(booking.roomItems || []).forEach(room => { room.checked = false })
+  })
+  checkoutGuestSelections.value = {}
+  checkoutGuestIds.value = []
+  checkoutPreview.value = null
 }
 const submitCheckout = async () => {
   if (denySaleInvoiceMutation()) return
@@ -419,19 +453,16 @@ const submitCheckout = async () => {
       if (!checkoutPreview.value) {
         const response = await previewCheckoutRooms(selectedBooking.value.bookingId, checkedRooms.map(({ room }) => room.roomId || room.id))
         checkoutPreview.value = response.data?.data || null
-        const failed = (checkoutPreview.value?.rooms || []).filter(room => !room.eligible)
-        checkoutError.value = checkoutPreview.value?.master_unpaid
-          ? 'Master còn công nợ nhóm. Xác nhận để tiếp tục.'
-          : (failed.length ? `${failed.length} phòng chưa đủ điều kiện checkout.` : 'Đã kiểm tra điều kiện. Bấm Trả phòng để tiếp tục.')
-        return
       }
-      if (checkoutPreview.value.master_unpaid && !masterDebtConfirmed.value) {
-        checkoutError.value = 'Cần xác nhận tiếp tục khi Master còn công nợ nhóm.'
-        return
-      }
+      // Checkout phòng không checkout Master, nên công nợ Master chỉ là thông tin, không chặn trả phòng.
       const successfulRooms = []
       const failedRooms = []
       const eligibleRoomIds = new Set((checkoutPreview.value.rooms || []).filter(room => room.eligible).map(room => String(room.room_id)))
+      if (eligibleRoomIds.size === 0) {
+        const reasons = (checkoutPreview.value.rooms || []).map(room => `Phòng ${room.room_number || room.room_id}: ${room.message || 'Không đủ điều kiện checkout'}`)
+        checkoutError.value = `Không có phòng nào đủ điều kiện checkout. ${reasons.join('; ')}`
+        return
+      }
       for (const { room } of checkedRooms.filter(({ room }) => eligibleRoomIds.has(String(room.roomId || room.id)))) {
         try {
           const guestIds = (checkoutGuestSelections.value[room.id] || []).filter(guestId => activeCheckoutGuests(room).some(guest => String(guest.id) === String(guestId)))
@@ -457,8 +488,10 @@ const submitCheckout = async () => {
       else if (childIds.length === 0) throw new Error('Phải chọn tối thiểu một khách.')
     } else await checkoutBooking(selectedBooking.value.bookingId)
     showCheckoutModal.value = false
+    // Checkout phòng: giữ Master đang xem (phòng đã out rời bộ lọc thì quay về dòng Master).
+    // Checkout Master: booking rời bộ lọc hiện tại nên refresh tự xóa panel.
+    resetCheckoutSelection()
     await refreshCheckoutData()
-    clearCheckoutPanels()
     uiStore.showToast('Checkout thành công.', 'success')
   } catch (err) {
     console.error('Checkout API error:', { status: err?.response?.status, code: err?.response?.data?.code })
@@ -561,7 +594,8 @@ const virtualFolioLoadingRoomNumbers = ref(new Set())
 
 const selectedCheckoutRooms = computed(() => allBookingsList.value.flatMap(booking => (
   (booking.roomItems || [])
-    .filter(room => room.checked && Number(room.rawRoom?.status ?? room.status) === 1)
+    // Dòng xem khách đã checkout lẻ ở Đăng ký cũ không dùng để trả phòng (khách còn ở trả tại Đăng ký hiện tại).
+    .filter(room => room.checked && !room.isPartialCheckoutView && Number(room.rawRoom?.status ?? room.status) === 1)
     .map(room => ({ booking, room }))
 )))
 const checkoutGuestSelections = ref({})
@@ -693,8 +727,17 @@ const filterContainerRef = ref(null)
 
 function formatDate(dateStr) {
   if (!dateStr) return '--/--/----'
+  const text = String(dateStr).trim()
+  // Ngày dạng UTC (vd. "2026-09-01T17:00:00.000000Z" = 02/09 giờ VN) phải đổi sang giờ địa phương,
+  // cắt chuỗi sẽ lùi 1 ngày khi server chạy múi giờ Asia/Ho_Chi_Minh.
+  const isUtcTimestamp = /^\d{4}-\d{2}-\d{2}T.*(Z|[+-]\d{2}:?\d{2})$/.test(text)
+  const ymd = !isUtcTimestamp && text.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (ymd) return `${ymd[3]}/${ymd[2]}/${ymd[1]}`
+  const dmy = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+  if (dmy) return `${String(dmy[1]).padStart(2, '0')}/${String(dmy[2]).padStart(2, '0')}/${dmy[3]}`
+
   const d = new Date(dateStr)
-  if (isNaN(d.getTime())) return dateStr
+  if (isNaN(d.getTime())) return text
   const day = String(d.getDate()).padStart(2, '0')
   const month = String(d.getMonth() + 1).padStart(2, '0')
   const year = d.getFullYear()
@@ -705,9 +748,13 @@ function formatTime(value) {
   if (!value) return ''
   const text = String(value).trim()
   const directTime = text.match(/^(\d{1,2}):(\d{2})/)
+  if (directTime) return `${String(directTime[1]).padStart(2, '0')}:${directTime[2]}`
+
+  const sixDigitTime = text.match(/^(\d{2})(\d{2})(?:\d{2})?$/)
+  if (sixDigitTime) return `${sixDigitTime[1]}:${sixDigitTime[2]}`
+
   const dateTime = text.match(/[T\s](\d{1,2}):(\d{2})/)
-  const match = directTime || dateTime
-  if (match) return `${String(match[1]).padStart(2, '0')}:${match[2]}`
+  if (dateTime) return `${String(dateTime[1]).padStart(2, '0')}:${dateTime[2]}`
 
   const date = new Date(value)
   if (isNaN(date.getTime())) return ''
@@ -779,6 +826,13 @@ const openAdjustRoomRateModal = async () => {
   showAdjustRoomRateModal.value = true
 }
 
+// Master chờ checkout: booking còn Đang ở (status=1) nhưng các phòng lưu trú đều đã checkout.
+const isPendingMasterCheckout = booking => {
+  if (Number(booking?.status) !== 1) return false
+  const stayRooms = (booking.booking_rooms || []).filter(room => ![3, 100].includes(Number(room.status)))
+  return stayRooms.length > 0 && stayRooms.every(room => isCheckedOutRecord(room))
+}
+
 const loadCheckoutBookings = async () => {
   isLoading.value = true
   try {
@@ -799,7 +853,10 @@ const loadCheckoutBookings = async () => {
     params.with_billing = true
     if (activeFilter.register !== 'virtual') params.stay_only = true
 
-    const res = await fetchBookings(params)
+    // Phòng ảo không có booking: lấy folio phòng ảo theo cấu trúc giống booking để dùng lại cách hiển thị.
+    const res = activeFilter.register === 'virtual'
+      ? await http.get('/virtual-room-folios')
+      : await fetchBookings(params)
     const list = res.data?.data || res.data || []
 
     const formatted = []
@@ -831,8 +888,11 @@ const loadCheckoutBookings = async () => {
           const hasTransactions = (r.services || []).some(isPostedBookingService) ||
             (b.service_bills || []).some(sb => String(sb.RentalRoomId1) === String(r.id) || String(sb.RentalRoomId2) === String(r.id)) ||
             (b.master_service_bills || []).some(sb => String(sb.RentalRoomId1) === String(r.id) || String(sb.RentalRoomId2) === String(r.id));
+          // Phòng còn khách ở nhưng đã có khách checkout lẻ: Đăng ký cũ hiển thị riêng các khách đã checkout.
+          const isPartialCheckoutView = activeFilter.register === 'old' && Number(r.status) === 1 && !roomIsCheckedOut
+            && (r.guests || []).some(g => Number(g.status) === 2)
           const includeRoom = activeFilter.register === 'old'
-            ? roomIsCheckedOut || isNoshowRoom || Number(r.status) === 3 || (Number(r.status) === 0 && hasTransactions)
+            ? roomIsCheckedOut || isNoshowRoom || Number(r.status) === 3 || (Number(r.status) === 0 && hasTransactions) || isPartialCheckoutView
             : activeFilter.register === 'virtual'
               ? isVirtualRoom && [0, 1].includes(Number(r.status)) && !roomIsCheckedOut
               : Number(r.status) === 1 && !roomIsCheckedOut
@@ -843,6 +903,8 @@ const loadCheckoutBookings = async () => {
           if (r.guests && Array.isArray(r.guests) && r.guests.length > 0) {
             r.guests.forEach(g => {
               if ([3, 100].includes(Number(g.status)) || (Number(g.status) === 2 && activeFilter.register !== 'old')) return
+              // Phòng còn khách ở: khách đang ở thuộc Đăng ký hiện tại, Đăng ký cũ chỉ hiện khách đã checkout.
+              if (isPartialCheckoutView && Number(g.status) !== 2) return
               const gName = g.guest?.full_name || g.full_name || (g.first_name ? `${g.first_name} ${g.last_name || ''}`.trim() : '')
               // Mỗi liên kết khách-phòng phải hiện thành một lựa chọn riêng.
               // Không loại trùng theo tên vì hai khách có thể cùng tên.
@@ -986,6 +1048,7 @@ const loadCheckoutBookings = async () => {
             roomNumber: displayRoomNo,
             isVirtual: isVirtualRoom,
             isCheckedOut: roomIsCheckedOut,
+            isPartialCheckoutView,
             guestName: roomGuests[0].name,
             allGuests: roomGuests,
             primaryGuestId: primaryGuestId,
@@ -1055,8 +1118,10 @@ const loadCheckoutBookings = async () => {
       if (!includeBooking) return
 
       formatted.push({
-        id: `B${b.id}`,
+        // Folio phòng ảo không có booking: khóa theo phòng, bookingId = null.
+        id: b.virtual_folio ? `VF-${b.virtual_room_id}` : `B${b.id}`,
         bookingId: b.id,
+        virtualRoomId: b.virtual_folio ? b.virtual_room_id : null,
         code: code,
         name: mainGuestName, // Tên nhóm / Tên booking
         // Master Header đại diện cho Folio Master: Tổng dịch vụ = masterServiceTotal
@@ -1066,6 +1131,7 @@ const loadCheckoutBookings = async () => {
         departureDate: b.departure_date || '',
         isVirtual: bookingIsVirtual,
         isCheckedOut: bookingIsCheckedOut,
+        isPendingMasterCheckout: isPendingMasterCheckout(b),
         note: b.note || '',
         checked: false,
         roomItems: roomItems,
@@ -1144,18 +1210,28 @@ const loadCheckoutBookings = async () => {
 }
 
 const refreshCheckoutData = async () => {
+  // So khớp theo khóa dòng (B<id> hoặc VF-<phòng> của folio phòng ảo không có booking).
+  const currentEntryKey = selectedBooking.value ? selectedBooking.value.id : null
   const currentBookingId = selectedBooking.value ? selectedBooking.value.bookingId : null
   const currentRoomId = selectedRoomItem.value ? selectedRoomItem.value.roomId : null
   const currentGuestId = selectedGuestId.value
   const currentGuestName = selectedGuest.value
+  const previousDisplayedKeys = displayedBookingsList.value.map(booking => booking.id)
 
   await loadCheckoutBookings()
 
-  if (currentBookingId) {
-    const freshB = allBookingsList.value.find(b => b.bookingId === currentBookingId)
+  // Giữ đúng các dòng đang hiển thị trước khi làm mới (vd. chỉ phòng ảo 001), không bung ra toàn bộ danh sách.
+  if (previousDisplayedKeys.length > 0) {
+    const freshByKey = new Map(allBookingsList.value.map(booking => [booking.id, booking]))
+    const keptBookings = previousDisplayedKeys.map(key => freshByKey.get(key)).filter(Boolean)
+    if (keptBookings.length > 0) displayedBookingsList.value = keptBookings
+  }
+
+  if (currentEntryKey) {
+    const freshB = allBookingsList.value.find(b => b.id === currentEntryKey)
     if (freshB) {
       // Cập nhật lại trong displayedBookingsList nếu nó đang chứa booking này
-      const displayedIdx = displayedBookingsList.value.findIndex(b => b.bookingId === currentBookingId)
+      const displayedIdx = displayedBookingsList.value.findIndex(b => b.id === currentEntryKey)
       if (displayedIdx !== -1) {
         displayedBookingsList.value[displayedIdx] = freshB
       } else {
@@ -1746,6 +1822,66 @@ const canSplitSelectedServices = computed(() => {
   return billIds.length === selectedServiceItems.value.length && new Set(billIds).size === 1
 })
 const selectedPaymentItems = computed(() => paymentsList.value.filter(payment => selectedPaymentIds.value.includes(Number(payment.id))))
+
+// In qua iframe ẩn để không bị chặn popup, kể cả khi tự in sau thanh toán (không còn thao tác bấm của user).
+const printHtmlDocument = (html) => {
+  const frame = document.createElement('iframe')
+  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none;'
+  document.body.appendChild(frame)
+  const frameWindow = frame.contentWindow
+  const frameDocument = frameWindow.document
+  // document.open() xóa mọi handler đã gán trên iframe (kể cả onload), nên ghi nội dung trước
+  // rồi tự chờ logo/ảnh tải xong (tối đa 2 giây) mới mở hộp thoại in.
+  frameDocument.open()
+  frameDocument.write(html)
+  frameDocument.close()
+
+  const pendingImages = Array.from(frameDocument.images || []).filter(image => !image.complete)
+  const imagesReady = Promise.all(pendingImages.map(image => new Promise(resolve => {
+    image.addEventListener('load', resolve, { once: true })
+    image.addEventListener('error', resolve, { once: true })
+  })))
+  const timeout = new Promise(resolve => setTimeout(resolve, 2000))
+
+  Promise.race([imagesReady, timeout]).then(() => {
+    frameWindow.focus()
+    frameWindow.print()
+    setTimeout(() => frame.remove(), 1000)
+  })
+}
+
+const printReceiptForPayments = async (paymentIds) => {
+  try {
+    const response = await http.post('/print-template-slots/payment-receipt', { payment_ids: paymentIds })
+    printHtmlDocument(response.data.html)
+  } catch (error) {
+    const errors = error?.response?.data?.errors
+    uiStore.showToast((errors && Object.values(errors).flat()[0]) || error?.response?.data?.message || 'Không thể in phiếu thu.', 'error')
+  }
+}
+
+// In Bill = phiếu thu (biên nhận thu tiền) theo mẫu gán cho vị trí PAYMENT_RECEIPT.
+// In các dòng thanh toán đang chọn; chưa chọn thì in toàn bộ thanh toán của folio đang xem.
+const printPaymentReceipt = async () => {
+  showInvoiceMenu.value = false
+  const payments = selectedPaymentItems.value.length ? selectedPaymentItems.value : visiblePaymentsList.value
+  const paymentIds = payments.map(payment => Number(payment.id)).filter(Number.isInteger)
+  if (paymentIds.length === 0) {
+    uiStore.showToast('Chưa có dòng thanh toán để in phiếu thu.', 'warning')
+    return
+  }
+  await printReceiptForPayments(paymentIds)
+}
+
+// DisablePrintBillAfterPayment: 1 = tự động in phiếu thu sau khi thanh toán thành công, 0 = không in.
+const shouldAutoPrintAfterPayment = async () => {
+  try {
+    const response = await http.get('/hotel-configs', { params: { name: 'DisablePrintBillAfterPayment' } })
+    return String(response.data?.data?.[0]?.value ?? '').trim() === '1'
+  } catch (error) {
+    return false
+  }
+}
 const selectedDeletePaymentGroup = computed(() => {
   const selected = selectedPaymentItems.value[0]
   if (!selected) return []
@@ -2079,13 +2215,20 @@ const transferDestinations = computed(() => allBookingsList.value.filter(isTrans
       ? room.allGuests
       : [{ id: room.primaryGuestId || null, name: room.guestName }]
 
-    return guests.map(g => {
+    return guests.map((g, idx) => {
       const gId = g.id || room.primaryGuestId || null
+      const isPrimary = Boolean(
+        g.isPrimary ||
+        g.is_primary ||
+        (room.primaryGuestId && String(gId) === String(room.primaryGuestId)) ||
+        (!room.primaryGuestId && idx === 0)
+      )
       return {
         key: `room-${room.roomId}-guest-${gId || 'primary'}`,
         bookingId: booking.bookingId,
         roomId: room.roomId,
         guestId: gId,
+        isPrimary,
         kind: 'room',
         bookingCode: booking.code,
         bookingName: booking.name,
@@ -2665,7 +2808,12 @@ const handleRoomDrop = async (booking, room, guest = null) => {
   }
   draggedOverRoom.value = null
 
-  if (!destination.bookingId || (room && !destination.roomId)
+  // Folio phòng ảo không có booking: chỉ nhận thả vào đúng dòng phòng (không có Master).
+  const isVirtualFolioTarget = Boolean(booking?.virtualRoomId)
+  if ((!destination.bookingId && !(isVirtualFolioTarget && destination.roomId))
+    || (room && !destination.roomId)
+    || (!room && isVirtualFolioTarget)
+    || (room && String(destination.roomId) === String(selectedRoomItem.value?.roomId || ''))
     || (!room && !selectedRoomItem.value && String(destination.bookingId) === String(selectedBooking.value?.bookingId))) {
     handleServiceDragEnd()
     return
@@ -2954,15 +3102,22 @@ const openPaymentModal = async () => {
 
 const openPrepaymentModal = () => {
   if (denySaleInvoiceMutation()) return
+  // Thanh toán trước/đặt cọc gắn với booking; folio phòng ảo chỉ post bill và thanh toán trực tiếp.
+  if (selectedBooking.value?.virtualRoomId) {
+    uiStore.showToast('Phòng ảo không dùng thanh toán trước/đặt cọc. Vui lòng post bill rồi thanh toán.', 'warning')
+    return
+  }
   showPrepaymentModal.value = true
 }
 
-const handlePaymentSuccess = async () => {
+const handlePaymentSuccess = async (data) => {
   showPaymentModal.value = false
   await refreshCheckoutData()
   selectedServiceIds.value = []
   selectedPaymentIds.value = []
   uiStore.showToast('Đã thực hiện thanh toán thành công!', 'success')
+  const paymentIds = (data?.payment_ids || []).map(Number).filter(Number.isInteger)
+  if (paymentIds.length && await shouldAutoPrintAfterPayment()) await printReceiptForPayments(paymentIds)
 }
 
 const openDeletePaymentModal = async () => {
@@ -3040,7 +3195,8 @@ const selectPanelGuest = (guest) => {
 }
 
 const selectBookingHeader = (b) => {
-  if (b.requiresFolio && b.roomItems?.[0]) {
+  // Folio phòng ảo không có booking nên không có Master: luôn thao tác trên dòng phòng.
+  if ((b.requiresFolio || b.virtualRoomId) && b.roomItems?.[0]) {
     selectRoomItemRow(b, b.roomItems[0])
     return
   }
@@ -3087,8 +3243,9 @@ const selectRoomItemRow = async (b, r, specificGuest = null) => {
       const createdFolio = response.data?.data
       await loadCheckoutBookings()
 
+      // Folio phòng ảo không có booking: tìm theo phòng vừa khởi tạo.
       const freshBooking = allBookingsList.value.find(booking => (
-        String(booking.bookingId) === String(createdFolio?.booking_id)
+        booking.roomItems?.some(room => String(room.roomId) === String(createdFolio?.booking_room_id))
       ))
       const freshRoom = freshBooking?.roomItems?.find(room => (
         String(room.roomId) === String(createdFolio?.booking_room_id)
@@ -3568,17 +3725,18 @@ onUnmounted(() => {
                 <Printer class="w-3.5 h-3.5 text-white shrink-0" />
                 <span v-if="!isSidebarCollapsed" class="truncate">In Hóa Đơn Folio</span>
               </div>
-              <ChevronRight v-if="!isSidebarCollapsed" class="w-3 h-3 text-[#94a3b8] shrink-0" />
+              <ChevronRight v-if="!isSidebarCollapsed" :class="['w-3 h-3 text-[#94a3b8] shrink-0 transition-transform', showInvoiceMenu ? 'rotate-90' : '']" />
             </button>
 
-            <!-- Dropdown Sub-menu Floating -->
-            <div 
-              v-if="showInvoiceMenu" 
-              class="absolute left-full top-0 ml-1 w-36 bg-white border border-gray-300 rounded shadow-lg z-50 py-1 text-xs"
+            <!-- Menu con xổ xuống ngay dưới nút: thanh chức năng nằm sát mép phải và có overflow-x-hidden
+                 nên menu mở sang bên cạnh sẽ bị cắt, bấm vào không thấy phản hồi. -->
+            <div
+              v-if="showInvoiceMenu"
+              class="mt-0.5 ml-5 flex flex-col border-l border-[#334155] pl-1 text-xs"
             >
-              <button class="w-full text-left px-2.5 py-1.5 hover:bg-sky-50 text-gray-700">Hiện giá</button>
-              <button class="w-full text-left px-2.5 py-1.5 hover:bg-sky-50 text-gray-700">Không hiện giá</button>
-              <button class="w-full text-left px-2.5 py-1.5 hover:bg-sky-50 text-sky-600 font-semibold border-t border-gray-100">In Bill</button>
+              <button class="w-full text-left px-2 py-[5px] rounded text-[#94a3b8] hover:bg-[#334155] hover:text-white transition-colors" title="Chưa có chức năng">Hiện giá</button>
+              <button class="w-full text-left px-2 py-[5px] rounded text-[#94a3b8] hover:bg-[#334155] hover:text-white transition-colors" title="Chưa có chức năng">Không hiện giá</button>
+              <button @click="printPaymentReceipt" class="w-full text-left px-2 py-[5px] rounded text-[#cbd5e1] font-semibold hover:bg-[#334155] hover:text-white transition-colors">In Bill</button>
             </div>
           </div>
 
@@ -3684,13 +3842,13 @@ onUnmounted(() => {
               <div 
                 v-for="b in filteredSearchBookings" 
                 :key="b.id"
-                class="py-1 text-xs"
+                class="border-b border-gray-100 last:border-b-0 py-0.5 text-xs"
               >
                 <!-- Line 1: BKK:  <mã booking>    <tên đoàn / tên booking> -->
-                <div class="grid min-w-0 cursor-pointer grid-cols-[50px_75px_minmax(0,1fr)] items-center gap-x-3 px-3 py-1.5 transition-colors hover:bg-slate-200" @click="selectBookingFromSearch(b)">
-                  <span class="font-bold text-gray-900">BKK:</span>
-                  <span class="font-bold text-gray-900">{{ b.code }}</span>
-                  <span class="min-w-0 truncate font-bold text-gray-800" :title="b.name">{{ b.name }}</span>
+                <div class="grid min-w-0 cursor-pointer grid-cols-[50px_75px_minmax(0,1fr)] items-center gap-x-3 px-3 py-1.5 bg-slate-50 font-bold transition-colors hover:bg-sky-100/70" @click="selectBookingFromSearch(b)">
+                  <span :class="b.isPendingMasterCheckout ? 'w-fit rounded bg-rose-100 px-1 font-bold text-rose-600' : 'font-bold text-gray-900'" :title="b.isPendingMasterCheckout ? 'Master chờ check-out' : ''">BKK:</span>
+                  <span class="font-bold text-blue-700">{{ b.code }}</span>
+                  <span class="min-w-0 truncate font-semibold text-gray-800" :title="b.name">{{ b.name }}</span>
                 </div>
                 <!-- Sublines for each room in booking (Khớp chính xác Ảnh 1) -->
                 <template v-for="r in b.roomItems" :key="r.id">
@@ -3699,27 +3857,31 @@ onUnmounted(() => {
                       v-for="(guest, gIdx) in r.allGuests"
                       :key="gIdx"
                       @click.stop="selectBookingFromSearch(b, r, guest)"
-                      class="grid min-w-0 cursor-pointer grid-cols-[50px_75px_minmax(0,1fr)] items-center gap-x-3 px-3 py-1.5 text-gray-700 transition-colors hover:bg-slate-200"
+                      class="grid min-w-0 cursor-pointer grid-cols-[50px_75px_minmax(0,1fr)] items-center gap-x-3 py-1.5 pl-7 pr-3 text-gray-700 transition-colors hover:bg-sky-50"
                     >
-                      <span aria-hidden="true"></span>
-                      <span class="text-gray-800 shrink-0">{{ r.roomNumber }}</span>
-                      <span class="min-w-0 truncate text-gray-800" :title="guest.name">{{ guest.name }}</span>
+                      <span aria-hidden="true" class="text-right text-slate-300">↳</span>
+                      <span class="text-slate-900 font-semibold shrink-0">{{ r.roomNumber }}</span>
+                      <span class="min-w-0 truncate text-gray-800 font-normal" :title="guest.name">{{ guest.name }}</span>
                     </div>
                   </template>
                   <template v-else>
                     <div 
                       @click.stop="selectBookingFromSearch(b, r)"
-                      class="grid min-w-0 cursor-pointer grid-cols-[50px_75px_minmax(0,1fr)] items-center gap-x-3 px-3 py-1.5 text-gray-700 transition-colors hover:bg-slate-200"
+                      class="grid min-w-0 cursor-pointer grid-cols-[50px_75px_minmax(0,1fr)] items-center gap-x-3 py-1.5 pl-7 pr-3 text-gray-700 transition-colors hover:bg-sky-50"
                     >
-                      <span aria-hidden="true"></span>
-                      <span class="text-gray-800 shrink-0">{{ r.roomNumber }}</span>
-                      <span class="min-w-0 truncate text-gray-800" :title="r.guestName">{{ r.guestName }}</span>
+                      <span aria-hidden="true" class="text-right text-slate-300">↳</span>
+                      <span class="text-slate-900 font-semibold shrink-0">{{ r.roomNumber }}</span>
+                      <span class="min-w-0 truncate text-gray-800 font-normal" :title="r.guestName">{{ r.guestName }}</span>
                     </div>
                   </template>
                 </template>
               </div>
               <div v-if="filteredSearchBookings.length === 0" class="p-3 text-center text-gray-400 italic">
                 Không tìm thấy dữ liệu đăng ký nào
+              </div>
+              <div v-if="filteredSearchBookings.some(b => b.isPendingMasterCheckout)" class="sticky bottom-0 flex items-center gap-2 bg-slate-50 px-3 py-1.5 text-[11px] text-slate-500">
+                <span class="rounded bg-rose-100 px-1 font-bold text-rose-600">BKK:</span>
+                <span>Master chờ check-out (các phòng đã check-out, master chưa check-out)</span>
               </div>
             </div>
           </div>                    <div ref="filterContainerRef" class="checkout-register-filter relative">
@@ -3797,7 +3959,7 @@ onUnmounted(() => {
       <div class="checkout-left-pane col-start-1 row-start-2 flex min-h-0 flex-col gap-0 border-r border-slate-300">
 
         <!-- TOP LEFT: Bảng Danh sách Đăng ký (7 cols) -->
-        <div class="checkout-bookings-panel flex-[1.65] bg-white rounded-none border-0 border-b border-slate-300 flex flex-col min-h-0 shadow-none">
+        <div class="checkout-bookings-panel flex-1 bg-white rounded-none border-0 border-b border-slate-300 flex flex-col min-h-0 shadow-none">
           <!-- Table Danh sách Phòng / Khách (Khớp chính xác Ảnh 2) -->
           <div class="flex-1 overflow-auto">
             <table class="w-full min-w-0 table-fixed border-collapse text-left text-xs">
@@ -3808,10 +3970,10 @@ onUnmounted(() => {
                 <col class="w-[92px]" />
                 <col class="w-[92px]" />
               </colgroup>
-              <thead class="bg-[#f0f2ea] sticky top-0 border-b border-gray-300 text-gray-700 font-semibold">
+              <thead class="bg-[#f0f2ea] sticky top-0 border-b border-gray-300 text-[#000000D9] font-semibold">
                 <tr>
                   <th class="p-1 w-[25px] text-center align-middle border-r border-slate-200 border"></th>
-                  <th class="p-1 text-center align-middle border-r border-slate-200 border">ĐK/Phòng</th>
+                  <th class="p-1 text-center align-middle border-r border-slate-200 border">ĐK / Phòng</th>
                   <th class="p-1 text-center align-middle border-r border-slate-200 border">Tên Khách</th>
                   <th class="p-1 text-center align-middle border-r border-slate-200 border">Tổng DV</th>
                   <th class="p-1 text-center align-middle border-r border-slate-200 border">Đã TT</th>
@@ -3821,11 +3983,14 @@ onUnmounted(() => {
                 <template v-for="b in displayedBookingsList" :key="b.id">
                   <tr
                     @click="selectBookingHeader(b)"
-                    @dragover.prevent="draggedServiceGroup && handleRoomDragOver(b, null)"
+                    @dragover.prevent="(draggedServiceGroup || draggedPayment) && handleRoomDragOver(b, null)"
                     @dragleave="draggedOverRoom = null"
-                    @drop.prevent.stop="draggedServiceGroup ? handleRoomDrop(b, null) : handleServiceDragEnd()"
+                    @drop.prevent.stop="(draggedServiceGroup || draggedPayment) ? handleRoomDrop(b, null) : handleServiceDragEnd()"
                     :class="[
-                      selectedBooking && selectedBooking.id === b.id && !selectedRoomItem ? 'checkout-selected-row bg-[#2563EB] border-l-[3px] border-[#1D4ED8]' : b.isCheckedOut ? 'bg-[#ffd4d4] border-l-[3px] border-rose-400' : 'bg-white border-l-[3px] border-transparent',
+                      selectedBooking && selectedBooking.id === b.id && !selectedRoomItem
+                        ? 'checkout-selected-row bg-sky-100 border-l-4 border-blue-600 text-[#000000D9]'
+                        : (b.isCheckedOut ? 'bg-[#fee2e2] hover:bg-[#fed7d7] border-l-4 border-rose-400 text-[#000000D9]' : 'bg-white hover:bg-slate-100/70 border-l-4 border-transparent text-[#000000D9]'),
+                      b.isPendingMasterCheckout ? 'outline outline-2 -outline-offset-2 outline-rose-400' : '',
                       draggedOverRoom === roomDropKey(b, null) ? 'ring-2 ring-inset ring-sky-500 bg-sky-50' : '',
                       'cursor-pointer transition-colors'
                     ]"
@@ -3840,7 +4005,7 @@ onUnmounted(() => {
                       </div>
                     </td>
                     <td class="min-w-0 p-1 font-bold text-slate-900 border-slate-200">
-                      <span class="block w-full min-w-0 truncate" :title="b.name">{{ b.name }}</span>
+                      <span class="block w-full min-w-0 truncate" :title="b.rawBooking?.note ? `${b.name} (${b.rawBooking.note})` : b.name">{{ b.name }}</span>
                     </td>
                     <td class="p-1 text-right tabular-nums text-slate-900 border-slate-200">{{ formatSummaryMoney(b.totalService) }}</td>
                     <td class="p-1 text-right tabular-nums text-slate-900 border-slate-200">{{ formatMoney(b.paidAmount) }}</td>
@@ -3856,7 +4021,9 @@ onUnmounted(() => {
                         @dragleave="draggedOverRoom = null"
                         @drop.prevent="handleRoomDrop(b, r, guest)"
                         :class="[
-                          selectedRoomItem && selectedRoomItem.id === r.id && String(selectedGuestId) === String(guest.id) ? 'checkout-selected-row bg-[#2563EB] border-l-[3px] border-[#1D4ED8]' : r.isCheckedOut ? 'bg-[#ffd4d4] hover:bg-[#ffc6c6]' : 'hover:bg-slate-50',
+                          selectedRoomItem && selectedRoomItem.id === r.id && String(selectedGuestId) === String(guest.id)
+                            ? 'checkout-selected-row bg-sky-100 border-l-4 border-blue-600 text-[#000000D9]'
+                            : (r.isCheckedOut ? 'bg-[#fee2e2] hover:bg-[#fed7d7] border-l-4 border-rose-300 text-[#000000D9]' : 'hover:bg-slate-100/70 border-l-4 border-transparent text-[#000000D9]'),
                           draggedOverRoom === roomDropKey(b, r, guest) ? 'ring-2 ring-inset ring-sky-500 bg-sky-50' : '',
                           'cursor-pointer transition-colors text-slate-900'
                         ]"
@@ -3877,7 +4044,9 @@ onUnmounted(() => {
                         @dragleave="draggedOverRoom = null"
                         @drop.prevent="handleRoomDrop(b, r)"
                         :class="[
-                          selectedRoomItem && selectedRoomItem.id === r.id ? 'checkout-selected-row bg-[#2563EB] border-l-[3px] border-[#1D4ED8]' : r.isCheckedOut ? 'bg-[#ffd4d4] hover:bg-[#ffc6c6]' : 'hover:bg-slate-50',
+                          selectedRoomItem && selectedRoomItem.id === r.id
+                            ? 'checkout-selected-row bg-sky-100 border-l-4 border-blue-600 text-[#000000D9]'
+                            : (r.isCheckedOut ? 'bg-[#fee2e2] hover:bg-[#fed7d7] border-l-4 border-rose-300 text-[#000000D9]' : 'hover:bg-slate-100/70 border-l-4 border-transparent text-[#000000D9]'),
                           draggedOverRoom === roomDropKey(b, r) ? 'ring-2 ring-inset ring-sky-500 bg-sky-50' : '',
                           'cursor-pointer transition-colors text-slate-900'
                         ]"
@@ -3899,7 +4068,7 @@ onUnmounted(() => {
         </div>
 
         <!-- BOOKING INFORMATION + FOLIO (reference layout) -->
-        <div class="checkout-info-panel bg-white rounded-none border-0 flex flex-col min-h-0 shadow-none overflow-y-auto">
+        <div class="checkout-info-panel bg-white rounded-none border-0 flex flex-col shrink-0 shadow-none overflow-hidden">
           <div class="checkout-info-heading flex items-center justify-between border-b border-slate-300 px-2 py-1">
             <span class="checkout-info-title"><i class="fa-solid fa-bed"></i> Thông Tin Đăng Ký</span>
             <label class="flex items-center gap-1 text-xs font-semibold text-red-600">
@@ -3907,15 +4076,15 @@ onUnmounted(() => {
               No post
             </label>
           </div>
-          <div class="grid grid-cols-2 gap-x-3 gap-y-1 px-2 py-1 text-xs leading-tight">
-            <div class="col-span-2"><label class="block text-slate-400">Tên đăng ký</label><span class="font-semibold text-slate-700 truncate block">{{ selectedBooking ? `${selectedBooking.code}-${selectedBooking.name}` : '--' }}</span></div>
-            <div><label class="block text-slate-400">Tên khách</label><span class="font-semibold text-slate-700 truncate block">{{ selectedGuest || '--' }}</span></div>
-            <div><label class="block text-slate-400">Ngày đến ~ Ngày đi</label><span class="font-semibold text-slate-700">{{ registrationStayLabel }}</span></div>
-            <div><label class="block text-slate-400">Phòng / Hạng</label><span class="font-semibold text-slate-700">{{ registrationRoomLabel }}</span></div>
-            <div><label class="block text-slate-400">Trạng thái</label><span class="font-semibold text-emerald-600">In-House</span></div>
-            <div class="col-span-2"><label class="block text-slate-400"><i class="fa-regular fa-note-sticky"></i> Ghi chú:</label><textarea :value="noteText" readonly class="w-full h-7 px-1 py-0.5 bg-white border border-slate-300 rounded text-xs resize-none"></textarea></div>
+          <div class="grid grid-cols-2 gap-x-3 gap-y-1.5 px-2.5 py-1.5 text-xs leading-normal">
+            <div class="col-span-2"><label class="block text-slate-500 font-semibold text-xs">Tên đăng ký</label><span class="font-semibold text-[#000000D9] truncate block" :title="selectedBooking ? `${selectedBooking.code}-${selectedBooking.name}` : ''">{{ selectedBooking ? `${selectedBooking.code}-${selectedBooking.name}` : '--' }}</span></div>
+            <div><label class="block text-slate-500 font-semibold text-xs">Tên khách</label><span class="font-semibold text-[#000000D9] truncate block" :title="selectedGuest">{{ selectedGuest || '--' }}</span></div>
+            <div><label class="block text-slate-500 font-semibold text-xs">Ngày đến ~ Ngày đi</label><span class="font-semibold text-[#000000D9]">{{ registrationStayLabel }}</span></div>
+            <div><label class="block text-slate-500 font-semibold text-xs">Phòng / Hạng</label><span class="font-semibold text-[#000000D9]">{{ registrationRoomLabel || '--' }}</span></div>
+            <div><label class="block text-slate-500 font-semibold text-xs">Trạng thái</label><span class="font-semibold text-emerald-600">In-House</span></div>
+            <div class="col-span-2"><label class="block text-slate-500 font-semibold text-xs"><i class="fa-regular fa-note-sticky"></i> Ghi chú:</label><textarea :value="noteText" :title="noteText" readonly class="w-full min-h-[32px] max-h-[50px] px-2 py-1 bg-white border border-slate-300 rounded text-xs resize-none text-[#000000D9] focus:outline-none"></textarea></div>
           </div>
-          <div class="checkout-folio-section border-t border-slate-300 mb-auto px-2 py-1">
+          <div class="checkout-folio-section border-t border-slate-300 px-2 py-1">
             <div class="checkout-folio-title"><i class="fa-solid fa-wallet"></i> Folio</div>
             <div class="grid grid-cols-2 gap-1">
               <button @click="activeFolioTab = 'A'" :class="[String(activeFolioTab) === 'A' ? 'active border-slate-600 bg-slate-300' : 'border-slate-300 bg-white', 'checkout-folio-card border rounded px-1.5 py-0.5 text-left']"><div class="font-semibold text-xs">Folio A</div><div class="text-right text-[15px] leading-none font-bold text-red-500">{{ formatSummaryMoney(folioTotal('A')) }}</div></button>
@@ -3934,12 +4103,12 @@ onUnmounted(() => {
         <div class="checkout-services-panel flex-[1.7] bg-white rounded-none border-0 border-b border-slate-300 flex flex-col min-h-0 shadow-none overflow-hidden">
           <div class="checkout-service-title flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700">
             <i class="fa-solid fa-list-check text-slate-900 text-[12px]"></i>
-            <span class="text-slate-900">Dịch vụ</span>
+            <span class="text-slate-900">Dịch Vụ</span>
           </div>
           <!-- Table Container -->
           <div class="flex-1 overflow-auto relative">
             <table class="w-full border-collapse text-left whitespace-nowrap text-xs">
-              <thead class="bg-[#f0f2ea] sticky top-0 border-b border-gray-300 text-gray-700 font-semibold">
+              <thead class="bg-[#f0f2ea] sticky top-0 border-b border-gray-300 text-[#000000D9] font-semibold">
                 <tr>
                   <th class="px-2 py-1.5 w-8 text-center align-middle border-r border-slate-200 border">
                     <input
@@ -3974,7 +4143,7 @@ onUnmounted(() => {
                   @dragend="handleServiceDragEnd"
                   :class="[
                     'border-b border-gray-200 transition-colors',
-                    group.paymentCode ? 'bg-[#fde8e8] text-rose-950 font-medium hover:bg-rose-100' : 'hover:bg-sky-50 text-gray-800 cursor-pointer',
+                    group.paymentCode ? 'bg-[#fee2e2] text-[#000000D9] font-normal hover:bg-rose-100' : 'hover:bg-slate-100/70 text-[#000000D9] cursor-pointer',
                     canTransferServiceGroup(group) ? 'cursor-grab active:cursor-grabbing' : ''
                   ]"
                   :title="canTransferServiceGroup(group) ? 'Kéo sang Folio khác' : 'Xem chi tiết hóa đơn'"
@@ -4035,7 +4204,7 @@ onUnmounted(() => {
                 @change="toggleAllServiceSelection($event.target.checked)"
                 class="rounded border-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
               />
-              <span class="uppercase text-xs font-semibold text-[#000000D9] tracking-wide">Tổng dịch vụ:</span>
+              <span class="uppercase text-xs font-semibold text-[#000000D9] tracking-wide">Tổng Dịch Vụ:</span>
             </div>
             <span class="tabular-nums pr-2 text-[#155DFC] font-semibold text-sm">{{ formatSummaryMoney(totalServiceAmount) }}</span>
           </div>
@@ -4050,7 +4219,7 @@ onUnmounted(() => {
           <!-- Table Container -->
           <div class="flex-1 overflow-auto relative">
             <table class="checkout-payment-table w-full border-collapse text-left whitespace-nowrap text-xs">
-              <thead class="bg-[#f0f2ea] sticky top-0 border-b border-gray-300 text-gray-700 font-semibold">
+              <thead class="bg-[#f0f2ea] sticky top-0 border-b border-gray-300 text-[#000000D9] font-semibold">
                 <tr>
                   <th class="px-2 py-1.5 w-8 text-center align-middle border-r border-slate-200 border"><input type="checkbox" :checked="areAllPaymentsSelected" :disabled="paymentSelectionIds.length === 0" @change="toggleAllPaymentSelection($event.target.checked)" class="rounded border-gray-300 disabled:cursor-not-allowed disabled:opacity-50" /></th>
                   <th class="px-2.5 py-1.5 text-center align-middle border-r border-slate-200 border">Ngày/Giờ</th>
@@ -4074,7 +4243,7 @@ onUnmounted(() => {
                   @dragend="handleServiceDragEnd"
                   :class="[
                     'border-b border-gray-200 transition-colors',
-                    p.paymentCode ? 'bg-[#fde8e8] text-rose-950 font-medium hover:bg-rose-100' : 'hover:bg-gray-50 text-gray-800',
+                    p.paymentCode ? 'bg-[#fee2e2] text-[#000000D9] font-normal hover:bg-rose-100' : 'hover:bg-slate-100/70 text-[#000000D9]',
                     canTransferPayment(p) ? 'cursor-grab active:cursor-grabbing' : ''
                   ]"
                   :title="canTransferPayment(p) ? 'Kéo sang Folio khác' : 'Cọc đã dùng để thanh toán không thể chuyển Folio'"
@@ -4130,7 +4299,7 @@ onUnmounted(() => {
                 @change="toggleAllPaymentSelection($event.target.checked)"
                 class="rounded border-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
               />
-              <span class="uppercase text-xs font-semibold text-[#000000D9] tracking-wide">Tổng thanh toán:</span>
+              <span class="uppercase text-xs font-semibold text-[#000000D9] tracking-wide">Tổng Thanh Toán:</span>
             </div>
             <span class="tabular-nums pr-2 text-[#155DFC] font-semibold text-sm">{{ formatMoney(totalPaymentAmount) }}</span>
           </div>
@@ -4157,7 +4326,7 @@ onUnmounted(() => {
           <aside v-if="selectedServiceGroup" class="absolute right-0 top-0 h-full w-full max-w-[650px] bg-white shadow-2xl flex flex-col">
             <header class="flex items-center justify-between px-5 py-4 border-b border-gray-200">
               <div>
-                <h2 class="text-base font-semibold text-gray-900">Hóa đơn</h2>
+                <h2 class="text-base font-semibold text-gray-900">Hóa Đơn</h2>
                 <p class="mt-1 text-xs text-gray-500">{{ selectedServiceGroup.name }} · {{ selectedServiceGroup.dateTime }}</p>
               </div>
               <button @click="closeServiceInvoice" class="w-8 h-8 rounded hover:bg-gray-100 text-xl text-gray-500" aria-label="Đóng">×</button>
@@ -4175,7 +4344,7 @@ onUnmounted(() => {
 
             <div class="flex-1 overflow-auto p-5">
               <table class="w-full border-collapse text-xs">
-                <thead class="bg-gray-50 text-gray-600">
+                <thead class="bg-gray-50 text-[#000000D9] font-semibold">
                   <tr>
                     <th class="border border-gray-200 px-3 py-2 text-center w-12 align-middle">STT</th>
                     <th class="border border-gray-200 px-3 py-2 text-center align-middle">Sản Phẩm</th>
@@ -4211,8 +4380,8 @@ onUnmounted(() => {
 
     <!-- Tạm nối API trả phòng cho frontend mới -->
     <div v-if="showCheckoutModal" class="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4">
-      <div class="w-full max-w-md rounded-xl bg-white shadow-2xl">
-        <div class="flex items-center justify-between rounded-t-xl bg-sky-300 px-4 py-3 text-white"><span class="font-semibold">Xác nhận</span><button @click="showCheckoutModal = false" class="text-xl">×</button></div>
+      <div class="w-full max-w-md rounded-xl bg-white shadow-2xl overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 text-white" :style="{ background: 'var(--pms-custom-theme, #006bdb)' }"><span class="font-semibold">Xác Nhận</span><button @click="showCheckoutModal = false" class="text-xl">×</button></div>
         <div class="space-y-2 p-5">
           <template v-if="isRestoreCheckout">
             <p class="py-3 text-center text-sm text-slate-700">Bạn có chắc chắn khôi phục checkout {{ selectedRoomItem ? `phòng ${selectedRoomItem.roomNumber || ''}` : 'Master' }} không?</p>
@@ -4220,7 +4389,8 @@ onUnmounted(() => {
           <template v-else-if="selectedCheckoutRooms.length > 1">
             <div v-if="checkoutPreview" class="space-y-1 rounded border border-slate-200 bg-slate-50 p-2 text-xs">
               <p v-for="room in checkoutPreview.rooms" :key="room.room_id" :class="room.eligible ? 'text-emerald-700' : 'text-rose-700'">{{ room.eligible ? '✓' : '✕' }} Phòng {{ room.room_number || room.room_id }}</p>
-              <label v-if="checkoutPreview.master_unpaid" class="mt-2 flex items-center gap-2 rounded border border-amber-200 bg-amber-50 p-2 text-amber-800"><input v-model="masterDebtConfirmed" type="checkbox" class="accent-amber-500" /> Master còn công nợ — vẫn checkout phòng hợp lệ.</label>
+              <p v-for="room in checkoutPreview.rooms.filter(item => !item.eligible && item.message)" :key="`reason-${room.room_id}`" class="pl-4 text-rose-600">Phòng {{ room.room_number || room.room_id }}: {{ room.message }}</p>
+              <p v-if="checkoutPreview.master_unpaid" class="mt-2 rounded border border-amber-200 bg-amber-50 p-2 text-amber-800">Master còn công nợ nhóm — checkout phòng vẫn giữ Master chưa check-out.</p>
             </div>
             <p class="py-2 text-center text-sm text-slate-700">Đã chọn {{ selectedCheckoutRooms.length }} phòng để checkout.</p>
             <div class="max-h-[320px] space-y-1 overflow-y-auto pr-1">
@@ -4248,13 +4418,13 @@ onUnmounted(() => {
             <button @click="openEarlyChargeModal" :disabled="isServiceOperationLoading || earlyChargeNoPost" class="btn-pms-primary">Tiền phòng</button>
           </div>
         </div>
-        <div v-if="!earlyCheckoutData" class="flex justify-end gap-2 border-t px-4 py-3"><button @click="showCheckoutModal = false" class="btn-pms-close">Đóng</button><button @click="submitCheckout" :disabled="isServiceOperationLoading" class="btn-pms-primary">{{ isRestoreCheckout ? 'Khôi phục checkout' : (selectedCheckoutRooms.length > 1 && !checkoutPreview ? 'Kiểm tra điều kiện' : (!selectedRoomItem && selectedCheckoutRooms.length === 0 ? 'Có' : 'Checkout')) }}</button></div>
+        <div v-if="!earlyCheckoutData" class="flex justify-end gap-2 border-t px-4 py-3"><button @click="showCheckoutModal = false" class="btn-pms-close">Đóng</button><button @click="submitCheckout" :disabled="isServiceOperationLoading" class="btn-pms-primary">{{ isRestoreCheckout ? 'Khôi phục checkout' : (!selectedRoomItem && selectedCheckoutRooms.length === 0 ? 'Có' : 'Checkout') }}</button></div>
       </div>
     </div>
 
     <div v-if="showEarlyChargeModal" class="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
       <div class="w-full max-w-sm overflow-hidden rounded-xl bg-white shadow-2xl">
-        <div class="flex items-center justify-between bg-sky-300 px-4 py-3 text-sm font-semibold text-white"><span>Xác nhận</span><button @click="showEarlyChargeModal = false" class="text-2xl leading-none">×</button></div>
+        <div class="flex items-center justify-between px-4 py-3 text-sm font-semibold text-white" :style="{ background: 'var(--pms-custom-theme, #006bdb)' }"><span>Xác Nhận</span><button @click="showEarlyChargeModal = false" class="text-2xl leading-none">×</button></div>
         <div class="space-y-4 p-5 text-xs text-slate-700">
           <div><p class="mb-2 font-semibold">Chọn ngày</p><label v-for="date in earlyChargeDateOptions" :key="date" class="mb-1 flex items-center gap-2"><input v-model="earlyChargeDates" :value="date" type="checkbox" class="h-4 w-4 accent-sky-500" />{{ date.split('-').reverse().join('-') }}</label></div>
           <label class="flex items-center gap-4"><span>% Charge</span><input v-model.number="earlyChargePercent" type="number" min="0" max="100" step="1" class="w-32 rounded border border-slate-300 px-2 py-1.5 text-right" /></label>
@@ -4271,6 +4441,7 @@ onUnmounted(() => {
       :guestId="selectedRoomItem ? selectedGuestId : null"
       :bookingId="selectedBooking ? selectedBooking.bookingId : ''"
       :arrivalDate="selectedRoomItem?.rawRoom?.arrival_date || selectedBooking?.arrivalDate || ''"
+      :originalArrivalDate="selectedRoomOriginalArrivalDate"
       :departureDate="selectedRoomItem?.rawRoom?.departure_date || selectedBooking?.departureDate || ''"
       :isDayUse="Boolean(selectedRoomItem?.rawRoom?.is_day_use || selectedRoomItem?.is_day_use || selectedBooking?.rawBooking?.is_day_use || selectedBooking?.is_day_use || (selectedRoomItem?.rawRoom?.arrival_date && selectedRoomItem?.rawRoom?.departure_date && String(selectedRoomItem.rawRoom.arrival_date).slice(0, 10) === String(selectedRoomItem.rawRoom.departure_date).slice(0, 10)))"
       :roomRate="Number(selectedRoomItem ? (selectedRoomItem.rate ?? selectedRoomItem.roomRate ?? selectedRoomItem.rawRoom?.rate ?? selectedRoomItem.rawRoom?.room_rate ?? 0) : (selectedBooking?.roomItems?.[0]?.rate ?? selectedBooking?.roomItems?.[0]?.roomRate ?? selectedBooking?.roomItems?.[0]?.rawRoom?.rate ?? selectedBooking?.roomItems?.[0]?.rawRoom?.room_rate ?? 0))"
@@ -4334,9 +4505,10 @@ onUnmounted(() => {
       @success="handlePrepaymentSuccess"
     />
 
-    <PaymentModal 
-      :show="showPaymentModal" 
+    <PaymentModal
+      :show="showPaymentModal"
       :bookingId="selectedBooking?.bookingId"
+      :virtualRoomId="selectedBooking?.virtualRoomId || null"
       :bookingCode="selectedBooking?.code"
       :bookingName="selectedBooking?.name"
       :companyName="selectedBooking?.rawBooking?.company?.name || 'KHÁCH LẺ'"
@@ -4465,23 +4637,21 @@ onUnmounted(() => {
 .checkout-actions .checkout-action-menu { padding-top: 0.5rem; }
 .checkout-actions .checkout-action-menu > div { border-color: #334155; }
 .checkout-actions .checkout-action-menu > div:last-child { margin-top: 0; }
-.checkout-bookings-panel table thead th,
 .checkout-services-panel table thead th,
 .checkout-payments-panel table thead th { background: #f8fafc; color: #64748b; }
 @media (max-height: 768px) {
   .checkout-shell { --checkout-bottom-height: 275px; }
 }
 .checkout-bookings-heading { height: 24px; flex: 0 0 24px; }
-.checkout-info-panel { font-size: 12px; }
+.checkout-info-panel { font-size: 12px; flex: 0 0 auto; }
 .checkout-info-heading { height: 24px; flex: 0 0 24px; }
-.checkout-folio-section { flex: 0 0 88px; }
+.checkout-folio-section { flex: 0 0 auto; }
 .checkout-folio-card { height: 36px; }
 .checkout-header > div:first-child { max-width: 430px; }
 .checkout-header select { background: #2563eb; color: #fff; border-color: #2563eb; font-weight: 700; min-width: 108px; }
 .checkout-header select option { background: #fff; color: #0f172a; }
 .checkout-left-pane { width: 100%; }
 .checkout-bookings-panel { flex: 1 1 auto; min-height: 0; }
-.checkout-info-panel { flex: 0 0 285px; }
 .checkout-billing-pane { flex: 1 1 auto; }
 .checkout-services-panel { flex: 1 1 auto; }
 .checkout-payments-panel { flex: 0 0 285px; }
@@ -4534,9 +4704,9 @@ onUnmounted(() => {
 .checkout-service-title svg,
 .checkout-service-title i { color: #0f172a; }
 /* Booking list: exact 5-column layout from the reference HTML. */
-.checkout-bookings-heading { height: 29px; flex: 0 0 29px; padding: 6px 10px !important; background: #f8fafc; color: #64748b; font-size: 12px; font-weight: 700; text-transform: uppercase; }
+.checkout-bookings-heading { height: 29px; flex: 0 0 29px; padding: 6px 10px !important; background: #f8fafc; color: #000000D9; font-size: 12px; font-weight: 600; text-transform: none; }
 .checkout-bookings-panel table { table-layout: fixed !important; width: 100%; border-collapse: collapse; }
-.checkout-bookings-panel table th { padding: 6px 6px; background: #f8fafc; color: #64748b; font-size: 12px; font-weight: 700; text-transform: uppercase; white-space: nowrap; }
+.checkout-bookings-panel table th { padding: 6px 6px; background: #f8fafc; color: #000000D9 !important; font-size: 12px; font-weight: 600; text-transform: none; white-space: nowrap; }
 .checkout-bookings-panel table td { padding: 6px 6px; font-size: 12px; border-bottom: 1px solid #cbd5e1; white-space: nowrap; overflow: hidden; }
 .checkout-bookings-panel table td:nth-child(3),
 .checkout-bookings-panel table td:nth-child(3) > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -4583,15 +4753,15 @@ onUnmounted(() => {
 .checkout-payments-panel tbody td:nth-child(7) span { background: transparent !important; color: inherit !important; border-radius: 0 !important; }
 .checkout-actions [data-action="add-deposit"] span { font-size: 0; }
 .checkout-actions [data-action="add-deposit"] span::after { content: 'Thanh Toán Trước'; font-size: 12px; }
-.checkout-info-heading { height: auto; min-height: 24px; padding: 4px 8px !important; border-bottom: 0 !important; color: #64748b; }
+.checkout-info-heading { height: auto; min-height: 24px; padding: 4px 8px !important; border-bottom: 0 !important; color: #000000D9; }
 .checkout-info-title,
-.checkout-folio-title { display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase; }
+.checkout-folio-title { display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: #000000D9; text-transform: none; }
 .checkout-info-title i,
-.checkout-folio-title i { color: #64748b; }
-.checkout-info-panel > div:nth-child(2) { padding: 4px 8px !important; gap: 2px 4px; }
+.checkout-folio-title i { color: #000000D9; }
+.checkout-info-panel > div:nth-child(2) { padding: 5px 8px !important; gap: 3px 6px; }
 .checkout-info-panel > div:nth-child(2) label { font-size: 12px; color: #64748b; display: block; }
 .checkout-info-panel > div:nth-child(2) span { font-size: 12px; font-weight: 600; color: #0f172a; }
-.checkout-info-panel > div:nth-child(2) textarea { height: 28px; padding: 2px 6px; font-size: 12px; border: 1px solid #cbd5e1; border-radius: 4px; }
+.checkout-info-panel > div:nth-child(2) textarea { min-height: 32px; height: 36px; padding: 3px 6px; font-size: 12px; border: 1px solid #cbd5e1; border-radius: 4px; }
 .checkout-info-panel > div:nth-child(2) label i { margin-right: 3px; }
 .checkout-folio-section { padding: 4px 8px !important; background: #f8fafc; border-top: 1px solid #cbd5e1; }
 .checkout-folio-title { margin-bottom: 2px; }
@@ -4651,9 +4821,13 @@ onUnmounted(() => {
 .checkout-filter-date-wrap input[type="date"]::-webkit-calendar-picker-indicator { opacity: 0 !important; width: 0 !important; margin: 0 !important; padding: 0 !important; }
 .checkout-filter-date-wrap input[type="date"] { appearance: none; -webkit-appearance: none; }
 .checkout-filter-date-wrap i.fa-copy { cursor: pointer; }
-.checkout-filter-date-wrap i.fa-copy:hover { color: #2563eb !important; }
+.checkout-selected-row {
+  background-color: #e0f2fe !important;
+}
 .checkout-selected-row,
-.checkout-selected-row * { color: #fff !important; }
+.checkout-selected-row * {
+  color: #000000D9 !important;
+}
 .checkout-shell,
 .checkout-shell input,
 .checkout-shell select,

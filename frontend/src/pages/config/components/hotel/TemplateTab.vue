@@ -148,7 +148,7 @@ onBeforeUnmount(() => {
       <div class="mt-2 flex flex-col gap-1">
         <button v-for="group in groups" :key="group" @click="activeGroup = group"
           class="w-full rounded-lg border-none px-3 py-2 text-left text-xs font-medium transition-colors cursor-pointer"
-          :class="activeGroup === group ? 'bg-sky-50 text-sky-700 font-semibold ring-1 ring-inset ring-sky-200' : 'bg-transparent text-slate-600 hover:bg-white'">
+          :class="activeGroup === group ? 'bg-sky-50 text-[#006bdb] font-semibold ring-1 ring-inset ring-sky-200' : 'bg-transparent text-[#000000D9] hover:bg-white'">
           {{ group }}
         </button>
       </div>
@@ -175,8 +175,8 @@ onBeforeUnmount(() => {
           <tbody>
             <tr v-for="slot in filteredSlots" :key="slot.id" class="border-b border-slate-100 hover:bg-slate-50/55 text-[#000000D9]">
               <td class="p-2.5">
-                <span class="block font-semibold text-slate-800">{{ slot.name }}</span>
-                <code class="mt-0.5 block text-[11px] font-normal text-slate-400 font-mono">{{ slot.code }}</code>
+                <span class="block font-normal text-[#000000D9]">{{ slot.name }}</span>
+                <code class="mt-0.5 block text-xs font-normal text-slate-400 font-mono">{{ slot.code }}</code>
               </td>
               <td class="p-2.5">
                 <div class="relative flex items-center">

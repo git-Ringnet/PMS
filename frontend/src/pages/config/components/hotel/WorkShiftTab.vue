@@ -157,7 +157,7 @@ const deleteShift = async (shiftId) => {
     fetchShifts()
   } catch (err) {
     console.error(err)
-    uiStore.showToast('Không thể xóa ca làm việc này', 'error')
+    uiStore.showToast(err.response?.data?.message || 'Không thể xóa ca làm việc này', 'error')
   } finally {
     loading.value = false
   }
@@ -209,9 +209,9 @@ onBeforeUnmount(() => {
         <tbody>
           <tr v-for="sh in shifts" :key="sh.id" @click="openEditShiftModal(sh)"
             class="border-b border-slate-100 hover:bg-slate-50/55 cursor-pointer text-[#000000D9]">
-            <td class="p-2.5 font-semibold text-slate-800 text-center">{{ sh.name }}</td>
-            <td class="p-2.5 font-normal text-slate-700 text-center font-mono">{{ sh.start_time }}</td>
-            <td class="p-2.5 font-normal text-slate-700 text-center font-mono">{{ sh.end_time }}</td>
+            <td class="p-2.5 font-normal text-[#000000D9] text-center">{{ sh.name }}</td>
+            <td class="p-2.5 font-normal text-[#000000D9] text-center font-mono">{{ sh.start_time }}</td>
+            <td class="p-2.5 font-normal text-[#000000D9] text-center font-mono">{{ sh.end_time }}</td>
             <td class="p-2.5 text-center">
               <div class="flex items-center justify-center">
                 <button @click.stop="deleteShift(sh.id)"

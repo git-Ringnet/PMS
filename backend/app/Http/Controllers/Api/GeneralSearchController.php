@@ -101,8 +101,21 @@ class GeneralSearchController extends Controller
 
     private function bookings(array $data)
     {
+        // Dòng 408: tab Đăng ký lấy theo bảng bookings, kể cả booking chưa lấy phòng.
+        // Điều kiện phòng chỉ áp dụng khi người dùng lọc theo thông tin phòng.
         $query = Booking::with($this->bookingRelations())
-            ->whereHas('bookingRooms', fn (Builder $rooms) => $this->applyRoomFilters($rooms, $data));
+            ->where('is_service_only', false)
+            ->where(fn (Builder $bookings) => $bookings->whereDoesntHave('bookingRooms')
+                ->orWhereHas('bookingRooms', fn (Builder $rooms) => $rooms->stayOnly()));
+        if ($this->hasRoomFilters($data)) {
+            $query->whereHas('bookingRooms', function (Builder $rooms) use ($data) {
+                $this->applyRoomFilters($rooms, array_merge($data, ['use_date' => false]));
+                $this->excludeCancelledRoomsOfActiveBookings($rooms);
+            });
+        }
+        if (($data['use_date'] ?? false) && ($data['from_date'] ?? null) && ($data['to_date'] ?? null)) {
+            $query->whereDate('arrival_date', '<=', $data['to_date'])->whereDate('departure_date', '>=', $data['from_date']);
+        }
         $this->applyBookingFilters($query, $data);
         $this->applyBookingSearch($query, $data['search'] ?? '');
         $this->applySort($query, $data, ['booking_code' => 'id', 'arrival_date' => 'arrival_date', 'departure_date' => 'departure_date', 'nights' => 'num_of_days', 'booking_date' => 'booking_date', 'created_at' => 'created_at'], 'id');
@@ -115,17 +128,22 @@ class GeneralSearchController extends Controller
     {
         // Paginate booking groups, not individual rooms: a booking must never
         // be split over two pages in the Room tab.
-        $query = Booking::with($this->bookingRelations())->whereHas('bookingRooms', function (Builder $rooms) use ($data) {
+        $roomConditions = function (Builder $rooms) use ($data) {
             $rooms->where('status', '!=', BookingRoom::STATUS_MOVED);
             $this->applyRoomFilters($rooms, $data);
             $this->applyRoomSearch($rooms, $data['search'] ?? '');
-        });
+            $this->excludeCancelledRoomsOfActiveBookings($rooms);
+        };
+        $query = Booking::with($this->bookingRelations())->whereHas('bookingRooms', $roomConditions);
         $this->applyBookingFilters($query, $data);
+        // Dòng 410: ngoài số booking, đếm thêm tổng số phòng của toàn bộ kết quả.
+        $roomTotal = BookingRoom::query()->whereIn('booking_id', (clone $query)->setEagerLoads([])->select('bookings.id'))
+            ->where($roomConditions)->count();
         $this->applySort($query, $data, ['arrival_date' => 'arrival_date', 'departure_date' => 'departure_date', 'nights' => 'num_of_days'], 'arrival_date');
 
         $page = $query->paginate($data['per_page'] ?? 50);
         $groups = $page->getCollection()->map(function (Booking $booking) use ($data) {
-            $rooms = $booking->bookingRooms->filter(fn (BookingRoom $room) => $this->roomMatches($room, $data));
+            $rooms = $booking->bookingRooms->filter(fn (BookingRoom $room) => $this->roomMatches($room->setRelation('booking', $booking), $data));
             $sort = $data['sort_by'] ?? 'arrival_date';
             if (in_array($sort, ['room_number', 'arrival_date', 'departure_date', 'nights', 'rate'], true)) {
                 $rooms = ($data['sort_dir'] ?? 'desc') === 'asc' ? $rooms->sortBy($sort) : $rooms->sortByDesc($sort);
@@ -133,7 +151,7 @@ class GeneralSearchController extends Controller
             return $this->projection->roomGroupRow($booking, $rooms->values());
         })->values();
         $page->setCollection($groups);
-        return response()->json(['success' => true, 'data' => $page]);
+        return response()->json(['success' => true, 'data' => array_merge($page->toArray(), ['room_total' => $roomTotal])]);
     }
 
     private function guests(array $data)
@@ -263,10 +281,24 @@ class GeneralSearchController extends Controller
     private function bookingRelations(): array
     {
         return [
-            'company', 'market', 'registrationStatus', 'creator',
+            'company', 'market', 'registrationStatus', 'creator', 'payments',
             'bookingRooms' => fn ($rooms) => $rooms->stayOnly(),
             'bookingRooms.roomClass', 'bookingRooms.originalRoomClass', 'bookingRooms.guests.guest',
+            'bookingRooms.services', 'bookingRooms.serviceBills', 'bookingRooms.currentServiceBills', 'bookingRooms.children.breakfastDetails',
         ];
+    }
+
+    private function hasRoomFilters(array $data): bool
+    {
+        return ($data['status'] ?? '') !== '' || ($data['rate_code_id'] ?? null)
+            || ($data['room_class_id'] ?? null) || ($data['original_room_class_id'] ?? null);
+    }
+
+    /** Dòng 409/410: booking tình trạng 0,1,2,4 không lấy phòng đã hủy (status = 3). */
+    private function excludeCancelledRoomsOfActiveBookings(Builder $rooms): void
+    {
+        $rooms->where(fn (Builder $where) => $where->where('booking_rooms.status', '!=', BookingRoom::STATUS_CANCELLED)
+            ->orWhereHas('booking', fn (Builder $booking) => $booking->where('status', Booking::STATUS_DELETED)));
     }
 
     private function applyRoomFilters(Builder $query, array $data): void
@@ -353,6 +385,7 @@ class GeneralSearchController extends Controller
     private function roomMatches(BookingRoom $room, array $data): bool
     {
         if ((int) $room->status === BookingRoom::STATUS_MOVED) return false;
+        if ((int) $room->status === BookingRoom::STATUS_CANCELLED && (int) $room->booking?->status !== Booking::STATUS_DELETED) return false;
         if (($data['status'] ?? '') !== '' && !in_array((int) $room->status, array_map('intval', explode(',', $data['status'])), true)) return false;
         if (($data['rate_code_id'] ?? null) && $room->rate_code !== $data['rate_code_id']) return false;
         if (($data['room_class_id'] ?? null) && (int) $room->room_class_id !== (int) $data['room_class_id']) return false;

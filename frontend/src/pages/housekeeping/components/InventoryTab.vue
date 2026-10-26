@@ -737,6 +737,19 @@ function getLogVal(productId, day, field) {
   return logsMap.value[productId]?.[dateStr]?.[field] || ''
 }
 
+// Tăng / giảm nhanh giá trị log cho 1 ô
+function stepLogVal(productId, day, field, delta) {
+  const current = Number(getLogVal(productId, day, field) || 0)
+  const next = Math.max(0, current + delta)
+  const dateStr = `${currentMonth.value}-${String(day).padStart(2, '0')}`
+  if (!logsMap.value[productId]) logsMap.value[productId] = {}
+  if (!logsMap.value[productId][dateStr]) logsMap.value[productId][dateStr] = {}
+  logsMap.value[productId][dateStr][field] = next > 0 ? next : ''
+  const key = `${productId}-${dateStr}-${field}`
+  clearTimeout(debounceMap[key])
+  debounceMap[key] = setTimeout(() => saveLog(productId, dateStr, field, next), 500)
+}
+
 // ─── Get Bill ────────────────────────────────────────────────────
 async function getBill(day) {
   const date = `${currentMonth.value}-${String(day).padStart(2, '0')}`
@@ -1054,21 +1067,20 @@ const otherWarehouses = computed(() =>
             @click="activeWarehouseId = wh.id"
           >
             <h2
-              class="text-xs font-bold tracking-wide pb-2 transition-colors relative"
-              :class="activeWarehouseId === wh.id ? 'text-[var(--pms-custom-theme,#006bdb)]' : 'text-slate-500 hover:text-slate-700'"
+              class="text-xs font-semibold tracking-wide transition-colors relative"
+              :class="activeWarehouseId === wh.id ? 'text-[#2563EB]' : 'text-[#000000D9] hover:text-[#2563EB]'"
             >
               {{ toTitleCase(wh.name) }}
-              <div v-if="activeWarehouseId === wh.id" class="absolute bottom-0 left-0 w-full h-0.5 bg-[var(--pms-custom-theme,#006bdb)] rounded-t-full"></div>
             </h2>
             <button
               @click.stop="openEditModal(wh)"
-              class="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 text-slate-400 hover:text-[var(--pms-custom-theme,#006bdb)] hover:bg-slate-50 rounded-full -mt-2 bg-white cursor-pointer"
+              class="opacity-0 group-hover:opacity-100 transition-opacity p-1 text-slate-400 hover:text-[var(--pms-custom-theme,#006bdb)] hover:bg-slate-50 rounded-full bg-white cursor-pointer"
             >
               <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
             </button>
           </div>
           <!-- Placeholder nếu chưa có kho -->
-          <span v-if="warehouses.length === 0" class="text-xs text-slate-400 italic pb-2">Chưa có kho nào</span>
+          <span v-if="warehouses.length === 0" class="text-xs text-slate-400 italic">Chưa có kho nào</span>
         </div>
         <button @click="openAddWarehouseModal" class="btn-pms-primary flex items-center gap-1.5 h-8 px-3 text-xs font-semibold rounded-lg shadow-sm cursor-pointer shrink-0">
           <Plus class="w-4 h-4" stroke-width="2.5" />
@@ -1081,7 +1093,7 @@ const otherWarehouses = computed(() =>
         <div class="flex flex-wrap items-center gap-4">
           <!-- Month Picker (mm/yyyy overlay) -->
           <div class="flex items-center gap-2">
-            <span class="font-semibold text-slate-700 text-xs">Tháng:</span>
+            <span class="font-semibold text-[#000000D9] text-xs">Tháng:</span>
             <div class="relative flex items-center justify-between border border-slate-300 rounded-lg bg-white px-2.5 h-8 w-32 shadow-2xs cursor-pointer hover:border-[var(--pms-custom-theme,#006bdb)] transition-colors">
               <span class="text-xs font-semibold text-[#000000D9]">{{ formattedMonth }}</span>
               <Calendar class="w-3.5 h-3.5 text-slate-400" />
@@ -1091,7 +1103,7 @@ const otherWarehouses = computed(() =>
 
           <!-- Warning Only Switch -->
           <div class="flex items-center gap-1.5 select-none">
-            <span class="text-xs text-[#000000D9] font-normal">Cảnh Báo Tồn</span>
+            <span class="text-xs text-[#000000D9] font-semibold">Cảnh Báo Tồn</span>
             <label class="relative inline-flex items-center cursor-pointer">
               <input type="checkbox" v-model="filterState.warningOnly" class="sr-only peer">
               <div class="w-8 h-4.5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-blue-500"></div>
@@ -1100,7 +1112,7 @@ const otherWarehouses = computed(() =>
 
           <!-- Sort -->
           <div class="flex items-center gap-2">
-            <span class="font-semibold text-slate-700 text-xs">Sắp Xếp:</span>
+            <span class="font-semibold text-[#000000D9] text-xs">Sắp Xếp:</span>
             <select v-model="filterState.sortBy" class="h-8 border border-slate-300 rounded-lg px-2.5 text-xs text-[#000000D9] bg-white focus:outline-none focus:ring-1 focus:ring-[var(--pms-custom-theme,#006bdb)] cursor-pointer shadow-2xs font-normal">
               <option value="name_asc">Tên A-Z</option>
               <option value="name_desc">Tên Z-A</option>
@@ -1142,7 +1154,7 @@ const otherWarehouses = computed(() =>
 
       <!-- Activity Filter Chips -->
       <div class="px-5 py-2 border-t border-slate-100 flex items-center gap-2 text-xs bg-slate-50/25 rounded-b-xl">
-        <span class="text-xs font-semibold text-slate-600 mr-1">Phát Sinh:</span>
+        <span class="text-xs font-semibold text-[#000000D9] mr-1">Phát Sinh:</span>
         <button
           v-for="st in [
             { label: 'Tất Cả Sản Phẩm', value: 'all' },
@@ -1154,7 +1166,7 @@ const otherWarehouses = computed(() =>
           class="px-2.5 py-1 rounded-full text-xs transition-all duration-200 cursor-pointer border"
           :class="filterState.activity === st.value
             ? 'bg-sky-100 text-sky-850 border-sky-300 font-semibold shadow-2xs'
-            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'"
+            : 'bg-white text-[#000000D9] border-slate-200 hover:bg-slate-50 font-normal'"
         >
           {{ st.label }}
         </button>
@@ -1167,7 +1179,7 @@ const otherWarehouses = computed(() =>
         <table class="w-full text-left border-collapse text-xs whitespace-nowrap min-w-max">
           <thead class="sticky top-0 z-20 backdrop-blur-md bg-white/95">
             <tr class="bg-slate-100 text-[#000000D9] font-semibold border-b border-slate-300 text-xs">
-              <th rowspan="2" class="py-2.5 px-3 border-r border-slate-200 w-64 min-w-[256px] text-center align-middle sticky left-0 z-30 shadow-[1px_0_0_0_#e2e8f0] bg-slate-100 border">
+              <th rowspan="2" class="py-2.5 px-3 border border-slate-200 w-64 min-w-[256px] text-center align-middle sticky left-0 z-30 shadow-[1px_0_0_0_#e2e8f0] bg-slate-100">
                 <div class="flex flex-col items-center justify-center gap-1.5">
                   <div class="flex items-center text-xs font-semibold text-[#000000D9]">
                     Sản Phẩm <Search @click="showProductSearch = !showProductSearch" class="w-3.5 h-3.5 inline-block ml-1.5 text-slate-400 cursor-pointer hover:text-[var(--pms-custom-theme,#006bdb)] transition-colors" />
@@ -1192,32 +1204,32 @@ const otherWarehouses = computed(() =>
                   </div>
                 </div>
               </th>
-              <th rowspan="2" class="col-ton-dk py-2.5 px-3 bg-slate-100 text-center align-middle sticky left-[256px] z-30 text-[#000000D9] font-semibold border-r border-slate-200 border text-xs">Tồn Đầu Kỳ</th>
-              <th v-for="day in days" :key="day" colspan="3" class="py-1 px-1 text-center border-r border-slate-200 transition-colors group/day align-middle border text-xs" :class="isSystemDate(day) ? 'col-today-header font-bold' : (day % 2 === 0 ? 'col-alt-header text-slate-800' : 'bg-slate-50/50')">
-                <div class="flex flex-col items-center gap-0.5">
+              <th rowspan="2" class="col-ton-dk py-2.5 px-3 bg-slate-100 text-center align-middle sticky left-[256px] z-30 text-[#000000D9] font-semibold border border-slate-200 text-xs">Tồn Đầu Kỳ</th>
+              <th v-for="day in days" :key="day" colspan="3" class="py-1 px-1 text-center border border-slate-200 transition-colors group/day align-middle text-xs" :class="isSystemDate(day) ? 'col-today-header font-bold' : (day % 2 === 0 ? 'col-alt-header text-[#000000D9]' : 'bg-slate-50/50 text-[#000000D9]')">
+                <div class="flex flex-col items-center gap-1">
                   <span class="font-semibold text-[#000000D9] text-xs">{{ day }}</span>
                   <button
                     @click="getBill(day)"
                     :disabled="!activeWarehouse?.outlet_id || isBillLoading"
-                    class="text-xs px-1.5 py-0.5 rounded transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap flex items-center gap-1 border shadow-2xs"
-                    :class="isSystemDate(day) ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300 font-semibold' : 'bg-sky-50 hover:bg-sky-100 text-sky-800 border-sky-200 font-medium'"
+                    class="text-xs px-2 py-0.5 rounded transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer whitespace-nowrap flex items-center gap-1 border shadow-2xs"
+                    :class="isSystemDate(day) ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border-amber-300 font-semibold' : 'bg-sky-50 hover:bg-sky-100 text-sky-800 border-sky-300 font-semibold'"
                     :title="`Lấy dữ liệu xuất bill ngày ${day}`"
                   >
-                    <Receipt class="w-3 h-3 text-sky-600" />
+                    <Receipt class="w-3.5 h-3.5 text-sky-600" stroke-width="2.2" />
                     <span>Bill</span>
                   </button>
                 </div>
               </th>
-              <th rowspan="2" class="py-2.5 px-3 border-r border-slate-200 bg-slate-100 text-center align-middle border text-xs font-semibold text-[#000000D9]">SL Nhập</th>
-              <th rowspan="2" class="py-2.5 px-3 border-r border-slate-200 bg-slate-100 text-center align-middle border text-xs font-semibold text-[#000000D9]">SL Xuất</th>
-              <th rowspan="2" class="py-2.5 px-3 border-r border-slate-200 bg-slate-100 text-center align-middle border text-xs font-semibold text-[#000000D9]">SL Chuyển</th>
-              <th rowspan="2" class="col-ton-cuoi py-2.5 px-4 bg-slate-100 text-center align-middle sticky right-0 text-[var(--pms-custom-theme,#006bdb)] font-bold border-r border-slate-200 border text-xs">Tồn Cuối</th>
+              <th rowspan="2" class="py-2.5 px-3 border border-slate-200 bg-slate-100 text-center align-middle text-xs font-semibold text-[#000000D9]">Số Lượng Nhập</th>
+              <th rowspan="2" class="py-2.5 px-3 border border-slate-200 bg-slate-100 text-center align-middle text-xs font-semibold text-[#000000D9]">Số Lượng Xuất</th>
+              <th rowspan="2" class="py-2.5 px-3 border border-slate-200 bg-slate-100 text-center align-middle text-xs font-semibold text-[#000000D9]">Số Lượng Chuyển</th>
+              <th rowspan="2" class="col-ton-cuoi py-2.5 px-4 bg-slate-100 text-center align-middle sticky right-0 text-[#000000D9] font-semibold border border-slate-200 text-xs">Tồn Cuối</th>
             </tr>
-            <tr class="bg-slate-100/90 text-slate-600 font-semibold border-b border-slate-250 text-xs">
+            <tr class="bg-slate-100/90 text-[#000000D9] font-semibold border-b border-slate-250 text-xs">
               <template v-for="day in days" :key="'sub'+day">
-                <th class="py-1.5 px-2 text-center border-r border-slate-200 font-semibold transition-colors align-middle border text-xs" :class="isSystemDate(day) ? 'col-today-subheader text-amber-900' : (day % 2 === 0 ? 'col-alt-subheader text-slate-700' : 'bg-slate-50/20')">Nhập</th>
-                <th class="py-1.5 px-2 text-center border-r border-slate-200 font-semibold transition-colors align-middle border text-xs" :class="isSystemDate(day) ? 'col-today-subheader text-amber-900' : (day % 2 === 0 ? 'col-alt-subheader text-slate-700' : 'bg-slate-50/20')">Xuất</th>
-                <th class="py-1.5 px-2 text-center border-r border-slate-200 font-semibold transition-colors align-middle border text-xs" :class="isSystemDate(day) ? 'col-today-subheader text-amber-900' : (day % 2 === 0 ? 'col-alt-subheader text-slate-700' : 'bg-slate-50/20')">Chuyển</th>
+                <th class="py-1.5 px-2 text-center border border-slate-200 font-semibold transition-colors align-middle text-xs" :class="isSystemDate(day) ? 'col-today-subheader text-amber-900' : (day % 2 === 0 ? 'col-alt-subheader text-[#000000D9]' : 'bg-slate-50/20 text-[#000000D9]')">Nhập</th>
+                <th class="py-1.5 px-2 text-center border border-slate-200 font-semibold transition-colors align-middle text-xs" :class="isSystemDate(day) ? 'col-today-subheader text-amber-900' : (day % 2 === 0 ? 'col-alt-subheader text-[#000000D9]' : 'bg-slate-50/20 text-[#000000D9]')">Xuất</th>
+                <th class="py-1.5 px-2 text-center border border-slate-200 font-semibold transition-colors align-middle text-xs" :class="isSystemDate(day) ? 'col-today-subheader text-amber-900' : (day % 2 === 0 ? 'col-alt-subheader text-[#000000D9]' : 'bg-slate-50/20 text-[#000000D9]')">Chuyển</th>
               </template>
             </tr>
           </thead>
@@ -1279,11 +1291,11 @@ const otherWarehouses = computed(() =>
               <tr class="bg-slate-100 font-semibold border-y border-slate-200">
                 <td 
                   :colspan="6 + days.length * 3" 
-                  class="py-2 px-4 sticky left-0 z-10 bg-slate-100/95 text-slate-800 text-xs shadow-[1px_0_0_0_#e2e8f0]"
+                  class="py-2 px-4 sticky left-0 z-10 bg-slate-100/95 text-[#000000D9] text-xs shadow-[1px_0_0_0_#e2e8f0]"
                 >
                   <div class="flex items-center gap-2">
                     <span class="inline-block w-2.5 h-2.5 rounded-full bg-[var(--pms-custom-theme,#006bdb)]"></span>
-                    <span class="font-bold text-slate-800 text-xs tracking-wide">{{ toTitleCase(group.categoryName) }}</span>
+                    <span class="font-semibold text-[#000000D9] text-xs tracking-wide">{{ toTitleCase(group.categoryName) }}</span>
                     <span class="text-slate-500 font-normal text-xs">({{ group.count }} sản phẩm)</span>
                   </div>
                 </td>
@@ -1307,29 +1319,68 @@ const otherWarehouses = computed(() =>
                   </div>
                 </td>
                 <!-- Tồn đầu kỳ -->
-                <td class="col-ton-dk py-2 px-2 text-center text-[#000000D9] font-medium bg-white group-hover:bg-slate-50 min-w-[80px] border-slate-200 text-xs">
+                <td class="col-ton-dk py-2 px-2 text-center text-[#000000D9] font-normal bg-white group-hover:bg-slate-50 min-w-[80px] border-slate-200 text-xs">
                   {{ getInitialStockLabel(item) }}
                 </td>
                 <!-- Nhật ký từng ngày (3 cột: nhập / xuất / chuyển) -->
                 <template v-for="day in days" :key="'item-day-'+day">
-                  <td class="py-0.5 px-0.5 border-slate-200 text-center transition-colors" :class="isSystemDate(day) ? 'col-today-body' : (day % 2 === 0 ? 'col-alt-body' : '')">
-                    <input
-                      type="number" min="0"
-                      :value="getLogVal(item.product_id, day, 'receive') || ''"
-                      @change="e => onLogInput(item.product_id, day, 'receive', e.target.value)"
-                      class="w-12 text-center text-xs border border-transparent hover:border-slate-300 focus:border-[var(--pms-custom-theme,#006bdb)] focus:ring-1 focus:ring-[var(--pms-custom-theme,#006bdb)] rounded outline-none bg-transparent focus:bg-white transition-all py-1 text-[#000000D9]"
-                      placeholder=""
-                    />
+                  <!-- Nhập -->
+                  <td class="py-0.5 px-0.5 border-slate-200 text-center transition-colors group/cell" :class="isSystemDate(day) ? 'col-today-body' : (day % 2 === 0 ? 'col-alt-body' : '')">
+                    <div class="inline-flex items-center justify-center relative">
+                      <button
+                        type="button"
+                        @click.stop="stepLogVal(item.product_id, day, 'receive', -1)"
+                        class="opacity-0 group-hover/cell:opacity-100 transition-opacity w-3.5 h-5 flex items-center justify-center text-slate-400 hover:text-slate-700 cursor-pointer border-none bg-transparent select-none p-0"
+                        title="Giảm 1"
+                      >
+                        <Minus class="w-2.5 h-2.5" />
+                      </button>
+                      <input
+                        type="number" min="0"
+                        :value="getLogVal(item.product_id, day, 'receive') || ''"
+                        @change="e => onLogInput(item.product_id, day, 'receive', e.target.value)"
+                        class="w-8 text-center text-xs border border-transparent hover:border-slate-300 focus:border-[var(--pms-custom-theme,#006bdb)] focus:ring-1 focus:ring-[var(--pms-custom-theme,#006bdb)] rounded outline-none bg-transparent focus:bg-white transition-all py-0.5 text-[#000000D9] font-normal"
+                        placeholder=""
+                      />
+                      <button
+                        type="button"
+                        @click.stop="stepLogVal(item.product_id, day, 'receive', 1)"
+                        class="opacity-0 group-hover/cell:opacity-100 transition-opacity w-3.5 h-5 flex items-center justify-center text-slate-400 hover:text-slate-700 cursor-pointer border-none bg-transparent select-none p-0"
+                        title="Tăng 1"
+                      >
+                        <Plus class="w-2.5 h-2.5" />
+                      </button>
+                    </div>
                   </td>
-                  <td class="py-0.5 px-0.5 border-slate-200 text-center transition-colors" :class="isSystemDate(day) ? 'col-today-body' : (day % 2 === 0 ? 'col-alt-body' : '')">
-                    <input
-                      type="number" min="0"
-                      :value="getLogVal(item.product_id, day, 'export') || ''"
-                      @change="e => onLogInput(item.product_id, day, 'export', e.target.value)"
-                      class="w-12 text-center text-xs border border-transparent hover:border-slate-300 focus:border-[var(--pms-custom-theme,#006bdb)] focus:ring-1 focus:ring-[var(--pms-custom-theme,#006bdb)] rounded outline-none bg-transparent focus:bg-white transition-all py-1 text-[#000000D9]"
-                      placeholder=""
-                    />
+                  <!-- Xuất -->
+                  <td class="py-0.5 px-0.5 border-slate-200 text-center transition-colors group/cell" :class="isSystemDate(day) ? 'col-today-body' : (day % 2 === 0 ? 'col-alt-body' : '')">
+                    <div class="inline-flex items-center justify-center relative">
+                      <button
+                        type="button"
+                        @click.stop="stepLogVal(item.product_id, day, 'export', -1)"
+                        class="opacity-0 group-hover/cell:opacity-100 transition-opacity w-3.5 h-5 flex items-center justify-center text-slate-400 hover:text-slate-700 cursor-pointer border-none bg-transparent select-none p-0"
+                        title="Giảm 1"
+                      >
+                        <Minus class="w-2.5 h-2.5" />
+                      </button>
+                      <input
+                        type="number" min="0"
+                        :value="getLogVal(item.product_id, day, 'export') || ''"
+                        @change="e => onLogInput(item.product_id, day, 'export', e.target.value)"
+                        class="w-8 text-center text-xs border border-transparent hover:border-slate-300 focus:border-[var(--pms-custom-theme,#006bdb)] focus:ring-1 focus:ring-[var(--pms-custom-theme,#006bdb)] rounded outline-none bg-transparent focus:bg-white transition-all py-0.5 text-[#000000D9] font-normal"
+                        placeholder=""
+                      />
+                      <button
+                        type="button"
+                        @click.stop="stepLogVal(item.product_id, day, 'export', 1)"
+                        class="opacity-0 group-hover/cell:opacity-100 transition-opacity w-3.5 h-5 flex items-center justify-center text-slate-400 hover:text-slate-700 cursor-pointer border-none bg-transparent select-none p-0"
+                        title="Tăng 1"
+                      >
+                        <Plus class="w-2.5 h-2.5" />
+                      </button>
+                    </div>
                   </td>
+                  <!-- Chuyển -->
                   <td
                     class="py-0.5 px-0.5 border-slate-200 text-center cursor-pointer transition-colors select-none"
                     :class="isSystemDate(day) ? 'col-today-body hover:bg-amber-100/30' : (day % 2 === 0 ? 'col-alt-body hover:bg-slate-100' : 'hover:bg-slate-100')"
@@ -1345,11 +1396,11 @@ const otherWarehouses = computed(() =>
                   </td>
                 </template>
                 <!-- Tổng tháng -->
-                <td class="py-2 px-2 border-slate-200 text-center text-[#000000D9] bg-white group-hover:bg-slate-50 font-medium text-xs">{{ item.totalReceive || '' }}</td>
-                <td class="py-2 px-2 border-slate-200 text-center text-[#000000D9] bg-white group-hover:bg-slate-50 font-medium text-xs">{{ item.totalExport || '' }}</td>
-                <td class="py-2 px-2 border-slate-200 text-center text-[#000000D9] bg-white group-hover:bg-slate-50 font-medium text-xs">{{ item.totalTransfer || '' }}</td>
+                <td class="py-2 px-2 border-slate-200 text-center text-[#000000D9] bg-white group-hover:bg-slate-50 font-normal text-xs">{{ item.totalReceive || '' }}</td>
+                <td class="py-2 px-2 border-slate-200 text-center text-[#000000D9] bg-white group-hover:bg-slate-50 font-normal text-xs">{{ item.totalExport || '' }}</td>
+                <td class="py-2 px-2 border-slate-200 text-center text-[#000000D9] bg-white group-hover:bg-slate-50 font-normal text-xs">{{ item.totalTransfer || '' }}</td>
                 <!-- Tồn cuối -->
-                <td class="col-ton-cuoi py-2 px-4 text-right font-bold sticky right-0 bg-white group-hover:bg-slate-50 text-xs border-slate-200"
+                <td class="col-ton-cuoi py-2 px-4 text-right font-semibold sticky right-0 bg-white group-hover:bg-slate-50 text-xs border-slate-200"
                   :class="item.finalStock < 50 ? 'text-rose-600' : 'text-[var(--pms-custom-theme,#006bdb)]'"
                 >
                   {{ item.finalStock?.toLocaleString() }}
@@ -1407,9 +1458,6 @@ const otherWarehouses = computed(() =>
             </div>
           </div>
           <div class="px-5 py-3 border-t border-slate-200 bg-white flex justify-end gap-2.5 font-semibold">
-            <button @click="showAddModal = false" class="btn-pms-close flex items-center gap-1.5 h-8 px-4 rounded-lg text-xs font-semibold cursor-pointer">
-              <X class="w-3.5 h-3.5" /> Đóng
-            </button>
             <button @click="addWarehouse" :disabled="isSaving || !newWarehouse.name.trim()" class="btn-pms-primary flex items-center gap-1.5 h-8 px-4 disabled:opacity-50 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer">
               <Save class="w-3.5 h-3.5" /> {{ isSaving ? 'Đang lưu...' : 'Lưu' }}
             </button>
@@ -1423,30 +1471,23 @@ const otherWarehouses = computed(() =>
       <div v-if="showEditModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/25">
         <div class="bg-white rounded-xl shadow-2xl w-[440px] flex flex-col overflow-hidden border border-slate-200" :style="{ transform: 'translate(' + editWhModalPos.x + 'px, ' + editWhModalPos.y + 'px)' }">
           <div class="px-5 py-3 flex items-center justify-between shadow-sm text-white cursor-move select-none rounded-t-xl" @mousedown="startDragEditWhModal" style="background: var(--pms-custom-theme, #006bdb)">
-            <h3 class="text-white font-bold text-xs tracking-wide">Cập Nhật Kho</h3>
-            <button @click="showEditModal = false" class="text-white/80 hover:text-white p-1 rounded-full transition-colors cursor-pointer border-none bg-transparent"><X class="w-4 h-4" /></button>
+            <h3 class="text-white font-semibold text-xs tracking-wide">Cập Nhật Kho</h3>
+            <button @click="showEditModal = false" class="text-white/80 hover:text-white p-1 rounded-full transition-colors cursor-pointer border-none bg-transparent" title="Đóng (Esc)"><X class="w-4 h-4" /></button>
           </div>
           <div class="p-5 flex flex-col gap-4 bg-slate-50 text-xs">
             <div class="flex flex-col gap-1.5">
-              <label class="text-xs font-semibold text-slate-700">Tên Kho <span class="text-rose-500 font-bold">*</span></label>
-              <input type="text" v-model="editWarehouse.name" class="input-required w-full text-xs h-8 rounded-lg px-3 outline-none font-medium text-[#000000D9]" />
+              <label class="text-xs font-semibold text-[#000000D9]">Tên Kho <span class="text-rose-500 font-bold">*</span></label>
+              <input type="text" v-model="editWarehouse.name" class="input-required w-full text-xs h-8 rounded-lg px-3 outline-none font-normal text-[#000000D9]" />
             </div>
             <div class="flex flex-col gap-1.5">
-              <div class="flex items-center justify-between">
-                <label class="text-xs font-semibold text-slate-700">Outlet (Để Lấy Bill)</label>
-                <span class="text-xs text-slate-400">Chọn Nhiều</span>
-              </div>
-              <div class="grid grid-cols-2 gap-2 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-                <label
-                  v-for="ol in hkOutlets" :key="ol.id || ol.code"
-                  class="flex items-center gap-2 p-2 rounded-md border cursor-pointer select-none transition-all text-xs"
-                  :class="editWarehouse.outlet_ids.includes(ol.code) ? 'bg-sky-50 border-sky-300 font-semibold text-sky-800 shadow-2xs' : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'"
-                >
+              <label class="text-xs font-semibold text-[#000000D9]">Điểm Bán Hàng Áp Dụng</label>
+              <div class="border border-slate-200 rounded-lg p-2.5 max-h-40 overflow-y-auto bg-white flex flex-col gap-2 hk-scroll">
+                <label v-for="ol in outlets" :key="ol.code" class="flex items-center gap-2 cursor-pointer text-[#000000D9] hover:text-slate-900 select-none text-xs font-normal">
                   <input
                     type="checkbox"
                     :value="ol.code"
                     v-model="editWarehouse.outlet_ids"
-                    class="w-4 h-4 rounded border-slate-300 text-sky-500 focus:ring-sky-500 cursor-pointer"
+                    class="w-4 h-4 rounded border-slate-300 text-[var(--pms-custom-theme,#006bdb)] focus:ring-[var(--pms-custom-theme,#006bdb)] cursor-pointer"
                   />
                   <span>{{ ol.name }} <span class="text-slate-400 font-normal">({{ ol.code }})</span></span>
                 </label>
@@ -1454,9 +1495,6 @@ const otherWarehouses = computed(() =>
             </div>
           </div>
           <div class="px-5 py-3 border-t border-slate-200 bg-white flex justify-end gap-2.5">
-            <button @click="showEditModal = false" class="btn-pms-close flex items-center gap-1.5 h-8 px-4 rounded-lg text-xs font-semibold cursor-pointer">
-              <X class="w-3.5 h-3.5" /> Đóng
-            </button>
             <button @click="deleteWarehouse" class="btn-pms-danger flex items-center gap-1.5 h-8 px-4 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer">
               <Trash2 class="w-3.5 h-3.5" /> Xóa
             </button>
@@ -1474,8 +1512,8 @@ const otherWarehouses = computed(() =>
         <div class="relative bg-white rounded-xl shadow-2xl w-[1100px] flex flex-col overflow-hidden max-h-[90vh] border border-slate-200" :style="{ transform: 'translate(' + checkModalPos.x + 'px, ' + checkModalPos.y + 'px)' }">
           <LoadingOverlay :show="isSaving" />
           <div class="px-5 py-3 flex items-center justify-between shrink-0 shadow-sm text-white cursor-move select-none rounded-t-xl" @mousedown="startDragCheckModal" style="background: var(--pms-custom-theme, #006bdb)">
-            <h3 class="text-white font-bold text-xs tracking-wide">Kiểm Kê Tồn Kho Định Kỳ<span v-if="checkDraftDirty" class="ml-2 font-normal opacity-90">(chưa lưu)</span></h3>
-            <button @click="closeCheckModal" class="text-white/80 hover:text-white p-1 rounded-full transition-colors cursor-pointer border-none bg-transparent"><X class="w-4 h-4" /></button>
+            <h3 class="text-white font-semibold text-xs tracking-wide">Kiểm Kê Tồn Kho Định Kỳ<span v-if="checkDraftDirty" class="ml-2 font-normal opacity-90">(chưa lưu)</span></h3>
+            <button @click="closeCheckModal" class="text-white/80 hover:text-white p-1 rounded-full transition-colors cursor-pointer border-none bg-transparent" title="Đóng (Esc)"><X class="w-4 h-4" /></button>
           </div>
           <div class="p-5 flex flex-col gap-4 overflow-y-auto bg-slate-50 flex-1 hk-scroll text-xs">
             <div v-if="isCheckLocked" class="px-3 py-2 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 font-medium">
@@ -1484,7 +1522,7 @@ const otherWarehouses = computed(() =>
             <!-- Header form -->
             <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs grid grid-cols-5 gap-3.5">
               <div class="flex flex-col gap-1.5">
-                <label class="text-xs font-semibold text-slate-700">Tháng / Năm</label>
+                <label class="text-xs font-semibold text-[#000000D9]">Tháng / Năm</label>
                 <div class="relative flex items-center justify-between border border-slate-300 rounded-lg bg-white px-2.5 h-8 w-full shadow-2xs cursor-pointer hover:border-[var(--pms-custom-theme,#006bdb)] transition-colors">
                   <span class="text-xs font-semibold text-[#000000D9]">{{ formattedCheckMonth }}</span>
                   <Calendar class="w-3.5 h-3.5 text-slate-400" />
@@ -1492,27 +1530,27 @@ const otherWarehouses = computed(() =>
                 </div>
               </div>
               <div class="flex flex-col gap-1.5">
-                <label class="text-xs font-semibold text-slate-700">Mã Phiếu</label>
-                <input type="text" :value="currentCheck?.id ? 'KK-' + currentCheck.id : 'Mới'" disabled class="w-full text-xs h-8 border border-slate-200 rounded-lg px-2.5 bg-slate-100 text-slate-500 cursor-not-allowed outline-none font-medium" />
+                <label class="text-xs font-semibold text-[#000000D9]">Mã Phiếu</label>
+                <input type="text" :value="currentCheck?.id ? 'KK-' + currentCheck.id : 'Mới'" disabled class="w-full text-xs h-8 border border-slate-200 rounded-lg px-2.5 bg-slate-100 text-slate-500 cursor-not-allowed outline-none font-normal" />
               </div>
               <div class="flex flex-col gap-1.5">
-                <label class="text-xs font-semibold text-slate-700">Kho</label>
-                <input type="text" :value="activeWarehouse?.name || ''" disabled class="w-full text-xs h-8 border border-slate-200 rounded-lg px-2.5 bg-slate-100 text-slate-500 cursor-not-allowed outline-none font-medium" />
+                <label class="text-xs font-semibold text-[#000000D9]">Kho</label>
+                <input type="text" :value="toTitleCase(activeWarehouse?.name || '')" disabled class="w-full text-xs h-8 border border-slate-200 rounded-lg px-2.5 bg-slate-100 text-slate-500 cursor-not-allowed outline-none font-normal" />
               </div>
               <div class="flex flex-col gap-1.5">
-                <label class="text-xs font-semibold text-slate-700">Người Kiểm Kho</label>
-                <input type="text" :value="authStore.user?.name || 'Chưa xác định'" disabled class="w-full text-xs h-8 border border-slate-200 rounded-lg px-2.5 bg-slate-100 text-slate-600 font-medium cursor-not-allowed outline-none" />
+                <label class="text-xs font-semibold text-[#000000D9]">Người Kiểm Kho</label>
+                <input type="text" :value="authStore.user?.name || 'Chưa xác định'" disabled class="w-full text-xs h-8 border border-slate-200 rounded-lg px-2.5 bg-slate-100 text-slate-500 font-normal cursor-not-allowed outline-none" />
               </div>
               <div class="flex flex-col gap-1.5">
-                <label class="text-xs font-semibold text-slate-700">Ghi Chú</label>
+                <label class="text-xs font-semibold text-[#000000D9]">Ghi Chú</label>
                 <div class="relative w-full">
                   <input 
                     type="text" 
                     v-model="checkForm.note"
                     :disabled="isCheckLocked"
                     @input="checkDraftDirty = true"
-                    placeholder="Nhập ghi chú..."  
-                    class="w-full text-xs h-8 border border-slate-300 rounded-lg px-2.5 pr-7 outline-none focus:border-[var(--pms-custom-theme,#006bdb)] transition-all shadow-2xs bg-white text-[#000000D9]" 
+                    placeholder="Nhập ghi chú..."
+                    class="w-full text-xs h-8 border border-slate-300 rounded-lg px-2.5 pr-7 outline-none focus:border-[var(--pms-custom-theme,#006bdb)] transition-all shadow-2xs bg-white text-[#000000D9] font-normal"
                   />
                   <button 
                     v-if="checkForm.note"
@@ -1532,20 +1570,20 @@ const otherWarehouses = computed(() =>
               <table class="w-full text-left border-collapse text-xs whitespace-nowrap">
                 <thead class="bg-slate-50 border-b border-slate-200 text-xs text-[#000000D9] font-semibold sticky top-0 z-10 shadow-[0_1px_0_0_#e2e8f0]">
                   <tr>
-                    <th class="py-2.5 px-3 border-r border-slate-200 text-center w-28 align-middle border">Mã Kiểm Kê</th>
-                    <th class="py-2.5 px-3 border-r border-slate-200 text-center w-24 align-middle border">Mã SP</th>
-                    <th class="py-2.5 px-4 border-r border-slate-200 text-center align-middle border">Tên SP</th>
-                    <th class="py-2.5 px-2 border-r border-slate-200 text-center w-20 align-middle border">Đơn Vị</th>
-                    <th class="py-2.5 px-2 border-r border-slate-200 text-center w-40 align-middle border">Tồn Đầu Kỳ</th>
-                    <th class="py-2.5 px-2 border-r border-slate-200 text-center w-40 align-middle border">Số Lượng Thực Tế</th>
-                    <th class="py-2.5 px-2 border-r border-slate-200 text-center w-28 align-middle border">Số Chênh Lệch</th>
-                    <th class="py-2.5 px-4 text-center align-middle border-r border-slate-200 border">Ghi Chú</th>
-                    <th v-if="!isCheckLocked" class="py-2.5 px-2 text-center align-middle border-r border-slate-200 border w-10"></th>
+                    <th class="py-2.5 px-3 border border-slate-200 text-center w-28 align-middle font-semibold text-[#000000D9] text-xs">Mã Kiểm Kê</th>
+                    <th class="py-2.5 px-3 border border-slate-200 text-center w-28 align-middle font-semibold text-[#000000D9] text-xs">Mã Sản Phẩm</th>
+                    <th class="py-2.5 px-4 border border-slate-200 text-center align-middle font-semibold text-[#000000D9] text-xs">Tên Sản Phẩm</th>
+                    <th class="py-2.5 px-2 border border-slate-200 text-center w-20 align-middle font-semibold text-[#000000D9] text-xs">Đơn Vị</th>
+                    <th class="py-2.5 px-2 border border-slate-200 text-center w-40 align-middle font-semibold text-[#000000D9] text-xs">Tồn Đầu Kỳ</th>
+                    <th class="py-2.5 px-2 border border-slate-200 text-center w-40 align-middle font-semibold text-[#000000D9] text-xs">Số Lượng Thực Tế</th>
+                    <th class="py-2.5 px-2 border border-slate-200 text-center w-28 align-middle font-semibold text-[#000000D9] text-xs">Số Chênh Lệch</th>
+                    <th class="py-2.5 px-4 text-center align-middle border border-slate-200 font-semibold text-[#000000D9] text-xs">Ghi Chú</th>
+                    <th v-if="!isCheckLocked" class="py-2.5 px-2 text-center align-middle border border-slate-200 w-10"></th>
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100 text-xs text-[#000000D9]">
                   <tr v-if="!modalCheckItems.length">
-                    <td colspan="9" class="py-12 text-center text-slate-400 border-slate-200">
+                    <td :colspan="isCheckLocked ? 8 : 9" class="py-12 text-center text-slate-400 border-slate-200">
                       <div class="flex flex-col items-center gap-2">
                         <span class="text-3xl">📦</span>
                         <p class="font-semibold text-slate-600 text-xs">Chưa có sản phẩm trong phiếu kiểm kê</p>
@@ -1554,10 +1592,10 @@ const otherWarehouses = computed(() =>
                     </td>
                   </tr>
                   <tr v-else v-for="(item, idx) in modalCheckItems" :key="item.product_id" class="hover:bg-slate-50 transition-colors">
-                    <td class="py-2 px-3 border-slate-200 text-center text-slate-500 font-mono text-xs">{{ currentCheck?.id ? 'KK-' + currentCheck.id : 'Mới' }}</td>
-                    <td class="py-2 px-3 border-slate-200 text-center text-slate-500 font-mono text-xs">{{ item.product_code }}</td>
-                    <td class="py-2 px-4 border-slate-200 font-medium text-slate-800 text-xs">{{ item.product_name }}</td>
-                    <td class="py-2 px-2 border-slate-200 text-center text-slate-600 text-xs">{{ item.unit || '—' }}</td>
+                    <td class="py-2 px-3 border-slate-200 text-center text-[#000000D9] font-normal text-xs">{{ currentCheck?.id ? 'KK-' + currentCheck.id : 'Mới' }}</td>
+                    <td class="py-2 px-3 border-slate-200 text-center text-[#000000D9] font-normal text-xs">{{ item.product_code }}</td>
+                    <td class="py-2 px-4 border-slate-200 font-normal text-[#000000D9] text-xs">{{ item.product_name }}</td>
+                    <td class="py-2 px-2 border-slate-200 text-center text-[#000000D9] font-normal text-xs">{{ item.unit || '—' }}</td>
                     <td class="py-2 px-2 border-slate-200 text-center">
                       <div class="inline-flex items-center border border-slate-300 rounded overflow-hidden shadow-2xs bg-white mx-auto">
                         <button 
@@ -1571,12 +1609,12 @@ const otherWarehouses = computed(() =>
                         </button>
                         <input 
                           type="number" 
-                          min="0"
+                          min="0" 
                           :value="item.well_balance"
                           :disabled="isCheckLocked"
                           :class="Number(item.well_balance) < 0 ? 'text-rose-600' : ''"
                           @change="e => onWellBalanceInput(item, e.target.value)"
-                          class="w-12 text-center text-xs px-1 py-0.5 outline-none font-medium text-[#000000D9]"
+                          class="w-12 text-center text-xs px-1 py-0.5 outline-none font-normal text-[#000000D9]"
                         />
                         <button 
                           type="button" 
@@ -1602,11 +1640,11 @@ const otherWarehouses = computed(() =>
                         </button>
                         <input 
                           type="number" 
-                          min="0"
+                          min="0" 
                           :value="item.stoke_take"
                           :disabled="isCheckLocked"
                           @change="e => onStokeTakeInput(item, e.target.value)"
-                          class="w-12 text-center text-xs px-1 py-0.5 outline-none font-medium text-[#000000D9]"
+                          class="w-12 text-center text-xs px-1 py-0.5 outline-none font-normal text-[#000000D9]"
                         />
                         <button 
                           type="button" 
@@ -1619,8 +1657,8 @@ const otherWarehouses = computed(() =>
                         </button>
                       </div>
                     </td>
-                    <td class="py-2 px-2 border-slate-200 text-center font-bold text-xs"
-                      :class="item.different_qty > 0 ? 'text-emerald-600' : item.different_qty < 0 ? 'text-rose-600' : 'text-[var(--pms-custom-theme,#006bdb)]'"
+                    <td class="py-2 px-2 border-slate-200 text-center font-semibold text-xs"
+                      :class="item.different_qty > 0 ? 'text-emerald-600' : item.different_qty < 0 ? 'text-rose-600' : 'text-[#000000D9]'"
                     >
                       {{ item.different_qty >= 0 ? '+' : '' }}{{ item.different_qty }}
                     </td>
@@ -1632,7 +1670,7 @@ const otherWarehouses = computed(() =>
                           :disabled="isCheckLocked"
                           @change="e => setDraftNote(item, e.target.value)"
                           placeholder="..." 
-                          class="w-full text-xs border border-slate-300 rounded-md px-2 py-1 pr-6 focus:outline-none focus:border-[var(--pms-custom-theme,#006bdb)] transition-all bg-white text-[#000000D9]"
+                          class="w-full text-xs border border-slate-300 rounded-md px-2 py-1 pr-6 focus:outline-none focus:border-[var(--pms-custom-theme,#006bdb)] transition-all bg-white text-[#000000D9] font-normal"
                         />
                         <button 
                           v-if="item.note && !isCheckLocked"
@@ -1641,7 +1679,7 @@ const otherWarehouses = computed(() =>
                           class="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full cursor-pointer border-none bg-transparent"
                           title="Xóa nhanh"
                         >
-                          <X class="w-3 h-3" />
+                          <X class="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </td>
@@ -1673,9 +1711,6 @@ const otherWarehouses = computed(() =>
             <button v-if="!isCheckLocked" @click="syncPreviousMonth" :disabled="isSaving" class="btn-pms-secondary flex items-center gap-1.5 h-8 px-4 disabled:opacity-50 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer" title="Lấy danh sách sản phẩm và tồn cuối tháng trước điền vào Tồn đầu kỳ & Thực tế">
               <BarChart2 class="w-3.5 h-3.5" /> {{ isSaving ? 'Đang lấy...' : 'Thống Kê' }}
             </button>
-            <button @click="closeCheckModal" class="btn-pms-close flex items-center gap-1.5 h-8 px-4 rounded-lg text-xs font-semibold cursor-pointer">
-              <X class="w-3.5 h-3.5" /> Đóng
-            </button>
           </div>
         </div>
       </div>
@@ -1687,8 +1722,8 @@ const otherWarehouses = computed(() =>
         <div class="relative bg-white rounded-xl shadow-2xl w-[420px] flex flex-col overflow-hidden border border-slate-200" :style="{ transform: 'translate(' + prodModalPos.x + 'px, ' + prodModalPos.y + 'px)' }">
           <LoadingOverlay :show="isSaving" />
           <div class="px-5 py-3 flex items-center justify-between shrink-0 shadow-sm text-white cursor-move select-none rounded-t-xl" @mousedown="startDragProdModal" style="background: var(--pms-custom-theme, #006bdb)">
-            <h3 class="text-white font-bold text-xs tracking-wide">Chọn Sản Phẩm</h3>
-            <button @click="showAddProductCheckModal = false" class="text-white/80 hover:text-white p-1 rounded-full transition-colors cursor-pointer border-none bg-transparent"><X class="w-4 h-4" /></button>
+            <h3 class="text-white font-semibold text-xs tracking-wide">Chọn Sản Phẩm</h3>
+            <button @click="showAddProductCheckModal = false" class="text-white/80 hover:text-white p-1 rounded-full transition-colors cursor-pointer border-none bg-transparent" title="Đóng (Esc)"><X class="w-4 h-4" /></button>
           </div>
           <div class="p-0 flex flex-col max-h-[60vh] overflow-y-auto bg-white hk-scroll">
             <table class="w-full text-left border-collapse text-xs">
@@ -1713,7 +1748,7 @@ const otherWarehouses = computed(() =>
                     <td class="py-2.5 px-4 cursor-pointer border-slate-200" @click="toggleOutlet(wh.id)">
                       <div class="flex items-center gap-2 select-none">
                         <div class="w-5 h-5 bg-[var(--pms-custom-theme,#006bdb)] flex items-center justify-center text-white text-xs leading-none pb-[1.5px] rounded-md shadow-sm font-bold">{{ expandedOutlets[wh.id] ? '-' : '+' }}</div>
-                        <span class="font-bold text-slate-800">{{ toTitleCase(wh.name) }}<template v-if="wh.code && !String(wh.code).startsWith('warehouse-')"> ({{ wh.code }})</template></span>
+                        <span class="font-semibold text-[#000000D9] text-xs">{{ toTitleCase(wh.name) }}<template v-if="wh.code && !String(wh.code).startsWith('warehouse-')"> ({{ wh.code }})</template></span>
                       </div>
                     </td>
                   </tr>
@@ -1728,7 +1763,7 @@ const otherWarehouses = computed(() =>
                         <td class="py-2.5 px-4 pl-8 cursor-pointer border-slate-200" @click="toggleCategory(cat.id)">
                           <div class="flex items-center gap-2 select-none">
                             <div class="w-4 h-4 bg-sky-600 flex items-center justify-center text-white text-xs leading-none pb-[1px] rounded-sm shadow-sm font-bold">{{ expandedCategories[cat.id] ? '-' : '+' }}</div>
-                            <span class="font-bold text-slate-700">{{ toTitleCase(cat.name) }}</span>
+                            <span class="font-semibold text-[#000000D9] text-xs">{{ toTitleCase(cat.name) }}</span>
                           </div>
                         </td>
                       </tr>
@@ -1738,7 +1773,7 @@ const otherWarehouses = computed(() =>
                           <td class="py-2.5 px-3 border-slate-200 text-center">
                             <input type="checkbox" :value="p.id" v-model="selectedProductIds" class="w-4 h-4 rounded border-slate-300 text-[var(--pms-custom-theme,#006bdb)] focus:ring-[var(--pms-custom-theme,#006bdb)] cursor-pointer" />
                           </td>
-                          <td class="py-2.5 px-4 pl-14 text-slate-700 font-normal select-none border-slate-200">{{ p.name }}</td>
+                          <td class="py-2.5 px-4 pl-14 text-[#000000D9] font-normal select-none border-slate-200 text-xs">{{ p.name }}</td>
                         </tr>
                       </template>
                     </template>
@@ -1748,13 +1783,10 @@ const otherWarehouses = computed(() =>
             </table>
           </div>
           <div class="px-5 py-3 border-t border-slate-200 bg-white flex justify-between items-center shrink-0">
-            <span class="text-xs text-slate-500 font-semibold">{{ selectedProductIds.length }} SP Được Chọn</span>
+            <span class="text-xs text-[#000000D9] font-semibold">{{ selectedProductIds.length }} SP Được Chọn</span>
             <div class="flex gap-2.5">
-              <button @click="showAddProductCheckModal = false" class="btn-pms-close flex items-center gap-1.5 h-8 px-4 rounded-lg text-xs font-semibold cursor-pointer">
-                <X class="w-3.5 h-3.5" /> Đóng
-              </button>
               <button @click="addProductsToCheck" :disabled="isSaving || !selectedProductIds.length" class="btn-pms-primary flex items-center gap-1.5 h-8 px-4 disabled:opacity-50 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer" title="Thêm vào phiếu kiểm kê (bấm Lưu ở phiếu để lưu)">
-                <Plus class="w-4 h-4" stroke-width="2.5" /> Thêm vào phiếu
+                <Plus class="w-4 h-4" stroke-width="2.5" /> Thêm
               </button>
             </div>
           </div>
@@ -1768,30 +1800,45 @@ const otherWarehouses = computed(() =>
         <div class="relative bg-white rounded-xl shadow-2xl w-[440px] flex flex-col overflow-hidden border border-slate-200" :style="{ transform: 'translate(' + transferModalPos.x + 'px, ' + transferModalPos.y + 'px)' }">
           <LoadingOverlay :show="isSaving" />
           <div class="px-5 py-3 flex items-center justify-between shadow-sm text-white cursor-move select-none rounded-t-xl" @mousedown="startDragTransferModal" style="background: var(--pms-custom-theme, #006bdb)">
-            <h3 class="text-white font-bold text-xs tracking-wide">Chuyển Kho</h3>
-            <button @click="showTransferModal = false" class="text-white/80 hover:text-white p-1 rounded-full transition-colors cursor-pointer border-none bg-transparent"><X class="w-4 h-4" /></button>
+            <h3 class="text-white font-semibold text-xs tracking-wide">Chuyển Kho</h3>
+            <button @click="showTransferModal = false" class="text-white/80 hover:text-white p-1 rounded-full transition-colors cursor-pointer border-none bg-transparent" title="Đóng (Esc)"><X class="w-4 h-4" /></button>
           </div>
           <div class="p-5 flex flex-col gap-4 bg-slate-50 text-xs">
             <div class="flex flex-col gap-1.5">
-              <label class="text-xs font-semibold text-slate-700">Sản Phẩm</label>
-              <input type="text" :value="transferProductLabel" disabled class="w-full text-xs h-8 border border-slate-200 rounded-lg px-3 bg-slate-100 text-slate-500 cursor-not-allowed outline-none font-medium" />
+              <label class="text-xs font-semibold text-[#000000D9]">Sản Phẩm</label>
+              <input type="text" :value="transferProductLabel" disabled class="w-full text-xs h-8 border border-slate-200 rounded-lg px-3 bg-slate-100 text-slate-500 cursor-not-allowed outline-none font-normal" />
             </div>
             <div class="grid grid-cols-2 gap-4">
               <div class="flex flex-col gap-1.5">
-                <label class="text-xs font-semibold text-slate-700">Kho Nguồn</label>
-                <input type="text" :value="toTitleCase(activeWarehouse?.name || '')" disabled class="w-full text-xs h-8 border border-slate-200 rounded-lg px-3 bg-slate-100 text-slate-500 cursor-not-allowed outline-none font-medium" />
+                <label class="text-xs font-semibold text-[#000000D9]">Kho Nguồn</label>
+                <input type="text" :value="toTitleCase(activeWarehouse?.name || '')" disabled class="w-full text-xs h-8 border border-slate-200 rounded-lg px-3 bg-slate-100 text-slate-500 cursor-not-allowed outline-none font-normal" />
               </div>
               <div class="flex flex-col gap-1.5">
-                <label class="text-xs font-semibold text-slate-700">Kho Đích <span class="text-rose-500 font-bold">*</span></label>
-                <select v-model="transferForm.transfer_to_warehouse_id" required class="input-required w-full text-xs h-8 rounded-lg px-3 outline-none font-medium text-[#000000D9]">
-                  <option :value="null">-- Chọn Kho Đích --</option>
-                  <option v-for="w in otherWarehouses" :key="w.id" :value="w.id">{{ toTitleCase(w.name) }}</option>
-                </select>
+                <label class="text-xs font-semibold text-[#000000D9]">Kho Đích <span class="text-rose-500 font-bold">*</span></label>
+                <div class="relative w-full">
+                  <select 
+                    v-model="transferForm.transfer_to_warehouse_id" 
+                    required 
+                    class="input-required w-full text-xs h-8 rounded-lg pl-3 pr-8 outline-none font-normal text-[#000000D9] bg-[#FFF8DB] border border-[#F1DD8A] focus:border-amber-400 cursor-pointer"
+                  >
+                    <option :value="null" disabled hidden>-- Chọn Kho Đích --</option>
+                    <option v-for="w in otherWarehouses" :key="w.id" :value="w.id">{{ toTitleCase(w.name) }}</option>
+                  </select>
+                  <button
+                    v-if="transferForm.transfer_to_warehouse_id !== null"
+                    type="button"
+                    @click="transferForm.transfer_to_warehouse_id = null"
+                    class="absolute right-6 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full cursor-pointer border-none bg-transparent"
+                    title="Xóa lựa chọn"
+                  >
+                    <X class="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
             </div>
             <div class="grid grid-cols-2 gap-4">
               <div class="flex flex-col gap-1.5">
-                <label class="text-xs font-semibold text-slate-700">Ngày</label>
+                <label class="text-xs font-semibold text-[#000000D9]">Ngày</label>
                 <SingleDatePicker
                   v-model="transferForm.date"
                   :start-date="transferForm.date || systemDate"
@@ -1801,15 +1848,37 @@ const otherWarehouses = computed(() =>
                 />
               </div>
               <div class="flex flex-col gap-1.5">
-                <label class="text-xs font-semibold text-slate-700">Số Lượng <span class="text-rose-500 font-bold">*</span></label>
-                <input type="number" min="0.001" required v-model="transferForm.quantity" placeholder="0" class="input-required w-full text-xs h-8 rounded-lg px-3 outline-none font-medium text-[#000000D9]" />
+                <label class="text-xs font-semibold text-[#000000D9]">Số Lượng <span class="text-rose-500 font-bold">*</span></label>
+                <div class="inline-flex items-center w-full h-8 border border-[#F1DD8A] rounded-lg overflow-hidden bg-[#FFF8DB] shadow-2xs">
+                  <button 
+                    type="button" 
+                    @click="transferForm.quantity = Math.max(1, Number(transferForm.quantity || 1) - 1)" 
+                    class="w-8 h-full flex items-center justify-center bg-amber-100/60 hover:bg-amber-200/80 text-amber-900 border-r border-[#F1DD8A] cursor-pointer select-none transition-colors"
+                    title="Giảm 1"
+                  >
+                    <Minus class="w-3.5 h-3.5" />
+                  </button>
+                  <input 
+                    type="number" 
+                    min="1" 
+                    required 
+                    v-model.number="transferForm.quantity" 
+                    placeholder="0" 
+                    class="w-full text-center text-xs h-full px-2 outline-none font-normal text-[#000000D9] bg-transparent" 
+                  />
+                  <button 
+                    type="button" 
+                    @click="transferForm.quantity = Number(transferForm.quantity || 0) + 1" 
+                    class="w-8 h-full flex items-center justify-center bg-amber-100/60 hover:bg-amber-200/80 text-amber-900 border-l border-[#F1DD8A] cursor-pointer select-none transition-colors"
+                    title="Tăng 1"
+                  >
+                    <Plus class="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
             </div>
           </div>
           <div class="px-5 py-3 border-t border-slate-200 bg-white flex justify-end gap-2.5">
-            <button @click="showTransferModal = false" class="btn-pms-close flex items-center gap-1.5 h-8 px-4 rounded-lg text-xs font-semibold cursor-pointer">
-              <X class="w-3.5 h-3.5" /> Đóng
-            </button>
             <button @click="submitTransfer" :disabled="isSaving || !transferForm.transfer_to_warehouse_id || !transferForm.quantity" class="btn-pms-primary flex items-center gap-1.5 h-8 px-4 disabled:opacity-50 rounded-lg text-xs font-semibold shadow-2xs cursor-pointer">
               <ArrowRightLeft class="w-3.5 h-3.5" /> {{ isSaving ? 'Đang xử lý...' : 'Chuyển Kho' }}
             </button>

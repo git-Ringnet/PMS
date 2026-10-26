@@ -286,6 +286,7 @@ class BookingRoomController extends Controller
                 'reason'          => 'nullable|string|max:500',
                 'guest_name'      => 'nullable|string|max:100',
                 'room_number'     => 'nullable|string',
+                'confirm_overbooking' => 'nullable|boolean',
                 'breakfast'       => 'nullable|boolean',
                 'is_day_use'      => 'nullable|boolean',
             ]);
@@ -305,6 +306,7 @@ class BookingRoomController extends Controller
                 'extra_bed_rate'  => 'nullable|numeric|min:0',
                 'note'            => 'nullable|string',
                 'room_number'     => 'nullable|string',
+                'confirm_overbooking' => 'nullable|boolean',
                 'breakfast'       => 'nullable|boolean',
                 'is_day_use'      => 'nullable|boolean',
             ]);
@@ -314,6 +316,44 @@ class BookingRoomController extends Controller
         $arrivalDate  = $validated['arrival_date'] ?? $bookingRoom->arrival_date->toDateString();
         $departureDate = $validated['departure_date'] ?? $bookingRoom->departure_date->toDateString();
         $roomClassId  = $validated['room_class_id'] ?? $bookingRoom->room_class_id;
+        $confirmOverbooking = (bool) ($validated['confirm_overbooking'] ?? false);
+        unset($validated['confirm_overbooking']);
+
+        $roomNumberChanged = array_key_exists('room_number', $validated)
+            && (string) $validated['room_number'] !== (string) $bookingRoom->room_number;
+        $targetPhysicalRoom = null;
+
+        if ($roomNumberChanged && filled($validated['room_number'])) {
+            $targetPhysicalRoom = Room::query()
+                ->physical()
+                ->where('room_number', $validated['room_number'])
+                ->first();
+
+            if (!$targetPhysicalRoom) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Chỉ được chuyển sang phòng vật lý đang tồn tại.',
+                ], 422);
+            }
+
+            if (!$isInhouse) {
+                if (
+                    array_key_exists('room_class_id', $validated)
+                    && (int) $validated['room_class_id'] !== (int) $targetPhysicalRoom->room_class_id
+                ) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Loại phòng gửi lên không khớp với phòng đích.',
+                    ], 422);
+                }
+
+                // Phòng vật lý là nguồn xác thực loại phòng khi kéo thả.
+                $validated['room_class_id'] = (int) $targetPhysicalRoom->room_class_id;
+                $roomClassId = (int) $targetPhysicalRoom->room_class_id;
+            }
+        }
+
+        $roomClassChanged = (int) $roomClassId !== (int) $bookingRoom->room_class_id;
 
         $parentArrival = $bookingRoom->booking->arrival_date->toDateString();
         $parentDeparture = $bookingRoom->booking->departure_date->toDateString();
@@ -345,15 +385,36 @@ class BookingRoomController extends Controller
             ], 422);
         }
 
-        // Validate AV nếu thay đổi ngày hoặc loại phòng
-        if (isset($validated['arrival_date']) || isset($validated['departure_date']) || isset($validated['room_class_id'])) {
-            $av = $this->avService->getAvailability($roomClassId, $arrivalDate, $departureDate, $roomId);
-            if ($av < 0 && !$this->allowOverAV()) {
+        // Validate AV nếu thay đổi ngày hoặc loại phòng. Khi chuyển khác loại,
+        // booking nguồn không thuộc loại đích nên phải trừ thêm một phòng dự kiến.
+        $wouldCauseOverbooking = false;
+        $projectedAv = null;
+        if (isset($validated['arrival_date']) || isset($validated['departure_date']) || $roomClassChanged) {
+            $requiresAdditionalTargetSlot = !$isInhouse && $roomClassChanged;
+            $av = $this->avService->getAvailability(
+                $roomClassId,
+                $arrivalDate,
+                $departureDate,
+                $requiresAdditionalTargetSlot ? null : $roomId
+            );
+            $projectedAv = $requiresAdditionalTargetSlot ? $av - 1 : $av;
+            $wouldCauseOverbooking = $projectedAv < 0;
+
+            if ($wouldCauseOverbooking && !$this->allowOverAV()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Không đủ phòng trống sau khi cập nhật. (AV = ' . $av . ')',
-                    'av'      => $av,
+                    'message' => 'Không đủ phòng trống sau khi cập nhật. (AV = ' . $projectedAv . ')',
+                    'av'      => $projectedAv,
                 ], 422);
+            }
+
+            if ($wouldCauseOverbooking && $requiresAdditionalTargetSlot && !$confirmOverbooking) {
+                return response()->json([
+                    'success' => false,
+                    'code' => 'overbooking_confirmation_required',
+                    'message' => 'Chuyển sang loại phòng đích sẽ làm âm phòng trống (AV = ' . $projectedAv . '). Bạn có muốn tiếp tục?',
+                    'av' => $projectedAv,
+                ], 409);
             }
         }
 
@@ -362,8 +423,6 @@ class BookingRoomController extends Controller
         if (!empty($targetRoomNumber)) {
             $datesChanged = (isset($validated['arrival_date']) && $validated['arrival_date'] !== $bookingRoom->arrival_date->toDateString())
                 || (isset($validated['departure_date']) && $validated['departure_date'] !== $bookingRoom->departure_date->toDateString());
-            $roomNumberChanged = (isset($validated['room_number']) && $validated['room_number'] !== $bookingRoom->room_number);
-
             if ($datesChanged || $roomNumberChanged) {
                 if ($this->avService->isRoomNumberOccupied($targetRoomNumber, $arrivalDate, $departureDate, $roomId, $bookingId)) {
                     return response()->json([
@@ -460,8 +519,8 @@ class BookingRoomController extends Controller
 
         $bookingRoom->load(['roomClass', 'room']);
 
-        $warning = (isset($av) && $av < 0 && $this->allowOverAV())
-            ? 'Cảnh báo: Số phòng trống của loại phòng đã bị âm (AV = ' . $av . '). Vẫn ghi nhận lưu theo cấu hình hệ thống.'
+        $warning = ($wouldCauseOverbooking && $this->allowOverAV())
+            ? 'Cảnh báo: Số phòng trống của loại phòng đã bị âm (AV = ' . $projectedAv . '). Vẫn ghi nhận lưu theo cấu hình hệ thống.'
             : null;
 
         try {
@@ -800,6 +859,13 @@ class BookingRoomController extends Controller
     // =========================================
     public function checkIn(Request $request, $bookingId, $roomId)
     {
+        $request->validate([
+            'confirmed'                  => 'nullable|boolean',
+            'post_day_use_room_charge'   => 'nullable|boolean',
+            'arrival_time'               => 'nullable|date_format:H:i',
+            'check_in_time'              => 'nullable|date_format:H:i',
+        ]);
+
         $bookingRoom = BookingRoom::where('booking_id', $bookingId)->with('booking')->findOrFail($roomId);
         $booking     = $bookingRoom->booking;
         $systemDate  = $this->avService->getSystemDate();
@@ -872,6 +938,7 @@ class BookingRoomController extends Controller
                                 return response()->json([
                                     'success'            => true,
                                     'needs_confirmation' => true,
+                                    'confirmation_type'  => 'room_status',
                                     'room_status'        => $currentCode,
                                     'message'            => 'Phòng ' . $bookingRoom->room_number . ' đang ở trạng thái ' . $label . '. Bạn có muốn tiếp tục nhận phòng không?',
                                 ], 200);
@@ -924,11 +991,58 @@ class BookingRoomController extends Controller
             }
         }
 
+        // Dòng 323: phòng Day Use đến và đi trong ngày phải có quyết định
+        // rõ ràng của người dùng trước khi check-in. Không ghi trạng thái hay
+        // phát sinh bill ở response xác nhận này.
+        $isDayUseSameDay = (bool) ($bookingRoom->is_day_use || $booking?->is_day_use)
+            && $bookingRoom->arrival_date
+            && $bookingRoom->departure_date
+            && $bookingRoom->arrival_date->isSameDay($bookingRoom->departure_date);
+        if ($isDayUseSameDay && !$request->has('post_day_use_room_charge')) {
+            return response()->json([
+                'success'            => true,
+                'needs_confirmation' => true,
+                'confirmation_type'  => 'day_use_room_charge',
+                'day_use_room'       => [
+                    'booking_room_id' => $bookingRoom->id,
+                    'room_number'     => $bookingRoom->room_number,
+                    'arrival_date'    => $bookingRoom->arrival_date->toDateString(),
+                    'departure_date'  => $bookingRoom->departure_date->toDateString(),
+                ],
+                'message' => 'Các phòng sau đây đến và đi trong ngày: ' . $bookingRoom->room_number . '. Bạn có muốn thêm tiền phòng vào hóa đơn không?',
+            ]);
+        }
+
+        $postDayUseRoomCharge = $isDayUseSameDay && $request->boolean('post_day_use_room_charge');
+        if ($postDayUseRoomCharge && ($booking->no_post || $bookingRoom->no_post)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Phòng đang ở trạng thái No Post. Chọn Không để chỉ nhận phòng, hoặc tắt No Post trước khi post tiền phòng.',
+            ], 422);
+        }
+
+        if ($postDayUseRoomCharge) {
+            $user = $request->user();
+            $branchId = $request->attributes->get('_branch_id');
+            $canPostRoomCharge = $user && (
+                $user->hasPermission('fo.service.add', $branchId)
+                || $user->hasPermission('fo.service.edit', $branchId)
+            );
+            if (!$canPostRoomCharge) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Bạn không có quyền post tiền phòng. Chọn Không để chỉ nhận phòng.',
+                    'required_permissions' => ['fo.service.add', 'fo.service.edit'],
+                ], 403);
+            }
+        }
+
         $currentUser = Auth::user()?->username ?? 'system';
         $checkInTime = $request->input('arrival_time')
             ?: ($request->input('check_in_time') ?: now()->format('H:i:s'));
         $checkInDate = $systemDate->toDateString();
 
+        $roomChargeResult = null;
         DB::beginTransaction();
         try {
             $bookingRoom->update([
@@ -982,7 +1096,30 @@ class BookingRoomController extends Controller
             // phòng và check-in một phần dùng cùng một invariant.
             $this->bookingStatusSyncService->sync($booking);
 
+            if ($postDayUseRoomCharge) {
+                // Dùng đúng luồng post RM hiện hữu để giữ giá, thuế, Master
+                // Room Rate, RoomNightBill và chống trùng đồng nhất. Transaction
+                // lồng nhau của Laravel nằm trong transaction check-in này.
+                $roomChargeRequest = Request::create('', 'POST', [
+                    'booking_room_id' => $bookingRoom->id,
+                    'date_from'       => $systemDate->toDateString(),
+                    'date_to'         => $systemDate->toDateString(),
+                    'mode'            => 'auto',
+                    'folio'           => 1,
+                    'currency'        => 'VND',
+                ]);
+                $roomChargeResponse = app(BookingRoomServiceController::class)
+                    ->postRoomCharge($roomChargeRequest);
+                $roomChargeResult = $roomChargeResponse->getData(true);
+                if ($roomChargeResponse->getStatusCode() >= 400 || !($roomChargeResult['success'] ?? false)) {
+                    throw new \DomainException($roomChargeResult['message'] ?? 'Không thể post tiền phòng Day Use.');
+                }
+            }
+
             DB::commit();
+        } catch (\DomainException $e) {
+            DB::rollBack();
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json(['success' => false, 'message' => 'Lỗi: ' . $e->getMessage()], 500);
@@ -993,10 +1130,16 @@ class BookingRoomController extends Controller
             \App\Services\ActivityLogService::logCheckIn($bCode, $bookingRoom->room_number, $request);
         } catch (\Throwable $e) {}
 
+        $message = 'Giao phòng thành công!';
+        if ($postDayUseRoomCharge) {
+            $message .= ' ' . ($roomChargeResult['message'] ?? 'Đã xử lý tiền phòng Day Use.');
+        }
+
         return response()->json([
             'success' => true,
             'data'    => $bookingRoom->fresh()->load(['roomClass', 'room']),
-            'message' => 'Giao phòng thành công!',
+            'room_charge' => $roomChargeResult,
+            'message' => $message,
         ]);
     }
 
@@ -1940,6 +2083,25 @@ class BookingRoomController extends Controller
      * GET /bookings/{bookingId}/rooms/{roomId}/move-target-rooms
      * Lấy danh sách phòng trống khả dụng & phòng inhouse cho phép gộp
      */
+    /**
+     * Số phòng vật lý đang có khách In-House (đã check-in, chưa check-out),
+     * không phụ thuộc ngày đi dự kiến.
+     *
+     * @return array<string, int> room_number => index
+     */
+    private function inHouseRoomNumbers(int|string $excludeBookingRoomId): array
+    {
+        return BookingRoom::where('id', '!=', $excludeBookingRoomId)
+            ->stayOnly()
+            ->where('status', BookingRoom::STATUS_CHECKED_IN)
+            ->whereNotNull('room_number')
+            ->where('room_number', '!=', '')
+            ->pluck('room_number')
+            ->unique()
+            ->flip()
+            ->all();
+    }
+
     public function getMoveTargetRooms($bookingId, $roomId)
     {
         $bookingRoom = BookingRoom::where('booking_id', $bookingId)
@@ -1965,6 +2127,7 @@ class BookingRoomController extends Controller
             ->get();
 
         $ratesMap = \App\Models\StandardRate::all()->keyBy('room_class_id');
+        $inHouseRoomNumbers = $this->inHouseRoomNumbers($bookingRoom->id);
 
         $availableRooms = [];
         $statusLabels = [
@@ -1982,6 +2145,10 @@ class BookingRoomController extends Controller
         ];
 
         foreach ($allRooms as $room) {
+            // Note 30/09: phòng đang có khách ở chưa check out (kể cả quá ngày đi) không phải phòng trống.
+            if (isset($inHouseRoomNumbers[$room->room_number])) {
+                continue;
+            }
             $isOccupied = $this->avService->isRoomNumberOccupied(
                 $room->room_number,
                 $effectiveStartDate,
@@ -2231,6 +2398,13 @@ class BookingRoomController extends Controller
             $physicalRoom = \App\Models\Room::where('room_number', $targetRoomNumber)->first();
             if (!$physicalRoom) {
                 return response()->json(['success' => false, 'message' => "Không tìm thấy số phòng {$targetRoomNumber} trong hệ thống."], 422);
+            }
+
+            if (isset($this->inHouseRoomNumbers($bookingRoom->id)[$targetRoomNumber])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Phòng {$targetRoomNumber} đang có khách ở chưa check out, không thể chuyển phòng.",
+                ], 422);
             }
 
             // Kiểm tra trạng thái phòng đích

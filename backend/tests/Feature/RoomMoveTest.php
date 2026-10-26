@@ -1077,6 +1077,37 @@ class RoomMoveTest extends TestCase
         $this->assertLessThan($idx1002, $idx102, 'Thứ tự phòng phải sắp xếp tự nhiên theo số từ nhỏ đến lớn');
     }
 
+    public function test_inhouse_room_past_departure_is_not_an_available_move_target()
+    {
+        Room::where('room_number', '103')->update(['room_status_code' => 'vacant_ready']);
+        $booking = Booking::create([
+            'booking_name' => 'Mover', 'booking_date' => '2026-07-14', 'arrival_date' => '2026-07-14',
+            'departure_date' => '2026-07-17', 'status' => 0, 'created_by' => 'admin_test',
+        ]);
+        $bookingRoom = BookingRoom::create([
+            'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id, 'room_number' => '101',
+            'arrival_date' => '2026-07-14', 'departure_date' => '2026-07-17', 'status' => BookingRoom::STATUS_CHECKED_IN,
+        ]);
+        // Khách phòng 103 đã quá ngày đi nhưng chưa check out: không trùng giai đoạn nhưng vẫn In-House.
+        $overstay = Booking::create([
+            'booking_name' => 'Overstay', 'booking_date' => '2026-07-10', 'arrival_date' => '2026-07-10',
+            'departure_date' => '2026-07-13', 'status' => 0, 'created_by' => 'admin_test',
+        ]);
+        BookingRoom::create([
+            'booking_id' => $overstay->id, 'room_class_id' => $this->roomClass->id, 'room_number' => '103',
+            'arrival_date' => '2026-07-10', 'departure_date' => '2026-07-13', 'status' => BookingRoom::STATUS_CHECKED_IN,
+        ]);
+
+        $available = collect($this->getJson("/api/bookings/{$booking->id}/rooms/{$bookingRoom->id}/move-target-rooms")
+            ->assertOk()->json('data.available_rooms'))->pluck('room_number');
+        $this->assertNotContains('103', $available);
+
+        $this->postJson("/api/bookings/{$booking->id}/rooms/{$bookingRoom->id}/move", [
+            'move_type' => 'available', 'target_room_number' => '103', 'reason' => 'Test',
+        ])->assertStatus(422)->assertJsonPath('message', 'Phòng 103 đang có khách ở chưa check out, không thể chuyển phòng.');
+        $this->assertSame('101', $bookingRoom->fresh()->room_number);
+    }
+
     public function test_move_targets_lists_all_physical_inhouse_rooms_and_marks_merge_eligibility()
     {
         $roomFormId = $this->room101->room_form_id;

@@ -411,4 +411,28 @@ class CheckoutBusinessRulesTest extends TestCase
         $this->postJson("/api/booking-rooms/{$this->room->id}/children/{$child->id}/checkout")->assertSuccessful();
         $this->assertDatabaseHas('booking_children', ['id' => $child->id, 'child_status' => BookingRoomGuest::STATUS_CHECKED_OUT]);
     }
+
+    public function test_partial_checkout_updates_guest_counts_on_booking_room(): void
+    {
+        $this->room->update(['adults' => 2, 'children_qty' => 1, 'babies' => 1]);
+        $secondGuest = Guest::create(['full_name' => 'Second guest']);
+        BookingRoomGuest::create(['booking_room_id' => $this->room->id, 'guest_id' => $secondGuest->id, 'status' => BookingRoomGuest::STATUS_CHECKED_IN, 'is_primary' => false]);
+        $child = BookingChild::create([
+            'booking_id' => $this->booking->id, 'booking_room_id' => $this->room->id,
+            'full_name' => 'Child', 'age_group' => 'child', 'child_status' => BookingRoomGuest::STATUS_CHECKED_IN,
+        ]);
+        $baby = BookingChild::create([
+            'booking_id' => $this->booking->id, 'booking_room_id' => $this->room->id,
+            'full_name' => 'Baby', 'age_group' => 'baby', 'child_status' => BookingRoomGuest::STATUS_CHECKED_IN,
+        ]);
+
+        // Checkout 1 trong 2 người lớn: phòng vẫn đang ở, adults 2 → 1.
+        $this->postJson("/api/booking-rooms/{$this->room->id}/checkout", ['guest_ids' => [$secondGuest->id]])->assertSuccessful();
+        $this->assertDatabaseHas('booking_rooms', ['id' => $this->room->id, 'status' => BookingRoom::STATUS_CHECKED_IN, 'adults' => 1]);
+
+        // Checkout trẻ em và em bé: trừ đúng cột theo nhóm tuổi.
+        $this->postJson("/api/booking-rooms/{$this->room->id}/children/{$child->id}/checkout")->assertSuccessful();
+        $this->postJson("/api/booking-rooms/{$this->room->id}/children/{$baby->id}/checkout")->assertSuccessful();
+        $this->assertDatabaseHas('booking_rooms', ['id' => $this->room->id, 'adults' => 1, 'children_qty' => 0, 'babies' => 0]);
+    }
 }

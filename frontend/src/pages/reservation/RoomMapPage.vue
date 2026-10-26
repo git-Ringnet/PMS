@@ -1,12 +1,14 @@
 <script setup>
 import { ref, computed, onMounted, watch, onBeforeUnmount, nextTick } from 'vue'
+import { toPng } from 'html-to-image'
 import { useRouter, useRoute } from 'vue-router'
 import { useRoomStore } from '@/stores/room-store'
 import { ROOM_STATUSES, ROOM_STATUS_CODES, ROOM_STATUS_ICON_MAP, roomService } from '@/services/room-service'
+import { housekeepingStatistics, isLockedRoom as isHousekeepingLocked } from '@/pages/reservation/room-map-housekeeping-stats'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
 import { usePermission } from '@/composables/usePermission'
-import { lockRoomMove as apiLockRoomMove, unlockRoomMove as apiUnlockRoomMove, fetchSystemDate, checkInRoom, undoCheckInRoom, fetchBooking, fetchPaymentMethods, fetchCurrencies, fetchHotelSettings } from '@/services/booking-service'
+import { lockRoomMove as apiLockRoomMove, unlockRoomMove as apiUnlockRoomMove, fetchSystemDate, checkInRoomWithConfirmations, undoCheckInRoom, fetchBooking, fetchPaymentMethods, fetchCurrencies, fetchHotelSettings } from '@/services/booking-service'
 import { t } from '@/utils/i18n'
 import { TEXT_THEME } from '@/utils/theme'
 import BookingDetailModal from '@/components/BookingDetailModal.vue'
@@ -141,8 +143,9 @@ const bulkStatusOptions = [
   { code: 'turndown', label: 'Lau dọn', icon: 'checkout', iconClass: 'text-sky-500' },
   { code: 'ooo', label: 'Phòng OOO', icon: 'ooo', iconClass: 'text-amber-500' },
   { code: 'oos', label: 'Phòng OOS', icon: 'oos', iconClass: 'text-sky-500' },
-  { code: 'vacant_priority', label: 'Phòng ưu tiên', icon: 'priority', iconClass: 'text-sky-500' },
-  { code: 'dnd', label: 'Phòng không làm phiền', icon: 'dnd', iconClass: 'text-sky-500' },
+  { code: 'is_housekeeping_service', label: 'Dịch vụ dọn phòng', icon: 'housekeeping-service', iconClass: 'text-sky-500', isHousekeepingFlag: true },
+  { code: 'is_priority_cleaning', label: 'Phòng ưu tiên dọn', icon: 'priority', iconClass: 'text-sky-500', isHousekeepingFlag: true },
+  { code: 'is_do_not_disturb', label: 'Phòng không làm phiền', icon: 'dnd', iconClass: 'text-sky-500', isHousekeepingFlag: true },
 ]
 
 const settings = ref({
@@ -342,6 +345,17 @@ function handleClickOutsideSettings(event) {
 // Top toggle state: isFuture (false = Hiện tại, true = Tương Lai)
 const isFuture = ref(false)
 const rawDate = ref(authStore.systemDate || localStorage.getItem('pms_system_date') || new Date().toISOString().split('T')[0])
+const roomGridRef = ref(null)
+const exportingImage = ref(false)
+
+const currentSystemDate = () => String(systemDate.value || authStore.systemDate || localStorage.getItem('pms_system_date') || new Date().toISOString()).slice(0, 10)
+const addDaysToIsoDate = (isoDate, days) => {
+  const [year, month, day] = String(isoDate).slice(0, 10).split('-').map(Number)
+  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10)
+}
+const futureMinDate = computed(() => addDaysToIsoDate(currentSystemDate(), 1))
+// Xem tương lai: ngày đang xem sau ngày hệ thống → room map chỉ để xem, khóa mọi thao tác.
+const isFutureView = computed(() => String(rawDate.value || '').slice(0, 10) > currentSystemDate())
 
 // Bottom toggle state: isGridMode (true = Bảng, false = Lưới)
 const isGridMode = ref(true)
@@ -409,10 +423,47 @@ const selectedDate = computed(() => {
 })
 
 watch(isFuture, (newVal) => {
-  if (!newVal) {
-    rawDate.value = systemDate.value || authStore.systemDate || localStorage.getItem('pms_system_date') || new Date().toISOString().split('T')[0]
+  if (newVal) {
+    if (!isFutureView.value) rawDate.value = futureMinDate.value
+    closeContextMenu()
+    selectedRoomIds.value = []
+    return
   }
+  rawDate.value = systemDate.value || authStore.systemDate || localStorage.getItem('pms_system_date') || new Date().toISOString().split('T')[0]
 })
+
+// Chọn ngày tương lai ở bộ lọc cũng bật chế độ tương lai (và ngược lại).
+watch(isFutureView, (future) => {
+  if (isFuture.value !== future) isFuture.value = future
+})
+
+async function exportRoomMapImage() {
+  const node = roomGridRef.value
+  if (!node || exportingImage.value) return
+  exportingImage.value = true
+  closeContextMenu()
+  hoverTooltip.value.show = false
+  try {
+    const width = node.scrollWidth
+    const height = node.scrollHeight
+    const dataUrl = await toPng(node, {
+      width,
+      height,
+      pixelRatio: 2,
+      backgroundColor: '#ffffff',
+      style: { overflow: 'visible', width: `${width}px`, height: `${height}px`, maxHeight: 'none', animation: 'none' },
+    })
+    const anchor = document.createElement('a')
+    anchor.href = dataUrl
+    anchor.download = `room-map_${String(rawDate.value).slice(0, 10)}.png`
+    anchor.click()
+  } catch (error) {
+    console.error('exportRoomMapImage error:', error)
+    uiStore.showToast('Không thể xuất ảnh room map.', 'error')
+  } finally {
+    exportingImage.value = false
+  }
+}
 
 watch(rawDate, async () => {
   if (isInitialLoad.value || currentTab.value === 'room-plan') return
@@ -466,11 +517,7 @@ const occupancyRateStats = computed(() => {
 // Popup dùng cùng kết quả công suất từ API với thẻ Room Map để không lệch công thức nghiệp vụ.
 const roomMapStatistics = computed(() => {
   const rooms = roomStore.rooms || []
-  const isLocked = (room) => ['ooo', 'oos', 'occupied_ooo'].includes(room.room_status_code)
-    || ['OOO', 'OOS'].includes(room.lock_type)
-  const isDirty = (room) => ['vacant_dirty', 'occupied_dirty'].includes(room.room_status_code)
-    || room.status === ROOM_STATUSES.DIRTY
-    || room.is_clean === false
+  const isLocked = isHousekeepingLocked
   const isOccupied = (room) => room.booking_status === 'occupied'
   const isCheckout = (room) => room.booking_status === 'checkout'
   const isArrival = (room) => room.booking_status === 'reserved'
@@ -501,12 +548,7 @@ const roomMapStatistics = computed(() => {
     ooo: apiStat('ooo'),
     oos: apiStat('oos'),
     saleableRooms: apiStat('saleable_rooms', saleable.length),
-    occupiedReady: occupied.filter(room => !isDirty(room)).length,
-    vacantReady: rooms.filter(room => !room.booking_status && !isLocked(room) && !isDirty(room)).length,
-    occupiedClean: occupied.filter(room => room.room_status_code === 'occupied_clean').length,
-    vacantClean: rooms.filter(room => room.room_status_code === 'vacant_clean').length,
-    occupiedDirty: currentStay.filter(isDirty).length,
-    vacantDirty: rooms.filter(room => !room.booking_status && !isLocked(room) && isDirty(room)).length,
+    ...housekeepingStatistics(rooms),
     pendingCheckoutRooms: apiStat('departures_pending', checkout.length),
     pendingCheckoutPax: apiStat('departures_pending_pax', occupiedPax(checkout)),
     checkedOutRooms: Number(roomStore.stats?.departures_checked_out) || 0,
@@ -582,33 +624,13 @@ async function handleQuickCheckIn() {
   const room = quickCheckinRoom.value
   quickCheckinLoading.value = true
   try {
-    const res = await checkInRoom(room.booking_id, room.booking_room_id)
-    if (res.data?.needs_confirmation) {
-      const dirtyConfirmed = await uiStore.confirm({
-        title: 'Phòng đang chờ kiểm tra',
-        message: res.data.message || `Phòng ${room.room_number} đang ở trạng thái chờ kiểm tra. Bạn có muốn tiếp tục nhận phòng không?`,
-        confirmText: 'Tiếp tục nhận phòng',
-        cancelText: 'Hủy'
-      })
-      if (!dirtyConfirmed) {
-        quickCheckinLoading.value = false
-        return
-      }
-      const res2 = await checkInRoom(room.booking_id, room.booking_room_id, { confirmed: true })
-      if (res2.data && res2.data.success !== false && !res2.data.needs_confirmation) {
-        uiStore.showToast(`Nhận phòng nhanh ${room.room_number} thành công!`, 'success')
-        showQuickCheckinModal.value = false
-        quickCheckinRoom.value = null
-        await roomStore.fetchRooms({ date: rawDate.value, silent: true })
-        await roomStore.fetchStats(rawDate.value)
-      } else {
-        const msg = res2.data?.message || 'Không thể nhận phòng.'
-        uiStore.showToast(msg, 'error')
-      }
-      return
-    }
+    const res = await checkInRoomWithConfirmations(room.booking_id, room.booking_room_id, {
+      roomNumber: room.room_number,
+      confirm: options => uiStore.confirm(options),
+    })
+    if (!res) return
 
-    if (res.data && res.data.success !== false) {
+    if (res?.data && res.data.success !== false && !res.data.needs_confirmation) {
       uiStore.showToast(`Nhận phòng nhanh ${room.room_number} thành công!`, 'success')
       showQuickCheckinModal.value = false
       quickCheckinRoom.value = null
@@ -1098,8 +1120,8 @@ const displayedTableRooms = computed(() => {
         if (val === 'ooo') return icon === 'ooo' || code === 'ooo' || code === 'occupied_ooo'
         if (val === 'oos') return icon === 'oos' || code === 'oos'
         if (val === 'checkout') return icon === 'checkout' || r.booking_status === 'checkout'
-        if (val === 'priority') return icon === 'priority' || r.is_priority || code === 'vacant_priority'
-        if (val === 'dnd') return icon === 'dnd' || r.is_dnd || code === 'dnd'
+        if (val === 'priority') return r.is_priority_cleaning || code === 'vacant_priority'
+        if (val === 'dnd') return r.is_do_not_disturb || code === 'dnd'
         return icon === val || code === val
       })
     })
@@ -1243,7 +1265,17 @@ async function bulkUpdateRoomStatus() {
   isBulkUpdating.value = true
   try {
     const selectedRooms = roomStore.rooms.filter(room => selectedRoomIds.value.includes(room.id))
-    if (['ooo', 'oos'].includes(bulkRoomStatus.value)) {
+    const isHousekeepingFlag = ['is_housekeeping_service', 'is_priority_cleaning', 'is_do_not_disturb'].includes(bulkRoomStatus.value)
+    if (isHousekeepingFlag) {
+      const enabled = !selectedRooms.every(room => Boolean(room[bulkRoomStatus.value]))
+      await roomService.bulkUpdateRoomHousekeepingFlags(
+        selectedRooms.map(room => room.id),
+        { [bulkRoomStatus.value]: enabled },
+        moduleContext.value,
+      )
+      await roomStore.fetchRooms({ date: rawDate.value })
+      await roomStore.fetchStats(rawDate.value)
+    } else if (['ooo', 'oos'].includes(bulkRoomStatus.value)) {
       const now = new Date()
       const date = String(rawDate.value || new Date().toISOString()).substring(0, 10)
       const time = now.toTimeString().substring(0, 8)
@@ -1404,28 +1436,22 @@ function shouldShowSparkles(room) {
 }
 
 
-// Dòng 57 FIX FE: Hai icon Không làm phiền (DND) và Phòng ưu tiên (Priority) chuyển lên góc phải của phòng và làm nổi bật
-function getTopRightSpecialIcon(room) {
-  if (!room) return null
-  const code = room.room_status_code
-  if (code === 'dnd' || room.status === 'dnd' || room.is_dnd) return 'dnd'
-  if (code === 'vacant_priority' || room.status === 'reserved' || room.is_priority) return 'priority'
-  return null
-}
+// Dòng 363: Các chỉ báo buồng phòng độc lập với tình trạng phòng thực tế.
+function getTopRightSpecialIcons(room) {
+  if (!room) return []
 
-function getTopRightSpecialIconClass(iconName) {
-  if (iconName === 'dnd') {
-    return 'text-red-600 bg-white border border-red-200 shadow-xs'
-  }
-  if (iconName === 'priority') {
-    return 'text-amber-600 bg-white border border-amber-300 shadow-xs'
-  }
-  return 'text-slate-700 bg-white'
+  const code = room.room_status_code
+  return [
+    (room.is_housekeeping_service || code === 'housekeeping') && 'housekeeping-service',
+    (room.is_priority_cleaning || code === 'vacant_priority') && 'priority',
+    (room.is_do_not_disturb || code === 'dnd') && 'dnd',
+  ].filter(Boolean)
 }
 
 function getTopRightSpecialIconTitle(iconName) {
+  if (iconName === 'housekeeping-service') return 'Dịch vụ dọn phòng'
+  if (iconName === 'priority') return 'Phòng ưu tiên dọn'
   if (iconName === 'dnd') return 'Phòng không làm phiền (DND)'
-  if (iconName === 'priority') return 'Phòng ưu tiên'
   return ''
 }
 
@@ -1440,8 +1466,8 @@ function getRoomStatusIconName(room, forCardBottom = true) {
   // Dùng room_status_code từ API (nguồn duy nhất, không đoán mò)
   const code = room.room_status_code
   if (code && Object.prototype.hasOwnProperty.call(ROOM_STATUS_ICON_MAP, code)) {
-    // Dòng 57: Hai icon dnd và priority đã chuyển lên góc trên bên phải của card
-    if (forCardBottom && (code === 'dnd' || code === 'vacant_priority')) return null
+    // Các mã cũ vẫn chỉ hiển thị tại góc phải để tương thích dữ liệu chưa được sửa trạng thái thực tế.
+    if (forCardBottom && ['housekeeping', 'dnd', 'vacant_priority'].includes(code)) return null
     return ROOM_STATUS_ICON_MAP[code]   // null = không hiển thị icon
   }
 
@@ -1470,6 +1496,11 @@ function getRoomStatusIconClass(room, forCardBottom = true) {
   return 'text-slate-600'
 }
 
+function getRoomMapStatusIcons(room) {
+  const statusIcon = getRoomStatusIconName(room)
+  return [...new Set([statusIcon, ...getTopRightSpecialIcons(room)].filter(Boolean))]
+}
+
 
 function getStatusIconSize(room) {
   let size = 20
@@ -1481,7 +1512,7 @@ function getStatusIconSize(room) {
     size = settings.value.iconSizes.group2
   } else if (room.status === ROOM_STATUSES.AVAILABLE) {
     size = settings.value.iconSizes.group2
-  } else if (room.status === ROOM_STATUSES.RESERVED || room.room_status_code === 'vacant_priority' || room.room_status_code === 'dnd' || room.is_priority || room.is_dnd) {
+  } else if (getTopRightSpecialIcons(room).length > 0) {
     size = settings.value.iconSizes.group5
   } else if (room.status === ROOM_STATUSES.OCCUPIED) {
     size = settings.value.iconSizes.group2
@@ -1741,6 +1772,10 @@ const statusItems = [
 
 function handleContextMenu(event, room) {
   event.preventDefault()
+  if (isFutureView.value) {
+    closeContextMenu()
+    return
+  }
   lastFocusedRoom.value = room
   if (tooltipTimeout) clearTimeout(tooltipTimeout)
   hoverTooltip.value.show = false
@@ -1877,6 +1912,7 @@ function handleRoomMapShortcut(event) {
     return
   }
 
+  if (isFutureView.value) return
   const key = String(event.key || '').toLowerCase()
   if (!['b', 'g', 'c', 'i', '1', '2', '3'].includes(key)) return
 
@@ -2240,6 +2276,39 @@ async function submitRoomLock(force = false) {
   }
 }
 
+async function toggleHousekeepingFlag(room, flag) {
+  if (!canChangeRoomStatus.value) {
+    uiStore.showToast('User không có quyền đổi trạng thái phòng tại module này.', 'warning')
+    return
+  }
+
+  const labels = {
+    is_housekeeping_service: 'Dịch vụ dọn phòng',
+    is_priority_cleaning: 'Phòng ưu tiên dọn',
+    is_do_not_disturb: 'Phòng không làm phiền',
+  }
+  const enabled = !Boolean(room?.[flag])
+  const label = labels[flag]
+  if (!room || !label) return
+
+  closeContextMenu()
+  const confirmed = await uiStore.confirm({
+    title: enabled ? 'Bật chỉ báo buồng phòng' : 'Tắt chỉ báo buồng phòng',
+    message: `${enabled ? 'Bật' : 'Tắt'} “${label}” cho phòng ${room.room_number}?`,
+    confirmText: t('roomMap.filterTitle') === 'Filters' ? 'Agree' : 'Đồng ý',
+    cancelText: t('roomMap.filterTitle') === 'Filters' ? 'Cancel' : 'Hủy bỏ',
+  })
+
+  if (!confirmed) return
+
+  try {
+    await roomStore.updateRoomHousekeepingFlags(room.id, { [flag]: enabled }, moduleContext.value)
+    uiStore.showToast(`${enabled ? 'Đã bật' : 'Đã tắt'} ${label} cho phòng ${room.room_number}.`, 'success')
+  } catch (err) {
+    uiStore.showToast(err.response?.data?.message || 'Không thể cập nhật chỉ báo buồng phòng.', 'error')
+  }
+}
+
 async function changeRoomStatus(room, roomStatusCode) {
   if (!canChangeRoomStatus.value) {
     uiStore.showToast('User không có quyền đổi trạng thái phòng tại module này.', 'warning')
@@ -2448,10 +2517,27 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
               </div>
               <div class="flex flex-col">
                 <span class="text-[12px] leading-tight" :class="TEXT_THEME.statsValue">{{ selectedDate }}</span>
-                <span class="text-[9.5px] uppercase mt-0.5" :class="TEXT_THEME.statsLabel">{{ t('roomMap.current')
+                <span v-if="isFutureView" class="text-[9.5px] uppercase mt-0.5 text-amber-600 font-semibold">Tương lai</span>
+                <span v-else class="text-[9.5px] uppercase mt-0.5" :class="TEXT_THEME.statsLabel">{{ t('roomMap.current')
                   }}</span>
               </div>
             </button>
+
+            <!-- Xem room map tương lai: mặc định ngày hệ thống + 1, chỉ xem -->
+            <div class="flex items-center gap-2 shrink-0 rounded-lg border bg-white px-2.5 py-1.5 shadow-xs"
+              :class="isFuture ? 'border-amber-300 bg-amber-50/60' : 'border-slate-200/80'">
+              <label class="flex items-center gap-1.5 cursor-pointer select-none text-xs font-semibold text-[#000000D9]">
+                <button type="button" role="switch" :aria-checked="isFuture" title="Xem room map tương lai"
+                  class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border-none cursor-pointer transition-colors"
+                  :class="isFuture ? 'bg-amber-500' : 'bg-slate-300'" @click="isFuture = !isFuture">
+                  <span class="inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform"
+                    :class="isFuture ? 'translate-x-[18px]' : 'translate-x-1'"></span>
+                </button>
+                Tương lai
+              </label>
+              <SingleDatePicker v-if="isFuture" v-model="rawDate" :min-date="futureMinDate" :start-date="rawDate"
+                placeholder="dd/mm/yyyy" four-digit-year input-class="h-7 w-[118px] bg-white border-slate-200" />
+            </div>
 
             <!-- Đã đến card -->
             <button @click="handleMetricClick(ROOM_STATUSES.RESERVED)"
@@ -2582,7 +2668,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
           <!-- View Mode & Zoom switchers -->
           <div class="flex items-center gap-2 xl:gap-2.5 shrink-0">
-            <div v-if="moduleContext !== 'reservation' && !isGridMode" class="bulk-status-container relative flex items-center gap-1">
+            <div v-if="moduleContext !== 'reservation' && !isGridMode && !isFutureView" class="bulk-status-container relative flex items-center gap-1">
               <button
                 type="button"
                 class="flex h-8 w-8 items-center justify-center rounded-lg border text-white shadow-xs transition cursor-pointer"
@@ -2618,6 +2704,21 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 </svg>
               </button>
             </div>
+            <!-- Xuất ảnh sơ đồ phòng đang hiển thị -->
+            <button type="button" @click="exportRoomMapImage" :disabled="!isGridMode || exportingImage"
+              class="h-8 w-8 flex items-center justify-center border rounded-lg cursor-pointer transition-colors bg-white border-slate-200 text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              title="Xuất ảnh room map">
+              <svg v-if="exportingImage" class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                <circle class="opacity-25" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3" />
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v3a5 5 0 0 0-5 5H4Z" />
+              </svg>
+              <svg v-else class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="3" y="5" width="18" height="14" rx="2" />
+                <circle cx="8.5" cy="10" r="1.5" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="m21 16-5-5-8 8" />
+              </svg>
+            </button>
+
             <!-- Help / Guide Trigger -->
             <HelpGuidePopover />
 
@@ -3334,7 +3435,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
                 <!-- Room Grid view (Lưới sơ đồ) -->
                 <!-- Room Grid view (Lưới sơ đồ) -->
-                <div v-else-if="isGridMode"
+                <div v-else-if="isGridMode" ref="roomGridRef"
                    class="flex-1 overflow-auto pt-2.5 pr-2.5 pb-4 scrollbar-thin animate-room-grid"
                    :class="settings.floorOrientation === 'Ngang' ? 'flex flex-col gap-1' : 'flex flex-row gap-5 items-start'">
                   <div v-for="(floor, floorIdx) in sortedFloors" :key="floor" :class="[
@@ -3371,8 +3472,8 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         <div v-if="hasDepartureToday(room)"
                           class="absolute top-2.5 z-10 pointer-events-none transition-all"
                           :style="{
-                            right: getTopRightSpecialIcon(room)
-                              ? (getTopRightSpecialIconSize() + 12) + 'px'
+                            right: getTopRightSpecialIcons(room).length
+                              ? (getTopRightSpecialIcons(room).length * (getTopRightSpecialIconSize() + 4) + 12) + 'px'
                               : '10px'
                           }"
                           title="Phòng đi">
@@ -3380,16 +3481,18 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                             :style="{ width: Math.max(8, (settings.iconSizes?.group3 ?? 10) * cardScale) + 'px', height: Math.max(8, (settings.iconSizes?.group3 ?? 10) * cardScale) + 'px' }"></span>
                         </div>
 
-                        <!-- Special Icon (DND / Priority nổi bật góc trên bên phải) -->
-                        <div v-if="getTopRightSpecialIcon(room)"
-                          class="absolute top-2 right-2 z-10 flex items-center justify-center rounded-full p-0.5 transition-transform shrink-0 pointer-events-none"
-                          :class="getTopRightSpecialIconClass(getTopRightSpecialIcon(room))"
-                          :title="getTopRightSpecialIconTitle(getTopRightSpecialIcon(room))"
-                          :style="{
-                            width: getTopRightSpecialIconSize() + 'px',
-                            height: getTopRightSpecialIconSize() + 'px'
-                          }">
-                          <RoomIcon :name="getTopRightSpecialIcon(room)" :monochrome="false" class="w-full h-full" />
+                        <!-- Dòng 363: Chỉ báo buồng phòng độc lập, nằm trước chấm check-out. -->
+                        <div v-if="getTopRightSpecialIcons(room).length"
+                          class="absolute top-2 right-2 z-10 flex items-center gap-1 text-slate-600 pointer-events-none">
+                          <div v-for="iconName in getTopRightSpecialIcons(room)" :key="iconName"
+                            class="flex items-center justify-center shrink-0"
+                            :title="getTopRightSpecialIconTitle(iconName)"
+                            :style="{
+                              width: getTopRightSpecialIconSize() + 'px',
+                              height: getTopRightSpecialIconSize() + 'px'
+                            }">
+                            <RoomIcon :name="iconName" :monochrome="false" class="w-full h-full" />
+                          </div>
                         </div>
 
                         <!-- Connecting Door Bridge (Icon cánh cửa giữa 2 phòng thông nhau) -->
@@ -3910,9 +4013,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
                         <!-- 3. TT Phòng -->
                         <td class="p-2 border-slate-200 text-center">
-                          <div class="flex items-center justify-center">
-                            <RoomIcon v-if="getRoomStatusIconName(room, false)" :name="getRoomStatusIconName(room, false)" :monochrome="false" :class="getRoomStatusIconClass(room, false)" class="w-5 h-5 mx-auto" />
-                            <span v-else class="text-slate-400">-</span>
+                          <div class="flex items-center justify-center gap-1">
+                            <RoomIcon v-for="iconName in getRoomMapStatusIcons(room)" :key="iconName" :name="iconName" :monochrome="false" :class="getRoomStatusIconClass({ ...room, room_status_code: iconName === 'housekeeping-service' ? 'housekeeping' : iconName === 'priority' ? 'vacant_priority' : iconName === 'dnd' ? 'dnd' : room.room_status_code }, false)" class="w-5 h-5" />
+                            <span v-if="getRoomMapStatusIcons(room).length === 0" class="text-slate-400">-</span>
                           </div>
                         </td>
 
@@ -4042,6 +4145,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                     <span :class="TEXT_THEME.sidebarLabel">{{ t('roomMap.date') }}</span>
                     <SingleDatePicker
                       v-model="rawDate"
+                      :min-date="isFuture ? futureMinDate : undefined"
                       :start-date="systemDate || rawDate"
                       placeholder="dd/mm/yyyy"
                       four-digit-year
@@ -4390,12 +4494,12 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                   <RoomIcon name="clean" class="w-4.5 h-4.5 text-[#38bdf8]" />
                   <span>Lau dọn</span>
                 </button>
-                <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.VACANT_PRIORITY)"
+                <button @click="toggleHousekeepingFlag(contextMenu.room, 'is_priority_cleaning')"
                   class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                   <RoomIcon name="priority" class="w-4.5 h-4.5 text-[#38bdf8]" />
-                  <span>Phòng ưu tiên</span>
+                  <span>Phòng ưu tiên dọn</span>
                 </button>
-                <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.DND)"
+                <button @click="toggleHousekeepingFlag(contextMenu.room, 'is_do_not_disturb')"
                   class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                   <RoomIcon name="dnd" class="w-4.5 h-4.5 text-[#38bdf8]" />
                   <span>Phòng không làm phiền</span>
@@ -4464,12 +4568,12 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                   <RoomIcon name="oos" class="w-4.5 h-4.5 text-[#4caf50]" />
                   <span>Phòng OOS</span>
                 </button>
-                <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.VACANT_PRIORITY)"
+                <button @click="toggleHousekeepingFlag(contextMenu.room, 'is_priority_cleaning')"
                   class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                   <RoomIcon name="priority" class="w-4.5 h-4.5 text-[#38bdf8]" />
-                  <span>Phòng ưu tiên</span>
+                  <span>Phòng ưu tiên dọn</span>
                 </button>
-                <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.DND)"
+                <button @click="toggleHousekeepingFlag(contextMenu.room, 'is_do_not_disturb')"
                   class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                   <RoomIcon name="dnd" class="w-4.5 h-4.5 text-[#38bdf8]" />
                   <span>Phòng không làm phiền</span>
@@ -4649,17 +4753,17 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                   <RoomIcon name="clean" class="w-4.5 h-4.5 text-[#38bdf8]" />
                   <span>Lau dọn</span>
                 </button>
-                <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.HOUSEKEEPING)"
+                <button @click="toggleHousekeepingFlag(contextMenu.room, 'is_housekeeping_service')"
                   class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                   <RoomIcon name="housekeeping-service" class="w-4.5 h-4.5 text-[#38bdf8]" />
                   <span>Dịch vụ dọn phòng</span>
                 </button>
-                <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.VACANT_PRIORITY)"
+                <button @click="toggleHousekeepingFlag(contextMenu.room, 'is_priority_cleaning')"
                   class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                   <RoomIcon name="priority" class="w-4.5 h-4.5 text-[#38bdf8]" />
-                  <span>Phòng ưu tiên</span>
+                  <span>Phòng ưu tiên dọn</span>
                 </button>
-                <button @click="changeRoomStatus(contextMenu.room, ROOM_STATUS_CODES.DND)"
+                <button @click="toggleHousekeepingFlag(contextMenu.room, 'is_do_not_disturb')"
                   class="w-full flex items-center gap-3 px-4 py-2 text-xs hover:bg-slate-200 transition-colors text-left bg-transparent border-none cursor-pointer text-slate-800">
                   <RoomIcon name="dnd" class="w-4.5 h-4.5 text-[#38bdf8]" />
                   <span>Phòng không làm phiền</span>

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { Printer, Save, Trash2, X } from '@lucide/vue'
 import http from '@/services/http'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
@@ -19,6 +19,68 @@ const paymentMethods = ref([])
 const form = ref({ payment_method_id: '', payment_date: '', amount: 0, description: '' })
 const settlementPendingDelete = ref(null)
 const amountInput = ref('0')
+
+const modalRef = ref(null)
+const modalPosition = ref({ x: 0, y: 0 })
+const isDraggingModal = ref(false)
+const dragStart = ref({ x: 0, y: 0, left: 0, top: 0 })
+
+function clampModalPosition(x, y) {
+  const modal = modalRef.value
+  if (!modal) return { x, y }
+
+  const margin = 16
+  const width = modal.offsetWidth
+  const height = modal.offsetHeight
+  const baseLeft = (window.innerWidth - width) / 2
+  const baseTop = (window.innerHeight - height) / 2
+  const minX = margin - baseLeft
+  const maxX = window.innerWidth - margin - width - baseLeft
+  const minY = margin - baseTop
+  const maxY = window.innerHeight - margin - height - baseTop
+
+  return {
+    x: minX <= maxX ? Math.min(Math.max(x, minX), maxX) : 0,
+    y: minY <= maxY ? Math.min(Math.max(y, minY), maxY) : 0,
+  }
+}
+
+function beginModalDrag(event) {
+  if (event.button !== 0 || event.target.closest('button, input, select, textarea')) return
+  isDraggingModal.value = true
+  dragStart.value = {
+    x: event.clientX,
+    y: event.clientY,
+    left: modalPosition.value.x,
+    top: modalPosition.value.y,
+  }
+  window.addEventListener('mousemove', onModalDrag)
+  window.addEventListener('mouseup', stopModalDrag)
+}
+
+function onModalDrag(event) {
+  if (!isDraggingModal.value) return
+  const rawX = dragStart.value.left + (event.clientX - dragStart.value.x)
+  const rawY = dragStart.value.top + (event.clientY - dragStart.value.y)
+  modalPosition.value = clampModalPosition(rawX, rawY)
+}
+
+function stopModalDrag() {
+  if (!isDraggingModal.value) return
+  isDraggingModal.value = false
+  window.removeEventListener('mousemove', onModalDrag)
+  window.removeEventListener('mouseup', stopModalDrag)
+}
+
+function handleKeyDown(event) {
+  if (event.key === 'Escape' && props.show) {
+    if (settlementPendingDelete.value) {
+      settlementPendingDelete.value = null
+    } else {
+      emit('close')
+    }
+  }
+}
 
 const money = value => new Intl.NumberFormat('en-US').format(Number(value) || 0)
 const remainingAmount = computed(() => Number(paymentInfo.value?.remaining_amount) || 0)
@@ -133,6 +195,22 @@ async function load() {
   }
 }
 
+watch(() => props.show, visible => {
+  if (visible) {
+    modalPosition.value = { x: 0, y: 0 }
+    window.removeEventListener('keydown', handleKeyDown)
+    window.addEventListener('keydown', handleKeyDown)
+  } else {
+    stopModalDrag()
+    window.removeEventListener('keydown', handleKeyDown)
+  }
+})
+
+onBeforeUnmount(() => {
+  stopModalDrag()
+  window.removeEventListener('keydown', handleKeyDown)
+})
+
 watch(() => [props.show, props.payment?.id], load, { immediate: true })
 
 async function submit() {
@@ -186,12 +264,20 @@ async function confirmDelete() {
 </script>
 
 <template>
-  <div v-if="show" class="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4" @click.self="emit('close')">
-    <section class="relative w-[920px] max-w-full overflow-hidden rounded-md bg-white shadow-2xl">
+  <div v-if="show" class="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4 font-sans select-none" @click.self="emit('close')">
+    <section
+      ref="modalRef"
+      class="relative w-[920px] max-w-[calc(100vw-32px)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl"
+      :style="{ transform: `translate3d(${modalPosition.x}px, ${modalPosition.y}px, 0)` }"
+    >
       <LoadingOverlay :show="loading" />
-      <header class="flex h-8 items-center justify-between bg-[#0788eb] px-4 text-sm font-bold text-white">
-        <span>Thanh toán công nợ</span>
-        <button class="rounded p-1 hover:bg-white/15" @click="emit('close')"><X class="h-4 w-4" /></button>
+      <header
+        class="flex h-9 items-center justify-between px-4 text-white cursor-move select-none"
+        :style="{ background: 'var(--pms-custom-theme, #006bdb)' }"
+        @mousedown="beginModalDrag"
+      >
+        <span class="text-xs font-semibold tracking-wide">Thanh Toán Công Nợ</span>
+        <button class="rounded p-1 hover:bg-white/20 active:scale-90 cursor-pointer" @click="emit('close')"><X class="h-4 w-4" /></button>
       </header>
 
       <div class="p-4 text-[11px] text-slate-700">
@@ -264,23 +350,26 @@ async function confirmDelete() {
         </div>
       </div>
 
-      <footer class="flex justify-end gap-1.5 border-t border-slate-200 bg-white px-4 py-2">
-        <button class="inline-flex items-center gap-1 rounded bg-[#0788eb] px-4 py-1.5 text-xs font-semibold text-white hover:bg-blue-600" @click="emit('close')"><X class="h-3.5 w-3.5" /> Đóng</button>
-        <button class="inline-flex items-center gap-1 rounded bg-[#0788eb] px-4 py-1.5 text-xs font-semibold text-white hover:bg-blue-600" :disabled="loading" @click="printDebtSettlement"><Printer class="h-3.5 w-3.5" /> In</button>
-        <button class="inline-flex items-center gap-1 rounded bg-[#0788eb] px-4 py-1.5 text-xs font-semibold text-white hover:bg-blue-600 disabled:opacity-60" :disabled="loading || remainingAmount <= 0" @click="submit"><Save class="h-3.5 w-3.5" /> Thêm</button>
+      <footer class="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-4 py-2.5">
+        <button class="btn-pms-close" @click="emit('close')"><X class="h-3.5 w-3.5" /> Đóng</button>
+        <button class="btn-pms-secondary" :disabled="loading" @click="printDebtSettlement"><Printer class="h-3.5 w-3.5" /> In</button>
+        <button class="btn-pms-primary" :disabled="loading || remainingAmount <= 0" @click="submit"><Save class="h-3.5 w-3.5" /> Thêm</button>
       </footer>
     </section>
 
     <div v-if="settlementPendingDelete" class="absolute inset-0 z-10 flex items-center justify-center bg-black/35" @click.self="settlementPendingDelete = null">
-      <section class="w-[360px] overflow-hidden rounded-md bg-white shadow-2xl">
-        <header class="flex h-8 items-center justify-between bg-[#0788eb] px-3 text-xs font-bold text-white">
-          <span>Xác nhận xóa</span>
-          <button class="rounded p-1 hover:bg-white/15" @click="settlementPendingDelete = null"><X class="h-4 w-4" /></button>
+      <section class="w-[360px] overflow-hidden rounded-xl bg-white shadow-2xl border border-slate-200">
+        <header
+          class="flex h-8 items-center justify-between px-3 text-xs font-semibold text-white select-none"
+          :style="{ background: 'var(--pms-custom-theme, #006bdb)' }"
+        >
+          <span>Xác Nhận Xóa</span>
+          <button class="rounded p-1 hover:bg-white/15 cursor-pointer" @click="settlementPendingDelete = null"><X class="h-4 w-4" /></button>
         </header>
-        <div class="px-4 py-5 text-sm text-slate-700">Bạn có muốn xóa dòng giải trừ công nợ này?</div>
-        <footer class="flex justify-end gap-2 border-t border-slate-200 px-4 py-2">
-          <button class="rounded bg-slate-500 px-4 py-1.5 text-xs font-semibold text-white hover:bg-slate-600" @click="settlementPendingDelete = null">Hủy</button>
-          <button class="rounded bg-[#0788eb] px-4 py-1.5 text-xs font-semibold text-white hover:bg-blue-600" @click="confirmDelete">Đồng ý</button>
+        <div class="px-4 py-5 text-xs text-slate-700">Bạn có muốn xóa dòng giải trừ công nợ này?</div>
+        <footer class="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-4 py-2">
+          <button class="btn-pms-close" @click="settlementPendingDelete = null">Hủy</button>
+          <button class="btn-pms-danger" @click="confirmDelete">Đồng Ý</button>
         </footer>
       </section>
     </div>

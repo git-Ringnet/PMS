@@ -73,8 +73,12 @@ const toggleSearchCol = (col) => {
 }
 
 const handleTableKeydown = (e) => {
-  if (e.key === 'Escape' && activeSearchCol.value) {
-    activeSearchCol.value = null
+  if (e.key === 'Escape') {
+    if (activeSearchCol.value) {
+      activeSearchCol.value = null
+    } else if (isModalOpen.value) {
+      isModalOpen.value = false
+    }
   }
 }
 
@@ -544,59 +548,59 @@ const handleExport = async () => {
       <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2.5">
         <!-- Date From -->
         <div class="flex flex-col gap-1">
-          <label class="font-semibold text-slate-700 text-xs">Từ ngày</label>
+          <label class="font-semibold text-[#000000D9] text-xs">Từ ngày</label>
           <input 
             v-model="filterDateFrom" 
             type="date" 
             @change="handleSearch"
-            class="border border-slate-300 rounded-lg px-2 py-1 h-[30px] focus:outline-none focus:ring-1 focus:ring-sky-400 font-semibold text-slate-700 bg-white"
+            class="border border-slate-300 rounded-lg px-2 py-1 h-8 focus:outline-none focus:ring-1 focus:ring-sky-400 font-normal text-[#000000D9] bg-white text-xs"
           />
         </div>
 
         <!-- Date To -->
         <div class="flex flex-col gap-1">
-          <label class="font-semibold text-slate-700 text-xs">Đến ngày</label>
+          <label class="font-semibold text-[#000000D9] text-xs">Đến ngày</label>
           <input 
             v-model="filterDateTo" 
             type="date" 
             @change="handleSearch"
-            class="border border-slate-300 rounded-lg px-2 py-1 h-[30px] focus:outline-none focus:ring-1 focus:ring-sky-400 font-semibold text-slate-700 bg-white"
+            class="border border-slate-300 rounded-lg px-2 py-1 h-8 focus:outline-none focus:ring-1 focus:ring-sky-400 font-normal text-[#000000D9] bg-white text-xs"
           />
         </div>
 
         <!-- Registration Code -->
         <div class="flex flex-col gap-1">
-          <label class="font-semibold text-slate-700 text-xs">Mã đăng ký</label>
+          <label class="font-semibold text-[#000000D9] text-xs">Mã đăng ký</label>
           <input 
             v-model="filterRegCode" 
             type="text" 
             placeholder="Mã đăng ký..."
             @input="onDebouncedSearch"
-            class="border border-slate-300 rounded-lg px-2 py-1 h-[30px] focus:outline-none focus:ring-1 focus:ring-sky-400 font-semibold text-slate-700 bg-white"
+            class="border border-slate-300 rounded-lg px-2.5 py-1 h-8 focus:outline-none focus:ring-1 focus:ring-sky-400 font-normal text-[#000000D9] placeholder:text-[#A8B0BF] bg-white text-xs"
             @keyup.enter="handleSearch"
           />
         </div>
 
         <!-- Room Code -->
         <div class="flex flex-col gap-1">
-          <label class="font-semibold text-slate-700 text-xs">Mã phòng</label>
+          <label class="font-semibold text-[#000000D9] text-xs">Mã phòng</label>
           <input 
             v-model="filterRoomCode" 
             type="text" 
-            placeholder="Mã phòng/Số phòng..."
+            placeholder="Mã phòng..."
             @input="onDebouncedSearch"
-            class="border border-slate-300 rounded-lg px-2 py-1 h-[30px] focus:outline-none focus:ring-1 focus:ring-sky-400 font-semibold text-slate-700 bg-white"
+            class="border border-slate-300 rounded-lg px-2.5 py-1 h-8 focus:outline-none focus:ring-1 focus:ring-sky-400 font-normal text-[#000000D9] placeholder:text-[#A8B0BF] bg-white text-xs"
             @keyup.enter="handleSearch"
           />
         </div>
 
         <!-- Action Selection Dropdown -->
         <div class="flex flex-col gap-1">
-          <label class="font-semibold text-slate-700 text-xs">Hành động</label>
+          <label class="font-semibold text-[#000000D9] text-xs">Hành động</label>
           <select 
             v-model="filterAction"
             @change="handleSearch"
-            class="border border-slate-300 rounded-lg px-2 py-1 h-[30px] focus:outline-none focus:ring-1 focus:ring-sky-400 font-semibold text-slate-700 bg-white cursor-pointer"
+            class="border border-slate-300 rounded-lg px-2 py-1 h-8 focus:outline-none focus:ring-1 focus:ring-sky-400 font-normal text-[#000000D9] bg-white text-xs cursor-pointer"
           >
             <option value="">-- Tất cả hành động --</option>
             <option value="New">Tạo mới (New)</option>
@@ -620,11 +624,11 @@ const handleExport = async () => {
 
         <!-- User Selection Dropdown -->
         <div class="flex flex-col gap-1">
-          <label class="font-semibold text-slate-700 text-xs">Người dùng</label>
+          <label class="font-semibold text-[#000000D9] text-xs">Người dùng</label>
           <select 
             v-model="filterUserId"
             @change="handleSearch"
-            class="border border-slate-300 rounded-lg px-2 py-1 h-[30px] focus:outline-none focus:ring-1 focus:ring-sky-400 font-semibold text-slate-700 bg-white cursor-pointer"
+            class="border border-slate-300 rounded-lg px-2 py-1 h-8 focus:outline-none focus:ring-1 focus:ring-sky-400 font-normal text-[#000000D9] bg-white text-xs cursor-pointer"
           >
             <option value="">-- Tất cả --</option>
             <option v-for="u in usersList" :key="u.user_id" :value="u.user_id">
@@ -635,11 +639,11 @@ const handleExport = async () => {
 
         <!-- Screen (Component) Selection Dropdown -->
         <div class="flex flex-col gap-1">
-          <label class="font-semibold text-slate-700 text-xs">Phân hệ / Màn hình</label>
+          <label class="font-semibold text-[#000000D9] text-xs">Phân hệ / Màn hình</label>
           <select 
             v-model="filterComponent"
             @change="handleSearch"
-            class="border border-slate-300 rounded-lg px-2 py-1 h-[30px] focus:outline-none focus:ring-1 focus:ring-sky-400 font-semibold text-slate-700 bg-white cursor-pointer"
+            class="border border-slate-300 rounded-lg px-2 py-1 h-8 focus:outline-none focus:ring-1 focus:ring-sky-400 font-normal text-[#000000D9] bg-white text-xs cursor-pointer"
           >
             <option value="">-- Tất cả --</option>
             <option v-for="c in componentsList" :key="c" :value="c">
@@ -650,13 +654,13 @@ const handleExport = async () => {
 
         <!-- Global Search -->
         <div class="flex flex-col gap-1">
-          <label class="font-semibold text-slate-700 text-xs">Tìm kiếm chung</label>
+          <label class="font-semibold text-[#000000D9] text-xs">Tìm kiếm chung</label>
           <input 
             v-model="filterSearch" 
             type="text" 
             placeholder="Nội dung bất kỳ..."
             @input="onDebouncedSearch"
-            class="border border-slate-300 rounded-lg px-2 py-1 h-[30px] focus:outline-none focus:ring-1 focus:ring-sky-400 font-semibold text-slate-700 bg-white"
+            class="border border-slate-300 rounded-lg px-2.5 py-1 h-8 focus:outline-none focus:ring-1 focus:ring-sky-400 font-normal text-[#000000D9] placeholder:text-[#A8B0BF] bg-white text-xs"
             @keyup.enter="handleSearch"
           />
         </div>
@@ -664,26 +668,26 @@ const handleExport = async () => {
 
       <!-- Action buttons -->
       <div class="flex items-center justify-between gap-2 mt-3 pt-2.5 border-t border-slate-100">
-        <div class="text-xs text-slate-600 font-semibold flex items-center gap-1.5">
-          <span>📊 Tổng cộng: <strong class="text-sky-600">{{ totalItems }}</strong> thao tác</span>
+        <div class="text-xs text-[#000000D9] font-semibold flex items-center gap-1.5">
+          <span>📊 Tổng cộng: <strong class="text-sky-700 font-semibold">{{ totalItems }}</strong> thao tác</span>
         </div>
         <div class="flex items-center gap-2">
           <button 
             @click="handleResetFilters"
-            class="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-bold text-xs border border-slate-200 cursor-pointer flex items-center gap-1 transition-colors h-[30px]"
+            class="btn-pms-secondary h-8 px-3 text-xs"
           >
             🔄 Hủy Lọc
           </button>
           <button 
             @click="handleSearch"
             :style="{ background: themeBg }"
-            class="px-4 py-1 text-white rounded-lg font-bold text-xs border-none cursor-pointer flex items-center gap-1.5 transition-all shadow-xs h-[30px] hover:brightness-110"
+            class="btn-pms-primary h-8 px-4 text-xs"
           >
             🔍 Tìm Kiếm
           </button>
           <button 
             @click="handleExport"
-            class="px-3.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs border-none cursor-pointer flex items-center gap-1.5 transition-all shadow-xs h-[30px]"
+            class="btn-pms-secondary h-8 px-3.5 text-xs text-emerald-700 hover:text-emerald-800"
           >
             📥 Xuất Excel
           </button>
@@ -697,29 +701,29 @@ const handleExport = async () => {
       <div v-if="loading" class="absolute inset-0 bg-white/70 flex items-center justify-center z-10">
         <div class="flex flex-col items-center gap-2 bg-white p-4 rounded-xl shadow-lg border border-slate-100">
           <div class="w-8 h-8 rounded-full border-3 border-slate-200 border-t-sky-500 animate-spin"></div>
-          <span class="font-bold text-sky-700 text-xs">Đang tải lịch sử thao tác...</span>
+          <span class="font-semibold text-sky-700 text-xs">Đang tải lịch sử thao tác...</span>
         </div>
       </div>
 
       <table class="w-full text-left border-collapse text-xs">
         <thead>
-          <tr class="bg-slate-100 border-b border-slate-200 text-slate-800 font-semibold select-none h-10 sticky top-0 z-20 shadow-2xs">
-            <th @click="toggleSort('id')" class="p-2 border border-slate-200 w-14 cursor-pointer hover:bg-slate-200 text-center align-middle whitespace-nowrap">
+          <tr class="bg-slate-100 border-b border-slate-200 text-[#000000D9] font-semibold select-none h-9 sticky top-0 z-20 shadow-2xs">
+            <th @click="toggleSort('id')" class="p-2 border border-slate-200 w-14 cursor-pointer hover:bg-slate-200 text-center align-middle whitespace-nowrap font-semibold text-[#000000D9]">
               ID <span v-if="queryParams.sort_by === 'id'" class="text-xs text-sky-600">{{ queryParams.sort_dir === 'asc' ? '▲' : '▼' }}</span>
             </th>
-            <th @click="toggleSort('created_at')" class="p-2 border border-slate-200 w-24 cursor-pointer hover:bg-slate-200 text-center align-middle whitespace-nowrap">
+            <th @click="toggleSort('created_at')" class="p-2 border border-slate-200 w-24 cursor-pointer hover:bg-slate-200 text-center align-middle whitespace-nowrap font-semibold text-[#000000D9]">
               Thời Gian <span v-if="queryParams.sort_by === 'created_at'" class="text-xs text-sky-600">{{ queryParams.sort_dir === 'asc' ? '▲' : '▼' }}</span>
             </th>
-            <th class="p-2 border border-slate-200 w-44 text-center align-middle whitespace-nowrap">Trình Duyệt</th>
-            <th class="p-2 border border-slate-200 w-28 text-center align-middle whitespace-nowrap">Màn Hình</th>
-            <th class="p-2 border border-slate-200 w-28 text-center align-middle whitespace-nowrap">Người Dùng</th>
-            <th class="p-2 border border-slate-200 w-24 text-center align-middle whitespace-nowrap">Ngày Thao Tác</th>
-            <th @click="toggleSort('action')" class="p-2 border border-slate-200 w-24 cursor-pointer hover:bg-slate-200 text-center align-middle whitespace-nowrap">
+            <th class="p-2 border border-slate-200 w-44 text-center align-middle whitespace-nowrap font-semibold text-[#000000D9]">Trình Duyệt</th>
+            <th class="p-2 border border-slate-200 w-28 text-center align-middle whitespace-nowrap font-semibold text-[#000000D9]">Màn Hình</th>
+            <th class="p-2 border border-slate-200 w-28 text-center align-middle whitespace-nowrap font-semibold text-[#000000D9]">Người Dùng</th>
+            <th class="p-2 border border-slate-200 w-24 text-center align-middle whitespace-nowrap font-semibold text-[#000000D9]">Ngày Thao Tác</th>
+            <th @click="toggleSort('action')" class="p-2 border border-slate-200 w-24 cursor-pointer hover:bg-slate-200 text-center align-middle whitespace-nowrap font-semibold text-[#000000D9]">
               Hành Động <span v-if="queryParams.sort_by === 'action'" class="text-xs text-sky-600">{{ queryParams.sort_dir === 'asc' ? '▲' : '▼' }}</span>
             </th>
 
             <!-- Cột Mã Đăng Ký kèm icon tìm kiếm -->
-            <th class="p-2 border border-slate-200 w-32 text-center align-middle whitespace-nowrap relative">
+            <th class="p-2 border border-slate-200 w-32 text-center align-middle whitespace-nowrap relative font-semibold text-[#000000D9]">
               <div class="flex items-center justify-center gap-1.5">
                 <span>Mã Đăng Ký</span>
                 <button 
@@ -739,7 +743,7 @@ const handleExport = async () => {
                     placeholder="Tìm mã ĐK..." 
                     @input="onDebouncedSearch"
                     @keyup.enter="handleSearch"
-                    class="w-full text-xs px-2 py-1 border border-slate-200 rounded focus:border-sky-500 outline-none font-normal"
+                    class="w-full text-xs px-2 py-1 border border-slate-200 rounded focus:border-sky-500 outline-none font-normal text-[#000000D9] placeholder:text-[#A8B0BF]"
                     autofocus
                   />
                   <button v-if="filterRegCode" @click="filterRegCode = ''; handleSearch()" class="text-slate-400 hover:text-slate-600 px-1 text-xs">✕</button>
@@ -748,7 +752,7 @@ const handleExport = async () => {
             </th>
 
             <!-- Cột Mã Phòng kèm icon tìm kiếm -->
-            <th class="p-2 border border-slate-200 w-32 text-center align-middle whitespace-nowrap relative">
+            <th class="p-2 border border-slate-200 w-32 text-center align-middle whitespace-nowrap relative font-semibold text-[#000000D9]">
               <div class="flex items-center justify-center gap-1.5">
                 <span>Mã Phòng</span>
                 <button 
@@ -768,7 +772,7 @@ const handleExport = async () => {
                     placeholder="Tìm mã phòng..." 
                     @input="onDebouncedSearch"
                     @keyup.enter="handleSearch"
-                    class="w-full text-xs px-2 py-1 border border-slate-200 rounded focus:border-sky-500 outline-none font-normal"
+                    class="w-full text-xs px-2 py-1 border border-slate-200 rounded focus:border-sky-500 outline-none font-normal text-[#000000D9] placeholder:text-[#A8B0BF]"
                     autofocus
                   />
                   <button v-if="filterRoomCode" @click="filterRoomCode = ''; handleSearch()" class="text-slate-400 hover:text-slate-600 px-1 text-xs">✕</button>
@@ -777,7 +781,7 @@ const handleExport = async () => {
             </th>
 
             <!-- Cột Mô Tả kèm icon tìm kiếm -->
-            <th class="p-2 border border-slate-200 min-w-[360px] text-center align-middle relative">
+            <th class="p-2 border border-slate-200 min-w-[360px] text-center align-middle relative font-semibold text-[#000000D9]">
               <div class="flex items-center justify-center gap-1.5">
                 <span>Mô Tả</span>
                 <button 
@@ -797,7 +801,7 @@ const handleExport = async () => {
                     placeholder="Tìm nội dung mô tả..." 
                     @input="onDebouncedSearch"
                     @keyup.enter="handleSearch"
-                    class="w-full text-xs px-2 py-1 border border-slate-200 rounded focus:border-sky-500 outline-none font-normal"
+                    class="w-full text-xs px-2 py-1 border border-slate-200 rounded focus:border-sky-500 outline-none font-normal text-[#000000D9] placeholder:text-[#A8B0BF]"
                     autofocus
                   />
                   <button v-if="filterSearch" @click="filterSearch = ''; handleSearch()" class="text-slate-400 hover:text-slate-600 px-1 text-xs">✕</button>
@@ -805,41 +809,41 @@ const handleExport = async () => {
               </div>
             </th>
 
-            <th class="p-2 border border-slate-200 text-center align-middle w-20 whitespace-nowrap">Chi Tiết</th>
+            <th class="p-2 border border-slate-200 text-center align-middle w-20 whitespace-nowrap font-semibold text-[#000000D9]">Chi Tiết</th>
           </tr>
         </thead>
         <tbody>
           <tr 
             v-for="log in logs" 
             :key="log.id" 
-            class="border-b border-slate-200 hover:bg-sky-50/50 transition-colors font-medium text-slate-700"
+            class="border-b border-slate-200 hover:bg-sky-50/50 transition-colors font-normal text-[#000000D9]"
           >
-            <td class="p-2.5 border-r border-slate-200 text-center text-slate-500 font-mono">{{ log.id }}</td>
-            <td class="p-2.5 border-r border-slate-200 text-slate-700 font-medium text-center whitespace-nowrap font-mono">
+            <td class="p-2.5 text-center font-mono text-slate-500">{{ log.id }}</td>
+            <td class="p-2.5 text-center whitespace-nowrap font-mono text-[#000000D9]">
               {{ log.created_time || formatTimeOnly(log.created_at) }}
             </td>
-            <td class="p-2.5 border-r border-slate-200 text-slate-500 font-normal text-xs break-words max-w-[200px]" :title="log.user_agent">
-              <span class="line-clamp-3 select-all hover:line-clamp-none transition-all font-mono leading-tight">{{ log.user_agent || '-' }}</span>
+            <td class="p-2.5 text-left text-xs break-words max-w-[200px]" :title="log.user_agent">
+              <span class="line-clamp-3 select-all hover:line-clamp-none transition-all font-mono leading-tight text-slate-500">{{ log.user_agent || '-' }}</span>
             </td>
-            <td class="p-2.5 border-r border-slate-200 text-slate-800 font-semibold text-center whitespace-nowrap">
+            <td class="p-2.5 text-center whitespace-nowrap text-[#000000D9]">
               {{ log.component || '-' }}
             </td>
-            <td class="p-2.5 border-r border-slate-200 text-slate-800 text-center whitespace-nowrap">
-              <span class="font-bold text-slate-900">{{ log.employee_code || log.user_name || 'admin' }}</span>
+            <td class="p-2.5 text-center whitespace-nowrap text-[#000000D9]">
+              {{ log.employee_code || log.user_name || 'admin' }}
             </td>
-            <td class="p-2.5 border-r border-slate-200 text-slate-700 font-medium text-center whitespace-nowrap font-mono">
+            <td class="p-2.5 text-center whitespace-nowrap font-mono text-[#000000D9]">
               {{ log.created_date || formatDateOnly(log.created_at) }}
             </td>
-            <td class="p-2.5 border-r border-slate-200 text-center whitespace-nowrap">
+            <td class="p-2.5 text-center whitespace-nowrap">
               <span :class="getActionClass(log.action)">{{ getActionLabel(log.action) }}</span>
             </td>
-            <td class="p-2.5 border-r border-slate-200 font-mono font-bold text-indigo-700 text-center whitespace-nowrap">
+            <td class="p-2.5 font-mono text-center whitespace-nowrap text-[#000000D9]">
               {{ log.booking_code || '-' }}
             </td>
-            <td class="p-2.5 border-r border-slate-200 font-mono font-bold text-emerald-700 text-center whitespace-nowrap">
+            <td class="p-2.5 font-mono text-center whitespace-nowrap text-[#000000D9]">
               {{ log.room_number || '-' }}
             </td>
-            <td class="p-2.5 border-r border-slate-200 text-slate-700 font-normal whitespace-pre-wrap leading-relaxed text-xs">
+            <td class="p-2.5 text-[#000000D9] whitespace-pre-wrap leading-relaxed text-xs">
               <div v-html="formatDescriptionHtml(log.description)"></div>
             </td>
             <td class="p-2.5 text-center whitespace-nowrap">
@@ -856,7 +860,7 @@ const handleExport = async () => {
           </tr>
 
           <tr v-if="logs.length === 0 && !loading">
-            <td colspan="11" class="p-16 text-center text-slate-400 text-sm font-semibold">
+            <td colspan="11" class="p-16 text-center text-slate-400 text-xs font-normal">
               Không tìm thấy lịch sử thao tác nào phù hợp với bộ lọc.
             </td>
           </tr>
@@ -867,10 +871,10 @@ const handleExport = async () => {
     <!-- Pagination Footer -->
     <div v-if="totalItems > 0" class="flex flex-wrap items-center justify-between mt-3 gap-3 select-none shrink-0 border-t border-slate-200 pt-3">
       <!-- Left: Records info & Per page selector -->
-      <div class="flex items-center gap-3 text-xs text-slate-600 font-semibold">
+      <div class="flex items-center gap-3 text-xs text-[#000000D9] font-semibold">
         <div>
-          Hiển thị <span class="font-bold text-slate-800">{{ logs.length }}</span> / <span class="font-bold text-slate-800">{{ totalItems }}</span> bản ghi
-          <span v-if="lastPage > 1"> (Trang <span class="font-bold text-sky-700">{{ currentPage }}</span> / {{ lastPage }})</span>
+          Hiển thị <span class="font-semibold text-[#000000D9]">{{ logs.length }}</span> / <span class="font-semibold text-[#000000D9]">{{ totalItems }}</span> bản ghi
+          <span v-if="lastPage > 1"> (Trang <span class="font-semibold text-sky-700">{{ currentPage }}</span> / {{ lastPage }})</span>
         </div>
         <div class="h-3.5 w-[1px] bg-slate-300"></div>
         <div class="flex items-center gap-1.5">
@@ -878,7 +882,7 @@ const handleExport = async () => {
           <select 
             v-model="perPage" 
             @change="handlePerPageChange" 
-            class="border border-slate-300 rounded-md px-2 py-0.5 text-xs font-bold text-slate-700 bg-white focus:outline-none focus:ring-1 focus:ring-sky-500 cursor-pointer shadow-2xs"
+            class="border border-slate-300 rounded-md px-2 py-0.5 text-xs font-semibold text-[#000000D9] bg-white focus:outline-none focus:ring-1 focus:ring-sky-500 cursor-pointer shadow-2xs"
           >
             <option :value="30">30 dòng / trang</option>
             <option :value="50">50 dòng / trang</option>
@@ -894,7 +898,7 @@ const handleExport = async () => {
         <button 
           @click="changePage(1)" 
           :disabled="currentPage === 1"
-          class="h-7 min-w-[28px] px-1.5 border border-slate-300 rounded-md text-xs font-bold text-slate-600 bg-white hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          class="h-7 min-w-[28px] px-1.5 border border-slate-300 rounded-md text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           title="Về trang đầu (1)"
         >
           &laquo;
@@ -904,7 +908,7 @@ const handleExport = async () => {
         <button 
           @click="changePage(currentPage - 1)" 
           :disabled="currentPage === 1"
-          class="h-7 min-w-[28px] px-1.5 border border-slate-300 rounded-md text-xs font-bold text-slate-600 bg-white hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          class="h-7 min-w-[28px] px-1.5 border border-slate-300 rounded-md text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           title="Trang trước"
         >
           &lsaquo;
@@ -915,8 +919,8 @@ const handleExport = async () => {
           v-for="page in visiblePages" 
           :key="page"
           @click="changePage(page)"
-          class="h-7 min-w-[28px] px-2 border rounded-md text-xs font-bold cursor-pointer transition-all"
-          :class="currentPage === page ? 'border-sky-500 text-white font-black shadow-xs' : 'border-slate-300 text-slate-600 bg-white hover:bg-slate-50'"
+          class="h-7 min-w-[28px] px-2 border rounded-md text-xs font-semibold cursor-pointer transition-all"
+          :class="currentPage === page ? 'border-sky-500 text-white font-bold shadow-xs' : 'border-slate-300 text-slate-600 bg-white hover:bg-slate-50'"
           :style="currentPage === page ? { background: themeBg } : {}"
         >
           {{ page }}
@@ -932,7 +936,7 @@ const handleExport = async () => {
           @keyup.enter="handleJumpPage"
           @change="handleJumpPage"
           placeholder="..."
-          class="h-7 w-9 text-center border border-slate-300 rounded-md text-xs font-bold text-slate-700 bg-white hover:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-500 shadow-2xs"
+          class="h-7 w-9 text-center border border-slate-300 rounded-md text-xs font-semibold text-[#000000D9] bg-white hover:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-500 shadow-2xs"
           :title="`Nhập số trang muốn đến (1 - ${lastPage}) rồi Enter`"
         />
 
@@ -940,7 +944,7 @@ const handleExport = async () => {
         <button 
           @click="changePage(currentPage + 1)" 
           :disabled="currentPage === lastPage"
-          class="h-7 min-w-[28px] px-1.5 border border-slate-300 rounded-md text-xs font-bold text-slate-600 bg-white hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          class="h-7 min-w-[28px] px-1.5 border border-slate-300 rounded-md text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           title="Trang sau"
         >
           &rsaquo;
@@ -950,7 +954,7 @@ const handleExport = async () => {
         <button 
           @click="changePage(lastPage)" 
           :disabled="currentPage === lastPage"
-          class="h-7 min-w-[28px] px-1.5 border border-slate-300 rounded-md text-xs font-bold text-slate-600 bg-white hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          class="h-7 min-w-[28px] px-1.5 border border-slate-300 rounded-md text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           :title="`Đến trang cuối (${lastPage})`"
         >
           &raquo;
@@ -963,25 +967,25 @@ const handleExport = async () => {
       v-if="isModalOpen" 
       class="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4"
     >
-      <div class="bg-white rounded-2xl w-full max-w-4xl shadow-2xl overflow-hidden border border-slate-200 animate-in max-h-[90vh] flex flex-col">
+      <div class="bg-white rounded-xl w-full max-w-4xl shadow-2xl overflow-hidden border border-slate-200 animate-in max-h-[90vh] flex flex-col">
         <!-- Modal Header -->
         <div :style="{ background: themeBg }" class="px-5 py-3.5 flex items-center justify-between text-white shrink-0 shadow-xs">
           <div class="flex items-center gap-2.5">
             <span class="px-2.5 py-0.5 bg-white/20 text-white rounded-md text-xs font-semibold uppercase">Log #{{ selectedLog?.id }}</span>
-            <h2 class="text-sm font-bold tracking-wide">Chi Tiết Thay Đổi Dữ Liệu</h2>
+            <h2 class="text-xs font-semibold tracking-wide">Chi Tiết Thay Đổi Dữ Liệu</h2>
           </div>
-          <button @click="isModalOpen = false" class="text-white/80 hover:text-white bg-transparent border-none cursor-pointer text-xl font-bold leading-none">✕</button>
+          <button @click="isModalOpen = false" class="text-white/80 hover:text-white bg-transparent border-none cursor-pointer text-lg font-bold leading-none">✕</button>
         </div>
 
         <!-- Modal Info Bar -->
-        <div class="bg-slate-50 border-b border-slate-200 p-4 grid grid-cols-2 sm:grid-cols-6 gap-3 text-xs font-medium text-slate-700 shrink-0">
+        <div class="bg-slate-50 border-b border-slate-200 p-4 grid grid-cols-2 sm:grid-cols-6 gap-3 text-xs font-normal text-[#000000D9] shrink-0">
           <div>
             <span class="text-slate-400 block text-xs uppercase font-semibold">Thời gian</span>
-            <strong>{{ formatDateTime(selectedLog?.created_at) }}</strong>
+            <strong class="font-semibold text-[#000000D9]">{{ formatDateTime(selectedLog?.created_at) }}</strong>
           </div>
           <div>
             <span class="text-slate-400 block text-xs uppercase font-semibold">Người thực hiện</span>
-            <strong>{{ selectedLog?.user_name }}</strong>
+            <strong class="font-semibold text-[#000000D9]">{{ selectedLog?.user_name }}</strong>
             <div class="text-xs text-slate-500 font-normal">Mã NV: {{ selectedLog?.employee_code || 'N/A' }}</div>
           </div>
           <div>
@@ -990,42 +994,42 @@ const handleExport = async () => {
           </div>
           <div>
             <span class="text-slate-400 block text-xs uppercase font-semibold">Màn hình</span>
-            <strong>{{ selectedLog?.component || selectedLog?.module_label || selectedLog?.module }}</strong>
+            <strong class="font-semibold text-[#000000D9]">{{ selectedLog?.component || selectedLog?.module_label || selectedLog?.module }}</strong>
           </div>
           <div>
             <span class="text-slate-400 block text-xs uppercase font-semibold">Mã đăng ký</span>
-            <strong class="font-mono text-indigo-700">{{ selectedLog?.booking_code || '-' }}</strong>
+            <strong class="font-mono font-semibold text-[#000000D9]">{{ selectedLog?.booking_code || '-' }}</strong>
           </div>
           <div>
             <span class="text-slate-400 block text-xs uppercase font-semibold">Mã phòng</span>
-            <strong class="font-mono text-emerald-700">{{ selectedLog?.room_number || '-' }}</strong>
+            <strong class="font-mono font-semibold text-[#000000D9]">{{ selectedLog?.room_number || '-' }}</strong>
           </div>
         </div>
 
         <!-- Modal Body: Mô tả & Diff Values -->
         <div class="p-4 overflow-y-auto flex-1 flex flex-col gap-4 text-xs">
           <!-- Mô tả đầy đủ -->
-          <div class="bg-sky-50/50 border border-sky-100 rounded-xl p-3.5">
-            <span class="text-sky-800 font-bold block mb-1">Mô tả nghiệp vụ:</span>
-            <div class="text-slate-800 whitespace-pre-wrap leading-relaxed font-medium" v-html="formatDescriptionHtml(selectedLog?.description)"></div>
+          <div class="bg-sky-50/50 border border-sky-100 rounded-lg p-3.5">
+            <span class="text-sky-900 font-semibold block mb-1">Mô tả nghiệp vụ:</span>
+            <div class="text-[#000000D9] whitespace-pre-wrap leading-relaxed font-normal text-xs" v-html="formatDescriptionHtml(selectedLog?.description)"></div>
           </div>
 
           <!-- So sánh dữ liệu Cũ vs Mới -->
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
             <!-- Old values -->
-            <div class="flex flex-col border border-rose-200 rounded-xl overflow-hidden">
-              <div class="bg-rose-50 border-b border-rose-200 px-3.5 py-2 font-bold text-rose-800 flex items-center gap-1.5">
+            <div class="flex flex-col border border-rose-200 rounded-lg overflow-hidden">
+              <div class="bg-rose-50 border-b border-rose-200 px-3.5 py-2 font-semibold text-rose-800 flex items-center gap-1.5">
                 <span>◀ Dữ liệu trước khi sửa (Old Values)</span>
               </div>
-              <pre class="p-3 bg-slate-900 text-rose-300 font-mono text-xs overflow-auto flex-1 max-h-[300px] leading-relaxed rounded-b-xl">{{ formatDiffValue(selectedLog?.old_values) }}</pre>
+              <pre class="p-3 bg-slate-900 text-rose-300 font-mono text-xs overflow-auto flex-1 max-h-[300px] leading-relaxed rounded-b-lg">{{ formatDiffValue(selectedLog?.old_values) }}</pre>
             </div>
 
             <!-- New values -->
-            <div class="flex flex-col border border-emerald-200 rounded-xl overflow-hidden">
-              <div class="bg-emerald-50 border-b border-emerald-200 px-3.5 py-2 font-bold text-emerald-800 flex items-center gap-1.5">
+            <div class="flex flex-col border border-emerald-200 rounded-lg overflow-hidden">
+              <div class="bg-emerald-50 border-b border-emerald-200 px-3.5 py-2 font-semibold text-emerald-800 flex items-center gap-1.5">
                 <span>▶ Dữ liệu sau khi sửa (New Values)</span>
               </div>
-              <pre class="p-3 bg-slate-900 text-emerald-300 font-mono text-xs overflow-auto flex-1 max-h-[300px] leading-relaxed rounded-b-xl">{{ formatDiffValue(selectedLog?.new_values) }}</pre>
+              <pre class="p-3 bg-slate-900 text-emerald-300 font-mono text-xs overflow-auto flex-1 max-h-[300px] leading-relaxed rounded-b-lg">{{ formatDiffValue(selectedLog?.new_values) }}</pre>
             </div>
           </div>
         </div>
@@ -1034,7 +1038,7 @@ const handleExport = async () => {
         <div class="bg-slate-50 border-t border-slate-200 px-5 py-3 flex justify-end shrink-0">
           <button 
             @click="isModalOpen = false"
-            class="px-5 py-1.5 bg-slate-600 hover:bg-slate-700 text-white rounded-lg font-bold text-xs border-none cursor-pointer transition-colors shadow-xs"
+            class="btn-pms-close text-xs"
           >
             Đóng
           </button>

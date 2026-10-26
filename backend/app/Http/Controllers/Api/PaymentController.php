@@ -139,9 +139,10 @@ class PaymentController extends Controller
         return (bool) $booking->company?->sync_acc;
     }
 
-    private function validateCityLedgerEligibility(Booking $booking, array $payments): void
+    private function validateCityLedgerEligibility(?Booking $booking, array $payments): void
     {
-        if ($this->companyAllowsCityLedger($booking)) {
+        // Folio phòng ảo không có booking/công ty nên không được thanh toán công nợ (AC).
+        if ($booking && $this->companyAllowsCityLedger($booking)) {
             return;
         }
 
@@ -1417,7 +1418,25 @@ class PaymentController extends Controller
      */
     public function settlePayment(Request $request, $bookingId)
     {
-        $booking = Booking::findOrFail($bookingId);
+        return $this->settle($request, Booking::findOrFail($bookingId), null);
+    }
+
+    /** Thanh toán folio phòng ảo: phòng không có booking (booking_id NULL), thanh toán theo phòng. */
+    public function settleVirtualRoomPayment(Request $request, $roomId)
+    {
+        $virtualRoom = BookingRoom::whereNull('booking_id')->findOrFail($roomId);
+        $request->merge(['booking_room_id' => (string) $virtualRoom->id]);
+
+        return $this->settle($request, null, $virtualRoom);
+    }
+
+    /**
+     * Thanh toán theo Folio. $booking = null chỉ dùng cho folio phòng ảo ($virtualRoom);
+     * luồng booking thường giữ nguyên hành vi.
+     */
+    private function settle(Request $request, ?Booking $booking, ?BookingRoom $virtualRoom)
+    {
+        $bookingId = $booking?->id;
         $systemDate = $this->getSystemDate();
         if (!$request->filled('date')) {
             $request->merge(['date' => $systemDate]);
@@ -1449,32 +1468,8 @@ class PaymentController extends Controller
             ], 403);
         }
 
-        $hasStayDateBounds = !$booking->is_service_only;
-        $stayStart = $booking->arrival_date ? Carbon::parse($booking->arrival_date)->startOfDay() : null;
-        $stayEnd = $booking->departure_date ? Carbon::parse($booking->departure_date)->startOfDay() : null;
-        $roomInput = $request->input('booking_room_id') ?? $request->input('bookingRoomId') ?? $request->input('room_id') ?? $request->input('roomId');
-        if ($roomInput !== null && $roomInput !== '') {
-            $dateBoundRoom = BookingRoom::where('booking_id', $bookingId)
-                ->where(function ($query) use ($roomInput) {
-                    $query->where('id', (string) $roomInput)
-                        ->orWhere('room_number', (string) $roomInput);
-                })
-                ->first();
-            if ($dateBoundRoom) {
-                if ($dateBoundRoom->isVirtual()) {
-                    $hasStayDateBounds = false;
-                } else {
-                    $stayStart = $dateBoundRoom->arrival_date ? Carbon::parse($dateBoundRoom->arrival_date)->startOfDay() : $stayStart;
-                    $stayEnd = $dateBoundRoom->departure_date ? Carbon::parse($dateBoundRoom->departure_date)->startOfDay() : $stayEnd;
-                }
-            }
-        }
-        if ($hasStayDateBounds && (($stayStart && $paymentDate->lt($stayStart)) || ($stayEnd && $paymentDate->gt($stayEnd)))) {
-            throw \Illuminate\Validation\ValidationException::withMessages([
-                'date' => ['Ngày thanh toán phải nằm trong thời gian lưu trú của đăng ký/phòng.'],
-            ]);
-        }
-
+        // Ngày thanh toán không ràng theo giai đoạn ở: khách có thể checkout rồi thanh toán sau.
+        // Chỉ chặn ngày tương lai và kiểm tra quyền ngày cũ ở trên.
         $paymentDate = $paymentDate->toDateString();
         $paymentTime = $this->normalizePaymentTime($request->input('open_time'));
         $paymentShift = $this->resolvePaymentShift($request->input('shift_id'), $paymentTime);
@@ -1489,7 +1484,9 @@ class PaymentController extends Controller
         $departmentId = $this->getDepartmentId($request);
         $salesInvoice = null;
 
-        DB::transaction(function () use ($request, $booking, $bookingId, $folioId, $systemDate, $departmentId, $paymentDate, $paymentTime, $paymentShift, &$salesInvoice) {
+        // Id các dòng thanh toán vừa tạo để Hóa đơn tự in phiếu thu khi bật DisablePrintBillAfterPayment.
+        $createdPaymentIds = [];
+        DB::transaction(function () use ($request, $booking, $bookingId, $virtualRoom, $folioId, $systemDate, $departmentId, $paymentDate, $paymentTime, $paymentShift, &$salesInvoice, &$createdPaymentIds) {
             // One sequential code is shared by all payment rows in this
             // settlement (for example cash + transfer entered together).
             $settlementCode = $this->nextSettlementCode();
@@ -1503,7 +1500,7 @@ class PaymentController extends Controller
             // Resolve the canonical room id and verify the guest belongs to
             // that room/booking before any payment or bill is updated.
             if ($reqRoomId !== null && $reqRoomId !== '') {
-                $room = BookingRoom::where('booking_id', $bookingId)
+                $room = $virtualRoom ?: BookingRoom::where('booking_id', $bookingId)
                     ->where(function ($query) use ($reqRoomId) {
                         $query->where('id', (string) $reqRoomId)
                             ->orWhere('room_number', (string) $reqRoomId);
@@ -1751,7 +1748,7 @@ class PaymentController extends Controller
                 'booking_id'            => $bookingId,
                 'booking_room_id'       => $reqRoomId ? (string) $reqRoomId : null,
                 'guest_id'              => $reqGuestId ? (string) $reqGuestId : null,
-                'company_id'            => $booking->company_id,
+                'company_id'            => $booking?->company_id,
                 'payment_code'          => (string) $settlementCode,
                 'guest_name'            => $spGuestName,
                 'legacy_booking_id'     => $bookingId,
@@ -1772,14 +1769,16 @@ class PaymentController extends Controller
                     $debitAccount = $bankAccount?->accounting_account ?: trim((string) ($pItem['bank_account'] ?? ''));
                 }
 
-                Payment::create([
+                $createdPaymentIds[] = Payment::create([
                     'booking_id'        => $bookingId,
                     'booking_room_id'   => $reqRoomId,
                     'guest_id'          => $reqGuestId,
-                    'company_id'        => $booking->company_id,
+                    'company_id'        => $booking?->company_id,
                     'date'              => $request->input('date', $systemDate),
                     'open_time'         => $request->input('open_time', now()->format('H:i:s')),
-                    'guest_display'     => $booking->booking_code . ' - ' . $booking->booking_name,
+                    'guest_display'     => $booking
+                        ? $booking->booking_code . ' - ' . $booking->booking_name
+                        : 'PHÒNG ẢO ' . ($virtualRoom?->room_number ?? ''),
                     'description'       => $note,
                     'amount'            => $amt,
                     'total_amount_before_split' => $amt,
@@ -1800,7 +1799,7 @@ class PaymentController extends Controller
                     'status'            => Payment::STATUS_PAID, // 2
                     'edit_flag'         => 0,
                     'created_by'        => Auth::user()?->username ?? 'system',
-                ]);
+                ])->id;
             }
 
             // 2. Cập nhật mã thanh toán payment_id & invoice_id trên các bản ghi cọc/tạm ứng hiện có thuộc Folio này
@@ -1981,14 +1980,16 @@ class PaymentController extends Controller
                 }
             }
 
-            // Sync payment_value trên booking
-            $totalDeposit = Payment::where('booking_id', $bookingId)
-                ->where('edit_flag', 0)
-                ->whereNull('deleted_at')
-                ->sum('amount');
-            Booking::where('id', $bookingId)->update(['payment_value' => $totalDeposit]);
+            // Sync payment_value trên booking (folio phòng ảo không có booking nên bỏ qua)
+            if ($booking) {
+                $totalDeposit = Payment::where('booking_id', $bookingId)
+                    ->where('edit_flag', 0)
+                    ->whereNull('deleted_at')
+                    ->sum('amount');
+                Booking::where('id', $bookingId)->update(['payment_value' => $totalDeposit]);
 
-            $this->completeBookingAfterMasterSettlement($booking);
+                $this->completeBookingAfterMasterSettlement($booking);
+            }
         });
 
         return response()->json([
@@ -1997,6 +1998,7 @@ class PaymentController extends Controller
             'invoice' => $salesInvoice ?? null,
             'data'    => [
                 'invoice' => $salesInvoice ?? null,
+                'payment_ids' => $createdPaymentIds,
             ],
         ]);
     }

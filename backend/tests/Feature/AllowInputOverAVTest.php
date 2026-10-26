@@ -120,6 +120,50 @@ class AllowInputOverAVTest extends TestCase
         $res->assertJsonPath('data.AllowInputOverAV', '1');
     }
 
+    public function test_hotel_setting_returns_show_virtual_room_without_changing_availability_rules()
+    {
+        HotelConfig::updateOrCreate(['name' => 'ShowVirtualRoom'], ['value' => '0', 'is_visible' => true]);
+
+        $res = $this->getJson('/api/hotel-settings');
+
+        $res->assertOk();
+        $res->assertJsonPath('data.ShowVirtualRoom', '0');
+    }
+
+    public function test_booking_init_dropdowns_returns_company_default_for_quick_booking(): void
+    {
+        HotelConfig::updateOrCreate(
+            ['name' => 'CompanyDefault'],
+            ['value' => (string) $this->company->id, 'is_visible' => true]
+        );
+
+        $this->getJson('/api/bookings/init-dropdowns')
+            ->assertOk()
+            ->assertJsonPath('data.hotel_settings.CompanyDefault', (string) $this->company->id);
+    }
+
+    public function test_company_default_must_reference_an_active_company(): void
+    {
+        $inactiveCompany = Company::create([
+            'name' => 'Inactive Company Default',
+            'code' => 'INACTIVE-COMPANY-DEFAULT',
+            'is_active' => false,
+        ]);
+        $config = HotelConfig::where('name', 'CompanyDefault')->firstOrFail();
+
+        $this->putJson("/api/hotel-configs/{$config->id}", [
+            'name' => 'CompanyDefault',
+            'value' => (string) $inactiveCompany->id,
+            'description' => $config->description,
+        ])->assertUnprocessable()->assertJsonValidationErrors('value');
+
+        $this->putJson("/api/hotel-configs/{$config->id}", [
+            'name' => 'CompanyDefault',
+            'value' => (string) $this->company->id,
+            'description' => $config->description,
+        ])->assertOk()->assertJsonPath('data.value', (string) $this->company->id);
+    }
+
     public function test_cannot_create_booking_when_allow_input_over_av_is_0_and_av_is_0()
     {
         HotelConfig::updateOrCreate(['name' => 'AllowInputOverAV'], ['value' => '0']);
@@ -455,5 +499,95 @@ class AllowInputOverAVTest extends TestCase
 
         $res->assertOk();
         $this->assertEquals(Booking::STATUS_RESERVATION, $bkCancelled->fresh()->status);
+    }
+
+    public function test_room_plan_drag_to_a_full_different_room_class_is_blocked_when_allow_over_is_0()
+    {
+        HotelConfig::updateOrCreate(['name' => 'AllowOverRoomTypeRoomKind'], ['value' => '0']);
+        [$sourceBooking, $sourceRoom] = $this->createRoomPlanDifferentClassMoveFixture();
+
+        $response = $this->putJson("/api/bookings/{$sourceBooking->id}/rooms/{$sourceRoom->id}", [
+            'room_number' => $this->room1->room_number,
+            'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-10-10',
+            'departure_date' => '2026-10-12',
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('success', false);
+        $this->assertSame('SRC_999', $sourceRoom->fresh()->room_number);
+        $this->assertNotSame($this->roomClass->id, (int) $sourceRoom->fresh()->room_class_id);
+    }
+
+    public function test_room_plan_drag_to_a_full_different_room_class_requires_confirmation_when_allow_over_is_1()
+    {
+        HotelConfig::updateOrCreate(['name' => 'AllowOverRoomTypeRoomKind'], ['value' => '1']);
+        [$sourceBooking, $sourceRoom] = $this->createRoomPlanDifferentClassMoveFixture();
+
+        $payload = [
+            'room_number' => $this->room1->room_number,
+            'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-10-10',
+            'departure_date' => '2026-10-12',
+        ];
+
+        $this->putJson("/api/bookings/{$sourceBooking->id}/rooms/{$sourceRoom->id}", $payload)
+            ->assertStatus(409)
+            ->assertJsonPath('code', 'overbooking_confirmation_required');
+        $this->assertSame('SRC_999', $sourceRoom->fresh()->room_number);
+
+        $this->putJson("/api/bookings/{$sourceBooking->id}/rooms/{$sourceRoom->id}", [
+            ...$payload,
+            'confirm_overbooking' => true,
+        ])
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('warning', 'Cảnh báo: Số phòng trống của loại phòng đã bị âm (AV = -1). Vẫn ghi nhận lưu theo cấu hình hệ thống.');
+
+        $movedRoom = $sourceRoom->fresh();
+        $this->assertSame($this->room1->room_number, $movedRoom->room_number);
+        $this->assertSame($this->roomClass->id, (int) $movedRoom->room_class_id);
+    }
+
+    private function createRoomPlanDifferentClassMoveFixture(): array
+    {
+        $bookingAttributes = [
+            'created_by' => $this->user->username,
+            'booking_date' => '2026-10-06',
+            'company_id' => $this->company->id,
+            'arrival_date' => '2026-10-10',
+            'departure_date' => '2026-10-12',
+            'num_of_days' => 2,
+            'registration_status_id' => $this->status->booking_status_id,
+            'market_id' => $this->market->id,
+            'customer_source_id' => $this->customerSource->id,
+        ];
+
+        $targetBooking = Booking::create([...$bookingAttributes, 'booking_name' => 'BK Target Full']);
+        BookingRoom::create([
+            'booking_id' => $targetBooking->id,
+            'room_class_id' => $this->roomClass->id,
+            'room_number' => null,
+            'arrival_date' => '2026-10-10',
+            'departure_date' => '2026-10-12',
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $sourceRoomClass = RoomClass::create([
+            'name' => 'Source Class',
+            'code' => 'SRC',
+            'is_active' => 1,
+        ]);
+        $sourceBooking = Booking::create([...$bookingAttributes, 'booking_name' => 'BK Source']);
+        $sourceRoom = BookingRoom::create([
+            'booking_id' => $sourceBooking->id,
+            'room_class_id' => $sourceRoomClass->id,
+            'room_number' => 'SRC_999',
+            'arrival_date' => '2026-10-10',
+            'departure_date' => '2026-10-12',
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        return [$sourceBooking, $sourceRoom];
     }
 }

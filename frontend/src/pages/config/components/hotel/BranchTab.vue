@@ -256,10 +256,10 @@ onBeforeUnmount(() => {
             v-for="b in branches.filter(item => !searchBranchQuery || (item.code && item.code.toLowerCase().includes(searchBranchQuery.toLowerCase())) || (item.name && item.name.toLowerCase().includes(searchBranchQuery.toLowerCase())))"
             :key="b.id" @click="openEditBranchModal(b)"
             class="border-b border-slate-100 hover:bg-slate-50/55 cursor-pointer text-[#000000D9]">
-            <td class="p-2.5 font-semibold text-slate-800 text-center">{{ b.code }}</td>
-            <td class="p-2.5 font-normal text-slate-700">{{ b.name }}</td>
-            <td class="p-2.5 font-normal text-sky-700 text-xs break-all select-all">{{ b.api_url || '-' }}</td>
-            <td class="p-2.5 font-normal text-sky-700 text-xs break-all select-all">{{ b.api_report_url || '-' }}</td>
+            <td class="p-2.5 font-normal text-[#000000D9] text-center">{{ b.code }}</td>
+            <td class="p-2.5 font-normal text-[#000000D9]">{{ b.name }}</td>
+            <td class="p-2.5 font-normal text-[#000000D9] text-xs break-all select-all">{{ b.api_url || '-' }}</td>
+            <td class="p-2.5 font-normal text-[#000000D9] text-xs break-all select-all">{{ b.api_report_url || '-' }}</td>
             <td class="p-2.5 text-center">
               <label @click.stop class="relative inline-flex items-center cursor-pointer">
                 <input type="checkbox" :checked="b.is_master" @change="toggleBranchMaster(b)"
@@ -331,7 +331,7 @@ onBeforeUnmount(() => {
             </div>
           </div>
           <div class="flex flex-col gap-1">
-            <label>API Connection URL</label>
+            <label>Đường Dẫn Kết Nối API</label>
             <div class="relative">
               <input type="text" v-model="branchFormState.api_url"
                 placeholder="https://hotel.hktsolution.vn/branches-total"
@@ -341,7 +341,7 @@ onBeforeUnmount(() => {
             </div>
           </div>
           <div class="flex flex-col gap-1">
-            <label>API Report Connection URL</label>
+            <label>Đường Dẫn Kết Nối API Báo Cáo</label>
             <div class="relative">
               <input type="text" v-model="branchFormState.api_report_url"
                 placeholder="https://hotel.hktsolution.vn/rppms1/"

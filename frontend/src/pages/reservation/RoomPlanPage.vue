@@ -1,22 +1,28 @@
 <script setup>
 import { ref, computed, onMounted, watch, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
-import { ROOM_STATUSES, roomService } from '@/services/room-service'
+import { ROOM_STATUS_ICON_MAP, roomService } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useRoomStore } from '@/stores/room-store'
 import RoomIcon from '@/components/RoomIcon.vue'
-import { fetchBookings, fetchBookingInitDropdowns, checkInRoom, unassignRoom, fetchRoomRateCodes, cancelBookingRoom, fetchSystemDate, fetchUserSettings, updateUserSettings, fetchHotelSettings, updateBookingRoom, splitBookingRoom, createBooking, lockRoomMove, unlockRoomMove, checkAvailability } from '@/services/booking-service'
+import { fetchBookings, fetchBookingInitDropdowns, checkInRoomWithConfirmations, unassignRoom, fetchRoomRateCodes, cancelBookingRoom, fetchSystemDate, fetchUserSettings, updateUserSettings, fetchHotelSettings, updateBookingRoom, splitBookingRoom, createBooking, lockRoomMove, unlockRoomMove, checkAvailability } from '@/services/booking-service'
 import { fetchCompanies, fetchMarkets, fetchCustomerSources } from '@/services/company-service'
 import { updateRoomPlanBookingRoomStay } from '@/services/room-plan-service'
 import CancelReasonModal from './components/CancelReasonModal.vue'
 import { useAuthStore } from '@/stores/auth-store'
 import http from '@/services/http'
 import echo from '@/services/echo'
-import { calculateRoomPlanBookingAmounts, calculateRoomPlanRoomAmounts } from '@/utils/room-plan-amounts.js'
+import { calculateRoomPlanBookingAmounts, calculateRoomPlanPaymentAmounts, calculateRoomPlanRoomAmounts, resolveRoomPlanBookingNote } from '@/utils/room-plan-amounts.js'
+import { resolveRoomPlanStatusIcon } from '@/utils/room-plan-room-status.js'
 import { resolveRateCodePrice } from '@/utils/rate-code-pricing.js'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
 import { getRoomPlanDateRange, setRoomPlanDateRange } from './room-plan-view-state.js'
 import { roomPlanStayRange, markRoomPlanConflicts } from '@/utils/room-plan-conflicts.js'
+import { resolveRoomPlanDayUseLayout } from '@/utils/room-plan-day-use-layout.js'
+import { resolveRoomPlanNights } from '@/utils/room-plan-nights.js'
+import { isRoomPlanVirtualRoomVisible } from '@/utils/room-plan-virtual-room-visibility.js'
+import { buildRoomPlanSelectionRectangle, getRoomPlanSelectionGroupBounds, replaceRoomPlanSelectionGroup } from '@/utils/room-plan-selection.js'
+import { resolveRoomPlanQuickBookingRateMode, resolveRoomPlanQuickBookingUnitPrice } from '@/utils/room-plan-quick-booking-pricing.js'
 
 const uiStore = useUiStore()
 const roomStore = useRoomStore()
@@ -254,10 +260,14 @@ const standardRates = ref([])
 const allMarkets = ref([])
 const allCustomerSources = ref([])
 const registrationStatuses = ref([])
-const quickBookingCompanySearch = ref('KHÁCH LẺ')
+const quickBookingCompanySearch = ref('')
 const showQuickBookingCompanyDropdown = ref(false)
+const quickBookingDefaultCompanyId = ref(null)
+const quickBookingUseConfiguredPricePerRoom = ref(false)
+const quickBookingRateSource = ref('standard')
+const quickBookingRateInput = ref('')
 const quickBookingForm = ref({
-  company: 'KHÁCH LẺ',
+  company: '',
   companyId: null,
   marketId: null,
   customerSourceId: null,
@@ -275,10 +285,7 @@ const selectedQuickBookingRateCode = computed(() => {
 })
 
 const isQuickBookingDailyRate = computed(() => Boolean(selectedQuickBookingRateCode.value?.IsDaily))
-const isQuickBookingRateEditable = computed(() => {
-  const rateCode = selectedQuickBookingRateCode.value
-  return !rateCode || (!rateCode.IsDaily && Boolean(rateCode.AllowChangeRate))
-})
+const isQuickBookingRateEditable = computed(() => !selectedQuickBookingRateCode.value)
 const quickBookingRateLabel = computed(() =>
   isQuickBookingDailyRate.value ? 'Rate (đêm đầu / 1 phòng)' : 'Rate (1 đêm / 1 phòng)'
 )
@@ -293,12 +300,40 @@ function clearQuickBookingRateCode() {
 
 function formatQuickBookingRate(val) {
   if (val === '' || val === null || val === undefined) return ''
-  return Number(val || 0).toLocaleString('en-US')
+  return Number(val || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })
+}
+
+function setQuickBookingRate(value) {
+  quickBookingForm.value.rate = Number(value) || 0
+  quickBookingRateInput.value = formatQuickBookingRate(quickBookingForm.value.rate)
 }
 
 function handleQuickBookingRateInput(event) {
-  const digits = event.target.value.replace(/[^0-9]/g, '')
-  quickBookingForm.value.rate = digits === '' ? '' : Number(digits)
+  const raw = String(event.target.value || '').replace(/,/g, '').replace(/[^0-9.]/g, '')
+  const [integerPart = '', ...decimalParts] = raw.split('.')
+  const decimalPart = decimalParts.join('').slice(0, 2)
+  const normalized = decimalParts.length > 0 ? `${integerPart}.${decimalPart}` : integerPart
+  quickBookingRateSource.value = 'manual'
+  quickBookingUseConfiguredPricePerRoom.value = false
+  quickBookingRateInput.value = normalized
+  quickBookingForm.value.rate = normalized === '' || normalized === '.' ? 0 : Number(normalized)
+}
+
+function focusQuickBookingRate(event) {
+  if (Number(quickBookingForm.value.rate || 0) === 0) {
+    quickBookingRateInput.value = ''
+  } else {
+    quickBookingRateInput.value = String(quickBookingForm.value.rate)
+  }
+  event.target.select()
+}
+
+function blurQuickBookingRate() {
+  setQuickBookingRate(quickBookingForm.value.rate)
+}
+
+function clearQuickBookingManualRate() {
+  calculateQuickBookingPrice()
 }
 
 const quickBookingModalStyle = computed(() => {
@@ -463,7 +498,9 @@ const isDragSelecting = ref(false)
 const dragSelectionStart = ref(null) // { roomIdx, dayIdx, roomNo }
 const initialSelectedCells = ref([])
 const selectionDragMoved = ref(false)
+const selectionDragBlockedMessage = ref('')
 let selectionGroupCounter = 0
+const selectionResizeState = ref(null)
 
 // Resize state
 const resizeState = ref(null)
@@ -700,71 +737,73 @@ const companyFilterData = computed(() => {
 
 const displayCompanies = computed(() => companyFilterData.value.items)
 
-const allCompanyNames = computed(() => {
-  const list = ['KHÁCH LẺ']
-  if (allCompanies.value && allCompanies.value.length > 0) {
-    allCompanies.value.forEach(c => {
-      const name = c.name || c.company_name || c.trading_name || c.code
-      if (name && !list.some(item => item.toLowerCase() === String(name).toLowerCase())) {
-        list.push(name)
-      }
+const quickBookingCompanyNames = computed(() => {
+  const seen = new Set()
+  return (allCompanies.value || [])
+    .filter(isQuickBookingCompanyActive)
+    .map(company => company.name || company.company_name || company.trading_name || company.code)
+    .filter(Boolean)
+    .filter(name => {
+      const key = String(name).toLocaleLowerCase()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
     })
-  }
-  if (bookings.value) {
-    bookings.value.forEach(b => {
-      if (b.company && !list.some(item => item.toLowerCase() === String(b.company).toLowerCase())) {
-        list.push(b.company)
-      }
-    })
-  }
-  return list
 })
 
 const filteredQuickBookingCompanies = computed(() => {
   const query = removeVietnameseTones(quickBookingCompanySearch.value.toLowerCase().trim())
   
-  if (!query || query === 'khach le') {
-    return allCompanyNames.value
+  if (!query) {
+    return quickBookingCompanyNames.value
   }
   
-  return allCompanyNames.value.filter(cName => removeVietnameseTones(String(cName).toLowerCase()).includes(query))
+  return quickBookingCompanyNames.value.filter(cName => removeVietnameseTones(String(cName).toLowerCase()).includes(query))
 })
 
 function selectQuickBookingCompany(cName) {
-  quickBookingForm.value.company = cName
-  quickBookingCompanySearch.value = cName
   showQuickBookingCompanyDropdown.value = false
 
   const co = allCompanies.value.find(c => {
     const name = c.name || c.company_name || c.trading_name || c.code
-    return name && String(name).toLowerCase() === String(cName).toLowerCase()
+    return isQuickBookingCompanyActive(c)
+      && name && String(name).toLowerCase() === String(cName).toLowerCase()
   })
 
   if (co) {
-    quickBookingForm.value.companyId = co.id
-    if (co.market_id) {
-      quickBookingForm.value.marketId = co.market_id
-    } else if (co.market?.id) {
-      quickBookingForm.value.marketId = co.market.id
-    }
-
-    if (co.customer_source_id) {
-      quickBookingForm.value.customerSourceId = co.customer_source_id
-    } else if (co.customer_source?.id) {
-      quickBookingForm.value.customerSourceId = co.customer_source.id
-    }
-
-    if (co.rate_code) {
-      quickBookingForm.value.rateCode = co.rate_code
-      calculateQuickBookingPrice()
-    }
-  } else {
-    const walkinCo = allCompanies.value.find(c => {
-      const n = removeVietnameseTones(String(c.name || c.company_name || c.code || '')).toLowerCase()
-      return n.includes('khach le') || n.includes('walk-in') || n.includes('walkin') || n.includes('fit')
-    })
-    quickBookingForm.value.companyId = walkinCo ? walkinCo.id : (allCompanies.value[0]?.id || 1)
+    applyQuickBookingCompany(co)
   }
+}
+
+function applyQuickBookingCompany(company) {
+  const companyName = company.name || company.company_name || company.trading_name || company.code || ''
+  quickBookingForm.value.company = companyName
+  quickBookingCompanySearch.value = companyName
+  quickBookingForm.value.companyId = company.id
+
+  if (company.market_id) quickBookingForm.value.marketId = company.market_id
+  else if (company.market?.id) quickBookingForm.value.marketId = company.market.id
+
+  if (company.customer_source_id) quickBookingForm.value.customerSourceId = company.customer_source_id
+  else if (company.customer_source?.id) quickBookingForm.value.customerSourceId = company.customer_source.id
+
+  if (quickBookingRateSource.value !== 'manual') {
+    quickBookingForm.value.rateCode = company.rate_code || ''
+    calculateQuickBookingPrice()
+  }
+}
+
+function getConfiguredQuickBookingCompany() {
+  const companyId = Number(quickBookingDefaultCompanyId.value)
+  if (!Number.isInteger(companyId) || companyId < 1) return null
+
+  return allCompanies.value.find(company =>
+    Number(company.id) === companyId && isQuickBookingCompanyActive(company)
+  ) || null
+}
+
+function isQuickBookingCompanyActive(company) {
+  return company?.is_active === true || Number(company?.is_active) === 1
 }
 
 function handleQuickBookingCompanyInput() {
@@ -778,30 +817,14 @@ function handleQuickBookingCompanyInput() {
 
   const co = allCompanies.value.find(c => {
     const name = c.name || c.company_name || c.trading_name || c.code
-    return name && String(name).toLowerCase() === query
+    return isQuickBookingCompanyActive(c)
+      && name && String(name).toLowerCase() === query
   })
 
   if (co) {
-    quickBookingForm.value.companyId = co.id
-    if (co.market_id) quickBookingForm.value.marketId = co.market_id
-    else if (co.market?.id) quickBookingForm.value.marketId = co.market.id
-    if (co.customer_source_id) quickBookingForm.value.customerSourceId = co.customer_source_id
-    else if (co.customer_source?.id) quickBookingForm.value.customerSourceId = co.customer_source.id
-    if (co.rate_code) {
-      quickBookingForm.value.rateCode = co.rate_code
-      calculateQuickBookingPrice()
-    }
+    applyQuickBookingCompany(co)
   } else {
-    const queryNoTone = removeVietnameseTones(query)
-    if (queryNoTone === 'khach le' || queryNoTone === 'walkin' || queryNoTone === 'fit') {
-      const walkinCo = allCompanies.value.find(c => {
-        const n = removeVietnameseTones(String(c.name || c.company_name || c.code || '')).toLowerCase()
-        return n.includes('khach le') || n.includes('walk-in') || n.includes('walkin') || n.includes('fit')
-      })
-      quickBookingForm.value.companyId = walkinCo ? walkinCo.id : (allCompanies.value[0]?.id || 1)
-    } else {
-      quickBookingForm.value.companyId = null
-    }
+    quickBookingForm.value.companyId = null
   }
 }
 
@@ -1108,8 +1131,10 @@ const dbRooms = computed(() => {
         floor: r.floor || r.room_number.substring(0, r.room_number.length - 2) || '1',
         shape,
         status: r.status,
+        room_status_code: r.room_status_code,
+        booking_status: r.booking_status,
         is_clean: r.is_clean !== undefined ? r.is_clean : true,
-        lock_type: r.status === 'maintenance' ? r.lock_type : null,
+        lock_type: r.lock_type || null,
         hasBroom: r.status === 'dirty' || !r.is_clean,
         hasSparkles: !!r.is_clean && r.status === 'available' && !r.booking_status,
         isVirtual: false,
@@ -1201,6 +1226,11 @@ const dbRooms = computed(() => {
       })
     }
   })
+
+  // Dòng 340: chỉ ẩn dòng phòng chưa gán trên lưới; dữ liệu booking và thống kê OCC/AV giữ nguyên.
+  if (!isRoomPlanVirtualRoomVisible(hotelSettings.value?.ShowVirtualRoom)) {
+    list = list.filter(room => !room.isVirtual)
+  }
 
   // Filter by selected room type
   if (selectedRoomTypes.value && selectedRoomTypes.value.length > 0) {
@@ -1615,17 +1645,10 @@ async function loadBookings() {
 
         const bookingAmounts = calculateRoomPlanBookingAmounts(b, systemDate.value)
         const bookingTotalAmount = bookingAmounts.roomCharge + bookingAmounts.serviceCharge
-        const activePayments = (b.payments || []).filter(payment => Number(payment.edit_flag) === 0 && !payment.deleted_at)
-        const depositAmount = activePayments
-          .filter(payment => (
-            String(payment.pack2 || '').toUpperCase() === 'DPR'
-            && String(payment.pack4 || '').toUpperCase() !== 'AP'
-            && !payment.payment_id
-            && !payment.paymentId
-            && !String(payment.description || '').trim().toUpperCase().startsWith('[TRANSFER IN')
-          ))
-          .reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0)
-        const bookingBalance = Math.max(0, bookingTotalAmount - depositAmount)
+        const paymentAmounts = calculateRoomPlanPaymentAmounts(b)
+        const depositAmount = paymentAmounts.depositAmount
+        const paidAmount = paymentAmounts.paidAmount
+        const bookingBalance = Math.max(0, bookingTotalAmount - depositAmount - paidAmount)
 
         b.booking_rooms.forEach(br => {
           if (![0, 1, 2].includes(Number(br.status))) return
@@ -1669,6 +1692,7 @@ async function loadBookings() {
           const departureStr = br.departure_date ? toLocalDateStr(br.departure_date) : (b.departure_date ? toLocalDateStr(b.departure_date) : '')
           const arrivalTime = br.arrival_time || '14:00'
           const departureTime = br.departure_time || '12:00'
+          const isDayUse = Boolean(br.is_day_use ?? b.is_day_use)
 
           const guestDetails = (br.guests || []).map(g => g.guest?.full_name || g.full_name).filter(Boolean)
           if (guestDetails.length === 0 && guestName && guestName !== 'Guest') {
@@ -1684,6 +1708,7 @@ async function loadBookings() {
             arrival_time: arrivalTime,
             departure_time: departureTime,
             room_type_name: br.room_class?.name || br.room_type || typeClass,
+            roomClassId: br.room_class_id ?? br.room_class?.id ?? null,
             status: Number(br.status),
             type,
             typeClass,
@@ -1693,22 +1718,26 @@ async function loadBookings() {
             guestName,
             guest_details: guestDetails,
             booking_color: b.color || br.color || '',
-            note: b.note || br.note || '',
+            note: resolveRoomPlanBookingNote(b, br),
             registrationStatusId: registrationStatus?.booking_status_id ?? b.registration_status_id ?? null,
             registrationStatusName,
             registrationStatusColor,
             isAvailability: registrationStatus.is_availability === undefined
               ? true
               : Boolean(registrationStatus.is_availability),
-            isDayUse: Boolean(br.is_day_use ?? b.is_day_use),
-            nights: Math.round((new Date(departureStr) - new Date(arrivalStr)) / (1000 * 60 * 60 * 24)) || 1,
+            isDayUse,
+            nights: resolveRoomPlanNights({
+              arrivalDate: arrivalStr,
+              departureDate: departureStr,
+              isDayUse,
+            }),
             isDoNotMove: !!br.is_do_not_move,
             checkoutHour: departureTime,
             adults: br.adults || 2,
             children: br.children ? br.children.filter(c => c.age_group === 'child').length : 0,
             babies: br.children ? br.children.filter(c => c.age_group === 'baby').length : 0,
             extraBed: br.extra_bed_qty || 0,
-            specialRequest: b.note || b.special_requests || br.note || '',
+            specialRequest: resolveRoomPlanBookingNote(b, br),
             price: priceStr,
             rawRate: priceVal,
             label,
@@ -1720,6 +1749,7 @@ async function loadBookings() {
             serviceChargeDue: roomAmounts.serviceCharge,
             totalAmount: roomAmounts.roomCharge + roomAmounts.serviceCharge,
             depositAmount,
+            paidAmount,
             bookingTotalAmount,
             bookingBalance
           })
@@ -1788,6 +1818,14 @@ function handleWindowClick(event) {
 
 let bc = null
 let suppressDateRangeReload = false
+
+function refreshRoomPlanRooms({ silent = false } = {}) {
+  const date = toLocalDateStr(systemDate.value)
+  return roomStore.fetchRooms({
+    ...(date ? { date } : {}),
+    ...(silent ? { silent: true } : {}),
+  })
+}
 
 function notifyRoomUpdates() {
   if (!bc) return
@@ -1870,7 +1908,7 @@ onMounted(async () => {
   settingsLoaded.value = true
 
   // 4. Load data
-  roomStore.fetchRooms()
+  refreshRoomPlanRooms()
   loadBookings()
   loadCompanies()
   loadRateCodes()
@@ -1886,7 +1924,7 @@ onMounted(async () => {
     bc = new BroadcastChannel('pms-room-updates')
     bc.onmessage = (event) => {
       if (event.data === 'rooms-updated') {
-        roomStore.fetchRooms()
+        refreshRoomPlanRooms({ silent: true })
         loadBookings()
       } else if (event.data === 'settings-updated') {
         fetchHotelSettings().then(res => {
@@ -1902,11 +1940,11 @@ onMounted(async () => {
   if (echo) {
     echo.channel('pms-channel')
       .listen('.room.status.updated', () => {
-        roomStore.fetchRooms()
+        refreshRoomPlanRooms({ silent: true })
         loadBookings()
       })
       .listen('.reservation.updated', () => {
-        roomStore.fetchRooms()
+        refreshRoomPlanRooms({ silent: true })
         loadBookings()
       })
   }
@@ -1938,6 +1976,7 @@ onBeforeUnmount(() => {
   stopQuickBookingDrag()
   stopLockRoomDrag()
   stopBookingPointerDrag()
+  stopSelectionResize()
   window.removeEventListener('keydown', handleKeyDown)
   if (roomPlanScrollContainer.value && !isRestoringPlanScroll) {
     sessionStorage.setItem(ROOM_PLAN_SCROLL_TOP_KEY, String(roomPlanScrollContainer.value.scrollTop))
@@ -2053,7 +2092,9 @@ function isCellOccupied(roomNo, date) {
   const roomBookings = processedBookings.value[rKey] || processedBookings.value[roomNo] || []
   if (!roomBookings || roomBookings.length === 0) return false
 
-  const targetDateStr = formatDateStr(date)
+  const targetDateStr = typeof date === 'string'
+    ? date.substring(0, 10)
+    : formatDateStr(date)
 
   return roomBookings.some(bk => {
     const checkInDateStr = formatDateStr(parseDateTime(bk.checkIn))
@@ -2106,6 +2147,124 @@ function isSelectionGroupTop(roomNo, date) {
   return (previous.selectionGroup ?? previous.date) !== (current.selectionGroup ?? current.date)
 }
 
+function selectionGroupId(cell) {
+  return cell?.selectionGroup
+}
+
+function roomPlanDayKeys() {
+  return days.value.map(day => formatDateStr(day.fullDate))
+}
+
+function selectionGroupBounds(selectionGroup) {
+  if (selectionGroup === undefined || selectionGroup === null) return null
+  return getRoomPlanSelectionGroupBounds(selectedCells.value, selectionGroup, roomPlanDayKeys())
+}
+
+function isMultiRoomSelectionGroup(roomNo, date) {
+  const dateStr = formatDateStr(date)
+  const cell = selectedCells.value.find(item => item.room === roomNo && item.date === dateStr)
+  const bounds = selectionGroupBounds(selectionGroupId(cell))
+  return Boolean(bounds && bounds.roomNumbers.length > 1)
+}
+
+function isSelectionResizeEdge(roomNo, date, edge) {
+  const dateStr = formatDateStr(date)
+  const cell = selectedCells.value.find(item => item.room === roomNo && item.date === dateStr)
+  const bounds = selectionGroupBounds(selectionGroupId(cell))
+  if (!bounds || bounds.roomNumbers.length < 2) return false
+
+  const dayIndex = roomPlanDayKeys().indexOf(dateStr)
+  return edge === 'start'
+    ? dayIndex === bounds.startDayIndex
+    : dayIndex === bounds.endDayIndex
+}
+
+function getRoomPlanCellAtPoint(event) {
+  const target = document.elementFromPoint(event.clientX, event.clientY)
+  const cell = target?.closest?.('[data-room-plan-cell]')
+  if (!cell) return null
+
+  const dayIndex = Number(cell.dataset.dayIndex)
+  return Number.isInteger(dayIndex) ? { dayIndex } : null
+}
+
+function startSelectionResize(roomItem, dayItem, edge, event) {
+  if (event.button !== 0 || isHousekeepingModule.value) return
+
+  const dateStr = formatDateStr(dayItem.fullDate)
+  const cell = selectedCells.value.find(item => item.room === roomItem.room && item.date === dateStr)
+  const selectionGroup = selectionGroupId(cell)
+  const bounds = selectionGroupBounds(selectionGroup)
+  if (!bounds || bounds.roomNumbers.length < 2) return
+
+  const roomIndexes = bounds.roomNumbers
+    .map(roomNumber => dbRooms.value.findIndex(room => room.room === roomNumber))
+    .filter(roomIndex => roomIndex >= 0)
+  if (roomIndexes.length !== bounds.roomNumbers.length) return
+
+  event.preventDefault()
+  event.stopPropagation()
+  selectionResizeState.value = {
+    edge,
+    selectionGroup,
+    startRoomIndex: Math.min(...roomIndexes),
+    endRoomIndex: Math.max(...roomIndexes),
+    originalStartDayIndex: bounds.startDayIndex,
+    originalEndDayIndex: bounds.endDayIndex,
+    initialSelectedCells: [...selectedCells.value],
+    blockedMessage: '',
+  }
+  window.addEventListener('mousemove', handleSelectionResizeMouseMove)
+  window.addEventListener('mouseup', stopSelectionResize)
+}
+
+function handleSelectionResizeMouseMove(event) {
+  const state = selectionResizeState.value
+  const pointerCell = getRoomPlanCellAtPoint(event)
+  if (!state || !pointerCell) return
+
+  const startDayIndex = state.edge === 'start' ? pointerCell.dayIndex : state.originalStartDayIndex
+  const endDayIndex = state.edge === 'end' ? pointerCell.dayIndex : state.originalEndDayIndex
+  if (startDayIndex > endDayIndex) return
+
+  const rectangle = buildRoomPlanSelectionRectangle({
+    rooms: dbRooms.value,
+    dayKeys: roomPlanDayKeys(),
+    startRoomIndex: state.startRoomIndex,
+    endRoomIndex: state.endRoomIndex,
+    startDayIndex,
+    endDayIndex,
+    selectionGroup: state.selectionGroup,
+    isSelectable: (room, date) => {
+      if (isCellOccupied(room.room, date)) return false
+      return !state.initialSelectedCells.some(cell => (
+        cell.selectionGroup !== state.selectionGroup
+        && cell.room === room.room
+        && cell.date === date
+      ))
+    },
+  })
+  if (!rectangle.valid) {
+    state.blockedMessage = 'Không thể đổi giai đoạn cùng lúc vì có phòng không trống, đang khóa hoặc đã được chọn ở vùng khác.'
+    return
+  }
+
+  state.blockedMessage = ''
+  selectedCells.value = replaceRoomPlanSelectionGroup(
+    state.initialSelectedCells,
+    state.selectionGroup,
+    rectangle.cells,
+  )
+}
+
+function stopSelectionResize() {
+  const blockedMessage = selectionResizeState.value?.blockedMessage
+  selectionResizeState.value = null
+  window.removeEventListener('mousemove', handleSelectionResizeMouseMove)
+  window.removeEventListener('mouseup', stopSelectionResize)
+  if (blockedMessage) uiStore.showToast(blockedMessage, 'warning')
+}
+
 function isBookingSegmented(bk) {
   const roomBookings = processedBookings.value[bk.room] || []
   return roomBookings.some(other => (
@@ -2123,6 +2282,7 @@ function handleCellMouseDown(roomItem, dayItem, dayIdx, roomIdx, event) {
   event.preventDefault()
   isDragSelecting.value = true
   selectionDragMoved.value = false
+  selectionDragBlockedMessage.value = ''
   const startDate = formatDateStr(dayItem.fullDate)
   const existingCell = selectedCells.value.find(c => c.room === roomItem.room && c.date === startDate)
   dragSelectionStart.value = {
@@ -2141,14 +2301,18 @@ function handleCellMouseDown(roomItem, dayItem, dayIdx, roomIdx, event) {
 
 function handleCellMouseEnter(roomItem, dayItem, dayIdx, roomIdx, event) {
   if (!isDragSelecting.value || !dragSelectionStart.value) return
-  if (roomItem.isVirtual) return
+  if (roomItem.isVirtual) {
+    selectionDragBlockedMessage.value = 'Không thể chọn nhiều phòng vì vùng chọn có phòng ảo.'
+    return
+  }
   if (!event.ctrlKey && !event.metaKey) return
-  if (roomItem.room !== dragSelectionStart.value.roomNo) return
-  if (dayIdx === dragSelectionStart.value.dayIdx) return
+  if (roomIdx === dragSelectionStart.value.roomIdx && dayIdx === dragSelectionStart.value.dayIdx) return
 
-  selectionDragMoved.value = true
-
-  updateDragSelection(roomIdx, dayIdx)
+  const updated = updateDragSelection(roomIdx, dayIdx)
+  selectionDragMoved.value = selectionDragMoved.value || updated
+  selectionDragBlockedMessage.value = updated
+    ? ''
+    : 'Không thể chọn nhiều phòng vì vùng chọn có phòng không trống hoặc đang khóa.'
 }
 
 function updateDragSelection(currentRoomIdx, currentDayIdx) {
@@ -2163,30 +2327,25 @@ function updateDragSelection(currentRoomIdx, currentDayIdx) {
     ? initialSelectedCells.value.filter(c => c.selectionGroup !== start.previousGroupId)
     : initialSelectedCells.value.filter(c => !(c.room === start.roomNo && c.date === formatDateStr(days.value[start.dayIdx]?.fullDate)))
   const newSelection = baseSelection.filter(c => c.selectionGroup !== start.groupId)
+  const rectangle = buildRoomPlanSelectionRectangle({
+    rooms: dbRooms.value,
+    dayKeys: roomPlanDayKeys(),
+    startRoomIndex: start.roomIdx,
+    endRoomIndex: currentRoomIdx,
+    startDayIndex: minDayIdx,
+    endDayIndex: maxDayIdx,
+    selectionGroup: start.groupId,
+    isSelectable: (room, date) => !isCellOccupied(room.room, date),
+  })
+  if (!rectangle.valid) return false
 
-  const roomObj = dbRooms.value[start.roomIdx]
-  if (!roomObj || roomObj.isVirtual) return
-  const roomNo = roomObj.room
-
-  for (let dIdx = minDayIdx; dIdx <= maxDayIdx; dIdx++) {
-    const dayObj = days.value[dIdx]
-    if (!dayObj) continue
-
-    if (isCellOccupied(roomNo, dayObj.fullDate)) continue
-
-    const dateStr = formatDateStr(dayObj.fullDate)
-    const exists = newSelection.some(c => c.room === roomNo && c.date === dateStr)
-    if (!exists) {
-      newSelection.push({
-        room: roomNo,
-        date: dateStr,
-        dayIdx: dIdx,
-        selectionGroup: start.groupId
-      })
+  rectangle.cells.forEach(cell => {
+    if (!newSelection.some(item => item.room === cell.room && item.date === cell.date)) {
+      newSelection.push(cell)
     }
-  }
-
+  })
   selectedCells.value = newSelection
+  return true
 }
 
 function handleGlobalCellMouseUp() {
@@ -2194,6 +2353,10 @@ function handleGlobalCellMouseUp() {
     isDragSelecting.value = false
     dragSelectionStart.value = null
     initialSelectedCells.value = []
+    if (selectionDragBlockedMessage.value) {
+      uiStore.showToast(selectionDragBlockedMessage.value, 'warning')
+    }
+    selectionDragBlockedMessage.value = ''
   }
   window.removeEventListener('mouseup', handleGlobalCellMouseUp)
 }
@@ -2350,7 +2513,8 @@ const processedBookings = computed(() => {
     
     const checkInDateStr = formatDateStr(checkInDate)
     const checkOutDateStr = formatDateStr(checkOutDate)
-    const isDayUse = Boolean(bk.isDayUse || checkInDateStr === checkOutDateStr)
+    const isPersistedDayUse = Boolean(bk.isDayUse) && checkInDateStr === checkOutDateStr
+    const isDayUse = Boolean(isPersistedDayUse || checkInDateStr === checkOutDateStr)
     const isLockItem = bk.code === 'LOCK' || bk.type === 'OOO' || bk.type === 'OOS'
 
     // Check if there is overlap with visible grid range
@@ -2432,8 +2596,18 @@ const processedBookings = computed(() => {
     } else {
       baseSpan = isLockEndedEarly ? (endIdx - startIdx) : (endIdx - startIdx + 1)
     }
-    const span = Math.max(1, baseSpan)
-    const showCheckOutIndicator = !showNights.value && isCheckOutVisible
+    let span = Math.max(1, baseSpan)
+    const dayUseLayout = resolveRoomPlanDayUseLayout({
+      isDayUse: isPersistedDayUse,
+      showNights: showNights.value,
+      arrivalTime: bk.arrival_time,
+      departureTime: bk.departure_time,
+    })
+    if (dayUseLayout) {
+      leftRatio = dayUseLayout.leftRatio
+      span = dayUseLayout.widthRatio
+    }
+    const showCheckOutIndicator = !showNights.value && isCheckOutVisible && !isPersistedDayUse
 
     // Calculate past days offset for text shift (Phương án 1: Trượt tự nhiên theo timeline quá khứ)
     const checkInMid = new Date(checkInDate)
@@ -2481,6 +2655,8 @@ const processedBookings = computed(() => {
       isCheckInVisible,
       isCheckOutVisible,
       showCheckOutIndicator,
+      isDayUseLayout: Boolean(dayUseLayout),
+      dayUseLayoutFallback: Boolean(dayUseLayout?.isFallback),
       // Dòng 395: giai đoạn giữ phòng để phát hiện trùng số phòng.
       _range: roomPlanStayRange({
         start: checkInDateStr,
@@ -3137,28 +3313,15 @@ async function loadDropdownsAndPrices() {
     if (mktRes?.data) allMarkets.value = mktRes.data.data || mktRes.data || []
     if (srcRes?.data) allCustomerSources.value = srcRes.data.data || srcRes.data || []
     registrationStatuses.value = initRes?.data?.data?.registration_statuses || []
+    quickBookingDefaultCompanyId.value = initRes?.data?.data?.hotel_settings?.CompanyDefault ?? null
 
-    // If company is selected, auto-set default market & source code
-    if (allCompanies.value.length > 0) {
-      const searchTarget = quickBookingCompanySearch.value || quickBookingForm.value.company || 'KHÁCH LẺ'
-      const co = allCompanies.value.find(c => {
-        const name = c.name || c.company_name || c.trading_name || c.code
-        return name && String(name).toLowerCase() === String(searchTarget).toLowerCase()
-      })
-      if (co) {
-        quickBookingForm.value.companyId = co.id
-        if (co.market_id) quickBookingForm.value.marketId = co.market_id
-        else if (co.market?.id) quickBookingForm.value.marketId = co.market.id
-        if (co.customer_source_id) quickBookingForm.value.customerSourceId = co.customer_source_id
-        else if (co.customer_source?.id) quickBookingForm.value.customerSourceId = co.customer_source.id
-        if (co.rate_code) quickBookingForm.value.rateCode = co.rate_code
-      } else {
-        const walkinCo = allCompanies.value.find(c => {
-          const n = removeVietnameseTones(String(c.name || c.company_name || c.code || '')).toLowerCase()
-          return n.includes('khach le') || n.includes('walk-in') || n.includes('walkin') || n.includes('fit')
-        })
-        quickBookingForm.value.companyId = walkinCo ? walkinCo.id : (allCompanies.value[0]?.id || 1)
-      }
+    const configuredCompany = getConfiguredQuickBookingCompany()
+    if (configuredCompany) {
+      applyQuickBookingCompany(configuredCompany)
+    } else {
+      quickBookingForm.value.companyId = null
+      quickBookingForm.value.company = ''
+      quickBookingCompanySearch.value = ''
     }
     // Fallback if not set
     if (!quickBookingForm.value.marketId && allMarkets.value.length > 0) {
@@ -3190,33 +3353,35 @@ function getRoomUnitPrice(roomNo, rateCodeMa, stayDate = null) {
     if (rateCodePrice !== null) return Number(rateCodePrice)
   }
 
-  // Không chọn Rate Code: lấy giá phòng chuẩn.
+  // Không chọn Rate Code: chỉ lấy giá phòng chuẩn; giá 0 là hợp lệ.
   if (standardRates.value && standardRates.value.length > 0 && roomClassId) {
     const matchedSr = standardRates.value.find(sr =>
       Number(sr.room_class_id) === Number(roomClassId) &&
       (!roomFormId || Number(sr.room_form_id) === Number(roomFormId))
     )
-    if (matchedSr && Number(matchedSr.room_price) > 0) return Number(matchedSr.room_price)
+    if (matchedSr) return Number(matchedSr.room_price) || 0
   }
 
-  if (roomObj) {
-    if (roomObj.room_class && Number(roomObj.room_class.price) > 0) return Number(roomObj.room_class.price)
-    if (Number(roomObj.price) > 0) return Number(roomObj.price)
-  }
-  return 890000
+  return 0
 }
 
 function calculateQuickBookingPrice() {
   const ranges = selectedRoomsRanges.value
-  if (!ranges || ranges.length === 0) return 0
+  if (!ranges || ranges.length === 0) {
+    quickBookingUseConfiguredPricePerRoom.value = false
+    return 0
+  }
 
   // Rate trên form tạo nhanh là đơn giá cho 1 đêm / 1 phòng, không phải tổng tiền booking.
   // Nếu các phòng được chọn có giá chuẩn khác nhau, để 0 để người dùng chủ động nhập giá chung.
   const unitRates = ranges.map(range => getRoomUnitPrice(range.room, quickBookingForm.value.rateCode, range.checkIn))
-  const [firstRate] = unitRates
-  const hasDifferentRates = unitRates.some(rate => Number(rate) !== Number(firstRate))
-
-  quickBookingForm.value.rate = hasDifferentRates ? 0 : (firstRate || 0)
+  const rateMode = resolveRoomPlanQuickBookingRateMode({
+    unitRates,
+    rateCode: quickBookingForm.value.rateCode,
+  })
+  quickBookingUseConfiguredPricePerRoom.value = rateMode.useConfiguredPricePerRoom
+  quickBookingRateSource.value = quickBookingForm.value.rateCode ? 'rate-code' : 'standard'
+  setQuickBookingRate(rateMode.formRate)
   return quickBookingForm.value.rate
 }
 
@@ -3229,10 +3394,14 @@ async function triggerMenuAction(actionName) {
   
   if (actionName === 'Tạo') {
     showQuickBookingModal.value = true
-    quickBookingCompanySearch.value = 'KHÁCH LẺ'
+    quickBookingCompanySearch.value = ''
+    quickBookingRateSource.value = 'standard'
+    quickBookingRateInput.value = ''
     quickBookingForm.value = {
-      company: 'KHÁCH LẺ',
+      company: '',
       companyId: null,
+      marketId: null,
+      customerSourceId: null,
       marketSegment: 'Free Individual Traveler',
       sourceCode: 'Free Individual Traveler',
       bookingName: 'Walkin Guest',
@@ -3294,7 +3463,7 @@ async function triggerMenuAction(actionName) {
           const res = await roomService.deleteRoomLock(lockId)
           if (res && (res.success || res.data?.success)) {
             uiStore.showToast('Đã mở khóa phòng thành công!', 'success')
-            await roomStore.fetchRooms()
+            await refreshRoomPlanRooms()
             await loadBookings()
             notifyRoomUpdates()
           } else {
@@ -3394,34 +3563,15 @@ async function triggerMenuAction(actionName) {
         try {
           loadingBookings.value = true
           emit('loading', true)
-          const res = await checkInRoom(booking.bookingId, booking.bookingRoomId)
-          if (res.data?.needs_confirmation) {
-            const dirtyConfirmed = await uiStore.confirm({
-              title: 'Phòng đang chờ kiểm tra',
-              message: res.data.message || `Phòng ${booking.room} đang ở trạng thái chờ kiểm tra. Bạn có muốn tiếp tục nhận phòng không?`,
-              confirmText: 'Tiếp tục nhận phòng',
-              cancelText: 'Hủy'
-            })
-            if (!dirtyConfirmed) {
-              loadingBookings.value = false
-              emit('loading', false)
-              return
-            }
-            const res2 = await checkInRoom(booking.bookingId, booking.bookingRoomId, { confirmed: true })
-            if (res2 && res2.data && res2.data.success !== false && !res2.data.needs_confirmation) {
-              uiStore.showToast(`Giao phòng ${booking.room} thành công!`, 'success')
-              await roomStore.fetchRooms()
-              await loadBookings()
-              notifyRoomUpdates()
-            } else {
-              uiStore.showToast(res2?.data?.message || 'Giao phòng thất bại.', 'error')
-            }
-            return
-          }
+          const res = await checkInRoomWithConfirmations(booking.bookingId, booking.bookingRoomId, {
+            roomNumber: booking.room,
+            confirm: options => uiStore.confirm(options),
+          })
+          if (!res) return
 
-          if (res && res.data && res.data.success !== false) {
+          if (res && res.data && res.data.success !== false && !res.data.needs_confirmation) {
             uiStore.showToast(`Giao phòng ${booking.room} thành công!`, 'success')
-            await roomStore.fetchRooms()
+            await refreshRoomPlanRooms()
             await loadBookings()
             notifyRoomUpdates()
           } else {
@@ -3880,6 +4030,13 @@ async function handleDrop(targetRoom, targetDay, event) {
   const targetRoomNumber = targetRoom.isVirtual ? null : targetRoom.room
   const targetRoomClass = targetRoom.type
   const originalRoomClass = bk.typeClass
+  const originalRoomClassId = Number(bk.roomClassId)
+  const targetRoomClassId = Number(targetRoom.classId)
+  const hasStableRoomClassIds = Number.isInteger(originalRoomClassId) && originalRoomClassId > 0
+    && Number.isInteger(targetRoomClassId) && targetRoomClassId > 0
+  const isDifferentRoomClass = hasStableRoomClassIds
+    ? originalRoomClassId !== targetRoomClassId
+    : originalRoomClass !== targetRoomClass
 
   // Keep original check-in and check-out dates (only change room)
   const originalCheckIn = parseDateTime(bk.checkIn)
@@ -3934,11 +4091,35 @@ async function handleDrop(targetRoom, targetDay, event) {
         arrival_date: arrivalStr,
         departure_date: departureStr
       }
-      if (differentClass && targetRoom.classId) {
-        payload.room_class_id = targetRoom.classId
+      if (differentClass && targetRoomClassId > 0) {
+        payload.room_class_id = targetRoomClassId
       }
 
-      const res = await updateBookingRoom(bk.bookingId, bk.bookingRoomId, payload)
+      let res
+      try {
+        res = await updateBookingRoom(bk.bookingId, bk.bookingRoomId, payload)
+      } catch (requestError) {
+        const errorData = requestError.response?.data
+        if (errorData?.code !== 'overbooking_confirmation_required') {
+          throw requestError
+        }
+
+        const confirmed = await uiStore.confirm({
+          title: 'Cảnh báo overbooking',
+          message: errorData.message || 'Loại phòng đích đã hết phòng trống. Bạn có muốn tiếp tục?',
+          confirmText: 'Tiếp tục',
+          cancelText: 'Hủy'
+        })
+        if (!confirmed) {
+          revertPreviewMove()
+          return
+        }
+
+        res = await updateBookingRoom(bk.bookingId, bk.bookingRoomId, {
+          ...payload,
+          confirm_overbooking: true
+        })
+      }
 
       if (res && res.data && res.data.success) {
         if (res.data.warning) {
@@ -3961,7 +4142,7 @@ async function handleDrop(targetRoom, targetDay, event) {
     }
   }
 
-  if (originalRoomClass !== targetRoomClass) {
+  if (isDifferentRoomClass) {
     uiStore.confirm({
       title: 'Xác nhận chuyển phòng khác loại',
       message: `Chuyển phòng ${previousRoom} sang ${targetRoomNumber} (${originalRoomClass} → ${targetRoomClass}). Bạn có muốn xác nhận thay đổi này?`,
@@ -4061,23 +4242,19 @@ async function saveQuickBooking() {
     loadingBookings.value = true
     emit('loading', true)
 
-    // 1. Công ty ID từ database
-    let companyId = quickBookingForm.value.companyId
-    if (!companyId) {
-      const companyName = quickBookingForm.value.company || quickBookingCompanySearch.value || 'KHÁCH LẺ'
-      const companyObj = allCompanies.value.find(c => {
-        const name = c.name || c.company_name || c.trading_name || c.code
-        return name && String(name).toLowerCase() === String(companyName).trim().toLowerCase()
-      })
-      if (companyObj) {
-        companyId = companyObj.id
-      } else {
-        const walkinCo = allCompanies.value.find(c => {
-          const n = removeVietnameseTones(String(c.name || c.company_name || c.code || '')).toLowerCase()
-          return n.includes('khach le') || n.includes('walk-in') || n.includes('walkin') || n.includes('fit')
-        })
-        companyId = walkinCo ? walkinCo.id : (allCompanies.value[0]?.id || 1)
-      }
+    const configuredCompany = getConfiguredQuickBookingCompany()
+    if (!configuredCompany) {
+      uiStore.showToast('Vui lòng cấu hình CompanyDefault là công ty đang hoạt động trước khi tạo Booking nhanh.', 'error')
+      return
+    }
+
+    const companyId = quickBookingForm.value.companyId
+    const selectedCompany = allCompanies.value.find(company =>
+      Number(company.id) === Number(companyId) && isQuickBookingCompanyActive(company)
+    )
+    if (!selectedCompany) {
+      uiStore.showToast('Vui lòng chọn công ty đang hoạt động.', 'error')
+      return
     }
 
     // 2. Xác định ngày đến sớm nhất và ngày đi muộn nhất
@@ -4103,12 +4280,12 @@ async function saveQuickBooking() {
     ranges.forEach(range => {
       const roomObj = roomStore.rooms ? roomStore.rooms.find(r => String(r.room_number) === String(range.room)) : null
       const roomClassId = roomObj ? roomObj.room_class_id : 1
-      const canOverrideFixedRate = selectedQuickBookingRateCode.value
-        && !selectedQuickBookingRateCode.value.IsDaily
-        && Boolean(selectedQuickBookingRateCode.value.AllowChangeRate)
-      const unitPrice = selectedRateCode && !canOverrideFixedRate
-        ? getRoomUnitPrice(range.room, selectedRateCode, range.checkIn)
-        : Number(quickBookingForm.value.rate || 0)
+      const configuredRoomPrice = getRoomUnitPrice(range.room, selectedRateCode, range.checkIn)
+      const unitPrice = resolveRoomPlanQuickBookingUnitPrice({
+        configuredRoomPrice,
+        rateCode: selectedRateCode,
+        formRate: quickBookingForm.value.rate,
+      })
 
       const groupKey = `${roomClassId}_${range.checkIn}_${range.checkOut}`
 
@@ -4120,8 +4297,7 @@ async function saveQuickBooking() {
           departureDate: range.checkOut,
           price: unitPrice,
           rateCode: selectedRateCode,
-          // Chỉ Rate Code cố định có AllowChangeRate mới được phép ghi đè giá nhập tay.
-          manualRateOverride: Boolean(selectedRateCode && isQuickBookingRateEditable.value),
+          manualRateOverride: false,
           breakfastIncluded: true,
           rooms: []
         }
@@ -4130,7 +4306,7 @@ async function saveQuickBooking() {
       allocationsMap[groupKey].quantity += 1
       allocationsMap[groupKey].rooms.push({
         roomNumber: range.room,
-        guestName: quickBookingForm.value.bookingName || 'Walkin Guest',
+        guestName: 'Guest 1',
         arrivalDate: range.checkIn,
         departureDate: range.checkOut,
         nights: range.nights || 1,
@@ -4196,7 +4372,7 @@ async function saveQuickBooking() {
     selectedCells.value = []
     hideTooltip()
     
-    await roomStore.fetchRooms()
+    await refreshRoomPlanRooms()
     await loadBookings()
     notifyRoomUpdates()
   } catch (err) {
@@ -4296,7 +4472,7 @@ async function saveLockRoom() {
     showLockRoomModal.value = false
     selectedCells.value = []
 
-    await roomStore.fetchRooms()
+    await refreshRoomPlanRooms()
     await loadBookings()
     notifyRoomUpdates()
     
@@ -4504,41 +4680,8 @@ function isTodayDate(dateVal) {
   return dStr === sysDateVal
 }
 
-function isTodayOrActiveBooking(b) {
-  if (!b || !b.checkIn || !b.checkOut) return false
-  const sysDateStr = systemDate.value ? toLocalDateStr(systemDate.value) : toLocalDateStr(new Date())
-  const inStr = toLocalDateStr(b.checkIn)
-  const outStr = toLocalDateStr(b.checkOut)
-  return sysDateStr >= inStr && sysDateStr < outStr
-}
-
 function getRoomStatusIconName(item) {
-  if (!item) return null
-  // 1. Lock (OOO / OOS) - Only when currently locked today
-  if (item.status === 'maintenance' || item.status === 'ooo' || item.status === 'oos') {
-    return item.lock_type === 'OOS' ? 'oos' : 'ooo'
-  }
-  // 2. Dirty Room / Housekeeping needed -> broom icon
-  if (item.status === 'dirty' || item.status === 'checkout' || item.is_clean === false || item.is_clean === 0) {
-    return 'dirty'
-  }
-  // 3. Occupied (In-house) and clean -> No extra icon
-  if (item.booking_status === 'occupied' || item.status === 'occupied') {
-    return null
-  }
-  // 4. Has reserved booking today -> double-check icon (✓✓)
-  const hasBookingToday = !!item.guest_name || !!item.booking_code || (bookings.value && bookings.value.some(b => String(b.room) === String(item.room) && isTodayOrActiveBooking(b) && b.status !== 'occupied'))
-  if (hasBookingToday) {
-    return 'double-check'
-  }
-  // 5. Sparkles ONLY for clean vacant available room without active booking today
-  if (item.is_clean && (item.status === 'available' || !item.status)) {
-    return 'clean'
-  }
-  if (item.status === 'reserved') {
-    return 'priority'
-  }
-  return null
+  return resolveRoomPlanStatusIcon(item, ROOM_STATUS_ICON_MAP)
 }
 </script>
 
@@ -4870,6 +5013,22 @@ function getRoomStatusIconName(item) {
                 @dragover.prevent="handleGlobalDragOver"
                 @drop="handleDrop(item, day, $event)"
               >
+                <div
+                  v-if="isSelectionResizeEdge(item.room, day.fullDate, 'start') && isMultiRoomSelectionGroup(item.room, day.fullDate)"
+                  data-room-plan-selection-resize-handle
+                  class="absolute inset-y-0 left-0 z-30 w-2 cursor-w-resize select-none bg-blue-500/25 hover:bg-blue-500/45"
+                  title="Kéo để đổi ngày đến cho các phòng đang chọn"
+                  @mousedown.stop="startSelectionResize(item, day, 'start', $event)"
+                  @click.stop
+                ></div>
+                <div
+                  v-if="isSelectionResizeEdge(item.room, day.fullDate, 'end') && isMultiRoomSelectionGroup(item.room, day.fullDate)"
+                  data-room-plan-selection-resize-handle
+                  class="absolute inset-y-0 right-0 z-30 w-2 cursor-e-resize select-none bg-blue-500/25 hover:bg-blue-500/45"
+                  title="Kéo để đổi ngày đi cho các phòng đang chọn"
+                  @mousedown.stop="startSelectionResize(item, day, 'end', $event)"
+                  @click.stop
+                ></div>
                 <!-- Render bookings starting at this cell -->
                 <template v-if="processedBookings[item.room]">
                   <div
@@ -4894,10 +5053,14 @@ function getRoomStatusIconName(item) {
                       bk.hasConflict ? 'ring-2 ring-inset ring-red-500' : ''
                     ]"
                     :style="{
-                      left: !bk.isCheckInVisible 
+                      left: bk.isDayUseLayout
+                        ? `${bk.leftRatio * 100}%`
+                        : !bk.isCheckInVisible
                         ? '0%' 
                         : (isBookingSegmented(bk) ? `calc(${bk.leftRatio * 100}% + 2px)` : `${bk.leftRatio * 100}%`),
-                      width: !bk.isCheckInVisible
+                      width: bk.isDayUseLayout
+                        ? `${bk.span * 100}%`
+                        : !bk.isCheckInVisible
                         ? (isBookingSegmented(bk) ? `calc(${bk.span * 100}% - 4px)` : `calc(${bk.span * 100}% - 1px)`)
                         : (isBookingSegmented(bk) ? `calc(${bk.span * 100}% - 6px)` : `calc(${bk.span * 100}% - 1px)`),
                       borderLeftStyle: !bk.isCheckInVisible ? 'none' : undefined,
@@ -4948,7 +5111,12 @@ function getRoomStatusIconName(item) {
                       >
                         <path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd" />
                       </svg>
-                      <span :class="bk.pastDaysOffset > 0 ? 'whitespace-nowrap' : 'truncate flex-1 min-w-0'">{{ bk.label }}</span>
+                      <span :class="bk.pastDaysOffset > 0 ? 'whitespace-nowrap' : 'truncate flex-1 min-w-[4ch]'">{{ bk.label }}</span>
+                      <i
+                        v-if="bk.depositAmount > 0"
+                        class="fa-solid fa-check mr-[-5px] shrink-0 text-[10px] text-emerald-700"
+                        :title="`Đặt cọc: ${formatMoney(bk.depositAmount)} ₫`"
+                      ></i>
                     </div>
 
                     <!-- Bottom Status Indicator: Tình trạng đăng ký (Line màu) & Phòng đi (Vạch đỏ) -->
@@ -5207,6 +5375,10 @@ function getRoomStatusIconName(item) {
             <div class="flex justify-between items-center text-xs">
               <span class="font-semibold text-[#000000D9]">Đã đặt cọc:</span>
               <span class="font-normal text-[#000000D9]">{{ formatMoney(hoveredBooking.depositAmount) }} ₫</span>
+            </div>
+            <div class="flex justify-between items-center text-xs">
+              <span class="font-semibold text-[#000000D9]">Đã thanh toán:</span>
+              <span class="font-normal text-[#000000D9]">{{ formatMoney(hoveredBooking.paidAmount) }} ₫</span>
             </div>
             <div class="flex justify-between items-center pt-1.5 border-t border-slate-100 text-xs">
               <span class="font-semibold text-[#000000D9]">Còn lại:</span>
@@ -5779,19 +5951,19 @@ function getRoomStatusIconName(item) {
               <input 
                 type="text" 
                 inputmode="numeric"
-                :value="formatQuickBookingRate(quickBookingForm.rate)" 
+                :value="quickBookingRateInput"
                 @input="handleQuickBookingRateInput"
-                @focus="e => { if (Number(quickBookingForm.rate || 0) === 0) quickBookingForm.rate = ''; e.target.select() }"
-                @blur="e => { if (quickBookingForm.rate === '' || quickBookingForm.rate === null) quickBookingForm.rate = 0 }"
-                :disabled="!isQuickBookingRateEditable" 
+                @focus="focusQuickBookingRate"
+                @blur="blurQuickBookingRate"
+                :disabled="!isQuickBookingRateEditable"
                 placeholder="0"
-                class="w-full border border-slate-200 rounded-lg bg-white px-3 py-2 text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500 font-normal disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed" 
+                class="w-full border border-slate-200 rounded-lg bg-white px-3 py-2 text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500 font-normal disabled:bg-slate-100 disabled:text-slate-500 disabled:cursor-not-allowed"
                 :class="isQuickBookingRateEditable && Number(quickBookingForm.rate || 0) > 0 ? 'pr-8' : ''"
               />
               <button 
-                v-if="isQuickBookingRateEditable && Number(quickBookingForm.rate || 0) > 0" 
+                v-if="isQuickBookingRateEditable && Number(quickBookingForm.rate || 0) > 0"
                 type="button" 
-                @click.stop="quickBookingForm.rate = 0" 
+                @click.stop="clearQuickBookingManualRate"
                 class="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0.5 flex items-center justify-center z-10 select-none"
                 title="Xóa"
               >

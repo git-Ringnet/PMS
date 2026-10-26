@@ -130,6 +130,7 @@ class BookingBusinessRulesTest extends TestCase
             $role->permissions()->syncWithoutDetaching([$permission->id]);
         }
         $this->user->roles()->attach($role->id);
+        \App\Models\HotelConfig::updateOrCreate(['name' => 'RoleUserReCheckout'], ['value' => 'booking_rules_test']);
         $this->actingAs($this->user);
 
         // Seed booking statuses
@@ -1459,6 +1460,84 @@ class BookingBusinessRulesTest extends TestCase
     }
 
     /**
+     * Day Use uses a half-open time range: a later, non-overlapping period
+     * may reuse both the physical room and its room-class capacity.
+     */
+    public function test_non_overlapping_dayuse_times_can_reuse_room_and_availability(): void
+    {
+        $booking = $this->createBooking([
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-07',
+            'registration_status_id' => $this->regStatus->booking_status_id,
+        ]);
+        BookingRoom::create([
+            'id' => 'G0000099',
+            'booking_id' => $booking->id,
+            'room_number' => '101',
+            'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-07',
+            'arrival_time' => '08:00:00',
+            'departure_time' => '12:00:00',
+            'is_day_use' => true,
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $service = app(\App\Services\RoomAvailabilityService::class);
+        $this->assertSame(0, $service->getBookedCount(
+            $this->roomClass->id,
+            '2026-08-07',
+            '2026-08-07',
+            null,
+            '13:00',
+            '16:00',
+        ));
+        $this->assertNull($service->findRoomNumberConflict(
+            '101',
+            '2026-08-07',
+            '2026-08-07',
+            null,
+            null,
+            '13:00',
+            '16:00',
+        ));
+        $vacantAtLaterTime = $this->getJson('/api/rooms/vacant?' . http_build_query([
+            'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-07',
+            'arrival_time' => '13:00',
+            'departure_time' => '16:00',
+        ]))->assertSuccessful()->json('data');
+        $this->assertContains('101', collect($vacantAtLaterTime)->pluck('room_number')->all());
+
+        $this->assertSame(1, $service->getBookedCount(
+            $this->roomClass->id,
+            '2026-08-07',
+            '2026-08-07',
+            null,
+            '11:00',
+            '13:00',
+        ));
+        $this->assertNotNull($service->findRoomNumberConflict(
+            '101',
+            '2026-08-07',
+            '2026-08-07',
+            null,
+            null,
+            '11:00',
+            '13:00',
+        ));
+        $vacantAtOverlappingTime = $this->getJson('/api/rooms/vacant?' . http_build_query([
+            'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-07',
+            'arrival_time' => '11:00',
+            'departure_time' => '13:00',
+        ]))->assertSuccessful()->json('data');
+        $this->assertNotContains('101', collect($vacantAtOverlappingTime)->pluck('room_number')->all());
+    }
+
+    /**
      * TC-15: Adjacent stays in the same booking (in Day 1 out Day 2, and in Day 2 out Day 3) can be assigned the same physical room.
      */
     public function test_adjacent_non_overlapping_room_stays_in_same_booking_can_be_assigned_same_room(): void
@@ -2655,6 +2734,34 @@ class BookingBusinessRulesTest extends TestCase
         $room101 = $rooms->firstWhere('room_number', '101');
         $this->assertSame('10:20:00', substr((string) $room101['arrival_time'], 0, 8));
         $this->assertSame('11:00:00', substr((string) $room101['departure_time'], 0, 8));
+    }
+
+    /**
+     * Room Map: icon EB chỉ hiện vào đêm có số lượng EB trong chi tiết theo đêm
+     * (vào 06, ra 10; đêm 06 = 0, các đêm sau = 1).
+     */
+    public function test_room_map_extra_bed_follows_nightly_detail(): void
+    {
+        $response = $this->storeBookingWithRooms('Room Map EB', $this->roomClass->id, ['101']);
+        $response->assertSuccessful();
+        $room = BookingRoom::where('booking_id', $response->json('data.id'))->firstOrFail();
+        $room->update([
+            'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-10',
+            'status' => BookingRoom::STATUS_CHECKED_IN, 'extra_bed_qty' => 1,
+        ]);
+        foreach (['2026-08-06' => 0, '2026-08-07' => 1, '2026-08-08' => 1, '2026-08-09' => 1] as $date => $quantity) {
+            \App\Models\BookingRoomService::create([
+                'booking_room_id' => $room->id, 'service_code' => 'EB', 'service_name' => 'Extra Bed',
+                'service_date' => $date, 'quantity' => $quantity, 'rate' => 300000,
+                'total_amount' => 300000 * $quantity, 'department' => 'FO', 'is_room' => 1, 'folio' => 1, 'is_posted' => 0,
+            ]);
+        }
+
+        $extraBedOn = fn (string $date) => collect($this->getJson("/api/rooms?date={$date}")->assertSuccessful()->json('data'))
+            ->firstWhere('room_number', '101')['extra_bed_qty'];
+
+        $this->assertSame(0, $extraBedOn('2026-08-06'));
+        $this->assertSame(1, $extraBedOn('2026-08-07'));
     }
 
     /**

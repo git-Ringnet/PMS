@@ -25,23 +25,25 @@ if (initialHistoryBack && !initialHistoryBack.startsWith('/config') && initialHi
   entryBackRoute.value = sessionStorage.getItem('pms_config_entry_route') || ''
 }
 
-// Update currentView when query changes
+// Update currentView when query changes (hỗ trợ phím quay lại của chuột / trình duyệt)
 watch(() => route.query.view, (newVal) => {
   currentView.value = newVal || 'menu'
 })
 
-// Update query when currentView changes (dùng replace để không làm phình browser history)
+// Update query when currentView changes (dùng push để lưu bước vào lịch sử duyệt web)
 watch(currentView, (newVal) => {
-  if (route.query.view !== newVal) {
+  const currentRouteView = route.query.view || 'menu'
+  if (currentRouteView !== newVal) {
     const query = { ...route.query }
     if (newVal === 'menu') {
       delete query.view
       delete query.tab
+      router.push({ path: '/config', query })
     } else {
       query.view = newVal
       delete query.tab // reset tab when changing view
+      router.push({ path: '/config', query })
     }
-    router.replace({ query })
   }
 })
 
@@ -59,14 +61,22 @@ function updateActiveTab(newTab) {
 
 function handleBack() {
   if (currentView.value === 'menu') {
-    const target = entryBackRoute.value || sessionStorage.getItem('pms_config_entry_route')
-    if (target && !target.startsWith('/config') && target !== '/' && target !== '/login') {
-      router.push(target)
+    if (window.history.state?.back && !window.history.state.back.startsWith('/config') && window.history.state.back !== '/' && window.history.state.back !== '/login') {
+      router.back()
     } else {
-      router.push('/pms')
+      const target = entryBackRoute.value || sessionStorage.getItem('pms_config_entry_route')
+      if (target && !target.startsWith('/config') && target !== '/' && target !== '/login') {
+        router.push(target)
+      } else {
+        router.push('/pms')
+      }
     }
   } else {
-    currentView.value = 'menu'
+    if (window.history.state?.back && window.history.state.back.includes('/config')) {
+      router.back()
+    } else {
+      currentView.value = 'menu'
+    }
   }
 }
 </script>
@@ -190,8 +200,10 @@ function handleBack() {
             class="w-48 h-48 bg-white border border-slate-100 rounded-2xl flex flex-col items-center justify-center gap-4 cursor-pointer shadow-xs hover:shadow-lg hover:-translate-y-1 hover:border-slate-200 transition-all duration-300 group"
           >
             <div class="w-16 h-16 rounded-xl bg-slate-50 flex items-center justify-center group-hover:scale-105 transition-transform">
-              <svg class="w-10 h-10 text-slate-700" fill="none" stroke="currentColor" stroke-width="1.2" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8-4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+              <svg class="w-10 h-10 text-slate-700" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+                <ellipse cx="12" cy="5" rx="9" ry="3" />
+                <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+                <path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3" />
               </svg>
             </div>
             <span class="text-sm font-bold text-slate-700 text-center tracking-wide px-2">Sao lưu & Khôi phục Database</span>
@@ -209,22 +221,22 @@ function handleBack() {
       >
         <HotelDefinition 
           v-if="currentView === 'hotel'" 
-          :initialTab="route.query.tab || 'THÔNG TIN KHÁCH SẠN'"
+          :initialTab="route.query.tab || 'Thông Tin Khách Sạn'"
           @update:activeTab="updateActiveTab"
         />
         <RoomDefinition 
           v-else-if="currentView === 'room'" 
-          :initialTab="route.query.tab || 'TÊN LOẠI PHÒNG'"
+          :initialTab="route.query.tab || 'Tên Loại Phòng'"
           @update:activeTab="updateActiveTab"
         />
         <SystemDefinition 
           v-else-if="currentView === 'system'" 
-          :initialTab="route.query.tab || 'HÌNH THỨC THANH TOÁN'"
+          :initialTab="route.query.tab || 'Hình Thức Thanh Toán'"
           @update:activeTab="updateActiveTab"
         />
         <RateSetup 
           v-else-if="currentView === 'rate'" 
-          :initialTab="route.query.tab || 'Mã giá phòng'"
+          :initialTab="route.query.tab || 'Mã Giá Phòng'"
           @update:activeTab="updateActiveTab"
         />
         <DesignTemplate 

@@ -5,6 +5,7 @@ import router from './router'
 import './style.css'
 import { installRequiredFieldHighlighter } from './utils/required-field-highlighter'
 import { installBroadcastOrigin } from './utils/broadcast-origin'
+import { installTranslator } from './utils/translator'
 
 installBroadcastOrigin()
 
@@ -16,3 +17,4 @@ app.use(router)
 app.mount('#app')
 
 installRequiredFieldHighlighter()
+installTranslator()

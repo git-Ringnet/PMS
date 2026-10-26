@@ -85,13 +85,15 @@ const filterBook = ref('all')
 const activeFloors = ref(new Set())
 const showFilterPanel = ref(false)
 
-// Phễu lọc chuẩn theo FIX FE Row 62
+// Phễu lọc chuẩn theo FIX FE Row 62 & Row 63 Note 19/10
 const hkFilterOptions = [
   { key: 'all', label: 'Tất cả', icon: null },
   { key: 'clean', label: 'Phòng sạch', icon: 'clean', iconClass: 'text-emerald-500' },
   { key: 'dirty', label: 'Phòng bẩn', icon: 'dirty', iconClass: 'text-amber-600' },
   { key: 'cleaning', label: 'Phòng lau dọn', icon: 'checkout', iconClass: 'text-cyan-600' },
   { key: 'ready', label: 'Phòng sẵn sàng', icon: 'available', iconClass: 'text-emerald-600' },
+  { key: 'ooo', label: 'Phòng OOO', icon: 'maintenance', iconClass: 'text-rose-500' },
+  { key: 'oos', label: 'Phòng OOS', icon: 'maintenance', iconClass: 'text-amber-500' },
 ]
 
 const bookingFilterOptions = [
@@ -221,6 +223,9 @@ const allRooms = computed(() => {
         floor: r.floor,
         room_type: r.room_class?.name || r.room_type || '',
         room_status_code: r.room_status_code || 'vacant_dirty',
+        lock_type: r.lock_type || '',
+        is_ooo: Boolean(r.is_ooo || r.room_status_code === 'ooo' || r.room_status_code === 'occupied_ooo' || (r.lock_type === 'OOO' && r.room_status_code !== 'housekeeping')),
+        is_oos: Boolean(r.is_oos || r.room_status_code === 'oos' || (r.lock_type === 'OOS' && r.room_status_code !== 'housekeeping')),
         booking_status: r.booking_status || '',
         displayBookingStatus,
         isBackToBack: !!r.is_back_to_back,
@@ -251,6 +256,10 @@ const filteredRooms = computed(() => {
       } else if (filterHk.value === 'ready') {
         const isReady = code === 'vacant_ready' || code === 'occupied_ready' || code === 'ready'
         if (!isReady) return false
+      } else if (filterHk.value === 'ooo') {
+        if (!r.is_ooo) return false
+      } else if (filterHk.value === 'oos') {
+        if (!r.is_oos) return false
       }
     }
     if (filterBook.value !== 'all' && r.displayBookingStatus !== filterBook.value) return false
@@ -267,6 +276,10 @@ const roomsByFloor = computed(() => {
     map[r.floor].push(r)
   })
   return map
+})
+
+const sortedFloorNumbers = computed(() => {
+  return Object.keys(roomsByFloor.value).map(Number).sort((a, b) => a - b)
 })
 
 // ─────────────────────────────────────────────────────────────
@@ -1147,7 +1160,7 @@ function printByRoom() {
       <!-- Room list -->
       <div class="room-list-scroll">
         <div v-if="hkStore.loading" class="list-loading"><Loader2 :size="18" class="spin" /> Đang tải...</div>
-        <template v-else v-for="floor in Object.keys(roomsByFloor).map(Number).sort((a, b) => a - b)" :key="floor">
+        <template v-else v-for="floor in sortedFloorNumbers" :key="floor">
           <div class="floor-label">
             <input type="checkbox"
               :checked="isFloorAllSelected(floor)"
@@ -1533,7 +1546,7 @@ function printByRoom() {
   border: 1px solid #cbd5e1;
   cursor: pointer;
   background: #fff;
-  color: #334155;
+  color: #000000D9;
   transition: all .15s;
 }
 .shift-tab.active {
@@ -1597,7 +1610,7 @@ function printByRoom() {
   border-radius: 6px;
   cursor: pointer;
   background: #f8fafc;
-  color: #64748b;
+  color: #000000D9;
   position: relative;
 }
 .filter-btn.active { background: #eff6ff; border-color: #93c5fd; color: #3b82f6; }
@@ -1615,7 +1628,7 @@ function printByRoom() {
   box-shadow: 0 4px 16px rgba(0,0,0,.08);
 }
 .fp-section { margin-bottom: 6px; }
-.fp-label { font-size: 12px; font-weight: 600; color: #64748b; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .5px; }
+.fp-label { font-size: 12px; font-weight: 600; color: #000000D9; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .5px; }
 .fp-chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .fc-chip {
   display: inline-flex;
@@ -1627,7 +1640,7 @@ function printByRoom() {
   border-radius: 12px;
   cursor: pointer;
   background: #f8fafc;
-  color: #475569;
+  color: #000000D9;
   transition: all 0.15s;
 }
 .fc-chip.on {
@@ -1646,19 +1659,19 @@ function printByRoom() {
   border-radius: 10px;
   cursor: pointer;
   background: #f8fafc;
-  color: #64748b;
+  color: #000000D9;
   transition: all 0.15s;
 }
 .fc.all-on { background: #1e293b; color: #fff; border-color: #1e293b; }
 .fc.on { background: var(--pms-custom-theme, #006bdb); color: #fff; border-color: var(--pms-custom-theme, #006bdb); }
 
 .select-all-row { padding: 4px 0 8px; border-top: 1px solid #f1f5f9; }
-.check-label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #475569; cursor: pointer; }
+.check-label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #000000D9; cursor: pointer; }
 .sel-count { font-weight: 600; color: var(--pms-custom-theme, #006bdb); }
 
 /* Room list */
 .room-list-scroll { flex: 1; overflow-y: auto; padding: 0 8px 8px; }
-.floor-label { font-size: 12px; font-weight: 700; color: #64748b; letter-spacing: .5px; padding: 6px 4px 3px; display: flex; align-items: center; gap: 5px; }
+.floor-label { font-size: 12px; font-weight: 600; color: #000000D9; letter-spacing: .5px; padding: 6px 4px 3px; display: flex; align-items: center; gap: 5px; }
 .floor-cb { accent-color: var(--pms-custom-theme, #006bdb); cursor: pointer; }
 .room-cb { accent-color: var(--pms-custom-theme, #006bdb); cursor: pointer; flex-shrink: 0; }
 .room-item {
@@ -1671,7 +1684,7 @@ function printByRoom() {
 .room-item.assigned { opacity: .7; }
 .room-num { font-size: 12px; font-weight: 700; color: #000000D9; min-width: 34px; }
 .room-code { font-size: 12px; font-weight: 700; min-width: 48px; }
-.room-type { font-size: 12px; color: #64748b; flex: 1; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.room-type { font-size: 12px; font-weight: 400; color: #000000D9; flex: 1; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .assigned-dot { font-size: 12px; color: #10b981; flex-shrink: 0; }
 .list-loading, .empty-msg { padding: 20px; text-align: center; font-size: 12px; color: #94a3b8; display: flex; align-items: center; justify-content: center; gap: 8px; }
 
@@ -1711,7 +1724,7 @@ function printByRoom() {
   border: 1px solid #cbd5e1;
   border-radius: 6px;
   background: #fff;
-  color: #475569;
+  color: #000000D9;
   font-size: 12px;
   cursor: pointer;
   outline: none;
@@ -1883,7 +1896,7 @@ function printByRoom() {
 }
 .gn-sub {
   font-size: 12px;
-  color: #64748b;
+  color: #000000D9;
   margin-top: 2px;
 }
 .group-actions {
@@ -1896,7 +1909,7 @@ function printByRoom() {
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: #64748b;
+  color: #000000D9;
   cursor: pointer;
   white-space: nowrap;
 }
@@ -1965,7 +1978,7 @@ function printByRoom() {
 }
 .gr-class-line {
   font-size: 12px;
-  color: #64748b;
+  color: #000000D9;
 }
 .btn-rm-room {
   width: 20px;
@@ -2045,7 +2058,7 @@ function printByRoom() {
   border: none;
   cursor: pointer;
   background: none;
-  color: #64748b;
+  color: #000000D9;
   transition: all 0.15s;
 }
 .modal-tabs button.mtab-on {
@@ -2112,13 +2125,13 @@ function printByRoom() {
 .sml-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid #f1f5f9; border-radius: 7px; }
 .sml-avatar { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #fff; flex-shrink: 0; }
 .sml-name { flex: 1; font-size: 12px; color: #000000D9; }
-.btn-sml-action { font-size: 12px; padding: 3px 8px; border: 1px solid #e2e8f0; border-radius: 6px; cursor: pointer; background: #f8fafc; color: #475569; }
+.btn-sml-action { font-size: 12px; padding: 3px 8px; border: 1px solid #e2e8f0; border-radius: 6px; cursor: pointer; background: #f8fafc; color: #000000D9; }
 .btn-sml-action:hover { background: #f1f5f9; }
 .btn-sml-del { width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; border: 1px solid #fca5a5; border-radius: 5px; cursor: pointer; background: #fff; color: #ef4444; }
 .btn-sml-del:hover { background: #fee2e2; }
 
 /* Edit group modal */
-.eg-section-label { font-size: 12px; color: #64748b; font-weight: 600; text-transform: uppercase; margin-bottom: 6px; }
+.eg-section-label { font-size: 12px; color: #000000D9; font-weight: 600; text-transform: uppercase; margin-bottom: 6px; }
 .eg-list { display: flex; flex-direction: column; gap: 5px; }
 .eg-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid #e2e8f0; border-radius: 7px; }
 .eg-name { flex: 1; font-size: 12px; color: #000000D9; }

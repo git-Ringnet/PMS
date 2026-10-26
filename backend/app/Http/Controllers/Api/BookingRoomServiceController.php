@@ -1076,15 +1076,18 @@ class BookingRoomServiceController extends Controller
             'service_ids.*' => 'integer',
             'service_bill_ids' => 'required_without:service_ids|array|min:1',
             'service_bill_ids.*' => 'integer',
-            'target_booking_id' => 'required|integer|exists:bookings,id',
+            // Đích là folio phòng ảo (không có booking) thì chỉ cần target_room_id.
+            'target_booking_id' => 'required_without:target_room_id|nullable|integer|exists:bookings,id',
             'target_room_id' => 'nullable|string|exists:booking_rooms,id',
             'target_guest_id' => 'nullable|string|exists:guests,id',
         ]);
 
         $sourceRoom = BookingRoom::findOrFail($roomId);
-        $targetBooking = Booking::findOrFail($validated['target_booking_id']);
+        $targetBooking = !empty($validated['target_booking_id']) ? Booking::findOrFail($validated['target_booking_id']) : null;
         $targetRoom = !empty($validated['target_room_id'])
-            ? BookingRoom::where('booking_id', $targetBooking->id)->findOrFail($validated['target_room_id'])
+            ? ($targetBooking
+                ? BookingRoom::where('booking_id', $targetBooking->id)->findOrFail($validated['target_room_id'])
+                : BookingRoom::whereNull('booking_id')->findOrFail($validated['target_room_id']))
             : null;
         $transferByBill = isset($validated['service_bill_ids']);
         $requestedIds = array_values(array_unique(array_map(
@@ -1095,7 +1098,7 @@ class BookingRoomServiceController extends Controller
         if (!in_array((int) $sourceRoom->status, $activeRoomStatuses, true)) {
             abort(422, 'Chỉ được chuyển dịch vụ từ phòng Reservation hoặc Inhouse.');
         }
-        if (!in_array((int) $targetBooking->status, [Booking::STATUS_RESERVATION, Booking::STATUS_CHECKIN], true)) {
+        if ($targetBooking && !in_array((int) $targetBooking->status, [Booking::STATUS_RESERVATION, Booking::STATUS_CHECKIN], true)) {
             abort(422, 'Chỉ được chuyển dịch vụ đến booking Reservation hoặc Inhouse.');
         }
         if ($targetRoom && !in_array((int) $targetRoom->status, $activeRoomStatuses, true)) {
@@ -1107,7 +1110,7 @@ class BookingRoomServiceController extends Controller
         $sourceLocation = 'R_' . ($sourceRoom->room_number ?: $sourceRoom->id);
         $targetLocation = $targetRoom
             ? 'R_' . ($targetRoom->room_number ?: $targetRoom->id)
-            : 'BK_' . $targetBooking->id;
+            : 'BK_' . $targetBooking?->id;
 
         DB::transaction(function () use ($validated, $sourceRoom, $targetBooking, $targetRoom, $targetGuest, $sourceLocation, $targetLocation, $transferByBill, $requestedIds) {
             if ($transferByBill) {
@@ -1117,17 +1120,12 @@ class BookingRoomServiceController extends Controller
                     abort(422, 'Có bill không thuộc phòng đã chọn.');
                 }
                 $billIds = $requestedIds;
-                $requestedMirrorIds = array_values(array_unique(array_map('intval', $validated['service_ids'] ?? [])));
-                $services = empty($requestedMirrorIds)
-                    ? collect()
-                    : BookingRoomService::where('booking_room_id', $sourceRoom->id)
-                        ->whereIn('service_bill_id', $billIds)
-                        ->whereIn('id', $requestedMirrorIds)
-                        ->lockForUpdate()
-                        ->get();
-                if ($services->count() !== count($requestedMirrorIds)) {
-                    abort(422, 'Có dịch vụ không thuộc phòng đã chọn.');
-                }
+                // Chuyển theo bill luôn chuyển trọn bill: lấy toàn bộ dòng chi tiết của bill tại server,
+                // không phụ thuộc id chi tiết client gửi (có thể đã cũ sau lần chuyển trước → lúc được lúc không).
+                $services = BookingRoomService::where('booking_room_id', $sourceRoom->id)
+                    ->whereIn('service_bill_id', $billIds)
+                    ->lockForUpdate()
+                    ->get();
                 $servicesByBill = $services->groupBy('service_bill_id');
             } else {
                 $services = BookingRoomService::where('booking_room_id', $sourceRoom->id)
@@ -1142,8 +1140,8 @@ class BookingRoomServiceController extends Controller
             foreach ($billIds as $serviceBillId) {
                 $billServices = $servicesByBill->get($serviceBillId, collect());
                 $bill = $bills->get($serviceBillId) ?: ServiceBill::whereKey($serviceBillId)->lockForUpdate()->firstOrFail();
-                if ((int) $sourceRoom->booking_id !== (int) $targetBooking->id
-                    && Carbon::parse($bill->Date)->toDateString() < $this->avService->getSystemDate()
+                if ((int) $sourceRoom->booking_id !== (int) $targetBooking?->id
+                    && Carbon::parse($bill->Date)->toDateString() < $this->avService->getSystemDate()->toDateString()
                     && !app(\App\Services\CheckoutRoleConfigService::class)->canTransferPastDateToAnotherBooking(
                         Auth::user(),
                         request()->attributes->get('_branch_id')
@@ -1167,8 +1165,8 @@ class BookingRoomServiceController extends Controller
                 $positive->RegisterID2 = $targetRoom ? null : $targetBooking->id;
                 $positive->RentalRoomId2 = $targetRoom?->id;
                 $positive->CustomerId2 = $targetGuest?->guest_id;
-                $positive->CompanyId2 = $targetBooking->company_id;
-                $positive->Guest = $targetGuest?->guest?->full_name ?: $targetBooking->booking_name;
+                $positive->CompanyId2 = $targetBooking?->company_id;
+                $positive->Guest = $targetGuest?->guest?->full_name ?: ($targetBooking?->booking_name ?: $targetRoom?->guests()->with('guest')->first()?->guest?->full_name);
                 $rawDesc = trim(($bill->DescriptionServive ?: $bill->ServiceId) . " ({$sourceLocation}=>{$targetLocation})");
                 if (mb_strlen($rawDesc) > 950) {
                     $rawDesc = mb_substr($rawDesc, 0, 950);
@@ -1304,7 +1302,7 @@ class BookingRoomServiceController extends Controller
                 if ($bill->PaymentId !== null || (int) $bill->Status !== 1 || (int) $bill->Edit === 1) {
                     abort(422, 'Chỉ được chuyển bill Master chưa thanh toán.');
                 }
-                if (Carbon::parse($bill->Date)->toDateString() < $this->avService->getSystemDate()
+                if (Carbon::parse($bill->Date)->toDateString() < $this->avService->getSystemDate()->toDateString()
                     && !app(\App\Services\CheckoutRoleConfigService::class)->canTransferPastDateToAnotherBooking(
                         Auth::user(),
                         request()->attributes->get('_branch_id')
@@ -1679,8 +1677,12 @@ class BookingRoomServiceController extends Controller
         $serviceDate = $request->service_date ?: now()->toDateString();
         $systemDate = $this->avService->getSystemDate();
         $serviceDateCarbon = Carbon::parse($serviceDate);
-        if ($serviceDateCarbon->gt(Carbon::parse($systemDate))) {
-            return response()->json(['success' => false, 'message' => 'Không thể post dịch vụ cho ngày tương lai.'], 422);
+        // Giống dịch vụ FO: được post trước trong giai đoạn ở (từ ngày đến ban đầu đến ngày check out), ngày hệ thống luôn hợp lệ.
+        $stayStart = $this->originalArrivalDate($room);
+        $stayEnd = Carbon::parse($room->departure_date ?: $room->booking?->departure_date)->startOfDay();
+        if (!$this->isSystemDatePosting($serviceDateCarbon, $serviceDateCarbon, $systemDate)
+            && ($serviceDateCarbon->copy()->startOfDay()->lt($stayStart) || $serviceDateCarbon->copy()->startOfDay()->gt($stayEnd))) {
+            return response()->json(['success' => false, 'message' => 'Ngày post bill phải nằm trong thời gian lưu trú của phòng (từ ngày đến đến ngày đi) hoặc là ngày hệ thống.'], 422);
         }
         if ($serviceDateCarbon->lt(Carbon::parse($systemDate)) && !$this->canOperateOldDay()) {
             return response()->json(['success' => false, 'message' => 'Tài khoản không có quyền post dịch vụ cho ngày cũ (RuleUserCorrectOrPostBillPaymentOldDay).'], 403);
@@ -2141,9 +2143,12 @@ class BookingRoomServiceController extends Controller
         $dateFrom   = Carbon::parse($request->date_from);
         $dateTo     = Carbon::parse($request->date_to);
 
-        $stayStart = Carbon::parse($room?->arrival_date ?: $booking->arrival_date)->startOfDay();
+        // Giai đoạn post dịch vụ: từ ngày đến ban đầu (tính cả late check-in) đến ngày check out,
+        // được post trước cho tương lai; riêng ngày hệ thống luôn được post để bổ sung dịch vụ sau check out.
+        $stayStart = $room ? $this->originalArrivalDate($room) : Carbon::parse($booking->arrival_date)->startOfDay();
         $stayEnd = Carbon::parse($room?->departure_date ?: $booking->departure_date)->startOfDay();
-        if ($dateFrom->copy()->startOfDay()->lt($stayStart) || $dateTo->copy()->startOfDay()->gt($stayEnd)) {
+        if (!$this->isSystemDatePosting($dateFrom, $dateTo, $systemDate)
+            && ($dateFrom->copy()->startOfDay()->lt($stayStart) || $dateTo->copy()->startOfDay()->gt($stayEnd))) {
             return response()->json([
                 'success' => false,
                 'message' => 'Ngày dịch vụ phải nằm trong thời gian lưu trú, từ ngày đến đến ngày đi.',
@@ -2501,14 +2506,19 @@ class BookingRoomServiceController extends Controller
         }
 
         $isDayUse = $isDayUseStay($room, $booking);
-        $stayStart = Carbon::parse($room?->arrival_date ?: $booking->arrival_date)->startOfDay();
+        // Giai đoạn post tiền phòng: từ ngày đến ban đầu (phòng late check-in vẫn charge lại được đêm cũ)
+        // đến đêm cuối trước ngày đi, được post trước cho tương lai. Phòng lẻ luôn được post bù vào ngày hệ thống.
+        $systemDay = Carbon::parse($systemDate)->startOfDay();
+        $systemDatePosting = !$isBookingPost && $this->isSystemDatePosting($dateFrom, $dateTo, $systemDate);
+        $actualArrival = Carbon::parse($room?->arrival_date ?: $booking->arrival_date)->startOfDay();
+        $stayStart = $room ? $this->originalArrivalDate($room) : $actualArrival->copy();
         $rawDeparture = Carbon::parse($room?->departure_date ?: $booking->departure_date)->startOfDay();
         $stayEnd = $isDayUse
-            ? $stayStart->copy()
+            ? $actualArrival->copy()
             : $rawDeparture->copy()->subDay();
-        if ($stayEnd->lt($stayStart)
+        if (!$systemDatePosting && ($stayEnd->lt($stayStart)
             || $dateFrom->copy()->startOfDay()->lt($stayStart)
-            || $dateTo->copy()->startOfDay()->gt($stayEnd)) {
+            || $dateTo->copy()->startOfDay()->gt($stayEnd))) {
             return response()->json([
                 'success' => false,
                 'message' => $isDayUse
@@ -2518,11 +2528,11 @@ class BookingRoomServiceController extends Controller
         }
 
         foreach ($roomsToPost as $targetRoom) {
-            $roomArrival = Carbon::parse($targetRoom->arrival_date)->startOfDay();
+            $roomArrival = $this->originalArrivalDate($targetRoom);
             if (in_array((int) $targetRoom->status, [BookingRoom::STATUS_CANCELLED, BookingRoom::STATUS_CHECKED_OUT], true)) {
                 return response()->json(['success' => false, 'message' => 'Phòng đã hủy hoặc đã checkout, không thể post tiền phòng.'], 422);
             }
-            if (!$isBookingPost && $dateFrom->copy()->startOfDay()->lt($roomArrival)) {
+            if (!$isBookingPost && !$systemDatePosting && $dateFrom->copy()->startOfDay()->lt($roomArrival)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Không thể post tiền phòng trước ngày đến của phòng ' . ($targetRoom->room_number ?: $targetRoom->id) . '.',
@@ -2555,7 +2565,8 @@ class BookingRoomServiceController extends Controller
             $request, $selectedGuest, $user, $roomService, $breakfastService,
             $roomTaxProfile, $breakfastTaxProfile,
             $chargePercent, &$createdBills,
-            &$postedRooms, &$skippedRooms, $isDayUseStay
+            &$postedRooms, &$skippedRooms, $isDayUseStay,
+            $systemDatePosting, $systemDay
         ) {
             foreach ($roomsToPost as $targetRoom) {
                 $roomLabel = $targetRoom->room_number ?: 'Phòng ' . $targetRoom->id;
@@ -2572,17 +2583,19 @@ class BookingRoomServiceController extends Controller
                 $currentGuestId = $sendRoomRateToMaster ? null : $guestId;
 
                 $current = $dateFrom->copy()->startOfDay();
-                $roomArrival = Carbon::parse($targetRoom->arrival_date)->startOfDay();
+                $roomArrival = $this->originalArrivalDate($targetRoom);
                 $roomDeparture = Carbon::parse($targetRoom->departure_date ?: $booking?->departure_date)->startOfDay();
                 $isTargetRoomDayUse = $isDayUseStay($targetRoom, $booking);
                 $roomLastOccupiedNight = $isTargetRoomDayUse
-                    ? $roomArrival->copy()
+                    ? Carbon::parse($targetRoom->arrival_date)->startOfDay()
                     : $roomDeparture->copy()->subDay();
+                // Post từ Master: mỗi phòng chỉ chạy các đêm thuộc giai đoạn ở của chính phòng đó.
                 if ($isBookingPost && $current->lt($roomArrival)) {
                     $current = $roomArrival->copy();
                 }
 
-                while ($current->lte($dateTo) && $current->lte($roomLastOccupiedNight)) {
+                while ($current->lte($dateTo)
+                    && ($current->lte($roomLastOccupiedNight) || ($systemDatePosting && $current->eq($systemDay)))) {
                     // Xác định giá phòng theo mode
                     if ($mode === 'auto') {
                         // Tự động: ưu tiên giá dịch vụ tự động (booking_room_services service_code=RM)
@@ -3141,6 +3154,27 @@ class BookingRoomServiceController extends Controller
             Auth::user(),
             request()->attributes->get('_branch_id')
         );
+    }
+
+    /** Ngày đến ban đầu của phòng: late check-in dời ngày đến nhưng vẫn cho post lại các đêm từ ngày đến cũ. */
+    private function originalArrivalDate(BookingRoom $room): Carbon
+    {
+        $arrival = Carbon::parse($room->arrival_date)->startOfDay();
+        $lateCheckinFrom = $room->lateCheckins()->min('late_checkin_date');
+        if (!$lateCheckinFrom) {
+            return $arrival;
+        }
+        $originalArrival = Carbon::parse($lateCheckinFrom)->startOfDay();
+
+        return $originalArrival->lt($arrival) ? $originalArrival : $arrival;
+    }
+
+    /** Post đúng một ngày là ngày hệ thống: luôn hợp lệ để bổ sung bill/tiền phòng ngoài giai đoạn ở. */
+    private function isSystemDatePosting(Carbon $dateFrom, Carbon $dateTo, $systemDate): bool
+    {
+        $systemDay = Carbon::parse($systemDate)->startOfDay();
+
+        return $dateFrom->copy()->startOfDay()->eq($systemDay) && $dateTo->copy()->startOfDay()->eq($systemDay);
     }
 
     private function ensureCheckedOutPostingAllowed(?BookingRoom $room, ?Booking $booking): void

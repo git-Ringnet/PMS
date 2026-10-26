@@ -64,6 +64,12 @@ class CheckoutRoleConfigService
         return $this->userHasConfiguredRole($user, ['RoleUserAdjustRoomRate'], $branchId);
     }
 
+    /** Khôi phục checkout (re checkout) Master booking và phòng đã checkout: chỉ role trong RoleUserReCheckout. */
+    public function canReCheckout(?User $user, ?int $branchId): bool
+    {
+        return $this->userHasConfiguredRole($user, ['RoleUserReCheckout'], $branchId);
+    }
+
     public function canModifyRateBillService(?User $user, ?int $branchId): bool
     {
         return $this->userHasConfiguredRole($user, ['RuleUserModifyRateBillService'], $branchId);

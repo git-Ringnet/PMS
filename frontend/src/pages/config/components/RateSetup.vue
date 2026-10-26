@@ -67,7 +67,7 @@ const handleKeyDown = (e) => {
 const props = defineProps({
   initialTab: {
     type: String,
-    default: 'Mã giá phòng'
+    default: 'Mã Giá Phòng'
   }
 })
 
@@ -85,7 +85,14 @@ watch(activeRateTab, (newVal) => {
   emit('update:activeTab', newVal)
 })
 
-const rateTabs = ['Mã giá phòng', 'Gói dịch vụ']
+const rateTabs = ['Mã Giá Phòng', 'Gói Dịch Vụ']
+
+const isTabActive = (tabName) => {
+  if (!activeRateTab.value) return false
+  const cur = String(activeRateTab.value).trim().toUpperCase()
+  const target = String(tabName).trim().toUpperCase()
+  return cur === target
+}
 
 // --- MOCK DATA FOR TABS ---
 
@@ -1083,8 +1090,8 @@ const selectPackage = (pkg) => {
     <div class="border-b border-slate-200 shrink-0">
       <div class="flex flex-wrap gap-1">
         <button v-for="tab in rateTabs" :key="tab" @click="activeRateTab = tab"
-          class="px-3 py-1.5 text-xs font-semibold border-none bg-transparent cursor-pointer relative pb-2 transition-colors"
-          :class="activeRateTab === tab ? 'text-[#006bdb] border-b-2 border-[#006bdb] font-bold' : 'text-[#000000D9]/70 hover:text-[#000000D9]'">
+          class="px-2.5 py-1.5 text-xs font-semibold border-none bg-transparent cursor-pointer relative pb-1.5 transition-colors font-roboto"
+          :class="isTabActive(tab) ? 'text-[#006bdb] border-b-2 border-[#006bdb] font-bold' : 'text-[#000000D9] hover:text-[#006bdb]'">
           {{ tab }}
         </button>
       </div>
@@ -1094,18 +1101,18 @@ const selectPackage = (pkg) => {
     <div class="flex-1 min-h-0 flex flex-col gap-2.5">
 
       <!-- ================= TAB 1: MÃ GIÁ PHÒNG ================= -->
-      <div v-if="activeRateTab === 'Mã giá phòng'" class="flex-1 flex flex-col gap-2.5 min-h-0">
+      <div v-if="isTabActive('Mã Giá Phòng')" class="flex-1 flex flex-col gap-2.5 min-h-0">
 
-        <!-- Top Half: Table on left (40%), form on right (60%) -->
-        <div class="flex flex-col lg:flex-row gap-2.5 min-h-[190px] max-h-[250px] shrink-0">
+        <!-- Top Half: Table on left (42%), form on right (58%) - Compact height to leave room for bottom panel -->
+        <div class="flex flex-col lg:flex-row gap-2.5 h-[225px] shrink-0">
 
-          <!-- Left Table (40%) -->
+          <!-- Left Table (42%) -->
           <div
-            class="w-full lg:w-[42%] bg-white border border-slate-200 rounded-lg p-3 flex flex-col min-h-0 shadow-2xs">
+            class="w-full lg:w-[42%] bg-white border border-slate-200 rounded-lg p-2.5 flex flex-col min-h-0 shadow-2xs">
             <div class="overflow-y-auto flex-1 border border-slate-200 rounded-lg">
               <table class="w-full text-xs text-left border-collapse font-roboto">
                 <thead>
-                  <tr class="bg-slate-50 text-slate-700 font-semibold text-xs sticky top-0 z-10">
+                  <tr class="bg-slate-50 text-[#000000D9] font-semibold text-xs sticky top-0 z-10">
                     <th class="p-2 text-center align-middle border border-slate-200 w-16">Mã</th>
                     <th class="p-2 text-center align-middle border border-slate-200">Mô Tả</th>
                     <th class="p-2 text-center align-middle border border-slate-200 w-16">Tiền Tệ</th>
@@ -1116,12 +1123,12 @@ const selectPackage = (pkg) => {
                 <tbody>
                   <tr v-for="rc in rateCodes" :key="rc.Ma" @click="selectRateCode(rc)"
                     class="border-b border-slate-100 hover:bg-slate-50/70 cursor-pointer transition-colors"
-                    :class="selectedRateCode?.Ma === rc.Ma ? 'bg-sky-50/60 font-semibold text-sky-800' : 'text-slate-700'">
-                    <td class="p-2 border-r border-slate-100 font-semibold text-[#000000D9]">{{ rc.Ma }}</td>
-                    <td class="p-2 border-r border-slate-100 text-slate-700">{{ rc.Description }}</td>
-                    <td class="p-2 border-r border-slate-100 text-center font-medium">{{ rc.Currency }}</td>
-                    <td class="p-2 border-r border-slate-100 text-center text-slate-600">{{ formatDateVN(rc.BeginDate) }}</td>
-                    <td class="p-2 border-r border-slate-100 text-center text-slate-600">{{ formatDateVN(rc.EndDate) }}</td>
+                    :class="selectedRateCode?.Ma === rc.Ma ? 'bg-sky-50/60 font-semibold text-sky-800' : 'text-[#000000D9]'">
+                    <td class="p-2 border-r border-slate-100 font-normal text-[#000000D9]">{{ rc.Ma }}</td>
+                    <td class="p-2 border-r border-slate-100 font-normal text-[#000000D9]">{{ rc.Description }}</td>
+                    <td class="p-2 border-r border-slate-100 text-center font-normal text-[#000000D9]">{{ rc.Currency }}</td>
+                    <td class="p-2 border-r border-slate-100 text-center font-normal text-[#000000D9]">{{ formatDateVN(rc.BeginDate) }}</td>
+                    <td class="p-2 border-r border-slate-100 text-center font-normal text-[#000000D9]">{{ formatDateVN(rc.EndDate) }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -1130,14 +1137,14 @@ const selectPackage = (pkg) => {
 
           <!-- Right Form (58%) -->
           <div
-            class="w-full lg:w-[58%] bg-white border border-slate-200 rounded-lg p-3 flex flex-col min-h-0 shadow-2xs justify-between">
+            class="w-full lg:w-[58%] bg-white border border-slate-200 rounded-lg p-2.5 flex flex-col min-h-0 shadow-2xs justify-between">
             <!-- Form Action Buttons Header -->
-            <div class="flex items-center justify-between pb-2.5 border-b border-slate-100 shrink-0">
-              <span class="text-xs font-semibold text-[#000000D9] uppercase tracking-wide">Chi Tiết Thiết Lập Giá</span>
+            <div class="flex items-center justify-between pb-2 border-b border-slate-100 shrink-0">
+              <span class="text-xs font-semibold text-[#000000D9]">Chi Tiết Thiết Lập Giá</span>
               <div class="flex items-center gap-1.5">
                 <!-- Add Button -->
                 <button @click="handleAdd"
-                  class="btn-pms-primary h-8 px-3 text-xs flex items-center gap-1.5 cursor-pointer shadow-xs">
+                  class="btn-pms-primary h-7.5 px-2.5 text-xs flex items-center gap-1.5 cursor-pointer shadow-xs">
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                   </svg>
@@ -1145,7 +1152,7 @@ const selectPackage = (pkg) => {
                 </button>
                 <!-- Save Button -->
                 <button @click="handleSave"
-                  class="btn-pms-primary h-8 px-3 text-xs flex items-center gap-1.5 cursor-pointer shadow-xs">
+                  class="btn-pms-primary h-7.5 px-2.5 text-xs flex items-center gap-1.5 cursor-pointer shadow-xs">
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
                   </svg>
@@ -1153,7 +1160,7 @@ const selectPackage = (pkg) => {
                 </button>
                 <!-- Delete Button -->
                 <button @click="handleDelete"
-                  class="btn-pms-danger h-8 px-3 text-xs flex items-center gap-1.5 cursor-pointer shadow-xs">
+                  class="btn-pms-danger h-7.5 px-2.5 text-xs flex items-center gap-1.5 cursor-pointer shadow-xs">
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round"
                       d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -1164,27 +1171,27 @@ const selectPackage = (pkg) => {
             </div>
 
             <!-- Form Content Fields stacked in rows matching mockup -->
-            <div class="flex flex-col gap-2.5 py-2.5 overflow-y-auto flex-1 text-xs">
+            <div class="flex flex-col gap-2 py-1.5 overflow-y-auto flex-1 text-xs">
               <!-- Row 1: Mã (1/3) & Mô tả (2/3) -->
-              <div class="flex gap-3">
+              <div class="flex gap-2.5">
                 <div class="w-1/3">
-                  <label class="block text-xs font-semibold text-[#000000D9] mb-1">
-                    Mã <span v-if="!isEditing" class="text-red-500">*</span>
+                  <label class="block text-xs font-semibold text-[#000000D9] mb-0.5">
+                    Mã <span v-if="!isEditing" class="text-rose-500">*</span>
                   </label>
                   <div class="relative flex items-center">
                     <input type="text" v-model="rateFormState.Ma" :disabled="isEditing" placeholder="Mã giá phòng..."
-                      class="w-full px-2.5 py-1.5 rounded-lg text-xs font-normal focus:outline-none transition-colors"
-                      :class="isEditing ? 'bg-slate-100 border border-slate-200 text-slate-500 cursor-not-allowed' : 'bg-[#FFF8DB] border border-[#F1DD8A] focus:border-amber-400 text-gray-900 pr-7'" />
+                      class="w-full px-2 py-1 rounded-lg text-xs transition-colors"
+                      :class="isEditing ? 'bg-slate-100 border border-slate-200 text-[#000000D9] font-normal cursor-not-allowed' : 'bg-[#FFF8DB] border border-[#F1DD8A] focus:border-[#eab308] text-[#000000D9] font-normal pr-7'" />
                     <button v-if="rateFormState.Ma && !isEditing" @click="rateFormState.Ma = ''"
                       class="absolute right-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer text-xs"
                       title="Xóa nhanh">✕</button>
                   </div>
                 </div>
                 <div class="w-2/3">
-                  <label class="block text-xs font-semibold text-[#000000D9] mb-1">Mô Tả</label>
+                  <label class="block text-xs font-semibold text-[#000000D9] mb-0.5">Mô Tả</label>
                   <div class="relative flex items-center">
                     <input type="text" v-model="rateFormState.Description" placeholder="Mô tả giá phòng..."
-                      class="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs focus:outline-sky-400 font-normal text-gray-900 pr-7" />
+                      class="w-full px-2 py-1 border border-slate-200 rounded-lg text-xs focus:outline-sky-400 font-normal text-[#000000D9] pr-7" />
                     <button v-if="rateFormState.Description" @click="rateFormState.Description = ''"
                       class="absolute right-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer text-xs"
                       title="Xóa nhanh">✕</button>
@@ -1192,25 +1199,25 @@ const selectPackage = (pkg) => {
                 </div>
               </div>
 
-              <!-- Row 2: Từ ngày - đến ngày (45%) & Tiền tệ (20%) & Ăn sáng checkbox (35%) -->
-              <div class="flex gap-3 items-end">
+              <!-- Row 2: Từ ngày - đến ngày (45%) & Tiền tệ (25%) & Ăn sáng checkbox (30%) -->
+              <div class="flex gap-2.5 items-end">
                 <div class="w-[45%] flex gap-2">
                   <div class="w-1/2">
-                    <label class="block text-xs font-semibold text-[#000000D9] mb-1">Từ Ngày</label>
+                    <label class="block text-xs font-semibold text-[#000000D9] mb-0.5">Từ Ngày</label>
                     <SingleDatePicker v-model="rateFormState.BeginDate" placeholder="dd/mm/yyyy" />
                   </div>
                   <div class="w-1/2">
-                    <label class="block text-xs font-semibold text-[#000000D9] mb-1">Đến Ngày</label>
+                    <label class="block text-xs font-semibold text-[#000000D9] mb-0.5">Đến Ngày</label>
                     <SingleDatePicker v-model="rateFormState.EndDate" :min-date="rateFormState.BeginDate" placeholder="dd/mm/yyyy" />
                   </div>
                 </div>
 
                 <div class="w-[25%]">
-                  <label class="block text-xs font-semibold text-[#000000D9] mb-1">Tiền Tệ</label>
+                  <label class="block text-xs font-semibold text-[#000000D9] mb-0.5">Tiền Tệ</label>
                   <button type="button" @click="showCurrencyModal = true"
-                    class="w-full flex items-center gap-1.5 px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-normal bg-white hover:border-sky-300 transition-colors cursor-pointer text-left">
+                    class="w-full flex items-center gap-1.5 px-2 py-1 border border-slate-200 rounded-lg text-xs font-normal bg-white hover:border-sky-300 transition-colors cursor-pointer text-left">
                     <span class="text-sm">{{ selectedCurrencyObj.flag }}</span>
-                    <span class="font-semibold text-gray-900">{{ rateFormState.Currency }}</span>
+                    <span class="font-normal text-[#000000D9]">{{ rateFormState.Currency }}</span>
                     <svg class="w-3.5 h-3.5 text-slate-400 ml-auto" fill="none" stroke="currentColor" stroke-width="2"
                       viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
@@ -1218,9 +1225,9 @@ const selectPackage = (pkg) => {
                   </button>
                 </div>
 
-                <div class="w-[30%] pb-1.5 pl-1">
+                <div class="w-[30%] pb-1 pl-1">
                   <label
-                    class="inline-flex items-center gap-1.5 text-xs text-slate-700 font-semibold cursor-pointer select-none">
+                    class="inline-flex items-center gap-1.5 text-xs text-[#000000D9] font-normal cursor-pointer select-none">
                     <input type="checkbox" v-model="rateFormState.IncludeBF"
                       class="rounded border-slate-300 text-sky-500 focus:ring-sky-400 cursor-pointer" />
                     Ăn Sáng
@@ -1229,27 +1236,27 @@ const selectPackage = (pkg) => {
               </div>
 
               <!-- Row 3: Remaining Checkboxes Grouped Inline -->
-              <div class="flex flex-wrap gap-x-4 gap-y-1.5 items-center pt-2 border-t border-slate-100">
+              <div class="flex flex-wrap gap-x-4 gap-y-1 items-center pt-1.5 border-t border-slate-100">
                 <label
-                  class="inline-flex items-center gap-1.5 text-xs text-slate-700 font-semibold cursor-pointer select-none">
+                  class="inline-flex items-center gap-1.5 text-xs text-[#000000D9] font-normal cursor-pointer select-none">
                   <input type="checkbox" v-model="rateFormState.IsDaily"
                     class="rounded border-slate-300 text-sky-500 focus:ring-sky-400 cursor-pointer" />
                   Giá Theo Ngày
                 </label>
                 <label
-                  class="inline-flex items-center gap-1.5 text-xs text-slate-700 font-semibold cursor-pointer select-none">
+                  class="inline-flex items-center gap-1.5 text-xs text-[#000000D9] font-normal cursor-pointer select-none">
                   <input type="checkbox" v-model="rateFormState.Disable"
                     class="rounded border-slate-300 text-sky-500 focus:ring-sky-400 cursor-pointer" />
                   Không Sử Dụng
                 </label>
                 <label
-                  class="inline-flex items-center gap-1.5 text-xs text-slate-700 font-semibold cursor-pointer select-none">
+                  class="inline-flex items-center gap-1.5 text-xs text-[#000000D9] font-normal cursor-pointer select-none">
                   <input type="checkbox" v-model="rateFormState.AllowChangeRate"
                     class="rounded border-slate-300 text-sky-500 focus:ring-sky-400 cursor-pointer" />
                   Cho Phép Nhập Giá
                 </label>
                 <label
-                  class="inline-flex items-center gap-1.5 text-xs text-slate-700 font-semibold cursor-pointer select-none">
+                  class="inline-flex items-center gap-1.5 text-xs text-[#000000D9] font-normal cursor-pointer select-none">
                   <input type="checkbox" v-model="rateFormState.IsChannelManager"
                     class="rounded border-slate-300 text-sky-500 focus:ring-sky-400 cursor-pointer" />
                   Đẩy Lên Channel Manager
@@ -1272,31 +1279,31 @@ const selectPackage = (pkg) => {
                 </div>
                 <div class="flex items-center gap-2.5 flex-wrap">
                   <label
-                    class="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 cursor-pointer"><input
+                    class="inline-flex items-center gap-1 text-xs font-normal text-[#000000D9] cursor-pointer"><input
                       type="checkbox" v-model="batchDaysOfWeek[1]" class="rounded text-sky-500 cursor-pointer" />T2</label>
                   <label
-                    class="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 cursor-pointer"><input
+                    class="inline-flex items-center gap-1 text-xs font-normal text-[#000000D9] cursor-pointer"><input
                       type="checkbox" v-model="batchDaysOfWeek[2]" class="rounded text-sky-500 cursor-pointer" />T3</label>
                   <label
-                    class="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 cursor-pointer"><input
+                    class="inline-flex items-center gap-1 text-xs font-normal text-[#000000D9] cursor-pointer"><input
                       type="checkbox" v-model="batchDaysOfWeek[3]" class="rounded text-sky-500 cursor-pointer" />T4</label>
                   <label
-                    class="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 cursor-pointer"><input
+                    class="inline-flex items-center gap-1 text-xs font-normal text-[#000000D9] cursor-pointer"><input
                       type="checkbox" v-model="batchDaysOfWeek[4]" class="rounded text-sky-500 cursor-pointer" />T5</label>
                   <label
-                    class="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 cursor-pointer"><input
+                    class="inline-flex items-center gap-1 text-xs font-normal text-[#000000D9] cursor-pointer"><input
                       type="checkbox" v-model="batchDaysOfWeek[5]" class="rounded text-sky-500 cursor-pointer" />T6</label>
                   <label
-                    class="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 cursor-pointer"><input
+                    class="inline-flex items-center gap-1 text-xs font-normal text-[#000000D9] cursor-pointer"><input
                       type="checkbox" v-model="batchDaysOfWeek[6]" class="rounded text-sky-500 cursor-pointer" />T7</label>
                   <label
-                    class="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 cursor-pointer"><input
+                    class="inline-flex items-center gap-1 text-xs font-normal text-[#000000D9] cursor-pointer"><input
                       type="checkbox" v-model="batchDaysOfWeek[0]" class="rounded text-sky-500 cursor-pointer" />CN</label>
 
                   <div class="flex items-center gap-1.5 border-l border-slate-300 pl-2.5 ml-1">
                     <span class="text-xs font-semibold text-[#000000D9]">Loại Giá</span>
                     <select v-model="batchRateType"
-                      class="border border-slate-200 px-2 py-1 rounded text-xs focus:outline-sky-400 w-28 bg-white font-semibold text-slate-700">
+                      class="border border-slate-200 px-2 py-1 rounded text-xs focus:outline-sky-400 w-28 bg-white font-normal text-[#000000D9]">
                       <option v-if="availableRatePlans.length === 0" value="" disabled>Trống</option>
                       <option v-for="plan in availableRatePlans" :key="plan.Code" :value="plan.Code">{{ plan.Code }}
                       </option>
@@ -1318,23 +1325,23 @@ const selectPackage = (pkg) => {
 
         <!-- Bottom Room rate matrix values with full table grid lines -->
         <div v-if="!rateFormState.IsDaily"
-          class="flex-1 min-h-[160px] bg-white border border-slate-200 rounded-xl p-3 flex flex-col shadow-xs overflow-hidden">
+          class="flex-1 min-h-[220px] bg-white border border-slate-200 rounded-xl p-3 flex flex-col shadow-xs overflow-hidden">
           <div class="flex-1 overflow-auto">
-            <table class="w-full text-xs text-left border-collapse min-w-[800px] border border-slate-200">
+            <table class="w-full text-xs text-left border-collapse min-w-[800px] border border-slate-200 font-roboto">
               <thead>
                 <tr
-                  class="bg-slate-50 border-b border-slate-200 text-gray-900 font-bold uppercase sticky top-0 z-10 text-center">
-                  <th class="p-2.5 text-left w-36 border border-slate-200 bg-slate-50">Loại phòng</th>
-                  <th class="p-2.5 text-left w-48 border border-slate-200 bg-slate-50">Mô tả</th>
-                  <th v-for="occ in occupancies" :key="occ" class="p-2.5 border border-slate-200 w-32">{{ occ }}</th>
+                  class="bg-slate-50 border-b border-slate-200 text-[#000000D9] font-semibold sticky top-0 z-10 text-center">
+                  <th class="p-2 text-center align-middle w-36 border border-slate-200 bg-slate-50 font-semibold text-[#000000D9]">Loại Phòng</th>
+                  <th class="p-2 text-center align-middle w-48 border border-slate-200 bg-slate-50 font-semibold text-[#000000D9]">Mô Tả</th>
+                  <th v-for="occ in occupancies" :key="occ" class="p-2 text-center align-middle border border-slate-200 w-32 font-semibold text-[#000000D9]">{{ occ }}</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="rt in roomTypes" :key="rt.code" class="hover:bg-slate-50/40">
                   <!-- Room type code -->
-                  <td class="p-2.5 font-bold text-gray-900 border border-slate-200 bg-slate-50/20">{{ rt.code }}</td>
+                  <td class="p-2 font-normal text-[#000000D9] border border-slate-200 bg-slate-50/20 text-center align-middle">{{ rt.code }}</td>
                   <!-- Room type description -->
-                  <td class="p-2.5 text-gray-900 font-semibold border border-slate-200">{{ rt.description }}</td>
+                  <td class="p-2 text-[#000000D9] font-normal border border-slate-200">{{ rt.description }}</td>
 
                   <!-- Occupancies pricing inputs inside grid -->
                   <td v-for="occ in occupancies" :key="rt.code + '-' + occ" class="p-1 border border-slate-200">
@@ -1343,7 +1350,7 @@ const selectPackage = (pkg) => {
                       :value="formatCurrencyInput(rateMatrix[getMatrixKey(rt.code, occ)], rateFormState.Currency)"
                       @input="e => rateMatrix[getMatrixKey(rt.code, occ)] = cleanCurrencyValue(e.target.value, rateFormState.Currency)"
                       placeholder="-"
-                      class="w-full px-2 py-1.5 border border-slate-100 hover:border-slate-300 focus:border-sky-300 rounded text-center text-xs focus:outline-none font-semibold bg-white text-gray-900 transition-colors" />
+                      class="w-full px-2 py-1 border border-slate-100 hover:border-slate-300 focus:border-sky-300 rounded text-center text-xs focus:outline-none font-normal bg-white text-[#000000D9] transition-colors" />
                   </td>
                 </tr>
               </tbody>
@@ -1351,20 +1358,20 @@ const selectPackage = (pkg) => {
           </div>
         </div>
 
-        <div v-else class="flex-1 min-h-[160px] bg-white border border-slate-200 rounded-xl p-0 flex flex-col shadow-xs overflow-hidden">
+        <div v-else class="flex-1 min-h-[220px] bg-white border border-slate-200 rounded-xl p-0 flex flex-col shadow-xs overflow-hidden font-roboto">
           <!-- Lưới giá theo ngày (Daily Grid) - giống hệ thống cũ -->
           <div class="flex-1 overflow-auto">
-            <table class="text-xs text-left border-collapse min-w-[1200px] border border-slate-200">
+            <table class="text-xs text-left border-collapse min-w-[1200px] border border-slate-200 font-roboto">
               <thead class="bg-slate-100 sticky top-0 z-20">
                 <!-- Header Row 1: Room Type Groups -->
-                <tr class="text-gray-900">
+                <tr class="text-[#000000D9]">
                   <th rowspan="2"
-                    class="p-2 border border-slate-200 w-28 text-center bg-slate-100 sticky left-0 z-30 font-bold">Ngày
+                    class="p-2 border border-slate-200 w-28 text-center align-middle bg-slate-100 sticky left-0 z-30 font-semibold text-[#000000D9]">Ngày
                   </th>
-                  <th rowspan="2" class="p-2 border border-slate-200 w-10 text-center bg-slate-100 font-bold"></th>
-                  <th rowspan="2" class="p-2 border border-slate-200 w-16 text-center bg-slate-100 font-bold">Mã</th>
+                  <th rowspan="2" class="p-2 border border-slate-200 w-10 text-center align-middle bg-slate-100 font-semibold text-[#000000D9]"></th>
+                  <th rowspan="2" class="p-2 border border-slate-200 w-16 text-center align-middle bg-slate-100 font-semibold text-[#000000D9]">Mã</th>
                   <th v-for="rt in roomTypes" :key="rt.code" :colspan="occupancies.length"
-                    class="p-2 border border-slate-200 text-center font-bold text-gray-900 bg-slate-100">
+                    class="p-2 border border-slate-200 text-center align-middle font-semibold text-[#000000D9] bg-slate-100">
                     {{ rt.code }}
                   </th>
                 </tr>
@@ -1372,7 +1379,7 @@ const selectPackage = (pkg) => {
                 <tr>
                   <template v-for="rt in roomTypes" :key="'occ-' + rt.code">
                     <th v-for="occ in occupancies" :key="rt.code + '-' + occ"
-                      class="p-1.5 border border-slate-200 text-center text-[10px] font-semibold text-gray-900 bg-slate-50 w-20">
+                      class="p-1.5 border border-slate-200 text-center align-middle text-[11px] font-semibold text-[#000000D9] bg-slate-50 w-20">
                       {{ occ }}
                     </th>
                   </template>
@@ -1381,23 +1388,23 @@ const selectPackage = (pkg) => {
               <tbody>
                 <tr v-for="mapping in paginatedDailyMappings" :key="mapping.Date + '-' + mapping.Code" :id="'daily-row-' + mapping.Date"
                   class="border-b border-slate-100 hover:bg-sky-100 transition-colors" :class="{
-                    'bg-amber-100/90 font-bold border-y-2 border-amber-400 text-amber-950': mapping.Date === focusedTargetDate,
-                    'bg-emerald-50/60 font-bold': mapping.Date !== focusedTargetDate && mapping.Date === getTodayString(),
+                    'bg-amber-100/90 font-medium border-y-2 border-amber-400 text-amber-950': mapping.Date === focusedTargetDate,
+                    'bg-emerald-50/60 font-medium': mapping.Date !== focusedTargetDate && mapping.Date === getTodayString(),
                     'bg-sky-50/30': mapping.Date !== focusedTargetDate && mapping.Date !== getTodayString() && getDayOfWeekFromDate(mapping.Date) === 0,
                     'text-rose-500': mapping.Date !== focusedTargetDate && mapping.Date !== getTodayString() && getDayOfWeekFromDate(mapping.Date) === 0,
                     'text-orange-500': mapping.Date !== focusedTargetDate && mapping.Date !== getTodayString() && getDayOfWeekFromDate(mapping.Date) === 6
                   }">
                   <td
-                    class="p-2 border border-slate-100 font-semibold text-gray-900 text-center whitespace-nowrap sticky left-0 z-10"
+                    class="p-2 border border-slate-100 font-normal text-[#000000D9] text-center whitespace-nowrap sticky left-0 z-10"
                     :class="{
-                      'bg-amber-300 text-amber-950 font-black shadow-sm': mapping.Date === focusedTargetDate,
-                      'bg-emerald-100 text-emerald-900 font-bold': mapping.Date !== focusedTargetDate && mapping.Date === getTodayString(),
+                      'bg-amber-300 text-amber-950 font-semibold shadow-sm': mapping.Date === focusedTargetDate,
+                      'bg-emerald-100 text-emerald-900 font-semibold': mapping.Date !== focusedTargetDate && mapping.Date === getTodayString(),
                       'bg-sky-50/30': mapping.Date !== focusedTargetDate && mapping.Date !== getTodayString() && getDayOfWeekFromDate(mapping.Date) === 0,
                       'bg-white': mapping.Date !== focusedTargetDate && mapping.Date !== getTodayString() && getDayOfWeekFromDate(mapping.Date) !== 0
                     }">
                     {{ formatDateVN(mapping.Date) }}
                   </td>
-                  <td class="p-2 border border-slate-100 text-center font-semibold text-gray-900 text-[10px]"
+                  <td class="p-2 border border-slate-100 text-center font-normal text-[#000000D9] text-[10px]"
                     :class="{
                       'bg-emerald-100/50 text-emerald-900': mapping.Date === getTodayString(),
                       'text-rose-500': mapping.Date !== getTodayString() && (getDayOfWeekFromDate(mapping.Date) === 0 || getDayOfWeekFromDate(mapping.Date) === 6)
@@ -1407,7 +1414,7 @@ const selectPackage = (pkg) => {
                   <td class="p-1.5 border border-slate-100 text-center">
                     <select :key="mapping.Date + '-' + mapping.Code" :value="mapping.Code" :disabled="isSavingDailyMappings" @change="e => updateSingleMapping(mapping.Date, e.target.value)"
                       class="border px-1 py-0.5 rounded text-xs focus:outline-sky-400 bg-white"
-                      :class="[getDayOfWeekFromDate(mapping.Date) === 0 || getDayOfWeekFromDate(mapping.Date) === 6 ? 'text-red-600 font-bold border-red-200' : 'text-gray-900 font-semibold border-slate-200']">
+                      :class="[getDayOfWeekFromDate(mapping.Date) === 0 || getDayOfWeekFromDate(mapping.Date) === 6 ? 'text-red-600 font-normal border-red-200' : 'text-[#000000D9] font-normal border-slate-200']">
                       <option value="-">-</option>
                       <option v-for="plan in availableRatePlans" :key="plan.Code" :value="plan.Code">{{ plan.Code }}
                       </option>
@@ -1417,7 +1424,7 @@ const selectPackage = (pkg) => {
                     <td v-for="occ in occupancies" :key="`${mapping.Date}-${rt.code}-${occ}`"
                       class="p-0.5 border border-slate-100">
                       <span class="block text-center text-[11px] py-1"
-                        :class="[getDayOfWeekFromDate(mapping.Date) === 0 || getDayOfWeekFromDate(mapping.Date) === 6 ? 'text-red-600 font-bold' : 'text-gray-900 font-semibold']">
+                        :class="[getDayOfWeekFromDate(mapping.Date) === 0 || getDayOfWeekFromDate(mapping.Date) === 6 ? 'text-red-600 font-normal' : 'text-[#000000D9] font-normal']">
                         {{ mapping.Code !== '-' ? (formatCurrencyInput(rateMatrix[`${mapping.Code}_${rt.code}_${occ}`],
                           rateFormState.Currency) || '-') : '-' }}
                       </span>
@@ -1426,7 +1433,7 @@ const selectPackage = (pkg) => {
                 </tr>
                 <tr v-if="paginatedDailyMappings.length === 0">
                   <td :colspan="3 + roomTypes.length * occupancies.length"
-                    class="p-8 text-center text-gray-900 font-semibold text-sm">
+                    class="p-8 text-center text-[#000000D9] font-normal text-xs">
                     Vui lòng chọn Mã giá phòng và thiết lập giai đoạn (Từ ngày - Đến ngày) để hiển thị chi tiết giá hằng
                     ngày.
                   </td>
@@ -1462,76 +1469,76 @@ const selectPackage = (pkg) => {
       </div>
 
       <!-- ================= TAB 2: GÓI DỊCH VỤ ================= -->
-      <div v-else-if="activeRateTab === 'Gói dịch vụ'" class="flex-1 flex flex-col gap-4 min-h-0">
+      <div v-else-if="isTabActive('Gói Dịch Vụ')" class="flex-1 flex flex-col gap-4 min-h-0">
 
         <!-- Top Half: Gói dịch vụ list -->
-        <div class="flex-1 bg-white border border-slate-200 rounded-xl p-4 flex flex-col min-h-0 shadow-xs">
+        <div class="flex-1 bg-white border border-slate-200 rounded-xl p-3 flex flex-col min-h-0 shadow-xs">
           <!-- Header with buttons -->
-          <div class="flex items-center justify-between pb-3 border-b border-slate-100 shrink-0">
-            <h3 class="text-xl font-bold text-gray-900 uppercase tracking-wide">Gói dịch vụ</h3>
+          <div class="flex items-center justify-between pb-2.5 border-b border-slate-100 shrink-0">
+            <h3 class="text-xs font-semibold text-[#000000D9] uppercase tracking-wide m-0">Gói Dịch Vụ</h3>
             <div class="flex items-center gap-1.5">
               <!-- Search Mock Button -->
               <button
-                class="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-gray-900 cursor-pointer bg-white">
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                class="btn-pms-secondary h-8 px-2.5 text-xs flex items-center justify-center cursor-pointer">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round"
                     d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
               </button>
               <!-- Add Button -->
               <button
-                class="px-3 py-1.5 bg-[#8dcbf4] hover:bg-[#78bce8] text-white rounded-lg text-xs font-bold border-none cursor-pointer flex items-center gap-1 shadow-sm">
+                class="btn-pms-primary h-8 px-3 text-xs flex items-center gap-1.5 cursor-pointer shadow-xs">
                 <span class="text-sm">+</span> Thêm
               </button>
               <!-- Edit Button -->
               <button
-                class="px-3 py-1.5 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-xs font-bold border-none cursor-pointer flex items-center gap-1 shadow-sm">
+                class="btn-pms-primary h-8 px-3 text-xs flex items-center gap-1.5 cursor-pointer shadow-xs">
                 Sửa
               </button>
-              <!-- Delete Button (using scoped CSS class) -->
+              <!-- Delete Button -->
               <button
-                class="px-3 py-1.5 btn-delete rounded-lg text-xs font-bold cursor-pointer flex items-center gap-1 shadow-sm">
+                class="btn-pms-danger h-8 px-3 text-xs flex items-center gap-1.5 cursor-pointer shadow-xs">
                 Xóa
               </button>
             </div>
           </div>
 
           <!-- Table Container with grid lines -->
-          <div class="flex-1 overflow-y-auto mt-3">
-            <table class="w-full text-xs text-left border-collapse min-w-[800px] border border-slate-200">
+          <div class="flex-1 overflow-y-auto mt-2.5">
+            <table class="w-full text-xs text-left border-collapse min-w-[800px] border border-slate-200 font-roboto">
               <thead>
-                <tr class="bg-slate-50 border-b border-slate-200 text-gray-900 font-bold uppercase sticky top-0 z-10">
-                  <th class="p-2.5 border border-slate-200 w-24">Mã</th>
-                  <th class="p-2.5 border border-slate-200 w-20 text-center">Tiền tệ</th>
-                  <th class="p-2.5 border border-slate-200 w-24 text-center">Số đêm</th>
-                  <th class="p-2.5 border border-slate-200 w-32 text-right">Giá hiển thị</th>
-                  <th class="p-2.5 border border-slate-200 w-32 text-center">Ngày bắt đầu</th>
-                  <th class="p-2.5 border border-slate-200 w-32 text-center">Ngày mở khóa</th>
-                  <th class="p-2.5 border border-slate-200 w-32 text-center">Không sử dụng</th>
-                  <th class="p-2.5 border border-slate-200">Theo ngày trong tuần</th>
-                  <th class="p-2.5 border border-slate-200">Mô tả</th>
+                <tr class="bg-slate-50 border-b border-slate-200 text-[#000000D9] font-semibold sticky top-0 z-10">
+                  <th class="p-2 border border-slate-200 w-24 text-center align-middle">Mã</th>
+                  <th class="p-2 border border-slate-200 w-20 text-center align-middle">Tiền Tệ</th>
+                  <th class="p-2 border border-slate-200 w-24 text-center align-middle">Số Đêm</th>
+                  <th class="p-2 border border-slate-200 w-32 text-center align-middle">Giá Hiển Thị</th>
+                  <th class="p-2 border border-slate-200 w-32 text-center align-middle">Ngày Bắt Đầu</th>
+                  <th class="p-2 border border-slate-200 w-32 text-center align-middle">Ngày Mở Khóa</th>
+                  <th class="p-2 border border-slate-200 w-32 text-center align-middle">Không Sử Dụng</th>
+                  <th class="p-2 border border-slate-200 text-center align-middle">Theo Ngày Trong Tuần</th>
+                  <th class="p-2 border border-slate-200 text-center align-middle">Mô Tả</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="pkg in servicePackages" :key="pkg.id" @click="selectPackage(pkg)"
                   class="hover:bg-sky-100 cursor-pointer transition-colors"
-                  :class="selectedPackage?.id === pkg.id ? 'bg-sky-50/40 font-bold text-sky-700' : 'text-gray-900 font-semibold'">
-                  <td class="p-2.5 border border-slate-200 font-bold">{{ pkg.code }}</td>
-                  <td class="p-2.5 border border-slate-200 text-center">{{ pkg.currency }}</td>
-                  <td class="p-2.5 border border-slate-200 text-center">{{ pkg.nights }}</td>
-                  <td class="p-2.5 border border-slate-200 text-right font-bold text-sky-600">{{ pkg.displayPrice }}
+                  :class="selectedPackage?.id === pkg.id ? 'bg-sky-50/60 font-semibold text-sky-700' : 'text-[#000000D9]'">
+                  <td class="p-2 border border-slate-200 font-normal text-[#000000D9] text-center">{{ pkg.code }}</td>
+                  <td class="p-2 border border-slate-200 text-center font-normal text-[#000000D9]">{{ pkg.currency }}</td>
+                  <td class="p-2 border border-slate-200 text-center font-normal text-[#000000D9]">{{ pkg.nights }}</td>
+                  <td class="p-2 border border-slate-200 text-right font-normal text-[#000000D9]">{{ pkg.displayPrice }}
                   </td>
-                  <td class="p-2.5 border border-slate-200 text-center text-gray-900 font-semibold">{{ pkg.startDate }}
+                  <td class="p-2 border border-slate-200 text-center text-[#000000D9] font-normal">{{ pkg.startDate }}
                   </td>
-                  <td class="p-2.5 border border-slate-200 text-center text-gray-900 font-semibold">{{ pkg.endDate }}
+                  <td class="p-2 border border-slate-200 text-center text-[#000000D9] font-normal">{{ pkg.endDate }}
                   </td>
-                  <td class="p-2.5 border border-slate-200 text-center">
+                  <td class="p-2 border border-slate-200 text-center">
                     <input type="checkbox" :checked="pkg.inactive" @click.stop
-                      class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
+                      class="rounded border-slate-300 text-sky-500 focus:ring-sky-400 cursor-pointer" />
                   </td>
-                  <td class="p-2.5 border border-slate-200 text-gray-900 font-semibold truncate max-w-[200px]"
+                  <td class="p-2 border border-slate-200 text-[#000000D9] font-normal truncate max-w-[200px]"
                     :title="pkg.daysOfWeek">{{ pkg.daysOfWeek }}</td>
-                  <td class="p-2.5 border border-slate-200 text-gray-900 font-semibold">{{ pkg.description }}</td>
+                  <td class="p-2 border border-slate-200 text-[#000000D9] font-normal">{{ pkg.description }}</td>
                 </tr>
               </tbody>
             </table>
@@ -1540,66 +1547,62 @@ const selectPackage = (pkg) => {
 
         <!-- Bottom Half: Chi tiết gói dịch vụ -->
         <div
-          class="flex-1 bg-white border border-slate-200 rounded-xl p-4 flex flex-col min-h-0 shadow-xs justify-between">
+          class="flex-1 bg-white border border-slate-200 rounded-xl p-3 flex flex-col min-h-0 shadow-xs justify-between">
           <!-- Header with buttons -->
-          <div class="flex items-center justify-between pb-3 border-b border-slate-100 shrink-0">
-            <h3 class="text-xl font-bold text-gray-900 uppercase tracking-wide">Chi tiết gói dịch vụ</h3>
+          <div class="flex items-center justify-between pb-2.5 border-b border-slate-100 shrink-0">
+            <h3 class="text-xs font-semibold text-[#000000D9] tracking-wide m-0">Chi Tiết Gói Dịch Vụ</h3>
             <div class="flex items-center gap-1.5">
               <!-- Add Button -->
               <button
-                class="px-3 py-1.5 bg-[#8dcbf4] hover:bg-[#78bce8] text-white rounded-lg text-xs font-bold border-none cursor-pointer flex items-center gap-1 shadow-sm">
+                class="btn-pms-primary h-8 px-3 text-xs flex items-center gap-1.5 cursor-pointer shadow-xs">
                 <span class="text-sm">+</span> Thêm
               </button>
               <!-- Edit Button -->
               <button
-                class="px-3 py-1.5 bg-sky-500 hover:bg-sky-600 text-white rounded-lg text-xs font-bold border-none cursor-pointer flex items-center gap-1 shadow-sm">
+                class="btn-pms-primary h-8 px-3 text-xs flex items-center gap-1.5 cursor-pointer shadow-xs">
                 Sửa
               </button>
-              <!-- Delete Button (using scoped CSS class) -->
+              <!-- Delete Button -->
               <button
-                class="px-3 py-1.5 btn-delete rounded-lg text-xs font-bold cursor-pointer flex items-center gap-1 shadow-sm">
+                class="btn-pms-danger h-8 px-3 text-xs flex items-center gap-1.5 cursor-pointer shadow-xs">
                 Xóa
               </button>
             </div>
           </div>
 
           <!-- Table Container with grid lines -->
-          <div class="flex-1 overflow-y-auto mt-3">
-            <table class="w-full text-xs text-left border-collapse min-w-[800px] border border-slate-200">
+          <div class="flex-1 overflow-y-auto mt-2.5">
+            <table class="w-full text-xs text-left border-collapse min-w-[800px] border border-slate-200 font-roboto">
               <thead>
-                <tr class="bg-slate-50 border-b border-slate-200 text-gray-900 font-bold uppercase sticky top-0 z-10">
-                  <th class="p-2.5 border border-slate-200">Thời gian hiệu lực</th>
-                  <th class="p-2.5 border border-slate-200 w-32 text-center">Từ ngày</th>
-                  <th class="p-2.5 border border-slate-200 w-32 text-center">Đến ngày</th>
-                  <th class="p-2.5 border border-slate-200">Dịch vụ</th>
-                  <th class="p-2.5 border border-slate-200">Bộ phận</th>
-                  <th class="p-2.5 border border-slate-200 text-center">Gói bữa ăn</th>
-                  <th class="p-2.5 border border-slate-200 w-32 text-right">Số tiền</th>
-                  <th class="p-2.5 border border-slate-200 w-32 text-center">Tính trên</th>
-                  <th class="p-2.5 border border-slate-200">Loại phòng</th>
+                <tr class="bg-slate-50 border-b border-slate-200 text-[#000000D9] font-semibold sticky top-0 z-10">
+                  <th class="p-2 border border-slate-200 text-center align-middle">Thời Gian Hiệu Lực</th>
+                  <th class="p-2 border border-slate-200 w-32 text-center align-middle">Từ Ngày</th>
+                  <th class="p-2 border border-slate-200 w-32 text-center align-middle">Đến Ngày</th>
+                  <th class="p-2 border border-slate-200 text-center align-middle">Dịch Vụ</th>
+                  <th class="p-2 border border-slate-200 text-center align-middle">Bộ Phận</th>
+                  <th class="p-2 border border-slate-200 text-center align-middle">Gói Bữa Ăn</th>
+                  <th class="p-2 border border-slate-200 w-32 text-center align-middle">Số Tiền</th>
+                  <th class="p-2 border border-slate-200 w-32 text-center align-middle">Tính Trên</th>
+                  <th class="p-2 border border-slate-200 text-center align-middle">Loại Phòng</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="detail in packageDetails" :key="detail.id"
-                  class="border-b border-slate-100 hover:bg-sky-100 text-gray-900 font-semibold">
-                  <td class="p-2.5 border border-slate-200 font-semibold">{{ detail.validity }}</td>
-                  <td class="p-2.5 border border-slate-200 text-center text-gray-900 font-semibold">{{ detail.fromDate
-                    }}</td>
-                  <td class="p-2.5 border border-slate-200 text-center text-gray-900 font-semibold">{{ detail.endDate }}
-                  </td>
-                  <td class="p-2.5 border border-slate-200 font-bold text-gray-900">{{ detail.service }}</td>
-                  <td class="p-2.5 border border-slate-200 text-gray-900 font-semibold">{{ detail.department }}</td>
-                  <td class="p-2.5 border border-slate-200 text-center"><span
-                      class="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded text-[10px] font-bold uppercase">{{
+                  class="border-b border-slate-100 hover:bg-sky-100 text-[#000000D9]">
+                  <td class="p-2 border border-slate-200 font-normal text-[#000000D9]">{{ detail.validity }}</td>
+                  <td class="p-2 border border-slate-200 text-center text-[#000000D9] font-normal">{{ detail.fromDate }}</td>
+                  <td class="p-2 border border-slate-200 text-center text-[#000000D9] font-normal">{{ detail.endDate }}</td>
+                  <td class="p-2 border border-slate-200 font-normal text-[#000000D9]">{{ detail.service }}</td>
+                  <td class="p-2 border border-slate-200 text-[#000000D9] font-normal">{{ detail.department }}</td>
+                  <td class="p-2 border border-slate-200 text-center"><span
+                      class="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded text-[10px] font-normal uppercase">{{
                       detail.mealPlan }}</span></td>
-                  <td class="p-2.5 border border-slate-200 text-right font-bold text-gray-900">{{ detail.amount }}</td>
-                  <td class="p-2.5 border border-slate-200 text-center text-gray-900 font-semibold">{{
-                    detail.calculatedOn }}
-                  </td>
-                  <td class="p-2.5 border border-slate-200 font-bold text-indigo-600">{{ detail.roomClass }}</td>
+                  <td class="p-2 border border-slate-200 text-right font-normal text-[#000000D9]">{{ detail.amount }}</td>
+                  <td class="p-2 border border-slate-200 text-center text-[#000000D9] font-normal">{{ detail.calculatedOn }}</td>
+                  <td class="p-2 border border-slate-200 font-normal text-sky-700 text-center">{{ detail.roomClass }}</td>
                 </tr>
                 <tr v-if="packageDetails.length === 0">
-                  <td colspan="9" class="p-8 text-center text-gray-900 font-semibold text-sm">Không có dữ liệu chi tiết
+                  <td colspan="9" class="p-8 text-center text-[#000000D9] font-normal text-xs">Không có dữ liệu chi tiết
                   </td>
                 </tr>
               </tbody>
@@ -1608,9 +1611,9 @@ const selectPackage = (pkg) => {
 
           <!-- Total Footer Row -->
           <div
-            class="mt-3 bg-slate-50 border border-slate-200 rounded-lg p-2.5 flex justify-between items-center text-xs font-bold text-gray-900 shrink-0">
+            class="mt-2.5 bg-slate-50 border border-slate-200 rounded-lg p-2.5 flex justify-between items-center text-xs font-semibold text-[#000000D9] shrink-0">
             <span>Tổng</span>
-            <span class="text-sm text-sky-600 font-extrabold pr-32">{{ formatNumber(totalPackageDetailsAmount) }}</span>
+            <span class="text-xs text-[#006bdb] font-bold pr-32">{{ formatNumber(totalPackageDetailsAmount) }}</span>
           </div>
         </div>
       </div>
@@ -1646,22 +1649,22 @@ const selectPackage = (pkg) => {
               <table class="w-full text-xs text-left border-collapse border border-slate-200 bg-white shadow-sm">
                 <thead class="bg-slate-100/80 sticky top-0">
                   <tr>
-                    <th class="p-2 border border-slate-200 text-gray-900 font-semibold text-center align-middle">Mã Loại Giá</th>
-                    <th class="p-2 border border-slate-200 text-gray-900 font-semibold text-center align-middle">Mô Tả</th>
-                    <th class="p-2 border border-slate-200 text-gray-900 font-semibold text-center align-middle">Từ Ngày</th>
-                    <th class="p-2 border border-slate-200 text-gray-900 font-semibold text-center align-middle">Đến Ngày</th>
-                    <th class="p-2 border border-slate-200 text-gray-900 font-semibold text-center align-middle w-16">Hành Động</th>
+                    <th class="p-2 border border-slate-200 text-[#000000D9] font-semibold text-center align-middle">Mã Loại Giá</th>
+                    <th class="p-2 border border-slate-200 text-[#000000D9] font-semibold text-center align-middle">Mô Tả</th>
+                    <th class="p-2 border border-slate-200 text-[#000000D9] font-semibold text-center align-middle">Từ Ngày</th>
+                    <th class="p-2 border border-slate-200 text-[#000000D9] font-semibold text-center align-middle">Đến Ngày</th>
+                    <th class="p-2 border border-slate-200 text-[#000000D9] font-semibold text-center align-middle w-16">Hành Động</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="plan in modalRatePlans" :key="plan.Code" @click="selectModalPlan(plan)"
                     class="cursor-pointer hover:bg-sky-50 transition-colors text-xs"
                     :class="{ 'bg-sky-100': modalFormState.Code === plan.Code }">
-                    <td class="p-2 border border-slate-200 font-semibold text-gray-900">{{ plan.Code }}</td>
-                    <td class="p-2 border border-slate-200 text-gray-900">{{ plan.Description }}</td>
-                    <td class="p-2 border border-slate-200 text-center text-gray-900">{{
+                    <td class="p-2 border border-slate-200 font-normal text-[#000000D9]">{{ plan.Code }}</td>
+                    <td class="p-2 border border-slate-200 font-normal text-[#000000D9]">{{ plan.Description }}</td>
+                    <td class="p-2 border border-slate-200 text-center font-normal text-[#000000D9]">{{
                       formatDateVN(plan.BeginDate) }}</td>
-                    <td class="p-2 border border-slate-200 text-center text-gray-900">{{
+                    <td class="p-2 border border-slate-200 text-center font-normal text-[#000000D9]">{{
                       formatDateVN(plan.EndDate) }}</td>
                     <td class="p-2 border border-slate-200 text-center" @click.stop>
                       <button @click="deletePlanItem(plan)" title="Xóa loại giá"
@@ -1688,7 +1691,14 @@ const selectPackage = (pkg) => {
                   <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
                   </svg>
-                  <span>Tạo Mới</span>
+                  <span>Thêm Mới</span>
+                </button>
+                <button v-if="isModalEditing" @click="deleteModalPlan" type="button"
+                  class="btn-pms-danger h-8 px-3 text-xs flex items-center gap-1.5 font-medium cursor-pointer shadow-xs">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  <span>Xóa</span>
                 </button>
                 <button @click="saveModalPlan" type="button"
                   class="btn-pms-primary h-8 px-4 text-xs flex items-center gap-1.5 font-medium cursor-pointer">
@@ -1701,10 +1711,10 @@ const selectPackage = (pkg) => {
 
               <div class="grid grid-cols-2 gap-4">
                 <div class="flex flex-col gap-1">
-                  <label class="text-xs font-semibold text-gray-900">Mã Loại Giá <span class="text-red-500">*</span></label>
+                  <label class="text-xs font-semibold text-[#000000D9]">Mã Loại Giá <span class="text-red-500">*</span></label>
                   <div class="relative">
                     <input type="text" v-model="modalFormState.Code" :disabled="isModalEditing"
-                      class="w-full border rounded px-2.5 py-1.5 text-xs focus:outline-none transition-colors disabled:bg-slate-100 disabled:border-slate-200 disabled:text-gray-500 text-gray-900 font-medium"
+                      class="w-full border rounded px-2.5 py-1.5 text-xs focus:outline-none transition-colors disabled:bg-slate-100 disabled:border-slate-200 disabled:text-[#000000D9] text-[#000000D9] font-normal"
                       :class="isModalEditing ? '' : 'bg-[#FFF8DB] border-[#F1DD8A] focus:border-amber-500'"
                       placeholder="Nhập mã loại giá" />
                     <button v-if="modalFormState.Code && !isModalEditing" @click="modalFormState.Code = ''" type="button"
@@ -1712,10 +1722,10 @@ const selectPackage = (pkg) => {
                   </div>
                 </div>
                 <div class="flex flex-col gap-1">
-                  <label class="text-xs font-semibold text-gray-900">Mô Tả</label>
+                  <label class="text-xs font-semibold text-[#000000D9]">Mô Tả</label>
                   <div class="relative">
                     <input type="text" v-model="modalFormState.Description"
-                      class="w-full border border-slate-200 rounded px-2.5 py-1.5 text-xs focus:outline-sky-400 text-gray-900 font-medium"
+                      class="w-full border border-slate-200 rounded px-2.5 py-1.5 text-xs focus:outline-sky-400 text-[#000000D9] font-normal"
                       placeholder="Mô tả loại giá" />
                     <button v-if="modalFormState.Description" @click="modalFormState.Description = ''" type="button"
                       class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs">✕</button>
@@ -1724,7 +1734,7 @@ const selectPackage = (pkg) => {
               </div>
 
               <div class="flex flex-col gap-1 mt-3">
-                <label class="text-xs font-semibold text-gray-900">Thời Gian Áp Dụng (Từ Ngày - Đến Ngày)</label>
+                <label class="text-xs font-semibold text-[#000000D9]">Thời Gian Áp Dụng (Từ Ngày - Đến Ngày)</label>
                 <div class="flex items-center gap-2">
                   <div class="w-full">
                     <SingleDatePicker v-model="modalFormState.BeginDate" placeholder="dd/mm/yyyy" />
@@ -1739,7 +1749,7 @@ const selectPackage = (pkg) => {
           </div>
 
           <!-- Content: Bottom (Matrix Grid) -->
-          <div class="flex-1 relative bg-white flex flex-col min-h-0">
+          <div class="flex-1 relative bg-white flex flex-col min-h-0 font-roboto">
             <div v-if="!modalFormState.Code"
               class="absolute inset-0 z-20 bg-white/60 backdrop-blur-[2px] flex items-center justify-center pointer-events-none">
               <span
@@ -1747,10 +1757,10 @@ const selectPackage = (pkg) => {
                 lòng nhập Mã loại giá để tiếp tục</span>
             </div>
             <div class="flex-1 p-4 overflow-auto">
-              <table class="w-full text-xs text-left border-collapse min-w-[800px] border border-slate-200">
+              <table class="w-full text-xs text-left border-collapse min-w-[800px] border border-slate-200 font-roboto">
                 <thead>
                   <tr
-                    class="bg-slate-100 border-b border-slate-200 text-gray-900 font-semibold sticky top-0 z-10 text-center">
+                    class="bg-slate-100 border-b border-slate-200 text-[#000000D9] font-semibold sticky top-0 z-10 text-center">
                     <th class="p-2 border border-slate-200 bg-slate-100 text-center align-middle w-36">Loại Phòng</th>
                     <th class="p-2 border border-slate-200 bg-slate-100 text-center align-middle w-48">Mô Tả</th>
                     <th v-for="occ in occupanciesList" :key="occ" class="p-2 border border-slate-200 text-center align-middle w-32">{{ occ }}</th>
@@ -1758,18 +1768,18 @@ const selectPackage = (pkg) => {
                 </thead>
                 <tbody>
                   <tr v-for="rt in roomTypes" :key="rt.code" class="hover:bg-slate-50/50">
-                    <td class="p-2 font-semibold text-gray-900 border border-slate-200 bg-slate-50 text-center">{{ rt.code }}</td>
-                    <td class="p-2 text-gray-900 border border-slate-200">{{ rt.description }}</td>
+                    <td class="p-2 font-normal text-[#000000D9] border border-slate-200 bg-slate-50 text-center align-middle">{{ rt.code }}</td>
+                    <td class="p-2 text-[#000000D9] font-normal border border-slate-200">{{ rt.description }}</td>
 
                     <td v-for="occ in occupanciesList" :key="rt.code + '-' + occ" class="p-1 border border-slate-200">
                       <input type="text" :disabled="!modalFormState.Code"
                         :value="formatCurrencyInput(modalRateMatrix[getModalMatrixKey(rt.code, occ)], selectedRateCode?.Currency)"
                         @input="e => modalRateMatrix[getModalMatrixKey(rt.code, occ)] = cleanCurrencyValue(e.target.value, selectedRateCode?.Currency)"
-                        class="w-full px-2 py-1.5 border border-slate-100 hover:border-slate-300 focus:border-sky-300 rounded text-center text-xs focus:outline-none font-medium text-gray-900 transition-colors disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed" />
+                        class="w-full px-2 py-1.5 border border-slate-100 hover:border-slate-300 focus:border-sky-300 rounded text-center text-xs focus:outline-none font-normal text-[#000000D9] transition-colors disabled:bg-slate-50 disabled:text-slate-400 disabled:cursor-not-allowed" />
                     </td>
                   </tr>
                   <tr v-if="roomTypes.length === 0">
-                    <td :colspan="2 + occupanciesList.length" class="p-8 text-center text-gray-500 font-medium text-xs">
+                    <td :colspan="2 + occupanciesList.length" class="p-8 text-center text-[#000000D9] font-normal text-xs">
                       Đang tải danh sách loại phòng...
                     </td>
                   </tr>

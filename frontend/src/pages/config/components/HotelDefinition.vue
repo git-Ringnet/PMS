@@ -12,7 +12,7 @@ import ServiceDepartmentTab from './hotel/ServiceDepartmentTab.vue'
 const props = defineProps({
   initialTab: {
     type: String,
-    default: 'THÔNG TIN KHÁCH SẠN'
+    default: 'Thông Tin Khách Sạn'
   }
 })
 
@@ -31,24 +31,35 @@ watch(activeHotelTab, (newVal) => {
 })
 
 const hotelTabs = [
-  'THÔNG TIN KHÁCH SẠN',
-  'DỊCH VỤ KHÁCH SẠN',
-  'CA LÀM VIỆC',
-  'CẤU HÌNH',
-  'CHI NHÁNH',
-  'MẪU IN',
-  'BỘ PHẬN DỊCH VỤ'
+  'Thông Tin Khách Sạn',
+  'Dịch Vụ Khách Sạn',
+  'Ca Làm Việc',
+  'Cấu Hình',
+  'Chi Nhánh',
+  'Mẫu In',
+  'Bộ Phận Dịch Vụ'
 ]
+
+const isTabActive = (tabName) => {
+  if (!activeHotelTab.value) return false
+  const cur = String(activeHotelTab.value).trim().toUpperCase()
+  const target = String(tabName).trim().toUpperCase()
+  return cur === target
+}
+
+const selectTab = (tab) => {
+  activeHotelTab.value = tab
+}
 </script>
 
 <template>
-  <div class="flex flex-col gap-2.5 flex-1 min-h-0 overflow-hidden">
+  <div class="flex flex-col gap-2.5 flex-1 min-h-0 overflow-hidden font-roboto">
     <!-- Sub Navigation Tabs Bar -->
     <div class="border-b border-slate-200 shrink-0">
       <div class="flex flex-wrap gap-1">
-        <button v-for="tab in hotelTabs" :key="tab" @click="activeHotelTab = tab"
-          class="px-3 py-1.5 text-xs font-semibold border-none bg-transparent cursor-pointer relative pb-2 transition-colors"
-          :class="activeHotelTab === tab ? 'text-[#006bdb] border-b-2 border-[#006bdb] font-bold' : 'text-[#000000D9]/70 hover:text-[#000000D9]'">
+        <button v-for="tab in hotelTabs" :key="tab" @click="selectTab(tab)"
+          class="px-2.5 py-1.5 text-xs font-semibold border-none bg-transparent cursor-pointer relative pb-1.5 transition-colors font-roboto"
+          :class="isTabActive(tab) ? 'text-[#006bdb] border-b-2 border-[#006bdb] font-bold' : 'text-[#000000D9] hover:text-[#006bdb]'">
           {{ tab }}
         </button>
       </div>
@@ -58,13 +69,13 @@ const hotelTabs = [
     <div class="flex-1 overflow-y-auto min-h-0 relative">
 
       <!-- Render component based on selected tab -->
-      <HotelInfoTab v-if="activeHotelTab === 'THÔNG TIN KHÁCH SẠN'" />
-      <HotelServiceTab v-else-if="activeHotelTab === 'DỊCH VỤ KHÁCH SẠN'" />
-      <WorkShiftTab v-else-if="activeHotelTab === 'CA LÀM VIỆC'" />
-      <HotelConfigTab v-else-if="activeHotelTab === 'CẤU HÌNH'" />
-      <BranchTab v-else-if="activeHotelTab === 'CHI NHÁNH'" />
-      <TemplateTab v-else-if="activeHotelTab === 'MẪU IN' || activeHotelTab === 'MẪU'" />
-      <ServiceDepartmentTab v-else-if="activeHotelTab === 'BỘ PHẬN DỊCH VỤ'" />
+      <HotelInfoTab v-if="isTabActive('Thông Tin Khách Sạn')" />
+      <HotelServiceTab v-else-if="isTabActive('Dịch Vụ Khách Sạn')" />
+      <WorkShiftTab v-else-if="isTabActive('Ca Làm Việc')" />
+      <HotelConfigTab v-else-if="isTabActive('Cấu Hình')" />
+      <BranchTab v-else-if="isTabActive('Chi Nhánh')" />
+      <TemplateTab v-else-if="isTabActive('Mẫu In') || String(activeHotelTab).toUpperCase() === 'MẪU'" />
+      <ServiceDepartmentTab v-else-if="isTabActive('Bộ Phận Dịch Vụ')" />
       
       <!-- Fallback block for remaining tabs -->
       <div v-else class="text-center py-12 flex flex-col items-center justify-center gap-3">

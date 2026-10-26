@@ -10,6 +10,12 @@ use Illuminate\Support\Facades\DB;
 
 class RoomController extends Controller
 {
+    private const HOUSEKEEPING_FLAG_COLUMNS = [
+        'is_housekeeping_service',
+        'is_priority_cleaning',
+        'is_do_not_disturb',
+    ];
+
     public function permissions(Request $request)
     {
         return response()->json([
@@ -103,6 +109,12 @@ class RoomController extends Controller
                 'movedFromRoom',
             ])
             ->get();
+
+        $extraBedDetailRoomIds = \App\Models\BookingRoomService::whereIn('booking_room_id', $bookingRoomsToday->pluck('id'))
+            ->where('service_code', \App\Models\BookingRoomService::CODE_EXTRA_BED)
+            ->distinct()
+            ->pluck('booking_room_id')
+            ->flip();
 
         $tomorrowDate = $systemDate->copy()->addDay()->toDateString();
         $bookingRoomsTomorrow = \App\Models\BookingRoom::whereNotNull('room_number')
@@ -253,7 +265,10 @@ class RoomController extends Controller
                     ->values()
                     ->toArray();
                 $ebQty = (int) ($br->extra_bed_qty ?? 0);
-                if ($br->extra_bed_qty === null && $br->services) {
+                if (isset($extraBedDetailRoomIds[$br->id])) {
+                    // Phòng đã có chi tiết EB theo đêm: chỉ hiện EB khi đêm đang xem có số lượng > 0.
+                    $ebQty = (int) $br->services->max('quantity');
+                } elseif ($br->extra_bed_qty === null && $br->services) {
                     $ebQty = (int) ($br->services->where('service_code', \App\Models\BookingRoomService::CODE_EXTRA_BED)->max('quantity') ?? 0);
                 }
                 $room->extra_bed_qty = $ebQty;
@@ -387,8 +402,9 @@ class RoomController extends Controller
                 ->lockForUpdate()
                 ->get();
 
+            // Folio phòng ảo không có booking (booking_id NULL); vẫn nhận dạng folio cũ còn booking ẩn.
             $serviceFolios = $activeRoomRows
-                ->filter(fn ($bookingRoom) => (bool) $bookingRoom->booking?->is_service_only)
+                ->filter(fn ($bookingRoom) => $bookingRoom->booking_id === null || (bool) $bookingRoom->booking?->is_service_only)
                 ->values();
 
             if ($serviceFolios->count() === 1) {
@@ -403,48 +419,14 @@ class RoomController extends Controller
                 ], 409)];
             }
 
-            $systemDate = DB::table('system_date_rolls')->orderByDesc('id')->value('system_date');
-            $arrivalDate = $systemDate
-                ? \Carbon\Carbon::parse($systemDate)->toDateString()
-                : now('Asia/Ho_Chi_Minh')->toDateString();
-            $departureDate = \Carbon\Carbon::parse($arrivalDate)->addDay()->toDateString();
-            $username = $request->user()?->username ?? 'system';
+            // Không tạo booking cho phòng ảo (tránh nhảy số BK): chỉ booking_rooms + guest + booking_room_guests.
+            $bookingRoom = app(\App\Services\VirtualRoomFolioService::class)->createFolio(
+                (string) $room->room_number,
+                $room->room_class_id,
+                $request->user()?->username ?? 'system'
+            );
 
-            $booking = \App\Models\Booking::create([
-                'booking_name' => 'PHÒNG ẢO ' . $room->room_number,
-                'arrival_date' => $arrivalDate,
-                'departure_date' => $departureDate,
-                'num_of_days' => 1,
-                'booking_date' => $arrivalDate,
-                'status' => \App\Models\Booking::STATUS_RESERVATION,
-                'is_service_only' => true,
-                'is_master_room_rate' => false,
-                'created_by' => $username,
-                'updated_by' => $username,
-                'module' => 'FO',
-            ]);
-
-            $bookingRoom = \App\Models\BookingRoom::create([
-                'booking_id' => $booking->id,
-                'room_number' => $room->room_number,
-                'room_class_id' => $room->room_class_id,
-                'arrival_date' => $arrivalDate,
-                'departure_date' => $departureDate,
-                'actual_arrival_date' => $arrivalDate,
-                'planned_departure_date' => $departureDate,
-                'NumOfDays' => 1,
-                'ActutalNumOfDays' => 1,
-                'status' => \App\Models\BookingRoom::STATUS_BOOKED,
-                'rate' => 0,
-                'base_price' => 0,
-                'adults' => 0,
-                'babies' => 0,
-                'children_qty' => 0,
-                'created_by' => $username,
-                'updated_by' => $username,
-            ]);
-
-            return ['booking_room' => $bookingRoom->load('booking'), 'created' => true];
+            return ['booking_room' => $bookingRoom, 'created' => true];
         });
 
         if (isset($result['error'])) {
@@ -603,7 +585,7 @@ class RoomController extends Controller
 
         $validCodes = [
             'vacant_ready', 'vacant_dirty', 'vacant_clean',
-            'ooo', 'oos', 'turndown', 'housekeeping', 'dnd', 'vacant_priority',
+            'ooo', 'oos', 'turndown',
             'occupied_ready', 'occupied_dirty', 'occupied_clean', 'occupied_ooo',
         ];
 
@@ -723,7 +705,7 @@ class RoomController extends Controller
 
         $validCodes = [
             'vacant_ready', 'vacant_dirty', 'vacant_clean',
-            'ooo', 'oos', 'turndown', 'housekeeping', 'dnd', 'vacant_priority',
+            'ooo', 'oos', 'turndown',
             'occupied_ready', 'occupied_dirty', 'occupied_clean', 'occupied_ooo',
         ];
 
@@ -826,6 +808,82 @@ class RoomController extends Controller
     }
 
     /**
+     * Update the independent Housekeeping indicators without changing room_status_code.
+     */
+    public function updateHousekeepingFlags(Request $request, $id)
+    {
+        if (!app(\App\Services\RoomStatusPermissionService::class)->canChange($request)) {
+            return response()->json(['success' => false, 'message' => 'User không có quyền đổi trạng thái phòng tại module này.'], 403);
+        }
+
+        $room = Room::find($id);
+        if (!$room) {
+            return response()->json(['message' => 'Room not found'], 404);
+        }
+
+        $flags = $this->validatedHousekeepingFlags($request);
+        $room->update($flags);
+        $room->load(['roomForm', 'roomClass']);
+
+        return response()->json([
+            'success' => true,
+            'data' => new RoomResource($room),
+        ]);
+    }
+
+    /**
+     * Update the independent Housekeeping indicators for multiple rooms.
+     */
+    public function bulkUpdateHousekeepingFlags(Request $request)
+    {
+        if (!app(\App\Services\RoomStatusPermissionService::class)->canChange($request)) {
+            return response()->json(['success' => false, 'message' => 'User không có quyền đổi trạng thái phòng tại module này.'], 403);
+        }
+
+        $validated = $request->validate([
+            'room_ids' => 'required|array|min:1',
+            'room_ids.*' => 'integer|distinct|exists:rooms,id',
+        ]);
+        $flags = $this->validatedHousekeepingFlags($request);
+
+        $updatedCount = Room::whereIn('id', $validated['room_ids'])->update($flags);
+
+        return response()->json([
+            'success' => true,
+            'updated_count' => $updatedCount,
+        ]);
+    }
+
+    /**
+     * @return array<string, bool>
+     */
+    private function validatedHousekeepingFlags(Request $request): array
+    {
+        $validated = $request->validate([
+            'housekeeping_flags' => 'required|array|min:1',
+            'housekeeping_flags.is_housekeeping_service' => 'sometimes|boolean',
+            'housekeeping_flags.is_priority_cleaning' => 'sometimes|boolean',
+            'housekeeping_flags.is_do_not_disturb' => 'sometimes|boolean',
+        ]);
+
+        $inputFlags = $validated['housekeeping_flags'];
+        $flags = [];
+        foreach (self::HOUSEKEEPING_FLAG_COLUMNS as $column) {
+            if (array_key_exists($column, $inputFlags)) {
+                $flags[$column] = (bool) $inputFlags[$column];
+            }
+        }
+
+        if ($flags === []) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'housekeeping_flags' => 'Phải cung cấp ít nhất một cờ buồng phòng hợp lệ.',
+            ]);
+        }
+
+        return $flags;
+    }
+
+    /**
      * Get room occupancy statistics.
      */
     public function stats(Request $request)
@@ -865,11 +923,15 @@ class RoomController extends Controller
             'room_class_id' => 'required|exists:room_classes,id',
             'arrival_date'  => 'required|date',
             'departure_date'=> 'required|date|after_or_equal:arrival_date',
+            'arrival_time'  => ['nullable', 'regex:/^\d{1,2}:\d{2}(?::\d{2})?$/'],
+            'departure_time'=> ['nullable', 'regex:/^\d{1,2}:\d{2}(?::\d{2})?$/'],
         ]);
 
         $roomClassId   = $request->room_class_id;
         $arrivalDate   = $request->arrival_date;
         $departureDate = $request->departure_date;
+        $arrivalTime   = $request->arrival_time;
+        $departureTime = $request->departure_time;
         $excludeId     = $request->exclude_booking_room_id;
 
         $avService = app(\App\Services\RoomAvailabilityService::class);
@@ -884,7 +946,7 @@ class RoomController extends Controller
 
             // 2. Kiểm tra có bị booking khác chiếm dụng không
             $isOccupied = $avService->isRoomNumberOccupied(
-                $room->room_number, $arrivalDate, $departureDate, $excludeId
+                $room->room_number, $arrivalDate, $departureDate, $excludeId, null, $arrivalTime, $departureTime
             );
 
             if (!$isOccupied) {

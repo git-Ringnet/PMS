@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { fetchGeneralSearch, fetchGeneralSearchOptions, fetchGeneralSearchSuggestions, checkInRoom } from '@/services/booking-service'
+import { fetchGeneralSearch, fetchGeneralSearchOptions, fetchGeneralSearchSuggestions, checkInRoomWithConfirmations } from '@/services/booking-service'
 import { useAuthStore } from '@/stores/auth-store'
 import { useDraggableModal } from '@/composables/useDraggableModal'
 import { useUiStore } from '@/stores/ui-store'
@@ -10,6 +10,7 @@ import http from '@/services/http'
 import GuestInfoModal from '@/pages/reservation/components/GuestInfoModal.vue'
 import CopyModal from '@/pages/reservation/components/CopyModal.vue'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
+import { getBookingRoomGroups, getSubtableTotals } from '@/utils/general-search-groups'
 
 const router = useRouter()
 const route = useRoute()
@@ -592,52 +593,6 @@ function getSelectOptions(key) {
 }
 
 // -------------------------------------------------------------
-// SUB-TABLE GROUPING LOGIC (sp_034 logic as shown in Image 3)
-// -------------------------------------------------------------
-function getBookingRoomGroups(rooms) {
-  if (!rooms || !rooms.length) return []
-  const map = new Map()
-  for (const r of rooms) {
-    const rType = r.room_class?.code || r.room_class?.name || '—'
-    const arr = r.arrival_date || ''
-    const dep = r.departure_date || ''
-    const rateCode = r.rate_code || '—'
-    const rateVal = Number(r.rate || 0)
-    const key = `${rType}|${arr}|${dep}|${rateCode}|${rateVal}`
-
-    if (!map.has(key)) {
-      map.set(key, {
-        room_type: rType,
-        room_count: 0,
-        adults: 0,
-        children: 0,
-        arrival_date: arr,
-        departure_date: dep,
-        rate_code: rateCode,
-        rate: rateVal,
-        service_total: 0
-      })
-    }
-    const g = map.get(key)
-    g.room_count += 1
-    g.adults += Number(r.adults || 0)
-    g.children += Number(r.children || 0)
-    g.service_total += Number(r.service_total || 0)
-  }
-  return Array.from(map.values())
-}
-
-function getSubtableTotals(groups) {
-  return groups.reduce((acc, g) => {
-    acc.rooms += g.room_count
-    acc.adults += g.adults
-    acc.children += g.children
-    acc.total += g.service_total
-    return acc
-  }, { rooms: 0, adults: 0, children: 0, total: 0 })
-}
-
-// -------------------------------------------------------------
 // COLUMN MANAGER & DRAGGABLE REORDERING (Image 1)
 // -------------------------------------------------------------
 const DEFAULT_TABLE_COLUMNS = {
@@ -677,6 +632,7 @@ const DEFAULT_TABLE_COLUMNS = {
     { key: 'extra_bed_rate', label: 'Giá TG', visible: true, isNumber: true },
     { key: 'adults', label: 'Người Lớn', visible: true },
     { key: 'children', label: 'Trẻ Em', visible: true },
+    { key: 'babies', label: 'Em Bé', visible: true },
     { key: 'note', label: 'Ghi Chú', visible: true },
     { key: 'service_total', label: 'Tổng Dịch Vụ', visible: true, isNumber: true },
     { key: 'paid_total', label: 'Thanh Toán', visible: true, isNumber: true },
@@ -821,14 +777,26 @@ function handleActionRegister() {
     uiStore.showToast('Chỉ có thể mở đăng ký khi chọn đúng 1 dòng.', 'warning')
     return
   }
-  const first = selected[0]
-  const bookingCode = first.booking_code || (tab.value === 'booking' ? first.id : first.booking_id)
+  openBookingFromSearch(selected[0], tab.value)
+}
+
+function getBookingReference(row, sourceTab = tab.value) {
+  const bookingCode = String(row?.booking_code ?? '').trim()
+  if (bookingCode) return bookingCode
+
+  const bookingId = row?.booking_id ?? (sourceTab === 'booking' ? row?.id : null)
+  return bookingId === null || bookingId === undefined || bookingId === '' ? '' : String(bookingId)
+}
+
+function openBookingFromSearch(row, sourceTab = tab.value) {
+  const bookingCode = getBookingReference(row, sourceTab)
   if (!bookingCode) {
     uiStore.showToast('Không tìm thấy thông tin mã đăng ký.', 'warning')
     return
   }
+
   const targetPath = route.path.startsWith('/frontdesk') ? '/frontdesk' : '/reservation'
-  router.push({ path: targetPath, query: { tab: 'create-res', bookingCode: bookingCode } })
+  router.push({ path: targetPath, query: { tab: 'create-res', bookingCode } })
 }
 
 function handleActionInvoice() {
@@ -940,23 +908,14 @@ async function handleActionCheckIn() {
   const errors = []
   for (const r of validRooms) {
     try {
-      let res = await checkInRoom(r.booking_id, r.id)
-      // Dòng 211: phòng chờ kiểm tra (AllowCheckinVacantClean = 1) phải xác nhận rồi mới nhận phòng
-      if (res.data?.needs_confirmation) {
-        const confirmedRoom = await uiStore.confirm({
-          title: 'Phòng đang chờ kiểm tra',
-          message: res.data.message,
-          confirmText: 'Tiếp tục nhận phòng',
-          cancelText: 'Bỏ qua phòng này'
-        })
-        if (!confirmedRoom) {
-          errors.push(`Phòng ${r.room_number || r.id}: Đã bỏ qua nhận phòng (phòng đang chờ kiểm tra)`)
-          continue
-        }
-        res = await checkInRoom(r.booking_id, r.id, { confirmed: true })
-      }
-      if (res.data && res.data.success !== false && !res.data.needs_confirmation) {
+      const res = await checkInRoomWithConfirmations(r.booking_id, r.id, {
+        roomNumber: r.room_number || r.id,
+        confirm: options => uiStore.confirm(options),
+      })
+      if (res?.data && res.data.success !== false && !res.data.needs_confirmation) {
         successCount++
+      } else if (!res) {
+        continue
       } else {
         errors.push(`Phòng ${r.room_number || r.id}: ${res.data?.message || 'Không thành công'}`)
       }
@@ -1744,6 +1703,7 @@ onMounted(async () => {
     <div class="toolbar">
       <div class="toolbar-left">
         Tổng: <strong>{{ meta.total || 0 }}</strong> kết quả
+        <template v-if="tab === 'room'"> · <strong>{{ meta.room_total || 0 }}</strong> phòng</template>
         <span v-if="loading" class="loading-tag">Đang tải dữ liệu…</span>
         <span v-if="errorMessage" class="error-tag">{{ errorMessage }}</span>
       </div>
@@ -1849,7 +1809,17 @@ onMounted(async () => {
 
               <!-- Dynamic columns according to active reordered columns -->
               <template v-for="col in visibleCols" :key="col.key">
-                <td v-if="col.key === 'booking_code'" class="mono border-slate-200">{{ row.booking_code }}</td>
+                <td v-if="col.key === 'booking_code'" class="mono border-slate-200">
+                  <button
+                    type="button"
+                    class="booking-code-link"
+                    title="Nhấp đúp để mở Đăng ký"
+                    @dblclick.stop="openBookingFromSearch(row, 'booking')"
+                    @keydown.enter.prevent="openBookingFromSearch(row, 'booking')"
+                  >
+                    {{ row.booking_code }}
+                  </button>
+                </td>
                 <td v-else-if="col.key === 'reference_code'" class="border-slate-200">{{ row.reference_code || '—' }}</td>
                 <td v-else-if="col.key === 'booking_name'" class="name-cell font-medium border-slate-200">{{ row.booking_name }}</td>
                 <td v-else-if="col.key === 'company'" class="wrap-cell border-slate-200">{{ row.company || 'KHÁCH LẺ' }}</td>
@@ -1888,6 +1858,7 @@ onMounted(async () => {
                         <th class="text-center align-middle border-r border-slate-200 border" style="width: 70px;">#Phòng</th>
                         <th class="text-center align-middle border-r border-slate-200 border" style="width: 70px;">#N.Lớn</th>
                         <th class="text-center align-middle border-r border-slate-200 border" style="width: 70px;">#T.Em</th>
+                        <th class="text-center align-middle border-r border-slate-200 border" style="width: 70px;">#E.Bé</th>
                         <th class="text-center align-middle border-r border-slate-200 border" style="width: 95px;">Ngày Đến</th>
                         <th class="text-center align-middle border-r border-slate-200 border" style="width: 95px;">Ngày Đi</th>
                         <th class="text-center align-middle border-r border-slate-200 border" style="width: 105px;">Mã Giá Phòng</th>
@@ -1904,6 +1875,7 @@ onMounted(async () => {
                         <td class="text-center border-slate-200">{{ grp.room_count }}</td>
                         <td class="text-center border-slate-200">{{ grp.adults }}</td>
                         <td class="text-center border-slate-200">{{ grp.children }}</td>
+                        <td class="text-center border-slate-200">{{ grp.babies }}</td>
                         <td class="text-center border-slate-200">{{ date(grp.arrival_date) }}</td>
                         <td class="text-center border-slate-200">{{ date(grp.departure_date) }}</td>
                         <td class="text-center border-slate-200">{{ grp.rate_code }}</td>
@@ -1916,6 +1888,7 @@ onMounted(async () => {
                         <td class="text-center font-bold border-slate-200">{{ getSubtableTotals(getBookingRoomGroups(row.rooms)).rooms }}</td>
                         <td class="text-center font-bold border-slate-200">{{ getSubtableTotals(getBookingRoomGroups(row.rooms)).adults }}</td>
                         <td class="text-center font-bold border-slate-200">{{ getSubtableTotals(getBookingRoomGroups(row.rooms)).children }}</td>
+                        <td class="text-center font-bold border-slate-200">{{ getSubtableTotals(getBookingRoomGroups(row.rooms)).babies }}</td>
                         <td class="border-slate-200"></td>
                         <td class="border-slate-200"></td>
                         <td class="border-slate-200"></td>
@@ -1963,7 +1936,19 @@ onMounted(async () => {
               </td>
               <td :colspan="Math.max(1, visibleCols.length - 2)" class="master-banner-left border-slate-200">
                 <div class="banner-title">
-                  <strong>Booking {{ group.booking_code }}: {{ group.booking_name }}</strong>
+                  <strong>
+                    Booking
+                    <button
+                      type="button"
+                      class="booking-code-link"
+                      title="Nhấp đúp để mở Đăng ký"
+                      @dblclick.stop="openBookingFromSearch(group, 'room')"
+                      @keydown.enter.prevent="openBookingFromSearch(group, 'room')"
+                    >
+                      {{ group.booking_code }}
+                    </button>:
+                    {{ group.booking_name }}
+                  </strong>
                   <span class="banner-dates">· {{ date(group.arrival_date) }} ~ {{ date(group.departure_date) }}</span>
                   <span class="banner-night">· Room Night: {{ group.nights }}</span>
                 </div>
@@ -2005,6 +1990,7 @@ onMounted(async () => {
                   <td v-else-if="col.key === 'extra_bed_rate'" class="number border-slate-200">{{ money(room.extra_bed_rate) }}</td>
                   <td v-else-if="col.key === 'adults'" class="border-slate-200">{{ room.adults }}</td>
                   <td v-else-if="col.key === 'children'" class="border-slate-200">{{ room.children }}</td>
+                  <td v-else-if="col.key === 'babies'" class="border-slate-200">{{ room.babies }}</td>
                   <td v-else-if="col.key === 'note'" class="note-cell whitespace-pre-line border-slate-200">{{ room.note || '—' }}</td>
                   <td v-else-if="col.key === 'service_total'" class="number font-medium border-slate-200">{{ money(room.service_total) }}</td>
                   <td v-else-if="col.key === 'paid_total'" class="number border-slate-200">{{ money(room.paid_total) }}</td>
@@ -2055,7 +2041,17 @@ onMounted(async () => {
             <!-- Dynamic guest columns according to active reordered columns -->
             <template v-for="col in visibleCols" :key="col.key">
               <td v-if="col.key === 'guest_name'" class="name-cell font-medium border-slate-200">{{ row.guest_name }}</td>
-              <td v-else-if="col.key === 'booking_code'" class="mono border-slate-200">{{ row.booking_code }}</td>
+               <td v-else-if="col.key === 'booking_code'" class="mono border-slate-200">
+                 <button
+                   type="button"
+                   class="booking-code-link"
+                   title="Nhấp đúp để mở Đăng ký"
+                   @dblclick.stop="openBookingFromSearch(row, 'guest')"
+                   @keydown.enter.prevent="openBookingFromSearch(row, 'guest')"
+                 >
+                   {{ row.booking_code }}
+                 </button>
+               </td>
               <td v-else-if="col.key === 'room_number'" class="border-slate-200">{{ row.room_number || '—' }}</td>
               <td v-else-if="col.key === 'arrival_date'" class="border-slate-200">{{ date(row.arrival_date) }}</td>
               <td v-else-if="col.key === 'departure_date'" class="border-slate-200">{{ date(row.departure_date) }}</td>
@@ -2938,6 +2934,22 @@ onMounted(async () => {
 .mono {
   color: #0c4ea0;
   font-weight: 700;
+}
+.booking-code-link {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+.booking-code-link:hover,
+.booking-code-link:focus-visible {
+  color: #006bdb;
+  outline: none;
+  text-decoration: underline;
 }
 .number {
   text-align: right;

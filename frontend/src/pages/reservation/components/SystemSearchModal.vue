@@ -5,7 +5,7 @@
     @click="close"
   >
     <div 
-      class="absolute pointer-events-auto bg-white rounded-xl shadow-2xl w-[min(730px,calc(100vw-12px))] flex flex-col overflow-hidden border border-slate-200"
+      class="absolute pointer-events-auto bg-white rounded-xl shadow-2xl w-[min(730px,calc(100vw-12px))] flex flex-col border border-slate-200"
       :style="{ top: `${position.top}px`, right: `${position.right}px`, transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }"
       @click.stop
     >
@@ -75,7 +75,7 @@
         <div class="relative">
           <button 
             type="button" 
-            @click="isStatusDropdownOpen = !isStatusDropdownOpen"
+            @click="toggleStatusDropdown"
             class="flex items-center space-x-1.5 px-3 py-1 bg-white hover:bg-slate-50 border border-slate-300 rounded-md cursor-pointer transition text-left shadow-2xs font-semibold text-slate-700"
           >
             <span>Tình trạng:</span>
@@ -195,7 +195,7 @@
         </div>
 
         <!-- EMPTY STATE -->
-        <div v-else class="px-5 py-10 text-xs text-slate-400 text-center bg-white">
+        <div v-else class="px-5 py-10 text-xs text-slate-400 text-center bg-white rounded-b-xl">
           <div v-if="isLoading" class="flex items-center justify-center space-x-2 text-sky-600">
             <i class="fa-solid fa-circle-notch animate-spin text-base"></i>
             <span class="font-bold">Đang tải danh sách Đăng ký...</span>
@@ -214,6 +214,7 @@ import { ref, computed, watch } from 'vue'
 import { fetchBookings } from '@/services/booking-service'
 import { useAuthStore } from '@/stores/auth-store'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
+import { createLatestRequestGuard } from '@/utils/latest-request'
 
 const props = defineProps({
   show: Boolean,
@@ -446,6 +447,12 @@ function handleFilterByArrivalDateChange() {
   executeGlobalSearch()
 }
 
+// Mở lại dropdown luôn bắt đầu từ lựa chọn đã lưu, không giữ lựa chọn tạm chưa bấm Lưu.
+function toggleStatusDropdown() {
+  if (!isStatusDropdownOpen.value) tempSelectedStatuses.value = [...selectedStatuses.value]
+  isStatusDropdownOpen.value = !isStatusDropdownOpen.value
+}
+
 function applyStatusFilter() {
   selectedStatuses.value = [...tempSelectedStatuses.value]
   isStatusDropdownOpen.value = false
@@ -471,11 +478,10 @@ watch(() => props.show, (newVal) => {
   }
 })
 
-watch(() => props.query, () => {
-  if (props.show) executeGlobalSearch()
-})
+const searchRequests = createLatestRequestGuard()
 
 async function executeGlobalSearch() {
+  const requestId = searchRequests.next()
   isLoading.value = true
   const params = {}
   
@@ -505,21 +511,25 @@ async function executeGlobalSearch() {
 
   try {
     const res = await fetchBookings(params)
+    if (!searchRequests.isLatest(requestId)) return
     let list = res.data?.data || res.data || []
     
     // Sắp xếp mã ĐK (id) giảm dần
     list.sort((a, b) => Number(b.id) - Number(a.id))
     globalSearchResults.value = list
   } catch (err) {
+    if (!searchRequests.isLatest(requestId)) return
+    globalSearchResults.value = []
     console.error('Lỗi tìm kiếm booking:', err)
   } finally {
-    isLoading.value = false
+    if (searchRequests.isLatest(requestId)) isLoading.value = false
   }
 }
 
 let searchDebounceTimer = null
 watch(globalSearchQuery, () => {
   if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
+  if (!props.show) return
   searchDebounceTimer = setTimeout(() => {
     executeGlobalSearch()
   }, 250)

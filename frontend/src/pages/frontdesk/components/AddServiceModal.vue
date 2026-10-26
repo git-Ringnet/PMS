@@ -14,6 +14,8 @@ const props = defineProps({
   bookingId:     { type: [String, Number], default: '' },
   bookingInfo:   { type: String, default: '' },
   arrivalDate:   { type: String, default: '' },
+  // Ngày đến ban đầu (trước late check-in) để cho post lại các đêm cũ.
+  originalArrivalDate: { type: String, default: '' },
   departureDate: { type: String, default: '' },
   isDayUse:      { type: Boolean, default: false },
   // Giá phòng hiện tại (từ booking_rooms.rate hoặc booking_room_services RM)
@@ -119,10 +121,12 @@ function todayYmd() {
   return `${year}-${month}-${day}`
 }
 
-// Giới hạn ngày từ booking (min = arrival_date, max = departure_date)
+// Giới hạn ngày theo giai đoạn ở (min = ngày đến ban đầu, max = ngày đi), được post trước cho tương lai.
+const stayArrivalDate = computed(() => props.arrivalDate ? parseDateOnly(props.arrivalDate) : undefined)
 const bookingMinDate = computed(() => {
-  if (props.arrivalDate) return parseDateOnly(props.arrivalDate)
-  return undefined
+  const original = props.originalArrivalDate ? parseDateOnly(props.originalArrivalDate) : undefined
+  if (original && stayArrivalDate.value) return original < stayArrivalDate.value ? original : stayArrivalDate.value
+  return original || stayArrivalDate.value
 })
 
 const bookingMaxDate = computed(() => {
@@ -132,8 +136,12 @@ const bookingMaxDate = computed(() => {
 
 const isDayUseStay = computed(() => {
   if (props.isDayUse) return true
-  return Boolean(bookingMinDate.value && bookingMaxDate.value && bookingMinDate.value === bookingMaxDate.value)
+  return Boolean(stayArrivalDate.value && bookingMaxDate.value && stayArrivalDate.value === bookingMaxDate.value)
 })
+
+// Ngày hệ thống luôn được post (bổ sung dịch vụ/tiền phòng ngoài giai đoạn ở); tiền phòng chỉ áp dụng cho phòng lẻ.
+const systemDay = computed(() => parseDateOnly(props.systemDate) || todayYmd())
+const isSystemDateRange = (from, to) => from === systemDay.value && to === systemDay.value
 
 // Room-night posting is limited through the last occupied night, not checkout day.
 // Với phòng Day Use (in-out cùng ngày), ngày post tiền phòng chính là ngày ở.
@@ -204,6 +212,7 @@ const selectedService    = ref(null)
 const serviceQuery       = ref('')
 const showServiceDropdown = ref(false)
 const serviceComboRef    = ref(null)
+const serviceInputRef    = ref(null)
 const quantity           = ref(1)
 const unitPrice          = ref(0)
 const unitPriceDisplay   = ref('')
@@ -239,13 +248,17 @@ const foServices      = ref([])
 const loadingServices = ref(false)
 const filteredFoServices = computed(() => {
   const query = serviceQuery.value.trim().toLowerCase()
-  return query ? foServices.value.filter(service => String(service.name || '').toLowerCase().includes(query)) : foServices.value
+  if (!query || (selectedService.value && query === String(selectedService.value.name || '').toLowerCase().trim())) {
+    return foServices.value
+  }
+  return foServices.value.filter(service => String(service.name || '').toLowerCase().includes(query))
 })
 
 function selectService(service) {
   selectedService.value = service
   serviceQuery.value = service?.name || ''
   showServiceDropdown.value = false
+  serviceInputRef.value?.blur()
 }
 
 function clearService() {
@@ -288,11 +301,10 @@ watch(selectedService, (svc) => {
   description.value = svc.name
   if (svc.price && Number(svc.price) > 0) {
     setUnitPrice(Number(svc.price))
-    isPriceLocked.value = true
   } else {
     setUnitPrice(0)
-    isPriceLocked.value = false
   }
+  isPriceLocked.value = false
 })
 
 // Tổng tiền Tab 1
@@ -401,13 +413,12 @@ function handleKeyDown(event) {
 watch(() => props.show, (v) => {
   if (v) {
     resetModalPosition()
-    const sysDateParsed = parseDateOnly(props.systemDate) || todayYmd()
-    const initialDate = clampDateToBounds(
-      sysDateParsed,
-      bookingMinDate.value,
-      bookingMaxDate.value,
-    )
-    const initialRoomDate = clampDateToBounds(initialDate, bookingMinDate.value, roomMaxDate.value)
+    // Mặc định = ngày hệ thống; chỉ dời lên ngày đến khi booking chưa tới (ngày hệ thống trước giai đoạn ở).
+    const sysDateParsed = systemDay.value
+    const initialDate = bookingMinDate.value && sysDateParsed < bookingMinDate.value ? bookingMinDate.value : sysDateParsed
+    const initialRoomDate = props.bookingRoomId
+      ? initialDate
+      : clampDateToBounds(initialDate, bookingMinDate.value, roomMaxDate.value)
     errorMsg.value = ''
     activeTab.value = 'service'
     serviceFrom.value = initialDate
@@ -468,8 +479,9 @@ async function handleSubmit() {
     if (activeTab.value === 'service') {
       if (!selectedService.value) { errorMsg.value = 'Vui lòng chọn dịch vụ.'; isSubmitting.value = false; return }
       if (!quantity.value || quantity.value <= 0) { errorMsg.value = 'Số lượng phải > 0.'; isSubmitting.value = false; return }
-      if (!isDateWithinBounds(serviceFrom.value, bookingMinDate.value, bookingMaxDate.value)
-        || !isDateWithinBounds(serviceTo.value, bookingMinDate.value, bookingMaxDate.value)) {
+      if (!isSystemDateRange(serviceFrom.value, serviceTo.value)
+        && (!isDateWithinBounds(serviceFrom.value, bookingMinDate.value, bookingMaxDate.value)
+          || !isDateWithinBounds(serviceTo.value, bookingMinDate.value, bookingMaxDate.value))) {
         errorMsg.value = 'Ngày dịch vụ phải nằm trong thời gian lưu trú, từ ngày đến đến ngày đi.'
         isSubmitting.value = false
         return
@@ -490,13 +502,15 @@ async function handleSubmit() {
       })
       result = response?.data ?? null
     } else {
-      if (bookingMinDate.value && roomMaxDate.value && bookingMinDate.value > roomMaxDate.value) {
+      const roomSystemDatePost = Boolean(props.bookingRoomId) && isSystemDateRange(roomFrom.value, roomTo.value)
+      if (!roomSystemDatePost && bookingMinDate.value && roomMaxDate.value && bookingMinDate.value > roomMaxDate.value) {
         errorMsg.value = 'Booking không có đêm lưu trú hợp lệ để post tiền phòng.'
         isSubmitting.value = false
         return
       }
-      if (!isDateWithinBounds(roomFrom.value, bookingMinDate.value, roomMaxDate.value)
-        || !isDateWithinBounds(roomTo.value, bookingMinDate.value, roomMaxDate.value)) {
+      if (!roomSystemDatePost
+        && (!isDateWithinBounds(roomFrom.value, bookingMinDate.value, roomMaxDate.value)
+          || !isDateWithinBounds(roomTo.value, bookingMinDate.value, roomMaxDate.value))) {
         errorMsg.value = isDayUseStay.value
           ? 'Ngày tiền phòng phải nằm trong ngày lưu trú của phòng trong ngày (Day use).'
           : 'Ngày tiền phòng phải nằm từ ngày đến đến đêm cuối trước ngày đi.'
@@ -541,7 +555,7 @@ function handleClose() {
   <div v-if="show" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
     <!-- Modal Dialog đủ rộng để hiển thị ngày dd/mm/yyyy cùng nút x và lịch -->
     <div ref="modalRef"
-      class="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col text-xs border border-gray-100"
+      class="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col text-xs border border-slate-200"
       :style="{ transform: `translate(${modalPosition.x}px, ${modalPosition.y}px)`, transition: isDraggingModal ? 'none' : '' }">
 
       <div class="text-white px-5 py-3 flex items-center justify-between cursor-move select-none touch-none"
@@ -551,7 +565,7 @@ function handleClose() {
           <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
-          <span class="font-semibold text-xs">Thêm dịch vụ</span>
+          <span class="font-semibold text-xs">Thêm Dịch Vụ</span>
         </div>
         <button @pointerdown.stop @click="handleClose" class="text-gray-300 hover:text-white transition-colors p-1">
           <X class="w-4 h-4" />
@@ -624,7 +638,7 @@ function handleClose() {
                 Dịch vụ <span class="text-red-500">*</span>
               </label>
               <div ref="serviceComboRef" class="relative">
-                <input v-model="serviceQuery" type="text" required :placeholder="loadingServices ? 'Đang tải danh sách...' : 'Chọn dịch vụ'" @focus="showServiceDropdown = true" @input="handleServiceInput" class="h-8 w-full rounded-lg border border-[#F1DD8A] bg-[#FFF8DB] pl-3 pr-9 text-xs font-normal text-[#000000D9] outline-none placeholder:text-[#A8B0BF] focus:border-amber-500" />
+                <input ref="serviceInputRef" v-model="serviceQuery" type="text" required :placeholder="loadingServices ? 'Đang tải danh sách...' : 'Chọn dịch vụ'" @click="showServiceDropdown = true" @focus="showServiceDropdown = true" @input="handleServiceInput" class="h-8 w-full rounded-lg border border-[#F1DD8A] bg-[#FFF8DB] pl-3 pr-9 text-xs font-normal text-[#000000D9] outline-none placeholder:text-[#A8B0BF] focus:border-amber-500" />
                 <button v-if="serviceQuery || selectedService" @click="clearService" type="button"
                   class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 font-bold p-0.5 focus:outline-none"
                   title="Bỏ chọn dịch vụ">
@@ -667,10 +681,10 @@ function handleClose() {
               </label>
               <div class="relative">
               <input :value="unitPriceDisplay" @input="onUnitPriceInput" type="text" required
-                :disabled="!selectedService || isPriceLocked"
+                :disabled="!selectedService"
                 :class="['w-full border rounded-lg px-3.5 py-2.5 text-xs font-normal focus:outline-none focus:ring-1 focus:ring-blue-500',
-                  (!selectedService || isPriceLocked) ? 'bg-[#f8fafc] text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-[#FFF8DB] border-[#F1DD8A] text-[#000000D9]']" />
-              <button v-if="selectedService && !isPriceLocked && unitPriceDisplay" type="button" title="Xóa đơn giá" @click="setUnitPrice('')" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500"><X class="h-3.5 w-3.5" /></button>
+                  !selectedService ? 'bg-[#f8fafc] text-gray-400 border-gray-200 cursor-not-allowed' : 'bg-[#FFF8DB] border-[#F1DD8A] text-[#000000D9]']" />
+              <button v-if="selectedService && unitPriceDisplay" type="button" title="Xóa đơn giá" @click="setUnitPrice('')" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500"><X class="h-3.5 w-3.5" /></button>
               </div>
             </div>
             <div>
@@ -712,9 +726,10 @@ function handleClose() {
               </div>
             </div>
             <div>
-              <label class="block text-xs font-medium text-gray-700 mb-1.5">Tiền phòng tự động</label>
+              <label :class="roomUpdateMode ? 'text-slate-400' : 'text-[#000000D9]'" class="block text-xs font-medium mb-1.5">Tiền phòng tự động</label>
               <input :value="roomAutoText" readonly disabled
-                class="w-full border border-[#E5E7EB] rounded-lg px-3.5 py-2.5 text-xs bg-[#F8FAFC] text-[#000000D9] font-normal cursor-not-allowed shadow-xs" />
+                :class="roomUpdateMode ? 'bg-slate-100 text-slate-400 border-slate-200' : 'bg-[#F8FAFC] text-[#000000D9] border-[#E5E7EB]'"
+                class="w-full border rounded-lg px-3.5 py-2.5 text-xs font-normal cursor-not-allowed shadow-xs" />
             </div>
           </div>
 

@@ -601,7 +601,7 @@ class ReportDefinitionController extends Controller
         }
 
         return $this->renderer->render(
-            $template->content_html ?? '',
+            $this->markBookingReferences($template->content_html ?? ''),
             $css,
             $data,
             [
@@ -613,6 +613,29 @@ class ReportDefinitionController extends Controller
                 'margin_right' => $template->margin_right,
             ]
         );
+    }
+
+    /**
+     * Wraps booking-code bindings so the Report Viewer can open the booking on
+     * double click. `Booking` is a composite label, so it links by BookingId.
+     * Bindings inside tag attributes are left untouched.
+     */
+    private function markBookingReferences(string $html): string
+    {
+        $fields = ['BookingId', 'BookingCode', 'BookingCode1', 'booking_code', 'CodeBooking', 'MaBooking', 'Booking'];
+        $pattern = '/\{\{row\.('.implode('|', $fields).')(?:\|[^}]*)?\}\}/';
+
+        return preg_replace_callback($pattern, function (array $matches) use ($html): string {
+            [$placeholder, $offset] = $matches[0];
+            $before = substr($html, 0, $offset);
+            $lastOpen = strrpos($before, '<');
+            if ($lastOpen !== false && $lastOpen > (int) strrpos($before, '>')) {
+                return $placeholder;
+            }
+            $reference = $matches[1][0] === 'Booking' ? 'BookingId' : $matches[1][0];
+
+            return '<span class="pms-booking-ref" data-pms-booking="{{row.'.$reference.'}}">'.$placeholder.'</span>';
+        }, $html, -1, $count, PREG_OFFSET_CAPTURE) ?? $html;
     }
 
     private function hotelContext(): array
