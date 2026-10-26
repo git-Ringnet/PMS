@@ -18,6 +18,7 @@ use App\Models\RoomClass;
 use App\Models\RoomRateCode;
 use App\Models\User;
 use App\Services\GeneralSearchProjectionService;
+use App\Services\StayStatusFilter;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -26,7 +27,10 @@ use Illuminate\Support\Str;
 /** API for three Common Search tabs; a Laravel/MySQL implementation, not a legacy SP port. */
 class GeneralSearchController extends Controller
 {
-    public function __construct(private readonly GeneralSearchProjectionService $projection) {}
+    public function __construct(
+        private readonly GeneralSearchProjectionService $projection,
+        private readonly StayStatusFilter $stayStatus,
+    ) {}
 
     public function options()
     {
@@ -91,6 +95,7 @@ class GeneralSearchController extends Controller
             'company_id' => 'nullable|integer', 'market_id' => 'nullable|integer', 'registration_status_id' => 'nullable|integer',
             'booker_id' => 'nullable|integer', 'customer_source_id' => 'nullable|integer', 'booking_date' => 'nullable|date',
             'sales_person' => 'nullable|string|max:100',
+            'stay_status' => 'nullable|in:' . implode(',', StayStatusFilter::CATEGORIES),
             'per_page' => 'nullable|integer|min:10|max:200', 'page' => 'nullable|integer|min:1',
         ]);
 
@@ -107,13 +112,16 @@ class GeneralSearchController extends Controller
             ->where('is_service_only', false)
             ->where(fn (Builder $bookings) => $bookings->whereDoesntHave('bookingRooms')
                 ->orWhereHas('bookingRooms', fn (Builder $rooms) => $rooms->stayOnly()));
+        // Dòng 451: lọc tình trạng lưu trú thì ngày tìm áp theo từng phòng (đến/đi/hủy...),
+        // không lọc theo ngày của booking nữa.
+        $stayStatus = $data['stay_status'] ?? '';
         if ($this->hasRoomFilters($data)) {
-            $query->whereHas('bookingRooms', function (Builder $rooms) use ($data) {
-                $this->applyRoomFilters($rooms, array_merge($data, ['use_date' => false]));
-                $this->excludeCancelledRoomsOfActiveBookings($rooms);
+            $query->whereHas('bookingRooms', function (Builder $rooms) use ($data, $stayStatus) {
+                $this->applyRoomFilters($rooms, $stayStatus !== '' ? $data : array_merge($data, ['use_date' => false]));
+                $this->excludeCancelledRoomsOfActiveBookings($rooms, $data);
             });
         }
-        if (($data['use_date'] ?? false) && ($data['from_date'] ?? null) && ($data['to_date'] ?? null)) {
+        if ($stayStatus === '' && ($data['use_date'] ?? false) && ($data['from_date'] ?? null) && ($data['to_date'] ?? null)) {
             $query->whereDate('arrival_date', '<=', $data['to_date'])->whereDate('departure_date', '>=', $data['from_date']);
         }
         $this->applyBookingFilters($query, $data);
@@ -132,7 +140,7 @@ class GeneralSearchController extends Controller
             $rooms->where('status', '!=', BookingRoom::STATUS_MOVED);
             $this->applyRoomFilters($rooms, $data);
             $this->applyRoomSearch($rooms, $data['search'] ?? '');
-            $this->excludeCancelledRoomsOfActiveBookings($rooms);
+            $this->excludeCancelledRoomsOfActiveBookings($rooms, $data);
         };
         $query = Booking::with($this->bookingRelations())->whereHas('bookingRooms', $roomConditions);
         $this->applyBookingFilters($query, $data);
@@ -142,8 +150,14 @@ class GeneralSearchController extends Controller
         $this->applySort($query, $data, ['arrival_date' => 'arrival_date', 'departure_date' => 'departure_date', 'nights' => 'num_of_days'], 'arrival_date');
 
         $page = $query->paginate($data['per_page'] ?? 50);
-        $groups = $page->getCollection()->map(function (Booking $booking) use ($data) {
-            $rooms = $booking->bookingRooms->filter(fn (BookingRoom $room) => $this->roomMatches($room->setRelation('booking', $booking), $data));
+        // Phòng thỏa tình trạng lưu trú lấy bằng cùng câu SQL với điều kiện chọn booking.
+        $stayRoomIds = ($data['stay_status'] ?? '') === '' ? null : BookingRoom::query()
+            ->whereIn('booking_id', $page->getCollection()->pluck('id'))
+            ->where(fn (Builder $rooms) => $this->applyStayStatus($rooms, $data))
+            ->pluck('id')->flip();
+        $groups = $page->getCollection()->map(function (Booking $booking) use ($data, $stayRoomIds) {
+            $rooms = $booking->bookingRooms->filter(fn (BookingRoom $room) => $this->roomMatches($room->setRelation('booking', $booking), $data)
+                && ($stayRoomIds === null || $stayRoomIds->has($room->id)));
             $sort = $data['sort_by'] ?? 'arrival_date';
             if (in_array($sort, ['room_number', 'arrival_date', 'departure_date', 'nights', 'rate'], true)) {
                 $rooms = ($data['sort_dir'] ?? 'desc') === 'asc' ? $rooms->sortBy($sort) : $rooms->sortByDesc($sort);
@@ -290,13 +304,17 @@ class GeneralSearchController extends Controller
 
     private function hasRoomFilters(array $data): bool
     {
-        return ($data['status'] ?? '') !== '' || ($data['rate_code_id'] ?? null)
+        return ($data['status'] ?? '') !== '' || ($data['stay_status'] ?? '') !== '' || ($data['rate_code_id'] ?? null)
             || ($data['room_class_id'] ?? null) || ($data['original_room_class_id'] ?? null);
     }
 
-    /** Dòng 409/410: booking tình trạng 0,1,2,4 không lấy phòng đã hủy (status = 3). */
-    private function excludeCancelledRoomsOfActiveBookings(Builder $rooms): void
+    /**
+     * Dòng 409/410: booking tình trạng 0,1,2,4 không lấy phòng đã hủy (status = 3).
+     * Dòng 451: trừ khi người dùng lọc đúng tình trạng "Đã hủy".
+     */
+    private function excludeCancelledRoomsOfActiveBookings(Builder $rooms, array $data): void
     {
+        if (($data['stay_status'] ?? '') === 'cancel') return;
         $rooms->where(fn (Builder $where) => $where->where('booking_rooms.status', '!=', BookingRoom::STATUS_CANCELLED)
             ->orWhereHas('booking', fn (Builder $booking) => $booking->where('status', Booking::STATUS_DELETED)));
     }
@@ -308,9 +326,17 @@ class GeneralSearchController extends Controller
         if ($data['rate_code_id'] ?? null) $query->where('rate_code', $data['rate_code_id']);
         if ($data['room_class_id'] ?? null) $query->where('room_class_id', $data['room_class_id']);
         if ($data['original_room_class_id'] ?? null) $query->whereRaw('CAST(SUBSTRING_INDEX(original_room_class_id, "-", 1) AS UNSIGNED) = ?', [$data['original_room_class_id']]);
-        if (($data['use_date'] ?? false) && ($data['from_date'] ?? null) && ($data['to_date'] ?? null)) {
+        if (($data['stay_status'] ?? '') !== '') {
+            $this->applyStayStatus($query, $data);
+        } elseif (($data['use_date'] ?? false) && ($data['from_date'] ?? null) && ($data['to_date'] ?? null)) {
             $query->whereDate('arrival_date', '<=', $data['to_date'])->whereDate('departure_date', '>=', $data['from_date']);
         }
+    }
+
+    private function applyStayStatus(Builder $rooms, array $data): void
+    {
+        $useDate = (bool) ($data['use_date'] ?? false);
+        $this->stayStatus->apply($rooms, $data['stay_status'], $useDate ? ($data['from_date'] ?? null) : null, $useDate ? ($data['to_date'] ?? null) : null);
     }
 
     private function applyBookingSearch(Builder $query, string $search): void
@@ -385,12 +411,13 @@ class GeneralSearchController extends Controller
     private function roomMatches(BookingRoom $room, array $data): bool
     {
         if ((int) $room->status === BookingRoom::STATUS_MOVED) return false;
-        if ((int) $room->status === BookingRoom::STATUS_CANCELLED && (int) $room->booking?->status !== Booking::STATUS_DELETED) return false;
+        if ((int) $room->status === BookingRoom::STATUS_CANCELLED && (int) $room->booking?->status !== Booking::STATUS_DELETED
+            && ($data['stay_status'] ?? '') !== 'cancel') return false;
         if (($data['status'] ?? '') !== '' && !in_array((int) $room->status, array_map('intval', explode(',', $data['status'])), true)) return false;
         if (($data['rate_code_id'] ?? null) && $room->rate_code !== $data['rate_code_id']) return false;
         if (($data['room_class_id'] ?? null) && (int) $room->room_class_id !== (int) $data['room_class_id']) return false;
         if (($data['original_room_class_id'] ?? null) && (int) $room->original_room_class_only_id !== (int) $data['original_room_class_id']) return false;
-        if (($data['use_date'] ?? false) && ($data['from_date'] ?? null) && ($data['to_date'] ?? null)
+        if (($data['stay_status'] ?? '') === '' && ($data['use_date'] ?? false) && ($data['from_date'] ?? null) && ($data['to_date'] ?? null)
             && ($room->arrival_date?->toDateString() > $data['to_date'] || $room->departure_date?->toDateString() < $data['from_date'])) return false;
 
         $search = trim($data['search'] ?? '');
