@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\InventoryCheck;
-use App\Models\InventoryCheckItem;
 use App\Models\InventoryDailyLog;
 use App\Models\InventoryTransfer;
 use App\Models\Warehouse;
@@ -139,23 +138,19 @@ class InventoryLogController extends Controller
 
         $month = $validated['month'] ?? substr($validated['date'], 0, 7);
 
-        // Tìm hoặc tạo phiếu kiểm kê cho tháng này để đảm bảo sản phẩm hiển thị trên bảng
-        $check = InventoryCheck::withTrashed()
-            ->where('warehouse_id', $validated['warehouse_id'])
+        // Dòng 440: chỉ lấy bill cho sản phẩm đã có trong phiếu kiểm kê của tháng,
+        // không tự tạo phiếu và không tự thêm sản phẩm khác vào phiếu.
+        $check = InventoryCheck::where('warehouse_id', $validated['warehouse_id'])
             ->where('month', $month)
             ->first();
 
-        if ($check) {
-            if ($check->trashed()) {
-                $check->restore();
-            }
-        } else {
-            $check = InventoryCheck::create([
-                'warehouse_id' => $validated['warehouse_id'],
-                'month'        => $month,
-                'created_by'   => auth()->id(),
-            ]);
+        if (!$check) {
+            return response()->json([
+                'success' => false,
+                'message' => "Kho chưa có phiếu kiểm kê tháng {$month}. Vui lòng tạo phiếu kiểm kê trước khi lấy bill.",
+            ], 422);
         }
+        $checkedProductIds = $check->items()->pluck('product_id')->map(fn ($id) => (string) $id)->all();
 
         // Query tổng số lượng bán theo sản phẩm từ HK bills
         // Status: 1 = active (chưa thanh toán), 2 = đã thanh toán (bỏ Status 3/4 là bill đã hủy)
@@ -207,12 +202,12 @@ class InventoryLogController extends Controller
         }
 
         $updatedCount = 0;
+        $skippedProducts = [];
         foreach ($billData as $row) {
-            // Tự động gắn sản phẩm vào phiếu kiểm kê nếu chưa có
-            InventoryCheckItem::firstOrCreate(
-                ['check_id' => $check->id, 'product_id' => $row->product_id],
-                ['well_balance' => 0, 'stoke_take' => 0, 'different_qty' => 0, 'final_balance' => 0]
-            );
+            if (!in_array((string) $row->product_id, $checkedProductIds, true)) {
+                $skippedProducts[(string) $row->product_id] = true;
+                continue;
+            }
 
             InventoryDailyLog::updateOrCreate(
                 [
@@ -226,10 +221,12 @@ class InventoryLogController extends Controller
         }
 
         $timeLabel = $isSingleDay ? "ngày {$validated['date']}" : "tháng {$month}";
+        $skippedLabel = $skippedProducts ? ' Bỏ qua ' . count($skippedProducts) . ' sản phẩm không có trong phiếu kiểm kê.' : '';
         return response()->json([
             'success' => true,
-            'message' => "Đã đồng bộ xuất kho cho {$updatedCount} lượt sản phẩm từ hóa đơn {$timeLabel} [{$outletDisplayName}].",
+            'message' => "Đã đồng bộ xuất kho cho {$updatedCount} lượt sản phẩm từ hóa đơn {$timeLabel} [{$outletDisplayName}].{$skippedLabel}",
             'updated' => $updatedCount,
+            'skipped' => count($skippedProducts),
         ]);
     }
 
