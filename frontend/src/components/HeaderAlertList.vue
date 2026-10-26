@@ -15,7 +15,7 @@ const authStore = useAuthStore()
 const { position: modalPos, isDragging, startDrag, resetPosition } = useDraggableModal()
 
 // Màu tiêu đề modal theo Tùy chỉnh màu nền Topbar
-const themeBg = computed(() => authStore.settings?.topbar_color || 'var(--pms-custom-theme, #006bdb)')
+const themeBg = computed(() => authStore.themeColor || 'var(--pms-custom-theme, #006bdb)')
 const isOpen = ref(false)
 const isLoading = ref(false)
 const fromDate = ref('')

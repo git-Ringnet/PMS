@@ -98,6 +98,10 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     Route::get('/user-settings', [\App\Http\Controllers\Api\UserSettingController::class, 'show']);
     Route::put('/user-settings', [\App\Http\Controllers\Api\UserSettingController::class, 'update']);
 
+    // Theme hệ thống dùng chung; quyền cập nhật được kiểm tra lại trong controller.
+    Route::get('/system-theme', [\App\Http\Controllers\Api\SystemThemeController::class, 'show']);
+    Route::put('/system-theme', [\App\Http\Controllers\Api\SystemThemeController::class, 'update']);
+
     // Room Rate Codes (Mapped to SP1340)
     Route::apiResource('room-rate-codes', RoomRateCodeController::class)->parameters([
         'room-rate-codes' => 'ma'
