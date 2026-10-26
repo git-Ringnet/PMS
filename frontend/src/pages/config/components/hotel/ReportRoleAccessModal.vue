@@ -109,7 +109,7 @@ const save = async () => {
       <footer class="flex justify-end gap-2 border-t border-slate-200 px-4 py-3">
         <button class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600" @click="emit('close')">Đóng</button>
         <button :disabled="saving || loading" class="rounded-lg border-none px-4 py-1.5 text-xs font-black text-white disabled:opacity-50"
-          :style="{ background: authStore.settings?.topbar_color || 'var(--pms-custom-theme, #006bdb)' }" @click="save">Lưu quyền</button>
+          :style="{ background: authStore.themeColor || 'var(--pms-custom-theme, #006bdb)' }" @click="save">Lưu quyền</button>
       </footer>
     </div>
   </div>

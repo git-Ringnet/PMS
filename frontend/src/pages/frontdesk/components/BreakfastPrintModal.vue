@@ -3,7 +3,7 @@ import { ref, watch, onMounted, onUnmounted, computed } from 'vue'
 import { useAuthStore } from '@/stores/auth-store'
 
 const authStore = useAuthStore()
-const themeBg = computed(() => authStore.settings?.topbar_color || 'var(--pms-custom-theme, #006bdb)')
+const themeBg = computed(() => authStore.themeColor || 'var(--pms-custom-theme, #006bdb)')
 
 const props = defineProps({
   isOpen: {

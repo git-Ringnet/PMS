@@ -103,7 +103,7 @@ const emit = defineEmits(['update:show', 'confirm'])
 const uiStore = useUiStore()
 const authStore = useAuthStore()
 
-const headerBgColor = computed(() => authStore.settings?.topbar_color || '#006bdb')
+const headerBgColor = computed(() => authStore.themeColor || '#006bdb')
 
 // ==================== DRAGGABLE MODAL POSITION ====================
 const modalPos = ref({ x: 0, y: 0 })

@@ -863,7 +863,7 @@ const wardsCache = ref({})
 const districtsForLine = ref({})
 const wardsForLine = ref({})
 const topbarThemeBg = computed(() => {
-  return authStore.settings?.topbar_color || 'var(--pms-custom-theme, #006bdb)'
+  return authStore.themeColor || 'var(--pms-custom-theme, #006bdb)'
 })
 
 // ==================== STATUS GROUPS ====================

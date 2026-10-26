@@ -467,7 +467,7 @@ const authStore = useAuthStore()
 const saving = ref(false)
 
 const topbarThemeBg = computed(() => {
-  return authStore.settings?.topbar_color || 'var(--pms-custom-theme, #006bdb)'
+  return authStore.themeColor || 'var(--pms-custom-theme, #006bdb)'
 })
 
 const guestPhotos = ref([])

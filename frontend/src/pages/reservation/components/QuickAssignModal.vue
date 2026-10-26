@@ -343,7 +343,7 @@ const roomStore = useRoomStore()
 const authStore = useAuthStore()
 
 // Theme Topbar Background Color
-const themeBg = computed(() => authStore.settings?.topbar_color || '#006bdb')
+const themeBg = computed(() => authStore.themeColor || '#006bdb')
 
 // ==================== DRAGGABLE MODAL POSITION ====================
 const modalPos = ref({ x: 0, y: 0 })

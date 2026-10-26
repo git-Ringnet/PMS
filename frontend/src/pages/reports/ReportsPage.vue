@@ -2,25 +2,84 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth-store'
+import { useReportStore } from '@/stores/report-store'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
 import { Database, Download, FileText, LoaderCircle, Play, Printer } from '@lucide/vue'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
 import ReportDateRangePicker from '@/components/ReportDateRangePicker.vue'
+import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import HousekeepingInvoiceFilters from '@/pages/reports/components/HousekeepingInvoiceFilters.vue'
 import ReportViewer from '@/pages/reports/components/ReportViewer.vue'
 
 const router = useRouter()
 const route = useRoute()
 const authStore = useAuthStore()
+const reportStore = useReportStore()
 const uiStore = useUiStore()
 const loading = ref(false)
 const systemDate = ref(authStore.systemDate || localStorage.getItem('pms_system_date') || '')
 const reports = ref([])
 const activeTabId = ref(null)
 const openTabs = ref([])
+const reportTabs = ref(null)
 const temporaryReportCode = 'EXPECTED_ROOM_REVENUE_NIGHT_AUDIT'
 const customDatePickerReportCodes = new Set(['REVENUE_ARMY', temporaryReportCode])
+let workspaceSaveTimer = null
+
+const pmsWorkspaceKey = computed(() => [
+  authStore.user?.id || authStore.user?.username || 'anonymous',
+  authStore.activeBranch?.id
+    || authStore.activeBranch?.code
+    || localStorage.getItem('selected_branch_id')
+    || localStorage.getItem('selected_branch_code')
+    || 'default',
+  route.path,
+].join(':'))
+
+const cloneWorkspaceValue = value => {
+  if (value === undefined) return undefined
+  return JSON.parse(JSON.stringify(value))
+}
+
+const saveWorkspace = (key = pmsWorkspaceKey.value) => {
+  if (!key) return
+  reportStore.savePmsWorkspace(key, {
+    activeTabId: activeTabId.value,
+    openTabs: openTabs.value.map(tab => ({
+      reportId: tab.report.id,
+      code: tab.code,
+      parameters: cloneWorkspaceValue(tab.parameters),
+      parameterOptions: cloneWorkspaceValue(tab.parameterOptions),
+      selectedTemplateId: tab.selectedTemplateId,
+      dataset: cloneWorkspaceValue(tab.dataset),
+      renderedHtml: tab.renderedHtml,
+    })),
+  })
+}
+
+const queueWorkspaceSave = () => {
+  if (workspaceSaveTimer) window.clearTimeout(workspaceSaveTimer)
+  workspaceSaveTimer = window.setTimeout(() => {
+    workspaceSaveTimer = null
+    saveWorkspace()
+  }, 150)
+}
+
+const flushWorkspaceSave = () => {
+  if (workspaceSaveTimer) {
+    window.clearTimeout(workspaceSaveTimer)
+    workspaceSaveTimer = null
+  }
+  saveWorkspace()
+}
+
+const handleReportTabsWheel = (event) => {
+  const container = reportTabs.value
+  if (!container || container.scrollWidth <= container.clientWidth || !event.deltaY) return
+  event.preventDefault()
+  container.scrollLeft += event.deltaY
+}
 
 const activeTab = computed(() => openTabs.value.find(t => t.id === activeTabId.value) || null)
 const isWeeklyRoomReport = tab => tab?.code === 'WEEKLY_ROOM_REPORT'
@@ -87,7 +146,7 @@ const loadParameterOptionsForTab = async (tab) => {
   }))
 }
 
-const loadReports = async () => {
+const loadReports = async ({ restore = true } = {}) => {
   loading.value = true
   try {
     const response = await http.get('/report-definitions', { params: { active_only: 1 } })
@@ -99,6 +158,8 @@ const loadReports = async () => {
       ? availableReports.filter(item => item.code === temporaryReportCode)
       : availableReports
 
+    const restored = restoreWorkspace(restore ? reportStore.getPmsWorkspace(pmsWorkspaceKey.value) : null)
+
     // Check initial report code from URL
     const requestedCode = route.query.report
     if (requestedCode) {
@@ -107,6 +168,14 @@ const loadReports = async () => {
         openReportInTab(report)
         return
       }
+    }
+
+    if (restored) {
+      const tab = openTabs.value.find(item => Number(item.id) === Number(activeTabId.value))
+      if (tab && route.query.report !== tab.code) {
+        router.replace({ path: route.path, query: { ...route.query, report: tab.code } })
+      }
+      return
     }
 
     // Default: Open the first report in dynamic menu if any
@@ -170,45 +239,66 @@ const handleReportParameterChange = (tab, parameter) => {
   if (isWeeklyRoomReport(tab) && parameter.name === 'p_week_preset') applyWeeklyDateRange(tab)
 }
 
-const openReportInTab = (report) => {
-  let tab = openTabs.value.find(t => t.id === report.id)
-  if (!tab) {
-    const defaultParams = {}
-    for (const definition of report.parameter_ui_schema || []) {
-      const resolved = resolveDefault(definition.default)
-      const options = definition.options || []
-      const firstOption = options[0]
-      const legacyDefault = definition.name === 'p_sort_by'
-        ? 'Room'
-        : definition.name === 'p_order_by'
-          ? 'ASC'
-          : ''
-      // Existing report definitions may have an empty persisted default even
-      // though the parameter is required. Keep execution usable by selecting
-      // the first configured option (e.g. OOS sort = Room).
-      defaultParams[definition.name] = definition.control === 'multi-select'
-        ? (Array.isArray(resolved) ? resolved : (resolved ? String(resolved).split(',').map(value => value.trim()).filter(Boolean) : []))
-        : resolved || (
+const defaultParametersForReport = (report) => {
+  const defaultParams = {}
+  for (const definition of report.parameter_ui_schema || []) {
+    const resolved = resolveDefault(definition.default)
+    const options = definition.options || []
+    const firstOption = options[0]
+    const legacyDefault = definition.name === 'p_sort_by'
+      ? 'Room'
+      : definition.name === 'p_order_by'
+        ? 'ASC'
+        : ''
+    defaultParams[definition.name] = definition.control === 'multi-select'
+      ? (Array.isArray(resolved) ? resolved : (resolved ? String(resolved).split(',').map(value => value.trim()).filter(Boolean) : []))
+      : resolved || (
         ['select', 'radio'].includes(definition.control) && firstOption !== undefined
           ? (firstOption.value ?? firstOption)
           : legacyDefault || resolved
-        )
-    }
+      )
+  }
+  return defaultParams
+}
 
-    tab = reactive({
-      id: report.id,
-      code: report.code,
-      name: report.name,
-      report: report,
-      parameters: defaultParams,
-      parameterOptions: Object.fromEntries((report.parameter_ui_schema || []).map(p => [p.name, p.options || []])),
-      selectedTemplateId: report.templates.find(item => item.is_default)?.id || report.templates[0]?.id || null,
-      dataset: null,
-      renderedHtml: '',
-      executing: false,
-      rendering: false,
-      exporting: false
-    })
+const createReportTab = (report, snapshot = null) => reactive({
+  id: report.id,
+  code: report.code,
+  name: report.name,
+  report,
+  parameters: snapshot?.parameters || defaultParametersForReport(report),
+  parameterOptions: snapshot?.parameterOptions
+    || Object.fromEntries((report.parameter_ui_schema || []).map(parameter => [parameter.name, parameter.options || []])),
+  selectedTemplateId: report.templates.some(item => Number(item.id) === Number(snapshot?.selectedTemplateId))
+    ? snapshot.selectedTemplateId
+    : report.templates.find(item => item.is_default)?.id || report.templates[0]?.id || null,
+  dataset: snapshot?.dataset || null,
+  renderedHtml: snapshot?.renderedHtml || '',
+  executing: false,
+  rendering: false,
+  exporting: false,
+})
+
+const restoreWorkspace = (workspace) => {
+  if (!workspace?.openTabs?.length) return false
+  const restoredTabs = workspace.openTabs.map(snapshot => {
+    const report = reports.value.find(item => Number(item.id) === Number(snapshot.reportId))
+    return report ? createReportTab(report, snapshot) : null
+  }).filter(Boolean)
+  if (!restoredTabs.length) return false
+
+  openTabs.value = restoredTabs
+  activeTabId.value = restoredTabs.some(tab => Number(tab.id) === Number(workspace.activeTabId))
+    ? workspace.activeTabId
+    : restoredTabs[0].id
+  restoredTabs.forEach(tab => loadParameterOptionsForTab(tab))
+  return true
+}
+
+const openReportInTab = (report) => {
+  let tab = openTabs.value.find(t => t.id === report.id)
+  if (!tab) {
+    tab = createReportTab(report)
 
     openTabs.value.push(tab)
     loadParameterOptionsForTab(tab)
@@ -475,35 +565,53 @@ watch(() => route.query.report, code => {
   }
 })
 
+watch(openTabs, queueWorkspaceSave, { deep: true })
+
+watch(pmsWorkspaceKey, async (nextKey, previousKey) => {
+  if (!previousKey || nextKey === previousKey) return
+  saveWorkspace(previousKey)
+  reports.value = []
+  openTabs.value = []
+  activeTabId.value = null
+  await loadReports({ restore: true })
+})
+
 onMounted(async () => {
   window.addEventListener('pms:report-template-saved', handleTemplateSaved)
+  window.addEventListener('pagehide', flushWorkspaceSave)
+  await reportStore.hydratePmsWorkspaces()
   await fetchSystemDate()
   await loadReports()
 })
 
 onBeforeUnmount(() => {
+  flushWorkspaceSave()
   window.removeEventListener('pms:report-template-saved', handleTemplateSaved)
+  window.removeEventListener('pagehide', flushWorkspaceSave)
 })
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 bg-slate-100 text-slate-800">
+  <div class="relative flex h-full min-h-0 bg-slate-100 text-[#000000D9]">
+    <LoadingOverlay :show="loading || activeTab?.executing || activeTab?.rendering" />
     <main class="flex min-w-0 flex-1 flex-col">
       <!-- Tabs Bar -->
-      <div v-if="openTabs.length > 0" class="flex items-end bg-slate-50 border-b border-slate-200 px-4 h-11 shrink-0 gap-1 overflow-x-auto scrollbar-none">
+      <div v-if="openTabs.length > 0" class="h-11 shrink-0 border-b border-slate-200 bg-slate-50">
+        <div ref="reportTabs" @wheel="handleReportTabsWheel" class="report-tabs flex h-full min-w-0 items-end gap-1 overflow-x-auto overflow-y-hidden px-4">
         <div v-for="tab in openTabs" :key="tab.id"
           @click="selectTab(tab.id)"
-          class="flex items-center gap-2 px-3 py-2 rounded-t-lg border-t border-x text-[11px] font-black transition-all cursor-pointer h-[36px] border-b-transparent -mb-[1px]"
+          class="-mb-px flex h-[36px] shrink-0 cursor-pointer items-center gap-2 rounded-t-lg border-x border-t border-b-transparent px-3 py-2 text-[12px] font-semibold transition-all"
           :class="activeTabId === tab.id
-            ? 'bg-white border-slate-200 text-sky-600 shadow-xs relative z-10'
-            : 'bg-slate-100/60 border-transparent text-slate-500 hover:bg-slate-100 hover:text-slate-700'"
+            ? 'bg-white border-slate-200 text-[#000000D9] shadow-xs relative z-10'
+            : 'bg-slate-100/60 border-transparent text-[#000000D9] hover:bg-slate-100'"
         >
-          <span class="whitespace-nowrap uppercase tracking-wider">{{ tab.name }}</span>
-          <button @click.stop="closeTab(tab.id)" class="p-0.5 rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-600 border-none bg-transparent cursor-pointer flex items-center justify-center">
+          <span class="whitespace-nowrap">{{ tab.name }}</span>
+          <button @click.stop="closeTab(tab.id)" class="flex cursor-pointer items-center justify-center rounded-full border-none bg-transparent p-0.5 text-[#000000D9] hover:bg-slate-200">
             <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
+        </div>
         </div>
       </div>
 
@@ -512,20 +620,20 @@ onBeforeUnmount(() => {
         <header class="border-b border-slate-200 bg-white px-5 py-3">
           <div class="flex items-center justify-between gap-4">
             <div>
-              <h2 class="text-sm font-black text-slate-800">{{ activeTab.name }}</h2>
+              <h2 class="text-sm font-semibold text-[#000000D9]">{{ activeTab.name }}</h2>
               <p class="mt-0.5 flex items-center gap-1 text-[10px] font-semibold text-slate-400">
                 <Database class="h-3 w-3" /> {{ activeTab.report.report_data_source?.object_name }}
               </p>
             </div>
             <div class="flex items-center gap-2">
-              <label class="text-[10px] font-bold uppercase text-slate-500">Mẫu đầu ra
-                <select v-model="activeTab.selectedTemplateId" class="ml-2 min-w-52 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700">
+              <label class="text-[12px] font-semibold uppercase text-[#000000D9]">Mẫu đầu ra
+                <select v-model="activeTab.selectedTemplateId" class="ml-2 min-w-52 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-normal text-[#000000D9]">
                   <option v-for="template in activeTab.report.templates" :key="template.id" :value="template.id">
                     {{ template.name }}{{ template.is_default ? ' (Mặc định)' : '' }}
                   </option>
                 </select>
               </label>
-              <button :disabled="!activeTab.dataset || activeTab.exporting" @click="exportReportForTab(activeTab, 'xlsx')" class="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-600 disabled:opacity-40"><Download class="h-4 w-4" /> Excel</button>
+              <button :disabled="!activeTab.dataset || activeTab.exporting" @click="exportReportForTab(activeTab, 'xlsx')" class="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-[#000000D9] disabled:opacity-40"><Download class="h-4 w-4" /> Excel</button>
               <button :disabled="!activeTab.renderedHtml" @click="printReportForTab(activeTab)" class="flex items-center gap-1 rounded-lg border-none bg-slate-800 px-3 py-2 text-xs font-bold text-white disabled:opacity-40"><Printer class="h-4 w-4" /> In</button>
             </div>
           </div>
@@ -534,7 +642,7 @@ onBeforeUnmount(() => {
         <div class="flex min-h-0 flex-1">
           <!-- Report parameters sidebar -->
           <aside class="w-[360px] shrink-0 overflow-y-auto border-r border-slate-200 bg-white p-4">
-            <h3 class="mb-4 text-[11px] font-black uppercase tracking-wider text-slate-600">Điều kiện báo cáo</h3>
+            <h3 class="mb-4 text-xs font-semibold uppercase tracking-wider text-[#000000D9]">Điều kiện báo cáo</h3>
             <HousekeepingInvoiceFilters
               v-if="isHousekeepingInvoiceReport(activeTab)"
               v-model="activeTab.parameters"
@@ -554,7 +662,7 @@ onBeforeUnmount(() => {
                 Báo cáo này không cần tham số.
               </div>
 
-              <div v-for="parameter in (activeTab.report.parameter_ui_schema || []).filter(item => isVisibleReportParameter(activeTab, item))" :key="parameter.name" class="mb-3 block text-[11px] font-bold text-slate-600">
+              <div v-for="parameter in (activeTab.report.parameter_ui_schema || []).filter(item => isVisibleReportParameter(activeTab, item))" :key="parameter.name" class="mb-3 block text-xs font-semibold text-[#000000D9]">
               <template v-if="parameter.control === 'checkbox'">
                 <div class="flex h-8 items-center gap-2">
                   <button @click="activeTab.parameters[parameter.name] = !activeTab.parameters[parameter.name]" class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-1" :class="activeTab.parameters[parameter.name] ? 'bg-sky-500' : 'bg-slate-300'">
@@ -568,7 +676,7 @@ onBeforeUnmount(() => {
                 {{ parameter.label }} <span v-if="parameter.required" class="text-red-500">*</span>
               </template>
 
-              <div v-if="parameter.control === 'radio'" class="mt-1 flex flex-wrap items-center gap-4 text-xs font-normal text-slate-700">
+              <div v-if="parameter.control === 'radio'" class="mt-1 flex flex-wrap items-center gap-4 text-xs font-normal text-[#000000D9]">
                 <label v-for="option in activeTab.parameterOptions[parameter.name] || parameter.options || []" :key="option.value ?? option" class="inline-flex cursor-pointer items-center gap-1.5 whitespace-nowrap">
                   <input v-model="activeTab.parameters[parameter.name]" type="radio" :name="`${activeTab.id}-${parameter.name}`" :value="option.value ?? option" class="h-4 w-4 border-sky-500 text-sky-600 focus:ring-sky-500" />
                   {{ option.label ?? option }}
@@ -576,12 +684,12 @@ onBeforeUnmount(() => {
               </div>
 
               <details v-else-if="parameter.control === 'multi-select'" class="relative mt-1 font-normal">
-                <summary class="flex min-h-9 cursor-pointer list-none items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600" :class="parameter.required ? 'input-required' : ''">
+                <summary class="flex min-h-9 cursor-pointer list-none items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-[#000000D9]" :class="parameter.required ? 'input-required' : ''">
                   <span class="truncate">{{ multiSelectLabel(activeTab, parameter) }}</span>
                   <span class="ml-2 text-slate-400">▾</span>
                 </summary>
                 <div class="absolute z-30 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
-                  <label v-for="option in multiSelectOptions(activeTab, parameter)" :key="option.value ?? option" class="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-50">
+                  <label v-for="option in multiSelectOptions(activeTab, parameter)" :key="option.value ?? option" class="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs text-[#000000D9] hover:bg-slate-50">
                     <input v-model="activeTab.parameters[parameter.name]" type="checkbox" :value="option.value ?? option" class="h-3.5 w-3.5 rounded border-slate-300 text-sky-600 focus:ring-sky-500" />
                     <span>{{ option.label ?? option }}</span>
                   </label>
@@ -657,3 +765,23 @@ onBeforeUnmount(() => {
     </main>
   </div>
 </template>
+
+<style scoped>
+.report-tabs {
+  scrollbar-color: #94a3b8 transparent;
+  scrollbar-width: thin;
+}
+
+.report-tabs::-webkit-scrollbar {
+  height: 6px;
+}
+
+.report-tabs::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 9999px;
+}
+
+.report-tabs::-webkit-scrollbar-track {
+  background: transparent;
+}
+</style>

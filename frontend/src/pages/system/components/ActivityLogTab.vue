@@ -3,12 +3,13 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { fetchActivityLogs, fetchActivityLogStats } from '@/services/activity-log-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
+import LoadingOverlay from '@/components/LoadingOverlay.vue'
 
 const uiStore = useUiStore()
 const authStore = useAuthStore()
 
 // Theme Background from Topbar settings
-const themeBg = computed(() => authStore.settings?.topbar_color || '#006bdb')
+const themeBg = computed(() => authStore.themeColor || '#006bdb')
 
 // State data
 const logs = ref([])
@@ -524,7 +525,8 @@ const handleExport = async () => {
 </script>
 
 <template>
-  <div class="p-4 bg-slate-50 flex-1 flex flex-col overflow-hidden text-xs font-sans min-h-[500px]">
+  <div class="relative p-4 bg-slate-50 flex-1 flex flex-col overflow-hidden text-xs font-sans min-h-[500px]">
+    <LoadingOverlay :show="loading && logs.length === 0" />
     
     <!-- Quick Filter Chips Bar -->
     <div class="flex items-center gap-2 mb-3 flex-wrap shrink-0">

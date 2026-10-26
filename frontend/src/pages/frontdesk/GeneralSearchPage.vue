@@ -10,6 +10,7 @@ import http from '@/services/http'
 import GuestInfoModal from '@/pages/reservation/components/GuestInfoModal.vue'
 import CopyModal from '@/pages/reservation/components/CopyModal.vue'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
+import LoadingOverlay from '@/components/LoadingOverlay.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -388,7 +389,7 @@ const guestHistoryLoading = ref(false)
 const guestHistoryError = ref('')
 let guestHistoryRequestId = 0
 const guestModal = useDraggableModal()
-const guestModalThemeBg = computed(() => auth.settings?.topbar_color || 'var(--pms-custom-theme, #006bdb)')
+const guestModalThemeBg = computed(() => auth.themeColor || 'var(--pms-custom-theme, #006bdb)')
 
 // Bật / tắt tự mở chi tiết khách khi bấm vào dòng (nhớ theo trình duyệt)
 const GUEST_DETAIL_PREF_KEY = 'pms_general_search_guest_detail'
@@ -1232,7 +1233,8 @@ onMounted(async () => {
 </script>
 
 <template>
-  <main class="general-search-wrapper">
+  <main class="general-search-wrapper relative">
+    <LoadingOverlay :show="loading && rows.length === 0" />
     <!-- TOP BAR: TABS & ACTIONS -->
     <div class="tabs-header">
       <div class="tabs-left">

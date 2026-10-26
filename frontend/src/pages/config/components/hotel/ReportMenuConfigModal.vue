@@ -17,7 +17,7 @@ const props = defineProps({ isOpen: { type: Boolean, default: false } })
 const emit = defineEmits(['close', 'changed'])
 const authStore = useAuthStore()
 const uiStore = useUiStore()
-const themeColor = computed(() => authStore.settings?.topbar_color || 'var(--pms-custom-theme, #006bdb)')
+const themeColor = computed(() => authStore.themeColor || 'var(--pms-custom-theme, #006bdb)')
 
 const MODULE_SHORT = { reservation: 'ĐK', frontdesk: 'LT', housekeeping: 'BP' }
 

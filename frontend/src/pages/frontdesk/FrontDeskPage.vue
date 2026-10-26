@@ -10,15 +10,18 @@ import GeneralSearchPage from './GeneralSearchPage.vue'
 import SplitOldServicesModal from './components/SplitOldServicesModal.vue'
 const route = useRoute()
 const currentTab = computed(() => route.query.tab || 'room-map')
+const cachedContentComponent = computed(() => {
+  if (currentTab.value === 'history') return ActivityLogTab
+  if (currentTab.value === 'search') return GeneralSearchPage
+  return RoomMapPage
+})
 </script>
 
 <template>
   <CheckoutPage v-if="currentTab === 'checkout'" />
   <DayClosePage v-else-if="currentTab === 'day-close'" />
-  <ActivityLogTab v-else-if="currentTab === 'history'" />
   <ReportsPage v-else-if="currentTab === 'reports'" />
-  <GeneralSearchPage v-else-if="currentTab === 'search'" />
-  <RoomMapPage v-else />
+  <KeepAlive><component v-if="!['checkout', 'day-close', 'reports'].includes(currentTab)" :is="cachedContentComponent" /></KeepAlive>
   <SplitOldServicesModal v-if="currentTab === 'split-old-services'" @close="$router.replace({ path: '/frontdesk', query: { tab: 'room-map' } })" />
 </template>
 
