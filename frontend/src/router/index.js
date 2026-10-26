@@ -24,19 +24,19 @@ const routes = [
     path: '/reservation',
     name: 'Reservation',
     component: () => import('@/pages/reservation/RoomMapPage.vue'),
-    meta: { title: 'Đặt phòng - PMS', permission: 'fo.booking.view' },
+    meta: { title: 'Đặt phòng - PMS', permission: 'fo.booking.view', keepAlive: true },
   },
   {
     path: '/frontdesk',
     name: 'FrontDesk',
     component: () => import('@/pages/frontdesk/FrontDeskPage.vue'),
-    meta: { title: 'Lễ tân - PMS', permission: 'fo.frontdesk.view' },
+    meta: { title: 'Lễ tân - PMS', permission: 'fo.frontdesk.view', keepAlive: true },
   },
   {
     path: '/housekeeping',
     name: 'Housekeeping',
     component: () => import('@/pages/housekeeping/HousekeepingPage.vue'),
-    meta: { title: 'Buồng phòng - PMS', permission: 'hk.view' },
+    meta: { title: 'Buồng phòng - PMS', permission: 'hk.view', keepAlive: true },
   },
   {
     path: '/reports',

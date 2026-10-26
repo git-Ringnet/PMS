@@ -719,11 +719,11 @@ const authStore = useAuthStore()
 
 // Dynamic Theme topbar background sync
 const topbarThemeBg = computed(() => {
-  return authStore.settings?.topbar_color || 'var(--pms-custom-theme, #006bdb)'
+  return authStore.themeColor || 'var(--pms-custom-theme, #006bdb)'
 })
 
 const isTopBarThemeDark = computed(() => {
-  const bg = authStore.settings?.topbar_color
+  const bg = authStore.themeColor
   if (!bg) return true
   if (bg.includes('linear-gradient')) return true
   if (bg.startsWith('#')) {

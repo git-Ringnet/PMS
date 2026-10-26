@@ -1,5 +1,23 @@
 # Project Memory — PMS
 
+- 2026-10-26: Điều chỉnh UX/UI 4 màn hình theo phản hồi và ảnh thực tế:
+  - Khai báo lưu trú (`ResidenceDeclarationPage.vue` - Ảnh 1): Chuyển bảng sang `width: max-content; min-width: 100%; table-layout: auto;`, tăng min-width các cột ngày tháng (95px), giới tính (85px), quốc tịch (170px), địa chỉ (160px), cell-content hiển thị trọn vẹn inline-block không cắt chữ `..`.
+  - Thống kê phòng trống (`AvailableRoomsPage.vue`): Đã rollback toàn bộ thay đổi theo yêu cầu người dùng, phục hồi trạng thái nguyên bản.
+  - Trả phòng (`CheckoutPage.vue` - Ảnh 3 & 4): Thêm kiểm tra trước điều kiện thanh toán trong `openCheckoutModal` qua `previewCheckoutRooms`. Khi còn phòng chưa thanh toán, hiển thị TRỰC TIẾP form Thông Báo (ảnh 4), tuyệt đối không hiển thị form Xác Nhận (ảnh 3); chỉ hiển thị form Xác Nhận (ảnh 3) khi đủ điều kiện checkout; loại bỏ nút "Đóng" ở footer form Xác Nhận (ảnh 3) chỉ giữ nút "Có"/"Checkout".
+  - Sơ đồ phòng (`RoomMapPage.vue` - Ảnh 5): Ghim cố định cả hàng công cụ chọn danh sách (`sticky top-0 z-30 h-[38px]`) và hàng tiêu đề cột `<thead> <th>` (`sticky top-[38px] z-20`) khi cuộn dọc danh sách phòng.
+  - `npm run build` thành công 100% trong 5.32s (0 lỗi), bảo toàn 100% logic backend và database.
+
+- 2026-10-26: Dòng 402 Sơ đồ phòng — popup hover tự đo chiều cao thực tế thay cho ngưỡng cố định; tự chọn phía trên/dưới theo viewport và cuộn nội bộ khi không đủ không gian, nên Ghi chú của phòng ở các hàng đầu vẫn xem được. Chỉ đổi `RoomMapPage.vue`; không đổi API, dữ liệu, trạng thái phòng, database hay import legacy. `npm run build` đạt.
+
+- 2026-10-26: Triển khai hoàn tất các Dòng 96, 97, 98, 99, 100, 102 trong Sheet FIX FE (Bỏ qua Dòng 101 theo yêu cầu người dùng):
+  - Dòng 100 (Menu module Lễ tân): Đã kiểm tra và xác nhận mục "Channel Manager" hoàn toàn không có trong menu Lễ tân của `MainLayout.vue`.
+  - Dòng 102 (Trả phòng - Cảnh báo phòng chưa thanh toán): `CheckoutPage.vue` khi có phòng chưa thanh toán thì CHỈ hiển thị nội dung cảnh báo, ẩn toàn bộ danh sách checkbox khách, ẩn câu hỏi xác nhận và ẩn các nút Có/Checkout/Đóng ở footer; hỗ trợ đóng modal bằng phím `Esc` và nút `×` header; đồng bộ viền và nền thông báo theo màu theme hệ thống.
+  - Dòng 97 (Khai báo lưu trú): `ResidenceDeclarationPage.vue` điều chỉnh tỷ lệ cột: thu hẹp các cột ngày/phòng (2.8% - 3.8%) và mở rộng mạnh cột Họ tên (17%, min 195px) giúp hiển thị đầy đủ tên khách không bị cắt chữ, cột Địa chỉ (11.5%, min 160px).
+  - Dòng 98 (Thống kê phòng trống): `AvailableRoomsPage.vue` áp dụng `background-clip: padding-box` và bộ chọn CSS trực tiếp trên `th`, `td` giúp giữ nguyên border dọc sắc nét không bị mất khi thu phóng trình duyệt <= 100%.
+  - Dòng 96 (Booking - Sửa Booking): `CreateRegistrationPage.vue` mở rộng nút "Chi tiết" ở cột Ăn sáng trẻ em và Thêm giường thành `h-7 px-3 text-xs inline-flex items-center justify-center font-semibold rounded shadow-2xs`; đồng bộ chiều cao ô sửa `initialRoomClass` thành 32px (`h-[32px]`); các trường "Phòng chuyển", "Mã ALM", "Mã phòng" khi bấm sửa chỉ hiển thị nội dung `<span>` không cho sửa; số phòng hiển thị `font-semibold text-[#000000D9]`, các ô dữ liệu khác `font-normal text-[#000000D9]`.
+  - Dòng 99 & FE Design System: `style.css` bổ sung mặc định `table td { color: #000000D9; }` đồng bộ màu chữ bảng trên toàn hệ thống.
+  - Zero Side Effects & Build: `npm run build` thành công 100% trong 5.18s (0 lỗi), không can thiệp API endpoint hay database.
+
 - 2026-10-23: Triển khai hoàn tất Dòng 86, 87, 90 Sheet FIX FE ([ResidenceDeclarationPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/ResidenceDeclarationPage.vue), [BreakfastPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/BreakfastPage.vue), [BreakfastPrintModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/components/BreakfastPrintModal.vue), [ActivityLogResource.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Http/Resources/ActivityLogResource.php), [ActivityLogTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/system/components/ActivityLogTab.vue)):
   - Dòng 86 (Khai báo lưu trú): Chuyển ô dữ liệu sang `font-normal text-[#000000D9]`, tiêu đề cột `font-semibold text-[#000000D9]`; nút "Xuất ra file" khi disabled có màu chữ tương phản rõ ràng (`color: #1e293b; background: #e2e8f0; border-color: #cbd5e1`); ô Ngày và ô Tìm kiếm nền trắng `#ffffff` tránh hiểu lầm disable; nút xóa nhanh `(x)` tách biệt khi có giá trị; cột Người lớn `.col-nlon` cố định `border-bottom: 1px solid var(--border) !important` khắc phục lỗi mất line hàng.
   - Dòng 87 (In phiếu ăn sáng): Bảng dữ liệu Roboto 12px, tách ô tiêu đề riêng và có icon kính lúp tìm kiếm popover ở từng cột; xóa cột thừa Q và đồng bộ `colspan="9"` trên các dòng phân cấp nhóm; modal in lược bỏ các ghi chú hướng dẫn dài, tiêu đề ngày đổi thành `Từ Ngày` và `Đến Ngày` Title Case; nút footer đổi thành duy nhất "In" (`.btn-pms-primary`), bỏ nút Đóng ở footer, hỗ trợ phím `Esc`; khi bấm "In" mở trực tiếp hộp thoại máy in của trình duyệt (`window.print()`), bỏ modal tùy chỉnh mẫu.
@@ -947,6 +965,10 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 ## Current Status
 
+- 2026-10-26: Dòng 407 Màu nền hệ thống đã chuyển sang cấu hình dùng chung; cần chạy migration và UAT đổi màu bằng tài khoản quản trị, sau đó kiểm tra tài khoản thường và phiên đăng nhập mới.
+- 2026-10-26: Dòng 402 Sơ đồ phòng đã thay định vị popup Ghi chú theo chiều cao thực tế; cần UAT các hàng đầu/cuối với ghi chú ngắn/dài.
+- 2026-10-26: Dòng 404 đã cache UI trong phiên SPA cho Tìm kiếm chung, Ghi log, Khóa phòng, In phân công HK và Room Map; cần UAT chuyển qua lại giữa Đặt phòng/Lễ tân/Buồng phòng và xác nhận loading lần tải đầu.
+- 2026-10-26: Dòng 403 Báo cáo đã giữ workspace qua reload bằng IndexedDB theo user/chi nhánh/phân hệ; thanh tab có scrollbar ngang và hỗ trợ bánh xe chuột. Cần UAT rời, quay lại và reload để xác nhận tab, điều kiện và HTML đã render không bị mất.
 - 2026-10-23: Dòng 430 Room Plan đã triển khai; cần UAT tạo Booking nhanh ngày hệ thống với phòng Sẵn sàng, Chờ kiểm tra và Phòng bẩn, đối chiếu Sơ đồ phòng.
 - 2026-10-23: Dòng 161 Room Plan đã triển khai; cần UAT Booking nhanh với giá chuẩn 0, nhiều loại phòng, đổi công ty sau khi nhập giá và Rate Code theo ngày.
 - 2026-10-23: Dòng 95 Room Plan đã triển khai; cần UAT tooltip với Booking có cọc DPR, thanh toán đã dùng cọc, thanh toán trước AP và chuyển cọc nội bộ.
@@ -957,6 +979,10 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 ## Recent Changes
 
+- 2026-10-26: Dòng 407: thêm `SystemThemeTopbarColor` vào `hotel_configs`, API đọc/cập nhật màu chung và backend chặn người không phải quản trị viên. Frontend chỉ đọc `authStore.themeColor`; migration `2026_10_26_121000` xóa hẳn `user_settings.settings.topbar_color` tại System DB, giữ các setting khác và tự bỏ qua branch DB không có `user_settings`. Ghi activity log cho thao tác đổi màu. PHP lint, route list và frontend build đạt. Tài liệu: `.codex/docs/system_workbook/row407_system_theme.md`, database mapping đã cập nhật.
+- 2026-10-26: Dòng 402 Sơ đồ phòng: tooltip hover đo chiều cao sau render, tự chọn phía trên/dưới theo viewport và cuộn nội bộ khi cần; cuộn hoặc resize đóng tooltip để tránh neo sai. Không đổi API/backend/schema/import/trạng thái phòng; frontend build đạt. Tài liệu: `.codex/docs/reservation/room_map_row_402_tooltip_note.md`.
+- 2026-10-26: Dòng 404: router cache route Đặt phòng/Lễ tân/Buồng phòng; Lễ tân và Buồng phòng cache chọn lọc các tab được giao. Tìm kiếm chung, Ghi log và Khóa phòng dùng `LoadingOverlay` lần tải đầu; In phân công đã có overlay theo `hkStore.loading`. Không đổi API/backend/schema/import; frontend build đạt. Tài liệu: `.codex/docs/system_workbook/row404_view_state.md`.
+- 2026-10-26: Dòng 403 Báo cáo: `ReportsPage` lưu và khôi phục tab/filter/template/dataset/HTML trong Pinia + IndexedDB theo user, chi nhánh và route; state F&B tách biệt. Workspace được lưu khi state đổi, không chỉ lúc unmount; thanh tab chỉ cuộn ngang bằng scrollbar/bánh xe, dùng `LoadingOverlay` chuẩn khi tải catalogue/chạy/render, chuẩn hoá chữ tab/form về `#000000D9` và giữ nguyên case của tên báo cáo. Không đổi API/backend/schema/import; frontend build đạt.
 - 2026-10-23: Dòng 430 Room Plan: tải snapshot phòng theo ngày hệ thống, giữ nguyên `room_status_code`/`booking_status`/`lock_type` khi map vào lưới và dùng `ROOM_STATUS_ICON_MAP` cùng nguồn với Sơ đồ phòng; Booking mới không ghi đè icon trạng thái buồng phòng đã lưu. Test helper trạng thái 3/3; không đổi Room Map/API/schema/import/OCC/AV/Booking.
 - 2026-10-23: Dòng 161 Room Plan: helper tách mode giá chuẩn/Rate Code; Booking nhanh không còn fallback 890.000, công ty chỉ lấy danh mục active, giữ giá nhập tay khi đổi công ty. Test helper/rate-code 13/13; frontend build đạt. Không đổi backend/API/schema/import/Checkout/Room Map/Tạo Đăng Ký.
 - 2026-10-23: Dòng 95 Room Plan: helper khử trùng payment theo `id`, tách DPR chưa dùng khỏi dòng đã thanh toán; tooltip hiển thị cả hai khoản và còn lại không âm. Ghi chú ưu tiên Booking, dấu tích cọc chỉ hiện có cọc hợp lệ ngay sau nhãn Booking rút gọn, sát mép phải tổng cộng 5px và nhãn giữ tối thiểu 4 ký tự. `room-plan-amounts.test.js` đạt 10/10; frontend build đạt. Không đổi API/schema/import/Checkout/dữ liệu payment.
@@ -1146,6 +1172,10 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 ## Known Risks
 
+- 2026-10-26: Dòng 407 cần chạy migration trước khi màu chung được lưu DB; chưa có realtime cross-session, nên các phiên đang mở nhận màu mới khi tải lại hoặc đăng nhập lại.
+- 2026-10-26: Dòng 402 đã qua build nhưng cần UAT browser với popup có nội dung dài nhất để xác nhận chiều cao cuộn nội bộ và mũi tên neo đúng thẻ phòng ở viewport thực tế.
+- 2026-10-26: Dòng 404 cần UAT listener realtime và bộ nhớ khi nhiều module cache đồng thời; cache chỉ giữ trong SPA, reload browser là phiên mới.
+- 2026-10-26: Dòng 403 cần UAT reload tại `/reports`, Đặt phòng, Lễ tân và Buồng phòng; trạng thái trang/zoom/chế độ xem của `ReportViewer` không thuộc phạm vi lưu workspace. Người dùng khác/chi nhánh khác không dùng cùng key cache, nhưng cache IndexedDB không bị xóa tự động lúc đăng xuất.
 - 2026-10-23: Dòng 430 cần UAT browser với Room Map đang xem đúng ngày hệ thống; ngày lịch sử/tương lai của Room Plan tiếp tục hiển thị booking theo timeline, còn icon buồng phòng phản ánh trạng thái nghiệp vụ ngày hệ thống.
 - 2026-10-23: Dòng 161 đã qua unit test/build nhưng cần UAT browser; đặc biệt xác nhận Rate Code theo ngày vẫn do backend tái tra giá khi lưu và CompanyDefault được cấu hình active ở branch.
 - 2026-10-23: Dòng 95 đã qua unit test/build nhưng cần UAT browser với payment thực tế có `status=2` và icon cọc ở mép phải thanh Booking; quy tắc Room Plan chỉ đọc response API, không sửa dữ liệu payment.

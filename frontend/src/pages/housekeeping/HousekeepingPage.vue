@@ -158,11 +158,13 @@ onUnmounted(() => document.removeEventListener('click', closeFab))
       <div class="flex-1 overflow-hidden relative">
         <LoadingOverlay :show="isTabLoading" />
         <Transition name="hk-tab" mode="out-in">
-          <component
-            :is="activeComponent"
-            :key="activeTabKey"
-            v-bind="activeTabKey === 'add-service' ? { initialRoomId: route.query.bookingRoomId || '' } : {}"
-          />
+          <KeepAlive :include="['PrintTasksTab', 'ActivityLogTab', 'RoomMapPage', 'LockRoomPage']">
+            <component
+              :is="activeComponent"
+              :key="activeTabKey"
+              v-bind="activeTabKey === 'add-service' ? { initialRoomId: route.query.bookingRoomId || '' } : {}"
+            />
+          </KeepAlive>
         </Transition>
       </div>
     </div>

@@ -58,7 +58,12 @@ onUnmounted(() => {
     <router-view />
   </div>
   <MainLayout v-else>
-    <router-view />
+    <router-view v-slot="{ Component, route: activeRoute }">
+      <KeepAlive>
+        <component :is="Component" v-if="activeRoute.meta.keepAlive" />
+      </KeepAlive>
+      <component :is="Component" v-if="!activeRoute.meta.keepAlive" />
+    </router-view>
   </MainLayout>
 
   <!-- Global UI Elements -->

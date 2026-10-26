@@ -792,10 +792,13 @@ const hoverTooltip = ref({
   y: 0,
   isBelow: false,
   pointerOffset: 0,
+  maxHeight: null,
   room: null,
 })
+const hoverTooltipRef = ref(null)
 
 let tooltipTimeout = null
+let tooltipTargetElement = null
 
 function isLockedRoom(room) {
   if (!room) return false
@@ -804,11 +807,46 @@ function isLockedRoom(room) {
   return hasLock && !hasBooking
 }
 
+async function positionTooltip(rect, room) {
+  await nextTick()
+  if (!hoverTooltip.value.show || hoverTooltip.value.room !== room || !hoverTooltipRef.value) return
+
+  const tooltipWidth = 320
+  const halfWidth = tooltipWidth / 2
+  const margin = 12
+  const gap = 8
+  const viewportWidth = window.visualViewport?.width || window.innerWidth
+  const viewportHeight = window.visualViewport?.height || window.innerHeight
+  const tooltipHeight = hoverTooltipRef.value.getBoundingClientRect().height
+  const targetX = rect.left + rect.width / 2
+  const minX = Math.min(halfWidth + margin, viewportWidth / 2)
+  const maxX = Math.max(minX, viewportWidth - halfWidth - margin)
+  const x = Math.max(minX, Math.min(maxX, targetX))
+  const pointerOffset = Math.max(-halfWidth + 24, Math.min(halfWidth - 24, targetX - x))
+  const spaceAbove = Math.max(0, rect.top - margin - gap)
+  const spaceBelow = Math.max(0, viewportHeight - rect.bottom - margin - gap)
+  const isBelow = spaceBelow >= tooltipHeight || spaceBelow >= spaceAbove
+  const availableHeight = isBelow ? spaceBelow : spaceAbove
+  const maxHeight = tooltipHeight > availableHeight ? Math.max(1, Math.floor(availableHeight)) : null
+  const displayedHeight = Math.min(tooltipHeight, maxHeight ?? tooltipHeight)
+
+  hoverTooltip.value = {
+    ...hoverTooltip.value,
+    x,
+    y: isBelow ? rect.bottom + gap : Math.max(margin, rect.top - gap - displayedHeight),
+    isBelow,
+    pointerOffset,
+    maxHeight,
+  }
+}
+
 function showTooltip(event, room) {
   if (contextMenu.value?.show) return
   const isBooking = room && (room.booking_status === 'occupied' || room.booking_status === 'reserved' || room.booking_status === 'checkout' || isArrivingTomorrow(room) || room.booking_code)
   const isLocked = isLockedRoom(room)
   if (!room || (!isBooking && !isLocked)) return
+
+  if (hoverTooltip.value.show && hoverTooltip.value.room === room && tooltipTargetElement === event.currentTarget) return
 
   if (tooltipTimeout) {
     clearTimeout(tooltipTimeout)
@@ -816,11 +854,10 @@ function showTooltip(event, room) {
   }
 
   const rect = event.currentTarget.getBoundingClientRect()
-  const tooltipHeight = 280
+  tooltipTargetElement = event.currentTarget
   const tooltipWidth = 320
   const halfWidth = tooltipWidth / 2
   const margin = 12
-  const isBelow = rect.top < tooltipHeight
 
   const targetX = rect.left + rect.width / 2
   const clampedX = Math.max(halfWidth + margin, Math.min(window.innerWidth - halfWidth - margin, targetX))
@@ -829,17 +866,20 @@ function showTooltip(event, room) {
   hoverTooltip.value = {
     show: true,
     x: clampedX,
-    y: isBelow ? rect.bottom + 8 : rect.top - 8,
-    isBelow: isBelow,
+    y: rect.bottom + 8,
+    isBelow: true,
     pointerOffset: pointerOffset,
+    maxHeight: null,
     room: room
   }
+  positionTooltip(rect, room)
 }
 
 function hideTooltip() {
   if (tooltipTimeout) clearTimeout(tooltipTimeout)
   tooltipTimeout = setTimeout(() => {
     hoverTooltip.value.show = false
+    tooltipTargetElement = null
   }, 250)
 }
 
@@ -848,6 +888,15 @@ function cancelHide() {
     clearTimeout(tooltipTimeout)
     tooltipTimeout = null
   }
+}
+
+function closeTooltipOnViewportChange() {
+  if (tooltipTimeout) {
+    clearTimeout(tooltipTimeout)
+    tooltipTimeout = null
+  }
+  hoverTooltip.value.show = false
+  tooltipTargetElement = null
 }
 
 function formatLockTooltipDateTime(dateStr) {
@@ -2420,6 +2469,8 @@ onMounted(async () => {
 
   calculateScale()
   window.addEventListener('resize', calculateScale)
+  window.addEventListener('resize', closeTooltipOnViewportChange)
+  window.addEventListener('scroll', closeTooltipOnViewportChange, true)
 
   // Lắng nghe sự kiện realtime qua Laravel Echo
   if (echo) {
@@ -2451,6 +2502,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleRoomMapShortcut)
   window.removeEventListener('click', handleClickOutsideSettings)
   window.removeEventListener('resize', calculateScale)
+  window.removeEventListener('resize', closeTooltipOnViewportChange)
+  window.removeEventListener('scroll', closeTooltipOnViewportChange, true)
   window.removeEventListener('hotel-config-updated', loadRoomStatusPermission)
   document.removeEventListener('visibilitychange', refreshWhenVisible)
   if (roomMapSyncTimer) window.clearInterval(roomMapSyncTimer)
@@ -3595,9 +3648,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
                 <!-- Room List Table view (Bảng danh sách) -->
                 <div v-else
-                  class="relative bg-white rounded-xl shadow-xs border border-slate-200 overflow-x-auto overflow-y-auto min-h-[300px] ml-1">
+                  class="room-list-table-container relative bg-white rounded-xl shadow-xs border border-slate-200 overflow-x-auto overflow-y-auto flex-1 min-h-[300px] max-h-[calc(100vh-140px)] ml-1">
                   <LoadingOverlay :show="isBulkUpdating" />
-                  <div class="sticky top-0 z-20 flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-2">
+                  <div class="sticky top-0 z-30 flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 h-[38px] min-h-[38px]">
                     <div class="flex items-center gap-3">
                       <label class="flex items-center gap-2 text-xs font-semibold text-slate-700">
                         <input type="checkbox" :checked="allVisibleRoomsSelected" @change="toggleSelectVisibleRooms" class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
@@ -4255,15 +4308,16 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
       <Teleport to="body">
         <Transition name="tooltip-fade">
           <div v-if="hoverTooltip.show && hoverTooltip.room && !contextMenu.show"
-            class="fixed z-[9990] pointer-events-none rounded-xl shadow-2xl p-3.5 w-[320px] text-[11px] leading-relaxed -translate-x-1/2"
-            :class="[
-              hoverTooltip.isBelow ? 'translate-y-0' : '-translate-y-full',
-              isLockedRoom(hoverTooltip.room)
-                ? 'bg-[#2e2e2e] text-[#f1f5f9] border border-neutral-700/60'
-                : 'bg-white text-slate-800 border border-slate-300'
-            ]"
+            ref="hoverTooltipRef"
+            class="fixed z-[9990] pointer-events-none w-[320px] text-[11px] leading-relaxed -translate-x-1/2"
             :style="{ top: hoverTooltip.y + 'px', left: hoverTooltip.x + 'px' }" @mouseenter="cancelHide"
             @mouseleave="hideTooltip">
+            <div
+              class="rounded-xl shadow-2xl p-3.5 overflow-y-auto"
+              :class="isLockedRoom(hoverTooltip.room)
+                ? 'bg-[#2e2e2e] text-[#f1f5f9] border border-neutral-700/60'
+                : 'bg-white text-slate-800 border border-slate-300'"
+              :style="hoverTooltip.maxHeight ? { maxHeight: hoverTooltip.maxHeight + 'px' } : undefined">
             <!-- Mode 1: Khóa phòng (OOO / OOS) - Giữ nguyên 100% -->
             <template v-if="isLockedRoom(hoverTooltip.room)">
               <div
@@ -4386,6 +4440,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 </div>
               </div>
             </template>
+            </div>
 
             <!-- Triangle Pointer - canh theo pointerOffset và đồng bộ màu nền -->
             <div
@@ -5418,5 +5473,13 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
   box-shadow: inset 0 0 0 999px rgba(2, 132, 199, 0.08) !important;
   position: relative;
   z-index: 5;
+}
+
+.room-list-table-container thead th {
+  position: sticky !important;
+  top: 38px !important;
+  z-index: 20 !important;
+  background-color: #f8fafc !important;
+  box-shadow: inset 0 -1px 0 #cbd5e1, inset 0 1px 0 #cbd5e1 !important;
 }
 </style>

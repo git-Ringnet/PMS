@@ -55,7 +55,7 @@ const uiStore = useUiStore()
 const authStore = useAuthStore()
 
 const topbarThemeBg = computed(() => {
-  return authStore.settings?.topbar_color || 'var(--pms-custom-theme, #006bdb)'
+  return authStore.themeColor || 'var(--pms-custom-theme, #006bdb)'
 })
 
 const isInHouse = computed(() => {
@@ -2312,12 +2312,11 @@ function parseNumber(val) {
   align-items: center;
 }
 .btn-hd {
-  border-radius: 6px;
-  color: #fff;
+  border-radius: 8px;
   font-size: 12px;
   font-weight: 600;
   height: 32px;
-  padding: 0 14px;
+  padding: 0 12px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -2330,56 +2329,51 @@ function parseNumber(val) {
   user-select: none;
 }
 .btn-hd:hover:not(:disabled) {
-  opacity: 0.92;
+  opacity: 0.95;
   box-shadow: 0 2px 4px 0 rgba(0, 0, 0, 0.1);
 }
 .btn-hd.save {
-  background: #0088ff;
-  border-color: #0088ff;
+  background: #ffffff;
+  color: var(--pms-custom-theme, #006bdb);
+  border-color: rgba(255, 255, 255, 0.4);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 .btn-hd.save:hover:not(:disabled) {
-  background: #0077e6;
-  border-color: #0077e6;
+  background: #f8fafc;
+  color: #0056b3;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
 }
-.btn-hd.edit {
-  background: #0088ff;
-  border-color: #0088ff;
+.btn-hd.edit,
+.btn-hd.cancel,
+.btn-hd.scan {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.35);
+  backdrop-filter: blur(4px);
 }
-.btn-hd.edit:hover:not(:disabled) {
-  background: #0077e6;
-  border-color: #0077e6;
-}
-.btn-hd.cancel {
-  background: #0088ff;
-  border-color: #0088ff;
-}
-.btn-hd.cancel:hover:not(:disabled) {
-  background: #0077e6;
-  border-color: #0077e6;
+.btn-hd.edit:hover:not(:disabled),
+.btn-hd.cancel:hover:not(:disabled),
+.btn-hd.scan:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.28);
+  border-color: rgba(255, 255, 255, 0.5);
+  color: #ffffff;
 }
 .btn-hd.delete {
   background: #dc2626;
-  border-color: #dc2626;
+  border-color: #b91c1c;
+  color: #ffffff;
 }
 .btn-hd.delete:hover:not(:disabled) {
   background: #b91c1c;
-  border-color: #b91c1c;
+  border-color: #991b1b;
 }
-.btn-hd.scan {
-  background: #ffffff;
-  color: #334155;
-  border-color: #cbd5e1;
-}
-.btn-hd.scan:hover:not(:disabled) {
-  background: #f8fafc;
-  color: #0f172a;
-  border-color: #94a3b8;
-}
-.btn-hd.disabled-btn {
-  background: #94a3b8 !important;
-  border-color: #94a3b8 !important;
-  color: #ffffff !important;
-  opacity: 0.5;
+.btn-hd.disabled-btn,
+.btn-hd:disabled {
+  background: rgba(255, 255, 255, 0.12) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+  color: rgba(255, 255, 255, 0.5) !important;
+  opacity: 0.6;
   cursor: not-allowed;
   pointer-events: none;
 }
@@ -2387,13 +2381,23 @@ function parseNumber(val) {
 .close-x-btn {
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.82);
-  font-size: 24px;
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 20px;
   cursor: pointer;
-  margin-left: 10px;
+  margin-left: 6px;
   line-height: 1;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
 }
-.close-x-btn:hover { color: #fff; }
+.close-x-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
 
 /* BODY & MAIN GRID */
 .card-body {
@@ -2407,8 +2411,8 @@ function parseNumber(val) {
   display: grid;
   grid-template-columns: 200px 1fr 1.3fr;
   grid-template-rows: auto auto auto;
-  border: 1.5px solid #cbd5e1;
-  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
   overflow: visible;
   gap: 0;
   background: #fff;
@@ -2437,7 +2441,7 @@ input.always-gray:disabled {
 .cell-guests {
   grid-column: 1;
   grid-row: 1 / 4;
-  border-right: 1.5px solid #cbd5e1;
+  border-right: 1px solid #cbd5e1;
   padding: 10px 12px;
   background: #fff;
   min-width: 0;
@@ -2445,21 +2449,21 @@ input.always-gray:disabled {
 .cell-personal {
   grid-column: 2 / 4;
   grid-row: 1;
-  border-bottom: 1.5px solid #cbd5e1;
+  border-bottom: 1px solid #cbd5e1;
   padding: 10px 14px;
   min-width: 0;
 }
 .cell-docs {
   grid-column: 2 / 4;
   grid-row: 2;
-  border-bottom: 1.5px solid #cbd5e1;
+  border-bottom: 1px solid #cbd5e1;
   padding: 10px 14px;
   min-width: 0;
 }
 .cell-stay {
   grid-column: 2;
   grid-row: 3;
-  border-right: 1.5px solid #cbd5e1;
+  border-right: 1px solid #cbd5e1;
   padding: 10px 12px;
   min-width: 0;
 }
@@ -2482,7 +2486,7 @@ input.always-gray:disabled {
   gap: 6px;
   padding-bottom: 6px;
   margin-bottom: 8px;
-  border-bottom: 1.5px solid #e2e8f0;
+  border-bottom: 1px solid #e2e8f0;
 }
 
 /* FIELD STYLING */
@@ -2497,7 +2501,7 @@ input.always-gray:disabled {
 }
 .f label .req { color: #ef4444; }
 .f input, .f select {
-  border: 1.5px solid #cbd5e1;
+  border: 1px solid #cbd5e1;
   border-radius: 8px;
   padding: 5px 8px;
   font-size: 12px;
@@ -2693,18 +2697,22 @@ input.always-gray:disabled {
 
 .btn-add {
   width: 100%;
-  border: 1.5px dashed #93c5fd;
-  background: none;
+  border: 1px dashed #93c5fd;
+  background: #f8fafc;
   border-radius: 6px;
-  color: #2563eb;
+  color: #0284c7;
   font-size: 12px;
   font-weight: 600;
-  padding: 4px 6px;
+  padding: 5px 8px;
   cursor: pointer;
-  margin-top: 3px;
-  transition: background 0.12s;
+  margin-top: 4px;
+  transition: all 0.15s ease;
 }
-.btn-add:hover { background: #eff6ff; }
+.btn-add:hover {
+  background: #eff6ff;
+  border-color: #38bdf8;
+  color: #0369a1;
+}
 
 /* AVATAR */
 .avatar-block { display: flex; gap: 10px; align-items: flex-start; }
@@ -2713,7 +2721,7 @@ input.always-gray:disabled {
   width: 72px; height: 72px;
   border-radius: 8px;
   background: #f1f5f9;
-  border: 1.5px solid #cbd5e1;
+  border: 1px solid #cbd5e1;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
@@ -2733,12 +2741,12 @@ input.always-gray:disabled {
 }
 .btn-xs:hover:not(:disabled) { background: #f1f5f9; }
 
-/* BUTTON ACTION BLUE (ALWAYS BLUE & CLICKABLE) */
+/* BUTTON ACTION (SECONDARY THEME PILL & CLICKABLE) */
 .btn-act {
   height: 32px;
-  background: #2563eb !important;
-  color: #fff !important;
-  border: none !important;
+  background: #f0f9ff !important;
+  color: #0284c7 !important;
+  border: 1px solid #bae6fd !important;
   border-radius: 6px;
   font-size: 12px;
   font-weight: 600;
@@ -2750,9 +2758,13 @@ input.always-gray:disabled {
   white-space: nowrap;
   flex-shrink: 0;
   opacity: 1 !important;
-  transition: background-color 0.15s;
+  transition: all 0.15s ease;
 }
-.btn-act:hover { background: #1d4ed8 !important; }
+.btn-act:hover {
+  background: #e0f2fe !important;
+  border-color: #7dd3fc !important;
+  color: #0369a1 !important;
+}
 
 /* CHECKBOX & STAY ROW */
 .stay-row-2 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }

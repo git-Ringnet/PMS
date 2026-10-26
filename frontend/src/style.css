@@ -865,15 +865,15 @@ textarea[required]:focus {
   outline: none;
 }
 
-/* 5. Kích thước nội dung chữ đồng nhất giữa các màn hình : Nội dung 12px */
+/* 5. Kích thước nội dung chữ đồng nhất giữa các màn hình : Nội dung 12px, màu chữ #000000D9 */
 table td,
 table th {
   font-size: 12px;
+  color: #000000D9;
 }
 
 table th {
   font-weight: 600;
-  color: #000000D9;
 }
 
 /* Dark mode compatibility cho Dòng 1 */

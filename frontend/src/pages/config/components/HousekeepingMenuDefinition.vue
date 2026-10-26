@@ -15,7 +15,7 @@ import {
 
 const uiStore = useUiStore()
 const authStore = useAuthStore()
-const topbarThemeBg = computed(() => authStore.themeColor || authStore.settings?.topbar_color || 'var(--pms-custom-theme, #006bdb)')
+const topbarThemeBg = computed(() => authStore.themeColor || 'var(--pms-custom-theme, #006bdb)')
 
 const outlets = ref([])
 const hotelServices = ref([])
