@@ -54,8 +54,8 @@ const headerBookingSearchQuery = ref('')
 const headerSearchButtonRef = ref(null)
 const headerBookingSearchPosition = ref({ top: 70, right: 16 })
 
-// Topbar custom background color (default #006bdb)
-const headerBgColor = computed(() => authStore.settings?.topbar_color || '#006bdb')
+// Màu nền hệ thống dùng chung, không lấy từ thiết lập cá nhân của user.
+const headerBgColor = computed(() => authStore.themeColor)
 
 const isColorPickerOpen = ref(false)
 const colorPickerRef = ref(null)
@@ -107,9 +107,12 @@ function updateCssVariables(colorVal) {
   }
 }
 
-function setHeaderColor(colorVal) {
-  authStore.updateUserSettings({ topbar_color: colorVal })
-  updateCssVariables(colorVal)
+async function setHeaderColor(colorVal) {
+  try {
+    await authStore.updateSystemTheme(colorVal)
+  } catch (error) {
+    uiStore.showToast(error.response?.data?.message || 'Không thể cập nhật màu nền hệ thống.', 'error')
+  }
 }
 
 function resetHeaderColor() {
@@ -122,7 +125,7 @@ function resetHeaderColor() {
   activeColorTab.value = 'solid'
 }
 
-watch(() => authStore.settings?.topbar_color, (newColor) => {
+watch(() => authStore.themeColor, (newColor) => {
   if (newColor) {
     updateCssVariables(newColor)
   }
@@ -448,7 +451,7 @@ onMounted(() => {
   }
   
   // Initialize color customization tabs/values
-  const savedBg = authStore.settings?.topbar_color || '#006bdb'
+  const savedBg = authStore.themeColor
   if (savedBg.includes('linear-gradient')) {
     activeColorTab.value = 'gradient'
     const angleMatch = savedBg.match(/(\d+)deg/)
@@ -621,7 +624,6 @@ const menuItems = computed(() => {
       },
       { name: t('submenu.actionHistory'), route: '/frontdesk?tab=history' },
       { name: t('menu.reports'), route: '/reports', reportSlot: true },
-      { name: t('menu.channelManager'), route: '/config' },
     ], 'frontdesk')
   }
   //trang buồng phòng housekeeping
