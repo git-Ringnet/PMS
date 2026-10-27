@@ -116,7 +116,7 @@ return new class
             ['id' => 'weekly_dep_guests', 'header' => 'Khách', 'value' => 'row.dep_guests', 'width' => '10%', 'align' => 'right', 'format' => 'number'],
             ['id' => 'weekly_occ_rooms', 'header' => 'Phòng', 'value' => 'row.occ_rooms', 'width' => '10%', 'align' => 'right', 'format' => 'number'],
             ['id' => 'weekly_occ_guests', 'header' => 'Khách', 'value' => 'row.occ_guests', 'width' => '10%', 'align' => 'right', 'format' => 'number'],
-            ['id' => 'weekly_occupancy_rate', 'header' => 'Công suất (%)', 'value' => 'row.occupancy_rate', 'width' => '14%', 'align' => 'right'],
+            ['id' => 'weekly_occupancy_rate', 'header' => 'Công suất (%)', 'value' => 'row.occupancy_rate', 'width' => '14%', 'align' => 'right', 'format' => 'percent'],
         ];
     }
 
@@ -128,7 +128,7 @@ return new class
 <p class="period"><b>Ngày:</b> {{parameters.p_from_date}} ~ {{parameters.p_to_date}}</p>
 <p class="division"><b>Chi nhánh:</b> {{parameters.p_division_label}}</p>
 <table class="weekly-room-report-table"><thead><tr><th rowspan="2">Ngày</th><th rowspan="2">Thứ</th><th colspan="2">ĐẾN</th><th colspan="2">ĐI</th><th colspan="2">Ở</th><th rowspan="2">CÔNG SUẤT (%)</th></tr><tr><th>Phòng</th><th>Khách</th><th>Phòng</th><th>Khách</th><th>Phòng</th><th>Khách</th></tr></thead>
-<tbody><tr class="pms-detail-row" data-source="rows"><td class="date-cell">{{row.report_date_display}}</td><td>{{row.day_name}}</td><td class="number-cell">{{row.arr_rooms|number}}</td><td class="number-cell">{{row.arr_guests|number}}</td><td class="number-cell">{{row.dep_rooms|number}}</td><td class="number-cell">{{row.dep_guests|number}}</td><td class="number-cell">{{row.occ_rooms|number}}</td><td class="number-cell">{{row.occ_guests|number}}</td><td class="number-cell">{{row.occupancy_rate}}%</td></tr></tbody>
+<tbody><tr class="pms-detail-row" data-source="rows"><td class="date-cell">{{row.report_date_display}}</td><td>{{row.day_name}}</td><td class="number-cell">{{row.arr_rooms|number}}</td><td class="number-cell">{{row.arr_guests|number}}</td><td class="number-cell">{{row.dep_rooms|number}}</td><td class="number-cell">{{row.dep_guests|number}}</td><td class="number-cell">{{row.occ_rooms|number}}</td><td class="number-cell">{{row.occ_guests|number}}</td><td class="number-cell">{{row.occupancy_rate|percent}}</td></tr></tbody>
 <tfoot><tr class="pms-custom-row"><td>Tổng</td><td>7</td><td>{{aggregate.rows.sum.arr_rooms|number}}</td><td>{{aggregate.rows.sum.arr_guests|number}}</td><td>{{aggregate.rows.sum.dep_rooms|number}}</td><td>{{aggregate.rows.sum.dep_guests|number}}</td><td>{{aggregate.rows.sum.occ_rooms|number}}</td><td>{{aggregate.rows.sum.occ_guests|number}}</td><td>{{parameters.p_weekly_occupancy_rate}}%</td></tr></tfoot></table>
 <p class="note">Công suất tuần = Tổng phòng ở / Tổng phòng khả dụng trong 7 ngày.</p>
 <div class="signatures"><span>Người lập biểu</span><span>Trưởng bộ phận</span><span>Giám đốc khách sạn</span></div>

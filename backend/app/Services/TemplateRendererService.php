@@ -41,6 +41,10 @@ class TemplateRendererService
             return is_numeric($value) ? number_format((float) $value, 0, ',', '.') : '';
         }, $html);
 
+        $html = preg_replace_callback('/\{\{([a-zA-Z0-9_\.]+)\|percent\}\}/', function (array $matches) use ($data): string {
+            return $this->formatPercent($this->getValueByPath($data, $matches[1]));
+        }, $html);
+
         // Clean up any remaining unresolved placeholders
         $html = preg_replace('/\{\{[a-zA-Z0-9_\.]+(?:\|[a-zA-Z0-9_]+)?\}\}/', '', $html);
 
@@ -396,6 +400,9 @@ class TemplateRendererService
             if ($modifier === 'number') {
                 return is_numeric($value) ? number_format((float) $value, 0, ',', '.') : '';
             }
+            if ($modifier === 'percent') {
+                return $this->formatPercent($value);
+            }
 
             return ($value === null || $value === '') ? (string) ($modifier ?? '') : (string) $value;
         }, $template);
@@ -409,6 +416,9 @@ class TemplateRendererService
             $modifier = $matches[2] ?? null;
             if ($modifier === 'number') {
                 return number_format((float) $sum, 0, ',', '.');
+            }
+            if ($modifier === 'percent') {
+                return $this->formatPercent($sum);
             }
             return (string) $sum;
         }, $rendered);
@@ -481,11 +491,14 @@ class TemplateRendererService
                 $prefixPattern = preg_quote((string) $itemPrefix, '/');
                 $currentRow = preg_replace_callback(
                     '/\{\{(?:'.$prefixPattern.'|item)\.([A-Za-z0-9_]+)(?:\|([^}]+))?\}\}/',
-                    static function (array $matches) use ($item): string {
+                    function (array $matches) use ($item): string {
                         $value = $item[$matches[1]] ?? null;
                         $modifier = $matches[2] ?? null;
                         if ($modifier === 'number') {
                             return is_numeric($value) ? number_format((float) $value, 0, ',', '.') : '';
+                        }
+                        if ($modifier === 'percent') {
+                            return $this->formatPercent($value);
                         }
 
                         return ($value === null || $value === '') ? (string) ($modifier ?? '') : (string) $value;
@@ -515,6 +528,11 @@ class TemplateRendererService
         }
 
         return $array;
+    }
+
+    private function formatPercent(mixed $value): string
+    {
+        return is_numeric($value) ? number_format((float) $value, 2, '.', '').'%' : '';
     }
 
     /**
