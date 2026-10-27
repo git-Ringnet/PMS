@@ -1,5 +1,11 @@
 # Project Memory — PMS
 
+- 2026-10-27: Room Map — Bảng Danh sách tăng chiều rộng tối thiểu và các cột header dài để không bị rút gọn; giữ cuộn ngang cục bộ. Chỉ đổi `RoomMapPage.vue`, không đổi API, dữ liệu, filter hay import legacy. Frontend build đạt.
+
+- 2026-10-27: Room Map — Thanh thống kê đầu trang giữ đủ nội dung cho thẻ Đã đến/Đã đi/Đang ở/Khóa OOO/Khóa OOS/Công suất: đặt chiều rộng tối thiểu và không ngắt nhãn; khi màn hình hẹp, chỉ dải thẻ cuộn ngang. Không đổi API, số liệu, lọc, dữ liệu hay import legacy. Frontend build đạt.
+
+- 2026-10-27: Dòng 265 — Danh sách Phòng Đến/Đi/Ở tách chính xác `NL/EB/TE`: ưu tiên danh sách trẻ/em bé đang hoạt động theo `age_group`, chỉ fallback về `booking_rooms.children_qty`/`babies` khi không có chi tiết; không dùng `extra_bed_qty` cho Em bé. Cột số dùng `tabular-nums`, icon trạng thái vẫn ở cạnh số phòng và yêu cầu đặc biệt giữ luồng hiện có. Chỉ đổi `CheckInPage.vue`, không đổi API, database, import legacy, giường phụ hay luồng nhận/trả phòng. Frontend build đạt.
+
 - 2026-10-27: Khắc phục lớp menu PMS cũ lộ phía dưới Tạo Đăng Ký: App gán key riêng cho route KeepAlive và route thường, buộc Vue gỡ đúng component route cũ khi điều hướng mà vẫn giữ trạng thái Room Map. Không đổi API, dữ liệu, database hay import legacy. Frontend build đạt.
 
 - 2026-10-27: Sửa tooltip Room Map còn hiển thị trên menu PMS khi chuyển trang: Room Map được KeepAlive và tooltip Teleport vào `body`, nên đóng tooltip/context menu tại `onDeactivated`. Không đổi API, dữ liệu, trạng thái phòng hay import legacy. Frontend build đạt.

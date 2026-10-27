@@ -810,6 +810,14 @@ function isLockedRoom(room) {
   return hasLock && !hasBooking
 }
 
+function hasBookingForRoom(room) {
+  if (!room) return false
+  return room.booking_status === 'occupied'
+    || room.booking_status === 'reserved'
+    || room.booking_status === 'checkout'
+    || Boolean(room.booking_code || room.booking_id)
+}
+
 async function positionTooltip(rect, room) {
   await nextTick()
   if (!hoverTooltip.value.show || hoverTooltip.value.room !== room || !hoverTooltipRef.value) return
@@ -2624,7 +2632,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
         <!-- TOP HORIZONTAL METRICS BAR (Only displayed for Room Map tab) -->
         <div v-if="currentTab === 'room-map'"
           class="relative bg-white border-b border-slate-200 px-3 xl:px-5 py-1 xl:py-1.5 compact-low-h-metrics shrink-0 flex items-center justify-between gap-2.5 xl:gap-3.5 select-none">
-          <div class="flex items-center gap-2 xl:gap-2.5 overflow-x-auto px-1 py-0.5 scrollbar-thin">
+          <div class="flex min-w-0 flex-1 items-center gap-2 xl:gap-2.5 overflow-x-auto px-1 py-0.5 scrollbar-thin">
             <!-- Date card -->
             <button @click="handleCurrentClick"
               class="bg-white border hover:border-slate-300 rounded-lg px-3 py-1.5 flex items-center gap-2.5 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu border-slate-200/80">
@@ -2669,7 +2677,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
             <!-- Đã đến card -->
             <button @click="handleMetricClick(ROOM_STATUSES.RESERVED)"
-              class="bg-white border hover:border-slate-300 rounded-lg px-3 py-1.5 flex items-center gap-2.5 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
+              class="min-w-[112px] bg-white border hover:border-slate-300 rounded-lg px-3 py-1.5 flex items-center gap-2.5 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
               :class="activeFilter === ROOM_STATUSES.RESERVED ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
               <div
                 class="w-7 h-7 rounded-md bg-gradient-to-br from-emerald-50 to-emerald-100/60 border border-emerald-200/50 flex items-center justify-center text-emerald-600 shadow-xs shrink-0">
@@ -2685,7 +2693,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 </svg>
               </div>
               <div class="flex flex-col">
-                <span class="text-[9.5px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{
+                <span class="text-[9.5px] uppercase leading-tight whitespace-nowrap" :class="TEXT_THEME.statsLabel">{{
                   t('roomMap.arrivals')
                   }}</span>
                 <span class="text-[12px] mt-0.5" :class="TEXT_THEME.statsValue">{{ checkinStats }}</span>
@@ -2694,7 +2702,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
             <!-- Đã đi card -->
             <button @click="handleMetricClick(ROOM_STATUSES.CHECKOUT)"
-              class="bg-white border hover:border-slate-300 rounded-lg px-3 py-1.5 flex items-center gap-2.5 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
+              class="min-w-[112px] bg-white border hover:border-slate-300 rounded-lg px-3 py-1.5 flex items-center gap-2.5 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
               :class="activeFilter === ROOM_STATUSES.CHECKOUT ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
               <div
                 class="w-7 h-7 rounded-md bg-gradient-to-br from-rose-50 to-rose-100/60 border border-rose-200/50 flex items-center justify-center text-rose-500 shadow-xs shrink-0">
@@ -2710,7 +2718,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 </svg>
               </div>
               <div class="flex flex-col">
-                <span class="text-[9.5px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{
+                <span class="text-[9.5px] uppercase leading-tight whitespace-nowrap" :class="TEXT_THEME.statsLabel">{{
                   t('roomMap.departures') }}</span>
                 <span class="text-[12px] mt-0.5" :class="TEXT_THEME.statsValue">{{ checkoutStats }}</span>
               </div>
@@ -2718,7 +2726,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
             <!-- Đang ở card -->
             <button @click="handleMetricClick(ROOM_STATUSES.OCCUPIED)"
-              class="bg-white border hover:border-slate-300 rounded-lg px-3 py-1.5 flex items-center gap-2.5 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
+              class="min-w-[112px] bg-white border hover:border-slate-300 rounded-lg px-3 py-1.5 flex items-center gap-2.5 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
               :class="activeFilter === ROOM_STATUSES.OCCUPIED ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
               <div
                 class="w-7 h-7 rounded-md bg-gradient-to-br from-sky-50 to-sky-100/80 border border-sky-200/50 flex items-center justify-center text-sky-600 shadow-xs shrink-0">
@@ -2730,7 +2738,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 </svg>
               </div>
               <div class="flex flex-col">
-                <span class="text-[9.5px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{
+                <span class="text-[9.5px] uppercase leading-tight whitespace-nowrap" :class="TEXT_THEME.statsLabel">{{
                   t('roomMap.occupied')
                   }}</span>
                 <span class="text-[12px] mt-0.5" :class="TEXT_THEME.statsValue">{{ occupiedStats }}</span>
@@ -2739,14 +2747,14 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
             <!-- Khóa OOO card -->
             <button @click="handleMetricClick('OOO')"
-              class="bg-white border hover:border-slate-300 rounded-lg px-3 py-1.5 flex items-center gap-2.5 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
+              class="min-w-[112px] bg-white border hover:border-slate-300 rounded-lg px-3 py-1.5 flex items-center gap-2.5 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
               :class="activeFilter === 'OOO' ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
               <div
                 class="w-7 h-7 rounded-md bg-gradient-to-br from-amber-50 to-amber-100/60 border border-amber-200/50 flex items-center justify-center shadow-xs shrink-0">
                 <RoomIcon name="ooo" class="w-4 h-4" />
               </div>
               <div class="flex flex-col">
-                <span class="text-[9.5px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{ t('roomMap.lockOoo')
+                <span class="text-[9.5px] uppercase leading-tight whitespace-nowrap" :class="TEXT_THEME.statsLabel">{{ t('roomMap.lockOoo')
                   }}</span>
                 <span class="text-[12px] mt-0.5" :class="TEXT_THEME.statsValue">{{roomStore.rooms.filter(r => r.room_status_code === 'ooo' || r.room_status_code === 'occupied_ooo' || (r.lock_type === 'OOO' && r.room_status_code !== 'housekeeping')).length }}</span>
               </div>
@@ -2754,14 +2762,14 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
             <!-- Khóa OOS card -->
             <button @click="handleMetricClick('OOS')"
-              class="bg-white border hover:border-slate-300 rounded-lg px-3 py-1.5 flex items-center gap-2.5 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
+              class="min-w-[112px] bg-white border hover:border-slate-300 rounded-lg px-3 py-1.5 flex items-center gap-2.5 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
               :class="activeFilter === 'OOS' ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
               <div
                 class="w-7 h-7 rounded-md bg-gradient-to-br from-emerald-50 to-emerald-100/60 border border-emerald-200/40 flex items-center justify-center text-emerald-600 shadow-xs shrink-0">
                 <RoomIcon name="oos" class="w-4 h-4 text-emerald-600" />
               </div>
               <div class="flex flex-col">
-                <span class="text-[9.5px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{ t('roomMap.lockOos')
+                <span class="text-[9.5px] uppercase leading-tight whitespace-nowrap" :class="TEXT_THEME.statsLabel">{{ t('roomMap.lockOos')
                   }}</span>
                 <span class="text-[12px] mt-0.5" :class="TEXT_THEME.statsValue">{{roomStore.rooms.filter(r => r.room_status_code === 'oos' || (r.lock_type === 'OOS' && r.room_status_code !== 'housekeeping')).length }}</span>
               </div>
@@ -2769,7 +2777,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
             <!-- Công suất card -->
             <button @click="openStatsModal"
-              class="bg-white border hover:border-slate-300 rounded-lg px-3 py-1.5 flex items-center gap-2.5 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
+              class="min-w-[112px] bg-white border hover:border-slate-300 rounded-lg px-3 py-1.5 flex items-center gap-2.5 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
               :class="showStatsModal ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
               <div
                 class="w-7 h-7 rounded-full flex items-center justify-center text-slate-800 font-extrabold text-[9.5px] shrink-0 relative">
@@ -2786,7 +2794,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 </span>
               </div>
               <div class="flex flex-col">
-                <span class="text-[9.5px] uppercase leading-tight" :class="TEXT_THEME.statsLabel">{{
+                <span class="text-[9.5px] uppercase leading-tight whitespace-nowrap" :class="TEXT_THEME.statsLabel">{{
                   t('roomMap.occupancy')
                   }}</span>
                 <span class="text-[12px] mt-0.5" :class="TEXT_THEME.statsValue">{{ occupancyRateStats }}</span>
@@ -3642,7 +3650,10 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         <!-- Room Content (Centered, shifted slightly up to leave safe space for bottom icons) -->
                         <div class="absolute inset-x-1 flex flex-col items-center justify-center overflow-hidden text-center pointer-events-none -translate-y-1/2"
                           :class="settings.roomHeight < 75 ? 'top-[33%]' : (settings.roomHeight < 90 || cardScale < 0.85 ? 'top-[36%]' : 'top-[42%]')"
-                          :style="{ maxHeight: (settings.roomHeight < 80 ? 'calc(100% - 16px)' : 'calc(100% - 10px)') }">
+                          :style="{
+                            maxHeight: (settings.roomHeight < 80 ? 'calc(100% - 16px)' : 'calc(100% - 10px)'),
+                            ...(hasBookingForRoom(room) ? { marginTop: '4px' } : {})
+                          }">
                           <!-- Room Number -->
                           <div
                             class="font-bold leading-tight text-center w-full flex items-center justify-center gap-1"
@@ -3738,7 +3749,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                       </button>
                     </div>
                   </div>
-                  <table class="w-full text-left border-collapse text-xs table-fixed min-w-[1740px]">
+                  <table class="w-full text-left border-collapse text-xs table-fixed min-w-[2350px]">
                     <thead>
                       <tr class="bg-slate-50 border-b border-slate-200 select-none whitespace-nowrap text-slate-700 font-semibold" :class="TEXT_THEME.tableHeader">
                         <!-- 1. Checkbox / STT -->
@@ -3772,7 +3783,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 3. TT Phòng [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[90px] text-center align-middle border" title="Tình trạng phòng">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[120px] text-center align-middle border" title="Tình trạng phòng">
                           <div class="flex items-center justify-between gap-1 w-full">
                             <span class="truncate" title="Tình trạng phòng">TT Phòng</span>
                             <button type="button" @click.stop="toggleColFilter('roomStatus')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('roomStatus') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc TT Phòng">
@@ -3838,7 +3849,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 6. Loại phòng [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[100px] text-center align-middle border" title="Loại phòng">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[125px] text-center align-middle border" title="Loại phòng">
                           <div class="flex items-center justify-between gap-1 w-full">
                             <span class="truncate" title="Loại phòng">Loại Phòng</span>
                             <button type="button" @click.stop="toggleColFilter('roomType')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('roomType') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc loại phòng">
@@ -3862,7 +3873,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 7. Dạng phòng [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[100px] text-center align-middle border" title="Dạng phòng">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[125px] text-center align-middle border" title="Dạng phòng">
                           <div class="flex items-center justify-between gap-1 w-full">
                             <span class="truncate" title="Dạng phòng">Dạng Phòng</span>
                             <button type="button" @click.stop="toggleColFilter('roomShape')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('roomShape') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc dạng phòng">
@@ -4010,7 +4021,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 14. Thêm giường [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[90px] text-center align-middle border" title="Thêm giường (Extra bed)">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[125px] text-center align-middle border" title="Thêm giường (Extra bed)">
                           <div class="flex items-center justify-between gap-1 w-full">
                             <span class="truncate" title="Thêm giường (Extra bed)">Thêm Giường</span>
                             <button type="button" @click.stop="toggleColFilter('extraBed')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('extraBed') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc thêm giường">
@@ -4033,7 +4044,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 15. Yêu cầu ĐB [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[95px] text-center align-middle border" title="Yêu cầu đặc biệt (YCĐB)">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[145px] text-center align-middle border" title="Yêu cầu đặc biệt (YCĐB)">
                           <div class="flex items-center justify-between gap-1 w-full">
                             <span class="truncate" title="Yêu cầu đặc biệt (YCĐB)">Yêu Cầu ĐB</span>
                             <button type="button" @click.stop="toggleColFilter('specialRequests')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('specialRequests') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc yêu cầu đặc biệt">
@@ -4056,7 +4067,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 16. Nhận phòng trễ [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[110px] text-center align-middle border" title="Nhận phòng trễ (Late check-in)">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[145px] text-center align-middle border" title="Nhận phòng trễ (Late check-in)">
                           <div class="flex items-center justify-between gap-1 w-full">
                             <span class="truncate" title="Nhận phòng trễ (Late check-in)">Nhận Phòng Trễ</span>
                             <button type="button" @click.stop="toggleColFilter('lateCheckin')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('lateCheckin') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc nhận phòng trễ">
@@ -4079,7 +4090,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 17. Chuyển phòng kế hoạch [▾] -->
-                        <th class="p-2 relative col-filter-container w-[130px] text-center align-middle border-r border-slate-200 border" title="Chuyển phòng kế hoạch">
+                        <th class="p-2 relative col-filter-container w-[190px] text-center align-middle border-r border-slate-200 border" title="Chuyển phòng kế hoạch">
                           <div class="flex items-center justify-between gap-1 w-full">
                             <span class="truncate" title="Chuyển phòng kế hoạch">Chuyển Phòng Kế Hoạch</span>
                             <button type="button" @click.stop="toggleColFilter('planMove')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('planMove') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc chuyển phòng">
