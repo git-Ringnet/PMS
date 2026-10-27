@@ -306,6 +306,9 @@ const signaturePreviewUrl = ref(null)
 const isModalOpen = ref(false)
 const isEditMode = ref(false)
 const currentId = ref(null)
+const isResetPasswordModalOpen = ref(false)
+const resetPasswordForm = ref({ password: '', password_confirmation: '' })
+const resetPasswordError = ref('')
 
 const emptyForm = () => ({
   employee_code: '',
@@ -341,6 +344,23 @@ onMounted(async () => {
     console.error('Lỗi tải dữ liệu tổ chức ban đầu:', err)
   }
 })
+
+const handleResetPasswordKeydown = (event) => {
+  if (event.key === 'Escape') closeResetPasswordModal()
+}
+
+const closeResetPasswordModal = () => {
+  isResetPasswordModalOpen.value = false
+  resetPasswordForm.value = { password: '', password_confirmation: '' }
+  resetPasswordError.value = ''
+}
+
+watch(isResetPasswordModalOpen, (isOpen) => {
+  if (isOpen) window.addEventListener('keydown', handleResetPasswordKeydown)
+  else window.removeEventListener('keydown', handleResetPasswordKeydown)
+})
+
+onBeforeUnmount(() => window.removeEventListener('keydown', handleResetPasswordKeydown))
 
 const loadData = async () => {
   loading.value = true
@@ -668,22 +688,35 @@ const deleteSignatureDirectly = async () => {
 
 const handleResetPassword = async () => {
   if (!isEditMode.value) return
-  const userEmail = form.value.email || 'email của nhân viên'
-  const confirmed = await uiStore.confirm({
-    title: 'Đặt lại mật khẩu',
-    message: `Bạn có chắc chắn muốn đặt lại mật khẩu của nhân viên này về Email (${userEmail})?`,
-    confirmText: 'Đặt lại',
-    cancelText: 'Hủy'
-  })
-  if (!confirmed) return
+  resetPasswordForm.value = { password: '', password_confirmation: '' }
+  resetPasswordError.value = ''
+  isResetPasswordModalOpen.value = true
+}
+
+const submitResetPassword = async () => {
+  const { password, password_confirmation: passwordConfirmation } = resetPasswordForm.value
+  if (!password || !passwordConfirmation) {
+    resetPasswordError.value = 'Vui lòng nhập đủ mật khẩu mới và xác nhận mật khẩu.'
+    return
+  }
+  if (password.length < 6) {
+    resetPasswordError.value = 'Mật khẩu mới phải có ít nhất 6 ký tự.'
+    return
+  }
+  if (password !== passwordConfirmation) {
+    resetPasswordError.value = 'Xác nhận mật khẩu mới không khớp.'
+    return
+  }
+
   try {
     loading.value = true
-    const res = await resetUserPassword(currentId.value)
-    const msg = res.data?.message || `Đã đặt lại mật khẩu về email (${userEmail})!`
+    const res = await resetUserPassword(currentId.value, resetPasswordForm.value)
+    const msg = res.data?.message || 'Đã đặt lại mật khẩu nhân viên thành công.'
+    closeResetPasswordModal()
     uiStore.showToast(msg, 'success')
   } catch (err) {
     console.error(err)
-    uiStore.showToast('Không thể đặt lại mật khẩu', 'error')
+    resetPasswordError.value = err.response?.data?.message || 'Không thể đặt lại mật khẩu.'
   } finally {
     loading.value = false
   }
@@ -1419,6 +1452,58 @@ const changePage = (page) => {
           </div>
         </div>
       </div>
+    </div>
+
+    <div
+      v-if="isResetPasswordModalOpen"
+      class="fixed inset-0 z-[60] flex items-center justify-center bg-black/55 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="reset-password-title"
+    >
+      <form class="w-full max-w-md overflow-hidden rounded-xl bg-white shadow-2xl" @submit.prevent="submitResetPassword">
+        <div class="flex items-center justify-between px-5 py-3 text-white" style="background: var(--pms-custom-theme, #006bdb)">
+          <h2 id="reset-password-title" class="text-sm font-semibold">Đặt Lại Mật Khẩu</h2>
+          <button type="button" class="btn-pms-close h-8 min-w-8 px-2" aria-label="Đóng" @click="closeResetPasswordModal">✕</button>
+        </div>
+
+        <div class="space-y-4 p-5 text-xs">
+          <p class="text-[#000000D9]">Nhân viên: <span class="font-semibold">{{ form.name }}</span></p>
+
+          <label class="flex flex-col gap-1 font-semibold text-[#000000D9]">
+            Mật Khẩu Mới <span class="text-red-500">*</span>
+            <input
+              v-model="resetPasswordForm.password"
+              type="password"
+              autocomplete="new-password"
+              minlength="6"
+              required
+              class="h-9 rounded-lg border border-[#F1DD8A] bg-[#FFF8DB] px-3 font-normal text-[#000000D9] outline-none focus:border-yellow-500"
+            >
+          </label>
+
+          <label class="flex flex-col gap-1 font-semibold text-[#000000D9]">
+            Xác Nhận Mật Khẩu Mới <span class="text-red-500">*</span>
+            <input
+              v-model="resetPasswordForm.password_confirmation"
+              type="password"
+              autocomplete="new-password"
+              minlength="6"
+              required
+              class="h-9 rounded-lg border border-[#F1DD8A] bg-[#FFF8DB] px-3 font-normal text-[#000000D9] outline-none focus:border-yellow-500"
+            >
+          </label>
+
+          <p v-if="resetPasswordError" class="text-red-600" role="alert">{{ resetPasswordError }}</p>
+        </div>
+
+        <div class="flex justify-end gap-2 border-t border-slate-200 bg-slate-50 px-5 py-3">
+          <button type="button" class="btn-pms-close h-8" @click="closeResetPasswordModal">Đóng</button>
+          <button type="submit" class="btn-pms-primary h-8" :disabled="loading">
+            <span aria-hidden="true">✓</span> Lưu Mật Khẩu
+          </button>
+        </div>
+      </form>
     </div>
   </div>
 </template>
