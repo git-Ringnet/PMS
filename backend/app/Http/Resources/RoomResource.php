@@ -33,7 +33,7 @@ class RoomResource extends JsonResource
             'is_priority_cleaning' => (bool) $this->is_priority_cleaning,
             'is_do_not_disturb' => (bool) $this->is_do_not_disturb,
             'max_guests' => $this->max_guests,
-            'floor' => (int) $this->floor,
+            'floor' => $this->floor,
             'area' => $this->area,
             'extra_beds_limit' => $this->extra_beds_limit,
             'grid_row' => $this->grid_row,

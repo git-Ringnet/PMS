@@ -265,8 +265,12 @@ CSS;
         foreach ($columns as $column) {
             $field = substr((string) $column['value'], 4);
             $class = $field === 'Date' ? ' class="date"' : '';
-            $modifier = ($column['format'] ?? '') === 'number' ? '|number' : '';
-            $suffix = ($column['format'] ?? '') === 'percent' ? '%' : '';
+            $modifier = match ($column['format'] ?? '') {
+                'number' => '|number',
+                'percent' => '|percent',
+                default => '',
+            };
+            $suffix = '';
             $html .= '<td'.$class.'>{{row.'.$field.$modifier.'}}'.$suffix.'</td>';
         }
         $html .= '</tr></tbody><tfoot><tr>';

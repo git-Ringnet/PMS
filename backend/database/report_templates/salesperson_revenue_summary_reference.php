@@ -96,7 +96,8 @@ return new class
         $html .= '<tr>'; foreach ($columns as $column) $html .= '<th>'.($column['header'] ?? '').'</th>'; $html .= '</tr></thead><tbody><tr class="pms-detail-row" data-source="'.($block['dataSource'] ?? 'rows').'">';
         foreach ($columns as $column) {
             $value = (string) ($column['value'] ?? ''); if (($column['format'] ?? '') === 'number') $value .= '|number';
-            $suffix = ($column['format'] ?? '') === 'percent' ? '%' : '';
+            if (($column['format'] ?? '') === 'percent') $value .= '|percent';
+            $suffix = '';
             $html .= '<td class="'.htmlspecialchars((string) ($column['align'] ?? 'left'), ENT_QUOTES, 'UTF-8').'">{{'.$value.'}}'.$suffix.'</td>';
         }
         $html .= '</tr></tbody>';

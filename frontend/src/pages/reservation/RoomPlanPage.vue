@@ -5211,7 +5211,7 @@ function getRoomStatusIconName(item) {
               ]"
               :title="'Danh sách phòng bận ngày ' + day.dateStr + ':\n' + (dynamicStats.occRooms[idx]?.join(', ') || 'Không có')"
             >
-              {{ dynamicStats.occ[idx] }} ({{ dynamicStats.totalRooms > 0 ? ((dynamicStats.occ[idx] / dynamicStats.totalRooms) * 100).toFixed(2) : 0 }}%)
+              {{ dynamicStats.occ[idx] }} ({{ dynamicStats.totalRooms > 0 ? ((dynamicStats.occ[idx] / dynamicStats.totalRooms) * 100).toFixed(2) : '0.00' }}%)
             </td>
           </tr>
 
