@@ -578,9 +578,11 @@ class BookingFourSectionsTest extends TestCase
             ->assertJsonPath('data.0.id', $roomB->id)
             ->assertJsonPath('data.1.id', $roomA->id);
 
+        // Dòng 294: trùng số phòng không loại phòng mà hỏi xác nhận xóa số phòng trùng.
         $this->postJson("/api/bookings/{$booking->id}/restore", ['room_ids' => [$roomA->id, $roomB->id]])
-            ->assertStatus(422)
-            ->assertJsonPath('ineligible_rooms.0', '102: đã được đặt bởi ' . $other->booking_code);
+            ->assertOk()
+            ->assertJsonPath('needs_duplicate_confirm', true)
+            ->assertJsonPath('duplicate_rooms.0.booking_code', $other->booking_code);
         $this->assertSame(BookingRoom::STATUS_CANCELLED, (int) $roomA->fresh()->status);
         $this->assertSame(Booking::STATUS_DELETED, (int) $booking->fresh()->status);
 
