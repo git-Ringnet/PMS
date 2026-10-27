@@ -57,7 +57,7 @@ const options = ref({
 // 12 fields chính thức theo đúng thiết kế mẫu + 4 fields mở rộng
 const FIELD_DEFINITIONS = {
   mabk: { id: 'mabk', field: 'booking_code', label: 'Mã BK', type: 'input', placeholder: 'Mã BK' },
-  tinhtranglt: { id: 'tinhtranglt', field: 'status', label: 'Tình trạng lưu trú', type: 'select', optionsKey: 'statuses' },
+  tinhtranglt: { id: 'tinhtranglt', field: 'stay_status', label: 'Tình trạng lưu trú', type: 'select', optionsKey: 'stay_statuses' },
   refcode: { id: 'refcode', field: 'reference_code', label: 'Ref Code', type: 'input', placeholder: 'Nhập Ref Code' },
   bookingname: { id: 'bookingname', field: 'booking_name', label: 'Booking Name', type: 'input', placeholder: 'Nhập tên đăng ký' },
   bookingstatus: { id: 'bookingstatus', field: 'registration_status_id', label: 'Booking Status', type: 'select', optionsKey: 'registration_statuses' },
@@ -187,6 +187,7 @@ const emptyFilters = () => ({
   to_date: auth.systemDate || localStorage.getItem('pms_system_date') || '',
   search: '',
   status: '',
+  stay_status: '',
   booking_code: '',
   reference_code: '',
   booking_name: '',
@@ -265,6 +266,18 @@ const statusOptions = [
   { value: '2', label: 'Đã trả phòng' },
   { value: '3', label: 'Đã hủy' },
   { value: '4', label: 'No-show' }
+]
+
+// Dòng 451: lọc tình trạng lưu trú theo nghiệp vụ Link Hotel (đến/đã đến/đang ở/đi/đã đi/hủy),
+// không phải theo tình trạng phòng. Danh sách statusOptions ở trên chỉ dùng để hiển thị.
+const stayStatusOptions = [
+  { value: '', label: 'Tất cả' },
+  { value: 'arrival', label: 'Đến (Arrival) - chưa check in' },
+  { value: 'checkin', label: 'Đã đến (Checked in)' },
+  { value: 'inhouse', label: 'Đang ở (In house)' },
+  { value: 'departure', label: 'Đi (Departure) - chưa check out' },
+  { value: 'checkout', label: 'Đã đi (Checked out)' },
+  { value: 'cancel', label: 'Đã hủy (Cancel)' }
 ]
 
 const tabItems = [
@@ -579,6 +592,7 @@ watch(() => filters.value.to_date, (newTo) => {
 // Helper lấy options theo optionsKey
 function getSelectOptions(key) {
   if (key === 'statuses') return statusOptions
+  if (key === 'stay_statuses') return stayStatusOptions
   if (key === 'registration_statuses') return (options.value.registration_statuses || []).filter(status => status.booking_status_id != null).map(status => ({
     value: status.booking_status_id,
     name: status.name,
