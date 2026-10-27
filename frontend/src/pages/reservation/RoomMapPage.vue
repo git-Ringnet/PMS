@@ -810,6 +810,14 @@ function isLockedRoom(room) {
   return hasLock && !hasBooking
 }
 
+function hasBookingForRoom(room) {
+  if (!room) return false
+  return room.booking_status === 'occupied'
+    || room.booking_status === 'reserved'
+    || room.booking_status === 'checkout'
+    || Boolean(room.booking_code || room.booking_id)
+}
+
 async function positionTooltip(rect, room) {
   await nextTick()
   if (!hoverTooltip.value.show || hoverTooltip.value.room !== room || !hoverTooltipRef.value) return
@@ -3642,7 +3650,10 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         <!-- Room Content (Centered, shifted slightly up to leave safe space for bottom icons) -->
                         <div class="absolute inset-x-1 flex flex-col items-center justify-center overflow-hidden text-center pointer-events-none -translate-y-1/2"
                           :class="settings.roomHeight < 75 ? 'top-[33%]' : (settings.roomHeight < 90 || cardScale < 0.85 ? 'top-[36%]' : 'top-[42%]')"
-                          :style="{ maxHeight: (settings.roomHeight < 80 ? 'calc(100% - 16px)' : 'calc(100% - 10px)') }">
+                          :style="{
+                            maxHeight: (settings.roomHeight < 80 ? 'calc(100% - 16px)' : 'calc(100% - 10px)'),
+                            ...(hasBookingForRoom(room) ? { marginTop: '4px' } : {})
+                          }">
                           <!-- Room Number -->
                           <div
                             class="font-bold leading-tight text-center w-full flex items-center justify-center gap-1"
