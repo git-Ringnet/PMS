@@ -60,9 +60,17 @@ onUnmounted(() => {
   <MainLayout v-else>
     <router-view v-slot="{ Component, route: activeRoute }">
       <KeepAlive>
-        <component :is="Component" v-if="activeRoute.meta.keepAlive" />
+        <component
+          :is="Component"
+          v-if="activeRoute.meta.keepAlive"
+          :key="activeRoute.name"
+        />
       </KeepAlive>
-      <component :is="Component" v-if="!activeRoute.meta.keepAlive" />
+      <component
+        v-if="!activeRoute.meta.keepAlive"
+        :is="Component"
+        :key="activeRoute.name"
+      />
     </router-view>
   </MainLayout>
 
