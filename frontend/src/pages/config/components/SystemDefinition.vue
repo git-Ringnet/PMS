@@ -193,22 +193,24 @@ const loadedTabs = ref(new Set())
 
 const fetchDataForTab = async (tab) => {
   if (loadedTabs.value.has(tab)) return
+
+  const normalizedTab = String(tab || '').trim().toLocaleUpperCase('vi-VN')
   
   loading.value = true
   try {
-    if (tab === 'HÌNH THỨC THANH TOÁN') {
+    if (normalizedTab === 'HÌNH THỨC THANH TOÁN') {
       const res = await http.get('/payment-methods')
       paymentMethods.value = res.data.data || []
       loadedTabs.value.add(tab)
-    } else if (tab === 'TIỀN TỆ') {
+    } else if (normalizedTab === 'TIỀN TỆ') {
       const res = await http.get('/currencies')
       currencies.value = res.data.data || []
       loadedTabs.value.add(tab)
-    } else if (tab === 'ĐƠN VỊ TÍNH') {
+    } else if (normalizedTab === 'ĐƠN VỊ TÍNH') {
       const res = await http.get('/units-of-measure')
       unitsOfMeasure.value = res.data.data || []
       loadedTabs.value.add(tab)
-    } else if (tab === 'TÌNH TRẠNG ĐĂNG KÝ') {
+    } else if (normalizedTab === 'TÌNH TRẠNG ĐĂNG KÝ') {
       const res = await http.get('/registration-statuses')
       registrationStatuses.value = res.data.data || []
       loadedTabs.value.add(tab)
