@@ -10,6 +10,55 @@
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 
 
+## [2026-10-26] - Điều Chỉnh UX/UI 4 Màn Hình Theo Ảnh Thực Tế
+### 1. Khai Báo Lưu Trú (Ảnh 1 - [ResidenceDeclarationPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/ResidenceDeclarationPage.vue))
+- **Hiển thị đầy đủ thông tin ở từng ô**:
+  + Đổi `table.residence-grid` sang `width: max-content; min-width: 100%; table-layout: auto;`.
+  + Tăng `min-width` từng cột dữ liệu (Ngày tháng `95px`, Giới tính `85px`, Quốc tịch `170px`, Địa chỉ `160px`...).
+  + Đổi `.cell-content` sang `display: inline-block; white-space: nowrap;` và giảm padding ô `padding: 6px 8px`.
+  + Toàn bộ thông tin ngày tháng (`30/08/2026`), quốc tịch (`Vietnam ( Việt Nam )`), giới tính (`M - Nam`) hiển thị trọn vẹn, không còn bị cắt chữ `..`.
+
+### 2. Thống Kê Phòng Trống ([AvailableRoomsPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/AvailableRoomsPage.vue))
+- Đã rollback lại toàn bộ code theo yêu cầu của người dùng, đưa file về trạng thái nguyên bản.
+
+### 3. Trả Phòng - Luồng Cảnh Báo Phòng Chưa Thanh Toán & Xác Nhận (Ảnh 3 & 4 - [CheckoutPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue))
+- **Kiểm tra trước điều kiện thanh toán trong `openCheckoutModal`**:
+  + Khi bấm "Trả Phòng", hệ thống gọi trước `previewCheckoutRooms` để kiểm tra công nợ và hóa đơn của các phòng.
+  + Nếu có phòng chưa thanh toán: Hiển thị TRỰC TIẾP form Thông Báo (ảnh 4), TUYỆT ĐỐI KHÔNG hiển thị form Xác Nhận (ảnh 3).
+  + Chỉ hiển thị form Xác Nhận (ảnh 3) khi tất cả các phòng đã đủ điều kiện checkout.
+  + Bỏ nút "Đóng" ở footer của form Xác Nhận (ảnh 3), chỉ giữ nút "Có" / "Checkout". Đóng form qua nút `×` trên header hoặc phím `Esc`.
+
+### 4. Sơ Đồ Phòng - Ghim Tiêu Đề Bảng Danh Sách (Ảnh 5 - [RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue))
+- **Ghim hàng tiêu đề và hàng công cụ khi cuộn trang**:
+  + Hàng công cụ chọn danh sách: `sticky top-0 z-30 bg-white h-[38px] min-h-[38px]`.
+  + Hàng tiêu đề cột (`<thead> <th>`): `position: sticky; top: 38px; z-index: 20; background-color: #f8fafc; box-shadow: inset 0 -1px 0 #cbd5e1, inset 0 1px 0 #cbd5e1;`.
+  + Khung chứa danh sách: `room-list-table-container flex-1 max-h-[calc(100vh-140px)] overflow-x-auto overflow-y-auto`.
+  + Khi cuộn dọc danh sách phòng, cả hàng "Chọn danh sách đang hiển thị..." và hàng tiêu đề cột đều được ghim cố định ở trên cùng.
+
+## [2026-10-26] - Triển Khai Hoàn Tất Dòng 96, 97, 98, 99, 100, 102 Sheet FIX FE (Bỏ Qua Dòng 101)
+### 1. Chi Tiết Triển Khai Các Dòng
+- **Dòng 100: Menu module Lễ tân ([MainLayout.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/layouts/MainLayout.vue))**:
+  + Đã xác nhận loại bỏ hoàn toàn mục "Channel Manager" khỏi menu Lễ tân.
+- **Dòng 102: Trả phòng - Cảnh báo phòng chưa thanh toán ([CheckoutPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/frontdesk/CheckoutPage.vue))**:
+  + Khi còn phòng chưa thanh toán: CHỈ hiển thị nội dung thông báo, ẩn toàn bộ danh sách checkbox khách, ẩn câu hỏi xác nhận và ẩn các nút Có/Checkout/Đóng ở footer.
+  + Người dùng đóng nhanh thông báo bằng phím `Escape` (`Esc`) hoặc nút `×` trên header.
+  + Đồng bộ viền modal và nền hộp cảnh báo sang màu theme hệ thống (`var(--pms-custom-theme, #006bdb)`).
+- **Dòng 97: Khai báo lưu trú ([ResidenceDeclarationPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/ResidenceDeclarationPage.vue))**:
+  + Cân đối lại độ rộng các cột: Thu gọn các cột ngày tháng (3.8%, min 65px) và số phòng (2.8%, min 45px); mở rộng mạnh cột Họ tên (17%, min 195px) để hiển thị đầy đủ tên khách, và cột Địa chỉ (11.5%, min 160px).
+- **Dòng 98: Thống kê phòng trống ([AvailableRoomsPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/AvailableRoomsPage.vue))**:
+  + Thêm `background-clip: padding-box` và bộ chọn CSS trực tiếp trên `th`, `td` giúp giữ nguyên border dọc sắc nét không bị mất khi thu phóng trình duyệt <= 100%.
+- **Dòng 96: Booking - Sửa Booking ([CreateRegistrationPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))**:
+  + Phóng to nút "Chi tiết" ở cột Ăn sáng trẻ em và Thêm giường thành `h-7 px-3 text-xs inline-flex items-center justify-center font-semibold rounded shadow-2xs`.
+  + Đồng bộ chiều cao ô sửa `initialRoomClass` thành 32px (`h-[32px]`).
+  + Các trường "Phòng chuyển", "Mã ALM", "Mã phòng" khi bấm sửa chỉ hiển thị nội dung `<span>` không cho sửa.
+  + Số phòng hiển thị `font-semibold text-[#000000D9]`, các ô dữ liệu khác `font-normal text-[#000000D9]`.
+- **Dòng 99: Chuẩn hóa màu chữ & border FE Design System ([style.css](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/style.css))**:
+  + Bổ sung mặc định `table td { color: #000000D9; }` đồng bộ màu chữ bảng trên toàn hệ thống.
+
+### 2. Kiểm Thử & Đảm Bảo Zero Side Effects
+- **Frontend build**: `npm run build` hoàn thành sạch sẽ trong 5.18s (0 lỗi).
+- **Zero Side Effects**: Không can thiệp API endpoint hay migration, bảo toàn 100% logic nghiệp vụ của các module khác.
+
 ## [2026-10-23] - Triển Khai Dòng 86, 87, 90 Sheet FIX FE (Khai Báo Lưu Trú, In Phiếu Ăn Sáng, Lịch Sử Thao Tác)
 ### 1. Dòng 86: Khai Báo Lưu Trú ([ResidenceDeclarationPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/ResidenceDeclarationPage.vue))
 - **Typography & Màu Sắc (FE Design System)**:

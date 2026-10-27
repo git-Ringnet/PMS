@@ -10,7 +10,7 @@ const authStore = useAuthStore()
 const loading = ref(false)
 const isLoaded = ref(false)
 
-const topbarThemeBg = computed(() => authStore.themeColor || authStore.settings?.topbar_color || 'var(--pms-custom-theme, #006bdb)')
+const topbarThemeBg = computed(() => authStore.themeColor || 'var(--pms-custom-theme, #006bdb)')
 
 // ==================== DRAGGABLE MODAL POSITION ====================
 const modalPos = ref({ x: 0, y: 0 })

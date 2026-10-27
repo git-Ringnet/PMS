@@ -6,6 +6,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { fetchSystemDate } from '@/services/booking-service'
 import RoomIcon from '@/components/RoomIcon.vue'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
+import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import { getLockRoomState, setLockRoomState } from './lock-room-view-state.js'
 
 const uiStore = useUiStore()
@@ -925,7 +926,8 @@ const toggleRowMenu = (rowKey, event) => {
 </script>
 
 <template>
-  <div class="h-full flex gap-4 overflow-hidden text-xs text-slate-800 p-1">
+  <div class="relative h-full flex gap-4 overflow-hidden text-xs text-slate-800 p-1">
+    <LoadingOverlay :show="loading" />
     
     <!-- LEFT SIDE: TABLE & CONTROLS -->
     <div class="flex-1 bg-white rounded-xl shadow-xs border border-slate-200 overflow-hidden flex flex-col min-h-[350px]">

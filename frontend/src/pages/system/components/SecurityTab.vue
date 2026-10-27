@@ -20,7 +20,7 @@ import {
 
 const uiStore = useUiStore()
 const authStore = useAuthStore()
-const themeBg = computed(() => authStore.settings?.topbar_color || 'var(--pms-custom-theme, #006bdb)')
+const themeBg = computed(() => authStore.themeColor || 'var(--pms-custom-theme, #006bdb)')
 
 const loading = ref(false)
 const settings = ref({ autoLogoutEnabled: false, autoLogoutHours: 5, ipRestrictionEnabled: false, timeRestrictionEnabled: false })

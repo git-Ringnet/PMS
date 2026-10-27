@@ -358,7 +358,7 @@ const authStore = useAuthStore()
 const uiStore = useUiStore()
 
 const topbarThemeBg = computed(() => {
-  return authStore.settings?.topbar_color || 'var(--pms-custom-theme, #006bdb)'
+  return authStore.themeColor || 'var(--pms-custom-theme, #006bdb)'
 })
 
 // ==================== STATE DECLARATIONS ====================

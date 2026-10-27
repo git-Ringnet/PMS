@@ -71,6 +71,7 @@ class LogActivity
         'organization' => ['system', 'Cơ cấu Tổ chức'],
         'permission-screens' => ['system', 'Phân quyền'],
         'portal-wallpaper' => ['system', 'Hình nền Hệ thống'],
+        'system-theme' => ['system', 'Màu nền Hệ thống'],
         'user-settings' => ['system', 'Cài đặt Người dùng'],
         'system' => ['system', 'Hệ thống'],
 

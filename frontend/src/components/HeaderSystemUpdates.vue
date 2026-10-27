@@ -15,7 +15,7 @@ defineProps({
 
 const authStore = useAuthStore()
 const { position: modalPos, isDragging, startDrag, resetPosition } = useDraggableModal()
-const themeBg = computed(() => authStore.settings?.topbar_color || 'var(--pms-custom-theme, #006bdb)')
+const themeBg = computed(() => authStore.themeColor || 'var(--pms-custom-theme, #006bdb)')
 
 const items = ref([])
 const unread = ref(0)

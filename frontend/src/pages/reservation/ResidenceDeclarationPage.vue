@@ -2067,10 +2067,10 @@ onUnmounted(() => {
 
 table.residence-grid {
   display: table;
-  width: 100%;
-  border-collapse: collapse;
+  width: max-content;
   min-width: 100%;
-  table-layout: fixed;
+  border-collapse: collapse;
+  table-layout: auto;
 }
 table.residence-grid thead th {
   position: sticky;
@@ -2083,7 +2083,7 @@ table.residence-grid thead th {
   font-weight: 600;
   color: #000000D9;
   letter-spacing: .01em;
-  padding: 8px 10px;
+  padding: 8px 8px;
   border: 1px solid var(--border);
   white-space: nowrap;
 }
@@ -2123,7 +2123,7 @@ th.sort-desc .sort-icons .down {
 }
 
 table.residence-grid td {
-  padding: 8px 12px;
+  padding: 6px 8px;
   border-bottom: 1px solid var(--border);
   color: #000000D9;
   font-weight: 400;
@@ -2158,11 +2158,7 @@ table.residence-grid tbody tr:hover td {
   font-size: 12px;
 }
 .cell-content {
-  display: block;
-  width: 100%;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  display: inline-block;
   white-space: nowrap;
 }
 
@@ -2236,24 +2232,25 @@ input[type=checkbox] {
 }
 
 /* Column Widths */
-.col-checkbox { width: 3%; }
-.col-ma { width: 5.2%; }
-.col-phong { width: 4.3%; }
-.col-ten { width: 7.4%; }
-.col-gioitinh { width: 4.3%; }
-.col-ngaysinh { width: 5.2%; }
-.col-ngayden { width: 5.65%; }
-.col-ngaydi { width: 5.65%; }
-.col-quoctich { width: 7.85%; }
-.col-diachi { width: 4.35%; }
-.col-sogiayto { width: 5.65%; }
-.col-hochieu { width: 4.8%; }
-.col-tamtruden { width: 5.2%; }
-.col-ngayhethan { width: 5.2%; }
-.col-ngaynhapcanh { width: 5.65%; }
-.col-nlon { width: 5%; min-width: 60px; text-align: center; vertical-align: middle; }
+.col-checkbox { width: 36px; min-width: 36px; }
+.col-ma { width: 75px; min-width: 75px; }
+.col-phong { width: 60px; min-width: 60px; }
+.col-ten { width: 200px; min-width: 200px; }
+.col-gioitinh { width: 85px; min-width: 85px; text-align: center; }
+.col-ngaysinh { width: 95px; min-width: 95px; text-align: center; }
+.col-ngayden { width: 95px; min-width: 95px; text-align: center; }
+.col-ngaydi { width: 95px; min-width: 95px; text-align: center; }
+.col-quoctich { width: 170px; min-width: 170px; }
+.col-diachi { width: 160px; min-width: 160px; }
+.col-sogiayto { width: 100px; min-width: 100px; }
+.col-hochieu { width: 95px; min-width: 95px; }
+.col-tamtruden { width: 95px; min-width: 95px; text-align: center; }
+.col-ngayhethan { width: 95px; min-width: 95px; text-align: center; }
+.col-ngaynhapcanh { width: 95px; min-width: 95px; text-align: center; }
+.col-cuakhau { width: 90px; min-width: 90px; }
+.col-nlon { width: 60px; min-width: 60px; text-align: center; vertical-align: middle; }
 td.col-nlon { text-align: center; vertical-align: middle; border-bottom: 1px solid var(--border) !important; }
-.col-ghichuchuyen { min-width: 220px; width: 11.8%; }
+.col-ghichuchuyen { width: 160px; min-width: 160px; }
 
 /* Column Hiding (All 17 data columns) */
 table.residence-grid.hide-ma .col-ma,

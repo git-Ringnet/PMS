@@ -10,11 +10,19 @@ const cleanOldLocalConfigs = () => {
   oldKeys.forEach(k => localStorage.removeItem(k))
 }
 
+const sanitizeUserSettings = (settings = {}) => {
+  const sanitized = { ...(settings || {}) }
+  // Dữ liệu cũ có thể vẫn lưu màu topbar theo từng user, nhưng không còn được áp dụng.
+  delete sanitized.topbar_color
+  return sanitized
+}
+
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     user: null,
     token: localStorage.getItem('pms_token') || sessionStorage.getItem('pms_token') || null,
     settings: {},
+    systemThemeColor: '#006bdb',
     loading: false,
     error: null,
     // ── Permission & Branch state ──────────────────────────────
@@ -42,7 +50,8 @@ export const useAuthStore = defineStore('auth', {
     },
 
     isSuperAdmin: (state) => state.roles.some(r => r.role_code === 'super_admin'),
-    isAdmin: (state) => state.roles.some(r => ['super_admin', 'branch_admin'].includes(r.role_code)),
+    isAdmin: (state) => state.roles.some(r => ['super_admin', 'branch_admin', 'admin'].includes(r.role_code)),
+    themeColor: (state) => state.systemThemeColor || '#006bdb',
   },
 
   actions: {
@@ -55,7 +64,7 @@ export const useAuthStore = defineStore('auth', {
           const response = await http.get('/me', { headers })
           const { user, permissions, branches, active_branch, roles } = response.data
           this.user = user
-          this.settings = user.setting?.settings || {}
+          this.settings = sanitizeUserSettings(user.setting?.settings)
           // Cập nhật permissions/branches/roles nếu server trả về
           if (permissions) {
             this.permissions = permissions
@@ -68,7 +77,7 @@ export const useAuthStore = defineStore('auth', {
             localStorage.setItem('pms_roles', JSON.stringify(this.roles))
           }
           cleanOldLocalConfigs()
-          this.fetchSystemDate()
+          await Promise.all([this.fetchSystemDate(), this.fetchSystemTheme()])
         } catch (err) {
           console.error('Không thể xác thực user hiện tại', err)
           this.logout()
@@ -122,8 +131,9 @@ export const useAuthStore = defineStore('auth', {
           localStorage.setItem('selected_branch_code', this.activeBranch.code)
         }
 
-        this.settings = user.setting?.settings || {}
+        this.settings = sanitizeUserSettings(user.setting?.settings)
         cleanOldLocalConfigs()
+        await this.fetchSystemTheme()
 
         // Kiểm tra ngay xem hệ thống có đang trong tiến trình Sang ngày hay không
         try {
@@ -176,6 +186,7 @@ export const useAuthStore = defineStore('auth', {
         this.token = null
         this.user = null
         this.settings = {}
+        this.systemThemeColor = '#006bdb'
         this.permissions = []
         this.branches = []
         this.activeBranch = null
@@ -195,7 +206,7 @@ export const useAuthStore = defineStore('auth', {
       try {
         const response = await http.put('/user-settings', { settings: newSettings })
         if (response.data && response.data.success) {
-          this.settings = response.data.data.settings || {}
+          this.settings = sanitizeUserSettings(response.data.data.settings)
           if (this.user) {
             if (!this.user.setting) this.user.setting = {}
             this.user.setting.settings = this.settings
@@ -206,6 +217,26 @@ export const useAuthStore = defineStore('auth', {
         console.error('Lỗi khi cập nhật thiết lập người dùng', err)
         throw err
       }
+    },
+
+    async fetchSystemTheme() {
+      try {
+        const response = await http.get('/system-theme')
+        this.systemThemeColor = response.data?.data?.color || '#006bdb'
+        return this.systemThemeColor
+      } catch (err) {
+        console.error('Không thể tải màu nền hệ thống', err)
+        this.systemThemeColor = '#006bdb'
+        return this.systemThemeColor
+      }
+    },
+
+    async updateSystemTheme(color) {
+      const response = await http.put('/system-theme', { color })
+      if (response.data?.success) {
+        this.systemThemeColor = response.data?.data?.color || '#006bdb'
+      }
+      return this.systemThemeColor
     },
   },
 })

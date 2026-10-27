@@ -322,6 +322,9 @@ onMounted(() => {
 
       <!-- Right: Main Content Area -->
       <main class="flex-1 bg-slate-50 overflow-hidden flex flex-col select-text">
+        <KeepAlive>
+          <ActivityLogTab v-if="activeTab === 'activity_log'" />
+        </KeepAlive>
         <!-- Render Active Tab Component -->
         <transition name="fade" mode="out-in">
           <CompanyInfoTab v-if="activeTab === 'company'" />
@@ -329,7 +332,6 @@ onMounted(() => {
           <OrgStructureTab v-else-if="activeTab === 'org_structure'" />
           <RoleManageTab v-else-if="activeTab === 'roles'" />
           <EmployeeTab v-else-if="activeTab === 'employee'" />
-          <ActivityLogTab v-else-if="activeTab === 'activity_log'" />
           <BankAccountTab v-else-if="activeTab === 'bank_accounts'" />
           <SecurityTab v-else-if="activeTab === 'security' && authStore.isSuperAdmin" />
           <LanguageTab v-else-if="activeTab === 'language' && authStore.hasPermission('system.language.view')" />

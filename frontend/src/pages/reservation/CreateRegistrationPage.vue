@@ -665,11 +665,11 @@ function selectBkColor(hex) {
 }
 
 const topbarThemeBg = computed(() => {
-  return authStore.settings?.topbar_color || 'var(--pms-custom-theme, #006bdb)'
+  return authStore.themeColor || 'var(--pms-custom-theme, #006bdb)'
 })
 
 const isTopBarThemeDark = computed(() => {
-  const bg = authStore.settings?.topbar_color
+  const bg = authStore.themeColor
   if (!bg) return true
   if (bg.includes('linear-gradient')) return true
   if (bg.startsWith('#')) {
@@ -1005,10 +1005,10 @@ const showColumnSelector = ref(false)
 const columns = ref([
   { key: 'type', label: 'Loại Phòng', visible: true, width: 'w-[160px]' },
   { key: 'shape', label: 'Dạng Phòng', visible: true, width: 'w-[105px]', center: true },
-  { key: 'roomNumber', label: 'Số Phòng', visible: true, width: 'auto', center: true },
-  { key: 'checkIn', label: 'Ngày Đến', visible: true, width: 'w-[110px]', center: true },
-  { key: 'checkOut', label: 'Ngày Đi', visible: true, width: 'w-[110px]', center: true },
-  { key: 'nights', label: 'Đêm', visible: true, width: 'w-[60px]', center: true },
+  { key: 'roomNumber', label: 'Số Phòng', visible: true, width: 'w-[80px]', center: true },
+  { key: 'checkIn', label: 'Ngày Đến', visible: true, width: 'w-[115px]', center: true },
+  { key: 'checkOut', label: 'Ngày Đi', visible: true, width: 'w-[115px]', center: true },
+  { key: 'nights', label: 'Đêm', visible: true, width: 'w-[50px]', center: true },
   { key: 'price', label: 'Giá', visible: true, width: 'w-[95px]', right: true },
   { key: 'rateCode', label: 'Mã Giá Phòng', visible: true, width: 'auto' },
   { key: 'adjustment', label: 'Giảm/Tăng Giá', visible: true, width: 'w-[80px]', right: true },
@@ -7431,7 +7431,6 @@ defineExpose({
                 v-if="!isSyncRoomDateEnabled" 
                 class="absolute inset-0 cursor-not-allowed z-10" 
                 @click.stop="warnSyncRoomDateDisabled"
-                title="Cấu hình SyncRoomDateByBookingDate = 0: Không cho phép chỉnh sửa ngày booking trực tiếp tại đây"
               ></div>
             </div>
             <span class="text-slate-400 font-bold">~</span>
@@ -7448,7 +7447,6 @@ defineExpose({
                 v-if="!isSyncRoomDateEnabled" 
                 class="absolute inset-0 cursor-not-allowed z-10" 
                 @click.stop="warnSyncRoomDateDisabled"
-                title="Cấu hình SyncRoomDateByBookingDate = 0: Không cho phép chỉnh sửa ngày booking trực tiếp tại đây"
               ></div>
             </div>
           </div>
@@ -7470,7 +7468,6 @@ defineExpose({
               v-if="!isSyncRoomDateEnabled" 
               class="absolute inset-0 cursor-not-allowed z-10" 
               @click.stop="warnSyncRoomDateDisabled"
-              title="Cấu hình SyncRoomDateByBookingDate = 0: Không cho phép chỉnh sửa số đêm trực tiếp tại đây"
             ></div>
           </div>
           <b v-else class="font-normal text-[#000000D9]">{{ activeTab.nights || 0 }}</b>
@@ -7503,7 +7500,7 @@ defineExpose({
               <col style="width: 120px" />
             </colgroup>
             <thead>
-              <tr class="bg-slate-50 border-b border-slate-200 text-gray-900 font-bold select-none whitespace-nowrap h-9 text-xs">
+              <tr class="bg-slate-50 border-b border-slate-200 text-[#000000D9] font-semibold select-none whitespace-nowrap h-9 text-xs">
                 <th class="p-0 border-r border-slate-200 text-center align-middle border" colspan="4">
                   <div class="flex items-center justify-start h-full">
                     <div class="w-[30px] shrink-0"></div>
@@ -7550,7 +7547,7 @@ defineExpose({
                 <th class="p-2 text-center w-[120px] bg-slate-100 text-[#000000D9] font-semibold sticky-shadow-left z-20 align-middle border-r border-slate-200 border text-xs">Tổng Cộng</th>
               </tr>
             </thead>
-            <tbody class="font-semibold text-gray-900 select-text">
+            <tbody class="font-semibold text-[#000000D9] select-text">
               <!-- Nested Rows of Rooms -->
               <template v-if="true">
                 <!-- ===== MODE A: No checked-in rooms → flat group by room type ===== -->
@@ -7558,7 +7555,7 @@ defineExpose({
                   <template v-for="group in groupedRooms" :key="group.typeName">
                     <!-- Type Group Header Row -->
                     <tr 
-                      class="bg-slate-50/70 border-b border-slate-200 font-bold h-8 text-gray-900 cursor-pointer select-none"
+                      class="bg-slate-50/70 border-b border-slate-200 font-bold h-8 text-[#000000D9] cursor-pointer select-none"
                       @click="toggleGroupCollapse(group.typeName)"
                     >
                       <td class="p-2 border-slate-200 text-center bg-slate-100/10"></td>
@@ -7578,7 +7575,7 @@ defineExpose({
                           @change="e => handleSelectAllInGroup(group.rooms, e.target.checked)" 
                         />
                       </td>
-                      <td :colspan="columns.filter(c => c.visible).length + 2" class="p-2 text-gray-900 font-bold text-xs uppercase tracking-wider pl-4 border-r border-slate-200">
+                      <td :colspan="columns.filter(c => c.visible).length + 2" class="p-2 text-[#000000D9] font-semibold text-xs uppercase tracking-wider pl-4 border-r border-slate-200">
                         {{ group.typeName }} ({{ group.rooms.length }})
                       </td>
                       <td class="bg-[#e2e8f0] sticky-shadow-left z-10 border-slate-200"></td>
@@ -7656,7 +7653,7 @@ defineExpose({
                             v-else-if="isEditing" 
                             v-model="room.roomNumber" 
                             @focus="loadVacantRoomsForRoom(room)"
-                            class="bg-white border border-slate-300 rounded px-1 py-0.5 text-xs w-full font-normal focus:outline-none text-center cursor-pointer"
+                            class="bg-white border border-slate-300 rounded px-1 text-xs w-full font-normal focus:outline-none text-center cursor-pointer h-[32px]"
                           >
                             <option value="">Chọn phòng</option>
                             <option v-if="room.roomNumber" :value="room.roomNumber">{{ room.roomNumber }}</option>
@@ -7668,10 +7665,10 @@ defineExpose({
                               {{ vRoom.room_number }}
                             </option>
                           </select>
-                          <span v-else class="text-[#000000D9] font-normal text-xs">{{ room.roomNumber || '-' }}</span>
+                          <span v-else class="text-[#000000D9] font-semibold text-xs">{{ room.roomNumber || '-' }}</span>
                         </template>
                         <template v-else-if="col.key === 'checkIn'">
-                          <div v-if="isEditing" class="w-[102px] mx-auto" @click.stop>
+                          <div v-if="isEditing" class="w-[115px] mx-auto" @click.stop>
                             <SingleDatePicker
                               v-model="room.checkIn"
                               :min-date="activeTab?.checkIn || ''"
@@ -7680,13 +7677,13 @@ defineExpose({
                               @change="handleRowDateChangeInline(room)"
                               placeholder="dd/mm/yyyy"
                               four-digit-year
-                              input-class="!h-[24px] !px-1 !text-xs !rounded !border-slate-300 font-normal text-[#000000D9] bg-white text-center"
+                              input-class="!h-[32px] !px-1.5 !text-xs !rounded !border-slate-300 font-normal text-[#000000D9] bg-white text-center"
                             />
                           </div>
                           <span v-else class="text-[#000000D9] font-normal text-xs">{{ formatDateVi(room.checkIn) }}</span>
                         </template>
                         <template v-else-if="col.key === 'checkOut'">
-                          <div v-if="isEditing" class="w-[102px] mx-auto" @click.stop :title="room.hourly ? 'Phòng đang bật ở theo giờ: ngày đi luôn bằng ngày đến' : ''">
+                          <div v-if="isEditing" class="w-[115px] mx-auto" @click.stop :title="room.hourly ? 'Phòng đang bật ở theo giờ: ngày đi luôn bằng ngày đến' : ''">
                             <SingleDatePicker
                               v-model="room.checkOut"
                               :min-date="room.checkIn || activeTab?.checkIn || ''"
@@ -7696,7 +7693,7 @@ defineExpose({
                               @change="handleRowDateChangeInline(room)"
                               placeholder="dd/mm/yyyy"
                               four-digit-year
-                              input-class="!h-[24px] !px-1 !text-xs !rounded !border-slate-300 font-normal text-[#000000D9] bg-white text-center"
+                              input-class="!h-[32px] !px-1.5 !text-xs !rounded !border-slate-300 font-normal text-[#000000D9] bg-white text-center"
                             />
                           </div>
                           <span v-else class="text-[#000000D9] font-normal text-xs">{{ formatDateVi(room.checkOut) }}</span>
@@ -7710,7 +7707,7 @@ defineExpose({
                             :disabled="!!room.hourly"
                             @input="handleRowNightsChangeInline(room)"
                             @click.stop
-                            class="border border-slate-300 rounded px-1 py-0.5 text-xs w-[50px] font-normal focus:outline-none text-center bg-white mx-auto block" 
+                            class="border border-slate-300 rounded px-1 text-xs w-[50px] font-normal focus:outline-none text-center bg-white mx-auto block h-[32px]" 
                           />
                           <span v-else class="text-[#000000D9] font-normal text-xs">{{ room.nights }}</span>
                         </template>
@@ -7722,7 +7719,7 @@ defineExpose({
                             :disabled="isRoomPriceDisabled(room)"
                             @input="e => handleRoomPriceChange(room, e.target.value)"
                             @focus="e => e.target.select()"
-                            class="border rounded px-1.5 py-0.5 text-xs w-full font-normal focus:outline-none text-right" 
+                            class="border rounded px-1.5 text-xs w-full font-normal focus:outline-none text-right h-[32px]" 
                             :class="isRoomPriceDisabled(room) ? 'bg-slate-100 cursor-not-allowed text-slate-400 border-slate-200' : 'bg-white border-slate-300 text-[#000000D9]'"
                           />
                           <span v-else class="text-[#000000D9] font-normal text-xs">{{ formatCurrencyInput(room.price) }}</span>
@@ -7732,7 +7729,7 @@ defineExpose({
                             v-if="isEditing" 
                             v-model="room.rateCode" 
                             @change="handleRoomRateCodeChange(room, $event.target.value)"
-                            class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs w-full focus:outline-none truncate"
+                            class="bg-white border border-slate-300 rounded px-1.5 text-xs w-full focus:outline-none truncate h-[32px]"
                             :class="room.rateCode ? 'font-normal text-[#000000D9]' : 'font-normal text-[#A8B0BF]'"
                           >
                             <option value="">Chọn giá phòng</option>
@@ -7826,19 +7823,19 @@ defineExpose({
                             v-if="isEditing" 
                             type="text" 
                             v-model="room.guestName" 
-                            class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs w-full font-normal text-[#000000D9] focus:outline-none" 
+                            class="bg-white border border-slate-300 rounded px-1.5 text-xs w-full font-normal text-[#000000D9] focus:outline-none h-[32px]" 
                           />
                           <span v-else class="text-[#000000D9] font-normal text-xs">{{ room.guestName }}</span>
                         </template>
                         <template v-else-if="col.key === 'adults'">
-                          <div v-if="isEditing" class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[26px] bg-white shadow-sm flex items-center" @click.stop>
+                          <div v-if="isEditing" class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[32px] bg-white shadow-sm flex items-center" @click.stop>
                             <input 
                               type="number" 
                               v-model.number="room.adults" 
                               min="1" 
                               @input="syncRoomToAllocation(room)" 
                               @focus="$event.target.select()" 
-                              class="w-full text-center pr-3 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              class="w-full text-center pr-3 focus:outline-none text-xs bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             />
                             <div class="flex flex-col text-slate-800 absolute right-1 top-0 bottom-0 justify-center items-center w-3 select-none">
                               <button @click.prevent="room.adults++; syncRoomToAllocation(room)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
@@ -7848,14 +7845,14 @@ defineExpose({
                           <span v-else>{{ room.adults }}</span>
                         </template>
                         <template v-else-if="col.key === 'babies'">
-                          <div v-if="isEditing" class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[26px] bg-white shadow-sm flex items-center" @click.stop>
+                          <div v-if="isEditing" class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[32px] bg-white shadow-sm flex items-center" @click.stop>
                             <input 
                               type="number" 
                               v-model.number="room.babies" 
                               min="0" 
                               @input="syncRoomToAllocation(room)" 
                               @focus="$event.target.select()" 
-                              class="w-full text-center pr-3 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              class="w-full text-center pr-3 focus:outline-none text-xs bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             />
                             <div class="flex flex-col text-slate-800 absolute right-1 top-0 bottom-0 justify-center items-center w-3 select-none">
                               <button @click.prevent="room.babies++; syncRoomToAllocation(room)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
@@ -7865,14 +7862,14 @@ defineExpose({
                           <span v-else>{{ room.babies }}</span>
                         </template>
                         <template v-else-if="col.key === 'children'">
-                          <div v-if="isEditing" class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[26px] bg-white shadow-sm flex items-center" @click.stop>
+                          <div v-if="isEditing" class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[32px] bg-white shadow-sm flex items-center" @click.stop>
                             <input 
                               type="number" 
                               v-model.number="room.children" 
                               min="0" 
                               @input="syncRoomToAllocation(room)" 
                               @focus="$event.target.select()" 
-                              class="w-full text-center pr-3 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              class="w-full text-center pr-3 focus:outline-none text-xs bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             />
                             <div class="flex flex-col text-slate-800 absolute right-1 top-0 bottom-0 justify-center items-center w-3 select-none">
                               <button @click.prevent="room.children++; syncRoomToAllocation(room)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
@@ -7882,7 +7879,7 @@ defineExpose({
                           <span v-else>{{ room.children }}</span>
                         </template>
                         <template v-else-if="col.key === 'childBreakfast'">
-                          <button v-if="!isEditing" @click.stop="openChildBreakfastModal(room)" class="px-2 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer">Chi tiết</button>
+                          <button v-if="!isEditing" @click.stop="openChildBreakfastModal(room)" class="h-7 px-3 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-xs font-semibold cursor-pointer inline-flex items-center justify-center">Chi tiết</button>
                         </template>
                         <template v-else-if="col.key === 'breakfast'">
                           <label class="relative inline-flex items-center cursor-pointer scale-75" @click.stop>
@@ -7891,13 +7888,13 @@ defineExpose({
                           </label>
                         </template>
                         <template v-else-if="col.key === 'upgrade'">
-                          <select v-model="room.upgradeClassId" @click.stop class="w-full border border-slate-300 rounded-md h-[26px] pl-1.5 pr-4 appearance-none focus:outline-none text-slate-700 bg-white shadow-sm cursor-pointer text-[10px]">
+                          <select v-model="room.upgradeClassId" @click.stop class="w-full border border-slate-300 rounded-md h-[32px] pl-1.5 pr-4 appearance-none focus:outline-none text-slate-700 bg-white shadow-sm cursor-pointer text-xs">
                             <option :value="null" disabled>Chọn hạng</option>
                             <option v-for="rc in roomClasses" :key="rc.id" :value="rc.id">{{ rc.code }}</option>
                           </select>
                         </template>
                         <template v-else-if="col.key === 'extraBed'">
-                          <div v-if="isEditing" class="relative w-full min-w-[45px] max-w-[55px] mx-auto border border-slate-300 rounded-md h-[26px] bg-white shadow-sm flex items-center" @click.stop>
+                          <div v-if="isEditing" class="relative w-full min-w-[45px] max-w-[55px] mx-auto border border-slate-300 rounded-md h-[32px] bg-white shadow-sm flex items-center" @click.stop>
                             <input 
                               type="number" 
                               v-model.number="room.extraBedQty" 
@@ -7905,7 +7902,7 @@ defineExpose({
                               max="10"
                               @input="handleInlineExtraBedQtyChange(room)"
                               @focus="$event.target.select()"
-                              class="w-full text-center pr-3 focus:outline-none text-[11px] font-semibold text-slate-800 bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              class="w-full text-center pr-3 focus:outline-none text-xs font-semibold text-slate-800 bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                             />
                             <div class="flex flex-col text-slate-800 absolute right-1 top-0 bottom-0 justify-center items-center w-3 select-none">
                               <button @click.prevent="stepExtraBedQty(room, 1)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0" title="Tăng số lượng"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
@@ -7913,14 +7910,14 @@ defineExpose({
                             </div>
                           </div>
                           <div v-else class="flex items-center justify-center gap-1">
-                            <span class="font-bold text-slate-700 text-[11px]">{{ getRoomExtraBedQty(room) }}</span>
-                            <button @click.stop="openExtraBedModal(room)" class="px-1.5 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer shadow-2xs">
+                            <span class="font-bold text-slate-700 text-xs">{{ getRoomExtraBedQty(room) }}</span>
+                            <button @click.stop="openExtraBedModal(room)" class="h-7 px-3 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-xs font-semibold cursor-pointer shadow-2xs inline-flex items-center justify-center">
                               <span>Chi tiết</span>
                             </button>
                           </div>
                         </template>
                         <template v-else-if="col.key === 'extraBedPrice'">
-                          <div v-if="isEditing" class="relative w-full border border-slate-300 rounded-md h-[26px] bg-white shadow-sm flex items-center" @click.stop>
+                          <div v-if="isEditing" class="relative w-full border border-slate-300 rounded-md h-[32px] bg-white shadow-sm flex items-center" @click.stop>
                             <input 
                               type="text" 
                               :value="formatCurrencyInput(room.extraBedPrice)"
@@ -7981,24 +7978,18 @@ defineExpose({
                             v-if="isEditing" 
                             type="text" 
                             v-model="room.initialRoomClass" 
-                            class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs w-full font-semibold focus:outline-none text-center" 
+                            class="bg-white border border-slate-300 rounded px-1.5 h-[32px] text-xs w-full font-semibold focus:outline-none text-center" 
                           />
                           <span v-else>{{ room.initialRoomClass || room.shape || '-' }}</span>
                         </template>
                         <template v-else-if="col.key === 'transferredFrom'">
-                          <input 
-                            v-if="isEditing" 
-                            type="text" 
-                            v-model="room.transferredFrom" 
-                            class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs w-full font-semibold focus:outline-none text-center" 
-                          />
-                          <span v-else>{{ room.transferredFrom || '-' }}</span>
+                          <span class="text-[#000000D9] font-normal text-xs">{{ room.transferredFrom || '-' }}</span>
                         </template>
                         <template v-else-if="col.key === 'roomStatus'">
                           <select 
                             v-if="isEditing" 
                             v-model="room.roomStatus" 
-                            class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs w-full font-semibold focus:outline-none text-center"
+                            class="bg-white border border-slate-300 rounded px-1.5 text-xs w-full font-semibold focus:outline-none text-center h-[32px]"
                           >
                             <option value="Sạch">Sạch</option>
                             <option value="Bẩn">Bẩn</option>
@@ -8016,25 +8007,13 @@ defineExpose({
                           </span>
                         </template>
                         <template v-else-if="col.key === 'allotmentCode'">
-                          <input 
-                            v-if="isEditing" 
-                            type="text" 
-                            v-model="room.allotmentCode" 
-                            class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs w-full font-semibold focus:outline-none" 
-                          />
-                          <span v-else>{{ room.allotmentCode || '-' }}</span>
+                          <span class="text-[#000000D9] font-normal text-xs">{{ room.allotmentCode || '-' }}</span>
                         </template>
                         <template v-else-if="col.key === 'roomCode'">
-                          <input 
-                            v-if="isEditing" 
-                            type="text" 
-                            v-model="room.roomCode" 
-                            class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs w-full font-semibold focus:outline-none" 
-                          />
-                          <span v-else>{{ room.roomCode || '-' }}</span>
+                          <span class="text-[#000000D9] font-normal text-xs">{{ room.roomCode || '-' }}</span>
                         </template>
                         </td>
-                        <td class="p-2 text-right text-gray-900 font-bold bg-[#f1f5f9] group-hover:bg-[#e2e8f0] sticky-shadow-left z-10 border-slate-200" @click.stop>{{ (Number(room.total) || 0).toLocaleString('en-US') }}</td>
+                        <td class="p-2 text-right text-[#000000D9] font-semibold bg-[#f1f5f9] group-hover:bg-[#e2e8f0] sticky-shadow-left z-10 border-slate-200" @click.stop>{{ (Number(room.total) || 0).toLocaleString('en-US') }}</td>
                       </tr>
 
                       <!-- Expanded Services Row -->
@@ -8259,7 +8238,7 @@ defineExpose({
                       <template v-for="group in statusGroup.typeGroups" :key="group.typeName">
                         <!-- Sub-group Header (Room Type) -->
                         <tr 
-                          class="bg-slate-50/70 border-b border-slate-200 font-bold h-8 text-gray-900 cursor-pointer select-none"
+                          class="bg-slate-50/70 border-b border-slate-200 font-bold h-8 text-[#000000D9] cursor-pointer select-none"
                           @click="toggleGroupCollapse(statusGroup.statusName + '_' + group.typeName)"
                         >
                           <td class="p-2 border-slate-200 text-center bg-slate-100/10"></td>
@@ -8289,7 +8268,7 @@ defineExpose({
                         <template v-if="!collapsedSections[statusGroup.statusName + '_' + group.typeName]">
                           <template v-for="(room, idx) in group.rooms" :key="room.id">
                             <tr 
-                              class="border-b border-slate-200 hover:bg-sky-50/30 transition-colors h-9 group cursor-pointer text-gray-900"
+                              class="border-b border-slate-200 hover:bg-sky-50/30 transition-colors h-9 group cursor-pointer text-[#000000D9]"
                               :class="[
                                 selectedRows.includes(room.id) ? 'bg-sky-50/60 ring-1 ring-inset ring-sky-200' : '',
                                 (Number(room.bookingRoomStatus) === 3 || Number(room.bookingRoomStatus) === 100) ? 'cancelled-room text-red-700 bg-red-50/40 font-medium' : '',
@@ -8354,7 +8333,7 @@ defineExpose({
                                     v-else-if="isEditing" 
                                     v-model="room.roomNumber" 
                                     @focus="loadVacantRoomsForRoom(room)"
-                                    class="bg-white border border-slate-300 rounded px-1 py-0.5 text-xs w-full font-normal focus:outline-none text-center cursor-pointer"
+                                    class="bg-white border border-slate-300 rounded px-1 text-xs w-full font-normal focus:outline-none text-center cursor-pointer h-[32px]"
                                   >
                                     <option value="">Chọn phòng</option>
                                     <option v-if="room.roomNumber" :value="room.roomNumber">{{ room.roomNumber }}</option>
@@ -8366,10 +8345,10 @@ defineExpose({
                                       {{ vRoom.room_number }}
                                     </option>
                                   </select>
-                                  <span v-else class="text-[#000000D9] font-normal text-xs">{{ room.roomNumber || '-' }}</span>
+                                  <span v-else class="text-[#000000D9] font-semibold text-xs">{{ room.roomNumber || '-' }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'checkIn'">
-                                  <div v-if="isEditing" class="w-[102px] mx-auto" @click.stop>
+                                  <div v-if="isEditing" class="w-[115px] mx-auto" @click.stop>
                                     <SingleDatePicker
                                       v-model="room.checkIn"
                                       :min-date="activeTab?.checkIn || ''"
@@ -8378,13 +8357,13 @@ defineExpose({
                                       @change="handleRowDateChangeInline(room)"
                                       placeholder="dd/mm/yyyy"
                                       four-digit-year
-                                      input-class="!h-[24px] !px-1 !text-xs !rounded !border-slate-300 font-normal text-[#000000D9] bg-white text-center"
+                                      input-class="!h-[32px] !px-1.5 !text-xs !rounded !border-slate-300 font-normal text-[#000000D9] bg-white text-center"
                                     />
                                   </div>
                                   <span v-else class="text-[#000000D9] font-normal text-xs">{{ formatDateVi(room.checkIn) }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'checkOut'">
-                                  <div v-if="isEditing" class="w-[102px] mx-auto" @click.stop :title="room.hourly ? 'Phòng đang bật ở theo giờ: ngày đi luôn bằng ngày đến' : ''">
+                                  <div v-if="isEditing" class="w-[115px] mx-auto" @click.stop :title="room.hourly ? 'Phòng đang bật ở theo giờ: ngày đi luôn bằng ngày đến' : ''">
                                     <SingleDatePicker
                                       v-model="room.checkOut"
                                       :min-date="room.checkIn || activeTab?.checkIn || ''"
@@ -8394,7 +8373,7 @@ defineExpose({
                                       @change="handleRowDateChangeInline(room)"
                                       placeholder="dd/mm/yyyy"
                                       four-digit-year
-                                      input-class="!h-[24px] !px-1 !text-xs !rounded !border-slate-300 font-normal text-[#000000D9] bg-white text-center"
+                                      input-class="!h-[32px] !px-1.5 !text-xs !rounded !border-slate-300 font-normal text-[#000000D9] bg-white text-center"
                                     />
                                   </div>
                                   <span v-else class="text-[#000000D9] font-normal text-xs">{{ formatDateVi(room.checkOut) }}</span>
@@ -8408,7 +8387,7 @@ defineExpose({
                                     :disabled="!!room.hourly"
                                     @input="handleRowNightsChangeInline(room)"
                                     @click.stop
-                                    class="border border-slate-300 rounded px-1 py-0.5 text-xs w-[50px] font-normal focus:outline-none text-center bg-white mx-auto block" 
+                                    class="border border-slate-300 rounded px-1 text-xs w-[50px] font-normal focus:outline-none text-center bg-white mx-auto block h-[32px]" 
                                   />
                                   <span v-else class="text-[#000000D9] font-normal text-xs">{{ room.nights }}</span>
                                 </template>
@@ -8420,7 +8399,7 @@ defineExpose({
                                     :disabled="isRoomPriceDisabled(room)"
                                     @input="e => handleRoomPriceChange(room, e.target.value)"
                                     @focus="e => e.target.select()"
-                                    class="border rounded px-1.5 py-0.5 text-xs w-full font-normal focus:outline-none text-right" 
+                                    class="border rounded px-1.5 text-xs w-full font-normal focus:outline-none text-right h-[32px]" 
                                     :class="isRoomPriceDisabled(room) ? 'bg-slate-100 cursor-not-allowed text-slate-400 border-slate-200' : 'bg-white border-slate-300 text-[#000000D9]'"
                                   />
                                   <span v-else class="text-[#000000D9] font-normal text-xs">{{ formatCurrencyInput(room.price) }}</span>
@@ -8430,7 +8409,7 @@ defineExpose({
                                     v-if="isEditing" 
                                     v-model="room.rateCode" 
                                     @change="handleRoomRateCodeChange(room, $event.target.value)"
-                                    class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs w-full focus:outline-none truncate"
+                                    class="bg-white border border-slate-300 rounded px-1.5 text-xs w-full focus:outline-none truncate h-[32px]"
                                     :class="room.rateCode ? 'font-normal text-[#000000D9]' : 'font-normal text-[#A8B0BF]'"
                                   >
                                     <option value="">Chọn giá phòng</option>
@@ -8524,63 +8503,63 @@ defineExpose({
                                     v-if="isEditing" 
                                     type="text" 
                                     v-model="room.guestName" 
-                                    class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs w-full font-normal text-[#000000D9] focus:outline-none" 
+                                    class="bg-white border border-slate-300 rounded px-1.5 h-[32px] text-xs w-full font-normal text-[#000000D9] focus:outline-none" 
                                   />
                                   <span v-else class="text-[#000000D9] font-normal text-xs">{{ room.guestName }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'adults'">
-                                  <div v-if="isEditing" class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[26px] bg-white shadow-sm flex items-center" @click.stop>
+                                  <div v-if="isEditing" class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[32px] bg-white shadow-sm flex items-center" @click.stop>
                                     <input 
                                       type="number" 
                                       v-model.number="room.adults" 
                                       min="1" 
                                       @input="syncRoomToAllocation(room)" 
                                       @focus="$event.target.select()" 
-                                      class="w-full text-center pr-3 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                      class="w-full text-center pr-3 focus:outline-none text-xs text-[#000000D9] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                     />
                                     <div class="flex flex-col text-slate-800 absolute right-1 top-0 bottom-0 justify-center items-center w-3 select-none">
                                       <button @click.prevent="room.adults++; syncRoomToAllocation(room)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
                                       <button @click.prevent="room.adults > 1 ? (room.adults--, syncRoomToAllocation(room)) : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
                                     </div>
                                   </div>
-                                  <span v-else>{{ room.adults }}</span>
+                                  <span v-else class="text-[#000000D9] font-normal text-xs">{{ room.adults }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'babies'">
-                                  <div v-if="isEditing" class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[26px] bg-white shadow-sm flex items-center" @click.stop>
+                                  <div v-if="isEditing" class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[32px] bg-white shadow-sm flex items-center" @click.stop>
                                     <input 
                                       type="number" 
                                       v-model.number="room.babies" 
                                       min="0" 
                                       @input="syncRoomToAllocation(room)" 
                                       @focus="$event.target.select()" 
-                                      class="w-full text-center pr-3 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                      class="w-full text-center pr-3 focus:outline-none text-xs text-[#000000D9] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                     />
                                     <div class="flex flex-col text-slate-800 absolute right-1 top-0 bottom-0 justify-center items-center w-3 select-none">
                                       <button @click.prevent="room.babies++; syncRoomToAllocation(room)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
                                       <button @click.prevent="room.babies > 0 ? (room.babies--, syncRoomToAllocation(room)) : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
                                     </div>
                                   </div>
-                                  <span v-else>{{ room.babies }}</span>
+                                  <span v-else class="text-[#000000D9] font-normal text-xs">{{ room.babies }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'children'">
-                                  <div v-if="isEditing" class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[26px] bg-white shadow-sm flex items-center" @click.stop>
+                                  <div v-if="isEditing" class="relative w-full min-w-[35px] max-w-[50px] mx-auto border border-slate-300 rounded-md h-[32px] bg-white shadow-sm flex items-center" @click.stop>
                                     <input 
                                       type="number" 
                                       v-model.number="room.children" 
                                       min="0" 
                                       @input="syncRoomToAllocation(room)" 
                                       @focus="$event.target.select()" 
-                                      class="w-full text-center pr-3 focus:outline-none text-[11px] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                      class="w-full text-center pr-3 focus:outline-none text-xs text-[#000000D9] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                     />
                                     <div class="flex flex-col text-slate-800 absolute right-1 top-0 bottom-0 justify-center items-center w-3 select-none">
                                       <button @click.prevent="room.children++; syncRoomToAllocation(room)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
                                       <button @click.prevent="room.children > 0 ? (room.children--, syncRoomToAllocation(room)) : null" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0"><i class="fa-solid fa-caret-down text-[9px]"></i></button>
                                     </div>
                                   </div>
-                                  <span v-else>{{ room.children }}</span>
+                                  <span v-else class="text-[#000000D9] font-normal text-xs">{{ room.children }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'childBreakfast'">
-                                  <button v-if="!isEditing" @click.stop="openChildBreakfastModal(room)" class="px-2 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer">Chi tiết</button>
+                                  <button v-if="!isEditing" @click.stop="openChildBreakfastModal(room)" class="h-7 px-3 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-xs font-semibold cursor-pointer shadow-2xs inline-flex items-center justify-center">Chi tiết</button>
                                 </template>
                                 <template v-else-if="col.key === 'breakfast'">
                                   <label class="relative inline-flex items-center cursor-pointer scale-75" @click.stop>
@@ -8589,13 +8568,13 @@ defineExpose({
                                   </label>
                                 </template>
                                 <template v-else-if="col.key === 'upgrade'">
-                                  <select v-model="room.upgradeClassId" @click.stop class="w-full border border-slate-300 rounded-md h-[26px] pl-1.5 pr-4 appearance-none focus:outline-none text-slate-700 bg-white shadow-sm cursor-pointer text-[10px]">
+                                  <select v-model="room.upgradeClassId" @click.stop class="w-full border border-slate-300 rounded-md h-[32px] pl-1.5 pr-4 appearance-none focus:outline-none text-[#000000D9] bg-white shadow-sm cursor-pointer text-xs">
                                     <option :value="null" disabled>Chọn hạng</option>
                                     <option v-for="rc in roomClasses" :key="rc.id" :value="rc.id">{{ rc.code }}</option>
                                   </select>
                                 </template>
                                 <template v-else-if="col.key === 'extraBed'">
-                                  <div v-if="isEditing" class="relative w-full min-w-[45px] max-w-[55px] mx-auto border border-slate-300 rounded-md h-[26px] bg-white shadow-sm flex items-center" @click.stop>
+                                  <div v-if="isEditing" class="relative w-full min-w-[45px] max-w-[55px] mx-auto border border-slate-300 rounded-md h-[32px] bg-white shadow-sm flex items-center" @click.stop>
                                     <input 
                                       type="number" 
                                       v-model.number="room.extraBedQty" 
@@ -8603,7 +8582,7 @@ defineExpose({
                                       max="10"
                                       @input="handleInlineExtraBedQtyChange(room)"
                                       @focus="$event.target.select()"
-                                      class="w-full text-center pr-3 focus:outline-none text-[11px] font-semibold text-slate-800 bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                      class="w-full text-center pr-3 focus:outline-none text-xs font-semibold text-[#000000D9] bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                     />
                                     <div class="flex flex-col text-slate-800 absolute right-1 top-0 bottom-0 justify-center items-center w-3 select-none">
                                       <button @click.prevent="stepExtraBedQty(room, 1)" class="hover:text-black leading-[0.6] outline-none border-none bg-transparent cursor-pointer p-0" title="Tăng số lượng"><i class="fa-solid fa-caret-up text-[9px]"></i></button>
@@ -8611,14 +8590,14 @@ defineExpose({
                                     </div>
                                   </div>
                                   <div v-else class="flex items-center justify-center gap-1">
-                                    <span class="font-bold text-slate-700 text-[11px]">{{ getRoomExtraBedQty(room) }}</span>
-                                    <button @click.stop="openExtraBedModal(room)" class="px-1.5 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer shadow-2xs">
+                                    <span class="font-bold text-[#000000D9] text-xs">{{ getRoomExtraBedQty(room) }}</span>
+                                    <button @click.stop="openExtraBedModal(room)" class="h-7 px-3 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-xs font-semibold cursor-pointer shadow-2xs inline-flex items-center justify-center">
                                       <span>Chi tiết</span>
                                     </button>
                                   </div>
                                 </template>
                                 <template v-else-if="col.key === 'extraBedPrice'">
-                                  <div v-if="isEditing" class="relative w-full border border-slate-300 rounded-md h-[26px] bg-white shadow-sm flex items-center" @click.stop>
+                                  <div v-if="isEditing" class="relative w-full border border-slate-300 rounded-md h-[32px] bg-white shadow-sm flex items-center" @click.stop>
                                     <input 
                                       type="text" 
                                       :value="formatCurrencyInput(room.extraBedPrice)"
@@ -8642,7 +8621,7 @@ defineExpose({
                                 <template v-else-if="col.key === 'specialRequests'">
                                   <button 
                                     @click.stop="openSpecialRequestsModal(room)" 
-                                    class="px-1.5 py-0.5 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-[9px] font-semibold cursor-pointer max-w-[120px] truncate"
+                                    class="px-2.5 py-1 border border-sky-200 hover:border-sky-300 bg-sky-50 text-sky-700 rounded text-xs font-semibold cursor-pointer max-w-[120px] truncate"
                                     :title="getRoomSpecialRequestsText(room)"
                                   >
                                     {{ getRoomSpecialRequestsText(room) }}
@@ -8675,28 +8654,16 @@ defineExpose({
                                   />
                                 </template>
                                 <template v-else-if="col.key === 'initialRoomClass'">
-                                  <input 
-                                    v-if="isEditing" 
-                                    type="text" 
-                                    v-model="room.initialRoomClass" 
-                                    class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs w-full font-semibold focus:outline-none text-center" 
-                                  />
-                                  <span v-else>{{ room.initialRoomClass || room.shape || '-' }}</span>
+                                  <span class="text-[#000000D9] font-normal text-xs">{{ room.initialRoomClass || room.shape || '-' }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'transferredFrom'">
-                                  <input 
-                                    v-if="isEditing" 
-                                    type="text" 
-                                    v-model="room.transferredFrom" 
-                                    class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs w-full font-semibold focus:outline-none text-center" 
-                                  />
-                                  <span v-else class="text-slate-700 font-bold">{{ room.transferredFrom || '-' }}</span>
+                                  <span class="text-[#000000D9] font-normal text-xs">{{ room.transferredFrom || '-' }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'roomStatus'">
                                   <select 
                                     v-if="isEditing" 
                                     v-model="room.roomStatus" 
-                                    class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs w-full font-semibold focus:outline-none text-center"
+                                    class="bg-white border border-slate-300 rounded px-1.5 h-[32px] text-xs w-full font-semibold focus:outline-none text-center"
                                   >
                                     <option value="Sạch">Sạch</option>
                                     <option value="Bẩn">Bẩn</option>
@@ -8714,25 +8681,13 @@ defineExpose({
                                   </span>
                                 </template>
                                 <template v-else-if="col.key === 'allotmentCode'">
-                                  <input 
-                                    v-if="isEditing" 
-                                    type="text" 
-                                    v-model="room.allotmentCode" 
-                                    class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs w-full font-semibold focus:outline-none" 
-                                  />
-                                  <span v-else>{{ room.allotmentCode || '-' }}</span>
+                                  <span class="text-[#000000D9] font-normal text-xs">{{ room.allotmentCode || '-' }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'roomCode'">
-                                  <input 
-                                    v-if="isEditing" 
-                                    type="text" 
-                                    v-model="room.roomCode" 
-                                    class="bg-white border border-slate-300 rounded px-1.5 py-0.5 text-xs w-full font-semibold focus:outline-none" 
-                                  />
-                                  <span v-else>{{ room.roomCode || '-' }}</span>
+                                  <span class="text-[#000000D9] font-normal text-xs">{{ room.roomCode || '-' }}</span>
                                 </template>
                               </td>
-                              <td class="p-2 text-right text-gray-900 font-bold bg-[#f1f5f9] group-hover:bg-[#e2e8f0] sticky-shadow-left z-10" @click.stop>{{ (Number(room.total) || 0).toLocaleString('en-US') }}</td>
+                              <td class="p-2 text-right text-[#000000D9] font-semibold bg-[#f1f5f9] group-hover:bg-[#e2e8f0] sticky-shadow-left z-10" @click.stop>{{ (Number(room.total) || 0).toLocaleString('en-US') }}</td>
                             </tr>
 
                             <!-- Expanded Services Row (read-only for checked-in) -->

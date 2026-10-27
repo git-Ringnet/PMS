@@ -4,7 +4,7 @@ import http from '@/services/http'
 import { useAuthStore } from '@/stores/auth-store'
 
 const authStore = useAuthStore()
-const topbarThemeBg = computed(() => authStore.themeColor || authStore.settings?.topbar_color || 'var(--pms-custom-theme, #006bdb)')
+const topbarThemeBg = computed(() => authStore.themeColor || 'var(--pms-custom-theme, #006bdb)')
 
 // Draggable modal position
 const modalPos = ref({ x: 0, y: 0 })
