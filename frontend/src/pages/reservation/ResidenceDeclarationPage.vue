@@ -171,10 +171,15 @@ async function markRowsDeclared(rows) {
   }
 }
 
-function getSeparateIdNumber(idNumber, passportNumber) {
+// Dòng 295 (note 27/10): số Passport của khách nằm ở cột Số giấy tờ, cột Hộ chiếu chỉ hiện khi là số khác.
+function getDocumentNumber(idNumber, passportNumber) {
+  return String(idNumber ?? '').trim() || String(passportNumber ?? '').trim()
+}
+
+function getSeparatePassportNumber(idNumber, passportNumber) {
   const idValue = String(idNumber ?? '').trim()
   const passportValue = String(passportNumber ?? '').trim()
-  return idValue && idValue !== passportValue ? idValue : ''
+  return idValue && passportValue && passportValue !== idValue ? passportValue : ''
 }
 
 function cellTitle(value) {
@@ -199,6 +204,8 @@ const filterSearchTerm = ref('')
 const filters = ref({
   children: false,
   passport: false,
+  foreigner: false,
+  vietnamese: false,
   roomMove: false,
   inHouse: false
 })
@@ -395,6 +402,11 @@ const filteredRows = computed(() => {
     list = list.filter(r => !r.nLon)
   }
 
+  // 3. Lọc Người Nước Ngoài / Người Việt Nam (dòng 295 note 27/10). Tick cả hai = hiện tất cả.
+  if (filters.value.foreigner !== filters.value.vietnamese) {
+    list = list.filter(r => filters.value.vietnamese ? r.isVn : !r.isVn)
+  }
+
   // 4. Lọc Passport
   if (filters.value.passport) {
     list = list.filter(r => !!r.hoChieu && String(r.hoChieu).trim() !== '')
@@ -582,8 +594,8 @@ function exportToCsv(rows) {
       r.ngayDi || '',
       quocTichVal,
       r.diaChi !== '_' ? r.diaChi : '',
-      r.soGiayTo || '',
-      r.hoChieu || '',
+      r.soGiayToHienThi || '',
+      r.hoChieuHienThi || '',
       r.ngayHetHan || '',
       entryDateVal,
       r.cuaKhau || '',
@@ -915,6 +927,8 @@ function resetFilters() {
   filters.value = {
     children: false,
     passport: false,
+    foreigner: false,
+    vietnamese: false,
     roomMove: false,
     inHouse: false
   }
@@ -1036,7 +1050,8 @@ async function loadBookingData() {
                     quocTich: getNationalityName(c.nationality_code || 'VNM'),
                     diaChi: c.address || '_',
                     soGiayTo: c.id_number || c.passport_number || '',
-                    soGiayToHienThi: getSeparateIdNumber(c.id_number, c.passport_number),
+                    soGiayToHienThi: getDocumentNumber(c.id_number, c.passport_number),
+                    hoChieuHienThi: getSeparatePassportNumber(c.id_number, c.passport_number),
                     loaiGiayTo: c.passport_number ? 'Hộ chiếu' : 'Căn cước công dân',
                     hoChieu: c.passport_number || '',
                     tamTruDenHienThi: c.temp_residence_to ? formatDateDisplay(c.temp_residence_to) : '',
@@ -1092,6 +1107,7 @@ async function loadBookingData() {
                 diaChi: '_',
                 soGiayTo: '',
                 soGiayToHienThi: '',
+                hoChieuHienThi: '',
                 loaiGiayTo: 'Căn cước công dân',
                 hoChieu: '',
                 tamTruDenHienThi: '',
@@ -1164,7 +1180,8 @@ async function loadBookingData() {
                 quocTich: getNationalityName(ch.nationality_code || 'VNM'),
                 diaChi: ch.address || '_',
                 soGiayTo: ch.id_number || ch.passport_number || '',
-                soGiayToHienThi: getSeparateIdNumber(ch.id_number, ch.passport_number),
+                soGiayToHienThi: getDocumentNumber(ch.id_number, ch.passport_number),
+                hoChieuHienThi: getSeparatePassportNumber(ch.id_number, ch.passport_number),
                 loaiGiayTo: ch.passport_number ? 'Hộ chiếu' : (ch.id_type || 'Căn cước công dân'),
                 hoChieu: ch.passport_number || '',
                 tamTruDenHienThi: ch.temp_residence_to ? formatDateDisplay(ch.temp_residence_to) : '',
@@ -1387,6 +1404,12 @@ onUnmounted(() => {
             <label v-show="!filterSearchTerm || 'passport'.includes(filterSearchTerm.toLowerCase())" class="dp-item">
               <input type="checkbox" v-model="filters.passport" /> Passport
             </label>
+            <label v-show="!filterSearchTerm || 'người nước ngoài'.includes(filterSearchTerm.toLowerCase())" class="dp-item">
+              <input type="checkbox" v-model="filters.foreigner" /> Người Nước Ngoài
+            </label>
+            <label v-show="!filterSearchTerm || 'người việt nam'.includes(filterSearchTerm.toLowerCase())" class="dp-item">
+              <input type="checkbox" v-model="filters.vietnamese" /> Người Việt Nam
+            </label>
             <label v-show="!filterSearchTerm || 'phòng chuyển'.includes(filterSearchTerm.toLowerCase())" class="dp-item">
               <input type="checkbox" v-model="filters.roomMove" /> Phòng Chuyển
             </label>
@@ -1547,7 +1570,7 @@ onUnmounted(() => {
               </td>
               <td class="col-diachi font-normal text-[#000000D9]" :title="cellTitle(r.diaChi)"><span class="cell-content">{{ r.diaChi !== '_' ? r.diaChi : '' }}</span></td>
               <td class="col-sogiayto font-normal text-[#000000D9]" :title="cellTitle(r.soGiayToHienThi)"><span class="cell-content">{{ r.soGiayToHienThi }}</span></td>
-              <td class="col-hochieu font-normal text-[#000000D9]" :title="cellTitle(r.hoChieu)"><span class="cell-content">{{ r.hoChieu }}</span></td>
+              <td class="col-hochieu font-normal text-[#000000D9]" :title="cellTitle(r.hoChieuHienThi)"><span class="cell-content">{{ r.hoChieuHienThi }}</span></td>
               <td class="col-tamtruden font-normal text-[#000000D9]" :title="cellTitle(r.tamTruDenHienThi)"><span class="cell-content">{{ r.tamTruDenHienThi }}</span></td>
               <td class="col-ngayhethan font-normal text-[#000000D9]" :title="cellTitle(r.ngayHetHan)"><span class="cell-content">{{ r.ngayHetHan }}</span></td>
               <td class="col-ngaynhapcanh font-normal text-[#000000D9]" :title="cellTitle(r.ngayNhapCanh)"><span class="cell-content">{{ r.ngayNhapCanh }}</span></td>
