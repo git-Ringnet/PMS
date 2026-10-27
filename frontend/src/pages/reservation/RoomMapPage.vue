@@ -3749,7 +3749,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                       </button>
                     </div>
                   </div>
-                  <table class="w-full text-left border-collapse text-xs table-fixed min-w-[1740px]">
+                  <table class="w-full text-left border-collapse text-xs table-fixed min-w-[2350px]">
                     <thead>
                       <tr class="bg-slate-50 border-b border-slate-200 select-none whitespace-nowrap text-slate-700 font-semibold" :class="TEXT_THEME.tableHeader">
                         <!-- 1. Checkbox / STT -->
@@ -3783,7 +3783,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 3. TT Phòng [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[90px] text-center align-middle border" title="Tình trạng phòng">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[120px] text-center align-middle border" title="Tình trạng phòng">
                           <div class="flex items-center justify-between gap-1 w-full">
                             <span class="truncate" title="Tình trạng phòng">TT Phòng</span>
                             <button type="button" @click.stop="toggleColFilter('roomStatus')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('roomStatus') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc TT Phòng">
@@ -3849,7 +3849,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 6. Loại phòng [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[100px] text-center align-middle border" title="Loại phòng">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[125px] text-center align-middle border" title="Loại phòng">
                           <div class="flex items-center justify-between gap-1 w-full">
                             <span class="truncate" title="Loại phòng">Loại Phòng</span>
                             <button type="button" @click.stop="toggleColFilter('roomType')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('roomType') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc loại phòng">
@@ -3873,7 +3873,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 7. Dạng phòng [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[100px] text-center align-middle border" title="Dạng phòng">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[125px] text-center align-middle border" title="Dạng phòng">
                           <div class="flex items-center justify-between gap-1 w-full">
                             <span class="truncate" title="Dạng phòng">Dạng Phòng</span>
                             <button type="button" @click.stop="toggleColFilter('roomShape')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('roomShape') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc dạng phòng">
@@ -4021,7 +4021,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 14. Thêm giường [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[90px] text-center align-middle border" title="Thêm giường (Extra bed)">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[125px] text-center align-middle border" title="Thêm giường (Extra bed)">
                           <div class="flex items-center justify-between gap-1 w-full">
                             <span class="truncate" title="Thêm giường (Extra bed)">Thêm Giường</span>
                             <button type="button" @click.stop="toggleColFilter('extraBed')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('extraBed') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc thêm giường">
@@ -4044,7 +4044,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 15. Yêu cầu ĐB [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[95px] text-center align-middle border" title="Yêu cầu đặc biệt (YCĐB)">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[145px] text-center align-middle border" title="Yêu cầu đặc biệt (YCĐB)">
                           <div class="flex items-center justify-between gap-1 w-full">
                             <span class="truncate" title="Yêu cầu đặc biệt (YCĐB)">Yêu Cầu ĐB</span>
                             <button type="button" @click.stop="toggleColFilter('specialRequests')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('specialRequests') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc yêu cầu đặc biệt">
@@ -4067,7 +4067,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 16. Nhận phòng trễ [▾] -->
-                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[110px] text-center align-middle border" title="Nhận phòng trễ (Late check-in)">
+                        <th class="p-2 border-r border-slate-200 relative col-filter-container w-[145px] text-center align-middle border" title="Nhận phòng trễ (Late check-in)">
                           <div class="flex items-center justify-between gap-1 w-full">
                             <span class="truncate" title="Nhận phòng trễ (Late check-in)">Nhận Phòng Trễ</span>
                             <button type="button" @click.stop="toggleColFilter('lateCheckin')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('lateCheckin') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc nhận phòng trễ">
@@ -4090,7 +4090,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         </th>
 
                         <!-- 17. Chuyển phòng kế hoạch [▾] -->
-                        <th class="p-2 relative col-filter-container w-[130px] text-center align-middle border-r border-slate-200 border" title="Chuyển phòng kế hoạch">
+                        <th class="p-2 relative col-filter-container w-[190px] text-center align-middle border-r border-slate-200 border" title="Chuyển phòng kế hoạch">
                           <div class="flex items-center justify-between gap-1 w-full">
                             <span class="truncate" title="Chuyển phòng kế hoạch">Chuyển Phòng Kế Hoạch</span>
                             <button type="button" @click.stop="toggleColFilter('planMove')" class="p-1 rounded hover:bg-slate-200 transition-colors" :class="isColFilterActive('planMove') ? 'text-sky-600 font-bold' : 'text-slate-400'" title="Lọc chuyển phòng">
