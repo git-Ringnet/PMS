@@ -1260,8 +1260,29 @@ class BookingController extends Controller
             }
         }
 
+        // Dòng 446: đổi tình trạng đăng ký giữa nhóm trừ phòng trống (is_availability = 1)
+        // và nhóm không trừ phòng trống (is_availability = 0, VD Waiting).
+        $oldRegistration = $booking->registration_status_id !== null
+            ? RegistrationStatus::where('booking_status_id', (int) $booking->registration_status_id)->first()
+            : null;
+        $newRegistration = array_key_exists('registration_status_id', $validated)
+            && (int) $validated['registration_status_id'] !== (int) $booking->registration_status_id
+            ? RegistrationStatus::where('booking_status_id', (int) $validated['registration_status_id'])->first()
+            : null;
+        $isInHouseBooking = (int) $booking->status === Booking::STATUS_CHECKIN
+            || $booking->bookingRooms()->where('status', BookingRoom::STATUS_CHECKED_IN)->exists();
+        if ($oldRegistration?->is_availability && $newRegistration && !$newRegistration->is_availability && $isInHouseBooking) {
+            return response()->json([
+                'success' => false,
+                'message' => "Đăng ký đang ở không được chuyển sang tình trạng {$newRegistration->name} (không tính vào phòng trống).",
+            ], 422);
+        }
+        $becomesAvailable = $oldRegistration && !$oldRegistration->is_availability
+            && $newRegistration && $newRegistration->is_availability;
+        $overBlock = null;
+
         try {
-            \Illuminate\Support\Facades\DB::transaction(function () use ($booking, $validated, $request, $allowAddingRoomsOnly, $bookingDatesChanged, $canSyncRoomDates, $canSyncArrivalDate, $syncRoomDates) {
+            \Illuminate\Support\Facades\DB::transaction(function () use ($booking, $validated, $request, $allowAddingRoomsOnly, $bookingDatesChanged, $canSyncRoomDates, $canSyncArrivalDate, $syncRoomDates, $becomesAvailable, &$overBlock) {
                 // Đồng bộ ngày của phòng theo cấu hình SyncRoomDateByBookingDate
                 if ($canSyncRoomDates
                     && $bookingDatesChanged
@@ -1814,8 +1835,37 @@ class BookingController extends Controller
                         throw new \Exception(self::BOOKING_PERIOD_MISMATCH_MESSAGE);
                     }
                 }
+
+                // Dòng 446 / 549: chuyển từ tình trạng không trừ phòng trống sang tình trạng
+                // trừ phòng trống thì phòng của BK bắt đầu chiếm quỹ phòng -> kiểm tra over.
+                // Kiểm tra trên dữ liệu cuối cùng (đã tính phòng của BK), lỗi thì rollback.
+                if ($becomesAvailable) {
+                    $overRooms = $this->overRoomNightsForBooking($booking);
+                    if ($overRooms) {
+                        $allowOver = (string) (HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->value('value') ?? '0') === '1';
+                        if (!$allowOver || !$request->boolean('force_over')) {
+                            $overBlock = ['allow_over' => $allowOver, 'over_rooms' => $overRooms];
+                            throw new \RuntimeException('over_on_registration_status_change');
+                        }
+                    }
+                }
             });
         } catch (\Exception $e) {
+            if ($overBlock !== null) {
+                return $overBlock['allow_over']
+                    ? response()->json([
+                        'success' => false,
+                        'needs_over_confirm' => true,
+                        'over_rooms' => $overBlock['over_rooms'],
+                        'message' => 'Loại phòng đang bị over bạn có muốn tiếp tục',
+                    ], 409)
+                    : response()->json([
+                        'success' => false,
+                        'blocked_by_over' => true,
+                        'over_rooms' => $overBlock['over_rooms'],
+                        'message' => 'Loại phòng đang bị over không thể cập nhật thông tin',
+                    ], 422);
+            }
             \Illuminate\Support\Facades\Log::error('Exception in update booking: ' . $e->getMessage() . "\n" . $e->getTraceAsString());
             return response()->json([
                 'success' => false,
@@ -1870,6 +1920,42 @@ class BookingController extends Controller
             'data'    => $booking,
             'message' => 'Cập nhật đăng ký thành công!',
         ]);
+    }
+
+    /**
+     * Dòng 446: các đêm (từ ngày hệ thống) mà loại phòng bị âm phòng trống sau khi
+     * phòng của booking được tính vào quỹ phòng.
+     */
+    private function overRoomNightsForBooking(Booking $booking): array
+    {
+        $systemDate = SystemDateRoll::latest('id')->value('system_date');
+        $systemDate = $systemDate ? Carbon::parse($systemDate)->toDateString() : now('Asia/Ho_Chi_Minh')->toDateString();
+        $availability = app(RoomAvailabilityService::class);
+        $rooms = $booking->bookingRooms()->stayOnly()
+            ->whereIn('status', [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN])
+            ->get();
+
+        $overRooms = [];
+        foreach ($rooms->groupBy('room_class_id') as $classId => $classRooms) {
+            $className = RoomClass::find($classId)?->name ?? "ID {$classId}";
+            foreach ($classRooms as $room) {
+                $start = Carbon::parse($room->arrival_date)->max(Carbon::parse($systemDate));
+                $end = Carbon::parse($room->departure_date);
+                if ($start->gte($end) && !$room->is_day_use) continue;
+                if ($start->gte($end)) $end = $start->copy()->addDay();
+
+                for ($date = $start->copy(); $date->lt($end); $date->addDay()) {
+                    $key = "{$classId}_{$date->toDateString()}";
+                    if (isset($overRooms[$key])) continue;
+                    $av = $availability->getAvailability((int) $classId, $date->toDateString(), $date->copy()->addDay()->toDateString());
+                    if ($av < 0) {
+                        $overRooms[$key] = ['room_class_id' => (int) $classId, 'class_name' => $className, 'date' => $date->toDateString(), 'av' => $av];
+                    }
+                }
+            }
+        }
+
+        return array_values($overRooms);
     }
 
     /**
