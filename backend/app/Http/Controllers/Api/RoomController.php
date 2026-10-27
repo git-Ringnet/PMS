@@ -355,8 +355,7 @@ class RoomController extends Controller
                     })
                     ->distinct()
                     ->orderBy('floor')
-                    ->pluck('floor')
-                    ->map(fn($f) => (int)$f),
+                    ->pluck('floor'),
             ]
         ]);
     }
@@ -467,6 +466,8 @@ class RoomController extends Controller
             'orders' => 'nullable|integer|unique:rooms,orders',
         ]);
 
+        $this->assertGridPositionAvailable($validated);
+
         $room = Room::create($validated);
         $room->load(['roomForm', 'roomClass']);
 
@@ -521,6 +522,7 @@ class RoomController extends Controller
         ]);
 
         app(\App\Services\ConfigurationReferenceGuard::class)->assertIdentityUnchanged($room, $validated, ['room_number']);
+        $this->assertGridPositionAvailable($validated, $room);
         $room->update($validated);
         $room->load(['roomForm', 'roomClass']);
 
@@ -528,6 +530,34 @@ class RoomController extends Controller
             'success' => true,
             'data' => new RoomResource($room)
         ]);
+    }
+
+    /**
+     * A positive grid coordinate identifies one physical room on the exact Room Map.
+     */
+    private function assertGridPositionAvailable(array $validated, ?Room $currentRoom = null): void
+    {
+        $gridRow = (int) ($validated['grid_row'] ?? 0);
+        $gridColumn = (int) ($validated['grid_column'] ?? 0);
+        $isInternal = (bool) ($validated['is_internal'] ?? $currentRoom?->is_internal ?? false);
+
+        if ($isInternal || $gridRow <= 0 || $gridColumn <= 0) {
+            return;
+        }
+
+        $conflictingRoom = Room::query()
+            ->where('is_internal', false)
+            ->where('grid_row', $gridRow)
+            ->where('grid_column', $gridColumn)
+            ->when($currentRoom, fn ($query) => $query->whereKeyNot($currentRoom->id))
+            ->first(['id', 'room_number']);
+
+        if ($conflictingRoom) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'grid_row' => ["Vị trí Hàng {$gridRow}, Cột {$gridColumn} đã được dùng bởi phòng {$conflictingRoom->room_number}."],
+                'grid_column' => ["Vị trí Hàng {$gridRow}, Cột {$gridColumn} đã được dùng bởi phòng {$conflictingRoom->room_number}."],
+            ]);
+        }
     }
 
     /**

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, onMounted, watch, onBeforeUnmount, onDeactivated, nextTick } from 'vue'
 import { toPng } from 'html-to-image'
 import { useRouter, useRoute } from 'vue-router'
 import { useRoomStore } from '@/stores/room-store'
@@ -511,8 +511,12 @@ const occupiedStats = computed(() => {
 })
 
 const occupancyRateStats = computed(() => {
-  return `${roomStore.occupancyRate}%`
+  return `${formatOccupancyRate(roomStore.occupancyRate)}%`
 })
+
+function formatOccupancyRate(value) {
+  return (Number(value) || 0).toFixed(2)
+}
 
 // Popup dùng cùng kết quả công suất từ API với thẻ Room Map để không lệch công thức nghiệp vụ.
 const roomMapStatistics = computed(() => {
@@ -593,8 +597,7 @@ function formatVnd(value) {
 // Sorted Floors list
 const sortedFloors = computed(() => {
   const floors = Object.keys(roomStore.roomsByFloor)
-    .map(Number)
-    .sort((a, b) => a - b)
+    .sort((a, b) => String(a).localeCompare(String(b), 'vi', { numeric: true, sensitivity: 'base' }))
   return floors
 })
 
@@ -1596,6 +1599,12 @@ function getRoomCardStyle(room, floorIdx, roomIdx) {
     ...(hasBridge ? { zIndex: 25 } : {})
   }
 
+  if (settings.value.exactPosition && hasValidGridPosition(room)) {
+    baseStyle.gridRow = String(room.grid_row)
+    // Hai cột đầu dành cho nhãn tầng và khoảng cách chuẩn với thẻ phòng.
+    baseStyle.gridColumn = String(Number(room.grid_column) + 2)
+  }
+
   if (hasBkColor) {
     const textColor = '#1e293b'
     return {
@@ -1608,6 +1617,44 @@ function getRoomCardStyle(room, floorIdx, roomIdx) {
   }
 
   return baseStyle
+}
+
+function hasValidGridPosition(room) {
+  return Number.isInteger(Number(room?.grid_row)) && Number(room.grid_row) > 0
+    && Number.isInteger(Number(room?.grid_column)) && Number(room.grid_column) > 0
+}
+
+function getExactRoomMapStyle() {
+  const positionedRooms = roomStore.filteredRooms.filter(hasValidGridPosition)
+  const maxColumn = Math.max(1, ...positionedRooms.map(room => Number(room.grid_column)))
+  return {
+    // Giữ nguyên tỷ lệ chế độ ngang thường: nhãn tầng 96px, cách thẻ đầu 16px,
+    // các thẻ phòng cách nhau 6px.
+    gridTemplateColumns: `96px 10px repeat(${maxColumn}, ${settings.value.roomWidth}px)`,
+    gridAutoRows: `${settings.value.roomHeight}px`,
+    columnGap: '6px',
+    rowGap: '4px',
+  }
+}
+
+function getExactFloorPillStyle(floor) {
+  const positionedRooms = (roomStore.roomsByFloor[floor] || []).filter(hasValidGridPosition)
+  const gridRow = positionedRooms.length
+    ? Math.min(...positionedRooms.map(room => Number(room.grid_row)))
+    : 1
+
+  return {
+    height: settings.value.roomHeight + 'px',
+    minHeight: settings.value.roomHeight + 'px',
+    maxHeight: settings.value.roomHeight + 'px',
+    width: '96px',
+    boxSizing: 'border-box',
+    gridRow: String(gridRow),
+    gridColumn: '1',
+    padding: '8px',
+    justifyContent: 'center',
+    transition: 'none',
+  }
 }
 
 function getConnectingRoomNumber(room) {
@@ -1632,7 +1679,13 @@ function hasConnectingDoorWithNext(room, floorRooms, roomIdx) {
   const r1Conn = String(room.connecting_room || '').trim()
   const r2Conn = String(nextRoom.connecting_room || '').trim()
 
-  return (r1Conn !== '' && r1Conn === r2Num) || (r2Conn !== '' && r2Conn === r1Num)
+  const isConnected = (r1Conn !== '' && r1Conn === r2Num) || (r2Conn !== '' && r2Conn === r1Num)
+  if (!isConnected || !settings.value.exactPosition) return isConnected
+
+  if (!hasValidGridPosition(room) || !hasValidGridPosition(nextRoom)) return false
+  const rowDistance = Math.abs(Number(room.grid_row) - Number(nextRoom.grid_row))
+  const columnDistance = Math.abs(Number(room.grid_column) - Number(nextRoom.grid_column))
+  return (rowDistance === 0 && columnDistance === 1) || (rowDistance === 1 && columnDistance === 0)
 }
 
 function isIsolatedConnectingRoom(room, floorRooms, roomIdx) {
@@ -1653,7 +1706,19 @@ function isIsolatedConnectingRoom(room, floorRooms, roomIdx) {
   return true
 }
 
-function getConnectingDoorStyle() {
+function getConnectingDoorStyle(room, nextRoom) {
+  if (settings.value.exactPosition && hasValidGridPosition(room) && hasValidGridPosition(nextRoom)) {
+    const rowDelta = Number(nextRoom.grid_row) - Number(room.grid_row)
+    const columnDelta = Number(nextRoom.grid_column) - Number(room.grid_column)
+    const iconW = Math.max(14, Math.round(16 * cardScale.value))
+    const iconH = Math.max(21, Math.round(25 * cardScale.value))
+
+    if (columnDelta === 1) return { right: `${-(3 + Math.round(iconW / 2))}px`, top: '42%', transform: 'translateY(-50%)', width: `${iconW}px`, height: `${iconH}px` }
+    if (columnDelta === -1) return { left: `${-(3 + Math.round(iconW / 2))}px`, top: '42%', transform: 'translateY(-50%)', width: `${iconW}px`, height: `${iconH}px` }
+    if (rowDelta === 1) return { bottom: `${-(3 + Math.round(iconH / 2))}px`, left: '50%', transform: 'translateX(-50%)', width: `${iconW}px`, height: `${iconH}px` }
+    if (rowDelta === -1) return { top: `${-(3 + Math.round(iconH / 2))}px`, left: '50%', transform: 'translateX(-50%)', width: `${iconW}px`, height: `${iconH}px` }
+  }
+
   const isHorizontal = settings.value.floorOrientation === 'Ngang'
   const iconW = Math.max(14, Math.round(16 * cardScale.value))
   const iconH = Math.max(21, Math.round(25 * cardScale.value))
@@ -2518,6 +2583,16 @@ onBeforeUnmount(() => {
   }
 })
 
+onDeactivated(() => {
+  if (tooltipTimeout) {
+    clearTimeout(tooltipTimeout)
+    tooltipTimeout = null
+  }
+  hoverTooltip.value.show = false
+  tooltipTargetElement = null
+  closeContextMenu()
+})
+
 watch(() => contextMenu.value.show, (newVal) => {
   if (newVal) {
     window.addEventListener('scroll', closeContextMenu, { passive: true })
@@ -2721,7 +2796,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
           <!-- View Mode & Zoom switchers -->
           <div class="flex items-center gap-2 xl:gap-2.5 shrink-0">
-            <div v-if="moduleContext !== 'reservation' && !isGridMode && !isFutureView" class="bulk-status-container relative flex items-center gap-1">
+            <div v-if="moduleContext === 'housekeeping' && !isGridMode && !isFutureView" class="bulk-status-container relative flex items-center gap-1">
               <button
                 type="button"
                 class="flex h-8 w-8 items-center justify-center rounded-lg border text-white shadow-xs transition cursor-pointer"
@@ -3490,22 +3565,19 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 <!-- Room Grid view (Lưới sơ đồ) -->
                 <div v-else-if="isGridMode" ref="roomGridRef"
                    class="flex-1 overflow-auto pt-2.5 pr-2.5 pb-4 scrollbar-thin animate-room-grid"
-                   :class="settings.floorOrientation === 'Ngang' ? 'flex flex-col gap-1' : 'flex flex-row gap-5 items-start'">
+                   :class="settings.exactPosition ? 'grid gap-1.5 items-start' : (settings.floorOrientation === 'Ngang' ? 'flex flex-col gap-1' : 'flex flex-row gap-3 items-start')"
+                   :style="settings.exactPosition ? getExactRoomMapStyle() : (settings.floorOrientation === 'Dọc' ? { paddingTop: '16px', paddingLeft: '12px' } : {})">
                   <div v-for="(floor, floorIdx) in sortedFloors" :key="floor" :class="[
-                    settings.floorOrientation === 'Ngang' ? 'flex gap-4 items-center' : 'flex flex-col gap-2',
+                    settings.exactPosition ? 'contents' : (settings.floorOrientation === 'Ngang' ? 'flex gap-4 items-center' : 'flex flex-col gap-2'),
                     isInitialLoad ? 'floor-row-animate' : ''
                   ]" :style="isInitialLoad ? { animationDelay: `${floorIdx * 65}ms` } : {}">
                     <!-- Vertical Floor Pill shape on the left - Sticky to keep floor numbers visible -->
-                    <div class="floor-pill cursor-pointer" :style="getFloorPillStyle()">
-                      <span :style="getFloorTitleStyle()">{{ t('roomMap.floor', { floor }) }}</span>
-                      <span class="opacity-80 font-bold"
-                        :style="getFloorCountStyle()">
-                        {{ t('roomMap.roomsCount', { count: roomStore.roomsByFloor[floor]?.length || 0 }) }}
-                      </span>
+                    <div class="floor-pill cursor-pointer" :style="settings.exactPosition ? getExactFloorPillStyle(floor) : getFloorPillStyle()">
+                      <span :style="getFloorTitleStyle()">{{ floor }}</span>
                     </div>
 
                     <!-- Rooms horizontal/vertical flex container inside this floor -->
-                    <div :class="settings.floorOrientation === 'Ngang' ? 'flex gap-1.5' : 'flex flex-col gap-1.5'">
+                    <div :class="settings.exactPosition ? 'contents' : (settings.floorOrientation === 'Ngang' ? 'flex gap-1.5' : 'flex flex-col gap-1.5')">
                       <div v-for="(room, roomIdx) in roomStore.roomsByFloor[floor]" :key="room.id" class="room-card"
                         :class="[
                           isInitialLoad ? 'room-card-animate' : '',
@@ -3551,7 +3623,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                         <!-- Connecting Door Bridge (Icon cánh cửa giữa 2 phòng thông nhau) -->
                         <div v-if="hasConnectingDoorWithNext(room, roomStore.roomsByFloor[floor], roomIdx)"
                           class="absolute z-50 pointer-events-auto flex items-center justify-center cursor-help transition-transform hover:scale-125"
-                          :style="getConnectingDoorStyle()"
+                          :style="getConnectingDoorStyle(room, roomStore.roomsByFloor[floor][roomIdx + 1])"
                           :title="`Cửa thông phòng: ${room.room_number} ↔ ${roomStore.roomsByFloor[floor][roomIdx + 1]?.room_number}`"
                           @click.stop>
                           <RoomIcon name="connecting-door" class="text-black w-full h-full drop-shadow-xs" />
@@ -5016,7 +5088,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                       <td class="font-normal text-[#000000D9] border-slate-200">Phòng ở (ko b/g COMP.HU)</td>
                       <td class="text-center font-normal tabular-nums border-slate-200">{{ roomMapStatistics.chargeableRooms }}</td>
                       <td class="text-center font-normal tabular-nums border-slate-200">{{ roomMapStatistics.chargeablePax }}</td>
-                      <td class="text-center font-normal text-sky-600 tabular-nums border-slate-200">{{ roomMapStatistics.occupancyRate }}%</td>
+                      <td class="text-center font-normal text-sky-600 tabular-nums border-slate-200">{{ formatOccupancyRate(roomMapStatistics.occupancyRate) }}%</td>
                     </tr>
                     <tr class="h-7">
                       <td class="font-normal text-[#000000D9] border-slate-200">Phòng COMP</td>
@@ -5028,7 +5100,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                       <td class="font-normal text-[#000000D9] border-slate-200">Phòng ở (ko b/g HU)</td>
                       <td class="text-center font-normal tabular-nums border-slate-200">{{ roomMapStatistics.chargeableRooms + roomMapStatistics.compRooms }}</td>
                       <td class="text-center font-normal tabular-nums border-slate-200">{{ roomMapStatistics.chargeablePax + roomMapStatistics.compPax }}</td>
-                      <td class="text-center font-normal text-sky-600 tabular-nums border-slate-200">{{ roomMapStatistics.occupancyRate }}%</td>
+                      <td class="text-center font-normal text-sky-600 tabular-nums border-slate-200">{{ formatOccupancyRate(roomMapStatistics.occupancyRate) }}%</td>
                     </tr>
                     <tr class="h-7">
                       <td class="font-normal text-[#000000D9] border-slate-200">Phòng nội bộ</td>
@@ -5040,7 +5112,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                       <td class="font-normal text-blue-700 border-slate-200">Phòng ở</td>
                       <td class="text-center font-normal text-blue-700 tabular-nums border-slate-200">{{ roomMapStatistics.endOfDayRooms }}</td>
                       <td class="text-center font-normal text-blue-700 tabular-nums border-slate-200">{{ roomMapStatistics.endOfDayPax }}</td>
-                      <td class="text-center font-normal text-blue-700 tabular-nums border-slate-200">{{ roomMapStatistics.occupancyRate }}%</td>
+                      <td class="text-center font-normal text-blue-700 tabular-nums border-slate-200">{{ formatOccupancyRate(roomMapStatistics.occupancyRate) }}%</td>
                     </tr>
                     <tr class="h-7">
                       <td class="font-normal text-red-500 border-slate-200">Phòng trống</td>
