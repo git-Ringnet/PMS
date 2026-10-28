@@ -1170,11 +1170,11 @@ class RoomMoveTest extends TestCase
         $response->assertOk()->assertJsonPath('success', true);
         $occupiedRooms = collect($response->json('data.occupied_rooms'));
         $this->assertSame(['2', '10', '102'], $occupiedRooms->pluck('room_number')->all());
-        $this->assertTrue($occupiedRooms->firstWhere('room_number', '2')['can_merge']);
-        $this->assertFalse($occupiedRooms->firstWhere('room_number', '102')['can_merge']);
+        // Dòng 292 (note 27/10): phòng 102 đi sớm hơn vẫn được chọn, không còn cờ chặn gộp.
+        $this->assertArrayNotHasKey('can_merge', $occupiedRooms->firstWhere('room_number', '102'));
     }
 
-    public function test_merge_with_earlier_target_departure_is_rejected_without_changing_data()
+    public function test_row_292_merge_into_room_with_earlier_departure_is_allowed(): void
     {
         $booking = Booking::create([
             'booking_name'   => 'Booking chuyển phòng không hợp lệ',
@@ -1213,29 +1213,22 @@ class RoomMoveTest extends TestCase
         $response = $this->postJson("/api/bookings/{$booking->id}/rooms/{$sourceRoom->id}/move", [
             'move_type'          => 'merge',
             'target_room_number' => '102',
-            'reason'             => 'Kiểm tra ngày trả không hợp lệ',
+            'reason'             => 'Gộp sang phòng đi sớm hơn',
             'selected_guest_ids' => [$guest->id],
         ]);
 
-        $response->assertStatus(422)->assertJsonPath('success', false);
-        $this->assertDatabaseHas('booking_rooms', [
-            'id'      => $sourceRoom->id,
-            'status'  => BookingRoom::STATUS_CHECKED_IN,
-            'adults'  => 1,
-        ]);
-        $this->assertDatabaseHas('booking_rooms', [
-            'id'      => $targetRoom->id,
-            'status'  => BookingRoom::STATUS_CHECKED_IN,
-            'adults'  => 1,
+        $response->assertOk()->assertJsonPath('success', true);
+        // Khách chuyển sang phòng đích và trả phòng theo ngày đi của phòng đích.
+        $this->assertDatabaseHas('booking_room_guests', [
+            'booking_room_id'      => $targetRoom->id,
+            'guest_id'             => $guest->id,
+            'status'               => BookingRoomGuest::STATUS_CHECKED_IN,
+            'actual_checkout_date' => '2026-07-16 00:00:00',
         ]);
         $this->assertDatabaseHas('booking_room_guests', [
             'booking_room_id' => $sourceRoom->id,
             'guest_id'        => $guest->id,
-            'status'          => BookingRoomGuest::STATUS_CHECKED_IN,
-        ]);
-        $this->assertDatabaseMissing('booking_room_guests', [
-            'booking_room_id' => $targetRoom->id,
-            'guest_id'        => $guest->id,
+            'status'          => 100,
         ]);
     }
 

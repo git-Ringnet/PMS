@@ -4399,7 +4399,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
               class="rounded-xl shadow-2xl p-3.5 overflow-y-auto"
               :class="isLockedRoom(hoverTooltip.room)
                 ? 'bg-[#2e2e2e] text-[#f1f5f9] border border-neutral-700/60'
-                : 'bg-white text-slate-800 border border-slate-300'"
+                : 'bg-white text-[#000000D9] text-xs border border-slate-300'"
               :style="hoverTooltip.maxHeight ? { maxHeight: hoverTooltip.maxHeight + 'px' } : undefined">
             <!-- Mode 1: Khóa phòng (OOO / OOS) - Giữ nguyên 100% -->
             <template v-if="isLockedRoom(hoverTooltip.room)">
@@ -4421,48 +4421,50 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
               </div>
             </template>
 
-            <!-- Mode 2: Booking thông thường - Đổi sang nền trắng, chữ đen, xuống dòng, bỏ tóm tắt loại phòng/giá, thêm yêu cầu đặc biệt -->
+            <!-- Mode 2: Booking thông thường - nền trắng, xuống dòng, bỏ tóm tắt loại phòng/giá, thêm yêu cầu đặc biệt.
+                 Dòng 293 (note 27/10): thứ tự Công ty -> YCĐB -> Ghi chú; màu chữ theo chuẩn FE
+                 (tiêu đề semi-bold #000000D9, nội dung regular #000000D9, 12px). -->
             <template v-else>
               <!-- Header: Dates and Booking Code -->
               <div
-                class="flex items-center justify-between font-bold border-b border-slate-200 pb-1.5 mb-2 text-[12px] text-slate-800">
+                class="flex items-center justify-between font-semibold border-b border-slate-200 pb-1.5 mb-2">
                 <div class="flex items-center gap-1.5">
                   <span class="text-xs">🟢</span>
                   <span>{{ formatTooltipDate(hoverTooltip.room.arrival_date) }}</span>
-                  <span class="text-slate-400 font-normal">-</span>
+                  <span class="font-normal">-</span>
                   <span class="text-xs">🔴</span>
                   <span>{{ formatTooltipDate(hoverTooltip.room.departure_date) }}</span>
                 </div>
                 <div>
-                  <span class="text-slate-500 font-normal">Mã ĐK:</span>
-                  <span class="ml-1 text-sky-600 font-bold">{{ hoverTooltip.room.booking_code }}</span>
+                  <span>Mã ĐK:</span>
+                  <span class="ml-1 font-normal">{{ hoverTooltip.room.booking_code }}</span>
                 </div>
               </div>
 
               <!-- Details list -->
-              <ul class="space-y-1 pl-0 list-none m-0 text-slate-700">
+              <ul class="space-y-1 pl-0 list-none m-0">
                 <li class="flex items-start gap-1 break-words whitespace-normal">
                   <span class="text-slate-400">•</span>
-                  <span>Tên ĐK: <strong class="text-slate-900">{{ hoverTooltip.room.booking_name }}</strong></span>
+                  <span><span class="font-semibold">Tên ĐK:</span> {{ hoverTooltip.room.booking_name }}</span>
                 </li>
                 <li class="flex items-start gap-1 break-words whitespace-normal">
                   <span class="text-slate-400">•</span>
-                  <span>Tên: <strong class="text-slate-900">{{ hoverTooltip.room.guest_name }}</strong></span>
+                  <span><span class="font-semibold">Tên:</span> {{ hoverTooltip.room.guest_name }}</span>
                 </li>
                 <li class="flex items-start gap-1 break-words whitespace-normal">
                   <span class="text-slate-400">•</span>
                   <span>{{ hoverTooltip.room.room_type_name }} (Phòng {{ hoverTooltip.room.room_number }})</span>
                 </li>
-                <li v-if="getConnectingRoomNumber(hoverTooltip.room)" class="flex items-start gap-1 text-sky-300 font-semibold">
-                  <span class="text-neutral-500">•</span>
+                <li v-if="getConnectingRoomNumber(hoverTooltip.room)" class="flex items-start gap-1">
+                  <span class="text-slate-400">•</span>
                   <span class="inline-flex items-center gap-1">
                     <RoomIcon name="connecting-door" class="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                    <span>Phòng thông nhau: <strong class="text-white">{{ getConnectingRoomNumber(hoverTooltip.room) }}</strong></span>
+                    <span><span class="font-semibold">Phòng thông nhau:</span> {{ getConnectingRoomNumber(hoverTooltip.room) }}</span>
                   </span>
                 </li>
                 <li class="flex items-start gap-1">
                   <span class="text-slate-400">•</span>
-                  <span>Đêm: {{ hoverTooltip.room.nights }}</span>
+                  <span><span class="font-semibold">Đêm:</span> {{ hoverTooltip.room.nights }}</span>
                 </li>
                 <li class="flex items-center gap-2">
                   <span class="text-slate-400">•</span>
@@ -4475,37 +4477,37 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 <li class="flex items-center justify-between">
                   <span class="flex items-center gap-1">
                     <span class="text-slate-400">•</span>
-                    <span>Thời gian đến: {{ hoverTooltip.room.arrival_time }}</span>
+                    <span><span class="font-semibold">Thời gian đến:</span> {{ hoverTooltip.room.arrival_time }}</span>
                   </span>
-                  <strong class="text-amber-600 text-xs">{{ formatTooltipPrice(hoverTooltip.room.rate) }}</strong>
+                  <span class="font-semibold">{{ formatTooltipPrice(hoverTooltip.room.rate) }}</span>
                 </li>
               </ul>
 
               <!-- Divider -->
               <div class="h-px bg-slate-200 my-2"></div>
 
-              <!-- Lower Section (Description/Company details) -->
-              <div class="text-slate-600 space-y-1">
-                <!-- Yêu cầu đặc biệt (thay thế phần tóm tắt loại phòng/giá được khoanh) -->
-                <div v-if="getListSpecialRequests(hoverTooltip.room)" class="text-slate-800 break-words whitespace-normal pt-0.5">
-                  <span class="font-bold text-slate-700">Yêu cầu đặc biệt:</span>
-                  <span class="ml-1 text-rose-600 font-semibold">{{ getListSpecialRequests(hoverTooltip.room) }}</span>
+              <!-- Lower Section: Tên công ty, Yêu cầu đặc biệt, Ghi chú -->
+              <div class="space-y-1">
+                <div v-if="hoverTooltip.room.company_name" class="break-words whitespace-normal">
+                  <span class="font-semibold">Công ty:</span>
+                  <span class="ml-1 uppercase">{{ hoverTooltip.room.company_name }}</span>
                 </div>
-
-                <div v-if="hoverTooltip.room.company_name" class="uppercase text-slate-700 font-semibold break-words whitespace-normal">
-                  CTY: {{ hoverTooltip.room.company_name }}
+                <div v-if="getListSpecialRequests(hoverTooltip.room)" class="break-words whitespace-normal">
+                  <span class="font-semibold">Yêu cầu đặc biệt:</span>
+                  <span class="ml-1">{{ getListSpecialRequests(hoverTooltip.room) }}</span>
                 </div>
-                <div v-if="hoverTooltip.room.booking_note" class="text-slate-600 italic break-words whitespace-normal">
-                  Ghi chú: {{ hoverTooltip.room.booking_note }}
+                <div v-if="hoverTooltip.room.booking_note" class="break-words whitespace-normal">
+                  <span class="font-semibold">Ghi chú:</span>
+                  <span class="ml-1">{{ hoverTooltip.room.booking_note }}</span>
                 </div>
 
                 <div class="h-px bg-slate-200 my-1.5"
                   v-if="hoverTooltip.room.guest_details && hoverTooltip.room.guest_details.length > 0"></div>
 
                 <template v-if="hoverTooltip.room.guest_details && hoverTooltip.room.guest_details.length > 0">
-                  <div class="text-slate-700 font-bold uppercase text-[10px] tracking-wider mb-0.5">Tên khách:</div>
+                  <div class="font-semibold mb-0.5">Tên khách:</div>
                   <div v-for="(gName, idx) in hoverTooltip.room.guest_details" :key="idx"
-                    class="uppercase text-slate-800 pl-1 break-words whitespace-normal">
+                    class="uppercase pl-1 break-words whitespace-normal">
                     • {{ gName }}
                   </div>
                 </template>

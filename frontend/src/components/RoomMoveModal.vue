@@ -468,12 +468,8 @@ function selectAvailableRoom(room) {
   }
 }
 
+// Dòng 292 (note 27/10): mọi phòng đang ở đều chọn được, kể cả phòng có ngày đi sớm hơn.
 function selectOccupiedRoom(room) {
-  if (!canMergeRoom(room)) {
-    uiStore.showToast('Ngày trả phòng của phòng đích sớm hơn phòng cần chuyển.', 'warning')
-    return
-  }
-
   selectedMoveType.value = 'merge'
   selectedTargetRoomNumber.value = room.room_number
   warningMsg.value = ''
@@ -484,14 +480,6 @@ function selectOccupiedRoom(room) {
       applyRateCodePrice()
     }
   }
-}
-
-function canMergeRoom(room) {
-  if (typeof room?.can_merge === 'boolean') return room.can_merge
-
-  const sourceDeparture = currentRoom.value?.departure_date
-  const targetDeparture = room?.departure_date
-  return Boolean(sourceDeparture && targetDeparture && targetDeparture >= sourceDeparture)
 }
 
 function handleSubmit() {
@@ -507,11 +495,6 @@ function handleSubmit() {
 
   if (!reason.value.trim()) {
     uiStore.showToast('Vui lòng nhập lý do chuyển phòng!', 'error')
-    return
-  }
-
-  if (selectedMoveType.value === 'merge' && !canMergeRoom(selectedTargetRoomObj.value)) {
-    uiStore.showToast('Ngày trả phòng của phòng đích sớm hơn phòng cần chuyển.', 'error')
     return
   }
 
@@ -823,14 +806,12 @@ async function executeSubmit(selectedGuestIds, selectedChildIds = [], confirmExc
                 <tr v-for="r in filteredOccupiedRooms" :key="r.booking_room_id" @click="selectOccupiedRoom(r)"
                   class="transition-colors"
                   :class="[
-                    canMergeRoom(r) ? 'cursor-pointer' : 'cursor-not-allowed opacity-50',
+                    'cursor-pointer',
                     selectedMoveType === 'merge' && selectedTargetRoomNumber === r.room_number ? 'bg-blue-50/80 font-semibold' : '',
-                  ]"
-                  :title="canMergeRoom(r) ? '' : 'Ngày trả phòng của phòng đích sớm hơn phòng cần chuyển'">
+                  ]">
                   <td class="col-check">
                     <input type="radio" name="targetRoomGroup"
                       :checked="selectedMoveType === 'merge' && selectedTargetRoomNumber === r.room_number"
-                      :disabled="!canMergeRoom(r)"
                       class="cursor-pointer" />
                   </td>
                   <td class="col-loai" :title="r.room_class_name">{{ r.room_class_name }}</td>

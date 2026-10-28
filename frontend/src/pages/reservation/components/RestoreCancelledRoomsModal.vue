@@ -280,6 +280,21 @@ async function restoreSelected() {
   const payload = { room_ids: [...selectedIds.value] }
   try {
     let res = await restoreBooking(props.bookingId, payload)
+    // Dòng 294: trùng số phòng với đăng ký khác hoặc phòng khóa -> Có thì xóa số phòng trùng rồi khôi phục.
+    if (res.data?.needs_duplicate_confirm) {
+      const confirmed = await uiStore.confirm({
+        title: 'Cảnh báo trùng số phòng',
+        message: res.data.message,
+        confirmText: 'Có',
+        cancelText: 'Không',
+      })
+      if (!confirmed) {
+        uiStore.showToast('Đã hủy khôi phục, đăng ký giữ nguyên.', 'info')
+        return
+      }
+      payload.clear_duplicate_rooms = true
+      res = await restoreBooking(props.bookingId, payload)
+    }
     if (res.data?.needs_over_confirm || res.data?.needs_confirm) {
       const confirmed = await uiStore.confirm({
         title: 'Cảnh báo Over phòng',
@@ -287,7 +302,10 @@ async function restoreSelected() {
         confirmText: 'Có',
         cancelText: 'Không',
       })
-      if (!confirmed) return
+      if (!confirmed) {
+        uiStore.showToast('Đã hủy khôi phục, đăng ký giữ nguyên.', 'info')
+        return
+      }
       res = await restoreBooking(props.bookingId, { ...payload, force: true, force_over: true })
     }
 

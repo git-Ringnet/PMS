@@ -9,6 +9,23 @@
 - **Ngày ghi**: `YYYY-MM-DD`
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 
+## [2026-10-27] - Khôi Phục Booking Trùng Phòng, Gộp Phòng Đến Sớm, Tooltip & Khai Báo Lưu Trú
+### Module: Booking, Sơ Đồ Phòng (Room Map), Chuyển Phòng, Khai Báo Lưu Trú
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **1. Khôi phục booking hủy & kiểm tra trùng phòng (Dòng 294)**:
+    + Khi khôi phục bị trùng số phòng (với booking khác hoặc phòng khóa OOO/OOS): hỏi xác nhận để gỡ số phòng trùng, sau đó kiểm tra over theo `AllowOverRoomTypeRoomKind`.
+    + Booking trong ngày (ngày đến = ngày đi): tính chiếm phòng trọn ngày đến khi kiểm tra trùng phòng, tránh trùng phòng vật lý.
+    + So sánh ngày chuẩn xác theo `DATE` để phòng rơi đúng ngày đi phòng khác không bị báo trùng.
+  - **2. Chuyển phòng & Sơ đồ phòng (Dòng 292, 293)**:
+    + Dòng 292: Bỏ chặn chọn phòng đang ở có ngày đi sớm hơn (FE & BE); khách gộp sang checkout theo ngày đi của phòng đích.
+    + Dòng 293: Chuẩn hóa Tooltip booking trên Room Map (thứ tự: Tên công ty → Yêu cầu đặc biệt → Ghi chú; chuẩn FE Design System).
+  - **3. Khai báo lưu trú (Dòng 295)**:
+    + Bổ sung 2 bộ lọc: Người Nước Ngoài và Người Việt Nam (mặc định tick cả hai hoặc không tick = hiện tất cả).
+    + Khách nước ngoài có Passport: hiển thị số Passport ở cột Số giấy tờ, cột Hộ chiếu để trống; đồng bộ xuất CSV.
+- **Kiểm thử**:
+  - Bổ sung và pass 100% tests cho các dòng 292, 293, 294, 295; code đã commit và sẵn sàng trên `kaynblue`.
+
+
 
 ## [2026-10-27] - Triển Khai Hoàn Tất 5 Commit Nghiệp Vụ: Đặt Lại Mật Khẩu, Công Suất Phòng, Tọa Độ Phòng & Điều Hướng
 ### 1. Đặt Lại Mật Khẩu Nhân Viên (Dòng 447 Sheet Excel - [EmployeeTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/system/components/EmployeeTab.vue), [UserController.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Http/Controllers/Api/UserController.php))
