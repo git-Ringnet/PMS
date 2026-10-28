@@ -547,6 +547,44 @@ class RbacMatrixSeeder extends Seeder
                 ],
             ],
 
+            // Dòng 406: các màn hình con còn lại của Cấu hình hệ thống
+            [
+                'module' => 'CONFIG',
+                'screen_code' => 'config.system',
+                'screen_name' => 'Định nghĩa hệ thống (Thanh toán, Tiền tệ, Trạng thái...)',
+                'app' => 'PMS',
+                'actions' => [
+                    'view'   => ['code' => 'config.system.view',   'name' => 'Xem định nghĩa hệ thống'],
+                    'add'    => ['code' => 'config.system.create', 'name' => 'Thêm danh mục hệ thống'],
+                    'edit'   => ['code' => 'config.system.edit',   'name' => 'Sửa danh mục hệ thống'],
+                    'delete' => ['code' => 'config.system.delete', 'name' => 'Xóa danh mục hệ thống'],
+                ],
+            ],
+            [
+                'module' => 'CONFIG',
+                'screen_code' => 'config.housekeeping',
+                'screen_name' => 'Định nghĩa buồng phòng',
+                'app' => 'PMS',
+                'actions' => [
+                    'view'   => ['code' => 'config.housekeeping.view',   'name' => 'Xem định nghĩa buồng phòng'],
+                    'add'    => ['code' => 'config.housekeeping.create', 'name' => 'Thêm định nghĩa buồng phòng'],
+                    'edit'   => ['code' => 'config.housekeeping.edit',   'name' => 'Sửa định nghĩa buồng phòng'],
+                    'delete' => ['code' => 'config.housekeeping.delete', 'name' => 'Xóa định nghĩa buồng phòng'],
+                ],
+            ],
+            [
+                'module' => 'CONFIG',
+                'screen_code' => 'config.template',
+                'screen_name' => 'Mẫu in & Báo cáo',
+                'app' => 'PMS',
+                'actions' => [
+                    'view'   => ['code' => 'config.template.view',   'name' => 'Xem mẫu in & báo cáo'],
+                    'add'    => ['code' => 'config.template.create', 'name' => 'Tạo mẫu in & báo cáo'],
+                    'edit'   => ['code' => 'config.template.edit',   'name' => 'Sửa mẫu in & báo cáo'],
+                    'delete' => ['code' => 'config.template.delete', 'name' => 'Xóa mẫu in & báo cáo'],
+                ],
+            ],
+
             // ==========================================
             // SYSTEM - HỆ THỐNG QUẢN TRỊ
             // ==========================================
@@ -688,6 +726,9 @@ class RbacMatrixSeeder extends Seeder
                 'config.shifts.view', 'config.shifts.create', 'config.shifts.edit', 'config.shifts.delete',
                 'config.markets.view', 'config.markets.create', 'config.markets.edit', 'config.markets.delete',
                 'config.date_roll.view', 'config.date_roll.roll', 'config.date_roll.edit',
+                'config.system.view', 'config.system.create', 'config.system.edit', 'config.system.delete',
+                'config.housekeeping.view', 'config.housekeeping.create', 'config.housekeeping.edit', 'config.housekeeping.delete',
+                'config.template.view', 'config.template.create', 'config.template.edit', 'config.template.delete',
                 // SYSTEM
                 'system.user.view', 'system.user.manage',
             ],
@@ -708,6 +749,7 @@ class RbacMatrixSeeder extends Seeder
                 'mgmt.activity_log',
                 'config.hotel.view', 'config.room_classes.view', 'config.rooms.view', 'config.rates.view',
                 'config.services.view', 'config.shifts.view', 'config.markets.view', 'config.date_roll.view',
+                'config.system.view', 'config.housekeeping.view', 'config.template.view',
                 'system.user.view',
             ],
 

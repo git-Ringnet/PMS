@@ -72,7 +72,7 @@ class ConnectingRoomTest extends TestCase
 
     public function test_cannot_connect_room_to_itself()
     {
-        $user = User::factory()->create();
+        $user = User::factory()->withRole('branch_admin')->create();
         $roomForm = RoomForm::firstOrCreate(
             ['code' => 'TEST_FORM2'],
             ['name' => 'Test Form 2']

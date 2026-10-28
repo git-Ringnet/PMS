@@ -19,6 +19,19 @@ Route::get('/i18n/dictionary/{lang}', [\App\Http\Controllers\Api\TranslationCont
 
 // Protected routes (Sanctum)
 Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestrictions::class, \App\Http\Middleware\EnsureBranchAccess::class])->group(function () {
+    // Dòng 406: quyền ghi (thêm / sửa / xóa) theo từng màn hình. Đọc danh mục vẫn mở vì các màn hình
+    // nghiệp vụ cần dữ liệu tra cứu. 'screen.*' = các quyền add/create/edit/delete của màn hình đó.
+    $canWrite = function (string ...$codes): string {
+        $expanded = ['admin', 'system.setting'];
+        foreach ($codes as $code) {
+            array_push($expanded, ...(str_ends_with($code, '.*')
+                ? array_map(fn ($action) => substr($code, 0, -1) . $action, ['add', 'create', 'edit', 'delete'])
+                : [$code]));
+        }
+
+        return 'permission.write:' . implode(',', $expanded);
+    };
+
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/me/change-password', [AuthController::class, 'changePassword']);
@@ -81,7 +94,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
                 'shift' => $newRoll->shift
             ]
         ]);
-    });
+    })->middleware('permission:fo.night_audit,config.date_roll.roll');
 
     // API Day Close / Night Audit
     Route::prefix('night-audit')->group(function () {
@@ -105,39 +118,39 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     // Room Rate Codes (Mapped to SP1340)
     Route::apiResource('room-rate-codes', RoomRateCodeController::class)->parameters([
         'room-rate-codes' => 'ma'
-    ]);
-    Route::post('room-rate-codes/{ma}/plans', [RoomRateCodeController::class, 'saveRatePlan']);
-    Route::post('room-rate-codes/{ma}/daily-mappings', [RoomRateCodeController::class, 'saveDailyMappings']);
+    ])->middleware($canWrite('config.rates.*'));
+    Route::post('room-rate-codes/{ma}/plans', [RoomRateCodeController::class, 'saveRatePlan'])->middleware($canWrite('config.rates.*'));
+    Route::post('room-rate-codes/{ma}/daily-mappings', [RoomRateCodeController::class, 'saveDailyMappings'])->middleware($canWrite('config.rates.*'));
 
     // Hotel settings (write only - GET moved to public routes)
     // Route::get('/hotel-settings', [\App\Http\Controllers\Api\HotelSettingController::class, 'show']);
-    Route::put('/hotel-settings', [\App\Http\Controllers\Api\HotelSettingController::class, 'update']);
-    Route::post('/hotel-settings/logo', [\App\Http\Controllers\Api\HotelSettingController::class, 'uploadLogo']);
-    Route::delete('/hotel-settings/logo', [\App\Http\Controllers\Api\HotelSettingController::class, 'deleteLogo']);
-    Route::post('/hotel-settings/qr-code', [\App\Http\Controllers\Api\HotelSettingController::class, 'uploadQrCode']);
-    Route::delete('/hotel-settings/qr-code', [\App\Http\Controllers\Api\HotelSettingController::class, 'deleteQrCode']);
+    Route::put('/hotel-settings', [\App\Http\Controllers\Api\HotelSettingController::class, 'update'])->middleware($canWrite('config.hotel.*'));
+    Route::post('/hotel-settings/logo', [\App\Http\Controllers\Api\HotelSettingController::class, 'uploadLogo'])->middleware($canWrite('config.hotel.*'));
+    Route::delete('/hotel-settings/logo', [\App\Http\Controllers\Api\HotelSettingController::class, 'deleteLogo'])->middleware($canWrite('config.hotel.*'));
+    Route::post('/hotel-settings/qr-code', [\App\Http\Controllers\Api\HotelSettingController::class, 'uploadQrCode'])->middleware($canWrite('config.hotel.*'));
+    Route::delete('/hotel-settings/qr-code', [\App\Http\Controllers\Api\HotelSettingController::class, 'deleteQrCode'])->middleware($canWrite('config.hotel.*'));
 
     // Shifts (ca làm việc - Định nghĩa khách sạn)
-    Route::apiResource('shifts', \App\Http\Controllers\Api\ShiftController::class);
+    Route::apiResource('shifts', \App\Http\Controllers\Api\ShiftController::class)->middleware($canWrite('config.shifts.*'));
 
     // Room configurations
-    Route::get('/room-class-groups', [\App\Http\Controllers\Api\RoomClassGroupController::class, 'index']);
-    Route::post('/room-class-groups', [\App\Http\Controllers\Api\RoomClassGroupController::class, 'store']);
-    Route::put('/room-class-groups/{id}', [\App\Http\Controllers\Api\RoomClassGroupController::class, 'update']);
-    Route::delete('/room-class-groups/{id}', [\App\Http\Controllers\Api\RoomClassGroupController::class, 'destroy']);
+    Route::get('/room-class-groups', [\App\Http\Controllers\Api\RoomClassGroupController::class, 'index'])->middleware($canWrite('config.room_classes.*'));
+    Route::post('/room-class-groups', [\App\Http\Controllers\Api\RoomClassGroupController::class, 'store'])->middleware($canWrite('config.room_classes.*'));
+    Route::put('/room-class-groups/{id}', [\App\Http\Controllers\Api\RoomClassGroupController::class, 'update'])->middleware($canWrite('config.room_classes.*'));
+    Route::delete('/room-class-groups/{id}', [\App\Http\Controllers\Api\RoomClassGroupController::class, 'destroy'])->middleware($canWrite('config.room_classes.*'));
 
-    Route::get('/room-classes', [\App\Http\Controllers\Api\RoomClassController::class, 'index']);
-    Route::post('/room-classes', [\App\Http\Controllers\Api\RoomClassController::class, 'store']);
-    Route::put('/room-classes/{id}', [\App\Http\Controllers\Api\RoomClassController::class, 'update']);
-    Route::delete('/room-classes/{id}', [\App\Http\Controllers\Api\RoomClassController::class, 'destroy']);
-    Route::get('/room-forms', [\App\Http\Controllers\Api\RoomFormController::class, 'index']);
-    Route::post('/room-forms', [\App\Http\Controllers\Api\RoomFormController::class, 'store']);
-    Route::put('/room-forms/{id}', [\App\Http\Controllers\Api\RoomFormController::class, 'update']);
-    Route::delete('/room-forms/{id}', [\App\Http\Controllers\Api\RoomFormController::class, 'destroy']);
-    Route::get('/standard-rates', [\App\Http\Controllers\Api\StandardRateController::class, 'index']);
-    Route::post('/standard-rates', [\App\Http\Controllers\Api\StandardRateController::class, 'store']);
-    Route::put('/standard-rates/{id}', [\App\Http\Controllers\Api\StandardRateController::class, 'update']);
-    Route::delete('/standard-rates/{id}', [\App\Http\Controllers\Api\StandardRateController::class, 'destroy']);
+    Route::get('/room-classes', [\App\Http\Controllers\Api\RoomClassController::class, 'index'])->middleware($canWrite('config.room_classes.*'));
+    Route::post('/room-classes', [\App\Http\Controllers\Api\RoomClassController::class, 'store'])->middleware($canWrite('config.room_classes.*'));
+    Route::put('/room-classes/{id}', [\App\Http\Controllers\Api\RoomClassController::class, 'update'])->middleware($canWrite('config.room_classes.*'));
+    Route::delete('/room-classes/{id}', [\App\Http\Controllers\Api\RoomClassController::class, 'destroy'])->middleware($canWrite('config.room_classes.*'));
+    Route::get('/room-forms', [\App\Http\Controllers\Api\RoomFormController::class, 'index'])->middleware($canWrite('config.room_classes.*'));
+    Route::post('/room-forms', [\App\Http\Controllers\Api\RoomFormController::class, 'store'])->middleware($canWrite('config.room_classes.*'));
+    Route::put('/room-forms/{id}', [\App\Http\Controllers\Api\RoomFormController::class, 'update'])->middleware($canWrite('config.room_classes.*'));
+    Route::delete('/room-forms/{id}', [\App\Http\Controllers\Api\RoomFormController::class, 'destroy'])->middleware($canWrite('config.room_classes.*'));
+    Route::get('/standard-rates', [\App\Http\Controllers\Api\StandardRateController::class, 'index'])->middleware($canWrite('config.rates.*'));
+    Route::post('/standard-rates', [\App\Http\Controllers\Api\StandardRateController::class, 'store'])->middleware($canWrite('config.rates.*'));
+    Route::put('/standard-rates/{id}', [\App\Http\Controllers\Api\StandardRateController::class, 'update'])->middleware($canWrite('config.rates.*'));
+    Route::delete('/standard-rates/{id}', [\App\Http\Controllers\Api\StandardRateController::class, 'destroy'])->middleware($canWrite('config.rates.*'));
 
     // Rooms management
     Route::get('/rooms/permissions', [\App\Http\Controllers\Api\RoomController::class, 'permissions']);
@@ -153,7 +166,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     Route::get('/virtual-room-folios', [\App\Http\Controllers\Api\VirtualRoomFolioController::class, 'index']);
     Route::post('/virtual-room-folios/{roomId}/settle-payment', [\App\Http\Controllers\Api\PaymentController::class, 'settleVirtualRoomPayment'])
         ->middleware('permission:fo.payment.create');
-    Route::apiResource('rooms', \App\Http\Controllers\Api\RoomController::class);
+    Route::apiResource('rooms', \App\Http\Controllers\Api\RoomController::class)->middleware($canWrite('config.rooms.*'));
 
     // Room locks management
     Route::get('/room-locks/history/{room_id}', [\App\Http\Controllers\Api\RoomLockController::class, 'history']);
@@ -163,51 +176,51 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     Route::apiResource('room-locks', \App\Http\Controllers\Api\RoomLockController::class);
 
     // Company settings
-    Route::apiResource('markets', \App\Http\Controllers\Api\MarketController::class);
-    Route::apiResource('customer-sources', \App\Http\Controllers\Api\CustomerSourceController::class);
-    Route::apiResource('branches', \App\Http\Controllers\Api\BranchController::class);
-    Route::apiResource('branches-total', \App\Http\Controllers\Api\BranchTotalController::class);
-    Route::apiResource('bookers', \App\Http\Controllers\Api\BookerController::class);
-    Route::post('companies/sync', [\App\Http\Controllers\Api\CompanyController::class, 'sync']);
+    Route::apiResource('markets', \App\Http\Controllers\Api\MarketController::class)->middleware($canWrite('config.markets.*'));
+    Route::apiResource('customer-sources', \App\Http\Controllers\Api\CustomerSourceController::class)->middleware($canWrite('config.markets.*'));
+    Route::apiResource('branches', \App\Http\Controllers\Api\BranchController::class)->middleware($canWrite('fo.company.*'));
+    Route::apiResource('branches-total', \App\Http\Controllers\Api\BranchTotalController::class)->middleware($canWrite('fo.company.*'));
+    Route::apiResource('bookers', \App\Http\Controllers\Api\BookerController::class)->middleware($canWrite('fo.company.*', 'fo.booking.create', 'fo.booking.edit'));
+    Route::post('companies/sync', [\App\Http\Controllers\Api\CompanyController::class, 'sync'])->middleware($canWrite('fo.company.*'));
     Route::get('companies/export', [\App\Http\Controllers\Api\CompanyController::class, 'export']);
-    Route::post('companies/import', [\App\Http\Controllers\Api\CompanyController::class, 'import']);
+    Route::post('companies/import', [\App\Http\Controllers\Api\CompanyController::class, 'import'])->middleware($canWrite('fo.company.*'));
     Route::get('companies/template', [\App\Http\Controllers\Api\CompanyController::class, 'template']);
-    Route::apiResource('companies', \App\Http\Controllers\Api\CompanyController::class);
+    Route::apiResource('companies', \App\Http\Controllers\Api\CompanyController::class)->middleware($canWrite('fo.company.*'));
 
     // Hotel details configuration routes
-    Route::apiResource('hotel-services', \App\Http\Controllers\Api\HotelServiceController::class);
-    Route::post('departments/{department}/services', [\App\Http\Controllers\Api\DepartmentController::class, 'attachService']);
-    Route::put('departments/{department}/services/{hotelService}', [\App\Http\Controllers\Api\DepartmentController::class, 'updateService']);
-    Route::delete('departments/{department}/services/{hotelService}', [\App\Http\Controllers\Api\DepartmentController::class, 'detachService']);
-    Route::apiResource('shifts', \App\Http\Controllers\Api\ShiftController::class);
-    Route::apiResource('hotel-configs', \App\Http\Controllers\Api\HotelConfigController::class);
+    Route::apiResource('hotel-services', \App\Http\Controllers\Api\HotelServiceController::class)->middleware($canWrite('config.services.*'));
+    Route::post('departments/{department}/services', [\App\Http\Controllers\Api\DepartmentController::class, 'attachService'])->middleware($canWrite('config.services.*'));
+    Route::put('departments/{department}/services/{hotelService}', [\App\Http\Controllers\Api\DepartmentController::class, 'updateService'])->middleware($canWrite('config.services.*'));
+    Route::delete('departments/{department}/services/{hotelService}', [\App\Http\Controllers\Api\DepartmentController::class, 'detachService'])->middleware($canWrite('config.services.*'));
+    Route::apiResource('shifts', \App\Http\Controllers\Api\ShiftController::class)->middleware($canWrite('config.shifts.*'));
+    Route::apiResource('hotel-configs', \App\Http\Controllers\Api\HotelConfigController::class)->middleware($canWrite('config.system.*', 'config.hotel.*'));
     Route::get('portal-wallpaper', [\App\Http\Controllers\Api\PortalWallpaperController::class, 'getWallpaper']);
     Route::post('portal-wallpaper', [\App\Http\Controllers\Api\PortalWallpaperController::class, 'updateWallpaper'])->middleware('permission:admin,system.setting,config.hotel.edit');
     Route::delete('portal-wallpaper', [\App\Http\Controllers\Api\PortalWallpaperController::class, 'resetWallpaper'])->middleware('permission:admin,system.setting,config.hotel.edit');
-    Route::post('templates/{id}/duplicate', [\App\Http\Controllers\Api\TemplateController::class, 'duplicate']);
-    Route::post('templates/{id}/make-default', [\App\Http\Controllers\Api\TemplateController::class, 'makeDefault']);
-    Route::post('templates/{id}/remove-default', [\App\Http\Controllers\Api\TemplateController::class, 'removeDefault']);
+    Route::post('templates/{id}/duplicate', [\App\Http\Controllers\Api\TemplateController::class, 'duplicate'])->middleware($canWrite('config.template.*'));
+    Route::post('templates/{id}/make-default', [\App\Http\Controllers\Api\TemplateController::class, 'makeDefault'])->middleware($canWrite('config.template.*'));
+    Route::post('templates/{id}/remove-default', [\App\Http\Controllers\Api\TemplateController::class, 'removeDefault'])->middleware($canWrite('config.template.*'));
     Route::get('templates/{id}/versions', [\App\Http\Controllers\Api\TemplateController::class, 'versions']);
-    Route::post('templates/{id}/rollback', [\App\Http\Controllers\Api\TemplateController::class, 'rollback']);
+    Route::post('templates/{id}/rollback', [\App\Http\Controllers\Api\TemplateController::class, 'rollback'])->middleware($canWrite('config.template.*'));
     Route::match(['get', 'post'], 'templates/{id}/preview', [\App\Http\Controllers\Api\TemplateController::class, 'preview']);
     Route::post('templates/{id}/render', [\App\Http\Controllers\Api\TemplateController::class, 'render']);
-    Route::post('templates/upload-image', [\App\Http\Controllers\Api\TemplateController::class, 'uploadImage']);
-    Route::apiResource('templates', \App\Http\Controllers\Api\TemplateController::class);
+    Route::post('templates/upload-image', [\App\Http\Controllers\Api\TemplateController::class, 'uploadImage'])->middleware($canWrite('config.template.*'));
+    Route::apiResource('templates', \App\Http\Controllers\Api\TemplateController::class)->middleware($canWrite('config.template.*'));
 
     // Operational print slots (Breakfast Ticket, Invoice, Registration Card...).
     Route::post('print-template-slots/payment-receipt', [\App\Http\Controllers\Api\PrintTemplateSlotController::class, 'paymentReceipt']);
     Route::post('print-template-slots/{printTemplateSlot}/render', [\App\Http\Controllers\Api\PrintTemplateSlotController::class, 'render']);
     Route::get('print-template-slots', [\App\Http\Controllers\Api\PrintTemplateSlotController::class, 'index']);
-    Route::put('print-template-slots/{printTemplateSlot}', [\App\Http\Controllers\Api\PrintTemplateSlotController::class, 'update']);
+    Route::put('print-template-slots/{printTemplateSlot}', [\App\Http\Controllers\Api\PrintTemplateSlotController::class, 'update'])->middleware($canWrite('config.template.*'));
 
     // Dynamic MySQL Stored Procedure report data sources
     Route::get('report-procedures', [\App\Http\Controllers\Api\ReportProcedureController::class, 'index']);
     Route::get('report-procedures/{procedure}', [\App\Http\Controllers\Api\ReportProcedureController::class, 'show']);
-    Route::post('report-procedure-samples', [\App\Http\Controllers\Api\ReportProcedureController::class, 'sample']);
-    Route::post('report-data-sources/{reportDataSource}/samples', [\App\Http\Controllers\Api\ReportDataSourceController::class, 'sample']);
-    Route::post('report-data-sources/{reportDataSource}/schema-refreshes', [\App\Http\Controllers\Api\ReportDataSourceController::class, 'refreshSchema']);
+    Route::post('report-procedure-samples', [\App\Http\Controllers\Api\ReportProcedureController::class, 'sample'])->middleware($canWrite('config.template.*'));
+    Route::post('report-data-sources/{reportDataSource}/samples', [\App\Http\Controllers\Api\ReportDataSourceController::class, 'sample'])->middleware($canWrite('config.template.*'));
+    Route::post('report-data-sources/{reportDataSource}/schema-refreshes', [\App\Http\Controllers\Api\ReportDataSourceController::class, 'refreshSchema'])->middleware($canWrite('config.template.*'));
     Route::apiResource('report-data-sources', \App\Http\Controllers\Api\ReportDataSourceController::class)
-        ->parameters(['report-data-sources' => 'reportDataSource']);
+        ->parameters(['report-data-sources' => 'reportDataSource'])->middleware($canWrite('config.template.*'));
 
     Route::get('report-lookups/{lookup}', [\App\Http\Controllers\Api\ReportLookupController::class, 'index']);
 
@@ -222,7 +235,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     Route::get('report-definitions/{reportDefinition}/role-access', [\App\Http\Controllers\Api\ReportMenuController::class, 'roleAccess'])->middleware('permission:system.user.view');
     Route::put('report-definitions/{reportDefinition}/role-access', [\App\Http\Controllers\Api\ReportMenuController::class, 'updateRoleAccess'])->middleware('permission:system.user.manage');
     Route::apiResource('report-definitions', \App\Http\Controllers\Api\ReportDefinitionController::class)
-        ->parameters(['report-definitions' => 'reportDefinition']);
+        ->parameters(['report-definitions' => 'reportDefinition'])->middleware($canWrite('config.template.*'));
 
     // System configuration routes
     Route::get('nationalities', [\App\Http\Controllers\Api\NationalityController::class, 'index']);
@@ -235,13 +248,13 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     Route::get('id-types', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'idTypes']);
     // Khai báo lưu trú - danh sách khách đã khai báo (SP8007)
     Route::get('residence-declarations', [\App\Http\Controllers\Api\ResidenceDeclarationController::class, 'index']);
-    Route::post('residence-declarations', [\App\Http\Controllers\Api\ResidenceDeclarationController::class, 'store']);
+    Route::post('residence-declarations', [\App\Http\Controllers\Api\ResidenceDeclarationController::class, 'store'])->middleware('permission:fo.guest.create,fo.guest.edit,fo.checkin');
     Route::get('provinces', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'provinces']);
     Route::get('districts', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'districts']);
     Route::get('wards', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'wards']);
-    Route::post('geo/sync', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'syncGeo']);
-    Route::apiResource('payment-methods', \App\Http\Controllers\Api\PaymentMethodController::class);
-    Route::apiResource('currencies', \App\Http\Controllers\Api\CurrencyController::class);
+    Route::post('geo/sync', [\App\Http\Controllers\Api\GuestDefinitionController::class, 'syncGeo'])->middleware($canWrite('config.system.*'));
+    Route::apiResource('payment-methods', \App\Http\Controllers\Api\PaymentMethodController::class)->middleware($canWrite('config.system.*'));
+    Route::apiResource('currencies', \App\Http\Controllers\Api\CurrencyController::class)->middleware($canWrite('config.system.*'));
     Route::get('bank-accounts/lookups', [\App\Http\Controllers\Api\BankAccountController::class, 'lookups'])
         ->middleware('permission:system.user.view,fo.payment.create');
     Route::apiResource('bank-accounts', \App\Http\Controllers\Api\BankAccountController::class)
@@ -250,17 +263,18 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     Route::apiResource('bank-accounts', \App\Http\Controllers\Api\BankAccountController::class)
         ->only(['store', 'update', 'destroy'])
         ->middleware('permission:system.user.manage');
-    Route::apiResource('units-of-measure', \App\Http\Controllers\Api\UnitOfMeasureController::class);
-    Route::apiResource('room-rate-codes', RoomRateCodeController::class);
-    Route::apiResource('registration-statuses', \App\Http\Controllers\Api\RegistrationStatusController::class);
-    Route::post('room-rate-codes/{ma}/plans', [RoomRateCodeController::class, 'saveRatePlan']);
-    Route::delete('room-rate-codes/{ma}/plans/{code}', [RoomRateCodeController::class, 'deleteRatePlan']);
-    Route::post('room-rate-codes/{ma}/daily-mappings', [RoomRateCodeController::class, 'saveDailyMappings']);
+    Route::apiResource('units-of-measure', \App\Http\Controllers\Api\UnitOfMeasureController::class)->middleware($canWrite('config.system.*', 'config.housekeeping.*'));
+    Route::apiResource('room-rate-codes', RoomRateCodeController::class)->middleware($canWrite('config.rates.*'));
+    Route::apiResource('registration-statuses', \App\Http\Controllers\Api\RegistrationStatusController::class)->middleware($canWrite('config.system.*'));
+    Route::post('room-rate-codes/{ma}/plans', [RoomRateCodeController::class, 'saveRatePlan'])->middleware($canWrite('config.rates.*'));
+    Route::delete('room-rate-codes/{ma}/plans/{code}', [RoomRateCodeController::class, 'deleteRatePlan'])->middleware($canWrite('config.rates.*'));
+    Route::post('room-rate-codes/{ma}/daily-mappings', [RoomRateCodeController::class, 'saveDailyMappings'])->middleware($canWrite('config.rates.*'));
 
     // System Administration routes
-    Route::get('/system/database/info', [\App\Http\Controllers\Api\DatabaseBackupController::class, 'getDatabaseInfo'])->middleware('permission:system.setting');
-    Route::get('/system/database/export', [\App\Http\Controllers\Api\DatabaseBackupController::class, 'exportDatabase'])->middleware('permission:system.setting');
-    Route::post('/system/database/import', [\App\Http\Controllers\Api\DatabaseBackupController::class, 'importDatabase'])->middleware('permission:system.setting');
+    // Dòng 406: sao lưu / khôi phục database chỉ admin, xuất & nhập phải gửi kèm mật khẩu xác nhận
+    Route::get('/system/database/info', [\App\Http\Controllers\Api\DatabaseBackupController::class, 'getDatabaseInfo'])->middleware('permission:admin');
+    Route::post('/system/database/export', [\App\Http\Controllers\Api\DatabaseBackupController::class, 'exportDatabase'])->middleware('permission:admin');
+    Route::post('/system/database/import', [\App\Http\Controllers\Api\DatabaseBackupController::class, 'importDatabase'])->middleware('permission:admin');
     Route::post('system-branches/{id}/provision', [\App\Http\Controllers\Api\SystemBranchController::class, 'provision'])->middleware('permission:system.branch.manage');
     Route::get('system-branches/list', [\App\Http\Controllers\Api\UserPermissionController::class, 'listBranches']);
     Route::get('system-branches', [\App\Http\Controllers\Api\SystemBranchController::class, 'index']);
@@ -268,7 +282,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     Route::get('system-branches/{systemBranch}', [\App\Http\Controllers\Api\SystemBranchController::class, 'show']);
     Route::put('system-branches/{systemBranch}', [\App\Http\Controllers\Api\SystemBranchController::class, 'update'])->middleware('permission:system.branch.manage');
     Route::delete('system-branches/{systemBranch}', [\App\Http\Controllers\Api\SystemBranchController::class, 'destroy'])->middleware('permission:system.branch.manage');
-    Route::apiResource('lost-and-found', \App\Http\Controllers\Api\LostAndFoundController::class);
+    Route::apiResource('lost-and-found', \App\Http\Controllers\Api\LostAndFoundController::class)->middleware($canWrite('hk.lost_found.*', 'hk.lost_found.manage'));
     
     // User & Employee routes
     Route::get('users', [\App\Http\Controllers\Api\UserController::class, 'index'])->middleware('permission:system.user.view');
@@ -310,125 +324,125 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     Route::post('roles/{role}/branch-permissions/sync', [\App\Http\Controllers\Api\BranchRolePermissionController::class, 'sync'])->middleware('permission:system.user.manage');
     Route::post('roles/{sourceRole}/copy', [\App\Http\Controllers\Api\BranchRolePermissionController::class, 'copyRole'])->middleware('permission:system.user.manage');
     Route::post('permission-screens', [\App\Http\Controllers\Api\BranchRolePermissionController::class, 'storeScreen'])->middleware('permission:system.user.manage');
-    Route::apiResource('product-categories', \App\Http\Controllers\Api\ProductCategoryController::class);
-    Route::post('/housekeeping/outlets/reorder', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'reorder']);
-    Route::delete('/housekeeping/outlets/{housekeepingOutlet}/force', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'forceDestroy'])->name('housekeeping.outlets.force-destroy');
+    Route::apiResource('product-categories', \App\Http\Controllers\Api\ProductCategoryController::class)->middleware($canWrite('config.housekeeping.*', 'hk.warehouse.manage'));
+    Route::post('/housekeeping/outlets/reorder', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'reorder'])->middleware($canWrite('config.housekeeping.*'));
+    Route::delete('/housekeeping/outlets/{housekeepingOutlet}/force', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'forceDestroy'])->name('housekeeping.outlets.force-destroy')->middleware($canWrite('config.housekeeping.*'));
 
-    Route::get('/housekeeping/outlets', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'index'])->name('housekeeping.outlets.index');
-    Route::post('/housekeeping/outlets', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'store'])->name('housekeeping.outlets.store');
-    Route::get('/housekeeping/outlets/{housekeepingOutlet}', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'show'])->name('housekeeping.outlets.show');
-    Route::put('/housekeeping/outlets/{housekeepingOutlet}', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'update'])->name('housekeeping.outlets.update');
-    Route::patch('/housekeeping/outlets/{housekeepingOutlet}', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'update'])->name('housekeeping.outlets.patch');
-    Route::delete('/housekeeping/outlets/{housekeepingOutlet}', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'destroy'])->name('housekeeping.outlets.destroy');
+    Route::get('/housekeeping/outlets', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'index'])->name('housekeeping.outlets.index')->middleware($canWrite('config.housekeeping.*'));
+    Route::post('/housekeeping/outlets', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'store'])->name('housekeeping.outlets.store')->middleware($canWrite('config.housekeeping.*'));
+    Route::get('/housekeeping/outlets/{housekeepingOutlet}', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'show'])->name('housekeeping.outlets.show')->middleware($canWrite('config.housekeeping.*'));
+    Route::put('/housekeeping/outlets/{housekeepingOutlet}', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'update'])->name('housekeeping.outlets.update')->middleware($canWrite('config.housekeeping.*'));
+    Route::patch('/housekeeping/outlets/{housekeepingOutlet}', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'update'])->name('housekeeping.outlets.patch')->middleware($canWrite('config.housekeeping.*'));
+    Route::delete('/housekeeping/outlets/{housekeepingOutlet}', [\App\Http\Controllers\Api\HousekeepingOutletController::class, 'destroy'])->name('housekeeping.outlets.destroy')->middleware($canWrite('config.housekeeping.*'));
 
     // HK Config: ký hiệu phòng + cột mẫu in
     Route::get('/hk-config', [\App\Http\Controllers\Api\HkConfigController::class, 'index']);
-    Route::put('/hk-config/symbols', [\App\Http\Controllers\Api\HkConfigController::class, 'updateSymbols']);
-    Route::put('/hk-config/print-cols', [\App\Http\Controllers\Api\HkConfigController::class, 'updatePrintCols']);
-    Route::post('/hk-config/reset', [\App\Http\Controllers\Api\HkConfigController::class, 'reset']);
+    Route::put('/hk-config/symbols', [\App\Http\Controllers\Api\HkConfigController::class, 'updateSymbols'])->middleware($canWrite('config.housekeeping.*'));
+    Route::put('/hk-config/print-cols', [\App\Http\Controllers\Api\HkConfigController::class, 'updatePrintCols'])->middleware($canWrite('config.housekeeping.*'));
+    Route::post('/hk-config/reset', [\App\Http\Controllers\Api\HkConfigController::class, 'reset'])->middleware($canWrite('config.housekeeping.*'));
 
 
     Route::get('/products/next-code', [\App\Http\Controllers\Api\ProductController::class, 'nextCode']);
-    Route::post('/products/bulk-toggle-active', [\App\Http\Controllers\Api\ProductController::class, 'bulkToggleActive']);
+    Route::post('/products/bulk-toggle-active', [\App\Http\Controllers\Api\ProductController::class, 'bulkToggleActive'])->middleware($canWrite('config.housekeeping.*', 'hk.warehouse.manage'));
     Route::get('/products/export', [\App\Http\Controllers\Api\ProductController::class, 'exportExcel']);
-    Route::post('/products/import', [\App\Http\Controllers\Api\ProductController::class, 'importExcel']);
-    Route::apiResource('products', \App\Http\Controllers\Api\ProductController::class);
-    Route::apiResource('inventories', \App\Http\Controllers\Api\InventoryController::class);
+    Route::post('/products/import', [\App\Http\Controllers\Api\ProductController::class, 'importExcel'])->middleware($canWrite('config.housekeeping.*', 'hk.warehouse.manage'));
+    Route::apiResource('products', \App\Http\Controllers\Api\ProductController::class)->middleware($canWrite('config.housekeeping.*', 'hk.warehouse.manage'));
+    Route::apiResource('inventories', \App\Http\Controllers\Api\InventoryController::class)->middleware($canWrite('hk.warehouse.*', 'hk.warehouse.import', 'hk.warehouse.manage', 'fb.menu.manage'));
 
     // ─── Quản lý Kho (Warehouses) ────────────────────────────────────
-    Route::get('/warehouses', [\App\Http\Controllers\Api\WarehouseController::class, 'index']);
-    Route::post('/warehouses', [\App\Http\Controllers\Api\WarehouseController::class, 'store']);
-    Route::put('/warehouses/{id}', [\App\Http\Controllers\Api\WarehouseController::class, 'update']);
-    Route::delete('/warehouses/{id}', [\App\Http\Controllers\Api\WarehouseController::class, 'destroy']);
+    Route::get('/warehouses', [\App\Http\Controllers\Api\WarehouseController::class, 'index'])->middleware($canWrite('hk.warehouse.*', 'hk.warehouse.manage', 'config.housekeeping.*'));
+    Route::post('/warehouses', [\App\Http\Controllers\Api\WarehouseController::class, 'store'])->middleware($canWrite('hk.warehouse.*', 'hk.warehouse.manage', 'config.housekeeping.*'));
+    Route::put('/warehouses/{id}', [\App\Http\Controllers\Api\WarehouseController::class, 'update'])->middleware($canWrite('hk.warehouse.*', 'hk.warehouse.manage', 'config.housekeeping.*'));
+    Route::delete('/warehouses/{id}', [\App\Http\Controllers\Api\WarehouseController::class, 'destroy'])->middleware($canWrite('hk.warehouse.*', 'hk.warehouse.manage', 'config.housekeeping.*'));
 
     // ─── Kiểm kê tồn kho định kỳ (Inventory Checks) ─────────────────
-    Route::get('/inventory/checks', [\App\Http\Controllers\Api\InventoryCheckController::class, 'index']);
-    Route::post('/inventory/checks', [\App\Http\Controllers\Api\InventoryCheckController::class, 'store']);
-    Route::post('/inventory/checks/sync-previous-month', [\App\Http\Controllers\Api\InventoryCheckController::class, 'syncPreviousMonth']);
-    Route::post('/inventory/checks/save', [\App\Http\Controllers\Api\InventoryCheckController::class, 'save']);
-    Route::delete('/inventory/checks/{id}', [\App\Http\Controllers\Api\InventoryCheckController::class, 'destroy']);
-    Route::post('/inventory/checks/{id}/items', [\App\Http\Controllers\Api\InventoryCheckController::class, 'addItems']);
-    Route::put('/inventory/checks/{id}/items/{itemId}', [\App\Http\Controllers\Api\InventoryCheckController::class, 'updateItem']);
-    Route::get('/inventory/checks/{id}/export', [\App\Http\Controllers\Api\InventoryCheckController::class, 'exportExcel']);
+    Route::get('/inventory/checks', [\App\Http\Controllers\Api\InventoryCheckController::class, 'index'])->middleware($canWrite('hk.warehouse.*', 'hk.warehouse.import', 'hk.warehouse.manage', 'fb.menu.manage'));
+    Route::post('/inventory/checks', [\App\Http\Controllers\Api\InventoryCheckController::class, 'store'])->middleware($canWrite('hk.warehouse.*', 'hk.warehouse.import', 'hk.warehouse.manage', 'fb.menu.manage'));
+    Route::post('/inventory/checks/sync-previous-month', [\App\Http\Controllers\Api\InventoryCheckController::class, 'syncPreviousMonth'])->middleware($canWrite('hk.warehouse.*', 'hk.warehouse.import', 'hk.warehouse.manage', 'fb.menu.manage'));
+    Route::post('/inventory/checks/save', [\App\Http\Controllers\Api\InventoryCheckController::class, 'save'])->middleware($canWrite('hk.warehouse.*', 'hk.warehouse.import', 'hk.warehouse.manage', 'fb.menu.manage'));
+    Route::delete('/inventory/checks/{id}', [\App\Http\Controllers\Api\InventoryCheckController::class, 'destroy'])->middleware($canWrite('hk.warehouse.*', 'hk.warehouse.import', 'hk.warehouse.manage', 'fb.menu.manage'));
+    Route::post('/inventory/checks/{id}/items', [\App\Http\Controllers\Api\InventoryCheckController::class, 'addItems'])->middleware($canWrite('hk.warehouse.*', 'hk.warehouse.import', 'hk.warehouse.manage', 'fb.menu.manage'));
+    Route::put('/inventory/checks/{id}/items/{itemId}', [\App\Http\Controllers\Api\InventoryCheckController::class, 'updateItem'])->middleware($canWrite('hk.warehouse.*', 'hk.warehouse.import', 'hk.warehouse.manage', 'fb.menu.manage'));
+    Route::get('/inventory/checks/{id}/export', [\App\Http\Controllers\Api\InventoryCheckController::class, 'exportExcel'])->middleware($canWrite('hk.warehouse.*', 'hk.warehouse.import', 'hk.warehouse.manage', 'fb.menu.manage'));
     Route::get('/inventory/products-in-stock', [\App\Http\Controllers\Api\InventoryCheckController::class, 'productsInStock']);
 
     // ─── Nhật ký nhập/xuất/chuyển kho từng ngày (Daily Logs) ─────────
     Route::get('/inventory/logs', [\App\Http\Controllers\Api\InventoryLogController::class, 'index']);
     Route::get('/inventory/logs/export', [\App\Http\Controllers\Api\InventoryLogController::class, 'exportExcel']);
-    Route::put('/inventory/logs', [\App\Http\Controllers\Api\InventoryLogController::class, 'upsert']);
+    Route::put('/inventory/logs', [\App\Http\Controllers\Api\InventoryLogController::class, 'upsert'])->middleware($canWrite('hk.warehouse.*', 'hk.warehouse.import', 'hk.warehouse.manage', 'fb.menu.manage'));
     Route::post('/inventory/get-bill', [\App\Http\Controllers\Api\InventoryLogController::class, 'getBill']);
 
     // ─── Chuyển kho (Transfer) ────────────────────────────────────────
-    Route::post('/inventory/transfer', [\App\Http\Controllers\Api\InventoryTransferController::class, 'store']);
+    Route::post('/inventory/transfer', [\App\Http\Controllers\Api\InventoryTransferController::class, 'store'])->middleware($canWrite('hk.warehouse.*', 'hk.warehouse.import', 'hk.warehouse.manage', 'fb.menu.manage'));
     Route::post('/users/{id}/signature', [\App\Http\Controllers\Api\UserController::class, 'uploadSignature'])
         ->middleware('permission:system.user.manage');
     Route::delete('/users/{id}/signature', [\App\Http\Controllers\Api\UserController::class, 'deleteSignature'])
         ->middleware('permission:system.user.manage');
     Route::get('/info-business', [\App\Http\Controllers\Api\InfoBusinessController::class, 'show']);
-    Route::put('/info-business', [\App\Http\Controllers\Api\InfoBusinessController::class, 'update']);
-    Route::post('/info-business/logo', [\App\Http\Controllers\Api\InfoBusinessController::class, 'uploadLogo']);
-    Route::delete('/info-business/logo', [\App\Http\Controllers\Api\InfoBusinessController::class, 'deleteLogo']);
+    Route::put('/info-business', [\App\Http\Controllers\Api\InfoBusinessController::class, 'update'])->middleware($canWrite('config.hotel.*'));
+    Route::post('/info-business/logo', [\App\Http\Controllers\Api\InfoBusinessController::class, 'uploadLogo'])->middleware($canWrite('config.hotel.*'));
+    Route::delete('/info-business/logo', [\App\Http\Controllers\Api\InfoBusinessController::class, 'deleteLogo'])->middleware($canWrite('config.hotel.*'));
     Route::get('/departments', [\App\Http\Controllers\Api\DepartmentController::class, 'index']);
-    Route::post('/outlets/reorder', [\App\Http\Controllers\Api\OutletController::class, 'reorder']);
+    Route::post('/outlets/reorder', [\App\Http\Controllers\Api\OutletController::class, 'reorder'])->middleware($canWrite('fb.overview.*', 'fb.menu.manage', 'config.housekeeping.*'));
     Route::get('/outlets/hk', [\App\Http\Controllers\Api\OutletController::class, 'listHK']); // HK outlets cho Get Bill
-    Route::apiResource('outlets', \App\Http\Controllers\Api\OutletController::class);
-    Route::apiResource('fb-locations', \App\Http\Controllers\Api\FbLocationController::class);
-    Route::post('fb-tables/bulk-create', [\App\Http\Controllers\Api\FbTableController::class, 'bulkCreate']);
-    Route::post('fb-tables/delete-row', [\App\Http\Controllers\Api\FbTableController::class, 'deleteRow']);
-    Route::post('fb-tables/{from_id}/transfer/{to_id}', [\App\Http\Controllers\FbOrderController::class, 'transferTable']);
-    Route::post('fb-tables/{from_id}/transfer-items/{to_id}', [\App\Http\Controllers\FbOrderController::class, 'transferItems']);
-    Route::apiResource('fb-tables', \App\Http\Controllers\Api\FbTableController::class);
+    Route::apiResource('outlets', \App\Http\Controllers\Api\OutletController::class)->middleware($canWrite('fb.overview.*', 'fb.menu.manage', 'config.housekeeping.*'));
+    Route::apiResource('fb-locations', \App\Http\Controllers\Api\FbLocationController::class)->middleware($canWrite('fb.overview.*', 'fb.menu.manage'));
+    Route::post('fb-tables/bulk-create', [\App\Http\Controllers\Api\FbTableController::class, 'bulkCreate'])->middleware($canWrite('fb.overview.*', 'fb.menu.manage'));
+    Route::post('fb-tables/delete-row', [\App\Http\Controllers\Api\FbTableController::class, 'deleteRow'])->middleware($canWrite('fb.overview.*', 'fb.menu.manage'));
+    Route::post('fb-tables/{from_id}/transfer/{to_id}', [\App\Http\Controllers\FbOrderController::class, 'transferTable'])->middleware('permission:fb.order.edit,fb.order.create');
+    Route::post('fb-tables/{from_id}/transfer-items/{to_id}', [\App\Http\Controllers\FbOrderController::class, 'transferItems'])->middleware('permission:fb.order.edit,fb.order.create');
+    Route::apiResource('fb-tables', \App\Http\Controllers\Api\FbTableController::class)->middleware($canWrite('fb.overview.*', 'fb.menu.manage'));
 
     // Dedicated F&B Menu definitions routes
-    Route::post('/fb-products/bulk-toggle-active', [\App\Http\Controllers\Api\FbProductController::class, 'bulkToggleActive']);
-    Route::post('/fb-products/bulk-update-status', [\App\Http\Controllers\Api\FbProductController::class, 'bulkUpdateStatus']);
-    Route::apiResource('fb-product-categories', \App\Http\Controllers\Api\FbProductCategoryController::class);
-    Route::apiResource('fb-products', \App\Http\Controllers\Api\FbProductController::class);
-    Route::apiResource('fb-printers', \App\Http\Controllers\Api\FbPrinterController::class);
-    Route::apiResource('fb-promotions', \App\Http\Controllers\FbPromotionController::class);
-    Route::apiResource('fb-parties', \App\Http\Controllers\Api\FbPartyController::class);
-    Route::post('fb-parties/{id}/cancel', [\App\Http\Controllers\Api\FbPartyController::class, 'cancel']);
+    Route::post('/fb-products/bulk-toggle-active', [\App\Http\Controllers\Api\FbProductController::class, 'bulkToggleActive'])->middleware($canWrite('fb.menu.*', 'fb.menu.manage'));
+    Route::post('/fb-products/bulk-update-status', [\App\Http\Controllers\Api\FbProductController::class, 'bulkUpdateStatus'])->middleware($canWrite('fb.menu.*', 'fb.menu.manage'));
+    Route::apiResource('fb-product-categories', \App\Http\Controllers\Api\FbProductCategoryController::class)->middleware($canWrite('fb.menu.*', 'fb.menu.manage'));
+    Route::apiResource('fb-products', \App\Http\Controllers\Api\FbProductController::class)->middleware($canWrite('fb.menu.*', 'fb.menu.manage'));
+    Route::apiResource('fb-printers', \App\Http\Controllers\Api\FbPrinterController::class)->middleware($canWrite('fb.overview.*', 'fb.menu.manage'));
+    Route::apiResource('fb-promotions', \App\Http\Controllers\FbPromotionController::class)->middleware($canWrite('fb.menu.*', 'fb.menu.manage'));
+    Route::apiResource('fb-parties', \App\Http\Controllers\Api\FbPartyController::class)->middleware($canWrite('fb.party.*', 'fb.party.manage'));
+    Route::post('fb-parties/{id}/cancel', [\App\Http\Controllers\Api\FbPartyController::class, 'cancel'])->middleware('permission:fb.party.delete,fb.party.manage');
     Route::post('fb-parties/check-conflict', [\App\Http\Controllers\Api\FbPartyController::class, 'checkConflict']);
-    Route::post('fb-parties/{partyId}/sub-parties/{subPartyId}/complete', [\App\Http\Controllers\Api\FbPartyController::class, 'completeSubParty']);
+    Route::post('fb-parties/{partyId}/sub-parties/{subPartyId}/complete', [\App\Http\Controllers\Api\FbPartyController::class, 'completeSubParty'])->middleware('permission:fb.party.manage');
 
     // F&B Orders (Bills)
     Route::get('/fnb/orders', [\App\Http\Controllers\FbOrderController::class, 'search']);
     Route::get('/fnb/tables/{tableId}/active-orders', [\App\Http\Controllers\FbOrderController::class, 'getActiveOrders']);
-    Route::post('/fnb/tables/{tableId}/orders/sync', [\App\Http\Controllers\FbOrderController::class, 'syncOrders']);
+    Route::post('/fnb/tables/{tableId}/orders/sync', [\App\Http\Controllers\FbOrderController::class, 'syncOrders'])->middleware('permission:fb.order.create,fb.order.edit,fb.payment');
     Route::get('/fnb/orders/{orderId}/print-logs', [\App\Http\Controllers\FbPrintLogController::class, 'getByOrder']);
 
 
     Route::get('/departments', [\App\Http\Controllers\Api\DepartmentController::class, 'index']);
-    Route::post('/outlets/reorder', [\App\Http\Controllers\Api\OutletController::class, 'reorder']);
-    Route::apiResource('outlets', \App\Http\Controllers\Api\OutletController::class);
-    Route::apiResource('fb-locations', \App\Http\Controllers\Api\FbLocationController::class);
-    Route::post('fb-tables/bulk-create', [\App\Http\Controllers\Api\FbTableController::class, 'bulkCreate']);
-    Route::post('fb-tables/delete-row', [\App\Http\Controllers\Api\FbTableController::class, 'deleteRow']);
-    Route::post('fb-tables/{from_id}/transfer/{to_id}', [\App\Http\Controllers\FbOrderController::class, 'transferTable']);
-    Route::post('fb-tables/{from_id}/transfer-items/{to_id}', [\App\Http\Controllers\FbOrderController::class, 'transferItems']);
-    Route::apiResource('fb-tables', \App\Http\Controllers\Api\FbTableController::class);
+    Route::post('/outlets/reorder', [\App\Http\Controllers\Api\OutletController::class, 'reorder'])->middleware($canWrite('fb.overview.*', 'fb.menu.manage', 'config.housekeeping.*'));
+    Route::apiResource('outlets', \App\Http\Controllers\Api\OutletController::class)->middleware($canWrite('fb.overview.*', 'fb.menu.manage', 'config.housekeeping.*'));
+    Route::apiResource('fb-locations', \App\Http\Controllers\Api\FbLocationController::class)->middleware($canWrite('fb.overview.*', 'fb.menu.manage'));
+    Route::post('fb-tables/bulk-create', [\App\Http\Controllers\Api\FbTableController::class, 'bulkCreate'])->middleware($canWrite('fb.overview.*', 'fb.menu.manage'));
+    Route::post('fb-tables/delete-row', [\App\Http\Controllers\Api\FbTableController::class, 'deleteRow'])->middleware($canWrite('fb.overview.*', 'fb.menu.manage'));
+    Route::post('fb-tables/{from_id}/transfer/{to_id}', [\App\Http\Controllers\FbOrderController::class, 'transferTable'])->middleware('permission:fb.order.edit,fb.order.create');
+    Route::post('fb-tables/{from_id}/transfer-items/{to_id}', [\App\Http\Controllers\FbOrderController::class, 'transferItems'])->middleware('permission:fb.order.edit,fb.order.create');
+    Route::apiResource('fb-tables', \App\Http\Controllers\Api\FbTableController::class)->middleware($canWrite('fb.overview.*', 'fb.menu.manage'));
 
     // Dedicated F&B Menu definitions routes
-    Route::post('/fb-products/bulk-toggle-active', [\App\Http\Controllers\Api\FbProductController::class, 'bulkToggleActive']);
-    Route::post('/fb-products/bulk-update-status', [\App\Http\Controllers\Api\FbProductController::class, 'bulkUpdateStatus']);
-    Route::apiResource('fb-product-categories', \App\Http\Controllers\Api\FbProductCategoryController::class);
-    Route::apiResource('fb-products', \App\Http\Controllers\Api\FbProductController::class);
-    Route::apiResource('fb-printers', \App\Http\Controllers\Api\FbPrinterController::class);
-    Route::apiResource('fb-promotions', \App\Http\Controllers\FbPromotionController::class);
-    Route::apiResource('fb-parties', \App\Http\Controllers\Api\FbPartyController::class);
-    Route::post('fb-parties/{id}/cancel', [\App\Http\Controllers\Api\FbPartyController::class, 'cancel']);
+    Route::post('/fb-products/bulk-toggle-active', [\App\Http\Controllers\Api\FbProductController::class, 'bulkToggleActive'])->middleware($canWrite('fb.menu.*', 'fb.menu.manage'));
+    Route::post('/fb-products/bulk-update-status', [\App\Http\Controllers\Api\FbProductController::class, 'bulkUpdateStatus'])->middleware($canWrite('fb.menu.*', 'fb.menu.manage'));
+    Route::apiResource('fb-product-categories', \App\Http\Controllers\Api\FbProductCategoryController::class)->middleware($canWrite('fb.menu.*', 'fb.menu.manage'));
+    Route::apiResource('fb-products', \App\Http\Controllers\Api\FbProductController::class)->middleware($canWrite('fb.menu.*', 'fb.menu.manage'));
+    Route::apiResource('fb-printers', \App\Http\Controllers\Api\FbPrinterController::class)->middleware($canWrite('fb.overview.*', 'fb.menu.manage'));
+    Route::apiResource('fb-promotions', \App\Http\Controllers\FbPromotionController::class)->middleware($canWrite('fb.menu.*', 'fb.menu.manage'));
+    Route::apiResource('fb-parties', \App\Http\Controllers\Api\FbPartyController::class)->middleware($canWrite('fb.party.*', 'fb.party.manage'));
+    Route::post('fb-parties/{id}/cancel', [\App\Http\Controllers\Api\FbPartyController::class, 'cancel'])->middleware('permission:fb.party.delete,fb.party.manage');
     Route::post('fb-parties/check-conflict', [\App\Http\Controllers\Api\FbPartyController::class, 'checkConflict']);
-    Route::post('fb-parties/{partyId}/sub-parties/{subPartyId}/complete', [\App\Http\Controllers\Api\FbPartyController::class, 'completeSubParty']);
+    Route::post('fb-parties/{partyId}/sub-parties/{subPartyId}/complete', [\App\Http\Controllers\Api\FbPartyController::class, 'completeSubParty'])->middleware('permission:fb.party.manage');
 
     // F&B Orders (Bills)
     Route::get('/fnb/orders', [\App\Http\Controllers\FbOrderController::class, 'search']);
     Route::get('/fnb/tables/{tableId}/active-orders', [\App\Http\Controllers\FbOrderController::class, 'getActiveOrders']);
-    Route::post('/fnb/tables/{tableId}/orders/sync', [\App\Http\Controllers\FbOrderController::class, 'syncOrders']);
+    Route::post('/fnb/tables/{tableId}/orders/sync', [\App\Http\Controllers\FbOrderController::class, 'syncOrders'])->middleware('permission:fb.order.create,fb.order.edit,fb.payment');
     Route::get('/fnb/orders/{orderId}/print-logs', [\App\Http\Controllers\FbPrintLogController::class, 'getByOrder']);
 
     // Activity Log routes
-    Route::get('/activity-logs', [\App\Http\Controllers\Api\ActivityLogController::class, 'index']);
-    Route::get('/activity-logs/stats', [\App\Http\Controllers\Api\ActivityLogController::class, 'stats']);
+    Route::get('/activity-logs', [\App\Http\Controllers\Api\ActivityLogController::class, 'index'])->middleware('permission:mgmt.activity_log,fb.view');
+    Route::get('/activity-logs/stats', [\App\Http\Controllers\Api\ActivityLogController::class, 'stats'])->middleware('permission:mgmt.activity_log,fb.view');
 
     // =====================================================================
     // BOOKING (Đăng ký phòng) routes
@@ -522,28 +536,28 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
 
     // --- Special Requests (SP2107, SP1325) — Epic 15 ---
     Route::get('/special-requests', [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'catalog']);
-    Route::post('/special-requests', [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'storeMaster']);
-    Route::delete('/special-requests/{id}', [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'destroyMaster']);
+    Route::post('/special-requests', [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'storeMaster'])->middleware('permission:fo.booking.edit,config.system.edit');
+    Route::delete('/special-requests/{id}', [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'destroyMaster'])->middleware('permission:fo.booking.edit,config.system.delete');
     Route::prefix('booking-rooms/{roomId}/special-requests')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'index']);
-        Route::post('/', [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'store']);
-        Route::post('/sync', [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'sync']);
-        Route::delete('/{id}', [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'destroy']);
+        Route::post('/', [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'store'])->middleware('permission:fo.booking.edit');
+        Route::post('/sync', [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'sync'])->middleware('permission:fo.booking.edit');
+        Route::delete('/{id}', [\App\Http\Controllers\Api\BookingRoomSpecialRequestController::class, 'destroy'])->middleware('permission:fo.booking.edit');
     });
 
     // --- Guests & Children — Epic 7, 13 ---
     Route::get('/guests/search', [\App\Http\Controllers\Api\GuestController::class, 'searchGuests']);
-    Route::post('/guests/{id}/avatar', [\App\Http\Controllers\Api\GuestController::class, 'uploadAvatar']);
+    Route::post('/guests/{id}/avatar', [\App\Http\Controllers\Api\GuestController::class, 'uploadAvatar'])->middleware('permission:fo.guest.edit,fo.guest.create,fo.booking.edit,fo.checkin');
     Route::get('/bookings/{bookingId}/guests', [\App\Http\Controllers\Api\GuestController::class, 'bookingGuests']);
-    Route::post('/bookings/{bookingId}/init-guests', [\App\Http\Controllers\Api\GuestController::class, 'initGuests']);
-    Route::post('/bookings/{bookingId}/bulk-update-guests', [\App\Http\Controllers\Api\GuestController::class, 'bulkUpdate']);
+    Route::post('/bookings/{bookingId}/init-guests', [\App\Http\Controllers\Api\GuestController::class, 'initGuests'])->middleware('permission:fo.guest.edit,fo.guest.create,fo.booking.edit,fo.checkin');
+    Route::post('/bookings/{bookingId}/bulk-update-guests', [\App\Http\Controllers\Api\GuestController::class, 'bulkUpdate'])->middleware('permission:fo.guest.edit,fo.guest.create,fo.booking.edit,fo.checkin');
     Route::prefix('booking-rooms/{roomId}/guests')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\GuestController::class, 'roomGuests']);
         Route::get('/on-date', [\App\Http\Controllers\Api\GuestController::class, 'getGuestsOnDate']);
-        Route::post('/', [\App\Http\Controllers\Api\GuestController::class, 'addGuest']);
+        Route::post('/', [\App\Http\Controllers\Api\GuestController::class, 'addGuest'])->middleware('permission:fo.guest.edit,fo.guest.create,fo.booking.edit,fo.checkin');
         Route::post('/{guestId}/checkout', [\App\Http\Controllers\Api\GuestController::class, 'checkoutGuest'])->middleware(['permission:fo.checkout', \App\Http\Middleware\RequireFrontDeskInvoiceMutation::class]);
-        Route::put('/{guestId}', [\App\Http\Controllers\Api\GuestController::class, 'updateGuest']);
-        Route::delete('/{guestId}', [\App\Http\Controllers\Api\GuestController::class, 'removeGuest']);
+        Route::put('/{guestId}', [\App\Http\Controllers\Api\GuestController::class, 'updateGuest'])->middleware('permission:fo.guest.edit,fo.booking.edit,fo.checkin');
+        Route::delete('/{guestId}', [\App\Http\Controllers\Api\GuestController::class, 'removeGuest'])->middleware('permission:fo.guest.edit,fo.booking.edit');
     });
     Route::post('/booking-rooms/{roomId}/checkout', [\App\Http\Controllers\Api\GuestController::class, 'checkoutRoom'])->middleware(['permission:fo.checkout', \App\Http\Middleware\RequireFrontDeskInvoiceMutation::class]);
     Route::post('/bookings/{bookingId}/checkout-preview', [\App\Http\Controllers\Api\GuestController::class, 'previewCheckoutRooms'])->middleware(['permission:fo.checkout', \App\Http\Middleware\RequireFrontDeskInvoiceMutation::class]);
@@ -559,7 +573,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
 
     // Breakfast details (Epic 13)
     Route::get('/booking-children/{childId}/breakfast-details', [\App\Http\Controllers\Api\GuestController::class, 'breakfastDetails']);
-    Route::patch('/booking-children/{childId}/breakfast-details/{detailId}', [\App\Http\Controllers\Api\GuestController::class, 'updateBreakfastDetail']);
+    Route::patch('/booking-children/{childId}/breakfast-details/{detailId}', [\App\Http\Controllers\Api\GuestController::class, 'updateBreakfastDetail'])->middleware('permission:fo.booking.edit');
 
     // Cancel Reasons catalog
     Route::get('/cancel-reasons', [\App\Http\Controllers\Api\GuestController::class, 'cancelReasons']);
@@ -583,11 +597,11 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     // =====================================================================
     // HÓA ĐƠN BÁN HÀNG (Sales Invoices) routes
     // =====================================================================
-    Route::get('/sales-invoices', [\App\Http\Controllers\Api\SalesInvoiceController::class, 'index']);
-    Route::get('/sales-invoices/stats', [\App\Http\Controllers\Api\SalesInvoiceController::class, 'stats']);
-    Route::get('/sales-invoices/{id}', [\App\Http\Controllers\Api\SalesInvoiceController::class, 'show']);
-    Route::get('/sales-invoices/{id}/print', [\App\Http\Controllers\Api\SalesInvoiceController::class, 'printData']);
-    Route::get('/bookings/{bookingId}/sales-invoices', [\App\Http\Controllers\Api\SalesInvoiceController::class, 'byBooking']);
+    Route::get('/sales-invoices', [\App\Http\Controllers\Api\SalesInvoiceController::class, 'index'])->middleware('permission:fo.bill.view,fo.payment.view,fb.payment');
+    Route::get('/sales-invoices/stats', [\App\Http\Controllers\Api\SalesInvoiceController::class, 'stats'])->middleware('permission:fo.bill.view,fo.payment.view,fb.payment');
+    Route::get('/sales-invoices/{id}', [\App\Http\Controllers\Api\SalesInvoiceController::class, 'show'])->middleware('permission:fo.bill.view,fo.payment.view,fb.payment');
+    Route::get('/sales-invoices/{id}/print', [\App\Http\Controllers\Api\SalesInvoiceController::class, 'printData'])->middleware('permission:fo.bill.view,fo.payment.view,fb.payment');
+    Route::get('/bookings/{bookingId}/sales-invoices', [\App\Http\Controllers\Api\SalesInvoiceController::class, 'byBooking'])->middleware('permission:fo.bill.view,fo.payment.view,fb.payment');
 
     // Availability
     Route::get('/availability', [\App\Http\Controllers\Api\AvailabilityController::class, 'index']);
@@ -670,7 +684,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
         Route::get('/departures', [\App\Http\Controllers\Api\ShiftWorkController::class, 'departures']);
         Route::get('/export', [\App\Http\Controllers\Api\ShiftWorkController::class, 'export']);
         Route::get('/pending', [\App\Http\Controllers\Api\ShiftWorkController::class, 'pending']);
-        Route::put('/pending/{bookingId}/note', [\App\Http\Controllers\Api\ShiftWorkController::class, 'updatePendingNote']);
+        Route::put('/pending/{bookingId}/note', [\App\Http\Controllers\Api\ShiftWorkController::class, 'updatePendingNote'])->middleware('permission:fo.booking.edit');
         Route::get('/shuttle', [\App\Http\Controllers\Api\ShiftWorkController::class, 'shuttle']);
         Route::get('/noshow', [\App\Http\Controllers\Api\ShiftWorkController::class, 'noshow']);
         Route::get('/birthdays', [\App\Http\Controllers\Api\ShiftWorkController::class, 'birthdays']);

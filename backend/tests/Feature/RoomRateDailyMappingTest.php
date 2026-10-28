@@ -15,7 +15,7 @@ class RoomRateDailyMappingTest extends TestCase
 
     public function test_merge_updates_only_selected_dates_and_can_remove_one_date(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->withRole('branch_admin')->create();
         $this->createRateCode();
         RoomRateDailyMapping::create(['RateCode' => 'TEST', 'Date' => '2026-08-09', 'Code' => 'A']);
 
@@ -45,7 +45,7 @@ class RoomRateDailyMappingTest extends TestCase
 
     public function test_unknown_plan_is_rejected_without_deleting_existing_mappings(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->withRole('branch_admin')->create();
         $this->createRateCode();
         RoomRateDailyMapping::create(['RateCode' => 'TEST', 'Date' => '2026-08-09', 'Code' => 'A']);
 

@@ -8,10 +8,30 @@ use App\Services\TenantDatabaseService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 class DatabaseBackupController extends Controller
 {
+    /**
+     * Dòng 406: sao lưu / khôi phục chỉ admin (middleware permission:admin) và phải nhập lại mật khẩu.
+     * Kiểm tra lại ở server để không thể bỏ qua popup xác nhận ở giao diện.
+     */
+    private function ensurePasswordConfirmed(Request $request): void
+    {
+        $request->validate(['password' => 'required|string'], [
+            'password.required' => 'Vui lòng nhập mật khẩu để xác nhận',
+        ]);
+
+        $user = $request->user();
+        if (! $user || ! Hash::check((string) $request->input('password'), $user->password)) {
+            throw ValidationException::withMessages([
+                'password' => 'Mật khẩu xác nhận không đúng',
+            ]);
+        }
+    }
+
     /**
      * Tìm đường dẫn thực thi của mysql CLI
      */
@@ -444,11 +464,13 @@ class DatabaseBackupController extends Controller
     }
 
     /**
-     * GET /api/system/database/export
+     * POST /api/system/database/export (kèm mật khẩu xác nhận)
      * Xuất file SQL (hỗ trợ ALL, SYSTEM, hoặc từng chi nhánh cụ thể)
      */
     public function exportDatabase(Request $request)
     {
+        $this->ensurePasswordConfirmed($request);
+
         @set_time_limit(0);
         @ini_set('memory_limit', '1024M');
         @ini_set('max_execution_time', '0');
@@ -724,6 +746,8 @@ class DatabaseBackupController extends Controller
      */
     public function importDatabase(Request $request)
     {
+        $this->ensurePasswordConfirmed($request);
+
         @set_time_limit(0);
         @ini_set('memory_limit', '1024M');
         @ini_set('max_execution_time', '0');

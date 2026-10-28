@@ -1,9 +1,12 @@
 <script setup>
 import { ref, computed, watch, defineAsyncComponent, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth-store'
+import { canOpenScreen } from '@/utils/screen-permissions'
 
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
 
 const isSidebarCollapsed = ref(localStorage.getItem('fnb_other_sidebar_collapsed') === 'true')
 
@@ -12,19 +15,20 @@ watch(isSidebarCollapsed, (val) => {
 })
 
 const activeTab = computed({
-  get: () => route.query.tab || 'log',
+  get: () => route.query.tab || sidebarItems[0]?.id || 'log',
   set: (val) => {
     router.replace({ query: { ...route.query, tab: val } })
   }
 })
 
 // Sidebar Menu Items
+// Dòng 406: chỉ hiện chức năng user có quyền xem
 const sidebarItems = [
   { id: 'log', name: 'GHI LOG', icon: 'file-text', shortcut: '1' },
   { id: 'inventory', name: 'KHO', icon: 'box', shortcut: '2' },
   { id: 'vat', name: 'IN VAT', icon: 'printer', shortcut: '3' },
   { id: 'settings', name: 'CÀI ĐẶT', icon: 'settings', shortcut: '4' }
-]
+].filter(item => canOpenScreen(authStore, '/fnb/other', { tab: item.id }))
 
 const handleKeydown = (e) => {
   if (e.key === 'Escape') {

@@ -29,7 +29,7 @@ class InventoryPeriodicCheckTest extends TestCase
     {
         parent::setUp();
 
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->withRole('branch_admin')->create());
 
         $this->minibar = Warehouse::create(['name' => 'Kho Minibar', 'outlet_id' => 'MB', 'is_active' => true]);
         $this->laundry = Warehouse::create(['name' => 'Kho Giặt ủi', 'outlet_id' => 'GU', 'is_active' => true]);

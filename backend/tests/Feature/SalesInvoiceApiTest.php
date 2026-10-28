@@ -37,7 +37,7 @@ class SalesInvoiceApiTest extends TestCase
     {
         parent::setUp();
 
-        $this->user = User::factory()->create(['username' => 'reception_test']);
+        $this->user = User::factory()->withRole('fo_staff', ['fo.bill.view'])->create(['username' => 'reception_test']);
         $role = Role::firstOrCreate(['code' => 'admin_test'], ['name' => 'Admin test', 'level' => 1, 'is_active' => true]);
         $perm = \App\Models\Permission::firstOrCreate(['code' => 'fo.payment.create'], ['name' => 'fo.payment.create', 'module' => 'FO']);
         $role->permissions()->syncWithoutDetaching([$perm->id]);

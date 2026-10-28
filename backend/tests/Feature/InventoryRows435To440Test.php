@@ -30,7 +30,7 @@ class InventoryRows435To440Test extends TestCase
     {
         parent::setUp();
 
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->withRole('branch_admin')->create());
 
         $this->minibar = Warehouse::create(['name' => 'Kho Minibar', 'outlet_id' => 'MB', 'is_active' => true]);
         $this->amenity = Warehouse::create(['name' => 'Kho Amenity', 'outlet_id' => 'AM', 'is_active' => true]);

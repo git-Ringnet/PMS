@@ -53,10 +53,51 @@ function startDragModal(e) {
 }
 
 const handleKeyDown = (e) => {
+  if (e.key === 'Escape' && passwordPrompt.value.show) {
+    closePasswordPrompt()
+    return
+  }
   if (e.key === 'Escape' && showConfirmModal.value) {
     showConfirmModal.value = false
   }
 }
+
+// Dòng 406: mọi thao tác sao lưu / khôi phục đều phải đăng nhập lại mật khẩu (backend kiểm tra lại)
+const passwordPrompt = ref({ show: false, action: null, password: '', error: '' })
+const passwordInputRef = ref(null)
+
+const askPassword = (action, error = '') => {
+  passwordPrompt.value = { show: true, action, password: '', error }
+  setTimeout(() => passwordInputRef.value?.focus(), 50)
+}
+
+const closePasswordPrompt = () => {
+  passwordPrompt.value = { show: false, action: null, password: '', error: '' }
+}
+
+const submitPassword = () => {
+  const { action, password } = passwordPrompt.value
+  if (!password) {
+    passwordPrompt.value.error = 'Vui lòng nhập mật khẩu'
+    return
+  }
+  closePasswordPrompt()
+  if (action === 'export') executeExport(password)
+  if (action === 'import') executeImport(password)
+}
+
+// Lỗi trả về khi tải file (responseType blob) cũng là Blob, cần đọc lại thành JSON
+const readErrorBody = async (err) => {
+  const data = err.response?.data
+  if (data instanceof Blob) {
+    try { return JSON.parse(await data.text()) } catch { return {} }
+  }
+  return data || {}
+}
+
+const passwordError = (status, body) => status === 422 && body?.errors?.password
+  ? body.errors.password[0]
+  : null
 
 const isLoading = ref(false)
 const isExporting = ref(false)
@@ -161,15 +202,16 @@ const selectTarget = (code) => {
   onBranchChange()
 }
 
-const handleExport = async () => {
+const handleExport = () => askPassword('export')
+
+const executeExport = async (password) => {
   isExporting.value = true
   message.value = null
   errorMsg.value = null
 
   try {
     const targetCode = selectedBranchCode.value
-    const response = await http.get('/system/database/export', {
-      params: { branch_code: targetCode },
+    const response = await http.post('/system/database/export', { branch_code: targetCode, password }, {
       responseType: 'blob',
       timeout: 600000 // 10 minutes for full DB export
     })
@@ -198,7 +240,13 @@ const handleExport = async () => {
     message.value = `Đã xuất bản sao lưu database cho [${selectedBranchObj.value.name}] (.sql) thành công!`
   } catch (err) {
     console.error('Export DB error:', err)
-    errorMsg.value = 'Không thể xuất database: ' + (err.response?.data?.message || err.message)
+    const body = await readErrorBody(err)
+    const wrongPassword = passwordError(err.response?.status, body)
+    if (wrongPassword) {
+      askPassword('export', wrongPassword)
+      return
+    }
+    errorMsg.value = 'Không thể xuất database: ' + (body.message || err.message)
   } finally {
     isExporting.value = false
   }
@@ -238,8 +286,12 @@ const triggerFileInput = () => {
 }
 
 
-const executeImport = async () => {
+const confirmImport = () => {
   showConfirmModal.value = false
+  askPassword('import')
+}
+
+const executeImport = async (password) => {
   isImporting.value = true
   message.value = null
   errorMsg.value = null
@@ -249,6 +301,7 @@ const executeImport = async () => {
     const formData = new FormData()
     formData.append('file', selectedFile.value)
     formData.append('branch_code', targetCode)
+    formData.append('password', password)
 
     const response = await http.post('/system/database/import', formData, {
       headers: {
@@ -270,6 +323,11 @@ const executeImport = async () => {
     }
   } catch (err) {
     console.error('Import DB error:', err)
+    const wrongPassword = passwordError(err.response?.status, err.response?.data)
+    if (wrongPassword) {
+      askPassword('import', wrongPassword)
+      return
+    }
     errorMsg.value = 'Lỗi khôi phục database: ' + (err.response?.data?.message || err.message)
   } finally {
     isImporting.value = false
@@ -721,7 +779,7 @@ onBeforeUnmount(() => {
                 Hủy Bỏ
               </button>
               <button
-                @click="executeImport"
+                @click="confirmImport"
                 class="btn-pms-danger h-8 px-4 text-xs font-medium cursor-pointer shadow-xs"
               >
                 Đồng Ý Ghi Đè & Khôi Phục
@@ -729,6 +787,39 @@ onBeforeUnmount(() => {
             </div>
           </div>
         </div>
+      </div>
+      <!-- Dòng 406: xác nhận lại mật khẩu trước khi sao lưu / khôi phục -->
+      <div v-if="passwordPrompt.show" class="fixed inset-0 z-[10000] flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/40" @click="closePasswordPrompt"></div>
+        <form class="relative bg-white rounded-xl max-w-sm w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col" @submit.prevent="submitPassword">
+          <div class="px-5 py-2.5 text-white text-xs font-semibold tracking-wide" :style="{ backgroundColor: topbarThemeBg }">
+            Xác nhận đăng nhập
+          </div>
+          <div class="p-5 flex flex-col gap-3 text-xs">
+            <p class="m-0 text-slate-700">
+              {{ passwordPrompt.action === 'export' ? 'Nhập mật khẩu để xuất bản sao lưu database.' : 'Nhập mật khẩu để khôi phục database.' }}
+            </p>
+            <label class="flex flex-col gap-1">
+              <span class="text-slate-500">Tài khoản</span>
+              <input :value="authStore.user?.username" disabled class="h-8 px-2 border border-slate-200 rounded bg-slate-50 text-slate-600" />
+            </label>
+            <label class="flex flex-col gap-1">
+              <span class="text-slate-500">Mật khẩu</span>
+              <input
+                ref="passwordInputRef"
+                v-model="passwordPrompt.password"
+                type="password"
+                autocomplete="current-password"
+                class="h-8 px-2 border border-slate-300 rounded focus:outline-none focus:border-primary-500"
+              />
+            </label>
+            <p v-if="passwordPrompt.error" class="m-0 text-rose-600">{{ passwordPrompt.error }}</p>
+            <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button type="button" @click="closePasswordPrompt" class="btn-pms-secondary h-8 px-3 text-xs font-medium cursor-pointer">Hủy Bỏ</button>
+              <button type="submit" class="btn-pms-primary h-8 px-4 text-xs font-medium cursor-pointer">Xác Nhận</button>
+            </div>
+          </div>
+        </form>
       </div>
     </Teleport>
     </div>

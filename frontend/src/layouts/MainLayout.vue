@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import { fetchSystemBranches } from '@/services/company-service'
 import http from '@/services/http'
 import { t, currentLang } from '@/utils/i18n'
+import { filterMenuByPermission } from '@/utils/screen-permissions'
 import { languages } from '@/utils/i18n-dictionary'
 import { isEditMode as isTranslationMode, toggleEditMode as toggleTranslationMode, setTranslationEditAllowed, registerMenu } from '@/utils/translator'
 import { fetchOutlets } from '@/services/outlet-service'
@@ -580,7 +581,7 @@ const withDynamicReportMenu = (items, context = null) => {
   return normalized.sort((a, b) => a.menuOrder - b.menuOrder)
 }
 
-const menuItems = computed(() => {
+const rawMenuItems = computed(() => {
   const fromModule = route.query.from || null
 
   if (route.path.startsWith('/frontdesk') || fromModule === 'frontdesk') {
@@ -591,10 +592,10 @@ const menuItems = computed(() => {
         route: '/frontdesk',
         dropdown: [
           { name: 'Sơ Đồ Phòng', tab: 'room-map' },
-          { name: 'Nhận Phòng Nhanh', tab: 'room-map', action: 'quick-checkin' },
-          { name: 'Tạo Đăng Ký', tab: 'create-res', action: 'new' },
-          { name: 'Đặt Cọc', tab: 'create-res', modal: 'deposit' },
-          { name: 'Tạo Thẻ Khóa Phòng', tab: 'create-res', modal: 'keycard' },
+          { name: 'Nhận Phòng Nhanh', tab: 'room-map', action: 'quick-checkin', permission: ['fo.checkin'] },
+          { name: 'Tạo Đăng Ký', tab: 'create-res', action: 'new', permission: ['fo.booking.create'] },
+          { name: 'Đặt Cọc', tab: 'create-res', modal: 'deposit', permission: ['fo.deposit.create', 'fo.payment.create'] },
+          { name: 'Tạo Thẻ Khóa Phòng', tab: 'create-res', modal: 'keycard', permission: ['fo.checkin', 'fo.booking.edit'] },
           { name: 'In Phiếu Ăn Sáng', tab: 'print-breakfast' },
         ]
       },
@@ -714,7 +715,7 @@ const menuItems = computed(() => {
       name: t('menu.registration'),
       route: '/reservation',
       dropdown: [
-        { name: t('menu.createReg'), tab: 'create-res' },
+        { name: t('menu.createReg'), tab: 'create-res', permission: ['fo.booking.create'] },
         { name: t('menu.allotment'), tab: 'allotment' },
         { name: t('menu.allotmentDetail'), tab: 'allotment-detail' },
         { name: t('menu.allotmentReport'), tab: 'allotment-report' }
@@ -738,13 +739,16 @@ const menuItems = computed(() => {
   ], 'reservation')
 })
 
+// Dòng 406: không có quyền thì không hiện menu (kể cả menu con)
+const menuItems = computed(() => filterMenuByPermission(rawMenuItems.value, authStore))
+
 const getQueryParam = (name) => {
   if (typeof window === 'undefined') return null
   const params = new URLSearchParams(window.location.search)
   return params.get(name)
 }
 
-const subMenuItems = computed(() => {
+const rawSubMenuItems = computed(() => {
   const currentTab = route.path.startsWith('/reports')
     ? (route.query.tab || getQueryParam('tab') || 'overview')
     : (route.query.tab || getQueryParam('tab') || 'room-map')
@@ -809,6 +813,11 @@ const subMenuItems = computed(() => {
   }
   
   return []
+})
+
+const subMenuItems = computed(() => {
+  const modulePath = '/' + (route.path.split('/')[1] || '')
+  return filterMenuByPermission(rawSubMenuItems.value, authStore, modulePath)
 })
 
 // Ghi nhận cấu trúc menu cho trang Cấu hình hệ thống › Ngôn ngữ (chỉ khi người dùng có quyền sửa bản dịch)

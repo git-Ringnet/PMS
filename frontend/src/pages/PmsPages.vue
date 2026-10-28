@@ -4,9 +4,12 @@ import { ref, onMounted, computed } from "vue";
 import PortalWallpaperModal from "@/components/PortalWallpaperModal.vue";
 import { usePermission } from "@/composables/usePermission";
 import { usePortalWallpaper } from "@/composables/usePortalWallpaper";
+import { useAuthStore } from "@/stores/auth-store";
+import { filterMenuByPermission } from "@/utils/screen-permissions";
 
 const router = useRouter();
 const { can, canAny, isSuperAdmin, isAdmin } = usePermission();
+const authStore = useAuthStore();
 const isLoaded = ref(false);
 
 const {
@@ -57,6 +60,9 @@ const menuItems = [
   },
 ];
 
+// Dòng 406: chỉ hiện module user có quyền xem
+const visibleMenuItems = computed(() => filterMenuByPermission(menuItems, authStore));
+
 function navigateTo(route) {
   router.push(route);
 }
@@ -98,7 +104,7 @@ onMounted(() => {
         <!-- Quick Module Cards (Desktop hover) -->
         <div class="flex flex-wrap items-center justify-center gap-3.5 sm:gap-4 mt-8 px-4">
           <div
-            v-for="(item, index) in menuItems"
+            v-for="(item, index) in visibleMenuItems"
             :key="item.route"
             class="transition-all duration-700"
             :style="{ transitionDelay: `${index * 100 + 400}ms` }"

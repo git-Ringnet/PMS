@@ -20,7 +20,7 @@ class HkConfigTest extends TestCase
 
     public function test_get_hk_config()
     {
-        $user = User::factory()->create();
+        $user = User::factory()->withRole('branch_admin')->create();
 
         $response = $this->actingAs($user)
             ->getJson('/api/hk-config');
@@ -43,7 +43,7 @@ class HkConfigTest extends TestCase
 
     public function test_update_print_cols_stores_parent_label()
     {
-        $user = User::factory()->create();
+        $user = User::factory()->withRole('branch_admin')->create();
 
         // Get existing columns
         $existingCols = HkPrintCol::where('template', 'worksheet')->get()->toArray();
@@ -76,7 +76,7 @@ class HkConfigTest extends TestCase
 
     public function test_reset_config_reloads_defaults()
     {
-        $user = User::factory()->create();
+        $user = User::factory()->withRole('branch_admin')->create();
 
         // Delete all columns to simulate custom setup
         HkPrintCol::query()->delete();
