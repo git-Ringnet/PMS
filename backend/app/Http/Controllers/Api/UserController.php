@@ -139,16 +139,24 @@ class UserController extends Controller
 
     public function resetPassword(Request $request, $id)
     {
+        $validated = $request->validate([
+            'password' => 'required|string|min:6|confirmed',
+        ], [
+            'password.required' => 'Vui lòng nhập mật khẩu mới.',
+            'password.min' => 'Mật khẩu mới phải có ít nhất 6 ký tự.',
+            'password.confirmed' => 'Xác nhận mật khẩu mới không khớp.',
+        ]);
+
         $user = User::findOrFail($id);
         $user->update([
-            'password' => Hash::make($user->email),
+            'password' => Hash::make($validated['password']),
             'must_change_password' => false,
         ]);
         $user->tokens()->delete();
 
         return response()->json([
             'success' => true,
-            'message' => 'Đã đặt lại mật khẩu về email ('.$user->email.').',
+            'message' => 'Đã đặt lại mật khẩu nhân viên thành công.',
         ]);
     }
 

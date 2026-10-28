@@ -1,5 +1,17 @@
 # Project Memory — PMS
 
+- 2026-10-27: Room Map — Bảng Danh sách tăng chiều rộng tối thiểu và các cột header dài để không bị rút gọn; giữ cuộn ngang cục bộ. Chỉ đổi `RoomMapPage.vue`, không đổi API, dữ liệu, filter hay import legacy. Frontend build đạt.
+
+- 2026-10-27: Room Map — Thanh thống kê đầu trang giữ đủ nội dung cho thẻ Đã đến/Đã đi/Đang ở/Khóa OOO/Khóa OOS/Công suất: đặt chiều rộng tối thiểu và không ngắt nhãn; khi màn hình hẹp, chỉ dải thẻ cuộn ngang. Không đổi API, số liệu, lọc, dữ liệu hay import legacy. Frontend build đạt.
+
+- 2026-10-27: Dòng 265 — Danh sách Phòng Đến/Đi/Ở tách chính xác `NL/EB/TE`: ưu tiên danh sách trẻ/em bé đang hoạt động theo `age_group`, chỉ fallback về `booking_rooms.children_qty`/`babies` khi không có chi tiết; không dùng `extra_bed_qty` cho Em bé. Cột số dùng `tabular-nums`, icon trạng thái vẫn ở cạnh số phòng và yêu cầu đặc biệt giữ luồng hiện có. Chỉ đổi `CheckInPage.vue`, không đổi API, database, import legacy, giường phụ hay luồng nhận/trả phòng. Frontend build đạt.
+
+- 2026-10-27: Khắc phục lớp menu PMS cũ lộ phía dưới Tạo Đăng Ký: App gán key riêng cho route KeepAlive và route thường, buộc Vue gỡ đúng component route cũ khi điều hướng mà vẫn giữ trạng thái Room Map. Không đổi API, dữ liệu, database hay import legacy. Frontend build đạt.
+
+- 2026-10-27: Sửa tooltip Room Map còn hiển thị trên menu PMS khi chuyển trang: Room Map được KeepAlive và tooltip Teleport vào `body`, nên đóng tooltip/context menu tại `onDeactivated`. Không đổi API, dữ liệu, trạng thái phòng hay import legacy. Frontend build đạt.
+
+- 2026-10-27: Dòng 447 — Tab Nhân viên có modal đặt lại mật khẩu mới với hai trường bắt buộc, xác nhận trùng khớp, phím `Esc` và header theo theme. API hiện nhận mật khẩu mới, hash, thu hồi token cũ và giữ `must_change_password=false`; không đổi route, quyền `system.user.manage`, schema, import legacy hoặc luồng đổi mật khẩu cá nhân. Frontend build và PHP lint đạt.
+
 - 2026-10-26: Điều chỉnh UX/UI 4 màn hình theo phản hồi và ảnh thực tế:
   - Khai báo lưu trú (`ResidenceDeclarationPage.vue` - Ảnh 1): Chuyển bảng sang `width: max-content; min-width: 100%; table-layout: auto;`, tăng min-width các cột ngày tháng (95px), giới tính (85px), quốc tịch (170px), địa chỉ (160px), cell-content hiển thị trọn vẹn inline-block không cắt chữ `..`.
   - Thống kê phòng trống (`AvailableRoomsPage.vue`): Đã rollback toàn bộ thay đổi theo yêu cầu người dùng, phục hồi trạng thái nguyên bản.
@@ -3138,4 +3150,16 @@ Reference schema: [`old_database_struct/db_schema/ProVistaDTXHotel/tables/SP3000
 - 2026-09-22: Đã triển khai source code cho Dòng 154, 159, 160, 166, 167 và 168 bằng migration `2026_09_22_170000_create_revenue_reports_154_159_160_166_167_168.php`. Mỗi báo cáo có Stored Procedure/source/template/definition riêng; menu chỉ dùng `reservation` và `frontdesk`. Dòng 159 tách theo từng settlement; Dòng 160 để trống PlanAmount/Rate; Dòng 167 chỉ summary; Dòng 168 tách summary/detail. Bổ sung `SummaryServiceInvoicesDataAdapter`, `SalespersonRevenueDataAdapter` và tài liệu hardcoded nhóm doanh thu. Chưa chạy migration trên database và chưa nghiệm thu browser/export với dữ liệu thật.
 - 2026-09-22: Mock Room Map chỉ còn tạo phòng ở trạng thái `available`; `SystemConfigurationSeeder` reset toàn bộ `rooms.room_status_code` về `vacant_ready` sau mỗi lần seed để môi trường test bắt đầu với phòng sẵn sàng. Không thay đổi mapping import legacy.
 - 2026-10-09: Sơ đồ Phòng căn giữa giá trị số trong modal Thống Kê; modal chi tiết Phòng Trống giới hạn cột Ghi Chú 280px và ngắt từ. Không thay đổi API, dữ liệu hay logic nghiệp vụ.
+
+- 2026-10-27: Dòng 418 — Sơ đồ phòng dạng danh sách chỉ hiển thị thanh đổi tình trạng phòng hàng loạt tại Buồng phòng; Lễ tân vẫn đổi trạng thái từng phòng theo quyền hiện có. Không đổi API, database, khóa OOO/OOS, log hay mapping import legacy. Frontend build đạt.
+
+- 2026-10-27: Dòng 434 — Sơ đồ phòng hỗ trợ vị trí chính xác bằng `grid_row`/`grid_column`, giữ tên tầng chuỗi từ API, bỏ số đếm tầng và điều chỉnh khoảng cách chế độ dọc. Không đổi schema, endpoint, quyền, trạng thái phòng hoặc import legacy; mapping `SP1000.XAxes/YAxes/FloorName` được ghi là Chưa xác minh. Frontend build đạt; backend test chưa chạy vì thiếu `backend/vendor`.
+
+- 2026-10-27: Sơ đồ phòng chế độ dọc thêm đệm trái 12px cho cột tầng đầu tiên; không đổi dữ liệu hay nghiệp vụ. Frontend build đạt.
+
+- 2026-10-27: Sửa Dòng 434: khi bật Vị trí chính xác, Room Map dùng một Grid chung toàn sơ đồ thay vì Grid lồng theo từng tầng; `grid_row`/`grid_column` không còn tạo khoảng trống lặp. Frontend build đạt.
+
+- 2026-10-27: Cấu hình phòng và API chặn trùng tổ hợp Hàng/Cột dương của phòng vật lý; `0,0` giữ nghĩa chưa đặt vị trí. Frontend build và PHP lint đạt.
+
+- 2026-10-27: Room Map vị trí chính xác giữ nguyên tỷ lệ cột/spacing của chế độ ngang thường; chỉ thay đổi tọa độ thẻ phòng. Frontend build đạt.
 

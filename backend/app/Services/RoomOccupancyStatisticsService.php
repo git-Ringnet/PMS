@@ -196,7 +196,7 @@ class RoomOccupancyStatisticsService
             'occupied_projected_pax' => $projected['pax'],
             'vacant_projected' => max(0, $saleableRooms - $occupiedProjected),
             'occupancy_rate' => $occupancyBaseRooms > 0
-                ? (int) round(($occupiedProjected / $occupancyBaseRooms) * 100)
+                ? round(($occupiedProjected / $occupancyBaseRooms) * 100, 2)
                 : 0,
             'arrivals_checked_in' => $arrivalsCheckedIn['rooms'],
             'arrivals_checked_in_pax' => $arrivalsCheckedIn['pax'],

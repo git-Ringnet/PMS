@@ -409,6 +409,27 @@ const saveRoom = async () => {
     uiStore.showToast('Vui lòng điền các trường bắt buộc (*)', 'warning')
     return
   }
+
+  const gridRow = Number(roomFormState.grid_row || 0)
+  const gridColumn = Number(roomFormState.grid_column || 0)
+  if ((gridRow > 0) !== (gridColumn > 0)) {
+    uiStore.showToast('Hàng và Cột phải cùng nhập hoặc cùng để 0.', 'warning')
+    return
+  }
+
+  if (!roomFormState.is_internal && gridRow > 0 && gridColumn > 0) {
+    const conflictingRoom = rooms.value.find(room =>
+      room.id !== currentRoomId.value
+      && !room.is_internal
+      && Number(room.grid_row) === gridRow
+      && Number(room.grid_column) === gridColumn
+    )
+    if (conflictingRoom) {
+      uiStore.showToast(`Vị trí Hàng ${gridRow}, Cột ${gridColumn} đã được dùng bởi phòng ${conflictingRoom.room_number}.`, 'warning')
+      return
+    }
+  }
+
   loading.value = true
   try {
     if (isEditMode.value) {

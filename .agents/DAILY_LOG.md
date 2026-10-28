@@ -27,6 +27,26 @@
 
 
 
+## [2026-10-27] - Triển Khai Hoàn Tất 5 Commit Nghiệp Vụ: Đặt Lại Mật Khẩu, Công Suất Phòng, Tọa Độ Phòng & Điều Hướng
+### 1. Đặt Lại Mật Khẩu Nhân Viên (Dòng 447 Sheet Excel - [EmployeeTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/system/components/EmployeeTab.vue), [UserController.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Http/Controllers/Api/UserController.php))
+- **Mục tiêu**: Bổ sung modal đặt lại mật khẩu mới cho nhân viên kèm xác nhận mật khẩu, không dùng reset tự động về email.
+- **Frontend & FE Design System**: Modal Đặt Lại Mật Khẩu hỗ trợ nhập mật khẩu mới và xác nhận mật khẩu; 2 trường bắt buộc nền vàng `#FFF8DB`, viền `#F1DD8A`, nhãn có dấu `*` đỏ; thanh tiêu đề mang màu theme hệ thống `var(--pms-custom-theme, #006bdb)`; hỗ trợ phím `Esc` và nút đóng `[X]`. Kiểm tra validation >= 6 ký tự và khớp mật khẩu.
+- **Backend API**: `UserController.php` hash mật khẩu mới, thu hồi token cũ và trả thông báo thành công.
+
+### 2. Chuẩn Hóa Tỷ Lệ Công Suất Phòng Hiển Thị 2 Chữ Số Thập Phân (Dòng 441 Sheet Excel)
+- **Backend Service**: `RoomOccupancyStatisticsService.php` tính toán và làm tròn tỷ lệ công suất phòng với 2 chữ số thập phân (`round(..., 2)`).
+- **Mẫu In & Báo Cáo**: `TemplateRendererService.php` bổ sung format modifier `|percent` tự động hiển thị số phần trăm 2 chữ số thập phân. Cập nhật các mẫu báo cáo liên quan: Báo cáo phòng theo tuần (`weekly_room_report`), Công suất theo công ty (`company_occupancy`), Dự báo phòng (`room_forecast`) và Doanh thu nhân viên (`salesperson_revenue_summary`).
+- **Frontend**: `RoomPlanPage.vue` và `RoomMapPage.vue` chuẩn hóa hiển thị tỷ lệ công suất phòng đạt chuẩn 2 chữ số thập phân (`formatOccupancyRate`).
+
+### 3. Kiểm Tra Trùng Tọa Độ Phòng & Sơ Đồ Phòng Theo Vị Trí Thực Tế (Dòng 434 Sheet Excel)
+- **Backend**: `RoomController.php` bổ sung hàm `assertGridPositionAvailable` kiểm tra trùng lặp Hàng/Cột giữa các phòng vật lý và chặn lưu nếu trùng.
+- **Frontend Quản Lý Phòng**: `RoomTab.vue` kiểm tra tức thì và cảnh báo người dùng ngay trên giao diện khi nhập tọa độ trùng với phòng khác.
+- **Frontend Sơ Đồ Phòng**: `RoomMapPage.vue` hoàn thiện hiển thị lưới vị trí thực tế (`exactPosition`), căn chỉnh nhãn tầng, hiển thị icon cửa thông phòng chính xác theo khoảng cách hàng/cột liền kề. Ẩn cụm nút chuyển trạng thái buồng phòng khi ở phân hệ Lễ tân. Giữ nguyên chuỗi của tầng và sắp xếp theo số tự nhiên tiếng Việt.
+
+### 4. Sửa Lỗi Điều Hướng Lộ Menu Cũ Khi Mở Tạo Đăng Ký & Dọn Dẹp Tooltip
+- **Frontend [App.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/App.vue)**: Tách biệt key của router-view giữa `activeRoute.name` (dành cho component KeepAlive như Room Map) và `activeRoute.fullPath` (dành cho các trang thường), đảm bảo Vue dọn sạch DOM trang cũ khi điều hướng mà vẫn giữ cache Room Map.
+- **Frontend [RoomMapPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/RoomMapPage.vue)**: Bổ sung hook `onDeactivated` tự động dọn sạch tooltip hover và context menu khi chuyển tab/trang.
+
 ## [2026-10-26] - Điều Chỉnh UX/UI 4 Màn Hình Theo Ảnh Thực Tế
 ### 1. Khai Báo Lưu Trú (Ảnh 1 - [ResidenceDeclarationPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/ResidenceDeclarationPage.vue))
 - **Hiển thị đầy đủ thông tin ở từng ô**:

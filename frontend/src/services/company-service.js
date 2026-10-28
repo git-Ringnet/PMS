@@ -97,7 +97,7 @@ export const fetchWarehouses = (branch = null) => http.get('/warehouses', branch
     'X-Branch-Code': branch.code,
   },
 } : {})
-export const resetUserPassword = (userId) => http.post(`/users/${userId}/reset-password`)
+export const resetUserPassword = (userId, data) => http.post(`/users/${userId}/reset-password`, data)
 export const changeUserPassword = (data) => http.post('/me/change-password', data)
 
 // ==================== BANK ACCOUNTS (TÀI KHOẢN NGÂN HÀNG) ====================

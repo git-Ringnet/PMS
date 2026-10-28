@@ -24,7 +24,7 @@ export const useRoomStore = defineStore('room', () => {
   // Getters
   const floors = computed(() => {
     const floorSet = new Set(rooms.value.map(r => r.floor))
-    return [...floorSet].sort((a, b) => a - b)
+    return [...floorSet].sort((a, b) => String(a).localeCompare(String(b), 'vi', { numeric: true, sensitivity: 'base' }))
   })
 
   const filteredRooms = computed(() => {
@@ -115,7 +115,7 @@ export const useRoomStore = defineStore('room', () => {
   const occupancyRate = computed(() => {
     if (stats.value?.occupancy_rate !== undefined) return Number(stats.value.occupancy_rate) || 0
     if (rooms.value.length === 0) return 0
-    return Math.round((roomStats.value.occupied / rooms.value.length) * 100)
+    return Math.round((roomStats.value.occupied / rooms.value.length) * 10000) / 100
   })
 
   // Actions
