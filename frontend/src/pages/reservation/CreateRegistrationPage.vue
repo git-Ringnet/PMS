@@ -3267,6 +3267,10 @@ function bookingToTab(b) {
         initialRoomClassId: br.room_class_id,
         roomClassCode: rc.code || '',
         shape: (() => {
+          // Dòng 414: dạng phòng lấy theo booking_rooms.RoomKind đã lưu lúc tạo phòng,
+          // đổi dạng phòng trong giá phòng chuẩn không làm đổi booking đã tạo.
+          const savedForm = br.RoomKind ? roomForms.value.find(f => Number(f.id) === Number(br.RoomKind)) : null
+          if (savedForm?.name) return savedForm.name
           const matched = roomClasses.value.find(c => c.id === br.room_class_id)
           return matched ? (matched.room_form_name || matched.code) : (rc.code || '')
         })(),

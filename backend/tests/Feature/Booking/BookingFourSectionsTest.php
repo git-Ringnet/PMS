@@ -467,6 +467,50 @@ class BookingFourSectionsTest extends TestCase
         $this->assertSame([[false, 0.0]], $this->breakfastFlags($room));
     }
 
+    // ---------------------------------------------------------------- Dòng 414
+
+    public function test_row_414_room_kind_is_saved_at_creation_and_kept_when_standard_rate_form_changes(): void
+    {
+        $king = RoomForm::create(['name' => 'King']);
+        $double = RoomForm::where('name', 'Double')->firstOrFail();
+        $suite = RoomClass::create(['code' => 'JST', 'name' => 'Suite', 'is_active' => true]);
+        $rate = \App\Models\StandardRate::create(['room_class_id' => $suite->id, 'room_form_id' => $king->id, 'room_price' => 1000000]);
+        $booking = $this->createBooking();
+
+        $room = $this->createRoom($booking, 'G4-414A', ['room_class_id' => $suite->id]);
+        $this->assertSame($king->id, (int) $room->fresh()->RoomKind);
+
+        // Giá phòng chuẩn đổi Suite - King thành Suite - Double.
+        $rate->update(['room_form_id' => $double->id]);
+
+        // Sửa thông tin khác của phòng cũ không làm đổi dạng phòng đã lưu.
+        $room->update(['rate' => 1200000, 'adults' => 1]);
+        $this->assertSame($king->id, (int) $room->fresh()->RoomKind);
+
+        $res = $this->getJson("/api/bookings/{$booking->id}")->assertSuccessful();
+        $rooms = collect($res->json('data.booking_rooms') ?? $res->json('booking_rooms'));
+        $this->assertSame($king->id, (int) $rooms->firstWhere('id', $room->id)['RoomKind']);
+
+        // Phòng tạo mới sau khi đổi lấy dạng phòng mới.
+        $newRoom = $this->createRoom($booking, 'G4-414B', ['room_class_id' => $suite->id]);
+        $this->assertSame($double->id, (int) $newRoom->fresh()->RoomKind);
+    }
+
+    public function test_row_414_room_kind_changes_only_when_room_class_changes(): void
+    {
+        $king = RoomForm::create(['name' => 'King']);
+        $family = RoomForm::create(['name' => 'Family']);
+        $suite = RoomClass::create(['code' => 'JST', 'name' => 'Suite', 'is_active' => true]);
+        $familyClass = RoomClass::create(['code' => 'FAM', 'name' => 'Family City View', 'is_active' => true]);
+        \App\Models\StandardRate::create(['room_class_id' => $suite->id, 'room_form_id' => $king->id, 'room_price' => 1000000]);
+        \App\Models\StandardRate::create(['room_class_id' => $familyClass->id, 'room_form_id' => $family->id, 'room_price' => 900000]);
+        $room = $this->createRoom($this->createBooking(), 'G4-414C', ['room_class_id' => $suite->id]);
+
+        $room->update(['room_class_id' => $familyClass->id]);
+
+        $this->assertSame($family->id, (int) $room->fresh()->RoomKind);
+    }
+
     // ---------------------------------------------------------------- S5
     public function test_s5_shortening_stay_keeps_additional_services_but_removes_projected_room_charges(): void
     {
