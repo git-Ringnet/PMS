@@ -1574,6 +1574,13 @@ class GuestController extends Controller
 
         $child = \App\Models\BookingChild::create($childData);
 
+        // Dòng 417: lưu thông tin phòng (ăn sáng, giai đoạn ở) trước để trẻ mới
+        // thêm ăn sáng theo đúng tình trạng ăn sáng vừa lưu của phòng.
+        if ($room) {
+            $this->validateStayDates($request, $room);
+            $this->updateBookingRoomFromGuestRequest($request, $room);
+        }
+
         // Auto-generate breakfast detail rows cho mỗi ngày nếu có room
         if ($request->booking_room_id) {
             $this->generateBreakfastDetails($child);
@@ -1584,11 +1591,6 @@ class GuestController extends Controller
                     'babies'       => $r->children()->where('age_group', 'baby')->count(),
                 ]);
             }
-        }
-
-        if ($room) {
-            $this->validateStayDates($request, $room);
-            $this->updateBookingRoomFromGuestRequest($request, $room);
         }
 
         $this->syncGeoFromData([$request->all()]);

@@ -367,6 +367,106 @@ class BookingFourSectionsTest extends TestCase
         $this->assertSame(0, (int) $room->fresh()->children_qty);
     }
 
+    // ---------------------------------------------------------------- Dòng 417
+
+    private function breakfastFlags(BookingRoom $room): array
+    {
+        return BookingChildBreakfastDetail::whereIn('booking_child_id', BookingChild::where('booking_room_id', $room->id)->pluck('id'))
+            ->get()
+            ->map(fn (BookingChildBreakfastDetail $detail) => [(bool) $detail->breakfast, (float) $detail->amount])
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    public function test_row_417_new_room_without_breakfast_adds_children_without_breakfast(): void
+    {
+        HotelConfig::create(['name' => 'BreakfastRateChild', 'value' => '70000']);
+        $booking = $this->createBooking();
+        $existing = $this->createRoom($booking, 'G4-417A', ['breakfast' => true]);
+
+        $this->putJson("/api/bookings/{$booking->id}", [
+            'booking_name' => $booking->booking_name,
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-10',
+            'num_of_days' => 3,
+            'registration_status_id' => $this->regStatus->booking_status_id,
+            'company_id' => 1,
+            'market_id' => 1,
+            'customer_source_id' => 1,
+            'room_allocations' => [[
+                'roomClassId' => $this->roomClass->id,
+                'quantity' => 2,
+                'rooms' => [
+                    ['bookingRoomId' => $existing->id, 'price' => 500000, 'breakfast' => true],
+                    ['price' => 500000, 'breakfast' => false, 'children' => 1, 'babies' => 1],
+                ],
+            ]],
+        ])->assertSuccessful();
+
+        $newRoom = BookingRoom::where('booking_id', $booking->id)->where('id', '!=', $existing->id)->firstOrFail();
+        $this->assertFalse((bool) $newRoom->breakfast);
+        $this->assertSame(2, BookingChild::where('booking_room_id', $newRoom->id)->count());
+        $this->assertSame([[false, 0.0]], $this->breakfastFlags($newRoom));
+    }
+
+    public function test_row_417_existing_room_without_breakfast_adds_children_without_breakfast(): void
+    {
+        HotelConfig::create(['name' => 'BreakfastRateChild', 'value' => '70000']);
+        $booking = $this->createBooking();
+        $room = $this->createRoom($booking, 'G4-417B', ['breakfast' => false]);
+
+        $this->putJson("/api/bookings/{$booking->id}/rooms/{$room->id}", ['children' => 1, 'babies' => 1])->assertSuccessful();
+
+        $this->assertSame(2, BookingChild::where('booking_room_id', $room->id)->count());
+        $this->assertSame([[false, 0.0]], $this->breakfastFlags($room));
+    }
+
+    public function test_row_417_room_with_breakfast_still_adds_children_with_breakfast(): void
+    {
+        HotelConfig::create(['name' => 'BreakfastRateChild', 'value' => '70000']);
+        $booking = $this->createBooking();
+        $room = $this->createRoom($booking, 'G4-417C', ['breakfast' => true]);
+
+        $this->putJson("/api/bookings/{$booking->id}/rooms/{$room->id}", ['children' => 1])->assertSuccessful();
+
+        $this->assertSame([[true, 70000.0]], $this->breakfastFlags($room));
+    }
+
+    public function test_row_417_room_map_add_child_follows_room_breakfast(): void
+    {
+        HotelConfig::create(['name' => 'BreakfastRateChild', 'value' => '70000']);
+        $booking = $this->createBooking();
+        $noBreakfast = $this->createRoom($booking, 'G4-417D', ['breakfast' => false]);
+        $withBreakfast = $this->createRoom($booking, 'G4-417E', ['breakfast' => true]);
+
+        $this->postJson("/api/bookings/{$booking->id}/children", ['booking_room_id' => $noBreakfast->id, 'full_name' => 'Child A', 'age_group' => 'child'])->assertSuccessful();
+        $this->postJson("/api/bookings/{$booking->id}/children", ['booking_room_id' => $noBreakfast->id, 'full_name' => 'Baby A', 'age_group' => 'baby'])->assertSuccessful();
+        $this->postJson("/api/bookings/{$booking->id}/children", ['booking_room_id' => $withBreakfast->id, 'full_name' => 'Child B', 'age_group' => 'child'])->assertSuccessful();
+
+        $this->assertSame([[false, 0.0]], $this->breakfastFlags($noBreakfast));
+        $this->assertSame([[true, 70000.0]], $this->breakfastFlags($withBreakfast));
+    }
+
+    public function test_row_417_room_info_turning_breakfast_off_and_adding_child_in_one_save(): void
+    {
+        HotelConfig::create(['name' => 'BreakfastRateChild', 'value' => '70000']);
+        $booking = $this->createBooking();
+        $room = $this->createRoom($booking, 'G4-417F', ['breakfast' => true]);
+
+        $this->postJson("/api/bookings/{$booking->id}/children", [
+            'booking_room_id' => $room->id,
+            'full_name' => 'Child F',
+            'age_group' => 'child',
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-10',
+            'breakfast' => false,
+        ])->assertSuccessful();
+
+        $this->assertFalse((bool) $room->fresh()->breakfast);
+        $this->assertSame([[false, 0.0]], $this->breakfastFlags($room));
+    }
+
     // ---------------------------------------------------------------- S5
     public function test_s5_shortening_stay_keeps_additional_services_but_removes_projected_room_charges(): void
     {

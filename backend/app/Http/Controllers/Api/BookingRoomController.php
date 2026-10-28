@@ -2011,6 +2011,9 @@ class BookingRoomController extends Controller
             }
         }
 
+        // Dòng 417: phòng không ăn sáng thì trẻ em/em bé thêm vào cũng không ăn sáng.
+        $roomBreakfast = $bRoom->breakfast === null ? true : (bool) $bRoom->breakfast;
+
         $current = Carbon::parse($bRoom->arrival_date);
         $departure = Carbon::parse($bRoom->departure_date);
 
@@ -2018,11 +2021,11 @@ class BookingRoomController extends Controller
             \App\Models\BookingChildBreakfastDetail::create([
                 'booking_child_id' => $child->id,
                 'service_date'     => $current->toDateString(),
-                'breakfast'        => true,
+                'breakfast'        => $roomBreakfast,
                 'is_free'          => $isFree,
                 'is_extra_charge'  => $isExtra,
                 'is_room'          => !$isExtra, // Nếu extra charge thì không phân bổ vào phòng (GIT)
-                'amount'           => $amount,
+                'amount'           => $roomBreakfast ? $amount : 0,
             ]);
 
             $current = $current->addDay();

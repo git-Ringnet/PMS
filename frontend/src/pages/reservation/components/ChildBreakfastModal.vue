@@ -85,7 +85,8 @@
                     </td>
                     <!-- Parent Amount (Bulk) -->
                     <td class="p-3 text-right border-slate-200">
-                      <div class="flex items-center justify-end">
+                      <span v-if="!child.is_extra_charge" class="text-xs text-[#000000D9]"></span>
+                      <div v-else class="flex items-center justify-end">
                         <input 
                           type="text" 
                           :value="formatCurrency(child.amount)"
@@ -160,7 +161,8 @@
                       </td>
                       <!-- Amount -->
                       <td class="p-2 text-right border-slate-200">
-                        <div class="flex items-center justify-end">
+                        <span v-if="!d.is_extra_charge" class="text-xs text-[#000000D9]"></span>
+                        <div v-else class="flex items-center justify-end">
                           <input 
                             type="text" 
                             :value="formatCurrency(d.amount)"
@@ -262,7 +264,8 @@
                     </td>
                     <!-- Parent Amount (Bulk) -->
                     <td class="p-3 text-right border-slate-200">
-                      <div class="flex items-center justify-end">
+                      <span v-if="!child.is_extra_charge" class="text-xs text-[#000000D9]"></span>
+                      <div v-else class="flex items-center justify-end">
                         <input 
                           type="text" 
                           :value="formatCurrency(child.amount)"
@@ -335,7 +338,8 @@
                       </td>
                       <!-- Amount -->
                       <td class="p-2 text-right border-slate-200">
-                        <div class="flex items-center justify-end">
+                        <span v-if="!d.is_extra_charge" class="text-xs text-[#000000D9]"></span>
+                        <div v-else class="flex items-center justify-end">
                           <input 
                             type="text" 
                             :value="formatCurrency(d.amount)"
