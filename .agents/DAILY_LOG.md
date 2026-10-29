@@ -9,6 +9,13 @@
 - **Ngày ghi**: `YYYY-MM-DD`
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 
+## [2026-10-29] - Sửa lỗi xóa dịch vụ sau khi chuyển bill qua lại
+### Module: Trả Phòng (Checkout)
+- **Lỗi**: Chọn hết dịch vụ của phòng rồi bấm Xóa thì báo "Phải chọn toàn bộ chi tiết của cùng một hóa đơn dịch vụ để xóa." (bill EB tập hợp từ Master về phòng rồi chuyển tiếp sang phòng khác).
+- **Nguyên nhân**: Dòng mirror `booking_room_services` của dịch vụ `is_room=0` bị ẩn ở màn hình phòng, bill hiển thị dạng ServiceBill nên không gửi id mirror → server thấy thiếu chi tiết.
+- **Sửa**: `BookingRoomServiceController::cancel` (xóa theo `service_bill_ids`): bill không có id mirror nào gửi lên thì lấy toàn bộ mirror tại server (giống logic chuyển theo bill). Vẫn chặn khi chỉ gửi một phần mirror.
+- **Kiểm thử**: Thêm test `test_room_service_cancel_by_bill_without_mirror_ids_deletes_all_server_mirrors`; chưa chạy được do migration `2026_10_26_121000_remove_user_topbar_color_settings` dùng `JSON_CONTAINS_PATH` không chạy trên SQLite.
+
 ## [2026-10-28] - Phân Quyền Màn Hình & Báo Cáo, Dạng Phòng Booking, Ăn Sáng Trẻ Em
 ### Module: Phân Quyền (RBAC), Đăng Ký (Booking), Sao Lưu Dữ Liệu
 - **Mục tiêu & Kết quả hoàn thành**:
