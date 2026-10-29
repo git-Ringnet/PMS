@@ -968,6 +968,29 @@ class GuestController extends Controller
     }
 
     // PUT /booking-rooms/{roomId}/guests/{guestId} — Cập nhật thông tin guest
+    /**
+     * Dòng 282 (note 23/10): mã giá không bắt buộc. Ô chưa chọn gửi lên chữ gợi ý thì coi
+     * như không có mã giá; mã giá đang lưu của phòng gửi lại nguyên vẹn thì không chặn
+     * lưu thông tin khách. Chỉ mã giá mới chọn mới phải có trong danh mục mã giá.
+     */
+    private function rateCodeRule(Request $request, ?BookingRoom $room): array
+    {
+        if ($request->has('rate_code')) {
+            $request->merge(['rate_code' => BookingRoom::normalizeRateCode($request->input('rate_code'))]);
+        }
+        $storedCode = BookingRoom::normalizeRateCode($room?->rate_code);
+
+        return [
+            'nullable', 'string', 'max:100',
+            function ($attribute, $value, $fail) use ($storedCode) {
+                if ($value === $storedCode || \App\Models\RoomRateCode::where('Ma', $value)->exists()) {
+                    return;
+                }
+                $fail('Mã giá phòng không tồn tại trong danh mục mã giá.');
+            },
+        ];
+    }
+
     public function updateGuest(Request $request, $roomId, $guestId)
     {
         // Verify pivot exists
@@ -1010,7 +1033,7 @@ class GuestController extends Controller
             'departure_date'    => 'nullable|date',
             'departure_time'    => 'nullable|date_format:H:i',
             'rate'              => 'nullable|numeric|min:0',
-            'rate_code'         => 'nullable|string|max:100|exists:room_rate_codes,Ma',
+            'rate_code'         => $this->rateCodeRule($request, BookingRoom::find($roomId)),
             'extra_bed_qty'     => 'nullable|integer|min:0',
             'extra_bed_rate'    => 'nullable|numeric|min:0',
             'breakfast'         => 'nullable|boolean',
@@ -1397,6 +1420,14 @@ class GuestController extends Controller
                 $query->whereRaw('CAST(CustomerId1 AS CHAR) = ?', [(string)$g->id])
                     ->orWhereRaw('CAST(CustomerId2 AS CHAR) = ?', [(string)$g->id]);
             })->where('Edit', 0)->whereNotIn('Status', [3, 4])->sum('Amount');
+            // Dòng 282 (note 23/10): gợi ý hiển thị giá phòng hiện tại của lần lưu trú gần nhất
+            // (đã đổi mã giá thì lấy giá mới), không phải bill đã post theo giá cũ
+            $lastRoomRate = BookingRoom::query()
+                ->whereIn('id', BookingRoomGuest::where('guest_id', $g->id)->select('booking_room_id'))
+                ->whereIn('status', [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN, BookingRoom::STATUS_CHECKED_OUT])
+                ->orderByDesc('arrival_date')
+                ->orderByDesc('updated_at')
+                ->value('rate');
 
             return [
                 'id'              => $g->id,
@@ -1415,6 +1446,7 @@ class GuestController extends Controller
                 'avatar'          => $g->avatar ?: '',
                 'stay_count'      => $stayCount,
                 'total_revenue'   => $revenue,
+                'last_room_rate'  => $lastRoomRate !== null ? (float) $lastRoomRate : null,
             ];
         });
 
@@ -1534,7 +1566,7 @@ class GuestController extends Controller
             'departure_date'    => 'nullable|date',
             'departure_time'    => 'nullable|date_format:H:i',
             'rate'              => 'nullable|numeric|min:0',
-            'rate_code'         => 'nullable|string|max:100|exists:room_rate_codes,Ma',
+            'rate_code'         => $this->rateCodeRule($request, ($request->filled('booking_room_id') ? BookingRoom::find($request->input('booking_room_id')) : null)),
             'extra_bed_qty'     => 'nullable|integer|min:0',
             'extra_bed_rate'    => 'nullable|numeric|min:0',
         ]);
@@ -1638,7 +1670,7 @@ class GuestController extends Controller
             'departure_date'    => 'nullable|date',
             'departure_time'    => 'nullable|date_format:H:i',
             'rate'              => 'nullable|numeric|min:0',
-            'rate_code'         => 'nullable|string|max:100|exists:room_rate_codes,Ma',
+            'rate_code'         => $this->rateCodeRule($request, ($child->booking_room_id ? BookingRoom::find($child->booking_room_id) : null)),
             'extra_bed_qty'     => 'nullable|integer|min:0',
             'extra_bed_rate'    => 'nullable|numeric|min:0',
             'breakfast'         => 'nullable|boolean',

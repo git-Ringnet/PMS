@@ -367,6 +367,25 @@ class BookingRoom extends Model
     const DEFAULT_ARRIVAL_TIME   = '14:00:00';
     const DEFAULT_DEPARTURE_TIME = '12:00:00';
 
+    // Chữ gợi ý của ô chọn mã giá trên giao diện, không phải mã giá thật
+    const RATE_CODE_PLACEHOLDER = 'Vui lòng chọn giá phòng';
+
+    /**
+     * Dòng 282 (note 23/10): mã giá không bắt buộc. Ô chưa chọn (rỗng / chữ gợi ý)
+     * lưu NULL thay vì lưu chữ gợi ý làm mã giá, tránh lỗi "The selected rate code is invalid".
+     */
+    public static function normalizeRateCode($value): ?string
+    {
+        $code = trim((string) $value);
+
+        return $code === '' || $code === self::RATE_CODE_PLACEHOLDER ? null : $code;
+    }
+
+    public function setRateCodeAttribute($value): void
+    {
+        $this->attributes['rate_code'] = self::normalizeRateCode($value);
+    }
+
     // =========================================
     // RELATIONSHIPS
     // =========================================
