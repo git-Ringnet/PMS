@@ -14,7 +14,7 @@ class DepartmentHotelServiceTest extends TestCase
 
     public function test_hotel_service_uses_department_foreign_key_and_returns_department_details(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->withRole('branch_admin')->create();
         $department = Department::create(['code' => 'FO', 'name' => 'Reception/ Lê Tân']);
 
         $this->actingAs($user)->postJson('/api/hotel-services', [
@@ -35,7 +35,7 @@ class DepartmentHotelServiceTest extends TestCase
 
     public function test_department_service_link_can_be_added_updated_and_removed(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->withRole('branch_admin')->create();
         $department = Department::create(['code' => 'HK', 'name' => 'House Keeping/Buồng Phòng']);
         $service = HotelService::create([
             'code' => 'MB',
@@ -70,7 +70,7 @@ class DepartmentHotelServiceTest extends TestCase
 
     public function test_fo_service_list_uses_department_service_links(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->withRole('branch_admin')->create();
         $frontOffice = Department::create(['code' => 'FO', 'name' => 'Front Office']);
         $housekeeping = Department::create(['code' => 'HK', 'name' => 'Housekeeping']);
 
@@ -97,7 +97,7 @@ class DepartmentHotelServiceTest extends TestCase
 
     public function test_inactive_fo_service_is_hidden_from_add_service_list(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->withRole('branch_admin')->create();
         $frontOffice = Department::create(['code' => 'FO', 'name' => 'Front Office']);
         $service = HotelService::create([
             'code' => 'FO-OFF',

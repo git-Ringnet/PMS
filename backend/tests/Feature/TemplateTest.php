@@ -19,7 +19,7 @@ class TemplateTest extends TestCase
     {
         parent::setUp();
         // Create user and authenticate
-        $this->user = User::factory()->create();
+        $this->user = User::factory()->withRole('branch_admin')->create();
     }
 
     /**

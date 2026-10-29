@@ -9,6 +9,26 @@
 - **Ngày ghi**: `YYYY-MM-DD`
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 
+## [2026-10-28] - Phân Quyền Màn Hình & Báo Cáo, Dạng Phòng Booking, Ăn Sáng Trẻ Em
+### Module: Phân Quyền (RBAC), Đăng Ký (Booking), Sao Lưu Dữ Liệu
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **1. Phân quyền màn hình, module & báo cáo (Dòng 406)**:
+    + Gom quyền theo màn hình vào `screen-permissions.js`; lọc theo quyền trên Router, Menu chính, Trang chủ, tab Buồng phòng, F&B khác, ô Cấu hình (chặn cả gõ URL/tab trực tiếp).
+    + Ẩn menu Báo cáo khi tài khoản không được phân quyền xem bất kỳ báo cáo nào.
+    + Thêm quyền màn hình Định nghĩa hệ thống, Định nghĩa buồng phòng, Mẫu in vào sơ đồ phân quyền (migration + seeder).
+    + API thêm/sửa/xóa cấu hình yêu cầu quyền màn hình tương ứng (`permission.write`), API đọc danh mục vẫn mở cho nghiệp vụ vận hành.
+    + Sao lưu/khôi phục CSDL: Giới hạn chỉ Admin, bắt buộc nhập lại mật khẩu xác nhận, chuyển export DB sang POST.
+  - **2. Dạng phòng hiển thị theo booking (Dòng 414)**:
+    + Cột Dạng phòng lấy theo `booking_rooms.RoomKind` đã lưu của booking thay vì lấy động theo bảng giá phòng chuẩn hiện tại.
+    + Chỉnh sửa dạng phòng trong giá phòng chuẩn không ảnh hưởng các booking đã tạo, chỉ áp dụng cho phòng lấy mới.
+  - **3. Ăn sáng trẻ em/em bé theo tình trạng phòng (Dòng 417)**:
+    + Thêm trẻ em/em bé: Phòng có ăn sáng thì trẻ mặc định có ăn; phòng không ăn sáng thì trẻ không ăn và thành tiền = 0.
+    + Thông tin phòng: Lưu tình trạng ăn sáng của phòng trước khi tạo trẻ mới.
+    + Chi tiết ăn sáng trẻ: Không phụ phí thì ẩn số tiền ở cột Thành tiền (vẫn lưu giá để bóc tách từ tiền phòng).
+- **Kiểm thử**:
+  - Pass 100% tests backend và frontend cho các dòng 406, 414, 417; code đã commit trên nhánh `kaynblue`.
+
+
 ## [2026-10-27] - Khôi Phục Booking Trùng Phòng, Gộp Phòng Đến Sớm, Tooltip & Khai Báo Lưu Trú
 ### Module: Booking, Sơ Đồ Phòng (Room Map), Chuyển Phòng, Khai Báo Lưu Trú
 - **Mục tiêu & Kết quả hoàn thành**:

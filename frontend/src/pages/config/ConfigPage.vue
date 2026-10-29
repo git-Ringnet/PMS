@@ -8,9 +8,15 @@ import RateSetup from './components/RateSetup.vue'
 import DesignTemplate from './components/DesignTemplateTab.vue'
 import HousekeepingMenuDefinition from './components/HousekeepingMenuDefinition.vue'
 import DatabaseBackupTab from './components/DatabaseBackupTab.vue'
+import { useAuthStore } from '@/stores/auth-store'
+import { CONFIG_VIEW_PERMISSIONS, hasAccess } from '@/utils/screen-permissions'
 
 const router = useRouter()
 const route = useRoute()
+const authStore = useAuthStore()
+
+// Dòng 406: chỉ hiện màn hình cấu hình user có quyền xem
+const canView = (view) => hasAccess(authStore, CONFIG_VIEW_PERMISSIONS[view])
 
 // View state: 'menu', 'hotel', 'room', 'system', 'rate', 'database-backup'
 const currentView = ref(route.query.view || 'menu')
@@ -116,6 +122,7 @@ function handleBack() {
         <div class="flex flex-wrap items-center justify-center gap-6 p-4">
           <!-- Card 1: Định nghĩa khách sạn -->
           <div 
+            v-if="canView('hotel')"
             @click="currentView = 'hotel'"
             class="w-48 h-48 bg-white border border-slate-100 rounded-2xl flex flex-col items-center justify-center gap-4 cursor-pointer shadow-xs hover:shadow-lg hover:-translate-y-1 hover:border-slate-200 transition-all duration-300 group"
           >
@@ -129,6 +136,7 @@ function handleBack() {
 
           <!-- Card 2: Định nghĩa phòng -->
           <div 
+            v-if="canView('room')"
             @click="currentView = 'room'"
             class="w-48 h-48 bg-white border border-slate-100 rounded-2xl flex flex-col items-center justify-center gap-4 cursor-pointer shadow-xs hover:shadow-lg hover:-translate-y-1 hover:border-slate-200 transition-all duration-300 group"
           >
@@ -142,6 +150,7 @@ function handleBack() {
 
           <!-- Card 3: Định nghĩa hệ thống -->
           <div 
+            v-if="canView('system')"
             @click="currentView = 'system'"
             class="w-48 h-48 bg-white border border-slate-100 rounded-2xl flex flex-col items-center justify-center gap-4 cursor-pointer shadow-xs hover:shadow-lg hover:-translate-y-1 hover:border-slate-200 transition-all duration-300 group"
           >
@@ -156,6 +165,7 @@ function handleBack() {
 
           <!-- Card 4: Thiết lập giá -->
           <div 
+            v-if="canView('rate')"
             @click="currentView = 'rate'"
             class="w-48 h-48 bg-white border border-slate-100 rounded-2xl flex flex-col items-center justify-center gap-4 cursor-pointer shadow-xs hover:shadow-lg hover:-translate-y-1 hover:border-slate-200 transition-all duration-300 group"
           >
@@ -169,6 +179,7 @@ function handleBack() {
 
           <!-- Card 5: Định nghĩa buồng phòng -->
           <div 
+            v-if="canView('housekeeping-menu')"
             @click="currentView = 'housekeeping-menu'"
             class="w-48 h-48 bg-white border border-slate-100 rounded-2xl flex flex-col items-center justify-center gap-4 cursor-pointer shadow-xs hover:shadow-lg hover:-translate-y-1 hover:border-slate-200 transition-all duration-300 group"
           >
@@ -183,6 +194,7 @@ function handleBack() {
 
           <!-- Card 6: Trung tâm mẫu & báo cáo -->
           <div 
+            v-if="canView('design-template')"
             @click="currentView = 'design-template'"
             class="w-48 h-48 bg-white border border-slate-100 rounded-2xl flex flex-col items-center justify-center gap-4 cursor-pointer shadow-xs hover:shadow-lg hover:-translate-y-1 hover:border-slate-200 transition-all duration-300 group"
           >
@@ -196,6 +208,7 @@ function handleBack() {
 
           <!-- Card 7: Sao lưu & Khôi phục Database -->
           <div 
+            v-if="canView('database-backup')"
             @click="currentView = 'database-backup'"
             class="w-48 h-48 bg-white border border-slate-100 rounded-2xl flex flex-col items-center justify-center gap-4 cursor-pointer shadow-xs hover:shadow-lg hover:-translate-y-1 hover:border-slate-200 transition-all duration-300 group"
           >
@@ -219,8 +232,11 @@ function handleBack() {
         class="flex-1 flex flex-col min-h-0 overflow-hidden"
         :class="currentView === 'database-backup' ? 'p-1' : 'bg-white rounded-xl shadow-xs border border-slate-200 p-3 sm:p-4'"
       >
+        <div v-if="!canView(currentView)" class="flex-1 flex items-center justify-center text-sm text-slate-500">
+          Bạn không có quyền truy cập màn hình này.
+        </div>
         <HotelDefinition 
-          v-if="currentView === 'hotel'" 
+          v-else-if="currentView === 'hotel'" 
           :initialTab="route.query.tab || 'Thông Tin Khách Sạn'"
           @update:activeTab="updateActiveTab"
         />

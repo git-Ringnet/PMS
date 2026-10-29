@@ -47,7 +47,7 @@ class GuestAvatarUploadTest extends TestCase
 
     public function test_upload_with_long_vietnamese_file_name_succeeds_with_safe_stored_name(): void
     {
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->withRole('fo_staff', ['fo.guest.edit'])->create());
         $guest = Guest::create(['full_name' => 'Walkin Guest']);
 
         $response = $this->upload($guest, str_repeat('ảnh khách hàng chụp tại quầy lễ tân ', 10) . '.png')->assertOk();
@@ -61,7 +61,7 @@ class GuestAvatarUploadTest extends TestCase
 
     public function test_new_upload_replaces_old_file(): void
     {
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->withRole('fo_staff', ['fo.guest.edit'])->create());
         $guest = Guest::create(['full_name' => 'Walkin Guest']);
 
         $first = $this->upload($guest, 'webcam_1.jpg')->assertOk()->json('avatar');
@@ -74,7 +74,7 @@ class GuestAvatarUploadTest extends TestCase
 
     public function test_non_image_is_rejected(): void
     {
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->withRole('fo_staff', ['fo.guest.edit'])->create());
         $guest = Guest::create(['full_name' => 'Walkin Guest']);
 
         $path = tempnam(sys_get_temp_dir(), 'txt');

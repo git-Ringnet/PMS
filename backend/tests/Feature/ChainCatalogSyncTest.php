@@ -24,7 +24,7 @@ class ChainCatalogSyncTest extends TestCase
     {
         parent::setUp();
 
-        $this->actingAs(User::factory()->create(['username' => 'sync_user']));
+        $this->actingAs(User::factory()->withRole('branch_admin')->create(['username' => 'sync_user']));
 
         SystemBranch::create(['code' => 'HKT1', 'name' => 'Chi nhánh 1', 'is_active' => true]);
         SystemBranch::create(['code' => 'HKT2', 'name' => 'Chi nhánh 2', 'is_active' => true]);

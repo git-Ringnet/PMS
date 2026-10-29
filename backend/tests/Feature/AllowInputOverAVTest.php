@@ -67,7 +67,7 @@ class AllowInputOverAVTest extends TestCase
         $this->artisan('db:seed', ['--class' => 'SystemDefinitionSeeder']);
         $this->artisan('db:seed', ['--class' => 'BookingStatusSeeder']);
 
-        $this->user = User::factory()->create([
+        $this->user = User::factory()->withRole('branch_admin')->create([
             'username' => 'test_admin',
         ]);
         $role = Role::create([
