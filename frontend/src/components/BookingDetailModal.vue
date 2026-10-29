@@ -2020,7 +2020,7 @@ function parseNumber(val) {
                   <RoomInfoDatePicker
                     v-model="stayInfo.departure_date"
                     :min-date="stayInfo.arrival_date"
-                    :disabled="!isEditingMode"
+                    :disabled="!isEditingMode || stayInfo.hourly"
                     required
                     placeholder="dd/mm/yyyy"
                   />

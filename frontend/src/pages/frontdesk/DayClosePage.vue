@@ -239,7 +239,8 @@ function calculateNights(arrivalStr, departureStr) {
   const d = new Date(getNormalizedDate(departureStr))
   const diffTime = d.getTime() - a.getTime()
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-  return diffDays > 0 ? diffDays : 1
+  // Dòng 253: phòng có ngày đến = ngày đi (day use) có 0 đêm
+  return diffDays > 0 ? diffDays : 0
 }
 
 const alreadyRolledToday = ref(false)
@@ -419,7 +420,7 @@ function processRealBookings(bookings) {
       } else if (activeFilterTab.value === 'departures') {
         matchesTab = (depDate === sysDateStr && isCheckedIn && !isMoved && Number(r?.status) !== 100)
       } else if (activeFilterTab.value === 'hourly') {
-        const isSameDay = arrDate === depDate || b.is_hourly || b.is_day_use || (b.num_of_days === 0)
+        const isSameDay = arrDate === depDate || r.is_day_use || b.is_hourly || b.is_day_use || (b.num_of_days === 0)
         matchesTab = isSameDay && arrDate === sysDateStr && !isMoved && Number(r?.status) !== 100
       } else {
         matchesTab = isCheckedIn && !isMoved && Number(r?.status) !== 100
@@ -449,7 +450,9 @@ function processRealBookings(bookings) {
         roomType: r.room_class?.name || r.roomClass?.name || 'Standard',
         guestName: guestName,
         arrivalDate: formatDateVN(arrDate),
-        nights: r.num_of_days || b.num_of_days || calculateNights(arrDate, depDate),
+        // Dòng 253: số đêm theo ngày đến/đi hiện tại của phòng (đã gồm gia hạn, chỉnh ngày đi),
+        // không lấy số đêm của booking
+        nights: calculateNights(arrDate, depDate),
         departureDate: formatDateVN(depDate),
         breakfast: Boolean(r.breakfast ?? b.breakfast_included),
         adults: r.adults ?? r.adults_count ?? 1,
