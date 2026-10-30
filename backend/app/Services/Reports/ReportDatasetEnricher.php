@@ -20,6 +20,7 @@ class ReportDatasetEnricher
     private readonly ReceptionCashierShiftDataAdapter $receptionCashierShift;
     private readonly SummaryServiceInvoicesDataAdapter $summaryServiceInvoices;
     private readonly SalespersonRevenueDataAdapter $salespersonRevenue;
+    private readonly TotalRevenueDataAdapter $totalRevenue;
 
     public function __construct(
         private readonly ArrivingRoomsSummaryService $arrivingRoomsSummary,
@@ -31,6 +32,7 @@ class ReportDatasetEnricher
         ?ReceptionCashierShiftDataAdapter $receptionCashierShift = null,
         ?SummaryServiceInvoicesDataAdapter $summaryServiceInvoices = null,
         ?SalespersonRevenueDataAdapter $salespersonRevenue = null,
+        ?TotalRevenueDataAdapter $totalRevenue = null,
     ) {
         $this->paidCompanyDebts = $paidCompanyDebts ?? new PaidCompanyDebtsDataAdapter();
         $this->salesInvoices = $salesInvoices ?? new SalesInvoicesDataAdapter();
@@ -38,6 +40,7 @@ class ReportDatasetEnricher
         $this->receptionCashierShift = $receptionCashierShift ?? new ReceptionCashierShiftDataAdapter();
         $this->summaryServiceInvoices = $summaryServiceInvoices ?? new SummaryServiceInvoicesDataAdapter();
         $this->salespersonRevenue = $salespersonRevenue ?? new SalespersonRevenueDataAdapter();
+        $this->totalRevenue = $totalRevenue ?? new TotalRevenueDataAdapter();
     }
 
     public function enrich(ReportDefinition $reportDefinition, array $data): array
@@ -81,6 +84,12 @@ class ReportDatasetEnricher
         }
         if (in_array($code, ['SALESPERSON_REVENUE_SUMMARY', 'SALESPERSON_REVENUE_DETAIL', 'RPT_SALESPERSON_REVENUE_SUMMARY', 'RPT_SALESPERSON_REVENUE_DETAIL'], true)) {
             return $this->salespersonRevenue->adapt($data);
+        }
+        if (in_array($code, ['TOTAL_REVENUE', 'RPT_TOTAL_REVENUE'], true)) {
+            return $this->totalRevenue->adapt($data);
+        }
+        if (in_array($code, ['SERVICE_REVENUE_DETAIL', 'RPT_SERVICE_REVENUE_DETAIL'], true)) {
+            return $this->totalRevenue->adaptDetail($data);
         }
         if (in_array($code, ['EXPECTED_BREAKFAST', 'EXPECTED_BREAKFAST_1', 'EXPECTED_BREAKFAST_2'], true)) {
             return $this->enrichExpectedBreakfast($data);

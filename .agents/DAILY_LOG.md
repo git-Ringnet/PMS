@@ -9,6 +9,28 @@
 - **Ngày ghi**: `YYYY-MM-DD`
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 
+## [2026-10-30] - Báo cáo dự đoán bán phòng: lỗi chạy, bộ lọc Khu vực, bảng tràn trang
+
+- Lỗi "Không thể chạy báo cáo" lúc 18:33: không tái hiện được (server chạy xong cả 5 lần bấm, trình duyệt sạch chạy đúng); thêm console.error trong executeTab (ReportsPage) để lần sau thấy lỗi thật.
+- Store rpt_room_forecast trong file migration 2026_09_24_100000 (đang có thay đổi chưa commit của người khác: bảng chi tiết RM/EB/ER, 20 cột) chưa từng chạy lên DB và có lỗi: hotel_settings.system_date không tồn tại → đổi sang dòng mới nhất system_date_rolls; hàm gộp lồng SUM(...MAX(pb.*)...) → bỏ, group theo cột posted_bills; subquery bữa sáng theo sb.Ma → bảng dẫn xuất bfd; tạo store khi tắt ONLY_FULL_GROUP_BY (store lưu sql_mode lúc tạo; subquery tương quan er.* trong SUM bị chế độ này từ chối).
+- SỰ CỐ: chạy bản store lỗi đầu tiên làm MariaDB local crash (mysqld.dmp 18:55:49); MySQL tự khởi động lại 18:56:30, InnoDB phục hồi sạch (19 trang redo), dữ liệu đọc bình thường.
+- Phòng MP: bỏ điều kiện rate_code IS NULL (23 phòng có giá nhưng không mã giá bị tính miễn phí → công suất/giá TB w/o HU,FOC = 0).
+- Thêm bộ lọc Khu vực (p_area theo rooms.area, như @Area của sp_099); có lọc khu vực thì phòng có thể bán quá khứ tính từ phòng + OOO thay vì snapshot toàn khách sạn. Chi nhánh vẫn ẩn (store chạy trên DB chi nhánh hiện tại).
+- Mẫu in: độ rộng cột px → % (fitWidths) để bảng vừa khổ A4 ngang; mẫu trong DB (bản 20/10, thiếu cột RM/EB/ER) được đồng bộ lại từ file.
+- Migration 2026_10_30_120000_add_area_filter_to_room_forecast_report chạy lại migration gốc; đã áp pms_hkt1–4. Kiểm tra: 02/09 doanh thu 7.820.000 = RM + BF tách từ phòng ở báo cáo tổng doanh thu (store cũ ra 18.820.000); trình duyệt thật hiển thị đủ, vừa trang.
+- RoomForecastReportTest: 3/4 fail do test còn theo thiết kế FO/HK cũ (HEAD pass 4/4); chưa sửa test vì thuộc phần thay đổi đang dở của người khác.
+
+## [2026-10-30] - Báo cáo tổng doanh thu theo mẫu hệ thống cũ + báo cáo doanh thu dịch vụ chi tiết
+
+- Đối chiếu store cũ trên SQL Server ProVistaDTXHotel: sp_018 (dòng theo ngày), sp_021 (MTD), sp_036 (YTD), sp_038 (CTM), sp_044 (biểu đồ), sp_134 (doanh thu dịch vụ chi tiết). Bản cũ của PMS dựng theo sp_292 (bảng kê theo booking) nên sai từ gốc; người dùng đồng ý thay hẳn.
+- Migration mới `2026_10_30_100000_rebuild_total_revenue_reports`: định nghĩa lại `rpt_total_revenue` (trả số thô theo kỳ DAY/MTD/YTD/CTM × ngày × mã dịch vụ, lọc khung giờ, bộ phận, khu, người dùng, hóa đơn miễn phí) và tạo `rpt_service_revenue_detail` + báo cáo `SERVICE_REVENUE_DETAIL`. Đã chạy riêng migration này (--path) trên pms_hkt1–4 theo yêu cầu người dùng; 10 migration khác đang chờ vẫn giữ nguyên. Chạy thử qua executor + enricher + template trên pms_hkt1 (01–03/09/2026) ra đúng tiêu đề, khoảng ngày, tổng 17.590.000.
+- `TotalRevenueDataAdapter`: gom mã dịch vụ vào 17 cột FO/HK/FB/SPA/Showroom theo đúng điều kiện sp_018 (cấu hình một chỗ trong COLUMNS + belongsTo để chỉnh theo mô hình outlet), dòng Cộng/Tổng/M.T.D/Y.T.D/CTM, phí phục vụ/VAT, biểu đồ tròn SVG; Not VAT dùng OriginalRate. Mỗi ô số gắn `data-pms-drill` chứa đúng mã dịch vụ của ô (BF trong bill RM = BF, ăn sáng lẻ = BS).
+- Sửa file dùng chung (đã được đồng ý): ReportDatasetEnricher (thêm 2 nhánh), ReportViewer.vue (double-click `data-pms-drill` phát `open-report`), ReportsPage.vue (mở báo cáo đích, gán tham số, chạy luôn).
+- Khác hệ thống cũ có chủ đích: CTM ở sp_038 luôn ra 0 (điều kiện join SP3002 khi PaymentID null) → PMS tính hóa đơn chưa thanh toán từ đầu tháng; xem khung giờ dùng Ngày + giờ mở bill cho cả dòng ngày; mã CN không bị cộng hai lần.
+- Kiểm thử: TotalRevenueReportTest 7/7 (89 assertions); node test báo cáo 14/14; build frontend đạt; đối chiếu dữ liệu local 01–03/09/2026: tổng chi tiết 17.590.000 = dòng Cộng. Bộ test báo cáo mở rộng có 189 lỗi môi trường có sẵn (JSON_CONTAINS_PATH trên SQLite từ migration 26/10, facade log, file .codex thiếu), không liên quan.
+- Bổ sung sau UAT người dùng: (1) API chỉ trả tham số có trong chữ ký Store nên radio Tổng cộng/Not VAT bị mất → thêm `p_amount_type` vào `rpt_total_revenue`, migration `2026_10_30_110000_add_amount_type_to_total_revenue_report` chạy lại migration trước, đã áp pms_hkt1–4. (2) ReportsPage khôi phục tab cũ kèm HTML/tham số cũ → chỉ dùng lại kết quả lưu khi tham số khớp cấu hình hiện tại, tham số mới lấy mặc định. Test 7/7, node 14/14, build đạt.
+- Hạn chế: ô chọn Dịch vụ của báo cáo chi tiết dùng lookup `hotel-services` (không có RM) nên chọn tay RM phải mở từ báo cáo tổng. Chưa UAT trình duyệt thật.
+
 ## [2026-10-29] - Sửa lỗi xóa dịch vụ sau khi chuyển bill qua lại
 ### Module: Trả Phòng (Checkout)
 - **Lỗi**: Chọn hết dịch vụ của phòng rồi bấm Xóa thì báo "Phải chọn toàn bộ chi tiết của cùng một hóa đơn dịch vụ để xóa." (bill EB tập hợp từ Master về phòng rồi chuyển tiếp sang phòng khác).

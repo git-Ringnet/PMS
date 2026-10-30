@@ -261,23 +261,43 @@ const defaultParametersForReport = (report) => {
   return defaultParams
 }
 
-const createReportTab = (report, snapshot = null) => reactive({
+// Tab lưu từ phiên trước chỉ dùng lại khi tham số khớp cấu hình hiện tại; báo cáo đổi tham số
+// (vd. dựng lại Store) thì lấy giá trị mặc định cho tham số mới và bỏ kết quả cũ đã dựng.
+const snapshotMatchesReport = (report, snapshot) => {
+  const saved = snapshot?.parameters
+  if (!saved) return false
+  const names = (report.parameter_ui_schema || []).map(item => item.name)
+  return names.every(name => Object.hasOwn(saved, name)) && Object.keys(saved).every(name => names.includes(name))
+}
+
+const restoredParameters = (report, snapshot) => {
+  const defaults = defaultParametersForReport(report)
+  const saved = snapshot?.parameters || {}
+  return Object.fromEntries(Object.keys(defaults).map(name => [name, Object.hasOwn(saved, name) ? saved[name] : defaults[name]]))
+}
+
+const createReportTab = (report, snapshot = null) => {
+  const usable = snapshotMatchesReport(report, snapshot)
+  return reactive({
   id: report.id,
   code: report.code,
   name: report.name,
   report,
-  parameters: snapshot?.parameters || defaultParametersForReport(report),
-  parameterOptions: snapshot?.parameterOptions
-    || Object.fromEntries((report.parameter_ui_schema || []).map(parameter => [parameter.name, parameter.options || []])),
+  parameters: restoredParameters(report, snapshot),
+  parameterOptions: {
+    ...Object.fromEntries((report.parameter_ui_schema || []).map(parameter => [parameter.name, parameter.options || []])),
+    ...(usable ? snapshot.parameterOptions : {}),
+  },
   selectedTemplateId: report.templates.some(item => Number(item.id) === Number(snapshot?.selectedTemplateId))
     ? snapshot.selectedTemplateId
     : report.templates.find(item => item.is_default)?.id || report.templates[0]?.id || null,
-  dataset: snapshot?.dataset || null,
-  renderedHtml: snapshot?.renderedHtml || '',
+  dataset: usable ? snapshot.dataset || null : null,
+  renderedHtml: usable ? snapshot.renderedHtml || '' : '',
   executing: false,
   rendering: false,
   exporting: false,
-})
+  })
+}
 
 const restoreWorkspace = (workspace) => {
   if (!workspace?.openTabs?.length) return false
@@ -404,6 +424,8 @@ const executeTab = async (tab) => {
     tab.renderedHtml = response.data.html
     uiStore.showToast(`Đã tải ${tab.dataset.summary?.row_count || 0} dòng dữ liệu từ Store`, 'success')
   } catch (error) {
+    // Lỗi không có message từ API (mạng, quá thời gian, lỗi JS khi nhận kết quả) chỉ hiện câu chung; ghi console để tra cứu.
+    console.error('[report] execute failed', tab.code, error)
     tab.dataset = null
     tab.renderedHtml = ''
     uiStore.showToast(error.response?.data?.message || 'Không thể chạy báo cáo. Kiểm tra Store và tham số.', 'error')
@@ -438,6 +460,32 @@ const printReportForTab = (tab) => {
 const openBookingFromReport = (bookingCode) => {
   const target = router.resolve({ path: '/reservation', query: { tab: 'create-res', bookingCode } })
   window.open(target.href, '_blank', 'noopener')
+}
+
+// Nhấp đúp ô số liệu có data-pms-drill (vd. Báo cáo tổng doanh thu): mở báo cáo đích với đúng tham số rồi chạy luôn.
+const openReportFromDrill = async ({ report: code, parameters = {} }) => {
+  const report = reports.value.find(item => item.code === code)
+  if (!report) {
+    uiStore.showToast('Bạn chưa có quyền xem báo cáo chi tiết hoặc báo cáo chưa được bật.', 'warning')
+    return
+  }
+  openReportInTab(report)
+  const tab = openTabs.value.find(item => item.id === report.id)
+  if (!tab) return
+  const nextParameters = { ...defaultParametersForReport(report) }
+  for (const [name, value] of Object.entries(parameters)) {
+    const definition = (report.parameter_ui_schema || []).find(item => item.name === name)
+    if (!definition) continue
+    if (definition.control === 'multi-select') {
+      nextParameters[name] = String(value ?? '').split(',').map(item => item.trim()).filter(Boolean)
+    } else if (definition.control === 'checkbox') {
+      nextParameters[name] = Boolean(Number(value))
+    } else {
+      nextParameters[name] = value
+    }
+  }
+  tab.parameters = nextParameters
+  await executeTab(tab)
 }
 
 const exportReportForTab = async (tab, format) => {
@@ -755,6 +803,7 @@ onBeforeUnmount(() => {
               :html="activeTab.renderedHtml"
               :template="activeTemplate"
               @open-booking="openBookingFromReport"
+              @open-report="openReportFromDrill"
             />
           </section>
         </div>

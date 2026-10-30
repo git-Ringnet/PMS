@@ -88,6 +88,8 @@ READS SQL DATA
 BEGIN
     DECLARE v_start_date DATE;
     DECLARE v_end_date DATE;
+    DECLARE v_op_date DATE DEFAULT NULL;
+    DECLARE v_system_date DATE DEFAULT NULL;
 
     /*
       The active branch is selected by the request connection. p_division is
@@ -101,6 +103,39 @@ BEGIN
     );
     SET v_end_date = DATE_ADD(v_start_date, INTERVAL 6 DAY);
 
+    SELECT COALESCE(
+        MAX(CASE
+            WHEN LOWER(name) = 'operationdate' AND TRIM(COALESCE(value, '')) REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+                THEN STR_TO_DATE(LEFT(TRIM(value), 10), '%Y-%m-%d')
+            WHEN LOWER(name) = 'operationdate' AND TRIM(COALESCE(value, '')) REGEXP '^[0-9]{2}/[0-9]{2}/[0-9]{4}'
+                THEN STR_TO_DATE(LEFT(TRIM(value), 10), '%d/%m/%Y')
+            ELSE NULL
+        END),
+        (SELECT MIN(DATE(system_date)) FROM system_date_rolls)
+    ) INTO v_op_date
+    FROM hotel_configs;
+
+    IF v_op_date IS NOT NULL AND v_start_date < v_op_date THEN
+        SET v_start_date = v_op_date;
+        IF v_end_date < v_start_date THEN
+            SET v_end_date = v_start_date;
+        END IF;
+    END IF;
+
+    SELECT COALESCE(
+        MAX(CASE
+            WHEN LOWER(name) IN ('systemdate', 'system_date') AND TRIM(COALESCE(value, '')) REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}'
+                THEN STR_TO_DATE(LEFT(TRIM(value), 10), '%Y-%m-%d')
+            WHEN LOWER(name) IN ('systemdate', 'system_date') AND TRIM(COALESCE(value, '')) REGEXP '^[0-9]{2}/[0-9]{2}/[0-9]{4}'
+                THEN STR_TO_DATE(LEFT(TRIM(value), 10), '%d/%m/%Y')
+            ELSE NULL
+        END),
+        (SELECT DATE(system_date) FROM hotel_settings ORDER BY id LIMIT 1),
+        (SELECT MAX(DATE(system_date)) FROM system_date_rolls),
+        CURRENT_DATE()
+    ) INTO v_system_date
+    FROM hotel_configs;
+
     WITH RECURSIVE week_days AS (
         SELECT v_start_date AS report_date
         UNION ALL
@@ -110,41 +145,61 @@ BEGIN
     ),
     daily_arrivals AS (
         SELECT
-            br.arrival_date AS report_date,
+            LEAST(
+                DATE(br.arrival_date),
+                DATE(COALESCE(br.actual_arrival_date, br.arrival_date)),
+                COALESCE((
+                    SELECT MIN(LEAST(DATE(prev.arrival_date), DATE(COALESCE(prev.actual_arrival_date, prev.arrival_date))))
+                    FROM booking_rooms AS prev
+                    WHERE prev.booking_id = br.booking_id
+                      AND prev.move_room = br.id
+                      AND prev.deleted_at IS NULL
+                ), DATE(br.arrival_date))
+            ) AS report_date,
             COUNT(*) AS arr_rooms,
             SUM(COALESCE(br.adults, 0) + COALESCE(br.children_qty, 0)) AS arr_guests
         FROM booking_rooms AS br
         INNER JOIN bookings AS b ON b.id = br.booking_id
-        LEFT JOIN registration_statuses AS rs ON rs.id = b.registration_status_id
+        LEFT JOIN registration_statuses AS rs ON (rs.booking_status_id = b.registration_status_id OR rs.id = b.registration_status_id)
         LEFT JOIN rooms AS r ON r.room_number = br.room_number
         WHERE br.deleted_at IS NULL
-          AND br.status IN (0, 1, 2)
+          AND COALESCE(br.status, 0) IN (0, 1, 2)
           AND b.deleted_at IS NULL
           AND b.status NOT IN (3, 4)
           AND COALESCE(rs.is_availability, 1) = 1
           AND (br.room_number IS NULL OR br.room_number NOT LIKE '0%')
           AND COALESCE(r.is_internal, 0) = 0
-          AND br.arrival_date BETWEEN v_start_date AND v_end_date
-        GROUP BY br.arrival_date
+          AND LEAST(
+                DATE(br.arrival_date),
+                DATE(COALESCE(br.actual_arrival_date, br.arrival_date)),
+                COALESCE((
+                    SELECT MIN(LEAST(DATE(prev.arrival_date), DATE(COALESCE(prev.actual_arrival_date, prev.arrival_date))))
+                    FROM booking_rooms AS prev
+                    WHERE prev.booking_id = br.booking_id
+                      AND prev.move_room = br.id
+                      AND prev.deleted_at IS NULL
+                ), DATE(br.arrival_date))
+            ) BETWEEN v_start_date AND v_end_date
+        GROUP BY report_date
     ),
     daily_departures AS (
         SELECT
-            br.departure_date AS report_date,
+            DATE(br.departure_date) AS report_date,
             COUNT(*) AS dep_rooms,
             SUM(COALESCE(br.adults, 0) + COALESCE(br.children_qty, 0)) AS dep_guests
         FROM booking_rooms AS br
         INNER JOIN bookings AS b ON b.id = br.booking_id
-        LEFT JOIN registration_statuses AS rs ON rs.id = b.registration_status_id
+        LEFT JOIN registration_statuses AS rs ON (rs.booking_status_id = b.registration_status_id OR rs.id = b.registration_status_id)
         LEFT JOIN rooms AS r ON r.room_number = br.room_number
         WHERE br.deleted_at IS NULL
-          AND br.status IN (0, 1, 2)
+          AND COALESCE(br.status, 0) IN (0, 1, 2)
           AND b.deleted_at IS NULL
           AND b.status NOT IN (3, 4)
           AND COALESCE(rs.is_availability, 1) = 1
           AND (br.room_number IS NULL OR br.room_number NOT LIKE '0%')
           AND COALESCE(r.is_internal, 0) = 0
-          AND br.departure_date BETWEEN v_start_date AND v_end_date
-        GROUP BY br.departure_date
+          AND DATE(br.departure_date) BETWEEN v_start_date AND v_end_date
+        GROUP BY DATE(br.departure_date)
     ),
     daily_occupied AS (
         SELECT
@@ -153,13 +208,31 @@ BEGIN
             SUM(COALESCE(br.adults, 0) + COALESCE(br.children_qty, 0)) AS occ_guests
         FROM week_days AS wd
         INNER JOIN booking_rooms AS br
-            ON wd.report_date >= br.arrival_date
-           AND wd.report_date < br.departure_date
+            ON (wd.report_date >= DATE(br.arrival_date) AND wd.report_date < DATE(br.departure_date))
+            OR (
+                COALESCE(br.status, 0) IN (0, 1, 2)
+                AND DATE(br.arrival_date) = wd.report_date
+                AND DATE(br.departure_date) = wd.report_date
+                AND (
+                    COALESCE(br.is_day_use, 0) = 1
+                    OR EXISTS (
+                        SELECT 1
+                        FROM service_bills sb0
+                        INNER JOIN room_night_bills rnb0 ON rnb0.bill_id = sb0.Ma
+                        WHERE COALESCE(NULLIF(TRIM(sb0.RentalRoomId2), ''), NULLIF(TRIM(sb0.RentalRoomId1), '')) = br.id
+                          AND COALESCE(sb0.Edit, 0) = 0
+                          AND COALESCE(sb0.Status, 1) <> 3
+                          AND UPPER(TRIM(sb0.ServiceId)) = 'RM'
+                          AND COALESCE(rnb0.is_room_night, 1) = 1
+                          AND DATE(COALESCE(rnb0.date, sb0.Date)) = wd.report_date
+                    )
+                )
+            )
         INNER JOIN bookings AS b ON b.id = br.booking_id
-        LEFT JOIN registration_statuses AS rs ON rs.id = b.registration_status_id
+        LEFT JOIN registration_statuses AS rs ON (rs.booking_status_id = b.registration_status_id OR rs.id = b.registration_status_id)
         LEFT JOIN rooms AS r ON r.room_number = br.room_number
         WHERE br.deleted_at IS NULL
-          AND br.status IN (0, 1, 2)
+          AND COALESCE(br.status, 0) IN (0, 1, 2, 100)
           AND b.deleted_at IS NULL
           AND b.status NOT IN (3, 4)
           AND COALESCE(rs.is_availability, 1) = 1
@@ -170,23 +243,58 @@ BEGIN
     daily_capacity AS (
         SELECT
             wd.report_date,
-            GREATEST(
-                (
-                    SELECT COUNT(*)
-                    FROM rooms AS r0
-                    WHERE COALESCE(r0.is_internal, 0) = 0
-                ) - (
-                    SELECT COUNT(DISTINCT rl.room_number)
-                    FROM room_locks AS rl
-                    INNER JOIN rooms AS locked_room ON locked_room.room_number = rl.room_number
-                    WHERE COALESCE(locked_room.is_internal, 0) = 0
-                      AND rl.lock_type = 'OOO'
-                      AND rl.is_active = 1
-                      AND COALESCE(rl.start_date, '1000-01-01 00:00:00') <= CONCAT(wd.report_date, ' 23:59:59')
-                      AND COALESCE(rl.end_date, '9999-12-31 23:59:59') >= CONCAT(wd.report_date, ' 00:00:00')
-                ),
-                0
-            ) AS available_rooms
+            CASE
+                WHEN wd.report_date < v_system_date THEN COALESCE(
+                    (
+                        SELECT s7003.room_available
+                        FROM night_audit_room_sales_forecast_snapshots s7003
+                        WHERE s7003.snapshot_date = wd.report_date
+                          AND s7003.room_available > 0
+                        ORDER BY s7003.id DESC
+                        LIMIT 1
+                    ),
+                    GREATEST(
+                        (
+                            SELECT COUNT(*)
+                            FROM rooms AS r0
+                            WHERE COALESCE(r0.is_internal, 0) = 0
+                              AND COALESCE(r0.room_number, '') NOT LIKE '0%'
+                        ) - (
+                            SELECT COUNT(DISTINCT rl.room_number)
+                            FROM room_locks AS rl
+                            INNER JOIN rooms AS locked_room ON locked_room.room_number = rl.room_number
+                            WHERE COALESCE(locked_room.is_internal, 0) = 0
+                              AND COALESCE(locked_room.room_number, '') NOT LIKE '0%'
+                              AND UPPER(COALESCE(rl.lock_type, 'OOO')) = 'OOO'
+                              AND COALESCE(rl.is_active, 1) = 1
+                              AND LOWER(COALESCE(rl.status, 'active')) NOT IN ('done', 'cancelled', 'unlocked')
+                              AND (rl.start_date IS NULL OR DATE(rl.start_date) <= wd.report_date)
+                              AND (rl.end_date IS NULL OR DATE(rl.end_date) >= wd.report_date)
+                        ),
+                        0
+                    )
+                )
+                ELSE GREATEST(
+                    (
+                        SELECT COUNT(*)
+                        FROM rooms AS r0
+                        WHERE COALESCE(r0.is_internal, 0) = 0
+                          AND COALESCE(r0.room_number, '') NOT LIKE '0%'
+                    ) - (
+                        SELECT COUNT(DISTINCT rl.room_number)
+                        FROM room_locks AS rl
+                        INNER JOIN rooms AS locked_room ON locked_room.room_number = rl.room_number
+                        WHERE COALESCE(locked_room.is_internal, 0) = 0
+                          AND COALESCE(locked_room.room_number, '') NOT LIKE '0%'
+                          AND UPPER(COALESCE(rl.lock_type, 'OOO')) = 'OOO'
+                          AND COALESCE(rl.is_active, 1) = 1
+                          AND LOWER(COALESCE(rl.status, 'active')) NOT IN ('done', 'cancelled', 'unlocked')
+                          AND (rl.start_date IS NULL OR DATE(rl.start_date) <= wd.report_date)
+                          AND (rl.end_date IS NULL OR DATE(rl.end_date) >= wd.report_date)
+                    ),
+                    0
+                )
+            END AS available_rooms
         FROM week_days AS wd
     )
     SELECT
