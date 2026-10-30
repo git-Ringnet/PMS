@@ -12,7 +12,7 @@ class HousekeepingOutletTest extends TestCase
 
     public function test_add_service_visibility_flag_can_be_created_and_updated(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->withRole('branch_admin')->create();
 
         $response = $this->actingAs($user)->postJson('/api/housekeeping/outlets', [
             'code' => 'TS',

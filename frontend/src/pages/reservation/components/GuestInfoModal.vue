@@ -399,7 +399,14 @@
                           <!-- Text fields -->
                           <template v-else>
                             <div class="relative flex items-center w-full">
-                              <input v-model="guest[col.key]" type="text" class="table-input" :class="guest[col.key] ? 'has-clear' : ''" />
+                              <!-- Dòng 282: gợi ý khách đã lưu trú khi nhập Họ tên / Số giấy tờ -->
+                              <GuestSuggestInput
+                                v-if="col.key === 'full_name' || col.key === 'id_number'"
+                                v-model="guest[col.key]"
+                                :input-class="['table-input', guest[col.key] ? 'has-clear' : '']"
+                                @select="selectGuestSuggestion(guest, $event)"
+                              />
+                              <input v-else v-model="guest[col.key]" type="text" class="table-input" :class="guest[col.key] ? 'has-clear' : ''" />
                               <button v-if="guest[col.key]" type="button" @click.stop="guest[col.key] = ''" class="absolute right-1.5 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent z-10 flex items-center justify-center w-4 h-4" title="Xóa nhanh">
                                 <i class="fa-solid fa-xmark text-[10px]"></i>
                               </button>
@@ -832,6 +839,8 @@ import {
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
 import GuestDetailModal from './GuestDetailModal.vue'
+import GuestSuggestInput from '@/components/GuestSuggestInput.vue'
+import { inheritGuestInfo } from '@/utils/guest-suggestion'
 import { normalizeGuestInfoGroups } from '@/utils/guest-info'
 
 const props = defineProps({
@@ -1502,6 +1511,12 @@ async function loadGuests() {
   } finally {
     loading.value = false
   }
+}
+
+// Dòng 282: chọn khách gợi ý -> kế thừa thông tin khách cũ vào dòng đang nhập (không thay khách của phòng)
+function selectGuestSuggestion(row, guest) {
+  inheritGuestInfo(row, guest)
+  uiStore.showToast(`Đã kế thừa thông tin khách "${guest.full_name}".`, 'info')
 }
 
 // ==================== MỞ THẺ CHI TIẾT KHÁCH ====================

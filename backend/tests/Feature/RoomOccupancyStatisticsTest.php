@@ -342,4 +342,123 @@ class RoomOccupancyStatisticsTest extends TestCase
             ->assertJsonPath('data.occupied_current', 1)
             ->assertJsonPath('data.occupied_projected', 1);
     }
+
+    /**
+     * HKT1 04/09: phòng 207 (OOO) / 208 (OOS) đã mở khóa nhưng end_date còn tới 05/09,
+     * khách đã nhận phòng -> thẻ Đang ở 25 trong khi danh sách đang ở 27.
+     */
+    public function test_inhouse_room_with_unlocked_lock_still_spanning_date_is_counted(): void
+    {
+        $this->actingAs(User::factory()->create());
+        DB::table('booking_statuses')->insert([['id' => 0, 'name' => 'Reservation'], ['id' => 1, 'name' => 'Checked In'], ['id' => 2, 'name' => 'Checked Out']]);
+        \App\Models\SystemDateRoll::create(['system_date' => '2026-09-04', 'actual_date' => now(), 'shift' => '1', 'username' => 'test']);
+        $status = RegistrationStatus::create(['booking_status_id' => 1, 'name' => 'Confirmed', 'is_availability' => true]);
+        $form = RoomForm::create(['name' => 'Double']);
+        $class = RoomClass::create(['code' => 'DLX', 'name' => 'Deluxe', 'is_active' => true]);
+        foreach (['207', '208', '209'] as $number) {
+            Room::create(['room_number' => $number, 'room_form_id' => $form->id, 'room_class_id' => $class->id, 'floor' => 2, 'room_status_code' => 'occupied_dirty']);
+        }
+        foreach (['207' => 'OOO', '208' => 'OOS'] as $number => $type) {
+            RoomLock::create([
+                'room_number' => $number, 'start_date' => '2026-08-31 10:53:24', 'end_date' => '2026-09-05 23:59:59',
+                'reason' => 'test', 'status' => 'Done', 'lock_type' => $type, 'is_active' => RoomLock::STATUS_UNLOCKED,
+                'unlocked_at' => now(),
+            ]);
+        }
+        foreach (['207', '208', '209'] as $number) {
+            $this->createBookingRoom($number, $class->id, $status->booking_status_id, BookingRoom::STATUS_CHECKED_IN);
+        }
+
+        $this->getJson('/api/rooms/stats?date=2026-09-04')->assertSuccessful()
+            ->assertJsonPath('data.occupied_current', 3)
+            ->assertJsonPath('data.ooo', 0)
+            ->assertJsonPath('data.oos', 0);
+    }
+
+    /**
+     * Dòng 392 (HKT1 04/09): 807 (tick Day Use), 205, 405 (không tick) chưa nhận phòng, ngày đến = ngày đi
+     * -> đều là phòng đi; danh sách phòng chưa trả có đủ; phòng ở cuối ngày không đổi.
+     */
+    public function test_same_day_reservations_count_as_departures_with_or_without_day_use_flag(): void
+    {
+        $this->actingAs(User::factory()->create());
+        DB::table('booking_statuses')->insert([['id' => 0, 'name' => 'Reservation'], ['id' => 1, 'name' => 'Checked In'], ['id' => 2, 'name' => 'Checked Out']]);
+        \App\Models\SystemDateRoll::create(['system_date' => '2026-09-04', 'actual_date' => now(), 'shift' => '1', 'username' => 'test']);
+        $status = RegistrationStatus::create(['booking_status_id' => 1, 'name' => 'Confirmed', 'is_availability' => true]);
+        $form = RoomForm::create(['name' => 'Double']);
+        $class = RoomClass::create(['code' => 'DLX', 'name' => 'Deluxe', 'is_active' => true]);
+        foreach (['101', '102', '205', '405', '807', '406'] as $number) {
+            Room::create(['room_number' => $number, 'room_form_id' => $form->id, 'room_class_id' => $class->id, 'floor' => 1, 'room_status_code' => 'vacant_ready']);
+        }
+
+        // 101 ở tiếp, 102 đến hạn trả hôm nay
+        $this->createBookingRoom('101', $class->id, $status->booking_status_id, BookingRoom::STATUS_CHECKED_IN);
+        $this->createBookingRoom('102', $class->id, $status->booking_status_id, BookingRoom::STATUS_CHECKED_IN)
+            ->update(['departure_date' => '2026-09-04']);
+        foreach (['205' => false, '405' => false, '807' => true] as $number => $dayUse) {
+            $this->createBookingRoom($number, $class->id, $status->booking_status_id, BookingRoom::STATUS_BOOKED)
+                ->update(['arrival_date' => '2026-09-04', 'departure_date' => '2026-09-04', 'is_day_use' => $dayUse]);
+        }
+        // 406 đến hôm nay ở qua đêm: là phòng đến, không phải phòng đi
+        $this->createBookingRoom('406', $class->id, $status->booking_status_id, BookingRoom::STATUS_BOOKED)
+            ->update(['arrival_date' => '2026-09-04', 'departure_date' => '2026-09-07']);
+
+        $this->getJson('/api/rooms/stats?date=2026-09-04')->assertSuccessful()
+            ->assertJsonPath('data.departures_pending', 4)
+            ->assertJsonPath('data.departures_total', 4)
+            ->assertJsonPath('data.arrivals_total', 4)
+            ->assertJsonPath('data.occupied_current', 2)
+            // Cuối ngày = 2 + 4 - 4 = 2 (101 ở tiếp + 406 ở qua đêm)
+            ->assertJsonPath('data.occupied_projected', 2);
+
+        $rooms = collect($this->getJson('/api/bookings?arrival_date=2026-09-04&status=0,1,2&list_mode=departures&stay_only=1&per_page=100')
+            ->assertSuccessful()
+            ->json('data'))
+            ->flatMap(fn ($booking) => $booking['booking_rooms'] ?? [])
+            ->pluck('room_number')
+            ->sort()
+            ->values()
+            ->all();
+        $this->assertSame(['102', '205', '405', '807'], $rooms);
+    }
+
+    /** Mở khóa lúc giờ thật nhỏ hơn giờ bắt đầu khóa cùng ngày nghiệp vụ vẫn phải cắt ngày kết thúc. */
+    public function test_unlock_end_date_uses_business_date_not_wall_clock(): void
+    {
+        $lock = new RoomLock(['start_date' => '2026-08-31 10:53:24', 'end_date' => '2026-09-05 23:59:59']);
+
+        // Ngày hệ thống 31/08, giờ thật 10:44 (trước 10:53) -> cắt về giờ bắt đầu, không giữ tới 05/09.
+        $this->assertSame('2026-08-31 10:53:24', RoomLock::unlockEndDate($lock, '2026-08-31 10:44:03'));
+        // Mở khóa ngày sau -> cắt về lúc mở khóa.
+        $this->assertSame('2026-09-01 10:44:03', RoomLock::unlockEndDate($lock, '2026-09-01 10:44:03'));
+        // Khóa tương lai -> không đổi.
+        $this->assertNull(RoomLock::unlockEndDate($lock, '2026-08-30 15:00:00'));
+        // Khóa đã kết thúc trước lúc mở -> không kéo dài.
+        $ended = new RoomLock(['start_date' => '2026-08-31 08:00:00', 'end_date' => '2026-08-31 09:00:00']);
+        $this->assertNull(RoomLock::unlockEndDate($ended, '2026-08-31 10:44:03'));
+    }
+
+    public function test_bulk_unlock_cuts_end_date_when_wall_clock_is_before_lock_start(): void
+    {
+        $this->actingAs(User::factory()->create());
+        \App\Models\SystemDateRoll::create(['system_date' => '2026-08-31', 'actual_date' => now(), 'shift' => '1', 'username' => 'test']);
+        $form = RoomForm::create(['name' => 'Double']);
+        $class = RoomClass::create(['code' => 'DLX', 'name' => 'Deluxe', 'is_active' => true]);
+        Room::create(['room_number' => '207', 'room_form_id' => $form->id, 'room_class_id' => $class->id, 'floor' => 2, 'room_status_code' => 'ooo']);
+        $lock = RoomLock::create([
+            'room_number' => '207', 'start_date' => '2026-08-31 10:53:24', 'end_date' => '2026-09-05 23:59:59',
+            'reason' => 'hư tivi', 'status' => 'Active', 'lock_type' => 'OOO', 'is_active' => RoomLock::STATUS_ACTIVE,
+        ]);
+
+        \Carbon\Carbon::setTestNow(\Carbon\Carbon::parse('2026-10-26 10:44:03', 'Asia/Ho_Chi_Minh'));
+        try {
+            $this->postJson('/api/room-locks/bulk-unlock', ['lock_ids' => [$lock->id]])->assertSuccessful();
+        } finally {
+            \Carbon\Carbon::setTestNow();
+        }
+
+        $lock->refresh();
+        $this->assertSame(RoomLock::STATUS_UNLOCKED, $lock->is_active);
+        $this->assertSame('2026-08-31 10:53:24', $lock->end_date->format('Y-m-d H:i:s'));
+    }
 }

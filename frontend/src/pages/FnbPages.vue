@@ -5,9 +5,12 @@ import { fetchOutlets } from "@/services/outlet-service";
 import PortalWallpaperModal from "@/components/PortalWallpaperModal.vue";
 import { usePermission } from "@/composables/usePermission";
 import { usePortalWallpaper } from "@/composables/usePortalWallpaper";
+import { useAuthStore } from "@/stores/auth-store";
+import { filterMenuByPermission } from "@/utils/screen-permissions";
 
 const router = useRouter();
 const { can, canAny, isSuperAdmin, isAdmin } = usePermission();
+const authStore = useAuthStore();
 const isLoaded = ref(false);
 const activeOutlets = ref([]);
 
@@ -78,7 +81,8 @@ const updateMenuItems = () => {
     },
   );
 
-  menuItems.value = items;
+  // Dòng 406: chỉ hiện chức năng F&B user có quyền xem
+  menuItems.value = filterMenuByPermission(items, authStore);
 };
 
 function navigateTo(route) {

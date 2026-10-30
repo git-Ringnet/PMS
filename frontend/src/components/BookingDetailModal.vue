@@ -649,8 +649,9 @@ function highlightGuestSuggestion(g, query) {
   }
   const bkCount = g.stay_count || 1
   parts.push(`${bkCount} BK`)
-  if (g.total_revenue && g.total_revenue > 0) {
-    parts.push(`${formatNumber(g.total_revenue)} VND`)
+  // Dòng 282: hiển thị giá phòng hiện tại của lần lưu trú gần nhất
+  if (g.last_room_rate && g.last_room_rate > 0) {
+    parts.push(`${formatNumber(g.last_room_rate)} VND`)
   }
   return parts.join(' - ')
 }
@@ -2020,7 +2021,7 @@ function parseNumber(val) {
                   <RoomInfoDatePicker
                     v-model="stayInfo.departure_date"
                     :min-date="stayInfo.arrival_date"
-                    :disabled="!isEditingMode"
+                    :disabled="!isEditingMode || stayInfo.hourly"
                     required
                     placeholder="dd/mm/yyyy"
                   />

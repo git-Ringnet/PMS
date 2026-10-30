@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth-store'
+import { ROUTE_PERMISSIONS, canOpenScreen, hasAccess } from '@/utils/screen-permissions'
 
 const routes = [
   {
@@ -18,7 +19,7 @@ const routes = [
     path: '/pms',
     name: 'PmsPages',
     component: () => import('@/pages/PmsPages.vue'),
-    meta: { title: 'Trang chủ - PMS' },
+    meta: { title: 'Trang chủ - PMS', permission: ROUTE_PERMISSIONS['/pms'] },
   },
   {
     path: '/reservation',
@@ -48,7 +49,7 @@ const routes = [
     path: '/config',
     name: 'Config',
     component: () => import('@/pages/config/ConfigPage.vue'),
-    meta: { title: 'Cấu hình hệ thống - PMS' },
+    meta: { title: 'Cấu hình hệ thống - PMS', permission: ROUTE_PERMISSIONS['/config'] },
   },
   {
     path: '/system',
@@ -60,7 +61,7 @@ const routes = [
     path: '/fnb',
     name: 'FnbPages',
     component: () => import('@/pages/FnbPages.vue'),
-    meta: { title: 'Trang chủ - F&B' },
+    meta: { title: 'Trang chủ - F&B', permission: ROUTE_PERMISSIONS['/fnb'] },
   },
   {
     path: '/fnb/restaurant',
@@ -72,7 +73,7 @@ const routes = [
     path: '/fnb/party',
     name: 'party',
     component: () => import('@/pages/fnb/PartyPage.vue'),
-    meta: { title: 'PARTY - F&B', permission: 'fb.party.manage' }
+    meta: { title: 'PARTY - F&B', permission: ROUTE_PERMISSIONS['/fnb/party'] }
   },
   {
     path: '/fnb/search',
@@ -84,7 +85,7 @@ const routes = [
     path: '/fnb/other',
     name: 'fnb-other',
     component: () => import('@/pages/fnb/OtherPages.vue'),
-    meta: { title: 'Khác - F&B' }
+    meta: { title: 'Khác - F&B', permission: ROUTE_PERMISSIONS['/fnb/other'] }
   },
   {
     path: '/fnb/report',
@@ -130,15 +131,11 @@ router.beforeEach(async (to, from) => {
         }
       }
 
-      // Kiểm tra permission nếu route có meta.permission
-      if (to.meta.permission) {
-        const isSuperAdmin = authStore.roles.some(r => r.role_code === 'super_admin')
-        const isTemporaryExpectedRevenueAccess = to.name === 'Reports'
-          && to.query.report === 'EXPECTED_ROOM_REVENUE_NIGHT_AUDIT'
-        const hasAccess = isSuperAdmin
-          || authStore.permissions.includes(to.meta.permission)
-          || isTemporaryExpectedRevenueAccess
-        if (!hasAccess) {
+      // Kiểm tra permission của route (meta.permission) và của tab/màn hình con (dòng 406)
+      const isTemporaryExpectedRevenueAccess = to.name === 'Reports'
+        && to.query.report === 'EXPECTED_ROOM_REVENUE_NIGHT_AUDIT'
+      if (!isTemporaryExpectedRevenueAccess) {
+        if (!hasAccess(authStore, to.meta.permission) || !canOpenScreen(authStore, to.path, to.query)) {
           return { name: 'Forbidden' }
         }
       }

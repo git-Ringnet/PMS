@@ -18,7 +18,7 @@ class RoomConstraintsTest extends TestCase
     {
         parent::setUp();
         
-        $user = User::create([
+        $user = User::factory()->withRole('branch_admin')->create([
             'name' => 'Test User',
             'username' => 'testuser',
             'email' => 'test@example.com',

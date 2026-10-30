@@ -2011,6 +2011,9 @@ class BookingRoomController extends Controller
             }
         }
 
+        // Dòng 417: phòng không ăn sáng thì trẻ em/em bé thêm vào cũng không ăn sáng.
+        $roomBreakfast = $bRoom->breakfast === null ? true : (bool) $bRoom->breakfast;
+
         $current = Carbon::parse($bRoom->arrival_date);
         $departure = Carbon::parse($bRoom->departure_date);
 
@@ -2018,11 +2021,11 @@ class BookingRoomController extends Controller
             \App\Models\BookingChildBreakfastDetail::create([
                 'booking_child_id' => $child->id,
                 'service_date'     => $current->toDateString(),
-                'breakfast'        => true,
+                'breakfast'        => $roomBreakfast,
                 'is_free'          => $isFree,
                 'is_extra_charge'  => $isExtra,
                 'is_room'          => !$isExtra, // Nếu extra charge thì không phân bổ vào phòng (GIT)
-                'amount'           => $amount,
+                'amount'           => $roomBreakfast ? $amount : 0,
             ]);
 
             $current = $current->addDay();
@@ -2186,9 +2189,8 @@ class BookingRoomController extends Controller
 
         usort($availableRooms, fn($a, $b) => strnatcasecmp($a['room_number'], $b['room_number']));
 
-        // 2. List every physical In-House room. Keep merge eligibility separate
-        // from visibility so the UI can show the full list without weakening
-        // the existing departure-date rule enforced by moveRoom().
+        // 2. List every physical In-House room. Dòng 292 (note 27/10): mọi phòng đang ở đều
+        // được chọn để gộp, kể cả phòng có ngày đi sớm hơn phòng cần chuyển.
         $occupiedBookingRooms = BookingRoom::where('id', '!=', $bookingRoom->id)
             ->where('status', BookingRoom::STATUS_CHECKED_IN)
             ->whereHas('room', fn($q) => $q->physical())
@@ -2222,7 +2224,6 @@ class BookingRoomController extends Controller
                 'all_guests'      => $guestNames,
                 'arrival_date'    => $obrItem->arrival_date->toDateString(),
                 'departure_date'  => $obrItem->departure_date->toDateString(),
-                'can_merge'       => $obrItem->departure_date->gte($bookingRoom->departure_date),
                 'rate'            => (float)$obrItem->rate,
                 'extra_bed_rate'  => (float)($obrItem->extra_bed_rate ?? 0),
                 'status_label'    => $statusText,
@@ -2738,13 +2739,6 @@ class BookingRoomController extends Controller
 
             if (!$targetBookingRoom) {
                 return response()->json(['success' => false, 'message' => "Không tìm thấy phòng đang ở (In-house) {$targetRoomNumber} để gộp."], 422);
-            }
-
-            if ($targetBookingRoom->departure_date->lt($bookingRoom->departure_date)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => "Phòng gộp {$targetRoomNumber} có ngày trả phòng (" . $targetBookingRoom->departure_date->toDateString() . ") trước ngày trả phòng hiện tại (" . $bookingRoom->departure_date->toDateString() . "). Không thể gộp.",
-                ], 422);
             }
 
             $activeGuests = $bookingRoom->guests()->where('status', '!=', 100)->get();

@@ -24,9 +24,12 @@ const LockRoomPage = defineAsyncComponent(() => import('@/pages/reservation/Lock
 const ReportsPage = defineAsyncComponent(() => import('@/pages/reports/ReportsPage.vue'))
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import { t } from '@/utils/i18n'
+import { useAuthStore } from '@/stores/auth-store'
+import { canOpenScreen } from '@/utils/screen-permissions'
 
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
 
 const isTabLoading = ref(false)
 
@@ -40,7 +43,7 @@ function switchTab(key, queryParams = {}) {
 const sidebarCollapsed = ref(false)
 const showDashboard = ref(true)
 
-const tabs = computed(() => [
+const allTabs = computed(() => [
   { key: 'room-map', label: t('submenu.roomMap'), icon: LayoutGrid, component: RoomMapPage, group: 'phong' },
   { key: 'room-plan', label: t('submenu.roomPlan'), icon: CalendarRange, component: RoomPlanPage, group: 'phong' },
   { key: 'lock-room', label: t('submenu.lockRoom'), icon: Lock, component: LockRoomPage, group: 'phong' },
@@ -56,6 +59,9 @@ const tabs = computed(() => [
   { key: 'history', label: t('submenu.actionHistory'), icon: History, component: ActivityLogTab, group: 'other' },
   { key: 'reports', label: t('submenu.reports'), icon: BarChart3, component: ReportsPage, group: 'report' },
 ])
+
+// Dòng 406: chỉ hiện tab buồng phòng user có quyền xem
+const tabs = computed(() => allTabs.value.filter(tab => canOpenScreen(authStore, '/housekeeping', { tab: tab.key })))
 
 const activeTabKey = computed(() => route.query.tab || 'room-map')
 

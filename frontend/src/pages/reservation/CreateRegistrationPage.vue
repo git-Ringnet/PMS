@@ -51,6 +51,7 @@ import { isFromOtherTab } from '@/utils/broadcast-origin.js'
 import BookingNotificationsModal from './components/BookingNotificationsModal.vue'
 import BookingPrintPreviewModal from './components/BookingPrintPreviewModal.vue'
 import PrintServiceSelectModal from './components/PrintServiceSelectModal.vue'
+import { resolvePostedServicePlan } from './extraServiceRows.js'
 import {
   fetchMarkets,
   fetchCustomerSources,
@@ -388,6 +389,7 @@ async function openRegistrationCardPrint(showPrice = true) {
   if (!data) return
   printPreviewModalType.value = 'registration_card'
   printPreviewModalShowPrice.value = showPrice
+  selectedPrintServices.value = data.services || []
   selectedPrintRooms.value = selected.length > 0 ? selected : data.rooms
   isPrintPreviewModalOpen.value = true
 }
@@ -2143,16 +2145,22 @@ function getRoomDisplayServices(room) {
       } else {
         // Hôm nay & Tương lai: Lấy theo dự kiến đã setup trong BK (trong giai đoạn ở)
         if (!isPostedSetup && !isServiceDateInStay(dStr, room.checkIn, room.checkOut, isStayDayUse)) return
+        // Dòng 351: giá sửa sau khi dịch vụ đã post nằm ở dòng kế hoạch chưa post cùng mã/ngày.
+        // Gộp vào dòng đã post: hiện giá mới kèm số tiền bill đã chạy, không cộng hai lần.
+        const { hidden, pendingPlan } = resolvePostedServicePlan(svc, setupServices, s => parseApiDate(s.service_date || ''))
+        if (hidden) return
         list.push({
           id: svc.id,
           service_date: dStr,
           service_name: serviceName,
           service_code: svc.service_code,
           quantity: svc.quantity ?? 1,
-          rate: svc.rate || 0,
+          rate: pendingPlan ? (Number(pendingPlan.rate) || 0) : (svc.rate || 0),
+          billed_rate: pendingPlan ? (Number(svc.rate) || 0) : undefined,
+          pending_rate: pendingPlan ? (Number(pendingPlan.rate) || 0) : null,
           is_room: svc.is_room !== 0,
           is_child_breakfast: isBreakfastSetup,
-          svc_ref: svc
+          svc_ref: pendingPlan || svc
         })
       }
     })
@@ -3267,6 +3275,10 @@ function bookingToTab(b) {
         initialRoomClassId: br.room_class_id,
         roomClassCode: rc.code || '',
         shape: (() => {
+          // Dòng 414: dạng phòng lấy theo booking_rooms.RoomKind đã lưu lúc tạo phòng,
+          // đổi dạng phòng trong giá phòng chuẩn không làm đổi booking đã tạo.
+          const savedForm = br.RoomKind ? roomForms.value.find(f => Number(f.id) === Number(br.RoomKind)) : null
+          if (savedForm?.name) return savedForm.name
           const matched = roomClasses.value.find(c => c.id === br.room_class_id)
           return matched ? (matched.room_form_name || matched.code) : (rc.code || '')
         })(),
@@ -8172,7 +8184,7 @@ defineExpose({
                                       {{ (Number(svc.rate) || 0).toLocaleString('en-US') }}
                                     </span>
                                   </td>
-                                  <td class="p-2 border-slate-100 text-right text-[#000000D9] font-normal text-xs">{{ (Number(svc.quantity !== undefined && svc.quantity !== null ? svc.quantity : 1) * Number(svc.rate || 0)).toLocaleString('en-US') }}<div v-if="svc.pending_rate != null && Number(svc.pending_rate) !== Number(svc.billed_rate)" class="text-[10px] leading-tight text-amber-600" title="Giá mới chỉ áp dụng khi xóa bill ở màn hình hóa đơn và post lại tiền phòng">Bill đã chạy: {{ (Number(svc.quantity !== undefined && svc.quantity !== null ? svc.quantity : 1) * Number(svc.billed_rate || 0)).toLocaleString('en-US') }}</div></td>
+                                  <td class="p-2 border-slate-100 text-right text-[#000000D9] font-normal text-xs">{{ (Number(svc.quantity !== undefined && svc.quantity !== null ? svc.quantity : 1) * Number(svc.rate || 0)).toLocaleString('en-US') }}<div v-if="svc.pending_rate != null && Number(svc.pending_rate) !== Number(svc.billed_rate)" class="text-[10px] leading-tight text-amber-600" title="Giá mới chỉ áp dụng khi xóa bill ở màn hình hóa đơn và post lại">Bill đã chạy: {{ (Number(svc.quantity !== undefined && svc.quantity !== null ? svc.quantity : 1) * Number(svc.billed_rate || 0)).toLocaleString('en-US') }}</div></td>
                                   <td class="p-2 text-center border-slate-200">
                                     <div class="relative inline-flex items-center justify-center">
                                       <label class="relative inline-flex items-center cursor-pointer select-none gap-1.5 justify-center" :class="{ 'opacity-40 pointer-events-none': !isServiceDisplayEditable(svc) || (isInlineEditLocked && room.bookingRoomId) }" title="Bật/Tắt Gửi HĐ về Master (GIT) hoặc Phòng (FIT)">

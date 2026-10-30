@@ -19,6 +19,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->appendToGroup('api', \App\Http\Middleware\BlockNightAuditRequests::class);
         $middleware->alias([
             'permission' => \App\Http\Middleware\RequirePermission::class,
+            'permission.write' => \App\Http\Middleware\RequireWritePermission::class,
         ]);
         $middleware->redirectGuestsTo(function (Request $request) {
             if ($request->is('api/*') || $request->expectsJson()) {

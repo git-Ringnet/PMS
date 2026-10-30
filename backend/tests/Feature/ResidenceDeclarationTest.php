@@ -17,7 +17,7 @@ class ResidenceDeclarationTest extends TestCase
 
     public function test_store_marks_guests_declared_per_stay_and_is_idempotent(): void
     {
-        $user = User::factory()->create(['username' => 'frontdesk01']);
+        $user = User::factory()->withRole('fo_staff', ['fo.guest.edit'])->create(['username' => 'frontdesk01']);
 
         $payload = [
             'guests' => [
@@ -52,7 +52,7 @@ class ResidenceDeclarationTest extends TestCase
 
     public function test_index_filters_by_booking_room_ids(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->withRole('fo_staff', ['fo.guest.edit'])->create();
 
         $this->actingAs($user)->postJson('/api/residence-declarations', [
             'guests' => [
@@ -70,7 +70,7 @@ class ResidenceDeclarationTest extends TestCase
 
     public function test_store_validates_payload(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->withRole('fo_staff', ['fo.guest.edit'])->create();
 
         $this->actingAs($user)->postJson('/api/residence-declarations', [
             'guests' => [['guest_id' => 'G001', 'guest_kind' => 'other']],
@@ -79,7 +79,7 @@ class ResidenceDeclarationTest extends TestCase
 
     public function test_hotel_settings_exposes_immigration_export_config(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->withRole('fo_staff', ['fo.guest.edit'])->create();
         HotelSetting::create(['hotel_name' => 'Test Hotel']);
 
         $this->actingAs($user)->getJson('/api/hotel-settings')

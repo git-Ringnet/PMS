@@ -120,7 +120,7 @@ class BookingStatusMappingTest extends TestCase
 
     public function test_catalogue_requires_a_unique_business_code(): void
     {
-        $this->actingAs(\App\Models\User::factory()->create());
+        $this->actingAs(\App\Models\User::factory()->withRole('branch_admin')->create());
         $this->postJson('/api/registration-statuses', ['name' => 'Missing code'])
             ->assertUnprocessable()->assertJsonValidationErrors('booking_status_id');
         $response = $this->postJson('/api/registration-statuses', ['name' => 'None Guaranteed', 'booking_status_id' => 20]);

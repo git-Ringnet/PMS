@@ -9,6 +9,82 @@
 - **Ngày ghi**: `YYYY-MM-DD`
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 
+## [2026-10-29] - Sửa lỗi xóa dịch vụ sau khi chuyển bill qua lại
+### Module: Trả Phòng (Checkout)
+- **Lỗi**: Chọn hết dịch vụ của phòng rồi bấm Xóa thì báo "Phải chọn toàn bộ chi tiết của cùng một hóa đơn dịch vụ để xóa." (bill EB tập hợp từ Master về phòng rồi chuyển tiếp sang phòng khác).
+- **Nguyên nhân**: Dòng mirror `booking_room_services` của dịch vụ `is_room=0` bị ẩn ở màn hình phòng, bill hiển thị dạng ServiceBill nên không gửi id mirror → server thấy thiếu chi tiết.
+- **Sửa**: `BookingRoomServiceController::cancel` (xóa theo `service_bill_ids`): bill không có id mirror nào gửi lên thì lấy toàn bộ mirror tại server (giống logic chuyển theo bill). Vẫn chặn khi chỉ gửi một phần mirror.
+- **Kiểm thử**: Thêm test `test_room_service_cancel_by_bill_without_mirror_ids_deletes_all_server_mirrors`; chưa chạy được do migration `2026_10_26_121000_remove_user_topbar_color_settings` dùng `JSON_CONTAINS_PATH` không chạy trên SQLite.
+
+## [2026-10-30] - Kiểm Thử QA Giao Diện Web: Dòng 351 – Dịch Vụ Bổ Sung
+### Module: Đăng Ký (Reservation / Create-Res), Thu Ngân / Hóa Đơn (Frontdesk / Checkout)
+- **Mục tiêu & Nghiệp vụ kiểm tra**:
+  - Kiểm thử giao diện web thực tế (E2E Web UI) xác minh sửa lỗi "Dòng 351 – Dịch vụ bổ sung".
+  - Kiểm tra thêm dịch vụ bổ sung lần 2 không ghi đè/sửa dịch vụ cũ.
+  - Kiểm tra sửa giá dịch vụ trên màn hình Đăng ký sau khi bill đã post ở Hóa đơn: Bill đã chạy giữ nguyên giá cũ, không bị đổi theo giá mới.
+  - Kiểm tra xóa bill ở Hóa đơn rồi post lại thì nhận đúng giá mới cập nhật.
+- **Kết quả kiểm thử**:
+  - **Kịch bản A (Thêm lần 2)**: ĐẠT 100% (modal mở ra trống, giữ nguyên Tour 200k, thêm riêng Ăn tối 500k đêm cuối).
+  - **Kịch bản B (Sửa giá sau khi bill chạy)**: ĐẠT logic cốt lõi (bill Hóa đơn giữ nguyên 200k, không tự động nhảy lên 300k/350k; đêm 2 chưa post đổi thẳng 250k).
+  - **Ghi nhận lỗi giao diện (Defect)**: Cột thành tiền của bảng phòng đang ở (MODE B trong `CreateRegistrationPage.vue`) thiếu đoạn hiển thị dòng chữ nhỏ màu vàng *"Bill đã chạy: 200,000"* khi có giá pending chỉnh sửa.
+  - **Kịch bản C (Xóa bill post lại ăn giá mới)**: ĐẠT 100% (xóa bill và post lại tiền phòng, bill Tour nhận đúng giá 350k).
+
+## [2026-10-29] - Sửa Lỗi Phòng Theo Giờ (Day Use) & Số Đêm Màn Hình Sang Ngày (Dòng 253)
+### Module: Sơ Đồ Phòng (Room Map), Thông Tin Phòng, Sang Ngày (Day Close)
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **1. Xử lý Ở theo giờ tại màn hình Thông tin phòng (Dòng 253)**:
+    + Khi tick "Phòng theo giờ": tự động cập nhật Ngày đi = Ngày đến, tính Số đêm = 0, khóa ô chọn Ngày đi (`disabled`).
+    + Bỏ tick "Phòng theo giờ": tự động đổi Ngày đi = Ngày đến + 1, Số đêm = 1, mở khóa ô chọn Ngày đi.
+    + Phòng đã ở qua các đêm trước (Ngày đến < Ngày hệ thống): chặn/khóa không cho tick "Phòng theo giờ".
+    + Lưu trạng thái `is_day_use` chuẩn theo từng phòng (`booking_rooms.is_day_use`), đồng bộ chính xác khi F5 hoặc mở lại từ Sơ đồ phòng và màn hình Đăng ký.
+  - **2. Đồng bộ số đêm và hiển thị trên màn hình Sang ngày**:
+    + Tab "Phòng đang ở" & tab "Ở theo giờ": Phòng ở theo giờ (ngày đến = ngày đi) hiển thị chuẩn 0 đêm.
+    + Khi chỉnh sửa Ngày đi (ví dụ từ 4 đêm về 2 đêm) hoặc Gia hạn đêm phòng (Late out): màn hình Sang ngày tính số đêm động theo ngày đến/đi thực tế của phòng, không bị giữ nguyên giá trị cũ.
+  - **3. Gợi ý khách & Giá phòng mới nhất (Dòng 282, 283)**:
+    + Gợi ý tên khách / số giấy tờ hiển thị giá phòng hiện tại của lần lưu trú gần nhất (đã đổi mã giá thì lấy giá mới), không hiển thị doanh thu bill đã post theo giá cũ.
+    + Thêm popup gợi ý khách ở ô Họ tên, Số giấy tờ của màn hình Thông tin khách trong phòng và màn hình Thông tin khách (nhấp đúp dòng khách); chọn gợi ý thì kế thừa thông tin, không làm thay đổi khách của phòng.
+    + Mã giá không bắt buộc: không lưu chuỗi gợi ý placeholder làm mã giá, mã giá cũ gửi lại không chặn lưu thông tin khách; migration dọn sạch chuỗi placeholder đã lưu ở booking_rooms.
+- **Kiểm thử E2E QA Web UI**:
+  - Đạt 10/10 test cases (TC1 - TC10) trên giao diện thực tế qua Playwright, không phát sinh lỗi 500 / Server Error.
+
+
+## [2026-10-28] - Phân Quyền Màn Hình & Báo Cáo, Dạng Phòng Booking, Ăn Sáng Trẻ Em
+### Module: Phân Quyền (RBAC), Đăng Ký (Booking), Sao Lưu Dữ Liệu
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **1. Phân quyền màn hình, module & báo cáo (Dòng 406)**:
+    + Gom quyền theo màn hình vào `screen-permissions.js`; lọc theo quyền trên Router, Menu chính, Trang chủ, tab Buồng phòng, F&B khác, ô Cấu hình (chặn cả gõ URL/tab trực tiếp).
+    + Ẩn menu Báo cáo khi tài khoản không được phân quyền xem bất kỳ báo cáo nào.
+    + Thêm quyền màn hình Định nghĩa hệ thống, Định nghĩa buồng phòng, Mẫu in vào sơ đồ phân quyền (migration + seeder).
+    + API thêm/sửa/xóa cấu hình yêu cầu quyền màn hình tương ứng (`permission.write`), API đọc danh mục vẫn mở cho nghiệp vụ vận hành.
+    + Sao lưu/khôi phục CSDL: Giới hạn chỉ Admin, bắt buộc nhập lại mật khẩu xác nhận, chuyển export DB sang POST.
+  - **2. Dạng phòng hiển thị theo booking (Dòng 414)**:
+    + Cột Dạng phòng lấy theo `booking_rooms.RoomKind` đã lưu của booking thay vì lấy động theo bảng giá phòng chuẩn hiện tại.
+    + Chỉnh sửa dạng phòng trong giá phòng chuẩn không ảnh hưởng các booking đã tạo, chỉ áp dụng cho phòng lấy mới.
+  - **3. Ăn sáng trẻ em/em bé theo tình trạng phòng (Dòng 417)**:
+    + Thêm trẻ em/em bé: Phòng có ăn sáng thì trẻ mặc định có ăn; phòng không ăn sáng thì trẻ không ăn và thành tiền = 0.
+    + Thông tin phòng: Lưu tình trạng ăn sáng của phòng trước khi tạo trẻ mới.
+    + Chi tiết ăn sáng trẻ: Không phụ phí thì ẩn số tiền ở cột Thành tiền (vẫn lưu giá để bóc tách từ tiền phòng).
+- **Kiểm thử**:
+  - Pass 100% tests backend và frontend cho các dòng 406, 414, 417; code đã commit trên nhánh `kaynblue`.
+
+
+## [2026-10-27] - Khôi Phục Booking Trùng Phòng, Gộp Phòng Đến Sớm, Tooltip & Khai Báo Lưu Trú
+### Module: Booking, Sơ Đồ Phòng (Room Map), Chuyển Phòng, Khai Báo Lưu Trú
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **1. Khôi phục booking hủy & kiểm tra trùng phòng (Dòng 294)**:
+    + Khi khôi phục bị trùng số phòng (với booking khác hoặc phòng khóa OOO/OOS): hỏi xác nhận để gỡ số phòng trùng, sau đó kiểm tra over theo `AllowOverRoomTypeRoomKind`.
+    + Booking trong ngày (ngày đến = ngày đi): tính chiếm phòng trọn ngày đến khi kiểm tra trùng phòng, tránh trùng phòng vật lý.
+    + So sánh ngày chuẩn xác theo `DATE` để phòng rơi đúng ngày đi phòng khác không bị báo trùng.
+  - **2. Chuyển phòng & Sơ đồ phòng (Dòng 292, 293)**:
+    + Dòng 292: Bỏ chặn chọn phòng đang ở có ngày đi sớm hơn (FE & BE); khách gộp sang checkout theo ngày đi của phòng đích.
+    + Dòng 293: Chuẩn hóa Tooltip booking trên Room Map (thứ tự: Tên công ty → Yêu cầu đặc biệt → Ghi chú; chuẩn FE Design System).
+  - **3. Khai báo lưu trú (Dòng 295)**:
+    + Bổ sung 2 bộ lọc: Người Nước Ngoài và Người Việt Nam (mặc định tick cả hai hoặc không tick = hiện tất cả).
+    + Khách nước ngoài có Passport: hiển thị số Passport ở cột Số giấy tờ, cột Hộ chiếu để trống; đồng bộ xuất CSV.
+- **Kiểm thử**:
+  - Bổ sung và pass 100% tests cho các dòng 292, 293, 294, 295; code đã commit và sẵn sàng trên `kaynblue`.
+
+
 
 ## [2026-10-30] - Khắc Phục Triệt Để Lỗi Báo Cáo Công Suất Công Ty (COMPANY_OCCUPANCY - Dòng 167 Sheet LỖI BÁO CÁO)
 ### 1. Báo Cáo Công Suất Công Ty (Dòng 167 Danh Mục Báo Cáo - Row 8 Sheet LỖI BÁO CÁO)
@@ -3384,6 +3460,8 @@ pm run build (thành công 6.10s, 0 lỗi).
 - **Nghiệp vụ đã xử lý**:
   1. **Frontend ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))**:
      - Tạo hàm chuẩn `isRoomChargeService(svc)` để định danh chính xác các mã tiền phòng: `RM`, `ROOM_CHARGE`, `ER`.
+     - Loại bỏ triệt để điều kiện nhầm lẫn `Number(svc.is_room) === 1` 
+... [truncated for diff preview]
      - Loại bỏ triệt để điều kiện nhầm lẫn `Number(svc.is_room) === 1` khi tìm `dbCharge`, gán tên `dbCharge.service_name || Dịch vụ phòng nghỉ` và `service_code: 'RM'`.
      - Đồng bộ lại `isRoomChargeService` ở tất cả các vị trí: `handleServiceRateChange`, `getServiceDiscountLabel`, popup giảm giá và template Mode A & Mode B.
      - Cập nhật điều kiện nút xóa và ô nhập số lượng trong chi tiết phòng: chỉ hiển thị cho dịch vụ phụ `!isRoomChargeService(svc)`.
@@ -7297,4 +7375,3 @@ pm run build (thành công 6.10s, 0 lỗi).
 - Bổ sung frontend chạy đoạn xử lý thật: 211 ba ca đồng ý/bỏ qua/API từ chối; 214 bốn ca lưu giá riêng và SL 0, báo ngày lỗi, bỏ qua đêm đã post/quá khứ, lỗi header dừng ghi đêm.
 - Kết quả backend 64/64 đạt, 398 assertions; frontend 15/15 đạt; PHP lint và git diff --check đạt. Không sửa production; không chạy DB vận hành/migrate/seed/push/commit. Chưa UAT trình duyệt thật; Waiting ở 259 đối chiếu query, chưa có test riêng.
 - Báo cáo docs/RA_SOAT_DONG_153_211_214_259_288.md ghi nguyên nhân, bằng chứng, giới hạn và checklist nghiệm thu. Giữ các test hồi quy/tài liệu; bảo toàn phần DAILY_LOG có sẵn của công việc khác.
-

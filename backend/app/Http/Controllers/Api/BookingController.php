@@ -238,10 +238,14 @@ class BookingController extends Controller
                 $isDepartureView = $request->input('list_mode') === 'departures';
 
                 $roomQuery->where(function ($dateQuery) use ($request, $statuses, $isDepartureView, $pmsDateStartUtc, $pmsDateEndUtc) {
-                    $dateQuery->where(function ($bookedQuery) use ($request, $statuses) {
+                    $dateQuery->where(function ($bookedQuery) use ($request, $statuses, $isDepartureView) {
                         if (in_array(BookingRoom::STATUS_BOOKED, $statuses, true)) {
                             $bookedQuery->where('status', BookingRoom::STATUS_BOOKED)
                                 ->whereDate('arrival_date', $request->arrival_date);
+                            // Dòng 392: danh sách phòng đi chỉ lấy phòng chưa nhận có ngày đến = ngày đi.
+                            if ($isDepartureView) {
+                                $bookedQuery->whereDate('departure_date', $request->arrival_date);
+                            }
                         } else {
                             $bookedQuery->whereRaw('1 = 0');
                         }
@@ -2477,6 +2481,12 @@ class BookingController extends Controller
                 : now()->toDateString();
             $roomArrival = fn ($room) => Carbon::parse($room->arrival_date ?? $booking->arrival_date)->toDateString();
             $roomDeparture = fn ($room) => Carbon::parse($room->departure_date ?? $booking->departure_date)->toDateString();
+            // Dòng 294: phòng có ngày đến = ngày đi vẫn chiếm phòng trong ngày đến.
+            $roomStayEnd = function ($room) use ($roomArrival, $roomDeparture) {
+                $arr = $roomArrival($room);
+                $dep = $roomDeparture($room);
+                return $dep > $arr ? $dep : Carbon::parse($arr)->addDay()->toDateString();
+            };
             $roomLabel = fn ($room) => $room->room_number
                 ? (string) $room->room_number
                 : 'Phòng chưa gán số ' . ($room->roomClass?->code ?? '') . ' (' . Carbon::parse($roomArrival($room))->format('d/m') . ' - ' . Carbon::parse($roomDeparture($room))->format('d/m') . ')';
@@ -2511,7 +2521,7 @@ class BookingController extends Controller
                 if (empty($bRoom->room_number)) continue;
                 $rn = trim((string) $bRoom->room_number);
                 $arrStr = $roomArrival($bRoom);
-                $depStr = $roomDeparture($bRoom);
+                $depStr = $roomStayEnd($bRoom);
 
                 foreach ($seenAssigned[$rn] ?? [] as $prevSpan) {
                     if ($arrStr < $prevSpan['dep'] && $depStr > $prevSpan['arr']) {
@@ -2534,8 +2544,10 @@ class BookingController extends Controller
                 $rn = trim((string) $bRoom->room_number);
                 $arrDate = $roomArrival($bRoom);
                 $depDate = $roomDeparture($bRoom);
+                $stayEnd = $roomStayEnd($bRoom);
 
-                // 2.1 Kiểm tra trùng với BookingRoom đang hoạt động
+                // 2.1 Kiểm tra trùng với BookingRoom đang hoạt động. Phòng có ngày đến = ngày đi
+                // (của cả hai phía) được coi là chiếm phòng trọn ngày đến.
                 $conflict = BookingRoom::with('booking')
                     ->where('room_number', $rn)
                     ->where('id', '!=', $bRoom->id)
@@ -2545,10 +2557,16 @@ class BookingController extends Controller
                         BookingRoom::STATUS_CHECKED_IN,
                         BookingRoom::STATUS_CHECKED_OUT,
                     ])
-                    ->where(function ($q) use ($arrDate, $depDate) {
-                        $q->where(function ($sub) use ($arrDate, $depDate) {
-                            $sub->where('arrival_date', '<', $depDate)
-                                ->where('departure_date', '>', $arrDate);
+                    ->where(function ($q) use ($arrDate, $depDate, $stayEnd) {
+                        $q->where(function ($sub) use ($arrDate, $stayEnd) {
+                            $sub->whereDate('arrival_date', '<', $stayEnd)
+                                ->where(function ($end) use ($arrDate) {
+                                    $end->whereDate('departure_date', '>', $arrDate)
+                                        ->orWhere(function ($sameDay) use ($arrDate) {
+                                            $sameDay->whereRaw('DATE(departure_date) <= DATE(arrival_date)')
+                                                ->whereDate('arrival_date', '>=', $arrDate);
+                                        });
+                                });
                         })->orWhere(function ($dayuseSub) use ($arrDate, $depDate) {
                             $dayuseSub->where('is_day_use', 1)
                                       ->whereBetween('arrival_date', [$arrDate . ' 00:00:00', $depDate . ' 23:59:59']);
@@ -2559,7 +2577,6 @@ class BookingController extends Controller
 
                 if ($conflict) {
                     $bCode = $conflict->booking?->booking_code ?? ('BK#' . $conflict->booking_id);
-                    $ineligibleIds[] = $bRoom->id;
                     $duplicateRooms[] = [
                         'room_number'  => $rn,
                         'booking_code' => $bCode,
@@ -2567,7 +2584,6 @@ class BookingController extends Controller
                     ];
                 } elseif ($availability->hasBlockingLock($rn, $arrDate, $depDate)) {
                     // 2.2 Kiểm tra trùng với phòng đang khóa OOO / OOS (RoomLock)
-                    $ineligibleIds[] = $bRoom->id;
                     $duplicateRooms[] = [
                         'room_number'  => $rn,
                         'booking_code' => null,
@@ -2576,16 +2592,22 @@ class BookingController extends Controller
                 }
             }
 
-            $uniqueDuplicateRooms = collect($duplicateRooms)->unique('room_number')->values()->all();
-            $clearDuplicateRooms = !$isRoomSelection && $request->boolean('clear_duplicate_rooms');
+            // Một phòng không đạt điều kiện thì không khôi phục phòng nào đã chọn.
+            if ($isRoomSelection && count($ineligible) > 0) {
+                return response()->json([
+                    'success'          => false,
+                    'ineligible_rooms' => array_values(array_unique($ineligible)),
+                    'ineligible_room_ids' => array_values(array_unique($ineligibleIds)),
+                    'message'          => "Không thể khôi phục vì có phòng không đủ điều kiện:\n- " . implode("\n- ", array_unique($ineligible)),
+                ], 422);
+            }
 
-            if ($isRoomSelection) {
-                foreach ($uniqueDuplicateRooms as $item) {
-                    $ineligible[] = $item['is_locked']
-                        ? "{$item['room_number']}: phòng đang bị khóa OOO/OOS"
-                        : "{$item['room_number']}: đã được đặt bởi {$item['booking_code']}";
-                }
-            } elseif (count($uniqueDuplicateRooms) > 0 && !$clearDuplicateRooms) {
+            // Dòng 294: trùng số phòng (với đăng ký khác hoặc phòng khóa) hỏi xác nhận xóa số phòng
+            // cả khi khôi phục cả booking lẫn khi chọn phòng hủy cần khôi phục.
+            $uniqueDuplicateRooms = collect($duplicateRooms)->unique('room_number')->values()->all();
+            $clearDuplicateRooms = $request->boolean('clear_duplicate_rooms');
+
+            if (count($uniqueDuplicateRooms) > 0 && !$clearDuplicateRooms) {
                 // Nếu có phòng trùng và người dùng chưa xác nhận xóa số phòng bị trùng -> Bật cảnh báo xác nhận
                 $conflictLines = collect($uniqueDuplicateRooms)->map(function ($item) {
                     $line = "- R: {$item['room_number']}";
@@ -2602,16 +2624,6 @@ class BookingController extends Controller
                     'conflict_lines'          => $conflictLines,
                     'message'                 => "Đăng ký được khôi phục có số phòng đã được đặt bởi đăng ký khác hoặc đang bị khóa. Bạn có muốn tiếp tục? (Số phòng của những phòng bị trùng sẽ được xóa khi khôi phục)\n{$conflictLines}",
                 ], 200);
-            }
-
-            // Một phòng không đạt điều kiện thì không khôi phục phòng nào đã chọn.
-            if ($isRoomSelection && count($ineligible) > 0) {
-                return response()->json([
-                    'success'          => false,
-                    'ineligible_rooms' => array_values(array_unique($ineligible)),
-                    'ineligible_room_ids' => array_values(array_unique($ineligibleIds)),
-                    'message'          => "Không thể khôi phục vì có phòng không đủ điều kiện:\n- " . implode("\n- ", array_unique($ineligible)),
-                ], 422);
             }
 
             // ========================================================
@@ -3612,6 +3624,9 @@ class BookingController extends Controller
             }
         }
 
+        // Dòng 417: phòng không ăn sáng thì trẻ em/em bé thêm vào cũng không ăn sáng.
+        $roomBreakfast = $bRoom->breakfast === null ? true : (bool) $bRoom->breakfast;
+
         $current = Carbon::parse($bRoom->arrival_date);
         $departure = Carbon::parse($bRoom->departure_date);
 
@@ -3619,11 +3634,11 @@ class BookingController extends Controller
             \App\Models\BookingChildBreakfastDetail::create([
                 'booking_child_id' => $child->id,
                 'service_date'     => $current->toDateString(),
-                'breakfast'        => true,
+                'breakfast'        => $roomBreakfast,
                 'is_free'          => $isFree,
                 'is_extra_charge'  => $isExtra,
                 'is_room'          => !$isExtra, // Nếu extra charge thì không phân bổ vào phòng (GIT)
-                'amount'           => $amount,
+                'amount'           => $roomBreakfast ? $amount : 0,
             ]);
 
             $current = $current->addDay();

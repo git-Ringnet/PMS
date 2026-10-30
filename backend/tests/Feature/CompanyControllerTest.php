@@ -26,7 +26,7 @@ class CompanyControllerTest extends TestCase
     {
         parent::setUp();
 
-        $this->adminUser = User::create([
+        $this->adminUser = User::factory()->withRole('branch_admin')->create([
             'name' => 'Admin User',
             'username' => 'admin',
             'email' => 'admin@pms.com',

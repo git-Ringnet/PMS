@@ -37,6 +37,9 @@
           class="text-[20px] md:text-[23px] font-semibold text-[#272428] tracking-normal font-sans"
         >
           {{ nightAuditStore.currentRunningStepText }}
+          <div v-if="nightAuditStore.isVerifyingResult" class="mt-2 text-xs font-medium text-amber-600">
+            Mất kết nối tạm thời với máy chủ, đang kiểm tra kết quả sang ngày... Vui lòng không tắt trang.
+          </div>
         </div>
 
         <!-- Succeeded Finish Text -->
@@ -160,7 +163,7 @@
         </div>
 
         <!-- Rollback safe notice -->
-        <div class="text-[11px] text-red-600 italic mt-2.5 flex items-center gap-1">
+        <div v-if="nightAuditStore.rollbackDone" class="text-[11px] text-red-600 italic mt-2.5 flex items-center gap-1">
           <CheckCircle2 class="w-3.5 h-3.5 text-emerald-600 shrink-0" />
           <span>Hệ thống đã tự động Rollback 100% dữ liệu về trạng thái an toàn trước khi sang ngày.</span>
         </div>

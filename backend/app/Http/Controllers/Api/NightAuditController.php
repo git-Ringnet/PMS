@@ -556,14 +556,12 @@ class NightAuditController extends Controller
             $settings->update(['is_night_audit_running' => true]);
         }
         $startedAtMs = (int) (microtime(true) * 1000);
-        $stepDelayUs = app()->environment('testing') ? 0 : 550000;
 
         $notifyStep = function (int $order, string $code, string $nameEn, int $percent) use (
             $username,
             $systemDate,
             $nextDate,
-            &$run,
-            $stepDelayUs
+            &$run
         ) {
             \Illuminate\Support\Facades\Cache::put('night_audit_active_step', [
                 'step_order'  => $order,
@@ -585,10 +583,8 @@ class NightAuditController extends Controller
                 'source_date'=> $systemDate->toDateString(),
                 'target_date'=> $nextDate->toDateString(),
             ]));
-
-            if ($stepDelayUs > 0) {
-                usleep($stepDelayUs);
-            }
+            // Không usleep ở đây: hàm chạy bên trong transaction sang ngày,
+            // chờ giả sẽ giữ khóa DB và làm request vượt timeout của trình duyệt.
         };
 
         event(new NightAuditUpdated('started', 'Hệ thống đang tiến hành sang ngày mới...', [

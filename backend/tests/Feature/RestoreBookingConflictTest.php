@@ -405,4 +405,174 @@ class RestoreBookingConflictTest extends TestCase
         $roomConflicted->refresh();
         $this->assertNull($roomConflicted->room_number);
     }
+
+    // ---------------------------------------------------------------- Dòng 294 (note 27/10)
+
+    private function activeRoom(string $id, string $roomNumber, string $arrival, string $departure): BookingRoom
+    {
+        $booking = $this->createBooking(['booking_name' => "Active {$id}", 'status' => Booking::STATUS_RESERVATION, 'registration_status_id' => $this->status->booking_status_id, 'arrival_date' => $arrival, 'departure_date' => $departure]);
+
+        return BookingRoom::create([
+            'id' => $id, 'booking_id' => $booking->id, 'room_number' => $roomNumber, 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => $arrival, 'departure_date' => $departure, 'rate' => 1500000, 'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+    }
+
+    private function cancelledRoom(string $id, ?string $roomNumber, string $arrival, string $departure): BookingRoom
+    {
+        $booking = $this->createBooking(['booking_name' => "Cancelled {$id}", 'arrival_date' => $arrival, 'departure_date' => $departure]);
+
+        return BookingRoom::create([
+            'id' => $id, 'booking_id' => $booking->id, 'room_number' => $roomNumber, 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => $arrival, 'departure_date' => $departure, 'rate' => 1500000, 'status' => BookingRoom::STATUS_CANCELLED,
+        ]);
+    }
+
+    private function restoreRoom(BookingRoom $room, array $extra = [])
+    {
+        return $this->postJson("/api/bookings/{$room->booking_id}/restore", array_merge(['room_ids' => [$room->id]], $extra));
+    }
+
+    public function test_row_294_selected_room_duplicate_asks_and_clears_room_number_without_over(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'AllowOverRoomTypeRoomKind'], ['value' => '0']);
+        $active = $this->activeRoom('BR294-A', '106', '2026-10-10', '2026-10-12');
+        $cancelled = $this->cancelledRoom('BR294-C', '106', '2026-10-10', '2026-10-12');
+
+        $this->restoreRoom($cancelled)
+            ->assertOk()
+            ->assertJsonPath('needs_duplicate_confirm', true)
+            ->assertJsonPath('conflict_lines', '- R: 106 - BK: ' . $active->booking->booking_code);
+        $this->assertSame(BookingRoom::STATUS_CANCELLED, (int) $cancelled->fresh()->status);
+
+        $this->restoreRoom($cancelled, ['clear_duplicate_rooms' => true])->assertOk()->assertJsonPath('success', true);
+
+        $cancelled->refresh();
+        $this->assertSame(BookingRoom::STATUS_BOOKED, (int) $cancelled->status);
+        $this->assertNull($cancelled->room_number);
+        $this->assertSame('106', $active->fresh()->room_number);
+    }
+
+    public function test_row_294_selected_room_duplicate_and_over_is_blocked_when_over_not_allowed(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'AllowOverRoomTypeRoomKind'], ['value' => '0']);
+        $this->activeRoom('BR294-A', '106', '2026-10-10', '2026-10-12');
+        $this->activeRoom('BR294-B', '107', '2026-10-10', '2026-10-12');
+        $cancelled = $this->cancelledRoom('BR294-C', '106', '2026-10-10', '2026-10-12');
+
+        $this->restoreRoom($cancelled)->assertOk()->assertJsonPath('needs_duplicate_confirm', true);
+
+        $this->restoreRoom($cancelled, ['clear_duplicate_rooms' => true])
+            ->assertStatus(422)
+            ->assertJsonPath('blocked_by_over', true);
+
+        $cancelled->refresh();
+        $this->assertSame(BookingRoom::STATUS_CANCELLED, (int) $cancelled->status);
+        $this->assertSame('106', $cancelled->room_number);
+    }
+
+    public function test_row_294_selected_room_duplicate_and_over_asks_twice_when_over_allowed(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'AllowOverRoomTypeRoomKind'], ['value' => '1']);
+        $this->activeRoom('BR294-A', '106', '2026-10-10', '2026-10-12');
+        $this->activeRoom('BR294-B', '107', '2026-10-10', '2026-10-12');
+        $cancelled = $this->cancelledRoom('BR294-C', '106', '2026-10-10', '2026-10-12');
+
+        $this->restoreRoom($cancelled)->assertOk()->assertJsonPath('needs_duplicate_confirm', true);
+        $this->restoreRoom($cancelled, ['clear_duplicate_rooms' => true])
+            ->assertOk()
+            ->assertJsonPath('needs_over_confirm', true)
+            ->assertJsonPath('message', 'Loại phòng đang bị over bạn có muốn tiếp tục');
+        $this->assertSame(BookingRoom::STATUS_CANCELLED, (int) $cancelled->fresh()->status);
+
+        $this->restoreRoom($cancelled, ['clear_duplicate_rooms' => true, 'force_over' => true])
+            ->assertOk()->assertJsonPath('success', true);
+
+        $cancelled->refresh();
+        $this->assertSame(BookingRoom::STATUS_BOOKED, (int) $cancelled->status);
+        $this->assertNull($cancelled->room_number);
+    }
+
+    public function test_row_294_selected_room_over_without_duplicate_is_blocked_when_over_not_allowed(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'AllowOverRoomTypeRoomKind'], ['value' => '0']);
+        $this->activeRoom('BR294-A', '106', '2026-10-10', '2026-10-12');
+        $this->activeRoom('BR294-B', '107', '2026-10-10', '2026-10-12');
+        $cancelled = $this->cancelledRoom('BR294-C', null, '2026-10-10', '2026-10-12');
+
+        $this->restoreRoom($cancelled)
+            ->assertStatus(422)
+            ->assertJsonPath('blocked_by_over', true)
+            ->assertJsonPath('message', 'Loại phòng đang bị over không thể khôi phục các phòng đã chọn');
+        $this->assertSame(BookingRoom::STATUS_CANCELLED, (int) $cancelled->fresh()->status);
+    }
+
+    public function test_row_294_selected_room_over_without_duplicate_asks_when_over_allowed(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'AllowOverRoomTypeRoomKind'], ['value' => '1']);
+        $this->activeRoom('BR294-A', '106', '2026-10-10', '2026-10-12');
+        $this->activeRoom('BR294-B', '107', '2026-10-10', '2026-10-12');
+        $cancelled = $this->cancelledRoom('BR294-C', null, '2026-10-10', '2026-10-12');
+
+        $this->restoreRoom($cancelled)
+            ->assertOk()
+            ->assertJsonPath('needs_over_confirm', true)
+            ->assertJsonPath('needs_duplicate_confirm', null);
+        $this->assertSame(BookingRoom::STATUS_CANCELLED, (int) $cancelled->fresh()->status);
+
+        $this->restoreRoom($cancelled, ['force_over' => true])->assertOk()->assertJsonPath('success', true);
+        $this->assertSame(BookingRoom::STATUS_BOOKED, (int) $cancelled->fresh()->status);
+    }
+
+    public function test_row_294_selected_room_locked_ooo_asks_without_booking_code(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'AllowOverRoomTypeRoomKind'], ['value' => '0']);
+        RoomLock::create(['room_number' => '106', 'start_date' => '2026-10-10 00:00:00', 'end_date' => '2026-10-11 12:00:00', 'is_active' => 1, 'lock_type' => 'OOO']);
+        $cancelled = $this->cancelledRoom('BR294-C', '106', '2026-10-10', '2026-10-11');
+
+        $this->restoreRoom($cancelled)
+            ->assertOk()
+            ->assertJsonPath('needs_duplicate_confirm', true)
+            ->assertJsonPath('conflict_lines', '- R: 106');
+
+        $this->restoreRoom($cancelled, ['clear_duplicate_rooms' => true])->assertOk()->assertJsonPath('success', true);
+        $this->assertNull($cancelled->fresh()->room_number);
+    }
+
+    public function test_row_294_same_day_cancelled_room_conflicts_with_room_staying_that_night(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'AllowOverRoomTypeRoomKind'], ['value' => '1']);
+        $this->activeRoom('BR294-A', '106', '2026-10-10', '2026-10-11');
+        $cancelled = $this->cancelledRoom('BR294-C', '106', '2026-10-10', '2026-10-10');
+
+        // Khôi phục cả booking và khôi phục theo phòng đều phải phát hiện trùng.
+        $this->postJson("/api/bookings/{$cancelled->booking_id}/restore")
+            ->assertOk()->assertJsonPath('needs_duplicate_confirm', true);
+        $this->restoreRoom($cancelled)
+            ->assertOk()->assertJsonPath('needs_duplicate_confirm', true);
+
+        $this->assertSame(BookingRoom::STATUS_CANCELLED, (int) $cancelled->fresh()->status);
+    }
+
+    public function test_row_294_cancelled_room_conflicts_with_same_day_room_of_another_booking(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'AllowOverRoomTypeRoomKind'], ['value' => '1']);
+        $this->activeRoom('BR294-A', '106', '2026-10-10', '2026-10-10');
+        $cancelled = $this->cancelledRoom('BR294-C', '106', '2026-10-10', '2026-10-11');
+
+        $this->restoreRoom($cancelled)->assertOk()->assertJsonPath('needs_duplicate_confirm', true);
+    }
+
+    public function test_row_294_same_day_room_on_departure_day_of_another_room_is_not_a_duplicate(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'AllowOverRoomTypeRoomKind'], ['value' => '1']);
+        $this->activeRoom('BR294-A', '106', '2026-10-10', '2026-10-11');
+        $cancelled = $this->cancelledRoom('BR294-C', '106', '2026-10-11', '2026-10-11');
+
+        $this->restoreRoom($cancelled)->assertOk()->assertJsonPath('success', true);
+
+        $cancelled->refresh();
+        $this->assertSame(BookingRoom::STATUS_BOOKED, (int) $cancelled->status);
+        $this->assertSame('106', $cancelled->room_number);
+    }
 }

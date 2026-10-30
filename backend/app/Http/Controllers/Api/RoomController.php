@@ -280,7 +280,10 @@ class RoomController extends Controller
                 $room->confirm_date = $br->booking?->confirm_date ? \Carbon\Carbon::parse($br->booking->confirm_date)->toDateString() : '';
                 $room->sales_person = $br->booking?->sales_person ?? '';
                 $room->is_git = (bool)($br->booking?->is_git ?? false);
-                $room->is_day_use = (bool)($br->booking?->is_day_use ?? false);
+                // Dòng 253: "Ở theo giờ" lưu theo từng phòng (booking_rooms.is_day_use) khi bật ở màn hình Thông tin
+                $room->is_day_use = $br->arrival_date && $br->departure_date
+                    && $br->arrival_date->toDateString() === $br->departure_date->toDateString()
+                    && ((bool) $br->is_day_use || (bool) ($br->booking?->is_day_use ?? false));
                 $room->is_same_day_booking = $br->booking?->booking_date
                     && $br->arrival_date
                     && \Carbon\Carbon::parse($br->booking->booking_date)->toDateString() === $sysDateStr
@@ -681,8 +684,8 @@ class RoomController extends Controller
                         'unlock_username' => $currentUser,
                         'unlocked_at' => now(),
                     ];
-                    if (\Carbon\Carbon::parse($lock->start_date)->lte(\Carbon\Carbon::parse($unlockEndDateTime))) {
-                        $updateData['end_date'] = $unlockEndDateTime;
+                    if ($unlockEnd = \App\Models\RoomLock::unlockEndDate($lock, $unlockEndDateTime)) {
+                        $updateData['end_date'] = $unlockEnd;
                     }
                     $lock->update($updateData);
                 }
@@ -811,8 +814,8 @@ class RoomController extends Controller
                                 'unlock_username' => $currentUser,
                                 'unlocked_at' => now(),
                             ];
-                            if (\Carbon\Carbon::parse($lock->start_date)->lte(\Carbon\Carbon::parse($unlockEndDateTime))) {
-                                $updateData['end_date'] = $unlockEndDateTime;
+                            if ($unlockEnd = \App\Models\RoomLock::unlockEndDate($lock, $unlockEndDateTime)) {
+                                $updateData['end_date'] = $unlockEnd;
                             }
                             $lock->update($updateData);
                         }

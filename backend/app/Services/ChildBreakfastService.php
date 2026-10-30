@@ -172,7 +172,7 @@ class ChildBreakfastService
                     'amount' => (float) $template->amount,
                 ];
             } else {
-                $values = $this->defaultDetailValues($isBaby);
+                $values = $this->defaultDetailValues($isBaby, $this->roomHasBreakfast($child->booking_room_id));
                 if ($template) {
                     $values['breakfast'] = (bool) $template->breakfast;
                     $values['is_room'] = (bool) $template->is_room;
@@ -223,9 +223,19 @@ class ChildBreakfastService
     }
 
     /**
+     * Dòng 417: trẻ em/em bé mới thêm ăn sáng theo cột Ăn sáng của phòng.
+     */
+    public function roomHasBreakfast(int|string|null $bookingRoomId): bool
+    {
+        $breakfast = $bookingRoomId ? BookingRoom::whereKey($bookingRoomId)->value('breakfast') : null;
+
+        return $breakfast === null ? true : (bool) $breakfast;
+    }
+
+    /**
      * Default detail values for a newly added child.
      */
-    public function defaultDetailValues(bool $isBaby): array
+    public function defaultDetailValues(bool $isBaby, bool $roomBreakfast = true): array
     {
         $autoExtraCharge = (int) (HotelConfig::where('name', 'Booking_AutoExtraChargeBFChild')->value('value') ?? 0) === 1;
         $setting = HotelSetting::first();
@@ -237,11 +247,11 @@ class ChildBreakfastService
         }
 
         return [
-            'breakfast' => true,
+            'breakfast' => $roomBreakfast,
             'is_free' => $isBaby,
             'is_extra_charge' => !$isBaby && $autoExtraCharge,
             'is_room' => !(!$isBaby && $autoExtraCharge),
-            'amount' => $isBaby ? 0 : $amount,
+            'amount' => $isBaby || !$roomBreakfast ? 0 : $amount,
         ];
     }
 

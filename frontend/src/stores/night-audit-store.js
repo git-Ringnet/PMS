@@ -4,6 +4,7 @@ import http from '@/services/http'
 import { useAuthStore } from './auth-store'
 import { useUiStore } from './ui-store'
 import router from '@/router'
+import { NIGHT_AUDIT_RUN_TIMEOUT_MS, isServerAuditResponse, resolveAuditOutcome } from './night-audit-outcome'
 
 export const defaultAuditSteps = [
   { order: 1, code: 'PRE_CHECK', nameEn: 'Check In/Out Conditions', nameVi: 'Kiểm tra điều kiện phòng đến/đi', status: 'pending' },
@@ -40,6 +41,10 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
   const executorUsername = ref('')
   const auditRunError = ref('')
   const auditErrorDetails = ref(null)
+  // Chỉ true khi server thật sự báo lỗi và đã rollback (không phải timeout phía trình duyệt)
+  const rollbackDone = ref(false)
+  // Mất kết nối khi đang chạy: đang hỏi lại server kết quả thật
+  const isVerifyingResult = ref(false)
   const autoCloseCountdown = ref(10)
   const toggleShowDetails = ref(false)
   const auditSteps = ref(JSON.parse(JSON.stringify(defaultAuditSteps)))
@@ -47,6 +52,7 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
   let autoCloseTimer = null
   let redirectTimer = null
   let pollTimer = null
+  let verifyTimer = null
 
   // BroadcastChannel API: Đồng bộ tức thì 0ms giữa các tabs trong cùng trình duyệt
   const bc = (typeof window !== 'undefined' && 'BroadcastChannel' in window)
@@ -104,6 +110,11 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
       redirectTimer = null
     }
     stopPolling()
+    if (verifyTimer) {
+      clearTimeout(verifyTimer)
+      verifyTimer = null
+    }
+    isVerifyingResult.value = false
   }
 
   function startAutoCloseCountdown() {
@@ -125,6 +136,7 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
     auditRunStatus.value = 'idle'
     auditRunError.value = ''
     auditErrorDetails.value = null
+    rollbackDone.value = false
     autoCloseCountdown.value = 10
     toggleShowDetails.value = false
     currentStepIndex.value = 0
@@ -233,19 +245,23 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
     let errMsg = 'Có lỗi xảy ra khi chuyển ngày.'
     let failedStep = null
     let errorDetails = null
+    let rolledBack = false
 
     if (errOrPayload?.response?.data) {
       const errData = errOrPayload.response.data
       errMsg = errData.message || errMsg
       failedStep = errData.failed_step
       errorDetails = errData.error_details
+      rolledBack = errData.rollback_done === true
     } else {
       errMsg = errOrPayload?.error_message || errOrPayload?.message || errMsg
       failedStep = errOrPayload?.failed_step
       errorDetails = errOrPayload?.error_details
+      rolledBack = errOrPayload?.rollback_done === true
     }
 
     auditRunError.value = errMsg
+    rollbackDone.value = rolledBack
     auditErrorDetails.value = errorDetails
 
     if (failedStep) {
@@ -268,7 +284,8 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
           payload: {
             error_message: errMsg,
             failed_step: failedStep,
-            error_details: errorDetails
+            error_details: errorDetails,
+            rollback_done: rolledBack
           }
         })
       } catch (_) {}
@@ -323,7 +340,8 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
           if (data.latest_run?.status === 'succeeded') {
             await handleCompleted(data.latest_run, false)
           } else if (data.latest_run?.status === 'failed') {
-            handleFailed(data.latest_run, false)
+            // Run thất bại trên server = transaction đã rollback
+            handleFailed({ ...data.latest_run, rollback_done: true }, false)
           }
         }
       }
@@ -335,9 +353,68 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
   /**
    * Khởi chạy Sang ngày từ phía Initiator
    */
+  async function fetchAuditStatus() {
+    try {
+      const res = await http.get('/night-audit/check-status')
+      return res.data?.success ? res.data.data : null
+    } catch (_) {
+      return null
+    }
+  }
+
+  /**
+   * Trình duyệt mất kết nối/hết thời gian chờ trước khi server trả lời:
+   * server có thể vẫn đang chạy hoặc đã sang ngày xong. Hỏi lại server
+   * cho tới khi có kết quả thật, không báo lỗi/rollback khi chưa chắc chắn.
+   */
+  function verifyUnknownResult(baselineSystemDate, lostError) {
+    isVerifyingResult.value = true
+    const deadline = Date.now() + NIGHT_AUDIT_RUN_TIMEOUT_MS
+
+    return new Promise(resolve => {
+      const check = async () => {
+        verifyTimer = null
+        const status = await fetchAuditStatus()
+        const outcome = resolveAuditOutcome(status, baselineSystemDate)
+
+        if (outcome === 'running' && Date.now() < deadline) {
+          verifyTimer = setTimeout(check, 2000)
+          return
+        }
+
+        isVerifyingResult.value = false
+        if (outcome === 'succeeded') {
+          await handleCompleted(status?.latest_run || {}, true)
+          resolve({ success: true, data: status?.latest_run })
+        } else if (outcome === 'failed' && status) {
+          const run = status.latest_run || {}
+          // Chỉ tính lần chạy của chính ngày vừa bấm (tránh lấy lỗi của lần chạy cũ)
+          const serverFailed = run.status === 'failed'
+            && (!baselineSystemDate || run.source_system_date === baselineSystemDate)
+          handleFailed({
+            error_message: serverFailed
+              ? (run.error_message || 'Sang ngày thất bại.')
+              : 'Sang ngày chưa thực hiện được. Ngày hệ thống chưa thay đổi, vui lòng thử lại.',
+            failed_step: run.failed_step,
+            rollback_done: serverFailed,
+          }, true)
+          resolve({ success: false, error: lostError })
+        } else {
+          handleFailed({
+            error_message: 'Mất kết nối tới máy chủ, chưa xác định được kết quả sang ngày. Vui lòng tải lại trang để kiểm tra ngày hệ thống trước khi chạy lại.',
+          }, true)
+          resolve({ success: false, error: lostError })
+        }
+      }
+      verifyTimer = setTimeout(check, 1000)
+    })
+  }
+
   async function triggerNightAudit({ occupiedToDirty = true, emptyToInspect = true, forceRerun = false } = {}) {
     clearAllTimers()
     isInitiator.value = true
+    rollbackDone.value = false
+    const baselineSystemDate = (await fetchAuditStatus())?.system_date || null
     executorUsername.value = authStore.user?.username || authStore.user?.name || 'system'
 
     // Bật modal ngay từ bước 1 và phát thông báo tức thì sang các tab khác trong cùng trình duyệt
@@ -352,7 +429,7 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
         occupied_to_dirty: occupiedToDirty,
         empty_to_inspect: emptyToInspect,
         force_rerun: forceRerun
-      })
+      }, { timeout: NIGHT_AUDIT_RUN_TIMEOUT_MS })
 
       if (res.data && res.data.success) {
         await handleCompleted(res.data, true)
@@ -363,6 +440,9 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
         return { success: false, message: errMsg }
       }
     } catch (err) {
+      if (!isServerAuditResponse(err)) {
+        return verifyUnknownResult(baselineSystemDate, err)
+      }
       handleFailed(err, true)
       return { success: false, error: err }
     }
@@ -389,6 +469,8 @@ export const useNightAuditStore = defineStore('nightAudit', () => {
     executorUsername,
     auditRunError,
     auditErrorDetails,
+    rollbackDone,
+    isVerifyingResult,
     autoCloseCountdown,
     toggleShowDetails,
     auditSteps,

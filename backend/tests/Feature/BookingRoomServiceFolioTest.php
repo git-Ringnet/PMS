@@ -159,6 +159,32 @@ class BookingRoomServiceFolioTest extends TestCase
         $this->assertSoftDeleted('booking_room_services', ['id' => $secondService->id]);
     }
 
+    public function test_room_service_cancel_by_bill_without_mirror_ids_deletes_all_server_mirrors(): void
+    {
+        $user = $this->createFolioUser();
+        $booking = Booking::create([
+            'booking_name' => 'GAL1', 'arrival_date' => now()->toDateString(), 'departure_date' => now()->addDay()->toDateString(),
+            'num_of_days' => 1, 'booking_date' => now()->toDateString(), 'created_by' => $user->username,
+        ]);
+        $room = $this->makeRoom($booking, 'GAL1-105');
+        $bill = $this->makeBill('Phụ thu thêm giường (BK_1=>R_105)');
+        $bill->update([
+            'DepartmentId' => 'FO',
+            'Date' => now(), 'Amount' => 300000, 'RegisterId1' => $booking->id, 'RentalRoomId1' => $room->id,
+            'RegisterID2' => null, 'RentalRoomId2' => $room->id, 'Status' => 1, 'Edit' => 0,
+        ]);
+        $hiddenMirror = $this->makeService($room, $bill->Ma);
+
+        $this->actingAs($user)
+            ->postJson("/api/booking-rooms/{$room->id}/services/cancel", [
+                'service_bill_ids' => [$bill->Ma], 'reason' => 'Bill không có mirror hiển thị',
+            ])
+            ->assertSuccessful();
+
+        $this->assertDatabaseHas('service_bills', ['Ma' => $bill->Ma, 'Edit' => 1, 'Status' => 3]);
+        $this->assertSoftDeleted('booking_room_services', ['id' => $hiddenMirror->id]);
+    }
+
     public function test_room_service_cancel_keeps_legacy_service_ids_contract(): void
     {
         $user = $this->createFolioUser();

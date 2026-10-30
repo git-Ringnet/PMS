@@ -13,7 +13,7 @@ class LostAndFoundTest extends TestCase
 
     public function test_it_creates_and_updates_a_lost_and_found_record(): void
     {
-        $user = User::factory()->create(['username' => 'hk_test']);
+        $user = User::factory()->withRole('branch_admin')->create(['username' => 'hk_test']);
 
         $response = $this->actingAs($user)->postJson('/api/lost-and-found', [
             'status' => 'found',
@@ -52,7 +52,7 @@ class LostAndFoundTest extends TestCase
 
     public function test_it_filters_by_status_report_date_and_search_text(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->withRole('branch_admin')->create();
 
         LostAndFoundItem::create([
             'log_no' => 1,
@@ -78,7 +78,7 @@ class LostAndFoundTest extends TestCase
 
     public function test_it_validates_status_and_required_item(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->withRole('branch_admin')->create();
 
         $this->actingAs($user)->postJson('/api/lost-and-found', [
             'status' => 'closed',

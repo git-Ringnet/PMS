@@ -17,7 +17,7 @@ class InventoryCheckTest extends TestCase
 
     public function test_can_create_check_and_add_products(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->withRole('branch_admin')->create();
         $this->actingAs($user);
 
         $wh = Warehouse::firstOrCreate(
