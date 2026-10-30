@@ -52,9 +52,21 @@ class ReportMenuController extends Controller
 
         $menus = collect(ReportMenuService::LOCATIONS)->map(function ($label, $location) use ($visible) {
             $members = $visible->filter(fn ($report) => ReportMenuService::belongsTo($report, $location));
-            $items = collect($this->menu->tree($location, $visible))
-                ->reject(fn ($item) => $item['type'] === 'group' && empty($item['children']))
-                ->values();
+            $removeEmptyGroups = function (array $items) use (&$removeEmptyGroups): array {
+                $result = [];
+                foreach ($items as $item) {
+                    if (($item['type'] ?? null) === 'group') {
+                        $children = $removeEmptyGroups($item['children'] ?? []);
+                        if ($children) {
+                            $result[] = [...$item, 'children' => $children];
+                        }
+                    } else {
+                        $result[] = $item;
+                    }
+                }
+                return $result;
+            };
+            $items = $removeEmptyGroups($this->menu->tree($location, $visible));
 
             return [
                 'top_order' => $members->isEmpty() ? 20 : (int) $members->min('menu_top_order'),
@@ -76,7 +88,6 @@ class ReportMenuController extends Controller
             'tree.*.name' => 'nullable|string|max:255',
             'tree.*.report_id' => 'required_if:tree.*.type,report|nullable|integer',
             'tree.*.children' => 'nullable|array',
-            'tree.*.children.*.report_id' => 'required|integer',
         ]);
 
         $this->menu->save($location, $validated['tree']);
