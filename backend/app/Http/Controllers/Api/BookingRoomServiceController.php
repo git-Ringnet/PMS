@@ -430,6 +430,69 @@ class BookingRoomServiceController extends Controller
             }
         }
 
+        // Dòng 351 (note 29/10): dịch vụ bổ sung của ngày đã post bill cũng giữ
+        // nguyên dòng đã post (màn hình hóa đơn đọc số tiền từ dòng này). Giá mới
+        // chỉ lưu vào dòng kế hoạch chưa post; muốn chạy giá mới thì xóa bill rồi post lại.
+        if (!$isRoomCharge) {
+            $postedService = BookingRoomService::where('booking_room_id', $room->id)
+                ->where('service_code', $request->service_code)
+                ->whereDate('service_date', $svcDateStr)
+                ->where(fn ($q) => $q->where('is_posted', 1)->orWhereNotNull('service_bill_id'))
+                ->latest('id')
+                ->first();
+
+            if ($postedService) {
+                $postedBill = $postedService->service_bill_id ? ServiceBill::find($postedService->service_bill_id) : null;
+                if ($postedBill && ($postedBill->PaymentId !== null || $postedBill->VatId !== null)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Dịch vụ ngày ' . $svcDateStr . ' đã thanh toán hoặc xuất hóa đơn VAT, không thể điều chỉnh đơn giá.',
+                    ], 422);
+                }
+
+                $service = DB::transaction(function () use ($room, $request, $postedService, $svcDateStr, $rate, $quantity) {
+                    $plan = BookingRoomService::withTrashed()
+                        ->where('booking_room_id', $room->id)
+                        ->where('service_code', $request->service_code)
+                        ->whereDate('service_date', $svcDateStr)
+                        ->where('is_posted', 0)
+                        ->whereNull('service_bill_id')
+                        ->orderBy('id')
+                        ->first();
+                    $values = [
+                        'service_name' => $request->service_name ?: $postedService->service_name,
+                        'guest_id'     => $request->guest_id ?? $postedService->guest_id,
+                        'quantity'     => $quantity,
+                        'rate'         => $rate,
+                        'department'   => 'FO',
+                        'is_room'      => $request->has('is_room') ? (int) $request->boolean('is_room') : (int) $postedService->is_room,
+                        'folio'        => $postedService->folio ?? 1,
+                        'is_posted'    => 0,
+                        'deleted_at'   => null,
+                        'created_by'   => Auth::user()?->username ?? 'system',
+                    ];
+                    if ($plan) {
+                        $plan->fill($values)->save();
+
+                        return $plan;
+                    }
+
+                    return BookingRoomService::create([
+                        'booking_room_id' => $room->id,
+                        'service_code'    => $request->service_code,
+                        'service_date'    => $svcDateStr,
+                        ...$values,
+                    ]);
+                });
+
+                return response()->json([
+                    'success' => true,
+                    'data'    => $service,
+                    'message' => 'Đã cập nhật đơn giá. Bill dịch vụ đã chạy không đổi; muốn áp dụng giá mới hãy xóa bill và post lại dịch vụ.',
+                ], 200);
+            }
+        }
+
         // Dòng 368: không gửi is_room thì EB giữ cờ của dòng đã có, ngày mới theo các ngày khác.
         $isRoomValue = $request->has('is_room') ? (int) $request->boolean('is_room') : 1;
         if (!$request->has('is_room')
@@ -3021,6 +3084,18 @@ class BookingRoomServiceController extends Controller
         foreach ($services as $service) {
             $foService = HotelService::where('code', $service->service_code)->first();
             if (!$foService) {
+                continue;
+            }
+
+            // Dòng 351: dòng kế hoạch (giá sửa sau khi đã post) chỉ được post khi
+            // bill cũ cùng mã/ngày đã bị xóa, tránh chạy trùng dịch vụ.
+            $alreadyPosted = BookingRoomService::where('booking_room_id', $room->id)
+                ->where('service_code', $service->service_code)
+                ->whereDate('service_date', $serviceDate->toDateString())
+                ->where('id', '!=', $service->id)
+                ->whereIn('service_bill_id', ServiceBill::query()->select('Ma')->where('Status', '!=', 3))
+                ->exists();
+            if ($alreadyPosted) {
                 continue;
             }
 

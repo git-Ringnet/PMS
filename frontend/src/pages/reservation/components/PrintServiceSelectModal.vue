@@ -59,7 +59,7 @@ const filteredServices = computed(() => {
     return props.services.filter(s => s.source === 'sale' && !s.is_room)
   }
   if (activeFilter.value === 'fo') {
-    return props.services.filter(s => s.source === 'fo')
+    return props.services.filter(s => s.source === 'fo' && !s.is_room)
   }
   return props.services
 })
@@ -180,7 +180,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
             >
               <span>DV Lễ tân post</span>
               <span class="px-1.5 py-0.2 rounded-full text-[10px] font-bold" :class="activeFilter === 'fo' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'">
-                {{ services.filter(s => s.source === 'fo').length }}
+                {{ services.filter(s => s.source === 'fo' && !s.is_room).length }}
               </span>
             </button>
           </div>

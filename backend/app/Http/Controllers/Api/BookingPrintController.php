@@ -8,13 +8,18 @@ use App\Models\BookingRoom;
 use App\Models\BookingRoomService;
 use App\Models\HotelSetting;
 use App\Models\ServiceBill;
+use App\Services\RoomAvailabilityService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 
 class BookingPrintController extends Controller
 {
+    /** Mã dịch vụ được coi là tiền phòng (giống màn hình đăng ký). */
+    private const ROOM_CHARGE_CODES = ['RM', 'ROOM_CHARGE', 'ER'];
+
     /**
      * Lấy dữ liệu tổng hợp đầy đủ cho các tác vụ in ấn Booking:
      * 1. Xác nhận đặt phòng (Booking Confirmation VN/ENG)
@@ -65,9 +70,10 @@ class BookingPrintController extends Controller
             }
         }
 
-        // 2. Danh sách ServiceBills do Lễ tân / Outlets post phát sinh cho booking hoặc các phòng
+        // 2. Danh sách ServiceBills còn hiệu lực của booking / các phòng đang in
+        // (bill đã hủy hoặc bill điều chỉnh Edit = 1 không in).
+        $targetRoomIds = $bookingRooms->pluck('id')->map(fn ($id) => (string) $id)->all();
         $allBookingRoomIds = $booking->bookingRooms->pluck('id')->toArray();
-        $targetRoomIds = $bookingRooms->pluck('id')->toArray();
 
         $foBills = ServiceBill::query()
             ->where(function ($q) use ($booking, $allBookingRoomIds) {
@@ -76,10 +82,20 @@ class BookingPrintController extends Controller
                   ->orWhereIn('RentalRoomId1', $allBookingRoomIds)
                   ->orWhereIn('RentalRoomId2', $allBookingRoomIds);
             })
-            ->where('Status', '!=', 3) // Loại trừ bill đã hủy
+            ->whereNotIn('Status', [3, 4])
+            ->where(fn ($q) => $q->whereNull('Edit')->orWhere('Edit', '!=', 1))
             ->orderBy('Date')
             ->orderBy('OpenTime')
-            ->get();
+            ->get()
+            // Bill của phòng không được chọn thì không in; bill chung của booking (không gắn phòng) vẫn in.
+            ->filter(function (ServiceBill $bill) use ($targetRoomIds) {
+                $billRoomIds = array_filter([(string) $bill->RentalRoomId1, (string) $bill->RentalRoomId2]);
+                return empty($billRoomIds) || array_intersect($billRoomIds, $targetRoomIds);
+            })
+            ->values();
+
+        $systemDate = app(RoomAvailabilityService::class)->getSystemDate()->toDateString();
+        $handledBillIds = [];
 
         // 3. Chuẩn hóa dữ liệu từng phòng
         $formattedRooms = [];
@@ -111,39 +127,60 @@ class BookingPrintController extends Controller
             $guestIdPassport = $primaryGuest?->id_passport ?: '';
             $guestNationality = $primaryGuest?->nationality ?: 'Việt Nam';
 
-            // Dịch vụ của phòng này (từ booking_room_services)
             $roomServicesList = [];
             $roomRateSum = 0;
 
+            // 3a. Tiền phòng theo từng đêm (dòng 348, 349) - giống chi tiết giá ở màn hình đăng ký:
+            //  - Đêm đã post bill tiền phòng: lấy theo bill.
+            //  - Đêm chưa post: lấy dòng RM đã lưu của đêm đó, không có thì lấy giá phòng (booking_rooms.rate).
+            //  - Đêm quá khứ chưa có bill: không tính.
+            $roomChargeLines = $this->roomChargeLines($br, $foBills, $systemDate, $roomNum, $roomClassName, $handledBillIds);
+            foreach ($roomChargeLines as $line) {
+                $totalRoomAmount += $line['amount'];
+                $roomRateSum += $line['amount'];
+                $roomServicesList[] = $line;
+                $allServices[] = $line;
+            }
+
+            // 3b. Dịch vụ bổ sung đã setup trong booking, chưa post bill.
+            // Dòng đã post được in theo bill ở bước 4 để không bị cộng hai lần.
             foreach ($br->services as $svc) {
-                $svcDate = $svc->service_date ? Carbon::parse($svc->service_date)->format('d/m/Y') : $ciStr;
-                $isRoom = (int)$svc->is_room === 1;
+                $code = strtoupper((string) $svc->service_code);
+                if (in_array($code, self::ROOM_CHARGE_CODES, true)) {
+                    continue;
+                }
+                if ((int) $svc->is_posted === 1 || $svc->service_bill_id) {
+                    continue;
+                }
+                $svcDateIso = $svc->service_date ? Carbon::parse($svc->service_date)->toDateString() : null;
+                if ($svcDateIso && $svcDateIso < $systemDate) {
+                    continue;
+                }
+                // Giá sửa sau khi đã post (dòng 351) chỉ áp dụng khi bill cũ bị xóa.
+                if ($svcDateIso && $this->hasActivePostedService($br, $svc, $svcDateIso, $foBills)) {
+                    continue;
+                }
+
                 $qty = (float)($svc->quantity ?: 1);
                 $rate = (float)($svc->rate ?: 0);
                 $amt = (float)($svc->total_amount ?: ($qty * $rate));
-
-                if ($isRoom) {
-                    $totalRoomAmount += $amt;
-                    $roomRateSum += $amt;
-                } else {
-                    $totalSaleServicesAmount += $amt;
-                }
+                $totalSaleServicesAmount += $amt;
 
                 $svcItem = [
                     'id'            => 'sale_' . $svc->id,
                     'source'        => 'sale',
-                    'type'          => $isRoom ? 'room' : 'service',
-                    'is_room'       => $isRoom,
+                    'type'          => 'service',
+                    'is_room'       => false,
                     'room_id'       => $br->id,
                     'room_number'   => $roomNum,
-                    'code'          => $svc->service_code ?: ($isRoom ? 'ROOM' : 'EXTRA'),
-                    'name'          => $svc->service_name ?: ($isRoom ? 'Tiền phòng ' . $roomClassName : 'Dịch vụ bổ sung'),
-                    'date'          => $svcDate,
+                    'code'          => $svc->service_code ?: 'EXTRA',
+                    'name'          => $svc->service_name ?: 'Dịch vụ bổ sung',
+                    'date'          => $svcDateIso ? Carbon::parse($svcDateIso)->format('d/m/Y') : $ciStr,
                     'time'          => '',
                     'quantity'      => $qty,
                     'unit_price'    => $rate,
                     'amount'        => $amt,
-                    'department'    => $svc->department ?: ($isRoom ? 'FO' : 'OTHER'),
+                    'department'    => $svc->department ?: 'OTHER',
                     'note'          => $svc->note ?: '',
                 ];
 
@@ -151,8 +188,10 @@ class BookingPrintController extends Controller
                 $allServices[] = $svcItem;
             }
 
-            // Đơn giá trung bình / ngày
-            $avgRate = $nights > 0 ? round($roomRateSum / $nights) : $roomRateSum;
+            // Giá phòng/đêm in trên phiếu đăng ký: trung bình tiền phòng các đêm
+            $avgRate = count($roomChargeLines) > 0
+                ? round($roomRateSum / count($roomChargeLines))
+                : (float) ($br->rate ?? 0);
 
             $formattedRooms[] = [
                 'id'                => $br->id,
@@ -189,23 +228,32 @@ class BookingPrintController extends Controller
             ];
         }
 
-        // 4. Thêm các dịch vụ Lễ tân post (ServiceBills) vào danh sách allServices
+        // 4. Các bill Lễ tân / Outlets post (ngoài tiền phòng đã lấy ở bước 3a)
         $totalFoServicesAmount = 0;
         foreach ($foBills as $bill) {
+            if (isset($handledBillIds[(string) $bill->Ma])) {
+                continue;
+            }
             $billDate = $bill->Date ? Carbon::parse($bill->Date)->format('d/m/Y') : '';
             $billAmt = (float)$bill->Amount;
-            $totalFoServicesAmount += $billAmt;
+            $isRoomBill = $this->isRoomChargeBill($bill);
 
             // Tìm số phòng tương ứng nếu có
-            $matchedRoom = $bookingRooms->firstWhere('id', $bill->RentalRoomId1) 
+            $matchedRoom = $bookingRooms->firstWhere('id', $bill->RentalRoomId1)
                         ?: $bookingRooms->firstWhere('id', $bill->RentalRoomId2);
             $billRoomNum = $matchedRoom ? ($matchedRoom->room?->room_number ?: $matchedRoom->room_number) : ($bill->Guest ?: '---');
+
+            if ($isRoomBill) {
+                $totalRoomAmount += $billAmt;
+            } else {
+                $totalFoServicesAmount += $billAmt;
+            }
 
             $allServices[] = [
                 'id'            => 'fo_' . $bill->Ma,
                 'source'        => 'fo',
-                'type'          => 'service',
-                'is_room'       => false,
+                'type'          => $isRoomBill ? 'room' : 'service',
+                'is_room'       => $isRoomBill,
                 'room_id'       => $bill->RentalRoomId1 ?: $bill->RentalRoomId2,
                 'room_number'   => $billRoomNum,
                 'code'          => $bill->ServiceId ?: 'SRV',
@@ -306,5 +354,120 @@ class BookingPrintController extends Controller
                 ],
             ],
         ]);
+    }
+
+    /**
+     * Tiền phòng từng đêm của một phòng, khớp chi tiết giá ở màn hình đăng ký.
+     * Bill tiền phòng đã dùng được đánh dấu vào $handledBillIds để không in lại ở mục dịch vụ.
+     *
+     * @param array<string, bool> $handledBillIds
+     * @return list<array<string, mixed>>
+     */
+    private function roomChargeLines(
+        BookingRoom $br,
+        Collection $foBills,
+        string $systemDate,
+        string $roomNum,
+        string $roomClassName,
+        array &$handledBillIds
+    ): array {
+        $roomBills = $foBills->filter(fn (ServiceBill $bill) => $this->isRoomChargeBill($bill)
+            && in_array((string) $br->id, [(string) $bill->RentalRoomId1, (string) $bill->RentalRoomId2], true));
+
+        $lines = [];
+        $billLine = function (ServiceBill $bill) use ($br, $roomNum, &$handledBillIds): array {
+            $handledBillIds[(string) $bill->Ma] = true;
+            $qty = (float) ($bill->Quantity ?: 1);
+            $amount = (float) $bill->Amount;
+
+            return $this->roomLine('fo_' . $bill->Ma, 'fo', $br, $roomNum, $bill->ServiceId ?: BookingRoomService::CODE_ROOM,
+                $bill->DescriptionServive ?: 'Tiền phòng', Carbon::parse($bill->Date)->toDateString(), $qty,
+                $qty > 0 ? $amount / $qty : $amount, $amount);
+        };
+
+        $arrival = $br->arrival_date ? Carbon::parse($br->arrival_date)->startOfDay() : null;
+        $departure = $br->departure_date ? Carbon::parse($br->departure_date)->startOfDay() : null;
+        if ($arrival && $departure && $br->is_day_use && $departure->equalTo($arrival)) {
+            $departure = $arrival->copy()->addDay();
+        }
+
+        if ($arrival && $departure) {
+            for ($date = $arrival->copy(); $date->lt($departure); $date->addDay()) {
+                $dateStr = $date->toDateString();
+                $nightBills = $roomBills->filter(fn (ServiceBill $bill) => $bill->Date
+                    && Carbon::parse($bill->Date)->toDateString() === $dateStr
+                    && !isset($handledBillIds[(string) $bill->Ma]));
+
+                if ($nightBills->isNotEmpty()) {
+                    foreach ($nightBills as $bill) {
+                        $lines[] = $billLine($bill);
+                    }
+                    continue;
+                }
+                if ($dateStr < $systemDate) {
+                    continue;
+                }
+
+                $plan = $br->services->first(fn (BookingRoomService $svc) => in_array(strtoupper((string) $svc->service_code), self::ROOM_CHARGE_CODES, true)
+                    && $svc->service_date && Carbon::parse($svc->service_date)->toDateString() === $dateStr
+                    && (int) $svc->is_posted !== 1 && !$svc->service_bill_id);
+                $rate = $plan ? (float) $plan->rate : (float) ($br->rate ?? 0);
+                $qty = $plan ? (float) ($plan->quantity ?: 1) : 1.0;
+
+                $lines[] = $this->roomLine($plan ? 'sale_' . $plan->id : 'room_' . $br->id . '_' . $dateStr, 'sale', $br, $roomNum,
+                    BookingRoomService::CODE_ROOM, $plan?->service_name ?: 'Tiền phòng ' . $roomClassName, $dateStr, $qty, $rate, $qty * $rate);
+            }
+        }
+
+        // Bill tiền phòng nằm ngoài giai đoạn ở (đổi ngày sau khi đã post) vẫn là tiền phòng đã chạy.
+        foreach ($roomBills as $bill) {
+            if (!isset($handledBillIds[(string) $bill->Ma])) {
+                $lines[] = $billLine($bill);
+            }
+        }
+
+        return $lines;
+    }
+
+    private function roomLine(string $id, string $source, BookingRoom $br, string $roomNum, string $code, string $name,
+        string $dateStr, float $qty, float $unitPrice, float $amount): array
+    {
+        return [
+            'id'          => $id,
+            'source'      => $source,
+            'type'        => 'room',
+            'is_room'     => true,
+            'room_id'     => $br->id,
+            'room_number' => $roomNum,
+            'code'        => $code,
+            'name'        => $name,
+            'date'        => Carbon::parse($dateStr)->format('d/m/Y'),
+            'time'        => '',
+            'quantity'    => $qty,
+            'unit_price'  => $unitPrice,
+            'amount'      => $amount,
+            'department'  => 'FO',
+            'note'        => '',
+        ];
+    }
+
+    private function isRoomChargeBill(ServiceBill $bill): bool
+    {
+        return in_array(strtoupper((string) $bill->ServiceId), self::ROOM_CHARGE_CODES, true);
+    }
+
+    /**
+     * Dịch vụ cùng mã/ngày đã có bill còn hiệu lực thì dòng kế hoạch chưa post
+     * (giá sửa sau khi post) không được in thêm.
+     */
+    private function hasActivePostedService(BookingRoom $br, BookingRoomService $svc, string $dateStr, Collection $foBills): bool
+    {
+        $activeBillIds = $foBills->pluck('Ma')->map(fn ($id) => (string) $id)->all();
+
+        return $br->services->contains(fn (BookingRoomService $other) => $other->id !== $svc->id
+            && $other->service_code === $svc->service_code
+            && $other->service_bill_id
+            && in_array((string) $other->service_bill_id, $activeBillIds, true)
+            && $other->service_date && Carbon::parse($other->service_date)->toDateString() === $dateStr);
     }
 }

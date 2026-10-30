@@ -20,7 +20,7 @@ const props = defineProps({
   },
   selectedServices: {
     type: Array,
-    default: () => []
+    default: null
   },
   selectedRooms: {
     type: Array,
@@ -107,8 +107,10 @@ const displayRooms = computed(() => {
 })
 
 // Danh sách dịch vụ cần in cho Confirmation & Provisional Invoice
+// Dòng 349: danh sách đã lọc rỗng (vd. chọn "In tiền phòng" mà chưa có tiền phòng) thì in rỗng,
+// không quay về in toàn bộ dịch vụ.
 const displayServices = computed(() => {
-  if (props.selectedServices && props.selectedServices.length > 0) {
+  if (Array.isArray(props.selectedServices)) {
     return props.selectedServices
   }
   return props.printData?.services || []
@@ -930,7 +932,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                   <td class="border border-slate-700 p-1.5 text-center">{{ svc.date }}</td>
                   <td class="border border-slate-700 p-1.5 text-left font-medium">
                     {{ svc.name }}
-                    <span v-if="svc.source === 'fo'" class="text-[9.5px] text-amber-700 font-bold ml-1">(Lễ tân post)</span>
+                    <span v-if="svc.source === 'fo' && !svc.is_room" class="text-[9.5px] text-amber-700 font-bold ml-1">(Lễ tân post)</span>
                   </td>
                   <td class="border border-slate-700 p-1.5 text-center font-bold">{{ svc.room_number || '---' }}</td>
                   <td class="border border-slate-700 p-1.5 text-center">{{ svc.quantity }}</td>
