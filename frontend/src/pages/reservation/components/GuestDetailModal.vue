@@ -135,7 +135,7 @@
                 <div class="f s6">
                   <label>Họ và tên <span class="req">*</span></label>
                   <div class="relative flex items-center w-full">
-                    <input v-model="form.full_name" type="text" required placeholder="HỌ VÀ TÊN" style="text-transform:uppercase" class="input-required" :class="{ '!pr-7': form.full_name }" />
+                    <GuestSuggestInput v-model="form.full_name" required placeholder="HỌ VÀ TÊN" style="text-transform:uppercase" :input-class="['input-required', { '!pr-7': form.full_name }]" @select="selectGuestSuggestion" />
                     <button v-if="form.full_name" type="button" @click.stop="form.full_name = ''" class="absolute right-2 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent flex items-center justify-center z-10" title="Xóa nhanh">
                       <i class="fa-solid fa-xmark text-xs"></i>
                     </button>
@@ -202,7 +202,7 @@
                 <div class="f s3">
                   <label>Số giấy tờ <span class="req">*</span></label>
                   <div class="relative flex items-center w-full">
-                    <input v-model="form.id_number" type="text" required placeholder="Số CCCD / Passport" class="input-required" :class="{ '!pr-7': form.id_number }" />
+                    <GuestSuggestInput v-model="form.id_number" required placeholder="Số CCCD / Passport" :input-class="['input-required', { '!pr-7': form.id_number }]" @select="selectGuestSuggestion" />
                     <button v-if="form.id_number" type="button" @click.stop="form.id_number = ''" class="absolute right-2 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent flex items-center justify-center z-10" title="Xóa nhanh">
                       <i class="fa-solid fa-xmark text-xs"></i>
                     </button>
@@ -450,6 +450,8 @@ import {
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
+import GuestSuggestInput from '@/components/GuestSuggestInput.vue'
+import { inheritGuestInfo } from '@/utils/guest-suggestion'
 
 const props = defineProps({
   show: Boolean,
@@ -655,6 +657,13 @@ async function onDistrictChange(districtName) {
 }
 
 const form = ref({})
+
+// Dòng 282: chọn khách gợi ý (Họ tên / Số giấy tờ) -> kế thừa thông tin khách cũ, không đổi khách đang sửa
+function selectGuestSuggestion(guest) {
+  inheritGuestInfo(form.value, guest)
+  if (guest.avatar) guestPhotos.value = [guest.avatar]
+  uiStore.showToast(`Đã kế thừa thông tin khách "${guest.full_name}".`, 'info')
+}
 
 async function resetForm() {
   const g = props.guest || {}

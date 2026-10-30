@@ -16,6 +16,38 @@
 - **Sửa**: `BookingRoomServiceController::cancel` (xóa theo `service_bill_ids`): bill không có id mirror nào gửi lên thì lấy toàn bộ mirror tại server (giống logic chuyển theo bill). Vẫn chặn khi chỉ gửi một phần mirror.
 - **Kiểm thử**: Thêm test `test_room_service_cancel_by_bill_without_mirror_ids_deletes_all_server_mirrors`; chưa chạy được do migration `2026_10_26_121000_remove_user_topbar_color_settings` dùng `JSON_CONTAINS_PATH` không chạy trên SQLite.
 
+## [2026-10-30] - Kiểm Thử QA Giao Diện Web: Dòng 351 – Dịch Vụ Bổ Sung
+### Module: Đăng Ký (Reservation / Create-Res), Thu Ngân / Hóa Đơn (Frontdesk / Checkout)
+- **Mục tiêu & Nghiệp vụ kiểm tra**:
+  - Kiểm thử giao diện web thực tế (E2E Web UI) xác minh sửa lỗi "Dòng 351 – Dịch vụ bổ sung".
+  - Kiểm tra thêm dịch vụ bổ sung lần 2 không ghi đè/sửa dịch vụ cũ.
+  - Kiểm tra sửa giá dịch vụ trên màn hình Đăng ký sau khi bill đã post ở Hóa đơn: Bill đã chạy giữ nguyên giá cũ, không bị đổi theo giá mới.
+  - Kiểm tra xóa bill ở Hóa đơn rồi post lại thì nhận đúng giá mới cập nhật.
+- **Kết quả kiểm thử**:
+  - **Kịch bản A (Thêm lần 2)**: ĐẠT 100% (modal mở ra trống, giữ nguyên Tour 200k, thêm riêng Ăn tối 500k đêm cuối).
+  - **Kịch bản B (Sửa giá sau khi bill chạy)**: ĐẠT logic cốt lõi (bill Hóa đơn giữ nguyên 200k, không tự động nhảy lên 300k/350k; đêm 2 chưa post đổi thẳng 250k).
+  - **Ghi nhận lỗi giao diện (Defect)**: Cột thành tiền của bảng phòng đang ở (MODE B trong `CreateRegistrationPage.vue`) thiếu đoạn hiển thị dòng chữ nhỏ màu vàng *"Bill đã chạy: 200,000"* khi có giá pending chỉnh sửa.
+  - **Kịch bản C (Xóa bill post lại ăn giá mới)**: ĐẠT 100% (xóa bill và post lại tiền phòng, bill Tour nhận đúng giá 350k).
+
+## [2026-10-29] - Sửa Lỗi Phòng Theo Giờ (Day Use) & Số Đêm Màn Hình Sang Ngày (Dòng 253)
+### Module: Sơ Đồ Phòng (Room Map), Thông Tin Phòng, Sang Ngày (Day Close)
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **1. Xử lý Ở theo giờ tại màn hình Thông tin phòng (Dòng 253)**:
+    + Khi tick "Phòng theo giờ": tự động cập nhật Ngày đi = Ngày đến, tính Số đêm = 0, khóa ô chọn Ngày đi (`disabled`).
+    + Bỏ tick "Phòng theo giờ": tự động đổi Ngày đi = Ngày đến + 1, Số đêm = 1, mở khóa ô chọn Ngày đi.
+    + Phòng đã ở qua các đêm trước (Ngày đến < Ngày hệ thống): chặn/khóa không cho tick "Phòng theo giờ".
+    + Lưu trạng thái `is_day_use` chuẩn theo từng phòng (`booking_rooms.is_day_use`), đồng bộ chính xác khi F5 hoặc mở lại từ Sơ đồ phòng và màn hình Đăng ký.
+  - **2. Đồng bộ số đêm và hiển thị trên màn hình Sang ngày**:
+    + Tab "Phòng đang ở" & tab "Ở theo giờ": Phòng ở theo giờ (ngày đến = ngày đi) hiển thị chuẩn 0 đêm.
+    + Khi chỉnh sửa Ngày đi (ví dụ từ 4 đêm về 2 đêm) hoặc Gia hạn đêm phòng (Late out): màn hình Sang ngày tính số đêm động theo ngày đến/đi thực tế của phòng, không bị giữ nguyên giá trị cũ.
+  - **3. Gợi ý khách & Giá phòng mới nhất (Dòng 282, 283)**:
+    + Gợi ý tên khách / số giấy tờ hiển thị giá phòng hiện tại của lần lưu trú gần nhất (đã đổi mã giá thì lấy giá mới), không hiển thị doanh thu bill đã post theo giá cũ.
+    + Thêm popup gợi ý khách ở ô Họ tên, Số giấy tờ của màn hình Thông tin khách trong phòng và màn hình Thông tin khách (nhấp đúp dòng khách); chọn gợi ý thì kế thừa thông tin, không làm thay đổi khách của phòng.
+    + Mã giá không bắt buộc: không lưu chuỗi gợi ý placeholder làm mã giá, mã giá cũ gửi lại không chặn lưu thông tin khách; migration dọn sạch chuỗi placeholder đã lưu ở booking_rooms.
+- **Kiểm thử E2E QA Web UI**:
+  - Đạt 10/10 test cases (TC1 - TC10) trên giao diện thực tế qua Playwright, không phát sinh lỗi 500 / Server Error.
+
+
 ## [2026-10-28] - Phân Quyền Màn Hình & Báo Cáo, Dạng Phòng Booking, Ăn Sáng Trẻ Em
 ### Module: Phân Quyền (RBAC), Đăng Ký (Booking), Sao Lưu Dữ Liệu
 - **Mục tiêu & Kết quả hoàn thành**:
@@ -3343,6 +3375,8 @@
 - **Nghiệp vụ đã xử lý**:
   1. **Frontend ([CreateRegistrationPage.vue](file:///d:/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue))**:
      - Tạo hàm chuẩn `isRoomChargeService(svc)` để định danh chính xác các mã tiền phòng: `RM`, `ROOM_CHARGE`, `ER`.
+     - Loại bỏ triệt để điều kiện nhầm lẫn `Number(svc.is_room) === 1` 
+... [truncated for diff preview]
      - Loại bỏ triệt để điều kiện nhầm lẫn `Number(svc.is_room) === 1` khi tìm `dbCharge`, gán tên `dbCharge.service_name || Dịch vụ phòng nghỉ` và `service_code: 'RM'`.
      - Đồng bộ lại `isRoomChargeService` ở tất cả các vị trí: `handleServiceRateChange`, `getServiceDiscountLabel`, popup giảm giá và template Mode A & Mode B.
      - Cập nhật điều kiện nút xóa và ô nhập số lượng trong chi tiết phòng: chỉ hiển thị cho dịch vụ phụ `!isRoomChargeService(svc)`.
@@ -7256,4 +7290,3 @@
 - Bổ sung frontend chạy đoạn xử lý thật: 211 ba ca đồng ý/bỏ qua/API từ chối; 214 bốn ca lưu giá riêng và SL 0, báo ngày lỗi, bỏ qua đêm đã post/quá khứ, lỗi header dừng ghi đêm.
 - Kết quả backend 64/64 đạt, 398 assertions; frontend 15/15 đạt; PHP lint và git diff --check đạt. Không sửa production; không chạy DB vận hành/migrate/seed/push/commit. Chưa UAT trình duyệt thật; Waiting ở 259 đối chiếu query, chưa có test riêng.
 - Báo cáo docs/RA_SOAT_DONG_153_211_214_259_288.md ghi nguyên nhân, bằng chứng, giới hạn và checklist nghiệm thu. Giữ các test hồi quy/tài liệu; bảo toàn phần DAILY_LOG có sẵn của công việc khác.
-
