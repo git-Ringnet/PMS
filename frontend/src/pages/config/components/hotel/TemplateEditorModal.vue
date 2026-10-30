@@ -61,6 +61,8 @@ const staticCellContextMenu = ref(null)
 
 const selectedDetailCellKeys = ref([])
 const selectedDetailCellTargets = ref([])
+const selectedTableGroupId = ref(null)
+const selectedPreviewReportCode = ref('')
 
 const onCellFocus = (cell) => {
   activeCell.value = cell
@@ -536,7 +538,9 @@ const isDetailCellSelected = (key) => selectedDetailCellKeys.value.includes(key)
 
 const selectDetailCell = (event, block, kind, targetData) => {
   selectedBlockId.value = block.id
+  selectedBand.value = findBlockLocation(block.id)?.band || selectedBand.value
   selectedStaticCellKeys.value = []
+  selectedTableGroupId.value = null
   const idOrIdx = (kind === 'header' || kind === 'detail')
     ? (targetData.colIdx ?? targetData.col?.value ?? targetData.col?.header ?? 0)
     : (targetData.cell?.id ?? targetData.cellIndex ?? 0)
@@ -564,6 +568,15 @@ const selectDetailCell = (event, block, kind, targetData) => {
     column: targetData.col,
     cell: targetData.cell
   }
+}
+
+const selectTableGroup = (block, group) => {
+  selectedBlockId.value = block.id
+  selectedBand.value = findBlockLocation(block.id)?.band || selectedBand.value
+  selectedTableGroupId.value = group.id
+  selectedDetailCellKeys.value = []
+  selectedDetailCellTargets.value = []
+  quickFormatTarget.value = null
 }
 
 const getDetailTargetStyle = (target) => {
@@ -1015,19 +1028,64 @@ const selectedDataSource = computed(() => {
     : null
 })
 
-const conditionalParameterOptions = computed(() => {
-  return (selectedDataSource.value?.parameter_schema || [])
-    .filter(parameter => ['bit', 'boolean', 'bool', 'tinyint'].includes(String(parameter.data_type || '').toLowerCase()))
-    .map(parameter => ({
-      label: parameter.name,
-      value: `parameters.${parameter.name}`
-    }))
+const linkedReportDefinitions = computed(() => template.value?.report_definitions || [])
+const selectedReportDefinition = computed(() => linkedReportDefinitions.value.find(definition => definition.code === selectedPreviewReportCode.value)
+  || linkedReportDefinitions.value[0]
+  || null)
+
+const isBooleanReportControl = parameter => ['checkbox', 'radio'].includes(String(parameter?.control || '').toLowerCase())
+
+const reportConditionControls = computed(() => (selectedReportDefinition.value?.parameter_ui_schema || [])
+  .filter(isBooleanReportControl))
+
+const configuredConditionPaths = computed(() => {
+  const paths = new Set()
+  const visit = (items) => (items || []).forEach(block => {
+    if (block.visibleWhen) paths.add(block.visibleWhen)
+    ;(block.groups || []).forEach(group => { if (group.enabledBy) paths.add(group.enabledBy) })
+    ;(block.customRows || []).forEach(row => { if (row.enabledBy) paths.add(row.enabledBy) })
+    ;(block.columns || []).forEach(column => visit(column.blocks))
+  })
+  ;['header', 'detail', 'footer'].forEach(band => visit(blocks.value[band]))
+  return [...paths]
 })
+
+const conditionalParameterOptions = computed(() => {
+  const options = new Map()
+  normalizeSchemaFields(selectedDataSource.value?.parameter_schema)
+    .filter(parameter => ['bit', 'boolean', 'bool', 'tinyint'].includes(String(parameter.data_type || '').toLowerCase()))
+    .forEach(parameter => options.set(`parameters.${parameter.name}`, { label: parameter.name, value: `parameters.${parameter.name}` }))
+  reportConditionControls.value.forEach(parameter => options.set(`parameters.${parameter.name}`, {
+    label: parameter.label || parameter.name,
+    value: `parameters.${parameter.name}`
+  }))
+  configuredConditionPaths.value.forEach(path => options.set(path, { label: `Biến runtime: ${path.replace('parameters.', '')}`, value: path }))
+  return [...options.values()]
+})
+
+const ensureReportConditionDefaults = () => {
+  if (!template.value) return
+  template.value.parameter_defaults = template.value.parameter_defaults || {}
+  reportConditionControls.value.forEach(parameter => {
+    if (template.value.parameter_defaults[parameter.name] === undefined) {
+      template.value.parameter_defaults[parameter.name] = parameter.default ?? false
+    }
+  })
+}
+
+const normalizeSchemaFields = (schema) => {
+  if (Array.isArray(schema)) return schema
+  if (!schema || typeof schema !== 'object') return []
+  return Object.entries(schema).map(([name, definition]) => ({
+    name,
+    ...(definition && typeof definition === 'object' ? definition : { type: definition })
+  }))
+}
 
 const fieldList = computed(() => {
   if (!selectedDataSource.value) return staticFieldList
 
-  const parameters = (selectedDataSource.value.parameter_schema || []).map(parameter => ({
+  const parameters = normalizeSchemaFields(selectedDataSource.value.parameter_schema).map(parameter => ({
     label: parameter.name,
     value: `parameters.${parameter.name}`
   }))
@@ -1045,7 +1103,7 @@ const fieldList = computed(() => {
 
 const getListFields = (listValue) => {
   if (listValue === 'rows' && selectedDataSource.value) {
-    return (selectedDataSource.value.field_schema || []).map(field => ({
+    return normalizeSchemaFields(selectedDataSource.value.field_schema).map(field => ({
       label: field.name,
       value: `row.${field.name}`
     }))
@@ -1099,7 +1157,7 @@ const tableGroups = (block) => Array.isArray(block?.groups) ? block.groups : []
 const tableCustomRows = (block) => Array.isArray(block?.customRows) ? block.customRows : []
 
 const customCellContent = (cell, source = 'rows') => {
-  const modifier = cell.format === 'number' ? '|number' : ''
+  const modifier = cell.format === 'number' ? '|number' : (cell.format === 'percent' ? '|percent' : '')
   if (cell.type === 'binding') return `{{${cell.binding || 'summary.row_count'}${modifier}}}`
   if (cell.type === 'count') return `{{aggregate.${source}.count${modifier}}}`
   if (cell.type === 'sum') return `{{aggregate.${source}.sum.${cell.aggregateField || 'Total'}${modifier}}}`
@@ -1354,6 +1412,8 @@ const loadTemplate = async () => {
       // API may return NULL for templates without saved parameter defaults.
       // Keep the editor bindings writable while the data source is loading.
       template.value.parameter_defaults = template.value.parameter_defaults || {}
+      selectedPreviewReportCode.value = template.value.report_definitions?.[0]?.code || ''
+      ensureReportConditionDefaults()
       
       // Load blocks structure from JSON
       if (template.value.content_json) {
@@ -1426,7 +1486,8 @@ const loadPreview = async () => {
       margin_bottom: template.value.margin_bottom ?? 10,
       margin_left: template.value.margin_left ?? 10,
       margin_right: template.value.margin_right ?? 10,
-      parameters: template.value.parameter_defaults || {}
+      parameters: template.value.parameter_defaults || {},
+      report_definition_code: selectedReportDefinition.value?.code || ''
     })
     if (res.data && res.data.html) {
       previewHtml.value = res.data.html
@@ -2417,7 +2478,10 @@ const compileBlockToHtml = (b) => {
     let thStyle = 'padding: 6px 8px;'
     let tdStyle = 'padding: 6px 8px;'
     
-    if (tableStyle === 'grid') {
+    if (b.tableClassName) {
+      thStyle = 'padding: 4px 6px; border: 1px solid #718096;'
+      tdStyle = 'padding: 4px 6px; border: 1px solid #718096;'
+    } else if (tableStyle === 'grid') {
       thStyle += ' border-bottom: 2px solid #cbd5e1; border-right: 1px solid #cbd5e1;'
       tdStyle += ' border-bottom: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0;'
     } else if (tableStyle === 'horizontal') {
@@ -2428,13 +2492,22 @@ const compileBlockToHtml = (b) => {
       tdStyle += ' border: none;'
     }
 
-    blockHtml += '  <table style="width: 100%; border-collapse: collapse; border: none;">\n'
+    const tableClass = b.tableClassName ? ` class="${b.tableClassName}"` : ''
+    blockHtml += `  <table${tableClass} style="width: 100%; border-collapse: collapse; border: none;">\n`
     blockHtml += '    <thead>\n      <tr>\n'
     b.columns.forEach(col => {
       const headerStyle = mergeConfiguredStyles({ textAlign: col.align || 'left', fontWeight: 'bold' }, col.headerStyle)
       blockHtml += `        <th style="${thStyle} width: ${col.width || 'auto'}; ${styleObjectToCss(headerStyle, true)}">${contentForTextStyle(col.header, headerStyle)}</th>\n`
     })
-    blockHtml += '      </tr>\n    </thead>\n'
+    blockHtml += '      </tr>\n'
+    if (b.topHeader && Array.isArray(b.topHeader) && b.topHeader.length) {
+      blockHtml += '      <tr class="index-row">\n'
+      b.topHeader.forEach(cell => {
+        blockHtml += `        <th style="${thStyle} text-align: ${cell.align || 'center'}; font-weight: bold;">${cell.content || ''}</th>\n`
+      })
+      blockHtml += '      </tr>\n'
+    }
+    blockHtml += '    </thead>\n'
     const groups = tableGroups(b).filter(group => group.field)
     const customRows = tableCustomRows(b)
     const groupCustomRows = customRows.filter(row => row.scope === 'group')
@@ -2472,9 +2545,10 @@ const compileBlockToHtml = (b) => {
 
     blockHtml += `      <tr class="pms-detail-row"${groups.length ? '' : ` data-source="${b.dataSource}"`}>\n`
     b.columns.forEach(col => {
-      const modifier = col.format === 'number' ? '|number' : ''
+      const modifier = col.format === 'number' ? '|number' : (col.format === 'percent' ? '|percent' : '')
       const detailStyle = mergeConfiguredStyles({ textAlign: col.align || 'left' }, col.cellStyle)
-      blockHtml += `        <td style="${tdStyle} ${styleObjectToCss(detailStyle, true)}">{{${col.value}${modifier}}}</td>\n`
+      const colClass = col.className ? ` class="${col.className}"` : (col.field === 'CompanyCode' ? ' class="company-code"' : '')
+      blockHtml += `        <td${colClass} style="${tdStyle} ${styleObjectToCss(detailStyle, true)}">{{${col.value}${modifier}}}</td>\n`
     })
     blockHtml += '      </tr>\n'
     detailCustomRows.forEach(row => { blockHtml += compileCustomRow(row, 'pms-detail-custom-row') })
@@ -3218,6 +3292,22 @@ const selectBand = (band) => {
                 </p>
               </div>
             </div>
+
+            <div v-if="selectedReportDefinition" class="flex flex-col gap-2 rounded-xl border border-violet-200 bg-violet-50/50 p-3 shadow-3xs">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-[10px] font-black uppercase tracking-widest text-violet-700">Điều Kiện Báo Cáo</span>
+                <select v-if="linkedReportDefinitions.length > 1" v-model="selectedPreviewReportCode" @change="ensureReportConditionDefaults" class="max-w-[160px] rounded border border-violet-200 bg-white px-1.5 py-1 text-[10px] font-semibold">
+                  <option v-for="definition in linkedReportDefinitions" :key="definition.code" :value="definition.code">{{ definition.name }}</option>
+                </select>
+              </div>
+              <p class="text-[10px] text-violet-700">{{ selectedReportDefinition.name }}</p>
+              <label v-for="parameter in reportConditionControls" :key="parameter.name" class="flex cursor-pointer items-center justify-between gap-2 rounded-lg bg-white px-2 py-1.5 text-[10px] font-semibold text-slate-700">
+                <span>{{ parameter.label || parameter.name }}</span>
+                <input v-model="template.parameter_defaults[parameter.name]" type="checkbox" class="h-4 w-4 accent-sky-600" />
+              </label>
+              <p v-if="!reportConditionControls.length" class="text-[10px] text-slate-400">Báo cáo này không có điều kiện bật/tắt.</p>
+              <p class="text-[9px] text-violet-600">Các điều kiện này dùng cho preview và danh sách điều kiện Group/Block.</p>
+            </div>
             
             <!-- TOOLBOX -->
             <div class="flex flex-col gap-2 bg-white rounded-xl p-3 border border-slate-200 shadow-3xs">
@@ -3568,13 +3658,19 @@ const selectBand = (band) => {
                                 <button @click.stop="addTableColumn(b)" class="w-5 h-5 bg-sky-100 hover:bg-sky-200 text-sky-700 rounded border-none cursor-pointer text-xs font-bold flex items-center justify-center">+</button>
                               </th>
                             </tr>
+                            <tr v-if="b.topHeader && b.topHeader.length" class="index-row font-bold bg-slate-100">
+                              <th v-for="(cell, cIdx) in b.topHeader" :key="`top-${cIdx}`" class="px-2 py-1 text-center font-bold text-slate-600 border-b border-slate-300">
+                                {{ cell.content || (cIdx + 1) }}
+                              </th>
+                              <th class="border-b border-slate-300"></th>
+                            </tr>
                           </thead>
                           <tbody>
                             <tr v-for="(group, groupIndex) in tableGroups(b)" :key="`preview-group-${group.id}`" class="bg-amber-50 text-amber-700" :style="{ paddingLeft: `${groupIndex * 12}px` }">
                               <template v-if="group.headerCells?.length">
                                 <td v-for="cell in group.headerCells" :key="cell.id" @click.stop="selectDetailCell($event, b, 'group-cell', { cell })" :colspan="cell.colspan" class="border-b border-amber-200 px-2 py-1 font-bold" :class="[cell.className, { 'selected-detail-cell': isDetailCellSelected(detailCellKey(b, 'group-cell', cell.id)) }]" :style="getCustomTableCellStyle(b, cell, {})"><span :style="tablePreviewContentStyle">{{ customCellContent(cell, b.dataSource) }}</span></td>
                               </template>
-                              <td v-else :colspan="b.columns.length + 1" class="border-b border-amber-200 px-2 py-1 text-left font-bold">
+                              <td v-else :colspan="b.columns.length + 1" @click.stop="selectTableGroup(b, group)" class="cursor-pointer border-b border-amber-200 px-2 py-1 text-left font-bold" :class="selectedTableGroupId === group.id ? 'selected-detail-cell' : ''" title="Chọn cấp nhóm để cấu hình">
                                 {{ groupHeaderPreview(group) }}
                               </td>
                             </tr>
@@ -3866,13 +3962,19 @@ const selectBand = (band) => {
                                 <button @click.stop="addTableColumn(b)" class="w-5 h-5 bg-sky-100 hover:bg-sky-200 text-sky-700 rounded border-none cursor-pointer text-xs font-bold flex items-center justify-center">+</button>
                               </th>
                             </tr>
+                            <tr v-if="b.topHeader && b.topHeader.length" class="index-row font-bold bg-slate-100">
+                              <th v-for="(cell, cIdx) in b.topHeader" :key="`top-${cIdx}`" class="px-2 py-1 text-center font-bold text-slate-600 border-b border-slate-300">
+                                {{ cell.content || (cIdx + 1) }}
+                              </th>
+                              <th class="border-b border-slate-300"></th>
+                            </tr>
                           </thead>
                           <tbody>
                             <tr v-for="(group, groupIndex) in tableGroups(b)" :key="`preview-group-${group.id}`" class="bg-amber-50 text-amber-700" :style="{ paddingLeft: `${groupIndex * 12}px` }">
                               <template v-if="group.headerCells?.length">
                                 <td v-for="cell in group.headerCells" :key="cell.id" @click.stop="selectDetailCell($event, b, 'group-cell', { cell })" :colspan="cell.colspan" class="border-b border-amber-200 px-2 py-1 font-bold" :class="[cell.className, { 'selected-detail-cell': isDetailCellSelected(detailCellKey(b, 'group-cell', cell.id)) }]" :style="getCustomTableCellStyle(b, cell, {})"><span :style="tablePreviewContentStyle">{{ customCellContent(cell, b.dataSource) }}</span></td>
                               </template>
-                              <td v-else :colspan="b.columns.length + 1" class="border-b border-amber-200 px-2 py-1 text-left font-bold">
+                              <td v-else :colspan="b.columns.length + 1" @click.stop="selectTableGroup(b, group)" class="cursor-pointer border-b border-amber-200 px-2 py-1 text-left font-bold" :class="selectedTableGroupId === group.id ? 'selected-detail-cell' : ''" title="Chọn cấp nhóm để cấu hình">
                                 {{ groupHeaderPreview(group) }}
                               </td>
                             </tr>
@@ -4188,13 +4290,19 @@ const selectBand = (band) => {
                                 <button @click.stop="addTableColumn(b)" class="w-5 h-5 bg-sky-100 hover:bg-sky-200 text-sky-700 rounded border-none cursor-pointer text-xs font-bold flex items-center justify-center">+</button>
                               </th>
                             </tr>
+                            <tr v-if="b.topHeader && b.topHeader.length" class="index-row font-bold bg-slate-100">
+                              <th v-for="(cell, cIdx) in b.topHeader" :key="`top-${cIdx}`" class="px-2 py-1 text-center font-bold text-slate-600 border-b border-slate-300">
+                                {{ cell.content || (cIdx + 1) }}
+                              </th>
+                              <th class="border-b border-slate-300"></th>
+                            </tr>
                           </thead>
                           <tbody>
                             <tr v-for="(group, groupIndex) in tableGroups(b)" :key="`preview-group-${group.id}`" class="bg-amber-50 text-amber-700" :style="{ paddingLeft: `${groupIndex * 12}px` }">
                               <template v-if="group.headerCells?.length">
                                 <td v-for="cell in group.headerCells" :key="cell.id" @click.stop="selectDetailCell($event, b, 'group-cell', { cell })" :colspan="cell.colspan" class="border-b border-amber-200 px-2 py-1 font-bold" :class="[cell.className, { 'selected-detail-cell': isDetailCellSelected(detailCellKey(b, 'group-cell', cell.id)) }]" :style="getCustomTableCellStyle(b, cell, {})"><span :style="tablePreviewContentStyle">{{ customCellContent(cell, b.dataSource) }}</span></td>
                               </template>
-                              <td v-else :colspan="b.columns.length + 1" class="border-b border-amber-200 px-2 py-1 text-left font-bold">
+                              <td v-else :colspan="b.columns.length + 1" @click.stop="selectTableGroup(b, group)" class="cursor-pointer border-b border-amber-200 px-2 py-1 text-left font-bold" :class="selectedTableGroupId === group.id ? 'selected-detail-cell' : ''" title="Chọn cấp nhóm để cấu hình">
                                 {{ groupHeaderPreview(group) }}
                               </td>
                             </tr>
@@ -4477,7 +4585,7 @@ const selectBand = (band) => {
                       <select v-model="selectedDetailCellTargets[0].cell.align" @change="compileHtml" class="h-7 rounded border border-slate-200 bg-white px-1 text-[10px]"><option value="left">Trái</option><option value="center">Giữa</option><option value="right">Phải</option></select>
                     </label>
                     <label class="flex flex-col gap-1 text-[9px] font-bold text-slate-500">Định dạng
-                      <select v-model="selectedDetailCellTargets[0].cell.format" @change="compileHtml" class="h-7 rounded border border-slate-200 bg-white px-1 text-[10px]"><option value="">Mặc định</option><option value="number">Số</option></select>
+                      <select v-model="selectedDetailCellTargets[0].cell.format" @change="compileHtml" class="h-7 rounded border border-slate-200 bg-white px-1 text-[10px]"><option value="">Mặc định</option><option value="number">Số</option><option value="percent">Phần trăm (%)</option></select>
                     </label>
                   </div>
 
@@ -4783,7 +4891,7 @@ const selectBand = (band) => {
                     <button type="button" @click="addTableGroup(selectedBlock)" class="rounded-lg border border-sky-200 bg-sky-50 px-2 py-1 text-[10px] font-black text-sky-700">+ Thêm cấp nhóm</button>
                   </div>
 
-                  <div v-for="(group, groupIndex) in tableGroups(selectedBlock)" :key="group.id" class="flex flex-col gap-2 rounded-lg border border-slate-200 bg-slate-50/60 p-2.5">
+                  <div v-for="(group, groupIndex) in tableGroups(selectedBlock)" :key="group.id" class="flex flex-col gap-2 rounded-lg border bg-slate-50/60 p-2.5" :class="selectedTableGroupId === group.id ? 'border-sky-500 ring-1 ring-sky-300' : 'border-slate-200'" @click="selectTableGroup(selectedBlock, group)">
                     <div class="flex items-center justify-between">
                       <span class="text-[10px] font-black text-slate-600">Cấp {{ groupIndex + 1 }}</span>
                       <div class="flex gap-1">
@@ -4937,6 +5045,7 @@ const selectBand = (band) => {
                         <select v-model="col.format" @change="compileHtml" class="text-[11px] border border-slate-200 rounded px-1 py-0.5 font-semibold">
                           <option value="">Mặc định</option>
                           <option value="number">Số - phân cách hàng nghìn</option>
+                          <option value="percent">Phần trăm (%)</option>
                         </select>
                       </div>
 
@@ -5171,8 +5280,9 @@ input[type="range"] {
   width: 100%;
 }
 .selected-detail-cell {
-  outline: 2px solid #000000 !important;
+  outline: 2px solid #0284c7 !important;
   outline-offset: -2px !important;
-  box-shadow: inset 0 0 0 2px #000000 !important;
+  box-shadow: inset 0 0 0 2px #0284c7 !important;
+  background-color: #e0f2fe !important;
 }
 </style>

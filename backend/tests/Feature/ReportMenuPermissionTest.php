@@ -126,6 +126,23 @@ class ReportMenuPermissionTest extends TestCase
         $this->assertSame(['Báo cáo doanh thu'], $this->names($this->navigation($this->admin, 'housekeeping')));
     }
 
+    public function test_menu_supports_nested_categories_without_changing_report_membership(): void
+    {
+        $this->actingAs($this->admin)->putJson('/api/report-menu/reservation', ['tree' => [
+            ['type' => 'group', 'name' => 'Báo cáo quản lý', 'children' => [
+                ['type' => 'group', 'name' => 'Doanh thu', 'children' => [
+                    ['type' => 'report', 'report_id' => $this->revenue->id],
+                ]],
+            ]],
+        ]])->assertOk();
+
+        $items = $this->navigation($this->admin, 'reservation');
+        $this->assertSame('Báo cáo quản lý', $items[0]['name']);
+        $this->assertSame('Doanh thu', $items[0]['children'][0]['name']);
+        $this->assertSame('Báo cáo doanh thu', $items[0]['children'][0]['children'][0]['name']);
+        $this->assertSame(['reservation'], $this->revenue->fresh()->menu_locations);
+    }
+
     public function test_new_report_is_appended_to_group_with_same_name(): void
     {
         $this->actingAs($this->admin)->putJson('/api/report-menu/reservation', ['tree' => [

@@ -120,15 +120,12 @@ class RoomOccupancyStatisticsService
                     $query->where(function ($checkedIn) use ($dateString) {
                         $checkedIn->where('status', BookingRoom::STATUS_CHECKED_IN)
                             ->whereDate('departure_date', '<=', $dateString);
-                    })->orWhere(function ($dayUseReservation) use ($dateString) {
-                        // Day Use chưa check-in vẫn là phòng đi trong ngày, nhưng không phải phòng đang ở.
-                        $dayUseReservation->where('status', BookingRoom::STATUS_BOOKED)
+                    })->orWhere(function ($sameDayReservation) use ($dateString) {
+                        // Dòng 392: phòng chưa check-in có ngày đến = ngày đi là phòng đi trong ngày
+                        // (không phải phòng đang ở), dù có tick Day Use hay không.
+                        $sameDayReservation->where('status', BookingRoom::STATUS_BOOKED)
                             ->whereDate('arrival_date', $dateString)
-                            ->whereDate('departure_date', $dateString)
-                            ->where(function ($dayUse) {
-                                $dayUse->where('is_day_use', true)
-                                    ->orWhereHas('booking', fn ($booking) => $booking->where('is_day_use', true));
-                            });
+                            ->whereDate('departure_date', $dateString);
                     });
                 })
         );

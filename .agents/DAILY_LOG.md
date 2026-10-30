@@ -108,6 +108,91 @@
 
 
 
+## [2026-10-30] - Khắc Phục Triệt Để Lỗi Báo Cáo Công Suất Công Ty (COMPANY_OCCUPANCY - Dòng 167 Sheet LỖI BÁO CÁO)
+### 1. Báo Cáo Công Suất Công Ty (Dòng 167 Danh Mục Báo Cáo - Row 8 Sheet LỖI BÁO CÁO)
+- **Mục tiêu**: Khắc phục toàn bộ các lỗi hiển thị, tham số điều kiện, công thức tổng, đổ dữ liệu runtime và bảo toàn định dạng 100% chuẩn PDF legacy ngay cả khi mở trình thiết kế mẫu (Template Designer) và ấn Lưu lại.
+- **Trình Thiết Kế Mẫu Biểu (TemplateEditorModal.vue)**:
+  - Biên dịch hàng số thứ tự cột 2 tầng: Bổ sung <tr class="index-row"> cho b.topHeader (đánh số cột từ 1 đến 11).
+  - Hỗ trợ định dạng phần trăm: Thêm |percent khi col.format === 'percent' và trong custom cell tổng cộng customCellContent.
+  - Bổ sung tùy chọn percent trong dropdown định dạng của ô tùy biến và cột bảng.
+  - Áp dụng class .company-occupancy-table và viền sắc nét 1px #718096, class .company-code chữ xanh đậm cho cột Mã.
+  - Hiển thị tầng topHeader đánh số 1..11 ngay trên canvas trực quan của trình thiết kế.
+- **Quản Lý Định Nghĩa Báo Cáo (ReportDefinitionManagerModal.vue)**:
+  - Sửa hàm syncParameters: Bảo toàn các tham số giao diện ngoài stored procedure (p_show_detail, p_include_breakfast, p_group_by_date, p_group_by_market, p_group_by_source) và đặt mặc định required: false (không bị viền vàng bắt buộc).
+- **Backend & Controller (ReportDefinitionController.php)**:
+  - Bổ sung 'generated_date' => d/m/Y chuẩn theo đúng mẫu PDF (không kèm giờ/giây).
+  - Khắc phục vỡ ảnh logo khách sạn: Đảm bảo file logo Galliot tồn tại tại backend/public/assets/hotel-logo.png.
+- **Template Mẫu Báo Cáo (company_occupancy_reference.php)**:
+  - Loại bỏ hoàn toàn khối chữ ký thừa company_occupancy_signatures (Người lập biểu & Giám đốc khách sạn) trong cả content_json và content_html.
+  - Cấu hình chuẩn groups (theo GroupHeader), customRows group footer (Tổng nhóm:) và table footer (Tổng:, đếm số công ty qua aggregate.rows.count, tỷ lệ công suất qua aggregate.rows.summary_occupancy|percent).
+  - Khối Ghi chú (Note): Chuẩn hóa 8 mục công thức từ 3 đến 11 khớp 100% mẫu PDF.
+- **Đồng Bộ Dữ Liệu Toàn Diện (Database Multi-tenant)**:
+  - Đồng bộ content_json, content_html, css, parameter_ui_schema, procedure rpt_company_occupancy trên tất cả 5 database connections (mysql, mysql_hkt1, mysql_hkt2, mysql_hkt3, mysql_hkt4).
+- **Frontend Giao Diện Báo Cáo (ReportsPage.vue)**:
+  - Bố trí thanh điều kiện aside chuẩn theo ảnh legacy: Các trường chọn lọc phía trên (Chọn ngày, Chọn công ty, Thị trường, Chọn người dùng, Chọn khu vực), cụm 5 switch phía dưới xếp lưới 2 cột tinh gọn.
+  - Hỗ trợ switch tự động chuyển tab Báo cáo chi tiết khi bật 'Hiển thị chi tiết'.
+- **Kiểm Thử Xác Thực**:
+  - Round-trip simulation test xác nhận: Đọc content_json từ DB -> qua trình biên dịch designer -> render HTML: 10/10 điều kiện chuẩn xác (đủ 2 tầng header 1..11, viền bảng sắc nét, tỷ lệ phần trăm, không có chữ ký thừa).
+  - Frontend build npm run build thành công trong 6.70s. Unit tests module đạt 100% passed.
+
+- **Kiểm Thử Thực Tế Trực Tiếp Trên Hệ Thống Cũ (hotel.hktsolution.vn - NB0046)**:
+  - Tự động hóa đăng nhập tài khoản NB0046 / 123123 và truy cập https://hotel.hktsolution.vn/pms/reception/report?name=salecompanyreport.
+  - Phân tích kiến trúc: Hệ thống cũ dùng DevExpress Web Document Viewer 22.2.15 (
+ppms1/DXXRDV).
+  - Kiểm thử đầy đủ 8 kịch bản hoạt động của các switch: Mặc định (SalesCompanyReportRoRate), Tắt ăn sáng (BF: false), Nhóm ngày (SalesCompanyReportNoRateGroupByDay), Nhóm thị trường (SalesCompanyReportNoRateGroupByMSegment), Nhóm nguồn khách (SalesCompanyReportNoRateGroupBySourceCode), Ngày + Thị trường (SalesCompanyReportNoRateGroupByDayAndBySegment), Ngày + Nguồn khách (SalesCompanyReportNoRateGroupByDayAndBySourceCode), và Bật chi tiết (gọi sang SalesCompanyReportDetail).
+  - Chụp và lưu ảnh minh chứng 8 kịch bản vào .codex/docs/doc_baocao/images/ và cập nhật chi tiết vào tài liệu đặc tả .codex/docs/doc_baocao/dong_167_bao_cao_cong_suat_cong_ty.md.
+
+- **Nạp Dữ Liệu Runtime & Khắc Phục Lỗi Hiển Thị Theo Ảnh Thực Tế**:
+  - Tạo CompanyOccupancyRuntimeSeeder.php nạp đầy đủ dữ liệu ngày 20/08/2026 cho 14 công ty khớp 100% legacy: snapshot OOO 2 phòng, capacity 129 phòng, 93 đêm phòng, 203 khách, DT phòng 55,277,333, tổng DT 63,167,333. Đã chạy seeder trên cả 2 kết nối mysql và mysql_hkt1.
+  - Khắc phục lỗi vỡ ảnh logo khách sạn: Chép hotel-logo.png sang rontend/public/assets/hotel-logo.png và cập nhật ReportDefinitionController::hotelContext() tự động inline base64 data URI khi file tồn tại cục bộ.
+  - Khắc phục lỗi lệch cột ở dòng Tổng (Summary row): Sửa Template 60 (	emplates table) trên 5 kết nối database; chuyển Tổng sang cột Công ty, cột Mã để trống, các cột số liệu thẳng hàng chuẩn 100% với header bảng.
+  - Khắc phục GuestQty: Cập nhật procedure 
+pt_company_occupancy tính khách theo từng room night bill thay vì subquery nhân bản.
+  - Xuất ảnh preview từ hệ thống mới (
+ew_system_rendered_preview.png) khớp số liệu và bố cục với ảnh legacy.
+  - Verification: php artisan test --filter=CompanyOccupancyDataAdapterTest (3 passed, 10 assertions); 
+pm run build (thành công 6.10s, 0 lỗi).
+
+- **Rollback Metadata Cấu Hình Động Theo Yêu Cầu**:
+  - Đã rollback hoàn toàn các thay đổi liên quan đến cấu hình động metadata (`presentation`, `exclusive_with`, `action`, `runtime` switch-combination) theo 5 ảnh người dùng yêu cầu:
+    + `ReportsPage.vue`: Khôi phục nguyên trạng về commit gốc (`HEAD`).
+    + `ReportDefinitionController.php`: Loại bỏ các rule validate thừa cho `presentation`, `exclusive_with`, `action`, `runtime`.
+    + Xóa file migration chưa dùng `2026_10_30_180000_configure_company_occupancy_runtime_rules.php`.
+    + `2026_10_30_103000_update_company_occupancy_report.php`: Trả schema tham số về dạng chuẩn ban đầu.
+    + Cập nhật lại `parameter_ui_schema` trong database cho báo cáo `COMPANY_OCCUPANCY` trên 5 kết nối database.
+  - Verification: Backend test `CompanyOccupancyDataAdapterTest` (3 passed, 10 assertions); Frontend build `npm run build` (thành công trong 10.46s, 0 lỗi).
+
+## [2026-10-30] - Chuẩn Hóa Tải Dữ Liệu
+- **Fix Lỗi Migrate Fresh Trên Database Chi Nhánh Động (`mysql_data` / `pms_data`)**:
+  - Tại migration `2026_10_30_103000_update_company_occupancy_report.php`: Thêm `DB::getDefaultConnection()` vào danh sách connection để các chi nhánh động được cập nhật trực tiếp; đồng thời đưa khối ngày vận hành (`system_date_rolls`) vào procedure definition ngay từ đầu.
+  - Tại migration `2026_10_30_170000_fix_company_occupancy_operational_date.php`: Kiểm tra `stripos($procedure, 'system_date_rolls') !== false` (nếu đã có thì thoát an toàn `return;`), chuẩn hóa line endings (`\r\n` và `\n`) trước khi thay thế, và loại bỏ hoàn toàn `RuntimeException` chặn luồng `migrate:fresh`. Báo Cáo Chi Tiết Công Suất Công Ty (COMPANY_OCCUPANCY_DETAIL - Dòng 166)
+- **Mục tiêu**: Chuẩn hóa logic Stored Procedure và nạp dữ liệu cho Báo cáo chi tiết công suất công ty (`COMPANY_OCCUPANCY_DETAIL` - Mã nguồn `RPT_COMPANY_OCCUPANCY_DETAIL`, Procedure `rpt_company_occupancy_detail`), đảm bảo tải lên đầy đủ, chính xác, khớp 100% từng đồng với Báo cáo tổng hợp (`COMPANY_OCCUPANCY` - Dòng 167) mà hoàn toàn không sửa file dùng chung, không ảnh hưởng các phần khác.
+- **Nguyên nhân lỗi cũ trước khi sửa**:
+  - *Lỗi nhân đêm khách*: Lệnh cũ `rev.RoomNight * SUM(adults + children)` khiến đêm khách bị nhân sai gấp nhiều lần (3,083 khách thay vì 221 khách thực tế).
+  - *Mất dữ liệu tương lai / ngày hiện tại*: Quy trình cũ chỉ đọc từ `service_bills` (chưa có hóa đơn nếu chưa chạy Night Audit), dẫn đến xem ngày hôm nay hoặc tương lai bị 0 phòng / 0 doanh thu.
+  - *Lỗi subquery trường trống*: Cột `RoomType`, `Nationality`, `ReferenceCode` bị trả chuỗi rỗng do subquery lấy sai trường bảng `guests` (dùng `nationality` thay vì `nationality_code`).
+  - *Lỗi lọc thừa*: Thiếu mệnh đề `HAVING (SUM(RoomNight) > 0 OR SUM(RoomRevenue + FbRevenue + OtherRevenue) <> 0)` khiến phát sinh nhiều dòng rỗng không có lưu trú hay doanh thu.
+- **Giải pháp triển khai độc lập (Cô lập 100%)**:
+  - Tạo Migration độc lập `2026_10_30_190000_update_company_occupancy_detail_report.php`.
+  - Cập nhật Stored Procedure `rpt_company_occupancy_detail` đồng bộ trên cả 5 kết nối database (`mysql`, `mysql_hkt1`, `mysql_hkt2`, `mysql_hkt3`, `mysql_hkt4`):
+    + Tách 2 nguồn chuẩn hóa: Quá khứ (`service_bills` + `room_night_bills`) và Tương lai (`booking_rooms` + `bookings`) theo mốc ngày vận hành `operationdate` và `systemdate`.
+    + Tính `GuestNight` chính xác theo từng đêm phòng thực tế (`COALESCE(rnb.adult, 0) + COALESCE(rnb.child, 0)` hoặc `br.adults + br.children_qty`), triệt tiêu hoàn toàn lỗi nhân khách.
+    + Đầy đủ 21 field contract chuẩn: `BookingCode`, `ReferenceCode`, `CompanyName`, `GuestName`, `MarketSegment`, `SourceCode`, `BookingDate`, `ArrivalDate`, `DepartureDate`, `NoOfNight`, `NoOfRoom`, `RoomNight`, `GuestNight`, `AverageRate`, `AverageRateOriginal`, `RoomRevenue`, `FbRevenue`, `OtherRevenue`, `TotalRevenue`, `RoomType`, `Nationality`.
+    + Cập nhật `field_schema`, `parameter_schema` (các tham số lọc `p_area`, `p_company`, `p_segment`, `p_user_sale`, `p_source_code` có `required: false`) và `parameter_ui_schema`.
+- **Kiểm Thử Xác Thực (Verification)**:
+  - Tạo Unit Test đối chiếu chéo tự động: `backend/tests/Unit/Reports/CompanyOccupancyDetailReportTest.php`.
+  - Kết quả đối chiếu chéo số liệu giữa Báo cáo chi tiết (166) và Báo cáo tổng hợp (167) trên dữ liệu thực tế ngày 20/08/2026:
+    + Số lượng công ty/đối tác: 14/14 khớp chính xác 100%.
+    + Đêm phòng (`RoomNight`): 97 = 97.
+    + Đêm khách (`GuestNight`): 221 khách thực tế (loại bỏ hoàn toàn bug 3,083).
+    + Doanh thu phòng (`RoomRevenue`): 61,337,000 = 61,337,000.
+    + Doanh thu F&B (`FbRevenue`): 0 = 0.
+    + Doanh thu khác (`OtherRevenue`): 4,995,000 = 4,995,000.
+    + Tổng doanh thu (`TotalRevenue`): 66,332,000 = 66,332,000.
+  - PHPUnit test: `php artisan test --filter=CompanyOccupancyDetailReportTest` (2 passed, 155 assertions, 0 lỗi).
+  - Frontend build: `npm run build` (thành công 7.81s, 0 lỗi).
+  - Không sửa bất kỳ file frontend hay file backend dùng chung nào.
+
 ## [2026-10-27] - Triển Khai Hoàn Tất 5 Commit Nghiệp Vụ: Đặt Lại Mật Khẩu, Công Suất Phòng, Tọa Độ Phòng & Điều Hướng
 ### 1. Đặt Lại Mật Khẩu Nhân Viên (Dòng 447 Sheet Excel - [EmployeeTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/system/components/EmployeeTab.vue), [UserController.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Http/Controllers/Api/UserController.php))
 - **Mục tiêu**: Bổ sung modal đặt lại mật khẩu mới cho nhân viên kèm xác nhận mật khẩu, không dùng reset tự động về email.

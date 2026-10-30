@@ -13,6 +13,7 @@ import ActivityLogTab from '@/pages/system/components/ActivityLogTab.vue'
 import SystemSearchModal from '@/pages/reservation/components/SystemSearchModal.vue'
 import HeaderAlertList from '@/components/HeaderAlertList.vue'
 import HeaderSystemUpdates from '@/components/HeaderSystemUpdates.vue'
+import ReportHeaderMenuTree from '@/components/ReportHeaderMenuTree.vue'
 import { useUiStore } from '@/stores/ui-store'
 
 const route = useRoute()
@@ -513,12 +514,14 @@ onUnmounted(() => {
 
 const reportRoute = (context, code) => `/${context}?tab=reports&report=${encodeURIComponent(code)}`
 
+const reportMenuItem = (context, item) => item.type === 'group'
+  ? { type: 'group', name: item.name, children: (item.children || []).map(child => reportMenuItem(context, child)) }
+  : { type: 'report', name: item.name, code: item.code, route: reportRoute(context, item.code) }
+
 const buildDynamicReportMenu = (context = null) => {
   const configured = context ? reportNavigation.value?.[context] : null
   if (configured) {
-    const dropdown = (configured.items || []).map(item => item.type === 'group'
-      ? { name: item.name, children: item.children.map(child => ({ name: child.name, route: reportRoute(context, child.code) })) }
-      : { name: item.name, route: reportRoute(context, item.code) })
+    const dropdown = (configured.items || []).map(item => reportMenuItem(context, item))
 
     return {
       name: t('menu.reports'),
@@ -557,10 +560,11 @@ const buildDynamicReportMenu = (context = null) => {
   const dropdown = [...groups.values()]
     .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, 'vi'))
     .map(group => ({
+      type: 'group',
       name: group.name,
       children: group.children
         .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, 'vi'))
-        .map(({ order, ...item }) => item)
+        .map(({ order, ...item }) => ({ ...item, type: 'report' }))
     }))
 
   return {
@@ -1080,6 +1084,12 @@ function handleHeaderBookingSelected(booking) {
               :class="index === 0 ? 'left-4' : 'left-1/2 -translate-x-1/2'"
             ></div>
             
+            <ReportHeaderMenuTree
+              v-if="item.reportSlot"
+              :items="item.dropdown"
+              @select="handleDropdownClick"
+            />
+            <template v-else>
             <div
               v-for="sub in item.dropdown"
               :key="sub.name"
@@ -1110,6 +1120,7 @@ function handleHeaderBookingSelected(booking) {
                 </button>
               </div>
             </div>
+            </template>
           </div>
         </div>
       </nav>

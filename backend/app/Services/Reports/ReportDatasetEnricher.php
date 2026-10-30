@@ -21,6 +21,7 @@ class ReportDatasetEnricher
     private readonly SummaryServiceInvoicesDataAdapter $summaryServiceInvoices;
     private readonly SalespersonRevenueDataAdapter $salespersonRevenue;
     private readonly TotalRevenueDataAdapter $totalRevenue;
+    private readonly CompanyOccupancyDataAdapter $companyOccupancy;
 
     public function __construct(
         private readonly ArrivingRoomsSummaryService $arrivingRoomsSummary,
@@ -33,6 +34,7 @@ class ReportDatasetEnricher
         ?SummaryServiceInvoicesDataAdapter $summaryServiceInvoices = null,
         ?SalespersonRevenueDataAdapter $salespersonRevenue = null,
         ?TotalRevenueDataAdapter $totalRevenue = null,
+        ?CompanyOccupancyDataAdapter $companyOccupancy = null,
     ) {
         $this->paidCompanyDebts = $paidCompanyDebts ?? new PaidCompanyDebtsDataAdapter();
         $this->salesInvoices = $salesInvoices ?? new SalesInvoicesDataAdapter();
@@ -41,6 +43,7 @@ class ReportDatasetEnricher
         $this->summaryServiceInvoices = $summaryServiceInvoices ?? new SummaryServiceInvoicesDataAdapter();
         $this->salespersonRevenue = $salespersonRevenue ?? new SalespersonRevenueDataAdapter();
         $this->totalRevenue = $totalRevenue ?? new TotalRevenueDataAdapter();
+        $this->companyOccupancy = $companyOccupancy ?? new CompanyOccupancyDataAdapter();
     }
 
     public function enrich(ReportDefinition $reportDefinition, array $data): array
@@ -90,6 +93,9 @@ class ReportDatasetEnricher
         }
         if (in_array($code, ['SERVICE_REVENUE_DETAIL', 'RPT_SERVICE_REVENUE_DETAIL'], true)) {
             return $this->totalRevenue->adaptDetail($data);
+        }
+        if (in_array($code, ['COMPANY_OCCUPANCY', 'RPT_COMPANY_OCCUPANCY'], true)) {
+            return $this->companyOccupancy->adapt($data);
         }
         if (in_array($code, ['EXPECTED_BREAKFAST', 'EXPECTED_BREAKFAST_1', 'EXPECTED_BREAKFAST_2'], true)) {
             return $this->enrichExpectedBreakfast($data);
