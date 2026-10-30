@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchBookings, checkInRoomWithConfirmations, undoCheckInRoom, cancelBookingRoom, fetchSystemDate } from '@/services/booking-service'
+import { isPendingDepartureRoom } from './departure-rooms'
 import { ROOM_STATUS_ICON_MAP, roomService } from '@/services/room-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useRoomStore } from '@/stores/room-store'
@@ -122,7 +123,8 @@ const loadBookings = async () => {
   try {
     const res = await fetchBookings({
       arrival_date: isDepartureMode.value ? (systemDate.value || searchDate.value) : searchDate.value,
-      status: isDepartureMode.value ? '1,2' : isOccupiedMode.value ? '1' : '0,1',
+      // Dòng 392: phòng đi gồm cả phòng chưa nhận có ngày đến = ngày đi (status 0)
+      status: isDepartureMode.value ? '0,1,2' : isOccupiedMode.value ? '1' : '0,1',
       ...(isDepartureMode.value ? { list_mode: 'departures' } : {}),
       with_billing: true,
       stay_only: true
@@ -192,7 +194,7 @@ const chuaDenBookings = computed(() => {
   return filteredBookings.value.map(booking => {
     const pendingRooms = (booking.booking_rooms || []).filter(room => {
       if (isDepartureMode.value) {
-        return Number(room.status) === 1 && normalizeDate(room.departure_date) <= normalizeDate(systemDate.value || searchDate.value)
+        return isPendingDepartureRoom(room, systemDate.value || searchDate.value, normalizeDate)
       }
       if (!isArrivalMode.value) return false
       const roomArrival = normalizeDate(room.arrival_date || room.actual_arrival_date)

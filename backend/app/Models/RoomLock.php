@@ -57,6 +57,27 @@ class RoomLock extends Model
         return $value;
     }
 
+    /**
+     * Ngày kết thúc mới khi mở khóa. Khóa đã bắt đầu theo NGÀY nghiệp vụ thì cắt
+     * về thời điểm mở khóa (không sớm hơn giờ bắt đầu). Không so giờ: giờ mở khóa
+     * là giờ thật ghép với ngày hệ thống nên có thể nhỏ hơn giờ bắt đầu cùng ngày.
+     */
+    public static function unlockEndDate(self $lock, string $unlockEndDateTime): ?string
+    {
+        $unlockAt = \Carbon\Carbon::parse($unlockEndDateTime);
+        $start = \Carbon\Carbon::parse($lock->start_date);
+        if ($start->toDateString() > $unlockAt->toDateString()) {
+            return null;
+        }
+
+        $end = $start->gt($unlockAt) ? $start : $unlockAt;
+        if ($lock->end_date && \Carbon\Carbon::parse($lock->end_date)->lte($end)) {
+            return null;
+        }
+
+        return $end->format('Y-m-d H:i:s');
+    }
+
     public function room(): BelongsTo
     {
         return $this->belongsTo(Room::class, 'room_number', 'room_number');

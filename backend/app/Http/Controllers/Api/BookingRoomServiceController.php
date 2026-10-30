@@ -747,6 +747,11 @@ class BookingRoomServiceController extends Controller
                     ->where('service_bill_id', $bill->Ma)
                     ->lockForUpdate()
                     ->get();
+                // Bill hiển thị dạng ServiceBill (mirror bị ẩn, vd dịch vụ is_room=0 tập hợp từ Master về phòng)
+                // không gửi kèm id mirror → xóa trọn bill thì lấy toàn bộ mirror tại server.
+                if ($cancelByBill && $billServices->isEmpty()) {
+                    $billServices = $allBillServices;
+                }
                 if ($allBillServices->count() !== $billServices->count()) {
                     abort(422, 'Phải chọn toàn bộ chi tiết của cùng một hóa đơn dịch vụ để xóa.');
                 }
