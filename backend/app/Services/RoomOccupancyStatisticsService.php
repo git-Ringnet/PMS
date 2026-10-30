@@ -35,12 +35,16 @@ class RoomOccupancyStatisticsService
             ? $physicalRooms->where('room_status_code', 'oos')->pluck('room_number')->diff($inhouseRoomNumbers)
             : collect();
 
+        // Lịch khóa cũng vậy: khóa đã mở nhưng end_date còn kéo dài (dữ liệu mở khóa cũ
+        // không cắt ngày kết thúc) không được loại phòng đang có khách.
         $oooRoomNumbers = $this->lockedRoomNumbers($physicalRoomNumbers, $date, 'OOO')
             ->merge($currentOooRooms)
+            ->diff($inhouseRoomNumbers)
             ->unique()
             ->values();
         $oosRoomNumbers = $this->lockedRoomNumbers($physicalRoomNumbers, $date, 'OOS')
             ->merge($currentOosRooms)
+            ->diff($inhouseRoomNumbers)
             ->unique()
             ->values();
         $unavailableRoomNumbers = $oooRoomNumbers->merge($oosRoomNumbers)->unique()->values();

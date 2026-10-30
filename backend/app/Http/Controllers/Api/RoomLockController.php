@@ -559,8 +559,8 @@ class RoomLockController extends Controller
                     'unlock_username' => $unlockUsername,
                     'unlocked_at' => $now,
                 ];
-                if (\Carbon\Carbon::parse($lock->start_date)->lte(\Carbon\Carbon::parse($unlockEndDateTime))) {
-                    $updateData['end_date'] = $unlockEndDateTime;
+                if ($unlockEnd = \App\Models\RoomLock::unlockEndDate($lock, $unlockEndDateTime)) {
+                    $updateData['end_date'] = $unlockEnd;
                 }
                 $lock->update($updateData);
             }
@@ -924,8 +924,8 @@ class RoomLockController extends Controller
                 'unlock_username' => $unlockUsername,
                 'unlocked_at' => now(),
             ];
-            if (\Carbon\Carbon::parse($lock->start_date)->lte(\Carbon\Carbon::parse($unlockEndDateTime))) {
-                $updateData['end_date'] = $unlockEndDateTime;
+            if ($unlockEnd = \App\Models\RoomLock::unlockEndDate($lock, $unlockEndDateTime)) {
+                $updateData['end_date'] = $unlockEnd;
             }
             $lock->update($updateData);
         }
