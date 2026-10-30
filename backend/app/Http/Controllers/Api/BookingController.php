@@ -238,10 +238,14 @@ class BookingController extends Controller
                 $isDepartureView = $request->input('list_mode') === 'departures';
 
                 $roomQuery->where(function ($dateQuery) use ($request, $statuses, $isDepartureView, $pmsDateStartUtc, $pmsDateEndUtc) {
-                    $dateQuery->where(function ($bookedQuery) use ($request, $statuses) {
+                    $dateQuery->where(function ($bookedQuery) use ($request, $statuses, $isDepartureView) {
                         if (in_array(BookingRoom::STATUS_BOOKED, $statuses, true)) {
                             $bookedQuery->where('status', BookingRoom::STATUS_BOOKED)
                                 ->whereDate('arrival_date', $request->arrival_date);
+                            // Dòng 392: danh sách phòng đi chỉ lấy phòng chưa nhận có ngày đến = ngày đi.
+                            if ($isDepartureView) {
+                                $bookedQuery->whereDate('departure_date', $request->arrival_date);
+                            }
                         } else {
                             $bookedQuery->whereRaw('1 = 0');
                         }

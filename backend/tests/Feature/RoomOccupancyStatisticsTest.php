@@ -375,6 +375,53 @@ class RoomOccupancyStatisticsTest extends TestCase
             ->assertJsonPath('data.oos', 0);
     }
 
+    /**
+     * Dòng 392 (HKT1 04/09): 807 (tick Day Use), 205, 405 (không tick) chưa nhận phòng, ngày đến = ngày đi
+     * -> đều là phòng đi; danh sách phòng chưa trả có đủ; phòng ở cuối ngày không đổi.
+     */
+    public function test_same_day_reservations_count_as_departures_with_or_without_day_use_flag(): void
+    {
+        $this->actingAs(User::factory()->create());
+        DB::table('booking_statuses')->insert([['id' => 0, 'name' => 'Reservation'], ['id' => 1, 'name' => 'Checked In'], ['id' => 2, 'name' => 'Checked Out']]);
+        \App\Models\SystemDateRoll::create(['system_date' => '2026-09-04', 'actual_date' => now(), 'shift' => '1', 'username' => 'test']);
+        $status = RegistrationStatus::create(['booking_status_id' => 1, 'name' => 'Confirmed', 'is_availability' => true]);
+        $form = RoomForm::create(['name' => 'Double']);
+        $class = RoomClass::create(['code' => 'DLX', 'name' => 'Deluxe', 'is_active' => true]);
+        foreach (['101', '102', '205', '405', '807', '406'] as $number) {
+            Room::create(['room_number' => $number, 'room_form_id' => $form->id, 'room_class_id' => $class->id, 'floor' => 1, 'room_status_code' => 'vacant_ready']);
+        }
+
+        // 101 ở tiếp, 102 đến hạn trả hôm nay
+        $this->createBookingRoom('101', $class->id, $status->booking_status_id, BookingRoom::STATUS_CHECKED_IN);
+        $this->createBookingRoom('102', $class->id, $status->booking_status_id, BookingRoom::STATUS_CHECKED_IN)
+            ->update(['departure_date' => '2026-09-04']);
+        foreach (['205' => false, '405' => false, '807' => true] as $number => $dayUse) {
+            $this->createBookingRoom($number, $class->id, $status->booking_status_id, BookingRoom::STATUS_BOOKED)
+                ->update(['arrival_date' => '2026-09-04', 'departure_date' => '2026-09-04', 'is_day_use' => $dayUse]);
+        }
+        // 406 đến hôm nay ở qua đêm: là phòng đến, không phải phòng đi
+        $this->createBookingRoom('406', $class->id, $status->booking_status_id, BookingRoom::STATUS_BOOKED)
+            ->update(['arrival_date' => '2026-09-04', 'departure_date' => '2026-09-07']);
+
+        $this->getJson('/api/rooms/stats?date=2026-09-04')->assertSuccessful()
+            ->assertJsonPath('data.departures_pending', 4)
+            ->assertJsonPath('data.departures_total', 4)
+            ->assertJsonPath('data.arrivals_total', 4)
+            ->assertJsonPath('data.occupied_current', 2)
+            // Cuối ngày = 2 + 4 - 4 = 2 (101 ở tiếp + 406 ở qua đêm)
+            ->assertJsonPath('data.occupied_projected', 2);
+
+        $rooms = collect($this->getJson('/api/bookings?arrival_date=2026-09-04&status=0,1,2&list_mode=departures&stay_only=1&per_page=100')
+            ->assertSuccessful()
+            ->json('data'))
+            ->flatMap(fn ($booking) => $booking['booking_rooms'] ?? [])
+            ->pluck('room_number')
+            ->sort()
+            ->values()
+            ->all();
+        $this->assertSame(['102', '205', '405', '807'], $rooms);
+    }
+
     /** Mở khóa lúc giờ thật nhỏ hơn giờ bắt đầu khóa cùng ngày nghiệp vụ vẫn phải cắt ngày kết thúc. */
     public function test_unlock_end_date_uses_business_date_not_wall_clock(): void
     {
