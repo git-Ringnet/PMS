@@ -399,7 +399,11 @@ class BookingRoomController extends Controller
                 $requiresAdditionalTargetSlot ? null : $roomId
             );
             $projectedAv = $requiresAdditionalTargetSlot ? $av - 1 : $av;
-            $wouldCauseOverbooking = $projectedAv < 0;
+            // Chỉ rút ngắn / giữ nguyên giai đoạn (cùng loại phòng) thì không thêm nhu cầu phòng: không coi là over.
+            $onlyShortens = !$roomClassChanged
+                && $arrivalDate >= $bookingRoom->arrival_date->toDateString()
+                && $departureDate <= $bookingRoom->departure_date->toDateString();
+            $wouldCauseOverbooking = $projectedAv < 0 && !$onlyShortens;
 
             if ($wouldCauseOverbooking && !$this->allowOverAV()) {
                 return response()->json([
@@ -695,8 +699,13 @@ class BookingRoomController extends Controller
             // A same-day room without day-use does not take AV.
             $takesAv = $newArrival !== $newDeparture || (bool) $room->is_day_use;
 
+            // Rút ngắn / giữ nguyên giai đoạn (không thêm đêm mới) thì không phát sinh nhu cầu phòng mới:
+            // không kiểm tra "over" (các đêm này phòng đã giữ sẵn từ trước).
+            $addsNewNights = $newArrival < $room->arrival_date->toDateString()
+                || $newDeparture > $room->departure_date->toDateString();
+
             // Check Availability (AV)
-            if ($takesAv && ((!$isInhouse && $request->filled('arrival_date')) || $request->filled('departure_date'))) {
+            if ($takesAv && $addsNewNights && ((!$isInhouse && $request->filled('arrival_date')) || $request->filled('departure_date'))) {
                 $av = $this->avService->getAvailability($room->room_class_id, $newArrival, $newDeparture, $room->id);
                 if ($av < 0) {
                     if (!$allowOver) {
