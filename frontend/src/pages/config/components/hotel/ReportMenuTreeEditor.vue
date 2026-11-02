@@ -11,7 +11,7 @@ const props = defineProps({
   collapsed: { type: Set, default: () => new Set() },
 })
 
-const emit = defineEmits(['add-group', 'add-report', 'open-report-definition', 'open-report-picker', 'select-target', 'rename-group', 'remove-node', 'move-sibling', 'toggle-collapse'])
+const emit = defineEmits(['add-group', 'add-report', 'move-report-before', 'open-report-definition', 'open-report-picker', 'select-target', 'rename-group', 'remove-node', 'move-sibling', 'toggle-collapse'])
 const activeMenu = ref('')
 const keyFor = path => path.join('.')
 const isSelected = path => keyFor(path) === keyFor(props.selectedPath)
@@ -26,9 +26,18 @@ const runAction = (action, path, ...args) => {
   activeMenu.value = ''
   emit(action, path, ...args)
 }
+const reportIdFromDrag = event => Number(event.dataTransfer?.getData('application/x-pms-report-id'))
 const dropReport = (event, path) => {
-  const reportId = Number(event.dataTransfer?.getData('application/x-pms-report-id'))
+  const reportId = reportIdFromDrag(event)
   if (reportId) emit('add-report', reportId, path)
+}
+const dropReportBefore = (event, targetReportId) => {
+  const reportId = reportIdFromDrag(event)
+  if (reportId) emit('move-report-before', reportId, targetReportId)
+}
+const dragReport = (event, item) => {
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData('application/x-pms-report-id', String(item.report_id))
 }
 </script>
 
@@ -36,12 +45,14 @@ const dropReport = (event, path) => {
   <div class="space-y-1.5" :class="path.length ? 'ml-3 border-l border-slate-200 pl-3' : ''">
     <div v-for="(item, index) in items" :key="item.type === 'group' ? `${keyFor([...path, index])}-${item.name}` : item.report_id"
       :data-report-menu-path="keyFor([...path, index])"
+      :draggable="item.type === 'report'"
+      @dragstart="item.type === 'report' && dragReport($event, item)"
       class="relative rounded-lg border bg-white transition-colors"
       :class="item.type === 'group' && isSelected([...path, index]) ? 'border-sky-300 ring-1 ring-sky-200' : 'border-slate-200'">
       <div class="flex min-h-9 items-center gap-2 px-2.5 py-1.5"
-        :class="item.type === 'group' ? 'cursor-pointer bg-slate-50 hover:bg-sky-50/60' : ''"
-        @dragover.prevent="item.type === 'group'"
-        @drop.prevent.stop="item.type === 'group' && dropReport($event, [...path, index])"
+        :class="item.type === 'group' ? 'cursor-pointer bg-slate-50 hover:bg-sky-50/60' : 'cursor-grab'"
+        @dragover.prevent
+        @drop.prevent.stop="item.type === 'group' ? dropReport($event, [...path, index]) : dropReportBefore($event, item.report_id)"
         @dblclick.stop="item.type === 'report' && emit('open-report-definition', item.report_id)"
         @click="item.type === 'group' && selectGroup([...path, index])">
         <button v-if="item.type === 'group'" type="button" class="border-none bg-transparent p-0 text-slate-500" @click.stop="emit('toggle-collapse', [...path, index])">
@@ -80,6 +91,7 @@ const dropReport = (event, path) => {
           :collapsed="collapsed"
           @add-group="(...args) => emit('add-group', ...args)"
           @add-report="(...args) => emit('add-report', ...args)"
+          @move-report-before="(...args) => emit('move-report-before', ...args)"
           @open-report-definition="(...args) => emit('open-report-definition', ...args)"
           @open-report-picker="(...args) => emit('open-report-picker', ...args)"
           @select-target="(...args) => emit('select-target', ...args)"
