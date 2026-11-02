@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch, onBeforeUnmount, onDeactivated, nextTick } from 'vue'
+import { ref, computed, onMounted, onActivated, watch, onBeforeUnmount, onDeactivated, nextTick } from 'vue'
 import { toPng } from 'html-to-image'
 import { useRouter, useRoute } from 'vue-router'
 import { useRoomStore } from '@/stores/room-store'
@@ -2483,6 +2483,21 @@ async function changeRoomStatus(room, roomStatusCode) {
 
 let roomMapSyncTimer = null
 let roomMapBc = null
+let roomMapKeyboardAttached = false
+let roomMapInstanceActive = false
+let roomMapReady = false
+
+function syncRoomMapShortcutListener() {
+  const shouldAttach = roomMapInstanceActive && roomMapReady && currentTab.value === 'room-map'
+
+  if (shouldAttach && !roomMapKeyboardAttached) {
+    window.addEventListener('keydown', handleRoomMapShortcut)
+    roomMapKeyboardAttached = true
+  } else if (!shouldAttach && roomMapKeyboardAttached) {
+    window.removeEventListener('keydown', handleRoomMapShortcut)
+    roomMapKeyboardAttached = false
+  }
+}
 
 async function refreshRoomMapSnapshot() {
   if (currentTab.value !== 'room-map') return
@@ -2503,6 +2518,8 @@ function refreshWhenVisible() {
 }
 
 onMounted(async () => {
+  roomMapInstanceActive = true
+
   // Fetch system date and set rawDate
   try {
     const dateRes = await fetchSystemDate()
@@ -2535,9 +2552,10 @@ onMounted(async () => {
   }
   isLoaded.value = true
   isInitialLoad.value = false
+  roomMapReady = true
 
   window.addEventListener('click', closeContextMenu)
-  window.addEventListener('keydown', handleRoomMapShortcut)
+  syncRoomMapShortcutListener()
   window.addEventListener('click', handleClickOutsideSettings)
 
   calculateScale()
@@ -2570,9 +2588,15 @@ onMounted(async () => {
   document.addEventListener('visibilitychange', refreshWhenVisible)
 })
 
+onActivated(() => {
+  roomMapInstanceActive = true
+  syncRoomMapShortcutListener()
+})
+
 onBeforeUnmount(() => {
+  roomMapInstanceActive = false
+  syncRoomMapShortcutListener()
   window.removeEventListener('click', closeContextMenu)
-  window.removeEventListener('keydown', handleRoomMapShortcut)
   window.removeEventListener('click', handleClickOutsideSettings)
   window.removeEventListener('resize', calculateScale)
   window.removeEventListener('resize', closeTooltipOnViewportChange)
@@ -2592,6 +2616,8 @@ onBeforeUnmount(() => {
 })
 
 onDeactivated(() => {
+  roomMapInstanceActive = false
+  syncRoomMapShortcutListener()
   if (tooltipTimeout) {
     clearTimeout(tooltipTimeout)
     tooltipTimeout = null
@@ -2599,6 +2625,10 @@ onDeactivated(() => {
   hoverTooltip.value.show = false
   tooltipTargetElement = null
   closeContextMenu()
+})
+
+watch(currentTab, () => {
+  syncRoomMapShortcutListener()
 })
 
 watch(() => contextMenu.value.show, (newVal) => {
