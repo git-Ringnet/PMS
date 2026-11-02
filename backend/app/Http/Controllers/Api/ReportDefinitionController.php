@@ -535,7 +535,7 @@ class ReportDefinitionController extends Controller
             'is_active' => 'sometimes|boolean',
             'show_in_menu' => 'sometimes|boolean',
             'menu_locations' => 'nullable|array',
-            'menu_locations.*' => 'string|in:reservation,frontdesk,housekeeping',
+            'menu_locations.*' => 'string|in:reservation,frontdesk,housekeeping,management',
             'menu_top_order' => 'nullable|integer|min:0|max:999',
             'menu_group_order' => 'nullable|integer|min:0|max:999',
             'menu_item_order' => 'nullable|integer|min:0|max:999',
@@ -684,13 +684,24 @@ class ReportDefinitionController extends Controller
     private function serialize(ReportDefinition $report): array
     {
         $source = $report->reportDataSource;
-        $configured = collect($report->parameter_ui_schema ?? [])->keyBy('name');
-        $parameterSchema = collect($source?->parameter_schema ?? [])->map(function (array $parameter) use ($configured) {
-            $ui = $configured->get($parameter['name'], []);
+        $uiSchema = collect($report->parameter_ui_schema ?? [])->values();
+        $configured = $uiSchema->keyBy('name');
+        $sourceSchema = collect($source?->parameter_schema ?? [])->keyBy('name');
+        $orderedNames = $uiSchema->pluck('name')
+            ->merge($sourceSchema->keys())
+            ->filter()
+            ->unique()
+            ->values();
+        $parameterSchema = $orderedNames->map(function (string $name) use ($configured, $sourceSchema) {
+            $parameter = $sourceSchema->get($name, []);
+            $ui = $configured->get($name, []);
 
             return [
                 ...$parameter,
-                'label' => $ui['label'] ?? $parameter['name'],
+                'name' => $name,
+                'mode' => $parameter['mode'] ?? 'UI',
+                'data_type' => $parameter['data_type'] ?? ($ui['data_type'] ?? 'string'),
+                'label' => $ui['label'] ?? $name,
                 'control' => $ui['control'] ?? $this->defaultControl($parameter['data_type'] ?? ''),
                 'default' => $ui['default'] ?? null,
                 'options' => $ui['options'] ?? [],
@@ -698,8 +709,13 @@ class ReportDefinitionController extends Controller
                 'placeholder' => $ui['placeholder'] ?? null,
                 'layout' => $ui['layout'] ?? null,
                 'range_end_parameter' => $ui['range_end_parameter'] ?? null,
-                'required' => $ui['required'] ?? ($parameter['required'] ?? true),
-                'configured' => $configured->has($parameter['name']),
+                'required' => $ui['required'] ?? ($parameter['required'] ?? false),
+                'ui_only' => (bool) ($ui['ui_only'] ?? ! $sourceSchema->has($name)),
+                'visible_when' => $ui['visible_when'] ?? null,
+                'maps_to' => $ui['maps_to'] ?? null,
+                'linked_report_code' => $ui['linked_report_code'] ?? null,
+                'view_mode' => $ui['view_mode'] ?? null,
+                'configured' => $configured->has($name),
             ];
         })->values()->all();
 
