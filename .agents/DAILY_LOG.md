@@ -16,6 +16,22 @@
 - **Sửa**: `BookingRoomServiceController::cancel` (xóa theo `service_bill_ids`): bill không có id mirror nào gửi lên thì lấy toàn bộ mirror tại server (giống logic chuyển theo bill). Vẫn chặn khi chỉ gửi một phần mirror.
 - **Kiểm thử**: Thêm test `test_room_service_cancel_by_bill_without_mirror_ids_deletes_all_server_mirrors`; chưa chạy được do migration `2026_10_26_121000_remove_user_topbar_color_settings` dùng `JSON_CONTAINS_PATH` không chạy trên SQLite.
 
+## [2026-10-30] - Hoàn Tất Dòng 348, 349, 351, Sửa Timeout Sang Ngày & Khớp Thống Kê Sơ Đồ Phòng
+### Module: Đăng Ký (Reservation), Sang Ngày (Day Close), Sơ Đồ Phòng (Room Map)
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **1. Đăng ký & Dịch vụ bổ sung (Dòng 348, 349, 351)**:
+    + Phiếu in lấy đúng tiền phòng theo từng đêm theo bill đã chạy hoặc giá kế hoạch, lọc theo phòng được chọn, không trùng lặp dịch vụ đã post.
+    + Sửa giá dịch vụ đã post ở Đăng ký chỉ lưu giá chờ, bill ở Hóa đơn giữ nguyên; chặn sửa khi bill đã thanh toán/xuất hóa đơn VAT; post lại không sinh bill trùng.
+    + Modal Thêm dịch vụ bổ sung mở ra ở trạng thái trống, khi lưu chỉ thêm mới, không ghi đè/xóa các dịch vụ cũ.
+  - **2. Sang ngày (Day Close)**:
+    + Tăng timeout sang ngày lên 10 phút; khi timeout/mất mạng tự động kiểm tra lại trạng thái để báo đúng kết quả thực tế từ server, không báo rollback nhầm.
+    + Loại bỏ usleep không cần thiết bên trong transaction sang ngày để tối ưu tốc độ xử lý.
+  - **3. Sơ đồ phòng & Thống kê (Dòng 392 & Lỗi lệch thẻ Đang ở)**:
+    + Khắc phục lệch số lượng thẻ Đang ở do khóa OOO/OOS đã mở nhưng không cắt ngày kết thúc; mở khóa xét theo ngày nghiệp vụ; migration dọn dẹp các khóa phòng cũ.
+    + Dòng 392: Thẻ Đã đi và danh sách Phòng chưa trả tính cả phòng chưa check-in có ngày đến = ngày đi; giữ nguyên công thức tính phòng ở cuối ngày.
+- **Kiểm thử**:
+  - Pass 100% test suites backend và frontend cho các dòng liên quan; test E2E xác minh flow chạy thông suốt.
+
 ## [2026-10-30] - Kiểm Thử QA Giao Diện Web: Dòng 351 – Dịch Vụ Bổ Sung
 ### Module: Đăng Ký (Reservation / Create-Res), Thu Ngân / Hóa Đơn (Frontdesk / Checkout)
 - **Mục tiêu & Nghiệp vụ kiểm tra**:
