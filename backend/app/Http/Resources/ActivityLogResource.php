@@ -246,11 +246,20 @@ class ActivityLogResource extends JsonResource
     public function toArray(Request $request): array
     {
         $action = $this->resolveAction();
-        $bookingCode = $this->resolveBookingCode();
-        $roomNumber = $this->resolveRoomNumber();
-        $componentLabel = $this->resolveComponentLabel();
         $moduleLabel = $this->resolveModuleLabel();
-        $description = $this->resolveDescription($bookingCode, $roomNumber, $componentLabel);
+
+        if ((int) ($this->log_version ?? 1) >= 2) {
+            // Log chuẩn mới: mô tả, mã đăng ký, mã phòng, màn hình đã ghi tường minh lúc thao tác
+            $bookingCode = $this->booking_code ?: null;
+            $roomNumber = $this->room_code ?: null;
+            $componentLabel = $this->component ?: 'Hệ thống';
+            $description = (string) $this->description;
+        } else {
+            $bookingCode = $this->resolveBookingCode();
+            $roomNumber = $this->resolveRoomNumber();
+            $componentLabel = $this->resolveComponentLabel();
+            $description = $this->resolveDescription($bookingCode, $roomNumber, $componentLabel);
+        }
 
         return [
             'id' => $this->id,
@@ -278,7 +287,9 @@ class ActivityLogResource extends JsonResource
             'duration_ms' => $this->duration_ms,
             'created_at' => $this->created_at?->toIso8601String(),
             'created_at_human' => $this->created_at?->timezone('Asia/Ho_Chi_Minh')->diffForHumans(),
-            'created_date' => $this->created_at?->timezone('Asia/Ho_Chi_Minh')->format('d/m/Y'),
+            // Ngày thao tác = ngày hệ thống lúc thao tác (log cũ chưa có thì lấy ngày ghi log)
+            'created_date' => $this->system_date?->format('d/m/Y') ?? $this->created_at?->timezone('Asia/Ho_Chi_Minh')->format('d/m/Y'),
+            'system_date' => $this->system_date?->toDateString(),
             'created_time' => $this->created_at?->timezone('Asia/Ho_Chi_Minh')->format('H:i'),
             'created_time_full' => $this->created_at?->timezone('Asia/Ho_Chi_Minh')->format('H:i:s'),
         ];

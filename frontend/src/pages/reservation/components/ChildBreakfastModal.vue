@@ -722,14 +722,17 @@ async function save() {
       return
     }
 
-    await Promise.all(allDetails.map(async (item) => {
+    // Lưu tuần tự cùng log_batch để lịch sử thao tác gom thành một dòng "từ ngày - đến ngày"
+    const logBatch = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+    for (const item of allDetails) {
       try {
         const payload = {
           breakfast: item.detail.breakfast,
           is_free: item.detail.is_free,
           is_extra_charge: item.detail.is_extra_charge,
           is_room: item.detail.is_room,
-          amount: item.detail.amount
+          amount: item.detail.amount,
+          log_batch: logBatch
         }
         await updateChildBreakfastDetail(item.childId, item.detail.id, payload)
         successCount++
@@ -737,7 +740,7 @@ async function save() {
         console.error(err)
         failCount++
       }
-    }))
+    }
 
     if (successCount > 0) {
       uiStore.showToast(`Lưu chi tiết ăn sáng thành công cho ${successCount} ngày!${failCount > 0 ? ` (Thất bại ${failCount})` : ''}`, 'success')

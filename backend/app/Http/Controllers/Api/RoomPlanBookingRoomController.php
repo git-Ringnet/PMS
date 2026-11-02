@@ -6,7 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\Booking;
 use App\Models\BookingRoom;
 use App\Models\HotelConfig;
+use App\Services\ActivityLogService;
 use App\Services\BookingRoomLifecycleService;
+use App\Support\ActivityScreen;
+use App\Support\BookingLogText;
 use App\Services\RoomAvailabilityService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -158,6 +161,8 @@ class RoomPlanBookingRoomController extends Controller
                     }
                 }
 
+                $logBookingBefore = $booking->getRawOriginal();
+
                 $bookingRoom->update([
                     'arrival_date' => $arrivalDate,
                     'departure_date' => $departureDate,
@@ -200,6 +205,8 @@ class RoomPlanBookingRoomController extends Controller
                     ]);
                 }
 
+                $this->logStayChange($booking, $bookingRoom, $logBookingBefore, $currentArrival, $currentDeparture, $arrivalDate, $departureDate);
+
                 $warning = ($av !== null && $av < 0 && $allowOver)
                     ? 'Cảnh báo: Số phòng trống của loại phòng đã bị âm (AV = ' . $av . ').'
                     : null;
@@ -226,6 +233,41 @@ class RoomPlanBookingRoomController extends Controller
                 'success' => false,
                 'message' => 'Không thể cập nhật ngày lưu trú trên Room Plan.',
             ], 500);
+        }
+    }
+
+    /**
+     * Dòng 7, 8 sheet GHI LOG (màn hình RoomSchedule):
+     *  - "* Cập Nhật Thông Tin Đăng Ký GAL11 : -Ngày Đi: .. -> .. -Số Ngày: 4 -> 6" chỉ khi ngày của đăng ký đổi theo
+     *  - "* Cập nhật ngày đi 08-09-2026 -> 11-09-2026 cho các phòng: G0000021"
+     */
+    private function logStayChange($booking, BookingRoom $room, array $bookingBefore, string $oldArr, string $oldDep, string $newArr, string $newDep): void
+    {
+        try {
+            $code = ActivityLogService::bookingCode($booking->id);
+            $opts = ['force_screen' => ActivityScreen::ROOM_SCHEDULE, 'booking_code' => $code, 'target_label' => $code];
+
+            $diff = BookingLogText::bookingDiff($bookingBefore, $booking->fresh()?->getRawOriginal() ?? []);
+            if ($diff) {
+                ActivityLogService::record('Modify', "* Cập Nhật Thông Tin Đăng Ký {$code} : " . implode(' ', $diff), $opts + ['target_type' => 'Booking', 'target_id' => $booking->id]);
+            }
+
+            $parts = [];
+            if ($oldArr !== $newArr) {
+                $parts[] = 'ngày đến ' . ActivityLogService::d($oldArr) . ' -> ' . ActivityLogService::d($newArr);
+            }
+            if ($oldDep !== $newDep) {
+                $parts[] = 'ngày đi ' . ActivityLogService::d($oldDep) . ' -> ' . ActivityLogService::d($newDep);
+            }
+            if ($parts) {
+                ActivityLogService::record('Modify', '* Cập nhật ' . implode(', ', $parts) . " cho các phòng: {$room->id}", $opts + [
+                    'room_code' => $room->id,
+                    'target_type' => 'BookingRoom',
+                    'target_id' => $room->id,
+                ]);
+            }
+        } catch (Throwable $e) {
+            report($e);
         }
     }
 }

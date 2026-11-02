@@ -523,6 +523,8 @@ async function saveServices() {
     let lastErrorMsg = ''
     const skippedBreakfastRooms = []
 
+    // Gom các ngày của cùng một lần thêm dịch vụ vào một dòng lịch sử thao tác
+    const logBatch = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
     for (const room of rooms) {
       const roomId = room.bookingRoomId
       if (!roomId) continue
@@ -544,7 +546,7 @@ async function saveServices() {
           }
         })
         for (const payload of payloads) {
-          await createBookingRoomService(roomId, payload)
+          await createBookingRoomService(roomId, { ...payload, log_batch: logBatch })
         }
 
         // 5. Update local room services cache

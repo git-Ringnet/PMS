@@ -184,12 +184,75 @@ class RoomLockController extends Controller
             event(new \App\Events\RoomStatusUpdated($room->id, $lockCode, 'Phòng khóa bảo trì'));
         }
 
+        $this->logLockCreated($lock, $request);
         $lock->load(['room.roomForm', 'room.roomClass']);
 
         return response()->json([
             'success' => true,
             'data' => $lock,
         ], 201);
+    }
+
+    /** Dòng 5, 6, 103: "Thêm Phòng OOO. Phòng 601 đã bị khóa từ 03-09-2026 đến 03-09-2026 - Lý do: thay tivi". */
+    private function logLockCreated(RoomLock $lock, ?Request $request = null): void
+    {
+        try {
+            \App\Services\ActivityLogService::record('Lock', "Thêm Phòng {$lock->lock_type}. Phòng {$lock->room_number} đã bị khóa từ "
+                . \App\Services\ActivityLogService::d($lock->start_date) . ' đến ' . \App\Services\ActivityLogService::d($lock->end_date)
+                . ($lock->reason ? " - Lý do: {$lock->reason}" : ''), [
+                'screen' => \App\Support\ActivityScreen::ROOM_LOCK,
+                'room_code' => $lock->room_number,
+                'target_type' => 'RoomLock',
+                'target_id' => $lock->id,
+            ], $request);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log room lock error: ' . $e->getMessage());
+        }
+    }
+
+    /** Dòng 103: "Cập nhật phòng khóa OOO mã 894, phòng 602:\n- Ngày kết thúc: 20-08-2026 => 21-08-2026\n- Mô tả: khóa => khóa s". */
+    private function logLockUpdated(RoomLock $lock, array $before, ?Request $request = null): void
+    {
+        try {
+            $fields = ['lock_type' => 'Loại khóa', 'room_number' => 'Phòng', 'start_date' => 'Ngày bắt đầu', 'end_date' => 'Ngày kết thúc', 'reason' => 'Mô tả', 'maintenance_percent' => 'Tỷ lệ bảo trì'];
+            $after = $lock->fresh()?->getAttributes() ?? [];
+            $lines = [];
+            foreach ($fields as $field => $label) {
+                $fmt = fn ($v) => str_contains($field, 'date') ? \App\Services\ActivityLogService::d($v) : trim((string) $v);
+                $o = $fmt($before[$field] ?? null);
+                $n = $fmt($after[$field] ?? null);
+                if ($o !== $n) {
+                    $lines[] = "- {$label}: {$o} => {$n}";
+                }
+            }
+            if (!$lines) {
+                return;
+            }
+            \App\Services\ActivityLogService::record('Modify', "Cập nhật phòng khóa {$lock->lock_type} mã {$lock->id}, phòng {$lock->room_number}:\n" . implode("\n", $lines), [
+                'screen' => \App\Support\ActivityScreen::ROOM_LOCK,
+                'room_code' => $lock->room_number,
+                'target_type' => 'RoomLock',
+                'target_id' => $lock->id,
+            ], $request);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log room lock update error: ' . $e->getMessage());
+        }
+    }
+
+    private function logUnlocked(RoomLock $lock, ?Request $request = null): void
+    {
+        try {
+            \App\Services\ActivityLogService::record('Unlock', "Mở khóa phòng {$lock->lock_type} mã {$lock->id}, phòng {$lock->room_number} - Giai đoạn: "
+                . ($lock->start_date ? \Carbon\Carbon::parse($lock->start_date)->format('d-m-Y H:i') : '') . ' ~ '
+                . ($lock->end_date ? \Carbon\Carbon::parse($lock->end_date)->format('d-m-Y H:i') : ''), [
+                'screen' => \App\Support\ActivityScreen::ROOM_LOCK,
+                'room_code' => $lock->room_number,
+                'target_type' => 'RoomLock',
+                'target_id' => $lock->id,
+            ], $request);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log room unlock error: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -469,6 +532,10 @@ class RoomLockController extends Controller
             }
         });
 
+        foreach ($locksCreated as $lock) {
+            $this->logLockCreated($lock, $request);
+        }
+
         return response()->json([
             'success' => true,
             'message' => count($locksCreated) . ' rooms locked successfully.',
@@ -549,7 +616,6 @@ class RoomLockController extends Controller
         foreach ($locks as $lock) {
             $affectedRoomNumbers[] = $lock->room_number;
 
-            $oldValues = $lock->toArray();
             if ($lock->status === 'New') {
                 $lock->delete();
             } else {
@@ -565,15 +631,7 @@ class RoomLockController extends Controller
                 $lock->update($updateData);
             }
 
-            \App\Services\ActivityLogService::logUpdate(
-                $request,
-                $lock,
-                $oldValues,
-                'reservation',
-                'LockRoomPage',
-                "Mở khóa phòng {$lock->room_number} (Hành động: Unlock, Giai đoạn: " . ($lock->start_date ? $lock->start_date->format('d/m/Y H:i') : '') . " ~ " . ($lock->end_date ? $lock->end_date->format('d/m/Y H:i') : '') . ")",
-                $lock->room_number
-            );
+            $this->logUnlocked($lock, $request);
         }
 
         // Check and update room statuses for affected rooms
@@ -870,9 +928,11 @@ class RoomLockController extends Controller
         // Remove non-schema fields
         unset($validated['force']);
 
+        $logBefore = $lock->getAttributes();
         $lock->update($validated);
 
         $this->syncRoomStatusAfterLockEdit($lock);
+        $this->logLockUpdated($lock, $logBefore, $request);
 
         $lock->load(['room.roomForm', 'room.roomClass']);
 
@@ -906,7 +966,6 @@ class RoomLockController extends Controller
 
         $roomNumber = $lock->room_number;
         $unlockUsername = $request->user()?->username ?? $request->user()?->name ?? 'NB0016';
-        $oldValues = $lock->toArray();
 
         $latestRoll = \App\Models\SystemDateRoll::latest('id')->first();
         $sysDateStr = $latestRoll
@@ -930,15 +989,7 @@ class RoomLockController extends Controller
             $lock->update($updateData);
         }
 
-        \App\Services\ActivityLogService::logUpdate(
-            $request,
-            $lock,
-            $oldValues,
-            'reservation',
-            'LockRoomPage',
-            "Mở khóa phòng {$lock->room_number} (Hành động: Unlock, Giai đoạn: " . ($lock->start_date ? $lock->start_date->format('d/m/Y H:i') : '') . " ~ " . ($lock->end_date ? $lock->end_date->format('d/m/Y H:i') : '') . ")",
-            $lock->room_number
-        );
+        $this->logUnlocked($lock, $request);
 
         // Check if there are other active locks today
         $latestRoll = \App\Models\SystemDateRoll::latest('id')->first();
@@ -1185,15 +1236,8 @@ class RoomLockController extends Controller
                 $lock->update($updateFields);
                 $this->syncRoomStatusAfterLockEdit($lock->fresh());
 
-                \App\Services\ActivityLogService::logUpdate(
-                    $request,
-                    $lock,
-                    $oldValues,
-                    'reservation',
-                    'LockRoomPage',
-                    "Cập nhật hàng loạt phòng khóa {$lock->room_number}",
-                    $lock->room_number
-                );
+                // Dòng 103: ghi rõ các thông tin phòng khóa được sửa
+                $this->logLockUpdated($lock, $oldValues, $request);
             }
         });
 

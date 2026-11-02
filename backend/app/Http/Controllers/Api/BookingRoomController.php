@@ -272,6 +272,7 @@ class BookingRoomController extends Controller
 
         $isInhouse = $bookingRoom->status === BookingRoom::STATUS_CHECKED_IN;
         $oldRoomAttributes = $bookingRoom->getAttributes();
+        $oldBookingAttributes = \App\Models\Booking::find($bookingRoom->booking_id)?->getRawOriginal() ?? [];
 
         // Rule Epic 2: phòng inhouse chỉ cho sửa ngày đi, giờ đi, giá và số phòng (chuyển phòng)
         if ($isInhouse) {
@@ -524,7 +525,7 @@ class BookingRoomController extends Controller
             : null;
 
         try {
-            \App\Services\ActivityLogService::logBookingRoomUpdated($bookingRoom, $oldRoomAttributes ?? [], $bookingRoom->fresh()->getAttributes(), $request);
+            \App\Services\ActivityLogService::logBookingRoomUpdated($bookingRoom, $oldRoomAttributes ?? [], $bookingRoom->fresh()->getAttributes(), $request, $oldBookingAttributes);
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::warning('Log BookingRoom update error: ' . $e->getMessage());
         }
@@ -735,6 +736,9 @@ class BookingRoomController extends Controller
             }
         }
 
+        // Lịch sử thao tác (dòng 33): chụp đăng ký + phòng trước khi cập nhật hàng loạt
+        $logSnapshot = \App\Services\ActivityLogService::snapshotBooking($booking);
+
         DB::beginTransaction();
         try {
             foreach ($rooms as $room) {
@@ -843,6 +847,12 @@ class BookingRoomController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json(['success' => false, 'message' => 'Lỗi: ' . $e->getMessage()], 500);
+        }
+
+        try {
+            \App\Services\ActivityLogService::logBookingChanges($booking, $logSnapshot, $request);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log bulk room update error: ' . $e->getMessage());
         }
 
         return response()->json([
@@ -1126,9 +1136,10 @@ class BookingRoomController extends Controller
         }
 
         try {
-            $bCode = $booking->booking_code ?? ('GAL' . $booking->id);
-            \App\Services\ActivityLogService::logCheckIn($bCode, $bookingRoom->room_number, $request);
-        } catch (\Throwable $e) {}
+            \App\Services\ActivityLogService::logCheckIn($booking->id, $bookingRoom->fresh(), $request);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log check-in error: ' . $e->getMessage());
+        }
 
         $message = 'Giao phòng thành công!';
         if ($postDayUseRoomCharge) {
@@ -1261,6 +1272,25 @@ class BookingRoomController extends Controller
             return response()->json(['success' => false, 'message' => 'Lỗi: ' . $e->getMessage()], 500);
         }
 
+        try {
+            // Dòng 98: "Cancel checkin cho Mã Đăng Ký: GAL.. - Phòng: 406 - tình trạng phòng: Phòng sạch"
+            $code = \App\Services\ActivityLogService::bookingCode($bookingRoom->booking_id);
+            $statusCode = $bookingRoom->room_number
+                ? \App\Models\Room::where('room_number', $bookingRoom->room_number)->value('room_status_code')
+                : null;
+            \App\Services\ActivityLogService::record('Modify', "Cancel checkin cho Mã Đăng Ký: {$code}\n- Phòng: " . ($bookingRoom->room_number ?: 'Chưa gán')
+                . "\n- tình trạng phòng: " . \App\Services\ActivityLogService::roomStatusName($statusCode), [
+                'screen' => \App\Support\ActivityScreen::ROOM_MAP,
+                'booking_code' => $code,
+                'room_code' => $bookingRoom->id,
+                'target_type' => 'BookingRoom',
+                'target_id' => $bookingRoom->id,
+                'target_label' => $code,
+            ], $request);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log undo check-in error: ' . $e->getMessage());
+        }
+
         return response()->json([
             'success' => true,
             'data'    => $bookingRoom->fresh()->load(['roomClass', 'room']),
@@ -1291,10 +1321,25 @@ class BookingRoomController extends Controller
             return response()->json(['success' => false, 'message' => 'Phòng đã hủy.'], 422);
         }
 
+        $oldNumber = $bookingRoom->room_number;
         $bookingRoom->update([
             'room_number' => null,
             'updated_by'  => Auth::user()?->username ?? 'system',
         ]);
+
+        try {
+            $code = \App\Services\ActivityLogService::bookingCode($bookingRoom->booking_id);
+            \App\Services\ActivityLogService::record('Modify', "* Cập Nhật Phòng Thuê ({$bookingRoom->id}): - Gỡ số phòng {$oldNumber} -> Chưa gán", [
+                'screen' => \App\Support\ActivityScreen::ROOM_SCHEDULE,
+                'booking_code' => $code,
+                'room_code' => $bookingRoom->id,
+                'target_type' => 'BookingRoom',
+                'target_id' => $bookingRoom->id,
+                'target_label' => $code,
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log unassign error: ' . $e->getMessage());
+        }
 
         return response()->json([
             'success' => true,
@@ -1435,6 +1480,26 @@ class BookingRoomController extends Controller
             return response()->json(['success' => false, 'message' => 'Lỗi: ' . $e->getMessage()], 500);
         }
 
+        try {
+            // Dòng 13, 40: "* Hủy phòng thuê: 703 (G0000044) - Đăng ký: GAL20 Lý do: Better Rate elsewhere"
+            $code = \App\Services\ActivityLogService::bookingCode($bookingRoom->booking_id);
+            \App\Services\ActivityLogService::record(
+                'Cancel',
+                '* Hủy phòng thuê: ' . ($bookingRoom->room_number ?: 'Chưa gán') . " ({$bookingRoom->id}) - Đăng ký: {$code}" . (!empty($reasonText) ? " Lý do: {$reasonText}" : ''),
+                [
+                    'screen' => \App\Support\ActivityScreen::REGISTRATION,
+                    'booking_code' => $code,
+                    'room_code' => $bookingRoom->id,
+                    'target_type' => 'BookingRoom',
+                    'target_id' => $bookingRoom->id,
+                    'target_label' => $code,
+                ],
+                $request
+            );
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log cancel room error: ' . $e->getMessage());
+        }
+
         return response()->json([
             'success' => true,
             'message' => 'Đã hủy phòng thành công.',
@@ -1472,6 +1537,11 @@ class BookingRoomController extends Controller
         // Dòng 399: AV của loại phòng mới chưa tính phòng đang nâng hạng, nên
         // phòng này cần AV >= 1. Khóa loại phòng mới để các lượt nâng hạng
         // đồng thời không cùng lấy một phòng trống cuối cùng.
+        $logOldClassId = $bookingRoom->room_class_id;
+        $logOldForm = \App\Support\BookingLogText::formName($bookingRoom);
+        $logOldNumber = $bookingRoom->room_number;
+        $logOldRate = $bookingRoom->rate;
+
         $result = DB::transaction(function () use ($bookingRoom, $newClassId, $request, $roomId, $allowOver) {
             \App\Models\RoomClass::whereKey($newClassId)->lockForUpdate()->first();
 
@@ -1516,6 +1586,31 @@ class BookingRoomController extends Controller
             ? 'Cảnh báo: AV âm (' . $result['av'] . '). Vẫn lưu theo cấu hình hệ thống.'
             : null;
 
+        try {
+            // Dòng 35: "* Upgrade các phòng (G..) , Loại phòng: A -> B , Dạng phòng: Triple -> Double"
+            $after = $bookingRoom->fresh();
+            $code = \App\Services\ActivityLogService::bookingCode($bookingRoom->booking_id);
+            $desc = "* Upgrade các phòng ({$bookingRoom->id}) , Loại phòng: " . \App\Support\BookingLogText::className($logOldClassId)
+                . ' -> ' . \App\Support\BookingLogText::className($after->room_class_id)
+                . ' , Dạng phòng: ' . $logOldForm . ' -> ' . \App\Support\BookingLogText::formName($after);
+            if ($logOldNumber) {
+                $desc .= " , Phòng: {$logOldNumber} -> " . ($after->room_number ?: 'Chưa gán');
+            }
+            if ((float) $logOldRate !== (float) $after->rate) {
+                $desc .= ' , Giá: ' . \App\Services\ActivityLogService::money($logOldRate) . ' -> ' . \App\Services\ActivityLogService::money($after->rate);
+            }
+            \App\Services\ActivityLogService::record('Modify', $desc, [
+                'screen' => \App\Support\ActivityScreen::REGISTRATION,
+                'booking_code' => $code,
+                'room_code' => $bookingRoom->id,
+                'target_type' => 'BookingRoom',
+                'target_id' => $bookingRoom->id,
+                'target_label' => $code,
+            ], $request);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log upgrade error: ' . $e->getMessage());
+        }
+
         return response()->json([
             'success' => true,
             'data'    => $bookingRoom->fresh()->load(['roomClass', 'originalRoomClass']),
@@ -1559,11 +1654,31 @@ class BookingRoomController extends Controller
                     'locked_at'          => now(),
                     'note'               => $request->note,
                 ]);
+                $this->logDoNotMove($bookingRoom, true);
 
                 return response()->json(['success' => true, 'message' => 'Đã khóa chuyển phòng (Do Not Move).']);
             });
         } catch (\Throwable $e) {
             return response()->json(['success' => false, 'message' => 'Lỗi: ' . $e->getMessage()], 500);
+        }
+    }
+
+    /** Dòng 11, 12, 41, 42: "* Cập nhật phòng thuê: G0000016 - Đăng Ký: GAL8 từ sẵn sàng sang Do Not Move". */
+    private function logDoNotMove(BookingRoom $room, bool $locked): void
+    {
+        try {
+            $code = \App\Services\ActivityLogService::bookingCode($room->booking_id);
+            [$from, $to] = $locked ? ['Sẵn Sàng', 'Do Not Move'] : ['Do Not Move', 'Sẵn Sàng'];
+            \App\Services\ActivityLogService::record('Modify', "* Cập nhật phòng thuê: {$room->id} - Đăng Ký: {$code} từ {$from} sang {$to}", [
+                'screen' => \App\Support\ActivityScreen::REGISTRATION,
+                'booking_code' => $code,
+                'room_code' => $room->id,
+                'target_type' => 'BookingRoom',
+                'target_id' => $room->id,
+                'target_label' => $code,
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log do-not-move error: ' . $e->getMessage());
         }
     }
     // =========================================
@@ -1606,6 +1721,7 @@ class BookingRoomController extends Controller
                     'unlocked_at'          => now(),
                 ]);
                 $bookingRoom->update(['is_do_not_move' => 0]);
+                $this->logDoNotMove($bookingRoom, false);
 
                 return response()->json(['success' => true, 'message' => 'Đã mở khóa chuyển phòng.']);
             });
@@ -1663,6 +1779,23 @@ class BookingRoomController extends Controller
                 'room_number' => $assignedRoom->room_number,
                 'updated_by'  => Auth::user()?->username ?? 'system',
             ]);
+
+            // Dòng 34: một dòng "* Tự động assigned rooms: - Mã phòng: G.. -> 109 - Mã phòng: G.. -> 209"
+            $code = \App\Services\ActivityLogService::bookingCode($bookingRoom->booking_id);
+            \App\Services\ActivityLogService::recordBatched(
+                request()->input('log_batch'),
+                'Modify',
+                '* Tự động assigned rooms:',
+                "- Mã phòng: {$bookingRoom->id} -> {$assignedRoom->room_number}",
+                [
+                    'screen' => \App\Support\ActivityScreen::REGISTRATION,
+                    'booking_code' => $code,
+                    'room_code' => [$bookingRoom->id],
+                    'target_type' => 'BookingRoom',
+                    'target_id' => $bookingRoom->id,
+                    'target_label' => $code,
+                ]
+            );
 
             return response()->json([
                 'success'      => true,
@@ -1965,6 +2098,24 @@ class BookingRoomController extends Controller
             $newBookingRoom->save();
 
             \Illuminate\Support\Facades\DB::commit();
+
+            try {
+                // Dòng 10: tách phòng thành hai giai đoạn
+                $code = \App\Services\ActivityLogService::bookingCode($bookingRoom->booking_id);
+                $d = fn ($v) => \App\Services\ActivityLogService::d($v);
+                \App\Services\ActivityLogService::record('Modify', "* Cập nhật phòng thuê: tách phòng {$bookingRoom->id} Thành hai giai đoạn\n"
+                    . "{$bookingRoom->id} - Ngày đến: {$d($bookingRoom->arrival_date)} - Ngày đi: {$d($bookingRoom->departure_date)}\n"
+                    . "{$newBookingRoom->id} - Ngày đến: {$d($newBookingRoom->arrival_date)} - Ngày đi: {$d($newBookingRoom->departure_date)}", [
+                    'screen' => \App\Support\ActivityScreen::ROOM_SCHEDULE,
+                    'booking_code' => $code,
+                    'room_code' => [$bookingRoom->id, $newBookingRoom->id],
+                    'target_type' => 'BookingRoom',
+                    'target_id' => $bookingRoom->id,
+                    'target_label' => $code,
+                ], $request);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Log split room error: ' . $e->getMessage());
+            }
 
             return response()->json([
                 'success' => true,
@@ -2355,6 +2506,12 @@ class BookingRoomController extends Controller
         $selectedChildIds = $request->input('selected_child_ids', []);
         $isChangeRate = filter_var($request->input('is_change_rate', false), FILTER_VALIDATE_BOOLEAN);
 
+        // Lịch sử thao tác (dòng 50, 99): giá và tình trạng phòng cũ trước khi chuyển
+        $logOldRate = $bookingRoom->rate;
+        $logOldRoomStatus = $bookingRoom->room_number
+            ? \App\Models\Room::where('room_number', $bookingRoom->room_number)->value('room_status_code')
+            : null;
+
         $syncMovedChildren = function ($sourceRoom, $targetRoom, $children, string $moveDate, string $moveTime, string $user): void {
             foreach ($children as $child) {
                 \App\Models\BookingRoomChild::updateOrCreate([
@@ -2683,10 +2840,10 @@ class BookingRoomController extends Controller
                     DB::commit();
 
                     try {
-                        $guestIdsStr = implode(',', $movedGuestIds ?? []);
-                        $bCode = $bookingRoom->booking?->booking_code ?? ('GAL' . $bookingId);
-                        \App\Services\ActivityLogService::logRoomMove($bCode, $bookingRoom->room_number, $targetRoomNumber, $reason, $guestIdsStr, $request);
-                    } catch (\Throwable $e) {}
+                        \App\Services\ActivityLogService::logRoomMove($bookingRoom, $newRoom->fresh(), $movedGuestIds ?? [], $reason, $logOldRate, $logOldRoomStatus, $request);
+                    } catch (\Throwable $e) {
+                        \Illuminate\Support\Facades\Log::warning('Log room move error: ' . $e->getMessage());
+                    }
 
                     return response()->json([
                         'success' => true,
@@ -2716,9 +2873,13 @@ class BookingRoomController extends Controller
                     DB::commit();
 
                     try {
-                        $bCode = $bookingRoom->booking?->booking_code ?? ('GAL' . $bookingId);
-                        \App\Services\ActivityLogService::logRoomMove($bCode, $oldNumber, $targetRoomNumber, $reason, null, $request);
-                    } catch (\Throwable $e) {}
+                        $before = $bookingRoom->replicate();
+                        $before->id = $bookingRoom->id;
+                        $before->room_number = $oldNumber;
+                        \App\Services\ActivityLogService::logRoomMove($before, $bookingRoom->fresh(), [], $reason, $logOldRate, null, $request);
+                    } catch (\Throwable $e) {
+                        \Illuminate\Support\Facades\Log::warning('Log room change error: ' . $e->getMessage());
+                    }
 
                     return response()->json([
                         'success' => true,

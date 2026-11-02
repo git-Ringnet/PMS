@@ -674,7 +674,6 @@ class RoomController extends Controller
                 ->get();
 
             foreach ($activeLocks as $lock) {
-                $oldValues = $lock->toArray();
                 if ($lock->status === 'New') {
                     $lock->delete();
                 } else {
@@ -690,34 +689,12 @@ class RoomController extends Controller
                     $lock->update($updateData);
                 }
 
-                \App\Services\ActivityLogService::logUpdate(
-                    $request,
-                    $lock,
-                    $oldValues,
-                    'reservation',
-                    'RoomMapPage',
-                    "Mở khóa phòng {$lock->room_number} (Hành động: Unlock qua đổi tình trạng phòng, Giai đoạn: " . ($lock->start_date ? $lock->start_date->format('d/m/Y H:i') : '') . " ~ " . ($lock->end_date ? $lock->end_date->format('d/m/Y H:i') : '') . ")",
-                    $lock->room_number
-                );
+                $this->logUnlockByStatus($lock, $request);
             }
         }
 
-        try {
-            $statusLabels = [
-                'vacant_ready' => 'Phòng sẵn sàng',
-                'vacant_clean' => 'Phòng sạch',
-                'vacant_dirty' => 'Phòng bẩn',
-                'occupied_ready' => 'Có khách (sẵn sàng)',
-                'occupied_clean' => 'Có khách (sạch)',
-                'occupied_dirty' => 'Có khách (bẩn)',
-                'ooo' => 'Hỏng (OOO)',
-                'oos' => 'Ngừng bán (OOS)',
-                'maintenance' => 'Bảo trì',
-            ];
-            $oldLabel = $statusLabels[$oldCode] ?? $oldCode;
-            $newLabel = $statusLabels[$newCode] ?? $newCode;
-            \App\Services\ActivityLogService::logRoomStatusChanged($room->room_number, $oldLabel, $newLabel, $request);
-        } catch (\Throwable $e) {}
+        // Dòng 48, 97: "* Phòng 101. Đổi trạng thái từ: Phòng chưa dọn -> Phòng sẵn sàng"
+        $this->logStatusChanges([$room->room_number => [$oldCode, $newCode]], $request);
 
         $room->load(['roomForm', 'roomClass']);
 
@@ -787,6 +764,7 @@ class RoomController extends Controller
         $localNow = \Carbon\Carbon::now('Asia/Ho_Chi_Minh');
         $unlockEndDateTime = $sysDateStr . ' ' . $localNow->format('H:i:s');
         $currentUser = auth()->user()?->username ?? auth()->user()?->name ?? 'system';
+        $logOldCodes = $rooms->mapWithKeys(fn (Room $room) => [$room->room_number => $room->room_status_code])->all();
 
         DB::transaction(function () use ($rooms, $newCode, $request, $unlockEndDateTime, $currentUser) {
             $rooms->each(function (Room $room) use ($newCode, $request, $unlockEndDateTime, $currentUser) {
@@ -804,7 +782,6 @@ class RoomController extends Controller
                         ->get();
 
                     foreach ($activeLocks as $lock) {
-                        $oldValues = $lock->toArray();
                         if ($lock->status === 'New') {
                             $lock->delete();
                         } else {
@@ -820,24 +797,98 @@ class RoomController extends Controller
                             $lock->update($updateData);
                         }
 
-                        \App\Services\ActivityLogService::logUpdate(
-                            $request,
-                            $lock,
-                            $oldValues,
-                            'reservation',
-                            'RoomMapPage',
-                            "Mở khóa phòng {$lock->room_number} (Hành động: Unlock qua đổi tình trạng phòng, Giai đoạn: " . ($lock->start_date ? $lock->start_date->format('d/m/Y H:i') : '') . " ~ " . ($lock->end_date ? $lock->end_date->format('d/m/Y H:i') : '') . ")",
-                            $lock->room_number
-                        );
+                        $this->logUnlockByStatus($lock, $request);
                     }
                 }
             });
         });
 
+        // Dòng 48, 97: đổi nhiều phòng cùng lúc gom theo cùng trạng thái "* Phòng 402,404,405. Đổi trạng thái từ: A -> B"
+        $this->logStatusChanges(
+            $rooms->mapWithKeys(fn (Room $room) => [$room->room_number => [null, $newCode]])->all(),
+            $request,
+            $logOldCodes
+        );
+
         return response()->json([
             'success' => true,
             'updated_count' => $rooms->count(),
         ]);
+    }
+
+    /**
+     * "* Phòng 402,404. Đổi trạng thái từ: Phòng chưa dọn -> Phòng sẵn sàng" gom các phòng cùng cặp trạng thái.
+     *
+     * @param  array<string, array{0:?string,1:?string}>  $changes  [số phòng => [mã cũ, mã mới]]
+     * @param  array<string, ?string>|null  $oldCodes  mã cũ chụp trước khi cập nhật (ưu tiên)
+     */
+    private function logStatusChanges(array $changes, Request $request, ?array $oldCodes = null): void
+    {
+        try {
+            $groups = [];
+            foreach ($changes as $roomNumber => [$old, $new]) {
+                $old = $oldCodes[$roomNumber] ?? $old;
+                if ($old === $new) {
+                    continue;
+                }
+                $groups["{$old}|{$new}"][] = (string) $roomNumber;
+            }
+            foreach ($groups as $pair => $roomNumbers) {
+                [$old, $new] = explode('|', $pair);
+                \App\Services\ActivityLogService::record('Modify', '* Phòng ' . implode(',', $roomNumbers) . '. Đổi trạng thái từ: '
+                    . \App\Services\ActivityLogService::roomStatusName($old) . ' -> ' . \App\Services\ActivityLogService::roomStatusName($new), [
+                    'screen' => \App\Support\ActivityScreen::ROOM_MAP,
+                    'room_code' => $roomNumbers,
+                    'target_type' => 'Room',
+                    'target_id' => implode(',', $roomNumbers),
+                ], $request);
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log room status error: ' . $e->getMessage());
+        }
+    }
+
+    /** Mở khóa phòng OOO/OOS do đổi tình trạng phòng (dòng 97). */
+    private function logUnlockByStatus(\App\Models\RoomLock $lock, Request $request): void
+    {
+        try {
+            \App\Services\ActivityLogService::record('Unlock', "Mở khóa phòng {$lock->lock_type} mã {$lock->id}, phòng {$lock->room_number}"
+                . ' (đổi tình trạng phòng) - Giai đoạn: ' . ($lock->start_date ? $lock->start_date->format('d-m-Y H:i') : '')
+                . ' ~ ' . ($lock->end_date ? $lock->end_date->format('d-m-Y H:i') : ''), [
+                'screen' => \App\Support\ActivityScreen::ROOM_MAP,
+                'room_code' => $lock->room_number,
+                'target_type' => 'RoomLock',
+                'target_id' => $lock->id,
+            ], $request);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log unlock by status error: ' . $e->getMessage());
+        }
+    }
+
+    /** Dòng 48: bật/hủy các cờ buồng phòng (DND, dịch vụ dọn phòng, ưu tiên dọn). */
+    private function logHousekeepingFlags(array $before, array $flags, Request $request): void
+    {
+        $labels = [
+            'is_do_not_disturb' => 'Do Not Disturb (Không làm phiền)',
+            'is_housekeeping_service' => 'Dịch vụ dọn phòng',
+            'is_priority_cleaning' => 'Phòng ưu tiên dọn',
+        ];
+        try {
+            foreach ($flags as $column => $value) {
+                $rooms = collect($before)->filter(fn ($state) => (bool) ($state[$column] ?? false) !== (bool) $value)->keys()->map(fn ($n) => (string) $n)->all();
+                if (!$rooms) {
+                    continue;
+                }
+                \App\Services\ActivityLogService::record('Modify', '* Phòng ' . implode(',', $rooms) . '. ' . ($value ? 'Bật' : 'Hủy') . ' trạng thái ' . ($labels[$column] ?? $column), [
+                    'screen' => \App\Support\ActivityScreen::ROOM_MAP,
+                    'room_code' => $rooms,
+                    'target_type' => 'Room',
+                    'target_id' => implode(',', $rooms),
+                ], $request);
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log housekeeping flags error: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -855,7 +906,9 @@ class RoomController extends Controller
         }
 
         $flags = $this->validatedHousekeepingFlags($request);
+        $before = [$room->room_number => $room->only(array_keys($flags))];
         $room->update($flags);
+        $this->logHousekeepingFlags($before, $flags, $request);
         $room->load(['roomForm', 'roomClass']);
 
         return response()->json([
@@ -878,8 +931,11 @@ class RoomController extends Controller
             'room_ids.*' => 'integer|distinct|exists:rooms,id',
         ]);
         $flags = $this->validatedHousekeepingFlags($request);
+        $before = Room::whereIn('id', $validated['room_ids'])->get()
+            ->mapWithKeys(fn (Room $room) => [$room->room_number => $room->only(array_keys($flags))])->all();
 
         $updatedCount = Room::whereIn('id', $validated['room_ids'])->update($flags);
+        $this->logHousekeepingFlags($before, $flags, $request);
 
         return response()->json([
             'success' => true,

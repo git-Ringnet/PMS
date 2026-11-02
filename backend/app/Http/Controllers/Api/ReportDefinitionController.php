@@ -140,12 +140,20 @@ class ReportDefinitionController extends Controller
 
             // Ghi log xem báo cáo chuẩn Row 1 & Row 71
             $params = $validated['parameters'] ?? [];
-            $from = !empty($params['from_date'])
-                ? \Carbon\Carbon::parse($params['from_date'])->format('d-m-Y')
-                : (!empty($params['date']) ? \Carbon\Carbon::parse($params['date'])->format('d-m-Y') : now()->format('d-m-Y'));
-            $to = !empty($params['to_date'])
-                ? \Carbon\Carbon::parse($params['to_date'])->format('d-m-Y')
-                : $from;
+            // Tham số ngày của báo cáo có thể đặt tên khác nhau (from_date, FromDate, tu_ngay, start_date...)
+            $pickDate = function (string $pattern) use ($params): ?string {
+                foreach ($params as $key => $value) {
+                    if (is_string($value) && preg_match($pattern, (string) $key) && strtotime($value) !== false) {
+                        return \Carbon\Carbon::parse($value)->format('d-m-Y');
+                    }
+                }
+
+                return null;
+            };
+            $from = $pickDate('/^(from|tu_?ngay|start|begin)|from_?date|tungay/i')
+                ?? $pickDate('/^(date|ngay)$/i')
+                ?? now()->format('d-m-Y');
+            $to = $pickDate('/^(to_|den_?ngay|end)|to_?date|denngay/i') ?? $from;
             \App\Services\ActivityLogService::logReportView($reportDefinition, $from, $to, $request);
 
             return response()->json([

@@ -616,10 +616,12 @@ async function handlePostRoomCharge() {
     const postedList = []
     const skippedList = []
     const failedList = []
+    // Gom các phòng của một lần "thêm tiền phòng" vào một dòng lịch sử thao tác
+    const logBatch = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
     for (const item of selected) {
       const parts = item.id.split('-')
       const bookingRoomId = parts[parts.length - 1]
-      
+
       // Dùng API post tiền phòng chung (chế độ tự động): giá theo phòng, tự bỏ qua phòng đã có tiền phòng ngày này.
       const payload = {
         booking_room_id: bookingRoomId,
@@ -627,7 +629,8 @@ async function handlePostRoomCharge() {
         date_to: sysDateStr,
         mode: 'auto',
         folio: 1,
-        description: `Tiền phòng ngày ${formatDateVN(sysDateStr)} (Post thủ công)`
+        description: `Tiền phòng ngày ${formatDateVN(sysDateStr)} (Post thủ công)`,
+        log_batch: logBatch
       }
 
       // Xử lý từng phòng: phòng không hợp lệ (vd. đi trong ngày, không còn đêm tính tiền) không chặn các phòng khác.

@@ -200,7 +200,7 @@ class ActivityLogDetailTest extends TestCase
         $this->assertStringContainsString('Đoàn Hà Nội', $info);
         $this->assertStringNotContainsString('Traveloka', $info);
         $this->assertStringNotContainsString('Đại lý lữ hành', $info);
-        $this->assertStringContainsString('P.301', $rooms);
+        $this->assertStringContainsString('Phòng: 301', $rooms);
         $this->assertStringContainsString('Deluxe Double', $rooms);
         $this->assertStringContainsString('650,000', $rooms);
         $this->assertStringNotContainsString('540,000', $rooms);

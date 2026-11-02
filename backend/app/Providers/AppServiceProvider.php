@@ -15,6 +15,16 @@ class AppServiceProvider extends ServiceProvider
         'RoomLock' => ['room_number', 'lock_type'],
         'Room' => ['room_number'],
         'Company' => ['code', 'name'],
+        // Sheet GHI LOG dòng 66, 78-93: khi sửa vẫn cần mã / tên để ghi đúng đối tượng
+        'Market' => ['id', 'code', 'name'],
+        'CustomerSource' => ['id', 'code', 'name'],
+        'Branch' => ['id', 'code', 'name'],
+        'Booker' => ['id', 'name'],
+        'HkStaff' => ['id', 'name'],
+        'LostAndFoundItem' => ['id', 'log_no'],
+        'Warehouse' => ['id', 'name'],
+        'ProductCategory' => ['id', 'name', 'outlet'],
+        'Product' => ['id', 'name', 'product_category_id'],
     ];
 
     /**
@@ -178,7 +188,7 @@ class AppServiceProvider extends ServiceProvider
             }
 
             // Kiểm tra chạy trong console cho Activity Log (CLI không cần ghi Activity Log)
-            if (app()->runningInConsole()) {
+            if (app()->runningInConsole() && !app()->runningUnitTests()) {
                 return;
             }
 
