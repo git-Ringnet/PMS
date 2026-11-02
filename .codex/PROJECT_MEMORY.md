@@ -1,5 +1,34 @@
 # Project Memory — PMS
 
+- 2026-10-30: Fix lỗi `migrate:fresh` trên chi nhánh động (`mysql_data` / `pms_data`):
+  - `2026_10_30_103000`: Thêm `DB::getDefaultConnection()` vào danh sách connection để các chi nhánh động được cập nhật `rpt_company_occupancy` đầy đủ khi chạy migrate; đưa logic ngày vận hành `system_date_rolls` vào ngay trong procedure của migration này.
+  - `2026_10_30_170000`: Thoát an toàn (`return;`) nếu procedure đã có `system_date_rolls`, chuẩn hóa line endings khi so sánh chuỗi, bỏ `RuntimeException` để không làm đứt đoạn lệnh reset `db:reset-all` / `migrate:fresh`.
+
+- 2026-10-30: Báo cáo chi tiết công suất công ty (`COMPANY_OCCUPANCY_DETAIL` - Dòng 166 Danh Mục Báo Cáo):
+  - Chuẩn hóa Stored Procedure `rpt_company_occupancy_detail` qua migration `2026_10_30_190000_update_company_occupancy_detail_report.php` áp dụng đồng bộ cho cả 5 database connections (`mysql`, `mysql_hkt1`, `mysql_hkt2`, `mysql_hkt3`, `mysql_hkt4`).
+  - Khắc phục triệt để lỗi tính khách: Chuyển từ công thức nhân `RoomNight * SUM(adults + children)` sang tính `GuestNight` theo từng đêm phòng thực tế (`COALESCE(rnb.adult, 0) + COALESCE(rnb.child, 0)` hoặc `br.adults + br.children_qty`), đưa đêm khách về con số thực 221 (khắc phục lỗi nhân lên 3,083).
+  - Tách mốc thời gian quá khứ và tương lai theo ngày vận hành và ngày hệ thống PMS (`operationdate`, `systemdate`), giúp báo cáo load đúng dữ liệu cả khi xem ngày hiện tại hoặc tương lai.
+  - Sửa subquery lấy đúng `g.nationality_code` (thay vì `nationality` không tồn tại) và `rc.code` giúp các cột `RoomType`, `Nationality`, `ReferenceCode` hiển thị đầy đủ, không bị rỗng.
+  - Đối chiếu chéo số liệu thực tế ngày 20/08/2026 với Báo cáo tổng hợp (`COMPANY_OCCUPANCY` - 167): Đêm phòng (97 = 97), Doanh thu phòng (61,337,000 = 61,337,000), Doanh thu F&B (0 = 0), Doanh thu khác (4,995,000 = 4,995,000), Tổng doanh thu (66,332,000 = 66,332,000) khớp chính xác 100% từng đồng cho tất cả 14 đối tác/công ty.
+  - Viết test tự động `CompanyOccupancyDetailReportTest` (2 passed, 155 assertions). `npm run build` thành công trong 7.81s (0 lỗi). Hoàn toàn không sửa bất kỳ file frontend hay backend dùng chung nào.
+
+- 2026-10-30: Rollback cấu hình metadata động theo yêu cầu người dùng: Đã khôi phục nguyên trạng `ReportsPage.vue` về HEAD, loại bỏ các validation rule `presentation`/`runtime` trong `ReportDefinitionController.php`, xóa file migration `2026_10_30_180000_configure_company_occupancy_runtime_rules.php`, và chuẩn hóa lại `parameter_ui_schema` trong database cùng migration `2026_10_30_103000` về schema 8 tham số cơ bản, không còn các trường metadata phức tạp.
+
+- 2026-10-30: Migration Báo cáo công suất công ty đã cô lập theo connection hiện hành của migration runner. Ba migration `2026_10_30_103000`, `160000`, `170000` không còn tự lặp qua alias `mysql`/`mysql_hkt*`; kiểm tra tồn tại metadata table hoặc Procedure trước khi cập nhật. Khắc phục lỗi `migrate:fresh` nhiều database va chạm bảng `report_data_sources` chưa được tạo. PHP lint đạt; chưa tự chạy `migrate:fresh` vì thao tác này xóa dữ liệu branch.
+
+- 2026-10-30: Sửa popup chọn khoảng ngày báo cáo bị cắt trong sidebar có `overflow-y-auto`: `ReportDateRangePicker.vue` Teleport popup vào `body`, định vị fixed theo input, đóng click ngoài/Esc và tự cập nhật khi resize/cuộn. Áp dụng cho mọi báo cáo date-range; không đổi API, dữ liệu hoặc import legacy. Frontend build đạt.
+
+- 2026-10-30: Báo cáo công suất công ty (`COMPANY_OCCUPANCY` - Dòng 167 Danh Mục Báo Cáo, Row 8 Sheet LỖI BÁO CÁO):
+  - Template Designer: chọn ô/cấp nhóm Detail Table đồng bộ block-band-Inspector và dùng viền/nền xanh rõ ràng. Panel trái nhận checkbox/radio từ Report Definition liên kết; preview truyền Report Definition và chạy `ReportDatasetEnricher`, nên điều kiện/aggregate runtime (gồm `p_is_grouped`) nhất quán với báo cáo thực tế. Chuẩn hóa schema Data Source dạng array/object để không lỗi render khi field schema lưu theo alias. Chỉ mở rộng API template trả metadata liên kết, không đổi dữ liệu/template đã lưu.
+  - Khắc phục ngày vận hành: `rpt_company_occupancy` nay ưu tiên `hotel_configs.SystemDate`, fallback `system_date_rolls.system_date`, và chỉ cuối cùng mới dùng ngày máy chủ. Đã đồng bộ 5 connection; kiểm tra HKT1 ngày vận hành 30/08/2026 trả 1 dòng với 6 đêm phòng. Không đổi dữ liệu booking, UI hay report khác.
+  - Backend & Database: Stored Procedure `rpt_company_occupancy` nhận đúng 8 tham số legacy (`p_from_date`, `p_to_date`, `p_area`, `p_company`, `p_segment`, `p_user_sale`, `p_group_by`, `p_include_breakfast`), không có `p_source_code`; hỗ trợ 6 chế độ gom nhóm linh hoạt (không nhóm, ngày, thị trường, nguồn khách, ngày + thị trường, ngày + nguồn khách), tính đúng số đêm lưu trú từ ngày đến trước ngày đi, tính Room Available động từng ngày trừ OOO từ `room_locks` và snapshot lịch sử. Tạo `CompanyOccupancyDataAdapter.php` tính tổng toàn khách sạn `summary_occupancy`, `summary_actual_adr`, `summary_rack_adr` và gán `p_is_grouped`. Tích hợp adapter vào `ReportDatasetEnricher.php` với phạm vi cô lập chỉ dành cho `COMPANY_OCCUPANCY`. Migration `2026_10_30_160000_sync_company_occupancy_legacy_parameter_contract.php` đã đồng bộ metadata cùng hợp đồng 8 tham số trên 5 branch connections (`mysql`, `mysql_hkt1`, `mysql_hkt2`, `mysql_hkt3`, `mysql_hkt4`).
+  - Template & Designer ([TemplateEditorModal.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/components/hotel/TemplateEditorModal.vue)): Khắc phục triệt để lỗi khi mở cấu hình báo cáo và ấn Lưu: biên dịch hàng 2 đánh số cột 1..11 (`topHeader`), hỗ trợ format `|percent` cho cả cột bảng và ô tùy biến, áp dụng class `.company-occupancy-table` và viền sắc nét 1px `#718096`, class `.company-code` cho cột Mã. Loại bỏ hoàn toàn khối chữ ký thừa `company_occupancy_signatures` (`Người lập biểu` & `Giám đốc khách sạn`) trong cả `content_json` và `content_html`. Khối Ghi chú 8 công thức chuẩn 100% legacy.
+  - Logo & Ngày in: Tạo file logo khách sạn tại `backend/public/assets/hotel-logo.png` ngăn lỗi vỡ ảnh; bổ sung `report.generated_date` theo định dạng `dd/mm/yyyy` (không có giờ/giây) khớp mẫu PDF.
+  - Giao diện tham số ([ReportsPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reports/ReportsPage.vue)): Xếp gọn thanh điều kiện aside `w-[290px] p-3`, các trường chọn lọc bên trên, cụm 5 switch bên dưới xếp lưới 2 cột tinh gọn đúng theo ảnh hệ thống cũ. Ràng buộc `required: false` cho `p_area` (không bị viền vàng bắt buộc).
+  - Dữ liệu runtime & Seeder: Tạo `CompanyOccupancyRuntimeSeeder.php` nạp toàn bộ giao dịch ngày 20/08/2026 cho 14 công ty khớp 100% số liệu legacy (PEGAS, Khách lẻ, Travel Concierge...; 93 đêm phòng, 203 khách, DT phòng 55,277,333, tổng DT 63,167,333; snapshot 129 phòng available trừ 2 phòng OOO). Đã chạy seeder trên cả `mysql` và `mysql_hkt1`.
+  - Khắc phục lỗi hiển thị theo ảnh chụp thực tế: Chép `hotel-logo.png` vào `frontend/public/assets/` và inline base64 trong `ReportDefinitionController::hotelContext()` (ngăn triệt để vỡ logo). Căn chỉnh dòng Tổng ở Template 60 (chuyển chữ `Tổng` sang cột Tên công ty, cột Mã để trống, các cột số liệu thẳng hàng với 11 cột header). Sửa cách tính khách theo từng room night bill trong procedure `rpt_company_occupancy`.
+  - Kiểm thử: Unit test `CompanyOccupancyDataAdapterTest` pass 3/3; frontend build `npm run build` thành công trong 6.10s (0 lỗi); xuất ảnh preview hệ thống mới (`new_system_rendered_preview.png`) khớp số liệu và giao diện mẫu PDF legacy.
+
 - 2026-10-27: Room Map — Bảng Danh sách tăng chiều rộng tối thiểu và các cột header dài để không bị rút gọn; giữ cuộn ngang cục bộ. Chỉ đổi `RoomMapPage.vue`, không đổi API, dữ liệu, filter hay import legacy. Frontend build đạt.
 
 - 2026-10-27: Room Map — Thanh thống kê đầu trang giữ đủ nội dung cho thẻ Đã đến/Đã đi/Đang ở/Khóa OOO/Khóa OOS/Công suất: đặt chiều rộng tối thiểu và không ngắt nhãn; khi màn hình hẹp, chỉ dải thẻ cuộn ngang. Không đổi API, số liệu, lọc, dữ liệu hay import legacy. Frontend build đạt.
@@ -977,6 +1006,7 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 ## Current Status
 
+- 2026-10-30: Menu Báo cáo đã hỗ trợ cây danh mục nhiều cấp trong cấu hình và dropdown header; cần UAT thao tác cấu hình/lưu/mở menu nhiều cấp trên các module Đăng ký phòng, Lễ tân và Buồng phòng.
 - 2026-10-26: Dòng 407 Màu nền hệ thống đã chuyển sang cấu hình dùng chung; cần chạy migration và UAT đổi màu bằng tài khoản quản trị, sau đó kiểm tra tài khoản thường và phiên đăng nhập mới.
 - 2026-10-26: Dòng 402 Sơ đồ phòng đã thay định vị popup Ghi chú theo chiều cao thực tế; cần UAT các hàng đầu/cuối với ghi chú ngắn/dài.
 - 2026-10-26: Dòng 404 đã cache UI trong phiên SPA cho Tìm kiếm chung, Ghi log, Khóa phòng, In phân công HK và Room Map; cần UAT chuyển qua lại giữa Đặt phòng/Lễ tân/Buồng phòng và xác nhận loading lần tải đầu.
@@ -991,6 +1021,13 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 ## Recent Changes
 
+- 2026-10-30: Menu Báo cáo: dùng `report_menu_nodes.parent_id` hiện có để lưu/đọc cây danh mục đệ quy; API navigation loại danh mục rỗng theo quyền ở mọi cấp. Form cấu hình mở rộng ngang, hỗ trợ tạo danh mục con, đổi tên, sắp xếp anh em, gỡ report và xóa danh mục theo cơ chế nâng mục con. Header dùng dropdown đệ quy. Không đổi report definition, procedure, template, quyền, schema, import hay menu nghiệp vụ khác. Test cây frontend 3/3 đạt; cần UAT browser/backend integration. Tài liệu: `.codex/docs/reports/report_menu_hierarchy.md`.
+- 2026-10-30: UX cấu hình Menu Báo cáo chuyển sang cây thư mục: click chọn danh mục, breadcrumb đích thêm, đường nối theo cấp và menu `…` gom thao tác. Không đổi API/dữ liệu/quyền/import; cần UAT thao tác trên browser.
+- 2026-10-30: Menu Báo cáo: tạo danh mục tự cuộn tới mục mới, chọn/highlight và báo toast; menu thao tác chặn click dội lên dòng cha để thao tác nhất quán.
+- 2026-10-30: Sửa lỗi tạo danh mục menu Báo cáo: xác định đúng danh sách mục ở cấp cha trước khi lấy vị trí mục mới; nút Thêm Danh Mục và Thêm Danh Mục Con hoạt động lại.
+- 2026-10-30: Menu Báo cáo: mỗi report có nút Lên/Xuống/Xóa trực tiếp; mỗi danh mục có vùng tick chọn nhiều report chưa xếp và thêm một lần vào danh mục đó. Không đổi API/dữ liệu/quyền/import; tree test và frontend build đạt.
+- 2026-10-30: Menu Báo cáo: chuyển tick chọn report vào form từ menu `…` của danh mục; hỗ trợ kéo report chưa xếp từ cột trái thả vào danh mục. Không đổi API/dữ liệu/quyền/import; tree test và frontend build đạt.
+- 2026-10-30: Bỏ phần Vị trí trên menu hệ thống khỏi Danh Mục Báo Cáo; double-click report trong cây menu mở đúng bản ghi cấu hình report. Không đổi API/dữ liệu/quyền/import; frontend build đạt.
 - 2026-10-26: Dòng 407: thêm `SystemThemeTopbarColor` vào `hotel_configs`, API đọc/cập nhật màu chung và backend chặn người không phải quản trị viên. Frontend chỉ đọc `authStore.themeColor`; migration `2026_10_26_121000` xóa hẳn `user_settings.settings.topbar_color` tại System DB, giữ các setting khác và tự bỏ qua branch DB không có `user_settings`. Ghi activity log cho thao tác đổi màu. PHP lint, route list và frontend build đạt. Tài liệu: `.codex/docs/system_workbook/row407_system_theme.md`, database mapping đã cập nhật.
 - 2026-10-26: Dòng 402 Sơ đồ phòng: tooltip hover đo chiều cao sau render, tự chọn phía trên/dưới theo viewport và cuộn nội bộ khi cần; cuộn hoặc resize đóng tooltip để tránh neo sai. Không đổi API/backend/schema/import/trạng thái phòng; frontend build đạt. Tài liệu: `.codex/docs/reservation/room_map_row_402_tooltip_note.md`.
 - 2026-10-26: Dòng 404: router cache route Đặt phòng/Lễ tân/Buồng phòng; Lễ tân và Buồng phòng cache chọn lọc các tab được giao. Tìm kiếm chung, Ghi log và Khóa phòng dùng `LoadingOverlay` lần tải đầu; In phân công đã có overlay theo `hkStore.loading`. Không đổi API/backend/schema/import; frontend build đạt. Tài liệu: `.codex/docs/system_workbook/row404_view_state.md`.
@@ -1184,6 +1221,7 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 ## Known Risks
 
+- 2026-10-30: Cần UAT dropdown Báo cáo sâu nhiều cấp trên viewport hẹp và xác nhận cấu hình cũ một/two-level được hiển thị, lưu lại đúng thứ tự. Không có migration vì bảng cũ đã có `parent_id`.
 - 2026-10-26: Dòng 407 cần chạy migration trước khi màu chung được lưu DB; chưa có realtime cross-session, nên các phiên đang mở nhận màu mới khi tải lại hoặc đăng nhập lại.
 - 2026-10-26: Dòng 402 đã qua build nhưng cần UAT browser với popup có nội dung dài nhất để xác nhận chiều cao cuộn nội bộ và mũi tên neo đúng thẻ phòng ở viewport thực tế.
 - 2026-10-26: Dòng 404 cần UAT listener realtime và bộ nhớ khi nhiều module cache đồng thời; cache chỉ giữ trong SPA, reload browser là phiên mới.

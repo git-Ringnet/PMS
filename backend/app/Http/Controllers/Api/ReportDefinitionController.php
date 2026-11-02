@@ -29,7 +29,8 @@ class ReportDefinitionController extends Controller
         private readonly ReportDatasetEnricher $datasetEnricher,
         private readonly ReportExportService $exporter,
         private readonly RoomAvailabilityService $roomAvailability
-    ) {}
+    ) {
+    }
 
     private function permissions(): ReportPermissionService
     {
@@ -65,7 +66,7 @@ class ReportDefinitionController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $reports->map(fn (ReportDefinition $report) => $this->serialize($report)),
+            'data' => $reports->map(fn(ReportDefinition $report) => $this->serialize($report)),
         ]);
     }
 
@@ -139,11 +140,11 @@ class ReportDefinitionController extends Controller
 
             // Ghi log xem báo cáo chuẩn Row 1 & Row 71
             $params = $validated['parameters'] ?? [];
-            $from = !empty($params['from_date']) 
-                ? \Carbon\Carbon::parse($params['from_date'])->format('d-m-Y') 
+            $from = !empty($params['from_date'])
+                ? \Carbon\Carbon::parse($params['from_date'])->format('d-m-Y')
                 : (!empty($params['date']) ? \Carbon\Carbon::parse($params['date'])->format('d-m-Y') : now()->format('d-m-Y'));
-            $to = !empty($params['to_date']) 
-                ? \Carbon\Carbon::parse($params['to_date'])->format('d-m-Y') 
+            $to = !empty($params['to_date'])
+                ? \Carbon\Carbon::parse($params['to_date'])->format('d-m-Y')
                 : $from;
             \App\Services\ActivityLogService::logReportView($reportDefinition, $from, $to, $request);
 
@@ -153,7 +154,7 @@ class ReportDefinitionController extends Controller
                 'template' => $this->templateSummary($template),
                 'html' => $this->renderTemplate($template, $data),
             ]);
-        } catch (InvalidArgumentException|RuntimeException|ValidationException $exception) {
+        } catch (InvalidArgumentException | RuntimeException | ValidationException $exception) {
             return response()->json([
                 'success' => false,
                 'message' => $exception->getMessage(),
@@ -210,7 +211,7 @@ class ReportDefinitionController extends Controller
             $html = $this->renderTemplate($template, $data);
 
             return $this->exporter->download($validated['format'], $template, $data, $html, $reportDefinition->code);
-        } catch (InvalidArgumentException|RuntimeException|ValidationException $exception) {
+        } catch (InvalidArgumentException | RuntimeException | ValidationException $exception) {
             return response()->json(['success' => false, 'message' => $exception->getMessage()], 422);
         }
     }
@@ -220,7 +221,7 @@ class ReportDefinitionController extends Controller
         $systemDate = $this->roomAvailability->getSystemDate();
         $time = now()->timezone('Asia/Ho_Chi_Minh')->format('H:i:s');
 
-        return $systemDate->format('d/m/Y').' '.$time;
+        return $systemDate->format('d/m/Y') . ' ' . $time;
     }
 
     private function prepareReportData(ReportDefinition $reportDefinition, array $parameters, Request $request): array
@@ -236,6 +237,7 @@ class ReportDefinitionController extends Controller
             'code' => $reportDefinition->code,
             'name' => $reportDefinition->name,
             'generated_at' => $this->systemReportTimestamp(),
+            'generated_date' => $this->roomAvailability->getSystemDate()->format('d/m/Y'),
             'generated_by' => $request->user()?->name ?? $request->user()?->username ?? '',
         ];
         $data['hotel'] = $this->hotelContext();
@@ -256,7 +258,7 @@ class ReportDefinitionController extends Controller
     {
         $division = $parameters['p_division'] ?? '__current__';
         $multiBranchReports = ['CANCELLED_ROOMS', 'NO_SHOW', 'NO_SHOW_BY_DAY', 'WEEKLY_ROOM_REPORT'];
-        if (! in_array($reportDefinition->code, $multiBranchReports, true) || ! in_array($division, ['', '__all__'], true)) {
+        if (!in_array($reportDefinition->code, $multiBranchReports, true) || !in_array($division, ['', '__all__'], true)) {
             $data = $this->executor->executeSource($reportDefinition->reportDataSource, $parameters);
 
             return $reportDefinition->code === 'WEEKLY_ROOM_REPORT'
@@ -265,7 +267,7 @@ class ReportDefinitionController extends Controller
         }
 
         $user = $request->user();
-        if (! $user) {
+        if (!$user) {
             throw new RuntimeException('Người dùng chưa được xác thực.');
         }
 
@@ -282,7 +284,7 @@ class ReportDefinitionController extends Controller
                 ->orderBy('system_branches.id')
                 ->get();
 
-        if (! $branches || $branches->isEmpty()) {
+        if (!$branches || $branches->isEmpty()) {
             throw new RuntimeException('Người dùng không có chi nhánh được phép xem báo cáo.');
         }
 
@@ -294,7 +296,7 @@ class ReportDefinitionController extends Controller
 
         foreach ($branches as $branch) {
             $connectionName = $branch->db_connection ?: TenantDatabaseService::getConnectionName($branch->code);
-            if (! config("database.connections.{$connectionName}")) {
+            if (!config("database.connections.{$connectionName}")) {
                 TenantDatabaseService::registerDynamicConnection(
                     $connectionName,
                     TenantDatabaseService::getDatabaseName($branch->code)
@@ -314,7 +316,7 @@ class ReportDefinitionController extends Controller
             $truncated = $truncated || (bool) ($branchData['summary']['truncated'] ?? false);
 
             foreach ($branchData['rows'] ?? [] as $row) {
-                $row['Division'] = ! empty($row['Division']) ? $row['Division'] : $branch->code;
+                $row['Division'] = !empty($row['Division']) ? $row['Division'] : $branch->code;
                 $rows[] = $row;
             }
         }
@@ -352,8 +354,8 @@ class ReportDefinitionController extends Controller
             $data['parameters'] ?? [],
             $rows,
             ($data['parameters']['p_division'] ?? '__current__') === '__all__'
-                ? 'Tất cả chi nhánh'
-                : 'Chi nhánh hiện tại'
+            ? 'Tất cả chi nhánh'
+            : 'Chi nhánh hiện tại'
         );
 
         return [
@@ -378,7 +380,7 @@ class ReportDefinitionController extends Controller
         }
         unset($row);
 
-        usort($rows, static fn (array $left, array $right): int => strcmp(
+        usort($rows, static fn(array $left, array $right): int => strcmp(
             (string) ($left['report_date'] ?? ''),
             (string) ($right['report_date'] ?? '')
         ));
@@ -394,7 +396,7 @@ class ReportDefinitionController extends Controller
             if ($date === '') {
                 continue;
             }
-            if (! isset($grouped[$date])) {
+            if (!isset($grouped[$date])) {
                 $grouped[$date] = $row;
                 $grouped[$date]['Division'] = '__all__';
                 continue;
@@ -416,8 +418,8 @@ class ReportDefinitionController extends Controller
 
     private function weeklySummaryParameters(array $parameters, array $rows, string $divisionLabel): array
     {
-        $availableRooms = array_sum(array_map(static fn (array $row): int => (int) ($row['available_rooms'] ?? 0), $rows));
-        $occupiedRooms = array_sum(array_map(static fn (array $row): int => (int) ($row['occ_rooms'] ?? 0), $rows));
+        $availableRooms = array_sum(array_map(static fn(array $row): int => (int) ($row['available_rooms'] ?? 0), $rows));
+        $occupiedRooms = array_sum(array_map(static fn(array $row): int => (int) ($row['occ_rooms'] ?? 0), $rows));
 
         $parameters['p_division_label'] = $divisionLabel;
         $parameters['p_weekly_occupancy_rate'] = number_format(
@@ -443,7 +445,7 @@ class ReportDefinitionController extends Controller
             $dateKey = static function (array $row): string {
                 $date = (string) ($row['CancelDate'] ?? '');
                 $sortableDate = preg_match('/^(\d{2})\/(\d{2})\/(\d{4})$/', $date, $parts)
-                    ? $parts[3].$parts[2].$parts[1]
+                    ? $parts[3] . $parts[2] . $parts[1]
                     : $date;
 
                 return implode('|', [$sortableDate, $row['CancelTime'] ?? '', $row['BookingId'] ?? '', $row['Room'] ?? '']);
@@ -459,7 +461,7 @@ class ReportDefinitionController extends Controller
         $dateKey = static function (array $row): string {
             $date = (string) ($row['NoshowDate'] ?? $row['LateCheckInDate'] ?? '');
             if (preg_match('/^(\d{2})[\/-](\d{2})[\/-](\d{4})$/', $date, $parts)) {
-                return $parts[3].$parts[2].$parts[1];
+                return $parts[3] . $parts[2] . $parts[1];
             }
 
             return $date;
@@ -507,7 +509,10 @@ class ReportDefinitionController extends Controller
     {
         $validated = $request->validate([
             'code' => [
-                'required', 'string', 'max:100', 'regex:/^[A-Z][A-Z0-9_]*$/',
+                'required',
+                'string',
+                'max:100',
+                'regex:/^[A-Z][A-Z0-9_]*$/',
                 Rule::unique('report_definitions', 'code')->ignore($report?->id),
             ],
             'name' => 'required|string|max:255',
@@ -536,8 +541,10 @@ class ReportDefinitionController extends Controller
             'menu_item_order' => 'nullable|integer|min:0|max:999',
         ]);
 
-        if (! empty($validated['default_template_id'])
-            && ! in_array($validated['default_template_id'], $validated['template_ids'], true)) {
+        if (
+            !empty($validated['default_template_id'])
+            && !in_array($validated['default_template_id'], $validated['template_ids'], true)
+        ) {
             throw ValidationException::withMessages([
                 'default_template_id' => 'Mẫu mặc định phải nằm trong danh sách mẫu đã gán.',
             ]);
@@ -549,10 +556,19 @@ class ReportDefinitionController extends Controller
     private function definitionAttributes(array $validated): array
     {
         return collect($validated)->only([
-            'code', 'name', 'group', 'description', 'report_data_source_id',
-            'parameter_ui_schema', 'sort_order', 'is_active',
-            'show_in_menu', 'menu_locations', 'menu_top_order',
-            'menu_group_order', 'menu_item_order',
+            'code',
+            'name',
+            'group',
+            'description',
+            'report_data_source_id',
+            'parameter_ui_schema',
+            'sort_order',
+            'is_active',
+            'show_in_menu',
+            'menu_locations',
+            'menu_top_order',
+            'menu_group_order',
+            'menu_item_order',
         ])->all();
     }
 
@@ -574,9 +590,9 @@ class ReportDefinitionController extends Controller
         $templates = $report->templates()->get();
         $template = $templateId
             ? $templates->firstWhere('id', $templateId)
-            : ($templates->first(fn (Template $item) => (bool) $item->pivot->is_default) ?? $templates->first());
+            : ($templates->first(fn(Template $item) => (bool) $item->pivot->is_default) ?? $templates->first());
 
-        if (! $template) {
+        if (!$template) {
             throw ValidationException::withMessages(['template_id' => 'Báo cáo chưa có mẫu đầu ra hợp lệ.']);
         }
 
@@ -595,7 +611,7 @@ class ReportDefinitionController extends Controller
             $css = preg_replace_callback('/(\.summary-table\s*\{)([^}]*)\}/i', function (array $matches) {
                 $rules = preg_replace('/\s*max-width\s*:\s*[^;]+;?/i', '', $matches[2]);
 
-                return $matches[1].$rules.'}';
+                return $matches[1] . $rules . '}';
             }, $css) ?? $css;
             $css .= '\n.summary-table { width: 100% !important; margin-left: 0 !important; margin-right: 0 !important; }';
         }
@@ -623,7 +639,7 @@ class ReportDefinitionController extends Controller
     private function markBookingReferences(string $html): string
     {
         $fields = ['BookingId', 'BookingCode', 'BookingCode1', 'booking_code', 'CodeBooking', 'MaBooking', 'Booking'];
-        $pattern = '/\{\{row\.('.implode('|', $fields).')(?:\|[^}]*)?\}\}/';
+        $pattern = '/\{\{row\.(' . implode('|', $fields) . ')(?:\|[^}]*)?\}\}/';
 
         return preg_replace_callback($pattern, function (array $matches) use ($html): string {
             [$placeholder, $offset] = $matches[0];
@@ -634,7 +650,7 @@ class ReportDefinitionController extends Controller
             }
             $reference = $matches[1][0] === 'Booking' ? 'BookingId' : $matches[1][0];
 
-            return '<span class="pms-booking-ref" data-pms-booking="{{row.'.$reference.'}}">'.$placeholder.'</span>';
+            return '<span class="pms-booking-ref" data-pms-booking="{{row.' . $reference . '}}">' . $placeholder . '</span>';
         }, $html, -1, $count, PREG_OFFSET_CAPTURE) ?? $html;
     }
 
@@ -642,17 +658,25 @@ class ReportDefinitionController extends Controller
     {
         $hotel = HotelSetting::first();
         $logoUrl = $hotel?->logo_url ?: $hotel?->logo;
-        if ($logoUrl && ! str_starts_with($logoUrl, '/') && ! preg_match('/^(https?:|data:|blob:)/i', $logoUrl)) {
-            $logoUrl = '/'.ltrim($logoUrl, '/');
+        if ($logoUrl && !str_starts_with($logoUrl, '/') && !preg_match('/^(https?:|data:|blob:)/i', $logoUrl)) {
+            $logoUrl = '/' . ltrim($logoUrl, '/');
         }
+
+        $base64Logo = null;
+        if ($logoUrl && file_exists(public_path(ltrim($logoUrl, '/')))) {
+            $mime = mime_content_type(public_path(ltrim($logoUrl, '/'))) ?: 'image/png';
+            $base64Logo = 'data:' . $mime . ';base64,' . base64_encode(file_get_contents(public_path(ltrim($logoUrl, '/'))));
+        }
+
+        $finalLogo = $base64Logo ?: $logoUrl;
 
         return [
             'name' => $hotel?->hotel_name ?? '',
             'address' => $hotel?->address ?? '',
             'phone' => $hotel?->phone ?? '',
             'email' => $hotel?->email ?? '',
-            'logo' => $logoUrl
-                ? '<img src="'.$logoUrl.'" alt="Logo" class="hotel-logo-image">'
+            'logo' => $finalLogo
+                ? '<img src="' . $finalLogo . '" alt="Logo" class="hotel-logo-image">'
                 : '<div class="hotel-logo-fallback">PMS</div>',
         ];
     }
@@ -695,7 +719,7 @@ class ReportDefinitionController extends Controller
             'menu_top_order' => $report->menu_top_order,
             'menu_group_order' => $report->menu_group_order,
             'menu_item_order' => $report->menu_item_order,
-            'templates' => $report->templates->map(fn (Template $template) => $this->templateSummary($template))->values(),
+            'templates' => $report->templates->map(fn(Template $template) => $this->templateSummary($template))->values(),
             'created_at' => $report->created_at,
             'updated_at' => $report->updated_at,
         ];

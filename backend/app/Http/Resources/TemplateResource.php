@@ -22,6 +22,12 @@ class TemplateResource extends JsonResource
             'report_data_source_id' => $this->report_data_source_id,
             'parameter_defaults' => $this->parameter_defaults,
             'report_data_source' => $this->whenLoaded('reportDataSource'),
+            'report_definitions' => $this->whenLoaded('reportDefinitions', fn () => $this->reportDefinitions->map(fn ($definition) => [
+                'id' => $definition->id,
+                'code' => $definition->code,
+                'name' => $definition->name,
+                'parameter_ui_schema' => $definition->parameter_ui_schema,
+            ])->values()),
             'page_size' => $this->page_size,
             'page_orientation' => $this->page_orientation,
             'margin_top' => $this->margin_top,

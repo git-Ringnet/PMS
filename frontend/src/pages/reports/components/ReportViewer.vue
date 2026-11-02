@@ -17,7 +17,7 @@ const props = defineProps({
   html: { type: String, default: '' },
   template: { type: Object, default: null },
 })
-const emit = defineEmits(['open-booking'])
+const emit = defineEmits(['open-booking', 'open-report'])
 
 const frame = ref(null)
 const scroller = ref(null)
@@ -88,7 +88,23 @@ const appendStyle = (doc, css) => {
   doc.head.appendChild(style)
 }
 
+// data-pms-drill = {"report": "<code>", "parameters": {...}}: mở báo cáo khác với tham số của ô được nhấp đúp.
+const parseDrill = (element) => {
+  try {
+    const drill = JSON.parse(element?.getAttribute('data-pms-drill') || '')
+    return drill?.report ? drill : null
+  } catch {
+    return null
+  }
+}
+
 const handleDoubleClick = (event) => {
+  const drill = parseDrill(event.target?.closest?.('[data-pms-drill]'))
+  if (drill) {
+    event.preventDefault()
+    emit('open-report', drill)
+    return
+  }
   const target = event.target?.closest?.('[data-pms-booking]')
   const bookingCode = target?.getAttribute('data-pms-booking')?.trim()
   if (!bookingCode) return

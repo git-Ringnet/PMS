@@ -29,7 +29,7 @@ class ReportMenuService
     }
 
     /**
-     * Cây menu của một module: [{type: group, name, children: [report...]}, {type: report, ...}].
+     * Cây menu của một module, hỗ trợ danh mục và báo cáo ở mọi cấp.
      *
      * @param  Collection<int, ReportDefinition>  $reports  các báo cáo được xét (đã lọc trạng thái / quyền nếu cần)
      */
@@ -51,24 +51,25 @@ class ReportMenuService
             ];
         };
 
-        $tree = [];
-        foreach ($nodes->whereNull('parent_id') as $node) {
-            if ($node->type === 'group') {
-                $children = [];
-                foreach ($nodes->where('parent_id', $node->id) as $child) {
-                    $report = $members->get($child->report_definition_id);
-                    if ($report && ! isset($placed[$report->id])) {
-                        $children[] = $reportItem($report);
-                    }
+        $rootKey = '__root__';
+        $childrenByParent = $nodes->groupBy(fn (ReportMenuNode $node) => $node->parent_id === null ? $rootKey : (string) $node->parent_id);
+        $buildNodes = function ($parentId) use (&$buildNodes, $childrenByParent, $members, $reportItem) {
+            $items = [];
+            foreach ($childrenByParent->get($parentId, collect()) as $node) {
+                if ($node->type === 'group') {
+                    $items[] = ['type' => 'group', 'name' => $node->name, 'children' => $buildNodes($node->id)];
+                    continue;
                 }
-                $tree[] = ['type' => 'group', 'name' => $node->name, 'children' => $children];
-            } else {
+
                 $report = $members->get($node->report_definition_id);
-                if ($report && ! isset($placed[$report->id])) {
-                    $tree[] = $reportItem($report);
+                if ($report) {
+                    $items[] = $reportItem($report);
                 }
             }
-        }
+
+            return $items;
+        };
+        $tree = $buildNodes($rootKey);
 
         // Báo cáo chưa xếp: thêm vào nhóm cùng tên, chưa có nhóm thì tạo nhóm mới ở cuối (thứ tự như menu cũ)
         $unplaced = $members->reject(fn ($report) => isset($placed[$report->id]))
@@ -95,24 +96,33 @@ class ReportMenuService
     public function save(string $location, array $tree): void
     {
         $reportIds = [];
-        $groupNames = [];
-        foreach ($tree as $item) {
-            if ($item['type'] === 'group') {
-                $name = trim((string) ($item['name'] ?? ''));
-                if ($name === '') {
-                    throw ValidationException::withMessages(['tree' => 'Tên nhóm báo cáo không được để trống.']);
+        $validateItems = function (array $items) use (&$validateItems, &$reportIds): void {
+            $groupNames = [];
+            foreach ($items as $item) {
+                if (($item['type'] ?? null) === 'group') {
+                    $name = trim((string) ($item['name'] ?? ''));
+                    if ($name === '') {
+                        throw ValidationException::withMessages(['tree' => 'Tên danh mục báo cáo không được để trống.']);
+                    }
+                    if (in_array(mb_strtolower($name), $groupNames, true)) {
+                        throw ValidationException::withMessages(['tree' => "Danh mục \"{$name}\" bị trùng tên cùng cấp."]);
+                    }
+                    $groupNames[] = mb_strtolower($name);
+                    $children = $item['children'] ?? [];
+                    if (! is_array($children)) {
+                        throw ValidationException::withMessages(['tree' => 'Danh mục báo cáo có dữ liệu con không hợp lệ.']);
+                    }
+                    $validateItems($children);
+                    continue;
                 }
-                if (in_array(mb_strtolower($name), $groupNames, true)) {
-                    throw ValidationException::withMessages(['tree' => "Nhóm \"{$name}\" bị trùng tên."]);
+
+                if (($item['type'] ?? null) !== 'report' || empty($item['report_id'])) {
+                    throw ValidationException::withMessages(['tree' => 'Mục báo cáo không hợp lệ.']);
                 }
-                $groupNames[] = mb_strtolower($name);
-                foreach ($item['children'] ?? [] as $child) {
-                    $reportIds[] = (int) $child['report_id'];
-                }
-            } else {
                 $reportIds[] = (int) $item['report_id'];
             }
-        }
+        };
+        $validateItems($tree);
 
         if (count($reportIds) !== count(array_unique($reportIds))) {
             throw ValidationException::withMessages(['tree' => 'Một báo cáo chỉ được xếp một lần trong menu của module.']);
@@ -124,24 +134,23 @@ class ReportMenuService
         DB::transaction(function () use ($location, $tree, $reportIds) {
             ReportMenuNode::where('location', $location)->delete();
 
-            foreach (array_values($tree) as $order => $item) {
-                if ($item['type'] === 'group') {
-                    $group = ReportMenuNode::create([
-                        'location' => $location, 'type' => 'group', 'name' => trim($item['name']), 'sort_order' => $order,
-                    ]);
-                    foreach (array_values($item['children'] ?? []) as $childOrder => $child) {
-                        ReportMenuNode::create([
-                            'location' => $location, 'parent_id' => $group->id, 'type' => 'report',
-                            'report_definition_id' => (int) $child['report_id'], 'sort_order' => $childOrder,
+            $saveItems = function (array $items, ?int $parentId = null) use (&$saveItems, $location): void {
+                foreach (array_values($items) as $order => $item) {
+                    if ($item['type'] === 'group') {
+                        $group = ReportMenuNode::create([
+                            'location' => $location, 'parent_id' => $parentId, 'type' => 'group',
+                            'name' => trim($item['name']), 'sort_order' => $order,
                         ]);
+                        $saveItems($item['children'] ?? [], $group->id);
+                        continue;
                     }
-                } else {
                     ReportMenuNode::create([
-                        'location' => $location, 'type' => 'report',
+                        'location' => $location, 'parent_id' => $parentId, 'type' => 'report',
                         'report_definition_id' => (int) $item['report_id'], 'sort_order' => $order,
                     ]);
                 }
-            }
+            };
+            $saveItems($tree);
 
             foreach (ReportDefinition::all() as $report) {
                 // Báo cáo đang ẩn khỏi menu thì các khu vực cũ không còn hiệu lực

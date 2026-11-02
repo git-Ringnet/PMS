@@ -58,6 +58,15 @@
 
 # Detail-table column/custom-row styles
 
+## Điều kiện Report Và Preview Runtime
+
+- Template API trả các `report_definitions` đang liên kết với template, chỉ gồm mã, tên và `parameter_ui_schema`; không thay đổi cấu trúc lưu template.
+- Designer chuẩn hóa `parameter_schema`/`field_schema` ở cả dạng mảng và object theo alias trước khi hiển thị; nguồn dữ liệu legacy đã lưu object không làm lỗi render.
+- Panel trái hiển thị các control checkbox/radio của Report Definition để làm điều kiện block, hàng tùy chỉnh và cấp nhóm; chúng cùng với boolean Data Source và biến runtime đã dùng trong template tạo thành danh sách điều kiện.
+- Preview truyền `report_definition_code` và chạy `ReportDatasetEnricher` sau Data Source, nên aggregate/cờ dẫn xuất như `parameters.p_is_grouped` khớp luồng runtime report.
+- Click ô Detail Table hoặc tiêu đề/nhóm sẽ đồng bộ block, band và Inspector; ô được chọn có viền/nền xanh. Ctrl/Cmd + click giữ chọn nhiều ô.
+- Mỗi cấp group có trường dữ liệu, điều kiện và thứ tự; renderer xử lý đệ quy từ cấp ngoài vào trong.
+
 - Mỗi cột `table` có `headerStyle` và `cellStyle`: độ đậm, căn lề, cỡ chữ, màu chữ và màu nền.
 - Header mặc định in đậm để giữ tương thích template cũ; `fontWeight=normal` được ưu tiên ở canvas và HTML runtime.
 - Ô tiêu đề nhóm và ô hàng tùy chỉnh hỗ trợ `fontSize`/`fontWeight` ngoài màu, viền và căn lề hiện có.

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { CalendarDays, CheckCircle2 } from '@lucide/vue'
 import { addLocalDays, localMonthRange, localQuarterRange, localYearRange } from '@/utils/report-date-range'
 
@@ -13,7 +13,9 @@ const props = defineProps({
 const emit = defineEmits(['update:startDate', 'update:endDate', 'change'])
 
 const root = ref(null)
+const popup = ref(null)
 const open = ref(false)
+const popupStyle = ref({})
 const preset = ref('today')
 const draftStart = ref('')
 const draftEnd = ref('')
@@ -173,23 +175,64 @@ const apply = () => {
   open.value = false
 }
 
+const updatePopupPosition = () => {
+  const rect = root.value?.getBoundingClientRect()
+  if (!rect) return
+
+  const popupWidth = 320
+  const viewportPadding = 8
+  popupStyle.value = {
+    left: `${Math.max(viewportPadding, Math.min(rect.left, window.innerWidth - popupWidth - viewportPadding))}px`,
+    top: `${rect.bottom + 6}px`,
+  }
+}
+
+const toggle = async () => {
+  open.value = !open.value
+  if (open.value) {
+    await nextTick()
+    updatePopupPosition()
+  }
+}
+
 const onDocumentClick = (event) => {
-  if (root.value && !root.value.contains(event.target)) open.value = false
+  if (root.value?.contains(event.target) || popup.value?.contains(event.target)) return
+  open.value = false
+}
+
+const onKeyDown = (event) => {
+  if (event.key === 'Escape') open.value = false
 }
 
 watch(() => [props.startDate, props.endDate, props.systemDate], syncDraft, { immediate: true })
-onMounted(() => document.addEventListener('click', onDocumentClick))
-onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
+watch(open, async (isOpen) => {
+  if (!isOpen) return
+  await nextTick()
+  updatePopupPosition()
+})
+onMounted(() => {
+  document.addEventListener('click', onDocumentClick)
+  window.addEventListener('keydown', onKeyDown)
+  window.addEventListener('resize', updatePopupPosition)
+  window.addEventListener('scroll', updatePopupPosition, true)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocumentClick)
+  window.removeEventListener('keydown', onKeyDown)
+  window.removeEventListener('resize', updatePopupPosition)
+  window.removeEventListener('scroll', updatePopupPosition, true)
+})
 </script>
 
 <template>
   <div ref="root" class="relative mt-1">
-    <button type="button" class="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-xs font-medium text-slate-700 hover:border-sky-300" :class="requiredHighlight ? 'input-required' : ''" @click="open = !open">
+    <button type="button" class="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-xs font-medium text-slate-700 hover:border-sky-300" :class="requiredHighlight ? 'input-required' : ''" :aria-expanded="open" @click="toggle">
       <span class="truncate">{{ displayText }}</span>
-      <CalendarDays class="h-4 w-4 shrink-0 cursor-pointer text-sky-400" title="Mở bộ chọn ngày" @click.stop="open = true" />
+      <CalendarDays class="h-4 w-4 shrink-0 cursor-pointer text-sky-400" title="Mở bộ chọn ngày" @click.stop="open ? (open = false) : toggle()" />
     </button>
 
-    <div v-if="open" class="absolute left-0 top-[calc(100%+6px)] z-30 w-[320px] rounded-lg border border-slate-300 bg-white p-3 shadow-xl" @click.stop>
+    <Teleport to="body">
+    <div v-if="open" ref="popup" class="fixed z-[1000] w-[320px] rounded-lg border border-slate-300 bg-white p-3 shadow-xl" :style="popupStyle" @click.stop>
       <label class="block text-xs font-bold text-slate-700">
         Phạm vi ngày
         <select v-model="preset" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm" @change="selectPreset">
@@ -229,5 +272,6 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocumentClick))
         </button>
       </div>
     </div>
+    </Teleport>
   </div>
 </template>

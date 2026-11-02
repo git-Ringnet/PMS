@@ -2535,6 +2535,13 @@ class BookingRoomServiceController extends Controller
             ], 422);
         }
 
+        // Phòng đã checkout vẫn được post lại tiền phòng (xóa bill rồi post lại khi
+        // cần chỉnh giá), theo cấu hình AllowPostBillCheckedOutRoom và quyền user.
+        $isCheckedOutRoom = $room && (int) $room->status === BookingRoom::STATUS_CHECKED_OUT;
+        if ($isCheckedOutRoom) {
+            $this->ensureCheckedOutPostingAllowed($room, $booking);
+        }
+
         $systemDate = $this->avService->getSystemDate();
         $dateFrom   = Carbon::parse($request->date_from);
         $dateTo     = Carbon::parse($request->date_to);
@@ -2577,7 +2584,8 @@ class BookingRoomServiceController extends Controller
         // Giai đoạn post tiền phòng: từ ngày đến ban đầu (phòng late check-in vẫn charge lại được đêm cũ)
         // đến đêm cuối trước ngày đi, được post trước cho tương lai. Phòng lẻ luôn được post bù vào ngày hệ thống.
         $systemDay = Carbon::parse($systemDate)->startOfDay();
-        $systemDatePosting = !$isBookingPost && $this->isSystemDatePosting($dateFrom, $dateTo, $systemDate);
+        // Phòng đã checkout chỉ post lại trong giai đoạn đã ở, không post bù vào ngày hệ thống.
+        $systemDatePosting = !$isBookingPost && !$isCheckedOutRoom && $this->isSystemDatePosting($dateFrom, $dateTo, $systemDate);
         $actualArrival = Carbon::parse($room?->arrival_date ?: $booking->arrival_date)->startOfDay();
         $stayStart = $room ? $this->originalArrivalDate($room) : $actualArrival->copy();
         $rawDeparture = Carbon::parse($room?->departure_date ?: $booking->departure_date)->startOfDay();
@@ -2597,8 +2605,8 @@ class BookingRoomServiceController extends Controller
 
         foreach ($roomsToPost as $targetRoom) {
             $roomArrival = $this->originalArrivalDate($targetRoom);
-            if (in_array((int) $targetRoom->status, [BookingRoom::STATUS_CANCELLED, BookingRoom::STATUS_CHECKED_OUT], true)) {
-                return response()->json(['success' => false, 'message' => 'Phòng đã hủy hoặc đã checkout, không thể post tiền phòng.'], 422);
+            if ((int) $targetRoom->status === BookingRoom::STATUS_CANCELLED) {
+                return response()->json(['success' => false, 'message' => 'Phòng đã hủy, không thể post tiền phòng.'], 422);
             }
             if (!$isBookingPost && !$systemDatePosting && $dateFrom->copy()->startOfDay()->lt($roomArrival)) {
                 return response()->json([

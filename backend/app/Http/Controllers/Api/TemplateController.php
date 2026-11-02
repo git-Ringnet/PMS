@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\TemplateResource;
+use App\Models\ReportDefinition;
 use App\Models\Template;
 use App\Models\TemplateVersion;
 use App\Services\Reports\ReportDataExecutorService;
+use App\Services\Reports\ReportDatasetEnricher;
 use App\Services\TemplateRendererService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -19,7 +21,7 @@ class TemplateController extends Controller
     public function index()
     {
         // Order by group, then default templates first, then by name
-        $templates = Template::with('reportDataSource')->orderBy('group')
+        $templates = Template::with(['reportDataSource', 'reportDefinitions'])->orderBy('group')
             ->orderByDesc('is_default')
             ->orderBy('name')
             ->get();
@@ -106,7 +108,7 @@ class TemplateController extends Controller
      */
     public function show($id)
     {
-        $template = Template::with('reportDataSource')->find($id);
+        $template = Template::with(['reportDataSource', 'reportDefinitions'])->find($id);
         if (! $template) {
             return response()->json(['message' => 'Template not found'], 404);
         }
@@ -512,10 +514,27 @@ class TemplateController extends Controller
             if ($source) {
                 $parameters = $request->input('parameters', $template->parameter_defaults ?? $source->sample_parameters ?? []);
 
-                return app(ReportDataExecutorService::class)->executeSource($source, $parameters);
+                $data = app(ReportDataExecutorService::class)->executeSource($source, $parameters);
+                $reportDefinition = $this->previewReportDefinition($request, $template);
+
+                return $reportDefinition
+                    ? app(ReportDatasetEnricher::class)->enrich($reportDefinition, $data)
+                    : $data;
             }
         }
 
         return $renderer->getMockData($template->group, $template->name);
+    }
+
+    private function previewReportDefinition(Request $request, Template $template): ?ReportDefinition
+    {
+        $definitions = $template->reportDefinitions()->with('reportDataSource')->get();
+        $requestedCode = (string) $request->input('report_definition_code', '');
+
+        if ($requestedCode !== '') {
+            return $definitions->firstWhere('code', $requestedCode);
+        }
+
+        return $definitions->first();
     }
 }

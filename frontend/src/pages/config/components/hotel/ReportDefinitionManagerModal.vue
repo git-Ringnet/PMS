@@ -2,11 +2,11 @@
 import { computed, reactive, ref, watch } from 'vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
-import { FilePlus2, ListTree, Save, ShieldCheck, Trash2, X } from '@lucide/vue'
+import { FilePlus2, Save, ShieldCheck, Trash2, X } from '@lucide/vue'
 import ReportRoleAccessModal from './ReportRoleAccessModal.vue'
 
-const props = defineProps({ isOpen: { type: Boolean, default: false } })
-const emit = defineEmits(['close', 'changed', 'open-menu-config'])
+const props = defineProps({ isOpen: { type: Boolean, default: false }, selectedReportId: { type: Number, default: null } })
+const emit = defineEmits(['close', 'changed'])
 const roleAccessReport = ref(null)
 const uiStore = useUiStore()
 const loading = ref(false)
@@ -77,18 +77,22 @@ const edit = (report) => {
 
 const syncParameters = () => {
   const old = new Map(form.parameter_ui_schema.map(item => [item.name, item]))
-  form.parameter_ui_schema = (selectedSource.value?.parameter_schema || []).map(parameter => {
+  const sourceParams = (selectedSource.value?.parameter_schema || []).map(parameter => {
     const saved = old.get(parameter.name) || {}
     return {
       name: parameter.name,
       label: saved.label || parameter.name,
       control: saved.control || inputControl(parameter.data_type),
-      required: saved.required ?? true,
+      required: saved.required ?? false,
       default: saved.default ?? selectedSource.value?.sample_parameters?.[parameter.name] ?? '',
       options: saved.options || [],
-      options_source: saved.options_source || ''
+      options_source: saved.options_source || '',
+      range_end_parameter: saved.range_end_parameter || ''
     }
   })
+  const sourceNames = new Set(sourceParams.map(p => p.name))
+  const extraParams = form.parameter_ui_schema.filter(p => !sourceNames.has(p.name))
+  form.parameter_ui_schema = [...sourceParams, ...extraParams]
 }
 
 const inputControl = (dataType) => {
@@ -176,7 +180,19 @@ const remove = async () => {
   }
 }
 
-watch(() => props.isOpen, open => { if (open) { blank(); load() } })
+watch(() => props.isOpen, open => {
+  if (!open) return
+  if (props.selectedReportId) selectedId.value = props.selectedReportId
+  else blank()
+  load()
+})
+
+watch(() => props.selectedReportId, reportId => {
+  if (props.isOpen && reportId) {
+    selectedId.value = reportId
+    load()
+  }
+})
 </script>
 
 <template>
@@ -232,38 +248,6 @@ watch(() => props.isOpen, open => { if (open) { blank(); load() } })
             <span class="text-sky-300">→</span>
             <div><b class="block text-xs text-sky-800">3. Hiện thiết kế</b><small class="text-[10px] text-sky-600">Render mẫu đã gán ở phần cuối</small></div>
           </div>
-
-          <section class="mt-5 rounded-xl border border-violet-200 bg-violet-50/30">
-            <div class="flex items-center justify-between border-b border-violet-100 px-4 py-3">
-              <div>
-                <h4 class="text-[11px] font-black uppercase text-violet-700">Vị trí trên menu hệ thống</h4>
-                <p class="mt-0.5 text-[10px] font-semibold text-slate-400">Chọn module hiển thị. Báo cáo mới được thêm vào cuối nhóm “{{ form.group }}”; sắp xếp nhóm và thứ tự ở màn Cấu hình menu báo cáo.</p>
-              </div>
-              <label class="text-xs font-bold text-slate-600"><input v-model="form.show_in_menu" type="checkbox" /> Hiện trên menu</label>
-            </div>
-            <div :class="['p-4', !form.show_in_menu && 'pointer-events-none opacity-45']">
-              <p class="mb-2 text-[10px] font-black uppercase text-slate-500">Hiển thị tại khu vực</p>
-              <div class="mb-4 flex flex-wrap gap-2">
-                <label v-for="location in [
-                  { value: 'reservation', label: 'Đăng ký phòng' },
-                  { value: 'frontdesk', label: 'Lễ tân' },
-                  { value: 'housekeeping', label: 'Buồng phòng' }
-                ]" :key="location.value" class="cursor-pointer rounded-lg border bg-white px-3 py-2 text-xs font-bold"
-                  :class="form.menu_locations.includes(location.value) ? 'border-violet-300 text-violet-700' : 'border-slate-200 text-slate-500'">
-                  <input class="mr-1.5" type="checkbox" :checked="form.menu_locations.includes(location.value)" @change="toggleMenuLocation(location.value)" />{{ location.label }}
-                </label>
-              </div>
-              <div class="flex flex-wrap items-end gap-3">
-                <label class="w-48 text-[10px] font-bold uppercase text-slate-500">Vị trí nút Báo cáo
-                  <input v-model.number="form.menu_top_order" type="number" min="0" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs" />
-                  <small class="mt-1 block normal-case text-slate-400">Số nhỏ nằm bên trái trước.</small>
-                </label>
-                <button type="button" class="mb-5 flex items-center gap-1 rounded-lg border border-violet-200 bg-white px-3 py-2 text-xs font-bold text-violet-700" @click="emit('open-menu-config')">
-                  <ListTree class="h-4 w-4" /> Sắp xếp nhóm / thứ tự báo cáo
-                </button>
-              </div>
-            </div>
-          </section>
 
           <section class="mt-5 rounded-xl border border-slate-200">
             <div class="border-b border-slate-200 bg-slate-50 px-4 py-2 text-[11px] font-black uppercase text-slate-600">Bộ lọc đầu vào lấy từ tham số Store</div>

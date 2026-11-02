@@ -42,6 +42,7 @@ const isEditorOpen = ref(false)
 const selectedTemplateId = ref(null)
 const isDataSourceManagerOpen = ref(false)
 const isReportManagerOpen = ref(false)
+const selectedReportDefinitionId = ref(null)
 
 // Creation form state
 const showCreateForm = ref(false)
@@ -125,6 +126,17 @@ const deleteTemplate = async (template) => {
 const openVisualEditor = (id) => {
   selectedTemplateId.value = id
   isEditorOpen.value = true
+}
+
+const openReportDefinition = (reportId) => {
+  selectedReportDefinitionId.value = reportId
+  isReportMenuConfigOpen.value = false
+  isReportManagerOpen.value = true
+}
+
+const closeReportManager = () => {
+  isReportManagerOpen.value = false
+  selectedReportDefinitionId.value = null
 }
 
 onMounted(() => {
@@ -322,11 +334,12 @@ onMounted(() => {
 
   <ReportDefinitionManagerModal
     :is-open="isReportManagerOpen"
-    @close="isReportManagerOpen = false"
-    @changed="fetchTemplates"
-    @open-menu-config="isReportMenuConfigOpen = true" />
+    :selected-report-id="selectedReportDefinitionId"
+    @close="closeReportManager"
+    @changed="fetchTemplates" />
 
   <ReportMenuConfigModal
     :is-open="isReportMenuConfigOpen"
-    @close="isReportMenuConfigOpen = false" />
+    @close="isReportMenuConfigOpen = false"
+    @open-report-definition="openReportDefinition" />
 </template>
