@@ -75,6 +75,12 @@ class NightlyAvailabilityTest extends TestCase
         return $this->postJson("/api/bookings/{$room->booking_id}/rooms/bulk-update", ['room_ids' => [$room->id]] + $fields);
     }
 
+    private function resetDeparture(BookingRoom $room, string $date): void
+    {
+        \Illuminate\Support\Facades\DB::table('booking_rooms')->where('id', $room->id)->update(['departure_date' => $date]);
+        $room->refresh();
+    }
+
     // ------------------------------------------------------------------ getAvailability (service)
 
     public function test_range_availability_is_the_lowest_night_not_the_sum_of_overlapping_bookings(): void
@@ -138,7 +144,7 @@ class NightlyAvailabilityTest extends TestCase
         foreach (['2026-09-07', '2026-09-06', '2026-09-03'] as $departure) {
             $this->bulk($mine, ['departure_date' => $departure])->assertOk();
             $this->assertSame($departure, $mine->fresh()->departure_date->toDateString());
-            $mine->update(['departure_date' => '2026-09-09']);
+            $this->resetDeparture($mine, '2026-09-09');
         }
     }
 
@@ -240,5 +246,24 @@ class NightlyAvailabilityTest extends TestCase
 
         // 2 phòng của booking này + chính phòng mình = còn dư 1 phòng cho đêm 5/9
         $this->bulk($mine, ['departure_date' => '2026-09-07'])->assertOk();
+    }
+
+    public function test_inhouse_room_can_shorten_checkout_but_not_extend_into_a_full_night(): void
+    {
+        // Đúng ca thực tế: phòng đang ở (Inhouse), ngày đến 30/8, ngày đi 9/9
+        $mine = $this->stay('2026-08-30', '2026-09-09', '1312');
+        $mine->update(['status' => BookingRoom::STATUS_CHECKED_IN]);
+        $this->fillAll('2026-09-04', '2026-09-06');   // các đêm 4-5/9 đã kín kể cả phòng mình
+        $this->fillAll('2026-09-10', '2026-09-12');   // đêm 10-11/9 kín
+
+        $this->bulk($mine, ['departure_date' => '2026-09-07', 'current_module' => 'FO'])->assertOk();
+        $this->assertSame('2026-09-07', $mine->fresh()->departure_date->toDateString());
+
+        $this->resetDeparture($mine, '2026-09-09');
+        $this->bulk($mine, ['departure_date' => '2026-09-06', 'current_module' => 'FO'])->assertOk();
+
+        $this->resetDeparture($mine, '2026-09-09');
+        $this->bulk($mine, ['departure_date' => '2026-09-11', 'current_module' => 'FO'])->assertStatus(422);
+        $this->assertSame('2026-09-09', $mine->fresh()->departure_date->toDateString());
     }
 }
