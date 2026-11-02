@@ -9,14 +9,19 @@ use App\Models\RegistrationStatus;
 use App\Models\Room;
 use App\Models\RoomClass;
 use App\Models\RoomForm;
+use App\Models\RoomLock;
 use App\Models\User;
 use App\Services\RoomAvailabilityService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * Phòng trống của một giai đoạn nhiều đêm = số phòng trống thấp nhất trong từng đêm,
- * và chỉ rút ngắn giai đoạn thì không bị báo "over".
+ * Phòng trống khi đổi ngày phòng thuê (Cập nhật nhanh phòng / Thông tin phòng):
+ *  - giai đoạn nhiều đêm tính theo đêm thấp nhất, không cộng dồn các booking chạm vào giai đoạn;
+ *  - chỉ các đêm MỚI thêm vào cần thêm 1 phòng; rút ngắn / giữ nguyên không bao giờ bị báo over.
+ *
+ * Loại Suite có 3 phòng. Dữ liệu tránh để booking khác kết thúc đúng vào đêm đang kiểm tra
+ * (SQLite so sánh chuỗi ngày/giờ khác MySQL ở đúng biên đó).
  */
 class NightlyAvailabilityTest extends TestCase
 {
@@ -40,16 +45,15 @@ class NightlyAvailabilityTest extends TestCase
         foreach (['1212', '1312', '1412'] as $number) {
             Room::create(['room_number' => $number, 'room_class_id' => $this->suite->id, 'room_form_id' => $form->id, 'floor' => 12, 'status' => 'vacant_ready']);
         }
-        HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->update(['value' => '0']);
-        // Ngày hệ thống trước giai đoạn thử để không vướng quy tắc ngày quá khứ
+        HotelConfig::updateOrCreate(['name' => 'AllowOverRoomTypeRoomKind'], ['value' => '0']);
         \App\Models\SystemDateRoll::create(['system_date' => '2026-08-29', 'actual_date' => now(), 'shift' => '1', 'username' => 'av_user']);
     }
 
-    private function stay(string $arrival, string $departure, ?string $roomNumber = null): BookingRoom
+    private function stay(string $arrival, string $departure, ?string $roomNumber = null, ?int $statusId = null): BookingRoom
     {
         $booking = Booking::create([
             'booking_name' => "BK {$arrival}", 'booking_date' => '2026-08-01', 'arrival_date' => $arrival, 'departure_date' => $departure,
-            'status' => Booking::STATUS_RESERVATION, 'registration_status_id' => $this->statusId, 'created_by' => 'av_user',
+            'status' => Booking::STATUS_RESERVATION, 'registration_status_id' => $statusId ?? $this->statusId, 'created_by' => 'av_user',
         ]);
 
         return BookingRoom::create([
@@ -58,52 +62,183 @@ class NightlyAvailabilityTest extends TestCase
         ]);
     }
 
+    /** Lấp đầy cả 3 phòng Suite trong [from, to) bằng 3 booking khác. */
+    private function fillAll(string $from, string $to): void
+    {
+        foreach (['1212', '1412', null] as $number) {
+            $this->stay($from, $to, $number);
+        }
+    }
+
+    private function bulk(BookingRoom $room, array $fields)
+    {
+        return $this->postJson("/api/bookings/{$room->booking_id}/rooms/bulk-update", ['room_ids' => [$room->id]] + $fields);
+    }
+
+    // ------------------------------------------------------------------ getAvailability (service)
+
     public function test_range_availability_is_the_lowest_night_not_the_sum_of_overlapping_bookings(): void
     {
-        // 3 phòng Suite. Mỗi đêm chỉ có tối đa 2 phòng bận, nhưng 4 booking cùng chạm vào giai đoạn.
         $this->stay('2026-08-30', '2026-09-01');
         $this->stay('2026-09-03', '2026-09-05');
         $this->stay('2026-09-06', '2026-09-08');
         $this->stay('2026-08-31', '2026-09-05');
-
         $service = app(RoomAvailabilityService::class);
 
-        // Đêm đông nhất còn đúng 1 phòng (cộng dồn theo booking sẽ ra -1)
         $this->assertSame(1, $service->getAvailability($this->suite->id, '2026-08-30', '2026-09-08'));
-        // Giai đoạn không có booking nào: trống cả 3
         $this->assertSame(3, $service->getAvailability($this->suite->id, '2026-09-10', '2026-09-13'));
     }
 
-    public function test_quick_update_shortening_checkout_is_not_blocked_by_over(): void
+    public function test_cancelled_deleted_and_non_availability_bookings_do_not_hold_rooms(): void
+    {
+        $service = app(RoomAvailabilityService::class);
+        $cancelled = $this->stay('2026-09-10', '2026-09-14', '1212');
+        $cancelled->update(['status' => BookingRoom::STATUS_CANCELLED]);
+        $deleted = $this->stay('2026-09-10', '2026-09-14', '1312');
+        $deleted->booking->update(['status' => Booking::STATUS_DELETED]);
+        $waiting = RegistrationStatus::where('is_availability', 0)->value('booking_status_id');
+        if ($waiting !== null) {
+            $this->stay('2026-09-10', '2026-09-14', '1412', (int) $waiting);
+        }
+
+        $this->assertSame(3, $service->getAvailability($this->suite->id, '2026-09-10', '2026-09-14'));
+    }
+
+    public function test_locked_room_reduces_capacity_for_the_nights_it_covers(): void
+    {
+        RoomLock::create(['room_number' => '1212', 'start_date' => '2026-09-10 00:00:00', 'end_date' => '2026-09-13 00:00:00', 'reason' => 'x', 'status' => 'Active', 'username' => 'av_user', 'lock_type' => 'OOO', 'is_active' => 1]);
+        $service = app(RoomAvailabilityService::class);
+
+        $this->assertSame(2, $service->getAvailability($this->suite->id, '2026-09-10', '2026-09-12'));
+        $this->assertSame(3, $service->getAvailability($this->suite->id, '2026-09-20', '2026-09-22'));
+    }
+
+    public function test_added_nights_helper_ignores_nights_the_room_already_holds(): void
+    {
+        $mine = $this->stay('2026-08-30', '2026-09-04', '1312');
+        $this->fillAll('2026-09-02', '2026-09-03'); // đêm 2/9 đã đầy kể cả phòng mình giữ
+        $service = app(RoomAvailabilityService::class);
+
+        // rút ngắn / giữ nguyên: không có đêm mới
+        $this->assertNull($service->getAvailabilityAfterAddingNights($this->suite->id, '2026-08-30', '2026-09-03', '2026-08-30', '2026-09-04', $mine->id));
+        $this->assertNull($service->getAvailabilityAfterAddingNights($this->suite->id, '2026-08-30', '2026-09-04', '2026-08-30', '2026-09-04', $mine->id));
+        // kéo dài sang đêm 4/9 còn trống cả 3 -> còn dư 2 phòng sau khi thêm
+        $this->assertSame(2, $service->getAvailabilityAfterAddingNights($this->suite->id, '2026-08-30', '2026-09-05', '2026-08-30', '2026-09-04', $mine->id));
+    }
+
+    // ------------------------------------------------------------------ Cập nhật nhanh phòng (bulk-update)
+
+    public function test_shortening_checkout_is_never_blocked_even_when_the_period_is_oversold(): void
     {
         $mine = $this->stay('2026-08-30', '2026-09-09', '1312');
-        // Hai phòng khác của loại Suite trùng gần hết giai đoạn: phòng đã ở sát giới hạn (AV = 0 các đêm đó)
-        $this->stay('2026-08-30', '2026-09-09', '1212');
-        $this->stay('2026-08-30', '2026-09-09', '1412');
-        // Dư thêm một booking đêm 07/09 làm giai đoạn 30/8-7/9 bị "âm" nếu cộng dồn
+        $this->fillAll('2026-09-02', '2026-09-05');     // các đêm này đã vượt tổng phòng (đã bán quá từ trước)
         $this->stay('2026-09-06', '2026-09-08');
         $this->stay('2026-09-02', '2026-09-03');
 
-        $payload = ['room_ids' => [$mine->id], 'departure_date' => '2026-09-07'];
+        foreach (['2026-09-07', '2026-09-06', '2026-09-03'] as $departure) {
+            $this->bulk($mine, ['departure_date' => $departure])->assertOk();
+            $this->assertSame($departure, $mine->fresh()->departure_date->toDateString());
+            $mine->update(['departure_date' => '2026-09-09']);
+        }
+    }
 
-        $response = $this->postJson("/api/bookings/{$mine->booking_id}/rooms/bulk-update", $payload);
+    public function test_shortening_from_the_arrival_side_is_not_blocked(): void
+    {
+        $mine = $this->stay('2026-08-30', '2026-09-06', '1312');
+        $this->fillAll('2026-08-30', '2026-09-02');
 
-        // Rút ngắn từ 09/09 xuống 07/09: không được lỗi "Không còn phòng trống"
-        $this->assertStringNotContainsString('Không còn phòng trống', (string) $response->json('message'));
+        $this->bulk($mine, ['arrival_date' => '2026-08-31', 'departure_date' => '2026-09-06'])->assertOk();
+        $this->assertSame('2026-08-31', $mine->fresh()->arrival_date->toDateString());
+    }
+
+    public function test_unchanged_period_is_not_checked(): void
+    {
+        $mine = $this->stay('2026-08-30', '2026-09-05', '1312');
+        $this->fillAll('2026-09-01', '2026-09-05');
+
+        $this->bulk($mine, ['departure_date' => '2026-09-05', 'note' => 'giữ nguyên'])->assertOk();
+    }
+
+    public function test_extending_into_a_night_with_free_rooms_is_allowed(): void
+    {
+        $mine = $this->stay('2026-08-30', '2026-09-05', '1312');
+        $this->stay('2026-09-06', '2026-09-08', '1212'); // đêm 5-6/9 còn trống cả 3
+
+        $this->bulk($mine, ['departure_date' => '2026-09-07'])->assertOk();
         $this->assertSame('2026-09-07', $mine->fresh()->departure_date->toDateString());
     }
 
-    public function test_quick_update_extending_into_a_full_night_is_still_blocked(): void
+    public function test_extending_into_a_night_that_is_exactly_full_is_blocked(): void
     {
         $mine = $this->stay('2026-08-30', '2026-09-05', '1312');
-        foreach (['1212', '1412', null, null] as $number) {
-            $this->stay('2026-09-05', '2026-09-08', $number);
-        }
+        $this->fillAll('2026-09-05', '2026-09-08'); // 3 phòng khác kín các đêm 5-7/9: phòng mình sẽ là phòng thứ 4
 
-        $response = $this->postJson("/api/bookings/{$mine->booking_id}/rooms/bulk-update", ['room_ids' => [$mine->id], 'departure_date' => '2026-09-07']);
+        $response = $this->bulk($mine, ['departure_date' => '2026-09-07']);
 
         $response->assertStatus(422);
         $this->assertStringContainsString('Không còn phòng trống cho loại phòng Suite', (string) $response->json('message'));
         $this->assertSame('2026-09-05', $mine->fresh()->departure_date->toDateString());
+    }
+
+    public function test_extending_blocked_when_only_one_of_the_added_nights_is_full(): void
+    {
+        $mine = $this->stay('2026-08-30', '2026-09-05', '1312');
+        $this->fillAll('2026-09-07', '2026-09-09'); // đêm 5,6/9 trống; đêm 7,8/9 kín
+
+        $this->bulk($mine, ['departure_date' => '2026-09-09'])->assertStatus(422);
+        $this->assertSame('2026-09-05', $mine->fresh()->departure_date->toDateString());
+
+        // chỉ kéo tới hết đêm còn trống thì được
+        $this->bulk($mine, ['departure_date' => '2026-09-07'])->assertOk();
+    }
+
+    public function test_extending_arrival_earlier_into_a_full_night_is_blocked(): void
+    {
+        $mine = $this->stay('2026-09-03', '2026-09-06', '1312');
+        $this->fillAll('2026-09-01', '2026-09-03');
+
+        $this->bulk($mine, ['arrival_date' => '2026-09-01', 'departure_date' => '2026-09-06'])->assertStatus(422);
+        $this->assertSame('2026-09-03', $mine->fresh()->arrival_date->toDateString());
+    }
+
+    public function test_extending_into_full_night_asks_for_confirmation_when_allow_over_is_on(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'AllowOverRoomTypeRoomKind'], ['value' => '1']);
+        $mine = $this->stay('2026-08-30', '2026-09-05', '1312');
+        $this->fillAll('2026-09-05', '2026-09-08');
+
+        $response = $this->bulk($mine, ['departure_date' => '2026-09-07']);
+        $response->assertOk();
+        $this->assertSame('OVERBOOKING_WARNING', $response->json('code'));
+        $this->assertSame('2026-09-05', $mine->fresh()->departure_date->toDateString());
+
+        $this->bulk($mine, ['departure_date' => '2026-09-07', 'confirm_overbooking' => true])->assertOk();
+        $this->assertSame('2026-09-07', $mine->fresh()->departure_date->toDateString());
+    }
+
+    // ------------------------------------------------------------------ Room map -> Thông tin phòng (PUT)
+
+    public function test_room_info_update_extend_blocked_and_shorten_allowed(): void
+    {
+        $mine = $this->stay('2026-08-30', '2026-09-05', '1312');
+        $this->fillAll('2026-09-05', '2026-09-08');
+
+        $this->putJson("/api/bookings/{$mine->booking_id}/rooms/{$mine->id}", ['departure_date' => '2026-09-07'])->assertStatus(422);
+        $this->assertSame('2026-09-05', $mine->fresh()->departure_date->toDateString());
+
+        $this->putJson("/api/bookings/{$mine->booking_id}/rooms/{$mine->id}", ['departure_date' => '2026-09-03'])->assertOk();
+        $this->assertSame('2026-09-03', $mine->fresh()->departure_date->toDateString());
+    }
+
+    public function test_sibling_room_of_the_same_booking_is_counted_once(): void
+    {
+        $mine = $this->stay('2026-08-30', '2026-09-05', '1312');
+        BookingRoom::create([
+            'booking_id' => $mine->booking_id, 'room_number' => '1212', 'room_class_id' => $this->suite->id,
+            'arrival_date' => '2026-08-30', 'departure_date' => '2026-09-05', 'rate' => 1000000, 'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        // 2 phòng của booking này + chính phòng mình = còn dư 1 phòng cho đêm 5/9
+        $this->bulk($mine, ['departure_date' => '2026-09-07'])->assertOk();
     }
 }

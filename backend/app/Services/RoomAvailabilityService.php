@@ -230,6 +230,38 @@ class RoomAvailabilityService
         return $total - $locked - $booked;
     }
 
+    /**
+     * Phòng trống còn lại SAU KHI một phòng thuê đổi giai đoạn từ [oldA, oldD) sang [newA, newD),
+     * chỉ xét các đêm MỚI thêm vào (đêm phòng đã giữ sẵn thì không phát sinh nhu cầu mới).
+     * Mỗi đêm mới cần thêm 1 phòng: AV(đêm, trừ chính phòng này) - 1. Âm = bị over.
+     * Trả null khi không có đêm mới (rút ngắn / giữ nguyên).
+     */
+    public function getAvailabilityAfterAddingNights(
+        int $roomClassId,
+        string $newArrival,
+        string $newDeparture,
+        string $oldArrival,
+        string $oldDeparture,
+        string|int|null $excludeBookingRoomId = null
+    ): ?int {
+        $held = array_flip($this->nightsBetween($oldArrival, $oldDeparture));
+        $total = $this->getTotalRooms($roomClassId);
+        $min = null;
+        foreach ($this->nightsBetween($newArrival, $newDeparture) as $night) {
+            if (isset($held[$night])) {
+                continue;
+            }
+            $next = Carbon::parse($night)->addDay()->toDateString();
+            $av = $total
+                - $this->getLockedCount($roomClassId, $night, $next)
+                - $this->getBookedCount($roomClassId, $night, $next, $excludeBookingRoomId)
+                - 1;
+            $min = $min === null ? $av : min($min, $av);
+        }
+
+        return $min;
+    }
+
     /** Các đêm (Y-m-d) trong [arrival, departure); rỗng khi ngày đi <= ngày đến. */
     private function nightsBetween(string $arrivalDate, string $departureDate): array
     {
