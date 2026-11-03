@@ -69,7 +69,7 @@ onUnmounted(() => {
       <component
         v-if="!activeRoute.meta.keepAlive"
         :is="Component"
-        :key="activeRoute.name"
+        :key="activeRoute.fullPath"
       />
     </router-view>
   </MainLayout>
