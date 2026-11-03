@@ -29,8 +29,14 @@ import http from '@/services/http'
 
 const pmsSystemDate = ref('')
 
+// Ngày gốc cho bộ lọc = ngày hệ thống (YYYY-MM-DD), tạo Date theo giờ địa phương để không lệch múi giờ
+const systemBaseDate = () => {
+  const m = String(pmsSystemDate.value || '').match(/^(\d{4})-(\d{2})-(\d{2})/)
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date()
+}
+
 const getTodayString = (offsetDays = 0) => {
-  const base = pmsSystemDate.value ? new Date(pmsSystemDate.value) : new Date()
+  const base = systemBaseDate()
   if (offsetDays !== 0) {
     base.setDate(base.getDate() + offsetDays)
   }
@@ -41,7 +47,7 @@ const getTodayString = (offsetDays = 0) => {
 }
 
 const getMonthStartString = () => {
-  const base = pmsSystemDate.value ? new Date(pmsSystemDate.value) : new Date()
+  const base = systemBaseDate()
   const year = base.getFullYear()
   const month = String(base.getMonth() + 1).padStart(2, '0')
   return `${year}-${month}-01`
@@ -142,7 +148,8 @@ const setQuickDate = (val) => {
     filterDateFrom.value = getTodayString(-1)
     filterDateTo.value = getTodayString(-1)
   } else if (val === 'last7days') {
-    filterDateFrom.value = getTodayString(-7)
+    // 7 ngày tính cả ngày hệ thống hiện tại
+    filterDateFrom.value = getTodayString(-6)
     filterDateTo.value = getTodayString()
   } else if (val === 'this_month') {
     filterDateFrom.value = getMonthStartString()
@@ -193,6 +200,19 @@ watch(filterDateFrom, (newVal) => {
   }
 })
 
+// Người dùng tự chọn Từ ngày / Đến ngày: bỏ đánh dấu nút lọc nhanh không còn đúng
+const handleManualDateChange = () => {
+  const from = filterDateFrom.value
+  const to = filterDateTo.value
+  if (!from && !to) quickDateFilter.value = 'all'
+  else if (from === getTodayString() && to === getTodayString()) quickDateFilter.value = 'today'
+  else if (from === getTodayString(-1) && to === getTodayString(-1)) quickDateFilter.value = 'yesterday'
+  else if (from === getTodayString(-6) && to === getTodayString()) quickDateFilter.value = 'last7days'
+  else if (from === getMonthStartString() && to === getTodayString()) quickDateFilter.value = 'this_month'
+  else quickDateFilter.value = ''
+  handleSearch()
+}
+
 // Handle apply filters
 const handleSearch = () => {
   if (filterDateFrom.value && filterDateTo.value && filterDateFrom.value > filterDateTo.value) {
@@ -220,10 +240,10 @@ const onDebouncedSearch = () => {
 
 // Clear all filter values
 const handleResetFilters = () => {
-  quickDateFilter.value = 'today'
-  const todayStr = getTodayString()
-  filterDateFrom.value = todayStr
-  filterDateTo.value = todayStr
+  // Xóa bộ lọc: quay về xem tất cả
+  quickDateFilter.value = 'all'
+  filterDateFrom.value = ''
+  filterDateTo.value = ''
   filterRegCode.value = ''
   filterRoomCode.value = ''
   filterUserId.value = ''
@@ -554,7 +574,7 @@ const handleExport = async () => {
           <input 
             v-model="filterDateFrom" 
             type="date" 
-            @change="handleSearch"
+            @change="handleManualDateChange"
             class="border border-slate-300 rounded-lg px-2 py-1 h-8 focus:outline-none focus:ring-1 focus:ring-sky-400 font-normal text-[#000000D9] bg-white text-xs"
           />
         </div>
@@ -565,7 +585,7 @@ const handleExport = async () => {
           <input 
             v-model="filterDateTo" 
             type="date" 
-            @change="handleSearch"
+            @change="handleManualDateChange"
             class="border border-slate-300 rounded-lg px-2 py-1 h-8 focus:outline-none focus:ring-1 focus:ring-sky-400 font-normal text-[#000000D9] bg-white text-xs"
           />
         </div>
@@ -605,20 +625,20 @@ const handleExport = async () => {
             class="border border-slate-300 rounded-lg px-2 py-1 h-8 focus:outline-none focus:ring-1 focus:ring-sky-400 font-normal text-[#000000D9] bg-white text-xs cursor-pointer"
           >
             <option value="">-- Tất cả hành động --</option>
-            <option value="New">Tạo mới (New)</option>
+            <option value="Add">Tạo mới (Add)</option>
             <option value="Modify">Cập nhật (Modify)</option>
             <option value="CheckIn">Nhận phòng (CheckIn)</option>
             <option value="CheckOut">Trả phòng (CheckOut)</option>
-            <option value="Cancel">Hủy đăng ký (Cancel)</option>
+            <option value="Cancel">Hủy / Xóa (Cancel)</option>
             <option value="NoShow">Không đến (NoShow)</option>
             <option value="Lock">Khóa phòng (Lock)</option>
             <option value="Unlock">Mở khóa (Unlock)</option>
             <option value="Payment">Thanh toán (Payment)</option>
             <option value="Refund">Hoàn tiền (Refund)</option>
-            <option value="AddService">Thêm dịch vụ</option>
-            <option value="DeleteService">Xóa dịch vụ</option>
             <option value="DayClose">Sang ngày (DayClose)</option>
             <option value="Inventory">Kho bãi (Inventory)</option>
+            <option value="Report">Xem báo cáo (Report)</option>
+            <option value="Restore">Khôi phục (Restore)</option>
             <option value="login">Đăng nhập (Login)</option>
             <option value="logout">Đăng xuất (Logout)</option>
           </select>

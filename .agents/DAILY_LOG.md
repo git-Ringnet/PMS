@@ -9,6 +9,22 @@
 - **Ngày ghi**: `YYYY-MM-DD`
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 
+## [2026-11-02] - Làm Lại Lịch Sử Thao Tác (Sheet Ghi Log) & Chuẩn Hóa Kiểm Tra Phòng Trống (Availability)
+### Module: Lịch Sử Thao Tác (Activity Log), Kiểm Tra Phòng Trống (Room Availability)
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **1. Lịch sử thao tác theo chuẩn tab GHI LOG (Dòng 1-103)**:
+    + Ghi log tường minh tại từng thao tác (log_version=2): ghi đúng mã đăng ký, mã phòng (mã G), màn hình theo tab frontend qua header X-Screen/X-Module.
+    + Nội dung log chuẩn hóa theo sheet: Đăng ký, thông tin khách, trẻ em, đặt cọc/thanh toán, hóa đơn, dịch vụ, Alert, khóa phòng, sang ngày, báo cáo, phân công HK, kho, menu, danh mục; chỉ ghi trường có thay đổi.
+    + Gom các request con của một thao tác thành 1 dòng (log_batch); ngày thao tác lưu theo ngày hệ thống (system_date).
+    + Thêm migration bổ sung các cột cần thiết và bộ test ActivityLogSheetTest (36 test cases đạt).
+  - **2. Chuẩn hóa kiểm tra phòng trống & kiểm soát Over (Availability)**:
+    + Phòng trống nhiều đêm tính theo đêm thấp nhất trong giai đoạn, tránh báo over nhầm khi từng đêm vẫn còn phòng trống.
+    + Rút ngắn hoặc giữ nguyên ngày đi: bỏ qua kiểm tra over.
+    + Kéo dài ngày đi / đổi ngày: chỉ kiểm tra over ở các đêm mới phát sinh thêm (getAvailabilityAfterAddingNights), các đêm đã giữ phòng không kiểm tra lại.
+    + Bổ sung bộ test NightlyAvailabilityTest bao phủ 14 ca kiểm thử phòng trống cho cả booking chờ và phòng Inhouse.
+- **Kiểm thử**:
+  - Pass 100% tests backend ActivityLogSheetTest và NightlyAvailabilityTest.
+
 ## [2026-10-30] - Báo cáo dự đoán bán phòng: lỗi chạy, bộ lọc Khu vực, bảng tràn trang
 
 - Lỗi "Không thể chạy báo cáo" lúc 18:33: không tái hiện được (server chạy xong cả 5 lần bấm, trình duyệt sạch chạy đúng); thêm console.error trong executeTab (ReportsPage) để lần sau thấy lỗi thật.
@@ -37,6 +53,22 @@
 - **Nguyên nhân**: Dòng mirror `booking_room_services` của dịch vụ `is_room=0` bị ẩn ở màn hình phòng, bill hiển thị dạng ServiceBill nên không gửi id mirror → server thấy thiếu chi tiết.
 - **Sửa**: `BookingRoomServiceController::cancel` (xóa theo `service_bill_ids`): bill không có id mirror nào gửi lên thì lấy toàn bộ mirror tại server (giống logic chuyển theo bill). Vẫn chặn khi chỉ gửi một phần mirror.
 - **Kiểm thử**: Thêm test `test_room_service_cancel_by_bill_without_mirror_ids_deletes_all_server_mirrors`; chưa chạy được do migration `2026_10_26_121000_remove_user_topbar_color_settings` dùng `JSON_CONTAINS_PATH` không chạy trên SQLite.
+
+## [2026-10-30] - Hoàn Tất Dòng 348, 349, 351, Sửa Timeout Sang Ngày & Khớp Thống Kê Sơ Đồ Phòng
+### Module: Đăng Ký (Reservation), Sang Ngày (Day Close), Sơ Đồ Phòng (Room Map)
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **1. Đăng ký & Dịch vụ bổ sung (Dòng 348, 349, 351)**:
+    + Phiếu in lấy đúng tiền phòng theo từng đêm theo bill đã chạy hoặc giá kế hoạch, lọc theo phòng được chọn, không trùng lặp dịch vụ đã post.
+    + Sửa giá dịch vụ đã post ở Đăng ký chỉ lưu giá chờ, bill ở Hóa đơn giữ nguyên; chặn sửa khi bill đã thanh toán/xuất hóa đơn VAT; post lại không sinh bill trùng.
+    + Modal Thêm dịch vụ bổ sung mở ra ở trạng thái trống, khi lưu chỉ thêm mới, không ghi đè/xóa các dịch vụ cũ.
+  - **2. Sang ngày (Day Close)**:
+    + Tăng timeout sang ngày lên 10 phút; khi timeout/mất mạng tự động kiểm tra lại trạng thái để báo đúng kết quả thực tế từ server, không báo rollback nhầm.
+    + Loại bỏ usleep không cần thiết bên trong transaction sang ngày để tối ưu tốc độ xử lý.
+  - **3. Sơ đồ phòng & Thống kê (Dòng 392 & Lỗi lệch thẻ Đang ở)**:
+    + Khắc phục lệch số lượng thẻ Đang ở do khóa OOO/OOS đã mở nhưng không cắt ngày kết thúc; mở khóa xét theo ngày nghiệp vụ; migration dọn dẹp các khóa phòng cũ.
+    + Dòng 392: Thẻ Đã đi và danh sách Phòng chưa trả tính cả phòng chưa check-in có ngày đến = ngày đi; giữ nguyên công thức tính phòng ở cuối ngày.
+- **Kiểm thử**:
+  - Pass 100% test suites backend và frontend cho các dòng liên quan; test E2E xác minh flow chạy thông suốt.
 
 ## [2026-10-30] - Kiểm Thử QA Giao Diện Web: Dòng 351 – Dịch Vụ Bổ Sung
 ### Module: Đăng Ký (Reservation / Create-Res), Thu Ngân / Hóa Đơn (Frontdesk / Checkout)

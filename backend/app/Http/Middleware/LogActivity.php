@@ -195,6 +195,11 @@ class LogActivity
             $oldValues = null;
             $newValues = null;
 
+            // Danh mục (sheet GHI LOG dòng 64-66, 78-93): log chuẩn mới, chỉ ghi trường thay đổi
+            if ($this->logCatalogChange($request, $path, $statusCode, $action)) {
+                return;
+            }
+
             if ($statusCode < 400) {
                 // Ưu tiên chọn model phù hợp nhất theo ngữ cảnh route
                 $modelChange = $this->resolveBestModelChange($request, $path);
@@ -262,6 +267,69 @@ class LogActivity
             // Không để lỗi logging làm crash ứng dụng
             \Log::warning('ActivityLog middleware error: ' . $e->getMessage());
         }
+    }
+
+    /** URL danh mục → loại model được ghi log bằng CatalogLogText. */
+    protected const CATALOG_PATHS = [
+        'companies' => 'Company',
+        'markets' => 'Market',
+        'customer-sources' => 'CustomerSource',
+        'branches' => 'Branch',
+        'bookers' => 'Booker',
+        'hk/staff' => 'HkStaff',
+        'lost-and-found' => 'LostAndFoundItem',
+        'warehouses' => 'Warehouse',
+        'product-categories' => 'ProductCategory',
+        'products' => 'Product',
+    ];
+
+    /**
+     * Ghi log v2 cho thao tác thêm/sửa/xóa danh mục. Trả về true khi request thuộc danh mục
+     * (kể cả khi không có gì thay đổi để ghi) để bỏ qua log chung.
+     */
+    protected function logCatalogChange(Request $request, string $path, int $statusCode, string $action): bool
+    {
+        $clean = preg_replace('#^api/#', '', $path);
+        $type = null;
+        foreach (self::CATALOG_PATHS as $prefix => $model) {
+            if (preg_match('#/(sync|import|bulk-[a-z-]+)$#', $clean)) {
+                break; // thao tác hàng loạt: giữ log chung
+            }
+            if ($clean === $prefix || preg_match('#^' . preg_quote($prefix, '#') . '/[^/]+$#', $clean)) {
+                $type = $model;
+                break;
+            }
+        }
+        if ($type === null || $statusCode >= 400) {
+            return false;
+        }
+
+        $change = $request->attributes->get('_model_changes', [])[$type] ?? null;
+        if (!$change) {
+            return false;
+        }
+
+        $verb = match ($change['action'] ?? '') {
+            'created' => 'create',
+            'deleted' => 'delete',
+            default => 'update',
+        };
+        $description = \App\Support\CatalogLogText::describe($type, $verb, $change['old_values'] ?? null, $change['new_values'] ?? null);
+        if ($description !== null) {
+            \App\Services\ActivityLogService::record(
+                ['create' => 'Add', 'update' => 'Modify', 'delete' => 'Cancel'][$verb],
+                $description,
+                [
+                    'screen' => \App\Support\CatalogLogText::screen($type),
+                    'target_type' => $type,
+                    'target_id' => $change['target_id'] ?? null,
+                    'target_label' => is_scalar($change['target_label'] ?? null) ? (string) $change['target_label'] : null,
+                ],
+                $request
+            );
+        }
+
+        return true;
     }
 
     /**

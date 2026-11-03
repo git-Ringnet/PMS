@@ -604,19 +604,26 @@ class PaymentController extends Controller
         });
 
         try {
-            $bkRoom = $payment->booking_room_id ? \App\Models\BookingRoom::find($payment->booking_room_id) : null;
-            $roomNumber = $bkRoom?->room_number;
-            $bCode = $booking->booking_code ?? ('GAL' . $bookingId);
-            \App\Services\ActivityLogService::logPaymentAction(
-                $request->pack4 === 'AP' ? 'payment' : 'deposit',
-                $bCode,
-                $roomNumber,
-                $payment->amount,
-                $method->name,
-                $payment->description,
-                $request
-            );
-        } catch (\Throwable $e) {}
+            // Dòng 19, 59: "* Thêm Đặt Cọc Cho Đăng Ký: GAL22 - Tên Booking - PaymentMethod: BT - Số Tiền - Mô tả"
+            $code = \App\Services\ActivityLogService::bookingCode($bookingId);
+            $isAdvance = $request->pack4 === Payment::PACK4_ADVANCE;
+            $roomPart = $payment->booking_room_id ? " - Mã phòng thuê: {$payment->booking_room_id}" : '';
+            $desc = ($isAdvance ? "* Thêm Advance Cho Đăng Ký {$code}" : "* Thêm Đặt Cọc Cho Đăng Ký: {$code}")
+                . $roomPart
+                . " - Tên Booking: {$booking->booking_name} - PaymentMethod: {$payment->payment_method_id}"
+                . ' - Số Tiền: ' . \App\Services\ActivityLogService::money($payment->amount)
+                . " - Mô tả: {$payment->description}";
+            \App\Services\ActivityLogService::record('Payment', $desc, [
+                'screen' => $isAdvance ? \App\Support\ActivityScreen::CHECKOUT : \App\Support\ActivityScreen::REGISTRATION,
+                'booking_code' => $code,
+                'room_code' => $payment->booking_room_id,
+                'target_type' => 'Payment',
+                'target_id' => $payment->id,
+                'target_label' => $code,
+            ], $request);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log deposit error: ' . $e->getMessage());
+        }
 
         return response()->json([
             'success' => true,
@@ -665,6 +672,9 @@ class PaymentController extends Controller
             }
         }
 
+        $logOldMethod = (string) $payment->payment_method_id;
+        $logOldDescription = (string) $payment->description;
+
         DB::transaction(function () use ($request, $payment, $paymentMethodCode, $paymentMethod) {
             // Không cho sửa date và amount
             // A deposit correction may only change its payment method and note.
@@ -697,6 +707,21 @@ class PaymentController extends Controller
 
             Booking::where('id', $payment->booking_id)->update(['payment_value' => $totalDeposit]);
         });
+
+        // Dòng 22: "Sửa Đặt Cọc Cho Đăng Ký: GAL22  PaymentMethod:BT->CA - Mô tả:A -> B" (chỉ trường thay đổi)
+        $fresh = $payment->fresh();
+        $parts = [];
+        if ($logOldMethod !== (string) $fresh->payment_method_id) {
+            $parts[] = "PaymentMethod:{$logOldMethod}->{$fresh->payment_method_id}";
+        }
+        if ($logOldDescription !== (string) $fresh->description) {
+            $parts[] = "Mô tả:{$logOldDescription} -> {$fresh->description}";
+        }
+        if ($parts) {
+            $code = \App\Services\ActivityLogService::bookingCode($fresh->booking_id);
+            $label = $fresh->pack4 === Payment::PACK4_ADVANCE ? 'Sửa Advance Cho Đăng Ký' : 'Sửa Đặt Cọc Cho Đăng Ký';
+            $this->logPayment('Modify', "{$label}: {$code}  " . implode(' - ', $parts), $fresh, $request);
+        }
 
         return response()->json([
             'success' => true,
@@ -834,6 +859,16 @@ class PaymentController extends Controller
             $totalDeposit = $this->bookingDepositAndAdvanceTotal($payment->booking_id);
             Booking::where('id', $payment->booking_id)->update(['payment_value' => $totalDeposit]);
         });
+
+        // Dòng 23, 60: "* Correct Đặt Cọc Cho Đăng Ký GAL9 - mã phòng thuê: G.. - Số tiền - PaymentMethod - Lý Do"
+        $code = \App\Services\ActivityLogService::bookingCode($payment->booking_id);
+        $methodName = PaymentMethod::where('code', $payment->payment_method_id)->value('name') ?? $payment->payment_method_id;
+        $label = $isSettlementPayment ? 'Hủy Thanh Toán Cho Đăng Ký'
+            : ($payment->pack4 === Payment::PACK4_ADVANCE ? 'Correct Advance Cho Đăng Ký' : 'Correct Đặt Cọc Cho Đăng Ký');
+        $this->logPayment('Cancel', "* {$label} {$code}"
+            . ($payment->booking_room_id ? " - mã phòng thuê: {$payment->booking_room_id}" : '')
+            . ' - Số tiền: ' . \App\Services\ActivityLogService::money($payment->amount)
+            . " - PaymentMethod: {$methodName} - Lý Do: {$validated['reason']}", $payment, $request);
 
         return response()->json([
             'success' => true,
@@ -1131,6 +1166,17 @@ class PaymentController extends Controller
             ->whereNull('deleted_at')
             ->get();
 
+        // Dòng 20: "* Deposit (Bank transfer) số tiền: 5,000,000, tách làm hai, số tiền 1: 2,500,000, folio 1, số tiền 2: ..."
+        $amounts = array_values($request->amounts);
+        $countText = [2 => 'hai', 3 => 'ba', 4 => 'bốn', 5 => 'năm'][count($amounts)] ?? (string) count($amounts);
+        $parts = [];
+        foreach ($amounts as $i => $amt) {
+            $folio = $i === 0 ? $payment->folio_id : $request->input('folio_id', $payment->folio_id);
+            $parts[] = 'số tiền ' . ($i + 1) . ': ' . \App\Services\ActivityLogService::money($amt) . ', folio ' . ($folio ?: 1);
+        }
+        $this->logPayment('Modify', "* {$payment->description} số tiền: " . \App\Services\ActivityLogService::money(array_sum($amounts))
+            . ", tách làm {$countText}, " . implode(', ', $parts), $payment, $request);
+
         return response()->json([
             'success' => true,
             'data'    => $activePayments,
@@ -1406,10 +1452,68 @@ class PaymentController extends Controller
             }
         });
 
+        // Dòng 21: "Chuyển đặt cọc (Deposit (Bank transfer) - 2,500,000) từ mã đăng ký: GAL22 đến mã đăng ký: GAL20"
+        $fromCode = \App\Services\ActivityLogService::bookingCode($payment->booking_id);
+        $toCode = \App\Services\ActivityLogService::bookingCode($targetBooking->id);
+        $sourceRoomNo = $payment->booking_room_id ? ($payment->bookingRoom?->room_number ?: $payment->booking_room_id) : null;
+        $label = $payment->pack4 === Payment::PACK4_ADVANCE ? 'Chuyển thanh toán trước' : 'Chuyển đặt cọc';
+        $this->logPayment('Modify', "{$label} ({$payment->description} - " . \App\Services\ActivityLogService::money($payment->amount) . ") từ mã đăng ký: {$fromCode}"
+            . ($sourceRoomNo ? " - phòng: {$sourceRoomNo}" : '')
+            . " đến mã đăng ký: {$toCode}"
+            . ($targetRoom ? ' - phòng: ' . ($targetRoom->room_number ?: $targetRoom->id) : ''), $payment, $request, [$payment->booking_room_id, $targetRoom?->id]);
+
         return response()->json([
             'success' => true,
             'message' => 'Chuyển đặt cọc/thanh toán trước thành công!',
         ]);
+    }
+
+    /**
+     * "* Thanh Toán cho đăng ký GAL27, - Mã phòng thuê: G.. - PaymentMethod: - BT: 10,000,000 , - CA: 900,000 ,
+     *  - Ca: 1. - Giờ: 08:56. - Thanh toán : 04-09-2026. - Công ty (CTY0001): Công ty TNHH Du lịch HKT"
+     */
+    private function logSettlement(?Booking $booking, array $paymentIds, $paymentDate, $paymentTime, $paymentShift, Request $request): void
+    {
+        try {
+            $payments = Payment::whereIn('id', array_filter($paymentIds))->get();
+            if ($payments->isEmpty()) {
+                return;
+            }
+            $first = $payments->first();
+            $code = \App\Services\ActivityLogService::bookingCode($first->booking_id);
+            $methods = $payments->groupBy('payment_method_id')
+                ->map(fn ($rows, $method) => "- {$method}: " . \App\Services\ActivityLogService::money($rows->sum('amount')) . ' ,')
+                ->implode(' ');
+            $company = $booking?->company;
+            $desc = ($code ? "* Thanh Toán cho đăng ký {$code}" : '* Thanh Toán folio phòng ' . ($first->booking_room_id ?? ''))
+                . ($first->booking_room_id ? ", - Mã phòng thuê: {$first->booking_room_id}" : '')
+                . " - PaymentMethod: {$methods}"
+                . ' - Ca: ' . ($paymentShift ?: $first->shift) . '.'
+                . ' - Giờ: ' . substr((string) ($paymentTime ?: $first->open_time), 0, 5) . '.'
+                . ' - Thanh toán : ' . \App\Services\ActivityLogService::d($paymentDate ?: $first->date) . '.'
+                . ($company ? " - Công ty ({$company->code}): {$company->name}" : '');
+            $this->logPayment('Payment', $desc, $first, $request);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log settlement error: ' . $e->getMessage());
+        }
+    }
+
+    /** Ghi lịch sử thao tác thanh toán/đặt cọc (log chuẩn sheet GHI LOG). */
+    private function logPayment(string $action, string $description, Payment $payment, ?Request $request = null, ?array $roomCodes = null): void
+    {
+        try {
+            $code = \App\Services\ActivityLogService::bookingCode($payment->booking_id);
+            \App\Services\ActivityLogService::record($action, $description, [
+                'screen' => \App\Support\ActivityScreen::CHECKOUT,
+                'booking_code' => $code,
+                'room_code' => $roomCodes !== null ? array_filter($roomCodes) : $payment->booking_room_id,
+                'target_type' => 'Payment',
+                'target_id' => $payment->id,
+                'target_label' => $code,
+            ], $request);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log payment error: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -1991,6 +2095,9 @@ class PaymentController extends Controller
                 $this->completeBookingAfterMasterSettlement($booking);
             }
         });
+
+        // Dòng 61: một dòng cho cả lần thanh toán (nhiều hình thức gom chung)
+        $this->logSettlement($booking, $createdPaymentIds, $paymentDate, $paymentTime, $paymentShift, $request);
 
         return response()->json([
             'success' => true,

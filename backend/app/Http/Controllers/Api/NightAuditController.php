@@ -358,6 +358,8 @@ class NightAuditController extends Controller
             }
         });
 
+        $this->logNoShow($room, 'No show one day', $chargeOption, $request);
+
         return response()->json([
             'success' => true,
             'message' => 'Late check-in thành công. Ngày đến mới: ' . $nextDate->toDateString(),
@@ -486,11 +488,52 @@ class NightAuditController extends Controller
             }
         });
 
+        $this->logNoShow($room, 'Noshow', $chargeOption, $request);
+
         return response()->json([
             'success' => true,
             'message' => 'Đã ghi nhận khách không đến và giải phóng phòng thành công.',
             'warning' => $warning,  // [Fix D] trả về warning nếu booking còn phòng chưa xử lý
         ]);
+    }
+
+    private function logDayCloseStep(string $description, Request $request, ?string $systemDate = null): void
+    {
+        try {
+            \App\Services\ActivityLogService::record('DayClose', $description, [
+                'force_screen' => \App\Support\ActivityScreen::DAY_CLOSE,
+                'target_type' => 'SystemDateRoll',
+                'system_date' => $systemDate,
+            ], $request);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log day close error: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Dòng 68: "* Mã phòng: G0000063 - Phòng 102 - No show one day không charge tiền."
+     * / "... - Noshow charge tiền phòng và tiền dịch vụ."
+     */
+    private function logNoShow(BookingRoom $room, string $label, string $chargeOption, Request $request): void
+    {
+        try {
+            $charge = match ($chargeOption) {
+                'all_charged' => 'charge tiền phòng và tiền dịch vụ',
+                'room_only' => 'charge tiền phòng',
+                default => 'không charge tiền',
+            };
+            $code = \App\Services\ActivityLogService::bookingCode($room->booking_id);
+            \App\Services\ActivityLogService::record('NoShow', "* Mã phòng: {$room->id} - Phòng " . ($room->room_number ?: 'Chưa gán') . " - {$label} {$charge}.", [
+                'screen' => \App\Support\ActivityScreen::DAY_CLOSE,
+                'booking_code' => $code,
+                'room_code' => $room->id,
+                'target_type' => 'BookingRoom',
+                'target_id' => $room->id,
+                'target_label' => $code,
+            ], $request);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log noshow error: ' . $e->getMessage());
+        }
     }
 
     /**
@@ -511,6 +554,9 @@ class NightAuditController extends Controller
         $nextDate   = $systemDate->copy()->addDay();
         $username   = Auth::user()?->username ?: (Auth::user()?->name ?: 'system');
         $shift      = $this->getSystemShift();
+
+        // Dòng 70: ghi nhận lúc bấm sang ngày
+        $this->logDayCloseStep('* Thao tác sang ngày : Thời gian ' . now('Asia/Ho_Chi_Minh')->format('d/m/Y H:i') . " - User: {$username}", $request);
 
         $settings = HotelSetting::first();
 
@@ -972,6 +1018,10 @@ class NightAuditController extends Controller
                 'started_at'  => $startedAtMs,
             ]));
 
+            // Dòng 70: ghi nhận khi sang ngày thành công
+            $this->logDayCloseStep('* Sang ngày thành công: Từ ngày ' . $systemDate->format('d/m/Y') . ' sang ngày ' . $nextDate->format('d/m/Y')
+                . ' - Thời gian ' . now('Asia/Ho_Chi_Minh')->format('d/m/Y H:i') . " - User: {$username}", $request, $systemDate->toDateString());
+
             return response()->json([
                 'success'           => true,
                 'run_id'            => $run->id,
@@ -1043,6 +1093,7 @@ class NightAuditController extends Controller
         $request->validate([
             'booking_room_id' => 'required|string|exists:booking_rooms,id',
             'nights'          => 'required|integer|min:1|max:30',
+            'confirm_overbooking' => 'sometimes|boolean',
         ]);
 
         $room   = BookingRoom::with('booking')->findOrFail($request->booking_room_id);
@@ -1058,6 +1109,72 @@ class NightAuditController extends Controller
 
         $oldDeparture = Carbon::parse($room->departure_date);
         $newDeparture = $oldDeparture->copy()->addDays($nights);
+
+        // Dòng 286: gia hạn phải kiểm tra các đêm gia hạn thêm còn dùng được không.
+        $availability = app(\App\Services\RoomAvailabilityService::class);
+        $oldDepartureStr = $oldDeparture->toDateString();
+        $newDepartureStr = $newDeparture->toDateString();
+        $arrivalStr = Carbon::parse($room->arrival_date)->toDateString();
+
+        // 1. Số phòng đã gán cho booking khác (hoặc đang bị khóa) trong các đêm gia hạn thêm
+        if (!empty($room->room_number)) {
+            $conflict = $availability->findRoomNumberConflict(
+                (string) $room->room_number,
+                $oldDepartureStr,
+                $newDepartureStr,
+                $room->id,
+                $room->booking_id
+            );
+            if ($conflict) {
+                $code = $conflict->booking?->booking_code ?: ('#' . $conflict->booking_id);
+
+                return response()->json([
+                    'success' => false,
+                    'code'    => 'room_number_conflict',
+                    'message' => "Phòng {$room->room_number} đã được đặt cho đăng ký {$code} ("
+                        . Carbon::parse($conflict->arrival_date)->format('d/m/Y') . ' - '
+                        . Carbon::parse($conflict->departure_date)->format('d/m/Y')
+                        . '), không thể gia hạn.',
+                ], 422);
+            }
+            if ($availability->hasBlockingLock((string) $room->room_number, $oldDepartureStr, $newDepartureStr)) {
+                return response()->json([
+                    'success' => false,
+                    'code'    => 'room_locked',
+                    'message' => "Phòng {$room->room_number} đang bị khóa (OOO/OOS) trong thời gian gia hạn.",
+                ], 422);
+            }
+        }
+
+        // 2. Loại phòng còn đủ phòng trống các đêm thêm không (AllowOverRoomTypeRoomKind)
+        $av = $availability->getAvailabilityAfterAddingNights(
+            (int) $room->room_class_id,
+            $arrivalStr,
+            $newDepartureStr,
+            $arrivalStr,
+            $oldDepartureStr,
+            $room->id
+        );
+        $allowOver = (string) (HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->value('value') ?? '0') === '1';
+        if ($av !== null && $av < 0) {
+            if (!$allowOver) {
+                return response()->json([
+                    'success' => false,
+                    'code'    => 'no_availability',
+                    'message' => 'Loại phòng đã hết phòng trống trong thời gian gia hạn, không thể cập nhật. (AV = ' . $av . ')',
+                    'av'      => $av,
+                ], 422);
+            }
+            if (!$request->boolean('confirm_overbooking')) {
+                return response()->json([
+                    'success' => false,
+                    'code'    => 'overbooking_confirmation_required',
+                    'requires_confirmation' => true,
+                    'message' => 'Loại phòng đang bị over (AV = ' . $av . '), bạn có muốn tiếp tục?',
+                    'av'      => $av,
+                ], 409);
+            }
+        }
 
         DB::transaction(function () use ($room, $newDeparture, $nights) {
             // Cập nhật departure_date của phòng thuê
@@ -1079,10 +1196,29 @@ class NightAuditController extends Controller
             }
         });
 
+        try {
+            // Dòng 69: "* Gia hạn phòng: Mã phòng: G0000063 - Phòng 102 - số đêm gia hạn: 3 (Ngày đi 04-09-2026 -> 07-09-2026)"
+            $code = \App\Services\ActivityLogService::bookingCode($room->booking_id);
+            \App\Services\ActivityLogService::record('Modify', "* Gia hạn phòng: Mã phòng: {$room->id} - Phòng " . ($room->room_number ?: 'Chưa gán')
+                . " - số đêm gia hạn: {$nights} (Ngày đi " . $oldDeparture->format('d-m-Y') . ' -> ' . $newDeparture->format('d-m-Y') . ')', [
+                'screen' => \App\Support\ActivityScreen::DAY_CLOSE,
+                'booking_code' => $code,
+                'room_code' => $room->id,
+                'target_type' => 'BookingRoom',
+                'target_id' => $room->id,
+                'target_label' => $code,
+            ], $request);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log extend stay error: ' . $e->getMessage());
+        }
+
         return response()->json([
             'success'        => true,
             'message'        => "Gia hạn thành công {$nights} đêm. Ngày đi mới: " . $newDeparture->toDateString(),
             'departure_date' => $newDeparture->toDateString(),
+            'warning'        => ($av !== null && $av < 0)
+                ? 'Cảnh báo: số phòng trống của loại phòng đã bị âm (AV = ' . $av . ').'
+                : null,
         ]);
     }
 

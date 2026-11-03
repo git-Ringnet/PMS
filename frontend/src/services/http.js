@@ -22,6 +22,19 @@ http.interceptors.request.use(
     config.headers['Accept-Language'] = lang
     config.headers['X-Language'] = lang
 
+    // Màn hình đang thao tác (tab) để lịch sử thao tác ghi đúng cột "Màn hình"
+    try {
+      const tab = new URLSearchParams(window.location.search).get('tab')
+      if (tab && !config.headers['X-Screen']) {
+        config.headers['X-Screen'] = tab
+      }
+      // Phân hệ đang mở (frontdesk / reservation / housekeeping...) để ghi bộ phận thao tác
+      const moduleSegment = (window.location.pathname || '').split('/').filter(Boolean)[0]
+      if (moduleSegment && !config.headers['X-Module']) {
+        config.headers['X-Module'] = moduleSegment
+      }
+    } catch (_) { /* không có window (SSR/test) */ }
+
     // Đính kèm chi nhánh hiện tại để backend chuyển connection DB tương ứng
     const branchCode = localStorage.getItem('selected_branch_code')
     const branchId = localStorage.getItem('selected_branch_id')

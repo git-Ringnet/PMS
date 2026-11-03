@@ -9,6 +9,25 @@ use Illuminate\Http\Request;
 
 class ActivityLogController extends Controller
 {
+    /** Bộ lọc Hành động → các giá trị action đã/đang lưu (log cũ dùng create/update/delete...). */
+    private const ACTION_ALIASES = [
+        'Add' => ['Add', 'New', 'create', 'AddService'],
+        'Modify' => ['Modify', 'update'],
+        'Cancel' => ['Cancel', 'delete', 'DeleteService'],
+        'CheckIn' => ['CheckIn', 'check_in'],
+        'CheckOut' => ['CheckOut', 'check_out'],
+        'Payment' => ['Payment', 'payment'],
+        'NoShow' => ['NoShow', 'no_show'],
+        'Lock' => ['Lock', 'lock'],
+        'Unlock' => ['Unlock', 'unlock'],
+        'DayClose' => ['DayClose', 'day_close'],
+        'Inventory' => ['Inventory', 'inventory'],
+        'Report' => ['Report'],
+        'Restore' => ['Restore'],
+        'login' => ['login', 'login_failed'],
+        'logout' => ['logout'],
+    ];
+
     /**
      * Danh sách log có phân trang, lọc, sắp xếp.
      */
@@ -21,9 +40,9 @@ class ActivityLogController extends Controller
             $query->where('user_id', $request->user_id);
         }
 
-        // Lọc theo action
+        // Lọc theo action (gộp các tên cũ / mới của cùng một hành động)
         if ($request->filled('action')) {
-            $query->where('action', $request->action);
+            $query->whereIn('action', self::ACTION_ALIASES[$request->action] ?? [$request->action]);
         }
 
         // Lọc theo module
@@ -41,48 +60,82 @@ class ActivityLogController extends Controller
             $query->where('ip_address', 'like', '%' . $request->ip_address . '%');
         }
 
-        // Lọc theo mã đăng ký
+        // Lọc theo mã đăng ký: "22" hay "GAL22" đều khớp đúng đăng ký GAL22 (không khớp GAL220, số tiền...)
         if ($request->filled('registration_code')) {
-            $regCode = trim($request->registration_code);
-            $numericId = preg_replace('/\D/', '', $regCode);
-            $query->where(function ($q) use ($regCode, $numericId) {
-                $q->where('target_label', 'like', "%{$regCode}%")
-                  ->orWhere('description', 'like', "%{$regCode}%");
-                if (!empty($numericId)) {
-                    $q->orWhere(function ($sub) use ($numericId) {
-                        $sub->where('target_type', 'Booking')
-                            ->where('target_id', $numericId);
-                    });
-                }
-            });
-        }
-
-        // Lọc theo mã phòng
-        if ($request->filled('room_code')) {
-            $roomCode = trim($request->room_code);
-            $query->where(function ($q) use ($roomCode) {
-                $q->where(function ($sub) use ($roomCode) {
-                    $sub->whereIn('target_type', ['Room', 'RoomLock', 'BookingRoom', 'BookingRoomService'])
-                        ->where(function ($inner) use ($roomCode) {
-                            $inner->where('target_id', 'like', "%{$roomCode}%")
-                                  ->orWhere('target_label', 'like', "%{$roomCode}%");
+            $numericId = preg_replace('/\D/', '', (string) $request->registration_code);
+            if ($numericId === '') {
+                $query->whereRaw('1 = 0');
+            } else {
+                $code = 'GAL' . ltrim($numericId, '0');
+                $query->where(function ($q) use ($code, $numericId) {
+                    $q->where('booking_code', $code)
+                        // Log cũ (chưa có cột booking_code)
+                        ->orWhere(function ($legacy) use ($code, $numericId) {
+                            $legacy->whereNull('booking_code')->where(function ($inner) use ($code, $numericId) {
+                                $inner->where('target_label', $code)
+                                    ->orWhere('target_label', 'like', "{$code} %")
+                                    ->orWhere(fn ($b) => $b->where('target_type', 'Booking')->where('target_id', $numericId))
+                                    ->orWhere('description', 'like', "%{$code} %")
+                                    ->orWhere('description', 'like', "%{$code}:%")
+                                    ->orWhere('description', 'like', "%{$code},%")
+                                    ->orWhere('description', 'like', "%{$code}");
+                            });
                         });
-                })
-                ->orWhere('description', 'like', "%phòng%{$roomCode}%")
-                ->orWhere('description', 'like', "%P.{$roomCode}%")
-                ->orWhereJsonContains('new_values->room_number', $roomCode)
-                ->orWhereJsonContains('old_values->room_number', $roomCode);
+                });
+            }
+        }
+
+        // Lọc theo mã phòng: nhập mã G (G0000048) hoặc số phòng (605)
+        if ($request->filled('room_code')) {
+            $roomCode = trim((string) $request->room_code);
+            $isGCode = (bool) preg_match('/^G\d+$/i', $roomCode);
+            // Số phòng → các mã G từng ở phòng đó (cột Mã phòng của log lưu mã G)
+            $gCodes = $isGCode
+                ? [strtoupper($roomCode)]
+                : \App\Models\BookingRoom::withTrashed()->where('room_number', $roomCode)->pluck('id')->map(fn ($id) => (string) $id)->all();
+
+            $query->where(function ($q) use ($roomCode, $gCodes, $isGCode) {
+                foreach ($gCodes as $g) {
+                    $q->orWhere('room_code', $g)
+                        ->orWhere('room_code', 'like', "{$g},%")
+                        ->orWhere('room_code', 'like', "%, {$g}")
+                        ->orWhere('room_code', 'like', "%, {$g},%");
+                }
+                if (!$isGCode) {
+                    // Log buồng phòng / khóa phòng lưu số phòng vật lý
+                    $q->orWhere('room_code', $roomCode)
+                        ->orWhere('room_code', 'like', "{$roomCode},%")
+                        ->orWhere('room_code', 'like', "%, {$roomCode}")
+                        ->orWhere('room_code', 'like', "%, {$roomCode},%");
+                }
+                // Log cũ (chưa có cột room_code)
+                $q->orWhere(function ($legacy) use ($roomCode, $gCodes) {
+                    $legacy->whereNull('room_code')->where(function ($inner) use ($roomCode, $gCodes) {
+                        $inner->where(function ($sub) use ($roomCode, $gCodes) {
+                            $sub->whereIn('target_type', ['Room', 'RoomLock', 'BookingRoom', 'BookingRoomService'])
+                                ->where(fn ($t) => $t->where('target_id', $roomCode)->orWhereIn('target_id', $gCodes ?: ['-']));
+                        })
+                            ->orWhere('description', 'like', "%P.{$roomCode} %")
+                            ->orWhere('description', 'like', "%P.{$roomCode})%");
+                    });
+                });
             });
         }
 
-        // Lọc theo khoảng thời gian (theo múi giờ Asia/Ho_Chi_Minh)
+        // Lọc theo NGÀY HỆ THỐNG (ngày thao tác); log cũ chưa có system_date thì theo ngày ghi log
         if ($request->filled('date_from')) {
-            $dateFrom = \Carbon\Carbon::createFromFormat('Y-m-d', $request->date_from, 'Asia/Ho_Chi_Minh')->startOfDay();
-            $query->where('created_at', '>=', $dateFrom);
+            $from = \Carbon\Carbon::createFromFormat('Y-m-d', $request->date_from, 'Asia/Ho_Chi_Minh')->startOfDay();
+            $query->where(function ($q) use ($from) {
+                $q->whereDate('system_date', '>=', $from->toDateString())
+                    ->orWhere(fn ($legacy) => $legacy->whereNull('system_date')->where('created_at', '>=', $from));
+            });
         }
         if ($request->filled('date_to')) {
-            $dateTo = \Carbon\Carbon::createFromFormat('Y-m-d', $request->date_to, 'Asia/Ho_Chi_Minh')->endOfDay();
-            $query->where('created_at', '<=', $dateTo);
+            $to = \Carbon\Carbon::createFromFormat('Y-m-d', $request->date_to, 'Asia/Ho_Chi_Minh')->endOfDay();
+            $query->where(function ($q) use ($to) {
+                $q->whereDate('system_date', '<=', $to->toDateString())
+                    ->orWhere(fn ($legacy) => $legacy->whereNull('system_date')->where('created_at', '<=', $to));
+            });
         }
 
         // Tìm kiếm full-text
@@ -100,7 +153,7 @@ class ActivityLogController extends Controller
         // Sắp xếp
         $sortBy = $request->input('sort_by', 'created_at');
         $sortDir = $request->input('sort_dir', 'desc');
-        $allowedSort = ['id', 'created_at', 'user_name', 'action', 'module', 'component'];
+        $allowedSort = ['id', 'created_at', 'system_date', 'user_name', 'action', 'module', 'component'];
         if (in_array($sortBy, $allowedSort)) {
             $query->orderBy($sortBy, $sortDir === 'asc' ? 'asc' : 'desc');
         }

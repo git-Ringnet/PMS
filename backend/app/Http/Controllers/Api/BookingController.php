@@ -976,6 +976,8 @@ class BookingController extends Controller
             'room_allocations' => 'required|array',
         ]);
 
+        $logSnapshot = \App\Services\ActivityLogService::snapshotBooking($booking);
+
         try {
             DB::transaction(function () use ($booking, $validated) {
                 $allocations = $validated['room_allocations'];
@@ -1034,6 +1036,13 @@ class BookingController extends Controller
             'payments.paymentMethod',
         ]);
 
+        try {
+            // Dòng 16: "* Thêm mới Phòng thuê : Mã: G.. - Giá - Loại - Dạng ..."
+            \App\Services\ActivityLogService::logBookingChanges($booking, $logSnapshot, $request);
+        } catch (\Throwable $e) {
+            Log::warning('Log add-rooms error: ' . $e->getMessage());
+        }
+
         return response()->json([
             'success' => true,
             'data' => $booking,
@@ -1074,13 +1083,7 @@ class BookingController extends Controller
             'note' => 'sometimes|nullable|string',
         ]);
 
-        $changes = [];
-        $fieldLabels = ['booking_name' => 'Tên đăng ký', 'customer_source_id' => 'Nguồn khách', 'booker_id' => 'Người đặt', 'note' => 'Ghi chú'];
-        foreach ($fieldLabels as $field => $label) {
-            if (array_key_exists($field, $validated) && $booking->{$field} != $validated[$field]) {
-                $changes[] = '-'.$label.': '.(string) ($validated[$field] ?? '');
-            }
-        }
+        $logSnapshot = \App\Services\ActivityLogService::snapshotBooking($booking);
         $validated['edit_count'] = (int) $booking->edit_count + 1;
         $validated['edit_date'] = now();
         $validated['updated_by'] = $user?->username ?? 'system';
@@ -1088,7 +1091,7 @@ class BookingController extends Controller
         $booking->fill($validated)->save();
         $booking->refresh()->load(['customerSource', 'booker']);
         try {
-            \App\Services\ActivityLogService::logBookingUpdated($booking, $changes, $request);
+            \App\Services\ActivityLogService::logBookingChanges($booking, $logSnapshot, $request);
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::warning('Log checked-out booking update error: '.$e->getMessage());
         }
@@ -1121,6 +1124,9 @@ class BookingController extends Controller
                 'message' => 'Không thể chỉnh sửa đăng ký đã xóa!',
             ], 422);
         }
+
+        // Lịch sử thao tác: chụp dữ liệu trước khi lưu để ghi đúng các trường thay đổi
+        $logSnapshot = \App\Services\ActivityLogService::snapshotBooking($booking);
 
         $allowAddingRoomsOnly = (int) $booking->status === Booking::STATUS_CHECKIN
             && $booking->bookingRooms()
@@ -1898,23 +1904,7 @@ class BookingController extends Controller
         $this->hideCancelledRoomsForActiveBooking($booking);
 
         try {
-            $changes = [];
-            if ($booking->wasChanged('registration_status_id')) {
-                $statusName = $booking->registrationStatus?->name ?? 'Mới';
-                $changes[] = "-Trạng thái: {$statusName}";
-            }
-            if ($booking->wasChanged('arrival_date') || $booking->wasChanged('departure_date')) {
-                $arr = $booking->arrival_date ? \Carbon\Carbon::parse($booking->arrival_date)->format('d/m/Y') : '';
-                $dep = $booking->departure_date ? \Carbon\Carbon::parse($booking->departure_date)->format('d/m/Y') : '';
-                $changes[] = "-Ngày ở: {$arr} ~ {$dep}";
-            }
-            if ($booking->wasChanged('note')) {
-                $changes[] = "-Ghi chú: {$booking->note}";
-            }
-            if ($booking->wasChanged('company_id')) {
-                $changes[] = "-Công ty: " . ($booking->company?->name ?? '');
-            }
-            \App\Services\ActivityLogService::logBookingUpdated($booking, $changes, $request);
+            \App\Services\ActivityLogService::logBookingChanges($booking, $logSnapshot, $request);
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::warning('Log Booking update error: ' . $e->getMessage());
         }
@@ -2051,6 +2041,11 @@ class BookingController extends Controller
         $cancelledAt = Carbon::parse($systemDate ?? now())
             ->setTimeFromTimeString(now()->format('H:i:s'));
 
+        // Lịch sử thao tác (dòng 44): các phòng bị hủy theo đăng ký
+        $logCancelledRooms = $booking->bookingRooms
+            ->filter(fn ($room) => (int) $room->status !== BookingRoom::STATUS_CANCELLED)
+            ->values();
+
         DB::transaction(function () use ($booking, $id, $request, $reasonText, $cancelledAt) {
             $currentUserId = Auth::id() ?? 0;
             $currentUsername = Auth::user()?->username ?? 'system';
@@ -2122,17 +2117,23 @@ class BookingController extends Controller
         });
 
         try {
-            $bCode = $booking->booking_code ?? ('GAL' . $booking->id);
-            \App\Services\ActivityLogService::logBusiness([
-                'action' => 'Cancel',
-                'module' => 'reservation',
-                'component' => 'CreateRegistrationPage',
-                'description' => "* Hủy đăng ký {$bCode}" . ($reasonText ? ". Lý do: {$reasonText}" : ""),
-                'target_type' => 'Booking',
-                'target_id' => (string) $booking->id,
-                'target_label' => $bCode,
-            ], $request);
-        } catch (\Throwable $e) {}
+            // Dòng 44: "* Huỷ đăng ký mã GAL27 - test ghi log, Lý do: ..." + dòng các phòng bị hủy
+            $bCode = \App\Services\ActivityLogService::bookingCode($booking->id);
+            $reasonPart = $reasonText ? ", Lý do: {$reasonText}" : '';
+            $opts = ['screen' => \App\Support\ActivityScreen::REGISTRATION, 'booking_code' => $bCode, 'target_type' => 'Booking', 'target_id' => $booking->id, 'target_label' => $bCode];
+            \App\Services\ActivityLogService::record('Cancel', "* Huỷ đăng ký mã {$bCode}" . ($booking->booking_name ? " - {$booking->booking_name}" : '') . $reasonPart, $opts, $request);
+            if ($logCancelledRooms->isNotEmpty()) {
+                $roomIds = $logCancelledRooms->pluck('id')->all();
+                \App\Services\ActivityLogService::record(
+                    'Cancel',
+                    '* Huỷ phòng thuê - ' . \App\Support\BookingLogText::roomsByClass($logCancelledRooms) . ($reasonText ? ". Lý do: {$reasonText}" : ''),
+                    array_merge($opts, ['room_code' => $roomIds, 'target_type' => 'BookingRoom', 'target_id' => implode(',', $roomIds)]),
+                    $request
+                );
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Log booking cancel error: ' . $e->getMessage());
+        }
 
         return response()->json([
             'success' => true,
@@ -2407,6 +2408,21 @@ class BookingController extends Controller
             'registrationStatus', 'company', 'bookingRooms.roomClass',
         ]);
 
+        try {
+            // Dòng 43: "* Copy Đăng Ký GAL27 từ đăng ký GAL22"
+            $newCode = \App\Services\ActivityLogService::bookingCode($newBooking->id);
+            \App\Services\ActivityLogService::record('Add', "* Copy Đăng Ký {$newCode} từ đăng ký " . \App\Services\ActivityLogService::bookingCode($id), [
+                'screen' => \App\Support\ActivityScreen::REGISTRATION,
+                'booking_code' => $newCode,
+                'room_code' => $newBooking->bookingRooms->pluck('id')->all(),
+                'target_type' => 'Booking',
+                'target_id' => $newBooking->id,
+                'target_label' => $newCode,
+            ], $request);
+        } catch (\Throwable $e) {
+            Log::warning('Log booking copy error: ' . $e->getMessage());
+        }
+
         return response()->json([
             'success' => true,
             'data'    => $newBooking,
@@ -2602,30 +2618,8 @@ class BookingController extends Controller
                 ], 422);
             }
 
-            // Dòng 294: trùng số phòng (với đăng ký khác hoặc phòng khóa) hỏi xác nhận xóa số phòng
-            // cả khi khôi phục cả booking lẫn khi chọn phòng hủy cần khôi phục.
-            $uniqueDuplicateRooms = collect($duplicateRooms)->unique('room_number')->values()->all();
-            $clearDuplicateRooms = $request->boolean('clear_duplicate_rooms');
-
-            if (count($uniqueDuplicateRooms) > 0 && !$clearDuplicateRooms) {
-                // Nếu có phòng trùng và người dùng chưa xác nhận xóa số phòng bị trùng -> Bật cảnh báo xác nhận
-                $conflictLines = collect($uniqueDuplicateRooms)->map(function ($item) {
-                    $line = "- R: {$item['room_number']}";
-                    if (!empty($item['booking_code'])) {
-                        $line .= " - BK: {$item['booking_code']}";
-                    }
-                    return $line;
-                })->implode("\n");
-
-                return response()->json([
-                    'success'                 => false,
-                    'needs_duplicate_confirm' => true,
-                    'duplicate_rooms'         => $uniqueDuplicateRooms,
-                    'conflict_lines'          => $conflictLines,
-                    'message'                 => "Đăng ký được khôi phục có số phòng đã được đặt bởi đăng ký khác hoặc đang bị khóa. Bạn có muốn tiếp tục? (Số phòng của những phòng bị trùng sẽ được xóa khi khôi phục)\n{$conflictLines}",
-                ], 200);
-            }
-
+            // Dòng 294 (note 27/10): kiểm tra over và thông số TRƯỚC. Không thỏa điều kiện thông số thì
+            // chặn ngay, không hỏi xóa số phòng trùng.
             // ========================================================
             // KIỂM TRA OVER PHÒNG THEO AllowOverRoomTypeRoomKind
             // ========================================================
@@ -2687,6 +2681,30 @@ class BookingController extends Controller
                         ? 'Loại phòng đang bị over không thể khôi phục các phòng đã chọn'
                         : 'Loại phòng đang bị over không thể khôi phục booking',
                 ], 422);
+            }
+
+            // Dòng 294: trùng số phòng (với đăng ký khác hoặc phòng khóa) hỏi xác nhận xóa số phòng
+            // cả khi khôi phục cả booking lẫn khi chọn phòng hủy cần khôi phục.
+            $uniqueDuplicateRooms = collect($duplicateRooms)->unique('room_number')->values()->all();
+            $clearDuplicateRooms = $request->boolean('clear_duplicate_rooms');
+
+            if (count($uniqueDuplicateRooms) > 0 && !$clearDuplicateRooms) {
+                // Nếu có phòng trùng và người dùng chưa xác nhận xóa số phòng bị trùng -> Bật cảnh báo xác nhận
+                $conflictLines = collect($uniqueDuplicateRooms)->map(function ($item) {
+                    $line = "- R: {$item['room_number']}";
+                    if (!empty($item['booking_code'])) {
+                        $line .= " - BK: {$item['booking_code']}";
+                    }
+                    return $line;
+                })->implode("\n");
+
+                return response()->json([
+                    'success'                 => false,
+                    'needs_duplicate_confirm' => true,
+                    'duplicate_rooms'         => $uniqueDuplicateRooms,
+                    'conflict_lines'          => $conflictLines,
+                    'message'                 => "Đăng ký được khôi phục có số phòng đã được đặt bởi đăng ký khác hoặc đang bị khóa. Bạn có muốn tiếp tục? (Số phòng của những phòng bị trùng sẽ được xóa khi khôi phục)\n{$conflictLines}",
+                ], 200);
             }
 
             // Nếu AllowOverRoomTypeRoomKind = 1: Bật cảnh báo xác nhận nếu chưa có cờ force / force_over
@@ -2760,17 +2778,21 @@ class BookingController extends Controller
             });
 
             try {
-                $bCode = $booking->booking_code ?? ('GAL' . $booking->id);
-                $restoredLabels = $roomsToRestore->map(fn ($room) => $room->room_number ?: $room->id)->implode(', ');
-                \App\Services\ActivityLogService::logBusiness([
-                    'action'       => 'Restore',
-                    'module'       => 'reservation',
-                    'component'    => 'CreateRegistrationPage',
-                    'description'  => "* Khôi phục đăng ký {$bCode}" . ($restoredLabels !== '' ? " - Phòng: {$restoredLabels}" : ''),
-                    'target_type'  => 'Booking',
-                    'target_id'    => (string) $booking->id,
-                    'target_label' => $bCode,
-                ], $request);
+                $bCode = \App\Services\ActivityLogService::bookingCode($booking->id);
+                $restoredLabels = $roomsToRestore->map(fn ($room) => ($room->room_number ? "{$room->room_number} " : '') . "({$room->id})")->implode(', ');
+                \App\Services\ActivityLogService::record(
+                    'Restore',
+                    "* Khôi phục đăng ký {$bCode}" . ($restoredLabels !== '' ? " - Phòng: {$restoredLabels}" : ''),
+                    [
+                        'screen' => \App\Support\ActivityScreen::REGISTRATION,
+                        'booking_code' => $bCode,
+                        'room_code' => $roomsToRestore->pluck('id')->all(),
+                        'target_type' => 'Booking',
+                        'target_id' => $booking->id,
+                        'target_label' => $bCode,
+                    ],
+                    $request
+                );
             } catch (\Throwable $e) {}
 
             $roomRestored = $roomsToRestore->isNotEmpty();

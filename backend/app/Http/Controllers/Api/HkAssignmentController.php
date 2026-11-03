@@ -127,6 +127,9 @@ class HkAssignmentController extends Controller
 
         $assignment->load(['shift', 'groups.staffList.staff', 'groups.rooms.room.roomClass']);
 
+        // Mở lịch phân công (chưa có phòng/nhân viên) không ghi log riêng; log ghi khi tạo nhóm phân công (dòng 72)
+        $request->attributes->set('_activity_logged', true);
+
         return response()->json([
             'success' => true,
             'data'    => $this->formatAssignment($assignment),
@@ -153,6 +156,9 @@ class HkAssignmentController extends Controller
             'room_ids.*' => 'integer|exists:rooms,id',
             'room_snapshots' => 'nullable|array', // ['room_id' => ['room_status_snapshot'=>'...', 'booking_status_snapshot'=>'...']]
         ]);
+
+        $logPrevious = $this->logPreviousGroups($assignment->id, $validated['room_ids']);
+        $logPreviousStaff = collect(array_unique($logPrevious))->mapWithKeys(fn ($gid) => [$gid => $this->logStaffNames((int) $gid)])->all();
 
         DB::transaction(function () use ($assignment, $validated, &$group) {
             // Kiểm tra NV đã ở nhóm khác trong cùng ca chưa
@@ -202,6 +208,14 @@ class HkAssignmentController extends Controller
             }
         });
 
+        // Dòng 72: "* Tạo phân công phòng các phòng: 502, 503, - Nhân Viên: A, B, - Ngày: 04-09-2026, - Ca: Tối"
+        $staff = $this->logStaffNames($group->id);
+        $this->logMovedRooms($logPrevious, $logPreviousStaff, $staff);
+        $rooms = $this->logRoomNumbers(array_diff($validated['room_ids'], array_keys($logPrevious)));
+        if ($rooms) {
+            $this->logAssign('Add', '* Tạo phân công phòng các phòng: ' . implode(', ', $rooms) . ", - Nhân Viên: {$staff}, " . $this->logContext($assignment), $rooms);
+        }
+
         $group->load(['staffList.staff', 'rooms.room.roomClass']);
         return response()->json(['success' => true, 'data' => $this->formatGroup($group)], 201);
     }
@@ -218,6 +232,8 @@ class HkAssignmentController extends Controller
             'staff_ids'   => 'required|array',
             'staff_ids.*' => 'integer|exists:hk_staff,id',
         ]);
+
+        $logOldStaff = $this->logStaffNames($group->id);
 
         DB::transaction(function () use ($group, $validated) {
             // Kiểm tra NV mới thêm đã ở nhóm khác chưa
@@ -240,6 +256,13 @@ class HkAssignmentController extends Controller
             }
         });
 
+        // Dòng 74: "* Cập nhật phân công phòng: - Nhân Viên: A, B, - Ngày, - Ca\nNhân Viên: A, B -> Nhân Viên: A"
+        $logNewStaff = $this->logStaffNames($group->id);
+        if ($logNewStaff !== $logOldStaff) {
+            $this->logAssign('Modify', "* Cập nhật phân công phòng: - Nhân Viên: {$logOldStaff}, " . $this->logContext($group->assignment)
+                . "\nNhân Viên: {$logOldStaff} -> Nhân Viên: {$logNewStaff}");
+        }
+
         $group->load(['staffList.staff', 'rooms.room.roomClass']);
         return response()->json(['success' => true, 'data' => $this->formatGroup($group)]);
     }
@@ -249,8 +272,14 @@ class HkAssignmentController extends Controller
      */
     public function destroyGroup($groupId)
     {
-        $group = HkAssignmentGroup::findOrFail($groupId);
+        $group = HkAssignmentGroup::with('assignment')->findOrFail($groupId);
+        $logStaff = $this->logStaffNames($group->id);
+        $logRooms = $this->logRoomNumbers(HkAssignmentGroupRoom::where('group_id', $group->id)->pluck('room_id')->all());
         $group->delete(); // cascade xóa staff + rooms của nhóm
+
+        // Dòng 77: "* Xóa lịch phân công các phòng 101, 102, - Nhân viên: X, - Ngày 04-09-2026, - Ca: Tối"
+        $this->logAssign('Cancel', '* Xóa lịch phân công các phòng ' . implode(', ', $logRooms) . ", - Nhân viên: {$logStaff}, " . $this->logContext($group->assignment), $logRooms);
+
         return response()->json(['success' => true]);
     }
 
@@ -271,6 +300,10 @@ class HkAssignmentController extends Controller
             'room_ids.*' => 'integer|exists:rooms,id',
             'room_snapshots' => 'nullable|array',
         ]);
+
+        $logPrevious = $this->logPreviousGroups($group->assignment_id, $validated['room_ids'], $group->id);
+        $logPreviousStaff = collect(array_unique($logPrevious))->mapWithKeys(fn ($gid) => [$gid => $this->logStaffNames((int) $gid)])->all();
+        $logAlready = HkAssignmentGroupRoom::where('group_id', $group->id)->whereIn('room_id', $validated['room_ids'])->pluck('room_id')->all();
 
         DB::transaction(function () use ($group, $validated) {
             $existingGroupIds = HkAssignmentGroup::where('assignment_id', $group->assignment_id)->pluck('id');
@@ -299,6 +332,14 @@ class HkAssignmentController extends Controller
             }
         });
 
+        // Dòng 73, 76: chuyển phòng từ nhóm khác / thêm phòng mới cho phân công
+        $staff = $this->logStaffNames($group->id);
+        $this->logMovedRooms($logPrevious, $logPreviousStaff, $staff);
+        $added = $this->logRoomNumbers(array_diff($validated['room_ids'], array_keys($logPrevious), $logAlready));
+        if ($added) {
+            $this->logAssign('Add', '* Thêm phân công phòng ' . implode(', ', $added) . " cho phân công : - Nhân viên: {$staff}, " . $this->logContext($group->assignment), $added);
+        }
+
         $group->load(['staffList.staff', 'rooms.room.roomClass']);
         return response()->json(['success' => true, 'data' => $this->formatGroup($group)]);
     }
@@ -308,8 +349,71 @@ class HkAssignmentController extends Controller
      */
     public function removeRoom($groupId, $roomId)
     {
-        HkAssignmentGroupRoom::where('group_id', $groupId)->where('room_id', $roomId)->delete();
+        $deleted = HkAssignmentGroupRoom::where('group_id', $groupId)->where('room_id', $roomId)->delete();
+
+        // Dòng 75: "* Xóa phân công phòng 106 cho phân công - Nhân viên: A, B"
+        if ($deleted) {
+            $room = $this->logRoomNumbers([(int) $roomId]);
+            $this->logAssign('Cancel', '* Xóa phân công phòng ' . implode(', ', $room) . ' cho phân công - Nhân viên: ' . $this->logStaffNames((int) $groupId), $room);
+        }
+
         return response()->json(['success' => true]);
+    }
+
+    // =========================================================
+    // Lịch sử thao tác (sheet GHI LOG dòng 72-77)
+    // =========================================================
+
+    private function logStaffNames(int $groupId): string
+    {
+        return HkStaff::whereIn('id', HkAssignmentGroupStaff::where('group_id', $groupId)->pluck('staff_id'))->pluck('name')->implode(', ');
+    }
+
+    private function logRoomNumbers(array $roomIds): array
+    {
+        return \App\Models\Room::whereIn('id', $roomIds)->orderBy('room_number')->pluck('room_number')->map(fn ($n) => (string) $n)->all();
+    }
+
+    private function logContext(?HkAssignment $assignment): string
+    {
+        if (!$assignment) {
+            return '';
+        }
+        $shift = \App\Models\Shift::whereKey($assignment->shift_id)->value('name') ?? $assignment->shift_id;
+
+        return '- Ngày: ' . \App\Services\ActivityLogService::d($assignment->work_date) . ", - Ca: {$shift}";
+    }
+
+    /** Nhóm cũ (cùng ca) đang giữ các phòng: [room_id => group_id]. */
+    private function logPreviousGroups(int $assignmentId, array $roomIds, ?int $exceptGroupId = null): array
+    {
+        return HkAssignmentGroupRoom::whereIn('group_id', HkAssignmentGroup::where('assignment_id', $assignmentId)->pluck('id'))
+            ->whereIn('room_id', $roomIds)
+            ->when($exceptGroupId, fn ($q) => $q->where('group_id', '!=', $exceptGroupId))
+            ->pluck('group_id', 'room_id')
+            ->all();
+    }
+
+    private function logAssign(string $action, string $description, array $roomNumbers = []): void
+    {
+        try {
+            \App\Services\ActivityLogService::record($action, $description, [
+                'screen' => \App\Support\ActivityScreen::HK_ASSIGN,
+                'room_code' => $roomNumbers,
+                'target_type' => 'HkAssignmentGroup',
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log HK assignment error: ' . $e->getMessage());
+        }
+    }
+
+    /** Dòng 73: "* Chuyển phân công cho phòng 106 từ - Nhân Viên: A, B -> Nhân Viên: C, D". */
+    private function logMovedRooms(array $previousGroups, array $previousStaff, string $newStaff): void
+    {
+        foreach ($previousGroups as $roomId => $oldGroupId) {
+            $room = $this->logRoomNumbers([$roomId])[0] ?? (string) $roomId;
+            $this->logAssign('Modify', "* Chuyển phân công cho phòng {$room} từ - Nhân Viên: " . ($previousStaff[$oldGroupId] ?? '') . " -> Nhân Viên: {$newStaff}", [$room]);
+        }
     }
 
     // =========================================================

@@ -69,7 +69,31 @@ class InventoryLogController extends Controller
             'transfer' => $validated['transfer'] ?? null,
         ], fn($v) => $v !== null);
 
+        $before = InventoryDailyLog::where($key)->first()?->only(['receive', 'export', 'transfer']) ?? [];
         $log = InventoryDailyLog::updateOrCreate($key, $values);
+
+        try {
+            // Dòng 87: "* Cập nhật số lượng SP: - Mã SP: 9 , - Tên SP: Nutriboost , - Ngày: 04-09-2026, - Nhập: -> 10"
+            $labels = ['receive' => 'Nhập', 'export' => 'Xuất', 'transfer' => 'Chuyển'];
+            $num = fn ($v) => $v === null ? '' : rtrim(rtrim(number_format((float) $v, 2, '.', ''), '0'), '.');
+            $parts = [];
+            foreach ($values as $field => $value) {
+                if ($num($before[$field] ?? null) !== $num($value)) {
+                    $parts[] = "- {$labels[$field]}: " . $num($before[$field] ?? null) . ' -> ' . $num($value);
+                }
+            }
+            if ($parts) {
+                $product = \App\Models\Product::find($validated['product_id']);
+                \App\Services\ActivityLogService::record('Inventory', '* Cập nhật số lượng SP: - Mã SP: ' . ($product?->product_code ?: $validated['product_id'])
+                    . ' , - Tên SP: ' . ($product?->name ?? '') . ' , - Ngày: ' . \App\Services\ActivityLogService::d($validated['date']) . ', ' . implode(', ', $parts), [
+                    'screen' => \App\Support\ActivityScreen::INVENTORY,
+                    'target_type' => 'InventoryDailyLog',
+                    'target_id' => $log->id,
+                ], $request);
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log inventory qty error: ' . $e->getMessage());
+        }
 
         return response()->json(['success' => true, 'data' => $log]);
     }
@@ -222,6 +246,21 @@ class InventoryLogController extends Controller
 
         $timeLabel = $isSingleDay ? "ngày {$validated['date']}" : "tháng {$month}";
         $skippedLabel = $skippedProducts ? ' Bỏ qua ' . count($skippedProducts) . ' sản phẩm không có trong phiếu kiểm kê.' : '';
+
+        try {
+            // Dòng 88: "Get bill cho Tháng: 09-2026 , - Kho: Minibar"
+            $period = $isSingleDay
+                ? 'Ngày: ' . \App\Services\ActivityLogService::d($validated['date'])
+                : 'Tháng: ' . \Carbon\Carbon::createFromFormat('Y-m', $month)->format('m-Y');
+            \App\Services\ActivityLogService::record('Inventory', "Get bill cho {$period} , - Kho: {$warehouse->name}", [
+                'screen' => \App\Support\ActivityScreen::INVENTORY,
+                'target_type' => 'Warehouse',
+                'target_id' => $warehouse->id,
+                'target_label' => $warehouse->name,
+            ], $request);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log get bill error: ' . $e->getMessage());
+        }
         return response()->json([
             'success' => true,
             'message' => "Đã đồng bộ xuất kho cho {$updatedCount} lượt sản phẩm từ hóa đơn {$timeLabel} [{$outletDisplayName}].{$skippedLabel}",
