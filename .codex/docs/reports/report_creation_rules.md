@@ -113,7 +113,7 @@ flowchart LR
 - Default ngày đã hỗ trợ: `$today`, `$yesterday`, `$month_start`, `$month_end`. Các control select/radio nên có default hợp lệ hoặc option đầu tiên có ý nghĩa.
 - Option tĩnh dùng `{ "label": "...", "value": "..." }`; option động chọn `options_source` đã có. Danh sách cho phép hiện tại: `areas`, `outlets`, `companies`, `bookings`, `rooms`, `room-classes`, `registration-statuses`, `users`, `hotel-services`, `report-shifts`, `service-departments`.
 - Nếu cần một lookup mới, xác minh nguồn và quyền dữ liệu trước. Thêm lookup tác động `ReportLookupController` và validation schema dùng chung; phải nêu report nào khác bị ảnh hưởng và xin duyệt trước khi sửa.
-- Khai báo `show_in_menu`, `menu_locations` (`reservation`, `frontdesk`, `housekeeping`), group và các trường thứ tự menu. Definition cần `is_active=true` để xuất hiện trong catalog runtime.
+- Khai báo `show_in_menu`, `menu_locations` (`reservation`, `frontdesk`, `housekeeping`, `management`), group và các trường thứ tự menu. Definition cần `is_active=true` để xuất hiện trong catalog runtime.
 - Mọi filter business phải được thực thi trong procedure. UI chỉ thu thập giá trị; UI không bảo vệ dữ liệu nếu procedure bỏ qua filter.
 
 ## 7. Enrichment và dataset phụ

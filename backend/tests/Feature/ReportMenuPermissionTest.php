@@ -126,6 +126,37 @@ class ReportMenuPermissionTest extends TestCase
         $this->assertSame(['Báo cáo doanh thu'], $this->names($this->navigation($this->admin, 'housekeeping')));
     }
 
+    public function test_moving_report_between_categories_persists_after_reload_without_changing_other_modules(): void
+    {
+        $this->actingAs($this->admin)->putJson('/api/report-menu/reservation', ['tree' => [
+            ['type' => 'group', 'name' => 'Danh mục cũ', 'children' => [
+                ['type' => 'report', 'report_id' => $this->revenue->id],
+            ]],
+        ]])->assertOk();
+
+        $this->actingAs($this->admin)->putJson('/api/report-menu/housekeeping', ['tree' => [
+            ['type' => 'group', 'name' => 'Danh mục Buồng phòng', 'children' => [
+                ['type' => 'report', 'report_id' => $this->revenue->id],
+            ]],
+        ]])->assertOk();
+
+        $this->actingAs($this->admin)->putJson('/api/report-menu/reservation', ['tree' => [
+            ['type' => 'group', 'name' => 'Danh mục mới', 'children' => [
+                ['type' => 'report', 'report_id' => $this->revenue->id],
+            ]],
+        ]])->assertOk();
+
+        $tree = $this->actingAs($this->admin)->getJson('/api/report-menu')->assertOk()->json('data.trees.reservation');
+        $this->assertSame([
+            ['type' => 'group', 'name' => 'Danh mục mới', 'children' => [[
+                'type' => 'report', 'report_id' => $this->revenue->id,
+                'code' => 'REVENUE_TEST', 'name' => 'Báo cáo doanh thu', 'is_active' => true,
+            ]]],
+        ], $tree);
+        $this->assertEqualsCanonicalizing(['reservation', 'housekeeping'], $this->revenue->fresh()->menu_locations);
+        $this->assertSame(['Báo cáo doanh thu'], $this->names($this->navigation($this->admin, 'housekeeping'))[0]['Danh mục Buồng phòng']);
+    }
+
     public function test_menu_supports_nested_categories_without_changing_report_membership(): void
     {
         $this->actingAs($this->admin)->putJson('/api/report-menu/reservation', ['tree' => [
@@ -141,6 +172,38 @@ class ReportMenuPermissionTest extends TestCase
         $this->assertSame('Doanh thu', $items[0]['children'][0]['name']);
         $this->assertSame('Báo cáo doanh thu', $items[0]['children'][0]['children'][0]['name']);
         $this->assertSame(['reservation'], $this->revenue->fresh()->menu_locations);
+    }
+
+    public function test_management_menu_preserves_existing_module_membership(): void
+    {
+        $this->actingAs($this->admin)->putJson('/api/report-menu/management', ['tree' => [
+            ['type' => 'group', 'name' => 'Doanh Thu', 'children' => [
+                ['type' => 'report', 'report_id' => $this->revenue->id],
+            ]],
+        ]])->assertOk();
+
+        $this->assertSame([
+            ['Doanh Thu' => ['Báo cáo doanh thu']],
+        ], $this->names($this->navigation($this->admin, 'management')));
+        $this->assertEqualsCanonicalizing(['reservation', 'management'], $this->revenue->fresh()->menu_locations);
+        $this->assertTrue($this->revenue->fresh()->show_in_menu);
+        $this->assertContains(
+            ['Doanh thu' => ['Báo cáo doanh thu']],
+            $this->names($this->navigation($this->admin, 'reservation'))
+        );
+    }
+
+    public function test_management_navigation_still_filters_report_view_permission(): void
+    {
+        $this->actingAs($this->admin)->putJson('/api/report-menu/management', ['tree' => [
+            ['type' => 'report', 'report_id' => $this->revenue->id],
+        ]])->assertOk();
+
+        $revenuePermission = Permission::where('code', ReportPermissionService::permissionCode($this->revenue))->first();
+        $this->role->permissions()->detach($revenuePermission->id);
+
+        $this->assertSame([], $this->navigation($this->staff, 'management'));
+        $this->assertSame(['Báo cáo doanh thu'], $this->names($this->navigation($this->admin, 'management')));
     }
 
     public function test_new_report_is_appended_to_group_with_same_name(): void

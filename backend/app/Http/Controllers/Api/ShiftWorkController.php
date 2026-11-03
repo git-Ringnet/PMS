@@ -242,7 +242,7 @@ class ShiftWorkController extends Controller
     public function departures(Request $request)
     {
         $dateStr = $request->input('date', $this->getSystemDate());
-        $statusFilter = $request->input('status', 'not_checked_out'); // 'not_checked_out' (1), 'checked_out' (2), 'all' (1,2)
+        $statusFilter = $request->input('status', 'not_checked_out'); // 'not_checked_out' (1 + same-day 0), 'checked_out' (2), 'all'
         $search = trim($request->input('search', ''));
 
         $prefix = $this->getPrefix();
@@ -262,13 +262,28 @@ class ShiftWorkController extends Controller
         ->whereNull('deleted_at')
         ->whereDate('departure_date', $targetDate);
 
-        // Filter status
+        // Phòng đi chưa trả gồm phòng đang ở và reservation chưa nhận phòng
+        // có ngày đến = ngày đi đang xem (day-use/same-day reservation).
         if ($statusFilter === 'not_checked_out' || $statusFilter === '1') {
-            $query->where('status', BookingRoom::STATUS_CHECKED_IN);
+            $query->where(function ($q) use ($targetDate) {
+                $q->where('status', BookingRoom::STATUS_CHECKED_IN)
+                    ->orWhere(function ($sameDay) use ($targetDate) {
+                        $sameDay->where('status', BookingRoom::STATUS_BOOKED)
+                            ->whereDate('arrival_date', $targetDate)
+                            ->whereDate('departure_date', $targetDate);
+                    });
+            });
         } elseif ($statusFilter === 'checked_out' || $statusFilter === '2') {
             $query->where('status', BookingRoom::STATUS_CHECKED_OUT);
         } else {
-            $query->whereIn('status', [BookingRoom::STATUS_CHECKED_IN, BookingRoom::STATUS_CHECKED_OUT]);
+            $query->where(function ($q) use ($targetDate) {
+                $q->whereIn('status', [BookingRoom::STATUS_CHECKED_IN, BookingRoom::STATUS_CHECKED_OUT])
+                    ->orWhere(function ($sameDay) use ($targetDate) {
+                        $sameDay->where('status', BookingRoom::STATUS_BOOKED)
+                            ->whereDate('arrival_date', $targetDate)
+                            ->whereDate('departure_date', $targetDate);
+                    });
+            });
         }
 
         $rooms = $query->orderBy('booking_id', 'asc')

@@ -178,6 +178,59 @@ class ShiftWorkListTest extends TestCase
         $this->assertSame('', $roomRow['rateCode']);
     }
 
+    public function test_same_day_booked_room_is_pending_departure_but_overnight_booking_is_not(): void
+    {
+        $sameDayBooking = $this->makeBooking('Same-day reservation');
+        $sameDayRoom = $this->makeRoom($sameDayBooking, BookingRoom::STATUS_BOOKED, [
+            'room_number' => '606',
+            'arrival_date' => '2026-09-03',
+            'departure_date' => '2026-09-03',
+        ]);
+
+        $overnightBooking = $this->makeBooking('Overnight reservation');
+        $overnightRoom = $this->makeRoom($overnightBooking, BookingRoom::STATUS_BOOKED, [
+            'room_number' => '705',
+        ]);
+
+        $rooms = collect($this->getJson('/api/shift-work/departures?date=2026-09-03')
+            ->assertOk()
+            ->json('data'))
+            ->flatMap(fn ($booking) => $booking['rooms']);
+
+        $this->assertNotNull($rooms->firstWhere('id', $sameDayRoom->id));
+        $this->assertNull($rooms->firstWhere('id', $overnightRoom->id));
+    }
+
+    public function test_same_day_booked_room_is_in_all_departures_but_not_checked_out_only(): void
+    {
+        $sameDayBooking = $this->makeBooking('Same-day reservation');
+        $sameDayRoom = $this->makeRoom($sameDayBooking, BookingRoom::STATUS_BOOKED, [
+            'room_number' => '606',
+            'arrival_date' => '2026-09-03',
+            'departure_date' => '2026-09-03',
+        ]);
+
+        $checkedOutBooking = $this->makeBooking('Checked-out reservation');
+        $checkedOutRoom = $this->makeRoom($checkedOutBooking, BookingRoom::STATUS_CHECKED_OUT, [
+            'room_number' => '1105',
+        ]);
+
+        $allRooms = collect($this->getJson('/api/shift-work/departures?date=2026-09-03&status=all')
+            ->assertOk()
+            ->json('data'))
+            ->flatMap(fn ($booking) => $booking['rooms']);
+
+        $checkedOutRooms = collect($this->getJson('/api/shift-work/departures?date=2026-09-03&status=checked_out')
+            ->assertOk()
+            ->json('data'))
+            ->flatMap(fn ($booking) => $booking['rooms']);
+
+        $this->assertNotNull($allRooms->firstWhere('id', $sameDayRoom->id));
+        $this->assertNotNull($allRooms->firstWhere('id', $checkedOutRoom->id));
+        $this->assertNull($checkedOutRooms->firstWhere('id', $sameDayRoom->id));
+        $this->assertNotNull($checkedOutRooms->firstWhere('id', $checkedOutRoom->id));
+    }
+
     public function test_export_returns_xlsx_for_departures(): void
     {
         $booking = $this->makeBooking('Walkin Guest');

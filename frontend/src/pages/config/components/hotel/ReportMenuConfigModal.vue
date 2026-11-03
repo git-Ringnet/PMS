@@ -9,7 +9,7 @@ import { FolderPlus, Plus, RefreshCw, Save, Search, ShieldCheck, X } from '@luci
 import ReportRoleAccessModal from './ReportRoleAccessModal.vue'
 import ReportMenuTreeEditor from './ReportMenuTreeEditor.vue'
 import {
-  addGroup, cloneTree, insertReport, moveSibling, placedReportIds, removeNode, renameGroup, toPayload, validateTree
+  addGroup, cloneTree, insertReport, insertReportBefore, moveReport, moveReportBefore, moveSibling, placedReportIds, removeNode, renameGroup, reportGroupPath, toPayload, transferReports, validateTree
 } from '@/utils/report-menu-tree.js'
 
 const props = defineProps({ isOpen: { type: Boolean, default: false } })
@@ -18,7 +18,7 @@ const authStore = useAuthStore()
 const uiStore = useUiStore()
 const themeColor = computed(() => authStore.themeColor || 'var(--pms-custom-theme, #006bdb)')
 
-const MODULE_SHORT = { reservation: 'ĐK', frontdesk: 'LT', housekeeping: 'BP' }
+const MODULE_SHORT = { reservation: 'ĐK', frontdesk: 'LT', housekeeping: 'BP', management: 'QL' }
 
 const loading = ref(false)
 const saving = ref(false)
@@ -38,7 +38,6 @@ const reportPickerIds = ref([])
 
 const tree = computed(() => trees.value[activeLocation.value] || [])
 const placed = computed(() => placedReportIds(tree.value))
-const unplacedReports = computed(() => reports.value.filter(report => !placed.value.has(report.id)))
 const isDirty = (location) => JSON.stringify(toPayload(trees.value[location])) !== JSON.stringify(toPayload(savedTrees.value[location]))
 const dirty = computed(() => isDirty(activeLocation.value))
 const activeLabel = computed(() => locations.value.find(item => item.code === activeLocation.value)?.label || '')
@@ -60,10 +59,28 @@ const filteredReports = computed(() => {
   return reports.value.filter(report => (!keyword || normalize(`${report.name} ${report.code}`).includes(keyword))
     && (!onlyUnplaced.value || !placed.value.has(report.id)))
 })
+const targetGroupReportIds = computed(() => {
+  let items = tree.value
+  for (const index of reportPickerPath.value || []) {
+    const group = items?.[index]
+    if (!group || group.type !== 'group') return new Set()
+    items = group.children || []
+  }
+  return new Set((items || [])
+    .filter(item => item.type === 'report')
+    .map(item => item.report_id))
+})
 const pickerReports = computed(() => {
   const keyword = normalize(reportPickerSearch.value.trim())
-  return unplacedReports.value.filter(report => !keyword || normalize(`${report.name} ${report.code}`).includes(keyword))
+  return reports.value.filter(report => {
+    return !targetGroupReportIds.value.has(report.id)
+      && (!keyword || normalize(`${report.name} ${report.code}`).includes(keyword))
+  })
 })
+const reportPlacementLabel = (report) => {
+  const path = reportGroupPath(tree.value, report.id)
+  return path ? `Đang ở: ${path.length ? path.join(' › ') : 'Gốc menu'}` : 'Chưa xếp'
+}
 
 const setTree = (next) => { trees.value = { ...trees.value, [activeLocation.value]: next } }
 const revealSelectedGroup = async (path) => {
@@ -171,10 +188,10 @@ const addReport = (report) => {
 
 const addReportsToGroup = (reportIds, targetPath) => {
   const selectedReports = reports.value.filter(report => reportIds.includes(report.id))
-  const next = selectedReports.reduce((items, report) => insertReport(items, report, targetPath), tree.value)
+  const next = transferReports(tree.value, selectedReports, targetPath)
   setTree(next)
   selectedGroup.value = targetPath
-  uiStore.showToast(`Đã thêm ${selectedReports.length} báo cáo vào danh mục.`, 'success')
+  uiStore.showToast(`Đã thêm/chuyển ${selectedReports.length} báo cáo vào danh mục.`, 'success')
 }
 
 const openReportPicker = (path) => {
@@ -197,14 +214,26 @@ const confirmReportPicker = () => {
 
 const addDroppedReport = (reportId, targetPath) => {
   const report = reports.value.find(item => item.id === reportId)
-  if (!report || placed.value.has(reportId)) return
-  setTree(insertReport(tree.value, report, targetPath))
+  if (!report) return
+  setTree(placed.value.has(reportId)
+    ? moveReport(tree.value, reportId, targetPath)
+    : insertReport(tree.value, report, targetPath))
   selectedGroup.value = targetPath
-  uiStore.showToast('Đã thêm báo cáo vào danh mục.', 'success')
+  uiStore.showToast(placed.value.has(reportId) ? 'Đã chuyển báo cáo sang danh mục.' : 'Đã thêm báo cáo vào danh mục.', 'success')
+}
+
+const addDroppedReportBefore = (reportId, targetReportId) => {
+  const report = reports.value.find(item => item.id === reportId)
+  if (!report || reportId === targetReportId) return
+  const wasPlaced = placed.value.has(reportId)
+  setTree(wasPlaced
+    ? moveReportBefore(tree.value, reportId, targetReportId)
+    : insertReportBefore(tree.value, report, targetReportId))
+  uiStore.showToast(wasPlaced ? 'Đã sắp xếp lại vị trí báo cáo.' : 'Đã thêm báo cáo vào vị trí đã chọn.', 'success')
 }
 
 const startReportDrag = (event, report) => {
-  event.dataTransfer.effectAllowed = 'copy'
+  event.dataTransfer.effectAllowed = placed.value.has(report.id) ? 'move' : 'copy'
   event.dataTransfer.setData('application/x-pms-report-id', String(report.id))
 }
 
@@ -287,10 +316,10 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown))
           </div>
           <div class="flex-1 overflow-y-auto p-2">
             <div v-for="report in filteredReports" :key="report.id"
-              :draggable="!placed.has(report.id)"
-              @dragstart="!placed.has(report.id) && startReportDrag($event, report)"
+              draggable="true"
+              @dragstart="startReportDrag($event, report)"
               class="group mb-1 flex items-center gap-2 rounded-lg border bg-white px-2 py-1.5"
-              :class="placed.has(report.id) ? 'border-transparent opacity-60' : 'cursor-grab border-slate-200 hover:border-sky-300'">
+              :class="placed.has(report.id) ? 'cursor-grab border-transparent opacity-60' : 'cursor-grab border-slate-200 hover:border-sky-300'">
               <div class="min-w-0 flex-1">
                 <div class="truncate text-xs font-semibold text-slate-700" :title="report.name">{{ report.name }}</div>
                 <div class="flex items-center gap-1 text-xs text-slate-400">
@@ -354,6 +383,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown))
                   :collapsed="collapsed"
                   @add-group="addMenuGroup"
                   @add-report="addDroppedReport"
+                  @move-report-before="addDroppedReportBefore"
                   @open-report-definition="reportId => emit('open-report-definition', reportId)"
                   @open-report-picker="openReportPicker"
                   @select-target="path => selectedGroup = path"
@@ -377,7 +407,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown))
         <header class="flex items-center justify-between gap-3 px-4 py-3 text-white" :style="{ background: themeColor }">
           <div>
             <h4 class="text-xs font-semibold">Thêm Báo Cáo Vào Danh Mục</h4>
-            <p class="mt-0.5 text-xs text-white/80">{{ groupAtPath(reportPickerPath)?.name }}</p>
+            <p class="mt-0.5 text-xs text-white/80">{{ groupAtPath(reportPickerPath)?.name }} · Báo cáo đã xếp sẽ được chuyển khỏi danh mục cũ</p>
           </div>
           <button type="button" class="rounded-lg border border-white/30 bg-white/15 p-2 text-white hover:bg-white/25" @click="reportPickerPath = null"><X class="h-4 w-4" /></button>
         </header>
@@ -388,12 +418,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', handleKeydown))
               <input type="checkbox" :checked="reportPickerIds.includes(report.id)" class="accent-sky-600" @change="togglePickerReport(report.id, $event.target.checked)" />
               <span class="min-w-0 flex-1 truncate font-normal text-[#000000D9]">{{ report.name }}</span>
               <span class="font-mono text-xs text-slate-400">{{ report.code }}</span>
+              <span class="max-w-48 truncate text-xs text-slate-400">{{ reportPlacementLabel(report) }}</span>
             </label>
-            <p v-if="!pickerReports.length" class="py-8 text-center text-xs text-slate-400">Không còn báo cáo chưa xếp phù hợp.</p>
+            <p v-if="!pickerReports.length" class="py-8 text-center text-xs text-slate-400">Không còn báo cáo phù hợp để thêm.</p>
           </div>
         </div>
         <footer class="flex items-center justify-end border-t border-slate-200 p-3">
-          <button type="button" class="btn-pms-primary" :disabled="!reportPickerIds.length" @click="confirmReportPicker">Thêm {{ reportPickerIds.length || '' }} Báo Cáo</button>
+          <button type="button" class="btn-pms-primary" :disabled="!reportPickerIds.length" @click="confirmReportPicker">Thêm/Chuyển {{ reportPickerIds.length || '' }} Báo Cáo</button>
         </footer>
       </div>
     </div>
