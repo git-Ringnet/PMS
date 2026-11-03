@@ -9,6 +9,22 @@
 - **Ngày ghi**: `YYYY-MM-DD`
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 
+## [2026-11-02] - Làm Lại Lịch Sử Thao Tác (Sheet Ghi Log) & Chuẩn Hóa Kiểm Tra Phòng Trống (Availability)
+### Module: Lịch Sử Thao Tác (Activity Log), Kiểm Tra Phòng Trống (Room Availability)
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **1. Lịch sử thao tác theo chuẩn tab GHI LOG (Dòng 1-103)**:
+    + Ghi log tường minh tại từng thao tác (log_version=2): ghi đúng mã đăng ký, mã phòng (mã G), màn hình theo tab frontend qua header X-Screen/X-Module.
+    + Nội dung log chuẩn hóa theo sheet: Đăng ký, thông tin khách, trẻ em, đặt cọc/thanh toán, hóa đơn, dịch vụ, Alert, khóa phòng, sang ngày, báo cáo, phân công HK, kho, menu, danh mục; chỉ ghi trường có thay đổi.
+    + Gom các request con của một thao tác thành 1 dòng (log_batch); ngày thao tác lưu theo ngày hệ thống (system_date).
+    + Thêm migration bổ sung các cột cần thiết và bộ test ActivityLogSheetTest (36 test cases đạt).
+  - **2. Chuẩn hóa kiểm tra phòng trống & kiểm soát Over (Availability)**:
+    + Phòng trống nhiều đêm tính theo đêm thấp nhất trong giai đoạn, tránh báo over nhầm khi từng đêm vẫn còn phòng trống.
+    + Rút ngắn hoặc giữ nguyên ngày đi: bỏ qua kiểm tra over.
+    + Kéo dài ngày đi / đổi ngày: chỉ kiểm tra over ở các đêm mới phát sinh thêm (getAvailabilityAfterAddingNights), các đêm đã giữ phòng không kiểm tra lại.
+    + Bổ sung bộ test NightlyAvailabilityTest bao phủ 14 ca kiểm thử phòng trống cho cả booking chờ và phòng Inhouse.
+- **Kiểm thử**:
+  - Pass 100% tests backend ActivityLogSheetTest và NightlyAvailabilityTest.
+
 ## [2026-10-30] - Báo cáo dự đoán bán phòng: lỗi chạy, bộ lọc Khu vực, bảng tràn trang
 
 - Lỗi "Không thể chạy báo cáo" lúc 18:33: không tái hiện được (server chạy xong cả 5 lần bấm, trình duyệt sạch chạy đúng); thêm console.error trong executeTab (ReportsPage) để lần sau thấy lỗi thật.
