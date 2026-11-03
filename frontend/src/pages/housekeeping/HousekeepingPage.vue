@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted, shallowRef, watch, nextTick, defineAsyncComponent } from 'vue'
+import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated, shallowRef, watch, nextTick, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   LayoutGrid, Printer, Receipt, FileSearch, Warehouse,
@@ -63,9 +63,11 @@ const allTabs = computed(() => [
 // Dòng 406: chỉ hiện tab buồng phòng user có quyền xem
 const tabs = computed(() => allTabs.value.filter(tab => canOpenScreen(authStore, '/housekeeping', { tab: tab.key })))
 
-const activeTabKey = computed(() => route.query.tab || 'room-map')
+const requestedTabKey = computed(() => route.query.tab || 'room-map')
 
-const activeTab = computed(() => tabs.value.find(t => t.key === activeTabKey.value) || tabs.value[0])
+const activeTab = computed(() => tabs.value.find(t => t.key === requestedTabKey.value) || tabs.value[0])
+
+const activeTabKey = computed(() => activeTab.value?.key || 'room-map')
 
 const activeComponent = computed(() => activeTab.value.component)
 
@@ -133,17 +135,33 @@ function handleKeyDown(e) {
   }
 }
 
-onMounted(() => {
+let housekeepingListenersActive = false
+
+function startHousekeepingListeners() {
+  if (housekeepingListenersActive) return
+  housekeepingListenersActive = true
   document.addEventListener('keydown', handleKeyDown)
+  document.addEventListener('click', closeFab)
+}
+
+function stopHousekeepingListeners() {
+  if (!housekeepingListenersActive) return
+  housekeepingListenersActive = false
+  document.removeEventListener('keydown', handleKeyDown)
+  document.removeEventListener('click', closeFab)
+}
+
+onMounted(() => {
+  startHousekeepingListeners()
   // Trigger count-up animations
   dashboardStats.value.forEach(stat => {
     animateCountUp(stat.key, stat.value)
   })
 })
 
-onUnmounted(() => {
-  document.removeEventListener('keydown', handleKeyDown)
-})
+onActivated(startHousekeepingListeners)
+onDeactivated(stopHousekeepingListeners)
+onUnmounted(stopHousekeepingListeners)
 
 // Close FAB on click outside
 function closeFab(e) {
@@ -151,8 +169,6 @@ function closeFab(e) {
     fabOpen.value = false
   }
 }
-onMounted(() => document.addEventListener('click', closeFab))
-onUnmounted(() => document.removeEventListener('click', closeFab))
 </script>
 
 <template>
@@ -164,7 +180,7 @@ onUnmounted(() => document.removeEventListener('click', closeFab))
       <div class="flex-1 overflow-hidden relative">
         <LoadingOverlay :show="isTabLoading" />
         <Transition name="hk-tab" mode="out-in">
-          <KeepAlive :include="['PrintTasksTab', 'ActivityLogTab', 'RoomMapPage', 'LockRoomPage']">
+          <KeepAlive :include="['PrintTasksTab', 'ActivityLogTab', 'RoomMapPage', 'LockRoomPage']" :max="4">
             <component
               :is="activeComponent"
               :key="activeTabKey"

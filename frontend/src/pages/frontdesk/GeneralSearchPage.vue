@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { fetchGeneralSearch, fetchGeneralSearchOptions, fetchGeneralSearchSuggestions, checkInRoomWithConfirmations } from '@/services/booking-service'
 import { useAuthStore } from '@/stores/auth-store'
@@ -1154,51 +1154,83 @@ watch(() => filters.value.booking_code, () => {
   suggestionTimer = setTimeout(loadBookingSuggestions, 180)
 })
 
-function setupEchoListeners() {
+const handleReservationUpdated = () => search(meta.value.current_page || 1)
+const handleRoomStatusUpdated = () => search(meta.value.current_page || 1)
+const handleNightAuditUpdated = () => {
+  initDefaultDates()
+  search(1)
+}
+
+let generalSearchListenersActive = false
+let generalSearchWasDeactivated = false
+let generalSearchInstanceActive = false
+let generalSearchReady = false
+
+function startGeneralSearchListeners() {
+  if (generalSearchListenersActive) return
+  generalSearchListenersActive = true
+  window.addEventListener('click', handleClickOutsideDropdown)
   if (echo) {
     echo.channel('pms-channel')
-      .listen('.reservation.updated', () => {
-        search(meta.value.current_page || 1)
-      })
-      .listen('.room.status.updated', () => {
-        search(meta.value.current_page || 1)
-      })
-      .listen('.night.audit.updated', () => {
-        initDefaultDates()
-        search(1)
-      })
+      .listen('.reservation.updated', handleReservationUpdated)
+      .listen('.room.status.updated', handleRoomStatusUpdated)
+      .listen('.night.audit.updated', handleNightAuditUpdated)
   }
 }
 
-function teardownEchoListeners() {
+function stopGeneralSearchListeners() {
+  if (!generalSearchListenersActive) return
+  generalSearchListenersActive = false
+  window.removeEventListener('click', handleClickOutsideDropdown)
   if (echo) {
     echo.channel('pms-channel')
-      .stopListening('.reservation.updated')
-      .stopListening('.room.status.updated')
-      .stopListening('.night.audit.updated')
+      .stopListening('.reservation.updated', handleReservationUpdated)
+      .stopListening('.room.status.updated', handleRoomStatusUpdated)
+      .stopListening('.night.audit.updated', handleNightAuditUpdated)
   }
 }
 
 onBeforeUnmount(() => {
+  generalSearchInstanceActive = false
   clearTimeout(autoSearchTimer)
   clearTimeout(suggestionTimer)
-  window.removeEventListener('click', handleClickOutsideDropdown)
-  teardownEchoListeners()
+  stopGeneralSearchListeners()
 })
 
 onMounted(async () => {
+  generalSearchInstanceActive = true
   restoreSorts()
   restoreLayout()
   restoreColumns()
   await initDefaultDates()
   advDraft.value = { ...filters.value }
-  window.addEventListener('click', handleClickOutsideDropdown)
-  setupEchoListeners()
+  if (generalSearchInstanceActive) startGeneralSearchListeners()
   try {
     const { data } = await fetchGeneralSearchOptions()
     if (data?.data) options.value = data.data
   } catch (_) {}
-  search(1)
+  generalSearchReady = true
+  if (generalSearchInstanceActive) {
+    generalSearchWasDeactivated = false
+    search(1)
+  }
+})
+
+onActivated(() => {
+  generalSearchInstanceActive = true
+  startGeneralSearchListeners()
+  if (generalSearchWasDeactivated && generalSearchReady) {
+    generalSearchWasDeactivated = false
+    search(meta.value.current_page || 1)
+  }
+})
+
+onDeactivated(() => {
+  generalSearchInstanceActive = false
+  generalSearchWasDeactivated = true
+  clearTimeout(autoSearchTimer)
+  clearTimeout(suggestionTimer)
+  stopGeneralSearchListeners()
 })
 </script>
 

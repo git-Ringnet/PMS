@@ -77,7 +77,9 @@ export const useAuthStore = defineStore('auth', {
             localStorage.setItem('pms_roles', JSON.stringify(this.roles))
           }
           cleanOldLocalConfigs()
-          await Promise.all([this.fetchSystemDate(), this.fetchSystemTheme()])
+          // Ngày hệ thống và màu giao diện không phải điều kiện xác thực.
+          // Tải ngầm để router không bị giữ tối đa theo timeout của API khi refresh trang.
+          void Promise.allSettled([this.fetchSystemDate(), this.fetchSystemTheme()])
         } catch (err) {
           console.error('Không thể xác thực user hiện tại', err)
           this.logout()

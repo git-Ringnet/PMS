@@ -34,6 +34,7 @@ import echo from '@/services/echo'
 import ReportsPage from '@/pages/reports/ReportsPage.vue'
 import GeneralSearchPage from '@/pages/frontdesk/GeneralSearchPage.vue'
 import CheckoutPage from '@/pages/frontdesk/CheckoutPage.vue'
+import ActivityLogTab from '@/pages/system/components/ActivityLogTab.vue'
 
 const roomStore = useRoomStore()
 const uiStore = useUiStore()
@@ -2486,6 +2487,8 @@ let roomMapBc = null
 let roomMapKeyboardAttached = false
 let roomMapInstanceActive = false
 let roomMapReady = false
+let roomMapSyncActive = false
+let roomMapWasDeactivated = false
 
 function syncRoomMapShortcutListener() {
   const shouldAttach = roomMapInstanceActive && roomMapReady && currentTab.value === 'room-map'
@@ -2515,6 +2518,56 @@ async function openStatsModal() {
 
 function refreshWhenVisible() {
   if (!document.hidden) refreshRoomMapSnapshot()
+}
+
+function handleRoomMapBroadcast(event) {
+  if (event?.data?.type === 'hotel-config-updated') {
+    loadRoomStatusPermission()
+  }
+  refreshRoomMapSnapshot()
+}
+
+function startRoomMapSync() {
+  if (roomMapSyncActive) return
+  roomMapSyncActive = true
+
+  if (echo) {
+    echo.channel('pms-channel')
+      .listen('.room.status.updated', refreshRoomMapSnapshot)
+      .listen('.reservation.updated', refreshRoomMapSnapshot)
+  }
+
+  if (typeof BroadcastChannel !== 'undefined' && !roomMapBc) {
+    roomMapBc = new BroadcastChannel('pms-room-updates')
+    roomMapBc.addEventListener('message', handleRoomMapBroadcast)
+  }
+
+  window.addEventListener('hotel-config-updated', loadRoomStatusPermission)
+  document.addEventListener('visibilitychange', refreshWhenVisible)
+  roomMapSyncTimer = window.setInterval(refreshRoomMapSnapshot, 15000)
+}
+
+function stopRoomMapSync() {
+  if (!roomMapSyncActive) return
+  roomMapSyncActive = false
+
+  if (roomMapSyncTimer) {
+    window.clearInterval(roomMapSyncTimer)
+    roomMapSyncTimer = null
+  }
+  document.removeEventListener('visibilitychange', refreshWhenVisible)
+  window.removeEventListener('hotel-config-updated', loadRoomStatusPermission)
+
+  if (roomMapBc) {
+    roomMapBc.removeEventListener('message', handleRoomMapBroadcast)
+    roomMapBc.close()
+    roomMapBc = null
+  }
+
+  if (echo) {
+    echo.channel('pms-channel').stopListening('.room.status.updated', refreshRoomMapSnapshot)
+    echo.channel('pms-channel').stopListening('.reservation.updated', refreshRoomMapSnapshot)
+  }
 }
 
 onMounted(async () => {
@@ -2563,34 +2616,17 @@ onMounted(async () => {
   window.addEventListener('resize', closeTooltipOnViewportChange)
   window.addEventListener('scroll', closeTooltipOnViewportChange, true)
 
-  // Lắng nghe sự kiện realtime qua Laravel Echo
-  if (echo) {
-    echo.channel('pms-channel')
-      .listen('.room.status.updated', refreshRoomMapSnapshot)
-      .listen('.reservation.updated', refreshRoomMapSnapshot)
-  }
-
-  // Lắng nghe sự kiện realtime qua BroadcastChannel (đồng bộ tức thì giữa các tab)
-  if (typeof BroadcastChannel !== 'undefined') {
-    roomMapBc = new BroadcastChannel('pms-room-updates')
-    roomMapBc.addEventListener('message', (event) => {
-      if (event?.data?.type === 'hotel-config-updated') {
-        loadRoomStatusPermission()
-      }
-      refreshRoomMapSnapshot()
-    })
-  }
-
-  window.addEventListener('hotel-config-updated', loadRoomStatusPermission)
-
-  // Echo là kênh chính; polling là dự phòng khi websocket gián đoạn hoặc tab vừa quay lại.
-  roomMapSyncTimer = window.setInterval(refreshRoomMapSnapshot, 15000)
-  document.addEventListener('visibilitychange', refreshWhenVisible)
+  if (roomMapInstanceActive) startRoomMapSync()
 })
 
 onActivated(() => {
   roomMapInstanceActive = true
   syncRoomMapShortcutListener()
+  startRoomMapSync()
+  if (roomMapWasDeactivated && roomMapReady) {
+    refreshRoomMapSnapshot()
+  }
+  roomMapWasDeactivated = false
 })
 
 onBeforeUnmount(() => {
@@ -2601,23 +2637,14 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', calculateScale)
   window.removeEventListener('resize', closeTooltipOnViewportChange)
   window.removeEventListener('scroll', closeTooltipOnViewportChange, true)
-  window.removeEventListener('hotel-config-updated', loadRoomStatusPermission)
-  document.removeEventListener('visibilitychange', refreshWhenVisible)
-  if (roomMapSyncTimer) window.clearInterval(roomMapSyncTimer)
-  if (roomMapBc) {
-    roomMapBc.close()
-    roomMapBc = null
-  }
-  // Hủy lắng nghe sự kiện realtime qua Laravel Echo
-  if (echo) {
-    echo.channel('pms-channel').stopListening('.room.status.updated')
-    echo.channel('pms-channel').stopListening('.reservation.updated')
-  }
+  stopRoomMapSync()
 })
 
 onDeactivated(() => {
   roomMapInstanceActive = false
+  roomMapWasDeactivated = true
   syncRoomMapShortcutListener()
+  stopRoomMapSync()
   if (tooltipTimeout) {
     clearTimeout(tooltipTimeout)
     tooltipTimeout = null
@@ -3159,8 +3186,13 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
             <!-- Left/Center content container -->
             <div class="flex-1 min-w-0 overflow-hidden bg-white flex flex-col gap-4">
 
+              <!-- Tab Lịch sử thao tác -->
+              <div v-if="currentTab === 'history'" class="h-full overflow-hidden">
+                <ActivityLogTab />
+              </div>
+
               <!-- Tab 1: Phòng Trống AvailableRoomsPage -->
-              <div v-if="currentTab === 'search'" class="h-full overflow-hidden">
+              <div v-else-if="currentTab === 'search'" class="h-full overflow-hidden">
                 <GeneralSearchPage />
               </div>
 
