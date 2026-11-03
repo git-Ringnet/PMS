@@ -780,6 +780,12 @@ class GuestController extends Controller
     private function validateMasterCheckout(Booking $booking, $rooms): ?array
     {
         $roomIds = $rooms->pluck('id')->map(fn ($id) => (string) $id)->all();
+        // Chỉ kiểm tra các phòng đang thao tác out: bỏ qua hóa đơn/công nợ của phòng đã check out trước đó.
+        $checkedOutRoomIds = $booking->bookingRooms
+            ->where('status', BookingRoom::STATUS_CHECKED_OUT)
+            ->pluck('id')
+            ->map(fn ($id) => (string) $id)
+            ->all();
         $unpaidBills = \App\Models\ServiceBill::query()
             ->where('Edit', 0)
             ->where(function ($q) { $q->whereNull('PaymentId')->orWhere('PaymentId', ''); })
@@ -792,6 +798,13 @@ class GuestController extends Controller
                         ->orWhereIn(DB::raw('CAST(RentalRoomId1 AS CHAR)'), $roomIds);
                 }
             })
+            ->when($checkedOutRoomIds, function ($query) use ($checkedOutRoomIds) {
+                $query->where(function ($q) use ($checkedOutRoomIds) {
+                    $q->whereNull('RentalRoomId2')
+                        ->orWhere('RentalRoomId2', '')
+                        ->orWhereNotIn(DB::raw('CAST(RentalRoomId2 AS CHAR)'), $checkedOutRoomIds);
+                });
+            })
             ->get(['RentalRoomId1', 'RentalRoomId2', 'RegisterID2', 'CustomerId1', 'CustomerId2']);
 
         $unpaidDebts = \App\Models\Payment::query()
@@ -800,6 +813,13 @@ class GuestController extends Controller
             ->where('edit_flag', 0)
             ->where('status', '!=', \App\Models\Payment::STATUS_DELETED)
             ->whereNull('deleted_at')
+            ->when($checkedOutRoomIds, function ($query) use ($checkedOutRoomIds) {
+                $query->where(function ($q) use ($checkedOutRoomIds) {
+                    $q->whereNull('booking_room_id')
+                        ->orWhere('booking_room_id', '')
+                        ->orWhereNotIn(DB::raw('CAST(booking_room_id AS CHAR)'), $checkedOutRoomIds);
+                });
+            })
             ->get(['id', 'amount', 'booking_room_id', 'guest_id', 'guest_display'])
             ->filter(function ($payment) {
                 $settled = \App\Models\PaymentDebtSettlement::query()
