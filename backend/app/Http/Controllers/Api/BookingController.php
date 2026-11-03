@@ -2618,30 +2618,8 @@ class BookingController extends Controller
                 ], 422);
             }
 
-            // Dòng 294: trùng số phòng (với đăng ký khác hoặc phòng khóa) hỏi xác nhận xóa số phòng
-            // cả khi khôi phục cả booking lẫn khi chọn phòng hủy cần khôi phục.
-            $uniqueDuplicateRooms = collect($duplicateRooms)->unique('room_number')->values()->all();
-            $clearDuplicateRooms = $request->boolean('clear_duplicate_rooms');
-
-            if (count($uniqueDuplicateRooms) > 0 && !$clearDuplicateRooms) {
-                // Nếu có phòng trùng và người dùng chưa xác nhận xóa số phòng bị trùng -> Bật cảnh báo xác nhận
-                $conflictLines = collect($uniqueDuplicateRooms)->map(function ($item) {
-                    $line = "- R: {$item['room_number']}";
-                    if (!empty($item['booking_code'])) {
-                        $line .= " - BK: {$item['booking_code']}";
-                    }
-                    return $line;
-                })->implode("\n");
-
-                return response()->json([
-                    'success'                 => false,
-                    'needs_duplicate_confirm' => true,
-                    'duplicate_rooms'         => $uniqueDuplicateRooms,
-                    'conflict_lines'          => $conflictLines,
-                    'message'                 => "Đăng ký được khôi phục có số phòng đã được đặt bởi đăng ký khác hoặc đang bị khóa. Bạn có muốn tiếp tục? (Số phòng của những phòng bị trùng sẽ được xóa khi khôi phục)\n{$conflictLines}",
-                ], 200);
-            }
-
+            // Dòng 294 (note 27/10): kiểm tra over và thông số TRƯỚC. Không thỏa điều kiện thông số thì
+            // chặn ngay, không hỏi xóa số phòng trùng.
             // ========================================================
             // KIỂM TRA OVER PHÒNG THEO AllowOverRoomTypeRoomKind
             // ========================================================
@@ -2703,6 +2681,30 @@ class BookingController extends Controller
                         ? 'Loại phòng đang bị over không thể khôi phục các phòng đã chọn'
                         : 'Loại phòng đang bị over không thể khôi phục booking',
                 ], 422);
+            }
+
+            // Dòng 294: trùng số phòng (với đăng ký khác hoặc phòng khóa) hỏi xác nhận xóa số phòng
+            // cả khi khôi phục cả booking lẫn khi chọn phòng hủy cần khôi phục.
+            $uniqueDuplicateRooms = collect($duplicateRooms)->unique('room_number')->values()->all();
+            $clearDuplicateRooms = $request->boolean('clear_duplicate_rooms');
+
+            if (count($uniqueDuplicateRooms) > 0 && !$clearDuplicateRooms) {
+                // Nếu có phòng trùng và người dùng chưa xác nhận xóa số phòng bị trùng -> Bật cảnh báo xác nhận
+                $conflictLines = collect($uniqueDuplicateRooms)->map(function ($item) {
+                    $line = "- R: {$item['room_number']}";
+                    if (!empty($item['booking_code'])) {
+                        $line .= " - BK: {$item['booking_code']}";
+                    }
+                    return $line;
+                })->implode("\n");
+
+                return response()->json([
+                    'success'                 => false,
+                    'needs_duplicate_confirm' => true,
+                    'duplicate_rooms'         => $uniqueDuplicateRooms,
+                    'conflict_lines'          => $conflictLines,
+                    'message'                 => "Đăng ký được khôi phục có số phòng đã được đặt bởi đăng ký khác hoặc đang bị khóa. Bạn có muốn tiếp tục? (Số phòng của những phòng bị trùng sẽ được xóa khi khôi phục)\n{$conflictLines}",
+                ], 200);
             }
 
             // Nếu AllowOverRoomTypeRoomKind = 1: Bật cảnh báo xác nhận nếu chưa có cờ force / force_over

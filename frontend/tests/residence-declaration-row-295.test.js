@@ -43,3 +43,17 @@ test('row 295: CSV export uses the same Số giấy tờ / Hộ chiếu values a
   const csv = source.slice(source.indexOf('function exportToCsv('), source.indexOf('function exportToXml('))
   assert.match(csv, /r\.soGiayToHienThi \|\| '',\s*r\.hoChieuHienThi \|\| ''/)
 })
+
+const compareNatural = extractFunction('compareNatural')
+
+test('row 295 (note 27/10): room numbers sort in natural order, ascending and descending', () => {
+  const rooms = ['1012', '101', '102', '201', '1101']
+  assert.deepEqual([...rooms].sort(compareNatural), ['101', '102', '201', '1012', '1101'])
+  assert.deepEqual([...rooms].sort((a, b) => compareNatural(a, b) * -1), ['1101', '1012', '201', '102', '101'])
+  assert.deepEqual(['GAL10', 'GAL9', 'GAL1'].sort(compareNatural), ['GAL1', 'GAL9', 'GAL10'])
+})
+
+test('row 295 (note 27/10): same-day rooms checked out on the viewed day are listed', () => {
+  assert.match(source, /status === 2 && arrTime !== null && arrTime === depTime/)
+  assert.match(source, /return arrTime === targetTime/)
+})

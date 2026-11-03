@@ -327,6 +327,10 @@ function handleSort(key) {
   }
 }
 
+function compareNatural(a, b) {
+  return String(a ?? '').localeCompare(String(b ?? ''), undefined, { numeric: true, sensitivity: 'base' })
+}
+
 // Computed Filtered Rows
 const filteredRows = computed(() => {
   let list = rowsData.value
@@ -359,6 +363,12 @@ const filteredRows = computed(() => {
         return true
       }
       return false
+    }
+
+    // A2. Phòng có ngày đến = ngày đi (dòng 295 note 27/10): hiển thị đúng ngày đó
+    // cả khi khách đã trả phòng trong ngày (status 2), không bị loại như phòng qua đêm.
+    if (status === 2 && arrTime !== null && arrTime === depTime) {
+      return arrTime === targetTime
     }
 
     // B. Phòng in-house (status = 1)
@@ -426,11 +436,10 @@ const filteredRows = computed(() => {
       if (sortKey.value === 'ngayDen' || sortKey.value === 'ngayDi') {
         va = parseDate(va)?.getTime() || 0
         vb = parseDate(vb)?.getTime() || 0
-      } else {
-        va = (va || '').toString().toLowerCase()
-        vb = (vb || '').toString().toLowerCase()
+        return va < vb ? -sortDir.value : va > vb ? sortDir.value : 0
       }
-      return va < vb ? -sortDir.value : va > vb ? sortDir.value : 0
+      // Dòng 295 (note 27/10): số phòng / mã đăng ký sắp xếp theo số tự nhiên (102 trước 1012, GAL9 trước GAL10)
+      return compareNatural(va, vb) * sortDir.value
     })
   }
 

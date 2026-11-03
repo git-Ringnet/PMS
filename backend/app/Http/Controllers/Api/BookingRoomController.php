@@ -379,7 +379,12 @@ class BookingRoomController extends Controller
                 'message' => 'Phòng day-use không thể chỉnh ngày đi khi đang bật theo giờ.',
             ], 422);
         }
-        if (!$isDayUse && $departureDate === $arrivalDate) {
+        // Dòng 294 (note 27/10): phòng có ngày đến = ngày đi (không day-use) là hợp lệ; chỉ chặn khi
+        // người dùng đổi ngày / cờ day-use để tạo ra giai đoạn này, không chặn khi chỉ đổi số phòng, giá...
+        $stayShapeChanged = $arrivalDate !== $bookingRoom->arrival_date->toDateString()
+            || $departureDate !== $bookingRoom->departure_date->toDateString()
+            || $isDayUse !== (bool) $bookingRoom->is_day_use;
+        if (!$isDayUse && $departureDate === $arrivalDate && $stayShapeChanged) {
             return response()->json([
                 'success' => false,
                 'message' => 'Ngày đi phải sau ngày đến đối với phòng ở qua đêm thông thường.',
