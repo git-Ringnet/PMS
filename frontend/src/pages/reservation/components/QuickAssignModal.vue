@@ -854,6 +854,8 @@ async function handleSave() {
       customer_source_id: defaultSource,
       registration_status_id: defaultRegStatus,
       payment_method_id: defaultPaymentMethod,
+      // Lịch sử thao tác: ghi một dòng "Giao phòng nhanh" lúc nhận phòng thay cho log tạo đăng ký
+      quick_checkin: true,
       room_allocations: [
         {
           roomClassId: selectedRoomClassId.value,
@@ -901,7 +903,7 @@ async function handleSave() {
         try {
           const checkinRes = await checkInRoomWithConfirmations(createdBooking.id, bRoom.id, {
             roomNumber: selectedRoomNumber.value,
-            payload: { confirmed: confirmedCheckIn },
+            payload: { confirmed: confirmedCheckIn, quick_checkin: true },
             confirm: options => uiStore.confirm(options),
           })
           if (!checkinRes || checkinRes.data?.success === false || checkinRes.data?.needs_confirmation) {

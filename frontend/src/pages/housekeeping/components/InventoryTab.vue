@@ -60,6 +60,8 @@ const isSaving             = ref(false)
 // Dòng 372: phiếu kiểm kê chỉnh sửa trên bản nháp, bấm Lưu mới ghi xuống DB
 const checkDraft           = ref([])
 const checkDraftDirty      = ref(false)
+// Bản nháp lấy từ kết chuyển tháng trước: khi lưu, lịch sử thao tác ghi "Kết chuyển tồn kho"
+const checkDraftCarryOver  = ref(false)
 const isCheckLocked        = computed(() => !!modalCheck.value?.has_logs)
 // Định mức cảnh báo tồn theo thông số Inventory_LowStockWarningQty (mặc định 50)
 const lowStockQty          = ref(50)
@@ -345,6 +347,7 @@ async function deleteWarehouse() {
 function resetCheckDraft() {
   checkDraft.value = (modalCheck.value?.items || []).map(item => ({ ...item }))
   checkDraftDirty.value = false
+  checkDraftCarryOver.value = false
 }
 
 watch(modalCheck, resetCheckDraft, { immediate: true })
@@ -417,6 +420,7 @@ async function syncPreviousMonth() {
       }
     }
     checkDraftDirty.value = true
+    checkDraftCarryOver.value = true
     uiStore.showToast(res.data.message, (res.data.negative_count || 0) > 0 ? 'warning' : 'success')
   } catch (e) {
     uiStore.showToast(e.response?.data?.message || 'Lỗi khi lấy số liệu tháng trước', 'error')
@@ -436,6 +440,7 @@ async function saveCheck(confirmNegative = false) {
       note: checkForm.value.note,
       created_by: checkForm.value.created_by || null,
       confirm_negative: confirmNegative,
+      carry_over: checkDraftCarryOver.value,
       items: checkDraft.value.map(item => ({
         product_id: item.product_id,
         well_balance: Number(item.well_balance) || 0,

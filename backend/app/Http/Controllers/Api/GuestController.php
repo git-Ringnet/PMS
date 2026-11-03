@@ -299,6 +299,22 @@ class GuestController extends Controller
 
         app(BookingStatusSyncService::class)->sync($room->booking_id);
 
+        try {
+            // Dòng 102: "Thêm người lớn: Mã khách: K.. - Danh xưng - Họ tên - Giới tính ..."
+            $code = \App\Services\ActivityLogService::bookingCode($room->booking_id);
+            $newGuest = $pivot->guest()->first();
+            \App\Services\ActivityLogService::record('Add', "Thêm người lớn: Mã khách: {$newGuest?->id}\n" . \App\Support\GuestLogText::full($newGuest?->getAttributes() ?? []), [
+                'screen' => \App\Support\ActivityScreen::ROOM_MAP,
+                'booking_code' => $code,
+                'room_code' => $room->id,
+                'target_type' => 'Guest',
+                'target_id' => $newGuest?->id,
+                'target_label' => $code,
+            ], $request);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log add guest error: ' . $e->getMessage());
+        }
+
         return response()->json([
             'success' => true,
             'data'    => $pivot->load('guest'),
@@ -376,6 +392,13 @@ class GuestController extends Controller
             // The sync service enforces the partial-check-in invariant while
             // preserving the existing no-inhouse fallback above.
             app(BookingStatusSyncService::class)->sync($booking, $fallbackStatus);
+
+            try {
+                // Dòng 62: "* Check Out Cho Đăng Ký GAL16 - Phòng: 405 (G0000028)"
+                \App\Services\ActivityLogService::logCheckOut($room->booking_id, [$room->fresh()], $request);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Log room checkout error: ' . $e->getMessage());
+            }
         }
         return $response;
     }
@@ -481,7 +504,7 @@ class GuestController extends Controller
             return response()->json($response, 422);
         }
 
-        return DB::transaction(function () use ($booking, $rooms) {
+        return DB::transaction(function () use ($booking, $rooms, $request) {
             foreach ($rooms->pluck('id') as $roomId) {
                 $room = BookingRoom::with('booking')->findOrFail($roomId);
                 $guestIds = $room->guests->whereNotIn('status', [BookingRoomGuest::STATUS_CHECKED_OUT, BookingRoomGuest::STATUS_CANCELLED])->pluck('guest_id');
@@ -496,10 +519,11 @@ class GuestController extends Controller
             app(BookingStatusSyncService::class)->sync($booking, Booking::STATUS_CHECKOUT);
 
             try {
-                $bCode = $booking->booking_code ?? ('GAL' . $booking->id);
-                $roomsList = $rooms->pluck('room_number')->filter()->implode(', ');
-                \App\Services\ActivityLogService::logCheckOut($bCode, $roomsList, $request);
-            } catch (\Throwable $e) {}
+                // Dòng 62: check out cấp đăng ký "* Check Out Cho Đăng Ký GAL16."
+                \App\Services\ActivityLogService::logCheckOut($booking->id, null, $request);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Log booking checkout error: ' . $e->getMessage());
+            }
 
             return response()->json(['success' => true, 'message' => 'Đã checkout toàn bộ Master.']);
         });
@@ -1060,6 +1084,11 @@ class GuestController extends Controller
             $guestData['passport_number'] = $request->input('id_number');
         }
 
+        // Lịch sử thao tác (dòng 36, 49, 100): giá trị trước khi sửa của khách và phòng
+        $logGuestBefore = $guest->getAttributes();
+        $logRoomBefore = $room?->getAttributes() ?? [];
+        $logBookingBefore = $room ? (\App\Models\Booking::find($room->booking_id)?->getRawOriginal() ?? []) : null;
+
         DB::transaction(function () use ($request, $guest, $guestData, $pivot, $room): void {
             $guest->update($guestData);
 
@@ -1082,6 +1111,28 @@ class GuestController extends Controller
                 $this->updateBookingRoomFromGuestRequest($request, $room);
             }
         });
+
+        try {
+            $code = $room ? \App\Services\ActivityLogService::bookingCode($room->booking_id) : null;
+            $guestDiff = \App\Support\GuestLogText::diff($logGuestBefore, $guest->fresh()->getAttributes());
+            if ($guestDiff !== '') {
+                // "Cập nhật thông tin khách: Mã khách: K.. - Danh xưng: Mr. -> Ms. - Họ tên: ..." (cột Mã phòng = mã G)
+                \App\Services\ActivityLogService::record('Modify', "Cập nhật thông tin khách: Mã khách: {$guest->id}\n{$guestDiff}", [
+                    'screen' => \App\Support\ActivityScreen::ROOM_MAP,
+                    'booking_code' => $code,
+                    'room_code' => $room?->id,
+                    'target_type' => 'Guest',
+                    'target_id' => $guest->id,
+                    'target_label' => $code,
+                ], $request);
+            }
+            if ($room) {
+                // Thay đổi giá phòng, EB, ngày đi... của phòng: "Thay đổi Mã Đăng Ký GAL.. - Phòng: 401 (G..) - Room Rate: 0 -> 900,000"
+                \App\Services\ActivityLogService::logBookingRoomUpdated($room, $logRoomBefore, $room->fresh()->getAttributes(), $request, $logBookingBefore);
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log update guest error: ' . $e->getMessage());
+        }
 
         return response()->json(['success' => true, 'data' => $guest, 'message' => 'Cập nhật thông tin khách thành công.']);
     }
@@ -1360,6 +1411,8 @@ class GuestController extends Controller
             ], 422);
         }
 
+        $logGuestName = Guest::where('id', $guestId)->value('full_name');
+
         DB::transaction(function () use ($pivot, $guestId, $roomId, $room, $activeAdults) {
             $isPrimary = (bool) ($pivot?->is_primary);
 
@@ -1392,6 +1445,21 @@ class GuestController extends Controller
                 $room->update(['adults' => max(1, $remainingAdults)]);
             }
         });
+
+        try {
+            // Dòng 101: "Xóa khách: Mã khách: K99887 - Tên khách: Nguyễn Văn A"
+            $code = $room ? \App\Services\ActivityLogService::bookingCode($room->booking_id) : null;
+            \App\Services\ActivityLogService::record('Cancel', "Xóa khách: Mã khách: {$guestId} - Tên khách: " . ($logGuestName ?? ''), [
+                'screen' => \App\Support\ActivityScreen::ROOM_MAP,
+                'booking_code' => $code,
+                'room_code' => $room?->id ?? $roomId,
+                'target_type' => 'Guest',
+                'target_id' => $guestId,
+                'target_label' => $code,
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log remove guest error: ' . $e->getMessage());
+        }
 
         return response()->json(['success' => true, 'message' => 'Đã xóa khách khỏi phòng và cơ sở dữ liệu.']);
     }
@@ -1627,6 +1695,10 @@ class GuestController extends Controller
 
         $this->syncGeoFromData([$request->all()]);
 
+        // Dòng 102: "Thêm trẻ em: Mã trẻ: 12\n- Danh xưng - Họ tên - Giới tính ..."
+        $this->logChild('Add', ($child->age_group === 'baby' ? 'Thêm em bé' : 'Thêm trẻ em') . ": Mã trẻ: {$child->id}\n"
+            . \App\Support\GuestLogText::full($child->fresh()->getAttributes()), $child, $request);
+
         return response()->json([
             'success' => true,
             'data'    => $child->load('breakfastDetails'),
@@ -1698,6 +1770,10 @@ class GuestController extends Controller
             $childData['passport_number'] = $request->input('id_number');
         }
 
+        $logChildBefore = $child->getAttributes();
+        $logRoomBefore = $room?->getAttributes() ?? [];
+        $logBookingBefore = $room ? (\App\Models\Booking::find($room->booking_id)?->getRawOriginal() ?? []) : null;
+
         DB::transaction(function () use ($request, $child, $childData, $room): void {
             $child->update($childData);
 
@@ -1707,6 +1783,19 @@ class GuestController extends Controller
                 $this->updateBookingRoomFromGuestRequest($request, $room);
             }
         });
+
+        // Chỉ ghi các thông tin trẻ / phòng thực sự thay đổi
+        $diff = \App\Support\GuestLogText::diff($logChildBefore, $child->fresh()->getAttributes());
+        if ($diff !== '') {
+            $this->logChild('Modify', "Cập nhật thông tin trẻ em: Mã trẻ: {$child->id}\n{$diff}", $child, $request);
+        }
+        if ($room) {
+            try {
+                \App\Services\ActivityLogService::logBookingRoomUpdated($room, $logRoomBefore, $room->fresh()->getAttributes(), $request, $logBookingBefore);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Log child room update error: ' . $e->getMessage());
+            }
+        }
 
         return response()->json(['success' => true, 'data' => $child, 'message' => 'Cập nhật thông tin trẻ em thành công.']);
     }
@@ -1785,7 +1874,28 @@ class GuestController extends Controller
             }
         }
 
+        // Dòng 101/102: "Xóa trẻ em: Mã trẻ: 12 - Tên: ..."
+        $this->logChild('Cancel', ($child->age_group === 'baby' ? 'Xóa em bé' : 'Xóa trẻ em') . ": Mã trẻ: {$child->id} - Tên: {$child->full_name}", $child, request());
+
         return response()->json(['success' => true, 'message' => 'Đã xóa trẻ em.']);
+    }
+
+    /** Lịch sử thao tác cho trẻ em / em bé, cột Mã phòng = mã G phòng của trẻ. */
+    private function logChild(string $action, string $description, BookingChild $child, ?Request $request): void
+    {
+        try {
+            $code = \App\Services\ActivityLogService::bookingCode($child->booking_id);
+            \App\Services\ActivityLogService::record($action, $description, [
+                'screen' => \App\Support\ActivityScreen::ROOM_MAP,
+                'booking_code' => $code,
+                'room_code' => $child->booking_room_id,
+                'target_type' => 'BookingChild',
+                'target_id' => $child->id,
+                'target_label' => $code,
+            ], $request);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log child error: ' . $e->getMessage());
+        }
     }
 
     // =========================================
@@ -1856,7 +1966,19 @@ class GuestController extends Controller
             }
         }
 
+        $logBefore = $detail->only(['breakfast', 'is_free', 'is_extra_charge', 'is_room', 'amount']);
         $detail->update($updateData);
+
+        try {
+            // Dòng 29: "* Cập nhật chi tiết ăn sáng - phòng: G.. - từ ngày - đến ngày - giá - extra change - FIT - Ăn sáng"
+            $fresh = $detail->fresh();
+            $changed = collect($logBefore)->contains(fn ($value, $key) => (string) (float) $value !== (string) (float) $fresh->{$key});
+            if ($changed) {
+                \App\Services\ActivityLogService::logChildBreakfast(\App\Models\BookingChild::find($childId), $fresh, $request);
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log child breakfast error: ' . $e->getMessage());
+        }
 
         return response()->json(['success' => true, 'data' => $detail->fresh(), 'message' => 'Cập nhật ăn sáng trẻ em thành công.']);
     }
@@ -1877,6 +1999,7 @@ class GuestController extends Controller
     {
         $guestsData = $request->input('guests', []);
         $childrenData = $request->input('children', []);
+        $logGuestChanges = [];
 
         DB::beginTransaction();
         try {
@@ -1928,7 +2051,9 @@ class GuestController extends Controller
                         $guestData['passport_number'] = $gData['passport_number'] ?? $guest->passport_number;
                     }
 
+                    $logBefore = $guest->getAttributes();
                     $guest->update($guestData);
+                    $logGuestChanges[] = [$guest->id, $logBefore, $guest->fresh()->getAttributes()];
                 }
             }
 
@@ -1988,6 +2113,29 @@ class GuestController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+
+        // Dòng 36: mỗi khách thay đổi một dòng "* Cập nhật thông tin khách: Mã khách: K.." , cột Mã phòng = mã G của khách
+        $bookingId = (int) $request->route('bookingId');
+        foreach ($logGuestChanges as [$guestId, $before, $after]) {
+            try {
+                $diff = \App\Support\GuestLogText::diff($before, $after);
+                if ($diff === '') {
+                    continue;
+                }
+                $room = \App\Support\GuestLogText::roomOf((string) $guestId, $bookingId ?: null);
+                $code = \App\Services\ActivityLogService::bookingCode($room?->booking_id ?? $bookingId);
+                \App\Services\ActivityLogService::record('Modify', "* Cập nhật thông tin khách: Mã khách: {$guestId}\n{$diff}", [
+                    'screen' => \App\Support\ActivityScreen::REGISTRATION,
+                    'booking_code' => $code,
+                    'room_code' => $room?->id,
+                    'target_type' => 'Guest',
+                    'target_id' => $guestId,
+                    'target_label' => $code,
+                ], $request);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Log bulk guest update error: ' . $e->getMessage());
+            }
         }
 
         return response()->json(['success' => true, 'message' => 'Cập nhật thông tin khách hàng loạt thành công!']);

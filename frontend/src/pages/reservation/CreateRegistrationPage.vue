@@ -6146,13 +6146,16 @@ async function triggerAction(actionName) {
       let successCount = 0
       let failCount = 0
 
+      // Gom các phòng của một lần thao tác vào một dòng lịch sử thao tác
+      const logBatch = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
       try {
         for (const r of targetList) {
           if (!r.bookingRoomId) continue
           try {
             const res = await autoAssignRoom(tab.dbId, r.bookingRoomId, {
               arrival_date: r.checkIn,
-              departure_date: r.checkOut
+              departure_date: r.checkOut,
+              log_batch: logBatch
             })
             if (res.data?.success) {
               r.roomNumber = res.data.room_number || ''

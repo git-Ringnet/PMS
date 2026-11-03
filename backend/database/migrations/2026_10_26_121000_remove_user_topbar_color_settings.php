@@ -12,6 +12,11 @@ return new class extends Migration
             return;
         }
 
+        // JSON_CONTAINS_PATH / JSON_REMOVE chỉ có trên MySQL; DB test (SQLite) không có dữ liệu cũ cần dọn.
+        if (! in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
+            return;
+        }
+
         DB::table('user_settings')
             ->whereRaw("JSON_CONTAINS_PATH(settings, 'one', '$.topbar_color')")
             ->update([

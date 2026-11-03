@@ -86,6 +86,7 @@ class BookingRoomSpecialRequestController extends Controller
         ]);
 
         $ids = $request->special_request_ids;
+        $beforeIds = BookingRoomSpecialRequest::where('booking_room_id', $roomId)->pluck('special_request_id')->map(fn ($id) => (int) $id)->all();
 
         // Xóa những yêu cầu không nằm trong danh mục mới chọn
         BookingRoomSpecialRequest::where('booking_room_id', $roomId)
@@ -99,6 +100,9 @@ class BookingRoomSpecialRequestController extends Controller
                 'special_request_id' => $id,
             ]);
         }
+
+        $afterIds = array_map('intval', $ids);
+        $this->logSpecial($room, array_diff($afterIds, $beforeIds), array_diff($beforeIds, $afterIds));
 
         return response()->json([
             'success' => true,
@@ -131,6 +135,8 @@ class BookingRoomSpecialRequestController extends Controller
 
         if (!$item->wasRecentlyCreated) {
             $item->update(['note' => $request->note]);
+        } else {
+            $this->logSpecial($room, [(int) $request->special_request_id], []);
         }
 
         return response()->json([
@@ -149,10 +155,43 @@ class BookingRoomSpecialRequestController extends Controller
             return response()->json(['success' => false, 'message' => 'Không thể xóa yêu cầu với phòng đã checkout.'], 422);
         }
 
-        BookingRoomSpecialRequest::where('booking_room_id', $roomId)
-            ->where('id', $id)
-            ->delete();
+        $item = BookingRoomSpecialRequest::where('booking_room_id', $roomId)->where('id', $id)->first();
+        $item?->delete();
+        if ($item) {
+            $this->logSpecial($room, [], [(int) $item->special_request_id]);
+        }
 
         return response()->json(['success' => true, 'message' => 'Đã xóa yêu cầu đặc biệt.']);
+    }
+
+    /**
+     * Dòng 31, 32: "* Thêm Special - Phòng thuê: G0000048 - Đăng ký: GAL22 - Special: HNYM"
+     * và "* Xoá Special - Phòng thuê: G0000048 - Đăng ký: GAL22 - Special: HNYM".
+     */
+    private function logSpecial(BookingRoom $room, array $addedIds, array $removedIds): void
+    {
+        try {
+            $code = \App\Services\ActivityLogService::bookingCode($room->booking_id);
+            $names = fn (array $ids) => SpecialRequest::whereIn('id', $ids)->get()->map(fn ($sr) => $sr->code ?: $sr->name)->implode(', ');
+            $lines = [];
+            if ($addedIds) {
+                $lines[] = "* Thêm Special - Phòng thuê: {$room->id} - Đăng ký: {$code} - Special: " . $names(array_values($addedIds));
+            }
+            if ($removedIds) {
+                $lines[] = "* Xoá Special - Phòng thuê: {$room->id} - Đăng ký: {$code} - Special: " . $names(array_values($removedIds));
+            }
+            if ($lines) {
+                \App\Services\ActivityLogService::record($addedIds ? 'Add' : 'Cancel', implode("\n", $lines), [
+                    'screen' => \App\Support\ActivityScreen::REGISTRATION,
+                    'booking_code' => $code,
+                    'room_code' => $room->id,
+                    'target_type' => 'BookingRoomSpecialRequest',
+                    'target_id' => $room->id,
+                    'target_label' => $code,
+                ]);
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log special request error: ' . $e->getMessage());
+        }
     }
 }

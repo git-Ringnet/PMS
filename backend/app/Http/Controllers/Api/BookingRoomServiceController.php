@@ -411,16 +411,11 @@ class BookingRoomServiceController extends Controller
                 });
 
                 try {
-                    \App\Services\ActivityLogService::logServiceAction(
-                        'update',
-                        $room->room_number,
-                        $room->booking?->booking_code ?? ('GAL' . $room->booking_id),
-                        $service->service_name ?: $service->service_code,
-                        $service->quantity ?? 1,
-                        $service->rate ?? 0,
-                        $request
-                    );
-                } catch (\Throwable $e) {}
+                    // Dòng 28: sửa tiền phòng một đêm
+                    \App\Services\ActivityLogService::logRoomService($room, $service, false, $request);
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::warning('Log room service error: ' . $e->getMessage());
+                }
 
                 return response()->json([
                     'success' => true,
@@ -524,6 +519,8 @@ class BookingRoomServiceController extends Controller
             ->where('service_code', $request->service_code)
             ->whereDate('service_date', Carbon::parse($request->service_date)->toDateString())
             ->first();
+        // Lịch sử thao tác: "thêm" khi chưa có hoặc đã xóa trước đó, ngược lại là "cập nhật" đêm đó
+        $logCreated = !$service || $service->trashed();
         if ($service) {
             $service->fill($serviceValues)->save();
         } else {
@@ -556,16 +553,10 @@ class BookingRoomServiceController extends Controller
         // riêng, hiển thị theo giá phòng) sẽ nhảy theo giá vừa sửa.
 
         try {
-            \App\Services\ActivityLogService::logServiceAction(
-                'create',
-                $room->room_number,
-                $room->booking?->booking_code ?? ('GAL' . $room->booking_id),
-                $service->service_name ?: $service->service_code,
-                $service->quantity ?? 1,
-                $service->rate ?? 0,
-                $request
-            );
-        } catch (\Throwable $e) {}
+            \App\Services\ActivityLogService::logRoomService($room, $service, $logCreated, $request);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log room service error: ' . $e->getMessage());
+        }
 
         return response()->json([
             'success' => true,
@@ -632,6 +623,27 @@ class BookingRoomServiceController extends Controller
             }
         }
 
+        try {
+            // Dòng 39: "* Xóa Dịch Vụ Tự Động Cho Mã Đăng Ký GAL22 - Phòng: G.. - Dịch Vụ: X - Các ngày: A, B"
+            $code = \App\Services\ActivityLogService::bookingCode($room->booking_id);
+            $lines = $services->groupBy(fn ($svc) => $svc->service_name ?: $svc->service_code)
+                ->map(fn ($group, $name) => "* Xóa Dịch Vụ Tự Động Cho Mã Đăng Ký {$code} - Phòng: {$room->id} - Dịch Vụ: {$name} - Các ngày: "
+                    . $group->sortBy('service_date')->map(fn ($svc) => \App\Services\ActivityLogService::d($svc->service_date))->implode(', '))
+                ->values();
+            if ($lines->isNotEmpty()) {
+                \App\Services\ActivityLogService::record('Cancel', $lines->implode("\n"), [
+                    'screen' => \App\Support\ActivityScreen::REGISTRATION,
+                    'booking_code' => $code,
+                    'room_code' => $room->id,
+                    'target_type' => 'BookingRoomService',
+                    'target_id' => $room->id,
+                    'target_label' => $code,
+                ], $request);
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log delete room services error: ' . $e->getMessage());
+        }
+
         return response()->json([
             'success' => true,
             'deleted' => $deletedCount,
@@ -652,7 +664,8 @@ class BookingRoomServiceController extends Controller
             ]);
             $bookingId = (int) substr((string) $roomId, 7);
             $systemDate = Carbon::parse($this->avService->getSystemDate())->startOfDay();
-            DB::transaction(function () use ($validated, $bookingId, $systemDate) {
+            $logCancelled = [];
+            DB::transaction(function () use ($validated, $bookingId, $systemDate, &$logCancelled) {
                 $bills = ServiceBill::whereIn('Ma', array_unique($validated['service_bill_ids']))
                     ->where('RegisterID2', $bookingId)->whereNull('RentalRoomId2')
                     ->lockForUpdate()->get();
@@ -668,6 +681,7 @@ class BookingRoomServiceController extends Controller
                     if ($serviceDate->lt($systemDate) && !$this->canOperateOldDay()) {
                         abort(403, 'Tài khoản không có quyền xóa dịch vụ ngày cũ.');
                     }
+                    $logCancelled[] = $this->billLogInfo($bill);
                     $description = trim(($bill->DescriptionServive ?: $bill->ServiceId) . ' (Correct : ' . trim($validated['reason']) . ')');
                     $negative = $bill->replicate();
                     $negative->Amount = -abs((float) $bill->Amount);
@@ -679,6 +693,8 @@ class BookingRoomServiceController extends Controller
                     ServiceBillDetail::where('BillServiceId', $bill->Ma)->delete();
                 }
             });
+            $this->logCancelledBills($logCancelled, $validated['reason'], $request);
+
             return response()->json(['success' => true, 'message' => 'Đã xóa dịch vụ Master và tạo dòng đối trừ.']);
         }
         $validated = $request->validate([
@@ -695,7 +711,8 @@ class BookingRoomServiceController extends Controller
             $cancelByBill ? $validated['service_bill_ids'] : $validated['service_ids']
         )));
 
-        DB::transaction(function () use ($validated, $room, $cancelByBill, $requestedIds) {
+        $logCancelled = [];
+        DB::transaction(function () use ($validated, $room, $cancelByBill, $requestedIds, &$logCancelled) {
             if ($cancelByBill) {
                 // Checkout gửi ServiceBill.Ma cho cả Master và folio phòng.
                 // Xác thực owner hiện tại trước khi hủy để không nhận bill phòng/Master khác.
@@ -761,6 +778,7 @@ class BookingRoomServiceController extends Controller
                     abort(403, 'Tài khoản không có quyền xóa dịch vụ ngày cũ (RuleUserCorrectOrPostBillPaymentOldDay).');
                 }
 
+                $logCancelled[] = $this->billLogInfo($bill);
                 $description = trim(($bill->DescriptionServive ?: $bill->ServiceId) . ' (Correct : ' . trim($validated['reason']) . ')');
                 $negative = $bill->replicate();
                 $negative->Amount = -abs((float) $bill->Amount);
@@ -785,7 +803,52 @@ class BookingRoomServiceController extends Controller
             }
         });
 
+        $this->logCancelledBills($logCancelled, $validated['reason'], $request);
+
         return response()->json(['success' => true, 'message' => 'Đã xóa dịch vụ và tạo dòng đối trừ.']);
+    }
+
+    /** Thông tin bill (trước khi đối trừ) dùng cho lịch sử thao tác. */
+    private function billLogInfo(ServiceBill $bill): array
+    {
+        $blank = static fn ($v) => $v === null || trim((string) $v) === '' || (string) $v === '0';
+
+        return [
+            'booking' => !$blank($bill->RegisterID2) ? $bill->RegisterID2 : $bill->RegisterId1,
+            'room' => !$blank($bill->RentalRoomId2) ? $bill->RentalRoomId2 : (!$blank($bill->RegisterID2) ? null : $bill->RentalRoomId1),
+            'guest' => !$blank($bill->CustomerId2) ? $bill->CustomerId2 : $bill->CustomerId1,
+            'service' => $bill->ServiceId,
+            'description' => $bill->DescriptionServive,
+            'amount' => (float) $bill->Amount,
+        ];
+    }
+
+    /**
+     * Dòng 58: "* Correct Hóa Đơn: - Mã Đăng Ký GAL9 - Mã Phòng Thuê: G.. - Mã Khách: K.. - Dịch vụ: KE -  Key card
+     * - Số Tiền: 250,000 - Lý do: post nhầm"
+     */
+    private function logCancelledBills(array $bills, string $reason, Request $request): void
+    {
+        foreach ($bills as $info) {
+            try {
+                $code = \App\Services\ActivityLogService::bookingCode($info['booking']);
+                $desc = "* Correct Hóa Đơn: - Mã Đăng Ký {$code}"
+                    . ($info['room'] ? " - Mã Phòng Thuê: {$info['room']}" : '')
+                    . ($info['guest'] ? " - Mã Khách: {$info['guest']}" : '')
+                    . " - Dịch vụ: {$info['service']} -  {$info['description']}"
+                    . ' - Số Tiền: ' . \App\Services\ActivityLogService::money($info['amount'])
+                    . ' - Lý do: ' . trim($reason);
+                \App\Services\ActivityLogService::record('Cancel', $desc, [
+                    'screen' => \App\Support\ActivityScreen::CHECKOUT,
+                    'booking_code' => $code,
+                    'room_code' => $info['room'],
+                    'target_type' => 'ServiceBill',
+                    'target_label' => $code,
+                ], $request);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Log cancel bill error: ' . $e->getMessage());
+            }
+        }
     }
 
     /** Kiểm tra ServiceBill đang thuộc folio của phòng theo owner hiện tại, fallback owner legacy. */
@@ -979,6 +1042,8 @@ class BookingRoomServiceController extends Controller
             }
         }
 
+        $logBills = ServiceBill::whereIn('Ma', array_unique($request->bill_ids))->get()->map(fn ($bill) => $this->billLogInfo($bill))->all();
+
         DB::transaction(function () use ($request, $targetRoom, $targetBooking, $targetGuest) {
             foreach (array_unique($request->bill_ids) as $billId) {
                 $bill = ServiceBill::lockForUpdate()->findOrFail($billId);
@@ -1055,6 +1120,23 @@ class BookingRoomServiceController extends Controller
             }
 
         });
+        try {
+            // Dòng 57: "* Tập hợp các bill - Broken/Phí Hư Hỏng - 60,000 từ phòng 412, ... tới BK 9 - Walkin Guest"
+            $code = \App\Services\ActivityLogService::bookingCode($targetBooking->id);
+            $parts = collect($logBills)->map(fn ($info) => "- {$info['description']} - " . \App\Services\ActivityLogService::money($info['amount'])
+                . ' từ ' . ($info['room'] ? 'phòng ' . (BookingRoom::whereKey($info['room'])->value('room_number') ?: $info['room']) : 'BK ' . $info['booking']))->implode(', ');
+            $target = $targetRoom ? 'phòng ' . ($targetRoom->room_number ?: $targetRoom->id) . " ({$targetRoom->id})" : "BK {$targetBooking->id} - {$targetBooking->booking_name}";
+            \App\Services\ActivityLogService::record('Modify', "* Tập hợp các bill {$parts} tới {$target}", [
+                'screen' => \App\Support\ActivityScreen::CHECKOUT,
+                'booking_code' => $code,
+                'room_code' => $targetRoom?->id,
+                'target_type' => 'ServiceBill',
+                'target_label' => $code,
+            ], $request);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log quick transfer error: ' . $e->getMessage());
+        }
+
         return response()->json(['success' => true, 'message' => 'Đã tập hợp dịch vụ về phòng đã chọn.']);
     }
 
@@ -1075,6 +1157,9 @@ class BookingRoomServiceController extends Controller
                     abort(422, 'Có bill Master không hợp lệ hoặc đã thanh toán.');
                 }
                 ServiceBill::whereIn('Ma', $bills->pluck('Ma'))->update(['Folio' => (string) $validated['folio']]);
+                $items = $bills->map(fn ($bill) => $bill->DescriptionServive . ' - ' . \App\Services\ActivityLogService::money($bill->Amount))->implode(', ');
+                $this->logMasterBill('Modify', "* Chuyển bill - ( {$items}) mã đăng ký " . \App\Services\ActivityLogService::bookingCode($bookingId)
+                    . " - Master sang folio {$validated['folio']}", $bookingId, null, $request);
                 return response()->json(['success' => true, 'message' => 'Đã chuyển dịch vụ Master sang Folio mới.']);
             }
             $validated = $request->validate([
@@ -1132,6 +1217,21 @@ class BookingRoomServiceController extends Controller
                 }
             });
 
+            try {
+                $code = \App\Services\ActivityLogService::bookingCode($room->booking_id);
+                $items = BookingRoomService::whereIn('id', $validated['service_ids'])->get()
+                    ->map(fn ($svc) => ($svc->service_name ?: $svc->service_code) . ' - ' . \App\Services\ActivityLogService::money($svc->total_amount))->implode(', ');
+                \App\Services\ActivityLogService::record('Modify', "* Chuyển bill - ( {$items}) mã đăng ký {$code} - phòng: " . ($room->room_number ?: $room->id) . " sang folio {$validated['folio']}", [
+                    'screen' => \App\Support\ActivityScreen::CHECKOUT,
+                    'booking_code' => $code,
+                    'room_code' => $room->id,
+                    'target_type' => 'ServiceBill',
+                    'target_label' => $code,
+                ], $request);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Log folio transfer error: ' . $e->getMessage());
+            }
+
             return response()->json(['success' => true, 'message' => 'Đã chuyển dịch vụ sang Folio mới.']);
         }
 
@@ -1179,6 +1279,11 @@ class BookingRoomServiceController extends Controller
         $targetLocation = $targetRoom
             ? 'R_' . ($targetRoom->room_number ?: $targetRoom->id)
             : 'BK_' . $targetBooking?->id;
+
+        $logBillIds = $transferByBill
+            ? $requestedIds
+            : BookingRoomService::whereIn('id', $requestedIds)->pluck('service_bill_id')->filter()->unique()->all();
+        $logBills = ServiceBill::whereIn('Ma', $logBillIds)->get()->map(fn ($bill) => $this->billLogInfo($bill))->all();
 
         DB::transaction(function () use ($validated, $sourceRoom, $targetBooking, $targetRoom, $targetGuest, $sourceLocation, $targetLocation, $transferByBill, $requestedIds) {
             if ($transferByBill) {
@@ -1288,6 +1393,25 @@ class BookingRoomServiceController extends Controller
             }
         });
 
+        try {
+            // Dòng 56: "* Chuyển bill - ( Key card - 125,000) từ mã đăng ký GAL9 - phòng: 105 đến mã đăng ký GAL27 - phòng: 102"
+            $fromCode = \App\Services\ActivityLogService::bookingCode($sourceRoom->booking_id);
+            $toCode = \App\Services\ActivityLogService::bookingCode($targetBooking?->id);
+            $items = collect($logBills)->map(fn ($info) => "{$info['description']} - " . \App\Services\ActivityLogService::money($info['amount']))->implode(', ');
+            $desc = "* Chuyển bill - ( {$items}) từ mã đăng ký {$fromCode} - phòng: " . ($sourceRoom->room_number ?: $sourceRoom->id)
+                . ' đến ' . ($toCode ? "mã đăng ký {$toCode}" : 'folio phòng ảo')
+                . ($targetRoom ? ' - phòng: ' . ($targetRoom->room_number ?: $targetRoom->id) : ' - Master');
+            \App\Services\ActivityLogService::record('Modify', $desc, [
+                'screen' => \App\Support\ActivityScreen::CHECKOUT,
+                'booking_code' => $fromCode,
+                'room_code' => array_filter([$sourceRoom->id, $targetRoom?->id]),
+                'target_type' => 'ServiceBill',
+                'target_label' => $fromCode,
+            ], $request);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log bill transfer error: ' . $e->getMessage());
+        }
+
         return response()->json([
             'success' => true,
             'message' => 'Đã chuyển dịch vụ thành công.',
@@ -1344,6 +1468,7 @@ class BookingRoomServiceController extends Controller
         $targetLocation = $targetRoom
             ? 'R_' . ($targetRoom->room_number ?: $targetRoom->id)
             : 'BK_' . $targetBooking->id;
+        $logBills = ServiceBill::whereIn('Ma', $billIds)->get()->map(fn ($bill) => $this->billLogInfo($bill))->all();
 
         DB::transaction(function () use (
             $billIds,
@@ -1464,10 +1589,33 @@ class BookingRoomServiceController extends Controller
             }
         });
 
+        // Dòng 56 (dòng Master): "* Chuyển bill - ( X - 125,000) từ mã đăng ký GAL9 - Master đến mã đăng ký GAL27 - phòng: 102"
+        $items = collect($logBills)->map(fn ($info) => "{$info['description']} - " . \App\Services\ActivityLogService::money($info['amount']))->implode(', ');
+        $this->logMasterBill('Modify', "* Chuyển bill - ( {$items}) từ mã đăng ký " . \App\Services\ActivityLogService::bookingCode($sourceBooking->id)
+            . ' - Master đến mã đăng ký ' . \App\Services\ActivityLogService::bookingCode($targetBooking->id)
+            . ($targetRoom ? ' - phòng: ' . ($targetRoom->room_number ?: $targetRoom->id) : ' - Master'), $sourceBooking->id, $targetRoom?->id, $request);
+
         return response()->json([
             'success' => true,
             'message' => 'Đã chuyển dịch vụ Master sang Booking nhận.',
         ]);
+    }
+
+    /** Lịch sử thao tác cho bill ở dòng Master (cột Mã phòng để trống trừ khi chuyển xuống phòng). */
+    private function logMasterBill(string $action, string $description, $bookingId, ?string $roomId, Request $request): void
+    {
+        try {
+            $code = \App\Services\ActivityLogService::bookingCode($bookingId);
+            \App\Services\ActivityLogService::record($action, $description, [
+                'screen' => \App\Support\ActivityScreen::CHECKOUT,
+                'booking_code' => $code,
+                'room_code' => $roomId,
+                'target_type' => 'ServiceBill',
+                'target_label' => $code,
+            ], $request);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log master bill error: ' . $e->getMessage());
+        }
     }
 
     public function splitFolio(Request $request, $roomId)
@@ -1480,6 +1628,7 @@ class BookingRoomServiceController extends Controller
                 'amount' => 'required|numeric|gt:0',
             ]);
             $bookingId = (int) substr((string) $roomId, 7);
+            $logBill = ServiceBill::whereKey($request->bill_ids[0])->first();
             $result = DB::transaction(function () use ($request, $bookingId) {
                 $bill = ServiceBill::whereKey($request->bill_ids[0])->where('RegisterID2', $bookingId)->whereNull('RentalRoomId2')->lockForUpdate()->firstOrFail();
                 if ($bill->PaymentId !== null || $bill->VatId !== null || (int) $bill->Status !== 1 || (int) $bill->Edit === 1) abort(422, 'Chỉ được tách dịch vụ Master chưa thanh toán và chưa xuất VAT.');
@@ -1499,6 +1648,14 @@ class BookingRoomServiceController extends Controller
                 }
                 return $split;
             });
+            // Dòng 55 (dòng Master)
+            if ($logBill) {
+                $money = fn ($v) => \App\Services\ActivityLogService::money($v);
+                $total = (float) $logBill->Amount;
+                $part2 = (float) $request->amount;
+                $this->logMasterBill('Modify', "* Dịch vụ {$logBill->DescriptionServive}, số tiền: {$money($total)}, tách làm 2, số tiền 1 {$money($total - $part2)}, folio "
+                    . ($logBill->Folio ?: 1) . ", số tiền 2 {$money($part2)}, folio {$request->folio}", $bookingId, null, $request);
+            }
             return response()->json(['success' => true, 'message' => 'Đã tách dịch vụ Master theo số tiền thành công.', 'data' => ['service_bill_id' => $result->Ma]]);
         }
         $request->validate([
@@ -1509,6 +1666,7 @@ class BookingRoomServiceController extends Controller
         ]);
 
         $room = BookingRoom::findOrFail($roomId);
+        $logBill = ServiceBill::whereKey(BookingRoomService::whereIn('id', $request->service_ids)->value('service_bill_id'))->first();
         $result = DB::transaction(function () use ($request, $room) {
             $services = BookingRoomService::where('booking_room_id', $room->id)
                 ->whereIn('id', $request->service_ids)
@@ -1603,6 +1761,27 @@ class BookingRoomServiceController extends Controller
 
             return $splitBill;
         });
+
+        try {
+            // Dòng 55: "* Dịch vụ X, số tiền: 250,000, tách làm 2, số tiền 1 125,000, folio 1, số tiền 2 125,000, folio 1"
+            if ($logBill) {
+                $total = (float) $logBill->Amount;
+                $part2 = (float) $request->amount;
+                $code = \App\Services\ActivityLogService::bookingCode($room->booking_id);
+                $money = fn ($v) => \App\Services\ActivityLogService::money($v);
+                \App\Services\ActivityLogService::record('Modify', "* Dịch vụ {$logBill->DescriptionServive}, số tiền: {$money($total)}, tách làm 2, số tiền 1 {$money($total - $part2)}, folio "
+                    . ($logBill->Folio ?: 1) . ", số tiền 2 {$money($part2)}, folio {$request->folio}", [
+                    'screen' => \App\Support\ActivityScreen::CHECKOUT,
+                    'booking_code' => $code,
+                    'room_code' => $room->id,
+                    'target_type' => 'ServiceBill',
+                    'target_id' => $logBill->Ma,
+                    'target_label' => $code,
+                ], $request);
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log split bill error: ' . $e->getMessage());
+        }
 
         return response()->json(['success' => true, 'message' => 'Đã tách dịch vụ theo số tiền thành công.', 'data' => ['service_bill_id' => $result->Ma]]);
     }
@@ -1957,13 +2136,42 @@ class BookingRoomServiceController extends Controller
         });
 
         try {
-            $roomNumber = $room->room_number;
-            $bCode = $room->booking?->booking_code ?? ('GAL' . $room->booking_id);
-            $itemsCount = count($items);
-            $firstName = $items[0]['name'] ?? ($items[0]['product']['name'] ?? 'Sản phẩm buồng phòng');
-            $summaryName = $itemsCount > 0 ? ($firstName . ($itemsCount > 1 ? " (+ " . ($itemsCount - 1) . " món)" : "")) : 'Dịch vụ buồng phòng';
-            \App\Services\ActivityLogService::logServiceAction('create', $roomNumber, $bCode, $summaryName, $itemsCount, 0, $request);
-        } catch (\Throwable $e) {}
+            // Dòng 54, 94: "* Gửi hoá đơn về mã đăng ký GAL27 - số phòng: 102 - Ngày - Giờ - Ca - Bộ Phận -Mã dịch vụ: MB
+            //  - Mô tả dịch vụ: Minibar ( SP -SL:3 - Giá:25,000 - Discount: 0% - Surcharge: 0%, ... ) - Số tiền: 100,000"
+            $code = \App\Services\ActivityLogService::bookingCode($room->booking_id);
+            $time = now('Asia/Ho_Chi_Minh')->format('H:i');
+            $lines = [];
+            foreach ($request->bills as $billGroup) {
+                $meta = $groupMeta[strtolower($billGroup['group'] ?? 'minibar')] ?? null;
+                $items = $billGroup['items'] ?? [];
+                if (!$meta || !$items) {
+                    continue;
+                }
+                $itemText = collect($items)->map(fn ($item) => ($item['name'] ?? ($item['product']['name'] ?? 'Sản phẩm'))
+                    . ' -SL:' . (float) ($item['qty'] ?? 1)
+                    . ' - Giá:' . \App\Services\ActivityLogService::money($item['original_rate'] ?? $item['price'] ?? 0)
+                    . ' - Discount: ' . (float) ($isFree ? 100 : ($item['discount_pct'] ?? 0)) . '%'
+                    . ' - Surcharge: ' . (float) ($item['surcharge_pct'] ?? 0) . '%')->implode(', ');
+                $total = collect($items)->sum(fn ($item) => (float) ($item['total_amount'] ?? $item['net_price'] ?? $item['price'] ?? 0));
+                $lines[] = "* Gửi hoá đơn về mã đăng ký {$code} - số phòng: " . ($room->room_number ?: $room->id)
+                    . ' - Ngày: ' . \App\Services\ActivityLogService::d($serviceDate)
+                    . " - Giờ: {$time} - Ca: " . \App\Services\ActivityLogService::shiftAt($time)
+                    . " - Bộ Phận: {$department} -Mã dịch vụ: {$meta['service']} - Mô tả dịch vụ: {$meta['label']} ( {$itemText} )"
+                    . ' - Số tiền: ' . \App\Services\ActivityLogService::money($isFree ? 0 : $total);
+            }
+            if ($lines) {
+                \App\Services\ActivityLogService::record('Add', implode("\n", $lines), [
+                    'screen' => \App\Support\ActivityScreen::HK_SERVICE,
+                    'booking_code' => $code,
+                    'room_code' => $room->id,
+                    'target_type' => 'HousekeepingServiceBill',
+                    'target_id' => $room->id,
+                    'target_label' => $code,
+                ], $request);
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log housekeeping bill error: ' . $e->getMessage());
+        }
 
         return response()->json([
             'success' => true,
@@ -2361,6 +2569,32 @@ class BookingRoomServiceController extends Controller
             }
         });
 
+        try {
+            // Dòng 53: "Gửi hoá đơn về mã đăng ký GAL27 - Số phòng:102 - Khách - Từ ngày - Đến ngày - Giờ - Ca - Bộ Phận
+            //  - Mã dịch vụ - Mô tả dịch vụ - Số tiền"
+            $code = \App\Services\ActivityLogService::bookingCode($booking?->id);
+            $time = now('Asia/Ho_Chi_Minh')->format('H:i');
+            $desc = "Gửi hoá đơn về mã đăng ký {$code}"
+                . ($room ? ' - Số phòng:' . ($room->room_number ?: $room->id) : '')
+                . ($room ? " - Khách: {$guestName}" : '')
+                . ' - Từ ngày: ' . \App\Services\ActivityLogService::d($request->date_from)
+                . ' - Đến ngày: ' . \App\Services\ActivityLogService::d($request->date_to)
+                . " - Giờ: {$time} - Ca: " . \App\Services\ActivityLogService::shiftAt($time)
+                . ' - Bộ Phận: ' . \App\Support\ActivityScreen::department($request)
+                . " -Mã dịch vụ: {$foService->code} - Mô tả dịch vụ: " . ($request->description ?: $foService->name)
+                . "\n- Số tiền: " . \App\Services\ActivityLogService::money((float) $request->quantity * (float) $request->rate);
+            \App\Services\ActivityLogService::record('Add', $desc, [
+                'screen' => \App\Support\ActivityScreen::CHECKOUT,
+                'booking_code' => $code,
+                'room_code' => $room?->id,
+                'target_type' => 'ServiceBill',
+                'target_id' => implode(',', $createdBills),
+                'target_label' => $code,
+            ], $request);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log post service bill error: ' . $e->getMessage());
+        }
+
         return response()->json([
             'success'  => true,
             'message'  => 'Đã post ' . count($createdBills) . ' dịch vụ thành công.',
@@ -2535,6 +2769,13 @@ class BookingRoomServiceController extends Controller
             ], 422);
         }
 
+        // Phòng đã checkout vẫn được post lại tiền phòng (xóa bill rồi post lại khi
+        // cần chỉnh giá), theo cấu hình AllowPostBillCheckedOutRoom và quyền user.
+        $isCheckedOutRoom = $room && (int) $room->status === BookingRoom::STATUS_CHECKED_OUT;
+        if ($isCheckedOutRoom) {
+            $this->ensureCheckedOutPostingAllowed($room, $booking);
+        }
+
         $systemDate = $this->avService->getSystemDate();
         $dateFrom   = Carbon::parse($request->date_from);
         $dateTo     = Carbon::parse($request->date_to);
@@ -2577,7 +2818,8 @@ class BookingRoomServiceController extends Controller
         // Giai đoạn post tiền phòng: từ ngày đến ban đầu (phòng late check-in vẫn charge lại được đêm cũ)
         // đến đêm cuối trước ngày đi, được post trước cho tương lai. Phòng lẻ luôn được post bù vào ngày hệ thống.
         $systemDay = Carbon::parse($systemDate)->startOfDay();
-        $systemDatePosting = !$isBookingPost && $this->isSystemDatePosting($dateFrom, $dateTo, $systemDate);
+        // Phòng đã checkout chỉ post lại trong giai đoạn đã ở, không post bù vào ngày hệ thống.
+        $systemDatePosting = !$isBookingPost && !$isCheckedOutRoom && $this->isSystemDatePosting($dateFrom, $dateTo, $systemDate);
         $actualArrival = Carbon::parse($room?->arrival_date ?: $booking->arrival_date)->startOfDay();
         $stayStart = $room ? $this->originalArrivalDate($room) : $actualArrival->copy();
         $rawDeparture = Carbon::parse($room?->departure_date ?: $booking->departure_date)->startOfDay();
@@ -2597,8 +2839,8 @@ class BookingRoomServiceController extends Controller
 
         foreach ($roomsToPost as $targetRoom) {
             $roomArrival = $this->originalArrivalDate($targetRoom);
-            if (in_array((int) $targetRoom->status, [BookingRoom::STATUS_CANCELLED, BookingRoom::STATUS_CHECKED_OUT], true)) {
-                return response()->json(['success' => false, 'message' => 'Phòng đã hủy hoặc đã checkout, không thể post tiền phòng.'], 422);
+            if ((int) $targetRoom->status === BookingRoom::STATUS_CANCELLED) {
+                return response()->json(['success' => false, 'message' => 'Phòng đã hủy, không thể post tiền phòng.'], 422);
             }
             if (!$isBookingPost && !$systemDatePosting && $dateFrom->copy()->startOfDay()->lt($roomArrival)) {
                 return response()->json([
@@ -2626,6 +2868,7 @@ class BookingRoomServiceController extends Controller
         $createdBills = [];
         $postedRooms = [];
         $skippedRooms = [];
+        $logPostedRooms = [];
 
         DB::transaction(function () use (
             $roomsToPost, $booking, $setting, $isBookingPost,
@@ -2633,7 +2876,7 @@ class BookingRoomServiceController extends Controller
             $request, $selectedGuest, $user, $roomService, $breakfastService,
             $roomTaxProfile, $breakfastTaxProfile,
             $chargePercent, &$createdBills,
-            &$postedRooms, &$skippedRooms, $isDayUseStay,
+            &$postedRooms, &$logPostedRooms, &$skippedRooms, $isDayUseStay,
             $systemDatePosting, $systemDay
         ) {
             foreach ($roomsToPost as $targetRoom) {
@@ -3027,6 +3270,7 @@ class BookingRoomServiceController extends Controller
                 if (!in_array($roomLabel, $postedRooms)) {
                     $postedRooms[] = $roomLabel;
                 }
+                $logPostedRooms[(string) $targetRoom->id] = $targetRoom->room_number ?: (string) $targetRoom->id;
                 $current->addDay();
             }
             }
@@ -3044,6 +3288,21 @@ class BookingRoomServiceController extends Controller
             $msgParts[] = 'bỏ qua các phòng đang bật No Post: ' . implode(', ', $noPostSkippedRooms);
         }
         $finalMessage = ucfirst(implode('; ', $msgParts) ?: 'Không có phòng nào được xử lý.');
+
+        try {
+            // Dòng 53, 67: log thêm tiền phòng (tự động / nhập tay có hoặc không tính công suất)
+            \App\Services\ActivityLogService::logRoomCharge(
+                $booking?->id,
+                $logPostedRooms,
+                (string) $request->mode,
+                $dateFrom->toDateString(),
+                $dateTo->toDateString(),
+                $request->filled('rate') ? (float) $request->rate : null,
+                $request
+            );
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log room charge error: ' . $e->getMessage());
+        }
 
         return response()->json([
             'success'       => true,

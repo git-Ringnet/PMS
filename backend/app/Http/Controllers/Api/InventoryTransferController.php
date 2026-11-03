@@ -86,6 +86,21 @@ class InventoryTransferController extends Controller
             );
         });
 
+        try {
+            // Dòng 87: "* Cập nhật số lượng SP: - Mã SP: 8 , - Tên SP: Redbull , - Ngày: .., - Chuyển: -> 5 Từ kho Minibar đến kho Amenity"
+            $product = \App\Models\Product::find($validated['product_id']);
+            $qty = rtrim(rtrim(number_format((float) $validated['quantity'], 3, '.', ''), '0'), '.');
+            \App\Services\ActivityLogService::record('Inventory', '* Cập nhật số lượng SP: - Mã SP: ' . ($product?->product_code ?: $validated['product_id'])
+                . ' , - Tên SP: ' . ($product?->name ?? '') . ' , - Ngày: ' . \App\Services\ActivityLogService::d($validated['date'])
+                . ", - Chuyển: -> {$qty} Từ kho " . Warehouse::whereKey($validated['warehouse_id'])->value('name')
+                . ' đến kho ' . Warehouse::whereKey($validated['transfer_to_warehouse_id'])->value('name'), [
+                'screen' => \App\Support\ActivityScreen::INVENTORY,
+                'target_type' => 'InventoryTransfer',
+            ], $request);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log inventory transfer error: ' . $e->getMessage());
+        }
+
         return response()->json([
             'success' => true,
             'message' => 'Chuyển kho thành công.',

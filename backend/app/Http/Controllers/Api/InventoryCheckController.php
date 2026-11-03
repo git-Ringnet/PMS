@@ -89,6 +89,9 @@ class InventoryCheckController extends Controller
 
         $negativeCount = collect($items)->where('well_balance', '<', 0)->count();
 
+        // Chỉ lấy số liệu, chưa lưu: không ghi log. Dòng 89 ghi khi bấm Lưu (save với carry_over = true).
+        $request->attributes->set('_activity_logged', true);
+
         return response()->json([
             'success'        => true,
             'message'        => "Đã lấy số liệu tồn cuối tháng {$prevMonthStr} cho " . count($items) . ' sản phẩm. Kiểm tra lại rồi bấm Lưu để tạo phiếu.'
@@ -205,6 +208,12 @@ class InventoryCheckController extends Controller
             ]);
         }
 
+        // Lịch sử thao tác (dòng 85, 86): phiếu mới hay cập nhật, số liệu trước khi lưu
+        $logIsNew = !$check || $check->trashed();
+        $logBefore = $check && !$check->trashed()
+            ? InventoryCheckItem::where('check_id', $check->id)->get()->keyBy('product_id')->map(fn ($i) => [(float) $i->well_balance, (float) $i->stoke_take])->all()
+            : [];
+
         \Illuminate\Support\Facades\DB::transaction(function () use (&$check, $validated) {
             if ($check) {
                 if ($check->trashed()) {
@@ -243,8 +252,73 @@ class InventoryCheckController extends Controller
         });
 
         $check->load(['items.product.category', 'creator']);
+        if ($request->boolean('carry_over')) {
+            $this->logCarryOver($check, $request);
+        } else {
+            $this->logCheckSaved($check, $logIsNew, $logBefore, $request);
+        }
 
         return response()->json(['success' => true, 'message' => 'Lưu phiếu kiểm kê thành công!', 'data' => $this->formatCheck($check)]);
+    }
+
+    /**
+     * Dòng 85: "* Thêm mới phiếu kiểm kê: - Mã phiếu: KK-2 , - Tháng: 09-2026 , - Kho: Minibar , - Người kiểm kho: X , Ghi chú:"
+     *          + từng dòng "- Mã SP: 1 , - Tên SP: Coca Cola , - Tồn đầu kỳ: 10 , - Số lượng thực tế: 10"
+     * Dòng 86: "* Cập nhật phiếu kiểm kê: - Mã phiếu: KK-2" + các sản phẩm thay đổi "- Tồn đầu kỳ: 10 -> 15".
+     */
+    private function logCheckSaved(InventoryCheck $check, bool $isNew, array $before, Request $request): void
+    {
+        try {
+            $warehouse = $check->warehouse?->name ?? '';
+            $month = Carbon::createFromFormat('Y-m', $check->month)->format('m-Y');
+            $num = fn ($v) => rtrim(rtrim(number_format((float) $v, 2, '.', ''), '0'), '.');
+            $lines = [];
+
+            if ($isNew) {
+                $lines[] = "* Thêm mới phiếu kiểm kê: - Mã phiếu: KK-{$check->id} , - Tháng: {$month} , - Kho: {$warehouse} , - Người kiểm kho: "
+                    . ($check->creator?->name ?? '') . ' , Ghi chú: ' . ($check->note ?? '');
+                foreach ($check->items as $item) {
+                    $lines[] = '- Mã SP: ' . ($item->product?->product_code ?: $item->product_id) . ' , - Tên SP: ' . ($item->product?->name ?? '')
+                        . ' , - Tồn đầu kỳ: ' . $num($item->well_balance) . ' , - Số lượng thực tế: ' . $num($item->stoke_take);
+                }
+            } else {
+                foreach ($check->items as $item) {
+                    $old = $before[$item->product_id] ?? null;
+                    $head = '- Mã SP: ' . ($item->product?->product_code ?: $item->product_id) . ' , - Tên Sp: ' . ($item->product?->name ?? '');
+                    if ($old === null) {
+                        $lines[] = "{$head} , - Thêm sản phẩm: Tồn đầu kỳ: " . $num($item->well_balance) . ', Số lượng thực tế: ' . $num($item->stoke_take);
+                        continue;
+                    }
+                    $parts = [];
+                    if ((float) $old[0] !== (float) $item->well_balance) {
+                        $parts[] = '- Tồn đầu kỳ: ' . $num($old[0]) . ' -> ' . $num($item->well_balance);
+                    }
+                    if ((float) $old[1] !== (float) $item->stoke_take) {
+                        $parts[] = '- Số lượng thực tế: ' . $num($old[1]) . ' -> ' . $num($item->stoke_take);
+                    }
+                    if ($parts) {
+                        $lines[] = "{$head} , " . implode(' , ', $parts);
+                    }
+                }
+                $removed = array_diff(array_keys($before), $check->items->pluck('product_id')->all());
+                foreach (Product::whereIn('id', $removed)->get() as $product) {
+                    $lines[] = '- Mã SP: ' . ($product->product_code ?: $product->id) . " , - Tên Sp: {$product->name} , - Xóa khỏi phiếu";
+                }
+                if (!$lines) {
+                    return;
+                }
+                array_unshift($lines, "* Cập nhật phiếu kiểm kê: - Mã phiếu: KK-{$check->id}");
+            }
+
+            \App\Services\ActivityLogService::record($isNew ? 'Add' : 'Modify', implode("\n", $lines), [
+                'screen' => \App\Support\ActivityScreen::INVENTORY,
+                'target_type' => 'InventoryCheck',
+                'target_id' => $check->id,
+                'target_label' => "KK-{$check->id}",
+            ], $request);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log inventory check error: ' . $e->getMessage());
+        }
     }
 
     public const LOCKED_MESSAGE = 'Tháng này đã phát sinh dữ liệu nhập/xuất tồn kho, phiếu kiểm kê không được chỉnh sửa.';
@@ -270,6 +344,7 @@ class InventoryCheckController extends Controller
         $products = Product::whereIn('id', $validated['product_ids'])
             ->pluck('id');
 
+        $logBefore = $this->logItemSnapshot((int) $check->id);
         $added = 0;
         foreach ($products as $productId) {
             InventoryCheckItem::firstOrCreate(
@@ -280,6 +355,7 @@ class InventoryCheckController extends Controller
         }
 
         $check->load(['items.product.category', 'creator']);
+        $this->logCheckSaved($check, false, $logBefore, $request);
 
         return response()->json([
             'success' => true,
@@ -321,8 +397,10 @@ class InventoryCheckController extends Controller
             $item->final_balance = $validated['stoke_take'];
         }
 
+        $logBefore = $this->logItemSnapshot((int) $id);
         $item->save();
         $item->load(['product.category']);
+        $this->logCheckSaved(InventoryCheck::with(['items.product', 'warehouse'])->findOrFail($id), false, $logBefore, $request);
 
         return response()->json([
             'success' => true,
@@ -358,10 +436,58 @@ class InventoryCheckController extends Controller
             ], 422);
         }
 
+        $check->loadMissing('warehouse');
         $check->items()->delete();
         $check->forceDelete();
 
+        try {
+            \App\Services\ActivityLogService::record('Cancel', "* Xóa phiếu kiểm kê: - Mã phiếu: KK-{$check->id} , - Tháng: "
+                . Carbon::createFromFormat('Y-m', $check->month)->format('m-Y') . ' , - Kho: ' . ($check->warehouse?->name ?? ''), [
+                'screen' => \App\Support\ActivityScreen::INVENTORY,
+                'target_type' => 'InventoryCheck',
+                'target_id' => $check->id,
+                'target_label' => "KK-{$check->id}",
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log delete inventory check error: ' . $e->getMessage());
+        }
+
         return response()->json(['success' => true]);
+    }
+
+    /**
+     * Dòng 89: "Kết chuyển tồn kho Minibar từ tháng 09-2026 sang tháng 10-2026\nChi tiết sản phẩm:\n- Mã SP: 1 , - Tên SP ..."
+     * Ghi khi lưu phiếu được điền từ số liệu tháng trước.
+     */
+    private function logCarryOver(InventoryCheck $check, Request $request): void
+    {
+        try {
+            $month = Carbon::createFromFormat('Y-m', $check->month);
+            $num = fn ($v) => rtrim(rtrim(number_format((float) $v, 2, '.', ''), '0'), '.');
+            $lines = ['Kết chuyển tồn kho ' . ($check->warehouse?->name ?? '') . ' từ tháng ' . $month->copy()->subMonth()->format('m-Y')
+                . ' sang tháng ' . $month->format('m-Y'), 'Chi tiết sản phẩm:'];
+            foreach ($check->items as $item) {
+                $lines[] = '- Mã SP: ' . ($item->product?->product_code ?: $item->product_id) . ' , - Tên SP: ' . ($item->product?->name ?? '')
+                    . ' , - Tồn đầu kỳ: ' . $num($item->well_balance) . ' , - Số lượng thực tế: ' . $num($item->stoke_take);
+            }
+            \App\Services\ActivityLogService::record('Inventory', implode("\n", $lines), [
+                'screen' => \App\Support\ActivityScreen::INVENTORY,
+                'target_type' => 'InventoryCheck',
+                'target_id' => $check->id,
+                'target_label' => "KK-{$check->id}",
+            ], $request);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log inventory carry-over error: ' . $e->getMessage());
+        }
+    }
+
+    /** Số liệu từng sản phẩm của phiếu trước khi sửa: [product_id => [tồn đầu kỳ, thực tế]]. */
+    private function logItemSnapshot(int $checkId): array
+    {
+        return InventoryCheckItem::where('check_id', $checkId)->get()
+            ->keyBy('product_id')
+            ->map(fn ($i) => [(float) $i->well_balance, (float) $i->stoke_take])
+            ->all();
     }
 
     public function productsInStock(Request $request)

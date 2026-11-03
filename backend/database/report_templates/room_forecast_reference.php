@@ -33,6 +33,9 @@ return new class
                     'HouseUse' => 'integer',
                     'FOCAll' => 'integer',
                     'RoomSales' => 'integer',
+                    'RM' => 'number',
+                    'EB' => 'number',
+                    'ER' => 'number',
                     'Revenue' => 'number',
                     'AvgRate' => 'number',
                     'AvgRate2' => 'number',
@@ -69,12 +72,12 @@ return new class
   <h1>BÁO CÁO DỰ ĐOÁN BÁN PHÒNG</h1>
   <p class="period"><b>Ngày:</b> {{parameters.p_from_date}} &nbsp; ~ &nbsp; {{parameters.p_to_date}}</p>
 </div>
-<section class="pms-conditional-block" data-condition-id="room-forecast-fo" data-visible-by="parameters.p_revenue_detail">
-'.$this->tableHtml(true).'
-</section><!--pms-condition-end:room-forecast-fo-->
-<section class="pms-conditional-block" data-condition-id="room-forecast-hk" data-visible-by="parameters.p_revenue_detail" data-visible-when="falsy">
+<section class="pms-conditional-block" data-condition-id="room-forecast-fo" data-visible-by="parameters.p_revenue_detail" data-visible-when="falsy">
 '.$this->tableHtml(false).'
-</section><!--pms-condition-end:room-forecast-hk-->
+</section><!--pms-condition-end:room-forecast-fo-->
+<section class="pms-conditional-block" data-condition-id="room-forecast-detail" data-visible-by="parameters.p_revenue_detail">
+'.$this->tableHtml(true).'
+</section><!--pms-condition-end:room-forecast-detail-->
 <div class="signatures">
   <span>Lễ Tân Trưởng</span>
   <span>Bộ phận kinh doanh</span>
@@ -140,8 +143,8 @@ return new class
                 ],
             ],
             'detail' => [
-                $this->tableBlock(true),
                 $this->tableBlock(false),
+                $this->tableBlock(true),
             ],
             'footer' => [
                 [
@@ -191,7 +194,7 @@ body { font-family: Arial, Helvetica, sans-serif; color: #111111; font-size: 9px
 .report-header-band h1 { font-size: 18px; text-align: center; margin: 6px 0 4px; font-weight: bold; color: #111111; }
 .period { text-align: center; font-size: 10px; margin: 2px 0 12px; color: #111111; font-weight: bold; }
 .room-forecast-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 8.5px; line-height: 1.2; }
-.room-forecast-table th, .room-forecast-table td { border: 1px solid #aeb5c0; padding: 4px 2px; vertical-align: middle; }
+.room-forecast-table th, .room-forecast-table td { border: 1px solid #aeb5c0; padding: 4px 2px; vertical-align: middle; overflow-wrap: anywhere; }
 .room-forecast-table thead th { background: #dee2ed; text-align: center; font-weight: bold; white-space: normal; }
 .room-forecast-table .index-row th { color: #64748b; font-size: 7px; padding-top: 1px; padding-bottom: 1px; }
 .room-forecast-table td { text-align: right; }
@@ -218,17 +221,19 @@ CSS;
         );
     }
 
-    private function tableBlock(bool $financial): array
+    private function tableBlock(bool $detail): array
     {
+        $columns = $this->fitWidths($detail ? $this->detailColumns() : $this->columns());
+
         return [
-            'id' => $financial ? 'room_forecast_fo_table' : 'room_forecast_hk_table',
+            'id' => $detail ? 'room_forecast_detail_table' : 'room_forecast_fo_table',
             'type' => 'table',
             'dataSource' => 'rows',
             'tableType' => 'dynamic',
             'tableStyle' => 'grid',
             'tableClassName' => 'room-forecast-table',
             'visibleWhen' => 'parameters.p_revenue_detail',
-            'visibleWhenMode' => $financial ? 'truthy' : 'falsy',
+            'visibleWhenMode' => $detail ? 'truthy' : 'falsy',
             'style' => [
                 'width' => '100%',
                 'fontSize' => '8.5px',
@@ -239,16 +244,16 @@ CSS;
             ],
             'topHeader' => array_map(
                 static fn (int $index): array => ['content' => '('.($index + 1).')', 'align' => 'center'],
-                array_keys($financial ? $this->columns() : $this->hkColumns())
+                array_keys($columns)
             ),
-            'columns' => $financial ? $this->columns() : $this->hkColumns(),
-            'customRows' => [$this->totalRow($financial)],
+            'columns' => $columns,
+            'customRows' => [$this->totalRow($detail)],
         ];
     }
 
-    private function tableHtml(bool $financial): string
+    private function tableHtml(bool $detail): string
     {
-        $columns = $financial ? $this->columns() : $this->hkColumns();
+        $columns = $this->fitWidths($detail ? $this->detailColumns() : $this->columns());
         $html = '<table class="room-forecast-table"><colgroup>';
         foreach ($columns as $column) {
             $html .= '<col style="width:'.htmlspecialchars((string) $column['width'], ENT_QUOTES, 'UTF-8').'">';
@@ -274,7 +279,7 @@ CSS;
             $html .= '<td'.$class.'>{{row.'.$field.$modifier.'}}'.$suffix.'</td>';
         }
         $html .= '</tr></tbody><tfoot><tr>';
-        foreach ($this->totalRow($financial)['cells'] as $cell) {
+        foreach ($this->totalRow($detail)['cells'] as $cell) {
             $colspan = max(1, (int) ($cell['colspan'] ?? 1));
             if (($cell['type'] ?? '') === 'binding') {
                 $content = '{{'.($cell['binding'] ?? '').(! empty($cell['format']) ? '|'.$cell['format'] : '').'}}';
@@ -287,7 +292,7 @@ CSS;
         return $html.'</tr></tfoot></table>';
     }
 
-    private function totalRow(bool $financial): array
+    private function totalRow(bool $detail): array
     {
         $cells = [
             ['type' => 'text', 'content' => 'Tổng: {{aggregate.rows.count}}', 'align' => 'center'],
@@ -302,34 +307,67 @@ CSS;
             ['type' => 'binding', 'binding' => 'aggregate.rows.sum.RoomSales', 'format' => 'number'],
         ];
 
-        if ($financial) {
-            $cells[] = ['type' => 'binding', 'binding' => 'aggregate.rows.sum.Revenue', 'format' => 'number'];
-            $cells[] = ['type' => 'text', 'content' => '-'];
-            $cells[] = ['type' => 'text', 'content' => '-'];
+        if ($detail) {
+            $cells[] = ['type' => 'binding', 'binding' => 'aggregate.rows.sum.RM', 'format' => 'number'];
+            $cells[] = ['type' => 'binding', 'binding' => 'aggregate.rows.sum.EB', 'format' => 'number'];
+            $cells[] = ['type' => 'binding', 'binding' => 'aggregate.rows.sum.ER', 'format' => 'number'];
         }
 
-        $cells[] = ['type' => 'text', 'content' => '-'];
-        $cells[] = ['type' => 'text', 'content' => '-'];
-        $cells[] = ['type' => 'text', 'content' => '-'];
-        if ($financial) {
-            $cells[] = ['type' => 'text', 'content' => '-'];
-        }
+        $cells[] = ['type' => 'binding', 'binding' => 'aggregate.rows.sum.Revenue', 'format' => 'number'];
+        $cells[] = ['type' => 'binding', 'binding' => 'aggregate.rows.avg.AvgRate', 'format' => 'number'];
+        $cells[] = ['type' => 'binding', 'binding' => 'aggregate.rows.avg.AvgRate2', 'format' => 'number'];
+        $cells[] = ['type' => 'binding', 'binding' => 'aggregate.rows.sum.RoomAvible', 'format' => 'number'];
+        $cells[] = ['type' => 'binding', 'binding' => 'aggregate.rows.avg.PercentOccupancy', 'format' => 'percent'];
+        $cells[] = ['type' => 'binding', 'binding' => 'aggregate.rows.avg.PercentOccupancy1', 'format' => 'percent'];
+        $cells[] = ['type' => 'binding', 'binding' => 'aggregate.rows.avg.RevPAR', 'format' => 'number'];
 
         return [
-            'id' => $financial ? 'room_forecast_fo_total' : 'room_forecast_hk_total',
+            'id' => $detail ? 'room_forecast_detail_total' : 'room_forecast_fo_total',
             'scope' => 'table',
             'className' => 'report-grand-total-row',
             'cells' => $cells,
         ];
     }
 
-    private function hkColumns(): array
+    private function detailColumns(): array
     {
-        $all = $this->columns();
+        return [
+            $this->column('Date', "Ngày\n(1)", '85px', 'center', null, ['color' => '#16a34a', 'fontWeight' => 'bold']),
+            $this->column('DepRooms', "P.Đi\n(2)", '45px'),
+            $this->column('DepAdult', "K.Đi\n(3)", '45px'),
+            $this->column('ArrRooms', "P.Đến\n(4)", '45px'),
+            $this->column('ArrAdult', "K.Đến\n(5)", '45px'),
+            $this->column('OccRooms', "P.Ở\n(6)", '45px'),
+            $this->column('OccAdult', "K.Ở\n(7)", '45px'),
+            $this->column('HouseUse', "Nội bộ\n(8)", '45px'),
+            $this->column('FOCAll', "Phòng MP\n(9)", '55px'),
+            $this->column('RoomSales', "P.Bán\n(10)", '45px'),
+            $this->column('RM', "Tiền phòng (RM)\n(11)", '90px', 'right', 'number'),
+            $this->column('EB', "Giường phụ (EB)\n(12)", '80px', 'right', 'number'),
+            $this->column('ER', "Phụ thu (ER)\n(13)", '80px', 'right', 'number'),
+            $this->column('Revenue', "Doanh Thu\n(14)", '95px', 'right', 'number'),
+            $this->column('AvgRate', "Giá phòng TB (w/o HU)\n(15)", '85px', 'right', 'number'),
+            $this->column('AvgRate2', "Giá phòng TB (w/o HU,FOC)\n(16)", '90px', 'right', 'number'),
+            $this->column('RoomAvible', "Phòng có thể bán\n(17)", '65px'),
+            $this->column('PercentOccupancy', "Công suất\n(18)", '65px', 'right', 'percent'),
+            $this->column('PercentOccupancy1', "Công suất (w/o HU,FOC)\n(19)", '75px', 'right', 'percent'),
+            $this->column('RevPAR', "DThu/Tổng phòng\n(20)", '85px', 'right', 'number'),
+        ];
+    }
 
-        return array_values(array_filter($all, static function (array $column): bool {
-            return ! in_array(substr((string) $column['value'], 4), ['Revenue', 'AvgRate', 'AvgRate2', 'RevPAR'], true);
-        }));
+    /**
+     * Column widths are designed in px; convert them to percentages so the
+     * table always fits the landscape page instead of overflowing it.
+     */
+    private function fitWidths(array $columns): array
+    {
+        $total = array_sum(array_map(static fn (array $column): float => (float) $column['width'], $columns));
+        foreach ($columns as &$column) {
+            $column['width'] = round((float) $column['width'] / max($total, 1) * 100, 2).'%';
+        }
+        unset($column);
+
+        return $columns;
     }
 
     private function column(string $field, string $header, string $width, string $align = 'right', ?string $format = null, array $cellStyle = []): array

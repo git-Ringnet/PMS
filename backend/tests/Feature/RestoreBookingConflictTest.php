@@ -460,7 +460,11 @@ class RestoreBookingConflictTest extends TestCase
         $this->activeRoom('BR294-B', '107', '2026-10-10', '2026-10-12');
         $cancelled = $this->cancelledRoom('BR294-C', '106', '2026-10-10', '2026-10-12');
 
-        $this->restoreRoom($cancelled)->assertOk()->assertJsonPath('needs_duplicate_confirm', true);
+        // Note 27/10: kiểm tra over + thông số trước; không thỏa thì chặn ngay, không hỏi xóa số phòng trùng.
+        $this->restoreRoom($cancelled)
+            ->assertStatus(422)
+            ->assertJsonPath('blocked_by_over', true)
+            ->assertJsonMissingPath('needs_duplicate_confirm');
 
         $this->restoreRoom($cancelled, ['clear_duplicate_rooms' => true])
             ->assertStatus(422)
@@ -574,5 +578,72 @@ class RestoreBookingConflictTest extends TestCase
         $cancelled->refresh();
         $this->assertSame(BookingRoom::STATUS_BOOKED, (int) $cancelled->status);
         $this->assertSame('106', $cancelled->room_number);
+    }
+
+    public function test_row_294_same_day_room_can_be_moved_to_another_room_number(): void
+    {
+        $room = $this->activeRoom('BR294-SD', '106', '2026-10-10', '2026-10-10');
+
+        $res = $this->putJson("/api/bookings/{$room->booking_id}/rooms/{$room->id}", ['room_number' => '107']);
+
+        $res->assertOk();
+        $this->assertSame('107', $room->fresh()->room_number);
+        $this->assertSame('2026-10-10', $room->fresh()->departure_date->toDateString());
+    }
+
+    public function test_row_294_overnight_room_still_cannot_be_changed_into_same_day_without_day_use(): void
+    {
+        $room = $this->activeRoom('BR294-ON', '106', '2026-10-10', '2026-10-12');
+
+        $this->putJson("/api/bookings/{$room->booking_id}/rooms/{$room->id}", ['departure_date' => '2026-10-10', 'is_day_use' => false])
+            ->assertStatus(422);
+        $this->assertSame('2026-10-12', $room->fresh()->departure_date->toDateString());
+    }
+
+    public function test_row_294_note_2710_full_scenario_same_day_booking_restore_then_move_room(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'AllowOverRoomTypeRoomKind'], ['value' => '1']);
+        // 1/9 - 1/9 phòng 106 (hủy) và booking 1/9 - 2/9 đã được gán 106 sau đó.
+        $cancelled = $this->cancelledRoom('BR294-X', '106', '2026-10-10', '2026-10-10');
+        $other = $this->activeRoom('BR294-Y', '106', '2026-10-10', '2026-10-11');
+
+        // Phải báo trùng (không được thành công gây trùng phòng 106 cho cả hai booking)
+        $this->postJson("/api/bookings/{$cancelled->booking_id}/restore")
+            ->assertOk()->assertJsonPath('needs_duplicate_confirm', true);
+        $this->assertSame(BookingRoom::STATUS_CANCELLED, (int) $cancelled->fresh()->status);
+
+        // Chọn Có: khôi phục và xóa số phòng trùng; booking kia vẫn giữ 106
+        $this->postJson("/api/bookings/{$cancelled->booking_id}/restore", ['clear_duplicate_rooms' => true])
+            ->assertOk()->assertJsonPath('success', true);
+        $this->assertNull($cancelled->fresh()->room_number);
+        $this->assertSame('106', $other->fresh()->room_number);
+
+        // Ra Kế hoạch phòng gán/kéo chuyển phòng cho booking ngày đến = ngày đi: không còn báo lỗi ngày đi
+        $this->putJson("/api/bookings/{$cancelled->booking_id}/rooms/{$cancelled->id}", ['room_number' => '107'])->assertOk();
+        $this->assertSame('107', $cancelled->fresh()->room_number);
+    }
+
+    public function test_row_294_same_day_room_cannot_be_moved_onto_a_room_number_held_by_another_booking(): void
+    {
+        $this->activeRoom('BR294-H', '107', '2026-10-10', '2026-10-11');
+        $room = $this->activeRoom('BR294-SD2', '106', '2026-10-10', '2026-10-10');
+
+        $this->putJson("/api/bookings/{$room->booking_id}/rooms/{$room->id}", ['room_number' => '107'])->assertStatus(422);
+        $this->assertSame('106', $room->fresh()->room_number);
+    }
+
+    public function test_row_294_full_booking_restore_with_duplicate_and_over_is_blocked_immediately_when_over_not_allowed(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'AllowOverRoomTypeRoomKind'], ['value' => '0']);
+        $this->activeRoom('BR294-A2', '106', '2026-10-10', '2026-10-12');
+        $this->activeRoom('BR294-B2', '107', '2026-10-10', '2026-10-12');
+        $cancelled = $this->cancelledRoom('BR294-C2', '106', '2026-10-10', '2026-10-12');
+
+        $this->postJson("/api/bookings/{$cancelled->booking_id}/restore")
+            ->assertStatus(422)
+            ->assertJsonPath('blocked_by_over', true)
+            ->assertJsonPath('message', 'Loại phòng đang bị over không thể khôi phục booking');
+        $this->assertSame(BookingRoom::STATUS_CANCELLED, (int) $cancelled->fresh()->status);
+        $this->assertSame('106', $cancelled->fresh()->room_number);
     }
 }
