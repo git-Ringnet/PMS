@@ -57,3 +57,48 @@ test('row 295 (note 27/10): same-day rooms checked out on the viewed day are lis
   assert.match(source, /status === 2 && arrTime !== null && arrTime === depTime/)
   assert.match(source, /return arrTime === targetTime/)
 })
+
+// ---------------------------------------------------------------- Dòng 298, 299 (note 27/10)
+const resolveIdTypeName = extractFunction('resolveIdTypeName')
+const formatResidenceLabel = extractFunction('formatResidenceLabel')
+const idTypes = {
+  CCCD: { code: 'CCCD', name: 'Căn cước công dân' },
+  'CĂN CƯỚC CÔNG DÂN': { code: 'CCCD', name: 'Căn cước công dân' },
+  GPLX: { code: 'GPLX', name: 'Giấy phép lái xe' },
+}
+
+test('row 298: adult and child export the same document type name (Căn cước công dân, not CCCD)', () => {
+  assert.equal(resolveIdTypeName('CCCD', false, idTypes), 'Căn cước công dân') // người lớn
+  assert.equal(resolveIdTypeName('CCCD', false, idTypes), 'Căn cước công dân') // trẻ em cùng hàm
+  assert.equal(resolveIdTypeName('cccd', false, idTypes), 'Căn cước công dân')
+})
+
+test('row 298: passport, other document types and missing data', () => {
+  assert.equal(resolveIdTypeName('CCCD', true, idTypes), 'Hộ chiếu')
+  assert.equal(resolveIdTypeName('GPLX', false, idTypes), 'Giấy phép lái xe')
+  assert.equal(resolveIdTypeName('', false, idTypes), 'Căn cước công dân')
+  assert.equal(resolveIdTypeName('KHONG_CO', false, idTypes), 'Căn cước công dân')
+  assert.equal(resolveIdTypeName('CCCD', false, undefined), 'Căn cước công dân')
+})
+
+test('row 298: Khánh Hòa Excel uses the shared document type helper', () => {
+  const excel = source.slice(source.indexOf('function exportToExcel('), source.indexOf('function formatIsoDate('))
+  assert.match(excel, /getIdTypeDisplayName\(r\)/)
+  assert.doesNotMatch(excel, /r\.loaiGiayTo/)
+  assert.doesNotMatch(excel, /GHI CHÚ CHUYỂN PHÒNG|transferNote/)
+})
+
+test('row 299: Nơi cư trú hiện nay is "code - name_new_form"', () => {
+  assert.equal(formatResidenceLabel({ code: '1', name_new_form: 'Thường trú' }), '1 - Thường trú')
+  assert.equal(formatResidenceLabel({ code: '2', name_new_form: 'Tạm trú' }), '2 - Tạm trú')
+  assert.equal(formatResidenceLabel({ code: '3', name_new_form: 'Khác' }), '3 - Khác')
+  assert.equal(formatResidenceLabel({ name_new_form: 'Khác' }), 'Khác')
+  assert.equal(formatResidenceLabel(null), '')
+  assert.equal(formatResidenceLabel({ code: '1' }), '')
+})
+
+test('row 299: Vietnamese template uses the code - name_new_form label', () => {
+  const vn = source.slice(source.indexOf('function exportToExcelVn('), source.indexOf('function exportToExcelVn(') + 6000)
+  assert.match(vn, /formatResidenceLabel\(getResidenceType\(r\.residenceType\)\)/)
+  assert.match(vn, /DANH SÁCH THÔNG BÁO LƯU TRÚ CHO CÔNG DÂN VIỆT NAM/)
+})

@@ -101,6 +101,25 @@ function getResidenceType(value) {
   return residenceTypeMap.value[String(value).trim()] || null
 }
 
+// Dòng 298 (note 27/10): tên loại giấy tờ xuất Excel đồng bộ giữa người lớn và trẻ em
+// (CCCD -> "Căn cước công dân", GPLX -> "Giấy phép lái xe"...), có số hộ chiếu thì là "Hộ chiếu".
+function resolveIdTypeName(idType, hasPassport, idTypeLookup) {
+  if (hasPassport) return 'Hộ chiếu'
+  const it = idType ? (idTypeLookup || {})[String(idType).trim().toUpperCase()] : null
+  return it?.name || 'Căn cước công dân'
+}
+
+function getIdTypeDisplayName(row) {
+  return resolveIdTypeName(row.idType, !!row.hoChieu, idTypeMap.value)
+}
+
+// Dòng 299 (note 27/10): Nơi cư trú hiện nay = residence_types.code - residence_types.name_new_form (vd: 1 - Thường trú)
+function formatResidenceLabel(residenceType) {
+  if (!residenceType?.name_new_form) return ''
+  const code = residenceType.code
+  return code !== null && code !== undefined && code !== '' ? `${code} - ${residenceType.name_new_form}` : residenceType.name_new_form
+}
+
 function getPoliceIdType(row) {
   const it = row.idType ? idTypeMap.value[String(row.idType).trim().toUpperCase()] : null
   if (it?.name_according_police) return it.name_according_police
@@ -515,7 +534,7 @@ function exportToExcel(rows) {
     html += `<td style="border: 0.5pt solid #000000;">${genderDisplay}</td>`
     html += `<td style="border: 0.5pt solid #000000;">${isVnText}</td>`
     html += `<td style="border: 0.5pt solid #000000; mso-number-format:'\\@';">${r.soGiayTo || ''}</td>`
-    html += `<td style="border: 0.5pt solid #000000;">${r.loaiGiayTo || ''}</td>`
+    html += `<td style="border: 0.5pt solid #000000;">${getIdTypeDisplayName(r)}</td>`
     html += `<td style="border: 0.5pt solid #000000;">${nationalityName}</td>`
     html += `<td style="border: 0.5pt solid #000000;">${r.diaChi || ''}</td>`
     html += `<td style="border: 0.5pt solid #000000;">${r.phuongXa || ''}</td>`
@@ -861,7 +880,7 @@ function exportToExcelVn(rows) {
 
     const docTypeVal = getPoliceIdType(r)
     const addressDetail = r.diaChi !== '_' ? r.diaChi : ''
-    const currentResidence = getResidenceType(r.residenceType)?.name_new_form || ''
+    const currentResidence = formatResidenceLabel(getResidenceType(r.residenceType))
 
     html += `<tr>`
     html += `<td style="text-align: center; border: 0.5pt solid #000000;">${idx + 1}</td>`
