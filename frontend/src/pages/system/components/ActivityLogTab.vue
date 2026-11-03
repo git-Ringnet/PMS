@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onActivated, onDeactivated, onMounted, onUnmounted, watch } from 'vue'
 import { fetchActivityLogs, fetchActivityLogStats } from '@/services/activity-log-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
@@ -117,10 +117,28 @@ const selectedLog = ref(null)
 
 // Debounce timer
 let searchTimeout = null
+let activityLogListenersActive = false
+let activityLogWasDeactivated = false
+let activityLogInstanceActive = false
+let activityLogReady = false
 
-onMounted(async () => {
+function startActivityLogListeners() {
+  if (activityLogListenersActive) return
+  activityLogListenersActive = true
   window.addEventListener('keydown', handleTableKeydown)
   window.addEventListener('click', handleTableClickOutside)
+}
+
+function stopActivityLogListeners() {
+  if (!activityLogListenersActive) return
+  activityLogListenersActive = false
+  window.removeEventListener('keydown', handleTableKeydown)
+  window.removeEventListener('click', handleTableClickOutside)
+}
+
+onMounted(async () => {
+  activityLogInstanceActive = true
+  startActivityLogListeners()
   try {
     const res = await http.get('/system-date')
     if (res.data?.data?.system_date) {
@@ -129,13 +147,35 @@ onMounted(async () => {
   } catch (e) {
     // fallback
   }
-  loadStats()
-  handleSearch()
+  activityLogReady = true
+  if (activityLogInstanceActive) {
+    activityLogWasDeactivated = false
+    loadStats()
+    handleSearch()
+  }
 })
 
 onUnmounted(() => {
-  window.removeEventListener('keydown', handleTableKeydown)
-  window.removeEventListener('click', handleTableClickOutside)
+  activityLogInstanceActive = false
+  stopActivityLogListeners()
+})
+
+onActivated(() => {
+  activityLogInstanceActive = true
+  startActivityLogListeners()
+  if (activityLogWasDeactivated && activityLogReady) {
+    activityLogWasDeactivated = false
+    loadStats()
+    handleSearch()
+  }
+})
+
+onDeactivated(() => {
+  activityLogInstanceActive = false
+  activityLogWasDeactivated = true
+  clearTimeout(searchTimeout)
+  activeSearchCol.value = null
+  stopActivityLogListeners()
 })
 
 // Set quick date preset

@@ -942,16 +942,13 @@ watch(() => props.show, (v) => {
     loadGuestDefinitions()
     loadProvinces()
   }
-})
+}, { immediate: true })
 
 watch(() => props.guest, () => {
   if (props.show) resetForm()
 })
 
 onMounted(() => {
-  loadNationalities()
-  loadGuestDefinitions()
-  loadProvinces()
   window.addEventListener('keydown', handleKeyDown)
 })
 

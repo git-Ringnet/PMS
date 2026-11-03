@@ -59,7 +59,7 @@ onUnmounted(() => {
   </div>
   <MainLayout v-else>
     <router-view v-slot="{ Component, route: activeRoute }">
-      <KeepAlive>
+      <KeepAlive :max="3">
         <component
           :is="Component"
           v-if="activeRoute.meta.keepAlive"

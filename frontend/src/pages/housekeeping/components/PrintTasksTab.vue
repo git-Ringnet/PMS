@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, onActivated, onDeactivated, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { useHkStore, GROUP_COLORS } from '@/stores/hk-store'
 import { compareRooms, getStatusSymbols as buildStatusSymbols, buildWorksheetSheets, buildSupervisorRooms } from '@/utils/hk-room-status'
@@ -329,9 +329,41 @@ function handleGlobalKeydown(e) {
 // ─────────────────────────────────────────────────────────────
 // Load
 // ─────────────────────────────────────────────────────────────
-onMounted(async () => {
+async function refreshPrintTasksFromRealtime() {
+  await roomStore.fetchRooms({ silent: true })
+  if (selectedShiftId.value) {
+    await hkStore.loadAssignment(workDate.value, selectedShiftId.value)
+  }
+}
+
+let printTasksListenersActive = false
+let printTasksWasDeactivated = false
+
+function startPrintTasksListeners() {
+  if (printTasksListenersActive) return
+  printTasksListenersActive = true
   document.addEventListener('click', onDocClick)
   window.addEventListener('keydown', handleGlobalKeydown)
+  if (echo) {
+    echo.channel('pms-channel')
+      .listen('.room.status.updated', refreshPrintTasksFromRealtime)
+      .listen('.reservation.updated', refreshPrintTasksFromRealtime)
+  }
+}
+
+function stopPrintTasksListeners() {
+  if (!printTasksListenersActive) return
+  printTasksListenersActive = false
+  document.removeEventListener('click', onDocClick)
+  window.removeEventListener('keydown', handleGlobalKeydown)
+  if (echo) {
+    echo.channel('pms-channel').stopListening('.room.status.updated', refreshPrintTasksFromRealtime)
+    echo.channel('pms-channel').stopListening('.reservation.updated', refreshPrintTasksFromRealtime)
+  }
+}
+
+onMounted(async () => {
+  startPrintTasksListeners()
   
   // Tải ngày hệ thống của khách sạn trước
   try {
@@ -372,32 +404,22 @@ onMounted(async () => {
     selectedRoomIds.value = new Set(preselectedRoomIds.filter(id => availableIds.has(id)))
   }
 
-  // Lắng nghe sự kiện realtime qua Laravel Echo để đồng bộ trạng thái phòng
-  if (echo) {
-    echo.channel('pms-channel')
-      .listen('.room.status.updated', async () => {
-        await roomStore.fetchRooms({ silent: true })
-        if (selectedShiftId.value) {
-          await hkStore.loadAssignment(workDate.value, selectedShiftId.value)
-        }
-      })
-      .listen('.reservation.updated', async () => {
-        await roomStore.fetchRooms({ silent: true })
-        if (selectedShiftId.value) {
-          await hkStore.loadAssignment(workDate.value, selectedShiftId.value)
-        }
-      })
+})
+
+onActivated(() => {
+  startPrintTasksListeners()
+  if (printTasksWasDeactivated) {
+    printTasksWasDeactivated = false
+    refreshPrintTasksFromRealtime()
   }
 })
 
-onUnmounted(() => {
-  document.removeEventListener('click', onDocClick)
-  window.removeEventListener('keydown', handleGlobalKeydown)
-  if (echo) {
-    echo.channel('pms-channel').stopListening('.room.status.updated')
-    echo.channel('pms-channel').stopListening('.reservation.updated')
-  }
+onDeactivated(() => {
+  printTasksWasDeactivated = true
+  stopPrintTasksListeners()
 })
+
+onUnmounted(stopPrintTasksListeners)
 
 watch(sortedShifts, (newShifts) => {
   if (newShifts && newShifts.length > 0 && !selectedShiftId.value) {

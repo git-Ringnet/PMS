@@ -18,6 +18,11 @@ import { useUiStore } from '@/stores/ui-store'
 
 const route = useRoute()
 const router = useRouter()
+const usesOwnActivityLog = computed(() => (
+  route.path.startsWith('/reservation')
+  || route.path.startsWith('/frontdesk')
+  || route.path.startsWith('/housekeeping')
+))
 const activeOutlets = ref([])
 const dynamicReports = ref([])
 // Dòng 327: menu Báo cáo theo cấu hình từng module (nhóm, thứ tự), chỉ gồm báo cáo người dùng được xem
@@ -446,14 +451,12 @@ onMounted(() => {
   // Thiết lập thuộc tính lang của HTML document
   document.documentElement.setAttribute('lang', currentLang.value)
   
-  const savedTheme = localStorage.getItem('theme')
-  if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-    isDark.value = true
-    document.documentElement.classList.add('dark')
-  } else {
-    isDark.value = false
-    document.documentElement.classList.remove('dark')
-  }
+  // PMS dùng giao diện sáng thống nhất trên mọi trình duyệt.
+  // Không tự kích hoạt dark mode theo thiết lập của hệ điều hành/trình duyệt
+  // vì các màn hình nghiệp vụ legacy chưa hỗ trợ dark mode đồng nhất.
+  isDark.value = false
+  document.documentElement.classList.remove('dark')
+  localStorage.setItem('theme', 'light')
   
   // Initialize color customization tabs/values
   const savedBg = authStore.themeColor
@@ -1570,7 +1573,7 @@ function handleHeaderBookingSelected(booking) {
 
     <!-- Main Content Area -->
     <main class="flex-1 min-h-0 min-w-0 overflow-hidden flex flex-col bg-white">
-      <ActivityLogTab v-if="route.query.tab === 'history'" />
+      <ActivityLogTab v-if="route.query.tab === 'history' && !usesOwnActivityLog" />
       <slot v-else />
     </main>
 

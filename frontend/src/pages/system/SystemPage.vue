@@ -322,7 +322,7 @@ onMounted(() => {
 
       <!-- Right: Main Content Area -->
       <main class="flex-1 bg-slate-50 overflow-hidden flex flex-col select-text">
-        <KeepAlive>
+        <KeepAlive :max="1">
           <ActivityLogTab v-if="activeTab === 'activity_log'" />
         </KeepAlive>
         <!-- Render Active Tab Component -->

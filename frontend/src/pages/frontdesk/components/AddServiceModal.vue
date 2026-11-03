@@ -394,7 +394,6 @@ const roomPostMode = computed(() => {
 // Reset & Load khi modal mở
 // ─────────────────────────────────────────────
 onMounted(() => {
-  loadFoServices()
   window.addEventListener('resize', resetModalPosition)
   document.addEventListener('click', handleDocumentClick)
 })

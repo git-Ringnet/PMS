@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, watch, computed, onBeforeUnmount } from 'vue'
 import { ChevronDown, X, Plus, Save } from '@lucide/vue'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
 import http from '@/services/http'
@@ -464,10 +464,6 @@ const handleClose = () => {
 
 watch(() => props.show, (val) => {
   if (val) resetModalPosition()
-})
-
-onMounted(() => {
-  fetchPaymentMethods()
 })
 
 onBeforeUnmount(() => {
