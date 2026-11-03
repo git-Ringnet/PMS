@@ -135,14 +135,17 @@ class RoomPlanBookingRoomController extends Controller
                         ], 422);
                     }
 
-                    $av = $this->availability->getAvailability(
+                    // Chỉ các đêm MỚI thêm vào cần thêm 1 phòng; rút ngắn / giữ nguyên không bị over.
+                    $av = $this->availability->getAvailabilityAfterAddingNights(
                         (int) $bookingRoom->room_class_id,
                         $arrivalDate,
                         $departureDate,
+                        $currentArrival,
+                        $currentDeparture,
                         $bookingRoom->id,
                     );
 
-                    if ($av < 0 && !$allowOver) {
+                    if ($av !== null && $av < 0 && !$allowOver) {
                         return response()->json([
                             'success' => false,
                             'message' => 'Không đủ phòng trống sau khi cập nhật. (AV = ' . $av . ')',
@@ -150,7 +153,7 @@ class RoomPlanBookingRoomController extends Controller
                         ], 422);
                     }
 
-                    if ($av < 0 && empty($validated['confirm_overbooking'])) {
+                    if ($av !== null && $av < 0 && empty($validated['confirm_overbooking'])) {
                         return response()->json([
                             'success' => false,
                             'code' => 'overbooking_confirmation_required',

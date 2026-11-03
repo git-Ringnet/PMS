@@ -1093,6 +1093,7 @@ class NightAuditController extends Controller
         $request->validate([
             'booking_room_id' => 'required|string|exists:booking_rooms,id',
             'nights'          => 'required|integer|min:1|max:30',
+            'confirm_overbooking' => 'sometimes|boolean',
         ]);
 
         $room   = BookingRoom::with('booking')->findOrFail($request->booking_room_id);
@@ -1108,6 +1109,72 @@ class NightAuditController extends Controller
 
         $oldDeparture = Carbon::parse($room->departure_date);
         $newDeparture = $oldDeparture->copy()->addDays($nights);
+
+        // Dòng 286: gia hạn phải kiểm tra các đêm gia hạn thêm còn dùng được không.
+        $availability = app(\App\Services\RoomAvailabilityService::class);
+        $oldDepartureStr = $oldDeparture->toDateString();
+        $newDepartureStr = $newDeparture->toDateString();
+        $arrivalStr = Carbon::parse($room->arrival_date)->toDateString();
+
+        // 1. Số phòng đã gán cho booking khác (hoặc đang bị khóa) trong các đêm gia hạn thêm
+        if (!empty($room->room_number)) {
+            $conflict = $availability->findRoomNumberConflict(
+                (string) $room->room_number,
+                $oldDepartureStr,
+                $newDepartureStr,
+                $room->id,
+                $room->booking_id
+            );
+            if ($conflict) {
+                $code = $conflict->booking?->booking_code ?: ('#' . $conflict->booking_id);
+
+                return response()->json([
+                    'success' => false,
+                    'code'    => 'room_number_conflict',
+                    'message' => "Phòng {$room->room_number} đã được đặt cho đăng ký {$code} ("
+                        . Carbon::parse($conflict->arrival_date)->format('d/m/Y') . ' - '
+                        . Carbon::parse($conflict->departure_date)->format('d/m/Y')
+                        . '), không thể gia hạn.',
+                ], 422);
+            }
+            if ($availability->hasBlockingLock((string) $room->room_number, $oldDepartureStr, $newDepartureStr)) {
+                return response()->json([
+                    'success' => false,
+                    'code'    => 'room_locked',
+                    'message' => "Phòng {$room->room_number} đang bị khóa (OOO/OOS) trong thời gian gia hạn.",
+                ], 422);
+            }
+        }
+
+        // 2. Loại phòng còn đủ phòng trống các đêm thêm không (AllowOverRoomTypeRoomKind)
+        $av = $availability->getAvailabilityAfterAddingNights(
+            (int) $room->room_class_id,
+            $arrivalStr,
+            $newDepartureStr,
+            $arrivalStr,
+            $oldDepartureStr,
+            $room->id
+        );
+        $allowOver = (string) (HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->value('value') ?? '0') === '1';
+        if ($av !== null && $av < 0) {
+            if (!$allowOver) {
+                return response()->json([
+                    'success' => false,
+                    'code'    => 'no_availability',
+                    'message' => 'Loại phòng đã hết phòng trống trong thời gian gia hạn, không thể cập nhật. (AV = ' . $av . ')',
+                    'av'      => $av,
+                ], 422);
+            }
+            if (!$request->boolean('confirm_overbooking')) {
+                return response()->json([
+                    'success' => false,
+                    'code'    => 'overbooking_confirmation_required',
+                    'requires_confirmation' => true,
+                    'message' => 'Loại phòng đang bị over (AV = ' . $av . '), bạn có muốn tiếp tục?',
+                    'av'      => $av,
+                ], 409);
+            }
+        }
 
         DB::transaction(function () use ($room, $newDeparture, $nights) {
             // Cập nhật departure_date của phòng thuê
@@ -1149,6 +1216,9 @@ class NightAuditController extends Controller
             'success'        => true,
             'message'        => "Gia hạn thành công {$nights} đêm. Ngày đi mới: " . $newDeparture->toDateString(),
             'departure_date' => $newDeparture->toDateString(),
+            'warning'        => ($av !== null && $av < 0)
+                ? 'Cảnh báo: số phòng trống của loại phòng đã bị âm (AV = ' . $av . ').'
+                : null,
         ]);
     }
 

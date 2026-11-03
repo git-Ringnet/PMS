@@ -295,7 +295,7 @@ class RoomPlanBookingRoomDateTest extends TestCase
     {
         $availability = Mockery::mock(RoomAvailabilityService::class);
         $availability->shouldReceive('getSystemDate')->andReturn(Carbon::parse('2026-09-01'));
-        $availability->shouldReceive('getAvailability')->andReturn(...$values);
+        $availability->shouldReceive('getAvailabilityAfterAddingNights')->andReturn(...$values);
         $availability->shouldReceive('isRoomNumberOccupied')->andReturn($roomOccupied);
         $this->app->instance(RoomAvailabilityService::class, $availability);
     }

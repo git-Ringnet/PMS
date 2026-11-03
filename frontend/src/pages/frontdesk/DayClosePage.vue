@@ -687,15 +687,54 @@ async function confirmExtendStay() {
     isLoading.value = true
     showExtendStayModal.value = false
 
+    // Dòng 286: gia hạn phải check trùng số phòng và thông số over.
+    // Gia hạn lần lượt từng phòng; phòng nào bị chặn thì báo rõ lý do, không làm dừng cả lượt.
+    let confirmOver = null // null: chưa hỏi, true: đồng ý cho các phòng còn lại, false: từ chối
+    const extended = []
+    const blocked = []
+
     for (const item of selected) {
       const parts = item.id.split('-')
       const bookingRoomId = parts[parts.length - 1]
-      await http.post('/night-audit/extend-stay', {
-        booking_room_id: bookingRoomId,
-        nights: nightsToAdd
-      })
+      const label = item.roomNumber || item.room_number || item.name || bookingRoomId
+      const payload = { booking_room_id: bookingRoomId, nights: nightsToAdd }
+
+      try {
+        try {
+          await http.post('/night-audit/extend-stay', payload)
+        } catch (err) {
+          const data = err.response?.data
+          if (err.response?.status !== 409 || data?.code !== 'overbooking_confirmation_required') throw err
+
+          if (confirmOver === null || confirmOver === false) {
+            isLoading.value = false
+            const ok = await uiStore.confirm({
+              title: 'Loại phòng đang bị over',
+              message: `${data.message} (Phòng ${label})`,
+              confirmText: 'Có',
+              cancelText: 'Không'
+            })
+            isLoading.value = true
+            confirmOver = ok
+          }
+          if (!confirmOver) {
+            blocked.push(`${label}: không gia hạn (loại phòng bị over)`)
+            continue
+          }
+          await http.post('/night-audit/extend-stay', { ...payload, confirm_overbooking: true })
+        }
+        extended.push(label)
+      } catch (err) {
+        blocked.push(`${label}: ${err.response?.data?.message || 'Có lỗi xảy ra khi gia hạn phòng.'}`)
+      }
     }
-    uiStore.showToast(`Đã gia hạn thành công ${nightsToAdd} đêm cho ${selected.length} phòng!`, 'success')
+
+    if (extended.length > 0) {
+      uiStore.showToast(`Đã gia hạn thành công ${nightsToAdd} đêm cho ${extended.length} phòng!`, 'success')
+    }
+    if (blocked.length > 0) {
+      uiStore.showToast(`Không gia hạn được ${blocked.length} phòng — ${blocked.join('; ')}`, 'error')
+    }
     await fetchRealData()
   } catch (err) {
     console.error(err)
