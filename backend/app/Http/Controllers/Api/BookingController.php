@@ -961,7 +961,10 @@ class BookingController extends Controller
         }
 
         if ((int) $booking->status === Booking::STATUS_CHECKOUT) {
-            return $this->updateCheckedOutBookingMetadata($request, $booking);
+            return response()->json([
+                'success' => false,
+                'message' => 'Đăng ký đã check out, không thể lấy thêm phòng.',
+            ], 422);
         }
 
         if (in_array($booking->status, [Booking::STATUS_CHECKOUT, Booking::STATUS_DELETED], true)) {
@@ -1102,6 +1105,112 @@ class BookingController extends Controller
             'message' => 'Cập nhật thông tin đăng ký đã checkout thành công.',
         ]);
     }
+    /**
+     * Dòng 336 (note 27/10): đăng ký đã check out vẫn sửa trên màn hình thông tin đăng ký thường.
+     * Cho chỉnh các thông tin đăng ký; ngày đến/đi vẫn kiểm tra với giai đoạn phòng chi tiết như
+     * booking bình thường. Không đụng tới phòng, không đổi trạng thái đăng ký đã out.
+     */
+    private function updateCheckedOutBooking(Request $request, Booking $booking)
+    {
+        $user = $request->user();
+        $branchId = $request->attributes->get('_branch_id') ?? $user?->primary_branch_id;
+        $canUpdate = app(\App\Services\CheckoutRoleConfigService::class)
+            ->canUpdateCheckedOutBooking($user, $branchId !== null ? (int) $branchId : null);
+        if (!$canUpdate) {
+            return response()->json(['success' => false, 'message' => 'Bạn không có quyền chỉnh sửa thông tin đăng ký đã checkout.'], 403);
+        }
+
+        $validated = $request->validate([
+            'booking_name'             => 'sometimes|required|string|max:255',
+            'arrival_date'             => 'sometimes|required|date',
+            'departure_date'           => 'sometimes|required|date|after_or_equal:arrival_date',
+            'expired_date'             => 'nullable|date',
+            'arrival_flight'           => 'nullable|string|max:50',
+            'arrival_flight_date'      => 'nullable|date',
+            'departure_flight'         => 'nullable|string|max:50',
+            'departure_flight_date'    => 'nullable|date',
+            'registration_status_id'   => 'sometimes|required|exists:registration_statuses,booking_status_id',
+            'color'                    => 'nullable|string|max:20',
+            'is_master_room_rate'      => 'nullable|boolean',
+            'breakfast_included'       => 'nullable|boolean',
+            'has_vat'                  => 'nullable|boolean',
+            'company_id'               => 'sometimes|required|exists:companies,id',
+            'market_id'                => 'sometimes|required|exists:markets,id',
+            'customer_source_id'       => 'sometimes|required|exists:customer_sources,id',
+            'branch_id'                => 'nullable|exists:branches,id',
+            'booker_id'                => 'nullable|exists:bookers,id',
+            'contact_name'             => 'nullable|string|max:255',
+            'contact_email'            => 'nullable|email|max:255',
+            'contact_phone'            => 'nullable|string|max:50',
+            'payment_method_id'        => 'nullable|exists:payment_methods,id',
+            'payment_value'            => 'nullable|numeric|min:0',
+            'commission'               => 'nullable|numeric|min:0',
+            'voucher_info'             => 'nullable|string|max:255',
+            'external_booking_code'    => 'nullable|string|max:100',
+            'event_code'               => 'nullable|string|max:50',
+            'note'                     => 'nullable|string',
+            'special_requests'         => 'nullable|string',
+            'sales_person'             => 'nullable|string|max:100',
+            'shuttle_info'             => 'nullable|array',
+        ], [
+            'registration_status_id.exists' => 'Tình trạng đăng ký không tồn tại!',
+        ]);
+
+        if ($request->has('room_allocations') && is_array($request->room_allocations)
+            && count(array_filter($request->room_allocations, fn ($a) => (int) ($a['quantity'] ?? 0) > 0)) > 0) {
+            return response()->json(['success' => false, 'message' => 'Đăng ký đã check out, không thể thêm hoặc chỉnh phòng.'], 422);
+        }
+
+        $newArrival = isset($validated['arrival_date'])
+            ? Carbon::parse($validated['arrival_date'])->toDateString()
+            : Carbon::parse($booking->arrival_date)->toDateString();
+        $newDeparture = isset($validated['departure_date'])
+            ? Carbon::parse($validated['departure_date'])->toDateString()
+            : Carbon::parse($booking->departure_date)->toDateString();
+
+        if ($newDeparture < $newArrival) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Ngày đi phải lớn hơn hoặc bằng ngày đến.',
+                'errors' => ['departure_date' => ['Ngày đi phải lớn hơn hoặc bằng ngày đến.']],
+            ], 422);
+        }
+
+        // Giai đoạn đăng ký phải bao trùm giai đoạn của mọi phòng chi tiết (giống booking thường).
+        $datesChanged = $newArrival !== Carbon::parse($booking->arrival_date)->toDateString()
+            || $newDeparture !== Carbon::parse($booking->departure_date)->toDateString();
+        if ($datesChanged) {
+            $rooms = $booking->bookingRooms()->whereIn('status', self::PERIOD_BOUND_ROOM_STATUSES)->get();
+            foreach ($rooms as $room) {
+                if ($this->roomOutsideBookingPeriod($room, $newArrival, $newDeparture)) {
+                    return response()->json(['success' => false, 'message' => self::BOOKING_PERIOD_MISMATCH_MESSAGE], 422);
+                }
+            }
+            $validated['num_of_days'] = $booking->is_day_use && $newArrival === $newDeparture
+                ? 0
+                : Carbon::parse($newArrival)->diffInDays(Carbon::parse($newDeparture));
+        }
+
+        $logSnapshot = \App\Services\ActivityLogService::snapshotBooking($booking);
+        $validated['edit_count'] = (int) $booking->edit_count + 1;
+        $validated['edit_date'] = now();
+        $validated['updated_by'] = $user?->username ?? 'system';
+        $validated['updated_by_user_id'] = $user?->getKey();
+        $booking->fill($validated)->save();
+        $booking->refresh()->load(['customerSource', 'booker']);
+        try {
+            \App\Services\ActivityLogService::logBookingChanges($booking, $logSnapshot, $request);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log checked-out booking update error: ' . $e->getMessage());
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $booking,
+            'message' => 'Cập nhật thông tin đăng ký đã checkout thành công.',
+        ]);
+    }
+
     public function update(Request $request, $id)
     {
         $booking = Booking::find($id);
@@ -1114,10 +1223,10 @@ class BookingController extends Controller
         }
 
         if ((int) $booking->status === Booking::STATUS_CHECKOUT) {
-            return $this->updateCheckedOutBookingMetadata($request, $booking);
+            return $this->updateCheckedOutBooking($request, $booking);
         }
 
-        // Không cho sửa booking đã checkout hoặc đã xóa
+        // Không cho sửa booking đã xóa
         if ((int) $booking->status === Booking::STATUS_DELETED) {
             return response()->json([
                 'success' => false,

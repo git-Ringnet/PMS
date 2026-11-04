@@ -2242,7 +2242,8 @@ function handleDrop(targetKey) {
 
 // ==================== COMPUTEDS ====================
 const activeTab = computed(() => tabs.value.find(t => t.id === activeTabId.value))
-const isCheckoutMetadataEdit = computed(() => isEditModal.value && Number(activeTab.value?.status) === 2)
+// Dòng 336: đăng ký đã checkout vẫn sửa trên modal thông tin đăng ký thường (không còn màn hình riêng).
+const isCheckedOutEdit = computed(() => isEditModal.value && Number(activeTab.value?.status) === 2)
 // Dòng 433: đăng ký đã hủy vẫn xem được thông tin nhưng không cho chỉnh sửa.
 const isModalReadonly = computed(() => isEditModal.value && isRegistrationReadonly(activeTab.value?.status))
 
@@ -4570,46 +4571,6 @@ async function openEditModal() {
   modalSubTab.value = 'info'
   isModalOpen.value = true
 }
-async function saveCheckoutMetadata() {
-  const tab = activeTab.value
-  if (!tab || Number(tab.status) !== 2) return
-  if (!bookingCapabilities.value.can_update_checkout_booking) {
-    uiStore.showToast('Bạn không có quyền chỉnh sửa thông tin đăng ký đã checkout.', 'error')
-    return
-  }
-  const bookingName = String(modalForm.value.bookingName || '').trim()
-  if (!bookingName) {
-    uiStore.showToast('Vui lòng nhập tên đăng ký!', 'warning')
-    return
-  }
-
-  isSavingModal.value = true
-  try {
-    const payload = {
-      booking_name: bookingName,
-      customer_source_id: modalForm.value.customerSourceId || null,
-      booker_id: modalForm.value.bookerId || null,
-      note: modalForm.value.note || null,
-    }
-    const res = await http.put(`/bookings/${tab.dbId}`, payload)
-    const updated = res.data?.data || {}
-    const source = customerSources.value.find(item => String(item.id) === String(updated.customer_source_id ?? payload.customer_source_id))
-    Object.assign(tab, {
-      bookingName: updated.booking_name ?? payload.booking_name,
-      customerSourceId: updated.customer_source_id ?? payload.customer_source_id,
-      customerSource: updated.customer_source?.name || source?.name || '—',
-      bookerId: updated.booker_id ?? payload.booker_id,
-      note: updated.note ?? payload.note ?? '',
-    })
-    closeModal()
-    uiStore.showToast('Đã cập nhật thông tin đăng ký đã checkout.', 'success')
-    notifyRoomUpdates(tab.dbId)
-  } catch (err) {
-    uiStore.showToast(err.response?.data?.message || 'Không thể cập nhật thông tin đăng ký.', 'error')
-  } finally {
-    isSavingModal.value = false
-  }
-}
 function handleBookerChange() {
   const selected = bookers.value.find(b => b.id === Number(modalForm.value.bookerId))
   if (selected) {
@@ -5461,7 +5422,7 @@ async function handleSaveNewBooking() {
 
   const sysDateStr = systemDate.value || parseApiDate(new Date())
   const isCheckInChanged = isEditModal.value && activeTab.value && modalForm.value.checkIn !== activeTab.value.checkIn
-  if ((!isEditModal.value || isCheckInChanged) && modalForm.value.checkIn < sysDateStr) {
+  if (!isCheckedOutEdit.value && (!isEditModal.value || isCheckInChanged) && modalForm.value.checkIn < sysDateStr) {
     uiStore.showToast(`Ngày đến không được nhỏ hơn ngày hệ thống (${sysDateStr})!`, 'warning')
     return
   }
@@ -9154,7 +9115,7 @@ defineExpose({
     <!-- MOCKUP CREATE REGISTRATION MODAL (Image 2 Match) -->
     <Teleport to="body">
       <div 
-        v-if="isModalOpen && !isCheckoutMetadataEdit"
+        v-if="isModalOpen"
         class="fixed inset-0 bg-black/20 z-[9999] flex items-center justify-center p-1 sm:p-3 animate-in"
       >
         <div 
@@ -9398,6 +9359,7 @@ defineExpose({
                   <span>Thông Tin Đưa Đón</span>
               </button>
               <button 
+                v-if="!isCheckedOutEdit"
                 @click="modalSubTab = 'rooms'"
                 class="px-3 py-2 font-bold border-b-2 flex items-center space-x-1.5 text-xs cursor-pointer border-none bg-transparent transition-colors"
                 :style="modalSubTab === 'rooms' ? { color: isTopBarThemeDark ? '#0284c7' : '#006bdb', borderColor: 'var(--pms-custom-theme, #006bdb)' } : {}"
@@ -10276,51 +10238,6 @@ defineExpose({
       </div>
     </Teleport>
 
-    <Teleport to="body">
-      <div v-if="isModalOpen && isCheckoutMetadataEdit" class="fixed inset-0 z-[10000] flex items-center justify-center bg-black/30 p-4" @click.self="closeModal">
-        <section class="w-full max-w-2xl overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
-          <header class="flex items-center justify-between px-5 py-3 text-white rounded-t-xl" :style="{ background: topbarThemeBg }">
-            <div>
-              <h2 class="text-sm font-bold">Thông Tin Đăng Ký Đã Checkout</h2>
-              <p class="mt-0.5 text-[11px] text-slate-300">Chỉ tên, nguồn khách, người đặt và ghi chú được chỉnh sửa.</p>
-            </div>
-            <button type="button" @click="closeModal" class="border-0 bg-transparent text-white hover:text-slate-200" aria-label="Đóng">✕</button>
-          </header>
-          <form class="space-y-4 p-5" @submit.prevent="saveCheckoutMetadata">
-            <div>
-              <label class="mb-1 block text-xs font-semibold text-slate-700">Tên đăng ký</label>
-              <input v-model="modalForm.bookingName" type="text" maxlength="255" required class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
-            </div>
-            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label class="mb-1 block text-xs font-semibold text-slate-700">Nguồn khách</label>
-                <select v-model="modalForm.customerSourceId" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
-                  <option :value="null">— Chọn nguồn khách —</option>
-                  <option v-for="source in customerSources" :key="source.id" :value="source.id">{{ source.name }}</option>
-                </select>
-              </div>
-              <div>
-                <label class="mb-1 block text-xs font-semibold text-slate-700">Người đặt</label>
-                <select v-model="modalForm.bookerId" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
-                  <option :value="null">— Chọn người đặt —</option>
-                  <option v-for="booker in bookers" :key="booker.id" :value="booker.id">{{ booker.name }}</option>
-                </select>
-              </div>
-            </div>
-            <div>
-              <label class="mb-1 block text-xs font-semibold text-slate-700">Ghi chú</label>
-              <textarea v-model="modalForm.note" rows="4" class="w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"></textarea>
-            </div>
-            <footer class="flex justify-end gap-2 border-t border-slate-100 pt-3">
-              <button type="button" @click="closeModal" :disabled="isSavingModal" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Hủy</button>
-              <button type="submit" :disabled="isSavingModal" class="rounded-lg border-0 bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-50">
-                {{ isSavingModal ? 'Đang lưu…' : 'Lưu thông tin' }}
-              </button>
-            </footer>
-          </form>
-        </section>
-      </div>
-    </Teleport>
     <!-- THÔNG BÁO THEO BOOKING / PHÒNG -->
     <BookingNotificationsModal
       v-model:show="isBookingNotificationsModalOpen"

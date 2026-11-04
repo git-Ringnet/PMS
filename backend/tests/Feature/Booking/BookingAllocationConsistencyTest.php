@@ -578,7 +578,7 @@ class BookingAllocationConsistencyTest extends TestCase
         ]);
     }
 
-    public function test_checkout_update_requires_exact_configured_role_and_rejects_forbidden_fields(): void
+    public function test_checkout_update_requires_exact_configured_role_and_rejects_invalid_dates(): void
     {
         $booking = $this->createBooking([
             'status' => Booking::STATUS_CHECKOUT,
