@@ -63,6 +63,8 @@ const selectedDetailCellKeys = ref([])
 const selectedDetailCellTargets = ref([])
 const selectedTableGroupId = ref(null)
 const selectedPreviewReportCode = ref('')
+const reportConditionConfigurationDirty = ref(false)
+const savingReportConditionConfiguration = ref(false)
 
 const onCellFocus = (cell) => {
   activeCell.value = cell
@@ -899,19 +901,42 @@ const normalizeBlock = (block) => {
         color: cell.color || '',
         borderColor: cell.borderColor || '',
         fontSize: cell.fontSize || '',
-        fontWeight: cell.fontWeight || ''
+        fontWeight: cell.fontWeight || '',
+        columnId: cell.columnId || ''
       }))
     }))
-    normalized.columns = (normalized.columns || []).map(column => {
+    normalized.columns = (normalized.columns || []).map((column, columnIndex) => {
       const value = String(column.value || '')
       const hasNumberModifier = value.endsWith('|number')
 
       return {
         ...column,
+        id: column.id || `column_${columnIndex + 1}`,
         value: hasNumberModifier ? value.slice(0, -7) : value,
         format: column.format || (hasNumberModifier ? 'number' : ''),
+        visibleWhen: column.visibleWhen || '',
+        visibleWhenMode: column.visibleWhenMode === 'falsy' ? 'falsy' : 'truthy',
         headerStyle: normalizeElementTextStyle(column.headerStyle),
         cellStyle: normalizeElementTextStyle(column.cellStyle)
+      }
+    })
+    normalized.topHeader = (Array.isArray(normalized.topHeader) ? normalized.topHeader : []).map((cell, cellIndex) => ({
+      ...cell,
+      id: cell.id || `top_header_${cellIndex + 1}`,
+      columnId: cell.columnId || normalized.columns[cellIndex]?.id || ''
+    }))
+    normalized.customRows = normalized.customRows.map(row => {
+      let columnIndex = 0
+      return {
+        ...row,
+        cells: row.cells.map(cell => {
+          const next = {
+            ...cell,
+            columnId: cell.columnId || normalized.columns[columnIndex]?.id || ''
+          }
+          columnIndex += Math.max(1, Number(cell.colspan) || 1)
+          return next
+        })
       }
     })
 
@@ -945,7 +970,8 @@ const normalizeBlock = (block) => {
           color: cell.color || '',
           borderColor: cell.borderColor || '',
           fontSize: cell.fontSize || '',
-          fontWeight: cell.fontWeight || ''
+          fontWeight: cell.fontWeight || '',
+          autoColspan: Boolean(cell.autoColspan)
         })),
         enabledBy: group.enabledBy || '',
         sort: String(group.sort || 'ASC').toUpperCase() === 'DESC' ? 'DESC' : 'ASC'
@@ -1038,13 +1064,95 @@ const isBooleanReportControl = parameter => ['checkbox', 'radio'].includes(Strin
 const reportConditionControls = computed(() => (selectedReportDefinition.value?.parameter_ui_schema || [])
   .filter(isBooleanReportControl))
 
+const reportConditionSelectionGroupKey = (parameter) => String(parameter?.selection_group?.key || '').trim()
+
+const reportConditionExclusivePeer = (parameter) => reportConditionControls.value
+  .find(candidate => candidate.name !== parameter.name
+    && candidate.selection_group?.mode === 'single'
+    && reportConditionSelectionGroupKey(candidate) === reportConditionSelectionGroupKey(parameter))?.name || ''
+
+const updateReportConditionExclusivePeer = (parameter, peerName) => {
+  const controls = reportConditionControls.value
+  const previousKeys = new Set([
+    reportConditionSelectionGroupKey(parameter),
+    reportConditionSelectionGroupKey(controls.find(candidate => candidate.name === peerName)),
+  ].filter(Boolean))
+
+  controls
+    .filter(candidate => previousKeys.has(reportConditionSelectionGroupKey(candidate)))
+    .forEach(candidate => { delete candidate.selection_group })
+
+  const peer = controls.find(candidate => candidate.name === peerName)
+  if (peer) {
+    const key = `selection_${[parameter.name, peer.name].sort().join('_')}`
+    ;[parameter, peer].forEach(candidate => {
+      candidate.selection_group = { key, label: 'Chọn một', mode: 'single' }
+    })
+  }
+
+  reportConditionConfigurationDirty.value = true
+}
+
+const reportConditionEffectLabel = (parameter) => {
+  if (parameter.maps_to?.parameter) {
+    const value = parameter.maps_to.value ?? ''
+    return `Gửi Store: ${parameter.maps_to.parameter}${value === '' ? '' : ` = ${value}`}`
+  }
+
+  const isStoreParameter = normalizeSchemaFields(selectedDataSource.value?.parameter_schema)
+    .some(sourceParameter => sourceParameter.name === parameter.name)
+
+  return isStoreParameter && !parameter.ui_only
+    ? `Tính toán Store: ${parameter.name}`
+    : `Hiển thị mẫu in: ${parameter.name}`
+}
+
+const togglePreviewReportCondition = (parameter) => {
+  if (!template.value) return
+
+  const nextValue = !Boolean(template.value.parameter_defaults?.[parameter.name])
+  template.value.parameter_defaults[parameter.name] = nextValue
+
+  const selectionGroupKey = reportConditionSelectionGroupKey(parameter)
+  if (!nextValue || parameter.selection_group?.mode !== 'single' || selectionGroupKey === '') return
+
+  reportConditionControls.value
+    .filter(candidate => candidate.name !== parameter.name)
+    .filter(candidate => candidate.selection_group?.mode === 'single')
+    .filter(candidate => reportConditionSelectionGroupKey(candidate) === selectionGroupKey)
+    .forEach(candidate => {
+      template.value.parameter_defaults[candidate.name] = false
+    })
+}
+
+const saveReportConditionConfiguration = async () => {
+  const definition = selectedReportDefinition.value
+  if (!reportConditionConfigurationDirty.value || !definition?.id) return
+
+  savingReportConditionConfiguration.value = true
+  try {
+    const response = await http.patch(`/report-definitions/${definition.id}/parameter-ui-schema`, {
+      parameter_ui_schema: definition.parameter_ui_schema || []
+    })
+    const updated = response.data?.data
+    const index = template.value?.report_definitions?.findIndex(item => Number(item.id) === Number(updated?.id)) ?? -1
+    if (updated && index >= 0) Object.assign(template.value.report_definitions[index], updated)
+    reportConditionConfigurationDirty.value = false
+  } finally {
+    savingReportConditionConfiguration.value = false
+  }
+}
+
 const configuredConditionPaths = computed(() => {
   const paths = new Set()
   const visit = (items) => (items || []).forEach(block => {
     if (block.visibleWhen) paths.add(block.visibleWhen)
     ;(block.groups || []).forEach(group => { if (group.enabledBy) paths.add(group.enabledBy) })
     ;(block.customRows || []).forEach(row => { if (row.enabledBy) paths.add(row.enabledBy) })
-    ;(block.columns || []).forEach(column => visit(column.blocks))
+    ;(block.columns || []).forEach(column => {
+      if (column.visibleWhen) paths.add(column.visibleWhen)
+      visit(column.blocks)
+    })
   })
   ;['header', 'detail', 'footer'].forEach(band => visit(blocks.value[band]))
   return [...paths]
@@ -1182,6 +1290,8 @@ const customCellPreviewText = (cell, source) => {
 }
 
 const customCellColumnLabel = (block, row, cellIndex) => {
+  const configuredColumn = (block?.columns || []).find(column => column.id === row?.cells?.[cellIndex]?.columnId)
+  if (configuredColumn?.header) return configuredColumn.header
   const columnIndex = (row?.cells || []).slice(0, cellIndex).reduce((index, cell) => index + Math.max(1, Number(cell.colspan) || 1), 0)
   return block?.columns?.[columnIndex]?.header || `Cột ${columnIndex + 1}`
 }
@@ -1207,6 +1317,7 @@ const addTableCustomRow = (block) => {
       binding: '',
       aggregateField: '',
       colspan: 1,
+      columnId: block.columns?.[index]?.id || '',
       align: block.columns?.[index]?.align || 'left',
       format: '',
       className: '',
@@ -1221,8 +1332,9 @@ const addTableCustomRow = (block) => {
   compileHtml()
 }
 
-const addTableCustomCell = (row) => {
-  row.cells.push({ id: `custom_cell_${Date.now()}`, type: 'text', content: '', binding: '', aggregateField: '', colspan: 1, align: 'left', format: '', className: '', backgroundColor: '', color: '', borderColor: '', fontSize: '', fontWeight: '' })
+const addTableCustomCell = (block, row) => {
+  const columnIndex = (row.cells || []).reduce((index, cell) => index + Math.max(1, Number(cell.colspan) || 1), 0)
+  row.cells.push({ id: `custom_cell_${Date.now()}`, type: 'text', content: '', binding: '', aggregateField: '', colspan: 1, columnId: block.columns?.[columnIndex]?.id || '', align: 'left', format: '', className: '', backgroundColor: '', color: '', borderColor: '', fontSize: '', fontWeight: '' })
   compileHtml()
 }
 
@@ -1325,6 +1437,7 @@ const ensureGroupHeaderCells = (block, group) => {
     binding: '',
     aggregateField: '',
     colspan: Math.max(1, block.columns?.length || 1),
+    autoColspan: true,
     align: 'left',
     format: '',
     className: group.className || '',
@@ -1409,6 +1522,7 @@ const loadTemplate = async () => {
     const res = await http.get(`/templates/${props.templateId}`)
     if (res.data && res.data.data) {
       template.value = res.data.data
+      reportConditionConfigurationDirty.value = false
       // API may return NULL for templates without saved parameter defaults.
       // Keep the editor bindings writable while the data source is loading.
       template.value.parameter_defaults = template.value.parameter_defaults || {}
@@ -2305,16 +2419,39 @@ const addSignatureBlock = () => {
 }
 
 // Table columns helpers
+const ensureTableTopHeader = (block) => {
+  if (Array.isArray(block.topHeader) && block.topHeader.length) return
+  block.topHeader = (block.columns || []).map((column, index) => ({
+    id: `top_header_${Date.now()}_${index + 1}`,
+    columnId: column.id,
+    content: String(index + 1),
+    align: 'center'
+  }))
+}
+
+const toggleTableTopHeader = (block, enabled) => {
+  if (enabled) ensureTableTopHeader(block)
+  else block.topHeader = []
+  compileHtml()
+}
+
 const addTableColumn = (block) => {
   const fields = getListFields(block.dataSource)
-  block.columns.push({
+  const column = {
+    id: `column_${Date.now()}`,
     header: 'Cột mới',
     value: fields[0]?.value || '',
     width: 'auto',
     align: 'left',
+    visibleWhen: '',
+    visibleWhenMode: 'truthy',
     headerStyle: normalizeElementTextStyle(),
     cellStyle: normalizeElementTextStyle()
-  })
+  }
+  block.columns.push(column)
+  if (Array.isArray(block.topHeader) && block.topHeader.length) {
+    block.topHeader.push({ id: `top_header_${Date.now()}`, columnId: column.id, content: String(block.columns.length), align: 'center' })
+  }
   compileHtml()
 }
 
@@ -2324,6 +2461,7 @@ const deleteTableColumn = (block, colIdx) => {
     return
   }
   block.columns.splice(colIdx, 1)
+  if (Array.isArray(block.topHeader) && block.topHeader.length) block.topHeader.splice(colIdx, 1)
   compileHtml()
 }
 
@@ -2431,6 +2569,13 @@ const resolveBlockStyles = (b) => {
   return compiledStyles
 }
 
+const tableColumnRuntimeAttributes = (block, columnId) => {
+  const column = (block.columns || []).find(item => item.id === columnId)
+  if (!column?.id) return ''
+  const visibleBy = column.visibleWhen ? ` data-visible-by="${column.visibleWhen}" data-visible-when="${column.visibleWhenMode === 'falsy' ? 'falsy' : 'truthy'}"` : ''
+  return ` data-pms-column-id="${column.id}"${visibleBy}`
+}
+
 const compileBlockToHtml = (b) => {
   if (b.visible === false) return ''
   const compiledStyles = resolveBlockStyles(b)
@@ -2497,13 +2642,13 @@ const compileBlockToHtml = (b) => {
     blockHtml += '    <thead>\n      <tr>\n'
     b.columns.forEach(col => {
       const headerStyle = mergeConfiguredStyles({ textAlign: col.align || 'left', fontWeight: 'bold' }, col.headerStyle)
-      blockHtml += `        <th style="${thStyle} width: ${col.width || 'auto'}; ${styleObjectToCss(headerStyle, true)}">${contentForTextStyle(col.header, headerStyle)}</th>\n`
+      blockHtml += `        <th${tableColumnRuntimeAttributes(b, col.id)} style="${thStyle} width: ${col.width || 'auto'}; ${styleObjectToCss(headerStyle, true)}">${contentForTextStyle(col.header, headerStyle)}</th>\n`
     })
     blockHtml += '      </tr>\n'
     if (b.topHeader && Array.isArray(b.topHeader) && b.topHeader.length) {
       blockHtml += '      <tr class="index-row">\n'
       b.topHeader.forEach(cell => {
-        blockHtml += `        <th style="${thStyle} text-align: ${cell.align || 'center'}; font-weight: bold;">${cell.content || ''}</th>\n`
+        blockHtml += `        <th${tableColumnRuntimeAttributes(b, cell.columnId)} style="${thStyle} text-align: ${cell.align || 'center'}; font-weight: bold;">${cell.content || ''}</th>\n`
       })
       blockHtml += '      </tr>\n'
     }
@@ -2520,7 +2665,7 @@ const compileBlockToHtml = (b) => {
       row.cells.forEach(cell => {
         const cellClass = cell.className ? ` class="${cell.className}"` : ''
         const resolvedStyle = mergeConfiguredStyles({ textAlign: cell.align || 'left', fontWeight: 'bold' }, customTableCellTextStyle(cell))
-        rowHtml += `        <td colspan="${Math.max(1, Number(cell.colspan) || 1)}"${cellClass} style="${tdStyle} ${styleObjectToCss(resolvedStyle, true)}">${contentForTextStyle(customCellContent(cell, b.dataSource || 'rows'), resolvedStyle)}</td>\n`
+        rowHtml += `        <td${tableColumnRuntimeAttributes(b, cell.columnId)} colspan="${Math.max(1, Number(cell.colspan) || 1)}"${cellClass} style="${tdStyle} ${styleObjectToCss(resolvedStyle, true)}">${contentForTextStyle(customCellContent(cell, b.dataSource || 'rows'), resolvedStyle)}</td>\n`
       })
       return rowHtml + '      </tr>\n'
     }
@@ -2534,9 +2679,10 @@ const compileBlockToHtml = (b) => {
           ? group.headerCells.map(cell => {
               const cellClass = cell.className ? ` class="${cell.className}"` : ''
               const resolvedStyle = mergeConfiguredStyles({ textAlign: cell.align || 'left', fontWeight: 'bold' }, customTableCellTextStyle(cell))
-              return `<td colspan="${Math.max(1, Number(cell.colspan) || 1)}"${cellClass} style="${tdStyle} ${styleObjectToCss(resolvedStyle, true)}">${contentForTextStyle(customCellContent(cell, b.dataSource || 'rows'), resolvedStyle)}</td>`
+              const autoColspan = cell.autoColspan ? ' data-pms-auto-colspan="1"' : ''
+              return `<td${autoColspan} colspan="${Math.max(1, Number(cell.colspan) || 1)}"${cellClass} style="${tdStyle} ${styleObjectToCss(resolvedStyle, true)}">${contentForTextStyle(customCellContent(cell, b.dataSource || 'rows'), resolvedStyle)}</td>`
             }).join('')
-          : `<td colspan="${Math.max(1, b.columns.length)}"${className}>${label}</td>`
+          : `<td data-pms-auto-colspan="1" colspan="${Math.max(1, b.columns.length)}"${className}>${label}</td>`
         blockHtml += `      <tr class="pms-group-header" data-group-level="${index}" data-group-field="${group.field}" data-group-sort="${group.sort || 'ASC'}"${enabledBy}>${cells}</tr>\n`
       })
     } else {
@@ -2548,7 +2694,7 @@ const compileBlockToHtml = (b) => {
       const modifier = col.format === 'number' ? '|number' : (col.format === 'percent' ? '|percent' : '')
       const detailStyle = mergeConfiguredStyles({ textAlign: col.align || 'left' }, col.cellStyle)
       const colClass = col.className ? ` class="${col.className}"` : (col.field === 'CompanyCode' ? ' class="company-code"' : '')
-      blockHtml += `        <td${colClass} style="${tdStyle} ${styleObjectToCss(detailStyle, true)}">{{${col.value}${modifier}}}</td>\n`
+      blockHtml += `        <td${tableColumnRuntimeAttributes(b, col.id)}${colClass} style="${tdStyle} ${styleObjectToCss(detailStyle, true)}">{{${col.value}${modifier}}}</td>\n`
     })
     blockHtml += '      </tr>\n'
     detailCustomRows.forEach(row => { blockHtml += compileCustomRow(row, 'pms-detail-custom-row') })
@@ -2921,6 +3067,7 @@ const saveTemplateDraft = async () => {
   if (!template.value) return
   compileHtml()
   try {
+    await saveReportConditionConfiguration()
     await http.put(`/templates/${props.templateId}`, {
       group: template.value.group,
       name: template.value.name,
@@ -2950,6 +3097,7 @@ const saveTemplateWithVersion = async () => {
   saving.value = true
   compileHtml()
   try {
+    await saveReportConditionConfiguration()
     const res = await http.put(`/templates/${props.templateId}`, {
       group: template.value.group,
       name: template.value.name,
@@ -3295,18 +3443,31 @@ const selectBand = (band) => {
 
             <div v-if="selectedReportDefinition" class="flex flex-col gap-2 rounded-xl border border-violet-200 bg-violet-50/50 p-3 shadow-3xs">
               <div class="flex items-center justify-between gap-2">
-                <span class="text-[10px] font-black uppercase tracking-widest text-violet-700">Điều Kiện Báo Cáo</span>
-                <select v-if="linkedReportDefinitions.length > 1" v-model="selectedPreviewReportCode" @change="ensureReportConditionDefaults" class="max-w-[160px] rounded border border-violet-200 bg-white px-1.5 py-1 text-[10px] font-semibold">
+                <span class="text-xs font-semibold text-[#000000D9]">Điều Kiện Báo Cáo</span>
+                <select v-if="linkedReportDefinitions.length > 1" v-model="selectedPreviewReportCode" @change="ensureReportConditionDefaults" class="max-w-[160px] rounded border border-violet-200 bg-white px-1.5 py-1 text-xs font-semibold">
                   <option v-for="definition in linkedReportDefinitions" :key="definition.code" :value="definition.code">{{ definition.name }}</option>
                 </select>
               </div>
-              <p class="text-[10px] text-violet-700">{{ selectedReportDefinition.name }}</p>
-              <label v-for="parameter in reportConditionControls" :key="parameter.name" class="flex cursor-pointer items-center justify-between gap-2 rounded-lg bg-white px-2 py-1.5 text-[10px] font-semibold text-slate-700">
-                <span>{{ parameter.label || parameter.name }}</span>
-                <input v-model="template.parameter_defaults[parameter.name]" type="checkbox" class="h-4 w-4 accent-sky-600" />
-              </label>
-              <p v-if="!reportConditionControls.length" class="text-[10px] text-slate-400">Báo cáo này không có điều kiện bật/tắt.</p>
-              <p class="text-[9px] text-violet-600">Các điều kiện này dùng cho preview và danh sách điều kiện Group/Block.</p>
+              <p class="text-xs text-violet-700">{{ selectedReportDefinition.name }}</p>
+              <div v-for="parameter in reportConditionControls" :key="parameter.name" class="rounded-lg bg-white px-2 py-2">
+                <div class="flex items-center justify-between gap-2 text-xs font-semibold text-[#000000D9]">
+                  <span>{{ parameter.label || parameter.name }}</span>
+                  <button type="button" @click="togglePreviewReportCondition(parameter)" :aria-pressed="Boolean(template.parameter_defaults[parameter.name])" class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-1" :class="Boolean(template.parameter_defaults[parameter.name]) ? 'bg-sky-500' : 'bg-slate-300'">
+                    <span class="inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform" :class="Boolean(template.parameter_defaults[parameter.name]) ? 'translate-x-[18px]' : 'translate-x-1'"></span>
+                  </button>
+                </div>
+                <p class="mt-1 text-xs font-normal text-slate-500">{{ reportConditionEffectLabel(parameter) }}</p>
+                <label class="mt-2 block text-xs font-semibold text-[#000000D9]">
+                  Chọn một cùng
+                  <select :value="reportConditionExclusivePeer(parameter)" @change="updateReportConditionExclusivePeer(parameter, $event.target.value)" class="mt-1 h-8 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500">
+                    <option value="">Độc lập</option>
+                    <option v-for="candidate in reportConditionControls.filter(item => item.name !== parameter.name)" :key="candidate.name" :value="candidate.name">{{ candidate.label || candidate.name }}</option>
+                  </select>
+                </label>
+              </div>
+              <p v-if="!reportConditionControls.length" class="text-xs text-slate-400">Báo cáo này không có điều kiện bật/tắt.</p>
+              <p v-else class="text-xs text-violet-700">Chỉ chọn cặp toggle cần loại trừ nhau. Cấp nhóm và thứ tự dữ liệu được cấu hình trong Bảng chi tiết.</p>
+              <p v-if="reportConditionConfigurationDirty || savingReportConditionConfiguration" class="text-xs font-medium text-amber-700">{{ savingReportConditionConfiguration ? 'Đang lưu cấu hình điều kiện…' : 'Cấu hình điều kiện sẽ được lưu cùng phiên bản.' }}</p>
             </div>
             
             <!-- TOOLBOX -->
@@ -4932,6 +5093,7 @@ const selectBand = (band) => {
                     <textarea v-if="cell.type === 'text'" v-model="cell.content" @input="updateTableGroups(selectedBlock)" rows="2" class="mb-2 w-full rounded border border-slate-200 p-2 text-[11px] font-mono" placeholder="Nội dung hoặc {{row.Field}}"></textarea>
                     <input v-else v-model="cell.binding" @input="updateTableGroups(selectedBlock)" class="mb-2 w-full rounded border border-slate-200 p-2 text-[11px] font-mono" placeholder="row.Field hoặc group.distinct.Field" />
                     <div class="grid grid-cols-3 gap-2"><select v-model="cell.type" @change="updateTableGroups(selectedBlock)" class="rounded border border-slate-200 p-1 text-[10px]"><option value="text">Văn bản</option><option value="binding">Binding</option><option value="count">Đếm</option><option value="distinct_count">Đếm khác nhau</option></select><input v-model.number="cell.colspan" @input="updateTableGroups(selectedBlock)" type="number" min="1" class="rounded border border-slate-200 p-1 text-[10px]" title="Colspan" /><select v-model="cell.align" @change="updateTableGroups(selectedBlock)" class="rounded border border-slate-200 p-1 text-[10px]"><option value="left">Trái</option><option value="center">Giữa</option><option value="right">Phải</option></select></div>
+                    <label class="mt-2 flex items-center gap-2 text-xs font-semibold text-[#000000D9]"><input v-model="cell.autoColspan" @change="updateTableGroups(selectedBlock)" type="checkbox" class="h-4 w-4 accent-sky-600" />Tự gộp theo số cột đang hiển thị</label>
                     <div class="mt-2 grid grid-cols-2 gap-2"><input v-model="cell.fontSize" @input="updateTableGroups(selectedBlock)" class="rounded border border-slate-200 p-1 text-[10px]" placeholder="Cỡ chữ: 12px" /><select v-model="cell.fontWeight" @change="updateTableGroups(selectedBlock)" class="rounded border border-slate-200 p-1 text-[10px]"><option value="">Mặc định (đậm)</option><option value="normal">Thường</option><option value="bold">Đậm</option></select></div>
                   </div>
                 </div>
@@ -4981,7 +5143,7 @@ const selectBand = (band) => {
                         </button>
                       </div>
 
-                      <button type="button" @click="addTableCustomCell(customRow)" class="rounded border border-dashed border-sky-300 bg-sky-50 px-2 py-1 text-[10px] font-bold text-sky-700">+ Thêm ô</button>
+                      <button type="button" @click="addTableCustomCell(selectedBlock, customRow)" class="rounded border border-dashed border-sky-300 bg-sky-50 px-2 py-1 text-[10px] font-bold text-sky-700">+ Thêm ô</button>
                     </div>
                   </details>
                 </div>
@@ -4994,6 +5156,22 @@ const selectBand = (band) => {
                     <option value="horizontal">Chỉ kẻ dòng ngang (horizontal)</option>
                     <option value="none">Không kẻ đường viền (none)</option>
                   </select>
+                </div>
+
+                <div class="rounded-xl border border-sky-200 bg-sky-50/60 p-3">
+                  <label class="flex cursor-pointer items-center justify-between gap-3">
+                    <div>
+                      <div class="text-xs font-semibold text-[#000000D9]">Hàng đánh số cột</div>
+                      <div class="text-xs font-normal text-[#000000D9]">Liên kết từng ô với cột để tự ẩn cùng điều kiện hiển thị của cột.</div>
+                    </div>
+                    <input type="checkbox" :checked="selectedBlock.topHeader?.length" @change="toggleTableTopHeader(selectedBlock, $event.target.checked)" class="h-4 w-4 accent-sky-600" />
+                  </label>
+                  <div v-if="selectedBlock.topHeader?.length" class="mt-2 grid grid-cols-2 gap-2">
+                    <label v-for="(cell, cellIndex) in selectedBlock.topHeader" :key="cell.id || cellIndex" class="min-w-0 text-xs font-semibold text-[#000000D9]">
+                      {{ selectedBlock.columns[cellIndex]?.header || `Cột ${cellIndex + 1}` }}
+                      <input v-model="cell.content" @input="compileHtml" class="mt-1 h-8 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs font-normal text-[#000000D9]" />
+                    </label>
+                  </div>
                 </div>
 
                 <!-- Columns manager -->
@@ -5053,6 +5231,18 @@ const selectBand = (band) => {
                       <div class="flex flex-col gap-0.5">
                         <span class="text-[9px] font-bold text-slate-400">Độ rộng (%):</span>
                         <input type="text" v-model="col.width" @input="compileHtml" class="text-[11px] border border-slate-200 rounded px-1.5 py-0.5 font-mono" placeholder="20% hoặc auto" />
+                      </div>
+
+                      <div class="flex flex-col gap-0.5 border-t border-slate-100 pt-2">
+                        <span class="text-[9px] font-bold text-slate-400">Điều kiện hiển thị:</span>
+                        <select v-model="col.visibleWhen" @change="compileHtml" class="text-[11px] border border-slate-200 rounded px-1 py-0.5 font-semibold">
+                          <option value="">Luôn hiển thị</option>
+                          <option v-for="parameter in conditionalParameterOptions" :key="parameter.value" :value="parameter.value">Khi {{ parameter.label }}</option>
+                        </select>
+                        <select v-if="col.visibleWhen" v-model="col.visibleWhenMode" @change="compileHtml" class="text-[11px] border border-slate-200 rounded px-1 py-0.5 font-semibold">
+                          <option value="truthy">Đang bật</option>
+                          <option value="falsy">Đang tắt</option>
+                        </select>
                       </div>
 
                       <div class="mt-1 grid grid-cols-2 gap-2 border-t border-slate-100 pt-2">
