@@ -2298,6 +2298,70 @@ class BookingBusinessRulesTest extends TestCase
     }
 
     /**
+     * Row 381: dịch vụ chưa post ngoài giai đoạn ở (sau khi đổi ngày) vẫn lưu trong DB nhưng không trả về/hiển thị.
+     */
+    public function test_row_381_services_outside_stay_are_kept_but_not_listed(): void
+    {
+        $booking = $this->createBooking(['arrival_date' => '2026-08-31', 'departure_date' => '2026-09-02', 'num_of_days' => 2]);
+        $room = BookingRoom::create([
+            'id' => 'G-381', 'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-31', 'departure_date' => '2026-09-02', 'rate' => 500000,
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+        foreach (['2026-08-31', '2026-09-01', '2026-09-02', '2026-09-03'] as $date) {
+            \App\Models\BookingRoomService::create([
+                'booking_room_id' => $room->id, 'service_code' => 'LD', 'service_name' => 'Giat ui',
+                'service_date' => $date, 'quantity' => 1, 'rate' => 10000, 'department' => 'FO', 'is_posted' => 0,
+            ]);
+        }
+        \App\Models\BookingRoomService::create([
+            'booking_room_id' => $room->id, 'service_code' => 'LD', 'service_name' => 'Da post',
+            'service_date' => '2026-09-03', 'quantity' => 1, 'rate' => 10000, 'department' => 'FO', 'is_posted' => 1,
+        ]);
+
+        $dates = fn () => collect($this->getJson("/api/booking-rooms/{$room->id}/services")->assertOk()->json('data'))
+            ->map(fn ($row) => \Carbon\Carbon::parse($row['service_date'])->timezone(config('app.timezone'))->toDateString() . ($row['is_posted'] ? 'P' : ''))->all();
+
+        $this->assertSame(['2026-08-31', '2026-09-01', '2026-09-03P'], $dates());
+    }
+
+    /**
+     * Row 488: đêm tiền phòng mới theo "Tiền phòng gửi Master" của đăng ký (GIT -> is_room 0, FIT -> 1).
+     */
+    public function test_row_488_projected_room_charge_follows_master_room_rate_flag(): void
+    {
+        foreach ([true => 0, false => 1] as $master => $expected) {
+            $booking = $this->createBooking(['arrival_date' => '2026-09-10', 'departure_date' => '2026-09-12', 'num_of_days' => 2, 'is_master_room_rate' => $master]);
+            $room = BookingRoom::create([
+                'id' => 'G-488-' . (int) $master, 'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+                'arrival_date' => '2026-09-10', 'departure_date' => '2026-09-12', 'rate' => 500000,
+                'status' => BookingRoom::STATUS_BOOKED,
+            ]);
+
+            app(\App\Services\BookingRoomStayChargeService::class)->synchronize($room->fresh(), 500000.0);
+
+            $flags = \App\Models\BookingRoomService::where('booking_room_id', $room->id)->pluck('is_room')->map(fn ($f) => (int) $f)->all();
+            $this->assertSame([$expected, $expected], $flags, 'master=' . (int) $master);
+        }
+    }
+
+    public function test_row_488_toggling_master_room_rate_updates_unposted_room_charge_flags(): void
+    {
+        $booking = $this->createBooking(['arrival_date' => '2026-09-10', 'departure_date' => '2026-09-12', 'num_of_days' => 2, 'is_master_room_rate' => false]);
+        $room = BookingRoom::create([
+            'id' => 'G-488-T', 'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-09-10', 'departure_date' => '2026-09-12', 'rate' => 500000,
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+        app(\App\Services\BookingRoomStayChargeService::class)->synchronize($room->fresh(), 500000.0);
+
+        $this->putJson("/api/bookings/{$booking->id}", $this->headerPayload($booking, '2026-09-10', '2026-09-12') + ['is_master_room_rate' => true])->assertSuccessful();
+
+        $flags = \App\Models\BookingRoomService::where('booking_room_id', $room->id)->pluck('is_room')->map(fn ($f) => (int) $f)->unique()->all();
+        $this->assertSame([0], $flags);
+    }
+
+    /**
      * Row 393: quick update allows departure = arrival (same-day room without
      * day-use, zero nights) and only rejects departure < arrival.
      */

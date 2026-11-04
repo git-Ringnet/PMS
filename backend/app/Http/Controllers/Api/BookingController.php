@@ -1461,6 +1461,16 @@ class BookingController extends Controller
 
                 $booking->update($validated);
                 $dayUseChanged = $booking->wasChanged('is_day_use');
+                // Dòng 488: đổi "Tiền phòng gửi Master" -> các đêm tiền phòng chưa post đổi FIT/GIT theo.
+                if ($booking->wasChanged('is_master_room_rate')) {
+                    \App\Models\BookingRoomService::whereIn('booking_room_id', $booking->bookingRooms()->pluck('id'))
+                        ->whereIn('service_code', [
+                            \App\Models\BookingRoomService::CODE_ROOM,
+                            \App\Models\BookingRoomService::catalogCode(\App\Models\BookingRoomService::CODE_ROOM),
+                        ])
+                        ->where('is_posted', 0)
+                        ->update(['is_room' => $booking->is_master_room_rate ? 0 : 1]);
+                }
                 $companyChanged = $booking->wasChanged('company_id');
                 // Do not use a mass update here: it bypasses BookingRoom's
                 // lifecycle hooks (night count and guest actual dates).
@@ -4063,7 +4073,7 @@ class BookingController extends Controller
                     'quantity'     => 1,
                     'rate'         => $rate,
                     'department'   => 'FO',
-                    'is_room'      => 1,
+                    'is_room'      => $existing ? (int) $existing->is_room : ($room->booking?->is_master_room_rate ? 0 : 1),
                     'is_posted'    => 0,
                     'deleted_at'   => null,
                     'created_by'   => Auth::user()?->username ?? 'system',

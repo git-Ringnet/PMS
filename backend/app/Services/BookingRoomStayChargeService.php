@@ -120,7 +120,6 @@ class BookingRoomStayChargeService
                 'quantity'     => 1,
                 'rate'         => $rate,
                 'department'   => 'FO',
-                'is_room'      => 1,
                 'is_posted'    => 0,
                 'deleted_at'   => null,
                 'created_by'   => Auth::user()?->username ?? 'system',
@@ -136,6 +135,8 @@ class BookingRoomStayChargeService
                 'booking_room_id' => $room->id,
                 'service_code'    => BookingRoomService::catalogCode(BookingRoomService::CODE_ROOM),
                 'service_date'    => $date->toDateString(),
+                // Dòng 488: đêm mới theo thông tin đăng ký (gửi về Master = GIT -> is_room 0).
+                'is_room'         => $room->booking?->is_master_room_rate ? 0 : 1,
                 ...$values,
             ]);
         }

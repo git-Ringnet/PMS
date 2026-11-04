@@ -1459,6 +1459,11 @@ async function handleServiceIsRoomToggle(room, svc, isChecked) {
   }
 }
 
+// Dòng 488: dòng tiền phòng hiển thị FIT/GIT theo thông tin đăng ký (Tiền phòng gửi Master = GIT).
+function isRoomRateAtRoom() {
+  return !modalForm.value?.isMasterRoomRate
+}
+
 function isRoomChargeService(svc) {
   if (!svc) return false
   const code = String(svc.service_code || svc.ServiceId || '').toUpperCase()
@@ -1800,7 +1805,7 @@ function getRoomDisplayServices(room) {
             rate: hasPending ? (Number(pendingPlan.rate) || 0) : billedRate,
             billed_rate: billedRate,
             pending_rate: hasPending ? (Number(pendingPlan.rate) || 0) : null,
-            is_room: true,
+            is_room: isRoomRateAtRoom(),
             from_bill: true,
             from_move_history: !!sb.from_move_history,
             bill_ref: sb
@@ -1827,7 +1832,7 @@ function getRoomDisplayServices(room) {
             service_code: dbCharge.service_code || 'RM',
             quantity: dbCharge.quantity || 1,
             rate: customRate,
-            is_room: true,
+            is_room: isRoomRateAtRoom(),
             svc_ref: dbCharge
           })
         } else {
@@ -1838,7 +1843,7 @@ function getRoomDisplayServices(room) {
             service_code: getHotelServiceCode('RM'),
             quantity: 1,
             rate: customRate,
-            is_room: true
+            is_room: isRoomRateAtRoom()
           })
         }
       }
@@ -1861,7 +1866,7 @@ function getRoomDisplayServices(room) {
           service_code: sb.ServiceId || 'RM',
           quantity: qty,
           rate: qty > 0 ? amt / qty : amt,
-          is_room: true,
+          is_room: isRoomRateAtRoom(),
           from_bill: true,
           from_move_history: !!sb.from_move_history,
           bill_ref: sb
@@ -1878,7 +1883,7 @@ function getRoomDisplayServices(room) {
         service_code: getHotelServiceCode('RM'),
         quantity: 1,
         rate: customRate,
-        is_room: true
+        is_room: isRoomRateAtRoom()
       })
     }
   }
@@ -1899,7 +1904,7 @@ function getRoomDisplayServices(room) {
           service_code: sb.ServiceId || 'RM',
           quantity: qty,
           rate: qty > 0 ? amt / qty : amt,
-          is_room: true,
+          is_room: isRoomRateAtRoom(),
           from_bill: true,
           from_move_history: !!sb.from_move_history,
           bill_ref: sb
@@ -2062,7 +2067,8 @@ function getRoomDisplayServices(room) {
             service_code: bfBill.ServiceId || bfCode,
             quantity: qty,
             rate: qty > 0 ? bAmt / qty : bAmt,
-            is_room: true,
+            // Dòng 488: bill ăn sáng trẻ em gửi Master (không có phòng đích) hiển thị GIT.
+            is_room: !!(bfBill.RentalRoomId2 ?? bfBill.rentalRoomId2),
             is_child_breakfast: true,
             from_bill: true,
             bill_ref: bfBill
@@ -8154,13 +8160,13 @@ defineExpose({
                                       <label class="relative inline-flex items-center cursor-pointer select-none gap-1.5 justify-center" :class="{ 'opacity-40 pointer-events-none': !isServiceDisplayEditable(svc) || (isInlineEditLocked && room.bookingRoomId) }" title="Bật/Tắt Gửi HĐ về Master (GIT) hoặc Phòng (FIT)">
                                         <input
                                           type="checkbox"
-                                          :checked="Number(svc.is_room) === 1 || svc.is_room === true"
-                                          @change="e => handleServiceIsRoomToggle(room, svc, e.target.checked)"
+                                          :checked="!(Number(svc.is_room) === 1 || svc.is_room === true)"
+                                          @change="e => handleServiceIsRoomToggle(room, svc, !e.target.checked)"
                                           :disabled="!isServiceDisplayEditable(svc) || (isInlineEditLocked && !!room.bookingRoomId)"
                                           class="sr-only peer"
                                         />
                                         <div class="w-8 h-4 bg-slate-300 rounded-full peer peer-checked:bg-sky-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 shadow-2xs"></div>
-                                        <span class="text-xs font-semibold uppercase min-w-[32px] text-left" :class="(Number(svc.is_room) === 1 || svc.is_room === true) ? 'text-sky-600' : 'text-slate-500'">
+                                        <span class="text-xs font-semibold uppercase min-w-[32px] text-left" :class="(Number(svc.is_room) === 1 || svc.is_room === true) ? 'text-slate-500' : 'text-sky-600'">
                                           {{ (Number(svc.is_room) === 1 || svc.is_room === true) ? 'FIT' : 'GIT' }}
                                         </span>
                                       </label>
@@ -8848,13 +8854,13 @@ defineExpose({
                                             <label class="relative inline-flex items-center cursor-pointer select-none gap-1.5 justify-center" :class="{ 'opacity-40 pointer-events-none': !isServiceDisplayEditable(svc) || (isInlineEditLocked && room.bookingRoomId) }" title="Bật/Tắt Gửi HĐ về Master (GIT) hoặc Phòng (FIT)">
                                               <input
                                                 type="checkbox"
-                                                :checked="Number(svc.is_room) === 1 || svc.is_room === true"
-                                                @change="e => handleServiceIsRoomToggle(room, svc, e.target.checked)"
+                                                :checked="!(Number(svc.is_room) === 1 || svc.is_room === true)"
+                                                @change="e => handleServiceIsRoomToggle(room, svc, !e.target.checked)"
                                                 :disabled="!isServiceDisplayEditable(svc) || (isInlineEditLocked && !!room.bookingRoomId)"
                                                 class="sr-only peer"
                                               />
                                               <div class="w-8 h-4 bg-slate-300 rounded-full peer peer-checked:bg-sky-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 shadow-2xs"></div>
-                                              <span class="text-xs font-semibold uppercase min-w-[32px] text-left" :class="(Number(svc.is_room) === 1 || svc.is_room === true) ? 'text-sky-600' : 'text-slate-500'">
+                                              <span class="text-xs font-semibold uppercase min-w-[32px] text-left" :class="(Number(svc.is_room) === 1 || svc.is_room === true) ? 'text-slate-500' : 'text-sky-600'">
                                                 {{ (Number(svc.is_room) === 1 || svc.is_room === true) ? 'FIT' : 'GIT' }}
                                               </span>
                                             </label>
