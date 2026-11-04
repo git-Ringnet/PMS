@@ -160,7 +160,7 @@
 | 5 | **Nhóm theo nguồn khách** | Bật switch "Nhóm theo nguồn khách" | `SalesCompanyReportNoRateGroupBySourceCode` | `typegroup: "", BF: true` | [`scenario_5_group_source.png`](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/images/scenario_5_group_source.png) |
 | 6 | **Ngày + Thị trường** | Bật cả "Nhóm theo ngày" VÀ "Nhóm theo thị trường" | `SalesCompanyReportNoRateGroupByDayAndBySegment` | `BF: true, subreport1.lang: "EN"` | [`scenario_6_group_date_market.png`](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/images/scenario_6_group_date_market.png) |
 | 7 | **Ngày + Nguồn khách** | Bật cả "Nhóm theo ngày" VÀ "Nhóm theo nguồn khách" | `SalesCompanyReportNoRateGroupByDayAndBySourceCode` | `BF: true` | [`scenario_7_group_date_source.png`](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/images/scenario_7_group_date_source.png) |
-| 8 | **Hiển thị chi tiết** | Bật switch "Hiển thị chi tiết" | `SalesCompanyReportDetail` | Chuyển sang mẫu báo cáo chi tiết theo booking/phòng (Dòng 166) | [`scenario_8_show_detail.png`](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/images/scenario_8_show_detail.png) |
+| 8 | **Hiển thị chi tiết** | Bật switch "Hiển thị chi tiết" | Giữ báo cáo công suất công ty | Thêm ba cột `Đêm Khách`, `Tiền Phòng`, `Giá Thêm Giường`; không chuyển Dòng 166 | [`scenario_8_show_detail.png`](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/images/scenario_8_show_detail.png) |
 
 * **Chi tiết Payload của Request `startBuild` DevExpress (Gốc từ hệ thống cũ):**
 ```json
@@ -572,7 +572,7 @@ Nằm tại [`frontend/src/pages/reports/ReportsPage.vue`](file:///c:/Users/Nguy
   </div>
   ```
 - **Hành vi xử lý tương tác:**
-  - Khi bật switch `Hiển thị chi tiết`: Tự động gọi `switchToCompanyOccupancyDetail`, mở tab `COMPANY_OCCUPANCY_DETAIL` (Dòng 166), sao chép toàn bộ điều kiện ngày, công ty, khu vực và thực thi tải dữ liệu ngay.
+  - Khi bật switch `Hiển thị chi tiết`: Giữ nguyên `COMPANY_OCCUPANCY` (Dòng 167), chỉ hiển thị thêm ba cột `Đêm Khách`, `Tiền Phòng`, `Giá Thêm Giường` theo cấu hình template. Không gọi hoặc mở `COMPANY_OCCUPANCY_DETAIL` (Dòng 166).
   - Khi chọn switch `Nhóm theo thị trường`: Tự động tắt switch `Nhóm theo nguồn khách` (và ngược lại), tuân thủ đúng nghiệp vụ chỉ chọn 1 trong 2.
   - Khi bấm `Hiển thị báo cáo`: Tự động ghép nối các switch thành giá trị `p_group_by` gửi về backend (`COMPANY`, `DATE`, `MARKET`, `SOURCE`, `DAY_MARKET`, `DAY_SOURCE`).
 
@@ -609,3 +609,40 @@ Agent kiểm tra (reviewer/tester) tiến hành kiểm tra theo danh sách 10 ti
    npm run build
    ```
    *(Kết quả: built successfully, 0 lỗi).*
+
+---
+
+## Cập nhật triển khai runtime 2026-11-04 (ưu tiên hơn mô tả cũ)
+
+- Lịch sử (`ngày báo cáo < SystemDate`) lấy **duy nhất** từ `night_audit_company_occupancy_daily_snapshots` và `night_audit_company_occupancy_snapshots`, được ghi tại Night Audit. Không fallback sang booking/bill live.
+- Ngày hiện tại/tương lai lấy dữ liệu vận hành mới theo cùng filter. Điều này giữ đúng số liệu khi phòng/bill lịch sử đã bị thay đổi hoặc xóa về sau.
+- `DT phòng bao gồm AS`:
+  - Bật: giữ `breakfast_revenue` trong `RoomRevenue`.
+  - Tắt: trừ `breakfast_revenue` đúng một lần; không trừ `FbRevenue`/`OtherRevenue`.
+- Giá trị cấu hình legacy (`Revenue`, `RevenueER`, `AverageRoomRateIncludedOthersRoomRevenue`, `FOCBaoGomCompliment`) được chốt cùng daily snapshot. `FOCBaoGomCompliment` hiện mới được bảo toàn cấu hình; chưa áp dụng phép tính riêng khi chưa có bằng chứng legacy đầy đủ.
+- Sidebar là metadata trong `report_definitions.parameter_ui_schema`; datasource/schema/template/group/subtotal là metadata trong database. `content_html` chỉ là output biên dịch từ `content_json`, không chứa dữ liệu hoặc quy tắc nhóm hardcode.
+- Cụm năm toggle dùng `layout.group/type/row/column` lưu trong metadata: hai cột theo đúng legacy (chi tiết/ăn sáng, nhóm ngày, nhóm thị trường/nguồn khách). `ReportsPage` chỉ diễn giải metadata layout; report không khai báo layout vẫn giữ bố cục cũ.
+- Snapshot fact lưu `room_revenue`, `breakfast_revenue`, `extra_bed_revenue`, `extra_rollaway_revenue`, `fb_revenue`, `other_revenue`, `total_by_date`, `original_total` cùng dimension/filter cần thiết cho cả báo cáo summary và detail.
+- Fixture cục bộ `backend/database/testing/company_occupancy_xampp_test_data.sql` chỉ phục vụ kiểm thử, không phải seeder. Dữ liệu nhận diện bằng prefix `XAMPP_OCC_`.
+
+## Đính chính thiết kế Template/Designer 2026-11-04
+
+- `Hiển thị chi tiết` là tham số runtime `p_show_detail` của chính Dòng 167, không phải điều hướng sang báo cáo khác.
+- `content_json` lưu `id`, `columnId`, `visibleWhen`, `visibleWhenMode`, top header, subtotal/group total và `autoColspan`; `content_html` chỉ được biên dịch từ cấu hình này.
+- Ba cột cuối có điều kiện `parameters.p_show_detail = truthy`; header, số thứ tự, dữ liệu, subtotal/tổng và colspan tiêu đề nhóm đồng bộ tự động thành 11 hoặc 14 cột.
+- Template Designer cho phép cấu hình điều kiện mỗi cột, hàng đánh số cột và tự gộp colspan; panel preview dùng giá trị `p_show_detail` đã lưu trong `parameter_defaults`.
+- `parameter_ui_schema` lưu toàn bộ toggle/sidebar, gồm layout hai cột; `ReportsPage` không chứa nhánh render riêng theo mã `COMPANY_OCCUPANCY`.
+
+## Cấu hình chọn-một và thứ tự nhóm 2026-11-04
+
+- `p_group_by_market` và `p_group_by_source` dùng metadata chung `selection_group.key = company_occupancy_group_dimension`, `mode = single`; không dùng mã report hoặc `exclusive_with` hard-code ở giao diện.
+- Template Designer không yêu cầu nhập mã kỹ thuật. Mỗi điều kiện checkbox/radio có dropdown `Chọn một cùng`, liệt kê các toggle còn lại bằng nhãn nghiệp vụ; chọn một toggle sẽ tự tạo metadata `selection_group` cho đúng cặp. Cùng nhóm chỉ bật một điều kiện trong preview; cấu hình được lưu qua `PATCH /api/report-definitions/{reportDefinition}/parameter-ui-schema` cùng phiên bản template.
+- Mỗi toggle hiển thị rõ nguồn tác động: tham số Store tính toán, tham số Store được map, hoặc biến hiển thị Template. Trường output như `CompanyName` chỉ được chọn ở `Bảng chi tiết → Nhóm dữ liệu → Các cấp nhóm`; dropdown này lấy trực tiếp `field_schema` của Store.
+- `ReportDefinitionManagerModal.vue` bảo toàn `selection_group` khi đồng bộ lại tham số từ Data Source, tránh mất cấu hình sau khi chỉnh Store.
+- Thứ tự procedure `rpt_company_occupancy`: `GroupHeaderId` tăng dần rồi `TotalRevenue` giảm dần và `CompanyName` tăng dần. Khớp các PDF legacy: ngày/nhóm thị trường/nhóm nguồn khách theo mã nhóm, doanh thu giảm dần trong từng nhóm.
+- Đã xác minh UI Designer hiển thị cùng mã `company_occupancy_group_dimension` cho hai điều kiện thị trường và nguồn khách; runtime cục bộ xác minh thị trường hiển thị hai nhóm theo mã tăng dần, từng nhóm theo doanh thu giảm dần.
+
+## Khắc phục runtime parameter 2026-11-04
+
+- Log runtime xác nhận `COMPANY_OCCUPANCY` trả 500 vì một input `varchar` đến Executor dưới dạng mảng và bị ép trực tiếp sang string.
+- `ReportDataExecutorService` nay chuẩn hóa mảng scalar thành CSV, mảng rỗng thành `NULL` và từ chối mảng lồng với lỗi validation. Procedure `rpt_company_occupancy`, snapshot và metadata nghiệp vụ không thay đổi.
