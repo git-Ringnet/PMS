@@ -555,6 +555,14 @@ class GuestController extends Controller
                 return response()->json(['success' => false, 'message' => 'Chỉ được khôi phục checkout của phòng trong ngày hệ thống.'], 422);
             }
 
+            // Ngày đi sau khôi phục: checkout sớm -> trả lại ngày đi dự kiến (planned, lớn hơn ngày đi hiện tại);
+            // phòng đã gia hạn -> giữ ngày đi hiện tại (lớn hơn planned), không được lùi về ngày đặt ban đầu.
+            $currentDeparture = Carbon::parse($room->departure_date)->startOfDay();
+            $plannedDeparture = $room->planned_departure_date ? Carbon::parse($room->planned_departure_date)->startOfDay() : $currentDeparture;
+            $restoredDepartureDate = $plannedDeparture->gt($currentDeparture)
+                ? $plannedDeparture->toDateString()
+                : $currentDeparture->toDateString();
+
             if ($room->room_number) {
                 $hasInhouseBooking = BookingRoom::where('room_number', $room->room_number)
                     ->where('id', '!=', $room->id)
@@ -566,7 +574,7 @@ class GuestController extends Controller
 
                 // Khôi phục trả lại ngày đi dự kiến (checkout sớm), nên phải xét chiếm dụng
                 // trong toàn bộ khoảng lưu trú được mở lại, tối thiểu là ngày hệ thống.
-                $restoredDeparture = Carbon::parse($room->planned_departure_date ?: $room->departure_date)->startOfDay();
+                $restoredDeparture = Carbon::parse($restoredDepartureDate)->startOfDay();
                 $occupancyEnd = $restoredDeparture->gt($systemDate) ? $restoredDeparture : $systemDate->copy()->addDay();
 
                 // Booking khác đã gán phòng này trong khoảng lưu trú được mở lại cũng xem là đang chiếm dụng.
@@ -620,9 +628,11 @@ class GuestController extends Controller
                 'children_qty' => max((int) $room->children_qty, $activeChildren->where('age_group', '!=', 'baby')->count()),
                 'babies' => max((int) $room->babies, $activeChildren->where('age_group', 'baby')->count()),
                 'status' => BookingRoom::STATUS_CHECKED_IN,
-                'departure_date' => $room->planned_departure_date ?: $room->departure_date,
-                'ActutalNumOfDays' => $room->NumOfDays ?: $room->ActutalNumOfDays,
-                'CheckoutDate' => $room->planned_departure_date ?: $room->departure_date,
+                'departure_date' => $restoredDepartureDate,
+                'ActutalNumOfDays' => $room->is_day_use
+                    ? 0
+                    : max(0, Carbon::parse($room->arrival_date)->startOfDay()->diffInDays(Carbon::parse($restoredDepartureDate)->startOfDay())),
+                'CheckoutDate' => $restoredDepartureDate,
                 'CheckoutTime' => '12:00:00',
                 'check_out_user' => null,
             ]);
@@ -759,9 +769,7 @@ class GuestController extends Controller
         }
         $unpaid = $unpaidQuery->exists();
         if ($unpaid) return ['code' => 'unpaid_bill', 'message' => 'Phòng còn hóa đơn chưa thanh toán.'];
-        if ($this->hasUnpaidDebt($room->booking_id, $masterScope ? null : $room->id)) {
-            return ['code' => 'unpaid_debt', 'message' => 'Phòng vẫn còn công nợ chưa thanh toán.'];
-        }
+        // Công nợ AC (City ledger...) không chặn checkout: lễ tân giải trừ công nợ sau khi khách thanh toán.
         $unusedDepositQuery = \App\Models\Payment::where('booking_id', $room->booking_id)
             ->where('edit_flag', 0)
             ->whereNull('payment_id')
@@ -807,35 +815,10 @@ class GuestController extends Controller
             })
             ->get(['RentalRoomId1', 'RentalRoomId2', 'RegisterID2', 'CustomerId1', 'CustomerId2']);
 
-        $unpaidDebts = \App\Models\Payment::query()
-            ->where('booking_id', $booking->id)
-            ->where('payment_method_id', 'AC')
-            ->where('edit_flag', 0)
-            ->where('status', '!=', \App\Models\Payment::STATUS_DELETED)
-            ->whereNull('deleted_at')
-            ->when($checkedOutRoomIds, function ($query) use ($checkedOutRoomIds) {
-                $query->where(function ($q) use ($checkedOutRoomIds) {
-                    $q->whereNull('booking_room_id')
-                        ->orWhere('booking_room_id', '')
-                        ->orWhereNotIn(DB::raw('CAST(booking_room_id AS CHAR)'), $checkedOutRoomIds);
-                });
-            })
-            ->get(['id', 'amount', 'booking_room_id', 'guest_id', 'guest_display'])
-            ->filter(function ($payment) {
-                $settled = \App\Models\PaymentDebtSettlement::query()
-                    ->where('payment_id', $payment->id)
-                    ->where('edit_flag', 0)
-                    ->sum('amount');
-
-                return round((float) $payment->amount - (float) $settled, 2) > 0;
-            });
-
-        if ($unpaidBills->isNotEmpty() || $unpaidDebts->isNotEmpty()) {
-            $roomDetails = $this->masterCheckoutUnpaidRooms($booking, $unpaidBills, $unpaidDebts);
-            $code = $unpaidBills->isNotEmpty() ? 'unpaid_master' : 'unpaid_debt';
-            $message = $unpaidBills->isNotEmpty()
-                ? 'Master còn hóa đơn chưa thanh toán.'
-                : 'Phòng vẫn còn công nợ chưa thanh toán.';
+        if ($unpaidBills->isNotEmpty()) {
+            $roomDetails = $this->masterCheckoutUnpaidRooms($booking, $unpaidBills);
+            $code = 'unpaid_master';
+            $message = 'Master còn hóa đơn chưa thanh toán.';
             if ($roomDetails['rooms']) {
                 $message = $roomDetails['has_master_balance']
                     ? 'Bạn cần thanh toán hết công nợ của các phòng sau và Master:'
@@ -859,7 +842,7 @@ class GuestController extends Controller
         return null;
     }
 
-    private function masterCheckoutUnpaidRooms(Booking $booking, $unpaidBills, $unpaidDebts): array
+    private function masterCheckoutUnpaidRooms(Booking $booking, $unpaidBills): array
     {
         $bookingRooms = $booking->bookingRooms->keyBy(fn (BookingRoom $room) => (string) $room->id);
         $unpaidRooms = [];
@@ -883,16 +866,6 @@ class GuestController extends Controller
             $unpaidRooms[(string) $room->id] = $this->masterCheckoutUnpaidRoomDetail($room, $guestId);
         }
 
-        foreach ($unpaidDebts as $debt) {
-            $room = $bookingRooms->get((string) $debt->booking_room_id);
-            if (!$room) {
-                $hasMasterBalance = true;
-                continue;
-            }
-
-            $unpaidRooms[(string) $room->id] = $this->masterCheckoutUnpaidRoomDetail($room, $debt->guest_id, $debt->guest_display);
-        }
-
         $rooms = array_values($unpaidRooms);
         usort($rooms, fn (array $a, array $b) => strnatcmp($a['room_number'], $b['room_number']));
 
@@ -914,30 +887,6 @@ class GuestController extends Controller
             'room_number' => (string) ($room->room_number ?: $room->id),
             'guest_name' => $guestName !== '' ? $guestName : 'Chưa xác định khách',
         ];
-    }
-
-    /** Công nợ AC chỉ được xem là đã thanh toán khi tổng giải trừ đạt đủ số tiền gốc. */
-    private function hasUnpaidDebt(int|string $bookingId, int|string|null $roomId = null): bool
-    {
-        $query = \App\Models\Payment::query()
-            ->where('booking_id', $bookingId)
-            ->where('payment_method_id', 'AC')
-            ->where('edit_flag', 0)
-            ->where('status', '!=', \App\Models\Payment::STATUS_DELETED)
-            ->whereNull('deleted_at');
-
-        if ($roomId !== null) {
-            $query->whereRaw('CAST(booking_room_id AS CHAR) = ?', [(string) $roomId]);
-        }
-
-        return $query->get(['id', 'amount'])->contains(function ($payment) {
-            $settled = \App\Models\PaymentDebtSettlement::query()
-                ->where('payment_id', $payment->id)
-                ->where('edit_flag', 0)
-                ->sum('amount');
-
-            return round((float) $payment->amount - (float) $settled, 2) > 0;
-        });
     }
 
     private function hasUnpaidMasterBills(Booking $booking): bool

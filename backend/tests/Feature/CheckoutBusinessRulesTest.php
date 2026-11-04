@@ -265,8 +265,10 @@ class CheckoutBusinessRulesTest extends TestCase
             ->assertJsonPath('data.unpaid_rooms', []);
     }
 
-    public function test_master_checkout_lists_room_debt_until_it_is_fully_settled(): void
+    public function test_master_checkout_is_not_blocked_by_unsettled_company_debt(): void
     {
+        // Khách yêu cầu: công nợ AC (City ledger...) không liên quan nghiệp vụ checkout;
+        // lễ tân giải trừ công nợ sau khi khách thanh toán.
         $debt = Payment::create([
             'booking_id' => $this->booking->id,
             'booking_room_id' => $this->room->id,
@@ -289,27 +291,35 @@ class CheckoutBusinessRulesTest extends TestCase
             'created_by' => 'checkout_rules_user',
         ]);
 
-        $this->postJson("/api/bookings/{$this->booking->id}/checkout")
-            ->assertStatus(422)
-            ->assertJsonPath('code', 'unpaid_debt')
-            ->assertJsonPath('message', 'Bạn cần thanh toán hết công nợ của các phòng sau:')
-            ->assertJsonPath('data.unpaid_rooms.0.room_number', '101')
-            ->assertJsonPath('data.unpaid_rooms.0.guest_name', $this->guest->full_name);
-        $this->assertDatabaseHas('bookings', ['id' => $this->booking->id, 'status' => Booking::STATUS_CHECKIN]);
-        $this->assertDatabaseHas('booking_rooms', ['id' => $this->room->id, 'status' => BookingRoom::STATUS_CHECKED_IN]);
+        $this->postJson("/api/bookings/{$this->booking->id}/checkout")->assertSuccessful();
 
-        PaymentDebtSettlement::create([
-            'payment_id' => $debt->id,
-            'payment_date' => '2026-08-04',
-            'payment_time' => '13:00',
-            'payment_method_id' => 'CA',
-            'amount' => 600000,
+        $this->assertDatabaseHas('bookings', ['id' => $this->booking->id, 'status' => Booking::STATUS_CHECKOUT]);
+        $this->assertDatabaseHas('booking_rooms', ['id' => $this->room->id, 'status' => BookingRoom::STATUS_CHECKED_OUT]);
+        // Công nợ vẫn còn nguyên để lễ tân giải trừ sau.
+        $this->assertDatabaseHas('payments', ['id' => $debt->id, 'payment_method_id' => 'AC', 'edit_flag' => 0, 'deleted_at' => null]);
+        $this->assertSame(1, PaymentDebtSettlement::where('payment_id', $debt->id)->count());
+    }
+
+    public function test_master_checkout_with_company_debt_and_no_settlement_succeeds(): void
+    {
+        // Booking 10: City ledger 7.700.000 chưa có dòng giải trừ nào, gắn master (booking_room_id = null).
+        $debt = Payment::create([
+            'booking_id' => $this->booking->id,
+            'booking_room_id' => null,
+            'guest_display' => $this->guest->full_name,
+            'date' => '2026-08-03',
+            'amount' => 7700000,
+            'payment_method_id' => 'AC',
+            'status' => Payment::STATUS_PENDING,
             'edit_flag' => 0,
             'created_by' => 'checkout_rules_user',
         ]);
 
         $this->postJson("/api/bookings/{$this->booking->id}/checkout")->assertSuccessful();
+
         $this->assertDatabaseHas('bookings', ['id' => $this->booking->id, 'status' => Booking::STATUS_CHECKOUT]);
+        $this->assertDatabaseHas('payments', ['id' => $debt->id, 'edit_flag' => 0]);
+        $this->assertSame(0, PaymentDebtSettlement::where('payment_id', $debt->id)->count());
     }
 
     public function test_early_room_checkout_requires_remaining_nights_to_be_charged(): void
@@ -364,7 +374,7 @@ class CheckoutBusinessRulesTest extends TestCase
         $this->assertDatabaseHas('service_bills', ['Ma' => $paid->Ma, 'RentalRoomId2' => $this->room->id, 'PaymentId' => 1]);
     }
 
-    public function test_room_checkout_is_blocked_when_debt_has_remaining_balance(): void
+    public function test_room_checkout_is_not_blocked_when_debt_has_remaining_balance(): void
     {
         $debt = Payment::create([
             'booking_id' => $this->booking->id,
@@ -377,7 +387,6 @@ class CheckoutBusinessRulesTest extends TestCase
             'edit_flag' => 0,
             'created_by' => 'checkout_rules_user',
         ]);
-
         PaymentDebtSettlement::create([
             'payment_id' => $debt->id,
             'payment_date' => '2026-08-04',
@@ -391,24 +400,10 @@ class CheckoutBusinessRulesTest extends TestCase
         $this->postJson("/api/booking-rooms/{$this->room->id}/checkout", [
             'guest_ids' => [$this->guest->id],
             'skip_remaining_room_charge' => true,
-        ])->assertStatus(422)
-            ->assertJsonPath('code', 'unpaid_debt')
-            ->assertJsonPath('message', 'Phòng vẫn còn công nợ chưa thanh toán.');
-
-        PaymentDebtSettlement::create([
-            'payment_id' => $debt->id,
-            'payment_date' => '2026-08-04',
-            'payment_time' => '13:00',
-            'payment_method_id' => 'CA',
-            'amount' => 600000,
-            'edit_flag' => 0,
-            'created_by' => 'checkout_rules_user',
-        ]);
-
-        $this->postJson("/api/booking-rooms/{$this->room->id}/checkout", [
-            'guest_ids' => [$this->guest->id],
-            'skip_remaining_room_charge' => true,
         ])->assertSuccessful();
+
+        $this->assertDatabaseHas('booking_rooms', ['id' => $this->room->id, 'status' => BookingRoom::STATUS_CHECKED_OUT]);
+        $this->assertDatabaseHas('payments', ['id' => $debt->id, 'payment_method_id' => 'AC', 'edit_flag' => 0]);
     }
 
     public function test_room_checkout_allows_unpaid_room_charge_when_room_rate_is_sent_to_master(): void
