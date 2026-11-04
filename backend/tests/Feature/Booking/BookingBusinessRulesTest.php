@@ -2273,6 +2273,31 @@ class BookingBusinessRulesTest extends TestCase
     }
 
     /**
+     * Row 358: late check-in CÓ charge đã post đêm cũ -> bật Ở theo giờ không sinh thêm đêm ngày đến mới;
+     * late check-in KHÔNG charge vẫn sinh đêm day-use ở ngày đến mới.
+     */
+    public function test_row_358_day_use_after_charged_late_checkin_has_no_extra_night(): void
+    {
+        foreach (['Charge Room' => 0, 'No Charge' => 1] as $label => $expected) {
+            $booking = $this->createBooking(['arrival_date' => '2026-09-02', 'departure_date' => '2026-09-02', 'is_day_use' => true]);
+            $room = BookingRoom::create([
+                'id' => 'G-358-' . $expected, 'booking_id' => $booking->id, 
+                'room_class_id' => $this->roomClass->id, 'arrival_date' => '2026-09-02', 'departure_date' => '2026-09-02',
+                'is_day_use' => true, 'rate' => 540000, 'status' => BookingRoom::STATUS_BOOKED,
+            ]);
+            \App\Models\LateCheckin::create([
+                'booking_room_id' => $room->id, 'late_checkin_date' => '2026-09-01 00:00:00',
+                'actual_arrival_date' => '2026-09-02 00:00:00', 'late_checkin_time' => '10:00',
+                'reason' => 'NightAudit No Show One Day ' . $label, 'status' => 1, 'username' => 'u', 'shift' => 1,
+            ]);
+
+            app(\App\Services\BookingRoomStayChargeService::class)->synchronize($room->fresh(), 540000.0);
+
+            $this->assertSame($expected, \App\Models\BookingRoomService::where('booking_room_id', $room->id)->count(), $label);
+        }
+    }
+
+    /**
      * Row 393: quick update allows departure = arrival (same-day room without
      * day-use, zero nights) and only rejects departure < arrival.
      */
