@@ -7,9 +7,10 @@
 -- 4. Sau khi test xong chạy phần CLEANUP.
 --
 -- Điều kiện:
--- - Đã chạy migration 2026_11_02_100000_finalize_company_occupancy_legacy_pdf.php.
+-- - Đã chạy migration 2026_11_04_120000_implement_company_occupancy_snapshot_report.php.
 -- - Bảng master rooms, room_forms, booking_statuses đã có dữ liệu.
--- - Script không sửa CompanyOccupancyRuntimeSeeder và không đổi SystemDate.
+-- - Script không sửa CompanyOccupancyRuntimeSeeder.
+-- - Sau setup, tạo snapshot cho ngày quá khứ bằng NightAuditSnapshotService trước khi đối chiếu.
 -- - Mã bắt đầu bằng XAMPP_OCC_ chỉ dành cho dữ liệu test của script này.
 
 /* ================================================================
@@ -37,7 +38,7 @@ ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id);
 SET @source_id = LAST_INSERT_ID();
 
 INSERT INTO room_classes (name, code, color, is_active, orders, created_at, updated_at)
-VALUES ('Test Occupancy Room', 'XAMPP_OCC_ROOM', '#dbeafe', 1, NULL, NOW(), NOW())
+VALUES ('Test Occupancy Room', 'XAMPP_OCC_ROOM', '#dbeafe', 1, 0, NOW(), NOW())
 ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id);
 SET @room_class_id = LAST_INSERT_ID();
 
