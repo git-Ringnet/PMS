@@ -1968,12 +1968,10 @@ watch(() => props.show, (v) => {
     loadGuestDefinitions()
     if (props.bookingId) loadGuests()
   }
-})
+}, { immediate: true })
 
 onMounted(() => {
   loadSavedColumnSettings()
-  loadNationalities()
-  loadGuestDefinitions()
 })
 </script>
 

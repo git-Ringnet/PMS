@@ -160,7 +160,7 @@ class RevenueReports154To168MigrationTest extends TestCase
         $templates = [
             ['daily_summary_reference.php', 'daily-summary-table', 'SortOrder'],
             ['company_occupancy_detail_reference.php', 'company-occupancy-detail-table', 'BookingCode'],
-            ['company_occupancy_reference.php', 'company-occupancy-table', 'ActualADR'],
+            ['company_occupancy_reference.php', 'company-occupancy-table', 'RevenuePercentage'],
             ['salesperson_revenue_summary_reference.php', 'salesperson-summary-table', 'RoomNights'],
             ['salesperson_revenue_detail_reference.php', 'salesperson-detail-table', 'FocRoomNights'],
         ];

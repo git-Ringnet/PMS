@@ -20,6 +20,7 @@ class ReportMenuService
         'reservation' => 'Đăng ký phòng',
         'frontdesk' => 'Lễ tân',
         'housekeeping' => 'Buồng phòng',
+        'management' => 'Báo Cáo Quản Lý',
     ];
 
     public static function belongsTo(ReportDefinition $report, string $location): bool

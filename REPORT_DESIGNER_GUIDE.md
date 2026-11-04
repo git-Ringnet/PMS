@@ -798,7 +798,7 @@ Bảng `report_definitions`:
 | `sort_order` | Thứ tự chung trong danh sách quản trị/Viewer |
 | `is_active` | Cho phép Viewer tải và chạy báo cáo |
 | `show_in_menu` | Có tạo lối tắt báo cáo trên menu hệ thống hay không |
-| `menu_locations` | Các khu vực hiển thị: `reservation`, `frontdesk`, `housekeeping` |
+| `menu_locations` | Các khu vực hiển thị: `reservation`, `frontdesk`, `housekeeping`, `management` |
 | `menu_top_order` | Thứ tự của nút Báo cáo trong thanh menu khu vực |
 | `menu_group_order` | Thứ tự nhóm báo cáo trong menu xổ xuống |
 | `menu_item_order` | Thứ tự báo cáo trong cùng nhóm |

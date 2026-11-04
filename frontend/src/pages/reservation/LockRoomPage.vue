@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, computed, onActivated, onMounted, onBeforeUnmount, onDeactivated, watch } from 'vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
@@ -119,6 +119,37 @@ const defaultLockEndTime = computed(() => {
 
 // Broadcast channel
 let bc = null
+let lockRoomListenersActive = false
+let lockRoomWasDeactivated = false
+
+function handleLockRoomBroadcast(event) {
+  if (event.data === 'rooms-updated') {
+    fetchRooms(true)
+  }
+}
+
+function startLockRoomListeners() {
+  if (lockRoomListenersActive) return
+  lockRoomListenersActive = true
+  window.addEventListener('keydown', handleGlobalKeydown)
+  document.addEventListener('click', closeAllPopovers)
+  if (typeof BroadcastChannel !== 'undefined' && !bc) {
+    bc = new BroadcastChannel('pms-room-updates')
+    bc.addEventListener('message', handleLockRoomBroadcast)
+  }
+}
+
+function stopLockRoomListeners() {
+  if (!lockRoomListenersActive) return
+  lockRoomListenersActive = false
+  window.removeEventListener('keydown', handleGlobalKeydown)
+  document.removeEventListener('click', closeAllPopovers)
+  if (bc) {
+    bc.removeEventListener('message', handleLockRoomBroadcast)
+    bc.close()
+    bc = null
+  }
+}
 
 const getTodayString = () => {
   if (systemDate.value) return systemDate.value
@@ -178,7 +209,7 @@ const handleGlobalKeydown = (e) => {
 }
 
 onMounted(async () => {
-  window.addEventListener('keydown', handleGlobalKeydown)
+  startLockRoomListeners()
   
   // Chỉ tải từ server khi chưa có cache trong RAM (lần đầu vào hoặc F5); nếu đã có thì giữ nguyên dữ liệu, không load lại (Dòng 50)
   const currentState = getLockRoomState()
@@ -198,24 +229,24 @@ onMounted(async () => {
   } catch (e) {
     console.error('Lỗi khi tải ngày hệ thống:', e)
   }
-  document.addEventListener('click', closeAllPopovers)
-  
-  if (typeof BroadcastChannel !== 'undefined') {
-    bc = new BroadcastChannel('pms-room-updates')
-    bc.onmessage = (event) => {
-      if (event.data === 'rooms-updated') {
-        fetchRooms(true)
-      }
-    }
+})
+
+onActivated(() => {
+  startLockRoomListeners()
+  if (lockRoomWasDeactivated) {
+    lockRoomWasDeactivated = false
+    fetchRooms(true)
   }
 })
 
+onDeactivated(() => {
+  lockRoomWasDeactivated = true
+  closeAllPopovers()
+  stopLockRoomListeners()
+})
+
 onBeforeUnmount(() => {
-  window.removeEventListener('keydown', handleGlobalKeydown)
-  document.removeEventListener('click', closeAllPopovers)
-  if (bc) {
-    bc.close()
-  }
+  stopLockRoomListeners()
   // Ghi nhớ trạng thái bộ lọc và lựa chọn vào module cache ngoài component trước khi unmount
   setLockRoomState({
     rooms: rooms.value,
@@ -230,10 +261,11 @@ onBeforeUnmount(() => {
 })
 
 const closeAllPopovers = (e) => {
-  if (!e.target.closest('.row-menu-container')) {
+  const target = e?.target
+  if (!target?.closest?.('.row-menu-container')) {
     activeRowMenuId.value = null
   }
-  if (isRoomDropdownOpen.value && !e.target.closest('.modal-room-dropdown-container')) {
+  if (isRoomDropdownOpen.value && !target?.closest?.('.modal-room-dropdown-container')) {
     isRoomDropdownOpen.value = false
   }
 }

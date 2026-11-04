@@ -52,8 +52,10 @@ const saveWorkspace = (key = pmsWorkspaceKey.value) => {
       parameters: cloneWorkspaceValue(tab.parameters),
       parameterOptions: cloneWorkspaceValue(tab.parameterOptions),
       selectedTemplateId: tab.selectedTemplateId,
+      templateSelections: cloneWorkspaceValue(tab.templateSelections),
       dataset: cloneWorkspaceValue(tab.dataset),
       renderedHtml: tab.renderedHtml,
+      executionReportCode: tab.executionReportCode,
     })),
   })
 }
@@ -83,10 +85,47 @@ const handleReportTabsWheel = (event) => {
 
 const activeTab = computed(() => openTabs.value.find(t => t.id === activeTabId.value) || null)
 const isWeeklyRoomReport = tab => tab?.code === 'WEEKLY_ROOM_REPORT'
+const isTruthy = value => value === true || value === 1 || value === '1' || value === 'true'
+const parameterMatchesVisibility = (tab, parameter) => {
+  const condition = parameter?.visible_when
+  if (!condition) return true
+  const actual = tab?.parameters?.[condition.parameter]
+  if (Array.isArray(condition.equals)) return condition.equals.some(value => String(value) === String(actual))
+  if (Object.prototype.hasOwnProperty.call(condition, 'equals')) return String(condition.equals) === String(actual)
+  if (condition.truthy === true) return isTruthy(actual)
+  if (condition.truthy === false) return !isTruthy(actual)
+  return true
+}
 const isVisibleReportParameter = (tab, parameter) => (
   parameter.control !== 'hidden'
+  && parameterMatchesVisibility(tab, parameter)
   && (!isWeeklyRoomReport(tab) || parameter.name !== 'p_from_date' || tab.parameters.p_week_preset === 'custom')
 )
+
+const viewModeParameter = tab => (tab?.report?.parameter_ui_schema || [])
+  .find(parameter => parameter.ui_only && parameter.view_mode && parameter.linked_report_code)
+
+const effectiveReportForTab = tab => {
+  const mode = viewModeParameter(tab)
+  if (!mode || !isTruthy(tab?.parameters?.[mode.name])) return tab?.report || null
+  return reports.value.find(report => report.code === mode.linked_report_code) || tab?.report || null
+}
+
+const effectiveTemplateIdForTab = tab => {
+  const report = effectiveReportForTab(tab)
+  if (!report) return null
+  const configured = tab?.templateSelections?.[report.code]
+  if (configured && report.templates.some(template => Number(template.id) === Number(configured))) return configured
+  if (report.code === tab?.report?.code && tab?.selectedTemplateId && report.templates.some(template => Number(template.id) === Number(tab.selectedTemplateId))) {
+    return tab.selectedTemplateId
+  }
+  return report.templates.find(template => template.is_default)?.id || report.templates[0]?.id || null
+}
+
+const executedReportForTab = tab => reports.value.find(report => report.code === tab?.executionReportCode)
+  || effectiveReportForTab(tab)
+
+const reportParameterNames = report => (report?.report_data_source?.parameter_schema || []).map(parameter => parameter.name)
 
 const housekeepingInvoiceCodes = new Set([
   'LAUNDRY_INVOICES',
@@ -110,8 +149,11 @@ const submitHousekeepingInvoice = (tab, parameters) => {
 }
 
 const activeTemplate = computed(() => {
-  if (!activeTab.value || !activeTab.value.selectedTemplateId) return null
-  return activeTab.value.report.templates.find(t => t.id === activeTab.value.selectedTemplateId) || null
+  const tab = activeTab.value
+  const report = effectiveReportForTab(tab)
+  const templateId = effectiveTemplateIdForTab(tab)
+  if (!report || !templateId) return null
+  return report.templates.find(template => Number(template.id) === Number(templateId)) || null
 })
 
 const reportViewer = ref(null)
@@ -237,6 +279,31 @@ const applyWeeklyDateRange = (tab) => {
 
 const handleReportParameterChange = (tab, parameter) => {
   if (isWeeklyRoomReport(tab) && parameter.name === 'p_week_preset') applyWeeklyDateRange(tab)
+  if (parameter?.view_mode) {
+    const report = effectiveReportForTab(tab)
+    const templateId = effectiveTemplateIdForTab(tab)
+    if (report && templateId) {
+      tab.templateSelections[report.code] = templateId
+      tab.selectedTemplateId = templateId
+    }
+    tab.dataset = null
+    tab.renderedHtml = ''
+    tab.executionReportCode = null
+  }
+}
+
+const toggleCheckboxParameter = (tab, parameter) => {
+  const nextValue = !isTruthy(tab.parameters[parameter.name])
+  tab.parameters[parameter.name] = nextValue
+
+  // Metadata-only mutual exclusion. Reports without `exclusive_with` retain
+  // their existing checkbox behaviour.
+  if (nextValue && Array.isArray(parameter.maps_to?.exclusive_with)) {
+    parameter.maps_to.exclusive_with.forEach((name) => {
+      tab.parameters[name] = false
+    })
+  }
+  handleReportParameterChange(tab, parameter)
 }
 
 const defaultParametersForReport = (report) => {
@@ -291,8 +358,14 @@ const createReportTab = (report, snapshot = null) => {
   selectedTemplateId: report.templates.some(item => Number(item.id) === Number(snapshot?.selectedTemplateId))
     ? snapshot.selectedTemplateId
     : report.templates.find(item => item.is_default)?.id || report.templates[0]?.id || null,
+  templateSelections: usable && snapshot?.templateSelections
+    ? snapshot.templateSelections
+    : {
+        [report.code]: report.templates.find(item => item.is_default)?.id || report.templates[0]?.id || null,
+      },
   dataset: usable ? snapshot.dataset || null : null,
   renderedHtml: usable ? snapshot.renderedHtml || '' : '',
+  executionReportCode: usable ? snapshot?.executionReportCode || null : null,
   executing: false,
   rendering: false,
   exporting: false,
@@ -377,12 +450,53 @@ const normalizeReportParameters = (tab) => {
   }
 }
 
-const reportParametersPayload = (tab) => Object.fromEntries(
-  Object.entries(tab.parameters).map(([name, value]) => {
-    const definition = (tab.report.parameter_ui_schema || []).find(item => item.name === name)
-    return [name, definition?.control === 'multi-select' && Array.isArray(value) ? value.join(',') : value]
-  })
-)
+const applyUiParameterMappings = (tab) => {
+  const definitions = (tab.report.parameter_ui_schema || [])
+    .filter(parameter => parameter.maps_to?.parameter)
+    .filter(parameter => isVisibleReportParameter(tab, parameter))
+    .sort((left, right) => Number(right.maps_to?.priority || 0) - Number(left.maps_to?.priority || 0))
+  const targets = new Set(definitions.map(parameter => parameter.maps_to.parameter))
+
+  for (const target of targets) {
+    const targetDefinitions = definitions.filter(parameter => parameter.maps_to.parameter === target)
+    const activeNames = new Set(targetDefinitions
+      .filter(parameter => isTruthy(tab.parameters[parameter.name]))
+      .map(parameter => parameter.name))
+    const candidates = targetDefinitions.flatMap((parameter) => {
+      if (!activeNames.has(parameter.name)) return []
+
+      const direct = [{
+        value: parameter.maps_to.value,
+        priority: Number(parameter.maps_to.priority || 0),
+      }]
+      const combinations = (parameter.maps_to.combinations || [])
+        .filter(combination => (combination.with || []).every(name => activeNames.has(name)))
+        .map(combination => ({
+          value: combination.value,
+          priority: Number(combination.priority ?? parameter.maps_to.priority ?? 0),
+        }))
+
+      return [...direct, ...combinations]
+    }).filter(candidate => candidate.value !== undefined && candidate.value !== null)
+      .sort((left, right) => right.priority - left.priority)
+
+    tab.parameters[target] = candidates[0]?.value
+      ?? targetDefinitions[0]?.maps_to.empty_value
+      ?? tab.parameters[target]
+  }
+}
+
+const reportParametersPayload = (tab, report = tab.report) => {
+  applyUiParameterMappings(tab)
+  const definitions = report.parameter_ui_schema || []
+  return Object.fromEntries(
+    reportParameterNames(report).map(name => {
+      const value = tab.parameters[name]
+      const definition = definitions.find(item => item.name === name)
+      return [name, definition?.control === 'multi-select' && Array.isArray(value) ? value.join(',') : value]
+    })
+  )
+}
 
 const hasEmptySelectOption = (tab, parameter) => (
   tab.parameterOptions[parameter.name] || parameter.options || []
@@ -398,30 +512,37 @@ const multiSelectLabel = (tab, parameter) => {
   return labels.length > 2 ? `${labels.slice(0, 2).join(', ')} (+${labels.length - 2})` : labels.join(', ')
 }
 
-const syncTemplateSummary = (tab, summary) => {
+const syncTemplateSummary = (tab, summary, report = tab?.report) => {
   if (!tab || !summary?.id) return
-  const template = (tab.report.templates || []).find(item => Number(item.id) === Number(summary.id))
+  const template = (report?.templates || []).find(item => Number(item.id) === Number(summary.id))
   if (template) Object.assign(template, summary)
 }
 
 const executeTab = async (tab) => {
-  if (!tab || !tab.selectedTemplateId) return
+  const report = effectiveReportForTab(tab)
+  const templateId = effectiveTemplateIdForTab(tab)
+  if (!tab || !report || !templateId) return
   normalizeReportParameters(tab)
   applyWeeklyDateRange(tab)
-  const missing = (tab.report.parameter_ui_schema || [])
+  const sourceNames = new Set(reportParameterNames(report))
+  const missing = (report.parameter_ui_schema || [])
+    .filter(item => sourceNames.has(item.name))
     .filter(item => item.required && (tab.parameters[item.name] === '' || tab.parameters[item.name] === undefined || (item.control === 'multi-select' && (!Array.isArray(tab.parameters[item.name]) || tab.parameters[item.name].length === 0))))
   if (missing.length) {
     uiStore.showToast(`Vui lòng nhập: ${missing.map(item => item.label).join(', ')}`, 'warning')
     return
   }
+  tab.templateSelections[report.code] = templateId
+  tab.selectedTemplateId = templateId
   tab.executing = true
   try {
-    const response = await http.post(`/report-definitions/${tab.report.id}/execute`, {
-      parameters: reportParametersPayload(tab), template_id: tab.selectedTemplateId
+    const response = await http.post(`/report-definitions/${report.id}/execute`, {
+      parameters: reportParametersPayload(tab, report), template_id: templateId
     })
-    syncTemplateSummary(tab, response.data.template)
+    syncTemplateSummary(tab, response.data.template, report)
     tab.dataset = response.data.data
     tab.renderedHtml = response.data.html
+    tab.executionReportCode = report.code
     uiStore.showToast(`Đã tải ${tab.dataset.summary?.row_count || 0} dòng dữ liệu từ Store`, 'success')
   } catch (error) {
     // Lỗi không có message từ API (mạng, quá thời gian, lỗi JS khi nhận kết quả) chỉ hiện câu chung; ghi console để tra cứu.
@@ -435,14 +556,16 @@ const executeTab = async (tab) => {
 }
 
 const changeTemplateForTab = async (tab) => {
-  if (!tab || !tab.dataset || !tab.selectedTemplateId) return
+  const report = executedReportForTab(tab)
+  const templateId = effectiveTemplateIdForTab(tab)
+  if (!tab || !tab.dataset || !report || !templateId) return
   tab.rendering = true
   try {
-    const response = await http.post(`/report-definitions/${tab.report.id}/render`, {
-      template_id: tab.selectedTemplateId,
+    const response = await http.post(`/report-definitions/${report.id}/render`, {
+      template_id: templateId,
       data: tab.dataset
     })
-    syncTemplateSummary(tab, response.data.template)
+    syncTemplateSummary(tab, response.data.template, report)
     tab.renderedHtml = response.data.html
   } catch (error) {
     uiStore.showToast(error.response?.data?.message || 'Không thể đổi mẫu đầu ra', 'error')
@@ -489,12 +612,14 @@ const openReportFromDrill = async ({ report: code, parameters = {} }) => {
 }
 
 const exportReportForTab = async (tab, format) => {
-  if (!tab?.dataset || !tab.selectedTemplateId || tab.exporting) return
+  const report = executedReportForTab(tab)
+  const templateId = effectiveTemplateIdForTab(tab)
+  if (!tab?.dataset || !report || !templateId || tab.exporting) return
   tab.exporting = true
   try {
-    const response = await http.post(`/report-definitions/${tab.report.id}/exports`, {
-      parameters: reportParametersPayload(tab),
-      template_id: tab.selectedTemplateId,
+    const response = await http.post(`/report-definitions/${report.id}/exports`, {
+      parameters: reportParametersPayload(tab, report),
+      template_id: templateId,
       format
     }, { responseType: 'arraybuffer' })
     const extension = format === 'xlsx' ? 'xlsx' : format
@@ -576,6 +701,8 @@ const handleTemplateSaved = async (event) => {
 // Watch active tab template change
 watch(() => activeTab.value?.selectedTemplateId, (val, oldVal) => {
   if (val && oldVal && val !== oldVal) {
+    const report = effectiveReportForTab(activeTab.value)
+    if (report) activeTab.value.templateSelections[report.code] = val
     changeTemplateForTab(activeTab.value)
   }
 })
@@ -670,13 +797,13 @@ onBeforeUnmount(() => {
             <div>
               <h2 class="text-sm font-semibold text-[#000000D9]">{{ activeTab.name }}</h2>
               <p class="mt-0.5 flex items-center gap-1 text-[10px] font-semibold text-slate-400">
-                <Database class="h-3 w-3" /> {{ activeTab.report.report_data_source?.object_name }}
+                <Database class="h-3 w-3" /> {{ effectiveReportForTab(activeTab)?.report_data_source?.object_name }}
               </p>
             </div>
             <div class="flex items-center gap-2">
               <label class="text-[12px] font-semibold uppercase text-[#000000D9]">Mẫu đầu ra
                 <select v-model="activeTab.selectedTemplateId" class="ml-2 min-w-52 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-normal text-[#000000D9]">
-                  <option v-for="template in activeTab.report.templates" :key="template.id" :value="template.id">
+                <option v-for="template in effectiveReportForTab(activeTab)?.templates || []" :key="template.id" :value="template.id">
                     {{ template.name }}{{ template.is_default ? ' (Mặc định)' : '' }}
                   </option>
                 </select>
@@ -713,8 +840,8 @@ onBeforeUnmount(() => {
               <div v-for="parameter in (activeTab.report.parameter_ui_schema || []).filter(item => isVisibleReportParameter(activeTab, item))" :key="parameter.name" class="mb-3 block text-xs font-semibold text-[#000000D9]">
               <template v-if="parameter.control === 'checkbox'">
                 <div class="flex h-8 items-center gap-2">
-                  <button @click="activeTab.parameters[parameter.name] = !activeTab.parameters[parameter.name]" class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-1" :class="activeTab.parameters[parameter.name] ? 'bg-sky-500' : 'bg-slate-300'">
-                    <span class="inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform" :class="activeTab.parameters[parameter.name] ? 'translate-x-[18px]' : 'translate-x-1'"></span>
+                  <button @click="toggleCheckboxParameter(activeTab, parameter)" class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-1" :class="isTruthy(activeTab.parameters[parameter.name]) ? 'bg-sky-500' : 'bg-slate-300'">
+                    <span class="inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform" :class="isTruthy(activeTab.parameters[parameter.name]) ? 'translate-x-[18px]' : 'translate-x-1'"></span>
                   </button>
                   <span>{{ parameter.label }} <span v-if="parameter.required" class="text-red-500">*</span></span>
                 </div>

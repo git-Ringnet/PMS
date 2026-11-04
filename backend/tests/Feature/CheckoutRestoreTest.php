@@ -253,4 +253,45 @@ class CheckoutRestoreTest extends TestCase
 
         $this->postJson("/api/booking-rooms/{$this->bookingRoom->id}/restore-checkout")->assertSuccessful();
     }
+
+    public function test_restore_checkout_of_extended_room_keeps_extended_departure_date_and_nights(): void
+    {
+        // NV2 / phòng 1312: đặt 30/08 -> 01/09, gia hạn tới 05/09 rồi check out đúng 05/09.
+        $this->bookingRoom->forceFill([
+            'arrival_date' => '2026-07-30', 'departure_date' => '2026-08-04', 'planned_departure_date' => '2026-08-01',
+            'NumOfDays' => 2, 'ActutalNumOfDays' => 5, 'CheckoutDate' => '2026-08-04',
+        ])->saveQuietly();
+
+        $this->postJson("/api/booking-rooms/{$this->bookingRoom->id}/restore-checkout")->assertSuccessful();
+
+        $room = $this->bookingRoom->fresh();
+        $this->assertSame(BookingRoom::STATUS_CHECKED_IN, (int) $room->status);
+        $this->assertSame('2026-08-04', $room->departure_date->toDateString());
+        $this->assertSame('2026-08-04', \Carbon\Carbon::parse($room->CheckoutDate)->toDateString());
+        $this->assertSame(5, (int) $room->ActutalNumOfDays);
+        $this->assertSame('2026-08-01', $room->planned_departure_date->toDateString());
+    }
+
+    public function test_restore_checkout_of_early_checkout_room_still_returns_to_planned_departure(): void
+    {
+        $this->bookingRoom->forceFill([
+            'arrival_date' => '2026-08-01', 'departure_date' => '2026-08-04', 'planned_departure_date' => '2026-08-08',
+            'NumOfDays' => 7, 'ActutalNumOfDays' => 3, 'CheckoutDate' => '2026-08-04',
+        ])->saveQuietly();
+
+        $this->postJson("/api/booking-rooms/{$this->bookingRoom->id}/restore-checkout")->assertSuccessful();
+
+        $room = $this->bookingRoom->fresh();
+        $this->assertSame('2026-08-08', $room->departure_date->toDateString());
+        $this->assertSame(7, (int) $room->ActutalNumOfDays);
+    }
+
+    public function test_restore_checkout_of_regular_room_keeps_departure_date(): void
+    {
+        $this->postJson("/api/booking-rooms/{$this->bookingRoom->id}/restore-checkout")->assertSuccessful();
+
+        $room = $this->bookingRoom->fresh();
+        $this->assertSame('2026-08-05', $room->departure_date->toDateString());
+        $this->assertSame(4, (int) $room->ActutalNumOfDays);
+    }
 }

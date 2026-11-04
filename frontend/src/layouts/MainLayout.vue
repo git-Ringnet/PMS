@@ -18,10 +18,16 @@ import { useUiStore } from '@/stores/ui-store'
 
 const route = useRoute()
 const router = useRouter()
+const usesOwnActivityLog = computed(() => (
+  route.path.startsWith('/reservation')
+  || route.path.startsWith('/frontdesk')
+  || route.path.startsWith('/housekeeping')
+))
 const activeOutlets = ref([])
 const dynamicReports = ref([])
 // Dòng 327: menu Báo cáo theo cấu hình từng module (nhóm, thứ tự), chỉ gồm báo cáo người dùng được xem
 const reportNavigation = ref(null)
+let reportMenuRequestVersion = 0
 
 const loadActiveOutlets = async () => {
   try {
@@ -33,11 +39,13 @@ const loadActiveOutlets = async () => {
 }
 
 const loadDynamicReports = async () => {
+  const requestVersion = ++reportMenuRequestVersion
   // Tải cùng lúc rồi mới gán để menu không hiện thứ tự cũ trước khi có cấu hình
   const [definitions, navigation] = await Promise.allSettled([
     http.get('/report-definitions', { params: { active_only: 1 } }),
     http.get('/report-menu/navigation')
   ])
+  if (requestVersion !== reportMenuRequestVersion) return
   if (definitions.status === 'rejected') console.error('Không thể tải menu báo cáo động:', definitions.reason)
   reportNavigation.value = navigation.status === 'fulfilled' ? (navigation.value.data.data || null) : null
   dynamicReports.value = definitions.status === 'fulfilled' ? (definitions.value.data.data || []) : []
@@ -443,14 +451,12 @@ onMounted(() => {
   // Thiết lập thuộc tính lang của HTML document
   document.documentElement.setAttribute('lang', currentLang.value)
   
-  const savedTheme = localStorage.getItem('theme')
-  if (savedTheme === 'dark' || (!savedTheme && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-    isDark.value = true
-    document.documentElement.classList.add('dark')
-  } else {
-    isDark.value = false
-    document.documentElement.classList.remove('dark')
-  }
+  // PMS dùng giao diện sáng thống nhất trên mọi trình duyệt.
+  // Không tự kích hoạt dark mode theo thiết lập của hệ điều hành/trình duyệt
+  // vì các màn hình nghiệp vụ legacy chưa hỗ trợ dark mode đồng nhất.
+  isDark.value = false
+  document.documentElement.classList.remove('dark')
+  localStorage.setItem('theme', 'light')
   
   // Initialize color customization tabs/values
   const savedBg = authStore.themeColor
@@ -512,7 +518,13 @@ onUnmounted(() => {
   }
 })
 
-const reportRoute = (context, code) => `/${context}?tab=reports&report=${encodeURIComponent(code)}`
+const reportRoute = (context, code) => context === 'management'
+  ? `/reports?report=${encodeURIComponent(code)}`
+  : `/${context}?tab=reports&report=${encodeURIComponent(code)}`
+
+const reportModuleRoute = (context) => context === 'management'
+  ? '/reports'
+  : `/${context}?tab=reports`
 
 const reportMenuItem = (context, item) => item.type === 'group'
   ? { type: 'group', name: item.name, children: (item.children || []).map(child => reportMenuItem(context, child)) }
@@ -525,7 +537,7 @@ const buildDynamicReportMenu = (context = null) => {
 
     return {
       name: t('menu.reports'),
-      route: `/${context}?tab=reports`,
+      route: reportModuleRoute(context),
       dropdown: dropdown.length ? dropdown : undefined,
       menuOrder: Number(configured.top_order ?? 20),
       reportSlot: true
@@ -550,9 +562,7 @@ const buildDynamicReportMenu = (context = null) => {
     group.order = Math.min(group.order, Number(report.menu_group_order || 0))
     group.children.push({
       name: report.name,
-      route: context
-        ? `/${context}?tab=reports&report=${encodeURIComponent(report.code)}`
-        : `/reports?report=${encodeURIComponent(report.code)}`,
+      route: context ? reportRoute(context, report.code) : `/reports?report=${encodeURIComponent(report.code)}`,
       order: Number(report.menu_item_order || 0)
     })
   }
@@ -569,7 +579,7 @@ const buildDynamicReportMenu = (context = null) => {
 
   return {
     name: t('menu.reports'),
-    route: context ? `/${context}?tab=reports` : '/reports',
+    route: context ? reportModuleRoute(context) : '/reports',
     dropdown: dropdown.length ? dropdown : undefined,
     menuOrder: available.length ? Math.min(...available.map(report => Number(report.menu_top_order ?? 20))) : 20,
     reportSlot: true
@@ -642,7 +652,7 @@ const rawMenuItems = computed(() => {
   }
   //trang báo cáo reports
   if (route.path.startsWith('/reports') && !fromModule) {
-    return withDynamicReportMenu([], null)
+    return withDynamicReportMenu([], 'management')
   }
   // trang PMS chính
   if (route.path.startsWith('/config') || fromModule === 'config') {
@@ -1563,7 +1573,7 @@ function handleHeaderBookingSelected(booking) {
 
     <!-- Main Content Area -->
     <main class="flex-1 min-h-0 min-w-0 overflow-hidden flex flex-col bg-white">
-      <ActivityLogTab v-if="route.query.tab === 'history'" />
+      <ActivityLogTab v-if="route.query.tab === 'history' && !usesOwnActivityLog" />
       <slot v-else />
     </main>
 

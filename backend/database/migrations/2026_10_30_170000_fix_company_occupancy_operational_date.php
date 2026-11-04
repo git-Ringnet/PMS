@@ -3,8 +3,7 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
-return new class extends Migration
-{
+return new class extends Migration {
     public function up(): void
     {
         $connection = DB::getDefaultConnection();
@@ -17,7 +16,7 @@ return new class extends Migration
             'SELECT 1 FROM information_schema.ROUTINES WHERE ROUTINE_SCHEMA = DATABASE() AND ROUTINE_NAME = ? AND ROUTINE_TYPE = ?',
             ['rpt_company_occupancy', 'PROCEDURE']
         );
-        if (! $exists) {
+        if (!$exists) {
             return;
         }
 
