@@ -68,4 +68,24 @@ class ReportProcedureServicesTest extends TestCase
         $this->assertSame(1, $castValue->invoke($executor, true, 'tinyint'));
         $this->assertSame(0, $castValue->invoke($executor, false, 'tinyint'));
     }
+
+    public function test_executor_normalizes_flat_array_parameter_to_csv(): void
+    {
+        $executor = new ReportDataExecutorService(Mockery::mock(ReportProcedureCatalogService::class));
+        $castValue = new \ReflectionMethod($executor, 'castValue');
+
+        $this->assertSame('AREA-A,AREA-B', $castValue->invoke($executor, ['AREA-A', 'AREA-B'], 'varchar'));
+        $this->assertNull($castValue->invoke($executor, [], 'varchar'));
+    }
+
+    public function test_executor_rejects_nested_array_parameter(): void
+    {
+        $executor = new ReportDataExecutorService(Mockery::mock(ReportProcedureCatalogService::class));
+        $castValue = new \ReflectionMethod($executor, 'castValue');
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Report parameter arrays must contain only scalar values.');
+
+        $castValue->invoke($executor, [['AREA-A']], 'varchar');
+    }
 }
