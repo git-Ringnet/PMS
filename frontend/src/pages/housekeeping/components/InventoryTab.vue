@@ -210,13 +210,14 @@ async function loadInitialData() {
     currentMonth.value = sysDate.slice(0, 7)
     transferForm.value.date = sysDate
 
+    // Danh sách nhân viên chỉ để hiển thị người kiểm kê: thiếu quyền xem user không được chặn việc tải kho
     const [warehousesRes, outletsRes, usersRes] = await Promise.all([
       http.get('/warehouses'),
-      http.get('/outlets/hk'),
-      http.get('/users'),
+      http.get('/outlets/hk').catch(err => { console.error('load outlets/hk error', err); return null }),
+      http.get('/users').catch(err => { console.error('load users error', err); return null }),
     ])
     warehouses.value = warehousesRes.data.data || []
-    hkOutlets.value  = outletsRes.data.data || []
+    hkOutlets.value  = outletsRes?.data?.data || []
     try {
       const settingsRes = await http.get('/hotel-settings')
       const qty = Number(settingsRes.data?.data?.Inventory_LowStockWarningQty)
@@ -224,7 +225,7 @@ async function loadInitialData() {
     } catch (err) {
       console.error('load Inventory_LowStockWarningQty error', err)
     }
-    users.value      = usersRes.data.data || usersRes.data || []
+    users.value      = usersRes ? (usersRes.data.data || usersRes.data || []) : []
     if (warehouses.value.length > 0) {
       activeWarehouseId.value = warehouses.value[0].id
     }
