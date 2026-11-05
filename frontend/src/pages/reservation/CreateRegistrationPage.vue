@@ -19,6 +19,7 @@ import {
   isMoveHistoryBillReference,
   mergeMoveHistoryBillReferences,
 } from '@/utils/booking-room-move-history'
+import { summarizeRoomTotals } from '@/utils/booking-room-totals'
 import {
   childBreakfastServiceDates,
   isChildBreakfastCode,
@@ -2369,20 +2370,13 @@ const selectRangeVal = computed({
 const roomsTotalSummary = computed(() => {
   const tab = bookingContext.value
   if (!tab) return { count: 0, priceSum: 0, adults: 0, babies: 0, children: 0, extraBedQty: 0, extraBed: 0, total: 0 }
-  let priceSum = 0, adults = 0, babies = 0, children = 0, extraBedQty = 0, extraBed = 0, total = 0
-  // Phòng chuyển (100) và phòng hủy (3) chỉ hiển thị để truy vết lịch sử, không cộng lặp vào tổng tiền/phòng hiện tại.
-  const roomList = filteredActiveRooms.value.filter(r => Number(r.bookingRoomStatus) !== 100 && Number(r.bookingRoomStatus) !== 3)
-  roomList.forEach(r => {
-    priceSum += getRoomChargeTotal(r)
-    adults   += Number(r.adults) || 0
-    babies   += Number(r.babies) || 0
-    children += Number(r.children) || 0
-    extraBedQty += getRoomExtraBedQty(r)
-    const ebTotal = getRoomExtraBedTotal(r)
-    extraBed += ebTotal
-    total    += calculateRoomTotal(r)
+  // Dòng 482: phòng chuyển (100) vẫn cộng tiền đã ở vào tổng nhưng không đếm phòng/khách; phòng hủy (3) bỏ qua.
+  return summarizeRoomTotals(filteredActiveRooms.value, {
+    chargeTotal: getRoomChargeTotal,
+    extraBedQty: getRoomExtraBedQty,
+    extraBedTotal: getRoomExtraBedTotal,
+    roomTotal: calculateRoomTotal,
   })
-  return { count: roomList.length, priceSum, adults, babies, children, extraBedQty, extraBed, total }
 })
 
 const activeTabStatusName = computed(() => {
