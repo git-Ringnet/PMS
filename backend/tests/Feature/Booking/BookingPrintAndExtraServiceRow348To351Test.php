@@ -117,6 +117,49 @@ class BookingPrintAndExtraServiceRow348To351Test extends TestCase
         $this->assertEquals(['07/08/2026', '08/08/2026'], array_column($this->roomLines($data), 'date'));
     }
 
+    // Dòng 462: mẫu confirm/đăng ký - tiền tính toán chính xác
+    public function test_row462_booked_room_in_the_past_is_still_charged_on_print(): void
+    {
+        [$booking, $room] = $this->inhouseRoom(arrival: '2026-08-05');
+        $room->update(['status' => BookingRoom::STATUS_BOOKED]);
+
+        $data = $this->printData($booking);
+
+        // Phòng chưa check-in: cả 4 đêm 05/08 -> 09/08 đều tính theo giá phòng, khớp tổng trên màn hình đăng ký.
+        $this->assertCount(4, $this->roomLines($data));
+        $this->assertEquals(4 * 540000, $data['summary']['total_room']);
+        $this->assertEquals(4 * 540000, array_sum(array_column($data['room_lines'], 'amount')));
+    }
+
+    public function test_row462_confirmation_lines_split_nights_with_different_prices(): void
+    {
+        $booking = Booking::create([
+            'booking_name' => 'Test Booking', 'arrival_date' => '2026-08-10', 'departure_date' => '2026-08-15',
+            'booking_date' => '2026-08-10', 'created_by' => 'test_user', 'status' => Booking::STATUS_RESERVATION,
+        ]);
+        $room = BookingRoom::create([
+            'id' => 'G-462-A', 'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id, 'room_number' => '101',
+            'arrival_date' => '2026-08-10', 'departure_date' => '2026-08-15', 'rate' => 900000, 'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+        foreach (['2026-08-10' => 0, '2026-08-11' => 900000, '2026-08-12' => 900000, '2026-08-13' => 800000, '2026-08-14' => 800000] as $date => $rate) {
+            BookingRoomService::create([
+                'booking_room_id' => $room->id, 'service_code' => 'RM', 'service_name' => 'Dịch vụ phòng nghỉ',
+                'service_date' => $date, 'quantity' => 1, 'rate' => $rate, 'department' => 'FO', 'is_posted' => 0,
+            ]);
+        }
+
+        $data = $this->printData($booking);
+
+        $this->assertSame(
+            [['10/08/2026', '11/08/2026', 1, 0], ['11/08/2026', '13/08/2026', 2, 1800000], ['13/08/2026', '15/08/2026', 2, 1600000]],
+            array_map(fn ($l) => [$l['checkin'], $l['checkout'], $l['nights'], (int) $l['amount']], $data['room_lines'])
+        );
+        foreach ($data['room_lines'] as $line) {
+            $this->assertEquals($line['unit_price'] * $line['nights'], $line['amount']);
+        }
+        $this->assertEquals(3400000, $data['summary']['total_room']);
+    }
+
     // ------------------------------------------------------------------
     // Dòng 349: In hóa đơn tạm tính - không có tiền phòng, chỉ in dịch vụ
     // ------------------------------------------------------------------

@@ -83,7 +83,7 @@ class BookingPrintController extends Controller
                   ->orWhereIn('RentalRoomId2', $allBookingRoomIds);
             })
             ->whereNotIn('Status', [3, 4])
-            ->where(fn ($q) => $q->whereNull('Edit')->orWhere('Edit', '!=', 1))
+            ->where(fn ($q) => $q->whereNull('Edit')->orWhere('Edit', 0))
             ->orderBy('Date')
             ->orderBy('OpenTime')
             ->get()
@@ -214,18 +214,34 @@ class BookingPrintController extends Controller
                 'services'          => $roomServicesList,
             ];
 
-            // Dòng hiển thị tổng hợp cho Booking Confirmation
-            $roomDetailLines[] = [
-                'checkin'     => $ciStr,
-                'checkout'    => $coStr,
-                'service'     => $roomClassName,
-                'room_number' => $roomNum,
-                'quantity'    => 1,
-                'nights'      => $nights,
-                'guests'      => $adults + $children,
-                'unit_price'  => $avgRate,
-                'amount'      => $roomRateSum,
-            ];
+            // Dòng hiển thị tổng hợp cho Booking Confirmation (dòng 462):
+            // các đêm liên tiếp cùng giá gộp một dòng; giá các đêm khác nhau tách dòng để Giá x Số đêm = Thành tiền.
+            foreach ($this->roomLineSegments($roomChargeLines) as $segment) {
+                $roomDetailLines[] = [
+                    'checkin'     => $segment['from'],
+                    'checkout'    => $segment['to'],
+                    'service'     => $roomClassName,
+                    'room_number' => $roomNum,
+                    'quantity'    => 1,
+                    'nights'      => $segment['nights'],
+                    'guests'      => $adults + $children,
+                    'unit_price'  => $segment['unit_price'],
+                    'amount'      => $segment['amount'],
+                ];
+            }
+            if (empty($roomChargeLines)) {
+                $roomDetailLines[] = [
+                    'checkin'     => $ciStr,
+                    'checkout'    => $coStr,
+                    'service'     => $roomClassName,
+                    'room_number' => $roomNum,
+                    'quantity'    => 1,
+                    'nights'      => $nights,
+                    'guests'      => $adults + $children,
+                    'unit_price'  => $avgRate,
+                    'amount'      => $roomRateSum,
+                ];
+            }
         }
 
         // 4. Các bill Lễ tân / Outlets post (ngoài tiền phòng đã lấy ở bước 3a)
@@ -404,7 +420,9 @@ class BookingPrintController extends Controller
                     }
                     continue;
                 }
-                if ($dateStr < $systemDate) {
+                // Phòng đang ở: đêm quá khứ chưa có bill thì không tính. Phòng chưa check-in (Đăng ký)
+                // chưa có gì để post nên vẫn tính theo giá đã setup, khớp tổng tiền trên màn hình đăng ký (dòng 462).
+                if ($dateStr < $systemDate && (int) $br->status !== BookingRoom::STATUS_BOOKED) {
                     continue;
                 }
 
@@ -427,6 +445,46 @@ class BookingPrintController extends Controller
         }
 
         return $lines;
+    }
+
+    /**
+     * Gom các dòng tiền phòng từng đêm thành đoạn liên tiếp cùng đơn giá.
+     *
+     * @param list<array<string, mixed>> $lines
+     * @return list<array{from: string, to: string, nights: int, unit_price: float, amount: float}>
+     */
+    private function roomLineSegments(array $lines): array
+    {
+        $segments = [];
+        foreach ($lines as $line) {
+            $date = Carbon::createFromFormat('d/m/Y', $line['date'])->startOfDay();
+            $qty = max(1, (int) round((float) $line['quantity']));
+            $price = (float) $line['unit_price'];
+            $last = count($segments) - 1;
+
+            if ($last >= 0 && $segments[$last]['unit_price'] === $price
+                && $segments[$last]['end']->equalTo($date)) {
+                $segments[$last]['nights'] += $qty;
+                $segments[$last]['amount'] += (float) $line['amount'];
+                $segments[$last]['end'] = $date->copy()->addDays($qty);
+                continue;
+            }
+            $segments[] = [
+                'from' => $date->format('d/m/Y'),
+                'nights' => $qty,
+                'unit_price' => $price,
+                'amount' => (float) $line['amount'],
+                'end' => $date->copy()->addDays($qty),
+            ];
+        }
+
+        return array_map(fn (array $segment) => [
+            'from' => $segment['from'],
+            'to' => $segment['end']->format('d/m/Y'),
+            'nights' => $segment['nights'],
+            'unit_price' => $segment['unit_price'],
+            'amount' => $segment['amount'],
+        ], $segments);
     }
 
     private function roomLine(string $id, string $source, BookingRoom $br, string $roomNum, string $code, string $name,
