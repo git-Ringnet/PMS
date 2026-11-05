@@ -84,7 +84,7 @@ class ChainCatalogSyncTest extends TestCase
     {
         $this->enableSync(false);
 
-        $this->postJson('/api/companies', ['name' => 'Công ty A'])->assertStatus(201);
+        $this->postJson('/api/companies', ['name' => 'Công ty A', 'trading_name' => 'Công ty A'])->assertStatus(201);
         $this->postJson('/api/markets', ['code' => 'OTA', 'name' => 'OTA'])->assertStatus(201);
 
         $this->assertSame(0, $this->target('companies')->count());
@@ -104,7 +104,7 @@ class ChainCatalogSyncTest extends TestCase
         $sales = User::factory()->create(['username' => 'sale_hkt1']);
 
         $res = $this->postJson('/api/companies', [
-            'name' => 'Công ty Du lịch HKT', 'tax_code' => '0312345678', 'phone' => '0909',
+            'name' => 'Công ty Du lịch HKT', 'trading_name' => 'Du lịch HKT', 'tax_code' => '0312345678', 'phone' => '0909',
             'market_id' => $market->id, 'customer_source_id' => $source->id,
             'sales_person_id' => $sales->id, 'max_debt' => 5000000,
         ])->assertStatus(201)->assertJsonPath('sync_warnings', []);
@@ -142,12 +142,12 @@ class ChainCatalogSyncTest extends TestCase
     public function test_update_company_syncs_but_keeps_other_branch_sales_person(): void
     {
         $this->enableSync();
-        $created = $this->postJson('/api/companies', ['name' => 'Công ty A', 'phone' => '111'])->assertStatus(201);
+        $created = $this->postJson('/api/companies', ['name' => 'Công ty A', 'trading_name' => 'Công ty A', 'phone' => '111'])->assertStatus(201);
         $id = $created->json('data.id');
         $code = Company::find($id)->code;
         $this->target('companies')->where('code', $code)->update(['sales_person_id' => 99]);
 
-        $this->putJson("/api/companies/{$id}", ['name' => 'Công ty A (mới)', 'phone' => '222', 'is_active' => false])
+        $this->putJson("/api/companies/{$id}", ['name' => 'Công ty A (mới)', 'trading_name' => 'Công ty A', 'phone' => '222', 'is_active' => false])
             ->assertOk()->assertJsonPath('sync_warnings', []);
 
         $copy = $this->target('companies')->where('code', $code)->first();
@@ -164,7 +164,7 @@ class ChainCatalogSyncTest extends TestCase
         $this->target('companies')->insert(['code' => 'CTY0001', 'name' => 'Công ty khác của HKT2']);
         $this->enableSync();
 
-        $this->putJson("/api/companies/{$company->id}", ['name' => 'Công ty HKT1 sửa'])
+        $this->putJson("/api/companies/{$company->id}", ['name' => 'Công ty HKT1 sửa', 'trading_name' => 'Công ty HKT1'])
             ->assertOk()->assertJsonCount(1, 'sync_warnings');
 
         $this->assertSame('Công ty khác của HKT2', $this->target('companies')->where('code', 'CTY0001')->value('name'));
@@ -176,28 +176,31 @@ class ChainCatalogSyncTest extends TestCase
         $company = Company::create(['code' => 'CTY0003', 'name' => 'Công ty tạo trước khi bật']);
         $this->enableSync();
 
-        $this->putJson("/api/companies/{$company->id}", ['name' => 'Công ty tạo trước khi bật'])->assertOk();
+        $this->putJson("/api/companies/{$company->id}", ['name' => 'Công ty tạo trước khi bật', 'trading_name' => 'Công ty tạo trước khi bật'])->assertOk();
 
         $this->assertSame(1, $this->target('companies')->where('code', 'CTY0003')->count());
     }
 
-    public function test_delete_company_syncs_unless_used_in_other_branch(): void
+    public function test_delete_company_hides_all_copies_or_blocks_all_branches_when_used(): void
     {
         $this->enableSync();
-        $a = $this->postJson('/api/companies', ['name' => 'Công ty A'])->json('data.id');
-        $b = $this->postJson('/api/companies', ['name' => 'Công ty B'])->json('data.id');
+        $a = $this->postJson('/api/companies', ['name' => 'Công ty A', 'trading_name' => 'Công ty A'])->assertCreated()->json('data.id');
+        $b = $this->postJson('/api/companies', ['name' => 'Công ty B', 'trading_name' => 'Công ty B'])->assertCreated()->json('data.id');
         $codeA = Company::find($a)->code;
         $codeB = Company::find($b)->code;
 
         // Công ty B đã có booking ở HKT2
         $this->target('bookings')->insert(['company_id' => $this->target('companies')->where('code', $codeB)->value('id')]);
 
-        $this->deleteJson("/api/companies/{$a}")->assertOk()->assertJsonPath('sync_warnings', []);
-        $this->assertSame(0, $this->target('companies')->where('code', $codeA)->count());
+        $this->deleteJson("/api/companies/{$a}")->assertOk()->assertJsonPath('message', 'Công ty đã được ẩn trên toàn bộ chi nhánh.');
+        $this->assertFalse((bool) Company::find($a)->is_active);
+        $this->assertEquals(0, $this->target('companies')->where('code', $codeA)->value('is_active'));
 
-        $this->deleteJson("/api/companies/{$b}")->assertOk()->assertJsonCount(1, 'sync_warnings');
+        $response = $this->deleteJson("/api/companies/{$b}")->assertStatus(422);
+        $this->assertStringContainsString('HKT2', $response->json('message'));
         $this->assertSame(1, $this->target('companies')->where('code', $codeB)->count());
-        $this->assertNull(Company::find($b));
+        $this->assertTrue((bool) Company::find($b)->is_active);
+        $this->assertEquals(1, $this->target('companies')->where('code', $codeB)->value('is_active'));
     }
 
     public function test_market_and_customer_source_create_update_delete_sync_by_code(): void

@@ -5,13 +5,20 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\CompanyResource;
 use App\Models\Company;
+use App\Models\HotelConfig;
 use App\Services\ChainCatalogSyncService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
-use Illuminate\Support\Facades\DB;
 
 class CompanyController extends Controller
 {
+    private const REQUIRED_FIELDS_CONFIG = 'CreateCompanyRequiredField';
+
+    private const CONFIGURABLE_REQUIRED_FIELDS = [
+        'address', 'tax_code', 'phone', 'email', 'customer_source_id', 'market_id',
+        'max_debt', 'bank_account', 'booker_id', 'sales_person_id', 'branch_id',
+    ];
+
     /**
      * Display a listing of companies with relationships.
      */
@@ -55,6 +62,7 @@ class CompanyController extends Controller
                 'last_page' => $companies->lastPage(),
                 'per_page' => $companies->perPage(),
                 'total' => $companies->total(),
+                'company_required_fields' => $this->requiredCompanyFields(),
             ],
         ]);
     }
@@ -64,25 +72,7 @@ class CompanyController extends Controller
      */
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'code' => 'nullable|string|max:50|unique:companies,code',
-            'name' => 'required|string|max:255',
-            'trading_name' => 'nullable|string|max:255',
-            'address' => 'nullable|string',
-            'tax_code' => 'nullable|string|max:100',
-            'phone' => 'nullable|string|max:50',
-            'email' => 'nullable|email|max:255',
-            'customer_source_id' => 'nullable|exists:customer_sources,id',
-            'market_id' => 'nullable|exists:markets,id',
-            'sync_acc' => 'nullable|boolean',
-            'max_debt' => 'nullable|numeric|min:0',
-            'bank_account' => 'nullable|string|max:255',
-            'booker_id'                => 'nullable|exists:bookers,id',
-            'sales_person_id'          => ['nullable', Rule::exists('mysql_system.users', 'id')],
-            'rate_code'                => 'nullable|string|max:100',
-            'branch_id'                => 'nullable|exists:branches,id',
-            'is_active'                => 'nullable|boolean',
-        ]);
+        $validated = $this->validateCompanyPayload($request->all());
 
         // Đồng bộ chuỗi: mã công ty tính trên tất cả chi nhánh để dùng chung một mã
         $chainSync = app(ChainCatalogSyncService::class);
@@ -126,24 +116,7 @@ class CompanyController extends Controller
             return response()->json(['message' => 'Company not found'], 404);
         }
 
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'trading_name' => 'nullable|string|max:255',
-            'address' => 'nullable|string',
-            'tax_code' => 'nullable|string|max:100',
-            'phone' => 'nullable|string|max:50',
-            'email' => 'nullable|email|max:255',
-            'customer_source_id' => 'nullable|exists:customer_sources,id',
-            'market_id' => 'nullable|exists:markets,id',
-            'sync_acc' => 'nullable|boolean',
-            'max_debt' => 'nullable|numeric|min:0',
-            'bank_account' => 'nullable|string|max:255',
-            'booker_id'                => 'nullable|exists:bookers,id',
-            'sales_person_id'          => ['nullable', Rule::exists('mysql_system.users', 'id')],
-            'rate_code'                => 'nullable|string|max:100',
-            'branch_id'                => 'nullable|exists:branches,id',
-            'is_active'                => 'nullable|boolean',
-        ]);
+        $validated = $this->validateCompanyPayload($request->all(), $company);
 
         $original = $company->getOriginal();
         $company->update($validated);
@@ -167,28 +140,103 @@ class CompanyController extends Controller
             return response()->json(['message' => 'Company not found'], 404);
         }
 
-        $references = [
-            'booking' => DB::table('bookings')->where('company_id', $company->id)->count(),
-            'thanh toán' => DB::table('payments')->where('company_id', $company->id)->count(),
-            'khuyến mãi F&B' => DB::table('fb_promotions')->where('company_id', $company->id)->count(),
-            'hóa đơn dịch vụ' => DB::table('service_bills')->where(function ($q) use ($company) {
-                $q->where('CompanyId1', $company->id)->orWhere('CompanyId2', $company->id);
-            })->count(),
-        ];
-        $usedIn = collect($references)->filter()->map(fn ($count, $name) => "{$count} {$name}")->implode(', ');
-        if ($usedIn !== '') {
-            return response()->json(['message' => "Không thể xóa công ty '{$company->name}' vì đang được sử dụng trong {$usedIn}. Vui lòng gỡ liên kết trước."], 422);
+        $chainSync = app(ChainCatalogSyncService::class);
+        $issues = $chainSync->companyDeletionIssues($company);
+        if ($issues !== []) {
+            return response()->json([
+                'message' => "Không thể xóa công ty '{$company->name}': " . $this->formatCompanyDeletionIssues($issues),
+            ], 422);
         }
 
-        $original = $company->getAttributes();
+        if ($chainSync->enabled()) {
+            $result = $chainSync->deactivateCompanyCopies($company->getAttributes());
+            if (!$result['success']) {
+                return response()->json(['message' => $result['message'] ?? 'Không thể ẩn công ty trên toàn bộ chi nhánh.'], 503);
+            }
+
+            $company->update(['is_active' => false]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Công ty đã được ẩn trên toàn bộ chi nhánh.',
+                'sync_warnings' => [],
+            ]);
+        }
+
         $company->delete();
-        $syncWarnings = app(ChainCatalogSyncService::class)->companyDeleted($original);
 
         return response()->json([
             'success' => true,
             'message' => 'Company deleted successfully',
-            'sync_warnings' => $syncWarnings,
+            'sync_warnings' => [],
         ]);
+    }
+
+    /** @return string[] */
+    private function requiredCompanyFields(): array
+    {
+        $value = (string) HotelConfig::where('name', self::REQUIRED_FIELDS_CONFIG)->value('value');
+        $fields = preg_split('/[,;|]+/', strtolower($value)) ?: [];
+
+        return array_values(array_unique(array_filter(
+            array_map('trim', $fields),
+            fn (string $field) => in_array($field, self::CONFIGURABLE_REQUIRED_FIELDS, true)
+        )));
+    }
+
+    /** @return array<string, mixed> */
+    private function validateCompanyPayload(array $payload, ?Company $company = null): array
+    {
+        $rules = [
+            'name' => ['required', 'string', 'max:255'],
+            'trading_name' => ['required', 'string', 'max:255'],
+            'address' => ['nullable', 'string'],
+            'tax_code' => ['nullable', 'string', 'max:100'],
+            'phone' => ['nullable', 'string', 'max:50'],
+            'email' => ['nullable', 'email', 'max:255'],
+            'customer_source_id' => ['nullable', 'exists:customer_sources,id'],
+            'market_id' => ['nullable', 'exists:markets,id'],
+            'sync_acc' => ['nullable', 'boolean'],
+            'max_debt' => ['nullable', 'numeric', 'min:0'],
+            'bank_account' => ['nullable', 'string', 'max:255'],
+            'booker_id' => ['nullable', 'exists:bookers,id'],
+            'sales_person_id' => ['nullable', Rule::exists('mysql_system.users', 'id')],
+            'rate_code' => ['nullable', 'string', 'max:100'],
+            'branch_id' => ['nullable', 'exists:branches,id'],
+            'is_active' => ['nullable', 'boolean'],
+        ];
+        if (!$company) {
+            $rules['code'] = ['nullable', 'string', 'max:50', 'unique:companies,code'];
+        }
+
+        foreach ($this->requiredCompanyFields() as $field) {
+            $rules[$field] = array_values(array_filter(
+                ['required', ...$rules[$field]],
+                fn ($rule) => $rule !== 'nullable'
+            ));
+        }
+
+        return validator($payload, $rules)->validate();
+    }
+
+    /** @param array<int, array{branch:string, reason:string, references?:array<string,int>}> $issues */
+    private function formatCompanyDeletionIssues(array $issues): string
+    {
+        return collect($issues)->map(function (array $issue) {
+            if ($issue['reason'] === 'used') {
+                $references = collect($issue['references'] ?? [])
+                    ->map(fn (int $count, string $name) => "{$count} {$name}")
+                    ->implode(', ');
+                return "Chi nhánh {$issue['branch']} đang sử dụng ({$references})";
+            }
+            if ($issue['reason'] === 'default') {
+                return "Chi nhánh {$issue['branch']} đang đặt làm Công ty mặc định";
+            }
+            if ($issue['reason'] === 'conflict') {
+                return "Chi nhánh {$issue['branch']} có công ty cùng mã nhưng dữ liệu không khớp";
+            }
+            return "không thể kiểm tra chi nhánh {$issue['branch']}";
+        })->implode('; ') . '.';
     }
 
     /**

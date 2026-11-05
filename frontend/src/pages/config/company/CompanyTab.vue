@@ -16,6 +16,23 @@ const branches = ref([])
 const bookers = ref([])
 const users = ref([])
 const loading = ref(false)
+const companyRequiredFields = ref([])
+
+const companyFieldLabels = {
+  name: 'tên công ty',
+  trading_name: 'tên giao dịch',
+  address: 'địa chỉ',
+  tax_code: 'Tax',
+  phone: 'số điện thoại',
+  email: 'email',
+  customer_source_id: 'nguồn khách',
+  market_id: 'thị trường',
+  max_debt: 'công nợ tối đa',
+  bank_account: 'tài khoản ngân hàng',
+  booker_id: 'người đặt phòng',
+  sales_person_id: 'người bán',
+  branch_id: 'chi nhánh',
+}
 
 // Pagination state
 const currentPage = ref(1)
@@ -106,6 +123,42 @@ const emptyForm = () => ({
 
 const form = ref(emptyForm())
 
+const isCompanyFieldRequired = (field) => ['name', 'trading_name'].includes(field)
+  || companyRequiredFields.value.includes(field)
+
+const isCompanyFieldEmpty = (field) => {
+  const value = form.value[field]
+  return value === null || value === undefined || (typeof value === 'string' && value.trim() === '')
+}
+
+const normalizeCompanyName = (value) => String(value || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/đ/g, 'd')
+  .replace(/Đ/g, 'D')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .toLocaleLowerCase('vi-VN')
+
+const companyNameSuggestions = computed(() => {
+  if (isEditMode.value) return []
+  const keyword = normalizeCompanyName(form.value.name)
+  if (!keyword) return []
+
+  const seen = new Set()
+  return allCompanies.value
+    .filter((company) => {
+      const normalized = normalizeCompanyName(company.name)
+      if (!normalized || !normalized.includes(keyword) || seen.has(normalized)) return false
+      seen.add(normalized)
+      return true
+    })
+    .sort((a, b) => normalizeCompanyName(a.name).startsWith(keyword) === normalizeCompanyName(b.name).startsWith(keyword)
+      ? String(a.name).localeCompare(String(b.name), 'vi')
+      : (normalizeCompanyName(a.name).startsWith(keyword) ? -1 : 1))
+    .slice(0, 8)
+})
+
 onMounted(() => {
   loadData()
   loadLookups()
@@ -191,6 +244,7 @@ const loadData = async () => {
   try {
     const res = await fetchCompanies({ per_page: 1000 })
     allCompanies.value = res.data.data || []
+    companyRequiredFields.value = res.data.meta?.company_required_fields || []
   } catch (err) {
     console.error(err)
   } finally {
@@ -257,12 +311,10 @@ const openEditModal = (item) => {
 }
 
 const saveItem = async () => {
-  if (!form.value.name?.trim()) {
-    uiStore.showToast('Vui lòng nhập tên công ty', 'warning')
-    return
-  }
-  if (!form.value.trading_name?.trim()) {
-    uiStore.showToast('Vui lòng nhập tên giao dịch', 'warning')
+  const missingField = Object.keys(companyFieldLabels)
+    .find((field) => isCompanyFieldRequired(field) && isCompanyFieldEmpty(field))
+  if (missingField) {
+    uiStore.showToast(`Vui lòng nhập ${companyFieldLabels[missingField]}`, 'warning')
     return
   }
   loading.value = true
@@ -296,15 +348,15 @@ const saveItem = async () => {
 const handleDelete = async (item) => {
   const confirmed = await uiStore.confirm({
     title: 'Xác nhận xóa',
-    message: `Bạn có chắc chắn muốn xóa công ty "${item.name}" (${item.code})?`,
+    message: `Bạn có chắc chắn muốn xóa công ty "${item.name}" (${item.code})? Khi đồng bộ chuỗi đang bật, công ty không có phát sinh sẽ được ẩn trên toàn bộ chi nhánh.`,
     confirmText: 'Xóa',
     cancelText: 'Hủy'
   })
   if (!confirmed) return
 
   try {
-    await deleteCompany(item.id)
-    uiStore.showToast('Xóa công ty thành công!', 'success')
+    const response = await deleteCompany(item.id)
+    uiStore.showToast(response.data?.message || 'Xóa công ty thành công!', 'success')
     loadData()
   } catch (err) {
     console.error(err)
@@ -1107,6 +1159,12 @@ const handleDownloadTemplate = async () => {
                 <div class="relative">
                   <input v-model="form.name" required aria-required="true" type="text" placeholder="Tên" class="input-required w-full h-8 pr-8 rounded-lg px-2 text-xs font-normal placeholder-[#A8B0BF]" />
                   <button v-if="form.name" @click.stop="form.name = ''" type="button" class="input-clear-button" title="Xóa">✕</button>
+                  <div v-if="companyNameSuggestions.length" class="absolute z-30 top-full left-0 right-0 mt-1 rounded-lg border border-slate-200 bg-white shadow-lg overflow-hidden pointer-events-none">
+                    <div class="px-2 py-1.5 text-xs font-semibold text-[#000000D9] bg-slate-50">Công ty đã có trong hệ thống</div>
+                    <div v-for="company in companyNameSuggestions" :key="company.id" class="px-2 py-1.5 text-xs font-normal text-[#000000D9] border-t border-slate-100">
+                      {{ company.name }}<span v-if="company.code" class="text-slate-500"> — {{ company.code }}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
               <!-- Tên giao dịch -->
@@ -1119,18 +1177,18 @@ const handleDownloadTemplate = async () => {
               </div>
               <!-- Công nợ tối đa -->
               <div class="flex flex-col gap-1">
-                <span class="font-semibold text-[#000000D9]">Công Nợ Tối Đa</span>
+                <span class="font-semibold text-[#000000D9]">Công Nợ Tối Đa<span v-if="isCompanyFieldRequired('max_debt')" class="text-red-500">*</span></span>
                 <div class="relative">
-                  <input :value="formatMaxDebt(form.max_debt)" @input="setMaxDebt" inputmode="numeric" type="text" placeholder="Công nợ tối đa" class="w-full h-8 border border-slate-200 rounded-lg px-2 pr-8 text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF] focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                  <input :value="formatMaxDebt(form.max_debt)" @input="setMaxDebt" :required="isCompanyFieldRequired('max_debt')" :aria-required="isCompanyFieldRequired('max_debt')" inputmode="numeric" type="text" placeholder="Công nợ tối đa" :class="['w-full h-8 rounded-lg px-2 pr-8 text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF] focus:outline-none focus:ring-1 focus:ring-blue-500', isCompanyFieldRequired('max_debt') ? 'input-required' : 'border border-slate-200']" />
                   <button v-if="form.max_debt !== '' && form.max_debt !== null" @click.stop="form.max_debt = ''" type="button" class="input-clear-button" title="Xóa">✕</button>
                 </div>
               </div>
               <!-- Người đặt phòng -->
               <div class="flex flex-col gap-1">
-                <span class="font-semibold text-[#000000D9]">Người Đặt Phòng</span>
+                <span class="font-semibold text-[#000000D9]">Người Đặt Phòng<span v-if="isCompanyFieldRequired('booker_id')" class="text-red-500">*</span></span>
                 <div class="flex items-center gap-1">
                   <div class="relative flex items-center flex-1">
-                    <select v-model="form.booker_id" class="w-full h-8 border border-slate-200 rounded-lg pl-2 pr-7 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer">
+                    <select v-model="form.booker_id" :required="isCompanyFieldRequired('booker_id')" :aria-required="isCompanyFieldRequired('booker_id')" :class="['w-full h-8 rounded-lg pl-2 pr-7 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer', isCompanyFieldRequired('booker_id') ? 'input-required' : 'border border-slate-200']">
                       <option value=""></option>
                       <option v-for="bk in bookers" :key="bk.id" :value="bk.id">{{ bk.name }}</option>
                     </select>
@@ -1144,9 +1202,9 @@ const handleDownloadTemplate = async () => {
               </div>
               <!-- Người bán -->
               <div class="flex flex-col gap-1">
-                <span class="font-semibold text-[#000000D9]">Người Bán</span>
+                <span class="font-semibold text-[#000000D9]">Người Bán<span v-if="isCompanyFieldRequired('sales_person_id')" class="text-red-500">*</span></span>
                 <div class="relative flex items-center">
-                  <select v-model="form.sales_person_id" class="w-full h-8 border border-slate-200 rounded-lg pl-2 pr-7 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer">
+                  <select v-model="form.sales_person_id" :required="isCompanyFieldRequired('sales_person_id')" :aria-required="isCompanyFieldRequired('sales_person_id')" :class="['w-full h-8 rounded-lg pl-2 pr-7 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer', isCompanyFieldRequired('sales_person_id') ? 'input-required' : 'border border-slate-200']">
                     <option value=""></option>
                     <option v-for="u in users" :key="u.id" :value="u.id">{{ u.name }}</option>
                   </select>
@@ -1160,22 +1218,22 @@ const handleDownloadTemplate = async () => {
             <div class="flex flex-col gap-2.5">
               <!-- Địa chỉ -->
               <div class="flex flex-col gap-1">
-                <span class="font-semibold text-[#000000D9]">Địa Chỉ</span>
+                <span class="font-semibold text-[#000000D9]">Địa Chỉ<span v-if="isCompanyFieldRequired('address')" class="text-red-500">*</span></span>
                 <div class="relative flex items-center">
                   <span class="absolute left-2.5 text-slate-400">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 014 0m-5 8a2 2 0 100-4 2 2 0 000 4zm5.333-2c0-.737-.324-1.4-.84-1.847A3.001 3.001 0 0012 11h.012a3.001 3.001 0 002.828 1.847c-.516.447-.84 1.11-.84 1.847" />
                     </svg>
                   </span>
-                  <input v-model="form.address" type="text" placeholder="Địa chỉ" class="pl-8 pr-8 w-full h-8 border border-slate-200 rounded-lg px-2 text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF] focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                  <input v-model="form.address" :required="isCompanyFieldRequired('address')" :aria-required="isCompanyFieldRequired('address')" type="text" placeholder="Địa chỉ" :class="['pl-8 pr-8 w-full h-8 rounded-lg px-2 text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF] focus:outline-none focus:ring-1 focus:ring-blue-500', isCompanyFieldRequired('address') ? 'input-required' : 'border border-slate-200']" />
                   <button v-if="form.address" @click.stop="form.address = ''" type="button" class="input-clear-button" title="Xóa">✕</button>
                 </div>
               </div>
               <!-- Tax -->
               <div class="flex flex-col gap-1">
-                <span class="font-semibold text-[#000000D9]">Tax</span>
+                <span class="font-semibold text-[#000000D9]">Tax<span v-if="isCompanyFieldRequired('tax_code')" class="text-red-500">*</span></span>
                 <div class="relative flex items-center">
-                  <input v-model="form.tax_code" type="text" placeholder="Tax" class="pr-8 w-full h-8 border border-slate-200 rounded-lg px-2 text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF] focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                  <input v-model="form.tax_code" :required="isCompanyFieldRequired('tax_code')" :aria-required="isCompanyFieldRequired('tax_code')" type="text" placeholder="Tax" :class="['pr-8 w-full h-8 rounded-lg px-2 text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF] focus:outline-none focus:ring-1 focus:ring-blue-500', isCompanyFieldRequired('tax_code') ? 'input-required' : 'border border-slate-200']" />
                   <button v-if="form.tax_code" @click.stop="form.tax_code = ''" type="button" class="input-clear-button" title="Xóa">✕</button>
                   <span v-if="!form.tax_code" class="absolute right-2.5 text-slate-400">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -1186,35 +1244,35 @@ const handleDownloadTemplate = async () => {
               </div>
               <!-- Số điện thoại -->
               <div class="flex flex-col gap-1">
-                <span class="font-semibold text-[#000000D9]">Số Điện Thoại</span>
+                <span class="font-semibold text-[#000000D9]">Số Điện Thoại<span v-if="isCompanyFieldRequired('phone')" class="text-red-500">*</span></span>
                 <div class="relative flex items-center">
                   <span class="absolute left-2.5 text-slate-400">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M3 5a2 2 0 012-2h3.28a1 1 0 01.94.725l.548 2.2a1 1 0 01-.321.988l-1.305.98a10.582 10.582 0 004.872 4.872l.98-1.305a1 1 0 01.988-.321l2.2.548a1 1 0 01.725.94V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                     </svg>
                   </span>
-                  <input v-model="form.phone" type="text" placeholder="Số điện thoại" class="pl-8 pr-8 w-full h-8 border border-slate-200 rounded-lg px-2 text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF] focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                  <input v-model="form.phone" :required="isCompanyFieldRequired('phone')" :aria-required="isCompanyFieldRequired('phone')" type="text" placeholder="Số điện thoại" :class="['pl-8 pr-8 w-full h-8 rounded-lg px-2 text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF] focus:outline-none focus:ring-1 focus:ring-blue-500', isCompanyFieldRequired('phone') ? 'input-required' : 'border border-slate-200']" />
                   <button v-if="form.phone" @click.stop="form.phone = ''" type="button" class="input-clear-button" title="Xóa">✕</button>
                 </div>
               </div>
               <!-- Email -->
               <div class="flex flex-col gap-1">
-                <span class="font-semibold text-[#000000D9]">Email</span>
+                <span class="font-semibold text-[#000000D9]">Email<span v-if="isCompanyFieldRequired('email')" class="text-red-500">*</span></span>
                 <div class="relative flex items-center">
                   <span class="absolute left-2.5 text-slate-400">
                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                     </svg>
                   </span>
-                  <input v-model="form.email" type="email" placeholder="Email" class="pl-8 pr-8 w-full h-8 border border-slate-200 rounded-lg px-2 text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF] focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                  <input v-model="form.email" :required="isCompanyFieldRequired('email')" :aria-required="isCompanyFieldRequired('email')" type="email" placeholder="Email" :class="['pl-8 pr-8 w-full h-8 rounded-lg px-2 text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF] focus:outline-none focus:ring-1 focus:ring-blue-500', isCompanyFieldRequired('email') ? 'input-required' : 'border border-slate-200']" />
                   <button v-if="form.email" @click.stop="form.email = ''" type="button" class="input-clear-button" title="Xóa">✕</button>
                 </div>
               </div>
               <!-- Tài khoản ngân hàng -->
               <div class="flex flex-col gap-1">
-                <span class="font-semibold text-[#000000D9]">Tài Khoản Ngân Hàng</span>
+                <span class="font-semibold text-[#000000D9]">Tài Khoản Ngân Hàng<span v-if="isCompanyFieldRequired('bank_account')" class="text-red-500">*</span></span>
                 <div class="relative">
-                  <input v-model="form.bank_account" type="text" placeholder="Tài khoản ngân hàng" class="w-full h-8 border border-slate-200 rounded-lg px-2 pr-8 text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF] focus:outline-none focus:ring-1 focus:ring-blue-500" />
+                  <input v-model="form.bank_account" :required="isCompanyFieldRequired('bank_account')" :aria-required="isCompanyFieldRequired('bank_account')" type="text" placeholder="Tài khoản ngân hàng" :class="['w-full h-8 rounded-lg px-2 pr-8 text-xs font-normal text-[#000000D9] placeholder-[#A8B0BF] focus:outline-none focus:ring-1 focus:ring-blue-500', isCompanyFieldRequired('bank_account') ? 'input-required' : 'border border-slate-200']" />
                   <button v-if="form.bank_account" @click.stop="form.bank_account = ''" type="button" class="input-clear-button" title="Xóa">✕</button>
                 </div>
               </div>
@@ -1242,10 +1300,10 @@ const handleDownloadTemplate = async () => {
             <div class="flex flex-col gap-2.5">
               <!-- Thị trường -->
               <div class="flex flex-col gap-1">
-                <span class="font-semibold text-[#000000D9]">Thị Trường</span>
+                <span class="font-semibold text-[#000000D9]">Thị Trường<span v-if="isCompanyFieldRequired('market_id')" class="text-red-500">*</span></span>
                 <div class="flex items-center gap-1">
                   <div class="relative flex items-center flex-1">
-                    <select v-model="form.market_id" class="w-full h-8 border border-slate-200 rounded-lg pl-2 pr-7 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer">
+                    <select v-model="form.market_id" :required="isCompanyFieldRequired('market_id')" :aria-required="isCompanyFieldRequired('market_id')" :class="['w-full h-8 rounded-lg pl-2 pr-7 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer', isCompanyFieldRequired('market_id') ? 'input-required' : 'border border-slate-200']">
                       <option value=""></option>
                       <option v-for="m in markets" :key="m.id" :value="m.id">{{ m.name }}</option>
                     </select>
@@ -1259,10 +1317,10 @@ const handleDownloadTemplate = async () => {
               </div>
               <!-- Nguồn khách -->
               <div class="flex flex-col gap-1">
-                <span class="font-semibold text-[#000000D9]">Nguồn Khách</span>
+                <span class="font-semibold text-[#000000D9]">Nguồn Khách<span v-if="isCompanyFieldRequired('customer_source_id')" class="text-red-500">*</span></span>
                 <div class="flex items-center gap-1">
                   <div class="relative flex items-center flex-1">
-                    <select v-model="form.customer_source_id" class="w-full h-8 border border-slate-200 rounded-lg pl-2 pr-7 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer">
+                    <select v-model="form.customer_source_id" :required="isCompanyFieldRequired('customer_source_id')" :aria-required="isCompanyFieldRequired('customer_source_id')" :class="['w-full h-8 rounded-lg pl-2 pr-7 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer', isCompanyFieldRequired('customer_source_id') ? 'input-required' : 'border border-slate-200']">
                       <option value=""></option>
                       <option v-for="s in customerSources" :key="s.id" :value="s.id">{{ s.name }}</option>
                     </select>
@@ -1280,10 +1338,10 @@ const handleDownloadTemplate = async () => {
             <div class="flex flex-col gap-2.5">
               <!-- Chi nhánh -->
               <div class="flex flex-col gap-1">
-                <span class="font-semibold text-[#000000D9]">Chi Nhánh</span>
+                <span class="font-semibold text-[#000000D9]">Chi Nhánh<span v-if="isCompanyFieldRequired('branch_id')" class="text-red-500">*</span></span>
                 <div class="flex items-center gap-1">
                   <div class="relative flex items-center flex-1">
-                    <select v-model="form.branch_id" class="w-full h-8 border border-slate-200 rounded-lg pl-2 pr-7 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer">
+                    <select v-model="form.branch_id" :required="isCompanyFieldRequired('branch_id')" :aria-required="isCompanyFieldRequired('branch_id')" :class="['w-full h-8 rounded-lg pl-2 pr-7 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer', isCompanyFieldRequired('branch_id') ? 'input-required' : 'border border-slate-200']">
                       <option value=""></option>
                       <option v-for="b in branches" :key="b.id" :value="b.id">{{ b.name }}</option>
                     </select>

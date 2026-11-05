@@ -252,6 +252,167 @@ class ChainCatalogSyncService
         });
     }
 
+    /**
+     * Kiểm tra trước khi xóa/ẩn công ty. Khi đồng bộ chuỗi bật, mọi bản sao
+     * cùng mã ở các chi nhánh đang hoạt động phải không có phát sinh.
+     *
+     * @return array<int, array{branch:string, reason:string, references?:array<string,int>}>
+     */
+    public function companyDeletionIssues(Company $company): array
+    {
+        $currentBranch = strtoupper((string) request()->attributes->get(
+            '_branch_code',
+            config('database_domains.default_branch_code', 'Chi nhánh hiện tại')
+        ));
+        $issues = $this->companyIssues(
+            DB::getDefaultConnection(),
+            $currentBranch,
+            $company->id
+        );
+
+        if (!$this->enabled()) {
+            return $issues;
+        }
+
+        $original = $company->getAttributes();
+        foreach ($this->targetConnections() as $branch => $connection) {
+            try {
+                $existing = DB::connection($connection)->table('companies')
+                    ->where('code', $company->code)
+                    ->first();
+                if (!$existing) {
+                    continue;
+                }
+                if (!$this->isSameCompany($existing, $original)) {
+                    $issues[] = ['branch' => $branch, 'reason' => 'conflict'];
+                    continue;
+                }
+
+                $issues = [...$issues, ...$this->companyIssues($connection, $branch, $existing->id)];
+            } catch (\Throwable $e) {
+                Log::error("ChainCatalogSync: không kiểm tra được công ty ở chi nhánh {$branch}: " . $e->getMessage());
+                $issues[] = ['branch' => $branch, 'reason' => 'unavailable'];
+            }
+        }
+
+        return $issues;
+    }
+
+    /**
+     * Ẩn các bản sao ở chi nhánh khác sau khi companyDeletionIssues() đã đạt.
+     * Không dùng companyDeleted() để tránh hard-delete dữ liệu lịch sử.
+     *
+     * @return array{success:bool, message?:string}
+     */
+    public function deactivateCompanyCopies(array $original): array
+    {
+        if (!$this->enabled()) {
+            return ['success' => true];
+        }
+
+        $changed = [];
+        foreach ($this->targetConnections() as $branch => $connection) {
+            try {
+                $result = DB::connection($connection)->transaction(function () use ($branch, $connection, $original) {
+                    $db = DB::connection($connection);
+                    $existing = $db->table('companies')->where('code', $original['code'])->first();
+                    if (!$existing) {
+                        return ['success' => true, 'changed' => null];
+                    }
+                    if (!$this->isSameCompany($existing, $original)) {
+                        return ['success' => false, 'message' => "Chi nhánh {$branch}: dữ liệu công ty cùng mã không khớp."];
+                    }
+                    if ($this->companyIssues($connection, $branch, $existing->id) !== []) {
+                        return ['success' => false, 'message' => "Chi nhánh {$branch}: công ty vừa phát sinh dữ liệu, không thể ẩn."];
+                    }
+                    if (!(bool) $existing->is_active) {
+                        return ['success' => true, 'changed' => null];
+                    }
+
+                    $db->table('companies')->where('id', $existing->id)->update([
+                        'is_active' => false,
+                        'updated_at' => now(),
+                    ]);
+
+                    return ['success' => true, 'changed' => ['connection' => $connection, 'id' => $existing->id]];
+                });
+
+                if (!$result['success']) {
+                    $this->restoreCompanyCopies($changed);
+                    return $result;
+                }
+                if ($result['changed']) {
+                    $changed[] = $result['changed'];
+                }
+            } catch (\Throwable $e) {
+                Log::error("ChainCatalogSync: không ẩn được công ty ở chi nhánh {$branch}: " . $e->getMessage());
+                $this->restoreCompanyCopies($changed);
+                return ['success' => false, 'message' => "Chi nhánh {$branch}: không thể ẩn công ty, vui lòng thử lại."];
+            }
+        }
+
+        return ['success' => true];
+    }
+
+    /** @param array<int, array{connection:string, id:int}> $changed */
+    private function restoreCompanyCopies(array $changed): void
+    {
+        foreach (array_reverse($changed) as $copy) {
+            try {
+                DB::connection($copy['connection'])->table('companies')->where('id', $copy['id'])->update([
+                    'is_active' => true,
+                    'updated_at' => now(),
+                ]);
+            } catch (\Throwable $e) {
+                Log::critical('ChainCatalogSync: không thể hoàn tác ẩn công ty: ' . $e->getMessage());
+            }
+        }
+    }
+
+    /** @return array<int, array{branch:string, reason:string, references?:array<string,int>}> */
+    private function companyIssues(string $connection, string $branch, int $companyId): array
+    {
+        $schema = Schema::connection($connection);
+        $db = DB::connection($connection);
+        $references = [];
+
+        foreach ([
+            'booking' => ['bookings', 'company_id'],
+            'thanh toán' => ['payments', 'company_id'],
+            'khuyến mãi F&B' => ['fb_promotions', 'company_id'],
+        ] as $name => [$table, $column]) {
+            if ($schema->hasTable($table)) {
+                $count = $db->table($table)->where($column, $companyId)->count();
+                if ($count > 0) {
+                    $references[$name] = $count;
+                }
+            }
+        }
+        if ($schema->hasTable('service_bills')) {
+            $count = $db->table('service_bills')->where(function ($query) use ($companyId) {
+                $query->where('CompanyId1', $companyId)->orWhere('CompanyId2', $companyId);
+            })->count();
+            if ($count > 0) {
+                $references['hóa đơn dịch vụ'] = $count;
+            }
+        }
+        if ($references !== []) {
+            return [['branch' => $branch, 'reason' => 'used', 'references' => $references]];
+        }
+
+        if ($schema->hasTable('hotel_configs')) {
+            $isDefault = $db->table('hotel_configs')
+                ->where('name', 'CompanyDefault')
+                ->where('value', (string) $companyId)
+                ->exists();
+            if ($isDefault) {
+                return [['branch' => $branch, 'reason' => 'default']];
+            }
+        }
+
+        return [];
+    }
+
     private function companyPayload(Company $company, string $connection): array
     {
         $payload = [];

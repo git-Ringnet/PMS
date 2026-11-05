@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Company;
 use App\Models\CustomerSource;
+use App\Models\HotelConfig;
 use App\Models\Market;
 use App\Models\Branch;
 use App\Models\Booker;
@@ -61,6 +62,45 @@ class CompanyControllerTest extends TestCase
         ]);
 
         $this->assertTrue((bool)$company->fresh()->sync_acc);
+    }
+
+    public function test_company_name_and_trading_name_are_always_required(): void
+    {
+        \Laravel\Sanctum\Sanctum::actingAs($this->adminUser);
+
+        $this->postJson('/api/companies', ['name' => 'Công ty thiếu tên giao dịch'])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['trading_name']);
+
+        $company = Company::create(['name' => 'Công ty cũ', 'trading_name' => 'Tên giao dịch cũ']);
+        $this->putJson("/api/companies/{$company->id}", ['name' => 'Công ty mới'])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['trading_name']);
+    }
+
+    public function test_configured_company_required_fields_are_exposed_and_validated(): void
+    {
+        \Laravel\Sanctum\Sanctum::actingAs($this->adminUser);
+        HotelConfig::updateOrCreate(
+            ['name' => 'CreateCompanyRequiredField'],
+            ['value' => 'market_id,customer_source_id,unknown_field']
+        );
+
+        $this->getJson('/api/companies?per_page=10')
+            ->assertOk()
+            ->assertJsonPath('meta.company_required_fields', ['market_id', 'customer_source_id']);
+
+        $this->postJson('/api/companies', [
+            'name' => 'Công ty thiếu danh mục',
+            'trading_name' => 'Thiếu danh mục',
+        ])->assertStatus(422)->assertJsonValidationErrors(['market_id', 'customer_source_id']);
+
+        $this->postJson('/api/companies', [
+            'name' => 'Công ty đủ danh mục',
+            'trading_name' => 'Đủ danh mục',
+            'market_id' => $this->marketOta->id,
+            'customer_source_id' => $this->sourceAgoda->id,
+        ])->assertCreated();
     }
 
     public function test_export_companies_csv()

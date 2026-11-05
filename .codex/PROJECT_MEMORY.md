@@ -1010,6 +1010,7 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 ## Current Status
 
+- 2026-11-05: Dòng 517–519 Công ty đã thêm thông số runtime `CreateCompanyRequiredField`, gợi ý tên chỉ đọc khi thêm và luồng ẩn công ty đồng bộ an toàn đa chi nhánh. Cần chạy migration, test backend và UAT trước production.
 - 2026-11-04: Báo cáo runtime — `ReportDataExecutorService` chuẩn hóa mảng scalar của tham số Store thành CSV trước khi bind Procedure; mảng rỗng thành `NULL`, mảng lồng bị trả lỗi validation. Khắc phục 500 `Array to string conversion` khi chạy `COMPANY_OCCUPANCY`; không đổi Procedure, dữ liệu hoặc kết quả scalar.
 - 2026-11-04: Dòng 167 — Hai toggle Nhóm theo thị trường/Nhóm theo nguồn khách dùng metadata `selection_group`, chế độ `single`. Designer cấu hình bằng dropdown nhãn nghiệp vụ `Chọn một cùng`, không hiển thị mã kỹ thuật; runtime chỉ cho chọn một. Procedure giữ thứ tự nhóm tăng dần, doanh thu giảm dần trong nhóm theo PDF legacy.
 - 2026-11-04: Designer báo cáo không còn yêu cầu nhập mã `selection_group`: dropdown `Chọn một cùng` dùng nhãn các toggle hiện có, tự lưu metadata loại trừ theo cặp. Card điều kiện hiển thị nguồn tác động Store/Template; field output và cấp/sort nhóm tiếp tục lấy từ `field_schema` ở Detail Table. `ReportDefinitionManagerModal` bảo toàn toàn bộ metadata đã có khi đồng bộ Store; không đổi Procedure hoặc runtime report.
@@ -1039,6 +1040,7 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 ## Recent Changes
 
+- 2026-11-05: Dòng 517–519 Công ty: `name`/`trading_name` bắt buộc ở API; cấu hình `CreateCompanyRequiredField` mặc định rỗng trả field hợp lệ cho form để hiển thị vàng/`*` và chặn lưu. Form Thêm chỉ gợi ý công ty cùng tên, không chọn/kế thừa. Khi `SyncCompanyAllBranch=1`, xóa kiểm tra tất cả chi nhánh rồi chuyển toàn bộ bản sao sang `is_active=false`; nếu có phát sinh, CompanyDefault, lỗi kết nối hoặc xung đột mã thì không thay đổi dữ liệu. Không đổi schema `companies`, Booking, Report hay mapping import legacy.
 - 2026-11-04: Sửa Executor dùng chung khi nhận mảng cho tham số `varchar`: ghép mảng scalar thành chuỗi CSV, mảng rỗng thành `NULL`, từ chối cấu trúc mảng lồng bằng `InvalidArgumentException`. Kiểm thử trực tiếp đạt `AREA-A,AREA-B`, `NULL`, và thông báo validation cho mảng lồng; PHP lint/diff-check đạt. PHPUnit vẫn chặn do bootstrap không đọc được `vendor/autoload.php` trong sandbox.
 - 2026-11-04: Designer điều kiện báo cáo: thay ô nhập mã loại trừ bằng dropdown chọn toggle cùng nhóm, tự sinh metadata nội bộ theo cặp; thêm mô tả nguồn tác động `Tính toán Store`/`Gửi Store`/`Hiển thị mẫu in`. `ReportDefinitionManagerModal` dùng bản sao metadata cũ khi đồng bộ tham số Store, nên không làm rơi layout/map/điều kiện cấu hình. Không đổi Procedure, snapshot, import hoặc dữ liệu nghiệp vụ. `npm run build`, PHP lint và `git diff --check` đạt.
 - 2026-11-04: Dòng 167: thêm/lưu/serialize `parameter_ui_schema.*.selection_group` qua endpoint `PATCH /api/report-definitions/{reportDefinition}/parameter-ui-schema`; `ReportsPage.vue` xử lý loại trừ tổng quát theo metadata. Xác minh trực tiếp Designer có hai toggle được ràng buộc; procedure đã chạy đủ 6 chế độ nhóm với fixture XAMPP. PHP lint, route list, `npm run build` và `git diff --check` đạt.
@@ -1250,6 +1252,7 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 ## Known Risks
 
+- 2026-11-05: Cần chạy migration mới trên từng branch trước khi cấu hình `CreateCompanyRequiredField` xuất hiện. Cần UAT xóa/ẩn với các branch thực, đặc biệt khi CompanyDefault đang trỏ đến công ty; thao tác sẽ bị chặn an toàn nếu một branch không truy cập được.
 - 2026-11-04: PHPUnit không thể đọc `backend/vendor/autoload.php` (`is_readable=false`) dù file tồn tại; test `CompanyOccupancySnapshotMigrationTest` chưa thực thi được tại môi trường này. Cần khôi phục quyền đọc/dependencies rồi chạy lại. Cần UAT lưu thay đổi mã nhóm trong Designer với quyền cấu hình để xác nhận metadata persisted sau reload.
 - 2026-11-04: Các ngày lịch sử trước lần Night Audit đầu tiên có snapshot không fallback sang dữ liệu live; cần backfill/đối soát theo output legacy trước khi import production. `FOCBaoGomCompliment` được chốt cùng snapshot nhưng quy tắc ảnh hưởng số liệu legacy chưa được xác minh đầy đủ. Cần UAT browser sáu tổ hợp nhóm/filter và Designer save-preview bằng tài khoản có quyền báo cáo; tài khoản local hiện tại không có quyền mở danh mục report.
 - 2026-11-02: Dòng 481 chưa được xác nhận browser sau thay đổi; cần kiểm tra kéo thả vào danh mục lồng, sắp xếp trước báo cáo khác, lưu/reload, quyền cấu hình và menu runtime trên cả 4 module. PHPUnit backend có thể tiếp tục bị chặn bởi `backend/vendor/autoload.php`.
