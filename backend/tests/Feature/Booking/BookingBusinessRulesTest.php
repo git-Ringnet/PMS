@@ -2362,6 +2362,49 @@ class BookingBusinessRulesTest extends TestCase
     }
 
     /**
+     * Row 491: rút ngắn giai đoạn của phòng đã đặt trước (màn hình đăng ký) không phát sinh nhu cầu phòng mới,
+     * nên không bị báo over dù các đêm đó đã over từ trước.
+     */
+    public function test_row_491_shortening_reserved_room_period_is_not_blocked_by_existing_over(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'AllowOverRoomTypeRoomKind'], ['value' => '0']);
+        SystemDateRoll::query()->update(['system_date' => '2026-08-31']);
+        $booking = $this->createBooking(['arrival_date' => '2026-09-06', 'departure_date' => '2026-09-09', 'num_of_days' => 3,
+            'registration_status_id' => $this->regStatus->booking_status_id]);
+        $mine = BookingRoom::create([
+            'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-09-06', 'departure_date' => '2026-09-09', 'rate' => 500000, 'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+        $other = $this->createBooking(['arrival_date' => '2026-09-07', 'departure_date' => '2026-09-09',
+            'registration_status_id' => $this->regStatus->booking_status_id]);
+        for ($i = 0; $i < 2; $i++) {
+            BookingRoom::create(['booking_id' => $other->id, 'room_class_id' => $this->roomClass->id,
+                'arrival_date' => '2026-09-07', 'departure_date' => '2026-09-09', 'status' => BookingRoom::STATUS_BOOKED]);
+        }
+
+        $payload = $this->headerPayload($booking, '2026-09-06', '2026-09-09');
+        $payload['room_allocations'] = [['roomClassId' => $this->roomClass->id, 'quantity' => 1,
+            'rooms' => [['bookingRoomId' => $mine->id, 'arrivalDate' => '2026-09-07', 'departureDate' => '2026-09-09', 'price' => 500000]]]];
+
+        $this->putJson("/api/bookings/{$booking->id}", $payload)->assertSuccessful();
+        $this->assertSame('2026-09-07', $mine->fresh()->arrival_date->toDateString());
+    }
+
+    /**
+     * Row 492: xóa hết thông tin đưa đón rồi lưu thì mở lại vẫn trống.
+     */
+    public function test_row_492_clearing_shuttle_info_persists_empty_list(): void
+    {
+        $booking = $this->createBooking(['arrival_date' => '2026-09-06', 'departure_date' => '2026-09-08', 'num_of_days' => 2]);
+        $booking->update(['shuttle_info' => [['id' => 1, 'type' => 'Đón', 'vehicle' => '7 Seater car', 'date' => '2026-09-06']]]);
+
+        $this->putJson("/api/bookings/{$booking->id}", $this->headerPayload($booking, '2026-09-06', '2026-09-08') + ['shuttle_info' => []])->assertSuccessful();
+
+        $this->assertSame([], $booking->fresh()->shuttle_info);
+        $this->assertSame([], $this->getJson("/api/bookings/{$booking->id}")->assertOk()->json('data.shuttle_info') ?? []);
+    }
+
+    /**
      * Row 393: quick update allows departure = arrival (same-day room without
      * day-use, zero nights) and only rejects departure < arrival.
      */

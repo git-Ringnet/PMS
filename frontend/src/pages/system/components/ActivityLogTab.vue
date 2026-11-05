@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onActivated, onDeactivated, onMounted, onUnmounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { fetchActivityLogs, fetchActivityLogStats } from '@/services/activity-log-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
@@ -7,6 +8,7 @@ import LoadingOverlay from '@/components/LoadingOverlay.vue'
 
 const uiStore = useUiStore()
 const authStore = useAuthStore()
+const route = useRoute()
 
 // Theme Background from Topbar settings
 const themeBg = computed(() => authStore.themeColor || '#006bdb')
@@ -136,7 +138,23 @@ function stopActivityLogListeners() {
   window.removeEventListener('click', handleTableClickOutside)
 }
 
+// Dòng 493: mở từ nút "Lịch sử booking" -> lọc theo mã đăng ký trên đường dẫn, xem toàn bộ thời gian.
+function applyRouteRegistrationFilter() {
+  const code = route.query.registration_code
+  if (!code) return false
+  filterRegCode.value = String(code)
+  quickDateFilter.value = 'all'
+  filterDateFrom.value = ''
+  filterDateTo.value = ''
+  return true
+}
+
+watch(() => route.query.registration_code, (code) => {
+  if (code && applyRouteRegistrationFilter() && activityLogReady) handleSearch()
+})
+
 onMounted(async () => {
+  applyRouteRegistrationFilter()
   activityLogInstanceActive = true
   startActivityLogListeners()
   try {

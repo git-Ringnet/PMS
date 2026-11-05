@@ -20,6 +20,7 @@ import {
   mergeMoveHistoryBillReferences,
 } from '@/utils/booking-room-move-history'
 import { summarizeRoomTotals } from '@/utils/booking-room-totals'
+import { normalizeShuttleInfo, buildBookingHistoryLocation } from '@/utils/booking-shuttle-history'
 import {
   childBreakfastServiceDates,
   isChildBreakfastCode,
@@ -297,6 +298,17 @@ function stopDragModal() {
   }
   document.removeEventListener('mousemove', dragModal)
   document.removeEventListener('mouseup', stopDragModal)
+}
+
+// Dòng 493: nút "Lịch sử booking" chuyển sang màn hình Lịch sử thao tác, lọc theo đăng ký đang xem.
+function openBookingHistory() {
+  const location = buildBookingHistoryLocation(route.path, modalForm.value?.dbId)
+  if (!location) {
+    uiStore.showToast('Vui lòng lưu đăng ký trước khi xem lịch sử booking.', 'warning')
+    return
+  }
+  closeModal()
+  router.push(location)
 }
 
 function closeModal() {
@@ -4485,9 +4497,8 @@ async function handleAddTabClick() {
     color: hotelSettings.value?.ColorDefaultBookingRoomMap || '#97D5FF',
     isGit: true,
     isMasterRoomRate: true,
-    shuttleInfo: [
-      { id: Date.now(), type: 'Đón', vehicle: '7 Seater car', code: '', date: today, time: '00:00', price: 0, location: '', note: '' }
-    ],
+    // Dòng 492: đăng ký mới mặc định thông tin đưa đón để trống.
+    shuttleInfo: [],
     roomAllocations: [],
   }
   roomAddDraft.value = initRoomAddDraft(today, tomorrow)
@@ -4531,9 +4542,8 @@ function fillModalForm(tab) {
     contactPhone: tab.contactPhone || '',
     note: tab.note || '',
     specialRequests: tab.specialRequests || '',
-    shuttleInfo: (tab.shuttleInfo && tab.shuttleInfo.length > 0)
-      ? JSON.parse(JSON.stringify(tab.shuttleInfo))
-      : [ { id: Date.now(), type: 'Đón', vehicle: '7 Seater car', code: '', date: tab.checkIn || systemDate.value || new Date().toISOString().split('T')[0], time: '00:00', price: 0, location: '', note: '' } ],
+    // Dòng 492: không tự thêm dòng đưa đón mặc định; đã xóa hết thì mở lại vẫn trống.
+    shuttleInfo: normalizeShuttleInfo(tab.shuttleInfo),
     roomAllocations: [],
     deposits: JSON.parse(JSON.stringify(tab.deposits || [])),
     rooms: [],
@@ -9194,7 +9204,7 @@ defineExpose({
                     </label>
                 </div>
                 <div class="flex items-center space-x-2" :class="isTopBarThemeDark ? 'text-gray-300' : 'text-slate-800'">
-                    <button class="flex items-center space-x-1 text-xs px-2 py-0.5 rounded-md transition font-medium shadow-sm cursor-pointer border-none" :class="isTopBarThemeDark ? 'bg-white/10 hover:bg-white/20 text-gray-200 hover:text-white' : 'bg-black/10 hover:bg-black/20 text-slate-900'">
+                    <button type="button" @click="openBookingHistory" class="flex items-center space-x-1 text-xs px-2 py-0.5 rounded-md transition font-medium shadow-sm cursor-pointer border-none" :class="isTopBarThemeDark ? 'bg-white/10 hover:bg-white/20 text-gray-200 hover:text-white' : 'bg-black/10 hover:bg-black/20 text-slate-900'">
                         <i class="fa-solid fa-clock-rotate-left"></i>
                         <span>Lịch sử booking</span>
                     </button>

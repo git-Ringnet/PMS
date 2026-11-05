@@ -3588,7 +3588,17 @@ class BookingController extends Controller
                     && $originalRoomArrival === $roomArrival
                     && $originalRoomDeparture === $roomDeparture;
 
-                if (!$isPersistedStay || ($bookingRoomStatus === BookingRoom::STATUS_BOOKED && !$sameReservationPeriod)) {
+                // Dòng 491: rút ngắn giai đoạn (nằm trọn trong giai đoạn cũ, cùng loại phòng) không phát sinh nhu cầu
+                // phòng mới nên không bị chặn over, kể cả khi các đêm đó đã over từ trước.
+                $onlyShortened = $isPersistedStay
+                    && $bookingRoomStatus === BookingRoom::STATUS_BOOKED
+                    && (int) $bookingRoom->room_class_id === (int) $roomClassId
+                    && $originalRoomArrival !== null && $originalRoomDeparture !== null
+                    && $originalRoomArrival !== $originalRoomDeparture
+                    && $roomArrival >= $originalRoomArrival
+                    && $roomDeparture <= $originalRoomDeparture;
+
+                if (!$isPersistedStay || ($bookingRoomStatus === BookingRoom::STATUS_BOOKED && !$sameReservationPeriod && !$onlyShortened)) {
                     if ($isTimedDayUse) {
                         $newTimedDayUseDemands[] = [
                             'room_class_id' => (int) $roomClassId,
