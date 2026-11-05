@@ -2675,6 +2675,8 @@ function syncRoomsToAllocations(tab) {
       allotmentCode: r.allotmentCode || '',
       roomCode: r.roomCode || '',
       bookingRoomId: r.bookingRoomId || null,
+      // Dòng 497: nâng hạng chọn theo từng phòng ở lưới phòng
+      upgradeClassId: r.upgradeClassId || null,
       total: Number(r.total) || 0,
       price: r.price ?? alloc.price ?? 0,
       basePrice: r.basePrice ?? alloc.basePrice ?? alloc.price ?? 0,
@@ -4628,7 +4630,8 @@ watch(() => modalForm.value.registrationStatusId, (newId) => {
       uiStore.showToast('Chú ý: Tình trạng đăng ký này không giữ phòng trống (is_availability = 0)', 'info')
     }
   }
-  handleConfirmDateCalculation(true)
+  // Chỉ tự tính cho đăng ký mới; đăng ký đã lưu tính lại khi người dùng đổi trạng thái (@change) - tránh ghi đè ngày xác nhận khi mở booking (dòng 495)
+  handleConfirmDateCalculation(false)
 })
 
 watch(() => modalForm.value.checkIn, () => {

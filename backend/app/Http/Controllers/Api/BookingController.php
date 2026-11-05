@@ -607,6 +607,10 @@ class BookingController extends Controller
 
         try {
             $booking = \Illuminate\Support\Facades\DB::transaction(function () use ($validated, $request, $isWaitingStatus) {
+                if ($request->has('room_allocations') && is_array($request->room_allocations)) {
+                    $request->merge(['room_allocations' => $this->applyUpgradeClassToAllocations($request->room_allocations)]);
+                }
+
                 // 1. Validate room allocations trước khi tạo booking
                 if ($request->has('room_allocations') && is_array($request->room_allocations)) {
                     $this->validateRoomAllocations(
@@ -682,7 +686,7 @@ class BookingController extends Controller
                                 'booking_id' => $booking->id,
                                 'room_number' => $detail['roomNumber'] ?? null,
                                 'room_class_id' => $alloc['roomClassId'] ?? null,
-                                'original_room_class_id' => $alloc['roomClassId'] ?? null,
+                                'original_room_class_id' => $alloc['originalRoomClassId'] ?? $alloc['roomClassId'] ?? null,
                                 'arrival_date' => $roomArrival,
                                 'departure_date' => $roomDeparture,
                                 'arrival_time' => $detail['arrivalTime'] ?? null,
@@ -990,7 +994,7 @@ class BookingController extends Controller
 
         try {
             DB::transaction(function () use ($booking, $validated) {
-                $allocations = $validated['room_allocations'];
+                $allocations = $this->applyUpgradeClassToAllocations($validated['room_allocations']);
                 $this->validateAddOnlyRoomAllocations($booking, $allocations);
 
                 $arrivalDate = Carbon::parse($booking->arrival_date)->toDateString();
@@ -1303,10 +1307,20 @@ class BookingController extends Controller
             throw $e;
         }
 
-        // Confirmation date is calculated once when a booking is created.
-        // Legacy edits may still submit the form field, but changing arrival
-        // date/status must never recalculate or overwrite the stored value.
-        unset($validated['confirm_date']);
+        // Confirmation date is calculated once when a booking is created and is
+        // never recalculated when arrival date/status change. A value the user
+        // explicitly edits is saved (row 495), but cannot be after arrival.
+        if (empty($validated['confirm_date'])) {
+            unset($validated['confirm_date']);
+        } else {
+            $effectiveArrival = isset($validated['arrival_date'])
+                ? Carbon::parse($validated['arrival_date'])->toDateString()
+                : Carbon::parse($booking->arrival_date)->toDateString();
+            $validated['confirm_date'] = min(
+                Carbon::parse($validated['confirm_date'])->toDateString(),
+                $effectiveArrival
+            );
+        }
 
         // Tự động tăng edit_count và ghi nhận người sửa
         $validated['edit_count']  = $booking->edit_count + 1;
@@ -1503,7 +1517,7 @@ class BookingController extends Controller
                     // quantity is the current-room target, while cancelled,
                     // no-show and moved rows are history only.
                     $roomAllocations = $this->normalizeRoomAllocations(
-                        $request->room_allocations,
+                        $this->applyUpgradeClassToAllocations($request->room_allocations),
                         $booking->id
                     );
 
@@ -1687,7 +1701,7 @@ class BookingController extends Controller
                                 'booking_id' => $booking->id,
                                 'room_number' => $detail['roomNumber'] ?? null,
                                 'room_class_id' => $alloc['roomClassId'] ?? null,
-                                'original_room_class_id' => $alloc['roomClassId'] ?? null,
+                                'original_room_class_id' => $alloc['originalRoomClassId'] ?? $bRoom?->original_room_class_id ?? $alloc['roomClassId'] ?? null,
                                 'arrival_date' => $roomArrival,
                                 'departure_date' => $roomDeparture,
                                 'actual_arrival_date' => ($bRoom && (int)$bRoom->status !== \App\Models\BookingRoom::STATUS_BOOKED && $bRoom->actual_arrival_date)
@@ -3084,6 +3098,95 @@ class BookingController extends Controller
      * moved BookingRoom remains a visible audit row, but it is removed from
      * the allocation details and cannot create a replacement implicitly.
      */
+    /**
+     * Dòng 497: cột "Nâng hạng" ở màn đăng ký/lấy phòng. Khi chọn loại phòng nâng hạng khác loại gốc,
+     * các phòng của dòng đó được lưu theo loại phòng MỚI (kiểm AV/over theo loại mới), loại gốc giữ ở
+     * original_room_class_id. Phòng đang ở/đã trả không được nâng hạng qua đường này.
+     */
+    private function applyUpgradeClassToAllocations(array $roomAllocations): array
+    {
+        $result = [];
+        foreach ($roomAllocations as $alloc) {
+            if (!is_array($alloc)) {
+                $result[] = $alloc;
+                continue;
+            }
+            $baseId = $alloc['roomClassId'] ?? null;
+            $allocUpgradeId = $alloc['upgradeClassId'] ?? $alloc['upgradeRoomClassId'] ?? null;
+            $details = is_array($alloc['rooms'] ?? null) ? $alloc['rooms'] : [];
+            $quantity = max((int) ($alloc['quantity'] ?? 0), 0);
+
+            // Phòng nâng hạng có thể chọn theo cả dòng (cột Nâng hạng của dòng lấy phòng) hoặc theo từng phòng;
+            // chọn theo từng phòng thắng. Gom các phòng theo loại phòng đích.
+            $hasAnyUpgrade = !empty($allocUpgradeId);
+            foreach ($details as $detail) {
+                if (is_array($detail) && !empty($detail['upgradeClassId'])) {
+                    $hasAnyUpgrade = true;
+                }
+            }
+            if (!$hasAnyUpgrade || empty($baseId)) {
+                $result[] = $alloc;
+                continue;
+            }
+
+            $groups = []; // target class id => details
+            $keep = [];
+            foreach ($details as $index => $detail) {
+                if ($index >= $quantity || !is_array($detail)) {
+                    $keep[] = $detail; // phần dư vượt số lượng giữ nguyên để các bước kiểm tra sau xử lý
+                    continue;
+                }
+                $targetId = (int) (!empty($detail['upgradeClassId']) ? $detail['upgradeClassId'] : ($allocUpgradeId ?: $baseId));
+                if ($targetId === (int) $baseId) {
+                    $keep[] = $detail;
+                    continue;
+                }
+                if (!\App\Models\RoomClass::whereKey($targetId)->exists()) {
+                    throw new \Exception('Loại phòng nâng hạng không tồn tại.');
+                }
+
+                $bookingRoomId = $detail['bookingRoomId'] ?? null;
+                if ($bookingRoomId !== null && trim((string) $bookingRoomId) !== '') {
+                    $persisted = BookingRoom::withTrashed()->find($bookingRoomId);
+                    if ($persisted && (int) $persisted->status !== BookingRoom::STATUS_BOOKED) {
+                        throw new \Exception('Chỉ nâng hạng được phòng ở trạng thái đăng ký.');
+                    }
+                }
+
+                $detail['roomClassId'] = $targetId;
+                $detail['upgradeClassId'] = null;
+                $roomNumber = $detail['roomNumber'] ?? null;
+                if (filled($roomNumber)) {
+                    $physical = \App\Models\Room::where('room_number', $roomNumber)->first();
+                    if (!$physical || (int) $physical->room_class_id !== $targetId) {
+                        $detail['roomNumber'] = null; // số phòng của loại cũ không còn hợp lệ
+                    }
+                }
+                $groups[$targetId][] = $detail;
+            }
+
+            $base = $alloc;
+            $base['upgradeClassId'] = null;
+            $base['upgradeRoomClassId'] = null;
+            if (!empty($keep) || empty($groups)) {
+                $keepDetails = array_values(array_filter($keep, fn ($d) => is_array($d)));
+                $base['rooms'] = $keepDetails;
+                $base['quantity'] = max($quantity - array_sum(array_map('count', $groups)), 0);
+                $result[] = $base;
+            }
+            foreach ($groups as $targetId => $groupDetails) {
+                $upgraded = $base;
+                $upgraded['originalRoomClassId'] = (int) $baseId;
+                $upgraded['roomClassId'] = (int) $targetId;
+                $upgraded['rooms'] = $groupDetails;
+                $upgraded['quantity'] = count($groupDetails);
+                $result[] = $upgraded;
+            }
+        }
+
+        return $result;
+    }
+
     private function normalizeRoomAllocations(array $roomAllocations, $bookingId = null): array
     {
         $activeStatuses = [
@@ -3364,7 +3467,7 @@ class BookingController extends Controller
             'booking_id' => $booking->id,
             'room_number' => $detail['roomNumber'] ?? null,
             'room_class_id' => $allocation['roomClassId'] ?? null,
-            'original_room_class_id' => $allocation['roomClassId'] ?? null,
+            'original_room_class_id' => $allocation['originalRoomClassId'] ?? $allocation['roomClassId'] ?? null,
             'arrival_date' => $roomArrival,
             'departure_date' => $roomDeparture,
             'arrival_time' => $detail['arrivalTime'] ?? null,
