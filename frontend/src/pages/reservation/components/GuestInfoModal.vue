@@ -146,7 +146,7 @@
 
                 <!-- LEVEL 2: CÁC PHÒNG TRONG NHÓM TÌNH TRẠNG -->
                 <template v-if="expandedStatusGroups[sg.id]">
-                  <template v-for="roomGroup in sg.rooms" :key="'room-' + roomGroup.booking_room_id">
+                  <template v-for="roomGroup in sg.rooms" :key="'room-' + roomGroup.booking_room_id + (roomGroup._checkedOutSplit ? '-out' : '')">
                     <!-- Room group header -->
                     <tr class="bg-slate-100/90 font-semibold border-b border-slate-200">
                       <td :colspan="visibleColumns.length + 1" class="py-1.5 px-4 text-xs text-slate-800 bg-[#f1f5f9] border-slate-200">
@@ -167,6 +167,7 @@
                       @dblclick="!isEditing && openGuestDetail(roomGroup, guest, 'adult')"
                       class="group border-b border-slate-200 transition-colors"
                       :class="[
+                        isCheckedOutPerson(guest) ? 'opacity-70 !bg-rose-50/60' : '',
                         idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/40',
                         isEditing ? '' : 'hover:bg-blue-50/70 cursor-pointer'
                       ]"
@@ -193,7 +194,7 @@
                           getColumnStickyStyle(col.key, false)
                         ]">
                         <!-- Khi đang chỉnh sửa trực tiếp trên bảng -->
-                        <template v-if="isEditing">
+                        <template v-if="isEditing && !isCheckedOutPerson(guest)">
                           <template v-if="col.key === 'room_number'">{{ roomGroup.room_number || `(${roomGroup.booking_room_id || 'Chưa gán'})` }}</template>
                           
                           <!-- Title dropdown (lọc theo người lớn: is_adult = 1) -->
@@ -438,6 +439,7 @@
                       @dblclick="!isEditing && openGuestDetail(roomGroup, child, 'child')"
                       class="group border-b border-slate-200 transition-colors"
                       :class="[
+                        isCheckedOutPerson(child) ? 'opacity-70 !bg-rose-50/60' : '',
                         (roomGroup.guests.length + cidx) % 2 === 0 ? 'bg-white' : 'bg-slate-50/40',
                         isEditing ? '' : 'hover:bg-blue-50/70 cursor-pointer'
                       ]"
@@ -464,7 +466,7 @@
                           getColumnStickyStyle(col.key, false)
                         ]">
                         <!-- Khi đang chỉnh sửa trực tiếp trên bảng -->
-                        <template v-if="isEditing">
+                        <template v-if="isEditing && !isCheckedOutPerson(child)">
                           <template v-if="col.key === 'room_number'">{{ roomGroup.room_number || `(${roomGroup.booking_room_id || 'Chưa gán'})` }}</template>
                           
                           <!-- Title dropdown (lọc theo trẻ em: is_adult = 0) -->
@@ -734,6 +736,7 @@
     :room="selectedRoom"
     :guest="selectedGuest"
     :guest-type="selectedGuestType"
+    :readonly="isCheckedOutPerson(selectedGuest)"
     @close="showDetailModal = false"
     @saved="handleGuestSaved"
   />
@@ -841,7 +844,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import GuestDetailModal from './GuestDetailModal.vue'
 import GuestSuggestInput from '@/components/GuestSuggestInput.vue'
 import { inheritGuestInfo } from '@/utils/guest-suggestion'
-import { normalizeGuestInfoGroups } from '@/utils/guest-info'
+import { normalizeGuestInfoGroups, isCheckedOutPerson, splitCheckedOutPeople } from '@/utils/guest-info'
 
 const props = defineProps({
   show: Boolean,
@@ -892,7 +895,8 @@ function toggleStatusGroup(statusId) {
 const currentSourceData = computed(() => isEditing.value ? editData.value : guestData.value)
 
 const groupedByStatus = computed(() => {
-  const rooms = currentSourceData.value || []
+  // Dòng 474: khách/trẻ em đã trả phòng tách thành nhóm "Phòng đi" riêng, không nằm chung nhóm phòng đang ở.
+  const rooms = splitCheckedOutPeople(currentSourceData.value || [])
   if (rooms.length === 0) return []
 
   const groups = STATUS_GROUPS.map(sg => {
@@ -1693,8 +1697,9 @@ async function saveChanges() {
     const allGuests = []
     const allChildren = []
     for (const group of editData.value) {
-      allGuests.push(...(group.guests || []))
-      allChildren.push(...(group.children || []))
+      // Dòng 474: khách/trẻ em đã check out không gửi lên để sửa.
+      allGuests.push(...(group.guests || []).filter(g => !isCheckedOutPerson(g)))
+      allChildren.push(...(group.children || []).filter(c => !isCheckedOutPerson(c)))
     }
     const res = await bulkUpdateBookingGuests(props.bookingId, {
       guests: allGuests,
@@ -1751,6 +1756,7 @@ function getScanTargetOptions() {
   const data = isEditing.value ? editData.value : guestData.value
   data.forEach(group => {
     (group.guests || []).forEach((guest, index) => {
+      if (isCheckedOutPerson(guest)) return
       options.push({
         key: `g-${guest.id}`,
         label: `Room ${group.room_number || '—'} | Adult - ${guest.full_name || `Khách ${index + 1} (Trống)`}`,
@@ -1761,6 +1767,7 @@ function getScanTargetOptions() {
       })
     });
     (group.children || []).forEach((child, index) => {
+      if (isCheckedOutPerson(child)) return
       options.push({
         key: `c-${child.id}`,
         label: `Room ${group.room_number || '—'} | Child - ${child.full_name || `Trẻ em ${index + 1} (Trống)`}`,

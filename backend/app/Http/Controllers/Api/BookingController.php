@@ -292,7 +292,14 @@ class BookingController extends Controller
                         $roomQuery->whereBetween('arrival_date', [$fromUtc, $toUtc]);
                     });
                 } elseif ($dateType === 'departure') {
-                    $q->whereBetween('departure_date', [$request->from_date, $request->to_date]);
+                    $q->whereBetween('departure_date', [$request->from_date, $request->to_date])
+                        // Dòng 241 (sp_133): khách check out lẻ trong khoảng ngày cũng thuộc Đăng ký cũ
+                        // dù ngày đi của phòng/đăng ký còn ở sau.
+                        ->orWhereHas('bookingRooms.guests', function ($guestQuery) use ($request) {
+                            $guestQuery->where('status', \App\Models\BookingRoomGuest::STATUS_CHECKED_OUT)
+                                ->whereDate('actual_checkout_date', '>=', $request->from_date)
+                                ->whereDate('actual_checkout_date', '<=', $request->to_date);
+                        });
                 } else {
                     $q->whereBetween('arrival_date', [$request->from_date, $request->to_date])
                       ->orWhereBetween('departure_date', [$request->from_date, $request->to_date]);

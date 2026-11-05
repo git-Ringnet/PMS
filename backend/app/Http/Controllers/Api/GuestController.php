@@ -70,6 +70,8 @@ class GuestController extends Controller
                         [
                             'pivot_id'   => $roomGuest->id,
                             'is_primary' => (bool) $roomGuest->is_primary,
+                            // Dòng 474: trạng thái lưu trú của khách trong phòng này (2 = đã trả phòng).
+                            'stay_status' => (int) $roomGuest->status,
                         ]
                     );
                 })
@@ -205,6 +207,33 @@ class GuestController extends Controller
         }
 
         return response()->json(['success' => true, 'message' => 'Đã khởi tạo thông tin khách mẫu.']);
+    }
+
+    /** Khách (người lớn) chỉ còn lưu trú đã check out trong các phòng của booking. */
+    private function isGuestCheckedOutInBooking(string $guestId, $bookingId): bool
+    {
+        $pivots = BookingRoomGuest::where('guest_id', $guestId)
+            ->when($bookingId, fn ($q) => $q->whereIn('booking_room_id', BookingRoom::where('booking_id', $bookingId)->select('id')))
+            ->pluck('status')
+            ->map(fn ($status) => (int) $status);
+
+        return $pivots->isNotEmpty()
+            && $pivots->contains(BookingRoomGuest::STATUS_CHECKED_OUT)
+            && !$pivots->contains(BookingRoomGuest::STATUS_ACTIVE)
+            && !$pivots->contains(BookingRoomGuest::STATUS_CHECKED_IN);
+    }
+
+    private function isChildCheckedOut(BookingChild $child): bool
+    {
+        if ((int) $child->child_status === BookingRoomGuest::STATUS_CHECKED_OUT) {
+            return true;
+        }
+
+        return $child->booking_room_id
+            && \App\Models\BookingRoomChild::where('booking_room_id', $child->booking_room_id)
+                ->where('booking_child_id', $child->id)
+                ->where('status', BookingRoomGuest::STATUS_CHECKED_OUT)
+                ->exists();
     }
 
     // GET /booking-rooms/{roomId}/guests
@@ -991,6 +1020,11 @@ class GuestController extends Controller
             ->where('guest_id', $guestId)
             ->firstOrFail();
 
+        // Dòng 474: khách đã check out (status = 2) không được sửa thông tin.
+        if ((int) $pivot->status === BookingRoomGuest::STATUS_CHECKED_OUT) {
+            return response()->json(['success' => false, 'message' => 'Khách đã check out, không được sửa thông tin.'], 422);
+        }
+
         $guest = Guest::findOrFail($guestId);
 
         $request->validate([
@@ -1106,6 +1140,57 @@ class GuestController extends Controller
         return response()->json(['success' => true, 'data' => $guest, 'message' => 'Cập nhật thông tin khách thành công.']);
     }
 
+    /**
+     * Dòng 474: gia hạn/đổi ngày ở màn hình thông tin phòng phải tuân thủ cùng quy tắc với màn hình đăng ký:
+     * số phòng không được trùng giai đoạn với booking khác / phòng bị khóa, và không over loại phòng
+     * khi thông số AllowOverRoomTypeRoomKind không cho phép.
+     */
+    private function assertStayPeriodAvailable(Request $request, BookingRoom $room): void
+    {
+        if (!in_array((int) $room->status, [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN], true)) {
+            return;
+        }
+
+        $arrival = Carbon::parse($request->filled('arrival_date') ? $request->input('arrival_date') : $room->arrival_date)->toDateString();
+        $departure = Carbon::parse($request->filled('departure_date') ? $request->input('departure_date') : $room->departure_date)->toDateString();
+        $avService = app(\App\Services\RoomAvailabilityService::class);
+        $period = Carbon::parse($arrival)->format('d/m/Y') . ' - ' . Carbon::parse($departure)->format('d/m/Y');
+
+        if (filled($room->room_number)) {
+            $roomNumber = (string) $room->room_number;
+            $conflict = $avService->findRoomNumberConflict($roomNumber, $arrival, $departure, $room->id);
+            if ($conflict) {
+                $code = $conflict->booking?->booking_code ?: ('#' . $conflict->booking_id);
+                $other = $conflict->arrival_date->format('d/m/Y') . ' - ' . $conflict->departure_date->format('d/m/Y');
+                throw ValidationException::withMessages([
+                    'departure_date' => "Số phòng {$roomNumber} bị trùng giai đoạn với đăng ký {$code} ({$other}). Không thể cập nhật giai đoạn {$period}.",
+                ]);
+            }
+            if ($avService->hasBlockingLock($roomNumber, $arrival, $departure)) {
+                throw ValidationException::withMessages([
+                    'departure_date' => "Số phòng {$roomNumber} đang bị khóa (OOO/OOS) trong giai đoạn {$period}. Không thể cập nhật.",
+                ]);
+            }
+        }
+
+        if ($room->room_class_id && $arrival !== $departure) {
+            $projectedAv = $avService->getAvailabilityAfterAddingNights(
+                (int) $room->room_class_id,
+                $arrival,
+                $departure,
+                $room->arrival_date->toDateString(),
+                $room->departure_date->toDateString(),
+                $room->id
+            ) ?? 0;
+            $allowOver = \App\Models\HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->first()?->value == '1';
+            if ($projectedAv < 0 && !$allowOver) {
+                throw ValidationException::withMessages([
+                    'departure_date' => 'Không đủ phòng trống sau khi cập nhật. (AV = ' . $projectedAv . ')',
+                ]);
+            }
+        }
+    }
+
     private function validateStayDates(Request $request, BookingRoom $room): void
     {
         if (!$request->has('arrival_date') && !$request->has('departure_date')) {
@@ -1184,6 +1269,9 @@ class GuestController extends Controller
         $stayFieldsChanged = $arrivalChanged || $departureChanged || $rateCodeChanged;
 
         $this->validateStayDates($request, $room);
+        if ($arrivalChanged || $departureChanged) {
+            $this->assertStayPeriodAvailable($request, $room);
+        }
 
         $datesChanged = $arrivalChanged || $departureChanged || $request->has('is_day_use');
         // Dòng 366: màn hình luôn gửi kèm SL/giá EB của phòng. Chỉ ghi đè EB
@@ -1325,6 +1413,11 @@ class GuestController extends Controller
         $pivot = BookingRoomGuest::where('booking_room_id', $roomId)
             ->where('guest_id', $guestId)
             ->first();
+
+        // Dòng 474: khách đã check out (status = 2) không được xóa.
+        if ($pivot && (int) $pivot->status === BookingRoomGuest::STATUS_CHECKED_OUT) {
+            return response()->json(['success' => false, 'message' => 'Khách đã check out, không được xóa.'], 422);
+        }
 
         // 1. Ràng buộc tối thiểu 1 người lớn trong phòng (Note 30/09 - Vy)
         $activeAdults = BookingRoomGuest::where('booking_room_id', $roomId)
@@ -1680,6 +1773,11 @@ class GuestController extends Controller
     {
         $child = BookingChild::findOrFail($childId);
 
+        // Dòng 474: trẻ em/em bé đã check out không được sửa thông tin.
+        if ($this->isChildCheckedOut($child)) {
+            return response()->json(['success' => false, 'message' => 'Khách đã check out, không được sửa thông tin.'], 422);
+        }
+
         $request->validate([
             'full_name'         => 'nullable|string|max:200',
             'title'             => 'nullable|string|max:20',
@@ -1773,6 +1871,10 @@ class GuestController extends Controller
     public function removeChild($bookingId, $childId)
     {
         $child = BookingChild::where('booking_id', $bookingId)->findOrFail($childId);
+        // Dòng 474: trẻ em/em bé đã check out không được xóa.
+        if ($this->isChildCheckedOut($child)) {
+            return response()->json(['success' => false, 'message' => 'Khách đã check out, không được xóa.'], 422);
+        }
         $roomId = $child->booking_room_id;
         $room = $roomId ? BookingRoom::find($roomId) : null;
         $childAssignment = $roomId ? \App\Models\BookingRoomChild::where('booking_room_id', $roomId)->where('booking_child_id', $childId)->first() : null;
@@ -1969,6 +2071,26 @@ class GuestController extends Controller
         $guestsData = $request->input('guests', []);
         $childrenData = $request->input('children', []);
         $logGuestChanges = [];
+
+        // Dòng 474: khách/trẻ em đã check out (status = 2) không được sửa thông tin.
+        $lockedNames = [];
+        foreach ($guestsData as $gData) {
+            if (!empty($gData['id']) && $this->isGuestCheckedOutInBooking((string) $gData['id'], $request->route('bookingId'))) {
+                $lockedNames[] = $gData['full_name'] ?? $gData['id'];
+            }
+        }
+        foreach ($childrenData as $cData) {
+            $lockedChild = !empty($cData['id']) ? BookingChild::find($cData['id']) : null;
+            if ($lockedChild && $this->isChildCheckedOut($lockedChild)) {
+                $lockedNames[] = $cData['full_name'] ?? $cData['id'];
+            }
+        }
+        if ($lockedNames) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Khách đã check out, không được sửa thông tin: ' . implode(', ', $lockedNames),
+            ], 422);
+        }
 
         DB::beginTransaction();
         try {
