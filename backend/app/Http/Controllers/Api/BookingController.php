@@ -292,7 +292,14 @@ class BookingController extends Controller
                         $roomQuery->whereBetween('arrival_date', [$fromUtc, $toUtc]);
                     });
                 } elseif ($dateType === 'departure') {
-                    $q->whereBetween('departure_date', [$request->from_date, $request->to_date]);
+                    $q->whereBetween('departure_date', [$request->from_date, $request->to_date])
+                        // Dòng 241 (sp_133): khách check out lẻ trong khoảng ngày cũng thuộc Đăng ký cũ
+                        // dù ngày đi của phòng/đăng ký còn ở sau.
+                        ->orWhereHas('bookingRooms.guests', function ($guestQuery) use ($request) {
+                            $guestQuery->where('status', \App\Models\BookingRoomGuest::STATUS_CHECKED_OUT)
+                                ->whereDate('actual_checkout_date', '>=', $request->from_date)
+                                ->whereDate('actual_checkout_date', '<=', $request->to_date);
+                        });
                 } else {
                     $q->whereBetween('arrival_date', [$request->from_date, $request->to_date])
                       ->orWhereBetween('departure_date', [$request->from_date, $request->to_date]);
@@ -600,6 +607,10 @@ class BookingController extends Controller
 
         try {
             $booking = \Illuminate\Support\Facades\DB::transaction(function () use ($validated, $request, $isWaitingStatus) {
+                if ($request->has('room_allocations') && is_array($request->room_allocations)) {
+                    $request->merge(['room_allocations' => $this->applyUpgradeClassToAllocations($request->room_allocations)]);
+                }
+
                 // 1. Validate room allocations trước khi tạo booking
                 if ($request->has('room_allocations') && is_array($request->room_allocations)) {
                     $this->validateRoomAllocations(
@@ -675,7 +686,7 @@ class BookingController extends Controller
                                 'booking_id' => $booking->id,
                                 'room_number' => $detail['roomNumber'] ?? null,
                                 'room_class_id' => $alloc['roomClassId'] ?? null,
-                                'original_room_class_id' => $alloc['roomClassId'] ?? null,
+                                'original_room_class_id' => $alloc['originalRoomClassId'] ?? $alloc['roomClassId'] ?? null,
                                 'arrival_date' => $roomArrival,
                                 'departure_date' => $roomDeparture,
                                 'arrival_time' => $detail['arrivalTime'] ?? null,
@@ -961,7 +972,10 @@ class BookingController extends Controller
         }
 
         if ((int) $booking->status === Booking::STATUS_CHECKOUT) {
-            return $this->updateCheckedOutBookingMetadata($request, $booking);
+            return response()->json([
+                'success' => false,
+                'message' => 'Đăng ký đã check out, không thể lấy thêm phòng.',
+            ], 422);
         }
 
         if (in_array($booking->status, [Booking::STATUS_CHECKOUT, Booking::STATUS_DELETED], true)) {
@@ -980,7 +994,7 @@ class BookingController extends Controller
 
         try {
             DB::transaction(function () use ($booking, $validated) {
-                $allocations = $validated['room_allocations'];
+                $allocations = $this->applyUpgradeClassToAllocations($validated['room_allocations']);
                 $this->validateAddOnlyRoomAllocations($booking, $allocations);
 
                 $arrivalDate = Carbon::parse($booking->arrival_date)->toDateString();
@@ -1102,6 +1116,112 @@ class BookingController extends Controller
             'message' => 'Cập nhật thông tin đăng ký đã checkout thành công.',
         ]);
     }
+    /**
+     * Dòng 336 (note 27/10): đăng ký đã check out vẫn sửa trên màn hình thông tin đăng ký thường.
+     * Cho chỉnh các thông tin đăng ký; ngày đến/đi vẫn kiểm tra với giai đoạn phòng chi tiết như
+     * booking bình thường. Không đụng tới phòng, không đổi trạng thái đăng ký đã out.
+     */
+    private function updateCheckedOutBooking(Request $request, Booking $booking)
+    {
+        $user = $request->user();
+        $branchId = $request->attributes->get('_branch_id') ?? $user?->primary_branch_id;
+        $canUpdate = app(\App\Services\CheckoutRoleConfigService::class)
+            ->canUpdateCheckedOutBooking($user, $branchId !== null ? (int) $branchId : null);
+        if (!$canUpdate) {
+            return response()->json(['success' => false, 'message' => 'Bạn không có quyền chỉnh sửa thông tin đăng ký đã checkout.'], 403);
+        }
+
+        $validated = $request->validate([
+            'booking_name'             => 'sometimes|required|string|max:255',
+            'arrival_date'             => 'sometimes|required|date',
+            'departure_date'           => 'sometimes|required|date|after_or_equal:arrival_date',
+            'expired_date'             => 'nullable|date',
+            'arrival_flight'           => 'nullable|string|max:50',
+            'arrival_flight_date'      => 'nullable|date',
+            'departure_flight'         => 'nullable|string|max:50',
+            'departure_flight_date'    => 'nullable|date',
+            'registration_status_id'   => 'sometimes|required|exists:registration_statuses,booking_status_id',
+            'color'                    => 'nullable|string|max:20',
+            'is_master_room_rate'      => 'nullable|boolean',
+            'breakfast_included'       => 'nullable|boolean',
+            'has_vat'                  => 'nullable|boolean',
+            'company_id'               => 'sometimes|required|exists:companies,id',
+            'market_id'                => 'sometimes|required|exists:markets,id',
+            'customer_source_id'       => 'sometimes|required|exists:customer_sources,id',
+            'branch_id'                => 'nullable|exists:branches,id',
+            'booker_id'                => 'nullable|exists:bookers,id',
+            'contact_name'             => 'nullable|string|max:255',
+            'contact_email'            => 'nullable|email|max:255',
+            'contact_phone'            => 'nullable|string|max:50',
+            'payment_method_id'        => 'nullable|exists:payment_methods,id',
+            'payment_value'            => 'nullable|numeric|min:0',
+            'commission'               => 'nullable|numeric|min:0',
+            'voucher_info'             => 'nullable|string|max:255',
+            'external_booking_code'    => 'nullable|string|max:100',
+            'event_code'               => 'nullable|string|max:50',
+            'note'                     => 'nullable|string',
+            'special_requests'         => 'nullable|string',
+            'sales_person'             => 'nullable|string|max:100',
+            'shuttle_info'             => 'nullable|array',
+        ], [
+            'registration_status_id.exists' => 'Tình trạng đăng ký không tồn tại!',
+        ]);
+
+        if ($request->has('room_allocations') && is_array($request->room_allocations)
+            && count(array_filter($request->room_allocations, fn ($a) => (int) ($a['quantity'] ?? 0) > 0)) > 0) {
+            return response()->json(['success' => false, 'message' => 'Đăng ký đã check out, không thể thêm hoặc chỉnh phòng.'], 422);
+        }
+
+        $newArrival = isset($validated['arrival_date'])
+            ? Carbon::parse($validated['arrival_date'])->toDateString()
+            : Carbon::parse($booking->arrival_date)->toDateString();
+        $newDeparture = isset($validated['departure_date'])
+            ? Carbon::parse($validated['departure_date'])->toDateString()
+            : Carbon::parse($booking->departure_date)->toDateString();
+
+        if ($newDeparture < $newArrival) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Ngày đi phải lớn hơn hoặc bằng ngày đến.',
+                'errors' => ['departure_date' => ['Ngày đi phải lớn hơn hoặc bằng ngày đến.']],
+            ], 422);
+        }
+
+        // Giai đoạn đăng ký phải bao trùm giai đoạn của mọi phòng chi tiết (giống booking thường).
+        $datesChanged = $newArrival !== Carbon::parse($booking->arrival_date)->toDateString()
+            || $newDeparture !== Carbon::parse($booking->departure_date)->toDateString();
+        if ($datesChanged) {
+            $rooms = $booking->bookingRooms()->whereIn('status', self::PERIOD_BOUND_ROOM_STATUSES)->get();
+            foreach ($rooms as $room) {
+                if ($this->roomOutsideBookingPeriod($room, $newArrival, $newDeparture)) {
+                    return response()->json(['success' => false, 'message' => self::BOOKING_PERIOD_MISMATCH_MESSAGE], 422);
+                }
+            }
+            $validated['num_of_days'] = $booking->is_day_use && $newArrival === $newDeparture
+                ? 0
+                : Carbon::parse($newArrival)->diffInDays(Carbon::parse($newDeparture));
+        }
+
+        $logSnapshot = \App\Services\ActivityLogService::snapshotBooking($booking);
+        $validated['edit_count'] = (int) $booking->edit_count + 1;
+        $validated['edit_date'] = now();
+        $validated['updated_by'] = $user?->username ?? 'system';
+        $validated['updated_by_user_id'] = $user?->getKey();
+        $booking->fill($validated)->save();
+        $booking->refresh()->load(['customerSource', 'booker']);
+        try {
+            \App\Services\ActivityLogService::logBookingChanges($booking, $logSnapshot, $request);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Log checked-out booking update error: ' . $e->getMessage());
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => $booking,
+            'message' => 'Cập nhật thông tin đăng ký đã checkout thành công.',
+        ]);
+    }
+
     public function update(Request $request, $id)
     {
         $booking = Booking::find($id);
@@ -1114,10 +1234,10 @@ class BookingController extends Controller
         }
 
         if ((int) $booking->status === Booking::STATUS_CHECKOUT) {
-            return $this->updateCheckedOutBookingMetadata($request, $booking);
+            return $this->updateCheckedOutBooking($request, $booking);
         }
 
-        // Không cho sửa booking đã checkout hoặc đã xóa
+        // Không cho sửa booking đã xóa
         if ((int) $booking->status === Booking::STATUS_DELETED) {
             return response()->json([
                 'success' => false,
@@ -1187,10 +1307,20 @@ class BookingController extends Controller
             throw $e;
         }
 
-        // Confirmation date is calculated once when a booking is created.
-        // Legacy edits may still submit the form field, but changing arrival
-        // date/status must never recalculate or overwrite the stored value.
-        unset($validated['confirm_date']);
+        // Confirmation date is calculated once when a booking is created and is
+        // never recalculated when arrival date/status change. A value the user
+        // explicitly edits is saved (row 495), but cannot be after arrival.
+        if (empty($validated['confirm_date'])) {
+            unset($validated['confirm_date']);
+        } else {
+            $effectiveArrival = isset($validated['arrival_date'])
+                ? Carbon::parse($validated['arrival_date'])->toDateString()
+                : Carbon::parse($booking->arrival_date)->toDateString();
+            $validated['confirm_date'] = min(
+                Carbon::parse($validated['confirm_date'])->toDateString(),
+                $effectiveArrival
+            );
+        }
 
         // Tự động tăng edit_count và ghi nhận người sửa
         $validated['edit_count']  = $booking->edit_count + 1;
@@ -1352,6 +1482,16 @@ class BookingController extends Controller
 
                 $booking->update($validated);
                 $dayUseChanged = $booking->wasChanged('is_day_use');
+                // Dòng 488: đổi "Tiền phòng gửi Master" -> các đêm tiền phòng chưa post đổi FIT/GIT theo.
+                if ($booking->wasChanged('is_master_room_rate')) {
+                    \App\Models\BookingRoomService::whereIn('booking_room_id', $booking->bookingRooms()->pluck('id'))
+                        ->whereIn('service_code', [
+                            \App\Models\BookingRoomService::CODE_ROOM,
+                            \App\Models\BookingRoomService::catalogCode(\App\Models\BookingRoomService::CODE_ROOM),
+                        ])
+                        ->where('is_posted', 0)
+                        ->update(['is_room' => $booking->is_master_room_rate ? 0 : 1]);
+                }
                 $companyChanged = $booking->wasChanged('company_id');
                 // Do not use a mass update here: it bypasses BookingRoom's
                 // lifecycle hooks (night count and guest actual dates).
@@ -1377,7 +1517,7 @@ class BookingController extends Controller
                     // quantity is the current-room target, while cancelled,
                     // no-show and moved rows are history only.
                     $roomAllocations = $this->normalizeRoomAllocations(
-                        $request->room_allocations,
+                        $this->applyUpgradeClassToAllocations($request->room_allocations),
                         $booking->id
                     );
 
@@ -1561,7 +1701,7 @@ class BookingController extends Controller
                                 'booking_id' => $booking->id,
                                 'room_number' => $detail['roomNumber'] ?? null,
                                 'room_class_id' => $alloc['roomClassId'] ?? null,
-                                'original_room_class_id' => $alloc['roomClassId'] ?? null,
+                                'original_room_class_id' => $alloc['originalRoomClassId'] ?? $bRoom?->original_room_class_id ?? $alloc['roomClassId'] ?? null,
                                 'arrival_date' => $roomArrival,
                                 'departure_date' => $roomDeparture,
                                 'actual_arrival_date' => ($bRoom && (int)$bRoom->status !== \App\Models\BookingRoom::STATUS_BOOKED && $bRoom->actual_arrival_date)
@@ -2231,17 +2371,28 @@ class BookingController extends Controller
             return $error;
         }
 
-        $request->validate([
-            'arrival_date'   => 'required|date',
-            'departure_date' => 'required|date|after_or_equal:arrival_date',
-        ]);
+        // Dòng 500: IsCopyAllBooking = 0 chỉ nhân bản thông tin đăng ký, không chọn lại ngày
+        // (giữ ngày của BK gốc, người dùng tự chỉnh sau khi copy) và không bị chặn bởi ngày quá khứ.
+        $copyHeaderByConfig = HotelConfig::where('name', 'IsCopyAllBooking')->first()?->value === '0';
+
+        if ($copyHeaderByConfig) {
+            $request->validate([
+                'arrival_date'   => 'nullable|date',
+                'departure_date' => 'nullable|date|after_or_equal:arrival_date',
+            ]);
+        } else {
+            $request->validate([
+                'arrival_date'   => 'required|date',
+                'departure_date' => 'required|date|after_or_equal:arrival_date',
+            ]);
+        }
 
         $systemDate = SystemDateRoll::latest('id')->first();
         $sysDateStr = $systemDate
             ? Carbon::parse($systemDate->system_date)->toDateString()
             : now()->toDateString();
 
-        if ($request->arrival_date < $sysDateStr) {
+        if (!$copyHeaderByConfig && $request->arrival_date < $sysDateStr) {
             return response()->json([
                 'success' => false,
                 'message' => 'Ngày đến không được nhỏ hơn ngày hệ thống (' . $sysDateStr . ').',
@@ -2252,8 +2403,8 @@ class BookingController extends Controller
         $copyRooms = HotelConfig::where('name', 'IsCopyAllBooking')->first()?->value !== '0';
         $allowOver = HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->first()?->value == '1';
 
-        $newArrival   = $request->arrival_date;
-        $newDeparture = $request->departure_date;
+        $newArrival   = $request->arrival_date ?: $source->arrival_date?->toDateString();
+        $newDeparture = $request->departure_date ?: $source->departure_date?->toDateString();
         $numDays      = Carbon::parse($newArrival)->diffInDays(Carbon::parse($newDeparture));
 
         // Kiểm tra phòng trống AV nếu được bật sao chép cả phòng
@@ -2409,9 +2560,9 @@ class BookingController extends Controller
         ]);
 
         try {
-            // Dòng 43: "* Copy Đăng Ký GAL27 từ đăng ký GAL22"
+            // Dòng 500: "Nhân bản Đăng Ký GAL27 từ đăng ký GAL22"
             $newCode = \App\Services\ActivityLogService::bookingCode($newBooking->id);
-            \App\Services\ActivityLogService::record('Add', "* Copy Đăng Ký {$newCode} từ đăng ký " . \App\Services\ActivityLogService::bookingCode($id), [
+            \App\Services\ActivityLogService::record('Add', "Nhân bản Đăng Ký {$newCode} từ đăng ký " . \App\Services\ActivityLogService::bookingCode($id), [
                 'screen' => \App\Support\ActivityScreen::REGISTRATION,
                 'booking_code' => $newCode,
                 'room_code' => $newBooking->bookingRooms->pluck('id')->all(),
@@ -2958,6 +3109,95 @@ class BookingController extends Controller
      * moved BookingRoom remains a visible audit row, but it is removed from
      * the allocation details and cannot create a replacement implicitly.
      */
+    /**
+     * Dòng 497: cột "Nâng hạng" ở màn đăng ký/lấy phòng. Khi chọn loại phòng nâng hạng khác loại gốc,
+     * các phòng của dòng đó được lưu theo loại phòng MỚI (kiểm AV/over theo loại mới), loại gốc giữ ở
+     * original_room_class_id. Phòng đang ở/đã trả không được nâng hạng qua đường này.
+     */
+    private function applyUpgradeClassToAllocations(array $roomAllocations): array
+    {
+        $result = [];
+        foreach ($roomAllocations as $alloc) {
+            if (!is_array($alloc)) {
+                $result[] = $alloc;
+                continue;
+            }
+            $baseId = $alloc['roomClassId'] ?? null;
+            $allocUpgradeId = $alloc['upgradeClassId'] ?? $alloc['upgradeRoomClassId'] ?? null;
+            $details = is_array($alloc['rooms'] ?? null) ? $alloc['rooms'] : [];
+            $quantity = max((int) ($alloc['quantity'] ?? 0), 0);
+
+            // Phòng nâng hạng có thể chọn theo cả dòng (cột Nâng hạng của dòng lấy phòng) hoặc theo từng phòng;
+            // chọn theo từng phòng thắng. Gom các phòng theo loại phòng đích.
+            $hasAnyUpgrade = !empty($allocUpgradeId);
+            foreach ($details as $detail) {
+                if (is_array($detail) && !empty($detail['upgradeClassId'])) {
+                    $hasAnyUpgrade = true;
+                }
+            }
+            if (!$hasAnyUpgrade || empty($baseId)) {
+                $result[] = $alloc;
+                continue;
+            }
+
+            $groups = []; // target class id => details
+            $keep = [];
+            foreach ($details as $index => $detail) {
+                if ($index >= $quantity || !is_array($detail)) {
+                    $keep[] = $detail; // phần dư vượt số lượng giữ nguyên để các bước kiểm tra sau xử lý
+                    continue;
+                }
+                $targetId = (int) (!empty($detail['upgradeClassId']) ? $detail['upgradeClassId'] : ($allocUpgradeId ?: $baseId));
+                if ($targetId === (int) $baseId) {
+                    $keep[] = $detail;
+                    continue;
+                }
+                if (!\App\Models\RoomClass::whereKey($targetId)->exists()) {
+                    throw new \Exception('Loại phòng nâng hạng không tồn tại.');
+                }
+
+                $bookingRoomId = $detail['bookingRoomId'] ?? null;
+                if ($bookingRoomId !== null && trim((string) $bookingRoomId) !== '') {
+                    $persisted = BookingRoom::withTrashed()->find($bookingRoomId);
+                    if ($persisted && (int) $persisted->status !== BookingRoom::STATUS_BOOKED) {
+                        throw new \Exception('Chỉ nâng hạng được phòng ở trạng thái đăng ký.');
+                    }
+                }
+
+                $detail['roomClassId'] = $targetId;
+                $detail['upgradeClassId'] = null;
+                $roomNumber = $detail['roomNumber'] ?? null;
+                if (filled($roomNumber)) {
+                    $physical = \App\Models\Room::where('room_number', $roomNumber)->first();
+                    if (!$physical || (int) $physical->room_class_id !== $targetId) {
+                        $detail['roomNumber'] = null; // số phòng của loại cũ không còn hợp lệ
+                    }
+                }
+                $groups[$targetId][] = $detail;
+            }
+
+            $base = $alloc;
+            $base['upgradeClassId'] = null;
+            $base['upgradeRoomClassId'] = null;
+            if (!empty($keep) || empty($groups)) {
+                $keepDetails = array_values(array_filter($keep, fn ($d) => is_array($d)));
+                $base['rooms'] = $keepDetails;
+                $base['quantity'] = max($quantity - array_sum(array_map('count', $groups)), 0);
+                $result[] = $base;
+            }
+            foreach ($groups as $targetId => $groupDetails) {
+                $upgraded = $base;
+                $upgraded['originalRoomClassId'] = (int) $baseId;
+                $upgraded['roomClassId'] = (int) $targetId;
+                $upgraded['rooms'] = $groupDetails;
+                $upgraded['quantity'] = count($groupDetails);
+                $result[] = $upgraded;
+            }
+        }
+
+        return $result;
+    }
+
     private function normalizeRoomAllocations(array $roomAllocations, $bookingId = null): array
     {
         $activeStatuses = [
@@ -3238,7 +3478,7 @@ class BookingController extends Controller
             'booking_id' => $booking->id,
             'room_number' => $detail['roomNumber'] ?? null,
             'room_class_id' => $allocation['roomClassId'] ?? null,
-            'original_room_class_id' => $allocation['roomClassId'] ?? null,
+            'original_room_class_id' => $allocation['originalRoomClassId'] ?? $allocation['roomClassId'] ?? null,
             'arrival_date' => $roomArrival,
             'departure_date' => $roomDeparture,
             'arrival_time' => $detail['arrivalTime'] ?? null,
@@ -3462,7 +3702,17 @@ class BookingController extends Controller
                     && $originalRoomArrival === $roomArrival
                     && $originalRoomDeparture === $roomDeparture;
 
-                if (!$isPersistedStay || ($bookingRoomStatus === BookingRoom::STATUS_BOOKED && !$sameReservationPeriod)) {
+                // Dòng 491: rút ngắn giai đoạn (nằm trọn trong giai đoạn cũ, cùng loại phòng) không phát sinh nhu cầu
+                // phòng mới nên không bị chặn over, kể cả khi các đêm đó đã over từ trước.
+                $onlyShortened = $isPersistedStay
+                    && $bookingRoomStatus === BookingRoom::STATUS_BOOKED
+                    && (int) $bookingRoom->room_class_id === (int) $roomClassId
+                    && $originalRoomArrival !== null && $originalRoomDeparture !== null
+                    && $originalRoomArrival !== $originalRoomDeparture
+                    && $roomArrival >= $originalRoomArrival
+                    && $roomDeparture <= $originalRoomDeparture;
+
+                if (!$isPersistedStay || ($bookingRoomStatus === BookingRoom::STATUS_BOOKED && !$sameReservationPeriod && !$onlyShortened)) {
                     if ($isTimedDayUse) {
                         $newTimedDayUseDemands[] = [
                             'room_class_id' => (int) $roomClassId,
@@ -3954,7 +4204,7 @@ class BookingController extends Controller
                     'quantity'     => 1,
                     'rate'         => $rate,
                     'department'   => 'FO',
-                    'is_room'      => 1,
+                    'is_room'      => $existing ? (int) $existing->is_room : ($room->booking?->is_master_room_rate ? 0 : 1),
                     'is_posted'    => 0,
                     'deleted_at'   => null,
                     'created_by'   => Auth::user()?->username ?? 'system',
@@ -4197,63 +4447,92 @@ class BookingController extends Controller
             }
         }
 
-        // 2. Validate AV (Phòng trống)
-        $allowOver = HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->first()?->value == '1';
+        // 2. Dòng 504: kiểm tra over + thông số TRƯỚC, rồi mới hỏi trùng số phòng (giống dòng 294).
+        $allowOver = (string) (HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->value('value') ?? '1') === '1';
         $force = filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN);
+        $clearDuplicateRooms = filter_var($request->input('clear_duplicate_rooms'), FILTER_VALIDATE_BOOLEAN);
 
-        if (!$force) {
-            $avService = app(RoomAvailabilityService::class);
-            // Gom các phòng theo room_class_id
-            $roomsByClass = [];
-            foreach ($booking->bookingRooms as $bRoom) {
-                if (intval($bRoom->status) === BookingRoom::STATUS_NOSHOW) {
-                    $roomsByClass[$bRoom->room_class_id][] = $bRoom;
+        $avService = app(RoomAvailabilityService::class);
+        $noshowRooms = $booking->bookingRooms->filter(fn ($r) => intval($r->status) === BookingRoom::STATUS_NOSHOW)->values();
+        $dateOf = fn ($value) => Carbon::parse($value)->toDateString();
+
+        // Gom các phòng noshow theo loại phòng để đếm số phòng cần mỗi đêm.
+        $overRooms = [];
+        foreach ($noshowRooms->groupBy('room_class_id') as $classId => $bRooms) {
+            $roomClass = \App\Models\RoomClass::find($classId);
+            $className = $roomClass ? $roomClass->name : "ID $classId";
+
+            foreach ($bRooms as $bRoom) {
+                $start = Carbon::parse($dateOf($bRoom->arrival_date));
+                $end = Carbon::parse($dateOf($bRoom->departure_date));
+                if ($start->gte($end)) {
+                    $end = $start->copy()->addDay();
                 }
-            }
 
-            foreach ($roomsByClass as $classId => $bRooms) {
-                $roomClass = \App\Models\RoomClass::find($classId);
-                $className = $roomClass ? $roomClass->name : "ID $classId";
+                for ($d = $start->copy(); $d->lt($end); $d->addDay()) {
+                    $dateStr = $d->toDateString();
+                    $av = $avService->getAvailability($classId, $dateStr, $d->copy()->addDay()->toDateString());
+                    // Phòng noshow của chính BK này phủ đêm dateStr (chưa được tính vào số phòng đã đặt).
+                    $needed = $bRooms->filter(fn ($r) => $dateOf($r->arrival_date) <= $dateStr && $dateOf($r->departure_date) > $dateStr)->count();
 
-                // Duyệt qua tất cả các ngày trong khoảng ngày của các phòng này để kiểm tra over
-                foreach ($bRooms as $bRoom) {
-                    $start = Carbon::parse($bRoom->arrival_date);
-                    $end = Carbon::parse($bRoom->departure_date);
-                    
-                    for ($d = $start->copy(); $d->lt($end); $d->addDay()) {
-                        $dateStr = $d->toDateString();
-                        // AV hiện tại cho 1 ngày này
-                        $av = $avService->getAvailability($classId, $dateStr, $d->copy()->addDay()->toDateString());
-                        
-                        // Đếm số phòng của chính booking này bao phủ ngày dateStr và đang có status là Noshow (nên chưa được tính trong booked count)
-                        $needed = 0;
-                        foreach ($bRooms as $r) {
-                            if ($r->arrival_date <= $dateStr && $r->departure_date > $dateStr) {
-                                $needed++;
-                            }
-                        }
-
-                        if ($av - $needed < 0) {
-                            if (!$allowOver) {
-                                return response()->json([
-                                    'success' => false,
-                                    'message' => "Loại phòng $className đã bị Over, không thể khôi phục thông tin.",
-                                ], 422);
-                            } else {
-                                return response()->json([
-                                    'success' => false,
-                                    'needs_confirm' => true,
-                                    'message' => 'Số lượng phòng trống sau khi khôi phục sẽ bị âm. Bạn có muốn tiếp tục thao tác?',
-                                ], 200);
-                            }
-                        }
+                    if ($av - $needed < 0) {
+                        $overRooms["{$classId}_{$dateStr}"] = [
+                            'room_class_id' => (int) $classId,
+                            'class_name'    => $className,
+                            'date'          => $dateStr,
+                            'av'            => $av,
+                            'needed'        => $needed,
+                        ];
                     }
                 }
             }
         }
 
+        // AllowOverRoomTypeRoomKind = 0: tuyệt đối không cho over, kể cả khi client gửi force.
+        if (count($overRooms) > 0 && !$allowOver) {
+            $first = array_values($overRooms)[0];
+            return response()->json([
+                'success'         => false,
+                'blocked_by_over' => true,
+                'over_rooms'      => array_values($overRooms),
+                'message'         => "Loại phòng {$first['class_name']} đã bị Over, không thể khôi phục thông tin.",
+            ], 422);
+        }
+
+        // Trùng số phòng với đăng ký khác / phòng khóa OOO-OOS: hỏi xác nhận, chọn Có thì xóa số phòng bị trùng.
+        $duplicateRooms = $avService->findDuplicateRoomNumbers($noshowRooms);
+        if (count($duplicateRooms) > 0 && !$clearDuplicateRooms) {
+            $conflictLines = collect($duplicateRooms)->map(function ($item) {
+                $line = "- R: {$item['room_number']}";
+                if (!empty($item['booking_code'])) {
+                    $line .= " - BK: {$item['booking_code']}";
+                }
+                return $line;
+            })->implode("\n");
+
+            return response()->json([
+                'success'                 => false,
+                'needs_duplicate_confirm' => true,
+                'duplicate_rooms'         => $duplicateRooms,
+                'conflict_lines'          => $conflictLines,
+                'message'                 => "Đăng ký được khôi phục có số phòng đã được đặt bởi đăng ký khác hoặc đang bị khóa. Bạn có muốn tiếp tục? (Số phòng của những phòng bị trùng sẽ được xóa khi khôi phục)\n{$conflictLines}",
+            ], 200);
+        }
+
+        // AllowOverRoomTypeRoomKind = 1: over thì hỏi xác nhận (client gửi force để đồng ý).
+        if (count($overRooms) > 0 && !$force) {
+            return response()->json([
+                'success'            => false,
+                'needs_over_confirm' => true,
+                'needs_confirm'      => true,
+                'over_rooms'         => array_values($overRooms),
+                'message'            => 'Số lượng phòng trống sau khi khôi phục sẽ bị âm. Bạn có muốn tiếp tục thao tác?',
+            ], 200);
+        }
+
         // 3. Thực hiện khôi phục
-        DB::transaction(function () use ($booking) {
+        $duplicateRoomNumbers = collect($duplicateRooms)->pluck('room_number')->all();
+        DB::transaction(function () use ($booking, $clearDuplicateRooms, $duplicateRoomNumbers) {
             $newStatusId = RegistrationStatusMapper::codeFromLegacyCode(1);
 
             $booking->update([
@@ -4264,9 +4543,12 @@ class BookingController extends Controller
 
             foreach ($booking->bookingRooms as $bRoom) {
                 if (intval($bRoom->status) === BookingRoom::STATUS_NOSHOW) {
-                    $bRoom->update([
-                        'status' => BookingRoom::STATUS_BOOKED,
-                    ]);
+                    $roomUpdate = ['status' => BookingRoom::STATUS_BOOKED];
+                    // Dòng 504: xóa số phòng bị trùng khi người dùng đồng ý.
+                    if ($clearDuplicateRooms && !empty($bRoom->room_number) && in_array(trim((string) $bRoom->room_number), $duplicateRoomNumbers, true)) {
+                        $roomUpdate['room_number'] = null;
+                    }
+                    $bRoom->update($roomUpdate);
 
                     // Khôi phục guests
                     $guestIds = BookingRoomGuest::where('booking_room_id', $bRoom->id)->pluck('guest_id');

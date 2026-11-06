@@ -414,6 +414,46 @@ class RoomAvailabilityService
         return $query->with('booking')->orderBy('arrival_date')->first();
     }
 
+    /**
+     * Số phòng vật lý của các phòng sắp khôi phục (noshow...) đang bị đăng ký khác giữ hoặc phòng khóa OOO/OOS.
+     * Dòng 504: khôi phục noshow không được làm trùng số phòng.
+     *
+     * @param iterable<BookingRoom> $rooms phòng sắp khôi phục
+     * @return list<array{room_number: string, booking_code: ?string, is_locked: bool}>
+     */
+    public function findDuplicateRoomNumbers(iterable $rooms): array
+    {
+        $rooms = collect($rooms);
+        $restoringIds = $rooms->pluck('id')->all();
+        $duplicates = [];
+
+        foreach ($rooms as $room) {
+            $roomNumber = trim((string) $room->room_number);
+            if ($roomNumber === '') {
+                continue;
+            }
+            $arrival = Carbon::parse($room->arrival_date)->toDateString();
+            $departure = Carbon::parse($room->departure_date)->toDateString();
+
+            $conflict = $this->findRoomNumberConflict(
+                $roomNumber, $arrival, $departure, null, null,
+                $room->arrival_time ?? null, $room->departure_time ?? null, $restoringIds
+            );
+
+            if ($conflict) {
+                $duplicates[$roomNumber] = [
+                    'room_number'  => $roomNumber,
+                    'booking_code' => $conflict->booking?->booking_code ?? ('BK#' . $conflict->booking_id),
+                    'is_locked'    => false,
+                ];
+            } elseif ($this->hasBlockingLock($roomNumber, $arrival, $departure)) {
+                $duplicates[$roomNumber] = ['room_number' => $roomNumber, 'booking_code' => null, 'is_locked' => true];
+            }
+        }
+
+        return array_values($duplicates);
+    }
+
     private function normalizeTime(?string $value): ?string
     {
         if ($value === null || !preg_match('/^(\d{1,2}):(\d{2})(?::\d{2})?$/', trim($value), $matches)) {

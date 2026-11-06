@@ -38,6 +38,43 @@
     + Can thiệp 100% cục bộ trong `HotelServiceTab.vue`, không sửa API backend hay database.
     + `npm run build` thành công trong 5.33s (0 lỗi).
 
+## [2026-11-04] - Trả Phòng & Khôi Phục, Phân Quyền Do Not Move, Sửa Đăng Ký Checkout, Late Check-in & FIT/GIT Tiền Phòng
+### Module: Trả Phòng (Checkout), Đăng Ký (Reservation), Buồng Phòng (Inventory)
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **1. Trả phòng & Khôi phục check-out**:
+    + Công nợ AC (City ledger...) chưa giải trừ không còn chặn checkout master/từng phòng (lễ tân giải trừ sau khi khách thanh toán).
+    + Khôi phục check-out giữ đúng ngày đi của phòng đã gia hạn (không bị lùi về ngày dự kiến ban đầu), tính lại đúng số đêm.
+  - **2. Khóa phòng Do Not Move & Late Check-in**:
+    + Người tự khóa Do Not Move luôn được phép mở khóa cho phòng đó dù cấu hình RoleUserOpenDoNotMove gán role khác.
+    + Late check-in có charge phụ thu không sinh thêm đêm day-use ở ngày đến mới (dòng 358).
+  - **3. Đăng ký & Chi tiết phòng (Dòng 381, 487, 488, 489)**:
+    + Cho phép sửa thông tin và ngày đến/đi của đăng ký đã checkout trực tiếp trên modal đăng ký chuẩn (bỏ màn hình riêng), kiểm tra khớp giai đoạn phòng chi tiết, chặn lấy thêm phòng.
+    + Ẩn các dịch vụ nằm ngoài giai đoạn lưu trú của phòng; sửa lỗi chọn ngày ăn sáng trẻ em.
+    + Trạng thái FIT/GIT tiền phòng tự động theo cấu hình Master (is_room_rate_to_master) và đồng bộ chiều công tắc switch.
+  - **4. Tồn kho Buồng phòng**:
+    + Tab tồn kho HK vẫn tải kho bình thường khi tài khoản thiếu quyền xem danh sách nhân viên.
+- **Kiểm thử**:
+  - Pass 100% test suites: CheckoutBusinessRulesTest, CheckoutRestoreTest, BookingRoleConfigCapabilitiesTest, BookingBusinessRulesTest, format-date-vi test.
+
+## [2026-11-03] - Gia Hạn Phòng Chặn Trùng/Over, Khai Báo Lưu Trú & Checkout Master
+### Module: Sang Ngày, Sơ Đồ Phòng, Khai Báo Lưu Trú, Trả Phòng (Checkout)
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **1. Gia hạn phòng (Dòng 286)**:
+    + Gia hạn phòng (màn hình Sang ngày, Sơ đồ/Kế hoạch phòng) kiểm tra trùng số phòng với booking khác hoặc lịch khóa phòng ở các đêm gia hạn.
+    + Kiểm tra thông số over AllowOverRoomTypeRoomKind (=0 chặn, =1 hiện hộp xác nhận over theo từng phòng).
+    + Chỉ kiểm tra phòng trống cho các đêm mới thêm vào khi cập nhật ngày ở.
+  - **2. Khôi phục booking hủy & phòng trong ngày (Dòng 294)**:
+    + Khôi phục booking hủy: kiểm tra phòng trống/over trước, chặn ngay nếu không cho phép over.
+    + Phòng ở trong ngày (ngày đến = ngày đi): cho phép đổi số phòng và kéo chuyển phòng bình thường.
+  - **3. Khai báo lưu trú & Xuất Excel (Dòng 295, 298, 299)**:
+    + Sắp xếp danh sách theo số phòng/mã đăng ký theo số tự nhiên; hiển thị phòng trong ngày đã checkout.
+    + Xuất Excel mẫu Khánh Hòa: loại giấy tờ trẻ em và người lớn đồng bộ tên chuẩn (Căn cước công dân, Hộ chiếu...).
+    + Xuất Excel mẫu khách Việt Nam: Nơi cư trú hiện nay xuất đúng định dạng (mã - tên, ví dụ: 1 - Thường trú).
+  - **4. Trả phòng Master (Master Checkout)**:
+    + Checkout Master bỏ qua hóa đơn/công nợ của các phòng con đã checkout trước đó; chỉ kiểm tra các phòng đang checkout và hóa đơn riêng của Master.
+- **Kiểm thử**:
+  - Bổ sung test suites ExtendStayConflictTest, RestoreBookingConflictTest, CheckoutBusinessRulesTest, residence-declaration test đạt 100%.
+
 ## [2026-11-02] - Làm Lại Lịch Sử Thao Tác (Sheet Ghi Log) & Chuẩn Hóa Kiểm Tra Phòng Trống (Availability)
 ### Module: Lịch Sử Thao Tác (Activity Log), Kiểm Tra Phòng Trống (Room Availability)
 - **Mục tiêu & Kết quả hoàn thành**:

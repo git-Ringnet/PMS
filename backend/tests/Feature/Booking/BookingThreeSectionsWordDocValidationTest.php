@@ -579,7 +579,8 @@ class BookingThreeSectionsWordDocValidationTest extends TestCase
     /**
      * Section 11: Phân quyền cập nhật booking đã checkout qua RoleUserUpdateCheckoutBooking
      * - Cho phép cập nhật thông tin đăng ký đối với BK đã checkout (bookings.status=2).
-     * - Chỉ sửa 4 trường metadata, chặn sửa trường tài chính/ngày.
+     * - Dòng 336 (note 27/10): vẫn sửa trên màn hình thông tin đăng ký thường, cho chỉnh các thông tin;
+     *   ngày đến/đi kiểm tra với giai đoạn phòng chi tiết như booking bình thường; không thêm phòng.
      */
     public function test_section_11_role_user_cap_nhat_thong_tin_dang_ky_da_checkout(): void
     {
@@ -617,11 +618,95 @@ class BookingThreeSectionsWordDocValidationTest extends TestCase
         $this->assertSame('Ten Booking Sau Checkout', $checkoutBooking->fresh()->booking_name);
         $this->assertSame('Ghi chu bo sung', $checkoutBooking->fresh()->note);
 
-        // Thử sửa trường cấm (ngày đến) -> Bị từ chối 422
+        // Booking chưa có phòng chi tiết nào nằm ngoài giai đoạn mới -> được đổi ngày.
         $this->actingAs($authorizedUser)
             ->putJson("/api/bookings/{$checkoutBooking->id}", [
                 'arrival_date' => '2026-08-11',
+            ])->assertSuccessful();
+        $this->assertSame('2026-08-11', $checkoutBooking->fresh()->arrival_date->toDateString());
+        $this->assertSame(Booking::STATUS_CHECKOUT, (int) $checkoutBooking->fresh()->status);
+    }
+
+    private function makeCheckoutUpdater(): User
+    {
+        $user = User::factory()->create(['username' => 'checkout_updater_' . uniqid()]);
+        $role = Role::firstOrCreate(
+            ['code' => 'role_checkout_updater'],
+            ['name' => 'Checkout Updater', 'level' => 3, 'department_scope' => 'FO', 'is_active' => true]
+        );
+        $permission = Permission::firstOrCreate(['code' => 'fo.booking.edit'], ['name' => 'fo.booking.edit', 'module' => 'FO']);
+        $role->permissions()->syncWithoutDetaching([$permission->id]);
+        $user->roles()->attach($role->id);
+        HotelConfig::updateOrCreate(['name' => 'RoleUserUpdateCheckoutBooking'], ['value' => 'role_checkout_updater']);
+
+        return $user;
+    }
+
+    public function test_section_11_checked_out_booking_dates_are_validated_against_room_periods(): void
+    {
+        $booking = $this->createBooking('2026-08-10', '2026-08-14', ['status' => Booking::STATUS_CHECKOUT]);
+        $this->createRoom($booking, '410', '2026-08-10', '2026-08-14', ['status' => BookingRoom::STATUS_CHECKED_OUT]);
+        $user = $this->makeCheckoutUpdater();
+
+        // Thu hẹp giai đoạn làm phòng nằm ngoài giai đoạn đăng ký -> 422
+        $this->actingAs($user)
+            ->putJson("/api/bookings/{$booking->id}", ['arrival_date' => '2026-08-11'])
+            ->assertStatus(422);
+        $this->actingAs($user)
+            ->putJson("/api/bookings/{$booking->id}", ['departure_date' => '2026-08-13'])
+            ->assertStatus(422);
+        $this->assertSame('2026-08-10', $booking->fresh()->arrival_date->toDateString());
+        $this->assertSame('2026-08-14', $booking->fresh()->departure_date->toDateString());
+
+        // Mở rộng giai đoạn bao trùm phòng -> được, số đêm tính lại
+        $this->actingAs($user)
+            ->putJson("/api/bookings/{$booking->id}", ['arrival_date' => '2026-08-09', 'departure_date' => '2026-08-15'])
+            ->assertSuccessful();
+        $fresh = $booking->fresh();
+        $this->assertSame('2026-08-09', $fresh->arrival_date->toDateString());
+        $this->assertSame('2026-08-15', $fresh->departure_date->toDateString());
+        $this->assertSame(6, (int) $fresh->num_of_days);
+        $this->assertSame(Booking::STATUS_CHECKOUT, (int) $fresh->status);
+    }
+
+    public function test_section_11_checked_out_booking_cannot_get_new_rooms(): void
+    {
+        $booking = $this->createBooking('2026-08-10', '2026-08-14', ['status' => Booking::STATUS_CHECKOUT]);
+        $user = $this->makeCheckoutUpdater();
+
+        $this->actingAs($user)
+            ->postJson("/api/bookings/{$booking->id}/add-rooms", ['intent' => 'add_only', 'room_allocations' => []])
+            ->assertStatus(422);
+        $this->actingAs($user)
+            ->putJson("/api/bookings/{$booking->id}", [
+                'booking_name' => 'Doi ten',
+                'room_allocations' => [['roomClassId' => $this->roomClass->id, 'quantity' => 1, 'rooms' => []]],
             ])->assertStatus(422);
+        $this->assertSame(0, BookingRoom::where('booking_id', $booking->id)->count());
+        $this->assertNotSame('Doi ten', $booking->fresh()->booking_name);
+    }
+
+    public function test_section_11_checked_out_booking_ignores_room_edits_status_and_requires_role(): void
+    {
+        $booking = $this->createBooking('2026-08-10', '2026-08-14', ['status' => Booking::STATUS_CHECKOUT]);
+        $room = $this->createRoom($booking, '907', '2026-08-10', '2026-08-14', ['status' => BookingRoom::STATUS_CHECKED_OUT]);
+        $user = $this->makeCheckoutUpdater();
+
+        $this->actingAs($user)
+            ->putJson("/api/bookings/{$booking->id}", ['contact_name' => 'Nguyen Van A', 'contact_phone' => '0900000000', 'status' => 1])
+            ->assertSuccessful();
+
+        $fresh = $booking->fresh();
+        $this->assertSame('Nguyen Van A', $fresh->contact_name);
+        $this->assertSame('0900000000', $fresh->contact_phone);
+        $this->assertSame(Booking::STATUS_CHECKOUT, (int) $fresh->status);
+        $this->assertSame(BookingRoom::STATUS_CHECKED_OUT, (int) $room->fresh()->status);
+
+        $noRole = User::factory()->create(['username' => 'no_role_user']);
+        $this->actingAs($noRole)
+            ->putJson("/api/bookings/{$booking->id}", ['contact_name' => 'Hacker'])
+            ->assertStatus(403);
+        $this->assertSame('Nguyen Van A', $booking->fresh()->contact_name);
     }
 
     /**

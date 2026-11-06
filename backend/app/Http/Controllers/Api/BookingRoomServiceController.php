@@ -41,16 +41,39 @@ class BookingRoomServiceController extends Controller
     public function index($roomId)
     {
         $room     = BookingRoom::findOrFail($roomId);
+        // Dòng 381: dịch vụ chưa post nằm ngoài giai đoạn ở của phòng (sau khi đổi ngày đến/đi)
+        // vẫn được giữ trong DB để gia hạn lại không phải nhập lại, nhưng không hiển thị/tính tiền.
+        // Dòng đã post (bill) luôn hiển thị vì là lịch sử tiền.
         $services = $room->services()
             ->orderBy('service_date')
             ->orderBy('id')
-            ->get();
+            ->get()
+            ->filter(fn (BookingRoomService $service) => $this->serviceInsideStay($room, $service))
+            ->values();
 
         return response()->json([
             'success' => true,
             'data' => $services,
             'move_history_bills' => app(\App\Services\BookingRoomMoveService::class)->postedHistoryBills($room),
         ]);
+    }
+
+    /** Dịch vụ thuộc giai đoạn [ngày đến, ngày đi) của phòng (day-use/cùng ngày: đúng ngày đến); dòng đã post luôn thuộc. */
+    private function serviceInsideStay(BookingRoom $room, BookingRoomService $service): bool
+    {
+        if ((int) $service->is_posted === 1 || !$room->arrival_date || !$room->departure_date || !$service->service_date) {
+            return true;
+        }
+
+        $date = Carbon::parse($service->service_date)->toDateString();
+        $arrival = $room->arrival_date->toDateString();
+        $departure = $room->departure_date->toDateString();
+
+        if ($departure <= $arrival) {
+            return $date === $arrival;
+        }
+
+        return $date >= $arrival && $date < $departure;
     }
 
     public function billDetails($billId)

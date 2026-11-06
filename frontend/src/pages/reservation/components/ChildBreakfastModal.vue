@@ -140,12 +140,12 @@
                       <label class="relative inline-flex items-center cursor-pointer select-none gap-1.5 justify-center">
                         <input 
                           type="checkbox" 
-                          :checked="child.is_room"
-                          @change="e => onParentFieldChange(child, 'is_room', e.target.checked)"
+                          :checked="!child.is_room"
+                          @change="e => onParentFieldChange(child, 'is_room', !e.target.checked)"
                           class="sr-only peer"
                         />
                         <div class="w-8 h-4 bg-slate-300 rounded-full peer peer-checked:bg-sky-500 relative after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 shadow-2xs"></div>
-                        <span class="text-xs font-semibold uppercase min-w-[32px] text-left" :class="child.is_room ? 'text-sky-600' : 'text-slate-500'">
+                        <span class="text-xs font-semibold uppercase min-w-[32px] text-left" :class="child.is_room ? 'text-slate-500' : 'text-sky-600'">
                           {{ child.is_room ? 'FIT' : 'GIT' }}
                         </span>
                       </label>
@@ -216,12 +216,12 @@
                         <label class="relative inline-flex items-center cursor-pointer select-none gap-1.5 justify-center">
                           <input 
                             type="checkbox" 
-                            :checked="d.is_room"
-                            @change="e => onDetailFieldChange(child, d, 'is_room', e.target.checked)"
+                            :checked="!d.is_room"
+                            @change="e => onDetailFieldChange(child, d, 'is_room', !e.target.checked)"
                             class="sr-only peer"
                           />
                           <div class="w-8 h-4 bg-slate-300 rounded-full peer peer-checked:bg-sky-500 relative after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 shadow-2xs"></div>
-                          <span class="text-xs font-semibold uppercase min-w-[32px] text-left" :class="d.is_room ? 'text-sky-600' : 'text-slate-500'">
+                          <span class="text-xs font-semibold uppercase min-w-[32px] text-left" :class="d.is_room ? 'text-slate-500' : 'text-sky-600'">
                             {{ d.is_room ? 'FIT' : 'GIT' }}
                           </span>
                         </label>
@@ -317,12 +317,12 @@
                       <label class="relative inline-flex items-center cursor-pointer select-none gap-1.5 justify-center">
                         <input 
                           type="checkbox" 
-                          :checked="child.is_room"
-                          @change="e => onParentFieldChange(child, 'is_room', e.target.checked)"
+                          :checked="!child.is_room"
+                          @change="e => onParentFieldChange(child, 'is_room', !e.target.checked)"
                           class="sr-only peer"
                         />
                         <div class="w-8 h-4 bg-slate-300 rounded-full peer peer-checked:bg-sky-500 relative after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 shadow-2xs"></div>
-                        <span class="text-xs font-semibold uppercase min-w-[32px] text-left" :class="child.is_room ? 'text-sky-600' : 'text-slate-500'">
+                        <span class="text-xs font-semibold uppercase min-w-[32px] text-left" :class="child.is_room ? 'text-slate-500' : 'text-sky-600'">
                           {{ child.is_room ? 'FIT' : 'GIT' }}
                         </span>
                       </label>
@@ -391,12 +391,12 @@
                         <label class="relative inline-flex items-center cursor-pointer select-none gap-1.5 justify-center">
                           <input 
                             type="checkbox" 
-                            :checked="d.is_room"
-                            @change="e => onDetailFieldChange(child, d, 'is_room', e.target.checked)"
+                            :checked="!d.is_room"
+                            @change="e => onDetailFieldChange(child, d, 'is_room', !e.target.checked)"
                             class="sr-only peer"
                           />
                           <div class="w-8 h-4 bg-slate-300 rounded-full peer peer-checked:bg-sky-500 relative after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 shadow-2xs"></div>
-                          <span class="text-xs font-semibold uppercase min-w-[32px] text-left" :class="d.is_room ? 'text-sky-600' : 'text-slate-500'">
+                          <span class="text-xs font-semibold uppercase min-w-[32px] text-left" :class="d.is_room ? 'text-slate-500' : 'text-sky-600'">
                             {{ d.is_room ? 'FIT' : 'GIT' }}
                           </span>
                         </label>
@@ -445,6 +445,7 @@ import { fetchHotelSettings } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
 import http from '@/services/http'
+import { formatDateVi } from '@/utils/format-date-vi'
 
 const authStore = useAuthStore()
 const topbarThemeBg = computed(() => {
@@ -658,26 +659,6 @@ function formatCurrency(val) {
 
 function cleanCurrency(val) {
   return normalizeBreakfastAmount(val)
-}
-
-function formatDateVi(dateStr) {
-  if (!dateStr) return ''
-  const str = String(dateStr).trim()
-  const parts = str.split(/[-\/]/)
-  if (parts.length === 3) {
-    if (parts[0].length === 4) {
-      return `${parts[2].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[0]}`
-    } else if (parts[2].length === 4) {
-      return `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${parts[2]}`
-    } else if (parts[2].length === 2) {
-      const yyyy = '20' + parts[2]
-      return `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${yyyy}`
-    }
-  }
-  const d = new Date(str)
-  if (isNaN(d)) return str
-  const yyyy = String(d.getFullYear())
-  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${yyyy}`
 }
 
 function handleKeyDown(e) {

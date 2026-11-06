@@ -4,6 +4,7 @@
 - **Always be concise**: Câu trả lời luôn ngắn gọn, đi vào trọng tâm.
 - **Use bullet points**: Sử dụng danh sách gạch đầu dòng (bullet points) để trình bày thông tin.
 - **Do not explain unless asked**: Không giải thích dài dòng trừ khi được yêu cầu.
+- **Xử lý dòng lỗi từ Excel của khách**: Khi nhận yêu cầu dạng "làm dòng N", đọc [docs/QUY_TRINH_XU_LY_DONG_EXCEL.md](../docs/QUY_TRINH_XU_LY_DONG_EXCEL.md) trước. Bắt buộc: đọc cả **ảnh** của dòng (`python docs/tools/excel_row_reader.py N`), phân tích nguyên nhân + kế hoạch trước khi sửa, test tái hiện, báo cáo kèm bảng nghiệm thu tay, chỉ commit khi người dùng đồng ý (trên nhánh đang đứng).
 - **Nhật ký tiến độ (DAILY_LOG.md)**: 
   - Sau khi hoàn thành một nghiệp vụ/tính năng, tự động cập nhật chi tiết vào [.agents/DAILY_LOG.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.agents/DAILY_LOG.md).
   - Đầu mỗi phiên làm việc mới, đọc file [.agents/DAILY_LOG.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.agents/DAILY_LOG.md) để nắm tiến độ và công việc tiếp theo.

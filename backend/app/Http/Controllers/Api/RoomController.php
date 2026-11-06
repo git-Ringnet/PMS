@@ -217,7 +217,11 @@ class RoomController extends Controller
                 }
 
                 $activeGuests = $br->guests->where('status', '!=', 100);
-                $primaryGuest = $activeGuests->firstWhere('is_primary', true) ?? $activeGuests->first();
+                $nameCandidates = $activeGuests->whereNotIn('status', [\App\Models\BookingRoomGuest::STATUS_CHECKED_OUT, \App\Models\BookingRoomGuest::STATUS_CANCELLED]);
+                if ($nameCandidates->isEmpty()) {
+                    $nameCandidates = $activeGuests;
+                }
+                $primaryGuest = $nameCandidates->firstWhere('is_primary', true) ?? $nameCandidates->first();
                 $room->guest_name = $primaryGuest?->guest?->full_name ?? '';
                 $room->booking_code = $br->booking?->booking_code ?? '';
                 $room->booking_name = $br->booking?->booking_name ?? '';
@@ -232,15 +236,25 @@ class RoomController extends Controller
                     : $br->departure_time;
                 $room->nights = $br->arrival_date && $br->departure_date ? $br->arrival_date->diffInDays($br->departure_date) : 1;
                 // Room Map dùng số khách/trẻ đang thực sự còn ở phòng.
-                $activeAdultCount = $activeGuests->count();
-                $assignedChildren = $br->assignedChildren()->get();
+                // Dòng 474: khách/trẻ em đã check out lẻ (status = 2) không còn ở phòng nên không tính vào số khách.
+                $stayingGuests = $activeGuests->whereNotIn('status', [
+                    \App\Models\BookingRoomGuest::STATUS_CHECKED_OUT,
+                    \App\Models\BookingRoomGuest::STATUS_CANCELLED,
+                ]);
+                $activeAdultCount = $stayingGuests->count();
+                $assignedChildren = $br->assignedChildren()->get()
+                    ->reject(fn ($child) => in_array((int) $child->child_status, [
+                        \App\Models\BookingRoomGuest::STATUS_CHECKED_OUT,
+                        \App\Models\BookingRoomGuest::STATUS_CANCELLED,
+                    ], true))
+                    ->values();
                 $room->adults = $activeAdultCount > 0 ? $activeAdultCount : ($br->adults ?? 2);
                 $room->children = $assignedChildren->isNotEmpty()
                     ? $assignedChildren->where('age_group', 'child')->count()
-                    : (int) ($br->children_qty ?: ($br->children ? $br->children->where('child_status', '!=', 100)->where('age_group', 'child')->count() : 0));
+                    : (int) ($br->children_qty ?: ($br->children ? $br->children->whereNotIn('child_status', [2, 3, 100])->where('age_group', 'child')->count() : 0));
                 $room->babies = $assignedChildren->isNotEmpty()
                     ? $assignedChildren->where('age_group', 'baby')->count()
-                    : (int) ($br->babies ?: ($br->children ? $br->children->where('child_status', '!=', 100)->where('age_group', 'baby')->count() : 0));
+                    : (int) ($br->babies ?: ($br->children ? $br->children->whereNotIn('child_status', [2, 3, 100])->where('age_group', 'baby')->count() : 0));
                 $room->guest_count = (int) $room->adults + $room->children + $room->babies;
                 $room->rate = $br->rate ?? 0;
                 $room->rate_code = $br->rate_code ?? null;

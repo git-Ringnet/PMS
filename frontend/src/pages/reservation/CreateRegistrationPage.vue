@@ -19,6 +19,10 @@ import {
   isMoveHistoryBillReference,
   mergeMoveHistoryBillReferences,
 } from '@/utils/booking-room-move-history'
+import { summarizeRoomTotals } from '@/utils/booking-room-totals'
+import { extraBedBillRow, findExtraBedBillsOutsideStay, findMoveHistoryExtraBedBill } from '@/utils/booking-room-extra-bed-bills'
+import { applySavedRoomColumns, serializeRoomColumns } from '@/utils/booking-room-columns'
+import { normalizeShuttleInfo, buildBookingHistoryLocation } from '@/utils/booking-shuttle-history'
 import {
   childBreakfastServiceDates,
   isChildBreakfastCode,
@@ -296,6 +300,17 @@ function stopDragModal() {
   }
   document.removeEventListener('mousemove', dragModal)
   document.removeEventListener('mouseup', stopDragModal)
+}
+
+// Dòng 493: nút "Lịch sử booking" chuyển sang màn hình Lịch sử thao tác, lọc theo đăng ký đang xem.
+function openBookingHistory() {
+  const location = buildBookingHistoryLocation(route.path, modalForm.value?.dbId)
+  if (!location) {
+    uiStore.showToast('Vui lòng lưu đăng ký trước khi xem lịch sử booking.', 'warning')
+    return
+  }
+  closeModal()
+  router.push(location)
 }
 
 function closeModal() {
@@ -1033,6 +1048,75 @@ const columns = ref([
   { key: 'roomCode', label: 'Mã Phòng', visible: true, width: 'w-[100px]' },
 ])
 
+// Dòng 98 (FIX FE task 109): thứ tự + ẩn/hiện cột bảng "Chi tiết phòng booking" lưu theo user trên server
+// (user-settings) nên không mất khi tải lại trang hay đăng nhập máy khác; localStorage chỉ là bản dự phòng.
+const defaultBookingRoomColumns = columns.value.map(col => ({ ...col }))
+
+function loadSavedBookingRoomColumns() {
+  const uid = authStore.user?.id || 'default'
+  let localOrder = null
+  let localVisible = null
+  try {
+    localOrder = JSON.parse(localStorage.getItem(`pms_col_order_booking_rooms_${uid}`) || 'null')
+    localVisible = JSON.parse(localStorage.getItem(`pms_vis_cols_booking_rooms_${uid}`) || 'null')
+  } catch (_) {}
+  return {
+    order: authStore.settings?.column_order?.create_registration_detail || localOrder,
+    visible: authStore.settings?.visible_columns?.create_registration_detail || localVisible,
+  }
+}
+
+columns.value = (() => {
+  const saved = loadSavedBookingRoomColumns()
+  return applySavedRoomColumns(defaultBookingRoomColumns, saved.order, saved.visible)
+})()
+
+let saveBookingRoomColumnsTimer = null
+let isApplyingBookingRoomColumns = false
+let isSavingBookingRoomColumns = false
+
+function saveBookingRoomColumns() {
+  if (isApplyingBookingRoomColumns) return
+  const { order, visible } = serializeRoomColumns(columns.value)
+  const uid = authStore.user?.id || 'default'
+  try {
+    localStorage.setItem(`pms_col_order_booking_rooms_${uid}`, JSON.stringify(order))
+    localStorage.setItem(`pms_vis_cols_booking_rooms_${uid}`, JSON.stringify(visible))
+  } catch (_) {}
+
+  if (saveBookingRoomColumnsTimer) clearTimeout(saveBookingRoomColumnsTimer)
+  saveBookingRoomColumnsTimer = setTimeout(async () => {
+    try {
+      isSavingBookingRoomColumns = true
+      await authStore.updateUserSettings({
+        column_order: { create_registration_detail: order },
+        visible_columns: { create_registration_detail: visible },
+      })
+    } catch (e) {
+      console.error('Lỗi khi lưu cấu hình cột chi tiết phòng booking:', e)
+    } finally {
+      nextTick(() => { isSavingBookingRoomColumns = false })
+    }
+  }, 500)
+}
+
+// Kéo thả đổi thứ tự (handleDrop) và tích ẩn/hiện (v-model col.visible) đều đổi `columns` nên chỉ cần theo dõi ở đây.
+watch(columns, saveBookingRoomColumns, { deep: true })
+
+// Cài đặt user được tải muộn (sau khi trang đã mount) hoặc đổi từ máy khác: áp lại nếu khác bảng hiện tại.
+watch(
+  () => [authStore.settings?.column_order?.create_registration_detail, authStore.settings?.visible_columns?.create_registration_detail],
+  ([order, visible]) => {
+    if (isSavingBookingRoomColumns || !order) return
+    const next = applySavedRoomColumns(defaultBookingRoomColumns, order, visible)
+    if (JSON.stringify(serializeRoomColumns(next)) === JSON.stringify(serializeRoomColumns(columns.value))) return
+    isApplyingBookingRoomColumns = true
+    columns.value = next
+    nextTick(() => { isApplyingBookingRoomColumns = false })
+  },
+  { deep: true },
+)
+
 const tableWidth = computed(() => {
   let total = 35 + 50 + 45 + 120 // base columns: toggle (35), checkbox (50), STT (45), Tổng cộng (120)
   columns.value.forEach(col => {
@@ -1459,6 +1543,11 @@ async function handleServiceIsRoomToggle(room, svc, isChecked) {
   }
 }
 
+// Dòng 488: dòng tiền phòng hiển thị FIT/GIT theo thông tin đăng ký (Tiền phòng gửi Master = GIT).
+function isRoomRateAtRoom() {
+  return !modalForm.value?.isMasterRoomRate
+}
+
 function isRoomChargeService(svc) {
   if (!svc) return false
   const code = String(svc.service_code || svc.ServiceId || '').toUpperCase()
@@ -1800,7 +1889,7 @@ function getRoomDisplayServices(room) {
             rate: hasPending ? (Number(pendingPlan.rate) || 0) : billedRate,
             billed_rate: billedRate,
             pending_rate: hasPending ? (Number(pendingPlan.rate) || 0) : null,
-            is_room: true,
+            is_room: isRoomRateAtRoom(),
             from_bill: true,
             from_move_history: !!sb.from_move_history,
             bill_ref: sb
@@ -1827,7 +1916,7 @@ function getRoomDisplayServices(room) {
             service_code: dbCharge.service_code || 'RM',
             quantity: dbCharge.quantity || 1,
             rate: customRate,
-            is_room: true,
+            is_room: isRoomRateAtRoom(),
             svc_ref: dbCharge
           })
         } else {
@@ -1838,7 +1927,7 @@ function getRoomDisplayServices(room) {
             service_code: getHotelServiceCode('RM'),
             quantity: 1,
             rate: customRate,
-            is_room: true
+            is_room: isRoomRateAtRoom()
           })
         }
       }
@@ -1861,7 +1950,7 @@ function getRoomDisplayServices(room) {
           service_code: sb.ServiceId || 'RM',
           quantity: qty,
           rate: qty > 0 ? amt / qty : amt,
-          is_room: true,
+          is_room: isRoomRateAtRoom(),
           from_bill: true,
           from_move_history: !!sb.from_move_history,
           bill_ref: sb
@@ -1878,7 +1967,7 @@ function getRoomDisplayServices(room) {
         service_code: getHotelServiceCode('RM'),
         quantity: 1,
         rate: customRate,
-        is_room: true
+        is_room: isRoomRateAtRoom()
       })
     }
   }
@@ -1899,7 +1988,7 @@ function getRoomDisplayServices(room) {
           service_code: sb.ServiceId || 'RM',
           quantity: qty,
           rate: qty > 0 ? amt / qty : amt,
-          is_room: true,
+          is_room: isRoomRateAtRoom(),
           from_bill: true,
           from_move_history: !!sb.from_move_history,
           bill_ref: sb
@@ -1912,6 +2001,7 @@ function getRoomDisplayServices(room) {
   // - Nếu phòng có cấu hình EB (extraBedQty > 0, dailyExtraBeds, hoặc services có mã EB):
   //   + Ngày quá khứ (< sysDate): Chỉ lấy từ service_bills (SP3000) có mã EB hợp lệ. Không có bill trong SP3000 -> = 0.
   //   + Ngày hiện tại/tương lai (>= sysDate): Lấy theo cài đặt dự kiến trong BK (dailyExtraBeds hoặc services hoặc extraBedQty * extraBedPrice).
+  const ebStayNights = new Set()
   if (checkIn) {
     for (let i = 0; i < nights; i++) {
       const parts = checkIn.split('-')
@@ -1927,6 +2017,16 @@ function getRoomDisplayServices(room) {
       const dd = String(curr.getDate()).padStart(2, '0')
       const dStr = `${yyyy}-${mm}-${dd}`
       const isPastNight = sysDate ? (dStr < sysDate) : false
+      ebStayNights.add(dStr)
+
+      // Dòng 306: đêm đã post EB ở phòng trước khi chuyển phòng -> hiện bill đó (tham chiếu lịch sử, không tính tổng lần nữa)
+      // thay vì dòng EB kế hoạch; đêm này sang ngày tiền phòng cũng không post lại.
+      const historyEbBill = findMoveHistoryExtraBedBill(room.serviceBills, dStr, getBillRecordDateStr, handledBillIds)
+      if (historyEbBill) {
+        handledBillIds.add(String(historyEbBill.Ma || historyEbBill.id))
+        list.push(extraBedBillRow(historyEbBill, dStr))
+        continue
+      }
 
       // Kiểm tra xem phòng có cấu hình EB theo từng ngày (dailyExtraBeds hoặc services có EB) hay không
       const hasDailyEbConfig = (room.dailyExtraBeds && room.dailyExtraBeds.length > 0) ||
@@ -1965,6 +2065,7 @@ function getRoomDisplayServices(room) {
             rate: qty > 0 ? amt / qty : amt,
             is_room: true,
             from_bill: true,
+            from_move_history: !!ebBill.from_move_history,
             bill_ref: ebBill
           })
         }
@@ -2010,6 +2111,13 @@ function getRoomDisplayServices(room) {
       }
     }
   }
+
+  // Dòng 306: bill EB đã post nằm ngoài các đêm lưu trú (phòng đã chuyển chỉ còn 0 đêm sau ngày chuyển) vẫn phải hiện,
+  // giống cách đang quét bill tiền phòng ngoài dải ngày ở trên.
+  findExtraBedBillsOutsideStay(room.serviceBills, ebStayNights, getBillRecordDateStr, handledBillIds).forEach(ebBill => {
+    handledBillIds.add(String(ebBill.Ma || ebBill.id))
+    list.push(extraBedBillRow(ebBill, getBillRecordDateStr(ebBill) || cleanDateStr(room.checkIn)))
+  })
 
   // 3. Phụ thu ăn sáng trẻ em theo Booking_BFChildSetServiceId:
   // - Chế độ detail: lấy dự kiến từ booking_child_breakfast_details (kể cả khi phòng chưa check-in).
@@ -2062,7 +2170,8 @@ function getRoomDisplayServices(room) {
             service_code: bfBill.ServiceId || bfCode,
             quantity: qty,
             rate: qty > 0 ? bAmt / qty : bAmt,
-            is_room: true,
+            // Dòng 488: bill ăn sáng trẻ em gửi Master (không có phòng đích) hiển thị GIT.
+            is_room: !!(bfBill.RentalRoomId2 ?? bfBill.rentalRoomId2),
             is_child_breakfast: true,
             from_bill: true,
             bill_ref: bfBill
@@ -2242,7 +2351,8 @@ function handleDrop(targetKey) {
 
 // ==================== COMPUTEDS ====================
 const activeTab = computed(() => tabs.value.find(t => t.id === activeTabId.value))
-const isCheckoutMetadataEdit = computed(() => isEditModal.value && Number(activeTab.value?.status) === 2)
+// Dòng 336: đăng ký đã checkout vẫn sửa trên modal thông tin đăng ký thường (không còn màn hình riêng).
+const isCheckedOutEdit = computed(() => isEditModal.value && Number(activeTab.value?.status) === 2)
 // Dòng 433: đăng ký đã hủy vẫn xem được thông tin nhưng không cho chỉnh sửa.
 const isModalReadonly = computed(() => isEditModal.value && isRegistrationReadonly(activeTab.value?.status))
 
@@ -2362,20 +2472,13 @@ const selectRangeVal = computed({
 const roomsTotalSummary = computed(() => {
   const tab = bookingContext.value
   if (!tab) return { count: 0, priceSum: 0, adults: 0, babies: 0, children: 0, extraBedQty: 0, extraBed: 0, total: 0 }
-  let priceSum = 0, adults = 0, babies = 0, children = 0, extraBedQty = 0, extraBed = 0, total = 0
-  // Phòng chuyển (100) và phòng hủy (3) chỉ hiển thị để truy vết lịch sử, không cộng lặp vào tổng tiền/phòng hiện tại.
-  const roomList = filteredActiveRooms.value.filter(r => Number(r.bookingRoomStatus) !== 100 && Number(r.bookingRoomStatus) !== 3)
-  roomList.forEach(r => {
-    priceSum += getRoomChargeTotal(r)
-    adults   += Number(r.adults) || 0
-    babies   += Number(r.babies) || 0
-    children += Number(r.children) || 0
-    extraBedQty += getRoomExtraBedQty(r)
-    const ebTotal = getRoomExtraBedTotal(r)
-    extraBed += ebTotal
-    total    += calculateRoomTotal(r)
+  // Dòng 482: phòng chuyển (100) vẫn cộng tiền đã ở vào tổng nhưng không đếm phòng/khách; phòng hủy (3) bỏ qua.
+  return summarizeRoomTotals(filteredActiveRooms.value, {
+    chargeTotal: getRoomChargeTotal,
+    extraBedQty: getRoomExtraBedQty,
+    extraBedTotal: getRoomExtraBedTotal,
+    roomTotal: calculateRoomTotal,
   })
-  return { count: roomList.length, priceSum, adults, babies, children, extraBedQty, extraBed, total }
 })
 
 const activeTabStatusName = computed(() => {
@@ -2662,6 +2765,8 @@ function syncRoomsToAllocations(tab) {
       allotmentCode: r.allotmentCode || '',
       roomCode: r.roomCode || '',
       bookingRoomId: r.bookingRoomId || null,
+      // Dòng 497: nâng hạng chọn theo từng phòng ở lưới phòng
+      upgradeClassId: r.upgradeClassId || null,
       total: Number(r.total) || 0,
       price: r.price ?? alloc.price ?? 0,
       basePrice: r.basePrice ?? alloc.basePrice ?? alloc.price ?? 0,
@@ -4487,9 +4592,8 @@ async function handleAddTabClick() {
     color: hotelSettings.value?.ColorDefaultBookingRoomMap || '#97D5FF',
     isGit: true,
     isMasterRoomRate: true,
-    shuttleInfo: [
-      { id: Date.now(), type: 'Đón', vehicle: '7 Seater car', code: '', date: today, time: '00:00', price: 0, location: '', note: '' }
-    ],
+    // Dòng 492: đăng ký mới mặc định thông tin đưa đón để trống.
+    shuttleInfo: [],
     roomAllocations: [],
   }
   roomAddDraft.value = initRoomAddDraft(today, tomorrow)
@@ -4533,9 +4637,8 @@ function fillModalForm(tab) {
     contactPhone: tab.contactPhone || '',
     note: tab.note || '',
     specialRequests: tab.specialRequests || '',
-    shuttleInfo: (tab.shuttleInfo && tab.shuttleInfo.length > 0)
-      ? JSON.parse(JSON.stringify(tab.shuttleInfo))
-      : [ { id: Date.now(), type: 'Đón', vehicle: '7 Seater car', code: '', date: tab.checkIn || systemDate.value || new Date().toISOString().split('T')[0], time: '00:00', price: 0, location: '', note: '' } ],
+    // Dòng 492: không tự thêm dòng đưa đón mặc định; đã xóa hết thì mở lại vẫn trống.
+    shuttleInfo: normalizeShuttleInfo(tab.shuttleInfo),
     roomAllocations: [],
     deposits: JSON.parse(JSON.stringify(tab.deposits || [])),
     rooms: [],
@@ -4572,46 +4675,6 @@ async function openEditModal() {
   }
   modalSubTab.value = 'info'
   isModalOpen.value = true
-}
-async function saveCheckoutMetadata() {
-  const tab = activeTab.value
-  if (!tab || Number(tab.status) !== 2) return
-  if (!bookingCapabilities.value.can_update_checkout_booking) {
-    uiStore.showToast('Bạn không có quyền chỉnh sửa thông tin đăng ký đã checkout.', 'error')
-    return
-  }
-  const bookingName = String(modalForm.value.bookingName || '').trim()
-  if (!bookingName) {
-    uiStore.showToast('Vui lòng nhập tên đăng ký!', 'warning')
-    return
-  }
-
-  isSavingModal.value = true
-  try {
-    const payload = {
-      booking_name: bookingName,
-      customer_source_id: modalForm.value.customerSourceId || null,
-      booker_id: modalForm.value.bookerId || null,
-      note: modalForm.value.note || null,
-    }
-    const res = await http.put(`/bookings/${tab.dbId}`, payload)
-    const updated = res.data?.data || {}
-    const source = customerSources.value.find(item => String(item.id) === String(updated.customer_source_id ?? payload.customer_source_id))
-    Object.assign(tab, {
-      bookingName: updated.booking_name ?? payload.booking_name,
-      customerSourceId: updated.customer_source_id ?? payload.customer_source_id,
-      customerSource: updated.customer_source?.name || source?.name || '—',
-      bookerId: updated.booker_id ?? payload.booker_id,
-      note: updated.note ?? payload.note ?? '',
-    })
-    closeModal()
-    uiStore.showToast('Đã cập nhật thông tin đăng ký đã checkout.', 'success')
-    notifyRoomUpdates(tab.dbId)
-  } catch (err) {
-    uiStore.showToast(err.response?.data?.message || 'Không thể cập nhật thông tin đăng ký.', 'error')
-  } finally {
-    isSavingModal.value = false
-  }
 }
 function handleBookerChange() {
   const selected = bookers.value.find(b => b.id === Number(modalForm.value.bookerId))
@@ -4660,7 +4723,8 @@ watch(() => modalForm.value.registrationStatusId, (newId) => {
       uiStore.showToast('Chú ý: Tình trạng đăng ký này không giữ phòng trống (is_availability = 0)', 'info')
     }
   }
-  handleConfirmDateCalculation(true)
+  // Chỉ tự tính cho đăng ký mới; đăng ký đã lưu tính lại khi người dùng đổi trạng thái (@change) - tránh ghi đè ngày xác nhận khi mở booking (dòng 495)
+  handleConfirmDateCalculation(false)
 })
 
 watch(() => modalForm.value.checkIn, () => {
@@ -5464,7 +5528,7 @@ async function handleSaveNewBooking() {
 
   const sysDateStr = systemDate.value || parseApiDate(new Date())
   const isCheckInChanged = isEditModal.value && activeTab.value && modalForm.value.checkIn !== activeTab.value.checkIn
-  if ((!isEditModal.value || isCheckInChanged) && modalForm.value.checkIn < sysDateStr) {
+  if (!isCheckedOutEdit.value && (!isEditModal.value || isCheckInChanged) && modalForm.value.checkIn < sysDateStr) {
     uiStore.showToast(`Ngày đến không được nhỏ hơn ngày hệ thống (${sysDateStr})!`, 'warning')
     return
   }
@@ -6464,7 +6528,10 @@ async function triggerAction(actionName) {
           clearDuplicates = true
           uiStore.showToast('Đang khôi phục booking...', 'info')
           try {
-            res = await restoreBooking(tab.dbId, { clear_duplicate_rooms: true })
+            // Dòng 504: BK noshow phải gọi revert-noshow (trước đây luôn gọi restore của booking hủy).
+            res = isCancelledBooking.value
+              ? await restoreBooking(tab.dbId, { clear_duplicate_rooms: true })
+              : await revertBookingNoshow(tab.dbId, { clear_duplicate_rooms: true })
           } catch (errDup) {
             uiStore.showToast(errDup.response?.data?.message || 'Khôi phục booking thất bại!', 'error')
             return
@@ -6532,11 +6599,26 @@ async function triggerAction(actionName) {
 
           for (const r of selected) {
             try {
+              let clearDuplicates = false
               let res = await revertRoomNoshow(tab.dbId, r.bookingRoomId)
+
+              // Dòng 504: trùng số phòng với đăng ký khác / phòng khóa -> hỏi, chọn Có thì xóa số phòng bị trùng
+              if (res.data?.needs_duplicate_confirm) {
+                const confirmedClear = await uiStore.confirm({
+                  title: 'Cảnh báo trùng số phòng',
+                  message: res.data.message,
+                  confirmText: 'Có',
+                  cancelText: 'Không'
+                })
+                if (!confirmedClear) continue
+                clearDuplicates = true
+                res = await revertRoomNoshow(tab.dbId, r.bookingRoomId, { clear_duplicate_rooms: true })
+              }
+
               if (res.data?.success) {
                 successCount++
               } else if (res.data?.needs_confirm) {
-                overBookingNeeded.push(r)
+                overBookingNeeded.push({ room: r, clearDuplicates })
               } else {
                 uiStore.showToast(res.data?.message || `Khôi phục phòng ${r.roomNumber || ''} thất bại!`, 'error')
               }
@@ -6552,9 +6634,9 @@ async function triggerAction(actionName) {
               confirmText: 'Tiếp tục', cancelText: 'Hủy'
             }).then(async (confirmedOver) => {
               if (confirmedOver) {
-                for (const r of overBookingNeeded) {
+                for (const { room: r, clearDuplicates } of overBookingNeeded) {
                   try {
-                    let resForce = await revertRoomNoshow(tab.dbId, r.bookingRoomId, { force: true })
+                    let resForce = await revertRoomNoshow(tab.dbId, r.bookingRoomId, { force: true, clear_duplicate_rooms: clearDuplicates })
                     if (resForce.data?.success) {
                       successCount++
                     } else {
@@ -8196,13 +8278,13 @@ defineExpose({
                                       <label class="relative inline-flex items-center cursor-pointer select-none gap-1.5 justify-center" :class="{ 'opacity-40 pointer-events-none': !isServiceDisplayEditable(svc) || (isInlineEditLocked && room.bookingRoomId) }" title="Bật/Tắt Gửi HĐ về Master (GIT) hoặc Phòng (FIT)">
                                         <input
                                           type="checkbox"
-                                          :checked="Number(svc.is_room) === 1 || svc.is_room === true"
-                                          @change="e => handleServiceIsRoomToggle(room, svc, e.target.checked)"
+                                          :checked="!(Number(svc.is_room) === 1 || svc.is_room === true)"
+                                          @change="e => handleServiceIsRoomToggle(room, svc, !e.target.checked)"
                                           :disabled="!isServiceDisplayEditable(svc) || (isInlineEditLocked && !!room.bookingRoomId)"
                                           class="sr-only peer"
                                         />
                                         <div class="w-8 h-4 bg-slate-300 rounded-full peer peer-checked:bg-sky-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 shadow-2xs"></div>
-                                        <span class="text-xs font-semibold uppercase min-w-[32px] text-left" :class="(Number(svc.is_room) === 1 || svc.is_room === true) ? 'text-sky-600' : 'text-slate-500'">
+                                        <span class="text-xs font-semibold uppercase min-w-[32px] text-left" :class="(Number(svc.is_room) === 1 || svc.is_room === true) ? 'text-slate-500' : 'text-sky-600'">
                                           {{ (Number(svc.is_room) === 1 || svc.is_room === true) ? 'FIT' : 'GIT' }}
                                         </span>
                                       </label>
@@ -8890,13 +8972,13 @@ defineExpose({
                                             <label class="relative inline-flex items-center cursor-pointer select-none gap-1.5 justify-center" :class="{ 'opacity-40 pointer-events-none': !isServiceDisplayEditable(svc) || (isInlineEditLocked && room.bookingRoomId) }" title="Bật/Tắt Gửi HĐ về Master (GIT) hoặc Phòng (FIT)">
                                               <input
                                                 type="checkbox"
-                                                :checked="Number(svc.is_room) === 1 || svc.is_room === true"
-                                                @change="e => handleServiceIsRoomToggle(room, svc, e.target.checked)"
+                                                :checked="!(Number(svc.is_room) === 1 || svc.is_room === true)"
+                                                @change="e => handleServiceIsRoomToggle(room, svc, !e.target.checked)"
                                                 :disabled="!isServiceDisplayEditable(svc) || (isInlineEditLocked && !!room.bookingRoomId)"
                                                 class="sr-only peer"
                                               />
                                               <div class="w-8 h-4 bg-slate-300 rounded-full peer peer-checked:bg-sky-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 shadow-2xs"></div>
-                                              <span class="text-xs font-semibold uppercase min-w-[32px] text-left" :class="(Number(svc.is_room) === 1 || svc.is_room === true) ? 'text-sky-600' : 'text-slate-500'">
+                                              <span class="text-xs font-semibold uppercase min-w-[32px] text-left" :class="(Number(svc.is_room) === 1 || svc.is_room === true) ? 'text-slate-500' : 'text-sky-600'">
                                                 {{ (Number(svc.is_room) === 1 || svc.is_room === true) ? 'FIT' : 'GIT' }}
                                               </span>
                                             </label>
@@ -9157,7 +9239,7 @@ defineExpose({
     <!-- MOCKUP CREATE REGISTRATION MODAL (Image 2 Match) -->
     <Teleport to="body">
       <div 
-        v-if="isModalOpen && !isCheckoutMetadataEdit"
+        v-if="isModalOpen"
         class="fixed inset-0 bg-black/20 z-[9999] flex items-center justify-center p-1 sm:p-3 animate-in"
       >
         <div 
@@ -9236,7 +9318,7 @@ defineExpose({
                     </label>
                 </div>
                 <div class="flex items-center space-x-2" :class="isTopBarThemeDark ? 'text-gray-300' : 'text-slate-800'">
-                    <button class="flex items-center space-x-1 text-xs px-2 py-0.5 rounded-md transition font-medium shadow-sm cursor-pointer border-none" :class="isTopBarThemeDark ? 'bg-white/10 hover:bg-white/20 text-gray-200 hover:text-white' : 'bg-black/10 hover:bg-black/20 text-slate-900'">
+                    <button type="button" @click="openBookingHistory" class="flex items-center space-x-1 text-xs px-2 py-0.5 rounded-md transition font-medium shadow-sm cursor-pointer border-none" :class="isTopBarThemeDark ? 'bg-white/10 hover:bg-white/20 text-gray-200 hover:text-white' : 'bg-black/10 hover:bg-black/20 text-slate-900'">
                         <i class="fa-solid fa-clock-rotate-left"></i>
                         <span>Lịch sử booking</span>
                     </button>
@@ -9401,6 +9483,7 @@ defineExpose({
                   <span>Thông Tin Đưa Đón</span>
               </button>
               <button 
+                v-if="!isCheckedOutEdit"
                 @click="modalSubTab = 'rooms'"
                 class="px-3 py-2 font-bold border-b-2 flex items-center space-x-1.5 text-xs cursor-pointer border-none bg-transparent transition-colors"
                 :style="modalSubTab === 'rooms' ? { color: isTopBarThemeDark ? '#0284c7' : '#006bdb', borderColor: 'var(--pms-custom-theme, #006bdb)' } : {}"
@@ -10283,51 +10366,6 @@ defineExpose({
       </div>
     </Teleport>
 
-    <Teleport to="body">
-      <div v-if="isModalOpen && isCheckoutMetadataEdit" class="fixed inset-0 z-[10000] flex items-center justify-center bg-black/30 p-4" @click.self="closeModal">
-        <section class="w-full max-w-2xl overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl">
-          <header class="flex items-center justify-between px-5 py-3 text-white rounded-t-xl" :style="{ background: topbarThemeBg }">
-            <div>
-              <h2 class="text-sm font-bold">Thông Tin Đăng Ký Đã Checkout</h2>
-              <p class="mt-0.5 text-[11px] text-slate-300">Chỉ tên, nguồn khách, người đặt và ghi chú được chỉnh sửa.</p>
-            </div>
-            <button type="button" @click="closeModal" class="border-0 bg-transparent text-white hover:text-slate-200" aria-label="Đóng">✕</button>
-          </header>
-          <form class="space-y-4 p-5" @submit.prevent="saveCheckoutMetadata">
-            <div>
-              <label class="mb-1 block text-xs font-semibold text-slate-700">Tên đăng ký</label>
-              <input v-model="modalForm.bookingName" type="text" maxlength="255" required class="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none" />
-            </div>
-            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <div>
-                <label class="mb-1 block text-xs font-semibold text-slate-700">Nguồn khách</label>
-                <select v-model="modalForm.customerSourceId" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
-                  <option :value="null">— Chọn nguồn khách —</option>
-                  <option v-for="source in customerSources" :key="source.id" :value="source.id">{{ source.name }}</option>
-                </select>
-              </div>
-              <div>
-                <label class="mb-1 block text-xs font-semibold text-slate-700">Người đặt</label>
-                <select v-model="modalForm.bookerId" class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none">
-                  <option :value="null">— Chọn người đặt —</option>
-                  <option v-for="booker in bookers" :key="booker.id" :value="booker.id">{{ booker.name }}</option>
-                </select>
-              </div>
-            </div>
-            <div>
-              <label class="mb-1 block text-xs font-semibold text-slate-700">Ghi chú</label>
-              <textarea v-model="modalForm.note" rows="4" class="w-full resize-y rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"></textarea>
-            </div>
-            <footer class="flex justify-end gap-2 border-t border-slate-100 pt-3">
-              <button type="button" @click="closeModal" :disabled="isSavingModal" class="rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">Hủy</button>
-              <button type="submit" :disabled="isSavingModal" class="rounded-lg border-0 bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700 disabled:opacity-50">
-                {{ isSavingModal ? 'Đang lưu…' : 'Lưu thông tin' }}
-              </button>
-            </footer>
-          </form>
-        </section>
-      </div>
-    </Teleport>
     <!-- THÔNG BÁO THEO BOOKING / PHÒNG -->
     <BookingNotificationsModal
       v-model:show="isBookingNotificationsModalOpen"

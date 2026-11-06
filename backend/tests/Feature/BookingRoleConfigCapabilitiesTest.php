@@ -64,6 +64,33 @@ class BookingRoleConfigCapabilitiesTest extends TestCase
         $this->assertFalse($this->service->canOpenDoNotMove($other, 2, $owner->id));
     }
 
+    public function test_dnm_lock_owner_can_always_open_even_when_parameter_assigns_another_role(): void
+    {
+        // Dòng 337 (note 28/10): user FOM khóa phòng 603 thì chính user FOM mở được,
+        // kể cả khi thông số RoleUserOpenDoNotMove chỉ phân quyền cho role khác.
+        $owner = User::factory()->create();
+        $stranger = User::factory()->create();
+        $manager = User::factory()->create();
+        foreach ([$owner, $stranger, $manager] as $user) {
+            $this->grantPermission($user, 'fo.booking.edit', 1);
+        }
+        $managerRole = Role::create(['code' => 'dnm_manager', 'name' => 'DNM manager']);
+        $manager->roles()->attach($managerRole->id, ['system_branch_id' => 1]);
+        HotelConfig::updateOrCreate(['name' => 'RoleUserOpenDoNotMove'], ['value' => 'dnm_manager']);
+
+        $this->assertTrue($this->service->canOpenDoNotMove($owner, 1, $owner->id), 'người khóa phải mở được');
+        $this->assertTrue($this->service->canOpenDoNotMove($manager, 1, $owner->id), 'role được phân quyền mở được');
+        $this->assertFalse($this->service->canOpenDoNotMove($stranger, 1, $owner->id), 'người khác không có role không mở được');
+    }
+
+    public function test_dnm_lock_owner_still_needs_booking_edit_permission(): void
+    {
+        $owner = User::factory()->create();
+        HotelConfig::updateOrCreate(['name' => 'RoleUserOpenDoNotMove'], ['value' => 'dnm_manager']);
+
+        $this->assertFalse($this->service->canOpenDoNotMove($owner, 1, $owner->id));
+    }
+
     public function test_legacy_unlock_username_config_does_not_grant_dnm_role_access(): void
     {
         $user = User::factory()->create(['username' => 'legacy-unlocker']);

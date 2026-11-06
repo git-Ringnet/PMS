@@ -869,14 +869,32 @@ function handleCloneBooking() {
   }
   const first = selected[0]
   copyModalBookingId.value = first.id
-  copyModalArrivalDate.value = first.arrival_date ? String(first.arrival_date).split('T')[0] : ''
-  copyModalDepartureDate.value = first.departure_date ? String(first.departure_date).split('T')[0] : ''
+  let arrival = first.arrival_date ? String(first.arrival_date).split('T')[0] : ''
+  let departure = first.departure_date ? String(first.departure_date).split('T')[0] : ''
+  // Dòng 500: ngày mặc định không được nhỏ hơn ngày hệ thống (giữ số đêm của đăng ký gốc).
+  const sysDate = auth.systemDate || localStorage.getItem('pms_system_date') || ''
+  if (arrival && sysDate && arrival < sysDate) {
+    const nights = departure && departure > arrival
+      ? Math.round((new Date(departure) - new Date(arrival)) / 86400000)
+      : 1
+    const dep = new Date(sysDate)
+    dep.setDate(dep.getDate() + nights)
+    arrival = sysDate
+    departure = dep.toISOString().split('T')[0]
+  }
+  copyModalArrivalDate.value = arrival
+  copyModalDepartureDate.value = departure
   showCopyModal.value = true
 }
 
-function handleBookingCopied() {
+function handleBookingCopied(newBooking) {
   showCopyModal.value = false
   uiStore.showToast('Nhân bản đăng ký thành công!', 'success')
+  // Dòng 500: nhân bản xong chuyển sang đăng ký vừa tạo.
+  if (newBooking?.booking_code || newBooking?.id) {
+    openBookingFromSearch({ booking_code: newBooking.booking_code, id: newBooking.id }, 'booking')
+    return
+  }
   search(1)
 }
 

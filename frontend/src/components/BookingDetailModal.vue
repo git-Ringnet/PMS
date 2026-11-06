@@ -30,6 +30,7 @@ import ExtraBedModal from '@/pages/reservation/components/ExtraBedModal.vue'
 import RoomInfoDatePicker from '@/pages/reservation/components/RoomInfoDatePicker.vue'
 import TimePicker24h from '@/components/TimePicker24h.vue'
 import { resolveRateCodePrice } from '@/utils/rate-code-pricing.js'
+import { isCheckedOutPerson } from '@/utils/guest-info'
 
 const props = defineProps({
   room: { type: Object, required: true },
@@ -780,6 +781,23 @@ function getNextDefaultName(type) {
 }
 
 // ── Fetch Guests ───────────────────────────────────
+// Dòng 474: số khách thực tế trong phòng không tính khách/trẻ em đã trả phòng.
+const activeAdults = computed(() => adults.value.filter(a => !isCheckedOutPerson(a)))
+const activeChildren = computed(() => children.value.filter(c => !isCheckedOutPerson(c)))
+const activeBabies = computed(() => babies.value.filter(b => !isCheckedOutPerson(b)))
+const sortedAdults = computed(() => [...adults.value].sort((a, b) => Number(isCheckedOutPerson(a)) - Number(isCheckedOutPerson(b))))
+const sortedChildren = computed(() => [...children.value].sort((a, b) => Number(isCheckedOutPerson(a)) - Number(isCheckedOutPerson(b))))
+const sortedBabies = computed(() => [...babies.value].sort((a, b) => Number(isCheckedOutPerson(a)) - Number(isCheckedOutPerson(b))))
+const selectedCheckedOut = computed(() => isCheckedOutPerson(selectedGuest.value || selectedChild.value))
+
+function activeOccupantsStr() {
+  return `${activeAdults.value.length} / ${activeChildren.value.length} / ${activeBabies.value.length}`
+}
+
+function warnCheckedOutLocked() {
+  uiStore.showToast('Khách đã check out, không được sửa hoặc xóa thông tin.', 'warning')
+}
+
 async function loadGuests(autoSelectId = null) {
   if (!bookingRoomId.value) return
   loading.value = true
@@ -814,6 +832,7 @@ async function loadGuests(autoSelectId = null) {
       actual_arrival_time:  p.actual_arrival_time ? formatTime24h(p.actual_arrival_time) : null,
       actual_checkout_date: p.actual_checkout_date ? formatDateForInput(p.actual_checkout_date) : null,
       actual_arrival_date:  p.actual_arrival_date ? formatDateForInput(p.actual_arrival_date) : null,
+      stay_status:   Number(p.status ?? 0),
     }))
 
     const rawChildren = cRes.data?.data ?? []
@@ -830,6 +849,7 @@ async function loadGuests(autoSelectId = null) {
         dob: formatDateForInput(c.dob) || '',
         nationality: c.nationality_code || 'VN',
         age_group: 'child',
+        child_status: Number(c.child_status ?? 0),
         phone: c.phone || '',
         email: c.email || '',
         id_type: c.id_type || 'CCCD',
@@ -849,6 +869,7 @@ async function loadGuests(autoSelectId = null) {
         dob: formatDateForInput(c.dob) || '',
         nationality: c.nationality_code || 'VN',
         age_group: 'baby',
+        child_status: Number(c.child_status ?? 0),
         phone: c.phone || '',
         email: c.email || '',
         id_type: c.id_type || 'CCCD',
@@ -860,7 +881,7 @@ async function loadGuests(autoSelectId = null) {
       }))
 
     // Dynamically update occupants count string
-    stayInfo.value.occupants_str = `${adults.value.length} / ${children.value.length} / ${babies.value.length}`
+    stayInfo.value.occupants_str = activeOccupantsStr()
 
     // Handle Selection
     if (autoSelectId) {
@@ -892,7 +913,7 @@ watch(() => props.room, (newRoom) => {
       departure_time: formatTime24h(newRoom.departure_time ?? newRoom.check_out_time) || '12:00',
       // Dòng 183: phòng chuyển cùng ngày có 0 đêm, không được đổi 0 thành 1
       nights: isHourlyRoom ? 0 : firstNightCount(newRoom.nights, newRoom.ActutalNumOfDays, 1),
-      occupants_str: `${adults.value.length} / ${children.value.length} / ${babies.value.length}`,
+      occupants_str: activeOccupantsStr(),
       // Dòng 214: API trả breakfast dạng 0/1; chỉ khi chưa có dữ liệu mới mặc định có ăn sáng
       breakfast: newRoom.breakfast === undefined || newRoom.breakfast === null || newRoom.breakfast === ''
         ? true
@@ -1025,6 +1046,7 @@ function selectGuest(g) {
   }
   selectedGuest.value = g
   selectedChild.value = null
+  if (isCheckedOutPerson(g)) isEditingMode.value = false
   showNameSuggestions.value = false
   showIdNumberSuggestions.value = false
   if (g) {
@@ -1058,6 +1080,7 @@ function selectChild(c) {
   }
   selectedChild.value = c
   selectedGuest.value = null
+  if (isCheckedOutPerson(c)) isEditingMode.value = false
   showNameSuggestions.value = false
   showIdNumberSuggestions.value = false
   formGuest.value = {
@@ -1087,6 +1110,7 @@ function isPassportType(value) {
 const avatarInput = ref(null)
 
 function triggerAvatarUpload() {
+  if (selectedCheckedOut.value) { warnCheckedOutLocked(); return }
   if (!isEditingMode.value) {
     isEditingMode.value = true
     backupFormGuest.value = JSON.parse(JSON.stringify(formGuest.value))
@@ -1219,6 +1243,7 @@ const backupStayInfo = ref(null)
 const backupPricingInfo = ref(null)
 
 function startEditing() {
+  if (selectedCheckedOut.value) { warnCheckedOutLocked(); return }
   isEditingMode.value = true
   backupFormGuest.value   = JSON.parse(JSON.stringify(formGuest.value))
   backupStayInfo.value    = JSON.parse(JSON.stringify(stayInfo.value))
@@ -1266,6 +1291,7 @@ function cancelEditing() {
 
 async function handleSave() {
   if (!isEditingMode.value) return
+  if (selectedCheckedOut.value) { warnCheckedOutLocked(); return }
 
   const missingRequiredFields = []
   if (!String(formGuest.value.name || '').trim()) missingRequiredFields.push('Họ tên')
@@ -1454,6 +1480,7 @@ async function handleDeleteGuest() {
     uiStore.showToast('Vui lòng chọn khách cần xóa!', 'warning')
     return
   }
+  if (selectedCheckedOut.value) { warnCheckedOutLocked(); return }
 
   // Ràng buộc tối thiểu 1 người lớn trong phòng (Note 30/09 - Vy)
   if (selectedGuest.value && !selectedGuest.value.isDraft) {
@@ -1631,14 +1658,14 @@ function parseNumber(val) {
 
           <div class="header-actions">
             <!-- Xóa khách -->
-            <button @click="handleDeleteGuest" class="btn-hd delete">
+            <button @click="handleDeleteGuest" class="btn-hd delete" :disabled="selectedCheckedOut" :class="{ 'disabled-btn': selectedCheckedOut }" :title="selectedCheckedOut ? 'Khách đã check out, không được xóa' : ''">
               <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6m4-6v6"/><path d="M9 6V4h6v2"/>
               </svg>Xoá khách
             </button>
 
             <!-- Sửa / Quay lại -->
-            <button v-if="!isEditingMode" @click="startEditing" class="btn-hd edit">
+            <button v-if="!isEditingMode" @click="startEditing" class="btn-hd edit" :disabled="selectedCheckedOut" :class="{ 'disabled-btn': selectedCheckedOut }" :title="selectedCheckedOut ? 'Khách đã check out, không được sửa' : ''">
               <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
               </svg>Sửa
@@ -1688,13 +1715,13 @@ function parseNumber(val) {
 
               <!-- NGƯỜI LỚN -->
               <div class="g-group">
-                <div class="g-group-label">NGƯỜI LỚN ({{ adults.length }})</div>
+                <div class="g-group-label">NGƯỜI LỚN ({{ activeAdults.length }})</div>
                 <div
-                  v-for="g in adults"
+                  v-for="g in sortedAdults"
                   :key="g.id"
                   @click="selectGuest(g)"
                   class="g-item"
-                  :class="{ active: selectedGuest?.id === g.id }"
+                  :class="{ active: selectedGuest?.id === g.id, 'g-out': isCheckedOutPerson(g) }"
                 >
                   <span :class="g.is_primary ? 'icon-rep' : 'icon-sub'">
                     <svg width="13" height="13" fill="currentColor" viewBox="0 0 24 24">
@@ -1704,6 +1731,7 @@ function parseNumber(val) {
                   <span class="g-name">
                     {{ g.name }}
                     <span v-if="g.isDraft" class="draft-badge">(Mới)</span>
+                    <span v-if="isCheckedOutPerson(g)" class="out-badge">- Đã trả phòng</span>
                   </span>
                 </div>
 
@@ -1712,13 +1740,13 @@ function parseNumber(val) {
 
               <!-- TRẺ EM -->
               <div class="g-group">
-                <div class="g-group-label">TRẺ EM ({{ children.length }})</div>
+                <div class="g-group-label">TRẺ EM ({{ activeChildren.length }})</div>
                 <div
-                  v-for="c in children"
+                  v-for="c in sortedChildren"
                   :key="c.id"
                   @click="selectChild(c)"
                   class="g-item"
-                  :class="{ active: selectedChild?.id === c.id }"
+                  :class="{ active: selectedChild?.id === c.id, 'g-out': isCheckedOutPerson(c) }"
                 >
                   <span class="icon-sub">
                     <svg width="13" height="13" fill="currentColor" viewBox="0 0 24 24">
@@ -1728,6 +1756,7 @@ function parseNumber(val) {
                   <span class="g-name">
                     {{ c.name }}
                     <span v-if="c.isDraft" class="draft-badge">(Mới)</span>
+                    <span v-if="isCheckedOutPerson(c)" class="out-badge">- Đã trả phòng</span>
                   </span>
                 </div>
 
@@ -1736,13 +1765,13 @@ function parseNumber(val) {
 
               <!-- EM BÉ -->
               <div class="g-group">
-                <div class="g-group-label">EM BÉ ({{ babies.length }})</div>
+                <div class="g-group-label">EM BÉ ({{ activeBabies.length }})</div>
                 <div
-                  v-for="b in babies"
+                  v-for="b in sortedBabies"
                   :key="b.id"
                   @click="selectChild(b)"
                   class="g-item"
-                  :class="{ active: selectedChild?.id === b.id }"
+                  :class="{ active: selectedChild?.id === b.id, 'g-out': isCheckedOutPerson(b) }"
                 >
                   <span class="icon-sub">
                     <svg width="13" height="13" fill="currentColor" viewBox="0 0 24 24">
@@ -1752,6 +1781,7 @@ function parseNumber(val) {
                   <span class="g-name">
                     {{ b.name }}
                     <span v-if="b.isDraft" class="draft-badge">(Mới)</span>
+                    <span v-if="isCheckedOutPerson(b)" class="out-badge">- Đã trả phòng</span>
                   </span>
                 </div>
 
@@ -2797,6 +2827,8 @@ input.always-gray:disabled {
 }
 
 /* SECTION 1 & 2 EXTENSIONS */
+.g-item.g-out { opacity: 0.7; background: #fff1f2; }
+.out-badge { margin-left: 4px; font-size: 11px; font-weight: 700; color: #be123c; }
 .draft-badge {
   margin-left: 6px;
   padding: 1px 5px;

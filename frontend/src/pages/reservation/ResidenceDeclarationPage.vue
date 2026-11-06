@@ -11,6 +11,7 @@ import {
 } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
+import { isResidenceRowVisible, matchesDeclarationFilter } from '@/utils/residence-room-visibility'
 
 const uiStore = useUiStore()
 
@@ -106,7 +107,16 @@ function getResidenceType(value) {
 function resolveIdTypeName(idType, hasPassport, idTypeLookup) {
   if (hasPassport) return 'Hộ chiếu'
   const it = idType ? (idTypeLookup || {})[String(idType).trim().toUpperCase()] : null
-  return it?.name || 'Căn cước công dân'
+  const name = it?.name || 'Căn cước công dân'
+  // Dòng 498: mã "CCCD" không được hiển thị thô, luôn là "Căn cước công dân" như người lớn
+  return String(name).trim().toUpperCase() === 'CCCD' ? 'Căn cước công dân' : name
+}
+
+// Dòng 498: đơn giá xuất Excel bỏ đuôi .00 (1500000.00 -> 1500000)
+function formatUnitPrice(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n) || n === 0) return ''
+  return String(Math.round(n * 100) / 100)
 }
 
 function getIdTypeDisplayName(row) {
@@ -363,67 +373,21 @@ const filteredRows = computed(() => {
   list = list.filter(r => {
     const arrDate = parseDate(r.arrivalDate || r.ngayDen)
     if (arrDate) arrDate.setHours(0, 0, 0, 0)
-    const arrTime = arrDate ? arrDate.getTime() : null
-
     const depDate = parseDate(r.departureDate || r.ngayDi)
     if (depDate) depDate.setHours(0, 0, 0, 0)
-    const depTime = depDate ? depDate.getTime() : null
-
-    const status = Number(r.roomStatus)
-
-    // A. Phòng cũ tình trạng 100 (STATUS_MOVED)
-    if (status === 100) {
-      if (r.isSameDayMoved) {
-        // Vừa check in xong chuyển cùng ngày: không hiển thị phòng cũ (tình trạng 100)
-        return false
-      }
-      if (r.isStayedThenMoved && arrTime === targetTime) {
-        // Ngày check-in ban đầu: hiển thị phòng ban đầu
-        return true
-      }
-      return false
-    }
-
-    // A2. Phòng có ngày đến = ngày đi (dòng 295 note 27/10): hiển thị đúng ngày đó
-    // cả khi khách đã trả phòng trong ngày (status 2), không bị loại như phòng qua đêm.
-    if (status === 2 && arrTime !== null && arrTime === depTime) {
-      return arrTime === targetTime
-    }
-
-    // B. Phòng in-house (status = 1)
-    if (status === 1) {
-      // B.1. Phòng chuyển tới sau khi đã ở (isStayedThenMoved)
-      if (r.isStayedThenMoved) {
-        if (arrTime === targetTime) {
-          // Ngày xem = ngày chuyển phòng (cũng là ngày in của phòng mới)
-          // Chỉ hiển thị khi có tick chọn "Phòng Chuyển" (roomMove)
-          return !!filters.value.roomMove
-        }
-        if (arrTime && depTime && arrTime < targetTime && targetTime < depTime) {
-          // Khách đang ở trong những ngày kế tiếp
-          return !!filters.value.inHouse
-        }
-        return false
-      }
-
-      // B.2. Phòng bình thường hoặc chuyển cùng ngày nhận phòng
-      if (arrTime === targetTime) {
-        // Ngày đến = ngày cần xem
-        return true
-      }
-      if (arrTime && depTime && arrTime < targetTime && targetTime < depTime) {
-        // Khách đang ở: ArrivalDate < ngày xem < CheckoutDate
-        return !!filters.value.inHouse
-      }
-      return false
-    }
-
-    return false
+    // Dòng 498: quy tắc hiển thị tách ra utils/residence-room-visibility.js để test
+    return isResidenceRowVisible({
+      status: r.roomStatus,
+      arrTime: arrDate ? arrDate.getTime() : null,
+      depTime: depDate ? depDate.getTime() : null,
+      isStayedThenMoved: r.isStayedThenMoved,
+      isSameDayMoved: r.isSameDayMoved
+    }, targetTime, filters.value)
   })
 
-  // 1b. Ẩn khách đã khai báo lưu trú khi tắt switch "Khách đã đăng ký" (bật switch: hiện tất cả)
-  if (isDeclarationTrackingEnabled.value && !showDeclaredGuests.value) {
-    list = list.filter(r => !isRowDeclared(r))
+  // 1b. Dòng 498: switch "Khách đã đăng ký" bật = chỉ khách đã xuất/khai báo; tắt = chỉ khách chưa xuất
+  if (isDeclarationTrackingEnabled.value) {
+    list = list.filter(r => matchesDeclarationFilter(isRowDeclared(r), showDeclaredGuests.value))
   }
 
   // 2. Lọc Trẻ em
@@ -543,7 +507,7 @@ function exportToExcel(rows) {
     html += `<td style="border: 0.5pt solid #000000;">${r.hotelName || ''}</td>`
     html += `<td style="border: 0.5pt solid #000000; mso-number-format:'\\@';">${checkinId}</td>`
     html += `<td style="border: 0.5pt solid #000000; mso-number-format:'\\@';">${r.phong || ''}</td>`
-    html += `<td style="border: 0.5pt solid #000000;">${r.donGia || ''}</td>`
+    html += `<td style="border: 0.5pt solid #000000;">${formatUnitPrice(r.donGia)}</td>`
     html += `<td style="border: 0.5pt solid #000000; mso-number-format:'\\@';">${r.ngayDen || ''}</td>`
     html += `<td style="border: 0.5pt solid #000000; mso-number-format:'\\@';">${r.ngayDi || ''}</td>`
     html += `<td style="border: 0.5pt solid #000000; mso-number-format:'\\@';">${r.ngayNhapCanh || ''}</td>`
@@ -710,10 +674,21 @@ function getForeignNationalityCodeLabel(input) {
   return str
 }
 
+// Dòng 498: ngày xuất file luôn dd/mm/yyyy (nhận dd/mm/yyyy hoặc yyyy-mm-dd[ T...])
+function toDdMmYyyy(value) {
+  if (!value) return ''
+  const clean = String(value).trim().split('T')[0].split(' ')[0]
+  const iso = clean.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/)
+  if (iso) return `${iso[3].padStart(2, '0')}/${iso[2].padStart(2, '0')}/${iso[1]}`
+  const vi = clean.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (vi) return `${vi[1].padStart(2, '0')}/${vi[2].padStart(2, '0')}/${vi[3]}`
+  return clean
+}
+
 function exportToExcelForeign(rows) {
   const headers = [
     'STT', 'HỌ TÊN', 'NGÀY SINH', 'NGÀY SINH ĐÚNG ĐẾN', 'GIỚI TÍNH',
-    'MÃ QUỐC TỊCH', 'SỐ HỘ CHIẾU', 'SỐ PHÒNG', 'NGÀY ĐẾN', 'NGÀY ĐI DỰ KIẾN', 'NGÀY TRẢ PHÒNG'
+    'MÃ QUỐC TỊCH', 'SỐ HỘ CHIẾU', 'SỐ PHÒNG', 'NGÀY ĐẾN', 'NGÀY ĐI DỰ KIẾN', 'NGÀY TRẢ PHÒNG', 'THỜI HẠN TẠM TRÚ'
   ]
 
   let html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">`
@@ -726,10 +701,18 @@ function exportToExcelForeign(rows) {
   </style></head>`
   html += `<body><table style="border-collapse: collapse;">`
   html += `<thead>`
-  html += `<tr><td colspan="11" style="text-align: center; font-size: 13pt; font-weight: bold; background-color: #ffffff; border: none; height: 30px; vertical-align: middle;">DANH SÁCH HỒ SƠ KBTT</td></tr>`
+  html += `<tr><td colspan="12" style="text-align: center; font-size: 13pt; font-weight: bold; background-color: #ffffff; border: none; height: 30px; vertical-align: middle;">DANH SÁCH HỒ SƠ KBTT</td></tr>`
   html += `<tr>`
   headers.forEach(h => {
     html += `<th style="background-color: #9bc2e6; font-weight: bold; border: 0.5pt solid #000000;">${h}</th>`
+  })
+  html += `</tr>`
+
+  // Dòng 498: giữ dòng mẫu của file (không xóa dữ liệu mẫu; thêm thông tin từ dòng tiếp theo)
+  const foreignExample = ['[EXAMPLE]', '[TEST] SAMPLE', '01/01/1990', 'D - Ngày', 'M - Nam', 'USA - United States', 'A1234567', '101', '01/01/2026', '03/01/2026', '03/01/2026', '03/01/2026']
+  html += `<tr>`
+  foreignExample.forEach(ex => {
+    html += `<td style="background-color: #ffff00; border: 0.5pt solid #000000; mso-number-format:'\\@';">${ex}</td>`
   })
   html += `</tr></thead><tbody>`
 
@@ -745,15 +728,17 @@ function exportToExcelForeign(rows) {
     html += `<tr>`
     html += `<td style="text-align: center; border: 0.5pt solid #000000;">${idx + 1}</td>`
     html += `<td style="border: 0.5pt solid #000000;">${r.ten || ''}</td>`
-    html += `<td style="border: 0.5pt solid #000000;">${r.ngaySinh || ''}</td>`
+    const textCell = (v) => `<td style="border: 0.5pt solid #000000; mso-number-format:'\\@';">${v || ''}</td>`
+    html += textCell(toDdMmYyyy(r.ngaySinh))
     html += `<td style="border: 0.5pt solid #000000;">D - Ngày</td>`
     html += `<td style="border: 0.5pt solid #000000;">${genderText}</td>`
     html += `<td style="border: 0.5pt solid #000000;">${natLabel}</td>`
-    html += `<td style="border: 0.5pt solid #000000;">${passportNo}</td>`
-    html += `<td style="border: 0.5pt solid #000000;">${r.phong || ''}</td>`
-    html += `<td style="border: 0.5pt solid #000000;">${r.ngayDen || ''}</td>`
-    html += `<td style="border: 0.5pt solid #000000;">${r.ngayDi || ''}</td>`
-    html += `<td style="border: 0.5pt solid #000000;">${r.ngayDi || ''}</td>`
+    html += `<td style="border: 0.5pt solid #000000; mso-number-format:'\@';">${passportNo}</td>`
+    html += `<td style="border: 0.5pt solid #000000; mso-number-format:'\@';">${r.phong || ''}</td>`
+    html += textCell(toDdMmYyyy(r.ngayDen))
+    html += textCell(toDdMmYyyy(r.ngayDi))
+    html += textCell(toDdMmYyyy(r.ngayDi))
+    html += textCell(toDdMmYyyy(r.tamTruDenHienThi || r.tamTruDen))
     html += `</tr>`
   })
 
@@ -1210,7 +1195,7 @@ async function loadBookingData() {
                 soGiayTo: ch.id_number || ch.passport_number || '',
                 soGiayToHienThi: getDocumentNumber(ch.id_number, ch.passport_number),
                 hoChieuHienThi: getSeparatePassportNumber(ch.id_number, ch.passport_number),
-                loaiGiayTo: ch.passport_number ? 'Hộ chiếu' : (ch.id_type || 'Căn cước công dân'),
+                loaiGiayTo: resolveIdTypeName(ch.id_type, !!ch.passport_number, idTypeMap.value),
                 hoChieu: ch.passport_number || '',
                 tamTruDenHienThi: ch.temp_residence_to ? formatDateDisplay(ch.temp_residence_to) : '',
                 ngayHetHan: ch.passport_expiry ? formatDateDisplay(ch.passport_expiry) : '',

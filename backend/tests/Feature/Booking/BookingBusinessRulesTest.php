@@ -2273,6 +2273,343 @@ class BookingBusinessRulesTest extends TestCase
     }
 
     /**
+     * Row 358: late check-in CÓ charge đã post đêm cũ -> bật Ở theo giờ không sinh thêm đêm ngày đến mới;
+     * late check-in KHÔNG charge vẫn sinh đêm day-use ở ngày đến mới.
+     */
+    public function test_row_358_day_use_after_charged_late_checkin_has_no_extra_night(): void
+    {
+        foreach (['Charge Room' => 0, 'No Charge' => 1] as $label => $expected) {
+            $booking = $this->createBooking(['arrival_date' => '2026-09-02', 'departure_date' => '2026-09-02', 'is_day_use' => true]);
+            $room = BookingRoom::create([
+                'id' => 'G-358-' . $expected, 'booking_id' => $booking->id, 
+                'room_class_id' => $this->roomClass->id, 'arrival_date' => '2026-09-02', 'departure_date' => '2026-09-02',
+                'is_day_use' => true, 'rate' => 540000, 'status' => BookingRoom::STATUS_BOOKED,
+            ]);
+            \App\Models\LateCheckin::create([
+                'booking_room_id' => $room->id, 'late_checkin_date' => '2026-09-01 00:00:00',
+                'actual_arrival_date' => '2026-09-02 00:00:00', 'late_checkin_time' => '10:00',
+                'reason' => 'NightAudit No Show One Day ' . $label, 'status' => 1, 'username' => 'u', 'shift' => 1,
+            ]);
+
+            app(\App\Services\BookingRoomStayChargeService::class)->synchronize($room->fresh(), 540000.0);
+
+            $this->assertSame($expected, \App\Models\BookingRoomService::where('booking_room_id', $room->id)->count(), $label);
+        }
+    }
+
+    /**
+     * Row 381: dịch vụ chưa post ngoài giai đoạn ở (sau khi đổi ngày) vẫn lưu trong DB nhưng không trả về/hiển thị.
+     */
+    public function test_row_381_services_outside_stay_are_kept_but_not_listed(): void
+    {
+        $booking = $this->createBooking(['arrival_date' => '2026-08-31', 'departure_date' => '2026-09-02', 'num_of_days' => 2]);
+        $room = BookingRoom::create([
+            'id' => 'G-381', 'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-31', 'departure_date' => '2026-09-02', 'rate' => 500000,
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+        foreach (['2026-08-31', '2026-09-01', '2026-09-02', '2026-09-03'] as $date) {
+            \App\Models\BookingRoomService::create([
+                'booking_room_id' => $room->id, 'service_code' => 'LD', 'service_name' => 'Giat ui',
+                'service_date' => $date, 'quantity' => 1, 'rate' => 10000, 'department' => 'FO', 'is_posted' => 0,
+            ]);
+        }
+        \App\Models\BookingRoomService::create([
+            'booking_room_id' => $room->id, 'service_code' => 'LD', 'service_name' => 'Da post',
+            'service_date' => '2026-09-03', 'quantity' => 1, 'rate' => 10000, 'department' => 'FO', 'is_posted' => 1,
+        ]);
+
+        $dates = fn () => collect($this->getJson("/api/booking-rooms/{$room->id}/services")->assertOk()->json('data'))
+            ->map(fn ($row) => \Carbon\Carbon::parse($row['service_date'])->timezone(config('app.timezone'))->toDateString() . ($row['is_posted'] ? 'P' : ''))->all();
+
+        $this->assertSame(['2026-08-31', '2026-09-01', '2026-09-03P'], $dates());
+    }
+
+    /**
+     * Row 488: đêm tiền phòng mới theo "Tiền phòng gửi Master" của đăng ký (GIT -> is_room 0, FIT -> 1).
+     */
+    public function test_row_488_projected_room_charge_follows_master_room_rate_flag(): void
+    {
+        foreach ([true => 0, false => 1] as $master => $expected) {
+            $booking = $this->createBooking(['arrival_date' => '2026-09-10', 'departure_date' => '2026-09-12', 'num_of_days' => 2, 'is_master_room_rate' => $master]);
+            $room = BookingRoom::create([
+                'id' => 'G-488-' . (int) $master, 'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+                'arrival_date' => '2026-09-10', 'departure_date' => '2026-09-12', 'rate' => 500000,
+                'status' => BookingRoom::STATUS_BOOKED,
+            ]);
+
+            app(\App\Services\BookingRoomStayChargeService::class)->synchronize($room->fresh(), 500000.0);
+
+            $flags = \App\Models\BookingRoomService::where('booking_room_id', $room->id)->pluck('is_room')->map(fn ($f) => (int) $f)->all();
+            $this->assertSame([$expected, $expected], $flags, 'master=' . (int) $master);
+        }
+    }
+
+    public function test_row_488_toggling_master_room_rate_updates_unposted_room_charge_flags(): void
+    {
+        $booking = $this->createBooking(['arrival_date' => '2026-09-10', 'departure_date' => '2026-09-12', 'num_of_days' => 2, 'is_master_room_rate' => false]);
+        $room = BookingRoom::create([
+            'id' => 'G-488-T', 'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-09-10', 'departure_date' => '2026-09-12', 'rate' => 500000,
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+        app(\App\Services\BookingRoomStayChargeService::class)->synchronize($room->fresh(), 500000.0);
+
+        $this->putJson("/api/bookings/{$booking->id}", $this->headerPayload($booking, '2026-09-10', '2026-09-12') + ['is_master_room_rate' => true])->assertSuccessful();
+
+        $flags = \App\Models\BookingRoomService::where('booking_room_id', $room->id)->pluck('is_room')->map(fn ($f) => (int) $f)->unique()->all();
+        $this->assertSame([0], $flags);
+    }
+
+    /**
+     * Row 491: rút ngắn giai đoạn của phòng đã đặt trước (màn hình đăng ký) không phát sinh nhu cầu phòng mới,
+     * nên không bị báo over dù các đêm đó đã over từ trước.
+     */
+    public function test_row_491_shortening_reserved_room_period_is_not_blocked_by_existing_over(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'AllowOverRoomTypeRoomKind'], ['value' => '0']);
+        SystemDateRoll::query()->update(['system_date' => '2026-08-31']);
+        $booking = $this->createBooking(['arrival_date' => '2026-09-06', 'departure_date' => '2026-09-09', 'num_of_days' => 3,
+            'registration_status_id' => $this->regStatus->booking_status_id]);
+        $mine = BookingRoom::create([
+            'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-09-06', 'departure_date' => '2026-09-09', 'rate' => 500000, 'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+        $other = $this->createBooking(['arrival_date' => '2026-09-07', 'departure_date' => '2026-09-09',
+            'registration_status_id' => $this->regStatus->booking_status_id]);
+        for ($i = 0; $i < 2; $i++) {
+            BookingRoom::create(['booking_id' => $other->id, 'room_class_id' => $this->roomClass->id,
+                'arrival_date' => '2026-09-07', 'departure_date' => '2026-09-09', 'status' => BookingRoom::STATUS_BOOKED]);
+        }
+
+        $payload = $this->headerPayload($booking, '2026-09-06', '2026-09-09');
+        $payload['room_allocations'] = [['roomClassId' => $this->roomClass->id, 'quantity' => 1,
+            'rooms' => [['bookingRoomId' => $mine->id, 'arrivalDate' => '2026-09-07', 'departureDate' => '2026-09-09', 'price' => 500000]]]];
+
+        $this->putJson("/api/bookings/{$booking->id}", $payload)->assertSuccessful();
+        $this->assertSame('2026-09-07', $mine->fresh()->arrival_date->toDateString());
+    }
+
+    private function makeSuiteClassWithRooms(int $count): RoomClass
+    {
+        $suite = RoomClass::create(['code' => 'STE', 'name' => 'Suite Class', 'is_active' => true]);
+        for ($i = 1; $i <= $count; $i++) {
+            Room::create(['room_number' => '30' . $i, 'room_class_id' => $suite->id, 'room_form_id' => $this->roomForm->id,
+                'floor' => 3, 'status' => 'available']);
+        }
+        return $suite;
+    }
+
+    /**
+     * Row 497: chọn "Nâng hạng" ở màn đăng ký rồi lưu thì phòng phải lưu theo loại mới (trước đây vẫn giữ loại gốc),
+     * loại gốc giữ ở original_room_class_id.
+     */
+    public function test_row_497_allocation_upgrade_class_is_persisted_on_booked_room(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'AllowOverRoomTypeRoomKind'], ['value' => '0']);
+        $suite = $this->makeSuiteClassWithRooms(3);
+        $booking = $this->createBooking(['arrival_date' => '2026-09-06', 'departure_date' => '2026-09-08', 'num_of_days' => 2,
+            'registration_status_id' => $this->regStatus->booking_status_id]);
+        $mine = BookingRoom::create([
+            'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id, 'original_room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-09-06', 'departure_date' => '2026-09-08', 'rate' => 500000, 'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $payload = $this->headerPayload($booking, '2026-09-06', '2026-09-08');
+        $payload['room_allocations'] = [['roomClassId' => $this->roomClass->id, 'upgradeClassId' => $suite->id, 'quantity' => 1,
+            'rooms' => [['bookingRoomId' => $mine->id, 'roomClassId' => $this->roomClass->id, 'price' => 500000]]]];
+
+        $this->putJson("/api/bookings/{$booking->id}", $payload)->assertSuccessful();
+
+        $fresh = $mine->fresh();
+        $this->assertSame($suite->id, (int) $fresh->room_class_id);
+        $this->assertSame($this->roomClass->id, (int) $fresh->original_room_class_id);
+        $this->assertSame(1, BookingRoom::where('booking_id', $booking->id)->count());
+    }
+
+    /**
+     * Row 497: lấy phòng mới (append-only) rồi nâng hạng -> các phòng mới lưu theo loại nâng hạng.
+     */
+    public function test_row_497_add_rooms_with_upgrade_creates_rooms_in_upgraded_class(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'AllowOverRoomTypeRoomKind'], ['value' => '0']);
+        $suite = $this->makeSuiteClassWithRooms(3);
+        $booking = $this->createBooking(['arrival_date' => '2026-09-06', 'departure_date' => '2026-09-08', 'num_of_days' => 2,
+            'registration_status_id' => $this->regStatus->booking_status_id]);
+
+        $rooms = [];
+        for ($i = 0; $i < 3; $i++) {
+            $rooms[] = ['roomClassId' => $this->roomClass->id, 'arrivalDate' => '2026-09-06', 'departureDate' => '2026-09-08', 'price' => 500000];
+        }
+        $response = $this->postJson("/api/bookings/{$booking->id}/add-rooms", [
+            'intent' => 'add_only',
+            'room_allocations' => [['roomClassId' => $this->roomClass->id, 'upgradeClassId' => $suite->id, 'quantity' => 3, 'rooms' => $rooms]],
+        ]);
+        $response->assertSuccessful();
+
+        $classes = BookingRoom::where('booking_id', $booking->id)->pluck('room_class_id')->map(fn ($c) => (int) $c)->unique()->all();
+        $this->assertSame([$suite->id], $classes);
+        $this->assertSame([$this->roomClass->id], BookingRoom::where('booking_id', $booking->id)->pluck('original_room_class_id')->map(fn ($c) => (int) $c)->unique()->all());
+    }
+
+    /**
+     * Row 497: loại gốc còn nhiều phòng nhưng loại nâng hạng không đủ -> chặn (khi thông số không cho over).
+     */
+    public function test_row_497_upgrade_blocked_when_upgraded_class_has_not_enough_rooms(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'AllowOverRoomTypeRoomKind'], ['value' => '0']);
+        $suite = $this->makeSuiteClassWithRooms(3);
+        $booking = $this->createBooking(['arrival_date' => '2026-09-06', 'departure_date' => '2026-09-08', 'num_of_days' => 2,
+            'registration_status_id' => $this->regStatus->booking_status_id]);
+
+        $rooms = [];
+        for ($i = 0; $i < 4; $i++) {
+            $rooms[] = ['roomClassId' => $this->roomClass->id, 'arrivalDate' => '2026-09-06', 'departureDate' => '2026-09-08', 'price' => 500000];
+        }
+        $this->postJson("/api/bookings/{$booking->id}/add-rooms", [
+            'intent' => 'add_only',
+            'room_allocations' => [['roomClassId' => $this->roomClass->id, 'upgradeClassId' => $suite->id, 'quantity' => 4, 'rooms' => $rooms]],
+        ])->assertStatus(422);
+
+        $this->assertSame(0, BookingRoom::where('booking_id', $booking->id)->count());
+    }
+
+    /**
+     * Row 497, đúng ví dụ khách: Fam còn 6, Suite còn 3 -> lấy 6 phòng nâng Suite không đủ phòng (bị chặn),
+     * lấy 3 phòng nâng Suite thì lưu được và phòng lưu là Suite.
+     */
+    public function test_row_497_customer_example_fam_6_suite_3(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'AllowOverRoomTypeRoomKind'], ['value' => '0']);
+        $fam = RoomClass::create(['code' => 'FAM', 'name' => 'Family', 'is_active' => true]);
+        for ($i = 1; $i <= 6; $i++) {
+            Room::create(['room_number' => '80' . $i, 'room_class_id' => $fam->id, 'room_form_id' => $this->roomForm->id, 'floor' => 8, 'status' => 'available']);
+        }
+        $suite = $this->makeSuiteClassWithRooms(3);
+        $booking = $this->createBooking(['arrival_date' => '2026-09-06', 'departure_date' => '2026-09-08', 'num_of_days' => 2,
+            'registration_status_id' => $this->regStatus->booking_status_id]);
+        $rooms = fn (int $n) => array_fill(0, $n, ['roomClassId' => $fam->id, 'arrivalDate' => '2026-09-06', 'departureDate' => '2026-09-08', 'price' => 800000]);
+
+        $this->postJson("/api/bookings/{$booking->id}/add-rooms", ['intent' => 'add_only',
+            'room_allocations' => [['roomClassId' => $fam->id, 'upgradeClassId' => $suite->id, 'quantity' => 6, 'rooms' => $rooms(6)]]])
+            ->assertStatus(422);
+        $this->assertSame(0, BookingRoom::where('booking_id', $booking->id)->count());
+
+        $this->postJson("/api/bookings/{$booking->id}/add-rooms", ['intent' => 'add_only',
+            'room_allocations' => [['roomClassId' => $fam->id, 'upgradeClassId' => $suite->id, 'quantity' => 3, 'rooms' => $rooms(3)]]])
+            ->assertSuccessful();
+        $this->assertSame([$suite->id], BookingRoom::where('booking_id', $booking->id)->pluck('room_class_id')->map(fn ($c) => (int) $c)->unique()->all());
+        $this->assertSame(3, BookingRoom::where('booking_id', $booking->id)->count());
+
+        // Fam vẫn còn nguyên 6 phòng trống vì 3 phòng kia đã chuyển sang Suite.
+        $this->postJson("/api/bookings/{$booking->id}/add-rooms", ['intent' => 'add_only',
+            'room_allocations' => [['roomClassId' => $fam->id, 'quantity' => 6, 'rooms' => $rooms(6)]]])
+            ->assertSuccessful();
+    }
+
+    /**
+     * Row 497: nâng hạng chọn theo TỪNG phòng ở lưới phòng (lưu đăng ký): chỉ phòng được chọn đổi loại.
+     */
+    public function test_row_497_per_room_upgrade_only_changes_selected_room(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'AllowOverRoomTypeRoomKind'], ['value' => '0']);
+        $suite = $this->makeSuiteClassWithRooms(3);
+        $booking = $this->createBooking(['arrival_date' => '2026-09-06', 'departure_date' => '2026-09-08', 'num_of_days' => 2,
+            'registration_status_id' => $this->regStatus->booking_status_id]);
+        $ids = [];
+        foreach ([1, 2, 3] as $n) {
+            $ids[] = BookingRoom::create([
+                'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id, 'original_room_class_id' => $this->roomClass->id,
+                'arrival_date' => '2026-09-06', 'departure_date' => '2026-09-08', 'rate' => 500000, 'status' => BookingRoom::STATUS_BOOKED,
+            ])->id;
+        }
+        $details = [];
+        foreach ($ids as $i => $id) {
+            $details[] = ['bookingRoomId' => $id, 'roomClassId' => $this->roomClass->id, 'price' => 500000,
+                'upgradeClassId' => $i === 1 ? $suite->id : null];
+        }
+        $payload = $this->headerPayload($booking, '2026-09-06', '2026-09-08');
+        $payload['room_allocations'] = [['roomClassId' => $this->roomClass->id, 'quantity' => 3, 'rooms' => $details]];
+
+        $this->putJson("/api/bookings/{$booking->id}", $payload)->assertSuccessful();
+
+        $this->assertSame(3, BookingRoom::where('booking_id', $booking->id)->count());
+        $this->assertSame($this->roomClass->id, (int) BookingRoom::find($ids[0])->room_class_id);
+        $this->assertSame($suite->id, (int) BookingRoom::find($ids[1])->room_class_id);
+        $this->assertSame($this->roomClass->id, (int) BookingRoom::find($ids[1])->original_room_class_id);
+        $this->assertSame($this->roomClass->id, (int) BookingRoom::find($ids[2])->room_class_id);
+    }
+
+    /**
+     * Row 497: phòng đang ở không nâng hạng được qua màn lưu đăng ký.
+     */
+    public function test_row_497_checked_in_room_cannot_be_upgraded_via_save(): void
+    {
+        $suite = $this->makeSuiteClassWithRooms(2);
+        $booking = $this->createBooking(['arrival_date' => '2026-08-07', 'departure_date' => '2026-08-09', 'num_of_days' => 2,
+            'registration_status_id' => $this->regStatus->booking_status_id]);
+        $room = BookingRoom::create([
+            'booking_id' => $booking->id, 'room_number' => '101', 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-07', 'departure_date' => '2026-08-09', 'rate' => 500000, 'status' => BookingRoom::STATUS_CHECKED_IN,
+        ]);
+        $payload = $this->headerPayload($booking, '2026-08-07', '2026-08-09');
+        $payload['room_allocations'] = [['roomClassId' => $this->roomClass->id, 'upgradeClassId' => $suite->id, 'quantity' => 1,
+            'rooms' => [['bookingRoomId' => $room->id, 'roomClassId' => $this->roomClass->id, 'roomNumber' => '101']]]];
+
+        $this->putJson("/api/bookings/{$booking->id}", $payload)->assertStatus(422);
+        $this->assertSame($this->roomClass->id, (int) $room->fresh()->room_class_id);
+    }
+
+    /**
+     * Row 498 (Khai báo lưu trú): dữ liệu API sau khi chuyển phòng phải đủ cho màn hình quyết định hiển thị:
+     * phòng cũ (status 100, ngày đi = ngày chuyển, move_room trỏ phòng mới, khách vẫn ở phòng cũ),
+     * phòng mới (ngày đến = ngày chuyển, có khách).
+     */
+    public function test_row_498_move_room_api_data_for_residence_declaration(): void
+    {
+        $booking = $this->createBooking(['arrival_date' => '2026-09-02', 'departure_date' => '2026-09-07', 'num_of_days' => 5,
+            'registration_status_id' => $this->regStatus->booking_status_id]);
+        $old = BookingRoom::create([
+            'id' => 'G-498-1', 'booking_id' => $booking->id, 'room_number' => '101', 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-09-02', 'departure_date' => '2026-09-07', 'rate' => 500000, 'status' => BookingRoom::STATUS_CHECKED_IN,
+        ]);
+        $guest = Guest::create(['full_name' => 'Khach 498']);
+        BookingRoomGuest::create(['booking_room_id' => $old->id, 'guest_id' => $guest->id, 'status' => BookingRoomGuest::STATUS_CHECKED_IN]);
+
+        $new = $old->moveToRoom('102', '2026-09-05', 'move_test');
+
+        $rooms = collect($this->getJson('/api/bookings?stay_only=1')->assertOk()->json('data'))
+            ->firstWhere('id', $booking->id)['booking_rooms'];
+        $oldRow = collect($rooms)->firstWhere('id', $old->id);
+        $newRow = collect($rooms)->firstWhere('id', $new->id);
+
+        $this->assertSame(100, (int) $oldRow['status']);
+        $this->assertSame('2026-09-02', \Carbon\Carbon::parse($oldRow['arrival_date'])->timezone(config('app.timezone'))->toDateString());
+        $this->assertSame('2026-09-05', \Carbon\Carbon::parse($oldRow['departure_date'])->timezone(config('app.timezone'))->toDateString());
+        $this->assertSame((string) $new->id, (string) $oldRow['move_room']);
+        $this->assertNotEmpty($oldRow['guests']); // khách vẫn nằm ở phòng cũ để hiện ở ngày đến cũ
+
+        $this->assertSame(1, (int) $newRow['status']);
+        $this->assertSame('2026-09-05', \Carbon\Carbon::parse($newRow['arrival_date'])->timezone(config('app.timezone'))->toDateString());
+        $this->assertSame('102', $newRow['room_number']);
+        $this->assertNotEmpty($newRow['guests']);
+    }
+
+    /**
+     * Row 492: xóa hết thông tin đưa đón rồi lưu thì mở lại vẫn trống.
+     */
+    public function test_row_492_clearing_shuttle_info_persists_empty_list(): void
+    {
+        $booking = $this->createBooking(['arrival_date' => '2026-09-06', 'departure_date' => '2026-09-08', 'num_of_days' => 2]);
+        $booking->update(['shuttle_info' => [['id' => 1, 'type' => 'Đón', 'vehicle' => '7 Seater car', 'date' => '2026-09-06']]]);
+
+        $this->putJson("/api/bookings/{$booking->id}", $this->headerPayload($booking, '2026-09-06', '2026-09-08') + ['shuttle_info' => []])->assertSuccessful();
+
+        $this->assertSame([], $booking->fresh()->shuttle_info);
+        $this->assertSame([], $this->getJson("/api/bookings/{$booking->id}")->assertOk()->json('data.shuttle_info') ?? []);
+    }
+
+    /**
      * Row 393: quick update allows departure = arrival (same-day room without
      * day-use, zero nights) and only rejects departure < arrival.
      */
