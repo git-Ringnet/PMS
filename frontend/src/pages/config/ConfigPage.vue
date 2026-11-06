@@ -38,6 +38,7 @@ watch(() => route.query.view, (newVal) => {
 
 // Update query when currentView changes (dùng push để lưu bước vào lịch sử duyệt web)
 watch(currentView, (newVal) => {
+  if (!route.path.startsWith('/config')) return
   const currentRouteView = route.query.view || 'menu'
   if (currentRouteView !== newVal) {
     const query = { ...route.query }

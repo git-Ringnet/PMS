@@ -236,6 +236,264 @@ class NightAuditSnapshotService
         return count($records);
     }
 
+    /**
+     * Snapshot bất biến cho Báo cáo công suất công ty (legacy sp_055/sp_078).
+     *
+     * SP7000 cũ không có BF, F&B, doanh thu khác, TotalByDate hoặc OriginalTotal,
+     * vì vậy không được dùng nó làm nguồn lịch sử của hai báo cáo này.
+     */
+    public function captureCompanyOccupancyReport(Carbon $closingDate, NightAuditRun $run): int
+    {
+        $snapshotDate = $closingDate->toDateString();
+        $now = now();
+
+        DB::table('night_audit_company_occupancy_snapshots')->whereDate('snapshot_date', $snapshotDate)->delete();
+        DB::table('night_audit_company_occupancy_daily_snapshots')->whereDate('snapshot_date', $snapshotDate)->delete();
+
+        $config = HotelConfig::query()
+            ->get(['name', 'value'])
+            ->mapWithKeys(static fn (HotelConfig $item): array => [strtolower((string) $item->name) => (string) $item->value]);
+        $revenueCodes = $this->reportServiceCodes($config->get('revenue'), ['RM']);
+        $extraRollawayCodes = $this->reportServiceCodes($config->get('revenueer'), ['ER']);
+        $averageIncludesOther = $this->reportBooleanConfig($config->get('averageroomrateincludedothersroomrevenue'), true);
+        $focIncludesCompliment = $this->reportBooleanConfig($config->get('focbaogomcompliment'), false);
+
+        $totalRooms = Room::query()
+            ->where(static function ($query): void {
+                $query->whereNull('is_internal')->orWhere('is_internal', 0);
+            })
+            ->where('room_number', 'not like', '0%')
+            ->count();
+        $oooRooms = RoomLock::query()
+            ->where('lock_type', 'OOO')
+            ->where('is_active', 1)
+            ->whereDate('start_date', '<=', $snapshotDate)
+            ->whereDate('end_date', '>=', $snapshotDate)
+            ->distinct('room_number')
+            ->count('room_number');
+        $roomAvailable = max(0, $totalRooms - $oooRooms);
+
+        DB::table('night_audit_company_occupancy_daily_snapshots')->insert([
+            'night_audit_run_id' => $run->id,
+            'snapshot_date' => $snapshotDate,
+            'total_rooms' => $totalRooms,
+            'ooo_rooms' => $oooRooms,
+            'room_available' => $roomAvailable,
+            'revenue_service_codes' => implode(',', $revenueCodes),
+            'revenue_er_service_codes' => implode(',', $extraRollawayCodes),
+            'average_room_rate_include_other_revenue' => $averageIncludesOther,
+            'foc_include_compliment' => $focIncludesCompliment,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $bills = DB::table('service_bills as sb')
+            ->leftJoin('room_night_bills as rnb', 'rnb.bill_id', '=', 'sb.Ma')
+            ->leftJoin('booking_rooms as br', 'br.id', '=', DB::raw('COALESCE(sb.RentalRoomId2, sb.RentalRoomId1)'))
+            ->leftJoin('bookings as b', 'b.id', '=', DB::raw('COALESCE(br.booking_id, NULLIF(sb.RegisterID2, 0), sb.RegisterId1)'))
+            ->leftJoin('companies as c', 'c.id', '=', DB::raw('COALESCE(b.company_id, sb.CompanyId2, sb.CompanyId1)'))
+            ->leftJoin('markets as m', 'm.id', '=', 'b.market_id')
+            ->leftJoin('customer_sources as cs', 'cs.id', '=', 'b.customer_source_id')
+            ->leftJoin('registration_statuses as rs', 'rs.id', '=', 'b.registration_status_id')
+            ->leftJoin('rooms as r', 'r.room_number', '=', 'br.room_number')
+            ->leftJoin('room_classes as rc', 'rc.id', '=', 'br.room_class_id')
+            ->whereDate('sb.Date', $snapshotDate)
+            ->where('sb.Edit', 0)
+            ->where('sb.Status', '<>', 3)
+            ->whereNotNull('b.id')
+            ->whereNull('b.deleted_at')
+            ->whereNotIn('b.status', [3, 4])
+            ->where(static function ($query): void {
+                $query->whereNull('rs.is_availability')->orWhere('rs.is_availability', 1);
+            })
+            ->where(static function ($query): void {
+                $query->whereNull('r.is_internal')->orWhere('r.is_internal', 0);
+            })
+            ->where(static function ($query): void {
+                $query->whereNull('r.room_number')->orWhere('r.room_number', 'not like', '0%');
+            })
+            ->get([
+                'sb.Ma as bill_id', 'sb.DepartmentId as department_id', 'sb.ServiceId as service_id', 'sb.Amount as amount',
+                'rnb.is_room_night', 'rnb.adult as rnb_adult', 'rnb.child as rnb_child', 'rnb.breakfast_amount', 'rnb.rate_code as rnb_rate_code', 'rnb.rate as rnb_rate',
+                'b.id as booking_id', 'b.booking_name', 'b.booking_date', 'b.arrival_date', 'b.departure_date', 'b.sales_person', 'b.created_by', 'b.external_booking_code',
+                'br.id as booking_room_id', 'br.adults as booking_room_adults', 'br.children_qty as booking_room_children', 'br.babies as booking_room_babies',
+                'c.id as company_id', 'c.code as company_code', 'c.name as company_name',
+                'm.id as market_id', 'm.code as market_code', 'm.name as market_name',
+                'cs.id as source_id', 'cs.code as source_code', 'cs.name as source_name',
+                'r.area as area_code', 'rc.code as room_type',
+            ]);
+
+        if ($bills->isEmpty()) {
+            return 0;
+        }
+
+        $billIds = $bills->pluck('bill_id')->unique()->values()->all();
+        $detailByBill = [];
+        foreach (DB::table('service_bill_details')->whereIn('BillServiceId', $billIds)->get() as $detail) {
+            $billId = (int) $detail->BillServiceId;
+            $code = strtoupper(trim((string) $detail->ServiceId));
+            $detailByBill[$billId] ??= ['breakfast' => 0.0, 'original' => 0.0];
+            if ($code === 'BF') {
+                $detailByBill[$billId]['breakfast'] += (float) $detail->Amount;
+            }
+            if (in_array($code, $revenueCodes, true) || $code === 'EB' || in_array($code, $extraRollawayCodes, true)) {
+                $detailByBill[$billId]['original'] += (float) ($detail->OriginalAmount ?? $detail->DetailBillOriginalAmount ?? $detail->Amount);
+            }
+        }
+
+        $prefix = (string) (HotelSetting::query()->value('prefix_booking_id') ?? '');
+        $bookingIds = $bills->pluck('booking_id')->filter()->unique()->values()->all();
+        $nationalitiesByBooking = [];
+        if ($bookingIds !== []) {
+            foreach (DB::table('booking_room_guests as brg')
+                ->join('booking_rooms as br', 'br.id', '=', 'brg.booking_room_id')
+                ->join('guests as g', 'g.id', '=', 'brg.guest_id')
+                ->whereIn('br.booking_id', $bookingIds)
+                ->where('brg.status', '<>', 3)
+                ->get(['br.booking_id', 'g.nationality_code']) as $guest) {
+                if (! empty($guest->nationality_code)) {
+                    $nationalitiesByBooking[$guest->booking_id][(string) $guest->nationality_code] = true;
+                }
+            }
+        }
+
+        $groups = [];
+        foreach ($bills as $bill) {
+            $bookingId = (int) $bill->booking_id;
+            if ($bookingId <= 0) {
+                continue;
+            }
+
+            $groups[$bookingId] ??= [
+                'night_audit_run_id' => $run->id,
+                'snapshot_date' => $snapshotDate,
+                'booking_id' => $bookingId,
+                'booking_code' => $prefix.$bookingId,
+                'booking_name' => $bill->booking_name,
+                'booking_date' => $bill->booking_date,
+                'arrival_date' => $bill->arrival_date,
+                'departure_date' => $bill->departure_date,
+                'company_id' => $bill->company_id,
+                'company_code' => $bill->company_code,
+                'company_name' => $bill->company_name ?: 'KHÁCH LẺ',
+                'market_id' => $bill->market_id,
+                'market_code' => $bill->market_code,
+                'market_name' => $bill->market_name,
+                'source_id' => $bill->source_id,
+                'source_code' => $bill->source_code,
+                'source_name' => $bill->source_name,
+                'user_sale' => $bill->sales_person ?: $bill->created_by,
+                'area_codes' => [],
+                'room_types' => [],
+                'nationalities' => $nationalitiesByBooking[$bookingId] ?? [],
+                'room_ids' => [],
+                'room_qty' => 0,
+                'guest_qty' => 0,
+                'room_night' => 0,
+                'guest_night' => 0,
+                'foc_room_nights' => 0,
+                'hu_room_nights' => 0,
+                'room_revenue' => 0.0,
+                'breakfast_revenue' => 0.0,
+                'extra_bed_revenue' => 0.0,
+                'extra_rollaway_revenue' => 0.0,
+                'fb_revenue' => 0.0,
+                'other_revenue' => 0.0,
+                'total_by_date' => 0.0,
+                'original_total' => 0.0,
+            ];
+
+            $group = &$groups[$bookingId];
+            $serviceCode = strtoupper(trim((string) $bill->service_id));
+            $department = strtoupper(trim((string) $bill->department_id));
+            $amount = (float) $bill->amount;
+            $detail = $detailByBill[(int) $bill->bill_id] ?? ['breakfast' => 0.0, 'original' => 0.0];
+            $isRoomRevenue = in_array($serviceCode, $revenueCodes, true);
+            $isExtraBed = $serviceCode === 'EB';
+            $isExtraRollaway = in_array($serviceCode, $extraRollawayCodes, true);
+
+            if (! empty($bill->area_code)) {
+                $group['area_codes'][(string) $bill->area_code] = true;
+            }
+            if (! empty($bill->room_type)) {
+                $group['room_types'][(string) $bill->room_type] = true;
+            }
+
+            if ($department === 'FB') {
+                $group['fb_revenue'] += $amount;
+            } elseif ($isRoomRevenue) {
+                $group['room_revenue'] += $amount;
+                $group['total_by_date'] += $amount;
+                $group['breakfast_revenue'] += (float) ($bill->breakfast_amount ?: $detail['breakfast']);
+                $group['original_total'] += $detail['original'] ?: $amount;
+            } elseif ($isExtraBed) {
+                $group['extra_bed_revenue'] += $amount;
+                $group['original_total'] += $detail['original'] ?: $amount;
+            } elseif ($isExtraRollaway) {
+                $group['extra_rollaway_revenue'] += $amount;
+                $group['original_total'] += $detail['original'] ?: $amount;
+            } elseif ($serviceCode === 'BF') {
+                $group['room_revenue'] += $amount;
+                $group['breakfast_revenue'] += $amount;
+                $group['total_by_date'] += $amount;
+            } else {
+                $group['other_revenue'] += $amount;
+            }
+
+            $isRoomNight = $isRoomRevenue && ($bill->is_room_night === null || (int) $bill->is_room_night === 1);
+            if ($isRoomNight) {
+                $group['room_night']++;
+                $guests = (int) ($bill->rnb_adult ?? $bill->booking_room_adults ?? 0) + (int) ($bill->rnb_child ?? $bill->booking_room_children ?? 0);
+                $group['guest_night'] += $guests;
+                $rateCode = strtoupper((string) ($bill->rnb_rate_code ?? ''));
+                if ($rateCode === 'HU') {
+                    $group['hu_room_nights']++;
+                } elseif (str_starts_with($rateCode, 'FOC') || (float) ($bill->rnb_rate ?? $amount) === 0.0) {
+                    $group['foc_room_nights']++;
+                }
+                if (! empty($bill->booking_room_id) && ! isset($group['room_ids'][$bill->booking_room_id])) {
+                    $group['room_ids'][$bill->booking_room_id] = true;
+                    $group['room_qty']++;
+                    $group['guest_qty'] += (int) ($bill->booking_room_adults ?? 0) + (int) ($bill->booking_room_children ?? 0) + (int) ($bill->booking_room_babies ?? 0);
+                }
+            }
+            unset($group);
+        }
+
+        $records = [];
+        foreach ($groups as $group) {
+            unset($group['room_ids']);
+            $group['area_codes'] = implode(',', array_keys($group['area_codes']));
+            $group['room_types'] = implode(', ', array_keys($group['room_types']));
+            $group['nationalities'] = implode(', ', array_keys($group['nationalities']));
+            $group['created_at'] = $now;
+            $group['updated_at'] = $now;
+            $records[] = $group;
+        }
+
+        foreach (array_chunk($records, 100) as $chunk) {
+            DB::table('night_audit_company_occupancy_snapshots')->insert($chunk);
+        }
+
+        return count($records);
+    }
+
+    private function reportServiceCodes(?string $value, array $fallback): array
+    {
+        $codes = preg_split('/[\s,;|]+/', strtoupper((string) $value), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+        return $codes === [] ? $fallback : array_values(array_unique($codes));
+    }
+
+    private function reportBooleanConfig(?string $value, bool $fallback): bool
+    {
+        if ($value === null || trim($value) === '') {
+            return $fallback;
+        }
+
+        return ! in_array(strtolower(trim($value)), ['0', 'false', 'no', 'off'], true);
+    }
+
             /**
      * SP7001: Chi tiết khách & phòng in-house theo ngày (Inhouse Backup)
      */

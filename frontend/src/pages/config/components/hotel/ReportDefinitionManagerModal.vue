@@ -80,6 +80,7 @@ const syncParameters = () => {
   const sourceParams = (selectedSource.value?.parameter_schema || []).map(parameter => {
     const saved = old.get(parameter.name) || {}
     return {
+      ...saved,
       name: parameter.name,
       label: saved.label || parameter.name,
       control: saved.control || inputControl(parameter.data_type),
@@ -87,7 +88,8 @@ const syncParameters = () => {
       default: saved.default ?? selectedSource.value?.sample_parameters?.[parameter.name] ?? '',
       options: saved.options || [],
       options_source: saved.options_source || '',
-      range_end_parameter: saved.range_end_parameter || ''
+      range_end_parameter: saved.range_end_parameter || '',
+      selection_group: saved.selection_group || null
     }
   })
   const sourceNames = new Set(sourceParams.map(p => p.name))

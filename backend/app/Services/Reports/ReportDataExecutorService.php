@@ -126,6 +126,12 @@ class ReportDataExecutorService
         if ($value === null || $value === '') {
             return $value === '' ? null : $value;
         }
+        if (is_array($value)) {
+            $value = $this->normalizeArrayParameter($value);
+        }
+        if ($value === null) {
+            return null;
+        }
         if (is_bool($value)) {
             return $value ? 1 : 0;
         }
@@ -141,6 +147,24 @@ class ReportDataExecutorService
                 : throw new InvalidArgumentException('Invalid numeric report parameter.'),
             default => (string) $value,
         };
+    }
+
+    private function normalizeArrayParameter(array $value): ?string
+    {
+        $values = [];
+
+        foreach ($value as $item) {
+            if ($item === null || $item === '') {
+                continue;
+            }
+            if (! is_scalar($item)) {
+                throw new InvalidArgumentException('Report parameter arrays must contain only scalar values.');
+            }
+
+            $values[] = (string) $item;
+        }
+
+        return $values === [] ? null : implode(',', $values);
     }
 
     private function discoverFields(array $rows, $statement): array

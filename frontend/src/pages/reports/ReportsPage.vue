@@ -34,7 +34,7 @@ const pmsWorkspaceKey = computed(() => [
     || localStorage.getItem('selected_branch_id')
     || localStorage.getItem('selected_branch_code')
     || 'default',
-  route.path,
+  route.path.startsWith('/reports') ? route.path : '/reports',
 ].join(':'))
 
 const cloneWorkspaceValue = value => {
@@ -47,7 +47,7 @@ const saveWorkspace = (key = pmsWorkspaceKey.value) => {
   reportStore.savePmsWorkspace(key, {
     activeTabId: activeTabId.value,
     openTabs: openTabs.value.map(tab => ({
-      reportId: tab.report.id,
+      reportId: tab.report?.id || tab.id,
       code: tab.code,
       parameters: cloneWorkspaceValue(tab.parameters),
       parameterOptions: cloneWorkspaceValue(tab.parameterOptions),
@@ -101,6 +101,58 @@ const isVisibleReportParameter = (tab, parameter) => (
   && parameterMatchesVisibility(tab, parameter)
   && (!isWeeklyRoomReport(tab) || parameter.name !== 'p_from_date' || tab.parameters.p_week_preset === 'custom')
 )
+
+// Layout stays metadata-driven: reports that do not declare a layout keep the
+// original one-field-per-row presentation.
+const reportParameterGroups = (tab) => {
+  const groups = []
+  const grouped = new Map()
+
+  ;(tab?.report?.parameter_ui_schema || [])
+    .filter(parameter => isVisibleReportParameter(tab, parameter))
+    .forEach(parameter => {
+      const layout = parameter.layout || {}
+      const groupName = layout.group
+      if (!groupName) {
+        groups.push({ key: parameter.name, type: 'stack', parameters: [parameter] })
+        return
+      }
+
+      let group = grouped.get(groupName)
+      if (!group) {
+        group = {
+          key: `layout-${groupName}`,
+          type: layout.type === 'two-column' ? 'two-column' : 'stack',
+          parameters: [],
+        }
+        grouped.set(groupName, group)
+        groups.push(group)
+      }
+      group.parameters.push(parameter)
+    })
+
+  return groups
+}
+
+const parameterGroupClass = group => group.type === 'two-column'
+  ? 'mb-3 grid grid-cols-2 gap-x-2 gap-y-1'
+  : ''
+
+const parameterItemClass = group => group.type === 'two-column'
+  ? 'min-w-0 text-xs font-semibold text-[#000000D9]'
+  : 'mb-3 block text-xs font-semibold text-[#000000D9]'
+
+const parameterItemStyle = (parameter, group) => {
+  if (group.type !== 'two-column') return undefined
+
+  const row = Number(parameter.layout?.row)
+  const column = Number(parameter.layout?.column)
+  const span = Math.min(2, Math.max(1, Number(parameter.layout?.column_span) || 1))
+  const style = {}
+  if (Number.isInteger(row) && row > 0) style.gridRow = String(row)
+  if (Number.isInteger(column) && column >= 1 && column <= 2) style.gridColumn = `${column} / span ${span}`
+  return style
+}
 
 const viewModeParameter = tab => (tab?.report?.parameter_ui_schema || [])
   .find(parameter => parameter.ui_only && parameter.view_mode && parameter.linked_report_code)
@@ -189,9 +241,11 @@ const loadParameterOptionsForTab = async (tab) => {
 }
 
 const loadReports = async ({ restore = true } = {}) => {
+  if (!route.path.startsWith('/reports')) return
   loading.value = true
   try {
     const response = await http.get('/report-definitions', { params: { active_only: 1 } })
+    if (!route.path.startsWith('/reports')) return
     const availableReports = response.data.data || []
     const hasReportPermission = authStore.isSuperAdmin
       || authStore.permissions.includes('mgmt.report.view')
@@ -214,7 +268,7 @@ const loadReports = async ({ restore = true } = {}) => {
 
     if (restored) {
       const tab = openTabs.value.find(item => Number(item.id) === Number(activeTabId.value))
-      if (tab && route.query.report !== tab.code) {
+      if (tab && route.query.report !== tab.code && route.path.startsWith('/reports')) {
         router.replace({ path: route.path, query: { ...route.query, report: tab.code } })
       }
       return
@@ -296,9 +350,21 @@ const toggleCheckboxParameter = (tab, parameter) => {
   const nextValue = !isTruthy(tab.parameters[parameter.name])
   tab.parameters[parameter.name] = nextValue
 
-  // Metadata-only mutual exclusion. Reports without `exclusive_with` retain
-  // their existing checkbox behaviour.
-  if (nextValue && Array.isArray(parameter.maps_to?.exclusive_with)) {
+  const selectionGroupKey = String(parameter.selection_group?.key || '').trim()
+  const isSingleSelection = parameter.selection_group?.mode === 'single' && selectionGroupKey !== ''
+
+  // This rule is defined in the report metadata, so Designer can make any
+  // set of checkbox/radio controls mutually exclusive without viewer code.
+  if (nextValue && isSingleSelection) {
+    ;(tab.report.parameter_ui_schema || [])
+      .filter(candidate => candidate.name !== parameter.name)
+      .filter(candidate => candidate.selection_group?.mode === 'single')
+      .filter(candidate => String(candidate.selection_group?.key || '').trim() === selectionGroupKey)
+      .forEach(candidate => {
+        tab.parameters[candidate.name] = false
+      })
+  } else if (nextValue && Array.isArray(parameter.maps_to?.exclusive_with)) {
+    // Backward compatibility for report metadata created before selection_group.
     parameter.maps_to.exclusive_with.forEach((name) => {
       tab.parameters[name] = false
     })
@@ -398,7 +464,7 @@ const openReportInTab = (report) => {
   }
 
   activeTabId.value = report.id
-  if (route.query.report !== report.code) {
+  if (route.query.report !== report.code && route.path.startsWith('/reports')) {
     router.replace({ path: route.path, query: { ...route.query, report: report.code } })
   }
 }
@@ -407,7 +473,9 @@ const selectTab = (tabId) => {
   const tab = openTabs.value.find(t => t.id === tabId)
   if (tab) {
     activeTabId.value = tabId
-    router.replace({ path: route.path, query: { ...route.query, report: tab.code } })
+    if (route.path.startsWith('/reports')) {
+      router.replace({ path: route.path, query: { ...route.query, report: tab.code } })
+    }
   }
 }
 
@@ -420,12 +488,16 @@ const closeTab = (tabId) => {
       if (openTabs.value.length > 0) {
         const newActiveTab = openTabs.value[Math.min(index, openTabs.value.length - 1)]
         activeTabId.value = newActiveTab.id
-        router.replace({ path: route.path, query: { ...route.query, report: newActiveTab.code } })
+        if (route.path.startsWith('/reports')) {
+          router.replace({ path: route.path, query: { ...route.query, report: newActiveTab.code } })
+        }
       } else {
         activeTabId.value = null
         const newQuery = { ...route.query }
         delete newQuery.report
-        router.replace({ path: route.path, query: newQuery })
+        if (route.path.startsWith('/reports')) {
+          router.replace({ path: route.path, query: newQuery })
+        }
       }
     }
   }
@@ -489,8 +561,12 @@ const applyUiParameterMappings = (tab) => {
 const reportParametersPayload = (tab, report = tab.report) => {
   applyUiParameterMappings(tab)
   const definitions = report.parameter_ui_schema || []
+  const parameterNames = [...new Set([
+    ...reportParameterNames(report),
+    ...definitions.map(definition => definition.name).filter(Boolean),
+  ])]
   return Object.fromEntries(
-    reportParameterNames(report).map(name => {
+    parameterNames.map(name => {
       const value = tab.parameters[name]
       const definition = definitions.find(item => item.name === name)
       return [name, definition?.control === 'multi-select' && Array.isArray(value) ? value.join(',') : value]
@@ -728,6 +804,7 @@ watch(() => activeTab.value?.parameters?.p_show_room_details, (showDetails) => {
 
 // Watch route parameter change
 watch(() => route.query.report, code => {
+  if (!route.path.startsWith('/reports')) return
   if (code) {
     const report = reports.value.find(item => item.code === code)
     if (report && report.id !== activeTabId.value) {
@@ -743,6 +820,7 @@ watch(() => route.query.report, code => {
 watch(openTabs, queueWorkspaceSave, { deep: true })
 
 watch(pmsWorkspaceKey, async (nextKey, previousKey) => {
+  if (!route.path.startsWith('/reports')) return
   if (!previousKey || nextKey === previousKey) return
   saveWorkspace(previousKey)
   reports.value = []
@@ -837,7 +915,8 @@ onBeforeUnmount(() => {
                 Báo cáo này không cần tham số.
               </div>
 
-              <div v-for="parameter in (activeTab.report.parameter_ui_schema || []).filter(item => isVisibleReportParameter(activeTab, item))" :key="parameter.name" class="mb-3 block text-xs font-semibold text-[#000000D9]">
+              <div v-for="group in reportParameterGroups(activeTab)" :key="group.key" :class="parameterGroupClass(group)">
+              <div v-for="parameter in group.parameters" :key="parameter.name" :class="parameterItemClass(group)" :style="parameterItemStyle(parameter, group)">
               <template v-if="parameter.control === 'checkbox'">
                 <div class="flex h-8 items-center gap-2">
                   <button @click="toggleCheckboxParameter(activeTab, parameter)" class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-1" :class="isTruthy(activeTab.parameters[parameter.name]) ? 'bg-sky-500' : 'bg-slate-300'">
@@ -896,6 +975,7 @@ onBeforeUnmount(() => {
                 four-digit-year
               />
               <input v-else-if="parameter.control !== 'checkbox'" v-model="activeTab.parameters[parameter.name]" :type="parameter.control || 'text'" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-sky-400" :class="parameter.required ? 'input-required' : ''" />
+              </div>
               </div>
 
               <button :disabled="activeTab.executing || !activeTab.selectedTemplateId" @click="executeTab(activeTab)" class="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border-none bg-sky-600 px-4 py-2.5 text-xs font-black text-white shadow-sm disabled:opacity-50">
