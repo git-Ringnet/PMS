@@ -20,6 +20,7 @@ import {
   mergeMoveHistoryBillReferences,
 } from '@/utils/booking-room-move-history'
 import { summarizeRoomTotals } from '@/utils/booking-room-totals'
+import { extraBedBillRow, findExtraBedBillsOutsideStay, findMoveHistoryExtraBedBill } from '@/utils/booking-room-extra-bed-bills'
 import { applySavedRoomColumns, serializeRoomColumns } from '@/utils/booking-room-columns'
 import { normalizeShuttleInfo, buildBookingHistoryLocation } from '@/utils/booking-shuttle-history'
 import {
@@ -2000,6 +2001,7 @@ function getRoomDisplayServices(room) {
   // - Nếu phòng có cấu hình EB (extraBedQty > 0, dailyExtraBeds, hoặc services có mã EB):
   //   + Ngày quá khứ (< sysDate): Chỉ lấy từ service_bills (SP3000) có mã EB hợp lệ. Không có bill trong SP3000 -> = 0.
   //   + Ngày hiện tại/tương lai (>= sysDate): Lấy theo cài đặt dự kiến trong BK (dailyExtraBeds hoặc services hoặc extraBedQty * extraBedPrice).
+  const ebStayNights = new Set()
   if (checkIn) {
     for (let i = 0; i < nights; i++) {
       const parts = checkIn.split('-')
@@ -2015,6 +2017,16 @@ function getRoomDisplayServices(room) {
       const dd = String(curr.getDate()).padStart(2, '0')
       const dStr = `${yyyy}-${mm}-${dd}`
       const isPastNight = sysDate ? (dStr < sysDate) : false
+      ebStayNights.add(dStr)
+
+      // Dòng 306: đêm đã post EB ở phòng trước khi chuyển phòng -> hiện bill đó (tham chiếu lịch sử, không tính tổng lần nữa)
+      // thay vì dòng EB kế hoạch; đêm này sang ngày tiền phòng cũng không post lại.
+      const historyEbBill = findMoveHistoryExtraBedBill(room.serviceBills, dStr, getBillRecordDateStr, handledBillIds)
+      if (historyEbBill) {
+        handledBillIds.add(String(historyEbBill.Ma || historyEbBill.id))
+        list.push(extraBedBillRow(historyEbBill, dStr))
+        continue
+      }
 
       // Kiểm tra xem phòng có cấu hình EB theo từng ngày (dailyExtraBeds hoặc services có EB) hay không
       const hasDailyEbConfig = (room.dailyExtraBeds && room.dailyExtraBeds.length > 0) ||
@@ -2053,6 +2065,7 @@ function getRoomDisplayServices(room) {
             rate: qty > 0 ? amt / qty : amt,
             is_room: true,
             from_bill: true,
+            from_move_history: !!ebBill.from_move_history,
             bill_ref: ebBill
           })
         }
@@ -2098,6 +2111,13 @@ function getRoomDisplayServices(room) {
       }
     }
   }
+
+  // Dòng 306: bill EB đã post nằm ngoài các đêm lưu trú (phòng đã chuyển chỉ còn 0 đêm sau ngày chuyển) vẫn phải hiện,
+  // giống cách đang quét bill tiền phòng ngoài dải ngày ở trên.
+  findExtraBedBillsOutsideStay(room.serviceBills, ebStayNights, getBillRecordDateStr, handledBillIds).forEach(ebBill => {
+    handledBillIds.add(String(ebBill.Ma || ebBill.id))
+    list.push(extraBedBillRow(ebBill, getBillRecordDateStr(ebBill) || cleanDateStr(room.checkIn)))
+  })
 
   // 3. Phụ thu ăn sáng trẻ em theo Booking_BFChildSetServiceId:
   // - Chế độ detail: lấy dự kiến từ booking_child_breakfast_details (kể cả khi phòng chưa check-in).
