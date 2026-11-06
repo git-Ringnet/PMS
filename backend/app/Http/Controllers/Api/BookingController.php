@@ -2371,17 +2371,28 @@ class BookingController extends Controller
             return $error;
         }
 
-        $request->validate([
-            'arrival_date'   => 'required|date',
-            'departure_date' => 'required|date|after_or_equal:arrival_date',
-        ]);
+        // Dòng 500: IsCopyAllBooking = 0 chỉ nhân bản thông tin đăng ký, không chọn lại ngày
+        // (giữ ngày của BK gốc, người dùng tự chỉnh sau khi copy) và không bị chặn bởi ngày quá khứ.
+        $copyHeaderByConfig = HotelConfig::where('name', 'IsCopyAllBooking')->first()?->value === '0';
+
+        if ($copyHeaderByConfig) {
+            $request->validate([
+                'arrival_date'   => 'nullable|date',
+                'departure_date' => 'nullable|date|after_or_equal:arrival_date',
+            ]);
+        } else {
+            $request->validate([
+                'arrival_date'   => 'required|date',
+                'departure_date' => 'required|date|after_or_equal:arrival_date',
+            ]);
+        }
 
         $systemDate = SystemDateRoll::latest('id')->first();
         $sysDateStr = $systemDate
             ? Carbon::parse($systemDate->system_date)->toDateString()
             : now()->toDateString();
 
-        if ($request->arrival_date < $sysDateStr) {
+        if (!$copyHeaderByConfig && $request->arrival_date < $sysDateStr) {
             return response()->json([
                 'success' => false,
                 'message' => 'Ngày đến không được nhỏ hơn ngày hệ thống (' . $sysDateStr . ').',
@@ -2392,8 +2403,8 @@ class BookingController extends Controller
         $copyRooms = HotelConfig::where('name', 'IsCopyAllBooking')->first()?->value !== '0';
         $allowOver = HotelConfig::where('name', 'AllowOverRoomTypeRoomKind')->first()?->value == '1';
 
-        $newArrival   = $request->arrival_date;
-        $newDeparture = $request->departure_date;
+        $newArrival   = $request->arrival_date ?: $source->arrival_date?->toDateString();
+        $newDeparture = $request->departure_date ?: $source->departure_date?->toDateString();
         $numDays      = Carbon::parse($newArrival)->diffInDays(Carbon::parse($newDeparture));
 
         // Kiểm tra phòng trống AV nếu được bật sao chép cả phòng
@@ -2549,9 +2560,9 @@ class BookingController extends Controller
         ]);
 
         try {
-            // Dòng 43: "* Copy Đăng Ký GAL27 từ đăng ký GAL22"
+            // Dòng 500: "Nhân bản Đăng Ký GAL27 từ đăng ký GAL22"
             $newCode = \App\Services\ActivityLogService::bookingCode($newBooking->id);
-            \App\Services\ActivityLogService::record('Add', "* Copy Đăng Ký {$newCode} từ đăng ký " . \App\Services\ActivityLogService::bookingCode($id), [
+            \App\Services\ActivityLogService::record('Add', "Nhân bản Đăng Ký {$newCode} từ đăng ký " . \App\Services\ActivityLogService::bookingCode($id), [
                 'screen' => \App\Support\ActivityScreen::REGISTRATION,
                 'booking_code' => $newCode,
                 'room_code' => $newBooking->bookingRooms->pluck('id')->all(),

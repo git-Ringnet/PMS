@@ -28,11 +28,15 @@
 
       <!-- MODAL BODY -->
       <div class="p-5 flex flex-col gap-4 text-xs font-normal text-[#000000D9]">
-        <p class="text-slate-600 leading-relaxed text-xs">
+        <!-- Dòng 500: IsCopyAllBooking = 0 chỉ xác nhận, không chọn lại ngày -->
+        <p v-if="copyHeaderOnly" class="text-slate-600 leading-relaxed text-xs">
+          Bạn có chắc chắn muốn nhân bản đăng ký này không? Bấm xác nhận để nhân bản hoặc nút tắt để thoát màn hình xác nhận.
+        </p>
+        <p v-else class="text-slate-600 leading-relaxed text-xs">
           Nhân bản đăng ký này sang một thời gian mới. Toàn bộ thông tin khách hàng, loại phòng, số lượng phòng và đơn giá sẽ được sao chép tự động.
         </p>
 
-        <div class="grid grid-cols-2 gap-3 mt-2">
+        <div v-if="!copyHeaderOnly" class="grid grid-cols-2 gap-3 mt-2">
           <div>
             <label class="block text-[#000000D9] mb-1 font-semibold text-xs">Ngày đến mới <span class="text-red-500">*</span></label>
             <SingleDatePicker
@@ -81,7 +85,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
-import { copyBooking } from '@/services/booking-service'
+import { copyBooking, fetchHotelSettings } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -142,12 +146,24 @@ function stopDragModal() {
 
 const arrivalDate = ref('')
 const departureDate = ref('')
+// IsCopyAllBooking = 0: chỉ nhân bản thông tin đăng ký, không chọn lại ngày.
+const copyHeaderOnly = ref(false)
+
+async function loadCopyMode() {
+  try {
+    const res = await fetchHotelSettings()
+    copyHeaderOnly.value = String(res.data?.data?.IsCopyAllBooking ?? '1') === '0'
+  } catch {
+    copyHeaderOnly.value = false
+  }
+}
 
 watch(() => props.show, (newVal) => {
   if (newVal) {
     modalPos.value = { x: 0, y: 0 }
     arrivalDate.value = props.defaultArrival || ''
     departureDate.value = props.defaultDeparture || ''
+    loadCopyMode()
   }
 })
 
@@ -156,11 +172,13 @@ function close() {
 }
 
 async function executeCopy(payload = {}) {
-  const requestData = {
-    arrival_date: arrivalDate.value,
-    departure_date: departureDate.value,
-    ...payload,
-  }
+  const requestData = copyHeaderOnly.value
+    ? { ...payload }
+    : {
+        arrival_date: arrivalDate.value,
+        departure_date: departureDate.value,
+        ...payload,
+      }
 
   try {
     const res = await copyBooking(props.bookingId, requestData)
@@ -210,14 +228,16 @@ async function executeCopy(payload = {}) {
 async function handleConfirmCopy() {
   if (!props.bookingId) return
 
-  if (!arrivalDate.value || !departureDate.value) {
-    uiStore.showToast('Vui lòng chọn đầy đủ ngày đến và ngày đi!', 'warning')
-    return
-  }
+  if (!copyHeaderOnly.value) {
+    if (!arrivalDate.value || !departureDate.value) {
+      uiStore.showToast('Vui lòng chọn đầy đủ ngày đến và ngày đi!', 'warning')
+      return
+    }
 
-  if (departureDate.value <= arrivalDate.value) {
-    uiStore.showToast('Ngày đi phải lớn hơn ngày đến!', 'warning')
-    return
+    if (departureDate.value <= arrivalDate.value) {
+      uiStore.showToast('Ngày đi phải lớn hơn ngày đến!', 'warning')
+      return
+    }
   }
 
   uiStore.showToast('Đang thực hiện nhân bản đăng ký...', 'info')
