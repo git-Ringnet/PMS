@@ -116,8 +116,9 @@ class CheckoutRoleConfigService
     }
 
     /**
-     * Open a Do Not Move lock when the user has the canonical exact role.
-     * In addition, the user who locked it is allowed to open if the parameter is unassigned.
+     * Mở khóa Do Not Move (dòng 337, note 28/10):
+     * - Người đã thao tác khóa luôn được mở khóa, kể cả khi thông số RoleUserOpenDoNotMove đã phân quyền cho role khác.
+     * - Người khác chỉ được mở khi có role nằm trong thông số RoleUserOpenDoNotMove.
      */
     public function canOpenDoNotMove(?User $user, ?int $branchId, int|string|null $lockOwnerUserId): bool
     {
@@ -125,9 +126,8 @@ class CheckoutRoleConfigService
             return false;
         }
 
-        $configuredCodes = $this->getConfiguredRoleCodes('RoleUserOpenDoNotMove');
-        if ($configuredCodes === []) {
-            return $lockOwnerUserId !== null && (string) $user->getKey() === (string) $lockOwnerUserId;
+        if ($lockOwnerUserId !== null && (string) $user->getKey() === (string) $lockOwnerUserId) {
+            return true;
         }
 
         return $this->hasExactConfiguredRoleCode($user, 'RoleUserOpenDoNotMove', $branchId);

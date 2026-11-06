@@ -24,7 +24,10 @@
         </div>
 
         <!-- Body -->
-        <div class="m-body overflow-y-auto max-h-[calc(90vh-105px)]">
+        <fieldset :disabled="readonly" class="m-body overflow-y-auto max-h-[calc(90vh-105px)] border-0 p-0 m-0 min-w-0">
+          <div v-if="readonly" class="px-4 py-2 text-xs font-semibold text-rose-700 bg-rose-50 border-b border-rose-200">
+            <i class="fa-solid fa-person-walking-dashed-line-arrow-right mr-1"></i>Khách đã trả phòng - chỉ xem, không được sửa thông tin.
+          </div>
           <!-- Booking strip -->
           <div class="stay">
             <div class="flex items-center gap-4">
@@ -391,7 +394,7 @@
               </div>
             </section>
           </div>
-        </div>
+        </fieldset>
 
         <!-- Footer -->
         <div class="m-foot select-none">
@@ -399,7 +402,7 @@
             <span>Cập nhật: <b>{{ auditTime }}</b> · bởi <b>{{ auditUser }}</b></span>
           </div>
 
-          <button type="button" @click="handleSave" :disabled="saving" class="btn-pms-primary h-8 px-4 flex items-center gap-1.5 text-xs">
+          <button v-if="!readonly" type="button" @click="handleSave" :disabled="saving" class="btn-pms-primary h-8 px-4 flex items-center gap-1.5 text-xs">
             <i class="fa-solid fa-check text-xs"></i>
             <span>{{ saving ? 'Đang lưu...' : 'Lưu' }}</span>
           </button>
@@ -460,6 +463,11 @@ const props = defineProps({
   guestType: {        // 'adult' | 'child'
     type: String,
     default: 'adult'
+  },
+  // Dòng 474: khách đã check out chỉ xem, không sửa
+  readonly: {
+    type: Boolean,
+    default: false
   }
 })
 

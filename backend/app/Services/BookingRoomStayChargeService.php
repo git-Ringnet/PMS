@@ -55,7 +55,9 @@ class BookingRoomStayChargeService
         // A day-use room (arrival = departure, is_day_use) is charged once on
         // its arrival date; a same-day room without day-use has no charge.
         if ($room->is_day_use && $departure->equalTo($arrival)) {
-            $departure = $arrival->copy()->addDay();
+            // Dòng 358: late check-in CÓ charge đã post đêm noshow của ngày đến cũ;
+            // ngày đến mới (= ngày đi) không phát sinh thêm đêm day-use thứ 2.
+            $departure = $this->hasChargedLateCheckin($room) ? $arrival->copy() : $arrival->copy()->addDay();
         }
 
         $stayDates = $this->stayDates($arrival, $departure);
@@ -118,7 +120,6 @@ class BookingRoomStayChargeService
                 'quantity'     => 1,
                 'rate'         => $rate,
                 'department'   => 'FO',
-                'is_room'      => 1,
                 'is_posted'    => 0,
                 'deleted_at'   => null,
                 'created_by'   => Auth::user()?->username ?? 'system',
@@ -134,6 +135,8 @@ class BookingRoomStayChargeService
                 'booking_room_id' => $room->id,
                 'service_code'    => BookingRoomService::catalogCode(BookingRoomService::CODE_ROOM),
                 'service_date'    => $date->toDateString(),
+                // Dòng 488: đêm mới theo thông tin đăng ký (gửi về Master = GIT -> is_room 0).
+                'is_room'         => $room->booking?->is_master_room_rate ? 0 : 1,
                 ...$values,
             ]);
         }
@@ -144,6 +147,14 @@ class BookingRoomStayChargeService
         if ($fallbackRate === null && $replaceExistingRates && $rateCode && $firstRate !== null && (float) $room->rate !== (float) $firstRate) {
             $room->update(['rate' => $firstRate]);
         }
+    }
+
+    /** Phòng đã late check-in và đêm noshow được charge (lý do "Charge Room", không phải "No Charge"). */
+    private function hasChargedLateCheckin(BookingRoom $room): bool
+    {
+        return $room->lateCheckins()
+            ->where('reason', 'like', '%Charge Room%')
+            ->exists();
     }
 
     /**

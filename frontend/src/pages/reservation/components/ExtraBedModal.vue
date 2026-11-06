@@ -116,13 +116,13 @@
                     <label class="relative inline-flex items-center cursor-pointer select-none gap-1.5 justify-center" :class="{ 'opacity-40 pointer-events-none': isAllPastOrLocked }" title="Bật/Tắt Gửi HĐ về Master hoặc Phòng">
                       <input
                         type="checkbox"
-                        v-model="totalIsRoom"
-                        @change="handleTotalIsRoomChange"
+                                                :checked="!totalIsRoom"
+                        @change="e => { totalIsRoom = !e.target.checked; handleTotalIsRoomChange() }"
                         :disabled="isAllPastOrLocked"
                         class="sr-only peer"
                       />
                       <div class="w-8 h-4 bg-slate-300 rounded-full peer peer-checked:bg-sky-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 shadow-2xs"></div>
-                      <span class="text-xs font-semibold uppercase min-w-[32px] text-left" :class="totalIsRoom ? 'text-sky-600' : 'text-slate-500'">
+                      <span class="text-xs font-semibold uppercase min-w-[32px] text-left" :class="totalIsRoom ? 'text-slate-500' : 'text-sky-600'">
                         {{ totalIsRoom ? 'FIT' : 'GIT' }}
                       </span>
                     </label>
@@ -223,12 +223,13 @@
                       <label class="relative inline-flex items-center cursor-pointer select-none gap-1.5 justify-center" :class="(night.isLocked || night.isPast) ? 'opacity-40 pointer-events-none' : ''">
                         <input
                           type="checkbox"
-                          v-model="night.isRoom"
+                          :checked="!night.isRoom"
+                          @change="e => { night.isRoom = !e.target.checked }"
                           :disabled="night.isLocked || night.isPast"
                           class="sr-only peer"
                         />
                         <div class="w-8 h-4 bg-slate-300 rounded-full peer peer-checked:bg-sky-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 shadow-2xs"></div>
-                        <span class="text-xs font-semibold uppercase min-w-[32px] text-left" :class="night.isRoom ? 'text-sky-600' : 'text-slate-500'">
+                        <span class="text-xs font-semibold uppercase min-w-[32px] text-left" :class="night.isRoom ? 'text-slate-500' : 'text-sky-600'">
                           {{ night.isRoom ? 'FIT' : 'GIT' }}
                         </span>
                       </label>

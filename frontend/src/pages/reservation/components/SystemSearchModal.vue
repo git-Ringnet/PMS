@@ -53,7 +53,7 @@
           <div v-if="filterByArrivalDate" class="flex items-center space-x-1.5">
             <SingleDatePicker
               v-model="searchFromDate"
-              @change="executeGlobalSearch"
+              @change="handleFromDateChange"
               :start-date="searchFromDate || sysDate"
               placeholder="dd/mm/yyyy"
               four-digit-year
@@ -62,7 +62,7 @@
             <span class="text-slate-400 px-0.5">-</span>
             <SingleDatePicker
               v-model="searchToDate"
-              @change="executeGlobalSearch"
+              @change="handleToDateChange"
               :start-date="searchToDate || searchFromDate || sysDate"
               placeholder="dd/mm/yyyy"
               four-digit-year
@@ -215,6 +215,7 @@ import { fetchBookings } from '@/services/booking-service'
 import { useAuthStore } from '@/stores/auth-store'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
 import { createLatestRequestGuard } from '@/utils/latest-request'
+import { normalizeArrivalRange } from '@/utils/arrival-date-range'
 
 const props = defineProps({
   show: Boolean,
@@ -424,12 +425,28 @@ function onDisplayFromDateBlur() {
   executeGlobalSearch()
 }
 
-watch(searchFromDate, (newVal) => {
-  if (newVal && searchToDate.value && newVal > searchToDate.value) {
-    searchToDate.value = newVal
-    displayToDate.value = formatDateDisplay(newVal)
-  }
-})
+// Dòng 95: chọn ngày làm khoảng ngày bị ngược thì kéo ô kia theo rồi tìm NGAY với khoảng ngày đúng
+// (trước đây watch chỉ đổi ô ngày, lần tìm đầu tiên vẫn dùng khoảng ngày ngược nên không ra dữ liệu).
+function applyArrivalRange(changed, ymd) {
+  const range = normalizeArrivalRange(
+    changed === 'from' ? ymd : searchFromDate.value,
+    changed === 'to' ? ymd : searchToDate.value,
+    changed,
+  )
+  searchFromDate.value = range.from
+  searchToDate.value = range.to
+  displayFromDate.value = range.from ? formatDateDisplay(range.from) : ''
+  displayToDate.value = range.to ? formatDateDisplay(range.to) : ''
+  executeGlobalSearch()
+}
+
+function handleFromDateChange(ymd) {
+  applyArrivalRange('from', ymd)
+}
+
+function handleToDateChange(ymd) {
+  applyArrivalRange('to', ymd)
+}
 
 function onDisplayToDateBlur() {
   searchToDate.value = parseInputDate(displayToDate.value)
