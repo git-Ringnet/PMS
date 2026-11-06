@@ -20,6 +20,7 @@ import {
   mergeMoveHistoryBillReferences,
 } from '@/utils/booking-room-move-history'
 import { summarizeRoomTotals } from '@/utils/booking-room-totals'
+import { applySavedRoomColumns, serializeRoomColumns } from '@/utils/booking-room-columns'
 import { normalizeShuttleInfo, buildBookingHistoryLocation } from '@/utils/booking-shuttle-history'
 import {
   childBreakfastServiceDates,
@@ -1045,6 +1046,75 @@ const columns = ref([
   { key: 'allotmentCode', label: 'Mã ALM', visible: true, width: 'w-[100px]' },
   { key: 'roomCode', label: 'Mã Phòng', visible: true, width: 'w-[100px]' },
 ])
+
+// Dòng 98 (FIX FE task 109): thứ tự + ẩn/hiện cột bảng "Chi tiết phòng booking" lưu theo user trên server
+// (user-settings) nên không mất khi tải lại trang hay đăng nhập máy khác; localStorage chỉ là bản dự phòng.
+const defaultBookingRoomColumns = columns.value.map(col => ({ ...col }))
+
+function loadSavedBookingRoomColumns() {
+  const uid = authStore.user?.id || 'default'
+  let localOrder = null
+  let localVisible = null
+  try {
+    localOrder = JSON.parse(localStorage.getItem(`pms_col_order_booking_rooms_${uid}`) || 'null')
+    localVisible = JSON.parse(localStorage.getItem(`pms_vis_cols_booking_rooms_${uid}`) || 'null')
+  } catch (_) {}
+  return {
+    order: authStore.settings?.column_order?.create_registration_detail || localOrder,
+    visible: authStore.settings?.visible_columns?.create_registration_detail || localVisible,
+  }
+}
+
+columns.value = (() => {
+  const saved = loadSavedBookingRoomColumns()
+  return applySavedRoomColumns(defaultBookingRoomColumns, saved.order, saved.visible)
+})()
+
+let saveBookingRoomColumnsTimer = null
+let isApplyingBookingRoomColumns = false
+let isSavingBookingRoomColumns = false
+
+function saveBookingRoomColumns() {
+  if (isApplyingBookingRoomColumns) return
+  const { order, visible } = serializeRoomColumns(columns.value)
+  const uid = authStore.user?.id || 'default'
+  try {
+    localStorage.setItem(`pms_col_order_booking_rooms_${uid}`, JSON.stringify(order))
+    localStorage.setItem(`pms_vis_cols_booking_rooms_${uid}`, JSON.stringify(visible))
+  } catch (_) {}
+
+  if (saveBookingRoomColumnsTimer) clearTimeout(saveBookingRoomColumnsTimer)
+  saveBookingRoomColumnsTimer = setTimeout(async () => {
+    try {
+      isSavingBookingRoomColumns = true
+      await authStore.updateUserSettings({
+        column_order: { create_registration_detail: order },
+        visible_columns: { create_registration_detail: visible },
+      })
+    } catch (e) {
+      console.error('Lỗi khi lưu cấu hình cột chi tiết phòng booking:', e)
+    } finally {
+      nextTick(() => { isSavingBookingRoomColumns = false })
+    }
+  }, 500)
+}
+
+// Kéo thả đổi thứ tự (handleDrop) và tích ẩn/hiện (v-model col.visible) đều đổi `columns` nên chỉ cần theo dõi ở đây.
+watch(columns, saveBookingRoomColumns, { deep: true })
+
+// Cài đặt user được tải muộn (sau khi trang đã mount) hoặc đổi từ máy khác: áp lại nếu khác bảng hiện tại.
+watch(
+  () => [authStore.settings?.column_order?.create_registration_detail, authStore.settings?.visible_columns?.create_registration_detail],
+  ([order, visible]) => {
+    if (isSavingBookingRoomColumns || !order) return
+    const next = applySavedRoomColumns(defaultBookingRoomColumns, order, visible)
+    if (JSON.stringify(serializeRoomColumns(next)) === JSON.stringify(serializeRoomColumns(columns.value))) return
+    isApplyingBookingRoomColumns = true
+    columns.value = next
+    nextTick(() => { isApplyingBookingRoomColumns = false })
+  },
+  { deep: true },
+)
 
 const tableWidth = computed(() => {
   let total = 35 + 50 + 45 + 120 // base columns: toggle (35), checkbox (50), STT (45), Tổng cộng (120)
