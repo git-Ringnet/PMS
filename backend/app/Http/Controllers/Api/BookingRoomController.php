@@ -3203,46 +3203,80 @@ class BookingRoomController extends Controller
             ], 422);
         }
 
-        // 2. Validate AV (Phòng trống)
+        // 2. Dòng 504: kiểm tra over + thông số TRƯỚC, rồi mới hỏi trùng số phòng (giống dòng 294).
         $allowOver = $this->allowOverAV();
         $force = filter_var($request->input('force'), FILTER_VALIDATE_BOOLEAN);
+        $clearDuplicateRooms = filter_var($request->input('clear_duplicate_rooms'), FILTER_VALIDATE_BOOLEAN);
 
-        if (!$force) {
-            $classId = $bookingRoom->room_class_id;
-            $roomClass = \App\Models\RoomClass::find($classId);
-            $className = $roomClass ? $roomClass->name : "ID $classId";
+        $classId = $bookingRoom->room_class_id;
+        $roomClass = \App\Models\RoomClass::find($classId);
+        $className = $roomClass ? $roomClass->name : "ID $classId";
 
-            $start = Carbon::parse($bookingRoom->arrival_date);
-            $end = Carbon::parse($bookingRoom->departure_date);
+        $start = Carbon::parse($bookingRoom->arrival_date)->startOfDay();
+        $end = Carbon::parse($bookingRoom->departure_date)->startOfDay();
+        if ($start->gte($end)) {
+            $end = $start->copy()->addDay();
+        }
 
-            for ($d = $start->copy(); $d->lt($end); $d->addDay()) {
-                $dateStr = $d->toDateString();
-                // AV hiện tại cho 1 ngày này
-                $av = $this->avService->getAvailability($classId, $dateStr, $d->copy()->addDay()->toDateString());
-
-                if ($av <= 0) {
-                    if (!$allowOver) {
-                        return response()->json([
-                            'success' => false,
-                            'message' => "Loại phòng $className đã bị Over, không thể khôi phục phòng noshow.",
-                        ], 422);
-                    } else {
-                        return response()->json([
-                            'success' => false,
-                            'needs_confirm' => true,
-                            'message' => 'Số lượng phòng trống sau khi khôi phục sẽ bị âm. Bạn có muốn tiếp tục thao tác?',
-                        ], 200);
-                    }
-                }
+        // Phòng noshow chưa được tính vào số phòng đã đặt nên khôi phục cần thêm 1 phòng mỗi đêm.
+        $overRooms = [];
+        for ($d = $start->copy(); $d->lt($end); $d->addDay()) {
+            $dateStr = $d->toDateString();
+            $av = $this->avService->getAvailability($classId, $dateStr, $d->copy()->addDay()->toDateString());
+            if ($av - 1 < 0) {
+                $overRooms[$dateStr] = ['room_class_id' => (int) $classId, 'class_name' => $className, 'date' => $dateStr, 'av' => $av, 'needed' => 1];
             }
         }
 
+        // AllowOverRoomTypeRoomKind = 0: tuyệt đối không cho over, kể cả khi client gửi force.
+        if (count($overRooms) > 0 && !$allowOver) {
+            return response()->json([
+                'success'         => false,
+                'blocked_by_over' => true,
+                'over_rooms'      => array_values($overRooms),
+                'message'         => "Loại phòng $className đã bị Over, không thể khôi phục phòng noshow.",
+            ], 422);
+        }
+
+        // Trùng số phòng với đăng ký khác / phòng khóa OOO-OOS: hỏi xác nhận, chọn Có thì xóa số phòng bị trùng.
+        $duplicateRooms = $this->avService->findDuplicateRoomNumbers([$bookingRoom]);
+        if (count($duplicateRooms) > 0 && !$clearDuplicateRooms) {
+            $conflictLines = collect($duplicateRooms)->map(function ($item) {
+                $line = "- R: {$item['room_number']}";
+                if (!empty($item['booking_code'])) {
+                    $line .= " - BK: {$item['booking_code']}";
+                }
+                return $line;
+            })->implode("\n");
+
+            return response()->json([
+                'success'                 => false,
+                'needs_duplicate_confirm' => true,
+                'duplicate_rooms'         => $duplicateRooms,
+                'conflict_lines'          => $conflictLines,
+                'message'                 => "Phòng được khôi phục có số phòng đã được đặt bởi đăng ký khác hoặc đang bị khóa. Bạn có muốn tiếp tục? (Số phòng bị trùng sẽ được xóa khi khôi phục)\n{$conflictLines}",
+            ], 200);
+        }
+
+        // AllowOverRoomTypeRoomKind = 1: over thì hỏi xác nhận (client gửi force để đồng ý).
+        if (count($overRooms) > 0 && !$force) {
+            return response()->json([
+                'success'            => false,
+                'needs_over_confirm' => true,
+                'needs_confirm'      => true,
+                'over_rooms'         => array_values($overRooms),
+                'message'            => 'Số lượng phòng trống sau khi khôi phục sẽ bị âm. Bạn có muốn tiếp tục thao tác?',
+            ], 200);
+        }
+
         // 3. Thực hiện khôi phục
-        DB::transaction(function () use ($bookingRoom, $bookingId) {
-            // Cập nhật phòng thuê về STATUS_BOOKED
-            $bookingRoom->update([
-                'status' => BookingRoom::STATUS_BOOKED,
-            ]);
+        DB::transaction(function () use ($bookingRoom, $bookingId, $clearDuplicateRooms, $duplicateRooms) {
+            // Cập nhật phòng thuê về STATUS_BOOKED; xóa số phòng bị trùng khi người dùng đồng ý (dòng 504)
+            $roomUpdate = ['status' => BookingRoom::STATUS_BOOKED];
+            if ($clearDuplicateRooms && count($duplicateRooms) > 0) {
+                $roomUpdate['room_number'] = null;
+            }
+            $bookingRoom->update($roomUpdate);
 
             // Khôi phục khách trong phòng
             $guestIds = BookingRoomGuest::where('booking_room_id', $bookingRoom->id)->pluck('guest_id');

@@ -6435,7 +6435,10 @@ async function triggerAction(actionName) {
           clearDuplicates = true
           uiStore.showToast('Đang khôi phục booking...', 'info')
           try {
-            res = await restoreBooking(tab.dbId, { clear_duplicate_rooms: true })
+            // Dòng 504: BK noshow phải gọi revert-noshow (trước đây luôn gọi restore của booking hủy).
+            res = isCancelledBooking.value
+              ? await restoreBooking(tab.dbId, { clear_duplicate_rooms: true })
+              : await revertBookingNoshow(tab.dbId, { clear_duplicate_rooms: true })
           } catch (errDup) {
             uiStore.showToast(errDup.response?.data?.message || 'Khôi phục booking thất bại!', 'error')
             return
@@ -6503,11 +6506,26 @@ async function triggerAction(actionName) {
 
           for (const r of selected) {
             try {
+              let clearDuplicates = false
               let res = await revertRoomNoshow(tab.dbId, r.bookingRoomId)
+
+              // Dòng 504: trùng số phòng với đăng ký khác / phòng khóa -> hỏi, chọn Có thì xóa số phòng bị trùng
+              if (res.data?.needs_duplicate_confirm) {
+                const confirmedClear = await uiStore.confirm({
+                  title: 'Cảnh báo trùng số phòng',
+                  message: res.data.message,
+                  confirmText: 'Có',
+                  cancelText: 'Không'
+                })
+                if (!confirmedClear) continue
+                clearDuplicates = true
+                res = await revertRoomNoshow(tab.dbId, r.bookingRoomId, { clear_duplicate_rooms: true })
+              }
+
               if (res.data?.success) {
                 successCount++
               } else if (res.data?.needs_confirm) {
-                overBookingNeeded.push(r)
+                overBookingNeeded.push({ room: r, clearDuplicates })
               } else {
                 uiStore.showToast(res.data?.message || `Khôi phục phòng ${r.roomNumber || ''} thất bại!`, 'error')
               }
@@ -6523,9 +6541,9 @@ async function triggerAction(actionName) {
               confirmText: 'Tiếp tục', cancelText: 'Hủy'
             }).then(async (confirmedOver) => {
               if (confirmedOver) {
-                for (const r of overBookingNeeded) {
+                for (const { room: r, clearDuplicates } of overBookingNeeded) {
                   try {
-                    let resForce = await revertRoomNoshow(tab.dbId, r.bookingRoomId, { force: true })
+                    let resForce = await revertRoomNoshow(tab.dbId, r.bookingRoomId, { force: true, clear_duplicate_rooms: clearDuplicates })
                     if (resForce.data?.success) {
                       successCount++
                     } else {
