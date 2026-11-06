@@ -219,7 +219,6 @@ class AvailabilityController extends Controller
             $isBooked          = ($br->status === BookingRoom::STATUS_BOOKED && !$isCancelled && !$isNoShow && $isAvailableStatus);
             $isCheckedIn       = ($br->status === BookingRoom::STATUS_CHECKED_IN && !$isCancelled && !$isNoShow && $isAvailableStatus);
             $isCheckedOut      = ($br->status === BookingRoom::STATUS_CHECKED_OUT && !$isCancelled && !$isNoShow && $isAvailableStatus);
-            $isOccupied        = $isBooked || $isCheckedIn || $isCheckedOut;
 
             $regStatusName     = $parentBooking && $parentBooking->registrationStatus ? strtolower($parentBooking->registrationStatus->name) : '';
             $isAllotment       = str_contains($regStatusName, 'allotment');
@@ -239,6 +238,9 @@ class AvailabilityController extends Controller
 
             // Dayuse booking rule
             $isDayUse = ($arrDate === $depDate && (($br->is_day_use ?? false) || ($parentBooking && $parentBooking->is_day_use)));
+            // Dòng 470: Day Use đã trả phòng là lịch sử, không còn chiếm OCC/AV.
+            $isCheckedOutDayUse = $isDayUse && $isCheckedOut;
+            $isOccupied = ($isBooked || $isCheckedIn || $isCheckedOut) && !$isCheckedOutDayUse;
 
             if ($isOccupied && !$isAllotment && !$isCancelled && !$isNoShow && $isAvailableStatus) {
                 $occBookings[$classCode][] = [
@@ -592,6 +594,12 @@ class AvailabilityController extends Controller
             ->orderBy('id')
             ->get();
 
+        // Dòng 470: giữ dữ liệu checkout trong lịch sử, nhưng không để Day Use
+        // đã checkout chặn danh sách phòng trống hoặc chi tiết OCC hiện hành.
+        $bookingRooms = $bookingRooms
+            ->reject(fn (BookingRoom $room) => $this->isCheckedOutDayUse($room))
+            ->values();
+
         $isAllotment = fn ($bookingRoom) => str_contains(
             strtolower((string) ($bookingRoom->booking?->registrationStatus?->name ?? '')),
             'allot'
@@ -719,5 +727,17 @@ class AvailabilityController extends Controller
                 'booking_rooms' => $bookingRows->count(),
             ],
         ]);
+    }
+
+    private function isCheckedOutDayUse(BookingRoom $room): bool
+    {
+        if ((int) $room->status !== BookingRoom::STATUS_CHECKED_OUT
+            || !$room->arrival_date
+            || !$room->departure_date
+            || !$room->arrival_date->isSameDay($room->departure_date)) {
+            return false;
+        }
+
+        return (bool) $room->is_day_use || (bool) $room->booking?->is_day_use;
     }
 }

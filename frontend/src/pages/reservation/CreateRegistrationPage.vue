@@ -2782,6 +2782,9 @@ onBeforeUnmount(() => {
     authStore.updateUserSettings({
       visible_columns: {
         create_registration: JSON.parse(JSON.stringify(visibleColumns.value))
+      },
+      column_order: {
+        create_registration_rooms: JSON.parse(JSON.stringify(roomsColumnOrder.value))
       }
     }).catch(() => {})
   }
@@ -9495,13 +9498,15 @@ defineExpose({
                     <!-- Hàng 2: Thị trường, Nguồn khách, Người bán -->
                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                       <div class="flex flex-col gap-1">
-                        <label class="block text-[11px] text-slate-600 font-bold">
-                          <i class="fa-solid fa-globe text-slate-400 mr-1"></i>Thị trường
+                        <label class="block text-xs text-[#000000D9] font-semibold">
+                          <i class="fa-solid fa-globe text-slate-400 mr-1"></i>Thị trường <span class="text-red-500">*</span>
                         </label>
                         <div class="relative w-full flex items-center group">
                           <select 
                             v-model="modalForm.marketId"
-                            class="w-full border border-slate-300 rounded-lg pl-2.5 pr-8 py-1 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-xs bg-white h-[34px] cursor-pointer appearance-none transition-all"
+                            required
+                            aria-required="true"
+                            class="input-required w-full border rounded-lg pl-2.5 pr-8 py-1 focus:outline-none focus:border-[#eab308] focus:ring-2 focus:ring-amber-100 text-xs h-[34px] cursor-pointer appearance-none transition-all"
                             :class="modalForm.marketId ? 'font-normal text-[#000000D9]' : 'font-normal text-[#A8B0BF]'"
                           >
                             <option :value="null" disabled>Thị trường</option>
@@ -9524,13 +9529,15 @@ defineExpose({
                       </div>
 
                       <div class="flex flex-col gap-1">
-                        <label class="block text-[11px] text-slate-600 font-bold">
-                          <i class="fa-solid fa-tags text-slate-400 mr-1"></i>Nguồn khách
+                        <label class="block text-xs text-[#000000D9] font-semibold">
+                          <i class="fa-solid fa-tags text-slate-400 mr-1"></i>Nguồn khách <span class="text-red-500">*</span>
                         </label>
                         <div class="relative w-full flex items-center group">
                           <select 
                             v-model="modalForm.customerSourceId"
-                            class="w-full border border-slate-300 rounded-lg pl-2.5 pr-8 py-1 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 text-xs bg-white h-[34px] cursor-pointer appearance-none transition-all"
+                            required
+                            aria-required="true"
+                            class="input-required w-full border rounded-lg pl-2.5 pr-8 py-1 focus:outline-none focus:border-[#eab308] focus:ring-2 focus:ring-amber-100 text-xs h-[34px] cursor-pointer appearance-none transition-all"
                             :class="modalForm.customerSourceId ? 'font-normal text-[#000000D9]' : 'font-normal text-[#A8B0BF]'"
                           >
                             <option :value="null" disabled>Nguồn khách</option>

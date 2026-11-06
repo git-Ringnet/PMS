@@ -1,14 +1,24 @@
 <script setup>
+import { computed } from 'vue'
 import { ChevronRight } from '@lucide/vue'
 
 defineOptions({ name: 'ReportHeaderMenuTree' })
 
-defineProps({ items: { type: Array, default: () => [] }, depth: { type: Number, default: 0 } })
+const props = defineProps({ items: { type: Array, default: () => [] }, depth: { type: Number, default: 0 } })
 const emit = defineEmits(['select'])
+
+// Chỉ cuộn danh sách lá để không cắt menu con đang mở sang ngang.
+const isLeafList = computed(() => props.items.every(item => item.type === 'report'))
 </script>
 
 <template>
-  <div class="pms-report-menu" :class="depth ? 'pms-report-submenu' : 'pms-report-root'">
+  <div
+    class="pms-report-menu"
+    :class="[
+      depth ? 'pms-report-submenu' : 'pms-report-root',
+      { 'pms-report-menu--scrollable': isLeafList }
+    ]"
+  >
     <div v-for="item in items" :key="item.type === 'group' ? `${depth}-${item.name}` : item.code" class="relative group/report-item">
       <button type="button" class="pms-report-menu-item" @click="item.type === 'report' && emit('select', item)">
         <span>{{ item.name }}</span>
@@ -27,6 +37,7 @@ const emit = defineEmits(['select'])
 
 <style scoped>
 .pms-report-menu { min-width: 220px; max-width: min(360px, calc(100vw - 28px)); border: 1px solid rgb(226 232 240 / .9); border-radius: 8px; background: #fff; padding: 4px; box-shadow: 0 12px 24px rgb(15 23 42 / .16); }
+.pms-report-menu--scrollable { max-height: calc(100vh - 64px); overflow-y: auto; overscroll-behavior: contain; }
 .pms-report-menu-item { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; border: 0; border-radius: 6px; background: transparent; padding: 6px 10px; color: #334155; cursor: pointer; font-size: 12px; line-height: 18px; text-align: left; }
 .pms-report-menu-item:hover { background: #f0f9ff; color: #0369a1; }
 .pms-report-submenu { margin-left: 4px; }

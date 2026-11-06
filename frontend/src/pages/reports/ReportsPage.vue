@@ -34,7 +34,7 @@ const pmsWorkspaceKey = computed(() => [
     || localStorage.getItem('selected_branch_id')
     || localStorage.getItem('selected_branch_code')
     || 'default',
-  route.path,
+  route.path.startsWith('/reports') ? route.path : '/reports',
 ].join(':'))
 
 const cloneWorkspaceValue = value => {
@@ -47,7 +47,7 @@ const saveWorkspace = (key = pmsWorkspaceKey.value) => {
   reportStore.savePmsWorkspace(key, {
     activeTabId: activeTabId.value,
     openTabs: openTabs.value.map(tab => ({
-      reportId: tab.report.id,
+      reportId: tab.report?.id || tab.id,
       code: tab.code,
       parameters: cloneWorkspaceValue(tab.parameters),
       parameterOptions: cloneWorkspaceValue(tab.parameterOptions),
@@ -241,9 +241,11 @@ const loadParameterOptionsForTab = async (tab) => {
 }
 
 const loadReports = async ({ restore = true } = {}) => {
+  if (!route.path.startsWith('/reports')) return
   loading.value = true
   try {
     const response = await http.get('/report-definitions', { params: { active_only: 1 } })
+    if (!route.path.startsWith('/reports')) return
     const availableReports = response.data.data || []
     const hasReportPermission = authStore.isSuperAdmin
       || authStore.permissions.includes('mgmt.report.view')
@@ -266,7 +268,7 @@ const loadReports = async ({ restore = true } = {}) => {
 
     if (restored) {
       const tab = openTabs.value.find(item => Number(item.id) === Number(activeTabId.value))
-      if (tab && route.query.report !== tab.code) {
+      if (tab && route.query.report !== tab.code && route.path.startsWith('/reports')) {
         router.replace({ path: route.path, query: { ...route.query, report: tab.code } })
       }
       return
@@ -462,7 +464,7 @@ const openReportInTab = (report) => {
   }
 
   activeTabId.value = report.id
-  if (route.query.report !== report.code) {
+  if (route.query.report !== report.code && route.path.startsWith('/reports')) {
     router.replace({ path: route.path, query: { ...route.query, report: report.code } })
   }
 }
@@ -471,7 +473,9 @@ const selectTab = (tabId) => {
   const tab = openTabs.value.find(t => t.id === tabId)
   if (tab) {
     activeTabId.value = tabId
-    router.replace({ path: route.path, query: { ...route.query, report: tab.code } })
+    if (route.path.startsWith('/reports')) {
+      router.replace({ path: route.path, query: { ...route.query, report: tab.code } })
+    }
   }
 }
 
@@ -484,12 +488,16 @@ const closeTab = (tabId) => {
       if (openTabs.value.length > 0) {
         const newActiveTab = openTabs.value[Math.min(index, openTabs.value.length - 1)]
         activeTabId.value = newActiveTab.id
-        router.replace({ path: route.path, query: { ...route.query, report: newActiveTab.code } })
+        if (route.path.startsWith('/reports')) {
+          router.replace({ path: route.path, query: { ...route.query, report: newActiveTab.code } })
+        }
       } else {
         activeTabId.value = null
         const newQuery = { ...route.query }
         delete newQuery.report
-        router.replace({ path: route.path, query: newQuery })
+        if (route.path.startsWith('/reports')) {
+          router.replace({ path: route.path, query: newQuery })
+        }
       }
     }
   }
@@ -796,6 +804,7 @@ watch(() => activeTab.value?.parameters?.p_show_room_details, (showDetails) => {
 
 // Watch route parameter change
 watch(() => route.query.report, code => {
+  if (!route.path.startsWith('/reports')) return
   if (code) {
     const report = reports.value.find(item => item.code === code)
     if (report && report.id !== activeTabId.value) {
@@ -811,6 +820,7 @@ watch(() => route.query.report, code => {
 watch(openTabs, queueWorkspaceSave, { deep: true })
 
 watch(pmsWorkspaceKey, async (nextKey, previousKey) => {
+  if (!route.path.startsWith('/reports')) return
   if (!previousKey || nextKey === previousKey) return
   saveWorkspace(previousKey)
   reports.value = []
