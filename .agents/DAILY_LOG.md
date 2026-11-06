@@ -9,6 +9,35 @@
 - **Ngày ghi**: `YYYY-MM-DD`
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 
+## [2026-11-06] - Triển Khai Hoàn Tất Dòng 105 Sheet FIX FE (Lỗi Load Modul Cấu Hình Hệ Thống)
+### Module: Báo Cáo Quản Lý ([ReportsPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reports/ReportsPage.vue)) & Cấu Hình Hệ Thống ([ConfigPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/ConfigPage.vue))
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **1. Khắc phục lỗi kẹt điều hướng khi chuyển từ Báo cáo -> PMS -> Cấu hình hệ thống (Dòng 105)**:
+    + Rào chắn `watch(() => route.query.report)`: Thêm kiểm tra `if (!route.path.startsWith('/reports')) return` để ngăn chặn việc tự động kích hoạt `router.replace` đẩy query report sang URL `/pms`.
+    + Rào chắn `watch(pmsWorkspaceKey)` & `loadReports()`: Thêm kiểm tra `route.path.startsWith('/reports')` trước và sau các lệnh `await` để dừng ngay các tiến trình nạp báo cáo bất đồng bộ và không gọi `router.replace` khi người dùng đã chuyển sang module khác.
+    + Cố định khóa workspace `pmsWorkspaceKey`: Sử dụng `'/reports'` khi đường dẫn không còn thuộc module báo cáo, tránh ghi đè dữ liệu workspace dưới khóa rác `...:/pms`.
+    + Bảo vệ `saveWorkspace`: Bọc an toàn `tab.report?.id || tab.id` để tránh quăng lỗi runtime làm gián đoạn chu trình unmount của Vue 3.
+    + Rào chắn trong `ConfigPage.vue`: Bổ sung kiểm tra `if (!route.path.startsWith('/config')) return` trong `watch(currentView)` để đảm bảo an toàn điều hướng.
+  - **2. Kiểm thử & Zero Side Effects**:
+    + `npm run build` thành công trong 6.31s (0 lỗi).
+    + Điều hướng giữa Báo cáo Quản lý, Trang chủ PMS và Cấu hình hệ thống diễn ra mượt mà, không còn hiện tượng kẹt router phải F5 tải lại trang.
+
+## [2026-11-06] - Triển Khai Hoàn Tất Dòng 103 Sheet FIX FE (Cấu Hình Hệ Thống / Dịch Vụ Khách Sạn)
+### Module: Cấu Hình Hệ Thống ([HotelServiceTab.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/config/components/hotel/HotelServiceTab.vue))
+- **Mục tiêu & Kết quả hoàn thành**:
+  - **1. Sắp xếp lại thứ tự Phí phục vụ, Thuế tiêu thụ ĐB, Thuế (Dòng 103)**:
+    + Cập nhật tiêu đề bảng (`<thead>`): Đổi thứ tự 3 cột tỷ lệ thành `Phí Phục Vụ (%)`, `Thuế Tiêu Thụ ĐB (%)`, `Thuế (%)`.
+    + Đổi thứ tự 3 cột switch toggle: `Bao Gồm Phí PV`, `Bao Gồm Thuế TTĐB`, `Bao Gồm Thuế`.
+    + Đồng bộ thứ tự ô dữ liệu (`<td>`) và toggle switch tương ứng trong hàng dữ liệu (`<tbody>`).
+    + Chuẩn hóa nhãn trong modal Thêm/Sửa: `Thuế Tiêu Thụ ĐB (%)`, `Bao gồm thuế TTĐB`.
+  - **2. Đồng bộ danh mục Đơn vị tính từ API thay vì hardcode**:
+    + Thêm hàm `fetchUnitsOfMeasure` gọi `GET /api/units-of-measure` và nạp vào `unitsOfMeasure`.
+    + Lọc danh mục đơn vị tính đang hoạt động (`activeUnits`) và binding động vào `<select v-model="serviceFormState.unit">`.
+    + Giữ cơ chế dự phòng: Nếu dịch vụ đã lưu có đơn vị tính chưa có trong danh mục kích hoạt, vẫn hiển thị option dự phòng để không mất dữ liệu hiển thị.
+  - **3. Zero Side Effects & Build**:
+    + Can thiệp 100% cục bộ trong `HotelServiceTab.vue`, không sửa API backend hay database.
+    + `npm run build` thành công trong 5.33s (0 lỗi).
+
 ## [2026-11-02] - Làm Lại Lịch Sử Thao Tác (Sheet Ghi Log) & Chuẩn Hóa Kiểm Tra Phòng Trống (Availability)
 ### Module: Lịch Sử Thao Tác (Activity Log), Kiểm Tra Phòng Trống (Room Availability)
 - **Mục tiêu & Kết quả hoàn thành**:
