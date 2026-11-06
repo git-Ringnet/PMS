@@ -50,6 +50,13 @@ watch(() => props.initialShowPrice, (val) => {
 
 // Dữ liệu khách sạn, booking và tổng hợp tài chính
 const hotel = computed(() => props.printData?.hotel || {})
+// logo_url do server trả dạng đường dẫn tương đối (uploads/hotel/...): thêm "/" để không bị ghép theo URL trang hiện tại (ảnh vỡ).
+const hotelLogoSrc = computed(() => {
+  const path = String(hotel.value.logo_url || '')
+  if (!path) return ''
+  if (/^(https?:|blob:|data:)/.test(path)) return path
+  return path.startsWith('/') ? path : `/${path}`
+})
 const booking = computed(() => props.printData?.booking || {})
 const summary = computed(() => props.printData?.summary || {})
 
@@ -130,6 +137,17 @@ function handlePrint() {
   window.print()
 }
 
+// Dòng 102, 103: khi modal mở đánh dấu <body> để CSS in ẩn giao diện phía sau và cho tờ in tự ngắt trang
+// (modal là lớp fixed + overflow nên nếu không thì chỉ in được đúng trang đầu).
+function syncPrintBodyClass(open) {
+  if (typeof document === 'undefined') return
+  if (open) document.body.classList.add('print-modal-open')
+  else document.body.classList.remove('print-modal-open')
+}
+
+watch(() => props.isOpen, syncPrintBodyClass, { immediate: true })
+onUnmounted(() => syncPrintBodyClass(false))
+
 function handleKeyDown(e) {
   if (e.key === 'Escape' && props.isOpen) {
     emit('close')
@@ -144,7 +162,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
   <Teleport to="body">
     <div
       v-if="isOpen"
-      class="fixed inset-0 z-50 flex flex-col bg-slate-900/85 backdrop-blur-xs text-slate-800 animate-in fade-in duration-150 overflow-y-auto"
+      class="print-root fixed inset-0 z-50 flex flex-col bg-slate-900/85 backdrop-blur-xs text-slate-800 animate-in fade-in duration-150 overflow-y-auto"
       style="font-family: Roboto, sans-serif;"
     >
       <!-- Non-printable Top Controls Toolbar -->
@@ -251,7 +269,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                 <td class="w-[30%] align-top p-0 border-none">
                   <img
                     v-if="hotel.logo_url"
-                    :src="hotel.logo_url"
+                    :src="hotelLogoSrc"
                     class="max-h-[65px] block object-contain"
                     alt="Logo"
                   />
@@ -660,7 +678,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
                 <td class="w-1/2 align-middle p-0 border-none">
                   <img
                     v-if="hotel.logo_url"
-                    :src="hotel.logo_url"
+                    :src="hotelLogoSrc"
                     class="max-h-[55px] block object-contain"
                     alt="Logo"
                   />
@@ -1113,6 +1131,28 @@ onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
     padding: 0 !important;
     width: 100% !important;
     max-width: 100% !important;
+  }
+}
+</style>
+
+<style>
+/* Dòng 102, 103: in đủ nhiều trang. Ẩn app phía sau, đưa modal về luồng thường để trình duyệt tự ngắt trang. */
+@media print {
+  html:has(body.print-modal-open),
+  body.print-modal-open {
+    height: auto !important;
+    overflow: visible !important;
+  }
+  body.print-modal-open > #app {
+    display: none !important;
+  }
+  body.print-modal-open .print-root {
+    position: static !important;
+    inset: auto !important;
+    overflow: visible !important;
+    display: block !important;
+    background: #fff !important;
+    backdrop-filter: none !important;
   }
 }
 </style>
