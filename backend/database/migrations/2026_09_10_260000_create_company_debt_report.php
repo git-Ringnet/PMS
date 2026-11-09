@@ -33,6 +33,7 @@ CREATE PROCEDURE rpt_company_debt(
 )
 READS SQL DATA
 BEGIN
+    SELECT t.BookingId, t.Room, t.CompanyId, t.CompanyName, t.ArrivalDate, t.DepartureDate, t.Description, t.TotalAmount, t.`Date`, t.DateGroup, t.Username, t.PaidMarker, t.MaxDebt, t.ReCreditLimit, t.Outlet, t.AC, t.PaidAmount, t.RemainingAmount, t.RoomId, t.Guest, t.Pack5, t.PaymentId, t.StatusBooking, t.Ma, t.StatusRoom, t.SettlementItems FROM (
     SELECT DISTINCT
         CONCAT(COALESCE(hs.prefix_booking_id, ''), COALESCE(si.legacy_booking_id, '')) AS BookingId,
         si.room AS Room,
@@ -80,7 +81,9 @@ BEGIN
                   AND (s.payment_id = p.id OR s.legacy_payment_table_id = p.legacy_id)
             )
             ELSE NULL
-        END AS SettlementItems
+        END AS SettlementItems,
+        si.legacy_booking_id AS _order_booking,
+        p.legacy_id AS _order_payment
     FROM service_bills AS sb
     INNER JOIN sales_invoices AS si
         ON si.legacy_id = sb.InvoiceId
@@ -117,7 +120,8 @@ BEGIN
       AND p.edit_flag = 0
       AND si.invoice_date BETWEEN p_from_date AND p_to_date
       AND (p_company_id IS NULL OR p_company_id = 0 OR p.company_id = p_company_id)
-    ORDER BY si.invoice_date, p.company_id, si.legacy_booking_id, si.room, p.legacy_id;
+    ) AS t
+    ORDER BY t.`Date`, t.CompanyId, t._order_booking, t.Room, t._order_payment;
 END
 SQL;
     }
