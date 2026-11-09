@@ -429,6 +429,32 @@ class BookingRoom extends Model
         return $this->hasMany(BookingRoomService::class);
     }
 
+    /**
+     * Dòng 458: dịch vụ đã bị "chuyển đi" khỏi phòng (chuyển bill sang phòng khác/master) nhưng vẫn là dịch vụ phát sinh
+     * gốc của phòng này. Dòng bị xóa mềm kèm bill cũ đã thay bằng bill mới còn hiệu lực (cùng phòng gốc/mã/ngày).
+     * Màn Đăng ký dùng để hiển thị tiền ở phòng gốc; Hóa đơn/Checkout không dùng.
+     * Dòng bị xóa/hủy thật (bill không còn hiệu lực) không được hồi sinh.
+     */
+    public function transferredOutServices()
+    {
+        return $this->hasMany(BookingRoomService::class)
+            ->onlyTrashed()
+            ->whereExists(function ($query) {
+                $query->selectRaw('1')->from('service_bills as old_bill')
+                    ->whereColumn('old_bill.Ma', 'booking_room_services.service_bill_id')
+                    ->where('old_bill.Status', 4)
+                    ->where('old_bill.Edit', 1);
+            })
+            ->whereExists(function ($query) {
+                $query->selectRaw('1')->from('service_bills as live_bill')
+                    ->whereColumn('live_bill.RentalRoomId1', 'booking_room_services.booking_room_id')
+                    ->whereColumn('live_bill.ServiceId', 'booking_room_services.service_code')
+                    ->whereRaw('DATE(live_bill.Date) = DATE(booking_room_services.service_date)')
+                    ->whereIn('live_bill.Status', [1, 2])
+                    ->where('live_bill.Edit', 0);
+            });
+    }
+
     public function lateCheckins()
     {
         return $this->hasMany(LateCheckin::class, 'booking_room_id');

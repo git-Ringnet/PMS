@@ -20,6 +20,7 @@ import {
   mergeMoveHistoryBillReferences,
 } from '@/utils/booking-room-move-history'
 import { summarizeRoomTotals } from '@/utils/booking-room-totals'
+import { collectRoomOwnedBills, distributeServicesByBillOrigin, mergeRoomServices, transferredBillIds } from '@/utils/booking-bill-origin'
 import { extraBedBillRow, findExtraBedBillsOutsideStay, findMoveHistoryExtraBedBill } from '@/utils/booking-room-extra-bed-bills'
 import { applySavedRoomColumns, serializeRoomColumns } from '@/utils/booking-room-columns'
 import { normalizeShuttleInfo, buildBookingHistoryLocation } from '@/utils/booking-shuttle-history'
@@ -1157,10 +1158,10 @@ async function toggleRoomExpand(room) {
       try {
         const res = await fetchBookingRoomServices(room.bookingRoomId)
         const list = res.data?.data || []
-        room.services = list.map(s => ({
+        room.services = mergeRoomServices(room, list.map(s => ({
           ...s,
           service_date: cleanDateStr(s.service_date)
-        }))
+        })))
         room.serviceBills = mergeMoveHistoryBillReferences(
           room.serviceBills,
           res.data?.move_history_bills || [],
@@ -1366,10 +1367,10 @@ async function handleInlineServiceRateChange(room, svc, newRate) {
           }
         }
         const freshRes = await fetchBookingRoomServices(room.bookingRoomId)
-        room.services = (freshRes.data?.data || []).map(s => ({
+        room.services = mergeRoomServices(room, (freshRes.data?.data || []).map(s => ({
           ...s,
           service_date: cleanDateStr(s.service_date)
-        }))
+        })))
         room.total = calculateRoomTotal(room)
         notifyRoomUpdates(activeTab.value?.dbId)
       }
@@ -1437,10 +1438,10 @@ async function handleInlineServiceQtyChange(room, svc, newQty) {
       if (res.data?.success) {
         uiStore.showToast('Cập nhật số lượng dịch vụ thành công!', 'success')
         const freshRes = await fetchBookingRoomServices(room.bookingRoomId)
-        room.services = (freshRes.data?.data || []).map(s => ({
+        room.services = mergeRoomServices(room, (freshRes.data?.data || []).map(s => ({
           ...s,
           service_date: cleanDateStr(s.service_date)
-        }))
+        })))
         room.total = calculateRoomTotal(room)
         notifyRoomUpdates(activeTab.value?.dbId)
       }
@@ -1530,10 +1531,10 @@ async function handleServiceIsRoomToggle(room, svc, isChecked) {
       if (res.data?.success) {
         uiStore.showToast('Cập nhật trạng thái GIT/FIT thành công!', 'success')
         const freshRes = await fetchBookingRoomServices(room.bookingRoomId)
-        room.services = (freshRes.data?.data || []).map(s => ({
+        room.services = mergeRoomServices(room, (freshRes.data?.data || []).map(s => ({
           ...s,
           service_date: cleanDateStr(s.service_date)
-        }))
+        })))
         notifyRoomUpdates(activeTab.value?.dbId)
       }
     } catch (err) {
@@ -3280,7 +3281,20 @@ function bookingToTab(b) {
 
   // Nếu API trả về booking_rooms (dữ liệu mới)
   if (b.booking_rooms && b.booking_rooms.length > 0) {
+    // Dòng 458: bill/dịch vụ đã chuyển sang phòng khác (hoặc master) vẫn hiển thị ở PHÒNG GỐC phát sinh, không đổ về phòng nhận.
+    const bookingRoomIds = new Set(b.booking_rooms.map(room => String(room.id)))
+    const allBookingBills = [
+      ...(b.service_bills || b.serviceBills || []),
+      ...b.booking_rooms.flatMap(room => [
+        ...(room.service_bills || room.serviceBills || []),
+        ...(room.current_service_bills || room.currentServiceBills || []),
+      ]),
+    ]
+    const servicesByRoom = distributeServicesByBillOrigin(b.booking_rooms, allBookingBills)
+    const transferredIds = transferredBillIds(allBookingBills)
     b.booking_rooms.forEach(br => {
+      const originSlot = servicesByRoom.get(String(br.id))
+      const ownServices = originSlot?.services || br.services || []
       const rc = br.room_class || {}
       const physicalRoom = br.room || {}
       
@@ -3292,7 +3306,7 @@ function bookingToTab(b) {
         nightsCount = diff >= 0 ? diff : 0
       }
       const priceNum = Number(br.rate) || 0
-      const servicesList = br.services || []
+      const servicesList = ownServices
       const servicesTotal = servicesList.filter(svc => svc.service_code !== 'EB' && svc.service_code !== 'RM' && svc.service_code !== 'ROOM_CHARGE').reduce((sum, svc) => sum + (Number(svc.rate) * (svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1)), 0)
       const roomChargeTotal = servicesList.filter(svc => svc.service_code === 'RM' || svc.service_code === 'ROOM_CHARGE').reduce((sum, svc) => sum + (Number(svc.rate) * (svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1)), 0)
       const extraBedDetailTotal = servicesList.filter(svc => svc.service_code === 'EB').reduce((sum, svc) => sum + (Number(svc.rate) * (svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1)), 0)
@@ -3362,17 +3376,8 @@ function bookingToTab(b) {
         ...(br.current_service_bills || br.currentServiceBills || []),
         ...((b.service_bills || b.serviceBills || []).filter(sb => String(sb.RentalRoomId1) === String(br.id) || String(sb.RentalRoomId2) === String(br.id)))
       ]
-      const seenBillIds = new Set()
-      const roomBills = []
-      rawBills.forEach(sb => {
-        const bId = sb.Ma ?? sb.id
-        if (bId && !seenBillIds.has(String(bId))) {
-          seenBillIds.add(String(bId))
-          roomBills.push(sb)
-        } else if (!bId) {
-          roomBills.push(sb)
-        }
-      })
+      // Dòng 458: chỉ giữ bill mà phòng này là phòng gốc (bill chuyển đi nơi khác vẫn tính ở phòng gốc, không tính thêm ở phòng nhận).
+      const roomBills = collectRoomOwnedBills(rawBills, br.id, bookingRoomIds, transferredIds)
 
       const roomObj = {
         id: idCounter++,
@@ -3426,7 +3431,9 @@ function bookingToTab(b) {
         roomCode: br.id || '',
         total: 0,
         roomClassId: br.room_class_id,
-        services: br.services || [],
+        services: ownServices,
+        originExtraServices: originSlot?.extras || [],
+        foreignServiceBillIds: originSlot?.foreignBillIds || new Set(),
         serviceBills: roomBills,
         childRecords: br.children || [],
         dailyRoomPrices: Object.keys(dailyRoomPrices).length ? dailyRoomPrices : null,
@@ -4417,10 +4424,10 @@ async function closeDiscountPopover(room, svc) {
           }
         }
         const freshRes = await fetchBookingRoomServices(room.bookingRoomId)
-        room.services = (freshRes.data?.data || []).map(s => ({
+        room.services = mergeRoomServices(room, (freshRes.data?.data || []).map(s => ({
           ...s,
           service_date: cleanDateStr(s.service_date)
-        }))
+        })))
         room.total = calculateRoomTotal(room)
       }
     } catch (err) {
