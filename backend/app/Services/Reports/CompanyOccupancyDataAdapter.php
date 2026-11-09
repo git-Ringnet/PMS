@@ -27,7 +27,9 @@ final class CompanyOccupancyDataAdapter
         $totalRoomRevenue = array_sum(array_map(static fn (array $row): float => (float) ($row['RoomRevenue'] ?? 0), $rows));
         $totalFoc = array_sum(array_map(static fn (array $row): float => (float) ($row['FocRoomNights'] ?? $row['Foc'] ?? 0), $rows));
         $totalHu = array_sum(array_map(static fn (array $row): float => (float) ($row['HuRoomNights'] ?? $row['Hu'] ?? 0), $rows));
-        $totalRoomAvailable = (int) ($rows[0]['RoomAvailable'] ?? $rows[0]['TotalRoomAvailable'] ?? 0);
+        // TotalRoomAvailable là tổng công suất của toàn kỳ. RoomAvailable có thể là
+        // công suất của từng group ngày nên không được lấy làm tổng báo cáo.
+        $totalRoomAvailable = (int) ($rows[0]['TotalRoomAvailable'] ?? $rows[0]['RoomAvailable'] ?? 0);
 
         if ($totalRoomAvailable <= 0) {
             $totalRoomAvailable = 1;

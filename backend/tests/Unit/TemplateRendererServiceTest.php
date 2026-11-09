@@ -216,6 +216,30 @@ HTML;
         $this->assertStringContainsString('Ghi chú', $visible);
     }
 
+    public function test_it_hides_a_configured_table_column_everywhere_and_recalculates_group_colspan(): void
+    {
+        $html = <<<'HTML'
+<table>
+<thead><tr><th data-pms-column-id="code">Mã</th><th data-pms-column-id="detail" data-visible-by="parameters.show_detail">Chi tiết</th></tr><tr><th data-pms-column-id="code">1</th><th data-pms-column-id="detail" data-visible-by="parameters.show_detail">2</th></tr></thead>
+<tbody class="pms-grouped-rows" data-source="rows" data-group-configured="1" data-group-by="Group"><tr class="pms-group-header" data-group-level="0" data-group-field="Group"><td data-pms-auto-colspan="1" colspan="2">{{row.Group}}</td></tr><tr class="pms-detail-row"><td data-pms-column-id="code">{{row.Code}}</td><td data-pms-column-id="detail" data-visible-by="parameters.show_detail">{{row.Detail}}</td></tr></tbody>
+<tfoot><tr class="pms-custom-row"><td data-pms-column-id="code">Tổng</td><td data-pms-column-id="detail" data-visible-by="parameters.show_detail">{{aggregate.rows.sum.Detail}}</td></tr></tfoot>
+</table>
+HTML;
+        $data = ['parameters' => ['show_detail' => false], 'rows' => [['Group' => 'A', 'Code' => 'C01', 'Detail' => 5]]];
+
+        $compact = app(TemplateRendererService::class)->render($html, '', $data);
+        $this->assertStringNotContainsString('Chi tiết', $compact);
+        $this->assertStringNotContainsString('<td>5</td>', $compact);
+        $this->assertStringContainsString('colspan="1"', $compact);
+        $this->assertStringNotContainsString('data-pms-column-id', $compact);
+
+        $data['parameters']['show_detail'] = true;
+        $detailed = app(TemplateRendererService::class)->render($html, '', $data);
+        $this->assertStringContainsString('Chi tiết', $detailed);
+        $this->assertStringContainsString('<td>C01</td><td>5</td>', $detailed);
+        $this->assertStringContainsString('colspan="2"', $detailed);
+    }
+
     public function test_it_renders_detail_custom_rows_without_grouping(): void
     {
         $html = <<<'HTML'

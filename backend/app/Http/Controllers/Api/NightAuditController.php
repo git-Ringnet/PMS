@@ -663,7 +663,7 @@ class NightAuditController extends Controller
             ['code' => 'PRE_CHECK',              'name' => 'Kiểm tra điều kiện phòng đến/đi',          'order' => 1],
             ['code' => 'LOCK_AND_VERIFY',        'name' => 'Khóa tiến trình & Xác thực ngày đóng',     'order' => 2],
             ['code' => 'POST_BILLS',             'name' => 'Tự động post tiền phòng & dịch vụ đêm',    'order' => 3],
-            ['code' => 'SNAPSHOT_SP7000',        'name' => 'Lưu Snapshot Năng suất đại lý (SP7000)',   'order' => 4],
+            ['code' => 'SNAPSHOT_SP7000',        'name' => 'Lưu Snapshot Công suất công ty (SP7000)',  'order' => 4],
             ['code' => 'SNAPSHOT_SP7001',        'name' => 'Lưu Snapshot Khách đang ở (SP7001)',      'order' => 5],
             ['code' => 'SNAPSHOT_SP7002',        'name' => 'Lưu Snapshot KPI đại lý (SP7002)',         'order' => 6],
             ['code' => 'SNAPSHOT_SP7003',        'name' => 'Lưu Snapshot Dự báo kinh doanh (SP7003)',  'order' => 7],
@@ -939,11 +939,16 @@ class NightAuditController extends Controller
                 // Bước 15: Back Up Data After Night Audit (SP7000 - SP7005)
                 $notifyStep(15, 'BACKUP_POST', 'Back Up Data After Night Audit', 94);
 
-                // Snapshot SP7000 (Agency Productivity)
+                // Snapshot SP7000 và fact chuyên biệt của Báo cáo công suất công ty.
+                // Fact riêng giữ BF/F&B/doanh thu khác để lịch sử không phụ thuộc dữ liệu live.
                 $currentStepCode = 'SNAPSHOT_SP7000';
                 $snapshotService->markStepRunning($steps['SNAPSHOT_SP7000']);
                 $sp7000Rows = $snapshotService->captureAgencyProductivity($systemDate, $run);
-                $snapshotService->markStepSucceeded($steps['SNAPSHOT_SP7000'], $sp7000Rows);
+                $companyOccupancyRows = $snapshotService->captureCompanyOccupancyReport($systemDate, $run);
+                $snapshotService->markStepSucceeded($steps['SNAPSHOT_SP7000'], $sp7000Rows + $companyOccupancyRows, [
+                    'agency_productivity_rows' => $sp7000Rows,
+                    'company_occupancy_rows' => $companyOccupancyRows,
+                ]);
 
                 // Snapshot SP7001 (Inhouse Guests)
                 $currentStepCode = 'SNAPSHOT_SP7001';

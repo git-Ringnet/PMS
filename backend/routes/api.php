@@ -228,6 +228,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     Route::post('report-definitions/{reportDefinition}/execute', [\App\Http\Controllers\Api\ReportDefinitionController::class, 'execute']);
     Route::post('report-definitions/{reportDefinition}/render', [\App\Http\Controllers\Api\ReportDefinitionController::class, 'render']);
     Route::post('report-definitions/{reportDefinition}/exports', [\App\Http\Controllers\Api\ReportDefinitionController::class, 'export']);
+    Route::patch('report-definitions/{reportDefinition}/parameter-ui-schema', [\App\Http\Controllers\Api\ReportDefinitionController::class, 'updateParameterUiSchema'])
+        ->middleware($canWrite('config.template.*'));
     // Dòng 327, 328: cấu hình menu báo cáo theo module và quyền xem từng báo cáo
     Route::get('report-menu/navigation', [\App\Http\Controllers\Api\ReportMenuController::class, 'navigation']);
     Route::get('report-menu', [\App\Http\Controllers\Api\ReportMenuController::class, 'index'])->middleware('permission:admin,system.setting,config.hotel.edit');

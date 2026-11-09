@@ -9,7 +9,12 @@ const authStore = useAuthStore()
 const loading = ref(false)
 const hotelServices = ref([])
 const departments = ref([])
+const unitsOfMeasure = ref([])
 const searchServiceQuery = ref('')
+
+const activeUnits = computed(() => {
+  return unitsOfMeasure.value.filter(u => !u.is_inactive)
+})
 
 const topbarThemeBg = computed(() => authStore.themeColor || 'var(--pms-custom-theme, #006bdb)')
 
@@ -90,6 +95,15 @@ const fetchDepartments = async () => {
   departments.value = res.data?.data || []
 }
 
+const fetchUnitsOfMeasure = async () => {
+  try {
+    const res = await http.get('/units-of-measure')
+    unitsOfMeasure.value = res.data?.data || []
+  } catch (err) {
+    console.error('Lỗi khi tải danh sách đơn vị tính:', err)
+  }
+}
+
 const fetchHotelServices = async () => {
   loading.value = true
   try {
@@ -119,7 +133,7 @@ const openAddServiceModal = () => {
     include_special_tax: true,
     folio: 1,
     short_name: '',
-    unit: 'Lần',
+    unit: activeUnits.value[0]?.name || 'Lần',
     price: 0,
     is_active: true,
     department_id: departments.value.find(department => department.code === 'FO')?.id || departments.value[0]?.id || null,
@@ -225,7 +239,7 @@ const formatCurrency = (val) => {
 }
 
 onMounted(() => {
-  Promise.all([fetchDepartments(), fetchHotelServices()])
+  Promise.all([fetchDepartments(), fetchHotelServices(), fetchUnitsOfMeasure()])
   window.addEventListener('keydown', handleKeyDown)
 })
 
@@ -277,12 +291,12 @@ onBeforeUnmount(() => {
             <th class="p-2.5 text-center align-middle border border-slate-200 whitespace-nowrap">Mã</th>
             <th class="p-2.5 text-center align-middle border border-slate-200 min-w-[200px]">Tên Dịch Vụ Đầy Đủ</th>
             <th class="p-2.5 text-center align-middle border border-slate-200 whitespace-nowrap">Trạng Thái</th>
-            <th class="p-2.5 text-center align-middle border border-slate-200 whitespace-nowrap">Thuế (%)</th>
-            <th class="p-2.5 text-center align-middle border border-slate-200 whitespace-nowrap">Thuế Đặc Biệt (%)</th>
             <th class="p-2.5 text-center align-middle border border-slate-200 whitespace-nowrap">Phí Phục Vụ (%)</th>
-            <th class="p-2.5 text-center align-middle border border-slate-200 whitespace-nowrap">Bao Gồm Thuế</th>
-            <th class="p-2.5 text-center align-middle border border-slate-200 whitespace-nowrap">Bao Gồm Thuế ĐB</th>
+            <th class="p-2.5 text-center align-middle border border-slate-200 whitespace-nowrap">Thuế Tiêu Thụ ĐB (%)</th>
+            <th class="p-2.5 text-center align-middle border border-slate-200 whitespace-nowrap">Thuế (%)</th>
             <th class="p-2.5 text-center align-middle border border-slate-200 whitespace-nowrap">Bao Gồm Phí PV</th>
+            <th class="p-2.5 text-center align-middle border border-slate-200 whitespace-nowrap">Bao Gồm Thuế TTĐB</th>
+            <th class="p-2.5 text-center align-middle border border-slate-200 whitespace-nowrap">Bao Gồm Thuế</th>
             <th class="p-2.5 text-center align-middle border border-slate-200 whitespace-nowrap">Folio</th>
             <th class="p-2.5 text-center align-middle border border-slate-200 whitespace-nowrap">Tên Ngắn</th>
             <th class="p-2.5 text-center align-middle border border-slate-200 whitespace-nowrap">Đơn Vị</th>
@@ -305,13 +319,13 @@ onBeforeUnmount(() => {
                 <div class="w-8 h-4.5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-emerald-500"></div>
               </label>
             </td>
-            <td class="p-2.5 text-center font-normal text-[#000000D9]">{{ s.tax }}</td>
-            <td class="p-2.5 text-center font-normal text-[#000000D9]">{{ s.special_tax }}</td>
             <td class="p-2.5 text-center font-normal text-[#000000D9]">{{ s.service_charge }}</td>
+            <td class="p-2.5 text-center font-normal text-[#000000D9]">{{ s.special_tax }}</td>
+            <td class="p-2.5 text-center font-normal text-[#000000D9]">{{ s.tax }}</td>
             <td class="p-2.5 text-center">
               <label @click.stop class="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" :checked="s.include_tax" @change="toggleServiceFlag(s, 'include_tax')"
-                  class="sr-only peer" />
+                <input type="checkbox" :checked="s.include_service_charge"
+                  @change="toggleServiceFlag(s, 'include_service_charge')" class="sr-only peer" />
                 <div
                   class="w-8 h-4.5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-blue-500">
                 </div>
@@ -328,8 +342,8 @@ onBeforeUnmount(() => {
             </td>
             <td class="p-2.5 text-center">
               <label @click.stop class="relative inline-flex items-center cursor-pointer">
-                <input type="checkbox" :checked="s.include_service_charge"
-                  @change="toggleServiceFlag(s, 'include_service_charge')" class="sr-only peer" />
+                <input type="checkbox" :checked="s.include_tax" @change="toggleServiceFlag(s, 'include_tax')"
+                  class="sr-only peer" />
                 <div
                   class="w-8 h-4.5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-blue-500">
                 </div>
@@ -441,7 +455,7 @@ onBeforeUnmount(() => {
                     class="border border-slate-200 rounded-lg p-2 focus:outline-none focus:border-sky-500 text-xs font-normal text-[#000000D9] bg-white" />
                 </div>
                 <div class="flex flex-col gap-1">
-                  <label>Thuế Đặc Biệt (%)</label>
+                  <label>Thuế Tiêu Thụ ĐB (%)</label>
                   <input type="number" min="0" max="100" v-model="serviceFormState.special_tax"
                     class="border border-slate-200 rounded-lg p-2 focus:outline-none focus:border-sky-500 text-xs font-normal text-[#000000D9] bg-white" />
                 </div>
@@ -464,7 +478,7 @@ onBeforeUnmount(() => {
                   </label>
                 </div>
                 <div class="flex flex-col gap-1 items-start">
-                  <span class="text-[11px] text-slate-500">Bao gồm thuế ĐB</span>
+                  <span class="text-[11px] text-slate-500">Bao gồm thuế TTĐB</span>
                   <label class="relative inline-flex items-center cursor-pointer mt-0.5">
                     <input type="checkbox" v-model="serviceFormState.include_special_tax" class="sr-only peer">
                     <div
@@ -494,11 +508,12 @@ onBeforeUnmount(() => {
                   <label>Đơn Vị</label>
                   <select v-model="serviceFormState.unit"
                     class="border border-slate-200 rounded-lg p-2 bg-white focus:outline-none focus:border-sky-500 text-xs font-normal text-[#000000D9]">
-                    <option value="Người">Người</option>
-                    <option value="Lần">Lần</option>
-                    <option value="Phòng">Phòng</option>
-                    <option value="Cái">Cái</option>
-                    <option value="Giờ">Giờ</option>
+                    <option v-if="serviceFormState.unit && !activeUnits.some(u => u.name === serviceFormState.unit)" :value="serviceFormState.unit">
+                      {{ serviceFormState.unit }}
+                    </option>
+                    <option v-for="u in activeUnits" :key="u.id" :value="u.name">
+                      {{ u.name }}
+                    </option>
                   </select>
                 </div>
                 <div class="flex flex-col gap-1">

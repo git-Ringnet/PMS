@@ -138,7 +138,7 @@
                 <div class="f s6">
                   <label>Họ và tên <span class="req">*</span></label>
                   <div class="relative flex items-center w-full">
-                    <GuestSuggestInput v-model="form.full_name" required placeholder="HỌ VÀ TÊN" style="text-transform:uppercase" :input-class="['input-required', { '!pr-7': form.full_name }]" @select="selectGuestSuggestion" />
+                    <GuestSuggestInput v-model="form.full_name" required placeholder="HỌ VÀ TÊN" style="text-transform:uppercase" :input-class="['input-required !h-8 !w-full !border !border-[#F1DD8A] !rounded-lg !text-xs !font-normal', { '!pr-7': form.full_name }]" @select="selectGuestSuggestion" />
                     <button v-if="form.full_name" type="button" @click.stop="form.full_name = ''" class="absolute right-2 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent flex items-center justify-center z-10" title="Xóa nhanh">
                       <i class="fa-solid fa-xmark text-xs"></i>
                     </button>
@@ -165,7 +165,7 @@
                     v-model="form.dob"
                     placeholder="dd/mm/yyyy"
                     four-digit-year
-                    input-class="!h-[30px] !py-0 !px-2 !rounded !border-[#C5CDDA] !text-xs !font-normal"
+                    input-class="!h-8 !border !py-0 !px-2 !rounded-lg !border-slate-200 !text-xs !font-normal focus:!border-[#1677ff] focus:!ring-1 focus:!ring-[#1677ff]"
                   />
                 </div>
 
@@ -186,7 +186,7 @@
 
             <!-- SECTION 2: Giấy tờ tùy thân -->
             <section class="sec">
-              <h3>Giấy Tờ Tùy Thân <span class="req">*</span></h3>
+              <h3>Giấy Tờ Tùy Thân</h3>
               <div class="g c12">
                 <div class="f s3">
                   <label>Loại giấy tờ</label>
@@ -203,9 +203,9 @@
                 </div>
 
                 <div class="f s3">
-                  <label>Số giấy tờ <span class="req">*</span></label>
+                  <label>Số giấy tờ</label>
                   <div class="relative flex items-center w-full">
-                    <GuestSuggestInput v-model="form.id_number" required placeholder="Số CCCD / Passport" :input-class="['input-required', { '!pr-7': form.id_number }]" @select="selectGuestSuggestion" />
+                    <GuestSuggestInput v-model="form.id_number" placeholder="Số CCCD / Passport" :input-class="['!h-8 !w-full !border !rounded-lg !border-slate-200 !text-xs !font-normal focus:!border-[#1677ff] focus:!ring-1 focus:!ring-[#1677ff]', { '!pr-7': form.id_number }]" @select="selectGuestSuggestion" />
                     <button v-if="form.id_number" type="button" @click.stop="form.id_number = ''" class="absolute right-2 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5 border-none bg-transparent flex items-center justify-center z-10" title="Xóa nhanh">
                       <i class="fa-solid fa-xmark text-xs"></i>
                     </button>
@@ -218,7 +218,7 @@
                     v-model="form.id_issue_date"
                     placeholder="dd/mm/yyyy"
                     four-digit-year
-                    input-class="!h-[30px] !py-0 !px-2 !rounded !border-[#C5CDDA] !text-xs !font-normal"
+                    input-class="!h-8 !border !py-0 !px-2 !rounded-lg !border-slate-200 !text-xs !font-normal focus:!border-[#1677ff] focus:!ring-1 focus:!ring-[#1677ff]"
                   />
                 </div>
 
@@ -228,7 +228,7 @@
                     v-model="form.passport_expiry"
                     placeholder="dd/mm/yyyy"
                     four-digit-year
-                    input-class="!h-[30px] !py-0 !px-2 !rounded !border-[#C5CDDA] !text-xs !font-normal"
+                    input-class="!h-8 !border !py-0 !px-2 !rounded-lg !border-slate-200 !text-xs !font-normal focus:!border-[#1677ff] focus:!ring-1 focus:!ring-[#1677ff]"
                   />
                   <div v-if="isPassportExpiredBeforeDeparture" class="msg err">
                     Giấy tờ hết hạn trước ngày trả phòng
@@ -241,7 +241,7 @@
                     v-model="form.entry_date"
                     placeholder="dd/mm/yyyy"
                     four-digit-year
-                    input-class="!h-[30px] !py-0 !px-2 !rounded !border-[#C5CDDA] !text-xs !font-normal"
+                    input-class="!h-8 !border !py-0 !px-2 !rounded-lg !border-slate-200 !text-xs !font-normal focus:!border-[#1677ff] focus:!ring-1 focus:!ring-[#1677ff]"
                   />
                 </div>
 
@@ -293,7 +293,7 @@
                     v-model="form.temp_residence_to"
                     placeholder="dd/mm/yyyy"
                     four-digit-year
-                    input-class="!h-[30px] !py-0 !px-2 !rounded !border-[#C5CDDA] !text-xs !font-normal"
+                    input-class="!h-8 !border !py-0 !px-2 !rounded-lg !border-slate-200 !text-xs !font-normal focus:!border-[#1677ff] focus:!ring-1 focus:!ring-[#1677ff]"
                   />
                 </div>
 
@@ -1046,7 +1046,6 @@ async function handleSave() {
   const missingRequiredFields = []
   if (!String(form.value.full_name || '').trim()) missingRequiredFields.push('Họ và tên')
   if (!String(form.value.nationality_code || '').trim()) missingRequiredFields.push('Quốc tịch')
-  if (!String(form.value.id_number || '').trim()) missingRequiredFields.push('Số giấy tờ')
   if (missingRequiredFields.length) {
     uiStore.showToast(`Vui lòng nhập/chọn: ${missingRequiredFields.join(', ')}`, 'warning')
     return
@@ -1463,9 +1462,9 @@ async function handleSave() {
 .f input, .f select, .f textarea {
   font: inherit;
   color: var(--txt);
-  height: 30px;
-  border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  height: 32px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
   padding: 0 9px;
   background: #fff;
   width: 100%;
@@ -1480,8 +1479,8 @@ async function handleSave() {
   min-height: 52px;
 }
 .f input:focus, .f select:focus, .f textarea:focus {
-  border-color: var(--blue);
-  box-shadow: 0 0 0 3px rgba(47, 111, 237, 0.15);
+  border-color: #1677ff;
+  box-shadow: 0 0 0 1px #1677ff;
 }
 .f input::placeholder {
   color: #A6AFBD;

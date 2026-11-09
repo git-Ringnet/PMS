@@ -25,6 +25,7 @@ class TemplateRendererService
         // 2. Handle conditional blocks/rows, grouped report bodies, then ordinary detail rows.
         $html = $this->renderConditionalBlocks($html, $data);
         $html = $this->renderConditionalCustomRows($html, $data);
+        $html = $this->renderConditionalTableColumns($html, $data);
         $html = $this->renderGroupedRows($html, $data);
 
         // 3. Handle detail rows in bands (dynamic table repeating)
@@ -144,6 +145,82 @@ class TemplateRendererService
             $attributes = preg_replace('/\sdata-visible-by="[^"]*"/i', '', $matches[1]);
             return '<tr'.$attributes.'>'.$matches[2].'</tr>';
         }, $html);
+    }
+
+    /**
+     * Remove table elements configured as conditionally visible in the Template Designer.
+     * A single configured column is linked by `data-pms-column-id` across its header,
+     * index header, detail cells, totals and optional col definition.
+     */
+    private function renderConditionalTableColumns(string $html, array $data): string
+    {
+        return preg_replace_callback('/<table\b([^>]*)>(.*?)<\/table>/is', function (array $matches) use ($data): string {
+            $body = $this->renderConditionalColumnTags($matches[2], $data, 'col');
+            $body = $this->renderConditionalColumnTags($body, $data, 'th|td');
+
+            preg_match_all('/\bdata-pms-column-id="([^"]+)"/i', $body, $columnMatches);
+            $columnIds = array_values(array_unique($columnMatches[1] ?? []));
+            if ($columnIds === []) {
+                return '<table'.$matches[1].'>'.$body.'</table>';
+            }
+
+            $visibleColumnCount = max(1, count($columnIds));
+            $body = preg_replace_callback('/<(th|td)\b([^>]*)>/i', static function (array $cell) use ($visibleColumnCount): string {
+                if (! preg_match('/\bdata-pms-auto-colspan="[^"]*"/i', $cell[2])) {
+                    return $cell[0];
+                }
+
+                $attributes = preg_replace('/\sdata-pms-auto-colspan="[^"]*"/i', '', $cell[2]);
+                $attributes = preg_replace('/\scolspan="[^"]*"/i', ' colspan="'.$visibleColumnCount.'"', $attributes, 1, $replaced);
+                if (! $replaced) {
+                    $attributes .= ' colspan="'.$visibleColumnCount.'"';
+                }
+
+                return '<'.$cell[1].$attributes.'>';
+            }, $body);
+
+            $body = preg_replace('/\sdata-pms-column-id="[^"]*"/i', '', $body);
+
+            return '<table'.$matches[1].'>'.$body.'</table>';
+        }, $html);
+    }
+
+    private function renderConditionalColumnTags(string $html, array $data, string $tagPattern): string
+    {
+        if ($tagPattern === 'col') {
+            return preg_replace_callback('/<col\b([^>]*\bdata-pms-column-id="[^"]+"[^>]*)>/is', function (array $column) use ($data): string {
+                if (! $this->isVisibleColumnElement($column[1], $data)) {
+                    return '';
+                }
+
+                return '<col'.$this->withoutColumnVisibilityAttributes($column[1]).'>';
+            }, $html);
+        }
+
+        return preg_replace_callback('/<(?:'.$tagPattern.')\b([^>]*\bdata-pms-column-id="[^"]+"[^>]*)>(.*?)<\/(?:'.$tagPattern.')>/is', function (array $cell) use ($data): string {
+            if (! $this->isVisibleColumnElement($cell[1], $data)) {
+                return '';
+            }
+
+            $tag = str_starts_with(strtolower($cell[0]), '<th') ? 'th' : 'td';
+            return '<'.$tag.$this->withoutColumnVisibilityAttributes($cell[1]).'>'.$cell[2].'</'.$tag.'>';
+        }, $html);
+    }
+
+    private function isVisibleColumnElement(string $attributes, array $data): bool
+    {
+        $visibleBy = $this->attributeValue($attributes, 'data-visible-by');
+        if (! $visibleBy) {
+            return true;
+        }
+
+        $visible = $this->isTruthy($this->getValueByPath($data, $visibleBy));
+        return $this->attributeValue($attributes, 'data-visible-when') === 'falsy' ? ! $visible : $visible;
+    }
+
+    private function withoutColumnVisibilityAttributes(string $attributes): string
+    {
+        return preg_replace('/\sdata-visible-(?:by|when)="[^"]*"/i', '', $attributes);
     }
 
     /**

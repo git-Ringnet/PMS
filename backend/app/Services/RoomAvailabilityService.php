@@ -41,6 +41,15 @@ class RoomAvailabilityService
                 BookingRoom::STATUS_CHECKED_IN,
                 BookingRoom::STATUS_CHECKED_OUT,
             ])
+            ->whereNot(function ($checkedOutDayUse) {
+                $checkedOutDayUse
+                    ->where('status', BookingRoom::STATUS_CHECKED_OUT)
+                    ->whereColumn('arrival_date', '=', 'departure_date')
+                    ->where(function ($dayUse) {
+                        $dayUse->where('is_day_use', 1)
+                            ->orWhereHas('booking', fn ($booking) => $booking->where('is_day_use', 1));
+                    });
+            })
             // Rule: Ignore same-day stays that are not dayuse
             ->where(function ($q) {
                 $q->whereColumn('arrival_date', '!=', 'departure_date')
@@ -333,6 +342,15 @@ class RoomAvailabilityService
                 BookingRoom::STATUS_CHECKED_IN,
                 BookingRoom::STATUS_CHECKED_OUT,
             ])
+            ->whereNot(function ($checkedOutDayUse) {
+                $checkedOutDayUse
+                    ->where('status', BookingRoom::STATUS_CHECKED_OUT)
+                    ->whereColumn('arrival_date', '=', 'departure_date')
+                    ->where(function ($dayUse) {
+                        $dayUse->where('is_day_use', 1)
+                            ->orWhereHas('booking', fn ($booking) => $booking->where('is_day_use', 1));
+                    });
+            })
             ->where(function ($q) {
                 $q->whereColumn('arrival_date', '!=', 'departure_date')
                   ->orWhere('is_day_use', 1);
@@ -519,6 +537,15 @@ class RoomAvailabilityService
                 BookingRoom::STATUS_CHECKED_IN,
                 BookingRoom::STATUS_CHECKED_OUT,
             ])
+            ->whereNot(function ($checkedOutDayUse) {
+                $checkedOutDayUse
+                    ->where('status', BookingRoom::STATUS_CHECKED_OUT)
+                    ->whereColumn('arrival_date', '=', 'departure_date')
+                    ->where(function ($dayUse) {
+                        $dayUse->where('is_day_use', 1)
+                            ->orWhereHas('booking', fn ($booking) => $booking->where('is_day_use', 1));
+                    });
+            })
             ->whereHas('booking', function ($q) {
                 $q->whereNotIn('status', [Booking::STATUS_DELETED, Booking::STATUS_NO_SHOW])
                   ->whereHas('registrationStatus', function ($subQ) {

@@ -647,6 +647,14 @@ class NightAuditTest extends TestCase
         $this->assertDatabaseHas('night_audit_agency_productivity_snapshots', [
             'night_audit_run_id' => $run->id,
         ]);
+        $this->assertDatabaseHas('night_audit_company_occupancy_daily_snapshots', [
+            'night_audit_run_id' => $run->id,
+            'snapshot_date'      => $sysDateStr,
+        ]);
+        $this->assertDatabaseHas('night_audit_company_occupancy_snapshots', [
+            'night_audit_run_id' => $run->id,
+            'snapshot_date'      => $sysDateStr,
+        ]);
         $this->assertDatabaseHas('night_audit_inhouse_snapshots', [
             'night_audit_run_id' => $run->id,
             'room'               => '201',

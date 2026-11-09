@@ -118,6 +118,21 @@ class ReportDefinitionController extends Controller
         ]);
     }
 
+    /** Persist only sidebar/UI metadata from the Template Designer. */
+    public function updateParameterUiSchema(Request $request, ReportDefinition $reportDefinition)
+    {
+        $validated = $request->validate($this->parameterUiSchemaRules('required'));
+
+        $reportDefinition->update([
+            'parameter_ui_schema' => $validated['parameter_ui_schema'],
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'data' => $this->serialize($reportDefinition->fresh()->load(['reportDataSource', 'templates'])),
+        ]);
+    }
+
     public function destroy(ReportDefinition $reportDefinition)
     {
         $reportDefinition->delete();
@@ -527,15 +542,7 @@ class ReportDefinitionController extends Controller
             'group' => 'required|string|max:255',
             'description' => 'nullable|string|max:2000',
             'report_data_source_id' => 'required|exists:report_data_sources,id',
-            'parameter_ui_schema' => 'nullable|array',
-            'parameter_ui_schema.*.name' => 'required|string|max:128',
-            'parameter_ui_schema.*.label' => 'nullable|string|max:255',
-            'parameter_ui_schema.*.control' => 'nullable|in:text,number,date,date-range,datetime-local,select,multi-select,radio,checkbox,hidden',
-            'parameter_ui_schema.*.required' => 'nullable|boolean',
-            'parameter_ui_schema.*.default' => 'nullable',
-            'parameter_ui_schema.*.options' => 'nullable|array',
-            'parameter_ui_schema.*.options_source' => 'nullable|string|in:areas,outlets,companies,bookings,rooms,room-classes,registration-statuses,users,hotel-services,report-shifts,service-departments,branches',
-            'parameter_ui_schema.*.range_end_parameter' => 'nullable|string|max:128',
+            ...$this->parameterUiSchemaRules(),
             'template_ids' => 'required|array|min:1',
             'template_ids.*' => 'integer|distinct|exists:templates,id',
             'default_template_id' => 'nullable|integer|exists:templates,id',
@@ -559,6 +566,25 @@ class ReportDefinitionController extends Controller
         }
 
         return $validated;
+    }
+
+    private function parameterUiSchemaRules(string $presence = 'nullable'): array
+    {
+        return [
+            'parameter_ui_schema' => [$presence, 'array'],
+            'parameter_ui_schema.*.name' => 'required|string|max:128',
+            'parameter_ui_schema.*.label' => 'nullable|string|max:255',
+            'parameter_ui_schema.*.control' => 'nullable|in:text,number,date,date-range,datetime-local,select,multi-select,radio,checkbox,hidden',
+            'parameter_ui_schema.*.required' => 'nullable|boolean',
+            'parameter_ui_schema.*.default' => 'nullable',
+            'parameter_ui_schema.*.options' => 'nullable|array',
+            'parameter_ui_schema.*.options_source' => 'nullable|string|in:areas,outlets,companies,bookings,rooms,room-classes,registration-statuses,users,hotel-services,report-shifts,service-departments,branches',
+            'parameter_ui_schema.*.range_end_parameter' => 'nullable|string|max:128',
+            'parameter_ui_schema.*.selection_group' => 'nullable|array',
+            'parameter_ui_schema.*.selection_group.key' => 'nullable|string|max:100',
+            'parameter_ui_schema.*.selection_group.label' => 'nullable|string|max:255',
+            'parameter_ui_schema.*.selection_group.mode' => 'nullable|in:single',
+        ];
     }
 
     private function definitionAttributes(array $validated): array
@@ -721,6 +747,7 @@ class ReportDefinitionController extends Controller
                 'ui_only' => (bool) ($ui['ui_only'] ?? ! $sourceSchema->has($name)),
                 'visible_when' => $ui['visible_when'] ?? null,
                 'maps_to' => $ui['maps_to'] ?? null,
+                'selection_group' => $ui['selection_group'] ?? null,
                 'linked_report_code' => $ui['linked_report_code'] ?? null,
                 'view_mode' => $ui['view_mode'] ?? null,
                 'configured' => $configured->has($name),

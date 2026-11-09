@@ -12,7 +12,8 @@ const PAPER_SIZES = {
 
 const SPACER_CLASS = 'pms-page-spacer'
 const REPEAT_CLASS = 'pms-page-repeat'
-const SKIPPED_TAGS = new Set(['STYLE', 'SCRIPT', 'TEMPLATE', 'LINK', 'META', 'TITLE'])
+// COLGROUP/COL có chiều cao bằng cả bảng nhưng không phải khối hiển thị; nếu coi là khối lá sẽ bị đẩy sang trang sau, để trống các trang đầu.
+const SKIPPED_TAGS = new Set(['STYLE', 'SCRIPT', 'TEMPLATE', 'LINK', 'META', 'TITLE', 'COLGROUP', 'COL'])
 const TABLE_SECTION_TAGS = new Set(['TABLE', 'THEAD', 'TBODY', 'TFOOT'])
 const BLOCK_SELECTOR = 'tr, table, div, p, h1, h2, h3, h4, h5, h6, ul, ol, section, hr'
 
