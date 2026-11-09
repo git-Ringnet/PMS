@@ -3595,16 +3595,31 @@ class BookingRoomServiceController extends Controller
 
         $user = Auth::user()?->username ?? 'system';
 
-        $dateFrom = Carbon::parse($request->date_from);
-        $dateTo = Carbon::parse($request->date_to);
-        $numDays = max(1, $dateFrom->diffInDays($dateTo));
+        $dateFrom = Carbon::parse($request->date_from)->startOfDay();
+        $dateTo = Carbon::parse($request->date_to)->startOfDay();
 
-        // Tính tổng tiền phòng được charge
-        $totalAmount = 0;
+        // Dòng 508: mỗi đêm trong khoảng ngày chọn là 1 bill tiền phòng riêng (đúng ngày đêm đó), không gộp thành 1 bill tổng.
+        // Khoảng [từ, đến) như số đêm ở; chọn cùng một ngày thì charge đúng 1 đêm của ngày đó.
+        $nights = [];
+        for ($night = $dateFrom->copy(); $night->lt($dateTo); $night->addDay()) {
+            $nights[] = $night->copy();
+        }
+        if ($nights === []) {
+            $nights[] = $dateFrom->copy();
+        }
+
+        // Tiền từng đêm: tự động = giá phòng đã thiết lập cho đêm đó; tự nhập = chia đều tổng nhập, đêm cuối nhận phần lẻ.
+        $nightAmounts = [];
         if ($request->auto_rate) {
-            $totalAmount = (float)$room->rate * $numDays;
+            foreach ($nights as $night) {
+                $nightAmounts[] = $this->noshowNightRate($room, $night);
+            }
         } else {
-            $totalAmount = (float)$request->rate;
+            $totalManual = (float) $request->rate;
+            $each = floor($totalManual / count($nights));
+            foreach ($nights as $i => $night) {
+                $nightAmounts[] = $i === count($nights) - 1 ? $totalManual - $each * (count($nights) - 1) : $each;
+            }
         }
 
         // Lấy khách chính của phòng
@@ -3614,89 +3629,96 @@ class BookingRoomServiceController extends Controller
         }
         $roomTaxProfile = HotelService::taxProfile(HotelService::where('code', 'RM')->first());
 
-        $result = DB::transaction(function () use ($booking, $room, $totalAmount, $dateFrom, $dateTo, $numDays, $primaryGuest, $user, $request, $roomTaxProfile) {
-            // 1. Tạo ServiceBill (SP3000)
-            $bill = ServiceBill::create([
-                'Date'               => $dateFrom->toDateString(),
-                'OpenTime'           => now()->format('H:i'),
-                'Guest'              => $primaryGuest?->guest?->full_name ?: $booking->booking_name,
-                'DepartmentId'       => 'FO',
-                'ServiceId'          => 'RM',
-                'DescriptionServive' => $request->description,
-                'Quantity'           => 1,
-                'Amount'             => $totalAmount,
-                'ServiceCharge'      => $roomTaxProfile['service_charge'],
-                'SpecialTax'         => $roomTaxProfile['special_tax'],
-                'Tax'                => $roomTaxProfile['tax'],
-                'Currency'           => 'VND',
-                'Exchange'           => 1,
-                'Edit'               => 0,
-                'Folio'              => '1',
-                
-                // Quan hệ theo yêu cầu:
-                // sp3000.RegisterId1=NULL , RentalRoomId1, CustomerId1= mã phòng, khách của phòng thao tác
-                // RegisterID2= mã bk , RentalRoomId2, CustomerId2=NULL
-                'RegisterId1'        => null,
-                'RentalRoomId1'      => $room->id,
-                'CustomerId1'        => $primaryGuest?->guest_id,
-                'CompanyId1'         => $booking->company_id,
-                
-                'RegisterID2'        => $booking->id,
-                'RentalRoomId2'      => null,
-                'CustomerId2'        => null,
-                'CompanyId2'         => null,
-                
-                'Username'           => $user,
-                'Status'             => 1, // Active
-                'Outlet'             => 'FO',
-                'Year'               => $dateFrom->year,
-                'Month'              => $dateFrom->month,
-                'Day'                => $dateFrom->day,
-                'CreatedUser'        => $user,
-                'CreatedDate'        => now(),
-                'CreatedHour'        => now()->format('H:i'),
-            ]);
+        $bills = DB::transaction(function () use ($booking, $room, $nights, $nightAmounts, $primaryGuest, $user, $request, $roomTaxProfile) {
+            $created = [];
+            foreach ($nights as $index => $night) {
+                $totalAmount = $nightAmounts[$index];
 
-            // 2. Tạo ServiceBillDetail (SP3001) - 1 dòng RM, không tách ăn sáng
-            $singleBreakdown = TaxBreakdownService::breakdown($totalAmount, $roomTaxProfile['service_charge'], $roomTaxProfile['special_tax'], $roomTaxProfile['tax']);
-            ServiceBillDetail::create([
-                'BillServiceId'            => $bill->Ma,
-                'Ma'                       => 1,
-                'DepartmentId'             => 'FO',
-                'ServiceId'                => 'RM',
-                'DescriptionServive'       => $request->description,
-                'OriginalRate'             => $singleBreakdown['original_rate'],
-                'ServiceCharge'            => $roomTaxProfile['service_charge'],
-                'SpecialTax'               => $roomTaxProfile['special_tax'],
-                'Tax'                      => $roomTaxProfile['tax'],
-                'ServiceChargeAmount'      => $singleBreakdown['service_charge_amount'],
-                'SpecialTaxAmount'         => $singleBreakdown['special_tax_amount'],
-                'TaxAmount'                => $singleBreakdown['tax_amount'],
-                'Amount'                   => $totalAmount,
-                'Currency'                 => 'VND',
-                'Exchange'                 => 1,
-                'DetailBillOriginalAmount' => $singleBreakdown['net_total'],
-                'OriginalAmount'           => $singleBreakdown['net_total'],
-                'DiscountAmount'           => 0,
-                'IncreaseAmount'           => 0,
-            ]);
+                // 1. Tạo ServiceBill (SP3000)
+                $bill = ServiceBill::create([
+                    'Date'               => $night->toDateString(),
+                    'OpenTime'           => now()->format('H:i'),
+                    'Guest'              => $primaryGuest?->guest?->full_name ?: $booking->booking_name,
+                    'DepartmentId'       => 'FO',
+                    'ServiceId'          => 'RM',
+                    'DescriptionServive' => $request->description,
+                    'Quantity'           => 1,
+                    'Amount'             => $totalAmount,
+                    'ServiceCharge'      => $roomTaxProfile['service_charge'],
+                    'SpecialTax'         => $roomTaxProfile['special_tax'],
+                    'Tax'                => $roomTaxProfile['tax'],
+                    'Currency'           => 'VND',
+                    'Exchange'           => 1,
+                    'Edit'               => 0,
+                    'Folio'              => '1',
 
-            // 3. Tạo RoomNightBill (SP3004)
-            RoomNightBill::create([
-                'bill_id'          => $bill->Ma,
-                'adult'            => max(1, (int)$room->adults),
-                'child'            => (int)$room->children_qty,
-                'is_room_night'    => $request->has('is_room_night') ? (int)$request->is_room_night : 0,
-                'breakfast_amount' => 0,
-                'extrabed_amount'  => 0,
-                'date'             => $dateFrom->toDateString(),
-                'room'             => $room->room_number,
-                'room_type_id'     => $room->room_class_id,
-                'breakfast'        => 0,
-                'extra_bed'        => 0,
-                'rate_code'        => $room->rate_code,
-                'rate'             => $totalAmount,
-            ]);
+                    // Quan hệ theo yêu cầu:
+                    // sp3000.RegisterId1=NULL , RentalRoomId1, CustomerId1= mã phòng, khách của phòng thao tác
+                    // RegisterID2= mã bk , RentalRoomId2, CustomerId2=NULL
+                    'RegisterId1'        => null,
+                    'RentalRoomId1'      => $room->id,
+                    'CustomerId1'        => $primaryGuest?->guest_id,
+                    'CompanyId1'         => $booking->company_id,
+
+                    'RegisterID2'        => $booking->id,
+                    'RentalRoomId2'      => null,
+                    'CustomerId2'        => null,
+                    'CompanyId2'         => null,
+
+                    'Username'           => $user,
+                    'Status'             => 1, // Active
+                    'Outlet'             => 'FO',
+                    'Year'               => $night->year,
+                    'Month'              => $night->month,
+                    'Day'                => $night->day,
+                    'CreatedUser'        => $user,
+                    'CreatedDate'        => now(),
+                    'CreatedHour'        => now()->format('H:i'),
+                ]);
+
+                // 2. Tạo ServiceBillDetail (SP3001) - 1 dòng RM, không tách ăn sáng
+                $singleBreakdown = TaxBreakdownService::breakdown($totalAmount, $roomTaxProfile['service_charge'], $roomTaxProfile['special_tax'], $roomTaxProfile['tax']);
+                ServiceBillDetail::create([
+                    'BillServiceId'            => $bill->Ma,
+                    'Ma'                       => 1,
+                    'DepartmentId'             => 'FO',
+                    'ServiceId'                => 'RM',
+                    'DescriptionServive'       => $request->description,
+                    'OriginalRate'             => $singleBreakdown['original_rate'],
+                    'ServiceCharge'            => $roomTaxProfile['service_charge'],
+                    'SpecialTax'               => $roomTaxProfile['special_tax'],
+                    'Tax'                      => $roomTaxProfile['tax'],
+                    'ServiceChargeAmount'      => $singleBreakdown['service_charge_amount'],
+                    'SpecialTaxAmount'         => $singleBreakdown['special_tax_amount'],
+                    'TaxAmount'                => $singleBreakdown['tax_amount'],
+                    'Amount'                   => $totalAmount,
+                    'Currency'                 => 'VND',
+                    'Exchange'                 => 1,
+                    'DetailBillOriginalAmount' => $singleBreakdown['net_total'],
+                    'OriginalAmount'           => $singleBreakdown['net_total'],
+                    'DiscountAmount'           => 0,
+                    'IncreaseAmount'           => 0,
+                ]);
+
+                // 3. Tạo RoomNightBill (SP3004)
+                RoomNightBill::create([
+                    'bill_id'          => $bill->Ma,
+                    'adult'            => max(1, (int)$room->adults),
+                    'child'            => (int)$room->children_qty,
+                    'is_room_night'    => $request->has('is_room_night') ? (int)$request->is_room_night : 0,
+                    'breakfast_amount' => 0,
+                    'extrabed_amount'  => 0,
+                    'date'             => $night->toDateString(),
+                    'room'             => $room->room_number,
+                    'room_type_id'     => $room->room_class_id,
+                    'breakfast'        => 0,
+                    'extra_bed'        => 0,
+                    'rate_code'        => $room->rate_code,
+                    'rate'             => $totalAmount,
+                ]);
+
+                $created[] = $bill;
+            }
 
             // 4. Nếu booking đang ở trạng thái 4 (Noshow), cập nhật status = 0 để hiện ở Checkout Hóa đơn
             if (intval($booking->status) === Booking::STATUS_NO_SHOW) {
@@ -3706,7 +3728,7 @@ class BookingRoomServiceController extends Controller
                 ]);
             }
 
-            return $bill;
+            return $created;
         });
 
         event(new \App\Events\ReservationUpdated($bookingId, 'charge_noshow', "Charge noshow cho phòng {$room->room_number} thành công"));
@@ -3714,8 +3736,25 @@ class BookingRoomServiceController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Charge tiền phòng noshow thành công!',
-            'data'    => $result,
+            'data'    => $bills,
         ]);
+    }
+
+    /**
+     * Giá phòng của một đêm để charge noshow: giá RM đã thiết lập cho đêm đó (kể cả 0đ nếu đã chủ động set),
+     * nếu không có thì giá phòng chung. Cùng quy tắc với post tiền phòng khi sang ngày.
+     */
+    private function noshowNightRate(BookingRoom $room, Carbon $night): float
+    {
+        $rmService = BookingRoomService::where('booking_room_id', $room->id)
+            ->where('service_code', 'RM')
+            ->whereDate('service_date', $night->toDateString())
+            ->first();
+        if ($rmService && $rmService->rate !== null && ((float) $rmService->rate > 0 || (float) $room->rate > 0)) {
+            return (float) $rmService->rate;
+        }
+
+        return (float) $room->rate > 0 ? (float) $room->rate : (float) ($room->base_price ?? 0);
     }
 
     /**
