@@ -473,4 +473,41 @@ class SalesInvoiceSettlementTest extends TestCase
         $bill->refresh();
         $this->assertNull($bill->InvoiceId);
     }
+
+    public function test_task_228_cancelling_a_payment_clears_payment_id_and_invoice_amount_and_stamps_shift(): void
+    {
+        $bill = ServiceBill::create([
+            'Guest' => 'Nguyễn Văn Test', 'DepartmentId' => 'FO', 'ServiceId' => 'LA',
+            'Username' => $this->user->username, 'Date' => '2026-09-16', 'OpenTime' => '10:00:00',
+            'Amount' => 800000, 'Exchange' => 1, 'Edit' => 0, 'Status' => 1, 'Folio' => '1',
+            'RentalRoomId1' => (string) $this->room->id, 'RentalRoomId2' => (string) $this->room->id,
+            'RegisterId1' => (string) $this->booking->id, 'RegisterID2' => (string) $this->booking->id,
+        ]);
+        $this->postJson("/api/bookings/{$this->booking->id}/settle-payment", [
+            'folio_id' => '1', 'booking_room_id' => $this->room->id,
+            'payments' => [['payment_method_id' => 'CA', 'amount' => 800000]], 'department_id' => 'FO',
+        ])->assertOk();
+        $payment = Payment::where('booking_id', $this->booking->id)->where('status', Payment::STATUS_PAID)->first();
+        $this->assertNotNull($payment->payment_id);
+        $invoiceId = $payment->invoice_id;
+
+        $this->deleteJson("/api/payments/{$payment->id}", ['reason' => 'Khách hủy hóa đơn'])->assertOk();
+
+        // Hai dòng thanh toán đã xóa (dòng gốc + dòng âm) không còn mã thanh toán và dòng âm có ca.
+        $rows = Payment::withTrashed()->where('booking_id', $this->booking->id)->get();
+        $this->assertCount(2, $rows);
+        foreach ($rows as $row) {
+            $this->assertNull($row->payment_id, 'payments.payment_id phải NULL sau khi xóa thanh toán');
+            $this->assertSame(1, (int) $row->edit_flag);
+            $this->assertSame(Payment::STATUS_DELETED, (int) $row->status);
+        }
+        $this->assertNotNull($rows->firstWhere('amount', '<', 0)->shift, 'Dòng âm không được để shift NULL');
+
+        // Hóa đơn: hủy, bỏ liên kết thanh toán và số tiền.
+        $invoice = SalesInvoice::find($invoiceId);
+        $this->assertEquals(3, $invoice->status);
+        $this->assertNull($invoice->payment_id);
+        $this->assertNull($invoice->payment_code);
+        $this->assertNull($invoice->amount);
+    }
 }

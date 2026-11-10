@@ -1125,10 +1125,11 @@ async function loadOperationalSettings() {
     console.error('Failed to load operational settings:', err)
   }
 }
-// Filter payment methods: not group 4, not group 5, not is_inactive
+// Dòng 146: HTTT đặt cọc chỉ gồm is_inactive=0, is_free=0 và code <> 'AC' (đồng thời loại nhóm 4, 5)
 const filteredPaymentMethods = computed(() => {
   return (props.paymentMethods || []).filter(pm => {
     return pm.payment_group !== 4 && pm.payment_group !== 5 && !pm.is_inactive
+      && !pm.is_free && String(pm.code || '').toUpperCase() !== 'AC'
   })
 })
 
@@ -1188,6 +1189,9 @@ const visibleDeposits = computed(() => {
   ))
   if (!showDeleted.value) {
     list = list.filter(dep => dep.edit_flag === 0 && dep.status !== 3)
+  } else {
+    // Task 228: bật "hiển thị xóa" chỉ lấy thêm các dòng xóa (status=3, edit_flag=1), không lấy dòng cọc đã chuyển (status=4)
+    list = list.filter(dep => Number(dep.status) !== 4)
   }
   if (depositForm.value.bookingRoomId) {
     list = list.filter(dep => String(dep.bookingRoomId) === String(depositForm.value.bookingRoomId))

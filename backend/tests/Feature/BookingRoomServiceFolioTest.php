@@ -97,6 +97,81 @@ class BookingRoomServiceFolioTest extends TestCase
         $this->assertDatabaseCount('booking_room_services', 0);
     }
 
+    public function test_task_228_cancelled_service_reversal_line_uses_system_date_and_operation_time(): void
+    {
+        SystemDateRoll::create(['system_date' => '2026-08-10', 'actual_date' => '2026-08-10', 'shift' => '1', 'username' => 'test']);
+        $user = $this->createFolioUser();
+        $booking = Booking::create([
+            'booking_name' => 'GAL1', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-11',
+            'num_of_days' => 5, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
+        ]);
+        $room = $this->makeRoom($booking, 'GAL1-105');
+        // Bill ngày 06/08 lúc 08:00 (dòng dương), bị xóa vào ngày hệ thống 10/08.
+        $bill = $this->makeBill('Dịch vụ bill ngày cũ');
+        $bill->update([
+            'DepartmentId' => 'FO', 'Date' => '2026-08-06 00:00:00', 'OpenTime' => '08:00', 'Amount' => 200000,
+            'RegisterId1' => $booking->id, 'RentalRoomId1' => $room->id,
+            'RegisterID2' => $booking->id, 'RentalRoomId2' => $room->id, 'Status' => 1, 'Edit' => 0,
+        ]);
+
+        $this->actingAs($user)
+            ->postJson("/api/booking-rooms/{$room->id}/services/cancel", ['service_bill_ids' => [$bill->Ma], 'reason' => 'Sửa bill'])
+            ->assertSuccessful();
+
+        $positive = ServiceBill::find($bill->Ma);
+        $negative = ServiceBill::where('Pack1', (string) $bill->Ma)->where('Amount', -200000)->first();
+        $this->assertNotNull($negative);
+        $this->assertStringStartsWith('2026-08-06', (string) $positive->Date, 'Dòng dương giữ nguyên ngày post bill');
+        $this->assertSame('08:00', $positive->OpenTime);
+        $this->assertStringStartsWith('2026-08-10', (string) $negative->Date, 'Dòng âm lấy ngày hệ thống');
+        $this->assertSame(now()->format('H:i'), $negative->OpenTime, 'Dòng âm lấy giờ thao tác');
+        $this->assertSame(10, (int) $negative->Day);
+    }
+
+    public function test_task_228_cancelled_housekeeping_and_master_reversal_lines_use_system_date_and_operation_time(): void
+    {
+        SystemDateRoll::create(['system_date' => '2026-08-10', 'actual_date' => '2026-08-10', 'shift' => '1', 'username' => 'test']);
+        $user = $this->createFolioUser();
+        $role = \App\Models\Role::where('code', 'folio_test')->first();
+        $permission = \App\Models\Permission::firstOrCreate(['code' => 'hk.service.delete'], ['name' => 'hk.service.delete', 'module' => 'HK']);
+        $role->permissions()->syncWithoutDetaching([$permission->id]);
+        $booking = Booking::create([
+            'booking_name' => 'GAL1', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-11',
+            'num_of_days' => 5, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
+        ]);
+
+        // Master: bill ngày 06/08 08:00 (RegisterID2 = booking, không gắn phòng).
+        $masterBill = $this->makeBill('Dịch vụ Master');
+        $masterBill->update([
+            'DepartmentId' => 'FO', 'Date' => '2026-08-06 00:00:00', 'OpenTime' => '08:00', 'Amount' => 100000,
+            'RegisterId1' => $booking->id, 'RegisterID2' => $booking->id, 'RentalRoomId2' => null, 'Status' => 1, 'Edit' => 0,
+        ]);
+        $this->actingAs($user)
+            ->postJson("/api/booking-rooms/master-{$booking->id}/services/cancel", ['service_bill_ids' => [$masterBill->Ma], 'reason' => 'Xóa master'])
+            ->assertSuccessful();
+        $masterNegative = ServiceBill::where('Pack1', (string) $masterBill->Ma)->where('Amount', -100000)->first();
+        $this->assertNotNull($masterNegative);
+        $this->assertStringStartsWith('2026-08-10', (string) $masterNegative->Date);
+        $this->assertSame(now()->format('H:i'), $masterNegative->OpenTime);
+        $this->assertStringStartsWith('2026-08-06', (string) ServiceBill::find($masterBill->Ma)->Date);
+
+        // Hóa đơn Buồng phòng: bill ngày 06/08 09:30.
+        $hkBill = $this->makeBill('Dịch vụ HK');
+        $hkBill->update(['DepartmentId' => 'HK', 'Date' => '2026-08-06 00:00:00', 'OpenTime' => '09:30', 'Amount' => 120000, 'Status' => 1, 'Edit' => 0]);
+        $invoice = \App\Models\HousekeepingServiceBill::create([
+            'BookingId' => $booking->id, 'BillAmount' => 120000, 'BillOriginalAmount' => 120000, 'Status' => 1,
+            'Outlet' => 'HK', 'Date' => '2026-08-06 00:00:00', 'Department' => 'HK', 'BillServiceId' => $hkBill->Ma, 'BillEdit' => 0,
+        ]);
+        $this->actingAs($user)
+            ->postJson("/api/housekeeping/service-bills/{$invoice->Ma}/cancel", ['reason' => 'Xóa HK'])
+            ->assertSuccessful();
+        $hkNegative = ServiceBill::where('Pack1', (string) $hkBill->Ma)->where('Amount', -120000)->first();
+        $this->assertNotNull($hkNegative);
+        $this->assertStringStartsWith('2026-08-10', (string) $hkNegative->Date);
+        $this->assertSame(now()->format('H:i'), $hkNegative->OpenTime);
+        $this->assertStringStartsWith('2026-08-06', (string) ServiceBill::find($hkBill->Ma)->Date);
+    }
+
     public function test_room_service_cancel_rejects_a_bill_owned_by_another_room(): void
     {
         $user = $this->createFolioUser();

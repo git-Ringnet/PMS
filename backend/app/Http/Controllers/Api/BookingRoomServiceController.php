@@ -677,6 +677,20 @@ class BookingRoomServiceController extends Controller
     /**
      * Hủy bill dịch vụ đã post: giữ audit bằng bill âm, không xóa vật lý bill.
      */
+    /**
+     * Task 228: dòng âm khi xóa dịch vụ phải mang ngày hệ thống + giờ thao tác hiện tại,
+     * không được sao chép ngày/giờ post bill của dòng dương.
+     */
+    private function stampReversalLineAtSystemDate(ServiceBill $negative): void
+    {
+        $date = Carbon::parse($this->avService->getSystemDate())->startOfDay();
+        $negative->Date = $date->toDateTimeString();
+        $negative->OpenTime = now()->format('H:i');
+        $negative->Year = $date->year;
+        $negative->Month = $date->month;
+        $negative->Day = $date->day;
+    }
+
     public function cancel(Request $request, $roomId)
     {
         if (str_starts_with((string) $roomId, 'master-')) {
@@ -709,7 +723,9 @@ class BookingRoomServiceController extends Controller
                     $negative = $bill->replicate();
                     $negative->Amount = -abs((float) $bill->Amount);
                     $negative->DescriptionServive = $description;
-                    $negative->Edit = 1; $negative->Status = 3; $negative->Pack1 = (string) $bill->Ma; $negative->UpdatedDate = now(); $negative->save();
+                    $negative->Edit = 1; $negative->Status = 3; $negative->Pack1 = (string) $bill->Ma; $negative->UpdatedDate = now();
+                    $this->stampReversalLineAtSystemDate($negative);
+                    $negative->save();
                     $bill->DescriptionServive = $description;
                     $bill->Edit = 1; $bill->Status = 3; $bill->Pack1 = (string) $negative->Ma; $bill->UpdatedDate = now(); $bill->save();
                     $this->reverseHousekeepingBills($bill, $negative, trim($validated['reason']));
@@ -810,6 +826,7 @@ class BookingRoomServiceController extends Controller
                 $negative->Status = 3;
                 $negative->Pack1 = (string) $bill->Ma;
                 $negative->UpdatedDate = now();
+                $this->stampReversalLineAtSystemDate($negative);
                 $negative->save();
 
                 $bill->DescriptionServive = $description;
@@ -2373,6 +2390,7 @@ class BookingRoomServiceController extends Controller
             $negativeServiceBill->Status = 3;
             $negativeServiceBill->Pack1 = (string) $serviceBill->Ma;
             $negativeServiceBill->UpdatedDate = now();
+            $this->stampReversalLineAtSystemDate($negativeServiceBill);
             $negativeServiceBill->save();
 
             $serviceBill->DescriptionServive = $description;
