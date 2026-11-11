@@ -93,13 +93,13 @@ watch(currentTab, (newTab) => {
   }
 }, { immediate: true })
 
-function handleMetricClick(status) {
-  filterByStatus(status)
-  checkInDisplayMode.value = status === ROOM_STATUSES.RESERVED
+function handleMetricClick(metric) {
+  filterByStatus(metric)
+  checkInDisplayMode.value = metric === 'arrival'
     ? 'arrivals'
-    : status === ROOM_STATUSES.CHECKOUT
+    : metric === 'departure'
       ? 'departures'
-      : status === ROOM_STATUSES.OCCUPIED
+      : metric === 'inhouse'
         ? 'occupied'
         : ''
   isGridMode.value = false
@@ -487,6 +487,9 @@ watch(currentTab, async (newTab) => {
 
 const checkinStats = computed(() => {
   if (roomStore.stats && roomStore.stats.arrivals_total !== undefined) {
+    if (isFutureView.value) {
+      return `${roomStore.stats.arrivals_assigned}/${roomStore.stats.arrivals_total}`
+    }
     return `${roomStore.stats.arrivals_checked_in}/${roomStore.stats.arrivals_total}`
   }
   const checkedIn = roomStore.rooms.filter(r => r.booking_status === 'occupied' || r.booking_status === 'checkout').length
@@ -497,6 +500,9 @@ const checkinStats = computed(() => {
 
 const checkoutStats = computed(() => {
   if (roomStore.stats && roomStore.stats.departures_total !== undefined) {
+    if (isFutureView.value) {
+      return `${roomStore.stats.departures_pending}/${roomStore.stats.departures_total}`
+    }
     return `${roomStore.stats.departures_checked_out}/${roomStore.stats.departures_total}`
   }
   const count = roomStore.rooms.filter(r => r.booking_status === 'checkout').length
@@ -505,6 +511,9 @@ const checkoutStats = computed(() => {
 
 const occupiedStats = computed(() => {
   if (roomStore.stats && roomStore.stats.occupied_current !== undefined) {
+    if (isFutureView.value) {
+      return `${roomStore.stats.occupied_projected}/${roomStore.stats.occupied_projected}`
+    }
     return `${roomStore.stats.occupied_current}/${roomStore.stats.occupied_projected}`
   }
   const count = roomStore.rooms.filter(r => r.booking_status === 'occupied' || r.booking_status === 'checkout').length
@@ -2733,9 +2742,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
             </div>
 
             <!-- Đã đến card -->
-            <button @click="handleMetricClick(ROOM_STATUSES.RESERVED)"
+            <button @click="handleMetricClick('arrival')"
               class="min-w-[112px] bg-white border hover:border-slate-300 rounded-lg px-3 py-1.5 flex items-center gap-2.5 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
-              :class="activeFilter === ROOM_STATUSES.RESERVED ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
+              :class="activeFilter === 'arrival' ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
               <div
                 class="w-7 h-7 rounded-md bg-gradient-to-br from-emerald-50 to-emerald-100/60 border border-emerald-200/50 flex items-center justify-center text-emerald-600 shadow-xs shrink-0">
                 <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -2751,16 +2760,16 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
               </div>
               <div class="flex flex-col">
                 <span class="text-[9.5px] uppercase leading-tight whitespace-nowrap" :class="TEXT_THEME.statsLabel">{{
-                  t('roomMap.arrivals')
+                  isFutureView ? 'Dự kiến đến' : t('roomMap.arrivals')
                   }}</span>
                 <span class="text-[12px] mt-0.5" :class="TEXT_THEME.statsValue">{{ checkinStats }}</span>
               </div>
             </button>
 
             <!-- Đã đi card -->
-            <button @click="handleMetricClick(ROOM_STATUSES.CHECKOUT)"
+            <button @click="handleMetricClick('departure')"
               class="min-w-[112px] bg-white border hover:border-slate-300 rounded-lg px-3 py-1.5 flex items-center gap-2.5 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
-              :class="activeFilter === ROOM_STATUSES.CHECKOUT ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
+              :class="activeFilter === 'departure' ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
               <div
                 class="w-7 h-7 rounded-md bg-gradient-to-br from-rose-50 to-rose-100/60 border border-rose-200/50 flex items-center justify-center text-rose-500 shadow-xs shrink-0">
                 <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -2776,15 +2785,15 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
               </div>
               <div class="flex flex-col">
                 <span class="text-[9.5px] uppercase leading-tight whitespace-nowrap" :class="TEXT_THEME.statsLabel">{{
-                  t('roomMap.departures') }}</span>
+                  isFutureView ? 'Dự kiến đi' : t('roomMap.departures') }}</span>
                 <span class="text-[12px] mt-0.5" :class="TEXT_THEME.statsValue">{{ checkoutStats }}</span>
               </div>
             </button>
 
             <!-- Đang ở card -->
-            <button @click="handleMetricClick(ROOM_STATUSES.OCCUPIED)"
+            <button @click="handleMetricClick('inhouse')"
               class="min-w-[112px] bg-white border hover:border-slate-300 rounded-lg px-3 py-1.5 flex items-center gap-2.5 shadow-xs shrink-0 cursor-pointer text-left transition-all hover:shadow-md hover:-translate-y-0.5 transform-gpu"
-              :class="activeFilter === ROOM_STATUSES.OCCUPIED ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
+              :class="activeFilter === 'inhouse' ? 'ring-2 ring-inset ring-[#97d5ff] border-[#97d5ff] bg-[#97d5ff]/5' : 'border-slate-200/80'">
               <div
                 class="w-7 h-7 rounded-md bg-gradient-to-br from-sky-50 to-sky-100/80 border border-sky-200/50 flex items-center justify-center text-sky-600 shadow-xs shrink-0">
                 <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -2796,7 +2805,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
               </div>
               <div class="flex flex-col">
                 <span class="text-[9.5px] uppercase leading-tight whitespace-nowrap" :class="TEXT_THEME.statsLabel">{{
-                  t('roomMap.occupied')
+                  isFutureView ? 'Dự kiến ở' : t('roomMap.occupied')
                   }}</span>
                 <span class="text-[12px] mt-0.5" :class="TEXT_THEME.statsValue">{{ occupiedStats }}</span>
               </div>

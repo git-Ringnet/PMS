@@ -78,6 +78,7 @@ class RoomController extends Controller
             ? \Carbon\Carbon::parse($request->date)
             : $avService->getSystemDate();
         $sysDateStr = $systemDate->toDateString();
+        $isFutureView = $systemDate->copy()->startOfDay()->gt($avService->getSystemDate()->copy()->startOfDay());
 
         // Tải các phòng đang được đặt/đang ở hôm nay
         $bookingRoomsToday = \App\Models\BookingRoom::whereNotNull('room_number')
@@ -167,6 +168,18 @@ class RoomController extends Controller
                     && $b->arrival_date
                     && $b->arrival_date->toDateString() === $sysDateStr;
             });
+            $projectedInhouseBr = $isFutureView ? $allBrToday->first(function ($b) use ($sysDateStr) {
+                return $b->status === \App\Models\BookingRoom::STATUS_BOOKED
+                    && $b->arrival_date
+                    && $b->departure_date
+                    && $b->arrival_date->toDateString() < $sysDateStr
+                    && $b->departure_date->toDateString() > $sysDateStr;
+            }) : null;
+            $projectedDepartureBr = $isFutureView ? $allBrToday->first(function ($b) use ($sysDateStr) {
+                return $b->status === \App\Models\BookingRoom::STATUS_BOOKED
+                    && $b->departure_date
+                    && $b->departure_date->toDateString() === $sysDateStr;
+            }) : null;
 
             $isBackToBack = false;
             $arrivingBooking = null;
@@ -196,6 +209,15 @@ class RoomController extends Controller
             } else if ($bookedBr) {
                 $br = $bookedBr;
                 $hasArrivalToday = true;
+                // Phòng trong ngày (ngày đến = ngày đi) luôn thuộc cả danh sách đến
+                // và đi, không phụ thuộc ngày đang xem là ngày vận hành hay tương lai.
+                $hasDepartureToday = $br->departure_date
+                    && $br->departure_date->toDateString() === $sysDateStr;
+            } else if ($projectedInhouseBr) {
+                $br = $projectedInhouseBr;
+            } else if ($projectedDepartureBr) {
+                $br = $projectedDepartureBr;
+                $hasDepartureToday = true;
             } else {
                 $br = $allBrToday->first();
                 if ($br && $br->status === \App\Models\BookingRoom::STATUS_BOOKED && $br->arrival_date && $br->arrival_date->toDateString() === $sysDateStr) {
@@ -205,13 +227,23 @@ class RoomController extends Controller
 
             if ($br) {
                 if ($br->status === \App\Models\BookingRoom::STATUS_CHECKED_IN) {
-                    if ($hasDepartureToday) {
+                    // Day-use cùng ngày vẫn là phòng đang ở cho đến khi checkout thực tế.
+                    // Dấu ngày đi vẫn được giữ qua has_departure_today để xuất hiện ở danh sách Đã đi.
+                    if ($hasDepartureToday && !$br->is_day_use) {
                         $room->booking_status = 'checkout';
                     } else {
                         $room->booking_status = 'occupied';
                     }
                 } else if ($br->status === \App\Models\BookingRoom::STATUS_BOOKED) {
-                    if ($br->arrival_date && $br->arrival_date->toDateString() === $sysDateStr) {
+                    if ($isFutureView && $br->departure_date && $br->departure_date->toDateString() === $sysDateStr) {
+                        // Ngày đi tương lai: hiển thị như phòng dự kiến đi, không tính ở cuối ngày.
+                        $room->booking_status = 'checkout';
+                    } elseif ($isFutureView && $br->arrival_date && $br->departure_date
+                        && $br->arrival_date->toDateString() < $sysDateStr
+                        && $br->departure_date->toDateString() > $sysDateStr) {
+                        // Giữa ngày đến và ngày đi: Room Map phải hiển thị phòng đang ở dự kiến.
+                        $room->booking_status = 'occupied';
+                    } elseif ($br->arrival_date && $br->arrival_date->toDateString() === $sysDateStr) {
                         $room->booking_status = 'reserved';
                     }
                 }
@@ -319,7 +351,9 @@ class RoomController extends Controller
             $room->arriving_booking = $arrivingBooking;
 
             // Gắn thông tin khách đến vào ngày mai
-            $brTomorrow = $bookingRoomsTomorrow->where('room_number', $room->room_number)->first();
+            // Chỉ hiển thị gợi ý "ngày mai" trên Room Map ngày vận hành. Ở chế độ tương lai,
+            // mọi nội dung phải thuộc đúng ngày đang xem, không được chen dữ liệu ngày kế tiếp.
+            $brTomorrow = $isFutureView ? null : $bookingRoomsTomorrow->where('room_number', $room->room_number)->first();
             $room->is_arriving_tomorrow = (bool) $brTomorrow;
             if ($brTomorrow) {
                 $primaryGuestTomorrow = $brTomorrow->guests->firstWhere('is_primary', true) ?? $brTomorrow->guests->first();
