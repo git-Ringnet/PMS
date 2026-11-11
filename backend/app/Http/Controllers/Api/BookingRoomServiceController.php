@@ -2700,6 +2700,10 @@ class BookingRoomServiceController extends Controller
             $adults = max(1, (int) $room->adults);
             $breakfastRate = (float) (HotelSetting::first()?->breakfast_adult_rate ?? 0);
             $breakfastAmount = $room->breakfast ? round($breakfastRate * $adults, 2) : 0;
+            // Dòng 415/480: cộng ăn sáng trẻ em không phụ phí (nằm trong tiền phòng).
+            $childBreakfast = app(\App\Services\ChildBreakfastService::class)->roomIncludedBreakfast($room, $date);
+            $breakfastAmount = round($breakfastAmount + $childBreakfast['amount'], 2);
+            $breakfastQuantity = ($room->breakfast ? $adults : 0) + $childBreakfast['quantity'];
             $breakfastService = HotelService::where('code', 'BF')->first();
             $breakfastTaxProfile = HotelService::taxProfile($breakfastService);
             $breakfastDescription = $breakfastService
@@ -2712,9 +2716,9 @@ class BookingRoomServiceController extends Controller
             ServiceBillDetail::insert([
                 ['BillServiceId' => $bill->Ma, 'Ma' => 1, 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'DescriptionServive' => $bill->DescriptionServive, 'OriginalRate' => $rmBreakdown['original_rate'], 'ServiceCharge' => $roomTaxProfile['service_charge'], 'SpecialTax' => $roomTaxProfile['special_tax'], 'Tax' => $roomTaxProfile['tax'], 'ServiceChargeAmount' => $rmBreakdown['service_charge_amount'], 'SpecialTaxAmount' => $rmBreakdown['special_tax_amount'], 'TaxAmount' => $rmBreakdown['tax_amount'], 'Amount' => $rate, 'Currency' => $bill->Currency, 'Exchange' => 1, 'DetailBillOriginalAmount' => $rmBreakdown['net_total'], 'OriginalAmount' => $rmBreakdown['net_total']],
                 ['BillServiceId' => $bill->Ma, 'Ma' => 2, 'DepartmentId' => 'FO', 'ServiceId' => 'BF', 'DescriptionServive' => $breakfastDescription, 'OriginalRate' => $bfBreakdown['original_rate'], 'ServiceCharge' => $breakfastTaxProfile['service_charge'], 'SpecialTax' => $breakfastTaxProfile['special_tax'], 'Tax' => $breakfastTaxProfile['tax'], 'ServiceChargeAmount' => $bfBreakdown['service_charge_amount'], 'SpecialTaxAmount' => $bfBreakdown['special_tax_amount'], 'TaxAmount' => $bfBreakdown['tax_amount'], 'Amount' => $breakfastAmount, 'Currency' => $bill->Currency, 'Exchange' => 1, 'DetailBillOriginalAmount' => $bfBreakdown['net_total'], 'OriginalAmount' => $bfBreakdown['net_total']],
-                ['BillServiceId' => $bill->Ma, 'Ma' => 3, 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'DescriptionServive' => 'Giảm trừ ' . $breakfastDescription, 'OriginalRate' => $rmMinusBreakdown['original_rate'], 'ServiceCharge' => $roomTaxProfile['service_charge'], 'SpecialTax' => $roomTaxProfile['special_tax'], 'Tax' => $roomTaxProfile['tax'], 'ServiceChargeAmount' => $rmMinusBreakdown['service_charge_amount'], 'SpecialTaxAmount' => $rmMinusBreakdown['special_tax_amount'], 'TaxAmount' => $rmMinusBreakdown['tax_amount'], 'Amount' => -$breakfastAmount, 'Currency' => $bill->Currency, 'Exchange' => 1, 'DetailBillOriginalAmount' => $rmMinusBreakdown['net_total'], 'OriginalAmount' => $rmMinusBreakdown['net_total']],
+                ['BillServiceId' => $bill->Ma, 'Ma' => 3, 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'DescriptionServive' => $breakfastDescription, 'OriginalRate' => $rmMinusBreakdown['original_rate'], 'ServiceCharge' => $roomTaxProfile['service_charge'], 'SpecialTax' => $roomTaxProfile['special_tax'], 'Tax' => $roomTaxProfile['tax'], 'ServiceChargeAmount' => $rmMinusBreakdown['service_charge_amount'], 'SpecialTaxAmount' => $rmMinusBreakdown['special_tax_amount'], 'TaxAmount' => $rmMinusBreakdown['tax_amount'], 'Amount' => -$breakfastAmount, 'Currency' => $bill->Currency, 'Exchange' => 1, 'DetailBillOriginalAmount' => $rmMinusBreakdown['net_total'], 'OriginalAmount' => $rmMinusBreakdown['net_total']],
             ]);
-            RoomNightBill::create(['bill_id' => $bill->Ma, 'adult' => $adults, 'child' => (int) $room->children_qty, 'is_room_night' => $this->roomNightFlag($room, $booking), 'breakfast_amount' => $breakfastAmount, 'date' => $date->toDateString(), 'room' => $room->room_number, 'room_type_id' => $room->room_class_id, 'breakfast' => $room->breakfast ? $adults : 0, 'extra_bed' => (int) $room->extra_bed_qty, 'rate_code' => $room->rate_code, 'rate' => $rate]);
+            RoomNightBill::create(['bill_id' => $bill->Ma, 'adult' => $adults, 'child' => (int) $room->children_qty, 'is_room_night' => $this->roomNightFlag($room, $booking), 'breakfast_amount' => $breakfastAmount, 'date' => $date->toDateString(), 'room' => $room->room_number, 'room_type_id' => $room->room_class_id, 'breakfast' => $breakfastQuantity, 'extra_bed' => (int) $room->extra_bed_qty, 'rate_code' => $room->rate_code, 'rate' => $rate]);
             if (!$atMaster) BookingRoomService::updateOrCreate(['booking_room_id' => $room->id, 'service_code' => BookingRoomService::catalogCode(BookingRoomService::CODE_ROOM), 'service_date' => $date->toDateString()], ['guest_id' => $guest?->guest_id, 'service_bill_id' => $bill->Ma, 'service_bill_detail_no' => 1, 'service_name' => BookingRoomService::catalogName(BookingRoomService::CODE_ROOM, 'Tiền phòng'), 'quantity' => 1, 'rate' => $rate, 'total_amount' => $rate, 'department' => 'FO', 'note' => $bill->DescriptionServive, 'tax' => $roomTaxProfile['tax'], 'service_charge' => $roomTaxProfile['service_charge'], 'unit' => 'Đêm', 'folio' => $bill->Folio, 'is_room' => 1, 'is_posted' => 1, 'posted_at' => now(), 'created_by' => $user]);
             if ((bool) ($data['update_room_rate'] ?? false)) {
                 if (($data['update_room_rate_scope'] ?? 'room') === 'booking') {
@@ -3003,9 +3007,17 @@ class BookingRoomServiceController extends Controller
 
                     // Lấy giá ăn sáng (chỉ tách ăn sáng khi mode === 'auto' và có ăn sáng)
                     $breakfastAmount = 0;
+                    $breakfastQuantity = 0;
                     if ($mode === 'auto' && $targetRoom->breakfast) {
                         $breakfastRate   = (float)($setting?->breakfast_adult_rate ?? 0);
                         $breakfastAmount = round($breakfastRate * max(1, (int)$targetRoom->adults) * $chargePercent / 100, 2);
+                        $breakfastQuantity = $breakfastAmount > 0 ? max(1, (int)$targetRoom->adults) : 0;
+                    }
+                    // Dòng 415/480: ăn sáng trẻ em không phụ phí nằm trong tiền phòng -> tách cùng dòng BF.
+                    if ($mode === 'auto') {
+                        $childBreakfast = app(\App\Services\ChildBreakfastService::class)->roomIncludedBreakfast($targetRoom, $current);
+                        $breakfastAmount = round($breakfastAmount + $childBreakfast['amount'] * $chargePercent / 100, 2);
+                        $breakfastQuantity += $childBreakfast['quantity'];
                     }
 
                     // Bổ sung tiền phòng (surcharge) vẫn là tiền phòng RM, chỉ khác is_room_night = 0
@@ -3152,7 +3164,7 @@ class BookingRoomServiceController extends Controller
                 // 1. Dòng RM: Amount = totalAmount
                 // 2. Dòng BF: Amount = breakfastAmount
                 // 3. Dòng RM trừ: Amount = -breakfastAmount
-                if ($mode === 'auto' && $targetRoom->breakfast && $breakfastAmount > 0) {
+                if ($mode === 'auto' && $breakfastAmount > 0) {
                     // Dòng 1: RM (Tiền phòng gốc)
                     $rmBreakdown = TaxBreakdownService::breakdown($totalAmount, $serviceTaxProfile['service_charge'], $serviceTaxProfile['special_tax'], $serviceTaxProfile['tax']);
                     ServiceBillDetail::create([
@@ -3178,10 +3190,11 @@ class BookingRoomServiceController extends Controller
                     ]);
 
                     // Dòng 2: BF (Tiền ăn sáng)
-                    $bfBreakdown = TaxBreakdownService::breakdown($breakfastAmount, $breakfastTaxProfile['service_charge'], $breakfastTaxProfile['special_tax'], $breakfastTaxProfile['tax']);
+                    $bfBreakdown = TaxBreakdownService::breakdown($breakfastAmount, $breakfastTaxProfile['service_charge'], $breakfastTaxProfile['special_tax'], $breakfastTaxProfile['tax'], max(1, $breakfastQuantity));
                     ServiceBillDetail::create([
                         'BillServiceId'            => $bill->Ma,
                         'Ma'                       => 2,
+                        'Quantity'                 => max(1, $breakfastQuantity),
                         'DepartmentId'             => 'FO',
                         'ServiceId'                => 'BF',
                         'DescriptionServive'       => $breakfastDesc,
@@ -3208,7 +3221,7 @@ class BookingRoomServiceController extends Controller
                         'Ma'                       => 3,
                         'DepartmentId'             => 'FO',
                         'ServiceId'                => 'RM',
-                        'DescriptionServive'       => 'Trừ ' . $breakfastDesc,
+                        'DescriptionServive'       => $breakfastDesc, // Dòng 416: RM âm cùng mô tả với BF
                         'OriginalRate'             => $rmMinusBreakdown['original_rate'],
                         'ServiceCharge'            => $roomTaxProfile['service_charge'],
                         'SpecialTax'               => $roomTaxProfile['special_tax'],
@@ -3263,7 +3276,7 @@ class BookingRoomServiceController extends Controller
                     'date'             => $current->toDateString(),
                     'room'             => $targetRoom->room_number,
                     'room_type_id'     => $targetRoom->room_class_id,
-                    'breakfast'        => $targetRoom->breakfast ? max(1, (int)$targetRoom->adults) : 0,
+                    'breakfast'        => $breakfastQuantity ?? ($targetRoom->breakfast ? max(1, (int)$targetRoom->adults) : 0),
                     'extra_bed'        => (int)($targetRoom->extra_bed_qty ?? 0),
                     'rate_code'        => $targetRoom->rate_code,
                     'rate'             => $rate,
