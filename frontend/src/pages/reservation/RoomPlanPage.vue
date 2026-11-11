@@ -1708,7 +1708,11 @@ async function loadBookings() {
         const bookingBalance = Math.max(0, bookingTotalAmount - depositAmount - paidAmount)
 
         b.booking_rooms.forEach(br => {
-          if (![0, 1, 2].includes(Number(br.status))) return
+          // A moved room is the completed source segment of a room move. Keep
+          // it on the plan for history, but never let it behave as an active
+          // stay or an actionable booking.
+          if (![0, 1, 2, 100].includes(Number(br.status))) return
+          const isMoveHistory = Number(br.status) === 100
           const isVirtual = !br.room_number
           const roomVal = br.room_number || br.id
           if (!roomVal) return
@@ -1731,6 +1735,8 @@ async function loadBookings() {
             type = 'CheckedOut'
           } else if (Number(br.status) === 0) {
             type = 'Reservation'
+          } else if (isMoveHistory) {
+            type = 'Moved'
           } else {
             type = 'Reservation'
           }
@@ -1779,9 +1785,14 @@ async function loadBookings() {
             registrationStatusId: registrationStatus?.booking_status_id ?? b.registration_status_id ?? null,
             registrationStatusName,
             registrationStatusColor,
-            isAvailability: registrationStatus.is_availability === undefined
-              ? true
-              : Boolean(registrationStatus.is_availability),
+            // The source segment was already replaced by the active target
+            // room. It is display-only history and must not alter OCC/AV.
+            isAvailability: isMoveHistory
+              ? false
+              : (registrationStatus.is_availability === undefined
+                ? true
+                : Boolean(registrationStatus.is_availability)),
+            isMoveHistory,
             isDayUse,
             nights: resolveRoomPlanNights({
               arrivalDate: arrivalStr,
@@ -2722,7 +2733,7 @@ const processedBookings = computed(() => {
       leftRatio = dayUseLayout.leftRatio
       span = dayUseLayout.widthRatio
     }
-    const showCheckOutIndicator = !showNights.value && isCheckOutVisible && !isPersistedDayUse
+    const showCheckOutIndicator = !showNights.value && isCheckOutVisible && !isPersistedDayUse && !bk.isMoveHistory
 
     // Calculate past days offset for text shift (Phương án 1: Trượt tự nhiên theo timeline quá khứ)
     const checkInMid = new Date(checkInDate)
@@ -3024,6 +3035,7 @@ function getBookingClass(type) {
   if (type === 'Reservation') return 'bg-[#fef3c7] text-black border-[#fde68a]'
   if (type === 'Late Checkout') return 'bg-[#fef9c3] text-black border-[#fef08a]'
   if (type === 'CheckedOut') return 'bg-slate-200 text-black border-slate-300'
+  if (type === 'Moved') return 'bg-slate-200 text-black border-slate-300'
   if (type === 'Guaranteed') return 'bg-[#dcfce7] text-black border-[#bbf7d0]'
   if (type === 'Allotment') return 'bg-[#ffedd5] text-black border-[#fed7aa]'
   if (type === 'Waiting') return 'bg-[#fee2e2] text-black border-[#fca5a5]'
@@ -3065,6 +3077,9 @@ function getBookingStyle(type, registrationColor = '') {
     }
   }
   if (type === 'CheckedOut') {
+    return { backgroundColor: '#cbd5e1', borderColor: '#94a3b8', color: '#000000' }
+  }
+  if (type === 'Moved') {
     return { backgroundColor: '#cbd5e1', borderColor: '#94a3b8', color: '#000000' }
   }
   if (type === 'InHouse') {
@@ -3193,7 +3208,7 @@ function handleCellContextMenu(roomItem, dayItem, event) {
 }
 
 function handleBookingDblClick(booking) {
-  if (isHousekeepingModule.value || booking.code === 'LOCK') return
+  if (isHousekeepingModule.value || booking.code === 'LOCK' || booking.isMoveHistory) return
   emit('edit-booking', { code: booking.code, id: booking.bookingId })
 }
 
@@ -3231,6 +3246,8 @@ function handleBookingClick(booking, event) {
     selectedBookingRoomIds.value = []
     return
   }
+
+  if (booking.isMoveHistory) return
 
   if (!isRoomPlanBatchEligible(booking)) {
     uiStore.showToast('Chỉ chọn cùng lúc các phòng đặt trước, không phải phòng ở theo giờ hoặc khóa chuyển phòng.', 'warning')
@@ -3358,7 +3375,7 @@ async function handleBatchResizeMouseUp() {
 
 function startResize(bk, type, event) {
   if (isHousekeepingModule.value) return
-  if (bk.code === 'LOCK') return
+  if (bk.code === 'LOCK' || bk.isMoveHistory) return
 
   if (bk.type === 'InHouse') {
     uiStore.showToast('Phòng đang In-house không được phép thay đổi ngày trên Room Plan.', 'warning')
@@ -3530,6 +3547,8 @@ async function handleResizeMouseUp(event) {
 function handleBookingContextMenu(booking, event) {
   event.preventDefault()
   event.stopPropagation()
+
+  if (booking.isMoveHistory) return
 
   const isRoomLock = booking.code === 'LOCK' || booking.type === 'OOO' || booking.type === 'OOS' || booking.isLockRoom
   if (isHousekeepingModule.value && !isRoomLock) return
@@ -3970,6 +3989,7 @@ function handleDragStart(bk, event) {
 
 function handleBookingPointerDown(bk, event) {
   if (isHousekeepingModule.value) return
+  if (bk.isMoveHistory) return
   if (event.button !== 0) return
   if (event.target.closest('[data-room-plan-resize-handle], [data-room-plan-split-handle]')) return
   if (splittingBooking.value) return
@@ -4578,6 +4598,7 @@ async function saveQuickBooking() {
         configuredRoomPrice,
         rateCode: selectedRateCode,
         formRate: quickBookingForm.value.rate,
+        hasManualRate: useManualQuickBookingRate,
       })
 
       const groupKey = `${roomClassId}_${range.checkIn}_${range.checkOut}`
@@ -5355,7 +5376,7 @@ function getRoomStatusIconName(item) {
                       isBookingMatched(bk) ? getBookingClass(bk.type) : 'bg-slate-100 text-slate-400 border-slate-200 opacity-60',
                       splittingBooking?.bookingRoomId === bk.bookingRoomId ? 'z-30 overflow-visible' : 'overflow-hidden',
                       draggedBooking?.bookingRoomId === bk.bookingRoomId ? 'opacity-0' : '',
-                      isHousekeepingModule ? 'cursor-default' : 'cursor-pointer',
+                      (isHousekeepingModule || bk.isMoveHistory) ? 'cursor-default' : 'cursor-pointer',
                       bk.isCheckInVisible ? 'pl-1 rounded-l border-l' : 'pl-0 rounded-l-none border-l-0',
                       bk.isCheckOutVisible ? 'pr-1.5 rounded-r border-r' : 'pr-0 rounded-r-none border-r-0',
                       bk.hasConflict ? 'ring-2 ring-inset ring-red-500' : ''
@@ -5384,7 +5405,7 @@ function getRoomStatusIconName(item) {
                     ></i>
                     <!-- Left resize handle -->
                     <div 
-                      v-if="!isHousekeepingModule && bk.code !== 'LOCK' && bk.isCheckInVisible"
+                      v-if="!isHousekeepingModule && !bk.isMoveHistory && bk.code !== 'LOCK' && bk.isCheckInVisible"
                       data-room-plan-resize-handle
                       class="absolute top-0 bottom-0 left-0 w-2 z-20 select-none"
                       :style="{ cursor: Number(hotelSettings?.RoomPlan_AllowChangeArrivalDate) === 1 ? 'w-resize' : 'not-allowed' }"
@@ -5393,7 +5414,7 @@ function getRoomStatusIconName(item) {
 
                     <!-- Right resize handle -->
                     <div 
-                      v-if="!isHousekeepingModule && bk.code !== 'LOCK' && bk.isCheckOutVisible"
+                      v-if="!isHousekeepingModule && !bk.isMoveHistory && bk.code !== 'LOCK' && bk.isCheckOutVisible"
                       data-room-plan-resize-handle
                       class="absolute top-0 bottom-0 right-0 w-2 z-20 select-none"
                       style="cursor: e-resize;"
