@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\SystemBranch;
+use App\Services\RoutineCollationNormalizer;
 use App\Services\TenantDatabaseService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
@@ -123,6 +124,16 @@ class MigrateMultiDbCommand extends Command
         if ($exitCode !== self::SUCCESS) {
             $this->error("  ✗ Lỗi migrate {$name}");
             return false;
+        }
+
+        // Database clone/import có thể nạp lại thủ tục với general_ci -> chuẩn hóa mỗi lần (idempotent).
+        try {
+            $fixed = (new RoutineCollationNormalizer())->normalize(DB::connection($conn));
+            if ($fixed > 0) {
+                $this->line("  ↻ Đã chuẩn hóa collation cho {$fixed} thủ tục/hàm");
+            }
+        } catch (\Throwable $e) {
+            $this->warn("  ⚠ Không chuẩn hóa được collation thủ tục: {$e->getMessage()}");
         }
 
         $this->info("  ✓ Hoàn tất migrate: {$name}");
