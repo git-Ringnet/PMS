@@ -1,3 +1,25 @@
+export function isLeapYear(year) {
+  const y = parseInt(year, 10)
+  if (Number.isNaN(y)) return false
+  const fullYear = y < 100 ? (y >= 50 ? 1900 + y : 2000 + y) : y
+  return (fullYear % 4 === 0 && fullYear % 100 !== 0) || (fullYear % 400 === 0)
+}
+
+export function getMaxDaysInMonth(month, year = null) {
+  const m = parseInt(month, 10)
+  if (!m || Number.isNaN(m) || m < 1 || m > 12) return 31
+  if (m === 2) {
+    if (year && (String(year).length === 4 || String(year).length === 2)) {
+      return isLeapYear(year) ? 29 : 28
+    }
+    return 29
+  }
+  if ([4, 6, 9, 11].includes(m)) {
+    return 30
+  }
+  return 31
+}
+
 export function parseYmd(value) {
   if (!value) return null
   if (value instanceof Date) return value
@@ -23,81 +45,123 @@ export function formatShortDate(value) {
   return `${day}/${month}/${year}`
 }
 
-export function maskDateInput(value, isDeleting = false) {
+export function maskDateInput(value, isDeleting = false, fourDigitYear = true) {
   if (!value) return ''
   let str = String(value)
+  const maxYear = fourDigitYear ? 4 : 2
 
-  if (isDeleting) {
-    const digits = str.replace(/\D/g, '').slice(0, 8)
-    if (digits.length <= 2) return digits
-    if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`
-    return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`
-  }
-
-  // Handle single digit followed by slash for day e.g. '5/' -> '05/'
-  if (/^\d\//.test(str)) {
+  // Handle single digit followed by slash for day only when typed from scratch e.g. '5/' -> '05/'
+  if (!isDeleting && /^\d\/$/.test(str)) {
     str = '0' + str
   }
 
-  // Handle single digit followed by slash for month e.g. '05/5/' -> '05/05/'
-  if (/^(\d{2}\/)(\d)\//.test(str)) {
-    str = str.replace(/^(\d{2}\/)(\d)\//, '$10$2/')
+  // Handle single digit followed by slash for month: only auto-pad if digit is 2..9!
+  // If digit is 1 (could be 10, 11, 12) or 0 (could be 01..09), DO NOT auto-pad immediately.
+  if (!isDeleting && /^(\d{1,2}\/)([2-9])\//.test(str)) {
+    str = str.replace(/^(\d{1,2}\/)([2-9])\//, '$10$2/')
   }
 
-  let digits = str.replace(/\D/g, '')
-  let dayPart = ''
-  if (digits.length >= 2) {
-    let dayNum = parseInt(digits.slice(0, 2), 10)
-    if (dayNum > 31) dayNum = 31
-    if (dayNum === 0) dayNum = 1
-    dayPart = String(dayNum).padStart(2, '0')
-  } else if (digits.length === 1) {
-    return digits
-  } else {
-    return ''
+  if (str.includes('/')) {
+    const parts = str.split('/')
+    let dayRaw = parts[0].replace(/\D/g, '')
+    let monthRaw = (parts[1] !== undefined ? parts[1].replace(/\D/g, '') : '')
+    let yearRaw = (parts[2] !== undefined ? parts[2].replace(/\D/g, '') : '')
+
+    // If user deleted the slash between day and month (e.g. '1405/1994')
+    if (dayRaw.length > 2) {
+      monthRaw = dayRaw.slice(2) + monthRaw
+      dayRaw = dayRaw.slice(0, 2)
+    }
+
+    // If user deleted the slash between month and year (e.g. '14/051994')
+    if (monthRaw.length > 2) {
+      yearRaw = monthRaw.slice(2) + yearRaw
+      monthRaw = monthRaw.slice(0, 2)
+    }
+
+    let dayStr = dayRaw.slice(0, 2)
+    let monthStr = monthRaw.slice(0, 2)
+    let yearStr = yearRaw.slice(0, maxYear)
+
+    // Month validation
+    if (!isDeleting && monthStr.length === 1 && monthStr[0] >= '2' && monthStr[0] <= '9' && parts.length === 2 && yearStr.length === 0) {
+      monthStr = '0' + monthStr[0]
+    } else if (monthStr.length === 2) {
+      let m = parseInt(monthStr, 10)
+      if (m > 12) monthStr = '12'
+      if (m === 0) monthStr = '01'
+    }
+
+    // Determine max days for the month & year
+    const maxDays = getMaxDaysInMonth(monthStr, yearStr)
+
+    // Day validation based on maxDays
+    if (dayStr.length === 2) {
+      let d = parseInt(dayStr, 10)
+      if (d > maxDays) dayStr = String(maxDays).padStart(2, '0')
+      if (d === 0) dayStr = '01'
+    }
+
+    let res = dayStr
+    if (parts.length > 1 || dayStr.length === 2) {
+      res += '/' + monthStr
+    }
+    if (parts.length > 2 || yearStr.length > 0 || (monthStr.length === 2 && !isDeleting && parts.length === 2)) {
+      res += '/' + yearStr
+    }
+    return res
   }
+
+  // Pure digits without slashes (typing from scratch e.g. 18091996)
+  let digits = str.replace(/\D/g, '')
+  if (digits.length === 0) return ''
+  if (digits.length === 1) return digits
+
+  let dayPart = ''
+  let dayNum = parseInt(digits.slice(0, 2), 10)
+  if (dayNum > 31) dayNum = 31
+  if (dayNum === 0) dayNum = 1
+  dayPart = String(dayNum).padStart(2, '0')
 
   let rest = digits.slice(2)
-  let monthPart = ''
-  let yearPart = ''
-  const maxYear = 4
-
-  if (rest.length > 0) {
-    const firstMonthChar = rest[0]
-    // Nếu số đầu ở phần tháng lớn hơn 1 (2..9) thì tự chuyển thành 0X/ và chuyển sang nhập năm
-    if (firstMonthChar >= '2' && firstMonthChar <= '9') {
-      monthPart = '0' + firstMonthChar
-      yearPart = rest.slice(1).slice(0, maxYear)
-    } else if (firstMonthChar === '0') {
-      if (rest.length === 1) {
-        return `${dayPart}/0`
-      } else {
-        let secondMonthChar = rest[1]
-        if (secondMonthChar === '0') secondMonthChar = '1'
-        monthPart = '0' + secondMonthChar
-        yearPart = rest.slice(2).slice(0, maxYear)
-      }
-    } else if (firstMonthChar === '1') {
-      if (rest.length === 1) {
-        return `${dayPart}/1`
-      } else {
-        let monthNum = parseInt(rest.slice(0, 2), 10)
-        // Rào lại ở tháng chỉ nhập được 12 tháng thôi (nếu > 12 thì giữ 12)
-        if (monthNum > 12) monthNum = 12
-        monthPart = String(monthNum).padStart(2, '0')
-        yearPart = rest.slice(2).slice(0, maxYear)
-      }
-    }
-  } else {
+  if (rest.length === 0) {
     return `${dayPart}/`
   }
 
+  let monthPart = ''
+  let yearPart = ''
+  const firstMonthChar = rest[0]
+
+  if (!isDeleting && firstMonthChar >= '2' && firstMonthChar <= '9') {
+    monthPart = '0' + firstMonthChar
+    yearPart = rest.slice(1).slice(0, maxYear)
+  } else if (firstMonthChar === '0') {
+    if (rest.length === 1) {
+      return `${dayPart}/0`
+    }
+    let secondMonthChar = rest[1]
+    if (secondMonthChar === '0') secondMonthChar = '1'
+    monthPart = '0' + secondMonthChar
+    yearPart = rest.slice(2).slice(0, maxYear)
+  } else if (firstMonthChar === '1') {
+    if (rest.length === 1) {
+      return `${dayPart}/1`
+    }
+    let monthNum = parseInt(rest.slice(0, 2), 10)
+    if (monthNum > 12) monthNum = 12
+    monthPart = String(monthNum).padStart(2, '0')
+    yearPart = rest.slice(2).slice(0, maxYear)
+  }
+
   if (monthPart) {
+    const maxDays = getMaxDaysInMonth(monthPart, yearPart)
+    let d = parseInt(dayPart, 10)
+    if (d > maxDays) dayPart = String(maxDays).padStart(2, '0')
+
     if (yearPart) {
       return `${dayPart}/${monthPart}/${yearPart}`
-    } else {
-      return `${dayPart}/${monthPart}/`
     }
+    return `${dayPart}/${monthPart}/`
   }
 
   return `${dayPart}/`
