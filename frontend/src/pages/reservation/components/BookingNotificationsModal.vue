@@ -96,7 +96,7 @@
                 :start-date="props.systemDate || form.starts_on"
                 placeholder="dd/mm/yyyy"
                 four-digit-year
-                input-class="!h-[32px] !py-0 !px-2.5 !rounded-lg !border-slate-200 !text-xs !font-normal"
+                input-class="!h-[32px] !py-0 !px-2.5 !rounded-lg !border-[#F1DD8A] !bg-[#FFF8DB] !text-xs !font-normal focus-within:!border-amber-400 focus-within:!ring-1 focus-within:!ring-amber-400"
               />
             </div>
             <div>
@@ -107,7 +107,7 @@
                 :start-date="form.starts_on || props.systemDate"
                 placeholder="dd/mm/yyyy"
                 four-digit-year
-                input-class="!h-[32px] !py-0 !px-2.5 !rounded-lg !border-slate-200 !text-xs !font-normal"
+                input-class="!h-[32px] !py-0 !px-2.5 !rounded-lg !border-[#F1DD8A] !bg-[#FFF8DB] !text-xs !font-normal focus-within:!border-amber-400 focus-within:!ring-1 focus-within:!ring-amber-400"
               />
             </div>
           </div>
@@ -155,16 +155,7 @@
       </div>
 
       <!-- MODAL FOOTER -->
-      <footer class="flex flex-wrap justify-center gap-2.5 border-t border-slate-100 bg-slate-50 px-5 py-3 shrink-0 rounded-b-xl">
-        <button 
-          type="button" 
-          class="btn-pms-primary" 
-          :disabled="saving" 
-          @click="addNotification"
-        >
-          <i class="fa-solid fa-plus"></i>
-          <span>Thêm</span>
-        </button>
+      <footer class="flex flex-wrap items-center justify-end gap-2.5 border-t border-slate-100 bg-slate-50 px-5 py-3 shrink-0 rounded-b-xl">
         <button 
           type="button" 
           class="btn-pms-secondary" 
@@ -194,11 +185,12 @@
         </button>
         <button 
           type="button" 
-          class="btn-pms-close" 
-          @click="close"
+          class="btn-pms-primary" 
+          :disabled="saving" 
+          @click="addNotification"
         >
-          <i class="fa-solid fa-xmark"></i>
-          <span>Đóng</span>
+          <i class="fa-solid fa-plus"></i>
+          <span>Thêm</span>
         </button>
       </footer>
     </section>
