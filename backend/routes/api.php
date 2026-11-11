@@ -457,6 +457,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     Route::get('general-search', [\App\Http\Controllers\Api\GeneralSearchController::class, 'index']);
     Route::get('general-search/guests/{guest}/history', [\App\Http\Controllers\Api\GeneralSearchController::class, 'guestHistory']);
     Route::get('bookings/export', [\App\Http\Controllers\Api\BookingController::class, 'export']);
+    Route::post('bookings/export-registration-xlsx', [\App\Http\Controllers\Api\BookingController::class, 'exportRegistrationXlsx']);
     Route::get('bookings/{booking}/notifications', [\App\Http\Controllers\Api\BookingNotificationController::class, 'index']);
     Route::get('bookings/{booking}/notifications/active', [\App\Http\Controllers\Api\BookingNotificationController::class, 'active']);
     Route::post('bookings/{booking}/notifications', [\App\Http\Controllers\Api\BookingNotificationController::class, 'store'])->middleware('permission:fo.booking.edit');
