@@ -185,10 +185,13 @@ const selectedBankAccountDetails = computed(() => bankAccountOptions.value.find(
 const netTotalAmount = computed(() => {
   return (Number(props.totalServiceAmount) || 0) - (Number(props.totalDepositAmount) || 0)
 })
+// Chốt thanh toán 0đ khi có bill chưa thanh toán và số còn phải trả = 0:
+// bill được cọc/tạm ứng bù đủ, hoặc bản thân bill 0đ (vd. Minibar 0đ, không có cọc).
 const isZeroBalanceSettlement = computed(() => (
   Math.abs(netTotalAmount.value) <= 0.01
-  && Number(props.totalServiceAmount) > 0
-  && Number(props.totalDepositAmount) > 0
+  && (props.serviceBillIds || []).length > 0
+  && Number(props.totalServiceAmount) >= 0
+  && Number(props.totalDepositAmount) >= 0
 ))
 
 const totalAddedInModal = computed(() => {
@@ -409,7 +412,8 @@ const handleAddPaymentItem = () => {
       debit_account: null,
       amount: 0,
       currency: currency.value,
-      note: 'Thanh toán 0đ - Dùng cọc/tạm ứng'
+      // Mô tả mặc định = tên hình thức thanh toán (payment_methods.name).
+      note: methodName
     })
     payAmountNum.value = 0
     errorMsg.value = ''

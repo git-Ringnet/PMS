@@ -9,6 +9,58 @@
 - **Ngày ghi**: `YYYY-MM-DD`
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 
+## [2026-11-12] - Dòng 474/241: gia hạn ở Thông tin phòng hỏi xác nhận khi over
+
+- Đã merge origin/main (có commit ce8ea419 của dòng 474/241: khóa sửa/xóa khách đã check out, đếm khách đúng, tách nhóm, chặn gia hạn trùng số phòng/over khi AllowOverRoomTypeRoomKind=0, Đăng ký cũ lọc theo ngày check out khách). Giải conflict stash: RoomMapPage.vue/room-store.js giữ cả xem tương lai và statsDate; DAILY_LOG lấy bản main + các mục 02–04/11.
+- Phần còn thiếu: AllowOverRoomTypeRoomKind=1 thì gia hạn làm âm AV vẫn lưu luôn. GuestController::assertStayPeriodAvailable trả 409 OVERBOOKING_CONFIRMATION_REQUIRED khi chưa gửi confirm_overbooking; BookingDetailModal hỏi "Cảnh báo âm phòng trống" rồi lưu lại kèm cờ.
+- Test: Row474CheckedOutGuestTest thêm 2 ca (cấu hình 0 chặn kể cả có cờ; cấu hình 1 hỏi rồi mới lưu), nhóm test khách/gia hạn liên quan 59/59 đạt; node test 474 3/3; vite build đạt; i18n đã sync (thêm 2 bản dịch en). Chưa UAT trình duyệt.
+
+## [2026-11-04] - Sơ đồ phòng: thẻ Đã đến/Đã đi/Đang ở hiện số cũ lúc mới vào
+
+- Lỗi: mới vào Sơ đồ phòng hiện Đã đến 11/11 rồi mới đổi thành 0/5. Nguyên nhân: thẻ dùng roomStore.stats còn giữ từ lần tải trước (ngày khác/trang khác) cho tới khi /rooms/stats trả về; nhánh dự phòng còn hardcode (x/31, /181).
+- room-store.js: thêm statsDate. RoomController::stats trả thêm `date`. RoomMapPage.vue: chỉ dùng stats khi statsDate = ngày đang xem, chưa có thì hiện "-" (Đã đến, Đã đi, Đang ở, Công suất); bỏ nhánh dự phòng hardcode. vite build đạt.
+
+## [2026-11-03] - Hóa đơn: thanh toán Master không tự checkout Master
+
+- Lỗi: phòng đã checkout, đứng ở Master bấm Thanh toán → thanh toán xong bookings.status tự = 2 dù chưa bấm Checkout Master. Nguyên nhân: PaymentController::settle gọi completeBookingAfterMasterSettlement (từ commit 72e672b7).
+- Bỏ lời gọi và hàm này. Master giữ status 1 → hiện "Master chờ check-out"; người dùng tự bấm Checkout Master. php -l đạt; không có test phụ thuộc.
+
+## [2026-11-03] - Hóa đơn: phòng ảo chỉ hiện một dòng phòng
+
+- CheckoutPage.vue: thêm `isVirtualFolioGroup` (bộ lọc Phòng ảo hoặc folio có virtualRoomId); ẩn dòng BK/Master trong danh sách bên trái và dòng "BKK:" trong dropdown tìm kiếm, bỏ thụt lề/mũi tên ở dòng phòng. Đăng ký hiện tại/cũ không đổi. vite build đạt.
+
+## [2026-11-03] - Hóa đơn: thanh toán trước ở Master bị gán vào phòng đầu tiên
+
+- Lỗi có sẵn từ commit d39b413f (21/10), không do sửa tick/chọn phòng: PrepaymentModal khi không chọn phòng (đang xem Master) tự lấy roomOptions[0] làm phòng nhận tiền.
+- PrepaymentModal.vue: mặc định phòng = null (Master), thêm lựa chọn "Master" trong ô Phòng. Backend store đã nhận booking_room_id null = cọc Master. vite build đạt.
+
+## [2026-11-03] - Hóa đơn: mô tả mặc định thanh toán 0đ / bill miễn phí
+
+- PaymentModal.vue: dòng thanh toán 0đ mặc định mô tả = tên hình thức thanh toán (payment_methods.name) thay cho "Thanh toán 0đ - Dùng cọc/tạm ứng".
+- BookingRoomServiceController (post bill buồng phòng miễn phí): mô tả payment = tên HTTT Complimentary (CL) thay cho "Thanh toán miễn phí - <nhóm>". Dữ liệu cũ không đổi. Thanh toán thường vẫn là "Thanh toán - <HTTT>".
+
+## [2026-11-02] - Hóa đơn: Đăng ký cũ hiện booking/phòng chưa checkout
+
+- Lỗi: BK ngày đến = ngày đi, booking và phòng status 0 (Đăng ký) vẫn hiện ở Đăng ký cũ. Nguyên nhân: điều kiện `(status 0 && hasTransactions)` từ commit 4783cb7a giữ phòng status 0 có giao dịch trong Đăng ký cũ.
+- CheckoutPage.vue (loadCheckoutBookings): bỏ điều kiện này; Đăng ký cũ chỉ còn phòng đã checkout / Noshow / Hủy / khách checkout lẻ. Booking status 0 không còn phòng hợp lệ thì tự ẩn. Không tái hiện được trên DB local (không có NV60); vite build đạt.
+
+## [2026-11-02] - Hóa đơn: ẩn dòng giải trừ công nợ đã xóa
+
+- DebtSettlementModal.vue: lọc bỏ dòng giải trừ đã xóa (edit_flag = 1) khỏi lịch sử và bản in, thay cho hiển thị gạch ngang. Số còn lại vẫn lấy từ backend.
+
+## [2026-11-02] - Hóa đơn: thanh toán bill 0đ không có cọc
+
+- Lỗi: post bill 0đ (vd. MB Minibar 0đ), bấm Thanh toán báo "Vui lòng nhập số tiền thanh toán". Nguyên nhân: chốt thanh toán 0đ (commit 47bae344) chỉ cho phép khi tổng bill > 0 và có cọc/tạm ứng bù đủ.
+- PaymentModal.vue: `isZeroBalanceSettlement` = còn phải trả 0 + có bill chưa thanh toán (serviceBillIds) + tổng bill, cọc không âm; ghi chú dòng là "Thanh toán 0đ" khi không có cọc.
+- PaymentController::settle (zero_balance_close): bỏ bắt buộc có cọc > 0; vẫn bắt buộc 1 dòng 0đ, có bill chưa thanh toán, bill = cọc, cọc > 0 thì phải có cọc hợp lệ. Đổi câu báo lỗi + bản dịch en.
+- Thêm test test_zero_balance_settlement_closes_a_zero_amount_bill_without_deposit. Bộ SalesInvoiceSettlementTest không chạy được do lỗi môi trường có sẵn (JSON_CONTAINS_PATH trên SQLite); php -l và vite build đạt.
+
+## [2026-11-02] - Hóa đơn (Trả phòng): khôi phục checkout sai phòng ở Đăng ký cũ
+
+- Lỗi: đang xem phòng 206 nhưng tick phòng 405 → khôi phục checkout chạy cho 206. Nguyên nhân: `selectedCheckoutRooms` chỉ lấy phòng In-House (status 1) nên tick phòng đã checkout bị bỏ qua, thao tác rơi về phòng đang xem.
+- CheckoutPage.vue: tick chọn phòng thì chuyển luôn sang xem phòng đó (`onRoomCheckChange` → `selectRoomItemRow`); `openCheckoutModal` ưu tiên phòng đã checkout được tick (status 2), tick >1 phòng thì báo chỉ khôi phục từng phòng.
+- i18n: thêm câu cảnh báo mới vào en.json, chạy extract + i18n:sync.
+
 ## [2026-11-11] - Triển Khai Hoàn Tất Dòng 112 Sheet FIX FE (Xuất File Excel Đăng Ký Phòng Chuẩn .xlsx với 29 Cột, Đóng Khung Thông Tin & 1 Gạch Dòng Tổng Cộng)
 ### Module: Đăng Ký ([CreateRegistrationPage.vue](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/frontend/src/pages/reservation/CreateRegistrationPage.vue)), Controller ([BookingController.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/app/Http/Controllers/Api/BookingController.php)) & API Routes ([api.php](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/backend/routes/api.php))
 - **Mục tiêu & Kết quả hoàn thành**:

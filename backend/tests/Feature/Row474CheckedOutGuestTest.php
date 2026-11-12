@@ -156,6 +156,50 @@ class Row474CheckedOutGuestTest extends TestCase
         $this->assertSame('2026-08-12', $mine->fresh()->departure_date->toDateString());
     }
 
+    /** Hết phòng loại DLX đêm 11/08: phòng 402 và một phòng chưa gán số đều đã được giữ. */
+    private function fillRoomClassOnAugust11(): void
+    {
+        $other = $this->booking('2026-08-11', '2026-08-13', Booking::STATUS_RESERVATION);
+        $this->room($other, '402', '2026-08-11', '2026-08-13', BookingRoom::STATUS_BOOKED);
+        BookingRoom::create([
+            'booking_id' => $other->id, 'room_class_id' => $this->roomClass->id, 'room_number' => null,
+            'arrival_date' => '2026-08-11', 'departure_date' => '2026-08-13',
+            'status' => BookingRoom::STATUS_BOOKED, 'adults' => 2, 'rate' => 1000000,
+        ]);
+    }
+
+    public function test_extension_over_room_class_av_is_blocked_when_over_is_not_allowed(): void
+    {
+        \App\Models\HotelConfig::updateOrCreate(['name' => 'AllowOverRoomTypeRoomKind'], ['value' => '0', 'is_visible' => true]);
+        $mine = $this->inhouseRoom($this->booking('2026-08-09', '2026-08-11'), '401');
+        $primary = $this->guest($mine, 'Guest 1', BookingRoomGuest::STATUS_CHECKED_IN, true);
+        $this->fillRoomClassOnAugust11();
+
+        $this->putJson("/api/booking-rooms/{$mine->id}/guests/{$primary->id}", ['departure_date' => '2026-08-12', 'confirm_overbooking' => true])
+            ->assertStatus(422);
+        $this->assertSame('2026-08-11', $mine->fresh()->departure_date->toDateString());
+    }
+
+    public function test_extension_over_room_class_av_requires_confirmation_when_over_is_allowed(): void
+    {
+        \App\Models\HotelConfig::updateOrCreate(['name' => 'AllowOverRoomTypeRoomKind'], ['value' => '1', 'is_visible' => true]);
+        $mine = $this->inhouseRoom($this->booking('2026-08-09', '2026-08-11'), '401');
+        $primary = $this->guest($mine, 'Guest 1', BookingRoomGuest::STATUS_CHECKED_IN, true);
+        $this->fillRoomClassOnAugust11();
+
+        // Chưa xác nhận: hỏi lại, không lưu gì (kể cả thông tin khách gửi kèm).
+        $this->putJson("/api/booking-rooms/{$mine->id}/guests/{$primary->id}", ['departure_date' => '2026-08-12', 'full_name' => 'Doi ten'])
+            ->assertStatus(409)
+            ->assertJsonPath('code', 'OVERBOOKING_CONFIRMATION_REQUIRED');
+        $this->assertSame('2026-08-11', $mine->fresh()->departure_date->toDateString());
+        $this->assertSame('Guest 1', $primary->fresh()->full_name);
+
+        // Đã xác nhận: lưu.
+        $this->putJson("/api/booking-rooms/{$mine->id}/guests/{$primary->id}", ['departure_date' => '2026-08-12', 'confirm_overbooking' => true])
+            ->assertSuccessful();
+        $this->assertSame('2026-08-12', $mine->fresh()->departure_date->toDateString());
+    }
+
     public function test_old_registration_list_exposes_checked_out_guest_of_inhouse_room(): void
     {
         $booking = $this->booking('2026-08-09', '2026-08-11');

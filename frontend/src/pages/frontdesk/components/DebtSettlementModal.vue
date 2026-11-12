@@ -173,7 +173,8 @@ async function load() {
       http.get('/payment-methods'),
     ])
     paymentInfo.value = detail.data?.data?.payment || null
-    settlements.value = detail.data?.data?.settlements || []
+    // Dòng giải trừ đã xóa (edit_flag = 1) không hiển thị trên lịch sử và bản in.
+    settlements.value = (detail.data?.data?.settlements || []).filter(item => Number(item.edit_flag) !== 1)
     const items = methods.data?.data || methods.data || []
     paymentMethods.value = items.filter(method => (
       String(method.code || '').toUpperCase() !== 'AC'
@@ -334,14 +335,14 @@ async function confirmDelete() {
                 <tr v-if="!loading && settlements.length === 0">
                   <td colspan="6" class="px-2 py-8 text-center text-slate-400">Chưa có dữ liệu</td>
                 </tr>
-                <tr v-for="item in settlements" :key="item.id" :class="Number(item.edit_flag) === 1 ? 'bg-slate-50 text-slate-400 line-through' : ''">
+                <tr v-for="item in settlements" :key="item.id">
                   <td class="border-t border-r border-slate-100 px-2 py-1.5 whitespace-nowrap">{{ formatHistoryDate(item.payment_date, item.payment_time) }}</td>
                   <td class="border-t border-r border-slate-100 px-2 py-1.5">{{ item.payment_method?.name || item.payment_method_id }}</td>
                   <td class="border-t border-r border-slate-100 px-2 py-1.5">{{ item.description || '' }}</td>
                   <td class="border-t border-r border-slate-100 px-2 py-1.5 text-right">{{ money(item.amount) }}</td>
                   <td class="border-t border-r border-slate-100 px-2 py-1.5">{{ item.created_by || '' }}</td>
                   <td class="border-t border-slate-100 px-2 py-1 text-center">
-                    <button class="rounded bg-[#0788eb] p-1 text-white hover:bg-blue-600 disabled:opacity-40" :disabled="loading || Number(item.edit_flag) === 1" title="Xóa" @click="requestDelete(item)"><Trash2 class="h-3.5 w-3.5" /></button>
+                    <button class="rounded bg-[#0788eb] p-1 text-white hover:bg-blue-600 disabled:opacity-40" :disabled="loading" title="Xóa" @click="requestDelete(item)"><Trash2 class="h-3.5 w-3.5" /></button>
                   </td>
                 </tr>
               </tbody>

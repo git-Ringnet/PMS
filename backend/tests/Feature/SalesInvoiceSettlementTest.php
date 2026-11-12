@@ -236,6 +236,31 @@ class SalesInvoiceSettlementTest extends TestCase
         $this->assertEquals(500000, (float) $salesInvoice->amount);
     }
 
+    public function test_zero_balance_settlement_closes_a_zero_amount_bill_without_deposit(): void
+    {
+        $bill = ServiceBill::create([
+            'Guest' => 'Nguyễn Văn Test', 'DepartmentId' => 'FO', 'ServiceId' => 'MB',
+            'Username' => $this->user->username, 'Date' => '2026-09-16', 'OpenTime' => '08:00:00',
+            'Amount' => 0, 'Exchange' => 1, 'Edit' => 0, 'Status' => 1, 'Folio' => '1',
+            'RegisterId1' => (string) $this->booking->id, 'RentalRoomId1' => (string) $this->room->id,
+            'RegisterID2' => (string) $this->booking->id, 'RentalRoomId2' => (string) $this->room->id,
+        ]);
+
+        $this->postJson("/api/bookings/{$this->booking->id}/settle-payment", [
+            'folio_id' => '1', 'booking_room_id' => $this->room->id,
+            'payments' => [['payment_method_id' => 'CA', 'amount' => 0]],
+            'service_bill_ids' => [$bill->Ma], 'department_id' => 'FO',
+            'date' => '2026-09-16', 'open_time' => '10:00', 'shift_id' => '1',
+            'zero_balance_close' => true,
+        ])->assertOk()->assertJsonPath('success', true);
+
+        $bill->refresh();
+        $salesInvoice = SalesInvoice::where('booking_id', $this->booking->id)->firstOrFail();
+        $this->assertSame(2, (int) $bill->Status);
+        $this->assertSame((string) $salesInvoice->id, (string) $bill->InvoiceId);
+        $this->assertEquals(0, (float) $salesInvoice->amount);
+    }
+
     public function test_zero_payment_cannot_create_an_invoice_without_an_unpaid_service_bill(): void
     {
         $this->postJson("/api/bookings/{$this->booking->id}/settle-payment", [
