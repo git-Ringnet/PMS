@@ -50,6 +50,9 @@ class VirtualRoomFolioTest extends TestCase
             ['fo.booking.create', 'Create booking'],
             ['fo.booking.cancel', 'Cancel booking'],
             ['fo.payment.create', 'Create payment'],
+            ['fo.deposit.create', 'Create deposit'],
+            ['fo.deposit.edit', 'Edit deposit'],
+            ['fo.deposit.delete', 'Delete deposit'],
         ])->map(fn (array $permission) => Permission::firstOrCreate(
             ['code' => $permission[0]],
             ['name' => $permission[1], 'module' => 'FO']

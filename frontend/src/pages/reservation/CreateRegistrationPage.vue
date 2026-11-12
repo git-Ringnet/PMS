@@ -9771,6 +9771,7 @@ defineExpose({
                       <h3 class="font-bold text-slate-800 text-xs tracking-wider">Đặt Cọc</h3>
                     </div>
                     <button 
+                      v-if="authStore.hasPermission('fo.deposit.view') || authStore.hasPermission('fo.deposit.create')"
                       @click="openDepositModal" 
                       :disabled="!modalForm.dbId"
                       type="button" 

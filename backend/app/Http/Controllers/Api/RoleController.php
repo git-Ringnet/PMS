@@ -70,6 +70,9 @@ class RoleController extends Controller
         if ($role->positionAssignments()->exists()) {
             return response()->json(['success' => false, 'message' => 'Role đang được gán cho vị trí công việc.'], 422);
         }
+        if ($role->users()->exists()) {
+            return response()->json(['success' => false, 'message' => 'Role đang được gán cho nhân viên.'], 422);
+        }
 
         $this->removeRoleFromOldDayOperationConfig($role->code);
 

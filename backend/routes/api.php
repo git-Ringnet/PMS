@@ -584,14 +584,14 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     // #18 — PAYMENTS (Đặt cọc / Deposit) routes
     // =====================================================================
     Route::get('/bookings/{bookingId}/payments', [\App\Http\Controllers\Api\PaymentController::class, 'index']);
-    Route::post('/bookings/{bookingId}/payments', [\App\Http\Controllers\Api\PaymentController::class, 'store'])->middleware('permission:fo.payment.create');
+    Route::post('/bookings/{bookingId}/payments', [\App\Http\Controllers\Api\PaymentController::class, 'store'])->middleware('permission:fo.payment.create,fo.deposit.create,fo.deposit.edit,fo.deposit.delete');
     Route::post('/bookings/{bookingId}/settle-payment', [\App\Http\Controllers\Api\PaymentController::class, 'settlePayment'])->middleware('permission:fo.payment.create');
-    Route::put('/payments/{id}', [\App\Http\Controllers\Api\PaymentController::class, 'update'])->middleware('permission:fo.payment.create');
-    Route::patch('/payments/{id}/folio', [\App\Http\Controllers\Api\PaymentController::class, 'transferFolio'])->middleware('permission:fo.payment.create');
-    Route::delete('/payments/{id}', [\App\Http\Controllers\Api\PaymentController::class, 'destroy'])->middleware('permission:fo.payment.create');
-    Route::post('/payments/{id}/split', [\App\Http\Controllers\Api\PaymentController::class, 'split'])->middleware('permission:fo.payment.create');
-    Route::post('/payments/transfer', [\App\Http\Controllers\Api\PaymentController::class, 'transferMany'])->middleware('permission:fo.payment.create');
-    Route::post('/payments/{id}/transfer', [\App\Http\Controllers\Api\PaymentController::class, 'transfer'])->middleware('permission:fo.payment.create');
+    Route::put('/payments/{id}', [\App\Http\Controllers\Api\PaymentController::class, 'update'])->middleware('permission:fo.payment.create,fo.deposit.create,fo.deposit.edit,fo.deposit.delete');
+    Route::patch('/payments/{id}/folio', [\App\Http\Controllers\Api\PaymentController::class, 'transferFolio'])->middleware('permission:fo.payment.create,fo.deposit.create,fo.deposit.edit,fo.deposit.delete');
+    Route::delete('/payments/{id}', [\App\Http\Controllers\Api\PaymentController::class, 'destroy'])->middleware('permission:fo.payment.create,fo.deposit.create,fo.deposit.edit,fo.deposit.delete');
+    Route::post('/payments/{id}/split', [\App\Http\Controllers\Api\PaymentController::class, 'split'])->middleware('permission:fo.payment.create,fo.deposit.create,fo.deposit.edit,fo.deposit.delete');
+    Route::post('/payments/transfer', [\App\Http\Controllers\Api\PaymentController::class, 'transferMany'])->middleware('permission:fo.payment.create,fo.deposit.create,fo.deposit.edit,fo.deposit.delete');
+    Route::post('/payments/{id}/transfer', [\App\Http\Controllers\Api\PaymentController::class, 'transfer'])->middleware('permission:fo.payment.create,fo.deposit.create,fo.deposit.edit,fo.deposit.delete');
     Route::get('/payments/{id}/debt-settlements', [\App\Http\Controllers\Api\PaymentController::class, 'debtSettlements']);
     Route::post('/payments/{id}/debt-settlements', [\App\Http\Controllers\Api\PaymentController::class, 'storeDebtSettlement'])->middleware('permission:fo.payment.create');
     Route::delete('/payments/{id}/debt-settlements/{settlementId}', [\App\Http\Controllers\Api\PaymentController::class, 'destroyDebtSettlement'])->middleware('permission:fo.payment.create');

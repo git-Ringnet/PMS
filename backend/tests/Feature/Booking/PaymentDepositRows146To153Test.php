@@ -34,6 +34,9 @@ class PaymentDepositRows146To153Test extends TestCase
         $role = Role::firstOrCreate(['code' => 'deposit_test'], ['name' => 'Deposit test', 'level' => 3, 'department_scope' => 'FO', 'is_active' => true]);
         $permission = Permission::firstOrCreate(['code' => 'fo.payment.create'], ['name' => 'fo.payment.create', 'module' => 'FO']);
         $role->permissions()->syncWithoutDetaching([$permission->id]);
+        foreach (['fo.deposit.create', 'fo.deposit.edit', 'fo.deposit.delete'] as $depositCode) {
+            $role->permissions()->syncWithoutDetaching([Permission::firstOrCreate(['code' => $depositCode], ['name' => $depositCode, 'module' => 'FO'])->id]);
+        }
         $this->user->roles()->attach($role->id);
         HotelConfig::updateOrCreate(['name' => 'RuleUserCorrectOrPostBillPaymentOldDay'], ['value' => 'deposit_test']);
 

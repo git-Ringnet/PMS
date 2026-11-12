@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth-store'
-import { ROUTE_PERMISSIONS, canOpenScreen, hasAccess } from '@/utils/screen-permissions'
+import { ROUTE_PERMISSIONS, canOpenScreen, hasAccess, hasApplication, requiredApplication } from '@/utils/screen-permissions'
 
 const routes = [
   {
@@ -135,7 +135,8 @@ router.beforeEach(async (to, from) => {
       const isTemporaryExpectedRevenueAccess = to.name === 'Reports'
         && to.query.report === 'EXPECTED_ROOM_REVENUE_NIGHT_AUDIT'
       if (!isTemporaryExpectedRevenueAccess) {
-        if (!hasAccess(authStore, to.meta.permission) || !canOpenScreen(authStore, to.path, to.query)) {
+        if (!hasApplication(authStore, requiredApplication(to.path)) ||
+          !hasAccess(authStore, to.meta.permission) || !canOpenScreen(authStore, to.path, to.query)) {
           return { name: 'Forbidden' }
         }
       }

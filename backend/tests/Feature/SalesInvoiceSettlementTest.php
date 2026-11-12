@@ -35,6 +35,9 @@ class SalesInvoiceSettlementTest extends TestCase
         $role = \App\Models\Role::firstOrCreate(['code' => 'admin_test'], ['name' => 'Admin test', 'level' => 1, 'is_active' => true]);
         $perm = \App\Models\Permission::firstOrCreate(['code' => 'fo.payment.create'], ['name' => 'fo.payment.create', 'module' => 'FO']);
         $role->permissions()->syncWithoutDetaching([$perm->id]);
+        foreach (['fo.deposit.create', 'fo.deposit.edit', 'fo.deposit.delete'] as $depositCode) {
+            $role->permissions()->syncWithoutDetaching([\App\Models\Permission::firstOrCreate(['code' => $depositCode], ['name' => $depositCode, 'module' => 'FO'])->id]);
+        }
         $this->user->roles()->attach($role->id);
 
         $this->actingAs($this->user);

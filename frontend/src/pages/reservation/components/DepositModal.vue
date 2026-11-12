@@ -342,7 +342,7 @@
         <!-- FOOTER ACTIONS -->
         <div class="bg-white border-t border-slate-200 p-2.5 px-4 flex justify-between items-center shrink-0 rounded-b-xl">
             
-            <div class="flex items-center space-x-2" v-if="!showDeleted">
+            <div class="flex items-center space-x-2" v-if="!showDeleted && canEditDeposit">
                 <button type="button" @click="splitDeposit" :disabled="isSubmitting || isEditing" class="btn-pms-secondary" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting || isEditing }">
                     <i class="fa-solid fa-code-branch text-[11px]"></i>
                     <span>Tách</span>
@@ -358,15 +358,15 @@
                     <i class="fa-solid fa-arrow-left text-[11px]"></i>
                     <span>Quay lại</span>
                 </button>
-                <button type="button" @click="deleteDeposits" :disabled="isSubmitting || isEditing" class="btn-pms-danger" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting || isEditing }">
+                <button type="button" v-if="canDeleteDeposit" data-testid="deposit-delete-btn" @click="deleteDeposits" :disabled="isSubmitting || isEditing" class="btn-pms-danger" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting || isEditing }">
                     <i class="fa-solid fa-trash-can text-[11px]"></i>
                     <span>Xóa</span>
                 </button>
-                <button type="button" @click="editDeposit" :disabled="isSubmitting || isEditing" class="btn-pms-primary" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting || isEditing }">
+                <button type="button" v-if="canEditDeposit" data-testid="deposit-edit-btn" @click="editDeposit" :disabled="isSubmitting || isEditing" class="btn-pms-primary" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting || isEditing }">
                     <i class="fa-solid fa-pen-to-square text-[11px]"></i>
                     <span>Sửa</span>
                 </button>
-                <button type="button" @click="saveDeposit" :disabled="isSubmitting" class="btn-pms-primary" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting }">
+                <button type="button" v-if="depositForm.id ? canEditDeposit : canCreateDeposit" data-testid="deposit-save-btn" @click="saveDeposit" :disabled="isSubmitting" class="btn-pms-primary" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting }">
                     <i class="fa-regular fa-floppy-disk text-[11px]"></i>
                     <span>Lưu</span>
                 </button>
@@ -716,6 +716,10 @@ const emit = defineEmits(['update:show', 'update:deposits', 'update:paymentValue
 
 const uiStore = useUiStore()
 const authStore = useAuthStore()
+// Task 473: quyền riêng cho đặt cọc (thêm / sửa-tách-chuyển / xóa)
+const canCreateDeposit = computed(() => authStore.hasPermission('fo.deposit.create'))
+const canEditDeposit = computed(() => authStore.hasPermission('fo.deposit.edit'))
+const canDeleteDeposit = computed(() => authStore.hasPermission('fo.deposit.delete'))
 
 // Dynamic Theme topbar background sync
 const topbarThemeBg = computed(() => {

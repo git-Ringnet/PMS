@@ -497,12 +497,33 @@ class PaymentController extends Controller
         return response()->json(['success' => true, 'message' => 'Đã xóa giải trừ công nợ.']);
     }
 
+    /**
+     * Task 473: đặt cọc phải có quyền fo.deposit.create/edit/delete (không dùng chung fo.payment.create).
+     * Thanh toán trước (pack4 = ADVANCE, thao tác ở màn trả phòng) vẫn dùng quyền thanh toán fo.payment.create.
+     */
+    private function authorizeDepositAction(Request $request, bool $isAdvance, string $depositPermission): void
+    {
+        $user = $request->user();
+        if (!$user || $user->isSuperAdmin()) {
+            return;
+        }
+
+        $required = $isAdvance ? 'fo.payment.create' : $depositPermission;
+        $branchId = $request->attributes->get('_branch_id');
+        if (!$user->hasPermission($required, $branchId)) {
+            abort(403, $isAdvance
+                ? 'Bạn không có quyền thực hiện thao tác thanh toán trước.'
+                : 'Bạn không có quyền thực hiện thao tác đặt cọc.');
+        }
+    }
+
     // =========================================
     // POST: Tạo cọc mới cho booking
     // POST /bookings/{bookingId}/payments
     // =========================================
     public function store(Request $request, $bookingId)
     {
+        $this->authorizeDepositAction($request, $request->input('pack4') === Payment::PACK4_ADVANCE, 'fo.deposit.create');
         $booking = Booking::findOrFail($bookingId);
 
         // Không cho cọc booking đã checkout / đã xóa
@@ -681,6 +702,7 @@ class PaymentController extends Controller
     public function update(Request $request, $id)
     {
         $payment = Payment::findOrFail($id);
+        $this->authorizeDepositAction($request, $payment->pack4 === Payment::PACK4_ADVANCE, 'fo.deposit.edit');
 
         $descriptionOnly = $request->has('description') && !$request->has('payment_method_id');
         if ($payment->edit_flag !== 0 || $payment->status === Payment::STATUS_DELETED || (!$descriptionOnly && $payment->status !== Payment::STATUS_PENDING)) {
@@ -791,11 +813,12 @@ class PaymentController extends Controller
         ]);
         $paymentIds = array_unique(array_merge([(int) $id], array_map('intval', $validated['payment_ids'] ?? [])));
 
-        DB::transaction(function () use ($paymentIds, $validated) {
+        DB::transaction(function () use ($paymentIds, $validated, $request) {
             $payments = Payment::whereIn('id', $paymentIds)->lockForUpdate()->get();
             if ($payments->count() !== count($paymentIds)) {
                 abort(404, 'Không tìm thấy cọc.');
             }
+            $payments->each(fn (Payment $payment) => $this->authorizeDepositAction($request, $payment->pack4 === Payment::PACK4_ADVANCE, 'fo.deposit.edit'));
             if ($payments->contains(fn (Payment $payment) => !$this->isTransferableDepositOrAdvance($payment) || $payment->edit_flag !== 0 || $payment->status !== Payment::STATUS_PENDING || !empty($payment->payment_id))) {
                 abort(422, 'Chỉ được chuyển Folio cho đặt cọc/thanh toán trước chưa sử dụng.');
             }
@@ -832,6 +855,7 @@ class PaymentController extends Controller
             ], 422);
         }
         $payment = Payment::findOrFail($id);
+        $this->authorizeDepositAction($request, $payment->pack4 === Payment::PACK4_ADVANCE, 'fo.deposit.delete');
 
         if ($payment->edit_flag !== 0) {
             return response()->json([
@@ -1125,6 +1149,7 @@ class PaymentController extends Controller
     public function split(Request $request, $id)
     {
         $payment = Payment::findOrFail($id);
+        $this->authorizeDepositAction($request, $payment->pack4 === Payment::PACK4_ADVANCE, 'fo.deposit.edit');
 
         if (!$this->isTransferableDepositOrAdvance($payment) || $payment->edit_flag !== 0 || $payment->status !== Payment::STATUS_PENDING) {
             return response()->json([
@@ -1298,6 +1323,7 @@ class PaymentController extends Controller
             if ($payments->count() !== count($request->payment_ids)) abort(422, 'Không tìm thấy đủ các dòng cọc cần chuyển.');
 
             foreach ($payments as $payment) {
+                $this->authorizeDepositAction($request, $payment->pack4 === Payment::PACK4_ADVANCE, 'fo.deposit.edit');
                 if (!$this->isTransferableDepositOrAdvance($payment) || $payment->edit_flag !== 0 || $payment->status !== Payment::STATUS_PENDING || !empty($payment->payment_id)) {
                     abort(422, 'Chỉ có thể chuyển đặt cọc/thanh toán trước chưa sử dụng.');
                 }
@@ -1333,6 +1359,7 @@ class PaymentController extends Controller
     public function transfer(Request $request, $id)
     {
         $payment = Payment::findOrFail($id);
+        $this->authorizeDepositAction($request, $payment->pack4 === Payment::PACK4_ADVANCE, 'fo.deposit.edit');
 
         if ($payment->edit_flag !== 0 || $payment->status !== Payment::STATUS_PENDING) {
             return response()->json([
