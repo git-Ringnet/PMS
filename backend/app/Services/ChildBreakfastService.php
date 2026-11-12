@@ -235,6 +235,16 @@ class ChildBreakfastService
         $quantity = 0;
         $amount = 0.0;
 
+        // Thông số Booking_BFChildSetServiceId khác mã dịch vụ ăn sáng trẻ trong danh mục (chế độ bill riêng):
+        // đêm nào phòng đã có dòng ở booking_room_services thì về bill phòng theo bảng đó, không tách từ tiền phòng nữa.
+        if (!$this->isDetailMode()
+            && BookingRoomService::where('booking_room_id', $room->id)
+                ->where('service_code', $this->configCode())
+                ->whereDate('service_date', $dateStr)
+                ->exists()) {
+            return ['quantity' => 0, 'amount' => 0.0];
+        }
+
         foreach ($this->childrenForRoom($room) as $child) {
             $detail = $child->breakfastDetails()->whereDate('service_date', $dateStr)->first();
             if (!$detail || !$detail->breakfast || $detail->is_free || $detail->is_extra_charge || (float) $detail->amount <= 0) {

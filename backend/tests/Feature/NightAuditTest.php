@@ -406,6 +406,49 @@ class NightAuditTest extends TestCase
         $this->assertEquals(640000, (float) RoomNightBill::where('bill_id', $bill->Ma)->value('breakfast_amount'));
     }
 
+    public function test_row_415_child_breakfast_is_not_split_when_a_separate_setup_service_row_exists()
+    {
+        $sysDateStr = Carbon::parse(SystemDateRoll::latest('id')->first()->system_date)->toDateString();
+        Room::updateOrCreate(['room_number' => '312'], ['room_class_id' => 1, 'room_form_id' => 1, 'floor' => '3', 'room_status_code' => 'occupied_ready']);
+        HotelSetting::query()->firstOrFail()->update(['breakfast_adult_rate' => 180000]);
+        $department = Department::where('code', 'FO')->firstOrFail();
+        // Dịch vụ danh mục "Ăn sáng trẻ em" mã BD nhưng thông số trỏ sang mã khác (ZZ): chế độ bill riêng theo booking_room_services.
+        HotelService::updateOrCreate(['code' => 'BD'], ['name' => 'Phụ thu ăn sáng trẻ em', 'price' => 90000, 'department_id' => $department->id]);
+        HotelConfig::updateOrCreate(['name' => 'Booking_BFChildSetServiceId'], ['value' => 'ZZ']);
+
+        $makeRoom = function (string $id, string $number) use ($sysDateStr) {
+            $booking = Booking::create([
+                'booking_name' => 'KHACH ' . $id, 'arrival_date' => $sysDateStr, 'departure_date' => Carbon::parse($sysDateStr)->addDays(2)->toDateString(),
+                'num_of_days' => 2, 'booking_date' => $sysDateStr, 'created_by' => 'admin', 'registration_status_id' => 1,
+            ]);
+            Room::updateOrCreate(['room_number' => $number], ['room_class_id' => 1, 'room_form_id' => 1, 'floor' => '3', 'room_status_code' => 'occupied_ready']);
+            $room = BookingRoom::create([
+                'id' => $id, 'booking_id' => $booking->id, 'room_class_id' => 1, 'room_number' => $number,
+                'arrival_date' => $sysDateStr, 'departure_date' => Carbon::parse($sysDateStr)->addDays(2)->toDateString(),
+                'status' => BookingRoom::STATUS_CHECKED_IN, 'rate' => 2000000, 'adults' => 3, 'breakfast' => 1, 'children_qty' => 1,
+            ]);
+            $child = \App\Models\BookingChild::create(['id' => 'BC' . substr($id, -4), 'booking_id' => $booking->id, 'booking_room_id' => $room->id, 'full_name' => 'Tre', 'age_group' => 'child', 'child_status' => 1]);
+            \App\Models\BookingChildBreakfastDetail::create(['booking_child_id' => $child->id, 'service_date' => $sysDateStr, 'breakfast' => true, 'is_free' => false, 'is_extra_charge' => false, 'is_room' => true, 'amount' => 100000]);
+
+            return $room;
+        };
+        $withSetupRow = $makeRoom('G4151001', '312');
+        $withoutSetupRow = $makeRoom('G4151002', '313');
+        BookingRoomService::create([
+            'booking_room_id' => $withSetupRow->id, 'service_code' => 'ZZ', 'service_name' => 'Ăn sáng trẻ em', 'service_date' => $sysDateStr,
+            'quantity' => 1, 'rate' => 100000, 'folio' => 1, 'is_room' => 1, 'is_posted' => 0,
+        ]);
+
+        $this->actingAs($this->user)->postJson('/api/night-audit/run', ['occupied_to_dirty' => false, 'empty_to_inspect' => false])->assertSuccessful();
+
+        $breakfastOf = fn ($room) => (float) ServiceBillDetail::whereIn('BillServiceId', ServiceBill::where('RentalRoomId1', $room->id)->where('ServiceId', 'RM')->pluck('Ma'))
+            ->where('ServiceId', 'BF')->value('Amount');
+        // Có dòng ở booking_room_services: về bill phòng theo bảng đó, KHÔNG tách ăn sáng trẻ từ tiền phòng (chỉ 3 người lớn).
+        $this->assertEquals(540000, $breakfastOf($withSetupRow));
+        // Không có dòng và không phụ phí: tách từ tiền phòng (3 người lớn + trẻ).
+        $this->assertEquals(640000, $breakfastOf($withoutSetupRow));
+    }
+
     public function test_row_416_night_audit_room_charge_details_use_service_descriptions()
     {
         $sysDateStr = Carbon::parse(SystemDateRoll::latest('id')->first()->system_date)->toDateString();
