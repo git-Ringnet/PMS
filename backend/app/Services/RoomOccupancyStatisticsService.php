@@ -17,11 +17,13 @@ class RoomOccupancyStatisticsService
     {
         $date = $date->copy()->startOfDay();
         $dateString = $date->toDateString();
+        $operationDate = app(RoomAvailabilityService::class)->getSystemDate()->copy()->startOfDay();
+        $isFutureView = $date->gt($operationDate);
         $physicalRooms = Room::physical()->get(['room_number', 'room_status_code']);
         $physicalRoomNumbers = $physicalRooms->pluck('room_number')->values();
 
         // room_status_code chỉ phản ánh hiện tại; khi xem ngày khác phải dựa vào lịch sử khóa phòng.
-        $isSystemDate = $date->isSameDay(app(RoomAvailabilityService::class)->getSystemDate());
+        $isSystemDate = $date->isSameDay($operationDate);
         // Dòng 288: phòng đang có khách check-in thì không thể là phòng khóa, dù room_status_code còn lưu OOO/OOS
         // (dữ liệu cũ bị ghi sai khi sửa lịch khóa) -> không loại khách của phòng đó khỏi số đang ở / dự kiến cuối ngày.
         $inhouseRoomNumbers = $isSystemDate
@@ -84,6 +86,13 @@ class RoomOccupancyStatisticsService
                     $query->where(function ($active) use ($dateString) {
                         $active->whereIn('status', [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN])
                             ->whereDate('departure_date', '>', $dateString);
+                    })->orWhere(function ($activeDayUse) use ($dateString) {
+                        // Day-use đang check-in vẫn chiếm một OCC trong ngày.
+                        // Khi checkout, status đổi sang 2 nên tự bị loại khỏi cả hai vế Đang ở.
+                        $activeDayUse->where('status', BookingRoom::STATUS_CHECKED_IN)
+                            ->where('is_day_use', true)
+                            ->whereDate('arrival_date', $dateString)
+                            ->whereDate('departure_date', $dateString);
                     })->orWhere(function ($historical) use ($dateString) {
                         $historical->whereIn('status', [BookingRoom::STATUS_CHECKED_OUT, BookingRoom::STATUS_MOVED])
                             ->whereDate('CheckoutDate', '>', $dateString);
@@ -116,7 +125,7 @@ class RoomOccupancyStatisticsService
 
         $pendingDepartures = $this->summarize(
             $assignedPhysicalQuery()
-                ->where(function ($query) use ($dateString) {
+                ->where(function ($query) use ($dateString, $isFutureView) {
                     $query->where(function ($checkedIn) use ($dateString) {
                         $checkedIn->where('status', BookingRoom::STATUS_CHECKED_IN)
                             ->whereDate('departure_date', '<=', $dateString);
@@ -127,6 +136,13 @@ class RoomOccupancyStatisticsService
                             ->whereDate('arrival_date', $dateString)
                             ->whereDate('departure_date', $dateString);
                     });
+                    if ($isFutureView) {
+                        // Chưa có check-in ở tương lai; ngày đi đã lên lịch vẫn là phòng dự kiến đi.
+                        $query->orWhere(function ($scheduledDeparture) use ($dateString) {
+                            $scheduledDeparture->where('status', BookingRoom::STATUS_BOOKED)
+                                ->whereDate('departure_date', $dateString);
+                        });
+                    }
                 })
         );
         $departuresCheckedOut = $this->summarize(

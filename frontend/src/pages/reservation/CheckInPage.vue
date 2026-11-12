@@ -40,7 +40,12 @@ const route = useRoute()
 const router = useRouter()
 const isFrontDesk = computed(() => props.currentModule === 'frontdesk' || (typeof route?.path === 'string' && route.path.startsWith('/frontdesk')))
 const isReservation = computed(() => !isFrontDesk.value && (props.currentModule === 'reservation' || (typeof route?.path === 'string' && route.path.startsWith('/reservation'))))
-const isReadOnlyModule = computed(() => isReservation.value || props.currentModule === 'housekeeping')
+const isFutureView = computed(() => {
+  const selected = normalizeDate(searchDate.value)
+  const current = normalizeDate(systemDate.value || authStore.systemDate || '')
+  return Boolean(selected && current && selected > current)
+})
+const isReadOnlyModule = computed(() => isReservation.value || props.currentModule === 'housekeeping' || isFutureView.value)
 const isArrivalMode = computed(() => props.displayMode === 'arrivals' || !props.displayMode)
 const isDepartureMode = computed(() => props.displayMode === 'departures')
 const isOccupiedMode = computed(() => props.displayMode === 'occupied')
@@ -93,7 +98,13 @@ const isRoomInhouseOnDate = (room, date) => {
   const selected = normalizeDate(date)
   const arrival = normalizeDate(room?.arrival_date)
   const departure = normalizeDate(room?.departure_date)
-  return Boolean(selected && arrival && departure && arrival <= selected && departure >= selected)
+  const isOvernightStay = selected && arrival && departure && arrival <= selected && departure > selected
+  // Day-use chỉ được coi là đang ở trong chính ngày đến/đi và chỉ khi chưa checkout.
+  const isActiveDayUse = Number(room?.status) === 1
+    && Boolean(room?.is_day_use)
+    && selected === arrival
+    && selected === departure
+  return Boolean(isOvernightStay || isActiveDayUse)
 }
 
 // Fetch system date on mount if initialDate not provided
@@ -122,10 +133,11 @@ const loadBookings = async () => {
   selectedRooms.value = [] // Reset selection on reload
   try {
     const res = await fetchBookings({
-      arrival_date: isDepartureMode.value ? (systemDate.value || searchDate.value) : searchDate.value,
+      arrival_date: searchDate.value,
       // Dòng 392: phòng đi gồm cả phòng chưa nhận có ngày đến = ngày đi (status 0)
-      status: isDepartureMode.value ? '0,1,2' : isOccupiedMode.value ? '1' : '0,1',
-      ...(isDepartureMode.value ? { list_mode: 'departures' } : {}),
+      status: isDepartureMode.value ? '0,1,2' : isOccupiedMode.value ? (isFutureView.value ? '0,1' : '1') : '0,1',
+      ...(isDepartureMode.value ? { list_mode: 'departures' } : isOccupiedMode.value ? { list_mode: 'inhouse' } : {}),
+      ...(isFutureView.value ? { projected: true } : {}),
       with_billing: true,
       stay_only: true
     })
@@ -194,7 +206,12 @@ const chuaDenBookings = computed(() => {
   return filteredBookings.value.map(booking => {
     const pendingRooms = (booking.booking_rooms || []).filter(room => {
       if (isDepartureMode.value) {
-        return isPendingDepartureRoom(room, systemDate.value || searchDate.value, normalizeDate)
+        if (isFutureView.value) {
+          // Phòng chưa check-in nhưng có ngày đi đúng ngày xem là phòng dự kiến đi.
+          return Number(room.status) === 0
+            && normalizeDate(room.departure_date) === normalizeDate(searchDate.value)
+        }
+        return isPendingDepartureRoom(room, searchDate.value, normalizeDate)
       }
       if (!isArrivalMode.value) return false
       const roomArrival = normalizeDate(room.arrival_date || room.actual_arrival_date)
@@ -218,9 +235,16 @@ const daDenBookings = computed(() => {
   return filteredBookings.value.map(booking => {
     const checkedInRooms = (booking.booking_rooms || []).filter(room => {
       if (isDepartureMode.value) {
-        return Number(room.status) === 2 && normalizeDate(room.departure_date) === normalizeDate(searchDate.value)
+        // “Đã trả” thuộc ngày trả thực tế; dữ liệu cũ chưa lưu CheckoutDate
+        // giữ tương thích bằng ngày đi kế hoạch.
+        const checkoutDate = normalizeDate(room.CheckoutDate || room.checkout_date || room.departure_date)
+        return Number(room.status) === 2 && checkoutDate === normalizeDate(searchDate.value)
       }
       if (isOccupiedMode.value) {
+        if (isFutureView.value) {
+          // Xem tương lai: booking chưa check-in vẫn phải hiện trong danh sách dự kiến ở.
+          return Number(room.status) === 0 && isRoomInhouseOnDate(room, searchDate.value)
+        }
         return Number(room.status) === 1 && isRoomInhouseOnDate(room, searchDate.value)
       }
       // Phòng chuyển giữ ngày đến gốc ở actual_arrival_date (sớm hơn arrival_date = ngày chuyển):

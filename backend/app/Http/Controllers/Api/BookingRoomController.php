@@ -3325,6 +3325,15 @@ class BookingRoomController extends Controller
         $start = Carbon::parse($startDateStr)->startOfDay();
         $end   = Carbon::parse($endDateStr)->startOfDay();
 
+        // A room move on its checkout date creates a zero-night target stay,
+        // but the physical move still occupies the target room on that
+        // business day. Check that day for overbooking confirmation without
+        // changing the persisted stay range or room-night calculation.
+        if ($end->equalTo($start)) {
+            $end = $start->copy()->addDay();
+            $endDateStr = $end->toDateString();
+        }
+
         $totalRooms = Room::physical()
             ->where('room_class_id', $roomClassId)
             ->count();

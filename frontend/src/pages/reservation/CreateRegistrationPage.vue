@@ -5936,6 +5936,107 @@ function validateRoomDatesAgainstBooking(tab) {
     : null
 }
 
+
+async function exportRegistrationRoomsExcel() {
+  const tab = activeTab.value
+  if (!tab) {
+    uiStore.showToast('Vui lòng chọn đăng ký để xuất Excel!', 'warning')
+    return
+  }
+
+  const rooms = tab.rooms || []
+  if (rooms.length === 0) {
+    uiStore.showToast('Không có danh sách phòng để xuất Excel!', 'warning')
+    return
+  }
+
+  const bookingCode = tab.bookingCode || 'Dang_Ky'
+  const todayStr = new Date().toISOString().slice(0, 10).split('-').reverse().join('-')
+  const fileName = `Dang_Ky_${bookingCode}_${todayStr}.xlsx`
+
+  uiStore.showToast('Đang tạo và tải xuống tệp Excel (.xlsx)...', 'info')
+
+  const payload = {
+    bookingCode: tab.bookingCode || '',
+    bookingName: tab.bookingName || '',
+    statusLabel: tab.statusLabel || '',
+    checkIn: formatDateVi(tab.checkIn) || '',
+    checkOut: formatDateVi(tab.checkOut) || '',
+    nights: tab.nights ?? 0,
+    contactName: tab.contactName || '',
+    contactPhone: tab.contactPhone || '',
+    company: tab.company || '',
+    customerSource: tab.customerSource || '',
+    market: tab.market || '',
+    deposit: Number(tab.deposit) || 0,
+    note: tab.note || '',
+    rooms: rooms.map(r => {
+      const ebQty = getRoomExtraBedQty(r)
+      const rateCodeDisplay = (r.rateCode && r.rateCode !== 'Vui lòng chọn giá phòng') ? r.rateCode : '—'
+      const discountDisplay = r.discountValue ? getDiscountLabel(r) : '—'
+      const specialReqDisplay = getRoomSpecialRequestsText(r) !== 'Yêu Cầu Đặc Biệt' && getRoomSpecialRequestsText(r) !== 'Yêu cầu đặc biệt' ? getRoomSpecialRequestsText(r) : '—'
+      const statusObj = getStatusOrderAndName(r.bookingRoomStatus)
+      const statusName = statusObj?.name || 'Đăng ký'
+      const childBfDisplay = r.children > 0
+        ? ((r.services && r.services.filter(s => s.service_code === 'BD').length > 0) ? `Có (${r.children} trẻ)` : `${r.children} trẻ`)
+        : '—'
+
+      return {
+        status: statusName,
+        type: r.type || '—',
+        shape: r.shape || '—',
+        roomNumber: r.roomNumber || '-',
+        checkIn: formatDateVi(r.checkIn) || '—',
+        checkOut: formatDateVi(r.checkOut) || '—',
+        nights: Number(r.nights) || 0,
+        price: Number(r.price) || 0,
+        rateCode: rateCodeDisplay,
+        adjustment: discountDisplay,
+        guestName: r.guestName || '—',
+        adults: Number(r.adults) || 0,
+        babies: Number(r.babies) || 0,
+        children: Number(r.children) || 0,
+        childBreakfast: childBfDisplay,
+        breakfast: !!r.breakfast,
+        extraBedQty: ebQty,
+        extraBedPrice: Number(r.extraBedPrice) || 0,
+        hourly: !!r.hourly,
+        specialRequests: specialReqDisplay,
+        arrivalTime: r.arrivalTime || '14:00',
+        hoursOut: r.checkoutTime || r.hoursOut || '12:00',
+        isPreassigned: !!r.isPreassigned,
+        initialRoomClass: r.initialRoomClass || r.shape || '—',
+        transferredFrom: r.transferredFrom || '—',
+        roomStatus: r.roomStatus || 'Sạch',
+        allotmentCode: r.allotmentCode || '—',
+        roomCode: r.roomCode || (r.bookingRoomId ? String(r.bookingRoomId) : '—'),
+        total: Number(r.total) || 0,
+      }
+    })
+  }
+
+  try {
+    const res = await http.post('/bookings/export-registration-xlsx', payload, {
+      responseType: 'blob'
+    })
+    const blob = new Blob([res.data], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = fileName
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(url)
+    uiStore.showToast('Xuất tệp Excel (.xlsx) thành công!', 'success')
+  } catch (err) {
+    console.error('Lỗi xuất Excel đăng ký:', err)
+    uiStore.showToast('Có lỗi xảy ra khi xuất tệp Excel (.xlsx)!', 'error')
+  }
+}
+
 async function triggerAction(actionName) {
   if (actionName === 'Sửa') {
     if (isInlineEditLocked.value) {
@@ -6469,7 +6570,7 @@ async function triggerAction(actionName) {
       }
     })
   } else if (actionName === 'Xuất Excel') {
-    uiStore.showToast('Đang tải xuống tệp Excel danh sách phòng...', 'success')
+    exportRegistrationRoomsExcel()
   } else if (actionName === 'In') {
     isTopPrintMenuOpen.value = !isTopPrintMenuOpen.value
   } else if (actionName === 'In phiếu đăng ký khách') {

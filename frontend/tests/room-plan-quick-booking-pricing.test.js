@@ -8,7 +8,7 @@ import {
   resolveRoomPlanQuickBookingUnitPrice,
 } from '../src/utils/room-plan-quick-booking-pricing.js'
 
-test('Kế hoạch phòng: nhiều giá chuẩn hiển thị 0 và dùng đúng giá nhập tay chung', () => {
+test('Kế hoạch phòng: nhiều giá chuẩn hiển thị 0 nhưng giữ giá từng phòng khi chưa nhập tay', () => {
   assert.deepEqual(resolveRoomPlanQuickBookingRateMode({
     unitRates: [850000, 1150000],
     rateCode: '',
@@ -17,11 +17,20 @@ test('Kế hoạch phòng: nhiều giá chuẩn hiển thị 0 và dùng đúng 
   assert.equal(resolveRoomPlanQuickBookingUnitPrice({
     configuredRoomPrice: 850000,
     formRate: 0,
-  }), 0)
-  assert.equal(resolveRoomPlanQuickBookingUnitPrice({ formRate: 720000 }), 720000)
+  }), 850000)
+  assert.equal(resolveRoomPlanQuickBookingUnitPrice({
+    configuredRoomPrice: 1150000,
+    formRate: 0,
+  }), 1150000)
+  assert.equal(resolveRoomPlanQuickBookingUnitPrice({
+    configuredRoomPrice: 850000,
+    formRate: 720000,
+    hasManualRate: true,
+  }), 720000)
   assert.equal(resolveRoomPlanQuickBookingUnitPrice({
     configuredRoomPrice: 650000,
     formRate: 5000000,
+    hasManualRate: true,
   }), 5000000)
 })
 
@@ -35,6 +44,7 @@ test('Kế hoạch phòng: Rate Code luôn lấy giá theo từng phòng và kh�
     configuredRoomPrice: 950000,
     rateCode: 'BAR',
     formRate: 720000,
+    hasManualRate: true,
   }), 950000)
 })
 
@@ -42,6 +52,10 @@ test('Kế hoạch phòng: giá chuẩn 0 là giá hợp lệ, không fallback g
   assert.equal(resolveRoomPlanQuickBookingUnitPrice({
     configuredRoomPrice: 890000,
     formRate: 0,
+  }), 890000)
+  assert.equal(resolveRoomPlanQuickBookingUnitPrice({
+    configuredRoomPrice: 0,
+    formRate: 720000,
   }), 0)
 })
 
@@ -52,6 +66,7 @@ test('Kế hoạch phòng: Rate Code chỉ có khoảng trắng được coi là
     configuredRoomPrice: 650000,
     rateCode: '   ',
     formRate: 100000,
+    hasManualRate: true,
   }), 100000)
 })
 

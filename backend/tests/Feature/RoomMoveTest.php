@@ -1030,6 +1030,89 @@ class RoomMoveTest extends TestCase
             ->assertJsonPath('success', true);
     }
 
+    public function test_checkout_day_move_prompts_when_target_class_is_over_and_allow_over_1(): void
+    {
+        SystemDateRoll::query()->latest('id')->update([
+            'system_date' => '2026-07-16 00:00:00',
+            'actual_date' => '2026-07-16 00:00:00',
+        ]);
+        HotelConfig::updateOrCreate(['name' => 'AllowOverRoomTypeRoomKind'], ['value' => '1']);
+        RegistrationStatus::firstOrCreate(['id' => 1], [
+            'name' => 'Guaranteed',
+            'booking_status_id' => 1,
+            'is_availability' => 1,
+        ]);
+
+        $suiteClass = RoomClass::create(['code' => 'SUI3', 'name' => 'Suite Room 3', 'is_active' => true]);
+        Room::create([
+            'room_number' => '203',
+            'room_class_id' => $suiteClass->id,
+            'room_form_id' => 1,
+            'floor' => 2,
+            'status' => 'available',
+            'room_status_code' => 'vacant_ready',
+        ]);
+
+        $holdingBooking = Booking::create([
+            'booking_name' => 'Booking giữ Suite ngày checkout',
+            'booking_date' => '2026-07-16',
+            'arrival_date' => '2026-07-16',
+            'departure_date' => '2026-07-17',
+            'status' => Booking::STATUS_RESERVATION,
+            'registration_status_id' => 1,
+            'created_by' => 'admin_test',
+        ]);
+        BookingRoom::create([
+            'booking_id' => $holdingBooking->id,
+            'room_class_id' => $suiteClass->id,
+            'room_number' => null,
+            'arrival_date' => '2026-07-16',
+            'departure_date' => '2026-07-17',
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $sourceBooking = Booking::create([
+            'booking_name' => 'Khách chuyển sau hai đêm',
+            'booking_date' => '2026-07-14',
+            'arrival_date' => '2026-07-14',
+            'departure_date' => '2026-07-16',
+            'status' => Booking::STATUS_CHECKIN,
+            'registration_status_id' => 1,
+            'created_by' => 'admin_test',
+        ]);
+        $sourceRoom = BookingRoom::create([
+            'booking_id' => $sourceBooking->id,
+            'room_class_id' => $this->roomClass->id,
+            'room_number' => '101',
+            'arrival_date' => '2026-07-14',
+            'departure_date' => '2026-07-16',
+            'status' => BookingRoom::STATUS_CHECKED_IN,
+        ]);
+
+        $this->postJson("/api/bookings/{$sourceBooking->id}/rooms/{$sourceRoom->id}/move", [
+            'move_type' => 'available',
+            'target_room_number' => '203',
+            'reason' => 'Chuyển ngày checkout sang Suite',
+        ])->assertStatus(422)
+            ->assertJsonPath('require_over_confirm', true)
+            ->assertJsonPath('message', 'Loại phòng đã bị over, bạn có muốn tiếp tục');
+
+        $this->postJson("/api/bookings/{$sourceBooking->id}/rooms/{$sourceRoom->id}/move", [
+            'move_type' => 'available',
+            'target_room_number' => '203',
+            'reason' => 'Chuyển ngày checkout sang Suite',
+            'confirm_over_room' => true,
+        ])->assertOk()
+            ->assertJsonPath('success', true);
+
+        $targetRoom = BookingRoom::where('booking_id', $sourceBooking->id)
+            ->where('room_number', '203')
+            ->firstOrFail();
+        $this->assertSame('2026-07-16', $targetRoom->arrival_date->toDateString());
+        $this->assertSame('2026-07-16', $targetRoom->departure_date->toDateString());
+        $this->assertSame(0, (int) $targetRoom->ActutalNumOfDays);
+    }
+
     public function test_get_move_target_rooms_includes_dirty_rooms_and_natural_sorts()
     {
         // 102 là dirty (đã tạo ở setUp)

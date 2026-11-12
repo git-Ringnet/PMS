@@ -671,6 +671,8 @@ const pendingGroups = computed(() => {
   return groups
 })
 
+const canEditPendingNote = computed(() => authStore.hasPermission('fo.booking.edit'))
+
 const sortedPendingDates = computed(() => {
   return Object.keys(pendingGroups.value)
 })
@@ -728,13 +730,15 @@ const footerStats = computed(() => {
 const editingNotes = ref({})
 
 function toggleEditNote(itemId) {
+  if (!canEditPendingNote.value) return
   editingNotes.value[itemId] = !editingNotes.value[itemId]
 }
 
 async function saveNote(item) {
-  editingNotes.value[item.id] = false
+  if (!canEditPendingNote.value) return
   try {
     await updatePendingNote(item.bookingId || item.id, item.notes)
+    editingNotes.value[item.id] = false
     uiStore.showToast(`Đã lưu ghi chú cho đăng ký ${item.id} thành công!`, 'success')
   } catch (err) {
     uiStore.showToast('Lỗi lưu ghi chú: ' + (err.message || ''), 'error')
@@ -1664,7 +1668,7 @@ function formatMoney(num) {
                     </button>
                   </td>
                   <td colspan="12" class="p-2.5 text-left font-semibold text-[#000000D9] bg-white group-hover:bg-[#bdecfe]/40 transition-colors border-slate-200">
-                    {{ dateGroup }}
+                    {{ formatDateInput(dateGroup) }}
                   </td>
                 </tr>
 
@@ -1695,13 +1699,13 @@ function formatMoney(num) {
                     {{ item.company }}
                   </td>
                   <td class="p-2 border-slate-200 text-center text-[#000000D9]">
-                    {{ item.confirmDate }}
+                    {{ formatDateInput(item.confirmDate) }}
                   </td>
                   <td class="p-2 border-slate-200 text-center text-[#000000D9]">
-                    {{ item.arrivalDate }}
+                    {{ formatDateInput(item.arrivalDate) }}
                   </td>
                   <td class="p-2 border-slate-200 text-center text-[#000000D9]">
-                    {{ item.departureDate }}
+                    {{ formatDateInput(item.departureDate) }}
                   </td>
                   <td class="p-2 border-slate-200 text-center text-[#000000D9]">
                     {{ item.nights }}
@@ -1720,14 +1724,15 @@ function formatMoney(num) {
                       <input
                         type="text"
                         v-model="item.notes"
-                        :disabled="!editingNotes[item.id]"
+                        :disabled="!canEditPendingNote || !editingNotes[item.id]"
                         placeholder="Ghi chú xác nhận"
                         class="flex-1 min-w-0 border rounded px-2 py-0.5 text-xs transition-all h-7 shadow-sm font-normal"
-                        :class="[editingNotes[item.id] ? 'bg-white border-sky-400 text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-sky-500' : 'bg-slate-50 border-slate-200 text-slate-500 cursor-not-allowed select-none']"
+                        :class="[canEditPendingNote && editingNotes[item.id] ? 'bg-white border-sky-400 text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-sky-500' : 'bg-slate-50 border-slate-200 text-slate-500 cursor-not-allowed select-none']"
                       />
                       
                       <!-- Save Button: Xanh đồng bộ theme, nổi bật khi cho thao tác -->
                       <button
+                        v-if="canEditPendingNote"
                         @click="saveNote(item)"
                         :disabled="!editingNotes[item.id]"
                         type="button"
@@ -1748,6 +1753,7 @@ function formatMoney(num) {
                       
                       <!-- Edit Button: Sắc nét, dễ bấm -->
                       <button
+                        v-if="canEditPendingNote"
                         @click="toggleEditNote(item.id)"
                         type="button"
                         class="w-7 h-7 rounded flex items-center justify-center border-none transition-all shadow-sm shrink-0 bg-sky-500 hover:bg-sky-600 text-white cursor-pointer"
