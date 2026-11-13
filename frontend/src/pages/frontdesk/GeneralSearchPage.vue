@@ -17,8 +17,10 @@ const router = useRouter()
 const route = useRoute()
 const uiStore = useUiStore()
 const auth = useAuthStore()
+const isFrontdeskModule = computed(() => route.path.startsWith('/frontdesk'))
 const tab = ref('booking')
 const loading = ref(false)
+const isNavigating = ref(false)
 const errorMessage = ref('')
 const advancedOpen = ref(false)
 const showColumnDropdown = ref(false)
@@ -249,6 +251,7 @@ const sorts = ref({ ...defaults })
 let autoSearchTimer = null
 let suggestionTimer = null
 let suggestionRequestId = 0
+let searchRequestId = 0
 let suppressNextSuggestion = false
 const bookingSuggestions = ref([])
 const showSuggestions = ref(false)
@@ -497,10 +500,13 @@ function searchParams(page = 1) {
 
 async function search(page = 1) {
   page = Number.isInteger(page) && page > 0 ? page : 1
+  const requestId = ++searchRequestId
+  const requestedTab = tab.value
   loading.value = true
   errorMessage.value = ''
   try {
     const { data } = await fetchGeneralSearch(searchParams(page))
+    if (requestId !== searchRequestId || tab.value !== requestedTab) return
     rows.value = data.data?.data || []
     // Khách đang xem chi tiết không còn trong kết quả mới thì đóng khung chi tiết
     if (activeGuestRow.value && !rows.value.some(r => r.id === activeGuestRow.value.id)) closeGuestDetail()
@@ -509,12 +515,19 @@ async function search(page = 1) {
       expandedRoomGroups.value = new Set(rows.value.map(group => group.booking_id))
     }
   } catch (error) {
+    if (requestId !== searchRequestId || tab.value !== requestedTab) return
     rows.value = []
     meta.value = { total: 0, current_page: 1, last_page: 1, per_page: perPage.value }
     errorMessage.value = error.response?.data?.message || 'Không tải được dữ liệu tìm kiếm. Hãy thử lại.'
   } finally {
-    loading.value = false
+    if (requestId === searchRequestId) loading.value = false
   }
+}
+
+function clearResultsForTabChange() {
+  rows.value = []
+  meta.value = { total: 0, current_page: 1, last_page: 1, per_page: perPage.value }
+  errorMessage.value = ''
 }
 
 function clearFilters() {
@@ -803,18 +816,32 @@ function getBookingReference(row, sourceTab = tab.value) {
   return bookingId === null || bookingId === undefined || bookingId === '' ? '' : String(bookingId)
 }
 
-function openBookingFromSearch(row, sourceTab = tab.value) {
+async function navigateWithinCurrentModule(query) {
+  if (isNavigating.value) return false
+
+  isNavigating.value = true
+  try {
+    await router.push({
+      path: isFrontdeskModule.value ? '/frontdesk' : '/reservation',
+      query
+    })
+    return true
+  } finally {
+    isNavigating.value = false
+  }
+}
+
+async function openBookingFromSearch(row, sourceTab = tab.value) {
   const bookingCode = getBookingReference(row, sourceTab)
   if (!bookingCode) {
     uiStore.showToast('Không tìm thấy thông tin mã đăng ký.', 'warning')
     return
   }
 
-  const targetPath = route.path.startsWith('/frontdesk') ? '/frontdesk' : '/reservation'
-  router.push({ path: targetPath, query: { tab: 'create-res', bookingCode } })
+  await navigateWithinCurrentModule({ tab: 'create-res', bookingCode })
 }
 
-function handleActionInvoice() {
+async function handleActionInvoice() {
   if (selectedCount.value !== 1) return
   showActionsMenu.value = false
   const selected = getSelectedRows()
@@ -827,17 +854,14 @@ function handleActionInvoice() {
   const bookingId = tab.value === 'booking' ? first.id : first.booking_id
   const roomId = tab.value === 'room' ? first.id : (first.booking_room_id || first.room_id || undefined)
   const isOld = Number(first.status) === 2 || String(first.status_label || '').toLowerCase().includes('check out')
-  router.push({
-    path: '/frontdesk',
-    query: {
-      tab: 'checkout',
-      bookingCode: bookingCode || undefined,
-      booking_code: bookingCode || undefined,
-      booking_id: bookingId || undefined,
-      roomId: roomId || undefined,
-      room_id: roomId || undefined,
-      ...(isOld ? { register: 'old' } : {})
-    }
+  await navigateWithinCurrentModule({
+    tab: 'checkout',
+    bookingCode: bookingCode || undefined,
+    booking_code: bookingCode || undefined,
+    booking_id: bookingId || undefined,
+    roomId: roomId || undefined,
+    room_id: roomId || undefined,
+    ...(isOld ? { register: 'old' } : {})
   })
 }
 
@@ -897,13 +921,12 @@ function handleBookingCopied(newBooking) {
   search(1)
 }
 
-function handleActionLostFound() {
-  showActionsMenu.value = false
-  router.push({ path: '/housekeeping', query: { tab: 'lost-found' } })
-}
-
 async function handleActionCheckIn() {
   showActionsMenu.value = false
+  if (!isFrontdeskModule.value) {
+    uiStore.showToast('Nhận phòng từ Tìm kiếm chung chỉ thực hiện tại bộ phận Lễ tân.', 'warning')
+    return
+  }
   if (tab.value !== 'room') return
   const selected = getSelectedRows()
   if (!selected.length) {
@@ -1056,26 +1079,6 @@ async function confirmNoShowAction() {
   }
 }
 
-function handleActionReport() {
-  showActionsMenu.value = false
-  uiStore.showToast('Chức năng Báo cáo sẽ được kích hoạt khi cấu hình mẫu báo cáo.', 'info')
-}
-
-function handleActionPrintConfirmation() {
-  showActionsMenu.value = false
-  uiStore.showToast('Chức năng In Xác Nhận sẽ được kích hoạt khi cấu hình mẫu in.', 'info')
-}
-
-function handleActionPrintResidence() {
-  showActionsMenu.value = false
-  uiStore.showToast('Chức năng In Đăng Ký Lưu Trú sẽ được kích hoạt khi cấu hình mẫu in.', 'info')
-}
-
-function handleActionPrintBreakfast() {
-  showActionsMenu.value = false
-  uiStore.showToast('Chức năng In phiếu ăn sáng sẽ được kích hoạt khi cấu hình mẫu in.', 'info')
-}
-
 function handleActionExportExcel() {
   showActionsMenu.value = false
   exportTableToCsv()
@@ -1139,6 +1142,7 @@ watch(tab, () => {
   expandedRoomGroups.value = new Set()
   selectedIds.value = new Set()
   closeGuestDetail()
+  clearResultsForTabChange()
   search(1)
 })
 
@@ -1209,6 +1213,7 @@ function stopGeneralSearchListeners() {
 
 onBeforeUnmount(() => {
   generalSearchInstanceActive = false
+  searchRequestId++
   clearTimeout(autoSearchTimer)
   clearTimeout(suggestionTimer)
   stopGeneralSearchListeners()
@@ -1245,6 +1250,7 @@ onActivated(() => {
 onDeactivated(() => {
   generalSearchInstanceActive = false
   generalSearchWasDeactivated = true
+  searchRequestId++
   clearTimeout(autoSearchTimer)
   clearTimeout(suggestionTimer)
   stopGeneralSearchListeners()
@@ -1322,41 +1328,10 @@ onDeactivated(() => {
                 class="action-menu-item"
                 :disabled="selectedCount === 0"
                 :class="{ 'is-disabled': selectedCount === 0 }"
-                @click="handleActionReport"
-              >
-                <i class="fa-solid fa-chart-column item-icon"></i>
-                <span>Báo cáo</span>
-              </button>
-              <button
-                class="action-menu-item"
-                :disabled="selectedCount === 0"
-                :class="{ 'is-disabled': selectedCount === 0 }"
-                @click="handleActionPrintConfirmation"
-              >
-                <i class="fa-solid fa-print item-icon"></i>
-                <span>In Xác Nhận</span>
-              </button>
-              <button
-                class="action-menu-item"
-                :disabled="selectedCount === 0"
-                :class="{ 'is-disabled': selectedCount === 0 }"
-                @click="handleActionPrintResidence"
-              >
-                <i class="fa-solid fa-print item-icon"></i>
-                <span>In Đăng Ký Lưu Trú</span>
-              </button>
-              <button
-                class="action-menu-item"
-                :disabled="selectedCount === 0"
-                :class="{ 'is-disabled': selectedCount === 0 }"
                 @click="handleActionExportExcel"
               >
                 <i class="fa-solid fa-file-excel item-icon"></i>
                 <span>Xuất excel</span>
-              </button>
-              <button class="action-menu-item" @click="handleActionLostFound">
-                <i class="fa-solid fa-box-open item-icon"></i>
-                <span>Đồ thất lạc</span>
               </button>
             </template>
 
@@ -1396,42 +1371,6 @@ onDeactivated(() => {
                 class="action-menu-item"
                 :disabled="selectedCount === 0"
                 :class="{ 'is-disabled': selectedCount === 0 }"
-                @click="handleActionReport"
-              >
-                <i class="fa-solid fa-chart-column item-icon"></i>
-                <span>Báo cáo</span>
-              </button>
-              <button
-                class="action-menu-item"
-                :disabled="selectedCount === 0"
-                :class="{ 'is-disabled': selectedCount === 0 }"
-                @click="handleActionPrintConfirmation"
-              >
-                <i class="fa-solid fa-print item-icon"></i>
-                <span>In Xác Nhận</span>
-              </button>
-              <button
-                class="action-menu-item"
-                :disabled="selectedCount === 0"
-                :class="{ 'is-disabled': selectedCount === 0 }"
-                @click="handleActionPrintResidence"
-              >
-                <i class="fa-solid fa-print item-icon"></i>
-                <span>In Đăng Ký Lưu Trú</span>
-              </button>
-              <button
-                class="action-menu-item"
-                :disabled="selectedCount === 0"
-                :class="{ 'is-disabled': selectedCount === 0 }"
-                @click="handleActionPrintBreakfast"
-              >
-                <i class="fa-solid fa-utensils item-icon"></i>
-                <span>In phiếu ăn sáng</span>
-              </button>
-              <button
-                class="action-menu-item"
-                :disabled="selectedCount === 0"
-                :class="{ 'is-disabled': selectedCount === 0 }"
                 @click="handleActionExportExcel"
               >
                 <i class="fa-solid fa-file-excel item-icon"></i>
@@ -1460,6 +1399,7 @@ onDeactivated(() => {
                 </div>
               </div>
               <button
+                v-if="isFrontdeskModule"
                 class="action-menu-item"
                 :disabled="selectedCount === 0"
                 :class="{ 'is-disabled': selectedCount === 0 }"
@@ -1468,10 +1408,6 @@ onDeactivated(() => {
               >
                 <i class="fa-solid fa-paper-plane item-icon"></i>
                 <span>Nhận phòng</span>
-              </button>
-              <button class="action-menu-item" @click="handleActionLostFound">
-                <i class="fa-solid fa-box-open item-icon"></i>
-                <span>Đồ thất lạc</span>
               </button>
             </template>
 
@@ -1511,41 +1447,10 @@ onDeactivated(() => {
                 class="action-menu-item"
                 :disabled="selectedCount === 0"
                 :class="{ 'is-disabled': selectedCount === 0 }"
-                @click="handleActionReport"
-              >
-                <i class="fa-solid fa-chart-column item-icon"></i>
-                <span>Báo cáo</span>
-              </button>
-              <button
-                class="action-menu-item"
-                :disabled="selectedCount === 0"
-                :class="{ 'is-disabled': selectedCount === 0 }"
-                @click="handleActionPrintConfirmation"
-              >
-                <i class="fa-solid fa-print item-icon"></i>
-                <span>In Xác Nhận</span>
-              </button>
-              <button
-                class="action-menu-item"
-                :disabled="selectedCount === 0"
-                :class="{ 'is-disabled': selectedCount === 0 }"
-                @click="handleActionPrintResidence"
-              >
-                <i class="fa-solid fa-print item-icon"></i>
-                <span>In Đăng Ký Lưu Trú</span>
-              </button>
-              <button
-                class="action-menu-item"
-                :disabled="selectedCount === 0"
-                :class="{ 'is-disabled': selectedCount === 0 }"
                 @click="handleActionExportExcel"
               >
                 <i class="fa-solid fa-file-excel item-icon"></i>
                 <span>Xuất excel</span>
-              </button>
-              <button class="action-menu-item" @click="handleActionLostFound">
-                <i class="fa-solid fa-box-open item-icon"></i>
-                <span>Đồ thất lạc</span>
               </button>
             </template>
           </div>
