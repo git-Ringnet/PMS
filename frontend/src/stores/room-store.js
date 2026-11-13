@@ -9,6 +9,10 @@ export const useRoomStore = defineStore('room', () => {
   const loading = ref(false)
   const error = ref(null)
   const stats = ref(null)
+  // Chỉ response danh sách phòng mới nhất được phép cập nhật store khi đổi ngày liên tục.
+  let roomsRequestSequence = 0
+  // Ngày của bộ thống kê đang giữ, để màn hình không hiển thị số của ngày khác trong lúc chờ tải.
+  const statsDate = ref(null)
   // Chỉ response thống kê mới nhất được phép cập nhật store, tránh request realtime cũ ghi đè.
   let statsRequestSequence = 0
   const filters = ref({
@@ -34,7 +38,13 @@ export const useRoomStore = defineStore('room', () => {
       result = result.filter(r => r.floor === filters.value.floor)
     }
     if (filters.value.status) {
-      if (filters.value.status === 'OOO') {
+      if (filters.value.status === 'arrival') {
+        result = result.filter(r => Boolean(r.has_arrival_today))
+      } else if (filters.value.status === 'departure') {
+        result = result.filter(r => Boolean(r.has_departure_today))
+      } else if (filters.value.status === 'inhouse') {
+        result = result.filter(r => r.booking_status === 'occupied')
+      } else if (filters.value.status === 'OOO') {
         result = result.filter(r => r.room_status_code === 'ooo' || r.room_status_code === 'occupied_ooo' || (r.lock_type === 'OOO' && r.room_status_code !== 'housekeeping'))
       } else if (filters.value.status === 'OOS') {
         result = result.filter(r => r.room_status_code === 'oos' || (r.lock_type === 'OOS' && r.room_status_code !== 'housekeeping'))
@@ -120,6 +130,7 @@ export const useRoomStore = defineStore('room', () => {
 
   // Actions
   async function fetchRooms(params = {}) {
+    const requestSequence = ++roomsRequestSequence
     const { silent, ...apiParams } = params
     if (!silent) {
       loading.value = true
@@ -128,6 +139,8 @@ export const useRoomStore = defineStore('room', () => {
     try {
       const response = await roomService.getRooms(apiParams)
       const newRooms = response.data
+
+      if (requestSequence !== roomsRequestSequence) return newRooms
 
       if (silent && rooms.value.length > 0) {
         // Cập nhật in-place để Vue không rebuild toàn bộ DOM (tránh chớp nháy)
@@ -153,10 +166,14 @@ export const useRoomStore = defineStore('room', () => {
         rooms.value = newRooms
       }
     } catch (err) {
-      error.value = 'Không thể tải danh sách phòng. Vui lòng thử lại.'
-      console.error('fetchRooms error:', err)
+      if (requestSequence === roomsRequestSequence) {
+        error.value = 'Không thể tải danh sách phòng. Vui lòng thử lại.'
+        console.error('fetchRooms error:', err)
+      }
     } finally {
-      loading.value = false
+      if (requestSequence === roomsRequestSequence) {
+        loading.value = false
+      }
     }
   }
 
@@ -215,11 +232,13 @@ export const useRoomStore = defineStore('room', () => {
       const response = await roomService.getRoomStats(date)
       if (requestSequence === statsRequestSequence) {
         stats.value = response.data
+        statsDate.value = String(response.data?.date || date || '').slice(0, 10) || null
       }
       return response.data
     } catch (err) {
       if (requestSequence === statsRequestSequence) {
         stats.value = null
+        statsDate.value = null
         error.value = 'Không thể tải thống kê phòng.'
       }
       console.error('fetchStats error:', err)
@@ -258,6 +277,7 @@ export const useRoomStore = defineStore('room', () => {
     loading,
     error,
     stats,
+    statsDate,
     filters,
     // Getters
     floors,

@@ -15,8 +15,11 @@ export function resolveRoomPlanQuickBookingUnitPrice({
   configuredRoomPrice,
   rateCode,
   formRate,
+  hasManualRate = false,
 } = {}) {
-  if (normalizeRoomPlanQuickBookingRateCode(rateCode)) {
+  // Rate 0 trên form có thể chỉ biểu thị các phòng được chọn có giá cấu hình
+  // khác nhau. Chỉ giá do người dùng thực sự nhập mới được dùng chung.
+  if (normalizeRoomPlanQuickBookingRateCode(rateCode) || !hasManualRate) {
     return Number(configuredRoomPrice) || 0
   }
 

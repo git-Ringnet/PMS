@@ -63,7 +63,11 @@ function handleInput(event) {
   const isDeleting = (event && event.inputType && event.inputType.startsWith('delete')) || isDeletingKey
   isDeletingKey = false
 
-  textInput.value = maskDateInput(event.target.value, isDeleting)
+  const masked = maskDateInput(event.target.value, isDeleting)
+  textInput.value = masked
+  if (event.target.value !== masked) {
+    event.target.value = masked
+  }
   const digits = textInput.value.replace(/\D/g, '')
   if (digits.length === 8) {
     const parsed = parseDmyInput(textInput.value)
@@ -117,6 +121,7 @@ function openCalendar() {
     <input
       :value="textInput"
       type="text"
+      maxlength="10"
       :disabled="disabled"
       :placeholder="placeholder"
       autocomplete="off"

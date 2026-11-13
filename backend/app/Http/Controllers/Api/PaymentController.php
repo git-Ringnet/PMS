@@ -1862,7 +1862,8 @@ class PaymentController extends Controller
             $submittedPayments = collect($request->input('payments', []));
 
             // A zero payment is only a bill-closing row when a real unpaid service
-            // bill is fully covered by an eligible deposit/advance in this scope.
+            // bill is fully covered by an eligible deposit/advance in this scope,
+            // or when the unpaid bills themselves total 0 (e.g. a 0đ minibar bill without deposit).
             // This explicit flag keeps every existing caller's settlement behavior unchanged.
             if ($request->boolean('zero_balance_close')) {
                 $serviceAmountForZeroSettlement = round((float) (clone $unpaidServiceQuery)->sum('Amount'), 2);
@@ -1873,13 +1874,13 @@ class PaymentController extends Controller
                     $submittedPayments->count() !== 1
                     || round((float) ($submittedPayments->first()['amount'] ?? 0), 2) != 0.0
                     || $settledBills->isEmpty()
-                    || !$hasEligibleDeposit
-                    || $serviceAmountForZeroSettlement <= 0
-                    || $depositAmountForZeroSettlement <= 0
+                    || $serviceAmountForZeroSettlement < 0
+                    || $depositAmountForZeroSettlement < 0
+                    || ($depositAmountForZeroSettlement > 0 && !$hasEligibleDeposit)
                     || abs($serviceAmountForZeroSettlement - $depositAmountForZeroSettlement) > 0.01
                 ) {
                     throw \Illuminate\Validation\ValidationException::withMessages([
-                        'payments' => ['Chỉ chốt thanh toán 0đ khi có bill dịch vụ chưa thanh toán được cọc/tạm ứng hợp lệ bù đủ.'],
+                        'payments' => ['Chỉ chốt thanh toán 0đ khi có bill dịch vụ chưa thanh toán và số tiền còn phải trả bằng 0.'],
                     ]);
                 }
             }
@@ -2197,8 +2198,7 @@ class PaymentController extends Controller
                     ->whereNull('deleted_at')
                     ->sum('amount');
                 Booking::where('id', $bookingId)->update(['payment_value' => $totalDeposit]);
-
-                $this->completeBookingAfterMasterSettlement($booking);
+                // Thanh toán không tự checkout Master: Master chỉ checkout khi người dùng bấm Checkout Master.
             }
         });
 
@@ -2214,50 +2214,5 @@ class PaymentController extends Controller
                 'payment_ids' => $createdPaymentIds,
             ],
         ]);
-    }
-
-    /** Complete a fully settled Master after all rooms have checked out. */
-    private function completeBookingAfterMasterSettlement(Booking $booking): void
-    {
-        $hasActiveRooms = $booking->bookingRooms()
-            ->whereNotIn('status', [BookingRoom::STATUS_CANCELLED, BookingRoom::STATUS_CHECKED_OUT])
-            ->exists();
-        if ($hasActiveRooms) return;
-
-        $hasCheckedOutStayRoom = $booking->bookingRooms()
-            ->stayOnly()
-            ->where('status', BookingRoom::STATUS_CHECKED_OUT)
-            ->exists();
-        if (!$hasCheckedOutStayRoom) return;
-
-        $checkedOutRoomIds = $booking->bookingRooms()
-            ->where('status', BookingRoom::STATUS_CHECKED_OUT)
-            ->pluck('id')
-            ->map(fn ($id) => (string) $id)
-            ->all();
-
-        $hasUnpaidMasterBills = \App\Models\ServiceBill::query()
-            ->where('Edit', 0)
-            ->where(function ($q) { $q->whereNull('PaymentId')->orWhere('PaymentId', ''); })
-            ->where('Status', '!=', 2)
-            ->where(function ($q) use ($booking) {
-                $q->whereRaw('CAST(RegisterID2 AS CHAR) = ?', [(string) $booking->id])
-                    ->orWhereRaw('CAST(RegisterId1 AS CHAR) = ?', [(string) $booking->id]);
-            })
-            ->where(function ($q) use ($booking, $checkedOutRoomIds) {
-                $q->whereNull('RentalRoomId2')->orWhere('RentalRoomId2', '')->orWhere('RentalRoomId2', '0');
-                if ($checkedOutRoomIds) $q->orWhereIn(DB::raw('CAST(RentalRoomId2 AS CHAR)'), $checkedOutRoomIds);
-            })
-            ->exists();
-        if ($hasUnpaidMasterBills) return;
-
-        $hasUnusedDeposit = Payment::where('booking_id', $booking->id)
-            ->where('edit_flag', 0)
-            ->whereNull('payment_id')
-            ->where(function ($q) { $q->where('pack2', Payment::PACK2_DEPOSIT)->orWhere('pack4', 'AP'); })
-            ->exists();
-        if ($hasUnusedDeposit) return;
-
-        $booking->update(['status' => Booking::STATUS_CHECKOUT]);
     }
 }

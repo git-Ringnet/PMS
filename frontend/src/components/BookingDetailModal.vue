@@ -1289,7 +1289,9 @@ function cancelEditing() {
   uiStore.showToast('Đã hủy bỏ thay đổi.', 'info')
 }
 
-async function handleSave() {
+async function handleSave(options) {
+  // @click truyền event vào tham số đầu, nên chỉ nhận đúng cờ xác nhận over khi lưu lại.
+  const confirmOverbooking = options?.confirmOverbooking === true
   if (!isEditingMode.value) return
   if (selectedCheckedOut.value) { warnCheckedOutLocked(); return }
 
@@ -1302,16 +1304,19 @@ async function handleSave() {
     return
   }
 
-  const confirmed = await uiStore.confirm({
-    title: draftGuest.value ? 'Xác nhận thêm khách mới' : 'Xác nhận lưu thông tin',
-    message: draftGuest.value
-      ? `Bạn có chắc chắn muốn lưu khách mới "${formGuest.value.name || 'Khách'}" vào phòng không?`
-      : 'Bạn có chắc chắn muốn lưu các thay đổi thông tin khách hàng này không?',
-    confirmText: 'Lưu ngay',
-    cancelText: 'Hủy',
-  })
-  if (!confirmed) return
+  if (!confirmOverbooking) {
+    const confirmed = await uiStore.confirm({
+      title: draftGuest.value ? 'Xác nhận thêm khách mới' : 'Xác nhận lưu thông tin',
+      message: draftGuest.value
+        ? `Bạn có chắc chắn muốn lưu khách mới "${formGuest.value.name || 'Khách'}" vào phòng không?`
+        : 'Bạn có chắc chắn muốn lưu các thay đổi thông tin khách hàng này không?',
+      confirmText: 'Lưu ngay',
+      cancelText: 'Hủy',
+    })
+    if (!confirmed) return
+  }
 
+  let overbookingMessage = ''
   submitting.value = true
   try {
     const validRateCode = pricingInfo.value.rate_code && pricingInfo.value.rate_code !== 'Vui lòng chọn giá phòng'
@@ -1330,6 +1335,7 @@ async function handleSave() {
       extra_bed_qty: Number(pricingInfo.value.extra_bed_qty || 0),
       extra_bed_rate: parseNumber(pricingInfo.value.extra_bed_price),
       room_note: stayInfo.value.notes,
+      ...(confirmOverbooking ? { confirm_overbooking: true } : {}),
     }
 
     if (draftGuest.value) {
@@ -1456,8 +1462,13 @@ async function handleSave() {
     await loadGuests(selectedGuest.value?.id || selectedChild.value?.id)
     notifyChanges()
   } catch (e) {
-    console.error('Lỗi khi lưu thông tin:', e)
     const errData = e.response?.data
+    // Gia hạn làm âm phòng trống khi cấu hình cho phép over: hỏi xác nhận rồi lưu lại.
+    if (e.response?.status === 409 && errData?.code === 'OVERBOOKING_CONFIRMATION_REQUIRED' && !confirmOverbooking) {
+      overbookingMessage = errData.message || 'Cập nhật sẽ làm âm phòng trống loại phòng. Bạn có muốn tiếp tục?'
+      return
+    }
+    console.error('Lỗi khi lưu thông tin:', e)
     let msg = errData?.message || 'Đã xảy ra lỗi khi lưu thông tin.'
     if (errData?.errors) {
       const firstKey = Object.keys(errData.errors)[0]
@@ -1468,6 +1479,15 @@ async function handleSave() {
     uiStore.showToast(msg, 'error')
   } finally {
     submitting.value = false
+    if (overbookingMessage) {
+      const acceptOver = await uiStore.confirm({
+        title: 'Cảnh báo âm phòng trống',
+        message: overbookingMessage,
+        confirmText: 'Tiếp tục lưu',
+        cancelText: 'Hủy',
+      })
+      if (acceptOver) await handleSave({ confirmOverbooking: true })
+    }
   }
 }
 

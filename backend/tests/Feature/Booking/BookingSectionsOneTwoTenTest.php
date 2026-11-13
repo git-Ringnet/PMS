@@ -175,7 +175,8 @@ class BookingSectionsOneTwoTenTest extends TestCase
 
         $this->assertSame('2026-08-09', $booking->fresh()->confirm_date->toDateString());
 
-        // Ngày xác nhận không được sau ngày đến.
+        // Ngày xác nhận không được sau ngày đến và không được trả thành công
+        // khi giá trị người dùng nhập không được lưu.
         $this->putJson("/api/bookings/{$booking->id}", [
             'booking_name' => 'Confirmation cutoff edited',
             'arrival_date' => '2026-08-14',
@@ -186,9 +187,37 @@ class BookingSectionsOneTwoTenTest extends TestCase
             'company_id' => 1,
             'market_id' => 1,
             'customer_source_id' => 1,
-        ])->assertSuccessful();
+        ])->assertUnprocessable()
+            ->assertJsonValidationErrors('confirm_date');
 
-        $this->assertSame('2026-08-14', $booking->fresh()->confirm_date->toDateString());
+        $this->assertSame('2026-08-09', $booking->fresh()->confirm_date->toDateString());
+    }
+
+    public function test_pending_confirmation_exposes_booking_dates_without_display_reformatting_and_note_requires_edit_permission(): void
+    {
+        $this->registrationStatus->update(['bk_definite' => false]);
+        $booking = $this->makeBooking();
+        $booking->update([
+            'confirm_date' => '2026-08-09',
+            'arrival_date' => '2026-08-10',
+            'departure_date' => '2026-08-11',
+            'note' => 'Gọi xác nhận lúc 10:00',
+        ]);
+
+        $this->getJson('/api/shift-work/pending?from_date=2026-08-07&to_date=2026-08-10')
+            ->assertSuccessful()
+            ->assertJsonPath('data.0.bookingId', $booking->id)
+            ->assertJsonPath('data.0.confirmDate', '2026-08-09')
+            ->assertJsonPath('data.0.arrivalDate', '2026-08-10')
+            ->assertJsonPath('data.0.departureDate', '2026-08-11')
+            ->assertJsonPath('data.0.notes', 'Gọi xác nhận lúc 10:00');
+
+        $viewer = User::factory()->create(['username' => 'pending_note_viewer']);
+        $this->actingAs($viewer)
+            ->putJson("/api/shift-work/pending/{$booking->id}/note", ['note' => 'Không được lưu'])
+            ->assertForbidden();
+
+        $this->assertSame('Gọi xác nhận lúc 10:00', $booking->fresh()->note);
     }
 
     public function test_disallowed_check_in_warning_does_not_expose_configuration_name(): void

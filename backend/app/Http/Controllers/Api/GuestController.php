@@ -1188,6 +1188,15 @@ class GuestController extends Controller
                     'departure_date' => 'Không đủ phòng trống sau khi cập nhật. (AV = ' . $projectedAv . ')',
                 ]);
             }
+            // Cho phép over: người dùng phải xác nhận trước khi lưu (giống màn hình sửa phòng).
+            if ($projectedAv < 0 && !$request->boolean('confirm_overbooking')) {
+                throw new \Illuminate\Http\Exceptions\HttpResponseException(response()->json([
+                    'success' => false,
+                    'code'    => 'OVERBOOKING_CONFIRMATION_REQUIRED',
+                    'message' => "Cập nhật giai đoạn {$period} sẽ làm âm phòng trống loại phòng (AV = {$projectedAv}). Bạn có muốn tiếp tục?",
+                    'av'      => $projectedAv,
+                ], 409));
+            }
         }
     }
 

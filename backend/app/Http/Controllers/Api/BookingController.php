@@ -236,15 +236,27 @@ class BookingController extends Controller
                 $statuses = is_array($statusValue)
                     ? array_map('intval', $statusValue)
                     : array_map('intval', explode(',', (string) $statusValue));
-                $isDepartureView = $request->input('list_mode') === 'departures';
+                $listMode = $request->input('list_mode');
+                $isDepartureView = $listMode === 'departures';
+                $isInhouseView = $listMode === 'inhouse';
+                $isProjectedView = $request->boolean('projected');
 
-                $roomQuery->where(function ($dateQuery) use ($request, $statuses, $isDepartureView, $pmsDateStartUtc, $pmsDateEndUtc) {
-                    $dateQuery->where(function ($bookedQuery) use ($request, $statuses, $isDepartureView) {
+                $roomQuery->where(function ($dateQuery) use ($request, $statuses, $isDepartureView, $isInhouseView, $isProjectedView, $pmsDateStartUtc, $pmsDateEndUtc) {
+                    $dateQuery->where(function ($bookedQuery) use ($request, $statuses, $isDepartureView, $isInhouseView, $isProjectedView) {
                         if (in_array(BookingRoom::STATUS_BOOKED, $statuses, true)) {
-                            $bookedQuery->where('status', BookingRoom::STATUS_BOOKED)
-                                ->whereDate('arrival_date', $request->arrival_date);
-                            // Dòng 392: danh sách phòng đi chỉ lấy phòng chưa nhận có ngày đến = ngày đi.
-                            if ($isDepartureView) {
+                            $bookedQuery->where('status', BookingRoom::STATUS_BOOKED);
+                            if ($isDepartureView && $isProjectedView) {
+                                // Xem tương lai: phòng chưa check-in vẫn là phòng dự kiến đi đúng ngày đã chọn.
+                                $bookedQuery->whereDate('departure_date', $request->arrival_date);
+                            } elseif ($isInhouseView && $isProjectedView) {
+                                // Xem tương lai: nằm trong [ngày đến, ngày đi) là phòng dự kiến đang ở.
+                                $bookedQuery->whereDate('arrival_date', '<', $request->arrival_date)
+                                    ->whereDate('departure_date', '>', $request->arrival_date);
+                            } else {
+                                $bookedQuery->whereDate('arrival_date', $request->arrival_date);
+                            }
+                            // Dòng 392: ngày vận hành chỉ lấy phòng chưa nhận có ngày đến = ngày đi ở danh sách phòng đi.
+                            if ($isDepartureView && !$isProjectedView) {
                                 $bookedQuery->whereDate('departure_date', $request->arrival_date);
                             }
                         } else {
@@ -262,11 +274,18 @@ class BookingController extends Controller
                         } else {
                             $inhouseQuery->whereRaw('1 = 0');
                         }
-                    })->orWhere(function ($checkedOutQuery) use ($request, $statuses, $pmsDateStartUtc, $pmsDateEndUtc) {
+                    })->orWhere(function ($checkedOutQuery) use ($request, $statuses) {
                         if (in_array(BookingRoom::STATUS_CHECKED_OUT, $statuses, true)) {
                             $checkedOutQuery->where('status', BookingRoom::STATUS_CHECKED_OUT)
-                                ->where('departure_date', '>=', $pmsDateStartUtc)
-                                ->where('departure_date', '<', $pmsDateEndUtc);
+                                // Danh sách “Đã trả” phải theo ngày trả thực tế. Bản ghi cũ
+                                // chưa có CheckoutDate mới dùng ngày đi kế hoạch làm dữ liệu dự phòng.
+                                ->where(function ($checkoutDateQuery) use ($request) {
+                                    $checkoutDateQuery->whereDate('CheckoutDate', $request->arrival_date)
+                                        ->orWhere(function ($legacyCheckoutDateQuery) use ($request) {
+                                            $legacyCheckoutDateQuery->whereNull('CheckoutDate')
+                                                ->whereDate('departure_date', $request->arrival_date);
+                                        });
+                                });
                         } else {
                             $checkedOutQuery->whereRaw('1 = 0');
                         }
@@ -1311,19 +1330,14 @@ class BookingController extends Controller
             throw $e;
         }
 
-        // Confirmation date is calculated once when a booking is created and is
-        // never recalculated when arrival date/status change. A value the user
-        // explicitly edits is saved (row 495), but cannot be after arrival.
+        // Confirmation date is calculated once when a booking is created and is        // never recalculated when arrival date/status change. A value the user        // explicitly edits is saved (row 495).
         if (empty($validated['confirm_date'])) {
             unset($validated['confirm_date']);
         } else {
             $effectiveArrival = isset($validated['arrival_date'])
                 ? Carbon::parse($validated['arrival_date'])->toDateString()
                 : Carbon::parse($booking->arrival_date)->toDateString();
-            $validated['confirm_date'] = min(
-                Carbon::parse($validated['confirm_date'])->toDateString(),
-                $effectiveArrival
-            );
+            $confirmationDate = Carbon::parse($validated['confirm_date'])->toDateString();            if ($confirmationDate > $effectiveArrival) {                throw \Illuminate\Validation\ValidationException::withMessages([                    'confirm_date' => ['Ngày xác nhận không được sau ngày đến.'],                ]);            }            $validated['confirm_date'] = $confirmationDate;
         }
 
         // Tự động tăng edit_count và ghi nhận người sửa
@@ -3080,6 +3094,324 @@ class BookingController extends Controller
         };
 
         return response()->stream($callback, 200, $headers);
+    }
+
+    // =========================================
+    // Xuất Excel chi tiết đăng ký phòng (.xlsx)
+    // POST /api/bookings/export-registration-xlsx
+    // =========================================
+    public function exportRegistrationXlsx(Request $request)
+    {
+        $bookingCode = $request->input('bookingCode', 'Dang_Ky');
+        $bookingName = $request->input('bookingName', '—');
+        $statusLabel = $request->input('statusLabel', '—');
+        $checkIn = $request->input('checkIn', '—');
+        $checkOut = $request->input('checkOut', '—');
+        $nights = $request->input('nights', 0);
+        $contactName = $request->input('contactName', '—');
+        $contactPhone = $request->input('contactPhone', '—');
+        $company = $request->input('company', '—');
+        $customerSource = $request->input('customerSource', '—');
+        $market = $request->input('market', '—');
+        $deposit = (float) $request->input('deposit', 0);
+        $note = $request->input('note', '');
+        $rooms = $request->input('rooms', []);
+
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('ChiTietDangKy');
+
+        // Font & Gridlines
+        $spreadsheet->getDefaultStyle()->getFont()->setName('Roboto')->setSize(11);
+        $sheet->setShowGridLines(true);
+
+        $infoLastCol = 'L';
+        $lastCol = 'AC';
+
+        // Title (canh giữa trên khung thông tin A..L)
+        $sheet->mergeCells("A1:{$infoLastCol}1");
+        $sheet->setCellValue('A1', 'THÔNG TIN CHI TIẾT ĐĂNG KÝ PHÒNG');
+        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(16)->getColor()->setARGB('FF006BDB');
+        $sheet->getStyle('A1')->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+        $sheet->getRowDimension(1)->setRowHeight(35);
+
+        // Registration Info box (gọn gàng trong 12 cột A..L, không kéo dài hết 29 cột bảng)
+        $sheet->setCellValue('A3', 'Mã Đăng Ký:');
+        $sheet->mergeCells('B3:C3');
+        $sheet->setCellValue('B3', $bookingCode);
+
+        $sheet->setCellValue('D3', 'Tên Đăng Ký / Đoàn:');
+        $sheet->mergeCells('E3:H3');
+        $sheet->setCellValue('E3', $bookingName);
+
+        $sheet->setCellValue('I3', 'Trạng Thái:');
+        $sheet->mergeCells('J3:L3');
+        $sheet->setCellValue('J3', $statusLabel);
+
+        $sheet->setCellValue('A4', 'Ngày Đến:');
+        $sheet->mergeCells('B4:C4');
+        $sheet->setCellValue('B4', $checkIn);
+
+        $sheet->setCellValue('D4', 'Ngày Đi:');
+        $sheet->mergeCells('E4:H4');
+        $sheet->setCellValue('E4', $checkOut);
+
+        $sheet->setCellValue('I4', 'Số Đêm:');
+        $sheet->mergeCells('J4:L4');
+        $sheet->setCellValue('J4', $nights);
+
+        $sheet->setCellValue('A5', 'Khách Liên Hệ:');
+        $sheet->mergeCells('B5:C5');
+        $sheet->setCellValue('B5', $contactName);
+
+        $sheet->setCellValue('D5', 'Số Điện Thoại:');
+        $sheet->mergeCells('E5:H5');
+        $sheet->setCellValue('E5', $contactPhone);
+
+        $sheet->setCellValue('I5', 'Tiền Đặt Cọc:');
+        $sheet->mergeCells('J5:L5');
+        $sheet->setCellValue('J5', $deposit);
+        $sheet->getStyle('J5')->getNumberFormat()->setFormatCode('#,##0 "VND"');
+
+        $sheet->setCellValue('A6', 'Công Ty:');
+        $sheet->mergeCells('B6:C6');
+        $sheet->setCellValue('B6', $company);
+
+        $sheet->setCellValue('D6', 'Nguồn Khách:');
+        $sheet->mergeCells('E6:H6');
+        $sheet->setCellValue('E6', $customerSource);
+
+        $sheet->setCellValue('I6', 'Thị Trường:');
+        $sheet->mergeCells('J6:L6');
+        $sheet->setCellValue('J6', $market);
+
+        $endInfoRow = 6;
+        if (!empty($note)) {
+            $endInfoRow = 7;
+            $sheet->setCellValue('A7', 'Ghi Chú:');
+            $sheet->mergeCells("B7:{$infoLastCol}7");
+            $sheet->setCellValue('B7', $note);
+        }
+
+        // Apply borders & styling to Info box (đóng khung gọn gàng A3:L$endInfoRow)
+        $infoRange = "A3:{$infoLastCol}{$endInfoRow}";
+        $sheet->getStyle($infoRange)->applyFromArray([
+            'borders' => [
+                'allBorders' => [
+                    'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                    'color' => ['argb' => 'FFCBD5E1'],
+                ],
+            ],
+            'alignment' => [
+                'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER,
+            ],
+        ]);
+
+        $lblCells = ['A3', 'D3', 'I3', 'A4', 'D4', 'I4', 'A5', 'D5', 'I5', 'A6', 'D6', 'I6'];
+        if (!empty($note)) {
+            $lblCells[] = 'A7';
+        }
+        foreach ($lblCells as $lbl) {
+            $sheet->getStyle($lbl)->applyFromArray([
+                'font' => ['bold' => true, 'color' => ['argb' => 'FF334155']],
+                'fill' => [
+                    'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                    'startColor' => ['argb' => 'FFF8FAFC'],
+                ],
+            ]);
+        }
+        $sheet->getStyle('B3')->getFont()->setBold(true)->getColor()->setARGB('FF006BDB');
+
+        for ($r = 3; $r <= $endInfoRow; $r++) {
+            $sheet->getRowDimension($r)->setRowHeight(24);
+        }
+
+        $headerRow = $endInfoRow + 2;
+
+        // Table Headers (29 cột theo đúng ảnh chụp chuẩn)
+        $headers = [
+            'Status', 'Loại phòng', 'Dạng phòng', 'Số phòng',
+            'Ngày đến', 'Ngày đi', 'Đêm', 'Giá',
+            'Mã giá phòng', 'Giảm/tăng giá', 'Tên khách', 'N.Lớn',
+            'Em bé', 'Trẻ em', 'Chi tiết ăn sáng trẻ', 'Ăn sáng',
+            'Thêm giường', 'Giá thêm giường', 'Ở theo giờ', 'Yêu cầu đặc biệt',
+            'Giờ đến', 'Giờ đi', 'Đặt trước', 'LP Khởi tạo',
+            'Phòng chuyển', 'Trạng thái phòng', 'Mã ALM', 'Mã phòng',
+            'Tổng cộng'
+        ];
+
+        $colList = [
+            'A','B','C','D','E','F','G','H','I','J','K','L','M',
+            'N','O','P','Q','R','S','T','U','V','W','X','Y','Z',
+            'AA','AB','AC'
+        ];
+
+        foreach ($headers as $idx => $h) {
+            $colName = $colList[$idx];
+            $sheet->setCellValue($colName . $headerRow, $h);
+        }
+
+        // Style table headers
+        $headerRange = "A{$headerRow}:{$lastCol}{$headerRow}";
+        $sheet->getStyle($headerRange)->applyFromArray([
+            'font' => ['bold' => true, 'size' => 11, 'color' => ['argb' => 'FF0F172A']],
+            'alignment' => [
+                'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER,
+                'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER,
+                'wrapText' => true
+            ],
+            'fill' => [
+                'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                'startColor' => ['argb' => 'FFE2E8F0'],
+            ],
+            'borders' => [
+                'allBorders' => [
+                    'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                    'color' => ['argb' => 'FF94A3B8'],
+                ],
+            ],
+        ]);
+        $sheet->getRowDimension($headerRow)->setRowHeight(28);
+
+        // Data Rows
+        $currentRow = $headerRow + 1;
+        $totalNights = 0;
+        $totalAdults = 0;
+        $totalChildren = 0;
+        $totalBabies = 0;
+        $totalExtraBeds = 0;
+        $totalAmount = 0;
+
+        foreach ($rooms as $r) {
+            $nightsVal = (int) ($r['nights'] ?? 0);
+            $priceVal = (float) ($r['price'] ?? 0);
+            $adultsVal = (int) ($r['adults'] ?? 0);
+            $babiesVal = (int) ($r['babies'] ?? 0);
+            $childrenVal = (int) ($r['children'] ?? 0);
+            $ebQtyVal = (int) ($r['extraBedQty'] ?? 0);
+            $ebPriceVal = (float) ($r['extraBedPrice'] ?? 0);
+            $totalVal = (float) ($r['total'] ?? 0);
+
+            $totalNights += $nightsVal;
+            $totalAdults += $adultsVal;
+            $totalBabies += $babiesVal;
+            $totalChildren += $childrenVal;
+            $totalExtraBeds += $ebQtyVal;
+            $totalAmount += $totalVal;
+
+            $sheet->setCellValue("A{$currentRow}", (string) ($r['status'] ?? '—'));
+            $sheet->setCellValue("B{$currentRow}", (string) ($r['type'] ?? '—'));
+            $sheet->setCellValue("C{$currentRow}", (string) ($r['shape'] ?? '—'));
+            $sheet->setCellValueExplicit("D{$currentRow}", (string) ($r['roomNumber'] ?? '-'), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit("E{$currentRow}", (string) ($r['checkIn'] ?? '—'), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit("F{$currentRow}", (string) ($r['checkOut'] ?? '—'), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+            $sheet->setCellValue("G{$currentRow}", $nightsVal);
+            $sheet->setCellValue("H{$currentRow}", $priceVal);
+            $sheet->setCellValue("I{$currentRow}", (string) ($r['rateCode'] ?? '—'));
+            $sheet->setCellValue("J{$currentRow}", (string) ($r['adjustment'] ?? '—'));
+            $sheet->setCellValue("K{$currentRow}", (string) ($r['guestName'] ?? '—'));
+            $sheet->setCellValue("L{$currentRow}", $adultsVal);
+            $sheet->setCellValue("M{$currentRow}", $babiesVal);
+            $sheet->setCellValue("N{$currentRow}", $childrenVal);
+            $sheet->setCellValue("O{$currentRow}", (string) ($r['childBreakfast'] ?? '—'));
+            $sheet->setCellValue("P{$currentRow}", !empty($r['breakfast']) ? 'Có' : 'Không');
+            $sheet->setCellValue("Q{$currentRow}", $ebQtyVal);
+            $sheet->setCellValue("R{$currentRow}", $ebQtyVal > 0 ? $ebPriceVal : 0);
+            $sheet->setCellValue("S{$currentRow}", !empty($r['hourly']) ? 'Có' : 'Không');
+            $sheet->setCellValue("T{$currentRow}", (string) ($r['specialRequests'] ?? '—'));
+            $sheet->setCellValueExplicit("U{$currentRow}", (string) ($r['arrivalTime'] ?? '14:00'), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit("V{$currentRow}", (string) ($r['hoursOut'] ?? '12:00'), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+            $sheet->setCellValue("W{$currentRow}", !empty($r['isPreassigned']) ? 'Có' : 'Không');
+            $sheet->setCellValue("X{$currentRow}", (string) ($r['initialRoomClass'] ?? '—'));
+            $sheet->setCellValue("Y{$currentRow}", (string) ($r['transferredFrom'] ?? '—'));
+            $sheet->setCellValue("Z{$currentRow}", (string) ($r['roomStatus'] ?? 'Sạch'));
+            $sheet->setCellValue("AA{$currentRow}", (string) ($r['allotmentCode'] ?? '—'));
+            $sheet->setCellValue("AB{$currentRow}", (string) ($r['roomCode'] ?? '—'));
+            $sheet->setCellValue("AC{$currentRow}", $totalVal);
+
+            // Alignments & Number formats
+            $sheet->getStyle("A{$currentRow}")->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+            $sheet->getStyle("C{$currentRow}")->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+            $sheet->getStyle("D{$currentRow}")->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+            $sheet->getStyle("D{$currentRow}")->getFont()->setBold(true);
+            $sheet->getStyle("E{$currentRow}:G{$currentRow}")->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+            $sheet->getStyle("H{$currentRow}")->getNumberFormat()->setFormatCode('#,##0');
+            $sheet->getStyle("I{$currentRow}:J{$currentRow}")->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+            $sheet->getStyle("L{$currentRow}:Q{$currentRow}")->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+            $sheet->getStyle("R{$currentRow}")->getNumberFormat()->setFormatCode('#,##0');
+            $sheet->getStyle("S{$currentRow}")->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+            $sheet->getStyle("U{$currentRow}:W{$currentRow}")->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+            $sheet->getStyle("X{$currentRow}:AB{$currentRow}")->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+            $sheet->getStyle("AC{$currentRow}")->getNumberFormat()->setFormatCode('#,##0');
+            $sheet->getStyle("AC{$currentRow}")->getFont()->setBold(true);
+
+            $sheet->getStyle("A{$currentRow}:{$lastCol}{$currentRow}")->getBorders()->getAllBorders()->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN)->getColor()->setARGB('FFCBD5E1');
+
+            $currentRow++;
+        }
+
+        // Totals Row
+        $sheet->mergeCells("A{$currentRow}:F{$currentRow}");
+        $sheet->setCellValue("A{$currentRow}", "TỔNG CỘNG (" . count($rooms) . " phòng)");
+        $sheet->setCellValue("G{$currentRow}", $totalNights);
+        $sheet->setCellValue("H{$currentRow}", '—');
+        $sheet->setCellValue("I{$currentRow}", '—');
+        $sheet->setCellValue("J{$currentRow}", '—');
+        $sheet->setCellValue("K{$currentRow}", '—');
+        $sheet->setCellValue("L{$currentRow}", $totalAdults);
+        $sheet->setCellValue("M{$currentRow}", $totalBabies);
+        $sheet->setCellValue("N{$currentRow}", $totalChildren);
+        $sheet->setCellValue("O{$currentRow}", '—');
+        $sheet->setCellValue("P{$currentRow}", '—');
+        $sheet->setCellValue("Q{$currentRow}", $totalExtraBeds);
+        $sheet->setCellValue("R{$currentRow}", '—');
+        $sheet->setCellValue("S{$currentRow}", '—');
+        $sheet->setCellValue("T{$currentRow}", '—');
+        $sheet->setCellValue("U{$currentRow}", '—');
+        $sheet->setCellValue("V{$currentRow}", '—');
+        $sheet->setCellValue("W{$currentRow}", '—');
+        $sheet->setCellValue("X{$currentRow}", '—');
+        $sheet->setCellValue("Y{$currentRow}", '—');
+        $sheet->setCellValue("Z{$currentRow}", '—');
+        $sheet->setCellValue("AA{$currentRow}", '—');
+        $sheet->setCellValue("AB{$currentRow}", '—');
+        $sheet->setCellValue("AC{$currentRow}", $totalAmount);
+
+        $totalRange = "A{$currentRow}:{$lastCol}{$currentRow}";
+        $sheet->getStyle($totalRange)->applyFromArray([
+            'font' => ['bold' => true],
+            'fill' => [
+                'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
+                'startColor' => ['argb' => 'FFF1F5F9'],
+            ],
+            'borders' => [
+                'allBorders' => [
+                    'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
+                    'color' => ['argb' => 'FF94A3B8'],
+                ],
+            ],
+        ]);
+        $sheet->getStyle("A{$currentRow}")->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+        $sheet->getStyle("G{$currentRow}")->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+        $sheet->getStyle("L{$currentRow}:N{$currentRow}")->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+        $sheet->getStyle("Q{$currentRow}")->getAlignment()->setHorizontal(\PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER);
+        $sheet->getStyle("AC{$currentRow}")->getNumberFormat()->setFormatCode('#,##0');
+        $sheet->getStyle("AC{$currentRow}")->getFont()->getColor()->setARGB('FF006BDB');
+
+        // Auto-fit column widths
+        foreach ($colList as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+
+        $dateStr = now()->format('Ymd');
+        $fileName = "Dang_Ky_{$bookingCode}_{$dateStr}.xlsx";
+
+        return response()->streamDownload(function () use ($spreadsheet) {
+            $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
+            $writer->save('php://output');
+        }, $fileName, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
     }
 
     /**

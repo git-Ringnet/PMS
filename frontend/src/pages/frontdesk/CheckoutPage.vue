@@ -376,6 +376,18 @@ const openCheckoutModal = async () => {
     }
     selectedBooking.value = checkedRooms[0].booking
     selectedRoomItem.value = checkedRooms.length === 1 ? checkedRooms[0].room : null
+  } else {
+    // Đăng ký cũ: phòng đã checkout được tick chọn là phòng cần khôi phục, không lấy phòng đang đứng xem.
+    const checkedOutRooms = allBookingsList.value.flatMap(booking => (
+      (booking.roomItems || [])
+        .filter(room => room.checked && !room.isVirtual && !room.isPartialCheckoutView && Number(room.rawRoom?.status ?? room.status) === 2)
+        .map(room => ({ booking, room }))
+    ))
+    if (checkedOutRooms.length > 1) {
+      uiStore.showToast('Chỉ khôi phục checkout từng phòng, vui lòng chọn một phòng.', 'warning')
+      return
+    }
+    if (checkedOutRooms.length === 1) await selectRoomItemRow(checkedOutRooms[0].booking, checkedOutRooms[0].room)
   }
   if (selectedRoomItem.value?.isVirtual) {
     uiStore.showToast('Folio phòng ảo chỉ dùng cho dịch vụ, không thể checkout.', 'warning')
@@ -930,14 +942,13 @@ const loadCheckoutBookings = async () => {
           const isVirtualRoom = Boolean(b.is_service_only || r.is_virtual || r.is_internal || r.room?.is_virtual || r.room?.is_internal || String(r.room_number || roomNo).startsWith('0'))
           const roomIsCheckedOut = isCheckedOutRecord(r)
           const isNoshowRoom = Number(r.status) === 4
-          const hasTransactions = (r.services || []).some(isPostedBookingService) ||
-            (b.service_bills || []).some(sb => String(sb.RentalRoomId1) === String(r.id) || String(sb.RentalRoomId2) === String(r.id)) ||
-            (b.master_service_bills || []).some(sb => String(sb.RentalRoomId1) === String(r.id) || String(sb.RentalRoomId2) === String(r.id));
           // Phòng còn khách ở nhưng đã có khách checkout lẻ: Đăng ký cũ hiển thị riêng các khách đã checkout.
           const isPartialCheckoutView = activeFilter.register === 'old' && Number(r.status) === 1 && !roomIsCheckedOut
             && (r.guests || []).some(g => Number(g.status) === 2)
+          // Đăng ký cũ chỉ gồm phòng đã checkout / Noshow / Hủy (hoặc khách checkout lẻ).
+          // Phòng còn ở trạng thái Đăng ký (status 0) chưa checkout nên không hiển thị, dù đã có giao dịch.
           const includeRoom = activeFilter.register === 'old'
-            ? roomIsCheckedOut || isNoshowRoom || Number(r.status) === 3 || (Number(r.status) === 0 && hasTransactions) || isPartialCheckoutView
+            ? roomIsCheckedOut || isNoshowRoom || Number(r.status) === 3 || isPartialCheckoutView
             : activeFilter.register === 'virtual'
               ? isVirtualRoom && [0, 1].includes(Number(r.status)) && !roomIsCheckedOut
               : Number(r.status) === 1 && !roomIsCheckedOut
@@ -1336,6 +1347,11 @@ const handleServiceAdded = async (data, options = {}) => {
 const handlePrepaymentSuccess = async () => {
   await refreshCheckoutData()
   uiStore.showToast('Thanh toán trước thành công!', 'success')
+}
+
+// Tick chọn phòng thì chuyển luôn sang xem phòng đó, để phòng đang xem và phòng thao tác (checkout / khôi phục checkout) luôn thống nhất.
+const onRoomCheckChange = (b, r, guest = null) => {
+  if (r.checked) selectRoomItemRow(b, r, guest)
 }
 
 const toggleBookingCheck = (b) => {
@@ -3239,6 +3255,9 @@ const selectPanelGuest = (guest) => {
   handlePanelGuestChange()
 }
 
+// Phòng ảo không có booking/Master thao tác được: ẩn dòng BK, chỉ giữ một dòng phòng.
+const isVirtualFolioGroup = b => appliedCheckoutFilter.value.register === 'virtual' || Boolean(b?.virtualRoomId)
+
 const selectBookingHeader = (b) => {
   // Folio phòng ảo không có booking nên không có Master: luôn thao tác trên dòng phòng.
   if ((b.requiresFolio || b.virtualRoomId) && b.roomItems?.[0]) {
@@ -3902,7 +3921,7 @@ onUnmounted(() => {
                 class="border-b border-gray-100 last:border-b-0 py-0.5 text-xs"
               >
                 <!-- Line 1: BKK:  <mã booking>    <tên đoàn / tên booking> -->
-                <div class="grid min-w-0 cursor-pointer grid-cols-[50px_75px_minmax(0,1fr)] items-center gap-x-3 px-3 py-1.5 bg-slate-50 font-bold transition-colors hover:bg-sky-100/70" @click="selectBookingFromSearch(b)">
+                <div v-if="!isVirtualFolioGroup(b)" class="grid min-w-0 cursor-pointer grid-cols-[50px_75px_minmax(0,1fr)] items-center gap-x-3 px-3 py-1.5 bg-slate-50 font-bold transition-colors hover:bg-sky-100/70" @click="selectBookingFromSearch(b)">
                   <span :class="b.isPendingMasterCheckout ? 'w-fit rounded bg-rose-100 px-1 font-bold text-rose-600' : 'font-bold text-gray-900'" :title="b.isPendingMasterCheckout ? 'Master chờ check-out' : ''">BKK:</span>
                   <span class="font-bold text-blue-700">{{ b.code }}</span>
                   <span class="min-w-0 truncate font-semibold text-gray-800" :title="b.name">{{ b.name }}</span>
@@ -3924,9 +3943,9 @@ onUnmounted(() => {
                   <template v-else>
                     <div 
                       @click.stop="selectBookingFromSearch(b, r)"
-                      class="grid min-w-0 cursor-pointer grid-cols-[50px_75px_minmax(0,1fr)] items-center gap-x-3 py-1.5 pl-7 pr-3 text-gray-700 transition-colors hover:bg-sky-50"
+                      :class="[isVirtualFolioGroup(b) ? 'px-3' : 'pl-7 pr-3', 'grid min-w-0 cursor-pointer grid-cols-[50px_75px_minmax(0,1fr)] items-center gap-x-3 py-1.5 text-gray-700 transition-colors hover:bg-sky-50']"
                     >
-                      <span aria-hidden="true" class="text-right text-slate-300">↳</span>
+                      <span aria-hidden="true" class="text-right text-slate-300">{{ isVirtualFolioGroup(b) ? '' : '↳' }}</span>
                       <span class="text-slate-900 font-semibold shrink-0">{{ r.roomNumber }}</span>
                       <span class="min-w-0 truncate text-gray-800 font-normal" :title="r.guestName">{{ r.guestName }}</span>
                     </div>
@@ -4039,6 +4058,7 @@ onUnmounted(() => {
                             <tbody class="divide-y divide-gray-200">
                 <template v-for="b in displayedBookingsList" :key="b.id">
                   <tr
+                    v-if="!isVirtualFolioGroup(b)"
                     @click="selectBookingHeader(b)"
                     @dragover.prevent="(draggedServiceGroup || draggedPayment) && handleRoomDragOver(b, null)"
                     @dragleave="draggedOverRoom = null"
@@ -4086,9 +4106,9 @@ onUnmounted(() => {
                         ]"
                       >
                         <td class="p-1 w-[25px] text-center border-slate-200">
-                          <input type="checkbox" v-model="r.checked" :disabled="r.isVirtual" @click.stop class="rounded border-gray-300 text-sky-600 disabled:cursor-not-allowed disabled:opacity-40" />
+                          <input type="checkbox" v-model="r.checked" :disabled="r.isVirtual" @click.stop @change="onRoomCheckChange(b, r, guest)" class="rounded border-gray-300 text-sky-600 disabled:cursor-not-allowed disabled:opacity-40" />
                         </td>
-                        <td class="p-1 pl-10 text-slate-900 text-center border-slate-200">{{ r.roomNumber }}</td>
+                        <td :class="[isVirtualFolioGroup(b) ? '' : 'pl-10', 'p-1 text-slate-900 text-center border-slate-200']">{{ r.roomNumber }}</td>
                         <td class="min-w-0 p-1 truncate text-slate-700 border-slate-200" :title="guest.name">{{ guest.name }}</td>
                         <td class="p-1 text-right tabular-nums border-slate-200">{{ formatSummaryMoney(guestRoomServiceAmount(b, r, guest.id)) }}</td>
                         <td class="p-1 text-right tabular-nums border-slate-200">{{ formatMoney(guestRoomPaidAmount(b, r, guest.id)) }}</td>
@@ -4109,9 +4129,9 @@ onUnmounted(() => {
                         ]"
                       >
                         <td class="p-1 w-[25px] text-center border-slate-200">
-                          <input type="checkbox" v-model="r.checked" :disabled="r.isVirtual" @click.stop class="rounded border-gray-300 text-sky-600 disabled:cursor-not-allowed disabled:opacity-40" />
+                          <input type="checkbox" v-model="r.checked" :disabled="r.isVirtual" @click.stop @change="onRoomCheckChange(b, r)" class="rounded border-gray-300 text-sky-600 disabled:cursor-not-allowed disabled:opacity-40" />
                         </td>
-                        <td class="p-1 pl-10 text-slate-900 text-center border-slate-200">{{ r.roomNumber }}</td>
+                        <td :class="[isVirtualFolioGroup(b) ? '' : 'pl-10', 'p-1 text-slate-900 text-center border-slate-200']">{{ r.roomNumber }}</td>
                         <td class="min-w-0 p-1 truncate text-slate-700 border-slate-200" :title="r.guestName">{{ r.guestName }}</td>
                         <td class="p-1 text-right tabular-nums border-slate-200">{{ formatSummaryMoney(guestRoomServiceAmount(b, r, r.primaryGuestId)) }}</td>
                         <td class="p-1 text-right tabular-nums border-slate-200">{{ formatMoney(guestRoomPaidAmount(b, r, r.primaryGuestId)) }}</td>

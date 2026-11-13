@@ -1,6 +1,6 @@
 {
- "generated_at": "2026-10-30T11:03:54.761Z",
- "count": 6037,
+ "generated_at": "2026-11-12T04:10:56.243Z",
+ "count": 6099,
  "items": [
   {
    "source": "- Bảo mật nâng cao",
@@ -89,6 +89,16 @@
     {
      "area": "Cấu hình hệ thống › SystemPage",
      "route": "/system"
+    }
+   ]
+  },
+  {
+   "source": "- Đã trả phòng",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Dùng chung › BookingDetailModal",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -627,21 +637,7 @@
    "is_pattern": false,
    "locations": [
     {
-     "area": "Đặt phòng › CreateRegistrationPage",
-     "route": "/reservation"
-    },
-    {
      "area": "Đặt phòng › RoomPlanPage",
-     "route": "/reservation"
-    }
-   ]
-  },
-  {
-   "source": "— Chọn người đặt —",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Đặt phòng › CreateRegistrationPage",
      "route": "/reservation"
     }
    ]
@@ -871,16 +867,6 @@
     {
      "area": "Cấu hình hệ thống › LanguageTab",
      "route": "/system"
-    }
-   ]
-  },
-  {
-   "source": "(chưa đặt tên)",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Cấu hình › ReportMenuConfigModal",
-     "route": "/config"
     }
    ]
   },
@@ -1263,6 +1249,16 @@
    ]
   },
   {
+   "source": "{0} · Báo cáo đã xếp sẽ được chuyển khỏi danh mục cũ",
+   "is_pattern": true,
+   "locations": [
+    {
+     "area": "Cấu hình › ReportMenuConfigModal",
+     "route": "/config"
+    }
+   ]
+  },
+  {
    "source": "{0} › Thanh chức năng",
    "is_pattern": true,
    "locations": [
@@ -1337,6 +1333,10 @@
    "is_pattern": true,
    "locations": [
     {
+     "area": "Lễ tân › DayClosePage",
+     "route": "/frontdesk"
+    },
+    {
      "area": "Đặt phòng › RoomMapPage",
      "route": "/reservation"
     }
@@ -1378,16 +1378,6 @@
    "locations": [
     {
      "area": "Cấu hình › DatabaseBackupTab",
-     "route": "/config"
-    }
-   ]
-  },
-  {
-   "source": "{0} báo cáo",
-   "is_pattern": true,
-   "locations": [
-    {
-     "area": "Cấu hình › ReportMenuConfigModal",
      "route": "/config"
     }
    ]
@@ -1745,6 +1735,16 @@
    ]
   },
   {
+   "source": "{0} trẻ",
+   "is_pattern": true,
+   "locations": [
+    {
+     "area": "Đặt phòng › CreateRegistrationPage",
+     "route": "/reservation"
+    }
+   ]
+  },
+  {
    "source": "{0} trống",
    "is_pattern": true,
    "locations": [
@@ -1786,6 +1786,16 @@
   },
   {
    "source": "{0}: đang bật No Post",
+   "is_pattern": true,
+   "locations": [
+    {
+     "area": "Lễ tân › DayClosePage",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
+   "source": "{0}: không gia hạn (loại phòng bị over)",
    "is_pattern": true,
    "locations": [
     {
@@ -3929,6 +3939,16 @@
    ]
   },
   {
+   "source": "Bạn có chắc chắn muốn nhân bản đăng ký này không? Bấm xác nhận để nhân bản hoặc nút tắt để thoát màn hình xác nhận.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Đặt phòng › CopyModal",
+     "route": "/reservation"
+    }
+   ]
+  },
+  {
    "source": "Bạn có chắc chắn muốn nhận phòng cho {0} phòng đã chọn không?",
    "is_pattern": true,
    "locations": [
@@ -4139,7 +4159,7 @@
    ]
   },
   {
-   "source": "Bạn có chắc chắn muốn xóa công ty \"{0}\" ({1})?",
+   "source": "Bạn có chắc chắn muốn xóa công ty \"{0}\" ({1})? Khi đồng bộ chuỗi đang bật, công ty không có phát sinh sẽ được ẩn trên toàn bộ chi nhánh.",
    "is_pattern": true,
    "locations": [
     {
@@ -5497,6 +5517,16 @@
    ]
   },
   {
+   "source": "Báo cáo này không có điều kiện bật/tắt.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › TemplateEditorModal",
+     "route": "/config"
+    }
+   ]
+  },
+  {
    "source": "Báo cáo quản lý",
    "is_pattern": false,
    "locations": [
@@ -5685,7 +5715,7 @@
    ]
   },
   {
-   "source": "Bao gồm thuế ĐB",
+   "source": "Bao gồm thuế TTĐB",
    "is_pattern": false,
    "locations": [
     {
@@ -5695,7 +5725,7 @@
    ]
   },
   {
-   "source": "Bao Gồm Thuế ĐB",
+   "source": "Bao Gồm Thuế TTĐB",
    "is_pattern": false,
    "locations": [
     {
@@ -5863,16 +5893,6 @@
     {
      "area": "Lễ tân › GeneralSearchPage",
      "route": "/frontdesk"
-    }
-   ]
-  },
-  {
-   "source": "Bấm đúp để đổi tên",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Cấu hình › ReportMenuConfigModal",
-     "route": "/config"
     }
    ]
   },
@@ -6095,6 +6115,16 @@
   {
    "source": "Biến dữ liệu ánh xạ:",
    "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › TemplateEditorModal",
+     "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "Biến runtime: {0}",
+   "is_pattern": true,
    "locations": [
     {
      "area": "Cấu hình › TemplateEditorModal",
@@ -6733,10 +6763,6 @@
    "is_pattern": false,
    "locations": [
     {
-     "area": "Cấu hình › ReportDefinitionManagerModal",
-     "route": "/config"
-    },
-    {
      "area": "Đặt phòng › RoomMapPage",
      "route": "/reservation"
     }
@@ -6981,10 +7007,6 @@
    "is_pattern": false,
    "locations": [
     {
-     "area": "Cấu hình › HotelServiceTab",
-     "route": "/config"
-    },
-    {
      "area": "Lễ tân › CheckoutPage",
      "route": "/frontdesk"
     },
@@ -7134,6 +7156,10 @@
    "source": "Cảnh báo âm phòng trống",
    "is_pattern": false,
    "locations": [
+    {
+     "area": "Dùng chung › BookingDetailModal",
+     "route": "/frontdesk"
+    },
     {
      "area": "Đặt phòng › QuickUpdateModal",
      "route": "/reservation"
@@ -8131,6 +8157,16 @@
    ]
   },
   {
+   "source": "Cập nhật sẽ làm âm phòng trống loại phòng. Bạn có muốn tiếp tục?",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Dùng chung › BookingDetailModal",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
    "source": "Cập nhật số lượng dịch vụ thành công!",
    "is_pattern": false,
    "locations": [
@@ -8444,6 +8480,16 @@
    "locations": [
     {
      "area": "Cấu hình › SynthesisReportTab",
+     "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "Cấu hình điều kiện sẽ được lưu cùng phiên bản.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › TemplateEditorModal",
      "route": "/config"
     }
    ]
@@ -8819,6 +8865,26 @@
    ]
   },
   {
+   "source": "Chỉ chọn cặp toggle cần loại trừ nhau. Cấp nhóm và thứ tự dữ liệu được cấu hình trong Bảng chi tiết.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › TemplateEditorModal",
+     "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "Chỉ chọn cùng lúc các phòng đặt trước, không phải phòng ở theo giờ hoặc khóa chuyển phòng.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Đặt phòng › RoomPlanPage",
+     "route": "/reservation"
+    }
+   ]
+  },
+  {
    "source": "Chỉ chọn những phòng cần khôi phục. Hệ thống kiểm tra lại số phòng, phòng khóa và tồn phòng theo loại phòng; nếu có một phòng không đủ điều kiện thì không khôi phục phòng nào.",
    "is_pattern": false,
    "locations": [
@@ -8899,6 +8965,16 @@
    ]
   },
   {
+   "source": "Chỉ được thay đổi giai đoạn cùng lúc cho các phòng thuộc cùng một đăng ký.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Đặt phòng › RoomPlanPage",
+     "route": "/reservation"
+    }
+   ]
+  },
+  {
    "source": "Chỉ hiển thị",
    "is_pattern": false,
    "locations": [
@@ -8924,6 +9000,26 @@
    "locations": [
     {
      "area": "Cấu hình › TemplateEditorModal",
+     "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "Chỉ khôi phục checkout từng phòng, vui lòng chọn một phòng.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › CheckoutPage",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
+   "source": "chi nhánh",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › CompanyTab",
      "route": "/config"
     }
    ]
@@ -9083,16 +9179,6 @@
     {
      "area": "Dùng chung › PortalWallpaperModal",
      "route": "/frontdesk"
-    }
-   ]
-  },
-  {
-   "source": "Chỉ tên, nguồn khách, người đặt và ghi chú được chỉnh sửa.",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Đặt phòng › CreateRegistrationPage",
-     "route": "/reservation"
     }
    ]
   },
@@ -10049,6 +10135,16 @@
    ]
   },
   {
+   "source": "Chọn cấp nhóm để cấu hình",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › TemplateEditorModal",
+     "route": "/config"
+    }
+   ]
+  },
+  {
    "source": "Chọn chi nhánh",
    "is_pattern": false,
    "locations": [
@@ -10309,6 +10405,16 @@
    ]
   },
   {
+   "source": "Chọn Gốc Menu",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › ReportMenuConfigModal",
+     "route": "/config"
+    }
+   ]
+  },
+  {
    "source": "Chọn hạng",
    "is_pattern": false,
    "locations": [
@@ -10513,16 +10619,6 @@
    ]
   },
   {
-   "source": "Chọn module hiển thị. Báo cáo mới được thêm vào cuối nhóm “{0}”; sắp xếp nhóm và thứ tự ở màn Cấu hình menu báo cáo.",
-   "is_pattern": true,
-   "locations": [
-    {
-     "area": "Cấu hình › ReportDefinitionManagerModal",
-     "route": "/config"
-    }
-   ]
-  },
-  {
    "source": "Chọn món ăn để sửa",
    "is_pattern": false,
    "locations": [
@@ -10549,11 +10645,25 @@
     {
      "area": "Cấu hình › ReportDefinitionManagerModal",
      "route": "/config"
+    },
+    {
+     "area": "Cấu hình › TemplateEditorModal",
+     "route": "/config"
     }
    ]
   },
   {
    "source": "Chọn một Block trên khu vực thiết kế để tùy chỉnh thuộc tính chi tiết.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › TemplateEditorModal",
+     "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "Chọn một cùng",
    "is_pattern": false,
    "locations": [
     {
@@ -13035,6 +13145,10 @@
    "is_pattern": false,
    "locations": [
     {
+     "area": "Cấu hình › ReportMenuConfigModal",
+     "route": "/config"
+    },
+    {
      "area": "Đặt phòng › ServicesModal",
      "route": "/reservation"
     }
@@ -13321,6 +13435,10 @@
      "route": "/frontdesk"
     },
     {
+     "area": "Lễ tân › DayClosePage",
+     "route": "/frontdesk"
+    },
+    {
      "area": "Lễ tân › GeneralSearchPage",
      "route": "/frontdesk"
     },
@@ -13373,6 +13491,16 @@
     {
      "area": "F&B › MenuDefinition",
      "route": "/fnb"
+    }
+   ]
+  },
+  {
+   "source": "Có ({0} trẻ)",
+   "is_pattern": true,
+   "locations": [
+    {
+     "area": "Đặt phòng › CreateRegistrationPage",
+     "route": "/reservation"
     }
    ]
   },
@@ -13953,6 +14081,16 @@
    ]
   },
   {
+   "source": "Có lỗi xảy ra khi xuất tệp Excel (.xlsx)!",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Đặt phòng › CreateRegistrationPage",
+     "route": "/reservation"
+    }
+   ]
+  },
+  {
    "source": "Có lỗi xảy ra, vui lòng thử lại.",
    "is_pattern": false,
    "locations": [
@@ -14287,6 +14425,16 @@
    ]
   },
   {
+   "source": "công nợ tối đa",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › CompanyTab",
+     "route": "/config"
+    }
+   ]
+  },
+  {
    "source": "Công nợ tối đa",
    "is_pattern": false,
    "locations": [
@@ -14447,6 +14595,16 @@
     {
      "area": "Lễ tân › GeneralSearchPage",
      "route": "/frontdesk"
+    }
+   ]
+  },
+  {
+   "source": "Công ty đã có trong hệ thống",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › CompanyTab",
+     "route": "/config"
     }
    ]
   },
@@ -14839,16 +14997,6 @@
    ]
   },
   {
-   "source": "cuối menu",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Cấu hình › ReportMenuConfigModal",
-     "route": "/config"
-    }
-   ]
-  },
-  {
    "source": "Cửa khẩu",
    "is_pattern": false,
    "locations": [
@@ -14907,6 +15055,16 @@
     {
      "area": "Khung giao diện › MainLayout",
      "route": "/frontdesk"
+    }
+   ]
+  },
+  {
+   "source": "D - Ngày",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Đặt phòng › ResidenceDeclarationPage",
+     "route": "/reservation"
     }
    ]
   },
@@ -14987,6 +15145,16 @@
    ]
   },
   {
+   "source": "Danh mục \"{0}\" bị trùng tên cùng cấp.",
+   "is_pattern": true,
+   "locations": [
+    {
+     "area": "Thông báo hệ thống › report-menu-tree",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
    "source": "DANH MỤC BÁO CÁO",
    "is_pattern": false,
    "locations": [
@@ -15003,6 +15171,16 @@
     {
      "area": "Cấu hình › DesignTemplateTab",
      "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "Danh mục báo cáo mới",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Thông báo hệ thống › report-menu-tree",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -15949,6 +16127,36 @@
    ]
   },
   {
+   "source": "dòng 392: phòng chưa nhận có ngày đến = ngày đi được tính, dù không tick Day Use (807, 205, 405)",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Đặt phòng › departure-rooms.test",
+     "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "dòng 392: phòng chưa nhận ở qua đêm và phòng đã trả không thuộc danh sách phòng chưa trả",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Đặt phòng › departure-rooms.test",
+     "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "dòng 392: phòng đang ở có ngày đi <= ngày hệ thống là phòng chưa trả",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Đặt phòng › departure-rooms.test",
+     "route": "/reservation"
+    }
+   ]
+  },
+  {
    "source": "dòng kết quả",
    "is_pattern": false,
    "locations": [
@@ -16074,6 +16282,36 @@
   },
   {
    "source": "Dự báo cuối ngày",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Đặt phòng › RoomMapPage",
+     "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "Dự kiến đến",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Đặt phòng › RoomMapPage",
+     "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "Dự kiến đi",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Đặt phòng › RoomMapPage",
+     "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "Dự kiến ở",
    "is_pattern": false,
    "locations": [
     {
@@ -16447,16 +16685,6 @@
    ]
   },
   {
-   "source": "Đã cập nhật thông tin đăng ký đã checkout.",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Đặt phòng › CreateRegistrationPage",
-     "route": "/reservation"
-    }
-   ]
-  },
-  {
    "source": "Đã cập nhật trạng thái outlet",
    "is_pattern": false,
    "locations": [
@@ -16643,6 +16871,16 @@
     {
      "area": "Lễ tân › CheckoutPage",
      "route": "/frontdesk"
+    }
+   ]
+  },
+  {
+   "source": "Đã chuyển báo cáo sang danh mục.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › ReportMenuConfigModal",
+     "route": "/config"
     }
    ]
   },
@@ -17673,6 +17911,16 @@
    ]
   },
   {
+   "source": "Đã sắp xếp lại vị trí báo cáo.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › ReportMenuConfigModal",
+     "route": "/config"
+    }
+   ]
+  },
+  {
    "source": "Đã tách cọc thành công!",
    "is_pattern": false,
    "locations": [
@@ -17841,6 +18089,26 @@
    ]
   },
   {
+   "source": "Đã thêm báo cáo vào danh mục.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › ReportMenuConfigModal",
+     "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "Đã thêm báo cáo vào vị trí đã chọn.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › ReportMenuConfigModal",
+     "route": "/config"
+    }
+   ]
+  },
+  {
    "source": "Đã thêm cột con dưới nhóm \"{0}\"",
    "is_pattern": true,
    "locations": [
@@ -17856,6 +18124,16 @@
    "locations": [
     {
      "area": "Cấu hình › HkConfigTab",
+     "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "Đã thêm danh mục mới. Chọn dấu … để đổi tên.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › ReportMenuConfigModal",
      "route": "/config"
     }
    ]
@@ -17977,6 +18255,16 @@
     {
      "area": "Dùng chung › BookingDetailModal",
      "route": "/frontdesk"
+    }
+   ]
+  },
+  {
+   "source": "Đã thêm/chuyển {0} báo cáo vào danh mục.",
+   "is_pattern": true,
+   "locations": [
+    {
+     "area": "Cấu hình › ReportMenuConfigModal",
+     "route": "/config"
     }
    ]
   },
@@ -18535,6 +18823,16 @@
    ]
   },
   {
+   "source": "Đang bật",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › TemplateEditorModal",
+     "route": "/config"
+    }
+   ]
+  },
+  {
    "source": "Đang biên dịch và render dữ liệu giả lập từ hệ thống...",
    "is_pattern": false,
    "locations": [
@@ -18867,6 +19165,16 @@
    ]
   },
   {
+   "source": "Đang lưu cấu hình điều kiện…",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › TemplateEditorModal",
+     "route": "/config"
+    }
+   ]
+  },
+  {
    "source": "Đang lưu thông tin Thêm giường...",
    "is_pattern": false,
    "locations": [
@@ -18939,16 +19247,6 @@
     {
      "area": "Cấu hình hệ thống › LanguageTab",
      "route": "/system"
-    }
-   ]
-  },
-  {
-   "source": "Đang lưu…",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Đặt phòng › CreateRegistrationPage",
-     "route": "/reservation"
     }
    ]
   },
@@ -19079,6 +19377,16 @@
     {
      "area": "Đặt phòng › CheckInPage",
      "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "Đang ở: {0}",
+   "is_pattern": true,
+   "locations": [
+    {
+     "area": "Cấu hình › ReportMenuConfigModal",
+     "route": "/config"
     }
    ]
   },
@@ -19433,16 +19741,6 @@
    ]
   },
   {
-   "source": "Đang tải xuống tệp Excel danh sách phòng...",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Đặt phòng › CreateRegistrationPage",
-     "route": "/reservation"
-    }
-   ]
-  },
-  {
    "source": "Đang tải...",
    "is_pattern": false,
    "locations": [
@@ -19496,6 +19794,26 @@
    "locations": [
     {
      "area": "Cấu hình › DatabaseBackupTab",
+     "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "Đang tạo và tải xuống tệp Excel (.xlsx)...",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Đặt phòng › CreateRegistrationPage",
+     "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "Đang tắt",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › TemplateEditorModal",
      "route": "/config"
     }
    ]
@@ -20409,8 +20727,8 @@
    ]
   },
   {
-   "source": "để thêm vào {0}, hoặc kéo thả sang bên phải.",
-   "is_pattern": true,
+   "source": "để thêm vào danh mục đích đang chọn.",
+   "is_pattern": false,
    "locations": [
     {
      "area": "Cấu hình › ReportMenuConfigModal",
@@ -20809,6 +21127,16 @@
    ]
   },
   {
+   "source": "địa chỉ",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › CompanyTab",
+     "route": "/config"
+    }
+   ]
+  },
+  {
    "source": "Địa chỉ",
    "is_pattern": false,
    "locations": [
@@ -21085,6 +21413,16 @@
    ]
   },
   {
+   "source": "Đích Thêm Báo Cáo",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › ReportMenuConfigModal",
+     "route": "/config"
+    }
+   ]
+  },
+  {
    "source": "Điểm bán hàng",
    "is_pattern": false,
    "locations": [
@@ -21227,7 +21565,27 @@
    ]
   },
   {
+   "source": "Điều Kiện Báo Cáo",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › TemplateEditorModal",
+     "route": "/config"
+    }
+   ]
+  },
+  {
    "source": "Điều kiện hiển thị khi in",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › TemplateEditorModal",
+     "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "Điều kiện hiển thị:",
    "is_pattern": false,
    "locations": [
     {
@@ -22057,6 +22415,16 @@
    ]
   },
   {
+   "source": "Độc lập",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › TemplateEditorModal",
+     "route": "/config"
+    }
+   ]
+  },
+  {
    "source": "Đổi ảnh",
    "is_pattern": false,
    "locations": [
@@ -22141,11 +22509,11 @@
    ]
   },
   {
-   "source": "Đổi tên nhóm",
+   "source": "Đổi Tên",
    "is_pattern": false,
    "locations": [
     {
-     "area": "Cấu hình › ReportMenuConfigModal",
+     "area": "Cấu hình › ReportMenuTreeEditor",
      "route": "/config"
     }
    ]
@@ -22571,12 +22939,52 @@
    ]
   },
   {
+   "source": "Đưa lên",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › ReportMenuTreeEditor",
+     "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "Đưa Lên",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › ReportMenuTreeEditor",
+     "route": "/config"
+    }
+   ]
+  },
+  {
    "source": "Đưa ra thanh tìm nhanh",
    "is_pattern": false,
    "locations": [
     {
      "area": "Lễ tân › GeneralSearchPage",
      "route": "/frontdesk"
+    }
+   ]
+  },
+  {
+   "source": "Đưa xuống",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › ReportMenuTreeEditor",
+     "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "Đưa Xuống",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › ReportMenuTreeEditor",
+     "route": "/config"
     }
    ]
   },
@@ -23029,10 +23437,6 @@
     {
      "area": "Buồng phòng › PostBillHousekeepingTab",
      "route": "/housekeeping"
-    },
-    {
-     "area": "Đặt phòng › CreateRegistrationPage",
-     "route": "/reservation"
     },
     {
      "area": "Đặt phòng › LockRoomPage",
@@ -24231,10 +24635,6 @@
    "is_pattern": false,
    "locations": [
     {
-     "area": "Cấu hình › HotelServiceTab",
-     "route": "/config"
-    },
-    {
      "area": "Cấu hình › TemplateEditorModal",
      "route": "/config"
     },
@@ -24547,6 +24947,10 @@
     {
      "area": "Đặt phòng › CreateRegistrationPage",
      "route": "/reservation"
+    },
+    {
+     "area": "Thông báo hệ thống › booking-room-extra-bed-bills",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -24617,6 +25021,16 @@
     {
      "area": "Đặt phòng › CreateRegistrationPage",
      "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "Gốc menu",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › ReportMenuConfigModal",
+     "route": "/config"
     }
    ]
   },
@@ -24711,11 +25125,21 @@
    ]
   },
   {
-   "source": "Gỡ khỏi menu",
+   "source": "Gỡ báo cáo",
    "is_pattern": false,
    "locations": [
     {
-     "area": "Cấu hình › ReportMenuConfigModal",
+     "area": "Cấu hình › ReportMenuTreeEditor",
+     "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "Gỡ Báo Cáo",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › ReportMenuTreeEditor",
      "route": "/config"
     }
    ]
@@ -24751,6 +25175,16 @@
     {
      "area": "Dùng chung › BookingDetailModal",
      "route": "/frontdesk"
+    }
+   ]
+  },
+  {
+   "source": "Gửi Store: {0}{1}",
+   "is_pattern": true,
+   "locations": [
+    {
+     "area": "Cấu hình › TemplateEditorModal",
+     "route": "/config"
     }
    ]
   },
@@ -24833,6 +25267,16 @@
     {
      "area": "Báo cáo quản lý › HousekeepingInvoiceFilters.test",
      "route": "/reports"
+    }
+   ]
+  },
+  {
+   "source": "Hàng đánh số cột",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › TemplateEditorModal",
+     "route": "/config"
     }
    ]
   },
@@ -25385,6 +25829,16 @@
    ]
   },
   {
+   "source": "Hiển thị mẫu in: {0}",
+   "is_pattern": true,
+   "locations": [
+    {
+     "area": "Cấu hình › TemplateEditorModal",
+     "route": "/config"
+    }
+   ]
+  },
+  {
    "source": "Hiển thị Ngày Ăn Sáng (Date)",
    "is_pattern": false,
    "locations": [
@@ -25421,16 +25875,6 @@
     {
      "area": "Lễ tân › BreakfastCouponPreview",
      "route": "/frontdesk"
-    }
-   ]
-  },
-  {
-   "source": "Hiển thị tại khu vực",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Cấu hình › ReportDefinitionManagerModal",
-     "route": "/config"
     }
    ]
   },
@@ -25481,16 +25925,6 @@
     {
      "area": "Cấu hình hệ thống › ActivityLogTab",
      "route": "/system"
-    }
-   ]
-  },
-  {
-   "source": "Hiện trên menu",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Cấu hình › ReportDefinitionManagerModal",
-     "route": "/config"
     }
    ]
   },
@@ -26615,6 +27049,16 @@
    ]
   },
   {
+   "source": "Hủy / Xóa (Cancel)",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình hệ thống › ActivityLogTab",
+     "route": "/system"
+    }
+   ]
+  },
+  {
    "source": "Hủy bỏ",
    "is_pattern": false,
    "locations": [
@@ -26661,16 +27105,6 @@
     {
      "area": "Cấu hình › TemplateEditorModal",
      "route": "/config"
-    }
-   ]
-  },
-  {
-   "source": "Hủy đăng ký (Cancel)",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Cấu hình hệ thống › ActivityLogTab",
-     "route": "/system"
     }
    ]
   },
@@ -27309,26 +27743,6 @@
    ]
   },
   {
-   "source": "Kéo báo cáo từ danh sách bên trái vào nhóm bên phải; kéo nhóm / báo cáo để đổi thứ tự hiển thị trên menu Báo cáo của từng module.",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Cấu hình › ReportMenuConfigModal",
-     "route": "/config"
-    }
-   ]
-  },
-  {
-   "source": "Kéo báo cáo vào nhóm này",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Cấu hình › ReportMenuConfigModal",
-     "route": "/config"
-    }
-   ]
-  },
-  {
    "source": "Kéo để đổi ngày đến cho các phòng đang chọn",
    "is_pattern": false,
    "locations": [
@@ -27743,11 +28157,51 @@
    ]
   },
   {
+   "source": "Khách đã check out, không được sửa",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Dùng chung › BookingDetailModal",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
+   "source": "Khách đã check out, không được sửa hoặc xóa thông tin.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Dùng chung › BookingDetailModal",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
+   "source": "Khách đã check out, không được xóa",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Dùng chung › BookingDetailModal",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
    "source": "Khách đã đăng ký",
    "is_pattern": false,
    "locations": [
     {
      "area": "Đặt phòng › ResidenceDeclarationPage",
+     "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "Khách đã trả phòng - chỉ xem, không được sửa thông tin.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Đặt phòng › GuestDetailModal",
      "route": "/reservation"
     }
    ]
@@ -28591,6 +29045,16 @@
    ]
   },
   {
+   "source": "Khôi phục (Restore)",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình hệ thống › ActivityLogTab",
+     "route": "/system"
+    }
+   ]
+  },
+  {
    "source": "Khôi phục (Rollback)",
    "is_pattern": false,
    "locations": [
@@ -28935,6 +29399,10 @@
      "route": "/frontdesk"
     },
     {
+     "area": "Lễ tân › DayClosePage",
+     "route": "/frontdesk"
+    },
+    {
      "area": "Lễ tân › GeneralSearchPage",
      "route": "/frontdesk"
     },
@@ -29144,6 +29612,16 @@
    "locations": [
     {
      "area": "Đặt phòng › RoomMapPage",
+     "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "Không có danh sách phòng để xuất Excel!",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Đặt phòng › CreateRegistrationPage",
      "route": "/reservation"
     }
    ]
@@ -29805,6 +30283,16 @@
    ]
   },
   {
+   "source": "Không còn báo cáo phù hợp để thêm.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › ReportMenuConfigModal",
+     "route": "/config"
+    }
+   ]
+  },
+  {
    "source": "Không còn nhân viên khả dụng",
    "is_pattern": false,
    "locations": [
@@ -29860,6 +30348,16 @@
    "locations": [
     {
      "area": "Lễ tân › CheckoutPage",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
+   "source": "Không gia hạn được {0} phòng — {1}",
+   "is_pattern": true,
+   "locations": [
+    {
+     "area": "Lễ tân › DayClosePage",
      "route": "/frontdesk"
     }
    ]
@@ -30472,16 +30970,6 @@
   },
   {
    "source": "Không thể cập nhật số lượng vào hệ thống!",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Đặt phòng › CreateRegistrationPage",
-     "route": "/reservation"
-    }
-   ]
-  },
-  {
-   "source": "Không thể cập nhật thông tin đăng ký.",
    "is_pattern": false,
    "locations": [
     {
@@ -33901,10 +34389,6 @@
    "is_pattern": false,
    "locations": [
     {
-     "area": "Cấu hình › ReportDefinitionManagerModal",
-     "route": "/config"
-    },
-    {
      "area": "Lễ tân › CheckoutPage",
      "route": "/frontdesk"
     }
@@ -33967,16 +34451,6 @@
     {
      "area": "Buồng phòng › SearchInvoiceTab",
      "route": "/housekeeping"
-    }
-   ]
-  },
-  {
-   "source": "Lên",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Cấu hình › ReportMenuConfigModal",
-     "route": "/config"
     }
    ]
   },
@@ -34105,6 +34579,16 @@
     {
      "area": "Đặt phòng › GuestDetailModal",
      "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "Liên kết từng ô với cột để tự ẩn cùng điều kiện hiển thị của cột.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › TemplateEditorModal",
+     "route": "/config"
     }
    ]
   },
@@ -34601,6 +35085,16 @@
     {
      "area": "Đặt phòng › CreateRegistrationPage",
      "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "Loại phòng đang bị over",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › DayClosePage",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -36672,10 +37166,6 @@
    "source": "Lưu thông tin",
    "is_pattern": false,
    "locations": [
-    {
-     "area": "Đặt phòng › CreateRegistrationPage",
-     "route": "/reservation"
-    },
     {
      "area": "Cấu hình hệ thống › CompanyInfoTab",
      "route": "/system"
@@ -39105,7 +39595,7 @@
    ]
   },
   {
-   "source": "Menu Báo cáo của {0} đang trống. Bấm “Thêm nhóm” hoặc kéo báo cáo từ bên trái vào đây.",
+   "source": "Menu Báo cáo của {0} đang trống. Bấm “Thêm danh mục” hoặc thêm báo cáo từ bên trái.",
    "is_pattern": true,
    "locations": [
     {
@@ -39555,6 +40045,16 @@
    ]
   },
   {
+   "source": "Một báo cáo chỉ được xếp một lần trong menu của module.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Thông báo hệ thống › report-menu-tree",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
    "source": "Một số phòng chưa đủ điều kiện checkout.",
    "is_pattern": false,
    "locations": [
@@ -39915,6 +40415,16 @@
     {
      "area": "Đặt phòng › CreateRegistrationPage",
      "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "Mục báo cáo không hợp lệ.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Thông báo hệ thống › report-menu-tree",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -41899,6 +42409,16 @@
    ]
   },
   {
+   "source": "nguồn khách",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › CompanyTab",
+     "route": "/config"
+    }
+   ]
+  },
+  {
    "source": "Nguồn khách",
    "is_pattern": false,
    "locations": [
@@ -41983,6 +42503,10 @@
     {
      "area": "Cấu hình › ReportMenuConfigModal",
      "route": "/config"
+    },
+    {
+     "area": "Cấu hình › ReportMenuTreeEditor",
+     "route": "/config"
     }
    ]
   },
@@ -42027,16 +42551,6 @@
    ]
   },
   {
-   "source": "Ngừng sử dụng",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Cấu hình › ReportMenuConfigModal",
-     "route": "/config"
-    }
-   ]
-  },
-  {
    "source": "người",
    "is_pattern": false,
    "locations": [
@@ -42047,11 +42561,11 @@
    ]
   },
   {
-   "source": "Người",
+   "source": "người bán",
    "is_pattern": false,
    "locations": [
     {
-     "area": "Cấu hình › HotelServiceTab",
+     "area": "Cấu hình › CompanyTab",
      "route": "/config"
     }
    ]
@@ -42183,12 +42697,12 @@
    ]
   },
   {
-   "source": "Người đặt",
+   "source": "người đặt phòng",
    "is_pattern": false,
    "locations": [
     {
-     "area": "Đặt phòng › CreateRegistrationPage",
-     "route": "/reservation"
+     "area": "Cấu hình › CompanyTab",
+     "route": "/config"
     }
    ]
   },
@@ -44353,26 +44867,6 @@
    ]
   },
   {
-   "source": "nhóm \"{0}\"",
-   "is_pattern": true,
-   "locations": [
-    {
-     "area": "Cấu hình › ReportMenuConfigModal",
-     "route": "/config"
-    }
-   ]
-  },
-  {
-   "source": "Nhóm \"{0}\" bị trùng tên.",
-   "is_pattern": true,
-   "locations": [
-    {
-     "area": "Thông báo hệ thống › report-menu-tree",
-     "route": "/frontdesk"
-    }
-   ]
-  },
-  {
    "source": "Nhóm 1",
    "is_pattern": false,
    "locations": [
@@ -44389,26 +44883,6 @@
     {
      "area": "F&B › PdfReportTab",
      "route": "/fnb"
-    }
-   ]
-  },
-  {
-   "source": "Nhóm báo cáo mới",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Cấu hình › ReportMenuConfigModal",
-     "route": "/config"
-    }
-   ]
-  },
-  {
-   "source": "Nhóm báo cáo mới {0}",
-   "is_pattern": true,
-   "locations": [
-    {
-     "area": "Cấu hình › ReportMenuConfigModal",
-     "route": "/config"
     }
    ]
   },
@@ -45407,6 +45881,16 @@
    ]
   },
   {
+   "source": "Phần trăm (%)",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › TemplateEditorModal",
+     "route": "/config"
+    }
+   ]
+  },
+  {
    "source": "phần tử",
    "is_pattern": false,
    "locations": [
@@ -45653,10 +46137,6 @@
     {
      "area": "Dùng chung › RoomMoveModal",
      "route": "/frontdesk"
-    },
-    {
-     "area": "Cấu hình › HotelServiceTab",
-     "route": "/config"
     },
     {
      "area": "Cấu hình › ReportDefinitionManagerModal",
@@ -48875,11 +49355,11 @@
    ]
   },
   {
-   "source": "Sắp xếp nhóm / thứ tự báo cáo",
+   "source": "Sắp xếp danh mục và báo cáo hiển thị trên menu Báo cáo của từng module.",
    "is_pattern": false,
    "locations": [
     {
-     "area": "Cấu hình › ReportDefinitionManagerModal",
+     "area": "Cấu hình › ReportMenuConfigModal",
      "route": "/config"
     }
    ]
@@ -49417,6 +49897,16 @@
     {
      "area": "Đặt phòng › CreateRegistrationPage",
      "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "số điện thoại",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › CompanyTab",
+     "route": "/config"
     }
    ]
   },
@@ -49987,16 +50477,6 @@
     {
      "area": "Dùng chung › BookingDetailModal",
      "route": "/frontdesk"
-    }
-   ]
-  },
-  {
-   "source": "Số nhỏ nằm bên trái trước.",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Cấu hình › ReportDefinitionManagerModal",
-     "route": "/config"
     }
    ]
   },
@@ -51461,6 +51941,16 @@
    ]
   },
   {
+   "source": "tài khoản ngân hàng",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › CompanyTab",
+     "route": "/config"
+    }
+   ]
+  },
+  {
    "source": "Tài khoản ngân hàng",
    "is_pattern": false,
    "locations": [
@@ -51853,7 +52343,7 @@
    ]
   },
   {
-   "source": "Tạo mới (New)",
+   "source": "Tạo mới (Add)",
    "is_pattern": false,
    "locations": [
     {
@@ -52997,6 +53487,16 @@
    ]
   },
   {
+   "source": "tên công ty",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › CompanyTab",
+     "route": "/config"
+    }
+   ]
+  },
+  {
    "source": "Tên công ty",
    "is_pattern": false,
    "locations": [
@@ -53081,6 +53581,26 @@
     {
      "area": "Cấu hình › RoomFormTab",
      "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "Tên danh mục báo cáo",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › ReportMenuConfigModal",
+     "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "Tên danh mục báo cáo không được để trống.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Thông báo hệ thống › report-menu-tree",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -53351,6 +53871,16 @@
     {
      "area": "Cấu hình hệ thống › CompanyInfoTab",
      "route": "/system"
+    }
+   ]
+  },
+  {
+   "source": "tên giao dịch",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › CompanyTab",
+     "route": "/config"
     }
    ]
   },
@@ -53909,16 +54439,6 @@
    ]
   },
   {
-   "source": "Tên nhóm báo cáo không được để trống.",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Thông báo hệ thống › report-menu-tree",
-     "route": "/frontdesk"
-    }
-   ]
-  },
-  {
    "source": "Tên Outlet",
    "is_pattern": false,
    "locations": [
@@ -54277,26 +54797,6 @@
     {
      "area": "Cấu hình hệ thống › LanguageTab",
      "route": "/system"
-    }
-   ]
-  },
-  {
-   "source": "Thả vào cuối nhóm",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Cấu hình › ReportMenuConfigModal",
-     "route": "/config"
-    }
-   ]
-  },
-  {
-   "source": "Thả vào đây để đặt ở cuối menu (không thuộc nhóm)",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Cấu hình › ReportMenuConfigModal",
-     "route": "/config"
     }
    ]
   },
@@ -54723,16 +55223,6 @@
    ]
   },
   {
-   "source": "Thanh toán 0đ - Dùng cọc/tạm ứng",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Lễ tân › PaymentModal",
-     "route": "/frontdesk"
-    }
-   ]
-  },
-  {
    "source": "Thanh toán cho đặt phòng mã {0}",
    "is_pattern": true,
    "locations": [
@@ -54840,6 +55330,10 @@
    "source": "Thao tác",
    "is_pattern": false,
    "locations": [
+    {
+     "area": "Cấu hình › ReportMenuTreeEditor",
+     "route": "/config"
+    },
     {
      "area": "Cấu hình › SynthesisReportTab",
      "route": "/config"
@@ -55413,6 +55907,16 @@
    ]
   },
   {
+   "source": "Thêm Báo Cáo",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › ReportMenuTreeEditor",
+     "route": "/config"
+    }
+   ]
+  },
+  {
    "source": "Thêm báo cáo mới",
    "is_pattern": false,
    "locations": [
@@ -55438,6 +55942,16 @@
    "locations": [
     {
      "area": "Cấu hình › SynthesisReportTab",
+     "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "Thêm Báo Cáo Vào Danh Mục",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › ReportMenuConfigModal",
      "route": "/config"
     }
    ]
@@ -55659,16 +56173,32 @@
    ]
   },
   {
+   "source": "Thêm danh mục",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › ReportMenuConfigModal",
+     "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "Thêm Danh Mục Con",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › ReportMenuTreeEditor",
+     "route": "/config"
+    }
+   ]
+  },
+  {
    "source": "Thêm dịch vụ",
    "is_pattern": false,
    "locations": [
     {
      "area": "Lễ tân › CheckoutPage",
      "route": "/frontdesk"
-    },
-    {
-     "area": "Cấu hình hệ thống › ActivityLogTab",
-     "route": "/system"
     }
    ]
   },
@@ -56521,16 +57051,6 @@
    ]
   },
   {
-   "source": "Thêm nhóm",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Cấu hình › ReportMenuConfigModal",
-     "route": "/config"
-    }
-   ]
-  },
-  {
    "source": "Thêm nhóm doanh thu",
    "is_pattern": false,
    "locations": [
@@ -56933,6 +57453,26 @@
     {
      "area": "F&B › PosProductSelector",
      "route": "/fnb"
+    }
+   ]
+  },
+  {
+   "source": "Thêm/Chuyển {0} Báo Cáo",
+   "is_pattern": true,
+   "locations": [
+    {
+     "area": "Cấu hình › ReportMenuConfigModal",
+     "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "thị trường",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › CompanyTab",
+     "route": "/config"
     }
    ]
   },
@@ -57463,16 +58003,6 @@
    ]
   },
   {
-   "source": "Thông Tin Đăng Ký Đã Checkout",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Đặt phòng › CreateRegistrationPage",
-     "route": "/reservation"
-    }
-   ]
-  },
-  {
    "source": "Thông tin đặt chỗ",
    "is_pattern": false,
    "locations": [
@@ -57885,6 +58415,16 @@
    ]
   },
   {
+   "source": "THỜI HẠN TẠM TRÚ",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Đặt phòng › ResidenceDeclarationPage",
+     "route": "/reservation"
+    }
+   ]
+  },
+  {
    "source": "Thu gọn",
    "is_pattern": false,
    "locations": [
@@ -58069,10 +58609,6 @@
    "is_pattern": false,
    "locations": [
     {
-     "area": "Cấu hình › HotelServiceTab",
-     "route": "/config"
-    },
-    {
      "area": "F&B › AddProductModal",
      "route": "/fnb"
     },
@@ -58088,6 +58624,16 @@
    "locations": [
     {
      "area": "Cấu hình › HousekeepingMenuDefinition",
+     "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "Thuế Tiêu Thụ ĐB (%)",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › HotelServiceTab",
      "route": "/config"
     }
    ]
@@ -59009,6 +59555,16 @@
    ]
   },
   {
+   "source": "Tiếp tục lưu",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Dùng chung › BookingDetailModal",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
    "source": "Tiếp tục nhận phòng",
    "is_pattern": false,
    "locations": [
@@ -59114,6 +59670,16 @@
   },
   {
    "source": "Tìm báo cáo theo tên / mã",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › ReportMenuConfigModal",
+     "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "Tìm báo cáo theo tên hoặc mã",
    "is_pattern": false,
    "locations": [
     {
@@ -60177,6 +60743,16 @@
     {
      "area": "Đặt phòng › GuestInfoModal",
      "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "Tính toán Store: {0}",
+   "is_pattern": true,
+   "locations": [
+    {
+     "area": "Cấu hình › TemplateEditorModal",
+     "route": "/config"
     }
    ]
   },
@@ -62821,6 +63397,16 @@
    ]
   },
   {
+   "source": "Tự gộp theo số cột đang hiển thị",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › TemplateEditorModal",
+     "route": "/config"
+    }
+   ]
+  },
+  {
    "source": "Từ khách",
    "is_pattern": false,
    "locations": [
@@ -63583,26 +64169,6 @@
    ]
   },
   {
-   "source": "Vị trí nút Báo cáo",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Cấu hình › ReportDefinitionManagerModal",
-     "route": "/config"
-    }
-   ]
-  },
-  {
-   "source": "Vị trí trên menu hệ thống",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Cấu hình › ReportDefinitionManagerModal",
-     "route": "/config"
-    }
-   ]
-  },
-  {
    "source": "Vị trí: {0}% | Phủ tối: {1}%",
    "is_pattern": true,
    "locations": [
@@ -63911,6 +64477,16 @@
    ]
   },
   {
+   "source": "Vui lòng chọn đăng ký để xuất Excel!",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Đặt phòng › CreateRegistrationPage",
+     "route": "/reservation"
+    }
+   ]
+  },
+  {
    "source": "Vui lòng chọn đăng ký trước.",
    "is_pattern": false,
    "locations": [
@@ -64019,6 +64595,10 @@
     {
      "area": "Đặt phòng › RoomPlanPage",
      "route": "/reservation"
+    },
+    {
+     "area": "Thông báo hệ thống › room-plan-quick-booking-pricing",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -64795,6 +65375,16 @@
    ]
   },
   {
+   "source": "Vui lòng lưu đăng ký trước khi xem lịch sử booking.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Đặt phòng › CreateRegistrationPage",
+     "route": "/reservation"
+    }
+   ]
+  },
+  {
    "source": "Vui lòng lưu Mã giá phòng trước khi thiết lập giá theo ngày.",
    "is_pattern": false,
    "locations": [
@@ -64911,6 +65501,16 @@
     {
      "area": "Đặt phòng › CreateRegistrationPage",
      "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "Vui lòng nhập {0}",
+   "is_pattern": true,
+   "locations": [
+    {
+     "area": "Cấu hình › CompanyTab",
+     "route": "/config"
     }
    ]
   },
@@ -65643,10 +66243,6 @@
    "is_pattern": false,
    "locations": [
     {
-     "area": "Cấu hình › CompanyTab",
-     "route": "/config"
-    },
-    {
      "area": "Cấu hình hệ thống › CompanyInfoTab",
      "route": "/system"
     }
@@ -65719,16 +66315,6 @@
     {
      "area": "Cấu hình hệ thống › SecurityTab",
      "route": "/system"
-    }
-   ]
-  },
-  {
-   "source": "Vui lòng nhập tên giao dịch",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Cấu hình › CompanyTab",
-     "route": "/config"
     }
    ]
   },
@@ -67103,6 +67689,16 @@
    ]
   },
   {
+   "source": "Xem báo cáo (Report)",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình hệ thống › ActivityLogTab",
+     "route": "/system"
+    }
+   ]
+  },
+  {
    "source": "Xem chi tiết",
    "is_pattern": false,
    "locations": [
@@ -67901,6 +68497,46 @@
    ]
   },
   {
+   "source": "Xóa danh mục",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › ReportMenuConfigModal",
+     "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "Xóa Danh Mục",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › ReportMenuTreeEditor",
+     "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "Xóa danh mục \"{0}\"? Các mục con sẽ được chuyển lên cấp cha.",
+   "is_pattern": true,
+   "locations": [
+    {
+     "area": "Cấu hình › ReportMenuConfigModal",
+     "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "Xóa danh mục báo cáo",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › ReportMenuConfigModal",
+     "route": "/config"
+    }
+   ]
+  },
+  {
    "source": "Xóa danh xưng",
    "is_pattern": false,
    "locations": [
@@ -67925,10 +68561,6 @@
     {
      "area": "Đặt phòng › CreateRegistrationPage",
      "route": "/reservation"
-    },
-    {
-     "area": "Cấu hình hệ thống › ActivityLogTab",
-     "route": "/system"
     }
    ]
   },
@@ -68933,36 +69565,12 @@
    "is_pattern": false,
    "locations": [
     {
-     "area": "Cấu hình › ReportMenuConfigModal",
-     "route": "/config"
-    },
-    {
      "area": "Buồng phòng › CreateMenuTab",
      "route": "/housekeeping"
     },
     {
      "area": "Buồng phòng › PrintTasksTab",
      "route": "/housekeeping"
-    }
-   ]
-  },
-  {
-   "source": "Xóa nhóm \"{0}\"? {1} báo cáo trong nhóm sẽ bị gỡ khỏi menu {2}.",
-   "is_pattern": true,
-   "locations": [
-    {
-     "area": "Cấu hình › ReportMenuConfigModal",
-     "route": "/config"
-    }
-   ]
-  },
-  {
-   "source": "Xóa nhóm báo cáo",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Cấu hình › ReportMenuConfigModal",
-     "route": "/config"
     }
    ]
   },
@@ -69765,21 +70373,21 @@
    ]
   },
   {
+   "source": "Xuất tệp Excel (.xlsx) thành công!",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Đặt phòng › CreateRegistrationPage",
+     "route": "/reservation"
+    }
+   ]
+  },
+  {
    "source": "Xuất toàn bộ Database hệ thống + TẤT CẢ các chi nhánh trong 1 file SQL",
    "is_pattern": false,
    "locations": [
     {
      "area": "Cấu hình › DatabaseBackupTab",
-     "route": "/config"
-    }
-   ]
-  },
-  {
-   "source": "Xuống",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Cấu hình › ReportMenuConfigModal",
      "route": "/config"
     }
    ]

@@ -10,6 +10,7 @@ use App\Models\Room;
 use App\Models\RoomClass;
 use App\Models\RoomForm;
 use App\Models\RoomLock;
+use App\Models\SystemDateRoll;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -18,6 +19,90 @@ use Tests\TestCase;
 class RoomOccupancyStatisticsTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_room_map_and_statistics_project_every_future_stay_day_from_the_selected_date(): void
+    {
+        $this->actingAs(User::factory()->create());
+        DB::table('booking_statuses')->insert([
+            ['id' => 0, 'name' => 'Reservation'],
+            ['id' => 1, 'name' => 'Checked In'],
+            ['id' => 2, 'name' => 'Checked Out'],
+        ]);
+        SystemDateRoll::create([
+            'system_date' => '2026-08-04',
+            'actual_date' => now(),
+            'shift' => '1',
+            'username' => 'room_stats_test',
+        ]);
+
+        $registrationStatus = RegistrationStatus::create([
+            'booking_status_id' => 1,
+            'name' => 'Confirmed',
+            'is_availability' => true,
+        ]);
+        $form = RoomForm::create(['name' => 'Double']);
+        $class = RoomClass::create(['code' => 'DLX', 'name' => 'Deluxe', 'is_active' => true]);
+        Room::create([
+            'room_number' => '101',
+            'room_form_id' => $form->id,
+            'room_class_id' => $class->id,
+            'floor' => 1,
+            'room_status_code' => 'vacant_ready',
+        ]);
+        $booking = Booking::create([
+            'booking_name' => 'Future room map stay',
+            'booking_date' => '2026-08-04',
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-09',
+            'num_of_days' => 2,
+            'status' => Booking::STATUS_RESERVATION,
+            'registration_status_id' => $registrationStatus->booking_status_id,
+            'created_by' => 'room_stats_test',
+        ]);
+        $dayUseRoom = BookingRoom::create([
+            'booking_id' => $booking->id,
+            'room_number' => '101',
+            'room_class_id' => $class->id,
+            'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-09',
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $roomOn = fn (string $date) => collect($this->getJson("/api/rooms?date={$date}")
+            ->assertSuccessful()->json('data'))->firstWhere('room_number', '101');
+
+        $arrival = $roomOn('2026-08-07');
+        $this->assertSame('reserved', $arrival['booking_status']);
+        $this->assertTrue($arrival['has_arrival_today']);
+        $this->assertFalse($arrival['has_departure_today']);
+
+        $inhouse = $roomOn('2026-08-08');
+        $this->assertSame('occupied', $inhouse['booking_status']);
+        $this->assertFalse($inhouse['has_arrival_today']);
+        $this->assertFalse($inhouse['has_departure_today']);
+
+        $departure = $roomOn('2026-08-09');
+        $this->assertSame('checkout', $departure['booking_status']);
+        $this->assertFalse($departure['has_arrival_today']);
+        $this->assertTrue($departure['has_departure_today']);
+
+        $this->getJson('/api/rooms/stats?date=2026-08-07')
+            ->assertSuccessful()
+            ->assertJsonPath('data.arrivals_total', 1)
+            ->assertJsonPath('data.arrivals_assigned', 1)
+            ->assertJsonPath('data.occupied_projected', 1)
+            ->assertJsonPath('data.departures_total', 0);
+        $this->getJson('/api/rooms/stats?date=2026-08-08')
+            ->assertSuccessful()
+            ->assertJsonPath('data.arrivals_total', 0)
+            ->assertJsonPath('data.occupied_projected', 1)
+            ->assertJsonPath('data.departures_total', 0);
+        $this->getJson('/api/rooms/stats?date=2026-08-09')
+            ->assertSuccessful()
+            ->assertJsonPath('data.occupied_projected', 0)
+            ->assertJsonPath('data.departures_pending', 1)
+            ->assertJsonPath('data.departures_total', 1);
+    }
 
     public function test_unchecked_in_day_use_room_is_a_pending_departure_not_an_inhouse_room(): void
     {
@@ -72,6 +157,68 @@ class RoomOccupancyStatisticsTest extends TestCase
             ->assertJsonPath('data.departures_total', 1)
             ->assertJsonPath('data.occupied_current', 0)
             ->assertJsonPath('data.occupied_current_pax', 0);
+
+        $roomMapRoom = collect($this->getJson('/api/rooms?date=2026-10-13')
+            ->assertSuccessful()
+            ->json('data'))
+            ->firstWhere('room_number', '101');
+        $this->assertTrue($roomMapRoom['has_arrival_today']);
+        $this->assertTrue($roomMapRoom['has_departure_today']);
+
+        $dayUseRoom->update([
+            'status' => BookingRoom::STATUS_CHECKED_IN,
+            'actual_arrival_date' => '2026-10-13',
+        ]);
+        $this->getJson('/api/rooms/stats?date=2026-10-13')
+            ->assertSuccessful()
+            ->assertJsonPath('data.occupied_current', 1)
+            ->assertJsonPath('data.occupied_projected', 1)
+            ->assertJsonPath('data.departures_pending', 1);
+        $checkedInDayUseOnMap = collect($this->getJson('/api/rooms?date=2026-10-13')
+            ->assertSuccessful()
+            ->json('data'))
+            ->firstWhere('room_number', '101');
+        $this->assertSame('occupied', $checkedInDayUseOnMap['booking_status']);
+
+        $dayUseRoom->update([
+            'status' => BookingRoom::STATUS_CHECKED_OUT,
+            'CheckoutDate' => '2026-10-13',
+        ]);
+        $this->getJson('/api/rooms/stats?date=2026-10-13')
+            ->assertSuccessful()
+            ->assertJsonPath('data.occupied_current', 0)
+            ->assertJsonPath('data.occupied_projected', 0)
+            ->assertJsonPath('data.departures_checked_out', 1)
+            ->assertJsonPath('data.departures_pending', 0);
+
+        $checkedOutBooking = Booking::create([
+            'booking_name' => 'Checked out on actual date',
+            'booking_date' => '2026-10-10',
+            'arrival_date' => '2026-10-10',
+            'departure_date' => '2026-10-12',
+            'num_of_days' => 2,
+            'status' => Booking::STATUS_RESERVATION,
+            'registration_status_id' => $registrationStatus->booking_status_id,
+            'created_by' => 'room_stats_test',
+        ]);
+        BookingRoom::create([
+            'booking_id' => $checkedOutBooking->id,
+            'room_number' => '101',
+            'room_class_id' => $class->id,
+            'arrival_date' => '2026-10-10',
+            'departure_date' => '2026-10-12',
+            'CheckoutDate' => '2026-10-13',
+            'status' => BookingRoom::STATUS_CHECKED_OUT,
+        ]);
+
+        $checkedOutRooms = collect($this->getJson('/api/bookings?arrival_date=2026-10-13&status=0,1,2&list_mode=departures&stay_only=true')
+            ->assertSuccessful()
+            ->json('data'))
+            ->pluck('booking_rooms')
+            ->flatten(1);
+        $this->assertTrue($checkedOutRooms->contains(
+            fn (array $room) => substr((string) ($room['CheckoutDate'] ?? ''), 0, 10) === '2026-10-13'
+        ));
     }
 
     public function test_all_room_map_statistics_follow_business_rules(): void

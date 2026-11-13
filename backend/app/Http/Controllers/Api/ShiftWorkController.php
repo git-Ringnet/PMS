@@ -554,9 +554,11 @@ class ShiftWorkController extends Controller
             ]);
             $contactStr = implode(' - ', $contactInfo);
 
-            $confirmDateStr = $bk->confirm_date ? Carbon::parse($bk->confirm_date)->format('d/m/Y') : '';
-            $arrDateStr = $bk->arrival_date ? Carbon::parse($bk->arrival_date)->format('d/m/Y') : '';
-            $depDateStr = $bk->departure_date ? Carbon::parse($bk->departure_date)->format('d/m/Y') : '';
+            // Trả ngày gốc theo hợp đồng API; giao diện định dạng dd/mm/yyyy.
+            // Không format tại đây để tránh ngày hiển thị khác dữ liệu Booking (dòng 495).
+            $confirmDate = $bk->confirm_date ? Carbon::parse($bk->confirm_date)->toDateString() : '';
+            $arrivalDate = $bk->arrival_date ? Carbon::parse($bk->arrival_date)->toDateString() : '';
+            $departureDate = $bk->departure_date ? Carbon::parse($bk->departure_date)->toDateString() : '';
 
             $result[] = [
                 'id' => $bkCode,
@@ -564,9 +566,9 @@ class ShiftWorkController extends Controller
                 'bookingName' => $bk->booking_name ?: 'Khách lẻ',
                 'status' => $bk->registrationStatus?->name ?? 'Non guaranteed',
                 'company' => $bk->company?->name ?: ($bk->customerSource?->name ?: ''),
-                'confirmDate' => $confirmDateStr,
-                'arrivalDate' => $arrDateStr,
-                'departureDate' => $depDateStr,
+                'confirmDate' => $confirmDate,
+                'arrivalDate' => $arrivalDate,
+                'departureDate' => $departureDate,
                 'nights' => (int) ($bk->num_of_days ?: 1),
                 'roomTypes' => $roomTypesStr,
                 'deposit' => $deposit,

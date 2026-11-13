@@ -2116,7 +2116,7 @@ class BookingRoomServiceController extends Controller
                         'booking_id' => $booking?->id, 'booking_room_id' => $room->id, 'guest_id' => $guestId,
                         'company_id' => $booking?->company_id, 'date' => $serviceDateCarbon->toDateString(),
                         'open_time' => now()->format('H:i:s'), 'guest_display' => trim(($booking?->booking_code ?: '') . ' - ' . $guestName, ' -'),
-                        'description' => 'Thanh toán miễn phí - ' . $groupTitle, 'amount' => 0, 'total_amount_before_split' => 0,
+                        'description' => $complimentaryMethod->name ?: $complimentaryMethod->code, 'amount' => 0, 'total_amount_before_split' => 0,
                         'pack4' => 'PY', 'folio_id' => 3, 'payment_method_id' => $complimentaryMethod->code,
                         'department_id' => $department, 'outlet' => $meta['outlet'], 'status' => Payment::STATUS_PAID,
                         'edit_flag' => 0, 'shift' => '1', 'created_by' => $user,
