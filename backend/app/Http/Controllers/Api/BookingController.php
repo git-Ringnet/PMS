@@ -2596,7 +2596,7 @@ class BookingController extends Controller
         return response()->json([
             'success' => true,
             'data'    => $newBooking,
-            'message' => 'Nhân bản booking thành công!',
+            'message' => 'Nhân bản đăng ký thành công!',
         ], 201);
     }
 

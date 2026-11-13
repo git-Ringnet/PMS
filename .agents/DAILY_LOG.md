@@ -9,8 +9,7 @@
 - **Ngày ghi**: `YYYY-MM-DD`
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 
-## [2026-11-12] - Dòng 474/241: gia hạn ở Thông tin phòng hỏi xác nhận khi over
-
+## [2026-11-13] - Tìm kiếm chung, nhân bản đăng ký và thông tin khách- Tìm kiếm chung: bỏ thao tác In/Báo cáo/Đồ thất lạc thiếu ngữ cảnh; in phiếu ăn sáng thực hiện tại Đăng ký; đổi thẻ hiển thị loading và chặn response cũ ghi đè.- Nhân bản đăng ký: khóa xác nhận trong lúc tải `IsCopyAllBooking`, cho phép tải lại khi lỗi, hỗ trợ Esc và thống nhất thông báo thành công.- Thông tin khách: chuẩn hóa ngày của khách/trẻ em về `yyyy-mm-dd`, sửa lỗi chuỗi ngày UTC; bổ sung cảnh báo sinh nhật trẻ em/em bé hợp lệ.## [2026-11-12] - Dòng 474/241: gia hạn ở Thông tin phòng hỏi xác nhận khi over
 - Đã merge origin/main (có commit ce8ea419 của dòng 474/241: khóa sửa/xóa khách đã check out, đếm khách đúng, tách nhóm, chặn gia hạn trùng số phòng/over khi AllowOverRoomTypeRoomKind=0, Đăng ký cũ lọc theo ngày check out khách). Giải conflict stash: RoomMapPage.vue/room-store.js giữ cả xem tương lai và statsDate; DAILY_LOG lấy bản main + các mục 02–04/11.
 - Phần còn thiếu: AllowOverRoomTypeRoomKind=1 thì gia hạn làm âm AV vẫn lưu luôn. GuestController::assertStayPeriodAvailable trả 409 OVERBOOKING_CONFIRMATION_REQUIRED khi chưa gửi confirm_overbooking; BookingDetailModal hỏi "Cảnh báo âm phòng trống" rồi lưu lại kèm cờ.
 - Test: Row474CheckedOutGuestTest thêm 2 ca (cấu hình 0 chặn kể cả có cờ; cấu hình 1 hỏi rồi mới lưu), nhóm test khách/gia hạn liên quan 59/59 đạt; node test 474 3/3; vite build đạt; i18n đã sync (thêm 2 bản dịch en). Chưa UAT trình duyệt.

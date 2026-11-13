@@ -410,6 +410,45 @@ async function openRegistrationCardPrint(showPrice = true) {
   isPrintPreviewModalOpen.value = true
 }
 
+function openBreakfastVoucherPrint() {
+  const tab = activeTab.value
+  if (!tab?.dbId) {
+    uiStore.showToast('Vui lòng lưu thông tin đăng ký trước khi in phiếu ăn sáng!', 'warning')
+    return
+  }
+
+  const selected = (tab.rooms || []).filter(room => selectedRows.value.includes(room.id))
+  if (selected.length !== 1) {
+    uiStore.showToast('Vui lòng chọn đúng 1 phòng để in phiếu ăn sáng!', 'warning')
+    return
+  }
+
+  const room = selected[0]
+  if (!room.roomNumber) {
+    uiStore.showToast('Vui lòng gán số phòng trước khi in phiếu ăn sáng!', 'warning')
+    return
+  }
+
+  const fromDate = parseApiDate(room.checkIn || tab.checkIn)
+  const toDate = parseApiDate(room.checkOut || tab.checkOut)
+  if (!fromDate || !toDate) {
+    uiStore.showToast('Không xác định được thời gian lưu trú để in phiếu ăn sáng!', 'warning')
+    return
+  }
+
+  const printRoute = router.resolve({
+    path: '/frontdesk',
+    query: {
+      tab: 'print-breakfast',
+      roomNumber: room.roomNumber,
+      data: room.bookingRoomId || room.id || tab.dbId,
+      fromDate,
+      toDate,
+    },
+  })
+  window.open(printRoute.href, '_blank', 'noopener,noreferrer')
+}
+
 async function openProformaInvoicePrint(mode = 'all') {
   isInvoiceSubListOpen.value = false
   const tab = activeTab.value
@@ -9297,6 +9336,12 @@ defineExpose({
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><path d="M8 3H4v18h16V9l-6-6H8z"/><path d="M8 13l2 2 4-4"/></svg>
               </span>
               <span class="lbl">Xuất Excel</span>
+            </div>
+            <div v-if="currentBookingModule === 'FO'" class="dock-item" @click="openBreakfastVoucherPrint">
+              <span class="di">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><path d="M6 9V2h12v7"/><rect x="6" y="14" width="12" height="8"/><path d="M6 14H4a2 2 0 01-2-2v-3a2 2 0 012-2h16a2 2 0 012 2v3a2 2 0 01-2 2h-2"/><path d="M9 18h6"/></svg>
+              </span>
+              <span class="lbl">In phiếu ăn sáng</span>
             </div>
             <div class="dock-item expandable" @click="isSubListOpen = !isSubListOpen">
               <span class="di">

@@ -365,7 +365,7 @@
                                 <i class="fa-regular fa-calendar-days text-[12px] pointer-events-none"></i>
                                 <input 
                                   type="date" 
-                                  :value="guest[col.key] || ''"
+                                  :value="getNativeDateValue(guest[col.key])"
                                   @input="handleNativeDateChange(guest, col.key, $event.target.value)"
                                   @change="handleNativeDateChange(guest, col.key, $event.target.value)"
                                   class="native-date-input absolute inset-0 w-full h-full opacity-0 pointer-events-none"
@@ -638,7 +638,7 @@
                                 <i class="fa-regular fa-calendar-days text-[12px] pointer-events-none"></i>
                                 <input 
                                   type="date" 
-                                  :value="child[col.key] || ''"
+                                  :value="getNativeDateValue(child[col.key])"
                                   @input="handleNativeDateChange(child, col.key, $event.target.value)"
                                   @change="handleNativeDateChange(child, col.key, $event.target.value)"
                                   class="native-date-input absolute inset-0 w-full h-full opacity-0 pointer-events-none"
@@ -847,7 +847,7 @@ import GuestDetailModal from './GuestDetailModal.vue'
 import GuestSuggestInput from '@/components/GuestSuggestInput.vue'
 import { inheritGuestInfo } from '@/utils/guest-suggestion'
 import { normalizeGuestInfoGroups, isCheckedOutPerson, splitCheckedOutPeople } from '@/utils/guest-info'
-import { maskDateInput } from './room-info-date-utils'
+import { maskDateInput, formatDateDisplayYY, normalizeIsoDateOnly } from './room-info-date-utils'
 
 const props = defineProps({
   show: Boolean,
@@ -1239,32 +1239,11 @@ function getNationalityLabel(code) {
   return nationalityMap.value[code] || code
 }
 
-function formatDateDisplayYY(isoDate) {
-  if (!isoDate) return ''
-  const str = String(isoDate).trim()
-  const parts = str.split(/[-\/]/)
-  if (parts.length === 3) {
-    if (parts[0].length === 4) {
-      // YYYY-MM-DD -> DD/MM/YYYY
-      const yyyy = parts[0]
-      const mm = parts[1].padStart(2, '0')
-      const dd = parts[2].padStart(2, '0')
-      return `${dd}/${mm}/${yyyy}`
-    } else if (parts[2].length === 4) {
-      // DD/MM/YYYY
-      const yyyy = parts[2]
-      const mm = parts[1].padStart(2, '0')
-      const dd = parts[0].padStart(2, '0')
-      return `${dd}/${mm}/${yyyy}`
-    } else if (parts[2].length === 2) {
-      // DD/MM/YY -> DD/MM/YYYY
-      const yy = parseInt(parts[2], 10)
-      const yyyy = yy >= 50 ? 1900 + yy : 2000 + yy
-      return `${parts[0].padStart(2, '0')}/${parts[1].padStart(2, '0')}/${yyyy}`
-    }
-  }
-  return str
+function getNativeDateValue(val) {
+  return normalizeIsoDateOnly(val)
 }
+
+
 
 function parseDateInputToIso(val) {
   if (!val) return ''
@@ -1439,7 +1418,21 @@ async function loadGuests() {
     await initBookingGuests(props.bookingId)
     const res = await fetchBookingGuests(props.bookingId)
     if (res.data?.success) {
-      guestData.value = normalizeGuestInfoGroups(res.data.data)
+      const groups = normalizeGuestInfoGroups(res.data.data)
+      const dateKeys = ['dob', 'id_issue_date', 'passport_expiry', 'temp_residence_to', 'entry_date', 'visa_expiry_date']
+      groups.forEach(group => {
+        ;(group.guests || []).forEach(g => {
+          dateKeys.forEach(k => {
+            if (g[k]) g[k] = normalizeIsoDateOnly(g[k])
+          })
+        })
+        ;(group.children || []).forEach(c => {
+          dateKeys.forEach(k => {
+            if (c[k]) c[k] = normalizeIsoDateOnly(c[k])
+          })
+        })
+      })
+      guestData.value = groups
     }
   } catch (err) {
     console.error(err)
@@ -1584,7 +1577,7 @@ async function handleDistrictChange(lineKey, row, newDistrictName) {
 function fixDateFields(row) {
   const dateFields = ['dob', 'id_issue_date', 'passport_expiry', 'temp_residence_to', 'entry_date', 'visa_expiry_date']
   dateFields.forEach(f => {
-    if (row[f]) row[f] = row[f].substring(0, 10)
+    if (row[f]) row[f] = normalizeIsoDateOnly(row[f])
     else row[f] = ''
   })
 }
