@@ -34,6 +34,24 @@ export function breakfastAmountForState(detail, ageGroup, prices = {}) {
 }
 
 /**
+ * Task 415: một giá nhập tay khác cả hai giá mặc định (BreakfastRateChild và giá phụ thu trong Thông tin khách sạn)
+ * thì bật/tắt phụ phí phải giữ nguyên; chỉ giá đang trùng giá mặc định mới nhảy theo giá của trạng thái mới.
+ */
+export function isCustomBreakfastAmount(amount, prices = {}) {
+  const value = normalizeBreakfastAmount(amount)
+  if (value <= 0) return false
+  return value !== normalizeBreakfastAmount(prices.extraCharge)
+    && value !== normalizeBreakfastAmount(prices.noCharge)
+}
+
+function resolveAmountAfterChange(detail, field, previousAmount, ageGroup, prices) {
+  if (field === 'is_extra_charge' && detail.breakfast && !detail.is_free && isCustomBreakfastAmount(previousAmount, prices)) {
+    return normalizeBreakfastAmount(previousAmount)
+  }
+  return breakfastAmountForState(detail, ageGroup, prices)
+}
+
+/**
  * Apply a parent-row edit to all of its daily rows. An amount edit is kept as
  * entered; only state-toggle edits resolve the configured default amount.
  */
@@ -60,6 +78,7 @@ export function applyParentBreakfastField(child, field, value, prices = {}) {
       return
     }
 
+    const previousAmount = detail.amount
     detail[field] = value
     if (child.age_group === 'baby') {
       detail.is_free = true
@@ -70,7 +89,7 @@ export function applyParentBreakfastField(child, field, value, prices = {}) {
     }
 
     if (['breakfast', 'is_free', 'is_extra_charge'].includes(field)) {
-      detail.amount = breakfastAmountForState(detail, child.age_group, prices)
+      detail.amount = resolveAmountAfterChange(detail, field, previousAmount, child.age_group, prices)
     }
   })
 
@@ -88,6 +107,7 @@ export function applyDetailBreakfastField(child, detail, field, value, prices = 
     ? normalizeBreakfastAmount(value)
     : value
 
+  const previousAmount = detail.amount
   detail[field] = amount
 
   if (child.age_group === 'baby') {
@@ -101,7 +121,7 @@ export function applyDetailBreakfastField(child, detail, field, value, prices = 
   if (field === 'amount') {
     detail.amount = child.age_group === 'baby' ? 0 : amount
   } else if (['breakfast', 'is_free', 'is_extra_charge'].includes(field)) {
-    detail.amount = breakfastAmountForState(detail, child.age_group, prices)
+    detail.amount = resolveAmountAfterChange(detail, field, previousAmount, child.age_group, prices)
   }
 
   syncParentFromFirstDetail(child)

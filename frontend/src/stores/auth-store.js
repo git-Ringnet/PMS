@@ -30,6 +30,8 @@ export const useAuthStore = defineStore('auth', {
     branches: JSON.parse(localStorage.getItem('pms_branches') || '[]'),
     activeBranch: JSON.parse(localStorage.getItem('pms_active_branch') || 'null'),
     roles: JSON.parse(localStorage.getItem('pms_roles') || '[]'),
+    // Ứng dụng (PMS/POS/SYS) được gán theo vị trí; null = không giới hạn (user cũ)
+    applications: JSON.parse(localStorage.getItem('pms_applications') || 'null'),
     systemDate: localStorage.getItem('pms_system_date') || '',
   }),
 
@@ -49,6 +51,13 @@ export const useAuthStore = defineStore('auth', {
       return codes.some(c => state.permissions.includes(c))
     },
 
+    /** Task 471: user chỉ vào ứng dụng đã được gán trong Cơ cấu tổ chức */
+    hasApplication: (state) => (code) => {
+      if (!code || state.roles.some(r => r.role_code === 'super_admin')) return true
+      if (!Array.isArray(state.applications)) return true
+      return state.applications.map(item => String(item).toUpperCase()).includes(String(code).toUpperCase())
+    },
+
     isSuperAdmin: (state) => state.roles.some(r => r.role_code === 'super_admin'),
     isAdmin: (state) => state.roles.some(r => ['super_admin', 'branch_admin', 'admin'].includes(r.role_code)),
     themeColor: (state) => state.systemThemeColor || '#006bdb',
@@ -62,7 +71,7 @@ export const useAuthStore = defineStore('auth', {
           const branchId = localStorage.getItem('selected_branch_id')
           const headers = branchId ? { 'X-Branch-Id': branchId } : {}
           const response = await http.get('/me', { headers })
-          const { user, permissions, branches, active_branch, roles } = response.data
+          const { user, permissions, branches, active_branch, roles, applications } = response.data
           this.user = user
           this.settings = sanitizeUserSettings(user.setting?.settings)
           // Cập nhật permissions/branches/roles nếu server trả về
@@ -71,6 +80,8 @@ export const useAuthStore = defineStore('auth', {
             this.branches = branches || []
             this.activeBranch = active_branch || null
             this.roles = roles || []
+            this.applications = Array.isArray(applications) ? applications : null
+            localStorage.setItem('pms_applications', JSON.stringify(this.applications))
             localStorage.setItem('pms_permissions', JSON.stringify(this.permissions))
             localStorage.setItem('pms_branches', JSON.stringify(this.branches))
             localStorage.setItem('pms_active_branch', JSON.stringify(this.activeBranch))
@@ -114,7 +125,7 @@ export const useAuthStore = defineStore('auth', {
         this.loading = true
         this.error = null
         const response = await http.post('/login', { username, password })
-        const { token, user, permissions, branches, active_branch, roles } = response.data
+        const { token, user, permissions, branches, active_branch, roles, applications } = response.data
 
         this.token = token
         this.user = user
@@ -122,8 +133,10 @@ export const useAuthStore = defineStore('auth', {
         this.branches = branches || []
         this.activeBranch = active_branch || null
         this.roles = roles || []
+        this.applications = Array.isArray(applications) ? applications : null
 
         localStorage.setItem('pms_token', token)
+        localStorage.setItem('pms_applications', JSON.stringify(this.applications))
         localStorage.setItem('pms_permissions', JSON.stringify(this.permissions))
         localStorage.setItem('pms_branches', JSON.stringify(this.branches))
         localStorage.setItem('pms_active_branch', JSON.stringify(this.activeBranch))
@@ -193,6 +206,8 @@ export const useAuthStore = defineStore('auth', {
         this.branches = []
         this.activeBranch = null
         this.roles = []
+        this.applications = null
+        localStorage.removeItem('pms_applications')
         localStorage.removeItem('pms_token')
         localStorage.removeItem('pms_permissions')
         localStorage.removeItem('pms_branches')

@@ -485,43 +485,39 @@ watch(currentTab, async (newTab) => {
   }
 })
 
+// Chỉ dùng thống kê của đúng ngày đang xem; số còn lưu từ ngày/lần tải khác không hiển thị.
+const currentDateStats = computed(() => (
+  roomStore.stats && roomStore.statsDate === String(rawDate.value || '').slice(0, 10) ? roomStore.stats : null
+))
+
 const checkinStats = computed(() => {
-  if (roomStore.stats && roomStore.stats.arrivals_total !== undefined) {
-    if (isFutureView.value) {
-      return `${roomStore.stats.arrivals_assigned}/${roomStore.stats.arrivals_total}`
-    }
-    return `${roomStore.stats.arrivals_checked_in}/${roomStore.stats.arrivals_total}`
-  }
-  const checkedIn = roomStore.rooms.filter(r => r.booking_status === 'occupied' || r.booking_status === 'checkout').length
-  const reserved = roomStore.rooms.filter(r => r.booking_status === 'reserved').length
-  const total = checkedIn + reserved
-  return `${checkedIn}/${total}`
+  const stats = currentDateStats.value
+  if (stats?.arrivals_total === undefined) return '-'
+  return isFutureView.value
+    ? `${stats.arrivals_assigned}/${stats.arrivals_total}`
+    : `${stats.arrivals_checked_in}/${stats.arrivals_total}`
 })
 
 const checkoutStats = computed(() => {
-  if (roomStore.stats && roomStore.stats.departures_total !== undefined) {
-    if (isFutureView.value) {
-      return `${roomStore.stats.departures_pending}/${roomStore.stats.departures_total}`
-    }
-    return `${roomStore.stats.departures_checked_out}/${roomStore.stats.departures_total}`
-  }
-  const count = roomStore.rooms.filter(r => r.booking_status === 'checkout').length
-  return `${count}/31`
+  const stats = currentDateStats.value
+  if (stats?.departures_total === undefined) return '-'
+  return isFutureView.value
+    ? `${stats.departures_pending}/${stats.departures_total}`
+    : `${stats.departures_checked_out}/${stats.departures_total}`
 })
 
 const occupiedStats = computed(() => {
-  if (roomStore.stats && roomStore.stats.occupied_current !== undefined) {
-    if (isFutureView.value) {
-      return `${roomStore.stats.occupied_projected}/${roomStore.stats.occupied_projected}`
-    }
-    return `${roomStore.stats.occupied_current}/${roomStore.stats.occupied_projected}`
-  }
-  const count = roomStore.rooms.filter(r => r.booking_status === 'occupied' || r.booking_status === 'checkout').length
-  return `${count}/${roomStore.rooms.length || 181}`
+  const stats = currentDateStats.value
+  if (stats?.occupied_current === undefined) return '-'
+  return isFutureView.value
+    ? `${stats.occupied_projected}/${stats.occupied_projected}`
+    : `${stats.occupied_current}/${stats.occupied_projected}`
 })
 
+const currentOccupancyRate = computed(() => Number(currentDateStats.value?.occupancy_rate) || 0)
+
 const occupancyRateStats = computed(() => {
-  return `${formatOccupancyRate(roomStore.occupancyRate)}%`
+  return currentDateStats.value?.occupancy_rate !== undefined ? `${formatOccupancyRate(currentOccupancyRate.value)}%` : '-'
 })
 
 function formatOccupancyRate(value) {
@@ -2851,7 +2847,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                   <path class="text-slate-100" stroke="currentColor" stroke-width="4.5" fill="none"
                     d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
                   <path class="text-amber-500 transition-all duration-1000 ease-out progress-ring-path"
-                    :stroke-dasharray="`${roomStore.occupancyRate || 0}, 100`" stroke-width="4.5" stroke-linecap="round"
+                    :stroke-dasharray="`${currentOccupancyRate}, 100`" stroke-width="4.5" stroke-linecap="round"
                     fill="none" stroke="currentColor"
                     d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
                 </svg>

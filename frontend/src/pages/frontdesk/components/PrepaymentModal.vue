@@ -297,9 +297,10 @@ watch(() => props.show, (visible) => {
     fetchWorkShifts()
     document.addEventListener('keydown', handleEscape)
     const rawRId = props.selectedRoomId
+    // Đang xem Master (không chọn phòng) thì thanh toán trước vào Master, không tự gán phòng đầu tiên.
     const defaultRoomId = (rawRId !== null && rawRId !== undefined && rawRId !== '' && rawRId !== 'null')
       ? rawRId
-      : (props.roomOptions?.[0]?.roomId || props.roomOptions?.[0]?.id || null)
+      : null
     selectedTargetRoomId.value = defaultRoomId
     if (paymentMethods.value.length === 0) {
       fetchPaymentMethods()
@@ -568,6 +569,7 @@ onBeforeUnmount(() => {
                 <label class="block font-semibold text-[#000000D9] mb-1 text-xs">Phòng</label>
                 <div class="relative">
                 <select v-model="selectedTargetRoomId" class="h-8 w-full appearance-none rounded border border-gray-300 bg-white py-1.5 pl-2.5 pr-12 text-xs font-normal text-[#000000D9] focus:outline-none">
+                  <option :value="null">Master</option>
                   <option v-for="r in roomOptions" :key="r.roomId || r.id" :value="r.roomId || r.id">
                     Phòng {{ r.roomNumber || r.room_number || r.id }}
                   </option>

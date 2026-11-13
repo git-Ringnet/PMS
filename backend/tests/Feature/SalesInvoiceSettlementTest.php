@@ -35,6 +35,9 @@ class SalesInvoiceSettlementTest extends TestCase
         $role = \App\Models\Role::firstOrCreate(['code' => 'admin_test'], ['name' => 'Admin test', 'level' => 1, 'is_active' => true]);
         $perm = \App\Models\Permission::firstOrCreate(['code' => 'fo.payment.create'], ['name' => 'fo.payment.create', 'module' => 'FO']);
         $role->permissions()->syncWithoutDetaching([$perm->id]);
+        foreach (['fo.deposit.create', 'fo.deposit.edit', 'fo.deposit.delete'] as $depositCode) {
+            $role->permissions()->syncWithoutDetaching([\App\Models\Permission::firstOrCreate(['code' => $depositCode], ['name' => $depositCode, 'module' => 'FO'])->id]);
+        }
         $this->user->roles()->attach($role->id);
 
         $this->actingAs($this->user);
@@ -234,6 +237,31 @@ class SalesInvoiceSettlementTest extends TestCase
         $this->assertEquals(0, (float) $zeroPayment->amount);
         $this->assertSame((string) $salesInvoice->id, (string) $zeroPayment->invoice_id);
         $this->assertEquals(500000, (float) $salesInvoice->amount);
+    }
+
+    public function test_zero_balance_settlement_closes_a_zero_amount_bill_without_deposit(): void
+    {
+        $bill = ServiceBill::create([
+            'Guest' => 'Nguyễn Văn Test', 'DepartmentId' => 'FO', 'ServiceId' => 'MB',
+            'Username' => $this->user->username, 'Date' => '2026-09-16', 'OpenTime' => '08:00:00',
+            'Amount' => 0, 'Exchange' => 1, 'Edit' => 0, 'Status' => 1, 'Folio' => '1',
+            'RegisterId1' => (string) $this->booking->id, 'RentalRoomId1' => (string) $this->room->id,
+            'RegisterID2' => (string) $this->booking->id, 'RentalRoomId2' => (string) $this->room->id,
+        ]);
+
+        $this->postJson("/api/bookings/{$this->booking->id}/settle-payment", [
+            'folio_id' => '1', 'booking_room_id' => $this->room->id,
+            'payments' => [['payment_method_id' => 'CA', 'amount' => 0]],
+            'service_bill_ids' => [$bill->Ma], 'department_id' => 'FO',
+            'date' => '2026-09-16', 'open_time' => '10:00', 'shift_id' => '1',
+            'zero_balance_close' => true,
+        ])->assertOk()->assertJsonPath('success', true);
+
+        $bill->refresh();
+        $salesInvoice = SalesInvoice::where('booking_id', $this->booking->id)->firstOrFail();
+        $this->assertSame(2, (int) $bill->Status);
+        $this->assertSame((string) $salesInvoice->id, (string) $bill->InvoiceId);
+        $this->assertEquals(0, (float) $salesInvoice->amount);
     }
 
     public function test_zero_payment_cannot_create_an_invoice_without_an_unpaid_service_bill(): void
@@ -472,5 +500,42 @@ class SalesInvoiceSettlementTest extends TestCase
         // Bill được nhả InvoiceId
         $bill->refresh();
         $this->assertNull($bill->InvoiceId);
+    }
+
+    public function test_task_228_cancelling_a_payment_clears_payment_id_and_invoice_amount_and_stamps_shift(): void
+    {
+        $bill = ServiceBill::create([
+            'Guest' => 'Nguyễn Văn Test', 'DepartmentId' => 'FO', 'ServiceId' => 'LA',
+            'Username' => $this->user->username, 'Date' => '2026-09-16', 'OpenTime' => '10:00:00',
+            'Amount' => 800000, 'Exchange' => 1, 'Edit' => 0, 'Status' => 1, 'Folio' => '1',
+            'RentalRoomId1' => (string) $this->room->id, 'RentalRoomId2' => (string) $this->room->id,
+            'RegisterId1' => (string) $this->booking->id, 'RegisterID2' => (string) $this->booking->id,
+        ]);
+        $this->postJson("/api/bookings/{$this->booking->id}/settle-payment", [
+            'folio_id' => '1', 'booking_room_id' => $this->room->id,
+            'payments' => [['payment_method_id' => 'CA', 'amount' => 800000]], 'department_id' => 'FO',
+        ])->assertOk();
+        $payment = Payment::where('booking_id', $this->booking->id)->where('status', Payment::STATUS_PAID)->first();
+        $this->assertNotNull($payment->payment_id);
+        $invoiceId = $payment->invoice_id;
+
+        $this->deleteJson("/api/payments/{$payment->id}", ['reason' => 'Khách hủy hóa đơn'])->assertOk();
+
+        // Hai dòng thanh toán đã xóa (dòng gốc + dòng âm) không còn mã thanh toán và dòng âm có ca.
+        $rows = Payment::withTrashed()->where('booking_id', $this->booking->id)->get();
+        $this->assertCount(2, $rows);
+        foreach ($rows as $row) {
+            $this->assertNull($row->payment_id, 'payments.payment_id phải NULL sau khi xóa thanh toán');
+            $this->assertSame(1, (int) $row->edit_flag);
+            $this->assertSame(Payment::STATUS_DELETED, (int) $row->status);
+        }
+        $this->assertNotNull($rows->firstWhere('amount', '<', 0)->shift, 'Dòng âm không được để shift NULL');
+
+        // Hóa đơn: hủy, bỏ liên kết thanh toán và số tiền.
+        $invoice = SalesInvoice::find($invoiceId);
+        $this->assertEquals(3, $invoice->status);
+        $this->assertNull($invoice->payment_id);
+        $this->assertNull($invoice->payment_code);
+        $this->assertNull($invoice->amount);
     }
 }

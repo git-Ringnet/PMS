@@ -223,6 +223,41 @@ class ChildBreakfastService
     }
 
     /**
+     * Dòng 415/480: ăn sáng trẻ em KHÔNG phụ phí của một đêm nằm trong tiền phòng, nên khi post tiền phòng
+     * phải tách ra dòng BF cùng người lớn. Trẻ có phụ phí (is_extra_charge) đi bill phụ thu riêng,
+     * trẻ miễn phí / không ăn sáng / giá 0 thì không tách.
+     *
+     * @return array{quantity:int, amount:float}
+     */
+    public function roomIncludedBreakfast(BookingRoom $room, Carbon|string $date): array
+    {
+        $dateStr = Carbon::parse($date)->toDateString();
+        $quantity = 0;
+        $amount = 0.0;
+
+        // Thông số Booking_BFChildSetServiceId khác mã dịch vụ ăn sáng trẻ trong danh mục (chế độ bill riêng):
+        // đêm nào phòng đã có dòng ở booking_room_services thì về bill phòng theo bảng đó, không tách từ tiền phòng nữa.
+        if (!$this->isDetailMode()
+            && BookingRoomService::where('booking_room_id', $room->id)
+                ->where('service_code', $this->configCode())
+                ->whereDate('service_date', $dateStr)
+                ->exists()) {
+            return ['quantity' => 0, 'amount' => 0.0];
+        }
+
+        foreach ($this->childrenForRoom($room) as $child) {
+            $detail = $child->breakfastDetails()->whereDate('service_date', $dateStr)->first();
+            if (!$detail || !$detail->breakfast || $detail->is_free || $detail->is_extra_charge || (float) $detail->amount <= 0) {
+                continue;
+            }
+            $quantity++;
+            $amount += (float) $detail->amount;
+        }
+
+        return ['quantity' => $quantity, 'amount' => round($amount, 2)];
+    }
+
+    /**
      * Dòng 417: trẻ em/em bé mới thêm ăn sáng theo cột Ăn sáng của phòng.
      */
     public function roomHasBreakfast(int|string|null $bookingRoomId): bool

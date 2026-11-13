@@ -1038,6 +1038,7 @@ class RoomController extends Controller
         return response()->json([
             'success' => true,
             'data' => array_merge($occupancyStats, [
+                'date' => $systemDate->toDateString(),
                 // Giữ khóa cũ để các vị trí khác chưa nâng cấp vẫn đọc đúng dữ liệu.
                 'total' => $occupancyStats['total_rooms'],
                 'maintenance' => $occupancyStats['ooo'] + $occupancyStats['oos'],

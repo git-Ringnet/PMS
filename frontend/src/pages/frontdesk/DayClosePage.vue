@@ -1,6 +1,8 @@
 <script setup>
+import { revenueReportRoute } from '@/utils/day-close-options'
+import { loadStatusOptions, saveStatusOptions, isInHouseForDayClose, alreadyRolledMessage } from '@/utils/day-close-options'
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import {
   Calendar,
   CalendarDays,
@@ -21,7 +23,6 @@ import {
   Briefcase,
   BarChart3,
   History,
-  CalendarPlus,
   UserX,
   CheckCircle2
 } from '@lucide/vue'
@@ -33,6 +34,7 @@ import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import echo from '@/services/echo'
 
 const router = useRouter()
+const route = useRoute()
 const uiStore = useUiStore()
 const authStore = useAuthStore()
 const nightAuditStore = useNightAuditStore()
@@ -69,8 +71,6 @@ const arrivalsProcessed = ref(true)
 const showArrivalModal = ref(false)
 const arrivalFeeOption = ref('room_only') // 'all_charged' | 'room_only' | 'no_charge'
 
-const showExtendStayModal = ref(false)
-const extendNightsInput = ref(1)
 
 // [Bug A] Noshow modal
 const showNoshowModal = ref(false)
@@ -148,16 +148,24 @@ const canRollDay = computed(() => {
 
 // Filter tabs
 const activeFilterTab = ref('in-house')
-const filterTabs = [
-  { id: 'in-house', name: 'Phòng đang ở' },
+const inHouseCount = ref(0)
+const filterTabs = computed(() => [
+  // Dòng 511: hiện tổng số phòng ở trên tab
+  { id: 'in-house', name: `Phòng đang ở (${inHouseCount.value})` },
   { id: 'arrivals', name: 'Phòng đến' },
   { id: 'departures', name: 'Phòng đi' },
   { id: 'hourly', name: 'Ở theo giờ' },
-]
+])
 
 // Footer options
-const occupiedToDirty = ref(true)
-const emptyToInspect = ref(true)
+// Dòng 511: 2 ô chuyển tình trạng phòng khi sang ngày giữ cố định theo user (lưu ở trình duyệt)
+const statusOptionsUser = computed(() => authStore.user?.username || authStore.user?.id || '')
+const savedStatusOptions = loadStatusOptions(typeof window !== 'undefined' ? window.localStorage : null, statusOptionsUser.value)
+const occupiedToDirty = ref(savedStatusOptions.occupiedToDirty)
+const emptyToInspect = ref(savedStatusOptions.emptyToInspect)
+watch([occupiedToDirty, emptyToInspect], ([dirty, inspect]) => {
+  saveStatusOptions(window.localStorage, statusOptionsUser.value, { occupiedToDirty: dirty, emptyToInspect: inspect })
+})
 
 // Data structure grouped by company / source (populated dynamically from backend)
 const groupData = ref([])
@@ -244,6 +252,7 @@ function calculateNights(arrivalStr, departureStr) {
 }
 
 const alreadyRolledToday = ref(false)
+const lastRolledAt = ref('')
 
 const fetchRealData = async () => {
   try {
@@ -261,6 +270,7 @@ const fetchRealData = async () => {
       const statusRes = await http.get('/night-audit/check-status')
       if (statusRes.data && statusRes.data.success && statusRes.data.data) {
         alreadyRolledToday.value = !!statusRes.data.data.already_rolled_today
+        lastRolledAt.value = statusRes.data.data.last_rolled_at || ''
       }
     } catch (err) {
       console.error('Không thể kiểm tra trạng thái sang ngày:', err)
@@ -355,6 +365,7 @@ function processRealBookings(bookings) {
   // Tính đếm số phòng đến và phòng đi theo ngày hệ thống
   let arrCount = 0
   let depCount = 0
+  let inHouseTotal = 0
   
   bookings.forEach(b => {
     const rooms = b.booking_rooms || b.bookingRooms || []
@@ -376,12 +387,14 @@ function processRealBookings(bookings) {
         if (arrDate === sysDateStr && isBooked && !isCheckedIn && !isMoved && Number(r?.status) !== 100) arrCount++
         // Phòng đi: Khách đang ở (đã gán phòng) và đi vào ngày hệ thống
         if (hasAssignedRoom(r) && depDate === sysDateStr && isCheckedIn && !isMoved && Number(r?.status) !== 100) depCount++
+        if (hasAssignedRoom(r) && isInHouseForDayClose({ isCheckedIn, departureDate: depDate, systemDate: sysDateStr })) inHouseTotal++
       })
     }
   })
 
   arrivalCount.value = arrCount
   departureCount.value = depCount
+  inHouseCount.value = inHouseTotal
 
   if (arrCount === 0) arrivalsProcessed.value = true
   if (depCount === 0) departuresProcessed.value = true
@@ -423,7 +436,8 @@ function processRealBookings(bookings) {
         const isSameDay = arrDate === depDate || r.is_day_use || b.is_hourly || b.is_day_use || (b.num_of_days === 0)
         matchesTab = isSameDay && arrDate === sysDateStr && !isMoved && Number(r?.status) !== 100
       } else {
-        matchesTab = isCheckedIn && !isMoved && Number(r?.status) !== 100
+        // Dòng 511: không lấy phòng có ngày đi = ngày hệ thống
+        matchesTab = !isMoved && Number(r?.status) !== 100 && isInHouseForDayClose({ isCheckedIn, departureDate: depDate, systemDate: sysDateStr })
       }
 
       if (!matchesTab) return
@@ -555,7 +569,7 @@ async function handleRollDay() {
   if (alreadyRolledToday.value) {
     const doubleConfirmed = await uiStore.confirm({
       title: 'Hệ thống đã thực hiện sang ngày hôm nay',
-      message: 'Hệ thống đã thực hiện sang ngày một lần trong ngày hôm nay. Bạn có chắc chắn muốn tiếp tục sang ngày nữa không?',
+      message: alreadyRolledMessage(lastRolledAt.value),
       confirmText: 'Đồng ý',
       cancelText: 'Hủy'
     })
@@ -579,7 +593,8 @@ async function handleRollDay() {
 }
 
 function handleRevenueReport() {
-  router.push({ path: '/reports', query: { report: 'EXPECTED_ROOM_REVENUE_NIGHT_AUDIT' } })
+  // Dòng 516: mở báo cáo ngay trong mục Báo cáo của module đang xem (Lễ tân), không đẩy sang module Quản lý.
+  router.push(revenueReportRoute(route.path))
 }
 
 function getSelectedDepartureItems() {
@@ -667,86 +682,6 @@ async function handlePostRoomCharge() {
   } finally {
     isLoading.value = false
   }
-}
-
-function handleExtendStay() {
-  const selected = getSelectedDepartureItems()
-  if (selected.length === 0) {
-    uiStore.showToast('Vui lòng tích chọn ít nhất 1 phòng để gia hạn.', 'warning')
-    return
-  }
-  extendNightsInput.value = 1
-  showExtendStayModal.value = true
-}
-
-async function confirmExtendStay() {
-  const selected = getSelectedDepartureItems()
-  const nightsToAdd = parseInt(extendNightsInput.value) || 1
-
-  try {
-    isLoading.value = true
-    showExtendStayModal.value = false
-
-    // Dòng 286: gia hạn phải check trùng số phòng và thông số over.
-    // Gia hạn lần lượt từng phòng; phòng nào bị chặn thì báo rõ lý do, không làm dừng cả lượt.
-    let confirmOver = null // null: chưa hỏi, true: đồng ý cho các phòng còn lại, false: từ chối
-    const extended = []
-    const blocked = []
-
-    for (const item of selected) {
-      const parts = item.id.split('-')
-      const bookingRoomId = parts[parts.length - 1]
-      const label = item.roomNumber || item.room_number || item.name || bookingRoomId
-      const payload = { booking_room_id: bookingRoomId, nights: nightsToAdd }
-
-      try {
-        try {
-          await http.post('/night-audit/extend-stay', payload)
-        } catch (err) {
-          const data = err.response?.data
-          if (err.response?.status !== 409 || data?.code !== 'overbooking_confirmation_required') throw err
-
-          if (confirmOver === null || confirmOver === false) {
-            isLoading.value = false
-            const ok = await uiStore.confirm({
-              title: 'Loại phòng đang bị over',
-              message: `${data.message} (Phòng ${label})`,
-              confirmText: 'Có',
-              cancelText: 'Không'
-            })
-            isLoading.value = true
-            confirmOver = ok
-          }
-          if (!confirmOver) {
-            blocked.push(`${label}: không gia hạn (loại phòng bị over)`)
-            continue
-          }
-          await http.post('/night-audit/extend-stay', { ...payload, confirm_overbooking: true })
-        }
-        extended.push(label)
-      } catch (err) {
-        blocked.push(`${label}: ${err.response?.data?.message || 'Có lỗi xảy ra khi gia hạn phòng.'}`)
-      }
-    }
-
-    if (extended.length > 0) {
-      uiStore.showToast(`Đã gia hạn thành công ${nightsToAdd} đêm cho ${extended.length} phòng!`, 'success')
-    }
-    if (blocked.length > 0) {
-      uiStore.showToast(`Không gia hạn được ${blocked.length} phòng — ${blocked.join('; ')}`, 'error')
-    }
-    await fetchRealData()
-  } catch (err) {
-    console.error(err)
-    uiStore.showToast(err.response?.data?.message || 'Có lỗi xảy ra khi gia hạn phòng.', 'error')
-  } finally {
-    isLoading.value = false
-  }
-}
-
-function handleProcessDepartures() {
-  departuresProcessed.value = true
-  uiStore.showToast('Đã xử lý hoàn tất tất cả phòng đi!', 'success')
 }
 
 function handleUpdateArrivalDate() {
@@ -1065,23 +1000,8 @@ async function confirmNoshow() {
           </button>
         </template>
 
-        <!-- Tab Departures Footer Button -->
-        <template v-else-if="activeFilterTab === 'departures'">
-          <button
-            @click="handleExtendStay"
-            class="bg-[#4a85df] hover:bg-[#3972c7] active:bg-[#2b5fa8] text-white px-3.5 py-1.5 rounded font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer text-xs"
-          >
-            <CalendarPlus class="w-3.5 h-3.5" />
-            <span>Gia hạn đêm phòng</span>
-          </button>
-          <button
-            @click="handleProcessDepartures"
-            class="bg-[#7ca668] hover:bg-[#6c9459] active:bg-[#5b804a] text-white px-3.5 py-1.5 rounded font-semibold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer text-xs"
-          >
-            <CheckCircle2 class="w-3.5 h-3.5" />
-            <span>Đã xử lý tất cả</span>
-          </button>
-        </template>
+        <!-- Tab Departures: dòng 511 bỏ nút "Gia hạn đêm phòng" và "Đã xử lý tất cả" (gia hạn thao tác ở sơ đồ phòng hoặc booking) -->
+        <template v-else-if="activeFilterTab === 'departures'"></template>
 
         <!-- Tab In-House / Hourly / Default Footer Buttons -->
         <template v-else>
@@ -1154,49 +1074,6 @@ async function confirmNoshow() {
           <button type="button" class="btn-pms-primary flex items-center gap-1.5" @click="confirmNoshow">
             <CheckCircle2 class="w-3.5 h-3.5" />
             <span>Xác nhận Noshow</span>
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- MODAL GIA HAN DEM PHONG -->
-    <div v-if="showExtendStayModal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div class="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
-        <div class="bg-blue-600 text-white px-4 py-3 font-semibold flex justify-between items-center text-sm">
-          <div class="flex items-center gap-2">
-            <CalendarPlus class="w-4 h-4" />
-            <span>Gia hạn đêm phòng</span>
-          </div>
-          <button @click="showExtendStayModal = false" class="hover:opacity-80 text-white font-bold text-base">&times;</button>
-        </div>
-        <div class="p-5 space-y-4 text-xs">
-          <p class="text-gray-600 font-medium">
-            Số phòng được chọn: <span class="font-bold text-blue-600">{{ getSelectedDepartureItems().length }}</span> phòng
-          </p>
-          <div>
-            <label class="block font-semibold text-gray-700 mb-1.5">Số ngày muốn gia hạn:</label>
-            <input
-              type="number"
-              v-model.number="extendNightsInput"
-              min="1"
-              max="30"
-              class="w-full border border-gray-300 rounded px-3 py-2 text-xs focus:outline-none focus:border-blue-500 font-medium"
-              placeholder="Nhập số ngày (ví dụ: 1)"
-            />
-          </div>
-        </div>
-        <div class="bg-gray-50 px-4 py-3 flex justify-end space-x-2 border-t border-gray-200">
-          <button
-            @click="showExtendStayModal = false"
-            class="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded font-medium text-xs transition-colors"
-          >
-            Hủy
-          </button>
-          <button
-            @click="confirmExtendStay"
-            class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-semibold text-xs transition-colors"
-          >
-            Xác nhận gia hạn
           </button>
         </div>
       </div>

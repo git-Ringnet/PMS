@@ -11,6 +11,8 @@ export const useRoomStore = defineStore('room', () => {
   const stats = ref(null)
   // Chỉ response danh sách phòng mới nhất được phép cập nhật store khi đổi ngày liên tục.
   let roomsRequestSequence = 0
+  // Ngày của bộ thống kê đang giữ, để màn hình không hiển thị số của ngày khác trong lúc chờ tải.
+  const statsDate = ref(null)
   // Chỉ response thống kê mới nhất được phép cập nhật store, tránh request realtime cũ ghi đè.
   let statsRequestSequence = 0
   const filters = ref({
@@ -230,11 +232,13 @@ export const useRoomStore = defineStore('room', () => {
       const response = await roomService.getRoomStats(date)
       if (requestSequence === statsRequestSequence) {
         stats.value = response.data
+        statsDate.value = String(response.data?.date || date || '').slice(0, 10) || null
       }
       return response.data
     } catch (err) {
       if (requestSequence === statsRequestSequence) {
         stats.value = null
+        statsDate.value = null
         error.value = 'Không thể tải thống kê phòng.'
       }
       console.error('fetchStats error:', err)
@@ -273,6 +277,7 @@ export const useRoomStore = defineStore('room', () => {
     loading,
     error,
     stats,
+    statsDate,
     filters,
     // Getters
     floors,

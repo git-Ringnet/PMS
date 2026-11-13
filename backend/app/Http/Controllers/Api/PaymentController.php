@@ -98,6 +98,14 @@ class PaymentController extends Controller
             : $minute >= $start || $minute < $end;
     }
 
+    /** Mã ca lưu vào payments.shift: tên ca (kể cả ca "0"), không có tên mới dùng id. */
+    private function shiftCode(Shift $shift): string
+    {
+        $name = trim((string) $shift->name);
+
+        return $name !== '' ? $name : (string) $shift->id;
+    }
+
     private function resolvePaymentShift(?string $requestedShift, string $time): string
     {
         $shifts = Shift::query()->orderBy('id')->get();
@@ -119,7 +127,8 @@ class PaymentController extends Controller
                 ]);
             }
 
-            return $requestedShift;
+            // Task 228: giao diện gửi id của ca (vd ca tên "1" có id 2) nhưng cột payments.shift phải lưu TÊN ca.
+            return $this->shiftCode($selectedShift);
         }
 
         $matchingShift = $shifts->first(fn (Shift $shift) => $this->shiftContainsTime($shift, $time));
@@ -129,7 +138,7 @@ class PaymentController extends Controller
             ]);
         }
 
-        return (string) ($matchingShift->name ?: $matchingShift->id);
+        return $this->shiftCode($matchingShift);
     }
 
     private function companyAllowsCityLedger(Booking $booking): bool
@@ -155,6 +164,40 @@ class PaymentController extends Controller
                 ]);
             }
         }
+    }
+
+    /**
+     * Dòng 146 / task 449: HTTT dùng cho đặt cọc / thanh toán trước.
+     * Luôn loại HTTT đã ẩn (is_inactive) và nhóm công nợ/miễn phí (4, 5).
+     * Riêng đặt cọc còn loại HTTT miễn phí (is_free, kể cả khi chưa gán nhóm) và công nợ AC.
+     */
+    private function depositMethodRejection(PaymentMethod $method, bool $isAdvance): ?string
+    {
+        if ($method->is_inactive) {
+            return 'Hình thức "' . $method->name . '" đã ngừng sử dụng.';
+        }
+        if (in_array((int) $method->payment_group, [4, 5], true)
+            || (!$isAdvance && ($method->is_free || strtoupper((string) $method->code) === 'AC'))) {
+            return 'Hình thức "' . $method->name . '" không được dùng cho đặt cọc / thanh toán trước. Chỉ chấp nhận Tiền mặt, Thẻ/CK hoặc Voucher.';
+        }
+
+        return null;
+    }
+
+    /** Ca của thời điểm thao tác hiện tại (dùng cho dòng âm khi xóa/chuyển cọc); null nếu chưa cấu hình ca. */
+    private function currentOperationShift(): ?string
+    {
+        try {
+            return $this->resolvePaymentShift(null, now()->format('H:i'));
+        } catch (\Illuminate\Validation\ValidationException) {
+            return null;
+        }
+    }
+
+    /** Nối ghi chú thao tác vào mô tả cọc, cắt theo độ dài cột description (255). */
+    private function withOperationNote(string $description, string $note): string
+    {
+        return mb_substr(rtrim($description) . $note, 0, 255);
     }
 
     private function resolvePaymentMethodCode($input)
@@ -454,12 +497,33 @@ class PaymentController extends Controller
         return response()->json(['success' => true, 'message' => 'Đã xóa giải trừ công nợ.']);
     }
 
+    /**
+     * Task 473: đặt cọc phải có quyền fo.deposit.create/edit/delete (không dùng chung fo.payment.create).
+     * Thanh toán trước (pack4 = ADVANCE, thao tác ở màn trả phòng) vẫn dùng quyền thanh toán fo.payment.create.
+     */
+    private function authorizeDepositAction(Request $request, bool $isAdvance, string $depositPermission): void
+    {
+        $user = $request->user();
+        if (!$user || $user->isSuperAdmin()) {
+            return;
+        }
+
+        $required = $isAdvance ? 'fo.payment.create' : $depositPermission;
+        $branchId = $request->attributes->get('_branch_id');
+        if (!$user->hasPermission($required, $branchId)) {
+            abort(403, $isAdvance
+                ? 'Bạn không có quyền thực hiện thao tác thanh toán trước.'
+                : 'Bạn không có quyền thực hiện thao tác đặt cọc.');
+        }
+    }
+
     // =========================================
     // POST: Tạo cọc mới cho booking
     // POST /bookings/{bookingId}/payments
     // =========================================
     public function store(Request $request, $bookingId)
     {
+        $this->authorizeDepositAction($request, $request->input('pack4') === Payment::PACK4_ADVANCE, 'fo.deposit.create');
         $booking = Booking::findOrFail($bookingId);
 
         // Không cho cọc booking đã checkout / đã xóa
@@ -551,11 +615,8 @@ class PaymentController extends Controller
             ], 422);
         }
 
-        if (in_array($method->payment_group, [4, 5])) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Hình thức "' . $method->name . '" không được dùng cho đặt cọc / thanh toán trước. Chỉ chấp nhận Tiền mặt, Thẻ/CK hoặc Voucher.',
-            ], 422);
+        if ($message = $this->depositMethodRejection($method, $request->pack4 === Payment::PACK4_ADVANCE)) {
+            return response()->json(['success' => false, 'message' => $message], 422);
         }
 
         // Tạo mô tả mặc định nếu chưa có
@@ -590,7 +651,7 @@ class PaymentController extends Controller
                 'outlet'            => $request->pack4 === Payment::PACK4_ADVANCE ? null : 'RC',
                 'status'            => Payment::STATUS_PENDING,
                 'edit_flag'         => 0,
-                'shift'             => $request->shift_id ?: ($request->shift ?: '1'),
+                'shift'             => (string) $request->input('shift_id'),
                 'created_by'        => Auth::user()?->username ?? 'system',
                 'image_path'        => $imagePath,
             ]);
@@ -641,6 +702,7 @@ class PaymentController extends Controller
     public function update(Request $request, $id)
     {
         $payment = Payment::findOrFail($id);
+        $this->authorizeDepositAction($request, $payment->pack4 === Payment::PACK4_ADVANCE, 'fo.deposit.edit');
 
         $descriptionOnly = $request->has('description') && !$request->has('payment_method_id');
         if ($payment->edit_flag !== 0 || $payment->status === Payment::STATUS_DELETED || (!$descriptionOnly && $payment->status !== Payment::STATUS_PENDING)) {
@@ -664,7 +726,7 @@ class PaymentController extends Controller
         if ($request->has('payment_method_id')) {
             $paymentMethodCode = $this->resolvePaymentMethodCode($request->payment_method_id);
             $paymentMethod = PaymentMethod::where('code', $paymentMethodCode)->first();
-            if (!$paymentMethod || $paymentMethod->is_inactive || in_array((int) $paymentMethod->payment_group, [4, 5], true)) {
+            if (!$paymentMethod || $this->depositMethodRejection($paymentMethod, $payment->pack4 === Payment::PACK4_ADVANCE)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Hình thức thanh toán không hợp lệ cho đặt cọc.',
@@ -692,9 +754,20 @@ class PaymentController extends Controller
                 $newMethodCode = strtoupper(trim((string) $paymentMethodCode));
 
                 if ($oldMethodCode !== $newMethodCode && $paymentMethod) {
-                    $roomNumber = $payment->bookingRoom?->room_number;
-                    $data['description'] = 'Deposit (' . $paymentMethod->name . ')'
-                        . ($roomNumber ? ' - Phòng ' . $roomNumber : '');
+                    // Dòng 150: đổi HTTT thì mô tả theo HTTT mới nhưng KHÔNG làm mất ghi chú người dùng nhập thêm.
+                    // Mô tả gửi lên vẫn dạng "Deposit (...)" (giao diện điền sẵn rồi người dùng gõ thêm) -> giữ nội dung,
+                    // chỉ thay tên HTTT cũ bằng HTTT mới. Mô tả tự do không có dạng đó, hoặc không gửi -> tự sinh theo HTTT mới.
+                    $sent = trim((string) $request->input('description', ''));
+                    if ($sent !== '' && str_starts_with($sent, 'Deposit (')) {
+                        $oldName = PaymentMethod::where('code', $payment->payment_method_id)->value('name');
+                        $data['description'] = $oldName
+                            ? str_replace('Deposit (' . $oldName . ')', 'Deposit (' . $paymentMethod->name . ')', $sent)
+                            : $sent;
+                    } else {
+                        $roomNumber = $payment->bookingRoom?->room_number;
+                        $data['description'] = 'Deposit (' . $paymentMethod->name . ')'
+                            . ($roomNumber ? ' - Phòng ' . $roomNumber : '');
+                    }
                 }
             }
             $payment->update(array_merge(
@@ -740,11 +813,12 @@ class PaymentController extends Controller
         ]);
         $paymentIds = array_unique(array_merge([(int) $id], array_map('intval', $validated['payment_ids'] ?? [])));
 
-        DB::transaction(function () use ($paymentIds, $validated) {
+        DB::transaction(function () use ($paymentIds, $validated, $request) {
             $payments = Payment::whereIn('id', $paymentIds)->lockForUpdate()->get();
             if ($payments->count() !== count($paymentIds)) {
                 abort(404, 'Không tìm thấy cọc.');
             }
+            $payments->each(fn (Payment $payment) => $this->authorizeDepositAction($request, $payment->pack4 === Payment::PACK4_ADVANCE, 'fo.deposit.edit'));
             if ($payments->contains(fn (Payment $payment) => !$this->isTransferableDepositOrAdvance($payment) || $payment->edit_flag !== 0 || $payment->status !== Payment::STATUS_PENDING || !empty($payment->payment_id))) {
                 abort(422, 'Chỉ được chuyển Folio cho đặt cọc/thanh toán trước chưa sử dụng.');
             }
@@ -781,6 +855,7 @@ class PaymentController extends Controller
             ], 422);
         }
         $payment = Payment::findOrFail($id);
+        $this->authorizeDepositAction($request, $payment->pack4 === Payment::PACK4_ADVANCE, 'fo.deposit.delete');
 
         if ($payment->edit_flag !== 0) {
             return response()->json([
@@ -820,6 +895,10 @@ class PaymentController extends Controller
                 abort(403, 'Tài khoản không được phân quyền xóa cọc / thanh toán cho ngày cũ (RuleUserCorrectOrPostBillPaymentOldDay).');
             }
 
+            // Task 228: 2 dòng cọc cũ (dòng gốc + dòng âm) đều edit_flag=1, status=3 (đã xóa) và cùng mô tả
+            // "nội dung cọc trước + Correct: lý do xóa" thay vì "[REVERSAL] + nội dung".
+            $deletedDescription = $this->withOperationNote((string) $payment->description, ' Correct: ' . $validated['reason']);
+
             // Tạo dòng âm đối trừ với ngày hệ thống hiện tại
             $reversal = Payment::create([
                 'booking_id'        => $payment->booking_id,
@@ -827,8 +906,9 @@ class PaymentController extends Controller
                 'company_id'        => $payment->company_id,
                 'date'              => $systemDate,
                 'open_time'         => now()->format('H:i:s'),
+                'shift'             => $this->currentOperationShift(),
                 'guest_display'     => $payment->guest_display,
-                'description'       => '[REVERSAL] ' . $payment->description,
+                'description'       => $deletedDescription,
                 'reason'            => $validated['reason'],
                 'amount'            => -abs($payment->amount), // Số âm
                 'guest_id'          => $payment->guest_id,
@@ -849,6 +929,8 @@ class PaymentController extends Controller
             // Đánh dấu dòng gốc đã hủy, lưu ref sang dòng âm
             $payment->update([
                 'edit_flag'    => 1,
+                'status'       => Payment::STATUS_DELETED,
+                'description'  => $deletedDescription,
                 'reversal_ref' => $reversal->id,
                 'updated_by'   => Auth::user()?->username ?? 'system',
             ]);
@@ -937,6 +1019,7 @@ class PaymentController extends Controller
                     'company_id' => $line->company_id,
                     'date' => $systemDate,
                     'open_time' => now()->format('H:i:s'),
+                    'shift' => $this->currentOperationShift(),
                     'guest_display' => $line->guest_display,
                     'description' => '[REVERSAL] ' . $line->description,
                     'reason' => $reason,
@@ -960,15 +1043,18 @@ class PaymentController extends Controller
                 $reversalId = $reversal->id;
             }
 
+            // Task 228: dòng thanh toán đã xóa không còn giữ mã thanh toán (payment_id = NULL).
             $line->update([
                 'status' => Payment::STATUS_DELETED,
                 'edit_flag' => 1,
+                'payment_id' => null,
                 'reversal_ref' => $reversalId,
                 'updated_by' => $username,
             ]);
             $line->delete();
         }
 
+        $invoicePaymentIdColumn = \Illuminate\Support\Facades\Schema::hasColumn('sales_invoices', 'payment_id');
         if ($invoiceIds->isNotEmpty() || $paymentCodes->isNotEmpty()) {
             SalesInvoice::query()
                 ->where(function ($query) use ($invoiceIds, $paymentCodes) {
@@ -982,7 +1068,14 @@ class PaymentController extends Controller
                 })
                 ->lockForUpdate()
                 ->get()
-                ->each(fn (SalesInvoice $invoice) => $invoice->update(['status' => 3]));
+                // Task 228: hóa đơn bị hủy bỏ liên kết thanh toán và số tiền (payment_id/payment_code/amount = NULL).
+                ->each(function (SalesInvoice $invoice) use ($invoicePaymentIdColumn): void {
+                    $attributes = ['status' => 3, 'payment_code' => null, 'amount' => null];
+                    if ($invoicePaymentIdColumn) {
+                        $attributes['payment_id'] = null;
+                    }
+                    $invoice->forceFill($attributes)->save();
+                });
         }
 
         $serviceBills = ServiceBill::query()
@@ -1056,6 +1149,7 @@ class PaymentController extends Controller
     public function split(Request $request, $id)
     {
         $payment = Payment::findOrFail($id);
+        $this->authorizeDepositAction($request, $payment->pack4 === Payment::PACK4_ADVANCE, 'fo.deposit.edit');
 
         if (!$this->isTransferableDepositOrAdvance($payment) || $payment->edit_flag !== 0 || $payment->status !== Payment::STATUS_PENDING) {
             return response()->json([
@@ -1121,6 +1215,7 @@ class PaymentController extends Controller
                     'company_id'                => $payment->company_id,
                     'date'                      => $payment->date, // Ngày dòng gốc
                     'open_time'                 => $payment->open_time ?? now()->format('H:i:s'),
+                    'shift'                     => $payment->shift,
                     'guest_display'             => $payment->guest_display,
                     'description'               => $payment->description,
                     'amount'                    => $amt,
@@ -1228,6 +1323,7 @@ class PaymentController extends Controller
             if ($payments->count() !== count($request->payment_ids)) abort(422, 'Không tìm thấy đủ các dòng cọc cần chuyển.');
 
             foreach ($payments as $payment) {
+                $this->authorizeDepositAction($request, $payment->pack4 === Payment::PACK4_ADVANCE, 'fo.deposit.edit');
                 if (!$this->isTransferableDepositOrAdvance($payment) || $payment->edit_flag !== 0 || $payment->status !== Payment::STATUS_PENDING || !empty($payment->payment_id)) {
                     abort(422, 'Chỉ có thể chuyển đặt cọc/thanh toán trước chưa sử dụng.');
                 }
@@ -1263,6 +1359,7 @@ class PaymentController extends Controller
     public function transfer(Request $request, $id)
     {
         $payment = Payment::findOrFail($id);
+        $this->authorizeDepositAction($request, $payment->pack4 === Payment::PACK4_ADVANCE, 'fo.deposit.edit');
 
         if ($payment->edit_flag !== 0 || $payment->status !== Payment::STATUS_PENDING) {
             return response()->json([
@@ -1376,6 +1473,11 @@ class PaymentController extends Controller
             $sourceLocation = $payment->booking_room_id ? 'R_' . ($payment->bookingRoom?->room_number ?: $payment->booking_room_id) : 'BK_' . $sourceBookingId;
             $targetLocation = $targetRoom ? 'R_' . ($targetRoom->room_number ?: $targetRoom->id) : 'BK_' . $targetBooking->id;
 
+            // Task 228: 2 dòng cọc cũ (dòng gốc + dòng âm) đều edit_flag=1, status=4 (đã chuyển) và cùng mô tả
+            // "nội dung cọc cũ (nơi đi=>nơi đến)", vd: Deposit (Cash) (BK_11=>R_105).
+            $originalDescription = (string) $payment->description;
+            $movedDescription = $this->withOperationNote((string) $payment->description, ' (' . $sourceLocation . '=>' . $targetLocation . ')');
+
             // 1. Tạo dòng âm trên booking nguồn (ngày hệ thống, user thao tác, edit_flag=1) - SP3002 Spec
             $reversal = Payment::create([
                 'booking_id'        => $sourceBookingId,
@@ -1384,8 +1486,9 @@ class PaymentController extends Controller
                 'company_id'        => $payment->company_id,
                 'date'              => $systemDate,
                 'open_time'         => now()->format('H:i:s'),
+                'shift'             => $this->currentOperationShift(),
                 'guest_display'     => $payment->guest_display,
-                'description'       => '[TRANSFER OUT ' . $sourceLocation . '=>' . $targetLocation . '] ' . $payment->description,
+                'description'       => $movedDescription,
                 'amount'            => -abs($payment->amount),
                 'total_amount_before_split' => $payment->total_amount_before_split,
                 'pack2'             => $payment->pack2,
@@ -1399,7 +1502,7 @@ class PaymentController extends Controller
                 'outlet'            => $payment->outlet,
                 'image_path'        => $payment->image_path,
                 'reversal_ref'      => $payment->id,
-                'status'            => Payment::STATUS_DELETED,
+                'status'            => Payment::STATUS_TRANSFERRED,
                 'edit_flag'         => 1,
                 'created_by'        => Auth::user()?->username ?? 'system',
             ]);
@@ -1407,6 +1510,8 @@ class PaymentController extends Controller
             // Đánh dấu dòng gốc đã chuyển (edit_flag=1, reversal_ref trỏ sang dòng âm)
             $payment->update([
                 'edit_flag'    => 1,
+                'status'       => Payment::STATUS_TRANSFERRED,
+                'description'  => $movedDescription,
                 'reversal_ref' => $reversal->id,
                 'updated_by'   => Auth::user()?->username ?? 'system',
             ]);
@@ -1421,10 +1526,11 @@ class PaymentController extends Controller
                 'company_id'        => $targetBooking->company_id,
                 'date'              => $payment->date, // Ngày dòng gốc ban đầu
                 'open_time'         => $payment->open_time ?? now()->format('H:i:s'),
+                'shift'             => $payment->shift,
                 'guest_display'     => $targetRoom
                     ? $targetBooking->booking_code . ' - ' . ($targetGuest?->guest?->full_name ?: $targetRoom->room_number)
                     : $targetBooking->booking_code . ' - ' . $targetBooking->booking_name,
-                'description'       => '[TRANSFER IN ' . $sourceLocation . '=>' . $targetLocation . '] ' . $payment->description,
+                'description'       => '[TRANSFER IN ' . $sourceLocation . '=>' . $targetLocation . '] ' . $originalDescription,
                 'amount'            => abs($payment->amount),
                 'total_amount_before_split' => $payment->total_amount_before_split,
                 'pack2'             => $payment->pack2,
@@ -1756,7 +1862,8 @@ class PaymentController extends Controller
             $submittedPayments = collect($request->input('payments', []));
 
             // A zero payment is only a bill-closing row when a real unpaid service
-            // bill is fully covered by an eligible deposit/advance in this scope.
+            // bill is fully covered by an eligible deposit/advance in this scope,
+            // or when the unpaid bills themselves total 0 (e.g. a 0đ minibar bill without deposit).
             // This explicit flag keeps every existing caller's settlement behavior unchanged.
             if ($request->boolean('zero_balance_close')) {
                 $serviceAmountForZeroSettlement = round((float) (clone $unpaidServiceQuery)->sum('Amount'), 2);
@@ -1767,13 +1874,13 @@ class PaymentController extends Controller
                     $submittedPayments->count() !== 1
                     || round((float) ($submittedPayments->first()['amount'] ?? 0), 2) != 0.0
                     || $settledBills->isEmpty()
-                    || !$hasEligibleDeposit
-                    || $serviceAmountForZeroSettlement <= 0
-                    || $depositAmountForZeroSettlement <= 0
+                    || $serviceAmountForZeroSettlement < 0
+                    || $depositAmountForZeroSettlement < 0
+                    || ($depositAmountForZeroSettlement > 0 && !$hasEligibleDeposit)
                     || abs($serviceAmountForZeroSettlement - $depositAmountForZeroSettlement) > 0.01
                 ) {
                     throw \Illuminate\Validation\ValidationException::withMessages([
-                        'payments' => ['Chỉ chốt thanh toán 0đ khi có bill dịch vụ chưa thanh toán được cọc/tạm ứng hợp lệ bù đủ.'],
+                        'payments' => ['Chỉ chốt thanh toán 0đ khi có bill dịch vụ chưa thanh toán và số tiền còn phải trả bằng 0.'],
                     ]);
                 }
             }
@@ -2091,8 +2198,7 @@ class PaymentController extends Controller
                     ->whereNull('deleted_at')
                     ->sum('amount');
                 Booking::where('id', $bookingId)->update(['payment_value' => $totalDeposit]);
-
-                $this->completeBookingAfterMasterSettlement($booking);
+                // Thanh toán không tự checkout Master: Master chỉ checkout khi người dùng bấm Checkout Master.
             }
         });
 
@@ -2108,50 +2214,5 @@ class PaymentController extends Controller
                 'payment_ids' => $createdPaymentIds,
             ],
         ]);
-    }
-
-    /** Complete a fully settled Master after all rooms have checked out. */
-    private function completeBookingAfterMasterSettlement(Booking $booking): void
-    {
-        $hasActiveRooms = $booking->bookingRooms()
-            ->whereNotIn('status', [BookingRoom::STATUS_CANCELLED, BookingRoom::STATUS_CHECKED_OUT])
-            ->exists();
-        if ($hasActiveRooms) return;
-
-        $hasCheckedOutStayRoom = $booking->bookingRooms()
-            ->stayOnly()
-            ->where('status', BookingRoom::STATUS_CHECKED_OUT)
-            ->exists();
-        if (!$hasCheckedOutStayRoom) return;
-
-        $checkedOutRoomIds = $booking->bookingRooms()
-            ->where('status', BookingRoom::STATUS_CHECKED_OUT)
-            ->pluck('id')
-            ->map(fn ($id) => (string) $id)
-            ->all();
-
-        $hasUnpaidMasterBills = \App\Models\ServiceBill::query()
-            ->where('Edit', 0)
-            ->where(function ($q) { $q->whereNull('PaymentId')->orWhere('PaymentId', ''); })
-            ->where('Status', '!=', 2)
-            ->where(function ($q) use ($booking) {
-                $q->whereRaw('CAST(RegisterID2 AS CHAR) = ?', [(string) $booking->id])
-                    ->orWhereRaw('CAST(RegisterId1 AS CHAR) = ?', [(string) $booking->id]);
-            })
-            ->where(function ($q) use ($booking, $checkedOutRoomIds) {
-                $q->whereNull('RentalRoomId2')->orWhere('RentalRoomId2', '')->orWhere('RentalRoomId2', '0');
-                if ($checkedOutRoomIds) $q->orWhereIn(DB::raw('CAST(RentalRoomId2 AS CHAR)'), $checkedOutRoomIds);
-            })
-            ->exists();
-        if ($hasUnpaidMasterBills) return;
-
-        $hasUnusedDeposit = Payment::where('booking_id', $booking->id)
-            ->where('edit_flag', 0)
-            ->whereNull('payment_id')
-            ->where(function ($q) { $q->where('pack2', Payment::PACK2_DEPOSIT)->orWhere('pack4', 'AP'); })
-            ->exists();
-        if ($hasUnusedDeposit) return;
-
-        $booking->update(['status' => Booking::STATUS_CHECKOUT]);
     }
 }

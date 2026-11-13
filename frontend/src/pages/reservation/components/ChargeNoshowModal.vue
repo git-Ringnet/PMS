@@ -132,6 +132,14 @@
           </div>
         </div>
 
+        <p class="text-[11px] font-medium text-slate-500 -mt-2" data-testid="noshow-split-hint">
+          <template v-if="chargeNightCount > 1">
+            Hệ thống post {{ chargeNightCount }} bill tiền phòng, mỗi đêm một bill theo đúng ngày
+            {{ customRateMode ? '(tổng nhập được chia đều theo số đêm).' : '(tiền phòng đã thiết lập của từng đêm).' }}
+          </template>
+          <template v-else>Hệ thống post 1 bill tiền phòng cho ngày đã chọn.</template>
+        </p>
+
         <!-- Mô tả -->
         <div>
           <label class="block text-xs font-medium text-gray-700 mb-1.5">Mô tả</label>
@@ -267,6 +275,9 @@ const numNights = computed(() => {
   if (isNaN(diffTime) || diffTime <= 0) return 0
   return Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)))
 })
+
+// Số bill sẽ post: mỗi đêm một bill (chọn cùng một ngày vẫn là 1 bill)
+const chargeNightCount = computed(() => Math.max(1, numNights.value))
 
 // Tiền phòng tự động tính toán
 const autoRateAmount = computed(() => {

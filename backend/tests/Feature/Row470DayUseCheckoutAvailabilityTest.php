@@ -28,7 +28,9 @@ class Row470DayUseCheckoutAvailabilityTest extends TestCase
         parent::setUp();
 
         $this->seed(\Database\Seeders\BookingStatusSeeder::class);
+        $this->seed(\Database\Seeders\SystemDefinitionSeeder::class);
         $this->actingAs(User::factory()->withRole('super_admin')->create(['username' => 'row470_user']));
+        \App\Models\SystemDateRoll::create(['system_date' => '2026-10-30 00:00:00', 'actual_date' => '2026-10-30 00:00:00', 'shift' => '1', 'username' => 'row470_user']);
 
         $this->registrationStatusId = (int) RegistrationStatus::where('is_availability', true)
             ->value('booking_status_id');
