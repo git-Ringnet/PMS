@@ -109,12 +109,12 @@ class Guest extends Model
     ];
 
     protected $casts = [
-        'dob'              => 'date',
-        'id_issue_date'    => 'date',
-        'passport_expiry'  => 'date',
-        'temp_residence_to'=> 'date',
-        'entry_date'       => 'date',
-        'visa_expiry_date' => 'date',
+        'dob'              => 'date:Y-m-d',
+        'id_issue_date'    => 'date:Y-m-d',
+        'passport_expiry'  => 'date:Y-m-d',
+        'temp_residence_to'=> 'date:Y-m-d',
+        'entry_date'       => 'date:Y-m-d',
+        'visa_expiry_date' => 'date:Y-m-d',
         'gender'           => 'integer',
         'guest_status'     => 'integer',
     ];

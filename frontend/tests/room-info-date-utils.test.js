@@ -6,6 +6,8 @@ import {
   parseDmyInput,
   isLeapYear,
   getMaxDaysInMonth,
+  normalizeIsoDateOnly,
+  formatDateDisplayYY,
 } from '../src/pages/reservation/components/room-info-date-utils.js'
 
 test('adds separators while entering an eight-digit date', () => {
@@ -122,4 +124,27 @@ test('day editing: blur or enter converts single digit day e.g. 1/05/1994 to 01/
   const parsed5 = parseDmyInput('5/05/1994')
   assert.equal(parsed5, '1994-05-05')
   assert.equal(formatShortDate(parsed5), '05/05/1994')
+})
+
+test('Row 33: formatDateDisplayYY correctly formats ISO timestamps and standard date strings', () => {
+  // ISO timestamp from legacy/API
+  assert.equal(formatDateDisplayYY('1998-02-20T00:00:00.000000Z'), '20/02/1998')
+  assert.equal(formatDateDisplayYY('1998-02-20'), '20/02/1998')
+  assert.equal(formatDateDisplayYY('20/02/1998'), '20/02/1998')
+  assert.equal(formatDateDisplayYY('20-02-1998'), '20/02/1998')
+  assert.equal(formatDateDisplayYY('20021998'), '20/02/1998')
+  // Never returns corrupted string like 19T17:00:00.000000Z/02/1998
+  const res = formatDateDisplayYY('1998-02-19T17:00:00.000000Z')
+  assert.match(res, /^\d{2}\/\d{2}\/\d{4}$/)
+  assert.ok(!res.includes('T'))
+  assert.ok(!res.includes('Z'))
+})
+
+test('Row 33: normalizeIsoDateOnly converts any valid date string to YYYY-MM-DD', () => {
+  assert.equal(normalizeIsoDateOnly('1998-02-20'), '1998-02-20')
+  assert.equal(normalizeIsoDateOnly('20/02/1998'), '1998-02-20')
+  assert.equal(normalizeIsoDateOnly('20-02-1998'), '1998-02-20')
+  assert.equal(normalizeIsoDateOnly('20021998'), '1998-02-20')
+  assert.equal(normalizeIsoDateOnly(''), '')
+  assert.equal(normalizeIsoDateOnly(null), '')
 })
