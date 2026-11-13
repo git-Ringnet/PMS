@@ -57,6 +57,7 @@ class AlertListController extends Controller
                 'booking',
                 'guests' => fn ($q) => $q->whereIn('status', [BookingRoomGuest::STATUS_ACTIVE, BookingRoomGuest::STATUS_CHECKED_IN]),
                 'guests.guest',
+                'children' => fn ($q) => $q->whereIn('child_status', [BookingRoomGuest::STATUS_ACTIVE, BookingRoomGuest::STATUS_CHECKED_IN]),
                 'specialRequests.specialRequest',
             ])
             ->whereNull('deleted_at')
@@ -102,6 +103,29 @@ class AlertListController extends Controller
                 $events[] = $base + [
                     'eventKey'  => "BD:{$room->id}:{$guest->id}:{$birthdayDate->year}",
                     'guestName' => $guest->full_name ?: 'Guest',
+                    'birthday'  => $dob->format('d/m/Y'),
+                    'eventType' => 'birthday',
+                    'eventName' => 'Sinh nhật',
+                    'eventDate' => $birthdayDate->toDateString(),
+                ];
+            }
+
+            // Trẻ em/em bé cũng có ngày sinh riêng tại booking_children (SP2400).
+            // Chỉ tạo alert khi còn đang lưu trú tại phòng và ngày sinh nằm trong kỳ xem.
+            foreach ($room->children as $child) {
+                if (!$child->dob || $stayStart->gt($stayEnd)) {
+                    continue;
+                }
+                $dob = Carbon::parse($child->dob);
+                $birthdayDate = $this->birthdayWithin($dob, $stayStart, $stayEnd);
+                if (!$birthdayDate) {
+                    continue;
+                }
+                $childLabel = $child->age_group === 'baby' ? 'Em bé' : 'Trẻ em';
+                $events[] = $base + [
+                    // Prefix child- bảo đảm không trùng CustomerId của khách người lớn.
+                    'eventKey'  => "BD:{$room->id}:child-{$child->id}:{$birthdayDate->year}",
+                    'guestName' => $child->full_name ?: $childLabel,
                     'birthday'  => $dob->format('d/m/Y'),
                     'eventType' => 'birthday',
                     'eventName' => 'Sinh nhật',
