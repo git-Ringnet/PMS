@@ -32,6 +32,7 @@ class ShiftWorkListTest extends TestCase
         DB::table('booking_statuses')->insert([
             ['id' => 0, 'name' => 'Reservation'],
             ['id' => 1, 'name' => 'Checked In'],
+            ['id' => 2, 'name' => 'Checked Out'],
             ['id' => 4, 'name' => 'No Show'],
         ]);
 
@@ -108,6 +109,49 @@ class ShiftWorkListTest extends TestCase
         $row = collect($rows)->flatMap(fn ($bookingRow) => $bookingRow['rooms'])->firstWhere('id', $room->id);
         $this->assertNotNull($row);
         $this->assertEquals(0, $row['nights']);
+    }
+
+    private function arrivalRoomIds(string $status): array
+    {
+        $rows = $this->getJson("/api/shift-work/arrivals?date=2026-09-02&status={$status}")->assertOk()->json('data');
+
+        return collect($rows)->flatMap(fn ($bookingRow) => $bookingRow['rooms'])->pluck('id')->sort()->values()->all();
+    }
+
+    // Dòng 475: phòng ngày đến = ngày đi đã nhận rồi trả trong ngày vẫn là phòng đến của ngày đó.
+    public function test_row_475_arrivals_include_same_day_checked_out_room(): void
+    {
+        $booking = $this->makeBooking('Day use out');
+        $room = $this->makeRoom($booking, BookingRoom::STATUS_CHECKED_OUT, [
+            'room_number' => '606', 'departure_date' => '2026-09-02', 'is_day_use' => true, 'actual_arrival_date' => '2026-09-02',
+        ]);
+        $stillWaiting = $this->makeRoom($booking, BookingRoom::STATUS_BOOKED, ['room_number' => '705', 'departure_date' => '2026-09-02']);
+
+        $this->assertContains($room->id, $this->arrivalRoomIds('all'));
+        $this->assertContains($room->id, $this->arrivalRoomIds('checked_in'));
+        $this->assertNotContains($room->id, $this->arrivalRoomIds('not_checked_in'));
+        $this->assertContains($stillWaiting->id, $this->arrivalRoomIds('not_checked_in'));
+    }
+
+    // Dòng 450: nhận phòng rồi chuyển ngay sang phòng khác chỉ tính phòng gốc ban đầu, không lấy thêm dòng phòng đích.
+    public function test_row_450_arrivals_count_only_the_original_room_after_same_day_move(): void
+    {
+        DB::table('booking_statuses')->insert(['id' => 100, 'name' => 'Moved']);
+        $booking = $this->makeBooking('Moved same day');
+        $target = $this->makeRoom($booking, BookingRoom::STATUS_CHECKED_IN, [
+            'room_number' => '606', 'arrival_date' => '2026-09-02', 'actual_arrival_date' => '2026-09-02',
+        ]);
+        $original = $this->makeRoom($booking, BookingRoom::STATUS_MOVED, [
+            'room_number' => '101', 'departure_date' => '2026-09-02', 'ActutalNumOfDays' => 0, 'NumOfDays' => 0, 'move_room' => $target->id,
+        ]);
+        $normal = $this->makeRoom($booking, BookingRoom::STATUS_CHECKED_IN, ['room_number' => '705']);
+
+        foreach (['all', 'checked_in'] as $filter) {
+            $ids = $this->arrivalRoomIds($filter);
+            $this->assertContains($original->id, $ids, "phòng gốc phải có ở bộ lọc {$filter}");
+            $this->assertContains($normal->id, $ids);
+            $this->assertNotContains($target->id, $ids, "phòng đích của lần chuyển không được lấy dư ở bộ lọc {$filter}");
+        }
     }
 
     // Dòng 356 + 362

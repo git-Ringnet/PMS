@@ -99,6 +99,21 @@ export function screenPermissions(path, query = {}) {
   return { route: codes, screen: tabCodes || [] }
 }
 
+// Task 471: ứng dụng (mã trong bảng modules) cần có để vào từng nhóm màn hình. Không khai báo = không giới hạn theo ứng dụng.
+export function requiredApplication(path = '') {
+  if (path === '/pms' || ['/reservation', '/frontdesk', '/housekeeping', '/reports'].includes(path)) return 'PMS'
+  if (path === '/fnb' || path.startsWith('/fnb/')) return 'POS'
+  return null
+}
+
+/** auth: { isSuperAdmin, applications } - applications null = user cũ chưa gán vị trí, không giới hạn. */
+export function hasApplication(auth, code) {
+  if (!code) return true
+  if (auth.isSuperAdmin) return true
+  if (!Array.isArray(auth.applications)) return true
+  return auth.applications.map(item => String(item).toUpperCase()).includes(String(code).toUpperCase())
+}
+
 /** auth: { isSuperAdmin, isAdmin, permissions } (authStore). */
 export function hasAccess(auth, codes) {
   const list = Array.isArray(codes) ? codes : (codes ? [codes] : [])

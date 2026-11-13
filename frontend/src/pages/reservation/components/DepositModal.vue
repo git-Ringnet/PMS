@@ -342,7 +342,7 @@
         <!-- FOOTER ACTIONS -->
         <div class="bg-white border-t border-slate-200 p-2.5 px-4 flex justify-between items-center shrink-0 rounded-b-xl">
             
-            <div class="flex items-center space-x-2" v-if="!showDeleted">
+            <div class="flex items-center space-x-2" v-if="!showDeleted && canEditDeposit">
                 <button type="button" @click="splitDeposit" :disabled="isSubmitting || isEditing" class="btn-pms-secondary" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting || isEditing }">
                     <i class="fa-solid fa-code-branch text-[11px]"></i>
                     <span>Tách</span>
@@ -358,15 +358,15 @@
                     <i class="fa-solid fa-arrow-left text-[11px]"></i>
                     <span>Quay lại</span>
                 </button>
-                <button type="button" @click="deleteDeposits" :disabled="isSubmitting || isEditing" class="btn-pms-danger" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting || isEditing }">
+                <button type="button" v-if="canDeleteDeposit" data-testid="deposit-delete-btn" @click="deleteDeposits" :disabled="isSubmitting || isEditing" class="btn-pms-danger" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting || isEditing }">
                     <i class="fa-solid fa-trash-can text-[11px]"></i>
                     <span>Xóa</span>
                 </button>
-                <button type="button" @click="editDeposit" :disabled="isSubmitting || isEditing" class="btn-pms-primary" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting || isEditing }">
+                <button type="button" v-if="canEditDeposit" data-testid="deposit-edit-btn" @click="editDeposit" :disabled="isSubmitting || isEditing" class="btn-pms-primary" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting || isEditing }">
                     <i class="fa-solid fa-pen-to-square text-[11px]"></i>
                     <span>Sửa</span>
                 </button>
-                <button type="button" @click="saveDeposit" :disabled="isSubmitting" class="btn-pms-primary" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting }">
+                <button type="button" v-if="depositForm.id ? canEditDeposit : canCreateDeposit" data-testid="deposit-save-btn" @click="saveDeposit" :disabled="isSubmitting" class="btn-pms-primary" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting }">
                     <i class="fa-regular fa-floppy-disk text-[11px]"></i>
                     <span>Lưu</span>
                 </button>
@@ -716,6 +716,10 @@ const emit = defineEmits(['update:show', 'update:deposits', 'update:paymentValue
 
 const uiStore = useUiStore()
 const authStore = useAuthStore()
+// Task 473: quyền riêng cho đặt cọc (thêm / sửa-tách-chuyển / xóa)
+const canCreateDeposit = computed(() => authStore.hasPermission('fo.deposit.create'))
+const canEditDeposit = computed(() => authStore.hasPermission('fo.deposit.edit'))
+const canDeleteDeposit = computed(() => authStore.hasPermission('fo.deposit.delete'))
 
 // Dynamic Theme topbar background sync
 const topbarThemeBg = computed(() => {
@@ -1125,10 +1129,11 @@ async function loadOperationalSettings() {
     console.error('Failed to load operational settings:', err)
   }
 }
-// Filter payment methods: not group 4, not group 5, not is_inactive
+// Dòng 146: HTTT đặt cọc chỉ gồm is_inactive=0, is_free=0 và code <> 'AC' (đồng thời loại nhóm 4, 5)
 const filteredPaymentMethods = computed(() => {
   return (props.paymentMethods || []).filter(pm => {
     return pm.payment_group !== 4 && pm.payment_group !== 5 && !pm.is_inactive
+      && !pm.is_free && String(pm.code || '').toUpperCase() !== 'AC'
   })
 })
 
@@ -1188,6 +1193,9 @@ const visibleDeposits = computed(() => {
   ))
   if (!showDeleted.value) {
     list = list.filter(dep => dep.edit_flag === 0 && dep.status !== 3)
+  } else {
+    // Task 228: bật "hiển thị xóa" chỉ lấy thêm các dòng xóa (status=3, edit_flag=1), không lấy dòng cọc đã chuyển (status=4)
+    list = list.filter(dep => Number(dep.status) !== 4)
   }
   if (depositForm.value.bookingRoomId) {
     list = list.filter(dep => String(dep.bookingRoomId) === String(depositForm.value.bookingRoomId))

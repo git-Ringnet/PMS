@@ -287,7 +287,7 @@ class BookingRoleConfigCapabilitiesTest extends TestCase
         $this->assertNotNull($checkoutRoute);
         $this->assertNotNull($noPostRoute);
         $this->assertContains('permission:fo.service.add,fo.service.edit', $serviceRoute->gatherMiddleware());
-        $this->assertContains('permission:fo.payment.create', $paymentRoute->gatherMiddleware());
+        $this->assertContains('permission:fo.payment.create,fo.deposit.create,fo.deposit.edit,fo.deposit.delete', $paymentRoute->gatherMiddleware());
         $this->assertNotContains(RequireFrontDeskInvoiceMutation::class, $serviceRoute->gatherMiddleware());
         $this->assertNotContains(RequireFrontDeskInvoiceMutation::class, $paymentRoute->gatherMiddleware());
         $this->assertNotContains(RequireFrontDeskInvoiceMutation::class, $housekeepingPostRoute->gatherMiddleware());

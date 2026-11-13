@@ -6,6 +6,7 @@ import { fetchBusinessInfo } from '@/services/company-service'
 import { fetchSystemDate } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
 import BreakfastPrintModal from './components/BreakfastPrintModal.vue'
+import { buildCouponPreviewHtml, initialSelectedKeys } from '@/utils/breakfast-print'
 
 const uiStore = useUiStore()
 const route = useRoute()
@@ -182,8 +183,8 @@ async function loadData() {
     })
     if (res.data?.success) {
       rawList.value = res.data.data || []
-      // Khi mở từ Room Map, chỉ chọn các dòng của phòng đang thao tác.
-      selectedRowKeys.value = filteredList.value.map(r => r.id)
+      // Dòng 505: không chọn sẵn tất cả; chỉ khi mở từ Room Map mới chọn các dòng của phòng đang thao tác.
+      selectedRowKeys.value = initialSelectedKeys(filteredList.value, Boolean(roomContext))
     }
   } catch (err) {
     console.error('Lỗi tải danh sách phòng ăn sáng:', err)
@@ -423,123 +424,24 @@ function printCouponsDirectly(coupons) {
     if (raw) savedConfig = JSON.parse(raw)
   } catch (e) {}
 
-  const cfg = savedConfig || {
-    columns: 3,
-    minHeight: 220,
-    fontSize: 'normal',
-    roomFontSize: 'large',
-    borderWidth: 2,
-    borderStyle: 'solid',
-    couponGap: 8,
-    showLogo: true,
-    showHotelName: true,
-    customHotelName: '',
-    titleLine1: 'PHIẾU ĂN SÁNG',
-    titleLine2: 'BREAKFAST COUPON',
-    showBookingInfo: true,
-    showGuestName: false,
-    showRoomNumber: true,
-    showDate: true,
-    roomLabel: 'Phòng / Room:',
-    dateLabel: 'Ngày / Date:',
-    showFooterNote: true,
-    footerNote: '• Áp dụng cho khách lưu trú tại khách sạn / Applied to guest in-house only\n• Mỗi khách hàng sử dụng 01 phiếu trong 01 ngày / One coupon per guest per day\n• Chúc quý khách ngon miệng / Enjoy your meal'
+  const previewHtml = buildCouponPreviewHtml({
+    coupons,
+    cfg: savedConfig,
+    hotelName: hotelSettings.value.hotel_name || '',
+    logoUrl: hotelSettings.value.logo_url || '',
+    formatDate: formatDateDisplay
+  })
+
+  // Dòng 505: phần xem trước mẫu mở ở TAB MỚI (khổ A4 dọc, mỗi hàng 2 phiếu); người dùng bấm "In phiếu" trong tab đó.
+  const previewTab = window.open('', '_blank')
+  if (!previewTab) {
+    if (uiStore.showToast) uiStore.showToast('Trình duyệt đang chặn tab mới. Vui lòng cho phép mở tab để xem trước phiếu.', 'warning')
+    return
   }
-
-  const hName = cfg.customHotelName?.trim() || hotelSettings.value.hotel_name || ''
-  const hLogo = (cfg.showLogo && hotelSettings.value.logo_url) ? hotelSettings.value.logo_url : ''
-  const footerLines = cfg.showFooterNote && cfg.footerNote ? cfg.footerNote.split('\n').filter(l => l.trim()) : []
-
-  const couponCardsHtml = coupons.map(c => `
-    <div class="coupon-card" style="min-height:${cfg.minHeight}px; border:${cfg.borderWidth}px ${cfg.borderStyle} #000; padding:10px; display:flex; flex-direction:column; justify-content:space-between; background:#fff; page-break-inside:avoid; break-inside:avoid; box-sizing:border-box;">
-      <div style="display:flex; align-items:center; justify-content:space-between; border-bottom:2px solid #000; padding-bottom:6px; gap:8px;">
-        <div style="min-width:70px; max-width:110px;">
-          ${hLogo ? `<img src="${hLogo}" style="height:32px; max-width:100px; object-fit:contain;" />` : (cfg.showHotelName ? `<span style="font-weight:900; font-size:11px; text-transform:uppercase;">${hName}</span>` : '')}
-        </div>
-        <div style="text-align:right; flex:1;">
-          ${cfg.titleLine1 ? `<div style="font-weight:900; text-transform:uppercase; font-size:13px; line-height:1.2;">${cfg.titleLine1}</div>` : ''}
-          ${cfg.titleLine2 ? `<div style="font-weight:800; text-transform:uppercase; font-size:10px; color:#555; margin-top:2px;">${cfg.titleLine2}</div>` : ''}
-        </div>
-      </div>
-      <div style="padding:10px 0; text-align:center; flex:1; display:flex; flex-direction:column; justify-content:center; gap:6px;">
-        ${cfg.showBookingInfo ? `<div style="font-size:11px; font-weight:600; color:#333; border-bottom:1px dotted #888; padding-bottom:3px;">${c.booking_info}</div>` : ''}
-        ${cfg.showGuestName && c.guest_name ? `<div style="font-size:11px; font-weight:700; color:#444;">Khách: ${c.guest_name}</div>` : ''}
-        ${cfg.showRoomNumber ? `<div><span style="font-size:10px; color:#666; text-transform:uppercase; margin-right:4px;">${cfg.roomLabel}</span><span style="font-weight:900; font-size:${cfg.roomFontSize === 'xlarge' ? '24px' : (cfg.roomFontSize === 'normal' ? '17px' : '20px')}; letter-spacing:1px;">${c.room_number}</span></div>` : ''}
-        ${cfg.showDate ? `<div style="border-bottom:1px dotted #888; padding-bottom:4px;"><span style="font-size:10px; color:#666; text-transform:uppercase; margin-right:4px;">${cfg.dateLabel}</span><span style="font-weight:900; font-size:13px;">${formatDateDisplay(c.date)}</span></div>` : ''}
-      </div>
-      ${footerLines.length > 0 ? `
-        <div style="font-size:8.5px; color:#555; font-style:italic; border-top:1px solid #ccc; padding-top:4px; line-height:1.3;">
-          ${footerLines.map(l => `<div>${l}</div>`).join('')}
-        </div>
-      ` : ''}
-    </div>
-  `).join('')
-
-  const printHtml = `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8"/>
-      <title>In Phiếu Ăn Sáng</title>
-      <style>
-        @page { size: auto; margin: 8mm; }
-        * { box-sizing: border-box; }
-        body { font-family: Roboto, -apple-system, sans-serif; margin: 0; padding: 0; background: #fff; }
-        .coupon-grid {
-          display: grid;
-          grid-template-columns: repeat(${cfg.columns}, minmax(0, 1fr));
-          gap: ${cfg.couponGap}px;
-          width: 100%;
-        }
-        @media print {
-          .coupon-card { page-break-inside: avoid; break-inside: avoid; margin-bottom: 6px; }
-        }
-      </style>
-    </head>
-    <body>
-      <div class="coupon-grid">
-        ${couponCardsHtml}
-      </div>
-    </body>
-    </html>
-  `
-
-  const printWindow = window.open('', '_blank', 'width=1000,height=800')
-  if (printWindow) {
-    printWindow.document.open()
-    printWindow.document.write(printHtml)
-    printWindow.document.close()
-    printWindow.focus()
-    setTimeout(() => {
-      try {
-        printWindow.print()
-      } catch (e) {
-        console.error('Print trigger error:', e)
-      }
-    }, 400)
-  } else {
-    // Fallback nếu trình duyệt chặn popup
-    let iframe = document.getElementById('breakfast-direct-print-frame')
-    if (!iframe) {
-      iframe = document.createElement('iframe')
-      iframe.id = 'breakfast-direct-print-frame'
-      iframe.style.position = 'fixed'
-      iframe.style.right = '0'
-      iframe.style.bottom = '0'
-      iframe.style.width = '0'
-      iframe.style.height = '0'
-      iframe.style.border = '0'
-      document.body.appendChild(iframe)
-    }
-    const doc = iframe.contentWindow.document
-    doc.open()
-    doc.write(printHtml)
-    doc.close()
-    setTimeout(() => {
-      iframe.contentWindow.focus()
-      iframe.contentWindow.print()
-    }, 350)
-  }
+  previewTab.document.open()
+  previewTab.document.write(previewHtml)
+  previewTab.document.close()
+  previewTab.focus()
 }
 </script>
 

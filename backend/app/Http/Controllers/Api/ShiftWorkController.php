@@ -84,14 +84,22 @@ class ShiftWorkController extends Controller
         ->whereNull('deleted_at')
         ->whereDate('arrival_date', $targetDate);
 
+        // Dòng 475: phòng đã nhận gồm cả phòng đã trả (ngày đến = ngày đi, nhận rồi trả trong ngày)
+        // và phòng gốc đã chuyển (100), khớp số đếm "Đã đến" ở sơ đồ phòng.
+        $arrivedStatuses = [BookingRoom::STATUS_CHECKED_IN, BookingRoom::STATUS_CHECKED_OUT, BookingRoom::STATUS_MOVED];
+
         // Filter status
         if ($statusFilter === 'not_checked_in' || $statusFilter === '0') {
             $query->whereIn('status', [BookingRoom::STATUS_BOOKED, 0]);
         } elseif ($statusFilter === 'checked_in' || $statusFilter === '1') {
-            $query->where('status', BookingRoom::STATUS_CHECKED_IN);
+            $query->whereIn('status', $arrivedStatuses);
         } else {
-            $query->whereIn('status', [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN, 100]);
+            $query->whereIn('status', [BookingRoom::STATUS_BOOKED, ...$arrivedStatuses]);
         }
+
+        // Dòng 450: nhận phòng rồi chuyển ngay sang phòng khác chỉ lấy phòng gốc ban đầu,
+        // không lấy thêm dòng phòng đích (dòng được tạo ra bởi lần chuyển, trỏ bởi move_room của phòng gốc).
+        $query->whereNotIn('id', BookingRoom::query()->withTrashed()->select('move_room')->whereNotNull('move_room'));
 
         // Exclude cancelled bookings (definite 4)
         $query->whereHas('booking', function ($q) {

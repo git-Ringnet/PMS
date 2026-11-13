@@ -34,6 +34,7 @@ class Payment extends Model
     const STATUS_PENDING  = 1; // Chưa thanh toán
     const STATUS_PAID     = 2; // Đã thanh toán
     const STATUS_DELETED  = 3; // Đã xóa
+    const STATUS_TRANSFERRED = 4; // Đã chuyển (2 dòng cọc cũ edit_flag=1 sau khi chuyển cọc) - task 228
 
     // Loại cọc
     const PACK2_DEPOSIT   = 'DPR'; // Đặt cọc

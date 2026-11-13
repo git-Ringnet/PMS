@@ -80,7 +80,7 @@ class NightAuditController extends Controller
         $breakfastTaxProfile = HotelService::taxProfile($breakfastService);
         $result = ['updated' => 0, 'skipped_vat' => 0, 'skipped_invalid' => 0];
 
-        DB::transaction(function () use ($fromDate, $toDate, $breakfastRate, $roomTaxProfile, $breakfastTaxProfile, &$result) {
+        DB::transaction(function () use ($fromDate, $toDate, $breakfastRate, $roomTaxProfile, $breakfastTaxProfile, $breakfastService, &$result) {
             // Không phụ thuộc SP3004: các bill dữ liệu cũ có thể chỉ có SP3000/SP3001.
             $bills = ServiceBill::query()
                 ->where('DepartmentId', 'FO')
@@ -113,18 +113,26 @@ class NightAuditController extends Controller
 
                 $adults = max(1, (int) $room->adults);
                 $breakfastAmount = $room->breakfast ? round($breakfastRate * $adults, 2) : 0;
+                // Dòng 415/480: cộng ăn sáng trẻ em không phụ phí (nằm trong tiền phòng) của đêm này.
+                $childBreakfast = app(\App\Services\ChildBreakfastService::class)->roomIncludedBreakfast($room, $bill->Date);
+                $breakfastAmount = round($breakfastAmount + $childBreakfast['amount'], 2);
+                $breakfastQuantity = ($room->breakfast ? $adults : 0) + $childBreakfast['quantity'];
                 $breakfastDetail = $details->first(fn ($detail) => $detail->ServiceId === 'BF');
                 $discountRoomDetail = $details->first(fn ($detail) => $detail->ServiceId === 'RM' && (float) $detail->Amount < 0);
                 $nextDetailNo = ((int) $details->max('Ma')) + 1;
                 $roomNumber = $room->room_number ?: $room->id;
+                // Dòng 416: BF và RM âm dùng mô tả dịch vụ ăn sáng + số phòng.
+                $breakfastDescription = $breakfastService
+                    ? $breakfastService->billDescription($roomNumber, 'FO')
+                    : 'Tiền ăn sáng người lớn - Phòng ' . $roomNumber;
 
                 if ($breakfastAmount > 0) {
-                    $bfBreakdown = TaxBreakdownService::breakdown($breakfastAmount, $breakfastTaxProfile['service_charge'], $breakfastTaxProfile['special_tax'], $breakfastTaxProfile['tax'], $adults);
+                    $bfBreakdown = TaxBreakdownService::breakdown($breakfastAmount, $breakfastTaxProfile['service_charge'], $breakfastTaxProfile['special_tax'], $breakfastTaxProfile['tax'], max(1, $breakfastQuantity));
                     $breakfastValues = [
                         'DepartmentId' => 'FO', 'ServiceId' => 'BF',
-                        'DescriptionServive' => 'Tiền ăn sáng người lớn - Phòng ' . $roomNumber,
+                        'DescriptionServive' => $breakfastDescription,
                         // Giá là đơn giá mỗi khách; Amount mới là tổng tiền BF.
-                        'OriginalRate' => $breakfastRate, 'Quantity' => $adults,
+                        'OriginalRate' => round($breakfastAmount / max(1, $breakfastQuantity), 2), 'Quantity' => max(1, $breakfastQuantity),
                         'ServiceCharge' => $breakfastTaxProfile['service_charge'], 'SpecialTax' => $breakfastTaxProfile['special_tax'], 'Tax' => $breakfastTaxProfile['tax'],
                         'ServiceChargeAmount' => $bfBreakdown['service_charge_amount'],
                         'SpecialTaxAmount'    => $bfBreakdown['special_tax_amount'],
@@ -142,7 +150,7 @@ class NightAuditController extends Controller
                     $discountBreakdown = TaxBreakdownService::breakdown(-$breakfastAmount, $roomTaxProfile['service_charge'], $roomTaxProfile['special_tax'], $roomTaxProfile['tax']);
                     $discountValues = [
                         'DepartmentId' => 'FO', 'ServiceId' => 'RM',
-                        'DescriptionServive' => 'Trừ tiền ăn sáng người lớn - Phòng ' . $roomNumber,
+                        'DescriptionServive' => $breakfastDescription,
                         'OriginalRate' => $discountBreakdown['original_rate'], 'Quantity' => 1,
                         'ServiceCharge' => $roomTaxProfile['service_charge'], 'SpecialTax' => $roomTaxProfile['special_tax'], 'Tax' => $roomTaxProfile['tax'],
                         'ServiceChargeAmount' => $discountBreakdown['service_charge_amount'],
@@ -201,7 +209,9 @@ class NightAuditController extends Controller
 
         $todayStart = Carbon::today();
         $todayEnd = Carbon::today()->endOfDay();
-        $alreadyRolledToday = SystemDateRoll::whereBetween('actual_date', [$todayStart, $todayEnd])->exists();
+        // Dòng 511: lấy lần sang ngày gần nhất trong ngày thực tế để báo "đã sang ngày lúc ...".
+        $lastRollToday = SystemDateRoll::whereBetween('actual_date', [$todayStart, $todayEnd])->latest('actual_date')->first();
+        $alreadyRolledToday = $lastRollToday !== null;
 
         // 1. Phòng cần check in nhưng chưa check in (arrival_date <= system_date và status = 0, loại bỏ phòng chuyển).
         // Dòng 259: gồm cả phòng chưa gán số phòng, trước đây bị bỏ qua nên vẫn sang ngày được khi khách chưa nhận phòng.
@@ -234,6 +244,7 @@ class NightAuditController extends Controller
             'data' => [
                 'system_date' => $systemDate,
                 'already_rolled_today' => $alreadyRolledToday,
+                'last_rolled_at' => $lastRollToday?->actual_date?->format('Y-m-d H:i:s'),
                 'is_running' => $isRunning,
                 'active_step' => $activeStep,
                 'latest_run' => $latestRun ? [
@@ -481,6 +492,10 @@ class NightAuditController extends Controller
                         foreach ($extraServices as $service) {
                             $this->postSetupServiceBill($room, $service, $username);
                         }
+
+                        // Dòng 503: phụ thu ăn sáng trẻ em có phụ phí (lưu theo chi tiết từng đêm) cũng phải tính
+                        // khi chọn "tính phí tất cả". Ở chế độ dịch vụ, đêm đã có dòng setup thì hàm tự bỏ qua để không post trùng.
+                        app(\App\Services\ChildBreakfastService::class)->postForDate($room, $nightDate->copy(), $username);
                     }
 
                     $nightDate->addDay();
@@ -1292,6 +1307,13 @@ class NightAuditController extends Controller
             $breakfastRate   = (float)($setting?->breakfast_adult_rate ?? 0);
             $breakfastAmount = $breakfastRate * $breakfastAdults;
         }
+        // Dòng 415/480: ăn sáng trẻ em không phụ phí nằm trong tiền phòng -> tách cùng dòng BF.
+        $breakfastQuantity = $breakfastAmount > 0 ? $breakfastAdults : 0;
+        if (!$isNoshow) {
+            $childBreakfast = app(\App\Services\ChildBreakfastService::class)->roomIncludedBreakfast($room, $date);
+            $breakfastAmount += $childBreakfast['amount'];
+            $breakfastQuantity += $childBreakfast['quantity'];
+        }
 
         $roomService = HotelService::where('code', 'RM')->first();
         $breakfastService = HotelService::where('code', 'BF')->first();
@@ -1344,7 +1366,7 @@ class NightAuditController extends Controller
         ]);
 
         // 4. Chi tiết ServiceBillDetail
-        if ($room->breakfast && $breakfastAmount > 0) {
+        if ($breakfastAmount > 0) {
             // Dòng RM gốc
             $rmBreakdown = TaxBreakdownService::breakdown($totalAmount, $roomTaxProfile['service_charge'], $roomTaxProfile['special_tax'], $roomTaxProfile['tax']);
             ServiceBillDetail::create([
@@ -1352,7 +1374,7 @@ class NightAuditController extends Controller
                 'Ma'                       => 1,
                 'DepartmentId'             => 'FO',
                 'ServiceId'                => 'RM',
-                'DescriptionServive'       => $reason ?: $description,
+                'DescriptionServive'       => $description, // Dòng 416: giống mô tả dịch vụ, không dùng lý do post
                 'OriginalRate'             => $rmBreakdown['original_rate'],
                 'ServiceCharge'            => $roomTaxProfile['service_charge'],
                 'SpecialTax'               => $roomTaxProfile['special_tax'],
@@ -1368,7 +1390,7 @@ class NightAuditController extends Controller
             ]);
 
             // Dòng BF ăn sáng
-            $bfBreakdown = TaxBreakdownService::breakdown($breakfastAmount, $breakfastTaxProfile['service_charge'], $breakfastTaxProfile['special_tax'], $breakfastTaxProfile['tax'], $breakfastAdults);
+            $bfBreakdown = TaxBreakdownService::breakdown($breakfastAmount, $breakfastTaxProfile['service_charge'], $breakfastTaxProfile['special_tax'], $breakfastTaxProfile['tax'], max(1, $breakfastQuantity));
             ServiceBillDetail::create([
                 'BillServiceId'            => $bill->Ma,
                 'Ma'                       => 2,
@@ -1377,7 +1399,7 @@ class NightAuditController extends Controller
                 'DescriptionServive'       => $breakfastDescription,
                 // SP3001: đơn giá 1 suất × số lượng khách = thành tiền.
                 'OriginalRate'             => $bfBreakdown['original_rate'],
-                'Quantity'                 => $breakfastAdults,
+                'Quantity'                 => max(1, $breakfastQuantity),
                 'ServiceCharge'            => $breakfastTaxProfile['service_charge'],
                 'SpecialTax'               => $breakfastTaxProfile['special_tax'],
                 'Tax'                      => $breakfastTaxProfile['tax'],
@@ -1398,7 +1420,7 @@ class NightAuditController extends Controller
                 'Ma'                       => 3,
                 'DepartmentId'             => 'FO',
                 'ServiceId'                => 'RM',
-                'DescriptionServive'       => 'Trừ ' . $breakfastDescription,
+                'DescriptionServive'       => $breakfastDescription, // Dòng 416: RM âm cùng mô tả với BF
                 'OriginalRate'             => $rmMinusBreakdown['original_rate'],
                 'ServiceCharge'            => $roomTaxProfile['service_charge'],
                 'SpecialTax'               => $roomTaxProfile['special_tax'],
@@ -1419,7 +1441,7 @@ class NightAuditController extends Controller
                 'Ma'                       => 1,
                 'DepartmentId'             => 'FO',
                 'ServiceId'                => 'RM',
-                'DescriptionServive'       => $reason ?: $description,
+                'DescriptionServive'       => $description, // Dòng 416: giống mô tả dịch vụ, không dùng lý do post
                 'OriginalRate'             => $singleBreakdown['original_rate'],
                 'ServiceCharge'            => $roomTaxProfile['service_charge'],
                 'SpecialTax'               => $roomTaxProfile['special_tax'],
@@ -1446,7 +1468,7 @@ class NightAuditController extends Controller
             'date'             => $date->toDateString(),
             'room'             => $room->room_number,
             'room_type_id'     => $room->room_class_id,
-            'breakfast'        => $room->breakfast ? max(1, (int)$room->adults) : 0,
+            'breakfast'        => $breakfastQuantity,
             'extra_bed'        => (int)($room->extra_bed_qty ?? 0),
             'rate_code'        => $room->rate_code,
             'rate'             => $rate,

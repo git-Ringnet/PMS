@@ -6488,5 +6488,13 @@
  "* MTD: Month to date / Đầu tháng đến ngày xem": "* MTD: Month to date",
  "* YTD: Year to date / Đầu năm đến ngày xem": "* YTD: Year to date",
  "* CTM: Balance to month / Công nợ trong tháng": "* CTM: Balance to month",
- "* Nhấp đúp vào số tiền để xem báo cáo doanh thu dịch vụ chi tiết": "* Double-click an amount to open the detailed service revenue report"
+ "* Nhấp đúp vào số tiền để xem báo cáo doanh thu dịch vụ chi tiết": "* Double-click an amount to open the detailed service revenue report",
+ "Sửa vai trò": "Edit role",
+ "Xóa vai trò": "Delete role",
+ "Đã cập nhật vai trò": "Role updated",
+ "Không thể cập nhật vai trò": "Unable to update role",
+ "Đã xóa vai trò": "Role deleted",
+ "Role đang được gán cho nhân viên.": "This role is assigned to employees.",
+ "Bạn không có quyền thực hiện thao tác đặt cọc.": "You do not have permission to perform deposit actions.",
+ "Bạn không có quyền thực hiện thao tác thanh toán trước.": "You do not have permission to perform advance payment actions."
 }
