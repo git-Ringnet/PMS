@@ -6496,5 +6496,15 @@
  "Đã xóa vai trò": "Role deleted",
  "Role đang được gán cho nhân viên.": "This role is assigned to employees.",
  "Bạn không có quyền thực hiện thao tác đặt cọc.": "You do not have permission to perform deposit actions.",
- "Bạn không có quyền thực hiện thao tác thanh toán trước.": "You do not have permission to perform advance payment actions."
+ "Bạn không có quyền thực hiện thao tác thanh toán trước.": "You do not have permission to perform advance payment actions.",
+ "Tải file mẫu nhập khách": "Download guest import template",
+ "Nhập từ Excel": "Import from Excel",
+ "Nhập thông tin khách từ file Excel/CSV": "Import guest information from an Excel/CSV file",
+ "Đang đọc file...": "Reading file...",
+ "Không tải được file mẫu!": "Could not download the template!",
+ "Không đọc được file nhập khách!": "Could not read the guest import file!",
+ "File không có dòng khách hợp lệ (cần cột \"Họ Và Tên\").": "The file has no valid guest rows (a \"Họ Và Tên\" column is required).",
+ "File không đúng mẫu: thiếu cột \"Họ Và Tên\". Vui lòng tải file mẫu.": "Invalid file: the \"Họ Và Tên\" column is missing. Please download the template.",
+ "Không đọc được file. Vui lòng dùng file Excel (.xlsx, .xls) hoặc CSV theo mẫu.": "Could not read the file. Please use an Excel (.xlsx, .xls) or CSV file that follows the template.",
+ "Đã điền {{ n }} khách từ file vào bảng": "Filled {{ n }} guests from the file into the table"
 }

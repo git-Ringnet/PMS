@@ -66,9 +66,10 @@ class ActivityLogController extends Controller
             if ($numericId === '') {
                 $query->whereRaw('1 = 0');
             } else {
-                $code = 'GAL' . ltrim($numericId, '0');
+                $code = \App\Services\ActivityLogService::bookingPrefix() . ltrim($numericId, '0');
                 $query->where(function ($q) use ($code, $numericId) {
-                    $q->where('booking_code', $code)
+                    // Log ghi trước khi đổi tiền tố (GAL -> NV) vẫn thuộc đúng đăng ký
+                    $q->whereIn('booking_code', array_unique([$code, 'GAL' . ltrim($numericId, '0')]))
                         // Log cũ (chưa có cột booking_code)
                         ->orWhere(function ($legacy) use ($code, $numericId) {
                             $legacy->whereNull('booking_code')->where(function ($inner) use ($code, $numericId) {

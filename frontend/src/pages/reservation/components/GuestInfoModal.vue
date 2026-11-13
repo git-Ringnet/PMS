@@ -29,6 +29,17 @@
               <i class="fa-solid fa-floppy-disk mr-1"></i>{{ saving ? 'Đang lưu...' : 'Lưu bảng' }}
             </button>
 
+            <!-- Dòng 369: nhập khách từ Excel/CSV vào bảng đang sửa -->
+            <template v-if="isEditing">
+              <button @click="handleDownloadImportTemplate" type="button" class="btn-pms-secondary h-7 text-xs px-2.5" title="Tải file mẫu nhập khách" data-testid="guest-import-template-btn">
+                <i class="fa-solid fa-download mr-1"></i>Tải file mẫu
+              </button>
+              <button @click="triggerImportFile" :disabled="importing" type="button" class="btn-pms-secondary h-7 text-xs px-2.5" title="Nhập thông tin khách từ file Excel/CSV" data-testid="guest-import-btn">
+                <i class="fa-solid fa-file-import mr-1"></i>{{ importing ? 'Đang đọc file...' : 'Nhập từ Excel' }}
+              </button>
+              <input ref="importFileInput" type="file" accept=".xlsx,.xls,.csv" class="hidden" data-testid="guest-import-file" @change="handleImportFile" />
+            </template>
+
             <!-- Scan CCCD / VNeID -->
             <button v-if="!isEditing" @click="handleScan" type="button" class="btn-pms-secondary h-7 text-xs px-2.5" title="Quét CCCD / VNeID">
               <i class="fa-solid fa-camera mr-1"></i>Scan
@@ -839,7 +850,9 @@ import {
   bulkUpdateBookingGuests,
   fetchNationalities,
   fetchGuestDefinitions,
-  syncGeoData
+  syncGeoData,
+  previewBookingGuestsImport,
+  guestImportTemplate
 } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
@@ -848,6 +861,7 @@ import GuestSuggestInput from '@/components/GuestSuggestInput.vue'
 import { inheritGuestInfo } from '@/utils/guest-suggestion'
 import { normalizeGuestInfoGroups, isCheckedOutPerson, splitCheckedOutPeople } from '@/utils/guest-info'
 import { maskDateInput } from './room-info-date-utils'
+import { applyImportedGuests } from '@/utils/guest-import'
 
 const props = defineProps({
   show: Boolean,
@@ -1614,6 +1628,64 @@ async function startEditing() {
     uiStore.showToast('Không thể chuẩn bị dữ liệu chỉnh sửa!', 'error')
   } finally {
     loading.value = false
+  }
+}
+
+// ==================== NHẬP KHÁCH TỪ EXCEL (dòng 369) ====================
+const importing = ref(false)
+const importFileInput = ref(null)
+
+function triggerImportFile() {
+  importFileInput.value?.click()
+}
+
+async function handleDownloadImportTemplate() {
+  try {
+    const res = await guestImportTemplate()
+    const url = URL.createObjectURL(new Blob([res.data], { type: 'text/csv;charset=utf-8' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'mau_nhap_khach.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch (err) {
+    console.error(err)
+    uiStore.showToast('Không tải được file mẫu!', 'error')
+  }
+}
+
+async function handleImportFile(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+  importing.value = true
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await previewBookingGuestsImport(props.bookingId, formData)
+    const rows = res.data?.data || []
+    if (!rows.length) {
+      uiStore.showToast('File không có dòng khách hợp lệ (cần cột "Họ Và Tên").', 'warning')
+      return
+    }
+    const { filled, unmatched } = applyImportedGuests(editData.value, rows)
+    for (const { guest } of filled) {
+      await initGeoForLine(`g-${guest.id}`, guest.province, guest.district)
+    }
+    const skipped = Number(res.data?.skipped || 0)
+    const wrongRooms = [...new Set(unmatched.filter((r) => r.reason === 'room_not_in_booking').map((r) => r.room_number))]
+    const noSlot = unmatched.filter((r) => r.reason !== 'room_not_in_booking').length
+    const notes = []
+    if (wrongRooms.length) notes.push(`phòng ${wrongRooms.join(', ')} không thuộc đăng ký này, hãy sửa cột Số Phòng hoặc để trống`)
+    if (noSlot) notes.push(`${noSlot} dòng không còn chỗ khách trống`)
+    if (skipped) notes.push(`${skipped} dòng thiếu họ tên`)
+    const note = notes.join('; ')
+    uiStore.showToast(`Đã điền ${filled.length} khách từ file vào bảng${note ? ` (bỏ qua: ${note})` : ''}.${filled.length ? ' Bấm "Lưu bảng" để lưu.' : ''}`, filled.length ? 'success' : 'warning')
+  } catch (err) {
+    console.error(err)
+    uiStore.showToast(err.response?.data?.message || 'Không đọc được file nhập khách!', 'error')
+  } finally {
+    importing.value = false
   }
 }
 

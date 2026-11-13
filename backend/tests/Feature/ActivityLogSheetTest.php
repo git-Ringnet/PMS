@@ -446,7 +446,7 @@ class ActivityLogSheetTest extends TestCase
         $this->assertStringStartsWith('* Thêm Công Ty : ID: ' . Company::find($id)->code . ' , Công Ty: Hana Travel , Tên Giao Dịch: Hana Travel', $created->description);
         $this->assertSame('Công ty', $created->component);
 
-        $this->withHeaders($headers)->putJson("/api/companies/{$id}", ['name' => 'Hana Travel', 'sync_acc' => true])->assertSuccessful();
+        $this->withHeaders($headers)->putJson("/api/companies/{$id}", ['name' => 'Hana Travel', 'trading_name' => 'Hana Travel', 'sync_acc' => true])->assertSuccessful();
         $this->assertSame('* Cập Nhật Công Ty:- ID: ' . Company::find($id)->code . ' , - Thanh toán công nợ: Không ➜ Có', ActivityLog::latest('id')->value('description'));
     }
 

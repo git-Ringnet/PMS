@@ -553,6 +553,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     Route::post('/guests/{id}/avatar', [\App\Http\Controllers\Api\GuestController::class, 'uploadAvatar'])->middleware('permission:fo.guest.edit,fo.guest.create,fo.booking.edit,fo.checkin');
     Route::get('/bookings/{bookingId}/guests', [\App\Http\Controllers\Api\GuestController::class, 'bookingGuests']);
     Route::post('/bookings/{bookingId}/init-guests', [\App\Http\Controllers\Api\GuestController::class, 'initGuests'])->middleware('permission:fo.guest.edit,fo.guest.create,fo.booking.edit,fo.checkin');
+    Route::get('/guests/import-template', [\App\Http\Controllers\Api\GuestController::class, 'importTemplate']);
+    Route::post('/bookings/{bookingId}/guests/import-preview', [\App\Http\Controllers\Api\GuestController::class, 'importPreview'])->middleware('permission:fo.guest.edit,fo.guest.create,fo.booking.edit,fo.checkin');
     Route::post('/bookings/{bookingId}/bulk-update-guests', [\App\Http\Controllers\Api\GuestController::class, 'bulkUpdate'])->middleware('permission:fo.guest.edit,fo.guest.create,fo.booking.edit,fo.checkin');
     Route::prefix('booking-rooms/{roomId}/guests')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\GuestController::class, 'roomGuests']);

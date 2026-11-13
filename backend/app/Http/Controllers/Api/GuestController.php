@@ -2075,6 +2075,31 @@ class GuestController extends Controller
     }
 
     // POST /bookings/{bookingId}/bulk-update-guests
+    /** TC_LT_27 (dòng 369): đọc file Excel/CSV khách, trả về các dòng để điền vào bảng; chưa lưu. */
+    public function importPreview(Request $request, $bookingId)
+    {
+        $request->validate(['file' => 'required|file|max:5120']);
+        Booking::findOrFail($bookingId);
+
+        try {
+            $result = app(\App\Services\GuestExcelImportService::class)->parse($request->file('file')->getRealPath());
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'message' => 'Không đọc được file. Vui lòng dùng file Excel (.xlsx, .xls) hoặc CSV theo mẫu.'], 422);
+        }
+
+        return response()->json(['success' => true, 'data' => $result['rows'], 'skipped' => $result['skipped']]);
+    }
+
+    public function importTemplate()
+    {
+        return response(app(\App\Services\GuestExcelImportService::class)->templateCsv(), 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="mau_nhap_khach.csv"',
+        ]);
+    }
+
     public function bulkUpdate(Request $request)
     {
         $guestsData = $request->input('guests', []);
@@ -2214,6 +2239,9 @@ class GuestController extends Controller
             DB::rollBack();
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
         }
+
+        // Task 325: lưu bảng không đổi gì thì không ghi dòng log chung chung "Thêm mới Quản lý Đặt phòng"
+        $request->attributes->set('_activity_logged', true);
 
         // Dòng 36: mỗi khách thay đổi một dòng "* Cập nhật thông tin khách: Mã khách: K.." , cột Mã phòng = mã G của khách
         $bookingId = (int) $request->route('bookingId');

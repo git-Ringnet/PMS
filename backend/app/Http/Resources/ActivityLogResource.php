@@ -261,6 +261,9 @@ class ActivityLogResource extends JsonResource
             $description = $this->resolveDescription($bookingCode, $roomNumber, $componentLabel);
         }
 
+        $bookingCode = \App\Services\ActivityLogService::localizePrefix($bookingCode);
+        $description = \App\Services\ActivityLogService::localizePrefix($description);
+
         return [
             'id' => $this->id,
             'user_id' => $this->user_id,
@@ -359,31 +362,31 @@ class ActivityLogResource extends JsonResource
     {
         // 1. Kiểm tra target_label nếu có dạng GAL... hoặc số
         if (!empty($this->target_label)) {
-            if (preg_match('/^(GAL\d+)/i', $this->target_label, $m)) {
+            if (preg_match('/^([A-Z]+\d+)/i', $this->target_label, $m)) {
                 return strtoupper($m[1]);
             }
             if (in_array($this->target_type, ['Booking', 'Payment']) && is_numeric($this->target_label)) {
-                return 'GAL' . $this->target_label;
+                return \App\Services\ActivityLogService::bookingPrefix() . $this->target_label;
             }
         }
 
         // 2. Nếu target_type là Booking
         if ($this->target_type === 'Booking') {
             if (!empty($this->target_id) && is_numeric($this->target_id)) {
-                return 'GAL' . $this->target_id;
+                return \App\Services\ActivityLogService::bookingPrefix() . $this->target_id;
             }
             if (!empty($this->new_values['id'])) {
-                return 'GAL' . $this->new_values['id'];
+                return \App\Services\ActivityLogService::bookingPrefix() . $this->new_values['id'];
             }
             if (!empty($this->old_values['id'])) {
-                return 'GAL' . $this->old_values['id'];
+                return \App\Services\ActivityLogService::bookingPrefix() . $this->old_values['id'];
             }
         }
 
         // 3. Nếu new_values hoặc old_values có booking_code trực tiếp
         $directCode = $this->new_values['booking_code'] ?? $this->old_values['booking_code'] ?? null;
         if ($directCode) {
-            return str_starts_with(strtoupper($directCode), 'GAL') ? strtoupper($directCode) : ('GAL' . $directCode);
+            return preg_match('/^[A-Z]+\d/i', $directCode) ? strtoupper($directCode) : (\App\Services\ActivityLogService::bookingPrefix() . $directCode);
         }
 
         // 4. Nếu có booking_id trong new_values hoặc old_values
@@ -391,7 +394,7 @@ class ActivityLogResource extends JsonResource
             ?? $this->old_values['booking_id'] 
             ?? null;
         if ($bookingId) {
-            return 'GAL' . $bookingId;
+            return \App\Services\ActivityLogService::bookingPrefix() . $bookingId;
         }
 
         // 5. Nếu có booking_room_id trong new_values hoặc old_values
@@ -401,7 +404,7 @@ class ActivityLogResource extends JsonResource
         if ($brId) {
             $br = $this->getCachedBookingRoom((string) $brId);
             if ($br?->booking_id) {
-                return 'GAL' . $br->booking_id;
+                return \App\Services\ActivityLogService::bookingPrefix() . $br->booking_id;
             }
         }
 
@@ -409,30 +412,30 @@ class ActivityLogResource extends JsonResource
         if (!empty($this->request_url) && preg_match('#/(?:rooms|booking-rooms)/(G\d+|\d+)#i', $this->request_url, $m)) {
             $br = $this->getCachedBookingRoom($m[1]);
             if ($br?->booking_id) {
-                return 'GAL' . $br->booking_id;
+                return \App\Services\ActivityLogService::bookingPrefix() . $br->booking_id;
             }
         }
         if (!empty($this->target_id) && preg_match('/^(G\d+|\d+)$/i', (string) $this->target_id, $m)) {
             $br = $this->getCachedBookingRoom($m[1]);
             if ($br?->booking_id) {
-                return 'GAL' . $br->booking_id;
+                return \App\Services\ActivityLogService::bookingPrefix() . $br->booking_id;
             }
         }
 
         // 7. Tìm trong request_url: /api/bookings/(\d+) hoặc ?booking_id=(\d+)
         if (!empty($this->request_url)) {
             if (preg_match('#/api/bookings/(\d+)#', $this->request_url, $m)) {
-                return 'GAL' . $m[1];
+                return \App\Services\ActivityLogService::bookingPrefix() . $m[1];
             }
             if (preg_match('#[?&]booking_id=(\d+)#', $this->request_url, $m)) {
-                return 'GAL' . $m[1];
+                return \App\Services\ActivityLogService::bookingPrefix() . $m[1];
             }
         }
 
         // 8. Tìm trong description
         if (!empty($this->description) && preg_match('/(?:Đ[Kk]|đăng ký|GAL|BK_?)\s*(GAL\d+|\d+)/iu', $this->description, $m)) {
             $val = $m[1];
-            return str_starts_with(strtoupper($val), 'GAL') ? strtoupper($val) : ('GAL' . $val);
+            return preg_match('/^[A-Z]+\d/i', $val) ? strtoupper($val) : (\App\Services\ActivityLogService::bookingPrefix() . $val);
         }
 
         return null;
@@ -819,7 +822,7 @@ class ActivityLogResource extends JsonResource
         if ($this->target_type === 'Booking' && $action === 'Add') {
             $bookingId = $this->target_id ?: ($bookingCode ? preg_replace('/\D/', '', $bookingCode) : '0');
             $b = $this->getCachedBooking($bookingId);
-            $bCode = $bookingCode ?: ('GAL' . $bookingId);
+            $bCode = $bookingCode ?: (\App\Services\ActivityLogService::bookingPrefix() . $bookingId);
 
             $name = $this->safeStr($this->new_values['booking_name'] ?? $b?->booking_name);
             $arrRaw = $this->new_values['arrival_date'] ?? $b?->arrival_date;
@@ -902,7 +905,7 @@ class ActivityLogResource extends JsonResource
         // 4. Cập nhật Booking (Hàng 17, 18, 33, 63)
         if ($this->target_type === 'Booking' && $action === 'Modify') {
             $bookingId = $this->target_id ?: ($bookingCode ? preg_replace('/\D/', '', $bookingCode) : '0');
-            $bCode = $bookingCode ?: ('GAL' . $bookingId);
+            $bCode = $bookingCode ?: (\App\Services\ActivityLogService::bookingPrefix() . $bookingId);
 
             // Row 63: No Post tại cấp Booking
             if (isset($this->new_values['no_post']) || isset($this->old_values['no_post'])) {
@@ -921,7 +924,7 @@ class ActivityLogResource extends JsonResource
         // 5. Hủy Booking (Hàng 44)
         if ($this->target_type === 'Booking' && $action === 'Cancel') {
             $bookingId = $this->target_id ?: ($bookingCode ? preg_replace('/\D/', '', $bookingCode) : '0');
-            $bCode = $bookingCode ?: ('GAL' . $bookingId);
+            $bCode = $bookingCode ?: (\App\Services\ActivityLogService::bookingPrefix() . $bookingId);
             $name = $this->safeStr($this->old_values['booking_name'] ?? null);
             $reason = $this->safeStr($this->new_values['cancel_reason'] ?? $this->old_values['cancel_reason'] ?? $this->new_values['reason'] ?? $this->old_values['reason'] ?? null);
             $reasonText = $reason !== '' ? ", Lý do: {$reason}" : '';
@@ -939,7 +942,7 @@ class ActivityLogResource extends JsonResource
             $brModel = $roomId !== '' && !str_contains($roomId, ',') ? $this->getCachedBookingRoom($roomId) : null;
             // Số phòng vật lý của phòng thuê (mã G... là mã phòng thuê)
             $physicalRoom = $this->safeStr($this->new_values['room_number'] ?? $this->old_values['room_number'] ?? $brModel?->room_number);
-            $bkCode = $bookingCode ?: (($this->new_values['booking_id'] ?? $this->old_values['booking_id'] ?? $brModel?->booking_id) ? 'GAL' . ($this->new_values['booking_id'] ?? $this->old_values['booking_id'] ?? $brModel?->booking_id) : '');
+            $bkCode = $bookingCode ?: (($this->new_values['booking_id'] ?? $this->old_values['booking_id'] ?? $brModel?->booking_id) ? \App\Services\ActivityLogService::bookingPrefix() . ($this->new_values['booking_id'] ?? $this->old_values['booking_id'] ?? $brModel?->booking_id) : '');
 
             if ($action === 'Add') {
                 // Nhiều phòng ghi chung một dòng (lúc tạo đăng ký): giữ mô tả đã ghi

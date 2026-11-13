@@ -190,6 +190,8 @@ export const fetchBookingGuests = (bookingId) => http.get(`/bookings/${bookingId
 export const initBookingGuests = (bookingId) => http.post(`/bookings/${bookingId}/init-guests`)
 export const updateBookingRoomGuest = (roomId, guestId, data) => http.put(`/booking-rooms/${roomId}/guests/${guestId}`, data)
 export const updateBookingChild = (childId, data) => http.put(`/booking-children/${childId}`, data)
+export const previewBookingGuestsImport = (bookingId, formData) => http.post(`/bookings/${bookingId}/guests/import-preview`, formData, { headers: { 'Content-Type': 'multipart/form-data' } })
+export const guestImportTemplate = () => http.get('/guests/import-template', { responseType: 'blob' })
 export const bulkUpdateBookingGuests = (bookingId, data) => http.post(`/bookings/${bookingId}/bulk-update-guests`, data)
 
 // Room-level guest operations (dùng cho Room Map modal)
