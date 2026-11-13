@@ -418,7 +418,8 @@ async function openProformaInvoicePrint(mode = 'all') {
   if (!data) return
 
   printPreviewModalType.value = 'proforma_invoice'
-  printPreviewModalShowPrice.value = isPrintPrice.value
+  // Dòng 349: hóa đơn tạm luôn hiện tiền, không thừa hưởng lựa chọn Hiện/Không hiện giá của phiếu đăng ký khách
+  printPreviewModalShowPrice.value = true
   selectedPrintRooms.value = selected.length > 0 ? selected : data.rooms
 
   if (mode === 'all') {

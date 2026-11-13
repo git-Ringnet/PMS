@@ -6506,5 +6506,7 @@
  "File không có dòng khách hợp lệ (cần cột \"Họ Và Tên\").": "The file has no valid guest rows (a \"Họ Và Tên\" column is required).",
  "File không đúng mẫu: thiếu cột \"Họ Và Tên\". Vui lòng tải file mẫu.": "Invalid file: the \"Họ Và Tên\" column is missing. Please download the template.",
  "Không đọc được file. Vui lòng dùng file Excel (.xlsx, .xls) hoặc CSV theo mẫu.": "Could not read the file. Please use an Excel (.xlsx, .xls) or CSV file that follows the template.",
- "Đã điền {{ n }} khách từ file vào bảng": "Filled {{ n }} guests from the file into the table"
+ "Đã điền {{ n }} khách từ file vào bảng": "Filled {{ n }} guests from the file into the table",
+ "In biên nhận thu tiền, hiện số tiền": "Print the payment receipt with the amount",
+ "In biên nhận thu tiền, ẩn số tiền": "Print the payment receipt without the amount"
 }

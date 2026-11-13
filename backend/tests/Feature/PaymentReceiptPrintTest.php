@@ -78,4 +78,24 @@ class PaymentReceiptPrintTest extends TestCase
         $this->postJson('/api/print-template-slots/payment-receipt', ['payment_ids' => [$payment->id, $otherPayment->id]])
             ->assertUnprocessable()->assertJsonValidationErrors('payment_ids');
     }
+
+    public function test_row_350_receipt_without_price_hides_amount_and_amount_in_words(): void
+    {
+        $template = Template::create([
+            'name' => 'Phieu thu test', 'group' => 'Receipt',
+            'content_html' => '<p>{{guest_name}}|{{amount}}|{{amount_in_words}}|{{content}}</p>',
+        ]);
+        PrintTemplateSlot::where('code', 'PAYMENT_RECEIPT')->update(['template_id' => $template->id]);
+        $payment = $this->makePayment(1500000, 'Thanh toán tiền phòng');
+
+        $hidden = $this->postJson('/api/print-template-slots/payment-receipt', ['payment_ids' => [$payment->id], 'show_price' => false])
+            ->assertSuccessful()->json('html');
+        $this->assertStringNotContainsString('1,500,000', $hidden);
+        $this->assertStringNotContainsString('Một triệu', $hidden);
+        $this->assertStringContainsString('Thanh toán tiền phòng', $hidden);
+
+        $shown = $this->postJson('/api/print-template-slots/payment-receipt', ['payment_ids' => [$payment->id], 'show_price' => true])
+            ->assertSuccessful()->json('html');
+        $this->assertStringContainsString('1,500,000 đ', $shown);
+    }
 }

@@ -1911,9 +1911,9 @@ const printHtmlDocument = (html) => {
   })
 }
 
-const printReceiptForPayments = async (paymentIds) => {
+const printReceiptForPayments = async (paymentIds, showPrice = true) => {
   try {
-    const response = await http.post('/print-template-slots/payment-receipt', { payment_ids: paymentIds })
+    const response = await http.post('/print-template-slots/payment-receipt', { payment_ids: paymentIds, show_price: showPrice })
     printHtmlDocument(response.data.html)
   } catch (error) {
     const errors = error?.response?.data?.errors
@@ -1923,7 +1923,7 @@ const printReceiptForPayments = async (paymentIds) => {
 
 // In Bill = phiếu thu (biên nhận thu tiền) theo mẫu gán cho vị trí PAYMENT_RECEIPT.
 // In các dòng thanh toán đang chọn; chưa chọn thì in toàn bộ thanh toán của folio đang xem.
-const printPaymentReceipt = async () => {
+const printPaymentReceipt = async (showPrice = true) => {
   showInvoiceMenu.value = false
   const payments = selectedPaymentItems.value.length ? selectedPaymentItems.value : visiblePaymentsList.value
   const paymentIds = payments.map(payment => Number(payment.id)).filter(Number.isInteger)
@@ -1931,7 +1931,7 @@ const printPaymentReceipt = async () => {
     uiStore.showToast('Chưa có dòng thanh toán để in phiếu thu.', 'warning')
     return
   }
-  await printReceiptForPayments(paymentIds)
+  await printReceiptForPayments(paymentIds, showPrice)
 }
 
 // DisablePrintBillAfterPayment: 1 = tự động in phiếu thu sau khi thanh toán thành công, 0 = không in.
@@ -3810,9 +3810,9 @@ onUnmounted(() => {
               v-if="showInvoiceMenu"
               class="mt-0.5 ml-5 flex flex-col border-l border-[#334155] pl-1 text-xs"
             >
-              <button class="w-full text-left px-2 py-[5px] rounded text-[#94a3b8] hover:bg-[#334155] hover:text-white transition-colors" title="Chưa có chức năng">Hiện giá</button>
-              <button class="w-full text-left px-2 py-[5px] rounded text-[#94a3b8] hover:bg-[#334155] hover:text-white transition-colors" title="Chưa có chức năng">Không hiện giá</button>
-              <button @click="printPaymentReceipt" class="w-full text-left px-2 py-[5px] rounded text-[#cbd5e1] font-semibold hover:bg-[#334155] hover:text-white transition-colors">In Bill</button>
+              <button @click="printPaymentReceipt(true)" data-testid="receipt-show-price-btn" class="w-full text-left px-2 py-[5px] rounded text-[#cbd5e1] hover:bg-[#334155] hover:text-white transition-colors" title="In biên nhận thu tiền, hiện số tiền">Hiện giá</button>
+              <button @click="printPaymentReceipt(false)" data-testid="receipt-hide-price-btn" class="w-full text-left px-2 py-[5px] rounded text-[#cbd5e1] hover:bg-[#334155] hover:text-white transition-colors" title="In biên nhận thu tiền, ẩn số tiền">Không hiện giá</button>
+              <button @click="printPaymentReceipt(true)" class="w-full text-left px-2 py-[5px] rounded text-[#cbd5e1] font-semibold hover:bg-[#334155] hover:text-white transition-colors">In Bill</button>
             </div>
           </div>
 
