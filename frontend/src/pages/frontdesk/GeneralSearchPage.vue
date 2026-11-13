@@ -889,7 +889,6 @@ function handleCloneBooking() {
 
 function handleBookingCopied(newBooking) {
   showCopyModal.value = false
-  uiStore.showToast('Nhân bản đăng ký thành công!', 'success')
   // Dòng 500: nhân bản xong chuyển sang đăng ký vừa tạo.
   if (newBooking?.booking_code || newBooking?.id) {
     openBookingFromSearch({ booking_code: newBooking.booking_code, id: newBooking.id }, 'booking')
