@@ -185,16 +185,41 @@
                 type="text" 
                 v-model="productSearchQuery" 
                 placeholder="Tìm sản phẩm..." 
+                role="combobox"
+                aria-autocomplete="list"
+                :aria-expanded="isProductSearchOpen"
+                aria-controls="housekeeping-product-suggestions"
+                @focus="isProductSearchOpen = true"
+                @input="onProductSearchInput"
                 class="w-full h-8 pl-8 pr-8 text-xs border border-slate-300 rounded-lg bg-slate-50 focus:bg-white focus:border-blue-500 text-[#000000D9] outline-none transition-colors"
               />
-              <button v-if="productSearchQuery" type="button" title="Xóa tìm kiếm" @click="productSearchQuery = ''" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500"><X class="h-3.5 w-3.5" /></button>
+              <button v-if="productSearchQuery" type="button" title="Xóa tìm kiếm" @click="clearProductSearch" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500"><X class="h-3.5 w-3.5" /></button>
+              <div
+                v-if="isProductSearchOpen && productSearchSuggestions.length"
+                id="housekeeping-product-suggestions"
+                role="listbox"
+                class="absolute z-30 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-slate-300 bg-white py-1 shadow-lg"
+              >
+                <button
+                  v-for="product in productSearchSuggestions"
+                  :key="product.id"
+                  type="button"
+                  role="option"
+                  :aria-selected="product.id === productSearchSelectedId"
+                  @mousedown.prevent="selectProductSearchSuggestion(product)"
+                  class="flex w-full items-center justify-between gap-3 px-3 py-1.5 text-left text-xs text-[#000000D9] hover:bg-blue-50"
+                >
+                  <span class="truncate">{{ product.name }}</span>
+                  <span v-if="product.product_code" class="shrink-0 text-slate-400">{{ product.product_code }}</span>
+                </button>
+              </div>
             </div>
           </div>
 
           <!-- Product List -->
           <div class="product-list flex-1 overflow-y-auto">
             <template v-if="filteredProductSubgroups.length > 0">
-              <div v-for="sub in filteredProductSubgroups" :key="sub.name">
+              <div v-for="sub in filteredProductSubgroups" :key="sub.id">
                 <div class="subgroup-header px-3.5 py-1 text-xs font-semibold uppercase tracking-wider text-white border-b border-slate-200 flex items-center gap-1.5" :style="{ background: 'var(--pms-custom-theme, #006bdb)' }">
                   {{ sub.name }}
                 </div>
@@ -289,7 +314,19 @@
                   >
                     <div class="cell-stt text-center text-[#000000D9] font-normal">{{ getItemIndex(grpKey, idx) }}</div>
                     <div class="cell-name text-[#000000D9] font-normal truncate pl-2" :title="item.product.name">{{ item.product.name }}</div>
-                    <div class="cell-price text-center text-[#000000D9] font-normal tabular-nums">{{ formatCurrency(item.product.price) }}</div>
+                    <div class="cell-price text-center text-[#000000D9] font-normal tabular-nums">
+                      <input
+                        v-if="item.product.flexible_price"
+                        type="text"
+                        inputmode="decimal"
+                        :value="flexiblePriceInputs[item.product.id] ?? formatPriceInput(item.unitPrice)"
+                        @input="updateFlexiblePrice(item, $event.target.value)"
+                        @blur="formatFlexiblePriceInput(item)"
+                        class="h-7 w-full rounded-lg border border-slate-300 bg-white px-2 text-center text-xs text-[#000000D9] outline-none focus:border-blue-500"
+                        :aria-label="`Giá bán ${item.product.name}`"
+                      />
+                      <span v-else>{{ formatCurrency(item.unitPrice) }}</span>
+                    </div>
                     
                     <!-- Qty Stepper -->
                     <div class="flex h-7 overflow-hidden rounded-lg border border-slate-300 bg-white shadow-xs">
@@ -737,35 +774,38 @@ const loadDbProducts = async () => {
     const categories = Array.isArray(resCats.data) ? resCats.data : (resCats.data?.data || [])
     const products = Array.isArray(resProds.data) ? resProds.data : (resProds.data?.data || [])
 
-    const newDbData = Object.fromEntries(housekeepingOutlets.value.map(o => [o.code, {}]))
+    const newDbData = Object.fromEntries(housekeepingOutlets.value.map(o => [o.code, []]))
 
-    categories.forEach(cat => {
-      const configured = housekeepingOutlets.value.find(o =>
-        String(o.code).toLowerCase() === String(cat.outlet || '').toLowerCase() ||
-        String(o.name).toLowerCase() === String(cat.outlet || cat.name || '').toLowerCase() ||
-        String(o.code).toLowerCase() === String(cat.outlet || '').toLowerCase()
-      )
-      const tabKey = configured?.code
-      if (!tabKey) return
-      if (!newDbData[tabKey]) {
-        newDbData[tabKey] = {}
-      }
-      if (!newDbData[tabKey][cat.name]) {
-        newDbData[tabKey][cat.name] = []
-      }
+    categories
+      .slice()
+      .sort((a, b) => Number(a.id) - Number(b.id))
+      .forEach(cat => {
+        const configured = housekeepingOutlets.value.find(o =>
+          String(o.code).toLowerCase() === String(cat.outlet || '').toLowerCase() ||
+          String(o.name).toLowerCase() === String(cat.outlet || cat.name || '').toLowerCase() ||
+          String(o.code).toLowerCase() === String(cat.outlet || '').toLowerCase()
+        )
+        const tabKey = configured?.code
+        if (!tabKey) return
+        if (!newDbData[tabKey]) newDbData[tabKey] = []
+        const category = {
+          id: Number(cat.id),
+          name: cat.name,
+          items: []
+        }
 
-      const catProducts = (cat.products && cat.products.length > 0)
-        ? cat.products
-        : products.filter(p => p.product_category_id === cat.id)
+        const catProducts = (cat.products && cat.products.length > 0)
+          ? cat.products
+          : products.filter(p => p.product_category_id === cat.id)
 
-      catProducts.forEach(p => {
-        if (Number(p.open_key) !== 1) return
-        if (p.is_active === 0 || p.is_active === false) return
-        let svcPercent = Number(p.service_charge_percent) || 0
-        let taxPercent = Number(p.tax_percent) || 0
-        let spcTaxPercent = Number(p.special_tax_percent) || 0
+        catProducts.forEach(p => {
+          if (Number(p.open_key) !== 1) return
+          if (p.is_active === 0 || p.is_active === false) return
+          let svcPercent = Number(p.service_charge_percent) || 0
+          let taxPercent = Number(p.tax_percent) || 0
+          let spcTaxPercent = Number(p.special_tax_percent) || 0
 
-        newDbData[tabKey][cat.name].push({
+          category.items.push({
           id: p.id,
           name: p.name,
           // Product.price is the configured selling price, inclusive of taxes/fees.
@@ -779,18 +819,16 @@ const loadDbProducts = async () => {
           tax_percent: taxPercent
           ,product_category_id: p.product_category_id
           ,product_group_id: p.product_group_id
+          ,flexible_price: Boolean(p.flexible_price)
+          })
+
+          productGroup[p.id] = tabKey
         })
 
-        productGroup[p.id] = tabKey
+        // Preserve legacy configuration order: category ID first, then product ID.
+        category.items.sort((a, b) => Number(a.id) - Number(b.id))
+        newDbData[tabKey].push(category)
       })
-    })
-
-    // Sắp xếp thứ tự sản phẩm theo bảng chữ cái ABC trong từng danh mục
-    Object.keys(newDbData).forEach(tab => {
-      Object.keys(newDbData[tab]).forEach(cat => {
-        newDbData[tab][cat].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'vi', { sensitivity: 'base' }))
-      })
-    })
 
     dbProductsData.value = newDbData
   } catch (err) {
@@ -813,6 +851,9 @@ const GROUP_COLORS = { MB: '#2563eb', LA: '#16a34a', BR: '#d97706', AM: '#7c3aed
 const currentTab = ref('')
 const tabKeys = computed(() => housekeepingOutlets.value.map(o => o.code))
 const productSearchQuery = ref('')
+const productSearchSelectedId = ref(null)
+const isProductSearchOpen = ref(false)
+const flexiblePriceInputs = ref({})
 const discountMode = ref('gg') // 'gg' = Giảm giá | 'pt' = Phụ thu
 const globalPct = ref(0)
 const cart = ref([])
@@ -846,7 +887,7 @@ const loadInitialAdjustment = () => {
       product_code: item.serviceCode || ''
     }
     productGroup[productId] = adjustmentGroup(item.serviceCode)
-    return { product, qty: Number(item.quantity) || 1, discPct: 0 }
+    return { product, unitPrice: product.price, qty: Number(item.quantity) || 1, discPct: 0 }
   })
   currentTab.value = adjustmentGroup(adjustment.items[0]?.serviceCode)
 }
@@ -855,24 +896,45 @@ watch(() => props.initialAdjustment, loadInitialAdjustment, { immediate: true, d
 
 const switchTab = (tabKey) => {
   currentTab.value = tabKey
-  productSearchQuery.value = ''
+  clearProductSearch()
 }
 
 const filteredProductSubgroups = computed(() => {
-  const currentDbTab = dbProductsData.value[currentTab.value] || {}
+  const currentDbTab = dbProductsData.value[currentTab.value] || []
   const q = productSearchQuery.value.trim().toLowerCase()
-  const result = []
+  const selectedId = productSearchSelectedId.value
 
-  Object.entries(currentDbTab).forEach(([subName, items]) => {
-    const matched = (items || []).filter(p => !q || p.name.toLowerCase().includes(q) || (p.product_code && p.product_code.toLowerCase().includes(q)))
-    const sorted = [...matched].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'vi', { sensitivity: 'base' }))
-    result.push({ name: subName, items: sorted })
-  })
-
-  result.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'vi', { sensitivity: 'base' }))
-
-  return result
+  return currentDbTab.map(category => ({
+    id: category.id,
+    name: category.name,
+    items: (category.items || []).filter(product => {
+      const productName = String(product.name || '').toLowerCase()
+      const productCode = String(product.product_code || '').toLowerCase()
+      return (!selectedId || product.id === selectedId) && (!q || productName.includes(q) || productCode.includes(q))
+    })
+  }))
 })
+
+const productSearchSuggestions = computed(() => filteredProductSubgroups.value
+  .flatMap(category => category.items || [])
+)
+
+const onProductSearchInput = () => {
+  productSearchSelectedId.value = null
+  isProductSearchOpen.value = true
+}
+
+const clearProductSearch = () => {
+  productSearchQuery.value = ''
+  productSearchSelectedId.value = null
+  isProductSearchOpen.value = false
+}
+
+const selectProductSearchSuggestion = (product) => {
+  productSearchSelectedId.value = product.id
+  productSearchQuery.value = product.name || product.product_code || ''
+  isProductSearchOpen.value = false
+}
 
 const onGlobalChange = (source) => {
   if (source === 'surcharge' && (form.value.surcharge || 0) > 0) {
@@ -926,20 +988,26 @@ const addToCart = (product) => {
   if (existing) {
     existing.qty++
   } else {
-    cart.value.push({ product, qty: 1, discPct: 0 })
+    const unitPrice = Number(product.price) || 0
+    cart.value.push({ product: { ...product }, unitPrice, qty: 1, discPct: 0 })
+    if (product.flexible_price) {
+      flexiblePriceInputs.value[product.id] = formatPriceInput(unitPrice)
+    }
   }
 }
 
 const removeFromCart = (id) => {
   cart.value = cart.value.filter(c => c.product.id !== id)
+  delete flexiblePriceInputs.value[id]
 }
 
 const undoCart = () => {
   cart.value = []
+  flexiblePriceInputs.value = {}
 }
 
 const calcRow = (item) => {
-  const base = item.product.price * (item.qty || 1)
+  const base = Number(item.unitPrice ?? item.product.price) * (item.qty || 1)
   if (form.value.isFree) {
     return { base, discAmt: base, net: 0 }
   }
@@ -978,6 +1046,28 @@ const grandTotal = computed(() => {
 
 const refreshCart = () => {
   // Triggers re-computation
+}
+
+const parsePriceInput = (value) => {
+  const normalized = String(value ?? '').replace(/,/g, '').replace(/[^\d.]/g, '')
+  const [whole = '', ...fractionParts] = normalized.split('.')
+  const fraction = fractionParts.join('').slice(0, 2)
+  const numeric = Number(`${whole || '0'}${fraction ? `.${fraction}` : ''}`)
+  return Number.isFinite(numeric) ? Math.max(0, numeric) : 0
+}
+
+const formatPriceInput = (value) => Number(value || 0).toLocaleString('en-US', {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2
+})
+
+const updateFlexiblePrice = (item, value) => {
+  flexiblePriceInputs.value[item.product.id] = value
+  item.unitPrice = parsePriceInput(value)
+}
+
+const formatFlexiblePriceInput = (item) => {
+  flexiblePriceInputs.value[item.product.id] = formatPriceInput(item.unitPrice)
 }
 
 const sendToRoom = async () => {
@@ -1026,7 +1116,7 @@ const sendToRoom = async () => {
       if (!groupedBillsMap[groupKey]) {
         groupedBillsMap[groupKey] = []
       }
-      const unitPrice = Number(prod.price) || 0
+      const unitPrice = Number(item.unitPrice ?? prod.price) || 0
       const rowCalc = calcRow(item)
       const qtyVal = Number(item.qty) || 1
       const itemTax = Number(prod.tax_percent ?? prod.tax) || 0
