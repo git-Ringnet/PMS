@@ -182,7 +182,7 @@
             <Trash2 class="w-3.5 h-3.5" />
             Xóa
           </button>
-          <button class="btn-pms-secondary h-8">
+          <button @click="printMenu" class="btn-pms-secondary h-8">
             <Printer class="w-3.5 h-3.5 text-slate-500" />
             In
           </button>
@@ -877,6 +877,62 @@ const exportExcel = async () => {
   } catch (error) {
     uiStore.showToast('Lỗi khi xuất dữ liệu', 'error')
   }
+}
+
+const escapePrintHtml = (value) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#039;')
+
+const printMenu = () => {
+  const printableGroups = filteredGroups.value.filter(group => group.products.length > 0)
+  if (!printableGroups.length) {
+    uiStore.showToast('Không có sản phẩm đang hiển thị để in.', 'warning')
+    return
+  }
+
+  const printWindow = window.open('', '_blank', 'width=1000,height=700')
+  if (!printWindow) {
+    uiStore.showToast('Trình duyệt đã chặn cửa sổ in. Vui lòng cho phép popup.', 'warning')
+    return
+  }
+
+  const outlet = housekeepingOutlets.value.find(item => item.code === activeTab.value)
+  const productRows = printableGroups.map(group => {
+    const rows = group.products.map(product => {
+      const unit = units.value.find(item => String(item.code) === String(product.currency))
+      return `<tr>
+        <td>${escapePrintHtml(product.product_code || product.id)}</td>
+        <td>${escapePrintHtml(product.name)}</td>
+        <td>${escapePrintHtml(unit?.name || product.currency || '—')}</td>
+        <td class="number">${escapePrintHtml(formatNumber(product.priceNum))}</td>
+        <td>${product.isActive ? 'Đang sử dụng' : 'Ngưng sử dụng'}</td>
+        <td>${product.trackStock ? 'Có' : 'Không'}</td>
+      </tr>`
+    }).join('')
+    return `<tr class="group"><td colspan="6">${escapePrintHtml(toTitleCase(group.name))}</td></tr>${rows}`
+  }).join('')
+  const generatedAt = new Intl.DateTimeFormat('vi-VN', { dateStyle: 'short', timeStyle: 'short' }).format(new Date())
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Danh sách menu buồng phòng</title>
+    <style>
+      body { font-family: Roboto, Arial, sans-serif; color: #000000d9; margin: 18mm; font-size: 12px; }
+      h1 { font-size: 16px; margin: 0 0 6px; } .meta { color: #475569; margin-bottom: 14px; }
+      table { width: 100%; border-collapse: collapse; } th, td { border: 1px solid #cbd5e1; padding: 7px 8px; }
+      th { text-align: center; background: #f1f5f9; font-weight: 600; } td.number { text-align: right; }
+      .group td { background: #e0f2fe; font-weight: 600; } @media print { @page { margin: 12mm; } }
+    </style></head><body>
+    <h1>Danh Sách Menu Buồng Phòng</h1>
+    <div class="meta">Outlet: ${escapePrintHtml(outlet?.name || activeTab.value)} · In lúc: ${escapePrintHtml(generatedAt)}</div>
+    <table><thead><tr><th>Mã Sản Phẩm</th><th>Tên Sản Phẩm</th><th>Đơn Vị Tính</th><th>Giá</th><th>Trạng Thái</th><th>Theo Dõi Tồn</th></tr></thead>
+    <tbody>${productRows}</tbody></table></body></html>`
+
+  printWindow.document.open()
+  printWindow.document.write(html)
+  printWindow.document.close()
+  printWindow.focus()
+  window.setTimeout(() => printWindow.print(), 350)
 }
 
 const handleFileUpload = async (event) => {
