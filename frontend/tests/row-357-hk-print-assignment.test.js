@@ -6,6 +6,8 @@ import {
   getStatusText,
   buildWorksheetSheets,
   buildSupervisorRooms,
+  normalizeHkCode,
+  isCleaningRoom,
 } from '../src/utils/hk-room-status.js'
 
 // Cấu hình ký hiệu giống bảng hk_symbols
@@ -100,16 +102,53 @@ test('Dòng 357: chọn phòng chưa phân công thì in đúng các phòng đó
   assert.ok(sheets[0].rooms.every(r => r.source === 'list'))
 })
 
-test('Dòng 357: chọn lẫn phòng đã và chưa phân công thì in theo nhóm + tờ phòng chưa phân công', () => {
+test('Dòng 357 (note 4/11): phòng đã phân công chọn ở danh sách phòng vẫn in theo danh sách, Housekeeping Attendant để trống', () => {
   const sheets = buildWorksheetSheets(GROUPS, new Set(), new Set([2, 5]), ROOM_GROUP_MAP, ROOMS)
-  assert.deepEqual(sheets.map(s => s.staffNames), ['Ngô Thị Thanh / Đinh Văn Minh', ''])
-  assert.deepEqual(sheets[0].rooms.map(r => r.room.room_number), ['102'])
+  assert.equal(sheets.length, 1)
+  assert.equal(sheets[0].staffNames, '')
+  assert.deepEqual(sheets[0].rooms.map(r => r.room.room_number), ['102', '301'])
+  assert.ok(sheets[0].rooms.every(r => r.source === 'list'))
+})
+
+test('Dòng 357: tích In lịch ở nhóm thì in nhóm đó theo lịch phân công, kèm phòng chọn ở danh sách', () => {
+  const sheets = buildWorksheetSheets(GROUPS, new Set(['B']), new Set([5]), ROOM_GROUP_MAP, ROOMS)
+  assert.deepEqual(sheets.map(s => s.staffNames), ['Nguyễn Thị Lan', ''])
+  assert.ok(sheets[0].rooms.every(r => r.source === 'group'))
+  assert.ok(sheets[1].rooms.every(r => r.source === 'list'))
+})
+
+test('Dòng 357 (note 4/11): phòng đã nằm trong nhóm được tích không in lặp ở tờ danh sách', () => {
+  const sheets = buildWorksheetSheets(GROUPS, new Set(['A']), new Set([1, 5]), ROOM_GROUP_MAP, ROOMS)
+  assert.deepEqual(sheets[0].rooms.map(r => r.room.room_number), ['101', '102'])
   assert.deepEqual(sheets[1].rooms.map(r => r.room.room_number), ['301'])
 })
 
-test('Dòng 357: tích In lịch ở nhóm thì in nhóm đó, kèm phòng chưa phân công đang chọn', () => {
-  const sheets = buildWorksheetSheets(GROUPS, new Set(['B']), new Set([5]), ROOM_GROUP_MAP, ROOMS)
-  assert.deepEqual(sheets.map(s => s.staffNames), ['Nguyễn Thị Lan', ''])
+// ── 6. Ký hiệu phòng đang ở (note 4/11) ──────────────────────
+test('Note 4/11: phòng đang ở có EB hiện OC, EB (không còn VR, EB)', () => {
+  assert.equal(getStatusText(SYMBOLS, 'vacant_ready', 'occupied', { extraBedQty: 1 }), 'OC, EB')
+})
+
+test('Note 4/11: chiếm dụng sạch/sẵn sàng/lau dọn đều là OC (không phải OR)', () => {
+  const sym = { ...SYMBOLS, hk: { ...SYMBOLS.hk, occupied_ready: { code: 'OR' }, turndown: { code: 'TD' } } }
+  assert.equal(getStatusText(sym, 'occupied_ready', 'occupied', null), 'OC')
+  assert.equal(getStatusText(sym, 'turndown', 'occupied', null), 'OC')
+  assert.equal(getStatusText(sym, 'occupied_clean', 'checkout', null), 'CO, OC')
+})
+
+test('Note 4/11: chiếm dụng bẩn có EB vẫn đúng OD, EB', () => {
+  assert.equal(getStatusText(SYMBOLS, 'occupied_dirty', 'occupied', { extraBedQty: 1 }), 'OD, EB')
+})
+
+test('Note 4/11: phòng trống không bị đổi mã (VC, VD giữ nguyên)', () => {
+  assert.equal(normalizeHkCode('vacant_clean', '', false), 'vacant_clean')
+  assert.equal(normalizeHkCode('vacant_dirty', 'reserved', false), 'vacant_dirty')
+})
+
+// ── 7. Lọc Lau dọn (note 4/11) ───────────────────────────────
+test('Note 4/11: lọc Lau dọn lấy phòng turndown (icon ngôi sao) và phòng khách trả trong ngày', () => {
+  assert.equal(isCleaningRoom({ room_status_code: 'turndown' }), true)
+  assert.equal(isCleaningRoom({ room_status_code: 'occupied_clean', booking_status: 'checkout' }), true)
+  assert.equal(isCleaningRoom({ room_status_code: 'vacant_clean', booking_status: '' }), false)
 })
 
 test('Dòng 357: không chọn gì thì in tất cả nhóm như trước', () => {

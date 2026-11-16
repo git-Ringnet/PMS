@@ -943,9 +943,10 @@ const inventorySelectOptions = computed(() => {
 
 const fetchUnitsAndInventories = async () => {
   try {
+    // Dòng 372: "Chọn Kho" là kho tồn kho (warehouses) vì Kiểm kê định kỳ lọc sản phẩm theo id kho này
     const [resUnits, resInv] = await Promise.all([
       http.get('/units-of-measure'),
-      http.get('/inventories')
+      http.get('/warehouses')
     ])
     units.value = resUnits.data.data || resUnits.data
     inventories.value = resInv.data.data || resInv.data
