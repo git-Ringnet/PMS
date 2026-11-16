@@ -492,34 +492,40 @@ class InventoryCheckController extends Controller
 
     public function productsInStock(Request $request)
     {
-        // Dòng 372: đang kiểm kê kho nào thì chỉ lấy sản phẩm của kho đó, có chọn "Có theo dõi" tồn kho
+        // Sản phẩm đã gán kho chỉ hiện ở kho đó; sản phẩm theo dõi tồn chưa gán kho vẫn được chọn cho kiểm kê nội bộ.
         if ($request->filled('warehouse_id')) {
             $warehouse = Warehouse::findOrFail($request->warehouse_id);
-            $products = Product::with('category')
+            $trackedProducts = Product::with('category')
                 ->where('is_active', true)
-                ->where('track_stock', true)
-                ->where('inventory_id', (string) $warehouse->id)
+                ->where('track_stock', true);
+            $products = (clone $trackedProducts)
+                ->where('inventory_id', (string) $warehouse->id)->orderBy('name')->get();
+            $unassignedProducts = (clone $trackedProducts)
+                ->where(function ($query) {
+                    $query->whereNull('inventory_id')
+                        ->orWhere('inventory_id', '')
+                        ->orWhereRaw('TRIM(inventory_id) = ?', ['']);
+                })
                 ->orderBy('name')
                 ->get();
 
-            $categories = $products->groupBy(fn ($p) => $p->product_category_id ?: 0)
-                ->map(fn ($items) => [
-                    'id'       => $items->first()->product_category_id ?: 0,
-                    'name'     => $items->first()->category?->name ?? 'Chưa phân nhóm',
-                    'products' => $items->map(fn ($p) => [
-                        'id' => $p->id, 'name' => $p->name, 'price' => $p->price,
-                        'product_code' => $p->product_code ?: $p->id, 'unit' => $p->unit ?: 'Cái',
-                        'category_name' => $p->category?->name ?? 'Chưa phân nhóm',
-                    ])->values()->toArray(),
-                ])
-                ->sortBy('name')
-                ->values()
-                ->toArray();
+            $tree = [];
+            if ($products->isNotEmpty()) {
+                $tree[] = [
+                    'id' => 'warehouse-' . $warehouse->id, 'code' => 'warehouse-' . $warehouse->id,
+                    'name' => $warehouse->name, 'group_key' => null,
+                    'categories' => $this->productPickerCategories($products),
+                ];
+            }
+            if ($unassignedProducts->isNotEmpty()) {
+                $tree[] = [
+                    'id' => 'unassigned-tracked-products', 'code' => 'unassigned-tracked-products',
+                    'name' => 'Chưa gán kho (Kiểm kê nội bộ)', 'group_key' => null,
+                    'categories' => $this->productPickerCategories($unassignedProducts),
+                ];
+            }
 
-            return response()->json(['success' => true, 'data' => $categories ? [[
-                'id' => 'warehouse-' . $warehouse->id, 'code' => 'warehouse-' . $warehouse->id,
-                'name' => $warehouse->name, 'group_key' => null, 'categories' => $categories,
-            ]] : []]);
+            return response()->json(['success' => true, 'data' => $tree]);
         }
 
         $hkOutlets = \App\Models\HousekeepingOutlet::where('is_active', true)
@@ -600,6 +606,23 @@ class InventoryCheckController extends Controller
     }
 
     // ─── Helpers ─────────────────────────────────────────────
+
+    private function productPickerCategories($products): array
+    {
+        return $products->groupBy(fn ($product) => $product->product_category_id ?: 0)
+            ->map(fn ($items) => [
+                'id'       => $items->first()->product_category_id ?: 0,
+                'name'     => $items->first()->category?->name ?? 'Chưa phân nhóm',
+                'products' => $items->map(fn ($product) => [
+                    'id' => $product->id, 'name' => $product->name, 'price' => $product->price,
+                    'product_code' => $product->product_code ?: $product->id, 'unit' => $product->unit ?: 'Cái',
+                    'category_name' => $product->category?->name ?? 'Chưa phân nhóm',
+                ])->values()->toArray(),
+            ])
+            ->sortBy('name')
+            ->values()
+            ->toArray();
+    }
 
     public function exportExcel($id)
     {

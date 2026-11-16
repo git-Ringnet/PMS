@@ -38,6 +38,7 @@ class InventoryPeriodicCheckTest extends TestCase
 
         $this->coca = Product::create(['product_category_id' => $drinks->id, 'name' => 'Coca Cola', 'price' => 20000, 'track_stock' => true, 'is_active' => true, 'inventory_id' => (string) $this->minibar->id]);
         $this->pepsi = Product::create(['product_category_id' => $drinks->id, 'name' => 'Pepsi', 'price' => 20000, 'track_stock' => true, 'is_active' => true, 'inventory_id' => (string) $this->minibar->id]);
+        Product::create(['product_category_id' => $drinks->id, 'name' => 'Nước lon chưa gán kho', 'price' => 18000, 'track_stock' => true, 'is_active' => true]);
         // Không theo dõi tồn kho
         Product::create(['product_category_id' => $drinks->id, 'name' => 'Nước suối free', 'price' => 0, 'track_stock' => false, 'is_active' => true, 'inventory_id' => (string) $this->minibar->id]);
         // Thuộc kho khác
@@ -55,13 +56,14 @@ class InventoryPeriodicCheckTest extends TestCase
         ]);
     }
 
-    public function test_add_product_list_only_shows_tracked_products_of_the_warehouse(): void
+    public function test_add_product_list_shows_tracked_products_of_the_warehouse_and_unassigned_products(): void
     {
         $tree = $this->getJson("/api/inventory/products-in-stock?warehouse_id={$this->minibar->id}")->assertOk()->json('data');
 
         $names = collect($tree)->flatMap(fn ($wh) => collect($wh['categories'])->flatMap(fn ($c) => array_column($c['products'], 'name')))->sort()->values()->all();
-        $this->assertSame(['Coca Cola', 'Pepsi'], $names);
+        $this->assertSame(['Coca Cola', 'Nước lon chưa gán kho', 'Pepsi'], $names);
         $this->assertSame('Kho Minibar', $tree[0]['name']);
+        $this->assertSame('Chưa gán kho (Kiểm kê nội bộ)', $tree[1]['name']);
     }
 
     public function test_check_is_only_created_when_saved(): void
