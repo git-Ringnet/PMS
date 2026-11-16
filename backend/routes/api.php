@@ -266,11 +266,9 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
         ->only(['store', 'update', 'destroy'])
         ->middleware('permission:system.user.manage');
     Route::apiResource('units-of-measure', \App\Http\Controllers\Api\UnitOfMeasureController::class)->middleware($canWrite('config.system.*', 'config.housekeeping.*'));
-    Route::apiResource('room-rate-codes', RoomRateCodeController::class)->middleware($canWrite('config.rates.*'));
+    // room-rate-codes (apiResource, plans, daily-mappings) đã khai báo ở đầu nhóm; khai báo lại sẽ trùng tên route và làm hỏng route:cache.
     Route::apiResource('registration-statuses', \App\Http\Controllers\Api\RegistrationStatusController::class)->middleware($canWrite('config.system.*'));
-    Route::post('room-rate-codes/{ma}/plans', [RoomRateCodeController::class, 'saveRatePlan'])->middleware($canWrite('config.rates.*'));
     Route::delete('room-rate-codes/{ma}/plans/{code}', [RoomRateCodeController::class, 'deleteRatePlan'])->middleware($canWrite('config.rates.*'));
-    Route::post('room-rate-codes/{ma}/daily-mappings', [RoomRateCodeController::class, 'saveDailyMappings'])->middleware($canWrite('config.rates.*'));
 
     // System Administration routes
     // Dòng 406: sao lưu / khôi phục database chỉ admin, xuất & nhập phải gửi kèm mật khẩu xác nhận
