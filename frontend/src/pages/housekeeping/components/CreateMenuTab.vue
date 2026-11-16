@@ -446,7 +446,7 @@
                   <div class="relative flex items-center">
                     <select v-model="newProduct.trackStock" class="w-full h-8 border border-slate-300 rounded-lg pl-2.5 pr-7 text-xs text-[#000000D9] outline-none cursor-pointer focus:ring-1 focus:ring-[#006bdb] focus:border-[#006bdb] shadow-xs appearance-none bg-white">
                       <option :value="false">Không theo dõi</option>
-                      <option :value="true">Có theo dõi (Trừ kho tự động)</option>
+                      <option :value="true">Có theo dõi tồn kho</option>
                     </select>
                     <ChevronDown class="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none" />
                   </div>
@@ -454,13 +454,14 @@
 
                 <!-- Chọn kho (Searchable combobox) -->
                 <div v-if="newProduct.trackStock" class="flex flex-col gap-1">
-                  <label class="font-semibold text-xs text-[#000000D9]">Chọn Kho</label>
+                  <label class="font-semibold text-xs text-[#000000D9]">Chọn Kho <span class="font-normal text-slate-500">(Tùy chọn)</span></label>
                   <SearchableSelect
                     v-model="newProduct.inventory_id"
                     :options="inventorySelectOptions"
                     placeholder="Chọn kho lưu trữ..."
                     search-placeholder="Tìm kiếm kho..."
                   />
+                  <p class="text-xs font-normal text-slate-500">Chưa gán kho vẫn có thể chọn khi kiểm kê nội bộ.</p>
                 </div>
               </div>
 
