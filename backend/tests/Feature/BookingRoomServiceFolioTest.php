@@ -8,6 +8,7 @@ use App\Models\BookingRoomGuest;
 use App\Models\BookingRoomService;
 use App\Models\Department;
 use App\Models\Guest;
+use App\Models\HousekeepingOutlet;
 use App\Models\HousekeepingServiceBill;
 use App\Models\HotelService;
 use App\Models\Payment;
@@ -1465,7 +1466,7 @@ class BookingRoomServiceFolioTest extends TestCase
             ->assertJsonMissing(['code' => 'FB-SVC']);
     }
 
-    public function test_housekeeping_bill_uses_each_product_tax_profile_from_database(): void
+    public function test_housekeeping_bill_uses_outlet_tax_profile_for_header_and_product_profiles_for_details(): void
     {
         $user = $this->createFolioUser();
         SystemDateRoll::create([
@@ -1476,6 +1477,10 @@ class BookingRoomServiceFolioTest extends TestCase
             'num_of_days' => 1, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
         ]);
         $room = $this->makeRoom($booking, 'GAL1-HK');
+        HousekeepingOutlet::updateOrCreate(['code' => 'MB'], [
+            'name' => 'Minibar', 'service_code' => 'MB', 'is_active' => true, 'show_in_add_service' => true,
+            'default_service_charge_percent' => 7, 'default_special_tax_percent' => 4, 'default_tax_percent' => 11,
+        ]);
         $category = ProductCategory::create(['name' => 'Minibar', 'outlet' => 'MB']);
         $product = Product::create([
             'product_category_id' => $category->id,
@@ -1484,6 +1489,15 @@ class BookingRoomServiceFolioTest extends TestCase
             'service_charge_percent' => 5,
             'special_tax_percent' => 2,
             'tax_percent' => 10,
+            'open_key' => true,
+        ]);
+        $secondProduct = Product::create([
+            'product_category_id' => $category->id,
+            'name' => 'Bánh ngọt',
+            'price' => 50000,
+            'service_charge_percent' => 3,
+            'special_tax_percent' => 0,
+            'tax_percent' => 8,
             'open_key' => true,
         ]);
 
@@ -1506,6 +1520,17 @@ class BookingRoomServiceFolioTest extends TestCase
                         'service_charge' => 0,
                         'special_tax' => 0,
                         'tax' => 0,
+                    ], [
+                        'id' => $secondProduct->id,
+                        'name' => $secondProduct->name,
+                        'qty' => 1,
+                        'price' => 50000,
+                        'original_rate' => 50000,
+                        'net_price' => 50000,
+                        'total_amount' => 50000,
+                        'service_charge' => 0,
+                        'special_tax' => 0,
+                        'tax' => 0,
                     ]],
                 ]],
             ])
@@ -1513,19 +1538,89 @@ class BookingRoomServiceFolioTest extends TestCase
 
         $bill = ServiceBill::where('RentalRoomId1', $room->id)->where('ServiceId', 'MB')->firstOrFail();
         $this->assertDatabaseHas('service_bills', [
-            'Ma' => $bill->Ma, 'ServiceCharge' => 5, 'SpecialTax' => 2, 'Tax' => 10,
+            'Ma' => $bill->Ma, 'ServiceCharge' => 7, 'SpecialTax' => 4, 'Tax' => 11,
         ]);
         $this->assertDatabaseHas('service_bill_details', [
             'BillServiceId' => $bill->Ma, 'ServiceCharge' => 5, 'SpecialTax' => 2, 'Tax' => 10,
         ]);
         $this->assertDatabaseHas('housekeeping_service_bills', [
-            'BillServiceId' => $bill->Ma, 'BillServicesCharge' => 5, 'BillSpecialTax' => 2, 'BillTax' => 10,
+            'BillServiceId' => $bill->Ma, 'BillServicesCharge' => 7, 'BillSpecialTax' => 4, 'BillTax' => 11,
         ]);
         $hkBill = HousekeepingServiceBill::where('BillServiceId', $bill->Ma)->sole();
         $this->assertDatabaseHas('housekeeping_service_bill_details', [
             'BillId' => $hkBill->getKey(), 'MaProduct' => $product->id, 'Quantity' => 1,
         ]);
-        $this->assertEquals(100000, $bill->Amount);
+        $this->assertDatabaseHas('service_bill_details', [
+            'BillServiceId' => $bill->Ma, 'ServiceCharge' => 3, 'SpecialTax' => 0, 'Tax' => 8,
+        ]);
+        $this->assertEquals(150000, $bill->Amount);
+    }
+
+    public function test_housekeeping_bill_accepts_an_overridden_price_only_for_a_flexible_product(): void
+    {
+        $user = $this->createFolioUser();
+        SystemDateRoll::create(['system_date' => '2026-08-06', 'actual_date' => now(), 'shift' => '1', 'username' => $user->username]);
+        $booking = Booking::create([
+            'booking_name' => 'GAL Flexible', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-07',
+            'num_of_days' => 1, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
+        ]);
+        $room = $this->makeRoom($booking, 'GAL-FLEX');
+        HousekeepingOutlet::firstOrCreate(['code' => 'MB'], [
+            'name' => 'Minibar', 'service_code' => 'MB', 'is_active' => true, 'show_in_add_service' => true,
+        ]);
+        $category = ProductCategory::create(['name' => 'Minibar', 'outlet' => 'MB']);
+        $product = Product::create([
+            'product_category_id' => $category->id, 'name' => 'Sản phẩm linh động', 'price' => 100000,
+            'flexible_price' => true, 'open_key' => true,
+        ]);
+
+        $this->actingAs($user)
+            ->postJson('/api/booking-room-services/post-housekeeping-bill', [
+                'booking_room_id' => $room->id, 'posting_source' => 'HK', 'service_date' => '2026-08-06', 'folio' => 1,
+                'bills' => [['group' => 'MB', 'items' => [[
+                    'id' => $product->id, 'name' => $product->name, 'qty' => 1,
+                    'price' => 125000, 'original_rate' => 125000, 'net_price' => 125000, 'total_amount' => 125000,
+                    'service_charge' => 0, 'special_tax' => 0, 'tax' => 0,
+                ]]]],
+            ])
+            ->assertSuccessful();
+
+        $bill = ServiceBill::where('RentalRoomId1', $room->id)->where('ServiceId', 'MB')->sole();
+        $this->assertSame(125000.0, (float) $bill->Amount);
+        $this->assertDatabaseHas('housekeeping_service_bill_details', ['MaProduct' => $product->id, 'Rate' => 125000]);
+    }
+
+    public function test_housekeeping_bill_rejects_an_overridden_price_for_a_fixed_product(): void
+    {
+        $user = $this->createFolioUser();
+        SystemDateRoll::create(['system_date' => '2026-08-06', 'actual_date' => now(), 'shift' => '1', 'username' => $user->username]);
+        $booking = Booking::create([
+            'booking_name' => 'GAL Fixed', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-07',
+            'num_of_days' => 1, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
+        ]);
+        $room = $this->makeRoom($booking, 'GAL-FIXED');
+        HousekeepingOutlet::firstOrCreate(['code' => 'MB'], [
+            'name' => 'Minibar', 'service_code' => 'MB', 'is_active' => true, 'show_in_add_service' => true,
+        ]);
+        $category = ProductCategory::create(['name' => 'Minibar', 'outlet' => 'MB']);
+        $product = Product::create([
+            'product_category_id' => $category->id, 'name' => 'Sản phẩm cố định', 'price' => 100000,
+            'flexible_price' => false, 'open_key' => true,
+        ]);
+
+        $this->actingAs($user)
+            ->postJson('/api/booking-room-services/post-housekeeping-bill', [
+                'booking_room_id' => $room->id, 'posting_source' => 'HK', 'service_date' => '2026-08-06', 'folio' => 1,
+                'bills' => [['group' => 'MB', 'items' => [[
+                    'id' => $product->id, 'name' => $product->name, 'qty' => 1,
+                    'price' => 125000, 'original_rate' => 125000, 'net_price' => 125000, 'total_amount' => 125000,
+                    'service_charge' => 0, 'special_tax' => 0, 'tax' => 0,
+                ]]]],
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Sản phẩm có giá cố định không được phép thay đổi đơn giá.');
+
+        $this->assertDatabaseMissing('service_bills', ['RentalRoomId1' => $room->id, 'ServiceId' => 'MB']);
     }
 
     public function test_no_post_blocks_front_desk_fo_and_housekeeping_posting_with_consistent_warning(): void

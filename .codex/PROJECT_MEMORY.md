@@ -2078,6 +2078,16 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 ## Current Status
 
+- 2026-11-16: Tạo menu HK hiển thị sản phẩm theo dõi tồn chưa gán kho trong nhóm kiểm kê nội bộ và có nút In danh sách theo tab/bộ lọc; cần UAT chọn sản phẩm tại kho, chưa gán kho và in thực tế.
+
+- 2026-11-16: Dòng 554 Menu HK đã có template Excel đa sheet cho sản phẩm, đơn vị tính và nhóm/outlet; cần UAT import file mới/cũ và chạy feature test sau khi khôi phục `backend/vendor/autoload.php`.
+
+- 2026-11-16: Dòng 455 bill HK đã snapshot thuế/phí header theo cấu hình outlet thay vì về `0` khi detail có các mức khác nhau; cần UAT bill nhiều nhóm thuế và chạy lại feature test sau khi khôi phục `backend/vendor/autoload.php`.
+
+- 2026-11-16: Dòng 453 post bill Buồng phòng đã cho sửa đơn giá đúng sản phẩm bật `flexible_price`; backend chặn giá sửa của sản phẩm cố định. Cần UAT HK/Checkout/Room Map và chạy lại feature test khi khôi phục `backend/vendor/autoload.php`.
+
+- 2026-11-16: Dòng 454 menu post bill Buồng phòng đã sắp xếp theo ID danh mục/sản phẩm và có combobox tìm sản phẩm trong outlet đang mở; cần UAT tại Buồng phòng, Checkout và Room Map.
+
 - 2026-11-13: Tìm kiếm chung hiển thị loading toàn hệ thống cho từng thẻ khi chuyển tab; cần UAT đổi tab nhanh Đăng ký/Phòng/Khách với mạng chậm.
 
 - 2026-11-13: Dòng 500 đã chặn race tải cấu hình nhân bản tại modal dùng chung; cần UAT hai giá trị `IsCopyAllBooking` từ Đăng ký và Tìm kiếm chung.
@@ -2152,6 +2162,16 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 
 ## Recent Changes
+
+- 2026-11-16: Tạo menu/kiểm kê Buồng phòng — `InventoryCheckController` tách sản phẩm theo dõi tồn đã gán đúng kho và nhóm chưa gán kho để người dùng chọn kiểm kê nội bộ theo đúng rule legacy, không tự gán kho hoặc tạo dòng kiểm kê. `CreateMenuTab.vue` ghi rõ kho tùy chọn và bổ sung in danh sách menu đang hiển thị. PHP lint, frontend build và diff-check đạt; PHPUnit bị chặn do thiếu `backend/vendor/autoload.php`. Không đổi schema, migration, API route, post bill, Checkout hoặc Room Map.
+
+- 2026-11-16: Dòng 554 — `ProductController` xuất Excel Menu HK gồm các sheet `Sản phẩm`, `Đơn vị tính`, `Nhóm sản phẩm`; cột `Tiền tệ` đổi thành `Mã Đơn Vị Tính`. Import template mới xác thực toàn bộ ID nhóm/mã đơn vị trước transaction và trả lỗi theo dòng, còn CSV/XLSX một sheet cũ vẫn giữ luồng nhập cũ. Bổ sung feature test export/import; không đổi route, UI, schema, model, migration hoặc import production từ legacy.
+
+- 2026-11-16: Dòng 455 — `postHousekeepingBill` lấy `ServiceCharge`/`SpecialTax`/`Tax` của `service_bills` và `BillServicesCharge`/`BillSpecialTax`/`BillTax` của `housekeeping_service_bills` từ default của đúng outlet. Tỷ lệ detail và tổng bill không đổi. Bổ sung hồi quy bill hai sản phẩm khác thuế; PHP lint/diff-check đạt, PHPUnit bị chặn do thiếu `backend/vendor/autoload.php`. Không đổi schema, API, import legacy, thanh toán hoặc bill lịch sử.
+
+- 2026-11-16: Dòng 453 — `PostBillHousekeepingTab.vue` giữ đơn giá bill độc lập với `products.price`, chỉ mở input định dạng tiền cho sản phẩm `flexible_price`; tổng/giảm/phụ thu/payload dùng giá dòng bill. `BookingRoomServiceController` xác thực lại Product và trả `422` khi request đổi giá sản phẩm cố định ở post bill mới; điều chỉnh bill cũ không đổi. Node regression 8/8, PHP lint và `npm run build` đạt; PHPUnit bị chặn do thiếu `backend/vendor/autoload.php`. Không đổi schema, route, import legacy, thanh toán hoặc bill lịch sử.
+
+- 2026-11-16: Dòng 454 — `PostBillHousekeepingTab.vue` sắp xếp `product_categories.id` rồi `products.id`, không còn sắp xếp ABC; combobox tìm theo tên/mã sản phẩm chỉ lọc outlet hiện hành và không tự thêm dòng bill. Không đổi API, payload, database, thuế/phí, quyền, No Post hay import legacy. Node regression 7/7 và `npm run build` đạt.
 
 - 2026-11-13: `GeneralSearchPage.vue` reset kết quả/meta khi đổi thẻ và gắn ngữ cảnh thẻ cho request tìm kiếm để chặn response cũ. Không đổi API, dữ liệu hoặc thao tác. `npm run build` đạt.
 
@@ -2591,6 +2611,16 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 
 ## Known Risks
+
+- 2026-11-16: Cần chạy `php artisan test --filter=InventoryPeriodicCheckTest` sau khi khôi phục `backend/vendor/autoload.php`, rồi UAT sản phẩm theo dõi tồn gán đúng kho/chưa gán kho/gán kho khác, thêm vào phiếu mới hoặc đã khóa và in danh sách menu có bộ lọc.
+
+- 2026-11-16: Dòng 554 cần chạy `php artisan test --filter=ProductExcelImportExportTest` sau khi khôi phục `backend/vendor/autoload.php`, rồi UAT export/import template mới, CSV/XLSX cũ và file có mã nhóm/đơn vị không tồn tại.
+
+- 2026-11-16: Dòng 455 cần chạy `php artisan test --filter=BookingRoomServiceFolioTest` sau khi khôi phục `backend/vendor/autoload.php`, rồi UAT bill HK nhiều sản phẩm khác thuế từ HK và Checkout để xác nhận header theo outlet, detail/tổng tiền không đổi.
+
+- 2026-11-16: Dòng 453 cần chạy `php artisan test --filter=BookingRoomServiceFolioTest` sau khi khôi phục `backend/vendor/autoload.php`, rồi UAT giá linh động/giá cố định, giảm-phụ thu và post từ HK, Checkout, Room Map.
+
+- 2026-11-16: Dòng 454 cần UAT với nhiều outlet, nhóm/sản phẩm trùng tên, tìm theo mã và mở modal từ Buồng phòng, Checkout, Room Map để xác nhận thứ tự ID và không tự thêm vào bill.
 
 - 2026-11-13: Cần UAT chuyển nhanh giữa ba thẻ Tìm kiếm chung khi request chậm/lỗi để xác nhận không hiện dữ liệu thẻ cũ và loading biến mất đúng lúc.
 
