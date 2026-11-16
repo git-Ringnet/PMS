@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { resolveModulePath } from '@/utils/module-route'
 import { fetchGeneralSearch, fetchGeneralSearchOptions, fetchGeneralSearchSuggestions, checkInRoomWithConfirmations } from '@/services/booking-service'
 import { useAuthStore } from '@/stores/auth-store'
 import { useDraggableModal } from '@/composables/useDraggableModal'
@@ -15,6 +16,10 @@ import { getBookingRoomGroups, getSubtableTotals } from '@/utils/general-search-
 
 const router = useRouter()
 const route = useRoute()
+// Dòng 502: module mở màn hình này (lấy lúc tạo, bản ẩn trong cache không đổi theo route module khác).
+// Đăng ký/Hóa đơn mở ở đâu thì giữ ở module đó; Nhận phòng chỉ dành cho Lễ tân.
+const ownerModulePath = resolveModulePath(route.path) === '/frontdesk' ? '/frontdesk' : '/reservation'
+const isFrontdeskModule = ownerModulePath === '/frontdesk'
 const uiStore = useUiStore()
 const auth = useAuthStore()
 const tab = ref('booking')
@@ -810,8 +815,7 @@ function openBookingFromSearch(row, sourceTab = tab.value) {
     return
   }
 
-  const targetPath = route.path.startsWith('/frontdesk') ? '/frontdesk' : '/reservation'
-  router.push({ path: targetPath, query: { tab: 'create-res', bookingCode } })
+  router.push({ path: ownerModulePath, query: { tab: 'create-res', bookingCode } })
 }
 
 function handleActionInvoice() {
@@ -828,7 +832,7 @@ function handleActionInvoice() {
   const roomId = tab.value === 'room' ? first.id : (first.booking_room_id || first.room_id || undefined)
   const isOld = Number(first.status) === 2 || String(first.status_label || '').toLowerCase().includes('check out')
   router.push({
-    path: '/frontdesk',
+    path: ownerModulePath,
     query: {
       tab: 'checkout',
       bookingCode: bookingCode || undefined,
@@ -898,13 +902,9 @@ function handleBookingCopied(newBooking) {
   search(1)
 }
 
-function handleActionLostFound() {
-  showActionsMenu.value = false
-  router.push({ path: '/housekeeping', query: { tab: 'lost-found' } })
-}
-
 async function handleActionCheckIn() {
   showActionsMenu.value = false
+  if (!isFrontdeskModule) return
   if (tab.value !== 'room') return
   const selected = getSelectedRows()
   if (!selected.length) {
@@ -1055,26 +1055,6 @@ async function confirmNoShowAction() {
   } finally {
     loading.value = false
   }
-}
-
-function handleActionReport() {
-  showActionsMenu.value = false
-  uiStore.showToast('Chức năng Báo cáo sẽ được kích hoạt khi cấu hình mẫu báo cáo.', 'info')
-}
-
-function handleActionPrintConfirmation() {
-  showActionsMenu.value = false
-  uiStore.showToast('Chức năng In Xác Nhận sẽ được kích hoạt khi cấu hình mẫu in.', 'info')
-}
-
-function handleActionPrintResidence() {
-  showActionsMenu.value = false
-  uiStore.showToast('Chức năng In Đăng Ký Lưu Trú sẽ được kích hoạt khi cấu hình mẫu in.', 'info')
-}
-
-function handleActionPrintBreakfast() {
-  showActionsMenu.value = false
-  uiStore.showToast('Chức năng In phiếu ăn sáng sẽ được kích hoạt khi cấu hình mẫu in.', 'info')
 }
 
 function handleActionExportExcel() {
@@ -1323,41 +1303,10 @@ onDeactivated(() => {
                 class="action-menu-item"
                 :disabled="selectedCount === 0"
                 :class="{ 'is-disabled': selectedCount === 0 }"
-                @click="handleActionReport"
-              >
-                <i class="fa-solid fa-chart-column item-icon"></i>
-                <span>Báo cáo</span>
-              </button>
-              <button
-                class="action-menu-item"
-                :disabled="selectedCount === 0"
-                :class="{ 'is-disabled': selectedCount === 0 }"
-                @click="handleActionPrintConfirmation"
-              >
-                <i class="fa-solid fa-print item-icon"></i>
-                <span>In Xác Nhận</span>
-              </button>
-              <button
-                class="action-menu-item"
-                :disabled="selectedCount === 0"
-                :class="{ 'is-disabled': selectedCount === 0 }"
-                @click="handleActionPrintResidence"
-              >
-                <i class="fa-solid fa-print item-icon"></i>
-                <span>In Đăng Ký Lưu Trú</span>
-              </button>
-              <button
-                class="action-menu-item"
-                :disabled="selectedCount === 0"
-                :class="{ 'is-disabled': selectedCount === 0 }"
                 @click="handleActionExportExcel"
               >
                 <i class="fa-solid fa-file-excel item-icon"></i>
                 <span>Xuất excel</span>
-              </button>
-              <button class="action-menu-item" @click="handleActionLostFound">
-                <i class="fa-solid fa-box-open item-icon"></i>
-                <span>Đồ thất lạc</span>
               </button>
             </template>
 
@@ -1397,42 +1346,6 @@ onDeactivated(() => {
                 class="action-menu-item"
                 :disabled="selectedCount === 0"
                 :class="{ 'is-disabled': selectedCount === 0 }"
-                @click="handleActionReport"
-              >
-                <i class="fa-solid fa-chart-column item-icon"></i>
-                <span>Báo cáo</span>
-              </button>
-              <button
-                class="action-menu-item"
-                :disabled="selectedCount === 0"
-                :class="{ 'is-disabled': selectedCount === 0 }"
-                @click="handleActionPrintConfirmation"
-              >
-                <i class="fa-solid fa-print item-icon"></i>
-                <span>In Xác Nhận</span>
-              </button>
-              <button
-                class="action-menu-item"
-                :disabled="selectedCount === 0"
-                :class="{ 'is-disabled': selectedCount === 0 }"
-                @click="handleActionPrintResidence"
-              >
-                <i class="fa-solid fa-print item-icon"></i>
-                <span>In Đăng Ký Lưu Trú</span>
-              </button>
-              <button
-                class="action-menu-item"
-                :disabled="selectedCount === 0"
-                :class="{ 'is-disabled': selectedCount === 0 }"
-                @click="handleActionPrintBreakfast"
-              >
-                <i class="fa-solid fa-utensils item-icon"></i>
-                <span>In phiếu ăn sáng</span>
-              </button>
-              <button
-                class="action-menu-item"
-                :disabled="selectedCount === 0"
-                :class="{ 'is-disabled': selectedCount === 0 }"
                 @click="handleActionExportExcel"
               >
                 <i class="fa-solid fa-file-excel item-icon"></i>
@@ -1464,15 +1377,12 @@ onDeactivated(() => {
                 class="action-menu-item"
                 :disabled="selectedCount === 0"
                 :class="{ 'is-disabled': selectedCount === 0 }"
+                v-if="isFrontdeskModule"
                 :title="selectedCount === 0 ? 'Vui lòng chọn ít nhất 1 phòng' : 'Nhận phòng nhanh'"
                 @click="handleActionCheckIn"
               >
                 <i class="fa-solid fa-paper-plane item-icon"></i>
                 <span>Nhận phòng</span>
-              </button>
-              <button class="action-menu-item" @click="handleActionLostFound">
-                <i class="fa-solid fa-box-open item-icon"></i>
-                <span>Đồ thất lạc</span>
               </button>
             </template>
 
@@ -1512,41 +1422,10 @@ onDeactivated(() => {
                 class="action-menu-item"
                 :disabled="selectedCount === 0"
                 :class="{ 'is-disabled': selectedCount === 0 }"
-                @click="handleActionReport"
-              >
-                <i class="fa-solid fa-chart-column item-icon"></i>
-                <span>Báo cáo</span>
-              </button>
-              <button
-                class="action-menu-item"
-                :disabled="selectedCount === 0"
-                :class="{ 'is-disabled': selectedCount === 0 }"
-                @click="handleActionPrintConfirmation"
-              >
-                <i class="fa-solid fa-print item-icon"></i>
-                <span>In Xác Nhận</span>
-              </button>
-              <button
-                class="action-menu-item"
-                :disabled="selectedCount === 0"
-                :class="{ 'is-disabled': selectedCount === 0 }"
-                @click="handleActionPrintResidence"
-              >
-                <i class="fa-solid fa-print item-icon"></i>
-                <span>In Đăng Ký Lưu Trú</span>
-              </button>
-              <button
-                class="action-menu-item"
-                :disabled="selectedCount === 0"
-                :class="{ 'is-disabled': selectedCount === 0 }"
                 @click="handleActionExportExcel"
               >
                 <i class="fa-solid fa-file-excel item-icon"></i>
                 <span>Xuất excel</span>
-              </button>
-              <button class="action-menu-item" @click="handleActionLostFound">
-                <i class="fa-solid fa-box-open item-icon"></i>
-                <span>Đồ thất lạc</span>
               </button>
             </template>
           </div>

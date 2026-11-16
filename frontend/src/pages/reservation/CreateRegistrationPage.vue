@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, onActivated, onDeactivated, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useUiStore } from '@/stores/ui-store'
 import http from '@/services/http'
@@ -110,6 +110,8 @@ import {
 } from '@/services/booking-service'
 
 const route = useRoute()
+// Dòng 502: false khi trang đang bị KeepAlive giữ ẩn (xem onDeactivated bên dưới).
+let pageActive = true
 const router = useRouter()
 const currentBookingModule = computed(() => {
   if (route.path === '/frontdesk') return 'FO'
@@ -2907,7 +2909,21 @@ onBeforeUnmount(() => {
   }
 })
 
-watch(() => route.query, async (newQuery) => {
+// Dòng 502: trang nằm trong sơ đồ phòng được KeepAlive giữ lại. Khi đang ẩn (đã chuyển màn hình/module)
+// không được mở booking theo route hay tự sửa URL, tránh trang đang hiển thị bị tải lại 2 lần hoặc mất mã đăng ký.
+onDeactivated(() => { pageActive = false })
+onActivated(() => {
+  if (pageActive) return
+  pageActive = true
+  handleRouteQuery(route.query)
+})
+
+watch(() => route.query, (newQuery) => {
+  if (!pageActive) return
+  return handleRouteQuery(newQuery)
+}, { deep: true })
+
+async function handleRouteQuery(newQuery) {
   const targetCode = newQuery.bookingCode || newQuery.edit_id || newQuery.booking_code || newQuery.booking_id || newQuery.edit_code
   if (targetCode) {
     const isAlreadyActive = activeTab.value && (
@@ -2930,7 +2946,7 @@ watch(() => route.query, async (newQuery) => {
     await handleAddTabClick()
   }
   await openGlobalSearchFromQuery()
-}, { deep: true })
+}
 
 watch(activeTabId, (newId, oldId) => {
   if (newId !== oldId) {
@@ -3684,6 +3700,7 @@ function makeBlankTab() {
 
 // ==================== TAB HANDLERS ====================
 function syncUrlBookingCode(bookingCode) {
+  if (!pageActive) return
   const currentQueryCode = route.query.bookingCode
   const hasLegacyParams = !!(route.query.edit_id || route.query.booking_code || route.query.booking_id || route.query.edit_code)
   const nextQuery = { ...route.query }

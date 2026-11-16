@@ -35,6 +35,7 @@ import ReportsPage from '@/pages/reports/ReportsPage.vue'
 import GeneralSearchPage from '@/pages/frontdesk/GeneralSearchPage.vue'
 import CheckoutPage from '@/pages/frontdesk/CheckoutPage.vue'
 import ActivityLogTab from '@/pages/system/components/ActivityLogTab.vue'
+import { isRoomMapRouteOwned, moduleContextFromPath, resolveModulePath } from '@/utils/module-route'
 
 const roomStore = useRoomStore()
 const uiStore = useUiStore()
@@ -49,12 +50,15 @@ const getQueryParam = (name) => {
   return params.get(name)
 }
 
-const currentTab = computed(() => route.query.tab || getQueryParam('tab') || 'room-map')
-const moduleContext = computed(() => {
-  if (typeof route?.path === 'string' && route.path.startsWith('/housekeeping')) return 'housekeeping'
-  if (typeof route?.path === 'string' && route.path.startsWith('/frontdesk')) return 'frontdesk'
-  return 'reservation'
+// Dòng 502: trang này được KeepAlive giữ lại ở nhiều module. Bản đang ẩn không được đọc
+// route của module khác, nếu không sẽ dựng thêm Tạo đăng ký/Hóa đơn/Tìm kiếm ẩn chạy song song.
+const ownerModulePath = resolveModulePath(route.path)
+const routeTab = () => route.query.tab || getQueryParam('tab') || 'room-map'
+const currentTab = ref(routeTab())
+watch(() => [route.path, routeTab()], ([path, tab]) => {
+  if (isRoomMapRouteOwned(ownerModulePath, path, tab)) currentTab.value = tab
 })
+const moduleContext = computed(() => moduleContextFromPath(ownerModulePath))
 const canChangeRoomStatus = ref(false)
 const canCancelCheckIn = ref(false)
 const systemDate = ref(authStore.systemDate || localStorage.getItem('pms_system_date') || '')

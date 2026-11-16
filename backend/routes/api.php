@@ -472,6 +472,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     Route::delete('bookings/{booking}', [\App\Http\Controllers\Api\BookingController::class, 'destroy'])->middleware('permission:fo.booking.cancel');
     Route::patch('bookings/{bookingId}/no-post', [\App\Http\Controllers\Api\BookingNoPostController::class, 'updateBooking'])->middleware(['permission:fo.booking.edit', \App\Http\Middleware\RequireFrontDeskInvoiceMutation::class]);
     Route::get('bookings/{id}/print-data', [\App\Http\Controllers\Api\BookingPrintController::class, 'getPrintData']);
+    // Trả phòng: In hóa đơn folio (hiện/không hiện giá) và In tổng (Master).
+    Route::post('checkout/invoice-print', [\App\Http\Controllers\Api\BookingPrintController::class, 'checkoutInvoice']);
 
     // #19 — Nhân bản booking
     Route::post('bookings/{id}/copy', [\App\Http\Controllers\Api\BookingController::class, 'copy'])->middleware('permission:fo.booking.create');
