@@ -156,8 +156,9 @@ class BookingRoomServiceController extends Controller
 
             $bill->DescriptionServive = $description;
             $bill->UpdatedDate = now();
-            $bill->UpdatedHour = now()->format('H:i:s');
-            $bill->UpdatedUser = Auth::user()?->username ?? 'system';
+            // Dòng 230: UpdatedHour varchar(5), UpdatedUser varchar(10) — ghi dài hơn thì MySQL strict báo lỗi 500.
+            $bill->UpdatedHour = now()->format('H:i');
+            $bill->UpdatedUser = mb_substr(Auth::user()?->username ?? 'system', 0, 10);
             $bill->save();
 
             BookingRoomService::where('service_bill_id', $bill->Ma)
@@ -1203,29 +1204,54 @@ class BookingRoomServiceController extends Controller
                 return response()->json(['success' => true, 'message' => 'Đã chuyển dịch vụ Master sang Folio mới.']);
             }
             $validated = $request->validate([
-                'service_ids'   => 'required|array|min:1',
+                'service_ids'   => 'required_without:service_bill_ids|array|min:1',
                 'service_ids.*' => 'integer',
+                // Bill thuần trên Hóa đơn (không có dòng booking_room_services, vd bill chuyển từ phòng khác sang).
+                'service_bill_ids'   => 'required_without:service_ids|array|min:1',
+                'service_bill_ids.*' => 'integer',
                 'folio'         => 'required|integer|between:1,3',
             ]);
+            $validated['service_ids'] = $validated['service_ids'] ?? [];
             $room = BookingRoom::find($roomId) ?? BookingRoom::where('booking_id', $roomId)->first();
             if (!$room) {
                 abort(404, 'Không tìm thấy phòng.');
             }
 
             DB::transaction(function () use ($validated, $room) {
-                $serviceIds = array_map('intval', $validated['service_ids']);
+                $serviceIds = array_values(array_unique(array_map('intval', $validated['service_ids'])));
+                $directBillIds = array_values(array_unique(array_map('intval', $validated['service_bill_ids'] ?? [])));
 
                 // Chỉ cho phép cập nhật dòng dịch vụ thuộc phòng đang thao tác.
-                $services = BookingRoomService::where('booking_room_id', $room->id)
+                $services = $serviceIds === [] ? collect() : BookingRoomService::where('booking_room_id', $room->id)
                     ->whereIn('id', $serviceIds)
                     ->lockForUpdate()
                     ->get();
 
-                if ($services->count() !== count(array_unique($serviceIds))) {
+                if ($services->count() !== count($serviceIds)) {
                     abort(422, 'Có dịch vụ không thuộc phòng đang chọn.');
                 }
 
-                $billIdsFromServices = $services->pluck('service_bill_id')->filter()->unique()->values();
+                // Bill thuần: phải đang thuộc phòng này (RentalRoomId2, hoặc bill gốc chưa chuyển đi).
+                if ($directBillIds !== []) {
+                    $directBills = ServiceBill::whereIn('Ma', $directBillIds)
+                        ->where('Edit', 0)
+                        ->where(function ($query) use ($room) {
+                            $query->where('RentalRoomId2', $room->id)
+                                ->orWhere(function ($origin) use ($room) {
+                                    $origin->where('RentalRoomId1', $room->id)
+                                        ->where(fn ($q) => $q->whereNull('RentalRoomId2')->orWhere('RentalRoomId2', ''))
+                                        ->where(fn ($q) => $q->whereNull('RegisterID2')->orWhere('RegisterID2', 0));
+                                });
+                        })
+                        ->lockForUpdate()
+                        ->get();
+                    if ($directBills->count() !== count($directBillIds)) {
+                        abort(422, 'Có dịch vụ không thuộc phòng đang chọn.');
+                    }
+                }
+
+                $billIdsFromServices = $services->pluck('service_bill_id')->filter()
+                    ->merge($directBillIds)->unique()->values();
                 $hasPaidBill = $billIdsFromServices->isNotEmpty()
                     && ServiceBill::whereIn('Ma', $billIdsFromServices)
                         ->where(function ($query) {
@@ -1260,7 +1286,10 @@ class BookingRoomServiceController extends Controller
             try {
                 $code = \App\Services\ActivityLogService::bookingCode($room->booking_id);
                 $items = BookingRoomService::whereIn('id', $validated['service_ids'])->get()
-                    ->map(fn ($svc) => ($svc->service_name ?: $svc->service_code) . ' - ' . \App\Services\ActivityLogService::money($svc->total_amount))->implode(', ');
+                    ->map(fn ($svc) => ($svc->service_name ?: $svc->service_code) . ' - ' . \App\Services\ActivityLogService::money($svc->total_amount))
+                    ->merge(ServiceBill::whereIn('Ma', $validated['service_bill_ids'] ?? [])->get()
+                        ->map(fn ($bill) => ($bill->DescriptionServive ?: $bill->ServiceId) . ' - ' . \App\Services\ActivityLogService::money($bill->Amount)))
+                    ->implode(', ');
                 \App\Services\ActivityLogService::record('Modify', "* Chuyển bill - ( {$items}) mã đăng ký {$code} - phòng: " . ($room->room_number ?: $room->id) . " sang folio {$validated['folio']}", [
                     'screen' => \App\Support\ActivityScreen::CHECKOUT,
                     'booking_code' => $code,

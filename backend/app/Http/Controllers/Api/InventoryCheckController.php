@@ -193,8 +193,20 @@ class InventoryCheckController extends Controller
             ->where('month', $validated['month'])
             ->first();
 
+        // Dòng 372 (note 4/11): phiếu đã phát sinh dữ liệu chi tiết thì không sửa/xóa số liệu các sản phẩm
+        // đã có trong phiếu, nhưng vẫn cho thêm sản phẩm mới (trước đó thiếu hoặc mới phát sinh).
+        $onlyAppend = false;
         if ($check && !$check->trashed() && $check->hasLogs()) {
-            return response()->json(['success' => false, 'message' => self::LOCKED_MESSAGE], 422);
+            $submitted = collect($validated['items'])->keyBy('product_id');
+            foreach (InventoryCheckItem::where('check_id', $check->id)->get() as $existingItem) {
+                $row = $submitted->get($existingItem->product_id);
+                if (!$row
+                    || (float) $row['well_balance'] !== (float) $existingItem->well_balance
+                    || (float) $row['stoke_take'] !== (float) $existingItem->stoke_take) {
+                    return response()->json(['success' => false, 'message' => self::LOCKED_MESSAGE], 422);
+                }
+            }
+            $onlyAppend = true;
         }
 
         $negative = collect($validated['items'])->filter(fn ($item) => (float) $item['well_balance'] < 0);
@@ -214,7 +226,7 @@ class InventoryCheckController extends Controller
             ? InventoryCheckItem::where('check_id', $check->id)->get()->keyBy('product_id')->map(fn ($i) => [(float) $i->well_balance, (float) $i->stoke_take])->all()
             : [];
 
-        \Illuminate\Support\Facades\DB::transaction(function () use (&$check, $validated) {
+        \Illuminate\Support\Facades\DB::transaction(function () use (&$check, $validated, $onlyAppend) {
             if ($check) {
                 if ($check->trashed()) {
                     $check->restore();
@@ -233,10 +245,15 @@ class InventoryCheckController extends Controller
             }
 
             $productIds = collect($validated['items'])->pluck('product_id')->all();
-            InventoryCheckItem::where('check_id', $check->id)->whereNotIn('product_id', $productIds)->delete();
+            if (!$onlyAppend) {
+                InventoryCheckItem::where('check_id', $check->id)->whereNotIn('product_id', $productIds)->delete();
+            }
 
             foreach ($validated['items'] as $row) {
                 $item = InventoryCheckItem::firstOrNew(['check_id' => $check->id, 'product_id' => $row['product_id']]);
+                if ($onlyAppend && $item->exists) {
+                    continue;
+                }
                 $item->well_balance  = $row['well_balance'];
                 $item->stoke_take    = $row['stoke_take'];
                 $item->different_qty = (float) $row['stoke_take'] - (float) $row['well_balance'];
@@ -321,7 +338,7 @@ class InventoryCheckController extends Controller
         }
     }
 
-    public const LOCKED_MESSAGE = 'Tháng này đã phát sinh dữ liệu nhập/xuất tồn kho, phiếu kiểm kê không được chỉnh sửa.';
+    public const LOCKED_MESSAGE = 'Tháng này đã phát sinh dữ liệu nhập/xuất tồn kho, không được sửa số liệu hay xóa phiếu kiểm kê, chỉ được thêm sản phẩm mới.';
 
     /**
      * POST /api/inventory/checks/{id}/items
@@ -330,10 +347,8 @@ class InventoryCheckController extends Controller
      */
     public function addItems(Request $request, $id)
     {
+        // Phiếu đã phát sinh dữ liệu vẫn được thêm sản phẩm mới (note 4/11)
         $check = InventoryCheck::findOrFail($id);
-        if ($check->hasLogs()) {
-            return response()->json(['success' => false, 'message' => self::LOCKED_MESSAGE], 422);
-        }
 
         $validated = $request->validate([
             'product_ids'   => 'required|array|min:1',
@@ -509,14 +524,22 @@ class InventoryCheckController extends Controller
                 ->orderBy('name')
                 ->get();
 
-            $tree = [];
-            if ($products->isNotEmpty()) {
-                $tree[] = [
-                    'id' => 'warehouse-' . $warehouse->id, 'code' => 'warehouse-' . $warehouse->id,
-                    'name' => $warehouse->name, 'group_key' => null,
-                    'categories' => $this->productPickerCategories($products),
-                ];
-            }
+            // Dòng 372 (note 4/11): kho kiểm kê cho nhiều outlet thì nhóm theo TÊN OUTLET của sản phẩm
+            // (outlet của nhóm hàng), không nhóm theo tên kho; trong outlet nhóm tiếp theo nhóm hàng.
+            $tree = $products
+                ->groupBy(fn ($p) => trim((string) ($p->category?->outlet ?? '')) ?: 'Chưa gán outlet')
+                ->map(function ($outletProducts, $outletName) {
+                    return [
+                        'id' => 'warehouse-outlet-' . \Illuminate\Support\Str::slug($outletName),
+                        'code' => 'warehouse-outlet-' . \Illuminate\Support\Str::slug($outletName),
+                        'name' => $outletName,
+                        'group_key' => null,
+                        'categories' => $this->productPickerCategories($outletProducts),
+                    ];
+                })
+                ->sortBy('name')
+                ->values()
+                ->toArray();
             if ($unassignedProducts->isNotEmpty()) {
                 $tree[] = [
                     'id' => 'unassigned-tracked-products', 'code' => 'unassigned-tracked-products',

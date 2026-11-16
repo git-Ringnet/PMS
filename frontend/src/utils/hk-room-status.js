@@ -10,6 +10,32 @@ export function compareRooms(a, b) {
   return String(a.room_number).localeCompare(String(b.room_number), undefined, { numeric: true })
 }
 
+const IN_HOUSE_BOOKING = new Set(['occupied', 'checkout', 'lco'])
+
+/**
+ * Dòng 357 (note 4/11): phòng đang có khách ở (chiếm dụng) phải hiện OC/OD, không hiện mã phòng trống (VR/VC)
+ * hay OR. Chiếm dụng sạch / sẵn sàng / lau dọn (icon ngôi sao) đều là OC; chiếm dụng bẩn là OD.
+ */
+export function normalizeHkCode(roomStatusCode, bookingStatus, isBackToBack = false) {
+  const inHouse = IN_HOUSE_BOOKING.has(bookingStatus) || isBackToBack
+  if (!inHouse) return roomStatusCode
+  if (['vacant_ready', 'vacant_clean', 'occupied_ready', 'occupied_clean', 'turndown', 'housekeeping'].includes(roomStatusCode)) {
+    return 'occupied_clean'
+  }
+  if (roomStatusCode === 'vacant_dirty') return 'occupied_dirty'
+  return roomStatusCode
+}
+
+/**
+ * Phòng "Lau dọn" khi lọc (khớp Room Map): trạng thái turndown/housekeeping (icon ngôi sao)
+ * hoặc phòng khách trả trong ngày.
+ */
+export function isCleaningRoom(room) {
+  const code = String(room?.room_status_code || '').toLowerCase()
+  return code === 'turndown' || code === 'housekeeping' || code === 'cleaning'
+    || room?.booking_status === 'checkout' || room?.displayBookingStatus === 'checkout'
+}
+
 /**
  * Ký hiệu tình trạng phòng.
  * - Phòng back-to-back (khách trả và khách đến cùng ngày): CI, <tình trạng buồng>, CO.
@@ -22,6 +48,8 @@ export function getStatusSymbols(symbols, roomStatusCode, bookingStatus, liveRoo
   const push = (sym, fallbackColor) => {
     if (sym?.code && !list.some(x => x.code === sym.code)) list.push({ code: sym.code, color: sym.color || fallbackColor })
   }
+
+  roomStatusCode = normalizeHkCode(roomStatusCode, bookingStatus, !!liveRoom?.isBackToBack)
 
   if (liveRoom?.isBackToBack) {
     push(symbols?.booking?.reserved, '#64748b')
@@ -44,31 +72,28 @@ export function getStatusText(symbols, roomStatusCode, bookingStatus, liveRoom =
 }
 
 /**
- * Danh sách tờ in "Theo nhóm NV".
- * - Có nhóm tích "In lịch": in các nhóm đó.
- * - Không tích nhóm, có chọn phòng: phòng đã phân công in theo nhóm của phòng đó.
+ * Danh sách tờ in "Theo nhóm NV" (dòng 357, note 4/11).
+ * - Có nhóm tích "In lịch": in các nhóm đó (tình trạng + nhân viên theo lịch phân công).
+ * - Phòng chọn ở danh sách phòng bên trái (chưa nằm trong nhóm đã tích): gom một tờ, tình trạng lấy theo
+ *   danh sách phòng, Housekeeping Attendant để trống, kể cả phòng đã phân công.
  * - Không chọn gì: in tất cả nhóm.
- * Phòng chưa phân công đang chọn luôn được in thêm một tờ, Housekeeping Attendant để trống.
  * @returns {{ staffNames: string, rooms: { source: 'group'|'list', room: object }[] }[]}
  */
 export function buildWorksheetSheets(groups, checkedGroupIds, selectedRoomIds, roomGroupMap, roomById) {
   const staffNames = g => g.staff_list.map(s => s.name).join(' / ')
   const groupRooms = rooms => rooms.map(room => ({ source: 'group', room }))
   const selectedRooms = [...selectedRoomIds].map(id => roomById.get(id)).filter(Boolean)
-  const unassigned = selectedRooms.filter(r => !roomGroupMap[r.id])
 
-  let sheets
   const checked = groups.filter(g => checkedGroupIds.has(g.id))
-  if (checked.length) {
-    sheets = checked.map(g => ({ staffNames: staffNames(g), rooms: groupRooms(g.rooms) }))
-  } else if (selectedRooms.length) {
-    sheets = groups
-      .map(g => ({ staffNames: staffNames(g), rooms: groupRooms(g.rooms.filter(r => selectedRoomIds.has(Number(r.room_id)))) }))
-  } else {
-    sheets = groups.map(g => ({ staffNames: staffNames(g), rooms: groupRooms(g.rooms) }))
+  if (!checked.length && !selectedRooms.length) {
+    return groups.map(g => ({ staffNames: staffNames(g), rooms: groupRooms(g.rooms) })).filter(s => s.rooms.length)
   }
-  if (unassigned.length) {
-    sheets.push({ staffNames: '', rooms: unassigned.map(room => ({ source: 'list', room })) })
+
+  const sheets = checked.map(g => ({ staffNames: staffNames(g), rooms: groupRooms(g.rooms) }))
+  const inCheckedGroups = new Set(checked.flatMap(g => g.rooms.map(r => Number(r.room_id))))
+  const fromList = selectedRooms.filter(r => !inCheckedGroups.has(Number(r.id)))
+  if (fromList.length) {
+    sheets.push({ staffNames: '', rooms: fromList.map(room => ({ source: 'list', room })) })
   }
   return sheets.filter(s => s.rooms.length)
 }

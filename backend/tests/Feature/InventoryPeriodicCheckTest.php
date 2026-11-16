@@ -62,7 +62,8 @@ class InventoryPeriodicCheckTest extends TestCase
 
         $names = collect($tree)->flatMap(fn ($wh) => collect($wh['categories'])->flatMap(fn ($c) => array_column($c['products'], 'name')))->sort()->values()->all();
         $this->assertSame(['Coca Cola', 'Nước lon chưa gán kho', 'Pepsi'], $names);
-        $this->assertSame('Kho Minibar', $tree[0]['name']);
+        // Kho kiểm kê có thể gồm nhiều outlet; nhóm theo outlet của sản phẩm.
+        $this->assertSame('minibar', $tree[0]['name']);
         $this->assertSame('Chưa gán kho (Kiểm kê nội bộ)', $tree[1]['name']);
     }
 
@@ -110,20 +111,72 @@ class InventoryPeriodicCheckTest extends TestCase
         $this->assertEquals(-3, InventoryCheckItem::first()->well_balance);
     }
 
-    public function test_check_with_activity_in_month_cannot_be_edited(): void
+    public function test_check_with_activity_cannot_edit_numbers_or_delete_but_can_append_products(): void
     {
         $checkId = $this->save([['product_id' => $this->coca->id, 'well_balance' => 10, 'stoke_take' => 10]])->json('data.id');
         InventoryDailyLog::create(['warehouse_id' => $this->minibar->id, 'date' => '2026-09-05', 'product_id' => $this->coca->id, 'receive' => 0, 'export' => 2, 'transfer' => 0]);
 
         $this->getJson("/api/inventory/checks?warehouse_id={$this->minibar->id}&month=2026-09")->assertJsonPath('data.has_logs', true);
 
+        // Sửa số liệu sản phẩm đã có -> chặn
         $this->save([['product_id' => $this->coca->id, 'well_balance' => 99, 'stoke_take' => 99]])
             ->assertStatus(422)->assertJsonPath('message', InventoryCheckController::LOCKED_MESSAGE);
-        $this->postJson("/api/inventory/checks/{$checkId}/items", ['product_ids' => [$this->pepsi->id]])->assertStatus(422);
+        // Bỏ sản phẩm đã có khỏi phiếu -> chặn
+        $this->save([['product_id' => $this->pepsi->id, 'well_balance' => 1, 'stoke_take' => 1]])->assertStatus(422);
         $itemId = InventoryCheckItem::first()->id;
         $this->putJson("/api/inventory/checks/{$checkId}/items/{$itemId}", ['well_balance' => 50])->assertStatus(422);
-
+        // Xóa phiếu -> chặn
+        $this->deleteJson("/api/inventory/checks/{$checkId}")->assertStatus(422);
         $this->assertEquals(10, InventoryCheckItem::first()->well_balance);
+
+        // Thêm sản phẩm mới (giữ nguyên sản phẩm cũ) -> cho phép
+        $this->save([
+            ['product_id' => $this->coca->id, 'well_balance' => 10, 'stoke_take' => 10],
+            ['product_id' => $this->pepsi->id, 'well_balance' => 5, 'stoke_take' => 4],
+        ])->assertOk()->assertJsonPath('success', true);
+        $this->assertSame(2, InventoryCheckItem::count());
+        $this->assertEquals(10, InventoryCheckItem::where('product_id', $this->coca->id)->first()->well_balance);
+        $this->assertEquals(5, InventoryCheckItem::where('product_id', $this->pepsi->id)->first()->well_balance);
+
+        // Thêm bằng nút Thêm sản phẩm trực tiếp -> cũng cho phép
+        $other = Product::create(['product_category_id' => $this->coca->product_category_id, 'name' => 'Fanta', 'price' => 20000, 'track_stock' => true, 'is_active' => true, 'inventory_id' => (string) $this->minibar->id]);
+        $this->postJson("/api/inventory/checks/{$checkId}/items", ['product_ids' => [$other->id]])->assertOk();
+        $this->assertSame(3, InventoryCheckItem::count());
+    }
+
+    public function test_add_product_list_groups_by_outlet_name_not_warehouse_name(): void
+    {
+        $snack = ProductCategory::create(['name' => 'Bánh snack', 'outlet' => 'Minibar', 'is_active' => true]);
+        $amenity = ProductCategory::create(['name' => 'Đồ dùng', 'outlet' => 'Amenity', 'is_active' => true]);
+        foreach (['Oishi', 'Bánh Danisa'] as $n) {
+            Product::create(['product_category_id' => $snack->id, 'name' => $n, 'price' => 5000, 'track_stock' => true, 'is_active' => true, 'inventory_id' => (string) $this->minibar->id]);
+        }
+        Product::create(['product_category_id' => $amenity->id, 'name' => 'Bàn chải', 'price' => 5000, 'track_stock' => true, 'is_active' => true, 'inventory_id' => (string) $this->minibar->id]);
+
+        $tree = collect($this->getJson("/api/inventory/products-in-stock?warehouse_id={$this->minibar->id}")->assertOk()->json('data'));
+
+        $this->assertNotContains('Kho Minibar', $tree->pluck('name')->all());
+        $this->assertContains('Amenity', $tree->pluck('name')->all());
+        $minibarGroup = $tree->firstWhere('name', 'Minibar');
+        $snackNames = collect($minibarGroup['categories'])->firstWhere('name', 'Bánh snack')['products'];
+        $this->assertEqualsCanonicalizing(['Oishi', 'Bánh Danisa'], array_column($snackNames, 'name'));
+    }
+
+    public function test_warehouse_with_check_cannot_be_deleted_but_can_be_hidden(): void
+    {
+        $this->save([['product_id' => $this->coca->id, 'well_balance' => 10, 'stoke_take' => 10]])->assertOk();
+
+        $this->deleteJson("/api/warehouses/{$this->minibar->id}")->assertStatus(422)
+            ->assertJsonPath('success', false);
+        $this->assertNotNull(Warehouse::find($this->minibar->id));
+
+        $this->putJson("/api/warehouses/{$this->minibar->id}", ['is_active' => false])->assertOk();
+        $ids = collect($this->getJson('/api/warehouses')->json('data'))->pluck('id')->all();
+        $this->assertNotContains($this->minibar->id, $ids);
+        $this->assertSame(1, InventoryCheck::count());
+
+        // Kho chưa có phiếu/nhật ký vẫn xóa được
+        $this->deleteJson("/api/warehouses/{$this->laundry->id}")->assertOk();
     }
 
     public function test_sync_previous_month_returns_draft_values_without_saving(): void

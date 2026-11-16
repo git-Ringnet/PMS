@@ -79,6 +79,14 @@ class AppServiceProvider extends ServiceProvider
                 return;
             }
 
+            // Task 325: bản dịch i18n và màu giao diện tự đổi là dữ liệu kỹ thuật, không phải thao tác nghiệp vụ
+            if ($model instanceof \App\Models\TranslationEntry ||
+                $model instanceof \App\Models\TranslationLocation ||
+                $model instanceof \App\Models\TranslationValue ||
+                ($model instanceof \App\Models\HotelConfig && str_starts_with((string) ($model->name ?? ''), 'SystemTheme'))) {
+                return;
+            }
+
             $action = '';
             if (str_contains($eventName, '.created:')) {
                 $action = 'created';
@@ -200,12 +208,12 @@ class AppServiceProvider extends ServiceProvider
             // Tìm nhãn đại diện cho Model
             $targetLabel = null;
             if ($model instanceof \App\Models\Booking) {
-                $targetLabel = $model->booking_code ?? ('GAL' . $model->id);
+                $targetLabel = $model->booking_code ?? (\App\Services\ActivityLogService::bookingPrefix() . $model->id);
             } elseif ($model instanceof \App\Models\BookingRoom) {
                 // Dòng 325: nhãn phòng thuê luôn kèm mã đăng ký và số phòng (hoặc mã phòng thuê khi chưa gán số)
-                $targetLabel = 'GAL' . $model->booking_id . ' - ' . ($model->room_number ? 'P.' . $model->room_number : $model->id);
+                $targetLabel = \App\Services\ActivityLogService::bookingPrefix() . $model->booking_id . ' - ' . ($model->room_number ? 'P.' . $model->room_number : $model->id);
             } elseif ($model instanceof \App\Models\Payment) {
-                $targetLabel = 'GAL' . ($model->booking_id ?? '');
+                $targetLabel = \App\Services\ActivityLogService::bookingPrefix() . ($model->booking_id ?? '');
             } elseif ($model instanceof \App\Models\HotelConfig) {
                 $targetLabel = $model->name ?? $model->config_key ?? $model->description;
             } elseif ($model instanceof \App\Models\Room || $model instanceof \App\Models\RoomLock) {

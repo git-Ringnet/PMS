@@ -7,6 +7,7 @@ use App\Models\Booking;
 use App\Models\BookingRoom;
 use App\Models\BookingRoomService;
 use App\Models\HotelSetting;
+use App\Models\Payment;
 use App\Models\ServiceBill;
 use App\Services\RoomAvailabilityService;
 use Carbon\Carbon;
@@ -370,6 +371,208 @@ class BookingPrintController extends Controller
                 ],
             ],
         ]);
+    }
+
+    /**
+     * Dữ liệu "Hóa đơn thanh toán" của màn hình Trả phòng.
+     * - scope=selection: đúng các bill / thanh toán đang hiển thị trên màn hình (folio đang xem).
+     * - scope=total: In tổng — toàn bộ bill và thanh toán còn hiệu lực của mọi phòng và Master trong đăng ký.
+     */
+    public function checkoutInvoice(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'scope'              => 'required|in:selection,total',
+            'booking_id'         => 'nullable|integer|required_if:scope,total',
+            'room_id'            => 'nullable|string|max:50',
+            'guest_id'           => 'nullable|string|max:50',
+            'folio'              => 'nullable|string|max:5',
+            'service_bill_ids'   => 'nullable|array',
+            'service_bill_ids.*' => 'integer',
+            'payment_ids'        => 'nullable|array',
+            'payment_ids.*'      => 'integer',
+        ]);
+
+        $booking = !empty($validated['booking_id'])
+            ? Booking::with(['bookingRooms.room', 'company'])->find($validated['booking_id'])
+            : null;
+        if ($validated['scope'] === 'total' && !$booking) {
+            return response()->json(['success' => false, 'message' => 'Không tìm thấy thông tin đặt phòng.'], 404);
+        }
+        $room = !empty($validated['room_id']) ? BookingRoom::with('room')->find($validated['room_id']) : null;
+
+        $activeBill = fn ($query) => $query->where(fn ($q) => $q->whereNull('Edit')->orWhere('Edit', 0))
+            ->whereNotIn('Status', [3, 4]);
+
+        if ($validated['scope'] === 'total') {
+            $bills = $this->bookingOwnedBills($booking, $activeBill);
+            $payments = Payment::with('paymentMethod')
+                ->where('booking_id', $booking->id)
+                ->where('edit_flag', 0)
+                ->whereNull('deleted_at')
+                ->get();
+        } else {
+            $bills = ServiceBill::query()
+                ->whereIn('Ma', $validated['service_bill_ids'] ?? [])
+                ->tap($activeBill)
+                ->get();
+            $payments = Payment::with('paymentMethod')
+                ->whereIn('id', $validated['payment_ids'] ?? [])
+                ->where('edit_flag', 0)
+                ->whereNull('deleted_at')
+                ->get();
+        }
+
+        $bills = $bills->sortBy(fn (ServiceBill $bill) => sprintf('%s %s %010d',
+            $bill->Date ? Carbon::parse($bill->Date)->format('Y-m-d') : '9999-12-31',
+            (string) $bill->OpenTime,
+            (int) $bill->Ma
+        ))->values();
+        $payments = $payments->sortBy(fn (Payment $payment) => sprintf('%s %010d',
+            Carbon::parse($payment->date ?: $payment->created_at)->format('Y-m-d'),
+            (int) $payment->id
+        ))->values();
+
+        // Số phòng: phòng đang sở hữu bill; bill đã chuyển lên Master thì lấy phòng gốc.
+        $displayRoomId = fn (ServiceBill $bill) => $this->currentBillRoomId($bill) ?? ($bill->RentalRoomId1 ? (string) $bill->RentalRoomId1 : null);
+        $roomIds = $bills->map($displayRoomId)->filter()->unique()->values();
+        $roomNumbers = BookingRoom::with('room')->whereIn('id', $roomIds)->get()
+            ->mapWithKeys(fn (BookingRoom $br) => [(string) $br->id => $br->room?->room_number ?: ($br->room_number ?: '')]);
+
+        $details = \App\Models\ServiceBillDetail::whereIn('BillServiceId', $bills->pluck('Ma'))->orderBy('Ma')->get()->groupBy('BillServiceId');
+
+        $net = 0.0;
+        $serviceCharge = 0.0;
+        $tax = 0.0;
+        $lines = $bills->map(function (ServiceBill $bill) use ($details, $roomNumbers, $displayRoomId, &$net, &$serviceCharge, &$tax) {
+            $amount = (float) $bill->Amount;
+            $breakdown = \App\Services\TaxBreakdownService::breakdown(
+                $amount,
+                (float) $bill->ServiceCharge,
+                (float) $bill->SpecialTax,
+                (float) $bill->Tax
+            );
+            $net += $breakdown['net_total'];
+            $serviceCharge += $breakdown['service_charge_amount'];
+            $tax += $breakdown['tax_amount'] + $breakdown['special_tax_amount'];
+
+            $description = trim((string) ($bill->DescriptionServive ?: $bill->ServiceId));
+            // Bill nhiều mặt hàng (Minibar, giặt ủi...) in thêm từng mặt hàng; bill tiền phòng không in dòng tách ăn sáng.
+            $items = [];
+            if (!$this->isRoomChargeBill($bill)) {
+                foreach ($details->get($bill->Ma, collect()) as $detail) {
+                    $itemName = trim((string) $detail->DescriptionServive);
+                    if ($itemName === '' || $itemName === $description) {
+                        continue;
+                    }
+                    $items[] = ['name' => $itemName, 'quantity' => (float) ($detail->Quantity ?: 1)];
+                }
+            }
+
+            return [
+                'id'          => (int) $bill->Ma,
+                'date'        => $bill->Date ? Carbon::parse($bill->Date)->format('d/m/Y') : '',
+                'description' => $description,
+                'items'       => $items,
+                'room_number' => (string) ($roomNumbers[(string) $displayRoomId($bill)] ?? ''),
+                'folio'       => (int) ($bill->Folio ?: 1),
+                'amount'      => $amount,
+            ];
+        })->values();
+
+        $paymentLines = $payments->map(fn (Payment $payment) => [
+            'id'          => (int) $payment->id,
+            'date'        => Carbon::parse($payment->date ?: $payment->created_at)->format('d/m/Y'),
+            'description' => $payment->description ?: ($payment->paymentMethod?->name ?: (string) $payment->payment_method_id),
+            'amount'      => (float) $payment->amount,
+        ])->values();
+
+        $total = (float) $lines->sum('amount');
+        $paid = (float) $paymentLines->sum('amount');
+
+        // Thông tin khách: khách đang chọn > khách đại diện phòng > tên đăng ký.
+        $guest = !empty($validated['guest_id']) ? \App\Models\Guest::find($validated['guest_id']) : null;
+        $guestName = $guest?->full_name ?: ($room?->customer_name ?: ($booking?->booking_name ?: ''));
+        $arrival = $room ? ($room->check_in_date ?: $room->arrival_date) : $booking?->arrival_date;
+        $departure = $room ? ($room->check_out_date ?: $room->departure_date) : $booking?->departure_date;
+        $hotel = HotelSetting::first();
+        $user = Auth::user();
+        $folio = (string) ($validated['folio'] ?? '');
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'hotel' => [
+                    'name'     => $hotel?->hotel_name ?: '',
+                    'address'  => $hotel?->address ?: '',
+                    'email'    => $hotel?->email ?: '',
+                    'phone'    => $hotel?->phone ?: '',
+                    'logo_url' => $hotel?->logo_url ?: '',
+                ],
+                'header' => [
+                    'guest_name'     => $guestName,
+                    'address'        => $guest?->address ?: '',
+                    'company_name'   => $booking?->company?->name ?: '',
+                    'arrival_date'   => $arrival ? Carbon::parse($arrival)->format('d/m/Y') : '',
+                    'departure_date' => $departure ? Carbon::parse($departure)->format('d/m/Y') : '',
+                    'booking_code'   => $booking ? ($booking->booking_code ?: ('GAL' . $booking->id)) : '',
+                    'folio'          => in_array($folio, ['1', '2', '3'], true) ? $folio : '',
+                    'room_number'    => $room ? ($room->room?->room_number ?: ($room->room_number ?: '')) : '',
+                    'is_total'       => $validated['scope'] === 'total',
+                ],
+                'services' => $lines,
+                'payments' => $paymentLines,
+                'summary' => [
+                    'net'             => round($net),
+                    'service_charge'  => round($serviceCharge),
+                    'tax'             => round($tax),
+                    'total'           => $total,
+                    'amount_in_words' => SalesInvoiceController::numberToVietnameseWords($total),
+                    'paid'            => $paid,
+                    'balance'         => $total - $paid,
+                ],
+                'printed_date' => Carbon::now()->format('Y-m-d'),
+                'cashier'      => $user?->name ?: ($user?->username ?: ''),
+            ],
+        ]);
+    }
+
+    /** Phòng đang sở hữu bill: phòng nhận chuyển > (bill đã lên Master thì không có phòng) > phòng gốc. */
+    private function currentBillRoomId(ServiceBill $bill): ?string
+    {
+        $filled = fn ($value) => $value !== null && (string) $value !== '' && (string) $value !== '0';
+        if ($filled($bill->RentalRoomId2)) {
+            return (string) $bill->RentalRoomId2;
+        }
+        if ($filled($bill->RegisterID2)) {
+            return null;
+        }
+        return $filled($bill->RentalRoomId1) ? (string) $bill->RentalRoomId1 : null;
+    }
+
+    /** Bill còn hiệu lực đang thuộc đăng ký (Master hoặc một phòng của đăng ký), không lấy bill đã chuyển sang đăng ký khác. */
+    private function bookingOwnedBills(Booking $booking, \Closure $activeBill): Collection
+    {
+        $roomIds = $booking->bookingRooms->pluck('id')->map(fn ($id) => (string) $id)->all();
+
+        return ServiceBill::query()
+            ->where(function ($q) use ($booking, $roomIds) {
+                $q->where('RegisterId1', $booking->id)
+                    ->orWhere('RegisterID2', $booking->id)
+                    ->orWhereIn('RentalRoomId1', $roomIds)
+                    ->orWhereIn('RentalRoomId2', $roomIds);
+            })
+            ->tap($activeBill)
+            ->get()
+            ->filter(function (ServiceBill $bill) use ($booking, $roomIds) {
+                $roomId = $this->currentBillRoomId($bill);
+                if ($roomId !== null) {
+                    return in_array($roomId, $roomIds, true);
+                }
+                $filled = fn ($value) => $value !== null && (string) $value !== '' && (string) $value !== '0';
+                $ownerBooking = $filled($bill->RegisterID2) ? $bill->RegisterID2 : $bill->RegisterId1;
+                return (string) $ownerBooking === (string) $booking->id;
+            })
+            ->values();
     }
 
     /**

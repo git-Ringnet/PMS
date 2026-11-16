@@ -461,6 +461,110 @@ class BookingRoomServiceFolioTest extends TestCase
         $this->assertDatabaseHas('service_bills', ['Ma' => $otherBill->Ma, 'Folio' => '1']);
     }
 
+    /** Dòng Excel 31/10/2026: kéo bill chuyển từ phòng khác sang (không có dòng booking_room_services) sang folio khác báo lỗi. */
+    public function test_folio_drag_accepts_direct_bills_transferred_into_the_room_together_with_services(): void
+    {
+        $user = $this->createFolioUser();
+        $booking = Booking::create([
+            'booking_name' => 'GAL1', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-07',
+            'num_of_days' => 1, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
+        ]);
+        $room = $this->makeRoom($booking, 'GAL1-1312');
+        $originRoom = $this->makeRoom($booking, 'GAL1-1412');
+        $serviceBill = $this->makeBill('Tiền ăn tối');
+        $service = $this->makeService($room, $serviceBill->Ma);
+        $transferredBill = $this->makeBill('Phí tiền sân bay (R_1412=>R_1312)');
+        $transferredBill->update([
+            'RegisterId1' => $booking->id, 'RentalRoomId1' => $originRoom->id,
+            'RegisterID2' => $booking->id, 'RentalRoomId2' => $room->id, 'Status' => 1, 'Edit' => 0,
+        ]);
+        $legacyBill = $this->makeBill('Bill gốc của phòng');
+        $legacyBill->update(['RentalRoomId1' => $room->id, 'RentalRoomId2' => null, 'RegisterID2' => null]);
+
+        $this->actingAs($user)
+            ->patchJson("/api/booking-rooms/{$room->id}/services/folio", [
+                'service_ids' => [$service->id],
+                'service_bill_ids' => [$transferredBill->Ma, $legacyBill->Ma],
+                'folio' => 3,
+            ])
+            ->assertSuccessful();
+
+        $this->assertDatabaseHas('booking_room_services', ['id' => $service->id, 'folio' => 3]);
+        $this->assertDatabaseHas('service_bills', ['Ma' => $serviceBill->Ma, 'Folio' => '3']);
+        $this->assertDatabaseHas('service_bills', ['Ma' => $transferredBill->Ma, 'Folio' => '3']);
+        $this->assertDatabaseHas('service_bills', ['Ma' => $legacyBill->Ma, 'Folio' => '3']);
+
+        // Chỉ bill thuần (không kèm service_ids) cũng chuyển được.
+        $this->actingAs($user)
+            ->patchJson("/api/booking-rooms/{$room->id}/services/folio", [
+                'service_bill_ids' => [$transferredBill->Ma], 'folio' => 2,
+            ])
+            ->assertSuccessful();
+        $this->assertDatabaseHas('service_bills', ['Ma' => $transferredBill->Ma, 'Folio' => '2']);
+    }
+
+    public function test_folio_drag_rejects_a_direct_bill_owned_by_another_room(): void
+    {
+        $user = $this->createFolioUser();
+        $booking = Booking::create([
+            'booking_name' => 'GAL1', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-07',
+            'num_of_days' => 1, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
+        ]);
+        $room = $this->makeRoom($booking, 'GAL1-1312');
+        $otherRoom = $this->makeRoom($booking, 'GAL1-1412');
+        $bill = $this->makeBill('Bill phòng khác');
+        // Bill gốc của phòng này nhưng đã chuyển sang phòng khác -> không còn thuộc phòng này.
+        $bill->update(['RentalRoomId1' => $room->id, 'RegisterID2' => $booking->id, 'RentalRoomId2' => $otherRoom->id]);
+        $paidBill = $this->makeBill('Bill đã thanh toán');
+        $paidBill->update(['RentalRoomId2' => $room->id, 'PaymentId' => 34, 'Status' => 2]);
+
+        $this->actingAs($user)
+            ->patchJson("/api/booking-rooms/{$room->id}/services/folio", ['service_bill_ids' => [$bill->Ma], 'folio' => 2])
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Có dịch vụ không thuộc phòng đang chọn.');
+        $this->actingAs($user)
+            ->patchJson("/api/booking-rooms/{$room->id}/services/folio", ['service_bill_ids' => [$paidBill->Ma], 'folio' => 2])
+            ->assertStatus(422);
+
+        $this->assertDatabaseHas('service_bills', ['Ma' => $bill->Ma, 'Folio' => '1']);
+        $this->assertDatabaseHas('service_bills', ['Ma' => $paidBill->Ma, 'Folio' => '1']);
+    }
+
+    /** Dòng 230: sửa mô tả bill đã thanh toán và dòng thanh toán (tất toán) trên Hóa đơn. */
+    public function test_row_230_description_of_paid_bill_and_settlement_payment_can_be_edited(): void
+    {
+        $user = $this->createFolioUser();
+        $booking = Booking::create([
+            'booking_name' => 'GAL1', 'arrival_date' => '2026-08-09', 'departure_date' => '2026-08-11',
+            'num_of_days' => 2, 'booking_date' => '2026-08-09', 'created_by' => $user->username,
+        ]);
+        $room = $this->makeRoom($booking, 'GAL1-104');
+        PaymentMethod::firstOrCreate(['code' => 'BT'], ['name' => 'Bank transfer', 'payment_group' => 3]);
+        $settlement = Payment::create([
+            'booking_id' => $booking->id, 'booking_room_id' => $room->id, 'date' => '2026-08-12', 'open_time' => '15:42',
+            'description' => 'Thanh toán -ddddd Bank transfer', 'amount' => 1200000, 'currency' => 'VND',
+            'pack2' => 'DPR', 'pack4' => 'PY', 'folio_id' => 3, 'payment_id' => 5, 'payment_method_id' => 'BT',
+            'status' => Payment::STATUS_PAID, 'edit_flag' => 0,
+        ]);
+        $bill = $this->makeBill('Dịch vụ phòng nghỉ - Phòng 104');
+        $bill->update(['ServiceId' => 'RM', 'DepartmentId' => 'FO', 'RentalRoomId2' => $room->id, 'PaymentId' => 5, 'Status' => 2]);
+
+        $this->actingAs($user)
+            ->putJson("/api/payments/{$settlement->id}", ['description' => 'Thanh toán chuyển khoản'])
+            ->assertSuccessful();
+        $this->assertDatabaseHas('payments', ['id' => $settlement->id, 'description' => 'Thanh toán chuyển khoản', 'amount' => 1200000]);
+
+        $this->actingAs($user)
+            ->patchJson("/api/service-bills/{$bill->Ma}/description", ['description' => 'Tiền phòng 104'])
+            ->assertSuccessful();
+        $this->assertDatabaseHas('service_bills', ['Ma' => $bill->Ma, 'DescriptionServive' => 'Tiền phòng 104']);
+        // MySQL thật: UpdatedHour varchar(5), UpdatedUser varchar(10) (SQLite test không chặn độ dài).
+        $fresh = $bill->fresh();
+        $this->assertLessThanOrEqual(5, mb_strlen((string) $fresh->UpdatedHour));
+        $this->assertMatchesRegularExpression('/^\d{2}:\d{2}$/', (string) $fresh->UpdatedHour);
+        $this->assertLessThanOrEqual(10, mb_strlen((string) $fresh->UpdatedUser));
+    }
+
     public function test_folio_drag_rejects_a_service_from_another_room(): void
     {
         $user = $this->createFolioUser();
@@ -1857,6 +1961,107 @@ class BookingRoomServiceFolioTest extends TestCase
             'Amount' => 500000,
             'Date' => '2026-08-31 00:00:00',
         ]);
+    }
+
+    public function test_checkout_invoice_total_prints_all_rooms_and_master_bills_of_the_booking(): void
+    {
+        $user = $this->createFolioUser();
+        $booking = Booking::create([
+            'booking_name' => 'Đoàn Anh Hậu', 'arrival_date' => '2026-08-19', 'departure_date' => '2026-08-21',
+            'num_of_days' => 2, 'booking_date' => '2026-08-19', 'created_by' => $user->username,
+        ]);
+        $other = Booking::create([
+            'booking_name' => 'Khác', 'arrival_date' => '2026-08-19', 'departure_date' => '2026-08-21',
+            'num_of_days' => 2, 'booking_date' => '2026-08-19', 'created_by' => $user->username,
+        ]);
+        $room410 = $this->makeRoom($booking, 'INV-410');
+        $room504 = $this->makeRoom($booking, 'INV-504');
+        $this->assignRoomNumber($room410, '410');
+        $this->assignRoomNumber($room504, '504');
+
+        $rm410 = $this->makeBill('Dịch vụ phòng nghỉ');
+        $rm410->update(['ServiceId' => 'RM', 'RegisterId1' => $booking->id, 'RentalRoomId1' => $room410->id, 'Amount' => 500000, 'Tax' => 8, 'ServiceCharge' => 5, 'Edit' => 0, 'Status' => 1]);
+        $minibar = $this->makeBill('Minibar/Phí Minibar');
+        $minibar->update(['RegisterId1' => $booking->id, 'RentalRoomId1' => $room504->id, 'Amount' => 65000, 'Tax' => 8, 'ServiceCharge' => 5, 'Edit' => 0, 'Status' => 1]);
+        ServiceBillDetail::create(['BillServiceId' => $minibar->Ma, 'Ma' => 1, 'DepartmentId' => 'HK', 'ServiceId' => 'MB', 'DescriptionServive' => 'BIA 333', 'Quantity' => 1, 'Amount' => 40000, 'OriginalRate' => 40000]);
+        ServiceBillDetail::create(['BillServiceId' => $minibar->Ma, 'Ma' => 2, 'DepartmentId' => 'HK', 'ServiceId' => 'MB', 'DescriptionServive' => 'Nước suối Aqua 500ml', 'Quantity' => 1, 'Amount' => 25000, 'OriginalRate' => 25000]);
+        // Bill phòng 504 đã chuyển lên Master: vẫn thuộc đăng ký, cột Phòng hiện phòng gốc.
+        $toMaster = $this->makeBill('Dịch vụ phòng nghỉ');
+        $toMaster->update(['ServiceId' => 'RM', 'RegisterId1' => $booking->id, 'RentalRoomId1' => $room504->id, 'RegisterID2' => $booking->id, 'Amount' => 500000, 'Edit' => 0, 'Status' => 1]);
+        // Bill đã chuyển sang đăng ký khác và bill đã xóa không được in.
+        $movedOut = $this->makeBill('Đã chuyển đi');
+        $movedOut->update(['RegisterId1' => $booking->id, 'RentalRoomId1' => $room410->id, 'RegisterID2' => $other->id, 'Amount' => 999000, 'Edit' => 0, 'Status' => 1]);
+        $deleted = $this->makeBill('Đã xóa');
+        $deleted->update(['RegisterId1' => $booking->id, 'RentalRoomId1' => $room410->id, 'Amount' => 777000, 'Edit' => 1, 'Status' => 3]);
+
+        PaymentMethod::firstOrCreate(['code' => 'CA'], ['name' => 'Cash (Tiền mặt)', 'payment_group' => 1]);
+        Payment::create([
+            'booking_id' => $booking->id, 'date' => '2026-08-20', 'description' => 'Cash (Tiền mặt)', 'amount' => 300000,
+            'currency' => 'VND', 'pack2' => 'DPR', 'folio_id' => 1, 'payment_method_id' => 'CA', 'status' => Payment::STATUS_PENDING, 'edit_flag' => 0,
+        ]);
+        Payment::create([
+            'booking_id' => $booking->id, 'date' => '2026-08-20', 'description' => 'Cọc đã hủy', 'amount' => 100000,
+            'currency' => 'VND', 'pack2' => 'DPR', 'folio_id' => 1, 'payment_method_id' => 'CA', 'status' => Payment::STATUS_PENDING, 'edit_flag' => 1,
+        ]);
+
+        $response = $this->actingAs($user)
+            ->postJson('/api/checkout/invoice-print', ['scope' => 'total', 'booking_id' => $booking->id])
+            ->assertSuccessful();
+
+        $data = $response->json('data');
+        $this->assertEqualsCanonicalizing([$rm410->Ma, $minibar->Ma, $toMaster->Ma], array_column($data['services'], 'id'));
+        $lines = collect($data['services'])->keyBy('id');
+        $this->assertSame('410', $lines[$rm410->Ma]['room_number']);
+        $this->assertSame('504', $lines[$toMaster->Ma]['room_number']);
+        $this->assertSame(['BIA 333', 'Nước suối Aqua 500ml'], array_column($lines[$minibar->Ma]['items'], 'name'));
+        $this->assertSame(['Cash (Tiền mặt)'], array_column($data['payments'], 'description'));
+
+        $summary = $data['summary'];
+        $this->assertEquals(1065000, $summary['total']);
+        $this->assertEquals(300000, $summary['paid']);
+        $this->assertEquals(765000, $summary['balance']);
+        $this->assertEqualsWithDelta(1065000, $summary['net'] + $summary['service_charge'] + $summary['tax'], 2);
+        $this->assertGreaterThan(0, $summary['tax']);
+        $this->assertTrue($data['header']['is_total']);
+        $this->assertSame('Đoàn Anh Hậu', $data['header']['guest_name']);
+    }
+
+    public function test_checkout_invoice_selection_prints_only_the_visible_active_lines(): void
+    {
+        $user = $this->createFolioUser();
+        $booking = Booking::create([
+            'booking_name' => 'GAL1', 'arrival_date' => '2026-08-19', 'departure_date' => '2026-08-21',
+            'num_of_days' => 2, 'booking_date' => '2026-08-19', 'created_by' => $user->username,
+        ]);
+        $room = $this->makeRoom($booking, 'INV-SEL-104');
+        $this->assignRoomNumber($room, '104');
+        $shown = $this->makeBill('Dịch vụ phòng nghỉ - Phòng 104');
+        $shown->update(['ServiceId' => 'RM', 'RegisterId1' => $booking->id, 'RentalRoomId1' => $room->id, 'Amount' => 600000, 'Edit' => 0, 'Status' => 1]);
+        $otherFolio = $this->makeBill('Folio khác');
+        $otherFolio->update(['RegisterId1' => $booking->id, 'RentalRoomId1' => $room->id, 'Amount' => 50000, 'Edit' => 0, 'Status' => 1]);
+        $deleted = $this->makeBill('Đã xóa');
+        $deleted->update(['RegisterId1' => $booking->id, 'RentalRoomId1' => $room->id, 'Amount' => 70000, 'Edit' => 1, 'Status' => 3]);
+
+        $data = $this->actingAs($user)
+            ->postJson('/api/checkout/invoice-print', [
+                'scope' => 'selection', 'booking_id' => $booking->id, 'room_id' => $room->id, 'folio' => '1',
+                'service_bill_ids' => [$shown->Ma, $deleted->Ma], 'payment_ids' => [],
+            ])
+            ->assertSuccessful()
+            ->json('data');
+
+        $this->assertSame([$shown->Ma], array_column($data['services'], 'id'));
+        $this->assertSame('104', $data['header']['room_number']);
+        $this->assertSame('1', $data['header']['folio']);
+        $this->assertEquals(600000, $data['summary']['total']);
+        $this->assertEquals(600000, $data['summary']['balance']);
+    }
+
+    private function assignRoomNumber(BookingRoom $room, string $number): void
+    {
+        $roomForm = RoomForm::firstOrCreate(['name' => 'Test Form']);
+        Room::create(['room_number' => $number, 'room_form_id' => $roomForm->id, 'room_class_id' => $room->room_class_id, 'floor' => '1']);
+        $room->update(['room_number' => $number]);
     }
 
     private function makeRoom(Booking $booking, string $id): BookingRoom

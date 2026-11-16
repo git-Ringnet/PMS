@@ -1,6 +1,6 @@
 {
- "generated_at": "2026-11-12T04:10:56.243Z",
- "count": 6099,
+ "generated_at": "2026-11-16T04:35:04.817Z",
+ "count": 6120,
  "items": [
   {
    "source": "- Bảo mật nâng cao",
@@ -699,6 +699,16 @@
     {
      "area": "Cấu hình hệ thống › LanguageTab",
      "route": "/system"
+    }
+   ]
+  },
+  {
+   "source": "...., ngày {0} tháng {1} năm {2}",
+   "is_pattern": true,
+   "locations": [
+    {
+     "area": "Lễ tân › CheckoutInvoicePaper",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -4953,10 +4963,6 @@
      "route": "/frontdesk"
     },
     {
-     "area": "Lễ tân › GeneralSearchPage",
-     "route": "/frontdesk"
-    },
-    {
      "area": "Cấu hình hệ thống › RoleManageTab",
      "route": "/system"
     }
@@ -5773,6 +5779,16 @@
    ]
   },
   {
+   "source": "Bằng chữ:",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › CheckoutInvoicePaper",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
    "source": "Bằng chữ/ In word:",
    "is_pattern": false,
    "locations": [
@@ -6247,6 +6263,16 @@
     {
      "area": "Cấu hình › TemplateEditorModal",
      "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "Bỏ lọc",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › CheckoutPage",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -11927,6 +11953,26 @@
    ]
   },
   {
+   "source": "Chữ ký của Khách",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › CheckoutInvoicePaper",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
+   "source": "Chữ ký của Thu ngân",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › CheckoutInvoicePaper",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
    "source": "Chữ ký giám sát",
    "is_pattern": false,
    "locations": [
@@ -12170,16 +12216,6 @@
     },
     {
      "area": "Lễ tân › PrepaymentModal",
-     "route": "/frontdesk"
-    }
-   ]
-  },
-  {
-   "source": "Chưa có chức năng",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Lễ tân › CheckoutPage",
      "route": "/frontdesk"
     }
    ]
@@ -13187,16 +13223,6 @@
    ]
   },
   {
-   "source": "Chức năng Báo cáo sẽ được kích hoạt khi cấu hình mẫu báo cáo.",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Lễ tân › GeneralSearchPage",
-     "route": "/frontdesk"
-    }
-   ]
-  },
-  {
    "source": "Chức năng cấu hình chi tiết đang được phát triển để đồng bộ hệ thống PMS.",
    "is_pattern": false,
    "locations": [
@@ -13227,36 +13253,6 @@
     {
      "area": "Cấu hình › TemplateTab",
      "route": "/config"
-    }
-   ]
-  },
-  {
-   "source": "Chức năng In Đăng Ký Lưu Trú sẽ được kích hoạt khi cấu hình mẫu in.",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Lễ tân › GeneralSearchPage",
-     "route": "/frontdesk"
-    }
-   ]
-  },
-  {
-   "source": "Chức năng In phiếu ăn sáng sẽ được kích hoạt khi cấu hình mẫu in.",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Lễ tân › GeneralSearchPage",
-     "route": "/frontdesk"
-    }
-   ]
-  },
-  {
-   "source": "Chức năng In Xác Nhận sẽ được kích hoạt khi cấu hình mẫu in.",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Lễ tân › GeneralSearchPage",
-     "route": "/frontdesk"
     }
    ]
   },
@@ -15743,6 +15739,16 @@
    ]
   },
   {
+   "source": "DỊCH VỤ",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › CheckoutInvoicePaper",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
    "source": "Dịch vụ (OOS)",
    "is_pattern": false,
    "locations": [
@@ -15850,6 +15856,10 @@
    "source": "Dịch vụ chưa thanh toán",
    "is_pattern": false,
    "locations": [
+    {
+     "area": "Lễ tân › CheckoutPage",
+     "route": "/frontdesk"
+    },
     {
      "area": "Lễ tân › FilterServiceModal",
      "route": "/frontdesk"
@@ -18039,6 +18049,10 @@
      "route": "/fnb"
     },
     {
+     "area": "Lễ tân › CheckoutPage",
+     "route": "/frontdesk"
+    },
+    {
      "area": "Lễ tân › FilterServiceModal",
      "route": "/frontdesk"
     },
@@ -18436,6 +18450,10 @@
    "source": "Đã xoá",
    "is_pattern": false,
    "locations": [
+    {
+     "area": "Lễ tân › CheckoutPage",
+     "route": "/frontdesk"
+    },
     {
      "area": "Lễ tân › FilterServiceModal",
      "route": "/frontdesk"
@@ -19161,6 +19179,16 @@
     {
      "area": "Buồng phòng › InventoryTab",
      "route": "/housekeeping"
+    }
+   ]
+  },
+  {
+   "source": "Đang lọc: {0}",
+   "is_pattern": true,
+   "locations": [
+    {
+     "area": "Lễ tân › CheckoutPage",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -21347,8 +21375,22 @@
    "is_pattern": false,
    "locations": [
     {
+     "area": "Lễ tân › CheckoutInvoicePaper",
+     "route": "/frontdesk"
+    },
+    {
      "area": "Đặt phòng › BookingPrintPreviewModal",
      "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "Địa chỉ: {0}",
+   "is_pattern": true,
+   "locations": [
+    {
+     "area": "Lễ tân › CheckoutInvoicePaper",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -22019,6 +22061,10 @@
      "route": "/frontdesk"
     },
     {
+     "area": "Lễ tân › PrintPreviewModal",
+     "route": "/frontdesk"
+    },
+    {
      "area": "Lễ tân › SplitOldServicesModal",
      "route": "/frontdesk"
     },
@@ -22380,10 +22426,6 @@
    "source": "Đồ thất lạc",
    "is_pattern": false,
    "locations": [
-    {
-     "area": "Lễ tân › GeneralSearchPage",
-     "route": "/frontdesk"
-    },
     {
      "area": "Buồng phòng › OperationHistoryTab",
      "route": "/housekeeping"
@@ -25583,7 +25625,7 @@
    "is_pattern": false,
    "locations": [
     {
-     "area": "Lễ tân › CheckoutPage",
+     "area": "Lễ tân › PrintPreviewModal",
      "route": "/frontdesk"
     },
     {
@@ -26307,6 +26349,10 @@
    "is_pattern": false,
    "locations": [
     {
+     "area": "Lễ tân › CheckoutPage",
+     "route": "/frontdesk"
+    },
+    {
      "area": "Lễ tân › FilterServiceModal",
      "route": "/frontdesk"
     }
@@ -26329,6 +26375,26 @@
     {
      "area": "Buồng phòng › HousekeepingPage",
      "route": "/housekeeping"
+    }
+   ]
+  },
+  {
+   "source": "Hóa đơn thanh toán",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › CheckoutPage",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
+   "source": "HÓA ĐƠN THANH TOÁN",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › CheckoutInvoicePaper",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -27329,6 +27395,10 @@
      "route": "/frontdesk"
     },
     {
+     "area": "Lễ tân › PrintPreviewModal",
+     "route": "/frontdesk"
+    },
+    {
      "area": "Buồng phòng › CreateMenuTab",
      "route": "/housekeeping"
     },
@@ -27405,16 +27475,6 @@
    ]
   },
   {
-   "source": "In Đăng Ký Lưu Trú",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Lễ tân › GeneralSearchPage",
-     "route": "/frontdesk"
-    }
-   ]
-  },
-  {
    "source": "In đậm",
    "is_pattern": false,
    "locations": [
@@ -27438,10 +27498,6 @@
    "source": "In hóa đơn",
    "is_pattern": false,
    "locations": [
-    {
-     "area": "Lễ tân › CheckoutPage",
-     "route": "/frontdesk"
-    },
     {
      "area": "Buồng phòng › SearchInvoiceTab",
      "route": "/housekeeping"
@@ -27479,6 +27535,16 @@
     {
      "area": "F&B › PrinterTab",
      "route": "/fnb"
+    }
+   ]
+  },
+  {
+   "source": "In Không Hiện Giá",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › CheckoutPage",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -27562,10 +27628,6 @@
    "locations": [
     {
      "area": "Lễ tân › BreakfastPage",
-     "route": "/frontdesk"
-    },
-    {
-     "area": "Lễ tân › GeneralSearchPage",
      "route": "/frontdesk"
     },
     {
@@ -27653,6 +27715,26 @@
    ]
   },
   {
+   "source": "In tổng",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › CheckoutPage",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
+   "source": "In Tổng",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › CheckoutPage",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
    "source": "In trang đang xem",
    "is_pattern": false,
    "locations": [
@@ -27679,16 +27761,6 @@
     {
      "area": "F&B › LogTab",
      "route": "/fnb"
-    }
-   ]
-  },
-  {
-   "source": "In Xác Nhận",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Lễ tân › GeneralSearchPage",
-     "route": "/frontdesk"
     }
    ]
   },
@@ -29587,6 +29659,16 @@
    ]
   },
   {
+   "source": "Không có bộ phận",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › FilterServiceModal",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
    "source": "Không có chi tiết dữ liệu thay đổi nào để hiển thị.",
    "is_pattern": false,
    "locations": [
@@ -29651,6 +29733,10 @@
    "is_pattern": false,
    "locations": [
     {
+     "area": "Lễ tân › FilterServiceModal",
+     "route": "/frontdesk"
+    },
+    {
      "area": "Báo cáo quản lý › ReportsPage",
      "route": "/reports"
     }
@@ -29673,6 +29759,16 @@
     {
      "area": "Đặt phòng › PrintServiceSelectModal",
      "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "Không có dịch vụ phù hợp bộ lọc",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › CheckoutPage",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -30366,10 +30462,6 @@
    "source": "Không hiện giá",
    "is_pattern": false,
    "locations": [
-    {
-     "area": "Lễ tân › CheckoutPage",
-     "route": "/frontdesk"
-    },
     {
      "area": "Đặt phòng › CreateRegistrationPage",
      "route": "/reservation"
@@ -32167,6 +32259,16 @@
    ]
   },
   {
+   "source": "Không thể tải dữ liệu hóa đơn.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › CheckoutPage",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
    "source": "Không thể tải dữ liệu in!",
    "is_pattern": false,
    "locations": [
@@ -33543,6 +33645,16 @@
     {
      "area": "F&B › PartyPage",
      "route": "/fnb"
+    }
+   ]
+  },
+  {
+   "source": "Không xác định được đăng ký để in tổng.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › CheckoutPage",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -37679,6 +37791,16 @@
    ]
   },
   {
+   "source": "Mã bộ phận",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › FilterServiceModal",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
    "source": "Mã bộ phận (tùy chọn)",
    "is_pattern": false,
    "locations": [
@@ -39653,10 +39775,6 @@
     {
      "area": "Lễ tân › CheckoutPage",
      "route": "/frontdesk"
-    },
-    {
-     "area": "Lễ tân › FilterServiceModal",
-     "route": "/frontdesk"
     }
    ]
   },
@@ -39764,6 +39882,10 @@
     },
     {
      "area": "Lễ tân › AdjustRoomRateModal",
+     "route": "/frontdesk"
+    },
+    {
+     "area": "Lễ tân › CheckoutInvoicePaper",
      "route": "/frontdesk"
     },
     {
@@ -40775,6 +40897,10 @@
      "route": "/frontdesk"
     },
     {
+     "area": "Lễ tân › CheckoutInvoicePaper",
+     "route": "/frontdesk"
+    },
+    {
      "area": "Lễ tân › DebtSettlementModal",
      "route": "/frontdesk"
     },
@@ -41313,6 +41439,10 @@
    "is_pattern": false,
    "locations": [
     {
+     "area": "Lễ tân › CheckoutInvoicePaper",
+     "route": "/frontdesk"
+    },
+    {
      "area": "Đặt phòng › RoomPlanPage",
      "route": "/reservation"
     },
@@ -41534,6 +41664,10 @@
    "source": "Ngày đi:",
    "is_pattern": false,
    "locations": [
+    {
+     "area": "Lễ tân › CheckoutInvoicePaper",
+     "route": "/frontdesk"
+    },
     {
      "area": "Đặt phòng › RoomPlanPage",
      "route": "/reservation"
@@ -45997,6 +46131,16 @@
    ]
   },
   {
+   "source": "Phí:",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › CheckoutInvoicePaper",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
    "source": "Phiên bản",
    "is_pattern": false,
    "locations": [
@@ -46077,6 +46221,16 @@
     {
      "area": "Buồng phòng › InventoryTab",
      "route": "/housekeeping"
+    }
+   ]
+  },
+  {
+   "source": "Phiếu thu",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › CheckoutPage",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -46164,6 +46318,10 @@
     },
     {
      "area": "Lễ tân › AdjustRoomRateModal",
+     "route": "/frontdesk"
+    },
+    {
+     "area": "Lễ tân › CheckoutInvoicePaper",
      "route": "/frontdesk"
     },
     {
@@ -47597,6 +47755,10 @@
      "route": "/config"
     },
     {
+     "area": "Lễ tân › PrintPreviewModal",
+     "route": "/frontdesk"
+    },
+    {
      "area": "Báo cáo quản lý › ReportViewer",
      "route": "/reports"
     },
@@ -47712,6 +47874,10 @@
    "locations": [
     {
      "area": "Lễ tân › CheckoutPage",
+     "route": "/frontdesk"
+    },
+    {
+     "area": "Lễ tân › CheckoutInvoicePaper",
      "route": "/frontdesk"
     },
     {
@@ -48743,16 +48909,6 @@
    ]
   },
   {
-   "source": "Reception/ Lễ Tân",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Lễ tân › FilterServiceModal",
-     "route": "/frontdesk"
-    }
-   ]
-  },
-  {
    "source": "Reception/ Lễ Tân, Restaurant/Nhà Hàng",
    "is_pattern": false,
    "locations": [
@@ -49465,6 +49621,16 @@
    ]
   },
   {
+   "source": "SĐT: {0}",
+   "is_pattern": true,
+   "locations": [
+    {
+     "area": "Lễ tân › CheckoutInvoicePaper",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
    "source": "sẽ bị GHI ĐÈ hoàn toàn.",
    "is_pattern": false,
    "locations": [
@@ -49811,6 +49977,16 @@
     {
      "area": "Cấu hình › SynthesisReportTab",
      "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "SỐ DƯ:",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › CheckoutInvoicePaper",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -50717,6 +50893,10 @@
      "route": "/fnb"
     },
     {
+     "area": "Lễ tân › CheckoutInvoicePaper",
+     "route": "/frontdesk"
+    },
+    {
      "area": "Lễ tân › DebtSettlementModal",
      "route": "/frontdesk"
     },
@@ -51497,6 +51677,16 @@
     {
      "area": "Cấu hình › DatabaseBackupTab",
      "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "TA/Công ty:",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › CheckoutInvoicePaper",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -52775,10 +52965,6 @@
     {
      "area": "F&B › TableDetail",
      "route": "/fnb"
-    },
-    {
-     "area": "Lễ tân › FilterServiceModal",
-     "route": "/frontdesk"
     },
     {
      "area": "Lễ tân › GeneralSearchPage",
@@ -54137,6 +54323,10 @@
    "is_pattern": false,
    "locations": [
     {
+     "area": "Lễ tân › CheckoutInvoicePaper",
+     "route": "/frontdesk"
+    },
+    {
      "area": "Buồng phòng › SearchInvoiceTab",
      "route": "/housekeeping"
     },
@@ -55193,6 +55383,16 @@
    ]
   },
   {
+   "source": "THANH TOÁN",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › CheckoutInvoicePaper",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
    "source": "Thanh toán - {0}",
    "is_pattern": true,
    "locations": [
@@ -55302,6 +55502,16 @@
    "locations": [
     {
      "area": "Lễ tân › CheckoutPage",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
+   "source": "THANH TOÁN:",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › CheckoutInvoicePaper",
      "route": "/frontdesk"
     }
    ]
@@ -58519,6 +58729,10 @@
      "route": "/config"
     },
     {
+     "area": "Lễ tân › PrintPreviewModal",
+     "route": "/frontdesk"
+    },
+    {
      "area": "Báo cáo quản lý › ReportViewer",
      "route": "/reports"
     },
@@ -58645,6 +58859,16 @@
     {
      "area": "Buồng phòng › CreateMenuTab",
      "route": "/housekeeping"
+    }
+   ]
+  },
+  {
+   "source": "Thuế:",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › CheckoutInvoicePaper",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -61885,6 +62109,16 @@
    ]
   },
   {
+   "source": "Tổng tiền trước thuế phí:",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › CheckoutInvoicePaper",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
    "source": "Tổng tiền:",
    "is_pattern": false,
    "locations": [
@@ -61895,6 +62129,16 @@
     {
      "area": "Đặt phòng › ShiftWorkPage",
      "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "TỔNG TIỀN:",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › CheckoutInvoicePaper",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -64483,6 +64727,16 @@
     {
      "area": "Đặt phòng › CreateRegistrationPage",
      "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "Vui lòng chọn đăng ký hoặc phòng cần in hóa đơn.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › CheckoutPage",
+     "route": "/frontdesk"
     }
    ]
   },

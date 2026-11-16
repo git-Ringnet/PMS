@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { resolveModulePath } from '@/utils/module-route'
 import { fetchGeneralSearch, fetchGeneralSearchOptions, fetchGeneralSearchSuggestions, checkInRoomWithConfirmations } from '@/services/booking-service'
 import { useAuthStore } from '@/stores/auth-store'
 import { useDraggableModal } from '@/composables/useDraggableModal'
@@ -15,9 +16,12 @@ import { getBookingRoomGroups, getSubtableTotals } from '@/utils/general-search-
 
 const router = useRouter()
 const route = useRoute()
+// Dòng 502: module mở màn hình này (lấy lúc tạo, bản ẩn trong cache không đổi theo route module khác).
+// Đăng ký/Hóa đơn mở ở đâu thì giữ ở module đó; Nhận phòng chỉ dành cho Lễ tân.
+const ownerModulePath = resolveModulePath(route.path) === '/frontdesk' ? '/frontdesk' : '/reservation'
+const isFrontdeskModule = ownerModulePath === '/frontdesk'
 const uiStore = useUiStore()
 const auth = useAuthStore()
-const isFrontdeskModule = computed(() => route.path.startsWith('/frontdesk'))
 const tab = ref('booking')
 const loading = ref(false)
 const isNavigating = ref(false)
@@ -822,7 +826,7 @@ async function navigateWithinCurrentModule(query) {
   isNavigating.value = true
   try {
     await router.push({
-      path: isFrontdeskModule.value ? '/frontdesk' : '/reservation',
+      path: ownerModulePath,
       query
     })
     return true
@@ -923,7 +927,7 @@ function handleBookingCopied(newBooking) {
 
 async function handleActionCheckIn() {
   showActionsMenu.value = false
-  if (!isFrontdeskModule.value) {
+  if (!isFrontdeskModule) {
     uiStore.showToast('Nhận phòng từ Tìm kiếm chung chỉ thực hiện tại bộ phận Lễ tân.', 'warning')
     return
   }
@@ -1399,10 +1403,10 @@ onDeactivated(() => {
                 </div>
               </div>
               <button
-                v-if="isFrontdeskModule"
                 class="action-menu-item"
                 :disabled="selectedCount === 0"
                 :class="{ 'is-disabled': selectedCount === 0 }"
+                v-if="isFrontdeskModule"
                 :title="selectedCount === 0 ? 'Vui lòng chọn ít nhất 1 phòng' : 'Nhận phòng nhanh'"
                 @click="handleActionCheckIn"
               >

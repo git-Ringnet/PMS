@@ -9,6 +9,8 @@ use Illuminate\Http\Request;
 
 class ActivityLogService
 {
+    private static ?string $bookingPrefix = null;
+
     /**
      * Ghi log tổng quát.
      */
@@ -349,7 +351,26 @@ class ActivityLogService
         }
         $value = trim((string) $value);
 
-        return preg_match('/^GAL/i', $value) ? strtoupper($value) : 'GAL' . $value;
+        return preg_match('/^[A-Za-z]+\d+$/', $value) ? strtoupper($value) : self::bookingPrefix() . $value;
+    }
+
+    /** Tiền tố mã đăng ký theo cấu hình khách sạn (vd NV, GAL); mặc định GAL. */
+    public static function bookingPrefix(): string
+    {
+        return self::$bookingPrefix ??= strtoupper((string) (\App\Models\HotelSetting::query()->value('prefix_booking_id') ?: 'GAL'));
+    }
+
+    public static function forgetBookingPrefix(): void
+    {
+        self::$bookingPrefix = null;
+    }
+
+    /** Log cũ ghi cứng "GAL12": hiển thị theo tiền tố hiện hành. */
+    public static function localizePrefix(?string $text): ?string
+    {
+        $prefix = self::bookingPrefix();
+
+        return ($text === null || $prefix === 'GAL') ? $text : preg_replace('/(?<![A-Za-z])GAL(?=\d)/', $prefix, $text);
     }
 
     /** Danh sách mã phòng thuê "G0000048, G0000049" (bỏ trùng, bỏ rỗng). */

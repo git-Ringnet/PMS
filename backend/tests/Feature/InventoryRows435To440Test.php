@@ -117,6 +117,25 @@ class InventoryRows435To440Test extends TestCase
         $this->assertSame(4, InventoryDailyLog::count());
     }
 
+    public function test_row438_note_4_11_repeated_transfers_accumulate_in_destination_and_source_matches(): void
+    {
+        // Thảo note 4/11: chuyển 3, tiếp 3, tiếp 2 cùng sản phẩm/ngày -> kho nhận phải là 8 (không phải 3 rồi 5).
+        $this->check($this->minibar, [$this->coca->id => 50]);
+
+        $this->transfer($this->coca, '2026-09-05', 3)->assertOk();
+        $this->assertEquals(3, $this->logOf($this->amenity, $this->coca, '2026-09-05')->receive);
+        $this->transfer($this->coca, '2026-09-05', 3)->assertOk();
+        $this->assertEquals(6, $this->logOf($this->amenity, $this->coca, '2026-09-05')->receive);
+        $this->transfer($this->coca, '2026-09-05', 2)->assertOk();
+
+        $this->assertEquals(8, $this->logOf($this->amenity, $this->coca, '2026-09-05')->receive);
+        $this->assertEquals(8, $this->logOf($this->minibar, $this->coca, '2026-09-05')->transfer);
+
+        // API đọc nhật ký kho nhận cũng phải trả 8
+        $logs = $this->getJson("/api/inventory/logs?warehouse_id={$this->amenity->id}&month=2026-09")->assertOk()->json('data');
+        $this->assertEquals(8, $logs[$this->coca->id]['2026-09-05']['receive']);
+    }
+
     public function test_row438_editing_one_cell_only_changes_that_cell(): void
     {
         $this->log($this->minibar, $this->coca, '2026-09-02', ['receive' => 10]);
