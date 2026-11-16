@@ -1961,10 +1961,10 @@ const closePrintPreview = () => {
   printPreview.value = { show: false, kind: '', title: '', loading: false, html: '', invoice: null, showPrice: true }
 }
 
-const printReceiptForPayments = async (paymentIds) => {
+const printReceiptForPayments = async (paymentIds, showPrice = true) => {
   printPreview.value = { show: true, kind: 'receipt', title: 'Phiếu thu', loading: true, html: '', invoice: null, showPrice: true }
   try {
-    const response = await http.post('/print-template-slots/payment-receipt', { payment_ids: paymentIds })
+    const response = await http.post('/print-template-slots/payment-receipt', { payment_ids: paymentIds, show_price: showPrice })
     if (printPreview.value.kind === 'receipt') printPreview.value.html = response.data.html
   } catch (error) {
     closePrintPreview()
@@ -1977,14 +1977,16 @@ const printReceiptForPayments = async (paymentIds) => {
 
 // In Bill = phiếu thu (biên nhận thu tiền) theo mẫu gán cho vị trí PAYMENT_RECEIPT.
 // In các dòng thanh toán đang chọn; chưa chọn thì in toàn bộ thanh toán của folio đang xem.
-const printPaymentReceipt = async () => {
+const printPaymentReceipt = async (showPrice = true) => {
+  // @click="printPaymentReceipt" truyền sự kiện chuột, chỉ coi là "ẩn giá" khi truyền đúng false
+  showPrice = showPrice !== false
   const payments = selectedPaymentItems.value.length ? selectedPaymentItems.value : visiblePaymentsList.value
   const paymentIds = payments.map(payment => Number(payment.id)).filter(Number.isInteger)
   if (paymentIds.length === 0) {
     uiStore.showToast('Chưa có dòng thanh toán để in phiếu thu.', 'warning')
     return
   }
-  await printReceiptForPayments(paymentIds)
+  await printReceiptForPayments(paymentIds, showPrice)
 }
 
 const isMasterRowSelected = computed(() => Number(selectedBooking.value?.bookingId) > 0 && !selectedRoomItem.value)
@@ -3957,13 +3959,24 @@ onUnmounted(() => {
             <Printer class="w-3.5 h-3.5 text-white shrink-0" />
             <span v-if="!isSidebarCollapsed" class="truncate">In Tổng</span>
           </button>
+          <!-- Biên nhận thu tiền (dòng 350): In Bill hiện số tiền; In Bill Không Hiện Giá ẩn số tiền -->
           <button
             @click="printPaymentReceipt"
+            data-testid="receipt-show-price-btn"
             class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded text-[#cbd5e1] hover:bg-[#334155] hover:text-white transition-colors text-xs"
-            :title="isSidebarCollapsed ? 'In Bill' : ''"
+            :title="isSidebarCollapsed ? 'In Bill' : 'In biên nhận thu tiền, hiện số tiền'"
           >
             <Printer class="w-3.5 h-3.5 text-white shrink-0" />
             <span v-if="!isSidebarCollapsed" class="truncate">In Bill</span>
+          </button>
+          <button
+            @click="printPaymentReceipt(false)"
+            data-testid="receipt-hide-price-btn"
+            class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded text-[#cbd5e1] hover:bg-[#334155] hover:text-white transition-colors text-xs"
+            :title="isSidebarCollapsed ? 'In Bill Không Hiện Giá' : 'In biên nhận thu tiền, ẩn số tiền'"
+          >
+            <Printer class="w-3.5 h-3.5 text-white shrink-0" />
+            <span v-if="!isSidebarCollapsed" class="truncate">In Bill Không Hiện Giá</span>
           </button>
 
           <!-- In VAT -->

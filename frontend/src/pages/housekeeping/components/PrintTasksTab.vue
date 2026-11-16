@@ -2,7 +2,7 @@
 import { ref, computed, watch, onActivated, onDeactivated, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { useHkStore, GROUP_COLORS } from '@/stores/hk-store'
-import { compareRooms, getStatusSymbols as buildStatusSymbols, buildWorksheetSheets, buildSupervisorRooms } from '@/utils/hk-room-status'
+import { compareRooms, isCleaningRoom, getStatusSymbols as buildStatusSymbols, buildWorksheetSheets, buildSupervisorRooms } from '@/utils/hk-room-status'
 import { useRoomStore } from '@/stores/room-store'
 import {
   CalendarDays, Clock3, Search, Filter, ChevronDown,
@@ -229,7 +229,8 @@ const allRooms = computed(() => {
         booking_status: r.booking_status || '',
         displayBookingStatus,
         isBackToBack: !!r.is_back_to_back,
-        extraBedQty: Number(r.extra_bed_qty || 0),
+        // Note 4/11: phòng hôm nay chưa có booking (chỉ có khách đến ngày mai) thì chưa hiện EB
+        extraBedQty: r.booking_status ? Number(r.extra_bed_qty || 0) : 0,
       }
     })
     .sort(compareRooms)
@@ -251,8 +252,7 @@ const filteredRooms = computed(() => {
         const isDirty = code === 'vacant_dirty' || code === 'occupied_dirty' || code === 'dirty'
         if (!isDirty) return false
       } else if (filterHk.value === 'cleaning') {
-        const isCleaning = code === 'housekeeping' || code === 'turndown' || code === 'cleaning'
-        if (!isCleaning) return false
+        if (!isCleaningRoom(r)) return false
       } else if (filterHk.value === 'ready') {
         const isReady = code === 'vacant_ready' || code === 'occupied_ready' || code === 'ready'
         if (!isReady) return false
@@ -438,9 +438,18 @@ watch([workDate, selectedShiftId], async ([d, s]) => {
 // Helpers: floor selection
 // ─────────────────────────────────────────────────────────────
 function toggleFloor(floor) {
-  if (activeFloors.value.has(floor)) activeFloors.value.delete(floor)
-  else activeFloors.value.add(floor)
+  const turningOn = !activeFloors.value.has(floor)
+  if (turningOn) activeFloors.value.add(floor)
+  else activeFloors.value.delete(floor)
   activeFloors.value = new Set(activeFloors.value) // trigger reactivity
+  // Note 4/11: bấm chọn tầng thì tự tick tất cả phòng của tầng (bấm lại bỏ tick)
+  const s = new Set(selectedRoomIds.value)
+  if (turningOn) {
+    filteredRooms.value.filter(r => r.floor === floor).forEach(r => s.add(r.id))
+  } else {
+    allRooms.value.filter(r => r.floor === floor).forEach(r => s.delete(r.id))
+  }
+  selectedRoomIds.value = s
 }
 function clearFloors() { activeFloors.value = new Set() }
 

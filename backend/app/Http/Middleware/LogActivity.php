@@ -169,6 +169,11 @@ class LogActivity
                 return;
             }
 
+            // Task 325: request chỉ xem trước / khởi tạo dữ liệu hiển thị, không thay đổi nghiệp vụ nên không ghi lịch sử thao tác
+            if (preg_match('#/(checkout-preview|init-guests|import-preview|preview)$#', $path) || str_starts_with($path, 'api/i18n/')) {
+                return;
+            }
+
             // Skip user-settings - cấu hình hiển thị giao diện cá nhân, không phải audit nghiệp vụ
             if (str_contains($path, 'user-settings')) {
                 return;
@@ -469,7 +474,7 @@ class LogActivity
 
         // 1. ĐĂNG KÝ (BOOKING)
         if ($targetType === 'Booking') {
-            $bookingCode = 'GAL' . ($targetId ?: preg_replace('/\D/', '', (string) $targetLabel));
+            $bookingCode = \App\Services\ActivityLogService::bookingPrefix() . ($targetId ?: preg_replace('/\D/', '', (string) $targetLabel));
 
             if ($action === 'create') {
                 return '* Thông Tin Đăng Ký ' . $bookingCode . ' : ' . $this->joinParts([
@@ -529,7 +534,7 @@ class LogActivity
         // 3. THANH TOÁN / ĐẶT CỌC (PAYMENT)
         if ($targetType === 'Payment') {
             $bookingId = $value('booking_id');
-            $ref = $bookingId ? 'GAL' . $bookingId : 'đăng ký (không rõ)';
+            $ref = $bookingId ? \App\Services\ActivityLogService::bookingPrefix() . $bookingId : 'đăng ký (không rõ)';
             if ($value('booking_room_id')) {
                 $ref .= ' - mã phòng thuê ' . $value('booking_room_id');
             }
@@ -625,7 +630,7 @@ class LogActivity
     {
         $parts = [];
         if ($bookingId) {
-            $parts[] = 'GAL' . $bookingId;
+            $parts[] = \App\Services\ActivityLogService::bookingPrefix() . $bookingId;
         }
         if ($roomNumber) {
             $parts[] = 'P.' . $roomNumber . ($bookingRoomId ? " ({$bookingRoomId})" : '');

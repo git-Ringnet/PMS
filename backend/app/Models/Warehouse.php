@@ -49,4 +49,10 @@ class Warehouse extends Model
     {
         return $this->dailyLogs()->exists();
     }
+
+    /** Đã có phiếu kiểm kê chưa (để chặn xóa kho) */
+    public function hasChecks(): bool
+    {
+        return \App\Models\InventoryCheck::where('warehouse_id', $this->id)->exists();
+    }
 }

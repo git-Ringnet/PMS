@@ -55,7 +55,10 @@ class PrintTemplateSlotController extends Controller
         $validated = $request->validate([
             'payment_ids' => 'required|array|min:1',
             'payment_ids.*' => 'integer',
+            'show_price' => 'nullable|boolean',
         ]);
+        // Dòng 350: chọn "Không hiện giá" thì phiếu thu không in số tiền và số tiền bằng chữ
+        $showPrice = (bool) ($validated['show_price'] ?? true);
         $slot = PrintTemplateSlot::where('code', 'PAYMENT_RECEIPT')->firstOrFail();
         // Chưa gán thiết kế cho vị trí thì dùng mẫu mặc định của nhóm Receipt.
         $template = $slot->template()->first()
@@ -87,8 +90,8 @@ class PrintTemplateSlotController extends Controller
             'date' => Carbon::parse($first->date ?: $first->created_at)->format('d/m/Y'),
             'guest_name' => $first->guest?->full_name ?: ($first->guest_display ?: ($booking?->booking_name ?? '')),
             'phone' => $first->guest?->phone ?: ($booking?->contact_phone ?? ''),
-            'amount' => number_format($total, 0, '.', ',') . ' đ',
-            'amount_in_words' => SalesInvoiceController::numberToVietnameseWords($total),
+            'amount' => $showPrice ? number_format($total, 0, '.', ',') . ' đ' : '',
+            'amount_in_words' => $showPrice ? SalesInvoiceController::numberToVietnameseWords($total) : '',
             'content' => $payments->pluck('description')->filter()->unique()->implode('; '),
             'payment_method' => $payments->map(fn (Payment $payment) => $payment->paymentMethod?->name ?: $payment->payment_method_id)->filter()->unique()->implode(', '),
             // Folio phòng ảo không có booking: hiển thị tên phòng ảo thay cho mã booking.

@@ -68,10 +68,13 @@ class WarehouseController extends Controller
     {
         $warehouse = Warehouse::findOrFail($id);
 
-        if ($warehouse->hasLogs()) {
+        // Dòng 372 (note 4/11): đã có phiếu kiểm kê thì không xóa dù chưa có nhập/xuất chi tiết
+        if ($warehouse->hasLogs() || $warehouse->hasChecks()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Kho đã phát sinh dữ liệu nhập/xuất, không thể xóa. Hãy ẩn kho thay thế.',
+                'message' => $warehouse->hasLogs()
+                    ? 'Kho đã phát sinh dữ liệu nhập/xuất, không thể xóa. Hãy ẩn kho thay thế.'
+                    : 'Kho đã có phiếu kiểm kê, không thể xóa. Hãy ẩn kho thay thế.',
             ], 422);
         }
 
