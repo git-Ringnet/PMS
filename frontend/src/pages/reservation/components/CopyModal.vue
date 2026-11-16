@@ -28,35 +28,48 @@
 
       <!-- MODAL BODY -->
       <div class="p-5 flex flex-col gap-4 text-xs font-normal text-[#000000D9]">
-        <!-- Dòng 500: IsCopyAllBooking = 0 chỉ xác nhận, không chọn lại ngày -->
-        <p v-if="copyHeaderOnly" class="text-slate-600 leading-relaxed text-xs">
-          Bạn có chắc chắn muốn nhân bản đăng ký này không? Bấm xác nhận để nhân bản hoặc nút tắt để thoát màn hình xác nhận.
+        <p v-if="isCopyModeLoading" class="text-slate-600 leading-relaxed text-xs">
+          Đang tải cấu hình nhân bản đăng ký...
         </p>
-        <p v-else class="text-slate-600 leading-relaxed text-xs">
-          Nhân bản đăng ký này sang một thời gian mới. Toàn bộ thông tin khách hàng, loại phòng, số lượng phòng và đơn giá sẽ được sao chép tự động.
-        </p>
+        <template v-else-if="copyModeLoadError">
+          <p class="text-red-600 leading-relaxed text-xs">
+            Không thể tải cấu hình nhân bản. Vui lòng thử lại.
+          </p>
+          <button type="button" class="btn-pms-secondary self-start" @click="loadCopyMode">
+            Tải lại
+          </button>
+        </template>
+        <template v-else>
+          <!-- Dòng 500: IsCopyAllBooking = 0 chỉ xác nhận, không chọn lại ngày -->
+          <p v-if="copyHeaderOnly" class="text-slate-600 leading-relaxed text-xs">
+            Bạn có chắc chắn muốn nhân bản đăng ký này không? Bấm xác nhận để nhân bản hoặc nút tắt để thoát màn hình xác nhận.
+          </p>
+          <p v-else class="text-slate-600 leading-relaxed text-xs">
+            Nhân bản đăng ký này sang một thời gian mới. Toàn bộ thông tin khách hàng, loại phòng, số lượng phòng và đơn giá sẽ được sao chép tự động.
+          </p>
 
-        <div v-if="!copyHeaderOnly" class="grid grid-cols-2 gap-3 mt-2">
-          <div>
-            <label class="block text-[#000000D9] mb-1 font-semibold text-xs">Ngày đến mới <span class="text-red-500">*</span></label>
-            <SingleDatePicker
-              v-model="arrivalDate"
-              placeholder="dd/mm/yyyy"
-              four-digit-year
-              input-class="!h-[32px] !py-0 !px-2.5 !rounded-lg !border-slate-200 !text-xs !font-normal"
-            />
+          <div v-if="!copyHeaderOnly" class="grid grid-cols-2 gap-3 mt-2">
+            <div>
+              <label class="block text-[#000000D9] mb-1 font-semibold text-xs">Ngày đến mới <span class="text-red-500">*</span></label>
+              <SingleDatePicker
+                v-model="arrivalDate"
+                placeholder="dd/mm/yyyy"
+                four-digit-year
+                input-class="!h-[32px] !py-0 !px-2.5 !rounded-lg !border-slate-200 !text-xs !font-normal"
+              />
+            </div>
+            <div>
+              <label class="block text-[#000000D9] mb-1 font-semibold text-xs">Ngày đi mới <span class="text-red-500">*</span></label>
+              <SingleDatePicker
+                v-model="departureDate"
+                :min-date="arrivalDate"
+                placeholder="dd/mm/yyyy"
+                four-digit-year
+                input-class="!h-[32px] !py-0 !px-2.5 !rounded-lg !border-slate-200 !text-xs !font-normal"
+              />
+            </div>
           </div>
-          <div>
-            <label class="block text-[#000000D9] mb-1 font-semibold text-xs">Ngày đi mới <span class="text-red-500">*</span></label>
-            <SingleDatePicker
-              v-model="departureDate"
-              :min-date="arrivalDate"
-              placeholder="dd/mm/yyyy"
-              four-digit-year
-              input-class="!h-[32px] !py-0 !px-2.5 !rounded-lg !border-slate-200 !text-xs !font-normal"
-            />
-          </div>
-        </div>
+        </template>
       </div>
 
       <!-- MODAL FOOTER -->
@@ -73,6 +86,7 @@
           @click="handleConfirmCopy" 
           type="button"
           class="btn-pms-primary"
+          :disabled="isCopyModeLoading || copyModeLoadError"
         >
           <i class="fa-solid fa-check"></i>
           <span>Xác nhận nhân bản</span>
@@ -83,7 +97,7 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, onBeforeUnmount, watch } from 'vue'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
 import { copyBooking, fetchHotelSettings } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
@@ -148,13 +162,24 @@ const arrivalDate = ref('')
 const departureDate = ref('')
 // IsCopyAllBooking = 0: chỉ nhân bản thông tin đăng ký, không chọn lại ngày.
 const copyHeaderOnly = ref(false)
+const isCopyModeLoading = ref(false)
+const copyModeLoadError = ref(false)
+let copyModeRequestId = 0
 
 async function loadCopyMode() {
+  const requestId = ++copyModeRequestId
+  isCopyModeLoading.value = true
+  copyModeLoadError.value = false
+  copyHeaderOnly.value = false
   try {
     const res = await fetchHotelSettings()
+    if (requestId !== copyModeRequestId) return
     copyHeaderOnly.value = String(res.data?.data?.IsCopyAllBooking ?? '1') === '0'
   } catch {
-    copyHeaderOnly.value = false
+    if (requestId !== copyModeRequestId) return
+    copyModeLoadError.value = true
+  } finally {
+    if (requestId === copyModeRequestId) isCopyModeLoading.value = false
   }
 }
 
@@ -164,12 +189,26 @@ watch(() => props.show, (newVal) => {
     arrivalDate.value = props.defaultArrival || ''
     departureDate.value = props.defaultDeparture || ''
     loadCopyMode()
+  } else {
+    copyModeRequestId++
   }
 })
 
 function close() {
+  copyModeRequestId++
   emit('update:show', false)
 }
+
+function handleKeyDown(event) {
+  if (event.key === 'Escape' && props.show) close()
+}
+
+watch(() => props.show, (isShown) => {
+  if (isShown) window.addEventListener('keydown', handleKeyDown)
+  else window.removeEventListener('keydown', handleKeyDown)
+})
+
+onBeforeUnmount(() => window.removeEventListener('keydown', handleKeyDown))
 
 async function executeCopy(payload = {}) {
   const requestData = copyHeaderOnly.value
@@ -183,7 +222,7 @@ async function executeCopy(payload = {}) {
   try {
     const res = await copyBooking(props.bookingId, requestData)
     if (res.data?.success) {
-      uiStore.showToast(res.data.message || 'Nhân bản đăng ký thành công!', 'success')
+      uiStore.showToast(res.data?.message ? res.data.message.replace(/booking/i, 'đăng ký') : 'Nhân bản đăng ký thành công!', 'success')
       close()
       emit('copied', res.data.data)
       return true
@@ -226,7 +265,7 @@ async function executeCopy(payload = {}) {
 }
 
 async function handleConfirmCopy() {
-  if (!props.bookingId) return
+  if (!props.bookingId || isCopyModeLoading.value || copyModeLoadError.value) return
 
   if (!copyHeaderOnly.value) {
     if (!arrivalDate.value || !departureDate.value) {

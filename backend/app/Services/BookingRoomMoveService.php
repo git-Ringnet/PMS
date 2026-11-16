@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Models\BookingRoom;
 use App\Models\BookingRoomService;
 use App\Models\RoomNightBill;
+use App\Models\Payment;
+use App\Models\SalesInvoice;
 use App\Models\ServiceBill;
 use Carbon\Carbon;
 
@@ -187,5 +189,26 @@ class BookingRoomMoveService
             $copy->posted_at = null;
             $copy->save();
         }
+    }
+
+    /**
+     * Dòng 512: khoản thanh toán/cọc và hóa đơn thanh toán đi theo folio sang phòng mới,
+     * giống bill dịch vụ. Chuyển cả phòng (hoặc khách chính) thì mang hết khoản của phòng;
+     * chuyển khách phụ thì chỉ mang khoản của khách đó. Khoản ở master (không gắn phòng) giữ nguyên.
+     */
+    public function transferPayments(BookingRoom $source, BookingRoom $target, array $movedGuestIds, bool $moveAll): void
+    {
+        $scope = fn ($query) => $query->where('booking_room_id', $source->id)
+            ->when(! $moveAll, fn ($q) => $q->whereIn('guest_id', $movedGuestIds));
+
+        Payment::query()->where($scope)->update(['booking_room_id' => $target->id]);
+
+        SalesInvoice::query()->where($scope)->get()->each(function (SalesInvoice $invoice) use ($target): void {
+            $invoice->forceFill([
+                'booking_room_id' => $target->id,
+                'guest_room_id' => $invoice->guest_id ? $target->id . $invoice->guest_id : $target->id,
+                'room' => 'R:' . $target->room_number,
+            ])->save();
+        });
     }
 }

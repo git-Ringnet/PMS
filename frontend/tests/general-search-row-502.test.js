@@ -36,9 +36,12 @@ test('row 502: general search keeps the module and only front desk can check in'
     assert.equal(source.includes(handler), false, handler)
   }
   assert.doesNotMatch(source, /path:\s*'\/frontdesk'/)
-  assert.match(source, /path:\s*ownerModulePath,\s*\r?\n\s*query:\s*\{\s*\r?\n\s*tab:\s*'checkout'/)
+  assert.match(source, /const ownerModulePath = resolveModulePath\(route\.path\)/)
+  assert.match(source, /async function navigateWithinCurrentModule\(query\) \{[\s\S]{0,200}path:\s*ownerModulePath,/)
+  assert.match(source, /navigateWithinCurrentModule\(\{\s*\r?\n\s*tab:\s*'checkout'/)
   assert.match(source, /v-if="isFrontdeskModule"[\s\S]{0,200}@click="handleActionCheckIn"/)
-  assert.match(source, /async function handleActionCheckIn\(\) \{\s*\r?\n\s*showActionsMenu\.value = false\s*\r?\n\s*if \(!isFrontdeskModule\) return/)
+  assert.match(source, /async function handleActionCheckIn\(\) \{\s*\r?\n\s*showActionsMenu\.value = false\s*\r?\n\s*if \(!isFrontdeskModule\) \{/)
+  assert.doesNotMatch(source, /isFrontdeskModule = computed/)
 })
 
 test('row 502: hidden cached registration/invoice pages do not react to other routes', () => {

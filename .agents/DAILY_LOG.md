@@ -13,8 +13,15 @@
 
 - Trước đó: "Hiện giá"/"Không hiện giá" chưa có chức năng, không có "In tổng", In Bill (phiếu thu) gọi print() ngay.
 - Backend: `POST checkout/invoice-print` (BookingPrintController::checkoutInvoice). scope=selection lấy đúng bill/thanh toán đang hiện ở folio đang xem; scope=total lấy mọi bill còn hiệu lực đang thuộc đăng ký (phòng + Master, bỏ bill đã chuyển sang đăng ký khác, bill hủy) và thanh toán edit_flag=0. Tách Trước thuế phí/Phí/Thuế bằng TaxBreakdownService; bill Minibar in thêm từng mặt hàng; bill trên Master in phòng gốc.
-- Frontend: PrintPreviewModal.vue (xem trước, zoom, công tắc Hiện giá, icon In; phiếu thu hiện trong iframe), CheckoutInvoicePaper.vue (mẫu "HÓA ĐƠN THANH TOÁN" theo khách sạn tham chiếu), utils/print-html.js. Nút In Hóa Đơn Folio bấm = in có giá; mũi tên mở Hiện giá / Không hiện giá / In tổng (chỉ dòng Master) / In Bill. Tự in sau thanh toán cũng mở xem trước.
+- Frontend: PrintPreviewModal.vue (xem trước, zoom, công tắc Hiện giá, icon In; phiếu thu hiện trong iframe), CheckoutInvoicePaper.vue (mẫu "HÓA ĐƠN THANH TOÁN" theo khách sạn tham chiếu), utils/print-html.js. Các nút hiện sẵn ở nhóm In & Hóa Đơn VAT: In Hóa Đơn Folio (có giá), In Không Hiện Giá, In Tổng (chỉ dòng Master), In Bill (lần đầu để trong menu con nên người dùng không thấy In tổng). Tự in sau thanh toán cũng mở xem trước.
 - Test: BookingRoomServiceFolioTest +2 ca (52/52); node test checkout-invoice-print 5/5; vite build đạt; i18n đã sync (+24 bản dịch en). Chưa UAT trình duyệt.
+
+## [2026-11-13] - Tìm kiếm chung, nhân bản đăng ký và thông tin khách
+
+- Tìm kiếm chung: bỏ thao tác In/Báo cáo/Đồ thất lạc thiếu ngữ cảnh; in phiếu ăn sáng thực hiện tại Đăng ký; đổi thẻ hiển thị loading và chặn response cũ ghi đè.
+- Nhân bản đăng ký: khóa xác nhận trong lúc tải `IsCopyAllBooking`, cho phép tải lại khi lỗi, hỗ trợ Esc và thống nhất thông báo thành công.
+- Thông tin khách: chuẩn hóa ngày của khách/trẻ em về `yyyy-mm-dd`, sửa lỗi chuỗi ngày UTC; bổ sung cảnh báo sinh nhật trẻ em/em bé hợp lệ.
+- Merge vào tamihi (16/11): GeneralSearchPage giữ `navigateWithinCurrentModule` của main nhưng điều hướng theo `ownerModulePath` (dòng 502: module mở màn hình); Nhận phòng ngoài Lễ tân báo cảnh báo.
 
 ## [2026-11-12] - Dòng 474/241: gia hạn ở Thông tin phòng hỏi xác nhận khi over
 

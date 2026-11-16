@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import {
-  fetchRoles, fetchModules, fetchSystemBranchesList, createRole, deleteRole,
+  fetchRoles, fetchModules, fetchSystemBranchesList, createRole, updateRole, deleteRole,
   fetchBranchRoleMatrix, syncBranchRoleMatrix, copyRole, createPermissionScreen,
 } from '@/services/company-service'
 import { useUiStore } from '@/stores/ui-store'
@@ -16,6 +16,7 @@ const applicationCode = ref('PMS')
 const groups = ref({})
 const loading = ref(false)
 const createModal = ref(false)
+const editingRoleId = ref(null)
 const copyModal = ref(false)
 const screenModal = ref(false)
 const roleForm = ref({ code: '', name: '', level: 3, department_scope: '', description: '', allow_historical_date_actions: false })
@@ -75,9 +76,39 @@ async function saveMatrix() {
   })
   uiStore.showToast('Đã lưu phân quyền theo chi nhánh', 'success')
 }
+function openCreate() {
+  editingRoleId.value = null
+  roleForm.value = { code: '', name: '', level: 3, department_scope: '', description: '', allow_historical_date_actions: false }
+  createModal.value = true
+}
+// Task 473: sửa vai trò - chỉ sửa tên/mô tả/phạm vi, không sửa mã
+function openEdit() {
+  if (!selectedRole.value) return
+  editingRoleId.value = selectedRole.value.id
+  roleForm.value = {
+    code: selectedRole.value.code, name: selectedRole.value.name, level: selectedRole.value.level || 3,
+    department_scope: selectedRole.value.department_scope || '', description: selectedRole.value.description || '',
+    allow_historical_date_actions: Boolean(selectedRole.value.allow_historical_date_actions),
+  }
+  createModal.value = true
+}
 async function saveRole() {
   if (!String(roleForm.value.code || '').trim() || !String(roleForm.value.name || '').trim()) {
     uiStore.showToast('Vui lòng nhập Mã vai trò và Tên vai trò.', 'warning')
+    return
+  }
+  if (editingRoleId.value) {
+    try {
+      await updateRole(editingRoleId.value, {
+        name: roleForm.value.name, description: roleForm.value.description || null,
+        department_scope: roleForm.value.department_scope || null,
+        allow_historical_date_actions: Boolean(roleForm.value.allow_historical_date_actions),
+      })
+      createModal.value = false
+      editingRoleId.value = null
+      await loadBase()
+      uiStore.showToast('Đã cập nhật vai trò', 'success')
+    } catch (error) { uiStore.showToast(error.response?.data?.message || 'Không thể cập nhật vai trò', 'error') }
     return
   }
   try {
@@ -90,7 +121,7 @@ async function saveRole() {
 }
 async function removeRole(role) {
   if (!confirm(`Xóa vai trò "${role.name}"?`)) return
-  try { await deleteRole(role.id); await loadBase() }
+  try { await deleteRole(role.id); await loadBase(); uiStore.showToast('Đã xóa vai trò', 'success') }
   catch (error) { uiStore.showToast(error.response?.data?.message || 'Không thể xóa vai trò', 'error') }
 }
 function openCopy() {
@@ -137,7 +168,7 @@ async function saveScreen() {
           <span class="font-bold text-slate-800 text-xs uppercase tracking-wide">Role</span>
           <button
             class="px-3 py-1 bg-[#0ea5e9] hover:bg-[#0284c7] text-white rounded font-bold text-xs border-none cursor-pointer shadow-2xs transition-colors inline-flex items-center gap-1"
-            @click="createModal = true"
+            @click="openCreate"
           >
             + Thêm
           </button>
@@ -189,6 +220,22 @@ async function saveScreen() {
 
         <!-- Right actions -->
         <div class="ml-auto flex items-center gap-2">
+          <button
+            class="px-3 py-1.5 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-md text-xs font-semibold cursor-pointer bg-white transition-colors"
+            :disabled="!selectedRole"
+            data-testid="role-edit-btn"
+            @click="openEdit"
+          >
+            Sửa vai trò
+          </button>
+          <button
+            class="px-3 py-1.5 border border-red-300 hover:bg-red-50 text-red-600 rounded-md text-xs font-semibold cursor-pointer bg-white transition-colors"
+            :disabled="!selectedRole"
+            data-testid="role-delete-btn"
+            @click="removeRole(selectedRole)"
+          >
+            Xóa vai trò
+          </button>
           <button
             class="px-3 py-1.5 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-md text-xs font-semibold cursor-pointer bg-white transition-colors"
             :disabled="!selectedRole"
@@ -295,13 +342,13 @@ async function saveScreen() {
       <div v-if="createModal" class="fixed inset-0 z-[100] bg-black/50 grid place-items-center p-4">
         <div class="bg-white w-[480px] rounded-lg shadow-2xl overflow-hidden border border-slate-200 animate-in">
           <header class="px-5 py-3 bg-[#72c6e6] text-white font-bold text-sm flex items-center justify-between">
-            <span>Thêm vai trò</span>
+            <span>{{ editingRoleId ? 'Sửa vai trò' : 'Thêm vai trò' }}</span>
             <button @click="createModal = false" class="text-white hover:text-slate-100 bg-transparent border-none cursor-pointer text-lg font-light leading-none">✕</button>
           </header>
           <div class="p-5 space-y-3.5">
             <div>
               <label class="font-bold text-slate-700 text-xs block mb-1">Mã vai trò (Role Code) *</label>
-              <input v-model="roleForm.code" required class="w-full border border-slate-300 rounded-md p-2 text-xs font-semibold focus:outline-sky-500 bg-[#fffbeb]" placeholder="Ví dụ: FOM, HKM, FO..." />
+              <input v-model="roleForm.code" :disabled="!!editingRoleId" data-testid="role-code-input" required class="w-full disabled:bg-slate-100 disabled:text-slate-500 border border-slate-300 rounded-md p-2 text-xs font-semibold focus:outline-sky-500 bg-[#fffbeb]" placeholder="Ví dụ: FOM, HKM, FO..." />
             </div>
             <div>
               <label class="font-bold text-slate-700 text-xs block mb-1">Tên vai trò *</label>
@@ -322,7 +369,7 @@ async function saveScreen() {
           </div>
           <footer class="px-5 py-3 bg-slate-50 border-t border-slate-200 flex justify-end gap-2.5">
             <button class="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-md font-bold text-xs border-none cursor-pointer" @click="createModal = false">Cancel</button>
-            <button class="px-5 py-1.5 bg-[#72c6e6] hover:bg-[#5db3d4] text-white rounded-md font-bold text-xs border-none cursor-pointer shadow-xs" @click="saveRole">Tạo</button>
+            <button class="px-5 py-1.5 bg-[#72c6e6] hover:bg-[#5db3d4] text-white rounded-md font-bold text-xs border-none cursor-pointer shadow-xs" @click="saveRole">{{ editingRoleId ? 'Lưu' : 'Tạo' }}</button>
           </footer>
         </div>
       </div>

@@ -221,14 +221,58 @@ class User extends Authenticatable
             ->exists();
     }
 
+    /**
+     * Phân công vị trí còn hiệu lực: vị trí vẫn còn cấu hình Role (đang bật) cho đúng chi nhánh + ứng dụng.
+     * Task 471: bỏ chi nhánh/ứng dụng khỏi vị trí thì user không còn thấy chi nhánh/ứng dụng đó.
+     */
+    public function effectiveAssignments(?int $branchId = null): \Illuminate\Support\Collection
+    {
+        return $this->userBranchPositions()
+            ->when($branchId, fn ($query) => $query->where('system_branch_id', $branchId))
+            ->whereExists(function ($query) {
+                $query->select(\Illuminate\Support\Facades\DB::raw(1))
+                    ->from('position_branch_roles as pbr')
+                    ->whereColumn('pbr.position_id', 'user_branch_positions.position_id')
+                    ->whereColumn('pbr.system_branch_id', 'user_branch_positions.system_branch_id')
+                    ->whereColumn('pbr.application_code', 'user_branch_positions.application_code')
+                    ->where('pbr.is_active', true);
+            })
+            ->get();
+    }
+
+    /** Chi nhánh user được vào: theo vị trí còn hiệu lực; user cũ chưa có vị trí thì theo user_branches. */
+    public function accessibleBranchIds(): \Illuminate\Support\Collection
+    {
+        if ($this->userBranchPositions()->exists()) {
+            return $this->effectiveAssignments()->pluck('system_branch_id')->map(fn ($id) => (int) $id)->unique()->values();
+        }
+
+        return $this->userBranches()->pluck('system_branch_id')->map(fn ($id) => (int) $id)->unique()->values();
+    }
+
+    /**
+     * Ứng dụng (PMS/POS/SYS) user được vào tại chi nhánh. null = user cũ chưa có vị trí, không giới hạn theo ứng dụng.
+     */
+    public function assignedApplicationCodes(?int $branchId = null): ?\Illuminate\Support\Collection
+    {
+        if ($this->isSuperAdmin()) {
+            return collect(['PMS', 'POS', 'SYS']);
+        }
+        if (!$this->userBranchPositions()->exists()) {
+            return null;
+        }
+
+        return $this->effectiveAssignments($branchId)
+            ->pluck('application_code')->map(fn ($code) => strtoupper($code))->unique()->values();
+    }
+
     public function hasBranchAccess(int $branchId): bool
     {
         // Super admin có quyền tất cả chi nhánh
         if ($this->isSuperAdmin()) {
             return true;
         }
-        return $this->userBranchPositions()->where('system_branch_id', $branchId)->exists()
-            || $this->userBranches()->where('system_branch_id', $branchId)->exists();
+        return $this->accessibleBranchIds()->contains($branchId);
     }
 
     public function isSuperAdmin(): bool

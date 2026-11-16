@@ -8,7 +8,7 @@ return new class
         return [
             'report' => 'EXPECTED_ROOM_REVENUE_REFERENCE',
             'name' => 'Báo cáo dự kiến doanh thu tiền phòng',
-            'page_size' => 'A4', 'page_orientation' => 'landscape',
+            'page_size' => 'A4', 'page_orientation' => 'portrait', // Task 516: A4 khổ dọc
             'margin_top' => 8, 'margin_right' => 5, 'margin_bottom' => 8, 'margin_left' => 5,
             'version' => '1.0',
             'content_html' => $this->html(),
@@ -103,13 +103,13 @@ return new class
     public function css(): string
     {
         return <<<'CSS'
-body { font-family: Arial, Helvetica, sans-serif; color: #111; font-size: 9px; }
+body { font-family: Arial, Helvetica, sans-serif; color: #111; font-size: 11px; }
 .hotel-header { display: flex; justify-content: space-between; align-items: flex-start; min-height: 54px; }
 .hotel-logo img { max-width: 130px; max-height: 50px; object-fit: contain; }
-.hotel-information { text-align: right; font-size: 9px; line-height: 1.4; }
-.report-title { text-align: center; font-size: 18px; font-weight: bold; margin: 8px 0; }
-.report-date { text-align: center; margin: 0 0 10px; }
-.expected-room-revenue-table { width: 100%; table-layout: fixed; border-collapse: collapse; border: 1px solid #aeb5c0; font-size: 9px; }
+.hotel-information { text-align: right; font-size: 11px; line-height: 1.4; }
+.report-title { text-align: center; font-size: 20px; font-weight: bold; margin: 8px 0; }
+.report-date { text-align: center; font-size: 12px; margin: 0 0 10px; }
+.expected-room-revenue-table { width: 100%; table-layout: fixed; border-collapse: collapse; border: 1px solid #aeb5c0; font-size: 10.5px; }
 .expected-room-revenue-table th, .expected-room-revenue-table td { border: 1px solid #aeb5c0; padding: 3px 4px; vertical-align: middle; overflow-wrap: anywhere; }
 .expected-room-revenue-table thead th { background: #d9deea; text-align: center; font-weight: bold; }
 .expected-room-revenue-table tfoot td { background: #d9deea; font-weight: bold; }

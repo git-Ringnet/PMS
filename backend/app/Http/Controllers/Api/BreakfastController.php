@@ -73,11 +73,13 @@ class BreakfastController extends Controller
         });
 
         if ($dateType === 'arrival') {
-            // Lọc theo ngày đến của phòng: Lấy các phòng sắp đến & đang đến (Đăng ký 0, Đang ở 1, Chuyển phòng 100)
+            // Lọc theo ngày đến của phòng: Lấy các phòng sắp đến & đang đến (Đăng ký 0, Đang ở 1).
+            // Dòng 505: KHÔNG lấy dòng phòng cũ đã chuyển (100) - phòng vừa nhận rồi chuyển ngay chỉ hiện dòng phòng mới (tình trạng 1),
+            // giai đoạn phòng mới bắt đầu từ ngày chuyển (vd 412: 5/9 - 7/9).
             $rooms = (clone $roomsQuery)
                 ->whereIn('status', $includeReserved
-                    ? [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN, BookingRoom::STATUS_CHECKED_OUT, 100]
-                    : [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN, 100])
+                    ? [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN, BookingRoom::STATUS_CHECKED_OUT]
+                    : [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN])
                 ->when($targetRoomNumber !== '', fn ($q) => $q->where('room_number', $targetRoomNumber))
                 ->whereBetween('arrival_date', [$fromDate->toDateString(), $toDate->toDateString()])
                 ->orderBy('arrival_date')
@@ -92,12 +94,14 @@ class BreakfastController extends Controller
                 }
             }
         } else {
-            // Lọc theo ngày ăn sáng (breakfast): CHỈ LẤY CÁC PHÒNG ĐÃ CHECK-IN / ĐANG Ở (1) hoặc ĐÃ CHECK-OUT TRONG NGÀY (2)
-            // Khách chưa nhận phòng (Đăng ký 0) chưa có mặt thực tế tại khách sạn nên không nằm trong danh sách ăn sáng
+            // Lọc theo ngày ăn sáng (breakfast). Dòng 505:
+            // - Có cả phòng chưa nhận (Đăng ký 0) để xem/in trước phiếu cho các ngày tương lai.
+            // - Có cả dòng phòng cũ đã chuyển (100): các ngày ăn sáng trước ngày chuyển vẫn thuộc phòng cũ
+            //   (vd 1212: 31/8 - 5/9), cần in lại phiếu ngày chuyển vẫn được; các ngày sau thuộc phòng mới.
             $candidateRooms = (clone $roomsQuery)
-                ->whereIn('status', $includeReserved
-                    ? [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN, BookingRoom::STATUS_CHECKED_OUT, 100]
-                    : [BookingRoom::STATUS_CHECKED_IN, BookingRoom::STATUS_CHECKED_OUT])
+                ->whereIn('status', [
+                    BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN, BookingRoom::STATUS_CHECKED_OUT, 100,
+                ])
                 ->when($targetRoomNumber !== '', fn ($q) => $q->where('room_number', $targetRoomNumber))
                 ->where('arrival_date', '<=', $toDate->toDateString())
                 ->where('departure_date', '>=', $fromDate->toDateString())

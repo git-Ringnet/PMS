@@ -41,7 +41,7 @@ class BookingSectionsOneTwoTenTest extends TestCase
             'department_scope' => 'FO',
             'is_active' => true,
         ]);
-        foreach (['fo.booking.create', 'fo.booking.edit', 'fo.payment.create', 'fo.checkin'] as $code) {
+        foreach (['fo.booking.create', 'fo.booking.edit', 'fo.payment.create', 'fo.deposit.create', 'fo.deposit.edit', 'fo.deposit.delete', 'fo.checkin'] as $code) {
             $permission = Permission::firstOrCreate(
                 ['code' => $code],
                 ['name' => $code, 'module' => 'FO'],

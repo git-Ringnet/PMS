@@ -2833,6 +2833,9 @@ class BookingRoomController extends Controller
                         ->whereIn('CustomerId2', $movedGuestIds)
                         ->update(['RentalRoomId2' => $newRoom->id]);
 
+                    // Dòng 512: thanh toán/cọc + hóa đơn thanh toán đi theo khách sang phòng mới.
+                    app(\App\Services\BookingRoomMoveService::class)->transferPayments($bookingRoom, $newRoom, $movedGuestIds, $isAllGuestsMoved);
+
                     if (!$isAllGuestsMoved && $movedGuestPivots->contains('is_primary', true)) {
                         \App\Models\BookingRoomGuest::where('booking_room_id', $bookingRoom->id)->update(['is_primary' => 0]);
                         \App\Models\BookingRoomGuest::where('booking_room_id', $bookingRoom->id)->where('status', '!=', 100)->orderBy('id')->first()?->update(['is_primary' => 1]);
@@ -3065,6 +3068,9 @@ class BookingRoomController extends Controller
                         'CustomerId2'   => in_array($currentGuestId, $movedGuestIds, true) ? $currentGuestId : $billOwnerFallback,
                     ]);
                 }
+
+                // Dòng 512: thanh toán/cọc + hóa đơn thanh toán đi cùng bill sang phòng gộp.
+                app(\App\Services\BookingRoomMoveService::class)->transferPayments($bookingRoom, $targetBookingRoom, $movedGuestIds, $moveAllRoomBills);
 
                 \App\Models\BookingRoomService::where('booking_room_id', $bookingRoom->id)
                     ->where(function ($query) use ($movedGuestIds, $movedServiceBills) {

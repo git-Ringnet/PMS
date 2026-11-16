@@ -20,6 +20,7 @@ import {
   mergeMoveHistoryBillReferences,
 } from '@/utils/booking-room-move-history'
 import { summarizeRoomTotals } from '@/utils/booking-room-totals'
+import { collectRoomOwnedBills, distributeServicesByBillOrigin, mergeRoomServices, transferredBillIds } from '@/utils/booking-bill-origin'
 import { extraBedBillRow, findExtraBedBillsOutsideStay, findMoveHistoryExtraBedBill } from '@/utils/booking-room-extra-bed-bills'
 import { applySavedRoomColumns, serializeRoomColumns } from '@/utils/booking-room-columns'
 import { normalizeShuttleInfo, buildBookingHistoryLocation } from '@/utils/booking-shuttle-history'
@@ -409,6 +410,45 @@ async function openRegistrationCardPrint(showPrice = true) {
   selectedPrintServices.value = data.services || []
   selectedPrintRooms.value = selected.length > 0 ? selected : data.rooms
   isPrintPreviewModalOpen.value = true
+}
+
+function openBreakfastVoucherPrint() {
+  const tab = activeTab.value
+  if (!tab?.dbId) {
+    uiStore.showToast('Vui lòng lưu thông tin đăng ký trước khi in phiếu ăn sáng!', 'warning')
+    return
+  }
+
+  const selected = (tab.rooms || []).filter(room => selectedRows.value.includes(room.id))
+  if (selected.length !== 1) {
+    uiStore.showToast('Vui lòng chọn đúng 1 phòng để in phiếu ăn sáng!', 'warning')
+    return
+  }
+
+  const room = selected[0]
+  if (!room.roomNumber) {
+    uiStore.showToast('Vui lòng gán số phòng trước khi in phiếu ăn sáng!', 'warning')
+    return
+  }
+
+  const fromDate = parseApiDate(room.checkIn || tab.checkIn)
+  const toDate = parseApiDate(room.checkOut || tab.checkOut)
+  if (!fromDate || !toDate) {
+    uiStore.showToast('Không xác định được thời gian lưu trú để in phiếu ăn sáng!', 'warning')
+    return
+  }
+
+  const printRoute = router.resolve({
+    path: '/frontdesk',
+    query: {
+      tab: 'print-breakfast',
+      roomNumber: room.roomNumber,
+      data: room.bookingRoomId || room.id || tab.dbId,
+      fromDate,
+      toDate,
+    },
+  })
+  window.open(printRoute.href, '_blank', 'noopener,noreferrer')
 }
 
 async function openProformaInvoicePrint(mode = 'all') {
@@ -1159,10 +1199,10 @@ async function toggleRoomExpand(room) {
       try {
         const res = await fetchBookingRoomServices(room.bookingRoomId)
         const list = res.data?.data || []
-        room.services = list.map(s => ({
+        room.services = mergeRoomServices(room, list.map(s => ({
           ...s,
           service_date: cleanDateStr(s.service_date)
-        }))
+        })))
         room.serviceBills = mergeMoveHistoryBillReferences(
           room.serviceBills,
           res.data?.move_history_bills || [],
@@ -1368,10 +1408,10 @@ async function handleInlineServiceRateChange(room, svc, newRate) {
           }
         }
         const freshRes = await fetchBookingRoomServices(room.bookingRoomId)
-        room.services = (freshRes.data?.data || []).map(s => ({
+        room.services = mergeRoomServices(room, (freshRes.data?.data || []).map(s => ({
           ...s,
           service_date: cleanDateStr(s.service_date)
-        }))
+        })))
         room.total = calculateRoomTotal(room)
         notifyRoomUpdates(activeTab.value?.dbId)
       }
@@ -1439,10 +1479,10 @@ async function handleInlineServiceQtyChange(room, svc, newQty) {
       if (res.data?.success) {
         uiStore.showToast('Cập nhật số lượng dịch vụ thành công!', 'success')
         const freshRes = await fetchBookingRoomServices(room.bookingRoomId)
-        room.services = (freshRes.data?.data || []).map(s => ({
+        room.services = mergeRoomServices(room, (freshRes.data?.data || []).map(s => ({
           ...s,
           service_date: cleanDateStr(s.service_date)
-        }))
+        })))
         room.total = calculateRoomTotal(room)
         notifyRoomUpdates(activeTab.value?.dbId)
       }
@@ -1532,10 +1572,10 @@ async function handleServiceIsRoomToggle(room, svc, isChecked) {
       if (res.data?.success) {
         uiStore.showToast('Cập nhật trạng thái GIT/FIT thành công!', 'success')
         const freshRes = await fetchBookingRoomServices(room.bookingRoomId)
-        room.services = (freshRes.data?.data || []).map(s => ({
+        room.services = mergeRoomServices(room, (freshRes.data?.data || []).map(s => ({
           ...s,
           service_date: cleanDateStr(s.service_date)
-        }))
+        })))
         notifyRoomUpdates(activeTab.value?.dbId)
       }
     } catch (err) {
@@ -3296,7 +3336,20 @@ function bookingToTab(b) {
 
   // Nếu API trả về booking_rooms (dữ liệu mới)
   if (b.booking_rooms && b.booking_rooms.length > 0) {
+    // Dòng 458: bill/dịch vụ đã chuyển sang phòng khác (hoặc master) vẫn hiển thị ở PHÒNG GỐC phát sinh, không đổ về phòng nhận.
+    const bookingRoomIds = new Set(b.booking_rooms.map(room => String(room.id)))
+    const allBookingBills = [
+      ...(b.service_bills || b.serviceBills || []),
+      ...b.booking_rooms.flatMap(room => [
+        ...(room.service_bills || room.serviceBills || []),
+        ...(room.current_service_bills || room.currentServiceBills || []),
+      ]),
+    ]
+    const servicesByRoom = distributeServicesByBillOrigin(b.booking_rooms, allBookingBills)
+    const transferredIds = transferredBillIds(allBookingBills)
     b.booking_rooms.forEach(br => {
+      const originSlot = servicesByRoom.get(String(br.id))
+      const ownServices = originSlot?.services || br.services || []
       const rc = br.room_class || {}
       const physicalRoom = br.room || {}
       
@@ -3308,7 +3361,7 @@ function bookingToTab(b) {
         nightsCount = diff >= 0 ? diff : 0
       }
       const priceNum = Number(br.rate) || 0
-      const servicesList = br.services || []
+      const servicesList = ownServices
       const servicesTotal = servicesList.filter(svc => svc.service_code !== 'EB' && svc.service_code !== 'RM' && svc.service_code !== 'ROOM_CHARGE').reduce((sum, svc) => sum + (Number(svc.rate) * (svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1)), 0)
       const roomChargeTotal = servicesList.filter(svc => svc.service_code === 'RM' || svc.service_code === 'ROOM_CHARGE').reduce((sum, svc) => sum + (Number(svc.rate) * (svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1)), 0)
       const extraBedDetailTotal = servicesList.filter(svc => svc.service_code === 'EB').reduce((sum, svc) => sum + (Number(svc.rate) * (svc.quantity !== undefined && svc.quantity !== null ? Number(svc.quantity) : 1)), 0)
@@ -3378,17 +3431,8 @@ function bookingToTab(b) {
         ...(br.current_service_bills || br.currentServiceBills || []),
         ...((b.service_bills || b.serviceBills || []).filter(sb => String(sb.RentalRoomId1) === String(br.id) || String(sb.RentalRoomId2) === String(br.id)))
       ]
-      const seenBillIds = new Set()
-      const roomBills = []
-      rawBills.forEach(sb => {
-        const bId = sb.Ma ?? sb.id
-        if (bId && !seenBillIds.has(String(bId))) {
-          seenBillIds.add(String(bId))
-          roomBills.push(sb)
-        } else if (!bId) {
-          roomBills.push(sb)
-        }
-      })
+      // Dòng 458: chỉ giữ bill mà phòng này là phòng gốc (bill chuyển đi nơi khác vẫn tính ở phòng gốc, không tính thêm ở phòng nhận).
+      const roomBills = collectRoomOwnedBills(rawBills, br.id, bookingRoomIds, transferredIds)
 
       const roomObj = {
         id: idCounter++,
@@ -3442,7 +3486,9 @@ function bookingToTab(b) {
         roomCode: br.id || '',
         total: 0,
         roomClassId: br.room_class_id,
-        services: br.services || [],
+        services: ownServices,
+        originExtraServices: originSlot?.extras || [],
+        foreignServiceBillIds: originSlot?.foreignBillIds || new Set(),
         serviceBills: roomBills,
         childRecords: br.children || [],
         dailyRoomPrices: Object.keys(dailyRoomPrices).length ? dailyRoomPrices : null,
@@ -4434,10 +4480,10 @@ async function closeDiscountPopover(room, svc) {
           }
         }
         const freshRes = await fetchBookingRoomServices(room.bookingRoomId)
-        room.services = (freshRes.data?.data || []).map(s => ({
+        room.services = mergeRoomServices(room, (freshRes.data?.data || []).map(s => ({
           ...s,
           service_date: cleanDateStr(s.service_date)
-        }))
+        })))
         room.total = calculateRoomTotal(room)
       }
     } catch (err) {
@@ -9308,6 +9354,12 @@ defineExpose({
               </span>
               <span class="lbl">Xuất Excel</span>
             </div>
+            <div v-if="currentBookingModule === 'FO'" class="dock-item" @click="openBreakfastVoucherPrint">
+              <span class="di">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><path d="M6 9V2h12v7"/><rect x="6" y="14" width="12" height="8"/><path d="M6 14H4a2 2 0 01-2-2v-3a2 2 0 012-2h16a2 2 0 012 2v3a2 2 0 01-2 2h-2"/><path d="M9 18h6"/></svg>
+              </span>
+              <span class="lbl">In phiếu ăn sáng</span>
+            </div>
             <div class="dock-item expandable" @click="isSubListOpen = !isSubListOpen">
               <span class="di">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="17" height="17"><path d="M6 9V2h12v7"/><rect x="6" y="14" width="12" height="8"/><path d="M6 14H4a2 2 0 01-2-2v-3a2 2 0 012-2h16a2 2 0 012 2v3a2 2 0 01-2 2h-2"/></svg>
@@ -9882,6 +9934,7 @@ defineExpose({
                       <h3 class="font-bold text-slate-800 text-xs tracking-wider">Đặt Cọc</h3>
                     </div>
                     <button 
+                      v-if="authStore.hasPermission('fo.deposit.view') || authStore.hasPermission('fo.deposit.create')"
                       @click="openDepositModal" 
                       :disabled="!modalForm.dbId"
                       type="button" 

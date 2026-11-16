@@ -608,7 +608,7 @@ const rawMenuItems = computed(() => {
           { name: 'Sơ Đồ Phòng', tab: 'room-map' },
           { name: 'Nhận Phòng Nhanh', tab: 'room-map', action: 'quick-checkin', permission: ['fo.checkin'] },
           { name: 'Tạo Đăng Ký', tab: 'create-res', action: 'new', permission: ['fo.booking.create'] },
-          { name: 'Đặt Cọc', tab: 'create-res', modal: 'deposit', permission: ['fo.deposit.create', 'fo.payment.create'] },
+          { name: 'Đặt Cọc', tab: 'create-res', modal: 'deposit', permission: ['fo.deposit.create'] },
           { name: 'Tạo Thẻ Khóa Phòng', tab: 'create-res', modal: 'keycard', permission: ['fo.checkin', 'fo.booking.edit'] },
           { name: 'In Phiếu Ăn Sáng', tab: 'print-breakfast' },
         ]

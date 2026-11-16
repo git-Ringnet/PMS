@@ -455,6 +455,7 @@ import { useAuthStore } from '@/stores/auth-store'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
 import GuestSuggestInput from '@/components/GuestSuggestInput.vue'
 import { inheritGuestInfo } from '@/utils/guest-suggestion'
+import { normalizeIsoDateOnly } from './room-info-date-utils'
 
 const props = defineProps({
   show: Boolean,
@@ -678,13 +679,13 @@ async function resetForm() {
   form.value = {
     full_name: g.full_name || '',
     title: g.title || 'Mr.',
-    dob: g.dob ? g.dob.substring(0, 10) : '',
+    dob: normalizeIsoDateOnly(g.dob),
     nationality_code: g.nationality_code || 'VN',
     id_type: g.id_type || 'CCCD',
     id_number: g.id_number || '',
-    id_issue_date: g.id_issue_date ? g.id_issue_date.substring(0, 10) : '',
+    id_issue_date: normalizeIsoDateOnly(g.id_issue_date),
     passport_number: g.passport_number || '',
-    passport_expiry: g.passport_expiry ? g.passport_expiry.substring(0, 10) : '',
+    passport_expiry: normalizeIsoDateOnly(g.passport_expiry),
     phone: g.phone || '',
     email: g.email || '',
     address: g.address || '',
@@ -693,10 +694,10 @@ async function resetForm() {
     district: g.district || '',
     ward: g.ward || '',
     residence_type: g.residence_type || '',
-    temp_residence_to: g.temp_residence_to ? g.temp_residence_to.substring(0, 10) : '',
+    temp_residence_to: normalizeIsoDateOnly(g.temp_residence_to),
     visa_no: g.visa_no || '',
-    entry_date: g.entry_date ? g.entry_date.substring(0, 10) : '',
-    visa_expiry_date: g.visa_expiry_date ? g.visa_expiry_date.substring(0, 10) : '',
+    entry_date: normalizeIsoDateOnly(g.entry_date),
+    visa_expiry_date: normalizeIsoDateOnly(g.visa_expiry_date),
     entry_purpose: g.entry_purpose || '',
     border_gate: g.border_gate || '',
     occupation: g.occupation || '',

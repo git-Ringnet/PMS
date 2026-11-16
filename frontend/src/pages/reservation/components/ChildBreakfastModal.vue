@@ -21,9 +21,6 @@
         <div class="flex items-center space-x-2">
           <!-- Help Icon -->
           <i class="fa-solid fa-circle-question text-white/80 hover:text-white text-base cursor-pointer transition mr-1" title="Hướng dẫn tính phụ phí"></i>
-          <button class="hover:opacity-80 p-1 rounded cursor-pointer border-none bg-transparent text-white" @click="close" title="Đóng">
-            <i class="fa-solid fa-xmark text-sm"></i>
-          </button>
         </div>
       </div>
 
@@ -264,8 +261,7 @@
                     </td>
                     <!-- Parent Amount (Bulk) -->
                     <td class="p-3 text-right border-slate-200">
-                      <span v-if="!child.is_extra_charge" class="text-xs text-[#000000D9]"></span>
-                      <div v-else class="flex items-center justify-end">
+                      <div v-if="child.breakfast && !child.is_free" class="flex items-center justify-end">
                         <input 
                           type="text" 
                           :value="formatCurrency(child.amount)"
@@ -338,8 +334,7 @@
                       </td>
                       <!-- Amount -->
                       <td class="p-2 text-right border-slate-200">
-                        <span v-if="!d.is_extra_charge" class="text-xs text-[#000000D9]"></span>
-                        <div v-else class="flex items-center justify-end">
+                        <div v-if="d.breakfast && !d.is_free" class="flex items-center justify-end">
                           <input 
                             type="text" 
                             :value="formatCurrency(d.amount)"
@@ -424,6 +419,15 @@
 
       <!-- FOOTER -->
       <div class="bg-slate-50 border-t border-slate-200 px-4 py-3 shrink-0 flex items-center justify-end space-x-2 rounded-b-xl">
+        <button
+          type="button"
+          @click="close"
+          class="btn-pms-secondary"
+          data-testid="child-breakfast-back"
+        >
+          <i class="fa-solid fa-rotate-left"></i>
+          <span>Quay lại</span>
+        </button>
         <button
           type="button"
           @click="save"

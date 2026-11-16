@@ -70,14 +70,7 @@ class AuthController extends Controller
         $user->load(['branches', 'userRoles.role', 'userRoles.branch', 'userBranchPositions.branch']);
 
         // Tổng hợp danh sách chi nhánh (kết hợp cả user_branches và user_branch_positions)
-        $accessibleBranches = $user->isSuperAdmin()
-            ? \App\Models\SystemBranch::where('is_active', true)->get()
-            : $user->branches;
-
-        if (!$user->isSuperAdmin() && $accessibleBranches->isEmpty()) {
-            $branchIdsFromPositions = $user->userBranchPositions->pluck('system_branch_id')->unique();
-            $accessibleBranches = \App\Models\SystemBranch::whereIn('id', $branchIdsFromPositions)->where('is_active', true)->get();
-        }
+        $accessibleBranches = $this->accessibleBranchesFor($user);
 
         $branches = $accessibleBranches->map(fn($b) => [
             'id'            => $b->id,
@@ -125,6 +118,7 @@ class AuthController extends Controller
             'branches'      => $branches,
             'active_branch' => $activeBranch,
             'roles'         => $roles,
+            'applications'  => $user->assignedApplicationCodes($branchId)?->values(),
         ]);
     }
 
@@ -150,14 +144,7 @@ class AuthController extends Controller
         $user = $request->user();
         $user->load(['setting', 'branches', 'userRoles.role', 'userRoles.branch', 'userBranchPositions.branch']);
 
-        $accessibleBranches = $user->isSuperAdmin()
-            ? \App\Models\SystemBranch::where('is_active', true)->get()
-            : $user->branches;
-
-        if (!$user->isSuperAdmin() && $accessibleBranches->isEmpty()) {
-            $branchIdsFromPositions = $user->userBranchPositions->pluck('system_branch_id')->unique();
-            $accessibleBranches = \App\Models\SystemBranch::whereIn('id', $branchIdsFromPositions)->where('is_active', true)->get();
-        }
+        $accessibleBranches = $this->accessibleBranchesFor($user);
 
         $branches = $accessibleBranches->map(fn($b) => [
             'id'            => $b->id,
@@ -214,7 +201,18 @@ class AuthController extends Controller
             'branches'      => $branches,
             'active_branch' => $activeBranch,
             'roles'         => $roles,
+            'applications'  => $user->assignedApplicationCodes($branchId)?->values(),
         ]);
+    }
+
+    /** Task 471: chi nhánh theo vị trí còn hiệu lực (bỏ chi nhánh khỏi vị trí thì không còn thấy khi đăng nhập). */
+    private function accessibleBranchesFor($user)
+    {
+        if ($user->isSuperAdmin()) {
+            return \App\Models\SystemBranch::where('is_active', true)->get();
+        }
+
+        return \App\Models\SystemBranch::whereIn('id', $user->accessibleBranchIds())->where('is_active', true)->get();
     }
 
     /**

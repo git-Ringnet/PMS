@@ -23,7 +23,7 @@ const STORAGE_KEY = 'pms_breakfast_coupon_template_config'
 // Default template configuration
 const defaultConfig = {
   // Layout & Dimensions
-  columns: 3, // 1, 2, 3
+  columns: 2, // 1, 2, 3 (mặc định 2 phiếu mỗi hàng - dòng 505)
   minHeight: 220, // in px
   fontSize: 'normal', // 'small' (10px), 'normal' (12px), 'large' (13.5px), 'xlarge' (15px)
   roomFontSize: 'large', // 'normal' (16px), 'large' (20px), 'xlarge' (24px)

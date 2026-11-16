@@ -2,6 +2,7 @@
 import { useRouter } from "vue-router";
 import { ref, onMounted, computed } from "vue";
 import { useUiStore } from "@/stores/ui-store";
+import { useAuthStore } from "@/stores/auth-store";
 import { usePermission } from "@/composables/usePermission";
 import PortalWallpaperModal from "@/components/PortalWallpaperModal.vue";
 import { usePortalWallpaper } from "@/composables/usePortalWallpaper";
@@ -9,6 +10,7 @@ import { ROUTE_PERMISSIONS } from "@/utils/screen-permissions";
 
 const router = useRouter();
 const uiStore = useUiStore();
+const authStore = useAuthStore();
 const { can, canAny, isSuperAdmin, isAdmin } = usePermission();
 const isLoaded = ref(false);
 
@@ -78,7 +80,7 @@ onMounted(() => {
     <div class="relative z-10 flex flex-wrap items-center justify-center gap-12 sm:gap-16 md:gap-20 px-6 max-w-5xl">
       <!-- 1. PROVISTA PMS Card -->
       <div 
-        v-if="isSuperAdmin || canAny(ROUTE_PERMISSIONS['/pms'])"
+        v-if="isSuperAdmin || (authStore.hasApplication('PMS') && canAny(ROUTE_PERMISSIONS['/pms']))"
         class="flex flex-col items-center group transition-all duration-1000"
         :class="isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'"
         style="transition-delay: 100ms;"
@@ -107,7 +109,7 @@ onMounted(() => {
 
       <!-- 2. PROVISTA F&B Card -->
       <div 
-        v-if="isSuperAdmin || canAny(ROUTE_PERMISSIONS['/fnb'])"
+        v-if="isSuperAdmin || (authStore.hasApplication('POS') && canAny(ROUTE_PERMISSIONS['/fnb']))"
         class="flex flex-col items-center group transition-all duration-1000"
         :class="isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'"
         style="transition-delay: 200ms;"

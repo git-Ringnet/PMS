@@ -6519,5 +6519,13 @@
  "Không xác định được đăng ký để in tổng.": "Cannot determine the registration to print the total.",
  "Không thể tải dữ liệu hóa đơn.": "Unable to load invoice data.",
  "In Không Hiện Giá": "Print Without Prices",
- "In Tổng": "Print Total"
+ "In Tổng": "Print Total",
+ "Sửa vai trò": "Edit role",
+ "Xóa vai trò": "Delete role",
+ "Đã cập nhật vai trò": "Role updated",
+ "Không thể cập nhật vai trò": "Unable to update role",
+ "Đã xóa vai trò": "Role deleted",
+ "Role đang được gán cho nhân viên.": "This role is assigned to employees.",
+ "Bạn không có quyền thực hiện thao tác đặt cọc.": "You do not have permission to perform deposit actions.",
+ "Bạn không có quyền thực hiện thao tác thanh toán trước.": "You do not have permission to perform advance payment actions."
 }
