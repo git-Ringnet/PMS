@@ -1996,6 +1996,9 @@ class BookingRoomServiceController extends Controller
                 'label' => $outlet->name,
                 'service' => $outlet->service_code ?: $outlet->code,
                 'outlet' => $outlet->code,
+                'default_service_charge' => (float) $outlet->default_service_charge_percent,
+                'default_special_tax' => (float) $outlet->default_special_tax_percent,
+                'default_tax' => (float) $outlet->default_tax_percent,
             ])
             ->all();
 
