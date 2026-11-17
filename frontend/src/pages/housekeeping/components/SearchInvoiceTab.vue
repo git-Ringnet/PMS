@@ -103,29 +103,6 @@
           </Transition>
         </div>
 
-        <!-- Mã ĐK filter -->
-        <div class="flex flex-col gap-1.5 w-[110px] relative">
-          <label class="text-xs font-semibold text-[#000000D9]">Mã ĐK</label>
-          <div class="relative flex items-center">
-            <input 
-              type="text" 
-              data-hk-search
-              v-model="filterState.regCode"
-              placeholder="Mã ĐK..."
-              class="w-full h-8 border border-slate-300 rounded-lg pl-2.5 pr-7 text-xs text-[#000000D9] placeholder:text-[#A8B0BF] bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 transition-all shadow-sm font-normal"
-            />
-            <button 
-              v-if="filterState.regCode" 
-              type="button" 
-              @click="filterState.regCode = ''"
-              class="absolute right-2 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
-              title="Xóa nhanh"
-            >
-              <X class="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-
         <!-- Phòng filter -->
         <div class="flex flex-col gap-1.5 w-[115px] relative">
           <label class="text-xs font-semibold text-[#000000D9]">Phòng</label>
@@ -478,7 +455,13 @@
           
           <!-- Modal Body (PostBillHousekeepingTab) -->
           <div class="flex-1 overflow-hidden bg-slate-50">
-            <PostBillHousekeepingTab />
+            <PostBillHousekeepingTab
+              :is-modal="true"
+              department="HK"
+              posting-source="HK"
+              @success="handleHousekeepingBillPosted"
+              @close="showAddModal = false"
+            />
           </div>
         </div>
       </div>
@@ -513,10 +496,14 @@
               <div><span class="font-semibold text-[#000000D9]">Ngày giờ:</span> <span class="font-normal text-[#000000D9]">{{ detailTarget.time || '—' }}</span></div>
               <div><span class="font-semibold text-[#000000D9]">Bộ phận:</span> <span class="font-normal text-[#000000D9]">{{ detailTarget.dept || '—' }}</span></div>
               <div class="sm:col-span-2"><span class="font-semibold text-[#000000D9]">Ghi chú:</span> <span class="font-normal text-[#000000D9]">{{ detailTarget.note || '—' }}</span></div>
-              <div><span class="font-semibold text-[#000000D9]">Miễn phí:</span> <span class="font-normal text-[#000000D9]">{{ detailTarget.isFree ? 'Có' : 'Không' }}</span></div>
+              <div>
+                <span class="font-semibold text-[#000000D9]">Miễn phí:</span>
+                <span v-if="detailTarget.isFree" class="ml-1 inline-flex rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-800 ring-1 ring-amber-300">MIỄN PHÍ</span>
+                <span v-else class="font-normal text-[#000000D9]">Không</span>
+              </div>
             </div>
             
-            <div class="mt-5 overflow-hidden rounded-lg border border-slate-200">
+            <div class="mt-5 overflow-x-auto rounded-lg border border-slate-200">
               <table class="w-full border-collapse text-xs">
                 <thead class="bg-slate-100 text-[#000000D9]">
                   <tr>
@@ -524,6 +511,11 @@
                     <th class="border border-slate-200 px-3 py-2 text-center align-middle font-semibold">Sản Phẩm</th>
                     <th class="border border-slate-200 px-3 py-2 text-center align-middle font-semibold">Số Lượng</th>
                     <th class="border border-slate-200 px-3 py-2 text-center align-middle font-semibold">Đơn Giá</th>
+                    <th class="border border-slate-200 px-3 py-2 text-center align-middle font-semibold">Giảm Giá</th>
+                    <th class="border border-slate-200 px-3 py-2 text-center align-middle font-semibold">Tăng Giá</th>
+                    <th class="border border-slate-200 px-3 py-2 text-center align-middle font-semibold">Phí DV</th>
+                    <th class="border border-slate-200 px-3 py-2 text-center align-middle font-semibold">Thuế ĐB</th>
+                    <th class="border border-slate-200 px-3 py-2 text-center align-middle font-semibold">VAT</th>
                     <th class="border border-slate-200 px-3 py-2 text-center align-middle font-semibold">Số Tiền</th>
                   </tr>
                 </thead>
@@ -533,13 +525,21 @@
                     <td class="px-3 py-2 border-b border-slate-100">{{ item.name || '—' }}</td>
                     <td class="px-3 py-2 text-right border-b border-slate-100">{{ item.quantity || 0 }}</td>
                     <td class="px-3 py-2 text-right border-b border-slate-100">{{ formatCurrency(item.rate || 0) }}</td>
+                    <td class="px-3 py-2 text-right border-b border-slate-100">{{ formatAdjustment(item.discountAmount, item.discount) }}</td>
+                    <td class="px-3 py-2 text-right border-b border-slate-100">{{ formatAdjustment(item.increaseAmount, item.increase) }}</td>
+                    <td class="px-3 py-2 text-right border-b border-slate-100">{{ formatAdjustment(item.serviceChargeAmount, item.serviceCharge) }}</td>
+                    <td class="px-3 py-2 text-right border-b border-slate-100">{{ formatAdjustment(item.specialTaxAmount, item.specialTax) }}</td>
+                    <td class="px-3 py-2 text-right border-b border-slate-100">{{ formatAdjustment(item.taxAmount, item.tax) }}</td>
                     <td class="px-3 py-2 text-right border-b border-slate-100">{{ formatCurrency(item.amount || 0) }}</td>
                   </tr>
+                  <tr v-if="detailTarget.isDetailLoading">
+                    <td colspan="10" class="px-3 py-6 text-center text-[#A8B0BF] border-b border-slate-100">Đang tải chi tiết hóa đơn...</td>
+                  </tr>
                   <tr v-if="!detailTarget.products.length">
-                    <td colspan="5" class="px-3 py-6 text-center text-[#A8B0BF] border-b border-slate-100">Không có chi tiết sản phẩm</td>
+                    <td colspan="10" class="px-3 py-6 text-center text-[#A8B0BF] border-b border-slate-100">Không có chi tiết sản phẩm</td>
                   </tr>
                   <tr class="border-t border-slate-200 font-semibold bg-slate-50">
-                    <td colspan="4" class="px-3 py-2 text-left text-[#000000D9]">Tổng tiền</td>
+                    <td colspan="9" class="px-3 py-2 text-left text-[#000000D9]">Tổng tiền</td>
                     <td class="px-3 py-2 text-right text-blue-600">{{ formatCurrency(detailTarget.price) }}</td>
                   </tr>
                 </tbody>
@@ -676,6 +676,7 @@ const mockInvoices = ref([
 
 const invoicesList = ref([])
 const detailTarget = ref(null)
+let detailRequestId = 0
 const cancelTarget = ref(null)
 const cancelReason = ref('')
 const isCancelling = ref(false)
@@ -688,7 +689,6 @@ const filterOptions = computed(() => ({
 }))
 
 const filterState = ref({
-  regCode: '',
   room: '',
   status: 'all', // 'all', 'paid', 'unpaid', 'deleted'
   dept: '',      // '' = tất cả
@@ -711,7 +711,6 @@ const triggerSearch = async () => {
     const { data } = await http.get('/housekeeping/service-bills', { params: {
       date_from: fromDate.value,
       date_to: toDate.value,
-      booking_code: filterState.value.regCode || undefined,
       room_no: filterState.value.room || undefined,
       department: filterState.value.dept || undefined,
       username: filterState.value.user || undefined,
@@ -720,7 +719,7 @@ const triggerSearch = async () => {
     } })
     if (requestId !== searchRequestId) return
     invoicesList.value = (data.data || []).map(item => ({
-      id: item.id, regCode: item.booking_code || '', guestName: item.guest_name || '', room: item.room_no || '', products: item.products || [], note: item.note || '',
+      id: item.id, serviceBillId: item.service_bill_id || null, regCode: item.booking_code || '', guestName: item.guest_name || '', room: item.room_no || '', products: item.products || [], note: item.note || '',
       time: item.date ? `${item.date.split('-').reverse().join('-')} ${item.time || ''}` : '',
       isFree: item.is_free, price: item.amount, payCode: item.payment_id || '',
       manualCode: item.manual_invoice_code || '', user: item.username || '',
@@ -953,22 +952,19 @@ const filteredInvoices = computed(() => {
     
     if (invDate < start || invDate > end) return false
 
-    // 2. RegCode filter
-    if (filterState.value.regCode && !inv.regCode.toLowerCase().includes(filterState.value.regCode.toLowerCase())) return false
-
-    // 3. Room filter
+    // 2. Room filter
     if (filterState.value.room && inv.room !== filterState.value.room) return false
 
-    // 4. Dept filter
+    // 3. Dept filter
     if (filterState.value.dept && inv.dept !== filterState.value.dept) return false
 
-    // 5. User filter
+    // 4. User filter
     if (filterState.value.user && inv.user !== filterState.value.user) return false
 
-    // 6. Zone filter
+    // 5. Zone filter
     if (filterState.value.zone && inv.zone !== filterState.value.zone) return false
 
-    // 7. Status filter
+    // 6. Status filter
     if (filterState.value.status === 'deleted') {
       return inv.isDeleted
     }
@@ -996,9 +992,19 @@ const formatCurrency = (value) => {
   return new Intl.NumberFormat('vi-VN').format(value)
 }
 
+const formatAdjustment = (amount, percent) => {
+  if (!amount && !percent) return '—'
+  return `${formatCurrency(amount || 0)}${percent ? ` (${percent}%)` : ''}`
+}
+
 const openAddModal = () => {
   if (!canPostHousekeepingBill.value) return
   showAddModal.value = true
+}
+
+const handleHousekeepingBillPosted = async () => {
+  showAddModal.value = false
+  await triggerSearch()
 }
 
 const openCancelModal = (invoice) => {
@@ -1012,8 +1018,44 @@ const openCancelModal = (invoice) => {
   cancelReason.value = ''
 }
 
-const openInvoiceDetail = (invoice) => {
-  detailTarget.value = invoice
+const openInvoiceDetail = async (invoice) => {
+  const requestId = ++detailRequestId
+  detailTarget.value = { ...invoice, products: [], isDetailLoading: true }
+  if (!invoice.serviceBillId) {
+    detailTarget.value.isDetailLoading = false
+    return
+  }
+
+  try {
+    const { data } = await http.get(`/service-bills/${invoice.serviceBillId}/details`)
+    if (requestId !== detailRequestId || !detailTarget.value) return
+    detailTarget.value = {
+      ...detailTarget.value,
+      isFree: data.is_free === true,
+      isDetailLoading: false,
+      products: (data.data || []).map(item => ({
+        name: item.DescriptionServive || item.Product || '',
+        quantity: Number(item.Quantity || 0),
+        rate: Number(item.OriginalRate || 0),
+        discount: Number(item.Discount || 0),
+        discountAmount: Number(item.DiscountAmount || 0),
+        increase: Number(item.Increase || 0),
+        increaseAmount: Number(item.IncreaseAmount || 0),
+        serviceCharge: Number(item.ServiceCharge || 0),
+        serviceChargeAmount: Number(item.ServiceChargeAmount || 0),
+        specialTax: Number(item.SpecialTax || 0),
+        specialTaxAmount: Number(item.SpecialTaxAmount || 0),
+        tax: Number(item.Tax || 0),
+        taxAmount: Number(item.TaxAmount || 0),
+        amount: Number(item.Amount || 0),
+      })),
+    }
+  } catch (error) {
+    if (requestId === detailRequestId && detailTarget.value) {
+      detailTarget.value = { ...detailTarget.value, isDetailLoading: false }
+      uiStore.showToast('Không thể tải chi tiết hóa đơn.', 'error')
+    }
+  }
 }
 
 const closeInvoiceDetail = () => {

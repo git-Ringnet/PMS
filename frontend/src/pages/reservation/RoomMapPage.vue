@@ -26,7 +26,6 @@ import CreateRegistrationPage from './CreateRegistrationPage.vue'
 import CheckInPage from './CheckInPage.vue'
 import ResidenceDeclarationPage from './ResidenceDeclarationPage.vue'
 import BreakfastPage from '@/pages/frontdesk/BreakfastPage.vue'
-import PrintTasksTab from '@/pages/housekeeping/components/PrintTasksTab.vue'
 import QuickAssignModal from './components/QuickAssignModal.vue'
 import HelpGuidePopover from '@/components/HelpGuidePopover.vue'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
@@ -81,8 +80,7 @@ const depositBooking = ref({ id: null, name: '', code: '', rooms: [], deposits: 
 const depositPaymentMethods = ref([])
 const depositCurrencies = ref([])
 const showStatsModal = ref(false)
-const showPrintTasksModal = ref(false)
-const printTaskRoomIds = ref([])
+const showRoomMapPrintMenu = ref(false)
 const isLoaded = ref(false)
 const isInitialLoad = ref(true)
 let pollingInterval = null
@@ -341,6 +339,9 @@ function handleClickOutsideSettings(event) {
   }
   if (showBulkStatusMenu.value && !event.target.closest('.bulk-status-container')) {
     showBulkStatusMenu.value = false
+  }
+  if (showRoomMapPrintMenu.value && !event.target.closest('.room-map-print-container')) {
+    showRoomMapPrintMenu.value = false
   }
   if (activeColFilter.value && !event.target.closest('.col-filter-container')) {
     activeColFilter.value = null
@@ -1378,11 +1379,122 @@ async function bulkUpdateRoomStatus() {
   }
 }
 
-function printSelectedRooms() {
-  const selectedRooms = roomStore.rooms.filter(room => selectedRoomIds.value.includes(room.id))
-  if (!selectedRooms.length) return uiStore.showToast('Vui lòng chọn phòng cần in Worksheet.', 'warning')
-  printTaskRoomIds.value = selectedRooms.map(room => room.id)
-  showPrintTasksModal.value = true
+function escapePrintHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, char => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  })[char])
+}
+
+function getRoomMapPrintStatus(room) {
+  const statusLabels = {
+    vacant_ready: 'Sẵn sàng',
+    vacant_clean: 'Phòng sạch',
+    vacant_dirty: 'Phòng bẩn',
+    occupied_ready: 'Đang ở - sẵn sàng',
+    occupied_clean: 'Đang ở - sạch',
+    occupied_dirty: 'Đang ở - bẩn',
+    occupied_ooo: 'Đang ở - OOO',
+    ooo: 'OOO',
+    oos: 'OOS',
+    turndown: 'Lau dọn',
+    housekeeping: 'Dịch vụ dọn phòng',
+    dnd: 'Không làm phiền',
+    vacant_priority: 'Ưu tiên dọn',
+  }
+  const code = String(room?.room_status_code || '').toLowerCase()
+  if (statusLabels[code]) return statusLabels[code]
+
+  const legacyStatusLabels = {
+    available: 'Sẵn sàng',
+    occupied: 'Đang ở',
+    dirty: 'Phòng bẩn',
+    maintenance: 'Bảo trì',
+    reserved: 'Đã đặt',
+    checkout: 'Lau dọn',
+  }
+  return legacyStatusLabels[String(room?.status || '').toLowerCase()] || '-'
+}
+
+function getSelectedRoomsForPrint() {
+  return roomStore.rooms
+    .filter(room => selectedRoomIds.value.includes(room.id))
+    .sort((left, right) => String(left.room_number || '').localeCompare(String(right.room_number || ''), 'vi', { numeric: true }))
+}
+
+function openRoomMapPrintPreview(template) {
+  showRoomMapPrintMenu.value = false
+  const rooms = getSelectedRoomsForPrint()
+  if (!rooms.length) {
+    uiStore.showToast('Vui lòng chọn phòng cần in.', 'warning')
+    return
+  }
+
+  const title = template === 'supervisor' ? 'Mẫu Sup - Room Map' : 'Mẫu nhân viên - Room Map'
+  const preview = window.open('', '_blank')
+  if (!preview) {
+    uiStore.showToast('Trình duyệt đang chặn mở tab mới. Vui lòng cho phép pop-up để xem bản in.', 'warning')
+    return
+  }
+
+  const date = escapePrintHtml(formatDate(new Date(rawDate.value)))
+  const roomRows = rooms.map((room, index) => {
+    const commonCells = `
+      <td>${index + 1}</td>
+      <td class="room-number">${escapePrintHtml(room.room_number || '-')}</td>
+      <td>${escapePrintHtml(room.room_type || room.room_class?.code || '-')}</td>
+      <td>${escapePrintHtml(getRoomMapPrintStatus(room))}</td>`
+    if (template === 'supervisor') {
+      return `<tr>${commonCells}<td></td><td></td></tr>`
+    }
+    return `<tr>${commonCells}<td></td></tr>`
+  }).join('')
+
+  const isSupervisor = template === 'supervisor'
+  const header = isSupervisor
+    ? '<th>STT</th><th>Phòng</th><th>Loại Phòng</th><th>Tình Trạng Phòng</th><th>Kiểm Tra</th><th>Ghi Chú</th>'
+    : '<th>STT</th><th>Phòng</th><th>Loại Phòng</th><th>Tình Trạng Phòng</th><th>Ghi Chú</th>'
+  const assignmentLabel = isSupervisor ? 'SUPERVISOR' : 'NHÂN VIÊN LÀM PHÒNG'
+  const reportTitle = isSupervisor ? 'PHIẾU KIỂM TRA SUPERVISOR' : 'PHIẾU LÀM PHÒNG'
+
+  preview.document.write(`<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8"><title>${title}</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #e2e8f0; color: #000000d9; font-family: Roboto, Arial, sans-serif; font-size: 12px; }
+      .toolbar { position: sticky; top: 0; display: flex; justify-content: space-between; align-items: center; padding: 8px 16px; background: #006bdb; color: #fff; }
+      .toolbar button { border: 0; border-radius: 6px; padding: 7px 14px; background: #fff; color: #006bdb; cursor: pointer; font: 600 12px Roboto, Arial, sans-serif; }
+      .sheet { max-width: 1040px; min-height: 297mm; margin: 12px auto; padding: 16mm 12mm; background: #fff; box-shadow: 0 1px 4px rgba(15, 23, 42, .18); }
+      h1 { margin: 0; font-size: 18px; text-align: center; }
+      .sub-title { margin: 4px 0 16px; text-align: center; color: #475569; font-weight: 600; }
+      .meta { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 24px; margin-bottom: 16px; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px; }
+      .blank { display: inline-block; min-width: 190px; border-bottom: 1px solid #475569; }
+      table { width: 100%; border-collapse: collapse; }
+      th { padding: 8px 6px; border: 1px solid #94a3b8; background: #f1f5f9; text-align: center; font-weight: 600; }
+      td { height: 32px; padding: 6px; border: 1px solid #94a3b8; vertical-align: middle; }
+      td:first-child { width: 46px; text-align: center; }
+      .room-number { text-align: center; font-weight: 600; }
+      .footer { display: flex; justify-content: space-between; gap: 24px; margin-top: 28px; }
+      .signature { width: 220px; text-align: center; padding-top: 52px; border-bottom: 1px solid #475569; font-weight: 600; }
+      @media print { .toolbar { display: none; } body { background: #fff; } .sheet { margin: 0; max-width: none; box-shadow: none; } }
+    </style></head><body>
+    <div class="toolbar"><span>${reportTitle}</span><button type="button" onclick="window.print()">In</button></div>
+    <main class="sheet">
+      <h1>${reportTitle}</h1>
+      <div class="sub-title">ROOM MAP</div>
+      <section class="meta">
+        <div>NGÀY: <strong>${date}</strong></div>
+        <div>TỔNG SỐ PHÒNG: <strong>${rooms.length}</strong></div>
+        <div>${assignmentLabel}: <span class="blank">&nbsp;</span></div>
+        <div>CA: <span class="blank">&nbsp;</span></div>
+      </section>
+      <table><thead><tr>${header}</tr></thead><tbody>${roomRows}</tbody></table>
+      <div class="footer"><div></div><div class="signature">${assignmentLabel}</div></div>
+    </main></body></html>`)
+  preview.document.close()
+  preview.focus()
 }
 
 // Show Warning toast for features under development
@@ -2035,7 +2147,6 @@ function handleRoomMapShortcut(event) {
     showRoomLockModal.value ||
     showDepositModal.value ||
     showStatsModal.value ||
-    showPrintTasksModal.value ||
     showQuickCheckinModal.value ||
     showQuickAssignModal.value ||
     showUndoCheckinModal.value ||
@@ -2870,7 +2981,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
 
           <!-- View Mode & Zoom switchers -->
           <div class="flex items-center gap-2 xl:gap-2.5 shrink-0">
-            <div v-if="moduleContext === 'housekeeping' && !isGridMode && !isFutureView" class="bulk-status-container relative flex items-center gap-1">
+            <div v-if="moduleContext === 'housekeeping' && !isGridMode && !isFutureView" class="bulk-status-container room-map-print-container relative flex items-center gap-1">
               <button
                 type="button"
                 class="flex h-8 w-8 items-center justify-center rounded-lg border text-white shadow-xs transition cursor-pointer"
@@ -2898,13 +3009,17 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                 class="flex h-8 w-8 items-center justify-center rounded-lg border text-white shadow-xs transition cursor-pointer"
                 :class="selectedRoomIds.length ? 'border-sky-400 bg-sky-400 hover:bg-sky-500' : 'border-slate-300 bg-slate-200 text-slate-400 hover:bg-slate-300'"
                 :disabled="isBulkUpdating"
-                title="In Worksheet"
-                @click.stop="printSelectedRooms"
+                title="In Room Map"
+                @click.stop="showRoomMapPrintMenu = !showRoomMapPrintMenu"
               >
                 <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 9V4h12v5M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v6H6z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 9V4h12v5M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2-2h-2M6 14h12v6H6z" />
                 </svg>
               </button>
+              <div v-if="showRoomMapPrintMenu" class="absolute right-0 top-full z-50 mt-2 w-48 rounded-xl border border-slate-300 bg-white p-1.5 shadow-lg" @click.stop>
+                <button type="button" class="flex h-8 w-full items-center rounded-lg px-2.5 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="openRoomMapPrintPreview('attendant')">In mẫu nhân viên</button>
+                <button type="button" class="flex h-8 w-full items-center rounded-lg px-2.5 text-left text-xs font-semibold text-slate-700 hover:bg-slate-50" @click="openRoomMapPrintPreview('supervisor')">In mẫu Sup</button>
+              </div>
             </div>
             <!-- Xuất ảnh sơ đồ phòng đang hiển thị -->
             <button type="button" @click="exportRoomMapImage" :disabled="!isGridMode || exportingImage"
@@ -5457,17 +5572,6 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
     </Teleport>    <!-- Room Move Modal -->
     <RoomMoveModal v-if="showRoomMoveModal" :show="showRoomMoveModal" :booking-id="roomMoveBookingId"
       :room-id="roomMoveBookingRoomId" @close="showRoomMoveModal = false" @success="handleRoomMoveSuccess" />
-
-    <Teleport to="body">
-      <Transition name="modal-fade">
-        <div v-if="showPrintTasksModal" class="fixed inset-0 z-[1000000] flex items-center justify-center bg-slate-900/50 p-3 backdrop-blur-sm">
-          <div class="relative h-[94vh] w-[97vw] overflow-hidden rounded-xl bg-white shadow-2xl">
-            <button type="button" class="absolute right-3 top-3 z-50 flex h-8 w-8 items-center justify-center rounded-lg bg-slate-700/80 text-xl text-white hover:bg-slate-900" title="Đóng" @click="showPrintTasksModal = false">×</button>
-            <PrintTasksTab :initial-room-ids="printTaskRoomIds" :initial-date="rawDate" />
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
 
   </div>
 </template>
