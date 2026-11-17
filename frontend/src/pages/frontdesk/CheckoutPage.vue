@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   Plus,
@@ -28,6 +28,7 @@ import { fetchBookings, transferBookingRoomServicesFolio, splitBookingRoomServic
 import http from '@/services/http'
 import { isCheckedOutRecord } from '@/utils/checkout-status'
 import { billBelongsToCurrentRoom, isMasterBillRecord, isMasterOwnedBill, serviceBillCurrentGuestId } from '@/utils/service-bill-ownership'
+import { deletedServiceBills, filterServiceItems, normalizeServiceDate } from '@/utils/service-filter'
 import { clearCheckoutSelection, loadCheckoutSelection, saveCheckoutSelection } from '@/utils/checkout-selection-storage'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import AdjustRoomRateModal from './components/AdjustRoomRateModal.vue'
@@ -270,8 +271,6 @@ const roomNumber = ref('')
 const noteText = ref('')
 const activeFolioTab = ref('A')
 
-// Dropdown In hóa đơn state
-const showInvoiceMenu = ref(false)
 const showCheckoutModal = ref(false)
 const checkoutGuestIds = ref([])
 const checkoutError = ref('')
@@ -312,6 +311,8 @@ import FilterServiceModal from './components/FilterServiceModal.vue'
 import TransferServiceModal from './components/TransferServiceModal.vue'
 import TransferPaymentModal from './components/TransferPaymentModal.vue'
 import SplitServiceModal from './components/SplitServiceModal.vue'
+import PrintPreviewModal from './components/PrintPreviewModal.vue'
+import CheckoutInvoicePaper from './components/CheckoutInvoicePaper.vue'
 import CancelServiceModal from './components/CancelServiceModal.vue'
 import SplitDepositModal from './components/SplitDepositModal.vue'
 import DeletePaymentModal from './components/DeletePaymentModal.vue'
@@ -1479,6 +1480,7 @@ const servicesList = computed(() => {
       serviceCode: codeVal,
       serviceBillId: s.service_bill_id || linkedBill?.Ma || null,
       serviceName: stripTrailingQuantitySuffix(s.service_name || s.name || (s.hotel_service && s.hotel_service.name) || 'Dịch vụ buồng phòng'),
+      serviceTypeName: s.hotel_service?.name || s.hotelService?.name || linkedBill?.hotel_service?.name || linkedBill?.hotelService?.name || '',
       description: descVal,
       note: serviceNote,
       department: s.department || '',
@@ -1521,6 +1523,7 @@ const servicesList = computed(() => {
       dateTime: formatServiceDateTime(sb.Date || sb.CreatedDate, sb.CreatedDate, sb.OpenTime || sb.CreatedHour),
       serviceCode: codeVal,
       serviceName: descVal,
+      serviceTypeName: sb.hotel_service?.name || sb.hotelService?.name || '',
       description: descVal,
       department: sb.DepartmentId || '',
       amount: rateVal,
@@ -1660,15 +1663,81 @@ const getServiceGroup = (service) => {
   return { key: prefix || serviceCode || 'DV', code: prefix || serviceCode || 'DV', name: service.serviceName || 'Dịch vụ khác' }
 }
 
-const serviceFilterOptions = computed(() => [...new Set(servicesList.value.map(service => service.serviceCode).filter(Boolean))].sort())
-const serviceDepartmentOptions = computed(() => [...new Set(servicesList.value.map(service => service.department).filter(Boolean))].sort())
-const serviceFolioOptions = computed(() => [...new Set(servicesList.value.map(service => Number(service.folio)).filter(Number.isFinite))].sort((a, b) => a - b))
+// Bill đã xóa (Edit=1, Status=3) của phòng/Master đang chọn, chỉ dùng cho bộ lọc "Đã xoá" (chỉ xem).
+const deletedServicesList = computed(() => {
+  const rawB = selectedBooking.value?.rawBooking
+  if (!rawB) return []
+  const room = selectedRoomItem.value
+  const roomBills = (rawB.booking_rooms || []).flatMap(r => [
+    ...(r.service_bills || r.serviceBills || []),
+    ...(r.current_service_bills || r.currentServiceBills || []),
+  ])
+  const allBills = mergeServiceBills(rawB.master_service_bills || [], rawB.service_bills || [], roomBills)
+  const guestId = room ? selectedGuestId.value : null
+  const isPrimaryGuest = room && String(guestId) === String(room.primaryGuestId)
 
-const normalizeServiceDate = value => {
-  if (!value) return ''
-  const match = String(value).match(/^\d{4}-\d{2}-\d{2}/)
-  return match ? match[0] : String(value).slice(0, 10)
-}
+  return deletedServiceBills(allBills).filter(sb => {
+    if (room) {
+      if (!billBelongsToCurrentRoom(sb, room)) return false
+      if (!guestId) return true
+      const billGuestId = serviceBillCurrentGuestId(sb)
+      return billGuestId ? String(billGuestId) === String(guestId) : isPrimaryGuest
+    }
+    return isMasterBillRecord({ ...sb, Edit: 0 }, rawB)
+  }).map(sb => {
+    const quantity = Number(sb.Quantity) || 1
+    const total = Number(sb.Amount) || 0
+    const description = stripTrailingQuantitySuffix(sb.DescriptionServive || sb.ServiceId || 'Dịch vụ FO')
+    return {
+      id: `deleted-${sb.Ma}`,
+      bookingRoomServiceId: null,
+      serviceBillId: sb.Ma || null,
+      serviceDate: sb.Date || sb.CreatedDate || null,
+      serviceTime: sb.OpenTime || sb.CreatedHour || null,
+      createdAt: sb.CreatedDate || sb.created_at || null,
+      dateTime: formatServiceDateTime(sb.Date || sb.CreatedDate, sb.CreatedDate, sb.OpenTime || sb.CreatedHour),
+      serviceCode: sb.ServiceId || 'DV',
+      serviceName: description,
+      serviceTypeName: sb.hotel_service?.name || sb.hotelService?.name || '',
+      description,
+      department: sb.DepartmentId || '',
+      amount: quantity > 0 ? total / quantity : total,
+      quantity,
+      totalAmount: total,
+      unit: 'Lần',
+      status: 3,
+      isPaid: false,
+      isDeleted: true,
+      paymentCode: '',
+      folio: Number(sb.Folio || 1),
+      tax: Number(sb.Tax) || 0,
+      serviceCharge: Number(sb.ServiceCharge) || 0,
+      invoiceCode: '',
+      vatNo: '',
+      accounting: 'Đã ghi',
+      userName: sb.Username || sb.CreatedUser || '',
+      guestId: serviceBillCurrentGuestId(sb),
+    }
+  })
+})
+
+const serviceFilterOptions = computed(() => {
+  const options = new Map()
+  ;[...servicesList.value, ...deletedServicesList.value].forEach(service => {
+    const code = String(service.serviceCode || '').trim()
+    if (!code) return
+    const key = code.toUpperCase()
+    const name = service.serviceTypeName || getServiceGroup(service).name || service.serviceName || code
+    if (!options.has(key) || (!options.get(key).hasTypeName && service.serviceTypeName)) {
+      options.set(key, { code, name, hasTypeName: Boolean(service.serviceTypeName) })
+    }
+  })
+  return [...options.values()]
+    .map(({ code, name }) => ({ code, name }))
+    .sort((a, b) => a.code.localeCompare(b.code))
+})
+const serviceDepartmentOptions = computed(() => [...new Set([...servicesList.value, ...deletedServicesList.value].map(service => service.department).filter(Boolean))].sort())
+const serviceFolioOptions = computed(() => [...new Set(servicesList.value.map(service => Number(service.folio)).filter(Number.isFinite))].sort((a, b) => a - b))
 
 const compareServiceDateTime = (left, right) => {
   const leftDate = normalizeServiceDate(left.serviceDate || left.createdAt) || '9999-12-31'
@@ -1688,6 +1757,24 @@ const compareServiceDateTime = (left, right) => {
   )
 }
 
+const serviceDisplayFilterLabels = {
+  unpaid: 'Dịch vụ chưa thanh toán',
+  vat: 'In VAT',
+  unprinted_vat: 'Hoá đơn chưa in VAT',
+  paid: 'Đã thanh toán',
+  deleted: 'Đã xoá',
+}
+const serviceFilterLabel = computed(() => {
+  const filter = serviceFilter.value
+  if (!filter) return ''
+  const formatDate = value => (value ? value.split('-').reverse().join('/') : '')
+  const parts = [serviceDisplayFilterLabels[filter.displayFilter] || '']
+  if (filter.startDate || filter.endDate) parts.push(`${formatDate(filter.startDate) || '...'} - ${formatDate(filter.endDate) || '...'}`)
+  if (filter.services?.length) parts.push(filter.services.map(rule => (rule.folio ? `${rule.code} (Folio ${rule.folio})` : rule.code)).join(', '))
+  if (filter.departments?.length) parts.push(filter.departments.join(', '))
+  return parts.filter(Boolean).join(' · ')
+})
+
 const applyServiceFilter = (filter) => {
   serviceFilter.value = filter
   selectedServiceIds.value = []
@@ -1700,24 +1787,8 @@ const resetServiceFilter = () => {
 
 const filteredServiceItems = computed(() => {
   const filter = serviceFilter.value
-  const services = filter ? servicesList.value.filter(service => {
-    const date = normalizeServiceDate(service.serviceDate || service.createdAt)
-    if (filter.startDate && (!date || date < filter.startDate)) return false
-    if (filter.endDate && (!date || date > filter.endDate)) return false
-    if (filter.serviceCode && String(service.serviceCode).toUpperCase() !== String(filter.serviceCode).toUpperCase()) return false
-    if (filter.department && String(service.department).toUpperCase() !== String(filter.department).toUpperCase()) return false
-    if (filter.folio && String(service.folio) !== String(filter.folio)) return false
-
-    const paid = Boolean(service.isPaid || service.paymentCode || Number(service.status) === 2)
-    const hasVat = Boolean(service.invoiceCode || service.vatNo)
-    if (filter.displayFilter === 'unpaid' && paid) return false
-    if (filter.displayFilter === 'paid' && !paid) return false
-    if (filter.displayFilter === 'vat' && !hasVat) return false
-    if (filter.displayFilter === 'unprinted_vat' && (!service.vatNo || service.invoiceCode)) return false
-    if (filter.displayFilter === 'deleted' && Number(service.status) !== 3) return false
-    return true
-  }) : servicesList.value
-
+  const source = filter?.displayFilter === 'deleted' ? deletedServicesList.value : servicesList.value
+  const services = filterServiceItems(source, filter)
   return [...services].sort(compareServiceDateTime)
 })
 
@@ -1742,7 +1813,7 @@ const folioPaidTotal = (folio) => {
 const folioTotal = (folio) => {
   if (String(folio) === 'A') return [1, 2, 3].reduce((total, currentFolio) => total + folioTotal(currentFolio), 0)
   const serviceTotal = filteredServiceItems.value
-    .filter(service => String(service.folio) === String(folio))
+    .filter(service => !service.isDeleted && String(service.folio) === String(folio))
     .reduce((total, service) => total + (Number(service.totalAmount) || 0), 0)
   const paidTotal = folioPaidTotal(folio)
   return serviceTotal - paidTotal
@@ -1865,7 +1936,7 @@ const toggleAllServiceSelection = (checked) => {
 
 const canTransferServiceGroup = (group) => {
   if (!group || !group.items || group.items.length === 0) return false
-  return group.items.every(item => !item.isPaid && Number(item.status) !== 2)
+  return group.items.every(item => !item.isPaid && !item.isDeleted && Number(item.status) !== 2)
 }
 
 const selectedServiceItems = computed(() => visibleServices.value.filter(service => (
@@ -1875,7 +1946,7 @@ const selectedServiceGroups = computed(() => serviceGroups.value.filter(group =>
 const canTransferSelectedServices = computed(() => (
   Boolean(selectedBooking.value)
   && selectedServiceItems.value.length > 0
-  && selectedServiceItems.value.every(service => !service.isPaid && Number(service.status) !== 2)
+  && selectedServiceItems.value.every(service => !service.isPaid && !service.isDeleted && Number(service.status) !== 2)
 ))
 const canSplitSelectedServices = computed(() => {
   if (!canTransferSelectedServices.value || selectedServiceItems.value.some(service => service.serviceCode === 'RM')) return false
@@ -1884,47 +1955,31 @@ const canSplitSelectedServices = computed(() => {
 })
 const selectedPaymentItems = computed(() => paymentsList.value.filter(payment => selectedPaymentIds.value.includes(Number(payment.id))))
 
-// In qua iframe ẩn để không bị chặn popup, kể cả khi tự in sau thanh toán (không còn thao tác bấm của user).
-const printHtmlDocument = (html) => {
-  const frame = document.createElement('iframe')
-  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0;pointer-events:none;'
-  document.body.appendChild(frame)
-  const frameWindow = frame.contentWindow
-  const frameDocument = frameWindow.document
-  // document.open() xóa mọi handler đã gán trên iframe (kể cả onload), nên ghi nội dung trước
-  // rồi tự chờ logo/ảnh tải xong (tối đa 2 giây) mới mở hộp thoại in.
-  frameDocument.open()
-  frameDocument.write(html)
-  frameDocument.close()
-
-  const pendingImages = Array.from(frameDocument.images || []).filter(image => !image.complete)
-  const imagesReady = Promise.all(pendingImages.map(image => new Promise(resolve => {
-    image.addEventListener('load', resolve, { once: true })
-    image.addEventListener('error', resolve, { once: true })
-  })))
-  const timeout = new Promise(resolve => setTimeout(resolve, 2000))
-
-  Promise.race([imagesReady, timeout]).then(() => {
-    frameWindow.focus()
-    frameWindow.print()
-    setTimeout(() => frame.remove(), 1000)
-  })
+// Dòng "In hóa đơn": mọi bản in mở màn xem trước (giống trang Báo cáo); bấm icon máy in mới in.
+const printPreview = ref({ show: false, kind: '', title: '', loading: false, html: '', invoice: null, showPrice: true })
+const closePrintPreview = () => {
+  printPreview.value = { show: false, kind: '', title: '', loading: false, html: '', invoice: null, showPrice: true }
 }
 
 const printReceiptForPayments = async (paymentIds, showPrice = true) => {
+  printPreview.value = { show: true, kind: 'receipt', title: 'Phiếu thu', loading: true, html: '', invoice: null, showPrice: true }
   try {
     const response = await http.post('/print-template-slots/payment-receipt', { payment_ids: paymentIds, show_price: showPrice })
-    printHtmlDocument(response.data.html)
+    if (printPreview.value.kind === 'receipt') printPreview.value.html = response.data.html
   } catch (error) {
+    closePrintPreview()
     const errors = error?.response?.data?.errors
     uiStore.showToast((errors && Object.values(errors).flat()[0]) || error?.response?.data?.message || 'Không thể in phiếu thu.', 'error')
+  } finally {
+    printPreview.value.loading = false
   }
 }
 
 // In Bill = phiếu thu (biên nhận thu tiền) theo mẫu gán cho vị trí PAYMENT_RECEIPT.
 // In các dòng thanh toán đang chọn; chưa chọn thì in toàn bộ thanh toán của folio đang xem.
 const printPaymentReceipt = async (showPrice = true) => {
-  showInvoiceMenu.value = false
+  // @click="printPaymentReceipt" truyền sự kiện chuột, chỉ coi là "ẩn giá" khi truyền đúng false
+  showPrice = showPrice !== false
   const payments = selectedPaymentItems.value.length ? selectedPaymentItems.value : visiblePaymentsList.value
   const paymentIds = payments.map(payment => Number(payment.id)).filter(Number.isInteger)
   if (paymentIds.length === 0) {
@@ -1932,6 +1987,47 @@ const printPaymentReceipt = async (showPrice = true) => {
     return
   }
   await printReceiptForPayments(paymentIds, showPrice)
+}
+
+const isMasterRowSelected = computed(() => Number(selectedBooking.value?.bookingId) > 0 && !selectedRoomItem.value)
+
+// Hóa đơn folio: đúng các bill/thanh toán đang hiển thị ở folio đang xem.
+// In tổng (chỉ ở dòng Master): toàn bộ bill và thanh toán của mọi phòng và Master trong đăng ký.
+const openCheckoutInvoice = async ({ showPrice = true, total = false } = {}) => {
+  if (!selectedBooking.value) {
+    uiStore.showToast('Vui lòng chọn đăng ký hoặc phòng cần in hóa đơn.', 'warning')
+    return
+  }
+  const bookingIdValue = Number(selectedBooking.value.bookingId)
+  const bookingId = Number.isInteger(bookingIdValue) && bookingIdValue > 0 ? bookingIdValue : null
+  if (total && !bookingId) {
+    uiStore.showToast('Không xác định được đăng ký để in tổng.', 'warning')
+    return
+  }
+  const roomId = selectedRoomItem.value?.roomId
+  const guestId = selectedGuestId.value
+  const payload = total
+    ? { scope: 'total', booking_id: bookingId }
+    : {
+        scope: 'selection',
+        booking_id: bookingId,
+        room_id: roomId ? String(roomId) : null,
+        guest_id: guestId ? String(guestId) : null,
+        folio: activeFolioTab.value,
+        service_bill_ids: [...new Set(serviceGroups.value.map(group => Number(group.serviceBillId)).filter(Number.isInteger))],
+        payment_ids: visiblePaymentsList.value.map(payment => Number(payment.id)).filter(Number.isInteger),
+      }
+
+  printPreview.value = { show: true, kind: 'invoice', title: total ? 'In tổng' : 'Hóa đơn thanh toán', loading: true, html: '', invoice: null, showPrice }
+  try {
+    const response = await http.post('/checkout/invoice-print', payload)
+    if (printPreview.value.kind === 'invoice') printPreview.value.invoice = response.data.data
+  } catch (error) {
+    closePrintPreview()
+    uiStore.showToast(error?.response?.data?.message || 'Không thể tải dữ liệu hóa đơn.', 'error')
+  } finally {
+    printPreview.value.loading = false
+  }
 }
 
 // DisablePrintBillAfterPayment: 1 = tự động in phiếu thu sau khi thanh toán thành công, 0 = không in.
@@ -2004,7 +2100,7 @@ const canCancelSelectedServices = computed(() => (
   Boolean(selectedBooking.value)
   && selectedServiceItems.value.length > 0
   && selectedServiceItems.value.every(service => service.serviceBillId)
-  && selectedServiceItems.value.every(service => !service.isPaid && Number(service.status) !== 2)
+  && selectedServiceItems.value.every(service => !service.isPaid && !service.isDeleted && Number(service.status) !== 2)
 ))
 const selectedServicesTotal = computed(() => selectedServiceItems.value.reduce((sum, service) => sum + (Number(service.totalAmount) || 0), 0))
 const firstPreviewValue = (...values) => values.find(value => value !== undefined && value !== null && value !== '')
@@ -2705,9 +2801,15 @@ const startDescriptionEdit = (type, item) => {
   if (denySaleInvoiceMutation()) return
   const id = type === 'payment' ? item?.id : item?.serviceBillId
   if (!id || String(id).startsWith('P-fallback')) return
-  editingDescription.value = { type, id: String(id) }
-  descriptionDraft.value = type === 'payment' ? String(item.description || '') : String(item.name || '')
+  if (type === 'service' && (item?.items || []).some(service => service.isDeleted)) return
+  if (isDescriptionEditing(type, id)) return
+  const original = type === 'payment' ? String(item.description || '') : String(item.name || '')
+  editingDescription.value = { type, id: String(id), original }
+  descriptionDraft.value = original
 }
+
+// Ô sửa mô tả tự nhận focus để bấm ra ngoài (blur) là lưu được.
+const vAutofocus = { mounted: el => el.focus() }
 
 const isDescriptionEditing = (type, id) => (
   editingDescription.value?.type === type
@@ -2719,13 +2821,23 @@ const cancelDescriptionEdit = () => {
   descriptionDraft.value = ''
 }
 
-const saveDescriptionEdit = async () => {
+// Dòng 230: Enter hoặc bấm ra ngoài (blur) đều lưu; mô tả không đổi thì chỉ đóng ô sửa.
+const saveDescriptionEdit = async ({ fromBlur = false } = {}) => {
   if (denySaleInvoiceMutation()) return
   if (!editingDescription.value || isDescriptionSaving.value) return
-  const { type, id } = editingDescription.value
+  const editing = editingDescription.value
+  const { type, id } = editing
   const description = descriptionDraft.value.trim()
   if (!description) {
+    if (fromBlur) {
+      cancelDescriptionEdit()
+      return
+    }
     uiStore.showToast('Mô tả không được để trống.', 'warning')
+    return
+  }
+  if (description === String(editing.original || '').trim()) {
+    cancelDescriptionEdit()
     return
   }
 
@@ -2736,7 +2848,8 @@ const saveDescriptionEdit = async () => {
     } else {
       await http.patch(`/service-bills/${id}/description`, { description })
     }
-    cancelDescriptionEdit()
+    // Người dùng có thể đã bấm sang ô mô tả khác trong lúc đang lưu: không đóng ô mới đó.
+    if (editingDescription.value === editing) cancelDescriptionEdit()
     await refreshCheckoutData()
     uiStore.showToast('Đã cập nhật mô tả.', 'success')
   } catch (error) {
@@ -2807,41 +2920,49 @@ const handleFolioDrop = async (folio) => {
     return
   }
 
+  const isMaster = !selectedRoomItem.value
   // Khi có dòng được tick, kéo thả chuyển tất cả dòng chưa thanh toán đã chọn.
-  const extractIds = (items) => {
-    const ids = []
+  // Bảng dịch vụ trộn 2 loại dòng: dòng booking_room_services (gửi service_ids)
+  // và bill thuần ServiceBill (id = Ma, gửi service_bill_ids). Master chỉ nhận mã bill.
+  const serviceIdSet = new Set()
+  const billIdSet = new Set()
+  const positiveInt = value => (Number.isInteger(Number(value)) && Number(value) > 0 ? Number(value) : null)
+  const collectIds = (items) => {
     items.forEach(item => {
       if (item.isPaid || Number(item.status) === 2) return
-      if (item.id && Number.isInteger(Number(item.id)) && Number(item.id) > 0) {
-        ids.push(Number(item.id))
+      const serviceId = positiveInt(item.bookingRoomServiceId)
+      const billId = positiveInt(item.serviceBillId)
+      if (isMaster) {
+        const masterBillId = billId ?? (serviceId ? null : positiveInt(item.id))
+        if (masterBillId) billIdSet.add(masterBillId)
+      } else if (serviceId) {
+        serviceIdSet.add(serviceId)
+      } else if (billId) {
+        billIdSet.add(billId)
       }
     })
-    return ids
   }
 
-  const selectedUnpaidIds = extractIds(selectedServiceItems.value)
-  const draggedGroupIds = extractIds(group.items)
-  const serviceIdsToTransfer = selectedUnpaidIds.length > 0
-    ? [...new Set([...selectedUnpaidIds, ...draggedGroupIds])]
-    : [...new Set(draggedGroupIds)]
+  collectIds(selectedServiceItems.value)
+  collectIds(group.items)
+  const transferCount = serviceIdSet.size + billIdSet.size
 
-  if (serviceIdsToTransfer.length === 0) {
+  if (transferCount === 0) {
     handleServiceDragEnd()
     return
   }
 
   isServiceOperationLoading.value = true
   try {
-    const isMaster = !selectedRoomItem.value
     const targetRoomId = selectedRoomItem.value?.roomId || `master-${selectedBooking.value?.bookingId}`
-    await transferBookingRoomServicesFolio(targetRoomId, {
-      [isMaster ? 'service_bill_ids' : 'service_ids']: serviceIdsToTransfer,
-      folio: targetFolio,
-    })
+    const payload = { folio: targetFolio }
+    if (serviceIdSet.size > 0) payload.service_ids = [...serviceIdSet]
+    if (billIdSet.size > 0) payload.service_bill_ids = [...billIdSet]
+    await transferBookingRoomServicesFolio(targetRoomId, payload)
     selectedServiceIds.value = []
     activeFolioTab.value = String(targetFolio)
     await handleServiceAdded(null, { showToast: false })
-    uiStore.showToast(`Đã chuyển ${serviceIdsToTransfer.length} dịch vụ sang Folio ${targetFolio}!`, 'success')
+    uiStore.showToast(`Đã chuyển ${transferCount} dịch vụ sang Folio ${targetFolio}!`, 'success')
   } catch (error) {
     console.error('Không thể chuyển Folio dịch vụ:', error)
     uiStore.showToast(error.response?.data?.message || 'Không thể chuyển Folio dịch vụ.', 'error')
@@ -3605,10 +3726,31 @@ onMounted(async () => {
   }
 })
 
-watch(() => [route.query.bookingCode, route.query.booking_code, route.query.booking_id, route.query.roomId, route.query.room_id, route.query.booking_room_id, route.query.register], async () => {
+// Dòng 502: bản Hóa đơn nằm trong sơ đồ phòng được KeepAlive giữ ẩn khi chuyển màn hình/module;
+// lúc ẩn không tải theo route của màn hình khác, khi hiện lại mới đồng bộ theo route hiện tại.
+let checkoutPageActive = true
+let checkoutRouteChangedWhileHidden = false
+const applyCheckoutRoute = async () => {
   syncCheckoutFilterFromRoute()
   await loadCheckoutBookings()
   await selectCheckoutBookingFromRoute()
+}
+onDeactivated(() => { checkoutPageActive = false })
+onActivated(() => {
+  if (checkoutPageActive) return
+  checkoutPageActive = true
+  if (checkoutRouteChangedWhileHidden) {
+    checkoutRouteChangedWhileHidden = false
+    applyCheckoutRoute()
+  }
+})
+
+watch(() => [route.query.bookingCode, route.query.booking_code, route.query.booking_id, route.query.roomId, route.query.room_id, route.query.booking_room_id, route.query.register], async () => {
+  if (!checkoutPageActive) {
+    checkoutRouteChangedWhileHidden = true
+    return
+  }
+  await applyCheckoutRoute()
 })
 
 watch(() => [authStore.activeBranch?.id, authStore.roles], () => {
@@ -3790,31 +3932,52 @@ onUnmounted(() => {
         <div class="pb-2 mb-1 border-b border-[#334155]">
           <div v-if="!isSidebarCollapsed" class="px-2 py-1 text-xs font-semibold uppercase tracking-wide text-white/80 whitespace-nowrap">In & Hóa Đơn VAT</div>
 
-          <!-- In hóa đơn với Dropdown Submenu -->
-          <div class="relative">
-            <button 
-              @click="showInvoiceMenu = !showInvoiceMenu"
-              class="w-full flex items-center justify-between px-2 py-[5px] rounded text-[#cbd5e1] hover:bg-[#334155] hover:text-white transition-colors text-xs"
-              :title="isSidebarCollapsed ? 'In hóa đơn' : ''"
-            >
-              <div class="flex items-center gap-1.5 truncate">
-                <Printer class="w-3.5 h-3.5 text-white shrink-0" />
-                <span v-if="!isSidebarCollapsed" class="truncate">In Hóa Đơn Folio</span>
-              </div>
-              <ChevronRight v-if="!isSidebarCollapsed" :class="['w-3 h-3 text-[#94a3b8] shrink-0 transition-transform', showInvoiceMenu ? 'rotate-90' : '']" />
-            </button>
-
-            <!-- Menu con xổ xuống ngay dưới nút: thanh chức năng nằm sát mép phải và có overflow-x-hidden
-                 nên menu mở sang bên cạnh sẽ bị cắt, bấm vào không thấy phản hồi. -->
-            <div
-              v-if="showInvoiceMenu"
-              class="mt-0.5 ml-5 flex flex-col border-l border-[#334155] pl-1 text-xs"
-            >
-              <button @click="printPaymentReceipt(true)" data-testid="receipt-show-price-btn" class="w-full text-left px-2 py-[5px] rounded text-[#cbd5e1] hover:bg-[#334155] hover:text-white transition-colors" title="In biên nhận thu tiền, hiện số tiền">Hiện giá</button>
-              <button @click="printPaymentReceipt(false)" data-testid="receipt-hide-price-btn" class="w-full text-left px-2 py-[5px] rounded text-[#cbd5e1] hover:bg-[#334155] hover:text-white transition-colors" title="In biên nhận thu tiền, ẩn số tiền">Không hiện giá</button>
-              <button @click="printPaymentReceipt(true)" class="w-full text-left px-2 py-[5px] rounded text-[#cbd5e1] font-semibold hover:bg-[#334155] hover:text-white transition-colors">In Bill</button>
-            </div>
-          </div>
+          <!-- In hóa đơn: các nút hiện sẵn (không giấu trong menu con).
+               In Hóa Đơn Folio = in có hiện giá; In tổng chỉ hiện khi đứng ở dòng Master. -->
+          <button
+            @click="openCheckoutInvoice({ showPrice: true })"
+            class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded text-[#cbd5e1] hover:bg-[#334155] hover:text-white transition-colors text-xs"
+            :title="isSidebarCollapsed ? 'In Hóa Đơn Folio' : ''"
+          >
+            <Printer class="w-3.5 h-3.5 text-white shrink-0" />
+            <span v-if="!isSidebarCollapsed" class="truncate">In Hóa Đơn Folio</span>
+          </button>
+          <button
+            @click="openCheckoutInvoice({ showPrice: false })"
+            class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded text-[#cbd5e1] hover:bg-[#334155] hover:text-white transition-colors text-xs"
+            :title="isSidebarCollapsed ? 'In Không Hiện Giá' : ''"
+          >
+            <Printer class="w-3.5 h-3.5 text-white shrink-0" />
+            <span v-if="!isSidebarCollapsed" class="truncate">In Không Hiện Giá</span>
+          </button>
+          <button
+            v-if="isMasterRowSelected"
+            @click="openCheckoutInvoice({ showPrice: true, total: true })"
+            class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded text-[#cbd5e1] hover:bg-[#334155] hover:text-white transition-colors text-xs"
+            :title="isSidebarCollapsed ? 'In Tổng' : ''"
+          >
+            <Printer class="w-3.5 h-3.5 text-white shrink-0" />
+            <span v-if="!isSidebarCollapsed" class="truncate">In Tổng</span>
+          </button>
+          <!-- Biên nhận thu tiền (dòng 350): In Bill hiện số tiền; In Bill Không Hiện Giá ẩn số tiền -->
+          <button
+            @click="printPaymentReceipt"
+            data-testid="receipt-show-price-btn"
+            class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded text-[#cbd5e1] hover:bg-[#334155] hover:text-white transition-colors text-xs"
+            :title="isSidebarCollapsed ? 'In Bill' : 'In biên nhận thu tiền, hiện số tiền'"
+          >
+            <Printer class="w-3.5 h-3.5 text-white shrink-0" />
+            <span v-if="!isSidebarCollapsed" class="truncate">In Bill</span>
+          </button>
+          <button
+            @click="printPaymentReceipt(false)"
+            data-testid="receipt-hide-price-btn"
+            class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded text-[#cbd5e1] hover:bg-[#334155] hover:text-white transition-colors text-xs"
+            :title="isSidebarCollapsed ? 'In Bill Không Hiện Giá' : 'In biên nhận thu tiền, ẩn số tiền'"
+          >
+            <Printer class="w-3.5 h-3.5 text-white shrink-0" />
+            <span v-if="!isSidebarCollapsed" class="truncate">In Bill Không Hiện Giá</span>
+          </button>
 
           <!-- In VAT -->
           <button 
@@ -4181,6 +4344,14 @@ onUnmounted(() => {
           <div class="checkout-service-title flex items-center gap-2 border-b border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700">
             <i class="fa-solid fa-list-check text-slate-900 text-[12px]"></i>
             <span class="text-slate-900">Dịch Vụ</span>
+            <span
+              v-if="serviceFilter"
+              class="ml-2 inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800"
+            >
+              <Filter class="h-3 w-3" />
+              <span>Đang lọc: {{ serviceFilterLabel }}</span>
+              <button type="button" class="ml-1 text-amber-700 underline hover:text-amber-900" @click="resetServiceFilter">Bỏ lọc</button>
+            </span>
           </div>
           <!-- Table Container -->
           <div class="flex-1 overflow-auto relative">
@@ -4240,10 +4411,13 @@ onUnmounted(() => {
                   <td class="px-2.5 py-1.5 border-slate-200" @click.stop="startDescriptionEdit('service', group)">
                     <input
                       v-if="isDescriptionEditing('service', group.serviceBillId)"
+                      v-autofocus
                       v-model="descriptionDraft"
+                      maxlength="950"
                       class="w-full min-w-[120px] rounded border border-sky-400 px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-sky-500"
                       :disabled="isDescriptionSaving"
-                      @keydown.enter.prevent="saveDescriptionEdit"
+                      @keydown.enter.prevent="saveDescriptionEdit()"
+                      @blur="saveDescriptionEdit({ fromBlur: true })"
                       @keydown.esc.prevent="cancelDescriptionEdit"
                       @click.stop
                     />
@@ -4267,7 +4441,8 @@ onUnmounted(() => {
             <!-- Empty Data Placeholder -->
             <div v-if="serviceGroups.length === 0" class="absolute inset-0 flex flex-col items-center justify-center text-gray-400 pt-6">
               <Inbox class="w-9 h-9 stroke-1 mb-1 text-gray-300" />
-              <span class="text-xs text-gray-400">No data</span>
+              <span v-if="serviceFilter && servicesList.length > 0" class="text-xs text-gray-500">Không có dịch vụ phù hợp bộ lọc</span>
+              <span v-else class="text-xs text-gray-400">No data</span>
             </div>
           </div>
 
@@ -4339,10 +4514,13 @@ onUnmounted(() => {
                   <td class="px-2.5 py-1.5 border-slate-200" :class="p.paymentCode ? 'text-red-600 font-medium' : 'text-gray-800'" @click.stop="startDescriptionEdit('payment', p)">
                     <input
                       v-if="isDescriptionEditing('payment', p.id)"
+                      v-autofocus
                       v-model="descriptionDraft"
+                      maxlength="255"
                       class="w-full min-w-[120px] rounded border border-sky-400 px-1.5 py-0.5 text-xs text-gray-800 focus:outline-none focus:ring-1 focus:ring-sky-500"
                       :disabled="isDescriptionSaving"
-                      @keydown.enter.prevent="saveDescriptionEdit"
+                      @keydown.enter.prevent="saveDescriptionEdit()"
+                      @blur="saveDescriptionEdit({ fromBlur: true })"
                       @keydown.esc.prevent="cancelDescriptionEdit"
                       @click.stop
                     />
@@ -4653,6 +4831,18 @@ onUnmounted(() => {
       @close="showTransferPaymentModal = false; transferPaymentError = ''"
       @transfer="transferSelectedPayment"
     />
+
+    <PrintPreviewModal
+      :show="printPreview.show"
+      :title="printPreview.title"
+      :loading="printPreview.loading"
+      :html="printPreview.kind === 'receipt' ? printPreview.html : ''"
+      :show-price-toggle="printPreview.kind === 'invoice'"
+      v-model:show-price="printPreview.showPrice"
+      @close="closePrintPreview"
+    >
+      <CheckoutInvoicePaper v-if="printPreview.invoice" :data="printPreview.invoice" :show-price="printPreview.showPrice" />
+    </PrintPreviewModal>
 
     <SplitServiceModal
       :show="showSplitServiceModal"

@@ -266,11 +266,9 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
         ->only(['store', 'update', 'destroy'])
         ->middleware('permission:system.user.manage');
     Route::apiResource('units-of-measure', \App\Http\Controllers\Api\UnitOfMeasureController::class)->middleware($canWrite('config.system.*', 'config.housekeeping.*'));
-    Route::apiResource('room-rate-codes', RoomRateCodeController::class)->middleware($canWrite('config.rates.*'));
+    // room-rate-codes (apiResource, plans, daily-mappings) đã khai báo ở đầu nhóm; khai báo lại sẽ trùng tên route và làm hỏng route:cache.
     Route::apiResource('registration-statuses', \App\Http\Controllers\Api\RegistrationStatusController::class)->middleware($canWrite('config.system.*'));
-    Route::post('room-rate-codes/{ma}/plans', [RoomRateCodeController::class, 'saveRatePlan'])->middleware($canWrite('config.rates.*'));
     Route::delete('room-rate-codes/{ma}/plans/{code}', [RoomRateCodeController::class, 'deleteRatePlan'])->middleware($canWrite('config.rates.*'));
-    Route::post('room-rate-codes/{ma}/daily-mappings', [RoomRateCodeController::class, 'saveDailyMappings'])->middleware($canWrite('config.rates.*'));
 
     // System Administration routes
     // Dòng 406: sao lưu / khôi phục database chỉ admin, xuất & nhập phải gửi kèm mật khẩu xác nhận
@@ -472,6 +470,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     Route::delete('bookings/{booking}', [\App\Http\Controllers\Api\BookingController::class, 'destroy'])->middleware('permission:fo.booking.cancel');
     Route::patch('bookings/{bookingId}/no-post', [\App\Http\Controllers\Api\BookingNoPostController::class, 'updateBooking'])->middleware(['permission:fo.booking.edit', \App\Http\Middleware\RequireFrontDeskInvoiceMutation::class]);
     Route::get('bookings/{id}/print-data', [\App\Http\Controllers\Api\BookingPrintController::class, 'getPrintData']);
+    // Trả phòng: In hóa đơn folio (hiện/không hiện giá) và In tổng (Master).
+    Route::post('checkout/invoice-print', [\App\Http\Controllers\Api\BookingPrintController::class, 'checkoutInvoice']);
 
     // #19 — Nhân bản booking
     Route::post('bookings/{id}/copy', [\App\Http\Controllers\Api\BookingController::class, 'copy'])->middleware('permission:fo.booking.create');

@@ -1,26 +1,67 @@
 <script setup>
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { X, Calendar, RotateCcw, Filter } from '@lucide/vue'
+import { fetchDepartments } from '@/services/outlet-service'
 
 const props = defineProps({
   show: Boolean,
+  // [{ code, name }] các dịch vụ đang có trên Hóa đơn.
   serviceOptions: { type: Array, default: () => [] },
+  // Mã bộ phận đang có trên Hóa đơn.
   departmentOptions: { type: Array, default: () => [] },
   folioOptions: { type: Array, default: () => [] }
 })
 
-const emit = defineEmits(['close', 'filter'])
+const emit = defineEmits(['close', 'filter', 'reset'])
 
 const startDate = ref('')
 const endDate = ref('')
 const displayFilter = ref('unpaid') // 'unpaid' | 'vat' | 'unprinted_vat' | 'paid' | 'deleted'
 
-const serviceCodeChecked = ref(false)
-const serviceCode = ref('')
-const serviceFolio = ref('')
+const checkedServices = ref([]) // mã dịch vụ được tick
+const serviceFolios = ref({}) // mã dịch vụ -> folio ('' = tất cả)
+const checkedDepartments = ref([])
 
-const deptChecked = ref(false)
-const department = ref('')
+const departmentNames = ref({})
+let departmentsLoaded = false
+const loadDepartmentNames = async () => {
+  if (departmentsLoaded) return
+  try {
+    const response = await fetchDepartments()
+    const rows = response.data?.data || response.data || []
+    departmentNames.value = Object.fromEntries((Array.isArray(rows) ? rows : [])
+      .filter(row => row?.code)
+      .map(row => [String(row.code).toUpperCase(), row.name || row.code]))
+    departmentsLoaded = true
+  } catch {
+    departmentNames.value = {}
+  }
+}
+
+const serviceRows = computed(() => props.serviceOptions.map(option => (
+  typeof option === 'string' ? { code: option, name: option } : option
+)))
+const departmentRows = computed(() => props.departmentOptions.map(code => ({
+  code,
+  name: departmentNames.value[String(code).toUpperCase()] || code,
+})))
+
+const allServicesChecked = computed(() => serviceRows.value.length > 0
+  && serviceRows.value.every(row => checkedServices.value.includes(row.code)))
+const allDepartmentsChecked = computed(() => departmentRows.value.length > 0
+  && departmentRows.value.every(row => checkedDepartments.value.includes(row.code)))
+
+const toggleAllServices = checked => {
+  checkedServices.value = checked ? serviceRows.value.map(row => row.code) : []
+}
+const toggleAllDepartments = checked => {
+  checkedDepartments.value = checked ? departmentRows.value.map(row => row.code) : []
+}
+// Chọn folio cho một dịch vụ thì tự tick dịch vụ đó.
+const setServiceFolio = (code, folio) => {
+  serviceFolios.value = { ...serviceFolios.value, [code]: folio }
+  if (folio && !checkedServices.value.includes(code)) checkedServices.value = [...checkedServices.value, code]
+}
 
 const modalRef = ref(null)
 const modalPosition = ref({ x: 0, y: 0 })
@@ -85,6 +126,7 @@ function handleKeyDown(event) {
 watch(() => props.show, visible => {
   if (visible) {
     modalPosition.value = { x: 0, y: 0 }
+    loadDepartmentNames()
     window.removeEventListener('keydown', handleKeyDown)
     window.addEventListener('keydown', handleKeyDown)
   } else {
@@ -102,22 +144,23 @@ const reset = () => {
   startDate.value = ''
   endDate.value = ''
   displayFilter.value = 'unpaid'
-  serviceCodeChecked.value = false
-  serviceCode.value = ''
-  serviceFolio.value = ''
-  deptChecked.value = false
-  department.value = ''
+  checkedServices.value = []
+  serviceFolios.value = {}
+  checkedDepartments.value = []
   emit('reset')
 }
 
 const applyFilter = () => {
+  const availableServices = new Set(serviceRows.value.map(row => row.code))
+  const availableDepartments = new Set(departmentRows.value.map(row => row.code))
   emit('filter', {
     startDate: startDate.value,
     endDate: endDate.value,
     displayFilter: displayFilter.value,
-    serviceCode: serviceCodeChecked.value ? serviceCode.value : '',
-    folio: serviceFolio.value,
-    department: deptChecked.value ? department.value : ''
+    services: checkedServices.value
+      .filter(code => availableServices.has(code))
+      .map(code => ({ code, folio: serviceFolios.value[code] || '' })),
+    departments: checkedDepartments.value.filter(code => availableDepartments.has(code)),
   })
   emit('close')
 }
@@ -202,39 +245,48 @@ const applyFilter = () => {
         <div class="space-y-1.5">
           <label class="block font-bold text-gray-700">Lọc theo dịch vụ</label>
           <div class="border border-gray-300 rounded overflow-hidden">
-            <table class="w-full text-left text-xs border-collapse">
-              <thead class="bg-[#f0f2ea] border-b border-gray-300 text-gray-700 font-semibold">
-                <tr>
-                  <th class="p-1.5 w-8 text-center border-r border-gray-300">
-                    <input type="checkbox" class="rounded border-gray-300" />
-                  </th>
-                  <th class="p-1.5 border-r border-gray-300 w-24">Code</th>
-                  <th class="p-1.5 border-r border-gray-300">Dịch vụ</th>
-                  <th class="p-1.5 w-32">Folio</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr class="border-b border-gray-200">
-                  <td class="p-1.5 text-center border-r border-gray-300">
-                    <input type="checkbox" v-model="serviceCodeChecked" class="rounded border-gray-300" />
-                  </td>
-                  <td class="p-1.5 font-semibold border-r border-gray-300">
-                    <select v-model="serviceCode" class="w-full bg-transparent focus:outline-none" :disabled="!serviceCodeChecked">
-                      <option value="">Tất cả</option>
-                      <option v-for="code in serviceOptions" :key="code" :value="code">{{ code }}</option>
-                    </select>
-                  </td>
-                  <td class="p-1.5 border-r border-gray-300">Minibar/Phí Minibar</td>
-                  <td class="p-1">
-                    <select v-model="serviceFolio" class="w-full p-1 bg-white border border-gray-300 rounded text-gray-500 focus:outline-none">
-                      <option value="">Tất cả Folio</option>
-                      <option v-for="folio in folioOptions" :key="folio" :value="String(folio)">Folio {{ folio }}</option>
-                    </select>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-            <div class="h-16 bg-white"></div>
+            <div class="max-h-40 overflow-y-auto">
+              <table class="w-full text-left text-xs border-collapse">
+                <thead class="bg-[#f0f2ea] border-b border-gray-300 text-gray-700 font-semibold sticky top-0">
+                  <tr>
+                    <th class="p-1.5 w-8 text-center border-r border-gray-300">
+                      <input
+                        type="checkbox"
+                        class="rounded border-gray-300"
+                        :checked="allServicesChecked"
+                        :disabled="serviceRows.length === 0"
+                        @change="toggleAllServices($event.target.checked)"
+                      />
+                    </th>
+                    <th class="p-1.5 border-r border-gray-300 w-24">Code</th>
+                    <th class="p-1.5 border-r border-gray-300">Dịch vụ</th>
+                    <th class="p-1.5 w-32">Folio</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in serviceRows" :key="row.code" class="border-b border-gray-200">
+                    <td class="p-1.5 text-center border-r border-gray-300">
+                      <input type="checkbox" v-model="checkedServices" :value="row.code" class="rounded border-gray-300" />
+                    </td>
+                    <td class="p-1.5 font-semibold border-r border-gray-300" data-no-translate>{{ row.code }}</td>
+                    <td class="p-1.5 border-r border-gray-300" data-no-translate>{{ row.name }}</td>
+                    <td class="p-1">
+                      <select
+                        :value="serviceFolios[row.code] || ''"
+                        @change="setServiceFolio(row.code, $event.target.value)"
+                        class="w-full p-1 bg-white border border-gray-300 rounded text-gray-500 focus:outline-none"
+                      >
+                        <option value="">Tất cả Folio</option>
+                        <option v-for="folio in folioOptions" :key="folio" :value="String(folio)">Folio {{ folio }}</option>
+                      </select>
+                    </td>
+                  </tr>
+                  <tr v-if="serviceRows.length === 0">
+                    <td colspan="4" class="p-3 text-center text-gray-400">Không có dịch vụ</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 
@@ -244,32 +296,37 @@ const applyFilter = () => {
         <div class="space-y-1.5">
           <label class="block font-bold text-gray-700">Lọc theo bộ phận</label>
           <div class="border border-gray-300 rounded overflow-hidden">
-            <table class="w-full text-left text-xs border-collapse">
-              <thead class="bg-[#f0f2ea] border-b border-gray-300 text-gray-700 font-semibold">
-                <tr>
-                  <th class="p-1.5 w-8 text-center border-r border-gray-300">
-                    <input type="checkbox" class="rounded border-gray-300" />
-                  </th>
-                  <th class="p-1.5 border-r border-gray-300 w-32">Bộ phận</th>
-                  <th class="p-1.5">Bộ phận</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr class="border-b border-gray-200">
-                  <td class="p-1.5 text-center border-r border-gray-300">
-                    <input type="checkbox" v-model="deptChecked" class="rounded border-gray-300" />
-                  </td>
-                  <td class="p-1.5 font-semibold border-r border-gray-300">
-                    <select v-model="department" class="w-full bg-transparent focus:outline-none" :disabled="!deptChecked">
-                      <option value="">Tất cả</option>
-                      <option v-for="dept in departmentOptions" :key="dept" :value="dept">{{ dept }}</option>
-                    </select>
-                  </td>
-                  <td class="p-1.5">Reception/ Lễ Tân</td>
-                </tr>
-              </tbody>
-            </table>
-            <div class="h-16 bg-white"></div>
+            <div class="max-h-40 overflow-y-auto">
+              <table class="w-full text-left text-xs border-collapse">
+                <thead class="bg-[#f0f2ea] border-b border-gray-300 text-gray-700 font-semibold sticky top-0">
+                  <tr>
+                    <th class="p-1.5 w-8 text-center border-r border-gray-300">
+                      <input
+                        type="checkbox"
+                        class="rounded border-gray-300"
+                        :checked="allDepartmentsChecked"
+                        :disabled="departmentRows.length === 0"
+                        @change="toggleAllDepartments($event.target.checked)"
+                      />
+                    </th>
+                    <th class="p-1.5 border-r border-gray-300 w-32">Mã bộ phận</th>
+                    <th class="p-1.5">Bộ phận</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in departmentRows" :key="row.code" class="border-b border-gray-200">
+                    <td class="p-1.5 text-center border-r border-gray-300">
+                      <input type="checkbox" v-model="checkedDepartments" :value="row.code" class="rounded border-gray-300" />
+                    </td>
+                    <td class="p-1.5 font-semibold border-r border-gray-300" data-no-translate>{{ row.code }}</td>
+                    <td class="p-1.5" data-no-translate>{{ row.name }}</td>
+                  </tr>
+                  <tr v-if="departmentRows.length === 0">
+                    <td colspan="3" class="p-3 text-center text-gray-400">Không có bộ phận</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 

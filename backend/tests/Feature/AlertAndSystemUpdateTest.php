@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Booking;
+use App\Models\BookingChild;
 use App\Models\BookingRoom;
 use App\Models\BookingRoomGuest;
 use App\Models\BookingRoomSpecialRequest;
@@ -60,6 +61,18 @@ class AlertAndSystemUpdateTest extends TestCase
         return $guest;
     }
 
+    private function addChild(string $name, ?string $dob, string $ageGroup = 'child', int $status = BookingRoomGuest::STATUS_ACTIVE): BookingChild
+    {
+        return BookingChild::create([
+            'booking_id' => $this->room->booking_id,
+            'booking_room_id' => $this->room->id,
+            'full_name' => $name,
+            'dob' => $dob,
+            'age_group' => $ageGroup,
+            'child_status' => $status,
+        ]);
+    }
+
     public function test_alert_list_returns_birthdays_in_range_and_special_requests(): void
     {
         $this->addGuest('TAIKESHEVA YELENA', '1981-08-18');
@@ -87,6 +100,25 @@ class AlertAndSystemUpdateTest extends TestCase
         // Ngày sinh nằm trong khoảng xem nhưng sau ngày đi của phòng (20/8) thì không báo
         Guest::query()->update(['dob' => '1990-08-25']);
         $this->assertCount(0, $this->getJson('/api/alerts?from_date=2026-08-21&to_date=2026-08-28')->assertOk()->json('data'));
+    }
+
+    public function test_alert_list_returns_child_and_baby_birthdays_but_excludes_inactive_children(): void
+    {
+        $child = $this->addChild('Bé An', '2018-08-18');
+        $baby = $this->addChild('Bé Bình', '2025-08-19', 'baby', BookingRoomGuest::STATUS_CHECKED_IN);
+        $this->addChild('Bé Đã Hủy', '2020-08-18', 'child', BookingRoomGuest::STATUS_CANCELLED);
+        $this->addChild('Bé Không Có Ngày Sinh', null);
+
+        $rows = collect($this->getJson('/api/alerts?from_date=2026-08-18&to_date=2026-08-21')->assertOk()->json('data'));
+
+        $childBirthday = $rows->firstWhere('eventKey', "BD:{$this->room->id}:child-{$child->id}:2026");
+        $this->assertSame('Bé An', $childBirthday['guestName']);
+        $this->assertSame('18/08/2018', $childBirthday['birthday']);
+
+        $babyBirthday = $rows->firstWhere('eventKey', "BD:{$this->room->id}:child-{$baby->id}:2026");
+        $this->assertSame('Bé Bình', $babyBirthday['guestName']);
+        $this->assertSame('19/08/2025', $babyBirthday['birthday']);
+        $this->assertCount(2, $rows->where('eventType', 'birthday'));
     }
 
     public function test_alert_status_can_be_updated_and_is_returned(): void

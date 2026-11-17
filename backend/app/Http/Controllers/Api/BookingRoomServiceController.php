@@ -156,8 +156,9 @@ class BookingRoomServiceController extends Controller
 
             $bill->DescriptionServive = $description;
             $bill->UpdatedDate = now();
-            $bill->UpdatedHour = now()->format('H:i:s');
-            $bill->UpdatedUser = Auth::user()?->username ?? 'system';
+            // Dòng 230: UpdatedHour varchar(5), UpdatedUser varchar(10) — ghi dài hơn thì MySQL strict báo lỗi 500.
+            $bill->UpdatedHour = now()->format('H:i');
+            $bill->UpdatedUser = mb_substr(Auth::user()?->username ?? 'system', 0, 10);
             $bill->save();
 
             BookingRoomService::where('service_bill_id', $bill->Ma)
@@ -1203,29 +1204,54 @@ class BookingRoomServiceController extends Controller
                 return response()->json(['success' => true, 'message' => 'Đã chuyển dịch vụ Master sang Folio mới.']);
             }
             $validated = $request->validate([
-                'service_ids'   => 'required|array|min:1',
+                'service_ids'   => 'required_without:service_bill_ids|array|min:1',
                 'service_ids.*' => 'integer',
+                // Bill thuần trên Hóa đơn (không có dòng booking_room_services, vd bill chuyển từ phòng khác sang).
+                'service_bill_ids'   => 'required_without:service_ids|array|min:1',
+                'service_bill_ids.*' => 'integer',
                 'folio'         => 'required|integer|between:1,3',
             ]);
+            $validated['service_ids'] = $validated['service_ids'] ?? [];
             $room = BookingRoom::find($roomId) ?? BookingRoom::where('booking_id', $roomId)->first();
             if (!$room) {
                 abort(404, 'Không tìm thấy phòng.');
             }
 
             DB::transaction(function () use ($validated, $room) {
-                $serviceIds = array_map('intval', $validated['service_ids']);
+                $serviceIds = array_values(array_unique(array_map('intval', $validated['service_ids'])));
+                $directBillIds = array_values(array_unique(array_map('intval', $validated['service_bill_ids'] ?? [])));
 
                 // Chỉ cho phép cập nhật dòng dịch vụ thuộc phòng đang thao tác.
-                $services = BookingRoomService::where('booking_room_id', $room->id)
+                $services = $serviceIds === [] ? collect() : BookingRoomService::where('booking_room_id', $room->id)
                     ->whereIn('id', $serviceIds)
                     ->lockForUpdate()
                     ->get();
 
-                if ($services->count() !== count(array_unique($serviceIds))) {
+                if ($services->count() !== count($serviceIds)) {
                     abort(422, 'Có dịch vụ không thuộc phòng đang chọn.');
                 }
 
-                $billIdsFromServices = $services->pluck('service_bill_id')->filter()->unique()->values();
+                // Bill thuần: phải đang thuộc phòng này (RentalRoomId2, hoặc bill gốc chưa chuyển đi).
+                if ($directBillIds !== []) {
+                    $directBills = ServiceBill::whereIn('Ma', $directBillIds)
+                        ->where('Edit', 0)
+                        ->where(function ($query) use ($room) {
+                            $query->where('RentalRoomId2', $room->id)
+                                ->orWhere(function ($origin) use ($room) {
+                                    $origin->where('RentalRoomId1', $room->id)
+                                        ->where(fn ($q) => $q->whereNull('RentalRoomId2')->orWhere('RentalRoomId2', ''))
+                                        ->where(fn ($q) => $q->whereNull('RegisterID2')->orWhere('RegisterID2', 0));
+                                });
+                        })
+                        ->lockForUpdate()
+                        ->get();
+                    if ($directBills->count() !== count($directBillIds)) {
+                        abort(422, 'Có dịch vụ không thuộc phòng đang chọn.');
+                    }
+                }
+
+                $billIdsFromServices = $services->pluck('service_bill_id')->filter()
+                    ->merge($directBillIds)->unique()->values();
                 $hasPaidBill = $billIdsFromServices->isNotEmpty()
                     && ServiceBill::whereIn('Ma', $billIdsFromServices)
                         ->where(function ($query) {
@@ -1260,7 +1286,10 @@ class BookingRoomServiceController extends Controller
             try {
                 $code = \App\Services\ActivityLogService::bookingCode($room->booking_id);
                 $items = BookingRoomService::whereIn('id', $validated['service_ids'])->get()
-                    ->map(fn ($svc) => ($svc->service_name ?: $svc->service_code) . ' - ' . \App\Services\ActivityLogService::money($svc->total_amount))->implode(', ');
+                    ->map(fn ($svc) => ($svc->service_name ?: $svc->service_code) . ' - ' . \App\Services\ActivityLogService::money($svc->total_amount))
+                    ->merge(ServiceBill::whereIn('Ma', $validated['service_bill_ids'] ?? [])->get()
+                        ->map(fn ($bill) => ($bill->DescriptionServive ?: $bill->ServiceId) . ' - ' . \App\Services\ActivityLogService::money($bill->Amount)))
+                    ->implode(', ');
                 \App\Services\ActivityLogService::record('Modify', "* Chuyển bill - ( {$items}) mã đăng ký {$code} - phòng: " . ($room->room_number ?: $room->id) . " sang folio {$validated['folio']}", [
                     'screen' => \App\Support\ActivityScreen::CHECKOUT,
                     'booking_code' => $code,
@@ -1919,6 +1948,8 @@ class BookingRoomServiceController extends Controller
             'bills'           => 'required|array',
             'bills.*.group'   => 'required|string',
             'bills.*.items'   => 'required|array',
+            'bills.*.items.*.price' => 'nullable|numeric|min:0',
+            'bills.*.items.*.original_rate' => 'nullable|numeric|min:0',
             'bills.*.items.*.tax' => 'nullable|numeric|min:0|max:100',
             'bills.*.items.*.special_tax' => 'nullable|numeric|min:0|max:100',
             'bills.*.items.*.service_charge' => 'nullable|numeric|min:0|max:100',
@@ -1994,6 +2025,9 @@ class BookingRoomServiceController extends Controller
                 'label' => $outlet->name,
                 'service' => $outlet->service_code ?: $outlet->code,
                 'outlet' => $outlet->code,
+                'default_service_charge' => (float) $outlet->default_service_charge_percent,
+                'default_special_tax' => (float) $outlet->default_special_tax_percent,
+                'default_tax' => (float) $outlet->default_tax_percent,
             ])
             ->all();
 
@@ -2013,15 +2047,22 @@ class BookingRoomServiceController extends Controller
                 $products = Product::whereIn('id', collect($items)->pluck('id')->filter()->all())
                     ->get()
                     ->keyBy('id');
-                $itemTaxProfiles = collect($items)->map(fn ($item) => $this->housekeepingItemTaxProfile(
-                    $item,
-                    $products->get($item['id'] ?? null)
-                ));
-                $billTaxProfile = $this->commonTaxProfile($itemTaxProfiles);
-                $effectiveFolio = $isFree ? 3 : $folio;
-                $originalAmount = collect($items)->sum(fn ($item) => (float)($item['original_rate'] ?? $item['price'] ?? 0) * (float)($item['qty'] ?? 1));
-                $billAmount = collect($items)->sum(fn ($item) => (float)($item['total_amount'] ?? $item['net_price'] ?? $item['price'] ?? 0));
-                $discountAmount = collect($items)->sum(fn ($item) => (float)($item['discount_amount'] ?? 0));
+
+                // Giá linh động chỉ áp dụng cho sản phẩm đã được cấu hình tại Menu HK.
+                // Điều chỉnh bill cũ giữ nguyên quyền/logic lịch sử hiện có.
+                if (!$request->filled('service_bill_id')) {
+                    foreach ($items as $item) {
+                        $product = $products->get($item['id'] ?? null);
+                        if (!$product || $product->flexible_price) {
+                            continue;
+                        }
+
+                        $requestedPrice = (float) ($item['original_rate'] ?? $item['price'] ?? $product->price);
+                        if (abs($requestedPrice - (float) $product->price) > 0.0001) {
+                            abort(422, 'Sản phẩm có giá cố định không được phép thay đổi đơn giá.');
+                        }
+                    }
+                }
 
                 $targetServiceBillId = $request->filled('service_bill_id') ? (int) $request->service_bill_id : null;
                 $existingServiceBill = $targetServiceBillId ? ServiceBill::whereKey($targetServiceBillId)->lockForUpdate()->first() : null;
@@ -2029,6 +2070,24 @@ class BookingRoomServiceController extends Controller
                 if ($targetServiceBillId && !$existingServiceBill) {
                     abort(404, 'Không tìm thấy bill dịch vụ cần điều chỉnh.');
                 }
+
+                // Bill mới snapshot thuế/phí mặc định của outlet. Detail giữ tỷ lệ riêng của từng sản phẩm.
+                // Điều chỉnh bill cũ bảo toàn header lịch sử thay vì lấy lại cấu hình hiện hành.
+                $billTaxProfile = $existingServiceBill
+                    ? [
+                        'service_charge' => (float) $existingServiceBill->ServiceCharge,
+                        'special_tax' => (float) $existingServiceBill->SpecialTax,
+                        'tax' => (float) $existingServiceBill->Tax,
+                    ]
+                    : [
+                        'service_charge' => (float) $meta['default_service_charge'],
+                        'special_tax' => (float) $meta['default_special_tax'],
+                        'tax' => (float) $meta['default_tax'],
+                    ];
+                $effectiveFolio = $isFree ? 3 : $folio;
+                $originalAmount = collect($items)->sum(fn ($item) => (float)($item['original_rate'] ?? $item['price'] ?? 0) * (float)($item['qty'] ?? 1));
+                $billAmount = collect($items)->sum(fn ($item) => (float)($item['total_amount'] ?? $item['net_price'] ?? $item['price'] ?? 0));
+                $discountAmount = collect($items)->sum(fn ($item) => (float)($item['discount_amount'] ?? 0));
 
                 if ($existingServiceBill) {
                     if (!$this->serviceBillBelongsToRoom($existingServiceBill, $room)) {
@@ -3503,21 +3562,6 @@ class BookingRoomServiceController extends Controller
             'service_charge' => (float) ($product?->service_charge_percent ?? $item['service_charge'] ?? 0),
             'special_tax' => (float) ($product?->special_tax_percent ?? $item['special_tax'] ?? 0),
             'tax' => (float) ($product?->tax_percent ?? $item['tax'] ?? 0),
-        ];
-    }
-
-    private function commonTaxProfile($profiles): array
-    {
-        $commonValue = static function (string $key) use ($profiles): float {
-            $values = $profiles->pluck($key)->map(fn ($value) => round((float) $value, 6))->unique()->values();
-
-            return $values->count() === 1 ? (float) $values->first() : 0;
-        };
-
-        return [
-            'service_charge' => $commonValue('service_charge'),
-            'special_tax' => $commonValue('special_tax'),
-            'tax' => $commonValue('tax'),
         ];
     }
 

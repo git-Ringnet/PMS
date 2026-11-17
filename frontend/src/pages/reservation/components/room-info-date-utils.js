@@ -230,3 +230,98 @@ export function parseDmyInput(value) {
 
   return null
 }
+
+export function normalizeIsoDateOnly(value) {
+  if (!value) return ''
+  const str = String(value).trim()
+  if (!str) return ''
+
+  if (/^\d{4}-\d{2}-\d{2}T/.test(str)) {
+    const d = new Date(str)
+    if (!Number.isNaN(d.getTime())) {
+      const yyyy = d.getFullYear()
+      const mm = String(d.getMonth() + 1).padStart(2, '0')
+      const dd = String(d.getDate()).padStart(2, '0')
+      return `${yyyy}-${mm}-${dd}`
+    }
+  }
+
+  const cleanStr = str.replace(/\s+\d{1,2}:\d{2}(:\d{2})?.*$/, '').trim()
+
+  const matchIso = cleanStr.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/)
+  if (matchIso) {
+    const yyyy = matchIso[1]
+    const mm = matchIso[2].padStart(2, '0')
+    const dd = matchIso[3].padStart(2, '0')
+    return `${yyyy}-${mm}-${dd}`
+  }
+
+  const matchDmy = cleanStr.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/)
+  if (matchDmy) {
+    const dd = matchDmy[1].padStart(2, '0')
+    const mm = matchDmy[2].padStart(2, '0')
+    const yyyy = matchDmy[3]
+    return `${yyyy}-${mm}-${dd}`
+  }
+
+  if (/^\d{8}$/.test(cleanStr)) {
+    const dd = cleanStr.substring(0, 2)
+    const mm = cleanStr.substring(2, 4)
+    const yyyy = cleanStr.substring(4, 8)
+    return `${yyyy}-${mm}-${dd}`
+  }
+
+  return cleanStr
+}
+
+export function formatDateDisplayYY(value) {
+  if (!value) return ''
+  const str = String(value).trim()
+  if (!str) return ''
+
+  if (/^\d{4}-\d{2}-\d{2}T/.test(str)) {
+    const d = new Date(str)
+    if (!Number.isNaN(d.getTime())) {
+      const dd = String(d.getDate()).padStart(2, '0')
+      const mm = String(d.getMonth() + 1).padStart(2, '0')
+      const yyyy = String(d.getFullYear())
+      return `${dd}/${mm}/${yyyy}`
+    }
+  }
+
+  const cleanStr = str.replace(/\s+\d{1,2}:\d{2}(:\d{2})?.*$/, '').trim()
+
+  const matchIso = cleanStr.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/)
+  if (matchIso) {
+    const yyyy = matchIso[1]
+    const mm = matchIso[2].padStart(2, '0')
+    const dd = matchIso[3].padStart(2, '0')
+    return `${dd}/${mm}/${yyyy}`
+  }
+
+  const matchDmy = cleanStr.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/)
+  if (matchDmy) {
+    const dd = matchDmy[1].padStart(2, '0')
+    const mm = matchDmy[2].padStart(2, '0')
+    const yyyy = matchDmy[3]
+    return `${dd}/${mm}/${yyyy}`
+  }
+
+  const matchDmyShort = cleanStr.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2})$/)
+  if (matchDmyShort) {
+    const dd = matchDmyShort[1].padStart(2, '0')
+    const mm = matchDmyShort[2].padStart(2, '0')
+    const yy = parseInt(matchDmyShort[3], 10)
+    const yyyy = yy >= 50 ? 1900 + yy : 2000 + yy
+    return `${dd}/${mm}/${yyyy}`
+  }
+
+  if (/^\d{8}$/.test(cleanStr)) {
+    const dd = cleanStr.substring(0, 2)
+    const mm = cleanStr.substring(2, 4)
+    const yyyy = cleanStr.substring(4, 8)
+    return `${dd}/${mm}/${yyyy}`
+  }
+
+  return cleanStr
+}

@@ -112,6 +112,41 @@ test('196: add service uses the same final price for flat and nested product res
       http: { get: async url => ({ data: url === '/products' ? products : categories }) },
     }
     await new Function(...Object.keys(bindings), `${loader}\nreturn loadDbProducts()`)(...Object.values(bindings))
-    assert.deepEqual(dbProductsData.value.MB.Minibar.map(p => p.price), [100000, 100000])
+    assert.deepEqual(dbProductsData.value.MB[0].items.map(p => p.price), [100000, 100000])
   }
+})
+
+test('454: post-housekeeping menu preserves category and product ID order', async () => {
+  const sfc = readFileSync(new URL('../src/pages/housekeeping/components/PostBillHousekeepingTab.vue', import.meta.url), 'utf8')
+  const start = sfc.indexOf('const loadDbProducts = async () => {')
+  const loader = sfc.slice(start, sfc.indexOf('\nonMounted(', start))
+  const categories = [
+    { id: 20, name: 'Nhóm sau', outlet: 'MB' },
+    { id: 10, name: 'Nhóm trước', outlet: 'MB' },
+  ]
+  const products = [
+    { id: 4, name: 'Sản phẩm 4', product_category_id: 10, price: 1, open_key: true, is_active: true },
+    { id: 2, name: 'Sản phẩm 2', product_category_id: 10, price: 1, open_key: true, is_active: true },
+    { id: 3, name: 'Sản phẩm 3', product_category_id: 20, price: 1, open_key: true, is_active: true },
+  ]
+  const dbProductsData = ref({})
+  const housekeepingOutlets = ref([])
+  const bindings = {
+    loadingProducts: ref(false), housekeepingOutlets, dbProductsData,
+    currentTab: ref(''), tabKeys: computed(() => housekeepingOutlets.value.map(o => o.code)),
+    productGroup: {}, storageImageUrl: v => v || null,
+    fetchHousekeepingOutlets: async () => ({ data: [{ code: 'MB', name: 'Minibar', is_active: true, show_in_add_service: true, service_code: 'MB' }] }),
+    http: { get: async url => ({ data: url === '/products' ? products : categories }) },
+  }
+  await new Function(...Object.keys(bindings), `${loader}\nreturn loadDbProducts()`)(...Object.values(bindings))
+  assert.deepEqual(dbProductsData.value.MB.map(category => category.id), [10, 20])
+  assert.deepEqual(dbProductsData.value.MB[0].items.map(product => product.id), [2, 4])
+})
+
+test('453: only flexible-price products expose an editable cart price', () => {
+  const sfc = readFileSync(new URL('../src/pages/housekeeping/components/PostBillHousekeepingTab.vue', import.meta.url), 'utf8')
+  assert.match(sfc, /flexible_price: Boolean\(p\.flexible_price\)/)
+  assert.match(sfc, /v-if="item\.product\.flexible_price"/)
+  assert.match(sfc, /item\.unitPrice = parsePriceInput\(value\)/)
+  assert.match(sfc, /const unitPrice = Number\(item\.unitPrice \?\? prod\.price\) \|\| 0/)
 })
