@@ -6,6 +6,8 @@ import {
   fetchRoles,
   fetchSystemBranchesList,
   createOrganizationDepartment,
+  updateOrganizationDepartment,
+  deleteOrganizationDepartment,
   createPosition,
   updatePosition,
   deletePosition,
@@ -37,7 +39,7 @@ const toggleDept = (id) => {
 }
 
 const showDepartmentModal = ref(false)
-const departmentForm = ref({ code: '', name: '' })
+const departmentForm = ref({ id: null, code: '', name: '' })
 const showPositionModal = ref(false)
 const positionForm = ref({ id: null, department_id: null, code: '', name: '' })
 
@@ -112,8 +114,30 @@ const currentUsers = computed(() => {
 })
 
 const openCreateDepartment = () => {
-  departmentForm.value = { code: '', name: '' }
+  departmentForm.value = { id: null, code: '', name: '' }
   showDepartmentModal.value = true
+}
+
+// Dòng 469: sửa bộ phận chỉ đổi tên, mã bộ phận giữ nguyên.
+const openEditDepartment = (department) => {
+  departmentForm.value = { id: department.id, code: department.code, name: department.name }
+  showDepartmentModal.value = true
+}
+
+// Dòng 469: chỉ xóa được bộ phận chưa có vị trí công việc (backend kiểm tra và trả thông báo).
+const removeDepartment = async (department) => {
+  if ((department.positions || []).length) {
+    uiStore.showToast('Bộ phận đã có vị trí công việc, không thể xóa.', 'warning')
+    return
+  }
+  if (!confirm(`Xóa bộ phận "${department.name}"?`)) return
+  try {
+    await deleteOrganizationDepartment(department.id)
+    await loadData()
+    uiStore.showToast('Đã xóa bộ phận', 'success')
+  } catch (error) {
+    uiStore.showToast(error.response?.data?.message || 'Không thể xóa bộ phận', 'error')
+  }
 }
 
 const saveDepartment = async () => {
@@ -122,15 +146,19 @@ const saveDepartment = async () => {
     return
   }
   try {
-    await createOrganizationDepartment({
-      code: departmentForm.value.code.toUpperCase(),
-      name: departmentForm.value.name,
-    })
+    if (departmentForm.value.id) {
+      await updateOrganizationDepartment(departmentForm.value.id, { name: departmentForm.value.name })
+    } else {
+      await createOrganizationDepartment({
+        code: departmentForm.value.code.toUpperCase(),
+        name: departmentForm.value.name,
+      })
+    }
     showDepartmentModal.value = false
     await loadData()
-    uiStore.showToast('Đã tạo bộ phận', 'success')
+    uiStore.showToast(departmentForm.value.id ? 'Đã lưu bộ phận' : 'Đã tạo bộ phận', 'success')
   } catch (error) {
-    uiStore.showToast(error.response?.data?.message || 'Không thể tạo bộ phận', 'error')
+    uiStore.showToast(error.response?.data?.message || 'Không thể lưu bộ phận', 'error')
   }
 }
 
@@ -150,13 +178,16 @@ const savePosition = async () => {
     return
   }
   try {
-    const payload = {
-      organization_department_id: positionForm.value.department_id,
-      code: positionForm.value.code.toUpperCase(),
-      name: positionForm.value.name,
+    // Dòng 469: sửa vị trí chỉ đổi tên, không gửi mã.
+    if (positionForm.value.id) {
+      await updatePosition(positionForm.value.id, { name: positionForm.value.name })
+    } else {
+      await createPosition({
+        organization_department_id: positionForm.value.department_id,
+        code: positionForm.value.code.toUpperCase(),
+        name: positionForm.value.name,
+      })
     }
-    if (positionForm.value.id) await updatePosition(positionForm.value.id, payload)
-    else await createPosition(payload)
     showPositionModal.value = false
     await loadData()
     uiStore.showToast('Đã lưu vị trí công việc', 'success')
@@ -321,6 +352,22 @@ const savePermissionMatrix = async () => {
             <span class="font-bold text-slate-800 uppercase text-[11.5px] tracking-wide flex-1 truncate" :title="department.name">
               {{ department.name }}
             </span>
+            <button
+              class="opacity-0 group-hover:opacity-100 px-1 rounded text-[#0ea5e9] hover:bg-sky-100 text-[11px] font-semibold border-none bg-transparent cursor-pointer transition-opacity"
+              title="Sửa bộ phận (chỉ sửa tên)"
+              data-testid="edit-department"
+              @click.stop="openEditDepartment(department)"
+            >
+              Sửa
+            </button>
+            <button
+              class="opacity-0 group-hover:opacity-100 px-1 rounded text-rose-500 hover:bg-rose-50 text-[11px] font-semibold border-none bg-transparent cursor-pointer transition-opacity"
+              title="Xóa bộ phận (chỉ xóa khi chưa có vị trí công việc)"
+              data-testid="delete-department"
+              @click.stop="removeDepartment(department)"
+            >
+              Xóa
+            </button>
             <button
               class="opacity-0 group-hover:opacity-100 w-4 h-4 rounded text-[#0ea5e9] hover:bg-sky-100 flex items-center justify-center font-bold text-xs border-none bg-transparent cursor-pointer transition-opacity"
               title="Thêm vị trí vào bộ phận này"
@@ -671,7 +718,7 @@ const savePermissionMatrix = async () => {
       <div v-if="showDepartmentModal" class="fixed inset-0 z-[100] bg-black/50 grid place-items-center p-4">
         <div class="bg-white w-[420px] rounded-lg shadow-2xl overflow-hidden border border-slate-200 animate-in">
           <header class="px-5 py-3 bg-[#72c6e6] text-white font-bold text-sm flex items-center justify-between">
-            <span>Thêm bộ phận</span>
+            <span>{{ departmentForm.id ? 'Sửa' : 'Thêm' }} bộ phận</span>
             <button @click="showDepartmentModal = false" class="text-white hover:text-slate-100 bg-transparent border-none cursor-pointer text-lg font-light leading-none">✕</button>
           </header>
           <div class="p-5 space-y-3">
@@ -679,8 +726,11 @@ const savePermissionMatrix = async () => {
               <label class="font-bold text-slate-700 text-xs block mb-1">Mã bộ phận *</label>
               <input
                 v-model="departmentForm.code"
-                required
-                class="w-full border border-slate-300 rounded-md p-2 text-xs font-semibold focus:outline-sky-500 bg-[#fffbeb]"
+                :required="!departmentForm.id"
+                :readonly="!!departmentForm.id"
+                :title="departmentForm.id ? 'Mã bộ phận không được sửa' : ''"
+                class="w-full border border-slate-300 rounded-md p-2 text-xs font-semibold focus:outline-sky-500"
+                :class="departmentForm.id ? 'bg-slate-100 text-slate-500' : 'bg-[#fffbeb]'"
                 placeholder="Ví dụ: FO, HK, FB..."
               />
             </div>
@@ -721,8 +771,11 @@ const savePermissionMatrix = async () => {
               <label class="font-bold text-slate-700 text-xs block mb-1">Mã vị trí *</label>
               <input
                 v-model="positionForm.code"
-                required
-                class="w-full border border-slate-300 rounded-md p-2 text-xs font-semibold focus:outline-sky-500 bg-[#fffbeb]"
+                :required="!positionForm.id"
+                :readonly="!!positionForm.id"
+                :title="positionForm.id ? 'Mã vị trí không được sửa' : ''"
+                class="w-full border border-slate-300 rounded-md p-2 text-xs font-semibold focus:outline-sky-500"
+                :class="positionForm.id ? 'bg-slate-100 text-slate-500' : 'bg-[#fffbeb]'"
                 placeholder="Ví dụ: FOM, FOS, FO..."
               />
             </div>

@@ -303,6 +303,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     Route::get('organization', [\App\Http\Controllers\Api\OrganizationController::class, 'index'])->middleware('permission:system.user.view');
     Route::post('organization/departments', [\App\Http\Controllers\Api\OrganizationController::class, 'storeDepartment'])->middleware('permission:system.user.manage');
     Route::put('organization/departments/{department}', [\App\Http\Controllers\Api\OrganizationController::class, 'updateDepartment'])->middleware('permission:system.user.manage');
+    Route::delete('organization/departments/{department}', [\App\Http\Controllers\Api\OrganizationController::class, 'destroyDepartment'])->middleware('permission:system.user.manage');
     Route::post('organization/positions', [\App\Http\Controllers\Api\OrganizationController::class, 'storePosition'])->middleware('permission:system.user.manage');
     Route::put('organization/positions/{position}', [\App\Http\Controllers\Api\OrganizationController::class, 'updatePosition'])->middleware('permission:system.user.manage');
     Route::delete('organization/positions/{position}', [\App\Http\Controllers\Api\OrganizationController::class, 'destroyPosition'])->middleware('permission:system.user.manage');
