@@ -38,14 +38,14 @@
         <!-- BÊN TRÁI: TOGGLE XEM THEO NGÀY ĐẾN & KHOẢNG NGÀY -->
         <div class="flex items-center space-x-3">
           <!-- TOGGLE SWITCH XEM THEO NGÀY ĐẾN -->
-          <label class="relative inline-flex items-center cursor-pointer select-none gap-2">
-            <input 
-              type="checkbox" 
-              v-model="filterByArrivalDate" 
+          <label class="inline-flex items-center cursor-pointer select-none gap-2">
+            <input
+              type="checkbox"
+              v-model="filterByArrivalDate"
               class="sr-only peer"
               @change="handleFilterByArrivalDateChange"
             />
-            <div class="w-8 h-4 bg-slate-300 rounded-full peer peer-checked:bg-sky-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 shadow-2xs"></div>
+            <div class="relative shrink-0 w-8 h-4 bg-slate-300 rounded-full peer peer-checked:bg-sky-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-4 shadow-2xs"></div>
             <span class="text-xs font-semibold text-sky-600">Xem theo ngày đến</span>
           </label>
 
@@ -558,6 +558,8 @@ function close() {
 
 function selectBooking(booking) {
   emit('select-booking', booking)
+  // Dòng 463: chọn xong booking thì xóa nội dung đã gõ để lần tìm sau bắt đầu trống.
+  emit('update:query', '')
   close()
 }
 </script>
