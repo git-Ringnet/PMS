@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Booking;
+use App\Models\BookingChild;
 use App\Models\BookingRoom;
 use App\Models\BookingRoomGuest;
 use App\Models\BookingRoomService;
@@ -1006,17 +1007,34 @@ class ShiftWorkController extends Controller
         })
         ->get();
 
+        // Dòng 486: trẻ em / em bé nằm ở booking_children (không phải guests) nên phải lấy riêng,
+        // nếu không tab sinh nhật bỏ sót các bé đang lưu trú trong phòng.
+        $roomChildren = BookingChild::with(['bookingRoom.booking.company'])
+            ->whereNotNull('dob')
+            ->whereIn('child_status', [BookingRoomGuest::STATUS_ACTIVE, BookingRoomGuest::STATUS_CHECKED_IN])
+            ->whereHas('bookingRoom', function ($q) {
+                $q->whereNull('deleted_at')
+                  ->whereIn('status', [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN]);
+            })
+            ->get();
+
+        $people = [];
+        foreach ($roomGuests as $rg) {
+            $people[] = [$rg->guest, $rg->bookingRoom];
+        }
+        foreach ($roomChildren as $child) {
+            $people[] = [$child, $child->bookingRoom];
+        }
+
         $result = [];
         $seq = 1;
 
-        foreach ($roomGuests as $rg) {
-            $g = $rg->guest;
-            $rm = $rg->bookingRoom;
+        foreach ($people as [$g, $rm]) {
             $bk = $rm?->booking;
             if (!$g || !$g->dob || !$rm) continue;
 
             $dob = Carbon::parse($g->dob);
-            
+
             // Check if birthday falls within [fromDate, toDate] (regardless of birth year)
             $isMatch = false;
             $period = CarbonPeriod::create($fromDate->copy()->startOfDay(), $toDate->copy()->startOfDay());
