@@ -1330,14 +1330,30 @@ class BookingController extends Controller
             throw $e;
         }
 
-        // Confirmation date is calculated once when a booking is created and is        // never recalculated when arrival date/status change. A value the user        // explicitly edits is saved (row 495).
+        // Confirmation date is calculated once when a booking is created and is
+
+        // never recalculated when arrival date/status change. A value the user
+
+        // explicitly edits is saved (row 495).
         if (empty($validated['confirm_date'])) {
             unset($validated['confirm_date']);
         } else {
             $effectiveArrival = isset($validated['arrival_date'])
                 ? Carbon::parse($validated['arrival_date'])->toDateString()
                 : Carbon::parse($booking->arrival_date)->toDateString();
-            $confirmationDate = Carbon::parse($validated['confirm_date'])->toDateString();            if ($confirmationDate > $effectiveArrival) {                throw \Illuminate\Validation\ValidationException::withMessages([                    'confirm_date' => ['Ngày xác nhận không được sau ngày đến.'],                ]);            }            $validated['confirm_date'] = $confirmationDate;
+            $confirmationDate = Carbon::parse($validated['confirm_date'])->toDateString();
+
+            if ($confirmationDate > $effectiveArrival) {
+
+                throw \Illuminate\Validation\ValidationException::withMessages([
+
+                    'confirm_date' => ['Ngày xác nhận không được sau ngày đến.'],
+
+                ]);
+
+            }
+
+            $validated['confirm_date'] = $confirmationDate;
         }
 
         // Tự động tăng edit_count và ghi nhận người sửa
@@ -1983,6 +1999,12 @@ class BookingController extends Controller
                             }
                         }
                     }
+                }
+
+                // Dòng 514: phòng noshow (status 4) vẫn được sửa thông tin để khách đến trễ
+                // chỉnh lại ngày đến rồi khôi phục. Phòng giữ nguyên trạng thái noshow.
+                if ($request->has('noshow_rooms') && is_array($request->noshow_rooms)) {
+                    $this->applyNoshowRoomEdits($booking, $request->noshow_rooms);
                 }
 
                 if ($companyChanged) {
@@ -3533,6 +3555,70 @@ class BookingController extends Controller
         }
 
         return $result;
+    }
+
+    /**
+     * Dòng 514: cập nhật thông tin phòng noshow tại chỗ (không đổi trạng thái, không tính availability).
+     * Chỉ nhận phòng thuộc đúng đăng ký và đang ở trạng thái noshow.
+     */
+    private function applyNoshowRoomEdits(Booking $booking, array $edits): void
+    {
+        foreach ($edits as $edit) {
+            if (!is_array($edit) || empty($edit['bookingRoomId'])) {
+                throw new \Exception('Dữ liệu phòng noshow không hợp lệ.');
+            }
+
+            $room = BookingRoom::where('booking_id', $booking->id)->find($edit['bookingRoomId']);
+            if (!$room || (int) $room->status !== BookingRoom::STATUS_NOSHOW) {
+                throw new \Exception('Chỉ được sửa phòng noshow thuộc đăng ký đang chỉnh sửa.');
+            }
+
+            $arrival = !empty($edit['arrivalDate']) ? Carbon::parse($edit['arrivalDate'])->toDateString() : $room->arrival_date->toDateString();
+            $departure = !empty($edit['departureDate']) ? Carbon::parse($edit['departureDate'])->toDateString() : $room->departure_date->toDateString();
+            if ($departure < $arrival) {
+                throw new \Exception('Ngày đi của phòng noshow không được nhỏ hơn ngày đến.');
+            }
+
+            $data = ['arrival_date' => $arrival, 'departure_date' => $departure];
+            if (array_key_exists('roomNumber', $edit)) {
+                $data['room_number'] = filled($edit['roomNumber']) ? $edit['roomNumber'] : null;
+            }
+            if (isset($edit['price'])) {
+                $data['rate'] = (float) $edit['price'];
+                $data['base_price'] = (float) $edit['price'];
+            }
+            if (array_key_exists('rateCode', $edit)) {
+                $data['rate_code'] = filled($edit['rateCode']) ? $edit['rateCode'] : null;
+            }
+            foreach (['adults' => 'adults', 'babies' => 'babies', 'children' => 'children_qty', 'extraBedQty' => 'extra_bed_qty'] as $key => $column) {
+                if (isset($edit[$key])) {
+                    $data[$column] = max((int) $edit[$key], 0);
+                }
+            }
+            if (isset($edit['extraBedPrice'])) {
+                $data['extra_bed_rate'] = (float) $edit['extraBedPrice'];
+            }
+            if (array_key_exists('breakfast', $edit)) {
+                $data['breakfast'] = !empty($edit['breakfast']);
+            }
+            if (array_key_exists('arrivalTime', $edit)) {
+                $data['arrival_time'] = $edit['arrivalTime'] ?: null;
+            }
+            if (array_key_exists('hoursOut', $edit)) {
+                $data['departure_time'] = $edit['hoursOut'] ?: null;
+            }
+            if ($arrival !== $room->arrival_date->toDateString()) {
+                $data['actual_arrival_date'] = $arrival;
+            }
+
+            $room->update($data);
+
+            $guestName = trim((string) ($edit['guestName'] ?? ''));
+            if ($guestName !== '') {
+                $pivot = \App\Models\BookingRoomGuest::where('booking_room_id', $room->id)->where('is_primary', 1)->first();
+                $pivot?->guest?->update(['full_name' => $guestName]);
+            }
+        }
     }
 
     private function normalizeRoomAllocations(array $roomAllocations, $bookingId = null): array
