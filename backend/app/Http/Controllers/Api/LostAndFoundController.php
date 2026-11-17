@@ -64,7 +64,16 @@ class LostAndFoundController extends Controller
 
     public function destroy($id)
     {
-        LostAndFoundItem::findOrFail($id)->delete();
+        $item = LostAndFoundItem::findOrFail($id);
+
+        if ($item->date_handling || $item->method_handling || $item->delieved_handling || $item->received_handling || $item->received) {
+            return response()->json([
+                'message' => 'Phiếu đã có thông tin xử lý hoặc giao nhận, không thể xóa.',
+                'code' => 'lost_found_handled_item_cannot_be_deleted',
+            ], 422);
+        }
+
+        $item->delete();
 
         return response()->json(['message' => 'Deleted successfully']);
     }

@@ -282,7 +282,17 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     Route::get('system-branches/{systemBranch}', [\App\Http\Controllers\Api\SystemBranchController::class, 'show']);
     Route::put('system-branches/{systemBranch}', [\App\Http\Controllers\Api\SystemBranchController::class, 'update'])->middleware('permission:system.branch.manage');
     Route::delete('system-branches/{systemBranch}', [\App\Http\Controllers\Api\SystemBranchController::class, 'destroy'])->middleware('permission:system.branch.manage');
-    Route::apiResource('lost-and-found', \App\Http\Controllers\Api\LostAndFoundController::class)->middleware($canWrite('hk.lost_found.*', 'hk.lost_found.manage'));
+    // Lost & Found: tách quyền theo từng thao tác; quyền xem không được phép ghi/xóa.
+    Route::get('lost-and-found', [\App\Http\Controllers\Api\LostAndFoundController::class, 'index'])
+        ->middleware('permission:hk.lost_found.view,hk.lost_found.create,hk.lost_found.manage,hk.lost_found.delete');
+    Route::get('lost-and-found/{lost_and_found}', [\App\Http\Controllers\Api\LostAndFoundController::class, 'show'])
+        ->middleware('permission:hk.lost_found.view,hk.lost_found.create,hk.lost_found.manage,hk.lost_found.delete');
+    Route::post('lost-and-found', [\App\Http\Controllers\Api\LostAndFoundController::class, 'store'])
+        ->middleware('permission:hk.lost_found.create');
+    Route::put('lost-and-found/{lost_and_found}', [\App\Http\Controllers\Api\LostAndFoundController::class, 'update'])
+        ->middleware('permission:hk.lost_found.manage');
+    Route::delete('lost-and-found/{lost_and_found}', [\App\Http\Controllers\Api\LostAndFoundController::class, 'destroy'])
+        ->middleware('permission:hk.lost_found.delete');
     
     // User & Employee routes
     Route::get('users', [\App\Http\Controllers\Api\UserController::class, 'index'])->middleware('permission:system.user.view');
