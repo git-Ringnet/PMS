@@ -3283,6 +3283,9 @@ class BookingRoomController extends Controller
                 $roomUpdate['room_number'] = null;
             }
             $bookingRoom->update($roomUpdate);
+            // Dòng 514: ngày phòng noshow có thể đã được sửa; dựng lại dòng tiền phòng/EB theo ngày ở hiện tại.
+            app(\App\Services\BookingRoomLifecycleService::class)
+                ->synchronize($bookingRoom->fresh(), false, true, true);
 
             // Khôi phục khách trong phòng
             $guestIds = BookingRoomGuest::where('booking_room_id', $bookingRoom->id)->pluck('guest_id');

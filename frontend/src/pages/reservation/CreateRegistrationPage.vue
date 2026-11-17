@@ -10,6 +10,8 @@ import {
   countProtectedAllocationRooms,
   hasBookingRoomId,
   isEditableAllocationRoom,
+  isNoshowRoom,
+  buildNoshowRoomEdits,
   isRoomAllocationCandidate,
   normalizeAllocationQuantity,
   sameRoomClass,
@@ -5231,6 +5233,14 @@ async function handleRowDateChange(row) {
 }
 
 async function handleRowDateChangeInline(room) {
+  // Dòng 514: phòng noshow chỉ tính lại số đêm/tiền, không đụng phân bổ hay phòng trống.
+  if (isNoshowRoom(room) && room.checkIn && room.checkOut) {
+    if (room.checkOut < room.checkIn) room.checkOut = room.checkIn
+    const nights = Math.round((new Date(room.checkOut) - new Date(room.checkIn)) / 86400000)
+    room.nights = nights >= 0 ? nights : 0
+    room.total = calculateRoomTotal(room)
+    return
+  }
   if (!isEditableAllocationRoom(room)) return
   if (room.checkIn && room.checkOut) {
     const ci = new Date(room.checkIn)
@@ -6129,6 +6139,8 @@ async function triggerAction(actionName) {
             special_requests:       tab.specialRequests || null,
             shuttle_info:           tab.shuttleInfo || [],
             room_allocations:       syncRoomsToAllocations(tab),
+            // Dòng 514: phòng noshow vẫn được lưu thông tin (ngày đến/đi, số phòng, giá...).
+            noshow_rooms:           buildNoshowRoomEdits(tab.rooms),
           }
           const res = await updateBookingWithOverConfirm(tab.dbId, payload)
           await loadBookings()

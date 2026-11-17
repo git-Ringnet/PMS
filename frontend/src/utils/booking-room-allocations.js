@@ -60,3 +60,29 @@ export function allocationCandidateRooms(rooms, roomClassId) {
   return (Array.isArray(rooms) ? rooms : [])
     .filter(room => sameRoomClass(room, roomClassId) && isRoomAllocationCandidate(room))
 }
+
+// Dòng 514: phòng noshow không nằm trong phân bổ (không chiếm AV) nhưng vẫn phải sửa được
+// để khách đến trễ chỉnh ngày đến rồi khôi phục. Gửi riêng để server cập nhật tại chỗ.
+export function isNoshowRoom(room) {
+  return hasBookingRoomId(room) && roomStatus(room) === 4
+}
+
+export function buildNoshowRoomEdits(rooms) {
+  return (Array.isArray(rooms) ? rooms : []).filter(isNoshowRoom).map(room => ({
+    bookingRoomId: room.bookingRoomId,
+    arrivalDate: room.checkIn,
+    departureDate: room.checkOut,
+    roomNumber: room.roomNumber || '',
+    price: Number(room.price) || 0,
+    adults: Number(room.adults) || 0,
+    babies: Number(room.babies) || 0,
+    children: Number(room.children) || 0,
+    guestName: room.guestName || '',
+    rateCode: room.rateCode && room.rateCode !== 'Vui lòng chọn giá phòng' ? room.rateCode : null,
+    breakfast: !!room.breakfast,
+    extraBedQty: Number(room.extraBedQty) || 0,
+    extraBedPrice: Number(room.extraBedPrice) || 0,
+    arrivalTime: room.arrivalTime || '14:00',
+    hoursOut: room.hoursOut || '12:00',
+  }))
+}
