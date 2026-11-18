@@ -496,6 +496,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     Route::prefix('bookings/{bookingId}/rooms')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\BookingRoomController::class, 'index']);
         Route::post('/', [\App\Http\Controllers\Api\BookingRoomController::class, 'store'])->middleware('permission:fo.booking.create');
+        Route::put('/room-plan-stay/bulk', [\App\Http\Controllers\Api\RoomPlanBookingRoomController::class, 'bulkUpdateStay'])->middleware('permission:fo.booking.edit');
         Route::put('/{roomId}', [\App\Http\Controllers\Api\BookingRoomController::class, 'update'])->middleware('permission:fo.booking.edit');
         Route::put('/{roomId}/room-plan-stay', [\App\Http\Controllers\Api\RoomPlanBookingRoomController::class, 'updateStay'])->middleware('permission:fo.booking.edit');
         Route::post('/bulk-update', [\App\Http\Controllers\Api\BookingRoomController::class, 'bulkUpdate'])->middleware('permission:fo.booking.edit');
