@@ -2954,7 +2954,12 @@ onBeforeUnmount(() => {
 
 // Dòng 502: trang nằm trong sơ đồ phòng được KeepAlive giữ lại. Khi đang ẩn (đã chuyển màn hình/module)
 // không được mở booking theo route hay tự sửa URL, tránh trang đang hiển thị bị tải lại 2 lần hoặc mất mã đăng ký.
-onDeactivated(() => { pageActive = false })
+onDeactivated(() => {
+  pageActive = false
+  // Dòng 527: modal tìm kiếm BK được Teleport ra body nên không tự ẩn theo trang bị KeepAlive giữ ẩn;
+  // phải đóng khi rời màn hình, nếu không nó nằm đè lên giao diện module/Portal.
+  isGlobalSearchOpen.value = false
+})
 onActivated(() => {
   if (pageActive) return
   pageActive = true
