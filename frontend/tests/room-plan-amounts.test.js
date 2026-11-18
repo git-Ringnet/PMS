@@ -223,3 +223,47 @@ test('row 95 prefers booking note and safely resolves special-request arrays', (
   assert.equal(resolveRoomPlanBookingNote({}, { note: 'Ghi chú phòng' }), 'Ghi chú phòng')
 })
 
+test('task 222 totals active rooms once, including a day-use bill shared with the master relation', () => {
+  const result = calculateRoomPlanBookingAmounts({
+    arrival_date: '2026-08-20',
+    departure_date: '2026-08-22',
+    master_service_bills: [{
+      Ma: 99,
+      ServiceId: 'RM',
+      Amount: 650,
+      Edit: 0,
+      RentalRoomId1: 'DAY-USE',
+    }],
+    booking_rooms: [
+      {
+        id: 'OVERNIGHT',
+        status: 0,
+        arrival_date: '2026-08-20',
+        departure_date: '2026-08-22',
+        rate: 100,
+        services: [{ service_code: 'SPA', service_date: '2026-08-21', quantity: 1, rate: 30, is_posted: 0 }],
+      },
+      {
+        id: 'DAY-USE',
+        status: 1,
+        is_day_use: true,
+        arrival_date: '2026-08-21',
+        departure_date: '2026-08-21',
+        rate: 650,
+        services: [],
+        service_bills: [{ Ma: 99, ServiceId: 'RM', Amount: 650, Edit: 0, RentalRoomId1: 'DAY-USE' }],
+      },
+      {
+        id: 'CANCELLED',
+        status: 3,
+        arrival_date: '2026-08-20',
+        departure_date: '2026-08-22',
+        rate: 999,
+        services: [],
+      },
+    ],
+  }, '2026-08-20')
+
+  assert.deepEqual(result, { roomCharge: 850, serviceCharge: 30 })
+})
+
