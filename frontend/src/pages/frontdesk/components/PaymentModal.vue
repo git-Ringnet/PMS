@@ -253,8 +253,7 @@ const fetchBankAccounts = async () => {
 }
 
 function inGroupExcluded(m) {
-  const grp = Number(m.payment_group)
-  return grp === 5 || m.is_free === 1 || m.is_free === true || m.is_inactive === 1 || m.is_inactive === true
+  return m.is_inactive === 1 || m.is_inactive === true
 }
 
 const workShiftsList = ref([])

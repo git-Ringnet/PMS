@@ -1450,15 +1450,18 @@ const servicesList = computed(() => {
     const linkedBill = findLinkedBill(s, roomNo, s.booking_room_id || s.roomId)
     const catalogServiceName = linkedBill?.hotel_service?.name || linkedBill?.hotelService?.name
 
+    const isRoomChargeCode = codeVal === 'RM' || s.service_name === 'Tiền phòng'
     let descVal = stripTrailingQuantitySuffix(
       isHousekeepingService
         ? (catalogServiceName || linkedBill?.DescriptionServive || s.service_name || s.name || defaultDesc)
-        : (s.note || s.description || defaultDesc)
+        : (isRoomChargeCode ? (linkedBill?.DescriptionServive || s.note || s.description || defaultDesc) : (s.note || s.description || defaultDesc))
     )
     descVal = String(descVal).replace(/^Post bill\s+/i, '')
-    if (codeVal === 'RM' || s.service_name === 'Tiền phòng') {
-      const transferTrail = descVal.match(/\([^()]+=>[^()]+\)\s*$/)?.[0] || ''
-      descVal = [`Dịch vụ phòng nghỉ ${roomNo || s.room_number || ''}`.trim(), transferTrail].filter(Boolean).join(' ')
+    if (isRoomChargeCode) {
+      const normalizedDesc = descVal.trim()
+      if (!normalizedDesc || /^Tiền phòng$/i.test(normalizedDesc) || /^Dịch vụ phòng nghỉ$/i.test(normalizedDesc)) {
+        descVal = `Dịch vụ phòng nghỉ ${roomNo || s.room_number || ''}`.trim()
+      }
     }
 
     const rawPayCode = s.payment_id || s.payment_code || s.PaymentID || s.PaymentId || s.service_bill?.PaymentID || s.service_bill?.PaymentId || s.serviceBill?.PaymentID || s.serviceBill?.PaymentId || linkedBill?.PaymentID || linkedBill?.PaymentId || linkedBill?.payment_id || ''
@@ -4769,6 +4772,7 @@ onUnmounted(() => {
       :bookingId="selectedBooking?.bookingId"
       :bookingCode="selectedBooking?.code"
       :bookingName="selectedBooking?.name"
+      :companyAllowsDebt="Boolean(selectedBooking?.rawBooking?.company?.sync_acc)"
       :selectedRoomId="selectedRoomItem?.roomId || null"
       :selectedRoomNumber="selectedRoomItem?.roomNumber || ''"
       :selectedGuestId="selectedGuestId"

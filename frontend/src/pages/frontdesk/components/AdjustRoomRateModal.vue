@@ -124,11 +124,13 @@ const error = ref('')
 const saving = ref(false)
 
 const rooms = computed(() => (props.booking?.roomItems || []).filter(room => [1, 2].includes(Number(room.rawRoom?.status ?? room.status))))
+const eligibleRooms = computed(() => rooms.value.filter(room => !roomNoPost(room)))
+const isAllRoomsSelected = computed(() => roomId.value === 'ALL')
 const selectedRoom = computed(() => rooms.value.find(room => String(room.roomId || room.id) === String(roomId.value)))
 const isNoPostEnabled = value => value === true || value === 1 || ['1', 'true', 'yes'].includes(String(value ?? '').trim().toLowerCase())
 const bookingNoPost = computed(() => isNoPostEnabled(props.booking?.rawBooking?.no_post ?? props.booking?.no_post))
 const roomNoPost = room => bookingNoPost.value || isNoPostEnabled(room?.rawRoom?.no_post ?? room?.no_post)
-const selectedRoomNoPost = computed(() => roomNoPost(selectedRoom.value))
+const selectedRoomNoPost = computed(() => (isAllRoomsSelected.value ? eligibleRooms.value.length === 0 : roomNoPost(selectedRoom.value)))
 
 const bookingName = computed(() => {
   if (!props.booking) return ''
@@ -309,22 +311,28 @@ async function submit() {
     return
   }
   const dates = roomDates()
-  if (!roomId.value || dates.length === 0 || rate.value < 0 || !reason.value.trim()) {
+  const targetRooms = isAllRoomsSelected.value
+    ? eligibleRooms.value
+    : (selectedRoom.value ? [selectedRoom.value] : [])
+  if (targetRooms.length === 0 || dates.length === 0 || rate.value < 0 || !reason.value.trim()) {
     error.value = 'Nhập đủ phòng, ngày, giá và lý do điều chỉnh.'
     return
   }
   saving.value = true
   try {
-    for (const serviceDate of dates) {
-      await adjustRoomRate(props.booking.bookingId, {
-        booking_room_id: roomId.value,
-        service_date: serviceDate,
-        rate: Number(rate.value),
-        description: description.value.trim() || 'Dịch vụ phòng nghỉ',
-        reason: reason.value.trim(),
-        update_room_rate: updateRoomRate.value,
-        update_room_rate_scope: updateRoomRateScope.value,
-      })
+    for (const targetRoom of targetRooms) {
+      const targetRoomId = String(targetRoom.roomId || targetRoom.id)
+      for (const serviceDate of dates) {
+        await adjustRoomRate(props.booking.bookingId, {
+          booking_room_id: targetRoomId,
+          service_date: serviceDate,
+          rate: Number(rate.value),
+          description: description.value.trim() || 'Dịch vụ phòng nghỉ',
+          reason: reason.value.trim(),
+          update_room_rate: updateRoomRate.value,
+          update_room_rate_scope: updateRoomRateScope.value,
+        })
+      }
     }
     emit('success')
   } catch (e) {
@@ -375,6 +383,9 @@ async function submit() {
               v-model="roomId"
               class="h-[32px] w-full rounded-[6px] border border-slate-300 bg-white px-2.5 text-[12px] text-slate-800 shadow-sm outline-none focus:border-[#0788eb]"
             >
+              <option v-if="eligibleRooms.length > 1" value="ALL">
+                Tất cả phòng ({{ eligibleRooms.length }} phòng)
+              </option>
               <option v-for="room in rooms" :key="room.roomId || room.id" :value="String(room.roomId || room.id)" :disabled="roomNoPost(room)">
                 Chọn: {{ room.roomNumber || room.rawRoom?.room_number || 0 }}{{ roomNoPost(room) ? ' — No Post' : '' }}
               </option>
