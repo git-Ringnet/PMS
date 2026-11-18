@@ -2078,6 +2078,18 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 ## Current Status
 
+- 2026-11-18: TC_LT_03 — Date input dùng chung tự chọn vùng tháng sau khi nhập đủ ngày và vùng năm sau khi nhập đủ tháng. Áp dụng `SingleDatePicker`, `RoomInfoDatePicker`, bảng khách và bộ lọc Danh sách công việc; không đổi API, database, migration, import legacy, Room Plan hay logic nghiệp vụ. Node regression 32/32 và frontend build đạt; cần UAT thao tác gõ/sửa ngày trên browser.
+
+- 2026-11-17: Room Map Buồng phòng đã in trực tiếp hai mẫu Nhân viên/Sup từ các phòng đang chọn; tình trạng lấy từ Room Map, thông tin nhân viên để trống và không còn mở In phân công phòng. Cần UAT hai mẫu với trạng thái phòng thực tế và trình duyệt cho phép pop-up.
+
+- 2026-11-17: Form Thêm bill từ Tìm kiếm hóa đơn Buồng phòng post với ngữ cảnh HK và tải lại danh sách ngay sau khi thành công; giữ nguyên các bộ lọc hiện hành. Cần UAT quyền post và bill mới theo từng điều kiện lọc.
+
+- 2026-11-17: Popup chi tiết hóa đơn Buồng phòng đọc `service_bill_id` để hiển thị snapshot giảm/tăng giá và thuế/phí; bill miễn phí được đánh dấu nổi bật. Cần UAT bill HK/FO, bill miễn phí và dòng âm.
+
+- 2026-11-17: Tìm kiếm hóa đơn Buồng phòng đã bỏ điều kiện Mã ĐK ở FE/API; phòng, bộ phận, người dùng và outlet tiếp tục được lọc đồng thời bằng `AND`. Cần UAT dữ liệu bill HK/FO thực tế.
+
+- 2026-11-17: Lost & Found đã tách quyền xem/tạo/sửa-xử lý/xóa ở FE và API; phiếu đã có dữ liệu xử lý hoặc giao nhận bị chặn xóa cứng. Cần UAT từng quyền tại Buồng phòng và Sơ đồ phòng; feature test chưa chạy được do thiếu `backend/vendor/autoload.php`.
+
 - 2026-11-16: Tạo menu HK hiển thị sản phẩm theo dõi tồn chưa gán kho trong nhóm kiểm kê nội bộ và có nút In danh sách theo tab/bộ lọc; cần UAT chọn sản phẩm tại kho, chưa gán kho và in thực tế.
 
 - 2026-11-16: Dòng 554 Menu HK đã có template Excel đa sheet cho sản phẩm, đơn vị tính và nhóm/outlet; cần UAT import file mới/cũ và chạy feature test sau khi khôi phục `backend/vendor/autoload.php`.
@@ -2162,6 +2174,10 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 
 ## Recent Changes
+
+- 2026-11-18: TC_LT_03 — `room-info-date-utils.js` bổ sung resolver vùng nhập ngày/tháng/năm; `SingleDatePicker`, `RoomInfoDatePicker`, `GuestInfoModal` và `ShiftWorkPage` chỉ đặt lại selection khi người dùng đang nhập, không làm lúc xóa/sửa năm. Bổ sung 2 regression test điều hướng vùng; `node --test tests/room-info-date-utils.test.js tests/room-plan-amounts.test.js` đạt 32/32 và `npm run build` đạt. Không đổi API, schema, migration, dữ liệu, import legacy, Checkout, Room Map hoặc Room Plan.
+
+- 2026-11-17: Dòng 515 — `RoomMapPage.vue` thay luồng In Worksheet mở `PrintTasksTab` bằng menu `In mẫu nhân viên`/`In mẫu Sup` và bản xem trước trực tiếp. Bản in chỉ đọc các phòng đã chọn, lấy trạng thái thực tế tại Room Map, để trống Nhân viên/Supervisor và không đổi API, quyền, phân công, database, schema hoặc import legacy. `room_map_printing.md` ghi nhận ràng buộc; cần UAT hai mẫu và popup trình duyệt.
 
 - 2026-11-16: Tạo menu/kiểm kê Buồng phòng — `InventoryCheckController` tách sản phẩm theo dõi tồn đã gán đúng kho và nhóm chưa gán kho để người dùng chọn kiểm kê nội bộ theo đúng rule legacy, không tự gán kho hoặc tạo dòng kiểm kê. `CreateMenuTab.vue` ghi rõ kho tùy chọn và bổ sung in danh sách menu đang hiển thị. PHP lint, frontend build và diff-check đạt; PHPUnit bị chặn do thiếu `backend/vendor/autoload.php`. Không đổi schema, migration, API route, post bill, Checkout hoặc Room Map.
 
@@ -2611,6 +2627,10 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 
 ## Known Risks
+
+- 2026-11-18: Cần UAT caret date trên Chrome/Edge khi sửa ngày đã có, nhập tháng một chữ số `2`–`9`, xóa và nhập năm để xác nhận browser không thay đổi selection ngoài rule mới.
+
+- 2026-11-17: In trực tiếp Room Map phụ thuộc trình duyệt cho phép mở tab xem trước; cần UAT hai mẫu với dữ liệu phòng thực tế.
 
 - 2026-11-16: Cần chạy `php artisan test --filter=InventoryPeriodicCheckTest` sau khi khôi phục `backend/vendor/autoload.php`, rồi UAT sản phẩm theo dõi tồn gán đúng kho/chưa gán kho/gán kho khác, thêm vào phiếu mới hoặc đã khóa và in danh sách menu có bộ lọc.
 

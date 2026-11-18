@@ -57,7 +57,7 @@ async function changeStatus(event) {
       uiStore.showToast(`Đã đổi trạng thái phòng ${props.room.room_number} sang "${statusLabel}" thành công!`, 'success')
       emit('close')
     } catch (err) {
-      uiStore.showToast('Không thể cập nhật trạng thái phòng. Vui lòng thử lại!', 'error')
+      uiStore.showToast(err.response?.data?.message || 'Không thể cập nhật trạng thái phòng. Vui lòng thử lại!', 'error')
     }
   } else {
     // Reset selection back

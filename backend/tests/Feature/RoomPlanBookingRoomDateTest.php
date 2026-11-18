@@ -137,6 +137,31 @@ class RoomPlanBookingRoomDateTest extends TestCase
         $this->assertSame(3, $booking->fresh()->num_of_days);
     }
 
+    public function test_room_plan_bulk_resize_updates_selected_rooms_atomically(): void
+    {
+        $booking = $this->makeBooking();
+        $first = $this->makeRoom($booking, '2026-09-08', '2026-09-10');
+        $second = $this->makeRoom($booking, '2026-09-09', '2026-09-10');
+
+        $response = $this->putJson("/api/bookings/{$booking->id}/rooms/room-plan-stay/bulk", [
+            'stays' => [
+                ['room_id' => (string) $first->id, 'arrival_date' => '2026-09-08', 'departure_date' => '2026-09-12'],
+                ['room_id' => (string) $second->id, 'arrival_date' => '2026-09-09', 'departure_date' => '2026-09-12'],
+            ],
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('booking_dates.arrival_date', '2026-09-08')
+            ->assertJsonPath('booking_dates.departure_date', '2026-09-12');
+
+        $this->assertSame('2026-09-12', $first->fresh()->departure_date->toDateString());
+        $this->assertSame('2026-09-12', $second->fresh()->departure_date->toDateString());
+        $this->assertSame('2026-09-08', $booking->fresh()->arrival_date->toDateString());
+        $this->assertSame('2026-09-12', $booking->fresh()->departure_date->toDateString());
+    }
+
     public function test_overbooking_setting_requires_confirmation_before_persisting_extended_dates(): void
     {
         $booking = $this->makeBooking();
@@ -295,6 +320,7 @@ class RoomPlanBookingRoomDateTest extends TestCase
     {
         $availability = Mockery::mock(RoomAvailabilityService::class);
         $availability->shouldReceive('getSystemDate')->andReturn(Carbon::parse('2026-09-01'));
+        $availability->shouldReceive('getAvailability')->andReturn(5);
         $availability->shouldReceive('getAvailabilityAfterAddingNights')->andReturn(...$values);
         $availability->shouldReceive('isRoomNumberOccupied')->andReturn($roomOccupied);
         $this->app->instance(RoomAvailabilityService::class, $availability);

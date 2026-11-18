@@ -282,7 +282,17 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     Route::get('system-branches/{systemBranch}', [\App\Http\Controllers\Api\SystemBranchController::class, 'show']);
     Route::put('system-branches/{systemBranch}', [\App\Http\Controllers\Api\SystemBranchController::class, 'update'])->middleware('permission:system.branch.manage');
     Route::delete('system-branches/{systemBranch}', [\App\Http\Controllers\Api\SystemBranchController::class, 'destroy'])->middleware('permission:system.branch.manage');
-    Route::apiResource('lost-and-found', \App\Http\Controllers\Api\LostAndFoundController::class)->middleware($canWrite('hk.lost_found.*', 'hk.lost_found.manage'));
+    // Lost & Found: tách quyền theo từng thao tác; quyền xem không được phép ghi/xóa.
+    Route::get('lost-and-found', [\App\Http\Controllers\Api\LostAndFoundController::class, 'index'])
+        ->middleware('permission:hk.lost_found.view,hk.lost_found.create,hk.lost_found.manage,hk.lost_found.delete');
+    Route::get('lost-and-found/{lost_and_found}', [\App\Http\Controllers\Api\LostAndFoundController::class, 'show'])
+        ->middleware('permission:hk.lost_found.view,hk.lost_found.create,hk.lost_found.manage,hk.lost_found.delete');
+    Route::post('lost-and-found', [\App\Http\Controllers\Api\LostAndFoundController::class, 'store'])
+        ->middleware('permission:hk.lost_found.create');
+    Route::put('lost-and-found/{lost_and_found}', [\App\Http\Controllers\Api\LostAndFoundController::class, 'update'])
+        ->middleware('permission:hk.lost_found.manage');
+    Route::delete('lost-and-found/{lost_and_found}', [\App\Http\Controllers\Api\LostAndFoundController::class, 'destroy'])
+        ->middleware('permission:hk.lost_found.delete');
     
     // User & Employee routes
     Route::get('users', [\App\Http\Controllers\Api\UserController::class, 'index'])->middleware('permission:system.user.view');
@@ -303,6 +313,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     Route::get('organization', [\App\Http\Controllers\Api\OrganizationController::class, 'index'])->middleware('permission:system.user.view');
     Route::post('organization/departments', [\App\Http\Controllers\Api\OrganizationController::class, 'storeDepartment'])->middleware('permission:system.user.manage');
     Route::put('organization/departments/{department}', [\App\Http\Controllers\Api\OrganizationController::class, 'updateDepartment'])->middleware('permission:system.user.manage');
+    Route::delete('organization/departments/{department}', [\App\Http\Controllers\Api\OrganizationController::class, 'destroyDepartment'])->middleware('permission:system.user.manage');
     Route::post('organization/positions', [\App\Http\Controllers\Api\OrganizationController::class, 'storePosition'])->middleware('permission:system.user.manage');
     Route::put('organization/positions/{position}', [\App\Http\Controllers\Api\OrganizationController::class, 'updatePosition'])->middleware('permission:system.user.manage');
     Route::delete('organization/positions/{position}', [\App\Http\Controllers\Api\OrganizationController::class, 'destroyPosition'])->middleware('permission:system.user.manage');
@@ -485,6 +496,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     Route::prefix('bookings/{bookingId}/rooms')->group(function () {
         Route::get('/', [\App\Http\Controllers\Api\BookingRoomController::class, 'index']);
         Route::post('/', [\App\Http\Controllers\Api\BookingRoomController::class, 'store'])->middleware('permission:fo.booking.create');
+        Route::put('/room-plan-stay/bulk', [\App\Http\Controllers\Api\RoomPlanBookingRoomController::class, 'bulkUpdateStay'])->middleware('permission:fo.booking.edit');
         Route::put('/{roomId}', [\App\Http\Controllers\Api\BookingRoomController::class, 'update'])->middleware('permission:fo.booking.edit');
         Route::put('/{roomId}/room-plan-stay', [\App\Http\Controllers\Api\RoomPlanBookingRoomController::class, 'updateStay'])->middleware('permission:fo.booking.edit');
         Route::post('/bulk-update', [\App\Http\Controllers\Api\BookingRoomController::class, 'bulkUpdate'])->middleware('permission:fo.booking.edit');

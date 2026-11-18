@@ -774,6 +774,21 @@ class RoomLockController extends Controller
             'lock_type.in' => 'Loại khóa phòng phải là OOO hoặc OOS.',
         ]);
 
+        // Dòng 153 (17/11): gửi is_active khác 1 hoặc status Done/Cancelled qua PUT là mở khóa phòng,
+        // phải qua cùng kiểm tra bộ phận + Rule (RoleUserUnlockRoomOOO/OOS) như bulk-unlock và xóa khóa.
+        $isActiveInput = $request->input('is_active');
+        $statusInput = strtolower((string) $request->input('status', ''));
+        $wantsUnlock = ($isActiveInput !== null && (int) $isActiveInput !== 1)
+            || in_array($statusInput, ['done', 'cancelled', 'canceled'], true);
+        if ($wantsUnlock) {
+            if ($deptError = $this->checkUnlockDepartmentPermission($request, $lock)) {
+                return response()->json(['success' => false, 'message' => $deptError], 403);
+            }
+            if ($roleError = $this->checkUnlockRolePermission($request, $lock)) {
+                return response()->json(['success' => false, 'message' => $roleError], 403);
+            }
+        }
+
         $room = Room::where('room_number', $lock->room_number)->firstOrFail();
 
         // Adjust dates according to start_date being today or in the future

@@ -204,7 +204,8 @@ export const useRoomStore = defineStore('room', () => {
       await fetchRooms({ silent: true })
       await fetchStats()
     } catch (err) {
-      error.value = 'Không thể cập nhật trạng thái phòng.'
+      // Dòng 153: lỗi đổi trạng thái (vd 403 không thuộc Rule mở khóa) chỉ báo qua toast ở nơi gọi.
+      // Không đặt error.value vì sơ đồ phòng dùng nó để thay cả lưới phòng bằng khung lỗi tải dữ liệu.
       console.error('updateRoomStatus error:', err)
       throw err
     }

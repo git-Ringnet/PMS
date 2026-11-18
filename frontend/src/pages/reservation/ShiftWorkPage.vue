@@ -16,6 +16,7 @@ import {
 } from '@/services/shift-work-service'
 import {
   maskDateInput,
+  resolveDateInputSegmentSelection,
   parseDmyInput
 } from './components/room-info-date-utils'
 
@@ -258,9 +259,25 @@ function triggerDateToPicker() {
   }
 }
 
+function applyDateSegmentSelection(event, value) {
+  const selection = resolveDateInputSegmentSelection(
+    value,
+    event?.target?.selectionStart,
+    Boolean(event?.inputType?.startsWith('delete'))
+  )
+  if (!selection || !event?.target) return
+
+  requestAnimationFrame(() => {
+    if (document.activeElement === event.target) {
+      event.target.setSelectionRange(selection.start, selection.end)
+    }
+  })
+}
+
 // Single Date typing handlers
 function onSearchDateInput(e) {
   searchDateText.value = maskDateInput(e.target.value)
+  applyDateSegmentSelection(e, searchDateText.value)
   const digits = searchDateText.value.replace(/\D/g, '')
   if (digits.length === 8) {
     const parsed = parseDmyInput(searchDateText.value)
@@ -304,6 +321,7 @@ function onPickerDateChange() {
 // Range From handlers
 function onDateFromInput(e) {
   searchDateFromText.value = maskDateInput(e.target.value)
+  applyDateSegmentSelection(e, searchDateFromText.value)
   const digits = searchDateFromText.value.replace(/\D/g, '')
   if (digits.length === 8) {
     const parsed = parseDmyInput(searchDateFromText.value)
@@ -347,6 +365,7 @@ function onPickerDateFromChange() {
 // Range To handlers
 function onDateToInput(e) {
   searchDateToText.value = maskDateInput(e.target.value)
+  applyDateSegmentSelection(e, searchDateToText.value)
   const digits = searchDateToText.value.replace(/\D/g, '')
   if (digits.length === 8) {
     const parsed = parseDmyInput(searchDateToText.value)

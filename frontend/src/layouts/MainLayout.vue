@@ -1005,6 +1005,11 @@ function openHeaderBookingSearch() {
   isHeaderBookingSearchOpen.value = true
 }
 
+// Dòng 527: header nằm lại khi đổi màn hình, đổi route (vd bấm logo về Portal) thì khung tìm kiếm BK phải đóng.
+watch(() => route.path, () => {
+  isHeaderBookingSearchOpen.value = false
+})
+
 function handleHeaderBookingSelected(booking) {
   isHeaderBookingSearchOpen.value = false
   headerBookingSearchQuery.value = ''

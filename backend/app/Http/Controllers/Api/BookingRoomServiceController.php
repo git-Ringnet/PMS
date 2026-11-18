@@ -90,7 +90,7 @@ class BookingRoomServiceController extends Controller
                 ->where(function ($query) {
                     $query->whereNull('Deleted')->orWhere('Deleted', 0);
                 })
-                ->get(['DetailId', 'MaProduct', 'DiscountAmount'])
+                ->get(['DetailId', 'MaProduct', 'Discount', 'DiscountAmount', 'Increase', 'IncreaseAmount'])
                 ->keyBy(fn ($detail) => (string) $detail->DetailId);
 
             $productIds = $housekeepingDetails->pluck('MaProduct')
@@ -129,6 +129,14 @@ class BookingRoomServiceController extends Controller
                     && $housekeepingDiscount !== null
                     && (float) $housekeepingDiscount !== 0.0) {
                     $detail->setAttribute('DiscountAmount', $housekeepingDiscount);
+                }
+
+                foreach (['Discount', 'Increase', 'IncreaseAmount'] as $field) {
+                    if (($detail->getAttribute($field) === null || (float) $detail->getAttribute($field) === 0.0)
+                        && $housekeepingDetail->getAttribute($field) !== null
+                        && (float) $housekeepingDetail->getAttribute($field) !== 0.0) {
+                        $detail->setAttribute($field, $housekeepingDetail->getAttribute($field));
+                    }
                 }
             });
         }
@@ -2327,7 +2335,6 @@ class BookingRoomServiceController extends Controller
         $validated = $request->validate([
             'date_from' => 'nullable|date',
             'date_to' => 'nullable|date|after_or_equal:date_from',
-            'booking_code' => 'nullable|string|max:50',
             'room_no' => 'nullable|string|max:20',
             'department' => 'nullable|string|in:FO,HK',
             'username' => 'nullable|string|max:50',
@@ -2365,12 +2372,10 @@ class BookingRoomServiceController extends Controller
                 $query->where('Deleted', 0)->orWhereIn('BillId', $bills->where('BillEdit', 1)->pluck('Ma'));
             })->orderBy('DetailId')->get()->groupBy('BillId');
         $bookings = \App\Models\Booking::withTrashed()->whereIn('id', $bills->pluck('BookingId')->filter())->get()->keyBy('id');
-
         $allowHkCorrectFoBill = $this->allowHkCorrectFoBill();
-        $rows = $bills->map(function (HousekeepingServiceBill $bill) use ($serviceBills, $freePaymentIds, $details, $bookings, $validated, $allowHkCorrectFoBill) {
+        $rows = $bills->map(function (HousekeepingServiceBill $bill) use ($serviceBills, $freePaymentIds, $details, $bookings, $allowHkCorrectFoBill) {
             $booking = $bookings->get($bill->BookingId);
             $bookingCode = $booking?->booking_code ?? '';
-            if (!empty($validated['booking_code']) && !str_contains(strtolower($bookingCode), strtolower($validated['booking_code']))) return null;
             $serviceBill = $serviceBills->get($bill->BillServiceId);
             $items = ($details->get($bill->Ma) ?? collect())->map(fn ($item) => [
                 'name' => $item->Product,
@@ -2382,6 +2387,7 @@ class BookingRoomServiceController extends Controller
             $billDate = $serviceBill?->Date ?: $bill->Date;
             return [
                 'id' => $bill->Ma,
+                'service_bill_id' => $bill->BillServiceId,
                 'booking_code' => $bookingCode,
                 'guest_name' => $serviceBill?->Guest ?: ($booking?->booking_name ?? ''),
                 'room_no' => $bill->RoomNo,

@@ -85,4 +85,24 @@ class LostAndFoundTest extends TestCase
         ])->assertUnprocessable()
             ->assertJsonValidationErrors(['item_found', 'status']);
     }
+
+    public function test_it_cannot_delete_a_handled_lost_and_found_record(): void
+    {
+        $user = User::factory()->withRole('branch_admin')->create();
+        $item = LostAndFoundItem::create([
+            'log_no' => 1,
+            'status' => 'found',
+            'item_found' => 'Điện thoại',
+            'date_reported' => '2026-07-16',
+            'date_handling' => '2026-07-17',
+            'received_handling' => 'Khách phòng 106',
+        ]);
+
+        $this->actingAs($user)
+            ->deleteJson("/api/lost-and-found/{$item->id}")
+            ->assertUnprocessable()
+            ->assertJsonPath('code', 'lost_found_handled_item_cannot_be_deleted');
+
+        $this->assertDatabaseHas('lost_and_found_items', ['id' => $item->id]);
+    }
 }
