@@ -71,6 +71,13 @@ class BookingPrintController extends Controller
             }
         }
 
+        // Note 17/11 (dòng 347, 348, 349): phòng đã hủy không còn là phòng của booking nên không in và không cộng tiền,
+        // nếu không BK 1 phòng + 1 phòng hủy sẽ in ra 2 phòng. Booking hủy hết thì giữ nguyên để mẫu in không rỗng.
+        $activeRooms = $bookingRooms->reject(fn ($r) => (int) $r->status === BookingRoom::STATUS_CANCELLED)->values();
+        if ($activeRooms->isNotEmpty()) {
+            $bookingRooms = $activeRooms;
+        }
+
         // 2. Danh sách ServiceBills còn hiệu lực của booking / các phòng đang in
         // (bill đã hủy hoặc bill điều chỉnh Edit = 1 không in).
         $targetRoomIds = $bookingRooms->pluck('id')->map(fn ($id) => (string) $id)->all();
@@ -116,7 +123,11 @@ class BookingPrintController extends Controller
             $ciStr = $ci ? Carbon::parse($ci)->format('d/m/Y') : '';
             $coStr = $co ? Carbon::parse($co)->format('d/m/Y') : '';
 
-            $nights = $br->nights ?: ($ci && $co ? max(1, Carbon::parse($ci)->diffInDays(Carbon::parse($co))) : 1);
+            // Số đêm theo đúng cột "Đêm" ở màn hình đăng ký (ActutalNumOfDays): đăng ký cùng ngày đến/đi là 0 đêm,
+            // không ép tối thiểu 1 đêm. Thiếu giá trị thì tính từ ngày đến/đi.
+            $nights = $br->ActutalNumOfDays !== null
+                ? max(0, (int) $br->ActutalNumOfDays)
+                : ($ci && $co ? max(0, (int) Carbon::parse($ci)->startOfDay()->diffInDays(Carbon::parse($co)->startOfDay())) : 0);
             $adults = (int)($br->adults ?: 1);
             $children = (int)($br->children_qty ?: 0);
 
@@ -337,7 +348,9 @@ class BookingPrintController extends Controller
                     'booking_name'     => $booking->booking_name ?: '',
                     'arrival_date'     => $arrivalFormatted,
                     'departure_date'   => $departureFormatted,
-                    'nights'           => max(1, (int)$booking->nights),
+                    'nights'           => ($booking->arrival_date && $booking->departure_date)
+                        ? max(0, (int) Carbon::parse($booking->arrival_date)->startOfDay()->diffInDays(Carbon::parse($booking->departure_date)->startOfDay()))
+                        : 0,
                     'confirm_date'     => $confirmDateFormatted,
                     'company_name'     => $booking->company?->name ?: '',
                     'company_code'     => $booking->company?->code ?: '',

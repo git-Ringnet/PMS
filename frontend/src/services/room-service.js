@@ -182,7 +182,10 @@ export const roomService = {
       })
       return response.data
     } catch (error) {
-      console.warn('Real API failed, falling back to mock data:', error.response?.data?.message || error.message)
+      // Dòng 153: backend từ chối (403 không thuộc Rule mở khóa phòng, 422...) thì phải báo lỗi thật,
+      // không được trả success giả. Chỉ khi không có phản hồi từ server mới dùng dữ liệu mock.
+      if (error.response) throw error
+      console.warn('Real API failed, falling back to mock data:', error.message)
       const rooms = getMockRooms()
       const room = rooms.find(r => r.id === parseInt(roomId))
       if (room) room.room_status_code = roomStatusCode

@@ -334,6 +334,57 @@ class BookingPrintAndExtraServiceRow348To351Test extends TestCase
     // ------------------------------------------------------------------
 
     /** @return array{0: Booking, 1: BookingRoom} */
+    // ------------------------------------------------------------------
+    // Note 17/11 dòng 347, 348, 349: phiếu in còn sai số lượng phòng / số đêm
+    // ------------------------------------------------------------------
+
+    public function test_row347_to_349_cancelled_room_is_not_printed_or_counted(): void
+    {
+        [$booking, $room] = $this->inhouseRoom();
+        $cancelled = $this->makeRoom($booking, 'G-348-B', '102', 700000);
+        $cancelled->update(['status' => BookingRoom::STATUS_CANCELLED]);
+
+        $data = $this->printData($booking);
+
+        $this->assertCount(1, $data['rooms']);
+        $this->assertSame('101', $data['rooms'][0]['room_number']);
+        $this->assertCount(1, array_unique(array_column($data['room_lines'], 'room_number')));
+        $this->assertEquals(1080000, $data['summary']['total_room']);
+        $this->assertSame(2, (int) $data['booking']['nights']);
+    }
+
+    public function test_row347_to_349_same_day_room_prints_zero_nights_not_one(): void
+    {
+        $booking = Booking::create([
+            'booking_name' => 'Same day', 'arrival_date' => '2026-08-07', 'departure_date' => '2026-08-07',
+            'booking_date' => '2026-08-07', 'created_by' => 'test_user', 'status' => Booking::STATUS_CHECKIN,
+            'is_master_room_rate' => false,
+        ]);
+        $room = $this->makeRoom($booking, 'G-348-C', '101', 540000);
+        $room->update(['departure_date' => '2026-08-07', 'status' => BookingRoom::STATUS_BOOKED]);
+
+        $data = $this->printData($booking);
+
+        $this->assertSame(0, (int) $data['rooms'][0]['nights']);
+        $this->assertSame(0, (int) $data['booking']['nights']);
+        $this->assertSame(0, (int) $data['room_lines'][0]['nights']);
+    }
+
+    public function test_row347_to_349_moved_room_keeps_its_own_stay_and_is_not_inflated(): void
+    {
+        [$booking, $room] = $this->inhouseRoom();
+        $room->update(['departure_date' => '2026-08-08', 'status' => BookingRoom::STATUS_MOVED]);
+        $this->makeRoom($booking, 'G-348-D', '102', 540000, '2026-08-08')->update(['departure_date' => '2026-08-09']);
+
+        $data = $this->printData($booking);
+
+        $byRoom = collect($data['rooms'])->keyBy(fn ($r) => (string) $r['room_number']);
+        $this->assertSame(['101', '102'], $byRoom->keys()->map(fn ($k) => (string) $k)->sort()->values()->all());
+        $this->assertSame(1, (int) $byRoom['101']['nights']);
+        $this->assertSame(1, (int) $byRoom['102']['nights']);
+        $this->assertEquals(2 * 540000, $data['summary']['total_room']);
+    }
+
     private function inhouseRoom(string $arrival = '2026-08-07'): array
     {
         $booking = Booking::create([
