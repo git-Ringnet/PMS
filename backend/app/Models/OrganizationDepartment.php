@@ -5,10 +5,11 @@ namespace App\Models;
 use App\Models\Concerns\UsesSystemConnection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class OrganizationDepartment extends Model
 {
-    use UsesSystemConnection;
+    use UsesSystemConnection, SoftDeletes;
 
     protected $fillable = ['code', 'name', 'phone', 'legacy_show', 'is_active', 'sort_order'];
 

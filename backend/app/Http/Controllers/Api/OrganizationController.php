@@ -38,17 +38,21 @@ class OrganizationController extends Controller
         }
 
         $departments = Department::query()->get(['code', 'name', 'phone', 'show']);
+        // Dòng 469: chỉ nhập bộ phận còn thiếu. Không ghi đè tên đã sửa và không tạo lại bộ phận đã xóa (soft delete).
+        $known = OrganizationDepartment::withTrashed()->pluck('code')->map(fn ($c) => strtoupper($c))->all();
         foreach ($departments as $index => $department) {
-            OrganizationDepartment::updateOrCreate(
-                ['code' => strtoupper(trim($department->code))],
-                [
-                    'name' => $department->name,
-                    'phone' => $department->phone,
-                    'legacy_show' => $department->show,
-                    'is_active' => (bool) $department->show,
-                    'sort_order' => $index + 1,
-                ]
-            );
+            $code = strtoupper(trim($department->code));
+            if (in_array($code, $known, true)) {
+                continue;
+            }
+            OrganizationDepartment::create([
+                'code' => $code,
+                'name' => $department->name,
+                'phone' => $department->phone,
+                'legacy_show' => $department->show,
+                'is_active' => (bool) $department->show,
+                'sort_order' => $index + 1,
+            ]);
         }
     }
 
@@ -73,14 +77,29 @@ class OrganizationController extends Controller
     {
         $system = config('database_domains.system_connection', 'mysql_system');
         $validated = $request->validate([
-            'code' => ['sometimes', 'string', 'max:20', Rule::unique($system . '.organization_departments', 'code')->ignore($department->id)],
             'name' => 'sometimes|required|string|max:200',
             'phone' => 'nullable|string|max:100',
             'is_active' => 'sometimes|boolean',
         ]);
+        // Dòng 469: chỉ cho sửa tên, mã bộ phận không đổi.
         $department->update($validated);
 
         return response()->json(['success' => true, 'data' => $department->fresh()]);
+    }
+
+    public function destroyDepartment(OrganizationDepartment $department)
+    {
+        // Dòng 469: chỉ xóa bộ phận chưa có vị trí công việc nào.
+        if ($department->positions()->exists()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Bộ phận đã có vị trí công việc, không thể xóa.',
+            ], 422);
+        }
+
+        $department->delete();
+
+        return response()->json(['success' => true, 'message' => 'Đã xóa bộ phận.']);
     }
 
     public function storePosition(Request $request)
@@ -106,16 +125,12 @@ class OrganizationController extends Controller
     public function updatePosition(Request $request, Position $position)
     {
         $system = config('database_domains.system_connection', 'mysql_system');
-        $departmentId = $request->input('organization_department_id', $position->organization_department_id);
         $validated = $request->validate([
             'organization_department_id' => ['sometimes', 'integer', Rule::exists($system . '.organization_departments', 'id')],
-            'code' => [
-                'sometimes', 'string', 'max:100',
-                Rule::unique($system . '.positions', 'code')->where('organization_department_id', $departmentId)->ignore($position->id)
-            ],
             'name' => 'sometimes|required|string|max:120',
             'is_active' => 'sometimes|boolean',
         ]);
+        // Dòng 469: chỉ cho sửa tên vị trí, mã vị trí không đổi.
         $position->update($validated);
 
         return response()->json(['success' => true, 'data' => $position->fresh()->load('department')]);
@@ -126,7 +141,7 @@ class OrganizationController extends Controller
         if ($position->userAssignments()->exists()) {
             return response()->json([
                 'success' => false,
-                'message' => 'Vị trí đã được gán cho nhân viên, chỉ có thể ngừng sử dụng.',
+                'message' => 'Vị trí đã được gán cho nhân viên, không thể xóa',
             ], 422);
         }
 
