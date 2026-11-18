@@ -167,6 +167,25 @@ export function maskDateInput(value, isDeleting = false, fourDigitYear = true) {
   return `${dayPart}/`
 }
 
+/**
+ * Cho phép các date input dùng chung chuyển vùng nhập sau khi hoàn tất ngày/tháng.
+ * Không can thiệp khi xóa hoặc khi người dùng đang nhập năm.
+ */
+export function resolveDateInputSegmentSelection(value, selectionStart, isDeleting = false, fourDigitYear = true) {
+  if (isDeleting || typeof value !== 'string' || !Number.isFinite(selectionStart)) return null
+
+  const yearEnd = fourDigitYear ? 10 : 8
+  if (/^\d{2}\/(?:\d{0,2})(?:\/\d*)?$/.test(value) && selectionStart <= 2) {
+    return { start: 3, end: 5 }
+  }
+
+  if (/^\d{2}\/\d{2}\/(?:\d*)$/.test(value) && selectionStart >= 3 && selectionStart <= 5) {
+    return { start: 6, end: yearEnd }
+  }
+
+  return null
+}
+
 export function parseDmyInput(value) {
   if (!value) return null
   const str = String(value).trim()

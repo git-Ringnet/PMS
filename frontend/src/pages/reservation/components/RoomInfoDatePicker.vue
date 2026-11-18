@@ -6,6 +6,7 @@ import { vi } from 'date-fns/locale'
 import {
   formatShortDate,
   maskDateInput,
+  resolveDateInputSegmentSelection,
   parseDmyInput,
   parseYmd,
   toYmd,
@@ -67,6 +68,12 @@ function handleInput(event) {
   textInput.value = masked
   if (event.target.value !== masked) {
     event.target.value = masked
+  }
+  const selection = resolveDateInputSegmentSelection(masked, event.target.selectionStart, isDeleting)
+  if (selection) {
+    requestAnimationFrame(() => {
+      if (document.activeElement === event.target) event.target.setSelectionRange(selection.start, selection.end)
+    })
   }
   const digits = textInput.value.replace(/\D/g, '')
   if (digits.length === 8) {

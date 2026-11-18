@@ -2078,6 +2078,8 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 ## Current Status
 
+- 2026-11-18: TC_LT_03 — Date input dùng chung tự chọn vùng tháng sau khi nhập đủ ngày và vùng năm sau khi nhập đủ tháng. Áp dụng `SingleDatePicker`, `RoomInfoDatePicker`, bảng khách và bộ lọc Danh sách công việc; không đổi API, database, migration, import legacy, Room Plan hay logic nghiệp vụ. Node regression 32/32 và frontend build đạt; cần UAT thao tác gõ/sửa ngày trên browser.
+
 - 2026-11-17: Room Map Buồng phòng đã in trực tiếp hai mẫu Nhân viên/Sup từ các phòng đang chọn; tình trạng lấy từ Room Map, thông tin nhân viên để trống và không còn mở In phân công phòng. Cần UAT hai mẫu với trạng thái phòng thực tế và trình duyệt cho phép pop-up.
 
 - 2026-11-17: Form Thêm bill từ Tìm kiếm hóa đơn Buồng phòng post với ngữ cảnh HK và tải lại danh sách ngay sau khi thành công; giữ nguyên các bộ lọc hiện hành. Cần UAT quyền post và bill mới theo từng điều kiện lọc.
@@ -2172,6 +2174,8 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 
 ## Recent Changes
+
+- 2026-11-18: TC_LT_03 — `room-info-date-utils.js` bổ sung resolver vùng nhập ngày/tháng/năm; `SingleDatePicker`, `RoomInfoDatePicker`, `GuestInfoModal` và `ShiftWorkPage` chỉ đặt lại selection khi người dùng đang nhập, không làm lúc xóa/sửa năm. Bổ sung 2 regression test điều hướng vùng; `node --test tests/room-info-date-utils.test.js tests/room-plan-amounts.test.js` đạt 32/32 và `npm run build` đạt. Không đổi API, schema, migration, dữ liệu, import legacy, Checkout, Room Map hoặc Room Plan.
 
 - 2026-11-17: Dòng 515 — `RoomMapPage.vue` thay luồng In Worksheet mở `PrintTasksTab` bằng menu `In mẫu nhân viên`/`In mẫu Sup` và bản xem trước trực tiếp. Bản in chỉ đọc các phòng đã chọn, lấy trạng thái thực tế tại Room Map, để trống Nhân viên/Supervisor và không đổi API, quyền, phân công, database, schema hoặc import legacy. `room_map_printing.md` ghi nhận ràng buộc; cần UAT hai mẫu và popup trình duyệt.
 
@@ -2623,6 +2627,8 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 
 ## Known Risks
+
+- 2026-11-18: Cần UAT caret date trên Chrome/Edge khi sửa ngày đã có, nhập tháng một chữ số `2`–`9`, xóa và nhập năm để xác nhận browser không thay đổi selection ngoài rule mới.
 
 - 2026-11-17: In trực tiếp Room Map phụ thuộc trình duyệt cho phép mở tab xem trước; cần UAT hai mẫu với dữ liệu phòng thực tế.
 

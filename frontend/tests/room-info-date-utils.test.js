@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   formatShortDate,
   maskDateInput,
+  resolveDateInputSegmentSelection,
   parseDmyInput,
   isLeapYear,
   getMaxDaysInMonth,
@@ -12,6 +13,17 @@ import {
 
 test('adds separators while entering an eight-digit date', () => {
   assert.equal(maskDateInput('18091996'), '18/09/1996')
+})
+
+test('selects the month after completing the day and the year after completing the month', () => {
+  assert.deepEqual(resolveDateInputSegmentSelection('18/11/2026', 2), { start: 3, end: 5 })
+  assert.deepEqual(resolveDateInputSegmentSelection('18/11/2026', 5), { start: 6, end: 10 })
+  assert.deepEqual(resolveDateInputSegmentSelection('18/05/', 4), { start: 6, end: 10 })
+})
+
+test('does not move date segments while deleting or when editing the year', () => {
+  assert.equal(resolveDateInputSegmentSelection('18/11/2026', 2, true), null)
+  assert.equal(resolveDateInputSegmentSelection('18/11/2026', 7), null)
 })
 
 test('converts an eight-digit date to the API format', () => {
