@@ -899,6 +899,23 @@ class RoomLockTest extends TestCase
         $this->deleteJson("/api/room-locks/{$lock->id}")->assertOk();
     }
 
+    /** Dòng 153 (17/11): sửa khóa (PUT) không được là cửa sau để mở khóa mà bỏ qua rule. */
+    public function test_row_153_update_endpoint_cannot_unlock_without_rule(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'RoleUserUnlockRoomOOO/OOS'], ['value' => 'FOM']);
+        $lock = RoomLock::create(['room_number' => '101', 'start_date' => '2026-06-01 00:00:00', 'end_date' => '2026-06-05 23:59:59',
+            'lock_type' => 'OOO', 'status' => 'Active', 'username' => 'admin', 'is_active' => 1]);
+        $payload = ['start_date' => '2026-06-01 00:00:00', 'end_date' => '2026-06-05 23:59:59', 'lock_type' => 'OOO', 'is_active' => 2, 'status' => 'Done'];
+
+        \Laravel\Sanctum\Sanctum::actingAs($this->makeUserWithRole('fo1', 'fo_staff'));
+        $this->putJson("/api/room-locks/{$lock->id}", $payload)->assertStatus(403);
+        $this->assertSame(1, (int) $lock->fresh()->is_active);
+        $this->assertSame('Active', $lock->fresh()->status);
+
+        // Sửa thông thường (giữ khóa hiệu lực) không bị chặn bởi rule mở khóa
+        $this->assertNotSame(403, $this->putJson("/api/room-locks/{$lock->id}", ['is_active' => 1, 'status' => 'Active'] + $payload)->status());
+    }
+
     private function editPayload(string $start, string $end, string $type = 'OOO'): array
     {
         return ['start_date' => "{$start} 00:00:00", 'end_date' => "{$end} 23:59:00", 'reason' => 'Bảo trì', 'maintenance_percent' => 0,
