@@ -121,6 +121,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     ])->middleware($canWrite('config.rates.*'));
     Route::post('room-rate-codes/{ma}/plans', [RoomRateCodeController::class, 'saveRatePlan'])->middleware($canWrite('config.rates.*'));
     Route::post('room-rate-codes/{ma}/daily-mappings', [RoomRateCodeController::class, 'saveDailyMappings'])->middleware($canWrite('config.rates.*'));
+    Route::apiResource('service-packages', \App\Http\Controllers\Api\ServicePackageController::class)
+        ->middleware($canWrite('config.rates.*'));
 
     // Hotel settings (write only - GET moved to public routes)
     // Route::get('/hotel-settings', [\App\Http\Controllers\Api\HotelSettingController::class, 'show']);

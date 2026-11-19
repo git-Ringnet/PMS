@@ -60,6 +60,7 @@ function startDragModal(e) {
 const handleKeyDown = (e) => {
   if (e.key === 'Escape') {
     if (showRatePlanModal.value) closeRatePlanModal()
+    else if (showServicePackageModal.value) closeServicePackageModal()
     else if (showCurrencyModal.value) showCurrencyModal.value = false
   }
 }
@@ -151,8 +152,7 @@ const fetchSystemDate = async () => {
 
 onMounted(async () => {
   window.addEventListener('keydown', handleKeyDown)
-  await Promise.all([fetchRoomData(), fetchSystemDate()])
-  await fetchRateCodes()
+  await Promise.all([fetchRoomData(), fetchSystemDate(), fetchRateCodes(), fetchServicePackages(), fetchHotelServices()])
 })
 
 onBeforeUnmount(() => {
@@ -1039,48 +1039,157 @@ const getMatrixKey = (roomCode, occupancy) => {
   return `DEFAULT_${roomCode}_${occupancy}`
 }
 
-// 2. Tab Gói dịch vụ: Service Packages List & Package Details
-const servicePackages = ref([
-  { id: 'PKG1', code: 'PKG01', currency: 'VND', nights: 1, displayPrice: '200.000', startDate: '01/01/2026', endDate: '31/12/2026', inactive: false, daysOfWeek: 'Thứ 2, Thứ 3, Thứ 4, Thứ 5, Thứ 6, Thứ 7, Chủ Nhật', description: 'Gói ăn sáng Buffet' },
-  { id: 'PKG2', code: 'PKG02', currency: 'VND', nights: 1, displayPrice: '450.000', startDate: '01/01/2026', endDate: '31/12/2026', inactive: false, daysOfWeek: 'Thứ 2, Thứ 3, Thứ 4, Thứ 5, Thứ 6, Thứ 7, Chủ Nhật', description: 'Gói ăn tối Set menu' },
-  { id: 'PKG3', code: 'PKG03', currency: 'VND', nights: 2, displayPrice: '900.000', startDate: '15/02/2026', endDate: '15/02/2027', inactive: false, daysOfWeek: 'Thứ 6, Thứ 7, Chủ Nhật', description: 'Combo Cuối tuần Spa & Dining' }
-])
+// 2. Tab Gói dịch vụ: dữ liệu runtime, không dùng dữ liệu mẫu.
+const servicePackages = ref([])
+const selectedPackage = ref(null)
+const hotelServices = ref([])
+const showServicePackageModal = ref(false)
+const isEditingServicePackage = ref(false)
+const isSavingServicePackage = ref(false)
 
-const selectedPackage = ref(servicePackages.value[0])
+const emptyServicePackageForm = () => ({
+  id: null,
+  code: '',
+  description: '',
+  currency: 'VND',
+  nights: 1,
+  display_price: 0,
+  begin_date: '',
+  end_date: '',
+  days_of_week: [0, 1, 2, 3, 4, 5, 6],
+  is_inactive: false,
+  items: [newServicePackageItem()],
+})
 
-const packageDetails = computed(() => {
-  if (!selectedPackage.value) return []
-  if (selectedPackage.value.id === 'PKG1') {
-    return [
-      { id: 'd1', validity: 'Theo ngày ở', fromDate: '01/01/2026', endDate: '31/12/2026', service: 'Buffet sáng người lớn', department: 'Restaurant/Nhà Hàng', mealPlan: 'Breakfast', amount: '150.000', calculatedOn: 'Người/Đêm', roomClass: 'Tất cả' },
-      { id: 'd2', validity: 'Theo ngày ở', fromDate: '01/01/2026', endDate: '31/12/2026', service: 'Buffet sáng trẻ em', department: 'Restaurant/Nhà Hàng', mealPlan: 'Breakfast', amount: '50.000', calculatedOn: 'Trẻ em/Đêm', roomClass: 'Tất cả' }
-    ]
-  } else if (selectedPackage.value.id === 'PKG2') {
-    return [
-      { id: 'd3', validity: 'Theo ngày ở', fromDate: '01/01/2026', endDate: '31/12/2026', service: 'Set ăn tối Deluxe', department: 'Restaurant/Nhà Hàng', mealPlan: 'Dinner', amount: '450.000', calculatedOn: 'Người/Đêm', roomClass: 'Tất cả' }
-    ]
-  } else {
-    return [
-      { id: 'd4', validity: 'Theo ngày ở', fromDate: '15/02/2026', endDate: '15/02/2027', service: 'Liệu trình Spa thư giãn', department: 'Spa', mealPlan: 'None', amount: '500.000', calculatedOn: 'Khách/Lần', roomClass: 'Suite' },
-      { id: 'd5', validity: 'Theo ngày ở', fromDate: '15/02/2026', endDate: '15/02/2027', service: 'Set ăn tối đặc biệt', department: 'Restaurant/Nhà Hàng', mealPlan: 'Dinner', amount: '400.000', calculatedOn: 'Người/Đêm', roomClass: 'Suite' }
-    ]
+const newServicePackageItem = () => ({
+  service_code: '', quantity: 1, rate: 0, service_charge: 0,
+  special_tax: 0, tax: 0, order_day: 1, outlet: '', note: '',
+})
+
+const servicePackageForm = reactive(emptyServicePackageForm())
+const packageDetails = computed(() => selectedPackage.value?.items || [])
+const totalPackageDetailsAmount = computed(() => packageDetails.value.reduce(
+  (sum, item) => sum + (Number(item.quantity) || 0) * (Number(item.rate) || 0), 0
+))
+
+const formatNumber = (num) => new Intl.NumberFormat('en-US').format(Number(num) || 0)
+const formatDaysOfWeek = (days) => {
+  const labels = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7']
+  return (days || []).map(day => labels[Number(day)]).filter(Boolean).join(', ')
+}
+const packageServiceName = (item) => item.hotel_service?.name || item.service_code || ''
+const packageDepartmentName = (item) => item.hotel_service?.department?.name || ''
+
+const fetchServicePackages = async () => {
+  try {
+    const res = await http.get('/service-packages')
+    servicePackages.value = res.data?.data || []
+    if (!selectedPackage.value || !servicePackages.value.some(pkg => pkg.id === selectedPackage.value.id)) {
+      selectedPackage.value = servicePackages.value[0] || null
+    } else {
+      selectedPackage.value = servicePackages.value.find(pkg => pkg.id === selectedPackage.value.id) || null
+    }
+  } catch (error) {
+    console.error(error)
+    uiStore.showToast('Không thể tải Gói dịch vụ.', 'error')
   }
-})
-
-// Calculate total sum of package details
-const totalPackageDetailsAmount = computed(() => {
-  return packageDetails.value.reduce((sum, item) => {
-    const numeric = parseInt(item.amount.replace(/\./g, ''), 10) || 0
-    return sum + numeric
-  }, 0)
-})
-
-const formatNumber = (num) => {
-  return new Intl.NumberFormat('vi-VN').format(num)
 }
 
-const selectPackage = (pkg) => {
-  selectedPackage.value = pkg
+const fetchHotelServices = async () => {
+  try {
+    const res = await http.get('/hotel-services')
+    hotelServices.value = res.data?.data || []
+  } catch (error) {
+    console.error(error)
+    uiStore.showToast('Không thể tải Danh mục dịch vụ.', 'error')
+  }
+}
+
+const selectPackage = (pkg) => { selectedPackage.value = pkg }
+
+const openNewServicePackage = () => {
+  Object.assign(servicePackageForm, emptyServicePackageForm())
+  isEditingServicePackage.value = false
+  modalPos.value = { x: 0, y: 0 }
+  showServicePackageModal.value = true
+}
+
+const openEditServicePackage = () => {
+  if (!selectedPackage.value) {
+    uiStore.showToast('Vui lòng chọn Gói dịch vụ.', 'warning')
+    return
+  }
+  Object.assign(servicePackageForm, JSON.parse(JSON.stringify({
+    ...selectedPackage.value,
+    items: selectedPackage.value.items?.length ? selectedPackage.value.items : [newServicePackageItem()],
+  })))
+  isEditingServicePackage.value = true
+  modalPos.value = { x: 0, y: 0 }
+  showServicePackageModal.value = true
+}
+
+const closeServicePackageModal = () => { showServicePackageModal.value = false }
+const addServicePackageItem = () => servicePackageForm.items.push(newServicePackageItem())
+const removeServicePackageItem = (index) => {
+  if (servicePackageForm.items.length > 1) servicePackageForm.items.splice(index, 1)
+}
+
+const saveServicePackage = async () => {
+  if (!servicePackageForm.code.trim()) {
+    uiStore.showToast('Vui lòng nhập Mã gói dịch vụ.', 'warning')
+    return
+  }
+  if (!servicePackageForm.items.every(item => item.service_code && Number(item.quantity) > 0)) {
+    uiStore.showToast('Mỗi chi tiết gói phải chọn Dịch vụ và Số lượng lớn hơn 0.', 'warning')
+    return
+  }
+  if (servicePackageForm.begin_date && servicePackageForm.end_date && servicePackageForm.end_date < servicePackageForm.begin_date) {
+    uiStore.showToast('Ngày kết thúc phải lớn hơn hoặc bằng Ngày bắt đầu.', 'warning')
+    return
+  }
+
+  isSavingServicePackage.value = true
+  try {
+    const payload = {
+      ...servicePackageForm,
+      code: servicePackageForm.code.trim(),
+      items: servicePackageForm.items.map(item => ({
+        ...item,
+        quantity: Number(item.quantity), rate: Number(item.rate) || 0,
+        service_charge: Number(item.service_charge) || 0,
+        special_tax: Number(item.special_tax) || 0,
+        tax: Number(item.tax) || 0,
+        order_day: Number(item.order_day) || 1,
+      })),
+    }
+    const res = isEditingServicePackage.value
+      ? await http.put(`/service-packages/${servicePackageForm.id}`, payload)
+      : await http.post('/service-packages', payload)
+    selectedPackage.value = res.data?.data || selectedPackage.value
+    await fetchServicePackages()
+    showServicePackageModal.value = false
+    uiStore.showToast('Lưu Gói dịch vụ thành công.', 'success')
+  } catch (error) {
+    console.error(error)
+    const errors = error.response?.data?.errors
+    uiStore.showToast(errors ? Object.values(errors).flat()[0] : (error.response?.data?.message || 'Không thể lưu Gói dịch vụ.'), 'error')
+  } finally {
+    isSavingServicePackage.value = false
+  }
+}
+
+const deleteServicePackage = async () => {
+  if (!selectedPackage.value) return
+  const confirmed = await uiStore.confirm({ message: `Bạn có chắc chắn muốn xóa Gói dịch vụ ${selectedPackage.value.code}?` })
+  if (!confirmed) return
+  try {
+    await http.delete(`/service-packages/${selectedPackage.value.id}`)
+    selectedPackage.value = null
+    await fetchServicePackages()
+    uiStore.showToast('Đã xóa Gói dịch vụ.', 'success')
+  } catch (error) {
+    uiStore.showToast(error.response?.data?.message || 'Không thể xóa Gói dịch vụ.', 'error')
+  }
 }
 </script>
 
@@ -1477,27 +1586,16 @@ const selectPackage = (pkg) => {
           <div class="flex items-center justify-between pb-2.5 border-b border-slate-100 shrink-0">
             <h3 class="text-xs font-semibold text-[#000000D9] uppercase tracking-wide m-0">Gói Dịch Vụ</h3>
             <div class="flex items-center gap-1.5">
-              <!-- Search Mock Button -->
-              <button
-                class="btn-pms-secondary h-8 px-2.5 text-xs flex items-center justify-center cursor-pointer">
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round"
-                    d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
+              <button @click="fetchServicePackages" class="btn-pms-secondary h-8 px-2.5 text-xs flex items-center justify-center cursor-pointer" title="Tải lại">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2a8.001 8.001 0 00-15.356-2M20 20v-5h-.581m0 0a8.003 8.003 0 01-15.357 2" /></svg>
               </button>
-              <!-- Add Button -->
-              <button
-                class="btn-pms-primary h-8 px-3 text-xs flex items-center gap-1.5 cursor-pointer shadow-xs">
+              <button @click="openNewServicePackage" class="btn-pms-primary h-8 px-3 text-xs flex items-center gap-1.5 cursor-pointer shadow-xs">
                 <span class="text-sm">+</span> Thêm
               </button>
-              <!-- Edit Button -->
-              <button
-                class="btn-pms-primary h-8 px-3 text-xs flex items-center gap-1.5 cursor-pointer shadow-xs">
+              <button @click="openEditServicePackage" :disabled="!selectedPackage" class="btn-pms-primary h-8 px-3 text-xs flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50">
                 Sửa
               </button>
-              <!-- Delete Button -->
-              <button
-                class="btn-pms-danger h-8 px-3 text-xs flex items-center gap-1.5 cursor-pointer shadow-xs">
+              <button @click="deleteServicePackage" :disabled="!selectedPackage" class="btn-pms-danger h-8 px-3 text-xs flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50">
                 Xóa
               </button>
             </div>
@@ -1526,20 +1624,20 @@ const selectPackage = (pkg) => {
                   <td class="p-2 border border-slate-200 font-normal text-[#000000D9] text-center">{{ pkg.code }}</td>
                   <td class="p-2 border border-slate-200 text-center font-normal text-[#000000D9]">{{ pkg.currency }}</td>
                   <td class="p-2 border border-slate-200 text-center font-normal text-[#000000D9]">{{ pkg.nights }}</td>
-                  <td class="p-2 border border-slate-200 text-right font-normal text-[#000000D9]">{{ pkg.displayPrice }}
+                  <td class="p-2 border border-slate-200 text-right font-normal text-[#000000D9]">{{ formatNumber(pkg.display_price) }}
                   </td>
-                  <td class="p-2 border border-slate-200 text-center text-[#000000D9] font-normal">{{ pkg.startDate }}
+                  <td class="p-2 border border-slate-200 text-center text-[#000000D9] font-normal">{{ formatDateVN(pkg.begin_date) }}
                   </td>
-                  <td class="p-2 border border-slate-200 text-center text-[#000000D9] font-normal">{{ pkg.endDate }}
+                  <td class="p-2 border border-slate-200 text-center text-[#000000D9] font-normal">{{ formatDateVN(pkg.end_date) }}
                   </td>
                   <td class="p-2 border border-slate-200 text-center">
-                    <input type="checkbox" :checked="pkg.inactive" @click.stop
-                      class="rounded border-slate-300 text-sky-500 focus:ring-sky-400 cursor-pointer" />
+                    <input type="checkbox" :checked="pkg.is_inactive" disabled class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" />
                   </td>
                   <td class="p-2 border border-slate-200 text-[#000000D9] font-normal truncate max-w-[200px]"
-                    :title="pkg.daysOfWeek">{{ pkg.daysOfWeek }}</td>
+                    :title="formatDaysOfWeek(pkg.days_of_week)">{{ formatDaysOfWeek(pkg.days_of_week) }}</td>
                   <td class="p-2 border border-slate-200 text-[#000000D9] font-normal">{{ pkg.description }}</td>
                 </tr>
+                <tr v-if="servicePackages.length === 0"><td colspan="9" class="p-8 text-center text-xs text-[#A8B0BF]">Chưa có Gói dịch vụ</td></tr>
               </tbody>
             </table>
           </div>
@@ -1552,21 +1650,7 @@ const selectPackage = (pkg) => {
           <div class="flex items-center justify-between pb-2.5 border-b border-slate-100 shrink-0">
             <h3 class="text-xs font-semibold text-[#000000D9] tracking-wide m-0">Chi Tiết Gói Dịch Vụ</h3>
             <div class="flex items-center gap-1.5">
-              <!-- Add Button -->
-              <button
-                class="btn-pms-primary h-8 px-3 text-xs flex items-center gap-1.5 cursor-pointer shadow-xs">
-                <span class="text-sm">+</span> Thêm
-              </button>
-              <!-- Edit Button -->
-              <button
-                class="btn-pms-primary h-8 px-3 text-xs flex items-center gap-1.5 cursor-pointer shadow-xs">
-                Sửa
-              </button>
-              <!-- Delete Button -->
-              <button
-                class="btn-pms-danger h-8 px-3 text-xs flex items-center gap-1.5 cursor-pointer shadow-xs">
-                Xóa
-              </button>
+              <button @click="openEditServicePackage" :disabled="!selectedPackage" class="btn-pms-primary h-8 px-3 text-xs flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50">Sửa Chi Tiết</button>
             </div>
           </div>
 
@@ -1575,34 +1659,28 @@ const selectPackage = (pkg) => {
             <table class="w-full text-xs text-left border-collapse min-w-[800px] border border-slate-200 font-roboto">
               <thead>
                 <tr class="bg-slate-50 border-b border-slate-200 text-[#000000D9] font-semibold sticky top-0 z-10">
-                  <th class="p-2 border border-slate-200 text-center align-middle">Thời Gian Hiệu Lực</th>
-                  <th class="p-2 border border-slate-200 w-32 text-center align-middle">Từ Ngày</th>
-                  <th class="p-2 border border-slate-200 w-32 text-center align-middle">Đến Ngày</th>
                   <th class="p-2 border border-slate-200 text-center align-middle">Dịch Vụ</th>
                   <th class="p-2 border border-slate-200 text-center align-middle">Bộ Phận</th>
-                  <th class="p-2 border border-slate-200 text-center align-middle">Gói Bữa Ăn</th>
+                  <th class="p-2 border border-slate-200 text-center align-middle">Ngày Dùng</th>
+                  <th class="p-2 border border-slate-200 text-center align-middle">Số Lượng</th>
                   <th class="p-2 border border-slate-200 w-32 text-center align-middle">Số Tiền</th>
-                  <th class="p-2 border border-slate-200 w-32 text-center align-middle">Tính Trên</th>
-                  <th class="p-2 border border-slate-200 text-center align-middle">Loại Phòng</th>
+                  <th class="p-2 border border-slate-200 text-center align-middle">Outlet</th>
+                  <th class="p-2 border border-slate-200 text-center align-middle">Ghi Chú</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="detail in packageDetails" :key="detail.id"
                   class="border-b border-slate-100 hover:bg-sky-100 text-[#000000D9]">
-                  <td class="p-2 border border-slate-200 font-normal text-[#000000D9]">{{ detail.validity }}</td>
-                  <td class="p-2 border border-slate-200 text-center text-[#000000D9] font-normal">{{ detail.fromDate }}</td>
-                  <td class="p-2 border border-slate-200 text-center text-[#000000D9] font-normal">{{ detail.endDate }}</td>
-                  <td class="p-2 border border-slate-200 font-normal text-[#000000D9]">{{ detail.service }}</td>
-                  <td class="p-2 border border-slate-200 text-[#000000D9] font-normal">{{ detail.department }}</td>
-                  <td class="p-2 border border-slate-200 text-center"><span
-                      class="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-100 rounded text-[10px] font-normal uppercase">{{
-                      detail.mealPlan }}</span></td>
-                  <td class="p-2 border border-slate-200 text-right font-normal text-[#000000D9]">{{ detail.amount }}</td>
-                  <td class="p-2 border border-slate-200 text-center text-[#000000D9] font-normal">{{ detail.calculatedOn }}</td>
-                  <td class="p-2 border border-slate-200 font-normal text-sky-700 text-center">{{ detail.roomClass }}</td>
+                  <td class="p-2 border border-slate-200 font-normal text-[#000000D9]">{{ packageServiceName(detail) }}</td>
+                  <td class="p-2 border border-slate-200 text-[#000000D9] font-normal">{{ packageDepartmentName(detail) }}</td>
+                  <td class="p-2 border border-slate-200 text-center text-[#000000D9] font-normal">{{ detail.order_day }}</td>
+                  <td class="p-2 border border-slate-200 text-center text-[#000000D9] font-normal">{{ detail.quantity }}</td>
+                  <td class="p-2 border border-slate-200 text-right font-normal text-[#000000D9]">{{ formatNumber(Number(detail.quantity) * Number(detail.rate)) }}</td>
+                  <td class="p-2 border border-slate-200 text-center text-[#000000D9] font-normal">{{ detail.outlet || '' }}</td>
+                  <td class="p-2 border border-slate-200 font-normal text-[#000000D9]">{{ detail.note || '' }}</td>
                 </tr>
                 <tr v-if="packageDetails.length === 0">
-                  <td colspan="9" class="p-8 text-center text-[#000000D9] font-normal text-xs">Không có dữ liệu chi tiết
+                  <td colspan="7" class="p-8 text-center text-[#A8B0BF] font-normal text-xs">Không có dữ liệu chi tiết
                   </td>
                 </tr>
               </tbody>
@@ -1619,6 +1697,93 @@ const selectPackage = (pkg) => {
       </div>
 
     </div>
+
+    <Teleport to="body">
+      <div v-if="showServicePackageModal" class="fixed inset-0 z-[9999] flex items-center justify-center p-6">
+        <div class="absolute inset-0 bg-black/40" @click="closeServicePackageModal"></div>
+        <div class="relative w-full max-w-6xl max-h-[90vh] bg-white rounded-xl shadow-2xl flex flex-col overflow-hidden" :style="{ transform: `translate(${modalPos.x}px, ${modalPos.y}px)` }">
+          <div class="flex items-center justify-between px-5 py-2.5 text-white shrink-0 cursor-move select-none" :style="{ background: topbarThemeBg }" @mousedown="startDragModal">
+            <span class="text-xs font-semibold tracking-wide text-white">{{ isEditingServicePackage ? 'Sửa Gói Dịch Vụ' : 'Thêm Gói Dịch Vụ' }}</span>
+            <button @click="closeServicePackageModal" class="w-7 h-7 flex items-center justify-center rounded-full hover:bg-white/20 transition-colors cursor-pointer bg-transparent border-none text-white" aria-label="Đóng">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+          </div>
+
+          <div class="p-4 overflow-y-auto min-h-0 space-y-4">
+            <div class="grid grid-cols-12 gap-3">
+              <div class="col-span-3">
+                <label class="block text-xs font-semibold text-[#000000D9] mb-1">Mã Gói <span class="text-red-500">*</span></label>
+                <input v-model="servicePackageForm.code" :disabled="isEditingServicePackage" required class="input-required w-full h-8 rounded-lg px-2 text-xs text-[#000000D9] disabled:bg-slate-100" placeholder="Nhập mã gói" />
+              </div>
+              <div class="col-span-3">
+                <label class="block text-xs font-semibold text-[#000000D9] mb-1">Tiền Tệ <span class="text-red-500">*</span></label>
+                <input v-model="servicePackageForm.currency" required maxlength="10" class="input-required w-full h-8 rounded-lg px-2 text-xs text-[#000000D9]" placeholder="VND" />
+              </div>
+              <div class="col-span-2">
+                <label class="block text-xs font-semibold text-[#000000D9] mb-1">Số Đêm <span class="text-red-500">*</span></label>
+                <input v-model.number="servicePackageForm.nights" min="1" max="365" type="number" required class="input-required w-full h-8 rounded-lg px-2 text-xs text-[#000000D9]" />
+              </div>
+              <div class="col-span-4">
+                <label class="block text-xs font-semibold text-[#000000D9] mb-1">Giá Hiển Thị <span class="text-red-500">*</span></label>
+                <input :value="formatCurrencyInput(servicePackageForm.display_price, servicePackageForm.currency)" @input="servicePackageForm.display_price = cleanCurrencyValue($event.target.value, servicePackageForm.currency)" required class="input-required w-full h-8 rounded-lg px-2 text-xs text-right text-[#000000D9]" placeholder="0" />
+              </div>
+              <div class="col-span-4">
+                <label class="block text-xs font-semibold text-[#000000D9] mb-1">Ngày Bắt Đầu</label>
+                <SingleDatePicker v-model="servicePackageForm.begin_date" placeholder="dd/mm/yyyy" />
+              </div>
+              <div class="col-span-4">
+                <label class="block text-xs font-semibold text-[#000000D9] mb-1">Ngày Kết Thúc</label>
+                <SingleDatePicker v-model="servicePackageForm.end_date" :min-date="servicePackageForm.begin_date" placeholder="dd/mm/yyyy" />
+              </div>
+              <div class="col-span-4 flex items-end pb-1">
+                <label class="inline-flex items-center gap-2 text-xs font-semibold text-[#000000D9] cursor-pointer"><input v-model="servicePackageForm.is_inactive" type="checkbox" class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" /> Không Sử Dụng</label>
+              </div>
+              <div class="col-span-12">
+                <label class="block text-xs font-semibold text-[#000000D9] mb-1">Mô Tả</label>
+                <input v-model="servicePackageForm.description" maxlength="255" class="w-full h-8 border border-slate-200 rounded-lg px-2 text-xs text-[#000000D9] focus:border-sky-400 focus:outline-none" placeholder="Mô tả gói dịch vụ" />
+              </div>
+              <div class="col-span-12">
+                <span class="block text-xs font-semibold text-[#000000D9] mb-1">Ngày Áp Dụng Trong Tuần</span>
+                <div class="flex flex-wrap gap-x-4 gap-y-1">
+                  <label v-for="(label, day) in ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7']" :key="label" class="inline-flex items-center gap-1.5 text-xs text-[#000000D9] cursor-pointer"><input v-model="servicePackageForm.days_of_week" :value="day" type="checkbox" class="rounded border-slate-300 text-sky-500 focus:ring-sky-400" /> {{ label }}</label>
+                </div>
+              </div>
+            </div>
+
+            <div class="border border-slate-200 rounded-lg overflow-hidden">
+              <div class="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200">
+                <span class="text-xs font-semibold text-[#000000D9]">Chi Tiết Gói <span class="text-red-500">*</span></span>
+                <button @click="addServicePackageItem" type="button" class="btn-pms-primary h-8 px-3 text-xs flex items-center gap-1.5"><span class="text-sm">+</span> Thêm Dòng</button>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="w-full min-w-[980px] text-xs border-collapse">
+                  <thead><tr class="bg-slate-50 text-[#000000D9] font-semibold">
+                    <th class="p-2 border border-slate-200 text-center align-middle">Dịch Vụ</th><th class="p-2 border border-slate-200 text-center align-middle">Ngày Dùng</th><th class="p-2 border border-slate-200 text-center align-middle">Số Lượng</th><th class="p-2 border border-slate-200 text-center align-middle">Đơn Giá</th><th class="p-2 border border-slate-200 text-center align-middle">Phí DV %</th><th class="p-2 border border-slate-200 text-center align-middle">Thuế TTĐB %</th><th class="p-2 border border-slate-200 text-center align-middle">VAT %</th><th class="p-2 border border-slate-200 text-center align-middle">Outlet</th><th class="p-2 border border-slate-200 text-center align-middle">Ghi Chú</th><th class="p-2 border border-slate-200 text-center align-middle w-14"></th>
+                  </tr></thead>
+                  <tbody>
+                    <tr v-for="(item, index) in servicePackageForm.items" :key="index">
+                      <td class="p-1 border border-slate-200"><select v-model="item.service_code" required class="input-required h-8 w-full rounded-lg px-2 text-xs text-[#000000D9]"><option value="" disabled>Chọn dịch vụ</option><option v-for="service in hotelServices" :key="service.code" :value="service.code">{{ service.code }} - {{ service.name }}</option></select></td>
+                      <td class="p-1 border border-slate-200"><input v-model.number="item.order_day" type="number" min="1" max="365" required class="input-required h-8 w-full rounded-lg px-2 text-xs text-center text-[#000000D9]" /></td>
+                      <td class="p-1 border border-slate-200"><input v-model.number="item.quantity" type="number" min="0.01" step="0.01" required class="input-required h-8 w-full rounded-lg px-2 text-xs text-right text-[#000000D9]" /></td>
+                      <td class="p-1 border border-slate-200"><input :value="formatCurrencyInput(item.rate, servicePackageForm.currency)" @input="item.rate = cleanCurrencyValue($event.target.value, servicePackageForm.currency)" required class="input-required h-8 w-full rounded-lg px-2 text-xs text-right text-[#000000D9]" /></td>
+                      <td class="p-1 border border-slate-200"><input v-model.number="item.service_charge" type="number" min="0" max="100" step="0.0001" class="h-8 w-full border border-slate-200 rounded-lg px-2 text-xs text-right text-[#000000D9]" /></td>
+                      <td class="p-1 border border-slate-200"><input v-model.number="item.special_tax" type="number" min="0" max="100" step="0.0001" class="h-8 w-full border border-slate-200 rounded-lg px-2 text-xs text-right text-[#000000D9]" /></td>
+                      <td class="p-1 border border-slate-200"><input v-model.number="item.tax" type="number" min="0" max="100" step="0.0001" class="h-8 w-full border border-slate-200 rounded-lg px-2 text-xs text-right text-[#000000D9]" /></td>
+                      <td class="p-1 border border-slate-200"><input v-model="item.outlet" maxlength="250" class="h-8 w-full border border-slate-200 rounded-lg px-2 text-xs text-[#000000D9]" /></td>
+                      <td class="p-1 border border-slate-200"><input v-model="item.note" maxlength="200" class="h-8 w-full border border-slate-200 rounded-lg px-2 text-xs text-[#000000D9]" /></td>
+                      <td class="p-1 border border-slate-200 text-center"><button @click="removeServicePackageItem(index)" :disabled="servicePackageForm.items.length === 1" type="button" class="text-rose-600 hover:text-rose-800 disabled:text-slate-300 cursor-pointer disabled:cursor-not-allowed" title="Xóa dòng">✕</button></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div class="flex items-center justify-end gap-2 p-3 border-t border-slate-200 shrink-0">
+            <button @click="saveServicePackage" :disabled="isSavingServicePackage" type="button" class="btn-pms-primary h-8 px-4 text-xs flex items-center gap-1.5 disabled:opacity-50"><span v-if="isSavingServicePackage">Đang lưu...</span><span v-else>Lưu</span></button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
 
     <!-- RATE PLAN MODAL -->
     <Teleport to="body">

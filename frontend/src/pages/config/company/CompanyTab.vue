@@ -55,6 +55,7 @@ const columns = ref([
   { id: 'booker', label: 'Người Đặt Phòng', visible: true },
   { id: 'sales_person', label: 'Người Bán', visible: true },
   { id: 'branch', label: 'Chi Nhánh', visible: true },
+  { id: 'is_active', label: 'Trạng Thái Sử Dụng', visible: true },
 ])
 
 const isColumnVisible = (columnId) => {
@@ -646,7 +647,7 @@ const companies = computed(() => paginatedCompanies.value)
 const meta = computed(() => computedMeta.value)
 
 const visibleColumnsCount = computed(() => {
-  return columns.value.filter(c => c.visible).length + 1
+  return columns.value.filter(c => c.visible).length + 2
 })
 
 const isSourceFiltered = computed(() => selectedSources.value.length > 0)
@@ -673,7 +674,7 @@ const handleExport = async () => {
     const url = window.URL.createObjectURL(new Blob([res.data]))
     const link = document.createElement('a')
     link.href = url
-    link.setAttribute('download', 'companies.csv')
+    link.setAttribute('download', 'companies.xlsx')
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -722,7 +723,7 @@ const handleDownloadTemplate = async () => {
     const url = window.URL.createObjectURL(new Blob([res.data]))
     const link = document.createElement('a')
     link.href = url
-    link.setAttribute('download', 'company_template.csv')
+    link.setAttribute('download', 'company_template.xlsx')
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
@@ -762,13 +763,13 @@ const handleDownloadTemplate = async () => {
           </svg>
           Nhập excel
         </button>
-        <button @click="handleDownloadTemplate" class="btn-pms-secondary" title="Tải file CSV mẫu để nhập liệu">
+        <button @click="handleDownloadTemplate" class="btn-pms-secondary" title="Tải file Excel mẫu để nhập liệu">
           <svg class="w-3.5 h-3.5 text-slate-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
           </svg>
           Tải file mẫu
         </button>
-        <input type="file" ref="fileInput" class="hidden" accept=".csv" @change="handleImport" />
+        <input type="file" ref="fileInput" class="hidden" accept=".xlsx,.xls,.csv" @change="handleImport" />
       </div>
 
       <!-- Column Selector & Help -->
@@ -809,6 +810,7 @@ const handleDownloadTemplate = async () => {
       <table class="w-full text-left border-collapse text-xs min-w-[1400px]">
         <thead>
           <tr class="bg-slate-100 border-b border-slate-200 text-[#000000D9] font-bold select-none h-9">
+            <th class="p-2 border border-slate-200 text-[#000000D9] font-semibold text-xs text-center align-middle whitespace-nowrap w-14">STT</th>
             <!-- Mã -->
             <th 
               v-if="isColumnVisible('code')" 
@@ -1041,17 +1043,21 @@ const handleDownloadTemplate = async () => {
               </div>
             </th>
 
+            <!-- Trạng thái sử dụng -->
+            <th v-if="isColumnVisible('is_active')" class="p-2 border border-slate-200 text-[#000000D9] font-semibold text-xs text-center align-middle whitespace-nowrap">Trạng Thái Sử Dụng</th>
+
             <!-- Xóa -->
             <th class="p-2 border border-slate-200 text-[#000000D9] font-semibold text-xs text-center align-middle whitespace-nowrap text-center w-20">Xóa</th>
           </tr>
         </thead>
         <tbody>
           <tr 
-            v-for="item in companies" 
+            v-for="(item, index) in companies"
             :key="item.id" 
             class="border-b border-slate-200 hover:bg-[#bdecfe]/50 cursor-pointer h-9 transition-colors"
             @dblclick="openEditModal(item)"
           >
+            <td class="p-2 text-[#000000D9] font-normal text-center whitespace-nowrap">{{ (meta.current_page - 1) * perPage + index + 1 }}</td>
             <td v-if="isColumnVisible('code')" class="p-2 text-[#000000D9] font-normal whitespace-nowrap">{{ item.code }}</td>
             <td v-if="isColumnVisible('name')" class="p-2 text-[#000000D9] font-normal whitespace-nowrap">{{ item.name }}</td>
             <td v-if="isColumnVisible('trading_name')" class="p-2 text-[#000000D9] font-normal whitespace-nowrap">{{ item.trading_name || '' }}</td>
@@ -1066,6 +1072,7 @@ const handleDownloadTemplate = async () => {
             <td v-if="isColumnVisible('booker')" class="p-2 text-[#000000D9] font-normal whitespace-nowrap text-xs">{{ item.booker?.name || '' }}</td>
             <td v-if="isColumnVisible('sales_person')" class="p-2 text-[#000000D9] font-normal whitespace-nowrap text-xs">{{ item.sales_person?.name || '' }}</td>
             <td v-if="isColumnVisible('branch')" class="p-2 text-[#000000D9] font-normal whitespace-nowrap text-xs">{{ item.branch?.name || '' }}</td>
+            <td v-if="isColumnVisible('is_active')" class="p-2 text-[#000000D9] font-normal text-center whitespace-nowrap">{{ item.is_active ? 'Đang sử dụng' : 'Không sử dụng' }}</td>
             <td class="p-2 text-center">
               <button 
                 @click.stop="handleDelete(item)"
@@ -1189,7 +1196,7 @@ const handleDownloadTemplate = async () => {
                 <div class="flex items-center gap-1">
                   <div class="relative flex items-center flex-1">
                     <select v-model="form.booker_id" :required="isCompanyFieldRequired('booker_id')" :aria-required="isCompanyFieldRequired('booker_id')" :class="['w-full h-8 rounded-lg pl-2 pr-7 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer', isCompanyFieldRequired('booker_id') ? 'input-required' : 'border border-slate-200']">
-                      <option value=""></option>
+                      <option value="">Chưa chọn</option>
                       <option v-for="bk in bookers" :key="bk.id" :value="bk.id">{{ bk.name }}</option>
                     </select>
                     <button v-if="form.booker_id" @click.stop.prevent="form.booker_id = ''" type="button" class="input-clear-button !right-6 text-slate-400 hover:text-slate-600" title="Xóa">✕</button>
@@ -1205,7 +1212,7 @@ const handleDownloadTemplate = async () => {
                 <span class="font-semibold text-[#000000D9]">Người Bán<span v-if="isCompanyFieldRequired('sales_person_id')" class="text-red-500">*</span></span>
                 <div class="relative flex items-center">
                   <select v-model="form.sales_person_id" :required="isCompanyFieldRequired('sales_person_id')" :aria-required="isCompanyFieldRequired('sales_person_id')" :class="['w-full h-8 rounded-lg pl-2 pr-7 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer', isCompanyFieldRequired('sales_person_id') ? 'input-required' : 'border border-slate-200']">
-                    <option value=""></option>
+                    <option value="">Chưa chọn</option>
                     <option v-for="u in users" :key="u.id" :value="u.id">{{ u.name }}</option>
                   </select>
                   <button v-if="form.sales_person_id" @click.stop.prevent="form.sales_person_id = ''" type="button" class="input-clear-button !right-6 text-slate-400 hover:text-slate-600" title="Xóa">✕</button>
@@ -1304,7 +1311,7 @@ const handleDownloadTemplate = async () => {
                 <div class="flex items-center gap-1">
                   <div class="relative flex items-center flex-1">
                     <select v-model="form.market_id" :required="isCompanyFieldRequired('market_id')" :aria-required="isCompanyFieldRequired('market_id')" :class="['w-full h-8 rounded-lg pl-2 pr-7 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer', isCompanyFieldRequired('market_id') ? 'input-required' : 'border border-slate-200']">
-                      <option value=""></option>
+                      <option value="">Chưa chọn</option>
                       <option v-for="m in markets" :key="m.id" :value="m.id">{{ m.name }}</option>
                     </select>
                     <button v-if="form.market_id" @click.stop.prevent="form.market_id = ''" type="button" class="input-clear-button !right-6 text-slate-400 hover:text-slate-600" title="Xóa">✕</button>
@@ -1321,7 +1328,7 @@ const handleDownloadTemplate = async () => {
                 <div class="flex items-center gap-1">
                   <div class="relative flex items-center flex-1">
                     <select v-model="form.customer_source_id" :required="isCompanyFieldRequired('customer_source_id')" :aria-required="isCompanyFieldRequired('customer_source_id')" :class="['w-full h-8 rounded-lg pl-2 pr-7 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer', isCompanyFieldRequired('customer_source_id') ? 'input-required' : 'border border-slate-200']">
-                      <option value=""></option>
+                      <option value="">Chưa chọn</option>
                       <option v-for="s in customerSources" :key="s.id" :value="s.id">{{ s.name }}</option>
                     </select>
                     <button v-if="form.customer_source_id" @click.stop.prevent="form.customer_source_id = ''" type="button" class="input-clear-button !right-6 text-slate-400 hover:text-slate-600" title="Xóa">✕</button>
@@ -1342,7 +1349,7 @@ const handleDownloadTemplate = async () => {
                 <div class="flex items-center gap-1">
                   <div class="relative flex items-center flex-1">
                     <select v-model="form.branch_id" :required="isCompanyFieldRequired('branch_id')" :aria-required="isCompanyFieldRequired('branch_id')" :class="['w-full h-8 rounded-lg pl-2 pr-7 bg-white text-xs font-normal text-[#000000D9] focus:outline-none focus:ring-1 focus:ring-blue-500 appearance-none cursor-pointer', isCompanyFieldRequired('branch_id') ? 'input-required' : 'border border-slate-200']">
-                      <option value=""></option>
+                      <option value="">Chưa chọn</option>
                       <option v-for="b in branches" :key="b.id" :value="b.id">{{ b.name }}</option>
                     </select>
                     <button v-if="form.branch_id" @click.stop.prevent="form.branch_id = ''" type="button" class="input-clear-button !right-6 text-slate-400 hover:text-slate-600" title="Xóa">✕</button>

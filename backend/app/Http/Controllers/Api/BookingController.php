@@ -104,6 +104,7 @@ class BookingController extends Controller
                 'room_classes' => \App\Http\Resources\RoomClassResource::collection($roomClasses),
                 'room_forms' => \App\Http\Resources\RoomFormResource::collection(\App\Models\RoomForm::all()),
                 'room_rate_codes' => \App\Models\RoomRateCode::with('ratePlans', 'dailyMappings')->get(),
+                'service_packages' => \App\Models\ServicePackage::with('items.hotelService.department')->orderBy('code')->get(),
                 'currencies' => \App\Http\Resources\CurrencyResource::collection(\App\Models\Currency::all()),
                 'hotel_services' => \App\Http\Resources\HotelServiceResource::collection(\App\Models\HotelService::all()),
                 'booking_capabilities' => [
@@ -144,6 +145,7 @@ class BookingController extends Controller
             'branch',
             'booker',
             'paymentMethod',
+            'servicePackage.items.hotelService.department',
             'bookingRooms.roomClass',
             'bookingRooms.room',
             'bookingRooms.movedToRoom.room',
@@ -499,6 +501,7 @@ class BookingController extends Controller
             'is_master_room_rate'      => 'nullable|boolean',
             'is_day_use'               => 'nullable|boolean',
             'breakfast_included'       => 'nullable|boolean',
+            'service_package_id'       => 'nullable|exists:service_packages,id',
             'has_vat'                  => 'nullable|boolean',
             'company_id'               => 'required|exists:companies,id',
             'market_id'                => 'required|exists:markets,id',
@@ -814,6 +817,10 @@ class BookingController extends Controller
                         }
                     }
                 }
+                if (array_key_exists('service_package_id', $validated)) {
+                    $this->applyServicePackage($booking, $validated['service_package_id']);
+                }
+
                 // 3. Tạo bản ghi cọc trong bảng payments nếu có
                 if ($request->has('deposit_details') && is_array($request->deposit_details)) {
                     $depositDepartmentId = ModuleCode::normalize($validated['module'] ?? null) === ModuleCode::FRONTDESK
@@ -891,6 +898,7 @@ class BookingController extends Controller
             'branch',
             'booker',
             'paymentMethod',
+            'servicePackage.items.hotelService.department',
             'bookingRooms.roomClass',
             'bookingRooms.room',
             'bookingRooms.movedToRoom.room',
@@ -938,6 +946,7 @@ class BookingController extends Controller
             'branch',
             'booker',
             'paymentMethod',
+            'servicePackage.items.hotelService.department',
             'bookingRooms.roomClass',
             'bookingRooms.room',
             'bookingRooms.guests.guest',
@@ -1314,6 +1323,7 @@ class BookingController extends Controller
                 'is_master_room_rate'      => 'nullable|boolean',
                 'is_day_use'               => 'nullable|boolean',
                 'breakfast_included'       => 'nullable|boolean',
+                'service_package_id'       => 'nullable|exists:service_packages,id',
                 'has_vat'                  => 'nullable|boolean',
                 'company_id'               => 'required|exists:companies,id',
                 'market_id'                => 'required|exists:markets,id',
@@ -2025,6 +2035,10 @@ class BookingController extends Controller
                     $this->cascadeBookingCompanyUpdate($booking, $booking->company_id);
                 }
 
+                if ($request->has('service_package_id')) {
+                    $this->applyServicePackage($booking, $validated['service_package_id'] ?? null);
+                }
+
                 // Dòng 394: kiểm tra trạng thái cuối cùng (sau đồng bộ ngày và
                 // room_allocations). Lỗi sẽ rollback toàn bộ, không lưu gì.
                 if ($bookingDatesChanged || ($request->has('room_allocations') && is_array($request->room_allocations))) {
@@ -2085,6 +2099,7 @@ class BookingController extends Controller
             'branch',
             'booker',
             'paymentMethod',
+            'servicePackage.items.hotelService.department',
             'bookingRooms.roomClass',
             'bookingRooms.room',
             'bookingRooms.guests.guest',
@@ -4822,6 +4837,114 @@ class BookingController extends Controller
         }
 
         return 0;
+    }
+
+    /**
+     * Áp dụng gói một lần cho Đăng ký vào folio Master của phòng lưu trú đầu tiên.
+     * Chỉ tạo dòng dự kiến (is_posted = 0); không tạo hoặc cập nhật hóa đơn Checkout.
+     */
+    private function applyServicePackage(Booking $booking, ?int $servicePackageId): void
+    {
+        $packageRows = \App\Models\BookingRoomService::query()
+            ->whereIn('booking_room_id', $booking->bookingRooms()->pluck('id'))
+            ->whereNotNull('service_package_detail_no');
+
+        if ((clone $packageRows)->where('is_posted', 1)->exists()) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'service_package_id' => ['Gói dịch vụ đã có dòng được ghi nhận trên hóa đơn, không thể thay đổi.'],
+            ]);
+        }
+
+        // Rebuild only unposted package projections. Other setup services and
+        // all posted Checkout data remain untouched.
+        $packageRows->where('is_posted', 0)->delete();
+
+        if (!$servicePackageId) {
+            $booking->update(['service_package_id' => null, 'service_package_snapshot' => null]);
+            return;
+        }
+
+        $package = \App\Models\ServicePackage::with('items.hotelService.department')->findOrFail($servicePackageId);
+        $arrival = Carbon::parse($booking->arrival_date)->startOfDay();
+        $departure = Carbon::parse($booking->departure_date)->startOfDay();
+        $allowedDays = $package->days_of_week ?? [];
+
+        if ($package->is_inactive
+            || ($package->begin_date && $arrival->lt(Carbon::parse($package->begin_date)->startOfDay()))
+            || ($package->end_date && $arrival->gt(Carbon::parse($package->end_date)->startOfDay()))
+            || ($allowedDays !== [] && !in_array($arrival->dayOfWeek, array_map('intval', $allowedDays), true))) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'service_package_id' => ['Gói dịch vụ không áp dụng cho ngày đến của đăng ký.'],
+            ]);
+        }
+
+        $targetRoom = $booking->bookingRooms()
+            ->whereIn('status', [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN])
+            ->orderBy('arrival_date')
+            ->orderBy('id')
+            ->first();
+        if (!$targetRoom) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'service_package_id' => ['Đăng ký phải có ít nhất một phòng đang hoạt động để áp dụng gói dịch vụ.'],
+            ]);
+        }
+
+        $snapshot = [
+            'id' => $package->id,
+            'code' => $package->code,
+            'description' => $package->description,
+            'currency' => $package->currency,
+            'nights' => $package->nights,
+            'display_price' => $package->display_price,
+            'items' => [],
+        ];
+
+        foreach ($package->items as $item) {
+            $serviceDate = $arrival->copy()->addDays(max(0, (int) $item->order_day - 1));
+            $isDayUse = $arrival->equalTo($departure);
+            if ((!$isDayUse && $serviceDate->gte($departure)) || ($isDayUse && !$serviceDate->equalTo($arrival))) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'service_package_id' => ["Dịch vụ ngày {$item->order_day} không nằm trong thời gian ở của đăng ký."],
+                ]);
+            }
+
+            $snapshot['items'][] = [
+                'detail_no' => $item->detail_no,
+                'service_code' => $item->service_code,
+                'service_name' => $item->hotelService?->name ?? $item->service_code,
+                'quantity' => $item->quantity,
+                'rate' => $item->rate,
+                'service_charge' => $item->service_charge,
+                'special_tax' => $item->special_tax,
+                'tax' => $item->tax,
+                'order_day' => $item->order_day,
+                'outlet' => $item->outlet,
+                'note' => $item->note,
+            ];
+
+            \App\Models\BookingRoomService::create([
+                'booking_room_id' => $targetRoom->id,
+                'service_code' => $item->service_code,
+                'service_package_detail_no' => $item->detail_no,
+                'service_name' => $item->hotelService?->name ?? $item->service_code,
+                'service_date' => $serviceDate->toDateString(),
+                'quantity' => $item->quantity,
+                'rate' => $item->rate,
+                'department' => 'FO',
+                'note' => $item->note,
+                'tax' => $item->tax,
+                'service_charge' => $item->service_charge,
+                'folio' => 1,
+                'is_room' => 0,
+                'is_posted' => 0,
+                'created_by' => Auth::user()?->username ?? 'system',
+            ]);
+        }
+
+        $booking->update([
+            'service_package_id' => $package->id,
+            'service_package_snapshot' => $snapshot,
+        ]);
     }
 
     /**

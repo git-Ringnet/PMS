@@ -8,11 +8,20 @@ use App\Models\Company;
 use App\Models\HotelConfig;
 use App\Services\ChainCatalogSyncService;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class CompanyController extends Controller
 {
     private const REQUIRED_FIELDS_CONFIG = 'CreateCompanyRequiredField';
+
+    private const SPREADSHEET_HEADERS = [
+        'Mã', 'Tên', 'Tên Giao Dịch', 'Địa Chỉ', 'Mã Số Thuế', 'Số Điện Thoại',
+        'Email', 'Nguồn Khách', 'Thị Trường', 'Công Nợ Tối Đa', 'Tài Khoản Ngân Hàng',
+        'Người Đặt Phòng', 'Mã Giá Phòng', 'Chi Nhánh', 'Trạng Thái Sử Dụng',
+    ];
 
     private const CONFIGURABLE_REQUIRED_FIELDS = [
         'address', 'tax_code', 'phone', 'email', 'customer_source_id', 'market_id',
@@ -252,268 +261,211 @@ class CompanyController extends Controller
         ]);
     }
 
-    /**
-     * Export all companies as CSV file formatted for Excel.
-     */
+    /** Xuất danh sách công ty dưới dạng XLSX, mỗi thuộc tính là một cột. */
     public function export(Request $request)
     {
         $companies = Company::with(['customerSource', 'market', 'branch', 'booker', 'salesPerson'])->get();
 
-        $headers = [
-            'Content-Type' => 'text/csv; charset=UTF-8',
-            'Content-Disposition' => 'attachment; filename="companies.csv"',
-            'Pragma' => 'no-cache',
-            'Cache-Control' => 'must-revalidate, post-check=0, pre-check=0',
-            'Expires' => '0'
-        ];
-
-        $callback = function() use ($companies) {
-            $file = fopen('php://output', 'w');
-            
-            // Add UTF-8 BOM for Vietnamese character support in Excel
-            fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF));
-
-            // CSV Headers
-            fputcsv($file, [
-                'Mã',
-                'Tên',
-                'Tên giao dịch',
-                'Địa chỉ',
-                'Tax',
-                'Số điện thoại',
-                'Email',
-                'Nguồn khách',
-                'Thị trường',
-                'Công nợ tối đa',
-                'Tài khoản ngân hàng',
-                'Người đặt phòng',
-                'Mã giá phòng',
-                'Chi nhánh'
-            ]);
-
-            // CSV Rows
-            foreach ($companies as $c) {
-                fputcsv($file, [
-                    $c->code,
-                    $c->name,
-                    $c->trading_name,
-                    $c->address,
-                    $c->tax_code,
-                    $c->phone,
-                    $c->email,
-                    $c->customerSource?->name ?? '',
-                    $c->market?->name ?? '',
-                    $c->max_debt,
-                    $c->bank_account,
-                    $c->booker?->name ?? '',
-                    $c->rate_code,
-                    $c->branch?->name ?? ''
-                ]);
-            }
-
-            fclose($file);
-        };
-
-        return response()->stream($callback, 200, $headers);
+        return $this->downloadSpreadsheet(
+            $companies->map(fn (Company $company) => $this->companySpreadsheetRow($company))->all(),
+            'companies.xlsx'
+        );
     }
 
-    /**
-     * Import companies from uploaded CSV file.
-     */
+    /** Nhập XLSX mới hoặc CSV legacy; mỗi dòng trả trạng thái xử lý riêng. */
     public function import(Request $request)
     {
         $request->validate([
-            'file' => 'required|file'
+            'file' => 'required|file|mimes:csv,txt,xlsx,xls',
         ]);
 
-        $file = $request->file('file');
-        $filePath = $file->getRealPath();
-
-        $handle = fopen($filePath, 'r');
-        if (!$handle) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Không thể đọc file upload.'
-            ], 422);
+        try {
+            $rows = $this->readImportRows($request->file('file'));
+        } catch (\Throwable $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
         }
 
-        // Check and remove BOM if present
-        $bom = fread($handle, 3);
-        if ($bom !== chr(0xEF) . chr(0xBB) . chr(0xBF)) {
-            rewind($handle);
+        $lookups = [
+            'source' => \App\Models\CustomerSource::all(),
+            'market' => \App\Models\Market::all(),
+            'branch' => \App\Models\Branch::all(),
+            'booker' => \App\Models\Booker::all(),
+        ];
+        $results = [];
+        $counts = ['created' => 0, 'updated' => 0, 'skipped' => 0, 'failed' => 0];
+        $seenIdentifiers = [];
+
+        foreach ($rows as $row) {
+            $result = $this->importCompanyRow($row['number'], $row['values'], $lookups, $seenIdentifiers);
+            $results[] = $result;
+            $counts[$result['status']]++;
         }
-
-        // Read header
-        $header = fgetcsv($handle);
-        if (!$header) {
-            fclose($handle);
-            return response()->json([
-                'success' => false,
-                'message' => 'File CSV trống.'
-            ], 422);
-        }
-
-        $importedCount = 0;
-
-        // Cache lookups for speed
-        $sources = \App\Models\CustomerSource::all();
-        $markets = \App\Models\Market::all();
-        $branches = \App\Models\Branch::all();
-        $bookers = \App\Models\Booker::all();
-
-        while (($row = fgetcsv($handle)) !== false) {
-            // Skip empty rows
-            if (empty($row) || count($row) < 2 || empty(trim($row[1]))) {
-                continue;
-            }
-
-            $code = trim($row[0] ?? '');
-            $name = trim($row[1] ?? '');
-            $tradingName = trim($row[2] ?? '');
-            $address = trim($row[3] ?? '');
-            $taxCode = trim($row[4] ?? '');
-            $phone = trim($row[5] ?? '');
-            $email = trim($row[6] ?? '');
-            $sourceNameOrCode = trim($row[7] ?? '');
-            $marketNameOrCode = trim($row[8] ?? '');
-            $maxDebt = floatval(str_replace(['.', ','], '', trim($row[9] ?? '0')));
-            $bankAccount = trim($row[10] ?? '');
-            $bookerNameOrEmail = trim($row[11] ?? '');
-            $rateCode = trim($row[12] ?? '');
-            $branchNameOrCode = trim($row[13] ?? '');
-
-            // Lookup customer source
-            $sourceId = null;
-            if (!empty($sourceNameOrCode)) {
-                $src = $sources->first(fn($s) => strtolower($s->code) === strtolower($sourceNameOrCode) || strtolower($s->name) === strtolower($sourceNameOrCode));
-                if ($src) $sourceId = $src->id;
-            }
-
-            // Lookup market
-            $marketId = null;
-            if (!empty($marketNameOrCode)) {
-                $mkt = $markets->first(fn($m) => strtolower($m->code) === strtolower($marketNameOrCode) || strtolower($m->name) === strtolower($marketNameOrCode));
-                if ($mkt) $marketId = $mkt->id;
-            }
-
-            // Lookup branch
-            $branchId = null;
-            if (!empty($branchNameOrCode)) {
-                $br = $branches->first(fn($b) => strtolower($b->code) === strtolower($branchNameOrCode) || strtolower($b->name) === strtolower($branchNameOrCode));
-                if ($br) $branchId = $br->id;
-            }
-
-            // Lookup booker
-            $bookerId = null;
-            if (!empty($bookerNameOrEmail)) {
-                $bkr = $bookers->first(fn($b) => strtolower($b->name) === strtolower($bookerNameOrEmail) || strtolower($b->email) === strtolower($bookerNameOrEmail));
-                if ($bkr) $bookerId = $bkr->id;
-            }
-
-            $companyData = [
-                'name' => $name,
-                'trading_name' => $tradingName ?: null,
-                'address' => $address ?: null,
-                'tax_code' => $taxCode ?: null,
-                'phone' => $phone ?: null,
-                'email' => $email ?: null,
-                'customer_source_id' => $sourceId,
-                'market_id' => $marketId,
-                'max_debt' => $maxDebt,
-                'bank_account' => $bankAccount ?: null,
-                'booker_id' => $bookerId,
-                'rate_code' => $rateCode ?: null,
-                'branch_id' => $branchId,
-                'is_active' => true,
-            ];
-
-            // If code is provided and exists, update. Otherwise try to find by name, or create new.
-            $existingCompany = null;
-            if (!empty($code)) {
-                $existingCompany = Company::where('code', $code)->first();
-            }
-            if (!$existingCompany) {
-                $existingCompany = Company::where('name', $name)->first();
-            }
-
-            if ($existingCompany) {
-                $existingCompany->update($companyData);
-            } else {
-                if (!empty($code)) {
-                    $companyData['code'] = $code;
-                }
-                Company::create($companyData);
-            }
-
-            $importedCount++;
-        }
-
-        fclose($handle);
 
         return response()->json([
-            'success' => true,
-            'message' => "Nhập excel thành công! Đã xử lý {$importedCount} dòng dữ liệu công ty."
-        ]);
+            'success' => $counts['failed'] === 0,
+            'message' => "Đã tạo {$counts['created']}, cập nhật {$counts['updated']}, bỏ qua {$counts['skipped']}, lỗi {$counts['failed']} dòng.",
+            'summary' => $counts + ['total' => count($results)],
+            'rows' => $results,
+        ], $counts['failed'] > 0 && $counts['created'] === 0 && $counts['updated'] === 0 ? 422 : 200);
     }
 
-    /**
-     * Download CSV template for company import.
-     */
+    /** Tải file XLSX mẫu; CSV legacy vẫn được chấp nhận ở API import. */
     public function template(Request $request)
     {
-        $headers = [
-            'Content-Type' => 'text/csv; charset=UTF-8',
-            'Content-Disposition' => 'attachment; filename="company_template.csv"',
-            'Pragma' => 'no-cache',
-            'Cache-Control' => 'must-revalidate, post-check=0, pre-check=0',
-            'Expires' => '0'
+        return $this->downloadSpreadsheet([[
+            'CTY0001', 'Công ty TNHH Du lịch Việt', 'Viet Travel', '123 Nguyễn Huệ, Quận 1, TP. Hồ Chí Minh',
+            '0102030405', '02839999999', 'info@viettravel.com', 'AGODA', 'OTA', 50000000,
+            '1234567890', 'Nguyễn Văn A', 'GP01', 'HKT1', 'Đang sử dụng',
+        ]], 'company_template.xlsx');
+    }
+
+    /** @return array<int, mixed> */
+    private function companySpreadsheetRow(Company $company): array
+    {
+        return [
+            $company->code, $company->name, $company->trading_name, $company->address, $company->tax_code,
+            $company->phone, $company->email, $company->customerSource?->name ?? '', $company->market?->name ?? '',
+            (float) $company->max_debt, $company->bank_account, $company->booker?->name ?? '', $company->rate_code,
+            $company->branch?->name ?? '', $company->is_active ? 'Đang sử dụng' : 'Không sử dụng',
         ];
+    }
 
-        $callback = function() {
-            $file = fopen('php://output', 'w');
-            
-            // Add UTF-8 BOM for Vietnamese character support in Excel
-            fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF));
+    /** @param array<int, array<int, mixed>> $rows */
+    private function downloadSpreadsheet(array $rows, string $filename)
+    {
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle('Công Ty');
+        $sheet->fromArray(self::SPREADSHEET_HEADERS, null, 'A1');
+        $sheet->fromArray($rows, null, 'A2');
+        $lastColumn = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex(count(self::SPREADSHEET_HEADERS));
+        $sheet->freezePane('A2');
+        $sheet->getStyle("A1:{$lastColumn}1")->applyFromArray([
+            'font' => ['bold' => true, 'color' => ['argb' => 'FFFFFFFF']],
+            'fill' => ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['argb' => 'FF006BDB']],
+            'alignment' => ['horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER, 'vertical' => \PhpOffice\PhpSpreadsheet\Style\Alignment::VERTICAL_CENTER],
+        ]);
+        foreach (range(1, count(self::SPREADSHEET_HEADERS)) as $index) {
+            $sheet->getColumnDimension(\PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($index))->setAutoSize(true);
+        }
+        $sheet->getStyle("J2:J" . max(2, count($rows) + 1))->getNumberFormat()->setFormatCode('#,##0');
 
-            // CSV Headers
-            fputcsv($file, [
-                'Mã',
-                'Tên',
-                'Tên giao dịch',
-                'Địa chỉ',
-                'Tax',
-                'Số điện thoại',
-                'Email',
-                'Nguồn khách',
-                'Thị trường',
-                'Công nợ tối đa',
-                'Tài khoản ngân hàng',
-                'Người đặt phòng',
-                'Mã giá phòng',
-                'Chi nhánh'
-            ]);
+        return response()->streamDownload(function () use ($spreadsheet) {
+            (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet))->save('php://output');
+        }, $filename, ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
+    }
 
-            // CSV Example Row
-            fputcsv($file, [
-                'CTY0001',
-                'Công ty TNHH Du lịch Việt',
-                'Viet Travel',
-                '123 Nguyễn Huệ, Quận 1, TP. Hồ Chí Minh',
-                '0102030405',
-                '02839999999',
-                'info@viettravel.com',
-                'AGODA',
-                'OTA',
-                '50000000',
-                '1234567890',
-                'Nguyễn Văn A',
-                'GP01',
-                'HKT1'
-            ]);
+    /** @return array<int, array{number:int, values:array<string, string>}> */
+    private function readImportRows(UploadedFile $file): array
+    {
+        $extension = strtolower($file->getClientOriginalExtension());
+        if (in_array($extension, ['xlsx', 'xls'], true)) {
+            $matrix = \PhpOffice\PhpSpreadsheet\IOFactory::load($file->getRealPath())->getActiveSheet()->toArray('', true, true, false);
+        } else {
+            $handle = fopen($file->getRealPath(), 'r');
+            if (!$handle) throw new \RuntimeException('Không thể đọc file upload.');
+            $first = fread($handle, 3);
+            if ($first !== "\xEF\xBB\xBF") rewind($handle);
+            $matrix = [];
+            while (($csvRow = fgetcsv($handle)) !== false) $matrix[] = $csvRow;
+            fclose($handle);
+        }
+        if ($matrix === []) throw new \RuntimeException('File nhập trống.');
 
-            fclose($file);
-        };
+        $header = array_shift($matrix);
+        $headerMap = [];
+        foreach ($header as $index => $label) {
+            $field = $this->companyImportField((string) $label);
+            if ($field) $headerMap[$index] = $field;
+        }
+        if (!in_array('name', $headerMap, true)) throw new \RuntimeException('File phải có cột Tên.');
 
-        return response()->stream($callback, 200, $headers);
+        $rows = [];
+        foreach ($matrix as $index => $rawRow) {
+            $values = [];
+            foreach ($headerMap as $column => $field) $values[$field] = trim((string) ($rawRow[$column] ?? ''));
+            $rows[] = ['number' => $index + 2, 'values' => $values];
+        }
+        return $rows;
+    }
+
+    private function companyImportField(string $header): ?string
+    {
+        return [
+            'ma' => 'code', 'ten' => 'name', 'tengiaodich' => 'trading_name', 'diachi' => 'address',
+            'tax' => 'tax_code', 'masothue' => 'tax_code', 'sodienthoai' => 'phone', 'email' => 'email',
+            'nguonkhach' => 'customer_source', 'thitruong' => 'market', 'congnotoida' => 'max_debt',
+            'taikhoannganhang' => 'bank_account', 'nguoidatphong' => 'booker', 'magiarphong' => 'rate_code',
+            'chinhanh' => 'branch', 'trangthaisudung' => 'is_active',
+        ][$this->normalizeImportValue($header)] ?? null;
+    }
+
+    private function normalizeImportValue(string $value): string
+    {
+        return Str::of($value)->ascii()->lower()->replaceMatches('/[^a-z0-9]+/', '')->toString();
+    }
+
+    /** @param array<string,string> $values @param array<string,\Illuminate\Support\Collection> $lookups @param array<string,int> $seenIdentifiers */
+    private function importCompanyRow(int $rowNumber, array $values, array $lookups, array &$seenIdentifiers): array
+    {
+        if (collect($values)->filter(fn ($value) => $value !== '')->isEmpty()) {
+            return ['row' => $rowNumber, 'status' => 'skipped', 'message' => 'Dòng trống.'];
+        }
+        $name = trim($values['name'] ?? '');
+        if ($name === '') return ['row' => $rowNumber, 'status' => 'failed', 'message' => 'Thiếu Tên công ty.'];
+        if (($values['email'] ?? '') !== '' && !filter_var($values['email'], FILTER_VALIDATE_EMAIL)) {
+            return ['row' => $rowNumber, 'status' => 'failed', 'message' => 'Email không hợp lệ.'];
+        }
+
+        $code = trim($values['code'] ?? '');
+        foreach (array_filter([
+            $code !== '' ? 'code:' . $this->normalizeImportValue($code) : null,
+            'name:' . $this->normalizeImportValue($name),
+        ]) as $identifier) {
+            if (isset($seenIdentifiers[$identifier])) {
+                return ['row' => $rowNumber, 'status' => 'failed', 'message' => "Trùng dữ liệu với dòng {$seenIdentifiers[$identifier]} trong file."];
+            }
+        }
+
+        $references = [];
+        $referenceLabels = [
+            'customer_source' => 'Nguồn khách', 'market' => 'Thị trường',
+            'branch' => 'Chi nhánh', 'booker' => 'Người đặt phòng',
+        ];
+        foreach (['customer_source' => 'source', 'market' => 'market', 'branch' => 'branch', 'booker' => 'booker'] as $field => $lookup) {
+            $value = $values[$field] ?? '';
+            if ($value === '') { $references[$field . '_id'] = null; continue; }
+            $matched = $lookups[$lookup]->first(fn ($item) => $this->normalizeImportValue((string) ($item->code ?? '')) === $this->normalizeImportValue($value)
+                || $this->normalizeImportValue((string) ($item->name ?? '')) === $this->normalizeImportValue($value)
+                || ($lookup === 'booker' && $this->normalizeImportValue((string) ($item->email ?? '')) === $this->normalizeImportValue($value)));
+            if (!$matched) return ['row' => $rowNumber, 'status' => 'failed', 'message' => "Không tìm thấy {$referenceLabels[$field]}: {$value}." ];
+            $references[$field . '_id'] = $matched->id;
+        }
+
+        $debtText = str_replace([',', '.', ' '], '', $values['max_debt'] ?? '0');
+        if ($debtText !== '' && !is_numeric($debtText)) return ['row' => $rowNumber, 'status' => 'failed', 'message' => 'Công nợ tối đa không hợp lệ.'];
+        $byCode = $code !== '' ? Company::where('code', $code)->first() : null;
+        $byName = Company::where('name', $name)->first();
+        if ($byCode && $byName && $byCode->id !== $byName->id) {
+            return ['row' => $rowNumber, 'status' => 'failed', 'message' => 'Mã và tên đang thuộc hai công ty khác nhau.'];
+        }
+        $company = $byCode ?: $byName;
+        $data = [
+            'name' => $name, 'trading_name' => ($values['trading_name'] ?? '') ?: null,
+            'address' => ($values['address'] ?? '') ?: null, 'tax_code' => ($values['tax_code'] ?? '') ?: null,
+            'phone' => ($values['phone'] ?? '') ?: null, 'email' => ($values['email'] ?? '') ?: null,
+            'max_debt' => $debtText === '' ? 0 : (float) $debtText, 'bank_account' => ($values['bank_account'] ?? '') ?: null,
+            'rate_code' => ($values['rate_code'] ?? '') ?: null,
+            'is_active' => !in_array($this->normalizeImportValue($values['is_active'] ?? 'dangsudung'), ['0', 'false', 'khongsudung'], true),
+        ] + $references;
+        if ($company) {
+            DB::transaction(fn () => $company->update($data));
+            foreach (array_filter([$code !== '' ? 'code:' . $this->normalizeImportValue($code) : null, 'name:' . $this->normalizeImportValue($name)]) as $identifier) $seenIdentifiers[$identifier] = $rowNumber;
+            return ['row' => $rowNumber, 'status' => 'updated', 'message' => 'Đã cập nhật.', 'company_id' => $company->id];
+        }
+        if ($code !== '') $data['code'] = $code;
+        $company = DB::transaction(fn () => Company::create($data));
+        foreach (array_filter([$code !== '' ? 'code:' . $this->normalizeImportValue($code) : null, 'name:' . $this->normalizeImportValue($name)]) as $identifier) $seenIdentifiers[$identifier] = $rowNumber;
+        return ['row' => $rowNumber, 'status' => 'created', 'message' => 'Đã tạo mới.', 'company_id' => $company->id];
     }
 }
