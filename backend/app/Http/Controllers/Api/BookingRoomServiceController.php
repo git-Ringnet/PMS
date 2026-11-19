@@ -739,6 +739,10 @@ class BookingRoomServiceController extends Controller
                     $bill->Edit = 1; $bill->Status = 3; $bill->Pack1 = (string) $negative->Ma; $bill->UpdatedDate = now(); $bill->save();
                     $this->reverseHousekeepingBills($bill, $negative, trim($validated['reason']));
                     ServiceBillDetail::where('BillServiceId', $bill->Ma)->delete();
+                    $this->releaseSetupServicesOfCancelledBill(
+                        $bill,
+                        BookingRoomService::where('service_bill_id', $bill->Ma)->lockForUpdate()->get()
+                    );
                 }
             });
             $this->logCancelledBills($logCancelled, $validated['reason'], $request);
@@ -848,13 +852,50 @@ class BookingRoomServiceController extends Controller
                 $this->reverseHousekeepingBills($bill, $negative, trim($validated['reason']));
 
                 ServiceBillDetail::where('BillServiceId', $bill->Ma)->delete();
-                $allBillServices->each->delete();
+                $released = $this->releaseSetupServicesOfCancelledBill($bill, $allBillServices);
+                $allBillServices->reject(fn (BookingRoomService $service) => $released->contains($service->id))->each->delete();
             }
         });
 
         $this->logCancelledBills($logCancelled, $validated['reason'], $request);
 
         return response()->json(['success' => true, 'message' => 'Đã xóa dịch vụ và tạo dòng đối trừ.']);
+    }
+
+    /**
+     * Task 477: xóa bill của dịch vụ đã set up theo ngày (EB, dịch vụ set up...) chỉ hủy bill,
+     * dòng set up trở lại "chờ post" để lần post tiền phòng/khóa sổ sau post lại đúng dịch vụ đó.
+     * Không áp cho tiền phòng (RM), dòng Housekeeping, bản sao dịch vụ chuyển từ phòng khác
+     * và bill đã chuyển đi (positive của chuyển bill), vì các dòng này không phải kế hoạch set up của phòng.
+     *
+     * @return \Illuminate\Support\Collection<int, int> id các dòng đã trả về chờ post
+     */
+    private function releaseSetupServicesOfCancelledBill(ServiceBill $bill, \Illuminate\Support\Collection $services): \Illuminate\Support\Collection
+    {
+        $roomCodes = [BookingRoomService::CODE_ROOM, BookingRoomService::catalogCode(BookingRoomService::CODE_ROOM)];
+        $isTransferredBill = ServiceBill::where('Pack1', (string) $bill->Ma)->where('Status', 4)->exists();
+        if ($isTransferredBill || in_array(strtoupper((string) $bill->ServiceId), $roomCodes, true)) {
+            return collect();
+        }
+
+        // Dòng set up được tạo trước ở trạng thái chờ rồi mới post (posted_at >= created_at);
+        // mirror tạo kèm bill (minibar, chuyển bill) không có posted_at hoặc posted_at sớm hơn lúc tạo.
+        $setupRows = $services->filter(fn (BookingRoomService $service) => !in_array(strtoupper((string) $service->service_code), $roomCodes, true)
+            && $service->housekeeping_service_bill_id === null
+            && (string) $service->booking_room_id === (string) $bill->RentalRoomId1
+            && $service->posted_at !== null && $service->created_at !== null
+            && Carbon::parse($service->created_at)->lte(Carbon::parse($service->posted_at)));
+
+        $user = Auth::user()?->username ?? 'system';
+        $setupRows->each(fn (BookingRoomService $service) => $service->update([
+            'service_bill_id'        => null,
+            'service_bill_detail_no' => null,
+            'is_posted'              => 0,
+            'posted_at'              => null,
+            'updated_by'             => $user,
+        ]));
+
+        return $setupRows->pluck('id');
     }
 
     /** Thông tin bill (trước khi đối trừ) dùng cho lịch sử thao tác. */
@@ -2159,8 +2200,9 @@ class BookingRoomServiceController extends Controller
                         'DescriptionServive' => $groupTitle, 'Quantity' => 1, 'Amount' => $billAmount,
                         'ServiceCharge' => $billTaxProfile['service_charge'], 'SpecialTax' => $billTaxProfile['special_tax'], 'Tax' => $billTaxProfile['tax'],
                         'Currency' => 'VND', 'Exchange' => 1, 'Edit' => 0, 'Folio' => (string)$effectiveFolio,
-                        'RentalRoomId1' => $room->id, 'CustomerId1' => $guestId, 'RentalRoomId2' => $room->id,
-                        'CustomerId2' => $guestId, 'CompanyId2' => $booking?->company_id,
+                        'RentalRoomId1' => $room->id, 'CustomerId1' => $guestId, 'RegisterId1' => $booking?->id,
+                        'CompanyId1' => $booking?->company_id, 'RegisterID2' => $booking?->id,
+                        'RentalRoomId2' => $room->id, 'CustomerId2' => $guestId, 'CompanyId2' => $booking?->company_id,
                         'Username' => $user, 'Status' => $isFree ? 2 : 1, 'Outlet' => $meta['outlet'],
                         'Year' => $serviceDateCarbon->year, 'Month' => $serviceDateCarbon->month, 'Day' => $serviceDateCarbon->day,
                         'CreatedUser' => $user, 'CreatedDate' => $postingCreatedAt, 'CreatedHour' => $postingCreatedAt->format('H:i'),
@@ -2558,7 +2600,8 @@ class BookingRoomServiceController extends Controller
         $totalAmount = $qty * $rate;
         $isRoomFolio = $request->has('is_room') ? (int) $request->boolean('is_room') : 1;
         $user        = Auth::user()?->username ?? 'system';
-        $description = $foService->billDescription($room?->room_number, 'FO');
+        // Mô tả bill phải đúng như người dùng nhập ở màn hình Post bill; chỉ khi bỏ trống mới dùng mô tả mặc định theo mã dịch vụ.
+        $description = trim((string) $request->input('description', '')) ?: $foService->billDescription($room?->room_number, 'FO');
         $primaryGuest = $room ? ($room->guests()->where('is_primary', 1)->with('guest')->first() ?: $room->guests()->with('guest')->first()) : null;
         $billGuest = $selectedGuest ?: $primaryGuest;
         $guestId   = $billGuest?->guest_id;
@@ -2599,6 +2642,7 @@ class BookingRoomServiceController extends Controller
                     'RegisterId1'        => $booking?->id,
                     'RentalRoomId1'      => $room?->id,
                     'CustomerId1'        => $guestId,
+                    'CompanyId1'         => $booking?->company_id,
                     'RegisterID2'        => $booking?->id,
                     'RentalRoomId2'      => $isRoomFolio ? $room?->id : null,
                     'CustomerId2'        => $currentGuestId,
@@ -3090,9 +3134,10 @@ class BookingRoomServiceController extends Controller
                     $serviceCode = 'RM';
                     $serviceName = BookingRoomService::catalogName('RM', 'Dịch vụ phòng nghỉ');
                     $serviceTaxProfile = $roomTaxProfile;
-                    $targetDesc = $roomService
+                    // Mô tả tiền phòng đúng như người dùng nhập ở màn hình post; bỏ trống mới dùng mô tả mặc định.
+                    $targetDesc = trim((string) $request->input('description', '')) ?: ($roomService
                         ? $roomService->billDescription($targetRoom->room_number ?: $targetRoom->id, 'FO')
-                        : trim($serviceName . ' - Phòng ' . ($targetRoom->room_number ?: $targetRoom->id));
+                        : trim($serviceName . ' - Phòng ' . ($targetRoom->room_number ?: $targetRoom->id)));
                     $breakfastDesc = $breakfastService
                         ? $breakfastService->billDescription($targetRoom->room_number ?: $targetRoom->id, 'FO')
                         : 'Tiền ăn sáng người lớn - Phòng ' . ($targetRoom->room_number ?: $targetRoom->id);

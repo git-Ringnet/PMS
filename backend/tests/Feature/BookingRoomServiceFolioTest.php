@@ -1843,6 +1843,91 @@ class BookingRoomServiceFolioTest extends TestCase
         $this->assertSame(3, ServiceBill::where('RentalRoomId1', $room->id)->where('ServiceId', 'BF')->count());
     }
 
+    public function test_fo_service_bill_keeps_the_description_entered_on_the_post_screen(): void
+    {
+        $user = $this->createFolioUser();
+        SystemDateRoll::create(['system_date' => '2026-08-06', 'actual_date' => now(), 'shift' => '1', 'username' => $user->username]);
+        $booking = Booking::create([
+            'booking_name' => 'Mo ta post bill', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-08',
+            'num_of_days' => 2, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
+        ]);
+        $room = $this->makeRoom($booking, 'GAL1-DESC');
+        $room->forceFill(['departure_date' => '2026-08-08'])->saveQuietly();
+        $department = Department::firstOrCreate(['code' => 'FO'], ['name' => 'Reception']);
+        $department->hotelServices()->attach(HotelService::create(['code' => 'TO', 'name' => 'Tour/ Vé Tham Quan', 'price' => 0, 'department_id' => $department->id])->id, ['description' => 'Vé tham quan']);
+
+        $payload = ['booking_room_id' => $room->id, 'service_code' => 'TO', 'quantity' => 1, 'rate' => 0, 'date_from' => '2026-08-06', 'date_to' => '2026-08-06'];
+        $this->actingAs($user)->postJson('/api/booking-room-services/post-fo-service-bill', $payload + ['description' => '  Vé tham quan Bà Nà  '])
+            ->assertSuccessful();
+        $this->actingAs($user)->postJson('/api/booking-room-services/post-fo-service-bill', $payload + ['description' => ''])
+            ->assertSuccessful();
+
+        $bills = ServiceBill::where('RentalRoomId1', $room->id)->orderBy('Ma')->get();
+        $this->assertSame('Vé tham quan Bà Nà', $bills[0]->DescriptionServive);
+        $this->assertSame('Vé tham quan Bà Nà', ServiceBillDetail::where('BillServiceId', $bills[0]->Ma)->value('DescriptionServive'));
+        // Bỏ trống mô tả thì vẫn dùng mô tả mặc định theo mã dịch vụ.
+        $this->assertStringStartsWith('Vé tham quan', $bills[1]->DescriptionServive);
+        $this->assertNotSame('Vé tham quan Bà Nà', $bills[1]->DescriptionServive);
+    }
+
+    public function test_room_charge_keeps_the_description_entered_on_the_post_screen(): void
+    {
+        $user = $this->createFolioUser();
+        SystemDateRoll::create(['system_date' => '2026-08-06', 'actual_date' => now(), 'shift' => '1', 'username' => $user->username]);
+        $booking = Booking::create([
+            'booking_name' => 'Mo ta tien phong', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-08',
+            'num_of_days' => 2, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
+        ]);
+        $room = $this->makeRoom($booking, 'GAL1-RMDESC');
+        $room->forceFill(['departure_date' => '2026-08-08'])->saveQuietly();
+
+        $payload = ['booking_room_id' => $room->id, 'mode' => 'surcharge', 'rate' => 300000, 'folio' => 1];
+        $this->actingAs($user)->postJson('/api/booking-room-services/post-room-charge', $payload + ['date_from' => '2026-08-06', 'date_to' => '2026-08-06', 'description' => 'Phụ thu nhận phòng sớm'])
+            ->assertSuccessful();
+        $this->actingAs($user)->postJson('/api/booking-room-services/post-room-charge', $payload + ['date_from' => '2026-08-07', 'date_to' => '2026-08-07', 'description' => ''])
+            ->assertSuccessful();
+
+        $this->assertSame('Phụ thu nhận phòng sớm', ServiceBill::where('RentalRoomId1', $room->id)->whereDate('Date', '2026-08-06')->value('DescriptionServive'));
+        $this->assertNotSame('Phụ thu nhận phòng sớm', ServiceBill::where('RentalRoomId1', $room->id)->whereDate('Date', '2026-08-07')->value('DescriptionServive'));
+    }
+
+    public function test_task_477_deleting_an_old_day_setup_bill_lets_room_charge_repost_it(): void
+    {
+        $user = $this->createFolioUser();
+        SystemDateRoll::create(['system_date' => '2026-08-08', 'actual_date' => now(), 'shift' => '1', 'username' => $user->username]);
+        $booking = Booking::create([
+            'booking_name' => 'Task 477', 'arrival_date' => '2026-08-06', 'departure_date' => '2026-08-09',
+            'num_of_days' => 3, 'booking_date' => '2026-08-06', 'created_by' => $user->username,
+        ]);
+        $room = $this->makeRoom($booking, 'GAL1-477');
+        $room->forceFill(['departure_date' => '2026-08-09'])->saveQuietly();
+        $room = BookingRoom::where('booking_id', $booking->id)->firstOrFail();
+        $department = Department::firstOrCreate(['code' => 'FO'], ['name' => 'Reception']);
+        $department->hotelServices()->attach(HotelService::create(['code' => BookingRoomService::CODE_EXTRA_BED, 'name' => 'Extra Bed', 'price' => 200000, 'department_id' => $department->id])->id);
+        BookingRoomService::create([
+            'booking_room_id' => $room->id, 'service_code' => BookingRoomService::CODE_EXTRA_BED, 'service_name' => 'Extra Bed',
+            'service_date' => '2026-08-06', 'quantity' => 1, 'rate' => 200000, 'total_amount' => 200000,
+            'department' => 'FO', 'is_room' => 1, 'folio' => 1, 'is_posted' => 0,
+        ]);
+        $roomCharge = ['booking_room_id' => $room->id, 'mode' => 'update', 'rate' => 500000, 'folio' => 1, 'date_from' => '2026-08-06', 'date_to' => '2026-08-06'];
+        $activeEb = fn () => ServiceBill::where('RentalRoomId1', $room->id)->where('ServiceId', BookingRoomService::CODE_EXTRA_BED)->where('Status', 1)->where('Edit', 0);
+
+        $this->actingAs($user)->postJson('/api/booking-room-services/post-room-charge', $roomCharge)->assertSuccessful();
+        $this->assertSame(1, $activeEb()->count());
+
+        // Xóa toàn bộ dịch vụ ngày cũ (tiền phòng + EB) rồi post lại tiền phòng ngày đó.
+        $this->actingAs($user)->postJson("/api/booking-rooms/{$room->id}/services/cancel", ['service_bill_ids' => $activeEb()->pluck('Ma')->all(), 'reason' => 'Post lại'])
+            ->assertSuccessful();
+        $roomBillIds = ServiceBill::where('RentalRoomId1', $room->id)->where('ServiceId', 'RM')->where('Status', 1)->where('Edit', 0)->pluck('Ma')->all();
+        $this->actingAs($user)->postJson("/api/booking-rooms/master-{$booking->id}/services/cancel", ['service_bill_ids' => $roomBillIds, 'reason' => 'Post lại'])
+            ->assertSuccessful();
+        $this->assertSame(0, $activeEb()->count());
+
+        $this->actingAs($user)->postJson('/api/booking-room-services/post-room-charge', $roomCharge)->assertSuccessful();
+        $this->assertSame(1, $activeEb()->count());
+        $this->assertEquals(200000, (float) $activeEb()->value('Amount'));
+    }
+
     public function test_master_room_charge_does_not_post_after_a_room_specific_departure(): void
     {
         $user = $this->createFolioUser();
