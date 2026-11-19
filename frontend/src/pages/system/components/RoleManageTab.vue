@@ -5,6 +5,7 @@ import {
   fetchBranchRoleMatrix, syncBranchRoleMatrix, copyRole, createPermissionScreen,
 } from '@/services/company-service'
 import { useUiStore } from '@/stores/ui-store'
+import { PERMISSION_MODULE_LABELS, splitFrontOfficeModules } from '@/utils/screen-permissions'
 
 const uiStore = useUiStore()
 const roles = ref([])
@@ -32,7 +33,7 @@ const screens = computed(() => Object.values(groups.value).flat().reduce((result
 const screenRows = computed(() => Object.values(screens.value))
 const selectedCount = computed(() => Object.values(groups.value).flat().filter(item => item.granted).length)
 // Dòng 328: phân hệ REPORT gồm quyền xem từng báo cáo trong Danh mục báo cáo
-const MODULE_LABELS = { REPORT: 'REPORT - Xem báo cáo (theo Danh mục báo cáo)' }
+const MODULE_LABELS = { REPORT: 'REPORT - Xem báo cáo (theo Danh mục báo cáo)', ...PERMISSION_MODULE_LABELS }
 const moduleAllViewGranted = (module) => (groups.value[module] || []).every(item => item.granted)
 function toggleModuleView(module, checked) {
   (groups.value[module] || []).filter(item => (item.action || 'view') === 'view').forEach(item => { item.granted = checked })
@@ -50,12 +51,17 @@ async function loadBase() {
     await loadMatrix()
   } finally { loading.value = false }
 }
+// Task 471 (dòng 298): chỉ nhận kết quả của lần nạp mới nhất. Nếu không, kết quả chậm của vai trò/chi nhánh
+// chọn trước đó ghi đè ma trận hiện tại và nút Lưu sẽ lưu nhầm quyền vào vai trò đang chọn.
+let matrixRequestId = 0
 async function loadMatrix() {
+  const requestId = ++matrixRequestId
   if (!selectedRole.value || !selectedBranchId.value) { groups.value = {}; return }
   const response = await fetchBranchRoleMatrix(selectedRole.value.id, {
     system_branch_id: selectedBranchId.value, application_code: applicationCode.value,
   })
-  groups.value = response.data.data.permissions || {}
+  if (requestId !== matrixRequestId) return
+  groups.value = splitFrontOfficeModules(response.data.data.permissions || {})
 }
 onMounted(loadBase)
 watch([selectedBranchId, applicationCode], loadMatrix)
