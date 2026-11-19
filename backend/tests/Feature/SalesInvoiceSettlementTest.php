@@ -531,6 +531,13 @@ class SalesInvoiceSettlementTest extends TestCase
         }
         $this->assertNotNull($rows->firstWhere('amount', '<', 0)->shift, 'Dòng âm không được để shift NULL');
 
+        // Task 228 (mô tả): hai dòng cùng mô tả kết thúc bằng " Correct: <lý do>", không còn [REVERSAL].
+        $this->assertCount(1, $rows->pluck('description')->unique());
+        foreach ($rows as $row) {
+            $this->assertStringEndsWith(' Correct: Khách hủy hóa đơn', (string) $row->description);
+            $this->assertStringNotContainsString('[REVERSAL]', (string) $row->description);
+        }
+
         // Hóa đơn: hủy, bỏ liên kết thanh toán và số tiền.
         $invoice = SalesInvoice::find($invoiceId);
         $this->assertEquals(3, $invoice->status);
