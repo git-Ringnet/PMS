@@ -11,48 +11,46 @@ import {
 const booking = {
   arrival_date: '2026-08-20',
   departure_date: '2026-08-24',
-  num_of_days: 4,
-  master_service_bills: [],
 }
 
-test('row 149 uses valid historical setup bills and ignores edited/manual bills', () => {
+test('task 222 only sums setup services of the same room, never Checkout bills', () => {
   const room = {
     id: 1,
     arrival_date: '2026-08-20',
-    departure_date: '2026-08-24',
-    services: [{ service_bill_id: 10 }],
+    departure_date: '2026-08-22',
+    rate: 500,
+    services: [
+      { service_code: 'RM', service_date: '2026-08-20', total_amount: 600, is_posted: 1, service_bill_id: 10 },
+      { service_code: 'RM', service_date: '2026-08-21', total_amount: 700, is_posted: 0 },
+      { service_code: 'SPA', service_date: '2026-08-21', total_amount: 100, is_posted: 0 },
+    ],
     service_bills: [
-      { Ma: 10, ServiceId: 'FO', Amount: 100, Date: '2026-08-21', Edit: 0 },
-      { Ma: 11, ServiceId: 'FO', Amount: 900, Date: '2026-08-21', Edit: 1 },
-      { Ma: 12, ServiceId: 'FO', Amount: 700, Date: '2026-08-21', Edit: 0 },
+      { Ma: 10, ServiceId: 'RM', Amount: 999999, Date: '2026-08-20', Edit: 0 },
+      { Ma: 11, ServiceId: 'MB', Amount: 888888, Date: '2026-08-21', Edit: 0 },
     ],
   }
 
-  assert.deepEqual(calculateRoomPlanRoomAmounts(room, booking, '2026-08-23'), {
-    roomCharge: 0,
+  assert.deepEqual(calculateRoomPlanRoomAmounts(room, booking), {
+    roomCharge: 1300,
     serviceCharge: 100,
   })
 })
 
-test('row 149 calculates current/future setup services and room charge', () => {
+test('task 222 uses the configured amount of every room-night and only falls back for missing nights', () => {
   const room = {
     id: 1,
     arrival_date: '2026-08-23',
-    departure_date: '2026-08-25',
+    departure_date: '2026-08-26',
     rate: 500,
-    extra_bed_qty: 1,
-    extra_bed_rate: 50,
     services: [
       { service_code: 'RM', service_date: '2026-08-23', quantity: 1, rate: 600, is_posted: 0 },
-      { service_code: 'EB', service_date: '2026-08-24', quantity: 1, rate: 50, is_posted: 0 },
-      { service_code: 'SPA', service_date: '2026-08-24', quantity: 2, rate: 25, is_posted: 0 },
-      { service_code: 'BAR', service_date: '2026-08-24', quantity: 1, rate: 99, is_posted: 1 },
+      { service_code: 'RM', service_date: '2026-08-24', total_amount: 750, is_posted: 1 },
     ],
   }
 
-  assert.deepEqual(calculateRoomPlanRoomAmounts(room, booking, '2026-08-23'), {
-    roomCharge: 600,
-    serviceCharge: 100,
+  assert.deepEqual(calculateRoomPlanRoomAmounts(room, booking), {
+    roomCharge: 1850,
+    serviceCharge: 0,
   })
 })
 
@@ -72,7 +70,7 @@ test('row 149 includes projected extra-charge child breakfast only', () => {
     }],
   }
 
-  assert.deepEqual(calculateRoomPlanRoomAmounts(room, booking, '2026-08-23'), {
+  assert.deepEqual(calculateRoomPlanRoomAmounts(room, booking), {
     roomCharge: 1000,
     serviceCharge: 40,
   })
@@ -91,11 +89,10 @@ test('row 149 aggregates active rooms and excludes cancelled rooms', () => {
   assert.deepEqual(result, { roomCharge: 300, serviceCharge: 0 })
 })
 
-test('calculates full room charge across entire stay even when arrival date is before system date', () => {
+test('uses registration setup for all stay dates regardless of current system date', () => {
   const testBooking = {
     arrival_date: '2026-08-09',
     departure_date: '2026-08-13',
-    num_of_days: 4,
   }
   const room = {
     id: 101,
@@ -110,19 +107,17 @@ test('calculates full room charge across entire stay even when arrival date is b
     ],
   }
 
-  // System date is 2026-08-10, room arrived 2026-08-09 (4 nights)
-  const roomAmounts = calculateRoomPlanRoomAmounts(room, testBooking, '2026-08-10')
+  const roomAmounts = calculateRoomPlanRoomAmounts(room, testBooking)
   assert.deepEqual(roomAmounts, {
     roomCharge: 2600000,
     serviceCharge: 0,
   })
 })
 
-test('counts a posted day-use room-charge bill once when room and master relations contain the same bill', () => {
+test('uses the Day-use registration setup and ignores room or master bills', () => {
   const dayUseBooking = {
     arrival_date: '2026-08-30',
     departure_date: '2026-08-30',
-    num_of_days: 1,
     is_day_use: true,
     master_service_bills: [{
       Ma: 1,
@@ -139,7 +134,7 @@ test('counts a posted day-use room-charge bill once when room and master relatio
     departure_date: '2026-08-30',
     is_day_use: true,
     rate: 650000,
-    services: [],
+    services: [{ service_code: 'RM', service_date: '2026-08-30', total_amount: 650000, is_posted: 1 }],
     service_bills: [{
       Ma: 1,
       ServiceId: 'RM',
@@ -150,7 +145,7 @@ test('counts a posted day-use room-charge bill once when room and master relatio
     }],
   }
 
-  assert.deepEqual(calculateRoomPlanRoomAmounts(room, dayUseBooking, '2026-08-30'), {
+  assert.deepEqual(calculateRoomPlanRoomAmounts(room, dayUseBooking), {
     roomCharge: 650000,
     serviceCharge: 0,
   })
@@ -176,7 +171,7 @@ test('row 442 keeps a zero-quantity daily extra bed at zero instead of charging 
     ],
   }
 
-  assert.deepEqual(calculateRoomPlanRoomAmounts(room, booking, '2026-08-30'), {
+  assert.deepEqual(calculateRoomPlanRoomAmounts(room, booking), {
     roomCharge: 650000,
     serviceCharge: 0,
   })
@@ -196,7 +191,7 @@ test('row 442 sums only daily extra-bed quantities greater than zero', () => {
     ],
   }
 
-  assert.deepEqual(calculateRoomPlanRoomAmounts(room, booking, '2026-08-30'), {
+  assert.deepEqual(calculateRoomPlanRoomAmounts(room, booking), {
     roomCharge: 1300000,
     serviceCharge: 300000,
   })
@@ -223,17 +218,10 @@ test('row 95 prefers booking note and safely resolves special-request arrays', (
   assert.equal(resolveRoomPlanBookingNote({}, { note: 'Ghi chú phòng' }), 'Ghi chú phòng')
 })
 
-test('task 222 totals active rooms once, including a day-use bill shared with the master relation', () => {
+test('task 222 totals each active or moved room from its own registration setup only', () => {
   const result = calculateRoomPlanBookingAmounts({
     arrival_date: '2026-08-20',
     departure_date: '2026-08-22',
-    master_service_bills: [{
-      Ma: 99,
-      ServiceId: 'RM',
-      Amount: 650,
-      Edit: 0,
-      RentalRoomId1: 'DAY-USE',
-    }],
     booking_rooms: [
       {
         id: 'OVERNIGHT',
@@ -250,8 +238,7 @@ test('task 222 totals active rooms once, including a day-use bill shared with th
         arrival_date: '2026-08-21',
         departure_date: '2026-08-21',
         rate: 650,
-        services: [],
-        service_bills: [{ Ma: 99, ServiceId: 'RM', Amount: 650, Edit: 0, RentalRoomId1: 'DAY-USE' }],
+        services: [{ service_code: 'RM', service_date: '2026-08-21', total_amount: 650 }],
       },
       {
         id: 'CANCELLED',
@@ -262,7 +249,7 @@ test('task 222 totals active rooms once, including a day-use bill shared with th
         services: [],
       },
     ],
-  }, '2026-08-20')
+  })
 
   assert.deepEqual(result, { roomCharge: 850, serviceCharge: 30 })
 })

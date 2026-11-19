@@ -1700,7 +1700,7 @@ async function loadBookings() {
         if (Number(b.status) === 3) return
         if (!b.booking_rooms) return
 
-        const bookingAmounts = calculateRoomPlanBookingAmounts(b, systemDate.value)
+        const bookingAmounts = calculateRoomPlanBookingAmounts(b)
         const bookingTotalAmount = bookingAmounts.roomCharge + bookingAmounts.serviceCharge
         const paymentAmounts = calculateRoomPlanPaymentAmounts(b)
         const depositAmount = paymentAmounts.depositAmount
@@ -1716,7 +1716,7 @@ async function loadBookings() {
           const isVirtual = !br.room_number
           const roomVal = br.room_number || br.id
           if (!roomVal) return
-          const roomAmounts = calculateRoomPlanRoomAmounts(br, b, systemDate.value)
+          const roomAmounts = calculateRoomPlanRoomAmounts(br, b)
           const typeClass = br.room_class?.code || br.room_type || 'DLXD'
           let registrationStatus = b.registration_status || null
           if (!registrationStatus && b.registration_status_id != null) {
