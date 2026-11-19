@@ -63,6 +63,7 @@ return [
         '2026_09_05_100000_expand_organization_rbac.php',
         '2026_09_05_110000_patch_organization_rbac_refinements.php',
         '2026_10_21_200000_create_security_settings_tables.php',
+        '2026_11_17_100000_add_soft_deletes_to_organization_departments.php',
     ],
 
     'system_seeders' => [
