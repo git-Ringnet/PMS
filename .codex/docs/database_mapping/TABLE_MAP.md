@@ -78,6 +78,8 @@
 | `room_rate_codes` | `SP1340` | Đã xác minh | Mã giá phòng. |
 | `room_rate_plans` | `SP1341` | Đã xác minh | Chi tiết rate plan. |
 | `room_rate_daily_mappings` | `SP1342` | Đã xác minh | Giá theo ngày. |
+| `service_packages` | `SP1317`, `SP1330` | Một phần | Runtime tách header gói từ nhóm `PackageCode`; cấu trúc header và khóa import chưa xác minh, không import tự động. |
+| `service_package_items` | `SP1317` | Một phần | `PackageCode`, `DetailCode`, `ServiceCode`, số lượng, giá, thuế/phí, `OrderDay`, `Outlet`, ghi chú có tương ứng theo cấu trúc; khóa gói/header và quy tắc import còn chưa xác minh. |
 
 ## Booking Và Khách
 

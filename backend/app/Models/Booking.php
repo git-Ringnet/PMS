@@ -41,6 +41,8 @@ class Booking extends Model
         'is_git',
         'is_day_use',
         'breakfast_included',
+        'service_package_id',
+        'service_package_snapshot',
         'has_vat',
         'is_master_room_rate',
         'no_post',
@@ -103,6 +105,7 @@ class Booking extends Model
         'updated_by_user_id'   => 'integer',
         'shuttle_info'         => 'array',
         'deposit_details'      => 'array',
+        'service_package_snapshot' => 'array',
     ];
 
     // =========================================
@@ -186,6 +189,11 @@ class Booking extends Model
     public function bookingRooms()
     {
         return $this->hasMany(BookingRoom::class);
+    }
+
+    public function servicePackage()
+    {
+        return $this->belongsTo(ServicePackage::class);
     }
 
     public function masterServiceBills()

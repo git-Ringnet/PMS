@@ -203,6 +203,7 @@ const users = ref([])
 const roomClasses = ref([])
 const roomForms = ref([])
 const roomRateCodes = ref([])
+const servicePackages = ref([])
 const activeRoomRateCodes = computed(() => {
   return (roomRateCodes.value || []).filter(rc => !rc.Disable)
 })
@@ -549,6 +550,7 @@ const emptyForm = () => ({
   salesPerson: '',
   isGit: true,
   isMasterRoomRate: true,
+  servicePackageId: null,
   hasVat: false,
   marketId: null,
   customerSourceId: null,
@@ -616,6 +618,7 @@ function getModalBookingSnapshot() {
     note: modalForm.value.note || '',
     specialRequests: modalForm.value.specialRequests || '',
     isMasterRoomRate: modalForm.value.isMasterRoomRate,
+    servicePackageId: modalForm.value.servicePackageId || null,
     shuttleInfo: modalForm.value.shuttleInfo || [],
   })
 }
@@ -3035,6 +3038,7 @@ async function loadDropdowns() {
     roomClasses.value          = (data.room_classes || []).filter(c => c.is_active !== false)
     roomForms.value            = data.room_forms || []
     roomRateCodes.value        = data.room_rate_codes || []
+    servicePackages.value       = data.service_packages || []
     currenciesList.value       = data.currencies || []
     hotelServicesList.value    = data.hotel_services || []
     if (data.child_breakfast) childBreakfastConfig.value = data.child_breakfast
@@ -3700,6 +3704,7 @@ function bookingToTab(b) {
     salesPerson: b.sales_person || '',
     isGit: b.is_git || false,
     isMasterRoomRate: b.is_master_room_rate !== undefined ? Boolean(b.is_master_room_rate) : true,
+    servicePackageId: b.service_package_id || null,
     hasVat: b.has_vat || false,
     note: b.note || '',
     specialRequests: b.special_requests || '',
@@ -3746,7 +3751,7 @@ function makeBlankTab() {
     marketId: null, market: '—', customerSourceId: null, customerSource: '—',
     bookerId: null, contactName: '', contactEmail: '', contactPhone: '',
     paymentMethodId: null, paymentValue: 0, externalBookingCode: '',
-    salesPerson: '', isGit: false, isMasterRoomRate: true, hasVat: false, note: '', specialRequests: '',
+    salesPerson: '', isGit: false, isMasterRoomRate: true, servicePackageId: null, hasVat: false, note: '', specialRequests: '',
     rooms: [],
     createdBy: '',
     createdAt: '',
@@ -4664,6 +4669,7 @@ async function handleAddTabClick() {
     color: hotelSettings.value?.ColorDefaultBookingRoomMap || '#97D5FF',
     isGit: true,
     isMasterRoomRate: true,
+    servicePackageId: null,
     // Dòng 492: đăng ký mới mặc định thông tin đưa đón để trống.
     shuttleInfo: [],
     roomAllocations: [],
@@ -4700,6 +4706,7 @@ function fillModalForm(tab) {
     salesPerson: tab.salesPerson || '',
     isGit: tab.isGit !== undefined ? tab.isGit : true,
     isMasterRoomRate: tab.isMasterRoomRate !== undefined ? Boolean(tab.isMasterRoomRate) : true,
+    servicePackageId: tab.servicePackageId || null,
     hasVat: tab.hasVat || false,
     marketId: tab.marketId,
     customerSourceId: tab.customerSourceId,
@@ -5699,6 +5706,7 @@ async function handleSaveNewBooking() {
       sales_person:           modalForm.value.salesPerson || null,
       is_git:                 modalForm.value.isGit ? 1 : 0,
       is_master_room_rate:    modalForm.value.isMasterRoomRate ? 1 : 0,
+      service_package_id:     modalForm.value.servicePackageId || null,
       has_vat:                modalForm.value.hasVat ? 1 : 0,
       note:                   modalForm.value.note || null,
       special_requests:       modalForm.value.specialRequests || null,
@@ -9553,6 +9561,18 @@ defineExpose({
                   placeholder="Mã tham chiếu" 
                   class="border border-slate-300 rounded-lg px-2.5 text-xs text-slate-800 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 h-[34px] font-semibold bg-white transition-all shadow-2xs"
                 />
+              </div>
+
+              <div class="flex flex-col min-w-[180px]">
+                <span class="text-xs font-semibold text-[#000000D9] mb-1">Gói dịch vụ</span>
+                <div class="relative w-full flex items-center group">
+                  <select v-model="modalForm.servicePackageId" class="w-full bg-white border border-slate-300 rounded-lg pl-2.5 pr-8 text-xs focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 appearance-none h-[34px] shadow-2xs cursor-pointer transition-all" :class="modalForm.servicePackageId ? 'font-normal text-[#000000D9]' : 'font-normal text-[#A8B0BF]'">
+                    <option :value="null">Chưa chọn</option>
+                    <option v-for="pkg in servicePackages.filter(item => !item.is_inactive || Number(item.id) === Number(modalForm.servicePackageId))" :key="pkg.id" :value="pkg.id">{{ pkg.code }}{{ pkg.description ? ` - ${pkg.description}` : '' }}</option>
+                  </select>
+                  <span class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none group-hover:opacity-0 transition-opacity"><i class="fa-solid fa-chevron-down text-[10px]"></i></span>
+                  <button v-if="modalForm.servicePackageId" type="button" @click.stop="modalForm.servicePackageId = null" class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-red-500 bg-transparent border-none p-0 cursor-pointer text-xs opacity-0 group-hover:opacity-100 transition-opacity" title="Xóa chọn"><i class="fa-solid fa-xmark"></i></button>
+                </div>
               </div>
 
               <!-- Ngày lưu trú -->
