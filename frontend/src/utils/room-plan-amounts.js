@@ -23,6 +23,29 @@ const isRoomCharge = service => ['RM', 'ROOM_CHARGE'].includes(codeOf(service))
 const isChildBreakfast = service => codeOf(service) === 'BD'
   || String(service.note ?? service.Note ?? '').toLowerCase().includes('phụ thu ăn sáng trẻ em')
 
+const addDays = (date, days) => {
+  const [year, month, day] = date.split('-').map(Number)
+  const value = new Date(Date.UTC(year, month - 1, day + days))
+  return value.toISOString().slice(0, 10)
+}
+
+const stayDatesOf = (room, booking) => {
+  const arrival = dateOnly(room.arrival_date || booking?.arrival_date)
+  const departure = dateOnly(room.departure_date || booking?.departure_date)
+  if (!arrival) return []
+
+  if (arrival === departure) {
+    return room.is_day_use ?? booking?.is_day_use ? [arrival] : []
+  }
+  if (!departure || departure < arrival) return []
+
+  const dates = []
+  for (let date = arrival; date < departure; date = addDays(date, 1)) {
+    dates.push(date)
+  }
+  return dates
+}
+
 const isActivePayment = payment => Number(payment?.edit_flag ?? 0) === 0
   && !payment?.deleted_at
   && Number(payment?.status) !== 3
@@ -83,88 +106,57 @@ export function resolveRoomPlanBookingNote(booking, room) {
     || requestNote(room?.special_requests ?? room?.specialRequests)
 }
 
-export function calculateRoomPlanRoomAmounts(room, booking, systemDate) {
-  const today = dateOnly(systemDate || new Date())
-  const arrival = dateOnly(room.arrival_date || booking.arrival_date)
-  const departure = dateOnly(room.departure_date || booking.departure_date)
+export function calculateRoomPlanRoomAmounts(room, booking) {
+  const stayDates = stayDatesOf(room, booking)
+  const stayDateSet = new Set(stayDates)
   const isStayDate = value => {
     const date = dateOnly(value)
-    if (!date) return true
-    return (!arrival || date >= arrival) && (!departure || date < departure)
+    return !date || stayDateSet.has(date)
   }
 
-  const setupBillIds = new Set((room.services || [])
-    .map(service => service.service_bill_id ?? service.serviceBillId)
-    .filter(value => value !== null && value !== undefined && value !== '')
-    .map(String))
+  // Room Plan is a registration projection.  Checkout/folio bills can be
+  // loaded alongside a booking for payment display, but never participate in
+  // this total.  Every amount below comes from the registration setup of the
+  // same booking room (or its child-breakfast setup).
+  const setupServices = (room.services || []).filter(service => isStayDate(service.service_date))
+  const roomChargeServices = setupServices.filter(isRoomCharge)
+  const configuredRoomDates = new Set(roomChargeServices
+    .map(service => dateOnly(service.service_date))
+    .filter(Boolean))
 
-  const roomBills = [
-    ...(room.service_bills || room.serviceBills || []),
-    ...(room.current_service_bills || room.currentServiceBills || []),
-    ...(booking.master_service_bills || []).filter(bill => String(bill.RentalRoomId1 || '') === String(room.id))
-  ].filter((bill, index, bills) => {
-    const billId = bill.Ma ?? bill.id
-    return billId === null || billId === undefined || billId === ''
-      || index === bills.findIndex(candidate => String(candidate.Ma ?? candidate.id ?? '') === String(billId))
-  })
-
-  const historicalBills = roomBills.filter(bill => {
-    const billId = String(bill.Ma ?? bill.id ?? '')
-    const billCode = String(bill.ServiceId || '').toUpperCase()
-    return Number(bill.Edit) !== 1
-      && (['RM', 'EB', 'BD'].includes(billCode) || setupBillIds.has(billId))
-  })
-
-  const historicalRoomCharge = historicalBills
-    .filter(bill => ['RM', 'ROOM_CHARGE'].includes(String(bill.ServiceId || '').toUpperCase()))
-    .reduce((sum, bill) => sum + (Number(bill.Amount) || 0), 0)
-
-  const historicalServiceCharge = historicalBills
-    .filter(bill => !['RM', 'ROOM_CHARGE'].includes(String(bill.ServiceId || '').toUpperCase()))
-    .reduce((sum, bill) => sum + (Number(bill.Amount) || 0), 0)
-
-  const unpostedServices = (room.services || []).filter(service => (
-    isStayDate(service.service_date)
-    && Number(service.is_posted) !== 1
-    && !service.service_bill_id
-    && !service.housekeeping_service_bill_id
-  ))
-
-  const fullNights = Math.max(1, Math.round((new Date(departure) - new Date(arrival)) / (1000 * 60 * 60 * 24)) || Number(booking.num_of_days) || 1)
-
-  const unpostedRoomCharge = unpostedServices
-    .filter(isRoomCharge)
+  const configuredRoomCharge = roomChargeServices
     .reduce((sum, service) => sum + amountOf(service), 0)
+  const fallbackRoomCharge = stayDates
+    .filter(date => !configuredRoomDates.has(date))
+    .reduce(sum => sum + (Number(room.rate) || 0), 0)
+  const roomCharge = configuredRoomCharge + fallbackRoomCharge
 
-  const roomCharge = (historicalRoomCharge + unpostedRoomCharge) > 0
-    ? (historicalRoomCharge + unpostedRoomCharge)
-    : (Number(room.rate) || 0) * fullNights
-
-  const unpostedExtraBed = unpostedServices
-    .filter(service => codeOf(service) === 'EB')
-    .reduce((sum, service) => sum + amountOf(service), 0)
-  const hasDailyExtraBedSetup = unpostedServices.some(service => codeOf(service) === 'EB')
-
-  const hasExtraBedBill = historicalBills.some(bill => String(bill.ServiceId || '').toUpperCase() === 'EB')
-
-  const extraBedAmount = (hasDailyExtraBedSetup || hasExtraBedBill)
-    ? unpostedExtraBed
-    : (Number(room.extra_bed_qty) || 0) * (Number(room.extra_bed_rate) || 0) * fullNights
-
-  const childBreakfastAmount = (room.children || [])
+  const childBreakfastDetails = (room.children || [])
     .flatMap(child => child.breakfast_details || child.breakfastDetails || [])
     .filter(detail => Number(detail.is_extra_charge) === 1
       && Number(detail.breakfast) === 1
       && isStayDate(detail.service_date))
+  const childBreakfastDates = new Set(childBreakfastDetails
+    .map(detail => dateOnly(detail.service_date))
+    .filter(Boolean))
+  const childBreakfastAmount = childBreakfastDetails
     .reduce((sum, detail) => sum + (Number(detail.amount) || 0), 0)
+
+  const setupServiceAmount = setupServices
+    .filter(service => !isRoomCharge(service))
+    // Chi tiết ăn sáng trẻ em là snapshot chi tiết hơn của cùng ngày; tránh
+    // cộng lại dòng BD được tạo đồng thời trong setup dịch vụ.
+    .filter(service => !isChildBreakfast(service) || !childBreakfastDates.has(dateOnly(service.service_date)))
+    .reduce((sum, service) => sum + amountOf(service), 0)
+
+  const hasDailyExtraBedSetup = setupServices.some(service => codeOf(service) === 'EB')
+  const fallbackExtraBedAmount = hasDailyExtraBedSetup
+    ? 0
+    : stayDates.length * (Number(room.extra_bed_qty) || 0) * (Number(room.extra_bed_rate) || 0)
 
   return {
     roomCharge,
-    serviceCharge: historicalServiceCharge + unpostedServices
-      .filter(service => !isRoomCharge(service) && !isChildBreakfast(service) && codeOf(service) !== 'EB')
-      .reduce((sum, service) => sum + amountOf(service), 0)
-      + extraBedAmount
-      + childBreakfastAmount
+    serviceCharge: setupServiceAmount + childBreakfastAmount + fallbackExtraBedAmount
   }
 }
 
