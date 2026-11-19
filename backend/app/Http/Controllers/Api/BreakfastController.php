@@ -74,15 +74,26 @@ class BreakfastController extends Controller
 
         if ($dateType === 'arrival') {
             // Lọc theo ngày đến của phòng: Lấy các phòng sắp đến & đang đến (Đăng ký 0, Đang ở 1).
-            // Dòng 505: KHÔNG lấy dòng phòng cũ đã chuyển (100) - phòng vừa nhận rồi chuyển ngay chỉ hiện dòng phòng mới (tình trạng 1),
-            // giai đoạn phòng mới bắt đầu từ ngày chuyển (vd 412: 5/9 - 7/9).
+            // Dòng 505:
+            // - Phòng vừa nhận rồi chuyển ngay trong ngày (dòng phòng cũ 100 có ngày đến = ngày đi) chỉ hiện dòng phòng mới
+            //   (tình trạng 1), giai đoạn phòng mới bắt đầu từ ngày chuyển (vd 412: 5/9 - 7/9).
+            // - Phòng đã ở qua đêm rồi mới chuyển (vd 807: 30/8 - 31/8 chuyển sang 701) vẫn hiện dòng phòng cũ ở đúng ngày đến.
+            // - Sắp xếp theo ngày đến, rồi số booking tăng dần.
             $rooms = (clone $roomsQuery)
-                ->whereIn('status', $includeReserved
-                    ? [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN, BookingRoom::STATUS_CHECKED_OUT]
-                    : [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN])
+                ->where(function ($q) use ($includeReserved) {
+                    $q->whereIn('status', $includeReserved
+                        ? [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN, BookingRoom::STATUS_CHECKED_OUT]
+                        : [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN])
+                      ->orWhere(function ($moved) {
+                          $moved->where('status', BookingRoom::STATUS_MOVED)
+                              ->whereColumn('departure_date', '>', 'arrival_date');
+                      });
+                })
                 ->when($targetRoomNumber !== '', fn ($q) => $q->where('room_number', $targetRoomNumber))
-                ->whereBetween('arrival_date', [$fromDate->toDateString(), $toDate->toDateString()])
+                ->whereDate('arrival_date', '>=', $fromDate->toDateString())
+                ->whereDate('arrival_date', '<=', $toDate->toDateString())
                 ->orderBy('arrival_date')
+                ->orderBy('booking_id')
                 ->orderBy('room_number')
                 ->get();
 
@@ -105,6 +116,7 @@ class BreakfastController extends Controller
                 ->when($targetRoomNumber !== '', fn ($q) => $q->where('room_number', $targetRoomNumber))
                 ->where('arrival_date', '<=', $toDate->toDateString())
                 ->where('departure_date', '>=', $fromDate->toDateString())
+                ->orderBy('booking_id')
                 ->orderBy('room_number')
                 ->get();
 

@@ -77,7 +77,7 @@ const HK_TAB_PERMISSIONS = {
   'invoice-search': ['hk.service.view', 'hk.service.bill'],
   inventory: ['hk.warehouse.view'],
   'create-menu': ['hk.warehouse.manage', 'config.housekeeping.view'],
-  'lost-found': ['hk.lost_found.view', 'hk.lost_found.manage'],
+  'lost-found': ['hk.lost_found.view', 'hk.lost_found.create', 'hk.lost_found.manage', 'hk.lost_found.delete'],
   history: ['mgmt.activity_log'],
   reports: ['hk.report.view', 'mgmt.report.view'],
 }

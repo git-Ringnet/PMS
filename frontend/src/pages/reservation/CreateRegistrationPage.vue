@@ -752,7 +752,8 @@ const activeDepositsList = computed(() => {
   return modalForm.value.deposits.filter(d =>
     Number(d.edit_flag ?? 0) === 0
       && !d.deleted_at
-      && String(d.pack2 || 'DPR').toUpperCase() === 'DPR'
+      && String(d.pack2 || '').toUpperCase() === 'DPR'
+      && String(d.pack4 || '').toUpperCase() !== 'PY'
   )
 })
 

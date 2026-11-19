@@ -631,9 +631,10 @@
             </div>
         </Teleport>
         <!-- Image Preview Lightbox Modal -->
+        <Teleport to="body">
         <div v-if="previewImageUrl" class="fixed inset-0 bg-black/80 z-[2000000] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200" @click="previewImageUrl = null">
             <div class="relative max-w-4xl max-h-[90vh] bg-white rounded-lg p-2 shadow-2xl animate-in zoom-in duration-200 flex flex-col" @click.stop>
-                <button @click="previewImageUrl = null" class="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center shadow-lg transition cursor-pointer border-none z-50">
+                <button @click="previewImageUrl = null" title="Đóng (Esc)" class="absolute top-3 right-3 w-8 h-8 rounded-full bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center shadow-lg transition cursor-pointer border-none z-50">
                     <i class="fa-solid fa-xmark text-sm"></i>
                 </button>
                 <div class="overflow-auto max-h-[85vh] flex items-center justify-center rounded">
@@ -644,6 +645,7 @@
                 </div>
             </div>
         </div>
+        </Teleport>
         <!-- Delete reason form required by the payment reversal API -->
         <div v-if="isDeleteReasonOpen" class="fixed inset-0 bg-black/60 z-[2100000] flex items-center justify-center p-4" @click.self="closeDeleteReason">
             <div class="w-full max-w-md bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden">
@@ -958,7 +960,18 @@ watch(isTransferOpen, (open) => {
   }
 })
 
+// Nhấn Esc để đóng ảnh chứng từ đang xem.
+function closePreviewOnEscape(event) {
+  if (event.key === 'Escape') previewImageUrl.value = null
+}
+
+watch(previewImageUrl, (url) => {
+  if (url) window.addEventListener('keydown', closePreviewOnEscape)
+  else window.removeEventListener('keydown', closePreviewOnEscape)
+})
+
 onUnmounted(() => {
+  window.removeEventListener('keydown', closePreviewOnEscape)
   document.removeEventListener('pointerdown', handleDocumentPointerDown)
   document.removeEventListener('mousemove', dragModal)
   document.removeEventListener('mouseup', stopDragModal)

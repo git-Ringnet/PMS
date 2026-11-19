@@ -20,6 +20,10 @@ const props = defineProps({
     type: String,
     default: ''
   },
+  companyAllowsDebt: {
+    type: Boolean,
+    default: false
+  },
   selectedRoomId: {
     type: [String, Number],
     default: null
@@ -221,13 +225,27 @@ const selectedBankAccountDetails = computed(() => bankAccountOptions.value.find(
   String(account.id) === String(selectedBankAccount.value)
 )) || null)
 
+const isCityLedgerMethod = (method) => (
+  String(method?.code || '').toUpperCase() === 'AC' || Number(method?.payment_group) === 4
+)
+
+const visiblePaymentMethods = computed(() => paymentMethods.value.filter(method => (
+  props.companyAllowsDebt || !isCityLedgerMethod(method)
+)))
+
+watch(visiblePaymentMethods, (methods) => {
+  if (!methods.some(method => String(method.id || method.code) === String(paymentMethodId.value))) {
+    paymentMethodId.value = methods[0] ? (methods[0].id || methods[0].code) : ''
+  }
+})
+
 const fetchPaymentMethods = async () => {
   try {
     const res = await http.get('/payment-methods')
     const list = res.data?.data || res.data || []
     paymentMethods.value = list.filter(m => !inGroupExcluded(m))
-    if (paymentMethods.value.length > 0 && (!paymentMethodId.value || !paymentMethods.value.some(m => String(m.id || m.code) === String(paymentMethodId.value)))) {
-      paymentMethodId.value = paymentMethods.value[0].id || paymentMethods.value[0].code
+    if (visiblePaymentMethods.value.length > 0 && (!paymentMethodId.value || !visiblePaymentMethods.value.some(m => String(m.id || m.code) === String(paymentMethodId.value)))) {
+      paymentMethodId.value = visiblePaymentMethods.value[0].id || visiblePaymentMethods.value[0].code
     }
     await fetchBankAccounts()
   } catch (err) {
@@ -280,8 +298,7 @@ const fetchWorkShifts = async () => {
 }
 
 function inGroupExcluded(m) {
-  const grp = Number(m.payment_group)
-  return grp === 4 || grp === 5 || m.is_free === 1 || m.is_free === true || m.is_inactive === 1 || m.is_inactive === true
+  return m.is_inactive === 1 || m.is_inactive === true
 }
 
 watch(() => props.show, (visible) => {
@@ -518,7 +535,7 @@ onBeforeUnmount(() => {
                 <div class="flex gap-1">
                   <div class="relative flex-1 min-w-0">
                   <select v-model="paymentMethodId" class="w-full h-8 appearance-none pl-2 pr-12 bg-[#FFF8DB] border border-[#F1DD8A] rounded text-[#000000D9] font-normal focus:outline-none focus:border-yellow-500 text-xs truncate">
-                    <option v-for="m in paymentMethods" :key="m.id || m.code" :value="m.id || m.code" class="bg-white">
+                    <option v-for="m in visiblePaymentMethods" :key="m.id || m.code" :value="m.id || m.code" class="bg-white">
                       {{ m.name }}
                     </option>
                   </select>

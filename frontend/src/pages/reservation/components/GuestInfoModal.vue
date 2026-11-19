@@ -860,7 +860,7 @@ import GuestDetailModal from './GuestDetailModal.vue'
 import GuestSuggestInput from '@/components/GuestSuggestInput.vue'
 import { inheritGuestInfo } from '@/utils/guest-suggestion'
 import { normalizeGuestInfoGroups, isCheckedOutPerson, splitCheckedOutPeople } from '@/utils/guest-info'
-import { maskDateInput, formatDateDisplayYY, normalizeIsoDateOnly } from './room-info-date-utils'
+import { maskDateInput, resolveDateInputSegmentSelection, formatDateDisplayYY, normalizeIsoDateOnly } from './room-info-date-utils'
 import { applyImportedGuests } from '@/utils/guest-import'
 
 const props = defineProps({
@@ -1337,6 +1337,12 @@ function handleDateCellInput(targetObj, colKey, event) {
   dateInputBuffers.value[k] = masked
   if (event?.target && event.target.value !== masked) {
     event.target.value = masked
+  }
+  const selection = resolveDateInputSegmentSelection(masked, event?.target?.selectionStart, isDeleting)
+  if (selection && event?.target) {
+    requestAnimationFrame(() => {
+      if (document.activeElement === event.target) event.target.setSelectionRange(selection.start, selection.end)
+    })
   }
 
   const digits = masked.replace(/\D/g, '')

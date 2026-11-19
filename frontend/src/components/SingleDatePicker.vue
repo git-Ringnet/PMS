@@ -4,7 +4,7 @@ import { VueDatePicker } from '@vuepic/vue-datepicker'
 import '@vuepic/vue-datepicker/dist/main.css'
 import { vi } from 'date-fns/locale'
 import { useAuthStore } from '@/stores/auth-store'
-import { maskDateInput } from '@/pages/reservation/components/room-info-date-utils'
+import { maskDateInput, resolveDateInputSegmentSelection } from '@/pages/reservation/components/room-info-date-utils'
 
 const authStore = useAuthStore()
 
@@ -244,6 +244,12 @@ function handleTextInput(e) {
   textInput.value = masked
   if (e && e.target && e.target.value !== masked) {
     e.target.value = masked
+  }
+  const selection = resolveDateInputSegmentSelection(masked, e?.target?.selectionStart, isDeleting, props.fourDigitYear)
+  if (selection && e?.target) {
+    requestAnimationFrame(() => {
+      if (document.activeElement === e.target) e.target.setSelectionRange(selection.start, selection.end)
+    })
   }
 
   const digits = textInput.value.replace(/\D/g, '')

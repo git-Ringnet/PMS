@@ -1012,6 +1012,8 @@ class PaymentController extends Controller
         foreach ($payments->reject(fn (Payment $payment) => $this->isTransferableDepositOrAdvance($payment)) as $line) {
             $reversalId = null;
             $amount = round((float) $line->amount, 2);
+            // Task 228: mô tả dòng gốc và dòng âm cùng dạng "nội dung cũ + Correct: lý do", không dùng [REVERSAL].
+            $cancelledDescription = $this->withOperationNote((string) $line->description, ' Correct: ' . $reason);
             if (abs($amount) >= 0.01) {
                 $reversal = Payment::create([
                     'booking_id' => $line->booking_id,
@@ -1021,7 +1023,7 @@ class PaymentController extends Controller
                     'open_time' => now()->format('H:i:s'),
                     'shift' => $this->currentOperationShift(),
                     'guest_display' => $line->guest_display,
-                    'description' => '[REVERSAL] ' . $line->description,
+                    'description' => $cancelledDescription,
                     'reason' => $reason,
                     'amount' => -$amount,
                     'total_amount_before_split' => $line->total_amount_before_split,
@@ -1047,6 +1049,7 @@ class PaymentController extends Controller
             $line->update([
                 'status' => Payment::STATUS_DELETED,
                 'edit_flag' => 1,
+                'description' => $cancelledDescription,
                 'payment_id' => null,
                 'reversal_ref' => $reversalId,
                 'updated_by' => $username,

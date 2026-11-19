@@ -15,6 +15,7 @@ import {
 import http from '@/services/http'
 import { fetchSystemDate } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
+import { usePermission } from '@/composables/usePermission'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
 
@@ -23,6 +24,10 @@ const PAGE_SIZE = 10
 
 const route = useRoute()
 const uiStore = useUiStore()
+const { can } = usePermission()
+const canCreate = computed(() => can('hk.lost_found.create'))
+const canManage = computed(() => can('hk.lost_found.manage'))
+const canDelete = computed(() => can('hk.lost_found.delete'))
 const items = ref([])
 const isLoading = ref(false)
 const systemDate = ref('')
@@ -151,6 +156,7 @@ const onDateFromChange = () => {
 const snapshotForm = () => JSON.stringify({ ...form, image: images.value })
 
 const openCreateModal = () => {
+  if (!canCreate.value) return
   Object.assign(form, emptyForm())
   images.value = []
   isEditing.value = false
@@ -159,6 +165,7 @@ const openCreateModal = () => {
 }
 
 const openEditModal = (item) => {
+  if (!canManage.value) return
   Object.assign(form, emptyForm(), item, {
     date_reported: String(item.date_reported || '').slice(0, 10),
     date_found: String(item.date_found || '').slice(0, 10),
@@ -265,6 +272,7 @@ const removeImage = (index) => {
 }
 
 const saveItem = async () => {
+  if ((isEditing.value && !canManage.value) || (!isEditing.value && !canCreate.value)) return
   if (!form.item_found.trim() || !form.date_reported) {
     uiStore.showToast('Vui lòng nhập Mặt hàng và Ngày báo cáo', 'warning')
     return
@@ -299,6 +307,7 @@ const saveItem = async () => {
 }
 
 const deleteItem = async (item) => {
+  if (!canDelete.value) return
   const confirmed = await uiStore.confirm({ message: `Xóa phiếu “${item.item_found}”?` })
   if (!confirmed) return
 
@@ -400,7 +409,7 @@ onMounted(async () => {
           </button>
         </div>
 
-        <button class="btn-pms-primary h-8 px-4 text-xs flex items-center gap-1.5 cursor-pointer shrink-0" type="button" @click="openCreateModal">
+        <button v-if="canCreate" class="btn-pms-primary h-8 px-4 text-xs flex items-center gap-1.5 cursor-pointer shrink-0" type="button" @click="openCreateModal">
           <Plus :size="14" />
           <span>Thêm phiếu</span>
         </button>
@@ -454,10 +463,10 @@ onMounted(async () => {
               <td class="py-2 px-3 align-middle text-[#000000D9] font-normal">{{ item.created_by || '—' }}</td>
               <td class="py-2 px-3 text-center align-middle">
                 <div class="flex items-center justify-center gap-1.5">
-                  <button class="w-7 h-7 rounded text-blue-600 hover:bg-blue-100 flex items-center justify-center transition-colors cursor-pointer border-none bg-transparent" type="button" title="Sửa" @click="openEditModal(item)">
+                  <button v-if="canManage" class="w-7 h-7 rounded text-blue-600 hover:bg-blue-100 flex items-center justify-center transition-colors cursor-pointer border-none bg-transparent" type="button" title="Sửa" @click="openEditModal(item)">
                     <Pencil :size="14" />
                   </button>
-                  <button class="w-7 h-7 rounded text-rose-500 hover:bg-rose-100 flex items-center justify-center transition-colors cursor-pointer border-none bg-transparent" type="button" title="Xóa" @click="deleteItem(item)">
+                  <button v-if="canDelete" class="w-7 h-7 rounded text-rose-500 hover:bg-rose-100 flex items-center justify-center transition-colors cursor-pointer border-none bg-transparent" type="button" title="Xóa" @click="deleteItem(item)">
                     <Trash2 :size="14" />
                   </button>
                 </div>
@@ -843,7 +852,7 @@ onMounted(async () => {
           </div>
 
           <!-- Modal Footer -->
-          <footer class="modal-footer flex items-center justify-end gap-2 p-3 bg-slate-50 border-t border-slate-200 shrink-0">
+          <footer v-if="(isEditing && canManage) || (!isEditing && canCreate)" class="modal-footer flex items-center justify-end gap-2 p-3 bg-slate-50 border-t border-slate-200 shrink-0">
             <button class="btn-pms-primary h-8 px-4 text-xs flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50" type="button" :disabled="isSaving" @click="saveItem">
               <span v-if="isSaving" class="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
               <template v-else>
