@@ -167,7 +167,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     // Folio phòng ảo (không có booking): danh sách cho Hóa đơn và thanh toán theo phòng.
     Route::get('/virtual-room-folios', [\App\Http\Controllers\Api\VirtualRoomFolioController::class, 'index']);
     Route::post('/virtual-room-folios/{roomId}/settle-payment', [\App\Http\Controllers\Api\PaymentController::class, 'settleVirtualRoomPayment'])
-        ->middleware('permission:fo.payment.create');
+        ->middleware(['permission:fo.payment.create', 'permission:fo.bill.create']);
     Route::apiResource('rooms', \App\Http\Controllers\Api\RoomController::class)->middleware($canWrite('config.rooms.*'));
 
     // Room locks management
@@ -547,7 +547,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     Route::post('/booking-room-services/post-housekeeping-bill', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'postHousekeepingBill'])->middleware('permission:hk.service.bill,fo.service.add,fo.service.edit');
     Route::get('/housekeeping/service-bills', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'searchHousekeepingInvoices']);
     Route::post('/housekeeping/service-bills/{billId}/cancel', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'cancelHousekeepingInvoice'])->middleware('permission:hk.service.delete');
-    Route::post('/booking-room-services/post-fo-service-bill', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'postFoServiceBill'])->middleware('permission:fo.service.add,fo.service.edit');
+    Route::post('/booking-room-services/post-fo-service-bill', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'postFoServiceBill'])->middleware(['permission:fo.service.add,fo.service.edit', 'permission:fo.bill.create']);
     Route::post('/booking-room-services/post-room-charge', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'postRoomCharge'])->middleware('permission:fo.service.add,fo.service.edit');
     Route::post('/bookings/{bookingId}/adjust-room-rate', [\App\Http\Controllers\Api\BookingRoomServiceController::class, 'adjustRoomRate'])->middleware('permission:fo.service.edit,fo.service.add');
 
@@ -602,7 +602,7 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     // =====================================================================
     Route::get('/bookings/{bookingId}/payments', [\App\Http\Controllers\Api\PaymentController::class, 'index']);
     Route::post('/bookings/{bookingId}/payments', [\App\Http\Controllers\Api\PaymentController::class, 'store'])->middleware('permission:fo.payment.create,fo.deposit.create,fo.deposit.edit,fo.deposit.delete');
-    Route::post('/bookings/{bookingId}/settle-payment', [\App\Http\Controllers\Api\PaymentController::class, 'settlePayment'])->middleware('permission:fo.payment.create');
+    Route::post('/bookings/{bookingId}/settle-payment', [\App\Http\Controllers\Api\PaymentController::class, 'settlePayment'])->middleware(['permission:fo.payment.create', 'permission:fo.bill.create']);
     Route::put('/payments/{id}', [\App\Http\Controllers\Api\PaymentController::class, 'update'])->middleware('permission:fo.payment.create,fo.deposit.create,fo.deposit.edit,fo.deposit.delete');
     Route::patch('/payments/{id}/folio', [\App\Http\Controllers\Api\PaymentController::class, 'transferFolio'])->middleware('permission:fo.payment.create,fo.deposit.create,fo.deposit.edit,fo.deposit.delete');
     Route::delete('/payments/{id}', [\App\Http\Controllers\Api\PaymentController::class, 'destroy'])->middleware('permission:fo.payment.create,fo.deposit.create,fo.deposit.edit,fo.deposit.delete');

@@ -370,7 +370,7 @@
                     <i class="fa-regular fa-floppy-disk text-[11px]"></i>
                     <span>Lưu</span>
                 </button>
-                <button type="button" v-if="!isEditing" @click="addDeposit" :disabled="isSubmitting" class="btn-pms-primary" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting }">
+                <button type="button" v-if="!isEditing && canCreateDeposit" data-testid="deposit-add-btn" @click="addDeposit" :disabled="isSubmitting" class="btn-pms-primary" :class="{ 'opacity-50 cursor-not-allowed': isSubmitting }">
                     <i class="fa-solid fa-plus text-[11px]"></i>
                     <span>Thêm</span>
                 </button>
@@ -960,18 +960,25 @@ watch(isTransferOpen, (open) => {
   }
 })
 
-// Nhấn Esc để đóng ảnh chứng từ đang xem.
-function closePreviewOnEscape(event) {
-  if (event.key === 'Escape') previewImageUrl.value = null
+// TC_DP_16 (Modal): nhấn Esc đóng lớp trên cùng — ảnh chứng từ → lý do xóa → tách/chuyển cọc → modal đặt cọc.
+function closeTopLayerOnEscape(event) {
+  if (event.key !== 'Escape' || event.defaultPrevented) return
+  if (previewImageUrl.value) previewImageUrl.value = null
+  else if (isDeleteReasonOpen.value) closeDeleteReason()
+  else if (isSplitOpen.value) isSplitOpen.value = false
+  else if (isTransferOpen.value) isTransferOpen.value = false
+  else if (props.show) close()
+  else return
+  event.preventDefault()
 }
 
-watch(previewImageUrl, (url) => {
-  if (url) window.addEventListener('keydown', closePreviewOnEscape)
-  else window.removeEventListener('keydown', closePreviewOnEscape)
-})
+watch(() => props.show, (open) => {
+  if (open) window.addEventListener('keydown', closeTopLayerOnEscape)
+  else window.removeEventListener('keydown', closeTopLayerOnEscape)
+}, { immediate: true })
 
 onUnmounted(() => {
-  window.removeEventListener('keydown', closePreviewOnEscape)
+  window.removeEventListener('keydown', closeTopLayerOnEscape)
   document.removeEventListener('pointerdown', handleDocumentPointerDown)
   document.removeEventListener('mousemove', dragModal)
   document.removeEventListener('mouseup', stopDragModal)

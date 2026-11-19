@@ -532,6 +532,20 @@ class BookingController extends Controller
             'registration_status_id.exists'   => 'Tình trạng đăng ký không tồn tại!',
         ]);
 
+        // Task 473 (TC_LT_22 dòng 297): tạo đăng ký kèm cọc cũng phải có quyền thêm cọc (fo.deposit.create),
+        // không chỉ fo.booking.create. Từ chối trước khi tạo booking để không tạo nửa chừng.
+        $hasPositiveDeposit = collect($request->input('deposit_details', []))
+            ->contains(fn ($dep) => is_array($dep) && (float) ($dep['amount'] ?? 0) > 0);
+        $actor = $request->user();
+        if ($hasPositiveDeposit && $actor && !$actor->isSuperAdmin()
+            && !$actor->hasPermission('fo.deposit.create', $request->attributes->get('_branch_id'))) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Bạn không có quyền thực hiện thao tác đặt cọc.',
+                'required_permissions' => ['fo.deposit.create'],
+            ], 403);
+        }
+
         // Lấy ngày hệ thống
         $systemDate = SystemDateRoll::latest('id')->first();
         $sysDateStr = $systemDate

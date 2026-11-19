@@ -166,3 +166,34 @@ export function filterMenuByPermission(items, auth, parentPath = '') {
     return result
   }, [])
 }
+
+// Task 471/473 (TC_LT_22 dòng 296): màn Vai trò & Phân quyền tách khối FO thành 2 module riêng
+// "Đặt phòng (Sales)" và "Lễ tân". Chỉ là cách nhóm hiển thị: mã quyền và dữ liệu lưu không đổi.
+export const FO_SALES_MODULE = 'FO_SALES'
+export const FO_SALES_SCREENS = ['fo.booking', 'fo.deposit', 'fo.company', 'fo.allotment', 'fo.room_lock']
+export const PERMISSION_MODULE_LABELS = {
+  [FO_SALES_MODULE]: 'FO - Đặt phòng (Sales)',
+  FO: 'FO - Lễ tân (Front Desk)',
+}
+
+export function splitFrontOfficeModules(groups = {}) {
+  const frontOffice = groups.FO
+  if (!Array.isArray(frontOffice)) return groups
+
+  const sales = frontOffice
+    .filter(permission => FO_SALES_SCREENS.includes(permission.screen_code))
+    .map(permission => ({ ...permission, module: FO_SALES_MODULE }))
+  const reception = frontOffice.filter(permission => !FO_SALES_SCREENS.includes(permission.screen_code))
+  if (!sales.length) return groups
+
+  const result = {}
+  for (const [module, permissions] of Object.entries(groups)) {
+    if (module === 'FO') {
+      result[FO_SALES_MODULE] = sales
+      result.FO = reception
+    } else {
+      result[module] = permissions
+    }
+  }
+  return result
+}

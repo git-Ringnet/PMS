@@ -10,5 +10,16 @@ test('xem ảnh cọc: lightbox ở body, nút đóng nằm trong khung và Esc 
   assert.match(block, /<Teleport to="body">/)
   assert.match(block, /title="Đóng \(Esc\)"[^>]*class="absolute top-3 right-3/)
   assert.doesNotMatch(block, /-top-3 -right-3/)
-  assert.match(source, /event\.key === 'Escape'\) previewImageUrl\.value = null/)
+  assert.match(source, /function closeTopLayerOnEscape/)
+  assert.match(source, /if \(previewImageUrl\.value\) previewImageUrl\.value = null/)
+})
+
+test('TC_DP_16 modal: Esc đóng lần lượt ảnh → lý do xóa → tách/chuyển cọc → modal đặt cọc', () => {
+  const start = source.indexOf('function closeTopLayerOnEscape')
+  const block = source.slice(start, source.indexOf('onUnmounted', start))
+  const order = ['previewImageUrl.value', 'isDeleteReasonOpen.value', 'isSplitOpen.value', 'isTransferOpen.value', 'props.show']
+  const positions = order.map(key => block.indexOf(key))
+  assert.ok(positions.every(pos => pos > -1))
+  assert.deepEqual([...positions].sort((a, b) => a - b), positions)
+  assert.match(block, /addEventListener\('keydown', closeTopLayerOnEscape\)/)
 })
