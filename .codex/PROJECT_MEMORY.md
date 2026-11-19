@@ -1,5 +1,7 @@
 # Project Memory — PMS
 
+- 2026-11-19: TC_DP_15 / Công Ty: bảng bổ sung STT theo phân trang và trạng thái sử dụng; các dropdown danh mục có lựa chọn `Chưa chọn`. Xuất/file mẫu chuyển sang XLSX, nhập nhận XLSX/XLS và giữ CSV legacy; import trả trạng thái từng dòng, chặn thiếu tên, email/công nợ/tham chiếu sai và trùng trong file. Không đổi schema, model, API CRUD Booking/Checkout hay khóa mapping production `SP1302`; cần UAT file Excel thực tế và chạy PHPUnit tại môi trường có `backend/vendor`.
+
 - 2026-11-19: Danh sách công việc / Đón tiễn khách và Dòng 530 Sinh nhật khách: API đưa đón nay đọc đúng từng phần tử `bookings.shuttle_info[]` theo `date` và `type`, khớp nguồn Báo cáo đưa đón; không còn suy diễn từ ngày đến/đi, chuyến bay hoặc khóa `pickup`/`dropoff` không tồn tại trong payload hiện hành. API sinh nhật chỉ trả ngày sinh lặp theo năm khi đồng thời thuộc kỳ xem và thời gian ở của từng phòng, áp dụng cho khách, trẻ em/em bé. Không đổi schema, migration, mapping/import legacy, Đăng ký, Báo cáo hoặc Checkout. Bổ sung hồi quy API; cần chạy PHPUnit tại môi trường có `backend/vendor`.
 
 - 2026-11-13: Tìm kiếm chung (`GeneralSearchPage.vue`) xóa ngay kết quả/phân trang của thẻ trước khi đổi Đăng ký/Phòng/Khách để loading toàn hệ thống hiển thị thay vì dữ liệu cũ; response chỉ cập nhật khi khớp thẻ của request. Không đổi API, bộ lọc, thao tác, quyền, schema hay import legacy. `npm run build` đạt.
