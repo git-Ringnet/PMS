@@ -3821,8 +3821,10 @@ onUnmounted(() => {
         <div class="pb-2 mb-1 border-b border-[#334155]">
           <div v-if="!isSidebarCollapsed" class="px-2 py-1 text-xs font-semibold uppercase tracking-wide text-white/80 whitespace-nowrap">Dịch Vụ & Phí</div>
 
-          <!-- Thêm dịch vụ -->
+          <!-- Thêm dịch vụ (tạo bill dịch vụ): cùng điều kiện quyền với API post-fo-service-bill (fo.service.add/edit + fo.bill.create) -->
           <button 
+            v-if="(can('fo.service.add') || can('fo.service.edit')) && can('fo.bill.create')"
+            data-testid="checkout-add-service-btn"
             @click="openAddServiceModal"
             :disabled="isSelectedPostBlocked"
             class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded text-[#cbd5e1] hover:bg-[#334155] hover:text-white transition-colors text-xs disabled:cursor-not-allowed disabled:opacity-40"
@@ -3908,9 +3910,10 @@ onUnmounted(() => {
             <span v-if="!isSidebarCollapsed" class="truncate">Thanh Toán Trước</span>
           </button>
 
-          <!-- Thanh toán -->
+          <!-- Thanh toán (tạo hóa đơn): cần quyền thanh toán + tạo hóa đơn, cùng điều kiện với API settle-payment -->
           <button 
-            v-if="can('fo.payment.create')"
+            v-if="can('fo.payment.create') && can('fo.bill.create')"
+            data-testid="checkout-pay-btn"
             @click="openPaymentModal"
             class="w-full flex items-center gap-1.5 px-2 py-[5px] rounded text-[#cbd5e1] hover:bg-[#334155] hover:text-white transition-colors text-xs cursor-pointer"
             :title="isSidebarCollapsed ? 'Thanh toán' : ''"
