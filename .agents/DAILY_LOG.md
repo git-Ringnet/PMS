@@ -9,6 +9,12 @@
 - **Ngày ghi**: `YYYY-MM-DD`
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 
+## [2026-11-19] - Hóa đơn: Tổng DV dòng Master hiện tiền phòng chưa post (booking GAL4)
+
+- Lỗi: cột Tổng DV của dòng booking (Master) ở Trả phòng hiện 2.950.000 nhưng bảng dịch vụ trống, `service_bills` không có dòng nào. Do vòng cộng tiền phòng Master trong `CheckoutPage.vue` (nhánh fallback `booking_room.services`) không lọc `isPostedBookingService`, nên cộng cả tiền phòng set up chưa post (590.000 × 5 đêm phòng 406, `is_room = 0`).
+- Sửa: bỏ qua dịch vụ chưa post (không `is_posted`, không `service_bill_id`) khi tính Tổng DV Master, khớp với bảng dịch vụ (vốn đã lọc như vậy).
+- Kiểm tra: `vite build` đạt. Chưa UAT trình duyệt.
+
 ## [2026-11-17] - TC_LT_15 & TC_LT_16 (Hóa đơn - dịch vụ, thanh toán) & Quy trình Playwright
 
 - **Task 459 (TC_LT_15 dòng 225 - sai mô tả khi chuyển bill & thiếu CompanyId1)**:

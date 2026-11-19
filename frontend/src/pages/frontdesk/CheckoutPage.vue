@@ -1140,6 +1140,8 @@ const loadCheckoutBookings = async () => {
           ;(r.services || []).forEach(service => {
             if (!isRoomCharge(service)) return
             if (getServiceRoomFlag(service) !== 0) return
+            // Tiền phòng set up (chưa post, chưa có bill) chỉ là dự kiến, không cộng vào Tổng DV.
+            if (!isPostedBookingService(service)) return
             const linkedBillId = service.service_bill_id ? String(service.service_bill_id) : null
             if (linkedBillId && countedMasterBillIds.has(linkedBillId)) return
             if (linkedBillId) {
