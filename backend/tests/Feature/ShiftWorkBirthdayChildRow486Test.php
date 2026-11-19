@@ -81,4 +81,25 @@ class ShiftWorkBirthdayChildRow486Test extends TestCase
 
         $this->assertCount(0, $rows);
     }
+
+    // Dòng 530: ngày sinh trong kỳ xem nhưng ngoài thời gian ở của phòng không được hiển thị.
+    public function test_birthdays_tab_requires_birthday_to_be_within_the_room_stay(): void
+    {
+        $adult = Guest::create(['full_name' => 'Khách trước ngày đến', 'dob' => '1990-09-02']);
+        BookingRoomGuest::create([
+            'booking_room_id' => $this->room->id,
+            'guest_id' => $adult->id,
+            'status' => BookingRoomGuest::STATUS_ACTIVE,
+        ]);
+        $this->child('Trước ngày đến', '2007-09-02');
+        $this->child('Đúng ngày đi', '2007-09-07');
+
+        $rows = collect($this->getJson('/api/shift-work/birthdays?from_date=2026-09-01&to_date=2026-09-10')
+            ->assertOk()
+            ->json('data'));
+
+        $this->assertNull($rows->firstWhere('guestName', 'Khách trước ngày đến'));
+        $this->assertNull($rows->firstWhere('guestName', 'Trước ngày đến'));
+        $this->assertNotNull($rows->firstWhere('guestName', 'Đúng ngày đi'));
+    }
 }

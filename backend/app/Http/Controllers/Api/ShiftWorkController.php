@@ -18,7 +18,6 @@ use App\Models\ServiceBill;
 use App\Models\RoomClass;
 use App\Models\SystemDateRoll;
 use Carbon\Carbon;
-use Carbon\CarbonPeriod;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -635,69 +634,64 @@ class ShiftWorkController extends Controller
         $prefix = $this->getPrefix();
         $targetDate = Carbon::parse($dateStr)->toDateString();
 
-        $query = Booking::with([
+        if (!in_array($type, ['all', 'arrival', 'departure'], true)) {
+            $type = 'all';
+        }
+
+        // Thông tin đưa đón được lưu theo từng dòng trong shuttle_info[]; ngày thực hiện
+        // là row.date, không phải ngày đến/đi hoặc ngày chuyến bay của booking.
+        $bookings = Booking::with([
             'company',
             'bookingRooms.room'
         ])
         ->whereNull('deleted_at')
-        ->where(function ($q) use ($targetDate) {
-            $q->whereDate('arrival_flight_date', $targetDate)
-              ->orWhereDate('departure_flight_date', $targetDate)
-              ->orWhereDate('arrival_date', $targetDate)
-              ->orWhereDate('departure_date', $targetDate);
-        });
-
-        $bookings = $query->orderBy('arrival_date', 'asc')->get();
+        ->whereNotNull('shuttle_info')
+        ->orderBy('arrival_date', 'asc')
+        ->get();
 
         $result = [];
         foreach ($bookings as $bk) {
             $bkCode = $prefix . $bk->id;
             $roomsList = $bk->bookingRooms->pluck('room_number')->filter()->implode(', ');
 
-            // Check Arrival Shuttle
-            if ($type === 'all' || $type === 'arrival') {
-                $arrFDate = $bk->arrival_flight_date ? Carbon::parse($bk->arrival_flight_date)->toDateString() : Carbon::parse($bk->arrival_date)->toDateString();
-                if ($arrFDate === $targetDate && ($bk->arrival_flight || !empty($bk->shuttle_info['pickup']))) {
-                    $flightTime = $bk->arrival_flight_date ? Carbon::parse($bk->arrival_flight_date)->format('H:i') : '';
-                    $result[] = [
-                        'id' => $bkCode,
-                        'bookingName' => $bk->booking_name ?: 'Khách lẻ',
-                        'roomNumber' => $roomsList,
-                        'guestName' => $bk->contact_name ?: $bk->booking_name,
-                        'shuttleType' => 'Đón sân bay',
-                        'flightCode' => $bk->arrival_flight ?: '',
-                        'flightTime' => $flightTime,
-                        'date' => Carbon::parse($arrFDate)->format('d/m/Y'),
-                        'pax' => (int) ($bk->bookingRooms->sum('adults') ?: 1),
-                        'vehicle' => $bk->shuttle_info['vehicle'] ?? 'Xe 7 chỗ',
-                        'notes' => $bk->shuttle_info['notes'] ?? ($bk->note ?: ''),
-                        'company' => $bk->company?->name ?: '',
-                        'status' => 'Chưa đón'
-                    ];
+            foreach ((array) $bk->shuttle_info as $row) {
+                if (!is_array($row) || empty($row['date'])) {
+                    continue;
                 }
-            }
 
-            // Check Departure Shuttle
-            if ($type === 'all' || $type === 'departure') {
-                $depFDate = $bk->departure_flight_date ? Carbon::parse($bk->departure_flight_date)->toDateString() : Carbon::parse($bk->departure_date)->toDateString();
-                if ($depFDate === $targetDate && ($bk->departure_flight || !empty($bk->shuttle_info['dropoff']))) {
-                    $flightTime = $bk->departure_flight_date ? Carbon::parse($bk->departure_flight_date)->format('H:i') : '';
-                    $result[] = [
-                        'id' => $bkCode,
-                        'bookingName' => $bk->booking_name ?: 'Khách lẻ',
-                        'roomNumber' => $roomsList,
-                        'guestName' => $bk->contact_name ?: $bk->booking_name,
-                        'shuttleType' => 'Tiễn sân bay',
-                        'flightCode' => $bk->departure_flight ?: '',
-                        'flightTime' => $flightTime,
-                        'date' => Carbon::parse($depFDate)->format('d/m/Y'),
-                        'pax' => (int) ($bk->bookingRooms->sum('adults') ?: 1),
-                        'vehicle' => $bk->shuttle_info['vehicle'] ?? 'Xe 7 chỗ',
-                        'notes' => $bk->shuttle_info['notes'] ?? ($bk->note ?: ''),
-                        'company' => $bk->company?->name ?: '',
-                        'status' => 'Chưa tiễn'
-                    ];
+                try {
+                    $transportDate = Carbon::parse($row['date'])->toDateString();
+                } catch (\Throwable $e) {
+                    continue;
                 }
+
+                if ($transportDate !== $targetDate) {
+                    continue;
+                }
+
+                $isArrival = in_array(mb_strtolower(trim((string) ($row['type'] ?? ''))), ['đón', 'don', 'arrival', 'arrive', '1'], true);
+                $rowType = $isArrival ? 'arrival' : 'departure';
+                if ($type !== 'all' && $type !== $rowType) {
+                    continue;
+                }
+
+                $result[] = [
+                    'id' => $bkCode,
+                    'bookingName' => $bk->booking_name ?: 'Khách lẻ',
+                    'roomNumber' => $roomsList,
+                    'guestName' => $bk->contact_name ?: $bk->booking_name,
+                    'shuttleType' => $isArrival ? 'Đón sân bay' : 'Tiễn sân bay',
+                    'flightCode' => (string) ($row['code'] ?? ''),
+                    'flightTime' => (string) ($row['time'] ?? ''),
+                    'date' => Carbon::parse($transportDate)->format('d/m/Y'),
+                    'pax' => (int) ($bk->bookingRooms->sum('adults') ?: 1),
+                    'vehicle' => (string) ($row['vehicle'] ?? ''),
+                    'price' => (float) ($row['price'] ?? 0),
+                    'location' => (string) ($row['location'] ?? ''),
+                    'notes' => (string) ($row['note'] ?? ''),
+                    'company' => $bk->company?->name ?: '',
+                    'status' => $isArrival ? 'Chưa đón' : 'Chưa tiễn',
+                ];
             }
         }
 
@@ -1035,17 +1029,14 @@ class ShiftWorkController extends Controller
 
             $dob = Carbon::parse($g->dob);
 
-            // Check if birthday falls within [fromDate, toDate] (regardless of birth year)
-            $isMatch = false;
-            $period = CarbonPeriod::create($fromDate->copy()->startOfDay(), $toDate->copy()->startOfDay());
-            foreach ($period as $checkDate) {
-                if ($checkDate->month === $dob->month && $checkDate->day === $dob->day) {
-                    $isMatch = true;
-                    break;
-                }
-            }
-
-            if (!$isMatch) continue;
+            // Dòng 530: sinh nhật phải nằm đồng thời trong kỳ xem và giai đoạn ở của phòng.
+            if (!$rm->arrival_date || !$rm->departure_date) continue;
+            $stayStart = Carbon::parse($rm->arrival_date)->startOfDay();
+            $stayEnd = Carbon::parse($rm->departure_date)->startOfDay();
+            $periodStart = $stayStart->greaterThan($fromDate) ? $stayStart : $fromDate->copy()->startOfDay();
+            $periodEnd = $stayEnd->lessThan($toDate) ? $stayEnd : $toDate->copy()->startOfDay();
+            $birthdayDate = $this->birthdayWithin($dob, $periodStart, $periodEnd);
+            if (!$birthdayDate) continue;
 
             $bkCode = $prefix . ($bk?->id ?? 0);
             $age = $dob->age;
@@ -1088,5 +1079,23 @@ class ShiftWorkController extends Controller
                 'total' => count($result)
             ]
         ]);
+    }
+
+    /** Ngày sinh lặp theo năm nằm trong khoảng đã giao với thời gian lưu trú. */
+    private function birthdayWithin(Carbon $dob, Carbon $start, Carbon $end): ?Carbon
+    {
+        if ($start->gt($end)) {
+            return null;
+        }
+
+        for ($year = $start->year; $year <= $end->year; $year++) {
+            $day = min($dob->day, Carbon::create($year, $dob->month, 1)->daysInMonth);
+            $candidate = Carbon::create($year, $dob->month, $day)->startOfDay();
+            if ($candidate->betweenIncluded($start, $end)) {
+                return $candidate;
+            }
+        }
+
+        return null;
     }
 }
