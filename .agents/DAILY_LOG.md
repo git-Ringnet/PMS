@@ -9,6 +9,19 @@
 - **Ngày ghi**: `YYYY-MM-DD`
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 
+## [2026-11-20] - Bàn giao ca: Gom nhóm tab Sinh nhật khách theo ngày sinh nhật trong kỳ xem
+
+- Yêu cầu: Bảng "Sinh nhật khách" trong màn hình Giao ca (`ShiftWorkPage.vue`) trước đó gom nhóm theo ngày sinh gốc của khách (`item.birthday` / DOB, ví dụ: 03/09/1995, 03/09/1997, 03/09/2009 làm tách rời mỗi người 1 header). Khách hàng yêu cầu gom nhóm theo ngày sinh nhật diễn ra trong kỳ xem (ví dụ: `03/09/2026` gom cả 3 khách có sinh nhật vào ngày 03/09).
+- Backend (`ShiftWorkController.php`): hàm `birthdays()` bổ sung `'birthdayDate' => $birthdayDate->format('d/m/Y')` vào mảng kết quả của từng khách (biến `$birthdayDate` đã được tính chuẩn trong kỳ xem).
+- Frontend (`ShiftWorkPage.vue`):
+  - `birthdayGroups`: gom theo `item.birthdayDate` (kèm fallback theo ngày/tháng của `item.birthday` + năm đang lọc).
+  - `sortedBirthdayDates`: sắp xếp các ngày sinh nhật tăng dần theo thời gian (`dd/mm/yyyy`).
+  - Cột con "Sinh Nhật" và "Tuổi" vẫn giữ nguyên ngày sinh gốc `item.birthday` và `item.age`.
+- Kiểm thử:
+  - `ShiftWorkBirthdayChildRow486Test`: bổ sung test `test_multiple_guests_with_different_birth_years_share_same_birthday_date_in_view_period`, 4/4 tests passed (17 assertions).
+  - `ShiftWorkListTest`: 9/9 tests passed (59 assertions).
+  - `npm run build`: biên dịch thành công (0 lỗi).
+
 ## [2026-11-19] - Hóa đơn: Tổng DV dòng Master hiện tiền phòng chưa post (booking GAL4)
 
 - Lỗi: cột Tổng DV của dòng booking (Master) ở Trả phòng hiện 2.950.000 nhưng bảng dịch vụ trống, `service_bills` không có dòng nào. Do vòng cộng tiền phòng Master trong `CheckoutPage.vue` (nhánh fallback `booking_room.services`) không lọc `isPostedBookingService`, nên cộng cả tiền phòng set up chưa post (590.000 × 5 đêm phòng 406, `is_room = 0`).
