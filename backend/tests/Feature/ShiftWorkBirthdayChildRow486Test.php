@@ -67,6 +67,7 @@ class ShiftWorkBirthdayChildRow486Test extends TestCase
         $this->assertEqualsCanonicalizing(['Child 1', 'Baby 1'], $rows->pluck('guestName')->all());
         $child = $rows->firstWhere('guestName', 'Child 1');
         $this->assertSame('06/09/2007', $child['birthday']);
+        $this->assertSame('06/09/2026', $child['birthdayDate']);
         $this->assertSame(19, $child['age']);
         $this->assertSame('203', $child['roomNumber']);
     }
@@ -101,5 +102,35 @@ class ShiftWorkBirthdayChildRow486Test extends TestCase
         $this->assertNull($rows->firstWhere('guestName', 'Khách trước ngày đến'));
         $this->assertNull($rows->firstWhere('guestName', 'Trước ngày đến'));
         $this->assertNotNull($rows->firstWhere('guestName', 'Đúng ngày đi'));
+    }
+
+    public function test_multiple_guests_with_different_birth_years_share_same_birthday_date_in_view_period(): void
+    {
+        $guest1995 = Guest::create(['full_name' => 'Guest 1', 'dob' => '1995-09-03']);
+        $guest1997 = Guest::create(['full_name' => 'Guest 2', 'dob' => '1997-09-03']);
+        BookingRoomGuest::create([
+            'booking_room_id' => $this->room->id,
+            'guest_id' => $guest1995->id,
+            'status' => BookingRoomGuest::STATUS_ACTIVE,
+        ]);
+        BookingRoomGuest::create([
+            'booking_room_id' => $this->room->id,
+            'guest_id' => $guest1997->id,
+            'status' => BookingRoomGuest::STATUS_ACTIVE,
+        ]);
+        $this->child('Child 2009', '2009-09-03');
+
+        // Phòng ở từ 2026-09-01 đến 2026-09-07, kỳ xem từ 2026-09-02 đến 2026-09-05
+        $this->room->update(['arrival_date' => '2026-09-01', 'departure_date' => '2026-09-07']);
+
+        $rows = collect($this->getJson('/api/shift-work/birthdays?from_date=2026-09-02&to_date=2026-09-05')
+            ->assertOk()
+            ->json('data'));
+
+        $matching = $rows->whereIn('guestName', ['Guest 1', 'Guest 2', 'Child 2009']);
+        $this->assertCount(3, $matching);
+        foreach ($matching as $item) {
+            $this->assertSame('03/09/2026', $item['birthdayDate']);
+        }
     }
 }
