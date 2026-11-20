@@ -286,4 +286,29 @@ class ShiftWorkListTest extends TestCase
         $this->assertStringContainsString('spreadsheetml', $response->headers->get('content-type'));
         $this->assertStringContainsString('phong_di_20260903.xlsx', $response->headers->get('content-disposition'));
     }
+
+    public function test_shuttle_list_reads_each_saved_shuttle_row_by_its_own_date_and_type(): void
+    {
+        $booking = $this->makeBooking('Shuttle booking');
+        $this->makeRoom($booking, BookingRoom::STATUS_BOOKED);
+        $booking->update([
+            'shuttle_info' => [
+                ['type' => 'Đón', 'vehicle' => '7 Seater car', 'code' => 'VN123', 'date' => '2026-09-05', 'time' => '10:30', 'price' => 250000, 'location' => 'Sân bay Cam Ranh', 'note' => 'Đón khách'],
+                ['type' => 'Đưa', 'vehicle' => 'Bus', 'code' => 'VN456', 'date' => '2026-09-06', 'time' => '14:00', 'price' => 300000, 'location' => 'Ga Nha Trang', 'note' => 'Tiễn khách'],
+            ],
+        ]);
+
+        $arrival = $this->getJson('/api/shift-work/shuttle?date=2026-09-05&type=arrival')->assertOk()->json('data');
+        $departure = $this->getJson('/api/shift-work/shuttle?date=2026-09-06&type=departure')->assertOk()->json('data');
+
+        $this->assertCount(1, $arrival);
+        $this->assertSame('Đón sân bay', $arrival[0]['shuttleType']);
+        $this->assertSame('VN123', $arrival[0]['flightCode']);
+        $this->assertSame('10:30', $arrival[0]['flightTime']);
+        $this->assertSame('Sân bay Cam Ranh', $arrival[0]['location']);
+        $this->assertCount(1, $departure);
+        $this->assertSame('Tiễn sân bay', $departure[0]['shuttleType']);
+        $this->assertSame('VN456', $departure[0]['flightCode']);
+        $this->assertSame('14:00', $departure[0]['flightTime']);
+    }
 }

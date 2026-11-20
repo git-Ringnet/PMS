@@ -103,7 +103,7 @@ class CompanyControllerTest extends TestCase
         ])->assertCreated();
     }
 
-    public function test_export_companies_csv()
+    public function test_export_companies_excel_with_each_field_in_its_own_column()
     {
         \Laravel\Sanctum\Sanctum::actingAs($this->adminUser);
 
@@ -119,20 +119,19 @@ class CompanyControllerTest extends TestCase
 
         $response = $this->get('/api/companies/export');
         $response->assertStatus(200);
-        $response->assertHeader('Content-Type', 'text/csv; charset=UTF-8');
+        $response->assertHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 
         $content = $response->streamedContent();
-        
-        // Assert UTF-8 BOM exists at the start
-        $this->assertEquals(0xEF, ord($content[0]));
-        $this->assertEquals(0xBB, ord($content[1]));
-        $this->assertEquals(0xBF, ord($content[2]));
+        $file = tempnam(sys_get_temp_dir(), 'companies-export');
+        file_put_contents($file, $content);
+        $sheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($file)->getActiveSheet();
 
-        // Assert content contains expected company data
-        $this->assertStringContainsString('Công ty HKT', $content);
-        $this->assertStringContainsString('HKT Travel', $content);
-        $this->assertStringContainsString('Agoda', $content);
-        $this->assertStringContainsString('Online Travel Agent', $content);
+        $this->assertSame('Mã', $sheet->getCell('A1')->getValue());
+        $this->assertSame('Trạng Thái Sử Dụng', $sheet->getCell('O1')->getValue());
+        $this->assertSame('Công ty HKT', $sheet->getCell('B2')->getValue());
+        $this->assertSame('HKT Travel', $sheet->getCell('C2')->getValue());
+        $this->assertSame('Agoda', $sheet->getCell('H2')->getValue());
+        $this->assertSame('Online Travel Agent', $sheet->getCell('I2')->getValue());
     }
 
     public function test_import_companies_csv()
@@ -174,6 +173,9 @@ class CompanyControllerTest extends TestCase
         $response->assertJsonFragment([
             'success' => true,
         ]);
+        $response->assertJsonPath('summary.created', 1);
+        $response->assertJsonPath('summary.updated', 1);
+        $response->assertJsonCount(2, 'rows');
 
         // Check DB updates
         $this->assertEquals('Công ty Cũ Đã Cập Nhật', $existingCompany->fresh()->name);
@@ -191,30 +193,49 @@ class CompanyControllerTest extends TestCase
         $this->assertEquals($this->bookerA->id, $newCompany->booker_id);
     }
 
-    public function test_download_companies_template_csv()
+    public function test_import_companies_excel_and_report_invalid_rows(): void
+    {
+        \Laravel\Sanctum\Sanctum::actingAs($this->adminUser);
+
+        $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->fromArray([
+            ['Mã', 'Tên', 'Tên Giao Dịch', 'Nguồn Khách', 'Thị Trường', 'Công Nợ Tối Đa'],
+            ['CTY-XLSX', 'Công ty Excel', 'Excel Travel', 'AGODA', 'OTA', '50.000.000'],
+            ['CTY-ERR', 'Công ty lỗi', 'Lỗi Travel', 'KHONG_CO', 'OTA', '0'],
+        ]);
+        $file = tempnam(sys_get_temp_dir(), 'companies-import');
+        (new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet))->save($file);
+
+        $response = $this->postJson('/api/companies/import', [
+            'file' => new UploadedFile($file, 'companies.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', null, true),
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('summary.created', 1)
+            ->assertJsonPath('summary.failed', 1)
+            ->assertJsonPath('rows.0.status', 'created')
+            ->assertJsonPath('rows.1.status', 'failed');
+        $this->assertDatabaseHas('companies', ['code' => 'CTY-XLSX', 'name' => 'Công ty Excel']);
+        $this->assertDatabaseMissing('companies', ['code' => 'CTY-ERR']);
+    }
+
+    public function test_download_companies_template_excel()
     {
         \Laravel\Sanctum\Sanctum::actingAs($this->adminUser);
 
         $response = $this->get('/api/companies/template');
         $response->assertStatus(200);
-        $response->assertHeader('Content-Type', 'text/csv; charset=UTF-8');
+        $response->assertHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 
         $content = $response->streamedContent();
+        $file = tempnam(sys_get_temp_dir(), 'companies-template');
+        file_put_contents($file, $content);
+        $sheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($file)->getActiveSheet();
 
-        // Assert UTF-8 BOM exists at the start
-        $this->assertEquals(0xEF, ord($content[0]));
-        $this->assertEquals(0xBB, ord($content[1]));
-        $this->assertEquals(0xBF, ord($content[2]));
-
-        // Assert headers are present
-        $this->assertStringContainsString('Mã', $content);
-        $this->assertStringContainsString('Tên', $content);
-        $this->assertStringContainsString('Tên giao dịch', $content);
-        $this->assertStringContainsString('Địa chỉ', $content);
-        $this->assertStringContainsString('Tax', $content);
-        $this->assertStringContainsString('Nguồn khách', $content);
-        $this->assertStringContainsString('Thị trường', $content);
-        // Assert example row is present
-        $this->assertStringContainsString('Công ty TNHH Du lịch Việt', $content);
+        $this->assertSame('Mã', $sheet->getCell('A1')->getValue());
+        $this->assertSame('Tên Giao Dịch', $sheet->getCell('C1')->getValue());
+        $this->assertSame('Công ty TNHH Du lịch Việt', $sheet->getCell('B2')->getValue());
     }
 }

@@ -1,5 +1,11 @@
 # Project Memory — PMS
 
+- 2026-11-19: TC_CH_04 / Cấu hình giá: thay Gói dịch vụ dữ liệu mẫu bằng cấu hình runtime (`service_packages`, `service_package_items`), CRUD API và form tab Gói dịch vụ. Đăng ký chọn một gói; backend snapshot gói và tạo dòng dịch vụ dự kiến chưa post tại folio Master của phòng hoạt động đầu tiên theo `order_day`. Không tạo/sửa `service_bills`, thanh toán hoặc Checkout; gói/dòng đã post bị chặn thay đổi. Mapping `SP1317`/`SP1330`/`SP2000.PackageCode` còn một phần hoặc chưa xác minh, chưa có importer production. Cần chạy migration và PHPUnit trong môi trường có `backend/vendor`.
+
+- 2026-11-19: TC_DP_15 / Công Ty: bảng bổ sung STT theo phân trang và trạng thái sử dụng; các dropdown danh mục có lựa chọn `Chưa chọn`. Xuất/file mẫu chuyển sang XLSX, nhập nhận XLSX/XLS và giữ CSV legacy; import trả trạng thái từng dòng, chặn thiếu tên, email/công nợ/tham chiếu sai và trùng trong file. Không đổi schema, model, API CRUD Booking/Checkout hay khóa mapping production `SP1302`; cần UAT file Excel thực tế và chạy PHPUnit tại môi trường có `backend/vendor`.
+
+- 2026-11-19: Danh sách công việc / Đón tiễn khách và Dòng 530 Sinh nhật khách: API đưa đón nay đọc đúng từng phần tử `bookings.shuttle_info[]` theo `date` và `type`, khớp nguồn Báo cáo đưa đón; không còn suy diễn từ ngày đến/đi, chuyến bay hoặc khóa `pickup`/`dropoff` không tồn tại trong payload hiện hành. API sinh nhật chỉ trả ngày sinh lặp theo năm khi đồng thời thuộc kỳ xem và thời gian ở của từng phòng, áp dụng cho khách, trẻ em/em bé. Không đổi schema, migration, mapping/import legacy, Đăng ký, Báo cáo hoặc Checkout. Bổ sung hồi quy API; cần chạy PHPUnit tại môi trường có `backend/vendor`.
+
 - 2026-11-13: Tìm kiếm chung (`GeneralSearchPage.vue`) xóa ngay kết quả/phân trang của thẻ trước khi đổi Đăng ký/Phòng/Khách để loading toàn hệ thống hiển thị thay vì dữ liệu cũ; response chỉ cập nhật khi khớp thẻ của request. Không đổi API, bộ lọc, thao tác, quyền, schema hay import legacy. `npm run build` đạt.
 
 - 2026-11-13: Dòng 500 Sheet THEO DÕI VẤN ĐỀ CẦN ĐIỀU CHỈNH — `CopyModal.vue` không còn mặc định nhánh copy phòng trong lúc tải `IsCopyAllBooking`: khóa xác nhận, chỉ hiển thị trạng thái tải; lỗi cấu hình chỉ cho tải lại/đóng. Cả Đăng ký và Tìm kiếm chung dùng chung bảo vệ này. `IsCopyAllBooking=0` tiếp tục không gửi ngày, giữ Booking quá khứ, không copy phòng; `=1` giữ chọn ngày/AV/overbooking hiện có. Thêm đóng modal bằng `Esc`. Không đổi API, backend, schema, log, import legacy hoặc điều hướng Booking mới. `npm run build` đạt.
@@ -2078,6 +2084,12 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 ## Current Status
 
+- 2026-11-19: Danh sách công việc: Đón tiễn khách đọc đúng từng dòng `bookings.shuttle_info[]` theo ngày và loại đã lưu; Dòng 530 Sinh nhật khách chỉ hiển thị khi ngày sinh lặp theo năm thuộc cả kỳ xem lẫn thời gian ở của phòng. Áp dụng cho khách, trẻ em/em bé; không đổi Đăng ký, Báo cáo, Checkout, schema hay import legacy. PHP lint đạt; PHPUnit bị chặn bởi lỗi bootstrap `backend/vendor/autoload.php`.
+
+- 2026-11-19: Reset System DB đã chọn migration `2026_11_17_100000_add_soft_deletes_to_organization_departments.php`; `organization_departments.deleted_at` sẽ được tạo trước `RbacMatrixSeeder`, khớp model `OrganizationDepartment` dùng `SoftDeletes`. Không đổi model, seeder, API, dữ liệu import hoặc schema chi nhánh. PHP lint đạt; cần người dùng chạy lại reset vì lệnh này xóa dữ liệu.
+
+- 2026-11-19: Dòng 222 Kế hoạch phòng chỉ tính tiền từ setup của đúng phòng trong Đăng ký (`booking_room_services`, chi tiết ăn sáng trẻ em và giá/giường phụ của phòng); không còn cộng bill từ Checkout/Hóa đơn. Không đổi API, backend, schema, dữ liệu, import legacy, Checkout, thanh toán hoặc cọc. Node regression 11/11 và frontend build đạt; cần UAT Booking thật có giá từng đêm và bill Checkout.
+
 - 2026-11-18: TC_LT_03 — Date input dùng chung tự chọn vùng tháng sau khi nhập đủ ngày và vùng năm sau khi nhập đủ tháng. Áp dụng `SingleDatePicker`, `RoomInfoDatePicker`, bảng khách và bộ lọc Danh sách công việc; không đổi API, database, migration, import legacy, Room Plan hay logic nghiệp vụ. Node regression 32/32 và frontend build đạt; cần UAT thao tác gõ/sửa ngày trên browser.
 
 - 2026-11-17: Room Map Buồng phòng đã in trực tiếp hai mẫu Nhân viên/Sup từ các phòng đang chọn; tình trạng lấy từ Room Map, thông tin nhân viên để trống và không còn mở In phân công phòng. Cần UAT hai mẫu với trạng thái phòng thực tế và trình duyệt cho phép pop-up.
@@ -2174,6 +2186,12 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 
 ## Recent Changes
+
+- 2026-11-19: `ShiftWorkController` bỏ cách đọc sai `shuttle_info.pickup/dropoff` và ngày Booking; trả dữ liệu từ từng row `shuttle_info[]`, giữ nguyên payload và Báo cáo đưa đón. Sinh nhật lọc theo giao của khoảng tìm kiếm và `booking_rooms.arrival_date/departure_date`, đồng nhất quy tắc Alert. Thêm test hồi quy đưa đón nhiều dòng và sinh nhật ngoài/đúng thời gian ở.
+
+- 2026-11-19: `database_domains.system_migrations` bổ sung migration soft delete của `organization_departments`; khắc phục lỗi `db:reset-all --seed-all` dừng tại `RbacMatrixSeeder` vì thiếu cột `deleted_at` sau `migrate:fresh` System DB. Không chạy reset tự động do đây là thao tác phá hủy dữ liệu.
+
+- 2026-11-19: Dòng 222 — `room-plan-amounts.js` loại hoàn toàn `service_bills`, `master_service_bills` và bill owner hiện tại khỏi phép tính Room Plan. `RM` theo ngày ưu tiên snapshot `total_amount` của setup, fallback `rate × quantity`, và chỉ fallback giá phòng cho đêm không có setup; dịch vụ/EB/ăn sáng trẻ em chỉ lấy setup Đăng ký của đúng phòng. Bổ sung regression bill Checkout lớn không được cộng, giá từng đêm, Day Use, phòng chuyển và phòng hủy. `npm run build` đạt.
 
 - 2026-11-18: TC_LT_03 — `room-info-date-utils.js` bổ sung resolver vùng nhập ngày/tháng/năm; `SingleDatePicker`, `RoomInfoDatePicker`, `GuestInfoModal` và `ShiftWorkPage` chỉ đặt lại selection khi người dùng đang nhập, không làm lúc xóa/sửa năm. Bổ sung 2 regression test điều hướng vùng; `node --test tests/room-info-date-utils.test.js tests/room-plan-amounts.test.js` đạt 32/32 và `npm run build` đạt. Không đổi API, schema, migration, dữ liệu, import legacy, Checkout, Room Map hoặc Room Plan.
 
@@ -2627,6 +2645,12 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 
 ## Known Risks
+
+- 2026-11-19: API đưa đón cần UAT với dữ liệu thực có nhiều dòng `shuttle_info[]`, ngày đưa đón khác ngày đến/đi và cả hai loại Đón/Đưa; PHPUnit chưa chạy được do bootstrap vendor lỗi môi trường.
+
+- 2026-11-19: Chạy lại `php artisan db:reset-all --seed-all` sẽ xóa và seed lại database PMS; chỉ thực hiện khi dữ liệu hiện tại đã được sao lưu hoặc có thể thay thế.
+
+- 2026-11-19: Dòng 222 cần UAT Booking thật có giá RM khác nhau từng đêm, service Checkout/FO/HK không có setup row, dịch vụ setup đã post, Day Use và phòng chuyển để xác nhận thẻ Kế hoạch phòng chỉ hiển thị tiền Đăng ký.
 
 - 2026-11-18: Cần UAT caret date trên Chrome/Edge khi sửa ngày đã có, nhập tháng một chữ số `2`–`9`, xóa và nhập năm để xác nhận browser không thay đổi selection ngoài rule mới.
 

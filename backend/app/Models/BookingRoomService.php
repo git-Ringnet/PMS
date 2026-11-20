@@ -23,6 +23,7 @@ class BookingRoomService extends Model
         'housekeeping_service_bill_id',
         'housekeeping_service_bill_detail_no',
         'service_code',
+        'service_package_detail_no',
         'service_name',
         'service_date',
         'quantity',
