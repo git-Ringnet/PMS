@@ -50,10 +50,13 @@ const isActivePayment = payment => Number(payment?.edit_flag ?? 0) === 0
   && !payment?.deleted_at
   && Number(payment?.status) !== 3
 
-const isTransferInPayment = payment => String(payment?.description ?? '')
-  .trim()
-  .toUpperCase()
-  .startsWith('[TRANSFER IN')
+// Dòng nhận cọc chuyển: mô tả mới kết thúc bằng "(BK_a=>BK_b)" / "(R_x=>BK_b)"; mô tả cũ bắt đầu bằng "[TRANSFER IN".
+const TRANSFER_IN_SUFFIX = /\(\s*(?:BK|R)_[^()=]*=>\s*(?:BK|R)_[^()]*\)\s*$/i
+
+const isTransferInPayment = payment => {
+  const description = String(payment?.description ?? '').trim()
+  return description.toUpperCase().startsWith('[TRANSFER IN') || TRANSFER_IN_SUFFIX.test(description)
+}
 
 const paymentKey = (payment, index) => {
   const id = payment?.id ?? payment?.paymentId ?? payment?.legacy_id
