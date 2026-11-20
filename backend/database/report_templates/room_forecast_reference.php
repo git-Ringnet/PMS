@@ -34,6 +34,7 @@ return new class
                     'FOCAll' => 'integer',
                     'RoomSales' => 'integer',
                     'RM' => 'number',
+                    'RMDay' => 'number',
                     'EB' => 'number',
                     'ER' => 'number',
                     'Revenue' => 'number',
@@ -196,7 +197,6 @@ body { font-family: Arial, Helvetica, sans-serif; color: #111111; font-size: 9px
 .room-forecast-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 8.5px; line-height: 1.2; }
 .room-forecast-table th, .room-forecast-table td { border: 1px solid #aeb5c0; padding: 4px 2px; vertical-align: middle; overflow-wrap: anywhere; }
 .room-forecast-table thead th { background: #dee2ed; text-align: center; font-weight: bold; white-space: normal; }
-.room-forecast-table .index-row th { color: #64748b; font-size: 7px; padding-top: 1px; padding-bottom: 1px; }
 .room-forecast-table td { text-align: right; }
 .room-forecast-table td.date { color: #16a34a; font-weight: bold; text-align: center; }
 .room-forecast-table tfoot td { background: #dee2ed; font-weight: bold; }
@@ -242,10 +242,6 @@ CSS;
                 'borderWidth' => '1px',
                 'borderStyle' => 'solid',
             ],
-            'topHeader' => array_map(
-                static fn (int $index): array => ['content' => '('.($index + 1).')', 'align' => 'center'],
-                array_keys($columns)
-            ),
             'columns' => $columns,
             'customRows' => [$this->totalRow($detail)],
         ];
@@ -258,11 +254,7 @@ CSS;
         foreach ($columns as $column) {
             $html .= '<col style="width:'.htmlspecialchars((string) $column['width'], ENT_QUOTES, 'UTF-8').'">';
         }
-        $html .= '</colgroup><thead><tr class="index-row">';
-        foreach ($columns as $index => $column) {
-            $html .= '<th>'.($index + 1).'</th>';
-        }
-        $html .= '</tr><tr>';
+        $html .= '</colgroup><thead><tr>';
         foreach ($columns as $column) {
             $html .= '<th>'.str_replace("\n", '<br>', (string) $column['header']).'</th>';
         }
@@ -309,7 +301,7 @@ CSS;
 
         if ($detail) {
             $cells[] = ['type' => 'binding', 'binding' => 'aggregate.rows.sum.RM', 'format' => 'number'];
-            $cells[] = ['type' => 'binding', 'binding' => 'aggregate.rows.sum.EB', 'format' => 'number'];
+            $cells[] = ['type' => 'binding', 'binding' => 'aggregate.rows.sum.RMDay', 'format' => 'number'];
             $cells[] = ['type' => 'binding', 'binding' => 'aggregate.rows.sum.ER', 'format' => 'number'];
         }
 
@@ -342,9 +334,9 @@ CSS;
             $this->column('HouseUse', "Nội bộ\n(8)", '45px'),
             $this->column('FOCAll', "Phòng MP\n(9)", '55px'),
             $this->column('RoomSales', "P.Bán\n(10)", '45px'),
-            $this->column('RM', "Tiền phòng (RM)\n(11)", '90px', 'right', 'number'),
-            $this->column('EB', "Giường phụ (EB)\n(12)", '80px', 'right', 'number'),
-            $this->column('ER', "Phụ thu (ER)\n(13)", '80px', 'right', 'number'),
+            $this->column('RM', "DT phòng\n(11)", '90px', 'right', 'number'),
+            $this->column('RMDay', "P.Theo giờ\n(12)", '80px', 'right', 'number'),
+            $this->column('ER', "DT phòng khác\n(13)", '80px', 'right', 'number'),
             $this->column('Revenue', "Doanh Thu\n(14)", '95px', 'right', 'number'),
             $this->column('AvgRate', "Giá phòng TB (w/o HU)\n(15)", '85px', 'right', 'number'),
             $this->column('AvgRate2', "Giá phòng TB (w/o HU,FOC)\n(16)", '90px', 'right', 'number'),

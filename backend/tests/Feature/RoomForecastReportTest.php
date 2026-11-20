@@ -104,6 +104,32 @@ class RoomForecastReportTest extends TestCase
         $this->assertStringContainsString('23/09/2026', $html);
     }
 
+    /**
+     * TC_BC_BP_02 (BP dòng 163 / Lễ tân dòng 352): bỏ dòng đầu tiên chỉ có số thứ tự cột
+     * vì số cột đã nằm trong tên cột "(1)...(17)".
+     */
+    public function test_template_has_no_column_number_row(): void
+    {
+        $template = $this->template();
+        $definition = $template->definition();
+
+        foreach ($definition['content_json']['detail'] as $block) {
+            if (($block['type'] ?? '') === 'table') {
+                $this->assertArrayNotHasKey('topHeader', $block);
+            }
+        }
+
+        foreach ([true, false] as $revenueDetail) {
+            $html = $template->render($this->sampleData($revenueDetail));
+            $this->assertStringNotContainsString('index-row', $html);
+        }
+        $this->assertStringNotContainsString('index-row', $definition['content_html']);
+
+        $html = $template->render($this->sampleData(true));
+        $this->assertStringContainsString('Ngày', $html);
+        $this->assertStringContainsString('(17)', $html);
+    }
+
     private function sampleData(bool $revenueDetail): array
     {
         return [
