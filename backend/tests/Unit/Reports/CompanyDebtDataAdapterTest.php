@@ -26,6 +26,8 @@ class CompanyDebtDataAdapterTest extends TestCase
 
         $this->assertSame([['name' => 'CompanyName']], $result['fields']);
         $this->assertArrayNotHasKey('PaidAmount', $result['rows'][0]);
+        $this->assertSame(60, $result['rows'][0]['RemainingAmount']);
+        $this->assertSame(30, $result['rows'][0]['SettlementDetails'][0]['SettlementId']);
         $this->assertSame('&lt;b&gt;Công ty A&lt;/b&gt;', $result['rows'][0]['CompanyName']);
         $this->assertSame(100.0, $result['company_summary'][0]['TotalAmount']);
         $this->assertSame(40.0, $result['company_summary'][0]['PaidAmount']);
@@ -43,5 +45,17 @@ class CompanyDebtDataAdapterTest extends TestCase
         ]]);
 
         $this->assertCount(1, $result['settlement_details']);
+    }
+
+    public function test_counts_a_shared_payment_once_in_company_summary(): void
+    {
+        $result = (new CompanyDebtDataAdapter())->adapt(['rows' => [
+            ['CompanyId' => 7, 'CompanyName' => 'A', 'PaymentId' => 99, 'TotalAmount' => 300, 'PaidAmount' => 100],
+            ['CompanyId' => 7, 'CompanyName' => 'A', 'PaymentId' => 99, 'TotalAmount' => 200, 'PaidAmount' => 100],
+        ]]);
+
+        $this->assertSame(500.0, $result['company_summary'][0]['TotalAmount']);
+        $this->assertSame(100.0, $result['company_summary'][0]['PaidAmount']);
+        $this->assertSame(400.0, $result['company_summary'][0]['RemainingAmount']);
     }
 }

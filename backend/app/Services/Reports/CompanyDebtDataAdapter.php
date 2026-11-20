@@ -20,8 +20,16 @@ final class CompanyDebtDataAdapter
         $settlements = $result['settlement_details'] ?? $this->settlements($rows);
         $totals = $result['totals'] ?? $this->totals($companySummary);
 
-        $technicalFields = ['PaidAmount', 'RemainingAmount', 'SettlementItems'];
-        $result['rows'] = $this->escapeValue(array_map(static function (array $row) use ($technicalFields): array {
+        $technicalFields = ['PaidAmount', 'SettlementItems'];
+        $assignedSettlementPayments = [];
+        $result['rows'] = $this->escapeValue(array_map(function (array $row) use ($technicalFields, &$assignedSettlementPayments): array {
+            $paymentKey = trim((string) ($row['PaymentId'] ?? ''));
+            $hasSettlementDetail = $paymentKey === '' || ! isset($assignedSettlementPayments[$paymentKey]);
+            $row['SettlementDetails'] = $hasSettlementDetail ? $this->settlementItems($row) : [];
+            if ($paymentKey !== '') {
+                $assignedSettlementPayments[$paymentKey] = true;
+            }
+
             foreach ($technicalFields as $field) {
                 unset($row[$field]);
             }
@@ -42,6 +50,7 @@ final class CompanyDebtDataAdapter
     private function companySummary(array $rows): array
     {
         $companies = [];
+        $paidPaymentKeys = [];
         foreach ($rows as $row) {
             $key = (string) ($row['CompanyId'] ?? $row['CompanyName'] ?? '');
             $companies[$key] ??= [
@@ -51,9 +60,23 @@ final class CompanyDebtDataAdapter
                 'RemainingAmount' => 0.0,
             ];
             $companies[$key]['TotalAmount'] += (float) ($row['TotalAmount'] ?? 0);
-            $companies[$key]['PaidAmount'] += (float) ($row['PaidAmount'] ?? 0);
-            $companies[$key]['RemainingAmount'] += (float) ($row['RemainingAmount'] ?? 0);
+
+            // A City Ledger payment may cover more than one sales invoice. Legacy
+            // detail keeps each invoice row, but the company summary must only count
+            // the settled payment once or its paid/remaining totals are duplicated.
+            $paymentKey = trim((string) ($row['PaymentId'] ?? ''));
+            if ($paymentKey !== '' && ! isset($paidPaymentKeys[$key][$paymentKey])) {
+                $companies[$key]['PaidAmount'] += (float) ($row['PaidAmount'] ?? 0);
+                $paidPaymentKeys[$key][$paymentKey] = true;
+            } elseif ($paymentKey === '') {
+                $companies[$key]['PaidAmount'] += (float) ($row['PaidAmount'] ?? 0);
+            }
         }
+
+        foreach ($companies as &$company) {
+            $company['RemainingAmount'] = $company['TotalAmount'] - $company['PaidAmount'];
+        }
+        unset($company);
 
         uasort($companies, static fn (array $left, array $right): int => strnatcasecmp(
             (string) $left['CompanyName'],
@@ -67,18 +90,7 @@ final class CompanyDebtDataAdapter
     {
         $settlements = [];
         foreach ($rows as $row) {
-            $items = $row['SettlementItems'] ?? [];
-            if (is_string($items)) {
-                $items = json_decode($items, true);
-            }
-            if (! is_array($items)) {
-                continue;
-            }
-
-            foreach ($items as $item) {
-                if (! is_array($item)) {
-                    continue;
-                }
+            foreach ($this->settlementItems($row) as $item) {
                 $settlementId = (string) ($item['SettlementId'] ?? '');
                 $key = implode('|', [(string) ($row['PaymentId'] ?? ''), $settlementId]);
                 $settlements[$key] = [
@@ -89,11 +101,28 @@ final class CompanyDebtDataAdapter
                     'Date' => $item['Date'] ?? '',
                     'Reference' => $item['Reference'] ?? '',
                     'Amount' => $item['Amount'] ?? 0,
+                    'PaymentMethod' => $item['PaymentMethod'] ?? '',
+                    'Username' => $item['Username'] ?? '',
                 ];
             }
         }
 
         return array_values($settlements);
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function settlementItems(array $row): array
+    {
+        $items = $row['SettlementItems'] ?? [];
+        if (is_string($items)) {
+            $items = json_decode($items, true);
+        }
+
+        if (! is_array($items)) {
+            return [];
+        }
+
+        return array_values(array_filter($items, static fn (mixed $item): bool => is_array($item)));
     }
 
     private function totals(array $companySummary): array
