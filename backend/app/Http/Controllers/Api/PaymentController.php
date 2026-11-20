@@ -1533,7 +1533,8 @@ class PaymentController extends Controller
                 'guest_display'     => $targetRoom
                     ? $targetBooking->booking_code . ' - ' . ($targetGuest?->guest?->full_name ?: $targetRoom->room_number)
                     : $targetBooking->booking_code . ' - ' . $targetBooking->booking_name,
-                'description'       => '[TRANSFER IN ' . $sourceLocation . '=>' . $targetLocation . '] ' . $originalDescription,
+                // Task 228: dòng nhận cọc cùng dạng mô tả với 2 dòng cũ: "nội dung cọc (nơi đi=>nơi đến)".
+                'description'       => $movedDescription,
                 'amount'            => abs($payment->amount),
                 'total_amount_before_split' => $payment->total_amount_before_split,
                 'pack2'             => $payment->pack2,

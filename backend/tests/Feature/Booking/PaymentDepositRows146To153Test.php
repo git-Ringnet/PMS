@@ -175,7 +175,8 @@ class PaymentDepositRows146To153Test extends TestCase
         $in = Payment::where('booking_id', $target->id)->first();
         $this->assertSame(0, (int) $in->edit_flag);
         $this->assertSame(Payment::STATUS_PENDING, (int) $in->status);
-        $this->assertSame("[TRANSFER IN BK_{$source->id}=>BK_{$target->id}] Deposit (Cash)", $in->description);
+        // Dòng nhận cọc dùng cùng dạng mô tả với 2 dòng cũ (hiển thị giống nhau ở Đăng ký và Hóa đơn).
+        $this->assertSame($expected, $in->description);
         $this->assertSame('1', (string) $in->shift);
     }
 

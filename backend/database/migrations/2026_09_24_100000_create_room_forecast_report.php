@@ -91,6 +91,10 @@ BEGIN
     DECLARE v_breakfast_adult_rate DECIMAL(15,2) DEFAULT 0;
     DECLARE v_breakfast_child_rate DECIMAL(15,2) DEFAULT 0;
     DECLARE v_avg_rate_inc_other TINYINT DEFAULT 0;
+    DECLARE v_revenue_codes TEXT DEFAULT 'RM,EB,ER,LO,TB,DN,GN,HN,HT,LH,MR,MS,NB,TO,WS,EI';
+    DECLARE v_er_codes TEXT DEFAULT 'ER,LO,TB,DN,GN,HN,HT,LH,MR,MS,NB,TO,WS,EI';
+    DECLARE v_rm_in_revenue TINYINT DEFAULT 1;
+    DECLARE v_eb_in_revenue TINYINT DEFAULT 1;
 
     SET v_from = COALESCE(p_from_date, CURRENT_DATE());
     SET v_to = COALESCE(p_to_date, v_from);
@@ -140,6 +144,14 @@ BEGIN
     END), 0)
       INTO v_avg_rate_inc_other
       FROM hotel_configs;
+
+    -- Thông số Revenue: các mã dịch vụ tính vào doanh thu phòng; RevenueER: các mã là doanh thu phòng khác (không phải RM).
+    SELECT COALESCE(NULLIF(MAX(CASE WHEN LOWER(name) = 'revenue' THEN REPLACE(UPPER(TRIM(value)), ' ', '') END), ''), v_revenue_codes),
+           COALESCE(NULLIF(MAX(CASE WHEN LOWER(name) = 'revenueer' THEN REPLACE(UPPER(TRIM(value)), ' ', '') END), ''), v_er_codes)
+      INTO v_revenue_codes, v_er_codes
+      FROM hotel_configs;
+    SET v_rm_in_revenue = IF(FIND_IN_SET('RM', v_revenue_codes) > 0, 1, 0);
+    SET v_eb_in_revenue = IF(FIND_IN_SET('EB', v_revenue_codes) > 0, 1, 0);
 
     SET v_breakfast_adult_rate = COALESCE((
         SELECT hs.breakfast_adult_rate
@@ -250,7 +262,7 @@ BEGIN
         SELECT
             DATE(COALESCE(rnb.date, sb.Date)) AS bill_date,
             COALESCE(SUM(CASE
-                WHEN UPPER(TRIM(sb.ServiceId)) = 'RM'
+                WHEN UPPER(TRIM(sb.ServiceId)) = 'RM' AND COALESCE(br.is_day_use, 0) = 0
                 THEN COALESCE(sb.Amount, 0) - CASE
                     WHEN p_include_breakfast = 0
                     THEN COALESCE(
@@ -263,14 +275,33 @@ BEGIN
                 ELSE 0
             END), 0) AS posted_rm,
             COALESCE(SUM(CASE
+                WHEN UPPER(TRIM(sb.ServiceId)) = 'RM' AND COALESCE(br.is_day_use, 0) = 1
+                THEN COALESCE(sb.Amount, 0) - CASE
+                    WHEN p_include_breakfast = 0
+                    THEN COALESCE(
+                        NULLIF(rnb.breakfast_amount, 0),
+                        bfd.bf_amount,
+                        0
+                    )
+                    ELSE 0
+                END
+                ELSE 0
+            END), 0) AS posted_rmday,
+            COALESCE(SUM(CASE
                 WHEN UPPER(TRIM(sb.ServiceId)) = 'EB' THEN COALESCE(sb.Amount, 0)
                 ELSE 0
             END), 0) AS posted_eb,
             COALESCE(SUM(CASE
-                WHEN UPPER(TRIM(sb.ServiceId)) IN ('ER','LO','TB','DN','GN','HN','HT','LH','MR','MS','NB','TO','WS','EI')
+                WHEN FIND_IN_SET(UPPER(TRIM(sb.ServiceId)), v_er_codes) > 0
                 THEN COALESCE(sb.Amount, 0)
                 ELSE 0
-            END), 0) AS posted_er
+            END), 0) AS posted_er,
+            COALESCE(SUM(CASE
+                WHEN UPPER(TRIM(sb.ServiceId)) NOT IN ('RM', 'EB')
+                 AND FIND_IN_SET(UPPER(TRIM(sb.ServiceId)), v_revenue_codes) > 0
+                THEN COALESCE(sb.Amount, 0)
+                ELSE 0
+            END), 0) AS posted_oth
         FROM service_bills sb
         LEFT JOIN room_night_bills rnb ON rnb.bill_id = sb.Ma
         LEFT JOIN (
@@ -354,9 +385,10 @@ BEGIN
                 THEN er.id
             END) AS FOCAll,
             COALESCE(pb.posted_rm, 0) + COALESCE(SUM(CASE
-                WHEN (c.dt >= v_system_date OR COALESCE(pb.posted_rm, 0) + COALESCE(pb.posted_eb, 0) + COALESCE(pb.posted_er, 0) = 0)
+                WHEN (c.dt >= v_system_date OR COALESCE(pb.posted_rm, 0) + COALESCE(pb.posted_rmday, 0) + COALESCE(pb.posted_eb, 0) + COALESCE(pb.posted_er, 0) + COALESCE(pb.posted_oth, 0) = 0)
                  AND ((c.dt >= er.arrival_date AND c.dt < er.departure_date)
                    OR (er.status IN (0, 1, 2) AND er.arrival_date = c.dt AND er.departure_date = c.dt AND er.is_day_use = 1))
+                 AND er.is_day_use = 0
                  AND NOT EXISTS (
                      SELECT 1
                      FROM service_bills sb1
@@ -392,8 +424,48 @@ BEGIN
                 )
                 ELSE 0
             END), 0) AS RM,
+            COALESCE(pb.posted_rmday, 0) + COALESCE(SUM(CASE
+                WHEN (c.dt >= v_system_date OR COALESCE(pb.posted_rm, 0) + COALESCE(pb.posted_rmday, 0) + COALESCE(pb.posted_eb, 0) + COALESCE(pb.posted_er, 0) + COALESCE(pb.posted_oth, 0) = 0)
+                 AND ((c.dt >= er.arrival_date AND c.dt < er.departure_date)
+                   OR (er.status IN (0, 1, 2) AND er.arrival_date = c.dt AND er.departure_date = c.dt AND er.is_day_use = 1))
+                 AND er.is_day_use = 1
+                 AND NOT EXISTS (
+                     SELECT 1
+                     FROM service_bills sb1
+                     LEFT JOIN room_night_bills rnb1 ON rnb1.bill_id = sb1.Ma
+                     WHERE COALESCE(NULLIF(TRIM(sb1.RentalRoomId2), ''), NULLIF(TRIM(sb1.RentalRoomId1), '')) = er.id
+                       AND COALESCE(sb1.Edit, 0) = 0
+                       AND COALESCE(sb1.Status, 1) <> 3
+                       AND UPPER(TRIM(sb1.ServiceId)) = 'RM'
+                       AND DATE(COALESCE(rnb1.date, sb1.Date)) = c.dt
+                 )
+                THEN GREATEST(
+                    COALESCE(
+                        (
+                            SELECT SUM(brs.total_amount)
+                            FROM booking_room_services brs
+                            WHERE brs.booking_room_id = er.id
+                              AND UPPER(TRIM(brs.service_code)) = 'RM'
+                              AND DATE(brs.service_date) = c.dt
+                              AND COALESCE(brs.is_posted, 0) = 0
+                              AND brs.deleted_at IS NULL
+                        ),
+                        CASE
+                            WHEN UPPER(COALESCE(er.rate_code, '')) IN ('FOC', 'HU') THEN 0
+                            ELSE COALESCE(er.rate, 0)
+                        END
+                    ) - CASE
+                        WHEN p_include_breakfast = 0
+                         AND (COALESCE(er.breakfast, 0) = 1 OR COALESCE(er.booking_breakfast_included, 0) = 1)
+                        THEN COALESCE(er.adults, 0) * v_breakfast_adult_rate + COALESCE(er.children_qty, 0) * v_breakfast_child_rate
+                        ELSE 0
+                    END,
+                    0
+                )
+                ELSE 0
+            END), 0) AS RMDay,
             COALESCE(pb.posted_eb, 0) + COALESCE(SUM(CASE
-                WHEN (c.dt >= v_system_date OR COALESCE(pb.posted_rm, 0) + COALESCE(pb.posted_eb, 0) + COALESCE(pb.posted_er, 0) = 0)
+                WHEN (c.dt >= v_system_date OR COALESCE(pb.posted_rm, 0) + COALESCE(pb.posted_rmday, 0) + COALESCE(pb.posted_eb, 0) + COALESCE(pb.posted_er, 0) + COALESCE(pb.posted_oth, 0) = 0)
                  AND ((c.dt >= er.arrival_date AND c.dt < er.departure_date)
                    OR (er.status IN (0, 1, 2) AND er.arrival_date = c.dt AND er.departure_date = c.dt AND er.is_day_use = 1))
                  AND NOT EXISTS (
@@ -421,20 +493,36 @@ BEGIN
                 ELSE 0
             END), 0) AS EB,
             COALESCE(pb.posted_er, 0) + COALESCE(SUM(CASE
-                WHEN (c.dt >= v_system_date OR COALESCE(pb.posted_rm, 0) + COALESCE(pb.posted_eb, 0) + COALESCE(pb.posted_er, 0) = 0)
+                WHEN (c.dt >= v_system_date OR COALESCE(pb.posted_rm, 0) + COALESCE(pb.posted_rmday, 0) + COALESCE(pb.posted_eb, 0) + COALESCE(pb.posted_er, 0) + COALESCE(pb.posted_oth, 0) = 0)
                  AND ((c.dt >= er.arrival_date AND c.dt < er.departure_date)
                    OR (er.status IN (0, 1, 2) AND er.arrival_date = c.dt AND er.departure_date = c.dt AND er.is_day_use = 1))
                 THEN COALESCE((
                     SELECT SUM(brs.total_amount)
                     FROM booking_room_services brs
                     WHERE brs.booking_room_id = er.id
-                      AND UPPER(TRIM(brs.service_code)) IN ('ER','LO','TB','DN','GN','HN','HT','LH','MR','MS','NB','TO','WS','EI')
+                      AND FIND_IN_SET(UPPER(TRIM(brs.service_code)), v_er_codes) > 0
                       AND DATE(brs.service_date) = c.dt
                       AND COALESCE(brs.is_posted, 0) = 0
                       AND brs.deleted_at IS NULL
                 ), 0)
                 ELSE 0
             END), 0) AS ER,
+            COALESCE(pb.posted_oth, 0) + COALESCE(SUM(CASE
+                WHEN (c.dt >= v_system_date OR COALESCE(pb.posted_rm, 0) + COALESCE(pb.posted_rmday, 0) + COALESCE(pb.posted_eb, 0) + COALESCE(pb.posted_er, 0) + COALESCE(pb.posted_oth, 0) = 0)
+                 AND ((c.dt >= er.arrival_date AND c.dt < er.departure_date)
+                   OR (er.status IN (0, 1, 2) AND er.arrival_date = c.dt AND er.departure_date = c.dt AND er.is_day_use = 1))
+                THEN COALESCE((
+                    SELECT SUM(brs.total_amount)
+                    FROM booking_room_services brs
+                    WHERE brs.booking_room_id = er.id
+                      AND UPPER(TRIM(brs.service_code)) NOT IN ('RM', 'EB')
+                      AND FIND_IN_SET(UPPER(TRIM(brs.service_code)), v_revenue_codes) > 0
+                      AND DATE(brs.service_date) = c.dt
+                      AND COALESCE(brs.is_posted, 0) = 0
+                      AND brs.deleted_at IS NULL
+                ), 0)
+                ELSE 0
+            END), 0) AS OthRev,
             (
                 SELECT COUNT(DISTINCT rl.room_number)
                 FROM room_locks rl
@@ -461,7 +549,7 @@ BEGIN
         FROM calendar c
         LEFT JOIN eligible_rooms er ON 1 = 1
         LEFT JOIN posted_bills pb ON pb.bill_date = c.dt
-        GROUP BY c.dt, pb.posted_rm, pb.posted_eb, pb.posted_er
+        GROUP BY c.dt, pb.posted_rm, pb.posted_rmday, pb.posted_eb, pb.posted_er, pb.posted_oth
     ), daily_calc AS (
         SELECT
             report_date,
@@ -475,9 +563,12 @@ BEGIN
             FOCAll,
             GREATEST(OccRooms - HouseUse, 0) AS RoomSales,
             RM,
+            RMDay,
             EB,
-            ER,
-            (RM + EB + ER) AS Revenue,
+            ER + CASE WHEN v_eb_in_revenue = 1 THEN EB ELSE 0 END AS ER,
+            (CASE WHEN v_rm_in_revenue = 1 THEN RM + RMDay ELSE 0 END
+             + CASE WHEN v_eb_in_revenue = 1 THEN EB ELSE 0 END
+             + OthRev) AS Revenue,
             CASE
                 WHEN report_date < v_system_date AND COALESCE(p_area, '') = '' THEN COALESCE(
                     CASE
@@ -518,11 +609,12 @@ BEGIN
         FOCAll,
         RoomSales,
         CAST(RM AS DECIMAL(15,2)) AS RM,
+        CAST(RMDay AS DECIMAL(15,2)) AS RMDay,
         CAST(EB AS DECIMAL(15,2)) AS EB,
         CAST(ER AS DECIMAL(15,2)) AS ER,
         CAST(Revenue AS DECIMAL(15,2)) AS Revenue,
-        CAST(COALESCE(ROUND((CASE WHEN v_avg_rate_inc_other = 1 THEN Revenue ELSE RM END) / NULLIF(RoomSales, 0), 0), 0) AS DECIMAL(15,2)) AS AvgRate,
-        CAST(COALESCE(ROUND((CASE WHEN v_avg_rate_inc_other = 1 THEN Revenue ELSE RM END) / NULLIF(GREATEST(RoomSales - FOCAll, 0), 0), 0), 0) AS DECIMAL(15,2)) AS AvgRate2,
+        CAST(COALESCE(ROUND((CASE WHEN v_avg_rate_inc_other = 1 THEN Revenue ELSE RM + RMDay END) / NULLIF(RoomSales, 0), 0), 0) AS DECIMAL(15,2)) AS AvgRate,
+        CAST(COALESCE(ROUND((CASE WHEN v_avg_rate_inc_other = 1 THEN Revenue ELSE RM + RMDay END) / NULLIF(GREATEST(RoomSales - FOCAll, 0), 0), 0), 0) AS DECIMAL(15,2)) AS AvgRate2,
         RoomAvible,
         CAST(COALESCE(ROUND((OccRooms / NULLIF(RoomAvible, 0)) * 100, 2), 0) AS DECIMAL(8,2)) AS PercentOccupancy,
         CAST(COALESCE(ROUND((GREATEST(OccRooms - HouseUse - FOCAll, 0) / NULLIF(RoomAvible, 0)) * 100, 2), 0) AS DECIMAL(8,2)) AS PercentOccupancy1,
@@ -563,6 +655,7 @@ SQL;
             ['name' => 'FOCAll', 'type' => 'integer'],
             ['name' => 'RoomSales', 'type' => 'integer'],
             ['name' => 'RM', 'type' => 'number'],
+            ['name' => 'RMDay', 'type' => 'number'],
             ['name' => 'EB', 'type' => 'number'],
             ['name' => 'ER', 'type' => 'number'],
             ['name' => 'Revenue', 'type' => 'number'],

@@ -212,6 +212,19 @@ test('row 95 deduplicates payments and separates unused deposits from paid amoun
   assert.deepEqual(amounts, { depositAmount: 100, paidAmount: 500 })
 })
 
+test('task 228 transfer-in deposit with description "(BK_a=>BK_b)" is still excluded from room plan totals', () => {
+  const amounts = calculateRoomPlanPaymentAmounts({
+    payments: [
+      { id: 1, amount: 100, pack2: 'DPR', status: 1, edit_flag: 0, description: 'Deposit (Cash)' },
+      { id: 2, amount: 400, pack2: 'DPR', status: 1, edit_flag: 0, description: 'Deposit (Cash) (BK_29=>BK_24)' },
+      { id: 3, amount: 600, pack2: 'DPR', status: 1, edit_flag: 0, description: 'Deposit (Cash) (BK_29=>R_105) (R_105=>BK_24)' },
+      { id: 4, amount: 50, pack2: 'DPR', status: 1, edit_flag: 0, description: 'Deposit (Cash) (khách đưa trước)' },
+    ],
+  })
+
+  assert.deepEqual(amounts, { depositAmount: 150, paidAmount: 0 })
+})
+
 test('row 95 prefers booking note and safely resolves special-request arrays', () => {
   assert.equal(resolveRoomPlanBookingNote({ note: 'Gọi trước khi đến' }, { note: 'Ghi chú phòng' }), 'Gọi trước khi đến')
   assert.equal(resolveRoomPlanBookingNote({ special_requests: [{ special_request: { name: 'Không hút thuốc' } }] }, { note: 'Ghi chú phòng' }), 'Không hút thuốc')
