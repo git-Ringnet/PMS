@@ -668,7 +668,17 @@ const sortedShuttleDates = computed(() => {
 const birthdayGroups = computed(() => {
   const groups = {}
   birthdaysData.value.forEach(item => {
-    const d = item.birthday || 'Khác'
+    let d = item.birthdayDate
+    if (!d && item.birthday) {
+      const parts = item.birthday.split('/')
+      if (parts.length >= 2) {
+        const fromYear = searchDateFrom.value ? searchDateFrom.value.slice(0, 4) : new Date().getFullYear()
+        d = `${parts[0]}/${parts[1]}/${fromYear}`
+      } else {
+        d = item.birthday
+      }
+    }
+    d = d || 'Khác'
     if (!groups[d]) groups[d] = []
     groups[d].push(item)
   })
@@ -676,7 +686,18 @@ const birthdayGroups = computed(() => {
 })
 
 const sortedBirthdayDates = computed(() => {
-  return Object.keys(birthdayGroups.value)
+  return Object.keys(birthdayGroups.value).sort((a, b) => {
+    if (a === 'Khác') return 1
+    if (b === 'Khác') return -1
+    const pA = a.split('/')
+    const pB = b.split('/')
+    if (pA.length === 3 && pB.length === 3) {
+      const timeA = new Date(Number(pA[2]), Number(pA[1]) - 1, Number(pA[0])).getTime()
+      const timeB = new Date(Number(pB[2]), Number(pB[1]) - 1, Number(pB[0])).getTime()
+      return timeA - timeB
+    }
+    return a.localeCompare(b)
+  })
 })
 
 // Pending Groups

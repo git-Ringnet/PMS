@@ -201,8 +201,8 @@ HTML;
         $data = [
             'parameters' => ['show_note' => false],
             'rows' => [
-                ['BookingId' => 1, 'Total' => 100000],
-                ['BookingId' => 1, 'Total' => 200000],
+                ['BookingId' => 1, 'Total' => 100000, 'SettlementDetails' => [['Amount' => 100000]]],
+                ['BookingId' => 1, 'Total' => 200000, 'SettlementDetails' => [['Amount' => 200000]]],
                 ['BookingId' => 2, 'Total' => 300000],
             ],
         ];

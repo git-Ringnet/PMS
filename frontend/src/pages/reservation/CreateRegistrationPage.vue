@@ -53,6 +53,7 @@ import QuickUpdateModal from './components/QuickUpdateModal.vue'
 import { bookingPeriodAfterQuickUpdate, isRegistrationReadonly } from '@/utils/booking-quick-update.js'
 import { createVacantRoomsLoader, vacantRoomsKey } from '@/utils/vacant-rooms-cache.js'
 import { roomPeriodsOverlap } from '@/utils/day-use-time-overlap.js'
+import { isHeaderDayUseTransition, synchronizeHeaderDayUseRooms } from '@/utils/booking-header-day-use.js'
 import echo from '@/services/echo'
 import { isFromOtherTab } from '@/utils/broadcast-origin.js'
 import BookingNotificationsModal from './components/BookingNotificationsModal.vue'
@@ -5223,6 +5224,19 @@ async function handleMainNightsChange() {
         })
       }
       if (tab.rooms) {
+        // Chỉ thao tác "Số đêm" ở header mới có nghĩa đổi booking 1 đêm về
+        // Day-use. Không áp dụng quy tắc này cho ô số đêm của từng phòng,
+        // nơi legacy vẫn cho phép phòng cùng ngày không bật Day-use.
+        const isHeaderDayUse = isHeaderDayUseTransition({
+          nights: tab.nights,
+          checkIn: tab.checkIn,
+          checkOut: tab.checkOut,
+        })
+        synchronizeHeaderDayUseRooms(
+          tab.rooms,
+          isHeaderDayUse,
+          room => isEditableAllocationRoom(room) && Number(room.bookingRoomStatus) === 0,
+        )
         tab.rooms.forEach(r => {
           if (!isEditableAllocationRoom(r) || Number(r.bookingRoomStatus) !== 0) return
           r.checkOut = tab.checkOut

@@ -1,5 +1,15 @@
 # Project Memory — PMS
 
+- 2026-11-20: TC_BC_LT_01 / Báo cáo công nợ công ty: V3 tách biệt (`COMPANY_DEBT_LEGACY_DTX_V3`) giữ V2 để rollback. Clone A4 dọc nay đưa bảng giải trừ ngay dưới từng dòng công nợ, thêm phương thức thanh toán/người thanh toán, số còn nợ theo dòng/nhóm và ngày tạo chỉ hiển thị ngày. `TemplateRendererService` và Template Designer có loại hàng con opt-in `detail-list`; không template nào khai báo thì không đổi output. Không sửa schema, model, import, payment/settlement flow, API hay báo cáo khác. Cần chạy migration `2026_11_20_130000_clone_company_debt_legacy_detail_layout.php`, build frontend và UAT preview/PDF/XLSX bằng mẫu legacy.
+
+- 2026-11-20: Sửa 500 khi chạy `COMPANY_DEBT`: aggregate renderer bỏ qua giá trị mảng/object trước `array_unique`. `SettlementDetails` là dữ liệu con nên không còn gây `Array to string conversion`; số/count aggregate của scalar giữ nguyên cho mọi báo cáo.
+
+- 2026-11-20: Sửa Template Designer làm đổi `PAID_COMPANY_DEBTS` khi lưu không chỉnh sửa: normalizer nhận `grouping`/`groups`, `label`/`content`; compiler giữ header 2 tầng (`colspan`, style, thứ tự) khi `hasTwoTierHeader=true`. Template/bảng không dùng cờ này giữ nhánh biên dịch cũ. Reference mẫu dùng contract chuẩn `groups` + `content`; template DB V2 hiện vẫn có HTML/header/group hợp lệ.
+
+- 2026-11-20: `PAID_COMPANY_DEBTS` sửa binding dòng `Tổng Cộng` từ `aggregate.totals.*` sang `totals.*`, đúng payload adapter nên các số tổng không còn trống. Chuẩn hóa cả hai header tầng 1 cùng `#d9dde7`; migration vá cả `PAID_COMPANY_DEBTS_REFERENCE` và `PAID_COMPANY_DEBTS_LEGACY_ARMY_V2`, không sửa renderer/API/procedure/dữ liệu thanh toán hay template của báo cáo khác.
+
+- 2026-11-20: TC_BC_LT_01 / Báo cáo công nợ: chuẩn bị bản clone report V2 cô lập, chưa chạy migration database thật. `COMPANY_DEBT` dùng baseline DTX, A4 dọc; `PAID_COMPANY_DEBTS` dùng baseline Army/Navy, A4 ngang và bổ sung filter FO/F&B. V2 tạo procedure/datasource/template riêng, giữ source/template cũ để rollback; không sửa ReportsPage, renderer/export dùng chung, payment/settlement flow hay schema. Cần chạy migration trên DB test, UAT 7 kịch bản và đối chiếu preview/PDF/XLSX/CSV legacy trước nghiệm thu.
+
 - 2026-11-19: TC_CH_04 / Cấu hình giá: thay Gói dịch vụ dữ liệu mẫu bằng cấu hình runtime (`service_packages`, `service_package_items`), CRUD API và form tab Gói dịch vụ. Đăng ký chọn một gói; backend snapshot gói và tạo dòng dịch vụ dự kiến chưa post tại folio Master của phòng hoạt động đầu tiên theo `order_day`. Không tạo/sửa `service_bills`, thanh toán hoặc Checkout; gói/dòng đã post bị chặn thay đổi. Mapping `SP1317`/`SP1330`/`SP2000.PackageCode` còn một phần hoặc chưa xác minh, chưa có importer production. Cần chạy migration và PHPUnit trong môi trường có `backend/vendor`.
 
 - 2026-11-19: TC_DP_15 / Công Ty: bảng bổ sung STT theo phân trang và trạng thái sử dụng; các dropdown danh mục có lựa chọn `Chưa chọn`. Xuất/file mẫu chuyển sang XLSX, nhập nhận XLSX/XLS và giữ CSV legacy; import trả trạng thái từng dòng, chặn thiếu tên, email/công nợ/tham chiếu sai và trùng trong file. Không đổi schema, model, API CRUD Booking/Checkout hay khóa mapping production `SP1302`; cần UAT file Excel thực tế và chạy PHPUnit tại môi trường có `backend/vendor`.
@@ -2084,6 +2094,10 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 ## Current Status
 
+- 2026-11-20: Đăng ký / Day Use: sửa số đêm tại header từ `1` về `0` nay đồng bộ cờ ở theo giờ cho đúng các phòng `Booked (0)` đang theo ngày booking. Payload hiện có lưu `bookings.is_day_use` và `booking_rooms.is_day_use`, nên Kế hoạch phòng hiển thị Day Use sau reload. Không áp dụng cho ô số đêm từng phòng, room đang check-in/check-out, no-show, hủy hay lịch sử chuyển phòng; không đổi API/schema/import. Node regression 3/3 và frontend build đạt; cần UAT GAL5.
+
+- 2026-11-20: TC_BC_LT_01 đã có migration clone report V2, chưa chạy database thật. Công nợ công ty dùng A4 dọc; công nợ đã thanh toán dùng A4 ngang. Không đổi schema/payment flow/generic report engine.
+
 - 2026-11-19: Danh sách công việc: Đón tiễn khách đọc đúng từng dòng `bookings.shuttle_info[]` theo ngày và loại đã lưu; Dòng 530 Sinh nhật khách chỉ hiển thị khi ngày sinh lặp theo năm thuộc cả kỳ xem lẫn thời gian ở của phòng. Áp dụng cho khách, trẻ em/em bé; không đổi Đăng ký, Báo cáo, Checkout, schema hay import legacy. PHP lint đạt; PHPUnit bị chặn bởi lỗi bootstrap `backend/vendor/autoload.php`.
 
 - 2026-11-19: Reset System DB đã chọn migration `2026_11_17_100000_add_soft_deletes_to_organization_departments.php`; `organization_departments.deleted_at` sẽ được tạo trước `RbacMatrixSeeder`, khớp model `OrganizationDepartment` dùng `SoftDeletes`. Không đổi model, seeder, API, dữ liệu import hoặc schema chi nhánh. PHP lint đạt; cần người dùng chạy lại reset vì lệnh này xóa dữ liệu.
@@ -2186,6 +2200,10 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 
 ## Recent Changes
+
+- 2026-11-20: `CreateRegistrationPage.vue` đồng bộ `hourly` chỉ khi người dùng sửa **Số đêm** ở header về `0` và ngày đến = ngày đi; serializer sẵn có truyền `is_day_use` cho từng phòng. Thêm helper/test `booking-header-day-use`; test Node 3/3 và `npm run build` đạt. Backend `BookingController`/Room Plan không sửa vì contract lưu và reload hiện có đã đúng khi nhận cờ Day Use.
+
+- 2026-11-20: Thêm procedure V2, metadata động và Design Template V2 riêng cho `COMPANY_DEBT`/`PAID_COMPANY_DEBTS`; giữ source code để adapter hiện hữu tiếp tục chạy, giữ template cũ để rollback. Sửa adapter company summary không nhân PaidAmount khi một payment bao nhiều invoice.
 
 - 2026-11-19: `ShiftWorkController` bỏ cách đọc sai `shuttle_info.pickup/dropoff` và ngày Booking; trả dữ liệu từ từng row `shuttle_info[]`, giữ nguyên payload và Báo cáo đưa đón. Sinh nhật lọc theo giao của khoảng tìm kiếm và `booking_rooms.arrival_date/departure_date`, đồng nhất quy tắc Alert. Thêm test hồi quy đưa đón nhiều dòng và sinh nhật ngoài/đúng thời gian ở.
 
@@ -2645,6 +2663,10 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 
 ## Known Risks
+
+- 2026-11-20: Cần UAT GAL5 và booking nhiều phòng theo chuỗi `1 đêm → 0 đêm → Lưu → reload Kế hoạch phòng`, sau đó đổi lại `1 đêm`; xác nhận chỉ phòng `Booked (0)` đổi Day Use, AV/room charge đúng quy tắc và không sửa trực tiếp dữ liệu cũ.
+
+- 2026-11-20: Chưa chạy migration V2 trên DB test hoặc database thật; cần UAT 7 kịch bản với preview/PDF/XLSX/CSV đối chiếu legacy. PHPUnit đang bị chặn vì thiếu `backend/vendor/autoload.php`.
 
 - 2026-11-19: API đưa đón cần UAT với dữ liệu thực có nhiều dòng `shuttle_info[]`, ngày đưa đón khác ngày đến/đi và cả hai loại Đón/Đưa; PHPUnit chưa chạy được do bootstrap vendor lỗi môi trường.
 

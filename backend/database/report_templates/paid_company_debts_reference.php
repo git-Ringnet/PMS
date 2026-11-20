@@ -15,7 +15,7 @@ return new class
             'name' => 'Báo cáo công nợ đã thanh toán',
             'report' => 'PAID_COMPANY_DEBTS_REFERENCE',
             'page_size' => 'A4',
-            'page_orientation' => 'portrait',
+            'page_orientation' => 'landscape',
             'margin_top' => 6,
             'margin_right' => 5,
             'margin_bottom' => 6,
@@ -64,6 +64,7 @@ return new class
                     'p_view_type' => 'int',
                     'p_company_id' => 'int',
                     'p_group_by_company' => 'int',
+                    'p_is_fb' => 'int',
                 ],
             ],
         ];
@@ -143,10 +144,10 @@ return new class
                     'style' => ['width' => '100%', 'fontSize' => '9.5px'],
                     'hasTwoTierHeader' => true,
                     'topHeader' => [
-                        ['label' => 'Thông Tin Công Nợ', 'colspan' => 10, 'align' => 'center', 'style' => ['backgroundColor' => '#f1f5f9', 'fontWeight' => 'bold']],
-                        ['label' => 'Thông Tin Thanh Toán', 'colspan' => 6, 'align' => 'center', 'style' => ['backgroundColor' => '#e2e8f0', 'fontWeight' => 'bold']],
+                        ['content' => 'Thông Tin Công Nợ', 'colspan' => 10, 'align' => 'center', 'style' => ['backgroundColor' => '#d9dde7', 'fontWeight' => 'bold']],
+                        ['content' => 'Thông Tin Thanh Toán', 'colspan' => 6, 'align' => 'center', 'style' => ['backgroundColor' => '#d9dde7', 'fontWeight' => 'bold']],
                     ],
-                    'grouping' => [
+                    'groups' => [
                         [
                             'id' => 'paid_debts_date_group',
                             'field' => 'DateGroup',
@@ -224,11 +225,11 @@ return new class
                             'className' => 'report-grand-total-row',
                             'cells' => [
                                 ['id' => 'g_sub_label', 'type' => 'text', 'content' => 'Tổng Cộng', 'colspan' => 5, 'align' => 'right', 'style' => ['fontWeight' => 'bold']],
-                                ['id' => 'g_sub_debt', 'type' => 'binding', 'binding' => 'aggregate.totals.DebtAmount', 'colspan' => 1, 'align' => 'right', 'format' => 'number', 'style' => ['fontWeight' => 'bold']],
+                                ['id' => 'g_sub_debt', 'type' => 'binding', 'binding' => 'totals.DebtAmount', 'colspan' => 1, 'align' => 'right', 'format' => 'number', 'style' => ['fontWeight' => 'bold']],
                                 ['id' => 'g_sub_spacer1', 'type' => 'text', 'content' => '', 'colspan' => 5, 'align' => 'left'],
-                                ['id' => 'g_sub_paid', 'type' => 'binding', 'binding' => 'aggregate.totals.PaidAmount', 'colspan' => 1, 'align' => 'right', 'format' => 'number', 'style' => ['fontWeight' => 'bold']],
+                                ['id' => 'g_sub_paid', 'type' => 'binding', 'binding' => 'totals.PaidAmount', 'colspan' => 1, 'align' => 'right', 'format' => 'number', 'style' => ['fontWeight' => 'bold']],
                                 ['id' => 'g_sub_spacer2', 'type' => 'text', 'content' => '-', 'colspan' => 1, 'align' => 'center'],
-                                ['id' => 'g_sub_remain', 'type' => 'binding', 'binding' => 'aggregate.totals.RemainingAmount', 'colspan' => 1, 'align' => 'right', 'format' => 'number', 'style' => ['fontWeight' => 'bold']],
+                                ['id' => 'g_sub_remain', 'type' => 'binding', 'binding' => 'totals.RemainingAmount', 'colspan' => 1, 'align' => 'right', 'format' => 'number', 'style' => ['fontWeight' => 'bold']],
                                 ['id' => 'g_sub_spacer3', 'type' => 'text', 'content' => '', 'colspan' => 2, 'align' => 'left'],
                             ],
                         ],
@@ -298,25 +299,26 @@ return new class
 .paid-company-debts-table {
     width: 100%;
     border-collapse: collapse;
-    font-family: inherit;
+    font-family: Roboto, Arial, Helvetica, sans-serif;
     font-size: 9.5px;
     line-height: 1.25;
     margin-top: 4px;
 }
 .paid-company-debts-table th,
 .paid-company-debts-table td {
-    border: 1px solid #cbd5e1;
+    border: 1px solid #000;
     padding: 3px 4px;
     vertical-align: middle;
 }
 .paid-company-debts-table thead tr:first-child th {
+    background-color: #d9dde7;
     font-size: 10px;
     font-weight: bold;
     padding: 4px;
 }
 .paid-company-debts-table thead tr:nth-child(2) th {
-    background-color: #f8fafc;
-    color: #0f172a;
+    background-color: #d9dde7;
+    color: #000;
     font-weight: bold;
     text-align: center;
 }
@@ -343,11 +345,11 @@ return new class
 }
 .payment-method-summary-table th,
 .payment-method-summary-table td {
-    border: 1px solid #cbd5e1;
+    border: 1px solid #000;
     padding: 4px 8px;
 }
 .payment-method-summary-table thead th {
-    background-color: #f1f5f9;
+    background-color: #d9dde7;
     font-weight: bold;
     text-align: center;
 }
@@ -443,7 +445,7 @@ CSS;
                 if (! empty($th['style']['backgroundColor'])) {
                     $thStyle .= ' background-color: '.$th['style']['backgroundColor'].';';
                 }
-                $html .= '      <th colspan="'.($th['colspan'] ?? 1).'" style="'.$thStyle.'">'.($th['label'] ?? '').'</th>'."\n";
+                $html .= '      <th colspan="'.($th['colspan'] ?? 1).'" style="'.$thStyle.'">'.($th['content'] ?? $th['label'] ?? '').'</th>'."\n";
             }
             $html .= "    </tr>\n";
         }
@@ -454,7 +456,7 @@ CSS;
         }
         $html .= "    </tr>\n  </thead>\n";
 
-        $groups = $block['grouping'] ?? [];
+        $groups = $block['groups'] ?? $block['grouping'] ?? [];
         $primaryGroup = $groups[0] ?? null;
         $secondaryGroup = $groups[1] ?? null;
         $dataSource = $block['dataSource'] ?? 'rows';
@@ -466,7 +468,7 @@ CSS;
 
             $html .= '  <tbody class="pms-grouped-rows" data-source="'.$dataSource.'"'.$groupByAttr.$subGroupByAttr.'>'."\n";
 
-            $html .= '    <tr class="pms-group-header" data-group-level="0" data-group-field="'.htmlspecialchars((string) $primaryGroup['field'], ENT_QUOTES, 'UTF-8').'">'."\n";
+            $html .= '    <tr class="pms-group-header '.htmlspecialchars((string) ($primaryGroup['className'] ?? ''), ENT_QUOTES, 'UTF-8').'" data-group-level="0" data-group-field="'.htmlspecialchars((string) $primaryGroup['field'], ENT_QUOTES, 'UTF-8').'">'."\n";
             if (! empty($primaryGroup['headerCells'])) {
                 foreach ($primaryGroup['headerCells'] as $cell) {
                     $html .= '      <td colspan="'.($cell['colspan'] ?? count($columns)).'">'
@@ -478,7 +480,7 @@ CSS;
             $html .= "    </tr>\n";
 
             if ($secondaryGroup) {
-                $html .= '    <tr class="pms-subgroup-header" data-group-level="1" data-group-field="'.htmlspecialchars((string) $secondaryGroup['field'], ENT_QUOTES, 'UTF-8').'">'."\n";
+                $html .= '    <tr class="pms-subgroup-header '.htmlspecialchars((string) ($secondaryGroup['className'] ?? ''), ENT_QUOTES, 'UTF-8').'" data-group-level="1" data-group-field="'.htmlspecialchars((string) $secondaryGroup['field'], ENT_QUOTES, 'UTF-8').'">'."\n";
                 if (! empty($secondaryGroup['headerCells'])) {
                     foreach ($secondaryGroup['headerCells'] as $cell) {
                         $html .= '      <td colspan="'.($cell['colspan'] ?? count($columns)).'">'

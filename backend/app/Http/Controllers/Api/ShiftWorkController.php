@@ -1047,6 +1047,7 @@ class ShiftWorkController extends Controller
                 'roomNumber' => $rm->room_number ?: '',
                 'guestName' => $g->full_name ?: ($g->name ?: 'Guest'),
                 'birthday' => $dob->format('d/m/Y'),
+                'birthdayDate' => $birthdayDate->format('d/m/Y'),
                 'age' => $age,
                 'idType' => $g->passport_number ? 'Hộ chiếu' : 'Căn cước công dân',
                 'idNumber' => $g->passport_number ?: ($g->id_number ?: ''),

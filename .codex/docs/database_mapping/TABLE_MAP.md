@@ -109,6 +109,13 @@
 
 ## Hóa Đơn Và Thanh Toán
 
+### Quy tắc đọc cho TC_BC_LT_01 (không phải mapping import mới)
+
+- `sp_212`: `SP3000.InvoiceId → SP3003.Ma`, `SP3003.PaymentID → SP3002.PaymentID`, `SP3007.PaymentTableId → SP3002.Ma`; chỉ cộng settlement `Edit=0`.
+- `sp_294`: `SP3007.PaymentTableId → SP3002.Ma`; số dư phải tính từ tổng settlement hợp lệ, không từ `Pack5`.
+- Runtime V2 ưu tiên khóa runtime `payments.invoice_id → sales_invoices.id` và `payment_debt_settlements.payment_id → payments.id`; chỉ fallback raw legacy key khi khóa runtime rỗng.
+- Fallback `sales_invoices.legacy_booking_id → bookings.id` vẫn `Chưa xác minh` cho import production; không dùng quy tắc đọc report này làm khóa import.
+
 | Bảng mới | Bảng legacy | Trạng thái | Ghi chú import |
 |---|---|---|---|
 | `service_bills` | `SP3000` | Đã xác minh | Giữ `Ma`, ngày dịch vụ, mã bộ phận `DepartmentId`, thuế/phí snapshot, chủ sở hữu gốc/hiện tại, status và audit chuyển/hủy; `employee_code` là runtime nullable, không suy diễn khi import. |
