@@ -96,7 +96,8 @@ class TemplateRendererService
                 foreach ($fields as $field) {
                     $values = array_column($rows, $field);
                     $sum[$field] = array_sum(array_map(static fn ($item): float => is_numeric($item) ? (float) $item : 0, $values));
-                    $distinctCount[$field] = count(array_unique(array_filter($values, static fn ($item): bool => $item !== null && $item !== '')));
+                    $distinctValues = array_filter($values, static fn ($item): bool => is_scalar($item) && $item !== null && $item !== '');
+                    $distinctCount[$field] = count(array_unique($distinctValues, SORT_REGULAR));
                 }
                 $result[$key] = ['count' => count($rows), 'sum' => $sum, 'distinct_count' => $distinctCount];
                 continue;
@@ -258,6 +259,7 @@ class TemplateRendererService
             $groupFooter = $this->groupedRowTemplate($body, 'pms-group-footer');
             $groupCustomRows = $this->groupedRowTemplates($body, 'pms-group-custom-row');
             $detailCustomRows = $this->groupedRowTemplates($body, 'pms-detail-custom-row');
+            $detailListRows = $this->groupedDetailListRowTemplates($body);
             $output = '';
 
             if ($groupConfigured) {
@@ -269,10 +271,11 @@ class TemplateRendererService
                             foreach ($detailCustomRows as $customRow) {
                                 $output .= $this->renderGroupedTemplate($customRow['template'], $row, [$row]);
                             }
+                            $output .= $this->renderDetailListRows($detailListRows, $row);
                         }
                     }
                 } else {
-                    $output = $this->renderConfiguredGroupLevel($items, $groups, 0, $detail, $groupFooter, $groupCustomRows, $detailCustomRows);
+                    $output = $this->renderConfiguredGroupLevel($items, $groups, 0, $detail, $groupFooter, $groupCustomRows, $detailCustomRows, $detailListRows);
                 }
 
                 return '<tbody>'.$output.'</tbody>';
@@ -282,6 +285,7 @@ class TemplateRendererService
                 foreach ($items as $row) {
                     if (is_array($row)) {
                         $output .= $this->renderGroupedTemplate($detail, $row, [$row]);
+                        $output .= $this->renderDetailListRows($detailListRows, $row);
                     }
                 }
 
@@ -305,12 +309,14 @@ class TemplateRendererService
                             $output .= $this->renderGroupedTemplate($subsubgroupNote, $subsubgroupFirst, $subsubgroupRows);
                             foreach ($subsubgroupRows as $row) {
                                 $output .= $this->renderGroupedTemplate($detail, $row, [$row]);
+                                $output .= $this->renderDetailListRows($detailListRows, $row);
                             }
                             $output .= $this->renderGroupedTemplate($subsubgroupFooter, $subsubgroupFirst, $subsubgroupRows);
                         }
                     } else {
                         foreach ($subgroupRows as $row) {
                             $output .= $this->renderGroupedTemplate($detail, $row, [$row]);
+                            $output .= $this->renderDetailListRows($detailListRows, $row);
                         }
                     }
 
@@ -372,7 +378,7 @@ class TemplateRendererService
         return $groups;
     }
 
-    private function renderConfiguredGroupLevel(array $items, array $groups, int $level, ?string $detail, ?string $groupFooter = null, array $groupCustomRows = [], array $detailCustomRows = []): string
+    private function renderConfiguredGroupLevel(array $items, array $groups, int $level, ?string $detail, ?string $groupFooter = null, array $groupCustomRows = [], array $detailCustomRows = [], array $detailListRows = []): string
     {
         if ($level >= count($groups)) {
             $output = '';
@@ -382,6 +388,7 @@ class TemplateRendererService
                     foreach ($detailCustomRows as $customRow) {
                         $output .= $this->renderGroupedTemplate($customRow['template'], $row, [$row]);
                     }
+                    $output .= $this->renderDetailListRows($detailListRows, $row);
                 }
             }
 
@@ -395,7 +402,7 @@ class TemplateRendererService
         foreach ($grouped as $groupRows) {
             $first = $groupRows[0] ?? [];
             $output .= $this->renderGroupedTemplate($definition['template'], $first, $groupRows);
-            $output .= $this->renderConfiguredGroupLevel($groupRows, $groups, $level + 1, $detail, $groupFooter, $groupCustomRows, $detailCustomRows);
+            $output .= $this->renderConfiguredGroupLevel($groupRows, $groups, $level + 1, $detail, $groupFooter, $groupCustomRows, $detailCustomRows, $detailListRows);
             foreach ($groupCustomRows as $customRow) {
                 if ($customRow['level'] === $level) {
                     $output .= $this->renderGroupedTemplate($customRow['template'], $first, $groupRows);
@@ -449,6 +456,94 @@ class TemplateRendererService
         }
 
         return $rows;
+    }
+
+    /**
+     * Return opt-in child-list rows declared immediately after a grouped detail row.
+     * Existing templates omit this class and retain their current output exactly.
+     */
+    private function groupedDetailListRowTemplates(string $body): array
+    {
+        preg_match_all('/<tr\b([^>]*)>(.*?)<\/tr>/is', $body, $matches, PREG_SET_ORDER);
+        $rows = [];
+
+        foreach ($matches as $match) {
+            $classes = $this->attributeValue($match[1], 'class') ?? '';
+            if (! preg_match('/\bpms-detail-list-row\b/', $classes)) {
+                continue;
+            }
+
+            $field = $this->attributeValue($match[1], 'data-list-field');
+            if (! $field) {
+                continue;
+            }
+
+            $rows[] = [
+                'field' => $field,
+                'mode' => $this->attributeValue($match[1], 'data-list-mode') ?? 'item',
+                'template' => $match[2],
+            ];
+        }
+
+        return $rows;
+    }
+
+    private function renderDetailListRows(array $definitions, array $row): string
+    {
+        $output = '';
+        $renderedHeaders = [];
+        $renderedFooters = [];
+
+        foreach ($definitions as $definition) {
+            $items = $row[$definition['field']] ?? [];
+            if (! is_array($items) || $items === []) {
+                continue;
+            }
+
+            $mode = $definition['mode'];
+            if ($mode === 'header') {
+                if (! isset($renderedHeaders[$definition['field']])) {
+                    $output .= $this->renderGroupedTemplate($definition['template'], $row, [$row]);
+                    $renderedHeaders[$definition['field']] = true;
+                }
+                continue;
+            }
+
+            if ($mode === 'footer') {
+                $renderedFooters[$definition['field']] = $definition;
+                continue;
+            }
+
+            foreach ($items as $item) {
+                if (is_array($item)) {
+                    $output .= $this->renderDetailListTemplate($definition['template'], $row, $item);
+                }
+            }
+        }
+
+        foreach ($renderedFooters as $definition) {
+            $output .= $this->renderGroupedTemplate($definition['template'], $row, [$row]);
+        }
+
+        return $output;
+    }
+
+    private function renderDetailListTemplate(string $template, array $row, array $item): string
+    {
+        $rendered = $this->renderGroupedTemplate($template, $row, [$row]);
+
+        return preg_replace_callback('/\{\{item\.([A-Za-z0-9_]+)(?:\|([^}]+))?\}\}/', function ($matches) use ($item) {
+            $value = $item[$matches[1]] ?? null;
+            $modifier = $matches[2] ?? null;
+            if ($modifier === 'number') {
+                return is_numeric($value) ? number_format((float) $value, 0, ',', '.') : '';
+            }
+            if ($modifier === 'percent') {
+                return $this->formatPercent($value);
+            }
+
+            return ($value === null || $value === '') ? (string) ($modifier ?? '') : (string) $value;
+        }, $rendered);
     }
 
     private function groupItems(array $items, string $field): array
