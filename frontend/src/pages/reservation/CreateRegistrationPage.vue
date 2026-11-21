@@ -3148,7 +3148,7 @@ async function refreshMatchingBooking(bookingId = null) {
           const newTabObj = bookingToTab(updatedBooking)
           newTabObj.rooms.forEach(room => {
             if (room.rateCode && room.rateCode !== 'Vui lòng chọn giá phòng') {
-              applyRateCodeDailyPricesToRoom(room)
+              applyRateCodeDailyPricesToRoom(room, { keepSavedRates: true })
             }
           })
           const idx = tabs.value.findIndex(t => t.id === matchingTab.id || t.dbId === matchingTab.dbId)
@@ -3182,7 +3182,7 @@ async function refreshMatchingBooking(bookingId = null) {
           const newTabObj = bookingToTab(updatedBooking)
           newTabObj.rooms.forEach(room => {
             if (room.rateCode && room.rateCode !== 'Vui lòng chọn giá phòng') {
-              applyRateCodeDailyPricesToRoom(room)
+              applyRateCodeDailyPricesToRoom(room, { keepSavedRates: true })
             }
           })
           newTabObj.id = tab.id
@@ -4575,8 +4575,19 @@ function getRateCodePrice(rateCodeMa, roomClassCode, dateStr, roomClassId, roomF
   })
 }
 
-function applyRateCodeDailyPricesToRoom(room) {
+// GAL39: Rate Code cố định cho phép đổi giá thì giá từng đêm đã lưu (sửa tay)
+// được giữ, khớp với quy tắc lưu ở BookingController::applyConfiguredRateCodePricing.
+function rateCodeKeepsSavedNightRates(rateCodeMa) {
+  const rcObj = roomRateCodes.value.find(rc => String(rc.Ma || '').trim() === String(rateCodeMa || '').trim())
+  if (!rcObj) return false
+  const flag = value => value === true || value === 1 || value === '1'
+  return !flag(rcObj.IsDaily) && flag(rcObj.AllowChangeRate)
+}
+
+// keepSavedRates: dùng khi nạp booking từ server, không ghi đè giá đêm đã lưu.
+function applyRateCodeDailyPricesToRoom(room, { keepSavedRates = false } = {}) {
   if (!room?.rateCode || room.rateCode === 'Vui lòng chọn giá phòng') return false
+  const keepSaved = keepSavedRates && rateCodeKeepsSavedNightRates(room.rateCode)
 
   const roomClass = roomClasses.value.find(item => item.id === Number(room.roomClassId))
   const configuredPrices = buildRateCodeDailyPrices(roomRateCodes.value, {
@@ -4604,6 +4615,11 @@ function applyRateCodeDailyPricesToRoom(room) {
       return
     }
 
+    if (keepSaved && existingRoomCharge) {
+      dailyPrices[date] = Number(existingRoomCharge.rate) || 0
+      return
+    }
+
     dailyPrices[date] = configuredPrices[date]
     if (existingRoomCharge) {
       existingRoomCharge.rate = configuredPrices[date]
@@ -4613,7 +4629,8 @@ function applyRateCodeDailyPricesToRoom(room) {
 
   room.dailyRoomPrices = dailyPrices
   const representativeDate = dates.find(date => isServiceRateEditable(date)) || dates[0]
-  room.price = Number(dailyPrices[representativeDate]) || 0
+  // Giá phòng giữ theo Rate Code, không theo giá sửa tay của một đêm (dòng 397).
+  room.price = Number((keepSaved ? configuredPrices : dailyPrices)[representativeDate]) || 0
   room.basePrice = room.price
   room.total = calculateRoomTotal(room)
   return true
@@ -4638,7 +4655,7 @@ function hydrateLoadedRateCodePrices() {
     const rooms = tab.rooms || []
     rooms.forEach(room => {
       if (room.rateCode && room.rateCode !== 'Vui lòng chọn giá phòng') {
-        applyRateCodeDailyPricesToRoom(room)
+        applyRateCodeDailyPricesToRoom(room, { keepSavedRates: true })
       }
     })
   })
@@ -6937,7 +6954,7 @@ async function reloadBookingTab(bookingId) {
       replaceBookingTab(booking)
       ;(activeTab.value?.rooms || []).forEach(room => {
         if (room.rateCode && room.rateCode !== 'Vui lòng chọn giá phòng') {
-          applyRateCodeDailyPricesToRoom(room)
+          applyRateCodeDailyPricesToRoom(room, { keepSavedRates: true })
         }
       })
       selectedRows.value = []
@@ -7383,7 +7400,7 @@ async function openBookingModalByCode(bookingCode, forceReload = false) {
         const tabObj = bookingToTab(bItem)
         tabObj.rooms.forEach(room => {
           if (room.rateCode && room.rateCode !== 'Vui lòng chọn giá phòng') {
-            applyRateCodeDailyPricesToRoom(room)
+            applyRateCodeDailyPricesToRoom(room, { keepSavedRates: true })
           }
         })
         replaceBookingTab(bItem)
@@ -7397,7 +7414,7 @@ async function openBookingModalByCode(bookingCode, forceReload = false) {
           const tabObj = bookingToTab(bItem)
           tabObj.rooms.forEach(room => {
             if (room.rateCode && room.rateCode !== 'Vui lòng chọn giá phòng') {
-              applyRateCodeDailyPricesToRoom(room)
+              applyRateCodeDailyPricesToRoom(room, { keepSavedRates: true })
             }
           })
           replaceBookingTab(bItem)
