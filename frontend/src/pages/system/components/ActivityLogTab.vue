@@ -604,7 +604,7 @@ const handleExport = async () => {
 </script>
 
 <template>
-  <div class="relative p-4 bg-slate-50 flex-1 flex flex-col overflow-y-auto overflow-x-hidden text-xs font-sans min-h-0">
+  <div class="relative p-4 bg-slate-50 h-full flex-1 flex flex-col overflow-y-auto overflow-x-hidden text-xs font-sans min-h-0">
     <LoadingOverlay :show="loading && logs.length === 0" />
     
     <!-- Quick Filter Chips Bar -->
