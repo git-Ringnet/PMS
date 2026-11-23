@@ -126,6 +126,14 @@ const parsedStartDate = computed(() => {
   return null
 })
 
+// Ngày hiện tại của PMS = ngày hệ thống (không phải ngày máy tính)
+const isSystemToday = (date) => {
+  const base = parsedStartDate.value
+  if (!base || !date) return false
+  const d = new Date(date)
+  return d.getFullYear() === base.getFullYear() && d.getMonth() === base.getMonth() && d.getDate() === base.getDate()
+}
+
 const formatDateDMY = (dateStr) => {
   if (!dateStr) return ''
   const parts = String(dateStr).split(/[-\/]/)
@@ -346,6 +354,9 @@ function handleInputClick() {
         menu-class-name="custom-datepicker-menu"
         class="custom-single-datepicker shrink-0"
       >
+        <template #day="{ day, date }">
+          <span class="pms-day" :class="isSystemToday(date) ? 'pms-system-today' : ''">{{ day }}</span>
+        </template>
         <template #trigger>
           <button
             type="button"
@@ -399,6 +410,33 @@ function handleInputClick() {
   font-weight: 700 !important;
   font-size: 11px !important;
   color: #475569 !important;
+}
+
+/* Thư viện v14 dùng class dp--*. Bỏ viền "hôm nay" theo ngày máy tính, thay bằng ngày hệ thống */
+.dp--cell-inner.dp--today:has(> .pms-day) {
+  border-color: transparent;
+}
+
+.pms-day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 6px;
+}
+
+.pms-day.pms-system-today {
+  background: #e0f2fe;
+  color: #0369a1;
+  font-weight: 800;
+  box-shadow: inset 0 0 0 1.5px #0284c7;
+}
+
+.dp--cell-inner.dp--active .pms-day.pms-system-today {
+  background: transparent;
+  color: #fff;
+  box-shadow: none;
 }
 
 .custom-datepicker-menu .dp__cell_inner {
