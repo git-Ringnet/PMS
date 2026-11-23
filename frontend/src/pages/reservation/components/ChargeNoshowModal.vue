@@ -192,6 +192,7 @@ import { chargeRoomNoshow } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
+import { noshowChargeNights } from '@/utils/noshow-charge'
 
 const authStore = useAuthStore()
 const topbarThemeBg = computed(() => {
@@ -266,23 +267,12 @@ const displayName = computed(() => {
   return `${name} - ${props.roomNumber || ''}`.trim()
 })
 
-// Tính số đêm giữa hai ngày
-const numNights = computed(() => {
-  if (!dateFrom.value || !dateTo.value) return 0
-  const d1 = new Date(dateFrom.value)
-  const d2 = new Date(dateTo.value)
-  const diffTime = d2.getTime() - d1.getTime()
-  if (isNaN(diffTime) || diffTime <= 0) return 0
-  return Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)))
-})
-
-// Số bill sẽ post: mỗi đêm một bill (chọn cùng một ngày vẫn là 1 bill)
-const chargeNightCount = computed(() => Math.max(1, numNights.value))
+// Dòng 508 (note 22/11): mỗi ngày trong khoảng đã chọn là một bill, tính cả hai đầu.
+const chargeNightCount = computed(() => Math.max(1, noshowChargeNights(dateFrom.value, dateTo.value)))
 
 // Tiền phòng tự động tính toán
 const autoRateAmount = computed(() => {
-  const nights = numNights.value || 1
-  return (props.roomRate || 0) * nights
+  return (props.roomRate || 0) * chargeNightCount.value
 })
 
 // Định dạng tiền phòng tự động sang vi-VN
@@ -315,22 +305,16 @@ function ensureYmd(dateStr) {
 watch(() => props.show, (newVal) => {
   if (newVal) {
     modalPos.value = { x: 0, y: 0 }
-    dateFrom.value = ensureYmd(props.arrivalDate)
-    dateTo.value = ensureYmd(props.departureDate)
+    // Dòng 508 (note 22/11): mặc định charge đúng ngày hệ thống, tiền = 1 đêm phòng.
+    const defaultDate = ensureYmd(authStore.systemDate || props.arrivalDate)
+    dateFrom.value = defaultDate
+    dateTo.value = defaultDate
     customRateMode.value = false
     isSurcharge.value = true
     customRate.value = Math.round(props.roomRate || 0)
     description.value = `Dịch vụ phòng nghỉ noshow phòng ${props.roomNumber || ''}`.trim()
     reason.value = ''
   }
-})
-
-watch(() => props.arrivalDate, (newVal) => {
-  if (newVal) dateFrom.value = ensureYmd(newVal)
-})
-
-watch(() => props.departureDate, (newVal) => {
-  if (newVal) dateTo.value = ensureYmd(newVal)
 })
 
 watch(() => props.roomRate, (newVal) => {

@@ -1,4 +1,5 @@
 <script setup>
+import { cancelMirrorIds } from '@/utils/service-cancel-selection'
 import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -2551,7 +2552,7 @@ const cancelSelectedServices = async (reason) => {
     const billIds = [...new Set(selectedServiceItems.value.map(service => Number(service.serviceBillId)).filter(id => Number.isInteger(id) && id > 0))]
     const payload = { service_bill_ids: billIds, reason }
     if (!isMaster) {
-      const mirrorIds = [...new Set(selectedServiceItems.value.map(service => service.bookingRoomServiceId).filter(Number.isInteger))]
+      const mirrorIds = cancelMirrorIds(selectedServiceItems.value, visibleServices.value)
       if (mirrorIds.length) payload.service_ids = mirrorIds
     }
     const response = await cancelBookingRoomServices(sourceId, payload)

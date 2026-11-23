@@ -44,6 +44,7 @@ class BookingRoomLifecycleService
                 $room,
                 (float) ($room->rate ?? 0),
                 $replaceRoomRates,
+                false,
             );
         }
         $this->synchronizeExtraBed($room, $stayDates);

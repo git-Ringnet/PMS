@@ -30,14 +30,15 @@ export function findExtraBedBillsOutsideStay(serviceBills, stayNights, dateOf, h
 }
 
 /** Dòng hiển thị cho một bill EB đã post: bill gửi về Master (không có phòng đích) hiển thị GIT. */
-export function extraBedBillRow(bill, dateStr) {
+export function extraBedBillRow(bill, dateStr, catalogName = '') {
   const quantity = Number(bill.Quantity) || 1
   const amount = Number(bill.Amount) || 0
   const folioRoom = bill.RentalRoomId2
   return {
     id: `service-bill-eb-${normalizeId(bill)}`,
     service_date: dateStr,
-    service_name: bill.DescriptionServive || 'Giường phụ (Extra Bed)',
+    // Dòng 382: mô tả đồng bộ theo danh mục dịch vụ, không theo mô tả của hóa đơn.
+    service_name: catalogName || bill.DescriptionServive || 'Giường phụ (Extra Bed)',
     service_code: 'EB',
     quantity,
     rate: quantity > 0 ? amount / quantity : amount,

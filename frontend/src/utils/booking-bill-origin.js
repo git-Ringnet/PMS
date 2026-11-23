@@ -66,6 +66,23 @@ export function collectRoomOwnedBills(rawBills, roomId, bookingRoomIds, transfer
   return result
 }
 
+/**
+ * Dòng 307: đổi phòng làm bill đang ở phòng cũ mang RentalRoomId2 = phòng mới. Bill có ngày trước ngày đến của
+ * phòng mới vẫn là dịch vụ đã dùng ở phòng cũ nên không hiện ở phòng mới. Bill do "Chuyển bill" giữ quy tắc riêng.
+ */
+export function excludeBillsBeforeMoveIn(bills, roomId, arrivalDate, bookingRoomIds, transferredIds, dateOf) {
+  const room = idOf(roomId)
+  const list = Array.isArray(bills) ? bills : []
+  if (!room || !arrivalDate) return list
+  return list.filter(bill => {
+    const origin = billOriginRoomId(bill)
+    if (!origin || origin === room || !bookingRoomIds?.has(origin)) return true
+    if (transferredIds?.has(billKey(bill))) return true
+    const date = dateOf(bill)
+    return !date || date >= arrivalDate
+  })
+}
+
 const sameServiceSlot = (a, b) =>
   String(a?.service_code || '').toUpperCase() === String(b?.service_code || '').toUpperCase()
   && String(a?.service_date || '').slice(0, 10) === String(b?.service_date || '').slice(0, 10)
