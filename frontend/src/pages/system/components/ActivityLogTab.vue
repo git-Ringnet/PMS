@@ -604,7 +604,7 @@ const handleExport = async () => {
 </script>
 
 <template>
-  <div class="relative p-4 bg-slate-50 flex-1 flex flex-col overflow-hidden text-xs font-sans min-h-[500px]">
+  <div class="relative p-4 bg-slate-50 flex-1 flex flex-col overflow-y-auto overflow-x-hidden text-xs font-sans min-h-0">
     <LoadingOverlay :show="loading && logs.length === 0" />
     
     <!-- Quick Filter Chips Bar -->
@@ -778,7 +778,7 @@ const handleExport = async () => {
     </div>
 
     <!-- Data Table Container -->
-    <div class="activity-table-scroll overflow-auto border border-slate-200 rounded-xl shadow-xs flex-1 max-h-full bg-white relative">
+    <div class="activity-table-scroll overflow-auto border border-slate-200 rounded-xl shadow-xs flex-1 min-h-[200px] max-h-full bg-white relative">
       <!-- Loading Overlay -->
       <div v-if="loading" class="absolute inset-0 bg-white/70 flex items-center justify-center z-10">
         <div class="flex flex-col items-center gap-2 bg-white p-4 rounded-xl shadow-lg border border-slate-100">
