@@ -6933,6 +6933,7 @@ async function triggerAction(actionName) {
     chargeNoshowArrivalDate.value = targetRoom.checkIn
     chargeNoshowDepartureDate.value = targetRoom.checkOut
     chargeNoshowRoomRate.value = Number(targetRoom.price) || 0
+    chargeNoshowDailyPrices.value = targetRoom.dailyRoomPrices || null
     isChargeNoshowModalOpen.value = true
   } else if (actionName === 'Xóa') {
     const tab = activeTab.value
@@ -6958,6 +6959,7 @@ async function triggerAction(actionName) {
 
 // ==================== CHARGE NOSHOW MODAL ====================
 const isChargeNoshowModalOpen = ref(false)
+const chargeNoshowDailyPrices = ref(null)
 const chargeNoshowBookingId = ref(null)
 const chargeNoshowBookingName = ref('')
 const chargeNoshowGuestName = ref('')
@@ -10791,6 +10793,7 @@ defineExpose({
     <Teleport to="body">
       <ChargeNoshowModal
         v-model:show="isChargeNoshowModalOpen"
+        :daily-room-prices="chargeNoshowDailyPrices"
         :bookingId="chargeNoshowBookingId"
         :bookingName="chargeNoshowBookingName"
         :guestName="chargeNoshowGuestName"

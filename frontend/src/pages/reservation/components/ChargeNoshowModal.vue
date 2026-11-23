@@ -192,7 +192,7 @@ import { chargeRoomNoshow } from '@/services/booking-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
-import { noshowChargeNights } from '@/utils/noshow-charge'
+import { noshowAutoAmount, noshowChargeNights } from '@/utils/noshow-charge'
 
 const authStore = useAuthStore()
 const topbarThemeBg = computed(() => {
@@ -208,7 +208,8 @@ const props = defineProps({
   roomNumber: String,
   arrivalDate: String,
   departureDate: String,
-  roomRate: Number
+  roomRate: Number,
+  dailyRoomPrices: { type: Object, default: null }
 })
 
 const emit = defineEmits(['update:show', 'saved'])
@@ -272,7 +273,7 @@ const chargeNightCount = computed(() => Math.max(1, noshowChargeNights(dateFrom.
 
 // Tiền phòng tự động tính toán
 const autoRateAmount = computed(() => {
-  return (props.roomRate || 0) * chargeNightCount.value
+  return noshowAutoAmount(dateFrom.value, dateTo.value, props.roomRate, props.dailyRoomPrices)
 })
 
 // Định dạng tiền phòng tự động sang vi-VN
