@@ -159,8 +159,8 @@ class BookingRoomMoveService
      * Copy future, unposted setup for a partial move while leaving the source
      * rows and their independent setup intact.
      *
-     * Dòng 308: EB của đêm phòng cũ đã post vẫn là thiết lập của phòng mới, nên tạo
-     * dòng EB chưa post cho phòng mới. Bill đã post vẫn thuộc phòng cũ.
+     * Dòng 308: EB của đêm đã post (ở phòng này hoặc phòng trước đó nếu đã chuyển cả phòng)
+     * vẫn là thiết lập của phòng mới, nên tạo dòng EB chưa post. Bill đã post giữ nguyên.
      */
     public function copyUnpostedServices(
         BookingRoom $source,
@@ -175,8 +175,12 @@ class BookingRoomMoveService
             BookingRoomService::catalogCode(BookingRoomService::CODE_EXTRA_BED),
         ]));
         $services = BookingRoomService::query()
-            ->where('booking_room_id', $source->id)
-            ->where(fn ($query) => $query->where('is_posted', 0)->orWhereIn('service_code', $extraBedCodes))
+            ->where(function ($query) use ($source, $extraBedCodes): void {
+                $query->where(fn ($own) => $own->where('booking_room_id', $source->id)->where('is_posted', 0))
+                    ->orWhere(fn ($posted) => $posted->whereIn('booking_room_id', $this->previousRoomIds($source))
+                        ->where('is_posted', 1)
+                        ->whereIn('service_code', $extraBedCodes));
+            })
             ->whereDate('service_date', '>=', $fromDate)
             ->whereDate('service_date', '<', $untilDate)
             ->where(function ($query) use ($movedGuestIds): void {
