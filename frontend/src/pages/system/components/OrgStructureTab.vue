@@ -130,7 +130,13 @@ const removeDepartment = async (department) => {
     uiStore.showToast('Bộ phận đã có vị trí công việc, không thể xóa.', 'warning')
     return
   }
-  if (!confirm(`Xóa bộ phận "${department.name}"?`)) return
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận xóa',
+    message: `Xóa bộ phận "${department.name}"?`,
+    confirmText: 'Xóa',
+    cancelText: 'Hủy'
+  })
+  if (!confirmed) return
   try {
     await deleteOrganizationDepartment(department.id)
     await loadData()
@@ -198,7 +204,13 @@ const savePosition = async () => {
 
 const removePosition = async () => {
   if (!selectedPosition.value) return
-  if (!confirm(`Xóa vị trí "${selectedPosition.value.name}"?`)) return
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận xóa',
+    message: `Xóa vị trí "${selectedPosition.value.name}"?`,
+    confirmText: 'Xóa',
+    cancelText: 'Hủy'
+  })
+  if (!confirmed) return
   try {
     await deletePosition(selectedPosition.value.id)
     selectedPosition.value = null
@@ -250,7 +262,13 @@ const saveApplication = async () => {
 }
 
 const removeApplication = async (applicationCode) => {
-  if (!confirm(`Gỡ ứng dụng ${applicationCode} khỏi vị trí này?`)) return
+  const confirmed = await uiStore.confirm({
+    title: 'Gỡ ứng dụng',
+    message: `Gỡ ứng dụng ${applicationCode} khỏi vị trí này?`,
+    confirmText: 'Gỡ',
+    cancelText: 'Hủy'
+  })
+  if (!confirmed) return
   await syncPositionBranches(selectedPosition.value.id, {
     application_code: applicationCode,
     assignments: [],

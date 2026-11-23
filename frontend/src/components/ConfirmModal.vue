@@ -9,6 +9,8 @@ function handleKeyDown(e) {
   if (e.key === 'Escape') {
     uiStore.handleConfirm(false)
   } else if (e.key === 'Enter') {
+    // Không để Enter kích hoạt lại nút đang giữ focus (nút vừa mở popup)
+    e.preventDefault()
     uiStore.handleConfirm(true)
   }
 }

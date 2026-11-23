@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth-store'
+import { useUiStore } from '@/stores/ui-store'
 import CompanyInfoTab from './components/CompanyInfoTab.vue'
 import BranchManageTab from './components/BranchManageTab.vue'
 import EmployeeTab from './components/EmployeeTab.vue'
@@ -15,6 +16,7 @@ import LanguageTab from './components/LanguageTab.vue'
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const uiStore = useUiStore()
 const currentUser = computed(() => authStore.user)
 
 const activeTab = ref(route.query.tab === 'language' ? 'language' : 'company') // 'company', 'branch', 'org_structure', 'roles', 'employee', 'activity_log', 'bank_accounts', 'security', 'language'
@@ -40,7 +42,13 @@ const handleBack = () => {
 }
 
 const handleLogout = async () => {
-  if (confirm('Bạn có chắc chắn muốn đăng xuất?')) {
+  const confirmed = await uiStore.confirm({
+    title: 'Đăng xuất',
+    message: 'Bạn có chắc chắn muốn đăng xuất?',
+    confirmText: 'Đăng xuất',
+    cancelText: 'Hủy'
+  })
+  if (confirmed) {
     isDropdownOpen.value = false
     await authStore.logout()
     router.push('/login')
