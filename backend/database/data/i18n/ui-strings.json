@@ -559,12 +559,62 @@
    ]
   },
   {
-   "source": "-- Nhấp để chọn vai trò được phép (Admin, FO, FOM,...) --",
+   "source": "-- Nhấp để chọn vai trò được phép --",
    "is_pattern": false,
    "locations": [
     {
      "area": "Cấu hình › HotelConfigTab",
      "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "Không có trong hệ thống",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › HotelConfigTab",
+     "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "Chưa tải được danh sách vai trò",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › HotelConfigTab",
+     "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "Không tải được danh sách vai trò",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › HotelConfigTab",
+     "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "Gỡ ứng dụng",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "System › OrgStructureTab",
+     "route": "/system"
+    }
+   ]
+  },
+  {
+   "source": "Gỡ",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "System › OrgStructureTab",
+     "route": "/system"
     }
    ]
   },
