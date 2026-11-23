@@ -6539,5 +6539,7 @@
  "Không đọc được file. Vui lòng dùng file Excel (.xlsx, .xls) hoặc CSV theo mẫu.": "Could not read the file. Please use an Excel (.xlsx, .xls) or CSV file that follows the template.",
  "Đã điền {{ n }} khách từ file vào bảng": "Filled {{ n }} guests from the file into the table",
  "In biên nhận thu tiền, hiện số tiền": "Print the payment receipt with the amount",
- "In biên nhận thu tiền, ẩn số tiền": "Print the payment receipt without the amount"
+ "In biên nhận thu tiền, ẩn số tiền": "Print the payment receipt without the amount",
+ "Mỗi phòng chỉ điều chỉnh các đêm nằm trong thời gian ở của phòng đó.": "Each room is adjusted only for nights within its own stay.",
+ "Tất cả phòng ({0} phòng)": "All rooms ({0} rooms)"
 }

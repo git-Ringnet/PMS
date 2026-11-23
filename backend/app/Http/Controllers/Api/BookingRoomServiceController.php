@@ -2760,6 +2760,10 @@ class BookingRoomServiceController extends Controller
     /** Điều chỉnh tiền phòng tại Master theo nghiệp vụ Hóa đơn dòng 66. */
     public function adjustRoomRate(Request $request, $bookingId)
     {
+        // Điều chỉnh nhiều phòng một lúc: gửi booking_room_ids + service_dates; kiểm tra hết rồi ghi trong một transaction.
+        if ($request->has('booking_room_ids')) {
+            return $this->adjustRoomRateForRooms($request, $bookingId);
+        }
         $data = $request->validate(['booking_room_id' => 'required|string|max:50', 'service_date' => 'required|date', 'rate' => 'required|numeric|min:0', 'description' => 'nullable|string|max:400', 'reason' => 'required|string|max:400', 'update_room_rate' => 'nullable|boolean', 'update_room_rate_scope' => 'nullable|in:room,booking']);
         $booking = Booking::findOrFail($bookingId);
         $room = $booking->bookingRooms()->with('guests.guest')->findOrFail($data['booking_room_id']);
@@ -2787,7 +2791,86 @@ class BookingRoomServiceController extends Controller
         $original = ServiceBill::where('RegisterId1', $booking->id)->where('RentalRoomId1', $room->id)->where('ServiceId', 'RM')->excludeSupplementalRoomCharge()->whereDate('Date', $date)->where('Edit', 0)->latest('Ma')->first();
         if ($original && ($original->PaymentId !== null || $original->VatId !== null)) return response()->json(['success' => false, 'message' => 'Chỉ điều chỉnh bill tiền phòng chưa thanh toán và chưa xuất VAT.'], 422);
 
-        $result = DB::transaction(function () use ($booking, $room, $date, $original, $data) {
+        $result = DB::transaction(fn () => $this->applyRoomRateAdjustment($booking, $room, $date, $original, $data));
+        return response()->json(['success' => true, 'message' => 'Đã điều chỉnh tiền phòng.', 'data' => $result]);
+    }
+
+    /** Điều chỉnh tiền phòng cho nhiều phòng × nhiều đêm; chỉ áp các đêm nằm trong thời gian ở của từng phòng. */
+    private function adjustRoomRateForRooms(Request $request, $bookingId)
+    {
+        $data = $request->validate([
+            'booking_room_ids' => 'required|array|min:1',
+            'booking_room_ids.*' => 'required',
+            'service_dates' => 'required|array|min:1',
+            'service_dates.*' => 'required|date',
+            'rate' => 'required|numeric|min:0',
+            'description' => 'nullable|string|max:400',
+            'reason' => 'required|string|max:400',
+            'update_room_rate' => 'nullable|boolean',
+            'update_room_rate_scope' => 'nullable|in:room,booking',
+        ]);
+        $booking = Booking::findOrFail($bookingId);
+        if (!app(\App\Services\CheckoutRoleConfigService::class)->canAdjustRoomRate(
+            Auth::user(),
+            request()->attributes->get('_branch_id')
+        )) {
+            return response()->json(['success' => false, 'message' => 'Tài khoản không có quyền điều chỉnh tiền phòng (RoleUserAdjustRoomRate).'], 403);
+        }
+
+        $roomIds = collect($data['booking_room_ids'])->map(fn ($id) => (string) $id)->unique()->values();
+        $rooms = $booking->bookingRooms()->with('guests.guest')->whereIn('id', $roomIds->all())->get()->keyBy(fn ($room) => (string) $room->id);
+        if ($rooms->count() !== $roomIds->count()) {
+            return response()->json(['success' => false, 'message' => 'Có phòng không thuộc booking đang chọn.'], 422);
+        }
+        $dates = collect($data['service_dates'])
+            ->map(fn ($value) => Carbon::parse($value)->startOfDay())
+            ->unique(fn (Carbon $date) => $date->toDateString())
+            ->sortBy(fn (Carbon $date) => $date->toDateString())
+            ->values();
+        $systemDate = SystemDateRoll::latest('id')->value('system_date');
+        $systemDate = $systemDate ? Carbon::parse($systemDate)->startOfDay() : now('Asia/Ho_Chi_Minh')->startOfDay();
+        $bookingArrival = Carbon::parse($booking->arrival_date)->startOfDay();
+        $bookingDeparture = Carbon::parse($booking->departure_date)->startOfDay();
+
+        $items = [];
+        foreach ($roomIds as $roomId) {
+            $room = $rooms->get($roomId);
+            $roomLabel = $room->room_number ?: $room->id;
+            if ($booking->no_post || $room->no_post) {
+                return response()->json(['success' => false, 'message' => "Phòng {$roomLabel} đang ở trạng thái No Post. Vui lòng kiểm tra lại thông tin."], 422);
+            }
+            if (!in_array((int) $room->status, [BookingRoom::STATUS_CHECKED_IN, BookingRoom::STATUS_CHECKED_OUT], true)) {
+                return response()->json(['success' => false, 'message' => "Phòng {$roomLabel}: chỉ điều chỉnh tiền phòng của phòng đang ở hoặc đã checkout."], 422);
+            }
+            $arrival = Carbon::parse($room->arrival_date ?: $booking->arrival_date)->startOfDay();
+            $departure = Carbon::parse($room->departure_date ?: $booking->departure_date)->startOfDay();
+            $roomDates = $dates->filter(fn (Carbon $date) => $date->gte($arrival) && $date->lt($departure)
+                && $date->gte($bookingArrival) && $date->lt($bookingDeparture) && $date->lte($systemDate));
+            if ($roomDates->isEmpty()) {
+                return response()->json(['success' => false, 'message' => "Phòng {$roomLabel} không có đêm nào hợp lệ trong khoảng ngày đã chọn (trong thời gian ở và không sau ngày hệ thống)."], 422);
+            }
+            foreach ($roomDates as $date) {
+                $original = ServiceBill::where('RegisterId1', $booking->id)->where('RentalRoomId1', $room->id)->where('ServiceId', 'RM')->excludeSupplementalRoomCharge()->whereDate('Date', $date)->where('Edit', 0)->latest('Ma')->first();
+                if ($original && ($original->PaymentId !== null || $original->VatId !== null)) {
+                    return response()->json(['success' => false, 'message' => "Phòng {$roomLabel} ngày {$date->format('d/m/Y')}: chỉ điều chỉnh bill tiền phòng chưa thanh toán và chưa xuất VAT."], 422);
+                }
+                $items[] = [$room, $date, $original];
+            }
+        }
+
+        $results = DB::transaction(function () use ($booking, $items, $data) {
+            return array_map(fn (array $item) => $this->applyRoomRateAdjustment($booking, $item[0], $item[1], $item[2], $data), $items);
+        });
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Đã điều chỉnh tiền phòng ' . count($results) . ' đêm.',
+            'data' => ['count' => count($results), 'items' => $results],
+        ]);
+    }
+
+    private function applyRoomRateAdjustment(Booking $booking, BookingRoom $room, Carbon $date, ?ServiceBill $original, array $data): array
+    {
             $user = Auth::user()?->username ?? 'system'; $rate = round((float) $data['rate'], 2); $reason = trim($data['reason']);
             $guest = $room->guests->firstWhere('is_primary', true) ?: $room->guests->first();
             $originalAtMaster = $original && (!$original->RentalRoomId2 || (string) $original->RentalRoomId2 === '0') && (!$original->CustomerId2 || (string) $original->CustomerId2 === '0');
@@ -2837,8 +2920,6 @@ class BookingRoomServiceController extends Controller
                 }
             }
             return ['original_bill_id' => $original?->Ma, 'negative_bill_id' => $negative?->Ma, 'new_bill_id' => $bill->Ma];
-        });
-        return response()->json(['success' => true, 'message' => 'Đã điều chỉnh tiền phòng.', 'data' => $result]);
     }
 
     public function postRoomCharge(Request $request)
