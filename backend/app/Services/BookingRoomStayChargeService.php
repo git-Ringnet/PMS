@@ -27,11 +27,15 @@ class BookingRoomStayChargeService
      * updates the room dates/rate.  It is intentionally transaction agnostic
      * so it can be reused by other booking-room endpoints without creating a
      * nested transaction boundary.
+     *
+     * Dòng 381: sửa giai đoạn truyền $createMissingNights = false. Đêm chưa có dòng RM
+     * không bị insert, vẫn hiển thị và post theo giá phòng; dòng đã có vẫn được đồng bộ.
      */
     public function synchronize(
         BookingRoom $room,
         ?float $fallbackRate = null,
-        bool $replaceExistingRates = false
+        bool $replaceExistingRates = false,
+        bool $createMissingNights = true
     ): void
     {
         $arrival = $this->dateOrNull($room->arrival_date);
@@ -128,6 +132,10 @@ class BookingRoomStayChargeService
             if ($existing) {
                 $existing->fill($values);
                 $existing->save();
+                continue;
+            }
+
+            if (!$createMissingNights) {
                 continue;
             }
 

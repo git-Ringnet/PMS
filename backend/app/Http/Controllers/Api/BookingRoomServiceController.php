@@ -3724,14 +3724,11 @@ class BookingRoomServiceController extends Controller
         $dateFrom = Carbon::parse($request->date_from)->startOfDay();
         $dateTo = Carbon::parse($request->date_to)->startOfDay();
 
-        // Dòng 508: mỗi đêm trong khoảng ngày chọn là 1 bill tiền phòng riêng (đúng ngày đêm đó), không gộp thành 1 bill tổng.
-        // Khoảng [từ, đến) như số đêm ở; chọn cùng một ngày thì charge đúng 1 đêm của ngày đó.
+        // Dòng 508 (note 22/11): từ ngày đến ngày là các ngày dịch vụ được charge, tính cả hai đầu;
+        // mỗi ngày là 1 bill tiền phòng riêng, không gộp thành 1 bill tổng.
         $nights = [];
-        for ($night = $dateFrom->copy(); $night->lt($dateTo); $night->addDay()) {
+        for ($night = $dateFrom->copy(); $night->lte($dateTo); $night->addDay()) {
             $nights[] = $night->copy();
-        }
-        if ($nights === []) {
-            $nights[] = $dateFrom->copy();
         }
 
         // Tiền từng đêm: tự động = giá phòng đã thiết lập cho đêm đó; tự nhập = chia đều tổng nhập, đêm cuối nhận phần lẻ.

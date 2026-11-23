@@ -106,7 +106,7 @@ class ChargeNoshowTest extends TestCase
     {
         return $this->postJson("/api/bookings/{$this->booking->id}/rooms/{$this->room->id}/charge-noshow", $overrides + [
             'date_from' => '2026-08-04',
-            'date_to' => '2026-08-06',
+            'date_to' => '2026-08-05',
             'rate' => 1000000,
             'auto_rate' => false,
             'is_room_night' => 0,
@@ -117,6 +117,7 @@ class ChargeNoshowTest extends TestCase
 
     /**
      * Dòng 508: charge nhiều đêm phải post mỗi đêm một bill tiền phòng (đúng ngày đêm đó), không gộp thành 1 bill tổng.
+     * Note 22/11: chọn từ ngày 04 đến ngày 05 là charge cả 2 ngày đã chọn.
      * Tự nhập tổng tiền 1.000.000 cho 2 đêm -> chia 2 bill 500.000 ngày 04 và 05.
      */
     public function test_charge_noshow_success_and_verifies_db_fields(): void
@@ -173,7 +174,7 @@ class ChargeNoshowTest extends TestCase
 
     public function test_manual_total_is_split_per_night_without_losing_a_dong(): void
     {
-        $this->charge(['date_to' => '2026-08-07', 'rate' => 1000000])->assertStatus(200);
+        $this->charge(['date_to' => '2026-08-06', 'rate' => 1000000])->assertStatus(200);
 
         $amounts = ServiceBill::where('RentalRoomId1', $this->room->id)->orderBy('Date')->pluck('Amount')->map(fn ($a) => (float) $a)->all();
         $this->assertCount(3, $amounts);

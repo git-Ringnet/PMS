@@ -527,6 +527,43 @@ class BookingRoomMoveBillingTest extends TestCase
         $this->assertSame(0, (int) $target->fresh()->NumOfDays);
     }
 
+    public function test_row_308_partial_move_keeps_extra_bed_for_night_already_posted_on_source(): void
+    {
+        $user = User::where('username', 'move_test')->firstOrFail();
+        $this->grantMovePermission($user);
+        $source = $this->makeRoom('907', '2026-08-16', '2026-08-19', ['adults' => 2, 'extra_bed_qty' => 1, 'extra_bed_rate' => 300000]);
+        $movedGuest = Guest::create(['full_name' => 'Guest moving with EB']);
+        $stayingGuest = Guest::create(['full_name' => 'Guest staying']);
+        BookingRoomGuest::create(['booking_room_id' => $source->id, 'guest_id' => $movedGuest->id, 'is_primary' => false, 'status' => BookingRoomGuest::STATUS_CHECKED_IN]);
+        BookingRoomGuest::create(['booking_room_id' => $source->id, 'guest_id' => $stayingGuest->id, 'is_primary' => true, 'status' => BookingRoomGuest::STATUS_CHECKED_IN]);
+        $postedEb = $this->makeBill($source, 'EB', '2026-08-16', 300000, false);
+        $this->makePostedService($source, 'EB', '2026-08-16', 300000, $postedEb);
+        $postedRoom = $this->makeBill($source, 'RM', '2026-08-16', 1000000, false);
+        $this->makePostedService($source, 'RM', '2026-08-16', 1000000, $postedRoom);
+        $this->makeUnpostedService($source, 'EB', '2026-08-17', 300000);
+        $this->makeUnpostedService($source, 'EB', '2026-08-18', 300000);
+
+        $this->actingAs($user)
+            ->postJson("/api/bookings/{$this->booking->id}/rooms/{$source->id}/move", [
+                'move_type' => 'available',
+                'target_room_number' => '410',
+                'reason' => 'Row 308',
+                'selected_guest_ids' => [$movedGuest->id],
+                'is_change_rate' => false,
+            ])
+            ->assertSuccessful();
+
+        $target = BookingRoom::where('booking_id', $this->booking->id)->where('room_number', '410')->firstOrFail();
+        $targetEb = BookingRoomService::where('booking_room_id', $target->id)->where('service_code', 'EB')->orderBy('service_date')->get();
+
+        $this->assertSame(['2026-08-16', '2026-08-17', '2026-08-18'], $targetEb->map(fn ($row) => substr((string) $row->service_date, 0, 10))->all());
+        $this->assertTrue($targetEb->every(fn ($row) => (int) $row->is_posted === 0 && $row->service_bill_id === null));
+        $this->assertSame(1, (int) $target->extra_bed_qty);
+        $this->assertSame(0, BookingRoomService::where('booking_room_id', $target->id)->where('service_code', 'RM')->where('is_posted', 1)->count());
+        $this->assertSame((string) $source->id, (string) $postedEb->fresh()->RentalRoomId1);
+        $this->assertSame((string) $source->id, (string) $postedEb->fresh()->RentalRoomId2);
+    }
+
     private function grantMovePermission(User $user, string $code = 'fo.room.move'): void
     {
         $role = \App\Models\Role::firstOrCreate(

@@ -69,3 +69,13 @@ export function calculateChargeableServiceTotals(services) {
   }
   return totals
 }
+
+/** Dòng 307: trẻ đã sang phòng mới nên phòng cũ không còn chi tiết ăn sáng; bill đã post vẫn hiện ở phòng cũ. */
+export function findMovedRoomChildBreakfastBills(serviceBills, isChildBreakfastBill, handledIds) {
+  return (Array.isArray(serviceBills) ? serviceBills : []).filter(bill =>
+    isChildBreakfastBill(bill)
+    && Number(bill.Edit) !== 1
+    && ![3, 4].includes(Number(bill.Status))
+    && !handledIds.has(String(bill.Ma ?? bill.id)),
+  )
+}

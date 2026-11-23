@@ -1938,7 +1938,7 @@ class BookingRoomController extends Controller
      */
     private function upsertRoomChargeServices(BookingRoom $room): void
     {
-        app(\App\Services\BookingRoomStayChargeService::class)->synchronize($room, (float) $room->rate, true);
+        app(\App\Services\BookingRoomStayChargeService::class)->synchronize($room, (float) $room->rate, true, false);
     }
 
     /**

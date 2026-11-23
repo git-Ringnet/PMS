@@ -4045,6 +4045,7 @@ class BookingController extends Controller
         $newTimedDayUseDemands = [];
         $periods = [];
         $occupiedRoomNumbers = [];
+        $keptReservedStays = [];
 
         $parseDate = function ($date) {
             if (!$date) return null;
@@ -4164,6 +4165,12 @@ class BookingController extends Controller
                     && $roomArrival >= $originalRoomArrival
                     && $roomDeparture <= $originalRoomDeparture;
 
+                // Dòng 497: phòng giữ nguyên loại đang được tạm loại khỏi AV khi lưu, vẫn phải chiếm chỗ
+                // để phòng khác của booking không đổi sang loại này vượt số phòng trống.
+                if ($bookingRoom?->trashed() && $bookingRoomStatus === BookingRoom::STATUS_BOOKED && ($sameReservationPeriod || $onlyShortened)) {
+                    $keptReservedStays[] = ['room_class_id' => (int) $roomClassId, 'arrival' => $roomArrival, 'departure' => $roomDeparture];
+                }
+
                 if (!$isPersistedStay || ($bookingRoomStatus === BookingRoom::STATUS_BOOKED && !$sameReservationPeriod && !$onlyShortened)) {
                     if ($isTimedDayUse) {
                         $newTimedDayUseDemands[] = [
@@ -4277,7 +4284,7 @@ class BookingController extends Controller
                     ->where('departure_date', '>', $period['arrival'])
                     ->count();
             }
-            $effectiveAvailability = $availability + $ownActiveCount;
+            $effectiveAvailability = $this->availabilityAfterKeptRooms($avService, $period, $availability, $keptReservedStays) + $ownActiveCount;
 
             $canOver = ($allowOver && $allowInputOver) || $isWaitingBooking;
 
@@ -4318,6 +4325,31 @@ class BookingController extends Controller
                 );
             }
         }
+    }
+
+    /** Dòng 497: AV thấp nhất theo từng đêm sau khi trừ các phòng của booking vẫn giữ loại này. */
+    private function availabilityAfterKeptRooms(RoomAvailabilityService $avService, array $period, int $availability, array $keptStays): int
+    {
+        $relevant = array_filter($keptStays, fn (array $stay) => $stay['room_class_id'] === $period['room_class_id']
+            && $stay['arrival'] <= $period['departure']
+            && $stay['departure'] >= $period['arrival']);
+        if (!$relevant) {
+            return $availability;
+        }
+
+        $date = Carbon::parse($period['arrival']);
+        $end = $period['arrival'] === $period['departure'] ? $date->copy()->addDay() : Carbon::parse($period['departure']);
+        $lowest = null;
+        for (; $date->lt($end); $date->addDay()) {
+            $day = $date->toDateString();
+            $next = $date->copy()->addDay()->toDateString();
+            $kept = count(array_filter($relevant, fn (array $stay) => $stay['arrival'] <= $day
+                && ($stay['departure'] > $day || ($stay['arrival'] === $stay['departure'] && $stay['arrival'] === $day))));
+            $nightAvailability = $avService->getAvailability($period['room_class_id'], $day, $next) - $kept;
+            $lowest = $lowest === null ? $nightAvailability : min($lowest, $nightAvailability);
+        }
+
+        return max(0, $lowest ?? $availability);
     }
 
     /**
