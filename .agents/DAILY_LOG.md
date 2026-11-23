@@ -9,6 +9,34 @@
 - **Ngày ghi**: `YYYY-MM-DD`
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 
+## [2026-11-22] - Đăng ký: Sửa đơn giá 1 đêm báo thành công nhưng hiện lại giá cũ (booking GAL39)
+
+- Lỗi: phòng có Rate Code (CORP), sửa đơn giá "Dịch vụ phòng nghỉ" đêm 03/09 từ 850,000 → 100,000, lưu báo thành công nhưng hiện lại 850,000. Do `applyConfiguredRateCodePricing` (`BookingController.php`) dựng lại `dailyRoomPrices` toàn bộ đêm theo Rate Code, chỉ chừa trường hợp sửa giá ở dòng phòng (`manualRateOverride`).
+- Sửa: Rate Code **cố định** và **cho phép đổi giá** (`!IsDaily && AllowChangeRate`) thì giữ giá từng đêm màn đăng ký gửi lên (giá sửa tay hoặc giá đã lưu); đêm không có giá gửi lên mới lấy theo Rate Code. `booking_rooms.rate/base_price` vẫn theo Rate Code (giữ quy tắc dòng 397). Rate Code theo ngày / không cho đổi giá giữ nguyên hành vi cũ. Không thêm cấu hình mới, không sửa giao diện.
+- Ảnh hưởng: post tiền phòng / night audit, Trả phòng, tổng tiền đọc `booking_room_services` nên lấy đúng giá đã sửa; Kế hoạch phòng / Sơ đồ phòng hiện `booking_rooms.rate` nên không đổi.
+- Kiểm thử: thêm `test_night_rate_edit_is_kept_for_fixed_rate_code_allowing_change` (đỏ trước khi sửa, xanh sau khi sửa). Hồi quy `tests/Feature/Booking` + RoomRateDailyMapping, UpdateRoomRateServiceBill, NightAudit, RoomPlanBookingRoomDate, BookingRoomServiceFolio: 372/374 đạt; 2 test fail sẵn từ trước (row351 repost, checkin arrival_time H:i), không liên quan.
+- Bổ sung (sau UAT trên VPS: DB đã lưu 03/09 = 200,000 nhưng màn hình vẫn hiện 850,000): khi nạp booking, `CreateRegistrationPage.vue` gọi `applyRateCodeDailyPricesToRoom` và đè giá đêm đã lưu bằng giá Rate Code (lần Lưu sau sẽ ghi 850,000 ngược vào DB). Thêm tùy chọn `keepSavedRates` cho 6 chỗ nạp booking: Rate Code cố định cho phép đổi giá thì giữ `rate` của dòng RM đã lưu; giá phòng vẫn theo Rate Code. Đổi mã giá / đổi ngày vẫn tính lại theo Rate Code như cũ. `node --test`: 392/397 (5 fail sẵn từ trước, giống trước khi sửa); `vite build` đạt.
+
+## [2026-11-20] - Bàn giao ca: Gom nhóm tab Sinh nhật khách theo ngày sinh nhật trong kỳ xem
+
+- Yêu cầu: Bảng "Sinh nhật khách" trong màn hình Giao ca (`ShiftWorkPage.vue`) trước đó gom nhóm theo ngày sinh gốc của khách (`item.birthday` / DOB, ví dụ: 03/09/1995, 03/09/1997, 03/09/2009 làm tách rời mỗi người 1 header). Khách hàng yêu cầu gom nhóm theo ngày sinh nhật diễn ra trong kỳ xem (ví dụ: `03/09/2026` gom cả 3 khách có sinh nhật vào ngày 03/09).
+- Backend (`ShiftWorkController.php`): hàm `birthdays()` bổ sung `'birthdayDate' => $birthdayDate->format('d/m/Y')` vào mảng kết quả của từng khách (biến `$birthdayDate` đã được tính chuẩn trong kỳ xem).
+- Frontend (`ShiftWorkPage.vue`):
+  - `birthdayGroups`: gom theo `item.birthdayDate` (kèm fallback theo ngày/tháng của `item.birthday` + năm đang lọc).
+  - `sortedBirthdayDates`: sắp xếp các ngày sinh nhật tăng dần theo thời gian (`dd/mm/yyyy`).
+  - Cột con "Sinh Nhật" và "Tuổi" vẫn giữ nguyên ngày sinh gốc `item.birthday` và `item.age`.
+- Kiểm thử:
+  - `ShiftWorkBirthdayChildRow486Test`: bổ sung test `test_multiple_guests_with_different_birth_years_share_same_birthday_date_in_view_period`, 4/4 tests passed (17 assertions).
+  - `ShiftWorkListTest`: 9/9 tests passed (59 assertions).
+  - `npm run build`: biên dịch thành công (0 lỗi).
+
+## [2026-11-19] - TC_LT_18 (Khai báo lưu trú): Xuất XML bổ sung thời hạn tạm trú & rà soát Task 498
+
+- **Task 498 (dòng 255–261)**: Đã được triển khai sẵn trong [ResidenceDeclarationPage.vue](file:///c:/xampp/htdocs/PMS/frontend/src/pages/reservation/ResidenceDeclarationPage.vue) và `utils/residence-room-visibility.js` (lọc phòng chuyển theo ngày, switch Khách đã đăng ký khi bật `Immigration_ExportExelChangeToRegistered=1`, giấy tờ trẻ em `Căn cước công dân`, bỏ `.00` đơn giá, giữ dòng `[TEST] SAMPLE` và cột `THỜI HẠN TẠM TRÚ` mẫu khách nước ngoài, định dạng `dd/mm/yyyy`).
+- **Dòng 262 (Xuất XML thiếu thời hạn tạm trú)**:
+  - Sửa `exportToXml` trong [ResidenceDeclarationPage.vue](file:///c:/xampp/htdocs/PMS/frontend/src/pages/reservation/ResidenceDeclarationPage.vue#L632-L645): bổ sung thẻ `<thoi_han_tam_tru>`, chuẩn hóa các trường ngày sang `toDdMmYyyy(...)`, lấy `so_ho_chieu` từ `r.hoChieu || r.soGiayTo`.
+- **Kiểm thử**: `ResidenceDeclarationTest` 5/5 passed; `vite build` đạt; Playwright [verify_tc_lt_18.py](file:///c:/xampp/htdocs/PMS/.agents/playwright/verify_tc_lt_18.py) 3/3 passed (xác nhận XML có `<thoi_han_tam_tru>` và Excel khách nước ngoài có `[TEST] SAMPLE` + `THỜI HẠN TẠM TRÚ`).
+
 ## [2026-11-19] - Hóa đơn: Tổng DV dòng Master hiện tiền phòng chưa post (booking GAL4)
 
 - Lỗi: cột Tổng DV của dòng booking (Master) ở Trả phòng hiện 2.950.000 nhưng bảng dịch vụ trống, `service_bills` không có dòng nào. Do vòng cộng tiền phòng Master trong `CheckoutPage.vue` (nhánh fallback `booking_room.services`) không lọc `isPostedBookingService`, nên cộng cả tiền phòng set up chưa post (590.000 × 5 đêm phòng 406, `is_room = 0`).

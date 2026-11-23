@@ -884,8 +884,10 @@ const normalizeBlock = (block) => {
     normalized.customRows = (Array.isArray(normalized.customRows) ? normalized.customRows : legacyFooter).map((row, rowIndex) => ({
       id: row.id || `custom_row_${rowIndex + 1}`,
       enabledBy: row.enabledBy || '',
-      scope: ['table', 'group', 'detail'].includes(row.scope) ? row.scope : 'table',
+      scope: ['table', 'group', 'detail', 'detail-list'].includes(row.scope) ? row.scope : 'table',
       level: Math.max(0, Number(row.level) || 0),
+      listField: row.listField || '',
+      listMode: ['header', 'footer'].includes(row.listMode) ? row.listMode : 'item',
       className: row.className || '',
       cells: (Array.isArray(row.cells) ? row.cells : []).map((cell, cellIndex) => ({
         id: cell.id || `custom_cell_${rowIndex + 1}_${cellIndex + 1}`,
@@ -923,6 +925,12 @@ const normalizeBlock = (block) => {
     normalized.topHeader = (Array.isArray(normalized.topHeader) ? normalized.topHeader : []).map((cell, cellIndex) => ({
       ...cell,
       id: cell.id || `top_header_${cellIndex + 1}`,
+      // Older templates use `label`; preserve it as the compiled cell content.
+      content: cell.content ?? cell.label ?? '',
+      label: cell.label ?? cell.content ?? '',
+      colspan: Math.max(1, Number(cell.colspan) || 1),
+      align: cell.align || 'center',
+      style: normalizeElementTextStyle(cell.style),
       columnId: cell.columnId || normalized.columns[cellIndex]?.id || ''
     }))
     normalized.customRows = normalized.customRows.map(row => {
@@ -947,7 +955,7 @@ const normalizeBlock = (block) => {
     ].filter(group => group.field)
     const sourceGroups = Array.isArray(normalized.groups) && normalized.groups.length
       ? normalized.groups
-      : legacyGroups
+      : (Array.isArray(normalized.grouping) && normalized.grouping.length ? normalized.grouping : legacyGroups)
 
     normalized.groups = sourceGroups.map((group, index) => {
       const parsed = parseGroupHeader(group.header)
@@ -1478,7 +1486,8 @@ const removeGroupHeaderCell = (block, group, index) => {
 const customRowScopeLabel = (scope) => ({
   table: 'Toàn bảng',
   group: 'Theo cấp nhóm',
-  detail: 'Theo từng dòng dữ liệu'
+  detail: 'Theo từng dòng dữ liệu',
+  'detail-list': 'Danh sách con theo dòng'
 }[scope] || 'Toàn bảng')
 
 const loadDataSources = async () => {
@@ -2639,13 +2648,23 @@ const compileBlockToHtml = (b) => {
 
     const tableClass = b.tableClassName ? ` class="${b.tableClassName}"` : ''
     blockHtml += `  <table${tableClass} style="width: 100%; border-collapse: collapse; border: none;">\n`
-    blockHtml += '    <thead>\n      <tr>\n'
+    blockHtml += '    <thead>\n'
+    const hasTwoTierHeader = b.hasTwoTierHeader === true && Array.isArray(b.topHeader) && b.topHeader.length
+    if (hasTwoTierHeader) {
+      blockHtml += '      <tr class="pms-top-header-row">\n'
+      b.topHeader.forEach(cell => {
+        const topHeaderStyle = mergeConfiguredStyles({ textAlign: cell.align || 'center', fontWeight: 'bold' }, cell.style)
+        blockHtml += `        <th colspan="${Math.max(1, Number(cell.colspan) || 1)}" style="${thStyle} ${styleObjectToCss(topHeaderStyle, true)}">${contentForTextStyle(cell.content ?? cell.label ?? '', topHeaderStyle)}</th>\n`
+      })
+      blockHtml += '      </tr>\n'
+    }
+    blockHtml += '      <tr>\n'
     b.columns.forEach(col => {
       const headerStyle = mergeConfiguredStyles({ textAlign: col.align || 'left', fontWeight: 'bold' }, col.headerStyle)
       blockHtml += `        <th${tableColumnRuntimeAttributes(b, col.id)} style="${thStyle} width: ${col.width || 'auto'}; ${styleObjectToCss(headerStyle, true)}">${contentForTextStyle(col.header, headerStyle)}</th>\n`
     })
     blockHtml += '      </tr>\n'
-    if (b.topHeader && Array.isArray(b.topHeader) && b.topHeader.length) {
+    if (!hasTwoTierHeader && b.topHeader && Array.isArray(b.topHeader) && b.topHeader.length) {
       blockHtml += '      <tr class="index-row">\n'
       b.topHeader.forEach(cell => {
         blockHtml += `        <th${tableColumnRuntimeAttributes(b, cell.columnId)} style="${thStyle} text-align: ${cell.align || 'center'}; font-weight: bold;">${cell.content || ''}</th>\n`
@@ -2657,7 +2676,8 @@ const compileBlockToHtml = (b) => {
     const customRows = tableCustomRows(b)
     const groupCustomRows = customRows.filter(row => row.scope === 'group')
     const detailCustomRows = customRows.filter(row => row.scope === 'detail')
-    const tableCustomRowsOnly = customRows.filter(row => row.scope !== 'group' && row.scope !== 'detail')
+    const detailListRows = customRows.filter(row => row.scope === 'detail-list')
+    const tableCustomRowsOnly = customRows.filter(row => !['group', 'detail', 'detail-list'].includes(row.scope))
     const compileCustomRow = (row, className, attributes = '') => {
       const rowClass = row.className ? ` ${row.className}` : ''
       const visibleBy = row.enabledBy ? ` data-visible-by="${row.enabledBy}"` : ''
@@ -2683,7 +2703,7 @@ const compileBlockToHtml = (b) => {
               return `<td${autoColspan} colspan="${Math.max(1, Number(cell.colspan) || 1)}"${cellClass} style="${tdStyle} ${styleObjectToCss(resolvedStyle, true)}">${contentForTextStyle(customCellContent(cell, b.dataSource || 'rows'), resolvedStyle)}</td>`
             }).join('')
           : `<td data-pms-auto-colspan="1" colspan="${Math.max(1, b.columns.length)}"${className}>${label}</td>`
-        blockHtml += `      <tr class="pms-group-header" data-group-level="${index}" data-group-field="${group.field}" data-group-sort="${group.sort || 'ASC'}"${enabledBy}>${cells}</tr>\n`
+        blockHtml += `      <tr class="pms-group-header${group.className ? ` ${group.className}` : ''}" data-group-level="${index}" data-group-field="${group.field}" data-group-sort="${group.sort || 'ASC'}"${enabledBy}>${cells}</tr>\n`
       })
     } else {
       blockHtml += '    <tbody>\n'
@@ -2698,6 +2718,12 @@ const compileBlockToHtml = (b) => {
     })
     blockHtml += '      </tr>\n'
     detailCustomRows.forEach(row => { blockHtml += compileCustomRow(row, 'pms-detail-custom-row') })
+    detailListRows.forEach(row => {
+      const listField = String(row.listField || '').trim()
+      if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(listField)) return
+      const listMode = ['header', 'footer'].includes(row.listMode) ? row.listMode : 'item'
+      blockHtml += compileCustomRow(row, 'pms-detail-list-row', ` data-list-field="${listField}" data-list-mode="${listMode}"`)
+    })
     groupCustomRows.forEach(row => { blockHtml += compileCustomRow(row, 'pms-group-custom-row', ` data-group-level="${Math.max(0, Number(row.level) || 0)}"`) })
     const hasOuterGroupCustomRow = groupCustomRows.some(row => Math.max(0, Number(row.level) || 0) === 0)
     if (groups.length && b.groupFooter && !hasOuterGroupCustomRow) blockHtml += `      <tr class="pms-group-footer">${b.groupFooter}</tr>\n`
@@ -2892,7 +2918,7 @@ const staticCellContent = (cell, row) => {
   return contentForTextStyle(content, mergeConfiguredStyles(row?.style, cell?.style))
 }
 
-const customTableCellTextStyle = cell => ({
+const customTableCellTextStyle = cell => mergeConfiguredStyles(cell?.style, {
   textAlign: cell.align || 'left',
   backgroundColor: cell.backgroundColor || undefined,
   color: cell.color || undefined,
@@ -5130,10 +5156,19 @@ const selectBand = (band) => {
                           <option value="table">Toàn bảng</option>
                           <option value="group">Theo cấp nhóm</option>
                           <option value="detail">Theo từng dòng dữ liệu</option>
+                          <option value="detail-list">Danh sách con theo từng dòng</option>
                         </select>
                         <select v-if="customRow.scope === 'group'" v-model.number="customRow.level" @change="compileHtml" class="col-span-2 rounded-lg border border-slate-200 p-2 text-[10px]">
                           <option v-for="(group, groupIndex) in tableGroups(selectedBlock)" :key="group.id" :value="groupIndex">Cấp {{ groupIndex + 1 }}</option>
                         </select>
+                        <div v-if="customRow.scope === 'detail-list'" class="col-span-2 grid grid-cols-2 gap-2">
+                          <input v-model="customRow.listField" @input="compileHtml" class="h-8 rounded-lg border border-slate-200 px-2 text-xs font-normal text-[#000000D9]" placeholder="Trường danh sách, ví dụ SettlementDetails" />
+                          <select v-model="customRow.listMode" @change="compileHtml" class="h-8 rounded-lg border border-slate-200 px-2 text-xs font-normal text-[#000000D9]">
+                            <option value="header">Tiêu đề danh sách</option>
+                            <option value="item">Từng phần tử</option>
+                            <option value="footer">Chân danh sách</option>
+                          </select>
+                        </div>
                       </div>
 
                       <div class="grid grid-cols-2 gap-1.5">

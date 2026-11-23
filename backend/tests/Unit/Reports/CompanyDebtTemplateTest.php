@@ -38,6 +38,7 @@ class CompanyDebtTemplateTest extends TestCase
         $this->assertSame('DateGroup', $definition['grouping']['levels'][0]['field']);
         $this->assertSame('CompanyId', $definition['grouping']['levels'][1]['field']);
         $this->assertSame('number', $definition['data_contract']['rows']['TotalAmount']);
+        $this->assertSame('array', $definition['data_contract']['rows']['SettlementDetails']);
         $this->assertSame('string|int', $definition['data_contract']['rows']['CompanyId']);
         $this->assertSame('string', $definition['data_contract']['rows']['PaidMarker']);
     }
@@ -108,9 +109,11 @@ class CompanyDebtTemplateTest extends TestCase
         $this->assertEquals(100, array_sum(array_map('floatval', $blockWidths)));
         $this->assertStringContainsString('row.MaxDebt|number', $this->provider->blocks()['detail'][0]['groups'][1]['label']);
         $this->assertNotEmpty($this->provider->blocks()['detail'][0]['customRows']);
+        $detailRows = $this->provider->blocks()['detail'][0]['customRows'];
+        $this->assertSame('detail-list', $detailRows[1]['scope']);
+        $this->assertSame('SettlementDetails', $detailRows[1]['listField']);
+        $this->assertStringContainsString('data-list-field="SettlementDetails"', $this->provider->html());
         $footerBlocks = array_column($this->provider->blocks()['footer'], null, 'id');
-        $this->assertStringContainsString('data-visible-by="parameters.p_show_settlements"', $footerBlocks['company_debt_settlement_details']['content']);
-        $this->assertStringContainsString('data-source="settlement_details"', $footerBlocks['company_debt_settlement_details']['content']);
         $this->assertStringContainsString('Bảng Kê Tổng Hợp Công Nợ', $footerBlocks['company_debt_summary_title']['content']);
         $this->assertNotEmpty($footerBlocks['company_debt_summary_table']['customRows']);
         $this->assertStringContainsString('data-source="company_summary"', $this->provider->html());
@@ -121,28 +124,24 @@ class CompanyDebtTemplateTest extends TestCase
         $this->assertStringContainsString('#cbd5e1', $this->provider->css());
     }
 
-    public function test_settlement_details_follow_the_explicit_visibility_parameter(): void
+    public function test_settlement_details_render_under_their_parent_debt_row(): void
     {
         $data = $this->dataSet();
-        $data['settlement_details'] = [[
-            'BookingId' => 'B-001',
-            'CompanyName' => 'ACME',
-            'PaymentId' => 'PAY-1',
-            'SettlementId' => 'SET-1',
-            'Date' => '2026-09-02',
-            'Reference' => 'REF-1',
-            'Amount' => 100000,
+        $data['rows'][0]['RemainingAmount'] = 25000;
+        $data['rows'][0]['SettlementDetails'] = [[
+            'Date' => '02/09/2026', 'PaymentMethod' => 'Chuyển khoản',
+            'Reference' => 'REF-1', 'Amount' => 100000, 'Username' => 'Admin',
         ]];
 
-        $hidden = $this->provider->render($data, new TemplateRendererService());
-        $this->assertStringNotContainsString('PAY-1', $hidden);
-        $this->assertStringNotContainsString('Mã giải trừ', $hidden);
-
-        $data['parameters']['p_show_settlements'] = true;
-        $shown = $this->provider->render($data, new TemplateRendererService());
-        $this->assertStringContainsString('Mã giải trừ', $shown);
-        $this->assertStringContainsString('<td>PAY-1</td><td>SET-1</td>', $shown);
-        $this->assertStringContainsString('<td class="money">100.000</td>', $shown);
+        $rendered = $this->provider->render($data, new TemplateRendererService());
+        $detailPosition = strpos($rendered, '<td>B-001</td>');
+        $settlementPosition = strpos($rendered, 'Chuyển khoản');
+        $this->assertStringContainsString('Hình thức thanh toán', $rendered);
+        $this->assertStringContainsString('<td colspan="2" class="money">100.000</td>', $rendered);
+        $this->assertStringContainsString('<td colspan="3" class="money">25.000</td>', $rendered);
+        $this->assertIsInt($detailPosition);
+        $this->assertIsInt($settlementPosition);
+        $this->assertLessThan($settlementPosition, $detailPosition);
     }
 
     private function dataSet(): array
@@ -152,7 +151,7 @@ class CompanyDebtTemplateTest extends TestCase
                 'logo' => '<img src="/trusted/logo.png" alt="Logo">',
                 'address' => 'A & B <address>',
             ],
-            'report' => ['generated_by' => 'Demo <staff>', 'generated_at' => '2026-09-09'],
+            'report' => ['generated_by' => 'Demo <staff>', 'generated_at' => '2026-09-09 10:00:00', 'generated_date' => '09/09/2026'],
             'parameters' => [
                 'p_from_date' => '2026-09-01',
                 'p_to_date' => '2026-09-02',

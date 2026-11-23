@@ -56,6 +56,8 @@ return new class
                     'Username' => 'string',
                     'PaidMarker' => 'string',
                     'MaxDebt' => 'number',
+                    'RemainingAmount' => 'number',
+                    'SettlementDetails' => 'array',
                 ],
                 'company_summary' => [
                     'CompanyName' => 'string',
@@ -103,7 +105,7 @@ return new class
         // grouping/detail parameters. Explicit false still disables date grouping.
         $data['parameters'] = array_replace([
             'p_group_by_date' => true,
-            'p_show_settlements' => false,
+            'p_show_settlements' => true,
         ], is_array($data['parameters'] ?? null) ? $data['parameters'] : []);
 
         $rendered = $renderer->render($this->html(), $this->css(), $this->escapeData($data), [
@@ -128,7 +130,7 @@ return new class
                 [
                     'id' => 'company_debt_hotel_header',
                     'type' => 'text',
-                    'content' => '<div class="hotel-header"><div class="hotel-logo">{{hotel.logo}}</div><div class="hotel-information"><div><b>Địa chỉ:</b> {{hotel.address}}</div><div><b>Nhân viên:</b> {{report.generated_by}} <span class="generated-date"><b>Ngày:</b> {{report.generated_at}}</span></div></div></div>',
+                    'content' => '<div class="hotel-header"><div class="hotel-logo">{{hotel.logo}}</div><div class="hotel-information"><div><b>Địa chỉ:</b> {{hotel.address}}</div><div><b>Nhân viên:</b> {{report.generated_by}} <span class="generated-date"><b>Ngày:</b> {{report.generated_date}}</span></div></div></div>',
                     'style' => ['fontSize' => '9px', 'marginBottom' => '4px'],
                 ],
                 ['id' => 'company_debt_divider', 'type' => 'divider', 'content' => '<hr class="header-divider">'],
@@ -153,8 +155,19 @@ return new class
                     'tableType' => 'dynamic',
                     'tableStyle' => 'grid',
                     'groups' => [
-                        ['id' => 'company_debt_date_group', 'field' => 'DateGroup', 'label' => 'Ngày: {{row.DateGroup}}', 'className' => 'date-group', 'sort' => 'ASC', 'enabledBy' => 'parameters.p_group_by_date'],
-                        ['id' => 'company_debt_company_group', 'field' => 'CompanyId', 'label' => 'Công ty: {{row.CompanyName}} <span class="max-debt-label">Công nợ tối đa: {{row.MaxDebt|number}}</span>', 'className' => 'company-group', 'sort' => 'ASC'],
+                        [
+                            'id' => 'company_debt_date_group', 'field' => 'DateGroup', 'label' => 'Ngày: {{row.DateGroup}}', 'className' => 'date-group', 'sort' => 'ASC', 'enabledBy' => 'parameters.p_group_by_date',
+                            'headerCells' => [
+                                ['id' => 'company_debt_date_group_label', 'type' => 'text', 'content' => 'Ngày: {{row.DateGroup}}', 'colspan' => 10, 'align' => 'left', 'className' => 'date-group'],
+                            ],
+                        ],
+                        [
+                            'id' => 'company_debt_company_group', 'field' => 'CompanyId', 'label' => 'Công ty: {{row.CompanyName}}', 'className' => 'company-group', 'sort' => 'ASC',
+                            'headerCells' => [
+                                ['id' => 'company_debt_company_group_label', 'type' => 'text', 'content' => 'Công ty: {{row.CompanyName}}', 'colspan' => 5, 'align' => 'left', 'className' => 'company-group'],
+                                ['id' => 'company_debt_company_group_max_debt', 'type' => 'text', 'content' => 'Công nợ tối đa: {{row.MaxDebt|number}}', 'colspan' => 5, 'align' => 'right', 'className' => 'max-debt'],
+                            ],
+                        ],
                     ],
                     'columns' => $this->columns(),
                     'customRows' => [
@@ -167,19 +180,52 @@ return new class
                                 ['id' => 'company_debt_total_label', 'type' => 'text', 'content' => 'Tổng', 'colspan' => 3, 'align' => 'left', 'className' => 'total-label'],
                                 ['id' => 'company_debt_total_amount', 'type' => 'text', 'content' => '{{group.sum.TotalAmount}}', 'colspan' => 2, 'align' => 'right', 'className' => 'money company-group-total-value'],
                                 ['id' => 'company_debt_remaining_label', 'type' => 'text', 'content' => 'Số tiền còn nợ', 'colspan' => 2, 'align' => 'left', 'className' => 'remaining-label'],
-                                ['id' => 'company_debt_remaining_value', 'type' => 'text', 'content' => '—', 'colspan' => 3, 'align' => 'right', 'className' => 'missing-value'],
+                                ['id' => 'company_debt_remaining_value', 'type' => 'text', 'content' => '{{group.sum.RemainingAmount}}', 'colspan' => 3, 'align' => 'right', 'className' => 'money company-group-total-value'],
+                            ],
+                        ],
+                        [
+                            'id' => 'company_debt_settlement_header',
+                            'scope' => 'detail-list',
+                            'listField' => 'SettlementDetails',
+                            'listMode' => 'header',
+                            'className' => 'settlement-header-row',
+                            'cells' => [
+                                ['id' => 'settlement_header_date', 'type' => 'text', 'content' => 'Ngày', 'colspan' => 2, 'align' => 'center'],
+                                ['id' => 'settlement_header_method', 'type' => 'text', 'content' => 'Hình thức thanh toán', 'colspan' => 3, 'align' => 'center'],
+                                ['id' => 'settlement_header_note', 'type' => 'text', 'content' => 'Ghi chú', 'colspan' => 2, 'align' => 'center'],
+                                ['id' => 'settlement_header_amount', 'type' => 'text', 'content' => 'Tổng tiền', 'colspan' => 2, 'align' => 'center'],
+                                ['id' => 'settlement_header_user', 'type' => 'text', 'content' => 'NV thanh toán', 'colspan' => 1, 'align' => 'center'],
+                            ],
+                        ],
+                        [
+                            'id' => 'company_debt_settlement_item',
+                            'scope' => 'detail-list',
+                            'listField' => 'SettlementDetails',
+                            'listMode' => 'item',
+                            'className' => 'settlement-item-row',
+                            'cells' => [
+                                ['id' => 'settlement_item_date', 'type' => 'binding', 'binding' => 'item.Date', 'colspan' => 2, 'align' => 'center'],
+                                ['id' => 'settlement_item_method', 'type' => 'binding', 'binding' => 'item.PaymentMethod', 'colspan' => 3, 'align' => 'left'],
+                                ['id' => 'settlement_item_note', 'type' => 'binding', 'binding' => 'item.Reference', 'colspan' => 2, 'align' => 'left'],
+                                ['id' => 'settlement_item_amount', 'type' => 'binding', 'binding' => 'item.Amount', 'format' => 'number', 'colspan' => 2, 'align' => 'right', 'className' => 'money'],
+                                ['id' => 'settlement_item_user', 'type' => 'binding', 'binding' => 'item.Username', 'colspan' => 1, 'align' => 'center'],
+                            ],
+                        ],
+                        [
+                            'id' => 'company_debt_settlement_balance',
+                            'scope' => 'detail-list',
+                            'listField' => 'SettlementDetails',
+                            'listMode' => 'footer',
+                            'className' => 'settlement-balance-row',
+                            'cells' => [
+                                ['id' => 'settlement_balance_label', 'type' => 'text', 'content' => 'Số tiền còn nợ', 'colspan' => 7, 'align' => 'right'],
+                                ['id' => 'settlement_balance_value', 'type' => 'binding', 'binding' => 'row.RemainingAmount', 'format' => 'number', 'colspan' => 3, 'align' => 'right', 'className' => 'money'],
                             ],
                         ],
                     ],
                 ],
             ],
             'footer' => [
-                [
-                    'id' => 'company_debt_settlement_details',
-                    'type' => 'text',
-                    'content' => '<div class="report-settlement-band"><table class="company-debt-settlements"><tbody><tr class="pms-custom-row" data-visible-by="parameters.p_show_settlements"><th>Mã ĐK</th><th>Công Ty</th><th>Mã thanh toán</th><th>Mã giải trừ</th><th>Ngày</th><th>Tham chiếu</th><th>Số tiền</th></tr><tr class="pms-detail-row pms-custom-row" data-source="settlement_details" data-visible-by="parameters.p_show_settlements"><td>{{item.BookingId}}</td><td>{{item.CompanyName}}</td><td>{{item.PaymentId}}</td><td>{{item.SettlementId}}</td><td>{{item.Date}}</td><td>{{item.Reference}}</td><td class="money">{{item.Amount|number}}</td></tr></tbody></table></div>',
-                    'style' => ['fontSize' => '9px'],
-                ],
                 ['id' => 'company_debt_summary_title', 'type' => 'text', 'content' => '<h2>Bảng Kê Tổng Hợp Công Nợ</h2>'],
                 [
                     'id' => 'company_debt_summary_table',
@@ -219,7 +265,7 @@ return new class
     {
         return <<<'HTML'
 <div class="report-header-band">
-  <div class="hotel-header"><div class="hotel-logo">{{hotel.logo}}</div><div class="hotel-information"><div><b>Địa chỉ:</b> {{hotel.address}}</div><div><b>Nhân viên:</b> {{report.generated_by}} <span class="generated-date"><b>Ngày:</b> {{report.generated_at}}</span></div></div></div>
+  <div class="hotel-header"><div class="hotel-logo">{{hotel.logo}}</div><div class="hotel-information"><div><b>Địa chỉ:</b> {{hotel.address}}</div><div><b>Nhân viên:</b> {{report.generated_by}} <span class="generated-date"><b>Ngày:</b> {{report.generated_date}}</span></div></div></div>
   <hr class="header-divider">
   <h1>BÁO CÁO CÔNG NỢ CÔNG TY</h1>
   <p class="report-period"><b>Ngày:</b> <span>{{parameters.p_from_date}}</span><b>~</b><span>{{parameters.p_to_date}}</span></p>
@@ -232,15 +278,10 @@ return new class
       <tr class="pms-group-header" data-group-level="0" data-group-field="DateGroup" data-group-sort="ASC" data-group-enabled-by="parameters.p_group_by_date"><td colspan="10" class="date-group">Ngày: {{row.DateGroup}}</td></tr>
       <tr class="pms-group-header" data-group-level="1" data-group-field="CompanyId" data-group-sort="ASC"><td colspan="5" class="company-group">Công ty: {{row.CompanyName}}</td><td colspan="5" class="max-debt">Công nợ tối đa: {{row.MaxDebt|number}}</td></tr>
       <tr class="pms-detail-row"><td>{{row.BookingId}}</td><td>{{row.Room}}</td><td>{{row.CompanyName}}</td><td>{{row.ArrivalDate}}</td><td>{{row.DepartureDate}}</td><td>{{row.Description}}</td><td class="money">{{row.TotalAmount|number}}</td><td>{{row.Date}}</td><td>{{row.Username}}</td><td class="paid-marker">{{row.PaidMarker}}</td></tr>
-      <tr class="pms-group-custom-row company-total-row" data-group-level="1"><td colspan="3" class="total-label">Tổng</td><td colspan="2" class="money company-group-total-value">{{group.sum.TotalAmount}}</td><td colspan="2" class="remaining-label">Số tiền còn nợ</td><td colspan="3" class="missing-value">—</td></tr>
-    </tbody>
-  </table>
-</div>
-<div class="report-settlement-band">
-  <table class="company-debt-settlements">
-    <tbody>
-      <tr class="pms-custom-row" data-visible-by="parameters.p_show_settlements"><th>Mã ĐK</th><th>Công Ty</th><th>Mã thanh toán</th><th>Mã giải trừ</th><th>Ngày</th><th>Tham chiếu</th><th>Số tiền</th></tr>
-      <tr class="pms-detail-row pms-custom-row" data-source="settlement_details" data-visible-by="parameters.p_show_settlements"><td>{{item.BookingId}}</td><td>{{item.CompanyName}}</td><td>{{item.PaymentId}}</td><td>{{item.SettlementId}}</td><td>{{item.Date}}</td><td>{{item.Reference}}</td><td class="money">{{item.Amount|number}}</td></tr>
+      <tr class="pms-detail-list-row settlement-header-row" data-list-field="SettlementDetails" data-list-mode="header"><td colspan="2">Ngày</td><td colspan="3">Hình thức thanh toán</td><td colspan="2">Ghi chú</td><td colspan="2">Tổng tiền</td><td>NV thanh toán</td></tr>
+      <tr class="pms-detail-list-row settlement-item-row" data-list-field="SettlementDetails"><td colspan="2">{{item.Date}}</td><td colspan="3">{{item.PaymentMethod}}</td><td colspan="2">{{item.Reference}}</td><td colspan="2" class="money">{{item.Amount|number}}</td><td>{{item.Username}}</td></tr>
+      <tr class="pms-detail-list-row settlement-balance-row" data-list-field="SettlementDetails" data-list-mode="footer"><td colspan="7">Số tiền còn nợ</td><td colspan="3" class="money">{{row.RemainingAmount|number}}</td></tr>
+      <tr class="pms-group-custom-row company-total-row" data-group-level="1"><td colspan="3" class="total-label">Tổng</td><td colspan="2" class="money company-group-total-value">{{group.sum.TotalAmount}}</td><td colspan="2" class="remaining-label">Số tiền còn nợ</td><td colspan="3" class="money company-group-total-value">{{group.sum.RemainingAmount}}</td></tr>
     </tbody>
   </table>
 </div>
@@ -260,7 +301,7 @@ HTML;
     public function css(): string
     {
         return <<<'CSS'
-body { color: #0f172a; font-family: Arial, Helvetica, sans-serif; font-size: 9px; }
+body { color: #0f172a; font-family: Roboto, Arial, Helvetica, sans-serif; font-size: 9px; }
 .hotel-header { display: grid; grid-template-columns: 38% 62%; align-items: center; min-height: 66px; }
 .hotel-logo { display: flex; align-items: center; min-height: 58px; }
 .hotel-logo img, .hotel-logo-image { display: block; max-width: 120px; max-height: 60px; object-fit: contain; }
@@ -282,15 +323,13 @@ h1 { margin: 0; text-align: center; font-size: 20px; line-height: 1.25; }
 .max-debt-label { float: right; }
 .pms-group-footer td { font-weight: 700; background: #f8fafc; }
 .pms-group-custom-row td { font-weight: 700; background: #f8fafc; }
+.settlement-header-row td { background: #e2e8f0; font-weight: 700; text-align: center !important; }
+.settlement-item-row td { background: #fff; font-size: 8px; }
+.settlement-balance-row td { background: #fff; border-top: 0 !important; font-weight: 700; text-align: right !important; }
 .total-label { text-align: left !important; }
 .remaining-label { text-align: left !important; }
 .missing-value { color: #64748b; text-align: right !important; }
 .report-summary-band { margin-top: 28px; }
-.report-settlement-band { margin-top: 18px; }
-.company-debt-settlements { width: 100%; border-collapse: collapse; }
-.company-debt-settlements > thead th { background: #e2e8f0; }
-.settlement-detail-table { width: 100%; margin: 0; border-collapse: collapse; }
-.settlement-detail-table td { border: 0; padding: 0; }
 h2 { margin: 0 0 12px; text-align: center; font-size: 18px; }
 .company-debt-summary, #company_debt_summary_table table { width: 72%; margin: 0 auto; }
 .company-debt-summary td, #company_debt_summary_table td { text-align: center; }

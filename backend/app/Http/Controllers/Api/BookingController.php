@@ -4790,13 +4790,50 @@ class BookingController extends Controller
             return $detail;
         }
 
+        // Giá phòng (booking_rooms.rate) luôn theo Rate Code; giá sửa tay của
+        // một đêm không làm đổi giá phòng (dòng 397).
         $firstRate = (float) reset($dailyPrices);
+
+        // GAL39: Rate Code cố định cho phép đổi giá thì giữ giá từng đêm đã gửi
+        // lên (giá sửa tay ở chi tiết dịch vụ hoặc giá đã lưu trước đó); đêm
+        // không có giá gửi lên mới lấy theo Rate Code.
+        if (!$configuredRateCode->IsDaily && $configuredRateCode->AllowChangeRate) {
+            foreach ($this->clientDailyRoomPrices($detail) as $date => $clientRate) {
+                if (array_key_exists($date, $dailyPrices)) {
+                    $dailyPrices[$date] = $clientRate;
+                }
+            }
+        }
+
         $detail['rateCode'] = $rateCode;
         $detail['price'] = $firstRate;
         $detail['basePrice'] = $firstRate;
         $detail['dailyRoomPrices'] = $dailyPrices;
 
         return $detail;
+    }
+
+    /** @return array<string, float> Giá từng đêm do màn đăng ký gửi lên, khóa theo Y-m-d. */
+    private function clientDailyRoomPrices(array $detail): array
+    {
+        $raw = $detail['dailyRoomPrices'] ?? $detail['daily_prices'] ?? null;
+        if (!is_array($raw)) {
+            return [];
+        }
+
+        $prices = [];
+        foreach ($raw as $rawDate => $rate) {
+            if ($rate === null || $rate === '' || !is_numeric($rate)) {
+                continue;
+            }
+            try {
+                $prices[Carbon::parse($rawDate)->toDateString()] = (float) $rate;
+            } catch (\Exception $e) {
+                continue;
+            }
+        }
+
+        return $prices;
     }
 
     private function resolvePersistedRateCodePrice(

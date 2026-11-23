@@ -38,9 +38,15 @@ class PaidCompanyDebtsReportTest extends TestCase
         $this->assertSame('PAID_COMPANY_DEBTS_REFERENCE', $definition['report']);
         $this->assertSame('Báo cáo công nợ đã thanh toán', $definition['name']);
         $this->assertSame('A4', $definition['page_size']);
+        $this->assertSame('landscape', $definition['page_orientation']);
+        $this->assertSame('int', $definition['data_contract']['parameters']['p_is_fb']);
         $this->assertTrue($tableBlock['hasTwoTierHeader']);
-        $this->assertSame('Thông Tin Công Nợ', $tableBlock['topHeader'][0]['label']);
-        $this->assertSame('Thông Tin Thanh Toán', $tableBlock['topHeader'][1]['label']);
+        $this->assertSame('Thông Tin Công Nợ', $tableBlock['topHeader'][0]['content']);
+        $this->assertSame('Thông Tin Thanh Toán', $tableBlock['topHeader'][1]['content']);
+        $this->assertSame(10, $tableBlock['topHeader'][0]['colspan']);
+        $this->assertSame(6, $tableBlock['topHeader'][1]['colspan']);
+        $this->assertSame('#d9dde7', $tableBlock['topHeader'][0]['style']['backgroundColor']);
+        $this->assertSame('#d9dde7', $tableBlock['topHeader'][1]['style']['backgroundColor']);
 
         $this->assertCount(16, $tableBlock['columns']);
         $this->assertSame('Mã Đăng Ký', $tableBlock['columns'][0]['header']);
@@ -60,8 +66,12 @@ class PaidCompanyDebtsReportTest extends TestCase
         $this->assertSame('Nhân Viên', $tableBlock['columns'][14]['header']);
         $this->assertSame('Ghi Chú', $tableBlock['columns'][15]['header']);
 
-        $this->assertSame('DateGroup', $tableBlock['grouping'][0]['field']);
-        $this->assertSame('CompanyName', $tableBlock['grouping'][1]['field']);
+        $this->assertSame('DateGroup', $tableBlock['groups'][0]['field']);
+        $this->assertSame('CompanyName', $tableBlock['groups'][1]['field']);
+        $grandTotalCells = $tableBlock['customRows'][2]['cells'];
+        $this->assertSame('totals.DebtAmount', $grandTotalCells[1]['binding']);
+        $this->assertSame('totals.PaidAmount', $grandTotalCells[3]['binding']);
+        $this->assertSame('totals.RemainingAmount', $grandTotalCells[5]['binding']);
 
         $this->assertSame('payment_method_summary', $pmSummaryBlock['dataSource']);
         $this->assertSame('HTTT', $pmSummaryBlock['columns'][0]['header']);
@@ -138,8 +148,8 @@ class PaidCompanyDebtsReportTest extends TestCase
                 ['Method' => 'BT', 'Amount' => 20495000],
             ],
             'totals' => [
-                'DebtAmount' => 20495000,
-                'PaidAmount' => 20495000,
+                'DebtAmount' => 20595000,
+                'PaidAmount' => 20595000,
                 'RemainingAmount' => 0,
             ],
         ]);
@@ -150,6 +160,7 @@ class PaidCompanyDebtsReportTest extends TestCase
         $this->assertStringContainsString('05/07/2026', $rendered);
         $this->assertStringContainsString('Nguyễn bí thư thành ủy Quy Nhơn', $rendered);
         $this->assertStringContainsString('20.495.000', $rendered);
+        $this->assertStringContainsString('20.595.000', $rendered);
         $this->assertStringContainsString('BT', $rendered);
         $this->assertStringContainsString('BẢNG KÊ HÌNH THỨC THANH TOÁN', $rendered);
         $this->assertStringNotContainsString('{{', $rendered);
