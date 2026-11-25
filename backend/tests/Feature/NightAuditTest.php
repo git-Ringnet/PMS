@@ -277,6 +277,45 @@ class NightAuditTest extends TestCase
     }
 
     /**
+     * Dòng 529: phòng có ngày đến = ngày đi = ngày hệ thống (0 đêm) không được noshow one day
+     * vì dời ngày đến sang hôm sau sẽ làm ngày đến lớn hơn ngày đi; chỉ được noshow by stage.
+     */
+    public function test_row_529_zero_night_room_cannot_late_check_in_but_other_rooms_still_can()
+    {
+        $sysDateStr = Carbon::parse(SystemDateRoll::latest('id')->first()->system_date)->toDateString();
+        $booking = Booking::create([
+            'booking_name' => 'NGAY 529', 'arrival_date' => $sysDateStr, 'departure_date' => $sysDateStr,
+            'num_of_days' => 0, 'booking_date' => $sysDateStr, 'created_by' => 'admin', 'registration_status_id' => 1,
+        ]);
+        $zeroNight = BookingRoom::create([
+            'id' => 'G1000529', 'booking_id' => $booking->id, 'room_class_id' => 1,
+            'arrival_date' => $sysDateStr, 'departure_date' => $sysDateStr,
+            'status' => BookingRoom::STATUS_BOOKED, 'rate' => 500000,
+        ]);
+
+        $response = $this->actingAs($this->user)->postJson('/api/night-audit/late-check-in', [
+            'booking_room_id' => $zeroNight->id, 'charge_option' => 'room_only', 'reason' => 'test 529',
+        ]);
+
+        $response->assertStatus(422)->assertJsonPath('code', 'zero_night_late_checkin');
+        $this->assertStringContainsString('Noshow', $response->json('message'));
+        $fresh = BookingRoom::find($zeroNight->id);
+        $this->assertSame($sysDateStr, $fresh->arrival_date->toDateString(), 'ngày đến không bị dời');
+        $this->assertDatabaseMissing('late_checkins', ['booking_room_id' => $zeroNight->id]);
+        $this->assertDatabaseMissing('service_bills', ['RentalRoomId1' => $zeroNight->id]);
+
+        // Phòng 1 đêm vẫn noshow one day được
+        $oneNight = BookingRoom::create([
+            'id' => 'G1000530', 'booking_id' => $booking->id, 'room_class_id' => 1,
+            'arrival_date' => $sysDateStr, 'departure_date' => Carbon::parse($sysDateStr)->addDay()->toDateString(),
+            'status' => BookingRoom::STATUS_BOOKED, 'rate' => 500000,
+        ]);
+        $this->actingAs($this->user)->postJson('/api/night-audit/late-check-in', [
+            'booking_room_id' => $oneNight->id, 'charge_option' => 'no_charge', 'reason' => 'test 529',
+        ])->assertSuccessful();
+    }
+
+    /**
      * Test Noshow hoàn toàn giải phóng phòng
      */
     public function test_row_503_full_charge_no_show_posts_child_breakfast_surcharge_for_every_night()

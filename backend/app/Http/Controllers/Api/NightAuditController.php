@@ -317,6 +317,17 @@ class NightAuditController extends Controller
             return response()->json(['success' => false, 'message' => 'Phòng không ở trạng thái Đặt trước để late check-in.'], 422);
         }
 
+        // Dòng 529: phòng ngày đến = ngày đi (0 đêm) dời ngày đến sang hôm sau sẽ làm ngày đến > ngày đi,
+        // nên không cho noshow one day, chỉ được noshow by stage.
+        if ($room->arrival_date && $room->departure_date
+            && $room->departure_date->toDateString() <= $room->arrival_date->toDateString()) {
+            return response()->json([
+                'success' => false,
+                'code' => 'zero_night_late_checkin',
+                'message' => 'Phòng có ngày đến bằng ngày đi (0 đêm) không thể Noshow one day, vì ngày đến mới sẽ lớn hơn ngày đi. Vui lòng dùng Noshow (by stage).',
+            ], 422);
+        }
+
         $systemDate = $this->getSystemDate();
         $nextDate   = $systemDate->copy()->addDay();
         $username   = Auth::user()?->username ?: (Auth::user()?->name ?: 'system');

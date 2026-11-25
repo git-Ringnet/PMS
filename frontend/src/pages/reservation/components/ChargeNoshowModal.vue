@@ -204,12 +204,14 @@ const props = defineProps({
   bookingId: Number,
   bookingName: String,
   guestName: String,
-  roomId: Number,
+  roomId: [Number, String],
   roomNumber: String,
   arrivalDate: String,
   departureDate: String,
   roomRate: Number,
-  dailyRoomPrices: { type: Object, default: null }
+  dailyRoomPrices: { type: Object, default: null },
+  // Dòng 532: ngày mặc định để charge (màn Sang ngày truyền ngày noshow của dòng), mặc định ngày hệ thống
+  defaultDate: { type: String, default: '' }
 })
 
 const emit = defineEmits(['update:show', 'saved'])
@@ -307,7 +309,7 @@ watch(() => props.show, (newVal) => {
   if (newVal) {
     modalPos.value = { x: 0, y: 0 }
     // Dòng 508 (note 22/11): mặc định charge đúng ngày hệ thống, tiền = 1 đêm phòng.
-    const defaultDate = ensureYmd(authStore.systemDate || props.arrivalDate)
+    const defaultDate = ensureYmd(props.defaultDate || authStore.systemDate || props.arrivalDate)
     dateFrom.value = defaultDate
     dateTo.value = defaultDate
     customRateMode.value = false

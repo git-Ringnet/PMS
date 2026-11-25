@@ -883,6 +883,21 @@ class ShiftWorkController extends Controller
         return $total + (float) $others->sum($amountOf);
     }
 
+    /** Phòng đã có bill tiền phòng (RM) đang hiệu lực trong khoảng ngày (dòng 532: đánh dấu đã charge noshow). */
+    private function noshowRoomHasRoomBill(string $roomId, ?string $fromDate, ?string $toDate): bool
+    {
+        if (!$fromDate) {
+            return false;
+        }
+
+        return \App\Models\ServiceBill::where('RentalRoomId1', $roomId)
+            ->where('ServiceId', 'RM')
+            ->where('Status', 1)
+            ->whereDate('Date', '>=', $fromDate)
+            ->whereDate('Date', '<=', max($fromDate, $toDate ?: $fromDate))
+            ->exists();
+    }
+
     private function isNoChargeReason(?string $reason): bool
     {
         return stripos((string) $reason, 'No Charge') !== false;
@@ -942,6 +957,14 @@ class ShiftWorkController extends Controller
             $result[] = [
                 'id' => $bkCode,
                 'type' => 'noshow',
+                'bookingId' => $bk?->id,
+                'roomId' => $room->id,
+                'arrivalDateIso' => Carbon::parse($room->arrival_date)->toDateString(),
+                'departureDateIso' => $room->departure_date ? Carbon::parse($room->departure_date)->toDateString() : null,
+                'noshowDateIso' => $log && $log->noshow_date ? Carbon::parse($log->noshow_date)->toDateString() : Carbon::parse($room->arrival_date)->toDateString(),
+                'rate' => $rate,
+                'guestName' => $bk?->booking_name ?: '',
+                'charged' => $this->noshowRoomHasRoomBill($room->id, Carbon::parse($room->arrival_date)->toDateString(), $room->departure_date ? Carbon::parse($room->departure_date)->subDay()->toDateString() : null),
                 'isCharged' => $isCharged,
                 'bookingName' => $bk?->booking_name ?: 'Khách lẻ',
                 'roomType' => $this->noshowRoomTypeName($room),
@@ -977,6 +1000,14 @@ class ShiftWorkController extends Controller
             $result[] = [
                 'id' => $prefix . ($bk?->id ?? 0),
                 'type' => 'late_checkin',
+                'bookingId' => $bk?->id,
+                'roomId' => $room->id,
+                'arrivalDateIso' => $room->arrival_date ? Carbon::parse($room->arrival_date)->toDateString() : null,
+                'departureDateIso' => $room->departure_date ? Carbon::parse($room->departure_date)->toDateString() : null,
+                'noshowDateIso' => $lateDate->toDateString(),
+                'rate' => (float) ($room->rate ?: 0),
+                'guestName' => $bk?->booking_name ?: '',
+                'charged' => $this->noshowRoomHasRoomBill($room->id, $lateDate->toDateString(), $lateDate->toDateString()),
                 'isCharged' => $isCharged,
                 'bookingName' => $bk?->booking_name ?: 'Khách lẻ',
                 'roomType' => $this->noshowRoomTypeName($room),

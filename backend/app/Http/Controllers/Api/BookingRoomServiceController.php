@@ -3712,7 +3712,14 @@ class BookingRoomServiceController extends Controller
             ], 422);
         }
 
-        if (intval($room->status) !== BookingRoom::STATUS_NOSHOW) {
+        // Dòng 532: phòng late check-in (noshow one day) chưa tới vẫn ở trạng thái Đặt trước,
+        // chỉ được charge bù các ngày vắng đã ghi nhận trong late_checkins.
+        $lateCheckinDates = $room->lateCheckins()->where('status', 1)->get()
+            ->map(fn ($late) => Carbon::parse($late->late_checkin_date)->toDateString())
+            ->unique()->values()->all();
+        $isLateCheckinRoom = intval($room->status) === BookingRoom::STATUS_BOOKED && $lateCheckinDates !== [];
+
+        if (intval($room->status) !== BookingRoom::STATUS_NOSHOW && !$isLateCheckinRoom) {
             return response()->json([
                 'success' => false,
                 'message' => 'Phòng thuê không ở trạng thái Noshow, không thể thực hiện charge tiền.',
@@ -3723,6 +3730,29 @@ class BookingRoomServiceController extends Controller
 
         $dateFrom = Carbon::parse($request->date_from)->startOfDay();
         $dateTo = Carbon::parse($request->date_to)->startOfDay();
+
+        if ($isLateCheckinRoom) {
+            for ($night = $dateFrom->copy(); $night->lte($dateTo); $night->addDay()) {
+                $nightStr = $night->toDateString();
+                if (!in_array($nightStr, $lateCheckinDates, true)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Ngày ' . $night->format('d/m/Y') . ' không phải ngày vắng (noshow one day) của phòng này nên không thể charge.',
+                    ], 422);
+                }
+                $alreadyCharged = ServiceBill::where('RentalRoomId1', $room->id)
+                    ->where('ServiceId', 'RM')
+                    ->where('Status', 1)
+                    ->whereDate('Date', $nightStr)
+                    ->exists();
+                if ($alreadyCharged) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Ngày ' . $night->format('d/m/Y') . ' đã có tiền phòng, không thể charge trùng.',
+                    ], 422);
+                }
+            }
+        }
 
         // Dòng 508 (note 22/11): từ ngày đến ngày là các ngày dịch vụ được charge, tính cả hai đầu;
         // mỗi ngày là 1 bill tiền phòng riêng, không gộp thành 1 bill tổng.

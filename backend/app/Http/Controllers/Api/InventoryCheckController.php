@@ -507,22 +507,26 @@ class InventoryCheckController extends Controller
 
     public function productsInStock(Request $request)
     {
-        // Sản phẩm đã gán kho chỉ hiện ở kho đó; sản phẩm theo dõi tồn chưa gán kho vẫn được chọn cho kiểm kê nội bộ.
+        // Dòng 372 (note 23/11): sản phẩm của kho = sản phẩm theo dõi tồn thuộc nhóm hàng của (các) điểm bán hàng
+        // gán cho kho, cộng sản phẩm gán thẳng vào kho. Dữ liệu cũ có inventory_id trỏ sai kho nên không dựa riêng vào cột này.
         if ($request->filled('warehouse_id')) {
             $warehouse = Warehouse::findOrFail($request->warehouse_id);
-            $trackedProducts = Product::with('category')
+            $outletTokens = $this->warehouseOutletTokens($warehouse);
+            $tracked = Product::with('category')
                 ->where('is_active', true)
-                ->where('track_stock', true);
-            $products = (clone $trackedProducts)
-                ->where('inventory_id', (string) $warehouse->id)->orderBy('name')->get();
-            $unassignedProducts = (clone $trackedProducts)
-                ->where(function ($query) {
-                    $query->whereNull('inventory_id')
-                        ->orWhere('inventory_id', '')
-                        ->orWhereRaw('TRIM(inventory_id) = ?', ['']);
-                })
+                ->where('track_stock', true)
                 ->orderBy('name')
                 ->get();
+            $products = $tracked->filter(function ($product) use ($warehouse, $outletTokens) {
+                if ((string) $product->inventory_id === (string) $warehouse->id) {
+                    return true;
+                }
+
+                return $outletTokens !== [] && in_array($this->normalizeOutletName($product->category?->outlet), $outletTokens, true);
+            })->values();
+            // Sản phẩm theo dõi tồn chưa gán kho và không thuộc outlet của kho vẫn được chọn cho kiểm kê nội bộ.
+            $unassignedProducts = $tracked->filter(fn ($product) => trim((string) $product->inventory_id) === ''
+                && !$products->contains('id', $product->id))->values();
 
             // Dòng 372 (note 4/11): kho kiểm kê cho nhiều outlet thì nhóm theo TÊN OUTLET của sản phẩm
             // (outlet của nhóm hàng), không nhóm theo tên kho; trong outlet nhóm tiếp theo nhóm hàng.
@@ -629,6 +633,28 @@ class InventoryCheckController extends Controller
     }
 
     // ─── Helpers ─────────────────────────────────────────────
+
+    private function normalizeOutletName($value): string
+    {
+        return preg_replace('/[^a-z0-9]/', '', strtolower(\Illuminate\Support\Str::ascii((string) $value)));
+    }
+
+    /** Các tên/mã outlet (đã chuẩn hóa) của điểm bán hàng gán cho kho: mã, tên, mã dịch vụ. */
+    private function warehouseOutletTokens(Warehouse $warehouse): array
+    {
+        $codes = $warehouse->outlet_ids;
+        if ($codes === []) {
+            return [];
+        }
+        $tokens = array_map(fn ($code) => $this->normalizeOutletName($code), $codes);
+        \App\Models\HousekeepingOutlet::whereIn('code', $codes)->get()->each(function ($outlet) use (&$tokens) {
+            foreach ([$outlet->code, $outlet->name, $outlet->service_code] as $value) {
+                $tokens[] = $this->normalizeOutletName($value);
+            }
+        });
+
+        return array_values(array_unique(array_filter($tokens)));
+    }
 
     private function productPickerCategories($products): array
     {

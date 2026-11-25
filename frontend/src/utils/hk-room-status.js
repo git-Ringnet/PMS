@@ -10,6 +10,11 @@ export function compareRooms(a, b) {
   return String(a.room_number).localeCompare(String(b.room_number), undefined, { numeric: true })
 }
 
+/** Phòng thuộc một tầng. Số tầng có thể là chuỗi hoặc số nên so sánh sau khi chuẩn hóa. */
+export function roomsOnFloor(rooms, floor) {
+  return rooms.filter(r => String(r.floor) === String(floor))
+}
+
 const IN_HOUSE_BOOKING = new Set(['occupied', 'checkout', 'lco'])
 
 /**
@@ -27,13 +32,53 @@ export function normalizeHkCode(roomStatusCode, bookingStatus, isBackToBack = fa
 }
 
 /**
- * Phòng "Lau dọn" khi lọc (khớp Room Map): trạng thái turndown/housekeeping (icon ngôi sao)
- * hoặc phòng khách trả trong ngày.
+ * Phòng "Lau dọn" khi lọc (khớp Room Map, dòng 357 note 23/11): phòng sạch/lau dọn (cùng icon ngôi sao),
+ * trạng thái turndown/housekeeping, hoặc phòng khách trả trong ngày.
  */
 export function isCleaningRoom(room) {
   const code = String(room?.room_status_code || '').toLowerCase()
-  return code === 'turndown' || code === 'housekeeping' || code === 'cleaning'
+  return ['clean', 'vacant_clean', 'occupied_clean', 'turndown', 'housekeeping', 'cleaning'].includes(code)
     || room?.booking_status === 'checkout' || room?.displayBookingStatus === 'checkout'
+}
+
+/**
+ * Trạng thái đặt phòng hiển thị theo ngày làm việc.
+ * Phòng chưa check in có ngày đến = ngày làm việc luôn là CI (kể cả day use đến = đi cùng ngày),
+ * không được rơi vào nhánh trả phòng.
+ */
+export function deriveDisplayBookingStatus(room, workDate) {
+  const status = room?.booking_status || ''
+  if (!status) return ''
+  const arr = room.arrival_date ? String(room.arrival_date).substring(0, 10) : ''
+  const dep = room.departure_date ? String(room.departure_date).substring(0, 10) : ''
+  if (status === 'occupied') return 'occupied'
+  if (status === 'reserved' && arr === workDate) return 'reserved'
+  if (dep === workDate) return 'checkout'
+  if (arr === workDate) return 'reserved'
+  return 'occupied'
+}
+
+/** Bộ lọc Vệ sinh: Phòng sạch và Phòng lau dọn cùng icon ngôi sao nên chỉ còn 1 mục Lau dọn. */
+export const hkFilterOptions = [
+  { key: 'all', label: 'Tất cả', icon: null },
+  { key: 'cleaning', label: 'Phòng lau dọn', icon: 'checkout', iconClass: 'text-cyan-600' },
+  { key: 'dirty', label: 'Phòng bẩn', icon: 'dirty', iconClass: 'text-amber-600' },
+  { key: 'ready', label: 'Phòng sẵn sàng', icon: 'available', iconClass: 'text-emerald-600' },
+  { key: 'ooo', label: 'Phòng OOO', icon: 'maintenance', iconClass: 'text-rose-500' },
+  { key: 'oos', label: 'Phòng OOS', icon: 'maintenance', iconClass: 'text-amber-500' },
+]
+
+export function matchesHkFilter(room, filterKey) {
+  if (!filterKey || filterKey === 'all') return true
+  const code = String(room?.room_status_code || '').toLowerCase()
+  switch (filterKey) {
+    case 'cleaning': return isCleaningRoom(room)
+    case 'dirty': return ['vacant_dirty', 'occupied_dirty', 'dirty'].includes(code)
+    case 'ready': return ['vacant_ready', 'occupied_ready', 'ready'].includes(code)
+    case 'ooo': return !!room?.is_ooo
+    case 'oos': return !!room?.is_oos
+    default: return true
+  }
 }
 
 /**
