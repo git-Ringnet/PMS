@@ -5,6 +5,7 @@ import { fetchActivityLogs, fetchActivityLogStats } from '@/services/activity-lo
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
+import SingleDatePicker from '@/components/SingleDatePicker.vue'
 
 const uiStore = useUiStore()
 const authStore = useAuthStore()
@@ -603,7 +604,7 @@ const handleExport = async () => {
 </script>
 
 <template>
-  <div class="relative p-4 bg-slate-50 flex-1 flex flex-col overflow-hidden text-xs font-sans min-h-[500px]">
+  <div class="relative p-4 bg-slate-50 h-full flex-1 flex flex-col overflow-y-auto overflow-x-hidden text-xs font-sans min-h-0">
     <LoadingOverlay :show="loading && logs.length === 0" />
     
     <!-- Quick Filter Chips Bar -->
@@ -629,22 +630,23 @@ const handleExport = async () => {
         <!-- Date From -->
         <div class="flex flex-col gap-1">
           <label class="font-semibold text-[#000000D9] text-xs">Từ ngày</label>
-          <input 
-            v-model="filterDateFrom" 
-            type="date" 
+          <SingleDatePicker
+            v-model="filterDateFrom"
+            :start-date="pmsSystemDate"
+            input-class="h-8 !border-slate-300"
             @change="handleManualDateChange"
-            class="border border-slate-300 rounded-lg px-2 py-1 h-8 focus:outline-none focus:ring-1 focus:ring-sky-400 font-normal text-[#000000D9] bg-white text-xs"
           />
         </div>
 
         <!-- Date To -->
         <div class="flex flex-col gap-1">
           <label class="font-semibold text-[#000000D9] text-xs">Đến ngày</label>
-          <input 
-            v-model="filterDateTo" 
-            type="date" 
+          <SingleDatePicker
+            v-model="filterDateTo"
+            :start-date="pmsSystemDate"
+            :min-date="filterDateFrom || null"
+            input-class="h-8 !border-slate-300"
             @change="handleManualDateChange"
-            class="border border-slate-300 rounded-lg px-2 py-1 h-8 focus:outline-none focus:ring-1 focus:ring-sky-400 font-normal text-[#000000D9] bg-white text-xs"
           />
         </div>
 
@@ -776,7 +778,7 @@ const handleExport = async () => {
     </div>
 
     <!-- Data Table Container -->
-    <div class="overflow-auto border border-slate-200 rounded-xl shadow-xs flex-1 max-h-full bg-white relative">
+    <div class="activity-table-scroll overflow-auto border border-slate-200 rounded-xl shadow-xs flex-1 min-h-[200px] max-h-full bg-white relative">
       <!-- Loading Overlay -->
       <div v-if="loading" class="absolute inset-0 bg-white/70 flex items-center justify-center z-10">
         <div class="flex flex-col items-center gap-2 bg-white p-4 rounded-xl shadow-lg border border-slate-100">
@@ -1133,5 +1135,32 @@ const handleExport = async () => {
 pre {
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+/* Thanh cuộn luôn hiển thị (không bị ẩn kiểu overlay trên một số máy/trình duyệt) */
+.activity-table-scroll {
+  scrollbar-gutter: stable;
+}
+.activity-table-scroll::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+.activity-table-scroll::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-left: 1px solid #e2e8f0;
+}
+.activity-table-scroll::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 6px;
+  border: 2px solid #f1f5f9;
+}
+.activity-table-scroll::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+@supports not selector(::-webkit-scrollbar) {
+  .activity-table-scroll {
+    scrollbar-width: auto;
+    scrollbar-color: #94a3b8 #f1f5f9;
+  }
 }
 </style>

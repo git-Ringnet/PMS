@@ -107,6 +107,35 @@ const router = createRouter({
   routes,
 })
 
+// Sau khi deploy bản mới, file chunk cũ (hash cũ) không còn trên server nên import() của route lười bị lỗi,
+// router.push thất bại âm thầm => bấm menu "không ăn", F5 thì chạy lại. Tự tải lại đúng trang đích (1 lần/đường dẫn).
+const CHUNK_ERROR_RE = /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module|Unable to preload CSS/i
+router.onError((error, to) => {
+  const message = String(error?.message || error || '')
+  if (!CHUNK_ERROR_RE.test(message)) return
+  try {
+    const key = `pms_chunk_reload:${to?.fullPath || ''}`
+    if (sessionStorage.getItem(key)) return
+    sessionStorage.setItem(key, '1')
+  } catch (e) {
+    // sessionStorage không dùng được: vẫn reload một lần
+  }
+  window.location.assign(to?.fullPath || window.location.href)
+})
+
+// Lỗi preload chunk do Vite phát ra (vd. modulepreload thất bại sau deploy)
+window.addEventListener('vite:preloadError', (event) => {
+  event.preventDefault()
+  try {
+    const key = `pms_chunk_reload:${window.location.pathname}`
+    if (sessionStorage.getItem(key)) return
+    sessionStorage.setItem(key, '1')
+  } catch (e) {
+    // ignore
+  }
+  window.location.reload()
+})
+
 // Navigation guard
 router.beforeEach(async (to, from) => {
   const token = localStorage.getItem('pms_token') || sessionStorage.getItem('pms_token')

@@ -126,7 +126,13 @@ async function saveRole() {
   } catch (error) { uiStore.showToast(error.response?.data?.message || 'Không thể tạo vai trò', 'error') }
 }
 async function removeRole(role) {
-  if (!confirm(`Xóa vai trò "${role.name}"?`)) return
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận xóa',
+    message: `Xóa vai trò "${role.name}"?`,
+    confirmText: 'Xóa',
+    cancelText: 'Hủy'
+  })
+  if (!confirmed) return
   try { await deleteRole(role.id); await loadBase(); uiStore.showToast('Đã xóa vai trò', 'success') }
   catch (error) { uiStore.showToast(error.response?.data?.message || 'Không thể xóa vai trò', 'error') }
 }

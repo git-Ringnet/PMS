@@ -222,6 +222,38 @@ class ShiftWorkListTest extends TestCase
         $this->assertSame('', $roomRow['rateCode']);
     }
 
+    public function test_row_390_departure_room_total_includes_every_live_bill_of_the_room(): void
+    {
+        $booking = $this->makeBooking('Row 390 departure');
+        $room = $this->makeRoom($booking, BookingRoom::STATUS_CHECKED_IN);
+        $this->bill(['RegisterId1' => $booking->id, 'RentalRoomId1' => $room->id, 'RentalRoomId2' => $room->id, 'Amount' => 2000000]);
+        $this->bill(['RegisterId1' => $booking->id, 'RentalRoomId1' => $room->id, 'RentalRoomId2' => $room->id, 'Amount' => 170000, 'ServiceId' => 'MB', 'DescriptionServive' => 'Minibar']);
+
+        $data = $this->getJson('/api/shift-work/departures?date=2026-09-03&status=all')->assertOk()->json('data');
+
+        $this->assertEquals(2170000, $data[0]['rooms'][0]['totalServices']);
+    }
+
+    public function test_row_390_arrival_totals_follow_registration_amounts(): void
+    {
+        $booking = $this->makeBooking('Row 390 arrival');
+        $booking->update(['departure_date' => '2026-09-04', 'payment_value' => 900000]);
+        $room = $this->makeRoom($booking, BookingRoom::STATUS_BOOKED, ['departure_date' => '2026-09-04', 'rate' => 780000]);
+        \App\Models\BookingRoomService::create([
+            'booking_room_id' => $room->id, 'service_code' => 'EB', 'service_name' => 'EB', 'service_date' => '2026-09-02',
+            'quantity' => 1, 'rate' => 300000, 'is_posted' => 0,
+        ]);
+        \App\Models\BookingRoomService::create([
+            'booking_room_id' => $room->id, 'service_code' => 'LD', 'service_name' => 'Ngoài giai đoạn', 'service_date' => '2026-09-05',
+            'quantity' => 1, 'rate' => 999999, 'is_posted' => 0,
+        ]);
+
+        $data = $this->getJson('/api/shift-work/arrivals?date=2026-09-02&status=all')->assertOk()->json('data');
+
+        $this->assertEquals(1860000, $data[0]['rooms'][0]['roomTotal']);
+        $this->assertEquals(1860000, $data[0]['totalAmount']);
+    }
+
     public function test_same_day_booked_room_is_pending_departure_but_overnight_booking_is_not(): void
     {
         $sameDayBooking = $this->makeBooking('Same-day reservation');

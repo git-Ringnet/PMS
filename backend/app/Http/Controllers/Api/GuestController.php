@@ -1294,12 +1294,16 @@ class GuestController extends Controller
             if ($roomData) $room->update($roomData);
             if ($stayFieldsChanged) {
                 // Đêm đã có giá theo ngày giữ nguyên; chỉ đổi mã giá mới tính lại.
+                $explicitRate = $request->has('rate') && $request->input('rate') !== null
+                    ? (float) $request->input('rate')
+                    : null;
+                $freshRoom = $room->fresh();
+                // Dòng 381: chỉ mã giá theo ngày (không có giá nhập) mới cần dòng RM cho từng đêm.
                 app(BookingRoomStayChargeService::class)->synchronize(
-                    $room->fresh(),
-                    $request->has('rate') && $request->input('rate') !== null
-                        ? (float) $request->input('rate')
-                        : null,
-                    $rateCodeChanged
+                    $freshRoom,
+                    $explicitRate,
+                    $rateCodeChanged,
+                    $explicitRate === null && filled($freshRoom->rate_code)
                 );
             }
             if ($extraBedChanged) {

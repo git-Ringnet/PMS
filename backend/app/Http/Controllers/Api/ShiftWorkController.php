@@ -79,7 +79,9 @@ class ShiftWorkController extends Controller
             'roomClass',
             'room.roomClass',
             'specialRequests.specialRequest',
-            'guests.guest'
+            'guests.guest',
+            'services',
+            'children.breakfastDetails',
         ])
         ->whereNull('deleted_at')
         ->whereDate('arrival_date', $targetDate);
@@ -135,13 +137,17 @@ class ShiftWorkController extends Controller
                     ->whereNull('deleted_at')
                     ->sum('amount');
 
-                // Tính tổng tiền booking
-                $totalAmount = (float) ($bk->payment_value ?: $bk->bookingRooms()->sum('total_rate'));
-                if ($totalAmount <= 0) {
-                    $totalAmount = (float) $bk->bookingRooms->sum(function ($r) {
-                        return ($r->rate ?: 0) * ($r->actual_num_of_days ?: ($r->num_of_days ?: 1));
-                    });
-                }
+                // Dòng 390: tổng tiền booking theo màn Đăng ký (không lấy payment_value).
+                $totalAmount = (float) $bk->bookingRooms()
+                    ->with(['services', 'children.breakfastDetails'])
+                    ->whereIn('status', [
+                        BookingRoom::STATUS_BOOKED,
+                        BookingRoom::STATUS_CHECKED_IN,
+                        BookingRoom::STATUS_CHECKED_OUT,
+                        BookingRoom::STATUS_MOVED,
+                    ])
+                    ->get()
+                    ->sum(fn (BookingRoom $bookingRoom) => $this->registrationRoomTotal($bookingRoom));
 
                 // Tổng đêm phòng của booking
                 $totalNights = (int) ($bk->num_of_days ?: ($room->ActutalNumOfDays ?: 1));
@@ -180,7 +186,7 @@ class ShiftWorkController extends Controller
 
             $nights = $this->roomNights($room);
             $rate = (float) ($room->rate ?: 0);
-            $roomTotal = (float) ($room->total_rate ?: ($rate * $nights));
+            $roomTotal = $this->registrationRoomTotal($room);
 
             // Room Type name
             $roomTypeName = $room->roomClass?->name 
@@ -806,38 +812,69 @@ class ShiftWorkController extends Controller
     }
 
     /**
-     * Tổng dịch vụ của một phòng: dịch vụ đã post (không phải tiền phòng)
-     * + bill tiền phòng của phòng, giống cách màn Hóa đơn cộng.
+     * Dòng 390: tổng dịch vụ của phòng = mọi bill còn hiệu lực đang ở phòng, giống màn Hóa đơn.
+     * Dòng đã post cũ chưa liên kết bill vẫn được cộng.
      */
     private function roomFolioServiceTotal(BookingRoom $room, $bills): float
     {
         $isRoomCharge = fn ($service) => in_array(strtoupper((string) $service->service_code), ['RM', 'ER'], true)
             || str_contains((string) $service->service_name, 'Tiền phòng');
-        $isPosted = fn ($service) => (int) $service->is_posted === 1 || !empty($service->service_bill_id);
         $inRoomFolio = fn ($service) => $service->is_room === null || (int) $service->is_room === 1;
         $amountOf = fn ($service) => (float) ($service->total_amount ?: ((float) ($service->quantity ?: 1) * (float) $service->rate));
 
-        $postedServices = $room->services->filter(fn ($service) => $isPosted($service) && $inRoomFolio($service));
+        $roomBills = $bills->filter(fn ($bill) => (string) $this->billCurrentRoomId($bill) === (string) $room->id);
+        $hasRoomChargeBill = $roomBills->contains(fn ($bill) => $this->isRoomChargeBill($bill));
+        $legacyPosted = $room->services
+            ->filter(fn ($service) => (int) $service->is_posted === 1 && empty($service->service_bill_id) && $inRoomFolio($service))
+            ->reject(fn ($service) => $hasRoomChargeBill && $isRoomCharge($service));
 
-        $extra = $postedServices->reject($isRoomCharge)->sum($amountOf);
+        return (float) $roomBills->sum(fn ($bill) => (float) $bill->Amount) + (float) $legacyPosted->sum($amountOf);
+    }
 
-        $roomBills = $bills->filter(fn ($bill) => $this->isRoomChargeBill($bill)
-            && (string) $this->billCurrentRoomId($bill) === (string) $room->id);
-        $billIds = $roomBills->pluck('Ma')->map(fn ($id) => (string) $id)->all();
-        $roomCharge = (float) $roomBills->sum(fn ($bill) => (float) $bill->Amount);
+    /**
+     * Dòng 390: tiền của phòng theo màn Đăng ký: tiền phòng từng đêm (giá đêm hoặc giá phòng),
+     * dịch vụ thiết lập trong giai đoạn ở và phụ thu ăn sáng trẻ em.
+     */
+    private function registrationRoomTotal(BookingRoom $room): float
+    {
+        $breakfast = app(\App\Services\ChildBreakfastService::class);
+        $stayDates = $breakfast->stayDatesForRoom($room);
+        $dateOf = fn ($value) => Carbon::parse($value)->toDateString();
+        $amountOf = fn ($service) => $service->total_amount !== null
+            ? (float) $service->total_amount
+            : (float) ($service->quantity ?? 1) * (float) $service->rate;
+        $roomCodes = array_filter(['RM', 'ROOM_CHARGE', 'ER', strtoupper((string) \App\Models\BookingRoomService::catalogCode('RM'))]);
+        $isRoomCharge = fn ($service) => in_array(strtoupper((string) $service->service_code), $roomCodes, true);
+        $isBreakfastRow = fn ($service) => $breakfast->isChildBreakfastCode($service->service_code);
+        $services = $room->services->filter(fn ($service) => in_array($dateOf($service->service_date), $stayDates, true));
 
-        // Dòng tiền phòng cũ chỉ còn trong booking_room_services (chưa có bill)
-        foreach ($postedServices->filter($isRoomCharge) as $service) {
-            if (!empty($service->service_bill_id) && in_array((string) $service->service_bill_id, $billIds, true)) {
-                continue;
-            }
-            if (empty($service->service_bill_id) && !empty($billIds)) {
-                continue;
-            }
-            $roomCharge += $amountOf($service);
+        $total = 0.0;
+        foreach ($stayDates as $date) {
+            $nightRows = $services->filter(fn ($service) => $isRoomCharge($service) && $dateOf($service->service_date) === $date);
+            $total += $nightRows->isNotEmpty() ? (float) $nightRows->sum($amountOf) : (float) ($room->rate ?: 0);
         }
 
-        return (float) $extra + $roomCharge;
+        $serviceBreakfastDates = $breakfast->isDetailMode()
+            ? []
+            : $services->filter($isBreakfastRow)->map(fn ($service) => $dateOf($service->service_date))->unique()->all();
+        $detailChargeDates = [];
+        foreach ($room->children as $child) {
+            foreach ($child->breakfastDetails as $detail) {
+                $date = $dateOf($detail->service_date);
+                if (!in_array($date, $stayDates, true) || in_array($date, $serviceBreakfastDates, true)
+                    || !$detail->breakfast || !$detail->is_extra_charge || $detail->is_free || (float) $detail->amount <= 0) {
+                    continue;
+                }
+                $detailChargeDates[$date] = true;
+                $total += (float) $detail->amount;
+            }
+        }
+
+        $others = $services->reject($isRoomCharge)->reject(fn ($service) => $breakfast->isDetailMode()
+            && $isBreakfastRow($service)
+            && isset($detailChargeDates[$dateOf($service->service_date)]));
+
+        return $total + (float) $others->sum($amountOf);
     }
 
     private function isNoChargeReason(?string $reason): bool

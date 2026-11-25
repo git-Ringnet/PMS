@@ -19,10 +19,9 @@ import {
 import {
   calculateChargeableServiceTotals,
   isMoveHistoryBillReference,
-  mergeMoveHistoryBillReferences,
-} from '@/utils/booking-room-move-history'
+  mergeMoveHistoryBillReferences, findMovedRoomChildBreakfastBills } from '@/utils/booking-room-move-history'
 import { summarizeRoomTotals } from '@/utils/booking-room-totals'
-import { collectRoomOwnedBills, distributeServicesByBillOrigin, mergeRoomServices, transferredBillIds } from '@/utils/booking-bill-origin'
+import { collectRoomOwnedBills, distributeServicesByBillOrigin, excludeBillsBeforeMoveIn, mergeRoomServices, transferredBillIds } from '@/utils/booking-bill-origin'
 import { extraBedBillRow, findExtraBedBillsOutsideStay, findMoveHistoryExtraBedBill } from '@/utils/booking-room-extra-bed-bills'
 import { applySavedRoomColumns, serializeRoomColumns } from '@/utils/booking-room-columns'
 import { normalizeShuttleInfo, buildBookingHistoryLocation } from '@/utils/booking-shuttle-history'
@@ -2074,7 +2073,7 @@ function getRoomDisplayServices(room) {
       const historyEbBill = findMoveHistoryExtraBedBill(room.serviceBills, dStr, getBillRecordDateStr, handledBillIds)
       if (historyEbBill) {
         handledBillIds.add(String(historyEbBill.Ma || historyEbBill.id))
-        list.push(extraBedBillRow(historyEbBill, dStr))
+        list.push(extraBedBillRow(historyEbBill, dStr, getHotelServiceName('EB')))
         continue
       }
 
@@ -2166,7 +2165,7 @@ function getRoomDisplayServices(room) {
   // giống cách đang quét bill tiền phòng ngoài dải ngày ở trên.
   findExtraBedBillsOutsideStay(room.serviceBills, ebStayNights, getBillRecordDateStr, handledBillIds).forEach(ebBill => {
     handledBillIds.add(String(ebBill.Ma || ebBill.id))
-    list.push(extraBedBillRow(ebBill, getBillRecordDateStr(ebBill) || cleanDateStr(room.checkIn)))
+    list.push(extraBedBillRow(ebBill, getBillRecordDateStr(ebBill) || cleanDateStr(room.checkIn), getHotelServiceName('EB')))
   })
 
   // 3. Phụ thu ăn sáng trẻ em theo Booking_BFChildSetServiceId:
@@ -2322,6 +2321,28 @@ function getRoomDisplayServices(room) {
           svc_ref: pendingPlan || svc
         })
       }
+    })
+  }
+
+  // Dòng 307: phòng đã chuyển đi vẫn hiện bill phụ thu ăn sáng trẻ của các đêm đã ở.
+  if (room.bookingRoomStatus === 100) {
+    findMovedRoomChildBreakfastBills(room.serviceBills, isChildBreakfastBill, handledBillIds).forEach(bfBill => {
+      const bId = String(bfBill.Ma ?? bfBill.id)
+      handledBillIds.add(bId)
+      const qty = Number(bfBill.Quantity) || 1
+      const amount = Number(bfBill.Amount) || 0
+      list.push({
+        id: `child-bf-bill-${bId}`,
+        service_date: getBillRecordDateStr(bfBill),
+        service_name: getHotelServiceName(bfBill.ServiceId || bfCode, bfName),
+        service_code: bfBill.ServiceId || bfCode,
+        quantity: qty,
+        rate: qty > 0 ? amount / qty : amount,
+        is_room: !!(bfBill.RentalRoomId2 ?? bfBill.rentalRoomId2),
+        is_child_breakfast: true,
+        from_bill: true,
+        bill_ref: bfBill,
+      })
     })
   }
 
@@ -3446,7 +3467,14 @@ function bookingToTab(b) {
         ...((b.service_bills || b.serviceBills || []).filter(sb => String(sb.RentalRoomId1) === String(br.id) || String(sb.RentalRoomId2) === String(br.id)))
       ]
       // Dòng 458: chỉ giữ bill mà phòng này là phòng gốc (bill chuyển đi nơi khác vẫn tính ở phòng gốc, không tính thêm ở phòng nhận).
-      const roomBills = collectRoomOwnedBills(rawBills, br.id, bookingRoomIds, transferredIds)
+      const roomBills = excludeBillsBeforeMoveIn(
+        collectRoomOwnedBills(rawBills, br.id, bookingRoomIds, transferredIds),
+        br.id,
+        parseApiDate(br.arrival_date || b.arrival_date),
+        bookingRoomIds,
+        transferredIds,
+        getBillRecordDateStr,
+      )
 
       const roomObj = {
         id: idCounter++,
@@ -6905,6 +6933,7 @@ async function triggerAction(actionName) {
     chargeNoshowArrivalDate.value = targetRoom.checkIn
     chargeNoshowDepartureDate.value = targetRoom.checkOut
     chargeNoshowRoomRate.value = Number(targetRoom.price) || 0
+    chargeNoshowDailyPrices.value = targetRoom.dailyRoomPrices || null
     isChargeNoshowModalOpen.value = true
   } else if (actionName === 'Xóa') {
     const tab = activeTab.value
@@ -6930,6 +6959,7 @@ async function triggerAction(actionName) {
 
 // ==================== CHARGE NOSHOW MODAL ====================
 const isChargeNoshowModalOpen = ref(false)
+const chargeNoshowDailyPrices = ref(null)
 const chargeNoshowBookingId = ref(null)
 const chargeNoshowBookingName = ref('')
 const chargeNoshowGuestName = ref('')
@@ -10763,6 +10793,7 @@ defineExpose({
     <Teleport to="body">
       <ChargeNoshowModal
         v-model:show="isChargeNoshowModalOpen"
+        :daily-room-prices="chargeNoshowDailyPrices"
         :bookingId="chargeNoshowBookingId"
         :bookingName="chargeNoshowBookingName"
         :guestName="chargeNoshowGuestName"

@@ -2326,6 +2326,41 @@ class BookingBusinessRulesTest extends TestCase
     }
 
     /**
+     * Row 381 (note 2/11, 21/11): sửa giai đoạn không insert tiền phòng vào booking_room_services;
+     * đêm chưa có dòng vẫn tính theo giá phòng, đêm đã chỉnh giá giữ nguyên khi gia hạn lại.
+     */
+    public function test_row_381_changing_stay_does_not_insert_room_charge_rows(): void
+    {
+        SystemDateRoll::query()->update(['system_date' => '2026-09-01']);
+        $booking = $this->createBooking(['arrival_date' => '2026-09-02', 'departure_date' => '2026-09-04', 'num_of_days' => 2]);
+        $room = BookingRoom::create([
+            'id' => 'G-381-RM', 'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-09-02', 'departure_date' => '2026-09-04', 'rate' => 500000,
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+        $lifecycle = app(\App\Services\BookingRoomLifecycleService::class);
+
+        $room->update(['departure_date' => '2026-09-06']);
+        $lifecycle->synchronize($room->fresh(), false, true, true);
+        $this->assertSame(0, \App\Models\BookingRoomService::where('booking_room_id', $room->id)->where('service_code', 'RM')->count());
+
+        \App\Models\BookingRoomService::create([
+            'booking_room_id' => $room->id, 'service_code' => 'RM', 'service_name' => 'Tien phong',
+            'service_date' => '2026-09-05', 'quantity' => 1, 'rate' => 700000, 'department' => 'FO', 'is_posted' => 0,
+        ]);
+        $room->update(['departure_date' => '2026-09-05']);
+        $lifecycle->synchronize($room->fresh(), false, true, true);
+        $this->assertSame(0, \App\Models\BookingRoomService::where('booking_room_id', $room->id)->where('service_code', 'RM')->count());
+
+        $room->update(['departure_date' => '2026-09-07']);
+        $lifecycle->synchronize($room->fresh(), false, true, true);
+        $rows = \App\Models\BookingRoomService::where('booking_room_id', $room->id)->where('service_code', 'RM')->get();
+        $this->assertCount(1, $rows);
+        $this->assertSame('2026-09-05', \Carbon\Carbon::parse($rows->first()->service_date)->toDateString());
+        $this->assertEquals(700000, (float) $rows->first()->rate);
+    }
+
+    /**
      * Row 488: đêm tiền phòng mới theo "Tiền phòng gửi Master" của đăng ký (GIT -> is_room 0, FIT -> 1).
      */
     public function test_row_488_projected_room_charge_follows_master_room_rate_flag(): void
@@ -2425,6 +2460,37 @@ class BookingBusinessRulesTest extends TestCase
         $this->assertSame($suite->id, (int) $fresh->room_class_id);
         $this->assertSame($this->roomClass->id, (int) $fresh->original_room_class_id);
         $this->assertSame(1, BookingRoom::where('booking_id', $booking->id)->count());
+    }
+
+    /**
+     * Row 497 (note 19/11, BK 21): một phòng đã nâng lên Suite (hết phòng), sửa phòng còn lại sang Suite phải bị chặn.
+     */
+    public function test_row_497_editing_second_room_to_class_filled_by_first_upgrade_is_blocked(): void
+    {
+        HotelConfig::updateOrCreate(['name' => 'AllowOverRoomTypeRoomKind'], ['value' => '0']);
+        HotelConfig::updateOrCreate(['name' => 'AllowInputOverAV'], ['value' => '0']);
+        $suite = $this->makeSuiteClassWithRooms(1);
+        $booking = $this->createBooking(['arrival_date' => '2026-09-06', 'departure_date' => '2026-09-08', 'num_of_days' => 2,
+            'registration_status_id' => $this->regStatus->booking_status_id]);
+        $upgraded = BookingRoom::create([
+            'booking_id' => $booking->id, 'room_class_id' => $suite->id, 'original_room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-09-06', 'departure_date' => '2026-09-08', 'rate' => 500000, 'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+        $second = BookingRoom::create([
+            'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id, 'original_room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-09-06', 'departure_date' => '2026-09-08', 'rate' => 500000, 'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $payload = $this->headerPayload($booking, '2026-09-06', '2026-09-08');
+        $payload['room_allocations'] = [
+            ['roomClassId' => $suite->id, 'quantity' => 1, 'rooms' => [['bookingRoomId' => $upgraded->id, 'roomClassId' => $suite->id, 'price' => 500000]]],
+            ['roomClassId' => $this->roomClass->id, 'upgradeClassId' => $suite->id, 'quantity' => 1, 'rooms' => [['bookingRoomId' => $second->id, 'roomClassId' => $this->roomClass->id, 'price' => 500000]]],
+        ];
+
+        $this->putJson("/api/bookings/{$booking->id}", $payload)->assertStatus(422);
+
+        $this->assertSame($this->roomClass->id, (int) $second->fresh()->room_class_id);
+        $this->assertSame($suite->id, (int) $upgraded->fresh()->room_class_id);
     }
 
     /**
@@ -4107,8 +4173,10 @@ class BookingBusinessRulesTest extends TestCase
 
         $this->assertSame([
             '2026-08-08' => 600000.0, '2026-08-09' => 600000.0, '2026-08-10' => 600000.0,
-            '2026-08-11' => 0.0, '2026-08-12' => 600000.0, '2026-08-13' => 600000.0,
+            '2026-08-11' => 0.0,
         ], $this->nightlyRates($room, 'RM'));
+        // Dòng 381: đêm gia hạn không insert dòng RM, vẫn tính theo giá phòng.
+        $this->assertSame(600000.0, (float) $room->fresh()->rate);
         $this->assertSame([
             '2026-08-08' => 0.0, '2026-08-09' => 300000.0, '2026-08-10' => 300000.0,
             '2026-08-11' => 0.0, '2026-08-12' => 300000.0, '2026-08-13' => 300000.0,
@@ -4132,8 +4200,10 @@ class BookingBusinessRulesTest extends TestCase
 
         $this->assertSame([
             '2026-08-08' => 600000.0, '2026-08-09' => 600000.0, '2026-08-10' => 600000.0,
-            '2026-08-11' => 0.0, '2026-08-12' => 600000.0, '2026-08-13' => 600000.0,
+            '2026-08-11' => 0.0,
         ], $this->nightlyRates($room, 'RM'));
+        // Dòng 381: đêm gia hạn không insert dòng RM, vẫn tính theo giá phòng.
+        $this->assertSame(600000.0, (float) $room->fresh()->rate);
         $this->assertSame([
             '2026-08-08' => 0.0, '2026-08-09' => 300000.0, '2026-08-10' => 300000.0,
             '2026-08-11' => 0.0, '2026-08-12' => 300000.0, '2026-08-13' => 300000.0,
