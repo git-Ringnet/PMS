@@ -18,11 +18,11 @@ class BreakageInvoicesByProductReportTest extends TestCase
         $template = require database_path('report_templates/breakage_invoices_by_product_reference.php');
         $d = $template->definition();
         $this->assertSame('BREAKAGE_INVOICES_BY_PRODUCT_REFERENCE', $d['report']);
-        $this->assertSame(7, count($d['content_json']['detail'][0]['columns']));
-        $this->assertSame(['ID','Sản phẩm','Đơn vị','Đơn giá','Số lượng','Thành tiền','Giảm giá'], array_column($d['content_json']['detail'][0]['columns'],'header'));
+        $this->assertSame(8, count($d['content_json']['detail'][0]['columns']));
+        $this->assertSame(['ID','Sản Phẩm','Đơn Vị','Đơn Giá','Số Lượng','Thành Tiền','Giảm Giá','Tổng Tiền'], array_column($d['content_json']['detail'][0]['columns'],'header'));
         $this->assertSame('parameters.p_group_by_date', $d['content_json']['detail'][0]['grouping'][0]['enabledBy']);
         $this->assertSame(100.0, array_sum(array_map(fn($c)=>(float)rtrim($c['width'],'%'),$d['content_json']['detail'][0]['columns'])));
-        $html = $template->render(['hotel'=>['address'=>'Hotel','logo'=>''],'report'=>['generated_by'=>'User','generated_at'=>'2026-09-11'],'parameters'=>['p_from_date'=>'11/09/2026','p_to_date'=>'11/09/2026'],'rows'=>[['MaProduct'=>1,'Product'=>'Áo','Currency'=>'VND','Rate'=>10000,'Quantity'=>2,'Total'=>20000,'DiscountAmount'=>0]],'totals'=>['Total'=>20000,'DiscountAmount'=>0]]);
+        $html = $template->render(['hotel'=>['address'=>'Hotel','logo'=>''],'report'=>['generated_by'=>'User','generated_at'=>'2026-09-11'],'parameters'=>['p_from_date'=>'11/09/2026','p_to_date'=>'11/09/2026'],'rows'=>[['MaProduct'=>1,'Product'=>'Áo','Currency'=>'VND','Rate'=>10000,'Quantity'=>2,'Amount'=>20000,'Total'=>20000,'DiscountAmount'=>0]],'totals'=>['Amount'=>20000,'Total'=>20000,'DiscountAmount'=>0]]);
         $this->assertStringContainsString('BÁO CÁO HÓA ĐƠN HÀNG BỂ VỠ (THEO SẢN PHẨM)', $html);
         $this->assertStringContainsString('<td>Áo</td>', $html);
         $this->assertStringContainsString('20.000', $html);

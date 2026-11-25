@@ -21,7 +21,7 @@ return new class
     {
         return <<<'HTML'
 <div class="report-header"><div class="hotel-header"><div class="hotel-logo">{{hotel.logo}}</div><div class="hotel-information"><div><b>Địa chỉ:</b> {{hotel.address}}</div><div><b>Người dùng:</b> {{report.generated_by}} <b>Ngày:</b> {{report.generated_at}}</div></div></div><hr><h1>BÁO CÁO HÓA ĐƠN HÀNG BỂ VỠ (THEO SẢN PHẨM)</h1><p class="period"><b>Ngày:</b> {{parameters.p_from_date}} &nbsp; ~ &nbsp; {{parameters.p_to_date}}</p></div>
-<table class="product-report"><colgroup><col style="width:7%"><col style="width:34%"><col style="width:12%"><col style="width:12%"><col style="width:11%"><col style="width:12%"><col style="width:12%"></colgroup><thead><tr><th>ID</th><th>Sản phẩm</th><th>Đơn vị</th><th>Đơn giá</th><th>Số lượng</th><th>Thành tiền</th><th>Giảm giá</th></tr></thead><tbody class="pms-grouped-rows" data-source="rows" data-group-configured="1" data-group-by="DateGroup"><tr class="pms-group-header" data-group-level="0" data-group-field="DateGroup" data-group-enabled-by="parameters.p_group_by_date"><td colspan="7" class="date-group">Ngày: {{row.DateGroup}}</td></tr><tr class="pms-detail-row"><td>{{row.MaProduct}}</td><td>{{row.Product}}</td><td>{{row.Currency}}</td><td>{{row.Rate|number}}</td><td>{{row.Quantity|number}}</td><td>{{row.Total|number}}</td><td>{{row.DiscountAmount|number}}</td></tr></tbody><tfoot><tr><td colspan="5">Tổng tiền</td><td>{{totals.Total|number}}</td><td>{{totals.DiscountAmount|number}}</td></tr></tfoot></table>
+<table class="product-report"><colgroup><col style="width:6%"><col style="width:27%"><col style="width:10%"><col style="width:11%"><col style="width:10%"><col style="width:12%"><col style="width:12%"><col style="width:12%"></colgroup><thead><tr><th>ID</th><th>Sản Phẩm</th><th>Đơn Vị</th><th>Đơn Giá</th><th>Số Lượng</th><th>Thành Tiền</th><th>Giảm Giá</th><th>Tổng Tiền</th></tr></thead><tbody class="pms-grouped-rows" data-source="rows" data-group-configured="1" data-group-by="DateGroup"><tr class="pms-group-header" data-group-level="0" data-group-field="DateGroup" data-group-enabled-by="parameters.p_group_by_date"><td colspan="8" class="date-group">Ngày: {{row.DateGroup}}</td></tr><tr class="pms-detail-row"><td>{{row.MaProduct}}</td><td>{{row.Product}}</td><td>{{row.Currency}}</td><td>{{row.Rate|number}}</td><td>{{row.Quantity|number}}</td><td>{{row.Amount|number}}</td><td>{{row.DiscountAmount|number}}</td><td>{{row.Total|number}}</td></tr></tbody><tfoot><tr><td colspan="5">Tổng tiền</td><td>{{totals.Amount|number}}</td><td>{{totals.DiscountAmount|number}}</td><td>{{totals.Total|number}}</td></tr></tfoot></table>
 HTML;
     }
 
@@ -40,20 +40,22 @@ HTML;
                     ['id' => 'laundry_product_date_group', 'field' => 'DateGroup', 'label' => 'Ngày: {{row.DateGroup}}', 'className' => 'date-group', 'sort' => 'ASC', 'enabledBy' => 'parameters.p_group_by_date'],
                 ],
                 'columns' => [
-                    ['header' => 'ID', 'value' => 'row.MaProduct', 'width' => '7%', 'align' => 'center'],
-                    ['header' => 'Sản phẩm', 'value' => 'row.Product', 'width' => '34%', 'align' => 'left'],
-                    ['header' => 'Đơn vị', 'value' => 'row.Currency', 'width' => '12%', 'align' => 'center'],
-                    ['header' => 'Đơn giá', 'value' => 'row.Rate', 'width' => '12%', 'align' => 'right', 'format' => 'number'],
-                    ['header' => 'Số lượng', 'value' => 'row.Quantity', 'width' => '11%', 'align' => 'right', 'format' => 'number'],
-                    ['header' => 'Thành tiền', 'value' => 'row.Total', 'width' => '12%', 'align' => 'right', 'format' => 'number'],
-                    ['header' => 'Giảm giá', 'value' => 'row.DiscountAmount', 'width' => '12%', 'align' => 'right', 'format' => 'number'],
+                    ['header' => 'ID', 'value' => 'row.MaProduct', 'width' => '6%', 'align' => 'center'],
+                    ['header' => 'Sản Phẩm', 'value' => 'row.Product', 'width' => '27%', 'align' => 'left'],
+                    ['header' => 'Đơn Vị', 'value' => 'row.Currency', 'width' => '10%', 'align' => 'center'],
+                    ['header' => 'Đơn Giá', 'value' => 'row.Rate', 'width' => '11%', 'align' => 'right', 'format' => 'number'],
+                    ['header' => 'Số Lượng', 'value' => 'row.Quantity', 'width' => '10%', 'align' => 'right', 'format' => 'number'],
+                    ['header' => 'Thành Tiền', 'value' => 'row.Amount', 'width' => '12%', 'align' => 'right', 'format' => 'number'],
+                    ['header' => 'Giảm Giá', 'value' => 'row.DiscountAmount', 'width' => '12%', 'align' => 'right', 'format' => 'number'],
+                    ['header' => 'Tổng Tiền', 'value' => 'row.Total', 'width' => '12%', 'align' => 'right', 'format' => 'number'],
                 ],
                 'customRows' => [[
                     'id' => 'laundry_product_totals', 'scope' => 'table', 'className' => 'product-total-row',
                     'cells' => [
                         ['type' => 'text', 'content' => 'Tổng tiền', 'colspan' => 5, 'align' => 'center'],
-                        ['type' => 'binding', 'binding' => 'totals.Total', 'colspan' => 1, 'align' => 'right', 'format' => 'number'],
+                        ['type' => 'binding', 'binding' => 'totals.Amount', 'colspan' => 1, 'align' => 'right', 'format' => 'number'],
                         ['type' => 'binding', 'binding' => 'totals.DiscountAmount', 'colspan' => 1, 'align' => 'right', 'format' => 'number'],
+                        ['type' => 'binding', 'binding' => 'totals.Total', 'colspan' => 1, 'align' => 'right', 'format' => 'number'],
                     ],
                 ]],
             ]], 'footer' => [],
@@ -62,7 +64,7 @@ HTML;
 
     public function css(): string
     {
-        return 'body{color:#0f172a;font-family:Arial,Helvetica,sans-serif;font-size:9px;margin:0 auto}.hotel-header{display:grid;grid-template-columns:175px 1fr;align-items:center;min-height:65px}.hotel-logo{display:flex;align-items:center;min-height:55px}.hotel-logo img{max-width:120px;max-height:55px;object-fit:contain}.hotel-information{line-height:1.8}hr{margin:0 0 10px;border:0;border-top:1px solid #cbd5e1}h1{margin:0;text-align:center;font-size:18px}.period{margin:8px 0 12px;text-align:center}.product-report{width:100%;border-collapse:collapse;table-layout:fixed}.product-report th,.product-report td{border:1px solid #cbd5e1;padding:4px 3px;line-height:1.15;vertical-align:middle;overflow-wrap:anywhere}.product-report th{background:#e2e8f0;color:#334155;text-align:center}.product-report .date-group{background:#fef3c7;color:#b45309;font-weight:bold;text-align:left}.product-report td:nth-child(1),.product-report td:nth-child(3){text-align:center}.product-report td:nth-child(n+4){text-align:right;white-space:nowrap}.product-report tfoot td{background:#f1f5f9;font-weight:bold}@media print{thead{display:table-header-group}tr{break-inside:avoid}}';
+        return 'body{color:#0f172a;font-family:Roboto,Arial,sans-serif;font-size:12px;margin:0 auto}.hotel-header{display:grid;grid-template-columns:175px 1fr;align-items:center;min-height:65px}.hotel-logo{display:flex;align-items:center;min-height:55px}.hotel-logo img{max-width:120px;max-height:55px;object-fit:contain}.hotel-information{line-height:1.8}hr{margin:0 0 10px;border:0;border-top:1px solid #cbd5e1}h1{margin:0;text-align:center;font-size:18px}.period{margin:8px 0 12px;text-align:center}.product-report{width:100%;border-collapse:collapse;table-layout:fixed}.product-report th,.product-report td{border:1px solid #cbd5e1;padding:4px 3px;line-height:1.15;vertical-align:middle;overflow-wrap:anywhere}.product-report th{background:#e2e8f0;color:#334155;text-align:center}.product-report .date-group{background:#fef3c7;color:#b45309;font-weight:bold;text-align:left}.product-report td:nth-child(1),.product-report td:nth-child(3){text-align:center}.product-report td:nth-child(n+4){text-align:right;white-space:nowrap}.product-report tfoot td{background:#e2e8f0;font-weight:bold}@media print{thead{display:table-header-group}tr{break-inside:avoid}}';
     }
 
     public function prepareData(array $data): array { return $this->sanitize($data); }

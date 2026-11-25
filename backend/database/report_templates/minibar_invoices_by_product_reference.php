@@ -156,7 +156,7 @@ return new class
             'borderRadius' => '0px',
         ];
         $nestedStyle = [
-            'textAlign' => 'left', 'fontSize' => '9px',
+            'textAlign' => 'left', 'fontSize' => '12px',
             'paddingTop' => '0px', 'paddingBottom' => '0px',
             'paddingLeft' => '0px', 'paddingRight' => '0px',
             'marginTop' => '0px', 'marginBottom' => '0px',
@@ -182,7 +182,7 @@ return new class
             'fontWeight' => 'bold',
         ]);
         $periodStyle = array_merge($bandStyle, [
-            'textAlign' => 'center', 'fontSize' => '11px',
+            'textAlign' => 'center', 'fontSize' => '12px',
             'marginTop' => '4px', 'marginBottom' => '14px',
         ]);
 
@@ -376,11 +376,11 @@ return new class
     public function css(): string
     {
         return <<<'CSS'
-body { color: #0f172a; font-family: Arial, Helvetica, sans-serif; font-size: 10px; margin: 0 auto; }
+body { color: #0f172a; font-family: Roboto, Arial, sans-serif; font-size: 12px; margin: 0 auto; }
 .hotel-header { display: grid; grid-template-columns: 175px 1fr; align-items: center; min-height: 65px; }
 .hotel-logo { display: flex; align-items: center; min-height: 55px; }
 .hotel-logo img { max-width: 120px; max-height: 55px; object-fit: contain; }
-.hotel-information { line-height: 1.8; text-align: right; font-size: 9.5px; }
+.hotel-information { line-height: 1.8; text-align: right; font-size: 12px; }
 hr, .header-divider { margin: 0 0 10px; border: 0; border-top: 1px solid #cbd5e1; }
 h1 { margin: 10px 0 6px; text-align: center; font-size: 18px; font-weight: bold; letter-spacing: 0.5px; }
 .period { margin: 4px 0 14px; text-align: center; font-size: 11px; }
