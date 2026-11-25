@@ -184,6 +184,44 @@ class ChildBreakfastService
     }
 
     /**
+     * Dòng 417: tình trạng ăn sáng của trẻ phụ thuộc tình trạng ăn sáng của phòng. Khi phòng đổi bật/tắt ăn sáng
+     * thì các đêm từ ngày hệ thống trở đi của trẻ trong phòng đổi theo (đêm quá khứ giữ nguyên).
+     * - Tắt: không ăn sáng, phụ thu 0đ.
+     * - Bật: có ăn sáng; đêm đang bị tắt (phụ thu 0đ do tắt) lấy lại giá mặc định, giá đã nhập tay giữ nguyên.
+     *
+     * @return int số dòng chi tiết ăn sáng đã đổi
+     */
+    public function syncRoomBreakfast(BookingRoom $room, bool $breakfast): int
+    {
+        $systemDate = app(RoomAvailabilityService::class)->getSystemDate()->toDateString();
+        $changed = 0;
+
+        foreach ($this->childrenForRoom($room) as $child) {
+            $isBaby = $child->age_group === 'baby';
+            $details = $child->breakfastDetails()->whereDate('service_date', '>=', $systemDate)->get();
+            foreach ($details as $detail) {
+                $values = [];
+                if ((bool) $detail->breakfast !== $breakfast) {
+                    $values['breakfast'] = $breakfast;
+                }
+                if (!$breakfast) {
+                    if ((float) $detail->amount !== 0.0) {
+                        $values['amount'] = 0.0;
+                    }
+                } elseif (!(bool) $detail->breakfast && !$isBaby && !(bool) $detail->is_free && (float) $detail->amount <= 0) {
+                    $values['amount'] = (float) $this->defaultDetailValues(false, true)['amount'];
+                }
+                if ($values) {
+                    $detail->update($values);
+                    $changed++;
+                }
+            }
+        }
+
+        return $changed;
+    }
+
+    /**
      * Nights [arrival, departure) of a room; a day-use room keeps its arrival day.
      *
      * @return list<string>

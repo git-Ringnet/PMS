@@ -99,6 +99,9 @@ class ShiftWorkController extends Controller
             $query->whereIn('status', [BookingRoom::STATUS_BOOKED, ...$arrivedStatuses]);
         }
 
+        // Dòng 540: đăng ký có tình trạng không ảnh hưởng phòng (is_availability=0) không hiện ở phòng đến.
+        $query->affectsAvailability();
+
         // Dòng 450: nhận phòng rồi chuyển ngay sang phòng khác chỉ lấy phòng gốc ban đầu,
         // không lấy thêm dòng phòng đích (dòng được tạo ra bởi lần chuyển, trỏ bởi move_room của phòng gốc).
         $query->whereNotIn('id', BookingRoom::query()->withTrashed()->select('move_room')->whereNotNull('move_room'));
@@ -299,6 +302,9 @@ class ShiftWorkController extends Controller
                     });
             });
         }
+
+        // Dòng 540: đăng ký có tình trạng không ảnh hưởng phòng (is_availability=0) không hiện ở phòng đi.
+        $query->affectsAvailability();
 
         $rooms = $query->orderBy('booking_id', 'asc')
             ->orderBy('room_number', 'asc')

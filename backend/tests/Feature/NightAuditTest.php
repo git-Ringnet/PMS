@@ -449,6 +449,63 @@ class NightAuditTest extends TestCase
         $this->assertEquals(640000, $breakfastOf($withoutSetupRow));
     }
 
+    /**
+     * Dòng 540 (note 22/11): tiền phòng của phòng late check-in có charge mô tả "Dịch vụ phòng nghỉ noshow 102"
+     * (tên dịch vụ + noshow + số phòng), cả trên bill lẫn chi tiết bill.
+     */
+    public function test_row_540_late_check_in_charge_description_is_service_name_noshow_room_number()
+    {
+        $sysDateStr = Carbon::parse(SystemDateRoll::latest('id')->first()->system_date)->toDateString();
+        Room::updateOrCreate(['room_number' => '112'], ['room_class_id' => 1, 'room_form_id' => 1, 'floor' => '1', 'room_status_code' => 'vacant_ready']);
+        $booking = Booking::create([
+            'booking_name' => 'KHACH 540', 'arrival_date' => $sysDateStr, 'departure_date' => Carbon::parse($sysDateStr)->addDays(2)->toDateString(),
+            'num_of_days' => 2, 'booking_date' => $sysDateStr, 'created_by' => 'admin', 'registration_status_id' => 1,
+        ]);
+        $bookingRoom = BookingRoom::create([
+            'id' => 'G5400001', 'booking_id' => $booking->id, 'room_class_id' => 1, 'room_number' => '112',
+            'arrival_date' => $sysDateStr, 'departure_date' => Carbon::parse($sysDateStr)->addDays(2)->toDateString(),
+            'status' => BookingRoom::STATUS_BOOKED, 'rate' => 500000, 'adults' => 2,
+        ]);
+
+        $this->actingAs($this->user)->postJson('/api/night-audit/late-check-in', [
+            'booking_room_id' => $bookingRoom->id, 'charge_option' => 'room_only', 'reason' => 'Late checkin 540',
+        ])->assertSuccessful();
+
+        $expected = HotelService::where('code', 'RM')->firstOrFail()->name . ' noshow 112';
+        $bill = ServiceBill::where('RentalRoomId1', $bookingRoom->id)->where('ServiceId', 'RM')->firstOrFail();
+        $this->assertSame($expected, $bill->DescriptionServive);
+        $detail = ServiceBillDetail::where('BillServiceId', $bill->Ma)->orderBy('Ma')->firstOrFail();
+        $this->assertSame($expected, $detail->DescriptionServive);
+    }
+
+    /**
+     * Dòng 540 (note 22/11): màn hình Sang ngày không tính đăng ký có tình trạng không ảnh hưởng phòng (is_availability=0).
+     */
+    public function test_row_540_night_audit_status_excludes_registration_status_without_availability()
+    {
+        $sysDateStr = Carbon::parse(SystemDateRoll::latest('id')->first()->system_date)->toDateString();
+        \Illuminate\Support\Facades\DB::table('booking_statuses')->insertOrIgnore([['id' => 29, 'name' => 'Waiting']]);
+        RegistrationStatus::updateOrCreate(['booking_status_id' => 29], ['name' => 'Waiting', 'is_availability' => false, 'bk_definite' => 1]);
+        $make = function (string $id, string $name, ?int $statusId) use ($sysDateStr) {
+            $booking = Booking::create([
+                'booking_name' => $name, 'arrival_date' => $sysDateStr, 'departure_date' => Carbon::parse($sysDateStr)->addDay()->toDateString(),
+                'num_of_days' => 1, 'booking_date' => $sysDateStr, 'created_by' => 'admin', 'registration_status_id' => $statusId,
+            ]);
+
+            return BookingRoom::create([
+                'id' => $id, 'booking_id' => $booking->id, 'room_class_id' => 1, 'arrival_date' => $sysDateStr,
+                'departure_date' => Carbon::parse($sysDateStr)->addDay()->toDateString(), 'status' => BookingRoom::STATUS_BOOKED, 'rate' => 500000,
+            ]);
+        };
+        $make('G5400101', 'WAITING 540', 29);
+        $kept = $make('G5400102', 'GUARANTEED 540', 1);
+
+        $data = $this->actingAs($this->user)->getJson('/api/night-audit/check-status')->assertOk()->json('data');
+
+        $this->assertSame([$kept->id], collect($data['pending_checkins'])->pluck('id')->all());
+        $this->assertSame(1, $data['pending_checkins_count']);
+    }
+
     public function test_row_416_night_audit_room_charge_details_use_service_descriptions()
     {
         $sysDateStr = Carbon::parse(SystemDateRoll::latest('id')->first()->system_date)->toDateString();

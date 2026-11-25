@@ -300,10 +300,11 @@ class GuestController extends Controller
             }
 
             // Gán vào phòng (tránh duplicate)
-            // actual_arrival_date: Nếu phòng đang inhouse (status=1) thì dùng ngày hệ thống hiện tại,
-            // Nếu phòng chưa check-in (status=0) thì dùng arrival_date của phòng.
-            $actualArrival = ($room->status === \App\Models\BookingRoom::STATUS_CHECKED_IN)
-                ? now()->toDateString()
+            // Dòng 538: phòng đang ở (status=1) lấy NGÀY HỆ THỐNG (không phải ngày thực tế của máy) và giờ hiện tại;
+            // phòng chưa check-in (status=0) dùng arrival_date của phòng, chưa có giờ đến thực tế.
+            $isInhouseRoom = (int) $room->status === \App\Models\BookingRoom::STATUS_CHECKED_IN;
+            $actualArrival = $isInhouseRoom
+                ? app(\App\Services\RoomAvailabilityService::class)->getSystemDate()->toDateString()
                 : $room->arrival_date->toDateString();
 
             $pivot = \App\Models\BookingRoomGuest::firstOrCreate(
@@ -312,6 +313,7 @@ class GuestController extends Controller
                     'is_primary'          => $request->is_primary ?? false,
                     'status'              => $room->status,
                     'actual_arrival_date' => $actualArrival,
+                    'actual_arrival_time' => $isInhouseRoom ? now()->format('H:i:s') : null,
                     'checkin_by'          => Auth::user()?->username ?? 'system',
                     'breakfast'           => $room->breakfast,
                 ]
@@ -1292,6 +1294,10 @@ class GuestController extends Controller
 
         DB::transaction(function () use ($request, $room, $roomData, $stayFieldsChanged, $rateCodeChanged, $datesChanged, $extraBedChanged) {
             if ($roomData) $room->update($roomData);
+            // Dòng 417: đổi tình trạng ăn sáng của phòng thì chi tiết ăn sáng của trẻ đổi theo.
+            if ($roomData && $room->wasChanged('breakfast')) {
+                app(\App\Services\ChildBreakfastService::class)->syncRoomBreakfast($room, (bool) $room->breakfast);
+            }
             if ($stayFieldsChanged) {
                 // Đêm đã có giá theo ngày giữ nguyên; chỉ đổi mã giá mới tính lại.
                 $explicitRate = $request->has('rate') && $request->input('rate') !== null

@@ -6544,5 +6544,9 @@
  "Không đọc được file. Vui lòng dùng file Excel (.xlsx, .xls) hoặc CSV theo mẫu.": "Could not read the file. Please use an Excel (.xlsx, .xls) or CSV file that follows the template.",
  "Đã điền {{ n }} khách từ file vào bảng": "Filled {{ n }} guests from the file into the table",
  "In biên nhận thu tiền, hiện số tiền": "Print the payment receipt with the amount",
- "In biên nhận thu tiền, ẩn số tiền": "Print the payment receipt without the amount"
+ "In biên nhận thu tiền, ẩn số tiền": "Print the payment receipt without the amount",
+ "⚙️ Cột": "⚙️ Columns",
+ "Sắp xếp và ẩn/hiện cột": "Sort and show/hide columns",
+ "Ẩn/Hiện và kéo thả đổi vị trí cột": "Show/hide and drag to reorder columns",
+ "Tình trạng đăng ký không giữ phòng nên không gán số phòng": "This registration status does not hold rooms, so room numbers cannot be assigned"
 }

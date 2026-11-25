@@ -254,6 +254,42 @@ class ShiftWorkListTest extends TestCase
         $this->assertEquals(1860000, $data[0]['totalAmount']);
     }
 
+    /**
+     * Dòng 540 (note 22/11): đăng ký có tình trạng không ảnh hưởng phòng (is_availability=0, vd Waiting)
+     * không xuất hiện trong danh sách phòng đến / phòng đi của Danh sách công việc.
+     */
+    private function nonAvailabilityBooking(string $name, int $statusId, bool $availability): Booking
+    {
+        DB::table('booking_statuses')->insertOrIgnore([['id' => $statusId, 'name' => 'Status ' . $statusId]]);
+        \App\Models\RegistrationStatus::updateOrCreate(
+            ['booking_status_id' => $statusId],
+            ['name' => 'Status ' . $statusId, 'is_availability' => $availability, 'bk_definite' => 1],
+        );
+        $booking = $this->makeBooking($name);
+        $booking->update(['registration_status_id' => $statusId]);
+
+        return $booking;
+    }
+
+    public function test_row_540_arrivals_and_departures_exclude_registration_status_without_availability(): void
+    {
+        $waiting = $this->nonAvailabilityBooking('Waiting 540', 29, false);
+        $this->makeRoom($waiting, BookingRoom::STATUS_BOOKED, ['room_number' => '101']);
+        $confirmed = $this->nonAvailabilityBooking('Confirmed 540', 28, true);
+        $this->makeRoom($confirmed, BookingRoom::STATUS_BOOKED, ['room_number' => '606']);
+
+        $arrivals = collect($this->getJson('/api/shift-work/arrivals?date=2026-09-02&status=all')->assertOk()->json('data'));
+        $this->assertSame(['Confirmed 540'], $arrivals->pluck('bookingName')->all());
+
+        $waitingOut = $this->nonAvailabilityBooking('Waiting out 540', 29, false);
+        $this->makeRoom($waitingOut, BookingRoom::STATUS_CHECKED_IN, ['room_number' => '1105', 'departure_date' => '2026-09-03']);
+        $confirmedOut = $this->nonAvailabilityBooking('Confirmed out 540', 28, true);
+        $this->makeRoom($confirmedOut, BookingRoom::STATUS_CHECKED_IN, ['room_number' => '705', 'departure_date' => '2026-09-03']);
+
+        $departures = collect($this->getJson('/api/shift-work/departures?date=2026-09-03&status=all')->assertOk()->json('data'));
+        $this->assertSame(['Confirmed out 540'], $departures->pluck('bookingName')->all());
+    }
+
     public function test_same_day_booked_room_is_pending_departure_but_overnight_booking_is_not(): void
     {
         $sameDayBooking = $this->makeBooking('Same-day reservation');

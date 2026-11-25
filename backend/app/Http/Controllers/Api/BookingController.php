@@ -154,6 +154,7 @@ class BookingController extends Controller
             'bookingRooms.children.breakfastDetails',
             'bookingRooms.services',
             'bookingRooms.transferredOutServices',
+            'bookingRooms.lateCheckins:id,booking_room_id,late_checkin_date,reason',
             'bookingRooms.serviceBills',
             'bookingRooms.currentServiceBills',
             'bookingRooms.specialRequests.specialRequest',
@@ -187,7 +188,7 @@ class BookingController extends Controller
             $relations[] = 'payments.user';
             $relations[] = 'payments.bankAccount';
             // Ngày đến ban đầu của phòng late check-in để Hóa đơn cho post lại các đêm cũ.
-            $relations[] = 'bookingRooms.lateCheckins:id,booking_room_id,late_checkin_date';
+            $relations[] = 'bookingRooms.lateCheckins:id,booking_room_id,late_checkin_date,reason';
         }
 
         $stayOnly = $request->boolean('stay_only');
@@ -907,6 +908,7 @@ class BookingController extends Controller
             'bookingRooms.children.breakfastDetails',
             'bookingRooms.services',
             'bookingRooms.transferredOutServices',
+            'bookingRooms.lateCheckins:id,booking_room_id,late_checkin_date,reason',
             'bookingRooms.serviceBills',
             'bookingRooms.currentServiceBills',
             'masterServiceBills',
@@ -953,6 +955,7 @@ class BookingController extends Controller
             'bookingRooms.children.breakfastDetails',
             'bookingRooms.services',
             'bookingRooms.transferredOutServices',
+            'bookingRooms.lateCheckins:id,booking_room_id,late_checkin_date,reason',
             'bookingRooms.serviceBills',
             'bookingRooms.currentServiceBills',
             'masterServiceBills',
@@ -1092,6 +1095,7 @@ class BookingController extends Controller
             'bookingRooms.children.breakfastDetails',
             'bookingRooms.services',
             'bookingRooms.transferredOutServices',
+            'bookingRooms.lateCheckins:id,booking_room_id,late_checkin_date,reason',
             'bookingRooms.specialRequests.specialRequest',
             'payments.paymentMethod',
         ]);
@@ -1793,6 +1797,10 @@ class BookingController extends Controller
                                 $roomStayChanged = $bRoom->arrival_date?->toDateString() !== $roomArrival
                                     || $bRoom->departure_date?->toDateString() !== $roomDeparture;
                                 $bRoom->update($roomData);
+                                // Dòng 417: đổi tình trạng ăn sáng của phòng thì chi tiết ăn sáng của trẻ đổi theo.
+                                if ($bRoom->wasChanged('breakfast')) {
+                                    app(\App\Services\ChildBreakfastService::class)->syncRoomBreakfast($bRoom, (bool) $bRoom->breakfast);
+                                }
                             } else {
                                 $bRoom = \App\Models\BookingRoom::create($roomData);
                             }
@@ -2106,6 +2114,7 @@ class BookingController extends Controller
             'bookingRooms.children.breakfastDetails',
             'bookingRooms.services',
             'bookingRooms.transferredOutServices',
+            'bookingRooms.lateCheckins:id,booking_room_id,late_checkin_date,reason',
             'bookingRooms.serviceBills',
             'bookingRooms.currentServiceBills',
             'bookingRooms.specialRequests.specialRequest',
@@ -4192,6 +4201,11 @@ class BookingController extends Controller
                     }
 
                     $roomNumber = $detail['roomNumber'];
+                    // Dòng 540: đăng ký có tình trạng không giữ phòng (is_availability=0) khi sửa không cho gán/đổi số phòng.
+                    if ($isWaitingBooking && $isPersistedStay
+                        && trim((string) $roomNumber) !== trim((string) ($bookingRoom->room_number ?? ''))) {
+                        throw new \Exception('Đăng ký có tình trạng không giữ phòng nên không thể gán số phòng.');
+                    }
                     $room = \App\Models\Room::where('room_number', $roomNumber)->first();
                     if (!$room) {
                         throw new \Exception('Số phòng ' . $roomNumber . ' không tồn tại trong hệ thống.');

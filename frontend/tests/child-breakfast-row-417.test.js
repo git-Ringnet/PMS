@@ -23,8 +23,9 @@ test('row 417/480: amount inputs of the child rows are shown for breakfast rows,
   }
 })
 
-test('row 415: modal has no close (X) button and a Quay lại button placed before Lưu', () => {
-  assert.doesNotMatch(modal, /title="Đóng"/)
+test('row 415/541: modal có nút X đóng ở header (note 23/11 dòng 541) và nút Quay lại đứng trước Lưu', () => {
+  // Dòng 415 (12/11) từng bỏ nút X; note 23/11 của dòng 541 yêu cầu có lại nút X tắt màn hình.
+  assert.match(modal, /title="Đóng"/)
   const back = modal.indexOf('data-testid="child-breakfast-back"')
   const save = modal.indexOf('@click="save"')
   assert.ok(back > -1 && save > -1 && back < save, 'Quay lại phải đứng trước Lưu')

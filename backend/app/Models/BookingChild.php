@@ -87,12 +87,22 @@ class BookingChild extends Model
             if (!empty($model->booking_room_id)) {
                 $status = (int) ($model->child_status ?? 1);
                 $assignmentStatus = in_array($status, [0, 1], true) ? 1 : $status;
+                $assignmentData = ['status' => $assignmentStatus];
+                // Dòng 538: trẻ thêm vào phòng đang ở có ngày đến = ngày hệ thống và giờ đến hiện tại.
+                $room = BookingRoom::find($model->booking_room_id);
+                if ($room && (int) $room->status === BookingRoom::STATUS_CHECKED_IN && $assignmentStatus === 1) {
+                    $assignmentData += [
+                        'actual_arrival_date' => app(\App\Services\RoomAvailabilityService::class)->getSystemDate()->toDateString(),
+                        'actual_arrival_time' => now()->format('H:i:s'),
+                        'checkin_by' => auth()->user()?->username ?? 'system',
+                    ];
+                }
                 BookingRoomChild::firstOrCreate(
                     [
                         'booking_child_id' => $model->id,
                         'booking_room_id' => $model->booking_room_id,
                     ],
-                    ['status' => $assignmentStatus]
+                    $assignmentData
                 );
             }
         });

@@ -476,6 +476,10 @@ class BookingRoomController extends Controller
             }
         } else {
             $bookingRoom->update($validated);
+            // Dòng 417: đổi tình trạng ăn sáng của phòng thì chi tiết ăn sáng của trẻ đổi theo.
+            if ($bookingRoom->wasChanged('breakfast')) {
+                app(\App\Services\ChildBreakfastService::class)->syncRoomBreakfast($bookingRoom, (bool) $bookingRoom->breakfast);
+            }
         }
 
         // Cập nhật khách chính (guest_name)

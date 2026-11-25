@@ -35,6 +35,21 @@ class BookingRoom extends Model
             });
     }
 
+    /**
+     * Dòng 540: chỉ lấy phòng của đăng ký có tình trạng đăng ký ảnh hưởng phòng (registration_statuses.is_availability = 1).
+     * Các tình trạng như Waiting (is_availability = 0) không chiếm phòng nên không xuất hiện ở danh sách phòng đến/đi,
+     * Sang ngày... Đăng ký chưa có tình trạng vẫn được tính.
+     */
+    public function scopeAffectsAvailability(Builder $query): Builder
+    {
+        return $query->whereHas('booking', function (Builder $booking): void {
+            $booking->where(function (Builder $status): void {
+                $status->whereNull('registration_status_id')
+                    ->orWhereHas('registrationStatus', fn (Builder $registration) => $registration->where('is_availability', 1));
+            });
+        });
+    }
+
     /** Scope to virtual/service-anchor rows without changing normal relation queries. */
     public function scopeVirtual(Builder $query): Builder
     {
