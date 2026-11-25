@@ -110,10 +110,14 @@ onMounted(() => {
             :style="{ transitionDelay: `${index * 100 + 400}ms` }"
             :class="isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-6'"
           >
+            <!-- Nút giữ nguyên vị trí/kích thước (vùng bấm cố định); hiệu ứng hover/active chạy trên lớp bên trong
+                 để thẻ không bị xê dịch khỏi con trỏ giữa lúc nhấn và nhả chuột (gây "bấm không ăn"). -->
             <button
+              type="button"
               @click="navigateTo(item.route)"
-              class="group relative w-36 sm:w-38 h-32 sm:h-34 bg-white/15 backdrop-blur-xl border border-white/30 rounded-2xl flex flex-col items-center justify-center gap-2.5 cursor-pointer shadow-xl transition-all duration-200 ease-out hover:bg-white/25 hover:border-white/50 hover:shadow-2xl hover:scale-105 hover:-translate-y-1.5 active:scale-95"
+              class="group relative w-36 sm:w-38 h-32 sm:h-34 p-0 bg-transparent border-0 cursor-pointer"
             >
+              <div class="absolute inset-0 pointer-events-none bg-white/15 backdrop-blur-xl border border-white/30 rounded-2xl flex flex-col items-center justify-center gap-2.5 shadow-xl transition-all duration-200 ease-out group-hover:bg-white/25 group-hover:border-white/50 group-hover:shadow-2xl group-hover:scale-105 group-hover:-translate-y-1.5 group-active:scale-95">
               <!-- Icon -->
               <div
                 class="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center group-hover:bg-white/30 transition-all duration-200 ease-out group-hover:scale-110 shadow-inner">
@@ -148,6 +152,7 @@ onMounted(() => {
               <span class="text-white text-xs sm:text-[13px] tracking-wide drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)] leading-tight text-center px-1 transition-transform duration-200 ease-out group-hover:scale-[1.02]">{{
                 item.name
                 }}</span>
+              </div>
 
               <!-- Hover description tooltip -->
               <div
