@@ -1,5 +1,11 @@
 # Legacy To New Table Map
 
+## Housekeeping invoice report rules (verified 2026-11-23)
+
+- `SP3000` / `service_bills`, `SP6000` / `housekeeping_service_bills`, `SP6001` / `housekeeping_service_bill_details` và `SP3002` / `payments` là nguồn đọc cho TC_BC_LT_03 (`sp_125`, `sp_202`, `sp_206`). Đây là quy tắc báo cáo, không thay đổi khóa import.
+- Quan hệ Master/Booking dùng owner hiện tại `RegisterID2`/`RentalRoomId2`; khi `RegisterID2 IS NOT NULL`, `sp_125` hiển thị Phòng rỗng. Không suy diễn lại quan hệ import từ quy tắc hiển thị này.
+- `PaymentMethod='CL'` là điều kiện đã xác minh cho `sp_202`; `FOCType` được dùng thêm cho nhánh free-item `sp_206`. Không đồng nhất hai cờ này thành khóa hay quy tắc import.
+
 ## Day Use report mapping
 
 - `SP2100` -> `booking_rooms`: detail row, Day Use/date/status/user filters, and separate adult/baby/child counts.
@@ -15,6 +21,7 @@
 - Hành vi legacy được đối chiếu với `sp_055`, `sp_078` và `func_store148`; đây là nguồn quy tắc báo cáo, không xác lập khóa import.
 - Ngày trước `SystemDate` chỉ đọc snapshot sau Night Audit. Ngày hiện tại/tương lai đọc dữ liệu vận hành mới. Không được fallback lịch sử sang booking/bill live.
 - Khi import lịch sử, `booking_id`/dimension runtime không được suy diễn làm khóa map legacy. Trạng thái: `Chưa xác minh` cho backfill/import snapshot cho đến khi đối chiếu được từng ngày với output legacy.
+- Snapshot giữ riêng tiền phòng, thêm giường và extra rollaway phục vụ `sp_055` grouped-detail; đây là quy tắc trình bày/runtime, không xác lập mapping import hoặc khóa legacy.
 
 ## Expected breakfast report mapping (verified 2026-09-16)
 

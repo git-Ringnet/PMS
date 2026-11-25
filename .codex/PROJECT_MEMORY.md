@@ -1,5 +1,27 @@
 # Project Memory — PMS
 
+- 2026-11-25: TC_BC_LT_02 routing guard — `COMPANY_OCCUPANCY` thêm điều kiện metadata `unless_truthy` cho ba toggle nhóm. Khi bật nhóm và `Hiển thị chi tiết`, runtime phải giữ report Summary/Grouped 14 cột như legacy; chỉ trường hợp không nhóm mới route sang `COMPANY_OCCUPANCY_DETAIL` 21 cột. Migration `2026_11_25_125000_guard_company_occupancy_detail_routing.php` chỉ cập nhật metadata report này; chưa chạy trên database ngoài môi trường test.
+- 2026-11-25: Report API serialization — `ReportDefinitionController` giữ `view_mode_when` khi trả parameter UI schema. Thiếu field này khiến frontend bỏ điều kiện detail/group của TC_BC_LT_02; không đổi API route, procedure hoặc report metadata khác.
+- 2026-11-25: TC_BC_LT_02 visual routing retest — không nhóm + Detail route Detail 21 cột; có nhóm + Detail giữ Summary 11 cột; số liệu test `97` RoomNight / `221` GuestNight / `66,332,000` TotalRevenue. Ảnh legacy xác nhận Summary/Grouped là 11 cột; “14” là số dòng công ty, không phải số cột.
+
+- 2026-11-23: TC_BC_LT_03 — Khảo sát toàn diện, thu thập bằng chứng UX/UI, SQL, Network & Baseline đối soát cho 9 báo cáo Housekeeping (`LAUNDRY_INVOICES`, `BREAKAGE_INVOICES`, `MINIBAR_INVOICES`, `LAUNDRY_INVOICES_BY_PRODUCT`, `BREAKAGE_INVOICES_BY_PRODUCT`, `MINIBAR_INVOICES_BY_PRODUCT`, `LAUNDRY_FREE_INVOICES`, `BREAKAGE_FREE_INVOICES`, `MINIBAR_FREE_INVOICES`):
+  - Quyền chỉ-đọc (Read-only): Không sửa đổi dữ liệu hay code vận hành; toàn bộ SQL gốc legacy (`sp_125`, `sp_202`, `sp_202_detail`, `sp_206`, `sp_206_GroupByDate`, `vw_018`, `vw_039`, `vw_040`) đã được xuất nguyên bản vào `function_sql/` và `.codex/docs/reports/evidence/tc_bc_lt_03/sql/`.
+  - Khảo sát UX/UI & DevExpress Web Document Viewer 22.2.7 qua Playwright: Đã chụp và lưu ảnh ban đầu của cả 9 báo cáo, bóc tách cấu trúc 3 component React React UmiJS (`BillReportHK`, `BillReportByProduct`, `ComplimentBillReportHK`), các tham số `ParametersModel` và handler `DXXRDV` (`openReport`, `startBuild`).
+  - Baseline thực tế & Đối soát toán học 100%: LA Hóa đơn 11 bills (1.490.000 đ) = LA Sản phẩm 20 items (1.490.000 đ); BR Hóa đơn 5 bills (575.000 đ, có ca chuyển phòng và cặp Correct bù trừ) = BR Sản phẩm 8 items (575.000 đ); MB Hóa đơn 15 bills (430.000 đ, có ca chuyển Master booking) = MB Sản phẩm 37 items (430.000 đ); 3 báo cáo Free gồm LA Free 300.000 đ, BR Free 240.000 đ, MB Free 50.000 đ.
+  - Đã xuất bản báo cáo tổng hợp đầy đủ 16 mục tại [.codex/docs/reports/tc_bc_lt_03_full_legacy_new_comparison.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/tc_bc_lt_03_full_legacy_new_comparison.md) kèm sơ đồ quan hệ CSDL [dependency_graph.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/evidence/tc_bc_lt_03/sql/dependency_graph.md) và 9 tài liệu đặc tả `ui_initial_state.md`.
+
+- 2026-11-23: TC_BC_LT_02 / Báo cáo công suất công ty (`COMPANY_OCCUPANCY` - Dòng 167 & `COMPANY_OCCUPANCY_DETAIL` - Dòng 166):
+  - Đã trích xuất mã nguồn hàm legacy `ProVistaNavyHotel.dbo.func_store148` (1345 dòng) từ SQL Server cục bộ vào cả `.codex/docs/doc_baocao/sql/ProVistaNavyHotel_func_store148.sql` và `function_sql/ProVistaNavyHotel_func_store148.sql`.
+  - Chốt chính thức baseline P0 cho ngày 20/08/2026 theo PDF DevExpress legacy: 14 công ty, 97 đêm phòng, 221 khách, DT phòng 61.337.000 đ, DT khác 4.995.000 đ, tổng DT 66.332.000 đ.
+  - Sửa runtime và Stored Procedure: Tách khoản 1.000.000 đ phụ thu giường phụ (`EB`) của KHÁCH LẺ (CTY0001) khỏi tiền phòng thuần RM (7.760.000 đ), giúp `ActualADR` và `RackADR` của KHÁCH LẺ trả về chính xác 705.455 đ (7.760.000 / 11), khớp hoàn toàn bản in PDF legacy.
+  - Kiểm thử đa ngày (Multi-day): Thêm giao dịch ngày 21/08/2026 và 5 phòng OOO, chứng minh RoomAvailable thay đổi giữa các ngày (180 phòng ngày 20/08 và 175 phòng ngày 21/08), tính năng phân nhóm theo ngày và cộng dồn toàn kỳ (117 đêm phòng / 355 phòng khả dụng, 80.332.000 đ tổng DT).
+  - Trích xuất kết quả thực tế cho bộ lọc khu vực `p_area` ('Khu A' 71 đêm vs 'Khu B' 26 đêm, tổng 97 đêm) và bộ lọc ăn sáng `p_include_breakfast = 0` (tiền phòng GREENTRAVEL giảm 400.000 đ cho 8 đêm x 50.000 đ ăn sáng).
+  - P1: Đồng bộ fixture và unit test sang baseline 97/221/66.332.000 đ, căn chỉnh chuẩn 100% tỷ lệ chiều rộng 14 cột summary (`company_occupancy_reference.php`) và 21 cột detail (`company_occupancy_detail_reference.php`).
+  - P2: Tạo migration `2026_11_23_140000_harmonize_company_occupancy_runtime_procedures.php`; migration chỉ tạo lại procedure cho connection tenant do runner cung cấp và chưa chạy trên tenant.
+  - P3: Cần đối chiếu runtime Dòng 166 (`rpt_company_occupancy_detail`) và Dòng 167 (`rpt_company_occupancy`) với dữ liệu legacy qua 12 tổ hợp UI trước nghiệm thu.
+
+- 2026-11-21: TC_BC_LT_02 / Công suất công ty: chuẩn bị migration clone interaction legacy cho `COMPANY_OCCUPANCY` và `COMPANY_OCCUPANCY_DETAIL`. Summary mặc định 11 cột; khi có nhóm và bật chi tiết dùng `sp_055` 14 cột (thêm GuestNight/RM/EB); khi không nhóm và bật chi tiết route sang `sp_078` 21 cột. ReportsPage thêm điều kiện routing metadata `view_mode_when`; Report Lookup bổ sung `markets` trả ID. Detail thêm dòng chỉ đọc Chi nhánh cho user nhiều chi nhánh, vẫn tenant-scoped. Night Audit tách EB/ER trước Revenue và chỉ gộp CP vào FOC khi cấu hình bật. Thêm command `reports:backfill-company-occupancy-snapshots`: mặc định chỉ tạo snapshot thiếu, `--force` cần xác nhận và audit log. Không sửa controller/report renderer/route. Migration chưa chạy trên tenant; UAT raw legacy, PDF/XLSX và mapping khu vực legacy còn cần thực hiện.
+
 - 2026-11-20: TC_BC_LT_01 / Báo cáo công nợ công ty: V3 tách biệt (`COMPANY_DEBT_LEGACY_DTX_V3`) giữ V2 để rollback. Clone A4 dọc nay đưa bảng giải trừ ngay dưới từng dòng công nợ, thêm phương thức thanh toán/người thanh toán, số còn nợ theo dòng/nhóm và ngày tạo chỉ hiển thị ngày. `TemplateRendererService` và Template Designer có loại hàng con opt-in `detail-list`; không template nào khai báo thì không đổi output. Không sửa schema, model, import, payment/settlement flow, API hay báo cáo khác. Cần chạy migration `2026_11_20_130000_clone_company_debt_legacy_detail_layout.php`, build frontend và UAT preview/PDF/XLSX bằng mẫu legacy.
 
 - 2026-11-20: Sửa 500 khi chạy `COMPANY_DEBT`: aggregate renderer bỏ qua giá trị mảng/object trước `array_unique`. `SettlementDetails` là dữ liệu con nên không còn gây `Array to string conversion`; số/count aggregate của scalar giữ nguyên cho mọi báo cáo.
@@ -2094,6 +2116,10 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 ## Current Status
 
+- 2026-11-23: TC_BC_LT_03 đã có migration cô lập cho 9 báo cáo hóa đơn LA/BR/MB và hai template BR; không đổi API, UI dùng chung, schema hay import. Migration chưa chạy tenant; cần nghiệm thu ba baseline normal và ba baseline Free.
+
+- 2026-11-21: TC_BC_LT_02 đã có migration metadata/template cô lập và command backfill snapshot bảo toàn ngày đã chốt; chưa chạy trên tenant. `COMPANY_OCCUPANCY` clone 11 cột mặc định, 14 cột khi có nhóm+bật chi tiết; không nhóm+bật chi tiết route sang `COMPANY_OCCUPANCY_DETAIL` 21 cột. Detail hiện có dòng `Chi nhánh` chỉ đọc cho user nhiều chi nhánh, vẫn chỉ chạy tenant hiện hành. Không sửa renderer/controller/route báo cáo dùng chung.
+
 - 2026-11-20: Đăng ký / Day Use: sửa số đêm tại header từ `1` về `0` nay đồng bộ cờ ở theo giờ cho đúng các phòng `Booked (0)` đang theo ngày booking. Payload hiện có lưu `bookings.is_day_use` và `booking_rooms.is_day_use`, nên Kế hoạch phòng hiển thị Day Use sau reload. Không áp dụng cho ô số đêm từng phòng, room đang check-in/check-out, no-show, hủy hay lịch sử chuyển phòng; không đổi API/schema/import. Node regression 3/3 và frontend build đạt; cần UAT GAL5.
 
 - 2026-11-20: TC_BC_LT_01 đã có migration clone report V2, chưa chạy database thật. Công nợ công ty dùng A4 dọc; công nợ đã thanh toán dùng A4 ngang. Không đổi schema/payment flow/generic report engine.
@@ -2200,6 +2226,10 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 
 ## Recent Changes
+
+- 2026-11-23: TC_BC_LT_03 tạo lại procedure LA/BR/MB theo `sp_125`/`sp_202`/`sp_206`; thêm trường Status/HTTT, giữ Master để trống Phòng, cho `All` bao gồm Free/Correct và chuẩn hóa lọc sản phẩm. BR theo sản phẩm có đủ Thành Tiền/Giảm Giá/Tổng Tiền. Hồi quy 37/37 test Housekeeping đạt; migration chưa chạy database.
+
+- 2026-11-21: TC_BC_LT_02 thêm routing metadata `view_mode_when` generic trong `ReportsPage.vue`, context control `branch-context` chỉ đọc, lookup `markets` theo tenant, template 11/14/21 cột, alias RM/Revenue adapter và Night Audit tách EB/ER trước Revenue. PHP lint và frontend build đạt; migration chưa chạy.
 
 - 2026-11-20: `CreateRegistrationPage.vue` đồng bộ `hourly` chỉ khi người dùng sửa **Số đêm** ở header về `0` và ngày đến = ngày đi; serializer sẵn có truyền `is_day_use` cho từng phòng. Thêm helper/test `booking-header-day-use`; test Node 3/3 và `npm run build` đạt. Backend `BookingController`/Room Plan không sửa vì contract lưu và reload hiện có đã đúng khi nhận cờ Day Use.
 
@@ -2663,6 +2693,10 @@ everb và pusher với SafePusherBroadcaster trong AppServiceProvider.php. Cấu
 
 
 ## Known Risks
+
+- 2026-11-23: TC_BC_LT_03 chưa kiểm thử procedure trên tenant sau migration. Cần đối chiếu Legacy/New theo các baseline LA 01/11/2025, BR 02/09/2026, MB 29/05/2026; kiểm tra Master, Correct dương/âm, CL, FOC, bill đã thanh toán và export/PDF trước nghiệm thu.
+
+- 2026-11-21: TC_BC_LT_02 cần chạy migration trên tenant test trước, sau đó UAT 12 tổ hợp `p_show_detail × p_group_by`, raw legacy/PDF/XLSX và dữ liệu HU/CP/OOO/EB/ER/BF. Báo cáo chỉ hiện context Chi nhánh hiện tại; tổng hợp `Division=1` đa tenant chưa triển khai. Mapping mã khu vực số legacy sang `rooms.area` runtime vẫn `Chưa xác minh`; không dùng để import production.
 
 - 2026-11-20: Cần UAT GAL5 và booking nhiều phòng theo chuỗi `1 đêm → 0 đêm → Lưu → reload Kế hoạch phòng`, sau đó đổi lại `1 đêm`; xác nhận chỉ phòng `Booked (0)` đổi Day Use, AV/room charge đúng quy tắc và không sửa trực tiếp dữ liệu cũ.
 

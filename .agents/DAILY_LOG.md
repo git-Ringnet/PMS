@@ -9,6 +9,76 @@
 - **Ngày ghi**: `YYYY-MM-DD`
 - **Module / Nghiệp vụ**: Tên module (Housekeeping, Booking, Thu ngân, Cài đặt,...)
 
+## [2026-11-25] - Báo cáo: QA Automation & Database Verification TC_BC_LT_02 và TC_BC_LT_03
+
+- **Mục tiêu**: Xây dựng và thực thi bộ đối soát toàn diện cho TC_BC_LT_02 (Công suất công ty) và TC_BC_LT_03 (9 Báo cáo Housekeeping LA/BR/MB) ở chế độ READ-ONLY.
+- **Thư mục đầu ra**: Lưu toàn bộ tại `.codex/docs/reports/artifacts/verification_2026_11_25/` gồm 10 deliverables bắt buộc và 4 thư mục artifacts (`screenshots/`, `exports/`, `sql/`, `network/`).
+- **Kết quả nghiệm thu**:
+  - `TC_BC_LT_02` (COMPANY_OCCUPANCY & DETAIL): **ĐẠT 100% (PASS)** cả 24 tổ hợp giao diện, khớp số liệu 14 công ty, 97 đêm phòng, 221 khách, 66.332.000 đ tổng doanh thu.
+  - `TC_BC_LT_03` (9 Báo cáo Housekeeping): Khớp toán học 100% số liệu (LA 1.490.000 đ, BR 575.000 đ, MB 430.000 đ, 3 Free 590.000 đ); Trạng thái **CHƯA ĐẠT (FAIL)** do còn 3 Gap kỹ thuật cần khắc phục (Form lọc 3 báo cáo Free thừa trường; Báo cáo sản phẩm thiếu Dual Toggle; Cột Room khi chuyển Master cần gán rỗng).
+- **Bộ Scripts SQL an toàn**:
+  - `test_data_import.sql`: Nạp fixture test cô lập có tiền tố `TCBC_TEST_`.
+  - `test_data_verify.sql`: Đối soát số dòng, tổng tiền theo outlet và các ca biên (chuyển phòng, chuyển master, bù trừ correct).
+  - `test_data_cleanup.sql`: Xóa sạch 100% dữ liệu thử nghiệm `TCBC_TEST_`.
+
+
+## [2026-11-23] - Báo cáo: Thu thập bằng chứng, khảo sát UX/UI, SQL và đối soát TC_BC_LT_03 (9 Báo cáo Housekeeping)
+
+- **Mục tiêu**: Thu thập toàn bộ bằng chứng nghiệp vụ, UX/UI, Stored Procedures, API Network payload và dữ liệu thực tế cho nhóm 9 báo cáo Housekeeping (`LAUNDRY_INVOICES`, `BREAKAGE_INVOICES`, `MINIBAR_INVOICES`, `LAUNDRY_INVOICES_BY_PRODUCT`, `BREAKAGE_INVOICES_BY_PRODUCT`, `MINIBAR_INVOICES_BY_PRODUCT`, `LAUNDRY_FREE_INVOICES`, `BREAKAGE_FREE_INVOICES`, `MINIBAR_FREE_INVOICES`).
+- **Trích xuất SQL & Stored Procedures Legacy**:
+  - Đã xuất nguyên bản: `sp_125`, `sp_202`, `sp_202_detail`, `sp_206`, `sp_206_GroupByDate`, `vw_018`, `vw_039`, `vw_040` vào [function_sql/](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/function_sql/) và [.codex/docs/reports/evidence/tc_bc_lt_03/sql/](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/evidence/tc_bc_lt_03/sql/).
+  - Lập tài liệu sơ đồ phụ thuộc dữ liệu [dependency_graph.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/evidence/tc_bc_lt_03/sql/dependency_graph.md).
+- **Khảo sát UX/UI & DevExpress Web Document Viewer Cũ**:
+  - Dùng Playwright tự động hóa đăng nhập và điều hướng thành công cả 9 báo cáo trên `https://hotel.hktsolution.vn/pms/housekeeping/report?name=...`.
+  - Bóc tách mã nguồn component React UmiJS (các chunk `4112.js`, `5538.js`):
+    - Component `BillReportHK` (`78994`): Form hóa đơn dịch vụ, chuyển đổi ngầm `MinibarDetailsBillReport` khi bật chi tiết.
+    - Component `BillReportByProduct` (`77808`): Form sản phẩm, chuyển đổi `BillReportByProductGroupByDate` khi bật nhóm ngày.
+    - Component `ComplimentBillReportHK` (`14977`): Form miễn phí, chuyển đổi `ComplimentBillReportHKDetail` khi bật chi tiết.
+  - Lưu ảnh chụp màn hình ban đầu của tất cả 9 báo cáo trong `.codex/docs/reports/evidence/tc_bc_lt_03/screenshots/`.
+  - Lưu 9 tài liệu đặc tả `ui_initial_state.md` trong `.codex/docs/reports/evidence/tc_bc_lt_03/legacy/<REPORT_CODE>/`.
+- **Bắt Network Payloads DevExpress**:
+  - Bắt toàn bộ các yêu cầu HTTP tới handler `https://hotel.hktsolution.vn/rppms1/DXXRDV` (`openReport`, `startBuild`).
+  - Lưu trữ payload JSON cho toàn bộ 9 báo cáo tại `.codex/docs/reports/evidence/tc_bc_lt_03/network/legacy/`.
+- **Đối soát số liệu Baseline Thực tế (Reconciliation Matrix)**:
+  - Khớp toán học 100% giữa Hóa đơn và Sản phẩm:
+    - Giặt ủi (`LA`): 11 hóa đơn = 20 sản phẩm = 1.490.000 đ.
+    - Bể vỡ (`BR`): 5 hóa đơn = 8 sản phẩm = 575.000 đ (gồm cả ca chuyển phòng và cặp bill Correct +30k/-30k triệt tiêu).
+    - Minibar (`MB`): 15 hóa đơn = 37 sản phẩm = 430.000 đ (gồm cả ca chuyển Master booking).
+    - 3 Báo cáo Miễn phí: LA Free = 300.000 đ; BR Free = 240.000 đ; MB Free = 50.000 đ.
+- **Tài liệu tổng hợp**:
+  - Đã xuất bản báo cáo đối chiếu toàn diện 16 phần tại [.codex/docs/reports/tc_bc_lt_03_full_legacy_new_comparison.md](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/reports/tc_bc_lt_03_full_legacy_new_comparison.md).
+
+
+## [2026-11-23] - Báo cáo: Hoàn thiện TC_BC_LT_02 (Công suất công ty & Chi tiết công suất công ty)
+
+- **Mục tiêu**: Clone chính xác nghiệp vụ Dòng 167 (`COMPANY_OCCUPANCY` / `sp_055`) và Dòng 166 (`COMPANY_OCCUPANCY_DETAIL` / `sp_078`), hỗ trợ 12 tổ hợp giao diện (6 kiểu nhóm × 2 trạng thái chi tiết).
+- **Trích xuất SQL legacy**:
+  - Trích xuất mã nguồn hàm gốc `ProVistaNavyHotel.dbo.func_store148` (1345 dòng) từ SQL Server instance `localhost\MSSQLSERVER01` vào [.codex/docs/doc_baocao/sql/ProVistaNavyHotel_func_store148.sql](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/.codex/docs/doc_baocao/sql/ProVistaNavyHotel_func_store148.sql) và [function_sql/ProVistaNavyHotel_func_store148.sql](file:///c:/Users/Nguyen%20Tho%20Thang/OneDrive/Desktop/PMS/PMS/function_sql/ProVistaNavyHotel_func_store148.sql).
+- **Chốt baseline P0 (ngày 20/08/2026)**:
+  - 14 công ty/đối tác.
+  - 97 đêm phòng (khớp 100% giữa Báo cáo tổng hợp và Báo cáo chi tiết).
+  - 221 đêm khách.
+  - Doanh thu phòng: 61.337.000 đ.
+  - Doanh thu khác: 4.995.000 đ.
+  - Tổng doanh thu: 66.332.000 đ.
+- **Khắc phục Runtime ADR KHÁCH LẺ (705.455 đ)**:
+  - Bóc tách khoản 1.000.000 đ phụ thu giường phụ (`EB`) khỏi tiền phòng thuần RM (7.760.000 đ) trong Seeder và Stored Procedure, giúp `ActualADR` và `RackADR` của KHÁCH LẺ trả về đúng 705.455 đ (7.760.000 / 11), khớp hoàn toàn bản in PDF legacy.
+  - Doanh thu phòng (Revenue) của KHÁCH LẺ vẫn hiển thị đủ 8.760.000 đ (RM + EB), tổng doanh thu 9.535.000 đ.
+- **Kiểm thử đa ngày (Multi-day)**:
+  - Bổ sung dữ liệu ngày 21/08/2026 (3 công ty, 20 đêm phòng, 14.000.000 đ) và 5 phòng khóa bảo trì `OOO`.
+  - Chứng minh `RoomAvailable` thay đổi động giữa các ngày (180 phòng ngày 20/08 và 175 phòng ngày 21/08).
+  - Kiểm thử thành công tính năng phân nhóm theo ngày và tính năng cộng dồn toàn kỳ (117 đêm phòng / 355 phòng khả dụng toàn kỳ, ADR toàn kỳ được tính lại chuẩn xác).
+- **Kiểm thử bộ lọc thực tế**:
+  - Bộ lọc khu vực `p_area`: 'Khu A' (9 công ty, 71 đêm phòng, DT 43.667.000 đ) vs 'Khu B' (5 công ty, 26 đêm phòng, DT 22.665.000 đ). Tổng khớp 97 đêm và 66.332.000 đ.
+  - Bộ lọc ăn sáng `p_include_breakfast`: Khi tắt ăn sáng (`p_include_breakfast = 0`), tiền phòng GREENTRAVEL giảm đúng 400.000 đ (8 đêm x 50.000 đ), ADR giảm đúng 50.000 đ; tổng doanh thu báo cáo giảm đúng 400.000 đ.
+- **Hoàn thiện mã nguồn & Test (P1 - P3)**:
+  - Tạo migration `2026_11_23_140000_harmonize_company_occupancy_runtime_procedures.php` cập nhật Stored Procedure đồng bộ trên cả 7 databases (`php artisan migrate:all --force`).
+  - Template `company_occupancy_reference.php` (14 cột chuẩn 100% width) và `company_occupancy_detail_reference.php` (21 cột chuẩn 100% width).
+  - Chạy `CompanyOccupancyRuntimeSeeder` tự động backfill snapshot cả 2 ngày.
+  - 18/18 unit tests CompanyOccupancy passed (239 assertions).
+  - Xác nhận 12/12 tổ hợp giao diện hoạt động chính xác.
+  - Frontend `npm run build` thành công 100% (6.49s).
+
 ## [2026-11-20] - Bàn giao ca: Gom nhóm tab Sinh nhật khách theo ngày sinh nhật trong kỳ xem
 
 - Yêu cầu: Bảng "Sinh nhật khách" trong màn hình Giao ca (`ShiftWorkPage.vue`) trước đó gom nhóm theo ngày sinh gốc của khách (`item.birthday` / DOB, ví dụ: 03/09/1995, 03/09/1997, 03/09/2009 làm tách rời mỗi người 1 header). Khách hàng yêu cầu gom nhóm theo ngày sinh nhật diễn ra trong kỳ xem (ví dụ: `03/09/2026` gom cả 3 khách có sinh nhật vào ngày 03/09).
