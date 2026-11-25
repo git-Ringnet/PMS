@@ -15,10 +15,10 @@ return new class
             'margin_right' => 6,
             'margin_bottom' => 8,
             'margin_left' => 6,
-            'version' => '2.1',
+            'version' => '3.0',
             'content_json' => $blocks,
             'content_html' => $this->compileBlocks($blocks),
-            'css' => $this->css(),
+            'css' => $this->reportCss(),
         ];
     }
 
@@ -27,18 +27,18 @@ return new class
         $definitions = [
             ['CompanyCode', 'Mã', '5%', 'left', 'text'],
             ['CompanyName', 'Công Ty', '12%', 'left', 'text'],
-            ['TotalRevenue', 'Doanh Thu', '11%', 'right', 'number'],
-            ['RevenuePercentage', '% Doanh Thu', '7%', 'right', 'percent'],
-            ['AverageRevenue', 'Doanh Thu TB', '10%', 'right', 'number'],
-            ['RoomQty', 'SL Phòng', '6%', 'right', 'number'],
-            ['RoomNight', 'Đêm<br>Phòng', '6%', 'right', 'number'],
-            ['FocRoomNights', 'Phòng<br>MP', '5%', 'right', 'number'],
-            ['HuRoomNights', 'Nội Bộ', '5%', 'right', 'number'],
-            ['OccupancyRate', 'Công<br>Suất', '7%', 'right', 'percent'],
-            ['GuestQty', 'SL Khách', '6%', 'right', 'number'],
-            ['GuestNight', 'Đêm Khách', '6%', 'right', 'number', 'parameters.p_show_detail'],
-            ['RoomRevenue', 'Tiền Phòng', '7%', 'right', 'number', 'parameters.p_show_detail'],
-            ['ExtraBedRevenue', 'Giá Thêm Giường', '7%', 'right', 'number', 'parameters.p_show_detail'],
+            ['OccupancyRate', 'Công Suất', '6%', 'right', 'percent'],
+            ['RoomNight', 'Đêm<br>Phòng', '5%', 'right', 'number'],
+            ['GuestQty', 'SL Khách', '5%', 'right', 'number'],
+            ['ActualADR', 'Giá Phòng<br>Trung Bình', '8%', 'right', 'number'],
+            ['RackADR', 'Giá Phòng TB<br>(Không FOC/HU)', '10%', 'right', 'number'],
+            ['Revenue', 'Doanh Thu<br>Phòng', '9%', 'right', 'number'],
+            ['FbRevenue', 'Doanh Thu<br>F&B', '6%', 'right', 'number'],
+            ['OtherRevenue', 'Doanh Thu<br>Khác', '7%', 'right', 'number'],
+            ['TotalRevenue', 'Tổng<br>Doanh Thu', '8%', 'right', 'number'],
+            ['GuestNight', 'Đêm Khách', '5%', 'right', 'number', 'parameters.p_show_detail'],
+            ['RmRevenue', 'Tiền Phòng', '8%', 'right', 'number', 'parameters.p_show_detail'],
+            ['ExtraBedRevenue', 'Giá Thêm Giường', '6%', 'right', 'number', 'parameters.p_show_detail'],
         ];
 
         return array_map(static function (array $column, int $index): array {
@@ -76,17 +76,17 @@ return new class
         $totalCells = [
             ['id' => 'tf_1', 'type' => 'text', 'content' => 'Tổng:', 'align' => 'left', 'fontWeight' => 'bold', 'columnId' => $columns[0]['id']],
             ['id' => 'tf_2', 'type' => 'binding', 'binding' => 'aggregate.rows.count', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[1]['id']],
-            ['id' => 'tf_3', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.TotalRevenue', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[2]['id']],
-            ['id' => 'tf_4', 'type' => 'text', 'content' => '100%', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[3]['id']],
-            ['id' => 'tf_5', 'type' => 'binding', 'binding' => 'aggregate.rows.summary_average_revenue', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[4]['id']],
-            ['id' => 'tf_6', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.RoomQty', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[5]['id']],
-            ['id' => 'tf_7', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.RoomNight', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[6]['id']],
-            ['id' => 'tf_8', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.FocRoomNights', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[7]['id']],
-            ['id' => 'tf_9', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.HuRoomNights', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[8]['id']],
-            ['id' => 'tf_10', 'type' => 'binding', 'binding' => 'aggregate.rows.summary_occupancy', 'format' => 'percent', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[9]['id']],
-            ['id' => 'tf_11', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.GuestQty', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[10]['id']],
+            ['id' => 'tf_3', 'type' => 'binding', 'binding' => 'aggregate.rows.summary_occupancy', 'format' => 'percent', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[2]['id']],
+            ['id' => 'tf_4', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.RoomNight', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[3]['id']],
+            ['id' => 'tf_5', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.GuestQty', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[4]['id']],
+            ['id' => 'tf_6', 'type' => 'binding', 'binding' => 'aggregate.rows.summary_actual_adr', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[5]['id']],
+            ['id' => 'tf_7', 'type' => 'binding', 'binding' => 'aggregate.rows.summary_rack_adr', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[6]['id']],
+            ['id' => 'tf_8', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.Revenue', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[7]['id']],
+            ['id' => 'tf_9', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.FbRevenue', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[8]['id']],
+            ['id' => 'tf_10', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.OtherRevenue', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[9]['id']],
+            ['id' => 'tf_11', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.TotalRevenue', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[10]['id']],
             ['id' => 'tf_12', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.GuestNight', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[11]['id']],
-            ['id' => 'tf_13', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.RoomRevenue', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[12]['id']],
+            ['id' => 'tf_13', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.RmRevenue', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[12]['id']],
             ['id' => 'tf_14', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.ExtraBedRevenue', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[13]['id']],
         ];
 
@@ -136,17 +136,17 @@ return new class
                     'className' => 'group-total',
                     'cells' => [
                         ['id' => 'gt_1', 'type' => 'text', 'content' => 'Tổng:', 'colspan' => 2, 'align' => 'left', 'fontWeight' => 'bold', 'columnId' => $columns[0]['id']],
-                        ['id' => 'gt_2', 'type' => 'binding', 'binding' => 'group.sum.TotalRevenue', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[2]['id']],
-                        ['id' => 'gt_3', 'type' => 'binding', 'binding' => 'group.sum.RevenuePercentage', 'format' => 'percent', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[3]['id']],
-                        ['id' => 'gt_4', 'type' => 'text', 'content' => '', 'align' => 'right', 'columnId' => $columns[4]['id']],
-                        ['id' => 'gt_5', 'type' => 'binding', 'binding' => 'group.sum.RoomQty', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[5]['id']],
-                        ['id' => 'gt_6', 'type' => 'binding', 'binding' => 'group.sum.RoomNight', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[6]['id']],
-                        ['id' => 'gt_7', 'type' => 'binding', 'binding' => 'group.sum.FocRoomNights', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[7]['id']],
-                        ['id' => 'gt_8', 'type' => 'binding', 'binding' => 'group.sum.HuRoomNights', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[8]['id']],
-                        ['id' => 'gt_9', 'type' => 'text', 'content' => '', 'align' => 'right', 'columnId' => $columns[9]['id']],
-                        ['id' => 'gt_10', 'type' => 'binding', 'binding' => 'group.sum.GuestQty', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[10]['id']],
+                        ['id' => 'gt_2', 'type' => 'binding', 'binding' => 'group.sum.OccupancyRate', 'format' => 'percent', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[2]['id']],
+                        ['id' => 'gt_3', 'type' => 'binding', 'binding' => 'group.sum.RoomNight', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[3]['id']],
+                        ['id' => 'gt_4', 'type' => 'binding', 'binding' => 'group.sum.GuestQty', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[4]['id']],
+                        ['id' => 'gt_5', 'type' => 'text', 'content' => '', 'align' => 'right', 'columnId' => $columns[5]['id']],
+                        ['id' => 'gt_6', 'type' => 'text', 'content' => '', 'align' => 'right', 'columnId' => $columns[6]['id']],
+                        ['id' => 'gt_7', 'type' => 'binding', 'binding' => 'group.sum.Revenue', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[7]['id']],
+                        ['id' => 'gt_8', 'type' => 'binding', 'binding' => 'group.sum.FbRevenue', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[8]['id']],
+                        ['id' => 'gt_9', 'type' => 'binding', 'binding' => 'group.sum.OtherRevenue', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[9]['id']],
+                        ['id' => 'gt_10', 'type' => 'binding', 'binding' => 'group.sum.TotalRevenue', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[10]['id']],
                         ['id' => 'gt_11', 'type' => 'binding', 'binding' => 'group.sum.GuestNight', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[11]['id']],
-                        ['id' => 'gt_12', 'type' => 'binding', 'binding' => 'group.sum.RoomRevenue', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[12]['id']],
+                        ['id' => 'gt_12', 'type' => 'binding', 'binding' => 'group.sum.RmRevenue', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[12]['id']],
                         ['id' => 'gt_13', 'type' => 'binding', 'binding' => 'group.sum.ExtraBedRevenue', 'format' => 'number', 'align' => 'right', 'fontWeight' => 'bold', 'columnId' => $columns[13]['id']],
                     ],
                 ]],
@@ -271,5 +271,10 @@ return new class
     public function css(): string
     {
         return '.report-header{display:flex;justify-content:space-between;align-items:flex-start;min-height:54px}.hotel-logo img{max-width:115px;max-height:52px;object-fit:contain}.hotel-information{text-align:left;font-size:9px;line-height:1.8;color:#000;margin-top:7px}.header-date{display:inline-block;margin-left:80px}h1{text-align:center;font-size:19px;font-weight:bold;margin:8px 0 4px;color:#000}.period{text-align:center;font-size:10px;margin:0 0 10px;color:#000}.company-occupancy-table{width:100%!important;table-layout:fixed;border-collapse:collapse;font-size:8.5px;border:1px solid #aeb5c0!important}.company-occupancy-table th,.company-occupancy-table td{border:1px solid #aeb5c0!important;padding:3px 2px;vertical-align:middle}.company-occupancy-table th{background:#d9deea!important;text-align:center;font-weight:bold;color:#000}.company-occupancy-table .index-row th{font-size:8px;padding:2px 1px}.company-occupancy-table td.right{text-align:right}.company-occupancy-table td.left{text-align:left}.company-occupancy-table tfoot td{background:#d9deea!important;font-weight:bold}.report-note{font-size:8.5px;margin-top:10px;line-height:1.45;color:#000}.report-note p{margin:1px 0}@media print{thead{display:table-header-group}tr{break-inside:avoid}}';
+    }
+
+    private function reportCss(): string
+    {
+        return $this->css().'body{font-family:Roboto,Arial,sans-serif!important;font-size:12px!important}';
     }
 };

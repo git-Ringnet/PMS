@@ -101,6 +101,7 @@ const parameterMatchesVisibility = (tab, parameter) => {
 const isVisibleReportParameter = (tab, parameter) => (
   parameter.control !== 'hidden'
   && parameterMatchesVisibility(tab, parameter)
+  && (!parameter.requires_multiple_branches || (authStore.branches || []).length > 1)
   && (!isWeeklyRoomReport(tab) || parameter.name !== 'p_from_date' || tab.parameters.p_week_preset === 'custom')
 )
 
@@ -159,9 +160,52 @@ const parameterItemStyle = (parameter, group) => {
 const viewModeParameter = tab => (tab?.report?.parameter_ui_schema || [])
   .find(parameter => parameter.ui_only && parameter.view_mode && parameter.linked_report_code)
 
+// A view-mode can depend on a mapped runtime value (for example, a detail view
+// only when no grouping switch is enabled). Keeping this generic means report
+// definitions, rather than this page, own the routing rule.
+const mappedParameterValue = (tab, target) => {
+  const definitions = (tab?.report?.parameter_ui_schema || [])
+    .filter(parameter => parameter.maps_to?.parameter === target)
+    .filter(parameter => parameterMatchesVisibility(tab, parameter))
+    .sort((left, right) => Number(right.maps_to?.priority || 0) - Number(left.maps_to?.priority || 0))
+  if (!definitions.length) return tab?.parameters?.[target]
+
+  const activeNames = new Set(definitions
+    .filter(parameter => isTruthy(tab?.parameters?.[parameter.name]))
+    .map(parameter => parameter.name))
+  const candidates = definitions.flatMap(parameter => {
+    if (!activeNames.has(parameter.name)) return []
+    return [
+      { value: parameter.maps_to.value, priority: Number(parameter.maps_to.priority || 0) },
+      ...(parameter.maps_to.combinations || [])
+        .filter(combination => (combination.with || []).every(name => activeNames.has(name)))
+        .map(combination => ({ value: combination.value, priority: Number(combination.priority ?? parameter.maps_to.priority ?? 0) })),
+    ]
+  }).filter(candidate => candidate.value !== undefined && candidate.value !== null)
+    .sort((left, right) => right.priority - left.priority)
+
+  return candidates[0]?.value ?? definitions[0]?.maps_to?.empty_value ?? tab?.parameters?.[target]
+}
+
+const viewModeMatches = (tab, mode) => {
+  const condition = mode?.view_mode_when
+  if (!condition) return true
+  // The mapped runtime value is the primary rule.  Keep a metadata-defined
+  // guard for UI-only switches as well: it prevents stale/restored workspace
+  // state from selecting a linked detail report while a grouping switch is on.
+  if (Array.isArray(condition.unless_truthy)
+    && condition.unless_truthy.some(name => isTruthy(tab?.parameters?.[name]))) return false
+  const actual = mappedParameterValue(tab, condition.parameter)
+  if (Array.isArray(condition.equals)) return condition.equals.some(value => String(value) === String(actual))
+  if (Object.prototype.hasOwnProperty.call(condition, 'equals')) return String(condition.equals) === String(actual)
+  if (condition.truthy === true) return isTruthy(actual)
+  if (condition.truthy === false) return !isTruthy(actual)
+  return true
+}
+
 const effectiveReportForTab = tab => {
   const mode = viewModeParameter(tab)
-  if (!mode || !isTruthy(tab?.parameters?.[mode.name])) return tab?.report || null
+  if (!mode || !isTruthy(tab?.parameters?.[mode.name]) || !viewModeMatches(tab, mode)) return tab?.report || null
   return reports.value.find(report => report.code === mode.linked_report_code) || tab?.report || null
 }
 
@@ -335,7 +379,8 @@ const applyWeeklyDateRange = (tab) => {
 
 const handleReportParameterChange = (tab, parameter) => {
   if (isWeeklyRoomReport(tab) && parameter.name === 'p_week_preset') applyWeeklyDateRange(tab)
-  if (parameter?.view_mode) {
+  if (parameter?.view_mode || parameter?.maps_to?.parameter) {
+    applyUiParameterMappings(tab)
     const report = effectiveReportForTab(tab)
     const templateId = effectiveTemplateIdForTab(tab)
     if (report && templateId) {
@@ -372,6 +417,12 @@ const toggleCheckboxParameter = (tab, parameter) => {
     })
   }
   handleReportParameterChange(tab, parameter)
+}
+
+const isToggleParameter = (parameter) => ['checkbox', 'pill-toggle'].includes(parameter?.control)
+
+const toggleParameter = (tab, parameter) => {
+  toggleCheckboxParameter(tab, parameter)
 }
 
 const defaultParametersForReport = (report) => {
@@ -565,13 +616,17 @@ const reportParametersPayload = (tab, report = tab.report) => {
   const definitions = report.parameter_ui_schema || []
   const parameterNames = [...new Set([
     ...reportParameterNames(report),
-    ...definitions.map(definition => definition.name).filter(Boolean),
+    ...definitions.filter(definition => !definition.ui_only).map(definition => definition.name).filter(Boolean),
   ])]
   return Object.fromEntries(
     parameterNames.map(name => {
       const value = tab.parameters[name]
       const definition = definitions.find(item => item.name === name)
-      return [name, definition?.control === 'multi-select' && Array.isArray(value) ? value.join(',') : value]
+      const normalized = definition?.control === 'multi-select' && Array.isArray(value) ? value.join(',') : value
+      // A linked report can have an optional parameter that the source tab does
+      // not render (for example p_source_code). Send an explicit empty value so
+      // the procedure contract remains complete.
+      return [name, normalized === undefined ? '' : normalized]
     })
   )
 }
@@ -597,6 +652,7 @@ const syncTemplateSummary = (tab, summary, report = tab?.report) => {
 }
 
 const executeTab = async (tab) => {
+  applyUiParameterMappings(tab)
   const report = effectiveReportForTab(tab)
   const templateId = effectiveTemplateIdForTab(tab)
   if (!tab || !report || !templateId) return
@@ -679,7 +735,7 @@ const openReportFromDrill = async ({ report: code, parameters = {} }) => {
     if (!definition) continue
     if (definition.control === 'multi-select') {
       nextParameters[name] = String(value ?? '').split(',').map(item => item.trim()).filter(Boolean)
-    } else if (definition.control === 'checkbox') {
+    } else if (isToggleParameter(definition)) {
       nextParameters[name] = Boolean(Number(value))
     } else {
       nextParameters[name] = value
@@ -929,6 +985,17 @@ onBeforeUnmount(() => {
                 </div>
               </template>
 
+              <template v-else-if="parameter.control === 'pill-toggle'">
+                <button
+                  type="button"
+                  @click="toggleParameter(activeTab, parameter)"
+                  class="mt-1 inline-flex h-8 min-w-28 items-center justify-center rounded-lg border px-3 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-1"
+                  :class="isTruthy(activeTab.parameters[parameter.name]) ? 'border-sky-600 bg-sky-600 text-white' : 'border-slate-300 bg-white text-[#000000D9]'"
+                >
+                  {{ isTruthy(activeTab.parameters[parameter.name]) ? (parameter.active_label || parameter.label) : (parameter.inactive_label || parameter.label) }}
+                </button>
+              </template>
+
               <template v-else>
                 {{ parameter.label }} <span v-if="parameter.required" class="text-red-500">*</span>
               </template>
@@ -961,6 +1028,10 @@ onBeforeUnmount(() => {
                 </option>
               </select>
 
+              <select v-else-if="parameter.control === 'branch-context'" disabled class="mt-1 w-full cursor-not-allowed rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-normal text-[#000000D9]">
+                <option>{{ authStore.activeBranch?.name || authStore.activeBranch?.code || 'Chi nhánh hiện tại' }}</option>
+              </select>
+
               <ReportDateRangePicker
                 v-else-if="parameter.control === 'date-range'"
                 v-model:start-date="activeTab.parameters[parameter.name]"
@@ -977,7 +1048,7 @@ onBeforeUnmount(() => {
                 placeholder="dd/mm/yyyy"
                 four-digit-year
               />
-              <input v-else-if="parameter.control !== 'checkbox'" v-model="activeTab.parameters[parameter.name]" :type="parameter.control || 'text'" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-sky-400" :class="parameter.required ? 'input-required' : ''" />
+              <input v-else-if="!isToggleParameter(parameter)" v-model="activeTab.parameters[parameter.name]" :type="parameter.control || 'text'" class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs outline-none focus:border-sky-400" :class="parameter.required ? 'input-required' : ''" />
               </div>
               </div>
 

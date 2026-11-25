@@ -750,6 +750,7 @@ class ReportDefinitionController extends Controller
                 'selection_group' => $ui['selection_group'] ?? null,
                 'linked_report_code' => $ui['linked_report_code'] ?? null,
                 'view_mode' => $ui['view_mode'] ?? null,
+                'view_mode_when' => $ui['view_mode_when'] ?? null,
                 'configured' => $configured->has($name),
             ];
         })->values()->all();

@@ -19,6 +19,7 @@ class ReportLookupController extends Controller
             'areas' => $this->areas(),
             'outlets' => $this->outlets(),
             'companies' => $this->companies($search),
+            'markets' => $this->markets($search),
             'bookings' => $this->bookings($search),
             'rooms' => $this->rooms($search),
             'room-classes' => $this->roomClasses(),
@@ -77,6 +78,22 @@ class ReportLookupController extends Controller
             ->map(fn ($company) => [
                 'value' => $company->id,
                 'label' => trim("{$company->code} - {$company->name}", ' -'),
+            ])->all();
+    }
+
+    private function markets(string $search): array
+    {
+        return DB::table('markets')
+            ->when($search !== '', fn ($query) => $query->where(function ($nested) use ($search) {
+                $nested->where('code', 'like', "%{$search}%")
+                    ->orWhere('name', 'like', "%{$search}%");
+            }))
+            ->orderBy('code')
+            ->limit(200)
+            ->get(['id', 'code', 'name'])
+            ->map(fn ($market) => [
+                'value' => $market->id,
+                'label' => trim("{$market->code} - {$market->name}", ' -'),
             ])->all();
     }
 

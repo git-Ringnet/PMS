@@ -10,32 +10,42 @@ return new class
             'report' => 'COMPANY_OCCUPANCY_DETAIL_REFERENCE',
             'name' => 'Báo cáo chi tiết công suất công ty',
             'page_size' => 'A4',
-            'page_orientation' => 'portrait',
+            'page_orientation' => 'landscape',
             'margin_top' => 6,
             'margin_right' => 4,
             'margin_bottom' => 6,
             'margin_left' => 4,
-            'version' => '1.1',
+            'version' => '2.0',
             'content_json' => $blocks,
             'content_html' => $this->compileBlocks($blocks),
-            'css' => $this->css(),
+            'css' => $this->reportCss(),
         ];
     }
 
     private function columns(): array
     {
         $definitions = [
-            ['RowNumber', 'STT', '4%', 'center', 'number'],
-            ['BookingCode', 'Mã ĐK', '8%', 'center', 'text'],
-            ['GuestName', 'Tên ĐK', '20%', 'left', 'text'],
-            ['ArrivalDate', 'Ngày Đến', '9%', 'center', 'text'],
-            ['DepartureDate', 'Ngày Đi', '9%', 'center', 'text'],
-            ['RoomNight', 'Đêm<br>Phòng', '6%', 'right', 'number'],
-            ['GuestNight', 'Đêm<br>Khách', '6%', 'right', 'number'],
-            ['RoomRevenue', 'DT Tiền<br>Phòng', '11%', 'right', 'number'],
-            ['ExtraBedRevenue', 'DT Thêm<br>Giường', '9%', 'right', 'number'],
-            ['ChildSurchargeRevenue', 'Phụ Thu<br>Trẻ Em', '9%', 'right', 'number'],
-            ['TotalRevenue', 'Tổng DT', '9%', 'right', 'number'],
+            ['BookingCode', 'Mã ĐK', '4%', 'center', 'text'],
+            ['ReferenceCode', 'Mã Tham Chiếu', '5%', 'center', 'text'],
+            ['CompanyName', 'Tên Công Ty', '8%', 'left', 'text'],
+            ['GuestName', 'Tên Khách', '8%', 'left', 'text'],
+            ['MarketSegment', 'Thị Trường', '5%', 'center', 'text'],
+            ['SourceCode', 'Nguồn Khách', '5%', 'center', 'text'],
+            ['BookingDate', 'Ngày Tạo', '5%', 'center', 'text'],
+            ['ArrivalDate', 'Ngày Đến', '5%', 'center', 'text'],
+            ['DepartureDate', 'Ngày Đi', '5%', 'center', 'text'],
+            ['NoOfNight', 'Đêm', '3%', 'right', 'number'],
+            ['NoOfRoom', 'Phòng', '3%', 'right', 'number'],
+            ['RoomNight', 'Đêm Phòng', '4%', 'right', 'number'],
+            ['GuestNight', 'Đêm Khách', '4%', 'right', 'number'],
+            ['AverageRate', 'ADR', '5%', 'right', 'number'],
+            ['AverageRateOriginal', 'ADR Không FOC/HU', '5%', 'right', 'number'],
+            ['RoomRevenue', 'DT Phòng', '5%', 'right', 'number'],
+            ['FbRevenue', 'DT F&B', '4%', 'right', 'number'],
+            ['OtherRevenue', 'DT Khác', '4%', 'right', 'number'],
+            ['TotalRevenue', 'Tổng DT', '5%', 'right', 'number'],
+            ['RoomType', 'Loại Phòng', '4%', 'center', 'text'],
+            ['Nationality', 'Quốc Tịch', '4%', 'center', 'text'],
         ];
 
         return array_map(static function (array $column, int $index): array {
@@ -73,24 +83,33 @@ return new class
                 'tableStyle' => 'grid',
                 'tableClassName' => 'company-occupancy-detail-table',
                 'columns' => $columns,
-                'groupBy' => 'CompanyCode',
                 'customRows' => [[
                     'id' => 'company_occupancy_detail_total',
                     'scope' => 'table',
                     'position' => 'footer',
                     'className' => 'total',
                     'cells' => [
-                        ['id' => 'tf_1', 'type' => 'text', 'content' => 'Tổng Giai Đoạn {{aggregate.rows.count}} BK', 'colspan' => 5, 'align' => 'right'],
-                        ['id' => 'tf_2', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.RoomNight', 'format' => 'number', 'align' => 'right'],
-                        ['id' => 'tf_3', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.GuestNight', 'format' => 'number', 'align' => 'right'],
-                        ['id' => 'tf_4', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.RoomRevenue', 'format' => 'number', 'align' => 'right'],
-                        ['id' => 'tf_5', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.ExtraBedRevenue', 'format' => 'number', 'align' => 'right'],
-                        ['id' => 'tf_6', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.ChildSurchargeRevenue', 'format' => 'number', 'align' => 'right'],
-                        ['id' => 'tf_7', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.TotalRevenue', 'format' => 'number', 'align' => 'right'],
+                        ['id' => 'tf_1', 'type' => 'text', 'content' => 'Tổng: {{aggregate.rows.count}} Booking', 'colspan' => 9, 'align' => 'right'],
+                        ['id' => 'tf_2', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.NoOfNight', 'format' => 'number', 'align' => 'right'],
+                        ['id' => 'tf_3', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.NoOfRoom', 'format' => 'number', 'align' => 'right'],
+                        ['id' => 'tf_4', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.RoomNight', 'format' => 'number', 'align' => 'right'],
+                        ['id' => 'tf_5', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.GuestNight', 'format' => 'number', 'align' => 'right'],
+                        ['id' => 'tf_6', 'type' => 'text', 'content' => '', 'align' => 'right'],
+                        ['id' => 'tf_7', 'type' => 'text', 'content' => '', 'align' => 'right'],
+                        ['id' => 'tf_8', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.RoomRevenue', 'format' => 'number', 'align' => 'right'],
+                        ['id' => 'tf_9', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.FbRevenue', 'format' => 'number', 'align' => 'right'],
+                        ['id' => 'tf_10', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.OtherRevenue', 'format' => 'number', 'align' => 'right'],
+                        ['id' => 'tf_11', 'type' => 'binding', 'binding' => 'aggregate.rows.sum.TotalRevenue', 'format' => 'number', 'align' => 'right'],
+                        ['id' => 'tf_12', 'type' => 'text', 'content' => '', 'align' => 'right'],
+                        ['id' => 'tf_13', 'type' => 'text', 'content' => '', 'align' => 'right'],
                     ],
                 ]],
             ]],
-            'footer' => [],
+            'footer' => [[
+                'id' => 'company_occupancy_detail_signatures',
+                'type' => 'text',
+                'content' => '<div class="report-signatures"><div><strong>Người Lập Biểu</strong><br><em>(Ký, họ tên)</em></div><div><strong>Trưởng Bộ Phận Kinh Doanh</strong><br><em>(Ký, họ tên)</em></div><div><strong>Giám Đốc</strong><br><em>(Ký, họ tên)</em></div></div>',
+            ]],
         ];
     }
 
@@ -121,15 +140,13 @@ return new class
         foreach ($columns as $column) $html .= '<col style="width:'.htmlspecialchars((string) ($column['width'] ?? 'auto'), ENT_QUOTES, 'UTF-8').'">';
         $html .= '</colgroup><thead><tr>';
         foreach ($columns as $column) $html .= '<th>'.($column['header'] ?? '').'</th>';
-        $html .= '</tr></thead><tbody class="pms-grouped-rows" data-source="rows" data-group-by="CompanyCode">';
-        $html .= '<tr class="pms-group-header"><td colspan="'.count($columns).'" class="group-header-cell">{{row.CompanyName}}</td></tr>';
-        $html .= '<tr class="pms-detail-row" data-source="rows">';
+        $html .= '</tr></thead><tbody><tr class="pms-detail-row" data-source="rows">';
         foreach ($columns as $column) {
             $value = 'row.'.($column['field'] ?? '');
             if (($column['format'] ?? '') === 'number') $value .= '|number';
             $html .= '<td class="'.htmlspecialchars((string) ($column['align'] ?? 'left'), ENT_QUOTES, 'UTF-8').'">{{'.$value.'}}</td>';
         }
-        $html .= '</tr><tr class="pms-group-footer"><td colspan="5" class="group-footer-label">Tổng</td><td class="right">{{group.sum.RoomNight|number}}</td><td class="right">{{group.sum.GuestNight|number}}</td><td class="right">{{group.sum.RoomRevenue|number}}</td><td class="right">{{group.sum.ExtraBedRevenue|number}}</td><td class="right">{{group.sum.ChildSurchargeRevenue|number}}</td><td class="right">{{group.sum.TotalRevenue|number}}</td></tr></tbody>';
+        $html .= '</tr></tbody>';
         foreach ($block['customRows'] ?? [] as $row) {
             $html .= '<tfoot><tr class="total">';
             foreach ($row['cells'] ?? [] as $cell) {
@@ -145,6 +162,11 @@ return new class
 
     public function css(): string
     {
-        return '.report-header{display:flex;justify-content:space-between;align-items:flex-start;min-height:54px}.hotel-logo img{max-width:115px;max-height:52px;object-fit:contain}.hotel-information{text-align:left;font-size:9px;line-height:1.8;color:#000;margin-top:7px}.header-date{display:inline-block;margin-left:80px}h1{text-align:center;font-size:18px;font-weight:bold;margin:8px 0 4px;color:#000}.period{text-align:center;font-size:10px;margin:0 0 10px;color:#000}.company-occupancy-detail-table{width:100%!important;table-layout:fixed;border-collapse:collapse;font-size:8.5px;line-height:1.15}.company-occupancy-detail-table th,.company-occupancy-detail-table td{border:1px solid #aeb5c0!important;padding:3px 2px;vertical-align:middle;overflow-wrap:anywhere}.company-occupancy-detail-table th{background:#d9deea!important;text-align:center;font-weight:bold}.company-occupancy-detail-table td.right{text-align:right}.company-occupancy-detail-table td.center{text-align:center}.company-occupancy-detail-table td.left{text-align:left}.company-occupancy-detail-table td.group-header-cell{background:#fff!important;font-weight:bold;text-align:left;padding:4px 3px}.company-occupancy-detail-table tr.pms-group-footer td,.company-occupancy-detail-table tfoot td{background:#d9deea!important;font-weight:bold}.company-occupancy-detail-table td.group-footer-label{text-align:right}@media print{thead{display:table-header-group}tr{break-inside:avoid}}';
+        return '.report-header{display:flex;justify-content:space-between;align-items:flex-start;min-height:54px}.hotel-logo img{max-width:115px;max-height:52px;object-fit:contain}.hotel-information{text-align:left;font-size:9px;line-height:1.8;color:#000;margin-top:7px}.header-date{display:inline-block;margin-left:80px}h1{text-align:center;font-size:18px;font-weight:bold;margin:8px 0 4px;color:#000}.period{text-align:center;font-size:10px;margin:0 0 10px;color:#000}.company-occupancy-detail-table{width:100%!important;table-layout:fixed;border-collapse:collapse;font-size:7px;line-height:1.15}.company-occupancy-detail-table th,.company-occupancy-detail-table td{border:1px solid #aeb5c0!important;padding:2px 1px;vertical-align:middle;overflow-wrap:anywhere}.company-occupancy-detail-table th{background:#d9deea!important;text-align:center;font-weight:bold}.company-occupancy-detail-table td.right{text-align:right}.company-occupancy-detail-table td.center{text-align:center}.company-occupancy-detail-table td.left{text-align:left}.company-occupancy-detail-table tfoot td{background:#d9deea!important;font-weight:bold}.report-signatures{display:flex;justify-content:space-between;margin-top:28px;text-align:center;font-size:9px}.report-signatures>div{width:30%}@media print{thead{display:table-header-group}tr{break-inside:avoid}}';
+    }
+
+    private function reportCss(): string
+    {
+        return $this->css().'body{font-family:Roboto,Arial,sans-serif!important;font-size:12px!important}';
     }
 };
