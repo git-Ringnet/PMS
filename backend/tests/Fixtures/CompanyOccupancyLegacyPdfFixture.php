@@ -34,15 +34,36 @@ final class CompanyOccupancyLegacyPdfFixture
             'rows' => [
                 [
                     'CompanyCode' => 'CTY001', 'CompanyName' => 'Công ty A', 'RowNumber' => 1, 'BookingCode' => 'BK001',
-                    'GuestName' => 'Nguyễn Văn A', 'ArrivalDate' => '11/06/2026', 'DepartureDate' => '12/06/2026',
-                    'RoomNight' => 2, 'GuestNight' => 4, 'RoomRevenue' => 2400000, 'ExtraBedRevenue' => 100000,
-                    'ChildSurchargeRevenue' => 50000, 'TotalRevenue' => 2550000,
+                    'ReferenceCode' => 'REF001', 'GuestName' => 'Nguyễn Văn A', 'MarketSegment' => 'QT', 'SourceCode' => 'TA',
+                    'BookingDate' => '10/06/2026', 'ArrivalDate' => '11/06/2026', 'DepartureDate' => '12/06/2026',
+                    'NoOfNight' => 1, 'NoOfRoom' => 1, 'RoomNight' => 2, 'GuestNight' => 4,
+                    'AverageRate' => 1200000, 'AverageRateOriginal' => 1200000, 'RoomRevenue' => 2400000,
+                    'FbRevenue' => 0, 'OtherRevenue' => 150000, 'TotalRevenue' => 2550000,
+                    'RoomType' => 'STD', 'Nationality' => 'VNM',
                 ],
                 [
                     'CompanyCode' => 'CTY002', 'CompanyName' => 'Công ty B', 'RowNumber' => 1, 'BookingCode' => 'BK002',
-                    'GuestName' => 'Trần Thị B', 'ArrivalDate' => '11/06/2026', 'DepartureDate' => '13/06/2026',
-                    'RoomNight' => 3, 'GuestNight' => 6, 'RoomRevenue' => 3600000, 'ExtraBedRevenue' => 0,
-                    'ChildSurchargeRevenue' => 100000, 'TotalRevenue' => 3700000,
+                    'ReferenceCode' => 'REF002', 'GuestName' => 'Trần Thị B', 'MarketSegment' => 'ND', 'SourceCode' => 'TA',
+                    'BookingDate' => '09/06/2026', 'ArrivalDate' => '11/06/2026', 'DepartureDate' => '13/06/2026',
+                    'NoOfNight' => 2, 'NoOfRoom' => 1, 'RoomNight' => 3, 'GuestNight' => 6,
+                    'AverageRate' => 1200000, 'AverageRateOriginal' => 1200000, 'RoomRevenue' => 3600000,
+                    'FbRevenue' => 0, 'OtherRevenue' => 100000, 'TotalRevenue' => 3700000,
+                    'RoomType' => 'DLX', 'Nationality' => 'VNM',
+                ],
+            ],
+            'aggregate' => [
+                'rows' => [
+                    'count' => 2,
+                    'sum' => [
+                        'NoOfNight' => 3,
+                        'NoOfRoom' => 2,
+                        'RoomNight' => 5,
+                        'GuestNight' => 10,
+                        'RoomRevenue' => 6000000,
+                        'FbRevenue' => 0,
+                        'OtherRevenue' => 250000,
+                        'TotalRevenue' => 6250000,
+                    ],
                 ],
             ],
         ];

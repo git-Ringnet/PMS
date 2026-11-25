@@ -93,8 +93,20 @@ class CompanyOccupancySnapshotMigrationTest extends TestCase
         $this->assertStringNotContainsString("'linked_report_code' => 'COMPANY_OCCUPANCY_DETAIL'", $migration);
         $this->assertStringNotContainsString("'view_mode' => 'detail'", $migration);
         $this->assertStringContainsString("'p_show_detail'", $migration);
-        $this->assertStringContainsString("'visibleWhen' => \\$column[5] ?? ''", $template);
+        $this->assertStringContainsString('\'visibleWhen\' => $column[5] ?? \'\'', $template);
         $this->assertStringContainsString("'parameters.p_show_detail'", $template);
         $this->assertStringContainsString('data-pms-auto-colspan', $template);
+    }
+
+    public function test_harmonization_migration_stays_on_the_runner_tenant_and_accepts_legacy_all_filters(): void
+    {
+        $migration = file_get_contents(database_path('migrations/2026_11_23_140000_harmonize_company_occupancy_runtime_procedures.php'));
+
+        $this->assertStringContainsString('DB::connection(DB::getDefaultConnection())', $migration);
+        $this->assertStringNotContainsString('mysql_hkt1', $migration);
+        $this->assertStringNotContainsString('mysql_hkt2', $migration);
+        $this->assertStringContainsString("COALESCE(p_company, '') IN ('', '0')", $migration);
+        $this->assertStringContainsString("COALESCE(p_segment, '') IN ('', '0')", $migration);
+        $this->assertStringContainsString("COALESCE(p_area, '') IN ('', '0')", $migration);
     }
 }

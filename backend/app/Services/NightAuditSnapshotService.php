@@ -408,9 +408,13 @@ class NightAuditSnapshotService
             $department = strtoupper(trim((string) $bill->department_id));
             $amount = (float) $bill->amount;
             $detail = $detailByBill[(int) $bill->bill_id] ?? ['breakfast' => 0.0, 'original' => 0.0];
-            $isRoomRevenue = in_array($serviceCode, $revenueCodes, true);
             $isExtraBed = $serviceCode === 'EB';
             $isExtraRollaway = in_array($serviceCode, $extraRollawayCodes, true);
+            // Revenue may be configured with EB/ER in legacy SP1600. These
+            // codes must still remain separate for the 14-column report.
+            $isRoomRevenue = in_array($serviceCode, $revenueCodes, true)
+                && ! $isExtraBed
+                && ! $isExtraRollaway;
 
             if (! empty($bill->area_code)) {
                 $group['area_codes'][(string) $bill->area_code] = true;
@@ -428,10 +432,8 @@ class NightAuditSnapshotService
                 $group['original_total'] += $detail['original'] ?: $amount;
             } elseif ($isExtraBed) {
                 $group['extra_bed_revenue'] += $amount;
-                $group['original_total'] += $detail['original'] ?: $amount;
             } elseif ($isExtraRollaway) {
                 $group['extra_rollaway_revenue'] += $amount;
-                $group['original_total'] += $detail['original'] ?: $amount;
             } elseif ($serviceCode === 'BF') {
                 $group['room_revenue'] += $amount;
                 $group['breakfast_revenue'] += $amount;
@@ -448,7 +450,9 @@ class NightAuditSnapshotService
                 $rateCode = strtoupper((string) ($bill->rnb_rate_code ?? ''));
                 if ($rateCode === 'HU') {
                     $group['hu_room_nights']++;
-                } elseif (str_starts_with($rateCode, 'FOC') || (float) ($bill->rnb_rate ?? $amount) === 0.0) {
+                } elseif (str_starts_with($rateCode, 'FOC')
+                    || ($focIncludesCompliment && $rateCode === 'CP')
+                    || (float) ($bill->rnb_rate ?? $amount) === 0.0) {
                     $group['foc_room_nights']++;
                 }
                 if (! empty($bill->booking_room_id) && ! isset($group['room_ids'][$bill->booking_room_id])) {

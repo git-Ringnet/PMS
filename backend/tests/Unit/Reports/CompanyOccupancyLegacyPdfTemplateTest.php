@@ -20,7 +20,7 @@ class CompanyOccupancyLegacyPdfTemplateTest extends TestCase
         $this->assertSame(100.0, array_sum(array_map(static fn (array $column): float => (float) rtrim($column['width'], '%'), $definition['content_json']['detail'][0]['columns'])));
         $this->assertSame('GroupHeaderId', $definition['content_json']['detail'][0]['groups'][0]['field']);
         $this->assertSame('parameters.p_is_grouped', $definition['content_json']['detail'][0]['groups'][0]['enabledBy']);
-        $this->assertStringContainsString('Doanh Thu TB', $rendered);
+        $this->assertStringContainsString('Giá Phòng', $rendered);
         $this->assertStringContainsString('Công ty A', $rendered);
         $this->assertStringContainsString('72.200.000', $rendered);
         $this->assertStringNotContainsString('{{', $rendered);
@@ -49,12 +49,11 @@ class CompanyOccupancyLegacyPdfTemplateTest extends TestCase
         $definition = $template->definition();
         $rendered = app(TemplateRendererService::class)->render($template->html(), $template->css(), CompanyOccupancyLegacyPdfFixture::detail());
 
-        $this->assertSame(11, count($definition['content_json']['detail'][0]['columns']));
+        $this->assertSame(21, count($definition['content_json']['detail'][0]['columns']));
         $this->assertSame(100.0, array_sum(array_map(static fn (array $column): float => (float) rtrim($column['width'], '%'), $definition['content_json']['detail'][0]['columns'])));
-        $this->assertStringContainsString('data-group-by="CompanyCode"', $template->html());
         $this->assertStringContainsString('Công ty A', $rendered);
         $this->assertStringContainsString('BK001', $rendered);
-        $this->assertStringContainsString('Tổng Giai Đoạn 2 BK', $rendered);
+        $this->assertStringContainsString('Tổng: 2 Booking', $rendered);
         $this->assertStringNotContainsString('{{', $rendered);
     }
 }
