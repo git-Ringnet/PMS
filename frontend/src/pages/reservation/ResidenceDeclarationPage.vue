@@ -613,7 +613,14 @@ function exportToXml(rows) {
     if (val === null || val === undefined || String(val).trim() === '') {
       return `<${tag}/>`
     }
-    return `<${tag}>${val}</${tag}>`
+    // Mã hóa ký tự đặc biệt để tên/số giấy tờ có &, <, >, ", ' không làm hỏng file XML
+    const escaped = String(val)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&apos;')
+    return `<${tag}>${escaped}</${tag}>`
   }
 
   let xml = '<KHAI_BAO_TAM_TRU>\n'
@@ -626,21 +633,24 @@ function exportToXml(rows) {
       }
     }
 
-    const fullLabel = getForeignNationalityCodeLabel(r.quocTich)
-    const isoCode = fullLabel.split(' - ')[0] || 'VNM'
+    // Như HKT: khách chưa có quốc tịch thì để trống, không tự điền VNM; mã lạ (vd "---") xuất đúng như đã lưu.
+    // Tra theo mã đã lưu (danh mục quốc tịch khóa theo mã), không theo tên hiển thị.
+    const storedCode = String(r.storedNationalityCode || '').trim()
+    const isoCode = storedCode ? getForeignNationalityCodeLabel(storedCode).split(' - ')[0].trim() : ''
 
     xml += '<THONG_TIN_KHACH>\n'
     xml += `<so_thu_tu>${idx + 1}</so_thu_tu>\n`
     xml += `${buildTag('ho_ten', r.ten)}\n`
-    xml += `${buildTag('ngay_sinh', r.ngaySinh)}\n`
+    xml += `${buildTag('ngay_sinh', toDdMmYyyy(r.ngaySinh))}\n`
     xml += `<ngay_sinh_dung_den>D</ngay_sinh_dung_den>\n`
     xml += `<gioi_tinh>${g}</gioi_tinh>\n`
-    xml += `<ma_quoc_tich>${isoCode}</ma_quoc_tich>\n`
-    xml += `${buildTag('so_ho_chieu', r.soGiayTo)}\n`
+    xml += `${buildTag('ma_quoc_tich', isoCode)}\n`
+    xml += `${buildTag('so_ho_chieu', r.hoChieu || r.soGiayTo)}\n`
     xml += `${buildTag('so_phong', r.phong)}\n`
-    xml += `${buildTag('ngay_den', r.ngayDen)}\n`
-    xml += `${buildTag('ngay_di_du_kien', r.ngayDi)}\n`
-    xml += `${buildTag('ngay_tra_phong', r.ngayTraPhong || r.ngayDi)}\n`
+    xml += `${buildTag('ngay_den', toDdMmYyyy(r.ngayDen))}\n`
+    xml += `${buildTag('ngay_di_du_kien', toDdMmYyyy(r.ngayDi))}\n`
+    xml += `${buildTag('ngay_tra_phong', toDdMmYyyy(r.ngayTraPhong || r.ngayDi))}\n`
+    xml += `${buildTag('thoi_han_tam_tru', toDdMmYyyy(r.tamTruDenHienThi || r.tamTruDen))}\n`
     xml += '</THONG_TIN_KHACH>\n'
   })
   xml += '</KHAI_BAO_TAM_TRU>'
@@ -709,7 +719,8 @@ function exportToExcelForeign(rows) {
   html += `</tr>`
 
   // Dòng 498: giữ dòng mẫu của file (không xóa dữ liệu mẫu; thêm thông tin từ dòng tiếp theo)
-  const foreignExample = ['[EXAMPLE]', '[TEST] SAMPLE', '01/01/1990', 'D - Ngày', 'M - Nam', 'USA - United States', 'A1234567', '101', '01/01/2026', '03/01/2026', '03/01/2026', '03/01/2026']
+  // Note 20/11: dòng mẫu có STT = 1, dữ liệu phòng bắt đầu từ STT = 2.
+  const foreignExample = ['1', '[TEST] SAMPLE', '01/01/1990', 'D - Ngày', 'M - Nam', 'USA - United States', 'A1234567', '101', '01/01/2026', '03/01/2026', '03/01/2026', '03/01/2026']
   html += `<tr>`
   foreignExample.forEach(ex => {
     html += `<td style="background-color: #ffff00; border: 0.5pt solid #000000; mso-number-format:'\\@';">${ex}</td>`
@@ -726,7 +737,7 @@ function exportToExcelForeign(rows) {
     const passportNo = r.hoChieu || r.soGiayTo || ''
 
     html += `<tr>`
-    html += `<td style="text-align: center; border: 0.5pt solid #000000;">${idx + 1}</td>`
+    html += `<td style="text-align: center; border: 0.5pt solid #000000;">${idx + 2}</td>`
     html += `<td style="border: 0.5pt solid #000000;">${r.ten || ''}</td>`
     const textCell = (v) => `<td style="border: 0.5pt solid #000000; mso-number-format:'\\@';">${v || ''}</td>`
     html += textCell(toDdMmYyyy(r.ngaySinh))
@@ -1051,6 +1062,8 @@ async function loadBookingData() {
                     guestId: c.id,
                     guestKind: 'guest',
                     nationalityCode: c.nationality_code || 'VNM',
+                    // Mã quốc tịch đúng như đã lưu (không mặc định VNM) để xuất XML.
+                    storedNationalityCode: c.nationality_code || '',
                     idType: c.id_type || '',
                     residenceType: c.residence_type || '',
                     ma: String(ma),
@@ -1107,6 +1120,7 @@ async function loadBookingData() {
                 guestId: null,
                 guestKind: 'guest',
                 nationalityCode: 'VNM',
+                storedNationalityCode: '',
                 idType: '',
                 residenceType: '',
                 ma: String(ma),
@@ -1181,6 +1195,7 @@ async function loadBookingData() {
                 guestId: ch.id,
                 guestKind: 'child',
                 nationalityCode: ch.nationality_code || 'VNM',
+                storedNationalityCode: ch.nationality_code || '',
                 idType: ch.id_type || '',
                 residenceType: ch.residence_type || '',
                 ma: String(ma),
