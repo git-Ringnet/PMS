@@ -86,17 +86,39 @@ class NightAuditController extends Controller
                 ->where('DepartmentId', 'FO')
                 ->where('ServiceId', 'RM')
                 ->excludeSupplementalRoomCharge()
+                // Bill đã hủy/đã chuyển (Edit = 1) giữ nguyên chi tiết để vẫn triệt tiêu với dòng âm đối ứng.
+                ->where(fn ($query) => $query->whereNull('Edit')->orWhere('Edit', 0))
                 ->whereDate('Date', '>=', $fromDate->toDateString())
                 ->whereDate('Date', '<=', $toDate->toDateString())
                 ->lockForUpdate()
                 ->get();
 
+            $detailsByBill = ServiceBillDetail::query()
+                ->whereIn('BillServiceId', $bills->pluck('Ma'))
+                ->lockForUpdate()
+                ->get()
+                ->groupBy('BillServiceId');
+            $snapshots = RoomNightBill::whereIn('bill_id', $bills->pluck('Ma'))->get()->keyBy('bill_id');
+            $nightKey = fn ($bill) => $bill->RentalRoomId1 . '|' . Carbon::parse($bill->Date)->toDateString();
+            $positiveRoomAmount = fn ($bill) => (float) $detailsByBill->get($bill->Ma, collect())
+                ->filter(fn ($detail) => $detail->ServiceId === 'RM' && (float) $detail->Amount >= 0)
+                ->sum('Amount');
+            // Một đêm có thể nằm ở nhiều bill (bill Master chia folio theo số tiền): ăn sáng chỉ tính 1 lần/đêm,
+            // chia cho từng bill theo tỷ lệ tiền phòng như lúc chia folio.
+            $nights = $bills->groupBy($nightKey)->map(fn ($group) => [
+                'count' => $group->count(),
+                'room_total' => $group->sum($positiveRoomAmount),
+                'room_label' => $group->map(fn ($bill) => $snapshots->get($bill->Ma)?->room)->filter()->first(),
+            ]);
+            // Đêm noshow (cả booking phòng hoặc noshow 1 đêm) lúc post không tách ăn sáng -> không tách lại.
+            $noshowNights = LateCheckin::whereIn('booking_room_id', $bills->pluck('RentalRoomId1')->filter()->unique())
+                ->get(['booking_room_id', 'late_checkin_date'])
+                ->map(fn ($row) => $row->booking_room_id . '|' . Carbon::parse($row->late_checkin_date)->toDateString())
+                ->flip();
+
             foreach ($bills as $bill) {
 
-                $details = ServiceBillDetail::query()
-                    ->where('BillServiceId', $bill->Ma)
-                    ->lockForUpdate()
-                    ->get();
+                $details = $detailsByBill->get($bill->Ma, collect());
                 $isVatIssued = $bill->VatId !== null
                     || $details->contains(fn ($detail) => $detail->VatId !== null || filled($detail->VatNumber));
                 if ($isVatIssued) {
@@ -110,29 +132,42 @@ class NightAuditController extends Controller
                     $result['skipped_invalid']++;
                     continue;
                 }
+                $key = $nightKey($bill);
+                if ((int) $room->status === BookingRoom::STATUS_NOSHOW || $noshowNights->has($key)) {
+                    $result['skipped_invalid']++;
+                    continue;
+                }
 
                 $adults = max(1, (int) $room->adults);
-                $breakfastAmount = $room->breakfast ? round($breakfastRate * $adults, 2) : 0;
+                $nightBreakfastAmount = $room->breakfast ? round($breakfastRate * $adults, 2) : 0;
                 // Dòng 415/480: cộng ăn sáng trẻ em không phụ phí (nằm trong tiền phòng) của đêm này.
                 $childBreakfast = app(\App\Services\ChildBreakfastService::class)->roomIncludedBreakfast($room, $bill->Date);
-                $breakfastAmount = round($breakfastAmount + $childBreakfast['amount'], 2);
-                $breakfastQuantity = ($room->breakfast ? $adults : 0) + $childBreakfast['quantity'];
+                $nightBreakfastAmount = round($nightBreakfastAmount + $childBreakfast['amount'], 2);
+                $nightBreakfastQuantity = ($room->breakfast ? $adults : 0) + $childBreakfast['quantity'];
+                $night = $nights->get($key);
+                $share = $night['count'] <= 1 ? 1.0
+                    : ($night['room_total'] > 0 ? $positiveRoomAmount($bill) / $night['room_total'] : 1 / $night['count']);
+                $breakfastAmount = round($nightBreakfastAmount * $share, 2);
+                $breakfastQuantity = round($nightBreakfastQuantity * $share, 2);
                 $breakfastDetail = $details->first(fn ($detail) => $detail->ServiceId === 'BF');
                 $discountRoomDetail = $details->first(fn ($detail) => $detail->ServiceId === 'RM' && (float) $detail->Amount < 0);
                 $nextDetailNo = ((int) $details->max('Ma')) + 1;
-                $roomNumber = $room->room_number ?: $room->id;
+                // Số phòng lấy theo bản ghi audit của đêm đó (khách có thể đã đổi phòng sau đêm này).
+                $roomNumber = $night['room_label'] ?: ($room->room_number ?: $room->id);
                 // Dòng 416: BF và RM âm dùng mô tả dịch vụ ăn sáng + số phòng.
                 $breakfastDescription = $breakfastService
                     ? $breakfastService->billDescription($roomNumber, 'FO')
                     : 'Tiền ăn sáng người lớn - Phòng ' . $roomNumber;
 
                 if ($breakfastAmount > 0) {
-                    $bfBreakdown = TaxBreakdownService::breakdown($breakfastAmount, $breakfastTaxProfile['service_charge'], $breakfastTaxProfile['special_tax'], $breakfastTaxProfile['tax'], max(1, $breakfastQuantity));
+                    // Phần bill chia folio có số suất lẻ theo tỷ lệ (như chia folio); bill nguyên đêm tối thiểu 1 suất.
+                    $breakfastQuantity = $share < 1 ? max(0.01, $breakfastQuantity) : max(1, $breakfastQuantity);
+                    $bfBreakdown = TaxBreakdownService::breakdown($breakfastAmount, $breakfastTaxProfile['service_charge'], $breakfastTaxProfile['special_tax'], $breakfastTaxProfile['tax'], $breakfastQuantity);
                     $breakfastValues = [
                         'DepartmentId' => 'FO', 'ServiceId' => 'BF',
                         'DescriptionServive' => $breakfastDescription,
-                        // Giá là đơn giá mỗi khách; Amount mới là tổng tiền BF.
-                        'OriginalRate' => round($breakfastAmount / max(1, $breakfastQuantity), 2), 'Quantity' => max(1, $breakfastQuantity),
+                        // Như lúc sang ngày: OriginalRate là đơn giá 1 suất CHƯA thuế phí; Amount là tổng tiền BF đã gồm thuế phí.
+                        'OriginalRate' => $bfBreakdown['original_rate'], 'Quantity' => $breakfastQuantity,
                         'ServiceCharge' => $breakfastTaxProfile['service_charge'], 'SpecialTax' => $breakfastTaxProfile['special_tax'], 'Tax' => $breakfastTaxProfile['tax'],
                         'ServiceChargeAmount' => $bfBreakdown['service_charge_amount'],
                         'SpecialTaxAmount'    => $bfBreakdown['special_tax_amount'],
@@ -170,14 +205,13 @@ class NightAuditController extends Controller
                     if ($discountRoomDetail) ServiceBillDetail::where('BillServiceId', $bill->Ma)->where('Ma', $discountRoomDetail->Ma)->delete();
                 }
 
+                // Chỉ cập nhật phần ăn sáng; phòng, hạng phòng, giá là dữ liệu audit của đêm đã post, không lấy theo phòng hiện tại.
                 RoomNightBill::where('bill_id', $bill->Ma)->update([
                     'adult' => $adults,
                     'child' => (int) $room->children_qty,
-                    'breakfast' => $breakfastAmount > 0 ? $adults : 0,
-                    'breakfast_amount' => $breakfastAmount,
-                    'room' => $room->room_number,
-                    'room_type_id' => $room->room_class_id,
-                    'rate' => (float) $positiveRoomDetail->Amount,
+                    // Audit đêm ghi tổng ăn sáng của cả đêm, kể cả khi bill đã chia folio.
+                    'breakfast' => $nightBreakfastAmount > 0 ? $nightBreakfastQuantity : 0,
+                    'breakfast_amount' => $nightBreakfastAmount,
                 ]);
                 $result['updated']++;
             }

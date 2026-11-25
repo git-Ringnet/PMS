@@ -673,6 +673,8 @@ class NightAuditTest extends TestCase
         $systemDate = Carbon::parse(SystemDateRoll::latest('id')->value('system_date'))->startOfDay();
         $serviceDate = $systemDate->copy()->subDay();
         HotelSetting::query()->firstOrFail()->update(['breakfast_adult_rate' => 100000]);
+        // Không thuế phí để đơn giá chưa thuế = 100.000 (trường hợp có thuế phí xem test riêng).
+        HotelService::where('code', 'BF')->update(['service_charge' => 0, 'special_tax' => 0, 'tax' => 0]);
 
         $booking = Booking::create([
             'booking_name' => 'Khách test tách dịch vụ', 'arrival_date' => $serviceDate,
@@ -691,12 +693,13 @@ class NightAuditTest extends TestCase
         ServiceBillDetail::create(['BillServiceId' => $bill->Ma, 'Ma' => 2, 'DepartmentId' => 'FO', 'ServiceId' => 'BF', 'OriginalRate' => 450000, 'Amount' => 450000]);
         ServiceBillDetail::create(['BillServiceId' => $bill->Ma, 'Ma' => 3, 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'OriginalRate' => -450000, 'Amount' => -450000]);
 
-        $vatBill = $this->makeRoomNightBill($booking, $room, $serviceDate, 99);
+        // Mỗi bill một đêm riêng: 1 đêm chỉ có 1 bill tiền phòng (nhiều bill cùng đêm = bill đã chia folio).
+        $vatBill = $this->makeRoomNightBill($booking, $room, $serviceDate->copy()->subDay(), 99);
         ServiceBillDetail::create(['BillServiceId' => $vatBill->Ma, 'Ma' => 1, 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'OriginalRate' => 600000, 'Amount' => 600000]);
         ServiceBillDetail::create(['BillServiceId' => $vatBill->Ma, 'Ma' => 2, 'DepartmentId' => 'FO', 'ServiceId' => 'BF', 'OriginalRate' => 450000, 'Amount' => 450000, 'VatNumber' => 'VAT-001']);
         ServiceBillDetail::create(['BillServiceId' => $vatBill->Ma, 'Ma' => 3, 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'OriginalRate' => -450000, 'Amount' => -450000]);
         // Dữ liệu cũ không có SP3004 vẫn phải tách lại được từ SP3000/SP3001.
-        $legacyBill = $this->makeRoomNightBill($booking, $room, $serviceDate, null, false);
+        $legacyBill = $this->makeRoomNightBill($booking, $room, $serviceDate->copy()->subDays(2), null, false);
         ServiceBillDetail::create(['BillServiceId' => $legacyBill->Ma, 'Ma' => 1, 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'OriginalRate' => 600000, 'Amount' => 600000]);
         ServiceBillDetail::create(['BillServiceId' => $legacyBill->Ma, 'Ma' => 2, 'DepartmentId' => 'FO', 'ServiceId' => 'BF', 'OriginalRate' => 450000, 'Amount' => 450000]);
         ServiceBillDetail::create(['BillServiceId' => $legacyBill->Ma, 'Ma' => 3, 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'OriginalRate' => -450000, 'Amount' => -450000]);
@@ -705,7 +708,7 @@ class NightAuditTest extends TestCase
         $postedDate = RoomNightBill::findOrFail($bill->Ma)->date->toDateString();
 
         $response = $this->actingAs($this->user)->postJson('/api/night-audit/split-old-services', [
-            'from_date' => $postedDate, 'to_date' => $postedDate,
+            'from_date' => Carbon::parse($postedDate)->subDays(2)->toDateString(), 'to_date' => $postedDate,
         ]);
         $response->assertSuccessful()->assertJsonPath('data.updated', 2)->assertJsonPath('data.skipped_vat', 1);
 
@@ -715,6 +718,181 @@ class NightAuditTest extends TestCase
         $this->assertDatabaseHas('room_night_bills', ['bill_id' => $bill->Ma, 'adult' => 2, 'breakfast_amount' => 200000]);
         $this->assertDatabaseHas('service_bill_details', ['BillServiceId' => $legacyBill->Ma, 'Ma' => 2, 'Amount' => 200000, 'OriginalRate' => 100000, 'Quantity' => 2]);
         $this->assertDatabaseHas('service_bill_details', ['BillServiceId' => $vatBill->Ma, 'Ma' => 2, 'Amount' => 450000, 'VatNumber' => 'VAT-001']);
+    }
+
+    public function test_split_old_services_does_not_touch_cancelled_or_transferred_bills()
+    {
+        $systemDate = Carbon::parse(SystemDateRoll::latest('id')->value('system_date'))->startOfDay();
+        $serviceDate = $systemDate->copy()->subDay();
+        HotelSetting::query()->firstOrFail()->update(['breakfast_adult_rate' => 100000]);
+
+        $booking = Booking::create([
+            'booking_name' => 'Khách test tách bill đã chuyển', 'arrival_date' => $serviceDate,
+            'departure_date' => $systemDate->copy()->addDay(), 'num_of_days' => 2,
+            'booking_date' => $serviceDate, 'created_by' => 'admin', 'registration_status_id' => 1,
+        ]);
+        $room = BookingRoom::create([
+            'id' => 'G1999002', 'booking_id' => $booking->id, 'room_class_id' => 1,
+            'room_number' => '902', 'arrival_date' => $serviceDate,
+            'departure_date' => $systemDate->copy()->addDay(), 'status' => BookingRoom::STATUS_CHECKED_IN,
+            'rate' => 600000, 'adults' => 2, 'breakfast' => true,
+        ]);
+
+        // Bill gốc đã chuyển đi (Edit = 1, Status = 4): chi tiết phải giữ nguyên để triệt tiêu với dòng âm.
+        $moved = $this->makeRoomNightBill($booking, $room, $serviceDate, null, false);
+        $moved->update(['Edit' => 1, 'Status' => 4]);
+        ServiceBillDetail::create(['BillServiceId' => $moved->Ma, 'Ma' => 1, 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'OriginalRate' => 600000, 'Amount' => 600000]);
+        ServiceBillDetail::create(['BillServiceId' => $moved->Ma, 'Ma' => 2, 'DepartmentId' => 'FO', 'ServiceId' => 'BF', 'OriginalRate' => 150000, 'Amount' => 300000]);
+        ServiceBillDetail::create(['BillServiceId' => $moved->Ma, 'Ma' => 3, 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'OriginalRate' => -300000, 'Amount' => -300000]);
+        $postedDate = Carbon::parse($moved->Date)->toDateString();
+
+        $this->actingAs($this->user)->postJson('/api/night-audit/split-old-services', [
+            'from_date' => $postedDate, 'to_date' => $postedDate,
+        ])->assertSuccessful()->assertJsonPath('data.updated', 0);
+
+        $this->assertDatabaseHas('service_bill_details', ['BillServiceId' => $moved->Ma, 'Ma' => 2, 'Amount' => 300000]);
+        $this->assertDatabaseHas('service_bill_details', ['BillServiceId' => $moved->Ma, 'Ma' => 3, 'Amount' => -300000]);
+    }
+
+    public function test_split_old_services_keeps_posted_night_audit_snapshot()
+    {
+        $systemDate = Carbon::parse(SystemDateRoll::latest('id')->value('system_date'))->startOfDay();
+        $serviceDate = $systemDate->copy()->subDay();
+        HotelSetting::query()->firstOrFail()->update(['breakfast_adult_rate' => 100000]);
+
+        $booking = Booking::create([
+            'booking_name' => 'Khách test giữ audit đêm cũ', 'arrival_date' => $serviceDate,
+            'departure_date' => $systemDate->copy()->addDay(), 'num_of_days' => 2,
+            'booking_date' => $serviceDate, 'created_by' => 'admin', 'registration_status_id' => 1,
+        ]);
+        $room = BookingRoom::create([
+            'id' => 'G1999003', 'booking_id' => $booking->id, 'room_class_id' => 1,
+            'room_number' => '903', 'arrival_date' => $serviceDate,
+            'departure_date' => $systemDate->copy()->addDay(), 'status' => BookingRoom::STATUS_CHECKED_IN,
+            'rate' => 600000, 'adults' => 3, 'breakfast' => true,
+        ]);
+        $bill = $this->makeRoomNightBill($booking, $room, $serviceDate, null);
+        ServiceBillDetail::create(['BillServiceId' => $bill->Ma, 'Ma' => 1, 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'OriginalRate' => 650000, 'Amount' => 650000]);
+        ServiceBillDetail::create(['BillServiceId' => $bill->Ma, 'Ma' => 2, 'DepartmentId' => 'FO', 'ServiceId' => 'BF', 'OriginalRate' => 150000, 'Amount' => 450000]);
+        ServiceBillDetail::create(['BillServiceId' => $bill->Ma, 'Ma' => 3, 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'OriginalRate' => -450000, 'Amount' => -450000]);
+
+        // Sau đêm đã audit: phòng đổi số phòng/giá; đêm cũ vẫn phải giữ phòng, giá lúc post.
+        Room::updateOrCreate(['room_number' => '999'], ['room_class_id' => 1, 'room_form_id' => 1, 'floor' => '9', 'room_status_code' => 'occupied_ready']);
+        $room->update(['room_number' => '999', 'rate' => 900000]);
+        $postedDate = RoomNightBill::findOrFail($bill->Ma)->date->toDateString();
+
+        $this->actingAs($this->user)->postJson('/api/night-audit/split-old-services', [
+            'from_date' => $postedDate, 'to_date' => $postedDate,
+        ])->assertSuccessful()->assertJsonPath('data.updated', 1);
+
+        $this->assertDatabaseHas('room_night_bills', [
+            'bill_id' => $bill->Ma, 'room' => '903', 'room_type_id' => 1, 'rate' => 600000,
+            'adult' => 3, 'breakfast' => 3, 'breakfast_amount' => 300000,
+        ]);
+        $this->assertDatabaseHas('service_bill_details', ['BillServiceId' => $bill->Ma, 'Ma' => 2, 'Amount' => 300000]);
+        $this->assertDatabaseHas('service_bill_details', ['BillServiceId' => $bill->Ma, 'Ma' => 1, 'Amount' => 650000]);
+    }
+
+    public function test_split_old_services_stores_breakfast_rate_before_tax_like_night_audit()
+    {
+        [$room, $bill, $postedDate] = $this->makeSplitScenario('G1999004', '904', 2);
+        HotelService::where('code', 'BF')->update(['service_charge' => 5, 'special_tax' => 0, 'tax' => 8]);
+
+        $this->actingAs($this->user)->postJson('/api/night-audit/split-old-services', [
+            'from_date' => $postedDate, 'to_date' => $postedDate,
+        ])->assertSuccessful()->assertJsonPath('data.updated', 1);
+
+        // 200.000 gồm 5% phí + 8% VAT -> chưa thuế phí 176.366,84 -> đơn giá 88.183,42/khách.
+        $breakfast = ServiceBillDetail::where('BillServiceId', $bill->Ma)->where('ServiceId', 'BF')->firstOrFail();
+        $this->assertEqualsWithDelta(200000, (float) $breakfast->Amount, 0.001);
+        $this->assertEqualsWithDelta(88183.42, (float) $breakfast->OriginalRate, 0.01);
+        $this->assertEqualsWithDelta(2, (float) $breakfast->Quantity, 0.001);
+    }
+
+    public function test_split_old_services_skips_noshow_night_bills()
+    {
+        [$room, $bill, $postedDate] = $this->makeSplitScenario('G1999005', '905', 2, false);
+        $room->update(['status' => BookingRoom::STATUS_NOSHOW]);
+
+        $this->actingAs($this->user)->postJson('/api/night-audit/split-old-services', [
+            'from_date' => $postedDate, 'to_date' => $postedDate,
+        ])->assertSuccessful()->assertJsonPath('data.updated', 0);
+
+        $this->assertSame(0, ServiceBillDetail::where('BillServiceId', $bill->Ma)->where('ServiceId', 'BF')->count());
+        $this->assertSame(1, ServiceBillDetail::where('BillServiceId', $bill->Ma)->count());
+    }
+
+    public function test_split_old_services_skips_one_day_noshow_night()
+    {
+        [$room, $bill, $postedDate] = $this->makeSplitScenario('G1999006', '906', 2, false);
+        LateCheckin::create([
+            'booking_room_id' => $room->id, 'late_checkin_date' => $postedDate . ' 00:00:00',
+            'actual_arrival_date' => Carbon::parse($postedDate)->addDay()->toDateTimeString(),
+            'late_checkin_time' => '23:00', 'reason' => 'NightAudit No Show One Day Charge Room', 'status' => 1, 'username' => 'admin', 'shift' => '1',
+        ]);
+
+        $this->actingAs($this->user)->postJson('/api/night-audit/split-old-services', [
+            'from_date' => $postedDate, 'to_date' => $postedDate,
+        ])->assertSuccessful()->assertJsonPath('data.updated', 0);
+
+        $this->assertSame(0, ServiceBillDetail::where('BillServiceId', $bill->Ma)->where('ServiceId', 'BF')->count());
+    }
+
+    public function test_split_old_services_counts_breakfast_once_for_master_bill_split_by_folio()
+    {
+        [$room, $bill, $postedDate] = $this->makeSplitScenario('G1999007', '907', 2);
+        // Bill Master đã chia folio theo số tiền 400.000 / 200.000 (chi tiết chia theo tỷ lệ).
+        $bill->update(['Amount' => 400000]);
+        $part = $bill->replicate();
+        $part->Amount = 200000; $part->Folio = '2';
+        $part->save();
+        ServiceBillDetail::where('BillServiceId', $bill->Ma)->where('Ma', 1)->update(['Amount' => 400000]);
+        ServiceBillDetail::where('BillServiceId', $bill->Ma)->where('Ma', 2)->update(['Amount' => 200000]);
+        ServiceBillDetail::where('BillServiceId', $bill->Ma)->where('Ma', 3)->update(['Amount' => -200000]);
+        ServiceBillDetail::create(['BillServiceId' => $part->Ma, 'Ma' => 1, 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'OriginalRate' => 600000, 'Amount' => 200000]);
+        ServiceBillDetail::create(['BillServiceId' => $part->Ma, 'Ma' => 2, 'DepartmentId' => 'FO', 'ServiceId' => 'BF', 'OriginalRate' => 150000, 'Amount' => 100000]);
+        ServiceBillDetail::create(['BillServiceId' => $part->Ma, 'Ma' => 3, 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'OriginalRate' => -100000, 'Amount' => -100000]);
+
+        $this->actingAs($this->user)->postJson('/api/night-audit/split-old-services', [
+            'from_date' => $postedDate, 'to_date' => $postedDate,
+        ])->assertSuccessful()->assertJsonPath('data.updated', 2);
+
+        // Đêm này ăn sáng 2 x 100.000 = 200.000, chia theo tỷ lệ tiền phòng 2/3 - 1/3; không nhân đôi.
+        $breakfastTotal = (float) ServiceBillDetail::whereIn('BillServiceId', [$bill->Ma, $part->Ma])->where('ServiceId', 'BF')->sum('Amount');
+        $this->assertEqualsWithDelta(200000, $breakfastTotal, 0.01);
+        $this->assertEqualsWithDelta(-200000, (float) ServiceBillDetail::whereIn('BillServiceId', [$bill->Ma, $part->Ma])->where('ServiceId', 'RM')->where('Amount', '<', 0)->sum('Amount'), 0.01);
+        $this->assertEqualsWithDelta(66666.67, (float) ServiceBillDetail::where('BillServiceId', $part->Ma)->where('ServiceId', 'BF')->value('Amount'), 0.01);
+        $this->assertDatabaseHas('room_night_bills', ['bill_id' => $bill->Ma, 'breakfast_amount' => 200000, 'breakfast' => 2]);
+    }
+
+    /** Phòng có ăn sáng, bill đêm hôm trước đã post; trả về [room, bill, ngày post]. */
+    private function makeSplitScenario(string $roomId, string $roomNumber, int $adults, bool $withBreakfastLines = true): array
+    {
+        $systemDate = Carbon::parse(SystemDateRoll::latest('id')->value('system_date'))->startOfDay();
+        $serviceDate = $systemDate->copy()->subDay();
+        HotelSetting::query()->firstOrFail()->update(['breakfast_adult_rate' => 100000]);
+        HotelService::where('code', 'BF')->update(['service_charge' => 0, 'special_tax' => 0, 'tax' => 0]);
+        Room::updateOrCreate(['room_number' => $roomNumber], ['room_class_id' => 1, 'room_form_id' => 1, 'floor' => '9', 'room_status_code' => 'occupied_ready']);
+
+        $booking = Booking::create([
+            'booking_name' => 'Khách test tách ' . $roomNumber, 'arrival_date' => $serviceDate,
+            'departure_date' => $systemDate->copy()->addDay(), 'num_of_days' => 2,
+            'booking_date' => $serviceDate, 'created_by' => 'admin', 'registration_status_id' => 1,
+        ]);
+        $room = BookingRoom::create([
+            'id' => $roomId, 'booking_id' => $booking->id, 'room_class_id' => 1,
+            'room_number' => $roomNumber, 'arrival_date' => $serviceDate,
+            'departure_date' => $systemDate->copy()->addDay(), 'status' => BookingRoom::STATUS_CHECKED_IN,
+            'rate' => 600000, 'adults' => $adults, 'breakfast' => true,
+        ]);
+        $bill = $this->makeRoomNightBill($booking, $room, $serviceDate, null);
+        ServiceBillDetail::create(['BillServiceId' => $bill->Ma, 'Ma' => 1, 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'OriginalRate' => 600000, 'Amount' => 600000]);
+        if ($withBreakfastLines) {
+            ServiceBillDetail::create(['BillServiceId' => $bill->Ma, 'Ma' => 2, 'DepartmentId' => 'FO', 'ServiceId' => 'BF', 'OriginalRate' => 150000, 'Amount' => 300000]);
+            ServiceBillDetail::create(['BillServiceId' => $bill->Ma, 'Ma' => 3, 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'OriginalRate' => -300000, 'Amount' => -300000]);
+        }
+
+        return [$room, $bill, RoomNightBill::findOrFail($bill->Ma)->date->toDateString()];
     }
 
     private function makeRoomNightBill(Booking $booking, BookingRoom $room, Carbon $date, ?int $vatId, bool $createMetadata = true): ServiceBill
