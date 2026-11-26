@@ -101,9 +101,18 @@ class RoomOccupancyStatisticsService
             true
         );
 
-        $occupiedCurrent = $this->summarize(
-            $assignedPhysicalQuery()->where('status', BookingRoom::STATUS_CHECKED_IN)
-        );
+        // Xem tương lai (note 30/10): chưa có check-in thực tế ở ngày đó, nên "đang ở" là phòng dự kiến
+        // ở trong ngày xem (đặt trước hoặc đang ở hiện tại còn ở qua ngày xem), không lấy phòng đang ở hôm nay.
+        $occupiedCurrent = $isFutureView
+            ? $this->summarize(
+                $assignedPhysicalQuery()
+                    ->whereIn('status', [BookingRoom::STATUS_BOOKED, BookingRoom::STATUS_CHECKED_IN])
+                    ->whereDate('arrival_date', '<=', $dateString)
+                    ->whereDate('departure_date', '>', $dateString)
+            )
+            : $this->summarize(
+                $assignedPhysicalQuery()->where('status', BookingRoom::STATUS_CHECKED_IN)
+            );
 
         // Phòng đến gồm cả reservation chưa gán; phòng đến đã gán chỉ gồm số phòng vật lý.
         $expectedArrivals = $this->summarize(
@@ -126,9 +135,11 @@ class RoomOccupancyStatisticsService
         $pendingDepartures = $this->summarize(
             $assignedPhysicalQuery()
                 ->where(function ($query) use ($dateString, $isFutureView) {
-                    $query->where(function ($checkedIn) use ($dateString) {
+                    $query->where(function ($checkedIn) use ($dateString, $isFutureView) {
+                        // Ngày hệ thống: phòng đang ở đến/quá hạn ngày đi là phòng chưa trả.
+                        // Xem tương lai: chỉ phòng đang ở có ngày đi đúng ngày xem (phòng đi ngày trước đã tính ở ngày đó).
                         $checkedIn->where('status', BookingRoom::STATUS_CHECKED_IN)
-                            ->whereDate('departure_date', '<=', $dateString);
+                            ->whereDate('departure_date', $isFutureView ? '=' : '<=', $dateString);
                     })->orWhere(function ($sameDayReservation) use ($dateString) {
                         // Dòng 392: phòng chưa check-in có ngày đến = ngày đi là phòng đi trong ngày
                         // (không phải phòng đang ở), dù có tick Day Use hay không.

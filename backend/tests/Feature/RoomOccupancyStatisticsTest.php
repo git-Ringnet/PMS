@@ -140,7 +140,7 @@ class RoomOccupancyStatisticsTest extends TestCase
             'registration_status_id' => $registrationStatus->booking_status_id,
             'created_by' => 'room_stats_test',
         ]);
-        BookingRoom::create([
+        $dayUseRoom = BookingRoom::create([
             'booking_id' => $booking->id,
             'room_number' => '101',
             'room_class_id' => $class->id,
@@ -607,5 +607,42 @@ class RoomOccupancyStatisticsTest extends TestCase
         $lock->refresh();
         $this->assertSame(RoomLock::STATUS_UNLOCKED, $lock->is_active);
         $this->assertSame('2026-08-31 10:53:24', $lock->end_date->format('Y-m-d H:i:s'));
+    }
+
+    /**
+     * Room map xem tương lai (note 30/10): thẻ Đi / Đang ở phải theo ngày xem, không lấy phòng
+     * đang check-in của ngày hệ thống có ngày đi trước ngày xem.
+     */
+    public function test_future_view_counts_departures_and_inhouse_of_the_viewed_date_only(): void
+    {
+        DB::table('booking_statuses')->insert([
+            ['id' => 0, 'name' => 'Reservation'], ['id' => 1, 'name' => 'Checked In'], ['id' => 2, 'name' => 'Checked Out'],
+        ]);
+        SystemDateRoll::create(['system_date' => '2026-08-04', 'actual_date' => now(), 'shift' => '1', 'username' => 'room_stats_test']);
+        $registrationStatus = RegistrationStatus::create(['booking_status_id' => 1, 'name' => 'Confirmed', 'is_availability' => true]);
+        $form = RoomForm::create(['name' => 'Double']);
+        $class = RoomClass::create(['code' => 'DLX', 'name' => 'Deluxe', 'is_active' => true]);
+        foreach (['101', '102'] as $number) {
+            Room::create(['room_number' => $number, 'room_form_id' => $form->id, 'room_class_id' => $class->id, 'floor' => 1, 'room_status_code' => 'vacant_ready']);
+        }
+        $booking = Booking::create([
+            'booking_name' => 'Future stats', 'booking_date' => '2026-08-03', 'arrival_date' => '2026-08-03', 'departure_date' => '2026-08-09',
+            'num_of_days' => 6, 'status' => Booking::STATUS_CHECKIN, 'registration_status_id' => $registrationStatus->booking_status_id, 'created_by' => 'room_stats_test',
+        ]);
+        // Phòng 101 đang ở (check-in), đi ngày 06; phòng 102 đặt trước 07 -> 09.
+        BookingRoom::create(['booking_id' => $booking->id, 'room_number' => '101', 'room_class_id' => $class->id,
+            'arrival_date' => '2026-08-03', 'departure_date' => '2026-08-06', 'status' => BookingRoom::STATUS_CHECKED_IN]);
+        BookingRoom::create(['booking_id' => $booking->id, 'room_number' => '102', 'room_class_id' => $class->id,
+            'arrival_date' => '2026-08-07', 'departure_date' => '2026-08-09', 'status' => BookingRoom::STATUS_BOOKED]);
+
+        $stats = fn (string $date) => app(\App\Services\RoomOccupancyStatisticsService::class)->calculate(\Carbon\Carbon::parse($date));
+
+        $this->assertSame(1, $stats('2026-08-05')['occupied_current']);
+        $this->assertSame(0, $stats('2026-08-05')['departures_total']);
+        $this->assertSame(1, $stats('2026-08-06')['departures_total']);   // 101 đi đúng ngày 06
+        $this->assertSame(0, $stats('2026-08-07')['departures_total']);   // 101 đã đi từ 06, không tính lại
+        $this->assertSame(1, $stats('2026-08-08')['occupied_current']);   // chỉ 102 dự kiến ở, không lấy 101
+        $this->assertSame(1, $stats('2026-08-09')['departures_total']);   // 102 dự kiến đi
+        $this->assertSame(0, $stats('2026-08-10')['occupied_current']);
     }
 }

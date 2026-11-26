@@ -207,8 +207,9 @@ const chuaDenBookings = computed(() => {
     const pendingRooms = (booking.booking_rooms || []).filter(room => {
       if (isDepartureMode.value) {
         if (isFutureView.value) {
-          // Phòng chưa check-in nhưng có ngày đi đúng ngày xem là phòng dự kiến đi.
-          return Number(room.status) === 0
+          // Xem tương lai: phòng dự kiến đi là phòng có ngày đi đúng ngày xem, gồm cả phòng
+          // đang ở hiện tại (đã check-in) lẫn phòng đặt trước chưa check-in.
+          return [0, 1].includes(Number(room.status))
             && normalizeDate(room.departure_date) === normalizeDate(searchDate.value)
         }
         return isPendingDepartureRoom(room, searchDate.value, normalizeDate)
@@ -242,8 +243,9 @@ const daDenBookings = computed(() => {
       }
       if (isOccupiedMode.value) {
         if (isFutureView.value) {
-          // Xem tương lai: booking chưa check-in vẫn phải hiện trong danh sách dự kiến ở.
-          return Number(room.status) === 0 && isRoomInhouseOnDate(room, searchDate.value)
+          // Xem tương lai: dự kiến ở gồm phòng đặt trước chưa check-in và phòng đang ở hiện tại
+          // còn ở qua ngày xem (note 30/10: trước đây thiếu phòng đang ở).
+          return [0, 1].includes(Number(room.status)) && isRoomInhouseOnDate(room, searchDate.value)
         }
         return Number(room.status) === 1 && isRoomInhouseOnDate(room, searchDate.value)
       }
