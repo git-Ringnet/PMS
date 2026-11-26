@@ -343,6 +343,33 @@ async function updateWarehouse() {
   }
 }
 
+// Dòng 372 (note 23/11): xem danh sách kho đang ẩn để hiện lại
+const showHiddenWarehouses = ref(false)
+const hiddenWarehouses = ref([])
+
+async function toggleHiddenWarehouses() {
+  showHiddenWarehouses.value = !showHiddenWarehouses.value
+  if (!showHiddenWarehouses.value) return
+  try {
+    const res = await http.get('/warehouses', { params: { hidden: 1 } })
+    hiddenWarehouses.value = res.data.data || []
+  } catch (e) {
+    uiStore.showToast(apiErrorMessage(e, 'Lỗi khi tải danh sách kho đã ẩn'), 'error')
+  }
+}
+
+async function restoreWarehouse(warehouse) {
+  try {
+    const res = await http.put(`/warehouses/${warehouse.id}`, { is_active: true })
+    hiddenWarehouses.value = hiddenWarehouses.value.filter(w => w.id !== warehouse.id)
+    warehouses.value.push(res.data.data)
+    if (!activeWarehouseId.value) activeWarehouseId.value = res.data.data.id
+    uiStore.showToast(`Đã hiện lại kho "${warehouse.name}"!`, 'success')
+  } catch (e) {
+    uiStore.showToast(apiErrorMessage(e, 'Lỗi khi hiện lại kho'), 'error')
+  }
+}
+
 // Dòng 372 (note 4/11): kho đã phát sinh dữ liệu/phiếu kiểm kê không xóa được -> cho ẩn kho thay thế
 async function hideWarehouse() {
   const confirmed = await uiStore.confirm({ message: `Ẩn kho "${editWarehouse.value.name}"? Dữ liệu của kho vẫn được giữ nguyên.` })
@@ -905,10 +932,13 @@ const tableItems = computed(() => {
   }
 
   // Activity filter
+  // Dòng 372 (23/11): trạng thái có/không phát sinh chốt lúc chọn bộ lọc hoặc tải dữ liệu để đang nhập số
+  // liệu dòng không biến mất khỏi danh sách (vd lọc Không Phát Sinh, nhập Xuất xong dòng bị lọc mất).
+  const hasActivity = i => frozenActivity.value[i.product_id] ?? (i.totalReceive > 0 || i.totalExport > 0 || i.totalTransfer > 0)
   if (filterState.value.activity === 'has_activity') {
-    items = items.filter(i => i.totalReceive > 0 || i.totalExport > 0 || i.totalTransfer > 0)
+    items = items.filter(hasActivity)
   } else if (filterState.value.activity === 'no_activity') {
-    items = items.filter(i => i.totalReceive === 0 && i.totalExport === 0 && i.totalTransfer === 0)
+    items = items.filter(i => !hasActivity(i))
   }
 
   // Sort. Dòng 372/R99: sắp xếp theo tồn cuối dùng thứ tự đã chốt lúc chọn sắp xếp/tải dữ liệu,
@@ -930,7 +960,21 @@ const tableItems = computed(() => {
 
 // Thứ tự product_id theo tồn cuối, chỉ tính lại khi bấm đổi kiểu sắp xếp hoặc tải lại dữ liệu
 const frozenStockOrder = ref([])
+// product_id -> có phát sinh nhập/xuất/chuyển trong tháng (chốt lúc đổi bộ lọc hoặc tải dữ liệu)
+const frozenActivity = ref({})
+function refreezeActivity() {
+  const map = {}
+  for (const item of currentCheck.value?.items || []) {
+    map[item.product_id] = sumLogMonth(item.product_id, 'receive') > 0
+      || sumLogMonth(item.product_id, 'export') > 0
+      || sumLogMonth(item.product_id, 'transfer') > 0
+  }
+  frozenActivity.value = map
+}
+watch(() => filterState.value.activity, refreezeActivity)
+
 function refreezeStockOrder() {
+  refreezeActivity()
   const items = (currentCheck.value?.items || []).map(item => ({
     product_id: item.product_id,
     finalStock: getInitialStock(item)
@@ -1149,10 +1193,23 @@ const otherWarehouses = computed(() =>
           <!-- Placeholder nếu chưa có kho -->
           <span v-if="warehouses.length === 0" class="text-xs text-slate-400 italic">Chưa có kho nào</span>
         </div>
-        <button @click="openAddWarehouseModal" class="btn-pms-primary flex items-center gap-1.5 h-8 px-3 text-xs font-semibold rounded-lg shadow-sm cursor-pointer shrink-0">
-          <Plus class="w-4 h-4" stroke-width="2.5" />
-          Thêm Kho
-        </button>
+        <div class="flex items-center gap-2 shrink-0 relative">
+          <button @click="toggleHiddenWarehouses" data-testid="hidden-warehouses-btn" class="btn-pms-secondary h-8 px-3 text-xs font-semibold rounded-lg cursor-pointer">
+            Kho đã ẩn
+          </button>
+          <div v-if="showHiddenWarehouses" data-testid="hidden-warehouses-panel" class="absolute right-0 top-full mt-1.5 w-72 bg-white border border-slate-200 rounded-lg shadow-xl z-50 py-1.5 max-h-72 overflow-y-auto">
+            <div class="text-xs font-semibold text-slate-500 px-3 pb-1 border-b select-none">Kho đang ẩn</div>
+            <div v-if="hiddenWarehouses.length === 0" class="px-3 py-3 text-xs text-slate-400 italic">Không có kho nào đang ẩn</div>
+            <div v-for="hw in hiddenWarehouses" :key="hw.id" class="flex items-center justify-between gap-2 px-3 py-1.5 hover:bg-slate-50 text-xs">
+              <span class="font-semibold text-slate-700 truncate">{{ hw.name }}</span>
+              <button @click="restoreWarehouse(hw)" :data-testid="'restore-warehouse-' + hw.id" class="btn-pms-primary h-7 px-2.5 text-xs rounded-md cursor-pointer">Hiện lại</button>
+            </div>
+          </div>
+          <button @click="openAddWarehouseModal" class="btn-pms-primary flex items-center gap-1.5 h-8 px-3 text-xs font-semibold rounded-lg shadow-sm cursor-pointer shrink-0">
+            <Plus class="w-4 h-4" stroke-width="2.5" />
+            Thêm Kho
+          </button>
+        </div>
       </div>
 
       <!-- Toolbar -->
@@ -1166,7 +1223,7 @@ const otherWarehouses = computed(() =>
 
           <!-- Warning Only Switch -->
           <div class="flex items-center gap-1.5 select-none">
-            <span class="text-xs text-[#000000D9] font-semibold">Cảnh Báo Tồn</span>
+            <span class="text-xs text-[#000000D9] font-semibold">Dưới định mức</span>
             <label class="relative inline-flex items-center cursor-pointer">
               <input type="checkbox" v-model="filterState.warningOnly" class="sr-only peer">
               <div class="w-8 h-4.5 bg-slate-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-blue-500"></div>
@@ -1374,7 +1431,7 @@ const otherWarehouses = computed(() =>
                   <div class="flex items-center justify-between gap-1">
                     <span>{{ item.product_name }}</span>
                     <div class="flex items-center gap-1">
-                      <span v-if="filterState.warningOnly && item.finalStock < lowStockQty && item.well_balance > 0" data-testid="low-stock-badge" class="px-1.5 py-0.5 rounded text-xs font-bold bg-rose-100 text-rose-800 border border-rose-200 shrink-0">🚨 Cảnh Báo Tồn</span>
+                      <span v-if="filterState.warningOnly && item.finalStock < lowStockQty && item.well_balance > 0" data-testid="low-stock-badge" class="px-1.5 py-0.5 rounded text-xs font-bold bg-rose-100 text-rose-800 border border-rose-200 shrink-0">🚨 Dưới định mức</span>
                       <button @click="openTransferModal(item)" title="Chuyển kho" class="opacity-0 group-hover:opacity-100 transition-opacity ml-1 p-1 rounded hover:bg-sky-100 text-slate-400 hover:text-[var(--pms-custom-theme,#006bdb)] cursor-pointer">
                         <ArrowRightLeft class="w-3.5 h-3.5" />
                       </button>
@@ -2038,11 +2095,11 @@ const otherWarehouses = computed(() =>
                 </div>
               </div>
 
-              <!-- Low Stock Warnings: chỉ hiện khi bật công tắc Cảnh Báo Tồn (note 4/11) -->
+              <!-- Low Stock Warnings: chỉ hiện khi bật công tắc Dưới định mức (note 4/11, 23/11) -->
               <div v-if="filterState.warningOnly" class="space-y-2" data-testid="low-stock-stats">
                 <h4 class="font-semibold text-slate-700 flex items-center gap-1.5 text-xs tracking-wide">
                   <AlertTriangle class="w-3.5 h-3.5 text-amber-500" />
-                  Sản Phẩm Tồn Thấp (&lt; {{ lowStockQty }})
+                  Sản Phẩm Dưới Định Mức (&lt; {{ lowStockQty }})
                 </h4>
                 <div v-if="statsData.lowStockProducts && statsData.lowStockProducts.length" class="border border-slate-200 rounded-lg overflow-hidden bg-white max-h-40 overflow-y-auto shadow-2xs">
                   <table class="w-full text-left text-xs border-collapse">
@@ -2061,7 +2118,7 @@ const otherWarehouses = computed(() =>
                   </table>
                 </div>
                 <div v-else class="p-3 text-center text-xs font-semibold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg">
-                  Không có sản phẩm nào ở mức cảnh báo tồn thấp!
+                  Không có sản phẩm nào dưới định mức!
                 </div>
               </div>
 

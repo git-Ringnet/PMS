@@ -63,8 +63,8 @@ class InventoryPeriodicCheckTest extends TestCase
         $names = collect($tree)->flatMap(fn ($wh) => collect($wh['categories'])->flatMap(fn ($c) => array_column($c['products'], 'name')))->sort()->values()->all();
         $this->assertSame(['Coca Cola', 'Nước lon chưa gán kho', 'Pepsi'], $names);
         // Kho kiểm kê có thể gồm nhiều outlet; nhóm theo outlet của sản phẩm.
-        $this->assertSame('minibar', $tree[0]['name']);
-        $this->assertSame('Chưa gán kho (Kiểm kê nội bộ)', $tree[1]['name']);
+        // Note 23/11: sản phẩm chưa gán kho nhưng nhóm hàng thuộc outlet của kho thì vào nhóm outlet đó.
+        $this->assertSame(['minibar'], array_column($tree, 'name'));
     }
 
     public function test_check_is_only_created_when_saved(): void
@@ -192,5 +192,57 @@ class InventoryPeriodicCheckTest extends TestCase
         $this->assertSame('Coca Cola', $response->json('items.0.product_name'));
         $this->assertSame(1, $response->json('negative_count'));
         $this->assertNull(InventoryCheck::where('month', '2026-09')->first());
+    }
+
+    private function listedProductNames(Warehouse $warehouse): array
+    {
+        $tree = $this->getJson("/api/inventory/products-in-stock?warehouse_id={$warehouse->id}")->assertOk()->json('data');
+
+        return collect($tree)->flatMap(fn ($wh) => collect($wh['categories'])->flatMap(fn ($c) => array_column($c['products'], 'name')))->sort()->values()->all();
+    }
+
+    /** Dòng 372 (23/11): dữ liệu cũ gán inventory_id sai kho nhưng nhóm hàng thuộc outlet của kho vẫn phải hiện đủ. */
+    public function test_warehouse_lists_tracked_products_of_its_outlets_even_when_inventory_id_points_elsewhere(): void
+    {
+        $snack = ProductCategory::create(['name' => 'Bánh snack', 'outlet' => 'Minibar', 'is_active' => true]);
+        foreach (['Oishi', 'Bánh Danisa'] as $name) {
+            // inventory_id trỏ kho khác (dữ liệu cũ)
+            Product::create(['product_category_id' => $snack->id, 'name' => $name, 'price' => 5000, 'track_stock' => true, 'is_active' => true, 'inventory_id' => (string) $this->laundry->id]);
+        }
+
+        $names = $this->listedProductNames($this->minibar);
+
+        $this->assertContains('Oishi', $names);
+        $this->assertContains('Bánh Danisa', $names);
+        $this->assertNotContains('Giặt áo sơ mi', $names, 'sản phẩm của outlet khác không được lẫn vào');
+    }
+
+    public function test_warehouse_covering_all_outlets_lists_every_tracked_product(): void
+    {
+        \DB::table('housekeeping_outlets')->updateOrInsert(['code' => 'MB'], ['name' => 'Minibar', 'service_code' => 'MB', 'is_active' => 1, 'order_index' => 1]);
+        \DB::table('housekeeping_outlets')->updateOrInsert(['code' => 'LA'], ['name' => 'Giặt ủi', 'service_code' => 'LA', 'is_active' => 1, 'order_index' => 2]);
+        $laundryCat = ProductCategory::create(['name' => 'Giặt hấp', 'outlet' => 'Giặt ủi', 'is_active' => true]);
+        Product::create(['product_category_id' => $laundryCat->id, 'name' => 'Giặt vest', 'price' => 50000, 'track_stock' => true, 'is_active' => true, 'inventory_id' => '99']);
+
+        $shop = Warehouse::create(['name' => 'Shop', 'outlet_id' => 'MB,LA', 'is_active' => true]);
+        $names = $this->listedProductNames($shop);
+
+        $this->assertContains('Giặt vest', $names);
+        $this->assertContains('Coca Cola', $names);
+        $this->assertContains('Giặt áo sơ mi', $names);
+        $this->assertNotContains('Nước suối free', $names, 'sản phẩm không theo dõi tồn kho không được hiện');
+    }
+
+    public function test_hidden_warehouses_can_be_listed_and_shown_again(): void
+    {
+        $this->putJson("/api/warehouses/{$this->laundry->id}", ['is_active' => false])->assertOk();
+
+        $this->assertNotContains($this->laundry->id, collect($this->getJson('/api/warehouses')->json('data'))->pluck('id')->all());
+
+        $hidden = collect($this->getJson('/api/warehouses?hidden=1')->assertOk()->json('data'));
+        $this->assertSame([$this->laundry->id], $hidden->pluck('id')->all());
+
+        $this->putJson("/api/warehouses/{$this->laundry->id}", ['is_active' => true])->assertOk();
+        $this->assertContains($this->laundry->id, collect($this->getJson('/api/warehouses')->json('data'))->pluck('id')->all());
     }
 }

@@ -229,4 +229,88 @@ class ChargeNoshowTest extends TestCase
 
         $this->assertDatabaseCount('service_bills', 0);
     }
+
+    /** Phòng late check-in (noshow one day): ngày đến đã dời sang hôm sau, vẫn trạng thái Đặt trước. */
+    private function makeLateCheckinRoom(string $lateDate = '2026-08-04'): void
+    {
+        $this->booking->update(['status' => Booking::STATUS_RESERVATION]);
+        $this->room->update(['status' => BookingRoom::STATUS_BOOKED, 'arrival_date' => '2026-08-05', 'no_show_day' => 1]);
+        \App\Models\LateCheckin::create([
+            'booking_room_id' => $this->room->id,
+            'late_checkin_date' => $lateDate . ' 00:00:00',
+            'actual_arrival_date' => '2026-08-05 00:00:00',
+            'late_checkin_time' => '18:00',
+            'reason' => 'NightAudit No Show One Day No Charge',
+            'status' => 1,
+            'username' => 'test_user',
+            'shift' => '1',
+        ]);
+    }
+
+    /**
+     * Dòng 532: phòng late check-in (noshow one day) chưa tới cũng charge bù được đúng ngày vắng.
+     */
+    public function test_row_532_can_charge_noshow_one_day_room_for_its_absent_date(): void
+    {
+        $this->makeLateCheckinRoom();
+
+        $this->charge(['date_from' => '2026-08-04', 'date_to' => '2026-08-04', 'rate' => 500000])->assertOk();
+
+        $bills = ServiceBill::where('RentalRoomId1', $this->room->id)->where('ServiceId', 'RM')->get();
+        $this->assertCount(1, $bills);
+        $this->assertSame('2026-08-04', substr((string) $bills[0]->Date, 0, 10));
+        $this->assertEquals(500000, $bills[0]->Amount);
+        $this->assertSame('Dịch vụ phòng nghỉ noshow phòng 102', $bills[0]->DescriptionServive);
+        // Phòng vẫn là đặt trước, ngày đến không bị đổi
+        $this->assertSame(BookingRoom::STATUS_BOOKED, (int) $this->room->fresh()->status);
+        $this->assertSame('2026-08-05', $this->room->fresh()->arrival_date->toDateString());
+    }
+
+    public function test_row_532_one_day_room_cannot_charge_a_date_that_was_not_absent(): void
+    {
+        $this->makeLateCheckinRoom();
+
+        $this->charge(['date_from' => '2026-08-05', 'date_to' => '2026-08-05', 'rate' => 500000])
+            ->assertStatus(422)
+            ->assertJsonPath('success', false);
+        $this->assertDatabaseCount('service_bills', 0);
+    }
+
+    public function test_row_532_one_day_room_cannot_be_charged_twice_for_the_same_night(): void
+    {
+        $this->makeLateCheckinRoom();
+        $this->charge(['date_from' => '2026-08-04', 'date_to' => '2026-08-04', 'rate' => 500000])->assertOk();
+
+        $this->charge(['date_from' => '2026-08-04', 'date_to' => '2026-08-04', 'rate' => 500000])
+            ->assertStatus(422)
+            ->assertJsonPath('success', false);
+        $this->assertSame(1, ServiceBill::where('RentalRoomId1', $this->room->id)->where('ServiceId', 'RM')->count());
+    }
+
+    public function test_row_532_noshow_list_exposes_ids_dates_and_charged_flag_for_both_types(): void
+    {
+        $this->makeLateCheckinRoom();
+        $path = '/api/shift-work/noshow?from_date=2026-08-04&to_date=2026-08-04';
+
+        $row = collect($this->getJson($path)->assertOk()->json('data'))->firstWhere('type', 'late_checkin');
+        $this->assertSame($this->booking->id, $row['bookingId']);
+        $this->assertSame($this->room->id, $row['roomId']);
+        $this->assertSame('2026-08-04', $row['noshowDateIso']);
+        $this->assertSame('2026-08-05', $row['arrivalDateIso']);
+        $this->assertFalse($row['charged']);
+
+        $this->charge(['date_from' => '2026-08-04', 'date_to' => '2026-08-04', 'rate' => 500000])->assertOk();
+
+        $row = collect($this->getJson($path)->assertOk()->json('data'))->firstWhere('type', 'late_checkin');
+        $this->assertTrue($row['charged']);
+    }
+
+    public function test_row_532_booked_room_without_late_checkin_still_cannot_be_charged(): void
+    {
+        $this->booking->update(['status' => Booking::STATUS_RESERVATION]);
+        $this->room->update(['status' => BookingRoom::STATUS_BOOKED]);
+
+        $this->charge()->assertStatus(422)
+            ->assertJsonPath('message', 'Phòng thuê không ở trạng thái Noshow, không thể thực hiện charge tiền.');
+    }
 }

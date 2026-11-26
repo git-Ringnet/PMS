@@ -9,9 +9,10 @@ use Illuminate\Http\Request;
 class WarehouseController extends Controller
 {
     /** GET /api/warehouses */
-    public function index()
+    public function index(Request $request)
     {
-        $warehouses = Warehouse::where('is_active', true)
+        // Dòng 372 (23/11): ?hidden=1 trả các kho đã ẩn để hiện lại
+        $warehouses = Warehouse::where('is_active', !$request->boolean('hidden'))
             ->orderBy('name')
             ->get();
 

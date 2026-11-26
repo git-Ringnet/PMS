@@ -251,6 +251,7 @@ class NightAuditController extends Controller
         // Dòng 259: gồm cả phòng chưa gán số phòng, trước đây bị bỏ qua nên vẫn sang ngày được khi khách chưa nhận phòng.
         $pendingCheckIns = BookingRoom::with(['booking', 'roomClass'])
             ->stayOnly()
+            ->affectsAvailability()
             ->whereDate('arrival_date', '<=', $systemDate)
             ->where('status', BookingRoom::STATUS_BOOKED)
             ->where('status', '!=', BookingRoom::STATUS_MOVED)
@@ -259,6 +260,7 @@ class NightAuditController extends Controller
         // 2. Phòng có lịch check out hôm nay/trước đây nhưng vẫn ở trạng thái in-house (departure_date <= system_date và status = 1, loại bỏ phòng chuyển)
         $pendingCheckOuts = BookingRoom::with(['booking', 'roomClass'])
             ->stayOnly()
+            ->affectsAvailability()
             ->whereDate('departure_date', '<=', $systemDate)
             ->where('status', BookingRoom::STATUS_CHECKED_IN)
             ->where('status', '!=', BookingRoom::STATUS_MOVED)
@@ -347,6 +349,17 @@ class NightAuditController extends Controller
         }
         if ($room->status !== BookingRoom::STATUS_BOOKED) {
             return response()->json(['success' => false, 'message' => 'Phòng không ở trạng thái Đặt trước để late check-in.'], 422);
+        }
+
+        // Dòng 529: phòng ngày đến = ngày đi (0 đêm) dời ngày đến sang hôm sau sẽ làm ngày đến > ngày đi,
+        // nên không cho noshow one day, chỉ được noshow by stage.
+        if ($room->arrival_date && $room->departure_date
+            && $room->departure_date->toDateString() <= $room->arrival_date->toDateString()) {
+            return response()->json([
+                'success' => false,
+                'code' => 'zero_night_late_checkin',
+                'message' => 'Phòng có ngày đến bằng ngày đi (0 đêm) không thể Noshow one day, vì ngày đến mới sẽ lớn hơn ngày đi. Vui lòng dùng Noshow (by stage).',
+            ], 422);
         }
 
         $systemDate = $this->getSystemDate();
@@ -756,6 +769,7 @@ class NightAuditController extends Controller
                 $pendingCheckIns = BookingRoom::with(['booking', 'guests.guest'])
                     ->whereDate('arrival_date', '<=', $systemDate->toDateString())
                     ->stayOnly()
+                    ->affectsAvailability()
                     ->where('status', BookingRoom::STATUS_BOOKED)
                     ->where('status', '!=', BookingRoom::STATUS_MOVED)
                     ->get();
@@ -763,6 +777,7 @@ class NightAuditController extends Controller
                 $pendingCheckOuts = BookingRoom::with(['booking', 'guests.guest'])
                     ->whereDate('departure_date', '<=', $systemDate->toDateString())
                     ->stayOnly()
+                    ->affectsAvailability()
                     ->where('status', BookingRoom::STATUS_CHECKED_IN)
                     ->where('status', '!=', BookingRoom::STATUS_MOVED)
                     ->whereNotNull('room_number')
@@ -1356,6 +1371,10 @@ class NightAuditController extends Controller
         $description = $roomService
             ? $roomService->billDescription($room->room_number, 'FO')
             : 'Dịch vụ phòng nghỉ' . ($room->room_number ? ' - Phòng ' . $room->room_number : '');
+        // Dòng 540: tiền phòng noshow / late check-in có charge mô tả "Dịch vụ phòng nghỉ noshow 102".
+        if ($isNoshow) {
+            $description = trim(($roomService?->name ?: 'Dịch vụ phòng nghỉ') . ' noshow ' . ($room->room_number ?: ''));
+        }
         $breakfastDescription = $breakfastService
             ? $breakfastService->billDescription($room->room_number, 'FO')
             : 'Tiền ăn sáng người lớn' . ($room->room_number ? ' - Phòng ' . $room->room_number : '');

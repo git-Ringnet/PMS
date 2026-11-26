@@ -2,7 +2,7 @@
 import { ref, computed, watch, onActivated, onDeactivated, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { useHkStore, GROUP_COLORS } from '@/stores/hk-store'
-import { compareRooms, isCleaningRoom, getStatusSymbols as buildStatusSymbols, buildWorksheetSheets, buildSupervisorRooms } from '@/utils/hk-room-status'
+import { compareRooms, roomsOnFloor, deriveDisplayBookingStatus, hkFilterOptions, matchesHkFilter, getStatusSymbols as buildStatusSymbols, buildWorksheetSheets, buildSupervisorRooms } from '@/utils/hk-room-status'
 import { useRoomStore } from '@/stores/room-store'
 import {
   CalendarDays, Clock3, Search, Filter, ChevronDown,
@@ -84,17 +84,6 @@ const filterHk = ref('all')
 const filterBook = ref('all')
 const activeFloors = ref(new Set())
 const showFilterPanel = ref(false)
-
-// Phễu lọc chuẩn theo FIX FE Row 62 & Row 63 Note 19/10
-const hkFilterOptions = [
-  { key: 'all', label: 'Tất cả', icon: null },
-  { key: 'clean', label: 'Phòng sạch', icon: 'clean', iconClass: 'text-emerald-500' },
-  { key: 'dirty', label: 'Phòng bẩn', icon: 'dirty', iconClass: 'text-amber-600' },
-  { key: 'cleaning', label: 'Phòng lau dọn', icon: 'checkout', iconClass: 'text-cyan-600' },
-  { key: 'ready', label: 'Phòng sẵn sàng', icon: 'available', iconClass: 'text-emerald-600' },
-  { key: 'ooo', label: 'Phòng OOO', icon: 'maintenance', iconClass: 'text-rose-500' },
-  { key: 'oos', label: 'Phòng OOS', icon: 'maintenance', iconClass: 'text-amber-500' },
-]
 
 const bookingFilterOptions = [
   { key: 'all', label: 'Tất cả' },
@@ -201,22 +190,7 @@ const allRooms = computed(() => {
   return roomStore.rooms
     .filter(r => !r.is_internal && !String(r.room_number || '').startsWith('0') && r.room_class?.is_active !== false)
     .map(r => {
-      let displayBookingStatus = r.booking_status || ''
-      if (r.booking_status) {
-        const dateStr = workDate.value
-        const arrStr = r.arrival_date ? r.arrival_date.substring(0, 10) : ''
-        const depStr = r.departure_date ? r.departure_date.substring(0, 10) : ''
-        
-        if (r.booking_status === 'occupied') {
-          displayBookingStatus = 'occupied'
-        } else if (depStr === dateStr) {
-          displayBookingStatus = 'checkout'
-        } else if (arrStr === dateStr) {
-          displayBookingStatus = 'reserved'
-        } else {
-          displayBookingStatus = 'occupied'
-        }
-      }
+      const displayBookingStatus = deriveDisplayBookingStatus(r, workDate.value)
       return {
         id: Number(r.id),
         room_number: r.room_number,
@@ -243,25 +217,7 @@ const floors = computed(() => [...new Set(allRooms.value.map(r => r.floor))].sor
 const filteredRooms = computed(() => {
   const q = searchQ.value.trim().toLowerCase()
   return allRooms.value.filter(r => {
-    if (filterHk.value !== 'all') {
-      const code = String(r.room_status_code || '').toLowerCase()
-      if (filterHk.value === 'clean') {
-        const isClean = code === 'vacant_clean' || code === 'occupied_clean' || code === 'clean'
-        if (!isClean) return false
-      } else if (filterHk.value === 'dirty') {
-        const isDirty = code === 'vacant_dirty' || code === 'occupied_dirty' || code === 'dirty'
-        if (!isDirty) return false
-      } else if (filterHk.value === 'cleaning') {
-        if (!isCleaningRoom(r)) return false
-      } else if (filterHk.value === 'ready') {
-        const isReady = code === 'vacant_ready' || code === 'occupied_ready' || code === 'ready'
-        if (!isReady) return false
-      } else if (filterHk.value === 'ooo') {
-        if (!r.is_ooo) return false
-      } else if (filterHk.value === 'oos') {
-        if (!r.is_oos) return false
-      }
-    }
+    if (!matchesHkFilter(r, filterHk.value)) return false
     if (filterBook.value !== 'all' && r.displayBookingStatus !== filterBook.value) return false
     if (activeFloors.value.size > 0 && !activeFloors.value.has(r.floor)) return false
     if (q && !String(r.room_number).toLowerCase().includes(q) && !r.room_type.toLowerCase().includes(q)) return false
@@ -445,9 +401,9 @@ function toggleFloor(floor) {
   // Note 4/11: bấm chọn tầng thì tự tick tất cả phòng của tầng (bấm lại bỏ tick)
   const s = new Set(selectedRoomIds.value)
   if (turningOn) {
-    filteredRooms.value.filter(r => r.floor === floor).forEach(r => s.add(r.id))
+    roomsOnFloor(filteredRooms.value, floor).forEach(r => s.add(r.id))
   } else {
-    allRooms.value.filter(r => r.floor === floor).forEach(r => s.delete(r.id))
+    roomsOnFloor(allRooms.value, floor).forEach(r => s.delete(r.id))
   }
   selectedRoomIds.value = s
 }
@@ -482,17 +438,17 @@ function handleRoomCheckboxChange(id, event) {
 
 function toggleFloorRooms(floor, checked) {
   const s = new Set(selectedRoomIds.value)
-  const floorRooms = filteredRooms.value.filter(r => r.floor === floor)
+  const floorRooms = roomsOnFloor(filteredRooms.value, floor)
   floorRooms.forEach(r => checked ? s.add(r.id) : s.delete(r.id))
   selectedRoomIds.value = s
 }
 
 function isFloorAllSelected(floor) {
-  const floorRooms = filteredRooms.value.filter(r => r.floor === floor)
+  const floorRooms = roomsOnFloor(filteredRooms.value, floor)
   return floorRooms.length > 0 && floorRooms.every(r => selectedRoomIds.value.has(r.id))
 }
 function isFloorPartialSelected(floor) {
-  const floorRooms = filteredRooms.value.filter(r => r.floor === floor)
+  const floorRooms = roomsOnFloor(filteredRooms.value, floor)
   return floorRooms.some(r => selectedRoomIds.value.has(r.id)) && !isFloorAllSelected(floor)
 }
 
@@ -1192,14 +1148,14 @@ function printByRoom() {
       <div class="room-list-scroll">
         <div v-if="hkStore.loading" class="list-loading"><Loader2 :size="18" class="spin" /> Đang tải...</div>
         <template v-else v-for="floor in sortedFloorNumbers" :key="floor">
-          <div class="floor-label">
+          <label class="floor-label cursor-pointer select-none" :data-testid="'floor-label-' + floor">
             <input type="checkbox"
               :checked="isFloorAllSelected(floor)"
               :indeterminate="isFloorPartialSelected(floor)"
               @change="toggleFloorRooms(floor, $event.target.checked)"
               class="floor-cb" />
             TẦNG {{ floor }}
-          </div>
+          </label>
           <div
             v-for="room in roomsByFloor[floor]" :key="room.id"
             class="room-item"
