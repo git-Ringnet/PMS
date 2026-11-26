@@ -898,7 +898,7 @@ function showExportToast() {
               :title="getStatTooltip('OCC', day.fullDateStr)"
             >
               {{ statistics[day.fullDateStr]?.total_occupied ?? 0 }}<br/>
-              <span class="text-xs font-semibold text-amber-700">({{ statistics[day.fullDateStr]?.occupied_pct ?? 0 }}%)</span>
+              <span class="text-xs font-semibold text-amber-700">({{ Number(statistics[day.fullDateStr]?.occupied_pct ?? 0).toFixed(2) }}%)</span>
             </td>
           </tr>
 

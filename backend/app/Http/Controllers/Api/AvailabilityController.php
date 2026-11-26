@@ -447,7 +447,8 @@ class AvailabilityController extends Controller
 
             $statistics[$dStr]['sellable'] = $sellable;
             $statistics[$dStr]['av']       = $av;
-            $statistics[$dStr]['occupied_pct'] = $sellable > 0 ? round(($occ / $sellable) * 100) : 0;
+            // Task 430: công suất làm tròn 2 chữ số thập phân như Kế hoạch phòng.
+            $statistics[$dStr]['occupied_pct'] = $sellable > 0 ? round(($occ / $sellable) * 100, 2) : 0;
 
             // Dọn dẹp/unique mảng mã phòng của statistics
             $statistics[$dStr]['av_rooms']  = array_values(array_unique(array_filter($statistics[$dStr]['av_rooms'])));
