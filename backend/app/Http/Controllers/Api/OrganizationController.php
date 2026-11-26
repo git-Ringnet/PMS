@@ -7,6 +7,7 @@ use App\Models\Department;
 use App\Models\OrganizationDepartment;
 use App\Models\Position;
 use App\Models\PositionBranchRole;
+use App\Models\UserBranchPosition;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -167,6 +168,8 @@ class OrganizationController extends Controller
         }
 
         $applicationCode = strtoupper($validated['application_code']);
+        $before = PositionBranchRole::query()->where('position_id', $position->id)->where('application_code', $applicationCode)
+            ->pluck('role_id', 'system_branch_id')->map(fn ($id) => (int) $id)->all();
         DB::connection($system)->transaction(function () use ($system, $position, $validated, $applicationCode) {
             PositionBranchRole::query()
                 ->where('position_id', $position->id)
@@ -182,13 +185,62 @@ class OrganizationController extends Controller
                     'is_active' => true,
                 ]);
             }
+
+            $this->applyPositionApplicationToEmployees($position, $applicationCode, $validated['assignments']);
         });
+
+        // Checklist TC_HT_06 dòng 33: ghi rõ chi nhánh nào dùng vai trò nào thay vì id kỹ thuật.
+        $after = collect($validated['assignments'])->mapWithKeys(fn ($item) => [(int) $item['system_branch_id'] => (int) $item['role_id']])->all();
+        \App\Services\ActivityLogService::record($after === [] ? 'Cancel' : 'Modify',
+            \App\Support\SystemLogText::positionApplications($position, $applicationCode, $before, $after),
+            ['screen' => \App\Support\SystemLogText::SCREEN_ORG, 'target_type' => 'Position', 'target_id' => $position->id, 'target_label' => $position->name], $request);
 
         return response()->json([
             'success' => true,
             'message' => 'Đã cập nhật ứng dụng, chi nhánh và Role cho vị trí.',
             'data' => $position->fresh()->load(['branchRoles.branch', 'branchRoles.role']),
         ]);
+    }
+
+    /**
+     * Checklist TC_HT_03 dòng 18 / task 471: một vị trí có nhiều ứng dụng (vd Lễ tân vào cả PMS và POS).
+     * Nhân viên đang giữ vị trí ở chi nhánh nào thì nhận / mất ứng dụng của vị trí ở chi nhánh đó ngay,
+     * không phải vào màn Nhân viên lưu lại từng người. Không tự thêm chi nhánh mới cho nhân viên và không
+     * đè lên vị trí khác mà nhân viên đang giữ cho cùng ứng dụng tại chi nhánh đó.
+     *
+     * @param  array<int, array{system_branch_id:int, role_id:int}>  $assignments
+     */
+    private function applyPositionApplicationToEmployees(Position $position, string $applicationCode, array $assignments): void
+    {
+        $configuredBranchIds = collect($assignments)->pluck('system_branch_id')->map(fn ($id) => (int) $id)->all();
+
+        UserBranchPosition::query()
+            ->where('position_id', $position->id)
+            ->where('application_code', $applicationCode)
+            ->whereNotIn('system_branch_id', $configuredBranchIds ?: [0])
+            ->delete();
+
+        $holders = UserBranchPosition::query()
+            ->where('position_id', $position->id)
+            ->whereIn('system_branch_id', $configuredBranchIds ?: [0])
+            ->get(['user_id', 'system_branch_id'])
+            ->unique(fn ($item) => $item->user_id . '|' . $item->system_branch_id);
+
+        foreach ($holders as $holder) {
+            $hasApplication = UserBranchPosition::query()
+                ->where('user_id', $holder->user_id)
+                ->where('system_branch_id', $holder->system_branch_id)
+                ->where('application_code', $applicationCode)
+                ->exists();
+            if (!$hasApplication) {
+                UserBranchPosition::create([
+                    'user_id' => $holder->user_id,
+                    'system_branch_id' => $holder->system_branch_id,
+                    'application_code' => $applicationCode,
+                    'position_id' => $position->id,
+                ]);
+            }
+        }
     }
 }
 

@@ -244,7 +244,7 @@ class ReportLookupController extends Controller
             ->where('is_active', true)
             ->whereIn('code', $configuredBranchCodes)
             ->get(['id'])
-            ->filter(fn (SystemBranch $branch): bool => $user->isSuperAdmin() || $user->hasBranchAccess((int) $branch->id));
+            ->filter(fn (SystemBranch $branch): bool => $user->hasBranchAccess((int) $branch->id));
 
         if ($branches->isEmpty()) {
             return [];

@@ -462,6 +462,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
     // Activity Log routes
     Route::get('/activity-logs', [\App\Http\Controllers\Api\ActivityLogController::class, 'index'])->middleware('permission:mgmt.activity_log,fb.view');
     Route::get('/activity-logs/stats', [\App\Http\Controllers\Api\ActivityLogController::class, 'stats'])->middleware('permission:mgmt.activity_log,fb.view');
+    // Checklist TC_HT_06 dòng 37: xuất nhật ký ra file .xlsx thật (mỗi cột 1 ô).
+    Route::post('/activity-logs/export', [\App\Http\Controllers\Api\ActivityLogController::class, 'export'])->middleware('permission:mgmt.activity_log,fb.view');
 
     // =====================================================================
     // BOOKING (Đăng ký phòng) routes

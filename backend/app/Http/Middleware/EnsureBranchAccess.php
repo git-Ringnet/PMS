@@ -51,7 +51,8 @@ class EnsureBranchAccess
             ], 403);
         }
 
-        if (!$user->isSuperAdmin()) {
+        // TC_HT_05 dòng 30: Super Admin đã gán vị trí theo chi nhánh cũng bị chặn ở chi nhánh không được gán.
+        if (!$user->hasUnrestrictedBranchAccess()) {
             $hasAssignments = $user->userBranchPositions()->exists()
                 || $user->userBranches()->exists();
 

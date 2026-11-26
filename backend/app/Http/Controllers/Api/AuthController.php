@@ -208,7 +208,8 @@ class AuthController extends Controller
     /** Task 471: chi nhánh theo vị trí còn hiệu lực (bỏ chi nhánh khỏi vị trí thì không còn thấy khi đăng nhập). */
     private function accessibleBranchesFor($user)
     {
-        if ($user->isSuperAdmin()) {
+        // TC_HT_05 dòng 30: Super Admin đã gán vị trí theo chi nhánh chỉ thấy chi nhánh đã gán.
+        if ($user->hasUnrestrictedBranchAccess()) {
             return \App\Models\SystemBranch::where('is_active', true)->get();
         }
 

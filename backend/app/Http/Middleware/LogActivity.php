@@ -465,7 +465,16 @@ class LogActivity
         };
 
         if ($statusCode >= 400) {
-            return "Thao tác {$actionText} trên {$component} thất bại (HTTP {$statusCode})";
+            // Checklist TC_HT_06 dòng 33: ghi kèm lý do hệ thống báo cho người dùng để tra soát được.
+            $reason = '';
+            try {
+                $payload = json_decode((string) $response->getContent(), true);
+                $reason = is_array($payload) ? trim((string) ($payload['message'] ?? '')) : '';
+            } catch (\Throwable $e) {
+            }
+            $reason = $reason !== '' ? ' - Lý do: ' . \Illuminate\Support\Str::limit($reason, 300) : '';
+
+            return "Thao tác {$actionText} trên {$component} thất bại (HTTP {$statusCode}){$reason}";
         }
 
         $old = $oldValues ?? [];

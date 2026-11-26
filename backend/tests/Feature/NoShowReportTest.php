@@ -86,7 +86,7 @@ class NoShowReportTest extends TestCase
         $executor->shouldReceive('executeSource')->never();
         $controller = new ReportDefinitionController($executor, Mockery::mock(TemplateRendererService::class), Mockery::mock(ReportDatasetEnricher::class), Mockery::mock(ReportExportService::class), Mockery::mock(RoomAvailabilityService::class));
         $user = Mockery::mock(User::class)->makePartial();
-        $user->shouldReceive('isSuperAdmin')->once()->andReturnTrue();
+        $user->shouldReceive('hasUnrestrictedBranchAccess')->once()->andReturnTrue();
         $request = Request::create('/api/report-definitions/1/execute', 'POST');
         $request->setUserResolver(fn () => $user);
         $method = new ReflectionMethod($controller, 'executeReportSource');
@@ -129,7 +129,7 @@ class NoShowReportTest extends TestCase
 
         $controller = $this->controller($executor);
         $user = Mockery::mock(User::class)->makePartial();
-        $user->shouldReceive('isSuperAdmin')->once()->andReturnTrue();
+        $user->shouldReceive('hasUnrestrictedBranchAccess')->once()->andReturnTrue();
         $request = Request::create('/api/report-definitions/1/execute', 'POST');
         $request->setUserResolver(fn () => $user);
         $method = new ReflectionMethod($controller, 'executeReportSource');

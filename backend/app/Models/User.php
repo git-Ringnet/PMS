@@ -268,11 +268,20 @@ class User extends Authenticatable
 
     public function hasBranchAccess(int $branchId): bool
     {
-        // Super admin có quyền tất cả chi nhánh
-        if ($this->isSuperAdmin()) {
+        if ($this->hasUnrestrictedBranchAccess()) {
             return true;
         }
         return $this->accessibleBranchIds()->contains($branchId);
+    }
+
+    /**
+     * Checklist TC_HT_05 dòng 30 / task 471 (note: testuser bỏ check CN 2,3,4 vẫn thấy các chi nhánh đó):
+     * chỉ Super Admin gán role trực tiếp (chưa phân chi nhánh / vị trí) mới vào mọi chi nhánh;
+     * Super Admin đã gán vị trí theo chi nhánh thì chỉ vào các chi nhánh đã tick.
+     */
+    public function hasUnrestrictedBranchAccess(): bool
+    {
+        return $this->isSuperAdmin() && !$this->userBranchPositions()->exists();
     }
 
     public function isSuperAdmin(): bool

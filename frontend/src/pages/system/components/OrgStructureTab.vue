@@ -16,6 +16,7 @@ import {
   syncBranchRoleMatrix,
 } from '@/services/company-service'
 import { useUiStore } from '@/stores/ui-store'
+import { applicationChoices } from '@/utils/position-applications.js'
 
 const uiStore = useUiStore()
 const loading = ref(false)
@@ -45,6 +46,7 @@ const positionForm = ref({ id: null, department_id: null, code: '', name: '' })
 
 const showApplicationModal = ref(false)
 const selectedApplicationCode = ref('PMS')
+const applicationModalMode = ref('add') // 'add' | 'edit'
 const branchAssignments = ref([])
 
 const showPermissionModal = ref(false)
@@ -235,8 +237,26 @@ const loadApplicationAssignments = applicationCode => {
   })
 }
 
-const openApplication = (applicationCode = null) => {
-  loadApplicationAssignments(applicationCode || applications.value[0]?.code || '')
+// Checklist TC_HT_03 dòng 18 / task 471: Thêm ứng dụng chọn trong danh sách ứng dụng vị trí chưa có (1 vị trí nhiều ứng dụng);
+// Sửa chỉ sửa đúng ứng dụng của thẻ đang bấm.
+const applicationOptions = computed(() =>
+  applicationChoices(applications.value, selectedPosition.value, applicationModalMode.value, selectedApplicationCode.value)
+)
+
+const openAddApplication = () => {
+  const choices = applicationChoices(applications.value, selectedPosition.value, 'add')
+  if (!choices.length) {
+    uiStore.showToast('Vị trí đã được gán tất cả ứng dụng, bấm Sửa trên từng ứng dụng để điều chỉnh.', 'warning')
+    return
+  }
+  applicationModalMode.value = 'add'
+  loadApplicationAssignments(choices[0].code)
+  showApplicationModal.value = true
+}
+
+const openApplication = (applicationCode) => {
+  applicationModalMode.value = 'edit'
+  loadApplicationAssignments(applicationCode)
   showApplicationModal.value = true
 }
 
@@ -463,7 +483,8 @@ const savePermissionMatrix = async () => {
         <!-- Button Thêm ứng dụng (matching image1.png: sky-blue rounded button) -->
         <button
           class="px-4 py-1.5 bg-[#72c6e6] hover:bg-[#5db3d4] text-white rounded-md font-bold text-xs border-none cursor-pointer shadow-2xs transition-colors mb-5 inline-flex items-center gap-1.5"
-          @click="openApplication('PMS')"
+          data-testid="position-add-application"
+          @click="openAddApplication"
         >
           Thêm ứng dụng
         </button>
@@ -541,7 +562,7 @@ const savePermissionMatrix = async () => {
         <div class="bg-white w-full max-w-4xl rounded-lg shadow-2xl overflow-hidden border border-slate-200 animate-in">
           <!-- Sky-blue banner header matching image2.png -->
           <header class="px-5 py-3 bg-[#72c6e6] text-white flex items-center justify-between">
-            <h3 class="text-sm font-bold tracking-wide text-white m-0">Sửa ứng dụng</h3>
+            <h3 class="text-sm font-bold tracking-wide text-white m-0">{{ applicationModalMode === 'add' ? 'Thêm ứng dụng' : 'Sửa ứng dụng' }}</h3>
             <button
               @click="showApplicationModal = false"
               class="text-white hover:text-slate-100 bg-transparent border-none cursor-pointer text-lg font-light leading-none"
@@ -556,10 +577,12 @@ const savePermissionMatrix = async () => {
               <label class="font-bold text-slate-700 text-xs block mb-1.5">Ứng dụng</label>
               <select
                 v-model="selectedApplicationCode"
+                data-testid="position-application-select"
+                :disabled="applicationModalMode === 'edit'"
                 @change="loadApplicationAssignments(selectedApplicationCode)"
                 class="w-full border border-slate-300 rounded-md p-2 text-xs font-semibold text-slate-800 bg-white focus:outline-sky-500"
               >
-                <option v-for="application in applications" :key="application.code" :value="application.code">
+                <option v-for="application in applicationOptions" :key="application.code" :value="application.code">
                   {{ application.name }}
                 </option>
               </select>
