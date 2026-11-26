@@ -16,6 +16,7 @@ import {
   normalizeAllocationQuantity,
   sameRoomClass,
 } from '@/utils/booking-room-allocations'
+import { standardCheckInTime, standardCheckOutTime, applyStandardStayTimes } from '@/utils/standard-stay-times'
 import {
   calculateChargeableServiceTotals,
   isMoveHistoryBillReference,
@@ -175,6 +176,8 @@ function formatLocalYYYYMMDD(dVal) {
 
 const systemDate = ref(authStore.systemDate || localStorage.getItem('pms_system_date') || formatLocalYYYYMMDD(new Date()))
 const hotelSettings = ref({})
+// Giờ nhận/trả phòng tiêu chuẩn lấy từ cấu hình khách sạn (init-dropdowns trả kèm hotel_configs).
+watch(hotelSettings, settings => applyStandardStayTimes(settings || {}), { immediate: true, flush: 'sync' })
 const isSyncRoomDateEnabled = computed(() => {
   const val = hotelSettings.value?.SyncRoomDateByBookingDate ?? hotelSettings.value?.sync_room_date_by_booking_date
   return Number(val) === 1
@@ -2831,8 +2834,8 @@ function syncRoomsToAllocations(tab) {
       extraBedQty: Number(r.extraBedQty) || 0,
       hourly: !!r.hourly && (r.checkIn === r.checkOut),
       is_day_use: !!r.hourly && (r.checkIn === r.checkOut),
-      arrivalTime: r.arrivalTime || '14:00',
-      hoursOut: r.hoursOut || '12:00',
+      arrivalTime: r.arrivalTime || standardCheckInTime.value,
+      hoursOut: r.hoursOut || standardCheckOutTime.value,
       isPreassigned: !!r.isPreassigned,
       initialRoomClass: r.initialRoomClass || '',
       transferredFrom: r.transferredFrom || '',
@@ -3512,8 +3515,8 @@ function bookingToTab(b) {
         extraBedPrice: (br.extra_bed_rate !== undefined && br.extra_bed_rate !== null && br.extra_bed_rate !== '') ? Number(br.extra_bed_rate) : (dailyExtraBeds.length ? (dailyExtraBeds.find(d => d.rate !== undefined)?.rate ?? 0) : 0),
         extraBedQty: Number(br.extra_bed_qty) || (dailyExtraBeds.length ? Math.max(...dailyExtraBeds.map(d => d.quantity || 0)) : 0),
         hourly: !!br.is_day_use && (parseApiDate(br.arrival_date || b.arrival_date) === parseApiDate(br.departure_date || b.departure_date)),
-        arrivalTime: br.arrival_time || '14:00',
-        hoursOut: br.departure_time || '12:00',
+        arrivalTime: br.arrival_time || standardCheckInTime.value,
+        hoursOut: br.departure_time || standardCheckOutTime.value,
         // Dòng 398: phòng đã checkout hiển thị giờ checkout thực tế (chỉ để xem).
         checkoutTime: Number(br.status) === 2 ? (br.CheckoutTime || null) : null,
         isPreassigned: !!physicalRoom.room_number,
@@ -3600,8 +3603,8 @@ function bookingToTab(b) {
           breakfast: roomDetail.breakfast !== undefined ? !!roomDetail.breakfast : !!alloc.breakfastIncluded,
           extraBedPrice: Number(roomDetail.extraBedPrice) || 0,
           hourly: (alloc.arrivalDate === alloc.departureDate) && (!!roomDetail.hourly || !!roomDetail.is_day_use),
-          arrivalTime: roomDetail.arrivalTime || '14:00',
-          hoursOut: roomDetail.hoursOut || '12:00',
+          arrivalTime: roomDetail.arrivalTime || standardCheckInTime.value,
+          hoursOut: roomDetail.hoursOut || standardCheckOutTime.value,
           isPreassigned: roomDetail.isPreassigned !== undefined ? !!roomDetail.isPreassigned : false,
           initialRoomClass: roomDetail.initialRoomClass || shapeName,
           transferredFrom: roomDetail.transferredFrom || '',
@@ -4021,8 +4024,8 @@ function serializeRoomAddDraft() {
         breakfast: room.breakfast !== undefined ? !!room.breakfast : !!row.breakfastIncluded,
         extraBedPrice: Number(room.extraBedPrice ?? row.extraBedPrice) || 0,
         extraBedQty: Number(room.extraBedQty) || 0,
-        arrivalTime: room.arrivalTime || '14:00',
-        hoursOut: room.hoursOut || '12:00',
+        arrivalTime: room.arrivalTime || standardCheckInTime.value,
+        hoursOut: room.hoursOut || standardCheckOutTime.value,
         arrivalDate: room.checkIn || row.arrivalDate,
         departureDate: room.checkOut || row.departureDate,
         price: Number(room.price ?? row.price) || 0,
@@ -5039,8 +5042,8 @@ function updateAllocatedRooms(row) {
         breakfast: row.breakfastIncluded !== undefined ? !!row.breakfastIncluded : getDefaultBreakfastSetting(),
         extraBedPrice: row.extraBedPrice !== undefined ? Number(row.extraBedPrice) : (Number(hotelSettings.value?.extra_bed_rate) || 300000),
         hourly: (row.arrivalDate || modalForm.value.checkIn) === (row.departureDate || modalForm.value.checkOut),
-        arrivalTime: '14:00',
-        hoursOut: '12:00',
+        arrivalTime: standardCheckInTime.value,
+        hoursOut: standardCheckOutTime.value,
         isPreassigned: false,
         initialRoomClass: row.roomClassCode,
         transferredFrom: '',
@@ -6158,8 +6161,8 @@ async function exportRegistrationRoomsExcel() {
         extraBedPrice: Number(r.extraBedPrice) || 0,
         hourly: !!r.hourly,
         specialRequests: specialReqDisplay,
-        arrivalTime: r.arrivalTime || '14:00',
-        hoursOut: r.checkoutTime || r.hoursOut || '12:00',
+        arrivalTime: r.arrivalTime || standardCheckInTime.value,
+        hoursOut: r.checkoutTime || r.hoursOut || standardCheckOutTime.value,
         isPreassigned: !!r.isPreassigned,
         initialRoomClass: r.initialRoomClass || r.shape || '—',
         transferredFrom: r.transferredFrom || '—',
@@ -8322,19 +8325,19 @@ defineExpose({
                           <TimePicker24h 
                             v-if="isEditing" 
                             v-model="room.arrivalTime" 
-                            default-time="14:00"
+                            :default-time="standardCheckInTime"
                             :disabled="!isEditing" 
                           />
-                          <span v-else class="text-xs font-normal text-[#000000D9]">{{ formatTimeHHmm(room.arrivalTime) || '14:00' }}</span>
+                          <span v-else class="text-xs font-normal text-[#000000D9]">{{ formatTimeHHmm(room.arrivalTime) || standardCheckInTime }}</span>
                         </template>
                         <template v-else-if="col.key === 'hoursOut'">
                           <TimePicker24h 
                             v-if="isEditing" 
                             v-model="room.hoursOut" 
-                            default-time="12:00"
+                            :default-time="standardCheckOutTime"
                             :disabled="!isEditing" 
                           />
-                          <span v-else class="text-xs font-normal text-[#000000D9]">{{ formatTimeHHmm(room.checkoutTime || room.hoursOut) || '12:00' }}</span>
+                          <span v-else class="text-xs font-normal text-[#000000D9]">{{ formatTimeHHmm(room.checkoutTime || room.hoursOut) || standardCheckOutTime }}</span>
                         </template>
                         <template v-else-if="col.key === 'isPreassigned'">
                           <input 
@@ -9010,19 +9013,19 @@ defineExpose({
                                   <TimePicker24h 
                                     v-if="isEditing" 
                                     v-model="room.arrivalTime" 
-                                    default-time="14:00"
+                                    :default-time="standardCheckInTime"
                                     :disabled="!isEditing" 
                                   />
-                                  <span v-else class="text-xs font-normal text-[#000000D9]">{{ formatTimeHHmm(room.arrivalTime) || '14:00' }}</span>
+                                  <span v-else class="text-xs font-normal text-[#000000D9]">{{ formatTimeHHmm(room.arrivalTime) || standardCheckInTime }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'hoursOut'">
                                   <TimePicker24h 
                                     v-if="isEditing" 
                                     v-model="room.hoursOut" 
-                                    default-time="12:00"
+                                    :default-time="standardCheckOutTime"
                                     :disabled="!isEditing" 
                                   />
-                                  <span v-else class="text-xs font-normal text-[#000000D9]">{{ formatTimeHHmm(room.checkoutTime || room.hoursOut) || '12:00' }}</span>
+                                  <span v-else class="text-xs font-normal text-[#000000D9]">{{ formatTimeHHmm(room.checkoutTime || room.hoursOut) || standardCheckOutTime }}</span>
                                 </template>
                                 <template v-else-if="col.key === 'isPreassigned'">
                                   <input 

@@ -23,6 +23,7 @@ import { resolveRoomPlanNights } from '@/utils/room-plan-nights.js'
 import { isRoomPlanVirtualRoomVisible } from '@/utils/room-plan-virtual-room-visibility.js'
 import { buildRoomPlanSelectionRectangle } from '@/utils/room-plan-selection.js'
 import { normalizeRoomPlanQuickBookingRateCode, resolveRoomPlanQuickBookingRateMode, resolveRoomPlanQuickBookingSelectedRateCode, resolveRoomPlanQuickBookingUnitPrice } from '@/utils/room-plan-quick-booking-pricing.js'
+import { standardCheckInTime, standardCheckOutTime, applyStandardStayTimes } from '@/utils/standard-stay-times'
 
 const uiStore = useUiStore()
 const roomStore = useRoomStore()
@@ -911,6 +912,8 @@ const startDate = ref(initDates.start)
 const activeGroupSetting = ref('Phòng') // 'Loại phòng' | 'Dạng phòng' | 'Tầng' | 'Phòng'
 const settingsLoaded = ref(false) // Tránh auto-save khi đang load settings lần đầu
 const hotelSettings = ref(null)
+// Giờ nhận/trả phòng tiêu chuẩn theo cấu hình khách sạn (dùng khi phòng chưa có giờ).
+watch(hotelSettings, settings => applyStandardStayTimes(settings || {}), { flush: 'sync' })
 const showPlanSettings = ref(false)
 const showWaitingList = ref(false)
 const searchInput = ref('')
@@ -1753,8 +1756,8 @@ async function loadBookings() {
 
           const arrivalStr = br.arrival_date ? toLocalDateStr(br.arrival_date) : (b.arrival_date ? toLocalDateStr(b.arrival_date) : '')
           const departureStr = br.departure_date ? toLocalDateStr(br.departure_date) : (b.departure_date ? toLocalDateStr(b.departure_date) : '')
-          const arrivalTime = br.arrival_time || '14:00'
-          const departureTime = br.departure_time || '12:00'
+          const arrivalTime = br.arrival_time || standardCheckInTime.value
+          const departureTime = br.departure_time || standardCheckOutTime.value
           const isDayUse = Boolean(br.is_day_use ?? b.is_day_use)
 
           // Dòng 474 (note 26/11): phòng đang ở chỉ liệt kê khách còn ở (bỏ khách đã check out/hủy/đã chuyển).

@@ -6628,5 +6628,10 @@
  "Khách chính": "Main guest",
  "Lỗi khi cập nhật khách chính.": "Error updating the main guest.",
  "Vui lòng lưu hoặc hủy thay đổi trước khi đổi khách chính.": "Please save or cancel your changes before changing the main guest.",
- "Xác nhận đổi khách chính": "Confirm main guest change"
+ "Xác nhận đổi khách chính": "Confirm main guest change",
+ "Giờ mặc định khi tạo phòng mới, phục vụ tính tiền lưu trú. Không đổi giờ của các phòng đã tạo.": "Default time for newly created rooms, used for stay charges. Rooms already created keep their times.",
+ "Giờ Nhận Phòng": "Check-in Time",
+ "Giờ Trả Phòng": "Check-out Time",
+ "Giờ nhận phòng tiêu chuẩn không đúng định dạng HH:mm.": "The standard check-in time must be in HH:mm format.",
+ "Giờ trả phòng tiêu chuẩn không đúng định dạng HH:mm.": "The standard check-out time must be in HH:mm format."
 }

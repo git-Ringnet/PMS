@@ -131,7 +131,7 @@ class BookingChild extends Model
             } elseif (in_array($status, [0, 1], true)) {
                 $data += [
                     'actual_checkout_date' => $room->departure_date->toDateString(),
-                    'actual_checkout_time' => '12:00:00',
+                    'actual_checkout_time' => \App\Support\StandardStayTimes::checkOut(),
                     'checkout_by' => null,
                 ];
             }

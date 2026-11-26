@@ -1,3 +1,5 @@
+import { standardCheckInTime, standardCheckOutTime } from './standard-stay-times.js'
+
 // Room rows with these statuses are part of the current allocation contract.
 // Cancelled, no-show, and moved rows remain visible as history, but never
 // contribute to the quantity that creates or restores reservation rooms.
@@ -82,7 +84,7 @@ export function buildNoshowRoomEdits(rooms) {
     breakfast: !!room.breakfast,
     extraBedQty: Number(room.extraBedQty) || 0,
     extraBedPrice: Number(room.extraBedPrice) || 0,
-    arrivalTime: room.arrivalTime || '14:00',
-    hoursOut: room.hoursOut || '12:00',
+    arrivalTime: room.arrivalTime || standardCheckInTime.value,
+    hoursOut: room.hoursOut || standardCheckOutTime.value,
   }))
 }

@@ -3,6 +3,8 @@ import { ref, reactive, onMounted, computed } from 'vue'
 import http from '@/services/http'
 import { useUiStore } from '@/stores/ui-store'
 import QrcodeVue from 'qrcode.vue'
+import TimePicker24h from '@/components/TimePicker24h.vue'
+import { applyStandardStayTimes, DEFAULT_CHECK_IN_TIME, DEFAULT_CHECK_OUT_TIME, normalizeStayTime } from '@/utils/standard-stay-times'
 
 const uiStore = useUiStore()
 const loading = ref(false)
@@ -44,7 +46,10 @@ const hotelForm = reactive({
   pos_invoice_form_no: '',
   pos_invoice_symbol: '',
   logo_url: '',
-  qr_code_url: ''
+  qr_code_url: '',
+  // Giờ nhận phòng / trả phòng tiêu chuẩn: giờ mặc định cho phòng mới
+  StandardCheckInTime: DEFAULT_CHECK_IN_TIME,
+  StandardCheckOutTime: DEFAULT_CHECK_OUT_TIME
 })
 
 const localPreviewLogoUrl = ref('')
@@ -178,7 +183,11 @@ const saveHotelSettings = async () => {
   }
   loading.value = true
   try {
+    hotelForm.StandardCheckInTime = normalizeStayTime(hotelForm.StandardCheckInTime) || DEFAULT_CHECK_IN_TIME
+    hotelForm.StandardCheckOutTime = normalizeStayTime(hotelForm.StandardCheckOutTime) || DEFAULT_CHECK_OUT_TIME
     await http.put('/hotel-settings', hotelForm)
+    // Các màn hình đang mở trong phiên dùng ngay giờ chuẩn mới cho phòng tạo sau.
+    applyStandardStayTimes(hotelForm)
     uiStore.showToast('Lưu thông tin khách sạn thành công!', 'success')
   } catch (err) {
     console.error('Lỗi khi lưu cấu hình khách sạn:', err)
@@ -409,6 +418,22 @@ onMounted(() => {
             <button v-if="hotelForm.extra_bed_rate" type="button" @click="hotelForm.extra_bed_rate = 0"
               class="absolute right-2 text-slate-400 hover:text-slate-600 bg-transparent border-none cursor-pointer p-0 text-xs"
               title="Xóa">✕</button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 items-center gap-2 text-xs font-semibold text-[#000000D9]"
+          title="Giờ mặc định khi tạo phòng mới, phục vụ tính tiền lưu trú. Không đổi giờ của các phòng đã tạo.">
+          <span>Giờ Nhận Phòng</span>
+          <div class="col-span-2">
+            <TimePicker24h v-model="hotelForm.StandardCheckInTime" :default-time="DEFAULT_CHECK_IN_TIME" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-3 items-center gap-2 text-xs font-semibold text-[#000000D9]"
+          title="Giờ mặc định khi tạo phòng mới, phục vụ tính tiền lưu trú. Không đổi giờ của các phòng đã tạo.">
+          <span>Giờ Trả Phòng</span>
+          <div class="col-span-2">
+            <TimePicker24h v-model="hotelForm.StandardCheckOutTime" :default-time="DEFAULT_CHECK_OUT_TIME" />
           </div>
         </div>
 

@@ -1,6 +1,6 @@
 {
- "generated_at": "2026-11-25T09:54:58.503Z",
- "count": 6243,
+ "generated_at": "2026-11-26T04:33:50.963Z",
+ "count": 6276,
  "items": [
   {
    "source": "- Bảo mật nâng cao",
@@ -2517,6 +2517,16 @@
    ]
   },
   {
+   "source": "⚙️ Cột",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình hệ thống › ActivityLogTab",
+     "route": "/system"
+    }
+   ]
+  },
+  {
    "source": "⚙ Cột hiển thị",
    "is_pattern": false,
    "locations": [
@@ -2747,7 +2757,7 @@
    ]
   },
   {
-   "source": "🚨 Cảnh Báo Tồn",
+   "source": "🚨 Dưới định mức",
    "is_pattern": false,
    "locations": [
     {
@@ -3605,6 +3615,16 @@
     {
      "area": "Đặt phòng › CreateRegistrationPage",
      "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "Ẩn/Hiện và kéo thả đổi vị trí cột",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình hệ thống › ActivityLogTab",
+     "route": "/system"
     }
    ]
   },
@@ -4711,6 +4731,16 @@
     {
      "area": "Cấu hình › SystemDefinition",
      "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "Bạn có muốn cập nhật khách \"{0}\" làm khách chính trong phòng không?",
+   "is_pattern": true,
+   "locations": [
+    {
+     "area": "Dùng chung › BookingDetailModal",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -7435,16 +7465,6 @@
    ]
   },
   {
-   "source": "Cảnh Báo Tồn",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Buồng phòng › InventoryTab",
-     "route": "/housekeeping"
-    }
-   ]
-  },
-  {
    "source": "Cảnh báo trùng số phòng",
    "is_pattern": false,
    "locations": [
@@ -9039,6 +9059,16 @@
    ]
   },
   {
+   "source": "Chỉ charge được từng phòng một, vui lòng chỉ chọn 1 phòng.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Thông báo hệ thống › noshow-room-list",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
    "source": "Chỉ chấp nhận định dạng ảnh JPG, PNG hoặc WEBP!",
    "is_pattern": false,
    "locations": [
@@ -9431,6 +9461,10 @@
     {
      "area": "Cấu hình hệ thống › ActivityLogTab",
      "route": "/system"
+    },
+    {
+     "area": "Thông báo hệ thống › activity-log-columns",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -12319,6 +12353,16 @@
    ]
   },
   {
+   "source": "Chưa charge",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › DayCloseNoshowTab",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
    "source": "Chưa chọn",
    "is_pattern": false,
    "locations": [
@@ -13104,6 +13148,10 @@
    "source": "Chưa gán",
    "is_pattern": false,
    "locations": [
+    {
+     "area": "Lễ tân › DayCloseNoshowTab",
+     "route": "/frontdesk"
+    },
     {
      "area": "Lễ tân › DayClosePage",
      "route": "/frontdesk"
@@ -16861,6 +16909,16 @@
    ]
   },
   {
+   "source": "Dưới định mức",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Buồng phòng › InventoryTab",
+     "route": "/housekeeping"
+    }
+   ]
+  },
+  {
    "source": "DV Lễ tân post",
    "is_pattern": false,
    "locations": [
@@ -17033,6 +17091,16 @@
    ]
   },
   {
+   "source": "Đã cập nhật khách chính của phòng.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Dùng chung › BookingDetailModal",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
    "source": "Đã cập nhật mô tả.",
    "is_pattern": false,
    "locations": [
@@ -17099,6 +17167,16 @@
     {
      "area": "Đặt phòng › SpecialRequestsModal",
      "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "Đã charge",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › DayCloseNoshowTab",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -17595,6 +17673,16 @@
     {
      "area": "Đặt phòng › RoomMapPage",
      "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "Đã hiện lại kho \"{0}\"!",
+   "is_pattern": true,
+   "locations": [
+    {
+     "area": "Buồng phòng › InventoryTab",
+     "route": "/housekeeping"
     }
    ]
   },
@@ -21097,6 +21185,16 @@
    ]
   },
   {
+   "source": "Đặt làm khách chính",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Dùng chung › BookingDetailModal",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
    "source": "đặt phòng",
    "is_pattern": false,
    "locations": [
@@ -21541,6 +21639,16 @@
     {
      "area": "Đặt phòng › RoomPlanPage",
      "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "đến",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › DayCloseNoshowTab",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -22677,6 +22785,10 @@
      "route": "/reservation"
     },
     {
+     "area": "Đặt phòng › ChildBreakfastModal",
+     "route": "/reservation"
+    },
+    {
      "area": "Đặt phòng › CopyModal",
      "route": "/reservation"
     },
@@ -23190,6 +23302,10 @@
    "source": "Đồng ý",
    "is_pattern": false,
    "locations": [
+    {
+     "area": "Dùng chung › BookingDetailModal",
+     "route": "/frontdesk"
+    },
     {
      "area": "Dùng chung › ConfirmModal",
      "route": "/frontdesk"
@@ -24661,6 +24777,10 @@
      "route": "/fnb"
     },
     {
+     "area": "Lễ tân › DayCloseNoshowTab",
+     "route": "/frontdesk"
+    },
+    {
      "area": "Lễ tân › GeneralSearchPage",
      "route": "/frontdesk"
     },
@@ -25459,6 +25579,26 @@
    ]
   },
   {
+   "source": "Giờ mặc định khi tạo phòng mới, phục vụ tính tiền lưu trú. Không đổi giờ của các phòng đã tạo.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › HotelInfoTab",
+     "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "Giờ Nhận Phòng",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › HotelInfoTab",
+     "route": "/config"
+    }
+   ]
+  },
+  {
    "source": "Giờ phải nằm trong thời gian của ca đã chọn.",
    "is_pattern": false,
    "locations": [
@@ -25483,6 +25623,16 @@
     {
      "area": "Lễ tân › PrepaymentModal",
      "route": "/frontdesk"
+    }
+   ]
+  },
+  {
+   "source": "Giờ Trả Phòng",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình › HotelInfoTab",
+     "route": "/config"
     }
    ]
   },
@@ -26055,6 +26205,10 @@
     {
      "area": "Cấu hình hệ thống › ActivityLogTab",
      "route": "/system"
+    },
+    {
+     "area": "Thông báo hệ thống › activity-log-columns",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -26121,6 +26275,10 @@
     {
      "area": "Cấu hình hệ thống › ActivityLogTab",
      "route": "/system"
+    },
+    {
+     "area": "Thông báo hệ thống › activity-log-columns",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -26303,6 +26461,16 @@
     {
      "area": "Cấu hình › TemplateEditorModal",
      "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "Hiện lại",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Buồng phòng › InventoryTab",
+     "route": "/housekeeping"
     }
    ]
   },
@@ -28597,6 +28765,10 @@
     {
      "area": "Đặt phòng › CreateRegistrationPage",
      "route": "/reservation"
+    },
+    {
+     "area": "Cấu hình hệ thống › ActivityLogTab",
+     "route": "/system"
     }
    ]
   },
@@ -28941,6 +29113,16 @@
     {
      "area": "Đặt phòng › GuestInfoModal",
      "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "Khách chính",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Dùng chung › BookingDetailModal",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -29455,6 +29637,26 @@
     {
      "area": "Cấu hình hệ thống › ActivityLogTab",
      "route": "/system"
+    }
+   ]
+  },
+  {
+   "source": "Kho đã ẩn",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Buồng phòng › InventoryTab",
+     "route": "/housekeeping"
+    }
+   ]
+  },
+  {
+   "source": "Kho đang ẩn",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Buồng phòng › InventoryTab",
+     "route": "/housekeeping"
     }
    ]
   },
@@ -30759,6 +30961,16 @@
    ]
   },
   {
+   "source": "Không có kho nào đang ẩn",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Buồng phòng › InventoryTab",
+     "route": "/housekeeping"
+    }
+   ]
+  },
+  {
    "source": "Không có kho nào được cấu hình cho chi nhánh này.",
    "is_pattern": false,
    "locations": [
@@ -31035,6 +31247,16 @@
    ]
   },
   {
+   "source": "Không có phòng noshow",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › DayCloseNoshowTab",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
    "source": "Không có phòng phù hợp",
    "is_pattern": false,
    "locations": [
@@ -31089,7 +31311,7 @@
    ]
   },
   {
-   "source": "Không có sản phẩm nào ở mức cảnh báo tồn thấp!",
+   "source": "Không có sản phẩm nào dưới định mức!",
    "is_pattern": false,
    "locations": [
     {
@@ -31639,6 +31861,16 @@
     {
      "area": "Đặt phòng › RestoreCancelledRoomsModal",
      "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "Không tải được danh sách phòng noshow.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › DayCloseNoshowTab",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -35955,6 +36187,10 @@
      "route": "/config"
     },
     {
+     "area": "Lễ tân › DayCloseNoshowTab",
+     "route": "/frontdesk"
+    },
+    {
      "area": "Lễ tân › GeneralSearchPage",
      "route": "/frontdesk"
     },
@@ -36669,6 +36905,16 @@
    ]
   },
   {
+   "source": "Lỗi khi cập nhật khách chính.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Dùng chung › BookingDetailModal",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
    "source": "Lỗi khi cập nhật kho",
    "is_pattern": false,
    "locations": [
@@ -36735,6 +36981,16 @@
     {
      "area": "Đặt phòng › CreateRegistrationPage",
      "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "Lỗi khi hiện lại kho",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Buồng phòng › InventoryTab",
+     "route": "/housekeeping"
     }
    ]
   },
@@ -36975,6 +37231,16 @@
     {
      "area": "Đặt phòng › DeleteServiceModal",
      "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "Lỗi khi tải danh sách kho đã ẩn",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Buồng phòng › InventoryTab",
+     "route": "/housekeeping"
     }
    ]
   },
@@ -38357,6 +38623,10 @@
      "route": "/frontdesk"
     },
     {
+     "area": "Lễ tân › DayCloseNoshowTab",
+     "route": "/frontdesk"
+    },
+    {
      "area": "Đặt phòng › ChargeNoshowModal",
      "route": "/reservation"
     }
@@ -38651,6 +38921,10 @@
    "is_pattern": false,
    "locations": [
     {
+     "area": "Lễ tân › DayCloseNoshowTab",
+     "route": "/frontdesk"
+    },
+    {
      "area": "Lễ tân › GeneralSearchPage",
      "route": "/frontdesk"
     },
@@ -38921,6 +39195,10 @@
     {
      "area": "Cấu hình hệ thống › ActivityLogTab",
      "route": "/system"
+    },
+    {
+     "area": "Thông báo hệ thống › activity-log-columns",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -38947,6 +39225,10 @@
     {
      "area": "Cấu hình hệ thống › ActivityLogTab",
      "route": "/system"
+    },
+    {
+     "area": "Thông báo hệ thống › activity-log-columns",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -39521,6 +39803,10 @@
     {
      "area": "Cấu hình hệ thống › ActivityLogTab",
      "route": "/system"
+    },
+    {
+     "area": "Thông báo hệ thống › activity-log-columns",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -39535,6 +39821,10 @@
     {
      "area": "Cấu hình hệ thống › ActivityLogTab",
      "route": "/system"
+    },
+    {
+     "area": "Thông báo hệ thống › activity-log-columns",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -40005,6 +40295,10 @@
      "route": "/system"
     },
     {
+     "area": "Thông báo hệ thống › activity-log-columns",
+     "route": "/frontdesk"
+    },
+    {
      "area": "Thông báo hệ thống › translator",
      "route": "/frontdesk"
     }
@@ -40025,6 +40319,10 @@
     {
      "area": "Cấu hình hệ thống › RoleManageTab",
      "route": "/system"
+    },
+    {
+     "area": "Thông báo hệ thống › activity-log-columns",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -40881,12 +41179,12 @@
      "route": "/reservation"
     },
     {
-     "area": "Cấu hình hệ thống › ActivityLogTab",
+     "area": "Cấu hình hệ thống › RoleManageTab",
      "route": "/system"
     },
     {
-     "area": "Cấu hình hệ thống › RoleManageTab",
-     "route": "/system"
+     "area": "Thông báo hệ thống › activity-log-columns",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -40937,6 +41235,10 @@
     {
      "area": "Cấu hình hệ thống › ActivityLogTab",
      "route": "/system"
+    },
+    {
+     "area": "Thông báo hệ thống › activity-log-columns",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -41987,8 +42289,8 @@
      "route": "/reservation"
     },
     {
-     "area": "Cấu hình hệ thống › ActivityLogTab",
-     "route": "/system"
+     "area": "Thông báo hệ thống › activity-log-columns",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -42298,6 +42600,10 @@
     },
     {
      "area": "Lễ tân › BreakfastPage",
+     "route": "/frontdesk"
+    },
+    {
+     "area": "Lễ tân › DayCloseNoshowTab",
      "route": "/frontdesk"
     },
     {
@@ -43151,6 +43457,26 @@
    ]
   },
   {
+   "source": "Ngày noshow",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › DayCloseNoshowTab",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
+   "source": "Ngày noshow:",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › DayCloseNoshowTab",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
    "source": "Ngày phát hành",
    "is_pattern": false,
    "locations": [
@@ -43291,6 +43617,10 @@
     {
      "area": "Cấu hình hệ thống › ActivityLogTab",
      "route": "/system"
+    },
+    {
+     "area": "Thông báo hệ thống › activity-log-columns",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -43853,6 +44183,10 @@
      "route": "/fnb"
     },
     {
+     "area": "Lễ tân › DayCloseNoshowTab",
+     "route": "/frontdesk"
+    },
+    {
      "area": "Lễ tân › DebtSettlementModal",
      "route": "/frontdesk"
     },
@@ -43871,6 +44205,10 @@
     {
      "area": "Cấu hình hệ thống › OrgStructureTab",
      "route": "/system"
+    },
+    {
+     "area": "Thông báo hệ thống › activity-log-columns",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -43905,6 +44243,10 @@
     {
      "area": "Cấu hình hệ thống › ActivityLogTab",
      "route": "/system"
+    },
+    {
+     "area": "Thông báo hệ thống › activity-log-columns",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -47465,6 +47807,10 @@
      "route": "/frontdesk"
     },
     {
+     "area": "Lễ tân › DayCloseNoshowTab",
+     "route": "/frontdesk"
+    },
+    {
      "area": "Lễ tân › PrepaymentModal",
      "route": "/frontdesk"
     },
@@ -47658,6 +48004,26 @@
    "locations": [
     {
      "area": "Lễ tân › CheckoutPage",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
+   "source": "Phòng {0} có ngày đến bằng ngày đi (0 đêm) nên không thể Noshow one day. Vui lòng dùng Noshow (by stage).",
+   "is_pattern": true,
+   "locations": [
+    {
+     "area": "Thông báo hệ thống › noshow-one-day",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
+   "source": "Phòng {0} đã được charge tiền phòng ngày {1}.",
+   "is_pattern": true,
+   "locations": [
+    {
+     "area": "Thông báo hệ thống › noshow-room-list",
      "route": "/frontdesk"
     }
    ]
@@ -48035,12 +48401,12 @@
      "route": "/frontdesk"
     },
     {
-     "area": "Buồng phòng › PrintTasksTab",
-     "route": "/housekeeping"
-    },
-    {
      "area": "Đặt phòng › RoomMapPage",
      "route": "/reservation"
+    },
+    {
+     "area": "Thông báo hệ thống › hk-room-status",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -48711,8 +49077,8 @@
    "is_pattern": false,
    "locations": [
     {
-     "area": "Buồng phòng › PrintTasksTab",
-     "route": "/housekeeping"
+     "area": "Thông báo hệ thống › hk-room-status",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -48771,6 +49137,10 @@
    "is_pattern": false,
    "locations": [
     {
+     "area": "Lễ tân › DayClosePage",
+     "route": "/frontdesk"
+    },
+    {
      "area": "Đặt phòng › AvailableRoomsPage",
      "route": "/reservation"
     }
@@ -48805,12 +49175,12 @@
    "is_pattern": false,
    "locations": [
     {
-     "area": "Buồng phòng › PrintTasksTab",
-     "route": "/housekeeping"
-    },
-    {
      "area": "Đặt phòng › RoomMapPage",
      "route": "/reservation"
+    },
+    {
+     "area": "Thông báo hệ thống › hk-room-status",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -48819,12 +49189,12 @@
    "is_pattern": false,
    "locations": [
     {
-     "area": "Buồng phòng › PrintTasksTab",
-     "route": "/housekeeping"
-    },
-    {
      "area": "Đặt phòng › RoomMapPage",
      "route": "/reservation"
+    },
+    {
+     "area": "Thông báo hệ thống › hk-room-status",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -48883,10 +49253,6 @@
    "is_pattern": false,
    "locations": [
     {
-     "area": "Buồng phòng › PrintTasksTab",
-     "route": "/housekeeping"
-    },
-    {
      "area": "Báo cáo quản lý › DashboardOverview",
      "route": "/reports"
     },
@@ -48901,16 +49267,16 @@
    "is_pattern": false,
    "locations": [
     {
-     "area": "Buồng phòng › PrintTasksTab",
-     "route": "/housekeeping"
-    },
-    {
      "area": "Báo cáo quản lý › DashboardOverview",
      "route": "/reports"
     },
     {
      "area": "Đặt phòng › RoomMapPage",
      "route": "/reservation"
+    },
+    {
+     "area": "Thông báo hệ thống › hk-room-status",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -50425,7 +50791,7 @@
    ]
   },
   {
-   "source": "Sản Phẩm Tồn Thấp (< {0})",
+   "source": "Sản Phẩm Dưới Định Mức (< {0})",
    "is_pattern": true,
    "locations": [
     {
@@ -50785,6 +51151,16 @@
     {
      "area": "Cấu hình › HkConfigTab",
      "route": "/config"
+    }
+   ]
+  },
+  {
+   "source": "Sắp xếp và ẩn/hiện cột",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Cấu hình hệ thống › ActivityLogTab",
+     "route": "/system"
     }
    ]
   },
@@ -51234,6 +51610,10 @@
    "source": "Số đêm",
    "is_pattern": false,
    "locations": [
+    {
+     "area": "Lễ tân › DayCloseNoshowTab",
+     "route": "/frontdesk"
+    },
     {
      "area": "Đặt phòng › BookingPrintPreviewModal",
      "route": "/reservation"
@@ -54311,6 +54691,10 @@
     {
      "area": "Cấu hình hệ thống › LanguageTab",
      "route": "/system"
+    },
+    {
+     "area": "Thông báo hệ thống › hk-room-status",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -55158,6 +55542,10 @@
     },
     {
      "area": "Lễ tân › CheckoutPage",
+     "route": "/frontdesk"
+    },
+    {
+     "area": "Lễ tân › DayCloseNoshowTab",
      "route": "/frontdesk"
     },
     {
@@ -59815,6 +60203,10 @@
     {
      "area": "Cấu hình hệ thống › ActivityLogTab",
      "route": "/system"
+    },
+    {
+     "area": "Thông báo hệ thống › activity-log-columns",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -59829,6 +60221,10 @@
     {
      "area": "Cấu hình hệ thống › ActivityLogTab",
      "route": "/system"
+    },
+    {
+     "area": "Thông báo hệ thống › activity-log-columns",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -60787,6 +61183,10 @@
      "route": "/frontdesk"
     },
     {
+     "area": "Lễ tân › DayCloseNoshowTab",
+     "route": "/frontdesk"
+    },
+    {
      "area": "Lễ tân › DayClosePage",
      "route": "/frontdesk"
     },
@@ -61297,6 +61697,10 @@
      "route": "/fnb"
     },
     {
+     "area": "Lễ tân › DayCloseNoshowTab",
+     "route": "/frontdesk"
+    },
+    {
      "area": "Lễ tân › GeneralSearchPage",
      "route": "/frontdesk"
     },
@@ -61677,6 +62081,16 @@
     {
      "area": "Đặt phòng › ShiftWorkPage",
      "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "Tìm mã BK, tên, số phòng, công ty...",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Lễ tân › DayCloseNoshowTab",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -62402,6 +62816,16 @@
    "locations": [
     {
      "area": "Đặt phòng › RoomMapPage",
+     "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "Tình trạng đăng ký không giữ phòng nên không gán số phòng",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Đặt phòng › CreateRegistrationPage",
      "route": "/reservation"
     }
    ]
@@ -64221,8 +64645,8 @@
      "route": "/housekeeping"
     },
     {
-     "area": "Cấu hình hệ thống › ActivityLogTab",
-     "route": "/system"
+     "area": "Thông báo hệ thống › activity-log-columns",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -64233,6 +64657,10 @@
     {
      "area": "Cấu hình hệ thống › ActivityLogTab",
      "route": "/system"
+    },
+    {
+     "area": "Thông báo hệ thống › activity-log-columns",
+     "route": "/frontdesk"
     }
    ]
   },
@@ -67087,6 +67515,16 @@
    ]
   },
   {
+   "source": "Vui lòng lưu hoặc hủy thay đổi trước khi đổi khách chính.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Dùng chung › BookingDetailModal",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
    "source": "Vui lòng lưu Mã giá phòng trước khi thiết lập giá theo ngày.",
    "is_pattern": false,
    "locations": [
@@ -68247,6 +68685,16 @@
    ]
   },
   {
+   "source": "Vui lòng tích chọn 1 phòng noshow để charge.",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Thông báo hệ thống › noshow-room-list",
+     "route": "/frontdesk"
+    }
+   ]
+  },
+  {
    "source": "Vui lòng tích chọn đúng 1 đăng ký để nhân bản.",
    "is_pattern": false,
    "locations": [
@@ -68659,6 +69107,16 @@
     {
      "area": "Đặt phòng › BookingPrintPreviewModal",
      "route": "/reservation"
+    }
+   ]
+  },
+  {
+   "source": "Xác nhận đổi khách chính",
+   "is_pattern": false,
+   "locations": [
+    {
+     "area": "Dùng chung › BookingDetailModal",
+     "route": "/frontdesk"
     }
    ]
   },

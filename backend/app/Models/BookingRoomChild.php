@@ -15,7 +15,7 @@ class BookingRoomChild extends Model
             }
 
             $assignment->actual_checkout_date = $assignment->actual_checkout_date ?: $room->departure_date;
-            $assignment->actual_checkout_time = $assignment->actual_checkout_time ?: '12:00:00';
+            $assignment->actual_checkout_time = $assignment->actual_checkout_time ?: \App\Support\StandardStayTimes::checkOut();
         });
     }
 

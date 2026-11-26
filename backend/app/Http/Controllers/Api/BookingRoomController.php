@@ -2564,7 +2564,7 @@ class BookingRoomController extends Controller
                     'actual_arrival_date' => $moveDate,
                     'actual_arrival_time' => $moveTime,
                     'actual_checkout_date' => $targetRoom->departure_date->toDateString(),
-                    'actual_checkout_time' => '12:00:00',
+                    'actual_checkout_time' => \App\Support\StandardStayTimes::checkOut(),
                     'checkin_by' => $user,
                     'checkout_by' => null,
                 ]);
@@ -2714,7 +2714,7 @@ class BookingRoomController extends Controller
                     $attributes['check_in_user']       = $currentUser;
                     $attributes['check_out_user']      = null;
                     $attributes['CheckoutDate']        = $originalDepartureStr;
-                    $attributes['CheckoutTime']        = '12:00:00';
+                    $attributes['CheckoutTime']        = \App\Support\StandardStayTimes::checkOut();
                     $attributes['move_room']           = null;
                     $attributes['created_by']          = $currentUser;
                     $attributes['updated_by']          = $currentUser;
@@ -2824,7 +2824,7 @@ class BookingRoomController extends Controller
                             'actual_arrival_time'  => $timeStr,
                             'checkin_by'           => $currentUser,
                             'actual_checkout_date' => $originalDepartureStr,
-                            'actual_checkout_time' => '12:00:00',
+                            'actual_checkout_time' => \App\Support\StandardStayTimes::checkOut(),
                             'breakfast'           => $gPivot->breakfast,
                         ]);
                     }
@@ -3021,7 +3021,7 @@ class BookingRoomController extends Controller
                         'actual_arrival_time'  => $timeStr,
                         'checkin_by'           => $currentUser,
                         'actual_checkout_date' => $targetBookingRoom->departure_date->toDateString(),
-                        'actual_checkout_time' => '12:00:00',
+                        'actual_checkout_time' => \App\Support\StandardStayTimes::checkOut(),
                         'breakfast'           => $gPivot->breakfast,
                     ]);
                 }

@@ -3379,8 +3379,8 @@ class BookingController extends Controller
             $sheet->setCellValue("R{$currentRow}", $ebQtyVal > 0 ? $ebPriceVal : 0);
             $sheet->setCellValue("S{$currentRow}", !empty($r['hourly']) ? 'Có' : 'Không');
             $sheet->setCellValue("T{$currentRow}", (string) ($r['specialRequests'] ?? '—'));
-            $sheet->setCellValueExplicit("U{$currentRow}", (string) ($r['arrivalTime'] ?? '14:00'), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
-            $sheet->setCellValueExplicit("V{$currentRow}", (string) ($r['hoursOut'] ?? '12:00'), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit("U{$currentRow}", (string) ($r['arrivalTime'] ?? substr(\App\Support\StandardStayTimes::checkIn(), 0, 5)), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
+            $sheet->setCellValueExplicit("V{$currentRow}", (string) ($r['hoursOut'] ?? substr(\App\Support\StandardStayTimes::checkOut(), 0, 5)), \PhpOffice\PhpSpreadsheet\Cell\DataType::TYPE_STRING);
             $sheet->setCellValue("W{$currentRow}", !empty($r['isPreassigned']) ? 'Có' : 'Không');
             $sheet->setCellValue("X{$currentRow}", (string) ($r['initialRoomClass'] ?? '—'));
             $sheet->setCellValue("Y{$currentRow}", (string) ($r['transferredFrom'] ?? '—'));

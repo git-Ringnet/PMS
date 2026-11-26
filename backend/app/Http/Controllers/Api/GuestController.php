@@ -664,7 +664,7 @@ class GuestController extends Controller
                     ? 0
                     : max(0, Carbon::parse($room->arrival_date)->startOfDay()->diffInDays(Carbon::parse($restoredDepartureDate)->startOfDay())),
                 'CheckoutDate' => $restoredDepartureDate,
-                'CheckoutTime' => '12:00:00',
+                'CheckoutTime' => \App\Support\StandardStayTimes::checkOut(),
                 'check_out_user' => null,
             ]);
             if ($room->room) $room->room->update(['status' => 'occupied']);

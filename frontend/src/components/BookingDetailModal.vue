@@ -32,6 +32,7 @@ import RoomInfoDatePicker from '@/pages/reservation/components/RoomInfoDatePicke
 import TimePicker24h from '@/components/TimePicker24h.vue'
 import { resolveRateCodePrice } from '@/utils/rate-code-pricing.js'
 import { isCheckedOutPerson } from '@/utils/guest-info'
+import { standardCheckInTime, standardCheckOutTime, loadStandardStayTimes } from '@/utils/standard-stay-times'
 
 const props = defineProps({
   room: { type: Object, required: true },
@@ -292,9 +293,9 @@ const formGuest = ref({
 
 const stayInfo = ref({
   arrival_date: '',
-  arrival_time: '14:00',
+  arrival_time: standardCheckInTime.value,
   departure_date: '',
-  departure_time: '12:00',
+  departure_time: standardCheckOutTime.value,
   nights: 1,
   occupants_str: '1 / 0 / 0',
   breakfast: true,
@@ -741,6 +742,7 @@ function handleGlobalClick(e) {
 }
 
 onMounted(() => {
+  loadStandardStayTimes()
   window.addEventListener('click', handleGlobalClick, true)
   window.addEventListener('keydown', handleKeyDown)
   loadRateCodes()
@@ -908,10 +910,10 @@ watch(() => props.room, (newRoom) => {
     const isHourlyRoom = !!(newRoom.is_day_use || newRoom.is_hourly || newRoom.hourly)
     stayInfo.value = {
       arrival_date: formatDateForInput(newRoom.arrival_date) || '',
-      // Dòng 398: giờ đến/giờ đi thật của phòng; thiếu dữ liệu mới dùng 14:00/12:00.
-      arrival_time: formatTime24h(newRoom.arrival_time ?? newRoom.check_in_time) || '14:00',
+      // Dòng 398: giờ đến/giờ đi thật của phòng; thiếu dữ liệu mới dùng giờ nhận/trả phòng tiêu chuẩn.
+      arrival_time: formatTime24h(newRoom.arrival_time ?? newRoom.check_in_time) || standardCheckInTime.value,
       departure_date: formatDateForInput(newRoom.departure_date) || '',
-      departure_time: formatTime24h(newRoom.departure_time ?? newRoom.check_out_time) || '12:00',
+      departure_time: formatTime24h(newRoom.departure_time ?? newRoom.check_out_time) || standardCheckOutTime.value,
       // Dòng 183: phòng chuyển cùng ngày có 0 đêm, không được đổi 0 thành 1
       nights: isHourlyRoom ? 0 : firstNightCount(newRoom.nights, newRoom.ActutalNumOfDays, 1),
       occupants_str: activeOccupantsStr(),
@@ -1037,8 +1039,6 @@ function onRateBlur(e) {
   }
 }
 
-function selectGuest(g) {
-  if (draftGuest.value && g.id !== draftGuest.value.id) {
 // Dòng 303: bấm sao để đặt người lớn làm khách chính (trẻ em/em bé không có thao tác này).
 async function makePrimaryGuest(g) {
   if (!g || g.is_primary || g.isDraft || !bookingRoomId.value || submitting.value) return
@@ -1069,6 +1069,8 @@ async function makePrimaryGuest(g) {
   }
 }
 
+function selectGuest(g) {
+  if (draftGuest.value && g.id !== draftGuest.value.id) {
     adults.value = adults.value.filter(a => !a.isDraft)
     children.value = children.value.filter(c => !c.isDraft)
     babies.value = babies.value.filter(b => !b.isDraft)
@@ -2098,7 +2100,7 @@ function parseNumber(val) {
                 <!-- GIỜ ĐẾN (24H FORMAT HH:mm): ALWAYS DISABLED / XÁM -->
                 <div class="f">
                   <label>Giờ đến</label>
-                  <input type="text" v-model="stayInfo.arrival_time" disabled class="always-gray" placeholder="14:00" style="text-align: center;">
+                  <input type="text" v-model="stayInfo.arrival_time" disabled class="always-gray" :placeholder="standardCheckInTime" style="text-align: center;">
                 </div>
                 <!-- NGÀY ĐỊ -->
                 <div class="f">
@@ -2116,7 +2118,7 @@ function parseNumber(val) {
                   <label>Giờ đi</label>
                   <TimePicker24h
                     v-model="stayInfo.departure_time"
-                    default-time="12:00"
+                    :default-time="standardCheckOutTime"
                     :disabled="!isEditingMode"
                     :drop-up="true"
                   />
@@ -2780,10 +2782,10 @@ input.always-gray:disabled {
 .g-name { font-size: 12px; font-weight: 400; color: #000000d9; flex: 1; }
 .icon-rep { color: #f59e0b; display: flex; align-items: center; flex-shrink: 0; }
 .icon-sub { color: #cbd5e1; display: flex; align-items: center; flex-shrink: 0; }
-
-.btn-add {
 .icon-clickable { cursor: pointer; }
 .icon-clickable:hover { color: #f59e0b; }
+
+.btn-add {
   width: 100%;
   border: 1px dashed #93c5fd;
   background: #f8fafc;

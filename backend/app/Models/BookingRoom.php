@@ -102,13 +102,13 @@ class BookingRoom extends Model
             $model->created_by = $model->created_by ?: $currentUser;
             $model->updated_by = $model->updated_by ?: $currentUser;
 
-            // Dòng 398: phòng mới có giờ đến/giờ đi mặc định 14:00/12:00.
+            // Dòng 398: phòng mới có giờ đến/giờ đi mặc định theo giờ nhận/trả phòng tiêu chuẩn của khách sạn.
             // Phòng trong ngày/ở theo giờ do người dùng tự nhập nên không gán mặc định.
             $isOvernight = !empty($model->arrival_date) && !empty($model->departure_date)
                 && \Carbon\Carbon::parse($model->arrival_date)->toDateString() !== \Carbon\Carbon::parse($model->departure_date)->toDateString();
             if (!$model->is_day_use && $isOvernight) {
-                $model->arrival_time = $model->arrival_time ?: self::DEFAULT_ARRIVAL_TIME;
-                $model->departure_time = $model->departure_time ?: self::DEFAULT_DEPARTURE_TIME;
+                $model->arrival_time = $model->arrival_time ?: \App\Support\StandardStayTimes::checkIn();
+                $model->departure_time = $model->departure_time ?: \App\Support\StandardStayTimes::checkOut();
             }
 
             // Format original_room_class_id to "room_class_id-room_form_id"
@@ -147,7 +147,7 @@ class BookingRoom extends Model
             // Phòng chưa checkout luôn giữ lịch checkout dự kiến để tương thích legacy.
             if (in_array((int) $model->status, [self::STATUS_BOOKED, self::STATUS_CHECKED_IN], true)) {
                 $model->CheckoutDate = $model->CheckoutDate ?: $model->departure_date;
-                $model->CheckoutTime = $model->CheckoutTime ?: '12:00:00';
+                $model->CheckoutTime = $model->CheckoutTime ?: \App\Support\StandardStayTimes::checkOut();
             }
         });
 
@@ -186,7 +186,7 @@ class BookingRoom extends Model
             if ($model->isDirty('departure_date')
                 && in_array((int) $model->status, [self::STATUS_BOOKED, self::STATUS_CHECKED_IN], true)) {
                 $model->CheckoutDate = $model->departure_date;
-                $model->CheckoutTime = '12:00:00';
+                $model->CheckoutTime = \App\Support\StandardStayTimes::checkOut();
             }
         });
 
@@ -240,7 +240,7 @@ class BookingRoom extends Model
                 ->whereIn('status', [BookingRoomGuest::STATUS_ACTIVE, BookingRoomGuest::STATUS_CHECKED_IN])
                 ->update([
                     'actual_checkout_date' => $departureDate,
-                    'actual_checkout_time' => '12:00:00',
+                    'actual_checkout_time' => \App\Support\StandardStayTimes::checkOut(),
                 ]);
 
             $childAssignments = $model->childAssignments();
@@ -252,7 +252,7 @@ class BookingRoom extends Model
             $childAssignments->update([
                 'status' => (int) $model->status,
                 'actual_checkout_date' => $departureDate,
-                'actual_checkout_time' => '12:00:00',
+                'actual_checkout_time' => \App\Support\StandardStayTimes::checkOut(),
                 'checkout_by' => null,
             ]);
         });
@@ -267,7 +267,7 @@ class BookingRoom extends Model
             }
             if (in_array((int) $model->status, [self::STATUS_BOOKED, self::STATUS_CHECKED_IN], true)) {
                 $model->CheckoutDate = $model->CheckoutDate ?: $model->departure_date;
-                $model->CheckoutTime = $model->CheckoutTime ?: '12:00:00';
+                $model->CheckoutTime = $model->CheckoutTime ?: \App\Support\StandardStayTimes::checkOut();
             }
             // If the room is not checked in yet, actual_arrival_date always equals arrival_date
             if ($model->status === self::STATUS_BOOKED) {
@@ -603,7 +603,7 @@ class BookingRoom extends Model
         $attributes['check_out_user'] = null;
         $attributes['move_room'] = null;
         $attributes['CheckoutDate'] = $this->departure_date->toDateString();
-        $attributes['CheckoutTime'] = '12:00:00';
+        $attributes['CheckoutTime'] = \App\Support\StandardStayTimes::checkOut();
         
         // Tạo phòng mới
         $newRoom = self::create($attributes);
@@ -626,7 +626,7 @@ class BookingRoom extends Model
                 'actual_arrival_date' => $systemDate->toDateString(),
                 'actual_arrival_time' => $moveTime,
                 'actual_checkout_date' => $gPivot->actual_checkout_date ?: $this->departure_date->toDateString(),
-                'actual_checkout_time' => '12:00:00',
+                'actual_checkout_time' => \App\Support\StandardStayTimes::checkOut(),
                 'checkin_by' => $currentUser,
                 'breakfast' => $gPivot->breakfast,
             ]);
@@ -661,7 +661,7 @@ class BookingRoom extends Model
                     'actual_arrival_date' => $systemDate->toDateString(),
                     'actual_arrival_time' => $moveTime,
                     'actual_checkout_date' => $this->departure_date->toDateString(),
-                    'actual_checkout_time' => '12:00:00',
+                    'actual_checkout_time' => \App\Support\StandardStayTimes::checkOut(),
                     'checkin_by' => $currentUser,
                     'checkout_by' => null,
                 ]

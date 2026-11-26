@@ -33,7 +33,7 @@ class BookingRoomGuest extends Model
 
             // Giữ mặc định ngày/giờ checkout theo Booking_rooms của legacy PMS.
             $pivot->actual_checkout_date = $pivot->actual_checkout_date ?: $room->departure_date;
-            $pivot->actual_checkout_time = $pivot->actual_checkout_time ?: '12:00:00';
+            $pivot->actual_checkout_time = $pivot->actual_checkout_time ?: \App\Support\StandardStayTimes::checkOut();
         });
 
         static::saved(function (self $pivot) {
