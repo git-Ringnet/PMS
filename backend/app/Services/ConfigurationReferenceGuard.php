@@ -28,6 +28,10 @@ class ConfigurationReferenceGuard
                 'hk_assignments' => 'phân công buồng phòng', 'late_checkins' => 'nhận phòng sớm/trả phòng trễ',
                 'noshow_logs' => 'lịch sử no-show', 'night_audit_runs' => 'kiểm toán đêm',
                 'system_date_rolls' => 'chuyển ngày hệ thống',
+                'room_status_change_logs' => 'lịch sử tình trạng phòng',
+                'hk_assignment_group_rooms' => 'phân công buồng phòng',
+                'night_audit_inhouse_snapshots' => 'dữ liệu sang ngày',
+                'night_audit_room_type_snapshots' => 'dữ liệu sang ngày',
                 'fb_products' => 'sản phẩm nhà hàng', 'fb_product_outlets' => 'menu điểm bán',
                 'fb_orders' => 'đơn hàng nhà hàng', 'fb_parties' => 'đặt tiệc',
                 'fb_printers' => 'máy in điểm bán', 'fb_promotions' => 'khuyến mãi', 'companies' => 'công ty',
@@ -72,6 +76,11 @@ class ConfigurationReferenceGuard
                 ['housekeeping_service_bills', 'RoomNo', [$number]],
                 ['rooms', 'connecting_room', [$number]],
                 ['rooms', 'linked_room', [$number]],
+                // Dữ liệu phát sinh khác theo phòng: lịch sử tình trạng, phân công buồng phòng (khóa ngoại
+                // cascade sẽ xóa mất lịch sử nếu cho xóa phòng), snapshot khách lưu trú khi sang ngày.
+                ['room_status_change_logs', 'room', [$number]],
+                ['hk_assignment_group_rooms', 'room_id', [$id]],
+                ['night_audit_inhouse_snapshots', 'room', [$number]],
             ],
             'room_classes' => [
                 ['rooms', 'room_class_id', [$id]],
@@ -79,6 +88,7 @@ class ConfigurationReferenceGuard
                 ['booking_rooms', 'room_class_id', [$id]],
                 ['booking_rooms', 'upgrade_room_class_id', [$id]],
                 ['room_night_bills', 'room_type_id', [$id]],
+                ['night_audit_room_type_snapshots', 'room_type_id', [$id]],
             ],
             'room_forms' => [
                 ['rooms', 'room_form_id', [$id]],

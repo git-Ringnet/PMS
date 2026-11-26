@@ -116,4 +116,79 @@ class ConfigurationReferenceGuardTest extends TestCase
         $this->putJson("/api/hotel-configs/{$config->id}", ['name' => 'AllowOverRoomTypeRoomKind', 'value' => '0'])
             ->assertOk();
     }
+
+    /**
+     * Checklist Định nghĩa phòng (note "vẫn xóa được phòng khi có dữ liệu phát sinh"):
+     * lịch sử đổi tình trạng phòng, phân công buồng phòng, snapshot sang ngày cũng là dữ liệu phát sinh.
+     */
+    private function makeRoom(string $number): Room
+    {
+        return Room::create([
+            'room_number' => $number,
+            'floor' => 1,
+            'room_class_id' => RoomClass::firstOrCreate(['code' => 'SUP'], ['name' => 'Superior', 'is_active' => true])->id,
+            'room_form_id' => RoomForm::firstOrCreate(['name' => 'Double'], ['max_adults' => 2])->id,
+        ]);
+    }
+
+    private function nightAuditRunId(): int
+    {
+        return DB::table('night_audit_runs')->insertGetId([
+            'source_system_date' => '2026-10-23', 'target_system_date' => '2026-10-24',
+            'actual_started_at' => now(), 'idempotency_key' => uniqid('na', true),
+        ]);
+    }
+
+    public function test_room_with_status_change_history_cannot_be_deleted(): void
+    {
+        $room = $this->makeRoom('201');
+        // Bảng chỉ được migration tạo trên MySQL; test SQLite tự tạo bản tối thiểu.
+        if (!\Illuminate\Support\Facades\Schema::hasTable('room_status_change_logs')) {
+            \Illuminate\Support\Facades\Schema::create('room_status_change_logs', function ($table) {
+                $table->id();
+                $table->dateTime('changed_at')->nullable();
+                $table->string('username', 50)->nullable();
+                $table->string('room', 50)->nullable();
+            });
+        }
+        DB::table('room_status_change_logs')->insert(['room' => '201', 'changed_at' => now(), 'username' => 'hk']);
+
+        $this->deleteJson("/api/rooms/{$room->id}")
+            ->assertStatus(422)
+            ->assertJsonPath('errors.references.0', fn ($message) => str_contains($message, 'lịch sử tình trạng phòng'));
+        $this->assertDatabaseHas('rooms', ['id' => $room->id]);
+    }
+
+    public function test_room_in_housekeeping_assignment_or_night_audit_snapshot_cannot_be_deleted(): void
+    {
+        $assigned = $this->makeRoom('202');
+        $audited = $this->makeRoom('203');
+        $shiftId = Shift::create(['name' => 'Ca 1'])->id;
+        $assignmentId = DB::table('hk_assignments')->insertGetId(['work_date' => '2026-10-23', 'shift_id' => $shiftId]);
+        $groupId = DB::table('hk_assignment_groups')->insertGetId(['assignment_id' => $assignmentId]);
+        DB::table('hk_assignment_group_rooms')->insert(['group_id' => $groupId, 'room_id' => $assigned->id]);
+        DB::table('night_audit_inhouse_snapshots')->insert([
+            'night_audit_run_id' => $this->nightAuditRunId(), 'snapshot_date' => '2026-10-23', 'status' => 1, 'room' => '203', 'booking_id' => 1,
+        ]);
+
+        $this->deleteJson("/api/rooms/{$assigned->id}")->assertStatus(422)->assertJsonValidationErrors('references');
+        $this->deleteJson("/api/rooms/{$audited->id}")->assertStatus(422)->assertJsonValidationErrors('references');
+        $this->assertDatabaseHas('rooms', ['id' => $assigned->id]);
+        $this->assertDatabaseHas('rooms', ['id' => $audited->id]);
+
+        $unused = $this->makeRoom('204');
+        $this->deleteJson("/api/rooms/{$unused->id}")->assertOk();
+    }
+
+    public function test_room_class_in_night_audit_snapshot_cannot_be_deleted(): void
+    {
+        RoomClass::create(['name' => 'Deluxe', 'code' => 'DLX', 'is_active' => true]);
+        $roomClass = RoomClass::create(['name' => 'Suite', 'code' => 'STE', 'is_active' => true]);
+        DB::table('night_audit_room_type_snapshots')->insert([
+            'night_audit_run_id' => $this->nightAuditRunId(), 'snapshot_date' => '2026-10-23', 'room_type_code' => 'STE', 'room_type_id' => $roomClass->id,
+        ]);
+
+        $this->deleteJson("/api/room-classes/{$roomClass->id}")->assertStatus(422);
+        $this->assertDatabaseHas('room_classes', ['id' => $roomClass->id]);
+    }
 }
