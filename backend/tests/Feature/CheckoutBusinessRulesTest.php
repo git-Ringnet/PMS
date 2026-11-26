@@ -469,6 +469,50 @@ class CheckoutBusinessRulesTest extends TestCase
         $this->assertDatabaseHas('service_bill_details', ['BillServiceId' => $adjustment->Ma, 'Ma' => 3, 'ServiceId' => 'RM', 'Amount' => -100000]);
     }
 
+    public function test_adjust_room_rate_for_many_rooms_in_one_request_skips_nights_outside_each_stay(): void
+    {
+        Room::create(['room_number' => '102', 'room_form_id' => RoomForm::firstOrFail()->id, 'room_class_id' => $this->room->room_class_id, 'floor' => 1, 'status' => 'occupied']);
+        $secondRoom = BookingRoom::create(['booking_id' => $this->booking->id, 'room_number' => '102', 'room_class_id' => $this->room->room_class_id, 'arrival_date' => '2026-08-03', 'departure_date' => '2026-08-06', 'status' => BookingRoom::STATUS_CHECKED_IN]);
+        $bill = fn (BookingRoom $room, string $date) => ServiceBill::create([
+            'Date' => $date, 'OpenTime' => '12:00', 'Guest' => 'Guest', 'DepartmentId' => 'FO', 'ServiceId' => 'RM',
+            'Amount' => 500000, 'Username' => 'checkout_rules_user', 'Edit' => 0, 'Status' => 1,
+            'RegisterId1' => $this->booking->id, 'RegisterID2' => $this->booking->id,
+            'RentalRoomId1' => $room->id, 'RentalRoomId2' => $room->id,
+        ]);
+        $a = $bill($this->room, '2026-08-02');
+        $b = $bill($this->room, '2026-08-03');
+        $c = $bill($secondRoom, '2026-08-03');
+
+        $this->postJson("/api/bookings/{$this->booking->id}/adjust-room-rate", [
+            'booking_room_ids' => [(string) $this->room->id, (string) $secondRoom->id],
+            'service_dates' => ['2026-08-02', '2026-08-03'],
+            'rate' => 800000, 'reason' => 'Đổi giá đoàn',
+        ])->assertSuccessful()->assertJsonPath('data.count', 3);
+
+        foreach ([$a, $b, $c] as $original) {
+            $this->assertDatabaseHas('service_bills', ['AdjustmentBillId' => $original->Ma, 'Amount' => 800000, 'Edit' => 0]);
+        }
+        // Phòng 102 nhận phòng 03/08 nên không được tạo tiền phòng đêm 02/08.
+        $this->assertSame(0, ServiceBill::where('RentalRoomId1', $secondRoom->id)->whereDate('Date', '2026-08-02')->count());
+    }
+
+    public function test_adjust_room_rate_for_many_rooms_changes_nothing_when_one_room_bill_is_paid(): void
+    {
+        Room::create(['room_number' => '102', 'room_form_id' => RoomForm::firstOrFail()->id, 'room_class_id' => $this->room->room_class_id, 'floor' => 1, 'status' => 'occupied']);
+        $secondRoom = BookingRoom::create(['booking_id' => $this->booking->id, 'room_number' => '102', 'room_class_id' => $this->room->room_class_id, 'arrival_date' => '2026-08-01', 'departure_date' => '2026-08-06', 'status' => BookingRoom::STATUS_CHECKED_IN]);
+        $unpaid = ServiceBill::create(['Date' => '2026-08-03', 'OpenTime' => '12:00', 'Guest' => 'G', 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'Amount' => 500000, 'Username' => 'u', 'Edit' => 0, 'Status' => 1, 'RegisterId1' => $this->booking->id, 'RegisterID2' => $this->booking->id, 'RentalRoomId1' => $this->room->id, 'RentalRoomId2' => $this->room->id]);
+        ServiceBill::create(['Date' => '2026-08-03', 'OpenTime' => '12:00', 'Guest' => 'G', 'DepartmentId' => 'FO', 'ServiceId' => 'RM', 'Amount' => 500000, 'Username' => 'u', 'Edit' => 0, 'Status' => 2, 'PaymentId' => 9, 'RegisterId1' => $this->booking->id, 'RegisterID2' => $this->booking->id, 'RentalRoomId1' => $secondRoom->id, 'RentalRoomId2' => $secondRoom->id]);
+
+        $this->postJson("/api/bookings/{$this->booking->id}/adjust-room-rate", [
+            'booking_room_ids' => [$this->room->id, $secondRoom->id],
+            'service_dates' => ['2026-08-03'],
+            'rate' => 800000, 'reason' => 'Đổi giá đoàn',
+        ])->assertStatus(422);
+
+        $this->assertDatabaseHas('service_bills', ['Ma' => $unpaid->Ma, 'Edit' => 0, 'Amount' => 500000]);
+        $this->assertSame(0, ServiceBill::where('AdjustmentBillId', $unpaid->Ma)->count());
+    }
+
     public function test_early_checkout_returns_only_dates_without_room_charge(): void
     {
         ServiceBill::create([

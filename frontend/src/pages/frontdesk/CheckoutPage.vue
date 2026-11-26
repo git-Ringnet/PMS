@@ -540,11 +540,7 @@ const submitCheckout = async () => {
       }
     } else if (checkedRooms.length === 1 || selectedRoomItem.value) {
       const room = checkedRooms.length === 1 ? checkedRooms[0].room : selectedRoomItem.value
-      const childIds = checkoutGuestIds.value.filter(id => (room.rawRoom?.children || []).some(child => String(child.id) === String(id)))
-      const adultIds = checkoutGuestIds.value.filter(id => !childIds.some(childId => String(childId) === String(id)))
-      for (const childId of childIds) await checkoutChild(room.roomId || room.id, childId)
-      if (adultIds.length > 0) await checkoutRoom(room.roomId || room.id, adultIds)
-      else if (childIds.length === 0) throw new Error('Phải chọn tối thiểu một khách.')
+      await checkoutSelectedGuests(room, checkoutGuestIds.value)
     } else await checkoutBooking(selectedBooking.value.bookingId)
     showCheckoutModal.value = false
     // Checkout phòng: giữ Master đang xem (phòng đã out rời bộ lọc thì quay về dòng Master).
@@ -618,10 +614,7 @@ const checkoutEarlyWithoutCharge = async () => {
   }
   isServiceOperationLoading.value = true
   try {
-    const childIds = checkoutGuestIds.value.filter(id => (selectedRoomItem.value.rawRoom?.children || []).some(child => String(child.id) === String(id)))
-    const adultIds = checkoutGuestIds.value.filter(id => !childIds.some(childId => String(childId) === String(id)))
-    for (const childId of childIds) await checkoutChild(selectedRoomItem.value.roomId || selectedRoomItem.value.id, childId)
-    if (adultIds.length > 0) await checkoutRoom(selectedRoomItem.value.roomId || selectedRoomItem.value.id, adultIds, { skip_remaining_room_charge: true })
+    await checkoutSelectedGuests(selectedRoomItem.value, checkoutGuestIds.value, { skip_remaining_room_charge: true })
     showCheckoutModal.value = false
     await refreshCheckoutData()
     clearCheckoutPanels()
@@ -659,14 +652,42 @@ const selectedCheckoutRooms = computed(() => allBookingsList.value.flatMap(booki
 )))
 const checkoutGuestSelections = ref({})
 const activeCheckoutGuests = room => (room.allGuests || []).filter(guest => guest?.id)
+// Trẻ em còn ở trong phòng (trẻ đã checkout không còn là lựa chọn checkout).
+const activeCheckoutChildren = room => (room?.rawRoom?.children || []).filter(child => Number(child.child_status) !== 2)
+// Khóa lựa chọn của trẻ em có tiền tố riêng để không trùng id khách người lớn (hai bảng khác nhau).
+const CHILD_OPTION_PREFIX = 'child:'
 const checkoutGuestOptions = room => [
   ...activeCheckoutGuests(room),
-  ...((room.rawRoom?.children || []).map(child => ({
-    id: child.id,
+  ...(activeCheckoutChildren(room).map(child => ({
+    id: `${CHILD_OPTION_PREFIX}${child.id}`,
+    childId: child.id,
     name: child.full_name || child.name || 'Trẻ em',
     isChild: true
   })))
 ]
+/**
+ * Checkout các khách đã chọn của một phòng.
+ * - Out cả phòng (chọn đủ người lớn đang ở): chỉ gọi checkout phòng, backend tự out luôn trẻ em.
+ *   Không out trẻ em trước, vì nếu phòng bị chặn (vd checkout sớm cần charge) thì trẻ em đã bị out dở
+ *   và lần bấm lại (charge xong / không tính phí) sẽ lỗi "Trẻ em đã checkout".
+ * - Out lẻ: out trẻ em đã chọn trước (khi còn người lớn trong phòng), rồi out người lớn đã chọn.
+ */
+const checkoutSelectedGuests = async (room, selectedIds, options = {}) => {
+  const roomId = room.roomId || room.id
+  const selected = (selectedIds || []).map(id => String(id))
+  const childIds = activeCheckoutChildren(room)
+    .filter(child => selected.includes(`${CHILD_OPTION_PREFIX}${child.id}`))
+    .map(child => child.id)
+  const adultIds = activeCheckoutGuests(room)
+    .filter(guest => selected.includes(String(guest.id)))
+    .map(guest => guest.id)
+  if (adultIds.length === 0 && childIds.length === 0) throw new Error('Phải chọn tối thiểu một khách.')
+  const isFullRoom = adultIds.length > 0 && adultIds.length === activeCheckoutGuests(room).length
+  if (!isFullRoom) {
+    for (const childId of childIds) await checkoutChild(roomId, childId)
+  }
+  if (adultIds.length > 0) await checkoutRoom(roomId, adultIds, options)
+}
 const isCheckoutGuestSelected = (roomId, guestId) => (checkoutGuestSelections.value[roomId] || []).some(id => String(id) === String(guestId))
 const toggleCheckoutGuest = (roomId, guestId, checked) => {
   const current = checkoutGuestSelections.value[roomId] || []

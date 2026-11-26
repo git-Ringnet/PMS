@@ -11,6 +11,7 @@ import ReportDateRangePicker from '@/components/ReportDateRangePicker.vue'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import HousekeepingInvoiceFilters from '@/pages/reports/components/HousekeepingInvoiceFilters.vue'
 import ReportViewer from '@/pages/reports/components/ReportViewer.vue'
+import DashboardOverview from '@/pages/reports/components/DashboardOverview.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -28,6 +29,10 @@ const customDatePickerReportCodes = new Set(['REVENUE_ARMY', temporaryReportCode
 let workspaceSaveTimer = null
 // Trang còn được gắn (kể cả khi nhúng trong /reservation, /frontdesk, /housekeeping); chỉ tắt khi rời trang để không router.replace muộn.
 let pageActive = true
+// Tab "Tổng Quan" của module Báo cáo quản lý: hiện dashboard khi chưa chọn báo cáo nào trên URL.
+const showDashboard = computed(() => route.path.startsWith('/reports')
+  && !route.query.report
+  && (!route.query.tab || route.query.tab === 'overview'))
 
 const pmsWorkspaceKey = computed(() => [
   authStore.user?.id || authStore.user?.username || 'anonymous',
@@ -267,6 +272,9 @@ const loadReports = async ({ restore = true } = {}) => {
         return
       }
     }
+
+    // Đang ở Tổng Quan: giữ các báo cáo đã mở trên thanh tab nhưng không tự mở báo cáo nào.
+    if (showDashboard.value) return
 
     if (restored) {
       const tab = openTabs.value.find(item => Number(item.id) === Number(activeTabId.value))
@@ -813,7 +821,7 @@ watch(() => route.query.report, code => {
       openReportInTab(report)
     }
   } else {
-    if (activeTab.value) {
+    if (activeTab.value && !showDashboard.value) {
       router.replace({ path: route.path, query: { ...route.query, report: activeTab.value.code } })
     }
   }
@@ -857,7 +865,7 @@ onBeforeUnmount(() => {
         <div v-for="tab in openTabs" :key="tab.id"
           @click="selectTab(tab.id)"
           class="-mb-px flex h-[36px] shrink-0 cursor-pointer items-center gap-2 rounded-t-lg border-x border-t border-b-transparent px-3 py-2 text-[12px] font-semibold transition-all"
-          :class="activeTabId === tab.id
+          :class="activeTabId === tab.id && !showDashboard
             ? 'bg-white border-slate-200 text-[#000000D9] shadow-xs relative z-10'
             : 'bg-slate-100/60 border-transparent text-[#000000D9] hover:bg-slate-100'"
         >
@@ -871,8 +879,9 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
+      <DashboardOverview v-if="showDashboard" class="min-h-0 flex-1" @open-booking="openBookingFromReport" />
       <!-- Tab Content Workspace -->
-      <template v-if="activeTab">
+      <template v-else-if="activeTab">
         <header class="border-b border-slate-200 bg-white px-5 py-3">
           <div class="flex items-center justify-between gap-4">
             <div>

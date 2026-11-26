@@ -7894,3 +7894,12 @@
 - Nhận phòng chỉ hiện và chỉ chạy ở Lễ tân.
 - Trắng trang/tải 2 lần: RoomMapPage được KeepAlive giữ ẩn vẫn đọc route.query.tab toàn cục nên dựng thêm Tạo đăng ký/Hóa đơn ẩn, các bản ẩn tự router.replace (xóa bookingCode, xóa booking_code/booking_id) làm trang đang hiển thị tải lại. Sửa: utils/module-route.js; RoomMapPage chỉ nhận tab của route thuộc chính nó; CreateRegistrationPage/CheckoutPage bỏ qua route khi đang ẩn, hiện lại mới đồng bộ.
 - Test: tests/general-search-row-502.test.js 5/5; toàn bộ node test 302/306 (4 ca đỏ sẵn từ trước: 295, 211); vite build đạt. Chưa UAT trình duyệt.
+
+## [2026-11-25] - Dashboard Tổng Quan (module Báo cáo quản lý) theo mẫu DASHBOARD.html
+
+- Nguồn nghiệp vụ là dashboard legacy ProVista DTX: sp_178 (đến/đi/đang ở, ăn sáng), sp_131 (doanh thu theo tháng năm nay/năm trước), sp_117 (doanh thu hôm qua/tuần/tháng, đã/chưa thanh toán), sp_136 (dự đoán bán phòng Ngày/Tháng/Năm, top công ty/thị trường/quốc tịch).
+- Backend: `DashboardOverviewService` + `DashboardController`, API `GET /api/dashboard/overview` và `GET /api/dashboard/activity-rooms?type=arrivals|departures|inhouse` (quyền `mgmt.report.view`). Đến/đi/đang ở dùng `RoomOccupancyStatisticsService` để khớp Sơ đồ phòng; dự đoán bán phòng tái dùng thủ tục `rpt_room_forecast` (2 lần gọi cả năm: có/không ăn sáng); doanh thu port sp_117/sp_131 trên `service_bills`/`service_bill_details`/`payments`.
+- Frontend: `pages/reports/components/DashboardOverview.vue` (biểu đồ SVG, popup chi tiết có Esc/tìm kiếm/lọc); `ReportsPage.vue` hiện dashboard khi `/reports` ở tab Tổng Quan và chưa có `report` trên URL, không tự mở báo cáo.
+- Khác legacy có chủ đích: tuần/hôm qua không bị cắt theo tháng hiện tại (sp_117 trả 0 cho hôm qua vào mùng 1); tuần bắt đầu thứ Hai.
+- Test: `DashboardOverviewApiTest` 2/2 (quyền + validate); chạy service trên MySQL thật ~0.9s; vite build đạt; i18n đã quét + 46 bản dịch EN. Chưa UAT trình duyệt.
+- [2026-11-26] Sửa doanh thu âm: hóa đơn chưa thanh toán cũng phải bỏ `Edit = 1` (cặp hóa đơn gốc/âm khi hủy, chuyển dịch vụ); nối `payment_methods` theo `pm.code` (trước nối `pm.id` nên đã thanh toán luôn ra 0). DB hkt1 ngày 03/09: hôm qua 12.080.000 (đã TT 4.620.000), tuần 25.420.000, tháng 20.620.000, khớp cộng tay từ DB. Không có file sp_117/sp_131 gốc trên máy để đối chiếu.

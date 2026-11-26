@@ -2,7 +2,7 @@
 // Hàm thuần để test được; mọi thời gian là timestamp 0h của ngày (hoặc null).
 //
 // status: 0 đăng ký, 1 đang ở, 2 đã trả, 100 phòng cũ đã chuyển đi.
-// isSameDayMoved: phòng mới được chuyển tới cùng ngày với ngày đến của phòng cũ (vừa check in rồi chuyển).
+// isSameDayMoved: phòng mới được chuyển tới cùng ngày với ngày đến của phòng cũ (vừa check in rồi chuyển) — hiện ở danh sách chính.
 // isStayedThenMoved: phòng mới được chuyển tới sau khi đã ở ít nhất 1 đêm ở phòng cũ.
 export function isResidenceRowVisible(row, targetTime, filters = {}) {
   const status = Number(row.status)
@@ -21,12 +21,15 @@ export function isResidenceRowVisible(row, targetTime, filters = {}) {
   // Nếu đó là phòng vừa chuyển tới (chuyển rồi trả trong ngày) thì vẫn chỉ hiện khi tick "Phòng chuyển".
   if (status === 2 && arrTime != null && arrTime === depTime) {
     if (arrTime !== targetTime) return false
-    return (row.isStayedThenMoved || row.isSameDayMoved) ? !!filters.roomMove : true
+    // Note 20/11: phòng vừa check in rồi chuyển ngay trong ngày là phòng lưu trú chính, hiện không cần tick.
+    return row.isStayedThenMoved ? !!filters.roomMove : true
   }
 
   if (status === 1) {
-    // Phòng vừa được chuyển tới: ngày chuyển chỉ hiển thị khi tick "Phòng chuyển".
-    if (row.isStayedThenMoved || row.isSameDayMoved) {
+    // Phòng chuyển tới sau khi đã ở phòng cũ ít nhất 1 đêm: ngày chuyển chỉ hiển thị khi tick "Phòng chuyển".
+    // Note 20/11: phòng vừa check in rồi chuyển ngay trong ngày (isSameDayMoved) thay cho phòng cũ (0 đêm, bị ẩn),
+    // nên hiển thị ở danh sách chính không cần tick, kèm ghi chú "From Room ..., old arrival date: ...".
+    if (row.isStayedThenMoved) {
       if (arrTime === targetTime) return !!filters.roomMove
       return inRange ? !!filters.inHouse : false
     }

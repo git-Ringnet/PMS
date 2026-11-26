@@ -5,7 +5,7 @@ import { adjustRoomRate } from '@/services/booking-service'
 
 const props = defineProps({ show: Boolean, booking: Object, systemDate: String })
 const emit = defineEmits(['close', 'success'])
-const roomId = ref('')
+const selectedRoomIds = ref([])
 const dateFrom = ref('')
 const dateTo = ref('')
 const rate = ref(0)
@@ -125,12 +125,18 @@ const saving = ref(false)
 
 const rooms = computed(() => (props.booking?.roomItems || []).filter(room => [1, 2].includes(Number(room.rawRoom?.status ?? room.status))))
 const eligibleRooms = computed(() => rooms.value.filter(room => !roomNoPost(room)))
-const isAllRoomsSelected = computed(() => roomId.value === 'ALL')
-const selectedRoom = computed(() => rooms.value.find(room => String(room.roomId || room.id) === String(roomId.value)))
+const roomKey = room => String(room?.roomId || room?.id || '')
+// Chọn được nhiều phòng một lúc; chỉ phòng không bật No Post mới được chọn.
+const targetRooms = computed(() => eligibleRooms.value.filter(room => selectedRoomIds.value.includes(roomKey(room))))
+const selectedRoom = computed(() => targetRooms.value[0])
+const isAllRoomsSelected = computed({
+  get: () => eligibleRooms.value.length > 0 && targetRooms.value.length === eligibleRooms.value.length,
+  set: value => { selectedRoomIds.value = value ? eligibleRooms.value.map(roomKey) : [] },
+})
 const isNoPostEnabled = value => value === true || value === 1 || ['1', 'true', 'yes'].includes(String(value ?? '').trim().toLowerCase())
 const bookingNoPost = computed(() => isNoPostEnabled(props.booking?.rawBooking?.no_post ?? props.booking?.no_post))
 const roomNoPost = room => bookingNoPost.value || isNoPostEnabled(room?.rawRoom?.no_post ?? room?.no_post)
-const selectedRoomNoPost = computed(() => (isAllRoomsSelected.value ? eligibleRooms.value.length === 0 : roomNoPost(selectedRoom.value)))
+const selectedRoomNoPost = computed(() => eligibleRooms.value.length === 0)
 
 const bookingName = computed(() => {
   if (!props.booking) return ''
@@ -154,8 +160,11 @@ function normalizeYmd(value) {
   return `${match[3]}-${match[1].padStart(2, '0')}-${match[2].padStart(2, '0')}`
 }
 
-const roomArrivalDate = computed(() => normalizeYmd(selectedRoom.value?.rawRoom?.arrival_date || selectedRoom.value?.arrivalDate || props.booking?.arrivalDate))
-const roomDepartureDate = computed(() => normalizeYmd(selectedRoom.value?.rawRoom?.departure_date || selectedRoom.value?.departureDate || props.booking?.departureDate))
+const roomArrivalYmd = room => normalizeYmd(room?.rawRoom?.arrival_date || room?.arrivalDate || props.booking?.arrivalDate)
+const roomDepartureYmd = room => normalizeYmd(room?.rawRoom?.departure_date || room?.departureDate || props.booking?.departureDate)
+// Nhiều phòng: khoảng ngày bao trùm các phòng đã chọn; backend chỉ áp các đêm nằm trong thời gian ở của từng phòng.
+const roomArrivalDate = computed(() => targetRooms.value.map(roomArrivalYmd).filter(Boolean).sort()[0] || normalizeYmd(props.booking?.arrivalDate))
+const roomDepartureDate = computed(() => targetRooms.value.map(roomDepartureYmd).filter(Boolean).sort().pop() || normalizeYmd(props.booking?.departureDate))
 const maxDate = computed(() => {
   const systemDate = normalizeYmd(props.systemDate)
   if (!systemDate) return ''
@@ -252,9 +261,9 @@ function roomDates() {
   return dates
 }
 
-function initializeStayDates(room) {
-  const arrival = normalizeYmd(room?.rawRoom?.arrival_date || room?.arrivalDate || props.booking?.arrivalDate || maxDate.value)
-  const departure = normalizeYmd(room?.rawRoom?.departure_date || room?.departureDate || props.booking?.departureDate || maxDate.value)
+function initializeStayDates() {
+  const arrival = roomArrivalDate.value || maxDate.value
+  const departure = roomDepartureDate.value || maxDate.value
   const systemDate = normalizeYmd(props.systemDate)
   if (!arrival || !departure || !systemDate) return false
   dateFrom.value = arrival
@@ -271,9 +280,9 @@ watch(() => props.show, visible => {
   modalPosition.value = { x: 0, y: 0 }
   window.removeEventListener('keydown', handleKeyDown)
   window.addEventListener('keydown', handleKeyDown)
-  const room = rooms.value[0]
-  roomId.value = String(room?.roomId || room?.id || '')
-  initializeStayDates(room)
+  const room = eligibleRooms.value[0]
+  selectedRoomIds.value = room ? [roomKey(room)] : []
+  initializeStayDates()
   setRate(Number(room?.rate || room?.roomRate || room?.rawRoom?.rate || 0))
   description.value = 'Dịch vụ phòng nghỉ'
   reason.value = ''
@@ -289,16 +298,17 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeyDown)
 })
 
-watch([() => props.show, () => props.systemDate, selectedRoom], ([visible, systemDate, room]) => {
-  if (!visible || !systemDate || !room) return
-  initializeStayDates(room)
+watch([() => props.show, () => props.systemDate], ([visible, systemDate]) => {
+  if (!visible || !systemDate || !selectedRoom.value) return
+  initializeStayDates()
 }, { flush: 'post' })
 
-watch(selectedRoom, room => {
-  if (!room) return
-  setRate(Number(room.rate || room.roomRate || room.rawRoom?.rate || 0))
-  const arrival = normalizeYmd(room.rawRoom?.arrival_date || room.arrivalDate || props.booking?.arrivalDate)
-  const departure = normalizeYmd(room.rawRoom?.departure_date || room.departureDate || props.booking?.departureDate)
+watch(selectedRoom, (room, previous) => {
+  if (room && roomKey(room) !== roomKey(previous)) setRate(Number(room.rate || room.roomRate || room.rawRoom?.rate || 0))
+})
+
+watch([roomArrivalDate, roomDepartureDate], ([arrival, departure]) => {
+  if (!arrival || !departure) return
   if (dateFrom.value < arrival || dateFrom.value >= departure) dateFrom.value = arrival
   if (dateTo.value <= dateFrom.value || dateTo.value > departure) dateTo.value = departure
   selectedNightDates.value = selectedNightDates.value.filter(date => availableNights.value.includes(date))
@@ -311,29 +321,22 @@ async function submit() {
     return
   }
   const dates = roomDates()
-  const targetRooms = isAllRoomsSelected.value
-    ? eligibleRooms.value
-    : (selectedRoom.value ? [selectedRoom.value] : [])
-  if (targetRooms.length === 0 || dates.length === 0 || rate.value < 0 || !reason.value.trim()) {
+  if (targetRooms.value.length === 0 || dates.length === 0 || rate.value < 0 || !reason.value.trim()) {
     error.value = 'Nhập đủ phòng, ngày, giá và lý do điều chỉnh.'
     return
   }
   saving.value = true
   try {
-    for (const targetRoom of targetRooms) {
-      const targetRoomId = String(targetRoom.roomId || targetRoom.id)
-      for (const serviceDate of dates) {
-        await adjustRoomRate(props.booking.bookingId, {
-          booking_room_id: targetRoomId,
-          service_date: serviceDate,
-          rate: Number(rate.value),
-          description: description.value.trim() || 'Dịch vụ phòng nghỉ',
-          reason: reason.value.trim(),
-          update_room_rate: updateRoomRate.value,
-          update_room_rate_scope: updateRoomRateScope.value,
-        })
-      }
-    }
+    // Một request cho tất cả phòng × đêm: backend kiểm tra hết rồi ghi trong một transaction (lỗi thì không sửa dở).
+    await adjustRoomRate(props.booking.bookingId, {
+      booking_room_ids: targetRooms.value.map(roomKey),
+      service_dates: dates,
+      rate: Number(rate.value),
+      description: description.value.trim() || 'Dịch vụ phòng nghỉ',
+      reason: reason.value.trim(),
+      update_room_rate: updateRoomRate.value,
+      update_room_rate_scope: updateRoomRateScope.value,
+    })
     emit('success')
   } catch (e) {
     error.value = e.response?.data?.message || 'Không thể điều chỉnh tiền phòng.'
@@ -379,22 +382,25 @@ async function submit() {
           </div>
           <div class="col-span-5">
             <label class="mb-1 block text-slate-700"><span class="font-bold text-slate-900">Phòng</span></label>
-            <select
-              v-model="roomId"
-              class="h-[32px] w-full rounded-[6px] border border-slate-300 bg-white px-2.5 text-[12px] text-slate-800 shadow-sm outline-none focus:border-[#0788eb]"
-            >
-              <option v-if="eligibleRooms.length > 1" value="ALL">
-                Tất cả phòng ({{ eligibleRooms.length }} phòng)
-              </option>
-              <option v-for="room in rooms" :key="room.roomId || room.id" :value="String(room.roomId || room.id)" :disabled="roomNoPost(room)">
-                Chọn: {{ room.roomNumber || room.rawRoom?.room_number || 0 }}{{ roomNoPost(room) ? ' — No Post' : '' }}
-              </option>
-            </select>
+            <div class="max-h-[96px] overflow-y-auto rounded-[6px] border border-slate-300 bg-white px-2.5 py-1.5 shadow-sm">
+              <label v-if="eligibleRooms.length > 1" class="flex cursor-pointer items-center gap-1.5 py-0.5 font-semibold text-slate-800 select-none">
+                <input v-model="isAllRoomsSelected" type="checkbox" class="h-3.5 w-3.5 rounded border-slate-300 text-[#0788eb] focus:ring-[#0788eb]" />
+                <span>Tất cả phòng ({{ eligibleRooms.length }} phòng)</span>
+              </label>
+              <div class="grid grid-cols-3 gap-x-2">
+                <label v-for="room in rooms" :key="roomKey(room)" class="flex items-center gap-1.5 py-0.5 select-none" :class="roomNoPost(room) ? 'cursor-not-allowed text-slate-400' : 'cursor-pointer text-slate-700'">
+                  <input v-model="selectedRoomIds" :value="roomKey(room)" :disabled="roomNoPost(room)" type="checkbox" class="h-3.5 w-3.5 rounded border-slate-300 text-[#0788eb] focus:ring-[#0788eb]" />
+                  <span>{{ room.roomNumber || room.rawRoom?.room_number || 0 }}</span>
+                  <span v-if="roomNoPost(room)">(No Post)</span>
+                </label>
+              </div>
+            </div>
+            <p v-if="targetRooms.length > 1" class="mt-1 text-[12px] text-slate-500">Mỗi phòng chỉ điều chỉnh các đêm nằm trong thời gian ở của phòng đó.</p>
             <label v-if="updateRoomRate" class="mt-2 flex cursor-pointer items-center gap-1.5 text-[12px] text-slate-700 select-none">
               <input v-model="updateRoomRateScope" true-value="booking" false-value="room" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-[#0788eb] focus:ring-[#0788eb]" />
               <span>Cập nhật giá toàn bộ phòng trong booking</span>
             </label>
-            <p v-if="selectedRoomNoPost" class="mt-1 text-[10px] text-rose-600">Phòng đang chọn bật No Post nên không thể post tiền phòng.</p>
+            <p v-if="selectedRoomNoPost" class="mt-1 text-[12px] text-rose-600">Phòng đang chọn bật No Post nên không thể post tiền phòng.</p>
           </div>
         </div>
 
