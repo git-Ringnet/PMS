@@ -171,7 +171,8 @@ const rateFormState = reactive({
   Disable: false,
   AllowChangeRate: false,
   IsChannelManager: false,
-  IncludeBF: false
+  // Mã giá mới mặc định có ăn sáng
+  IncludeBF: true
 })
 
 const rateMatrix = reactive({})
@@ -935,7 +936,7 @@ const handleAdd = async () => {
     if (!confirmed) return;
   }
   selectedRateCode.value = null
-  Object.assign(rateFormState, { Ma: '', Description: '', BeginDate: '', EndDate: '', Currency: 'VND', IsDaily: false, Disable: false, AllowChangeRate: false, IsChannelManager: false, IncludeBF: false })
+  Object.assign(rateFormState, { Ma: '', Description: '', BeginDate: '', EndDate: '', Currency: 'VND', IsDaily: false, Disable: false, AllowChangeRate: false, IsChannelManager: false, IncludeBF: true })
   for (const key in rateMatrix) delete rateMatrix[key];
 }
 

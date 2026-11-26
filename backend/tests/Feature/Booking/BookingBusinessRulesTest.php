@@ -1354,6 +1354,67 @@ class BookingBusinessRulesTest extends TestCase
         }
     }
 
+    /**
+     * Mã giá phòng: sửa giá của mã giá đã dùng thì booking tạo trước đó vẫn giữ mã giá và giá cũ
+     * (kể cả khi lưu lại đăng ký), booking mới mới lấy giá mới.
+     */
+    public function test_rate_code_price_change_does_not_reprice_existing_booking_on_save(): void
+    {
+        StandardRate::create(['room_class_id' => $this->roomClass->id, 'room_form_id' => $this->roomForm->id, 'room_price' => 900000]);
+        RoomRateCode::create(['Ma' => 'BAR', 'IsDaily' => false]);
+        $plan = RoomRatePlan::create(['RateCode' => 'BAR', 'Code' => 'DEFAULT', 'Period' => ['DEFAULT_STD_Standard Form' => 321000]]);
+
+        $payload = fn (array $room = []) => [
+            'booking_name' => 'Old price', 'arrival_date' => '2026-08-09', 'departure_date' => '2026-08-11', 'num_of_days' => 2,
+            'registration_status_id' => $this->regStatus->booking_status_id, 'company_id' => 1, 'market_id' => 1, 'customer_source_id' => 1,
+            'room_allocations' => [[
+                'roomClassId' => $this->roomClass->id, 'quantity' => 1, 'price' => 321000, 'basePrice' => 321000, 'rateCode' => 'BAR',
+                'rooms' => [array_merge([
+                    'arrivalDate' => '2026-08-09', 'departureDate' => '2026-08-11', 'price' => 321000, 'basePrice' => 321000, 'rateCode' => 'BAR',
+                    'dailyRoomPrices' => ['2026-08-09' => 321000, '2026-08-10' => 321000],
+                ], $room)],
+            ]],
+        ];
+
+        $bookingId = $this->postJson('/api/bookings', $payload())->assertSuccessful()->json('data.id');
+        $room = BookingRoom::where('booking_id', $bookingId)->firstOrFail();
+        $this->assertEquals(321000, $room->rate);
+
+        // Khách sạn đổi giá của mã giá BAR sang 400.000.
+        $plan->update(['Period' => ['DEFAULT_STD_Standard Form' => 400000]]);
+
+        // Lưu lại đăng ký cũ (không đổi gì): giữ giá cũ.
+        $this->putJson("/api/bookings/{$bookingId}", $payload(['bookingRoomId' => $room->id, 'roomNumber' => null]))->assertSuccessful();
+        $room->refresh();
+        $this->assertEquals('BAR', $room->rate_code);
+        $this->assertEquals(321000, $room->rate);
+        foreach (['2026-08-09', '2026-08-10'] as $date) {
+            $this->assertDatabaseHas('booking_room_services', [
+                'booking_room_id' => $room->id, 'service_code' => BookingRoomService::CODE_ROOM,
+                'service_date' => $date . ' 00:00:00', 'rate' => 321000,
+            ]);
+        }
+
+        // Booking mới lấy giá mới (mỗi request thật dùng controller mới; test làm mới controller đã cache).
+        foreach (app('router')->getRoutes() as $route) {
+            $route->flushController();
+        }
+        $newId = $this->postJson('/api/bookings', $payload())->assertSuccessful()->json('data.id');
+        $this->assertEquals(400000, BookingRoom::where('booking_id', $newId)->value('rate'));
+        // Đổi sang loại phòng khác (cùng mã giá) thì lấy giá theo bảng giá của loại phòng mới.
+        $otherClass = RoomClass::create(['code' => 'SUP', 'name' => 'Superior', 'is_active' => true]);
+        StandardRate::create(['room_class_id' => $otherClass->id, 'room_form_id' => $this->roomForm->id, 'room_price' => 900000]);
+        Room::create(['room_number' => '201', 'room_class_id' => $otherClass->id, 'room_form_id' => $this->roomForm->id, 'floor' => 2, 'status' => 'available']);
+        $plan->update(['Period' => ['DEFAULT_STD_Standard Form' => 400000, 'DEFAULT_SUP_Standard Form' => 555000]]);
+        foreach (app('router')->getRoutes() as $route) {
+            $route->flushController();
+        }
+        $changed = $payload(['bookingRoomId' => $room->id, 'roomNumber' => null]);
+        $changed['room_allocations'][0]['roomClassId'] = $otherClass->id;
+        $this->putJson("/api/bookings/{$bookingId}", $changed)->assertSuccessful();
+        $this->assertEquals(555000, $room->fresh()->rate);
+    }
+
     public function test_master_room_rate_flag_does_not_move_existing_room_charge_bills(): void
     {
         $booking = $this->createBooking([

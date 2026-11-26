@@ -1755,7 +1755,8 @@ class BookingController extends Controller
                                 $alloc,
                                 $roomArrival,
                                 $roomDeparture,
-                                $isRoomDayUse
+                                $isRoomDayUse,
+                                $bRoom
                             );
                             $roomRate = (float) ($detail['price'] ?? $alloc['price'] ?? ($bRoom?->rate ?? 0));
 
@@ -4768,7 +4769,8 @@ class BookingController extends Controller
         array $allocation,
         ?string $arrivalDate,
         ?string $departureDate,
-        bool $isDayUse = false
+        bool $isDayUse = false,
+        ?BookingRoom $existingRoom = null
     ): array {
         $rateCodeValue = array_key_exists('rateCode', $detail)
             ? $detail['rateCode']
@@ -4839,6 +4841,25 @@ class BookingController extends Controller
         // Giá phòng (booking_rooms.rate) luôn theo Rate Code; giá sửa tay của
         // một đêm không làm đổi giá phòng (dòng 397).
         $firstRate = (float) reset($dailyPrices);
+        // Mã giá phòng: sửa bảng giá của mã giá không được đổi giá booking đã tạo. Phòng đã có và
+        // giữ nguyên mã giá và loại phòng thì giữ giá phòng và giá các đêm đã lưu; chỉ đêm mới thêm
+        // (hoặc đổi mã giá / loại phòng) mới lấy theo bảng giá hiện tại.
+        if ($existingRoom
+            && (string) $existingRoom->rate_code === $rateCode
+            && (string) $existingRoom->room_class_id === (string) $roomClassId) {
+            $storedNightRates = \App\Models\BookingRoomService::where('booking_room_id', $existingRoom->id)
+                ->where('service_code', \App\Models\BookingRoomService::CODE_ROOM)
+                ->get(['service_date', 'rate'])
+                ->mapWithKeys(fn ($service) => [Carbon::parse($service->service_date)->toDateString() => (float) $service->rate]);
+            foreach ($dailyPrices as $date => $price) {
+                if ($storedNightRates->has($date)) {
+                    $dailyPrices[$date] = $storedNightRates->get($date);
+                }
+            }
+            if ((float) $existingRoom->rate > 0) {
+                $firstRate = (float) $existingRoom->rate;
+            }
+        }
 
         // GAL39: Rate Code cố định cho phép đổi giá thì giữ giá từng đêm đã gửi
         // lên (giá sửa tay ở chi tiết dịch vụ hoặc giá đã lưu trước đó); đêm

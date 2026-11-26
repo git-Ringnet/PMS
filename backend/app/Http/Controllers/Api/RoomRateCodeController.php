@@ -52,7 +52,8 @@ class RoomRateCodeController extends Controller
     public function update(Request $request, $ma)
     {
         $rateCode = RoomRateCode::findOrFail($ma);
-        app(\App\Services\ConfigurationReferenceGuard::class)->assertUnused($rateCode);
+        // Mã giá đã có booking dùng vẫn được cập nhật (booking đã tạo giữ mã giá và giá cũ đã lưu);
+        // chỉ không được đổi mã (khóa) của mã giá.
         app(\App\Services\ConfigurationReferenceGuard::class)->assertIdentityUnchanged($rateCode, $request->all(), ['Ma'], true);
         $rateCode->update($request->all());
 
@@ -71,7 +72,8 @@ class RoomRateCodeController extends Controller
     // Custom method to save Rate Plans (Matrix Grid)
     public function saveRatePlan(Request $request, $ma)
     {
-        app(\App\Services\ConfigurationReferenceGuard::class)->assertUnused(RoomRateCode::findOrFail($ma));
+        // Cập nhật bảng giá của mã giá đang dùng: chỉ áp dụng cho booking tạo sau, booking cũ giữ giá đã lưu.
+        RoomRateCode::findOrFail($ma);
         $request->validate([
             'Code' => 'required|string',
             'Description' => 'nullable|string',
@@ -132,8 +134,8 @@ class RoomRateCodeController extends Controller
             ->values();
 
         $savedMappings = DB::transaction(function () use ($ma, $mode, $mappings, $deleteDates) {
+            // Mã giá đang dùng vẫn cập nhật được lịch giá theo ngày (booking cũ giữ giá đã lưu).
             $rateCode = RoomRateCode::where('Ma', $ma)->lockForUpdate()->firstOrFail();
-            app(\App\Services\ConfigurationReferenceGuard::class)->assertUnused($rateCode);
             $availablePlanCodes = RoomRatePlan::where('RateCode', $ma)->pluck('Code');
             $unknownPlanCodes = $mappings->pluck('Code')->unique()->diff($availablePlanCodes)->values();
 
