@@ -232,6 +232,8 @@ class Row474CheckedOutGuestTest extends TestCase
         $this->assertSame(2, (int) $row['adults']);
         $this->assertSame(0, (int) $row['children']);
         $this->assertSame(2, (int) $row['guest_count']);
+        // Note 26/11: tooltip danh sách tên khách cũng không còn khách đã check out.
+        $this->assertSame(['Guest 1', 'Guest 2'], $row['guest_details']);
     }
 
     public function test_old_registration_departure_filter_includes_booking_with_guest_checked_out_in_range(): void
@@ -247,5 +249,44 @@ class Row474CheckedOutGuestTest extends TestCase
 
         $this->assertNotNull($inRange->firstWhere('id', $booking->id));
         $this->assertNull($outRange->firstWhere('id', $booking->id));
+    }
+
+    /**
+     * Note 26/11: lưu lại đăng ký (Tạo đăng ký) sau khi check out sớm 1 khách không được xóa
+     * hay đổi trạng thái khách/trẻ em đã check out, khách còn ở giữ nguyên.
+     */
+    public function test_saving_registration_keeps_checked_out_guest_and_child(): void
+    {
+        $booking = $this->booking('2026-08-09', '2026-08-11');
+        $room = $this->inhouseRoom($booking, '401');
+        $room->update(['adults' => 2, 'children_qty' => 1]);
+        $primary = $this->guest($room, 'Guest 1', BookingRoomGuest::STATUS_CHECKED_IN, true);
+        $staying = $this->guest($room, 'Guest 2', BookingRoomGuest::STATUS_CHECKED_IN);
+        $out = $this->guest($room, 'Guest 3', BookingRoomGuest::STATUS_CHECKED_OUT);
+        $childIn = BookingChild::create(['booking_id' => $booking->id, 'booking_room_id' => $room->id, 'full_name' => 'Child 1', 'age_group' => 'child', 'child_status' => 1]);
+        $childOut = BookingChild::create(['booking_id' => $booking->id, 'booking_room_id' => $room->id, 'full_name' => 'Child 2', 'age_group' => 'child', 'child_status' => 2]);
+        \Illuminate\Support\Facades\DB::table('markets')->insertOrIgnore(['id' => 1, 'name' => 'FIT', 'code' => 'FIT']);
+        \Illuminate\Support\Facades\DB::table('customer_sources')->insertOrIgnore(['id' => 1, 'name' => 'WalkIn', 'code' => 'WI']);
+        \Illuminate\Support\Facades\DB::table('companies')->insertOrIgnore(['id' => 1, 'name' => 'WalkIn Company', 'code' => 'WIC']);
+
+        $this->putJson("/api/bookings/{$booking->id}", [
+            'booking_name' => 'Row474', 'arrival_date' => '2026-08-09', 'departure_date' => '2026-08-11', 'num_of_days' => 2,
+            'registration_status_id' => 1, 'company_id' => 1, 'market_id' => 1, 'customer_source_id' => 1,
+            'room_allocations' => [[
+                'roomClassId' => $this->roomClass->id, 'quantity' => 1,
+                'rooms' => [[
+                    'bookingRoomId' => $room->id, 'roomNumber' => '401', 'arrivalDate' => '2026-08-09', 'departureDate' => '2026-08-11',
+                    'price' => 1000000, 'adults' => 2, 'children' => 1, 'guestName' => 'Guest 1',
+                ]],
+            ]],
+        ])->assertSuccessful();
+
+        $statuses = BookingRoomGuest::where('booking_room_id', $room->id)->pluck('status', 'guest_id')->map(fn ($s) => (int) $s);
+        $this->assertSame(BookingRoomGuest::STATUS_CHECKED_OUT, $statuses[$out->id] ?? null, 'Khách đã check out bị xóa hoặc đổi trạng thái');
+        $this->assertSame(BookingRoomGuest::STATUS_CHECKED_IN, $statuses[$staying->id] ?? null, 'Khách còn ở bị xóa');
+        $this->assertSame(BookingRoomGuest::STATUS_CHECKED_IN, $statuses[$primary->id] ?? null);
+        $this->assertNotNull(BookingChild::find($childOut->id), 'Trẻ em đã check out bị xóa');
+        $this->assertSame(2, (int) BookingChild::find($childOut->id)->child_status);
+        $this->assertNotNull(BookingChild::find($childIn->id), 'Trẻ em còn ở bị xóa');
     }
 }

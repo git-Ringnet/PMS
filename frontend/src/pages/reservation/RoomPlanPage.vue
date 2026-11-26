@@ -1757,7 +1757,11 @@ async function loadBookings() {
           const departureTime = br.departure_time || '12:00'
           const isDayUse = Boolean(br.is_day_use ?? b.is_day_use)
 
-          const guestDetails = (br.guests || []).map(g => g.guest?.full_name || g.full_name).filter(Boolean)
+          // Dòng 474 (note 26/11): phòng đang ở chỉ liệt kê khách còn ở (bỏ khách đã check out/hủy/đã chuyển).
+          const roomGuests = br.guests || []
+          const stayingGuests = roomGuests.filter(g => ![2, 3, 100].includes(Number(g.status)))
+          const tooltipGuests = Number(br.status) !== 2 && stayingGuests.length > 0 ? stayingGuests : roomGuests
+          const guestDetails = tooltipGuests.map(g => g.guest?.full_name || g.full_name).filter(Boolean)
           if (guestDetails.length === 0 && guestName && guestName !== 'Guest') {
             guestDetails.push(guestName)
           }

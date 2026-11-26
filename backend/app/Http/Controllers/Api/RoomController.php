@@ -305,7 +305,12 @@ class RoomController extends Controller
                     ->toArray();
                 $room->has_birthday_today = $br->guests
                     ->contains(fn($guestLink) => $guestLink->guest?->dob?->format('m-d') === $systemDate->format('m-d'));
-                $room->guest_details = $br->guests
+                // Dòng 474 (note 26/11): tooltip chỉ liệt kê khách còn ở phòng, khớp số người lớn ở trên;
+                // phòng đã trả toàn bộ hoặc chưa có khách còn ở thì giữ danh sách đầy đủ.
+                $detailGuests = (int) $br->status !== \App\Models\BookingRoom::STATUS_CHECKED_OUT && $stayingGuests->isNotEmpty()
+                    ? $stayingGuests
+                    : $br->guests;
+                $room->guest_details = $detailGuests
                     ->map(fn($g) => $g->guest?->full_name)
                     ->filter()
                     ->values()
