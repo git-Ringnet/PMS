@@ -226,6 +226,12 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
 
     Route::get('report-lookups/{lookup}', [\App\Http\Controllers\Api\ReportLookupController::class, 'index']);
 
+    // Tổng quan (dashboard) module Báo cáo quản lý
+    Route::get('dashboard/overview', [\App\Http\Controllers\Api\DashboardController::class, 'overview'])
+        ->middleware('permission:mgmt.report.view');
+    Route::get('dashboard/activity-rooms', [\App\Http\Controllers\Api\DashboardController::class, 'activityRooms'])
+        ->middleware('permission:mgmt.report.view');
+
     // Business report catalogue: one Store, configurable filters and many output templates.
     Route::post('report-definitions/{reportDefinition}/execute', [\App\Http\Controllers\Api\ReportDefinitionController::class, 'execute']);
     Route::post('report-definitions/{reportDefinition}/render', [\App\Http\Controllers\Api\ReportDefinitionController::class, 'render']);
