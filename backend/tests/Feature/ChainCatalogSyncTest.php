@@ -197,7 +197,8 @@ class ChainCatalogSyncTest extends TestCase
         $this->assertEquals(0, $this->target('companies')->where('code', $codeA)->value('is_active'));
 
         $response = $this->deleteJson("/api/companies/{$b}")->assertStatus(422);
-        $this->assertStringContainsString('HKT2', $response->json('message'));
+        // Dòng 519 (note 20/11): câu thông báo theo mẫu của khách, không liệt kê chi nhánh/số booking
+        $this->assertSame('Không thể xóa vì Công ty B đã phát sinh dữ liệu', $response->json('message'));
         $this->assertSame(1, $this->target('companies')->where('code', $codeB)->count());
         $this->assertTrue((bool) Company::find($b)->is_active);
         $this->assertEquals(1, $this->target('companies')->where('code', $codeB)->value('is_active'));

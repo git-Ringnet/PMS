@@ -699,10 +699,6 @@ const submitResetPassword = async () => {
     resetPasswordError.value = 'Vui lòng nhập đủ mật khẩu mới và xác nhận mật khẩu.'
     return
   }
-  if (password.length < 6) {
-    resetPasswordError.value = 'Mật khẩu mới phải có ít nhất 6 ký tự.'
-    return
-  }
   if (password !== passwordConfirmation) {
     resetPasswordError.value = 'Xác nhận mật khẩu mới không khớp.'
     return
@@ -1476,7 +1472,6 @@ const changePage = (page) => {
               v-model="resetPasswordForm.password"
               type="password"
               autocomplete="new-password"
-              minlength="6"
               required
               class="h-9 rounded-lg border border-[#F1DD8A] bg-[#FFF8DB] px-3 font-normal text-[#000000D9] outline-none focus:border-yellow-500"
             >
@@ -1488,7 +1483,6 @@ const changePage = (page) => {
               v-model="resetPasswordForm.password_confirmation"
               type="password"
               autocomplete="new-password"
-              minlength="6"
               required
               class="h-9 rounded-lg border border-[#F1DD8A] bg-[#FFF8DB] px-3 font-normal text-[#000000D9] outline-none focus:border-yellow-500"
             >

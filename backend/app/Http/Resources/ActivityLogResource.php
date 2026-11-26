@@ -282,6 +282,8 @@ class ActivityLogResource extends JsonResource
             'room_number' => $roomNumber,
             'old_values' => $this->old_values,
             'new_values' => $this->new_values,
+            // Checklist TC_HT_06 dòng 36: bảng Trường / Trước / Sau dễ đọc cho popup Chi tiết
+            'changes' => Fmt::changeRows($this->old_values, $this->new_values, self::$fieldLabels),
             'ip_address' => $this->ip_address,
             'user_agent' => $this->user_agent,
             'request_method' => $this->request_method,
@@ -1266,7 +1268,8 @@ class ActivityLogResource extends JsonResource
     {
         $lines = [];
         $new = $this->new_values ?: [];
-        $skip = ['updated_at', 'created_at', 'id', 'deleted_at', 'remember_token', 'password', 'branch_id', 'created_by_user_id', 'updated_by_user_id', 'created_by', 'updated_by'];
+        // Checklist TC_HT_06 dòng 33: bỏ trường kỹ thuật (thứ tự sắp xếp) khỏi mô tả thêm mới.
+        $skip = ['updated_at', 'created_at', 'id', 'deleted_at', 'remember_token', 'password', 'branch_id', 'created_by_user_id', 'updated_by_user_id', 'created_by', 'updated_by', 'sort_order', 'order_index'];
 
         foreach ($new as $key => $val) {
             if (in_array($key, $skip)) continue;

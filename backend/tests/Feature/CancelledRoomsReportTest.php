@@ -137,7 +137,7 @@ class CancelledRoomsReportTest extends TestCase
             Mockery::mock(RoomAvailabilityService::class),
         );
         $user = Mockery::mock(User::class)->makePartial();
-        $user->shouldReceive('isSuperAdmin')->once()->andReturnTrue();
+        $user->shouldReceive('hasUnrestrictedBranchAccess')->once()->andReturnTrue();
         $request = Request::create('/api/report-definitions/1/execute', 'POST');
         $request->setUserResolver(fn () => $user);
 

@@ -107,7 +107,7 @@ test('196: add service uses the same final price for flat and nested product res
     const bindings = {
       loadingProducts: ref(false), housekeepingOutlets, dbProductsData,
       currentTab: ref(''), tabKeys: computed(() => housekeepingOutlets.value.map(o => o.code)),
-      productGroup: {}, storageImageUrl: v => v || null,
+      productGroup: {}, storageImageUrl: v => v || null, productDisplayImage: p => p?.image || null,
       fetchHousekeepingOutlets: async () => ({ data: [{ code: 'MB', name: 'Minibar', is_active: true, show_in_add_service: true, service_code: 'MB' }] }),
       http: { get: async url => ({ data: url === '/products' ? products : categories }) },
     }
@@ -134,7 +134,7 @@ test('454: post-housekeeping menu preserves category and product ID order', asyn
   const bindings = {
     loadingProducts: ref(false), housekeepingOutlets, dbProductsData,
     currentTab: ref(''), tabKeys: computed(() => housekeepingOutlets.value.map(o => o.code)),
-    productGroup: {}, storageImageUrl: v => v || null,
+    productGroup: {}, storageImageUrl: v => v || null, productDisplayImage: p => p?.image || null,
     fetchHousekeepingOutlets: async () => ({ data: [{ code: 'MB', name: 'Minibar', is_active: true, show_in_add_service: true, service_code: 'MB' }] }),
     http: { get: async url => ({ data: url === '/products' ? products : categories }) },
   }

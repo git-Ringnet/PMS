@@ -1,12 +1,12 @@
 <script setup>
 import { ref, computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { fetchActivityLogs, fetchActivityLogStats } from '@/services/activity-log-service'
+import { exportActivityLogsExcel, fetchActivityLogs, fetchActivityLogStats } from '@/services/activity-log-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
-import { ACTIVITY_LOG_SETTINGS_KEY, buildActivityLogColumns, buildActivityLogCsv, moveActivityLogColumn, visibleActivityLogColumns } from '@/utils/activity-log-columns'
+import { ACTIVITY_LOG_SETTINGS_KEY, buildActivityLogColumns, buildActivityLogTable, moveActivityLogColumn, visibleActivityLogColumns } from '@/utils/activity-log-columns'
 import { serializeRoomColumns } from '@/utils/booking-room-columns'
 
 const uiStore = useUiStore()
@@ -570,19 +570,6 @@ const formatDateOnly = (dateStr) => {
   }
 }
 
-// Format values nicely for the comparison diff table (handling array/object values)
-const formatDiffValue = (val) => {
-  if (val === null || val === undefined) return 'null'
-  if (typeof val === 'object') {
-    try {
-      return JSON.stringify(val, null, 2)
-    } catch (e) {
-      return String(val)
-    }
-  }
-  return String(val)
-}
-
 // Details modal opener
 const viewDetails = (log) => {
   selectedLog.value = log
@@ -632,41 +619,48 @@ const formatDescriptionHtml = (text) => {
   return escaped
 }
 
-// CSV Export logic
+// Checklist TC_HT_06 dòng 37: xuất file Excel .xlsx thật (mỗi cột 1 ô, tiêu đề đậm, mô tả xuống dòng).
+// Lấy hết các trang theo bộ lọc hiện tại (API giới hạn 500 dòng/trang).
+const EXPORT_PAGE_SIZE = 500
+const EXPORT_MAX_ROWS = 20000
 const handleExport = async () => {
   try {
     uiStore.showToast('Bắt đầu xuất dữ liệu...', 'info')
-    const exportParams = {
-      ...queryParams.value,
-      per_page: 1000,
-      page: 1
-    }
-    const res = await fetchActivityLogs(exportParams)
-    if (res.data && res.data.success && res.data.data.length > 0) {
-      const data = res.data.data
-      
-      // Dòng 542: xuất theo đúng các cột đang hiện và thứ tự user đã chọn.
-      const csvContent = String.fromCharCode(0xFEFF) + buildActivityLogCsv(data, logColumns.value, {
-        time: log => log.created_time || formatTimeOnly(log.created_at),
-        date: log => log.created_date || formatDateOnly(log.created_at),
-        action: log => getActionLabel(log.action),
-      }) + String.fromCharCode(10) // BOM cho Excel đọc UTF-8
-      
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-      const link = document.createElement('a')
-      const url = URL.createObjectURL(blob)
-      link.setAttribute('href', url)
-      link.setAttribute('download', `Lich_su_thao_tac_${getTodayString()}.csv`)
-      link.style.visibility = 'hidden'
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      uiStore.showToast('Xuất file thành công!', 'success')
-    } else {
+    const data = []
+    let page = 1
+    let lastPage = 1
+    do {
+      const res = await fetchActivityLogs({ ...queryParams.value, per_page: EXPORT_PAGE_SIZE, page })
+      if (!res.data?.success) break
+      data.push(...(res.data.data || []))
+      lastPage = Number(res.data.meta?.last_page || 1)
+      page += 1
+    } while (page <= lastPage && data.length < EXPORT_MAX_ROWS)
+
+    if (!data.length) {
       uiStore.showToast('Không có dữ liệu phù hợp để xuất', 'warning')
+      return
     }
+    // Dòng 542: xuất theo đúng các cột đang hiện và thứ tự user đã chọn.
+    const table = buildActivityLogTable(data.slice(0, EXPORT_MAX_ROWS), logColumns.value, {
+      time: log => log.created_time || formatTimeOnly(log.created_at),
+      date: log => log.created_date || formatDateOnly(log.created_at),
+      action: log => getActionLabel(log.action),
+    })
+    const res = await exportActivityLogsExcel(table)
+    const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const link = document.createElement('a')
+    const url = URL.createObjectURL(blob)
+    link.setAttribute('href', url)
+    link.setAttribute('download', `Lich_su_thao_tac_${getTodayString()}.xlsx`)
+    link.style.visibility = 'hidden'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    uiStore.showToast('Xuất file thành công!', 'success')
   } catch (err) {
-    console.error('Lỗi khi xuất CSV:', err)
+    console.error('Lỗi khi xuất Excel:', err)
     uiStore.showToast('Không thể xuất lịch sử thao tác', 'error')
   }
 }
@@ -1202,23 +1196,27 @@ const handleExport = async () => {
             <div class="text-[#000000D9] whitespace-pre-wrap leading-relaxed font-normal text-xs" v-html="formatDescriptionHtml(selectedLog?.description)"></div>
           </div>
 
-          <!-- So sánh dữ liệu Cũ vs Mới -->
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
-            <!-- Old values -->
-            <div class="flex flex-col border border-rose-200 rounded-lg overflow-hidden">
-              <div class="bg-rose-50 border-b border-rose-200 px-3.5 py-2 font-semibold text-rose-800 flex items-center gap-1.5">
-                <span>◀ Dữ liệu trước khi sửa (Old Values)</span>
-              </div>
-              <pre class="p-3 bg-slate-900 text-rose-300 font-mono text-xs overflow-auto flex-1 max-h-[300px] leading-relaxed rounded-b-lg">{{ formatDiffValue(selectedLog?.old_values) }}</pre>
-            </div>
-
-            <!-- New values -->
-            <div class="flex flex-col border border-emerald-200 rounded-lg overflow-hidden">
-              <div class="bg-emerald-50 border-b border-emerald-200 px-3.5 py-2 font-semibold text-emerald-800 flex items-center gap-1.5">
-                <span>▶ Dữ liệu sau khi sửa (New Values)</span>
-              </div>
-              <pre class="p-3 bg-slate-900 text-emerald-300 font-mono text-xs overflow-auto flex-1 max-h-[300px] leading-relaxed rounded-b-lg">{{ formatDiffValue(selectedLog?.new_values) }}</pre>
-            </div>
+          <!-- Checklist TC_HT_06 dòng 36: bảng thay đổi dễ đọc (chỉ các trường thay đổi), không hiện JSON kỹ thuật -->
+          <div class="border border-slate-200 rounded-lg overflow-hidden">
+            <table class="w-full border-collapse text-xs" data-testid="activity-log-changes">
+              <thead>
+                <tr class="bg-slate-100 text-[#000000D9] font-semibold">
+                  <th class="p-2 border border-slate-200 text-left w-1/4">Thông tin</th>
+                  <th class="p-2 border border-slate-200 text-left">Giá trị trước</th>
+                  <th class="p-2 border border-slate-200 text-left">Giá trị sau</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in (selectedLog?.changes || [])" :key="row.field" class="align-top">
+                  <td class="p-2 border border-slate-200 font-semibold text-[#000000D9]">{{ row.label }}</td>
+                  <td class="p-2 border border-slate-200 text-rose-700 whitespace-pre-wrap break-words" data-no-translate>{{ row.before || '—' }}</td>
+                  <td class="p-2 border border-slate-200 text-emerald-700 whitespace-pre-wrap break-words" data-no-translate>{{ row.after || '—' }}</td>
+                </tr>
+                <tr v-if="!(selectedLog?.changes || []).length">
+                  <td colspan="3" class="p-3 text-center text-[#A8B0BF] border border-slate-200">Không có thay đổi dữ liệu cần hiển thị</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
 

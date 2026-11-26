@@ -55,31 +55,47 @@ const EXPORT_HEADERS = {
 
 const quote = value => `"${String(value ?? '').replace(/"/g, '""')}"`
 
+/** Giá trị gốc (chưa bọc dấu nháy) của một ô xuất. */
+function exportCell(log, key, fmt) {
+  switch (key) {
+    case 'id': return log.id
+    case 'time': return fmt.time(log)
+    case 'userAgent': return log.user_agent || ''
+    case 'screen': return log.component || 'Booking'
+    case 'user': return log.employee_code || log.user_name || 'admin'
+    case 'date': return fmt.date(log)
+    case 'action': return fmt.action(log)
+    case 'regCode': return log.booking_code || '-'
+    case 'roomCode': return log.room_number || '-'
+    case 'description': return log.description || ''
+    default: return ''
+  }
+}
+
+function exportColumns(columns) {
+  const exportable = visibleActivityLogColumns(columns).filter(col => EXPORT_HEADERS[col.key])
+  return exportable.length ? exportable : ACTIVITY_LOG_COLUMNS.filter(col => EXPORT_HEADERS[col.key])
+}
+
+/**
+ * Checklist TC_HT_06 dòng 37: bảng xuất Excel (tiêu đề + từng dòng, mỗi giá trị 1 ô) gửi lên server dựng file .xlsx.
+ * Theo đúng các cột đang hiện và thứ tự user đã chọn (dòng 542).
+ */
+export function buildActivityLogTable(logs, columns, fmt) {
+  const exportable = exportColumns(columns)
+  return {
+    headers: exportable.map(col => EXPORT_HEADERS[col.key]),
+    rows: (logs || []).map(log => exportable.map(col => exportCell(log, col.key, fmt))),
+  }
+}
+
 /**
  * Nội dung CSV xuất theo đúng các cột đang hiện và thứ tự user đã chọn (dòng 542).
  * `fmt` cung cấp cách lấy giờ, ngày và nhãn hành động của từng log.
  */
 export function buildActivityLogCsv(logs, columns, fmt) {
-  let exportable = visibleActivityLogColumns(columns).filter(col => EXPORT_HEADERS[col.key])
-  if (!exportable.length) exportable = ACTIVITY_LOG_COLUMNS.filter(col => EXPORT_HEADERS[col.key])
-
-  const cell = (log, key) => {
-    switch (key) {
-      case 'id': return log.id
-      case 'time': return quote(fmt.time(log))
-      case 'userAgent': return quote(log.user_agent || '')
-      case 'screen': return quote(log.component || 'Booking')
-      case 'user': return quote(log.employee_code || log.user_name || 'admin')
-      case 'date': return quote(fmt.date(log))
-      case 'action': return quote(fmt.action(log))
-      case 'regCode': return quote(log.booking_code || '-')
-      case 'roomCode': return quote(log.room_number || '-')
-      case 'description': return quote(log.description || '')
-      default: return ''
-    }
-  }
-
+  const exportable = exportColumns(columns)
   const lines = [exportable.map(col => EXPORT_HEADERS[col.key]).join(',')]
-  for (const log of logs) lines.push(exportable.map(col => cell(log, col.key)).join(','))
+  for (const log of logs) lines.push(exportable.map(col => (col.key === 'id' ? log.id : quote(exportCell(log, col.key, fmt)))).join(','))
   return lines.join(String.fromCharCode(10))
 }

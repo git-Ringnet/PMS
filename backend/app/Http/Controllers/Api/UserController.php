@@ -139,11 +139,11 @@ class UserController extends Controller
 
     public function resetPassword(Request $request, $id)
     {
+        // Checklist TC_HT_05 dòng 32: mật khẩu khởi tạo khi tạo nhân viên không ràng độ dài nên đặt lại cũng không bắt buộc 6 ký tự.
         $validated = $request->validate([
-            'password' => 'required|string|min:6|confirmed',
+            'password' => 'required|string|confirmed',
         ], [
             'password.required' => 'Vui lòng nhập mật khẩu mới.',
-            'password.min' => 'Mật khẩu mới phải có ít nhất 6 ký tự.',
             'password.confirmed' => 'Xác nhận mật khẩu mới không khớp.',
         ]);
 
@@ -153,6 +153,11 @@ class UserController extends Controller
             'must_change_password' => false,
         ]);
         $user->tokens()->delete();
+
+        // Checklist TC_HT_06 dòng 33: trước đây log chỉ hiện "* Thêm mới Quản lý Nhân viên" (không rõ thao tác).
+        \App\Services\ActivityLogService::record('Modify',
+            "* Đặt lại mật khẩu cho nhân viên '{$user->name}' (Tên đăng nhập: {$user->username})",
+            ['screen' => \App\Support\SystemLogText::SCREEN_EMPLOYEE, 'target_type' => 'User', 'target_id' => $user->id, 'target_label' => $user->name], $request);
 
         return response()->json([
             'success' => true,

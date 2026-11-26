@@ -6622,6 +6622,7 @@
  "Không tải được danh sách phòng noshow.": "Could not load the noshow room list.",
  "Phòng có ngày đến bằng ngày đi (0 đêm) không thể Noshow one day, vì ngày đến mới sẽ lớn hơn ngày đi. Vui lòng dùng Noshow (by stage).": "A room whose arrival date equals its departure date (0 nights) cannot be No Show One Day, because the new arrival date would be later than the departure date. Please use Noshow (by stage).",
  "Phòng thuê không ở trạng thái Noshow, không thể thực hiện charge tiền.": "The room is not in Noshow status, so it cannot be charged.",
+
  "Bạn có muốn cập nhật khách \"{0}\" làm khách chính trong phòng không?": "Do you want to set guest \"{0}\" as the main guest of this room?",
  "Đã cập nhật khách chính của phòng.": "The room's main guest has been updated.",
  "Đặt làm khách chính": "Set as main guest",
@@ -6634,4 +6635,22 @@
  "Giờ Trả Phòng": "Check-out Time",
  "Giờ nhận phòng tiêu chuẩn không đúng định dạng HH:mm.": "The standard check-in time must be in HH:mm format.",
  "Giờ trả phòng tiêu chuẩn không đúng định dạng HH:mm.": "The standard check-out time must be in HH:mm format."
+
+ "Mã giá ${rateCodeMa} không cho phép sửa giá từng đêm, giá lấy theo bảng giá của mã giá.": "Rate code ${rateCodeMa} does not allow changing nightly rates; rates follow the rate code price table.",
+ "Không thể xóa vì {label} đã phát sinh dữ liệu": "Cannot delete because {label} already has transaction data",
+ "Vị trí đã được gán tất cả ứng dụng, bấm Sửa trên từng ứng dụng để điều chỉnh.": "This position already has every application; use Edit on each application to adjust it.",
+ "Được truy cập phân hệ": "Can access module",
+ "Tích: vai trò được vào phân hệ này (xem tất cả màn hình). Bỏ tích: không được vào phân hệ.": "Checked: the role can access this module (view all screens). Unchecked: no access to the module.",
+ "Cho xem tất cả báo cáo": "Allow viewing all reports",
+ "Không thể copy phân quyền": "Cannot copy permissions",
+ "Giá trị trước": "Before",
+ "Giá trị sau": "After",
+ "Không có thay đổi dữ liệu cần hiển thị": "No data changes to display",
+ "Vui lòng nhập Mã quyền mới.": "Please enter the new role code.",
+ "Mã quyền mới tối đa 30 ký tự.": "The new role code may have at most 30 characters.",
+ "Mã quyền \"{code}\" đã tồn tại, vui lòng nhập mã khác.": "Role code \"{code}\" already exists, please enter another code.",
+ "Vui lòng nhập Tên quyền mới.": "Please enter the new role name.",
+ "Tên quyền mới tối đa 100 ký tự.": "The new role name may have at most 100 characters.",
+ "Vui lòng chọn chi nhánh.": "Please select a branch."
+
 }
