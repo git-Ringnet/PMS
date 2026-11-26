@@ -645,4 +645,99 @@ class RoomOccupancyStatisticsTest extends TestCase
         $this->assertSame(1, $stats('2026-08-09')['departures_total']);   // 102 dự kiến đi
         $this->assertSame(0, $stats('2026-08-10')['occupied_current']);
     }
+
+    /**
+     * Checklist Sơ đồ phòng › Đã đi ("số liệu còn lỗi ở trường hợp phòng có ngày đến = ngày đi"):
+     * một phòng trả khách rồi bán tiếp lượt trong ngày (đến = đi) thì có 2 lượt đi / 2 lượt đến,
+     * thẻ phải đếm theo từng lượt như danh sách và legacy sp_178 (count(*) SP2100).
+     */
+    public function test_same_room_with_two_stays_in_one_day_counts_each_departure_and_arrival(): void
+    {
+        DB::table('booking_statuses')->insert([
+            ['id' => 0, 'name' => 'Reservation'], ['id' => 1, 'name' => 'Checked In'], ['id' => 2, 'name' => 'Checked Out'],
+        ]);
+        SystemDateRoll::create(['system_date' => '2026-08-31', 'actual_date' => now(), 'shift' => '1', 'username' => 'room_stats_test']);
+        $registrationStatus = RegistrationStatus::create(['booking_status_id' => 1, 'name' => 'Confirmed', 'is_availability' => true]);
+        $form = RoomForm::create(['name' => 'Double']);
+        $class = RoomClass::create(['code' => 'DLX', 'name' => 'Deluxe', 'is_active' => true]);
+        Room::create(['room_number' => '107', 'room_form_id' => $form->id, 'room_class_id' => $class->id, 'floor' => 1, 'room_status_code' => 'vacant_ready']);
+        $booking = Booking::create([
+            'booking_name' => 'Two stays', 'booking_date' => '2026-08-30', 'arrival_date' => '2026-08-30', 'departure_date' => '2026-08-31',
+            'num_of_days' => 1, 'status' => Booking::STATUS_CHECKIN, 'registration_status_id' => $registrationStatus->booking_status_id, 'created_by' => 'room_stats_test',
+        ]);
+        // Lượt 1: ở 30 -> 31, đã trả ngày 31. Lượt 2: trong ngày 31 (đến = đi), đã trả ngày 31.
+        foreach ([['2026-08-30', '2026-08-31'], ['2026-08-31', '2026-08-31']] as [$arrival, $departure]) {
+            $stay = BookingRoom::create(['booking_id' => $booking->id, 'room_number' => '107', 'room_class_id' => $class->id,
+                'arrival_date' => $arrival, 'departure_date' => $departure, 'actual_arrival_date' => $arrival, 'status' => BookingRoom::STATUS_CHECKED_OUT]);
+            $stay->forceFill(['CheckoutDate' => '2026-08-31'])->save();
+        }
+
+        $stats = app(\App\Services\RoomOccupancyStatisticsService::class)->calculate(\Carbon\Carbon::parse('2026-08-31'));
+        $this->assertSame(2, $stats['departures_checked_out']);
+        $this->assertSame(2, $stats['departures_total']);
+        $this->assertSame(1, $stats['arrivals_checked_in']);   // chỉ lượt 2 đến ngày 31
+    }
+
+    /**
+     * Checklist Room map › Công suất: tổng phòng bỏ loại phòng ngưng dùng; phòng ở theo giờ có số khách;
+     * dự báo cuối ngày tách COMP (giá 0đ + mã FOC) / HU trên cùng tập "Phòng ở".
+     */
+    public function test_statistics_popup_totals_and_forecast_breakdown(): void
+    {
+        DB::table('booking_statuses')->insert([
+            ['id' => 0, 'name' => 'Reservation'], ['id' => 1, 'name' => 'Checked In'], ['id' => 2, 'name' => 'Checked Out'],
+        ]);
+        SystemDateRoll::create(['system_date' => '2026-08-10', 'actual_date' => now(), 'shift' => '1', 'username' => 'room_stats_test']);
+        $registrationStatus = RegistrationStatus::create(['booking_status_id' => 1, 'name' => 'Confirmed', 'is_availability' => true]);
+        $form = RoomForm::create(['name' => 'Double']);
+        $active = RoomClass::create(['code' => 'DLX', 'name' => 'Deluxe', 'is_active' => true]);
+        $inactive = RoomClass::create(['code' => 'DP', 'name' => 'Dự phòng', 'is_active' => false]);
+        foreach (['101', '102', '103', '104', '105'] as $number) {
+            Room::create(['room_number' => $number, 'room_form_id' => $form->id, 'room_class_id' => $active->id, 'floor' => 1, 'room_status_code' => 'vacant_ready']);
+        }
+        Room::create(['room_number' => '901', 'room_form_id' => $form->id, 'room_class_id' => $inactive->id, 'floor' => 9, 'room_status_code' => 'vacant_ready']);
+        $booking = Booking::create([
+            'booking_name' => 'Popup', 'booking_date' => '2026-08-09', 'arrival_date' => '2026-08-09', 'departure_date' => '2026-08-12',
+            'num_of_days' => 3, 'status' => Booking::STATUS_CHECKIN, 'registration_status_id' => $registrationStatus->booking_status_id, 'created_by' => 'room_stats_test',
+        ]);
+        $stay = fn (string $room, float $rate, ?string $code, array $extra = []) => BookingRoom::create(array_merge([
+            'booking_id' => $booking->id, 'room_number' => $room, 'room_class_id' => $active->id,
+            'arrival_date' => '2026-08-09', 'departure_date' => '2026-08-12', 'actual_arrival_date' => '2026-08-09',
+            'status' => BookingRoom::STATUS_CHECKED_IN, 'rate' => $rate, 'rate_code' => $code, 'adults' => 2,
+        ], $extra));
+        $stay('101', 500000, 'BAR');
+        $stay('102', 0, 'FOC');          // COMP
+        $stay('103', 0, 'BAR');          // giá 0 nhưng không FOC -> không phải COMP
+        $stay('104', 300000, 'HU');      // House use
+        $stay('105', 400000, null, ['arrival_date' => '2026-08-10', 'departure_date' => '2026-08-10', 'actual_arrival_date' => '2026-08-10', 'is_day_use' => true, 'adults' => 3]);
+
+        $stats = app(\App\Services\RoomOccupancyStatisticsService::class)->calculate(\Carbon\Carbon::parse('2026-08-10'));
+
+        $this->assertSame(5, $stats['total_rooms']);       // bỏ phòng 901 thuộc loại phòng ngưng dùng
+        $this->assertSame(5, $stats['saleable_rooms']);
+        $this->assertSame(1, $stats['day_rooms']);
+        $this->assertSame(3, $stats['day_rooms_pax']);
+        $this->assertSame(5, $stats['occupied_projected']);
+        $this->assertSame(1, $stats['forecast_comp_rooms']);
+        $this->assertSame(1, $stats['forecast_hu_rooms']);
+        $this->assertSame(3, $stats['forecast_chargeable_rooms']);  // 101, 103, 105
+        $this->assertSame(4, $stats['forecast_without_hu_rooms']);
+        $this->assertSame(
+            $stats['occupied_projected'],
+            $stats['forecast_chargeable_rooms'] + $stats['forecast_comp_rooms'] + $stats['forecast_hu_rooms'] + $stats['forecast_internal_rooms']
+        );
+        $this->assertSame(900000.0, (float) $stats['forecast_revenue']);
+
+        // Khách đoàn theo cờ GIT của mã giá (không theo bookings.is_git = tiền phòng gửi Master).
+        $this->assertSame(0, $stats['forecast_group_rooms']);
+        $this->assertSame(5, $stats['forecast_retail_rooms']);
+        $booking->forceFill(['is_git' => true])->save();
+        \App\Models\RoomRateCode::create(['Ma' => 'BAR', 'IsGIT' => false]);
+        \App\Models\RoomRateCode::create(['Ma' => 'HU', 'IsGIT' => true]);
+        $stats = app(\App\Services\RoomOccupancyStatisticsService::class)->calculate(\Carbon\Carbon::parse('2026-08-10'));
+        $this->assertSame(1, $stats['forecast_group_rooms']);    // 104 dùng mã HU được tick GIT
+        $this->assertSame(2, $stats['forecast_group_pax']);
+        $this->assertSame(4, $stats['forecast_retail_rooms']);
+        $this->assertSame($stats['occupied_projected'], $stats['forecast_group_rooms'] + $stats['forecast_retail_rooms']);
+    }
 }

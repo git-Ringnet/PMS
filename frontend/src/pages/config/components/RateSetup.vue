@@ -172,7 +172,9 @@ const rateFormState = reactive({
   AllowChangeRate: false,
   IsChannelManager: false,
   // Mã giá mới mặc định có ăn sáng
-  IncludeBF: true
+  IncludeBF: true,
+  // Khách đoàn (GIT): phòng dùng mã giá này được tính là khách đoàn ở popup Thống kê
+  IsGIT: false
 })
 
 const rateMatrix = reactive({})
@@ -896,7 +898,8 @@ watch(selectedRateCode, (newVal) => {
       Disable: newVal.Disable || false,
       AllowChangeRate: newVal.AllowChangeRate || false,
       IsChannelManager: newVal.IsChannelManager || false,
-      IncludeBF: newVal.IncludeBF || false
+      IncludeBF: newVal.IncludeBF || false,
+      IsGIT: Boolean(newVal.IsGIT)
     })
 
     loadRateMatrixFromPlans(newVal.Ma, newVal.rate_plans);
@@ -936,7 +939,7 @@ const handleAdd = async () => {
     if (!confirmed) return;
   }
   selectedRateCode.value = null
-  Object.assign(rateFormState, { Ma: '', Description: '', BeginDate: '', EndDate: '', Currency: 'VND', IsDaily: false, Disable: false, AllowChangeRate: false, IsChannelManager: false, IncludeBF: true })
+  Object.assign(rateFormState, { Ma: '', Description: '', BeginDate: '', EndDate: '', Currency: 'VND', IsDaily: false, Disable: false, AllowChangeRate: false, IsChannelManager: false, IncludeBF: true, IsGIT: false })
   for (const key in rateMatrix) delete rateMatrix[key];
 }
 
@@ -1341,6 +1344,13 @@ const deleteServicePackage = async () => {
                     <input type="checkbox" v-model="rateFormState.IncludeBF"
                       class="rounded border-slate-300 text-sky-500 focus:ring-sky-400 cursor-pointer" />
                     Ăn Sáng
+                  </label>
+                  <label
+                    class="inline-flex items-center gap-1.5 text-xs text-[#000000D9] font-normal cursor-pointer select-none ml-3"
+                    title="Phòng dùng mã giá này được tính là Khách đoàn ở thống kê Room map">
+                    <input type="checkbox" v-model="rateFormState.IsGIT"
+                      class="rounded border-slate-300 text-sky-500 focus:ring-sky-400 cursor-pointer" />
+                    Khách Đoàn (GIT)
                   </label>
                 </div>
               </div>

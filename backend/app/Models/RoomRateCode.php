@@ -22,6 +22,8 @@ class RoomRateCode extends Model
         'BeginDate',
         'EndDate',
         'IncludeBF',
+        // Khách đoàn (GIT) như legacy SP1323.IsGIT, dùng cho thống kê Khách đoàn / Khách lẻ
+        'IsGIT',
         'Currency',
         'PromotionCode',
         'SourceCode',
@@ -39,6 +41,7 @@ class RoomRateCode extends Model
         'BeginDate' => 'date:Y-m-d',
         'EndDate' => 'date:Y-m-d',
         'IncludeBF' => 'boolean',
+        'IsGIT' => 'boolean',
         'Disable' => 'boolean',
         'AllowChangeRate' => 'boolean',
         'IsChannelManager' => 'boolean',

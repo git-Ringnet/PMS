@@ -247,7 +247,13 @@ const daDenBookings = computed(() => {
           // còn ở qua ngày xem (note 30/10: trước đây thiếu phòng đang ở).
           return [0, 1].includes(Number(room.status)) && isRoomInhouseOnDate(room, searchDate.value)
         }
-        return Number(room.status) === 1 && isRoomInhouseOnDate(room, searchDate.value)
+        // Như legacy sp_178 (ngày xem nằm trong khoảng ngày đến - ngày đi) và thẻ Đang ở:
+        // phòng đi hôm nay nhưng chưa check out vẫn đang lưu trú.
+        if (Number(room.status) !== 1) return false
+        const viewDate = normalizeDate(searchDate.value)
+        const departsToday = normalizeDate(room.departure_date) === viewDate
+          && normalizeDate(room.arrival_date || room.actual_arrival_date) <= viewDate
+        return departsToday || isRoomInhouseOnDate(room, searchDate.value)
       }
       // Phòng chuyển giữ ngày đến gốc ở actual_arrival_date (sớm hơn arrival_date = ngày chuyển):
       // khách đã đến từ ngày trước thì không tính là phòng đã đến của ngày chuyển.

@@ -547,7 +547,8 @@ const roomMapStatistics = computed(() => {
   const arrivals = rooms.filter(isArrival)
   const groupRooms = endOfDayStay.filter(room => Boolean(room.is_git))
   const retailRooms = endOfDayStay.filter(room => !room.is_git)
-  const compRooms = endOfDayStay.filter(room => hasRateCode(room, /comp/i))
+  // Phòng COMP: giá 0đ và gán mã giá FOC (fallback khi API chưa trả số liệu dự báo).
+  const compRooms = endOfDayStay.filter(room => rate(room) === 0 && hasRateCode(room, /foc/i))
   const huRooms = endOfDayStay.filter(room => hasRateCode(room, /(^|[^a-z])hu([^a-z]|$)|house\s*use/i))
   const internalRooms = endOfDayStay.filter(room => hasRateCode(room, /noi\s*bo|internal/i))
   const chargeableRooms = endOfDayStay.filter(room => !hasRateCode(room, /comp|(^|[^a-z])hu([^a-z]|$)|house\s*use|noi\s*bo|internal/i))
@@ -577,27 +578,35 @@ const roomMapStatistics = computed(() => {
     occupiedPax: apiStat('occupied_current_pax', occupiedPax(currentStay)),
     earlyCheckoutRooms: Number(roomStore.stats?.early_departures) || 0,
     hourlyRooms: apiStat('day_rooms'),
+    hourlyPax: apiStat('day_rooms_pax'),
     sameDayBookings: apiStat('same_day_reservations'),
+    sameDayPax: apiStat('same_day_reservations_pax'),
     walkInRooms: apiStat('walk_in_rooms'),
-    retailRooms: retailRooms.length,
-    retailPax: occupiedPax(retailRooms),
-    groupRooms: groupRooms.length,
-    groupPax: occupiedPax(groupRooms),
-    chargeableRooms: chargeableRooms.length,
-    chargeablePax: occupiedPax(chargeableRooms),
-    compRooms: compRooms.length,
-    compPax: occupiedPax(compRooms),
-    huRooms: huRooms.length,
-    huPax: occupiedPax(huRooms),
-    internalRooms: internalRooms.length,
-    internalPax: occupiedPax(internalRooms),
+    // Khách đoàn / lẻ theo cờ Khách đoàn (GIT) của mã giá phòng (legacy SP1323.IsGIT), tính ở API.
+    retailRooms: apiStat('forecast_retail_rooms', retailRooms.length),
+    retailPax: apiStat('forecast_retail_pax', occupiedPax(retailRooms)),
+    groupRooms: apiStat('forecast_group_rooms', groupRooms.length),
+    groupPax: apiStat('forecast_group_pax', occupiedPax(groupRooms)),
+    // Dự báo cuối ngày theo mã giá: lấy từ API (cùng tập phòng dự kiến cuối ngày với "Phòng ở").
+    chargeableRooms: apiStat('forecast_chargeable_rooms', chargeableRooms.length),
+    chargeablePax: apiStat('forecast_chargeable_pax', occupiedPax(chargeableRooms)),
+    chargeableRate: apiStat('forecast_chargeable_rate'),
+    compRooms: apiStat('forecast_comp_rooms', compRooms.length),
+    compPax: apiStat('forecast_comp_pax', occupiedPax(compRooms)),
+    withoutHuRooms: apiStat('forecast_without_hu_rooms', chargeableRooms.length + compRooms.length),
+    withoutHuPax: apiStat('forecast_without_hu_pax', occupiedPax(chargeableRooms) + occupiedPax(compRooms)),
+    withoutHuRate: apiStat('forecast_without_hu_rate'),
+    huRooms: apiStat('forecast_hu_rooms', huRooms.length),
+    huPax: apiStat('forecast_hu_pax', occupiedPax(huRooms)),
+    internalRooms: apiStat('forecast_internal_rooms', internalRooms.length),
+    internalPax: apiStat('forecast_internal_pax', occupiedPax(internalRooms)),
     endOfDayRooms: apiStat('occupied_projected', endOfDayStay.length),
     endOfDayPax: apiStat('occupied_projected_pax', occupiedPax(endOfDayStay)),
     vacantRooms: apiStat('vacant_projected', Math.max(0, saleable.length - endOfDayStay.length)),
     occupancyRate: apiStat('occupancy_rate'),
-    projectedRevenue,
-    averageRate: chargeableRooms.length ? Math.round(projectedRevenue / chargeableRooms.length) : 0,
-    revenuePerSaleableRoom: apiStat('saleable_rooms', saleable.length) ? Math.round(projectedRevenue / apiStat('saleable_rooms', saleable.length)) : 0,
+    projectedRevenue: apiStat('forecast_revenue', projectedRevenue),
+    averageRate: apiStat('forecast_average_rate', chargeableRooms.length ? Math.round(projectedRevenue / chargeableRooms.length) : 0),
+    revenuePerSaleableRoom: apiStat('saleable_rooms', saleable.length) ? Math.round(apiStat('forecast_revenue', projectedRevenue) / apiStat('saleable_rooms', saleable.length)) : 0,
   }
 })
 
@@ -5240,12 +5249,12 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                   <tr class="h-7.5">
                     <td class="font-normal text-[#000000D9] border-slate-200">Phòng ở theo giờ</td>
                     <td class="text-center font-normal text-[#000000D9] tabular-nums border-slate-200">{{ roomMapStatistics.hourlyRooms }}</td>
-                    <td class="text-center font-normal text-slate-400 tabular-nums border-slate-200">-</td>
+                    <td class="text-center font-normal text-[#000000D9] tabular-nums border-slate-200">{{ roomMapStatistics.hourlyPax }}</td>
                   </tr>
                   <tr class="h-7.5">
                     <td class="font-normal text-[#000000D9] border-slate-200">Đặt phòng trong ngày</td>
                     <td class="text-center font-normal text-[#000000D9] tabular-nums border-slate-200">{{ roomMapStatistics.sameDayBookings }}</td>
-                    <td class="text-center font-normal text-[#000000D9] tabular-nums border-slate-200">{{ roomMapStatistics.arrivalsPax }}</td>
+                    <td class="text-center font-normal text-[#000000D9] tabular-nums border-slate-200">{{ roomMapStatistics.sameDayPax }}</td>
                   </tr>
                   <tr class="h-7.5">
                     <td class="font-normal text-[#000000D9] border-slate-200">Khách vãng lai</td>
@@ -5287,7 +5296,7 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                       <td class="font-normal text-[#000000D9] border-slate-200">Phòng ở (ko b/g COMP.HU)</td>
                       <td class="text-center font-normal tabular-nums border-slate-200">{{ roomMapStatistics.chargeableRooms }}</td>
                       <td class="text-center font-normal tabular-nums border-slate-200">{{ roomMapStatistics.chargeablePax }}</td>
-                      <td class="text-center font-normal text-sky-600 tabular-nums border-slate-200">{{ formatOccupancyRate(roomMapStatistics.occupancyRate) }}%</td>
+                      <td class="text-center font-normal text-sky-600 tabular-nums border-slate-200">{{ formatOccupancyRate(roomMapStatistics.chargeableRate) }}%</td>
                     </tr>
                     <tr class="h-7">
                       <td class="font-normal text-[#000000D9] border-slate-200">Phòng COMP</td>
@@ -5297,9 +5306,9 @@ const uniqueRegistrationStatuses = computed(() => [...new Set(roomStore.rooms.ma
                     </tr>
                     <tr class="h-7">
                       <td class="font-normal text-[#000000D9] border-slate-200">Phòng ở (ko b/g HU)</td>
-                      <td class="text-center font-normal tabular-nums border-slate-200">{{ roomMapStatistics.chargeableRooms + roomMapStatistics.compRooms }}</td>
-                      <td class="text-center font-normal tabular-nums border-slate-200">{{ roomMapStatistics.chargeablePax + roomMapStatistics.compPax }}</td>
-                      <td class="text-center font-normal text-sky-600 tabular-nums border-slate-200">{{ formatOccupancyRate(roomMapStatistics.occupancyRate) }}%</td>
+                      <td class="text-center font-normal tabular-nums border-slate-200">{{ roomMapStatistics.withoutHuRooms }}</td>
+                      <td class="text-center font-normal tabular-nums border-slate-200">{{ roomMapStatistics.withoutHuPax }}</td>
+                      <td class="text-center font-normal text-sky-600 tabular-nums border-slate-200">{{ formatOccupancyRate(roomMapStatistics.withoutHuRate) }}%</td>
                     </tr>
                     <tr class="h-7">
                       <td class="font-normal text-[#000000D9] border-slate-200">Phòng nội bộ</td>

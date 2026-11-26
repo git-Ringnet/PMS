@@ -26,6 +26,7 @@ class RoomRateCodeController extends Controller
             'BeginDate' => 'nullable|date',
             'EndDate' => 'nullable|date',
             'IncludeBF' => 'boolean',
+            'IsGIT' => 'boolean',
             'Currency' => 'nullable|string',
             'IsDaily' => 'boolean',
         ]);

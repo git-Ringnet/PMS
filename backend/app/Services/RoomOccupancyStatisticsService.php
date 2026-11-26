@@ -19,7 +19,11 @@ class RoomOccupancyStatisticsService
         $dateString = $date->toDateString();
         $operationDate = app(RoomAvailabilityService::class)->getSystemDate()->copy()->startOfDay();
         $isFutureView = $date->gt($operationDate);
-        $physicalRooms = Room::physical()->get(['room_number', 'room_status_code']);
+        // Checklist Công suất: loại phòng ngưng sử dụng (legacy SP1100.IsDayUse = 0 ~ is_active = 0)
+        // không thuộc tổng phòng / phòng có thể bán, giống các ô phòng trên Room map.
+        $physicalRooms = Room::physical()
+            ->whereHas('roomClass', fn ($query) => $query->where('is_active', true))
+            ->get(['room_number', 'room_status_code']);
         $physicalRoomNumbers = $physicalRooms->pluck('room_number')->values();
 
         // room_status_code chỉ phản ánh hiện tại; khi xem ngày khác phải dựa vào lịch sử khóa phòng.
@@ -79,8 +83,7 @@ class RoomOccupancyStatisticsService
                     });
             });
 
-        $projected = $this->summarize(
-            $forecastQuery()
+        $projectedQuery = fn () => $forecastQuery()
                 ->whereDate('arrival_date', '<=', $dateString)
                 ->where(function ($query) use ($dateString) {
                     $query->where(function ($active) use ($dateString) {
@@ -97,9 +100,9 @@ class RoomOccupancyStatisticsService
                         $historical->whereIn('status', [BookingRoom::STATUS_CHECKED_OUT, BookingRoom::STATUS_MOVED])
                             ->whereDate('CheckoutDate', '>', $dateString);
                     });
-                }),
-            true
-        );
+                });
+        $projected = $this->summarize($projectedQuery(), true);
+        $forecastBreakdown = $this->forecastBreakdown($projectedQuery(), $occupancyBaseRooms);
 
         // Xem tương lai (note 30/10): chưa có check-in thực tế ở ngày đó, nên "đang ở" là phòng dự kiến
         // ở trong ngày xem (đặt trước hoặc đang ở hiện tại còn ở qua ngày xem), không lấy phòng đang ở hôm nay.
@@ -119,17 +122,22 @@ class RoomOccupancyStatisticsService
             $forecastQuery()
                 ->where('status', BookingRoom::STATUS_BOOKED)
                 ->whereDate('arrival_date', $dateString),
+            true,
             true
         );
         $assignedArrivals = $this->summarize(
             $assignedPhysicalQuery()
                 ->where('status', BookingRoom::STATUS_BOOKED)
-                ->whereDate('arrival_date', $dateString)
+                ->whereDate('arrival_date', $dateString),
+            false,
+            true
         );
         $arrivalsCheckedIn = $this->summarize(
             $assignedPhysicalQuery()
                 ->whereIn('status', [BookingRoom::STATUS_CHECKED_IN, BookingRoom::STATUS_CHECKED_OUT])
-                ->whereDate('actual_arrival_date', $dateString)
+                ->whereDate('actual_arrival_date', $dateString),
+            false,
+            true
         );
 
         $pendingDepartures = $this->summarize(
@@ -154,12 +162,16 @@ class RoomOccupancyStatisticsService
                                 ->whereDate('departure_date', $dateString);
                         });
                     }
-                })
+                }),
+            false,
+            true
         );
         $departuresCheckedOut = $this->summarize(
             $assignedPhysicalQuery()
                 ->where('status', BookingRoom::STATUS_CHECKED_OUT)
-                ->whereDate('CheckoutDate', $dateString)
+                ->whereDate('CheckoutDate', $dateString),
+            false,
+            true
         );
 
         // Link Hotel nhận diện checkout sớm bằng số đêm thực tế nhỏ hơn số đêm đặt ban đầu.
@@ -243,26 +255,31 @@ class RoomOccupancyStatisticsService
             'early_departures' => $earlyDepartures['rooms'],
             'extended_stays' => $extendedStays['rooms'],
             'day_rooms' => $dayRooms['rooms'],
+            'day_rooms_pax' => $dayRooms['pax'],
             'same_day_reservations' => $sameDayReservations['rooms'],
             'same_day_reservations_pax' => $sameDayReservations['pax'],
             'walk_in_rooms' => $walkIns['rooms'],
             'walk_in_pax' => $walkIns['pax'],
-        ];
+        ] + $forecastBreakdown;
     }
 
     /**
      * Đếm một số phòng đúng một lần. Với reservation chưa gán phòng, mỗi booking_room là một phòng dự kiến.
+     * $perStay: đếm theo từng lượt ở (booking_room) như legacy sp_178 (count(*) SP2100) — dùng cho Đến/Đi,
+     * vì một phòng có thể trả khách rồi bán tiếp lượt trong ngày (ngày đến = ngày đi) trong cùng một ngày.
      */
-    private function summarize($query, bool $includeUnassigned = false): array
+    private function summarize($query, bool $includeUnassigned = false, bool $perStay = false): array
     {
         $rows = $query
             ->get(['id', 'room_number', 'adults', 'children_qty', 'babies'])
             ->when(
-                $includeUnassigned,
-                fn ($rows) => $rows->unique(fn ($room) => $room->room_number
-                    ? 'room:'.$room->room_number
-                    : 'booking-room:'.$room->id),
-                fn ($rows) => $rows->unique('room_number')
+                $perStay,
+                fn ($rows) => $rows->unique('id'),
+                fn ($rows) => $includeUnassigned
+                    ? $rows->unique(fn ($room) => $room->room_number
+                        ? 'room:'.$room->room_number
+                        : 'booking-room:'.$room->id)
+                    : $rows->unique('room_number')
             );
 
         return [
@@ -270,6 +287,59 @@ class RoomOccupancyStatisticsService
             'pax' => (int) $rows->sum(fn ($room) =>
                 (int) $room->adults + (int) $room->children_qty + (int) $room->babies
             ),
+        ];
+    }
+
+    /**
+     * Dự báo cuối ngày tách theo mã giá, tính trên cùng tập phòng dự kiến cuối ngày với "Phòng ở"
+     * (trước đây giao diện tự tính từ ô phòng nên lệch với tổng).
+     * - COMP: giá 0đ và gán mã giá FOC.  - HU: mã giá HU / House Use.  - Nội bộ: mã giá nội bộ / internal.
+     * - Khách đoàn: phòng dùng mã giá có cờ Khách đoàn (room_rate_codes.IsGIT) như legacy vw_009/SP1323;
+     *   còn lại (kể cả không có mã giá) là khách lẻ. Không dùng bookings.is_git (= tiền phòng gửi Master, dòng 19).
+     */
+    private function forecastBreakdown($query, int $occupancyBaseRooms): array
+    {
+        $rows = $query
+            ->get(['id', 'room_number', 'adults', 'children_qty', 'babies', 'rate', 'rate_code'])
+            ->unique(fn ($room) => $room->room_number ? 'room:'.$room->room_number : 'booking-room:'.$room->id)
+            ->values();
+        $code = fn ($room) => strtoupper(trim((string) $room->rate_code));
+        $isComp = fn ($room) => (float) $room->rate == 0.0 && str_contains($code($room), 'FOC');
+        $isHu = fn ($room) => (bool) preg_match('/(^|[^A-Z])HU([^A-Z]|$)|HOUSE\s*USE/', $code($room));
+        $isInternal = fn ($room) => (bool) preg_match('/NOI\s*BO|INTERNAL/', $code($room));
+        $pax = fn ($list) => (int) $list->sum(fn ($room) => (int) $room->adults + (int) $room->children_qty + (int) $room->babies);
+        $rate = fn (int $rooms) => $occupancyBaseRooms > 0 ? round($rooms / $occupancyBaseRooms * 100, 2) : 0;
+
+        $comp = $rows->filter($isComp);
+        $hu = $rows->filter(fn ($room) => !$isComp($room) && $isHu($room));
+        $internal = $rows->filter(fn ($room) => !$isComp($room) && !$isHu($room) && $isInternal($room));
+        $chargeable = $rows->reject(fn ($room) => $isComp($room) || $isHu($room) || $isInternal($room));
+        $revenue = (float) $chargeable->sum(fn ($room) => (float) $room->rate);
+        $gitCodes = \Illuminate\Support\Facades\Schema::hasColumn('room_rate_codes', 'IsGIT')
+            ? \App\Models\RoomRateCode::where('IsGIT', true)->pluck('Ma')->map(fn ($ma) => strtoupper(trim((string) $ma)))->all()
+            : [];
+        $group = $rows->filter(fn ($room) => in_array($code($room), $gitCodes, true));
+        $retail = $rows->reject(fn ($room) => in_array($code($room), $gitCodes, true));
+
+        return [
+            'forecast_group_rooms' => $group->count(),
+            'forecast_group_pax' => $pax($group),
+            'forecast_retail_rooms' => $retail->count(),
+            'forecast_retail_pax' => $pax($retail),
+            'forecast_chargeable_rooms' => $chargeable->count(),
+            'forecast_chargeable_pax' => $pax($chargeable),
+            'forecast_chargeable_rate' => $rate($chargeable->count()),
+            'forecast_comp_rooms' => $comp->count(),
+            'forecast_comp_pax' => $pax($comp),
+            'forecast_without_hu_rooms' => $chargeable->count() + $comp->count(),
+            'forecast_without_hu_pax' => $pax($chargeable) + $pax($comp),
+            'forecast_without_hu_rate' => $rate($chargeable->count() + $comp->count()),
+            'forecast_hu_rooms' => $hu->count(),
+            'forecast_hu_pax' => $pax($hu),
+            'forecast_internal_rooms' => $internal->count(),
+            'forecast_internal_pax' => $pax($internal),
+            'forecast_revenue' => round($revenue),
+            'forecast_average_rate' => $chargeable->count() > 0 ? round($revenue / $chargeable->count()) : 0,
         ];
     }
 

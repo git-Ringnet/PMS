@@ -6633,5 +6633,7 @@
  "Giờ Nhận Phòng": "Check-in Time",
  "Giờ Trả Phòng": "Check-out Time",
  "Giờ nhận phòng tiêu chuẩn không đúng định dạng HH:mm.": "The standard check-in time must be in HH:mm format.",
- "Giờ trả phòng tiêu chuẩn không đúng định dạng HH:mm.": "The standard check-out time must be in HH:mm format."
+ "Giờ trả phòng tiêu chuẩn không đúng định dạng HH:mm.": "The standard check-out time must be in HH:mm format.",
+ "Khách Đoàn (GIT)": "Group (GIT)",
+ "Phòng dùng mã giá này được tính là Khách đoàn ở thống kê Room map": "Rooms using this rate code are counted as group guests in Room map statistics"
 }
