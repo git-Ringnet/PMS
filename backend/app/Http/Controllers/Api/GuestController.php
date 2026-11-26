@@ -1545,6 +1545,57 @@ class GuestController extends Controller
         return response()->json(['success' => true, 'message' => 'Đã xóa khách khỏi phòng và cơ sở dữ liệu.']);
     }
 
+    /**
+     * Dòng 303: đặt khách (người lớn) đang chọn làm khách chính của phòng,
+     * khách chính cũ thành khách phụ. Trẻ em/em bé nằm ở bảng riêng nên không đặt được.
+     */
+    public function setPrimaryGuest($roomId, $guestId)
+    {
+        $pivot = BookingRoomGuest::where('booking_room_id', $roomId)
+            ->where('guest_id', $guestId)
+            ->first();
+
+        if (!$pivot) {
+            return response()->json(['success' => false, 'message' => 'Không tìm thấy khách trong phòng.'], 404);
+        }
+
+        if (in_array((int) $pivot->status, [
+            BookingRoomGuest::STATUS_CHECKED_OUT,
+            BookingRoomGuest::STATUS_CANCELLED,
+            BookingRoomGuest::STATUS_NOSHOW,
+            100,
+        ], true)) {
+            return response()->json(['success' => false, 'message' => 'Khách đã check out hoặc không còn ở phòng, không thể đặt làm khách chính.'], 422);
+        }
+
+        if (!$pivot->is_primary) {
+            DB::transaction(function () use ($roomId, $pivot) {
+                BookingRoomGuest::where('booking_room_id', $roomId)
+                    ->where('id', '!=', $pivot->id)
+                    ->update(['is_primary' => false]);
+                $pivot->update(['is_primary' => true]);
+            });
+
+            try {
+                $room = BookingRoom::find($roomId);
+                $code = $room ? \App\Services\ActivityLogService::bookingCode($room->booking_id) : null;
+                $guestName = Guest::where('id', $guestId)->value('full_name');
+                \App\Services\ActivityLogService::record('Modify', "Đổi khách chính: Mã khách: {$guestId} - Tên khách: " . ($guestName ?? ''), [
+                    'screen' => \App\Support\ActivityScreen::ROOM_MAP,
+                    'booking_code' => $code,
+                    'room_code' => $room?->id ?? $roomId,
+                    'target_type' => 'Guest',
+                    'target_id' => $guestId,
+                    'target_label' => $code,
+                ]);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Log set primary guest error: ' . $e->getMessage());
+            }
+        }
+
+        return response()->json(['success' => true, 'message' => 'Đã cập nhật khách chính của phòng.']);
+    }
+
     // GET /guests/search?q=keyword — Tìm khách để kế thừa thông tin
     public function searchGuests(Request $request)
     {

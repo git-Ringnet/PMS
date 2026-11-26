@@ -569,4 +569,41 @@ class GuestControllerFixesTest extends TestCase
         $this->assertSame('Updated room note for room 101', $room->fresh()->note);
         $this->assertSame('Original booking note', $booking->fresh()->note);
     }
+
+    /**
+     * Dòng 303: bấm sao để đổi khách chính trong phòng.
+     */
+    private function roomWithTwoAdultsForRow303(): array
+    {
+        $room = $this->inhouseRoomForRow538();
+        $primary = Guest::create(['full_name' => 'Khach chinh 303']);
+        $other = Guest::create(['full_name' => 'Khach phu 303']);
+        BookingRoomGuest::create(['booking_room_id' => $room->id, 'guest_id' => $primary->id, 'is_primary' => true, 'status' => BookingRoomGuest::STATUS_CHECKED_IN]);
+        BookingRoomGuest::create(['booking_room_id' => $room->id, 'guest_id' => $other->id, 'is_primary' => false, 'status' => BookingRoomGuest::STATUS_CHECKED_IN]);
+
+        return [$room, $primary, $other];
+    }
+
+    public function test_row_303_set_primary_guest_swaps_primary_in_room(): void
+    {
+        [$room, $primary, $other] = $this->roomWithTwoAdultsForRow303();
+
+        $this->putJson("/api/booking-rooms/{$room->id}/guests/{$other->id}/primary")->assertSuccessful();
+
+        $flags = BookingRoomGuest::where('booking_room_id', $room->id)->pluck('is_primary', 'guest_id');
+        $this->assertTrue((bool) $flags[$other->id]);
+        $this->assertFalse((bool) $flags[$primary->id]);
+    }
+
+    public function test_row_303_checked_out_or_unknown_guest_cannot_become_primary(): void
+    {
+        [$room, $primary, $other] = $this->roomWithTwoAdultsForRow303();
+        BookingRoomGuest::where('booking_room_id', $room->id)->where('guest_id', $other->id)
+            ->update(['status' => BookingRoomGuest::STATUS_CHECKED_OUT]);
+
+        $this->putJson("/api/booking-rooms/{$room->id}/guests/{$other->id}/primary")->assertStatus(422);
+        $this->putJson("/api/booking-rooms/{$room->id}/guests/999999/primary")->assertStatus(404);
+
+        $this->assertTrue((bool) BookingRoomGuest::where('booking_room_id', $room->id)->where('guest_id', $primary->id)->value('is_primary'));
+    }
 }

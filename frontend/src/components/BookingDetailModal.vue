@@ -12,6 +12,7 @@ import {
   updateBookingRoomGuest,
   updateBookingChild,
   removeRoomGuest,
+  setPrimaryRoomGuest,
   removeBookingChild,
   fetchRoomRateCodes,
   fetchSystemDate,
@@ -1038,6 +1039,36 @@ function onRateBlur(e) {
 
 function selectGuest(g) {
   if (draftGuest.value && g.id !== draftGuest.value.id) {
+// Dòng 303: bấm sao để đặt người lớn làm khách chính (trẻ em/em bé không có thao tác này).
+async function makePrimaryGuest(g) {
+  if (!g || g.is_primary || g.isDraft || !bookingRoomId.value || submitting.value) return
+  if (isCheckedOutPerson(g)) { warnCheckedOutLocked(); return }
+  if (isEditingMode.value || draftGuest.value) {
+    uiStore.showToast('Vui lòng lưu hoặc hủy thay đổi trước khi đổi khách chính.', 'warning')
+    return
+  }
+
+  const confirmed = await uiStore.confirm({
+    title: 'Xác nhận đổi khách chính',
+    message: `Bạn có muốn cập nhật khách "${g.name}" làm khách chính trong phòng không?`,
+    confirmText: 'Đồng ý',
+    cancelText: 'Hủy',
+  })
+  if (!confirmed) return
+
+  submitting.value = true
+  try {
+    await setPrimaryRoomGuest(bookingRoomId.value, g.id)
+    uiStore.showToast('Đã cập nhật khách chính của phòng.', 'success')
+    await loadGuests(g.id)
+    notifyChanges()
+  } catch (e) {
+    uiStore.showToast(e.response?.data?.message || 'Lỗi khi cập nhật khách chính.', 'error')
+  } finally {
+    submitting.value = false
+  }
+}
+
     adults.value = adults.value.filter(a => !a.isDraft)
     children.value = children.value.filter(c => !c.isDraft)
     babies.value = babies.value.filter(b => !b.isDraft)
@@ -1743,7 +1774,11 @@ function parseNumber(val) {
                   class="g-item"
                   :class="{ active: selectedGuest?.id === g.id, 'g-out': isCheckedOutPerson(g) }"
                 >
-                  <span :class="g.is_primary ? 'icon-rep' : 'icon-sub'">
+                  <span
+                    :class="[g.is_primary ? 'icon-rep' : 'icon-sub', { 'icon-clickable': !g.is_primary && !g.isDraft && !isCheckedOutPerson(g) }]"
+                    :title="g.is_primary ? 'Khách chính' : 'Đặt làm khách chính'"
+                    @click.stop="makePrimaryGuest(g)"
+                  >
                     <svg width="13" height="13" fill="currentColor" viewBox="0 0 24 24">
                       <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
                     </svg>
@@ -2747,6 +2782,8 @@ input.always-gray:disabled {
 .icon-sub { color: #cbd5e1; display: flex; align-items: center; flex-shrink: 0; }
 
 .btn-add {
+.icon-clickable { cursor: pointer; }
+.icon-clickable:hover { color: #f59e0b; }
   width: 100%;
   border: 1px dashed #93c5fd;
   background: #f8fafc;

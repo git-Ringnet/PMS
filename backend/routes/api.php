@@ -582,6 +582,8 @@ Route::middleware(['auth:sanctum', \App\Http\Middleware\EnforceAccessRestriction
         Route::post('/', [\App\Http\Controllers\Api\GuestController::class, 'addGuest'])->middleware('permission:fo.guest.edit,fo.guest.create,fo.booking.edit,fo.checkin');
         Route::post('/{guestId}/checkout', [\App\Http\Controllers\Api\GuestController::class, 'checkoutGuest'])->middleware(['permission:fo.checkout', \App\Http\Middleware\RequireFrontDeskInvoiceMutation::class]);
         Route::put('/{guestId}', [\App\Http\Controllers\Api\GuestController::class, 'updateGuest'])->middleware('permission:fo.guest.edit,fo.booking.edit,fo.checkin');
+        // Dòng 303: đổi khách chính của phòng
+        Route::put('/{guestId}/primary', [\App\Http\Controllers\Api\GuestController::class, 'setPrimaryGuest'])->middleware('permission:fo.guest.edit,fo.booking.edit,fo.checkin');
         Route::delete('/{guestId}', [\App\Http\Controllers\Api\GuestController::class, 'removeGuest'])->middleware('permission:fo.guest.edit,fo.booking.edit');
     });
     Route::post('/booking-rooms/{roomId}/checkout', [\App\Http\Controllers\Api\GuestController::class, 'checkoutRoom'])->middleware(['permission:fo.checkout', \App\Http\Middleware\RequireFrontDeskInvoiceMutation::class]);
