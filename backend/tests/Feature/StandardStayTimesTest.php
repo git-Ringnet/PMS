@@ -62,14 +62,22 @@ class StandardStayTimesTest extends TestCase
         $this->assertSame('12:00', $data['StandardCheckOutTime']);
     }
 
-    public function test_configured_times_are_saved_and_used_for_new_rooms_and_guests(): void
+    private function setConfig(string $name, string $value)
     {
-        $this->putJson('/api/hotel-settings', [
-            'hotel_name' => 'Test Hotel', 'StandardCheckInTime' => '13:30', 'StandardCheckOutTime' => '11:00',
-        ])->assertSuccessful();
+        $id = HotelConfig::where('name', $name)->value('id');
 
-        $this->assertSame('13:30:00', HotelConfig::where('name', 'StandardCheckInTime')->value('value'));
-        $this->assertSame('11:00:00', HotelConfig::where('name', 'StandardCheckOutTime')->value('value'));
+        return $this->putJson("/api/hotel-configs/{$id}", ['name' => $name, 'value' => $value]);
+    }
+
+    public function test_configured_times_are_saved_in_config_tab_and_used_for_new_rooms_and_guests(): void
+    {
+        // Migration tạo sẵn 2 thông số ở tab Cấu Hình.
+        $this->assertSame('14:00:00', HotelConfig::where('name', 'StandardCheckInTime')->value('value'));
+        $this->assertSame('12:00:00', HotelConfig::where('name', 'StandardCheckOutTime')->value('value'));
+
+        $this->setConfig('StandardCheckInTime', '13:30')->assertSuccessful();
+        $this->setConfig('StandardCheckOutTime', '11:00')->assertSuccessful();
+
         $data = $this->getJson('/api/hotel-settings')->assertOk()->json('data');
         $this->assertSame('13:30', $data['StandardCheckInTime']);
         $this->assertSame('11:00', $data['StandardCheckOutTime']);
@@ -88,9 +96,8 @@ class StandardStayTimesTest extends TestCase
     {
         $existing = $this->createRoom()->fresh();
 
-        $this->putJson('/api/hotel-settings', [
-            'hotel_name' => 'Test Hotel', 'StandardCheckInTime' => '15:00', 'StandardCheckOutTime' => '11:30',
-        ])->assertSuccessful();
+        $this->setConfig('StandardCheckInTime', '15:00')->assertSuccessful();
+        $this->setConfig('StandardCheckOutTime', '11:30')->assertSuccessful();
 
         $this->assertSame('14:00', substr((string) $existing->fresh()->arrival_time, 0, 5));
         $this->assertSame('12:00', substr((string) $existing->fresh()->departure_time, 0, 5));
@@ -100,16 +107,17 @@ class StandardStayTimesTest extends TestCase
         $this->assertSame('18:45', substr((string) $manual->departure_time, 0, 5));
     }
 
-    public function test_invalid_time_is_rejected_and_blank_resets_to_default(): void
+    public function test_invalid_time_is_rejected_and_hotel_info_save_does_not_touch_times(): void
     {
-        $this->putJson('/api/hotel-settings', ['hotel_name' => 'Test Hotel', 'StandardCheckInTime' => '25:00'])
-            ->assertStatus(422)->assertJsonValidationErrors('StandardCheckInTime');
+        $this->setConfig('StandardCheckInTime', '25:00')->assertStatus(422)->assertJsonValidationErrors('value');
+        $this->assertSame('14:00:00', StandardStayTimes::checkIn());
 
-        $this->putJson('/api/hotel-settings', ['hotel_name' => 'Test Hotel', 'StandardCheckOutTime' => '10:00'])->assertSuccessful();
-        $this->putJson('/api/hotel-settings', ['hotel_name' => 'Test Hotel', 'StandardCheckOutTime' => ''])->assertSuccessful();
-        $this->assertSame('12:00:00', StandardStayTimes::checkOut());
+        // Lưu Thông tin khách sạn (dù có gửi kèm) không còn đổi giờ chuẩn.
+        $this->setConfig('StandardCheckOutTime', '10:00')->assertSuccessful();
+        $this->putJson('/api/hotel-settings', ['hotel_name' => 'Test Hotel', 'StandardCheckOutTime' => '12:00'])->assertSuccessful();
+        $this->assertSame('10:00:00', StandardStayTimes::checkOut());
 
-        HotelConfig::updateOrCreate(['name' => 'StandardCheckInTime'], ['value' => 'abc']);
+        HotelConfig::where('name', 'StandardCheckInTime')->update(['value' => 'abc']);
         $this->assertSame('14:00:00', StandardStayTimes::checkIn());
     }
 }

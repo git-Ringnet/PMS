@@ -69,7 +69,7 @@ class HotelSettingController extends Controller
         $data['AllowShowAlertListView'] = $configs->get('AllowShowAlertListView', '1');
         $data['Inventory_LowStockWarningQty'] = $configs->get('Inventory_LowStockWarningQty', '50');
         
-        // Giờ nhận phòng / trả phòng tiêu chuẩn (HH:MM), chưa cấu hình thì 14:00 / 12:00.
+        // Giờ nhận phòng / trả phòng tiêu chuẩn (HH:MM, sửa ở Định nghĩa khách sạn › Cấu Hình), chưa cấu hình thì 14:00 / 12:00.
         $data['StandardCheckInTime'] = substr(\App\Support\StandardStayTimes::checkIn(), 0, 5);
         $data['StandardCheckOutTime'] = substr(\App\Support\StandardStayTimes::checkOut(), 0, 5);
 
@@ -138,11 +138,7 @@ class HotelSettingController extends Controller
             'RoomPlan_ColorRoomLateCheckout' => 'nullable|string|max:7',
             'RoomPlan_ColorOOO' => 'nullable|string|max:7',
             'RoomPlan_ColorOOS' => 'nullable|string|max:7',
-            'StandardCheckInTime' => ['nullable', 'regex:/^([01]?\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/'],
-            'StandardCheckOutTime' => ['nullable', 'regex:/^([01]?\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/'],
         ], [
-            'StandardCheckInTime.regex' => 'Giờ nhận phòng tiêu chuẩn không đúng định dạng HH:mm.',
-            'StandardCheckOutTime.regex' => 'Giờ trả phòng tiêu chuẩn không đúng định dạng HH:mm.',
             'hotel_name.required' => 'Tên khách sạn không được để trống.',
             'email.email' => 'Email không đúng định dạng.',
             'breakfast_adult_rate.numeric' => 'Giá ăn sáng người lớn phải là số.',
@@ -165,22 +161,6 @@ class HotelSettingController extends Controller
                 \App\Models\HotelConfig::updateOrCreate(
                     ['name' => $cfgKey],
                     ['value' => $request->input($cfgKey)]
-                );
-            }
-        }
-
-        // Giờ nhận phòng / trả phòng tiêu chuẩn: lưu HH:MM:SS; để trống thì quay về mặc định 14:00 / 12:00.
-        foreach ([
-            \App\Support\StandardStayTimes::CHECK_IN_KEY => [\App\Support\StandardStayTimes::DEFAULT_CHECK_IN, 'Giờ nhận phòng tiêu chuẩn'],
-            \App\Support\StandardStayTimes::CHECK_OUT_KEY => [\App\Support\StandardStayTimes::DEFAULT_CHECK_OUT, 'Giờ trả phòng tiêu chuẩn'],
-        ] as $cfgKey => [$default, $description]) {
-            if ($request->has($cfgKey)) {
-                \App\Models\HotelConfig::updateOrCreate(
-                    ['name' => $cfgKey],
-                    [
-                        'value' => \App\Support\StandardStayTimes::normalize($request->input($cfgKey)) ?? $default,
-                        'description' => $description,
-                    ]
                 );
             }
         }

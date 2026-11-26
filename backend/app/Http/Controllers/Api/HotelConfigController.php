@@ -122,6 +122,14 @@ class HotelConfigController extends Controller
             'description' => 'nullable|string',
         ]);
 
+        // Giờ nhận/trả phòng tiêu chuẩn phải đúng định dạng giờ HH:mm.
+        $validator->after(function ($validator) use ($request): void {
+            if (in_array($request->input('name'), [\App\Support\StandardStayTimes::CHECK_IN_KEY, \App\Support\StandardStayTimes::CHECK_OUT_KEY], true)
+                && \App\Support\StandardStayTimes::normalize($request->input('value')) === null) {
+                $validator->errors()->add('value', 'Giờ phải đúng định dạng HH:mm (00:00 - 23:59).');
+            }
+        });
+
         $validator->after(function ($validator) use ($request): void {
             if ($request->input('name') !== 'CompanyDefault') {
                 return;

@@ -1,6 +1,6 @@
 {
- "generated_at": "2026-11-26T04:33:50.963Z",
- "count": 6276,
+ "generated_at": "2026-11-26T07:22:49.361Z",
+ "count": 6273,
  "items": [
   {
    "source": "- Bảo mật nâng cao",
@@ -25579,26 +25579,6 @@
    ]
   },
   {
-   "source": "Giờ mặc định khi tạo phòng mới, phục vụ tính tiền lưu trú. Không đổi giờ của các phòng đã tạo.",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Cấu hình › HotelInfoTab",
-     "route": "/config"
-    }
-   ]
-  },
-  {
-   "source": "Giờ Nhận Phòng",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Cấu hình › HotelInfoTab",
-     "route": "/config"
-    }
-   ]
-  },
-  {
    "source": "Giờ phải nằm trong thời gian của ca đã chọn.",
    "is_pattern": false,
    "locations": [
@@ -25623,16 +25603,6 @@
     {
      "area": "Lễ tân › PrepaymentModal",
      "route": "/frontdesk"
-    }
-   ]
-  },
-  {
-   "source": "Giờ Trả Phòng",
-   "is_pattern": false,
-   "locations": [
-    {
-     "area": "Cấu hình › HotelInfoTab",
-     "route": "/config"
     }
    ]
   },

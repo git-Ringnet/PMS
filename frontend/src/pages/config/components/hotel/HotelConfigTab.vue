@@ -4,6 +4,7 @@ import http from '@/services/http'
 import { fetchRoles } from '@/services/company-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
+import { applyStandardStayTimes } from '@/utils/standard-stay-times'
 
 const uiStore = useUiStore()
 const authStore = useAuthStore()
@@ -268,6 +269,8 @@ const saveConfig = async () => {
       uiStore.showToast('Thêm cấu hình mới thành công!', 'success')
     }
     isConfigModalOpen.value = false
+    // Giờ nhận/trả phòng tiêu chuẩn: các màn hình đang mở dùng ngay giờ mới cho phòng tạo sau.
+    applyStandardStayTimes({ [configFormState.name]: configFormState.value })
     fetchHotelConfigs()
     if (typeof BroadcastChannel !== 'undefined') {
       const bcNotify = new BroadcastChannel('pms-room-updates')

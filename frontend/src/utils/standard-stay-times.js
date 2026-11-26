@@ -33,6 +33,17 @@ export function applyStandardStayTimes(settings) {
 
 let pending = null
 
+// Sửa thông số ở tab Cấu Hình (tab trình duyệt khác) thì các tab đang mở cập nhật theo.
+if (typeof window !== 'undefined') {
+  const onConfigUpdated = data => {
+    if (data?.type === 'hotel-config-updated' || data?.name) applyStandardStayTimes({ [data.name]: data.value })
+  }
+  window.addEventListener('hotel-config-updated', event => onConfigUpdated(event?.detail))
+  if (typeof BroadcastChannel !== 'undefined') {
+    new BroadcastChannel('pms-room-updates').addEventListener('message', event => onConfigUpdated(event?.data))
+  }
+}
+
 /** Tải giờ chuẩn một lần cho cả phiên; force = true để tải lại sau khi lưu cấu hình. */
 export function loadStandardStayTimes(force = false) {
   if (!pending || force) {
