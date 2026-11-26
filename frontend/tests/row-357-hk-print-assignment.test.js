@@ -148,7 +148,9 @@ test('Note 4/11: phòng trống không bị đổi mã (VC, VD giữ nguyên)', 
 test('Note 4/11: lọc Lau dọn lấy phòng turndown (icon ngôi sao) và phòng khách trả trong ngày', () => {
   assert.equal(isCleaningRoom({ room_status_code: 'turndown' }), true)
   assert.equal(isCleaningRoom({ room_status_code: 'occupied_clean', booking_status: 'checkout' }), true)
-  assert.equal(isCleaningRoom({ room_status_code: 'vacant_clean', booking_status: '' }), false)
+  // Note 23/11: phòng sạch cùng icon ngôi sao với Lau dọn nên gộp chung một mục lọc
+  assert.equal(isCleaningRoom({ room_status_code: 'vacant_clean', booking_status: '' }), true)
+  assert.equal(isCleaningRoom({ room_status_code: 'vacant_dirty', booking_status: '' }), false)
 })
 
 test('Dòng 357: không chọn gì thì in tất cả nhóm như trước', () => {
@@ -178,4 +180,56 @@ test('Dòng 357: chọn cả hai nơi thì phòng trùng lấy theo lịch phân
 
 test('Dòng 357: không chọn gì thì mẫu Supervisor không có phòng để in', () => {
   assert.equal(buildSupervisorRooms(GROUPS, new Set(), new Set(), ROOMS).length, 0)
+})
+
+// ── Note 23/11: day use chưa check in ─────────────────────────
+import { deriveDisplayBookingStatus, hkFilterOptions, matchesHkFilter } from '../src/utils/hk-room-status.js'
+
+test('Dòng 357 (23/11): phòng day use chưa check in (đến = đi = hôm nay) hiện CI, VC, không phải CO, OC', () => {
+  const room = { booking_status: 'reserved', arrival_date: '2026-11-25', departure_date: '2026-11-25' }
+  const display = deriveDisplayBookingStatus(room, '2026-11-25')
+  assert.equal(display, 'reserved')
+  assert.equal(getStatusText(SYMBOLS, 'vacant_clean', display, { isBackToBack: false }), 'CI, VC')
+})
+
+test('Dòng 357 (23/11): phòng day use đã check in vẫn là phòng đang ở', () => {
+  const room = { booking_status: 'occupied', arrival_date: '2026-11-25', departure_date: '2026-11-25' }
+  assert.equal(deriveDisplayBookingStatus(room, '2026-11-25'), 'occupied')
+})
+
+test('Dòng 357 (23/11): phòng đang ở có ngày đi hôm nay vẫn là CO', () => {
+  const room = { booking_status: 'checkout', arrival_date: '2026-11-23', departure_date: '2026-11-25' }
+  assert.equal(deriveDisplayBookingStatus(room, '2026-11-25'), 'checkout')
+})
+
+test('Dòng 357 (23/11): phòng không có booking không có trạng thái đặt phòng', () => {
+  assert.equal(deriveDisplayBookingStatus({ booking_status: '' }, '2026-11-25'), '')
+})
+
+// ── Note 23/11: bộ lọc chỉ còn 1 mục Lau dọn (icon ngôi sao) ──
+test('Dòng 357 (23/11): bộ lọc vệ sinh không còn mục Phòng sạch trùng icon ngôi sao', () => {
+  const keys = hkFilterOptions.map(o => o.key)
+  assert.ok(!keys.includes('clean'))
+  assert.ok(keys.includes('cleaning'))
+  assert.equal(hkFilterOptions.filter(o => o.icon === 'clean' || o.icon === 'checkout').length, 1)
+})
+
+test('Dòng 357 (23/11): lọc Lau dọn lấy phòng sạch/lau dọn (ngôi sao) theo Room Map', () => {
+  const mk = (code, extra = {}) => ({ room_status_code: code, booking_status: '', displayBookingStatus: '', ...extra })
+  assert.equal(matchesHkFilter(mk('vacant_clean'), 'cleaning'), true)
+  assert.equal(matchesHkFilter(mk('occupied_clean'), 'cleaning'), true)
+  assert.equal(matchesHkFilter(mk('turndown'), 'cleaning'), true)
+  assert.equal(matchesHkFilter(mk('vacant_dirty'), 'cleaning'), false)
+  assert.equal(matchesHkFilter(mk('vacant_dirty'), 'dirty'), true)
+  assert.equal(matchesHkFilter(mk('vacant_ready'), 'ready'), true)
+})
+
+// ── Note 23/11: bấm ô Tầng tick cả tầng (số tầng từ danh sách là số, tầng của phòng là chuỗi) ──
+import { roomsOnFloor } from '../src/utils/hk-room-status.js'
+
+test('Dòng 357 (23/11): lấy phòng của tầng dù tầng là chuỗi "1" hay số 1', () => {
+  const rooms = [{ id: 1, floor: '1' }, { id: 2, floor: 1 }, { id: 3, floor: '2' }]
+  assert.deepEqual(roomsOnFloor(rooms, 1).map(r => r.id), [1, 2])
+  assert.deepEqual(roomsOnFloor(rooms, '2').map(r => r.id), [3])
+  assert.deepEqual(roomsOnFloor(rooms, 9), [])
 })

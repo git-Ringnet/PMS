@@ -1,11 +1,13 @@
 <script setup>
-import { ref, computed, onActivated, onDeactivated, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { fetchActivityLogs, fetchActivityLogStats } from '@/services/activity-log-service'
 import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import SingleDatePicker from '@/components/SingleDatePicker.vue'
+import { ACTIVITY_LOG_SETTINGS_KEY, buildActivityLogColumns, buildActivityLogCsv, moveActivityLogColumn, visibleActivityLogColumns } from '@/utils/activity-log-columns'
+import { serializeRoomColumns } from '@/utils/booking-room-columns'
 
 const uiStore = useUiStore()
 const authStore = useAuthStore()
@@ -13,6 +15,86 @@ const route = useRoute()
 
 // Theme Background from Topbar settings
 const themeBg = computed(() => authStore.themeColor || '#006bdb')
+
+// ==================== Dòng 542: sắp xếp, ẩn/hiện cột lưu theo user ====================
+const logColumns = ref([])
+const isColumnSelectorOpen = ref(false)
+const draggedColKey = ref(null)
+let saveLogColumnsTimer = null
+let isApplyingLogColumns = false
+let isSavingLogColumns = false
+
+function loadSavedLogColumns() {
+  const uid = authStore.user?.id || 'default'
+  let localOrder = null
+  let localVisible = null
+  try {
+    localOrder = JSON.parse(localStorage.getItem(`pms_col_order_${ACTIVITY_LOG_SETTINGS_KEY}_${uid}`) || 'null')
+    localVisible = JSON.parse(localStorage.getItem(`pms_vis_cols_${ACTIVITY_LOG_SETTINGS_KEY}_${uid}`) || 'null')
+  } catch (_) { /* không có localStorage */ }
+  return {
+    order: authStore.settings?.column_order?.[ACTIVITY_LOG_SETTINGS_KEY] || localOrder,
+    visible: authStore.settings?.visible_columns?.[ACTIVITY_LOG_SETTINGS_KEY] || localVisible,
+  }
+}
+
+logColumns.value = (() => {
+  const saved = loadSavedLogColumns()
+  return buildActivityLogColumns(saved.order, saved.visible)
+})()
+
+const visibleLogColumns = computed(() => visibleActivityLogColumns(logColumns.value))
+
+function saveLogColumns() {
+  if (isApplyingLogColumns) return
+  const { order, visible } = serializeRoomColumns(logColumns.value)
+  const uid = authStore.user?.id || 'default'
+  try {
+    localStorage.setItem(`pms_col_order_${ACTIVITY_LOG_SETTINGS_KEY}_${uid}`, JSON.stringify(order))
+    localStorage.setItem(`pms_vis_cols_${ACTIVITY_LOG_SETTINGS_KEY}_${uid}`, JSON.stringify(visible))
+  } catch (_) { /* không có localStorage */ }
+
+  if (saveLogColumnsTimer) clearTimeout(saveLogColumnsTimer)
+  saveLogColumnsTimer = setTimeout(async () => {
+    try {
+      isSavingLogColumns = true
+      await authStore.updateUserSettings({
+        column_order: { [ACTIVITY_LOG_SETTINGS_KEY]: order },
+        visible_columns: { [ACTIVITY_LOG_SETTINGS_KEY]: visible },
+      })
+    } catch (e) {
+      console.error('Lỗi khi lưu cấu hình cột lịch sử thao tác:', e)
+    } finally {
+      nextTick(() => { isSavingLogColumns = false })
+    }
+  }, 500)
+}
+
+watch(logColumns, saveLogColumns, { deep: true })
+
+// Cài đặt user tải muộn hoặc đổi từ máy khác: áp lại nếu khác bảng hiện tại.
+watch(
+  () => [authStore.settings?.column_order?.[ACTIVITY_LOG_SETTINGS_KEY], authStore.settings?.visible_columns?.[ACTIVITY_LOG_SETTINGS_KEY]],
+  ([order, visible]) => {
+    if (isSavingLogColumns || !order) return
+    const next = buildActivityLogColumns(order, visible)
+    if (JSON.stringify(serializeRoomColumns(next)) === JSON.stringify(serializeRoomColumns(logColumns.value))) return
+    isApplyingLogColumns = true
+    logColumns.value = next
+    nextTick(() => { isApplyingLogColumns = false })
+  },
+  { deep: true },
+)
+
+function onColDragStart(key) {
+  draggedColKey.value = key
+}
+
+function onColDrop(targetKey) {
+  if (!draggedColKey.value || draggedColKey.value === targetKey) return
+  logColumns.value = moveActivityLogColumn(logColumns.value, draggedColKey.value, targetKey)
+  draggedColKey.value = null
+}
 
 // State data
 const logs = ref([])
@@ -563,25 +645,12 @@ const handleExport = async () => {
     if (res.data && res.data.success && res.data.data.length > 0) {
       const data = res.data.data
       
-      let csvContent = '\uFEFF' // BOM for Excel encoding UTF-8
-      const headers = ['ID', 'Thời gian', 'Trình duyệt', 'Màn hình', 'Người dùng', 'Ngày', 'Hành động', 'Mã đăng ký', 'Mã phòng', 'Mô tả']
-      csvContent += headers.join(',') + '\n'
-      
-      data.forEach(log => {
-        const row = [
-          log.id,
-          `"${log.created_time || formatTimeOnly(log.created_at)}"`,
-          `"${(log.user_agent || '').replace(/"/g, '""')}"`,
-          `"${log.component || 'Booking'}"`,
-          `"${log.employee_code || log.user_name || 'admin'}"`,
-          `"${log.created_date || formatDateOnly(log.created_at)}"`,
-          `"${getActionLabel(log.action)}"`,
-          `"${log.booking_code || '-'}"`,
-          `"${log.room_number || '-'}"`,
-          `"${(log.description || '').replace(/"/g, '""')}"`
-        ]
-        csvContent += row.join(',') + '\n'
-      })
+      // Dòng 542: xuất theo đúng các cột đang hiện và thứ tự user đã chọn.
+      const csvContent = String.fromCharCode(0xFEFF) + buildActivityLogCsv(data, logColumns.value, {
+        time: log => log.created_time || formatTimeOnly(log.created_at),
+        date: log => log.created_date || formatDateOnly(log.created_at),
+        action: log => getActionLabel(log.action),
+      }) + String.fromCharCode(10) // BOM cho Excel đọc UTF-8
       
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
       const link = document.createElement('a')
@@ -767,7 +836,40 @@ const handleExport = async () => {
           >
             🔍 Tìm Kiếm
           </button>
-          <button 
+          <div class="relative">
+            <button
+              type="button"
+              @click.stop="isColumnSelectorOpen = !isColumnSelectorOpen"
+              class="btn-pms-secondary h-8 px-3 text-xs"
+              title="Sắp xếp và ẩn/hiện cột"
+              data-testid="activity-log-column-button"
+            >
+              ⚙️ Cột
+            </button>
+            <div v-if="isColumnSelectorOpen" class="fixed inset-0 z-40 cursor-default" @click="isColumnSelectorOpen = false"></div>
+            <div
+              v-if="isColumnSelectorOpen"
+              class="absolute right-0 top-full mt-1.5 w-60 bg-white border border-slate-200 rounded-lg shadow-xl z-50 py-1.5 max-h-80 overflow-y-auto"
+              data-testid="activity-log-column-menu"
+            >
+              <div class="text-xs font-semibold text-slate-500 mb-1 px-3 border-b pb-1 select-none">Ẩn/Hiện và kéo thả đổi vị trí cột</div>
+              <div
+                v-for="col in logColumns"
+                :key="col.key"
+                class="px-3.5 py-1.5 hover:bg-slate-50 flex items-center gap-2 text-xs font-semibold text-slate-700 select-none cursor-grab active:cursor-grabbing"
+                draggable="true"
+                :data-column-key="col.key"
+                @dragstart="onColDragStart(col.key)"
+                @dragover.prevent
+                @drop="onColDrop(col.key)"
+              >
+                <span class="text-slate-400 font-semibold cursor-grab text-xs leading-none">⋮⋮</span>
+                <input type="checkbox" v-model="col.visible" class="rounded w-3.5 h-3.5 cursor-pointer" />
+                <span class="flex-1 cursor-pointer" @click="col.visible = !col.visible">{{ col.label }}</span>
+              </div>
+            </div>
+          </div>
+          <button
             @click="handleExport"
             class="btn-pms-secondary h-8 px-3.5 text-xs text-emerald-700 hover:text-emerald-800"
           >
@@ -790,22 +892,23 @@ const handleExport = async () => {
       <table class="w-full text-left border-collapse text-xs">
         <thead>
           <tr class="bg-slate-100 border-b border-slate-200 text-[#000000D9] font-semibold select-none h-9 sticky top-0 z-20 shadow-2xs">
-            <th @click="toggleSort('id')" class="p-2 border border-slate-200 w-14 cursor-pointer hover:bg-slate-200 text-center align-middle whitespace-nowrap font-semibold text-[#000000D9]">
+            <template v-for="col in visibleLogColumns" :key="col.key">
+            <th v-if="col.key === 'id'" draggable="true" @dragstart="onColDragStart(col.key)" @dragover.prevent @drop="onColDrop(col.key)" title="Kéo để đổi vị trí cột" @click="toggleSort('id')" class="p-2 border border-slate-200 w-14 cursor-pointer hover:bg-slate-200 text-center align-middle whitespace-nowrap font-semibold text-[#000000D9]">
               ID <span v-if="queryParams.sort_by === 'id'" class="text-xs text-sky-600">{{ queryParams.sort_dir === 'asc' ? '▲' : '▼' }}</span>
             </th>
-            <th @click="toggleSort('created_at')" class="p-2 border border-slate-200 w-24 cursor-pointer hover:bg-slate-200 text-center align-middle whitespace-nowrap font-semibold text-[#000000D9]">
+            <th v-if="col.key === 'time'" draggable="true" @dragstart="onColDragStart(col.key)" @dragover.prevent @drop="onColDrop(col.key)" title="Kéo để đổi vị trí cột" @click="toggleSort('created_at')" class="p-2 border border-slate-200 w-24 cursor-pointer hover:bg-slate-200 text-center align-middle whitespace-nowrap font-semibold text-[#000000D9]">
               Thời Gian <span v-if="queryParams.sort_by === 'created_at'" class="text-xs text-sky-600">{{ queryParams.sort_dir === 'asc' ? '▲' : '▼' }}</span>
             </th>
-            <th class="p-2 border border-slate-200 w-44 text-center align-middle whitespace-nowrap font-semibold text-[#000000D9]">Trình Duyệt</th>
-            <th class="p-2 border border-slate-200 w-28 text-center align-middle whitespace-nowrap font-semibold text-[#000000D9]">Màn Hình</th>
-            <th class="p-2 border border-slate-200 w-28 text-center align-middle whitespace-nowrap font-semibold text-[#000000D9]">Người Dùng</th>
-            <th class="p-2 border border-slate-200 w-24 text-center align-middle whitespace-nowrap font-semibold text-[#000000D9]">Ngày Thao Tác</th>
-            <th @click="toggleSort('action')" class="p-2 border border-slate-200 w-24 cursor-pointer hover:bg-slate-200 text-center align-middle whitespace-nowrap font-semibold text-[#000000D9]">
+            <th v-if="col.key === 'userAgent'" draggable="true" @dragstart="onColDragStart(col.key)" @dragover.prevent @drop="onColDrop(col.key)" title="Kéo để đổi vị trí cột" class="p-2 border border-slate-200 w-44 text-center align-middle whitespace-nowrap font-semibold text-[#000000D9]">Trình Duyệt</th>
+            <th v-if="col.key === 'screen'" draggable="true" @dragstart="onColDragStart(col.key)" @dragover.prevent @drop="onColDrop(col.key)" title="Kéo để đổi vị trí cột" class="p-2 border border-slate-200 w-28 text-center align-middle whitespace-nowrap font-semibold text-[#000000D9]">Màn Hình</th>
+            <th v-if="col.key === 'user'" draggable="true" @dragstart="onColDragStart(col.key)" @dragover.prevent @drop="onColDrop(col.key)" title="Kéo để đổi vị trí cột" class="p-2 border border-slate-200 w-28 text-center align-middle whitespace-nowrap font-semibold text-[#000000D9]">Người Dùng</th>
+            <th v-if="col.key === 'date'" draggable="true" @dragstart="onColDragStart(col.key)" @dragover.prevent @drop="onColDrop(col.key)" title="Kéo để đổi vị trí cột" class="p-2 border border-slate-200 w-24 text-center align-middle whitespace-nowrap font-semibold text-[#000000D9]">Ngày Thao Tác</th>
+            <th v-if="col.key === 'action'" draggable="true" @dragstart="onColDragStart(col.key)" @dragover.prevent @drop="onColDrop(col.key)" title="Kéo để đổi vị trí cột" @click="toggleSort('action')" class="p-2 border border-slate-200 w-24 cursor-pointer hover:bg-slate-200 text-center align-middle whitespace-nowrap font-semibold text-[#000000D9]">
               Hành Động <span v-if="queryParams.sort_by === 'action'" class="text-xs text-sky-600">{{ queryParams.sort_dir === 'asc' ? '▲' : '▼' }}</span>
             </th>
 
             <!-- Cột Mã Đăng Ký kèm icon tìm kiếm -->
-            <th class="p-2 border border-slate-200 w-32 text-center align-middle whitespace-nowrap relative font-semibold text-[#000000D9]">
+            <th v-if="col.key === 'regCode'" draggable="true" @dragstart="onColDragStart(col.key)" @dragover.prevent @drop="onColDrop(col.key)" title="Kéo để đổi vị trí cột" class="p-2 border border-slate-200 w-32 text-center align-middle whitespace-nowrap relative font-semibold text-[#000000D9]">
               <div class="flex items-center justify-center gap-1.5">
                 <span>Mã Đăng Ký</span>
                 <button 
@@ -834,7 +937,7 @@ const handleExport = async () => {
             </th>
 
             <!-- Cột Mã Phòng kèm icon tìm kiếm -->
-            <th class="p-2 border border-slate-200 w-32 text-center align-middle whitespace-nowrap relative font-semibold text-[#000000D9]">
+            <th v-if="col.key === 'roomCode'" draggable="true" @dragstart="onColDragStart(col.key)" @dragover.prevent @drop="onColDrop(col.key)" title="Kéo để đổi vị trí cột" class="p-2 border border-slate-200 w-32 text-center align-middle whitespace-nowrap relative font-semibold text-[#000000D9]">
               <div class="flex items-center justify-center gap-1.5">
                 <span>Mã Phòng</span>
                 <button 
@@ -863,7 +966,7 @@ const handleExport = async () => {
             </th>
 
             <!-- Cột Mô Tả kèm icon tìm kiếm -->
-            <th class="p-2 border border-slate-200 min-w-[360px] text-center align-middle relative font-semibold text-[#000000D9]">
+            <th v-if="col.key === 'description'" draggable="true" @dragstart="onColDragStart(col.key)" @dragover.prevent @drop="onColDrop(col.key)" title="Kéo để đổi vị trí cột" class="p-2 border border-slate-200 min-w-[360px] text-center align-middle relative font-semibold text-[#000000D9]">
               <div class="flex items-center justify-center gap-1.5">
                 <span>Mô Tả</span>
                 <button 
@@ -891,7 +994,8 @@ const handleExport = async () => {
               </div>
             </th>
 
-            <th class="p-2 border border-slate-200 text-center align-middle w-20 whitespace-nowrap font-semibold text-[#000000D9]">Chi Tiết</th>
+            <th v-if="col.key === 'detail'" draggable="true" @dragstart="onColDragStart(col.key)" @dragover.prevent @drop="onColDrop(col.key)" title="Kéo để đổi vị trí cột" class="p-2 border border-slate-200 text-center align-middle w-20 whitespace-nowrap font-semibold text-[#000000D9]">Chi Tiết</th>
+            </template>
           </tr>
         </thead>
         <tbody>
@@ -900,35 +1004,36 @@ const handleExport = async () => {
             :key="log.id" 
             class="border-b border-slate-200 hover:bg-sky-50/50 transition-colors font-normal text-[#000000D9]"
           >
-            <td class="p-2.5 text-center font-mono text-slate-500">{{ log.id }}</td>
-            <td class="p-2.5 text-center whitespace-nowrap font-mono text-[#000000D9]">
+            <template v-for="col in visibleLogColumns" :key="col.key">
+            <td v-if="col.key === 'id'" class="p-2.5 text-center font-mono text-slate-500">{{ log.id }}</td>
+            <td v-if="col.key === 'time'" class="p-2.5 text-center whitespace-nowrap font-mono text-[#000000D9]">
               {{ log.created_time || formatTimeOnly(log.created_at) }}
             </td>
-            <td class="p-2.5 text-left text-xs break-words max-w-[200px]" :title="log.user_agent">
+            <td v-if="col.key === 'userAgent'" class="p-2.5 text-left text-xs break-words max-w-[200px]" :title="log.user_agent">
               <span class="line-clamp-3 select-all hover:line-clamp-none transition-all font-mono leading-tight text-slate-500">{{ log.user_agent || '-' }}</span>
             </td>
-            <td class="p-2.5 text-center whitespace-nowrap text-[#000000D9]">
+            <td v-if="col.key === 'screen'" class="p-2.5 text-center whitespace-nowrap text-[#000000D9]">
               {{ log.component || '-' }}
             </td>
-            <td class="p-2.5 text-center whitespace-nowrap text-[#000000D9]">
+            <td v-if="col.key === 'user'" class="p-2.5 text-center whitespace-nowrap text-[#000000D9]">
               {{ log.employee_code || log.user_name || 'admin' }}
             </td>
-            <td class="p-2.5 text-center whitespace-nowrap font-mono text-[#000000D9]">
+            <td v-if="col.key === 'date'" class="p-2.5 text-center whitespace-nowrap font-mono text-[#000000D9]">
               {{ log.created_date || formatDateOnly(log.created_at) }}
             </td>
-            <td class="p-2.5 text-center whitespace-nowrap">
+            <td v-if="col.key === 'action'" class="p-2.5 text-center whitespace-nowrap">
               <span :class="getActionClass(log.action)">{{ getActionLabel(log.action) }}</span>
             </td>
-            <td class="p-2.5 font-mono text-center whitespace-nowrap text-[#000000D9]">
+            <td v-if="col.key === 'regCode'" class="p-2.5 font-mono text-center whitespace-nowrap text-[#000000D9]">
               {{ log.booking_code || '-' }}
             </td>
-            <td class="p-2.5 font-mono text-center whitespace-nowrap text-[#000000D9]">
+            <td v-if="col.key === 'roomCode'" class="p-2.5 font-mono text-center whitespace-normal break-words [overflow-wrap:anywhere] min-w-[110px] max-w-[220px] text-[#000000D9]" data-testid="activity-log-room-code">
               {{ log.room_number || '-' }}
             </td>
-            <td class="p-2.5 text-[#000000D9] whitespace-pre-wrap leading-relaxed text-xs">
+            <td v-if="col.key === 'description'" class="p-2.5 text-[#000000D9] whitespace-pre-wrap leading-relaxed text-xs">
               <div v-html="formatDescriptionHtml(log.description)"></div>
             </td>
-            <td class="p-2.5 text-center whitespace-nowrap">
+            <td v-if="col.key === 'detail'" class="p-2.5 text-center whitespace-nowrap">
               <button 
                 v-if="log.old_values || log.new_values"
                 @click="viewDetails(log)"
@@ -939,10 +1044,11 @@ const handleExport = async () => {
               </button>
               <span v-else class="text-slate-400 font-normal">-</span>
             </td>
+            </template>
           </tr>
 
           <tr v-if="logs.length === 0 && !loading">
-            <td colspan="11" class="p-16 text-center text-slate-400 text-xs font-normal">
+            <td :colspan="visibleLogColumns.length" class="p-16 text-center text-slate-400 text-xs font-normal">
               Không tìm thấy lịch sử thao tác nào phù hợp với bộ lọc.
             </td>
           </tr>

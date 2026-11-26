@@ -2361,6 +2361,75 @@ class BookingBusinessRulesTest extends TestCase
     }
 
     /**
+     * Row 358 (note 23/11): API đăng ký trả kèm late check-in (có lý do Charge Room) để màn hình không chiếu thêm đêm day-use.
+     */
+    public function test_row_358_booking_api_returns_late_checkin_reason_for_each_room(): void
+    {
+        $booking = $this->createBooking(['arrival_date' => '2026-09-02', 'departure_date' => '2026-09-02', 'is_day_use' => true]);
+        $room = BookingRoom::create([
+            'id' => 'G-358-API', 'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-09-02', 'departure_date' => '2026-09-02', 'is_day_use' => true, 'rate' => 540000,
+            'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+        \App\Models\LateCheckin::create([
+            'booking_room_id' => $room->id, 'late_checkin_date' => '2026-09-01 00:00:00', 'actual_arrival_date' => '2026-09-02 00:00:00',
+            'late_checkin_time' => '10:00', 'reason' => 'NightAudit No Show One Day Charge Room', 'status' => 1, 'username' => 'u', 'shift' => 1,
+        ]);
+
+        $json = $this->getJson("/api/bookings/{$booking->id}")->assertOk()->json();
+        $rooms = $json['data']['booking_rooms'] ?? $json['booking_rooms'] ?? [];
+        $lateCheckins = collect($rooms)->firstWhere('id', $room->id)['late_checkins'] ?? [];
+
+        $this->assertCount(1, $lateCheckins);
+        $this->assertStringContainsString('Charge Room', $lateCheckins[0]['reason']);
+    }
+
+    /**
+     * Dòng 540: đăng ký có tình trạng không giữ phòng (is_availability=0, vd Waiting) khi sửa không cho gán số phòng
+     * (màn hình khóa cột Số phòng; backend cũng chặn để không lách bằng API). Tình trạng có giữ phòng vẫn gán được.
+     */
+    private function roomAllocationPayload540(Booking $booking, BookingRoom $room, int $statusId, string $roomNumber): array
+    {
+        $payload = $this->headerPayload($booking, '2026-09-06', '2026-09-08');
+        $payload['registration_status_id'] = $statusId;
+        $payload['room_allocations'] = [[
+            'roomClassId' => $this->roomClass->id, 'quantity' => 1,
+            'rooms' => [['bookingRoomId' => $room->id, 'roomNumber' => $roomNumber, 'arrivalDate' => '2026-09-06', 'departureDate' => '2026-09-08', 'price' => 500000]],
+        ]];
+
+        return $payload;
+    }
+
+    public function test_row_540_waiting_booking_cannot_assign_room_number_when_editing(): void
+    {
+        DB::table('booking_statuses')->insertOrIgnore([['id' => 29, 'name' => 'Waiting']]);
+        RegistrationStatus::create(['name' => 'Waiting', 'booking_status_id' => 29, 'is_availability' => false]);
+        $booking = $this->createBooking(['arrival_date' => '2026-09-06', 'departure_date' => '2026-09-08', 'num_of_days' => 2, 'registration_status_id' => 29]);
+        $room = BookingRoom::create([
+            'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id, 'arrival_date' => '2026-09-06',
+            'departure_date' => '2026-09-08', 'rate' => 500000, 'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $this->putJson("/api/bookings/{$booking->id}", $this->roomAllocationPayload540($booking, $room, 29, '101'))->assertStatus(422);
+
+        $this->assertNull($room->fresh()->room_number);
+    }
+
+    public function test_row_540_guaranteed_booking_can_still_assign_room_number_when_editing(): void
+    {
+        $booking = $this->createBooking(['arrival_date' => '2026-09-06', 'departure_date' => '2026-09-08', 'num_of_days' => 2,
+            'registration_status_id' => $this->regStatus->booking_status_id]);
+        $room = BookingRoom::create([
+            'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id, 'arrival_date' => '2026-09-06',
+            'departure_date' => '2026-09-08', 'rate' => 500000, 'status' => BookingRoom::STATUS_BOOKED,
+        ]);
+
+        $this->putJson("/api/bookings/{$booking->id}", $this->roomAllocationPayload540($booking, $room, $this->regStatus->booking_status_id, '101'))->assertSuccessful();
+
+        $this->assertSame('101', $room->fresh()->room_number);
+    }
+
+    /**
      * Row 488: đêm tiền phòng mới theo "Tiền phòng gửi Master" của đăng ký (GIT -> is_room 0, FIT -> 1).
      */
     public function test_row_488_projected_room_charge_follows_master_room_rate_flag(): void

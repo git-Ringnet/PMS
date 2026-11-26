@@ -99,6 +99,9 @@ class ShiftWorkController extends Controller
             $query->whereIn('status', [BookingRoom::STATUS_BOOKED, ...$arrivedStatuses]);
         }
 
+        // Dòng 540: đăng ký có tình trạng không ảnh hưởng phòng (is_availability=0) không hiện ở phòng đến.
+        $query->affectsAvailability();
+
         // Dòng 450: nhận phòng rồi chuyển ngay sang phòng khác chỉ lấy phòng gốc ban đầu,
         // không lấy thêm dòng phòng đích (dòng được tạo ra bởi lần chuyển, trỏ bởi move_room của phòng gốc).
         $query->whereNotIn('id', BookingRoom::query()->withTrashed()->select('move_room')->whereNotNull('move_room'));
@@ -299,6 +302,9 @@ class ShiftWorkController extends Controller
                     });
             });
         }
+
+        // Dòng 540: đăng ký có tình trạng không ảnh hưởng phòng (is_availability=0) không hiện ở phòng đi.
+        $query->affectsAvailability();
 
         $rooms = $query->orderBy('booking_id', 'asc')
             ->orderBy('room_number', 'asc')
@@ -877,6 +883,21 @@ class ShiftWorkController extends Controller
         return $total + (float) $others->sum($amountOf);
     }
 
+    /** Phòng đã có bill tiền phòng (RM) đang hiệu lực trong khoảng ngày (dòng 532: đánh dấu đã charge noshow). */
+    private function noshowRoomHasRoomBill(string $roomId, ?string $fromDate, ?string $toDate): bool
+    {
+        if (!$fromDate) {
+            return false;
+        }
+
+        return \App\Models\ServiceBill::where('RentalRoomId1', $roomId)
+            ->where('ServiceId', 'RM')
+            ->where('Status', 1)
+            ->whereDate('Date', '>=', $fromDate)
+            ->whereDate('Date', '<=', max($fromDate, $toDate ?: $fromDate))
+            ->exists();
+    }
+
     private function isNoChargeReason(?string $reason): bool
     {
         return stripos((string) $reason, 'No Charge') !== false;
@@ -936,6 +957,14 @@ class ShiftWorkController extends Controller
             $result[] = [
                 'id' => $bkCode,
                 'type' => 'noshow',
+                'bookingId' => $bk?->id,
+                'roomId' => $room->id,
+                'arrivalDateIso' => Carbon::parse($room->arrival_date)->toDateString(),
+                'departureDateIso' => $room->departure_date ? Carbon::parse($room->departure_date)->toDateString() : null,
+                'noshowDateIso' => $log && $log->noshow_date ? Carbon::parse($log->noshow_date)->toDateString() : Carbon::parse($room->arrival_date)->toDateString(),
+                'rate' => $rate,
+                'guestName' => $bk?->booking_name ?: '',
+                'charged' => $this->noshowRoomHasRoomBill($room->id, Carbon::parse($room->arrival_date)->toDateString(), $room->departure_date ? Carbon::parse($room->departure_date)->subDay()->toDateString() : null),
                 'isCharged' => $isCharged,
                 'bookingName' => $bk?->booking_name ?: 'Khách lẻ',
                 'roomType' => $this->noshowRoomTypeName($room),
@@ -971,6 +1000,14 @@ class ShiftWorkController extends Controller
             $result[] = [
                 'id' => $prefix . ($bk?->id ?? 0),
                 'type' => 'late_checkin',
+                'bookingId' => $bk?->id,
+                'roomId' => $room->id,
+                'arrivalDateIso' => $room->arrival_date ? Carbon::parse($room->arrival_date)->toDateString() : null,
+                'departureDateIso' => $room->departure_date ? Carbon::parse($room->departure_date)->toDateString() : null,
+                'noshowDateIso' => $lateDate->toDateString(),
+                'rate' => (float) ($room->rate ?: 0),
+                'guestName' => $bk?->booking_name ?: '',
+                'charged' => $this->noshowRoomHasRoomBill($room->id, $lateDate->toDateString(), $lateDate->toDateString()),
                 'isCharged' => $isCharged,
                 'bookingName' => $bk?->booking_name ?: 'Khách lẻ',
                 'roomType' => $this->noshowRoomTypeName($room),

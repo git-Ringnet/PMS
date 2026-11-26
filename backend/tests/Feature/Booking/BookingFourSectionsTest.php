@@ -467,6 +467,106 @@ class BookingFourSectionsTest extends TestCase
         $this->assertSame([[false, 0.0]], $this->breakfastFlags($room));
     }
 
+    /**
+     * Dòng 417 (note 23/11): phòng không ăn sáng, thêm trẻ (không ăn sáng), sau đó bật ăn sáng ở Thông tin phòng
+     * thì chi tiết ăn sáng của trẻ cũng phải có ăn sáng (và giá mặc định), không còn "không ăn sáng".
+     */
+    public function test_row_417_room_info_turning_breakfast_on_updates_existing_child_breakfast_details(): void
+    {
+        HotelConfig::create(['name' => 'BreakfastRateChild', 'value' => '70000']);
+        $booking = $this->createBooking();
+        $room = $this->createRoom($booking, 'G4-417G', ['breakfast' => false]);
+        $guest = Guest::create(['full_name' => 'Khach chinh 417']);
+        BookingRoomGuest::create(['booking_room_id' => $room->id, 'guest_id' => $guest->id, 'is_primary' => true, 'status' => BookingRoom::STATUS_BOOKED, 'breakfast' => false]);
+        $this->postJson("/api/bookings/{$booking->id}/children", ['booking_room_id' => $room->id, 'full_name' => 'Child G', 'age_group' => 'child'])->assertSuccessful();
+        $this->assertSame([[false, 0.0]], $this->breakfastFlags($room));
+
+        $this->putJson("/api/booking-rooms/{$room->id}/guests/{$guest->id}", ['full_name' => 'Khach chinh 417', 'breakfast' => true])->assertSuccessful();
+
+        $this->assertTrue((bool) $room->fresh()->breakfast);
+        $this->assertSame([[true, 70000.0]], $this->breakfastFlags($room));
+    }
+
+    public function test_row_417_room_info_turning_breakfast_off_updates_existing_child_breakfast_details(): void
+    {
+        HotelConfig::create(['name' => 'BreakfastRateChild', 'value' => '70000']);
+        $booking = $this->createBooking();
+        $room = $this->createRoom($booking, 'G4-417H', ['breakfast' => true]);
+        $guest = Guest::create(['full_name' => 'Khach chinh 417H']);
+        BookingRoomGuest::create(['booking_room_id' => $room->id, 'guest_id' => $guest->id, 'is_primary' => true, 'status' => BookingRoom::STATUS_BOOKED, 'breakfast' => true]);
+        $this->postJson("/api/bookings/{$booking->id}/children", ['booking_room_id' => $room->id, 'full_name' => 'Child H', 'age_group' => 'child'])->assertSuccessful();
+        $this->assertSame([[true, 70000.0]], $this->breakfastFlags($room));
+
+        $this->putJson("/api/booking-rooms/{$room->id}/guests/{$guest->id}", ['full_name' => 'Khach chinh 417H', 'breakfast' => false])->assertSuccessful();
+
+        $this->assertSame([[false, 0.0]], $this->breakfastFlags($room));
+    }
+
+    public function test_row_417_turning_breakfast_on_keeps_manual_price_and_past_nights(): void
+    {
+        HotelConfig::create(['name' => 'BreakfastRateChild', 'value' => '70000']);
+        SystemDateRoll::query()->update(['system_date' => '2026-08-08 00:00:00']);
+        $booking = $this->createBooking();
+        $room = $this->createRoom($booking, 'G4-417I', ['breakfast' => false]);
+        $guest = Guest::create(['full_name' => 'Khach chinh 417I']);
+        BookingRoomGuest::create(['booking_room_id' => $room->id, 'guest_id' => $guest->id, 'is_primary' => true, 'status' => BookingRoom::STATUS_BOOKED, 'breakfast' => false]);
+        $this->postJson("/api/bookings/{$booking->id}/children", ['booking_room_id' => $room->id, 'full_name' => 'Child I', 'age_group' => 'child'])->assertSuccessful();
+        $child = BookingChild::where('booking_room_id', $room->id)->firstOrFail();
+        // Đêm 07/08 (quá khứ so với ngày hệ thống 08/08) giữ nguyên; đêm 09/08 nhập tay 0đ nhưng đang tắt ăn sáng -> đặt lại giá mặc định khi bật.
+        $this->assertSame(3, $child->breakfastDetails()->count());
+
+        $this->putJson("/api/booking-rooms/{$room->id}/guests/{$guest->id}", ['full_name' => 'Khach chinh 417I', 'breakfast' => true])->assertSuccessful();
+
+        $byDate = $child->breakfastDetails()->orderBy('service_date')->get()
+            ->mapWithKeys(fn ($detail) => [substr((string) $detail->service_date, 0, 10) => [(bool) $detail->breakfast, (float) $detail->amount]])->all();
+        $this->assertSame([false, 0.0], $byDate['2026-08-07']);
+        $this->assertSame([true, 70000.0], $byDate['2026-08-08']);
+        $this->assertSame([true, 70000.0], $byDate['2026-08-09']);
+    }
+
+    /**
+     * Dòng 417: các đường khác đổi tình trạng ăn sáng của phòng (API sửa phòng, lưu đăng ký có đổi cột Ăn sáng)
+     * cũng phải đồng bộ chi tiết ăn sáng của trẻ.
+     */
+    public function test_row_417_room_update_api_turning_breakfast_on_updates_child_breakfast_details(): void
+    {
+        HotelConfig::create(['name' => 'BreakfastRateChild', 'value' => '70000']);
+        $booking = $this->createBooking();
+        $room = $this->createRoom($booking, 'G4-417J', ['breakfast' => false]);
+        $this->postJson("/api/bookings/{$booking->id}/children", ['booking_room_id' => $room->id, 'full_name' => 'Child J', 'age_group' => 'child'])->assertSuccessful();
+        $this->assertSame([[false, 0.0]], $this->breakfastFlags($room));
+
+        $this->putJson("/api/bookings/{$booking->id}/rooms/{$room->id}", ['breakfast' => true])->assertSuccessful();
+        $this->assertSame([[true, 70000.0]], $this->breakfastFlags($room));
+
+        $this->putJson("/api/bookings/{$booking->id}/rooms/{$room->id}", ['breakfast' => false])->assertSuccessful();
+        $this->assertSame([[false, 0.0]], $this->breakfastFlags($room));
+    }
+
+    public function test_row_417_booking_save_toggling_room_breakfast_updates_child_breakfast_details(): void
+    {
+        HotelConfig::create(['name' => 'BreakfastRateChild', 'value' => '70000']);
+        $booking = $this->createBooking();
+        $room = $this->createRoom($booking, 'G4-417K', ['breakfast' => false]);
+        $this->postJson("/api/bookings/{$booking->id}/children", ['booking_room_id' => $room->id, 'full_name' => 'Child K', 'age_group' => 'child'])->assertSuccessful();
+
+        $save = fn (bool $breakfast) => $this->putJson("/api/bookings/{$booking->id}", [
+            'booking_name' => $booking->booking_name, 'arrival_date' => '2026-08-07', 'departure_date' => '2026-08-10', 'num_of_days' => 3,
+            'registration_status_id' => $this->regStatus->booking_status_id, 'company_id' => 1, 'market_id' => 1, 'customer_source_id' => 1,
+            'room_allocations' => [[
+                'roomClassId' => $this->roomClass->id, 'quantity' => 1,
+                'rooms' => [['bookingRoomId' => $room->id, 'price' => 500000, 'breakfast' => $breakfast]],
+            ]],
+        ])->assertSuccessful();
+
+        $save(true);
+        $this->assertTrue((bool) $room->fresh()->breakfast);
+        $this->assertSame([[true, 70000.0]], $this->breakfastFlags($room));
+
+        $save(false);
+        $this->assertSame([[false, 0.0]], $this->breakfastFlags($room));
+    }
+
     // ---------------------------------------------------------------- Dòng 414
 
     public function test_row_414_room_kind_is_saved_at_creation_and_kept_when_standard_rate_form_changes(): void

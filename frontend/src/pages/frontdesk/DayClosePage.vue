@@ -1,5 +1,6 @@
 <script setup>
 import { revenueReportRoute } from '@/utils/day-close-options'
+import { zeroNightArrivalItems, zeroNightArrivalMessage } from '@/utils/noshow-one-day'
 import { loadStatusOptions, saveStatusOptions, isInHouseForDayClose, alreadyRolledMessage } from '@/utils/day-close-options'
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
@@ -31,6 +32,7 @@ import { useUiStore } from '@/stores/ui-store'
 import { useAuthStore } from '@/stores/auth-store'
 import { useNightAuditStore } from '@/stores/night-audit-store'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
+import DayCloseNoshowTab from './components/DayCloseNoshowTab.vue'
 import echo from '@/services/echo'
 
 const router = useRouter()
@@ -155,6 +157,8 @@ const filterTabs = computed(() => [
   { id: 'arrivals', name: 'Phòng đến' },
   { id: 'departures', name: 'Phòng đi' },
   { id: 'hourly', name: 'Ở theo giờ' },
+  // Dòng 532: danh sách phòng noshow (by date và by stage) để charge bù
+  { id: 'noshow', name: 'Phòng noshow' },
 ])
 
 // Footer options
@@ -690,6 +694,12 @@ function handleUpdateArrivalDate() {
     uiStore.showToast('Vui lòng tích chọn ít nhất 1 phòng đến để cập nhật.', 'warning')
     return
   }
+  // Dòng 529: phòng 0 đêm (đến = đi) không được Noshow one day, chỉ Noshow by stage
+  const zeroNight = zeroNightArrivalItems(selected)
+  if (zeroNight.length > 0) {
+    uiStore.showToast(zeroNightArrivalMessage(zeroNight), 'warning')
+    return
+  }
   arrivalFeeOption.value = 'room_only'
   showArrivalModal.value = true
 }
@@ -844,7 +854,10 @@ async function confirmNoshow() {
     </section>
 
     <!-- 2. DATA TABLE CONTENT (GIỮ NGUYÊN BẢNG CHUẨN CỦA KHÁCH) -->
-    <main class="flex-1 p-3 overflow-x-auto">
+    <main v-if="activeFilterTab === 'noshow'" class="flex-1 p-3 overflow-x-auto">
+      <DayCloseNoshowTab />
+    </main>
+    <main v-else class="flex-1 p-3 overflow-x-auto">
       <div class="bg-white border border-gray-300 rounded shadow-xs overflow-hidden min-w-[1200px]">
         <table class="w-full text-left border-collapse">
           <thead>
@@ -958,7 +971,7 @@ async function confirmNoshow() {
     </main>
 
     <!-- 3. BOTTOM ACTION FOOTER BAR (GIỮ NGUYÊN) -->
-    <footer class="bg-white border-t border-gray-300 px-4 py-2.5 flex items-center justify-between shadow-lg sticky bottom-0 z-20">
+    <footer v-if="activeFilterTab !== 'noshow'" class="bg-white border-t border-gray-300 px-4 py-2.5 flex items-center justify-between shadow-lg sticky bottom-0 z-20">
       <div v-if="activeFilterTab === 'in-house'" class="flex items-center space-x-6">
         <label class="flex items-center space-x-2.5 cursor-pointer font-semibold text-gray-800 hover:text-gray-900 select-none">
           <input

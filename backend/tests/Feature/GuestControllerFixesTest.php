@@ -72,6 +72,59 @@ class GuestControllerFixesTest extends TestCase
         ]);
     }
 
+    /**
+     * Dòng 538: thêm khách / trẻ em vào phòng đang ở lấy ngày hệ thống (không phải ngày thực tế của máy) và có giờ đến.
+     */
+    private function inhouseRoomForRow538(): BookingRoom
+    {
+        $booking = Booking::create([
+            'booking_name' => 'ROW538', 'booking_date' => '2026-08-07', 'arrival_date' => '2026-08-07',
+            'departure_date' => '2026-08-12', 'num_of_days' => 5, 'status' => Booking::STATUS_CHECKIN,
+            'registration_status_id' => 1, 'created_by' => 'test',
+        ]);
+
+        return BookingRoom::create([
+            'booking_id' => $booking->id, 'room_class_id' => $this->roomClass->id,
+            'arrival_date' => '2026-08-07', 'departure_date' => '2026-08-12', 'actual_arrival_date' => '2026-08-07',
+            'rate' => 500000, 'status' => BookingRoom::STATUS_CHECKED_IN,
+        ]);
+    }
+
+    public function test_row_538_adult_added_to_inhouse_room_gets_system_date_and_arrival_time(): void
+    {
+        $room = $this->inhouseRoomForRow538();
+
+        $this->postJson("/api/booking-rooms/{$room->id}/guests", ['full_name' => 'Khach them 538'])->assertSuccessful();
+
+        $pivot = BookingRoomGuest::where('booking_room_id', $room->id)->firstOrFail();
+        $this->assertSame('2026-08-09', substr((string) $pivot->actual_arrival_date, 0, 10));
+        $this->assertMatchesRegularExpression('/^\d{2}:\d{2}:\d{2}$/', (string) $pivot->actual_arrival_time);
+    }
+
+    public function test_row_538_child_added_to_inhouse_room_gets_system_date_and_arrival_time(): void
+    {
+        $room = $this->inhouseRoomForRow538();
+
+        $this->postJson("/api/bookings/{$room->booking_id}/children", [
+            'booking_room_id' => $room->id, 'full_name' => 'Tre them 538', 'age_group' => 'child',
+        ])->assertSuccessful();
+
+        $assignment = BookingRoomChild::where('booking_room_id', $room->id)->firstOrFail();
+        $this->assertSame('2026-08-09', substr((string) $assignment->actual_arrival_date, 0, 10));
+        $this->assertMatchesRegularExpression('/^\d{2}:\d{2}:\d{2}$/', (string) $assignment->actual_arrival_time);
+    }
+
+    public function test_row_538_adult_added_to_booked_room_keeps_room_arrival_date(): void
+    {
+        $room = $this->inhouseRoomForRow538();
+        $room->update(['status' => BookingRoom::STATUS_BOOKED, 'actual_arrival_date' => null]);
+
+        $this->postJson("/api/booking-rooms/{$room->id}/guests", ['full_name' => 'Khach phong dat'])->assertSuccessful();
+
+        $pivot = BookingRoomGuest::where('booking_room_id', $room->id)->firstOrFail();
+        $this->assertSame('2026-08-07', substr((string) $pivot->actual_arrival_date, 0, 10));
+    }
+
     public function test_guest_screen_whitelists_history_but_init_only_creates_current_guests(): void
     {
         $booking = $this->makeBooking();

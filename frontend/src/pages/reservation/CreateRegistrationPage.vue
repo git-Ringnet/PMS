@@ -23,6 +23,8 @@ import {
 import { summarizeRoomTotals } from '@/utils/booking-room-totals'
 import { collectRoomOwnedBills, distributeServicesByBillOrigin, excludeBillsBeforeMoveIn, mergeRoomServices, transferredBillIds } from '@/utils/booking-bill-origin'
 import { extraBedBillRow, findExtraBedBillsOutsideStay, findMoveHistoryExtraBedBill } from '@/utils/booking-room-extra-bed-bills'
+import { displayNightCount } from '@/utils/day-use-nights'
+import { isRegistrationStatusWithoutAvailability } from '@/utils/registration-status'
 import { applySavedRoomColumns, serializeRoomColumns } from '@/utils/booking-room-columns'
 import { normalizeShuttleInfo, buildBookingHistoryLocation } from '@/utils/booking-shuttle-history'
 import {
@@ -187,6 +189,10 @@ const isWaitingBooking = computed(() => {
   const st = registrationStatuses.value.find(rs => Number(rs.booking_status_id) === Number(regId) || Number(rs.id) === Number(regId))
   return st ? (st.is_availability === false || Number(st.is_availability) === 0) : false
 })
+// Dòng 540: đăng ký có tình trạng không giữ phòng (is_availability = 0) thì khóa cột Số phòng khi sửa.
+const isActiveTabWithoutAvailability = computed(() =>
+  isRegistrationStatusWithoutAvailability(registrationStatuses.value, activeTab.value?.registrationStatusId)
+)
 const currenciesList = ref([])
 const activeCurrency = computed(() => {
   return currenciesList.value.find(c => c.is_main) || { code: 'VND', decimals_to_round: 0 }
@@ -1884,10 +1890,8 @@ function getRoomDisplayServices(room) {
   const checkIn = room.checkIn
   const isSameDay = !!checkIn && !!room.checkOut && (cleanDateStr(checkIn) === cleanDateStr(room.checkOut))
   const isDayUse = !!room.hourly && isSameDay
-  const rawNightCount = Number(room.nights)
-  const nights = isSameDay
-    ? (isDayUse ? 1 : 0)
-    : (Number.isFinite(rawNightCount) ? Math.max(0, rawNightCount) : 1)
+  // Dòng 358: phòng late check-in có charge bật Ở theo giờ không hiện thêm đêm day-use.
+  const nights = displayNightCount(room)
 
   if (checkIn) {
     for (let i = 0; i < nights; i++) {
@@ -3025,6 +3029,8 @@ async function handleRouteQuery(newQuery) {
 watch(activeTabId, (newId, oldId) => {
   if (newId !== oldId) {
     selectedRows.value = []
+    // Dòng 537: đổi sang đăng ký khác thì đóng chi tiết phòng đang xổ.
+    expandedRooms.value = []
     loadActiveBookingNotifications()
     if (activeTab.value?.dbId) {
       setLastActiveBookingId(activeTab.value.dbId)
@@ -3533,6 +3539,8 @@ function bookingToTab(b) {
         foreignServiceBillIds: originSlot?.foreignBillIds || new Set(),
         serviceBills: roomBills,
         childRecords: br.children || [],
+        // Dòng 358: late check-in có charge (đêm cũ đã post bill).
+        lateCheckinCharged: (br.late_checkins || br.lateCheckins || []).some(item => /Charge Room/i.test(String(item?.reason || ''))),
         dailyRoomPrices: Object.keys(dailyRoomPrices).length ? dailyRoomPrices : null,
         dailyExtraBeds: dailyExtraBeds.length ? dailyExtraBeds : null,
         specialRequests: br.special_requests || [],
@@ -4874,8 +4882,9 @@ function addDaysToDateStr(dateStr, days) {
 }
 
 function handleConfirmDateCalculation(isUserStatusChange = false) {
-  // Booking đã tồn tại và không phải user chủ động đổi trạng thái đăng ký -> không tự tính lại
-  if (modalForm.value.dbId && !isUserStatusChange) return
+  // Dòng 539: đăng ký đã tạo thì ngày xác nhận giữ nguyên, kể cả khi đổi tình trạng đăng ký.
+  // Chỉ đăng ký mới (chưa lưu) mới tự tính theo tình trạng; người dùng vẫn tự sửa tay được.
+  if (modalForm.value.dbId) return
 
   const statusId = modalForm.value.registrationStatusId
   if (!statusId) return
@@ -6191,6 +6200,8 @@ async function triggerAction(actionName) {
       return
     }
     loadDropdowns().catch(console.error)
+    // Dòng 537: bấm Sửa thì đóng chi tiết từng đêm của các phòng.
+    expandedRooms.value = []
     isEditing.value = true
     const tab = activeTab.value
     if (tab) {
@@ -8001,6 +8012,14 @@ defineExpose({
                               <path d="M7 11V7a5 5 0 0 1 10 0v4" fill="none" stroke="currentColor" stroke-width="2.5"></path>
                             </svg>
                           </div>
+                          <div
+                            v-else-if="isEditing && isActiveTabWithoutAvailability"
+                            class="flex items-center justify-center text-xs font-normal text-slate-400 bg-slate-100 border border-slate-200 rounded w-full h-[32px] cursor-not-allowed select-none"
+                            title="Tình trạng đăng ký không giữ phòng nên không gán số phòng"
+                            data-testid="room-number-locked"
+                          >
+                            {{ room.roomNumber || '-' }}
+                          </div>
                           <select 
                             v-else-if="isEditing" 
                             v-model="room.roomNumber" 
@@ -8680,6 +8699,14 @@ defineExpose({
                                       <rect x="3" y="11" width="18" height="11" rx="2" ry="2" fill="none" stroke="currentColor" stroke-width="2.5"></rect>
                                       <path d="M7 11V7a5 5 0 0 1 10 0v4" fill="none" stroke="currentColor" stroke-width="2.5"></path>
                                     </svg>
+                                  </div>
+                                  <div
+                                    v-else-if="isEditing && isActiveTabWithoutAvailability"
+                                    class="flex items-center justify-center text-xs font-normal text-slate-400 bg-slate-100 border border-slate-200 rounded w-full h-[32px] cursor-not-allowed select-none"
+                                    title="Tình trạng đăng ký không giữ phòng nên không gán số phòng"
+                                    data-testid="room-number-locked"
+                                  >
+                                    {{ room.roomNumber || '-' }}
                                   </div>
                                   <select 
                                     v-else-if="isEditing" 

@@ -21,6 +21,15 @@
         <div class="flex items-center space-x-2">
           <!-- Help Icon -->
           <i class="fa-solid fa-circle-question text-white/80 hover:text-white text-base cursor-pointer transition mr-1" title="Hướng dẫn tính phụ phí"></i>
+          <!-- Dòng 541: nút X tắt màn hình -->
+          <button
+            type="button"
+            class="hover:opacity-80 p-1 rounded cursor-pointer border-none bg-transparent text-white"
+            title="Đóng"
+            @click="close"
+          >
+            <i class="fa-solid fa-xmark text-sm"></i>
+          </button>
         </div>
       </div>
 
